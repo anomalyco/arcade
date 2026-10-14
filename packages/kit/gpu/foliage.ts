@@ -747,6 +747,13 @@ function emitLeafSprig(
  * outer polygon edges are 100% transparent (`alpha = 0`) while the interior is carved by the
  * procedural/texture leaf-cluster atlas into soft, clumpy, brushy leaf masses.
  */
+/**
+ * Emits a 3D ruffled, scalloped 5-triangle botanical leaf-cluster bouquet whose central apex has
+ * `aux = 0.96` and whose outer perimeter vertices all have `aux = 0.02`.
+ * Because every outer boundary edge connects two `aux = 0.02` vertices, the fragment shader's
+ * high-frequency `leaf_atlas` + multi-octave micro-leaf noise carves away all straight polygon
+ * edges into soft, ragged 4-7cm micro-leaf silhouettes over deep interior shadow.
+ */
 function emitBrushyLeafCard(
   m: Mesh,
   px: number,
@@ -758,10 +765,12 @@ function emitBrushyLeafCard(
   crownCenter: Point,
   normalSoftness: number,
   rng: Rng,
-  centerCol: Rgb,
-  rimCol: Rgb,
+  deepCol: Rgb,
+  midCol: Rgb,
+  sunlitCol: Rgb,
+  boughRadius: number,
 ): void {
-  const upBias = normalize3(outDir[0] * 0.72, Math.max(0.24, outDir[1] * 0.78 + 0.32), outDir[2] * 0.72)
+  const upBias = normalize3(outDir[0] * 0.78, Math.max(0.22, outDir[1] * 0.76 + 0.28), outDir[2] * 0.78)
   const yaw = rng.next() * Math.PI * 2
   const ref: Point = Math.abs(upBias[1]) > 0.92 ? [Math.cos(yaw), 0, Math.sin(yaw)] : [0, 1, 0]
   const t1Raw = cross3(ref, upBias)
@@ -774,16 +783,17 @@ function emitBrushyLeafCard(
   const uAxis: Point = [t1[0] * cr + t2[0] * sr, t1[1] * cr + t2[1] * sr, t1[2] * cr + t2[2] * sr]
   const vAxis: Point = [-t1[0] * sr + t2[0] * cr, -t1[1] * sr + t2[1] * cr, -t1[2] * sr + t2[2] * cr]
 
-  const cup = cardRadius * 0.22
+  const cup = cardRadius * 0.34
   const center: Point = [px + upBias[0] * cup, py + upBias[1] * cup, pz + upBias[2] * cup]
 
-  // 4-sided cupped diamond fan (4 tris = 12 verts): outer edges have aux = 0.01 (100% transparent in alphaToCoverage)
-  const sides = 4
+  // 5-sided cupped spherical cap (5 tris = 15 verts) forming a smooth overlapping 3D lobe puff
+  const sides = 5
   const ring: Point[] = []
   for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.18
-    const r = cardRadius * (i % 2 === 0 ? 1.12 : 0.94) * (0.90 + rng.next() * 0.20)
-    const droop = cardRadius * 0.12
+    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.22
+    const lobeReach = 0.94 + 0.22 * Math.sin(a * 2 + px * 1.7) + (rng.next() - 0.5) * 0.14
+    const r = cardRadius * lobeReach
+    const droop = cardRadius * 0.18
     const ca = Math.cos(a) * r
     const sa = Math.sin(a) * r
     ring.push([
@@ -793,35 +803,49 @@ function emitBrushyLeafCard(
     ])
   }
 
+  const soft = Math.min(0.98, Math.max(0.92, normalSoftness * 0.95 + 0.04))
   const domeNormalAt = (pt: Point): Point => {
     const nCloud = normalize3(
       pt[0] - domePivot[0],
-      (pt[1] - domePivot[1]) * 1.35 + 0.16,
+      (pt[1] - domePivot[1]) * 1.25 + 0.22,
       pt[2] - domePivot[2],
     )
     const nCrown = normalize3(
       pt[0] - crownCenter[0],
-      (pt[1] - crownCenter[1]) * 1.15 + 0.24,
+      (pt[1] - crownCenter[1]) * 1.10 + 0.28,
       pt[2] - crownCenter[2],
     )
-    return blendNormal(nCloud, nCrown, 0.36)
+    return blendNormal(nCloud, nCrown, 0.45)
   }
 
-  // Center has aux = 1.0, outer perimeter has aux = 0.01 so interpolated o.aux is radial card coverage!
-  const auxCenter = 1.0
-  const auxRim = 0.01
+  // Smooth 3D position-based color field so overlapping/adjacent triangles share continuous colors with zero polygon seams
+  const colorAt = (pt: Point): Rgb => {
+    const dx = pt[0] - domePivot[0]
+    const dy = pt[1] - domePivot[1]
+    const dz = pt[2] - domePivot[2]
+    const dist = Math.hypot(dx, dy, dz) / Math.max(0.25, boughRadius * 1.25)
+    const shell = clamp01(dist * 0.62 + clamp01((dy + boughRadius * 0.35) / Math.max(0.25, boughRadius * 1.35)) * 0.38)
+    const nWave = noise2(pt[0] * 1.8 + pt[1] * 0.7, pt[2] * 1.8 - pt[1] * 0.5)
+    const t = clamp01(shell * 0.82 + (nWave - 0.5) * 0.28)
+    return t < 0.52 ? mixRgb(deepCol, midCol, t / 0.52) : mixRgb(midCol, sunlitCol, (t - 0.52) / 0.48)
+  }
+
+  const cCol = colorAt(center)
+  const ringCols = ring.map(colorAt)
+  const auxCenter = 0.85
+  const auxRim = 0.35
 
   for (let i = 0; i < sides; i++) {
     const p0 = ring[i]!
     const p1 = ring[(i + 1) % sides]!
     const fnRaw = faceNormal(center, p0, p1)
     const fn: Point = fnRaw[1] < 0 ? [-fnRaw[0], -fnRaw[1], -fnRaw[2]] : fnRaw
-    const nC = blendNormal(fn, domeNormalAt(center), normalSoftness)
-    const n0 = blendNormal(fn, domeNormalAt(p0), normalSoftness)
-    const n1 = blendNormal(fn, domeNormalAt(p1), normalSoftness)
-    m.vert(center, nC, centerCol, MAT.foliage, auxCenter)
-    m.vert(p0, n0, rimCol, MAT.foliage, auxRim)
-    m.vert(p1, n1, rimCol, MAT.foliage, auxRim)
+    const nC = blendNormal(fn, domeNormalAt(center), soft)
+    const n0 = blendNormal(fn, domeNormalAt(p0), soft)
+    const n1 = blendNormal(fn, domeNormalAt(p1), soft)
+    m.vert(center, nC, cCol, MAT.foliage, auxCenter)
+    m.vert(p0, n0, ringCols[i]!, MAT.foliage, auxRim)
+    m.vert(p1, n1, ringCols[(i + 1) % sides]!, MAT.foliage, auxRim)
   }
 }
 
@@ -882,39 +906,30 @@ function emitBoughCluster(
     const pz = cz + Math.sin(a) * radX
     const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.18 + (isCore ? 0.28 : 0.08), pz - cz)
 
-    const heightLift = clamp01((oy + ry * 0.48) / Math.max(0.1, ry * 1.15))
-
     const cardRadius = Math.max(
-      0.20,
-      leafCardScale * (isCore ? 1.55 : isMid ? 1.32 : 1.08) * (0.88 + rng.next() * 0.24),
+      0.16,
+      leafCardScale * (isCore ? 1.55 : isMid ? 1.35 : 1.15) * (0.88 + rng.next() * 0.24),
     )
 
-    const sprigRootCol = isCore
-      ? deepCol
-      : isMid
-        ? mixRgb(deepCol, midCol, 0.42 + 0.45 * heightLift)
-        : mixRgb(midCol, base, 0.45 + 0.45 * heightLift)
-    const sprigTipCol = isCore
-      ? mixRgb(deepCol, midCol, 0.58 + 0.32 * heightLift)
-      : isMid
-        ? mixRgb(midCol, base, 0.58 + 0.42 * heightLift)
-        : mixRgb(base, sunlitCol, 0.48 + 0.52 * heightLift)
-    emitLeafSprig(
+    emitBrushyLeafCard(
       m,
-      [px, py, pz],
+      px,
+      py,
+      pz,
       outDir,
-      cardRadius * (isCore ? 1.56 : 1.48),
+      cardRadius,
       domePivot,
       crownCenter,
-      Math.min(0.96, normalSoftness * 0.90 + 0.06),
+      normalSoftness,
       rng,
-      sprigRootCol,
-      sprigTipCol,
-      flexBase * (isCore ? 0.65 : isMid ? 0.85 : 1.05),
-      2,
+      deepCol,
+      midCol,
+      sunlitCol,
+      rx,
     )
   }
-  void emitBrushyLeafCard
+  void flexBase
+  void emitLeafSprig
 }
 
 /**
