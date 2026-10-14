@@ -33,6 +33,12 @@ import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
+import {
+  CombinedFogMemory,
+  DEFAULT_FOG_OF_WAR,
+  collectFogSoundSprites,
+  fogOfWarControls,
+} from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -51,7 +57,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const lookSettings = createLookSettings("current")
+const lookSettings = createLookSettings("noir")
 const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
 const peaceful = params.has("peaceful")
 const settings = {
@@ -77,8 +83,10 @@ const settings = {
   texContrast: 1.0,
   texRoughness: 0.0,
   humanProfile: 0,
-  lookPreset: "current",
+  lookPreset: "noir",
   ...DEFAULT_OUTBREAK_LIGHTING,
+  ...OUTBREAK_LOOK_LIGHTING_PRESETS.noir,
+  ...DEFAULT_FOG_OF_WAR,
   ...DEFAULT_AI_CONFIG,
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
@@ -119,6 +127,7 @@ async function main() {
   let session = new LocalSession(seed, settings.houseSeed, settings.terrain, settings)
   let vision = new Vision()
   let scenery = new SceneryMemory()
+  const combinedFog = new CombinedFogMemory()
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -238,6 +247,7 @@ async function main() {
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
+    ...fogOfWarControls,
     { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
     ...outbreakLightingControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
@@ -677,7 +687,9 @@ async function main() {
     ambientMotion.reset()
     level()
     scenery = new SceneryMemory()
-    renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+    combinedFog.reset()
+    combinedFog.update(vision, scenery, true)
+    renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
     pendingDrawDt = 0
@@ -799,8 +811,22 @@ async function main() {
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    vision.update(p.x, p.y, p.aim, blockers, settings, peek)
-    if (scenery.update(town, vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings, peek)
+    const scenChanged = scenery.update(town, vision)
+    if (visChanged || scenChanged) {
+      combinedFog.markDirty()
+      combinedFog.update(vision, scenery, true)
+      renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
+    }
+    let frameLightOccluders = lightOccluders
+    for (let zi = 0; zi < zombies.length && frameLightOccluders < MAX_OCCLUDERS; zi++) {
+      const z = zombies[zi]!
+      if (z.state === "dead") continue
+      if (Math.hypot(z.x - p.x, z.y - p.y) > 16) continue
+      if (vision.actorVisible(z.x, z.y) <= 0.02) continue
+      // Height 0.96m (< flashlight height 1.18m) so zombies cast finite partialShadow ground shadows without blacking out entire rooms/walls behind them
+      occluders.set([z.x, z.y, 0.16, 0, 0.96, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
+    }
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -858,14 +884,14 @@ async function main() {
       )
       const fx = p.x + Math.cos(p.aim) * 0.25
       const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.18 + playerGroundY
+      const fh = 1.34 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
+      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.35
       const power = p.flashlightOutput * settings.flashlightIntensity * directScale
-      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 9.5)
+      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 7.8 : 12.5)
       flashlightSlot = count
       lights.set(
-        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
+        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -880,6 +906,7 @@ async function main() {
       view,
       settings,
       Boolean(settings.aiDebugOverlay),
+      time,
     )
 
     let addCount = combatFx.processShots(
@@ -1011,6 +1038,17 @@ async function main() {
       alphaSprites,
       0,
     )
+    const fogSoundAlphaCount = collectFogSoundSprites(
+      zombies,
+      noises,
+      p,
+      vision,
+      time,
+      (x, z) => supportHeight(town, x, z),
+      settings,
+      alphaSprites,
+      debugAlphaCount,
+    )
     const groundWearBatches = groundWear.collectBatches(town, view, settings)
     const clutterBatches = exteriorClutter.collectBatches(town, view, settings)
     const motionOut = ambientMotion.stepAndCollect(
@@ -1021,7 +1059,7 @@ async function main() {
       view,
       settings,
       alphaSprites,
-      debugAlphaCount,
+      fogSoundAlphaCount,
     )
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
@@ -1037,7 +1075,7 @@ async function main() {
       ...(openWindows ? [sashBatch] : []),
     ]
     render.lightCount = render.shadowLightCount = count
-    render.occluderCount = lightOccluders
+    render.occluderCount = frameLightOccluders
     render.lampCount = town.lamps.length
     render.view = view
     render.grade = [time, settings.diagnostic, 0, settings.exposure]
@@ -1262,6 +1300,7 @@ async function main() {
       if (key === "lookPreset") {
         const pid = resolveLookPresetId(value) ?? "current"
         applyLookPreset(lookSettings, pid)
+        Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
         lab.refresh()
       }
     },
@@ -1270,6 +1309,7 @@ async function main() {
       if (!pid) throw new Error(`Unknown look preset: ${preset}`)
       settings.lookPreset = pid
       applyLookPreset(lookSettings, pid)
+      Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
       lab.refresh()
       return { ...lookSettings }
     },

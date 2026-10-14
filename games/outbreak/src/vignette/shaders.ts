@@ -66,6 +66,8 @@ struct VignetteUniforms {
   params3: vec4f,
   // x: tanHalfAngle, y: flashRange, z: flashHaze, w: flashSlot (<0 if off)
   params4: vec4f,
+  // x: fogStyle (0=soft, 1=noir memory, 2=stark cone), y: fogEdgeSoftness, z: fogMemoryDim, w: fogUnknownGrain
+  params5: vec4f,
 }
 @group(0) @binding(13) var<uniform> Vig: VignetteUniforms;
 var<private> surfaceTexRatio: vec3f;
@@ -150,18 +152,30 @@ fn eyeVisible(p: vec2f) -> f32 {
   let eyeOrigin = select(F.eye.xy, Vig.params2.xy, length(Vig.params2.xy) > 0.1);
   let delta = p - eyeOrigin;
   let distance = length(delta);
+  let soft = clamp(select(0.78, Vig.params5.y, Vig.params5.y > 0.01), 0.05, 1.5);
   let a = (atan2(delta.y, delta.x) + TAU) % TAU;
   let f = a / TAU * f32(RAYS) - 0.5;
-  let ray0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
-  let ray1 = (ray0 + 1u) % RAYS;
-  let los0 = 1.0 - smoothstep(polar[ray0 * 2u].x + 0.025, polar[ray0 * 2u].x + 0.10, distance);
-  let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
-  let los = mix(los0, los1, fract(f));
+  let angStep = clamp(0.65 + soft * 0.85, 0.5, 2.2);
+  var los = 0.0;
+  for (var k = -2; k <= 2; k++) {
+    let sf = f + f32(k) * angStep;
+    let r0 = u32(i32(floor(sf)) + i32(RAYS) * 4) % RAYS;
+    let r1 = (r0 + 1u) % RAYS;
+    let h0 = polar[r0 * 2u].x;
+    let h1 = polar[r1 * 2u].x;
+    let p0 = (0.08 + max(0.0, distance - h0) * 0.22) * soft;
+    let p1 = (0.08 + max(0.0, distance - h1) * 0.22) * soft;
+    let v0 = 1.0 - smoothstep(h0 + 0.015, h0 + 0.045 + p0, distance);
+    let v1 = 1.0 - smoothstep(h1 + 0.015, h1 + 0.045 + p1, distance);
+    let w = select(select(0.12, 0.22, abs(k) == 1), 0.32, k == 0);
+    los += mix(v0, v1, fract(sf)) * w;
+  }
   let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
-  let cone = smoothstep(F.effects.y, F.effects.y + 0.035, facing);
-  let near = 1.0 - smoothstep(F.effects.z - 0.2, F.effects.z, distance);
-  let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
-  return los * max(cone, near) * range;
+  let coneW = 0.04 + 0.16 * soft;
+  let cone = smoothstep(F.effects.y - coneW * 0.4, F.effects.y + coneW * 0.6, facing);
+  let near = exp(-(distance * distance) / (max(0.5, F.effects.z * F.effects.z) * (0.65 + 0.45 * soft))) * 0.48;
+  let range = 1.0 - smoothstep(lights[0].pos.w - (1.0 + 2.0 * soft), lights[0].pos.w, distance);
+  return clamp(los * max(cone, near) * range, 0.0, 1.0);
 }
 `,
     material: /* wgsl */ `
@@ -668,14 +682,24 @@ fn eyeVisible(p: vec2f) -> f32 {
       col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.36, 0.48, inHouse);
     }
   }
-  if (mat != 12 && mat != 21 && mat != 2 && !(activeVig && Vig.params0.w > 0.05)) {
+  if (mat != 12 && mat != 2 && !(activeVig && Vig.params0.w > 0.05)) {
+    let fogStyle = i32(round(Vig.params5.x));
+    let baseMemDim = select(0.42, Vig.params5.z, Vig.params5.z > 0.01);
+    let memDim = clamp(
+      select(select(baseMemDim, baseMemDim * 0.38, fogStyle == 2), max(baseMemDim, 0.78), fogStyle == 0),
+      0.06,
+      0.95
+    );
+    let grainAmt = clamp(select(0.48, Vig.params5.w, Vig.params5.z > 0.01), 0.0, 1.0) * select(1.0, 1.6, fogStyle == 2);
     let luminance = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-    let peripheral = mix(vec3f(luminance) * vec3f(0.83, 0.94, 1.05), col, 0.72);
+    let memTone = mix(vec3f(luminance) * vec3f(0.76, 0.88, 1.06), col, select(0.05, 0.42, fogStyle == 0)) * memDim;
+    let gNoise = (hash2(floor(o.world.xz * 14.0)) - 0.5) * grainAmt * 0.016;
+    let shroudCol = max(vec3f(0.001), o.color * 0.006 + vec3f(0.002, 0.003, 0.005) + vec3f(gNoise));
     if (interior(o.world.xz) && o.world.y < 2.8) {
-      let room = mix(vec3f(luminance) * vec3f(0.90, 0.96, 1.0), col, 0.88 + 0.12 * visible);
-      col = mix(o.color * 0.008, room * mix(F.effects.w, 1.0, 0.82), explored);
+      let unrev = mix(shroudCol, memTone, explored);
+      col = mix(unrev, col, visible);
     } else {
-      col = mix(peripheral * (0.86 + 0.14 * explored), col, 0.86 + 0.14 * visible);
+      col = mix(memTone * (0.72 + 0.28 * explored) + vec3f(gNoise * 0.5), col, visible);
     }
   }
   // Crisp split-screen divider when compareMode == 2 (Split A/B vs Shipped)

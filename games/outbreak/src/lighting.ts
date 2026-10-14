@@ -43,19 +43,19 @@ export const OUTBREAK_LOOK_LIGHTING_PRESETS: Readonly<Record<LookPresetId, Parti
   current: { ...DEFAULT_OUTBREAK_LIGHTING },
   sodium_70s: { ...DEFAULT_OUTBREAK_LIGHTING },
   noir: {
-    exposure: 0.88,
-    skyFill: 0.38,
-    moonFill: 0.85,
-    practicalWarmth: 0.32,
-    porchPower: 0.38,
-    windowPower: 0.42,
-    roomPower: 0.50,
-    streetPower: 0.15,
-    lightFalloff: 1.45,
-    flashlightHaze: 1.15,
-    wetSpecular: 0.84,
-    rimStrength: 0.95,
-    vignetteDarkness: 0.78,
+    exposure: 1.03,
+    skyFill: 0.40,
+    moonFill: 0.90,
+    practicalWarmth: 0.0,
+    porchPower: 0.36,
+    windowPower: 0.38,
+    roomPower: 0.56,
+    streetPower: 0.12,
+    lightFalloff: 1.38,
+    flashlightHaze: 1.38,
+    wetSpecular: 0.85,
+    rimStrength: 1.45,
+    vignetteDarkness: 0.58,
   },
   cinematic_dusk: {
     exposure: 0.96,
@@ -129,6 +129,10 @@ export type OutbreakLightingFrameState = {
     flashlightRange: number
     flashlightCone: number
     flashlightWarmth: number
+    fogStyle?: number
+    fogEdgeSoftness?: number
+    fogMemoryDim?: number
+    fogUnknownGrain?: number
   }
   playerX: number
   playerY: number
@@ -148,7 +152,7 @@ export type OutbreakLightingFrameState = {
  * u4: flashTanHalf, flashRange, flashPower, flashSlot
  * u5: flashColorR, flashColorG, flashColorB, inInteriorView (1 or 0)
  * u6: playerX, playerY, playerH, exposure
- * u7: reserved
+ * u7: fogStyle, fogEdgeSoftness, fogMemoryDim, fogUnknownGrain
  */
 export function packOutbreakLightingUniforms(
   state: OutbreakLightingFrameState,
@@ -184,7 +188,7 @@ export function packOutbreakLightingUniforms(
   out[15] = dirY
   // u4
   out[16] = Math.tan(halfRad)
-  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 5.2) : Math.min(s.flashlightRange, 9.5)
+  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 7.8) : Math.min(s.flashlightRange, 12.5)
   out[18] = state.flashlightOutput * s.flashlightIntensity
   out[19] = state.flashlightSlot
   // u5
@@ -197,6 +201,11 @@ export function packOutbreakLightingUniforms(
   out[25] = state.playerY
   out[26] = state.playerH
   out[27] = s.exposure
+  // u7
+  out[28] = s.fogStyle ?? 1
+  out[29] = s.fogEdgeSoftness ?? 0.78
+  out[30] = s.fogMemoryDim ?? 0.42
+  out[31] = s.fogUnknownGrain ?? 0.48
   return out
 }
 
@@ -797,12 +806,12 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       col += texAlbedo * vec3f(1.0, 0.44, 0.07) * spill * w;
     }
 
-    // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0)
+    // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0) — scaled by w*w so Noir street stays dark outside the flashlight
     let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85);
     let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
-    if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9) {
+    if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9 && w > 0.15) {
       let pPool = exp(-dp2 / 7.8);
-      col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (0.4 + 0.6 * w);
+      col += texAlbedo * vec3f(1.0, 0.48, 0.11) * pPool * 1.15 * (w * w);
     }
   } else if (world.y < 2.72) {
     // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
@@ -864,12 +873,12 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   if (mat == 12 && length(world.xz - OL.u6.xy) < 0.55) {
     return vec3f(0.0);
   }
-  let radial = exp(-pow(across / (coneR * 0.68), 2.0)) * (1.0 - smoothstep(coneR * 0.65, coneR * 1.28, across));
-  let axial = smoothstep(-0.05, 0.20, along) * pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.4);
+  let radial = exp(-pow(across / (coneR * 0.78), 2.0)) * (1.0 - smoothstep(coneR * 0.72, coneR * 1.45, across));
+  let axial = smoothstep(-0.12, 0.18, along) * pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.25);
   let profile = radial * axial;
-  if (profile <= 0.01) { return vec3f(0.0); }
+  if (profile <= 0.008) { return vec3f(0.0); }
 
-  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.05, world.xz + n.xz * 0.03, min(world.y, 1.05));
+  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.06, world.xz + n.xz * 0.03, min(world.y, 1.05));
   if (vis <= 0.001) { return vec3f(0.0); }
 
   // Shadow-gated 3D drifting dust motes (dustAt) glinting inside unoccluded beam
@@ -877,9 +886,10 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let moteHash = hash2(moteCell);
   let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
 
-  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.25 && n.y > 0.7);
-  let beamCol = vec3f(1.0, 0.62, 0.24);
-  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * OL.u2.x * 0.14 * surfW;
-  return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
+  let surfW = select(0.34 + 0.56 * max(0.0, dot(n.xz, -fDir)), 1.0, world.y < 0.32 && n.y > 0.65);
+  let w = clamp(OL.u0.z, 0.0, 1.0);
+  let beamCol = mix(vec3f(1.06, 0.94, 0.76), vec3f(1.0, 0.62, 0.24), w * 0.78);
+  let mist = (profile / (0.42 + max(0.0, along) * 0.24) + moteGlint * 0.18) * OL.u2.x * 0.20 * surfW;
+  return (baseAlbedo * 1.35 + beamCol * 0.045) * beamCol * OL.u4.z * mist * vis;
 }
 `

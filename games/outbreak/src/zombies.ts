@@ -30,6 +30,7 @@ import {
 import { angleDiff } from "@arcade/kit/sim/geom"
 import type { AIAgent, AIConfig, NoiseEvent } from "../shared/ai"
 import type { Vision } from "../shared/vision"
+import { ZombieMemoryTracker } from "./fog-of-war"
 import { hex } from "./level"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 
@@ -123,51 +124,59 @@ export class ZombieCrowdRenderer {
   private readonly models: number[]
   private readonly partData: Float32Array<ArrayBuffer>[]
   private readonly partCounts = new Int32Array(PART_COUNT)
+  private readonly ghostPartData: Float32Array<ArrayBuffer>[]
+  private readonly ghostPartCounts = new Int32Array(PART_COUNT)
   private readonly anims = new Map<number, AgentAnimState>()
+  readonly memory = new ZombieMemoryTracker()
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
 
   constructor(renderer: Pick<Renderer, "addModel">) {
-    const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
+    const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0.022) => {
       const m = new Mesh()
-      m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
+      m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, MAT.actor)
       return m
     }
-    const skin = hex(0x6c7d60)
-    const forearmSkin = hex(0x4e5d45)
-    const jacket = hex(0x454137)
-    const trousers = hex(0x2b3136)
-    const wound = hex(0x581416)
-    const hair = hex(0x212623)
-    const boot = hex(0x26201c)
+    const skin = hex(0x7c906e)
+    const forearmSkin = hex(0x647857)
+    const jacket = hex(0x61594b)
+    const collar = hex(0x786f5e)
+    const trousers = hex(0x3a434c)
+    const wound = hex(0x9c2024)
+    const hair = hex(0x252b28)
+    const boot = hex(0x28221e)
 
     const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
     const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
-    torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
-    torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+    // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
+    torso.bevelBox(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, 0.018, collar, MAT.actor)
+    torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
+    torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
 
-    const head = box(0.18, 0.01, 0.24, 0.18, skin)
-    head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
+    const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.026)
+    head.bevelBox(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, 0.016, hair, MAT.actor)
     for (const z of [-0.042, 0.042]) {
-      head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
+      head.box(0.086, 0.13, z - 0.017, 0.098, 0.158, z + 0.017, hex(0xbce858), MAT.glow, 0.72)
     }
 
-    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
-    const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
-    foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
+    const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket, 0.018)
+    const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin, 0.016)
+    foreArm.box(-0.04, -0.31, -0.046, 0.058, -0.255, 0.046, wound, MAT.actor)
 
-    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
-    const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
-    const foot = box(0.21, -0.075, 0.09, 0.14, boot)
+    const thigh = box(0.17, -0.42, 0.46, 0.17, trousers, 0.02)
+    const shin = box(0.135, -0.41, 0.43, 0.14, trousers, 0.018)
+    const foot = box(0.21, -0.075, 0.09, 0.14, boot, 0.015)
 
     this.models = [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot].map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
+    this.ghostPartData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
   }
 
   reset(): void {
     this.anims.clear()
+    this.memory.reset()
     this.debris.length = 0
   }
 
@@ -241,12 +250,14 @@ export class ZombieCrowdRenderer {
     return st
   }
 
-  private pushPart(partIndex: number, frame: Frame, tint: Rgb, flash: number, alpha = 1): void {
-    const count = this.partCounts[partIndex]!
+  private pushPart(partIndex: number, frame: Frame, tint: Rgb, flash: number, alpha = 1, isGhost = false): void {
+    const counts = isGhost ? this.ghostPartCounts : this.partCounts
+    const buffers = isGhost ? this.ghostPartData : this.partData
+    const count = counts[partIndex]!
     if (count >= MAX_INSTANCES_PER_PART) return
     const [yaw, p, r] = frameAngles(frame)
     const offset = count * INST_FLOATS
-    const data = this.partData[partIndex]!
+    const data = buffers[partIndex]!
     data[offset] = frame.p[0]
     data[offset + 1] = frame.p[1]
     data[offset + 2] = frame.p[2]
@@ -259,7 +270,7 @@ export class ZombieCrowdRenderer {
     data[offset + 9] = r
     data[offset + 10] = alpha
     data[offset + 11] = flash
-    this.partCounts[partIndex] = count + 1
+    counts[partIndex] = count + 1
   }
 
   draw(
@@ -268,12 +279,15 @@ export class ZombieCrowdRenderer {
     support: (x: number, z: number) => number,
     vision: Vision,
     viewRect: readonly [number, number, number, number],
-    zombieTune: ZombieTuning,
+    zombieTune: ZombieTuning & { fogGhostDuration?: number },
     debugOverlay: boolean,
+    time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
     this.partCounts.fill(0)
+    this.ghostPartCounts.fill(0)
     const [vx0, vy0, vx1, vy1] = viewRect
+    const ghostDuration = zombieTune.fogGhostDuration ?? 3.2
 
     // Step detached limb debris
     for (let i = this.debris.length - 1; i >= 0; i--) {
@@ -315,8 +329,23 @@ export class ZombieCrowdRenderer {
       const a = agents[idx]!
       if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue
 
-      const isVisible = vision.visible(a.x, a.y)
-      if (!isVisible && !debugOverlay) continue
+      const visWeight = vision.actorVisible(a.x, a.y)
+      const isVisible = visWeight > 0.02
+      if (!isVisible && !debugOverlay) {
+        const mem = this.memory.getActiveGhost(a, vision, time, ghostDuration)
+        if (mem) {
+          const g = mem.ghost
+          const gTint: Rgb = [0.42, 0.48, 0.58]
+          for (const [boneId, frame] of Object.entries(g.bones)) {
+            if (!frame || !boneVisible(boneId as BoneId, g.hiddenBones)) continue
+            const partIdx = BONE_TO_PART[boneId as BoneId]
+            if (partIdx !== undefined) {
+              this.pushPart(partIdx, frame, gTint, 0, mem.alpha, true)
+            }
+          }
+        }
+        continue
+      }
 
       const st = this.ensureAnim(a, support)
       for (const limbId of a.detachedLimbs) {
@@ -324,11 +353,13 @@ export class ZombieCrowdRenderer {
       }
 
       // Compute individual colour variation
-      const shade = 0.86 + ((a.id * 19) % 7) * 0.035
-      const tint: Rgb = !isVisible && debugOverlay ? [0.55, 0.72, 0.85] : [shade, shade * 0.98, shade * 0.94]
-      const alpha = !isVisible && debugOverlay ? 0.58 : 1.0
+      const shade = 0.88 + ((a.id * 19) % 7) * 0.035
+      const isGhost = !isVisible && debugOverlay
+      const tint: Rgb = isGhost ? [0.55, 0.72, 0.85] : [shade, shade * 0.98, shade * 0.94]
+      const alpha = isGhost ? 0.58 : Math.min(1.0, 0.25 + 0.75 * visWeight)
 
       if (a.state === "dead") {
+        this.memory.remove(a.id)
         st.collapse = Math.min(1, st.collapse + dt * 4.2)
         const c = smoother(st.collapse)
         const groundY = support(a.x, a.y)
@@ -339,9 +370,9 @@ export class ZombieCrowdRenderer {
         const torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.yaw), -1.48 * c)
         const head = pitch(yawFrame(at(torso, 0.02, RIG.neckY, 0), st.yaw), -1.35 * c)
 
-        if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha)
-        if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha)
-        if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha)
+        if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha, isGhost)
+        if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha, isGhost)
+        if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha, isGhost)
         for (let i = 0; i < 2; i++) {
           const side = i ? 1 : -1
           const name = i === 0 ? "left" : "right"
@@ -354,11 +385,11 @@ export class ZombieCrowdRenderer {
           const pole = dirIn(pelvis, 1, 0, side * 0.3)
           const [knee, end] = ik(hip, footTarget, RIG.thigh, RIG.shin, pole)
           if (boneVisible(`${name}.thigh` as BoneId, st.hiddenBones))
-            this.pushPart(5, limb(hip, knee, pole, pelvis.x), tint, a.hitFlash, alpha)
+            this.pushPart(5, limb(hip, knee, pole, pelvis.x), tint, a.hitFlash, alpha, isGhost)
           if (boneVisible(`${name}.shin` as BoneId, st.hiddenBones))
-            this.pushPart(6, limb(knee, end, pole, pelvis.x), tint, a.hitFlash, alpha)
+            this.pushPart(6, limb(knee, end, pole, pelvis.x), tint, a.hitFlash, alpha, isGhost)
           if (boneVisible(`${name}.foot` as BoneId, st.hiddenBones))
-            this.pushPart(7, pitch(yawFrame(end, st.yaw), -1.2 * c), tint, a.hitFlash, alpha)
+            this.pushPart(7, pitch(yawFrame(end, st.yaw), -1.2 * c), tint, a.hitFlash, alpha, isGhost)
 
           const shoulder = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
           const handTarget: V3 = [
@@ -368,9 +399,9 @@ export class ZombieCrowdRenderer {
           ]
           const [elbow, wrist] = ik(shoulder, handTarget, RIG.upper, RIG.fore, dirIn(torso, -0.4, -1, side))
           if (boneVisible(`${name}.upperArm` as BoneId, st.hiddenBones))
-            this.pushPart(3, limb(shoulder, elbow, torso.x, torso.y), tint, a.hitFlash, alpha)
+            this.pushPart(3, limb(shoulder, elbow, torso.x, torso.y), tint, a.hitFlash, alpha, isGhost)
           if (boneVisible(`${name}.foreArm` as BoneId, st.hiddenBones))
-            this.pushPart(4, limb(elbow, wrist, torso.x, torso.y), tint, a.hitFlash, alpha)
+            this.pushPart(4, limb(elbow, wrist, torso.x, torso.y), tint, a.hitFlash, alpha, isGhost)
         }
         continue
       }
@@ -487,9 +518,9 @@ export class ZombieCrowdRenderer {
       const arms = poseArms(torso, ...hands)
 
       st.bones = { pelvis, torso, head }
-      if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha)
-      if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha)
-      if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha)
+      if (boneVisible("pelvis", st.hiddenBones)) this.pushPart(0, pelvis, tint, a.hitFlash, alpha, isGhost)
+      if (boneVisible("torso", st.hiddenBones)) this.pushPart(1, torso, tint, a.hitFlash, alpha, isGhost)
+      if (boneVisible("head", st.hiddenBones)) this.pushPart(2, head, tint, a.hitFlash, alpha, isGhost)
 
       for (let i = 0; i < 2; i++) {
         const side = i ? 1 : -1
@@ -505,16 +536,19 @@ export class ZombieCrowdRenderer {
         st.bones[`${name}.thigh` as BoneId] = thigh
         st.bones[`${name}.shin` as BoneId] = shin
         st.bones[`${name}.foot` as BoneId] = boot
-        if (boneVisible(`${name}.thigh` as BoneId, st.hiddenBones)) this.pushPart(5, thigh, tint, a.hitFlash, alpha)
-        if (boneVisible(`${name}.shin` as BoneId, st.hiddenBones)) this.pushPart(6, shin, tint, a.hitFlash, alpha)
-        if (boneVisible(`${name}.foot` as BoneId, st.hiddenBones)) this.pushPart(7, boot, tint, a.hitFlash, alpha)
+        if (boneVisible(`${name}.thigh` as BoneId, st.hiddenBones)) this.pushPart(5, thigh, tint, a.hitFlash, alpha, isGhost)
+        if (boneVisible(`${name}.shin` as BoneId, st.hiddenBones)) this.pushPart(6, shin, tint, a.hitFlash, alpha, isGhost)
+        if (boneVisible(`${name}.foot` as BoneId, st.hiddenBones)) this.pushPart(7, boot, tint, a.hitFlash, alpha, isGhost)
 
         const upper = arms.ua[i]!
         const fore = arms.fa[i]!
         st.bones[`${name}.upperArm` as BoneId] = upper
         st.bones[`${name}.foreArm` as BoneId] = fore
-        if (boneVisible(`${name}.upperArm` as BoneId, st.hiddenBones)) this.pushPart(3, upper, tint, a.hitFlash, alpha)
-        if (boneVisible(`${name}.foreArm` as BoneId, st.hiddenBones)) this.pushPart(4, fore, tint, a.hitFlash, alpha)
+        if (boneVisible(`${name}.upperArm` as BoneId, st.hiddenBones)) this.pushPart(3, upper, tint, a.hitFlash, alpha, isGhost)
+        if (boneVisible(`${name}.foreArm` as BoneId, st.hiddenBones)) this.pushPart(4, fore, tint, a.hitFlash, alpha, isGhost)
+      }
+      if (isVisible) {
+        this.memory.recordSeen(a.id, a.x, a.y, st.yaw, st.bones, st.hiddenBones, time)
       }
     }
 
@@ -526,6 +560,17 @@ export class ZombieCrowdRenderer {
           model: this.models[i]!,
           data: this.partData[i]!,
           count,
+        })
+      }
+    }
+    for (let i = 0; i < PART_COUNT; i++) {
+      const count = this.ghostPartCounts[i]!
+      if (count > 0) {
+        this.batches.push({
+          model: this.models[i]!,
+          data: this.ghostPartData[i]!,
+          count,
+          alpha: true,
         })
       }
     }
@@ -583,10 +628,10 @@ export class ZombieCrowdRenderer {
       alphaSprites[o + 11] = extra
     }
 
-    // Even when full debug overlay is off, show subtle alert "!" marker on newly alerted zombies
+    // Even when full debug overlay is off, show subtle alert "!" marker on newly alerted zombies in LOS
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]!
-      if (a.state === "alert") {
+      if (a.state === "alert" && (enabled || a.hitFlash > 0.05)) {
         const gy = support(a.x, a.y)
         pushSprite(a.x, gy + 2.25, a.y, 0.22, 1.0, 0.32, 0.18, 0.92, 7, 0, 1, 0)
       }
