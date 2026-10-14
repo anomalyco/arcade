@@ -983,6 +983,15 @@ class PageControlRuntime {
     if ((command === "scene.set-env" || command === "env") && args?.name !== undefined) {
       return `CLI: env ${String(args.name)}`
     }
+    if (command === "look.preset" && args?.preset !== undefined) {
+      return `CLI: look preset ${String(args.preset)}`
+    }
+    if (command === "look.set" && args?.key !== undefined) {
+      return `CLI: look set ${String(args.key)} = ${String(args?.value)}`
+    }
+    if (command === "look.randomize") {
+      return `CLI: look randomize ${String(args?.group ?? "all")}`
+    }
     if (command === "nav.open" && args?.target !== undefined) {
       return `CLI: open ${String(args.target)}`
     }
