@@ -4,8 +4,10 @@ import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-OUT_DIR = sys.argv[1] if len(sys.argv) > 1 else "/Users/kit/code/home/artifacts/2026-10-14-pose-diff"
-TAG = sys.argv[2] if len(sys.argv) > 2 else "before"
+if len(sys.argv) < 2:
+    sys.exit("usage: pose-diff-render.py <out-dir> [tag]")
+OUT_DIR = sys.argv[1]
+TAG = sys.argv[2] if len(sys.argv) > 2 else "after"
 
 with open(os.path.join(OUT_DIR, f"pose-diff-{TAG}.json")) as f:
     cur_data = json.load(f)
@@ -713,7 +715,8 @@ if TAG == "after" and before_data:
     for mode, cyc_key, ref_key in [("walk", "survivorWalk", "mocapWalk"), ("run", "survivorRun", "mocapRun")]:
         ideal_src = os.path.join(OUT_DIR, f"{mode}-3d-ideal-side.png")
         if not os.path.exists(ideal_src):
-            alt_src = os.path.join("/Users/kit/code/home/artifacts/2026-10-14-walk-audit", f"{mode}-sheet-ideal-side.png")
+            # A paint-over target saved next to render-sheets.ts output also works.
+            alt_src = os.path.join(OUT_DIR, f"{mode}-sheet-ideal-side.png")
             if os.path.exists(alt_src):
                 ideal_src = alt_src
         if not os.path.exists(ideal_src):
@@ -732,7 +735,7 @@ if TAG == "after" and before_data:
         )
         odraw.text(
             (14, 27),
-            "Shows why Before failed (upper arm stuck vertical in torso / run elbow unbending downward) vs After matching paint-over & mocap.",
+            "Our arm chains drawn over the paint-over target, with the mocap reference for comparison.",
             fill=(175, 190, 210, 255),
             font=FONT_SMALL,
         )

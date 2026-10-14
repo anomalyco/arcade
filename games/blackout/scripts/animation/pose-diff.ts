@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
-import { animate, newAvatar } from "../src/game/anim"
-import { GUNPTS } from "../src/render/person"
+import { animate, newAvatar } from "../../src/game/anim"
+import { GUNPTS } from "../../src/render/person"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { poseUnarmedArms, unarmedHands } from "@arcade/kit/human-pose"
 import {
@@ -19,25 +19,8 @@ import {
   type CycleData,
   type RigJointMap,
 } from "@arcade/kit/pose-diff"
-import { Survivor as OutbreakSurvivor } from "../../outbreak/src/survivor"
-
-function parseArgs(argv: string[]) {
-  let tag = "after"
-  let outDir = "/Users/kit/code/home/artifacts/2026-10-14-pose-diff"
-  let bvhDir = "/Users/kit/code/home/artifacts/2026-10-14-walk-audit/mocap"
-  let baselineDir = "/Users/kit/code/open-source/arcade"
-  let noRender = false
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!
-    if (a === "--tag" && argv[i + 1]) tag = argv[++i]!
-    else if (a === "--out" && argv[i + 1]) outDir = resolve(argv[++i]!)
-    else if (a === "--bvh-dir" && argv[i + 1]) bvhDir = resolve(argv[++i]!)
-    else if (a === "--baseline" && argv[i + 1]) baselineDir = resolve(argv[++i]!)
-    else if (a === "--no-render") noRender = true
-    else if (!a.startsWith("-")) tag = a
-  }
-  return { tag, outDir, bvhDir, baselineDir, noRender }
-}
+import { Survivor as OutbreakSurvivor } from "../../../outbreak/src/survivor"
+import { fixturesDir, loadMocap, parseArgs } from "./common"
 
 type PoseHooks = {
   unarmedHandsFn: typeof unarmedHands
@@ -123,27 +106,19 @@ function sampleOutbreakCycle(name: string, mode: "walk" | "run", speed: number, 
   return buildCycleFromJointFrames(name, mode, speed, dur, cycleSlice, 0)
 }
 
-function loadReferenceCycles(bvhDir: string) {
-  const williamsWalk = buildWilliamsReferenceCycle("walk")
-  const williamsRun = buildWilliamsReferenceCycle("run")
-
-  const walkBvhPath = join(bvhDir, "walk_normal_001.bvh")
-  const runBvhPath = join(bvhDir, "dataset-2_run_normal_001.bvh")
-
-  const mocapWalk = existsSync(walkBvhPath)
-    ? extractBvhCycle(parseBvh(readFileSync(walkBvhPath, "utf8")), "walk", 35, 131)
-    : williamsWalk
-  const mocapRun = existsSync(runBvhPath)
-    ? extractBvhCycle(parseBvh(readFileSync(runBvhPath, "utf8")), "run", 10, 66)
-    : williamsRun
-
-  return { mocapWalk, mocapRun, williamsWalk, williamsRun }
+async function loadReferenceCycles(bvhDir: string) {
+  return {
+    mocapWalk: extractBvhCycle(parseBvh(await loadMocap("walk", bvhDir)), "walk", 35, 131),
+    mocapRun: extractBvhCycle(parseBvh(await loadMocap("run", bvhDir)), "run", 10, 66),
+    williamsWalk: buildWilliamsReferenceCycle("walk"),
+    williamsRun: buildWilliamsReferenceCycle("run"),
+  }
 }
 
 function runPass(
   passTag: string,
   outDir: string,
-  refs: ReturnType<typeof loadReferenceCycles>,
+  refs: Awaited<ReturnType<typeof loadReferenceCycles>>,
   hooks: PoseHooks,
   noRender: boolean,
 ) {
@@ -198,13 +173,16 @@ function runPass(
   }
 }
 
-const { tag, outDir, bvhDir, baselineDir, noRender } = parseArgs(process.argv.slice(2))
-mkdirSync(outDir, { recursive: true })
-const refs = loadReferenceCycles(bvhDir)
+const { tag, out: outDir, values, flags } = parseArgs(process.argv.slice(2), { tag: "after", out: "pose-diff" })
+const noRender = flags.has("no-render")
+const refs = await loadReferenceCycles(values["bvh-dir"] ? resolve(values["bvh-dir"]) : fixturesDir)
+const baselineDir = values.baseline ? resolve(values.baseline) : null
 
-if (tag === "after" && existsSync(join(baselineDir, "packages/kit/human-pose.ts"))) {
+// With --baseline <checkout>, also sample that checkout's arm and Outbreak code as the "before" pass.
+if (baselineDir) {
+  if (!existsSync(join(baselineDir, "packages/kit/human-pose.ts"))) throw new Error(`${baselineDir} is not an arcade checkout`)
   const basePose = (await import(join(baselineDir, "packages/kit/human-pose.ts"))) as typeof import("@arcade/kit/human-pose")
-  const baseSurvivor = (await import(join(baselineDir, "games/outbreak/src/survivor.ts"))) as typeof import("../../outbreak/src/survivor")
+  const baseSurvivor = (await import(join(baselineDir, "games/outbreak/src/survivor.ts"))) as typeof import("../../../outbreak/src/survivor")
   runPass(
     "before",
     outDir,
