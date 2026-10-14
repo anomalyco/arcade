@@ -43,6 +43,7 @@
 //
 // Room codes for the lobby live here too, since the server and the client both need them.
 
+import { LOWER_CODE_CHARS, randomRoomCode } from "@arcade/kit/sim/matchmaking"
 import { gunnerAt, makeSlots, opById, opError, readySlot } from "./ops"
 import { catapultTime } from "./launch"
 import { Rng } from "./rng"
@@ -667,16 +668,9 @@ export function spawnAt(team: number, slot: number, heading: number, friend?: { 
 
 // Room codes.
 
-/** No 0/o, 1/l/i: codes are read aloud and typed from a screen. */
-export const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
+export const CODE_CHARS = LOWER_CODE_CHARS
 export const CODE_LENGTH = 4
-
-/** A fresh room code. */
-export function randomCode(rand: () => number = Math.random): string {
-  let out = ""
-  for (let i = 0; i < CODE_LENGTH; i++) out += CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]
-  return out
-}
+export const randomCode = (rand: () => number = Math.random): string => randomRoomCode(CODE_CHARS, rand, CODE_LENGTH)
 
 /** A typed or linked room code: lowercase letters and digits, at most 8, or null if nothing usable is left. */
 export function roomCode(v: string | null | undefined): string | null {
