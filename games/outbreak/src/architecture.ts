@@ -212,6 +212,11 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     // Rounded dark-green shrub at the front-right lawn corner inside the sidewalk intersection + border companion
     [r+2.75,e+2.45,1.46,.94],
     [r+1.15,e+2.60,1.06,.74],
+    // South-side street corner framing shrubs across the road (for the hero north-west lot)
+    ...(id===0 ? [
+      [x-6.35,e+16.4,5.60,2.25],
+      [r+3.35,e+16.6,1.48,.96],
+    ] as const : []),
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner.
   // Living room Oriental rug with warm cream border, slate-sage field, terracotta guard, corner motifs & diamond medallion

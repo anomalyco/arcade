@@ -1558,16 +1558,29 @@ export type FoliageTextureSlot = "grassAlbedo" | "grassNormal" | "barkAlbedo" | 
 
 /**
  * Configurable texture URLs for external/generated textures (`grass/soil albedo`, `grass/soil detail normal`,
- * `bark albedo`, and `leaf-cluster RGBA atlas`). When set, the Lab and Outbreak can load and bind them directly.
+ * `bark albedo`, and `leaf-cluster RGBA atlas`). Defaults to the prepared WebP maps from `generated-textures`.
  */
-export const foliageTextureUrls: Partial<Record<FoliageTextureSlot, string>> = {}
+export const foliageTextureUrls: Record<FoliageTextureSlot, string> = {
+  grassAlbedo: "texture-assets/lawn_grass.webp",
+  grassNormal: "texture-assets/lawn_grass_normal.webp",
+  barkAlbedo: "texture-assets/tree_bark.webp",
+  leafAtlas: "texture-assets/leaf_atlas.webp",
+}
+
+let textureRev = 1
+export function getFoliageTexturesRevision(): number {
+  return textureRev
+}
 
 export function setFoliageTextureUrls(urls: Partial<Record<FoliageTextureSlot, string>>): void {
+  let changed = false
   for (const [k, v] of Object.entries(urls) as [FoliageTextureSlot, string | undefined][]) {
-    if (typeof v === "string" && v.trim()) {
+    if (typeof v === "string" && v.trim() && foliageTextureUrls[k] !== v.trim()) {
       foliageTextureUrls[k] = v.trim()
+      changed = true
     }
   }
+  if (changed) textureRev++
 }
 
 /**
@@ -1647,8 +1660,8 @@ struct FoliageWindConfig {
 
 fn defaultFoliageWindConfig() -> FoliageWindConfig {
   return FoliageWindConfig(
-    vec4f(0.30, 0.85, 0.45, 0.54),
-    vec4f(0.48, 0.55, 0.68, 0.88)
+    vec4f(0.24, 0.80, 0.42, 0.30),
+    vec4f(0.45, 0.55, 0.72, 0.88)
   );
 }
 
@@ -1664,21 +1677,21 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
   var p = pos;
   var n = normal;
   if (aux > 0.0) {
-    // Height-based bough flexibility so card center (aux=1.0) and card rim (aux=0.01) move together without stretching
-    let flex = clamp((pos.y - 0.35) * 0.28, 0.08, 1.35);
+    // Height-based bough flexibility + peripheral leaflet tip weight (aux) for organic two-stage sway
+    let flex = clamp((pos.y - 0.35) * 0.26, 0.06, 1.25) * (0.65 + 0.35 * clamp(aux, 0.0, 1.2));
     let freq = max(0.1, cfg.u0.y);
-    let strength = cfg.u0.x * 0.14 * flex;
-    let gustEnv = 1.0 + cfg.u0.z * (0.45 * sin(time * 0.75 + pos.x * 0.18 + pos.z * 0.14) + 0.25 * cos(time * 1.3 - pos.z * 0.22));
-    let phase = pos.x * 0.52 + pos.z * 0.39 + pos.y * 0.31;
-    let swayX = (sin(time * freq * 3.1 + phase) + 0.55 * sin(time * freq * 1.35 + phase * 1.7 + 1.2)) * strength * gustEnv;
-    let swayZ = (cos(time * freq * 2.6 + phase * 0.9) + 0.45 * sin(time * freq * 1.15 - phase * 1.3)) * strength * 0.78 * gustEnv;
-    let flutter = sin(time * freq * 6.8 + dot(pos, vec3f(4.3, 6.1, 4.9))) * strength * 0.28;
+    let strength = cfg.u0.x * 0.12 * flex;
+    let gustEnv = 1.0 + cfg.u0.z * (0.42 * sin(time * 0.65 + pos.x * 0.16 + pos.z * 0.12) + 0.24 * cos(time * 1.15 - pos.z * 0.18));
+    let phase = pos.x * 0.48 + pos.z * 0.36 + pos.y * 0.28;
+    let swayX = (sin(time * freq * 2.3 + phase) + 0.52 * sin(time * freq * 1.15 + phase * 1.6 + 1.2)) * strength * gustEnv;
+    let swayZ = (cos(time * freq * 1.9 + phase * 0.9) + 0.44 * sin(time * freq * 0.95 - phase * 1.3)) * strength * 0.78 * gustEnv;
+    let flutter = sin(time * freq * 4.2 + dot(pos, vec3f(3.7, 5.1, 4.1))) * strength * 0.18;
     let dx = swayX + flutter;
     let dz = swayZ - flutter * 0.7;
     p.x += dx;
     p.z += dz;
     p.y -= (abs(dx) + abs(dz)) * 0.14;
-    n = normalize(n + vec3f(dx * 1.4, 0.0, dz * 1.4));
+    n = normalize(n + vec3f(dx * 1.2, 0.0, dz * 1.2));
   } else if (aux < -0.02) {
     let isShell = aux < -1.5;
     let bladeT = select(clamp(-aux, 0.0, 1.0), clamp(-aux - 2.0, 0.0, 1.0), isShell);
