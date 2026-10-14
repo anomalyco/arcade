@@ -261,6 +261,7 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
 | lab-interaction | `a91975bfaf3355daa4064379cfedfc54cb391ff8` | — |
 | perf/outbreak-autoresearch | `2fbba0994aa5d4f82d473dbddcfa4d2b619bf9aa` | #19 |
 | materials | `f5750cf8254e1917aa1cd5cf7441c04c6c665cf6` | — |
+| shadow-edges | `df1310ad60c8718dc53c1a31ea5af93c381eacd1` | — |
 
 ### Resolution log
 
@@ -293,8 +294,15 @@ subsequent Carrier merges on `main`). Each follow-up source is merged separately
   `evalCobblestone`, `evalPlasterWall`, `evalAsphaltConcrete`, `evalGrassSoil`, `evalFoliageCanopy`). Updated
   `games/outbreak/tests/cutaway.test.ts` seed-7 static vertex count from `196,722` to `139,620` (reflecting the
   clustered ground-cover and cupped-leaf geometry reduction).
-- Pending additions (shadow/edge fixes, rig-page, dev-control, and soldier-run) enter as separate merge commits once
-  their committed branch tips are finalized; uncommitted worktree changes are never copied.
+- `shadow-edges` vs `#14`, `#15`, `lab-interaction`, `#19`, and `materials`: retained `#14`'s `packages/kit/fx/volume.ts`
+  and `volume-shader.ts` as canonical (16-direction corner-safe arrival, occupancy vs half-float density, and 12 Lab
+  controls), updated `packages/kit/lab/workbench.ts` so paused edits to live-update smoke controls (`Appearance` /
+  non-`retrigger` controls) update in-place without retriggering `volume.time`, and adopted `shadow-edges`'s
+  `stage-shader.ts` entry-slab normals, `boxShadow` contact-hardening penumbras, 4× RGSS edge AA, `lighting.ts`
+  `edgeAA` / `shadowSoftness` controls, `car-mesh.ts` `hullDeckY` cab/scoop seating, and `games/outbreak/src/shaders.ts`
+  2-tap `eyeVisible` angular interpolation.
+- Pending additions (rig-page, dev-control, and soldier-run) enter as separate merge commits once their committed
+  branch tips are finalized; uncommitted worktree changes are never copied.
 
 ### Verification
 
@@ -314,9 +322,16 @@ A clean `git archive` export passed on the Studio via Hivemind:
   cursor + sloped ground reticle, trackpad gestures (`Ctrl+wheel` pinch zoom, two-finger orbit, `Shift+scroll` pan),
   pre-Play checkpoint restore on `Escape`, and frozen-frame A/B flip (`V`) + GPU readback split wipe (`Shift+V`) on
   both Lab hosts (`getaway` and `blackout`) on Metal.
+- `bun packages/kit/lab/prove-car-playground.ts`: launch/drift/hard-brake skids (`52`/`68`/`92`), persistence across
+  `Effects` → `Lighting` → `Objects`, `Getaway · Street` environment (`86` skids), deterministic `Reset scene`, and
+  `bodyPoint` lamp pose on both Lab hosts on Metal.
+- `bun packages/kit/lab/prove-smoke.ts`: live `Appearance` (`Extinction`) edits preserve `volume.time` without
+  retriggering, WGSL corner/front compute probes pass, and paired Metal timing passes.
+- `bun packages/kit/lab/prove-shadow-edges.ts`: `edgeAA` and `shadowSoftness` controls, 0 pixel diff across 30
+  stationary frames, and 9 alternating Metal GPU pairs (`+0.2147 ms` room, `+0.0206 ms` yard) passed on Studio.
 - `bun packages/kit/lab/prove-materials.ts`: all 6 procedural material recipes (`wood_planks`, `cobblestone`,
   `plaster_wall`, `asphalt_concrete`, `grass_soil`, `foliage_canopy`), swatch modes, isolated `tuningSeed`
   randomization, and versioned preset round-trip passed on Metal.
-- `BENCH_LABEL=release-2-materials-studio bun games/outbreak/scripts/bench-outbreak.ts` (Studio M5 Max Metal, 3456×1894 Retina, 1 warmup + 7 × 2 s runs):
-  - Street: fresh submit `p95 = 23.50 ms` (MAD `1.90 ms`), `p50 = 16.40 ms`, `56.24 states/s`, `realtime_ratio = 0.9973` (`3.391 m/s`), dependent GPU `15.254 ms` (MAD `0.347 ms`).
-  - Interior: fresh submit `p95 = 32.30 ms` (MAD `0.60 ms`), `p50 = 26.15 ms`, `36.87 states/s`, `realtime_ratio = 0.9966` (`3.388 m/s`), dependent GPU `22.906 ms` (MAD `0.984 ms`).
+- `BENCH_LABEL=release-2-shadow-edges-studio-clean bun games/outbreak/scripts/bench-outbreak.ts` (Studio M5 Max Metal, 3456×1894 Retina, 1 warmup + 7 × 2 s runs):
+  - Street: fresh submit `p95 = 28.60 ms` (MAD `2.60 ms`), `p50 = 15.50 ms`, `55.42 states/s`, `realtime_ratio = 0.9985` (`3.395 m/s`), dependent GPU `14.191 ms` (MAD `0.012 ms`).
+  - Interior: fresh submit `p95 = 24.20 ms` (MAD `0.10 ms`), `p50 = 23.50 ms`, `40.82 states/s`, `realtime_ratio = 0.9979` (`3.393 m/s`), dependent GPU `21.411 ms` (MAD `0.022 ms`).
