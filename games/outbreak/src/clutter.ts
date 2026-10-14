@@ -1,12 +1,34 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { distToRect } from "@arcade/kit/sim/geom"
+import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import { frontageEnd, inBuildingFootprint, SIZE, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 import type { GroundSettings } from "./ground"
 
 const rgb = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
+
+/**
+ * Authoritative world-space bounding rectangles for large abandoned street vehicles.
+ * Positioned along outer street curbs with >= 4.5 m clear lane width so survivor traversal,
+ * `bench-outbreak.ts` street runs, `prove.ts` paths, and `GridNav` zombie AI pathing never bottleneck.
+ */
+export const ABANDONED_VEHICLE_SPECS: readonly {
+  x: number
+  z: number
+  yaw: number
+  tint: Rgb
+  rect: Rect
+}[] = [
+  { x: 12.2, z: 46.25, yaw: 0.24, tint: [0.88, 0.72, 0.68], rect: [10.25, 45.25, 14.15, 47.25] },
+  { x: 55.4, z: 41.35, yaw: -0.18, tint: [0.72, 0.84, 0.78], rect: [53.45, 40.35, 57.35, 42.35] },
+  { x: 46.45, z: 58.5, yaw: 1.42, tint: [0.86, 0.82, 0.70], rect: [45.45, 56.55, 47.45, 60.45] },
+  { x: 41.55, z: 17.8, yaw: 1.72, tint: [0.68, 0.74, 0.86], rect: [40.55, 15.85, 42.55, 19.75] },
+]
+
+export function abandonedVehicleRects(): Rect[] {
+  return ABANDONED_VEHICLE_SPECS.map(v => v.rect)
+}
 
 export type ClutterCategory = "rubble" | "clutter"
 
@@ -56,6 +78,9 @@ export function isExteriorWalkPathBlocked(town: Town, x: number, z: number, radi
   }
   for (const w of town.windows) {
     if (distToRect(x, z, w.rect) < 0.90 + radius) return true
+  }
+  for (const v of ABANDONED_VEHICLE_SPECS) {
+    if (distToRect(x, z, v.rect) < 0.25 + radius) return true
   }
   // Keep survivor's exact street-proof pose (30, 41) clear
   if (Math.hypot(x - 30.0, z - 41.0) < 0.85 + radius) return true
@@ -199,6 +224,59 @@ export class ExteriorClutterRenderer {
     // Knocked-over plastic bucket / toy wheel
     itemMesh.prism(-0.18, 0.18, 0.11, 0.09, 0.0, 0.14, 7, rgb(0x3c5468), MAT.lit)
     this.registerArchetype(renderer, itemMesh, 64)
+
+    // Model 8 (clutter): Weathered abandoned 1980s sedan (+X forward) with popped hood/trunk & flat-tire list
+    const carMesh = new Mesh()
+    carMesh.quad([-1.95, 0.005, 0.90], [1.95, 0.005, 0.90], [1.95, 0.005, -0.90], [-1.95, 0.005, -0.90], [0, 1, 0], rgb(0x0d1015), MAT.lit)
+    const bodyCol = rgb(0x524844)
+    const topCol = rgb(0x665a54)
+    const rustCol = rgb(0x4a3328)
+    const glassCol = rgb(0x1e2630)
+    for (const sx of [-1.22, 1.24]) {
+      for (const sz of [-0.76, 0.76]) {
+        carMesh.box(sx - 0.29, 0.01, sz - 0.11, sx + 0.29, 0.52, sz + 0.11, rgb(0x16181c), MAT.lit)
+        carMesh.box(sx - 0.17, 0.13, sz + (sz < 0 ? -0.12 : 0.09), sx + 0.17, 0.40, sz + (sz < 0 ? -0.09 : 0.12), rgb(0x585c64), MAT.shiny)
+      }
+    }
+    carMesh.bevelBox(-1.98, 0.20, -0.82, 1.98, 0.74, 0.82, 0.05, bodyCol, topCol, MAT.lit, MAT.lit)
+    // Rusted quarter-panel patches & dark bumpers
+    carMesh.box(-2.04, 0.18, -0.85, -1.82, 0.42, 0.85, rgb(0x22262c), MAT.lit)
+    carMesh.box(1.82, 0.18, -0.85, 2.04, 0.42, 0.85, rgb(0x22262c), MAT.lit)
+    carMesh.box(-0.95, 0.22, 0.80, 0.45, 0.52, 0.835, rustCol, MAT.lit)
+    // Slightly popped-open hood at +X exposing dark engine bay
+    carMesh.box(0.85, 0.68, -0.74, 1.92, 0.75, 0.74, rgb(0x14171c), MAT.lit)
+    carMesh.yawBox(1.38, 0.0, 1.06, 1.50, 0.74, 0.79, 0.04, topCol, MAT.lit)
+    // Tapered cabin greenhouse
+    carMesh.bevelBox(-0.88, 0.72, -0.72, 0.68, 1.22, 0.72, 0.12, bodyCol, rgb(0x6e625c), MAT.lit, MAT.lit)
+    carMesh.box(-0.90, 0.76, -0.62, 0.70, 1.14, 0.62, glassCol, MAT.shiny)
+    for (const sz of [-0.56, 0.56]) {
+      carMesh.box(-1.99, 0.46, sz - 0.18, -1.94, 0.62, sz + 0.18, rgb(0x6e2824), MAT.shiny)
+      carMesh.box(1.94, 0.46, sz - 0.16, 1.99, 0.62, sz + 0.16, rgb(0x8c929c), MAT.shiny)
+    }
+    this.registerArchetype(renderer, carMesh, 16)
+
+    // Model 9 (clutter): Knocked-over child's tricycle / scooter & scattered toy blocks
+    const toyMesh = new Mesh()
+    // Fallen tubular frame & handlebars
+    toyMesh.yawBox(0.0, 0.0, 0.42, 0.045, 0.02, 0.08, 0.25, rgb(0x8e382c), MAT.shiny)
+    toyMesh.yawBox(0.16, 0.04, 0.04, 0.32, 0.02, 0.14, 0.25, rgb(0x9ca2aa), MAT.shiny)
+    // Front wheel + twin rear wheels lying tilted
+    toyMesh.prism(0.18, 0.05, 0.13, 0.13, 0.01, 0.045, 8, rgb(0x1c2026), MAT.lit)
+    toyMesh.prism(-0.18, -0.11, 0.09, 0.09, 0.01, 0.05, 8, rgb(0x1c2026), MAT.lit)
+    toyMesh.prism(-0.14, 0.12, 0.09, 0.09, 0.06, 0.10, 8, rgb(0x1c2026), MAT.lit)
+    // Small yellow/blue plastic toy beside it
+    toyMesh.yawBox(-0.08, 0.22, 0.11, 0.09, 0.0, 0.065, -0.55, rgb(0x8c722c), MAT.lit)
+    this.registerArchetype(renderer, toyMesh, 32)
+
+    // Model 10 (rubble): Gutter leaf, brick & twig windrow cluster (breaks up straight curb & walkway seams)
+    const windrowMesh = new Mesh()
+    windrowMesh.yawBox(-0.18, 0.02, 0.26, 0.14, 0.0, 0.022, 0.18, rgb(0x4a2e16), MAT.lit)
+    windrowMesh.yawBox(0.06, -0.02, 0.22, 0.12, 0.004, 0.026, -0.24, rgb(0x5c3a1a), MAT.lit)
+    windrowMesh.yawBox(0.24, 0.03, 0.18, 0.10, 0.0, 0.020, 0.42, rgb(0x3a2614), MAT.lit)
+    windrowMesh.bevelBox(-0.04, 0.0, 0.02, 0.12, 0.048, 0.10, 0.006, rgb(0x683a2e), rgb(0x784436), MAT.brick, MAT.brick)
+    windrowMesh.yawBox(-0.26, -0.03, 0.09, 0.07, 0.0, 0.036, -0.52, rgb(0x4c5058), MAT.lit)
+    windrowMesh.yawBox(0.14, -0.05, 0.28, 0.022, 0.005, 0.022, 0.35, rgb(0x3d2e20), MAT.timber)
+    this.registerArchetype(renderer, windrowMesh, 256)
   }
 
   private registerArchetype(renderer: Pick<Renderer, "addModel">, mesh: Mesh, capacity: number): void {
@@ -269,9 +347,50 @@ export class ExteriorClutterRenderer {
       [6, "clutter", 19.25, 27.40, 0.45, 0.90, 0.30],
       [2, "clutter", 21.55, 29.80, -0.60, 0.86, 0.35],
       [7, "clutter", 19.35, 32.10, 0.28, 0.85, 0.35],
+      // Knocked-over child's tricycle & toys by front yard / walkway corner
+      [9, "clutter", 24.35, 37.65, 0.58, 0.92, 0.25],
+      [9, "clutter", 31.65, 37.72, -0.74, 0.86, 0.45],
+      // Gutter & walkway-border leaf/brick windrows (breaks up clean curb & walk edges)
+      [10, "rubble", 23.20, 40.08, 0.08, 0.95, 0.15],
+      [10, "rubble", 25.45, 40.10, -0.06, 1.02, 0.15],
+      [10, "rubble", 27.05, 40.06, 0.12, 0.90, 0.15],
+      [10, "rubble", 28.45, 40.08, -0.09, 0.94, 0.15],
+      [10, "rubble", 30.85, 40.09, 0.05, 0.98, 0.15],
+      [10, "rubble", 32.35, 40.07, -0.11, 0.92, 0.20],
+      [10, "rubble", 34.70, 40.10, 0.07, 0.96, 0.20],
+      [10, "rubble", 24.80, 47.90, 3.10, 0.95, 0.20],
+      [10, "rubble", 27.30, 47.92, -3.05, 1.00, 0.20],
+      [10, "rubble", 29.90, 47.91, 3.18, 0.92, 0.20],
+      [10, "rubble", 33.10, 47.89, -3.12, 0.96, 0.25],
+      [10, "rubble", 26.86, 36.35, 1.52, 0.82, 0.20],
+      [10, "rubble", 28.54, 36.65, -1.55, 0.85, 0.20],
+      [10, "rubble", 26.88, 37.75, 1.62, 0.84, 0.20],
+      [10, "rubble", 28.52, 38.15, -1.48, 0.86, 0.20],
     ]
     for (const [mIdx, cat, x, z, yaw, sc, thr] of heroAnchors) {
       add(mIdx, cat, x, z, yaw, sc, thr)
+    }
+
+    // Abandoned vehicles elsewhere on the street & commercial frontages + surrounding spilled debris
+    for (const [vIdx, v] of ABANDONED_VEHICLE_SPECS.entries()) {
+      const y = supportHeight(town, v.x, v.z)
+      list.push({
+        modelIndex: 8,
+        category: "clutter",
+        x: v.x,
+        y,
+        z: v.z,
+        yaw: v.yaw,
+        scale: 1.0,
+        pitch: 0.015,
+        roll: vIdx % 2 === 0 ? 0.042 : -0.038,
+        threshold: 0.25,
+      })
+      const c = Math.cos(v.yaw)
+      const s = Math.sin(v.yaw)
+      add(2, "clutter", v.x - c * 2.45 + s * 0.4, v.z - s * 2.45 - c * 0.4, v.yaw + 0.5, 0.92, 0.30)
+      add(6, "clutter", v.x + c * 0.3 - s * 1.25, v.z + s * 0.3 + c * 1.25, v.yaw - 0.3, 0.90, 0.30)
+      add(1, "rubble", v.x + c * 1.2 + s * 1.15, v.z + s * 1.2 - c * 1.15, v.yaw + 1.1, 0.95, 0.25)
     }
 
     // 2. Town-wide seeded procedural scattering along curbs, gutters, fences, walls & driveways
@@ -284,15 +403,17 @@ export class ExteriorClutterRenderer {
         const z = gCoord
         const roll = rng.next()
         const [mIdx, cat]: [number, ClutterCategory] =
-          roll < 0.30
+          roll < 0.24
             ? [0, "rubble"]
-            : roll < 0.58
+            : roll < 0.48
               ? [1, "rubble"]
-              : roll < 0.82
-                ? [4, "clutter"]
-                : roll < 0.92
-                  ? [2, "clutter"]
-                  : [5, "rubble"]
+              : roll < 0.70
+                ? [10, "rubble"]
+                : roll < 0.86
+                  ? [4, "clutter"]
+                  : roll < 0.94
+                    ? [2, "clutter"]
+                    : [5, "rubble"]
         add(mIdx, cat, x, z, rng.next() * Math.PI * 2, 0.72 + rng.next() * 0.42, rng.next() * 1.65)
       }
     }
