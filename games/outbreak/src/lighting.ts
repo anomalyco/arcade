@@ -24,14 +24,14 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   moonFill: 0.85,
   lighting: 1.0,
   practicalWarmth: 0.62,
-  porchPower: 0.42,
-  windowPower: 0.44,
-  roomPower: 0.48,
+  porchPower: 0.39,
+  windowPower: 0.42,
+  roomPower: 0.50,
   streetPower: 0.15,
   lightFalloff: 1.45,
   flashlightHaze: 1.15,
-  wetSpecular: 0.78,
-  rimStrength: 0.85,
+  wetSpecular: 0.82,
+  rimStrength: 0.90,
   vignetteDarkness: 0.75,
 }
 
@@ -306,13 +306,20 @@ struct OutbreakLightingUniforms {
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
-fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
+fn evalFlashlightBeam(world: vec3f, n: vec3f, V: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
   if (OL.u4.z <= 0.001 || OL.u4.w < 0.5) { return vec3f(0.0); }
   let fSlot = u32(round(OL.u4.w));
   let fOrig = OL.u3.xy;
   let fDir = OL.u3.zw;
   let fSide = vec2f(-fDir.y, fDir.x);
-  let rel = world.xz - fOrig;
+
+  // Project camera ray to the floor/beam plane (y = 0.13) when inside a room so low partition stubs don't carve a black notch out of the air cone
+  let rayFloorXZ = select(
+    world.xz,
+    world.xz - V.xz / max(V.y, 0.35) * clamp(world.y - 0.13, 0.0, 1.45),
+    OL.u5.w > 0.5 && world.y > 0.16 && world.y < 1.65 && world.z > 31.2
+  );
+  let rel = rayFloorXZ - fOrig;
   let along = dot(rel, fDir);
   let across = abs(dot(rel, fSide));
   let tanHalf = max(0.12, OL.u4.x);
@@ -338,42 +345,43 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   }
 
   let coneR = 0.09 + max(0.0, along) * tanHalf;
-  let radialCore = exp(-pow(across / (coneR * select(0.58, 0.48, inRoom)), 2.0));
-  let radialAura = exp(-pow(across / (coneR * select(1.12, 0.88, inRoom)), 1.55)) * (1.0 - smoothstep(coneR * 0.82, coneR * 1.65, across));
+  let radialCore = exp(-pow(across / (coneR * select(0.58, 0.52, OL.u5.w > 0.5)), 2.0));
+  let radialAura = exp(-pow(across / (coneR * select(1.12, 0.92, OL.u5.w > 0.5)), 1.55)) * (1.0 - smoothstep(coneR * 0.82, coneR * 1.65, across));
   let radialEdge = 1.0 - smoothstep(coneR * 0.62, coneR * 1.32, across);
   let axialIn = smoothstep(-0.08, 0.16, along);
-  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.32, 1.38, inRoom));
-  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, world.xz + n.xz * 0.03, min(world.y, 1.05));
+  let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.32, 1.38, OL.u5.w > 0.5));
+  let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, rayFloorXZ, 0.25);
   if (vis <= 0.001) { return vec3f(0.0); }
 
-  // Suppress volumetric mist on vertical partition walls & doors so the beam doesn't paint a bright bar beside the player
   let isTrueFloor = world.y < 0.165 && n.y > 0.75;
-  let surfWeight = select(0.0, 1.0, isTrueFloor || mat == 12);
+  let inHallBeam = OL.u5.w > 0.5 && world.z > 31.2 && world.z < 35.1 && world.x > 26.2 && world.x < 28.9;
+  let surfWeight = select(select(0.0, 0.85, inHallBeam), 1.0, isTrueFloor || mat == 12);
 
   // 1. Tight ground/air origin point right under the hand
   let d2Orig = dot(rel, rel);
-  let handOriginGlow = exp(-d2Orig / 0.024) * 1.15 * step(world.y, 0.20) * surfWeight;
+  let handOriginGlow = exp(-d2Orig / 0.024) * 1.15 * step(world.y, 0.25) * surfWeight;
 
   // 2. Volumetric air mist cone scatter
-  let airNoise = 0.84 + 0.32 * surfaceNoise(world.xz * 2.4 + vec2f(1.3, 4.7));
+  let airNoise = 0.84 + 0.32 * surfaceNoise(rayFloorXZ * 2.4 + vec2f(1.3, 4.7));
   let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut / (0.38 + max(0.0, along) * 0.22) * airNoise * surfWeight;
-  var add = beamTint * fPower * (mist * hazeAmt * select(0.30, 0.26, inRoom) + handOriginGlow);
+  var add = beamTint * fPower * (mist * hazeAmt * select(0.30, 0.28, OL.u5.w > 0.5) + handOriginGlow);
 
   // 3. Tilted flashlight beam striking wet road asphalt / damp interior floorboards
-  if (isTrueFloor) {
-    let grit = 0.48 + 1.05 * (surfaceNoise(world.xz * 5.6 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(world.xz * 16.0) * 0.42);
+  if (isTrueFloor || inHallBeam) {
+    let grit = 0.48 + 1.05 * (surfaceNoise(rayFloorXZ * 5.6 + vec2f(1.7, 3.9)) * 0.58 + surfaceNoise(rayFloorXZ * 16.0) * 0.42);
     let strikePeak = select(
       exp(-pow((along - 2.65) / 2.25, 2.0)) * 1.18 + 0.42,
       exp(-pow((along - 1.55) / 1.25, 2.0)) * 1.32 + 0.46,
-      inRoom
+      OL.u5.w > 0.5
     );
-    var groundSpot = (radialCore * radialEdge + radialAura * 0.34) * axialIn * axialOut * strikePeak / (0.28 + max(0.0, along) * 0.14 + along * along * 0.016) * grit;
-    if (inRoom) {
-      let plankSeam = 0.36 + 0.64 * smoothstep(0.0, 0.075, abs(fract(world.z / 0.165 + 0.5) - 0.5));
+    var groundSpot = (radialCore * radialEdge + radialAura * 0.34) * axialIn * axialOut * strikePeak / (0.28 + max(0.0, along) * 0.14 + along * along * 0.016) * grit * surfWeight;
+    if (OL.u5.w > 0.5) {
+      let plankSeam = 0.36 + 0.64 * smoothstep(0.0, 0.075, abs(fract(rayFloorXZ.y / 0.165 + 0.5) - 0.5));
       groundSpot *= plankSeam;
     }
-    let specTint = select(vec3f(0.95, 0.92, 0.84), vec3f(0.90, 0.94, 0.95), inRoom);
-    add += (baseAlbedo * 1.80 + specTint * 0.155 * wetAmt) * fPower * groundSpot * select(1.18, 1.42, inRoom);
+    let specTint = select(vec3f(0.95, 0.92, 0.84), vec3f(0.90, 0.94, 0.95), OL.u5.w > 0.5);
+    let effFloorAlbedo = select(baseAlbedo, vec3f(0.045, 0.032, 0.020), inHallBeam && !isTrueFloor);
+    add += (effFloorAlbedo * 1.80 + specTint * 0.155 * wetAmt) * fPower * groundSpot * select(1.18, 1.42, OL.u5.w > 0.5);
   }
   return add * vis;
 }
@@ -385,43 +393,43 @@ fn evalInteriorWallWash(world: vec3f, n: vec3f, baseAlbedo: vec3f) -> vec3f {
   var add = vec3f(0.0);
 
   // 1. NW Bedroom bedside lamp wall wash (north & west walls around x=24.6, z=24.2..26.5) + warm bed/floor bounce
-  let vNW = (world.xz - vec2f(25.2, 25.4)) * vec2f(0.72, 0.82);
+  let vNW = (world.xz - vec2f(25.2, 25.4)) * vec2f(0.70, 0.80);
   let dNW2 = dot(vNW, vNW);
   if (dNW2 < 16.0) {
-    let nwPool = exp(-dNW2 / 4.2);
-    let wallBoost = select(0.58, 1.55, abs(n.y) < 0.45 && world.z < 26.8);
-    add += (baseAlbedo * 0.072 + vec3f(0.018, 0.010, 0.0036)) * nwPool * wallBoost * roomScale;
+    let nwPool = exp(-dNW2 / 4.4);
+    let wallBoost = select(0.65, 1.72, abs(n.y) < 0.45 && world.z < 26.8);
+    add += (baseAlbedo * 0.082 + vec3f(0.024, 0.012, 0.0040)) * nwPool * wallBoost * roomScale;
   }
 
   // 2. NE Bedroom dresser candle wall wash (around x=29.5, z=24.8)
-  let vNE = (world.xz - vec2f(29.4, 25.2)) * vec2f(0.82, 0.88);
+  let vNE = (world.xz - vec2f(29.4, 25.2)) * vec2f(0.80, 0.86);
   let dNE2 = dot(vNE, vNE);
   if (dNE2 < 12.0) {
-    let nePool = exp(-dNE2 / 3.4);
-    let wallBoost = select(0.52, 1.42, abs(n.y) < 0.45 && world.z < 26.2);
-    add += (baseAlbedo * 0.056 + vec3f(0.012, 0.0072, 0.0028)) * nePool * wallBoost * roomScale;
+    let nePool = exp(-dNE2 / 3.6);
+    let wallBoost = select(0.58, 1.52, abs(n.y) < 0.45 && world.z < 26.2);
+    add += (baseAlbedo * 0.062 + vec3f(0.014, 0.0085, 0.0034)) * nePool * wallBoost * roomScale;
   }
 
   // 3. East kitchen window warm sill & counter spill (around x=36.6, z=28.0..30.6) + dining table bounce
-  let vEW = (world.xz - vec2f(36.4, 29.2)) * vec2f(0.65, 0.70);
+  let vEW = (world.xz - vec2f(36.2, 29.2)) * vec2f(0.60, 0.65);
   let dEW2 = dot(vEW, vEW);
-  if (dEW2 < 16.0) {
-    let winSpill = exp(-dEW2 / 3.8) * smoothstep(2.4, 0.1, world.y);
-    add += (baseAlbedo * 0.058 + vec3f(0.0105, 0.0064, 0.0028)) * winSpill * roomScale;
+  if (dEW2 < 18.0) {
+    let winSpill = exp(-dEW2 / 4.4) * smoothstep(2.4, 0.1, world.y);
+    add += (baseAlbedo * 0.072 + vec3f(0.014, 0.0092, 0.0046)) * winSpill * roomScale;
   }
-  let vDin = (world.xz - vec2f(33.6, 32.5)) * vec2f(0.70, 0.70);
+  let vDin = (world.xz - vec2f(33.6, 32.5)) * vec2f(0.66, 0.66);
   let dDin2 = dot(vDin, vDin);
-  if (dDin2 < 12.0) {
-    let dinPool = exp(-dDin2 / 3.6);
-    add += (baseAlbedo * 0.052 + vec3f(0.0082, 0.0050, 0.0024)) * dinPool * roomScale;
+  if (dDin2 < 14.0) {
+    let dinPool = exp(-dDin2 / 4.2);
+    add += (baseAlbedo * 0.068 + vec3f(0.0115, 0.0076, 0.0038)) * dinPool * roomScale;
   }
 
   // 4. SW Living room coffee table warm bounce (around x=24.7, z=33.3)
-  let vSW = (world.xz - vec2f(24.7, 33.1)) * vec2f(0.72, 0.72);
+  let vSW = (world.xz - vec2f(24.7, 33.1)) * vec2f(0.70, 0.70);
   let dSW2 = dot(vSW, vSW);
-  if (dSW2 < 11.0) {
-    let swPool = exp(-dSW2 / 3.2);
-    add += (baseAlbedo * 0.045 + vec3f(0.0062, 0.0038, 0.0018)) * swPool * roomScale;
+  if (dSW2 < 12.0) {
+    let swPool = exp(-dSW2 / 3.5);
+    add += (baseAlbedo * 0.052 + vec3f(0.0072, 0.0046, 0.0024)) * swPool * roomScale;
   }
   return add;
 }

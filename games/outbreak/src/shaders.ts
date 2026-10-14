@@ -144,12 +144,12 @@ fn eyeVisible(p: vec2f) -> f32 {
       if (kind == 0) {
         // Overgrown dark-clump variation across lawns & yards with cool desaturated night moonlight + warm window/porch bounce.
         let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.52, 1.12, smoothstep(0.26, 0.76, turfPatch));
+        col *= mix(0.48, 1.06, smoothstep(0.26, 0.76, turfPatch));
         let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        col = mix(vec3f(turfLum) * vec3f(0.96, 1.0, 1.12), col, 0.48);
+        col = mix(vec3f(turfLum) * vec3f(0.92, 0.96, 1.18), col, 0.28);
         if (o.world.z > 35.4 && o.world.z < 38.2 && o.world.x > 21.5 && o.world.x < 37.5 && OL.u5.w < 0.5) {
-          let lawnGlow = (exp(-pow((o.world.x - 24.5) * 0.42, 2.0)) + exp(-pow((o.world.x - 34.2) * 0.42, 2.0)) + exp(-pow((o.world.x - 27.7) * 0.35, 2.0)) * 1.2) * exp(-pow((o.world.z - 36.8) * 0.55, 2.0));
-          col += vec3f(0.016, 0.014, 0.011) * lawnGlow * nightLamps;
+          let lawnGlow = (exp(-pow((o.world.x - 24.5) * 0.42, 2.0)) + exp(-pow((o.world.x - 34.2) * 0.42, 2.0)) + exp(-pow((o.world.x - 27.7) * 0.35, 2.0)) * 1.1) * exp(-pow((o.world.z - 36.8) * 0.55, 2.0));
+          col += vec3f(0.011, 0.010, 0.011) * lawnGlow * nightLamps;
         }
       } else if (kind == 1) {
         // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and wet moonlit road sheen.
@@ -169,22 +169,22 @@ fn eyeVisible(p: vec2f) -> f32 {
         let grit = (w2 - 0.5) * 0.36;
         let dxRoad = (p.x - 32.0) * 0.062;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.56 + 0.32 * gutter - 0.10 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let wetRoad = (0.35 + 0.65 * crown) * (0.38 + 0.62 * centerFocus) * (0.55 + 0.85 * w1) * (1.0 - 0.55 * cracks);
-        col += vec3f(0.025, 0.033, 0.054) * F.ambient.w * OL.u2.y * wetRoad;
+        col *= (0.58 + 0.32 * gutter - 0.10 * ruts + 0.20 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
+        let wetRoad = (0.38 + 0.62 * crown) * (0.42 + 0.58 * centerFocus) * (0.58 + 0.85 * w1) * (1.0 - 0.55 * cracks);
+        col += vec3f(0.030, 0.038, 0.060) * F.ambient.w * OL.u2.y * wetRoad;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
         if (!inVerge) {
           let gritWalk = 0.76 + 0.48 * surfaceNoise(o.world.xz * 7.5);
-          let extScale = select(1.0, 0.42, OL.u5.w > 0.5);
+          let extScale = select(1.0, 0.45, OL.u5.w > 0.5);
           let frontBand = smoothstep(42.0, 37.5, o.world.z) * smoothstep(18.0, 23.0, o.world.x) * smoothstep(41.0, 36.0, o.world.x);
-          col = col * 0.92 * gritWalk + vec3f(0.018, 0.020, 0.026) * F.ambient.w * gritWalk * (0.7 + 0.65 * frontBand * extScale);
+          col = col * 0.92 * gritWalk + vec3f(0.022, 0.022, 0.025) * F.ambient.w * gritWalk * (0.75 + 0.65 * frontBand * extScale);
           // Wet porch walkway & sidewalk reflection streak under the porch sconces (x ~ 27.7, z ~ 35.4..40.4)
           let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 5.5 && o.world.z > 35.3 && o.world.z < 40.4) {
+          if (abs(dxWalk) < 5.8 && o.world.z > 35.3 && o.world.z < 40.4) {
             let walkCore = exp(-(dxWalk * dxWalk) / 1.15) * smoothstep(40.4, 35.5, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 9.5) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            col += vec3f(0.088, 0.068, 0.046) * (walkCore * 1.25 + sideSpread * 0.78) * gritWalk * OL.u2.y * nightLamps * extScale;
+            let sideSpread = exp(-(dxWalk * dxWalk) / 11.0) * smoothstep(37.6, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            col += vec3f(0.105, 0.078, 0.048) * (walkCore * 1.18 + sideSpread * 0.88) * gritWalk * OL.u2.y * nightLamps * extScale;
           }
         }
       }
@@ -249,8 +249,13 @@ fn eyeVisible(p: vec2f) -> f32 {
           col=mix(peripheral*(.86+.14*explored),col,.86+.14*visible);
         }
       }
+    } else {
+      // Actor readability (survivor & zombies): cool directional moonlight rim + top shoulder catch so silhouettes read in the dark
+      let actorRim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * OL.u2.z;
+      let topCatch = max(0.0, n.y) * 0.45 * OL.u2.z;
+      col += vec3f(0.032, 0.048, 0.082) * F.ambient.w * (actorRim + topCatch);
     }
-    col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
+    col += evalFlashlightBeam(o.world, n, V, o.color, inRoom, mat);
   }
 `,
 }
