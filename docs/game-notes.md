@@ -235,14 +235,18 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
   applies swing sole floor clearance (`low < 0`) to `ankle[1]` before solving `ik(hip, ankle)`, blends late-swing ankles
   into the `-0.12 rad` toe-pivot touchdown frame over `u = 0.75..1.0`, and uses `dirIn(pelvis, 1, 0.28, side * 0.25)` so
   forward crouch-run pelvis pitch cannot tilt the knee pole into the swing chord.
-- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank and step lift in the Lab.** `anim.ts`
+- **Keep run-posture lean aligned with `legYaw` and expose hip drop, bounce, turn bank, step lift, arm swing and transition Hz in the Lab.** `anim.ts`
   projects `m.posture.x` along `a.legYaw` rather than `a.svx / speed`, reducing 180°-reversal pelvis pitch jumps from
   `0.406 rad` (`23.3°`) to `0.032 rad` (`1.8°`) while keeping steady run/sprint posture and weapon stability metrics intact.
-  `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank` and `stepLift` to the shared `Profile`/`Animation` Lab controls.
-  Outbreak's `src/survivor.ts` replaces its raw `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter and
-  re-anchored swing targets, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to `0.049 m` / `0.040 m`.
-  `games/blackout/src/dev/characters.ts` no longer mutates `a.x, a.y` before `animate()` on loop wraps, eliminating the
-  `6.24 m` walk / `10.44 m` run loop-wrap leg stretch.
+  `human-locomotion.ts` phase-locks `a.phase` softly to the active swing foot, uses a phase-shifted bounce harmonic
+  `cos(2*theta - pi*run)` (preventing amplitude cancellation at `run = 0.5`), curves stride length sublinearly above
+  `3.6 m/s`, inertializes forward/backpedal quadrant flips (`m.yawOffset` at `transitionHz`), and uses an Overgrowth-style
+  lead-follow lateral strafe shuffle. `human-profile.ts` adds `hipDrop`, `bobScale`, `turnBank`, `stepLift`, `armSwing`
+  and `transitionHz` to the shared `Profile`/`Animation` Lab controls. Outbreak's `src/survivor.ts` replaces its raw
+  `sqrt(0.815^2 - d^2)` pelvis clamp with a sprung `reachDrop` filter, re-anchored swing targets, pelvic twist, and
+  two-stage arm/hand follow-through springs, cutting sloped reversal pelvis jumps from `0.358 m` / `0.566 m` to
+  `0.049 m` / `0.040 m`. `games/blackout/src/dev/characters.ts` squares up the unarmed Survivor's chest, uses
+  `unarmedHands()`, and wraps loops by stage distance (`5.8 m`) so toggling `Walk loop` ↔ `Run loop` transitions in place.
 
 ## Rendering (WebGPU)
 
