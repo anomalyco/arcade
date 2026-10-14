@@ -5,7 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { scatterClusteredGroundCover } from "@arcade/kit/gpu/surface-materials"
+import { emitCurvedGrassBlade, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -99,36 +99,47 @@ function compileLevel(town: Town): LevelData {
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
-  const tufts = scatterClusteredGroundCover({
+  const grassRng = new Rng(town.seed ^ 0x73c9)
+  const tufts = scatterGrassClumps({
     seed: town.seed ^ 0x453a,
     bounds: [0.5, 0.5, SIZE - 0.5, SIZE - 0.5],
-    clusterCount: Math.round(210 * (town.foliageDensity ?? 1)),
-    tuftsPerCluster: 4,
+    clusterCount: Math.round(165 * (town.foliageDensity ?? 1)),
+    tuftsPerCluster: 3,
+    params: foliageSettings,
     avoid: (x, z) =>
       (x > 37.8 && x < 50.2) ||
       (z > 37.8 && z < 50.2) ||
       town.buildings.some(b => x > b.rect[0] - 3.1 && x < b.rect[2] + 0.3 && z > b.rect[1] - 0.4 && z < b.rect[3] + 1.8),
   })
   for (const t of tufts) {
-    const { x, z, radius: r, height: h, tint: c } = t
-    const y = supportHeight(town, x, z), m = at(x, z)
-    m.facet([x - r * .7, y, z - r * .3], [x + r * .2, y + h, z + r * .3], [x + r * .8, y, z - r * .2], c, MAT.foliage)
-    m.facet([x - r * .2, y, z - r * .8], [x - r * .3, y + h * .85, z + r * .2], [x + r * .4, y, z + r * .7], c, MAT.foliage)
+    const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+    emitGrassTuft(m, t.x, y, t.z, {
+      bladeCount: 2,
+      radius: t.radius,
+      height: t.height,
+      width: t.width,
+      curvature: t.curvature,
+      leanAngle: t.leanAngle,
+      rootColor: t.rootColor,
+      tipColor: t.tipColor,
+      rng: grassRng,
+    })
   }
-  // Clustered curb-verge & front-lawn edge ground cover with natural gaps.
+  // Clustered curb-verge & front-lawn edge curved grass blades with natural gaps.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2; v < SIZE - 2; v += 0.95 + vergeRng.next() * 1.45) {
+  for (let v = 2; v < SIZE - 2; v += 1.05 + vergeRng.next() * 1.55) {
     if (v > 37.5 && v < 50.5) continue
     for (const zBase of [37.82, 39.55, 48.45, 50.18]) {
-      if (vergeRng.next() < 0.24) continue
+      if (vergeRng.next() < 0.26) continue
       if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.0 || (v > b.rect[0] - 3.2 && v < b.rect[0] - 0.2))) continue
       const count = zBase > 39 && zBase < 49 ? 3 : 2
+      const lean = vergeRng.next() * Math.PI * 2
       for (let k = 0; k < count; k++) {
-        const x = v + (vergeRng.next() - 0.5) * 0.62, z = zBase + (vergeRng.next() - 0.5) * 0.22
-        const y = supportHeight(town, x, z), m = at(x, z), r = 0.10 + vergeRng.next() * 0.12, h = 0.11 + vergeRng.next() * 0.14
-        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348, 0x7b7846]))
-        m.facet([x - r, y, z], [x + r * .2, y + h, z + r * .4], [x + r, y, z - r * .2], c, MAT.foliage)
-        m.facet([x, y, z - r], [x - r * .4, y + h * .85, z], [x + r * .2, y, z + r], c, MAT.foliage)
+        const x = v + (vergeRng.next() - 0.5) * 0.58, z = zBase + (vergeRng.next() - 0.5) * 0.20
+        const y = supportHeight(town, x, z), m = at(x, z), h = 0.13 + vergeRng.next() * 0.14
+        const rootCol = hex(vergeRng.pick([0x28361c, 0x222f18, 0x333820]))
+        const tipCol = hex(vergeRng.pick([0x667844, 0x586b3c, 0x7b7846]))
+        emitCurvedGrassBlade(m, x, y, z, h, foliageSettings.bladeWidth, foliageSettings.bladeCurvature, lean + (vergeRng.next() - 0.5) * 0.5, rootCol, tipCol)
       }
     }
   }

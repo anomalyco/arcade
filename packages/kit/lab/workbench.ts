@@ -11,6 +11,21 @@ import {
 import { LabCommandRegistry, type LabCommandContext, type LabSceneState } from "./commands"
 import { computeSnapshotDiffs, createCompareWipeDOM } from "./compare-ab"
 import { effectOptions } from "./effects"
+import {
+  FOLIAGE_CROWN_SHAPES,
+  FOLIAGE_PARAM_SPECS,
+  FOLIAGE_PRESETS,
+  FOLIAGE_PRESET_IDS,
+  exportFoliagePreset,
+  foliageSettings,
+  importFoliagePreset,
+  isFoliagePresetId,
+  randomizeFoliageParams,
+  resetFoliageParams,
+  type FoliageCameraMode,
+  type FoliageCompareMode,
+} from "../gpu/foliage"
+import { FOLIAGE_LIGHTING_PRESETS } from "./foliage"
 import { lightingDefaults } from "./lighting"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
 import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
@@ -1805,6 +1820,200 @@ export function createWorkbench(opts: WorkbenchOptions) {
         throw new Error(`Unknown selection target "${id}".`)
       },
     },
+    {
+      id: "foliage.set",
+      label: "Set Foliage Parameter(s)",
+      shortLabel: "Foliage Set",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        key: { type: "string", description: "Foliage parameter key (or pass parameter keys directly)" },
+        value: { type: "value", description: "Parameter value when using { key, value }" },
+        treePreset: { type: "string", enum: FOLIAGE_PRESET_IDS, description: "Species preset" },
+        crownShape: { type: "string", enum: FOLIAGE_CROWN_SHAPES.map(s => s.value), description: "Crown silhouette shape" },
+        cameraMode: { type: "string", enum: ["close", "game"], description: "Camera view mode" },
+        lightingPreset: { type: "string", enum: Object.keys(FOLIAGE_LIGHTING_PRESETS), description: "Stage lighting preset" },
+        compare: { type: "number", min: 0, max: 2, description: "Comparison mode (0=Before, 1=After, 2=Split)" },
+        tuningSeed: { type: "number", min: 1, max: 9999, description: "Parameter randomize seed" },
+        ...Object.fromEntries(
+          FOLIAGE_PARAM_SPECS.map(s => [
+            s.key,
+            { type: "number" as const, min: s.min, max: s.max, description: `${s.group} · ${s.label}${s.unit ? ` (${s.unit})` : ""}` },
+          ]),
+        ),
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+        const updates: [string, unknown][] = []
+        if (typeof args?.key === "string" && args.key.trim() && args.value !== undefined) {
+          updates.push([args.key.trim(), args.value])
+        } else if (args && typeof args === "object") {
+          for (const [k, v] of Object.entries(args)) {
+            if (k !== "key" && k !== "value" && v !== undefined) updates.push([k, v])
+          }
+        }
+        if (updates.length === 0) {
+          throw new Error("foliage.set requires { key, value } or parameter key/value pairs.")
+        }
+        const applied: Record<string, LabValue> = {}
+        for (const [k, rawVal] of updates) {
+          const ctrl = foliageSec.controls.find(c => c.key === k || c.label.toLowerCase() === k.toLowerCase())
+          if (ctrl && ctrl.type !== "action") {
+            const coerced = coerceControlValue(ctrl, rawVal)
+            panel.navigation.set(ctrl, coerced)
+            applied[ctrl.key] = foliageSec.settings[ctrl.key]!
+          } else if (k in foliageSec.settings) {
+            foliageSec.settings[k] = rawVal as LabValue
+            applied[k] = foliageSec.settings[k]!
+          } else {
+            throw new Error(`Unknown foliage parameter "${k}".`)
+          }
+        }
+        foliageSec.prepare?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return { section: "foliage", applied, settings: { ...foliageSettings } }
+      },
+    },
+    {
+      id: "foliage.randomize",
+      label: "Randomize Foliage Parameters",
+      shortLabel: "Randomize Foliage",
+      category: "Inspector",
+      undoable: true,
+      args: {
+        scope: { type: "string", enum: ["all", "tree", "grass"], description: "Scope to randomize ('all', 'tree', or 'grass')" },
+        tuningSeed: { type: "number", min: 1, max: 9999, description: "Optional deterministic tuning seed" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+        const scope = args?.scope === "tree" || args?.scope === "grass" ? args.scope : "all"
+        const tSeed =
+          typeof args?.tuningSeed === "number" && Number.isFinite(args.tuningSeed)
+            ? Math.max(1, Math.min(9999, Math.round(args.tuningSeed)))
+            : Math.max(1, Math.min(9999, Math.round(Number(foliageSec.settings.tuningSeed) || 41)))
+        const next = randomizeFoliageParams(foliageSettings, tSeed, scope)
+        Object.assign(foliageSettings, next)
+        foliageSec.settings.tuningSeed = (tSeed % 9999) + 1
+        foliageSec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+        return {
+          scope,
+          seed: Number(foliageSec.settings.seed),
+          usedTuningSeed: tSeed,
+          nextTuningSeed: Number(foliageSec.settings.tuningSeed),
+          settings: { ...foliageSettings },
+        }
+      },
+    },
+    {
+      id: "foliage.preset",
+      label: "Load, Reset, or Export Foliage Preset",
+      shortLabel: "Foliage Preset",
+      category: "Preset",
+      undoable: true,
+      args: {
+        preset: {
+          type: "string",
+          enum: [...FOLIAGE_PRESET_IDS, "reset"],
+          description: "Named tree/foliage preset ('oak', 'maple', 'birch', 'pine', 'hydrangea') or 'reset'",
+        },
+        lighting: {
+          type: "string",
+          enum: Object.keys(FOLIAGE_LIGHTING_PRESETS),
+          description: "Optional Outbreak lighting preset ('outbreak_dusk', 'outbreak_day', 'outbreak_night', 'cold_moon')",
+        },
+        cameraMode: {
+          type: "string",
+          enum: ["close", "game"],
+          description: "Optional camera mode ('close' or 'game')",
+        },
+        compare: {
+          type: "number",
+          min: 0,
+          max: 2,
+          description: "Optional comparison mode (0=Before, 1=After, 2=Split)",
+        },
+        json: { type: "string", description: "Optional FoliagePresetV1 JSON payload to import" },
+      },
+      enabled: () => mode !== "play",
+      disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
+      run: (_ctx, args) => {
+        const foliageSec = sections.find(s => s.id === "foliage")
+        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (globalSettings.section !== "foliage") selectSection("foliage")
+
+        if (typeof args?.json === "string" && args.json.trim()) {
+          const imported = importFoliagePreset(args.json)
+          if (!imported.ok) throw new Error(imported.error)
+          const val = imported.value
+          foliageSec.settings.seed = val.seed
+          foliageSec.settings.tuningSeed = val.tuningSeed
+          foliageSec.settings.cameraMode = val.cameraMode
+          foliageSec.settings.compare = val.compare
+          foliageSec.settings.lightingPreset = val.lightingPreset
+          Object.assign(foliageSettings, val.params)
+          foliageSec.enter?.()
+          foliageSec.retrigger?.()
+          panel.sync()
+          syncChrome()
+          void renderNow()
+          return { action: "imported", preset: val }
+        }
+
+        if (typeof args?.preset === "string" && args.preset.trim()) {
+          const p = args.preset.trim().toLowerCase()
+          if (p === "reset") {
+            resetFoliageParams(foliageSettings.treePreset, foliageSettings)
+          } else if (isFoliagePresetId(p)) {
+            resetFoliageParams(p, foliageSettings)
+          } else {
+            throw new Error(`Unknown foliage preset "${args.preset}". Valid: ${FOLIAGE_PRESET_IDS.join(", ")}, reset.`)
+          }
+        }
+        if (typeof args?.lighting === "string" && args.lighting in FOLIAGE_LIGHTING_PRESETS) {
+          foliageSec.settings.lightingPreset = args.lighting
+          const lp = FOLIAGE_LIGHTING_PRESETS[args.lighting]
+          if (lp && Object.keys(lp.values).length > 0) Object.assign(stage.lighting, lp.values)
+        }
+        if (args?.cameraMode === "close" || args?.cameraMode === "game") {
+          const camCtrl = foliageSec.controls.find(c => c.key === "cameraMode")
+          if (camCtrl) panel.navigation.set(camCtrl, args.cameraMode)
+        }
+        if (args?.compare === 0 || args?.compare === 1 || args?.compare === 2) {
+          foliageSec.settings.compare = args.compare
+        }
+        foliageSec.retrigger?.()
+        panel.sync()
+        syncChrome()
+        void renderNow()
+
+        const exported = exportFoliagePreset({
+          seed: Number(foliageSec.settings.seed) || 7,
+          tuningSeed: Number(foliageSec.settings.tuningSeed) || 41,
+          cameraMode: (foliageSec.settings.cameraMode === "game" ? "game" : "close") as FoliageCameraMode,
+          compare: (Number(foliageSec.settings.compare) === 0 ? 0 : Number(foliageSec.settings.compare) === 2 ? 2 : 1) as FoliageCompareMode,
+          lightingPreset: String(foliageSec.settings.lightingPreset || "outbreak_dusk"),
+          params: foliageSettings,
+        })
+        return {
+          preset: foliageSettings.treePreset,
+          exported,
+          json: JSON.stringify(exported, null, 2),
+        }
+      },
+    },
   ])
 
   function buildSceneState(): Omit<LabSceneState, "commands"> {
@@ -2395,6 +2604,42 @@ export function createWorkbench(opts: WorkbenchOptions) {
       })
     }
 
+    const foliageSec = sections.find(s => s.id === "foliage")
+    if (foliageSec) {
+      for (const id of FOLIAGE_PRESET_IDS) {
+        const def = FOLIAGE_PRESETS[id]
+        const catId = `foliage-preset:${id}`
+        entries.push({
+          id: catId,
+          label: def.label,
+          group: "Foliage & Trees (Outbreak)",
+          category: "objects",
+          collection: "shared",
+          tag: "Foliage",
+          sectionId: "foliage",
+          isActive: () => globalSettings.section === "foliage" && foliageSec.settings.treePreset === id,
+          run: () => {
+            activeCatalogId = catId
+            if (globalSettings.section !== "foliage") selectSection("foliage")
+            const c = foliageSec.controls.find(ctrl => ctrl.key === "treePreset")
+            if (c) panel.navigation.set(c, id)
+            frameActiveTarget()
+          },
+        })
+      }
+      entries.push({
+        id: "section:foliage",
+        label: "Foliage Workbench Stage",
+        group: "Calibration & Solvers",
+        category: "objects",
+        collection: "shared",
+        tag: "Foliage",
+        sectionId: "foliage",
+        isActive: () => globalSettings.section === "foliage",
+        run: () => selectSection("foliage"),
+      })
+    }
+
     // 8. Lighting Category
     entries.push({
       id: "section:lighting",
@@ -2783,6 +3028,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const recCtrl = sec.controls.find(c => c.key === "recipe" && "options" in c)
       const recLabel = recCtrl && "options" in recCtrl ? recCtrl.options.find(o => o.value === sec.settings.recipe)?.label : String(sec.settings.recipe)
       inspectorTitle.textContent = recLabel || sec.label
+      inspectorSub.textContent = sec.label
+    } else if ("treePreset" in sec.settings) {
+      const preCtrl = sec.controls.find(c => c.key === "treePreset" && "options" in c)
+      const preLabel = preCtrl && "options" in preCtrl ? preCtrl.options.find(o => o.value === sec.settings.treePreset)?.label : String(sec.settings.treePreset)
+      inspectorTitle.textContent = preLabel || sec.label
       inspectorSub.textContent = sec.label
     } else {
       inspectorTitle.textContent = sec.label

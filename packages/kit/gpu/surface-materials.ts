@@ -967,9 +967,17 @@ export const surfaceMaterial = /* wgsl */ `
       albedo = mix(vec3f(0.32, 0.30, 0.26), albedo * (0.8 + 0.35 * hash2(floor(q))), seam(q.x, 0.025, 4.0) * seam(q.y, 0.06, 11.76));
     }
     if (mat == 22) {
-      let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
-      albedo = s.albedo;
-      gloss = s.gloss;
+      if (o.aux < -0.02) {
+        // Curved 3D grass blade: preserve per-vertex root-to-tip gradient, add subtle vein grain and grazing tip sheen.
+        let bladeT = clamp(-o.aux, 0.0, 1.0);
+        let vein = grain(o.world.xz * 2.2 + vec2f(o.world.y * 1.4), 14.0) * 0.16;
+        albedo *= (0.94 + vein) * mix(0.76, 1.14, bladeT);
+        gloss = vec2f(48.0, 0.22 * bladeT);
+      } else {
+        let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
+        albedo = s.albedo;
+        gloss = s.gloss;
+      }
     }
     if (mat == 24) {
       albedo *= 0.84 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24;

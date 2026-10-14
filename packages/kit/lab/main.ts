@@ -4,6 +4,7 @@ import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
 import { Stage, type CameraWriter } from "./stage"
 import { createEffects } from "./effects"
+import { createFoliage } from "./foliage"
 import { createLighting } from "./lighting"
 import { createMaterials } from "./materials"
 import { createPhysics } from "./physics"
@@ -175,7 +176,7 @@ export async function lab(options:LabOptions) {
   }
   spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
   const effects=createEffects(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
-  const sections=[effects.section,createLighting(context),createMaterials(context,options.materials??[]),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
+  const sections=[effects.section,createLighting(context),createMaterials(context,options.materials??[]),createFoliage(context),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
   const ids=new Set<string>()
   for(const section of sections){if(ids.has(section.id))throw new Error(`Duplicate Lab section: ${section.id}`);ids.add(section.id)}
   for(const s of sections)sectionSelect.add(new Option(s.label,s.id))
@@ -292,8 +293,18 @@ export async function lab(options:LabOptions) {
   })
 
   select("effects")
-  const bench=new URLSearchParams(location.search).has("bench")
-  if(!bench){
+  const searchParams=new URLSearchParams(location.search)
+  const bench=searchParams.has("bench")
+  const resolveDeepSection=()=>{
+    const rawHash=location.hash.replace(/^#/, "").trim().toLowerCase()
+    const fromHash=rawHash.startsWith("section=")?rawHash.slice("section=".length):rawHash
+    const candidate=fromHash||searchParams.get("section")?.trim().toLowerCase()||""
+    return sections.find(s=>s.id.toLowerCase()===candidate)?.id??null
+  }
+  const initialSection=resolveDeepSection()
+  if(initialSection){
+    select(initialSection)
+  }else if(!bench){
     if(spawn){
       select("spawn")
       spawn.section.settings.character="getaway:muscle"
@@ -311,6 +322,13 @@ export async function lab(options:LabOptions) {
       stage.frameTarget(-1,0.5,0,15)
     }
   }
+  window.addEventListener("hashchange",()=>{
+    const target=resolveDeepSection()
+    if(target&&settings.section!==target){
+      select(target)
+      void render()
+    }
+  })
   const api={
     adapter:adapter.info,
     context,

@@ -752,16 +752,6 @@ function synthesizeHubCanvas(): HTMLCanvasElement {
   return out
 }
 
-export function buildDevControlWsUrl(
-  loc: { protocol: string; host: string },
-  controlPath: string,
-  pageToken: string,
-  pageId: string,
-): string {
-  const proto = loc.protocol === "https:" ? "wss:" : "ws:"
-  return `${proto}//${loc.host}${controlPath}?token=${encodeURIComponent(pageToken)}&pageId=${encodeURIComponent(pageId)}`
-}
-
 const COMMAND_ALIASES: Record<string, string> = {
   select: "object.select",
   spawn: "ground.spawn-here",
