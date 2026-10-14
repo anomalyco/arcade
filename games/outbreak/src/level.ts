@@ -163,17 +163,19 @@ function compileLevel(town: Town): LevelData {
     ]
     for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
       if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
-      emitGrassFurShells(
-        at((lx0 + lx1) * 0.5, (lz0 + lz1) * 0.5),
-        lx0,
-        lz0,
-        lx1,
-        lz1,
-        (gx, gz) => supportHeight(town, gx, gz),
-        foliageSettings,
-        4,
-        2.2,
-      )
+      if (b.kind === "house" && pIdx < 2) {
+        emitGrassFurShells(
+          at((lx0 + lx1) * 0.5, (lz0 + lz1) * 0.5, true),
+          lx0,
+          lz0,
+          lx1,
+          lz1,
+          (gx, gz) => supportHeight(town, gx, gz),
+          foliageSettings,
+          1,
+          2.2,
+        )
+      }
       const patchClumps = scatterGrassClumps({
         seed: (town.seed ^ (bIdx * 4099 + pIdx * 613)) >>> 0,
         bounds: [lx0, lz0, lx1, lz1],
@@ -196,36 +198,6 @@ function compileLevel(town: Town): LevelData {
           rng: grassRng,
         })
       }
-    }
-  }
-  // Volumetric grass fur shells over the outer woodland/street yards and curb verge strips.
-  for (const [fx0, fz0, fx1, fz1] of [
-    [6.0, 20.0, 17.8, 37.8],
-    [6.0, 50.2, 20.5, 70.0],
-  ] as const) {
-    emitGrassFurShells(
-      at((fx0 + fx1) * 0.5, (fz0 + fz1) * 0.5),
-      fx0,
-      fz0,
-      fx1,
-      fz1,
-      (gx, gz) => supportHeight(town, gx, gz),
-      foliageSettings,
-      3,
-      3.0,
-    )
-  }
-  for (const [vx0, vx1] of [
-    [2.5, 18.6],
-    [22.0, 26.6],
-    [28.8, 37.5],
-    [53.0, 72.5],
-  ] as const) {
-    for (const [vz0, vz1] of [
-      [39.35, 39.75],
-      [48.25, 48.65],
-    ] as const) {
-      emitGrassFurShells(at((vx0 + vx1) * 0.5, vz0), vx0, vz0, vx1, vz1, () => 0.10, foliageSettings, 3, 2.2)
     }
   }
   // Shadowed root-collar tussock tufts around every exterior street/yard tree.
@@ -438,20 +410,22 @@ function compileLevel(town: Town): LevelData {
       return [{ data: source.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
     }
     const opaque = new Mesh()
+    const fur = new Mesh()
     const screen = new Mesh()
     const customByBuilding = BUILDING_RECTS.map(() => new Mesh())
     const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
     for (let i = 0; i < source.v.length; i += 33) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
-      let hasRoof = false, hasScreen = false, hasFoliage = false
+      let hasRoof = false, hasScreen = false, hasFoliage = false, hasFur = false
       for (const j of [0, 11, 22]) {
         const vx = source.v[i + j]!, vy = source.v[i + j + 1]!, vz = source.v[i + j + 2]!
-        const mat = Math.round(source.v[i + j + 9]!)
+        const mat = Math.round(source.v[i + j + 9]!), aux = source.v[i + j + 10]!
         minX = Math.min(minX, vx); maxX = Math.max(maxX, vx)
         minY = Math.min(minY, vy); maxY = Math.max(maxY, vy)
         minZ = Math.min(minZ, vz); maxZ = Math.max(maxZ, vz)
         if (mat === 21) hasRoof = true
         if (mat === 22 || mat === 24) hasFoliage = true
+        if (mat === 22 && aux < -1.5) hasFur = true
         if ((mat === 4 || mat === 9 || mat === 11) && maxY > 1.0) hasScreen = true
       }
       let customId = -1
@@ -459,7 +433,7 @@ function compileLevel(town: Town): LevelData {
       const strictlyInsideHouse = (id: number, minX: number, maxX: number, minZ: number, maxZ: number) => {
         const b = BUILDING_RECTS[id]!
         if (id >= 2) return minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
-        const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.65 && maxZ < b[3] + 1.65
+        const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.55 && maxZ < b[3] + 1.65
         const inNorth = minX > b[0] + 2.25 && maxX < b[0] + 9.25 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
         return inSouth || inNorth
       }
@@ -495,15 +469,17 @@ function compileLevel(town: Town): LevelData {
       }
       return [{ data: m.pack(), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
     }
-    const screenChunk = (): LevelChunk[] => {
+    const screenChunks = (): LevelChunk[] => {
       if (!screen.count) return []
-      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, top = 0, z1 = -Infinity
-      for (let i = 0; i < screen.v.length; i += 11) {
-        x0 = Math.min(x0, screen.v[i]!); x1 = Math.max(x1, screen.v[i]!)
-        top = Math.max(top, screen.v[i + 1]!)
-        z0 = Math.min(z0, screen.v[i + 2]!); z1 = Math.max(z1, screen.v[i + 2]!)
+      // Bucket cuttable walls into 4m Z-bands so north/partition/south walls don't merge into one room-spanning cutBox.
+      const bands = new Map<number, Mesh>()
+      for (let i = 0; i < screen.v.length; i += 33) {
+        const zBand = Math.floor(Math.min(screen.v[i + 2]!, screen.v[i + 13]!, screen.v[i + 24]!) / 4)
+        let bm = bands.get(zBand)
+        if (!bm) { bm = new Mesh(); bands.set(zBand, bm) }
+        bm.v.push(...screen.v.slice(i, i + 33))
       }
-      return [{ data: screen.pack(), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
+      return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => ({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }
     const customChunks = BUILDING_RECTS.flatMap((b, id) => {
       const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + 1.7] as const
@@ -512,7 +488,7 @@ function compileLevel(town: Town): LevelData {
         ...pack(customByBuilding[id]!, bounds, true),
       ]
     })
-    return [...pack(opaque), ...screenChunk(), ...customChunks]
+    return [...pack(opaque), ...screenChunks(), ...customChunks]
   })
   // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
   const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)

@@ -89,7 +89,15 @@ export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:numbe
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
   const trim=rgb(0xd4d2c8),roof=rgb(0x3d4758),brick=rgb(0x684339)
-  if(b.kind!=="house"){m.box(x-.15,2.8,z-.15,r+.15,2.94,e+.15,rgb(0x555a54),MAT.roof,id);return}
+  if(b.kind!=="house"){
+    const sc=rgb(0x555a54)
+    m.box(x+.36,2.8,z+.36,r-.36,2.94,e-.36,sc,MAT.roof,id)
+    m.box(x-.15,2.8,z-.15,r+.15,2.94,z+.36,sc,MAT.roof,id)
+    m.box(x-.15,2.8,e-.36,r+.15,2.94,e+.15,sc,MAT.roof,id)
+    m.box(x-.15,2.8,z+.36,x+.36,2.94,e-.36,sc,MAT.roof,id)
+    m.box(r-.36,2.8,z+.36,r+.15,2.94,e-.36,sc,MAT.roof,id)
+    return
+  }
   const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
   // Front roof slope (mid .. e+.42) spans full width; north slope steps in at x+9.5 and r-1.6 to match the L-shaped plan.
   const xCutsFront = [x - .42, x + .36, r - .36, r + .42]
@@ -120,12 +128,13 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-1.55, 2.70, z+5.08, r+.45, 2.85, z+5.20, trim, MAT.roof, id)
   for(const px of [x-.01,r+.01])m.facet([px,2.8,z+5.5],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
   m.box(x+1.75,2.68,z-.42,x+9.78,2.86,z-.31,trim,MAT.roof,id)
-  m.box(x-.45,2.72,e+.34,r+.45,2.87,e+.44,trim,MAT.roof,id)
-  // Dark soffit and half-round gutter read as a crisp eave border with trim fascia.
-  m.box(x-.42,2.63,e+.02,r+.42,2.71,e+.40,rgb(0x282e38),MAT.roof,id)
-  m.box(x-.48,2.76,e+.43,r+.48,2.83,e+.50,rgb(0x9da4b0),MAT.roof,id)
+  // Split south eave fascia, dark soffit, and gutter across xCutsFront so the middle span cuts away cleanly on CPU when inside.
   for (let xi = 0; xi < 3; xi++) {
-    m.box(xCutsFront[xi]!, ridge - .04, mid - .1, xCutsFront[xi + 1]!, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
+    const x0 = xCutsFront[xi]!, x1 = xCutsFront[xi + 1]!
+    m.box(x0, 2.72, e+.34, x1, 2.87, e+.44, trim, MAT.roof, id)
+    m.box(x0, 2.63, e+.02, x1, 2.71, e+.40, rgb(0x282e38), MAT.roof, id)
+    m.box(x0, 2.76, e+.43, x1, 2.83, e+.50, rgb(0x9da4b0), MAT.roof, id)
+    m.box(x0, ridge - .04, mid - .1, x1, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
   }
   // Brick chimney on upper-right slope with stone cap, dark flue, and east-eave downspout.
   m.box(r-2.08,3.18,mid+.82,r-1.12,4.82,mid+1.78,rgb(0x7c483a),MAT.brick)

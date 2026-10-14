@@ -25,6 +25,7 @@ export const shaders = {
     shadowTaps: 5,
     lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
     material: surfaceMaterial + `
+      if (mat == 22 && o.aux < -1.5 && alpha < 0.22) { return vec4f(0.0); }
       if (mat == 4 && interior(o.world.xz+n.xz*.3)) {
         let s = evalPlasterWall(o.world, n, vec3f(.44, .38, .31), defaultMaterialRecipe(2));
         albedo = s.albedo;
@@ -149,8 +150,7 @@ fn eyeVisible(p: vec2f) -> f32 {
     let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.48 * tipWeight;
     let chloroTint = mix(vec3f(0.18, 0.46, 0.04), vec3f(0.58, 0.85, 0.12), sqrt(clamp(tipWeight, 0.0, 1.0)));
     let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 4.0) * 0.22 * tipWeight * F.ambient.w;
-    let lampTrans = spill(o.world) * 0.16 * tipWeight;
-    col += o.color * (chloroTint * transLobe + vec3f(0.50, 0.85, 0.30) * fresnelRim + lampTrans);
+    col += o.color * (chloroTint * transLobe + vec3f(0.50, 0.85, 0.30) * fresnelRim) + col * 0.18 * tipWeight;
   }
   // Scenery and illumination are not an enemy-visibility mask. Exterior form remains readable.
   // Dynamic entities use the authoritative CPU Vision before submitting a draw (the local survivor is exempt).

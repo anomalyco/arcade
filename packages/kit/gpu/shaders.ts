@@ -696,7 +696,7 @@ fn shadeScene(o: VOut) -> vec4f {
   }` : ""}
   ${hooks.surface ?? ""}
   let a = alpha * o.extra.z;
-  return vec4f(select(col * a, col, mat == 22), a);
+  return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
