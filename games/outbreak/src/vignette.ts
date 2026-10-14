@@ -1168,12 +1168,12 @@ fn eyeVisible(p: vec2f) -> f32 {
         albedo = modulateFast(albedo, tex, vec3f(0.145, 0.195, 0.082), 0.72);
       }
       if (activeVignette && Vig.params1.y < -0.35 && Vig.params0.w < 0.05) {
-        // Noir foliage: desaturated midnight-slate leaves with crisp moonlit upper-leaf rim & deep core contrast
+        // Noir foliage: deep ink-black silhouette core with crisp moonlit upper-leaf rim
         let fLum = dot(albedo, vec3f(0.2126, 0.7152, 0.0722));
-        let leafMicro = surfaceNoise(o.world.xz * 7.5 + vec2f(o.world.y * 3.1, -o.world.y * 2.4));
-        let tipRim = smoothstep(0.38, 0.82, leafMicro) * max(0.0, n.y);
-        let coreShadow = smoothstep(0.15, 0.65, leafMicro);
-        albedo = mix(vec3f(fLum) * vec3f(0.24, 0.30, 0.38), albedo * 0.30, 0.20) * mix(0.45, 1.25, coreShadow) + vec3f(0.075, 0.095, 0.125) * tipRim;
+        let leafMicro = surfaceNoise(o.world.xz * 7.8 + vec2f(o.world.y * 3.1, -o.world.y * 2.4));
+        let tipRim = smoothstep(0.54, 0.88, leafMicro) * max(0.0, n.y) * smoothstep(0.6, 3.2, o.world.y);
+        let coreShadow = smoothstep(0.18, 0.72, leafMicro);
+        albedo = mix(vec3f(fLum) * vec3f(0.18, 0.23, 0.30), albedo * 0.22, 0.18) * mix(0.28, 0.95, coreShadow) + vec3f(0.048, 0.062, 0.085) * tipRim;
       }
     }
     if (mat == 24) {
@@ -1350,15 +1350,16 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (o.world.y > 2.74 && o.world.y < 2.83 && n.y > 0.75 && o.world.x > 21.8 && o.world.x < 37.2 && o.world.z > 23.8 && o.world.z < 35.8) {
       col *= 0.08;
     }
-    // Roof shingles catching cold directional moonlight along course steps & eave drip edge (street view)
+    // Roof shingles catching cold directional moonlight along course steps & gable chevron (street view)
     if (mat == 21 && Vig.params2.y > 35.0) {
-      let courseStep = smoothstep(0.65, 0.96, fract(o.world.z / 0.23));
+      let courseStep = smoothstep(0.68, 0.96, fract(o.world.z / 0.23));
       let tabGrain = 0.65 + 0.70 * surfaceNoise(o.world.xz * 6.5);
-      let eaveGlow = smoothstep(35.4, 35.9, o.world.z) * smoothstep(36.1, 35.85, o.world.z);
-      let gableChevron = smoothstep(36.7, 37.08, o.world.z) * step(2.38, o.world.y);
-      col = col * (0.78 + 0.34 * tabGrain) + vec3f(0.011, 0.016, 0.024) * courseStep * tabGrain + vec3f(0.032, 0.042, 0.055) * max(eaveGlow, gableChevron * 0.85);
+      let eaveGlow = smoothstep(35.45, 35.88, o.world.z) * smoothstep(36.05, 35.85, o.world.z) * 0.28;
+      let gableMask = smoothstep(25.8, 26.5, o.world.x) * smoothstep(29.6, 28.9, o.world.x);
+      let gableChevron = smoothstep(36.6, 37.08, o.world.z) * step(2.38, o.world.y) * gableMask;
+      col = col * (0.76 + 0.32 * tabGrain) + vec3f(0.009, 0.014, 0.021) * courseStep * tabGrain + vec3f(0.030, 0.040, 0.054) * max(eaveGlow, gableChevron * 0.95);
     }
-    // Fine textured detail in darks: gravel ruts, asphalt aggregate, and grass/verge blade micro-contrast
+    // Fine textured detail in darks: gravel ruts, asphalt aggregate, and grass/verge blade micro-contrast + front lawn window spill
     if (mat == 20 && !interior(o.world.xz)) {
       let p = o.world.xz;
       let kind = i32(round(o.aux));
@@ -1367,15 +1368,18 @@ fn eyeVisible(p: vec2f) -> f32 {
         let crackLine = 1.0 - smoothstep(0.0, 0.022, abs(surfaceNoise(p * 0.95 + vec2f(2.4, 5.1)) - 0.5));
         col = col * (0.62 + 0.76 * fineGrit) * (1.0 - crackLine * 0.48);
       } else if (kind == 0) {
-        let tuft = smoothstep(0.32, 0.78, fineGrit);
-        col = col * mix(0.55, 1.45, tuft);
+        let tuft = smoothstep(0.28, 0.78, fineGrit);
+        let sideTreeShadow = smoothstep(17.5, 22.5, p.x) * smoothstep(40.5, 36.5, p.x);
+        let frontLawnSpill = (exp(-pow((p.x - 24.5) * 0.38, 2.0)) + exp(-pow((p.x - 34.2) * 0.38, 2.0))) * exp(-pow((p.y - 37.2) * 0.45, 2.0));
+        col = col * mix(0.48, 1.38, tuft) * mix(0.52, 1.0, sideTreeShadow) + vec3f(0.018, 0.022, 0.026) * frontLawnSpill * tuft * select(1.0, 0.35, Vig.params2.y < 35.0);
       }
     }
-    // Weathered dark slate-grey porch trim, columns, and window mullions on south facade
+    // Weathered dark slate-grey porch trim, columns, and clapboard courses on south facade
     if ((mat == 4 || mat == 21) && o.world.z > 35.15 && !interior(o.world.xz)) {
       let trimLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      if (trimLum > 0.035) {
-        col = mix(vec3f(trimLum) * vec3f(0.28, 0.32, 0.38), col * 0.34, 0.25);
+      let courseLap = mix(0.62, 1.12, smoothstep(0.0, 0.25, fract(o.world.y / 0.165)));
+      if (trimLum > 0.028) {
+        col = mix(vec3f(trimLum) * vec3f(0.22, 0.26, 0.32), col * 0.26, 0.20) * courseLap;
       }
     }
     // Desaturate bright rugs & bedding in Noir and balance interior rooms
@@ -1423,11 +1427,11 @@ fn eyeVisible(p: vec2f) -> f32 {
       col += vec3f(0.075, 0.105, 0.155) * moonShaft;
     }
     // Wider wet porch & walkway reflection pool under the porch light
-    if (mat == 20 && o.world.x > 25.2 && o.world.x < 30.2 && o.world.z > 35.4 && o.world.z < 40.2) {
-      let cx = exp(-pow((o.world.x - 27.7) * 1.55, 2.0));
+    if (mat == 20 && o.world.x > 25.0 && o.world.x < 30.4 && o.world.z > 35.4 && o.world.z < 40.2) {
+      let cx = exp(-pow((o.world.x - 27.7) * 1.45, 2.0));
       let cz = smoothstep(40.2, 35.5, o.world.z);
       let pWet = 0.55 + 0.90 * surfaceFbm(o.world.xz * 4.5);
-      col = col * mix(0.55, 0.92, cx) + vec3f(0.18, 0.17, 0.15) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
+      col = col * mix(0.55, 0.95, cx) + vec3f(0.20, 0.19, 0.17) * cx * cz * pWet * select(1.0, 0.28, Vig.params2.y < 35.0);
     }
   }
   // Direction 3 (Noir): volumetric flashlight cone haze + soft outer aura + hot hand core & textured ground beam
@@ -1446,19 +1450,19 @@ fn eyeVisible(p: vec2f) -> f32 {
     let fPower = lights[fSlot].color.w;
     let inHouse = interior(o.world.xz);
     if (along > -0.15 && along < fRange) {
-      let coneR = 0.09 + max(0.0, along) * tanHalf * select(1.0, 1.25, inHouse);
-      let radialCore = exp(-pow(across / (coneR * select(0.52, 0.62, inHouse)), 2.0));
+      let coneR = 0.09 + max(0.0, along) * tanHalf * select(1.0, 1.04, inHouse);
+      let radialCore = exp(-pow(across / (coneR * select(0.52, 0.50, inHouse)), 2.0));
       let radialAura = exp(-pow(across / (coneR * 0.92), 1.5)) * (1.0 - smoothstep(coneR * 0.75, coneR * 1.38, across));
-      let radialEdge = 1.0 - smoothstep(coneR * 0.58, coneR * 1.16, across);
+      let radialEdge = 1.0 - smoothstep(coneR * 0.58, coneR * 1.12, across);
       let axialIn = smoothstep(-0.06, 0.14, along);
-      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.55, 1.25, inHouse));
+      let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.55, 1.42, inHouse));
       let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.045, o.world.xz, min(o.world.y, 0.95));
       let grit = 0.55 + 0.90 * (surfaceNoise(o.world.xz * 4.5 + vec2f(1.7, 3.9)) * 0.6 + surfaceNoise(o.world.xz * 11.2) * 0.4);
-      let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.38) * axialIn * axialOut / (0.45 + max(0.0, along) * 0.24) * vis * (0.82 + 0.36 * surfaceNoise(o.world.xz * 2.1));
-      col += fLightCol * fPower * mist * hazeAmt * select(0.22, 0.36, inHouse);
+      let mist = (radialCore * radialEdge * 0.72 + radialAura * 0.36) * axialIn * axialOut / (0.45 + max(0.0, along) * 0.24) * vis * (0.82 + 0.36 * surfaceNoise(o.world.xz * 2.1));
+      col += fLightCol * fPower * mist * hazeAmt * select(0.22, 0.24, inHouse);
       if (o.world.y < 0.38) {
         let groundSpot = radialCore * radialEdge * axialIn * axialOut / (0.28 + max(0.0, along) * 0.16 + along * along * 0.022) * vis * grit;
-        col += (o.color * select(1.55, 2.85, inHouse) + vec3f(0.062, 0.070, 0.078)) * fLightCol * fPower * groundSpot * select(1.22, 2.45, inHouse);
+        col += (o.color * select(1.55, 2.05, inHouse) + vec3f(0.062, 0.070, 0.078)) * fLightCol * fPower * groundSpot * select(1.22, 1.65, inHouse);
       }
     }
     // Small close hand/lantern ground spill right at the survivor's feet
@@ -1466,7 +1470,7 @@ fn eyeVisible(p: vec2f) -> f32 {
     let pDist = length(pRel);
     if (pDist < 1.55 && o.world.y < 0.35) {
       let nearGlow = exp(-pDist * pDist * 2.2) * (1.0 - smoothstep(0.5, 1.55, pDist));
-      col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.36, 0.65, inHouse);
+      col += (o.color * 1.35 + vec3f(0.055, 0.06, 0.065)) * fLightCol * fPower * nearGlow * select(0.36, 0.48, inHouse);
     }
   }
   if (mat != 12 && mat != 21 && mat != 2 && !(activeVig && Vig.params0.w > 0.05)) {
