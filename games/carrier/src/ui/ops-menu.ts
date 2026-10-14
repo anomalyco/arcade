@@ -1,4 +1,5 @@
 import "./ops-menu.css"
+import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import type { CrewError } from "../../shared/crew"
 import type { OpView } from "../../shared/ops"
 
@@ -56,7 +57,7 @@ export class OpsMenu {
     addEventListener(
       "keydown",
       (e) => {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || !this.enabled || this.airborne || e.metaKey || e.ctrlKey) return
+        if (isEditableEventTarget(e.target) || !this.enabled || this.airborne || e.metaKey || e.ctrlKey) return
         if (isKey(e)) {
           e.preventDefault()
           e.stopImmediatePropagation()

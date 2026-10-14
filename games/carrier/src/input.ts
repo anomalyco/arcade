@@ -1,6 +1,8 @@
+import { KeyStateTracker, requestCanvasPointerLock } from "@arcade/kit/client/controls"
+
 /**
- * Keyboard and mouse. WASD or arrows (matched by physical position and by letter, so any layout works) drive the ship
- * or pan the free camera, Shift pans faster, the wheel zooms the free camera.
+ * Keyboard and mouse. Physical WASD (`KeyW`, `KeyA`, `KeyS`, `KeyD`) or arrows drive the ship or pan the free camera,
+ * Shift pans faster, the wheel zooms the free camera.
  *
  * The mouse looks around, Battlefield-vehicle style: while `lockable` (the game sets it: aboard, not in the free camera,
  * no menu), a left click on the canvas takes Pointer Lock and from then on plain mouse movement is the look delta
@@ -10,9 +12,7 @@
  * (denied, unsupported, the free camera) dragging still looks.
  */
 export class Input {
-  private keys = new Set<string>()
-  /** Codes that went down since the last `endFrame` (taps shorter than a frame still count). */
-  private downs = new Set<string>()
+  private readonly tracker: KeyStateTracker
   private drag = false
   private dx = 0
   private dy = 0
@@ -25,19 +25,7 @@ export class Input {
 
   constructor(private canvas: HTMLElement) {
     canvas.tabIndex = -1
-    addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
-      if (this.keys.has(e.code)) return
-      this.keys.add(e.code)
-      this.downs.add(e.code)
-    })
-    addEventListener("keyup", (e) => {
-      this.keys.delete(e.code)
-      // macOS drops keyups for other keys while Cmd is held.
-      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
-    })
-    addEventListener("blur", () => this.release())
+    this.tracker = new KeyStateTracker({ onRelease: () => (this.drag = false) })
     canvas.addEventListener("mousedown", (e) => {
       e.preventDefault()
       canvas.focus({ preventScroll: true })
@@ -69,20 +57,7 @@ export class Input {
 
   /** Takes Pointer Lock (raw mouse movement where the browser allows it). Needs a click, or a lock a menu suspended. */
   lock(): void {
-    const c = this.canvas as HTMLElement & { requestPointerLock(o?: { unadjustedMovement?: boolean }): Promise<void> | void }
-    const plain = () => {
-      try {
-        void Promise.resolve(c.requestPointerLock()).catch(() => {})
-      } catch {
-        // No Pointer Lock: dragging looks instead.
-      }
-    }
-    try {
-      const p = c.requestPointerLock({ unadjustedMovement: true })
-      if (p) void p.catch(plain)
-    } catch {
-      plain()
-    }
+    requestCanvasPointerLock(this.canvas)
   }
 
   /** Lets go of Pointer Lock for good (the free camera); the next click on the canvas takes it again. */
@@ -113,37 +88,31 @@ export class Input {
   }
 
   release(): void {
-    this.keys.clear()
-    this.downs.clear()
+    this.tracker.release()
     this.drag = false
   }
 
   held(code: string): boolean {
-    return this.keys.has(code)
+    return this.tracker.held(code)
   }
 
   /** Whether any of these physical codes went down since the last `endFrame`. */
   pressed(...codes: string[]): boolean {
-    for (const c of codes) if (this.downs.has(c)) return true
-    return false
-  }
-
-  private any(code: string, arrow: string): boolean {
-    return this.keys.has(code) || this.keys.has(arrow)
+    return this.tracker.pressed(...codes)
   }
 
   /** Pan intent to the right, -1..1. */
   get right(): number {
-    return (this.any("KeyD", "ArrowRight") ? 1 : 0) - (this.any("KeyA", "ArrowLeft") ? 1 : 0)
+    return (this.tracker.any("KeyD", "ArrowRight") ? 1 : 0) - (this.tracker.any("KeyA", "ArrowLeft") ? 1 : 0)
   }
 
   /** Pan intent ahead, -1..1. */
   get ahead(): number {
-    return (this.any("KeyW", "ArrowUp") ? 1 : 0) - (this.any("KeyS", "ArrowDown") ? 1 : 0)
+    return (this.tracker.any("KeyW", "ArrowUp") ? 1 : 0) - (this.tracker.any("KeyS", "ArrowDown") ? 1 : 0)
   }
 
   get fast(): boolean {
-    return this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")
+    return this.tracker.any("ShiftLeft", "ShiftRight")
   }
 
   /** Mouse movement under Pointer Lock, or while dragging, since the last `endFrame`, in CSS pixels. */
@@ -168,6 +137,6 @@ export class Input {
   /** Clears the per-frame drag, wheel and key-press accumulators. */
   endFrame(): void {
     this.dx = this.dy = this.wheelDelta = 0
-    this.downs.clear()
+    this.tracker.clearDowns()
   }
 }

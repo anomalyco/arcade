@@ -5,7 +5,7 @@
  * vehicle (H honks at the wheel), Q cycles contextual actions, 1/2/3 pick a gun and 4/5 frag or claymore for your next
  * life, Tab shows the scores.
  */
-import { observeKeyLayout } from "./controls"
+import { isEditableEventTarget, isMetaKey, isNavigationKey, observeKeyLayout } from "./controls"
 
 export type MuxState = { x: number; y: number; vx: number; vy: number; aim: number; tx: number; ty: number }
 export type MuxKey = { type: "mux-key"; kind: "keydown" | "keyup"; code: string; key: string; shiftKey?: boolean; altKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
@@ -48,9 +48,8 @@ export class Input<Selection extends string = string> {
   constructor(canvas: HTMLElement, private interactCodes = ["KeyE", "KeyF"]) {
     canvas.tabIndex = -1
     window.addEventListener("keydown", (e) => {
-      if ((typeof HTMLInputElement !== "undefined" && e.target instanceof HTMLInputElement) || (typeof HTMLTextAreaElement !== "undefined" && e.target instanceof HTMLTextAreaElement)) return
-      if (e.code === "Tab") e.preventDefault()
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
+      if (isEditableEventTarget(e.target)) return
+      if (e.code === "Tab" || isNavigationKey(e.code)) e.preventDefault()
       const msg: MuxKey = { type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey }
       if (this.mux) { if (!e.repeat) this.forward(msg) }
       else this.key(msg)
@@ -104,7 +103,7 @@ export class Input<Selection extends string = string> {
     if (e.kind === "keyup") {
       this.keys.delete(e.code)
       // macOS drops keyups for other keys while Cmd is held.
-      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
+      if (isMetaKey(e.code)) this.release()
       return
     }
     observeKeyLayout(e)
