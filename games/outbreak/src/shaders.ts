@@ -65,7 +65,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - 1.0, lights[0].pos.w, distance);
   return los * max(cone, near) * range;
 }`,
-    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g * 0.35, 1.0, !interior(o.world.xz) || o.world.y > 2.8) * F.ambient.w * max(0.0, dot(n, F.monitorBounds.xyz))",
+    directional: "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(fd.g * 0.35, 1.0, !interior(o.world.xz) || o.world.y > 2.8) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
     cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)))) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {

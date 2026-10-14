@@ -90,15 +90,24 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
   for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
-  // Framing side-yard trees and border hedges along the driveway and east side of the house.
+  // Framing side-yard trees, sidewalk-overhanging street canopies, corner shrubs, and driveway border hedges.
   for(const [px,pz,ph,pr] of [
-    [x-3.55,e-.4,1.35,.78],
-    [x-3.65,e-2.8,1.28,.72],
-    [x-3.60,z+3.2,1.35,.74],
-    [r+1.05,z+1.8,4.4,1.25],
-    [r+1.15,z+5.8,4.8,1.35],
-    [r+1.05,e-2.6,4.2,1.22],
-    [r+.55,e+.35,1.38,.82],
+    // Continuous dark border hedge & overarching woodland trees along the left driveway fence
+    [x-3.62,e+2.05,1.46,.92],
+    [x-3.58,e+.55,1.42,.86],
+    [x-3.55,e-.95,1.38,.82],
+    [x-3.65,e-2.80,1.34,.78],
+    [x-3.60,z+3.20,1.38,.80],
+    [x-5.25,e-.60,6.35,2.55],
+    [x-4.85,z+3.60,6.65,2.65],
+    // Multi-layered broadleaf street & side-yard trees overhanging the right lawn and north-south sidewalk
+    [r+2.45,z+1.60,6.40,2.45],
+    [r+2.95,z+5.80,6.85,2.65],
+    [r+2.55,e-2.10,6.15,2.35],
+    [r+.85,e+.40,1.48,.94],
+    // Rounded dark-green shrub at the front-right lawn corner inside the sidewalk intersection + border companion
+    [r+2.75,e+2.45,1.46,.94],
+    [r+1.15,e+2.60,1.06,.74],
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Two furnished zones, with the 1.4m entrance-to-bedroom circulation lane kept empty.
   const rug=(a:number,c:number,d:number,f:number,color:number)=>{

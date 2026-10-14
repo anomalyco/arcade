@@ -121,12 +121,12 @@ const COMMON_GRASS_DEFAULTS = {
   bladeWidth: 0.058,
   bladeCurvature: 0.62,
   grassClumping: 0.82,
-  rootColorR: 0.08,
-  rootColorG: 0.14,
-  rootColorB: 0.06,
-  tipColorR: 0.25,
-  tipColorG: 0.37,
-  tipColorB: 0.16,
+  rootColorR: 0.12,
+  rootColorG: 0.20,
+  rootColorB: 0.08,
+  tipColorR: 0.30,
+  tipColorG: 0.43,
+  tipColorB: 0.19,
   grassVariation: 0.62,
   dryPatches: 0.28,
   grassWind: 0.48,
@@ -149,13 +149,13 @@ export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>
       clumpSize: 0.95,
       leafCardSize: 0.28,
       porosity: 0.35,
-      treeColorR: 0.20,
-      treeColorG: 0.31,
-      treeColorB: 0.14,
+      treeColorR: 0.25,
+      treeColorG: 0.38,
+      treeColorB: 0.17,
       treeColorVariation: 0.62,
       autumnMix: 0.25,
       translucency: 0.30,
-      canopyAO: 0.74,
+      canopyAO: 0.72,
       normalSoftness: 0.88,
       treeWindStrength: 0.26,
       treeWindFreq: 0.80,
@@ -719,8 +719,10 @@ function emitLeafSprig(
       root[2] + dir[2] * len,
     ]
 
-    const fnL = faceNormal(pBase, pMidL, pTip)
-    const fnR = faceNormal(pBase, pTip, pMidR)
+    const fnLRaw = faceNormal(pBase, pMidL, pTip)
+    const fnRRaw = faceNormal(pBase, pTip, pMidR)
+    const fnL: Point = fnLRaw[1] < 0 ? [-fnLRaw[0], -fnLRaw[1], -fnLRaw[2]] : fnLRaw
+    const fnR: Point = fnRRaw[1] < 0 ? [-fnRRaw[0], -fnRRaw[1], -fnRRaw[2]] : fnRRaw
     const nBase = blendNormal(fnL, domeNormalAt(pBase), normalSoftness)
     const nMidL = blendNormal(fnL, domeNormalAt(pMidL), normalSoftness)
     const nMidR = blendNormal(fnR, domeNormalAt(pMidR), normalSoftness)
@@ -812,7 +814,8 @@ function emitBrushyLeafCard(
   for (let i = 0; i < sides; i++) {
     const p0 = ring[i]!
     const p1 = ring[(i + 1) % sides]!
-    const fn = faceNormal(center, p0, p1)
+    const fnRaw = faceNormal(center, p0, p1)
+    const fn: Point = fnRaw[1] < 0 ? [-fnRaw[0], -fnRaw[1], -fnRaw[2]] : fnRaw
     const nC = blendNormal(fn, domeNormalAt(center), normalSoftness)
     const n0 = blendNormal(fn, domeNormalAt(p0), normalSoftness)
     const n1 = blendNormal(fn, domeNormalAt(p1), normalSoftness)
@@ -845,11 +848,12 @@ function emitBoughCluster(
   flexBase: number,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
-  const coreDark = Math.max(0.10, 0.40 - canopyAO * 0.36)
-  const midShade = Math.max(0.30, 0.68 - canopyAO * 0.24)
+  // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.48 sRGB = 0.20 linear (deep green interior shadow, never pitch black)
+  const coreDark = Math.max(0.46, 0.72 - canopyAO * 0.32)
+  const midShade = Math.max(0.66, 0.88 - canopyAO * 0.24)
   const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
-  const sunlitCol = scaleRgb(base, 1.08)
+  const sunlitCol = scaleRgb(base, 1.18)
 
   const totalCards = Math.max(8, Math.round(sprigDensity * 1.15))
   for (let s = 0; s < totalCards; s++) {
@@ -885,44 +889,32 @@ function emitBoughCluster(
       leafCardScale * (isCore ? 1.55 : isMid ? 1.32 : 1.08) * (0.88 + rng.next() * 0.24),
     )
 
-    if (isCore) {
-      emitBrushyLeafCard(
-        m,
-        px,
-        py,
-        pz,
-        outDir,
-        cardRadius * 1.12,
-        domePivot,
-        crownCenter,
-        Math.min(0.96, normalSoftness * 0.92 + 0.06),
-        rng,
-        deepCol,
-        scaleRgb(deepCol, 0.72),
-      )
-    } else {
-      const sprigRootCol = isMid
-        ? mixRgb(deepCol, midCol, 0.35 + 0.45 * heightLift)
-        : mixRgb(midCol, base, 0.38 + 0.45 * heightLift)
-      const sprigTipCol = isMid
-        ? mixRgb(midCol, base, 0.55 + 0.45 * heightLift)
-        : mixRgb(base, sunlitCol, 0.42 + 0.58 * heightLift)
-      emitLeafSprig(
-        m,
-        [px, py, pz],
-        outDir,
-        cardRadius * 1.48,
-        domePivot,
-        crownCenter,
-        Math.min(0.96, normalSoftness * 0.90 + 0.06),
-        rng,
-        sprigRootCol,
-        sprigTipCol,
-        flexBase * (isMid ? 0.85 : 1.05),
-        2,
-      )
-    }
+    const sprigRootCol = isCore
+      ? deepCol
+      : isMid
+        ? mixRgb(deepCol, midCol, 0.42 + 0.45 * heightLift)
+        : mixRgb(midCol, base, 0.45 + 0.45 * heightLift)
+    const sprigTipCol = isCore
+      ? mixRgb(deepCol, midCol, 0.58 + 0.32 * heightLift)
+      : isMid
+        ? mixRgb(midCol, base, 0.58 + 0.42 * heightLift)
+        : mixRgb(base, sunlitCol, 0.48 + 0.52 * heightLift)
+    emitLeafSprig(
+      m,
+      [px, py, pz],
+      outDir,
+      cardRadius * (isCore ? 1.56 : 1.48),
+      domePivot,
+      crownCenter,
+      Math.min(0.96, normalSoftness * 0.90 + 0.06),
+      rng,
+      sprigRootCol,
+      sprigTipCol,
+      flexBase * (isCore ? 0.65 : isMid ? 0.85 : 1.05),
+      2,
+    )
   }
+  void emitBrushyLeafCard
 }
 
 /**
@@ -941,7 +933,8 @@ export function buildFoliageTree(
 ): void {
   const rng = new Rng(seed)
   const isTree = h > 2.1
-  const shape: FoliageCrownShape = shapeOverride ?? (isTree ? params.crownShape : "spreading")
+  const naturalHabit: FoliageCrownShape = (["dome", "layered", "spreading", "dome"] as const)[Math.abs(seed) & 3]!
+  const shape: FoliageCrownShape = shapeOverride ?? (isTree ? (params.crownShape === "dome" ? naturalHabit : params.crownShape) : "spreading")
 
   const heightRatio = h / Math.max(1.2, params.treeHeight)
   const radiusRatio = radius / Math.max(0.7, params.crownRadius)
@@ -977,10 +970,15 @@ export function buildFoliageTree(
     )
   }
 
-  // Construct chlorophyll + autumn palette from base RGB, variation, and autumnMix.
-  const baseRgb: Rgb = [params.treeColorR, params.treeColorG, params.treeColorB]
+  // Construct chlorophyll + autumn palette from base RGB, variation, and per-tree species shift.
+  const treeToneShift = (((Math.abs(seed) * 2654435761) >>> 0) % 100) / 100 - 0.5
+  const baseRgb: Rgb = [
+    clamp01(params.treeColorR * (1 + treeToneShift * 0.18)),
+    clamp01(params.treeColorG * (1 + treeToneShift * 0.10)),
+    clamp01(params.treeColorB * (1 - treeToneShift * 0.12)),
+  ]
   const varAmt = params.treeColorVariation
-  const autumn = params.autumnMix
+  const autumn = clamp01(params.autumnMix * (isTree ? 0.85 + (Math.abs(seed * 7) % 5) * 0.12 : 0.45))
   const greenPalette: Rgb[] = [
     baseRgb,
     [
@@ -989,8 +987,8 @@ export function buildFoliageTree(
       clamp01(baseRgb[2] * (1 - 0.12 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 - 0.16 * varAmt)),
-      clamp01(baseRgb[1] * (1 - 0.12 * varAmt)),
+      clamp01(baseRgb[0] * (1 - 0.18 * varAmt)),
+      clamp01(baseRgb[1] * (1 - 0.14 * varAmt)),
       clamp01(baseRgb[2] * (1 - 0.08 * varAmt)),
     ],
     [
@@ -999,17 +997,17 @@ export function buildFoliageTree(
       clamp01(baseRgb[2] * (1 - 0.16 * varAmt)),
     ],
     [
-      clamp01(baseRgb[0] * (1 - 0.08 * varAmt)),
-      clamp01(baseRgb[1] * (1 - 0.05 * varAmt)),
+      clamp01(baseRgb[0] * (1 - 0.10 * varAmt)),
+      clamp01(baseRgb[1] * (1 - 0.06 * varAmt)),
       clamp01(baseRgb[2] * (1 + 0.06 * varAmt)),
     ],
   ]
   const autumnPalette: Rgb[] = [
-    [0.64, 0.45, 0.16],
-    [0.70, 0.34, 0.15],
-    [0.54, 0.48, 0.18],
-    [0.74, 0.50, 0.18],
-    [0.45, 0.38, 0.17],
+    [0.52, 0.36, 0.14],
+    [0.58, 0.28, 0.13],
+    [0.44, 0.40, 0.15],
+    [0.62, 0.42, 0.15],
+    [0.36, 0.32, 0.14],
   ]
   const palette: Rgb[] = greenPalette.map((gCol, idx) => {
     const aWeight = clamp01(autumn * (idx % 2 === 0 ? 1.15 : 0.72))
@@ -1024,8 +1022,8 @@ export function buildFoliageTree(
   const clumpScale = params.clumpSize * Math.max(0.45, Math.min(1.45, radiusRatio))
   const cardScale = params.leafCardSize * Math.max(0.55, Math.min(1.40, radiusRatio))
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer perimeter woods
-  const isPerimeterTree = isTree && (x < 9 || x > 76 || z < 16 || z > 74)
-  const sprigsPerClump = isTree ? (isPerimeterTree ? 7 : 11) : 7
+  const isPerimeterTree = isTree && (x < 10 || x > 74 || z < 18 || z > 72)
+  const sprigsPerClump = isTree ? (isPerimeterTree ? 5 : 9) : 6
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * 0.42
@@ -1341,9 +1339,9 @@ export function emitCurvedGrassBlade(
   const n1R = normalize3(spineN1[0] * cosR + sideX * sinR, spineN1[1] * cosR, spineN1[2] * cosR + sideZ * sinR)
 
   // High-contrast root-to-tip gradient so tufts pop from 38-46m overhead without neon oversaturation
-  const rootGrounded = scaleRgb(rootCol, 0.36)
+  const rootGrounded = scaleRgb(rootCol, 0.58)
   const midCol = mixRgb(rootCol, tipCol, Math.pow(yFrac1, 0.62))
-  const brightTip = scaleRgb(tipCol, 1.04)
+  const brightTip = scaleRgb(tipCol, 1.06)
   const aux0 = -0.05
   const aux1 = -0.52
   const aux2 = -1.0

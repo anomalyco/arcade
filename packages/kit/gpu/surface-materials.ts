@@ -955,15 +955,15 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
 
   let topMask = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
   let heightLift = smoothstep(0.05, 1.2, fract(world.y * 0.55));
-  let canopyLift = mix(0.26 - wear * 0.08, 1.08, clamp(topMask * 0.68 + heightLift * 0.22 + (microLeaf - 0.5) * 0.28, 0.0, 1.0));
+  let canopyLift = mix(0.64 - wear * 0.08, 1.24, clamp(topMask * 0.68 + heightLift * 0.22 + (microLeaf - 0.5) * 0.28, 0.0, 1.0));
   let warmTip = clamp((microLeaf - 0.45) + topMask * 0.35 - 0.10, -0.4, 0.55);
   let hueTint = vec3f(
     1.0 + (hHue * 0.16 + warmTip * 0.18) * colVar,
     1.0 + (hHue * 0.08 + warmTip * 0.10) * colVar,
     1.0 - (hHue * 0.14 + warmTip * 0.16) * colVar
   );
-  var col = baseTint * hueTint * (0.90 + hCluster * 0.28 * colVar) * canopyLift;
-  col *= (1.0 - 0.36 * leafGap + 0.12 * leafPlate) * (1.0 + n0 * 0.16 * macroVar);
+  var col = baseTint * hueTint * (0.94 + hCluster * 0.26 * colVar) * canopyLift;
+  col *= (1.0 - 0.26 * leafGap + 0.14 * leafPlate) * (1.0 + n0 * 0.14 * macroVar);
 
   let leafBumpAtten = (1.0 - smoothstep(0.08, 0.55, surfaceFootprint)) * 0.32;
   surfaceNormalShift = vec3f(
@@ -972,7 +972,7 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
     clusterG.z * 0.55 + bladeG.z * 0.45
   ) * leafBumpAtten;
 
-  let cavity = clamp(mix(0.34, 1.0, topMask) * (1.0 - 0.32 * leafGap), 0.20, 1.0);
+  let cavity = clamp(mix(0.56, 1.0, topMask) * (1.0 - 0.22 * leafGap), 0.42, 1.0);
   return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, cavity);
 }
 `
