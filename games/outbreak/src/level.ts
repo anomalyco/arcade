@@ -127,21 +127,6 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
 
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, LevelData>()
-/**
- * Window glass pane tagged for the interior-parallax shader: aux = 10 + u, where u runs 0..1 along the pane's outward
- * tangent (cross(up, outward normal)), and the red channel stores the pane width / 2.55 m. Untagged glass keeps aux 0.
- */
-function parallaxGlass(g: Mesh, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, along: "x" | "z"): void {
-  const from = g.v.length
-  const width = along === "x" ? x1 - x0 : z1 - z0
-  g.box(x0, y0, z0, x1, y1, z1, [width / 2.55, 0, 0], MAT.glass)
-  for (let i = from; i < g.v.length; i += 11) {
-    // South panes face +z (tangent +x); east panes face +x (tangent -z).
-    const u = along === "x" ? (g.v[i]! - x0) / width : (z1 - g.v[i + 2]!) / width
-    g.v[i + 10] = 10 + Math.max(0, Math.min(1, u))
-  }
-}
-
 export function buildLevel(town: Town): LevelData {
   const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}`
   const cached=levelCache.get(key)
@@ -427,7 +412,7 @@ function compileLevel(town: Town): LevelData {
           const midX = (wx0! + wx1!) / 2
           m.box(midX - .018, .86, zm - .024, midX + .018, 2.14, zm + .024, hex(0x7e7666), MAT.wall)
           // See-through glass pane recessed at zm
-          parallaxGlass(g, wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, "x")
+          g.box(wx0!, .86, zm - .01, wx1!, 2.14, zm + .01, hex(0x463626), MAT.glass)
         }
         // Recessed horizontal meeting rail across the sash mid-plane
         m.box(x+.06, 1.46, zm - .026, r-.06, 1.51, zm + .026, hex(0x7e7666), MAT.wall)
@@ -445,7 +430,7 @@ function compileLevel(town: Town): LevelData {
         const midZ = (z + end) / 2
         m.box(xm - .026, .86, midZ - .03, xm + .026, 2.14, midZ + .03, hex(0x7e7666), MAT.wall)
         m.box(xm - .024, 1.46, z+.06, xm + .024, 1.51, end-.06, hex(0x7e7666), MAT.wall)
-        parallaxGlass(g, xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, "z")
+        g.box(xm - .01, .86, z+.07, xm + .01, 2.14, end-.07, hex(0x6e888c), MAT.glass)
       }
     } else {
       // Weathered & partially damaged timber picket fence in warm 70s putty-grey cedar

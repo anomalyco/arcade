@@ -136,17 +136,6 @@ fn eyeVisible(p: vec2f) -> f32 {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.28, 0.145, 0.036) * nightLamps, outsideView);
-    let depthMix = OL.u8.y;
-    if (depthMix > 0.001 && o.aux > 9.5) {
-      if (dot(n, V) > 0.02 && abs(n.y) < 0.5) {
-        let width = pow(o.color.r, 1.0 / 2.2) * 2.55;
-        let lamps = nightLamps * select(0.8, 1.0, outsideView);
-        col = mix(col, evalWindowInterior(o.world, n, V, clamp(o.aux - 10.0, 0.0, 1.0), width, lamps), depthMix);
-        alpha = mix(alpha, 0.97, depthMix);
-      } else {
-        alpha *= 1.0 - depthMix;
-      }
-    }
   } else if (mat == 21) {
     // Weathered 3-tab slate-taupe roof shingles catching twilight sky, ridge rim, and granule lip sheen; eaves stay grounded.
     let eave = smoothstep(2.82, 3.62, o.world.y);
