@@ -3608,7 +3608,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
     }
 
-    return entries
+    // Fixtures for a game whose adapters this Lab did not load (the Lab's game picker) would select a missing section.
+    return entries.filter(entry => !entry.sectionId || sections.some(sec => sec.id === entry.sectionId))
   }
 
   function resolveEnvOwner(): LabSection {
@@ -5480,7 +5481,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else if (key === "p" && !event.repeat) {
       event.preventDefault()
       setPlayMode("play")
-    } else if ((key === "m" || event.key === "ContextMenu") && !event.repeat) {
+    } else if (event.key === "ContextMenu" && !event.repeat) {
+      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key.
       event.preventDefault()
       openRadialFromKeyboard()
     } else if (key === "i" && !event.repeat) {

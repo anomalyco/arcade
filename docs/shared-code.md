@@ -48,7 +48,7 @@ Shared FX now lives in `packages/kit/fx/` ([API](../packages/kit/fx/README.md)).
 use the extracted tyre simulation and shader/pipeline without changing the image. Blackout supplies camera,
 culled lights, readable depth and wall rectangles to the bounded volume path. The same package supplies fixed
 particle storage, rate/distance emitters, lit billboards, bouncing/stretched sparks and instanced debris.
-The particle renderer's current consumer is the shared Lab (`/lab.html` in either game); existing game debris
+The particle renderer's current consumer is the shared Lab (`/arcade/lab/`); existing game debris
 remains game-owned. Both workflows already trigger on `packages/kit/**`, and both client typechecks include the
 FX source. `packages/kit/lab/` owns the sandbox, controls and test scene. Each game's `src/lab.ts` supplies camera
 matrices and material catalogs. FX proof and GPU-cost limitations are in `perf/fx-kit.md`.
@@ -62,7 +62,7 @@ the panel visible. Getaway retains the approved single tyre-smoke look; study va
 
 ## Add an isolation experiment to the Lab
 
-Open `/lab.html` from Getaway or Blackout's Vite server. Backquote opens the shared panel; its Section select
+Open the Lab (`/arcade/lab/` under `bun run dev`). Backquote opens the shared panel; its Section select
 chooses Effects, Lighting, Materials, Physics or Spawn. The sandbox has one device and frame loop. Switching sections
 clears shared particles and volumes, calls the old section's `leave`, then calls the new section's `enter`.
 Only the active section updates or draws. Lighting settings survive section changes so effects can be inspected
@@ -185,9 +185,9 @@ propane tank with actual keyboard input, verifies chassis motion and tyre emissi
 through Blackout's host. It also exercises every car spec, row/grid/clear, all effects, placed lights and panel
 input release. Evidence is in `perf/lab-spawn.json`; stills are in `captures/lab-spawn/`.
 
-For a new game, add `lab.html` with a module script for its `src/lab.ts`, call `lab({ camera })`, and add the HTML
-to Vite's build inputs. Additional catalogs and sections are optional. Game-specific assets/dependencies belong
-in the entry's adapters. Query parameters never select sections or looks; `?bench` only stops the live loop and
+To add a game to the Lab, give it a module in `games/lab/src/games/` that exports its sections, materials and
+characters, and list it (with its section ids) in `games/lab/src/games/registry.ts`. Each module is its own chunk,
+loaded only when its game is chosen. Game-specific assets/dependencies belong in the game's adapters. Query parameters never select sections or looks; `?bench` only stops the live loop and
 exposes `window.lab` for deterministic automation. Current merged-host proofs:
 `bun games/getaway/scripts/prove-lab-spawn.ts`, `prove-lab-effects.ts`, `prove-fire-water.ts` and
 `prove-fx-integration.ts` on headless Metal. Earlier `prove-fx-playwright.ts` records the pre-cleanup study protocol.

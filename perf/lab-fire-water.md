@@ -1,6 +1,6 @@
 # Fire and water Lab study
 
-Open either game's `/lab.html`, choose **Fire and water**, then **Style**. Flowing is the default; Graphic has harder
+Open the Lab (`/arcade/lab/`), choose **Fire and water**, then **Style**. Flowing is the default; Graphic has harder
 flame bands and a denser jet. Current draws the existing game emitters through the Lab sprite adapter. Each new
 style keeps separate settings during this page session. Choose downtown night, office or Getaway alley, adjust
 Zoom, pause, retrigger, or toggle the siren lights. Flame and Water controls enable for the matching effect.

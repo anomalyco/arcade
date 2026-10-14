@@ -12,6 +12,18 @@ mkdirSync(out, { recursive: true })
 const dir = resolve(root, "games/outbreak")
 assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: dir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
 const distRoot = resolve(dir, "dist/arcade/outbreak")
+const labDir = resolve(root, "games/lab")
+assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: labDir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
+const labDist = resolve(labDir, "dist/arcade/lab")
+const labFixture = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch(req) {
+    const p = new URL(req.url).pathname
+    const f = Bun.file(resolve(labDist, `.${p === "/" ? "/index.html" : p}`))
+    return (await f.exists()) ? new Response(f) : new Response("Not found", { status: 404 })
+  },
+})
 const fixture = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -47,7 +59,7 @@ try {
   })
 
   // 1. Open Lab with #foliage deep link (defaults to Outbreak house lot + Game camera)
-  await page.goto(`http://127.0.0.1:${fixture.port}/lab.html?bench#foliage`)
+  await page.goto(`http://127.0.0.1:${labFixture.port}/?bench#foliage`)
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 25000 })
 
   const adapter = await page.evaluate(() => {
@@ -242,5 +254,6 @@ try {
   console.log(JSON.stringify(summary, null, 2))
 } finally {
   fixture.stop(true)
+  labFixture.stop(true)
   await browser.close()
 }

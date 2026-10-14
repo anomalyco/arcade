@@ -12,7 +12,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: new URL("./index.html", import.meta.url).pathname,
-        lab: new URL("./lab.html", import.meta.url).pathname,
       },
     },
   },

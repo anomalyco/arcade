@@ -34,7 +34,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
 })
-const dir = resolve(root, "games/getaway")
+const dir = resolve(root, "games/lab")
 const server = await createServer({ root: dir, configFile: resolve(dir, "vite.config.ts"), server: { host: "127.0.0.1", port: 0 } })
 await server.listen()
 const addr = server.httpServer!.address()
@@ -120,7 +120,7 @@ await page.addInitScript(() => {
     }
   } as any
 })
-await page.goto(`http://127.0.0.1:${addr.port}/lab.html?bench`)
+await page.goto(`http://127.0.0.1:${addr.port}/?bench`)
 await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
 const cdp = await page.context().newCDPSession(page)
 await cdp.send("Performance.enable")
@@ -257,10 +257,10 @@ async function measureRun(record: boolean) {
   await page.mouse.up({ button: "right" })
   await waitSample(++n)
   await closeMenu()
-  // Keyboard M.
+  // Keyboard menu key (M is mute).
   await page.locator("canvas").focus()
   await page.evaluate(() => (window as any).__expect("open-key", ["keydown"], `!document.querySelector("[data-lab-radial]").hidden`))
-  await page.keyboard.press("m")
+  await page.keyboard.press("ContextMenu")
   await waitSample(++n)
   await closeMenu()
   const samples = await page.evaluate(k => (window as any).__rb.samples.slice(k), before)

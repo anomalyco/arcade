@@ -171,13 +171,14 @@ try {
   await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: false }); document.dispatchEvent(new Event("visibilitychange")) })
   report.catalogue = { assets: ids.length, canvases: 1, audioContexts: after.audio, hiddenRoutePaused: true, syntheticVisibilityPaused: true, reloadPersists: true }
 
-  // Sandbox round trip on both Lab hosts.
-  await page.getByRole("link", { name: "Sandbox", exact: true }).click()
-  await page.waitForURL(`${origin}/arcade/getaway/lab.html`)
+  // Lab round trip: the hub link opens the single Lab app; old per-game Lab URLs redirect to it.
+  await page.getByRole("link", { name: "Lab", exact: true }).click()
+  await page.waitForURL(`${origin}/arcade/lab/`)
   await page.getByRole("link", { name: "Dev Hub" }).click()
   check(page.url() === `${origin}/arcade/getaway/dev.html#games`, "Lab return navigation")
-  await page.goto(`${origin}/arcade/blackout/lab.html`); await page.getByRole("link", { name: "Dev Hub" }).click()
-  check(page.url() === `${origin}/arcade/blackout/dev.html#games` && await page.locator(".hub-env").textContent() === "Local", "Blackout hub")
+  await page.goto(`${origin}/arcade/blackout/lab.html`); await page.waitForURL(`${origin}/arcade/lab/?game=blackout`)
+  await page.getByRole("link", { name: "Dev Hub" }).click()
+  check(page.url() === `${origin}/arcade/getaway/dev.html#games` && await page.locator(".hub-env").textContent() === "Local", "Blackout Lab redirect and hub")
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${origin}/arcade/getaway/dev.html#catalogue`); await page.locator('[role=option][aria-selected="true"]').waitFor(); await page.waitForTimeout(300)
   await page.screenshot({ path: join(out, "mobile.png") })
   await page.close()

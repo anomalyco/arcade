@@ -30,7 +30,7 @@ const report: Record<string, unknown> = {}
 try {
   const hosts: { game: string; url: string }[] = []
   for (const game of ["getaway", "blackout"] as const) {
-    const dir = resolve(root, "games", game)
+    const dir = resolve(root, "games/lab") // One Lab app; both former hosts load the same sections
     const server = await createServer({
       root: dir,
       configFile: resolve(dir, "vite.config.ts"),
@@ -48,7 +48,7 @@ try {
     for (const variant of ["before", "after"] as const) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
       page.on("pageerror", e => errors.push(`pair-${variant}: ${e.message}`))
-      await page.goto(`${hosts[0]!.url}/lab.html?bench`)
+      await page.goto(`${hosts[0]!.url}/?bench`)
       await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
       const step = async (n: number) => {
         for (let i = 0; i < n; i++) {
@@ -108,7 +108,7 @@ try {
       if (m.type() === "error" && !m.text().includes("404")) errors.push(`${game}: ${m.text()}`)
     })
 
-    await page.goto(`${url}/lab.html?bench`)
+    await page.goto(`${url}/?bench`)
     await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 45000 })
     const adapter = await page.evaluate(() => {
       const a = (window as any).lab.adapter

@@ -21,12 +21,12 @@ function mad(values: number[], med = median(values)): number {
   return median(values.map(v => Math.abs(v - med)))
 }
 
-const blackoutDir = resolve(root, "games/blackout")
+const labDir = resolve(root, "games/lab")
 const outbreakDir = resolve(root, "games/outbreak")
-assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: blackoutDir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
+assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: labDir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
 assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: outbreakDir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
 
-const blackoutDist = resolve(blackoutDir, "dist/arcade/blackout")
+const labDist = resolve(labDir, "dist/arcade/lab")
 const outbreakDist = resolve(outbreakDir, "dist/arcade/outbreak")
 
 const labServer = Bun.serve({
@@ -34,7 +34,7 @@ const labServer = Bun.serve({
   port: 0,
   async fetch(req) {
     const p = new URL(req.url).pathname
-    const f = Bun.file(resolve(blackoutDist, `.${p === "/" ? "/index.html" : p}`))
+    const f = Bun.file(resolve(labDist, `.${p === "/" ? "/index.html" : p}`))
     return (await f.exists()) ? new Response(f) : new Response("Not found", { status: 404 })
   },
 })
@@ -74,7 +74,7 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
 
-  await page.goto(`http://127.0.0.1:${labServer.port}/lab.html?bench`)
+  await page.goto(`http://127.0.0.1:${labServer.port}/?bench`)
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 25000 })
 
   const adapter = await page.evaluate(() => {

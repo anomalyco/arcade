@@ -310,7 +310,7 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
     The sheen is direct-light specular, not reflected scene geometry. No water simulation or screen-space reflection
     buffer is required. Heat shimmer does require an HDR copy and one extra pass, included in the timing.
 
-- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
+- **Keep isolation tools in one Lab.** `packages/kit/lab/` runs in the one Lab app (`games/lab`, `/arcade/lab/`), sharing one device,
   test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
   Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
   `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`.

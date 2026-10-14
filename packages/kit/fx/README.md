@@ -1,7 +1,7 @@
 # Shared FX
 
 Getaway uses `SmokeTrail` and `TyreRenderer`; Blackout uses `SmokeVolumes` and `VolumeRenderer` for frag,
-claymore and wreck smoke. Both games serve `/lab.html`, which runs both paths and the general particle renderer.
+claymore and wreck smoke. The Lab app (`/arcade/lab/`) runs both paths and the general particle renderer.
 All positions use world X/Z with Y up. Simulation and upload storage is allocated at construction.
 The Lab's effect picker, parameter sliders, playback actions and debug views live in the shared Lab panel.
 Backquote toggles it. Getaway retains the approved single tyre-smoke path; all experiments use Lab controls.

@@ -6,7 +6,7 @@ recorded separately in `docs/integration.md`.
 
 ## Integration boundary
 
-- Both existing `/lab.html` hosts register **Audio** in the shared section selector. Entering the section, changing
+- The Lab app (`/arcade/lab/`) registers **Audio** in the shared section selector. Entering the section, changing
   controls, and returning after leaving create no live audio context. **Audition** is the only live unlock action;
   **Render offline** and **Render A/B** use native browser offline rendering. Stop, blur, hidden documents, section
   changes and page exit interrupt playback. Returning does not restart it.

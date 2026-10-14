@@ -12,13 +12,13 @@ const browser=await chromium.launch({executablePath,headless:true,args:["--enabl
 const errors:string[]=[],proof:any={}
 try{
   for(const game of ["getaway","blackout"]){
-    const dir=join(root,"games",game),server=await createServer({root:dir,configFile:join(dir,"vite.config.ts"),server:{host:"127.0.0.1",port:0}})
+    const dir=join(root,"games/lab"),server=await createServer({root:dir,configFile:join(dir,"vite.config.ts"),server:{host:"127.0.0.1",port:0}})
     await server.listen()
     try{
       const address=server.httpServer!.address();if(!address||typeof address==="string")throw new Error("No fixture port")
       const page=await browser.newPage({viewport:{width:1100,height:760}})
       page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!m.text().includes("404")){errors.push(m.text());console.error(m.text())}})
-      await page.goto(`http://localhost:${address.port}/lab.html?bench`)
+      await page.goto(`http://localhost:${address.port}/?bench`)
       await page.waitForFunction(()=>(window as any).lab)
       const adapter=await page.evaluate(()=>({architecture:(window as any).lab.adapter.architecture,vendor:(window as any).lab.adapter.vendor}))
       if(!adapter.architecture.includes("metal"))throw new Error("Not Metal")

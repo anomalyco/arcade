@@ -9,9 +9,9 @@ const root = resolve(import.meta.dir, "../../..")
 const out = resolve(process.env.MATERIALS_OUT ?? resolve(root, "captures/materials-lab"))
 mkdirSync(out, { recursive: true })
 
-const dir = resolve(root, "games/blackout")
+const dir = resolve(root, "games/lab")
 assert.equal(Bun.spawnSync(["bun", "run", "build"], { cwd: dir, stdout: "inherit", stderr: "inherit" }).exitCode, 0)
-const distRoot = resolve(dir, "dist/arcade/blackout")
+const distRoot = resolve(dir, "dist/arcade/lab")
 const fixture = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -46,7 +46,7 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
 
-  await page.goto(`http://127.0.0.1:${fixture.port}/lab.html?bench`)
+  await page.goto(`http://127.0.0.1:${fixture.port}/?bench`)
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 25000 })
 
   const adapter = await page.evaluate(() => {

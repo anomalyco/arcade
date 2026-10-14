@@ -907,7 +907,7 @@ function drawPanelBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
 /**
  * Factory compatible with `fx-kit` / `@arcade/kit/lab` `SectionFactory`.
  */
-export function createAudioLab(context?: AudioLabContextLike): AudioLabSection {
+export function createAudioLab(context?: AudioLabContextLike): AudioLabSection & { readonly controller: AudioLabController } {
   const controller = createAudioLabController(context, { baseUrl: new URL("./audio-assets/", document.baseURI).href })
   if (new URLSearchParams(location.search).has("bench")) Object.assign(window, { audioLab: controller })
   const canvas = document.createElement("canvas")
@@ -925,6 +925,7 @@ export function createAudioLab(context?: AudioLabContextLike): AudioLabSection {
   }
   return {
     ...controller.section,
+    controller,
     retrigger() { void controller.triggerCurrent() },
     enter() {
       controller.section.enter?.()
