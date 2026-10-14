@@ -27,7 +27,7 @@ export type UnarmedRigState = {
 const DEG = Math.PI / 180
 
 /**
- * Two-stage spring-driven unarmed hand targets calibrated against CMU walk/run mocap and Williams key poses:
+ * Two-stage spring-driven unarmed hand targets calibrated against Bandai Namco walk/run mocap and Williams key poses:
  * - Walk (1.4 m/s): shoulder sagittal swing [-29°, +18°], elbow flexion [7°, 35°] peaking on forward swing,
  *   natural ~12° coronal abduction, and true pendulum arc passing near the hip.
  * - Run (4.2 m/s): shoulder sagittal swing [-74°, +10°], compact bent-elbow pump [72°, 117°] peaking on
