@@ -9,14 +9,15 @@ import { createServer } from "vite"
 const root = resolve(import.meta.dir, "..")
 const out = resolve(process.env.PERF_OUT ?? "captures/outbreak-bench")
 const label = process.env.BENCH_LABEL ?? "baseline"
+const weatherPreset = process.env.BENCH_WEATHER ?? ""
 const warmupRuns = Number(process.env.BENCH_WARMUP ?? 1)
 const measuredRuns = Number(process.env.BENCH_RUNS ?? 7)
 const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
 const runAblations = process.env.BENCH_ABLATE === "1"
-/** Optional Lab foliage density (0.5..1.5) for GPU-cost-per-density sweeps. */
-const foliageDensity = process.env.BENCH_FOLIAGE_DENSITY ? Number(process.env.BENCH_FOLIAGE_DENSITY) : null
 // Optional Lab overrides for A/B experiments, e.g. BENCH_LAB='{"streetAirHaze":1}'.
 const labOverrides: Record<string, number> = JSON.parse(process.env.BENCH_LAB ?? "{}")
+// Foliage density sweeps (GPU cost per density): BENCH_FOLIAGE_DENSITY=0.5 is shorthand for BENCH_LAB='{"foliageDensity":0.5}'.
+if (process.env.BENCH_FOLIAGE_DENSITY) labOverrides.foliageDensity = Number(process.env.BENCH_FOLIAGE_DENSITY)
 mkdirSync(out, { recursive: true })
 
 function sampleThermal(): { host: string; thermalPressure: string; pmset: string } {
@@ -68,8 +69,8 @@ const browser = await chromium.launch({
 })
 
 const scenes = [
-  { name: "street", x: 30, y: 41, zoom: 46, hour: 18, foliageDensity },
-  { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19, foliageDensity },
+  { name: "street", x: 30, y: 41, zoom: 46, hour: 18 },
+  { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19 },
 ] as const
 
 const median = (xs: number[]): number => {
@@ -181,61 +182,66 @@ try {
     })
 
     for (const scene of scenes) {
-      await page.evaluate(async ({ scene, labOverrides }) => {
-        const w = window as any
-        const h = w.__arcadeHarness
-        h.freeze(true)
-        h.reset(7)
-        h.setLab("timeScale", 0)
-        h.setLab("zoom", scene.zoom)
-        h.setLab("hour", scene.hour)
-        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
-        for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
-        h.pose(scene.x, scene.y, -Math.PI / 2)
-        await h.step(0)
-        const s = h.session()
-        const v = h.vision()
-        const r = h.renderer
-        const stats: any = (w.__pacing = {
-          active: false,
-          callbacks: [],
-          ticks: [],
-          draws: [],
-          inputs: [],
-          cpuVisionMs: [],
-          end: 0,
-          header: "",
-        })
-        const origUpdate = s.update.bind(s)
-        s.update = (dt: number, c: any, ...args: any[]) => {
-          const t0 = performance.now()
-          origUpdate(dt, c, ...args)
-          const cpuSimMs = performance.now() - t0
-          if (stats.active) {
-            stats.ticks.push({
-              wall: t0,
-              cpuSimMs,
-              dt,
-              mx: c.mx,
-              my: c.my,
-              time: s.view.time,
-              x: s.view.player.x,
-              y: s.view.player.y,
-            })
+      await page.evaluate(
+        async ({ scene, weatherPreset, labOverrides }) => {
+          const w = window as any
+          const h = w.__arcadeHarness
+          h.freeze(true)
+          h.reset(7)
+          h.setLab("timeScale", 0)
+          h.setLab("zoom", scene.zoom)
+          h.setLab("hour", scene.hour)
+          for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
+          if (weatherPreset && typeof h.setWeatherPreset === "function") {
+            h.setWeatherPreset(weatherPreset)
           }
-        }
-        const origVision = v.update.bind(v)
-        v.update = (...args: any[]) => {
-          const t0 = performance.now()
-          const res = origVision(...args)
-          if (stats.active) stats.cpuVisionMs.push(performance.now() - t0)
-          return res
-        }
-        h.freeze(false)
-        await new Promise(resolve => setTimeout(resolve, 350))
-        h.freeze(true)
-        await r.device.queue.onSubmittedWorkDone()
-      }, { scene, labOverrides })
+          h.pose(scene.x, scene.y, -Math.PI / 2)
+          await h.step(0)
+          const s = h.session()
+          const v = h.vision()
+          const r = h.renderer
+          const stats: any = (w.__pacing = {
+            active: false,
+            callbacks: [],
+            ticks: [],
+            draws: [],
+            inputs: [],
+            cpuVisionMs: [],
+            end: 0,
+            header: "",
+          })
+          const origUpdate = s.update.bind(s)
+          s.update = (dt: number, c: any, ...args: any[]) => {
+            const t0 = performance.now()
+            origUpdate(dt, c, ...args)
+            const cpuSimMs = performance.now() - t0
+            if (stats.active) {
+              stats.ticks.push({
+                wall: t0,
+                cpuSimMs,
+                dt,
+                mx: c.mx,
+                my: c.my,
+                time: s.view.time,
+                x: s.view.player.x,
+                y: s.view.player.y,
+              })
+            }
+          }
+          const origVision = v.update.bind(v)
+          v.update = (...args: any[]) => {
+            const t0 = performance.now()
+            const res = origVision(...args)
+            if (stats.active) stats.cpuVisionMs.push(performance.now() - t0)
+            return res
+          }
+          h.freeze(false)
+          await new Promise(resolve => setTimeout(resolve, 350))
+          h.freeze(true)
+          await r.device.queue.onSubmittedWorkDone()
+        },
+        { scene, weatherPreset, labOverrides },
+      )
 
       await page.locator("canvas").click()
       await page.evaluate(() => {
@@ -247,23 +253,27 @@ try {
       await page.evaluate(ms => new Promise(resolve => setTimeout(resolve, ms)), holdMs)
       await page.keyboard.up("ArrowRight")
 
-      const live = await page.evaluate(async scene => {
-        const w = window as any
-        const h = w.__arcadeHarness
-        const s = w.__pacing
-        s.end = performance.now()
-        s.header = h.lab.header.textContent
-        s.active = false
-        h.freeze(true)
-        await h.renderer.device.queue.onSubmittedWorkDone()
+      const live = await page.evaluate(
+        async ({ scene, weatherPreset, labOverrides }) => {
+          const w = window as any
+          const h = w.__arcadeHarness
+          const s = w.__pacing
+          s.end = performance.now()
+          s.header = h.lab.header.textContent
+          s.active = false
+          h.freeze(true)
+          await h.renderer.device.queue.onSubmittedWorkDone()
 
-        // Deterministic 24-step non-overlapping CPU / queue-completion / GPU hardware timestamp profile
-        h.reset(7)
-        h.setLab("timeScale", 0)
-        h.setLab("zoom", scene.zoom)
-        h.setLab("hour", scene.hour)
-        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
-        h.pose(scene.x, scene.y, -Math.PI / 2)
+          // Deterministic 24-step non-overlapping CPU / queue-completion / GPU hardware timestamp profile
+          h.reset(7)
+          h.setLab("timeScale", 0)
+          h.setLab("zoom", scene.zoom)
+          h.setLab("hour", scene.hour)
+          for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
+          if (weatherPreset && typeof h.setWeatherPreset === "function") {
+            h.setWeatherPreset(weatherPreset)
+          }
+          h.pose(scene.x, scene.y, -Math.PI / 2)
         const cpuPrepMs: number[] = []
         const cpuVisionStepMs: number[] = []
         const cpuSimStepMs: number[] = []
@@ -326,7 +336,9 @@ try {
           canvas: [canvas.width, canvas.height],
           hidden: document.hidden,
         }
-      }, scene)
+      },
+      { scene, weatherPreset, labOverrides },
+    )
 
       const down = live.inputs.find((e: any) => e.kind === "down")
       const up = live.inputs.find((e: any) => e.kind === "up")
@@ -424,7 +436,6 @@ try {
         h.setLab("timeScale", 0)
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
-        if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
 

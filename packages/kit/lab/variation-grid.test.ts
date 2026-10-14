@@ -89,6 +89,14 @@ describe("variation-grid", () => {
 
     expect(() => resolveVariationGridConfig({ tiles: [{ label: "Only One" }] }, "looks")).toThrow(/between 2 and 9/)
     expect(() => resolveVariationGridConfig({ preset: "not-a-preset" }, "looks")).toThrow(/Unknown variation grid preset/)
-    expect(Object.keys(VARIATION_GRID_PRESETS)).toEqual(["looks", "explosions", "smoke", "materials", "foliage", "lighting"])
+    expect(Object.keys(VARIATION_GRID_PRESETS)).toEqual([
+      "looks",
+      "explosions",
+      "smoke",
+      "materials",
+      "foliage",
+      "lighting",
+      "weather",
+    ])
   })
 })

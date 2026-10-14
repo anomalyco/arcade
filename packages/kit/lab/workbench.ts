@@ -43,6 +43,7 @@ import { FOLIAGE_LIGHTINGS, FOLIAGE_LOOKS } from "./foliage"
 import { lightingDefaults } from "./lighting"
 import type { LookLabController } from "./looks"
 import { applyLookPreset, LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup, type LookSettings } from "../gpu/look"
+import { applyWeatherPreset, resolveWeatherPresetId, type WeatherSettings } from "../weather"
 import { createRadialMenuDOM, RadialMenuStateMachine, type RadialReleaseResult } from "./radial"
 import { applyGameRecipe, buildGameRecipe, type GameRecipePayload } from "./recipe"
 import {
@@ -607,6 +608,23 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   function applyTileSettingsToSection(sec: LabSection, tile: VariationTileConfig) {
+    if (sec.id === "weather") {
+      if (tile.preset) {
+        const pid = resolveWeatherPresetId(tile.preset)
+        if (pid) applyWeatherPreset(sec.settings as unknown as WeatherSettings, pid)
+      }
+      if (tile.settings) {
+        for (const [k, v] of Object.entries(tile.settings)) {
+          if (k === "preset") {
+            const pid = resolveWeatherPresetId(v)
+            if (pid) applyWeatherPreset(sec.settings as unknown as WeatherSettings, pid)
+          } else {
+            sec.settings[k] = v
+          }
+        }
+      }
+      return
+    }
     if (sec.id === "looks") {
       if (tile.preset) {
         const pid = resolveLookPresetId(tile.preset)
