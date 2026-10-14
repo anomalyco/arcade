@@ -29,8 +29,8 @@ export const outbreakSceneHooks: SceneHooks = {
       att *= 1.0 + 1.85 * smoothstep(0.2, 4.8, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
-  wallDirectScale: "mix(0.18, 0.33, smoothstep(0.0, 1.5, o.world.y))",
-  ambient: "ambientAt(n) * mix(0.05, 1.0, select(1.0, select(fd.g, 0.04, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.008, 0.005, 0.0025), inRoom && o.world.y < 2.8)",
+  wallDirectScale: "mix(0.28, 0.48, smoothstep(0.0, 1.5, o.world.y))",
+  ambient: "ambientAt(n) * mix(0.16, 1.0, select(1.0, select(fd.g, 0.18, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.009, 0.008, 0.006), vec3f(0.036, 0.025, 0.014) * mix(0.72, 1.16, clamp(n.y * 0.5 + 0.5, 0.0, 1.0)), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
@@ -128,11 +128,12 @@ fn eyeVisible(p: vec2f) -> f32 {
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Deep weathered slate-charcoal roof reusing surfaceAlpha (courseLip * tabSlot) from surfaceMaterial.
+    // Style-agnostic weathered slate-taupe roof: derives course-lip & ridge sheen from scene ambient/key light so 70s, Dusk, and Noir all dial in cleanly.
     let eave = smoothstep(2.82, 3.62, o.world.y);
     let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
-    let moonGlint = (0.30 * eave + 1.15 * ridgeRim + 2.65 * surfaceAlpha * (0.38 + 0.62 * eave)) * F.ambient.w * max(0.0, n.y);
-    col = col * mix(0.68, 1.14, eave) + vec3f(0.009, 0.018, 0.038) * moonGlint;
+    let roofGlint = (0.48 * eave + 1.45 * ridgeRim + 3.45 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * max(0.0, n.y);
+    let skyTint = mix(vec3f(0.028, 0.026, 0.022), F.ambient.rgb * 0.65, 0.45);
+    col = col * mix(0.92, 1.46, eave) + skyTint * roofGlint;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {
@@ -169,11 +170,11 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     } else if (mat == 4 && !inRoom) {
-      // Deep eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub/sill occlusion.
-      let eaveShadow = smoothstep(1.96, 2.70, o.world.y);
-      let lowShadow = (1.0 - smoothstep(0.28, 0.95, o.world.y)) * 0.45;
-      let underPorchGable = step(2.02, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.65) * step(34.5, o.world.z);
-      col *= mix(0.76, 0.28, clamp(eaveShadow + lowShadow + underPorchGable * 0.52, 0.0, 1.0));
+      // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
+      let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
+      let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.34;
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      col *= mix(0.88, 0.36, clamp(eaveShadow + lowShadow + underPorchGable * 0.45, 0.0, 1.0));
     }
     if (!inRoom && o.world.y < 0.35) {
       let dp = o.world.xz - lights[0].pos.xz;
@@ -208,9 +209,9 @@ fn eyeVisible(p: vec2f) -> f32 {
         let luminance=dot(col,vec3f(.2126,.7152,.0722));
         let peripheral=mix(vec3f(luminance)*vec3f(.83,.94,1.05),col,.72);
         if (inRoom && o.world.y < 2.8) {
-          let room=mix(vec3f(luminance)*vec3f(.90,.96,1.0),col,.88+.12*visible);
-          let reveal = max(explored, visible * 0.92);
-          col=mix(o.color*.008, room * mix(F.effects.w, 1.0, .82), reveal);
+          let room=mix(vec3f(luminance)*vec3f(.96,.95,.92),col,.90+.10*visible);
+          let reveal = max(explored, visible * 0.94);
+          col=mix(o.color*.012, room * mix(F.effects.w, 1.0, .88), reveal);
         } else {
           col=mix(peripheral*(.86+.14*explored),col,.86+.14*visible);
         }

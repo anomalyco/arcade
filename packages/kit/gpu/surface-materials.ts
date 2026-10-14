@@ -995,30 +995,49 @@ fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSampl
   return SurfaceSample(col, roughnessToGloss(localRough, 0.05), localRough, mix(0.45, 1.0, bevel * stoneMask));
 }
 
-/** Recipe 2: Plaster & wallpapered wall with triplanar damask/linen texture, plaster patches, and causal runoff/base wear. */
+/** Recipe 2: Plaster & wallpapered wall with 1970s lower walnut wainscot paneling, chair-rail molding, and upper trowel-stippled plaster/wallpaper. */
 fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
   let scale = max(0.25, r.u1.x);
   let gScale = max(0.25, r.u1.w);
   let colVar = r.u2.x;
   let wear = r.u2.z;
   let macroVar = r.u2.w;
+  surfaceNormalShift = vec3f(0.0);
 
   let uv = vec2f(world.x + world.z, world.y);
   let patchNoise = surfaceNoise(uv * 0.65 * scale + vec2f(1.9, 3.4));
-  let exposedPlaster = smoothstep(0.50 - wear * 0.20, 0.76 - wear * 0.10, patchNoise) * wear;
-  let underTone = baseTint * vec3f(0.82, 0.76, 0.66);
-  var col = mix(baseTint, underTone, exposedPlaster * (0.55 + 0.45 * colVar));
-
   let stipple = grain(uv, 9.0 * gScale) * 0.16;
-  col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
 
-  let streak = surfaceNoise(vec2f(uv.x * 2.4 * scale, uv.y * 0.45)) * smoothstep(1.4, 2.72, world.y) * wear * 0.28;
-  let baseWear = (1.0 - smoothstep(0.12, 0.64, world.y)) * (0.24 + 0.18 * patchNoise) * wear;
-  let chairRail = exp(-pow((world.y - 0.92) * 18.0, 2.0)) * 0.14;
-  let macroTone = (patchNoise - 0.5) * macroVar * 0.22;
-  col *= clamp(1.0 - streak - baseWear - chairRail + macroTone, 0.32, 1.25);
+  // Lower 0.13..0.94m timber wainscot paneling with vertical V-grooves + 0.94..0.99m chair-rail molding
+  let inWainscot = world.y > 0.13 && world.y < 0.96 && abs(normal.y) < 0.35;
+  let chairRailBand = smoothstep(0.91, 0.95, world.y) * (1.0 - smoothstep(0.96, 1.01, world.y)) * step(abs(normal.y), 0.35);
+  var col = baseTint;
+  var localRough = r.u0.w;
 
-  let localRough = clamp(r.u0.w + exposedPlaster * 0.08, 0.05, 1.0);
+  if (inWainscot) {
+    let boardPitch = 0.14 / scale;
+    let bIdx = floor(uv.x / boardPitch);
+    let bHash = hash2(vec2f(bIdx, 7.1)) - 0.5;
+    let vGroove = seam(uv.x / boardPitch, 0.032, 1.0 / boardPitch);
+    let woodGrain = grain(vec2f(uv.x * 3.5, uv.y * 18.0) * gScale, 1.0) * 0.18;
+    let panelTint = vec3f(0.22, 0.15, 0.095) * (0.94 + bHash * 0.22 * colVar) * (1.0 + woodGrain);
+    col = panelTint * mix(0.42, 1.0, vGroove);
+    localRough = 0.76;
+  } else {
+    let exposedPlaster = smoothstep(0.50 - wear * 0.20, 0.76 - wear * 0.10, patchNoise) * wear;
+    let underTone = baseTint * vec3f(0.84, 0.78, 0.68);
+    col = mix(baseTint, underTone, exposedPlaster * (0.55 + 0.45 * colVar));
+    col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
+    localRough = clamp(r.u0.w + exposedPlaster * 0.08, 0.05, 1.0);
+  }
+
+  // Moulded wooden chair rail at y ~ 0.95m
+  col = mix(col, vec3f(0.28, 0.19, 0.12), chairRailBand * 0.85);
+  let streak = surfaceNoise(vec2f(uv.x * 2.4 * scale, uv.y * 0.45)) * smoothstep(1.55, 2.74, world.y) * wear * 0.26;
+  let baseWear = (1.0 - smoothstep(0.12, 0.42, world.y)) * (0.20 + 0.14 * patchNoise) * wear;
+  let macroTone = (patchNoise - 0.5) * macroVar * 0.20;
+  col *= clamp(1.0 - streak - baseWear + macroTone, 0.36, 1.25);
+
   return SurfaceSample(col, roughnessToGloss(localRough, 0.03), localRough, 1.0 - baseWear);
 }
 
@@ -1226,7 +1245,7 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
 }
 
 /**
- * Evaluates weathered 1980s kitchen ceramic/vinyl floor tiles with recessed dark grout joints, traffic wear & grime.
+ * Evaluates weathered 1970s/80s kitchen ceramic & travertine vinyl floor tiles with recessed grout normals & warm patina.
  */
 fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
   let tileSize = 0.38;
@@ -1235,14 +1254,14 @@ fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
   let fq = fract(q);
   let hTile = hash2(cell * 1.91 + 0.7) - 0.5;
   let hHue = fract((hTile + 0.5) * 13.7) - 0.5;
-  let chipped = step(0.89, fract((hTile + 0.5) * 29.3)) * 0.26;
-  var col = baseTint * (0.92 + hTile * 0.26) * (1.0 - chipped) * vec3f(1.0 + hHue * 0.08, 1.0 + hHue * 0.02, 1.0 - hHue * 0.08);
+  let chipped = step(0.90, fract((hTile + 0.5) * 29.3)) * 0.22;
+  var col = baseTint * (0.94 + hTile * 0.28) * (1.0 - chipped) * vec3f(1.0 + hHue * 0.10, 1.0 + hHue * 0.03, 1.0 - hHue * 0.10);
   let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-  let edgeWear = (1.0 - smoothstep(0.0, 0.14, edgeDist)) * 0.18;
+  let edgeWear = (1.0 - smoothstep(0.0, 0.14, edgeDist)) * 0.16;
   let joint = seam(q.x, 0.028, 1.0 / tileSize) * seam(q.y, 0.028, 1.0 / tileSize);
-  let grime = (surfaceNoise(p * 0.82 + vec2f(3.1, 5.7)) - 0.45) * 0.34;
-  col = mix(col * vec3f(0.24, 0.22, 0.19), col * (1.0 - edgeWear - max(0.0, grime)), joint);
-  return SurfaceSample(col, vec2f(22.0, 0.05 * joint), 0.82, joint);
+  let grime = (surfaceNoise(p * 0.85 + vec2f(3.1, 5.7)) - 0.42) * 0.28;
+  col = mix(col * vec3f(0.24, 0.20, 0.16), col * (1.0 - edgeWear - max(0.0, grime)), joint);
+  return SurfaceSample(col, vec2f(26.0, 0.07 * joint), 0.76, joint);
 }
 `
 
@@ -1310,19 +1329,19 @@ export const surfaceMaterial = /* wgsl */ `
           if (onPorch) {
             let edgeX = min(p.x - (bPorch.x + 4.5), (bPorch.x + 7.0) - p.x);
             let edgeZ = min(p.y - bPorch.w, (bPorch.w + 1.3) - p.y);
-            let borderGrime = smoothstep(0.0, 0.34, min(edgeX, edgeZ));
+            let borderGrime = smoothstep(0.0, 0.32, min(edgeX, edgeZ));
             let stainNoise = surfaceNoise(p * 3.4 + vec2f(1.7, 5.2));
-            let rustStain = smoothstep(0.40, 0.74, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.1) * weatherMult;
-            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.025, 2.38);
-            albedo *= (0.34 + 0.28 * borderGrime) * mix(0.48, 1.0, stepSeam);
-            albedo = mix(albedo, vec3f(0.09, 0.026, 0.015), clamp(rustStain * 0.75, 0.0, 0.78));
+            let rustStain = smoothstep(0.42, 0.76, stainNoise) * exp(-length(p - vec2f(bPorch.x + 5.35, bPorch.w + 0.92)) * 2.1) * weatherMult;
+            let stepSeam = seam((p.y - bPorch.w) / 0.42, 0.024, 2.38);
+            albedo *= (0.44 + 0.32 * borderGrime) * mix(0.52, 1.0, stepSeam);
+            albedo = mix(albedo, vec3f(0.11, 0.04, 0.02), clamp(rustStain * 0.65, 0.0, 0.72));
           } else if (onWalk) {
             let walkEdge = min(p.x - (bPorch.x + 5.0), (bPorch.x + 6.4) - p.x);
-            let walkGrime = smoothstep(0.0, 0.28, walkEdge);
+            let walkGrime = smoothstep(0.0, 0.26, walkEdge);
             let wNoise = surfaceNoise(p * 5.2 + vec2f(2.1, 6.7));
             let walkCrack = abs(surfaceNoise(p * 1.85 + vec2f(wNoise * 0.45, 1.9)) - 0.5);
-            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.42 * weatherMult;
-            albedo *= (0.48 + 0.26 * walkGrime) * (1.0 - crackLine);
+            let crackLine = (1.0 - smoothstep(0.005, 0.018, walkCrack)) * step(0.54, wNoise) * 0.40 * weatherMult;
+            albedo *= (0.58 + 0.28 * walkGrime) * (1.0 - crackLine);
           }
         }
       } else if (kind == 3) {
@@ -1338,23 +1357,23 @@ export const surfaceMaterial = /* wgsl */ `
         let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
         let inKitchen = p.x > b.z - 6.08 && p.x < b.z - 0.05 && p.y > b.y + 5.68 && p.y < b.w - 0.05;
         if (inKitchen) {
-          // Moody weathered darkstone-slate kitchen tile floor (less bright so warm table & clutter read clearly)
+          // 1970s warm ochre-travertine kitchen tile floor with recessed dark grout & perimeter shading
           let perimDist = min(min(p.x - (b.z - 6.08), (b.z - 0.05) - p.x), min(p.y - (b.y + 5.68), (b.w - 0.05) - p.y));
-          let perimShade = 0.62 + 0.38 * smoothstep(0.0, 0.85, perimDist);
-          let s = evalKitchenTile(p, vec3f(0.122, 0.112, 0.096) * perimShade);
+          let perimShade = 0.68 + 0.32 * smoothstep(0.0, 0.80, perimDist);
+          let s = evalKitchenTile(p, vec3f(0.215, 0.176, 0.132) * perimShade);
           albedo = s.albedo;
           gloss = s.gloss;
           if (texOn) {
             let tex = sampleMaterialFast(1, p, 0.88 * texScaleMult);
-            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.80 * texContrastMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.82 * texContrastMult);
           }
         } else {
-          let s = evalWoodPlanks(p, albedo * 0.94, defaultMaterialRecipe(0));
+          let s = evalWoodPlanks(p, albedo * 1.04, defaultMaterialRecipe(0));
           albedo = s.albedo;
           if (texOn && floorStyleBits < 2u) {
             let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;
             let tex = sampleMaterialFast(0, p, styleScale);
-            albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82 * texContrastMult);
+            albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.84 * texContrastMult);
           }
         }
       } else {
@@ -1365,7 +1384,7 @@ export const surfaceMaterial = /* wgsl */ `
     } else if (mat == 0 && o.world.y > 0.131 && o.world.y < 0.156 && o.world.x < 37.5 && texOn && rugStyleBits < 2u) {
       let p = o.world.xz;
       let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
-      let rugWear = 1.0 - (surfaceNoise(p * 1.65 + vec2f(4.2, 1.8)) - 0.35) * 0.32 * weatherMult;
+      let rugWear = 1.0 - (surfaceNoise(p * 1.65 + vec2f(4.2, 1.8)) - 0.35) * 0.28 * weatherMult;
       if (p.x >= b.x + 1.53 && p.x <= b.x + 4.44 && p.y >= b.w - 4.37 && p.y <= b.w - 0.83) {
         let span = vec2f(2.87, 3.50);
         let uv = clamp((p - vec2f(b.x + 1.55, b.w - 4.35)) / span, vec2f(0.015), vec2f(0.985));
@@ -1374,7 +1393,7 @@ export const surfaceMaterial = /* wgsl */ `
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.32));
         let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
         let centered = refLin + (tex.rgb - refLin) * texContrastMult;
-        albedo = clamp(centered * 0.46 * rugWear * mix(0.55, 1.0, edgeBevel), vec3f(0.015), vec3f(0.65));
+        albedo = clamp(centered * vec3f(0.64, 0.56, 0.44) * rugWear * mix(0.58, 1.0, edgeBevel), vec3f(0.015), vec3f(0.75));
       } else if (p.x >= b.x + 4.90 && p.x <= b.x + 6.84 && p.y >= b.y + 1.33 && p.y <= b.y + 4.27) {
         let span = vec2f(1.90, 2.90);
         let uv = clamp((p - vec2f(b.x + 4.92, b.y + 1.35)) / span, vec2f(0.015), vec2f(0.985));
@@ -1383,9 +1402,8 @@ export const surfaceMaterial = /* wgsl */ `
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, materialMipLod(0.45));
         let refLin = select(vec3f(0.3882, 0.2897, 0.1774), vec3f(0.3522, 0.1986, 0.1107), layer == 13);
         let centered = refLin + (tex.rgb - refLin) * texContrastMult;
-        // Subtle dark blood/scuff stain on the west edge of the bedroom rug near the bed
-        let bedStain = exp(-length(p - vec2f(b.x + 5.18, b.y + 2.85)) * 2.8) * 0.55 * weatherMult;
-        albedo = clamp(centered * 0.50 * rugWear * (1.0 - bedStain) * mix(0.55, 1.0, edgeBevel), vec3f(0.015), vec3f(0.65));
+        let bedStain = exp(-length(p - vec2f(b.x + 5.18, b.y + 2.85)) * 2.8) * 0.35 * weatherMult;
+        albedo = clamp(centered * vec3f(0.68, 0.58, 0.46) * rugWear * (1.0 - bedStain) * mix(0.58, 1.0, edgeBevel), vec3f(0.015), vec3f(0.75));
       } else if (p.x >= b.z - 4.97 && p.x <= b.z - 2.23 && p.y >= b.y + 6.43 && p.y <= b.y + 7.24) {
         let span = vec2f(2.70, 0.77);
         let uv = clamp((p - vec2f(b.z - 4.95, b.y + 6.45)) / span, vec2f(0.015), vec2f(0.985));
@@ -1393,15 +1411,15 @@ export const surfaceMaterial = /* wgsl */ `
         let tex = textureSampleLevel(materialTexArray, materialSampler, uv, 14, materialMipLod(0.65));
         let refLin = vec3f(0.2887, 0.2220, 0.1674);
         let centered = refLin + (tex.rgb - refLin) * texContrastMult;
-        albedo = clamp(centered * 0.38 * rugWear * mix(0.55, 1.0, edgeBevel), vec3f(0.015), vec3f(0.55));
+        albedo = clamp(centered * 0.52 * rugWear * mix(0.58, 1.0, edgeBevel), vec3f(0.015), vec3f(0.65));
       }
     } else if (mat == 4) {
       let wallUv = vec2f(o.world.x + o.world.z, o.world.y);
       let inWallRoom = interior(o.world.xz + n.xz * 0.3);
       if (inWallRoom || o.aux > 20.5) {
-        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.24, 0.20, 0.16), inWallRoom), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.34, 0.29, 0.22), inWallRoom), defaultMaterialRecipe(2));
         albedo = s.albedo;
-        if (texOn && (!inWallRoom || wallStyleBits < 2u)) {
+        if (texOn && (!inWallRoom || wallStyleBits < 2u) && o.world.y >= 0.96) {
           let wallScale = select(0.78, select(0.78, 1.15, wallStyleBits == 1u), inWallRoom) * texScaleMult;
           let tex = sampleMaterialFast(2, wallUv, wallScale);
           albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), select(0.70, 0.78, inWallRoom) * texContrastMult);
@@ -1412,21 +1430,22 @@ export const surfaceMaterial = /* wgsl */ `
         let fy = fract(course);
         let plank = floor((o.world.x + o.world.z + row * 0.43) / 2.2);
         let boardVar = hash2(vec2f(row, plank)) - 0.5;
-        albedo *= 0.80 + boardVar * 0.14;
+        // Warm 1970s weathered putty-cream clapboard tint with lap-board normal tilt
+        albedo *= vec3f(0.88, 0.82, 0.70) * (0.96 + boardVar * 0.16);
         if (texOn) {
           let tex = sampleMaterialFast(3, wallUv, 0.72 * texScaleMult);
-          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.82 * texContrastMult);
+          albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.84 * texContrastMult);
         }
-        let lapShadow = mix(0.46, 1.04, smoothstep(0.0, 0.24, fy)) * mix(1.04, 0.86, fy);
-        albedo *= mix(1.0, lapShadow * mix(0.54, 1.0, seam(course, 0.036, 6.06)), 1.0 - smoothstep(0.28, 0.72, surfaceFootprint * 6.06));
-        // Single-noise exterior clapboard weathering: vertical rain/grime streaks, peeling paint & foundation splashback.
+        let lapShadow = mix(0.44, 1.06, smoothstep(0.0, 0.26, fy)) * mix(1.05, 0.85, fy);
+        albedo *= mix(1.0, lapShadow * mix(0.50, 1.0, seam(course, 0.038, 6.06)), 1.0 - smoothstep(0.28, 0.72, surfaceFootprint * 6.06));
         let grimeField = surfaceNoise(vec2f(wallUv.x * 2.1, o.world.y * 0.48) + vec2f(5.3, 1.7));
         let peelField = fract(grimeField * 3.17 + boardVar * 1.9);
-        let grimeStreak = smoothstep(0.44, 0.78, grimeField) * (0.24 * weatherMult);
+        let grimeStreak = smoothstep(0.44, 0.78, grimeField) * (0.22 * weatherMult);
         let peelMask = smoothstep(0.68 - 0.10 * weatherMult, 0.80 - 0.06 * weatherMult, peelField) * clamp(weatherMult, 0.0, 1.5);
-        albedo = mix(albedo, vec3f(0.16, 0.13, 0.10), peelMask * 0.58);
+        albedo = mix(albedo, vec3f(0.18, 0.14, 0.10), peelMask * 0.52);
         albedo *= (0.96 + grain(vec2f(o.world.x + o.world.z, o.world.y * 3.5), 11.0) * 0.14) * (1.0 - grimeStreak);
-        albedo *= mix(0.62, 1.0, smoothstep(0.28, 0.82, o.world.y));
+        albedo *= mix(0.64, 1.0, smoothstep(0.28, 0.82, o.world.y));
+        n = normalize(n + vec3f(0.0, (fy - 0.38) * 0.24, 0.0));
       }
     } else if (mat == 21) {
       // Slope-aware 3-tab architectural asphalt shingles with crisp course overlap shadows, moonlit tab lips, and weathered streaks.
@@ -1445,16 +1464,16 @@ export const surfaceMaterial = /* wgsl */ `
       let tabTilt = hash2(tabId * 1.73 + vec2f(5.1, 2.9)) - 0.5;
       let detailFade = 1.0 - smoothstep(0.40, 0.92, surfaceFootprint * 4.0);
 
-      // Deep overlap drop-shadow at top of each course + bright moonlit granule catch along the stepped bottom lip.
-      let overlapShadow = mix(0.24, 1.0, smoothstep(0.05, 0.28, fy));
+      // Deep overlap drop-shadow at top of each course + bright granule catch along the stepped bottom lip.
+      let overlapShadow = mix(0.20, 1.0, smoothstep(0.05, 0.28, fy));
       let stepCut = smoothstep(1.0, 0.88, fy);
-      let bottomBevel = exp(-pow((fy - 0.78) * 9.5, 2.0)) * (0.48 + 0.28 * tabHash) * detailFade;
-      let rowShade = mix(1.0, (0.68 + 0.38 * fy) * overlapShadow * mix(0.30, 1.0, stepCut), detailFade) + bottomBevel;
+      let bottomBevel = exp(-pow((fy - 0.78) * 9.5, 2.0)) * (0.56 + 0.32 * tabHash) * detailFade;
+      let rowShade = mix(1.0, (0.74 + 0.42 * fy) * overlapShadow * mix(0.26, 1.0, stepCut), detailFade) + bottomBevel;
 
-      // Per-tab slate/charcoal/blue-grey granule variation + occasional missing/damaged dark tab.
+      // Per-tab warm-charcoal/slate/taupe granule variation + occasional missing/damaged dark tab.
       let missingTab = step(0.935, fract((tabHash + 0.5) * 19.7)) * 0.46 * clamp(weatherMult, 0.0, 1.5);
-      let tabTint = vec3f(1.0 - tabTilt * 0.10, 1.0 + tabTilt * 0.02, 1.0 + tabTilt * 0.14);
-      albedo *= tabTint * (1.0 + tabHash * 0.46 * detailFade) * (1.0 - missingTab) * rowShade;
+      let tabTint = vec3f(1.02 + tabTilt * 0.08, 1.0 + tabTilt * 0.03, 0.96 - tabTilt * 0.08);
+      albedo *= tabTint * (1.04 + tabHash * 0.48 * detailFade) * (1.0 - missingTab) * rowShade;
       if (texOn) {
         let tex = sampleMaterialFast(4, o.world.xz, 0.72 * texScaleMult);
         albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.92 * texContrastMult);
