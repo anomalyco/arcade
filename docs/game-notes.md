@@ -286,7 +286,18 @@ review; sampled images and numerical checks do not establish it. Runtime CPU/GPU
 - **Keep isolation tools in one Lab.** `packages/kit/lab/` runs through either game's `/lab.html`, sharing one device,
   test scene and keyboard panel. Only the active section ticks. Spawn uses real car/chassis, soldier and prop adapters;
   Physics inspects those same bodies. Lighting persists between sections; transient effects reset. Evidence:
-  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`; the Materials shader calibration remains a stub.
+  `perf/lab.json`, `perf/lab-spawn.json`, `perf/lab-effects.json`.
+- **Share procedural material recipes between the Lab swatch and production scene shader.** `packages/kit/gpu/surface-materials.ts`
+  and `packages/kit/lab/materials.ts` evaluate the same WGSL recipes for matte wood planks (`roughness = 0.84`, no broad
+  specular sheen, staggered board lengths, butt-joint AO, warm/cool plank tint), 2×2 quadrant Voronoi cobblestone
+  (varied stone sizes, worn rounded edges, recessed dirt joints), paint/plaster mixture walls with causal runoff,
+  multi-scale asphalt/concrete, warped clump-correlated turf, and clustered foliage/ground cover. Filter widths (`fwidth`)
+  band-limit detail before divergent branches and fold unresolved micro-variance into roughness. The Lab exposes Room,
+  Ball, and Plane swatches under the stage lighting presets with Before/After/Split comparison and a separate
+  `tuningSeed` for deterministic randomization. In Outbreak (`1000×680`, M5 Max Metal, 1 warmup + 7 alternating pairs of
+  120 steps against `076fb7c`), static vertices drop `196,722 → 139,620`; median paired frame-span deltas are `-1.1 ms`
+  street (`9.0 → 7.9 ms`, range `-3.9 to +0.9 ms`) and `+0.3 ms` interior (`9.0 → 9.9 ms`, range `-4.3 to +2.2 ms`,
+  inside spread). Default Blackout and Getaway shaders remain unchanged.
 - **Exclude a convex receiver from its own polar shadow test.** The Lab's 256-angle table stores near/far intervals
   and height per light. Skipping the receiving box removes self-stripes while retaining other blockers. This is a
   bounded test-scene renderer; only boxes cast shadows. Its GPU readout is diagnostic, not a paired performance claim.

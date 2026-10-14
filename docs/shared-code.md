@@ -114,10 +114,11 @@ them in `prepare`, and release section-specific external listeners in `leave`. F
 
 ### Connect Materials and Physics through adapters
 
-Materials is a catalog/renderer stub. Both entries import the actual game `MAT` constants (plus Getaway's smoke
-code); they list 25 codes without duplicating the numbers. `MaterialAdapter.prepare(code, context)` and
-`draw(pass, code)` are the hook for each game's calibration sphere/box shader. Until a renderer is supplied,
-the section shows neutral geometry and “renderer pending”; selecting a code does not pretend to render it.
+Materials runs the shared procedural material recipes from `packages/kit/gpu/surface-materials.ts` across Room, Material
+Ball, and Surface Plane swatches under the Lab's lighting presets, with Before/After/A-B Split comparison, typed
+parameter ranges/units, Reset, Undo/Redo, versioned preset export/import, and a separate deterministic `tuningSeed` for
+group randomization. Both entries also import the actual game `MAT` constants (25 codes) in the folded Game Catalog group,
+and `MaterialAdapter.prepare(code, context)` / `draw(pass, code)` remain available for game-specific code hooks.
 The shared Lab itself imports no game modules.
 
 Physics uses the merged `getaway-clutter` solver and shares the Spawn section's props. The adapter supplies

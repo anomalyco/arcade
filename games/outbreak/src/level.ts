@@ -5,9 +5,10 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant } from "./architecture"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
+import { scatterClusteredGroundCover } from "@arcade/kit/gpu/surface-materials"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
-const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : 2)
+const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
 
 function furniture(m: Mesh, p: Prop, town: Town): void {
   const { x, y: z, kind } = p
@@ -17,10 +18,10 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
   }
   const wood = hex(0x75604b), legs = hex(0x3b3934)
   if (kind === "bed") {
-    m.box(x - .8, .12, z - 1.2, x + .8, .45, z + 1.2, wood)
+    m.box(x - .8, .12, z - 1.2, x + .8, .45, z + 1.2, wood, MAT.timber)
     m.bevelBox(x - .78, .45, z - 1.15, x + .78, .65, z + 1.15, .07, hex(0x637578), hex(0x889c9b))
     m.box(x - .65, .66, z - 1.0, x + .65, .77, z - .6, hex(0xc0baab))
-    m.box(x - .86, .15, z - 1.3, x + .86, 1, z - 1.17, wood)
+    m.box(x - .86, .15, z - 1.3, x + .86, 1, z - 1.17, wood, MAT.timber)
   } else if (kind === "sofa") {
     m.box(x-.55,.22,z-1.25,x+.55,.46,z+1.25,hex(0x555d50))
     m.bevelBox(x-.6,.35,z-1.3,x-.36,1.0,z+1.3,.055,hex(0x5d6557),hex(0x6a7160))
@@ -29,7 +30,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     for(const dx of [-.4,.4])for(const dz of [-1,1])m.box(x+dx-.04,.13,z+dz-.04,x+dx+.04,.23,z+dz+.04,legs)
     m.bevelBox(x-.27,.63,z+.65,x+.23,.82,z+1.02,.045,hex(0x9b8360),hex(0x9b8360))
   } else if(kind==="coffee") {
-    m.bevelBox(x-.55,.43,z-.75,x+.55,.52,z+.75,.035,wood,hex(0x887554))
+    m.bevelBox(x-.55,.43,z-.75,x+.55,.52,z+.75,.035,wood,hex(0x887554),MAT.timber,MAT.timber)
     for(const dx of [-.43,.43])for(const dz of [-.63,.63])m.box(x+dx-.035,.13,z+dz-.035,x+dx+.035,.43,z+dz+.035,legs)
     m.box(x-.2,.52,z+.1,x+.19,.56,z+.48,hex(0x9e987f))
     m.prism(x+.2,z-.32,.09,.085,.52,.65,8,hex(0xb2aa8e))
@@ -63,13 +64,13 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(x-.27,.6,z+.20,x+.27,1.05,z+.27,wood,MAT.timber)
     for(const dx of [-.21,.21])for(const dz of [-.21,.21])m.box(x+dx-.025,.13,z+dz-.025,x+dx+.025,.52,z+dz+.025,legs)
   } else if (kind === "table") {
-    m.box(x - .75, .7, z - .5, x + .75, .82, z + .5, wood)
+    m.box(x - .75, .7, z - .5, x + .75, .82, z + .5, wood, MAT.timber)
     for (const dx of [-.65, .65]) for (const dz of [-.4, .4]) m.box(x + dx - .05, .1, z + dz - .05, x + dx + .05, .7, z + dz + .05, legs)
     m.box(x - .2, .82, z - .15, x + .2, .87, z + .15, hex(0xb5b0a0))
   } else {
     for (const dx of [-.8, .8]) m.box(x + dx - .06, .1, z - .38, x + dx + .06, 1.8, z + .38, legs)
     for (const h of [.3, .85, 1.4]) {
-      m.box(x - .85, h, z - .4, x + .85, h + .07, z + .4, wood)
+      m.box(x - .85, h, z - .4, x + .85, h + .07, z + .4, wood, MAT.timber)
       for (let i = 0; i < 5; i++) {
         const px = x - .68 + i * .3
         m.box(px, h + .07, z - .25, px + .2, h + .2 + (p.variant + i * .13) % .27, z + .25, hex(i % 2 ? 0xa39b7c : 0x5a7973))
@@ -98,14 +99,37 @@ function compileLevel(town: Town): LevelData {
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
-  const foliage=new Rng(town.seed^0x453a)
-  for(let i=0;i<3500;i++) {
-    const x=foliage.next()*SIZE,z=foliage.next()*SIZE
-    if((x>37.8&&x<50.2)||(z>37.8&&z<50.2)||town.buildings.some(b=>x>b.rect[0]-3.2&&x<b.rect[2]+.4&&z>b.rect[1]-.5&&z<b.rect[3]+2.2)) continue
-    if(Math.sin(x*.7+z*.4)+Math.cos(z*.3-x*.5)<.8) continue
-    const y=supportHeight(town,x,z),m=at(x,z),h=.08+foliage.next()*.17,c=hex(foliage.pick([0x707851,0x626f49,0x8a895a]))
-    m.facet([x-.025,y,z],[x+.015,y+h,z+.02],[x+.035,y,z],c,MAT.foliage)
-    m.facet([x,y,z-.035],[x-.04,y+h*.8,z],[x,y,z+.025],c,MAT.foliage)
+  const tufts = scatterClusteredGroundCover({
+    seed: town.seed ^ 0x453a,
+    bounds: [0.5, 0.5, SIZE - 0.5, SIZE - 0.5],
+    clusterCount: 210,
+    tuftsPerCluster: 4,
+    avoid: (x, z) =>
+      (x > 37.8 && x < 50.2) ||
+      (z > 37.8 && z < 50.2) ||
+      town.buildings.some(b => x > b.rect[0] - 3.1 && x < b.rect[2] + 0.3 && z > b.rect[1] - 0.4 && z < b.rect[3] + 1.8),
+  })
+  for (const t of tufts) {
+    const { x, z, radius: r, height: h, tint: c } = t
+    const y = supportHeight(town, x, z), m = at(x, z)
+    m.facet([x - r * .7, y, z - r * .3], [x + r * .2, y + h, z + r * .3], [x + r * .8, y, z - r * .2], c, MAT.foliage)
+    m.facet([x - r * .2, y, z - r * .8], [x - r * .3, y + h * .85, z + r * .2], [x + r * .4, y, z + r * .7], c, MAT.foliage)
+  }
+  // Clustered curb-verge & front-lawn edge ground cover with natural gaps.
+  const vergeRng = new Rng(town.seed ^ 0x91e1)
+  for (let v = 2; v < SIZE - 2; v += 1.4 + vergeRng.next() * 2.2) {
+    if (v > 37 && v < 51) continue
+    for (const zBase of [37.75, 39.82, 48.18, 50.25]) {
+      if (vergeRng.next() < 0.32) continue
+      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 1.1 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.2))) continue
+      for (let k = 0; k < 2; k++) {
+        const x = v + (vergeRng.next() - 0.5) * 0.55, z = zBase + (vergeRng.next() - 0.5) * 0.16
+        const y = supportHeight(town, x, z), m = at(x, z), r = 0.08 + vergeRng.next() * 0.09, h = 0.09 + vergeRng.next() * 0.12
+        const c = hex(vergeRng.pick([0x5a6840, 0x4d5c37, 0x6f7348]))
+        m.facet([x - r, y, z], [x + r * .2, y + h, z + r * .4], [x + r, y, z - r * .2], c, MAT.foliage)
+        m.facet([x, y, z - r], [x - r * .4, y + h * .85, z], [x + r * .2, y, z + r], c, MAT.foliage)
+      }
+    }
   }
   // Segment streets at chunk edges to retain useful culling.
   for (let v = 0; v < SIZE; v += CHUNK) {
@@ -138,9 +162,9 @@ function compileLevel(town: Town): LevelData {
   }
   for (const [id,b] of town.buildings.entries()) {
     const [x, z, r, end] = b.rect, m = at(x, z)
-    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x8d7760 : 0x89968b, b.kind === "house" ? 2 : 1)
-    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x727768, 3)
-    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x76796c,3)
+    floor(m, x, z, r, end, .13, b.kind === "house" ? 0x886f54 : 0x89968b, b.kind === "house" ? 2 : 1)
+    floor(m, x + 4.5, end, x + 7, end + 1.3, .13, 0x7b786b, 3)
+    floor(m,x+5,end+1.3,x+6.4,frontageEnd(b)+2,.13,0x7e7a6d,3)
     floor(m,x-3,z,x-.35,frontageEnd(b)+2,.035,0x646659,7)
     const gravel=new Rng(town.seed+id*177)
     for(let k=0;k<45;k++) {

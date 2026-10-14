@@ -15,28 +15,53 @@ function branch(m:Mesh,a:Point,b:Point,r:number) {
   for(let i=0;i<5;i++)m.quadAuto(p(0,i),p(1,i),p(1,i+1),p(0,i+1),rgb(0x484332),MAT.timber)
 }
 
-/** Broadleaf scaffold: exposed forks, separated shoots and folded leaf sprays. No opaque crown spheres. */
+/** Broadleaf scaffold: asymmetric bough clusters, intentional crown gaps, cupped leaf sprays and base ground cover. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
-  const rng=new Rng(seed),tree=h>2,tiers=tree?3:2,branches=3
-  if(tree)branch(m,[x,ground,z],[x+.12,ground+h*.85,z-.15],.16)
-  for(let tier=0;tier<tiers;tier++)for(let j=0;j<branches;j++){
-    const angle=j*6.283/branches+tier*1.1+rng.next()*.5
-    const reach=radius*(.7+rng.next()*.3)*(1-tier*.12)
-    const start:Point=[x,ground+h*(tree?.3+tier*.17:.12),z]
-    const tip:Point=[x+Math.cos(angle)*reach,ground+h*(.6+tier*.14),z+Math.sin(angle)*reach]
-    branch(m,start,tip,tree?.07:.018)
-    // Each shoot carries an offset pair of sprays; empty branch intervals preserve crown gaps.
-    for(let shoot=0;shoot<2;shoot++){
-      const t=.63+shoot*.36,cx=start[0]+(tip[0]-start[0])*t,cy=start[1]+(tip[1]-start[1])*t,cz=start[2]+(tip[2]-start[2])*t
-      for(let leaf=0;leaf<6;leaf++){
-        const a=angle+leaf*2.4,spread=radius*.29*Math.sqrt((leaf+1)/6)
-        const px=cx+Math.cos(a)*spread,pz=cz+Math.sin(a)*spread,py=cy+(rng.next()-.45)*h*.13
-        const size=(tree?.3:.11)+rng.next()*(tree?.28:.09),width=size*.64
-        const f=[Math.cos(a)*size,Math.sin(a)*size],s=[-Math.sin(a)*width,Math.cos(a)*width]
-        const center=[px,py+.05,pz],a0=[px-f[0]!,py,pz-f[1]!],a1=[px+s[0]!,py-.03,pz+s[1]!],a2=[px+f[0]!,py-.02,pz+f[1]!],a3=[px-s[0]!,py-.04,pz-s[1]!]
-        const k=.75+rng.next()*.35,col:Rgb=[.28*k,.34*k,.18*k]
-        for(const [a,b] of [[a0,a1],[a1,a2],[a2,a3],[a3,a0]])m.facet(center,a!,b!,col,MAT.foliage)
+  const rng=new Rng(seed),tree=h>2,boughs=tree?5:4,gapAngle=rng.next()*6.283
+  const leanX=(rng.next()-.5)*(tree?.22:.06),leanZ=(rng.next()-.5)*(tree?.22:.06)
+  if(tree)branch(m,[x,ground,z],[x+leanX,ground+h*.78,z+leanZ],.17)
+  const palette:Rgb[]=[[0.26,0.34,0.17],[0.31,0.38,0.20],[0.23,0.30,0.15],[0.35,0.39,0.21]]
+  for(let b=0;b<boughs;b++){
+    const baseAngle=b*6.283/boughs+(rng.next()-.5)*.55
+    // Keep one angular sector sparser so branches and ground read through crown gaps.
+    const gapDelta=Math.abs(Math.atan2(Math.sin(baseAngle-gapAngle),Math.cos(baseAngle-gapAngle)))
+    const inGap=gapDelta<.62
+    const reach=radius*(inGap?.42:.68+rng.next()*.38)
+    const tierFrac=b/(boughs-1)
+    const startH=ground+h*(tree?.28+tierFrac*.24:.10+tierFrac*.12)
+    const tipH=ground+h*(tree?.54+tierFrac*.36+(rng.next()-.4)*.10:.48+tierFrac*.38)
+    const start:Point=[x+leanX*.35,startH,z+leanZ*.35]
+    const tip:Point=[x+Math.cos(baseAngle)*reach,tipH,z+Math.sin(baseAngle)*reach]
+    branch(m,start,tip,tree?.075*(1-tierFrac*.28):.022)
+    const lobes=tree?(inGap?1:2):1
+    for(let lobe=0;lobe<lobes;lobe++){
+      const t=lobes===1?.82:.58+lobe*.38
+      const cx=start[0]+(tip[0]-start[0])*t,cy=start[1]+(tip[1]-start[1])*t,cz=start[2]+(tip[2]-start[2])*t
+      const clusterTone=palette[(b+lobe)%palette.length]!
+      const sprays=tree?3:3
+      for(let s=0;s<sprays;s++){
+        const a=baseAngle+s*2.15+lobe*1.1+(rng.next()-.5)*.45
+        const spread=radius*(tree?.24:.26)*Math.sqrt((s+.4)/sprays)
+        const px=cx+Math.cos(a)*spread,pz=cz+Math.sin(a)*spread,py=cy+(s===0?.06:-.02)+(rng.next()-.45)*h*.09
+        const size=(tree?.42:.17)+rng.next()*(tree?.28:.11),width=size*(.72+rng.next()*.20)
+        const f=[Math.cos(a)*size,Math.sin(a)*size],side=[-Math.sin(a)*width,Math.cos(a)*width]
+        const dome=tree?.11:.05,droop=tree?.06:.03
+        const center=[px,py+dome,pz],a0=[px-f[0]!,py-droop*.5,pz-f[1]!],a1=[px+side[0]!,py-droop,pz+side[1]!],a2=[px+f[0]!,py-droop*.8,pz+f[1]!],a3=[px-side[0]!,py-droop,pz-side[1]!]
+        const k=.78+rng.next()*.34,col:Rgb=[clusterTone[0]*k,clusterTone[1]*k,clusterTone[2]*k]
+        for(const [p0,p1] of [[a0,a1],[a1,a2],[a2,a3],[a3,a0]])m.facet(center,p0!,p1!,col,MAT.foliage)
       }
+    }
+  }
+  // Clustered low ground-cover tufts around the base flare, leaving an open side gap.
+  const coverCount=tree?3:2
+  for(let c=0;c<coverCount;c++){
+    const a=gapAngle+1.4+c*1.65+(rng.next()-.5)*.4,d=radius*(tree?.22:.32)*(0.6+rng.next()*.5)
+    const gx=x+Math.cos(a)*d,gz=z+Math.sin(a)*d,sz=(tree?.24:.15)+rng.next()*.10,gh=(tree?.16:.11)+rng.next()*.07
+    const col:Rgb=[.25+.06*rng.next(),.33+.07*rng.next(),.16+.04*rng.next()]
+    const top=[gx,ground+gh,gz]
+    for(let k=0;k<3;k++){
+      const ka=a+k*2.09,ka2=ka+1.15
+      m.facet(top,[gx+Math.cos(ka)*sz,ground+.01,gz+Math.sin(ka)*sz],[gx+Math.cos(ka2)*sz,ground+.01,gz+Math.sin(ka2)*sz],col,MAT.foliage)
     }
   }
 }
@@ -83,8 +108,8 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
   }
   for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,trim,MAT.wall)
-  // Narrow side-yard planting follows the gravel edge and leaves the drive/passages open.
-  for(const [px,pz] of [[x-3.4,e-.9],[x-3.5,e-3.2],[r+.45,z+2.8],[r+.4,z+5.4]])plant(m,px!,pz!,1.1,.5,town.houseSeed+Math.floor(pz!*43),supportHeight(town,px!,pz!))
+  // Narrow side-yard planting follows the gravel edge and frames both front house corners while leaving passages and sidewalks clear.
+  for(const [px,pz,ph,pr] of [[x-3.4,e-.9,1.25,.58],[x-3.5,e-3.2,1.15,.52],[r+.55,z+2.8,1.15,.52],[r+.5,z+5.4,1.2,.55],[r+.85,e-.65,1.2,.54],[r+.95,e-3.6,1.45,.62]])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   for(let i=0;i<9;i++){
     const a=i*2.4,px=r-.85+Math.cos(a)*.35,pz=e+.62+Math.sin(a)*.25
     m.prism(px,pz,.055,.04,.6+(i%3)*.06,.68+(i%3)*.06,5,rgb(0xa9af92))
