@@ -307,5 +307,9 @@ In rough order of value against risk:
      handshake, and seat bookkeeping.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
      vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
-   - **Session & snapshot interpolation:** Local and network sessions behind one interface; snapshot interpolation
-     (Getaway `interp.ts`/`netcode.ts`, Blackout `smooth.ts`) stays game-owned.
+   - **Session & snapshot interpolation:** `@arcade/kit/net` now has the shared pieces (Outbreak co-op is the first
+     consumer): `jitter-buffer` (Wings's adaptive playout buffer, with one-shot edges carried forward instead of dropped),
+     `seats` (public id vs private reconnect token), `bytes` (binary writer/reader and shared-prefix `frame`),
+     `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
+     (`Predictor` replay on ack, `Smoother` correction offset). Blackout's `queue.splice` input trim, its exponential
+     avatar chase and Getaway/Blackout's public-id reconnect are the next adopters ([outbreak-coop.md](outbreak-coop.md)).

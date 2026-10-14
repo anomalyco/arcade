@@ -32,14 +32,17 @@ export class CoopView {
     private readonly renderer: Renderer,
     readonly net: NetSession | null,
     room: string | null,
+    /** Offline automation (`?bench`) captures stay free of the Host button. */
+    menu = true,
   ) {
     this.hud = new CoopHud(net, room)
+    this.hud.root.hidden = !menu && !net
   }
 
   /** `?room=<code>` joins that room; anything else plays offline. */
   static fromUrl(renderer: Renderer, params: URLSearchParams): CoopView {
     const room = params.get("room")?.toLowerCase().replace(/[^a-z0-9]/g, "") || null
-    if (!room) return new CoopView(renderer, null, null)
+    if (!room) return new CoopView(renderer, null, null, !params.has("bench"))
     const dir = location.pathname.replace(/[^/]*$/, "")
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${room}`
     const net = new NetSession({

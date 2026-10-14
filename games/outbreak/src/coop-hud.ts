@@ -56,6 +56,7 @@ export class CoopHud {
     this.note = this.root.querySelector(".note")
     const button = this.root.querySelector<HTMLButtonElement>("[data-copy]")!
     button.addEventListener("click", async () => {
+      button.blur()
       button.textContent = (await copy(inviteLink(room))) ? "Link copied" : inviteLink(room)
       setTimeout(() => (button.textContent = "Copy invite link"), 2400)
     })

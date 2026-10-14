@@ -10,3 +10,4 @@
 #coop .note { opacity: .7; min-height: 1em }
 .coop-tag { position: fixed; left: 0; top: 0; z-index: 9; pointer-events: none; padding: 1px 6px; border-radius: 3px; border-bottom: 2px solid var(--seat); background: #0b1011c8; color: #ecebe0; font: 10.5px ui-monospace, monospace; white-space: nowrap }
 .coop-tag[hidden] { display: none }
+#coop[hidden] { display: none }

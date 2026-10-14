@@ -954,6 +954,16 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
   `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
 
+- **Carry one-shot edges through the input jitter buffer.** Outbreak co-op (`@arcade/kit/net/jitter-buffer.ts`, Wings's
+  playout schedule generalised) never drops a press: an input that arrives after its dry-tick stand-in, or is cut by the
+  queue cap, gives fire/interact/reload to the next applied input; catch-up returns two inputs that the room applies as two
+  movement steps, so client prediction still matches. Over a 3 + 0–8 tick jittery loopback, all five shots landed and the
+  predicted survivor converged within 1 cm (`games/outbreak/tests/coop.test.ts`).
+- **Binary shared snapshot plus per-player prefix.** Outbreak's room encodes survivors, 60 zombies (15 bytes each), doors,
+  barricades, loot and shots once per 20 Hz snapshot and prefixes each player's ack and private survivor state: about
+  1.7 KB per snapshot, 33.7 KB/s per client, room tick 0.12 ms mean at 4 survivors + 60 zombies
+  (`games/outbreak/scripts/coop-bench.ts`).
+
 ## Input
 
 - **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn

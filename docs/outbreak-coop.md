@@ -49,6 +49,34 @@ calls `Vision.visible`). Remote survivors are drawn only when inside your sight,
 the world. Every seat has a colour and a name tag. Lab tuning stays local in co-op: AI and generation controls only
 change the offline session.
 
+## Wire format
+
+- Up: JSON `{t:"in", s, c:[[mx, my, aim, flags, slot?, delta?, action?], …]}`, two 60 Hz commands per message.
+- Down, text: `welcome` (public id, private token, seat index, room options), `roster`, `pong`, `error`, `reload`.
+- Down, binary snapshot at 20 Hz: `frame(personal, shared)`. `shared` (encoded once): tick, clock, survivors
+  (position cm, packed aim, flags, light, health, recoil, vault lift), zombies (15 bytes each: id, state, position,
+  aim, hp, hit flash, state time, stagger, clamber), door/window/container bit fields, barricade planks, recent bashes
+  and shots with shooter seat. `personal`: ack and the survivor's fields as a positional JSON array, plus the
+  inventory only when it changed. Velocities are derived from the two interpolated snapshots.
+
+## Measured
+
+`scripts/coop-bench.ts` (in-process room, 4 NetSession clients over a 50 ms loopback, 60 zombies, 60 s, M2 Max
+under heavy load from other agents): room tick mean 0.12 ms (p50 0.09, p95 0.23, p99 0.58 ms) at 60 Hz, about
+7 ms of CPU per second; snapshots about 1.7 KB, **33.7 KB/s down and 2.8 KB/s up per client**. With the default 28
+zombies, `coop-smoke.ts` against `wrangler dev` measured 18–23 KB/s down per client. Over a 3 + 0–8 tick jittery
+loopback the jitter buffer made stand-ins and every one of five shots still landed (`tests/coop.test.ts`).
+
+## Known gaps
+
+- Doors, loot, barricades and shots take a round trip (no prediction or local muzzle flash yet); hitscan has no lag
+  compensation (the room hits zombies where they are now).
+- Remote survivors show body, flashlight and name tag, not their pistol, reload or action callouts; the shared
+  world-anchored callout component can be reused for them once it lands.
+- No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. No lobby or
+  quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
+- All zombies are sent to everyone every snapshot (no interest management or deltas); fine at 60, not at 300.
+
 ## Proof
 
 - `games/outbreak/tests/coop-sim.test.ts`: 2–4 survivors, zombies split targets, shared doors and loot, private ammo.
