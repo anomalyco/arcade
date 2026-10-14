@@ -200,15 +200,15 @@ export const VIGNETTE_DIRECTIONS: Readonly<Record<VignetteDirectionId, VignetteD
       moonTemp: -0.78,
       shadowSoftness: 0.07,
       diffuseWrap: 0.0,
-      streetLampPower: 0.46,
+      streetLampPower: 0.0,
       streetLampTemp: 3400,
       streetLampFalloff: 0.85,
-      porchLightPower: 0.58,
-      porchLightTemp: 2500,
-      porchLightFalloff: 0.82,
-      windowLightPower: 0.55,
-      windowLightTemp: 2550,
-      windowLightFalloff: 0.85,
+      porchLightPower: 0.36,
+      porchLightTemp: 3700,
+      porchLightFalloff: 0.62,
+      windowLightPower: 0.48,
+      windowLightTemp: 2450,
+      windowLightFalloff: 0.78,
       flashlightPower: 1.85,
       flashlightAngle: 16,
       flashlightRange: 10.5,
@@ -1015,7 +1015,34 @@ fn eyeVisible(p: vec2f) -> f32 {
   let visible = eyeVisible(o.world.xz + n.xz * 0.06);
   let explored = textureSampleLevel(exploredTex, floorSamp, o.world.xz * F.map.xy, 0.0).r;
   let activeVig = useVignetteActive(o.pos);
-  if (mat == 2) { col *= 0.88; }
+  let isNoir = activeVig && Vig.params1.y < -0.35 && Vig.params0.w < 0.05;
+  if (mat == 2) {
+    col *= 0.88;
+    if (isNoir) {
+      // South facade windows: left window is unlit cold glass; right window has a soft centered amber glow.
+      if (o.world.z > 35.1 && o.world.y < 2.2) {
+        if (o.world.x < 26.5) {
+          col = vec3f(0.012, 0.018, 0.026);
+        } else if (o.world.x > 31.5) {
+          let wDist = length(vec2f((o.world.x - 34.25) * 0.9, (o.world.y - 1.50) * 1.3));
+          let wFall = exp(-wDist * wDist * 2.4);
+          col = select(vec3f(0.32, 0.25, 0.16) * wFall + vec3f(0.015, 0.02, 0.028), col * 0.04, Vig.params2.y < 35.0);
+        }
+      } else if (o.world.z < 35.0) {
+        // Bedroom nightstand shade is cool silvery-blue; unlit SW sofa shade is dark.
+        if (o.world.x < 27.0 && o.world.z < 28.0) {
+          col = vec3f(0.55, 0.72, 0.95) * 0.85;
+        } else if (o.world.x < 26.0 && o.world.z > 30.0) {
+          col = vec3f(0.015, 0.016, 0.02);
+        } else {
+          col *= 0.55;
+        }
+      } else {
+        // Porch sconce diffuser
+        col *= 0.45;
+      }
+    }
+  }
   if (mat == 4 && !interior(o.world.xz + n.xz * 0.3)) { col *= mix(1.0, 0.52, smoothstep(2.15, 2.78, o.world.y)); }
   if (mat == 20 && i32(round(o.aux)) == 1) {
     let crown = 1.0 - abs(clamp((o.world.z - 40.0) / 8.0, 0.0, 1.0) * 2.0 - 1.0) * 0.35;
@@ -1713,6 +1740,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
     lights.set([player.x, 1.65 + groundY, player.y, 27, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, 0.01, -1], 0)
     let count = 1
 
+    const isInteriorCam = s.cameraPreset === "interior" || s.cameraPreset === "target_interior"
+    const isNoirPreset = !useShippedGlobal && s.directionPreset === 3
     const soft = useShippedGlobal ? 0.20 : s.shadowSoftness
     for (const [i, lamp] of town.lamps.entries()) {
       const kindMult = useShippedGlobal
@@ -1720,7 +1749,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
         : lamp.kind === "street"
           ? s.streetLampPower
           : lamp.kind === "porch"
-            ? s.porchLightPower
+            ? s.porchLightPower * (isInteriorCam && isNoirPreset ? 0.36 : 1.0)
             : s.windowLightPower
       const radiusMult = useShippedGlobal
         ? 1.0
@@ -1729,7 +1758,29 @@ export const outbreakVignetteSection: SectionFactory = context => {
           : lamp.kind === "porch"
             ? s.porchLightFalloff
             : s.windowLightFalloff
-      const lampScale = Math.max(0.18, day.lamps) * kindMult
+      let noirRoomMult = 1.0
+      let noirColorOverride: [number, number, number] | null = null
+      if (isNoirPreset) {
+        if (lamp.kind === "window") {
+          // Left window off; right window subtle
+          noirRoomMult = lamp.x < 26 ? 0.0 : isInteriorCam ? 0.0 : 0.45
+          noirColorOverride = [0.95, 0.76, 0.48]
+        } else if (lamp.kind === "room") {
+          if (lamp.x < 26 && lamp.y < 28) {
+            // Bedroom nightstand lamp: cool pale ice-blue pool
+            noirRoomMult = 1.55
+            noirColorOverride = [0.64, 0.82, 1.0]
+          } else if (lamp.x > 30 && lamp.y > 29) {
+            // Dining/kitchen lamp: warm amber pool
+            noirRoomMult = 1.75
+            noirColorOverride = [1.0, 0.58, 0.22]
+          } else {
+            // SW living room & central hallway lamps off in Noir
+            noirRoomMult = 0.0
+          }
+        }
+      }
+      const lampScale = Math.max(0.18, day.lamps) * kindMult * noirRoomMult
       lampPower[i] = lampScale
       const power = lampScale * lamp.power
       if (power <= 0.001) continue
@@ -1744,11 +1795,12 @@ export const outbreakVignetteSection: SectionFactory = context => {
             : lamp.kind === "window"
               ? [1, 0.60, 0.24]
               : [1, 0.52, 0.19]
-        : lamp.kind === "street"
-          ? kelvinToRgb(s.streetLampTemp)
-          : lamp.kind === "porch"
-            ? kelvinToRgb(s.porchLightTemp)
-            : kelvinToRgb(s.windowLightTemp)
+        : noirColorOverride ??
+          (lamp.kind === "street"
+            ? kelvinToRgb(s.streetLampTemp)
+            : lamp.kind === "porch"
+              ? kelvinToRgb(s.porchLightTemp)
+              : kelvinToRgb(s.windowLightTemp))
       const cone =
         lamp.kind === "window"
           ? [0, 1, -0.15, 1]
@@ -1765,7 +1817,6 @@ export const outbreakVignetteSection: SectionFactory = context => {
     // Player flashlight cone (polar-shadowed directional cone light, used in Noir direction 3)
     const flashPower = useShippedGlobal ? 0 : s.flashlightPower
     let flashSlot = -1
-    const isInteriorCam = s.cameraPreset === "interior" || s.cameraPreset === "target_interior"
     const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 43) < 2 ? 50 : s.flashlightAim
     const effRange = isInteriorCam && Math.abs(s.flashlightRange - 10.5) < 1 ? 6.2 : s.flashlightRange
     const beamRad = (beamDeg * Math.PI) / 180
