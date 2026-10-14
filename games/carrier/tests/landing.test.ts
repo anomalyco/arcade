@@ -3,7 +3,7 @@ import { type Conn, RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
 import { BOW_Z, CENTERLINE_X, DECK_Y, ISLAND, STERN_Z } from "../shared/carrier-spec"
 import { playerOf, shipOf } from "../shared/crew"
-import { FLEET, type Hull, makeHull } from "../shared/fleet"
+import { FLEET, makeHull } from "../shared/fleet"
 import { LANDING, type LandingShip, approachTime, landTarget, landingStep, startLanding } from "../shared/landing"
 import type { ShipLike } from "../shared/launch"
 import { PLANE, type Plane, makePlane, quatAxis, setPlaneQuat, worldToShip } from "../shared/plane"
@@ -42,35 +42,41 @@ const carrier = (id: number, team: number, x = 0, z = 0): LandingShip => Object.
 
 describe("the F LAND prompt", () => {
   const own = carrier(1, 0)
-  const friend = carrier(2, 0, 3000, 0)
-  const enemy = carrier(3, 1, 0, 1200)
-  const ships = [own, friend, enemy]
-  const at = (x: number, z: number, y = DECK_Y + 300, speed = 140): Plane => {
+  /** A jet at (x, z), its nose `off` degrees (yaw) off the line to the ship. */
+  const at = (x: number, z: number, off = 0, y = DECK_Y + 300, speed = 140): Plane => {
     const p = makePlane(10)
-    Object.assign(p, { x, y, z, vz: -speed })
+    Object.assign(p, { x, y, z })
+    const yaw = Math.atan2(own.x - x, own.z - z) + off * (Math.PI / 180)
+    setPlaneQuat(p, quatAxis(0, 1, 0, yaw))
+    p.vx = Math.sin(yaw) * speed
+    p.vz = Math.cos(yaw) * speed
     return p
   }
 
-  test("offers the nearest friendly carrier within range, under the ceiling, above stall, after the lockout", () => {
-    expect(landTarget(at(0, 1500), 10, ships, 0, null, 10, HORNET)).toBe(own)
-    expect(landTarget(at(2700, 0), 10, ships, 0, null, 10, HORNET)).toBe(friend)
-    // Friendly only: team 1 gets its own ship, never ours.
-    expect(landTarget(at(0, 1500), 10, ships, 1, null, 10, HORNET)).toBe(enemy)
-    expect(landTarget(at(0, -LANDING.range - 50), 10, ships, 0, null, 10, HORNET)).toBeNull()
-    expect(landTarget(at(0, 1500, DECK_Y + LANDING.ceiling + 20), 10, ships, 0, null, 10, HORNET)).toBeNull()
-    expect(landTarget(at(0, 1500), LANDING.cooldown - 0.1, ships, 0, null, 10, HORNET)).toBeNull()
-    expect(landTarget(at(0, 1500, DECK_Y + 300, PLANE.stallSpeed - 5), 10, ships, 0, null, 10, HORNET)).toBeNull()
-    const crashed = at(0, 1500)
+  test("offers your own carrier when close, under the ceiling, pointing at it, above stall, after the lockout", () => {
+    expect(landTarget(at(0, 1000), 10, own, undefined, 10, HORNET)).toBe(own)
+    expect(landTarget(at(600, -600, 20), 10, own, undefined, 10, HORNET)).toBe(own)
+    expect(landTarget(at(0, 1000), 10, undefined, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, LANDING.range + 50), 10, own, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000, 0, DECK_Y + LANDING.ceiling + 20), 10, own, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000), LANDING.cooldown - 0.1, own, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000, 0, DECK_Y + 300, PLANE.stallSpeed - 5), 10, own, undefined, 10, HORNET)).toBeNull()
+    const crashed = at(0, 1000)
     crashed.crashed = "sea"
-    expect(landTarget(crashed, 10, ships, 0, null, 10, HORNET)).toBeNull()
+    expect(landTarget(crashed, 10, own, undefined, 10, HORNET)).toBeNull()
   })
 
-  test("no prompt for a carrier with a deck fire or sinking; the next friendly one is offered instead", () => {
-    const fire = new Map<number, Hull>([[1, Object.assign(makeHull(1, 0), { deckFire: 10 + FLEET.deckFire })]])
-    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10, HORNET)).toBe(friend)
-    expect(landTarget(at(1000, 0), 10, ships, 0, fire, 10 + FLEET.deckFire + 1, HORNET)).toBe(own)
-    const sinking = new Map<number, Hull>([[1, Object.assign(makeHull(1, 0), { sinkAt: 5 })]])
-    expect(landTarget(at(0, 1500), 10, ships, 0, sinking, 10, HORNET)).toBeNull()
+  test("only while looking at it", () => {
+    expect(landTarget(at(0, 1000, 45), 10, own, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000, 180), 10, own, undefined, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000, 90), 10, own, undefined, 10, HORNET)).toBeNull()
+  })
+
+  test("no prompt while its deck burns or it sinks", () => {
+    const fire = Object.assign(makeHull(1, 0), { deckFire: 10 + FLEET.deckFire })
+    expect(landTarget(at(0, 1000), 10, own, fire, 10, HORNET)).toBeNull()
+    expect(landTarget(at(0, 1000), 10, own, fire, 10 + FLEET.deckFire + 1, HORNET)).toBe(own)
+    expect(landTarget(at(0, 1000), 10, own, Object.assign(makeHull(1, 0), { sinkAt: 5 }), 10, HORNET)).toBeNull()
   })
 })
 

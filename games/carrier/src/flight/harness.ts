@@ -174,7 +174,7 @@ async function main() {
     if (target - ship.t > 4) ship.t = target - SHIP.tick
     flight.readInput(dt)
     // "F LAND" near the carrier, as in the game (src/flight/seam.ts).
-    flight.landPrompt = flight.phase === "flying" && !!landTarget(flight.plane, flight.airborne, [ship], team, null, target, landingVehicle(flight.vehicle))
+    flight.landPrompt = flight.phase === "flying" && !!landTarget(flight.plane, flight.airborne, ship, undefined, target, landingVehicle(flight.vehicle))
     if (flight.landPrompt && input.land) flight.land(ship)
     while (ship.t + SHIP.tick <= target) {
       copyShip(ship, shipPrev)

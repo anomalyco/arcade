@@ -439,9 +439,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   one step full thrust, the burner and the stroke: `STROKE` 285 m (87% of the runway) on `CENTERLINE_X` to the bow in
   `VEHICLES[kind].strokeTime` (Hornet 4.2 s, ~141 m/s; `catapult(kind)` derives the acceleration), glued to the hull
   pose every step; leaves with the ship's plan velocity plus the launch speed, nose up.
-- `shared/landing.ts`: `landTarget(plane, airborne, ships, team, hulls, t, vehicle)` is the "F LAND" prompt (the
-  nearest friendly carrier with an open deck within `LANDING.range` 2 km, under `ceiling`, above stall, `cooldown` 5 s
-  after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
+- `shared/landing.ts`: `landTarget(plane, airborne, ship, hull, t, vehicle)` is the "F LAND" prompt (your own
+  carrier only, its deck open, within `LANDING.range` 1.2 km, under `ceiling` 600 m, the nose within `look` 30° of the
+  line to it, above stall, `cooldown` 5 s after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
   join point behind the stern, a 3.5° glideslope, the trap, a hold) that always ends on the deck (`LANDING.timeout`
   hard stop) and reports done exactly once. Input is ignored meanwhile; F is flares whenever the prompt is not up.
 - `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in SHIP OPERATIONS → the room gives
