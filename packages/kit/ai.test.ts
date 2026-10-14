@@ -220,4 +220,58 @@ describe("GridNav & AI state transitions", () => {
     )
     expect(runA.avgMsPerTick).toBeLessThan(1.0)
   })
+
+  test("caps A* repaths per tick across simultaneous chasing crowds while all agents receive paths and converge", () => {
+    const nav = new GridNav(96, 96, 0.5)
+    const walls: Rect[] = [[22, 24, 37, 24.25], [22, 24, 22.25, 35.5]]
+    nav.rebuild(walls, [])
+    let pathCalls = 0
+    const origPath = nav.path.bind(nav)
+    nav.path = (from, to) => {
+      pathCalls++
+      return origPath(from, to)
+    }
+    const spatial = new SpatialHash(96, 96)
+    const noiseBus = new NoiseBus()
+    const agents = Array.from({ length: 20 }, (_, i) => {
+      const a = createAIAgent(i + 1, 7, 14 + (i % 5) * 1.2, 26 + Math.floor(i / 5) * 1.2)
+      a.state = "chase"
+      a.awareness = 1
+      a.targetX = 30
+      a.targetY = 20
+      a.repathAt = 0
+      return a
+    })
+    const ctx: AIWorldContext = {
+      time: 0,
+      tick: 0,
+      dt: 1 / 60,
+      worldSize: 96,
+      nightFactor: 1,
+      solids: walls,
+      walls,
+      closedDoors: [],
+      sightBlockers: walls,
+      portals: [],
+      nav,
+      spatial,
+      noiseBus,
+      config: DEFAULT_AI_CONFIG,
+      targets: [{ id: "player", x: 30, y: 20, vx: 0, vy: 0, lightLevel: 0.2, continuousNoiseRadius: 1 }],
+    }
+
+    // Tick 0: at most 4 agents run A* even though all 20 have repathAt === 0
+    stepAICrowd(agents, ctx)
+    expect(pathCalls).toBe(4)
+
+    // Over the next 4 ticks, the remaining 16 agents receive their A* paths (4 per tick)
+    for (let t = 1; t < 5; t++) {
+      pathCalls = 0
+      ctx.tick = t
+      ctx.time = t / 60
+      stepAICrowd(agents, ctx)
+      expect(pathCalls).toBe(4)
+    }
+    expect(agents.every((a) => a.path.length > 0 && a.repathAt > 0)).toBe(true)
+  })
 })

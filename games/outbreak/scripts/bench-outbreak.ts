@@ -15,6 +15,8 @@ const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
 const runAblations = process.env.BENCH_ABLATE === "1"
 /** Optional Lab foliage density (0.5..1.5) for GPU-cost-per-density sweeps. */
 const foliageDensity = process.env.BENCH_FOLIAGE_DENSITY ? Number(process.env.BENCH_FOLIAGE_DENSITY) : null
+// Optional Lab overrides for A/B experiments, e.g. BENCH_LAB='{"streetAirHaze":1}'.
+const labOverrides: Record<string, number> = JSON.parse(process.env.BENCH_LAB ?? "{}")
 mkdirSync(out, { recursive: true })
 
 function sampleThermal(): { host: string; thermalPressure: string; pmset: string } {
@@ -179,7 +181,7 @@ try {
     })
 
     for (const scene of scenes) {
-      await page.evaluate(async scene => {
+      await page.evaluate(async ({ scene, labOverrides }) => {
         const w = window as any
         const h = w.__arcadeHarness
         h.freeze(true)
@@ -188,6 +190,7 @@ try {
         h.setLab("zoom", scene.zoom)
         h.setLab("hour", scene.hour)
         if (scene.foliageDensity !== null) h.setLab("foliageDensity", scene.foliageDensity)
+        for (const [key, value] of Object.entries(labOverrides)) h.setLab(key, value)
         h.pose(scene.x, scene.y, -Math.PI / 2)
         await h.step(0)
         const s = h.session()
@@ -232,7 +235,7 @@ try {
         await new Promise(resolve => setTimeout(resolve, 350))
         h.freeze(true)
         await r.device.queue.onSubmittedWorkDone()
-      }, scene)
+      }, { scene, labOverrides })
 
       await page.locator("canvas").click()
       await page.evaluate(() => {
@@ -575,6 +578,7 @@ try {
 
   const output = {
     label,
+    labOverrides,
     recordedAt: new Date().toISOString(),
     note: "GPU queue completion and submission timestamps are not physical display presentation. True display presentation latency is unmeasured.",
     device: {
