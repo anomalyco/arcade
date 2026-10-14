@@ -11,6 +11,7 @@ import {
   setKeyLayoutMapForTest,
 } from "./client/controls"
 import { Input } from "./client/input"
+import { LabInput } from "./lab/input"
 
 afterEach(() => {
   setKeyLayoutMapForTest(null)
@@ -145,6 +146,99 @@ describe("controls standard and layout-aware prompt labels", () => {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor)
         else Reflect.deleteProperty(globalThis, key)
       }
+    }
+  })
+
+  test("LabInput handles QWERTY and Dvorak physical WASD codes, body-focus fallback, F8 eject release, and panel focus release", () => {
+    const fakeWin = new EventTarget()
+    const fakeDoc = new EventTarget() as EventTarget & {
+      activeElement: unknown
+      body: object
+      documentElement: object
+    }
+    const bodyObj = {}
+    const docElObj = {}
+    let focusedCanvas = false
+    const canvas = Object.assign(new EventTarget(), {
+      tabIndex: 0,
+      focus() {
+        focusedCanvas = true
+        fakeDoc.activeElement = canvas
+      },
+    }) as unknown as HTMLCanvasElement
+    fakeDoc.body = bodyObj
+    fakeDoc.documentElement = docElObj
+    fakeDoc.activeElement = bodyObj
+
+    const prevWin = Object.getOwnPropertyDescriptor(globalThis, "window")
+    const prevDoc = Object.getOwnPropertyDescriptor(globalThis, "document")
+    Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWin })
+    Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDoc })
+
+    try {
+      const labInput = new LabInput(canvas)
+      labInput.enabled = true
+
+      const dispatch = (kind: "keydown" | "keyup", code: string, key: string, target: unknown = canvas) => {
+        const ev = Object.assign(new Event(kind), {
+          code,
+          key,
+          repeat: false,
+          metaKey: false,
+          ctrlKey: false,
+          altKey: false,
+          composedPath: () => [target],
+          preventDefault() {},
+        })
+        fakeWin.dispatchEvent(ev)
+      }
+
+      // 1. Even if document.activeElement starts on document.body, pressing Dvorak W (code: KeyW, key: ",") focuses canvas and drives forward
+      dispatch("keydown", "KeyW", ",")
+      expect(focusedCanvas).toBe(true)
+      expect(labInput.up).toBe(true)
+      expect(moveClusterLabel()).toBe(",ASD")
+
+      // 2. Dvorak S (KeyS, "o"), A (KeyA, "a"), D (KeyD, "e"), Space, ShiftLeft
+      dispatch("keydown", "KeyS", "o")
+      dispatch("keydown", "KeyA", "a")
+      dispatch("keydown", "KeyD", "e")
+      dispatch("keydown", "Space", " ")
+      dispatch("keydown", "ShiftLeft", "Shift")
+      expect(labInput.down).toBe(true)
+      expect(labInput.left).toBe(true)
+      expect(labInput.right).toBe(true)
+      expect(labInput.space).toBe(true)
+      expect(labInput.shift).toBe(true)
+      expect(moveClusterLabel()).toBe(",AOE")
+
+      // 3. F8 Eject releases held keys immediately
+      dispatch("keydown", "F8", "F8")
+      expect(labInput.up).toBe(false)
+      expect(labInput.down).toBe(false)
+      expect(labInput.left).toBe(false)
+      expect(labInput.right).toBe(false)
+      expect(labInput.space).toBe(false)
+      expect(labInput.shift).toBe(false)
+
+      // 4. QWERTY WASD codes
+      setKeyLayoutMapForTest(null)
+      dispatch("keydown", "KeyW", "w")
+      dispatch("keydown", "KeyD", "d")
+      expect(labInput.up).toBe(true)
+      expect(labInput.right).toBe(true)
+      expect(moveClusterLabel()).toBe("WASD")
+
+      // 5. Focusing an external panel (e.g. LabPanel host) releases held keys
+      fakeDoc.activeElement = { tagName: "ASIDE" }
+      fakeDoc.dispatchEvent(new Event("focusin"))
+      expect(labInput.up).toBe(false)
+      expect(labInput.right).toBe(false)
+    } finally {
+      if (prevWin) Object.defineProperty(globalThis, "window", prevWin)
+      else Reflect.deleteProperty(globalThis, "window")
+      if (prevDoc) Object.defineProperty(globalThis, "document", prevDoc)
+      else Reflect.deleteProperty(globalThis, "document")
     }
   })
 })

@@ -8,6 +8,7 @@ import {
   registerStageCameraCommands,
   registerUiNoteCommand,
   resolveNavigationPath,
+  resolveTourAssetUrl,
   validateTourDefinition,
   type DevNotePayload,
 } from "./dev-control"
@@ -342,6 +343,45 @@ describe("Shared Lab & Camera Commands", () => {
 
     const step2SingleUrl = buildTourStepUrl("http://127.0.0.1:5180", "/arcade/lab/?section=looks#looks", tour.id, 2, true)
     expect(step2SingleUrl).toBe("http://127.0.0.1:5180/arcade/lab/?section=looks&tour=overnight&step=2&singleTab=1#looks")
+
+    // Default singleTab is true
+    expect(tour.singleTab).toBe(true)
+    expect(buildTourStepUrl("http://127.0.0.1:5180", "/arcade/outbreak/?seed=7", tour.id, 1)).toBe(
+      "http://127.0.0.1:5180/arcade/outbreak/?seed=7&tour=overnight&step=1&singleTab=1",
+    )
+
+    // Static "kind": "page" steps with markdown and images auto-resolve to /arcade/getaway/dev.html#tour/<id>/<step>
+    const studioTour = validateTourDefinition(
+      {
+        id: "look-review",
+        title: "Outbreak Look Review",
+        steps: [
+          {
+            kind: "page",
+            title: "Paint-Over Targets",
+            markdown: "### Findings\n- **Value structure**: darkness owns the frame",
+            images: [
+              "street.png",
+              { src: "target-noir-street.png", label: "Target · Noir Street", tag: "Noir", caption: "Dark frame" },
+            ],
+          },
+          {
+            title: "Vignette · Noir",
+            url: "outbreak-lab",
+          },
+        ],
+      },
+      "look-review",
+    )
+    expect(studioTour.singleTab).toBe(true)
+    expect(studioTour.steps[0]?.kind).toBe("page")
+    expect(studioTour.steps[0]?.url).toBe("/arcade/getaway/dev.html#tour/look-review/1")
+    expect(studioTour.steps[0]?.images).toEqual([
+      { src: "street.png" },
+      { src: "target-noir-street.png", label: "Target · Noir Street", tag: "Noir", caption: "Dark frame" },
+    ])
+    expect(resolveTourAssetUrl("look-review", "street.png")).toBe("/__arcade/tour-assets/look-review/street.png")
+    expect(resolveNavigationPath("tour/look-review/1")).toBe("/arcade/getaway/dev.html#tour/look-review/1")
 
     // Invalid tours throw descriptive errors
     expect(() => validateTourDefinition([])).toThrow(/non-empty 'steps'/)

@@ -46,7 +46,8 @@ bun run arcade transport pause                         # transport.toggle / tran
 bun run arcade possess getaway:muscle                  # mode.play: enter Play mode on character
 bun run arcade release                                 # mode.play: exit Play mode back to Edit mode and release input
 bun run arcade note "Noir A/B Wipe" --body "Left: current · Right: noir" --target setting:compare
-bun run arcade tour .arcade-tours/overnight.json       # Open one labeled tab per step and apply each step's setup
+bun run arcade tour .arcade-tours/look-review.json     # Open ONE browser tab with a top Studio Tab Strip of mini-tabs
+bun run arcade tour .arcade-tours/overnight.json --multi-tab # Legacy mode: open one separate browser tab per step
 bun run arcade run <command-id> '{"key":"value"}'      # Invoke any command ID from 'arcade cmd list'
 bun run arcade run outliner.select '{"kind":"cone"}'   # Lab layout: select in the Outliner (also id, ids, additive)
 bun run arcade run library.place '{"id":"spawn-prop:hydrant","at":"2,-4"}'  # Place a Library item at a ground point
@@ -96,40 +97,47 @@ To call Kit's attention to a specific feature in an open tab or walk him through
   bun run arcade note --clear
   ```
 
-- **Multi-tab guided tours (`arcade tour`)**:
-  Opens one tab per step (default `open` locally, or `ssh pro 'open "<url>"'` when `ARCADE_OPEN=pro` / `--open pro`; pass `--single-tab` to navigate within a single tab, or `--no-open` to stage without opening tabs). Each step URL receives `?tour=<id>&step=<n>` so when the page connects to the bridge it automatically runs its `setup` commands and renders its `ui.note` card with step badge (`2/5`) and `‹ Prev` / `Next ›` buttons. Tours are persisted in `.arcade-tours/<id>.json` for replay.
+- **Single-tab Studio Tours (`arcade tour`)**:
+  Opens **one** browser tab by default (`singleTab: true`; pass `--multi-tab` for the legacy one-browser-tab-per-step behavior, or `--no-open` to stage without opening a tab) and renders a persistent, dark, collapsible **Studio Tab Strip** (`[data-arcade-studio-strip]`) across the top of every Arcade page (Hub, Lab, Catalogue, Characters, and games).
+  - Each tour step appears as a numbered mini-tab (`1 Title`, `2 Title`, …) with its active step highlighted.
+  - Switch between mini-tabs by clicking any tab, clicking `‹`/`›`, or pressing `Alt+[` / `Alt+]` (`Option+[` / `Option+]` on macOS).
+  - **Fast in-place switching (no reload)**: If the target step shares the current page (e.g. switching Lab sections/presets/cameras on `/lab.html` or player poses on `/arcade/outbreak/`), its `setup` commands and `ui.note` card apply in place in milliseconds without reloading or recreating the WebGPU device. If the target step is on a different page, the tab navigates in place and resumes the strip from `sessionStorage` and the WebSocket bridge so **at most one WebGPU context is ever alive at a time**.
+  - **Static Studio Landing Pages (`"kind": "page"`)**: Steps can also be zero-WebGPU landing pages rendered inside the studio shell (`/arcade/getaway/dev.html#tour/<id>/<step>`) with `"markdown"` and/or `"images"` (served from `.arcade-tours/assets/<id>/` via `/__arcade/tour-assets/<id>/<file>`, with click-to-zoom lightbox).
+  - Append a step from the CLI with `arcade tour --add-step <tour> --title "..." [--kind page|scene] [--markdown "..."] [--images a.png,b.png]`.
 
   ```sh
-  ARCADE_OPEN=pro bun run arcade tour .arcade-tours/overnight.json \
+  ARCADE_OPEN=pro bun run arcade tour .arcade-tours/look-review.json \
     --base-url https://kits-mac-studio.taila8e7c7.ts.net:5180
   ```
 
-  Example tour JSON (`.arcade-tours/example.json`):
+  Example tour JSON (`.arcade-tours/look-review.json`):
 
   ```json
   {
-    "id": "example",
-    "title": "Look & Vignette Walkthrough",
+    "id": "look-review",
+    "title": "Outbreak Look Review",
+    "singleTab": true,
     "steps": [
       {
-        "title": "Outbreak Vignette · Noir",
-        "body": "Cold moonlit roof courses, volumetric flashlight haze, and split room practicals.",
+        "kind": "page",
+        "title": "Paint-Over Targets · Street & Open",
+        "body": "Side-by-side comparison of current Outbreak captures vs Noir and Dusk paint-over targets.",
+        "markdown": "- **#1 Value Structure**: Darkness owns the frame outside practical pools.\n- **#2 Ground Detail**: Cracked asphalt, weeds over curb joints, gravel, and leaves.",
+        "images": [
+          { "src": "street.png", "label": "Current · Street", "tag": "Current" },
+          { "src": "target-noir-street.png", "label": "Target · Noir Street", "tag": "Noir Target" },
+          { "src": "target-dusk-street.png", "label": "Target · Dusk Street", "tag": "Dusk Target" }
+        ]
+      },
+      {
+        "title": "Vignette · Noir, game camera",
+        "body": "Same lot with the Noir preset. Compare value structure with the paint-over tab.",
         "url": "/arcade/outbreak/lab.html?section=outbreak-vignette",
         "setup": [
           { "command": "vignette.preset", "args": { "direction": "noir" } },
           { "command": "vignette.camera", "args": { "preset": "game", "cutaway": "cutaway" } }
         ],
         "target": { "setting": "directionPreset" }
-      },
-      {
-        "title": "Lab Looks · Noir vs Current Wipe",
-        "body": "50/50 split wipe in the Look Debug Room comparing Current (left) vs Noir (right).",
-        "url": "/arcade/getaway/lab.html?section=looks",
-        "setup": [
-          { "command": "look.preset", "args": { "preset": "noir" } },
-          { "command": "look.set", "args": { "key": "compare", "value": 2 } }
-        ],
-        "target": { "setting": "compare" }
       }
     ]
   }

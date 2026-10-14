@@ -289,6 +289,8 @@ export type ViewportCursorUpdate = {
   immediateLabel?: boolean
   normal?: { nx: number; ny: number; nz: number }
   radialVec?: { dx: number; dy: number }
+  /** Report the state but show the OS cursor (zero-latency) instead of the drawn glyph. */
+  native?: boolean
 }
 
 const FALLBACK_CURSOR: Record<ViewportCursorState, string> = {
@@ -301,7 +303,7 @@ const FALLBACK_CURSOR: Record<ViewportCursorState, string> = {
   marquee: "crosshair",
   move: "move",
   rotate: "ew-resize",
-  radial: "pointer",
+  radial: "default",
   disabled: "not-allowed",
 }
 
@@ -348,7 +350,7 @@ export function createViewportCursorDOM(
 
   function update(opts: ViewportCursorUpdate) {
     const nextState = opts.state
-    if (opts.x !== undefined && opts.y !== undefined) {
+    if (!opts.native && opts.x !== undefined && opts.y !== undefined) {
       lastX = opts.x
       lastY = opts.y
       el.style.transform = `translate3d(${Math.round(lastX)}px, ${Math.round(lastY)}px, 0)`
@@ -367,6 +369,23 @@ export function createViewportCursorDOM(
         options.canvas.style.cursor = "default"
       }
       lastState = "hidden"
+      return
+    }
+
+    if (opts.native) {
+      clearHoverTimer()
+      labelReady = false
+      lastHoverLabel = ""
+      if (el.dataset.cursorState !== nextState) el.dataset.cursorState = nextState
+      if (!el.hidden) el.hidden = true
+      tag.dataset.visible = "false"
+      if (!tag.hidden) tag.hidden = true
+      if (options.canvas) {
+        if (options.canvas.dataset.customCursor !== "off") options.canvas.dataset.customCursor = "off"
+        const cursor = FALLBACK_CURSOR[nextState]
+        if (options.canvas.style.cursor !== cursor) options.canvas.style.cursor = cursor
+      }
+      lastState = nextState
       return
     }
 

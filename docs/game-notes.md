@@ -1069,6 +1069,18 @@ Candidates from the code audits; measure and playtest before moving any into the
   the canvas on mousedown; `games/blackout/src/ui/debug-overlay.ts` stops panel events and releases held gameplay input on pointer
   interaction. Chromium checks passed All On/Off, clicking back into the game, B to switch bots, and Backquote to hide
   the panel. Runtime cost is unmeasured.
+- **Keep pointer-driven overlays off the rebuild path.** The Lab radial menu (`packages/kit/lab/radial.ts`) used to
+  rewrite all eight sectors' `innerHTML` on every pointermove. When a `pointerenter` handler did that, Chrome dispatched
+  the matching pointermove to the detached node, so it never reached the viewport listener and the selection skipped
+  that move. The ring now builds its sector DOM once per open. A move only rotates the highlight wedge and direction
+  pointer, swaps two `data-active` flags and changes caption text when it differs. Its position is a transform, and the
+  OS cursor replaces the drawn viewport glyph while the menu is open. `bun packages/kit/lab/bench-radial.ts`
+  (headless-shell, Metal, 1 warm-up + 7 runs) measured main-thread time per open-menu move with the scene loop off:
+  2.12 → 1.04 ms task, 0.25 → 0.02 ms layout, 0.26 → 0.02 ms paint. Giving the highlight, pointer and root
+  `will-change` layers cost more in Layerize than it saved in paint (0.87 vs 1.31 ms task per move), so they share the
+  menu's layer. Every open and hover change painted on the next frame both before and after. Headless frames on the
+  display-less Studio arrive every 50–83 ms even on an idle Lab page, so wall-clock latency there is not a valid
+  measurement. Physical-display latency is unmeasured.
 
 ## Feel
 

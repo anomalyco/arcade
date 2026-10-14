@@ -233,6 +233,194 @@ try {
   check(afterEsc.hidden === true, "Expected Escape to dismiss the Show Me card")
   check(!afterEsc.docTitle.startsWith("▸ Custom One-Off Label"), `Expected Escape to restore document.title, got ${afterEsc.docTitle}`)
 
+  // 4. Verify single-tab Studio Tab Strip & static `kind: "page"` landing page on `.arcade-tours/look-review.json`
+  const lookTourRes = runArcade(["tour", ".arcade-tours/look-review.json", "--no-open", "--base-url", origin, "--json"], 0).json
+  check(lookTourRes.ok === true && lookTourRes.id === "look-review" && lookTourRes.singleTab === true, "Expected single-tab look-review tour")
+  check(lookTourRes.steps.length === 4, `Expected 4 steps in look-review, got ${lookTourRes.steps.length}`)
+
+  // Open Step 1 (static comparison page with 6 images)
+  await page.goto(lookTourRes.steps[0].url, { waitUntil: "domcontentloaded" })
+  for (let i = 0; i < 60; i++) {
+    const ready = await page.evaluate(() => {
+      const strip = document.querySelector<HTMLElement>("[data-arcade-studio-strip]")
+      const pageEl = document.querySelector<HTMLElement>("[data-arcade-studio-page]")
+      const imgs = [...document.querySelectorAll<HTMLImageElement>("img[data-studio-image]")]
+      return (
+        Boolean(strip && !strip.hidden) &&
+        Boolean(pageEl && !pageEl.hidden) &&
+        imgs.length === 6 &&
+        imgs.every(img => img.complete && img.naturalWidth > 0)
+      )
+    })
+    if (ready) break
+    await Bun.sleep(100)
+  }
+  const lookPageAudit = await page.evaluate(() => {
+    const tabs = [...document.querySelectorAll<HTMLElement>("[data-studio-step]")].map(el => ({
+      step: Number(el.dataset.studioStep),
+      selected: el.getAttribute("aria-selected") === "true",
+      kind: el.dataset.stepKind,
+      text: el.querySelector("[data-studio-step-title]")?.textContent ?? "",
+    }))
+    const imgs = [...document.querySelectorAll<HTMLImageElement>("img[data-studio-image]")].map(img => ({
+      src: img.getAttribute("src"),
+      w: img.naturalWidth,
+      h: img.naturalHeight,
+    }))
+    return { tabCount: tabs.length, tabs, imgs }
+  })
+  check(lookPageAudit.tabCount === 4, `Expected 4 mini-tabs in studio strip, got ${lookPageAudit.tabCount}`)
+  check(lookPageAudit.tabs[0]?.selected === true && lookPageAudit.tabs[0]?.kind === "page", "Step 1 mini-tab should be selected and kind=page")
+  check(lookPageAudit.imgs.length === 6 && lookPageAudit.imgs.every(i => i.w > 100 && i.h > 100), "All 6 comparison images loaded from dev server")
+  const lookPagePng = join(artifactsDir, "look-review-step-01-page.png")
+  await page.screenshot({ path: lookPagePng })
+  console.log(`✓ Look Review Step 1 (Studio Page with 6 comparison images): ${lookPagePng}`)
+
+  // Click Mini-Tab 3 ("Vignette · Noir, game camera") -> navigates within the SAME browser tab
+  await page.locator('[data-studio-step="3"]').click()
+  for (let i = 0; i < 80; i++) {
+    const st = await page
+      .evaluate(() => ({
+        path: location.pathname,
+        stepText: document.querySelector("[data-arcade-note-step]")?.textContent ?? "",
+        selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
+      }))
+      .catch(() => null)
+    if (st?.path === "/arcade/outbreak/lab.html" && st.stepText === "3/4" && st.selectedStep === "3") break
+    await Bun.sleep(100)
+  }
+  check(context.pages().length === 1, "Studio Tab Strip must keep only 1 browser tab open")
+
+  // Set a sentinel on window, then press Alt+] to switch from Step 3 (Noir) to Step 4 (Street close-up, Dusk) IN PLACE with zero reload!
+  await page.evaluate(() => {
+    ;(window as any).__inPlaceSentinel = "alive"
+  })
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "BracketRight", key: "]", altKey: true, bubbles: true, cancelable: true }))
+  })
+  for (let i = 0; i < 50; i++) {
+    const st = await page.evaluate(() => ({
+      sentinel: (window as any).__inPlaceSentinel,
+      selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
+      stepText: document.querySelector("[data-arcade-note-step]")?.textContent ?? "",
+      preset: (document.querySelector("[data-lab]")?.shadowRoot?.querySelector('[data-key="directionPreset"]') as HTMLSelectElement | null)?.value,
+    }))
+    if (st.selectedStep === "4" && st.stepText === "4/4" && st.preset === "1") break
+    await Bun.sleep(80)
+  }
+  const inPlaceAudit = await page.evaluate(() => ({
+    sentinel: (window as any).__inPlaceSentinel,
+    selectedStep: document.querySelector('[data-studio-step][aria-selected="true"]')?.getAttribute("data-studio-step"),
+    stepText: document.querySelector("[data-arcade-note-step]")?.textContent ?? "",
+    preset: (document.querySelector("[data-lab]")?.shadowRoot?.querySelector('[data-key="directionPreset"]') as HTMLSelectElement | null)?.value,
+  }))
+  check(inPlaceAudit.sentinel === "alive", "Switching between same-page Lab steps in Studio Tab Strip must not reload the page")
+  check(inPlaceAudit.selectedStep === "4" && inPlaceAudit.preset === "1", `Expected in-place switch to step 4 (dusk=1), got ${JSON.stringify(inPlaceAudit)}`)
+  console.log("✓ Studio Tab Strip: same-page in-place step switch verified (0 reloads, 1 tab)")
+
+  // Close the studio tour strip
+  await page.locator("[data-studio-close]").click()
+  check(await page.evaluate(() => document.querySelector<HTMLElement>("[data-arcade-studio-strip]")?.hidden === true), "Studio strip should hide on close")
+
+  // 5. Verify Lab Play mode on Getaway Lab & Blackout Lab for both QWERTY and Dvorak layouts
+  for (const hostGame of ["getaway", "blackout"] as const) {
+    await page.goto(`${origin}/arcade/${hostGame}/lab.html`, { waitUntil: "domcontentloaded" })
+    await page.waitForFunction(
+      () => Boolean(document.querySelector('[data-action="mode-play"]') && document.querySelector("canvas")),
+      undefined,
+      { timeout: 30000 },
+    )
+    await Bun.sleep(250)
+
+    // A. Default startup selects controllable character:active and shows ▶ Play
+    const initialPlayBtn = await page.locator('[data-action="mode-play"]').textContent()
+    check(initialPlayBtn?.includes("Play"), `${hostGame}: expected ▶ Play button on startup, got "${initialPlayBtn}"`)
+
+    // B. Deselect everything (Escape), focus Details (LabPanel), then press Dvorak P (physical KeyR, logical key "p"):
+    //    must enter Play mode even with nothing selected and Details focused, and must NOT reroll the room seed!
+    await page.locator("canvas").focus()
+    await page.keyboard.press("Escape")
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>("[data-lab]")?.focus()
+    })
+    const seedBeforePlay = await page.evaluate(() => document.querySelector("[data-readout='seed']")?.textContent)
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyR", key: "p", bubbles: true, cancelable: true }))
+    })
+    await Bun.sleep(80)
+    const afterDvorakP = await page.evaluate(() => ({
+      playPressed: document.querySelector('[data-action="mode-play"]')?.getAttribute("aria-pressed"),
+      btnText: document.querySelector('[data-action="mode-play"]')?.textContent,
+      seedText: document.querySelector("[data-readout='seed']")?.textContent,
+      focusPill: document.querySelector("[data-focus-pill]")?.textContent,
+    }))
+    check(afterDvorakP.playPressed === "true", `${hostGame}: Dvorak P (KeyR/key="p") from Details with nothing selected failed to enter Play`)
+    check(afterDvorakP.btnText?.includes("Stop"), `${hostGame}: Play button should read ■ Stop in Play mode, got "${afterDvorakP.btnText}"`)
+    check(afterDvorakP.seedText === seedBeforePlay, `${hostGame}: Dvorak P (KeyR) must not reroll room seed`)
+
+    // C. Drive / move using Dvorak physical WASD codes (KeyW=",", KeyD="e")
+    const posBefore = await page.evaluate(() => {
+      const nameEl = document.querySelector(".lab-details-meta")?.textContent ?? ""
+      return nameEl
+    })
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "ShiftLeft", key: "Shift", shiftKey: true, bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: ",", bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD", key: "e", bubbles: true }))
+    })
+    await Bun.sleep(450)
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW", key: ",", bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyD", key: "e", bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "ShiftLeft", key: "Shift", bubbles: true }))
+    })
+    const hintDuringDvorak = await page.locator("[data-hint-text]").textContent()
+    check(hintDuringDvorak?.includes(",AOE") || hintDuringDvorak?.includes(",ASD"), `${hostGame}: expected Dvorak movement label in hint strip, got "${hintDuringDvorak}"`)
+
+    // D. Press F8 to toggle Eject camera while simulation keeps running, then F8 again to re-possess
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "F8", key: "F8", bubbles: true, cancelable: true }))
+    })
+    await Bun.sleep(60)
+    const ejectedPill = await page.locator("[data-focus-pill]").textContent()
+    check(ejectedPill?.includes("Ejected"), `${hostGame}: expected F8 to toggle Ejected camera, got "${ejectedPill}"`)
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "F8", key: "F8", bubbles: true, cancelable: true }))
+    })
+    await Bun.sleep(60)
+    check(!(await page.locator("[data-focus-pill]").textContent())?.includes("Ejected"), `${hostGame}: second F8 should re-possess`)
+
+    // E. Click top-bar ■ Stop button -> must exit Play mode back to Edit mode and restore pre-Play checkpoint!
+    await page.locator('[data-action="mode-play"]').click()
+    await Bun.sleep(80)
+    const afterStopClick = await page.evaluate(() => ({
+      playPressed: document.querySelector('[data-action="mode-play"]')?.getAttribute("aria-pressed"),
+      btnText: document.querySelector('[data-action="mode-play"]')?.textContent,
+      posAfter: document.querySelector(".lab-details-meta")?.textContent ?? "",
+    }))
+    check(afterStopClick.playPressed === "false", `${hostGame}: clicking ■ Stop button must exit Play mode (got aria-pressed=${afterStopClick.playPressed})`)
+    check(afterStopClick.btnText?.includes("Play"), `${hostGame}: button must return to ▶ Play after stopping`)
+    check(afterStopClick.posAfter === posBefore, `${hostGame}: stopping Play must restore pre-Play checkpoint position`)
+
+    // F. QWERTY P (code: KeyP, key: "p") while a <select> dropdown is focused -> enters Play, then Escape exits Play
+    await page.locator('[data-control="environment"]').focus()
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "p", bubbles: true, cancelable: true }))
+    })
+    await Bun.sleep(60)
+    check(
+      (await page.locator('[data-action="mode-play"]').getAttribute("aria-pressed")) === "true",
+      `${hostGame}: QWERTY P (KeyP/key="p") with <select> focused failed to enter Play`,
+    )
+    await page.keyboard.press("Escape")
+    await Bun.sleep(60)
+    check(
+      (await page.locator('[data-action="mode-play"]').getAttribute("aria-pressed")) === "false",
+      `${hostGame}: Escape failed to exit Play mode`,
+    )
+    console.log(`✓ ${hostGame} Lab Play mode verified (QWERTY + Dvorak, unselected, Details/select focus, F8 eject, ■ Stop button, Esc checkpoint)`)
+  }
+
   check(pageErrors.length === 0, `Unexpected page errors:\n${pageErrors.join("\n")}`)
 
   const summaryPath = join(artifactsDir, "summary.json")

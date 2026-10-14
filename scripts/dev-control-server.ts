@@ -502,40 +502,102 @@ export function createDevControlServer(opts: {
     return { ok: errors.length === 0, errors }
   }
 
-  function extractTourParams(summary: DevPageSummary): { id: string; step: number; singleTab?: boolean } | null {
+  function extractTourParams(summary: DevPageSummary): { id: string; step: number; singleTab?: boolean; applied?: boolean } | null {
     if (summary.tour && summary.tour.id && summary.tour.step >= 1) return summary.tour
     try {
       if (!summary.url) return null
       const u = new URL(summary.url)
       const id = u.searchParams.get("tour")?.trim()
       const step = Number(u.searchParams.get("step"))
+      const multiTab = u.searchParams.get("multiTab") === "1" || u.searchParams.get("singleTab") === "0"
       if (id && Number.isFinite(step) && step >= 1) {
         return {
           id,
           step: Math.round(step),
-          ...(u.searchParams.get("singleTab") === "1" ? { singleTab: true } : {}),
+          singleTab: !multiTab,
+        }
+      }
+      const hashMatch = (u.hash || summary.hash || "").match(/^#tour\/([a-zA-Z0-9_-]+)(?:\/(\d+))?/)
+      if (hashMatch) {
+        return {
+          id: hashMatch[1]!,
+          step: hashMatch[2] ? Math.max(1, Number(hashMatch[2])) : 1,
+          singleTab: true,
         }
       }
     } catch {}
     return null
   }
 
+  function sendTourState(client: ConnectedClient, tour: TourDefinition, step: number) {
+    try {
+      client.socket.write(encodeWsTextFrame(JSON.stringify({ type: "tour.state", tour, step })))
+    } catch {}
+  }
+
   function maybeApplyTourOnStatus(client: ConnectedClient) {
     const meta = extractTourParams(client.summary)
     if (!meta) return
-    const key = `${meta.id}:${meta.step}:${client.summary.pathname}${client.summary.hash}`
-    if (client.appliedTourKey === key || client.applyingTour) return
     const tour = loadTourById(meta.id)
     if (!tour || !tour.steps[meta.step - 1]) return
+    const key = `${meta.id}:${meta.step}:${client.summary.pathname}${client.summary.hash}`
+    if (client.appliedTourKey === key || client.applyingTour) return
+    sendTourState(client, tour, meta.step)
     client.appliedTourKey = key
+    if (meta.applied === true) {
+      return
+    }
     client.applyingTour = true
-    void applyTourStepToClient(client, tour, meta.step, meta.singleTab).finally(() => {
+    void applyTourStepToClient(client, tour, meta.step, meta.singleTab ?? tour.singleTab ?? true).finally(() => {
       client.applyingTour = false
     })
   }
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const url = new URL(req.url ?? "/", "http://127.0.0.1")
+
+    const assetMatch = url.pathname.match(/^(?:\/arcade\/[a-z0-9-]+)?\/__arcade\/tour-assets\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/)
+    if (req.method === "GET" && assetMatch) {
+      const tourId = assetMatch[1]!
+      const fileName = assetMatch[2]!
+      if (!fileName.includes("..")) {
+        const candidates = [
+          join(toursDir, "assets", tourId, fileName),
+          join(homedir(), ".cache", "arcade", "tour-assets", tourId, fileName),
+          join(homedir(), "code", "home", "artifacts", "2026-10-14-outbreak-review", fileName),
+        ]
+        for (const candidate of candidates) {
+          if (existsSync(candidate)) {
+            const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase()
+            const mime =
+              ext === ".png"
+                ? "image/png"
+                : ext === ".jpg" || ext === ".jpeg"
+                  ? "image/jpeg"
+                  : ext === ".webp"
+                    ? "image/webp"
+                    : ext === ".gif"
+                      ? "image/gif"
+                      : ext === ".svg"
+                        ? "image/svg+xml"
+                        : ext === ".json"
+                          ? "application/json; charset=utf-8"
+                          : "text/plain; charset=utf-8"
+            const data = readFileSync(candidate)
+            res.writeHead(200, {
+              "content-type": mime,
+              "content-length": data.byteLength,
+              "cache-control": "no-cache",
+            })
+            res.end(data)
+            return true
+          }
+        }
+      }
+      writeJson(res, 404, { ok: false, code: "not_found", error: `Tour asset not found: ${tourId}/${fileName}` })
+      return true
+    }
+
     if (url.pathname !== CONTROL_PATH && !url.pathname.startsWith(`${CONTROL_PATH}/`)) {
       return false
     }
@@ -615,20 +677,22 @@ export function createDevControlServer(opts: {
       }
 
       const savedFile = saveTour(validated)
-      const runtimeSingleTab = typeof body.singleTab === "boolean" ? body.singleTab : Boolean(validated.singleTab)
+      const runtimeSingleTab = typeof body.singleTab === "boolean" ? body.singleTab : validated.singleTab !== false
       const runtimeBaseUrl =
         typeof body.baseUrl === "string" && body.baseUrl.trim() ? body.baseUrl.trim().replace(/\/$/, "") : validated.baseUrl
-      tours.set(validated.id, {
+      const storedTour: TourDefinition = {
         ...validated,
-        ...(runtimeSingleTab ? { singleTab: true } : {}),
+        singleTab: runtimeSingleTab,
         ...(runtimeBaseUrl ? { baseUrl: runtimeBaseUrl } : {}),
-      })
+      }
+      tours.set(validated.id, storedTour)
       const baseOrigin = runtimeBaseUrl || (pageHosts.length > 0 ? `https://${pageHosts[0]}:${opts.port}` : origin)
       const singleTab = runtimeSingleTab
       const stepUrls = validated.steps.map((s, idx) => ({
         step: idx + 1,
         title: s.title,
         body: s.body ?? null,
+        kind: s.kind ?? "scene",
         url: buildTourStepUrl(baseOrigin, s.url, validated.id, idx + 1, singleTab),
         localUrl: buildTourStepUrl(origin, s.url, validated.id, idx + 1, singleTab),
       }))
@@ -638,10 +702,11 @@ export function createDevControlServer(opts: {
       for (const c of clients.values()) {
         const meta = extractTourParams(c.summary)
         if (meta && meta.id === validated.id && validated.steps[meta.step - 1]) {
+          sendTourState(c, storedTour, meta.step)
           c.appliedTourKey = `${meta.id}:${meta.step}:${c.summary.pathname}${c.summary.hash}`
           c.applyingTour = true
           appliedPages.push(c.id)
-          void applyTourStepToClient(c, validated, meta.step, singleTab).finally(() => {
+          void applyTourStepToClient(c, storedTour, meta.step, singleTab).finally(() => {
             c.applyingTour = false
           })
         }
@@ -830,6 +895,11 @@ export function createDevControlServer(opts: {
             client.summary = { ...msg.page, updatedAt: Date.now() }
             checkNavWaiters(client.summary)
             maybeApplyTourOnStatus(client)
+          } else if (msg.type === "tour.get" && typeof msg.tourId === "string") {
+            const tour = loadTourById(msg.tourId)
+            if (tour) {
+              sendTourState(client, tour, typeof msg.step === "number" && msg.step >= 1 ? msg.step : 1)
+            }
           } else if (msg.type === "tour.focus" && typeof msg.tourId === "string" && typeof msg.step === "number") {
             let targetClient: ConnectedClient | undefined
             for (const c of clients.values()) {

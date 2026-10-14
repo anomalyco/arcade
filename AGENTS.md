@@ -8,7 +8,7 @@
 - `packages/kit/` is the private, versionless `@arcade/kit` source package. Import subpaths such as
   `@arcade/kit/lab-panel` and `@arcade/kit/compare.css`; Vite and Wrangler bundle source directly, with no package build.
   Declare tooling dependencies in the package that uses them; never import another game's `node_modules`.
-- Read `docs/game-notes.md` before rendering, performance, input, multiplayer or feel work, and add techniques there
+- Read `docs/game-notes.md` and [docs/rendering-techniques.md](docs/rendering-techniques.md) before rendering, performance, input, multiplayer or feel work, and add techniques to `docs/game-notes.md`
   once they are proven in a game, with where they live and what they measured. Read [docs/controls.md](docs/controls.md)
   before changing key bindings or HUD input prompts: bind gameplay actions by physical `KeyboardEvent.code` (`KeyE`
   interact, `KeyW`/`KeyA`/`KeyS`/`KeyD` move, `ShiftLeft` sprint) and render prompts with the user's layout label via

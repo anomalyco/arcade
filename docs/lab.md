@@ -122,7 +122,13 @@ and `packages/kit/lab/viewport-input.ts`):
   is active) and orbits elsewhere (Catalogue, Characters, or Lab sections without selectable objects; `Shift+drag` pans
   when not adding to an existing selection).
 - **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or `M` / `ContextMenu` opens the
-  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters.
+  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab ring
+  (`packages/kit/lab/radial.ts`) draws 8 equal wedges with an icon and short label each; the wedge under the pointer's
+  bearing from the centre is highlighted (not the label under the pointer), a press anywhere on the disc selects by
+  direction, the hub names the target, and the caption below shows the full label and shortcut or the disabled reason.
+  Disabled slots stay in place, dimmed. Give radial commands an `icon`. While the ring is open the OS cursor is shown
+  instead of the drawn viewport glyph, and pointer moves only rotate the highlight and pointer and retarget two labels;
+  rebuild sector DOM only when the ring opens.
 - **Keyboard**: `F` frames the active target, `Arrows` orbit (`Shift+Arrows` pan) when the canvas is focused, and `Esc`
   cancels active transforms/ghosts/radial/drags, clears selection, or exits Play/Possess.
 

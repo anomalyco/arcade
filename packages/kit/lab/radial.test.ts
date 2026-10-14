@@ -3,8 +3,12 @@ import { LabCommandRegistry, RADIAL_COMPASS } from "./commands"
 import {
   classifyRadialDisplacement,
   clampRadialCenter,
+  RADIAL_CAPTION_PX,
   RADIAL_DEAD_ZONE_PX,
+  RADIAL_EDGE_MARGIN_PX,
+  RADIAL_OUTER_PX,
   RadialMenuStateMachine,
+  radialWedgePath,
 } from "./radial"
 import type { LabWorldObject } from "./types"
 
@@ -279,8 +283,42 @@ test("tap (<180ms, <8px) latches open; hold (>180ms) in dead zone cancels with 0
   if (flickRes.outcome === "execute") flickRes.sector.command.run(sm.commandContext)
   expect(log).toEqual(["object.move", "ground.spawn-here"])
 
-  // 4. Clamping near viewport edges preserves off-screen margin
-  expect(clampRadialCenter(10, 15, 740, 720)).toEqual({ x: 116, y: 116 })
+  // 4. Clamping near viewport edges keeps the whole ring, plus the caption below it, on screen
+  expect(clampRadialCenter(10, 15, 740, 720)).toEqual({ x: RADIAL_EDGE_MARGIN_PX, y: RADIAL_EDGE_MARGIN_PX })
+  expect(clampRadialCenter(735, 715, 740, 720)).toEqual({
+    x: 740 - RADIAL_EDGE_MARGIN_PX,
+    y: 720 - RADIAL_EDGE_MARGIN_PX - RADIAL_CAPTION_PX,
+  })
+  expect(RADIAL_EDGE_MARGIN_PX).toBeGreaterThan(RADIAL_OUTER_PX)
+})
+
+test("pointer bearing drives the direction indicator only outside the dead zone", () => {
+  const sm = new RadialMenuStateMachine(createTestRegistry([]))
+  sm.openKeyboard(300, 300, 800, 600, 0, { pickedObject: null, groundHit: { x: 0, y: 0, z: 0 } })
+  expect(sm.pointerAngle).toBeNull()
+  sm.movePointer(305, 296)
+  expect(sm.zone).toBe("deadzone")
+  expect(sm.pointerAngle).toBeNull()
+  sm.movePointer(340, 260)
+  expect(sm.activeSlot).toBe(1)
+  expect(sm.pointerAngle).toBeCloseTo(45, 5)
+  sm.movePointer(300, 360)
+  expect(sm.activeSlot).toBe(4)
+  expect(sm.pointerAngle).toBeCloseTo(180, 5)
+  sm.close()
+  expect(sm.pointerAngle).toBeNull()
+})
+
+test("highlight wedge spans one 45 degree sector between the inner and outer radius", () => {
+  const d = radialWedgePath(40, 110, 22.5)
+  const nums = d.match(/-?\d+(\.\d+)?/g)!.map(Number)
+  // Outer arc starts at -22.5 deg on the outer radius and the path closes on the inner radius.
+  expect(nums[0]).toBeCloseTo(-Math.sin((22.5 * Math.PI) / 180) * 110, 1)
+  expect(nums[1]).toBeCloseTo(-Math.cos((22.5 * Math.PI) / 180) * 110, 1)
+  expect(d.endsWith("Z")).toBe(true)
+  // A gap insets both radial edges symmetrically.
+  const inset = radialWedgePath(40, 110, 22.5, 2).match(/-?\d+(\.\d+)?/g)!.map(Number)
+  expect(inset[0]).toBeGreaterThan(nums[0]!)
 })
 
 test("LabCommandRegistry invoke validates args schema, records undoable transactions, and returns serializable state()", () => {
