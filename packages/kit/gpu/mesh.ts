@@ -1,5 +1,8 @@
 export type Rgb = readonly [number, number, number]
 
+/** sRGB hex (0xRRGGBB) to a 0..1 triple. */
+export const hex = (h: number): Rgb => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]
+
 /** Vertex while building: position (3), normal (3), colour (3), material (1), aux (1). */
 export const FLOATS_PER_VERT = 11
 /** Packed GPU vertex: position f32x3, normal snorm8x4, colour unorm8x4, material and aux f16x2. */
