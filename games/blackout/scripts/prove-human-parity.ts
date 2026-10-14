@@ -9,12 +9,11 @@ import { HIP, RIG } from "../src/render/person"
 
 const EXPECTED_HASHES = {
   old: "00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac",
-  // Deliberately updated from f5a333ae622e3df2042d99638c1010121ffdbf95edef6a7a0cca6d932670539b after the
-  // walk/run gait audit: phase-locked anti-phase step scheduling (eliminating the 45% run / 12.5% walk L/R step
-  // stagger and 3-step phase-wrap bob beat), smooth Williams Contact->Down->Passing->Up COM curve without
-  // discontinuous touchdown dip impulse, terminal-stance heel-off roll + dorsiflexed heel-strike preparation
-  // with near-zero contact foot velocity, and phase-compensated opposing arm swing.
-  new: "756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff",
+  // Deliberately updated from 756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff after the
+  // run-realism pass: mocap-calibrated running heel kick-up and knee drive in poseLegs, unwrapped sagittal
+  // shin-relative swing ankle pitch, seeded pair-balanced per-step variation (stride, timing, lift, lateral
+  // placement, toe-out yaw, arm swing), start/stop weight transfer, turn banking, and secondary head lag.
+  new: "dcca71fd2a0ce386aeff806a3f15f6afa2fc96f1f76643b7e47242fb8f332f79",
 } as const
 
 type Api = {

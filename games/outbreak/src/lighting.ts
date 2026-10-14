@@ -4,6 +4,17 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 
+/** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
+export const STREET_LAMP_POSTS = [
+  { x: 38.25, z: 47.85, yaw: -Math.PI * 0.92 },
+  { x: 37.95, z: 25.15, yaw: 0.32 },
+] as const
+
+/** World-space centre of a post's sodium lens (model lens at x = 1.44, y = 6.10 above the 0.08 m curb). */
+export function streetLampHead(post: (typeof STREET_LAMP_POSTS)[number]): [number, number, number] {
+  return [post.x + Math.cos(post.yaw) * 1.44, 6.18, post.z + Math.sin(post.yaw) * 1.44]
+}
+
 export type OutbreakLightingSettings = {
   exposure: number
   skyFill: number
@@ -19,6 +30,8 @@ export type OutbreakLightingSettings = {
   wetSpecular: number
   rimStrength: number
   vignetteDarkness: number
+  streetAirHaze: number
+  actorLampShadow: number
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
@@ -36,6 +49,8 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   wetSpecular: 0.56,
   rimStrength: 0.76,
   vignetteDarkness: 0.34,
+  streetAirHaze: 1,
+  actorLampShadow: 1,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -119,9 +134,11 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "wetSpecular", label: "Wet specular sheen", group: "Lighting", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "rimStrength", label: "Moonlight rim", group: "Lighting", min: 0, max: 2.0, step: 0.05, unit: "×" },
   { key: "vignetteDarkness", label: "Peripheral darkness", group: "Lighting", min: 0, max: 1.2, step: 0.05, unit: "×" },
+  { key: "streetAirHaze", label: "Streetlamp air haze", group: "Atmosphere", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 32
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 40
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -137,6 +154,10 @@ export type OutbreakLightingFrameState = {
   flashlightOutput: number
   flashlightSlot: number
   inInteriorView: boolean
+  /** Lens centre of the streetlamp nearest the camera target. */
+  streetHead: readonly [number, number, number]
+  /** Up to two nearest living zombies (x, y); unused slots are far away. */
+  zombies: readonly [number, number, number, number]
   weather?: {
     wetness: number
     puddleCoverage: number
@@ -146,7 +167,7 @@ export type OutbreakLightingFrameState = {
 }
 
 /**
- * Packs 32 floats (8 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
+ * Packs 40 floats (10 vec4f) into Renderer's custom uniform buffer (@group(0) @binding(13)):
  * u0: skyFill, moonFill, practicalWarmth, lightFalloff
  * u1: porchPower, windowPower, roomPower, streetPower
  * u2: flashlightHaze, wetSpecular, rimStrength, vignetteDarkness
@@ -154,7 +175,9 @@ export type OutbreakLightingFrameState = {
  * u4: flashTanHalf, flashRange, flashPower, flashSlot
  * u5: flashColorR, flashColorG, flashColorB, inInteriorView (1 or 0)
  * u6: playerX, playerY, playerH, exposure
- * u7: reserved
+ * u7: streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
+ * u8: actorLampShadow, reserved, reserved, reserved
+ * u9: zombie0X, zombie0Y, zombie1X, zombie1Y
  */
 export function packOutbreakLightingUniforms(
   state: OutbreakLightingFrameState,
@@ -203,11 +226,18 @@ export function packOutbreakLightingUniforms(
   out[25] = state.playerY
   out[26] = state.playerH
   out[27] = s.exposure
-  // u7: weather surface response (wetness, puddleCoverage, rippleIntensity, snowAmount)
-  out[28] = state.weather?.wetness ?? 0
-  out[29] = state.weather?.puddleCoverage ?? 0
-  out[30] = state.weather?.rippleIntensity ?? 0
-  out[31] = state.weather?.snowAmount ?? 0
+  // u7
+  out[28] = state.streetHead[0]
+  out[29] = state.streetHead[1]
+  out[30] = state.streetHead[2]
+  out[31] = s.streetAirHaze
+  // u8: actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
+  out[32] = s.actorLampShadow
+  out[33] = state.weather?.wetness ?? 0
+  out[34] = state.weather?.puddleCoverage ?? 0
+  out[35] = state.weather?.snowAmount ?? 0
+  // u9
+  out.set(state.zombies, 36)
   return out
 }
 
@@ -696,7 +726,9 @@ struct OutbreakLightingUniforms {
   u4: vec4f, // flashTanHalf, flashRange, flashPower, flashSlot
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
-  u7: vec4f, // reserved
+  u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
+  u8: vec4f, // actorLampShadow, reserved, reserved, reserved
+  u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 
@@ -787,15 +819,15 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
 
   if (!inRoom) {
     var wetPuddle = 0.0;
-    if (OL.u7.x > 0.01) {
+    if (OL.u8.y > 0.01) {
       if (world.y < 0.35 && n.y > 0.75) {
         let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u7.x * (0.45 + 0.85 * q.x * q.y);
+        wetPuddle = OL.u8.y * (0.45 + 0.85 * q.x * q.y);
         col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
       }
     }
-    if (OL.u7.w > 0.01 && n.y > 0.45) {
-      col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u7.w * 0.55 * n.y);
+    if (OL.u8.w > 0.01 && n.y > 0.45) {
+      col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u8.w * 0.55 * n.y);
     }
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
     let sScale = OL.u1.w;
@@ -905,9 +937,97 @@ fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, m
   let moteHash = hash2(moteCell);
   let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
 
-  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0 + select(0.0, OL.u7.x * OL.u2.y * 0.85, !inRoom), world.y < 0.25 && n.y > 0.7);
+  let surfW = select(0.12 * max(0.0, dot(n.xz, -fDir)), 1.0 + select(0.0, OL.u8.y * OL.u2.y * 0.85, !inRoom), world.y < 0.25 && n.y > 0.7);
   let beamCol = vec3f(1.0, 0.62, 0.24);
-  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * (OL.u2.x + select(0.0, OL.u7.x * 0.35, !inRoom)) * 0.14 * surfW;
+  let mist = (profile / (0.55 + max(0.0, along) * 0.32) + moteGlint * 0.18) * (OL.u2.x + select(0.0, OL.u8.y * 0.35, !inRoom)) * 0.14 * surfW;
   return (baseAlbedo * 0.75 + beamCol * 0.06) * beamCol * OL.u4.z * mist * vis;
+}
+
+/**
+ * Analytic sodium air cone under the streetlamp lens, integrated along the camera ray to the shaded surface (no extra
+ * pass). The cone uses six midpoint samples on the ray segment clipped to the lamp's height slab, gated by the ray's
+ * horizontal closest approach to the pole axis; the lens and its halo use the closed-form Gaussian line integral at
+ * the ray's closest approach, faded where the surface occludes the far half.
+ */
+fn gaussLineAir(ro: vec3f, rd: vec3f, tMax: f32, c: vec3f, sigma: f32, slack: f32) -> f32 {
+  let tc = dot(c - ro, rd);
+  let d = length(ro + rd * tc - c);
+  let shown = clamp(0.5 + (tMax - tc + slack) / (sigma * 1.8), 0.0, 1.0);
+  return sigma * exp(-d * d / (sigma * sigma)) * shown;
+}
+
+fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
+  let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
+  if (nightLamps <= 0.001) { return vec3f(0.0); }
+  let ro = F.cam.xyz;
+  let seg = world - ro;
+  let tMax = length(seg);
+  let rd = seg / tMax;
+  var out = vec3f(0.0);
+  let haze = OL.u7.w * OL.u1.w * select(1.0, 0.6, inView);
+  if (haze > 0.001) {
+    let head = OL.u7.xyz;
+    let k = 0.58;
+    var air = 0.0;
+    if (rd.y < -1e-4) {
+      let t0 = max(0.0, (head.y - 0.04 - ro.y) / rd.y);
+      let t1 = min(tMax, -ro.y / rd.y);
+      if (t1 > t0) {
+        let oxz = ro.xz - head.xz;
+        let tAx = clamp(-dot(oxz, rd.xz) / max(dot(rd.xz, rd.xz), 1e-6), t0, t1);
+        if (length(oxz + rd.xz * tAx) < k * head.y * 1.2 + 0.5) {
+          let dt = (t1 - t0) / 6.0;
+          for (var i = 0; i < 6; i++) {
+            let p = ro + rd * (t0 + (f32(i) + 0.5) * dt);
+            let depth = head.y - p.y;
+            let coneR = 0.2 + k * depth;
+            let r2 = dot(p.xz - head.xz, p.xz - head.xz);
+            air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
+          }
+          air *= dt;
+        }
+      }
+    }
+    let lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
+    let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
+    out += vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
+  }
+  return out * nightLamps;
+}
+
+/**
+ * Analytic soft capsule shadow cast by the survivor and the two nearest zombies away from the streetlamp lens on outdoor
+ * ground, plus a tight boot-contact occlusion under each actor. Shadow length follows the lamp's height over the actor,
+ * the penumbra widens toward the tip, and the darkening fades with distance from the lamp.
+ */
+fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional: f32) -> f32 {
+  let rel = g - feet;
+  let contact = exp(-dot(rel, rel) / 0.035);
+  let away = feet - lamp.xz;
+  let dh = length(away);
+  let reach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
+  let dir = away / max(dh, 1e-3);
+  let t = clamp(dot(rel, dir) / reach, 0.0, 1.0);
+  let dist = length(rel - dir * (t * reach));
+  let radius = 0.17 + 0.22 * t;
+  let lampNear = (1.0 - smoothstep(8.0, 16.0, dh)) * directional;
+  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * lampNear;
+  return max(shadow * 0.72, contact * 0.48);
+}
+
+fn evalActorGroundShadow(world: vec3f, n: vec3f, inRoom: bool) -> f32 {
+  let k = OL.u8.x;
+  if (k <= 0.001 || n.y < 0.6 || world.y > OL.u6.z + 0.35) { return 1.0; }
+  let g = world.xz;
+  let p = OL.u6.xy;
+  let z0 = OL.u9.xy;
+  let z1 = OL.u9.zw;
+  let near = min(dot(g - p, g - p), min(dot(g - z0, g - z0), dot(g - z1, g - z1)));
+  if (near > 9.0) { return 1.0; }
+  // Outdoors the sodium lens is the dominant caster; indoors only the boot contact remains.
+  let lamp = OL.u7.xyz;
+  let directional = select(1.0, 0.0, inRoom || OL.u5.w > 0.5);
+  let occ = max(actorShadowTerm(g, p, lamp, 1.72, directional), max(actorShadowTerm(g, z0, lamp, 1.68, directional), actorShadowTerm(g, z1, lamp, 1.68, directional)));
+  return 1.0 - occ * k;
 }
 `

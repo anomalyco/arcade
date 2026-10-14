@@ -89,6 +89,8 @@ describe("Outbreak weather integration", () => {
         flashlightOutput: 1,
         flashlightSlot: 1,
         inInteriorView: false,
+        streetHead: [36.86, 6.18, 47.49],
+        zombies: [-999, -999, -999, -999],
         weather: {
           wetness: out.state.wetness,
           puddleCoverage: out.state.puddleCoverage,
@@ -98,10 +100,9 @@ describe("Outbreak weather integration", () => {
       },
       [1, 0.9, 0.8],
     )
-    expect(u[28]).toBeCloseTo(out.state.wetness, 4)
-    expect(u[29]).toBeCloseTo(out.state.puddleCoverage, 4)
-    expect(u[30]).toBeCloseTo(out.state.rippleIntensity, 4)
-    expect(u[31]).toBe(0)
+    expect(u[33]).toBeCloseTo(out.state.wetness, 4)
+    expect(u[34]).toBeCloseTo(out.state.puddleCoverage, 4)
+    expect(u[35]).toBe(0)
 
     const r1 = randomizeOutbreakWeather({ ...s }, 55)
     const r2 = randomizeOutbreakWeather({ ...s }, 55)

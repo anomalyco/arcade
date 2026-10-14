@@ -13,7 +13,9 @@ showed this works:
   contact foot speed from 0.63 to 0.03 m/s. The walk's COM subharmonic ratio fell from 0.92 to 0.03
   and touchdown jerk from 279 to 90 m/s³.
 - Pose diff: arm angle RMSE against mocap went from 12.7° to 2.6° for the walk and from 31.7° to
-  7.6° for the run.
+  7.6° for the run; in the run-realism pass, leg angle RMSE fell from 12.2° to 9.2° (walk), 24.5° to
+  16.9° (run, peak foot lift 19.5 → 38.9 cm, peak knee flexion 102.6° → 119.0°), and 31.8° to 15.2°
+  (Outbreak run), with seeded per-step blue-noise variation (`stepVariation = 0.35`).
 
 Read `docs/animation.md` first. It has the rules the rig follows, current values for every metric
 below, the causes of past bugs and the known gaps. `docs/human-rig.md` has the module API.
@@ -114,5 +116,6 @@ bun games/blackout/scripts/animation/render-video.ts [--out dir]
   align frames by left heel strike, not by timestamp.
 - **Paint-overs are art targets.** They show the intended pose; mocap and the metrics are the
   biomechanical reference.
-- **Do not report leg angles as solved.** Knee and ankle still differ from mocap by 15° to 35° RMSE
-  (`docs/animation.md`, Known gaps).
+- **Check late-swing knee extension.** Walk leg RMSE is 9.2° and run leg RMSE is 16.9° (Outbreak run
+  15.2°); the remaining run knee error is concentrated in late swing (`7/8`) where the heel-tuck
+  tapers before touchdown (`docs/animation.md`, Known gaps).

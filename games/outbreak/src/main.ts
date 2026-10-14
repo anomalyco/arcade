@@ -43,6 +43,8 @@ import {
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
+  STREET_LAMP_POSTS,
+  streetLampHead,
 } from "./lighting"
 import { Survivor } from "./survivor"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
@@ -96,6 +98,39 @@ const settings = {
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
+  infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
+}
+
+const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
+function nearestStreetHead(x: number, y: number): readonly [number, number, number] {
+  let best = streetHeads[0]!
+  for (const head of streetHeads) if (Math.hypot(head[0] - x, head[2] - y) < Math.hypot(best[0] - x, best[2] - y)) best = head
+  return best
+}
+
+const zombieSlots: [number, number, number, number] = [-999, -999, -999, -999]
+/** Two nearest living zombies within 12 m for analytic lamp shadows; unused slots stay far away. */
+function nearestZombies(zombies: readonly { x: number; y: number; state: string }[], px: number, py: number) {
+  let d0 = 144
+  let d1 = 144
+  zombieSlots.fill(-999)
+  for (const z of zombies) {
+    if (z.state === "dead") continue
+    const d = (z.x - px) ** 2 + (z.y - py) ** 2
+    if (d < d0) {
+      d1 = d0
+      zombieSlots[2] = zombieSlots[0]
+      zombieSlots[3] = zombieSlots[1]
+      d0 = d
+      zombieSlots[0] = z.x
+      zombieSlots[1] = z.y
+    } else if (d < d1) {
+      d1 = d
+      zombieSlots[2] = z.x
+      zombieSlots[3] = z.y
+    }
+  }
+  return zombieSlots
 }
 
 async function main() {
@@ -245,6 +280,15 @@ async function main() {
     },
     { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
     { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
+    {
+      key: "infiniteAmmo",
+      label: "Infinite ammo",
+      group: "Combat",
+      options: [
+        { label: "Off", value: 0 },
+        { label: "On", value: 1 },
+      ],
+    },
     { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
@@ -628,9 +672,28 @@ async function main() {
               }
             }
           }
+          if (args?.openDoor) {
+            for (const d of session.view.town.doors) {
+              if (d.id.startsWith("0-")) d.open = true
+            }
+            const bRects = sightRects(session.view.town)
+            for (const [vx, vy, va] of [
+              [30, 41, -1.57],
+              [20, 35, -1.57],
+              [20, 26, 0],
+              [30, 21, 1.57],
+              [38, 32, 3.14],
+            ] as const) {
+              vision.update(vx, vy, va, bRects, settings, null)
+              scenery.update(session.view.town, vision)
+            }
+            renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+            session.view.revision++
+          }
           peekBlend = 0
           lastPeek = null
           session.rebuildCollision()
+          avatar.reset()
           cam.snap(x, y)
           cam.dist = settings.zoom
           cam.update(innerWidth / Math.max(1, innerHeight))
@@ -1070,6 +1133,8 @@ async function main() {
         flashlightOutput: p.flashlightOutput,
         flashlightSlot,
         inInteriorView,
+        streetHead: nearestStreetHead(camX, camY),
+        zombies: nearestZombies(zombies, p.x, p.y),
         weather: activeWeather,
       },
       flashRgb,

@@ -879,7 +879,7 @@ function emitBoughCluster(
   const midCol = scaleRgb(base, midShade)
   const sunlitCol = scaleRgb(base, 1.18)
 
-  const totalCards = Math.max(8, Math.round(sprigDensity * 1.15))
+  const totalCards = Math.max(6, Math.round(sprigDensity))
   for (let s = 0; s < totalCards; s++) {
     const tierFrac = s / totalCards
     const isCore = tierFrac < 0.34
@@ -907,8 +907,8 @@ function emitBoughCluster(
     const outDir = normalize3(px - cx, (py - domePivot[1]) * 1.18 + (isCore ? 0.28 : 0.08), pz - cz)
 
     const cardRadius = Math.max(
-      0.10,
-      leafCardScale * (isCore ? 1.45 : isMid ? 1.25 : 1.05) * (0.88 + rng.next() * 0.24),
+      0.11,
+      leafCardScale * (isCore ? 1.54 : isMid ? 1.32 : 1.12) * (0.88 + rng.next() * 0.24),
     )
 
     emitBrushyLeafCard(

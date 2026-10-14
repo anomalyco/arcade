@@ -49,7 +49,11 @@ import {
   type StaminaTuning,
 } from "./stamina"
 
-export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & { aiWalkSpeed?: number }
+export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & {
+  aiWalkSpeed?: number
+  /** Dev cheat: keeps the pistol magazine full. 1 = on. */
+  infiniteAmmo?: number
+}
 
 export type Command = {
   mx: number
@@ -270,6 +274,7 @@ export class LocalSession implements Session {
       if (p.equippedItem === "hands") {
         this.combat.meleeShove(p, this.ai, sightRects(view.town), view.time)
       } else {
+        if (tuning.infiniteAmmo) p.magAmmo = p.magCapacity
         this.combat.firePistol(p, this.ai, sightRects(view.town), view.time)
         ensureCombatSlots = true
       }

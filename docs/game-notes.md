@@ -528,6 +528,15 @@ proven animation techniques to animation.md, not here.
   without avoiding a pass on this path (`perf/getaway.md`).
 - **Getaway early-Z split was not a clear win.** Opaque/cutaway pipelines with separate alpha chunks measured
   38.254 → 37.308 ms (inside MAD), with increased CPU submission cost; reverted (`perf/autoresearch.md`).
+- **Put the analytic lamp air on the actual lens, and anchor actors with a capsule shadow.** Outbreak's sodium pool
+  centre sits 6.7 m from the visible cobra-head lens, so the 2026-10-14 experiments integrate the air cone along the
+  camera ray from the lens (`STREET_LAMP_POSTS`/`streetLampHead`, six samples clipped to the lamp's height slab, plus a
+  closed-form Gaussian lens/halo line integral) and cast a soft capsule shadow from the survivor and two nearest zombies
+  away from that lens with 22 cm boot contact AO (`evalLampAir`, `evalActorGroundShadow` in
+  `games/outbreak/src/lighting.ts`; Lab Atmosphere group). Against the sodium-70s target (`scripts/look-compare.py`),
+  street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
+  paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
+  inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
 
 ## Art direction
 
@@ -776,6 +785,22 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
 ## Researched, not yet adopted
+
+### Outbreak survey §5 experiments rejected on measurement (2026-10-14)
+
+Evidence and patches: `~/code/home/artifacts/2026-10-14-visual-experiments/progress.md`.
+
+- **Window interior parallax** (virtual room, drapes, valance behind the glass): after Release 5's lamp-box and drape
+  geometry behind 22 % glass, five tunings all moved the window regions away from the target (best: street 6.75 → 8.50,
+  open 4.56 → 6.12) and read paler. The existing geometry already supplies the warm depth.
+- **Light-list grid / static polar rows**: skipping the entire polar dispatch changed GPU time by under 0.15 ms, so
+  row caching cannot pay. A pixel-exact 16×10 view bitmask grid (0 scene pixels changed) had no clear win with only 6/3
+  lights in the benchmark frames; 11 rejected dummy lights cost +2.2–2.5 ms, so revisit if light counts grow.
+- **Directional actor bounce and wet asphalt lamp sheen**: actor pixels moved under 2/255. The 6.2 m lens's mirror point
+  for this camera lands on the far sidewalk under the tree canopy, so a physically placed sheen never reaches the road.
+- **Foliage contact bend and Karis bloom average**: the bend darkened the shrub mass instead of reading as parting.
+  With `bloom = 0.068` and a 0.9 threshold, the Karis average changed the frame by at most 3/255 and frame-to-frame
+  shimmer not at all.
 
 ### Connected smoke research (2026-10-12)
 
