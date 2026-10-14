@@ -206,22 +206,6 @@ fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialR
 )
 
 export const outbreakSurfaceMaterialWgsl = surfaceMaterial
-  .replace(
-    "let inNorthVerge = kind == 2 && p.y > 39.32 && p.y < 39.78 && (p.x < 37.8 || p.x > 50.2);",
-    "let vWarp = sin(p.x * 1.7 + sin(p.x * 0.63) * 1.2) * 0.055;\n      let inNorthVerge = kind == 2 && (p.y + vWarp) > 39.28 && (p.y + vWarp) < 39.78 && (p.x < 37.8 || p.x > 50.2);",
-  )
-  .replace(
-    "let inSouthVerge = kind == 2 && p.y > 48.22 && p.y < 48.68 && (p.x < 37.8 || p.x > 50.2);",
-    "let inSouthVerge = kind == 2 && (p.y - vWarp) > 48.22 && (p.y - vWarp) < 48.72 && (p.x < 37.8 || p.x > 50.2);",
-  )
-  .replace(
-    "&& !((p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 25.8 && p.x < 27.6 && p.y > 48.0));",
-    "&& !((p.x > 26.8 && p.x < 28.6 && p.y < 40.0) || (p.x > 26.55 && p.x < 28.75 && p.y > 48.0));",
-  )
-  .replace(
-    "grassTint = vec3f(0.022, 0.038, 0.012) * (0.42 + 0.58 * vEdge);",
-    "grassTint = vec3f(0.052, 0.064, 0.026) * (0.60 + 0.40 * vEdge);",
-  )
 
 export const groundSurfaceHookWgsl = /* wgsl */ `
     if (mat == 20) {

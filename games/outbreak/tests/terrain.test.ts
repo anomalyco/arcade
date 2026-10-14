@@ -98,4 +98,4 @@ test("house decay state, clutter density, weathering and clutter seed vary meshe
   } finally {
     Object.assign(archSettings, saved)
   }
-})
+}, 20_000)

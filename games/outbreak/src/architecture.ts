@@ -1,5 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
-import { buildFoliageTree, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
+import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -294,29 +294,53 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   // Leaning porch broom against right wall beside door
   m.quadAuto([cx+.82,.13,e+.18],[cx+.85,.13,e+.18],[cx+.76,1.28,e+.03],[cx+.73,1.28,e+.03],rgb(0x5c462e),MAT.timber)
   m.box(cx+.76,.13,e+.14,cx+.90,.32,e+.23,rgb(0x6e5a38),MAT.timber)
-  // Grouped foundation planting: natural soil bed without toothed brick edging, boxwood pair by porch, corner shrubs and hydrangea.
+  // Overgrown, irregular foundation hedge & bramble thicket: organic soil discs (no straight rectangular bed)
+  // and multi-height sprawling shrubs keeping window sills & porch columns clear while spilling wild weeds onto the lawn.
   const rng=new Rng(town.houseSeed+id*71)
-  for(const [a,d] of [[x+.15,x+4.35],[x+7.15,r-.15]]){
-    m.quad([a!,.022,e+.92],[d!,.022,e+.92],[d!,.022,e+.05],[a!,.022,e+.05],[0,1,0],rgb(0x28291f),MAT.ground,5)
-  }
-  // Left corner shrub cluster + low under-window shrubs + twin boxwood globes + flowering hydrangea
   for(const [px,pz,ph,pr] of [
-    [x+.28,e+.54,1.38,.88],
-    [x-.28,e-.35,1.22,.78],
-    [x+1.45,e+.44,.64,.44],
-    [x+2.52,e+.46,.52,.38],
-    [x+3.65,e+.38,.56,.40],
-    // Two distinct compact rounded boxwood globes right of the porch column (h/r >= 1.65 triggers globe habit)
-    [x+7.42,e+.50,.88,.50],
-    [x+8.68,e+.52,.84,.48],
-    // Low border shrubs under the right window
-    [x+10.05,e+.42,.52,.38],
-    [x+11.25,e+.44,.56,.40],
-    // Lush flowering Hydrangea bush at the front-right corner
-    [r-1.05,e+.62,1.12,.88],
-  ])plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),supportHeight(town,px!,pz!))
-  // Multi-floret creamy-white hydrangea corymb panicles on the front-right corner bush
-  emitHydrangeaPanicles(m,r-1.05,supportHeight(town,r-1.05,e+.62),e+.62,1.12,.88,town.houseSeed+31)
+    // Left corner bush cluster wrapping around the corner by the driveway sedan
+    [x-.24,e-.35,1.24,.82],
+    [x+.28,e+.56,1.18,.80],
+    [x+.88,e+.96,.68,.56],
+    // Irregular low-to-mid bushes under the left window (below 0.85m sill) + taller bush flanking the left porch column
+    [x+1.52,e+.46,.72,.58],
+    [x+2.28,e+.78,.54,.48],
+    [x+2.95,e+.44,.66,.54],
+    [x+3.82,e+.58,1.08,.72],
+    // Taller bush flanking the right porch column + irregular overgrown shrubs under the right window
+    [x+7.48,e+.56,1.12,.74],
+    [x+8.48,e+.52,.94,.66],
+    [x+9.28,e+.84,.58,.50],
+    [x+10.05,e+.44,.68,.56],
+    [x+10.92,e+.78,.56,.48],
+    [x+11.65,e+.48,.74,.58],
+    // Front-right corner hydrangea thicket
+    [r-1.08,e+.62,1.16,.84],
+    [r-.22,e+1.02,.76,.62],
+  ]){
+    const gy=supportHeight(town,px!,pz!)
+    m.prism(px!,pz!,pr!*1.05,pr!*.95,gy+.006,gy+.018,7,rgb(0x14180f),MAT.ground,5)
+    plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),gy)
+  }
+  // Subtle, short, matted olive-ochre weed & turf tufts along the front margin of the foundation bushes
+  for(let wx=x-.1;wx<=r+.1;wx+=.58+rng.next()*.42){
+    if(wx>x+4.15&&wx<x+7.15)continue
+    const wz=e+.72+rng.next()*.68
+    const gy=supportHeight(town,wx,wz)
+    emitGrassTuft(m,wx,gy,wz,{
+      bladeCount:3,
+      radius:.16+rng.next()*.08,
+      height:.11+rng.next()*.09,
+      width:foliageSettings.bladeWidth*.88,
+      curvature:Math.min(1,foliageSettings.bladeCurvature*1.15),
+      leanAngle:Math.PI*.5+(rng.next()-.5)*1.4,
+      rootColor:rgb(0x1c1e12),
+      tipColor:rgb(rng.pick([0x3e3c24,0x484226,0x343820])),
+      rng,
+    })
+  }
+  // Delicate creamy-white blossom flecks on the front-right corner bush
+  emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,town.houseSeed+31)
   for(const px of [x+.08,r-.14]){
     m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
     m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
@@ -356,28 +380,28 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   }
   m.box(x - .08, 1.15, z + 6.8, x + .01, 1.52, z + 7.12, rgb(0x3a4046), MAT.lit)
   m.box(x - .04, .35, z + 6.93, x + .01, 2.68, z + 6.99, rgb(0x4a5058), MAT.lit)
-  // Framing side-yard trees, sidewalk-overhanging street canopies, corner shrubs, and driveway border hedges.
+  // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
   for(const [px,pz,ph,pr] of [
-    // Continuous dark border hedge & overarching woodland trees along the left driveway fence
-    [x-3.62,e+2.05,1.46,.92],
-    [x-3.58,e+.55,1.42,.86],
-    [x-3.55,e-.95,1.38,.82],
-    [x-3.65,e-2.80,1.34,.78],
-    [x-3.60,z+3.20,1.38,.80],
-    [x-5.25,e-.60,6.35,2.55],
-    [x-4.85,z+3.60,6.65,2.65],
-    // Multi-layered broadleaf street & side-yard trees overhanging the right lawn and north-south sidewalk
-    [r+2.45,z+1.60,6.40,2.45],
-    [r+2.95,z+5.80,6.85,2.65],
-    [r+2.55,e-2.10,6.15,2.35],
-    [r+.85,e+.40,1.48,.94],
-    // Rounded dark-green shrub at the front-right lawn corner inside the sidewalk intersection + border companion
-    [r+2.75,e+2.45,1.46,.94],
-    [r+1.15,e+2.60,1.06,.74],
-    // South-side street corner framing shrubs across the road (for the hero north-west lot)
+    // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies
+    [x-3.58,e+2.05,1.48,.96],
+    [x-3.52,e+.55,1.42,.90],
+    [x-3.55,e-.95,1.38,.86],
+    [x-3.65,e-2.65,1.34,.82],
+    [x-3.60,z+3.20,1.38,.86],
+    [x-5.45,e+.60,6.80,3.10],
+    [x-5.15,e-3.60,7.20,3.25],
+    [x-4.80,z+3.20,6.60,2.95],
+    // Right yard street tree & corner bush (keeping the north-south sidewalk x=38..40 open under the sodium streetlamp)
+    [r+.52,e-2.40,5.80,2.35],
+    [r+.52,e+.42,1.44,.92],
+    [r+.48,e+1.65,1.38,.88],
+    [r-.45,e+1.95,.98,.68],
+    // South-side street corner framing trees across the road (leaving south sidewalk & verge open)
     ...(id===0 ? [
-      [x-6.35,e+16.4,5.60,2.25],
-      [r+3.35,e+16.6,1.48,.96],
+      [x-5.40,e+14.50,6.80,3.05],
+      [x-3.50,e+14.80,1.48,.98],
+      [r+4.40,e+14.60,6.80,3.05],
+      [r+2.80,e+14.80,1.46,.96],
     ] as const : []),
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner (muted antique tones).
