@@ -1098,25 +1098,36 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (interior(o.world.xz) && o.world.y < 2.65) {
       let inLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(vec3f(inLum) * vec3f(0.92, 0.95, 1.02), col, 0.35);
-      // Subdue white fridge/counter/stove tops along the partition so they don't form a bright white band
-      if (o.world.x > 30.8 && o.world.x < 35.8 && o.world.z > 29.55 && o.world.z < 30.48 && o.world.y > 0.85) {
-        col *= 0.28;
+      // Subdue white fridge/counter/stove tops & runner mat border along the partition
+      if (o.world.x > 30.8 && o.world.x < 35.8 && o.world.z > 29.55 && o.world.z < 31.30) {
+        if (o.world.y > 0.85 || (o.world.y > 0.131 && o.world.y < 0.148)) {
+          col *= 0.24;
+        }
       }
-      // Warm amber wall-wash on the south-east dining partition wall above the console table
-      if (o.world.x > 29.2 && o.world.x < 36.2 && o.world.z > 29.45 && o.world.z < 30.65 && o.world.y > 0.55 && o.world.y < 2.55) {
-        let wx = exp(-pow((o.world.x - 33.45) * 0.55, 2.0));
-        let wy = exp(-pow((o.world.y - 1.45) * 1.15, 2.0));
-        col += vec3f(0.22, 0.125, 0.048) * wx * wy;
+      let plasterTex = 0.72 + 0.56 * surfaceFbm(vec2f(o.world.x + o.world.z, o.world.y) * 2.8);
+      // Cool silvery-blue wall-wash on the north bedroom wall behind the nightstand lamp
+      if (abs(n.y) < 0.35 && o.world.x > 22.2 && o.world.x < 27.6 && o.world.z < 26.2 && o.world.y > 0.45 && o.world.y < 2.65) {
+        let bx = exp(-pow((o.world.x - 24.65) * 0.62, 2.0));
+        let by = exp(-pow((o.world.y - 1.55) * 1.15, 2.0));
+        col += vec3f(0.095, 0.135, 0.185) * bx * by * plasterTex;
       }
-      // Subtle cool moonlight fill in the north-east room & central hallway threshold
+      // Warm amber wall-wash on the vertical south-east dining partition wall above the console table
+      if (abs(n.y) < 0.35 && o.world.x > 29.2 && o.world.x < 36.2 && o.world.z > 29.40 && o.world.z < 30.25 && o.world.y > 0.55 && o.world.y < 2.55) {
+        let wx = exp(-pow((o.world.x - 33.45) * 0.58, 2.0));
+        let wy = exp(-pow((o.world.y - 1.48) * 1.15, 2.0));
+        col += vec3f(0.24, 0.135, 0.052) * wx * wy * plasterTex;
+      }
+      // Textured dark wood-plank & plaster fill in the north-east room & central hallway threshold
       if (o.world.z < 29.6 && o.world.x > 28.5) {
-        col += vec3f(0.012, 0.015, 0.020) * (0.7 + 0.3 * max(0.0, n.y));
+        let neTex = 0.55 + 0.90 * surfaceFbm(o.world.xz * 2.4);
+        col = col * 0.85 + vec3f(0.007, 0.009, 0.012) * neTex * (0.6 + 0.4 * max(0.0, n.y));
       }
       // Hallway & living-room floorboard bounce around the survivor
-      if (o.world.y < 0.22 && o.world.x > 26.2 && o.world.x < 31.8 && o.world.z > 29.2 && o.world.z < 35.3) {
-        let hallCarry = exp(-pow((o.world.x - 28.1) * 0.65, 2.0)) * exp(-pow((o.world.z - 31.4) * 0.48, 2.0));
-        let plankVar = 0.75 + 0.5 * surfaceNoise(vec2f(o.world.x * 1.4, o.world.z * 9.5));
-        col += vec3f(0.042, 0.046, 0.052) * hallCarry * plankVar;
+      if (o.world.y < 0.22 && o.world.x > 25.8 && o.world.x < 32.2 && o.world.z > 28.8 && o.world.z < 35.3) {
+        let hallCarry = exp(-pow((o.world.x - 28.1) * 0.58, 2.0)) * exp(-pow((o.world.z - 31.6) * 0.42, 2.0));
+        let plankVar = 0.65 + 0.70 * surfaceNoise(vec2f(o.world.x * 1.4, o.world.z * 9.5));
+        let seamDark = smoothstep(0.0, 0.08, abs(fract(o.world.z / 0.18) - 0.5));
+        col += vec3f(0.046, 0.050, 0.056) * hallCarry * plankVar * seamDark;
       }
     }
     // East window icy moonlight spill on window reveals & kitchen counter/floor
@@ -1129,10 +1140,10 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
     // Wet central porch walkway specular streak under the porch light
     if (mat == 20 && o.world.x > 26.4 && o.world.x < 29.0 && o.world.z > 35.5 && o.world.z < 40.0) {
-      let cx = exp(-pow((o.world.x - 27.7) * 2.8, 2.0));
+      let cx = exp(-pow((o.world.x - 27.7) * 2.6, 2.0));
       let cz = smoothstep(40.0, 35.6, o.world.z);
-      let pWet = 0.65 + 0.7 * surfaceNoise(o.world.xz * 4.8);
-      col = col * mix(0.38, 0.72, cx) + vec3f(0.14, 0.13, 0.11) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
+      let pWet = 0.55 + 0.90 * surfaceFbm(o.world.xz * 4.5);
+      col = col * mix(0.36, 0.78, cx) + vec3f(0.155, 0.145, 0.125) * cx * cz * pWet * select(1.0, 0.45, Vig.params2.y < 35.0);
     }
   }
   // Direction 3 (Noir): volumetric flashlight cone haze + hot hand core & occluded ground beam
@@ -1152,8 +1163,8 @@ fn eyeVisible(p: vec2f) -> f32 {
     let inHouse = interior(o.world.xz);
     if (along > -0.15 && along < fRange) {
       let coneR = 0.09 + max(0.0, along) * tanHalf * select(1.0, 1.25, inHouse);
-      let radialCore = exp(-pow(across / (coneR * select(0.52, 0.64, inHouse)), 2.0));
-      let radialEdge = 1.0 - smoothstep(coneR * 0.58, coneR * 1.15, across);
+      let radialCore = exp(-pow(across / (coneR * select(0.50, 0.62, inHouse)), 2.0));
+      let radialEdge = 1.0 - smoothstep(coneR * 0.55, coneR * 1.12, across);
       let axialIn = smoothstep(-0.06, 0.14, along);
       let axialOut = pow(clamp(1.0 - along / fRange, 0.0, 1.0), select(1.65, 1.25, inHouse));
       let vis = shadowAt(fSlot, fOrig, lights[fSlot].pos.y, 0.04, o.world.xz, min(o.world.y, 0.95));
@@ -1877,7 +1888,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     // Player flashlight cone (polar-shadowed directional cone light, used in Noir direction 3)
     const flashPower = useShippedGlobal ? 0 : s.flashlightPower
     let flashSlot = -1
-    const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 43) < 2 ? 50 : s.flashlightAim
+    const beamDeg = isInteriorCam && Math.abs(s.flashlightAim - 43) < 3 ? 50 : s.flashlightAim
     const effRange = isInteriorCam && Math.abs(s.flashlightRange - 10.5) < 1 ? 6.2 : s.flashlightRange
     const beamRad = (beamDeg * Math.PI) / 180
     const dirX = Math.cos(beamRad)
