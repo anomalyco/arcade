@@ -32,6 +32,7 @@ import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakCombatFX } from "./combat-fx"
 import { buildLevel, hex } from "./level"
+import { archSettings } from "./architecture"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
@@ -54,6 +55,10 @@ const settings = {
   houseSeed: 7,
   terrain: 0.22,
   foliageDensity: 1,
+  houseDecay: 0,
+  clutterDensity: 1,
+  weathering: 1,
+  clutterSeed: 17,
   weather: 0,
   lighting: 1,
   diagnostic: 0,
@@ -220,6 +225,21 @@ async function main() {
     { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
     { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
     { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
+    {
+      key: "houseDecay",
+      label: "House decay",
+      group: "Generation",
+      options: [
+        { label: "Auto (by seed)", value: 0 },
+        { label: "Tidy", value: 1 },
+        { label: "Abandoned", value: 2 },
+        { label: "Ransacked", value: 3 },
+        { label: "Barricaded", value: 4 },
+      ],
+    },
+    { key: "clutterDensity", label: "Clutter density", group: "Generation", min: 0, max: 2, step: 0.1, unit: "×" },
+    { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "clutterSeed", label: "Clutter seed", group: "Generation", min: 1, max: 99, step: 1, unit: "" },
     { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
     { key: "lighting", label: "Practical lights", group: "Look", min: 0, max: 1.5, step: 0.05 },
   ]
@@ -392,7 +412,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour") session.view.hour = wrapHour(settings.hour)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||
@@ -570,6 +599,10 @@ async function main() {
   let vertices = 0
   function level() {
     session.view.town.foliageDensity = settings.foliageDensity
+    archSettings.houseDecay = settings.houseDecay
+    archSettings.clutterDensity = settings.clutterDensity
+    archSettings.weathering = settings.weathering
+    archSettings.clutterSeed = settings.clutterSeed
     const data = buildLevel(session.view.town)
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
@@ -584,7 +617,7 @@ async function main() {
     session.view.revision = previous.revision + 1
     session.view.town.doors.forEach((d, i) => {
       d.open = previous.town.doors[i]!.open
-      d.locked = previous.town.doors[i]!.locked
+      if (previous.town.doors[i]!.locked !== undefined) d.locked = previous.town.doors[i]!.locked
     })
     session.view.town.windows.forEach((w, i) => {
       w.open = previous.town.windows[i]!.open
@@ -883,7 +916,8 @@ async function main() {
       (((settings.wallStyle & 3) << 4) >>> 0) |
       (((settings.floorStyle & 3) << 6) >>> 0) |
       ((Math.round((settings.texScale - 0.5) / 0.05) & 63) << 8) |
-      ((Math.round(settings.texContrast / 0.05) & 63) << 14)
+      ((Math.round(settings.texContrast / 0.05) & 63) << 14) |
+      ((Math.round(settings.weathering * 5) & 15) << 20)
     frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
     frame.set([cutX, cutY, cutFlag, cutRadius], 24)
     frame.set(
@@ -1123,7 +1157,16 @@ async function main() {
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
       if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
-      if (key === "houseSeed" || key === "terrain" || key === "foliageDensity") regenerate()
+      if (
+        key === "houseSeed" ||
+        key === "terrain" ||
+        key === "foliageDensity" ||
+        key === "houseDecay" ||
+        key === "clutterDensity" ||
+        key === "weathering" ||
+        key === "clutterSeed"
+      )
+        regenerate()
       if (
         key === "textures" ||
         key === "rugStyle" ||

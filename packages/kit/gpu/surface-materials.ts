@@ -1251,6 +1251,7 @@ export const surfaceMaterial = /* wgsl */ `
     let floorStyleBits = (texCfg >> 6u) & 3u;
     let texScaleMult = select(1.0, 0.5 + f32((texCfg >> 8u) & 63u) * 0.05, ((texCfg >> 8u) & 63u) > 0u);
     let texContrastMult = select(1.0, f32((texCfg >> 14u) & 63u) * 0.05, ((texCfg >> 14u) & 63u) > 0u);
+    let weatherMult = select(1.0, f32((texCfg >> 20u) & 15u) * 0.2, ((texCfg >> 20u) & 15u) > 0u);
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
@@ -1383,17 +1384,64 @@ export const surfaceMaterial = /* wgsl */ `
         albedo *= mix(0.84, 1.0, smoothstep(0.28, 0.65, o.world.y));
       }
     } else if (mat == 21) {
-      let row = floor(o.world.z / 0.23);
-      let q = vec2f(o.world.x / 0.34 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.15, o.world.z / 0.23);
-      let tabHash = hash2(floor(q)) - 0.5;
-      let rowShade = mix(0.76, 1.08, fract(o.world.z / 0.23));
-      albedo *= (0.98 + tabHash * 0.30 * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * 4.35))) * rowShade;
+      // Slope-aware 3-tab architectural asphalt shingles with crisp course overlap shadows, moonlit tab lips, and weathered streaks.
+      let ewWing = abs(n.x) > abs(n.z) && abs(n.y) < 0.96;
+      let slopeCoord = select(o.world.z, o.world.x, ewWing);
+      let spanCoord = select(o.world.x, o.world.z, ewWing);
+      let coursePitch = 0.25;
+      let tabSpan = 0.38;
+      let row = floor(slopeCoord / coursePitch);
+      let fy = fract(slopeCoord / coursePitch);
+      let rowJitter = (hash2(vec2f(row, 3.1)) - 0.5) * 0.18;
+      let q = vec2f(spanCoord / tabSpan + fract(row * 0.5) + rowJitter, slopeCoord / coursePitch);
+      let tabId = floor(q);
+      let fx = fract(q.x);
+      let tabHash = hash2(tabId) - 0.5;
+      let tabTilt = hash2(tabId * 1.73 + vec2f(5.1, 2.9)) - 0.5;
+      let detailFade = 1.0 - smoothstep(0.40, 0.92, surfaceFootprint * 4.0);
+
+      // Deep overlap drop-shadow at top of each course + bright moonlit granule catch along the stepped bottom lip.
+      let overlapShadow = mix(0.24, 1.0, smoothstep(0.05, 0.28, fy));
+      let stepCut = smoothstep(1.0, 0.88, fy);
+      let bottomBevel = exp(-pow((fy - 0.78) * 9.5, 2.0)) * (0.48 + 0.28 * tabHash) * detailFade;
+      let rowShade = mix(1.0, (0.68 + 0.38 * fy) * overlapShadow * mix(0.30, 1.0, stepCut), detailFade) + bottomBevel;
+
+      // Per-tab slate/charcoal/blue-grey granule variation + occasional missing/damaged dark tab.
+      let missingTab = step(0.935, hash2(tabId + vec2f(7.3, 11.9))) * 0.46 * clamp(weatherMult, 0.0, 1.5);
+      let tabTint = vec3f(1.0 - tabTilt * 0.10, 1.0 + tabTilt * 0.02, 1.0 + tabTilt * 0.14);
+      albedo *= tabTint * (1.0 + tabHash * 0.46 * detailFade) * (1.0 - missingTab) * rowShade;
       if (texOn) {
-        let tex = sampleMaterialFast(4, o.world.xz, 0.68 * texScaleMult);
-        albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.82 * texContrastMult);
+        let tex = sampleMaterialFast(4, o.world.xz, 0.72 * texScaleMult);
+        albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.92 * texContrastMult);
       }
-      albedo *= mix(0.48, 1.0, seam(q.x, 0.020, 2.94) * seam(q.y, 0.042, 4.35));
-      albedo *= 1.0 + grain(o.world.xz, 18.0) * 0.12;
+
+      // Crisp dark keyways (vertical tab slots) with one-sided moonlit edge catch.
+      let slotDist = min(fx, 1.0 - fx);
+      let tabSlot = mix(1.0, mix(0.22, 1.0, smoothstep(0.018, 0.085, slotDist)), detailFade);
+      let sideBevel = exp(-pow((fx - 0.12) * 14.0, 2.0)) * 0.22 * detailFade;
+      albedo *= tabSlot * (1.0 + sideBevel);
+
+      // Weathering: vertical rain/soot runoff streaks down the slope + damp moss/algae darkening near lower eaves.
+      let streakNoise = surfaceNoise(vec2f(spanCoord * 1.65, slopeCoord * 0.42) + vec2f(2.7, 6.1));
+      let lichenNoise = surfaceNoise(o.world.xz * 1.35 + vec2f(8.4, 1.9));
+      let eaveDamp = (1.0 - smoothstep(2.82, 3.28, o.world.y)) * 0.22 * weatherMult;
+      let sootStreak = smoothstep(0.44, 0.78, streakNoise) * 0.18 * weatherMult;
+      let mossPatch = smoothstep(0.62, 0.86, lichenNoise) * (1.0 - smoothstep(2.85, 3.65, o.world.y)) * 0.28 * weatherMult;
+      albedo *= (1.0 - sootStreak - eaveDamp);
+      albedo = mix(albedo, albedo * vec3f(0.68, 0.88, 0.62), mossPatch);
+      albedo *= 1.0 + (surfaceNoise(o.world.xz * 14.0) - 0.5) * 0.24 * detailFade;
+
+      // Perturb shingle normal so each course lip & individual tab catches directional moonlight and porch bounce.
+      let lipNorm = (smoothstep(0.68, 0.88, fy) - smoothstep(0.0, 0.22, fy) * 0.75) * 0.42 * detailFade;
+      let slotNorm = (smoothstep(0.0, 0.10, fx) - smoothstep(0.90, 1.0, fx)) * 0.22 * detailFade;
+      let dirZ = select(-1.0, 1.0, n.z >= 0.0);
+      let shShift = select(
+        vec3f(slotNorm + tabTilt * 0.15 * detailFade, 0.0, lipNorm * dirZ + tabHash * 0.12 * detailFade),
+        vec3f(lipNorm * select(-1.0, 1.0, n.x >= 0.0), 0.0, slotNorm + tabTilt * 0.15 * detailFade),
+        ewWing
+      );
+      n = normalize(n + shShift);
+      gloss = vec2f(26.0, (0.08 + 0.16 * bottomBevel) * tabSlot);
     } else if (mat == 23) {
       let p = vec2f(o.world.x + o.world.z, o.world.y);
       let row = floor(p.y / 0.085);

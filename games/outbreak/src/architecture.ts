@@ -7,6 +7,13 @@ import { supportHeight } from "../shared/terrain"
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
 type Point = [number,number,number]
 
+export const archSettings = {
+  houseDecay: 0,
+  clutterDensity: 1.0,
+  weathering: 1.0,
+  clutterSeed: 17,
+}
+
 /** Weathered clapboard garden shed with hipped shingle roof in the north-west side yard by the picket fence. */
 function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number) {
   const y=ground, wallCol=rgb(0x6c7582), trimCol=rgb(0x9ca3ad), roofCol=rgb(0x384252), ridgeCol=rgb(0x4b5668)
@@ -88,14 +95,14 @@ export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:numbe
 /** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
-  const trim=rgb(0xd4d2c8),roof=rgb(0x3d4758),brick=rgb(0x684339)
+  const trim=rgb(0xc8c4b8),roof=rgb(0x364152),eaveTrim=rgb(0x323944),gutterMetal=rgb(0x414a56),gutterDark=rgb(0x14181f)
   if(b.kind!=="house"){
-    const sc=rgb(0x555a54)
+    const sc=rgb(0x3a403d),parapet=rgb(0x4a504c)
     m.box(x+.36,2.8,z+.36,r-.36,2.94,e-.36,sc,MAT.roof,id)
-    m.box(x-.15,2.8,z-.15,r+.15,2.94,z+.36,sc,MAT.roof,id)
-    m.box(x-.15,2.8,e-.36,r+.15,2.94,e+.15,sc,MAT.roof,id)
-    m.box(x-.15,2.8,z+.36,x+.36,2.94,e-.36,sc,MAT.roof,id)
-    m.box(r-.36,2.8,z+.36,r+.15,2.94,e-.36,sc,MAT.roof,id)
+    m.box(x-.15,2.8,z-.15,r+.15,3.02,z+.36,parapet,MAT.roof,id)
+    m.box(x-.15,2.8,e-.36,r+.15,3.02,e+.15,parapet,MAT.roof,id)
+    m.box(x-.15,2.8,z+.36,x+.36,3.02,e-.36,parapet,MAT.roof,id)
+    m.box(r-.36,2.8,z+.36,r+.15,3.02,e-.36,parapet,MAT.roof,id)
     return
   }
   const slopeY = (pz: number) => 2.88 + (ridge - 2.88) * (1 - Math.abs(pz - mid) / (mid - (z - .42)))
@@ -118,39 +125,86 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   }
   // Left roof wing alongside the west bedroom wall (x-.42 .. x+2.05, z+1.2 .. z+5.55), meeting the living room north wall cleanly
   m.quadAuto([x-.42, 2.84, z+1.2], [x-.42, 2.84, z+5.55], [x+2.05, 3.48, z+5.55], [x+2.05, 3.48, z+1.2], roof, MAT.roof, id)
-  m.box(x-.45, 2.70, z+1.15, x+2.05, 2.85, z+1.26, trim, MAT.roof, id)
-  // Stepped north-east shingle roof wing (x+9.45 .. r-1.55, z+1.45 .. z+5.55) and kitchen north eave (r-1.60 .. r+.42, z+5.12 .. mid)
-  m.quadAuto([x+9.45, 3.46, z+5.55], [r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+1.45], [x+9.45, 2.84, z+1.45], roof, MAT.roof, id)
-  m.quadAuto([r-1.55, 3.46, z+5.55], [r-1.55, 2.84, z+5.15], [r-1.55, 2.84, z+1.45], [r-1.55, 3.46, z+5.55], roof, MAT.roof, id)
-  m.quadAuto([r-1.60, slopeY(mid), mid], [r+.42, slopeY(mid), mid], [r+.42, 2.84, z+5.12], [r-1.60, 2.84, z+5.12], roof, MAT.roof, id)
-  m.box(x+9.45, 2.70, z+1.38, r-1.50, 2.85, z+1.50, trim, MAT.roof, id)
-  m.box(r-1.62, 2.70, z+1.38, r-1.50, 2.85, z+5.18, trim, MAT.roof, id)
-  m.box(r-1.55, 2.70, z+5.08, r+.45, 2.85, z+5.20, trim, MAT.roof, id)
+  m.box(x-.45, 2.70, z+1.15, x+2.05, 2.84, z+1.25, eaveTrim, MAT.roof, id)
+  m.box(x-.48, 2.72, z+1.18, x-.40, 2.84, z+5.55, eaveTrim, MAT.roof, id)
+  // Stepped north-east shingle roof wing spanning all the way to r+.42 so the NE utility alcove is properly roofed
+  m.quadAuto([x+9.45, 3.46, z+5.55], [r+.42, 3.46, z+5.55], [r+.42, 2.84, z+1.38], [x+9.45, 2.84, z+1.38], roof, MAT.roof, id)
+  m.quadAuto([r-1.60, slopeY(mid), mid], [r+.42, slopeY(mid), mid], [r+.42, 3.46, z+5.55], [r-1.60, 3.46, z+5.55], roof, MAT.roof, id)
+  m.box(x+9.45, 2.70, z+1.32, r+.45, 2.84, z+1.43, eaveTrim, MAT.roof, id)
+  m.box(r+.36, 2.72, z+1.35, r+.46, 2.86, z+5.55, eaveTrim, MAT.roof, id)
+  // Gable end triangles + stepped moonlit rake bargeboards & dark under-rake shadow molding
   for(const px of [x-.01,r+.01])m.facet([px,2.8,z+5.5],[px,ridge,mid],[px,2.8,e],rgb(b.color),MAT.roof,id)
-  m.box(x+1.75,2.68,z-.42,x+9.78,2.86,z-.31,trim,MAT.roof,id)
-  // Split south eave fascia, dark soffit, and gutter across xCutsFront so the middle span cuts away cleanly on CPU when inside.
+  for(const [rx0,rx1] of [[x-.46,x-.36],[r+.36,r+.46]] as const){
+    m.quadAuto([rx0,2.84,e+.44],[rx1,2.84,e+.44],[rx1,ridge+.03,mid],[rx0,ridge+.03,mid],rgb(0x465160),MAT.roof,id)
+    m.quadAuto([rx0,ridge+.03,mid],[rx1,ridge+.03,mid],[rx1,2.84,z+5.45],[rx0,2.84,z+5.45],rgb(0x3b4554),MAT.roof,id)
+  }
+  m.box(x+1.75,2.68,z-.42,x+9.78,2.84,z-.31,eaveTrim,MAT.roof,id)
+  // Split south eave fascia, deep soffit shadow, half-round metal gutter with dark interior channel + brackets, and overlapping ridge cap tiles.
   for (let xi = 0; xi < 3; xi++) {
     const x0 = xCutsFront[xi]!, x1 = xCutsFront[xi + 1]!
-    m.box(x0, 2.72, e+.34, x1, 2.87, e+.44, trim, MAT.roof, id)
-    m.box(x0, 2.63, e+.02, x1, 2.71, e+.40, rgb(0x282e38), MAT.roof, id)
-    m.box(x0, 2.76, e+.43, x1, 2.83, e+.50, rgb(0x9da4b0), MAT.roof, id)
-    m.box(x0, ridge - .04, mid - .1, x1, ridge + .04, mid + .1, rgb(0x4b5668), MAT.roof, id)
+    // Dark weathered fascia & deep recessed soffit shadow
+    m.box(x0, 2.71, e+.34, x1, 2.85, e+.43, eaveTrim, MAT.roof, id)
+    m.box(x0, 2.58, e+.01, x1, 2.70, e+.39, rgb(0x141820), MAT.roof, id)
+    // Gutter body, dark interior water trough, and thin moonlit outer lip
+    m.box(x0, 2.74, e+.42, x1, 2.81, e+.51, gutterMetal, MAT.roof, id)
+    m.box(x0, 2.811, e+.43, x1, 2.825, e+.49, gutterDark, MAT.roof, id)
+    m.box(x0, 2.79, e+.50, x1, 2.835, e+.525, rgb(0x586474), MAT.roof, id)
+    // Overlapping saddle ridge-cap tiles with moonlit top bevel
+    let rx = x0
+    let capIdx = 0
+    while (rx < x1 - .02) {
+      const nx = Math.min(x1, rx + .38)
+      const capCol = capIdx % 2 === 0 ? rgb(0x3a4556) : rgb(0x303a49)
+      m.box(rx, ridge - .03, mid - .12, nx, ridge + .045, mid + .12, capCol, MAT.roof, id, rgb(0x526076))
+      rx = nx
+      capIdx++
+    }
   }
-  // Brick chimney on upper-right slope with stone cap, dark flue, and east-eave downspout.
-  m.box(r-2.08,3.18,mid+.82,r-1.12,4.82,mid+1.78,rgb(0x7c483a),MAT.brick)
-  m.box(r-2.16,4.76,mid+.74,r-1.04,4.88,mid+1.86,rgb(0x8e9196))
-  m.box(r-1.88,4.88,mid+1.02,r-1.32,4.91,mid+1.58,rgb(0x181c22))
-  m.box(r+.02,.15,e-.12,r+.10,2.76,e-.04,rgb(0x7d8490),MAT.lit)
+  // Gutter mounting brackets & rafter-tail shadow blocks along front eave (on outer non-cut spans + inner span)
+  for (let gx = x - .30; gx <= r + .30; gx += 1.15) {
+    m.box(gx - .02, 2.73, e + .41, gx + .02, 2.84, e + .53, rgb(0x252b34), MAT.roof, id)
+  }
+  // Roof plumbing vent stacks & low-profile metal box louver attic vent (MAT.roof + id so they cut away cleanly)
+  for (const [vx, vz] of [[x + 3.4, mid + 1.15], [x + 8.1, mid - 1.05]] as const) {
+    const vy = slopeY(vz) - .04
+    m.box(vx - .14, vy, vz - .14, vx + .14, vy + .05, vz + .14, rgb(0x232932), MAT.roof, id)
+    m.prism(vx, vz, .055, .052, vy + .04, vy + .38, 6, rgb(0x3e4652), MAT.roof, id)
+    m.prism(vx, vz, .042, .042, vy + .38, vy + .395, 6, rgb(0x101318), MAT.roof, id)
+  }
+  {
+    const ax = x + 5.8, az = mid - 1.35, ay = slopeY(az) - .03
+    m.box(ax - .26, ay, az - .20, ax + .26, ay + .11, az + .20, rgb(0x2c3440), MAT.roof, id, rgb(0x465264))
+    m.box(ax - .22, ay + .02, az - .21, ax + .22, ay + .08, az + .21, rgb(0x161a20), MAT.roof, id)
+  }
+  // Weathered brick chimney on upper-right slope with lead step-flashing, corbelled brick crown, soot-stained cap & terracotta flue pot.
+  const chY0 = slopeY(mid + 1.3) - .18
+  m.box(r-2.15,chY0,mid+.75,r-1.05,chY0+.22,mid+1.85,rgb(0x242a32),MAT.roof,id)
+  m.box(r-2.08,3.18,mid+.82,r-1.12,4.72,mid+1.78,rgb(0x583329),MAT.brick,id)
+  // Corbelled brick necking + soot-darkened upper courses
+  m.box(r-2.13,4.64,mid+.77,r-1.07,4.75,mid+1.83,rgb(0x462820),MAT.brick,id)
+  m.box(r-2.17,4.75,mid+.73,r-1.03,4.85,mid+1.87,rgb(0x34383e),MAT.roof,id,rgb(0x3e434b))
+  m.box(r-1.92,4.85,mid+.98,r-1.28,4.90,mid+1.62,rgb(0x14171c),MAT.roof,id)
+  m.box(r-1.76,4.88,mid+1.14,r-1.44,5.08,mid+1.46,rgb(0x4e2f24),MAT.roof,id,rgb(0x12151a))
+  // Dual metal downspouts at west & east front corners with gooseneck elbows and wall straps
+  for (const [dx, side] of [[x + .04, -1], [r - .06, 1]] as const) {
+    m.box(dx - .04, .14, e - .02, dx + .04, 2.74, e + .06, gutterMetal, MAT.lit)
+    m.box(dx - .045, 2.58, e + .04, dx + .045, 2.76, e + .44, gutterMetal, MAT.roof, id)
+    for (const sy of [.65, 1.45, 2.25]) m.box(dx - .05, sy, e - .025, dx + .05, sy + .04, e + .07, rgb(0x232830), MAT.lit)
+    m.box(dx - .04, .08, e + .02, dx + .04, .18, e + .26 + (side < 0 ? .04 : 0), gutterMetal, MAT.lit)
+  }
   const cx=x+5.7
   parkedSedan(m,x-1.68,e-1.35,.035)
   gardenShed(m,x-2.85,z+.55,x-1.15,z+2.25,.035)
-  // Gabled porch canopy aligned over the columns (e+1.28) so the street camera sees the front door, sconce bulb, and full doormat.
+  // Gabled porch canopy with dark valley flashing, dark shingle slopes, shadowed soffit, and weathered bargeboard rake trim.
+  m.quadAuto([cx-1.56,2.48,e-.08],[cx,3.06,e-.08],[cx,3.06,e-.26],[cx-1.56,2.48,e-.26],rgb(0x1f252e),MAT.roof,id)
+  m.quadAuto([cx,3.06,e-.08],[cx+1.56,2.48,e-.08],[cx+1.56,2.48,e-.26],[cx,3.06,e-.26],rgb(0x1f252e),MAT.roof,id)
   m.quadAuto([cx-1.56,2.48,e+1.28],[cx,3.04,e+1.28],[cx,3.04,e-.12],[cx-1.56,2.48,e-.12],roof,MAT.roof,id)
   m.quadAuto([cx,3.04,e+1.28],[cx+1.56,2.48,e+1.28],[cx+1.56,2.48,e-.12],[cx,3.04,e-.12],roof,MAT.roof,id)
-  m.facet([cx-1.46,2.48,e+1.18],[cx,2.98,e+1.18],[cx+1.46,2.48,e+1.18],rgb(0x3a352e),MAT.roof,id)
-  m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],trim,MAT.roof,id)
-  m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],trim,MAT.roof,id)
-  m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,trim,MAT.roof,id)
+  m.box(cx-.06,3.01,e-.12,cx+.06,3.08,e+1.30,rgb(0x3c4758),MAT.roof,id,rgb(0x526076))
+  m.facet([cx-1.46,2.48,e+1.18],[cx,2.98,e+1.18],[cx+1.46,2.48,e+1.18],rgb(0x282420),MAT.roof,id)
+  m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],rgb(0x64686e),MAT.roof,id)
+  m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],rgb(0x64686e),MAT.roof,id)
+  m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,rgb(0x4a4e54),MAT.roof,id)
   for(const px of [cx-1.32,cx+1.32]){
     m.box(px-.09,.34,e+1.06,px+.09,2.42,e+1.24,rgb(0xeae4d7),MAT.wall)
     m.box(px-.14,.13,e+1.01,px+.14,.34,e+1.29,rgb(0xd8d2c5),MAT.wall)

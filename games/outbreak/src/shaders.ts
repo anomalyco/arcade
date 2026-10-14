@@ -128,9 +128,21 @@ fn eyeVisible(p: vec2f) -> f32 {
     let outsideView = !interior(F.eye.xy);
     col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.18, 0.075, 0.015) * nightLamps, outsideView);
   } else if (mat == 21) {
-    // Subtle cool twilight sky sheen on upper roof shingle slopes; eaves stay shadowed.
-    let eave = smoothstep(2.88, 3.55, o.world.y);
-    col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
+    // Deep weathered slate-charcoal roof with shadowed eaves, cool moonlit ridge/rake rims, and crisp course-edge highlights.
+    let eave = smoothstep(2.82, 3.62, o.world.y);
+    let ridgeRim = smoothstep(4.18, 4.46, o.world.y) * max(0.0, n.y);
+    let ewWing = abs(o.normal.x) > abs(o.normal.z) && abs(o.normal.y) < 0.96;
+    let slopeCoord = select(o.world.z, o.world.x, ewWing);
+    let spanCoord = select(o.world.x, o.world.z, ewWing);
+    let row = floor(slopeCoord / 0.25);
+    let fy = fract(slopeCoord / 0.25);
+    let fx = fract(spanCoord / 0.38 + fract(row * 0.5) + (hash2(vec2f(row, 3.1)) - 0.5) * 0.18);
+    let tabHash = hash2(floor(vec2f(spanCoord / 0.38 + fract(row * 0.5), row)));
+    let courseLip = exp(-pow((fy - 0.78) * 10.5, 2.0)) * smoothstep(0.03, 0.10, min(fx, 1.0 - fx));
+    let courseTrough = 1.0 - 0.52 * (1.0 - smoothstep(0.04, 0.22, fy));
+    let slotTrough = mix(0.38, 1.0, smoothstep(0.015, 0.075, min(fx, 1.0 - fx)));
+    let moonGlint = (0.22 * eave + 0.95 * ridgeRim + (0.65 + 0.55 * tabHash) * courseLip * (0.35 + 0.65 * eave)) * F.ambient.w * max(0.0, n.y);
+    col = col * mix(0.54, 0.96, eave) * courseTrough * slotTrough + vec3f(0.007, 0.014, 0.030) * moonGlint;
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     if (mat == 20) {
@@ -167,7 +179,10 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       }
     } else if (mat == 4 && !inRoom) {
-      col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y));
+      // Deep eave overhang shadow beneath main roof soffit and porch gable overhang.
+      let eaveShadow = smoothstep(2.02, 2.72, o.world.y);
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      col *= mix(1.0, 0.34, clamp(eaveShadow + underPorchGable * 0.48, 0.0, 1.0));
     }
     if (!inRoom && o.world.y < 0.35) {
       let dp = o.world.xz - lights[0].pos.xz;
