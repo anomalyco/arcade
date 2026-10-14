@@ -472,13 +472,17 @@ export class ZombieCrowdRenderer {
       angleSpring(st.chest, a.aim, profile.chestHz, dt)
       angleSpring(st.head, a.aim, profile.headHz, dt)
 
-      // Add a lunge pitch during door bashing or attack windup
+      // Add a lunge pitch during door bashing or backward flinch during bullet/shove stagger
       const bashPulse =
-        a.state === "bash" ? Math.sin((a.stateTime * Math.PI * 2) / 0.9) * 0.18 : 0
-      let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.chest.x), -0.05 - lean - bashPulse)
-      torso = profileTorso(torso, profile)
+        a.state === "bash" ? Math.pow(Math.max(0, Math.sin((a.stateTime * Math.PI * 2) / 0.9)), 3) * 0.34 : 0
+      const staggerRecoil =
+        a.state === "stagger" ? -0.36 * clamp(a.timer / 0.3, 0, 1) : -0.18 * a.hitFlash
+      const staggerCant =
+        a.state === "stagger" ? (a.id % 2 ? 1 : -1) * 0.22 * clamp(a.timer / 0.3, 0, 1) : 0
+      let torso = pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), st.chest.x), -0.05 - lean - bashPulse - staggerRecoil)
+      torso = roll(profileTorso(torso, profile), staggerCant)
       let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), st.head.x)
-      head = roll(head, profile.headTilt)
+      head = roll(pitch(head, -staggerRecoil * 0.6), profile.headTilt + staggerCant * 0.5)
       const hands = profileHands(torso, profile)!
       const arms = poseArms(torso, ...hands)
 

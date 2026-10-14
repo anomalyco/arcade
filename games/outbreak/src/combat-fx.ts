@@ -168,7 +168,30 @@ export class OutbreakCombatFX {
       batches.push({ model: this.plankModel, data: this.plankData, count: plankCount })
     }
 
-    // 3. Muzzle flash & tracer sprites from active shots
+    // 3. Muzzle flash, door/barricade bash impact splinters, & tracer sprites
+    for (const d of town.doors) {
+      const st = ai.portalStates.get(d.id)
+      if (st && time - st.lastBashTime >= 0 && time - st.lastBashTime < 0.16) {
+        const u = 1 - (time - st.lastBashTime) / 0.16
+        const cx = (d.rect[0] + d.rect[2]) * 0.5
+        const cz = (d.rect[1] + d.rect[3]) * 0.5
+        const cy = support(cx, cz) + 1.15
+        pushAdd(cx, cy, cz, 0.28 * u, 0.95, 0.68, 0.32, u * 0.75, 0, 0, 1, 0)
+        pushAdd(cx, support(cx, cz) + 0.06, cz, 0.45 + (1 - u) * 0.85, 0.95, 0.62, 0.28, u * 0.65, 2, 0, 0.08, 0)
+      }
+    }
+    for (const w of town.windows) {
+      const st = ai.portalStates.get(w.id)
+      if (st && time - st.lastBashTime >= 0 && time - st.lastBashTime < 0.16) {
+        const u = 1 - (time - st.lastBashTime) / 0.16
+        const cx = (w.rect[0] + w.rect[2]) * 0.5
+        const cz = (w.rect[1] + w.rect[3]) * 0.5
+        const cy = support(cx, cz) + 1.35
+        pushAdd(cx, cy, cz, 0.28 * u, 0.95, 0.68, 0.32, u * 0.75, 0, 0, 1, 0)
+        pushAdd(cx, support(cx, cz) + 0.06, cz, 0.45 + (1 - u) * 0.85, 0.95, 0.62, 0.28, u * 0.65, 2, 0, 0.08, 0)
+      }
+    }
+
     let muzzleLight: [number, number, number, number] | null = null
     if (this.lastFlash && time < this.lastFlash.until) {
       const strength = (this.lastFlash.until - time) / 0.08

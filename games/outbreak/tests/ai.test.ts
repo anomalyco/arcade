@@ -70,7 +70,7 @@ describe("Outbreak AI & survival combat integration", () => {
     const p = session.view.player
     Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0, magAmmo: 2, reserveAmmo: 6 })
     const target = session.ai.spawnZombie(session.view.town, 34, 44, "wander", Math.PI)
-    const distant = session.ai.spawnZombie(session.view.town, 62, 44, "wander", Math.PI)
+    const distant = session.ai.spawnZombie(session.view.town, 54, 44, "wander", Math.PI)
 
     // Shot 1: hits and staggers target, populates pistol & ammo in hotbar inventory, emits gunshot noise
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0)
@@ -79,7 +79,7 @@ describe("Outbreak AI & survival combat integration", () => {
     expect(session.view.inventory.slots.find((s) => s?.kind === "ammo")?.count).toBe(6)
     expect(target.hp).toBeLessThan(100)
     expect(target.state).toBe("stagger")
-    expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 50)).toBe(true)
+    expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 30)).toBe(true)
 
     // Step through fire cooldown so distant zombie processes gunshot and we can fire shot 2
     for (let i = 0; i < 18; i++) {

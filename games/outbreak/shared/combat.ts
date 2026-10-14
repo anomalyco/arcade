@@ -14,7 +14,7 @@ export const PISTOL_RANGE = 26.0
 export const PISTOL_MAG_SIZE = 8
 export const PISTOL_FIRE_COOLDOWN = 0.24
 export const PISTOL_RELOAD_TIME = 1.15
-export const PISTOL_NOISE = 52.0
+export const PISTOL_NOISE = 32.0
 export const RELOAD_NOISE = 2.8
 export const SHOVE_RANGE = 1.75
 export const SHOVE_ARC = 1.15
@@ -91,9 +91,9 @@ export type SurvivorCombatState = {
 export function createSurvivorCombatState(): SurvivorCombatState {
   return {
     equippedItem: "pistol",
-    magAmmo: 7,
+    magAmmo: 6,
     magCapacity: PISTOL_MAG_SIZE,
-    reserveAmmo: 8,
+    reserveAmmo: 6,
     planks: 2,
     fireCooldown: 0,
     reloadRemaining: 0,

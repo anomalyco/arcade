@@ -1126,9 +1126,9 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         const isGroan = bestNoise.kind === "groan"
         const audioGain = isNewImpulse
           ? isGroan
-            ? Math.min(0.38, bestNoiseScore * 0.55)
-            : Math.max(0.38, bestNoiseScore * 0.78)
-          : bestNoiseScore * (isGroan ? 0.25 : 0.75) * senseDt
+            ? clamp(bestNoiseScore * 0.48, 0.06, 0.36)
+            : clamp(bestNoiseScore * 0.72, 0.08, 0.68)
+          : bestNoiseScore * (isGroan ? 0.22 : 0.55) * senseDt
         const maxAudioAwareness = isGroan ? 0.52 : 1.0
         a.awareness = clamp(Math.min(maxAudioAwareness, a.awareness + audioGain), 0, 1)
         a.lastHeardNoiseId = bestNoise.id
@@ -1136,7 +1136,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           a.targetX = bestNoise.x
           a.targetY = bestNoise.y
           a.targetKind = "noise"
-          if (isNewImpulse && bestNoiseScore > 0.35) {
+          if (isNewImpulse && bestNoiseScore > 0.25) {
             a.repathAt = 0
           }
         }
@@ -1274,9 +1274,9 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
 
     if (a.state === "wander") {
       a.timer -= dt
-      if (a.timer <= 0 || Math.hypot(a.wanderX - a.x, a.wanderY - a.y) < 0.85) {
+      if (a.timer <= 0 || Math.hypot(a.wanderX - a.x, a.wanderY - a.y) < 0.95) {
         pickWanderPoint(a, nav, worldSize, tick)
-        a.timer = 3.0 + ((a.id * 17 + tick) % 5)
+        a.timer = 3.2 + ((a.id * 17 + tick) % 5)
       }
       const dx = a.wanderX - a.x
       const dy = a.wanderY - a.y
@@ -1284,7 +1284,10 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       if (d > 0.2) {
         moveDirX = dx / d
         moveDirY = dy / d
-        desiredSpeed = config.walkSpeed * a.speedScale * (0.9 + 0.1 * nightFactor)
+        // Organic shambling lurch: cadence surges on the stepping beat and drags between steps
+        const lurchPhase = (time * (1.35 + (a.id % 5) * 0.12) + a.id * 0.7) % 1
+        const lurchPulse = 0.76 + 0.38 * Math.pow(Math.sin(lurchPhase * Math.PI), 2)
+        desiredSpeed = config.walkSpeed * a.speedScale * lurchPulse * (0.92 + 0.08 * nightFactor)
       }
     } else if (a.state === "investigate" || a.state === "chase") {
       const goalX = a.targetX
@@ -1307,17 +1310,27 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         }
         desiredSpeed = config.walkSpeed * 0.25
       } else {
-        const canWalkStraight = a.seesTarget && nav.straightFree(a, { x: goalX, y: goalY })
+        // Fan out chasing packs slightly so zombies form a crescent instead of single-file stacking
+        const fanOffset =
+          a.state === "chase" && distToGoal > 2.2
+            ? (((a.id % 5) - 2) * 0.38) * clamp((distToGoal - 1.5) / 6, 0, 1)
+            : 0
+        const toGoalAngle = Math.atan2(goalY - a.y, goalX - a.x)
+        const effGoalX = goalX + Math.cos(toGoalAngle + Math.PI / 2) * fanOffset
+        const effGoalY = goalY + Math.sin(toGoalAngle + Math.PI / 2) * fanOffset
+
+        const canWalkStraight = a.seesTarget && nav.straightFree(a, { x: effGoalX, y: effGoalY })
         if (canWalkStraight) {
           a.path.length = 0
-          moveDirX = (goalX - a.x) / (distToGoal || 1)
-          moveDirY = (goalY - a.y) / (distToGoal || 1)
+          const ed = Math.hypot(effGoalX - a.x, effGoalY - a.y) || 1
+          moveDirX = (effGoalX - a.x) / ed
+          moveDirY = (effGoalY - a.y) / ed
         } else {
           if (time >= a.repathAt || a.path.length === 0) {
             a.path = nav.path(a, { x: goalX, y: goalY }) ?? [{ x: goalX, y: goalY }]
-            a.repathAt = time + (a.state === "chase" ? 0.45 : 0.85) + (a.id % 5) * 0.08
+            a.repathAt = time + (a.state === "chase" ? 0.42 : 0.75) + (a.id % 5) * 0.07
           }
-          while (a.path.length > 0 && Math.hypot(a.path[0]!.x - a.x, a.path[0]!.y - a.y) < 0.38) {
+          while (a.path.length > 0 && Math.hypot(a.path[0]!.x - a.x, a.path[0]!.y - a.y) < 0.48) {
             a.path.shift()
           }
           const wp = a.path[0] ?? { x: goalX, y: goalY }
@@ -1328,7 +1341,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           moveDirY = wdy / wd
         }
 
-        const baseSpeed = a.state === "chase" ? config.chaseSpeed : config.walkSpeed * 1.32
+        const baseSpeed = a.state === "chase" ? config.chaseSpeed : config.walkSpeed * 1.35
         desiredSpeed = baseSpeed * a.speedScale * (0.92 + 0.08 * nightFactor)
 
         // Check if a closed door, barricaded opening, or open window is right in front of the agent
@@ -1355,12 +1368,19 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         }
       }
     } else if (a.state === "search") {
-      const searchAngle = a.seed * 0.001 + a.searchIndex * 2.1
-      const sx = a.targetX + Math.cos(searchAngle) * 2.2
-      const sy = a.targetY + Math.sin(searchAngle) * 2.2
+      // Search around Last Known Position: alternate between stepping to local offsets and sweeping head/aim
+      const searchAngle = a.seed * 0.001 + a.searchIndex * 2.15
+      const sx = a.targetX + Math.cos(searchAngle) * 2.1
+      const sy = a.targetY + Math.sin(searchAngle) * 2.1
       const d = Math.hypot(sx - a.x, sy - a.y)
-      if (d < 0.55) {
-        a.searchIndex++
+      if (d < 0.65) {
+        // Pause and look left/right before advancing to the next search point
+        const lookWave = Math.sin(a.stateTime * 3.2 + a.id) * 0.85
+        const want = searchAngle + lookWave
+        a.aim += clamp(angleDiff(want, a.aim), -dt * 3.4, dt * 3.4)
+        if ((a.stateTime + a.id * 0.3) % 1.4 < dt * 1.5) {
+          a.searchIndex++
+        }
       } else {
         moveDirX = (sx - a.x) / d
         moveDirY = (sy - a.y) / d
@@ -1368,8 +1388,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       }
     }
 
-    // Apply local Boids flocking (strong separation for all living agents; mild cohesion/alignment for wanderers)
-    const neighbors = spatial.query(a.x, a.y, 4.5, neighborScratch)
+    // Apply local Boids flocking (non-clumping personal space separation + loose street pack cohesion)
+    const neighbors = spatial.query(a.x, a.y, 4.8, neighborScratch)
     let sepX = 0
     let sepY = 0
     let cohX = 0
@@ -1377,6 +1397,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     let alignX = 0
     let alignY = 0
     let flockCount = 0
+    const sepRadius = a.state === "wander" ? 1.65 : 1.28
 
     for (let k = 0; k < neighbors.length; k++) {
       const j = neighbors[k]!
@@ -1386,16 +1407,17 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const dy = a.y - b.y
       const d2 = dx * dx + dy * dy
       if (d2 < 1e-6) {
-        sepX += (a.id > b.id ? 1 : -1) * 0.5
+        sepX += (a.id > b.id ? 1 : -1) * 0.7
         continue
       }
       const d = Math.sqrt(d2)
-      if (d < 1.15) {
-        const push = (1.15 - d) / 1.15
-        sepX += (dx / d) * push * 1.45
-        sepY += (dy / d) * push * 1.45
+      if (d < sepRadius) {
+        const u = (sepRadius - d) / sepRadius
+        const push = (u * u * 1.85 + u * 0.55)
+        sepX += (dx / d) * push
+        sepY += (dy / d) * push
       }
-      if (a.state === "wander" && b.state === "wander" && d < 4.5) {
+      if (a.state === "wander" && b.state === "wander" && d >= 1.8 && d < 4.8) {
         cohX += b.x
         cohY += b.y
         alignX += Math.cos(b.aim)
@@ -1408,8 +1430,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const cx = cohX / flockCount - a.x
       const cy = cohY / flockCount - a.y
       const cl = Math.hypot(cx, cy) || 1
-      moveDirX += (cx / cl) * 0.18 + (alignX / flockCount) * 0.14
-      moveDirY += (cy / cl) * 0.18 + (alignY / flockCount) * 0.14
+      moveDirX += (cx / cl) * 0.14 + (alignX / flockCount) * 0.12
+      moveDirY += (cy / cl) * 0.14 + (alignY / flockCount) * 0.12
     }
 
     moveDirX += sepX
@@ -1418,14 +1440,44 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     if (moveLen > 1e-4 && desiredSpeed > 0) {
       const ux = moveDirX / moveLen
       const uy = moveDirY / moveLen
-      a.x += ux * desiredSpeed * dt
-      a.y += uy * desiredSpeed * dt
-      const wantAim = a.seesTarget && targets[0] ? Math.atan2(targets[0].y - a.y, targets[0].x - a.x) : Math.atan2(uy, ux)
-      const turnRate = (a.state === "chase" ? 7.5 : 4.2) * dt
+      const expectedStep = desiredSpeed * dt
+      a.x += ux * expectedStep
+      a.y += uy * expectedStep
+      pushOut(a, 0.28, solids)
+
+      // Corner-slide recovery: if a wall/corner ate most of the step, slide along the open tangent
+      const progressed = (a.x - prevX) * ux + (a.y - prevY) * uy
+      if (progressed < expectedStep * 0.42) {
+        const tang1X = -uy
+        const tang1Y = ux
+        const probe1 = { x: prevX + tang1X * expectedStep * 0.85, y: prevY + tang1Y * expectedStep * 0.85 }
+        pushOut(probe1, 0.28, solids)
+        const probe2 = { x: prevX - tang1X * expectedStep * 0.85, y: prevY - tang1Y * expectedStep * 0.85 }
+        pushOut(probe2, 0.28, solids)
+        const d1 = Math.hypot(probe1.x - prevX, probe1.y - prevY)
+        const d2 = Math.hypot(probe2.x - prevX, probe2.y - prevY)
+        if (Math.max(d1, d2) > expectedStep * 0.45) {
+          const bestProbe = d1 >= d2 ? probe1 : probe2
+          a.x = bestProbe.x
+          a.y = bestProbe.y
+        }
+        if (a.path.length > 1) a.path.shift()
+      }
+
+      const actualDx = a.x - prevX
+      const actualDy = a.y - prevY
+      const actualMoveAngle = Math.hypot(actualDx, actualDy) > expectedStep * 0.2 ? Math.atan2(actualDy, actualDx) : Math.atan2(uy, ux)
+      const wantAim =
+        a.seesTarget && targets[0]
+          ? Math.atan2(targets[0].y - a.y, targets[0].x - a.x)
+          : actualMoveAngle
+      const turnRate =
+        (a.state === "chase" ? 6.8 : a.state === "investigate" || a.state === "search" ? 3.8 : 2.3) * dt
       a.aim += clamp(angleDiff(wantAim, a.aim), -turnRate, turnRate)
+    } else {
+      pushOut(a, 0.28, solids)
     }
 
-    pushOut(a, 0.28, solids)
     a.x = clamp(a.x, 0.5, worldSize - 0.5)
     a.y = clamp(a.y, 0.5, worldSize - 0.5)
 
