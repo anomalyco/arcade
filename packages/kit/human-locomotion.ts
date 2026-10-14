@@ -31,7 +31,7 @@ export function newMotion(x: number, y: number, aim: number) {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
-    bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(),
+    bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(),
     gun: [spring(), spring(), spring()] as [Spring, Spring, Spring],
     swings: [0, 0], durations: [0.2, 0.2], contacts: [1, 1],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
@@ -73,7 +73,7 @@ function reset(a: Avatar): void {
   m.centreX = { x: a.x, v: a.vx }
   m.centreY = { x: a.y, v: a.vy }
   for (const s of [m.pelvis, m.chest, m.head, m.weapon]) { s.x = a.aim; s.v = 0 }
-  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture]) { s.x = 0; s.v = 0 }
+  for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch]) { s.x = 0; s.v = 0 }
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
@@ -213,9 +213,13 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   stepSpring(m.bob, k, 0.85, dt, limp > 0 ? bobGoal - limp * 0.032 * Math.sin(theta) : bobGoal)
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
   const forward = (a.svx * Math.cos(a.aim) + a.svy * Math.sin(a.aim)) / Math.max(speed, 0.1)
-  const posture = clamp(animation.runPosture, 0, 0.3) * gait.run * a.gait * smooth(forward) * (1 + 0.25 * smooth((speed - 4.2) / 2.1))
+  const speedRamp = gait.run * a.gait * (0.65 + 0.35 * smooth((speed - 1.8) / 2.4) + 0.25 * smooth((speed - 4.2) / 2.1))
+  const posture = clamp(animation.runPosture, 0, 0.45) * speedRamp * smooth(forward)
+  const crouch = clamp(animation.crouchDepth ?? 0, 0, 0.16) * speedRamp * (0.35 + 0.65 * smooth(forward))
   stepSpring(m.posture, k, 1, dt, posture)
-  const lean = (v: number, accel: number) => clamp((v * 0.025 + accel * 0.007) * animation.leanScale, -0.22, 0.22)
+  stepSpring(m.crouch, k, 1, dt, crouch)
+  const backScale = forward < 0 ? 0.35 + 0.65 * (1 - smooth(-forward)) : 1
+  const lean = (v: number, accel: number) => clamp((v * 0.025 * backScale + accel * 0.007) * animation.leanScale, -0.24, 0.24)
   stepSpring(a.leanX, stiffness(2.5), 1, dt, lean(a.svx, a.acx))
   stepSpring(a.leanY, stiffness(2.5), 1, dt, lean(a.svy, a.acy))
   stepSpring(a.dip, k, 0.8, dt, -Math.min(0.035, Math.hypot(a.acx, a.acy) * 0.002))
@@ -239,7 +243,7 @@ export function plantedFoot(a: Avatar, i: number) {
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
-  return [a.x - a.leanX.x * 0.6 - s * m.sway.x + a.hitX.x * 0.5,
-    HIP - (0.04 + m.run * 0.02) * a.gait + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
-    a.y - a.leanY.x * 0.6 + c * m.sway.x + a.hitY.x * 0.5]
+  return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
+    HIP - (0.04 + m.run * 0.02) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
+    a.y - a.leanY.x * 0.22 + c * m.sway.x + a.hitY.x * 0.5]
 }

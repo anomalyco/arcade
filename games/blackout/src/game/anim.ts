@@ -425,12 +425,15 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   const enhanced = animation.animationMode === "new"
   const profile = actorProfile(a, wizard)
   const distance = Math.hypot(x - a.x, y - a.y)
-  const teleport = Math.hypot(x - a.x, y - a.y) > 2.5 || !a.body
+  const teleport = distance > 2.5 || !a.body
+  const dx = teleport ? 0 : x - a.x
+  const dy = teleport ? 0 : y - a.y
+  const dAim = teleport ? 0 : angleDiff(aim, a.aim)
   a.x = x
   a.y = y
   a.vx = vx
   a.vy = vy
-  a.aimVel += (angleDiff(aim, a.aim) / dt - a.aimVel) * Math.min(1, dt * 12)
+  a.aimVel += (dAim / dt - a.aimVel) * Math.min(1, dt * 12)
   a.aim = aim
   if (a.gun !== a.prevGun) {
     if (a.prevGun !== null || teleport) {
@@ -578,11 +581,6 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   if (enhanced) {
     angleSpring(a.motion.chest, aim + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[a.gun]) - a.motion.twist.x * 0.65, profile.chestHz, dt)
     angleSpring(a.motion.head, aim, profile.headHz, dt)
-    const ergonomics = animation[`${a.gun}Ergonomics`]
-    angleSpring(a.motion.weapon, aim, animation.weaponHz * ergonomics, dt)
-    const c = Math.cos(a.motion.weapon.x), sn = Math.sin(a.motion.weapon.x), hold = HOLD[a.gun]
-    const target = [a.x + c * hold.fwd - sn * hold.side, hold.up, a.y + sn * hold.fwd + c * hold.side]
-    a.motion.gun.forEach((s, i) => stepSpring(s, stiffness(animation.weaponHz * ergonomics), 1, dt, target[i]!))
   }
 
   // Clips: reload first, then the pump or bolt cycle.
@@ -608,7 +606,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 
   const prevHand = a.body ? at(a.body.fa[0], 0, -RIG.fore, 0) : null
   const previous = enhanced && !teleport && a.body ? bodyJoints(a.body, a.gun) : null
-  a.body = build(a, now, k, clip, ct, wizard)
+  a.body = build(a, now, k, clip, ct, wizard, dt, dx, dy, dAim, teleport)
   if (previous) a.body.velocities = jointVelocities(bodyJoints(a.body, a.gun), previous, dt)
   if (prevHand) {
     const h = at(a.body.fa[0], 0, -RIG.fore, 0)
@@ -618,7 +616,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
 }
 
 /** Builds the pose: pelvis over the feet, a twisting torso aiming the gun, IK arms on the gun and IK legs to the feet. */
-function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean): Body {
+function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number, wizard: boolean, dt: number, dx: number, dy: number, dAim: number, teleport: boolean): Body {
   const enhanced = animation.animationMode === "new"
   const profile = actorProfile(a, wizard)
   const m = a.motion
@@ -662,7 +660,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     pelvis = roll(pelvis, m.drop.x)
     // Pitch after the support roll, about the hip-to-hip axis: hip joint positions and
     // both leg reaches remain identical. The waist, shoulders and head lean together.
-    pelvis = pitch(pelvis, -0.7 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
+    pelvis = pitch(pelvis, -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)))
     if (profile.torsoLean > 0) pelvis = pitch(pelvis, -0.35 * clamp(profile.torsoLean, 0, 0.35))
   }
 
@@ -694,15 +692,16 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   // Sprinting squares the chest up to the run and carries the gun with it.
   const run = angleDiff(a.legYaw, a.aim) * port * 0.7
   const sw = swingPhase(a, now)
-  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x : a.aim + run + (a.bare ? 0 : BLADE[g]) * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
+  const blade = a.bare || enhanced && profile.handPose !== "weapon" ? 0 : BLADE[g]
+  const torsoYaw = (sw?.twist ?? 0) + (enhanced ? m.chest.x + run - blade * 0.4 * port : a.aim + run + blade * (1 - 0.4 * port) + Math.sin(th) * (0.12 + 0.1 * sprint) * moving) + a.hitTwist.x + a.recYaw.x * 0.4
   const waist = at(pelvis, 0, RIG.waist, 0)
   let torso = yawFrame(waist, torsoYaw)
   // Pitch and roll by the lean measured along the aim (the torso is bladed, so convert).
   const tb = torsoYaw - a.aim
-  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.06 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
+  const fwd = (a.bare ? 0.2 : 0) + (enhanced ? 0.08 + leanFwd : 0.1 + 0.08 * moving + 0.2 * sprint + leanFwd * 2.2) - a.torsoKick.x + breath * 0.012 * still + reloadHunch + raise * 0.1
   const side = leanSide * (enhanced ? 1 : 2.2) + Math.sin(2 * th) * 0.02 * moving
   torso = pitch(torso, -(fwd * Math.cos(tb) + side * Math.sin(tb)))
-  torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * 0.4)
+  torso = roll(torso, side * Math.cos(tb) - fwd * Math.sin(tb) * (enhanced ? 0.85 : 0.4))
   if (enhanced) torso = profileTorso(torso, profile)
 
   // Gun: hung off the shoulder line along the exact aim, then recoil, sway, clip tilt and the raise.
@@ -714,6 +713,16 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   gunRoll += 0.35 * port
   gunPull += 0.1 * port
   gunDrop += 0.12 * port
+  if (enhanced) {
+    const ergonomics = animation[`${g}Ergonomics`]
+    if (teleport) {
+      m.weapon.x = a.aim + run
+      m.weapon.v = 0
+    } else {
+      m.weapon.x += dAim
+      angleSpring(m.weapon, a.aim + run + clamp(-a.aimVel * 0.008 / ergonomics, -0.03, 0.03), animation.weaponHz * ergonomics, dt)
+    }
+  }
   const gy = enhanced ? m.weapon.x : a.aim + run
   const ga = Math.cos(gy)
   const gs = Math.sin(gy)
@@ -724,13 +733,44 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
     gy +
     a.recYaw.x +
     Math.sin(t * 0.9 + a.seed) * sway2 +
-    Math.sin(th) * 0.03 * moving +
+    Math.sin(th) * (enhanced ? 0.008 : 0.03) * moving +
     a.heat * 0.035 * Math.sin(t * 41 + a.seed) +
     a.hitTwist.x * 0.3 -
     gunYaw
   let gunF = yawFrame([shoulderC[0] + ga * hold.fwd - gs * hold.side, shoulderC[1] + hold.up - rest - gunDrop - raise * 0.22, shoulderC[2] + gs * hold.fwd + ga * hold.side], yaw)
-  if (enhanced) gunF = moved(gunF, [m.gun[0].x, m.gun[1].x - gunDrop - raise * 0.22, m.gun[2].x])
-  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (enhanced ? 0.008 : 0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
+  if (enhanced) {
+    // Anchor the weapon to the steady posture frame (root + crouch + lean/dip, without hip sway or spine twist)
+    // and carry world translation 1:1 with the root so locomotion never drags or vibrates the gun.
+    const steadyPelvis = pitch(
+      yawFrame([
+        a.x - a.leanX.x * 0.35 + a.hitX.x * 0.5,
+        HIP - (0.04 + m.run * 0.02) * a.gait - m.crouch.x + m.bob.x * 0.2 + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
+        a.y - a.leanY.x * 0.35 + a.hitY.x * 0.5,
+      ], a.legYaw),
+      -0.65 * (postureX * Math.cos(a.legYaw) + postureY * Math.sin(a.legYaw)),
+    )
+     const steadyYaw = (sw?.twist ?? 0) + a.aim + run + (a.bare || profile.handPose !== "weapon" ? 0 : BLADE[g]) * (1 - 0.4 * port) + a.hitTwist.x + a.recYaw.x * 0.4
+     const steadyTb = steadyYaw - a.aim
+     let steadyTorso = yawFrame(at(steadyPelvis, 0, RIG.waist, 0), steadyYaw)
+     steadyTorso = pitch(steadyTorso, -(fwd * Math.cos(steadyTb) + leanSide * Math.sin(steadyTb)))
+     steadyTorso = roll(steadyTorso, leanSide * Math.cos(steadyTb) - fwd * Math.sin(steadyTb) * 0.85)
+     steadyTorso = profileTorso(steadyTorso, profile)
+     const gunShoulder = at(steadyTorso, 0, RIG.shoulderY, 0)
+     const postureFwd = Math.max(0, postureX * ca + postureY * sa)
+     const holdFwd = hold.fwd - (staff ? 0 : 0.08 * postureFwd)
+     const holdUp = hold.up + (staff ? 0 : 0.035 * postureFwd)
+     const target: V3 = [gunShoulder[0] + ga * holdFwd - gs * hold.side, gunShoulder[1] + holdUp - rest, gunShoulder[2] + gs * holdFwd + ga * hold.side]
+     const kGun = stiffness(animation.weaponHz * animation[`${g}Ergonomics`])
+     if (teleport) {
+       m.gun.forEach((s, i) => { s.x = target[i]!; s.v = 0 })
+     } else {
+       m.gun[0].x += dx
+       m.gun[2].x += dy
+       m.gun.forEach((s, i) => stepSpring(s, kGun, 1, dt, target[i]!))
+     }
+     gunF = moved(gunF, [m.gun[0].x, m.gun[1].x - gunDrop - raise * 0.22, m.gun[2].x])
+  }
+  gunF = pitch(gunF, a.recPitch.x + gunPitch - raise * 0.95 + Math.sin(t * 1.3 + a.seed) * sway2 + Math.sin(2 * th) * (enhanced ? 0.006 : 0.025 + 0.05 * sprint) * moving + a.heat * 0.03 * Math.sin(t * 53))
   gunF = roll(gunF, a.recRoll.x + gunRoll + clamp(-a.aimVel * 0.03, -0.3, 0.3) + raise * 0.5)
   // A swing with a gun in hand: a bash, the gun driven forward.
   const bash = sw && !a.bare ? Math.sin(Math.PI * sw.strike) * sw.back : 0
@@ -794,9 +834,11 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   // Head follows the aim, looks down at the gun while reloading.
   let head = yawFrame(at(torso, 0.02, RIG.neckY, 0), a.aim + a.hitTwist.x * 1.6 + clamp(a.aimVel * 0.02, -0.25, 0.25))
   if (enhanced) head = yawFrame(at(torso, 0.02, RIG.neckY, 0), m.head.x + a.hitTwist.x)
-  const headLean = fwd - (postureX * ca + postureY * sa)
-  head = pitch(head, -0.1 - look * 1.1 - a.torsoKick.x * 0.6 - headLean * 0.3 + Math.sin(2 * th) * 0.03 * moving)
-  head = roll(head, side * 0.5 - a.hitTwist.x * 0.5)
+  const stab = enhanced ? clamp(profile.headStability ?? 0.8, 0, 1) : 0
+  const headLean = fwd - (postureX * ca + postureY * sa) * stab
+  const baseHeadPitch = enhanced ? -0.1 * (1 - 0.35 * stab) : -0.1
+  head = pitch(head, baseHeadPitch - look * 1.1 - a.torsoKick.x * 0.6 - headLean * (0.3 * (1 - 0.55 * stab)) + Math.sin(2 * th) * 0.03 * (1 - 0.7 * stab) * moving)
+  head = roll(head, side * 0.5 * (1 - 0.5 * stab) - a.hitTwist.x * 0.5)
   if (enhanced) {
     if (profile.torsoLean > 0) head = pitch(head, -0.22 * clamp(profile.torsoLean, 0, 0.35) + Math.sin(th) * 0.04 * moving * clamp(profile.footDrag, 0, 1))
     head = roll(head, clamp(profile.headTilt, -0.3, 0.3))

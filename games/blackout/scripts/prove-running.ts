@@ -32,7 +32,8 @@ try {
     const dir = join(out, `${view}-${route}-${variant}`)
     mkdirSync(dir, { recursive: true })
     const camera = view === "game" ? "zoom=24" : `zoom=6&side=${view === "side" ? 0 : 35}&elev=14`
-    const url = `http://127.0.0.1:${address.port}/anim.html?manual&only=running&runRoute=${route}&animation=${mode}&runPosture=${variant === "current" ? 0 : 0.18}&${camera}`
+    const posture = variant === "current" ? "runPosture=0&crouchDepth=0" : variant === "before" ? "runPosture=0.18&crouchDepth=0" : "runPosture=0.34&crouchDepth=0.08"
+    const url = `http://127.0.0.1:${address.port}/anim.html?manual&only=running&runRoute=${route}&animation=${mode}&${posture}&${camera}`
     const open = async () => {
       await page.goto(url)
       await page.waitForFunction(() => (window as any).ready, null, { timeout: 30000 })
@@ -92,16 +93,16 @@ try {
     await control.waitFor()
     await control.click()
     await page.keyboard.press("Enter")
-    await page.getByRole("textbox", { name: "Exact Run posture · rad" }).fill("0.27")
+    await page.getByRole("textbox", { name: "Exact Run lean · rad" }).fill("0.38")
     await page.keyboard.press("Enter")
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       writeText: async (text: string) => { (window as any).copiedAnimation = JSON.parse(text) },
     } }))
     await page.keyboard.press("c")
-    await page.waitForFunction(() => (window as any).copiedAnimation?.runPosture === 0.27)
+    await page.waitForFunction(() => (window as any).copiedAnimation?.runPosture === 0.38)
     const copied = await page.evaluate(() => (window as any).copiedAnimation)
     await page.keyboard.press("Enter")
-    await page.getByRole("textbox", { name: "Exact Run posture · rad" }).fill("0.18")
+    await page.getByRole("textbox", { name: "Exact Run lean · rad" }).fill("0.34")
     await page.keyboard.press("Enter")
     await page.screenshot({ path: join(out, "lab.png") })
     writeFileSync(join(out, "lab.json"), JSON.stringify({ copied, exactKeyboardEdit: true, errors }, null, 2))

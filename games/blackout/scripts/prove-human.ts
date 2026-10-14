@@ -79,7 +79,7 @@ try {
     writeText: async (text: string) => { (window as any).copiedHuman = JSON.parse(text) },
   } }))
   await page.getByRole("button", { name: "Copy Animation JSON", exact: true }).click()
-  await page.waitForFunction(() => (window as any).copiedHuman?.runPosture === 0.18)
+  await page.waitForFunction(() => (window as any).copiedHuman?.runPosture === 0.34 && (window as any).copiedHuman?.crouchDepth === 0.08)
   const copied = await page.evaluate(() => (window as any).copiedHuman)
   for (const key of Object.keys(reset)) if (copied[key] !== reset[key]) throw new Error(`Copy mismatch: ${key}`)
   // Keyboard profile editing and group reset share the pointer path.
