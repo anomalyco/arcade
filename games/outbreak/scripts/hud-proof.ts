@@ -103,7 +103,7 @@ try {
 
   // Reload in progress.
   await stage(page, { x: 30, y: 41, aim: -Math.PI / 2, zoom: 42, hour: 18 })
-  await mutate(page, { magAmmo: 2, reserveAmmo: 12 })
+  await mutate(page, { magAmmo: 2 })
   await step(page, 1, { reload: true })
   await step(page, 32)
   await snap(page, "reload", "Reload in progress: ring fills over 1.15 s")

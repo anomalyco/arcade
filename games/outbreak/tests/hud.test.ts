@@ -41,6 +41,20 @@ describe("callout model", () => {
     expect(m.items).toHaveLength(0)
   })
 
+  test("a finished action resolves in its own slot instead of jumping over newer pops", () => {
+    const m = new CalloutModel()
+    m.callout("a", "+6 9mm", "result")
+    m.advance(0.2)
+    m.callout("a", "Reloading", "progress", { key: "reload", progress: 0.5 })
+    m.advance(0.2)
+    m.callout("a", "Reloading", "progress", { key: "reload", progress: 0.9 })
+    expect(m.forActor("a").find((c) => c.key === "reload")!.slot).toBe(0)
+    m.callout("a", "Reloaded 8/8", "result", { key: "reload" })
+    const reload = m.forActor("a").find((c) => c.key === "reload")!
+    expect(reload.slot).toBe(0)
+    expect(m.alpha(reload)).toBe(1)
+  })
+
   test("actors stack independently and duration scale applies", () => {
     const m = new CalloutModel({ durationScale: 2, maxVisible: 2 })
     m.callout("a", "Shove", "info")

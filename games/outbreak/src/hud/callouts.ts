@@ -72,12 +72,17 @@ export class CalloutModel {
     const duration = kind === "progress" && opts.duration === undefined ? base : base * this.tuning.durationScale
     const existing = this.items.find((c) => c.actorId === actorId && c.key === key && c.until > this.now)
     if (existing) {
+      const resolved = existing.kind === "progress" && kind !== "progress"
       existing.text = text
       existing.kind = kind
       existing.until = this.now + duration
       if (opts.progress !== undefined) existing.progress = clamp01(opts.progress)
-      // A repeated pop restarts its entrance so the player sees it happen again.
-      if (kind !== "progress" && this.now - existing.born > FADE_IN) {
+      if (resolved) {
+        // A finished action turns into its result in the same slot, already fully visible.
+        existing.born = this.now - FADE_IN
+        existing.order = Math.min(...this.items.filter((c) => c.actorId === actorId).map((c) => c.order)) - 1
+      } else if (kind !== "progress" && this.now - existing.born > FADE_IN) {
+        // A repeated pop restarts its entrance and moves to the top so the player sees it happen again.
         existing.born = this.now
         existing.order = this.nextId++
       }
