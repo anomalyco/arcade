@@ -333,10 +333,17 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
   m.box(r-2.23,.94,kz-.01,r-1.37,.965,kz+.69,rgb(0x323838))
   for(const dx of [-.22,.22])for(const dz of [.18,.48])m.prism(r-1.80+dx,kz+dz,.11,.11,.966,.982,8,rgb(0x1b2022))
   m.box(r-2.12,.26,kz+.68,r-1.48,.76,kz+.70,rgb(0x282e30),MAT.shiny)
-  // Warm tiled backsplash & upper wall cupboards above north kitchen run
+  // Warm tiled backsplash, under-cabinet warm light strip & upper wall cupboards above north kitchen run
+  const kLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="room"&&l.x>x+7&&l.x<r&&l.y>z+5.5&&l.y<e))
+  const lLamp=Math.max(0,town.lamps.findIndex(l=>l.kind==="room"&&l.x>x&&l.x<x+5&&l.y>z+5.5&&l.y<e))
   m.box(r-5.00,.96,kz,r-1.38,1.68,kz+.04,rgb(0x9e8c6c),MAT.wall)
+  m.box(r-4.92,1.69,kz+.06,r-2.32,1.72,kz+.24,rgb(0xffd896),MAT.lamp,kLamp)
   m.box(r-5.00,1.72,kz,r-2.25,2.38,kz+.38,rgb(0x7c664c),MAT.timber)
   for(let i=0;i<4;i++)m.box(r-4.94+i*.67,1.76,kz+.38,r-4.35+i*.67,2.32,kz+.40,rgb(0x947b5c),MAT.timber)
+  // Living room corner table lamp on the sofa end table (x+1.1, e-.62)
+  m.prism(x+1.10,e-.62,.03,.025,.66,.92,6,rgb(0x5a4b35))
+  m.prism(x+1.10,e-.62,.21,.12,.90,1.16,9,rgb(0xe8b86b),MAT.lamp,lLamp)
+  m.prism(x+1.10,e-.62,.17,.17,.89,.90,9,rgb(0xffdca0),MAT.lamp,lLamp)
   // Potted plant in bedroom top-right corner beside the dresser
   m.prism(x+8.95,z+.85,.17,.13,.13,.44,7,rgb(0x885238))
   plant(m,x+8.95,z+.85,.62,.36,town.houseSeed+91,.40)

@@ -161,7 +161,7 @@ async function main() {
       blockers.forEach((r, i) => occluders.set([...r, 2.8, 0, 0, 0], i * OCC_FLOATS))
       lightOccluders=blockers.length
       for(const b of town.barriers)if(b.kind==="window")occluders.set([...b.rect,.85,0,0,0],lightOccluders++*OCC_FLOATS)
-      for(const p of town.props){const s=propShape(p);if(s)occluders.set([...s.rect,s.height,0,0,0],lightOccluders++*OCC_FLOATS)}
+      for(const p of town.props){if(p.kind==="coffee"||p.kind==="table"||p.kind==="chair"||p.kind==="nightstand")continue;const s=propShape(p);if(s)occluders.set([...s.rect,s.height,0,0,0],lightOccluders++*OCC_FLOATS)}
     }
     vision.update(p.x, p.y, p.aim, blockers, settings)
     if (scenery.update(town,vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
@@ -180,7 +180,7 @@ async function main() {
       if (Math.hypot(lamp.x - p.x, lamp.y - p.y) > 40) continue
       if (lx + r < vx0 || lx - r > vx1 || ly + r < vy0 || ly - r > vy1) continue
       const color=lamp.kind==="street"?[1,.76,.50]:lamp.kind==="porch"?[1,.62,.24]:lamp.kind==="window"?[1,.58,.22]:[1,.56,.20]
-      const cone=lamp.kind==="window"?[0,1,.10,1]:[0,0,0,(lamp.kind==="room"||lamp.kind==="porch")?-1:0]
+      const cone=lamp.kind==="window"?[0,1,-.75,1]:[0,0,0,(lamp.kind==="room"||lamp.kind==="porch")?-1:0]
       lights.set([lx, lamp.h, ly, r, ...color, power, ...cone, 0, lightOccluders, lamp.kind==="room"?.16:.22, i], count++ * LIGHT_FLOATS)
     }
     frame.set(cam.viewProj, 0); frame.set([...cam.eye, time], 16)
