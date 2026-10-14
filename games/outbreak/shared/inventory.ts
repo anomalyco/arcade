@@ -1,6 +1,6 @@
 export const HOTBAR_SIZE = 5
 
-export type ItemKind = "flashlight" | "crowbar" | "medkit" | "noisemaker" | "key"
+export type ItemKind = "flashlight" | "pistol" | "ammo" | "plank" | "crowbar" | "medkit" | "noisemaker" | "key"
 
 export type ItemSpec = {
   kind: ItemKind
@@ -17,6 +17,27 @@ export const ITEM_CATALOG: Readonly<Record<ItemKind, ItemSpec>> = {
     shortLabel: "LIGHT",
     stackable: false,
     usesCharge: true,
+  },
+  pistol: {
+    kind: "pistol",
+    label: "9mm Pistol",
+    shortLabel: "9MM",
+    stackable: false,
+    usesCharge: false,
+  },
+  ammo: {
+    kind: "ammo",
+    label: "9mm Ammo",
+    shortLabel: "AMMO",
+    stackable: true,
+    usesCharge: false,
+  },
+  plank: {
+    kind: "plank",
+    label: "Wood Plank",
+    shortLabel: "PLANK",
+    stackable: true,
+    usesCharge: false,
   },
   crowbar: {
     kind: "crowbar",
@@ -136,6 +157,46 @@ export function syncFlashlightItem(inv: InventoryState, battery: number, flashli
     if (item?.kind === "flashlight") {
       item.charge = battery
       item.active = flashlightOn
+    }
+  }
+}
+
+/** Syncs pistol, 9mm ammo, and plank items in the hotbar when combat or scavenging occurs. */
+export function syncCombatInventory(
+  inv: InventoryState,
+  state: { equippedItem: "pistol" | "hands"; magAmmo: number; reserveAmmo: number; planks: number },
+  ensureSlots = false,
+): void {
+  if (ensureSlots) {
+    if (!inv.slots.some((s) => s?.kind === "pistol")) {
+      addItemToInventory(
+        inv,
+        createItem("pistol", {
+          shortLabel: `9MM ${state.magAmmo}/${state.reserveAmmo}`,
+          active: state.equippedItem === "pistol",
+        }),
+      )
+    }
+    if (state.reserveAmmo > 0 && !inv.slots.some((s) => s?.kind === "ammo")) {
+      addItemToInventory(inv, createItem("ammo", { count: state.reserveAmmo }))
+    }
+    if (state.planks > 0 && !inv.slots.some((s) => s?.kind === "plank")) {
+      addItemToInventory(inv, createItem("plank", { count: state.planks }))
+    }
+  }
+
+  for (let i = 0; i < inv.slots.length; i++) {
+    const item = inv.slots[i]
+    if (!item) continue
+    if (item.kind === "pistol") {
+      item.shortLabel = `9MM ${state.magAmmo}/${state.reserveAmmo}`
+      item.active = state.equippedItem === "pistol"
+    } else if (item.kind === "ammo") {
+      if (state.reserveAmmo <= 0) inv.slots[i] = null
+      else item.count = state.reserveAmmo
+    } else if (item.kind === "plank") {
+      if (state.planks <= 0) inv.slots[i] = null
+      else item.count = state.planks
     }
   }
 }

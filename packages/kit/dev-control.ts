@@ -702,6 +702,12 @@ class PageControlRuntime {
     this.sendStatus()
   }
 
+  registerCommands(setup: (commands: LabCommandRegistry) => void) {
+    const adapter = this.activeAdapter()
+    setup(adapter.commands)
+    this.sendStatus()
+  }
+
   removePanel(panel: LabPanel) {
     this.panels.delete(panel)
     this.sendStatus()
@@ -1111,6 +1117,11 @@ export function attachLabPanelControl(panel: LabPanel): () => void {
   const rt = getRuntime()
   rt?.addPanel(panel)
   return () => rt?.removePanel(panel)
+}
+
+export function registerGameCommands(setup: (commands: LabCommandRegistry) => void): void {
+  const rt = getRuntime()
+  rt?.registerCommands(setup)
 }
 
 export function ensureDevControlConnected(): void {
