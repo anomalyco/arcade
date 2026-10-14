@@ -1,7 +1,7 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
-import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0,
@@ -36,7 +36,7 @@ export const outbreakSceneHooks: SceneHooks = {
   shadowTaps: 5,
   lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; }",
   material: " ",
-  postLightMaterial: `${surfaceMaterial}
+  postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     let inRoom = interior(o.world.xz + n.xz * 0.28);`,
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
@@ -47,7 +47,7 @@ export const outbreakSceneHooks: SceneHooks = {
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
-${surfaceMaterialDeclarations}
+${outbreakSurfaceMaterialDeclarationsWgsl}
 ${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
@@ -133,49 +133,9 @@ fn eyeVisible(p: vec2f) -> f32 {
     col = col * mix(0.62, 1.08, eave) + vec3f(0.005, 0.010, 0.022) * F.ambient.w * eave * max(0.0, n.y);
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
-    if (mat == 20) {
-      let kind = i32(round(o.aux));
-      if (kind == 0) {
-        // Overgrown dark-clump variation across lawns & yards so turf reads with deep mossy shadows and organic patches.
-        let turfPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
-        col *= mix(0.42, 1.05, smoothstep(0.26, 0.76, turfPatch));
-      } else if (kind == 1) {
-        // Textured cracked asphalt: dark gutters & wheel ruts, jagged fracture lines, coarse aggregate, and localized moonlit crown sheen.
-        let p = o.world.xz;
-        let roadU = clamp((p.y - 40.0) / 8.0, 0.0, 1.0);
-        let crown = 1.0 - abs(roadU * 2.0 - 1.0);
-        let gutter = smoothstep(0.0, 0.18, roadU) * smoothstep(0.0, 0.18, 1.0 - roadU);
-        let ruts = max(0.0, 1.0 - pow((roadU - 0.28) * 6.5, 2.0)) + max(0.0, 1.0 - pow((roadU - 0.72) * 6.5, 2.0));
-        let roadMacro = surfaceNoise(p * 0.28 + vec2f(3.7, 8.1));
-        let w1 = surfaceNoise(p * 1.45 + vec2f(1.7, 5.3));
-        let w2 = surfaceNoise(p * 2.95 + vec2f(8.2, 2.9));
-        let warp = w1 * 0.65 + w2 * 0.35;
-        let fx = abs(fract(p.x * 0.34 + warp * 0.52) - 0.5);
-        let fy = abs(fract(p.y * 0.42 - warp * 0.48 + roadMacro * 0.35) - 0.5);
-        let mask = smoothstep(0.38, 0.64, roadMacro);
-        let cracks = clamp(((1.0 - smoothstep(0.004, 0.016, fx)) + (1.0 - smoothstep(0.005, 0.018, fy)) * 0.85) * mask, 0.0, 1.0);
-        let grit = (w2 - 0.5) * 0.32;
-        let dxRoad = (p.x - 29.0) * 0.07;
-        let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        col *= (0.50 + 0.32 * gutter - 0.12 * ruts + 0.18 * (roadMacro - 0.5) + grit) * (1.0 - 0.48 * cracks);
-        let sheen = crown * crown * (0.45 + 0.55 * centerFocus) * (0.65 + 0.65 * roadMacro) * (1.0 - 0.65 * cracks);
-        col += vec3f(0.011, 0.018, 0.035) * F.ambient.w * sheen;
-      } else if (kind == 2) {
-        let inVerge = (o.world.z > 39.30 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.70);
-        if (!inVerge) {
-          col = col * 0.84 + vec3f(0.007, 0.011, 0.022) * F.ambient.w;
-        }
-      }
-    } else if (mat == 4 && !inRoom) {
+    ${groundSurfaceHookWgsl}
+    if (mat == 4 && !inRoom) {
       col *= mix(1.0,.52,smoothstep(2.15,2.78,o.world.y));
-    }
-    if (!inRoom && o.world.y < 0.35) {
-      let dp = o.world.xz - lights[0].pos.xz;
-      let d2 = dot(dp, dp);
-      if (d2 < 14.0) {
-        let aura = max(0.0, 1.0 - d2 / 14.0);
-        col += o.color * vec3f(0.52, 0.31, 0.11) * aura * aura * nightLamps;
-      }
     }
     if (mat == 22) {
       // Above the Grassland + Botanics subsurface chlorophyll translucency & 4th-power grazing Fresnel rim.

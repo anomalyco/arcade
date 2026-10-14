@@ -31,6 +31,7 @@ import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakCombatFX } from "./combat-fx"
+import { DEFAULT_GROUND_SETTINGS, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { Survivor } from "./survivor"
 import { ZombieCrowdRenderer } from "./zombies"
@@ -72,6 +73,7 @@ const settings = {
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
+  ...DEFAULT_GROUND_SETTINGS,
   ...zombieTuning,
   ...(peaceful ? { zombieCount: 0 } : {}),
 }
@@ -181,6 +183,17 @@ async function main() {
     },
     ...flashlightControls,
     ...staminaControls,
+    ...groundControls,
+    {
+      key: "randomizeGroundTuning",
+      label: "Randomize ground & clutter",
+      group: "Ground & Clutter",
+      type: "action",
+      run: () => {
+        Object.assign(settings, randomizeGroundSettings(settings, settings.groundTuningSeed))
+        lab.refresh()
+      },
+    },
     { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
     { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
     { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
@@ -400,7 +413,15 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {
@@ -584,7 +605,7 @@ async function main() {
     session.view.revision = previous.revision + 1
     session.view.town.doors.forEach((d, i) => {
       d.open = previous.town.doors[i]!.open
-      d.locked = previous.town.doors[i]!.locked
+      if (previous.town.doors[i]!.locked !== undefined) d.locked = previous.town.doors[i]!.locked
     })
     session.view.town.windows.forEach((w, i) => {
       w.open = previous.town.windows[i]!.open
@@ -898,7 +919,7 @@ async function main() {
     const focus = cam.project(focusX, 1, focusY, w, h)
     frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, cutHeight, count], 32)
     frame.set([...day.direction, day.sun], 36)
-    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, SIZE], 40)
+    frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, packGroundCfgBits(settings)], 40)
     frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.shroud], 44)
     town.doors.forEach((door, i) =>
       doorData.set(
@@ -1131,7 +1152,15 @@ async function main() {
         key === "floorStyle" ||
         key === "texScale" ||
         key === "texContrast" ||
-        key === "texRoughness"
+        key === "texRoughness" ||
+        key === "wearAmount" ||
+        key === "curbDirt" ||
+        key === "puddleWetness" ||
+        key === "clutterDensity" ||
+        key === "rubbleAmount" ||
+        key === "motionStrength" ||
+        key === "windGustiness" ||
+        key === "clutterSeed"
       )
         syncTextures()
       if (key === "lookPreset") {
