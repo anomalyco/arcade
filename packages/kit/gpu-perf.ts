@@ -97,3 +97,30 @@ export class GpuPerf {
     }
   }
 }
+
+export type FramePerfSample = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
+
+/** Rolling frame-time percentile and GPU telemetry tracker for embedded game DebugOverlay panels. */
+export class PerfSampler {
+  private samples: number[] = []
+  private lastReport = 0
+  sample: FramePerfSample = { fps: 0, frameMs: 0, p95Ms: 0, gpuMs: null, gpuKind: "timestamp", draws: 0, verts: 0, chunks: 0, lights: 0 }
+
+  constructor(private readonly windowSize = 180) {}
+
+  reset(): void { this.samples.length = 0; this.lastReport = 0 }
+
+  update(now: number, elapsedMs: number, stats: Pick<FramePerfSample, "gpuMs" | "gpuKind" | "draws" | "verts" | "chunks" | "lights">, headerEl?: HTMLElement | null): FramePerfSample | null {
+    if (elapsedMs > 0 && elapsedMs < 1000 && Number.isFinite(elapsedMs)) this.samples.push(elapsedMs)
+    if (this.samples.length > this.windowSize) this.samples.shift()
+    if (typeof document !== "undefined" && document.hidden) { this.reset(); return null }
+    if (now - this.lastReport < 150 || !this.samples.length) return null
+    this.lastReport = now
+    const sorted = [...this.samples].sort((a, b) => a - b), n = sorted.length
+    const frameMs = sorted[Math.floor((n - 1) * 0.5)] ?? 0, p95Ms = sorted[Math.floor((n - 1) * 0.95)] ?? 0
+    const fps = (1000 * n) / (this.samples.reduce((a, b) => a + b, 0) || 1)
+    this.sample = { ...stats, fps, frameMs, p95Ms }
+    if (headerEl) headerEl.textContent = `FPS ${fps.toFixed(0)} · Frame ms ${frameMs.toFixed(1)} / ${p95Ms.toFixed(1)}\nGPU ${stats.gpuKind === "timestamp" ? "HW" : "queue-wait"} ms ${stats.gpuMs?.toFixed(2) ?? "—"}`
+    return this.sample
+  }
+}

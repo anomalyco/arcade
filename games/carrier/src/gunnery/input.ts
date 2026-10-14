@@ -1,18 +1,19 @@
+import { KeyStateTracker, requestCanvasPointerLock } from "@arcade/kit/client/controls"
+
 /**
- * Turret controls, first person:
+ * Turret controls, first person (bound by physical `KeyboardEvent.code`):
  * - Mouse under Pointer Lock: aim (the game's src/input.ts owns the lock aboard; the harness takes it itself with
  *   `grab`). Without the lock (denied, headless) dragging aims.
  * - Left mouse (under the lock) or Space: fire (hold: the CIWS and the gun keep firing; a SAM leaves per press).
  * - Right mouse held: the sight's zoom.
- * Keys match by physical position (`e.code`) and by character (`e.key`); everything releases on Cmd-up and on blur.
- * Space and the mouse are movement keys on no layout. Leaving the turret is SHIP OPERATIONS (E), not a key here.
+ * Leaving the turret is SHIP OPERATIONS (E), not a key here.
  */
 export class TurretInput {
   /** Off: nothing is read (not manning a turret, menus, debug panel). */
   enabled = false
   /** Take Pointer Lock on a click itself (the harness). */
   grab = false
-  private keys = new Set<string>()
+  private readonly tracker: KeyStateTracker
   private dx = 0
   private dy = 0
   private left = false
@@ -22,26 +23,17 @@ export class TurretInput {
   zoom: boolean | null = null
 
   constructor(private canvas: HTMLCanvasElement) {
-    addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.code === "Space" && this.enabled) e.preventDefault()
-      if (this.keys.has(e.code)) return
-      this.keys.add(e.code)
+    this.tracker = new KeyStateTracker({
+      shouldPreventDefault: (code) => code === "Space" && this.enabled,
+      onRelease: () => {
+        this.left = false
+        this.right = false
+      },
     })
-    addEventListener("keyup", (e) => {
-      this.keys.delete(e.code)
-      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
-    })
-    addEventListener("blur", () => this.release())
     canvas.addEventListener("mousedown", (e) => {
       const locked = document.pointerLockElement === canvas
       if (e.button === 0 && !locked && this.grab && this.enabled) {
-        const c = canvas as HTMLCanvasElement & { requestPointerLock(o?: { unadjustedMovement?: boolean }): Promise<void> | void }
-        try {
-          void Promise.resolve(c.requestPointerLock()).catch(() => {})
-        } catch {
-          // No Pointer Lock: dragging aims.
-        }
+        requestCanvasPointerLock(canvas)
       }
       if (e.button === 0 && locked) this.left = true
       if (e.button === 2) this.right = true
@@ -62,7 +54,7 @@ export class TurretInput {
   }
 
   release(): void {
-    this.keys.clear()
+    this.tracker.release()
     this.left = false
     this.right = false
   }
@@ -79,7 +71,7 @@ export class TurretInput {
   get fire(): boolean {
     if (!this.enabled) return false
     if (this.trigger !== null) return this.trigger
-    return this.left || this.keys.has("Space")
+    return this.left || this.tracker.held("Space")
   }
 
   get scope(): boolean {
@@ -90,5 +82,6 @@ export class TurretInput {
 
   endFrame(): void {
     this.dx = this.dy = 0
+    this.tracker.clearDowns()
   }
 }

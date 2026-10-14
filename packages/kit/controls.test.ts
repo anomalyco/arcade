@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
+  KeyStateTracker,
   STANDARD_BINDINGS,
   fallbackCodeLabel,
+  isEditableEventTarget,
+  isMetaKey,
+  isNavigationKey,
   keyLabel,
   matchesAction,
   moveClusterLabel,
@@ -239,6 +243,39 @@ describe("controls standard and layout-aware prompt labels", () => {
       else Reflect.deleteProperty(globalThis, "window")
       if (prevDoc) Object.defineProperty(globalThis, "document", prevDoc)
       else Reflect.deleteProperty(globalThis, "document")
+    }
+  })
+
+  test("isEditableEventTarget, isNavigationKey, isMetaKey, and KeyStateTracker handle physical codes and release", () => {
+    expect(isEditableEventTarget(null)).toBe(false)
+    expect(isEditableEventTarget({ tagName: "INPUT" } as unknown as EventTarget)).toBe(true)
+    expect(isEditableEventTarget({ tagName: "TEXTAREA" } as unknown as EventTarget)).toBe(true)
+    expect(isEditableEventTarget({ isContentEditable: true } as unknown as EventTarget)).toBe(true)
+    expect(isEditableEventTarget({ tagName: "CANVAS" } as unknown as EventTarget)).toBe(false)
+    expect(isNavigationKey("Space")).toBe(true)
+    expect(isNavigationKey("ArrowUp")).toBe(true)
+    expect(isNavigationKey("KeyW")).toBe(false)
+    expect(isMetaKey("MetaLeft")).toBe(true)
+    expect(isMetaKey("ShiftLeft")).toBe(false)
+
+    const fakeWin = new EventTarget()
+    const prevWin = Object.getOwnPropertyDescriptor(globalThis, "window")
+    Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWin })
+    try {
+      let released = 0
+      const tracker = new KeyStateTracker({ onRelease: () => released++ })
+      fakeWin.dispatchEvent(Object.assign(new Event("keydown"), { code: "KeyW", key: ",", preventDefault() {} }))
+      expect(tracker.held("KeyW")).toBe(true)
+      expect(tracker.pressed("KeyW")).toBe(true)
+      tracker.clearDowns()
+      expect(tracker.pressed("KeyW")).toBe(false)
+      expect(tracker.held("KeyW")).toBe(true)
+      fakeWin.dispatchEvent(Object.assign(new Event("keyup"), { code: "MetaLeft", key: "Meta" }))
+      expect(tracker.held("KeyW")).toBe(false)
+      expect(released).toBe(1)
+    } finally {
+      if (prevWin) Object.defineProperty(globalThis, "window", prevWin)
+      else Reflect.deleteProperty(globalThis, "window")
     }
   })
 })

@@ -1,20 +1,15 @@
+import { KeyStateTracker } from "@arcade/kit/client/controls"
+
 /**
- * Weapon controls while flying, Battlefield-style (BF3/BF4 jets fire on Space + LMB and pick weapons with 1/2 or a
- * switch key; here F is taken by flares, BF's countermeasure key being X, which is our free look):
+ * Weapon controls while flying, Battlefield-style (bound by physical `KeyboardEvent.code`):
  * - Space or left mouse (under Pointer Lock): fire the selected weapon (hold for the cannon).
  * - 1, 2, 3: select the aircraft's first, second, third weapon (only those it has). Mouse wheel or V: cycle them.
  * - F: flares.
- *
- * Keys match by physical position (`e.code`) and by character (`e.key`), so any layout works; the character a key
- * produced on press is the one released, and everything releases on Cmd-up and on blur. Digits match by code too, so
- * AZERTY's unshifted digit row works. None of Space, 1-3, V, F or the wheel is a movement key on QWERTY, AZERTY or
- * Dvorak (V is Dvorak's K position, Dvorak's V is on QWERTY's period).
  */
 export class WeaponInput {
   /** Off: nothing is read (not flying, menus, debug panel). */
   enabled = true
-  private keys = new Set<string>()
-  private downs = new Set<string>()
+  private readonly tracker: KeyStateTracker
   private mouseFire = false
   private wheel = 0
   private wheelAt = 0
@@ -24,18 +19,10 @@ export class WeaponInput {
   trigger: boolean | null = null
 
   constructor(private canvas: HTMLCanvasElement) {
-    addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.code === "Space") e.preventDefault()
-      if (this.keys.has(e.code)) return
-      this.keys.add(e.code)
-      this.downs.add(e.code)
+    this.tracker = new KeyStateTracker({
+      shouldPreventDefault: (code) => code === "Space",
+      onRelease: () => (this.mouseFire = false),
     })
-    addEventListener("keyup", (e) => {
-      this.keys.delete(e.code)
-      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
-    })
-    addEventListener("blur", () => this.release())
     canvas.addEventListener("mousedown", (e) => {
       // Left mouse fires only once the pointer is locked: the first click captures it (flight/input.ts).
       if (e.button === 0 && document.pointerLockElement === canvas) this.mouseFire = true
@@ -61,50 +48,39 @@ export class WeaponInput {
   }
 
   release(): void {
-    this.keys.clear()
-    this.downs.clear()
+    this.tracker.release()
     this.mouseFire = false
-  }
-
-  private any(...k: string[]): boolean {
-    for (const x of k) if (this.keys.has(x)) return true
-    return false
-  }
-
-  private pressed(...k: string[]): boolean {
-    for (const x of k) if (this.downs.has(x)) return true
-    return false
   }
 
   /** Trigger held (Space or left mouse). */
   get fire(): boolean {
     if (!this.enabled) return false
     if (this.trigger !== null) return this.trigger
-    return this.mouseFire || this.any("Space")
+    return this.mouseFire || this.tracker.any("Space")
   }
 
   /** Slot picked this frame by a number key (0-based), or -1. */
   get select(): number {
     if (!this.enabled) return -1
-    if (this.pressed("Digit1", "Numpad1")) return 0
-    if (this.pressed("Digit2", "Numpad2")) return 1
-    if (this.pressed("Digit3", "Numpad3")) return 2
+    if (this.tracker.pressed("Digit1", "Numpad1")) return 0
+    if (this.tracker.pressed("Digit2", "Numpad2")) return 1
+    if (this.tracker.pressed("Digit3", "Numpad3")) return 2
     return -1
   }
 
   /** Cycle steps this frame: wheel notches (down = next) and V. */
   get cycle(): number {
     if (!this.enabled) return 0
-    return this.wheel + (this.pressed("KeyV") ? 1 : 0)
+    return this.wheel + (this.tracker.pressed("KeyV") ? 1 : 0)
   }
 
   /** Flares asked for this frame. */
   get flares(): boolean {
-    return this.enabled && !this.flaresBlocked && this.pressed("KeyF")
+    return this.enabled && !this.flaresBlocked && this.tracker.pressed("KeyF")
   }
 
   endFrame(): void {
-    this.downs.clear()
+    this.tracker.clearDowns()
     this.wheel = 0
   }
 }

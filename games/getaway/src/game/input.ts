@@ -1,4 +1,4 @@
-import { observeKeyLayout } from "@arcade/kit/client/controls"
+import { isEditableEventTarget, isMetaKey, isNavigationKey, observeKeyLayout } from "@arcade/kit/client/controls"
 import type { Input } from "../../shared/sim/vehicle"
 
 /** Keyboard and gamepad driving controls. Bound by physical `KeyboardEvent.code`; steering is relative to the car. */
@@ -15,14 +15,14 @@ export class Controls {
   constructor() {
     const mux = this.mux
     addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.code === "Escape") return
+      if (isEditableEventTarget(e.target) || e.code === "Escape") return
       if (mux) {
         if (!e.repeat) this.forward({ type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey })
         e.preventDefault()
         return
       }
       this.key("keydown", e.code, e.key)
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault()
+      if (isNavigationKey(e.code)) e.preventDefault()
     })
     addEventListener("keyup", (e) => {
       if (mux) {
@@ -58,7 +58,7 @@ export class Controls {
     if (kind === "keyup") {
       this.keys.delete(code)
       // macOS drops keyups for other keys while Cmd is held.
-      if (code === "MetaLeft" || code === "MetaRight") this.release()
+      if (isMetaKey(code)) this.release()
       return
     }
     observeKeyLayout({ code, key })

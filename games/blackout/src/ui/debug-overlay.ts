@@ -1,4 +1,5 @@
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
 import { animationControls, animationLab } from "../game/anim-settings"
 import { motionSettings } from "../render/motion"
 import { bloodSplatterSettings } from "../game/splatter"
@@ -37,7 +38,7 @@ export function lookMask(settings: Juice): number {
   for (let i = 0; i < LOOK_KEYS.length; i++) if (settings[LOOK_KEYS[i]!]) bits |= 1 << i
   return bits
 }
-export type Perf = { fps: number; frameMs: number; p95Ms: number; gpuMs: number | null; gpuKind: string; draws: number; verts: number; chunks: number; lights: number }
+export type Perf = FramePerfSample
 const controls: LabControl[] = [
   {key:"wizardPitch",label:"Camera angle",min:0.7,max:1.2,step:0.05,group:"Spells"},
   ...Object.entries(SPELL_CONTROLS).filter(([key])=>!key.endsWith("Threshold")).map(([key,c]) => ({ key, label: c.label, min: c.min, max: c.max, step: c.step, group: "Spells" })),
@@ -46,8 +47,7 @@ const controls: LabControl[] = [
 ]
 
 export class DebugOverlay extends LabPanel {
-  private samples: number[] = []
-  private lastReport = 0
+  private readonly sampler = new PerfSampler(180)
   constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}, extra: LabControl[] = []) {
     super(animationLab(settings, params), [...controls, ...animationControls, ...extra], params, release)
     this.addControls(settings, lightControls.filter(c => c.key !== "style").map(c => ({ ...c, group: "Vehicle lights" })))
@@ -58,17 +58,6 @@ export class DebugOverlay extends LabPanel {
     ])
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
-    if (elapsed > 0 && Number.isFinite(elapsed)) this.samples.push(elapsed)
-    if (this.samples.length > 180) this.samples.shift()
-    if (document.hidden) { this.samples = []; return null }
-    if (now - this.lastReport < 150 || !this.samples.length) return null
-    this.lastReport = now
-    const sorted = [...this.samples].sort((a, b) => a - b)
-    const frameMs = sorted[Math.floor((sorted.length - 1) * 0.5)]!
-    const p95Ms = sorted[Math.floor((sorted.length - 1) * 0.95)]!
-    const fps = 1000 * this.samples.length / this.samples.reduce((a, b) => a + b, 0)
-    const perf = { fps, frameMs, p95Ms, ...gpu, chunks, lights }
-    this.header.textContent = `FPS ${fps.toFixed(0)} · Frame ms ${frameMs.toFixed(1)} / ${p95Ms.toFixed(1)}\nGPU ${gpu.gpuKind === "timestamp" ? "HW" : "queue-wait"} ms ${gpu.gpuMs?.toFixed(2) ?? "—"}`
-    return perf
+    return this.sampler.update(now, elapsed, { ...gpu, chunks, lights }, this.header)
   }
 }

@@ -1,3 +1,5 @@
+import { keyLabel } from "@arcade/kit/client/controls"
+
 /** What the helm readout shows. */
 export type HelmView = { order: number; power: number; knots: number; heading: number; rudder: number }
 
@@ -80,7 +82,8 @@ export class Hud {
    * above it a short-lived refusal.
    */
   seat(v: { role: string; ship: string; state?: string; captain?: boolean; color: string; flash: string } | null): void {
-    const key = v ? `${v.role}|${v.ship}|${v.state}|${v.captain}|${v.color}|${v.flash}` : ""
+    const eKey = keyLabel("KeyE")
+    const key = v ? `${v.role}|${v.ship}|${v.state}|${v.captain}|${v.color}|${v.flash}|${eKey}` : ""
     if (key === this.lastSeat) return
     this.lastSeat = key
     this.seatEl.hidden = !v
@@ -90,7 +93,8 @@ export class Hud {
     role.innerHTML = `${v.captain ? "<em>★</em>" : ""}${v.role} · <b></b>${v.state ? "<i></i>" : ""}`
     role.querySelector("b")!.textContent = v.ship
     if (v.state) role.querySelector("i")!.textContent = ` · ${v.state}`
-    role.insertAdjacentHTML("beforeend", "<kbd><b>E</b>SHIP OPS</kbd>")
+    role.insertAdjacentHTML("beforeend", "<kbd><b></b>SHIP OPS</kbd>")
+    role.querySelector("kbd b")!.textContent = eKey
     this.seatEl.querySelector(".flash")!.textContent = v.flash
   }
 
