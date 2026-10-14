@@ -109,12 +109,24 @@ try {
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
   await shot("06-window-peek")
 
-  // Press F directly to Open window (no Q cycling), then press E (primary Climb on open window) to climb through into the room.
+  // Hold E on window to Open (secondary action), then tap E (primary Climb on open window) to climb through into the room.
   await page.evaluate(() => (window as any).__arcadeHarness.freeze(false))
-  await page.keyboard.press("KeyF")
+  await page.keyboard.down("KeyE")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().town.windows.find((w: any) => w.id === "elm-south-west")?.open)
+  await page.keyboard.up("KeyE")
   await page.keyboard.press("KeyE")
   await page.waitForFunction(() => (window as any).__arcadeHarness.state().player.y < 65.0)
+
+  // Flashlight toggle with F and hotbar selection with Digit2 / Digit1.
+  const onBefore = await page.evaluate(() => (window as any).__arcadeHarness.state().flashlight.on)
+  await page.keyboard.press("KeyF")
+  await page.waitForFunction(prev => (window as any).__arcadeHarness.state().flashlight.on !== prev, onBefore)
+  await page.keyboard.press("KeyF")
+  await page.waitForFunction(() => (window as any).__arcadeHarness.state().flashlight.on === true)
+  await page.keyboard.press("Digit2")
+  await page.waitForFunction(() => (window as any).__arcadeHarness.state().inventory.selectedSlot === 1)
+  await page.keyboard.press("Digit1")
+  await page.waitForFunction(() => (window as any).__arcadeHarness.state().inventory.selectedSlot === 0)
   await page.evaluate(() => (window as any).__arcadeHarness.freeze())
 
   // Fence vaulting: pose near north yard fence [18, 20, 39, 20.12] and vault across with E / Space.

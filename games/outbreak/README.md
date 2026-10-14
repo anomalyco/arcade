@@ -1,11 +1,13 @@
 # Outbreak
 
 Unlisted local-session prototype at `/arcade/outbreak/?solo`. Physical WASD (`KeyW`, `KeyA`, `KeyS`, `KeyD`) or arrows move,
-`Shift` sprints with stamina and exhaustion recovery, the mouse aims, `E` (`KeyE`) triggers the primary contextual action
-(peek closed window with a localised cutaway bubble, climb through open window, vault fence, open/close door), `F` (`KeyF`
-or Hold `E`) triggers the secondary action shown simultaneously in the floating object prompt (open/close window sash,
-lock/unlock door), and `Space` vaults fences or climbs through open windows. On-screen prompts adapt to the user's
-keyboard layout (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
+`Shift` sprints with stamina and exhaustion recovery, the mouse aims, `F` (`KeyF`) toggles the shadow-casting noir
+flashlight (with battery drain, recharge delay, low-battery flicker/dimming, and empty cutout), `1`–`5` (`Digit1`–`Digit5`)
+and the mouse wheel select hotbar slots, `E` (`KeyE`) triggers the primary contextual action (peek closed window with a
+localised cutaway bubble, climb through open window, vault fence, open/close door), `Hold E` (`0.38 s`) triggers the
+secondary action shown simultaneously in the floating object prompt (open/close window sash, lock/unlock door), and
+`Space` vaults fences or climbs through open windows. On-screen prompts adapt to the user's keyboard layout
+(`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.

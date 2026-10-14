@@ -7,6 +7,8 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { LocalSession, type Command } from "../shared/session"
+import { DEFAULT_FLASHLIGHT_TUNING, flashlightColor, flashlightControls } from "../shared/flashlight"
+import { HOTBAR_SIZE } from "../shared/inventory"
 import { holdProgress, vaultLift, type PeekInfo } from "../shared/interact"
 import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
@@ -22,8 +24,9 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...zombieTuning }
+const settings = { hour: 18, timeScale: 120, cone: 110, awareness: 2.5, range: 27, shroud: .32, exposure: 1.0, zoom: 46, houseSeed: 7, terrain: .22, weather: 0, lighting: 1, diagnostic: 0, skyFill: 1, humanProfile: 0, ...DEFAULT_STAMINA_TUNING, ...DEFAULT_FLASHLIGHT_TUNING, ...zombieTuning }
 const controls: LabControl[] = [
+  ...flashlightControls,
   ...staminaControls,
   { key: "humanProfile", label: "Pose", group: "Zombie", options: [{ label: "Survivor", value: 0 }, { label: "Zombie", value: 1 }] },
   ...zombieControls,
@@ -49,6 +52,9 @@ async function main() {
   const promptEl = document.querySelector<HTMLElement>("#prompt")
   const staminaEl = document.querySelector<HTMLElement>("#stamina")
   const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
+  const batteryEl = document.querySelector<HTMLElement>("#battery")
+  const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
+  const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
   if (!navigator.gpu) { status.textContent = "Outbreak needs WebGPU."; return }
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   if (!adapter) { status.textContent = "No WebGPU adapter is available."; return }
@@ -65,6 +71,19 @@ async function main() {
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
+  let pendingHotbarSlot: number | undefined
+  let pendingHotbarDelta = 0
+  let pendingFlashlightToggle = false
+  input.onKey = (code) => {
+    const slot = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].indexOf(code)
+    if (slot >= 0) {
+      if (slot === 0 && session.view.inventory.selectedSlot === 0) pendingFlashlightToggle = true
+      pendingHotbarSlot = slot
+    }
+  }
+  input.onWheel = (delta) => {
+    if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
+  }
   const cam = new Camera()
   const avatar = new Survivor(renderer)
   const updateProfile = () => { avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined }
@@ -103,14 +122,22 @@ async function main() {
       wallNow,
       liveMove(),
       () => input.takeEnter(),
-      () => input.takeSecondary(),
+      () => {
+        const f = input.takeSecondary() || pendingFlashlightToggle
+        pendingFlashlightToggle = false
+        return f
+      },
       () => input.takeJump(),
       () => input.interactHeld,
     )
     if (!substeps.length) return 0
     const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
+    const hotbarSlot = pendingHotbarSlot
+    const hotbarDelta = pendingHotbarDelta
+    pendingHotbarSlot = undefined
+    pendingHotbarDelta = 0
     let stepped = 0
-    for (const step of substeps) {
+    for (const [idx, step] of substeps.entries()) {
       const p = session.view.player
       session.update(
         step.dt,
@@ -120,9 +147,11 @@ async function main() {
           sprint: step.sprint,
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
-          secondary: step.secondary,
+          flashlight: step.flashlight,
           jump: step.jump,
           interactHeld: step.interactHeld,
+          ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
+          ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
         },
         settings.timeScale,
         settings,
@@ -186,11 +215,10 @@ async function main() {
   const formatStatus = () => {
     const { player: p, hour, prompt } = session.view
     const primaryKey = keyLabel("KeyE")
-    const secondaryKey = keyLabel("KeyF")
     let promptText = ""
     if (prompt) {
       const second = prompt.secondary
-        ? `  ·  ${prompt.secondary.hold ? `${secondaryKey} / Hold ${primaryKey}` : secondaryKey} ${prompt.secondary.label}`
+        ? `  ·  Hold ${primaryKey} ${prompt.secondary.label}`
         : ""
       promptText = ` · ${primaryKey} ${prompt.primary.label}${second}`
     }
@@ -211,10 +239,9 @@ async function main() {
       return
     }
     const primaryKey = esc(keyLabel("KeyE"))
-    const secondaryKey = esc(keyLabel("KeyF"))
     const primaryHtml = `<span><kbd>${primaryKey}</kbd>${esc(prompt.primary.label)}</span>`
     const secondaryHtml = prompt.secondary
-      ? `<span class="sep">·</span><span><kbd>${prompt.secondary.hold ? `${secondaryKey} / Hold ${primaryKey}` : secondaryKey}</kbd>${esc(prompt.secondary.label)}</span>`
+      ? `<span class="sep">·</span><span><kbd>Hold ${primaryKey}</kbd>${esc(prompt.secondary.label)}</span>`
       : ""
     const hold = holdProgress(p)
     const holdHtml = hold > 0 ? `<i class="hold" style="width:${(hold * 100).toFixed(1)}%"></i>` : ""
@@ -222,7 +249,23 @@ async function main() {
     promptEl.hidden = false
     promptEl.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
   }
-  onKeyLayoutChange(() => { status.textContent = formatStatus(); syncWorldPrompt(innerWidth, innerHeight) })
+  let lastHotbarKey = ""
+  const syncHotbar = () => {
+    if (!hotbarEl) return
+    const { inventory, player: p } = session.view
+    const fKey = keyLabel("KeyF")
+    const key = `${inventory.selectedSlot}|${p.flashlightOn}|${fKey}|${inventory.slots.map(s => s ? `${s.id}:${s.active ? 1 : 0}:${s.count ?? ""}` : "").join(",")}`
+    if (key === lastHotbarKey) return
+    lastHotbarKey = key
+    hotbarEl.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
+      const item = inventory.slots[i]
+      const sel = i === inventory.selectedSlot
+      const on = item?.kind === "flashlight" && p.flashlightOn
+      const label = item ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}` : "—"
+      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
+    }).join("")
+  }
+  onKeyLayoutChange(() => { lastHotbarKey = ""; status.textContent = formatStatus(); syncWorldPrompt(innerWidth, innerHeight); syncHotbar() })
   function draw(dt: number) {
     const { player: p, town, hour, time, peek } = session.view
     settings.hour = Math.round(hour * 20) / 20
@@ -265,6 +308,15 @@ async function main() {
     const sightAwareness = activePeek ? settings.awareness + (Math.max(settings.awareness, activePeek.awareness) - settings.awareness) * peekBlend : settings.awareness
     lights.set([sightX, 1.65+supportHeight(town,p.x,p.y), sightY, settings.range, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, .01, -1])
     let count = 1
+    if (p.flashlightOutput > .001 && settings.flashlightIntensity > .001) {
+      const [fr, fg, fb] = flashlightColor(settings.flashlightWarmth)
+      const fx = p.x + Math.cos(p.aim) * .25
+      const fy = p.y + Math.sin(p.aim) * .25
+      const fh = 1.22 + supportHeight(town, p.x, p.y)
+      const cosHalf = Math.cos(settings.flashlightCone * Math.PI / 360)
+      const power = p.flashlightOutput * settings.flashlightIntensity
+      lights.set([fx, fh, fy, settings.flashlightRange, fr, fg, fb, power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, .08, -1], count++ * LIGHT_FLOATS)
+    }
     for (const [i, lamp] of town.lamps.entries()) {
       const lampScale = day.lamps * settings.lighting
       lampPower[i] = lampScale
@@ -313,8 +365,17 @@ async function main() {
       staminaEl.dataset.active = String(p.sprinting || p.exhausted || p.stamina < .999)
       staminaEl.dataset.exhausted = String(p.exhausted)
     }
+    if (batteryEl && batteryFill) {
+      const pct = Math.max(0, Math.min(100, p.battery * 100))
+      batteryFill.style.width = `${pct.toFixed(1)}%`
+      batteryEl.dataset.active = String(p.flashlightOn || p.batteryDepleted || p.battery < .999)
+      batteryEl.dataset.low = String(p.battery > 0 && p.battery < settings.flashlightFlicker)
+      batteryEl.dataset.depleted = String(p.batteryDepleted)
+      batteryEl.style.opacity = p.flashlightOn && p.battery < settings.flashlightFlicker ? String(.45 + .5 * p.flashlightOutput) : ""
+    }
     status.textContent = formatStatus()
     syncWorldPrompt(w, h)
+    syncHotbar()
     const meterNow = performance.now(), elapsed = (meterNow - meterAt) / 1000
     if (elapsed > .25) {
       lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks\n${clockText(hour)} · seed ${town.seed}`
@@ -399,7 +460,23 @@ async function main() {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
     human: () => ({ profile: avatar.profile, bones: avatar.bones }),
-    state: () => ({ ...session.view, peekBlend, explored: vision.explored.filter(v => v > 0).length, vertices }),
+    state: () => ({
+      ...session.view,
+      peekBlend,
+      flashlight: {
+        on: session.view.player.flashlightOn,
+        battery: session.view.player.battery,
+        depleted: session.view.player.batteryDepleted,
+        output: session.view.player.flashlightOutput,
+        signature: session.view.player.lightSignature,
+        cone: settings.flashlightCone,
+        range: settings.flashlightRange,
+        intensity: settings.flashlightIntensity,
+        color: flashlightColor(settings.flashlightWarmth),
+      },
+      explored: vision.explored.filter(v => v > 0).length,
+      vertices,
+    }),
     fog: (x: number, y: number) => vision.state(x, y),
     reset,
     freeze: (value = true) => {

@@ -56,6 +56,7 @@ export type InteractActorState = {
   holdTargetId: string | null
   holdElapsed: number
   holdTriggered: boolean
+  holdPendingPrimary: InteractActionId | null
   vault: VaultState | null
 }
 
@@ -68,6 +69,7 @@ export function createInteractActorState(): Pick<
   | "holdTargetId"
   | "holdElapsed"
   | "holdTriggered"
+  | "holdPendingPrimary"
   | "vault"
 > {
   return {
@@ -78,6 +80,7 @@ export function createInteractActorState(): Pick<
     holdTargetId: null,
     holdElapsed: 0,
     holdTriggered: false,
+    holdPendingPrimary: null,
     vault: null,
   }
 }
@@ -167,16 +170,16 @@ function windowActions(
     if (!win.openable) {
       return { primary, actions: [primary] }
     }
-    const secondary: InteractAction = { id: "toggle", label: "Open" }
+    const secondary: InteractAction = { id: "toggle", label: "Open", hold: true }
     return { primary, secondary, actions: [primary, secondary] }
   }
 
-  // Open window: primary action is Climb, secondary action is Close.
+  // Open window: primary action is Climb, secondary action is Hold E to Close.
   const primary: InteractAction = { id: "climb", label: "Climb" }
   if (!win.openable) {
     return { primary, actions: [primary] }
   }
-  const secondary: InteractAction = { id: "toggle", label: "Close" }
+  const secondary: InteractAction = { id: "toggle", label: "Close", hold: true }
   return { primary, secondary, actions: [primary, secondary] }
 }
 
@@ -474,6 +477,7 @@ export function executeInteraction(
   actor: InteractActorState,
   slotOrAction?: "primary" | "secondary" | InteractActionId,
   registry: InteractionRegistry = defaultInteractionRegistry,
+  interactHeld = false,
 ): InteractOutcome {
   if (actor.vault) return { handled: false }
   const target = selectInteractTarget(town, actor, registry)
@@ -489,17 +493,33 @@ export function executeInteraction(
   let actionId: InteractActionId | undefined
   if (!slotOrAction || slotOrAction === "primary") {
     actionId = target.primary.id
+    // On an open window (Climb vs Hold-E Close) or while already peeking a closed window (Stop peeking vs Hold-E Open),
+    // defer the tap action until release if E is actively held down so a Hold-E gesture can complete without climbing/closing first.
+    if (
+      interactHeld &&
+      target.kind === "window" &&
+      target.secondary &&
+      (target.primary.id === "climb" || actor.peekingWindowId === target.id)
+    ) {
+      actor.holdTargetId = target.id
+      actor.holdElapsed = 0
+      actor.holdTriggered = false
+      actor.holdPendingPrimary = target.primary.id
+      return { handled: true, kind: target.kind, targetId: target.id, action: target.primary.id }
+    }
   } else if (slotOrAction === "secondary") {
     actionId = target.secondary?.id
   } else {
     actionId = slotOrAction
   }
   if (!actionId) return { handled: false }
+  actor.holdPendingPrimary = null
   return handler.execute(town, actor, target.id, actionId)
 }
 
 /**
- * Advances Hold-E timer (`HOLD_DURATION`) to trigger the target's secondary action (e.g. Lock door, Open/Close window).
+ * Advances Hold-E timer (`HOLD_DURATION`) to trigger the target's secondary action (e.g. Lock door, Open/Close window),
+ * or commits a deferred tap primary action when E is released before `HOLD_DURATION`.
  */
 export function stepHoldInteraction(
   town: Town,
@@ -508,27 +528,51 @@ export function stepHoldInteraction(
   dt: number,
   registry: InteractionRegistry = defaultInteractionRegistry,
 ): InteractOutcome {
-  if (!interactHeld || actor.vault) {
+  if (actor.vault) {
     actor.holdTargetId = null
     actor.holdElapsed = 0
     actor.holdTriggered = false
+    actor.holdPendingPrimary = null
+    return { handled: false }
+  }
+  if (!interactHeld) {
+    if (actor.holdPendingPrimary && actor.holdTargetId && !actor.holdTriggered) {
+      const pendingAction = actor.holdPendingPrimary
+      const pendingTargetId = actor.holdTargetId
+      actor.holdTargetId = null
+      actor.holdElapsed = 0
+      actor.holdTriggered = false
+      actor.holdPendingPrimary = null
+      const target = selectInteractTarget(town, actor, registry)
+      if (target && target.id === pendingTargetId) {
+        const handler = registry.get(target.kind)
+        if (handler) return handler.execute(town, actor, target.id, pendingAction)
+      }
+    }
+    actor.holdTargetId = null
+    actor.holdElapsed = 0
+    actor.holdTriggered = false
+    actor.holdPendingPrimary = null
     return { handled: false }
   }
   const target = selectInteractTarget(town, actor, registry)
   if (!target || !target.secondary) {
     actor.holdTargetId = null
     actor.holdElapsed = 0
+    actor.holdPendingPrimary = null
     return { handled: false }
   }
   if (actor.holdTargetId !== target.id) {
     actor.holdTargetId = target.id
     actor.holdElapsed = 0
     actor.holdTriggered = false
+    actor.holdPendingPrimary = null
   }
   if (actor.holdTriggered) return { handled: false }
   actor.holdElapsed = Math.min(HOLD_DURATION, actor.holdElapsed + dt)
   if (actor.holdElapsed + 1e-6 >= HOLD_DURATION) {
     actor.holdTriggered = true
+    actor.holdPendingPrimary = null
     const handler = registry.get(target.kind)
     if (handler) {
       return handler.execute(town, actor, target.id, target.secondary.id)

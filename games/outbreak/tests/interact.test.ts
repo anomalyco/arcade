@@ -33,7 +33,7 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
     expect(westTarget?.kind).toBe("window")
     expect(westTarget?.id).toBe("ash-south-west")
     expect(westTarget?.primary).toEqual({ id: "peek", label: "Peek" })
-    expect(westTarget?.secondary).toEqual({ id: "toggle", label: "Open" })
+    expect(westTarget?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
 
     // Turn east toward the front door from the equidistant midpoint
     actor.aim = 0
@@ -52,7 +52,7 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
       expect(target?.kind).toBe("window")
       expect(target?.id).toBe("ash-south-west")
       expect(target?.primary).toEqual({ id: "peek", label: "Peek" })
-      expect(target?.secondary).toEqual({ id: "toggle", label: "Open" })
+      expect(target?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
     }
 
     // Far from any building or fence: no prompt
@@ -83,14 +83,14 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
       }
       expect(session.view.prompt?.id).toBe(cfg.winId)
       expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
-      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
 
       // Press E while still holding movement/sprint input: must reliably enter Peek!
       session.update(TICK_DT, { mx: cfg.mx, my: cfg.my, aim: cfg.aim, interact: true, sprint: cfg.sprint }, 0)
       expect(p.peekingWindowId).toBe(cfg.winId)
       expect(session.view.peek?.windowId).toBe(cfg.winId)
       expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Stop peeking" })
-      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+      expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
 
       // Continuing to press into the wall must NOT cancel peek
       for (let i = 0; i < 12; i++) {
@@ -106,40 +106,52 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
     }
   })
 
-  test("automatic window context: closed -> E Peek / F Open; open -> E Climb / F Close", () => {
+  test("automatic window context: closed -> E Peek / Hold E Open; open -> E Climb / Hold E Close", () => {
     const session = new LocalSession(7)
     const p = session.view.player
     Object.assign(p, { x: 24.5, y: 36.1, vx: 0, vy: 0, aim: -Math.PI / 2 })
     session.rebuildCollision()
 
-    // Closed window: primary is Peek (E), secondary is Open (F)
+    // Closed window: primary is Peek (E), secondary is Open (Hold E)
     expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
-    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
 
-    // Press E to Peek
+    // Tap E to Peek
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(p.peekingWindowId).toBe("ash-south-west")
     expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Stop peeking" })
-    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open", hold: true })
 
-    // Press F (secondary: true) while peeking -> opens window immediately and switches context to E Climb · F Close!
+    // Hold E for HOLD_DURATION (0.38s) while peeking -> opens window and switches context to E Climb · Hold E Close!
     const revBefore = session.view.revision
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
+    const holdTicks = Math.ceil(HOLD_DURATION / TICK_DT) + 1
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true, interactHeld: true }, 0)
+    for (let i = 0; i < holdTicks; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: true }, 0)
+    }
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: false }, 0)
     const win = session.view.town.windows.find((w) => w.id === "ash-south-west")!
     expect(win.open).toBe(true)
     expect(session.view.revision).toBe(revBefore + 1)
     expect(session.view.prompt?.primary).toEqual({ id: "climb", label: "Climb" })
-    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Close" })
+    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Close", hold: true })
 
-    // Press F again -> closes window, context returns to E Peek · F Open
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
+    // Hold E again on open window -> closes window without climbing, context returns to E Peek · Hold E Open
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true, interactHeld: true }, 0)
+    for (let i = 0; i < holdTicks; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: true }, 0)
+    }
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: false }, 0)
     expect(win.open).toBe(false)
+    expect(p.vault).toBeNull()
     expect(p.peekingWindowId).toBeNull()
     expect(session.view.prompt?.primary).toEqual({ id: "peek", label: "Peek" })
-    expect(session.view.prompt?.secondary).toEqual({ id: "toggle", label: "Open" })
 
-    // Press F to Open again, then press E (primary: Climb) to climb right through!
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
+    // Open again via Hold E, then tap E (primary: Climb) to climb right through!
+    for (let i = 0; i < holdTicks; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: i === 0, interactHeld: true }, 0)
+    }
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: false }, 0)
     expect(win.open).toBe(true)
     const staminaBefore = p.stamina
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
@@ -234,7 +246,7 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
     expect(vision.state(30, 33)).toBe("explored")
   })
 
-  test("door open/close via E and lock/unlock via F or Hold E", () => {
+  test("door open/close via E and lock/unlock via Hold E", () => {
     const session = new LocalSession(7)
     const p = session.view.player
     const door = session.view.town.doors.find((d) => d.id === "ash-front")!
@@ -245,17 +257,6 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
     expect(session.view.prompt?.primary).toEqual({ id: "toggle", label: "Open" })
     expect(session.view.prompt?.secondary).toEqual({ id: "lock", label: "Lock", hold: true })
 
-    // Press F (secondary) to lock door directly
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, secondary: true }, 0)
-    expect(door.locked).toBe(true)
-    expect(door.open).toBe(false)
-    expect(session.view.prompt?.primary).toEqual({ id: "lock", label: "Unlock" })
-
-    // Press E to unlock, then E to open
-    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
-    expect(door.locked).toBe(false)
-    expect(session.view.prompt?.primary).toEqual({ id: "toggle", label: "Open" })
-
     // Hold E for HOLD_DURATION (0.38s): initial press opens, holding through 0.38s closes & locks!
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true, interactHeld: true }, 0)
     expect(door.open).toBe(true)
@@ -264,8 +265,17 @@ describe("simultaneous dual-action contextual interactions (E primary, F / Hold 
       session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: true }, 0)
       if (i === 5) expect(holdProgress(p)).toBeGreaterThan(0.1)
     }
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false, interactHeld: false }, 0)
     expect(door.open).toBe(false)
     expect(door.locked).toBe(true)
+    expect(session.view.prompt?.primary).toEqual({ id: "lock", label: "Unlock" })
+
+    // Tap E to unlock, then tap E to open
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(door.locked).toBe(false)
+    expect(session.view.prompt?.primary).toEqual({ id: "toggle", label: "Open" })
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(door.open).toBe(true)
 
     // Custom handler registration on InteractionRegistry
     const customRegistry = new InteractionRegistry()

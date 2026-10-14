@@ -14,7 +14,7 @@ export type TimedSubstep = {
   my: number
   sprint: boolean
   interact: boolean
-  secondary: boolean
+  flashlight: boolean
   jump: boolean
   interactHeld: boolean
 }
@@ -102,7 +102,7 @@ export class FrameClock {
     nowMs: number,
     liveMove: MoveSample,
     takeInteract?: () => boolean,
-    takeSecondary?: () => boolean,
+    takeFlashlight?: () => boolean,
     takeJump?: () => boolean,
     isInteractHeld?: () => boolean,
   ): TimedSubstep[] {
@@ -132,7 +132,7 @@ export class FrameClock {
 
     const out: TimedSubstep[] = []
     const interact = takeInteract ? takeInteract() : false
-    const secondary = takeSecondary ? takeSecondary() : false
+    const flashlight = takeFlashlight ? takeFlashlight() : false
     const jump = takeJump ? takeJump() : false
     const interactHeld = isInteractHeld ? isInteractHeld() : false
     for (let i = 0; i < steps; i++) {
@@ -168,7 +168,7 @@ export class FrameClock {
         my: stepMove.my,
         sprint: stepMove.sprint,
         interact: i === 0 ? interact : false,
-        secondary: i === 0 ? secondary : false,
+        flashlight: i === 0 ? flashlight : false,
         jump: i === 0 ? jump : false,
         interactHeld,
       })
