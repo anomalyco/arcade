@@ -27,7 +27,7 @@ export type FlybyHandle = { id: number; move(at: { x: number; y: number; z: numb
 
 /**
  * Jet one-shots. Flybys and the sonic crack are procedural (timed to the jet's predicted pass, they must stay locked to
- * it). Discrete deck events use one recorded slot each (sfx-bank.ts: the trap, the gear; the catapult is a live voice,
+ * it). Discrete deck events use one recorded slot each (sfx-bank.ts: the trap; the catapult is a live voice,
  * jet-catapult.ts), with a procedural placeholder until the slot has loaded. Recorded shots go
  * through the bank's spatial chain; procedural ones get a panner, an air-absorption low-pass and reverb/echo sends.
  */
@@ -142,11 +142,6 @@ export class JetSfx {
   }
 
 
-  /** The gear locking up: one subtle recorded take; until it loads, one soft thunk. */
-  gear(up: boolean, gain: number, o: ShotOptions = {}): void {
-    if (this.play("gear", { ...o, gain, rate: up ? 1 : 0.94 })) return
-    this.thunk(gain * 0.5, { ...o, delay: (o.delay ?? 0) + 2 })
-  }
 
 
 

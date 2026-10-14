@@ -714,7 +714,7 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
   let t = 0
   const feed = () => {
     scene.step(sim, t, STEP)
-    jets.own(sim.own, sim.pose)
+    jets.own(sim.own)
     for (const r of sim.remotes) jets.remote(r.id, r.pose, r.tuple)
     jets.ships(sim.ships)
     jets.frame(STEP, sim.eye, sim.fwd, sim.up)

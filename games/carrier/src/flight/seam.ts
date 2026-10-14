@@ -392,7 +392,7 @@ export class FlightModule {
       }
       w.setOwnModel(f.phase === "flying" || f.phase === "landing" ? m : null)
     } else w.setOwnModel(null)
-    this.audio.own(airborne ? f : null, this.pose)
+    this.audio.own(airborne ? f : null)
     // A crash breaks the jet up where it hit (once). A jet that was shot down already has its breakup and burning
     // wreck: no crash for it.
     const crashed = airborne && f.phase === "crashed" ? f.plane.crashed : ""

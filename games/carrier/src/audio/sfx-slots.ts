@@ -26,7 +26,6 @@ const L = "cinematic, high fidelity, seamless loop, steady, no music, no voice"
 const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, number, string])[] = [
   // Carrier operations.
   ["trap", "carrier", "Arrested landing", false, 4, 5, `Fighter jet arrested landing on an aircraft carrier: heavy tyre thud and chirp on the steel deck, the arresting cable screaming as it pays out, engines spooling down, deep metallic thump, ${C}`],
-  ["gear", "carrier", "Landing gear", false, 4, 3, `Fighter jet landing gear retracting: smooth hydraulic whine, mechanical motion, heavy solid clunk as it locks, close, ${C}`],
   // Gun impacts (the M61 itself is procedural: gun-audio.ts).
   ["impact-water", "gun", "Rounds into water", false, 3, 2, `Bullets ripping into the ocean surface: rapid sharp water splashes and spray, ${C}`],
   ["impact-metal", "gun", "Rounds into metal", false, 3, 2, `Cannon rounds hitting a metal aircraft: sharp metallic impacts, sparks, ringing debris, ${C}`],
