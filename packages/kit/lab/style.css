@@ -997,13 +997,12 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   box-shadow: 0 0 0 1px #f2797966, 0 8px 24px rgb(0 0 0 / 40%);
 }
 
-/* Watch pins */
-.lab-watch {
+/* Frame time (the status bar's stats toggle it) */
+.lab-perf {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
+  right: 8px;
+  top: 8px;
   width: 268px;
-  padding: 4px 0 2px;
   border-radius: 0;
   background: rgb(20 21 24 / 92%);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
@@ -1011,76 +1010,26 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   backdrop-filter: blur(8px);
 }
 
-.lab-watch-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 18px;
-  padding: 0 10px;
-  color: var(--acc);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+/* Watch pins */
+.lab-watch {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 268px;
+  border-radius: 0;
+  background: rgb(20 21 24 / 92%);
+  box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
 }
 
-.lab-watch-head .lab-tcount {
-  color: var(--tx3);
+.lab-watch .knobs-row[data-field] > span:first-child {
+  cursor: pointer;
 }
 
-.lab-watch-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 86px 18px;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 4px 0 10px;
-}
-
-.lab-watch-name {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--tx);
-  font: inherit;
-  font-size: 11.5px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lab-watch-name:hover {
-  color: #fff;
+.lab-watch .knobs-row[data-field] > span:first-child:hover {
   text-decoration: underline;
   text-decoration-color: var(--line2);
-}
-
-.lab-watch-src {
-  color: var(--tx3);
-}
-
-.lab-watch-value {
-  height: 18px;
-  line-height: 18px;
-  padding: 0 6px;
-  border-radius: 0;
-  background: var(--fieldbg);
-  box-shadow: inset 0 0 0 1px var(--line);
-  font: 11px/18px var(--mono);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.lab-watch-row[data-modified="true"] .lab-watch-value {
-  color: color-mix(in srgb, var(--acc) 70%, var(--tx));
-  font-weight: 600;
-}
-
-.lab-watch-row[data-stale="true"] {
-  opacity: 0.5;
 }
 
 .lab-watch-x {
@@ -1097,6 +1046,10 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-watch-x:hover {
   background: var(--hover);
   color: var(--tx);
+}
+
+.lab-watch-x[data-modified="true"] {
+  color: color-mix(in srgb, var(--acc) 70%, var(--tx));
 }
 
 /* Library drawer */
@@ -1609,12 +1562,18 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 
 .lab-stats {
   color: var(--tx3);
+  cursor: pointer;
   font-size: 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
   max-width: 46%;
+}
+
+.lab-stats:hover,
+.lab-stats[aria-pressed="true"] {
+  color: var(--tx2);
 }
 
 .lab-hints {

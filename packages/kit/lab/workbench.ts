@@ -48,8 +48,9 @@ import { captureThumb, createThumbCache, thumbStats } from "./library-thumbs"
 import { createPanels, PANEL_IDS, PANELS_CHANGE_EVENT, type PanelId, type Panels } from "./panels"
 import { createOutliner, OUTLINER_GROUPS, outlinerGroupOf } from "./outliner"
 import { commandPalette, rank as rankCommands, type Command as PaletteCommand } from "@arcade/knobs/ui"
-import { knobsCombo, notify, setupLabOverlays, tip } from "./overlays"
-import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin } from "./watch"
+import { isAsking, knobsCombo, notify, setupLabOverlays, tip } from "./overlays"
+import { createPerfReadout } from "./perf"
+import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin, type WatchReading } from "./watch"
 import {
   applyArrowCameraKey,
   bindOrbitGestures,
@@ -252,6 +253,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let lastSelectionSig = ""
   let selectingFromOutliner = false
   let telemetryText = ""
+  let watchCheck = 0
   let chromeReady = false
 
   // Viewport HUD elements
@@ -2311,24 +2313,28 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return ok
   }
 
-  function readWatchPin(pin: WatchPin) {
+  function readWatchPin(pin: WatchPin): WatchReading | null {
     const sec = sections.find(s => s.id === pin.sectionId)
     const c = sec?.controls.find(ctrl => ctrl.key === pin.key)
     if (!sec || !c || c.type === "action" || !(pin.key in sec.settings)) return null
     const v = sec.settings[pin.key]!
+    const unit = "min" in c ? inferControlUnit(c.key, c.label, c.unit) : ""
     const text =
       "options" in c
         ? c.options.find(o => o.value === v)?.label ?? String(v)
         : "min" in c
-          ? formatLabValue(v, c.step, inferControlUnit(c.key, c.label, c.unit))
+          ? formatLabValue(v, c.step, unit)
           : v === (c.on ?? true)
             ? "On"
             : "Off"
     const d = defaultsBySection.get(sec.id)?.[pin.key]
     const modified =
       !c.derived && d !== undefined && (typeof v === "number" && typeof d === "number" ? Math.abs(v - d) > ("min" in c ? (c.step ?? 0.01) * 1e-3 : 1e-9) : v !== d)
-    return { text, modified, sectionLabel: sec.label }
+    const step = "min" in c ? c.step : undefined
+    const numeric = "min" in c && typeof v === "number"
+    return { value: numeric ? v : text, text, modified, sectionLabel: sec.label, ...(numeric ? { format: (n: number) => formatLabValue(n, step, unit) } : {}) }
   }
+
 
   function setWatchPins(next: WatchPin[]) {
     watchPins = next
@@ -2356,6 +2362,35 @@ export function createWorkbench(opts: WorkbenchOptions) {
     unpin: pin => setWatchPins(watchPins.filter(p => watchPinId(p) !== watchPinId(pin))),
   })
   watchList.render(watchPins)
+
+  const perf = createPerfReadout(viewportHud)
+  const syncPerfButton = () => {
+    statsReadout.setAttribute("aria-pressed", String(perf.visible))
+    tip(statsReadout, perf.visible ? "Hide frame time" : "Show frame time (graph and CPU/GPU meters)")
+  }
+  statsReadout.setAttribute("role", "button")
+  statsReadout.tabIndex = 0
+  statsReadout.onclick = () => commands.execute("view.perf", { pickedObject: null, groundHit: null, source: "ui" })
+  statsReadout.onkeydown = event => {
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    statsReadout.click()
+  }
+  syncPerfButton()
+  commands.register({
+    id: "view.perf",
+    label: "Frame Time Readout",
+    shortLabel: "Frame time",
+    category: "Navigation",
+    undoable: false,
+    args: { show: { type: "boolean", description: "Show or hide it (toggles when omitted)" } },
+    enabled: () => true,
+    run: (_ctx, args) => {
+      const shown = perf.toggle(typeof args?.show === "boolean" ? args.show : undefined)
+      syncPerfButton()
+      return { shown }
+    },
+  })
 
   function applyDetailsView(force = false) {
     const sec = activeSection()
@@ -3046,7 +3081,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       return
     }
 
-    if (palette.isOpen) return
+    // The palette and a confirm keep the keys while they're open.
+    if (palette.isOpen || isAsking()) return
 
     // Undo / Redo in Edit mode outside text inputs
     if (cmd && key === "z" && !inText && mode === "edit") {
@@ -3433,7 +3469,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
         timeReadout.textContent = `${elapsed.toFixed(2)}s · f${frames}`
       }
       syncStageMarkers()
-      if (chromeReady) watchList.render(watchPins)
+      // Pinned values that changed on their own (the clock, a simulation) reach the Watch list four times a second.
+      watchCheck += dt
+      if (chromeReady && watchPins.length && watchCheck >= 0.25) {
+        watchCheck = 0
+        watchList.render(watchPins)
+      }
       if (pendingThumb) maybeCaptureThumb()
     },
     onSectionChanged() {
@@ -3548,6 +3589,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
       },
       el: watchList.el,
     },
+    /** One frame for the frame-time readout (a no-op while it is hidden). */
+    perf: { push: perf.push, get visible() { return perf.visible } },
     revealSetting,
     recordHistory,
     captureSnapshot,

@@ -1,5 +1,6 @@
 import { mat4 } from "wgpu-matrix"
 import { lab } from "@arcade/kit/lab/main"
+import { tip } from "@arcade/kit/lab/overlays"
 import type { SectionFactory } from "@arcade/kit/lab/types"
 import type { SpawnFactory } from "@arcade/kit/lab/spawn-types"
 import { ALL_GAMES, LAB_GAMES, loadPlayground, resolveGames, type LabGameModule } from "./games/registry"
@@ -33,7 +34,7 @@ function gamePicker(slot: HTMLElement) {
   select.className = "lab-select lab-game"
   select.dataset.control = "game"
   select.setAttribute("aria-label", "Game")
-  select.title = "Which game's adapters the Lab loads"
+  tip(select, "Which game's adapters the Lab loads")
   select.add(new Option("All games", ALL_GAMES))
   for (const game of LAB_GAMES) select.add(new Option(game.label, game.id))
   select.value = choice

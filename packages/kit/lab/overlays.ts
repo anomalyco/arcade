@@ -1,4 +1,4 @@
-import { overlayLook, toast, tooltips } from "@arcade/knobs/ui"
+import { confirm, overlayLook, toast, tooltips, type ConfirmOptions } from "@arcade/knobs/ui"
 import { arcadePreset } from "../lab-knobs"
 
 let ready = false
@@ -18,6 +18,21 @@ export function tip(el: HTMLElement, text: string, shortcut?: string) {
   if (shortcut) el.dataset.tipShortcut = shortcut
   else delete el.dataset.tipShortcut
 }
+
+let asking = 0
+
+/** knobs' confirm, counted so the workbench's keys stay out while one is open (not while it animates away). */
+export async function ask(options: ConfirmOptions): Promise<boolean> {
+  asking++
+  try {
+    return await confirm(options)
+  } finally {
+    asking--
+  }
+}
+
+/** Whether a confirm is waiting for an answer. */
+export const isAsking = () => asking > 0
 
 /** A transient notice at the bottom of the window (errors stay longer), with an optional action such as Undo. */
 export function notify(message: string, isError = false, action?: { label: string; run: () => void }) {

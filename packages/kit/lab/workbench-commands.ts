@@ -30,7 +30,8 @@ import { FOLIAGE_LIGHTINGS, FOLIAGE_LOOKS } from "./foliage"
 import { isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, type createLibrary } from "./library"
 import type { LookLabController } from "./looks"
 import { OUTLINER_GROUPS, type createOutliner } from "./outliner"
-import { confirm, type Command as PaletteCommand } from "@arcade/knobs/ui"
+import type { Command as PaletteCommand } from "@arcade/knobs/ui"
+import { ask } from "./overlays"
 import type { createSpawn } from "./spawn"
 import type { Stage } from "./stage"
 import type { TransformMode } from "./transform"
@@ -366,7 +367,7 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
           if (ctx?.source === "cli") deleteAll()
           else {
             const names = allSceneObjects().filter(o => targetIds.includes(o.id)).map(o => o.label)
-            void confirm({
+            void ask({
               title: `Delete ${targetIds.length} objects?`,
               body: `${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""} leave the scene. Undo brings them back.`,
               confirm: "Delete",

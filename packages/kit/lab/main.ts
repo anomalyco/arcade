@@ -503,9 +503,13 @@ export async function lab(options:LabOptions) {
   }
   let last=0
   const tick=(now:number)=>{
-    const dt=last?Math.max(0,Math.min(0.033,(now-last)/1000)):0;last=now
+    const interval=last?now-last:0,dt=Math.max(0,Math.min(0.033,interval/1000));last=now
     requestAnimationFrame(tick)
-    if(!bench&&!document.hidden&&!suspended){advance(dt);void render()}
+    if(!bench&&!document.hidden&&!suspended){
+      const start=performance.now()
+      advance(dt);void render()
+      if(workbench?.perf.visible)workbench.perf.push(interval,performance.now()-start,stage.gpuMs)
+    }
   }
   await render()
   if(bench)Object.assign(window,{lab:api,fx:{adapter:adapter.info,...effects,particles,volume,trail,stage,render,debug:(n:number)=>{settings.debug=n;syncDebugOptions(settings.section);panel!.sync()}}})
