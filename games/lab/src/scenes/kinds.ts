@@ -1,18 +1,22 @@
 import type { KindChoice, LabKind, LabPanel } from "@arcade/kit/lab/scenes/kinds"
 import type { SlotFor } from "@arcade/kit/lab/scenes/migrate"
 import type { SceneHost } from "@arcade/kit/lab/scenes/model"
+import type { LabStation } from "@arcade/kit/lab/stations/types"
 
 /**
  * Every kind of lab the Lab can open today, one per subject. Section kinds run a Lab section; page kinds embed an
- * Arcade page. Each lists only the panels its subject needs (AR-25: no global asset browser).
+ * Arcade page. Each opts into only the panels its subject needs (`LabPanel` in @arcade/kit/lab/scenes/kinds): the
+ * Outliner only with placeable objects, the clock only for subjects that play out, compare only where directions are
+ * weighed side by side, and never a voice-note panel.
  */
-const tuning: readonly LabPanel[] = ["controls", "variants", "readouts", "measured", "views", "notes", "work"]
-const animated: readonly LabPanel[] = [...tuning, "timeline"]
-const page: readonly LabPanel[] = ["variants", "measured", "notes", "work"]
+const still: readonly LabPanel[] = ["controls", "variants", "measured", "views"]
+const effect: readonly LabPanel[] = [...still, "transport", "readouts", "timeline"]
+const directions: readonly LabPanel[] = [...still, "choices", "compare"]
+const page: readonly LabPanel[] = ["controls", "variants", "measured"]
 
 const weatherPresets = ["rain", "drizzle", "storm", "fog", "snow", "clear"]
 const lookPresets = ["noir", "painterly", "dusk", "sodium_70s", "cozy", "current"]
-const directions = ["noir", "painterly", "dusk", "70s", "cozy", "shipped"]
+const vignetteDirections = ["noir", "painterly", "dusk", "70s", "cozy", "shipped"]
 const parts = (prefix: string, ids: readonly string[]) => ids.map(id => ({ part: `${prefix}:${id}`, label: id.replace(/[_-]/g, " ").replace(/^./, c => c.toUpperCase()) }))
 const choice = (slot: string, label: string, role: KindChoice["role"], prefix: string, ids?: readonly string[]): KindChoice => ({
   slot,
@@ -24,38 +28,40 @@ const choice = (slot: string, label: string, role: KindChoice["role"], prefix: s
 const PROPS = ["cone", "barrier", "sawhorse", "bin", "dumpster", "bench", "planter", "crate", "pallet", "sign", "hydrant", "propane", "canister", "fuel"]
 
 export const LAB_KINDS: readonly LabKind[] = [
-  { id: "explosion", label: "Effect", subject: "A shared effect: explosion, smoke, fire or debris", host: { kind: "section", section: "effects" }, panels: animated },
-  { id: "splatter", label: "Splatter", subject: "Blood and splatter decals on a surface", host: { kind: "section", section: "splatter" }, panels: animated },
-  { id: "fire-water", label: "Fire and water", subject: "Flames, hydrant spray and puddles", host: { kind: "section", section: "fire-water" }, panels: animated },
-  { id: "blackout-fx", label: "Blackout effect", subject: "One Blackout weapon or impact effect", host: { kind: "section", section: "blackout-effects" }, panels: animated },
-  { id: "getaway-fx", label: "Getaway effect", subject: "One Getaway vehicle effect", host: { kind: "section", section: "getaway-effects" }, panels: animated },
+  { id: "explosion", label: "Effect", subject: "A shared effect: explosion, smoke, fire or debris", host: { kind: "section", section: "effects" }, panels: effect },
+  { id: "splatter", label: "Splatter", subject: "Blood and splatter decals on a surface", host: { kind: "section", section: "splatter" }, panels: effect },
+  { id: "fire-water", label: "Fire and water", subject: "Flames, hydrant spray and puddles", host: { kind: "section", section: "fire-water" }, panels: effect },
+  { id: "blackout-fx", label: "Blackout effect", subject: "One Blackout weapon or impact effect", host: { kind: "section", section: "blackout-effects" }, panels: effect },
+  { id: "getaway-fx", label: "Getaway effect", subject: "One Getaway vehicle effect", host: { kind: "section", section: "getaway-effects" }, panels: effect },
   {
     id: "weather",
     label: "Weather",
     subject: "Rain, fog, snow and wind",
     host: { kind: "section", section: "weather" },
-    panels: [...tuning, "choices"],
+    panels: [...still, "choices"],
     choices: [choice("preset", "Weather", "subject", "weather", weatherPresets)],
   },
-  { id: "vegetation", label: "Vegetation", subject: "A tree, bush or grass recipe in its test room", host: { kind: "section", section: "foliage" }, panels: tuning },
+  { id: "vegetation", label: "Vegetation", subject: "A tree, bush or grass recipe in its test room", host: { kind: "section", section: "foliage" }, panels: still },
   {
     id: "look",
     label: "Look",
     subject: "A colour grade and its scene terms",
     host: { kind: "section", section: "looks" },
-    panels: [...tuning, "choices"],
+    panels: directions,
     choices: [choice("preset", "Look", "subject", "look", lookPresets)],
   },
-  { id: "light", label: "Light", subject: "The lighting rig: lamps, moon, spot and shadows", host: { kind: "section", section: "lighting" }, panels: tuning },
-  { id: "material", label: "Material", subject: "A material recipe on swatches", host: { kind: "section", section: "materials" }, panels: tuning },
-  { id: "physics", label: "Physics", subject: "Rigid bodies and collisions", host: { kind: "section", section: "physics" }, panels: animated },
-  { id: "sound", label: "Sound", subject: "A sound, its variants and its mix", host: { kind: "section", section: "audio" }, panels: ["controls", "variants", "readouts", "notes", "work"] },
+  { id: "light", label: "Light", subject: "The lighting rig: lamps, moon, spot and shadows", host: { kind: "section", section: "lighting" }, panels: still },
+  { id: "material", label: "Material", subject: "A material recipe on swatches", host: { kind: "section", section: "materials" }, panels: still },
+  { id: "physics", label: "Physics", subject: "Rigid bodies and collisions", host: { kind: "section", section: "physics" }, panels: [...still, "transport", "readouts", "timeline"] },
+  { id: "sound", label: "Sound", subject: "A sound, its variants and its mix", host: { kind: "section", section: "audio" }, panels: ["controls", "variants"] },
   {
     id: "vehicle",
     label: "Vehicle",
     subject: "A car on a test course",
     host: { kind: "section", section: "spawn" },
-    panels: [...tuning, "add"],
+    panels: [...still, "add", "objects"],
+    // The car, what's selected and the course; not the room, characters or effects (the Spawn section has them all).
+    groups: ["Vehicle & Skids", "Transform", "Light", "Items", "Lights"],
     add: [
       { group: "Obstacles", parts: parts("prop", PROPS) },
       { group: "Lights", parts: parts("light", ["lamp", "spotlight", "torch"]) },
@@ -67,16 +73,16 @@ export const LAB_KINDS: readonly LabKind[] = [
     label: "Scene look",
     subject: "An Outbreak house lot in the game's own renderer, under one art direction",
     host: { kind: "section", section: "outbreak-vignette" },
-    panels: [...tuning, "choices"],
-    choices: [choice("direction", "Art direction", "subject", "vignette", directions)],
+    panels: directions,
+    choices: [choice("direction", "Art direction", "subject", "vignette", vignetteDirections)],
   },
-  { id: "rug", label: "Rug", subject: "A procedural rug: pattern, palette and wear", host: { kind: "section", section: "rugs" }, panels: tuning },
+  { id: "rug", label: "Rug", subject: "A procedural rug: pattern, palette and wear", host: { kind: "section", section: "rugs" }, panels: still },
   {
     id: "style",
     label: "Style",
     subject: "One rendering style on the same Outbreak room combat sim",
     host: { kind: "section", section: "styles" },
-    panels: [...tuning, "choices"],
+    panels: [...directions, "readouts"],
     choices: [choice("style", "Style", "subject", "style")],
   },
   { id: "walk-cycle", label: "Walk cycle", subject: "A character's walk, run and poses on the shared rig", host: { kind: "page", url: "/arcade/blackout/characters.html" }, panels: [...page, "timeline"], play: "Walk" },
@@ -87,7 +93,7 @@ export const LAB_KINDS: readonly LabKind[] = [
     subject: "Camera shake and kick, blur bursts, hit-stop, damage flash and blood, on the survivor and a few dummy zombies",
     // Phase 2 runs in the Outbreak page; phase 4 moves it to a Lab arena built on the Styles section's room sim.
     host: { kind: "page", url: "/arcade/outbreak/" },
-    panels: [...page, "controls", "actions", "readouts", "timeline", "views"],
+    panels: [...page, "actions", "readouts", "timeline", "views"],
     actions: [
       { id: "shot", label: "Shot", key: "S", command: "camera.impulse", args: { kind: "shot", power: 1 } },
       { id: "shove", label: "Shove", key: "V", command: "camera.impulse", args: { kind: "shove", power: 1 } },
@@ -148,4 +154,11 @@ export function kindOf(host: SceneHost, station?: string): { kind: string; slotF
     return { kind: FALLBACK_KINDS[host.kind], slotFor: () => undefined }
   }
   return { kind: kind.id, slotFor: prefix => kind.choices?.find(c => c.prefix === `${prefix}:`)?.slot }
+}
+
+/** The kind a station opens as (a page station by its id, a section station by its section); undefined for none yet. */
+export function kindForStation(station: Pick<LabStation, "id" | "demo">): LabKind | undefined {
+  if (station.demo.kind === "page") return LAB_KINDS.find(k => k.id === PAGE_STATIONS[station.id])
+  const section = station.demo.section
+  return LAB_KINDS.find(k => k.host.kind === "section" && k.host.section === section)
 }

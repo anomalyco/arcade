@@ -54,7 +54,7 @@ export async function lab(options:LabOptions) {
           <button type="button" class="lab-btn" data-action="mode-edit" aria-label="Edit mode" aria-pressed="true">Edit</button>
           <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" data-tip="Enter Play mode and possess a character (F8 ejects, Esc stops)" data-tip-shortcut="P">▶ Play</button>
         </div>
-        <div class="lab-divider"></div>
+        <div class="lab-divider" data-divider="transport"></div>
         <div class="lab-transport" role="group" aria-label="Transport">
           <button type="button" class="lab-btn lab-icon-btn" data-action="transport-retrigger" aria-label="Transport retrigger" data-tip="Retrigger with the same seed" data-tip-shortcut="Space">⟲</button>
           <button type="button" class="lab-btn lab-icon-btn" data-action="transport-play" aria-label="Transport play" aria-pressed="true" data-tip="Pause" data-tip-shortcut="K">❚❚</button>
@@ -496,6 +496,7 @@ export async function lab(options:LabOptions) {
       radial:workbench!.radial,
       getSelectedIds:()=>workbench!.getSelectedIds(),
       onDigit:(handler:(n:number,shift:boolean)=>boolean)=>workbench!.onDigit(handler),
+      setDetailsScope:(scope:((group:string)=>boolean)|null)=>workbench!.setDetailsScope(scope),
       libraryOpen:()=>workbench!.library.open,
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
       transform:workbench!.transform,

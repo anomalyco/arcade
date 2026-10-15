@@ -1,7 +1,7 @@
 import type { LabCommandInvokeResult, LabCommandRegistry } from "../../lab-commands"
 import type { LabPanel } from "../../lab-panel"
 import type { Stage } from "../stage"
-import { addWidget, featuredGroups, findWidget, moveWidget, nudgeWidget, parseLayout, removeWidget, resolveLayout, saveLayout, savedLayout, stationLayout, toStationLayout, updateWidget, type GroupInfo, type PlacedWidget, type ResolvedLayout } from "./layout"
+import { addWidget, featuredGroups, findWidget, moveWidget, nudgeWidget, parseLayout, removeWidget, resolveLayout, saveLayout, savedLayout, stationLayout, toStationLayout, trimLayout, updateWidget, type GroupInfo, type PlacedWidget, type ResolvedLayout } from "./layout"
 import { STATION_SLOTS, STATUS_LABEL, WIDGET_KINDS, orderStations, type LabStation, type StationCommand, type StationEvent, type StationSlot, type StationSnapshot, type StationVariant, type StationWidgetKind } from "./types"
 import { renderWidget, WIDGET_HINTS, WIDGET_TITLES, type StationChanges, type WidgetContext, type WidgetInstance } from "./widgets"
 import "./style.css"
@@ -32,11 +32,9 @@ export type StationHost = {
   libraryOpen(): boolean
 }
 
-/** Dev-server extras: recent git activity and the voice-note recorder. Absent in production builds. */
+/** Dev-server extras: recent git activity. Absent in production builds. */
 export type StationDev = {
   changes(station: LabStation): Promise<StationChanges | null>
-  toggleNote?(): boolean
-  noteActive?(): boolean
 }
 
 export type { StationChanges } from "./widgets"
@@ -68,6 +66,11 @@ export function createStations(opts: {
    * The Lab's Home turns all three off: it lists labs itself, and number keys pick the open lab's variant.
    */
   list?: boolean
+  /**
+   * The cards a station may show (its lab kind's opt-in panels); the station's layout, saved or from its file, is
+   * trimmed to these and ✎ only offers them. Without it every card is allowed.
+   */
+  widgets?: (station: LabStation) => readonly StationWidgetKind[] | null
 }) {
   const { host } = opts
   const listed = opts.list !== false
@@ -88,6 +91,8 @@ export function createStations(opts: {
   let selecting = false
   const instances = new Map<string, WidgetInstance>()
   const frameTimes: number[] = []
+  const allowed = (station: LabStation) => opts.widgets?.(station) ?? null
+  const layoutOf = (station: LabStation) => trimLayout(stationLayout(station, groupsOf(station), storage), allowed(station))
 
   // ── station list (top of the Outliner) ─────────────────────────────────────────────────────────────────────────────
   const list = host.slots.list
@@ -100,7 +105,7 @@ export function createStations(opts: {
   editBtn.type = "button"
   editBtn.title = "Edit this station's layout"
   editBtn.setAttribute("aria-label", "Edit station layout")
-  const closeBtn = el("button", "ls-icon", headTools, "✕")
+  const closeBtn = el("button", "ls-icon", headTools, "×")
   closeBtn.type = "button"
   closeBtn.title = "Close the station"
   closeBtn.setAttribute("aria-label", "Close station")
@@ -168,7 +173,6 @@ export function createStations(opts: {
     say,
     live,
     changes: opts.dev ? () => opts.dev!.changes(station) : null,
-    note: opts.dev?.toggleNote ? { toggle: () => void opts.dev!.toggleNote!(), active: () => Boolean(opts.dev!.noteActive?.()) } : null,
     storage,
     abPending: { get: () => abPending, set: on => { abPending = on } },
     variantKey: listed ? "⇧" : "",
@@ -256,7 +260,7 @@ export function createStations(opts: {
       Object.assign(el("button", "ls-btn", undefined, "Reset"), {
         type: "button",
         title: "Forget this browser's edits and use the station file's layout",
-        onclick: () => { if (!current) return; saveLayout(storage, current.id, null); layout = stationLayout(current, groupsOf(current), storage); renderLayout() },
+        onclick: () => { if (!current) return; saveLayout(storage, current.id, null); layout = layoutOf(current); renderLayout() },
       }),
       Object.assign(el("button", "ls-btn ls-primary", undefined, "Done"), { type: "button", onclick: () => setEditing(false) }),
     )
@@ -268,7 +272,8 @@ export function createStations(opts: {
     b.type = "button"
     b.addEventListener("click", e => {
       e.stopPropagation()
-      const items = WIDGET_KINDS.map(kind => ({ label: WIDGET_TITLES[kind], hint: WIDGET_HINTS[kind], run: () => add(kind, slot) }))
+      const ok = current ? allowed(current) : null
+      const items = WIDGET_KINDS.filter(kind => !ok || ok.includes(kind)).map(kind => ({ label: WIDGET_TITLES[kind], hint: WIDGET_HINTS[kind], run: () => add(kind, slot) }))
       openMenu(b, items)
     })
     return b
@@ -450,34 +455,16 @@ export function createStations(opts: {
     }
     for (const instance of instances.values()) instance.refresh?.()
   }
-  /** Keys pressed inside an embedded page still reach the station: number keys, ⇧ variants and N. */
+  /** Number keys and ⇧ variants pressed inside an embedded page still reach the station. */
   function forwardKeys(frame: HTMLIFrameElement) {
     frame.addEventListener("load", () => {
       frame.contentWindow?.addEventListener("keydown", e => {
         const t = e.composedPath()[0]
         if (e.metaKey || e.ctrlKey || e.altKey || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
         const n = /^Digit[0-9]$/.test(e.code) ? Number(e.code.slice(5)) : null
-        // A page lists the physical keys it binds itself (`<html data-page-keys="KeyN">`); those stay with the page.
-        const owned = frame.contentDocument?.documentElement.dataset.pageKeys?.split(" ").includes(e.code)
         if (n !== null && digit(n, e.shiftKey)) e.preventDefault()
-        else if (e.key.toLowerCase() === "n" && !owned && !e.repeat && opts.dev?.toggleNote) { e.preventDefault(); opts.dev.toggleNote() }
-        else if (e.key === "Escape" && opts.dev?.noteActive?.()) window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape" }))
       }, { capture: true })
     })
-  }
-  /** A picture of the embedded page for voice notes; false when no page station is showing. */
-  async function capturePage(target: HTMLCanvasElement): Promise<boolean> {
-    if (page.hidden) return false
-    const rt = await frameRuntime(1000)
-    const res = rt ? await rt.invokeLocal("screenshot", { maxSize: 1280, raw: true }) : null
-    const url = (res?.result as { dataUrl?: string } | undefined)?.dataUrl
-    if (!url) return false
-    const img = new Image()
-    await new Promise(done => { img.onload = done; img.onerror = done; img.src = url })
-    target.width = img.naturalWidth || 1
-    target.height = img.naturalHeight || 1
-    target.getContext("2d")!.drawImage(img, 0, 0)
-    return true
   }
   function closePage() {
     if (page.hidden) return
@@ -541,7 +528,7 @@ export function createStations(opts: {
     if (first) libraryWasOpen = host.libraryOpen()
     if (host.libraryOpen()) host.invoke("library.toggle", { open: false })
     host.root.dataset.station = station.id
-    layout = stationLayout(station, groupsOf(station), storage)
+    layout = layoutOf(station)
     renderList()
     renderLayout()
     syncUrl()
@@ -717,7 +704,7 @@ export function createStations(opts: {
     disabledReason: () => "Open a station first.",
     run: (_ctx, args) => {
       if (!current || !layout) throw new Error("Open a station first.")
-      if (args?.reset === true) { saveLayout(storage, current.id, null); layout = stationLayout(current, groupsOf(current), storage); renderLayout() }
+      if (args?.reset === true) { saveLayout(storage, current.id, null); layout = layoutOf(current); renderLayout() }
       if (typeof args?.layout === "string") {
         let raw: unknown
         try { raw = JSON.parse(args.layout) } catch { throw new Error("layout must be JSON") }
@@ -750,7 +737,6 @@ export function createStations(opts: {
     close,
     chooseVariant,
     say,
-    capturePage,
     on(listener: (e: StationEvent) => void) { listeners.add(listener); return () => listeners.delete(listener) },
     snapshot(): StationSnapshot {
       return { view: current ? "station" : "lab", station: current, variant, section: current?.demo.kind === "section" && !missing ? current.demo.section : null, url: location.href }

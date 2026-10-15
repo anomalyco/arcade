@@ -28,6 +28,9 @@
   --ring: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--rim);
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.52), 0 1px 2px rgba(0, 0, 0, 0.3);
   --row: 26px;
+  /* One control size for every button, chip, picker and close button in the Lab's own chrome (knobs' control height). */
+  --control-h: 24px;
+  --control-font: 500 12px/1 var(--sans);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "SF Pro Text", sans-serif;
   color-scheme: dark;
@@ -151,14 +154,14 @@ kbd {
 .lab-select,
 .lab-input {
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--tx2);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
-  padding: 0 6px;
-  height: 22px;
-  line-height: 22px;
+  padding: 0 8px;
+  height: var(--control-h);
+  line-height: var(--control-h);
 }
 
 .lab-btn,
@@ -217,7 +220,7 @@ kbd {
 }
 
 .lab-icon-btn {
-  min-width: 22px;
+  min-width: var(--control-h);
   padding: 0 4px;
   text-align: center;
   font-size: 12px;
@@ -226,8 +229,8 @@ kbd {
 button.lab-icon-btn:not(.lab-btn) {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 20px;
+  width: var(--control-h);
+  height: var(--control-h);
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
@@ -317,15 +320,13 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 20px;
-  padding: 0 7px;
+  height: var(--control-h);
+  padding: 0 8px;
   border: 0;
   border-radius: var(--radius-sm);
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--surface);
   color: var(--tx2);
-  font: inherit;
-  font-size: 11px;
+  font: var(--control-font);
   white-space: nowrap;
 }
 
@@ -336,8 +337,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 
 .lab-chip[aria-pressed="true"] {
   color: var(--tx);
-  background: var(--acc-a);
-  box-shadow: inset 0 0 0 1px var(--acc-b);
+  background: var(--acc-b);
 }
 
 .lab-chip-n {
@@ -982,18 +982,24 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   text-decoration-color: var(--line2);
 }
 
-.lab-watch-x {
-  width: 18px;
-  height: 18px;
+/* Close buttons look the same everywhere: a quiet × in a control-sized square (Watch rows, the grid, station cards). */
+.lab-watch-x,
+.lab-grid-action-btn[data-grid-action="close"] {
+  display: grid;
+  place-items: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  min-width: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--tx3);
-  font-size: 13px;
+  font: 400 15px/1 var(--sans);
   padding: 0;
 }
 
-.lab-watch-x:hover {
+.lab-watch-x:hover,
+.lab-grid-action-btn[data-grid-action="close"]:hover {
   background: var(--hover);
   color: var(--tx);
 }
@@ -2259,31 +2265,72 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 
 .lab-grid-pill,
 .lab-grid-action-btn {
-  height: 20px;
-  min-width: 20px;
-  padding: 0 6px;
+  height: var(--control-h);
+  min-width: var(--control-h);
+  padding: 0 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid #2b313a;
-  background: #171a20;
+  border: 0;
+  background: var(--surface);
   color: var(--tx2);
-  font: 600 10.5px/1 var(--mono);
+  font: var(--control-font);
   cursor: pointer;
 }
 
 .lab-grid-pill:hover,
 .lab-grid-action-btn:hover {
-  background: #222730;
-  color: #fff;
-  border-color: #3c4552;
+  background: var(--hover);
+  color: var(--tx);
 }
 
 .lab-grid-pill[aria-pressed="true"] {
-  background: rgba(77, 141, 255, 0.26);
-  color: #fff;
-  border-color: var(--acc);
+  background: var(--acc-b);
+  color: var(--tx);
 }
 
 
 
 
 
+
+/* A focused lab shows only what its kind opts into. The Lab's Home writes the kind's pieces to data-lab-show (see
+   labChrome in scenes/kinds.ts): a page lab gets none of the Lab's own chrome, a section lab its subject's Details and
+   only the Outliner, clock, Play and compare tools its kind asks for. A column with nothing left in it closes. */
+.lab-workbench[data-lab-show]:not([data-lab-show~="edit"]) :is(.lab-mode-seg, .lab-divider, .lab-transport, .lab-view, .lab-more, .lab-focus-pill, .lab-hints, .lab-stats, [data-action="frame"], [data-action="undo"], [data-action="redo"]),
+.lab-workbench[data-lab-show]:not([data-lab-show~="outliner"]) :is(.lab-outliner-card, [data-action="mode-box"]),
+.lab-workbench[data-lab-show]:not([data-lab-show~="transport"]) :is(.lab-transport, [data-divider="transport"], .lab-details-actions),
+.lab-workbench[data-lab-show]:not([data-lab-show~="compare"]) :is(.lab-compare, .lab-compare-divider),
+.lab-workbench[data-lab-show]:not([data-lab-show~="play"]) [data-action="mode-play"],
+.lab-workbench[data-lab-show]:not([data-lab-show~="details"]) .lab-details {
+  display: none !important;
+}
+
+/* Without the Outliner or Details, the station cards have the column: the subject's knobs card takes the height. */
+.lab-workbench[data-lab-show]:not([data-lab-show~="outliner"]) .lab-station-slot[data-slot="left"],
+.lab-workbench[data-lab-show]:not([data-lab-show~="details"]) .lab-station-slot[data-slot="right"] {
+  flex: 1 1 auto;
+  height: auto !important;
+  max-height: none !important;
+}
+
+.lab-workbench[data-lab-show]:not([data-lab-show~="outliner"]) .lab-splitter[data-splitter="leftSlot"],
+.lab-workbench[data-lab-show]:not([data-lab-show~="details"]) .lab-splitter[data-splitter="rightSlot"] {
+  display: none !important;
+}
+
+.lab-workbench[data-lab-show]:not([data-lab-show~="details"]) .lab-station-slot[data-slot="right"] .ls-card[data-widget="controls"] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lab-workbench[data-lab-left-empty] {
+  --lw: 0px !important;
+}
+
+.lab-workbench[data-lab-right-empty] {
+  --rw: 0px !important;
+}
+
+.lab-workbench[data-lab-left-empty] > :is(.lab-outliner, .lab-splitter[data-splitter="left"], .lab-rail[data-rail="left"]),
+.lab-workbench[data-lab-right-empty] > :is(.lab-inspector, .lab-splitter[data-splitter="right"], .lab-rail[data-rail="right"]) {
+  display: none !important;
+}

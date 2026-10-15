@@ -40,7 +40,6 @@ export default defineStation({
   ],
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
-    right: [{ widget: "links" }, { widget: "changes" }],
-    dock: [{ widget: "variants" }, { widget: "voice" }, { widget: "notes" }],
+    dock: [{ widget: "variants" }],
   },
 })

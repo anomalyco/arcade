@@ -7,8 +7,9 @@ come: saving what you changed in a lab back into it, collections of your own, an
 lab's actions, add-pickers).
 
 A **lab** is one focused workspace about one subject: an explosion, a tree, rain, the walk cycle, a HUD, a car. Its
-**kind** decides which shared patterns it shows (knobs controls, choices, an add-picker, the variant strip, compare,
-readouts, measured numbers, views, notes and voice, a timeline) and nothing else, so there is no global asset browser.
+**kind** decides which shared patterns it shows (knobs controls, choices, an add-picker and Outliner, the variant strip,
+compare, the clock, the backdrop, readouts, measured numbers, views, a timeline, and rarely notes), each opt-in, and
+nothing else, so there is no global asset browser and no voice-notes panel.
 A kind's **choices** are its own short pickers: the subject's preset (Storm, Noir) and the backdrop it is shown against.
 Only kinds whose subject needs company have an add-picker (the Vehicle kind adds course obstacles and lights). Labs live
 in **collections**, one per feature, area or review, and are Draft, Kept or Archived. Stations become kept labs, tours

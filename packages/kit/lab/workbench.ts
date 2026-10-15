@@ -1,4 +1,4 @@
-import { formatLabValue, inferControlUnit, LabPanel, type LabControl, type LabSettings, type LabValue } from "../lab-panel"
+import { formatLabValue, inferControlUnit, LabPanel, type LabControl, type LabRow, type LabSettings, type LabValue } from "../lab-panel"
 import { LabToolbar } from "../lab-knobs"
 import {
   findControlRow,
@@ -171,7 +171,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   // Top-bar A/B Compare cluster and Copy Game Recipe button
   const topbarRight = topbar.querySelector<HTMLElement>(".lab-topbar-right")!
   const compareGroup = document.createElement("div")
-  compareGroup.className = "lab-mode-seg"
+  compareGroup.className = "lab-mode-seg lab-compare"
   compareGroup.setAttribute("role", "group")
   compareGroup.setAttribute("aria-label", "A/B Comparison")
   const pinABtn = document.createElement("button")
@@ -201,7 +201,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   gridBtn.textContent = "⊞ Grid"
   compareGroup.append(pinABtn, flipBtn, wipeBtn, gridBtn)
   const compareDivider = document.createElement("div")
-  compareDivider.className = "lab-divider"
+  compareDivider.className = "lab-divider lab-compare-divider"
   topbar.querySelector<HTMLElement>(".lab-transport")!.after(compareDivider, compareGroup)
 
   const recipeBtn = document.createElement("button")
@@ -248,6 +248,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const lockedIds = new Set<string>()
   let watchPins: WatchPin[] = loadWatchPins()
   let detailsShowAll = false
+  /** A focused lab's own Details groups (`setDetailsScope`); everything else in the section stays out of Details. */
+  let detailsScope: ((group: string) => boolean) | null = null
+  let detailsScopeSig = 0
   let detailsViewSig = ""
   let detailsRelevant: Set<string> | null = null
   let lastSelectionSig = ""
@@ -2409,14 +2412,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const selected = detailsSelection()
     const relevant = sec.detailsGroups?.(selected)
     const only = relevant && selected.length && !detailsShowAll ? new Set(relevant) : null
-    const sig = JSON.stringify([sec.id, relevant ?? null, only ? [...only] : null, panel.navigation.rows.length])
+    const sig = JSON.stringify([sec.id, relevant ?? null, only ? [...only] : null, panel.navigation.rows.length, detailsScopeSig])
     detailsAllBtn.hidden = !(relevant && selected.length)
     detailsAllBtn.setAttribute("aria-pressed", String(detailsShowAll))
     detailsRelevant = only
     if (!force && sig === detailsViewSig) return
     detailsViewSig = sig
-    // Search and Modified are knobs' (the panel's search field); the selection keeps Details to its groups.
-    panel.setView({ order: relevant ?? [], filter: only ? row => only.has(row.group) : undefined })
+    // Search and Modified are knobs' (the panel's search field); the selection keeps Details to its groups, inside the
+    // focused lab's scope.
+    const scope = detailsScope
+    const filter = only && scope ? (row: LabRow) => only.has(row.group) && scope(row.group)
+      : only ? (row: LabRow) => only.has(row.group)
+      : scope ? (row: LabRow) => scope(row.group)
+      : undefined
+    panel.setView({ order: relevant ?? [], filter })
   }
 
   /** The Details toolbar's keys by the names knobs reads (the commands show glyphs). */
@@ -3461,6 +3470,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
     /** Whether the multi-tile variation grid is open (it owns 1–9, G and Esc). */
     get variationGridOpen() {
       return variationGrid !== null
+    },
+    /** Keeps Details to a focused lab's own groups; null shows the whole section again. */
+    setDetailsScope(scope: ((group: string) => boolean) | null) {
+      detailsScope = scope
+      detailsScopeSig++
+      applyDetailsView(true)
     },
     /** Number keys outside text fields, Play, the grid and the radial: return true to take them (stations do). */
     onDigit(handler: (n: number, shift: boolean) => boolean) {

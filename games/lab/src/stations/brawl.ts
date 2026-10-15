@@ -67,7 +67,8 @@ export default defineStation({
     { label: "Practice vs bots", href: "/arcade/brawl/?practice" },
   ],
   layout: {
+    left: [{ widget: "status" }],
     right: [{ widget: "controls", groups: ["Scene", "Abilities"], title: "Abilities" }],
-    dock: [{ widget: "variants" }, { widget: "perf" }, { widget: "voice" }, { widget: "notes" }],
+    dock: [{ widget: "variants" }],
   },
 })

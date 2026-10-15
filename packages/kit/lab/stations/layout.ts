@@ -17,8 +17,8 @@ export function featuredGroups(groups: readonly GroupInfo[]): string[] {
 }
 
 /**
- * The layout a station gets when its file has none: what it is on the left, knobs for its section's main groups on
- * the right, and the things you reach for while looking (variants, compare, live numbers, notes) in the dock.
+ * The layout a station gets when its file has none: what it is and what was measured on the left, knobs for its
+ * section's main groups on the right, and its variants in the dock. A lab kind trims this further (`trimLayout`).
  */
 export function defaultLayout(station: LabStation, groups: readonly string[]): StationLayout {
   const section = station.demo.kind === "section"
@@ -31,13 +31,17 @@ export function defaultLayout(station: LabStation, groups: readonly string[]): S
     right: section && groups.length ? [w("controls", { groups: groups.slice(0, 2) })] : [],
     dock: [
       ...(station.variants?.length ? [w("variants")] : []),
-      ...(section ? [w("compare")] : []),
-      w("perf"),
-      w("voice"),
-      w("notes"),
-      ...(station.paths?.length || station.branches?.length ? [w("changes")] : []),
+      ...(section && station.variants?.length ? [w("compare")] : []),
+      ...(section ? [w("perf")] : []),
     ],
   }
+}
+
+/** Keeps only the cards in `allowed` (a lab kind's opt-in panels); null keeps them all. */
+export function trimLayout(layout: ResolvedLayout, allowed: readonly StationWidget["widget"][] | null): ResolvedLayout {
+  if (!allowed) return layout
+  const keep = (w: PlacedWidget) => allowed.includes(w.widget)
+  return { left: layout.left.filter(keep), right: layout.right.filter(keep), dock: layout.dock.filter(keep) }
 }
 
 /** Gives every widget an id (its kind, then kind-2, kind-3…) and drops anything malformed. */
@@ -122,6 +126,8 @@ export function updateWidget(layout: ResolvedLayout, id: string, patch: Partial<
 const strings = (value: unknown) => Array.isArray(value) && value.every(v => typeof v === "string" && v.length > 0 && v.length <= 120)
 
 /** A saved or pasted layout, checked whole: anything malformed rejects all of it (null) rather than half-applying. */
+const RETIRED_WIDGETS: readonly string[] = ["voice"]
+
 export function parseLayout(raw: unknown): StationLayout | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
   const out: Record<string, StationWidget[]> = {}
@@ -132,6 +138,8 @@ export function parseLayout(raw: unknown): StationLayout | null {
       if (!item || typeof item !== "object") return null
       const { widget, id, title, groups, keys, ...rest } = item as Record<string, unknown>
       if (Object.keys(rest).length) return null
+      // Cards the Lab no longer has (the voice note, retired for Scrawl) drop out of saved layouts without losing them.
+      if (typeof widget === "string" && RETIRED_WIDGETS.includes(widget)) continue
       if (typeof widget !== "string" || !WIDGET_KINDS.includes(widget as StationWidget["widget"])) return null
       if (id !== undefined && (typeof id !== "string" || !/^[a-z][a-z0-9-]{0,40}$/.test(id))) return null
       if (title !== undefined && (typeof title !== "string" || title.length > 80)) return null

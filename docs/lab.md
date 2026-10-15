@@ -36,9 +36,9 @@ described beside it (`split`). `/` or `⌘K` searches (every word must match the
 Home covers the workbench, which stops drawing until a lab opens. In a lab the top bar shows `Labs › collection › lab`;
 `H` (or Labs) comes back to Home, the lab's name lists the others in its collection, and `⌥[` `⌥]` step through them.
 `1`–`9` pick the open lab's variants, and `⇧` with a number shows what you see now beside that variant as an A/B wipe
-(section labs; a page lab just switches). A lab shows only its own panels: the Library drawer and the World footer
-(the global section, environment and seed pickers) are hidden and `Ctrl+Space` does nothing while one is open
-(`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
+(section labs; a page lab just switches). A lab shows only what its subject needs (below): the Library drawer and the
+World footer (the global section, environment and seed pickers) are always hidden and `Ctrl+Space` does nothing while
+one is open (`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
 work. `arcade run lab.list`, `lab.open {"id": "look-and-light/weather"}` and `lab.home` do the same from the CLI.
 
 Labs come and go from Home. `+` (or ＋ New lab) starts a draft lab of any section kind in Drafts and opens it; `⌘D`
@@ -56,6 +56,33 @@ splatter variants) opens a station built from the lab (`stationFromScene`). Ever
 `games/lab/tests/scenes.test.ts` fails until it has one. The model and the plan are in [lab-scenes.md](lab-scenes.md).
 `bun games/lab/scripts/prove-home.ts` proves Home in a headless browser and writes stills to `captures/lab-home`.
 
+### Labs show only what their subject needs
+
+Every panel is opt-in per lab kind, and there is no voice-notes panel (Kit gives feedback with Scrawl). A kind lists
+its panels (`LabKind.panels` in `games/lab/src/scenes/kinds.ts`; the vocabulary is `LabPanel` in
+`packages/kit/lab/scenes/kinds.ts`) and the lab shows nothing else:
+
+- The subject's knobs come first and largest: Details for a section lab, the page's own panel in a card for a page lab
+  (Outbreak unseen's Unseen layers). A section kind can name its own Details groups (`groups`); otherwise Details
+  leaves out the backdrop's groups (`BACKDROP_GROUPS`: Environment and room seed) unless the kind has `backdrop`.
+- Variants only when the lab has some; the A/B and grid card and the top bar's A, V, Wipe and Grid only with
+  `compare` (Look, Scene look, Style). `⇧` with a number still wipes in any section lab with variants.
+- The Outliner only with `objects` (placeable things: the Vehicle lab). The clock and Details' Retrigger row only with
+  `transport` (effects and physics). Play only for kinds with a `play` verb.
+- A page lab is its page: none of the Lab's own chrome (modes, clock, Details, Outliner, debug view, undo, status-bar
+  hints) shows around it, because all of it drives the Lab scene behind the page.
+- Station cards are trimmed to the kind too (`labWidgets`): status always (a short summary and the links as buttons,
+  such as Play Outbreak), `metrics` when something was measured, `perf` only for section labs with `readouts`, and
+  `notes` or `changes` only for a kind that asks for them (none do today).
+- A column left with nothing closes. Keys for a piece the lab doesn't show (`Space`, `K`, `.`, `L` without a clock;
+  `B`, `V` without compare; `P` without Play; every scene key in a page lab) do nothing.
+
+The Lab's Home applies this when a lab opens (`labChrome` and `detailsGroups` write `data-lab-show` on the workbench
+and scope Details; `createStations({ widgets })` trims the cards). `games/lab/tests/scenes.test.ts` checks that only
+the Vehicle lab has an Outliner, page labs get none of the Lab's chrome and no station file lists a card its kind
+leaves out. Every button, chip, picker and close button in the Lab's own chrome is one size (`--control-h`, knobs'
+control height) and one shape.
+
 ## Stations
 
 A station is a saved workspace for one demo. Opening its lab runs its section and setup commands, then its widgets
@@ -70,24 +97,23 @@ Widgets (`packages/kit/lab/stations/widgets.ts`):
 
 | Widget | Shows |
 | --- | --- |
-| `status` | Status, board feature, summary, what it runs and the station's links |
+| `status` | Status, board feature, a three-line summary and the station's links as buttons |
 | `controls` | Knobs cards for chosen Details `groups` and single `keys`, over the same settings as Details |
 | `variants` | The variants as chips (`⇧1`–`⇧9`) |
 | `compare` | A/B wipe (pin A, pick a variant for B) and the variation grid when the station names one |
 | `perf` | Frame rate and the Lab's telemetry line (section counts, GPU time), twice a second |
 | `metrics` | Measured numbers with their sources |
 | `changes` | Recent commits and unmerged branches (dev server only) |
-| `notes` | Kit's notes for the station, kept in the browser |
-| `voice` | The voice-note button |
-| `links` | Links to where the thing lives in the games |
+| `notes` | A text note kept in the browser, only for a kind with `notes` |
+| `links` | Links to where the thing lives in the games (status already shows them) |
 
 ✎ in the list header edits the layout: drag a card between slots or use its ⋯ menu (move to a slot, earlier or later,
 Configure for a title and the controls card's groups, Remove), and `+ Widget` adds one. Edits save per station in the
 browser (`arcade.lab.station-layouts.v1`) as you make them; Reset goes back to the station file's layout and Copy JSON
 gives the `layout` block to paste into the file. `arcade run station.layout` reads, replaces (`layout`), resets or
 opens the editor from the CLI. Without a `layout` the station gets the default: status and measurements left, a
-controls card for the section's first two groups with real tuning sliders right, and variants, compare, live numbers,
-voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
+controls card for the section's first two groups with real tuning sliders right, and variants (plus compare and live
+numbers in a section lab) in the dock. Either way the lab kind trims it, and `+ Widget` only offers the kind's cards. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
 adding a file, plus one line for its collection in `STATION_AREAS` (`games/lab/src/scenes/from-stations.ts`) and, unless
@@ -109,14 +135,14 @@ export default defineStation({
   defaultVariant: "storm",                // the variant the setup already shows
   variants: [{ id: "storm", label: "Storm", setup: [{ command: "weather.preset", args: { preset: "storm" } }] }],
   grid: "looks",                          // optional VARIATION_GRID_PRESETS id for the Grid button
-  board: { feature: "AR-19" },            // where voice notes from this station go
+  board: { feature: "AR-19" },            // the board feature the status card links
   metrics: [{ label: "GPU, rain at 1280×800", value: "0.4 ms", source: "perf/weather-lab.json" }],
   paths: ["packages/kit/weather.ts"],     // recent commits touching these
   branches: ["weather-*"],                // unmerged branches matching these
   links: [{ label: "Outbreak street", href: "/arcade/outbreak/?peaceful=1&seed=7" }],
   layout: {                               // optional; Kit's saved edits override it
     right: [{ widget: "controls", groups: ["Precipitation", "Wind & Atmosphere"], title: "Rain" }],
-    dock: [{ widget: "variants" }, { widget: "compare" }, { widget: "perf" }, { widget: "voice" }],
+    dock: [{ widget: "variants" }],
   },
 })
 ```
@@ -133,20 +159,6 @@ each variant through `station.variant` and records the page's Lab settings, body
 section-demo station, `bun games/lab/scripts/prove-station.ts <id>` runs the demo and every variant against the
 production build. It waits while the section's optional `busy()` is true, so a section that bakes in a Worker (Rugs)
 is captured after its results land.
-
-### Voice notes
-
-In dev (`bun run dev`), `N` anywhere in the Lab (outside text fields) starts a voice note, like Scrawl: talk, hold
-`Shift` and move to draw, `⌘Z` undoes a mark, `⇧1`–`⇧9` still switch variants and are logged, `Esc` cancels and `N` finishes. The review card
-shows a contact sheet of keyframes (start, each mark, each variant change, end); `Enter` sends. The dev server
-(`scripts/lab-feedback.ts`) saves the bundle to `~/code/home/artifacts/lab-feedback/<time>-<station>/` (audio,
-contact sheet, frames, `state.json` with the preset JSON, seeds, tuning seed, camera and transport, `feedback.json`,
-`summary.md`)
-and posts it to the station's decision on the team board (project `arcade`) through the board's feedback path, so
-Whisper transcribes it and the marks are described with their transcript. It then presses Send, which puts it in
-`board.ts inbox`, and writes `transcript.md` once Whisper finishes. Stations without `board.decision` get a
-"<Title> Station" decision on their feature the first time a note is sent, with the variants as options. The board
-token stays in the dev server; production builds don't include the recorder.
 
 ## Bind controls to typed production settings
 
@@ -208,10 +220,9 @@ Mutate, drawing from the panel's recorded tuning seed (knobs' `random` option ov
 each roll records the seed it used in `tuning.last` and moves to the next). knobs draws only for the keys a roll
 changes, in row order, so a recorded seed replays the roll. Its `tunable` option and `random: false` on seeds keep
 switches, locked and dependency-disabled rows, the effect, environment and room pickers, the key-label layout and every
-seed out. Copy adds `tuningSeed` when a roll produced the values, and voice notes save the tuning state. A group with
+seed out. Copy adds `tuningSeed` when a roll produced the values. A group with
 its own `Randomize <group>` action keeps using it. Tuning seeds recorded before the switch to knobs' draws (Arcade's
-`seededPatch`, until October 2026) give different values now; none were recorded (every saved voice note has
-`tuning.last: null`). Section seeds such as Looks', Weather's or Effects' `tuningSeed` drive their own randomizers and
+`seededPatch`, until October 2026) give different values now; none were recorded. Section seeds such as Looks', Weather's or Effects' `tuningSeed` drive their own randomizers and
 are unchanged.
 
 Current limitations:
@@ -276,7 +287,7 @@ Test an intentional gameplay-physics change in the actual simulation separately 
 
 Text editors, search, `<select>` dropdowns and preset dialogs own printable keys, arrows, Space and clipboard/text-undo
 shortcuts. They must not trigger canvas actions. A list with type-to-filter (the Library) owns printable keys the same
-way: mark its host `data-typeahead` so capture-phase letter shortcuts (`M` mute, `N` voice note) skip it, and stop
+way: mark its host `data-typeahead` so capture-phase letter shortcuts (`M` mute) skip it, and stop
 propagation for the keys it handles. Placement/move ghosts precede Inspector navigation; focused Inspector
 precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open
 capture.

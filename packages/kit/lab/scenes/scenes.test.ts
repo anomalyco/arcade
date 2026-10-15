@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { checkScene, decodeSceneLink, emptyScene, encodeSceneLink, slug, type LabScene, type SceneCommand } from "./model"
-import { checkAgainstKind, checkKinds, type LabKind } from "./kinds"
+import { checkAgainstKind, checkKinds, detailsGroups, labChrome, labWidgets, type LabKind } from "./kinds"
 import { CURRENT_LIGHTING, choiceCommands, liftCommands, openCommands, sceneFromPreset, scenesFromTour, type KindOf } from "./migrate"
 import { createSceneStore, memorySceneStorage, repoPath } from "./store"
 
@@ -199,7 +199,7 @@ describe("lab kinds", () => {
     label: "Vehicle",
     subject: "A car on a test course",
     host: { kind: "section", section: "spawn" },
-    panels: ["controls", "variants", "add"],
+    panels: ["controls", "variants", "add", "objects"],
     add: [{ group: "Obstacles", parts: [{ part: "prop:cone", label: "Cone" }] }],
   }
   const weather: LabKind = {
@@ -214,6 +214,33 @@ describe("lab kinds", () => {
     expect(checkKinds([vehicle, weather])).toEqual([])
     expect(checkKinds([{ ...vehicle, panels: ["controls"] }])).toEqual(['kind "vehicle": has an add-picker but no "add" panel'])
     expect(checkKinds([{ ...weather, add: undefined, panels: ["add", "choices"] }])[0]).toContain("nothing to add")
+    expect(checkKinds([{ ...vehicle, panels: ["controls", "variants", "add"] }])).toEqual(['kind "vehicle": "add" places objects, so it needs the "objects" panel (the Outliner)'])
+  })
+  test("a page kind can't have panels that drive the Lab's own scene", () => {
+    const page: LabKind = { id: "unseen", label: "Unseen", subject: "x", host: { kind: "page", url: "/arcade/outbreak/" }, panels: ["controls", "variants", "transport", "objects"] }
+    expect(checkKinds([page])).toEqual([
+      'kind "unseen": "objects" drives the Lab\'s own scene; a page lab can\'t have it',
+      'kind "unseen": "transport" drives the Lab\'s own scene; a page lab can\'t have it',
+    ])
+    expect(checkKinds([{ ...weather, panels: ["controls", "choices", "compare"] }])).toEqual(['kind "weather": "compare" needs "variants"'])
+  })
+  test("a lab shows only what its kind opts into", () => {
+    const unseen: LabKind = { id: "unseen", label: "Unseen", subject: "x", host: { kind: "page", url: "/arcade/outbreak/" }, panels: ["controls", "variants", "measured"], play: "Play" }
+    // A page lab is its page: none of the Lab's own chrome.
+    expect(labChrome(unseen)).toEqual([])
+    expect(labWidgets(unseen, { variants: [1, 2], metrics: [1] })).toEqual(["status", "controls", "variants", "metrics"])
+    // No variants, no strip; no measurements, no Measured card; never a voice note or notes card unless asked.
+    expect(labWidgets(unseen, {})).toEqual(["status", "controls"])
+    expect(labChrome(vehicle)).toEqual(["edit", "details", "outliner"])
+    expect(labChrome({ ...weather, panels: ["controls", "transport", "backdrop"], play: "Walk" })).toEqual(["edit", "play", "details", "transport", "backdrop"])
+  })
+  test("Details hides the backdrop's groups unless the kind has one, and a kind's own groups win", () => {
+    expect(detailsGroups(weather)!("Environment")).toBe(false)
+    expect(detailsGroups(weather)!("Weather Stage")).toBe(true)
+    expect(detailsGroups({ ...weather, panels: ["controls", "backdrop"] })).toBeNull()
+    const own = detailsGroups({ ...vehicle, groups: ["Vehicle & Skids"] })!
+    expect([own("Vehicle & Skids"), own("Lights")]).toEqual([true, false])
+    expect(detailsGroups({ ...weather, host: { kind: "page", url: "/arcade/x/" } })).toBeNull()
   })
   test("action keys come from the action pool and are unique within a kind", () => {
     const feel: LabKind = {

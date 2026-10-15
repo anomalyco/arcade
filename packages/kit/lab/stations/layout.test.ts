@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { addWidget, defaultLayout, featuredGroups, moveWidget, nudgeWidget, parseLayout, removeWidget, resolveLayout, saveLayout, savedLayout, stationLayout, toStationLayout, updateWidget } from "./layout"
+import { addWidget, defaultLayout, featuredGroups, moveWidget, nudgeWidget, parseLayout, removeWidget, resolveLayout, saveLayout, savedLayout, stationLayout, toStationLayout, trimLayout, updateWidget } from "./layout"
 import { gridVariants, orderStations, validateStations, type LabStation } from "./types"
 
 const station = (id: string, order: number, extra: Partial<LabStation> = {}): LabStation => ({
@@ -44,11 +44,21 @@ describe("stations", () => {
 describe("station layouts", () => {
   const weather = station("weather", 1, { variants: [{ id: "rain", label: "Rain" }], metrics: [{ label: "GPU", value: "1 ms" }], paths: ["packages/kit/weather"] })
 
-  test("the default puts status left, two groups of controls right and the working tools in the dock", () => {
+  test("the default puts status left, two groups of controls right and the variants in the dock, with no notes", () => {
     const layout = resolveLayout(defaultLayout(weather, ["Stage", "Precipitation", "Wind"]))
     expect(layout.left.map(w => w.id)).toEqual(["status", "metrics"])
     expect(layout.right).toEqual([{ widget: "controls", groups: ["Stage", "Precipitation"], id: "controls" }])
-    expect(layout.dock.map(w => w.id)).toEqual(["variants", "compare", "perf", "voice", "notes", "changes"])
+    expect(layout.dock.map(w => w.id)).toEqual(["variants", "compare", "perf"])
+    expect(resolveLayout(defaultLayout(station("bare", 1), ["A"])).dock.map(w => w.id)).toEqual(["perf"])
+  })
+  test("a lab kind trims a layout to the cards it opts into", () => {
+    const layout = resolveLayout({ left: [{ widget: "status" }, { widget: "notes" }], right: [{ widget: "controls", groups: ["A"] }, { widget: "links" }], dock: [{ widget: "variants" }, { widget: "compare" }] })
+    const trimmed = trimLayout(layout, ["status", "controls", "variants"])
+    expect([trimmed.left, trimmed.right, trimmed.dock].map(s => s.map(w => w.id))).toEqual([["status"], ["controls"], ["variants"]])
+    expect(trimLayout(layout, null)).toBe(layout)
+  })
+  test("a saved layout with a retired voice-note card loses only that card", () => {
+    expect(parseLayout({ dock: [{ widget: "variants" }, { widget: "voice" }] })).toEqual({ dock: [{ widget: "variants" }] })
   })
   test("the controls card features groups with tuning sliders", () => {
     expect(featuredGroups([{ name: "Stage", tunable: 0 }, { name: "Emitter", tunable: 1 }, { name: "Fireball", tunable: 3 }, { name: "Smoke", tunable: 4 }, { name: "Debris", tunable: 2 }])).toEqual(["Fireball", "Smoke"])
@@ -73,9 +83,8 @@ describe("station layouts", () => {
     expect(layout.left.map(w => w.id)).toEqual(["metrics"])
     layout = nudgeWidget(layout, "status", 1)
     expect(layout.dock.map(w => w.id).slice(0, 2)).toEqual(["variants", "status"])
-    layout = removeWidget(layout, "notes")
-    layout = removeWidget(layout, "changes")
-    expect(layout.dock.map(w => w.id)).not.toContain("notes")
+    layout = removeWidget(layout, "perf")
+    expect(layout.dock.map(w => w.id)).not.toContain("perf")
     layout = addWidget(layout, { widget: "controls", groups: ["Wind"] }, "left")
     expect(layout.left.at(-1)).toEqual({ widget: "controls", groups: ["Wind"], id: "controls-2" })
     layout = updateWidget(layout, "controls-2", { title: "Wind", groups: [] })

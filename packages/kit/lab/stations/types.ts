@@ -73,7 +73,7 @@ export type LabStation = {
 export type StationSlot = "left" | "right" | "dock"
 export const STATION_SLOTS: readonly StationSlot[] = ["left", "right", "dock"]
 
-export type StationWidgetKind = "status" | "controls" | "variants" | "compare" | "perf" | "metrics" | "changes" | "notes" | "voice" | "links"
+export type StationWidgetKind = "status" | "controls" | "variants" | "compare" | "perf" | "metrics" | "changes" | "notes" | "links"
 
 /**
  * One widget. `controls` shows knobs cards for the section's `groups` (Details group titles) and single `keys`;
@@ -158,7 +158,7 @@ export function orderStations(stations: readonly LabStation[]): { station: LabSt
     .map((station, i) => ({ station, key: i < 9 ? String(i + 1) : i === 9 ? "0" : null }))
 }
 
-export const WIDGET_KINDS: readonly StationWidgetKind[] = ["status", "controls", "variants", "compare", "perf", "metrics", "changes", "notes", "voice", "links"]
+export const WIDGET_KINDS: readonly StationWidgetKind[] = ["status", "controls", "variants", "compare", "perf", "metrics", "changes", "notes", "links"]
 
 export const STATUS_LABEL: Record<StationStatus, string> = {
   live: "Live",

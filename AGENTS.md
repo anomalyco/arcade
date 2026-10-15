@@ -79,6 +79,9 @@ game's own `AGENTS.md`.
 ## Lab and showing Kit
 
 - Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options.
+- Labs show only what their subject needs; every panel is opt-in per lab kind (`LabKind.panels`), the subject's knobs
+  come first and largest, and there is no voice-notes panel (Kit uses Scrawl). Don't add a panel, card or toolbar
+  button to every lab; give it to the kinds that need it.
 - To show Kit an orientation, asset, or sandbox setup in his open browser tab, use `bun run arcade …`; to walk him
   through a labeled multi-tab tour or highlight a target with a pinned note, use `arcade tour` and `arcade note`
   ([docs/dev-control.md#show-kit-things](docs/dev-control.md#show-kit-things)). For demos he comes back to, add or

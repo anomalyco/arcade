@@ -48,7 +48,7 @@ export default defineStation({
     { label: "Looks station", href: "/arcade/lab/?station=looks" },
   ],
   layout: {
-    left: [{ widget: "status" }, { widget: "metrics" }, { widget: "notes" }],
+    left: [{ widget: "status" }, { widget: "metrics" }],
     right: [
       {
         widget: "controls",
@@ -56,6 +56,6 @@ export default defineStation({
         title: "Style Knobs",
       },
     ],
-    dock: [{ widget: "variants" }, { widget: "compare" }, { widget: "perf" }, { widget: "voice" }],
+    dock: [{ widget: "variants" }, { widget: "compare" }, { widget: "perf" }],
   },
 })

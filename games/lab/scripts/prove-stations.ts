@@ -1,13 +1,11 @@
 // Headless proof for Lab stations and the knobs panels, through the dev router (`bun run dev`): every station opens in
 // place, number keys switch, knobs in a station card drive the real section, Random is reproducible from the tuning
-// seed, the widget layout can be edited and survives a reload, a voice note (Chrome's fake microphone fed a spoken
-// WAV) reaches the dev server, the OS cursor shows with the chrome hidden, and an idle panel does no DOM work.
+// seed, the widget layout can be edited and survives a reload, the OS cursor shows with the chrome hidden, and an idle
+// panel does no DOM work.
 //   hivemind run --kind browser --fetch captures/lab-stations -- bun games/lab/scripts/prove-stations.ts --serve
 //   bun games/lab/scripts/prove-stations.ts --base http://127.0.0.1:5180      uses a running dev router
-// --board sends the voice note to the team board; by default it is only saved by the dev server.
-// Never plays sound: the WAV is written with `say -o` and only fed to the fake capture device.
 import assert from "node:assert/strict"
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium, type Page } from "playwright-core"
@@ -27,7 +25,6 @@ if (server) {
   })
 }
 const out = resolve(root, arg("--out") ?? "captures/lab-stations")
-const board = process.argv.includes("--board")
 mkdirSync(out, { recursive: true })
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
@@ -35,13 +32,10 @@ const executablePath = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).
   .map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
 assert(executablePath, "Playwright Chromium binary required")
 
-const wav = resolve(out, "fake-mic.wav")
-execFileSync("say", ["-o", wav, "--data-format=LEI16@16000", "The storm needs heavier drops near the lamp, and the splashes read too bright."])
-
 const browser = await chromium.launch({
   executablePath,
   headless: true,
-  args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-audio-capture=${wav}`],
+  args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
 })
 const errors: string[] = []
 const report: Record<string, unknown> = { base }
@@ -55,7 +49,6 @@ const w = (page: Page) => page.evaluate.bind(page)
 
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
-  await context.grantPermissions(["microphone"], { origin: base })
   const page = await context.newPage()
   page.on("pageerror", e => errors.push(e.message))
   page.on("console", m => { if (m.type() === "error" && !/favicon|status of (404|503)/.test(m.text())) errors.push(m.text()) })
@@ -198,40 +191,6 @@ try {
   assert.equal(await page.locator('.ls-card[data-widget-id="controls"] .ls-card-title').textContent(), "Rain and wind")
   await page.waitForTimeout(1200)
   await page.screenshot({ path: resolve(out, "04-weather-saved-layout.png") })
-
-  // Text fields own their keys: typing in the notes widget neither switches station nor starts a voice note.
-  await page.locator(".ls-notes").click()
-  await page.keyboard.type("3n1")
-  assert.equal((await snap()).station?.id, "weather", "digits typed into notes don't switch lab")
-  assert.equal(await page.locator(".fb-pill:not([hidden])").count(), 0, "N typed into notes doesn't record")
-  assert.equal(await page.locator(".ls-notes").inputValue(), "3n1")
-
-  // 5. Voice note at the station: talk (fake mic), draw with Shift held, switch variant, finish, save.
-  await page.locator('canvas[aria-label="Lab scene"]').click({ position: { x: 500, y: 300 } })
-  await page.keyboard.press("Escape")
-  await page.keyboard.press("KeyN")
-  await page.waitForSelector(".fb-pill:not([hidden])", { timeout: 10000 })
-  await page.waitForTimeout(1200)
-  await page.mouse.move(520, 300)
-  await page.keyboard.down("Shift")
-  for (let i = 0; i <= 28; i++) {
-    const a = (i / 28) * Math.PI * 2
-    await page.mouse.move(560 + Math.cos(a) * 90, 300 + Math.sin(a) * 70)
-  }
-  await page.keyboard.up("Shift")
-  await page.keyboard.press("Shift+Digit4")
-  await page.waitForTimeout(4200)
-  await page.screenshot({ path: resolve(out, "05-recording.png") })
-  await page.keyboard.press("KeyN")
-  await page.waitForSelector("[data-fb-review]", { timeout: 20000 })
-  await page.screenshot({ path: resolve(out, "06-review.png") })
-  const response = page.waitForResponse(r => r.url().includes("/__arcade/lab/feedback"), { timeout: 120000 })
-  await page.locator("[data-fb-review] textarea").fill("Automated test of the Lab station voice-note path (fake microphone). Nothing to act on.")
-  await page.locator(`[data-fb-review] [data-action="${board ? "send" : "save"}"]`).click()
-  const result = await (await response).json()
-  report.feedback = result
-  assert(result.dir, "bundle saved by the dev server")
-  if (board) assert(result.board?.decision, `board delivery: ${JSON.stringify(result.board)}`)
 
   // 6. With the chrome hidden (Backquote) the OS cursor shows over the canvas.
   await page.locator('canvas[aria-label="Lab scene"]').click({ position: { x: 500, y: 300 } })
