@@ -91,8 +91,9 @@ function generate(g: Gait, cycles = 6): Sample[] {
       const ankle: V3 = [f.p[0] - fd[0] * kick * 0.8, f.p[1] + RIG.ankle + kick, f.p[2] - fd[2] * kick * 0.8]
       const pole: V3 = [fd[0], 0.25, fd[2]]
       const [knee, end] = ik(hips[i], ankle, RIG.thigh, RIG.shin, pole)
-      const toe: V3 = [end[0] + fd[0] * 0.19, end[1] - RIG.ankle, end[2] + fd[2] * 0.19]
-      return { knee, ankle: end, toe, planted: f.planted, yaw }
+      const ball: V3 = [end[0] + fd[0] * RIG.foot, end[1] - RIG.ankle, end[2] + fd[2] * RIG.foot]
+      const toe: V3 = [ball[0] + fd[0] * RIG.toe, ball[1], ball[2] + fd[2] * RIG.toe]
+      return { knee, ankle: end, ball, toe, planted: f.planted, yaw }
     })
     const up = (h: number): V3 => [pelvis[0], py + h, pelvis[2]]
     const waist = up(RIG.waist), chest = up(RIG.waist + RIG.shoulderY), neck = up(RIG.waist + RIG.neckY), headTop = up(RIG.waist + RIG.neckY + 0.26)
@@ -105,8 +106,8 @@ function generate(g: Gait, cycles = 6): Sample[] {
     const [elbowR, wristR] = ik(shoulderR, grip, RIG.upper, RIG.fore, [-0.5, -1, 0.8])
     const joints: RigJointMap = {
       pelvis, waist, chest, neck, headTop, shoulderL, elbowL, wristL, shoulderR, elbowR, wristR,
-      hipL: hips[0], kneeL: legs[0]!.knee, ankleL: legs[0]!.ankle, toeL: legs[0]!.toe,
-      hipR: hips[1], kneeR: legs[1]!.knee, ankleR: legs[1]!.ankle, toeR: legs[1]!.toe,
+      hipL: hips[0], kneeL: legs[0]!.knee, ankleL: legs[0]!.ankle, ballL: legs[0]!.ball, toeL: legs[0]!.toe,
+      hipR: hips[1], kneeR: legs[1]!.knee, ankleR: legs[1]!.ankle, ballR: legs[1]!.ball, toeR: legs[1]!.toe,
       gunGrip: grip, gunMuzzle: [grip[0] + 0.2, grip[1] + 0.03, grip[2]],
     }
     out.push({
