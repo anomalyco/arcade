@@ -186,8 +186,8 @@ proven animation techniques to animation.md, not here.
   `windowBuildingBits`) so roof cuts, `interior()` and the tiled kitchen follow the bungalow's wings, not its rect;
   origin roof parts keep their own cutaway mode (`true` or `"outside"`) and only roof vertices get the slot id.
   `games/outbreak/scripts/origin-switch-proof.ts` draws both at seven poses (porches, crossroads, stores, the west
-  edge, inside Ash): 21–64% of pixels changed before, ≤ 0.14% beauty and ≤ 0.004% albedo after (the rest is street
-  lamps beyond the block edge, which only the streamed window has). Renderer stream slots grow in 768 KB steps
+  edge, inside Ash): 1–24% of beauty pixels and 3–25% of albedo pixels changed on main, ≤ 0.14% and ≤ 0.004% after
+  (the rest is street lamps beyond the block edge, which only the streamed window has). Renderer stream slots grow in 768 KB steps
   (a 256 KB step is not a whole number of 24-byte vertices and scrambles every slot after the first).
 - **Streamed lots are dressed by the origin's rules.** `houseFrontage` and `housePlanting` (`src/architecture.ts`)
   and `src/yard.ts` (lawn patches, walkway and driveway tufts, gravel, tree collars, street verges) are what
