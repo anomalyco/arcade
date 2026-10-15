@@ -10,10 +10,12 @@ import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
+import { beamPose } from "./flashlight-beam"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings = Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
   practicalWarmth: number
+  beamPoolDistance: number
 }
 
 /** Visibility of an actor to the local survivor: the fog/vision module's soft actor test when present. */
@@ -87,8 +89,23 @@ export class CoopView {
     return this.net ? this.net.remotes : this.companions()
   }
 
-  /** Packs remote flashlights after the local one. Returns the new light count. */
-  flashlights(lights: Float32Array, count: number, town: Town, settings: LightSettings, occluders: number): number {
+  /** Plan positions of the other survivors (round casters for the local flashlight). */
+  otherPositions(): [number, number][] {
+    return this.others.map((slot) => [slot.survivor.x, slot.survivor.y])
+  }
+
+  /**
+   * Packs remote flashlights after the local one, from each remote body's posed pistol or hand (call after `bodies`).
+   * Returns the new light count.
+   */
+  flashlights(
+    lights: Float32Array,
+    count: number,
+    town: Town,
+    settings: LightSettings,
+    occluders: number,
+    blockers: readonly (readonly [number, number, number, number])[],
+  ): number {
     const others = this.others
     if (!others.length) return count
     const rgb = flashlightColor(settings.flashlightWarmth)
@@ -101,8 +118,11 @@ export class CoopView {
       const power = p.flashlightOutput * settings.flashlightIntensity * directScale
       const range = Math.min(settings.flashlightRange, inside ? 5.2 : 6.4)
       const ground = supportHeight(town, p.x, p.y)
+      const avatar = this.avatars.get(slot.index)
+      const rig = avatar?.light ?? { p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const, d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const, mounted: false }
+      const beam = beamPose(rig, p.x, p.y, p.aim, ground, settings.beamPoolDistance, blockers)
       lights.set(
-        [p.x + Math.cos(p.aim) * 0.25, 1.18 + ground, p.y + Math.sin(p.aim) * 0.25, range, rgb[0], rgb[1], rgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, occluders, 0.06, -1],
+        [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), cosHalf, 1, 0, occluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }

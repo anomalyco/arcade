@@ -1,6 +1,7 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
@@ -264,4 +265,5 @@ export const shaders = {
   lookScene: makeLookSceneShader(outbreakSceneHooks),
   lookPost: makeLookPostShader(outbreakPostFinish),
   visField: visibilityFieldShader,
+  volume: flashlightVolumeShader,
 }
