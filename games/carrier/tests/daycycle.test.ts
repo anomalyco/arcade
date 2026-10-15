@@ -197,9 +197,11 @@ describe("room clock (protocol + server)", () => {
     }
     const last = (c: { sent: Msg[] }) => c.sent.filter((m) => m.type === "time").at(-1) as Extract<Msg, { type: "time" }> | undefined
     let now = 1_000_000
+    // Overrides are dev tools: only a dev room takes them (tests/bots.test.ts checks a production room refuses them).
     const core = new RoomCore(
       () => now,
       () => 42,
+      { dev: true },
     )
     const a = conn()
     core.message(a, encode({ type: "hello", build: BUILD, name: "ada" }))

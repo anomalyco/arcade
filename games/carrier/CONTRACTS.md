@@ -256,6 +256,10 @@ crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm
 menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip()`, `recover(how)` (the jet is gone,
 the pilot waits on deck), and the captain powers `promote(player)`, `kick(player)`, `lock(locked)`. Client messages
 `op`, `promote`, `kick`, `lock` (no `takehelm` / `launch`). `connect({ room, seed, name, private, onFull })`.
+Chat (`shared/chat.ts`): client `chat { text, crew? }` (decoded with `cleanChat`: control/bidi stripped, ≤ 120 code
+points), server `chat { from, name, team, text, crew? }` stamped from the room's crew, 5 lines per 5 s per player
+(over it dropped silently; `Net.sendChat` refuses first and the feed says TOO FAST), crew lines only to the sender's
+team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they echo locally.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
 
 ## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
@@ -505,6 +509,27 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   tab; read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
   in `captures/radar/`.
 
+## Capture zones (`shared/objective.ts`, `server/core.ts`, `src/objective/**`)
+
+- The game's objective. Zones are 650 m circles of open water (clear of islands, 1.4 km+ from every spawn); fewer
+  than 4 active carriers (crewed, not sinking) → one zone, 4 → two, decided at each reveal. A zone stays put for
+  5 minutes (`cycle` 300 s); 30 s before it moves the next spot shows as a dashed ghost ring and the HUD counts down
+  (ZONE MOVING IN 20S). A round's first zone sits within 1 km of the middle (about 3 minutes' sail from every spawn);
+  later ones hop 1.3-2.8 km.
+- A carrier whose hull centre is inside a zone alone captures it in 10 s (someone else's drains to neutral first);
+  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone. No clock: first to
+  1,200 points wins the round; the result shows 15 s, then scores reset and a new round starts. Nothing in the
+  objective touches ships, crew or aircraft: relocations, round ends and new rules never move or respawn anything.
+- Authority: the room's `Objective` steps with the ships and sends `obj` (`packObjective`, a flat number array) at
+  ~4 Hz while a zone is being taken or held, at once on a capture, reveal, relocation or round end, 1 Hz otherwise,
+  and to joiners. Offline the client runs its own on the local ship. Dev rooms take `objective` (rules, clamped;
+  the round restarts) from the debug menu's ZONES tab (rules + look, APPLY TO ROOM).
+- Client: `Zones` (`src/objective/zones.ts`) draws `ZonePass` (a glowing boundary on the displaced sea with the
+  capture arc and turning dash marks, a faint tint, a low light curtain on the boundary; no centre beam) and the
+  top-centre `ObjectiveHud` (zone pips, scores in carrier colours with bars to the target, MOVE countdown, a capture
+  meter, one event line, the WINS banner). `objectiveZones()` gives other HUD pieces (the radar) the zones.
+- Real-GPU check: `scripts/zones-shot.ts` (dev room; captures in `captures/zones/`).
+
 ## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
 
 - Loadouts are per aircraft (`LOADOUTS` in `shared/weapons.ts`), keyed by `VehicleKind`. The F/A-18E (`hornet`) has
@@ -677,6 +702,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
     25 m.
   - Enemy jet crashing into the ship: 50.
+  - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 650; the hull that
+    brought the speed takes up to 40% less. A 15 m/s T-bone: ~300 to the rammed side, ~180 to the rammer.
   - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
 - Zones (`hullZone`, ship-local):
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
@@ -726,6 +753,24 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - `ShipHit.amount` / `ShipDamageKind` carry the shell type into `Fleet.hit`.
 - Real-GPU check: `scripts/ships-shot.ts`. Three pages on three carriers: A's F-35C bombs B's carrier (direct hit, near
   miss), C's Hornet strafes it and fires dumbfires, A's bombs finish it, B moves to its replacement. Captures go to `captures/ships/damage/`.
+
+## Carrier collisions (`shared/ship-collide.ts`, hook in `server/core.ts` `collideShips`, `src/game/game.ts`)
+
+- Carriers don't pass through each other. The colliding shape is the flight deck's plan (330 × 76 m, notched bow
+  corners; it overhangs the waterline hull boats bounce off), a convex polygon: separating-axis contact, at most two
+  clipped points. Sequential impulses with equal masses, heavier sideways (×2) and in yaw (×1.5) for the water moving
+  with the hull: closing speed cancelled, bounced by `SHIP.bounce` above 1 m/s (none below: resting contact), sliding
+  resisted up to 0.3 of the normal impulse (a glancing blow slides and yaws), off-centre points yaw. The leftover overlap
+  is pushed out 25% per step past 5 cm (≤ 0.5 m). Deterministic; no jitter resting under power; < 2 m overlap at top
+  speed from any heading. Sinking hulls stay solid for their first 10 s.
+- The room steps every ship one fixed tick at a time and resolves every pair after each (`ShipCollider.step`, id order).
+  A bump faster than 0.8 m/s is broadcast (`bump { a, b, k }`, k 0..1 at 12 m/s); damage goes through `Fleet.hit`
+  (`w: "ram"`, credited to the other ship's helm, else its captain; a ram of 20+ leaves a fire at the contact). Each
+  pair then takes only the excess of a harder blow for 1.5 s, so grinding doesn't drain health.
+- The helm's client resolves its predicted hull against the remotes it draws (`collideHulls(.., onlyA)`), so it stops
+  where the room's does; `net.bumps` set `slam` on both hulls (chase shake) and one `slams` count (the `hull-slam`
+  sound, ship-audio.ts) when k ≥ 0.05. The red hit flash comes from the hull's health as for any hit.
+- Real-GPU check: `scripts/collide-shot.ts` (two helms, a 14 m/s T-bone and a pushing grind; `captures/collide/`).
 
 ## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 

@@ -10,6 +10,9 @@ import { TIME_SPEED_MAX } from "./daycycle"
 import { WEATHER_KINDS, type WeatherKind, unpackWeather } from "./weather"
 import { KILL_WEAPONS } from "./weapons"
 import { type BoatCtlTuple, type BoatTuple, isBoatCtl, isBoatTuple } from "./boat"
+import { unpackObjective } from "./objective"
+import { type BotCmd, type BotInfo, botCmdOf, botInfoOf } from "./bots"
+import { cleanChat } from "./chat"
 import { type AimTuple, type GunBoomTuple, type GunFireTuple, type InterceptTuple, type TurretTuple, isAimTuple, isGunBoomTuple, isGunFireTuple, isInterceptTuple, isTurretTuple } from "./gunnery"
 
 export const DEFAULT_ROOM = "open-sea"
@@ -85,10 +88,23 @@ export type ClientMsg =
   /** The boat's 25 mm rounds hit something `n` times since its last report: `k` shared/boat.ts BOAT_HIT (0 a jet or
    *  1 a boat: player `on`; 2 a carrier: ship `on`). */
   | { type: "bhits"; k: number; on: number; n: number }
+  /** A chat line (shared/chat.ts: cleaned, rate-limited, stamped by the room); `crew`: only the sender's carrier hears it. */
+  | { type: "chat"; text: string; crew?: true }
+  /** Dev tools: a bot command from the BOTS panel (shared/bots.ts). Dev rooms only (`DEV_MESSAGES`). */
+  | { type: "bot"; cmd: BotCmd }
+  /** Dev tools: new objective rules (shared/objective.ts packRules, clamped by the room); the round restarts with them. */
+  | { type: "objective"; r: number[] }
+
+/**
+ * Dev tools: messages a room accepts only when it runs in dev mode (server configuration, never the client: see
+ * server/room.ts). Anywhere else the room answers `nope` "dev-only" and changes nothing. The one gate is in
+ * server/core.ts `RoomCore.message`.
+ */
+export const DEV_MESSAGES: ReadonlySet<ClientMsg["type"]> = new Set<ClientMsg["type"]>(["weather", "time", "bot", "objective"])
 
 export type ServerMsg =
-  /** `id` is this connection's player id in the crew. */
-  | { type: "welcome"; seed: number; epoch: number; now: number; players: number; id: number }
+  /** `id` is this connection's player id in the crew. `dev`: the room runs in dev mode (it takes `DEV_MESSAGES`). */
+  | { type: "welcome"; seed: number; epoch: number; now: number; players: number; id: number; dev?: true }
   /** The server runs different shared code than this client: reload the page. */
   | { type: "reload" }
   /** The room has CREW.roomMax players: pick another. */
@@ -126,6 +142,8 @@ export type ServerMsg =
   | { type: "hulls"; h: HullTuple[] }
   /** A carrier started sinking: its id, name and team, and who dealt the final blow (-1 nobody). */
   | { type: "sunk"; ship: number; name: string; team: number; by: number }
+  /** Carriers a and b collided (shared/ship-collide.ts): how hard, 0..1. Damage comes as `hulls`. */
+  | { type: "bump"; a: number; b: number; k: number }
   /** Every manned turret's aim and trigger, ~10 Hz while anyone mans one (then once empty). */
   | { type: "turrets"; t: TurretTuple[] }
   /** Another gunner's SAM launch or shell. */
@@ -135,6 +153,13 @@ export type ServerMsg =
   /** Every boat out (shared/boat.ts BoatTuple: its pose, crane state, turret and trigger), ~10 Hz while any is out
    *  (then once empty). Its health, kills and the kill feed travel as `hp` / `kill` like a jet's. */
   | { type: "boats"; b: BoatTuple[] }
+  /** Dev rooms: every live bot (shared/bots.ts), ~2 Hz while any exist (then once empty), and to joiners. */
+  | { type: "bots"; b: BotInfo[] }
+  /** The objective (shared/objective.ts packObjective: round, zones, capture, scores), ~4 Hz while anything moves,
+   *  at once on a capture, reveal, relocation or round end, and to joiners. */
+  | { type: "obj"; o: number[] }
+  /** A chat line from player `from` (name and team as the room knows them); `crew`: the sender's carrier only. */
+  | { type: "chat"; from: number; name: string; team: number; text: string; crew?: true }
 
 /** A launch: [sequence, sea time, x, y, z, vx, vy, vz, target (-1 none), kind (0 missile, 1 bomb)]. */
 export type FireTuple = [seq: number, t: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, target: number, kind: number]
@@ -378,6 +403,17 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return isBoatCtl(o.c) ? { type: "boat", c: o.c } : null
     case "bhits":
       return (o.k === 0 || o.k === 1 || o.k === 2) && isCount(o.on) && isCount(o.n) && o.n > 0 && o.n <= 60 ? { type: "bhits", k: o.k, on: o.on, n: o.n } : null
+    case "chat": {
+      const text = cleanChat(o.text)
+      if (!text) return null
+      return o.crew === true ? { type: "chat", text, crew: true } : { type: "chat", text }
+    }
+    case "objective":
+      return Array.isArray(o.r) && o.r.length <= 16 && o.r.every(isTime) ? { type: "objective", r: o.r as number[] } : null
+    case "bot": {
+      const cmd = botCmdOf(o.cmd)
+      return cmd ? { type: "bot", cmd } : null
+    }
     case "hello": {
       if (!isStr(o.build, 64)) return null
       const msg: ClientMsg = { type: "hello", build: o.build }
@@ -399,7 +435,8 @@ export function decodeServer(raw: unknown): ServerMsg | null {
   switch (o.type) {
     case "welcome": {
       const w = worldOf(o)
-      return w && isTime(o.now) && isCount(o.players) && isCount(o.id) ? { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id } : null
+      if (!w || !isTime(o.now) || !isCount(o.players) || !isCount(o.id)) return null
+      return o.dev === true ? { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id, dev: true } : { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id }
     }
     case "reload":
       return { type: "reload" }
@@ -457,6 +494,21 @@ export function decodeServer(raw: unknown): ServerMsg | null {
       return isGunBoomTuple(o.b) ? { type: "gboom", b: o.b } : null
     case "boats":
       return Array.isArray(o.b) && o.b.length <= 64 && o.b.every(isBoatTuple) ? { type: "boats", b: o.b as BoatTuple[] } : null
+    case "bots": {
+      if (!Array.isArray(o.b) || o.b.length > 64) return null
+      const b = o.b.map(botInfoOf)
+      return b.every((x) => x) ? { type: "bots", b: b as BotInfo[] } : null
+    }
+    case "obj":
+      return unpackObjective(o.o) ? { type: "obj", o: o.o as number[] } : null
+    case "chat": {
+      const text = cleanChat(o.text)
+      if (!text || !isCount(o.from) || !isStr(o.name, CREW.nameMax) || !isCount(o.team) || o.team >= CREW.ships) return null
+      const m = { type: "chat" as const, from: o.from, name: o.name, team: o.team, text }
+      return o.crew === true ? { ...m, crew: true } : m
+    }
+    case "bump":
+      return isCount(o.a) && isCount(o.b) && isTime(o.k) && o.k >= 0 && o.k <= 1 ? { type: "bump", a: o.a, b: o.b, k: o.k } : null
     case "sunk":
       return isCount(o.ship) && isStr(o.name, 40) && isCount(o.team) && isInt(o.by) ? { type: "sunk", ship: o.ship, name: o.name, team: o.team, by: o.by } : null
     case "stats": {

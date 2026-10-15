@@ -397,7 +397,9 @@ export function guide(m: Missile, dt: number, track: boolean, px: number, py: nu
     }
   }
   // Limit, lag, and keep the acceleration square to the flight path.
-  const limit = c.maxG * G * Math.min(1, (m.speed / c.topSpeed) ** 2)
+  // Half its turn authority at any speed, all of it at top speed: a slow missile just off the rail still turns onto a
+  // crossing target.
+  const limit = c.maxG * G * Math.min(1, 0.5 + 0.5 * (m.speed / c.topSpeed))
   const cl = Math.hypot(cx, cy, cz)
   if (cl > limit) {
     cx *= limit / cl

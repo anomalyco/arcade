@@ -92,9 +92,10 @@ export const WEAPONS = {
     accel: 230,
     topSpeed: 640,
     burn: 2.6,
-    drag: 0.00011,
-    /** Self-destructs after this long (s). */
-    life: 7,
+    drag: 0.00005,
+    /** Self-destructs after this long (s): long enough to run down a jet fleeing on afterburner from the edge of the
+     *  lock range (a locked missile only misses when flared or outmanoeuvred up close). */
+    life: 14,
     /** Ejection off the rail: the missile drops this fast (m/s) for the first `drop` seconds before it steers. */
     ejectDrop: 6,
     drop: 0.18,

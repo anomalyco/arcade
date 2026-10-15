@@ -7,14 +7,8 @@ import { FLEET } from "../shared/fleet"
 import { PLANE_MODE } from "../shared/protocol"
 import { makeSea } from "../shared/sea"
 import { bakeSeabed } from "../shared/seabed"
-import { WEATHER_KINDS, type WeatherKind } from "../shared/weather"
 import { WeatherAudio } from "./audio/weather-audio"
-import { DebugMenu } from "./dev/debug-menu"
-import { controlsTab } from "./dev/controls-tab"
-import { MixerLab } from "./audio/mixer-lab"
 import { mixer } from "./audio/mixer"
-import { SoundsLab } from "./audio/sounds-lab"
-import { WeatherLab } from "./dev/weather-lab"
 import { FlightView } from "./flight/camera"
 import { FlightModule } from "./flight/seam"
 import { BoatModule } from "./boat/seam"
@@ -27,7 +21,6 @@ import { ATMOSPHERE, fillAtmosphere } from "./render/atmosphere"
 import { Camera, parseCam } from "./render/camera"
 import { Clouds } from "./render/clouds"
 import { DayNight } from "./render/daynight"
-import { TimeLab } from "./render/daynight-lab"
 import { FRAME, FRAME_FLOATS, TIME_WRAP } from "./render/frame"
 import { buildIslandMesh } from "./render/island-mesh"
 import { Lights } from "./render/lights"
@@ -38,10 +31,12 @@ import { Sky } from "./render/sky"
 import { Stars } from "./render/stars"
 import { WeatherSystem } from "./render/weather-system"
 import { Hud } from "./ui/hud"
+import { Zones } from "./objective/zones"
 import { type Start, startFromUrl, storedName } from "./ui/lobby"
 import { showMenu } from "./ui/menu"
 import { OpsMenu } from "./ui/ops-menu"
 import { TeamMenu } from "./ui/team-menu"
+import { Chat } from "./ui/chat"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 
 const MAX_DPR = 1.5
@@ -88,14 +83,24 @@ async function main() {
   const frozen = tParam !== null && Number.isFinite(Number(tParam)) ? Number(tParam) : null
   // `?seed` plays offline and `?room=` joins straight away; otherwise the menu picks a room over an offline sea.
   const start = startFromUrl(params)
+  // Dev builds only (Vite drops this import from production bundles): the debug menu, its tabs and the bots.
+  const devTools = import.meta.env.DEV ? await import("./dev/dev-tools") : null
+  // Dev: `?seed=N&bots` plays offline on a room inside the page (src/dev/local-room.ts), so bots have a room to live in.
+  const localRoom = devTools && params.has("bots") && start?.mode === "offline" ? devTools.localRoom() : null
   const netFor = (s: Start | null) =>
-    s?.mode === "room" ? connect({ room: s.room, name: s.name, private: s.private, onFull: () => menu("That game is full. Pick another.") }) : connect({ seed: s?.mode === "offline" ? s.seed : MENU_SEED, name: storedName() })
+    s?.mode === "room"
+      ? connect({ room: s.room, name: s.name, private: s.private, onFull: () => menu("That game is full. Pick another.") })
+      : localRoom && s?.mode === "offline"
+        ? connect({ room: "local", name: storedName(), socket: localRoom, world: { seed: s.seed >>> 0, epoch: Date.now() } })
+        : connect({ seed: s?.mode === "offline" ? s.seed : MENU_SEED, name: storedName() })
   let net = netFor(start)
   const camera = new Camera()
   const cam = parseCam(params.get("cam"))
   if (cam) camera.set(cam)
   const input = new Input(canvas)
   const hud = new Hud(hudEl)
+  // The objective (shared/objective.ts): zones on the sea, the scoreboard, objectiveZones() for the radar.
+  const zones = new Zones(renderer, hudEl)
   const grade = { ...DEFAULT_GRADE }
   const atmosphere = { ...ATMOSPHERE }
   const frame = new Float32Array(FRAME_FLOATS)
@@ -158,33 +163,31 @@ async function main() {
   const daynight = new DayNight(dayBases)
   const tod = Number(params.get("tod") ?? Number.NaN)
   if (params.has("tod") && Number.isFinite(tod)) daynight.setManual(tod, 0)
-  // The debug menu (` or F2) and its WEATHER tab. ?lab=weather opens it; ?weather=clear|light|medium|heavy previews a
-  // weather locally from the start (scripted captures).
-  const lab = new WeatherLab({
-    system: weather,
+  // Dev builds: the debug menu (` or F2) with its tabs (src/dev/dev-tools.ts: add dev tabs there, never statically here,
+  // so production bundles stay free of them). ?lab=weather, ?sounds=1, ?bots open it; ?weather=kind previews a weather.
+  const dev = devTools?.installDevTools({
+    params,
     device: renderer.context.device,
-    focus: () => [camera.eye[0]! + camera.forward[0]! * 200, camera.eye[2]! + camera.forward[2]! * 200],
-    broadcast: (to, fade) => net.sendWeather(to, fade),
-    ship: () => game.state.ship,
-  })
-  const debugMenu = new DebugMenu({
-    release: () => {
-      input.suspend()
-      input.release()
+    camera,
+    input,
+    weather,
+    daynight,
+    game,
+    audio: flight.audio,
+    net: () => net,
+    bots: {
+      me: () => {
+        const f = flight.flight
+        if (f.mode === 1 || f.mode === 3) {
+          const p = f.plane
+          return { x: p.x, y: p.y, z: p.z, heading: Math.atan2(p.vx, -p.vz), flying: true }
+        }
+        const s = game.state.ship
+        if (s) return { x: s.x, y: 0, z: s.z, heading: s.heading, flying: false }
+        return { x: camera.eye[0]!, y: camera.eye[1]!, z: camera.eye[2]!, heading: Math.atan2(camera.forward[0]!, -camera.forward[2]!), flying: false }
+      },
     },
-    open: params.get("lab") === "weather",
-    tab: "weather",
   })
-  debugMenu.addTab(lab.tab)
-  debugMenu.addTab(new TimeLab({ daynight, broadcast: (hour, speed, fade) => net.sendTime(hour, speed, fade) }).tab)
-  // AUDIO: levels, jet sound tuning and test buttons (M mutes anywhere).
-  debugMenu.addTab(new MixerLab(flight.audio).tab)
-  // SOUNDS: the audition board (every sound slot's candidate takes; pick by ear). ?sounds=1 opens it.
-  debugMenu.addTab(new SoundsLab().tab)
-  debugMenu.addTab(controlsTab)
-  if (params.has("sounds")) debugMenu.open("sounds")
-  const forced = params.get("weather")
-  if (forced && (WEATHER_KINDS as readonly string[]).includes(forced)) lab.force(forced as WeatherKind, 0)
 
   // Tab: players and ships (every carrier its own side), switching ships, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
@@ -212,6 +215,17 @@ async function main() {
     input.suspend()
     ops.close()
   }
+  // T: chat to everyone, Y: to my carrier's crew. While its input is open it owns the keyboard: the game pauses, held
+  // keys let go, the cursor is freed (and comes back with the other menus, see Input.resume).
+  const chat = new Chat(document.body)
+  chat.send = (text, channel) => net.sendChat(text, channel === "crew")
+  chat.onToggle = (open) => {
+    if (!open) return
+    input.suspend()
+    input.release()
+    ops.close()
+    teams.pin(false)
+  }
   ops.onToggle = (open) => {
     if (!open) return
     input.suspend()
@@ -221,10 +235,13 @@ async function main() {
   const menu = (notice?: string) => {
     if (lost) return
     menuOpen = true
+    chat.hide()
+    chat.enabled = false
     teams.enabled = false
     ops.enabled = false
     void showMenu(document.body, { notice }).then((s) => {
       menuOpen = false
+      chat.enabled = true
       teams.enabled = true
       ops.enabled = true
       net.close()
@@ -233,7 +250,7 @@ async function main() {
   }
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
-  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, lab, debugMenu, baseOcean, daynight, stars, lights }) })
+  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots } : {}) })
 
   let carrierBlastTimer = 0
   registerGameCommands(commands => {
@@ -296,6 +313,7 @@ async function main() {
     flight.setWorld(sea, arch)
     boat.setWorld(sea, arch)
     gunnery.setGround({ sea, arch, ships: [] })
+    zones.setWorld(sea, arch)
   }
   const useNet = (n: typeof net) => {
     net = n
@@ -325,12 +343,11 @@ async function main() {
     if (lost) return
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
-    const t = lab.time(frozen ?? net.seaTime(), dt)
-    const menus = menuOpen || teams.open || ops.open || debugMenu.visible
+    const t = dev ? dev.time(frozen ?? net.seaTime(), dt) : (frozen ?? net.seaTime())
+    const menus = menuOpen || teams.open || ops.open || chat.open || !!dev?.visible
     if (!menus) input.resume()
-    game.paused = menuOpen || teams.open || ops.open || debugMenu.wantsInput
-    lab.frame(dt, t)
-    debugMenu.frame(dt)
+    game.paused = menuOpen || teams.open || ops.open || chat.open || !!dev?.wantsInput
+    dev?.frame(dt, t)
     daynight.update(dt, t, dayBases, ocean.look)
     weather.update(dt, t, {
       baseAtmosphere: daynight.atmosphere,
@@ -349,6 +366,7 @@ async function main() {
       return h ? { hp: h.hp / FLEET.hp, sinking: h.sinkAt !== -1 } : null
     }
     teams.update(crew, net.id, net.room, serverNow)
+    chat.update(net.chat, crew, net.id, net)
     const me = crew ? playerOf(crew, net.id) : undefined
     const myShip = crew ? shipOf(crew, me?.ship ?? -1) : undefined
     // In a jet (catapult, flight, landing, the wait after a crash) E is the rudder: no DEPLOY menu and no "E DEPLOY"
@@ -389,6 +407,7 @@ async function main() {
     ocean.update(t, view, sunView)
     clouds.update(t, view)
     weather.draw(dt, t, view, frame, camera.fov)
+    zones.update(t, camera.eye, net, game.state.ship, menuOpen)
     renderer.render(frame, shownGrade)
     hud.update(net)
     requestAnimationFrame(tick)

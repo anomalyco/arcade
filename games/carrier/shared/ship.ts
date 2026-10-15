@@ -24,17 +24,18 @@ export const SHIP = {
   // Propulsion. The engines hold a speed: the throttle order maps linearly to a target speed (50% = half of top
   // speed). Below it the screws push with thrust · (1 − thrustFade · u/U), easing off over the last `band` m/s; above
   // it the ship coasts down on hull drag (quadratic + linear + friction) until it reaches the target.
-  /** Speed at 100% (m/s): 46 kn. Arcade-fast for a carrier, so speed reads at chase-camera distance. */
-  topSpeed: 46 * KNOT,
-  /** Acceleration from standstill at full power (m/s²): ~7 s to 90% of top speed. */
-  thrust: 4.4,
+  /** Speed at 100% (m/s): 92 kn. Arcade-fast for a carrier: speed reads at chase-camera distance, and a ship can reach
+   *  a moving capture zone (shared/objective.ts) in time. */
+  topSpeed: 92 * KNOT,
+  /** Acceleration from standstill at full power (m/s²). */
+  thrust: 7,
   /** Thrust falls off with speed (screws bite less), so the last knots come slower than the first. */
   thrustFade: 0.55,
   /** Thrust eases off over this many m/s below the target speed. */
   band: 2.5,
   /** Coasting deceleration at top speed (m/s²), the share of it that is linear in speed (the rest quadratic), and a
-   *  constant friction so a coasting ship finally stops: ~1 km from 36 kn to a stop. */
-  coastDrag: 1.1,
+   *  constant friction so a coasting ship finally stops: ~2 km from top speed to a stop. */
+  coastDrag: 2.2,
   linearShare: 0.2,
   friction: 0.02,
   /** Deepest astern order (fraction of full power): the throttle runs from −astern to 1. Astern thrust is weaker
@@ -52,9 +53,9 @@ export const SHIP = {
   rudderRate: 3,
   rudderReturn: 3.5,
   /** Turning radius at full rudder (m): turnRadius + turnRadiusPerSpeed · speed, so the ship turns tighter when slow
-   *  (but slower: the rudder needs flow). ~0.75 km tactical diameter at full speed, ~0.4 km at 10 kn. */
+   *  (but slower: the rudder needs flow). ~0.6 km tactical diameter at full speed, ~0.3 km at 10 kn. */
   turnRadius: 60,
-  turnRadiusPerSpeed: 11,
+  turnRadiusPerSpeed: 8.5,
   /** Propeller wash over the rudder at full power, as a share of top speed: a stopped or slow ship still swings its
    *  stern round while the screws turn. */
   wash: 0.5,
@@ -63,11 +64,11 @@ export const SHIP = {
   /** Sideslip in a turn: lateral speed = −slip · u · r (the stern swings outward; ~8° drift angle at full turn). */
   slip: 2.6,
   slipLag: 1.5,
-  /** Heel outward in a turn (rad per m/s · rad/s): ~4° at full speed and full rudder. */
-  heel: 0.032,
+  /** Heel outward in a turn (rad per m/s · rad/s): ~4.5° at full speed and full rudder. */
+  heel: 0.016,
   /** Bow-up trim and squat at speed. */
-  trim: 0.00045,
-  squat: 0.02,
+  trim: 0.000225,
+  squat: 0.01,
 
   // Buoyancy (natural periods and damping ratios per axis).
   /** Share of the hull length and beam the buoyancy points span. Shorter than the real waterline so long swells
@@ -132,7 +133,7 @@ export const SHIP = {
 
   // World edge: beyond this radius from the origin a growing current pushes the ship back.
   edge: 8500,
-  edgePush: 0.004,
+  edgePush: 0.008,
 } as const
 
 export type ShipControls = {

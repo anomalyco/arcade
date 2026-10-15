@@ -358,5 +358,7 @@ describe("HUD styles", () => {
     expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID, calloutPlacement: 0, vitalsPlacement: VITALS_FEET })).toMatchObject({ callouts: "down", vitals: VITALS_FEET })
     expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW, avoidAim: false }).avoid).toBe(false)
     expect(DEFAULT_HUD_SETTINGS.hudStyle).toBe(STYLE_BELOW)
+    // Kit turned the noise tags off; they stay a Lab option (HUD › Noise callouts).
+    expect(DEFAULT_HUD_SETTINGS.noiseCallouts).toBe(false)
   })
 })
