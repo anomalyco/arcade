@@ -1,0 +1,61 @@
+/* Outbreak HUD design system (docs/outbreak-hud.md "Design system"). Noir: desaturated warm neutrals, with the
+   flashlight's warm amber kept for what is lit, on or full. Every HUD surface uses these tokens. Motion tokens
+   (--m-<spring> and --m-<spring>-ms) are written on <html> by HudMotion.install from Kit's spring palette. */
+:root {
+  /* Spacing scale. */
+  --hud-1: 2px; --hud-2: 4px; --hud-3: 6px; --hud-4: 8px; --hud-5: 12px; --hud-6: 16px; --hud-7: 24px;
+  /* Type scale: whole-pixel sizes and line heights so glyph boxes land on the pixel grid. */
+  --hud-font: "SF Pro Text", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --hud-xs: 10px; --hud-xs-lh: 12px;
+  --hud-sm: 11px; --hud-sm-lh: 14px;
+  --hud-md: 12px; --hud-md-lh: 16px;
+  --hud-lg: 13px; --hud-lg-lh: 18px;
+  /* Corners: a cell inside a panel is the panel's radius minus its padding. */
+  --hud-r-cell: 4px; --hud-r-chip: 6px; --hud-r-panel: 10px;
+  /* Colour and contrast (on --hud-surface over a dark scene: ink 15:1, ink-2 8:1, ink-3 4.5:1). */
+  --hud-surface: rgb(13 12 11 / .82);
+  --hud-chip: rgb(22 21 19 / .78);
+  --hud-raised: rgb(44 41 37 / .92);
+  --hud-line: rgb(255 244 226 / .1);
+  --hud-line-2: rgb(255 244 226 / .24);
+  --hud-ink: #ede7d9;
+  --hud-ink-2: #b6ae9f;
+  --hud-ink-3: #847d71;
+  --hud-warm: #f1c46a;
+  --hud-gain: rgb(241 196 106 / .26);
+  --hud-caution: #e8a34c;
+  --hud-danger: #e5674b;
+  --hud-shadow: 0 6px 18px rgb(0 0 0 / .42), 0 1px 2px rgb(0 0 0 / .5);
+  --hud-idle: .5;
+  /* Key caps (packages/kit/client/key-cap.ts) in the Noir palette. */
+  --akc-face: linear-gradient(#efe9dc, #d6cfbf);
+  --akc-ink: #171512;
+  --akc-edge: #6f685c;
+  --akc-ring: var(--hud-warm);
+  --akc-track: rgb(255 244 226 / .3);
+}
+
+/* Panel surface: prompts, strips, the workbench, field craft, the pack sheet. */
+.hud-panel {
+  background: var(--hud-surface); border-radius: var(--hud-r-panel);
+  box-shadow: inset 0 0 0 1px var(--hud-line), var(--hud-shadow);
+  color: var(--hud-ink); font: 500 var(--hud-md)/var(--hud-md-lh) var(--hud-font);
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased
+}
+
+/* Rolling numbers: whole-pixel line height, so a reel at rest sits on the pixel grid. */
+.roll { display: inline-flex; height: 1lh; overflow: hidden; vertical-align: top; font-variant-numeric: tabular-nums }
+.roll-reel { display: inline-block; width: 1ch; height: 1lh; overflow: hidden }
+.roll-strip { display: flex; flex-direction: column; text-align: center; transition: transform var(--m-calm-ms, .4s) var(--m-calm, ease) }
+.roll-strip > span { display: block; height: 1lh }
+
+/* Tap and hold on one key: one ringed cap, the tap verb, then the hold verb after a small ring. */
+.akp-dual { display: inline-flex; align-items: center; gap: var(--hud-3) }
+.akp-dual .akp-label { transition: opacity var(--m-default-ms, .3s) var(--m-default, ease) }
+.akp-hold { display: inline-flex; align-items: center; gap: var(--hud-2); color: var(--hud-ink-2); transition: color var(--m-default-ms, .3s) var(--m-default, ease) }
+.akp-hold i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px currentColor; opacity: .85 }
+.akp-dual[data-holding="true"] > .akp-label { opacity: .45 }
+.akp-dual[data-holding="true"] .akp-hold { color: var(--hud-warm) }
+.akp-dual .akc-hold .akc-ring { transition: none }
+
+[data-reduced-motion="true"] .roll-strip { transition-duration: 0s }

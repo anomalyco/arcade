@@ -13,26 +13,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #battery-fill { display: block; height: 100%; width: 100%; background: #e3c878; transition: background-color .15s ease }
 #battery[data-low="true"] #battery-fill { background: #e09a48 }
 #stamina[data-exhausted="true"] #stamina-fill, #battery[data-depleted="true"] #battery-fill { background: #d96b43 }
-#hotbar { display: flex; gap: 4px }
-#hotbar .slot { display: inline-flex; align-items: center; gap: 5px; min-width: 42px; height: 24px; padding: 0 7px; border: 1px solid #ffffff1a; border-radius: 4px; background: #0f1515b8; color: #8c9488; font-size: 10.5px; font-variant-numeric: tabular-nums }
-#hotbar .slot[data-selected="true"] { border-color: #d6d4c675; background: #182121dc; color: #e8e6d8 }
-#hotbar .slot[data-on="true"] b { color: #f0d584 }
-#hotbar .slot kbd { font: inherit; opacity: .65 }
-#hotbar .slot b { font-weight: 500 }
 #status { padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; font-variant-numeric: tabular-nums }
-#belt { display: flex; gap: 4px; flex-wrap: wrap; max-width: 420px }
-#belt .pill { padding: 2px 7px; border: 1px solid #ffffff17; border-radius: 999px; background: #0f1515b0; color: #c9c7b9; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap }
-#belt .pill b { font-weight: 400; color: #8c9488; margin-right: 3px }
-#belt .pill small { color: #6c746a }
-#belt .pill[data-full="true"] { color: #f0d584 }
-#belt .pill[data-flash="true"] { border-color: #c5cfb880 }
-#hands { display: flex; gap: 8px; align-items: center }
-#pack { display: flex; gap: 4px; align-items: center; color: #8c9488; font-size: 10.5px }
-#pack .tag { display: inline-flex; align-items: center; gap: 5px }
-#pack .pk { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; border: 1px dashed #ffffff26; border-radius: 4px; background: #0f151599; color: #c9c4b2; white-space: nowrap }
-#pack .pk kbd { font: inherit; opacity: .65 }
-#pack .pk[data-empty="true"] { color: #6c746a }
-#pack .pk[data-heavy="true"] { min-width: 110px; border-style: solid; border-color: #e0894a77 }
 #prompt[data-strip="true"] { display: block; padding: 8px 10px; border-radius: 6px }
 #prompt .strip-t { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: #8c9488; margin-bottom: 6px }
 #prompt .strip-items { display: flex; gap: 5px }
@@ -56,11 +37,6 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #prompt .strip-t span { margin-left: 14px; text-transform: none; letter-spacing: 0; color: #a9ad9f }
 #prompt .strip-s { margin: -2px 0 6px; font-size: 10.5px; color: #8c9488 }
 #prompt .bench, #craft { min-width: 340px; max-width: 420px; white-space: normal }
-#craft { padding: 8px 10px; border: 1px solid #ffffff29; border-radius: 6px; background: #0f1515e6; color: #ece9dc; font-size: 11.5px }
-#craft[hidden] { display: none }
-#craft .strip-t { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: #8c9488; margin-bottom: 4px }
-#craft .strip-t span { margin-left: 14px; text-transform: none; letter-spacing: 0 }
-#craft .strip-h { margin-top: 7px; display: flex; gap: 8px; align-items: center; color: #c9c7b9 }
 #prompt .row, #craft .row { position: relative; display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 4px 2px; border-top: 1px solid #ffffff10; overflow: hidden }
 #prompt .row b, #craft .row b { font-weight: 500; color: #ece9dc }
 #prompt .row small, #craft .row small { display: block; font-size: 10.5px; color: #8c9488; margin-top: 1px }

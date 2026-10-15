@@ -1,0 +1,67 @@
+/* The bottom dock (dock.ts): the belt of supplies with the pack chip at its end, the five hand slots under it, and
+   the pack sheet that grows out of the chip. Always shown; dims when idle. */
+#dock {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--hud-2);
+  font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased; color: var(--hud-ink-2);
+  transition: opacity var(--m-snappy-ms, .25s) var(--m-snappy, ease)
+}
+#hud[data-dock="idle"] #dock { opacity: var(--hud-idle); transition-duration: var(--m-slow-ms, .85s); transition-timing-function: var(--m-slow, ease) }
+#belt, #hotbar { display: flex; align-items: center; gap: var(--hud-2) }
+
+/* Chips and slots share one tile: chip fill, a hairline, chip radius, 22 px tall. */
+#belt .chip, #pack, #hotbar .slot {
+  position: relative; display: inline-flex; align-items: center; gap: var(--hud-2); height: 22px; padding: 0 var(--hud-3);
+  border-radius: var(--hud-r-chip); background: var(--hud-chip); box-shadow: inset 0 0 0 1px var(--hud-line); white-space: nowrap
+}
+#belt .chip::after, #hotbar .slot::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--hud-gain); opacity: 0; pointer-events: none
+}
+#belt .chip b { font-weight: 500; color: var(--hud-ink-3) }
+#belt .chip .roll { color: var(--hud-ink) }
+#belt .chip small, #pack small { font-size: var(--hud-xs); color: var(--hud-ink-3); margin-left: calc(-1 * var(--hud-2)) }
+#belt .chip[data-full="true"] .roll, #belt .chip[data-full="true"] small { color: var(--hud-warm) }
+#pack { gap: var(--hud-3); padding-left: var(--hud-1); --akc-size: 16px }
+#pack .pack-cap { display: inline-flex; font-size: 11px }
+#pack .roll { color: var(--hud-ink) }
+#pack[data-open="true"] { box-shadow: inset 0 0 0 1px var(--hud-line-2); background: var(--hud-raised) }
+#pack[data-open="true"] .akc { --akc-face: linear-gradient(#d6cfbf, #c7bfae) }
+#pack[data-open="true"] .akc-cap { transform: translateY(1px) }
+
+/* Hand slots: a fixed width each, so an item arriving never moves its neighbours. */
+#hotbar .slot { width: 80px; padding: 0 var(--hud-3) 0 var(--hud-2); gap: var(--hud-2); color: var(--hud-ink-2); --akc-size: 14px }
+#hotbar .slot-key { font: inherit; font-size: var(--hud-xs); color: var(--hud-ink-3); min-width: 10px; text-align: center }
+#hotbar .slot-item { display: inline-flex; align-items: center; gap: var(--hud-2); font-size: var(--hud-xs); letter-spacing: .04em; font-weight: 600; min-width: 0; flex: 0 1 auto }
+#hotbar .slot .roll { margin-left: auto; color: var(--hud-ink); font-size: var(--hud-sm) }
+#hotbar .slot[data-count="false"] .roll { display: none }
+#hotbar .slot[data-empty="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--hud-line) }
+#hotbar .slot[data-selected="true"] { background: var(--hud-raised); box-shadow: inset 0 0 0 1px var(--hud-line-2), 0 1px 0 rgb(0 0 0 / .4); color: var(--hud-ink) }
+#hotbar .slot[data-selected="true"] .slot-key { color: var(--hud-ink-2) }
+#hotbar .slot[data-on="true"] .slot-item { color: var(--hud-warm) }
+#hotbar .slot-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+#hotbar .slot .slot-cap { margin-left: var(--hud-1) }
+#hotbar .slot .slot-cap .akc-cap { font-size: 9px; transition: box-shadow var(--m-default-ms, .3s) var(--m-default, ease) }
+#hotbar .slot[data-on="true"] .slot-cap .akc-cap { box-shadow: 0 0.14em 0 var(--akc-edge), 0 0 0 1px rgb(0 0 0 / .6), 0 0 8px rgb(241 196 106 / .55) }
+
+/* The pack sheet: one shape that grows from the pack chip. Its grid is laid out at full size from the bottom-right
+   corner, so the growing shape reveals it from the chip outward. */
+#pack-sheet {
+  position: absolute; left: 0; top: 0; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; z-index: 1;
+  background: var(--hud-surface); border-radius: var(--hud-r-panel); box-shadow: inset 0 0 0 1px var(--hud-line-2), var(--hud-shadow)
+}
+#pack-sheet .sheet-grid { position: absolute; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 84px); gap: var(--hud-2); padding: var(--hud-3) }
+#pack-sheet .cell {
+  display: flex; align-items: center; gap: var(--hud-2); height: 26px; padding: 0 var(--hud-3) 0 var(--hud-2); min-width: 0;
+  border-radius: var(--hud-r-cell); background: var(--hud-raised); box-shadow: inset 0 0 0 1px var(--hud-line); color: var(--hud-ink); overflow: hidden
+}
+#pack-sheet .cell kbd { font: inherit; font-size: var(--hud-xs); color: var(--hud-ink-3); min-width: 10px; text-align: center }
+#pack-sheet .cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+#pack-sheet .cell[data-empty="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--hud-line); background-image: repeating-linear-gradient(135deg, rgb(255 244 226 / .03) 0 4px, transparent 4px 8px) }
+#pack-sheet .cell[data-covered="true"] { display: none }
+
+/* Field craft: a panel above the dock. */
+#craft { min-width: 340px; max-width: 420px; padding: var(--hud-3) var(--hud-4); white-space: normal }
+#craft[hidden] { display: none }
+#craft .strip-t { font-size: var(--hud-xs); letter-spacing: .07em; text-transform: uppercase; color: var(--hud-ink-3); margin-bottom: var(--hud-2) }
+#craft .strip-t span { margin-left: var(--hud-5); text-transform: none; letter-spacing: 0 }
+#craft .strip-h { margin-top: var(--hud-3); display: flex; gap: var(--hud-4); align-items: center; color: var(--hud-ink-2) }

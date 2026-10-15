@@ -1,13 +1,14 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import { keyLabel } from "@arcade/kit/client/controls"
 import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { findFinisherTarget } from "../shared/combat"
 import { holdProgress, type InteractTarget } from "../shared/interact"
-import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
+import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
+import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
+import { snapToPixels } from "./hud/motion"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const MARKER_RANGE = 30
@@ -42,7 +43,6 @@ export class InventoryHud {
   /** How many finishers the player has performed this session; the small bare key cap fades out after 2. */
   finisherCount = 0
   private wasFinishing = false
-  private lastBar = ""
   private lastStrip = ""
   private markers: HTMLElement[] = []
 
@@ -60,7 +60,18 @@ export class InventoryHud {
     private readonly squad: () => readonly { x: number; y: number; flashlightOn: boolean; flashlightOutput: number }[],
     /** The Discovery settings: searched containers and drops shown as props, prompt words that fade with use. */
     private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
-  ) {}
+    /** Dock dimming (Lab › HUD). */
+    dockSettings: DockSettings = DEFAULT_DOCK_SETTINGS,
+  ) {
+    const { belt, hotbar, pack } = els
+    const dock = belt?.closest<HTMLElement>("#dock")
+    const hud = dock?.closest<HTMLElement>("#hud")
+    const sheet = dock?.querySelector<HTMLElement>("#pack-sheet")
+    if (belt && hotbar && pack && dock && hud && sheet) this.dock = new Dock({ hud, dock, belt, hotbar, pack, sheet }, dockSettings)
+  }
+
+  /** The bottom dock: belt, hand slots and pack. */
+  readonly dock: Dock | null = null
 
   /** How often this browser has acted on each kind of prompt; words drop off once an action is familiar. */
   private readonly familiar = loadFamiliar()
@@ -126,19 +137,16 @@ export class InventoryHud {
   togglePack(): void {
     this.packOpen = !this.packOpen
     this.craftOpen = false
-    this.lastBar = ""
   }
 
   toggleCraft(): void {
     this.craftOpen = !this.craftOpen
     this.packOpen = false
-    this.lastBar = ""
   }
 
   close(): boolean {
     const was = this.packOpen || this.craftOpen
     this.packOpen = this.craftOpen = false
-    this.lastBar = ""
     return was
   }
 
@@ -151,54 +159,7 @@ export class InventoryHud {
   }
 
   private syncBar(view: SessionView): void {
-    const { progression, actorId, player: p } = view
-    const ledger = progression.ledger
-    const belt = ledger.store(`${actorId}/belt`)
-    const hotbar = ledger.store(`${actorId}/hotbar`)
-    const pack = ledger.store(`${actorId}/pack`)
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${p.meleeDurability}|${this.packOpen}|${this.craftOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
-    if (key === this.lastBar) return
-    this.lastBar = key
-
-    if (this.els.belt && belt) {
-      const pills = BELT_ITEMS.filter((item) => item === "ammo" || item === "plank" || (belt.counts[item] ?? 0) > 0 || progression.seen(item)).map((item) => {
-        const n = belt.counts[item] ?? 0
-        const cap = ledger.capFor(belt, item)
-        return `<span class="pill" data-item="${item}" data-full="${n >= cap}"><b>${esc(ledger.label(item, true))}</b> ${n}<small>/${cap}</small></span>`
-      })
-      this.els.belt.innerHTML = pills.join("")
-      this.els.belt.dataset.open = String(this.packOpen || this.craftOpen)
-    }
-
-    if (this.els.hotbar && hotbar) {
-      this.els.hotbar.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
-        const s = hotbar.slots[i]
-        const sel = i === hotbar.selected
-        const on = (s?.item === "flashlight" && p.flashlightOn) || (sel && Boolean(s))
-        let label = "—"
-        if (s) {
-          const def = ledger.items.get(s.item)
-          label = esc(def?.shortLabel ?? s.item)
-          if (s.item === "flashlight") label += ` (${esc(keyLabel("KeyF"))})`
-          else if (s.item === "pistol") label += ` ${s.charge ?? 0}/${ledger.count(actorId, "ammo")}`
-          else if (s.count > 1) label += ` ×${s.count}`
-        }
-        return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!s}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
-      }).join("")
-    }
-
-    if (this.els.pack && pack) {
-      const used = ledger.usedSlots(pack)
-      const cells: string[] = []
-      if (this.packOpen) {
-        pack.slots.forEach((s, i) => {
-          if (!s) cells.push(`<div class="pk" data-empty="true"><kbd>${i + 1}</kbd>—</div>`)
-          else cells.push(`<div class="pk" data-heavy="${(ledger.items.get(s.item)?.slots ?? 1) > 1}"><kbd>${i + 1}</kbd>${esc(ledger.label(s.item))}</div>`)
-        })
-      }
-      this.els.pack.innerHTML = `<span class="tag">${keyCapHtml("Tab")} Pack ${used}/${PACK_SIZE}</span>${cells.join("")}`
-      this.els.pack.dataset.open = String(this.packOpen)
-    }
+    this.dock?.sync(view, this.packOpen, this.craftOpen)
   }
 
   private syncPrompt(view: SessionView, cam: Camera, w: number, h: number): void {
@@ -337,7 +298,11 @@ export class InventoryHud {
     const html = rows.length
       ? `<div class="strip-t">Field craft<span>${progression.tuning.craftTime.toFixed(1)} s each</span></div>${rows.join("")}<div class="strip-h"><span class="akp">${keyCapHtml("Digit1")}<span class="akp-label">Craft</span></span><span class="sep">·</span>${keyPromptHtml("KeyQ", "Close")}</div>`
       : `<div class="strip-t">Field craft</div><div class="row" data-off="true"><span></span><div><b>Nothing learned yet</b><small>Research recipes at a house workbench; the whole squad learns them</small></div></div>`
-    if (el.innerHTML !== html) el.innerHTML = html
+    if (el.innerHTML !== html) {
+      el.innerHTML = html
+      el.hidden = false
+      snapToPixels(el)
+    }
     el.hidden = false
   }
 
