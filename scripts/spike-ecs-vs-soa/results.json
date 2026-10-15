@@ -1,0 +1,120 @@
+{
+  "zombies_500": {
+    "1_current_aos_objects": {
+      "kinematicsAndSeparationStep": {
+        "medianUs": 40.72,
+        "p95Us": 71.58,
+        "medianMs": 0.0407
+      },
+      "fourAStarRepathsPerTick": {
+        "medianUs": 192.58,
+        "p95Us": 496.71,
+        "medianMs": 0.1926
+      },
+      "totalAiTickWithAStarUs": 233.3,
+      "hitscanRaycast": {
+        "medianUs": 1.33,
+        "p95Us": 1.77,
+        "medianMs": 0.0013
+      },
+      "snapshotEncode": {
+        "medianUs": 27.96,
+        "p95Us": 32.82,
+        "medianMs": 0.028
+      },
+      "approxMemoryBytes": 240000
+    },
+    "2_general_bitmask_ecs": {
+      "kinematicsAndSeparationStep": {
+        "medianUs": 40.97,
+        "p95Us": 72.56,
+        "medianMs": 0.041
+      },
+      "approxMemoryBytes": 110000
+    },
+    "3_selective_domain_soa_pool": {
+      "kinematicsFlowAndSeparationStep": {
+        "medianUs": 33.46,
+        "p95Us": 41.02,
+        "medianMs": 0.0335
+      },
+      "hitscanRaycast": {
+        "medianUs": 0.6,
+        "p95Us": 2.19,
+        "medianMs": 0.0006
+      },
+      "snapshotEncode": {
+        "medianUs": 2.03,
+        "p95Us": 2.3,
+        "medianMs": 0.002
+      },
+      "approxMemoryBytes": 14000,
+      "speedupVsCurrentAosWithAStar": {
+        "totalAiStep": 6.97,
+        "kinematicsOnly": 1.22,
+        "hitscanRaycast": 2.22,
+        "snapshotEncode": 13.77,
+        "memoryReduction": 17.1
+      }
+    }
+  },
+  "zombies_1000": {
+    "1_current_aos_objects": {
+      "kinematicsAndSeparationStep": {
+        "medianUs": 110.33,
+        "p95Us": 139.85,
+        "medianMs": 0.1103
+      },
+      "fourAStarRepathsPerTick": {
+        "medianUs": 192.42,
+        "p95Us": 476.85,
+        "medianMs": 0.1924
+      },
+      "totalAiTickWithAStarUs": 302.75,
+      "hitscanRaycast": {
+        "medianUs": 3.05,
+        "p95Us": 8.45,
+        "medianMs": 0.0031
+      },
+      "snapshotEncode": {
+        "medianUs": 63.06,
+        "p95Us": 83.17,
+        "medianMs": 0.0631
+      },
+      "approxMemoryBytes": 480000
+    },
+    "2_general_bitmask_ecs": {
+      "kinematicsAndSeparationStep": {
+        "medianUs": 113.68,
+        "p95Us": 243.91,
+        "medianMs": 0.1137
+      },
+      "approxMemoryBytes": 220000
+    },
+    "3_selective_domain_soa_pool": {
+      "kinematicsFlowAndSeparationStep": {
+        "medianUs": 86.83,
+        "p95Us": 188.4,
+        "medianMs": 0.0868
+      },
+      "hitscanRaycast": {
+        "medianUs": 1.19,
+        "p95Us": 5.82,
+        "medianMs": 0.0012
+      },
+      "snapshotEncode": {
+        "medianUs": 6.01,
+        "p95Us": 7.5,
+        "medianMs": 0.006
+      },
+      "approxMemoryBytes": 28000,
+      "speedupVsCurrentAosWithAStar": {
+        "totalAiStep": 3.49,
+        "kinematicsOnly": 1.27,
+        "hitscanRaycast": 2.56,
+        "snapshotEncode": 10.49,
+        "memoryReduction": 17.1
+      }
+    }
+  }
+}
