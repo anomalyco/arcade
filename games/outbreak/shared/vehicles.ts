@@ -23,7 +23,8 @@ import {
   type RawInteractCandidate,
 } from "./interact"
 import { CHUNK, EXTERIOR_VEHICLE_COLLIDERS, propShape, SIZE, type Building, type Town } from "./map"
-import type { OutbreakProgression, ProgressionSlot } from "./progression"
+import type { OutbreakProgression } from "./progression/progression"
+import type { ProgressionSlot } from "./progression/types"
 import { chunkKey, districtAtBlock, MACRO_CHUNKS, worldToChunk, type StreamingWorld, type WorldMode } from "./world"
 
 export type VehicleKind = "sedan" | "cruiser" | "pickup" | "van"

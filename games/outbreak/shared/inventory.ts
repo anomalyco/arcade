@@ -1,4 +1,5 @@
-import { HOTBAR_SIZE, type OutbreakProgression } from "./progression"
+import { HOTBAR_SIZE } from "./progression/catalog"
+import type { OutbreakProgression } from "./progression/progression"
 
 export { HOTBAR_SIZE }
 

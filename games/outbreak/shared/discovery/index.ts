@@ -10,7 +10,7 @@ export const outbreakDiscoverySharedFeature = registerOutbreakSharedFeature({
   // After progression (20), before vehicles take over a seated survivor's movement.
   order: 24,
   stepSurvivorMovement: ({ sim, slot, command, dt, predict }) => {
-    const closet = sim.progression.hiddenIn(slot.id)
+    const closet = sim.progression.verbs.hiddenIn(slot.id)
     if (!closet) return false
     const p = slot.survivor
     p.x = closet.x
@@ -21,11 +21,11 @@ export const outbreakDiscoverySharedFeature = registerOutbreakSharedFeature({
     p.flashlightOn = false
     p.noise = 0
     p.stamina = Math.min(1, p.stamina + 0.22 * dt)
-    if (!predict && command.interact) sim.progression.leaveHiding(slot)
+    if (!predict && command.interact) sim.progression.verbs.leaveHiding(slot)
     return true
   },
   transformAISurvivor: (sim, slot, view) => {
-    if (sim.progression.hiddenIn(slot.id)) return { ...view, visibility: 0, noise: 0, flashlightOn: false }
+    if (sim.progression.verbs.hiddenIn(slot.id)) return { ...view, visibility: 0, noise: 0, flashlightOn: false }
     if (view.crouching) return { ...view, visibility: sim.progression.tuning.crouchVisibility }
     return view
   },

@@ -1,7 +1,7 @@
 import { Rng } from "@arcade/kit/sim/rng"
 import { DEFAULT_AI_CONFIG, LEGACY_AI_CONFIG, type AIConfig } from "./ai"
 import { runHeadlessBotGame, type BotRunResult } from "./bot-runner"
-import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "./progression"
+import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "./progression/tuning"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "./survivor-bot"
 
 export type DifficultyKnobKey =

@@ -26,7 +26,7 @@ export class ClosetView {
   }
 
   update(view: SessionView, dt: number): void {
-    this.hidden = Boolean(view.progression.hiddenIn(view.actorId))
+    this.hidden = Boolean(view.progression.verbs.hiddenIn(view.actorId))
     const goal = this.hidden ? 1 : 0
     const rate = this.hidden ? 5 : 7
     this.shown += (goal - this.shown) * Math.min(1, Math.max(0, dt) * rate)

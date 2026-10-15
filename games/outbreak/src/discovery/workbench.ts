@@ -124,7 +124,7 @@ export class WorkbenchProps {
     this.out.length = 0
     this.shown.clear()
     this.noticeClatter(progression, survivors, clatterTime)
-    const board = progression.corkboard()
+    const board = progression.tinkering.corkboard()
     const found: string[] = []
     for (const site of progression.benches) {
       found.length = 0
@@ -136,7 +136,7 @@ export class WorkbenchProps {
 
       // The felt mat, and what lies on it: two materials side by side, or what they made in the middle.
       this.put(this.models.mat, f.mat.x, ground + BENCH_TOP, f.mat.z, 0, 0, 0, 1)
-      const mat = progression.mat(site.id)
+      const mat = progression.tinkering.mat(site.id)
       const k = clatterTime > 0 ? shakeLeft / clatterTime : 0
       mat.forEach((s, i) => {
         const model = this.items.model(s.item)

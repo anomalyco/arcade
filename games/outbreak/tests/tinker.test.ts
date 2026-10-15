@@ -21,7 +21,7 @@ function setup(hour = 12) {
   }
   const give = (item: string, count = 1) => expect(ledger.apply({ kind: "grant", actor: "player", item, count }).ok).toBe(true)
   const notices = () => session.view.notices.splice(0).map((n) => n.text)
-  const mat = () => progression.mat("bench:ash").map((s) => s.item)
+  const mat = () => progression.tinkering.mat("bench:ash").map((s) => s.item)
   const tap = () => step({ interact: true })
   /** Holds E long enough to start a try, then lets go and waits for it to finish. */
   const tinker = () => {
@@ -86,7 +86,7 @@ describe("the bench mat", () => {
     expect(mat()).toEqual(["spiked-board"])
     expect(ledger.count("player", "scrap")).toBe(0)
     expect(readPin(ledger.store(pinStoreId("spiked-board")), "spiked-board")).toMatchObject({ actor: "player", seat: 0 })
-    expect(progression.corkboard().learned).toEqual(["spiked-board"])
+    expect(progression.tinkering.corkboard().learned).toEqual(["spiked-board"])
     // No words: the sketch on the corkboard and the board on the mat are the news.
     expect(notices().filter((t) => /learned|research|recipe/i.test(t))).toEqual([])
     expect(session.view.prompt?.primary.id).toBe("take")
@@ -102,7 +102,7 @@ describe("the bench mat", () => {
     tinker()
     expect(mat()).toEqual(["plank", "plank"])
     expect(session.view.noises.some((n) => n.kind === "clatter" && n.radius === T.clatterNoise)).toBe(true)
-    expect(progression.corkboard().tried).toEqual(["plank+plank"])
+    expect(progression.tinkering.corkboard().tried).toEqual(["plank+plank"])
     const rev = ledger.store("team/known")!.rev
     tinker()
     expect(ledger.store("team/known")!.rev).toBe(rev)
@@ -113,7 +113,7 @@ describe("the bench mat", () => {
     give("scrap", 2)
     while (mat().join("+") !== "scrap+scrap") tap()
     tinker()
-    expect(progression.corkboard().ideas).toEqual(["reinforced"])
+    expect(progression.tinkering.corkboard().ideas).toEqual(["reinforced"])
     expect(progression.learned("reinforced")).toBe(false)
     expect(mat()).toEqual(["scrap", "scrap"])
     give("toolbox")
@@ -124,7 +124,7 @@ describe("the bench mat", () => {
     expect(ledger.count("player/belt", "plank")).toBe(2)
     tinker()
     expect(progression.learned("reinforced")).toBe(true)
-    expect(progression.corkboard().ideas).toEqual([])
+    expect(progression.tinkering.corkboard().ideas).toEqual([])
     expect(mat()).toEqual([])
   })
 
@@ -188,7 +188,7 @@ describe("tinkering in co-op and across snapshots", () => {
     sim.progression.ledger.apply({ kind: "grant", actor: "bob", item: "battery", count: 1 })
     const lure = ALL_PAIRS.findIndex(([a, b]) => pairKey(a, b) === "scrap+battery")
     tick({ bob: { pick: { mode: "bench", index: lure } } })
-    expect(sim.progression.mat("bench:ash").map((s) => s.item).sort()).toEqual(["battery", "scrap"])
+    expect(sim.progression.tinkering.mat("bench:ash").map((s) => s.item).sort()).toEqual(["battery", "scrap"])
     hold(tick, [bob!])
     expect(sim.progression.learned("lure")).toBe(true)
     expect(readPin(sim.progression.ledger.store(pinStoreId("lure")), "lure")).toMatchObject({ actor: "bob", seat: 1 })
@@ -219,7 +219,7 @@ describe("tinkering in co-op and across snapshots", () => {
     tick({ ann: { pick: { mode: "bench", index: pair("scrap+scrap") } } })
     hold(tick, [slots[0]!])
     tick({ ann: { pick: { mode: "bench", index: pair("plank+plank") } } })
-    expect(sim.progression.corkboard()).toEqual({ learned: ["spiked-board"], ideas: ["reinforced"], tried: [] })
+    expect(sim.progression.tinkering.corkboard()).toEqual({ learned: ["spiked-board"], ideas: ["reinforced"], tried: [] })
     // Mid-try: the fork must finish the same try the same way.
     tick({ ann: { interact: true, interactHeld: true } })
     for (let i = 0; i < HOLD + 10; i++) tick({ ann: { interactHeld: true } })
@@ -232,9 +232,9 @@ describe("tinkering in co-op and across snapshots", () => {
       tick({})
       forkTick()
     }
-    expect(sim.progression.corkboard().tried).toEqual(["plank+plank"])
+    expect(sim.progression.tinkering.corkboard().tried).toEqual(["plank+plank"])
     expect(JSON.stringify(fork.progression.ledger.snapshot())).toBe(JSON.stringify(ledger.snapshot()))
-    expect(fork.progression.corkboard()).toEqual(sim.progression.corkboard())
+    expect(fork.progression.tinkering.corkboard()).toEqual(sim.progression.tinkering.corkboard())
     expect(readPin(fork.progression.ledger.store(pinStoreId("spiked-board")), "spiked-board")).toMatchObject({ actor: "ann", seat: 0 })
   })
 

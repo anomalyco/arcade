@@ -113,12 +113,12 @@ describe("vignettes", () => {
   test("an alarm car that already rang out has its window in and stays quiet; the dead it called lie round it", () => {
     const { sim, tick, heard, ledger } = room({ x: 9.5, y: 46.3, aim: 0 })
     const key = "12.2,46.3"
-    expect(sim.progression.seedVignette("alarm-car", key)).toBe(true)
+    expect(sim.progression.verbs.seedVignette("alarm-car", key)).toBe(true)
     expect(ledger.store(carStoreId(key))!.counts).toMatchObject({ smashed: 1, alarm: 1 })
     expect(vignetteScene(sim.town, "alarm-car", key)!.bodies.length).toBeGreaterThanOrEqual(2)
     sim.ai.emitNoise(12.2, 46.3, 30, "gunshot", sim.time, "ann")
     tick({}, 120)
     expect(heard.filter((e) => e.kind === "alarm")).toHaveLength(0)
-    expect(sim.progression.alarmRinging(sim.progression.cars.find((c) => c.key === key)!, sim.time)).toBe(false)
+    expect(sim.progression.verbs.alarmRinging(sim.progression.verbs.cars.find((c) => c.key === key)!, sim.time)).toBe(false)
   })
 })

@@ -106,7 +106,7 @@ export class VerbProps {
       this.put(this.models.shard, st.at.x, support(st.at.x, st.at.y) + 0.003, st.at.y, (st.counts.t ?? 0) * 0.37, 0, 0, 1.4)
     }
 
-    for (const car of progression.cars) {
+    for (const car of progression.verbs.cars) {
       if (!near(car.x, car.y)) continue
       const st = ledger.store(carStoreId(car.key))
       if (!st) continue

@@ -3,7 +3,7 @@ import { angleDiff, clearLine, distToRect, raycast, type Rect } from "@arcade/ki
 import { Rng } from "@arcade/kit/sim/rng"
 import { hasSeveredLeg, type AIAgent, type OutbreakAISubsystem } from "./ai"
 import type { Town } from "./map"
-import type { ChannelView, PistolAmmo } from "./progression"
+import type { ChannelView, PistolAmmo } from "./types"
 
 export type MeleeHitMaterial = "wood" | "metal" | "blade"
 

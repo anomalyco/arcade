@@ -49,7 +49,7 @@ describe("Survivor bots use the D-19 slice 4 verbs", () => {
     let hiddenAt = -1
     let snapshotMidHide: ReturnType<SurvivorBot["toSnapshot"]> | null = null
     run(s, 4, () => {
-      if (s.sim.progression.hiddenIn("player") && hiddenAt < 0) hiddenAt = s.sim.time
+      if (s.sim.progression.verbs.hiddenIn("player") && hiddenAt < 0) hiddenAt = s.sim.time
     })
     expect(hiddenAt).toBeGreaterThan(0)
     snapshotMidHide = s.bot.toSnapshot()
@@ -60,7 +60,7 @@ describe("Survivor bots use the D-19 slice 4 verbs", () => {
 
     let leftAt = -1
     run(s, 90, () => {
-      if (!s.sim.progression.hiddenIn("player")) {
+      if (!s.sim.progression.verbs.hiddenIn("player")) {
         leftAt = s.sim.time
         return true
       }

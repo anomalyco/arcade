@@ -11,7 +11,8 @@ import { DEFAULT_FLASHLIGHT_TUNING, flashlightAwarenessAt } from "./flashlight"
 import { INTERACT_RANGE, type InteractTarget } from "./interact"
 import { inBuildingFootprint, propShape, sightRects, SIZE, solidRects, type Building, type Town } from "./map"
 import { STARTING_SAFEHOUSE_RECT } from "./pacing"
-import { RECIPES, type BenchSite, type LootSite } from "./progression"
+import { RECIPES } from "./progression/catalog"
+import type { BenchSite } from "./progression/loot"
 import type { Command } from "./session"
 import { DEFAULT_VISION, Vision } from "./vision"
 
@@ -763,7 +764,7 @@ export class SurvivorBot {
     }
 
     // Hidden in a closet: the sim holds the survivor in place, so the only decision is when E steps back out.
-    if (world.progression.hiddenIn(this.actorId)) {
+    if (world.progression.verbs.hiddenIn(this.actorId)) {
       this.lastCommand = this.stepHidden(world)
       return this.lastCommand
     }
@@ -1066,7 +1067,7 @@ export class SurvivorBot {
       }
     }
 
-    for (const c of world.progression.closets) {
+    for (const c of world.progression.verbs.closets) {
       if (this.knownClosets.has(c.id)) continue
       const sameRoom = hereBuilding && Math.hypot(c.x - px, c.y - py) < 8.5 && insideBuildingAt(world.town, c.x, c.y)?.id === hereBuilding.id
       if (sameRoom || (this.inCameraFootprint(px, py, c.x, c.y) && this.vision.visible(c.out.x, c.out.y))) {
@@ -1551,7 +1552,7 @@ export class SurvivorBot {
    */
   private pickBottleTarget(world: BotWorldView, p: SurvivorSlot["survivor"], threats: readonly PerceivedThreat[], fleeX: number, fleeY: number): { x: number; y: number; car: boolean } {
     let best: { x: number; y: number; d: number } | null = null
-    for (const car of world.progression.cars) {
+    for (const car of world.progression.verbs.cars) {
       const d = Math.hypot(car.x - p.x, car.y - p.y)
       if (d < 5 || d > 11.5 || (best && d <= best.d)) continue
       if ((car.x - p.x) * fleeX + (car.y - p.y) * fleeY > 0.2 * d) continue
@@ -2444,7 +2445,7 @@ export class SurvivorBot {
             return cmd
           }
           // Whatever the mat made waits there: take it.
-          const onMat = world.progression.mat(benchId)
+          const onMat = world.progression.tinkering.mat(benchId)
           if (onMat.some((s) => !(TINKER_MATERIALS as readonly string[]).includes(s.item))) {
             cmd.interact = true
             return cmd

@@ -91,7 +91,7 @@ function pin(view: SessionView, recipe: string, seat: number, found: keyof typeo
 
 /** Puts a building's page back where it lay, unread. */
 function unread(view: SessionView, building: string): PageSite {
-  const site = view.progression.pages.find((p) => p.buildingId === building)!
+  const site = view.progression.knowledge.pages.find((p) => p.buildingId === building)!
   const st = view.progression.ledger.store(site.id)
   if (st) {
     st.counts.page = 1
@@ -117,7 +117,7 @@ function setDoor(view: SessionView, id: string, open: boolean): void {
 /** The alarm car nearest the crossroads, out on the street, and a spot `back` metres west of it. */
 function alarmCar(view: SessionView, back: number) {
   const near = (c: { x: number; y: number }) => Math.hypot(c.x - 44, c.y - 44)
-  const car = view.progression.cars.filter((c) => c.alarm).sort((a, b) => near(a) - near(b))[0]!
+  const car = view.progression.verbs.cars.filter((c) => c.alarm).sort((a, b) => near(a) - near(b))[0]!
   return { car, x: car.rect[0] - back, y: car.y }
 }
 
@@ -127,7 +127,7 @@ function vignette(view: SessionView, kind: VignetteKind, target: string): Vignet
   const scene = vignetteScene(view.town, kind, target)
   if (!scene) throw new Error(`No room for a ${kind} vignette at ${target}`)
   for (const id of [vignetteDropId(kind, target), ...(scene.car ? [carStoreId(scene.car)] : [])]) if (ledger.store(id)) ledger.deleteStore(id)
-  view.progression.seedVignette(kind, target)
+  view.progression.verbs.seedVignette(kind, target)
   return scene
 }
 
@@ -138,7 +138,7 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
   const ash = view.town.buildings.find((b) => b.id === "ash")!
   const ledger = view.progression.ledger
   // Out of any closet a previous scene left the survivor in.
-  const hidden = view.progression.hiddenIn(view.actorId)
+  const hidden = view.progression.verbs.hiddenIn(view.actorId)
   if (hidden) ledger.deleteStore(hideStoreId(hidden.id))
   switch (scene) {
     case "crouch": {
@@ -171,7 +171,7 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
     case "closet": {
       // Hidden in Ash's bedroom closet at dusk, seeing the room through the louvres. E steps back out.
       host.setHour(18)
-      const closet = view.progression.closets.find((c) => c.id.startsWith("closet:") && c.x > ash.rect[0] && c.x < ash.rect[2] && c.y < ash.rect[3])!
+      const closet = view.progression.verbs.closets.find((c) => c.id.startsWith("closet:") && c.x > ash.rect[0] && c.x < ash.rect[2] && c.y < ash.rect[3])!
       host.pose(closet.out.x, closet.out.y, -Math.PI / 2)
       ledger.createStore({ id: hideStoreId(closet.id), mode: "counters", scope: "shared", owner: view.actorId, at: { x: closet.x, y: closet.y }, initial: { in: 1 } })
       Object.assign(view.player, { x: closet.x, y: closet.y, flashlightOn: false })
@@ -269,7 +269,7 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       for (const token of [ideaToken("battery"), triedToken("plank+plank"), triedToken("plank+chem")]) {
         if (!ledger.count("team/known", token)) ledger.apply({ kind: "grant", actor: view.actorId, item: token, store: "team/known" })
       }
-      if (!view.progression.mat(bench).length) ledger.apply({ kind: "grant", actor: view.actorId, item: "spiked-board", store: matStoreId(bench) })
+      if (!view.progression.tinkering.mat(bench).length) ledger.apply({ kind: "grant", actor: view.actorId, item: "spiked-board", store: matStoreId(bench) })
       return
     }
     case "dark-bench": {
@@ -420,8 +420,8 @@ export const outbreakDiscoveryFeature = registerOutbreakClientFeature({
       bench: Object.fromEntries(host.discoveryHost.props.bench.shown),
       reinforced: [...host.discoveryHost.props.barricades.reinforced],
       glance: host.discoveryHost.glance.showing,
-      pages: host.session().view.progression.pages.map((p) => ({ ...p, unread: host.session().view.progression.ledger.count(p.id, "page") })),
-      practice: { ...host.session().view.progression.mastery },
+      pages: host.session().view.progression.knowledge.pages.map((p) => ({ ...p, unread: host.session().view.progression.ledger.count(p.id, "page") })),
+      practice: { ...host.session().view.progression.knowledge.mastery },
       verbs: { ...host.discoveryHost.props.verbs.shown, hidden: host.discoveryHost.closet?.hidden ?? false, crouching: Boolean(host.session().view.player.crouching) },
       vignettes: { ...host.discoveryHost.props.vignettes.shown, scenes: [...host.discoveryHost.props.vignettes.shown.scenes] },
     },
