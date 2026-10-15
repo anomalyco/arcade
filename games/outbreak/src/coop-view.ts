@@ -10,7 +10,7 @@ import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
-import { Survivor } from "./survivor"
+import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings = Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
   practicalWarmth: number
@@ -108,7 +108,7 @@ export class CoopView {
   }
 
   /** Bodies of remote survivors you can see. */
-  bodies(dt: number, time: number, town: Town, vision: Vision): Batch[] {
+  bodies(dt: number, time: number, town: Town, vision: Vision, aimTuning?: Partial<SurvivorAimTuning>): Batch[] {
     const others = this.others
     if (!others.length && !this.avatars.size) return []
     const out: Batch[] = []
@@ -123,7 +123,7 @@ export class CoopView {
       const p = slot.survivor
       const lift = remoteLift.get(slot) ?? 0
       // Keep animating out of sight so the gait is continuous when they step into view.
-      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58)
+      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58, aimTuning)
       if (actorVisibility(vision, p.x, p.y) > 0.05) out.push(...batches)
     }
     for (const index of this.avatars.keys()) if (!live.has(index)) this.avatars.delete(index)

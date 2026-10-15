@@ -57,7 +57,7 @@ import {
   streetLampHead,
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
-import { Survivor } from "./survivor"
+import { Survivor, survivorAimControls, survivorAimTuning } from "./survivor"
 import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
@@ -119,6 +119,7 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
+  ...survivorAimTuning,
   ...DEFAULT_HUD_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
@@ -310,6 +311,7 @@ async function main() {
       ],
     },
     ...zombieControls,
+    ...survivorAimControls,
     ...hudControls,
     {
       key: "diagnostic",
@@ -1134,8 +1136,8 @@ async function main() {
     count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift)
-    const coopBatches = coop.bodies(dt, time, town, vision)
+    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift, settings)
+    const coopBatches = coop.bodies(dt, time, town, vision, settings)
     const zombieBatches = zombieCrowd.draw(
       zombies,
       dt,
@@ -1495,7 +1497,22 @@ async function main() {
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
-    human: () => ({ profile: avatar.profile, bones: avatar.bones }),
+    human: () => ({
+      profile: avatar.profile,
+      bones: avatar.bones,
+      gun: avatar.gun,
+      mag: avatar.mag,
+      aimWeight: avatar.aimWeight,
+      holdRemaining: avatar.holdRemaining,
+    }),
+    setLegacyPistol: (legacy: boolean) => {
+      avatar.legacyUnarmedPistol = legacy
+      avatar.reset()
+    },
+    setZoomRaw: (zoom: number) => {
+      settings.zoom = zoom
+      cam.dist = zoom
+    },
     state: () => {
       const dc = dayCycle(session.view.hour)
       return {
