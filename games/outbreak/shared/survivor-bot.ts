@@ -6,6 +6,7 @@ import { PISTOL_MAG_SIZE, PISTOL_RANGE, SHOVE_RANGE } from "./combat"
 import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
 import { matStoreId, pairCost, pairIndex, TINKER_MATERIALS } from "./discovery/tinker"
+import { carStoreId, hideStoreId, tripLine, tripStoreId } from "./discovery/verbs"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightAwarenessAt } from "./flashlight"
 import { INTERACT_RANGE, type InteractTarget } from "./interact"
 import { inBuildingFootprint, propShape, sightRects, SIZE, solidRects, type Building, type Town } from "./map"
@@ -251,6 +252,16 @@ export type BotIntentKind =
   | "loot"
   | "assist-ally"
   | "explore"
+  | "hide"
+  | "disarm-trap"
+  | "set-trap"
+  | "repair-barricade"
+
+/** A can tripwire the bot has seen. `armed` is what it last saw; `ours` lines were strung by the squad, so it leaves them. */
+export type KnownTripwire = { id: string; x: number; y: number; rect: Rect; armed: boolean; ours?: boolean }
+
+/** A closet the bot has seen: where it stands to squeeze in, and which building it is in. */
+export type KnownCloset = { id: string; x: number; y: number; buildingId: string | null }
 
 export type PerceivedThreat = {
   id: number
@@ -342,6 +353,12 @@ export const MELEE_WEAPON_IDS: ReadonlySet<string> = new Set([
   "fire-axe",
 ])
 
+/** Unhurried intents in which Skilled and better bots crouch past the dead that have not noticed them. */
+const SNEAK_INTENTS: ReadonlySet<BotIntentKind> = new Set(["loot", "explore", "workbench", "retreat-safehouse", "disarm-trap", "set-trap"])
+
+/** Intents with the dead already on the bot: no time to look through a peephole. */
+const PRESSED_INTENTS: ReadonlySet<BotIntentKind> = new Set(["flee-horde", "kite-shoot", "fight-melee", "reload-cover", "hide", "heal"])
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const wrapAngle = (a: number) => {
   let r = (a + Math.PI) % (Math.PI * 2)
@@ -365,6 +382,8 @@ export type BotWorldView = {
   readonly noises: readonly NoiseEvent[]
   readonly progression: CoopSim["progression"]
   readonly getBarricadePlanks: (portalId: string) => number
+  /** Hit points left in a portal's boards (100 per plank when whole); damage shows as splintered boards. */
+  readonly getBarricadeHp: (portalId: string) => number
 }
 
 export function createBotWorldView(sim: CoopSim): BotWorldView {
@@ -378,6 +397,7 @@ export function createBotWorldView(sim: CoopSim): BotWorldView {
     noises: sim.ai.noiseBus.events,
     progression: sim.progression,
     getBarricadePlanks: (id: string) => sim.ai.getBarricadePlanks(id),
+    getBarricadeHp: (id: string) => sim.ai.portalStates.get(id)?.barricadeHp ?? 0,
   }
 }
 
@@ -434,7 +454,47 @@ export type BotStateSnapshot = {
   perceivedThreats: PerceivedThreat[]
   lastCommand: Command
   initializedMemory: boolean
+  /** Absent in snapshots taken before the D-19 verbs. */
+  knownTripwires?: KnownTripwire[]
+  knownClosets?: KnownCloset[]
+  verbMemory?: BotVerbMemory
 }
+
+/** Timers for the D-19 verbs (closets, peepholes, bottles). Times are sim seconds; -1e9 means never. */
+export type BotVerbMemory = {
+  hiddenSince: number
+  calmSince: number
+  lastHideAt: number
+  lastBottleAt: number
+  peekingDoor: string | null
+  peekStartedAt: number
+  peekedAt: Record<string, number>
+  doorHoldUntil: Record<string, number>
+}
+
+const freshVerbMemory = (): BotVerbMemory => ({
+  hiddenSince: -1e9,
+  calmSince: -1e9,
+  lastHideAt: -1e9,
+  lastBottleAt: -1e9,
+  peekingDoor: null,
+  peekStartedAt: -1e9,
+  peekedAt: {},
+  doorHoldUntil: {},
+})
+
+const copyVerbMemory = (m: BotVerbMemory): BotVerbMemory => ({ ...m, peekedAt: { ...m.peekedAt }, doorHoldUntil: { ...m.doorHoldUntil } })
+
+/** Seconds a hidden bot stays in the closet at least, and how long the coast must be clear before it steps out. */
+const HIDE_MIN_SECONDS = 6
+const HIDE_CLEAR_SECONDS = 3
+const HIDE_MAX_SECONDS = 60
+/** Distance (m) within which a known armed tripwire makes the bot crouch to step over it. */
+const TRIPWIRE_CROUCH_RANGE = 1.7
+/** Distance (m) from broken glass within which the bot crouches so its steps do not crunch (they do within 0.4 m). */
+const GLASS_CROUCH_RANGE = 1.1
+/** How long (s) a peek through a peephole lasts before the bot decides. */
+const PEEK_SECONDS = 0.9
 
 /**
  * Human-like Outbreak survivor bot that perceives the world strictly through player line-of-sight (`Vision`),
@@ -459,6 +519,9 @@ export class SurvivorBot {
   private readonly knownBenches = new Map<string, BenchSite>()
   private readonly knownBuildings = new Set<string>()
   private readonly exploredWaypoints = new Set<string>()
+  private readonly knownTripwires = new Map<string, KnownTripwire>()
+  private readonly knownClosets = new Map<string, KnownCloset>()
+  private verbMemory: BotVerbMemory = freshVerbMemory()
 
   private smoothedAim = -Math.PI / 2
   private aimInitialized = false
@@ -562,6 +625,9 @@ export class SurvivorBot {
       perceivedThreats: this.perceivedThreats.map((t) => ({ ...t })),
       lastCommand: { ...this.lastCommand },
       initializedMemory: this.initializedMemory,
+      knownTripwires: [...this.knownTripwires.values()].map((t) => ({ ...t, rect: [...t.rect] as Rect })),
+      knownClosets: [...this.knownClosets.values()].map((c) => ({ ...c })),
+      verbMemory: copyVerbMemory(this.verbMemory),
     }
   }
 
@@ -619,6 +685,11 @@ export class SurvivorBot {
     this.perceivedThreats = snap.perceivedThreats.map((t) => ({ ...t }))
     this.lastCommand = { ...snap.lastCommand }
     this.initializedMemory = snap.initializedMemory
+    this.knownTripwires.clear()
+    for (const t of snap.knownTripwires ?? []) this.knownTripwires.set(t.id, { ...t, rect: [...t.rect] as Rect })
+    this.knownClosets.clear()
+    for (const c of snap.knownClosets ?? []) this.knownClosets.set(c.id, { ...c })
+    this.verbMemory = snap.verbMemory ? copyVerbMemory(snap.verbMemory) : freshVerbMemory()
     this.lastTopologyKey = ""
   }
 
@@ -691,6 +762,19 @@ export class SurvivorBot {
       this.perceivedThreats.sort((a, b) => a.distance - b.distance)
     }
 
+    // Hidden in a closet: the sim holds the survivor in place, so the only decision is when E steps back out.
+    if (world.progression.hiddenIn(this.actorId)) {
+      this.lastCommand = this.stepHidden(world)
+      return this.lastCommand
+    }
+    this.verbMemory.hiddenSince = -1e9
+
+    // Looking through a peephole: watch for a moment, then stop and decide whether the door can be opened.
+    if (p.peekingWindowId && p.peekingWindowId === this.verbMemory.peekingDoor) {
+      this.lastCommand = this.stepPeek(dt, world, p)
+      return this.lastCommand
+    }
+
     // 2. If currently executing a timed progression channel (search, research, craft, heal, barricade, pry),
     // hold still so the channel completes unless an approaching threat forces an emergency abort.
     if (p.channel) {
@@ -735,8 +819,99 @@ export class SurvivorBot {
 
     // 5. Execute the chosen intent into a pure player Command
     const cmd = this.executeIntent(dt, world, slot, sightBlockers, actionableThreats, rawPressure, panicking)
+    this.applyCrouch(cmd, world, p, actionableThreats)
     this.lastCommand = cmd
     return cmd
+  }
+
+  private stepHidden(world: BotWorldView): Command {
+    const now = world.time
+    const m = this.verbMemory
+    if (m.hiddenSince < -1e8) {
+      m.hiddenSince = now
+      m.calmSince = now
+    }
+    if (this.perceivedThreats.some((t) => t.distance < 7 && t.confidence > 0.25)) m.calmSince = now
+    const hidFor = now - m.hiddenSince
+    const leave =
+      hidFor >= HIDE_MAX_SECONDS
+        ? !this.perceivedThreats.some((t) => t.distance < 2.5)
+        : hidFor >= HIDE_MIN_SECONDS && now - m.calmSince >= HIDE_CLEAR_SECONDS
+    this.currentIntent = "hide"
+    this.currentReason = leave ? "Stepping out of the closet" : `Hiding in a closet (${hidFor.toFixed(0)}s)`
+    if (leave) {
+      m.lastHideAt = now
+      this.intentLockedUntil = now
+    }
+    // Watch the room through the closet doors, which open south.
+    this.smoothedAim = Math.PI / 2
+    return { mx: 0, my: 0, aim: this.smoothedAim, interact: leave }
+  }
+
+  private stepPeek(dt: number, world: BotWorldView, p: SurvivorSlot["survivor"]): Command {
+    const now = world.time
+    const m = this.verbMemory
+    const door = world.town.doors.find((d) => d.id === p.peekingWindowId)
+    const close = this.perceivedThreats.some((t) => t.actionable && t.distance < 3)
+    if (!door || close || now - m.peekStartedAt >= PEEK_SECONDS) {
+      if (door && !close) {
+        const cx = (door.rect[0] + door.rect[2]) * 0.5
+        const cy = (door.rect[1] + door.rect[3]) * 0.5
+        const waiting = this.perceivedThreats.some(
+          (t) => t.confidence > 0.3 && t.state !== "dead" && Math.hypot(t.x - cx, t.y - cy) < 9 && !insideBuildingAt(world.town, t.x, t.y),
+        )
+        if (waiting) m.doorHoldUntil[door.id] = now + 6
+        this.currentReason = waiting ? `The dead are outside ${door.id}; waiting` : `Clear outside ${door.id}`
+      }
+      m.peekingDoor = null
+      // While peeking, E only stops peeking.
+      return { mx: 0, my: 0, aim: this.smoothedAim, interact: true, interactAction: "peek" }
+    }
+    if (door) {
+      const aim = Math.atan2((door.rect[1] + door.rect[3]) * 0.5 - p.y, (door.rect[0] + door.rect[2]) * 0.5 - p.x)
+      this.smoothedAim = this.stepAim(dt, aim, false)
+    }
+    this.currentReason = `Peeking through ${p.peekingWindowId}`
+    return { mx: 0, my: 0, aim: this.smoothedAim, interact: false }
+  }
+
+  /**
+   * Crouch to step over known armed cans and the broken glass at its feet (upright, glass crunches loud), and
+   * (Skilled and better) to creep past the dead that have not noticed. Not with the dead already close: then speed wins.
+   */
+  private applyCrouch(cmd: Command, world: BotWorldView, p: SurvivorSlot["survivor"], threats: readonly PerceivedThreat[]): void {
+    if (p.vehicleId || Math.hypot(cmd.mx, cmd.my) < 0.05) return
+    const nearestActionable = threats[0]?.distance ?? Infinity
+    let crouch = false
+    if (nearestActionable > 6) {
+      for (const t of this.knownTripwires.values()) {
+        if (t.armed && distToRect(p.x, p.y, t.rect) < TRIPWIRE_CROUCH_RANGE) {
+          crouch = true
+          break
+        }
+      }
+      if (!crouch) {
+        for (const st of world.progression.ledger.stores.values()) {
+          if (st.at && st.id.startsWith("glass:") && Math.hypot(st.at.x - p.x, st.at.y - p.y) < GLASS_CROUCH_RANGE) {
+            crouch = true
+            break
+          }
+        }
+      }
+    }
+    if (!crouch && this.skill.panicUnderPressure <= 0.2 && SNEAK_INTENTS.has(this.currentIntent)) {
+      const unaware = this.perceivedThreats.some(
+        (z) => z.source === "sight" && z.distance > 2.5 && z.distance < 10 && (z.state === "wander" || z.state === "investigate"),
+      )
+      const hunted = this.perceivedThreats.some(
+        (z) => z.distance < 14 && (z.state === "chase" || z.state === "alert" || z.state === "bash"),
+      )
+      crouch = unaware && !hunted
+    }
+    if (crouch) {
+      cmd.crouch = true
+      cmd.sprint = false
+    }
   }
 
   getTelemetry(): BotTelemetrySnapshot {
@@ -888,6 +1063,34 @@ export class SurvivorBot {
           existing.empty = !hasItems
           existing.searched = !hasItems || existing.takenOnce
         }
+      }
+    }
+
+    for (const c of world.progression.closets) {
+      if (this.knownClosets.has(c.id)) continue
+      const sameRoom = hereBuilding && Math.hypot(c.x - px, c.y - py) < 8.5 && insideBuildingAt(world.town, c.x, c.y)?.id === hereBuilding.id
+      if (sameRoom || (this.inCameraFootprint(px, py, c.x, c.y) && this.vision.visible(c.out.x, c.out.y))) {
+        this.knownClosets.set(c.id, { id: c.id, x: c.out.x, y: c.out.y, buildingId: insideBuildingAt(world.town, c.x, c.y)?.id ?? null })
+      }
+    }
+
+    // Cans across doorways: the bot learns a line by seeing it, and sees it sprung or taken down the same way.
+    for (const st of world.progression.ledger.stores.values()) {
+      if (!st.id.startsWith("trip:")) continue
+      const portalId = st.id.slice(5)
+      const known = this.knownTripwires.get(portalId)
+      const portal = known ? null : (world.town.doors.find((d) => d.id === portalId) ?? world.town.windows.find((w) => w.id === portalId))
+      const line = known ?? (portal ? tripLine(world.town, portal) : null)
+      if (!line) continue
+      const d = Math.hypot(line.x - px, line.y - py)
+      const seen = d < 2.2 || (d < 14 && this.inCameraFootprint(px, py, line.x, line.y) && this.vision.visible(line.x, line.y))
+      if (!seen) continue
+      const armed = Boolean(st.counts.armed) && !st.counts.down
+      if (known) {
+        known.armed = armed
+        if (st.owner) known.ours = true
+      } else {
+        this.knownTripwires.set(portalId, { id: portalId, x: line.x, y: line.y, rect: [...line.rect] as Rect, armed, ours: Boolean(st.owner) })
       }
     }
   }
@@ -1186,6 +1389,9 @@ export class SurvivorBot {
       if ((s.item === "medkit" || s.item === "bandage") && !hotbar.slots[3]) {
         return { packIndex: i, targetHotbarSlot: 3 }
       }
+      if ((s.item === "bottle" || s.item === "cans") && !hotbar.slots[4]) {
+        return { packIndex: i, targetHotbarSlot: 4 }
+      }
     }
     return null
   }
@@ -1238,6 +1444,131 @@ export class SurvivorBot {
     const pack = world.progression.ledger.store(`${this.actorId}/pack`)
     if (!pack) return false
     return pack.slots.some((s) => s && (s.item === "toolbox" || s.item === "car-battery"))
+  }
+
+  private findHotbarItem(world: BotWorldView, item: string): { slotIndex: number; count: number } | null {
+    const hotbar = world.progression.hotbar(this.actorId)
+    if (!hotbar) return null
+    for (let i = 0; i < hotbar.slots.length; i++) {
+      const s = hotbar.slots[i]
+      if (s && s.item === item && s.count > 0) return { slotIndex: i, count: s.count }
+    }
+    return null
+  }
+
+  private findPackItem(world: BotWorldView, item: string): number {
+    const pack = world.progression.ledger.store(`${this.actorId}/pack`)
+    return pack ? pack.slots.findIndex((s) => s?.item === item) : -1
+  }
+
+  /** A point `inset` metres inside `building` from the middle of a doorway or window in its wall. */
+  private insidePortal(building: Building, rect: Rect, inset: number): { x: number; y: number } {
+    const cx = (rect[0] + rect[2]) * 0.5
+    const cy = (rect[1] + rect[3]) * 0.5
+    const bx = (building.rect[0] + building.rect[2]) * 0.5
+    const by = (building.rect[1] + building.rect[3]) * 0.5
+    return rect[2] - rect[0] > rect[3] - rect[1]
+      ? { x: cx, y: cy + Math.sign(by - cy || 1) * inset }
+      : { x: cx + Math.sign(bx - cx || 1) * inset, y: cy }
+  }
+
+  /**
+   * A free closet the bot knows that it reaches before any of the dead do: within 7 m in the building it is in, or
+   * within 14 m (through the front door) from outside.
+   */
+  private findHideCloset(world: BotWorldView, px: number, py: number, buildingId: string | null, threats: readonly PerceivedThreat[]): KnownCloset | null {
+    let best: KnownCloset | null = null
+    let bestD = buildingId ? 7 : 14
+    for (const c of this.knownClosets.values()) {
+      if (buildingId && c.buildingId !== buildingId) continue
+      if (world.progression.ledger.store(hideStoreId(c.id))) continue
+      const d = Math.hypot(c.x - px, c.y - py)
+      if (d >= bestD) continue
+      if (threats.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < d + 1.0)) continue
+      best = c
+      bestD = d
+    }
+    return best
+  }
+
+  /** The nearest armed line the bot has seen, with the spot on its own side to work it loose from. */
+  private findDisarmTarget(px: number, py: number): { line: KnownTripwire; x: number; y: number } | null {
+    let best: { line: KnownTripwire; x: number; y: number; d: number } | null = null
+    for (const t of this.knownTripwires.values()) {
+      if (!t.armed || t.ours) continue
+      const d = Math.hypot(t.x - px, t.y - py)
+      if (d > 7 || (best && d >= best.d)) continue
+      const horizontal = t.rect[2] - t.rect[0] > t.rect[3] - t.rect[1]
+      const x = horizontal ? t.x : t.x + Math.sign(px - t.x || 1) * 0.4
+      const y = horizontal ? t.y + Math.sign(py - t.y || 1) * 0.4 : t.y
+      best = { line: t, x, y, d }
+    }
+    return best
+  }
+
+  /** A door of the safehouse with no cans across it yet, and where to stand inside to string them. */
+  private findTrapDoor(world: BotWorldView, px: number, py: number): { id: string; x: number; y: number } | null {
+    const safe = this.pickBestSafehousePoint(world, px, py)
+    const building = world.town.buildings.find((b) => b.id === safe.buildingId)
+    if (!building) return null
+    let best: { id: string; x: number; y: number; d: number } | null = null
+    for (const door of world.town.doors) {
+      if (!door.id.startsWith(`${building.id}-`) || world.getBarricadePlanks(door.id) > 0) continue
+      const st = world.progression.ledger.store(tripStoreId(door.id))
+      if (st && !st.counts.down) continue
+      const stand = this.reachableInsideStand(world, building, door.rect, { x: px, y: py })
+      if (!stand) continue
+      const d = Math.hypot(stand.x - px, stand.y - py)
+      if (d < 30 && (!best || d < best.d)) best = { id: door.id, ...stand, d }
+    }
+    return best
+  }
+
+  /** The most damaged barricade in this building, if one is worth re-nailing. */
+  private findRepairTarget(world: BotWorldView, building: Building, px: number, py: number): { id: string; x: number; y: number; damage: number } | null {
+    let best: { id: string; x: number; y: number; damage: number; score: number } | null = null
+    const portals = [
+      ...world.town.windows.filter((w) => w.buildingId === building.id),
+      ...world.town.doors.filter((d) => d.id.startsWith(`${building.id}-`)),
+    ]
+    for (const o of portals) {
+      const planks = world.getBarricadePlanks(o.id)
+      if (planks <= 0) continue
+      const full = planks * 100
+      const damage = clamp((full - world.getBarricadeHp(o.id)) / full, 0, 1)
+      if (damage < 0.3) continue
+      const stand = this.reachableInsideStand(world, building, o.rect, { x: px, y: py })
+      if (!stand) continue
+      const score = damage * 30 - Math.hypot(stand.x - px, stand.y - py)
+      if (!best || score > best.score) best = { id: o.id, ...stand, damage, score }
+    }
+    return best
+  }
+
+  /**
+   * Where to throw a bottle so the noise pulls the dead off: a car it can see at 5–12 m away from where it is running
+   * (about half have an alarm, which no one can tell by looking), otherwise past the nearest of the dead.
+   */
+  private pickBottleTarget(world: BotWorldView, p: SurvivorSlot["survivor"], threats: readonly PerceivedThreat[], fleeX: number, fleeY: number): { x: number; y: number; car: boolean } {
+    let best: { x: number; y: number; d: number } | null = null
+    for (const car of world.progression.cars) {
+      const d = Math.hypot(car.x - p.x, car.y - p.y)
+      if (d < 5 || d > 11.5 || (best && d <= best.d)) continue
+      if ((car.x - p.x) * fleeX + (car.y - p.y) * fleeY > 0.2 * d) continue
+      if (world.progression.ledger.store(carStoreId(car.key))?.counts.smashed) continue
+      if (!this.inCameraFootprint(p.x, p.y, car.x, car.y) || !this.vision.visible(car.x, car.y)) continue
+      best = { x: car.x, y: car.y, d }
+    }
+    if (best) return { x: best.x, y: best.y, car: true }
+    let cx = 0
+    let cy = 0
+    for (const t of threats) {
+      cx += t.x
+      cy += t.y
+    }
+    const n = Math.max(1, threats.length)
+    const ang = Math.atan2(cy / n - p.y, cx / n - p.x) + (this.slotIndex % 2 === 0 ? 0.45 : -0.45)
+    return { x: p.x + Math.cos(ang) * 11, y: p.y + Math.sin(ang) * 11, car: false }
   }
 
   private pickBestSafehousePoint(world: BotWorldView, px: number, py: number): { x: number; y: number; label: string; buildingId: string } {
@@ -1332,6 +1663,37 @@ export class SurvivorBot {
       }
     }
     return best
+  }
+
+  /**
+   * A spot inside `building`, in reach of the opening `rect`, that the nav grid can actually stand on (furniture
+   * often fills the floor right under a window), or null if there is none.
+   */
+  private reachableInsideStand(
+    world: BotWorldView,
+    building: Building,
+    rect: Rect,
+    from?: { x: number; y: number },
+  ): { x: number; y: number } | null {
+    const horizontal = rect[2] - rect[0] > rect[3] - rect[1]
+    const start = from && insideBuildingAt(world.town, from.x, from.y)?.id === building.id ? this.localNav.nearest(from) : null
+    for (const inset of [0.7, 1.05, 1.4]) {
+      const base = this.insidePortal(building, rect, inset)
+      for (const lateral of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.0, -2.0]) {
+        const want = horizontal ? { x: base.x + lateral, y: base.y } : { x: base.x, y: base.y + lateral }
+        const at = this.localNav.nearest(want)
+        if (Math.hypot(at.x - want.x, at.y - want.y) > 0.4) continue
+        if (insideBuildingAt(world.town, at.x, at.y)?.id !== building.id) continue
+        if (distToRect(at.x, at.y, rect) > INTERACT_RANGE - 0.35) continue
+        // From inside, the way there must stay inside: the nav grid lets paths climb through windows.
+        if (start) {
+          const path = this.localNav.path(start, at, 600)
+          if (!path || path.some((pt) => insideBuildingAt(world.town, pt.x, pt.y)?.id !== building.id)) continue
+        }
+        return { x: at.x, y: at.y }
+      }
+    }
+    return null
   }
 
   private findBestLootCandidate(
@@ -1657,6 +2019,76 @@ export class SurvivorBot {
       }
     }
 
+    // 13. HIDE: chased while worn out, hurt or out of ammo (or by three or more), with a free closet close by that the
+    // dead are further from than we are
+    if (chaserCount >= 1 && nearestDist < 10 && now - this.verbMemory.lastHideAt > 12) {
+      const worn = p.exhausted || p.stamina < 0.35 || totalAmmo === 0 || p.health < 45
+      if (worn || chaserCount >= 3) {
+        const closet = this.findHideCloset(world, p.x, p.y, hereBuilding?.id ?? null, threats)
+        if (closet) {
+          candidates.push({
+            intent: "hide",
+            score: 98 + chaserCount * 5 + (p.exhausted ? 10 : 0) + noise(),
+            reason: `Cornered by ${chaserCount} — hiding in ${closet.id}`,
+            targetX: closet.x,
+            targetY: closet.y,
+            targetLabel: closet.id,
+          })
+        }
+      }
+    }
+
+    // 14. DISARM CANS: an armed line it has seen close by, and nothing hunting it
+    if (chaserCount === 0 && nearestDist > 10) {
+      const trap = this.findDisarmTarget(p.x, p.y)
+      if (trap) {
+        candidates.push({
+          intent: "disarm-trap",
+          score: 61 + noise(),
+          reason: `Working the cans loose at ${trap.line.id}`,
+          targetX: trap.x,
+          targetY: trap.y,
+          targetLabel: trap.line.id,
+        })
+      }
+    }
+
+    // 15. SET CANS: carrying a tripwire as night comes, string it across a safehouse door
+    if (
+      chaserCount === 0 &&
+      nearestDist > 10 &&
+      (isNightOrLateDusk || world.threat > 0.35) &&
+      (this.findHotbarItem(world, "cans") || this.findPackItem(world, "cans") >= 0)
+    ) {
+      const door = this.findTrapDoor(world, p.x, p.y)
+      if (door) {
+        candidates.push({
+          intent: "set-trap",
+          score: 57 + (isNightOrLateDusk ? 6 : 0) + noise(),
+          reason: `Stringing cans across ${door.id}`,
+          targetX: door.x,
+          targetY: door.y,
+          targetLabel: door.id,
+        })
+      }
+    }
+
+    // 16. REPAIR: a crowbar (in the hotbar, or the pack to swap in) and splintered boards in this building
+    const crowbar = this.findHotbarItem(world, "crowbar") ?? (this.findPackItem(world, "crowbar") >= 0 ? true : null)
+    if (crowbar && hereBuilding && nearestDist > 3) {
+      const repair = this.findRepairTarget(world, hereBuilding, p.x, p.y)
+      if (repair) {
+        candidates.push({
+          intent: "repair-barricade",
+          score: 62 + repair.damage * 22 + noise(),
+          reason: `Re-nailing ${repair.id} (${Math.round(repair.damage * 100)}% damaged)`,
+          targetX: repair.x,
+          targetY: repair.y,
+          targetLabel: repair.id,
+        })
+      }
+    }
+
     // 12. EXPLORE NEW CHUNKS / BUILDINGS
     const exploreTarget = this.pickExploreTarget(world, p.x, p.y)
     candidates.push({
@@ -1676,7 +2108,8 @@ export class SurvivorBot {
       top.intent === "fight-melee" ||
       top.intent === "kite-shoot" ||
       top.intent === "flee-horde" ||
-      top.intent === "heal"
+      top.intent === "heal" ||
+      top.intent === "hide"
     if (urgentCombat || now >= this.intentLockedUntil || top.intent === this.currentIntent) {
       if (top.intent !== this.currentIntent) {
         this.currentIntent = top.intent
@@ -1800,6 +2233,36 @@ export class SurvivorBot {
           cmd.fire = true
         }
         meleeLockedAim = true
+      }
+    }
+
+    // Throw a bottle to pull off two or more of the dead that are coming but have not locked on (investigating,
+    // searching, alerted): at a car, which may have an alarm, or past them. One chasing by sight ignores the noise.
+    const bottle = this.findHotbarItem(world, "bottle")
+    if (bottle && !meleeLockedAim && nearest && nearest.distance > 3.5 && now - this.verbMemory.lastBottleAt > 3) {
+      const lurable = threats.filter((t) => t.distance < 14 && (t.state === "investigate" || t.state === "search" || t.state === "alert"))
+      if (lurable.length >= 2 && !threats.some((t) => t.distance < 6 && (t.state === "chase" || t.state === "bash"))) {
+        if (hotbar && hotbar.selected !== bottle.slotIndex) {
+          cmd.hotbarSlot = bottle.slotIndex
+          return cmd
+        }
+        let ax = 0
+        let ay = 0
+        for (const t of lurable) {
+          ax += p.x - t.x
+          ay += p.y - t.y
+        }
+        const away = Math.hypot(ax, ay) || 1
+        const target = this.pickBottleTarget(world, p, lurable, ax / away, ay / away)
+        const throwAim = Math.atan2(target.y - p.y, target.x - p.x)
+        this.smoothedAim = this.stepAim(dt, throwAim, false)
+        cmd.aim = this.smoothedAim
+        if (Math.abs(angleDiff(this.smoothedAim, throwAim)) < 0.2) {
+          cmd.fire = true
+          this.verbMemory.lastBottleAt = now
+          this.currentReason = target.car ? "Bottle at a car to set off its alarm" : "Bottle past the dead to pull them off"
+        }
+        return cmd
       }
     }
 
@@ -2046,6 +2509,82 @@ export class SurvivorBot {
         )
       }
 
+      case "hide": {
+        const closet = this.knownClosets.get(this.goalLabel)
+        if (slot.prompt?.kind === "closet" && slot.prompt.id === this.goalLabel && slot.prompt.primary.id === "hide") {
+          cmd.interact = true
+          cmd.interactAction = "hide"
+          return cmd
+        }
+        if (closet && Math.hypot(closet.x - p.x, closet.y - p.y) < 0.6) {
+          // At the closet doors: face them so the closet is the prompt.
+          this.smoothedAim = this.stepAim(dt, -Math.PI / 2, false)
+          cmd.aim = this.smoothedAim
+          return cmd
+        }
+        const move = this.followPathTo(dt, world, slot, this.goalX, this.goalY, true)
+        move.sprint = this.shouldSprint(p, true, now)
+        return move
+      }
+
+      case "disarm-trap": {
+        const line = this.knownTripwires.get(this.goalLabel)
+        if (!line?.armed) break
+        if (slot.prompt?.kind === "tripwire" && slot.prompt.id === line.id && slot.prompt.primary.id === "disarm") {
+          cmd.interact = true
+          cmd.interactAction = "disarm"
+          return cmd
+        }
+        if (Math.hypot(this.goalX - p.x, this.goalY - p.y) < 0.35) {
+          this.smoothedAim = this.stepAim(dt, Math.atan2(line.y - p.y, line.x - p.x), false)
+          cmd.aim = this.smoothedAim
+          return cmd
+        }
+        return this.followPathTo(dt, world, slot, this.goalX, this.goalY, false)
+      }
+
+      case "set-trap": {
+        const door = world.town.doors.find((d) => d.id === this.goalLabel)
+        if (door && Math.hypot(this.goalX - p.x, this.goalY - p.y) < 0.6 && distToRect(p.x, p.y, door.rect) <= INTERACT_RANGE - 0.3) {
+          this.smoothedAim = this.stepAim(dt, Math.atan2((door.rect[1] + door.rect[3]) * 0.5 - p.y, (door.rect[0] + door.rect[2]) * 0.5 - p.x), false)
+          cmd.aim = this.smoothedAim
+          const cans = this.findHotbarItem(world, "cans")
+          if (cans) {
+            if (hotbar && hotbar.selected !== cans.slotIndex) cmd.hotbarSlot = cans.slotIndex
+            else {
+              cmd.fire = true
+              const line = tripLine(world.town, door)
+              this.knownTripwires.set(door.id, { id: door.id, x: line.x, y: line.y, rect: [...line.rect] as Rect, armed: false, ours: true })
+            }
+          } else {
+            const packIndex = this.findPackItem(world, "cans")
+            if (packIndex >= 0) {
+              if (hotbar && hotbar.selected !== 4) cmd.hotbarSlot = 4
+              else cmd.pick = { mode: "pack", index: packIndex }
+            }
+          }
+          return cmd
+        }
+        return this.followPathTo(dt, world, slot, this.goalX, this.goalY, false)
+      }
+
+      case "repair-barricade": {
+        if (Math.hypot(this.goalX - p.x, this.goalY - p.y) < 0.7) {
+          const crowbar = this.findHotbarItem(world, "crowbar")
+          if (crowbar && hotbar && hotbar.selected !== crowbar.slotIndex) cmd.hotbarSlot = crowbar.slotIndex
+          else if (crowbar) cmd.barricade = true
+          else {
+            const packIndex = this.findPackItem(world, "crowbar")
+            if (packIndex >= 0) {
+              if (hotbar && hotbar.selected !== 4) cmd.hotbarSlot = 4
+              else cmd.pick = { mode: "pack", index: packIndex }
+            }
+          }
+          return cmd
+        }
+        return this.followPathTo(dt, world, slot, this.goalX, this.goalY, false)
+      }
+
       case "loot": {
         // Check if standing right at a container or drop prompt
         if (slot.prompt?.kind === "drop") {
@@ -2077,6 +2616,25 @@ export class SurvivorBot {
     }
 
     return this.followPathTo(dt, world, slot, this.goalX, this.goalY, false)
+  }
+
+  /**
+   * Skilled and better look through an outer door's peephole before opening it from inside once the dead are
+   * out, unless something is already on them.
+   */
+  private shouldPeek(world: BotWorldView, p: SurvivorSlot["survivor"], prompt: InteractTarget): boolean {
+    if (prompt.alt?.id !== "peek" || this.skill.mapKnowledge < 0.5 || world.threat < 0.45) return false
+    if (PRESSED_INTENTS.has(this.currentIntent) || !insideBuildingAt(world.town, p.x, p.y)) return false
+    if (world.time - (this.verbMemory.peekedAt[prompt.id] ?? -1e9) < 8) return false
+    return !this.perceivedThreats.some((t) => t.actionable && t.distance < 8)
+  }
+
+  private startPeek(cmd: Command, doorId: string, now: number): Command {
+    this.verbMemory.peekingDoor = doorId
+    this.verbMemory.peekStartedAt = now
+    this.verbMemory.peekedAt[doorId] = now
+    this.lastInteractTickTime = now
+    return { ...cmd, mx: 0, my: 0, interact: true, interactAction: "peek" }
   }
 
   private computeCombatMoveScale(
@@ -2245,10 +2803,23 @@ export class SurvivorBot {
 
     // Handle door/window/container interactions along the path
     const prompt: InteractTarget | undefined = slot.prompt
+    // A door the bot peeked through and saw the dead waiting behind: stay inside, facing it, until the hold runs out.
+    const pressed = this.perceivedThreats.some((t) => t.actionable && t.distance < 5)
+    for (const door of pressed ? [] : world.town.doors) {
+      if ((this.verbMemory.doorHoldUntil[door.id] ?? -1) <= now || door.open || distToRect(p.x, p.y, door.rect) > 1.6) continue
+      const cx = (door.rect[0] + door.rect[2]) * 0.5
+      const cy = (door.rect[1] + door.rect[3]) * 0.5
+      this.smoothedAim = this.stepAim(dt, Math.atan2(cy - p.y, cx - p.x), false)
+      cmd.aim = this.smoothedAim
+      return cmd
+    }
     if (prompt && now - this.lastInteractTickTime > 0.22) {
       if (prompt.kind === "door") {
         const door = world.town.doors.find((d) => d.id === prompt.id)
         const planks = world.getBarricadePlanks(prompt.id)
+        if (door && !door.open && planks === 0 && this.shouldPeek(world, p, prompt)) {
+          return this.startPeek(cmd, prompt.id, now)
+        }
         if (door && !door.open && planks === 0) {
           if (
             prompt.primary.id === "toggle" ||
@@ -2309,7 +2880,11 @@ export class SurvivorBot {
         const doorAng = Math.atan2(dcy - p.y, dcx - p.x)
         this.smoothedAim = this.stepAim(dt, doorAng, false)
         cmd.aim = this.smoothedAim
-        if (now - this.lastInteractTickTime > 0.2) {
+        // E acts on whatever is the prompt: never let a door push hide the bot in a closet or smash a car.
+        const offPath = prompt?.kind === "closet" || prompt?.kind === "car"
+        if (prompt?.kind === "door" && prompt.id === door.id && now - this.lastInteractTickTime > 0.2 && this.shouldPeek(world, p, prompt)) {
+          return this.startPeek(cmd, prompt.id, now)
+        } else if (!offPath && now - this.lastInteractTickTime > 0.2) {
           cmd.interact = true
           this.lastInteractTickTime = now
         }
