@@ -38,7 +38,7 @@ function room(poses: Record<string, Pose>, strapped = false) {
 
 /** In front of a page's shelf, facing it. */
 const beforePage = (sim: CoopSim, building: string): Pose => {
-  const page = sim.progression.pages.find((p) => p.buildingId === building)!
+  const page = sim.progression.knowledge.pages.find((p) => p.buildingId === building)!
   return { x: page.x, y: page.y + 1, aim: -Math.PI / 2 }
 }
 
@@ -52,13 +52,13 @@ describe("pages left in buildings", () => {
   test("each kind of building holds the same page in the same place, every time; houses hold none", () => {
     const a = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
     const b = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
-    expect(a.progression.pages).toEqual(b.progression.pages)
-    expect(a.progression.pages.map((p) => [p.buildingId, p.recipe, p.style])).toEqual([
+    expect(a.progression.knowledge.pages).toEqual(b.progression.knowledge.pages)
+    expect(a.progression.knowledge.pages.map((p) => [p.buildingId, p.recipe, p.style])).toEqual([
       ["hardware", "reinforced", "flyer"],
       ["pharmacy", "bandage", "chart"],
     ])
     for (const house of a.town.buildings.filter((x) => x.kind === "house")) expect(pageSite(a.town, house)).toBeNull()
-    for (const p of a.progression.pages) {
+    for (const p of a.progression.knowledge.pages) {
       const building = a.town.buildings.find((x) => x.id === p.buildingId)!
       expect(PAGE_BY_ARCHETYPE[building.archetype ?? building.kind]).toBe(p.recipe)
       expect(a.progression.ledger.count(p.id, "page")).toBe(1)
@@ -101,7 +101,7 @@ describe("pages left in buildings", () => {
     tick()
     tick({ ann: { interact: true } })
     const fork = CoopSim.fromSnapshot(JSON.parse(JSON.stringify(sim.toSnapshot())))
-    expect(fork.progression.pages).toEqual(sim.progression.pages)
+    expect(fork.progression.knowledge.pages).toEqual(sim.progression.knowledge.pages)
     expect(fork.progression.ledger.count("page:pharmacy", "page")).toBe(0)
     expect(fork.progression.ledger.count("page:hardware", "page")).toBe(1)
     expect(readPin(fork.progression.ledger.store(pinStoreId("bandage")), "bandage")?.source).toBe("chart")
@@ -135,7 +135,7 @@ describe("practice", () => {
     expect(second.duration).toBeCloseTo(T.barricadeTime * practiceFactor(1, T.practiceTimeFloor))
     expect(third.noise).toBeCloseTo(T.barricadeNoise * practiceFactor(2, T.practiceNoiseFloor))
     expect(third.duration).toBeLessThan(second.duration)
-    expect(progression.practice("ann", "barricade")).toBe(3)
+    expect(progression.knowledge.practice("ann", "barricade")).toBe(3)
     expect(sim.ai.getBarricadePlanks("ash-east")).toBe(3)
   })
 
@@ -147,7 +147,7 @@ describe("practice", () => {
       tick({}, BOARD)
     }
     const fork = CoopSim.fromSnapshot(JSON.parse(JSON.stringify(sim.toSnapshot())))
-    expect(fork.progression.mastery).toEqual(sim.progression.mastery)
+    expect(fork.progression.knowledge.mastery).toEqual(sim.progression.knowledge.mastery)
     // To the south-east window, and board it in both.
     for (const s of [sim, fork]) {
       Object.assign(s.slot("ann")!.survivor, { x: 34.2, y: 34.6, aim: Math.PI / 2 })
@@ -174,10 +174,10 @@ describe("practice", () => {
       tick({ ann: { barricade: true } })
       tick({}, BOARD)
     }
-    expect(progression.practice("ann", "barricade")).toBe(2)
-    expect(progression.practice("bob", "barricade")).toBeCloseTo(2 * T.watchShare)
-    expect(progression.practice("cal", "barricade")).toBe(0)
-    expect(progression.practice("dee", "barricade")).toBe(0)
+    expect(progression.knowledge.practice("ann", "barricade")).toBe(2)
+    expect(progression.knowledge.practice("bob", "barricade")).toBeCloseTo(2 * T.watchShare)
+    expect(progression.knowledge.practice("cal", "barricade")).toBe(0)
+    expect(progression.knowledge.practice("dee", "barricade")).toBe(0)
   })
 })
 
@@ -186,28 +186,28 @@ describe("learning by looking", () => {
     const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
     // The classic town's hardware store is left as it was; dressed as a streamed warehouse, it is held out.
     expect(sim.ai.getBarricadePlanks("hardware-south-east")).toBe(0)
-    expect(sim.progression.heldOut).toEqual([])
+    expect(sim.progression.knowledge.heldOut).toEqual([])
     const hardware = sim.town.buildings.find((b) => b.id === "hardware")!
     expect(heldOutWindow(sim.town, hardware)).toBeNull()
     hardware.archetype = "warehouse"
     expect(heldOutWindow(sim.town, hardware)).toBe("hardware-south-east")
-    expect(sim.progression.boardHeldOut(sim.town, sim.ai)).toBe(true)
-    expect(sim.progression.boardHeldOut(sim.town, sim.ai)).toBe(false)
+    expect(sim.progression.knowledge.boardHeldOut(sim.town, sim.ai)).toBe(true)
+    expect(sim.progression.knowledge.boardHeldOut(sim.town, sim.ai)).toBe(false)
     const st = sim.ai.portalStates.get("hardware-south-east")!
     expect(st.barricadePlanks).toBe(2)
     expect(looksReinforced(st.barricadePlanks, st.barricadeHp)).toBe(true)
-    expect(sim.progression.heldOut).toEqual(["hardware"])
+    expect(sim.progression.knowledge.heldOut).toEqual(["hardware"])
   })
 
   test("standing still and looking closely at a reinforced barricade teaches how it was done", () => {
     const { tick, ledger, progression } = room({ ann: STUDY_SPOT }, true)
     tick({}, Math.floor(STUDY / 2))
     expect(progression.learned("reinforced")).toBe(false)
-    expect(progression.study.ann?.portal).toBe("hardware-south-east")
+    expect(progression.knowledge.study.ann?.portal).toBe("hardware-south-east")
     tick({}, STUDY)
     expect(progression.learned("reinforced")).toBe(true)
     expect(readPin(ledger.store(pinStoreId("reinforced")), "reinforced")).toMatchObject({ actor: "ann", seat: 0, source: "sketch" })
-    expect(progression.study).toEqual({})
+    expect(progression.knowledge.study).toEqual({})
   })
 
   test("walking past it or looking away teaches nothing", () => {
@@ -223,7 +223,7 @@ describe("learning by looking", () => {
     const { sim, tick } = room({ ann: STUDY_SPOT }, true)
     tick({}, Math.floor(STUDY / 2))
     const fork = CoopSim.fromSnapshot(JSON.parse(JSON.stringify(sim.toSnapshot())))
-    expect(fork.progression.study).toEqual(sim.progression.study)
+    expect(fork.progression.knowledge.study).toEqual(sim.progression.knowledge.study)
     for (let i = 0; i < STUDY; i++) {
       tick()
       for (const s of fork.slots) fork.stepSurvivor(s, idle(s.survivor.aim), TICK_DT)

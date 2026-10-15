@@ -113,7 +113,7 @@ describe("closets", () => {
     expect(slot("ann").prompt?.kind).toBe("closet")
     tick({ ann: { interact: true } })
     const ann = slot("ann").survivor
-    const closet = progression.hiddenIn("ann")!
+    const closet = progression.verbs.hiddenIn("ann")!
     expect(closet).not.toBeNull()
     expect(ledger.store(hideStoreId(closet.id))?.owner).toBe("ann")
     expect([ann.x, ann.y]).toEqual([ASH_CLOSET.x, ASH_CLOSET.y])
@@ -125,7 +125,7 @@ describe("closets", () => {
     expect(view.visibility).toBe(0)
     expect(slot("ann").prompt?.primary.label).toBe("Leave")
     tick({ ann: { interact: true } })
-    expect(progression.hiddenIn("ann")).toBeNull()
+    expect(progression.verbs.hiddenIn("ann")).toBeNull()
     expect(ann.y).toBeCloseTo(closet.out.y, 5)
     tick({ ann: { my: 1 } }, 10)
     expect(ann.y).toBeGreaterThan(closet.out.y)
@@ -134,11 +134,11 @@ describe("closets", () => {
   test("a closet holds one: a teammate sees no way in while it is taken", () => {
     const { tick, slot, progression } = room({ ann: BEFORE_CLOSET, bob: { ...BEFORE_CLOSET, x: BEFORE_CLOSET.x + 0.4 } })
     tick({ ann: { interact: true } })
-    expect(progression.hiddenIn("ann")).not.toBeNull()
+    expect(progression.verbs.hiddenIn("ann")).not.toBeNull()
     tick()
     expect(slot("bob").prompt?.kind).not.toBe("closet")
     tick({ bob: { interact: true } })
-    expect(progression.hiddenIn("bob")).toBeNull()
+    expect(progression.verbs.hiddenIn("bob")).toBeNull()
   })
 
   test("the dead lose a survivor who hides: a chaser goes to where it last saw them and searches", () => {
@@ -149,7 +149,7 @@ describe("closets", () => {
     expect(z.state).toBe("chase")
     expect(z.focusId).toBe("ann")
     tick({ ann: { interact: true } })
-    expect(progression.hiddenIn("ann")).not.toBeNull()
+    expect(progression.verbs.hiddenIn("ann")).not.toBeNull()
     let searched = false
     for (let i = 0; i < 60 * 12 && !searched; i++) {
       tick()
@@ -285,12 +285,12 @@ describe("bottles and car alarms", () => {
     expect(slot("ann").prompt?.kind).toBe("car")
     tick({ ann: { interact: true } })
     expect(ledger.store(carStoreId(car.key))!.counts).toMatchObject({ smashed: 1, alarm: 1 })
-    expect(progression.alarmRinging(car, s.time)).toBe(true)
+    expect(progression.verbs.alarmRinging(car, s.time)).toBe(true)
     tick({}, 60 * 5)
     const wails = noises("alarm").length
     expect(wails).toBeGreaterThanOrEqual(3)
     tick({}, ticks(T.alarmTime))
-    expect(progression.alarmRinging(car, s.time)).toBe(false)
+    expect(progression.verbs.alarmRinging(car, s.time)).toBe(false)
     expect(slot("ann").prompt?.kind).not.toBe("car")
   })
 
@@ -303,7 +303,7 @@ describe("bottles and car alarms", () => {
     hold("ann", "bottle")
     tick({ ann: { fire: true } })
     expect(ledger.store(carStoreId(car.key))!.counts).toMatchObject({ alarm: 1 })
-    expect(progression.alarmRinging(car, s.time)).toBe(true)
+    expect(progression.verbs.alarmRinging(car, s.time)).toBe(true)
   })
 })
 
@@ -325,7 +325,7 @@ describe("crowbar repairs", () => {
     tick({}, ticks(T.repairTime))
     expect(st.barricadeHp).toBe(200)
     expect(st.barricadePlanks).toBe(2)
-    expect(progression.practice("ann", "repair")).toBe(1)
+    expect(progression.knowledge.practice("ann", "repair")).toBe(1)
     st.barricadeHp = 130
     tick({ ann: { barricade: true } })
     expect(progression.ledger.channel("ann")!.duration).toBeLessThan(T.repairTime)
@@ -352,7 +352,7 @@ describe("verb state", () => {
     tick({ bob: { mx: 1, crouch: true } }, 5)
     const copy = CoopSim.fromSnapshot(sim.toSnapshot())
     expect(hashSimState(copy.toSnapshot())).toBe(hashSimState(sim.toSnapshot()))
-    expect(copy.progression.hiddenIn("ann")?.id).toBe(sim.progression.hiddenIn("ann")!.id)
+    expect(copy.progression.verbs.hiddenIn("ann")?.id).toBe(sim.progression.verbs.hiddenIn("ann")!.id)
     expect(copy.slot("bob")!.survivor.crouching).toBe(true)
     const step = (s: CoopSim) => {
       for (let i = 0; i < 90; i++) {

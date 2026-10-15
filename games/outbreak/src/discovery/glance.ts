@@ -40,7 +40,7 @@ export class PageGlance {
 
   update(view: SessionView, settings: DiscoverySettings, dt: number): void {
     const p = view.player
-    for (const site of view.progression.pages) {
+    for (const site of view.progression.knowledge.pages) {
       const count = view.progression.ledger.count(site.id, "page")
       const prev = this.last.get(site.id)
       this.last.set(site.id, count)

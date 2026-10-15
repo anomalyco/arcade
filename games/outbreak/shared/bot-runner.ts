@@ -5,7 +5,8 @@ import { cloneSimState, CoopSim, forkSimState, hashSimState, type SimState, type
 import { dayCycle } from "./day-cycle"
 import { carStoreId, crossing, portals, tripLine, tripStoreId } from "./discovery/verbs"
 import { DEFAULT_PACING_TUNING } from "./pacing"
-import { buildingAt, type ProgressionTuning } from "./progression"
+import { buildingAt } from "./progression/loot"
+import type { ProgressionTuning } from "./progression/tuning"
 import type { Command } from "./session"
 import {
   BOT_SKILL_PRESET_ORDER,
@@ -618,7 +619,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
         verbs.peeks++
         verbEvent(`Peeked through ${slot.prompt?.id ?? "a door"}`, slot.survivor.x, slot.survivor.y)
       }
-      const hiddenNow = Boolean(sim.progression.hiddenIn(slot.id))
+      const hiddenNow = Boolean(sim.progression.verbs.hiddenIn(slot.id))
       if (hiddenNow) verbs.hiddenSeconds += stepDt
       if (hiddenNow && !wasHidden[i]) {
         verbs.hides++
@@ -689,7 +690,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
     }
     let glassStepsBefore = 0
     for (const st of sim.progression.ledger.stores.values()) if (st.id.startsWith("glass:")) glassStepsBefore += st.counts.steps ?? 0
-    const carBefore = sim.progression.cars.map((c) => {
+    const carBefore = sim.progression.verbs.cars.map((c) => {
       const st = sim.progression.ledger.store(carStoreId(c.key))
       return { smashed: Boolean(st?.counts.smashed), alarm: Boolean(st?.counts.alarm) }
     })
@@ -712,8 +713,8 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
         verbEvent(`The dead rattled the cans at ${line.id}`, lead.x, lead.y)
       }
     }
-    for (let c = 0; c < sim.progression.cars.length; c++) {
-      const car = sim.progression.cars[c]!
+    for (let c = 0; c < sim.progression.verbs.cars.length; c++) {
+      const car = sim.progression.verbs.cars[c]!
       const st = sim.progression.ledger.store(carStoreId(car.key))
       const before = carBefore[c]
       if (st?.counts.smashed && !before?.smashed) {

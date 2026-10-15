@@ -58,6 +58,10 @@ export function judgeMat(recipes: readonly TinkerRecipe[], mat: readonly ItemId[
   return { kind: "assemble", recipe: recipe.id, pair }
 }
 
+/** The ledger rule a try at the mat runs: the outcome is picked before the try, the label never gives it away. */
+export const tinkerRule = (o: TinkerOutcome) =>
+  o.kind === "assemble" ? `tinker:${o.recipe}` : o.kind === "almost" ? `tinker:idea:${o.recipe}` : "tinker:clatter"
+
 /** Catalog entries for the corkboard's ideas and crossed-out tries. */
 export function tinkerKnowledgeItems(recipes: readonly TinkerRecipe[]): ItemDef[] {
   const tinkered = recipes.filter((r) => r.tinker)

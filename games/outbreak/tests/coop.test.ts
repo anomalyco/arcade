@@ -227,7 +227,7 @@ describe("CoopRoomCore", () => {
     const b = client(core, "Bob")
     run(core, [a, b], 3)
     const progression = core.sim.progression
-    const page = progression.pages.find((p) => p.buildingId === "pharmacy")!
+    const page = progression.knowledge.pages.find((p) => p.buildingId === "pharmacy")!
     for (const c of [a, b]) expect(c.ledger.count(page.id, "page")).toBe(1)
     Object.assign(core.sim.slot(b.id)!.survivor, { x: page.x, y: page.y + 1, aim: -Math.PI / 2 })
     core.sim.rebuildSolids()

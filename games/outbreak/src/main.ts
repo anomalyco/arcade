@@ -318,7 +318,7 @@ async function main() {
   audio.arm()
   const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
   coop.onFootfall = footfall
-  coop.hidden = (id) => Boolean(session.view.progression.hiddenIn(id))
+  coop.hidden = (id) => Boolean(session.view.progression.verbs.hiddenIn(id))
   let avatar = new Survivor(renderer)
   avatar.onFootfall = footfall
   let avatarPalette: object | null = null

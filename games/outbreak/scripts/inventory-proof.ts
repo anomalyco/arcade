@@ -174,7 +174,7 @@ try {
     await step(page, 1, { interact: true })
     await step(page, 4)
     await snap(page, "bench", "The workbench: E installed the toolbox; tap E to lay two materials on the mat", "prompt")
-    while ((await sim(page, `return progression.mat("${bench.id}").map((s) => s.item).join("+")`)) !== "chem+chem") await step(page, 1, { interact: true })
+    while ((await sim(page, `return progression.tinkering.mat("${bench.id}").map((s) => s.item).join("+")`)) !== "chem+chem") await step(page, 1, { interact: true })
     await step(page, 1, { interact: true, interactHeld: true })
     await step(page, 26, { interactHeld: true })
     await step(page, 70)

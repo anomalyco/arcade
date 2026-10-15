@@ -1,7 +1,8 @@
 import type { AIAgent, AIState } from "@arcade/kit/sim/ai"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { hash3, Rng } from "@arcade/kit/sim/rng"
-import { DEFAULT_PROGRESSION_TUNING, lootSites, type LootSite } from "./progression"
+import { lootSites, type LootSite } from "./progression/loot"
+import { DEFAULT_PROGRESSION_TUNING } from "./progression/tuning"
 import { closetSpot } from "./discovery/closet-spot"
 import {
   CHUNK,
