@@ -540,5 +540,6 @@ test("zombie shamble and crouch-run reference cycles, FK shamble arms, variants 
   const comp = compareCycles(crouchCyc, crouchRef)
   expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(8.5)
   expect(comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(7.5)
-  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.0)
+  // 10.7° before the knee pole followed the boot; knees over toes (stance knee-vs-foot 21° → 7°) costs 0.5° here.
+  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.5)
 })

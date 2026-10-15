@@ -52,7 +52,12 @@ for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["s
           contacts++
         }
       }
-      if (vy !== 0) expect(a.feet[1].p[2] - a.feet[0].p[2]).toBeGreaterThanOrEqual(0.199999)
+      // Side-steps keep the boots apart across the leg heading; they never pass through each other.
+      if (vy !== 0) {
+        const s = Math.sin(a.legYaw), c = Math.cos(a.legYaw)
+        const d = [a.feet[1].p[0] - a.feet[0].p[0], a.feet[1].p[2] - a.feet[0].p[2]]
+        expect(-d[0]! * s + d[1]! * c).toBeGreaterThanOrEqual(0.15)
+      }
       expect(Math.abs(angleDiff(a.legYaw, a.aim))).toBeLessThanOrEqual(1.050001)
       expect(a.body!.pelvis.p[1]).toBeGreaterThan(vx >= 4.2 ? 0.66 : 0.75)
       expect(a.body!.head.p).toEqual(at(a.body!.torso, 0.02, RIG.neckY, 0))
@@ -448,8 +453,10 @@ test("reversals, sharp turns, strafe transitions, hard stops and mux stepping ha
       for (let i = 0; i < 2; i++) {
         const hip = b.th[i]!.p, knee = at(b.th[i]!, 0, -RIG.thigh, 0), shinEnd = at(b.sh[i]!, 0, -RIG.shin, 0)
         const mid = [(hip[0] + shinEnd[0]) * 0.5, (hip[1] + shinEnd[1]) * 0.5, (hip[2] + shinEnd[2]) * 0.5]
-        const kneeFwd = (knee[0] - mid[0]!) * b.pelvis.x[0] + (knee[1] - mid[1]!) * b.pelvis.x[1] + (knee[2] - mid[2]!) * b.pelvis.x[2]
-        const kneeSide = Math.abs((knee[0] - mid[0]!) * b.pelvis.z[0] + (knee[1] - mid[1]!) * b.pelvis.z[1] + (knee[2] - mid[2]!) * b.pelvis.z[2])
+        // The knee tracks over the boot, which may turn from the pelvis while strafing.
+        const fy = a.feet[i]!.yaw, fx = [Math.cos(fy), 0, Math.sin(fy)], fz = [-Math.sin(fy), 0, Math.cos(fy)]
+        const kneeFwd = (knee[0] - mid[0]!) * fx[0]! + (knee[2] - mid[2]!) * fx[2]!
+        const kneeSide = Math.abs((knee[0] - mid[0]!) * fz[0]! + (knee[2] - mid[2]!) * fz[2]!)
         expect(kneeFwd).toBeGreaterThan(-0.01)
         expect(kneeSide).toBeLessThan(0.17)
       }
@@ -483,15 +490,30 @@ test("walk-to-run-to-sprint-to-walk speed ramp and strafe reversals keep phase, 
     prevFeet = a.feet.map(f => [...f.p] as [number, number, number])
   }
 
-  // Strafe left <-> right reversal keeps feet uncrossed in aim space and leads with the outside foot
+  // Strafe left <-> right reversals at run speed cross over cleanly: the hips turn toward travel and the boots
+  // pass on either side of the travel line without touching.
   const st = newAvatar("strafe-shuffle", 0, 0, 0, "rifle")
   let y = 0
+  const boot = (f: { p: number[]; yaw: number }) => [[f.p[0]! - Math.cos(f.yaw) * 0.07, f.p[2]! - Math.sin(f.yaw) * 0.07], [f.p[0]! + Math.cos(f.yaw) * 0.19, f.p[2]! + Math.sin(f.yaw) * 0.19]] as const
+  const segGap = (a: readonly (readonly number[])[], b: readonly (readonly number[])[]) => {
+    let best = Infinity
+    for (let k = 0; k <= 20; k++) for (let q = 0; q <= 20; q++) {
+      const pa = [a[0]![0]! + (a[1]![0]! - a[0]![0]!) * k / 20, a[0]![1]! + (a[1]![1]! - a[0]![1]!) * k / 20]
+      const pb = [b[0]![0]! + (b[1]![0]! - b[0]![0]!) * q / 20, b[0]![1]! + (b[1]![1]! - b[0]![1]!) * q / 20]
+      best = Math.min(best, Math.hypot(pa[0]! - pb[0]!, pa[1]! - pb[1]!))
+    }
+    return best
+  }
   for (let n = 0; n < 240; n++) {
     const vy = n < 80 ? 3.8 : n < 160 ? -3.8 : 3.8
     y += vy * dt
     animate(st, dt, n * dt, 0, y, 0, vy, 0)
-    expect(st.feet[1].p[2] - st.feet[0].p[2]).toBeGreaterThanOrEqual(0.195)
-    expect(Math.abs(angleDiff(st.legYaw, st.aim))).toBeLessThanOrEqual(0.55)
+    // Boots at different heights pass over each other; only compare them near the floor.
+    if (Math.max(st.feet[0].p[1], st.feet[1].p[1]) < 0.06 && segGap(boot(st.feet[0]), boot(st.feet[1])) < 0.08) console.log("GAP", n, segGap(boot(st.feet[0]), boot(st.feet[1])).toFixed(3), st.feet.map(f => (f.planted ? "P" : "s") + f.p[1].toFixed(2) + "@" + f.p[0].toFixed(2) + "," + (f.p[2] - y).toFixed(2) + " y" + (f.yaw * 57.3).toFixed(0)).join(" "), (st.legYaw * 57.3).toFixed(0), (st.motion as any).strafeCross.toFixed(2), ((st.motion as any).strafePhi * 57.3).toFixed(0), st.svy.toFixed(2))
+    if (Math.max(st.feet[0].p[1], st.feet[1].p[1]) < 0.06) expect(segGap(boot(st.feet[0]), boot(st.feet[1]))).toBeGreaterThan(0.08)
+    expect(Math.abs(angleDiff(st.legYaw, st.aim))).toBeLessThanOrEqual(1.050001)
+    if (n === 70) expect(angleDiff(st.legYaw, st.aim)).toBeGreaterThan(0.6)
+    if (n === 150) expect(angleDiff(st.legYaw, st.aim)).toBeLessThan(-0.6)
   }
 })
 

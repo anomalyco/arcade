@@ -27,9 +27,21 @@ import {
   type V3,
   type PushPart,
 } from "@arcade/kit/rig"
-import { angleSpring, gaitAt, stepHash, stiffness } from "@arcade/kit/human-locomotion"
+import {
+  angleSpring,
+  backpedalling,
+  gaitAt,
+  stepHash,
+  stiffness,
+  strafeFootOffset,
+  strafeFootOpen,
+  strafeHipLimit,
+  strafeLegGoal,
+  strafeSeparate,
+  strafeStance,
+} from "@arcade/kit/human-locomotion"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
-import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { kneePole, poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
 import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import { angleDiff } from "@arcade/kit/sim/geom"
 import { PISTOL_RELOAD_TIME } from "../shared/combat"
@@ -144,6 +156,8 @@ export class Survivor {
   private sinceShot = 10
   private shotCount = 0
   private back = false
+  private yawOffset = spring()
+  private pelvisYaw = spring()
   private models: number[]
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
@@ -239,6 +253,8 @@ export class Survivor {
     this.sinceShot = 10
     this.shotCount = 0
     this.back = false
+    this.yawOffset = spring()
+    this.pelvisYaw = spring()
     this.aimWeight = 0
     this.holdRemaining = 0
     this.recBack = spring()
@@ -278,6 +294,8 @@ export class Survivor {
       this.svy = p.vy
       this.phase = 0
       this.back = false
+      this.yawOffset = spring()
+      this.pelvisYaw = { x: p.aim, v: 0 }
       this.chest = { x: p.aim, v: 0 }
       this.head = { x: p.aim, v: 0 }
       this.weaponYaw = { x: p.aim, v: 0 }
@@ -366,7 +384,11 @@ export class Survivor {
       const speed = Math.hypot(vx, vy)
       moving = Math.min(1, speed / 3.4)
       const activeProfile = profile ?? humanProfiles.soldier
-      const curGait = gaitAt(speed, false, 0, activeProfile)
+      // Direction-aware stepping shared with Blackout: hips turn partly toward travel, side-steps never cross and
+      // run-speed strafes cross over cleanly (strafeStance), with a continuous forward/backpedal flip.
+      const travelDir = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
+      const stance = strafeStance(speed > 0.2 ? speed : 0, this.yaw, travelDir, activeProfile)
+      const curGait = gaitAt(speed, stance.backness, stance.sideStep, activeProfile)
       const runBlend = curGait.run
       const leanScale = 0.25 + 0.75 * runBlend
       stepSpring(this.leanX, 90, 0.38, h, vx * 0.028 * leanScale + ((vx - this.svx) / h) * 0.003)
@@ -375,19 +397,27 @@ export class Survivor {
       this.svy = vy
 
       const effTwistLimit = isPistol ? twistLimit : 1.05
-      let travel = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
-      const rawTravelDiff = Math.abs(angleDiff(travel, p.aim))
-      if (this.back ? rawTravelDiff < 1.72 : rawTravelDiff > 2.05) this.back = !this.back
-      if (this.back) travel += Math.PI
-      const want = p.aim + clamp(angleDiff(travel, p.aim), -effTwistLimit, effTwistLimit)
+      const rel = angleDiff(travelDir, p.aim)
+      const hipLimit = Math.min(strafeHipLimit(speed, activeProfile), effTwistLimit)
+      if (speed > 0.35) {
+        const wasBack = this.back
+        this.back = backpedalling(rel, this.back)
+        if (this.back !== wasBack) {
+          // Inertialize the forward/backpedal flip so the hips keep their angular velocity.
+          this.yawOffset.x = clamp(this.yawOffset.x + strafeLegGoal(rel, wasBack, hipLimit) - strafeLegGoal(rel, this.back, hipLimit), -0.85, 0.85)
+        }
+      } else this.back = false
+      stepSpring(this.yawOffset, stiffness(clamp(activeProfile.transitionHz ?? 6, 2, 14)), 1, h, 0)
+      const want = p.aim + clamp((speed > 0.35 ? strafeLegGoal(rel, this.back, hipLimit) : 0) + this.yawOffset.x, -effTwistLimit, effTwistLimit)
       this.yaw += angleDiff(want, this.yaw) * Math.min(1, h * 9)
       this.yaw = p.aim + clamp(angleDiff(this.yaw, p.aim), -effTwistLimit, effTwistLimit)
 
       const c = Math.cos(this.yaw)
       const s = Math.sin(this.yaw)
       const rest = (i: number): V3 => {
-        const x = sx - s * (i ? 0.145 : -0.145)
-        const z = sy + c * (i ? 0.145 : -0.145)
+        const [ox, oz] = strafeFootOffset(stance, this.yaw, i, curGait.stride, activeProfile)
+        const x = sx + ox
+        const z = sy + oz
         return [x, support(x, z), z]
       }
       if (teleport && step === 1) {
@@ -431,14 +461,8 @@ export class Survivor {
             const target = rest(i)
             target[0] += vx * lead - s * f.stepLat
             target[2] += vy * lead + c * f.stepLat
-            // Preserve Blackout's minimum side-step separation.
             const other = this.feet[1 - i]!
-            const side = i ? 1 : -1
-            const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
-            if (lat < 0.16) {
-              target[0] -= s * side * (0.16 - lat)
-              target[2] += c * side * (0.16 - lat)
-            }
+            ;[target[0], target[2]] = strafeSeparate(stance, this.yaw, i, [target[0], target[2]], [other.p[0], other.p[2]], activeProfile)
             target[1] = support(target[0], target[2])
             const ep = smoother(f.prevU)
             if (!firstSwingFrame && ep > 0 && ep < 0.95) {
@@ -467,7 +491,7 @@ export class Survivor {
             f.lift[1] + (target[1] - f.lift[1]) * e + liftBell * ((0.085 + 0.125 * runBlend) * clearance + boost),
           )
           f.p = [px, py, pz]
-          f.yaw += angleDiff(this.yaw + f.stepToe, f.yaw) * e
+          f.yaw += angleDiff(this.yaw + strafeFootOpen(stance, i) + f.stepToe, f.yaw) * e
         } else if (!f.planted) {
           f.planted = true
           f.prevU = 0
@@ -475,6 +499,10 @@ export class Survivor {
           this.onFootfall?.(f.p[0], f.p[2], speed)
         }
       })
+      // The pelvis turns between the feet (Blackout's rule), so strafing boots that open toward travel take it along.
+      const f0 = this.feet[0]!.yaw
+      const midYaw = f0 + angleDiff(this.feet[1]!.yaw, f0) * 0.5
+      angleSpring(this.pelvisYaw, p.aim + clamp(angleDiff(midYaw, p.aim), -effTwistLimit, effTwistLimit), activeProfile.bodyHz, h)
       // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).
       const footSupport =
         (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
@@ -554,7 +582,7 @@ export class Survivor {
       bobOffset -
       this.reachDrop.x
     let pelvis = roll(
-      yawFrame([p.x, height, p.y], this.yaw + this.twist.x),
+      yawFrame([p.x, height, p.y], this.pelvisYaw.x + this.twist.x),
       Math.cos(this.phase * Math.PI * 2) * (0.07 + 0.03 * (profile?.hipDrop ?? 0)) * moving +
         (shambleMod?.pelvisRollAdd ?? 0),
     )
@@ -817,7 +845,7 @@ export class Survivor {
       const chordX =
         (ankle[0] - hip[0]) * pelvis.x[0] + (ankle[1] - hip[1]) * pelvis.x[1] + (ankle[2] - hip[2]) * pelvis.x[2]
       const backKick = runBlend * kickBell * clamp(-chordX / 0.35, 0, 1)
-      const pole = dirIn(pelvis, 1, 0.28 - 0.65 * backKick, side * (0.25 - 0.17 * runBlend * kickBell))
+      const pole = kneePole(pelvis, foot.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * runBlend * kickBell)
       const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
       const thigh = limb(hip, knee, pole, pelvis.x)
       const shin = limb(knee, end, pole, pelvis.x)

@@ -16,7 +16,10 @@ const EXPECTED_HASHES = {
   // poseLegs, crouch-depth swing heel-kick attenuation (preventing the crouched pelvis from jackknifing the
   // swing thigh into the chest), unwrapped sagittal shin-relative swing ankle pitch, seeded pair-balanced
   // per-step variation, start/stop weight transfer, turn banking, and secondary head lag.
-  new: "e1a01135fc8524456b19cdea06a8f276d6c23efe4490633b0e3caa51896a5b1e",
+  // Then -> 112f1d46fb4336a72c808e75a5d2ba20c78f5118bd489888975a5de7dc8a90b6 for the strafe pass: this run circles
+  // while aiming, so the soldier now turns its hips toward travel, side-steps without crossing or crosses over at run
+  // speed, flips to backpedal without a hip jump, and tracks its knees over its boots.
+  new: "112f1d46fb4336a72c808e75a5d2ba20c78f5118bd489888975a5de7dc8a90b6",
 } as const
 
 type Api = {
