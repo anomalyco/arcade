@@ -5,7 +5,9 @@
   Look targets: `concept/shot-5-fleet.png` (sea, swell, sky) and `concept/shot-4-topdown.png` (islands, reefs).
 - Module contracts and file ownership: `CONTRACTS.md` (Frame uniform, scene passes, sea, islands, net, URL params).
 - `bun run dev` runs Wrangler (rooms, :8797) and Vite (:5197, proxies `/ws`). `bun run check` before every push;
-  pushing to `main` deploys to https://anoma.ly/arcade/carrier/ (`bun run deploy` also works).
+  pushing to `main` deploys to https://anoma.ly/arcade/carrier/ (`bun run deploy` also works). A deploy restarts every
+  room (games in progress reset), so CI runs `scripts/deploy.ts --if-changed`: it skips the deploy when the build's
+  fingerprint (`/arcade/carrier/deploy.txt`) matches the live one, e.g. a merge that only touches other games.
 - WebGPU only runs in secure contexts: test via the deployed URL or `localhost`, never a bare LAN hostname.
 - No params: the load screen (quick join, create, join by code; see CONTRACTS.md "Multiplayer"). URL params:
   `?room=name` (join it directly), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea time),
