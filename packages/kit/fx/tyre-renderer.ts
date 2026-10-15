@@ -1,6 +1,9 @@
 import { SMOKE_CAPACITY, SMOKE_STRIDE, type SmokeTrail } from "./smoke-trail"
 
-export const tyreShader = (common: string, cone = "if (li.dir.w > -1.0) { a *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(-d / dist, normalize(li.dir.xyz))); }") => /* wgsl */ `
+/** Unlit smoke and dust colour: Getaway's night street. Hosts with a frame ambient (Noir) pass their own expression. */
+export const TYRE_SMOKE_BASE = "vec3f(0.25, 0.28, 0.34)"
+export const TYRE_DUST_BASE = "vec3f(0.36, 0.31, 0.25)"
+export const tyreShader = (common: string, cone = "if (li.dir.w > -1.0) { a *= smoothstep(li.dir.w, min(1.0, li.dir.w + 0.08), dot(-d / dist, normalize(li.dir.xyz))); }", base = TYRE_SMOKE_BASE, dust = TYRE_DUST_BASE) => /* wgsl */ `
 ${common}
 @group(1) @binding(0) var noiseTex: texture_3d<f32>;
 @group(1) @binding(1) var noiseSampler: sampler;
@@ -35,6 +38,7 @@ struct SO {
   @location(1) world: vec3f,
   @location(2) @interpolate(flat) density: f32,
   @location(3) light: vec3f,
+  @location(4) @interpolate(flat) dust: f32,
 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, s: SI) -> SO {
   let corners = array<vec2f, 6>(vec2f(-1,-1),vec2f(1,-1),vec2f(1,1),vec2f(-1,-1),vec2f(1,1),vec2f(-1,1));
@@ -43,7 +47,7 @@ struct SO {
   var o: SO;
   o.world = s.pos.xyz + (right * c.x + up * c.y) * s.pos.w;
   o.pos = F.viewProj * vec4f(o.world,1);
-  o.uv = c; o.density = s.misc.x; o.light = practical(o.world);
+  o.uv = c; o.density = s.misc.x; o.light = practical(o.world); o.dust = s.misc.y;
   return o;
 }
 @fragment fn fs(o: SO) -> @location(0) vec4f {
@@ -54,7 +58,7 @@ struct SO {
   let erosion = smoothstep(0.18, 0.75, n);
   let ground = smoothstep(-0.1, 0.42, o.world.y);
   let alpha = 1.0 - exp(-shape * erosion * o.density * ground * 0.8);
-  let color = vec3f(0.25, 0.28, 0.34) * (0.7 + n * 0.6) + o.light * 0.9;
+  let color = select(${base}, ${dust}, o.dust > 0.5) * (0.7 + n * 0.6) + o.light * select(0.9, 0.75, o.dust > 0.5);
   return vec4f(color * alpha, alpha);
 }
 `
@@ -67,7 +71,7 @@ export class SmokeRenderer {
   private readonly motionPipeline: GPURenderPipeline
   private readonly noise: GPUTexture
   private count = 0
-  constructor(private readonly device: GPUDevice, main: GPUBindGroupLayout, common: string, depthFormat: GPUTextureFormat = "depth24plus-stencil8", cone?: string) {
+  constructor(private readonly device: GPUDevice, main: GPUBindGroupLayout, common: string, depthFormat: GPUTextureFormat = "depth24plus-stencil8", cone?: string, base?: string, dust?: string) {
     const d = device
     this.instances = d.createBuffer({ size: SMOKE_CAPACITY * SMOKE_STRIDE * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     const noise = this.noise = d.createTexture({ size: [32,32,32], dimension: "3d", format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
@@ -83,7 +87,7 @@ export class SmokeRenderer {
       { binding: 0, resource: noise.createView() },
       { binding: 1, resource: d.createSampler({ minFilter: "linear", magFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", addressModeW: "repeat" }) },
     ] })
-    const module = d.createShaderModule({ code: tyreShader(common, cone) })
+    const module = d.createShaderModule({ code: tyreShader(common, cone, base, dust) })
     const descriptor: GPURenderPipelineDescriptor = {
       layout: d.createPipelineLayout({ bindGroupLayouts: [main, layout] }),
       vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }, { shaderLocation: 1, offset: 16, format: "float32x4" }] }] },

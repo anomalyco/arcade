@@ -458,6 +458,12 @@ export const LIBRARY_FILES: Record<string, readonly LibraryFile[]> = {
   "ambience.threat": [
     {"file":"ambience.threat.1.ogg","path":"packages/kit/audio/sfx/ambience.threat.1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"eleven_text_to_sound_v2, take 1 of 2, 24 s requested, prompt influence 0.4, loop; trimmed, crossfade-looped, normalised to -32 LUFS, Ogg Opus","requestId":"6a55d6e4840c02b9fd6719b7ea704c31","durationSeconds":23.4,"loudness":-32,"peakDb":-17.3,"gain":1.001,"bytes":220039,"loopStart":0.25,"loopEnd":23.65},
   ],
+  "vehicle.tyre.screech": [
+    {"file":"tire_screech_loop.mp3","path":"games/getaway/public/sfx/tire_screech_loop.mp3","source":"project","license":"Proprietary project asset (Getaway public/sfx)","provenance":"Getaway's tyre screech loop","durationSeconds":4.53,"loudness":-18.4,"peakDb":-5.4,"gain":0.525,"bytes":46021,"loopStart":0,"loopEnd":4.530042},
+  ],
+  "vehicle.tyre.chirp": [
+    {"file":"skid_short.mp3","path":"games/getaway/public/sfx/skid_short.mp3","source":"project","license":"Proprietary project asset (Getaway public/sfx)","provenance":"Getaway's short skid","durationSeconds":0.379,"loudness":-18.5,"peakDb":-5.7,"gain":0.665,"bytes":5374},
+  ],
   "ui.click": [
     {"file":"ui_click.mp3","path":"games/getaway/public/sfx/ui_click.mp3","source":"project","license":"Proprietary project asset (Getaway public/sfx)","provenance":"Getaway's interface click","durationSeconds":0.48,"loudness":-20.8,"peakDb":-0.8,"gain":0.688,"bytes":6627},
   ],
