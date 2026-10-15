@@ -26,8 +26,8 @@ movement keys still move you, and only the mouse over the sheet is taken, so you
   are small crosses, shown only from 3 px/m.
 - Marks: click the sheet to place a lettered pin, click a pin (or right-click near it) to clear it. Marks are kept in
   local storage per seed, house seed and world mode.
-- Moving vehicles: `MapFrame.vehicles` takes position, heading and size. `gameMapFrame` passes none until the game
-  has drivable vehicles; parked ones come from the chunks.
+- Vehicles from the sim (`CoopSim.vehicles`) at their current position and heading, wherever that ground has been
+  explored; wrecks are drawn grey.
 
 Two looks: Survey paper (default) and Noir survey (Lab › Map › Map look).
 

@@ -206,7 +206,8 @@ export class OutbreakMap {
       time: f.time,
       actors: [...f.teammates, f.self],
       pings: f.pings,
-      vehicles: f.vehicles,
+      // Vehicles show where you have explored; one you drove away stays visible because its ground is explored too.
+      vehicles: f.vehicles.filter((v) => this.memory.explored(v.x, v.y)),
       hordeMemory: this.settings.mapHordeMemory,
       place: this.placeName(f.self.x, f.self.y),
     }

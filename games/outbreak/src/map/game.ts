@@ -17,7 +17,7 @@ export type MapGameInput = {
   ground: number
   visionChanged: boolean
   windowChanged: boolean
-  /** Moving vehicles, once the game has them; parked cars come from the chunks. */
+  /** Overrides the sim's vehicles (proofs). */
   vehicles?: readonly MapVehicle[]
 }
 
@@ -56,7 +56,9 @@ export function gameMapFrame(g: MapGameInput): MapFrame {
     pings: view.progression.pings
       .filter((ping) => time < ping.until)
       .map((ping) => ({ x: ping.x, y: ping.y, label: ping.label, colour: colour(ping.by), left: ping.until - time })),
-    vehicles: g.vehicles ?? [],
+    vehicles:
+      g.vehicles ??
+      sim.vehicles.list.map((v) => ({ x: v.x, y: v.y, heading: v.h, length: v.spec.length, width: v.spec.width, colour: v.wreck ? "#7a6e62" : undefined })),
     project: (x, y, z) => cam.project(x, y, z, g.w, g.h),
     ground: g.ground,
   }

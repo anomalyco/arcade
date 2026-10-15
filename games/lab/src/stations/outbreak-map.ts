@@ -20,7 +20,7 @@ export default defineStation({
   title: "Outbreak map",
   summary:
     "The live game's map: only what the survivor has seen, kept per 32 m chunk and drawn from cached tiles. Variants are the sheet's two looks and the two optional on-screen helpers, which are off by default to keep the Diegetic HUD clear.",
-  order: 114,
+  order: 119,
   prop: "panels",
   color: 0xd6cbb0,
   status: "review",
