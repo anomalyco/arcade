@@ -28,6 +28,13 @@ const variants: StationVariant[] = [
     setup: [{ command: "archers.scene", args: { scene: "round", arena: "cloister" } }],
   },
   {
+    id: "aqueduct",
+    label: "Aqueduct (4 bots)",
+    note: "The third arena: a broken aqueduct deck over a ravine; falling out of the chambers below brings you in at the top.",
+    url: `${page}#round/aqueduct`,
+    setup: [{ command: "archers.scene", args: { scene: "round", arena: "aqueduct" } }],
+  },
+  {
     id: "practice",
     label: "Practice vs bots",
     note: "Click in and play (WASD or arrows, Space jump, Shift draw, E dodge) while the Moves knobs change running, jumping, walls, dodging and arrows live.",

@@ -189,7 +189,7 @@ describe("matches", () => {
     expect(JSON.stringify(c.s)).toBe(JSON.stringify(a.s))
   })
 
-  for (const arena of ["belltower", "cloister"]) {
+  for (const arena of ["belltower", "cloister", "aqueduct"]) {
     test(`bots play fast rounds with the full move set (${arena})`, () => {
       const w = botWorld(3, arena)
       expect(navGraph(w.arena, w.t).edges.size).toBeGreaterThan(40)

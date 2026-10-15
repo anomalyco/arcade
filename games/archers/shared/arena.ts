@@ -13,7 +13,7 @@ export type ArenaDef = {
   /** Fire bowls: decor that lights the scene and throws embers. */
   braziers: readonly (readonly [number, number])[]
   /** Background set the renderer builds behind the plane. */
-  backdrop: "belltower" | "cloister"
+  backdrop: "belltower" | "cloister" | "aqueduct"
 }
 
 export type Arena = ArenaDef & {
@@ -80,7 +80,42 @@ const CLOISTER: ArenaDef = {
   backdrop: "cloister",
 }
 
-export const ARENA_DEFS: readonly ArenaDef[] = [BELL_TOWER, CLOISTER]
+/**
+ * A broken aqueduct over a ravine. The deck stands on pillars; under it three chambers open onto the drop, so falling
+ * out of the bottom brings you in at the top, onto the keystone or back down to the deck. The outer chambers open at
+ * the foot onto the side shaft (which wraps across the edge). The keystone and the
+ * centre ledge are mostly reached by wrapping.
+ */
+const AQUEDUCT: ArenaDef = {
+  id: "aqueduct",
+  name: "Aqueduct",
+  rows: [
+    "####........................####",
+    "##...........######...........##",
+    "................................",
+    "................................",
+    "..............####..............",
+    "......#####..........#####......",
+    "................................",
+    "................................",
+    "................................",
+    "...###########....###########...",
+    "...##.....##........##.....##...",
+    "...##.....##........##.....##...",
+    "...##.....##........##.....##...",
+    "...##.....##..####..##.....##...",
+    "..........##........##..........",
+    "..........##........##..........",
+    "......###.##........##.###......",
+    "#####.....##........##.....#####",
+  ],
+  spawns: [[7, 9], [24.5, 9], [8, 13], [23.5, 13]],
+  chests: [[16, 14], [16, 5], [7, 2], [24.5, 2]],
+  braziers: [[4.5, 9], [27, 9]],
+  backdrop: "aqueduct",
+}
+
+export const ARENA_DEFS: readonly ArenaDef[] = [BELL_TOWER, CLOISTER, AQUEDUCT]
 
 function pad(rows: readonly string[], w: number): string[] {
   return rows.map((r) => (r.length >= w ? r.slice(0, w) : r + ".".repeat(w - r.length)))
