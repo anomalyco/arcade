@@ -1,4 +1,4 @@
-import { RewindHistory } from "@arcade/kit/net/rewind"
+import { RewindHistory, type RewindFrameSnapshot } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import {
@@ -125,6 +125,11 @@ export type SimState = {
   progression: OutbreakProgressionSnapshot
   vehicles: OutbreakVehicleSnapshot
   featureStates: Record<string, unknown>
+  /**
+   * Lag-compensation history: recent zombie positions that shots and finishers rewind to (absent in older snapshots).
+   * Excluded from `hashSimState`, which digests the world itself; `diffSimState` still compares it.
+   */
+  rewind?: RewindFrameSnapshot<number>[]
 }
 
 export type SimInputs = Readonly<Record<string, Command>> | readonly Command[]
@@ -731,6 +736,7 @@ export class CoopSim {
       progression: this.progression.snapshot(),
       vehicles: this.vehicles.snapshot(),
       featureStates: featureStatesObj,
+      rewind: this.rewind.snapshot(),
     }
   }
 
@@ -810,6 +816,7 @@ export class CoopSim {
     )
     this.combat.restore(state.combat, this.slots)
     this.vehicles.restore(state.vehicles, this.slots)
+    this.rewind.restore(state.rewind ?? [])
 
     for (const [k, v] of Object.entries(state.featureStates ?? {})) {
       this.featureStates.set(k, JSON.parse(JSON.stringify(v)))
@@ -841,9 +848,59 @@ export class CoopSim {
   }
 }
 
+/** A sim that is still exactly at the `SimState` it last returned. */
+type LiveSim = { sim: CoopSim | undefined }
+
+/** States returned by `stepSim`, mapped to the sim that produced them. Taken (and deleted) by the next step. */
+const liveSims = new WeakMap<SimState, LiveSim>()
+/** The newest live sims; older ones are released so many abandoned branch heads don't each pin a world. */
+const liveOrder: LiveSim[] = []
+const MAX_LIVE_SIMS = 8
+
+function takeLiveSim(state: SimState): CoopSim | undefined {
+  const live = liveSims.get(state)
+  if (!live?.sim) return undefined
+  liveSims.delete(state)
+  const sim = live.sim
+  live.sim = undefined
+  // The caller may have edited the state since we returned it; only an untouched state continues the live sim.
+  return sameValue(state, sim.toSnapshot()) ? sim : undefined
+}
+
+function keepLiveSim(state: SimState, sim: CoopSim): void {
+  const live: LiveSim = { sim }
+  liveSims.set(state, live)
+  liveOrder.push(live)
+  if (liveOrder.length > MAX_LIVE_SIMS) liveOrder.shift()!.sim = undefined
+  for (let i = liveOrder.length - 1; i >= 0; i--) if (!liveOrder[i]!.sim) liveOrder.splice(i, 1)
+}
+
+/** Deep equality of plain JSON-like values (`Object.is` on leaves, so `-Infinity` and `NaN` compare exactly). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return Object.is(a, b)
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i])) return false
+    return true
+  }
+  if (Array.isArray(b)) return false
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  for (const k of keys) {
+    if (!Object.hasOwn(b, k) || !sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false
+  }
+  return true
+}
+
 /**
  * Pure simulation transition function `step(state, inputs, dt) -> state`:
  * Treats the entire game state as an immutable value with no hidden globals, clocks, or `Math.random`.
+ *
+ * Chained calls are cheap: the sim that produced `state` is kept alive (keyed by the returned object) and stepped in
+ * place when `state` comes back unedited, so the town, chunks and nav topology are reused rather than rebuilt. Any
+ * other state (a fork, an older tick, an edited one) is restored into a fresh sim. Both paths give identical results
+ * because restoring a snapshot is lossless; `stepSim` never mutates `state`.
  */
 export function stepSim(
   state: SimState,
@@ -851,7 +908,7 @@ export function stepSim(
   dt: number,
   options: StepSimOptions = {},
 ): SimState {
-  const sim = CoopSim.fromSnapshot(state)
+  const sim = takeLiveSim(state) ?? CoopSim.fromSnapshot(state)
   const tuning = options.tuning ?? DEFAULT_STAMINA_TUNING
   const timeScale = options.timeScale ?? 240
   for (let i = 0; i < sim.slots.length; i++) {
@@ -867,7 +924,9 @@ export function stepSim(
     sim.stepSurvivor(slot, cmd, dt, tuning)
   }
   sim.stepWorld(dt, timeScale, tuning)
-  return sim.toSnapshot()
+  const next = sim.toSnapshot()
+  keepLiveSim(next, sim)
+  return next
 }
 
 const JSON_INF = "__arcade_inf__"
@@ -927,9 +986,14 @@ export function forkSimState(
 
 /**
  * Computes a deterministic 64-bit FNV-1a hex digest (`"16-hex-chars"`) over a `SimState` snapshot.
+ * The world only: the `rewind` lag-compensation history is left out, so digests match those taken before it was
+ * serialised.
  */
 export function hashSimState(state: SimState): string {
-  const str = JSON.stringify(state, simJsonReplacer)
+  const str = JSON.stringify(state, function (this: unknown, key: string, value: unknown) {
+    if (key === "rewind" && this === state) return undefined
+    return simJsonReplacer(key, value)
+  })
   let h1 = 0x811c9dc5 >>> 0
   let h2 = 0xcbf29ce4 >>> 0
   for (let i = 0; i < str.length; i++) {

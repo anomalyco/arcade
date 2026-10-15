@@ -170,6 +170,13 @@ flowchart TD
 
 Authoritative gameplay runs at a fixed tick rate (`TICK_HZ` in `shared/`) using pure state transitions (`stepWorld(world, inputs, dt)`). Randomness inside `shared/` always draws from a seeded `Rng` (`@arcade/kit/sim/rng`), never `Math.random()`. Because `shared/` has zero browser or Worker dependencies, a solo/practice session in the browser and an authoritative multiplayer room in a Cloudflare Durable Object execute the exact same simulation code.
 
+Outbreak's whole world is also a value: `CoopSim.toSnapshot()` returns a plain JSON `SimState` (lag-compensation
+history included) and `stepSim(state, inputs, dt)` is a pure transition over it, for forks and rollouts. Chained
+calls cost about as much as stepping `CoopSim` in place (0.12–0.27 ms/tick vs 0.5–0.7 ms when every tick rebuilt the
+town and nav): `stepSim` keeps the sim that produced each returned state and steps it again when that exact, unedited
+state comes back. Forks, older states and edited states restore into a fresh sim. `scripts/stepsim-bench.ts` checks
+both paths hash for hash against the mutable sim; `hashSimState` leaves `rewind` out so digests stay comparable.
+
 ### Authoritative Durable Object rooms and client prediction
 
 Each multiplayer game deploys a Cloudflare Worker (`arcade-<name>`) with two Durable Object classes:
