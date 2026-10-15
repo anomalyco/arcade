@@ -181,16 +181,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`client/{input,camera}` & `orbit-gestures`",
-    description: "Top-down `Input` and `Camera`, plus 3D viewport orbit/pan/zoom gestures",
+    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||
       s === "@arcade/kit/orbit-gestures",
-  },
-  {
-    area: "`feel/*`",
-    description: "`GameFeel` trauma² shake, directional recoil kick, hit-stop, impulse blur, and reduced-motion",
-    match: (s) => s === "@arcade/kit/feel" || s.startsWith("@arcade/kit/feel/"),
   },
   {
     area: "`audio/*`",

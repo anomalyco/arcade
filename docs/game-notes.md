@@ -201,8 +201,8 @@ proven animation techniques to animation.md, not here.
     4× simultaneous ship+airburst+boat worst-case **0.687→0.602 ms** mean (**0.725→0.725 ms** peak, delta `-0.085 ms`, MAD `0.059`).
   All single and worst-case scenarios remain well within the 16.67 ms (60 Hz) frame budget; non-exploding frames add zero draws or passes.
 
-- **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate impulse motion blur to active bursts (`@arcade/kit/feel`, `packages/kit/fx/splatter*.ts`).**
-  Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and routing `@arcade/kit/feel` impulse shutter blur to `lookPipes.composite` only while `hasFeelBurst` is non-zero (`compositeFast` remains register-identical at rest) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and add **`+0.023 ms`** whole-frame GPU median (`MAD 0.003 ms`) during active shot blur + splatter at `1000×680` on M5 Max Metal (`captures/game-feel/feel-proof.json`).
+- **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate shared `MotionBlur` impulse bursts to active frames (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `packages/kit/fx/splatter*.ts`).**
+  Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and running `@arcade/kit/gpu/motion-blur` (`MotionBlur` + `MotionBlurBurst`) before bloom/composite only when continuous shutter blur or an impulse burst is active (`0.000 ms` steady-state overhead when inactive; `compositeFast` runs on every Noir frame) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and keep steady-state `3456×1894` GPU time within noise (`+0.007 ms` street / `-0.016 ms` interior).
 
 - **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
   Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into
@@ -1295,9 +1295,17 @@ Candidates from the code audits; measure and playtest before moving any into the
   with body roll reaching 0.144 rad and pitch 0.148 rad. No page or console errors occurred. The startup centre-crop red
   mean stayed within 46.54–47.21 (46.64–47.22 with `off=trauma`, which is now ignored because trauma is baked in).
 
-- **Hit-stop is presentation only.** Freeze or slow what is drawn, never the simulation clock, so prediction and the
-  server stay in step.
-- **Scale shake with trauma squared** so small hits stay subtle and big ones land hard.
+- **Hit-stop is presentation only.** Freeze or slow what is drawn (`HitStop.step(dt)` in `@arcade/kit/client/camera`),
+  never the simulation clock, so prediction and the server stay in step.
+- **Scale shake with trauma squared, and keep feel primitives composable.** `Camera.add(trauma, dir?, kick?)` in
+  `packages/kit/client/camera.ts` drives `trauma²` 2-octave smooth 1D gradient noise on `(x, z, roll)` plus critically
+  damped directional recoil/lunge kicks, `MotionBlurBurst` in `packages/kit/gpu/motion-blur.ts` feeds short directional
+  and radial velocity impulses into the shared 8-tap depth-aware `MotionBlur` gather pass (`0.000 ms` steady-state GPU
+  overhead when inactive; `+0.007 ms` street / `-0.016 ms` interior paired `ab-gpu.ts` at `3456×1894`), and `G.z`
+  (`render.grade[2]`) drives the crimson edge damage flash in the existing post composite. In `SplatterRenderer`
+  (`packages/kit/fx/splatter-renderer.ts`), keeping `alpha: { srcFactor: "zero", dstFactor: "one" }` preserves
+  `hdrView.a` (`1.0 - lookFlashIrradiance`) so Outbreak's Noir post shader retains deep arterial crimson inside the
+  flashlight beam while desaturating blood outside the beam (`36.16×` beam-to-shadow red chroma ratio, up from `7.38×`).
 - **Blackout playtest verdicts.** Kit rejected gunshot/sprint sound rings and found shot-triggered lamp flicker too
   strobey. Both switches now default off, including the Recommended preset in
   `games/blackout/src/ui/debug-overlay.ts`; monitor lights, paper, glass, monitor sparks, casings and trauma remain on.

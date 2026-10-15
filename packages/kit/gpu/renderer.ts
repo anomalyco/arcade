@@ -8,7 +8,14 @@ import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { installFramePacer } from "../gpu-perf"
-import { MotionHistory, motionSettings, type MotionKey } from "./motion"
+import {
+  MotionBlur,
+  MotionHistory,
+  motionSettings,
+  type MotionBlurBurst,
+  type MotionBlurSettings,
+  type MotionKey,
+} from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
 import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
@@ -143,8 +150,12 @@ export type FrameInput = {
   volume?: { downscale: number; rect?: readonly [number, number, number, number] } | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
-  /** Optional game-feel post-processing burst: [blurX, blurY, radialBlur, chromaticBoost] */
-  feel?: readonly [number, number, number, number]
+  /** Optional shared screen-space shutter + impulse motion blur (`@arcade/kit/gpu/motion-blur`). */
+  motionBlur?: {
+    settings: MotionBlurSettings
+    burst?: MotionBlurBurst
+    dt?: number
+  }
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
@@ -227,6 +238,14 @@ export class Renderer {
   private velocityMSAAView!: GPUTextureView
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
+  private sharedBlur: MotionBlur | null = null
+  private sharedBlurGroups: { down0: GPUBindGroup; composite: GPUBindGroup; w: number; h: number } | null = null
+  private readonly blurPrevVP = new Float32Array(16)
+  private readonly blurLastVP = new Float32Array(16)
+  private readonly blurInverseVP = new Float32Array(16)
+  private readonly blurLastEye = new Float32Array(3)
+  private blurLastTime = -1
+  private blurReady = false
   private level: Buf | null = null
   private glass: Buf | null = null
   private models: Buf[] = []
@@ -800,6 +819,8 @@ export class Renderer {
     this.width = w
     this.height = h
     this.measureTarget?.destroy();this.measureTarget=null
+    this.sharedBlurGroups = null
+    this.blurReady = false
     this.previousFrame = null
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
@@ -1109,24 +1130,46 @@ export class Renderer {
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
-    const feel = f.feel
     if (useLookPipes && effectiveLook) {
-      this.gradeData[4] = feel ? feel[0]! : 0
-      this.gradeData[5] = feel ? feel[1]! : 0
-      this.gradeData[6] = feel ? feel[2]! : 0
-      this.gradeData[7] = feel ? feel[3]! : 0
+      this.gradeData[4] = 0
+      this.gradeData[5] = 0
+      this.gradeData[6] = 0
+      this.gradeData[7] = 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
       })
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
-      this.gradeData[4] = (f.frame[45]! & 1) + (feel ? Math.min(0.48, Math.max(0, feel[3]!)) : 0)
-      this.gradeData[5] = feel ? feel[0]! : 0
-      this.gradeData[6] = feel ? feel[1]! : 0
-      this.gradeData[7] = feel ? feel[2]! : 0
+      this.gradeData[4] = f.frame[45]! & 1
+      this.gradeData[5] = 0
+      this.gradeData[6] = 0
+      this.gradeData[7] = 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
+
+    const mb = f.motionBlur
+    const frameTime = f.frame[19]!
+    const rawBlurDt = mb?.dt ?? (this.blurLastTime >= 0 ? frameTime - this.blurLastTime : 1 / 60)
+    const blurDt = Math.max(1 / 240, rawBlurDt > 0 && rawBlurDt < 0.25 ? rawBlurDt : 1 / 60)
+    const eyeMove = this.blurReady
+      ? Math.hypot(
+          f.frame[16]! - this.blurLastEye[0]!,
+          f.frame[17]! - this.blurLastEye[1]!,
+          f.frame[18]! - this.blurLastEye[2]!,
+        )
+      : 0
+    const blurValid = this.blurReady && eyeMove < 8
+    this.blurPrevVP.set(blurValid ? this.blurLastVP : f.frame.subarray(0, 16))
+    this.blurLastVP.set(f.frame.subarray(0, 16))
+    this.blurLastEye[0] = f.frame[16]!
+    this.blurLastEye[1] = f.frame[17]!
+    this.blurLastEye[2] = f.frame[18]!
+    this.blurLastTime = frameTime
+    this.blurReady = true
+    const mbContinuous = Boolean(mb?.settings.enabled && mb.settings.strength > 0.001 && mb.settings.shutter > 0.001)
+    const mbBurst = Boolean(mb?.settings.enabled && mb.settings.burst > 0.001 && mb.burst?.active)
+    const runSharedBlur = !motion && (mbContinuous || mbBurst)
 
     const total = f.batches.reduce((s, b) => s + b.count, 0)
     if (motion && total * INST_FLOATS > this.previousData.length) {
@@ -1205,7 +1248,7 @@ export class Renderer {
     const pass = enc.beginRenderPass({
       timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
       colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke ? "store" : "discard" },
+      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
     const [vx0, vy0, vx1, vy1] = f.view
@@ -1285,10 +1328,59 @@ export class Renderer {
     if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect)
 
     const g = this.postGroups!
+    let activeDown0 = g.down[0]!
+    let activeComposite = g.composite
+    if (runSharedBlur && mb) {
+      this.sharedBlur ??= new MotionBlur(d, HDR, true)
+      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== this.width || this.sharedBlurGroups.h !== this.height) {
+        this.sharedBlur.resize(this.width, this.height, this.hdrView, this.depthView)
+        const makeGroup = (srcView: GPUTextureView, params: GPUBuffer, extraView: GPUTextureView = srcView) =>
+          d.createBindGroup({
+            layout: this.postLayout,
+            entries: [
+              { binding: 0, resource: srcView },
+              { binding: 1, resource: this.sampler },
+              { binding: 2, resource: { buffer: params } },
+              { binding: 3, resource: extraView },
+              { binding: 4, resource: { buffer: this.gradeBuf } },
+            ],
+          })
+        this.sharedBlurGroups = {
+          down0: makeGroup(this.sharedBlur.output, this.postParams[0]!),
+          composite: makeGroup(this.sharedBlur.output, this.postParams[0]!, this.bloomViews[0]!),
+          w: this.width,
+          h: this.height,
+        }
+      }
+      const curVP = f.frame.subarray(0, 16)
+      mat4.inverse(curVP, this.blurInverseVP)
+      if (mb.burst) {
+        this.sharedBlur.burst.dx = mb.burst.dx
+        this.sharedBlur.burst.dy = mb.burst.dy
+        this.sharedBlur.burst.radial = mb.burst.radial
+        this.sharedBlur.burst.shutterBoost = mb.burst.shutterBoost
+      } else {
+        this.sharedBlur.burst.reset()
+      }
+      this.sharedBlur.update(
+        curVP,
+        this.blurInverseVP,
+        this.blurPrevVP,
+        blurDt,
+        mb.settings.strength,
+        mb.settings.shutter,
+        blurValid,
+        32,
+        mb.settings.burst,
+      )
+      this.sharedBlur.encode(enc)
+      activeDown0 = this.sharedBlurGroups.down0
+      activeComposite = this.sharedBlurGroups.composite
+    }
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
-      p.setBindGroup(0, g.down[i]!)
+      p.setBindGroup(0, i === 0 ? activeDown0 : g.down[i]!)
       p.draw(3)
       p.end()
     }
@@ -1301,14 +1393,7 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    const hasFeelBurst =
-      Boolean(f.feel) &&
-      (Math.abs(f.feel![0]!) > 0.00018 ||
-        Math.abs(f.feel![1]!) > 0.00018 ||
-        f.feel![2]! > 0.00018 ||
-        f.feel![3]! > 0.002)
     const useFastLookPost =
-      !hasFeelBurst &&
       useLookPipes &&
       effectiveLook &&
       (effectiveCompare.mode ?? 1) === 1 &&
@@ -1326,7 +1411,7 @@ export class Renderer {
             ? this.pipes.composite!
             : this.baselinePipes.composite!,
     )
-    fp.setBindGroup(0, motion ? this.motionComposite : g.composite)
+    fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
     fp.draw(3)
     fp.end()
     if(this.timing) this.timer!.finish(enc,output)
