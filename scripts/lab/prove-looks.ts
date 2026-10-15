@@ -6,7 +6,7 @@ import { chromium } from "playwright-core"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, type LookPresetId } from "@arcade/kit/gpu/look"
 
 const root = resolve(import.meta.dir, "../..")
-const out = resolve(process.env.LOOKS_OUT ?? "/Users/kit/code/home/artifacts/2026-10-14-looks")
+const out = resolve(process.env.LOOKS_OUT ?? resolve(root, "captures/looks"))
 const perfDir = resolve(root, "perf")
 mkdirSync(out, { recursive: true })
 mkdirSync(perfDir, { recursive: true })

@@ -8,7 +8,7 @@ import { chromium } from "playwright-core"
 import { BUSH_PRESET_IDS, GRASS_PRESET_IDS, TREE_PRESETS, TREE_PRESET_IDS } from "@arcade/kit/gpu/foliage"
 
 const root = resolve(import.meta.dir, "../..")
-const out = resolve(process.env.FOLIAGE_OUT ?? `${process.env.HOME}/code/home/artifacts/2026-10-14-vegetation/lab`)
+const out = resolve(process.env.FOLIAGE_OUT ?? resolve(root, "captures/foliage"))
 mkdirSync(out, { recursive: true })
 
 const labDir = resolve(root, "games/lab")
