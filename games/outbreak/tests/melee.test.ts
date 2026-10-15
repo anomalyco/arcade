@@ -166,7 +166,7 @@ describe("Melee attack input, combos, heavy charge, stamina & durability", () =>
     const heavyStamCost = 1 - p.stamina
     expect(heavyDamage).toBeGreaterThan(lightDamage * 1.4)
     expect(heavyStamCost).toBeGreaterThan(lightStamCost * 1.4)
-    expect(zLight.state).toBe("knockdown")
+    expect(zLight.state as string).toBe("knockdown")
   })
 
   test("shove stays on V without spending melee weapon durability", () => {

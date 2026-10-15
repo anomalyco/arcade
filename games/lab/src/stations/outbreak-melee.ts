@@ -72,7 +72,7 @@ export default defineStation({
   title: "Outbreak melee weapons",
   summary:
     "Nine melee weapons across one-handed blunt, one-handed blade and two-handed heavy classes, with wind-up → active → recovery swing arcs, 2–3 swing combos, charged heavy attacks, stamina drain, durability and weapon-specific blood and impact sounds. Tunables are in the Melee group.",
-  order: 114,
+  order: 117,
   prop: "figure",
   color: 0xd46a4e,
   status: "live",

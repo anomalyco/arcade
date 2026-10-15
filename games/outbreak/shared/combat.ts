@@ -1,10 +1,11 @@
-import type { MeleeHitMaterial } from "@arcade/kit/audio"
 import type { MeleeSwingPhase, MeleeWeaponClass } from "@arcade/kit/human-melee"
 import { angleDiff, clearLine, distToRect, raycast, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { AIAgent, OutbreakAISubsystem } from "./ai"
 import type { Town } from "./map"
 import type { ChannelView, PistolAmmo } from "./progression"
+
+export type MeleeHitMaterial = "wood" | "metal" | "blade"
 
 export const PISTOL_RANGE = 26.0
 export const PISTOL_MAG_SIZE = 8
@@ -30,7 +31,7 @@ export type CombatShotEvent = {
   aim: number
   hitZombieId: number | null
   killed: boolean
-  detachBone: "head" | "left.upperArm" | "right.upperArm" | "right.foreArm" | null
+  detachBone: "head" | "left.upperArm" | "right.upperArm" | "left.foreArm" | "right.foreArm" | null
   seed: number
 }
 
@@ -316,7 +317,7 @@ export type CombatMeleeHit = {
   killed: boolean
   knockdown: boolean
   headshot: boolean
-  detachBone: "head" | "left.upperArm" | "right.upperArm" | "right.foreArm" | null
+  detachBone: "head" | "left.upperArm" | "right.upperArm" | "left.foreArm" | "right.foreArm" | null
   seed: number
 }
 

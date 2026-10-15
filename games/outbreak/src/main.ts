@@ -2463,7 +2463,21 @@ async function main() {
         hb.rev = ++ledger.rev
       }
       const slot = session.sim.slot(actorId)
-      if (slot) progression.project(slot)
+      if (slot) {
+        slot.survivor.meleePhase = "idle"
+        slot.survivor.meleePhaseTime = 0
+        slot.survivor.meleePhaseDuration = 0
+        slot.survivor.meleeCombo = 1
+        slot.survivor.meleeCharge = 0
+        slot.survivor.meleeHeavy = false
+        slot.survivor.meleeComboQueued = false
+        slot.survivor.meleeComboUntil = 0
+        slot.stamina.stamina = 1
+        slot.stamina.exhausted = false
+        slot.survivor.stamina = 1
+        slot.survivor.exhausted = false
+        progression.project(slot)
+      }
 
       harness.pose(44, 44, 0)
       session.ai.agents.length = 0
