@@ -63,84 +63,65 @@ export function createBoxOcclusionQuery(boxes: readonly OccluderBox[]): Visibili
   }
 }
 
-const roomImpulseCache = new Map<string, [Float32Array, Float32Array]>()
-const streetImpulseCache = new Map<string, [Float32Array, Float32Array]>()
-
 /** A small furnished room: dense early reflections, fast bright-to-dark decay. */
 function buildRoomImpulse(ctx: BaseAudioContext, seconds = 0.5): AudioBuffer {
   const n = Math.max(256, Math.floor(ctx.sampleRate * seconds))
   const buf = ctx.createBuffer(2, n, ctx.sampleRate)
-  const key = `${ctx.sampleRate}:${n}`
-  let pair = roomImpulseCache.get(key)
-  if (!pair) {
-    pair = [new Float32Array(n), new Float32Array(n)]
-    let seed = 7654321
-    const rnd = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff
-      return seed / 0x7fffffff - 0.5
-    }
-    for (let c = 0; c < 2; c++) {
-      const d = pair[c]!
-      for (let i = 0; i < n; i++) {
-        const t = i / ctx.sampleRate
-        d[i] = rnd() * Math.exp(-t * (6.9 / seconds)) * (t < 0.003 ? t / 0.003 : 1)
-      }
-      for (const [tap, g] of [[0.007 + c * 0.002, 0.7], [0.013 - c * 0.001, 0.5], [0.021 + c * 0.003, 0.35], [0.029, 0.25]] as const) {
-        const k = Math.floor(tap * ctx.sampleRate)
-        for (let i = 0; i < 48 && k + i < n; i++) d[k + i]! += rnd() * g * (1 - i / 48)
-      }
-      let lp = 0
-      for (let i = 0; i < n; i++) {
-        lp += (d[i]! - lp) * (0.85 - 0.6 * (i / n))
-        d[i] = lp
-      }
-    }
-    roomImpulseCache.set(key, pair)
+  let seed = 7654321
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff - 0.5
   }
-  buf.getChannelData(0).set(pair[0])
-  buf.getChannelData(1).set(pair[1])
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c)
+    for (let i = 0; i < n; i++) {
+      const t = i / ctx.sampleRate
+      d[i] = rnd() * Math.exp(-t * (6.9 / seconds)) * (t < 0.003 ? t / 0.003 : 1)
+    }
+    for (const [tap, g] of [[0.007 + c * 0.002, 0.7], [0.013 - c * 0.001, 0.5], [0.021 + c * 0.003, 0.35], [0.029, 0.25]] as const) {
+      const k = Math.floor(tap * ctx.sampleRate)
+      for (let i = 0; i < 48 && k + i < n; i++) d[k + i]! += rnd() * g * (1 - i / 48)
+    }
+    let lp = 0
+    for (let i = 0; i < n; i++) {
+      lp += (d[i]! - lp) * (0.85 - 0.6 * (i / n))
+      d[i] = lp
+    }
+  }
   return buf
 }
 
 function buildStreetImpulse(ctx: BaseAudioContext, seconds = 1.65): AudioBuffer {
   const n = Math.max(256, Math.floor(ctx.sampleRate * seconds))
   const buf = ctx.createBuffer(2, n, ctx.sampleRate)
-  const key = `${ctx.sampleRate}:${n}`
-  let pair = streetImpulseCache.get(key)
-  if (!pair) {
-    pair = [new Float32Array(n), new Float32Array(n)]
-    let seed = 1234567
-    const rnd = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff
-      return seed / 0x7fffffff - 0.5
-    }
-    for (let c = 0; c < 2; c++) {
-      const d = pair[c]!
-      for (let i = 0; i < n; i++) {
-        const t = i / ctx.sampleRate
-        d[i] = rnd() * Math.exp(-t * 3.6) * (t < 0.012 ? t / 0.012 : 1)
-      }
-      for (const [tap, g] of [
-        [0.043 + c * 0.007, 0.5],
-        [0.091 - c * 0.005, 0.32],
-        [0.137 + c * 0.011, 0.2],
-      ] as const) {
-        const k = Math.floor(tap * ctx.sampleRate)
-        for (let i = 0; i < 160 && k + i < n; i++) {
-          d[k + i]! += rnd() * g * (1 - i / 160)
-        }
-      }
-      let lp = 0
-      for (let i = 0; i < n; i++) {
-        const a = 0.5 * Math.exp((-i / n) * 2.5)
-        lp += (d[i]! - lp) * a
-        d[i] = lp
-      }
-    }
-    streetImpulseCache.set(key, pair)
+  let seed = 1234567
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff - 0.5
   }
-  buf.getChannelData(0).set(pair[0])
-  buf.getChannelData(1).set(pair[1])
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c)
+    for (let i = 0; i < n; i++) {
+      const t = i / ctx.sampleRate
+      d[i] = rnd() * Math.exp(-t * 3.6) * (t < 0.012 ? t / 0.012 : 1)
+    }
+    for (const [tap, g] of [
+      [0.043 + c * 0.007, 0.5],
+      [0.091 - c * 0.005, 0.32],
+      [0.137 + c * 0.011, 0.2],
+    ] as const) {
+      const k = Math.floor(tap * ctx.sampleRate)
+      for (let i = 0; i < 160 && k + i < n; i++) {
+        d[k + i]! += rnd() * g * (1 - i / 160)
+      }
+    }
+    let lp = 0
+    for (let i = 0; i < n; i++) {
+      const a = 0.5 * Math.exp((-i / n) * 2.5)
+      lp += (d[i]! - lp) * a
+      d[i] = lp
+    }
+  }
   return buf
 }
 

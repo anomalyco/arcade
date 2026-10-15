@@ -11,9 +11,6 @@ export class DeterministicAudioParam {
   private events: ParamEvent[] = []
   private currentVal: number
   private lastEvalTime = -1
-  private cachedLo = -1
-  private cachedLen = -1
-  private cachedVBeforeLo = 0
 
   constructor(initial = 0) {
     this.value = initial
@@ -47,14 +44,12 @@ export class DeterministicAudioParam {
 
   cancelScheduledValues(cancelTime: number): this {
     this.events = this.events.filter(e => e.time < cancelTime - 1e-7)
-    this.cachedLen = -1
     return this
   }
 
   cancelAndHoldAtTime(holdTime: number): this {
     const held = this.sampleAt(holdTime)
     this.events = this.events.filter(e => e.time < holdTime - 1e-7)
-    this.cachedLen = -1
     this.insert({ kind: "set", time: holdTime, value: held })
     return this
   }
@@ -63,29 +58,11 @@ export class DeterministicAudioParam {
     let i = this.events.length - 1
     while (i >= 0 && this.events[i]!.time > ev.time + 1e-7) i--
     this.events.splice(i + 1, 0, ev)
-    this.cachedLen = -1
   }
 
   resetEval(): void {
     this.currentVal = this.events.length > 0 && this.events[0]!.time <= 0 ? (this.events[0]!.kind === "target" ? this.events[0]!.target : this.events[0]!.value) : this.value
     this.lastEvalTime = -1
-    this.cachedLen = -1
-  }
-
-  get isConstant(): boolean {
-    return this.events.length === 0
-  }
-
-  isSilentBlock(startT: number, endT: number): boolean {
-    const len = this.events.length
-    if (len === 0) return this.value === 0
-    if (endT < this.events[0]!.time) return this.value === 0
-    const last = this.events[len - 1]!
-    if (startT >= last.time) {
-      if (last.kind !== "target") return last.value === 0
-      return last.target === 0 && Math.abs(this.sampleAt(startT)) < 1e-7
-    }
-    return false
   }
 
   sampleAt(t: number): number {
@@ -93,42 +70,30 @@ export class DeterministicAudioParam {
     if (len === 0) return this.value
     if (t < this.events[0]!.time) return this.value
 
-    let lo = this.cachedLo
-    if (this.cachedLen === len && lo >= 0 && lo < len && this.events[lo]!.time <= t) {
-      if (lo + 1 < len && this.events[lo + 1]!.time <= t) {
-        if (lo + 2 === len || this.events[lo + 2]!.time > t) {
-          lo = lo + 1
-        } else {
-          lo = -1
-        }
-      }
-    } else {
-      lo = -1
-    }
-
-    if (lo < 0) {
-      lo = 0
-      let hi = len - 1
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1
-        if (this.events[mid]!.time <= t) lo = mid
-        else hi = mid - 1
-      }
+    // Binary search for the last event at or before `t`
+    let lo = 0
+    let hi = len - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (this.events[mid]!.time <= t) lo = mid
+      else hi = mid - 1
     }
 
     // Check if `t` falls inside a linear or exponential ramp ending at `lo + 1`
     const nextEv = lo + 1 < len ? this.events[lo + 1] : undefined
     const curEv = this.events[lo]!
 
+    const baseValueAt = (idx: number): number => {
+      const e = this.events[idx]!
+      if (e.kind === "set" || e.kind === "linear" || e.kind === "exp") return e.value
+      // target event: approximate starting value from preceding event
+      const prev = idx > 0 ? baseValueAt(idx - 1) : this.value
+      const nextT = idx + 1 < len ? this.events[idx + 1]!.time : t
+      const dt = Math.max(0, Math.min(t, nextT) - e.time)
+      return e.target + (prev - e.target) * Math.exp(-dt / e.tau)
+    }
+
     if (nextEv && (nextEv.kind === "linear" || nextEv.kind === "exp") && t <= nextEv.time) {
-      const baseValueAt = (idx: number): number => {
-        const e = this.events[idx]!
-        if (e.kind === "set" || e.kind === "linear" || e.kind === "exp") return e.value
-        const prev = idx > 0 ? baseValueAt(idx - 1) : this.value
-        const nextT = idx + 1 < len ? this.events[idx + 1]!.time : t
-        const dt = Math.max(0, Math.min(t, nextT) - e.time)
-        return e.target + (prev - e.target) * Math.exp(-dt / e.tau)
-      }
       const v0 = baseValueAt(lo)
       const t0 = curEv.time
       const span = Math.max(1e-6, nextEv.time - t0)
@@ -141,28 +106,21 @@ export class DeterministicAudioParam {
     }
 
     if (curEv.kind === "target") {
-      if (this.cachedLen !== len || this.cachedLo !== lo) {
-        const startIdx = Math.max(0, lo - 4)
-        let v = startIdx > 0 ? (this.events[startIdx - 1]!.kind === "target" ? (this.events[startIdx - 1] as { target: number }).target : (this.events[startIdx - 1] as { value: number }).value) : this.value
-        for (let i = startIdx; i < lo; i++) {
-          const e = this.events[i]!
-          if (e.kind === "target") {
-            const endT = this.events[i + 1]!.time
-            v = e.target + (v - e.target) * Math.exp(-Math.max(0, endT - e.time) / e.tau)
-          } else {
-            v = e.value
-          }
+      // Walk back at most 4 target steps so smooth chains stay fast (O(1))
+      const startIdx = Math.max(0, lo - 4)
+      let v = startIdx > 0 ? (this.events[startIdx - 1]!.kind === "target" ? (this.events[startIdx - 1] as { target: number }).target : (this.events[startIdx - 1] as { value: number }).value) : this.value
+      for (let i = startIdx; i <= lo; i++) {
+        const e = this.events[i]!
+        if (e.kind === "target") {
+          const endT = i < lo ? this.events[i + 1]!.time : t
+          v = e.target + (v - e.target) * Math.exp(-Math.max(0, endT - e.time) / e.tau)
+        } else {
+          v = e.value
         }
-        this.cachedLo = lo
-        this.cachedLen = len
-        this.cachedVBeforeLo = v
       }
-      if (this.cachedVBeforeLo === curEv.target) return curEv.target
-      return curEv.target + (this.cachedVBeforeLo - curEv.target) * Math.exp(-Math.max(0, t - curEv.time) / curEv.tau)
+      return v
     }
 
-    this.cachedLo = lo
-    this.cachedLen = len
     return curEv.value
   }
 }
@@ -197,11 +155,8 @@ abstract class BaseNode {
   readonly outputs = new Set<BaseNode>()
   readonly inputs = new Set<BaseNode>()
   private cachedStart = -1
-  private cachedActive = false
-  cachedL = new Float32Array(0)
-  cachedR = new Float32Array(0)
-  private sumL = new Float32Array(0)
-  private sumR = new Float32Array(0)
+  private cachedL = new Float32Array(0)
+  private cachedR = new Float32Array(0)
 
   connect(destination: BaseNode): BaseNode {
     this.outputs.add(destination)
@@ -214,122 +169,63 @@ abstract class BaseNode {
     this.outputs.clear()
   }
 
-  evalBlock(startSample: number, count: number, sr: number): boolean {
+  renderBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
     if (this.cachedStart === startSample && this.cachedL.length === count) {
-      return this.cachedActive
+      outL.set(this.cachedL)
+      outR.set(this.cachedR)
+      return
     }
     if (this.cachedL.length !== count) {
       this.cachedL = new Float32Array(count)
       this.cachedR = new Float32Array(count)
-    } else if (this.cachedActive) {
-      this.cachedL.fill(0)
-      this.cachedR.fill(0)
     }
-    this.cachedActive = this.computeBlock(startSample, count, sr, this.cachedL, this.cachedR)
+    this.cachedL.fill(0)
+    this.cachedR.fill(0)
+    this.computeBlock(startSample, count, sr, this.cachedL, this.cachedR)
     this.cachedStart = startSample
-    return this.cachedActive
+    outL.set(this.cachedL)
+    outR.set(this.cachedR)
   }
 
-  renderBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
-    if (this.evalBlock(startSample, count, sr)) {
-      outL.set(this.cachedL)
-      outR.set(this.cachedR)
-    } else {
-      outL.fill(0)
-      outR.fill(0)
-    }
-  }
+  abstract computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void
 
-  abstract computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean
-
-  protected sumInputs(startSample: number, count: number, sr: number): [Float32Array, Float32Array, boolean] {
-    if (this.sumL.length !== count) {
-      this.sumL = new Float32Array(count)
-      this.sumR = new Float32Array(count)
-    }
-    const l = this.sumL
-    const r = this.sumR
-    if (this.inputs.size === 0) {
-      l.fill(0)
-      r.fill(0)
-      return [l, r, false]
-    }
-    let active = false
+  protected sumInputs(startSample: number, count: number, sr: number): [Float32Array, Float32Array] {
+    const l = new Float32Array(count)
+    const r = new Float32Array(count)
+    if (this.inputs.size === 0) return [l, r]
+    const tmpL = new Float32Array(count)
+    const tmpR = new Float32Array(count)
     for (const inp of this.inputs) {
-      if (!inp.evalBlock(startSample, count, sr)) continue
-      const inL = inp.cachedL
-      const inR = inp.cachedR
-      if (!active) {
-        l.set(inL)
-        r.set(inR)
-        active = true
-      } else {
-        for (let i = 0; i < count; i++) {
-          l[i]! += inL[i]!
-          r[i]! += inR[i]!
-        }
+      tmpL.fill(0)
+      tmpR.fill(0)
+      inp.renderBlock(startSample, count, sr, tmpL, tmpR)
+      for (let i = 0; i < count; i++) {
+        l[i]! += tmpL[i]!
+        r[i]! += tmpR[i]!
       }
     }
-    if (!active) {
-      l.fill(0)
-      r.fill(0)
-    }
-    return [l, r, active]
+    return [l, r]
   }
 }
 
 class GainNodeImpl extends BaseNode {
   readonly gain = new DeterministicAudioParam(1)
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    if (this.gain.isSilentBlock(startSample / sr, (startSample + count - 1) / sr)) return false
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
-    if (!active) return false
-    if (this.gain.isConstant) {
-      const g = this.gain.value
-      if (g === 0) return false
-      if (g === 1) {
-        outL.set(inL)
-        outR.set(inR)
-        return true
-      }
-      for (let i = 0; i < count; i++) {
-        outL[i] = inL[i]! * g
-        outR[i] = inR[i]! * g
-      }
-      return true
-    }
-    let nonZero = false
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     for (let i = 0; i < count; i++) {
       const g = this.gain.sampleAt((startSample + i) / sr)
-      const l = inL[i]! * g
-      const r = inR[i]! * g
-      outL[i] = l
-      outR[i] = r
-      if (l !== 0 || r !== 0) nonZero = true
+      outL[i] = inL[i]! * g
+      outR[i] = inR[i]! * g
     }
-    return nonZero
   }
 }
 
 class StereoPannerNodeImpl extends BaseNode {
   readonly pan = new DeterministicAudioParam(0)
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
-    if (!active) return false
-    if (this.pan.isConstant) {
-      const p = clamp(this.pan.value, -1, 1)
-      const angle = ((p + 1) * Math.PI) / 4
-      const gl = Math.cos(angle) * 0.5
-      const gr = Math.sin(angle) * 0.5
-      for (let i = 0; i < count; i++) {
-        const s = inL[i]! + inR[i]!
-        outL[i] = s * gl
-        outR[i] = s * gr
-      }
-      return true
-    }
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     for (let i = 0; i < count; i++) {
       const p = clamp(this.pan.sampleAt((startSample + i) / sr), -1, 1)
       const angle = ((p + 1) * Math.PI) / 4
@@ -339,7 +235,6 @@ class StereoPannerNodeImpl extends BaseNode {
       outL[i] = mono * gl
       outR[i] = mono * gr
     }
-    return true
   }
 }
 
@@ -353,38 +248,13 @@ class BiquadFilterNodeImpl extends BaseNode {
   private hpL = 0
   private hpR = 0
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
-    if (!active && Math.abs(this.lpL) < 1e-12 && Math.abs(this.lpR) < 1e-12 && Math.abs(this.hpL) < 1e-12 && Math.abs(this.hpR) < 1e-12) {
-      this.lpL = 0
-      this.lpR = 0
-      this.hpL = 0
-      this.hpR = 0
-      return false
-    }
-    const dt = 1 / sr
-    const constFreq = this.frequency.isConstant
-    let constAlpha = 0
-    let constHpAlpha = 0
-    if (constFreq) {
-      const fc = clamp(this.frequency.value, 20, sr * 0.48)
-      const rc = 1 / (2 * Math.PI * fc)
-      constAlpha = clamp(dt / (rc + dt), 0.001, 0.999)
-      const hpRc = 1 / (2 * Math.PI * Math.max(20, fc * 0.7))
-      constHpAlpha = clamp(hpRc / (hpRc + dt), 0.001, 0.999)
-    }
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     for (let i = 0; i < count; i++) {
-      let alpha = constAlpha
-      let hpAlpha = constHpAlpha
-      if (!constFreq) {
-        const fc = clamp(this.frequency.sampleAt((startSample + i) / sr), 20, sr * 0.48)
-        const rc = 1 / (2 * Math.PI * fc)
-        alpha = clamp(dt / (rc + dt), 0.001, 0.999)
-        if (this.type !== "lowpass" && this.type !== "highshelf" && this.type !== "peaking" && this.type !== "highpass") {
-          const hpRc = 1 / (2 * Math.PI * Math.max(20, fc * 0.7))
-          hpAlpha = clamp(hpRc / (hpRc + dt), 0.001, 0.999)
-        }
-      }
+      const fc = clamp(this.frequency.sampleAt((startSample + i) / sr), 20, sr * 0.48)
+      const dt = 1 / sr
+      const rc = 1 / (2 * Math.PI * fc)
+      const alpha = clamp(dt / (rc + dt), 0.001, 0.999)
       this.lpL += alpha * (inL[i]! - this.lpL)
       this.lpR += alpha * (inR[i]! - this.lpR)
 
@@ -396,13 +266,14 @@ class BiquadFilterNodeImpl extends BaseNode {
         outR[i] = inR[i]! - this.lpR
       } else {
         // bandpass
+        const hpRc = 1 / (2 * Math.PI * Math.max(20, fc * 0.7))
+        const hpAlpha = clamp(hpRc / (hpRc + dt), 0.001, 0.999)
         this.hpL = hpAlpha * (this.hpL + this.lpL) * 0.5
         this.hpR = hpAlpha * (this.hpR + this.lpR) * 0.5
         outL[i] = (this.lpL - inL[i]! * 0.25) * 0.85
         outR[i] = (this.lpR - inR[i]! * 0.25) * 0.85
       }
     }
-    return true
   }
 }
 
@@ -414,13 +285,12 @@ class ConvolverNodeImpl extends BaseNode {
   private tailL = 0
   private tailR = 0
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     if (!this.buffer) {
-      if (!active) return false
       outL.set(inL)
       outR.set(inR)
-      return true
+      return
     }
     const ringLen = this.ringL.length
     const tap1 = Math.floor(0.043 * sr)
@@ -452,7 +322,6 @@ class ConvolverNodeImpl extends BaseNode {
       outR[i] = eR * 0.45 + this.tailR
       this.writePtr = (w + 1) % ringLen
     }
-    return true
   }
 }
 
@@ -464,12 +333,8 @@ class DynamicsCompressorNodeImpl extends BaseNode {
   readonly release = new DeterministicAudioParam(0.25)
   private env = 0
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
-    if (!active && this.env < 1e-9) {
-      this.env = 0
-      return false
-    }
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     const threshDb = this.threshold.value
     const ratio = Math.max(1, this.ratio.value)
     const att = Math.exp(-1 / (Math.max(0.0005, this.attack.value) * sr))
@@ -489,7 +354,6 @@ class DynamicsCompressorNodeImpl extends BaseNode {
       outL[i] = Math.tanh(inL[i]! * gain)
       outR[i] = Math.tanh(inR[i]! * gain)
     }
-    return true
   }
 }
 
@@ -523,19 +387,7 @@ class OscillatorNodeImpl extends BaseNode {
     this.stopTime = Math.max(this.startTime, when)
   }
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const startT = startSample / sr
-    const endT = (startSample + count - 1) / sr
-    if (endT < this.startTime) return false
-    if (startT >= this.stopTime) {
-      if (!this.endedFired) {
-        this.endedFired = true
-        this.onended?.()
-      }
-      return false
-    }
-    const detuneFactor = Math.pow(2, this.detune.value / 1200)
-    let active = false
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
     for (let i = 0; i < count; i++) {
       const t = (startSample + i) / sr
       if (t < this.startTime || t >= this.stopTime) {
@@ -545,8 +397,7 @@ class OscillatorNodeImpl extends BaseNode {
         }
         continue
       }
-      active = true
-      const freq = this.frequency.sampleAt(t) * detuneFactor
+      const freq = this.frequency.sampleAt(t) * Math.pow(2, this.detune.value / 1200)
       this.phase = (this.phase + (2 * Math.PI * freq) / sr) % (2 * Math.PI)
       let s = 0
       if (this.periodicWave) {
@@ -569,7 +420,6 @@ class OscillatorNodeImpl extends BaseNode {
       outL[i] = s
       outR[i] = s
     }
-    return active
   }
 }
 
@@ -596,23 +446,13 @@ class AudioBufferSourceNodeImpl extends BaseNode {
     this.stopTime = Math.max(this.startTime, when)
   }
 
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
     const buf = this.buffer
-    if (!buf || buf.length === 0 || this.endedFired) return false
-    const startT = startSample / sr
-    const endT = (startSample + count - 1) / sr
-    if (endT < this.startTime) return false
-    if (startT >= this.stopTime) {
-      this.endedFired = true
-      this.onended?.()
-      return false
-    }
+    if (!buf || buf.length === 0) return
     const ch0 = buf.getChannelData(0)
     const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0
     const bufSr = buf.sampleRate
-    const constRate = this.playbackRate.isConstant ? (Math.max(0.05, this.playbackRate.value) * bufSr) / sr : 0
 
-    let active = false
     for (let i = 0; i < count; i++) {
       const t = (startSample + i) / sr
       if (t < this.startTime) continue
@@ -640,27 +480,19 @@ class AudioBufferSourceNodeImpl extends BaseNode {
           break
         }
       }
-      active = true
       outL[i] = ch0[idx] ?? 0
       outR[i] = ch1[idx] ?? 0
-      if (constRate > 0) {
-        this.pos += constRate
-      } else {
-        const rate = Math.max(0.05, this.playbackRate.sampleAt(t))
-        this.pos += (rate * bufSr) / sr
-      }
+      const rate = Math.max(0.05, this.playbackRate.sampleAt(t))
+      this.pos += (rate * bufSr) / sr
     }
-    return active
   }
 }
 
 class DestinationNodeImpl extends BaseNode {
-  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): boolean {
-    const [inL, inR, active] = this.sumInputs(startSample, count, sr)
-    if (!active) return false
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
     outL.set(inL)
     outR.set(inR)
-    return true
   }
 }
 

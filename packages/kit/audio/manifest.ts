@@ -258,17 +258,11 @@ type DecodedPcm = {
   channels: Float32Array[]
 }
 
-const fallbackPcmCache = new WeakMap<SampleAssetMeta, Map<number, DecodedPcm>>()
-
 /**
  * Generates a deterministic PCM stem from a metadata fallback recipe so offline/headless tests
  * and environments without network fetch still exercise the exact sample-layer graph.
  */
 export function synthesizeFallbackPcm(meta: SampleAssetMeta, sampleRate = 48000): DecodedPcm {
-  let byRate = fallbackPcmCache.get(meta)
-  const cached = byRate?.get(sampleRate)
-  if (cached) return cached
-
   const spec = meta.fallbackSynth ?? {
     durationSeconds: meta.durationSeconds ?? 0.4,
     baseHz: 220,
@@ -329,13 +323,7 @@ export function synthesizeFallbackPcm(meta: SampleAssetMeta, sampleRate = 48000)
       right[length - 1 - i]! *= w
     }
   }
-  const result: DecodedPcm = { sampleRate, channels: [left, right] }
-  if (!byRate) {
-    byRate = new Map()
-    fallbackPcmCache.set(meta, byRate)
-  }
-  byRate.set(sampleRate, result)
-  return result
+  return { sampleRate, channels: [left, right] }
 }
 
 export function defaultSfxBaseUrl(): string {
