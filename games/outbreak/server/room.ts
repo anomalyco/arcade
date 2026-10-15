@@ -34,7 +34,13 @@ export class OutbreakRoom extends DurableObject<RoomEnv> {
       },
     }
     core.open(conn)
-    socket.addEventListener("message", (e) => core.message(conn, e.data))
+    socket.addEventListener("message", (e) => {
+      if (typeof Blob !== "undefined" && e.data instanceof Blob) {
+        void e.data.arrayBuffer().then((buf) => core.message(conn, buf))
+        return
+      }
+      core.message(conn, e.data)
+    })
     socket.addEventListener("close", () => core.close(conn))
     socket.addEventListener("error", () => core.close(conn))
     if (!this.timer) {
