@@ -210,7 +210,7 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
         my = dy / dist
         aim = Math.atan2(dy, dx)
         // Open any closed door blocking the survivor's step
-        if (slot.prompt?.kind === "door" && slot.prompt.primary.id === "open" && tick % 15 === 0) {
+        if (slot.prompt?.kind === "door" && slot.prompt.primary.label === "Open" && tick % 15 === 0) {
           interact = true
         }
       } else {

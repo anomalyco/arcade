@@ -20,7 +20,7 @@ import { createOutbreakSettings, setOutbreakSetting } from "../src/settings"
 
 describe("Outbreak first-night opening pacing & spawn rules", () => {
   test("Pacing group Lab controls cover all PacingTuning keys with explicit ranges, steps, units and defaults", () => {
-    expect(pacingControls.map((c) => c.key).sort()).toEqual(Object.keys(DEFAULT_PACING_TUNING).sort())
+    expect(pacingControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_PACING_TUNING).sort())
     for (const control of pacingControls) {
       expect(control.group).toBe("Pacing")
       const def = DEFAULT_PACING_TUNING[control.key as keyof typeof DEFAULT_PACING_TUNING]
