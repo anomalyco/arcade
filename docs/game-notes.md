@@ -1015,10 +1015,23 @@ Candidates from the code audits; measure and playtest before moving any into the
   queue cap, gives fire/interact/reload to the next applied input; catch-up returns two inputs that the room applies as two
   movement steps, so client prediction still matches. Over a 3 + 0–8 tick jittery loopback, all five shots landed and the
   predicted survivor converged within 1 cm (`games/outbreak/tests/coop.test.ts`).
-- **Binary shared snapshot plus per-player prefix.** Outbreak's room encodes survivors, 60 zombies (15 bytes each), doors,
-  barricades, loot and shots once per 20 Hz snapshot and prefixes each player's ack and private survivor state: about
-  1.7 KB per snapshot, 33.7 KB/s per client, room tick 0.12 ms mean at 4 survivors + 60 zombies
-  (`games/outbreak/scripts/coop-bench.ts`).
+- **Per-bubble interest culling, priority cadence, and bit-packed delta compression against `ackSnapTick`.**
+  `packages/kit/net/{interest,rewind,bytes}.ts`, `games/outbreak/shared/net-protocol.ts` and `server/room-core.ts` scope
+  each recipient's zombie updates to their `128 × 128 m` (`±64 m`) chunk bubble, throttle non-urgent mid/far/idle
+  zombies to 10 Hz / 5 Hz, and delta-encode against the last snapshot acknowledged by that client (`AckHistory`), sharing
+  the encoded payload whenever survivors share a `(bubble, baseTick)` pair. Retained zombies omit their 2-byte `id` and
+  4-byte `seed`, using a changed-entity bitfield plus 1-byte nibble (`±7 cm`) or 2-byte `i8` (`±127 cm`) position deltas,
+  8-bit aim, and optional state/HP/FX sub-flags; unchanged portals (`sim.revision === baseSnap.revision`) and already-acked
+  shots cost 0 bytes; personal survivor state packs in binary (44–75 B vs 200 B JSON); and upstream `"I" + base64` input
+  batches fold repeated ticks into 1 bit while re-sending one-shot edges across packet loss. Server-side `RectGrid` and
+  `SpatialHash` switch to 4,096-bucket spatial hashing on wide maps, `GridNav` caches integer chunk keys, and
+  `RewindHistory` rewinds zombie positions to the shooter's `viewTick`. At 4 survivors spread 1 km apart with 300 active
+  zombies (`scripts/coop-bench.ts --matrix=1`, `perf/outbreak-net-perf.json`), downstream bandwidth per client drops
+  **`138.41 → 6.81 KB/s` (`-95.1%`)**, upstream drops **`2.75 → 1.43 KB/s` (`-48.0%`)**, snapshot size drops
+  **`7,085 → 372 B`** (`zombies: 6,602 → 207 B`, `portals: 144 → 1 B`, `personal: 200 → 75 B`), server tick `p95` drops
+  **`14.18 → 1.05 ms` (`-92.6%`, mean `0.64 ms`)**, client decode `p95` drops **`0.52 → 0.03 ms` (`-95.1%`)**, and under
+  `80 ± 30 ms` jitter with `2%` packet loss max reconciliation correction drops **`0.1121 → 0.0010 m`** (`0.0000 m` mean,
+  zero growth). At 1,000 zombies spread 1 km apart, downstream bandwidth drops **`439.19 → 15.16 KB/s` (`-96.5%`)**.
 - **Stream 32 m chunks from deterministic `(seed, cx, cy)` hashes, stitch a sliding 3×3 render window, and persist sparse `ChunkDelta`s.**
   `games/outbreak/shared/world.ts` and `games/outbreak/src/world-streamer.ts` extend Outbreak beyond the fixed 96 m block
   while keeping the starting `(0..2, 0..2)` neighbourhood bit-identical in Classic mode (`prove.ts` passes unchanged).

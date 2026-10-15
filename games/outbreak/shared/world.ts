@@ -879,6 +879,7 @@ export class StreamingWorld {
   readonly activeChunks = new Map<string, WorldChunk>()
   readonly deltas = new Map<string, ChunkDelta>()
   readonly navTiles = new Map<string, Uint8Array<ArrayBuffer>>()
+  private readonly navTileSigs = new Map<string, number>()
   private readonly centers = new Map<string, ChunkCoord>()
   private readonly chunkCache = new Map<string, WorldChunk>()
   /** Increments whenever the active chunk set changes. */
@@ -1068,6 +1069,27 @@ export class StreamingWorld {
     }
   }
 
+  getSurvivorWindowCenter(id: string, x: number, y: number): ChunkCoord {
+    return this.centers.get(id) ?? selectActiveWindowCenter(x, y)
+  }
+
+  /** Fast zero-allocation check whether any survivor has crossed their active 3×3 chunk window hysteresis boundary. */
+  wouldWindowsChange(survivors: readonly { id: string; x: number; y: number }[]): boolean {
+    if (this.mode === "classic") {
+      const outsideClassic = survivors.some((s) => s.x < 4 || s.x > SIZE - 4 || s.y < 4 || s.y > SIZE - 4)
+      if (!outsideClassic && this.isOriginNineOnly()) return false
+    }
+    if (survivors.length === 0) return !this.isOriginNineOnly()
+    if (survivors.length !== this.centers.size) return true
+    for (const s of survivors) {
+      const prev = this.centers.get(s.id)
+      if (!prev) return true
+      const next = selectActiveWindowCenter(s.x, s.y, prev)
+      if (next.cx !== prev.cx || next.cy !== prev.cy) return true
+    }
+    return false
+  }
+
   /**
    * Updates the active chunk set around `survivors` (`3×3` window per survivor).
    * Returns `{ changed, loaded, unloaded }` when chunks enter or leave the active set.
@@ -1139,6 +1161,7 @@ export class StreamingWorld {
         }
         this.activeChunks.delete(key)
         this.navTiles.delete(key)
+        this.navTileSigs.delete(key)
         unloaded.push(key)
       }
     }
@@ -1343,6 +1366,8 @@ export class StreamingWorld {
         }
       }
 
+      const sig = this.portalSig(ch, portalStates)
+      this.navTileSigs.set(ch.key, sig)
       this.navTiles.set(
         ch.key,
         buildChunkNavTile(ch, (id) => portalStates.get(id)?.barricadePlanks ?? 0),
@@ -1365,13 +1390,27 @@ export class StreamingWorld {
     containers.push(...nextContainers)
   }
 
-  /** Rebuilds the `64×64` nav tiles for all active chunks after a door/window/barricade topology change. */
+  private portalSig(chunk: WorldChunk, portalStates: ReadonlyMap<string, { barricadePlanks: number }>): number {
+    let h = 2166136261 >>> 0
+    for (const d of chunk.doors) {
+      const p = portalStates.get(d.id)?.barricadePlanks ?? 0
+      h = Math.imul(h ^ ((d.open ? 1 : 0) | (d.locked ? 2 : 0) | (p << 2)), 16777619) >>> 0
+    }
+    for (const w of chunk.windows) {
+      const p = portalStates.get(w.id)?.barricadePlanks ?? 0
+      h = Math.imul(h ^ ((w.open ? 1 : 0) | (w.openable ? 2 : 0) | (p << 2)), 16777619) >>> 0
+    }
+    return h >>> 0
+  }
+
+  /** Rebuilds the `64×64` nav tiles for active chunks whose door/window/barricade state changed. */
   rebuildActiveNavTiles(
     town: Town,
     portalStates: ReadonlyMap<string, { barricadePlanks: number }>,
   ): void {
     if (this.isOriginNineOnly()) {
       this.navTiles.clear()
+      this.navTileSigs.clear()
       return
     }
     const doorMap = new Map(town.doors.map((d) => [d.id, d]))
@@ -1391,6 +1430,9 @@ export class StreamingWorld {
           w.openable = live.openable
         }
       }
+      const sig = this.portalSig(ch, portalStates)
+      if (this.navTileSigs.get(ch.key) === sig && this.navTiles.has(ch.key)) continue
+      this.navTileSigs.set(ch.key, sig)
       this.navTiles.set(
         ch.key,
         buildChunkNavTile(ch, (id) => portalStates.get(id)?.barricadePlanks ?? 0, 0.28, this.navTiles.get(ch.key)),

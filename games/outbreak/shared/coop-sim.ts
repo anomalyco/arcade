@@ -1,3 +1,4 @@
+import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
 import { createAIAgent, OutbreakAISubsystem, type AIConfig } from "./ai"
 import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
@@ -73,6 +74,7 @@ export class CoopSim {
   readonly combat: OutbreakCombatSubsystem
   readonly registry: InteractionRegistry
   readonly progression: OutbreakProgression
+  readonly rewind = new RewindHistory<number>(24, 0.25)
   readonly slots: SurvivorSlot[] = []
   hour = 18
   time = 0
@@ -150,7 +152,14 @@ export class CoopSim {
    * With `predict`, only what a client may predict for its own survivor runs (aim, flashlight toggle, stamina,
    * movement, vault/peek state, climbing); nothing shared changes and no noise is emitted.
    */
-  stepSurvivor(slot: SurvivorSlot, command: Command, dt: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING, predict = false): void {
+  stepSurvivor(
+    slot: SurvivorSlot,
+    command: Command,
+    dt: number,
+    tuning: SessionTuning = DEFAULT_STAMINA_TUNING,
+    predict = false,
+    viewTime?: number,
+  ): void {
     const p = slot.survivor
     const town = this.town
     if (!p.vault) p.aim = command.aim
@@ -200,13 +209,13 @@ export class CoopSim {
       if (!predict && outcome.topologyChanged) this.topologyChanged()
     }
 
-    if (!predict) this.applyActions(slot, command, dt, tuning)
+    if (!predict) this.applyActions(slot, command, dt, tuning, viewTime)
 
     p.vx = dt > 0 ? (p.x - x) / dt : 0
     p.vy = dt > 0 ? (p.y - y) / dt : 0
   }
 
-  private applyActions(slot: SurvivorSlot, command: Command, dt: number, tuning: SessionTuning): void {
+  private applyActions(slot: SurvivorSlot, command: Command, dt: number, tuning: SessionTuning, viewTime?: number): void {
     const p = slot.survivor
     const town = this.town
     const progression = this.progression
@@ -267,7 +276,13 @@ export class CoopSim {
     if (command.fire) {
       if (use === "fire") {
         if (tuning.infiniteAmmo) ammo.fill()
-        if (this.combat.firePistol(p, this.ai, blockers, this.time, ammo)) progression.ledger.cancel(slot.id)
+        const fired =
+          viewTime !== undefined && viewTime < this.time
+            ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+              )
+            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+        if (fired) progression.ledger.cancel(slot.id)
       } else if (use === "shove") shove()
       else verbs.fire = true
     }
@@ -281,6 +296,7 @@ export class CoopSim {
   /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
   syncWorldChunks(): boolean {
     const survivors = this.slots.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y }))
+    if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
     const res = this.worldStream.updateActiveWindows(
       survivors,
@@ -335,6 +351,7 @@ export class CoopSim {
       const damage = aiStep.damage[i]!
       if (damage > 0) slot.survivor.health = Math.max(0, slot.survivor.health - damage)
     })
+    this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 

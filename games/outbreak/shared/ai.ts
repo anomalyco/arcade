@@ -301,9 +301,11 @@ export class OutbreakAISubsystem {
     if (chunkTiles && chunkTiles.size > 0) {
       this.nav.chunkTiles.clear()
       for (const [k, tile] of chunkTiles) this.nav.chunkTiles.set(k, tile)
+      this.nav.invalidateChunkTileCache()
       return
     }
     this.nav.chunkTiles.clear()
+    this.nav.invalidateChunkTileCache()
     const navObstacleRects = [
       ...town.barriers.map((b) => b.rect),
       ...town.props.flatMap((p) => {
@@ -533,7 +535,7 @@ export class OutbreakAISubsystem {
     }
 
     if (topologyChanged) {
-      this.rebuildTopology(town)
+      this.rebuildTopology(town, this.nav.chunkTiles.size > 0 ? new Map(this.nav.chunkTiles) : undefined)
     }
 
     const damage = survivors.map(() => 0)

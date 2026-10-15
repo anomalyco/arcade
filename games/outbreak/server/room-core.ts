@@ -1,4 +1,5 @@
 import { ByteWriter, frame } from "@arcade/kit/net/bytes"
+import { AckHistory, BandwidthPacer } from "@arcade/kit/net/interest"
 import { JitterBuffer } from "@arcade/kit/net/jitter-buffer"
 import { Seats } from "@arcade/kit/net/seats"
 import { cleanPlayerName } from "@arcade/kit/sim/matchmaking"
@@ -17,6 +18,7 @@ import {
   type ClientMsg,
   type RosterEntry,
   type ServerMsg,
+  type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { Command } from "../shared/session"
 
@@ -28,8 +30,21 @@ const MSG_BURST = 240
 
 export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
 
-/** `ledgerRev`: the progression ledger revision this seat's client has; 0 sends everything it can see. */
-type SeatData = { slot: SurvivorSlot; jitter: JitterBuffer<Command>; ledgerRev: number }
+/**
+ * `ledgerRev`: the progression ledger revision this seat's client has; 0 sends everything it can see.
+ * `ackSnapTick`: highest snapshot tick acknowledged by this seat's client (for delta compression).
+ * `history`: ring buffer of snapshots emitted to this seat so delta encoding matches client reconstruction.
+ */
+type SeatData = {
+  slot: SurvivorSlot
+  jitter: JitterBuffer<Command>
+  ledgerRev: number
+  ackSnapTick: number
+  viewTick: number
+  history: AckHistory<SharedSnapshot>
+  pacer: BandwidthPacer
+  lastSnapTick: number
+}
 type ConnState = { seatId: string | null; tokens: number; at: number; bytes: number }
 
 /** One co-op room's world and seats, independent of the transport so tests and benchmarks can drive it. */
@@ -37,9 +52,11 @@ export class CoopRoomCore {
   readonly sim: CoopSim
   readonly seats: Seats<SeatData>
   tick = 0
+  private snapIndex = 0
   private conns = new Map<Conn, ConnState>()
   private shooters = new Map<number, number>()
   private writer = new ByteWriter(4096)
+  private personalWriter = new ByteWriter(256)
   private rosterKey = ""
 
   constructor(
@@ -89,16 +106,31 @@ export class CoopRoomCore {
   private send(conn: Conn, msg: ServerMsg | Uint8Array): void {
     const data = msg instanceof Uint8Array ? msg : JSON.stringify(msg)
     const state = this.conns.get(conn)
-    if (state) state.bytes += typeof data === "string" ? data.length : data.byteLength
+    const len = typeof data === "string" ? data.length : data.byteLength
+    if (state) state.bytes += len
     conn.send(data)
   }
 
   private handle(conn: Conn, state: ConnState, msg: ClientMsg): void {
-    if (msg.t === "ping") return this.send(conn, { t: "pong", c: msg.c })
+    if (msg.t === "ping") {
+      if (msg.a && state.seatId) {
+        const seat = this.seats.byId(state.seatId)
+        if (seat && msg.a > seat.data.ackSnapTick && seat.data.history.get(msg.a)) {
+          seat.data.ackSnapTick = msg.a
+        }
+      }
+      return this.send(conn, { t: "pong", c: msg.c })
+    }
     if (msg.t === "hello") return this.hello(conn, state, msg)
     if (!state.seatId) return
     const seat = this.seats.byId(state.seatId)
     if (!seat) return
+    if (msg.a && msg.a > seat.data.ackSnapTick && seat.data.history.get(msg.a)) {
+      seat.data.ackSnapTick = msg.a
+    }
+    if (msg.v && msg.v <= this.tick) {
+      seat.data.viewTick = msg.v
+    }
     for (let i = 0; i < msg.c.length; i++) seat.data.jitter.push(msg.s + i, unpackCommand(msg.c[i]), this.tick)
   }
 
@@ -114,6 +146,11 @@ export class CoopRoomCore {
       slot: this.sim.addSurvivor(id, index),
       jitter: new JitterBuffer(commandOps),
       ledgerRev: 0,
+      ackSnapTick: 0,
+      viewTick: 0,
+      history: new AckHistory<SharedSnapshot>(32),
+      pacer: new BandwidthPacer(SNAPSHOT_EVERY, 9, 22 * 1024),
+      lastSnapTick: -SNAPSHOT_EVERY,
     }))
     if (!joined.ok) {
       this.send(conn, { t: "error", message: `Room ${this.code} is full (${MAX_SURVIVORS} survivors).` })
@@ -124,6 +161,9 @@ export class CoopRoomCore {
     // A reconnect starts a fresh command stream (the client's sequence numbers restart at 0).
     if (joined.resumed) seat.data.jitter = new JitterBuffer(commandOps)
     seat.data.ledgerRev = 0
+    seat.data.ackSnapTick = 0
+    seat.data.history.clear()
+    seat.data.lastSnapTick = -SNAPSHOT_EVERY
     for (const [other, s] of this.conns) {
       if (other !== conn && s.seatId === seat.id) {
         s.seatId = null
@@ -179,9 +219,10 @@ export class CoopRoomCore {
         slot.survivor.vx = slot.survivor.vy = 0
         continue
       }
+      const viewTime = seat.data.viewTick > 0 ? seat.data.viewTick * TICK_DT : undefined
       for (const command of inputs) {
         const lastShot = sim.combat.shots.at(-1)?.id ?? 0
-        sim.stepSurvivor(slot, command, TICK_DT, COOP_TUNING)
+        sim.stepSurvivor(slot, command, TICK_DT, COOP_TUNING, false, viewTime)
         for (const shot of sim.combat.shots) if (shot.id > lastShot) this.shooters.set(shot.id, slot.index)
       }
     }
@@ -193,18 +234,53 @@ export class CoopRoomCore {
     if (this.tick % SNAPSHOT_EVERY === 0) this.snapshot()
   }
 
-  /** Encodes the shared part once, then prefixes each player's ack, private survivor state, ledger delta and notices. */
+  /**
+   * Emits per-recipient interest-filtered and delta-compressed snapshots, sharing encoded bytes whenever
+   * recipients share the same chunk bubble `(winCx, winCy)` and acked baseline tick.
+   */
   snapshot(to?: Conn[]): void {
-    const shared = encodeShared(this.sim, this.tick, this.shooters, this.writer)
+    this.snapIndex++
+    const sharedCache = new Map<string, { bytes: Uint8Array; snap: SharedSnapshot }>()
     for (const [conn, s] of this.conns) {
       if (to && !to.includes(conn)) continue
       const seat = s.seatId ? this.seats.byId(s.seatId) : undefined
       if (!seat) continue
-      const slot = seat.data.slot
-      const delta = this.sim.progression.ledger.diff(seat.data.ledgerRev, { visibleTo: seat.id })
-      if (delta) seat.data.ledgerRev = delta.toRev
+      const data = seat.data
+      if (!to && this.tick - data.lastSnapTick < data.pacer.stride()) continue
+      data.lastSnapTick = this.tick
+
+      const slot = data.slot
+      const viewerCenter = this.sim.worldStream.getSurvivorWindowCenter(slot.id, slot.survivor.x, slot.survivor.y)
+      const bubbleKey = `${viewerCenter.cx},${viewerCenter.cy}`
+      const baseSnap = data.ackSnapTick > 0 ? data.history.get(data.ackSnapTick) : undefined
+      const baseTick = baseSnap ? baseSnap.tick : 0
+      const baseBubble = (baseSnap as (SharedSnapshot & { _bubbleKey?: string }) | undefined)?._bubbleKey
+      const canShare = baseTick === 0 || baseBubble === bubbleKey
+      const cacheKey = `${bubbleKey}:${baseTick}`
+      let cached = canShare ? sharedCache.get(cacheKey) : undefined
+      if (!cached) {
+        const outHolder: { snap?: SharedSnapshot & { _bubbleKey?: string } } = {}
+        const bytes = encodeShared(this.sim, this.tick, this.shooters, this.writer, {
+          viewerCenter,
+          baseSnap,
+          snapIndex: this.snapIndex,
+          outSnapshot: outHolder,
+        })
+        if (outHolder.snap) outHolder.snap._bubbleKey = bubbleKey
+        cached = { bytes, snap: outHolder.snap! }
+        if (canShare) sharedCache.set(cacheKey, cached)
+      }
+      if (this.tick > 0 && cached.snap) {
+        data.history.record(this.tick, cached.snap)
+      }
+
+      const delta = this.sim.progression.ledger.diff(data.ledgerRev, { visibleTo: seat.id })
+      if (delta) data.ledgerRev = delta.toRev
       const notices = slot.notices.splice(0)
-      this.send(conn, frame(encodePersonal(seat.data.jitter.ack, slot.survivor, delta, notices), shared))
+      const personal = encodePersonal(data.jitter.ack, slot.survivor, delta, notices, this.personalWriter)
+      const packet = frame(personal, cached.bytes)
+      data.pacer.record(packet.byteLength, this.sim.time)
+      this.send(conn, packet)
     }
   }
 }
