@@ -418,6 +418,24 @@ proven animation techniques to animation.md, not here.
   is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
   samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
   switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
+- **Give a top-down flashlight a visible shaft with a separate reduced-resolution march, and hang it on the rig.**
+  From Outbreak's steep camera a flashlight that only lights surfaces reads as a pool starting at the feet. The light
+  now rides the survivor rig every frame (`Survivor.light`: under the pistol barrel when drawn, following low-ready,
+  raised aim, recoil and reload; otherwise the right hand), at hand height, with the barrel's pitch clamped to the
+  pool-distance tilt so low-ready still throws the beam ahead (`beamPose` in `games/outbreak/src/flashlight-beam.ts`);
+  the polar shadow pass uses the same origin, remote co-op survivors too. Zombies and other survivors are appended to
+  the flashlight's occluder range as round casters, so they cut both the pool and the shaft. The shaft is a kit
+  `VolumeLightShader` pass after the scene: per pixel of a 1/2- (Medium) or 1/4-resolution target, the view ray is
+  clipped analytically to a slightly widened cone, the beam range and the ground, then 8 samples (static per-pixel
+  offset) take the beam's angular profile, softened inverse-square falloff, the polar visibility at the sample's own
+  height, slow two-octave dust and a mild forward phase; rain, mist and interiors thicken it, and a small glare sits
+  on the lens. A kit composite adds it to the resolved HDR target and multiplies the selective-colour alpha, so the
+  warm shaft keeps its colour in Noir. Both passes are scissored to a CPU screen rect around the shaft (lens plus cone
+  corners out to `min(range, first wall + 1.5 m, 13 m)`, matched by a fade in the shader). Measured with the pass
+  amplified ×5 on one page at 3456×1894: `0.06 ms` street / `0.04 ms` interior aimed north, `0.13 / 0.23 ms` aimed
+  across the screen; High (14 samples) `0.10 / 0.09 ms`. Lab: Flashlight › Volumetric beam, Dust, Lens glare,
+  Volumetric quality (Off/Low/Medium/High). Proof: `NOIR_SCENES=beam bun scripts/noir-proof.ts`,
+  `bun scripts/beam-sweep.ts`.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.

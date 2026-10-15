@@ -157,7 +157,19 @@ export type FlashlightBeamSettings = {
   beamBounce: number
   beamColorKnee: number
   practicalColor: number
+  beamVisibility: number
+  beamDust: number
+  beamGlare: number
+  beamQuality: number
 }
+
+/** Volumetric beam quality tiers: resolution divisor and march samples (0 = no pass, closed-form air glow instead). */
+export const BEAM_QUALITY_TIERS = [
+  { label: "Off", downscale: 0, samples: 0 },
+  { label: "Low", downscale: 4, samples: 6 },
+  { label: "Medium", downscale: 2, samples: 8 },
+  { label: "High", downscale: 2, samples: 14 },
+] as const
 
 export const DEFAULT_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
   beamInner: 0.35,
@@ -166,12 +178,16 @@ export const DEFAULT_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
   beamSpill: 0.05,
   beamSpillWidth: 1.5,
   beamCookie: 0.45,
-  beamPoolDistance: 3.6,
+  beamPoolDistance: 5.5,
   beamNearSoftening: 2.0,
   beamAirScatter: 0.35,
   beamBounce: 0.35,
   beamColorKnee: 0.16,
   practicalColor: 0.55,
+  beamVisibility: 1.7,
+  beamDust: 0.5,
+  beamGlare: 1.2,
+  beamQuality: 2,
 }
 
 export const flashlightBeamControls: LabControl[] = [
@@ -187,6 +203,15 @@ export const flashlightBeamControls: LabControl[] = [
   { key: "beamBounce", label: "Bounce light", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "beamColorKnee", label: "Colour knee (irradiance)", group: "Flashlight", min: 0.02, max: 1, step: 0.01, unit: "" },
   { key: "practicalColor", label: "Practical lights restore colour", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "beamVisibility", label: "Volumetric beam (air density)", group: "Flashlight", min: 0, max: 4, step: 0.05, unit: "×" },
+  { key: "beamDust", label: "Dust in the beam", group: "Flashlight", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "beamGlare", label: "Lens glare", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
+  {
+    key: "beamQuality",
+    label: "Volumetric quality",
+    group: "Flashlight",
+    options: BEAM_QUALITY_TIERS.map((t, value) => ({ label: t.downscale ? `${t.label} (1/${t.downscale} res, ${t.samples} samples)` : t.label, value })),
+  },
 ]
 
 /**
@@ -197,7 +222,9 @@ export const flashlightBeamControls: LabControl[] = [
 export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
 export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
 export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 140
+/** Volumetric beam block: inverse view-projection (16) then two vec4f. */
+export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 164
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
@@ -256,6 +283,17 @@ export type OutbreakLightingFrameState = {
   flashlightAirLimit?: number
   /** Seconds since the last frame; 0 snaps the visibility field (teleports, resets). */
   frameDt?: number
+  /** Lens plan position (from the survivor rig), default a hand's reach along the aim. */
+  flashlightOrigin?: readonly [number, number]
+  /** Beam yaw and pitch (radians, negative pitch points down); default the aim and the pool-distance tilt. */
+  flashlightYaw?: number
+  flashlightPitch?: number
+  /** Camera inverse view-projection, for the volumetric beam's view rays. */
+  invViewProj?: ArrayLike<number>
+  /** Extra air density from rain and mist (0..2). */
+  weatherAir?: number
+  /** Distance from the lens where the visible shaft has faded out (its screen rect ends there too). */
+  beamReach?: number
   inInteriorView: boolean
   /** Lens centre of the streetlamp nearest the camera target. */
   streetHead: readonly [number, number, number]
@@ -294,8 +332,10 @@ export function packOutbreakLightingUniforms(
   const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog } : raw
   const dirX = Math.cos(state.playerAim)
   const dirY = Math.sin(state.playerAim)
-  const handX = state.playerX + dirX * 0.24
-  const handY = state.playerY + dirY * 0.24
+  const handX = state.flashlightOrigin?.[0] ?? state.playerX + dirX * 0.24
+  const handY = state.flashlightOrigin?.[1] ?? state.playerY + dirY * 0.24
+  const beamDirX = state.flashlightYaw === undefined ? dirX : Math.cos(state.flashlightYaw)
+  const beamDirY = state.flashlightYaw === undefined ? dirY : Math.sin(state.flashlightYaw)
   const halfRad = (Math.max(10, Math.min(120, s.flashlightCone)) * Math.PI) / 360
   const beam = { ...DEFAULT_FLASHLIGHT_BEAM, ...s }
   const lensH = state.flashlightHeight ?? state.playerH + 1.34
@@ -319,8 +359,8 @@ export function packOutbreakLightingUniforms(
   // u3
   out[12] = handX
   out[13] = handY
-  out[14] = dirX
-  out[15] = dirY
+  out[14] = beamDirX
+  out[15] = beamDirY
   // u4
   out[16] = Math.tan(halfRad)
   out[17] = s.flashlightRange
@@ -365,16 +405,19 @@ export function packOutbreakLightingUniforms(
   out[N + 6] = beam.beamSpillWidth
   out[N + 7] = beam.beamCookie
   // u13: axis y, axis plan scale, near-lens softening, colour knee
-  out[N + 8] = -Math.sin(tilt)
-  out[N + 9] = Math.cos(tilt)
+  const beamPitch = state.flashlightPitch ?? -tilt
+  out[N + 8] = Math.sin(beamPitch)
+  out[N + 9] = Math.cos(beamPitch)
   out[N + 10] = beam.beamNearSoftening
   out[N + 11] = beam.beamColorKnee
   // u14: bounce point, bounce power, air scatter
-  const bounce = state.flashlightBounce ?? [handX + dirX * beam.beamPoolDistance, handY + dirY * beam.beamPoolDistance]
+  const bounce = state.flashlightBounce ?? [handX + beamDirX * beam.beamPoolDistance, handY + beamDirY * beam.beamPoolDistance]
   out[N + 12] = bounce[0]
   out[N + 13] = bounce[1]
   out[N + 14] = state.flashlightOutput * s.flashlightIntensity * beam.beamBounce
-  out[N + 15] = beam.beamAirScatter
+  const tier = BEAM_QUALITY_TIERS[Math.round(beam.beamQuality)] ?? BEAM_QUALITY_TIERS[2]
+  // The closed-form air glow stands in for the volumetric pass when it is off.
+  out[N + 15] = tier.downscale ? 0 : beam.beamAirScatter
   // u15: penumbra base, penumbra growth per metre, reveal and fade blend factors for this frame
   const dt = state.frameDt ?? 1 / 60
   out[N + 16] = s.fogPenumbra ?? 0.22
@@ -391,6 +434,17 @@ export function packOutbreakLightingUniforms(
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
   out[N + 26] = 0
   out[N + 27] = 0
+  // Volumetric beam: inverse view-projection, then density, dust, glare, samples; air boost, indoors, ground, reserved
+  const B = OUTBREAK_BEAM_UNIFORM_OFFSET
+  if (state.invViewProj) for (let i = 0; i < 16; i++) out[B + i] = state.invViewProj[i]!
+  out[B + 16] = beam.beamVisibility * (tier.downscale ? 1 : 0)
+  out[B + 17] = beam.beamDust
+  out[B + 18] = beam.beamGlare
+  out[B + 19] = tier.samples
+  out[B + 20] = state.weatherAir ?? 0
+  out[B + 21] = state.inInteriorView ? 1 : 0
+  out[B + 22] = state.playerH
+  out[B + 23] = state.beamReach ?? 13
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -919,6 +973,9 @@ struct OutbreakLightingUniforms {
   u15: vec4f, // fogPenumbra, fogPenumbraGrowth, fieldRevealBlend, fieldFadeBlend
   u16: vec4f, // fogMemoryWarmth, practicalColor, flashCosSpillCut, flashAirLimit
   u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
+  invViewProj: mat4x4f,
+  u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
+  u19: vec4f, // weatherAir, indoors, groundY, beamReach
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 `

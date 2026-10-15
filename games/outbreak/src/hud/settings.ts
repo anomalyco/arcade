@@ -12,7 +12,7 @@ import {
   VITALS_ICONS,
   VITALS_STYLE,
 } from "./placement"
-import { STYLE_BELOW, STYLES } from "./styles"
+import { STYLE_DIEGETIC, STYLES } from "./styles"
 
 export const HUD_MODE_CALLOUTS = 0
 export const HUD_MODE_LOG = 1
@@ -28,8 +28,8 @@ export const RING_ARC = 2
 export const DEFAULT_HUD_SETTINGS = {
   /** 0 = callouts on the survivor, 1 = the old bottom-left status log. */
   hudMode: HUD_MODE_CALLOUTS,
-  /** The HUD direction: Today, Below Feet, Hades Style, Zomboid Style or Diegetic (see styles.ts). */
-  hudStyle: STYLE_BELOW,
+  /** The HUD direction: Today, Below Feet, Hades Style, Zomboid Style or Diegetic (see styles.ts). Kit chose Diegetic (D-13). */
+  hudStyle: STYLE_DIEGETIC,
   /** Which side of the survivor callouts prefer (-1 = the style's); they swap sides when the survivor aims into them. */
   calloutPlacement: CALLOUTS_STYLE,
   /** Callout font size in CSS pixels. */

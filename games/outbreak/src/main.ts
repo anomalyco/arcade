@@ -21,6 +21,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
+import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { aiControls, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
@@ -48,6 +49,7 @@ import { archSettings } from "./architecture"
 import { WorldClientStreamer } from "./world-streamer"
 import { districtAtChunk, worldToChunk } from "../shared/world"
 import {
+  BEAM_QUALITY_TIERS,
   flashlightBeamControls,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
@@ -76,6 +78,7 @@ import {
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
+import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
 import { zombieControls, zombieProfile } from "./zombie-profile"
 import {
   applyOutbreakPreset,
@@ -601,6 +604,8 @@ async function main() {
   const lampPower = new Float32Array(MAX_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const flashlightBounce: [number, number] = [0, 0]
+  const flashlightOrigin: [number, number] = [0, 0]
+  const invViewProj = new Float32Array(16)
   let lastSightX = -1e3
   let lastSightY = -1e3
   let fieldWindowX = 0
@@ -1530,7 +1535,17 @@ async function main() {
       combinedFog.update(vision, scenery, true)
       renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
     }
-    const frameLightOccluders = lightOccluders
+    // The flashlight also sees actors as round casters, so zombies and other survivors cut its pool and its shaft.
+    let frameLightOccluders = lightOccluders
+    if (p.flashlightOutput > 0.001) {
+      const casters = (x: number, y: number) => {
+        if (frameLightOccluders >= MAX_OCCLUDERS - 4 || frameLightOccluders - lightOccluders >= 16) return
+        if (Math.hypot(x - p.x, y - p.y) > settings.flashlight.flashlightRange) return
+        occluders.set([x, y, 0.27, 0, 1.72, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
+      }
+      for (const z of zombies) if (z.state !== "dead") casters(z.x, z.y)
+      for (const o of coop.otherPositions()) casters(o[0], o[1])
+    }
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -1580,35 +1595,49 @@ async function main() {
     ])
     let count = 1
     let flashlightSlot = -1
+    // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
+    const lift = vaultLift(p)
+    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift, settings.survivor)
+    const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     let flashlightHeight = 1.34 + playerGroundY
     let flashlightAirLimit = 0
+    let flashlightYaw = p.aim
+    let beamReach = 0
+    let flashlightPitch: number | undefined
     let flashlightBounceHeight = playerGroundY + 0.3
     const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlight.flashlightIntensity > 0.001) {
-      const fx = p.x + Math.cos(p.aim) * 0.25
-      const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.34 + playerGroundY
+      // Lens and direction from the posed rig; the shadow pass uses the same origin as the shading.
+      const beam = beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+      const fx = beam.x
+      const fy = beam.y
+      const fh = beam.h
+      const dx = Math.cos(beam.yaw)
+      const dy = Math.sin(beam.yaw)
       const cosHalf = Math.cos((settings.flashlight.flashlightCone * Math.PI) / 360)
       // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
       const power = p.flashlightOutput * settings.flashlight.flashlightIntensity
       flashlightSlot = count
       flashlightHeight = fh
-      const wall = raycast(fx, fy, Math.cos(p.aim), Math.sin(p.aim), blockers, settings.flashlight.flashlightRange)
-      const hit = Math.min(wall, settings.flashlight.beamPoolDistance)
-      flashlightBounce[0] = fx + Math.cos(p.aim) * Math.max(0.3, hit - 0.15)
-      flashlightBounce[1] = fy + Math.sin(p.aim) * Math.max(0.3, hit - 0.15)
+      flashlightOrigin[0] = fx
+      flashlightOrigin[1] = fy
+      flashlightYaw = beam.yaw
+      flashlightPitch = beam.pitch
+      const wall = raycast(fx, fy, dx, dy, blockers, settings.flashlight.flashlightRange)
+      const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
+      const hit = Math.min(wall, reach, settings.flashlight.flashlightRange)
+      flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
+      flashlightBounce[1] = fy + dy * Math.max(0.3, hit - 0.15)
       flashlightAirLimit = wall
-      flashlightBounceHeight = playerGroundY + (wall < settings.flashlight.beamPoolDistance ? 0.9 : 0.3)
+      beamReach = Math.min(settings.flashlight.flashlightRange, wall + 1.5, 13)
+      flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
       lights.set(
-        [fx, fh, fy, settings.flashlight.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
+        [fx, fh, fy, settings.flashlight.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
-    count = coop.flashlights(lights, count, town, settings, lightOccluders)
+    count = coop.flashlights(lights, count, town, settings, lightOccluders, blockers)
 
-    const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift, settings.survivor)
-    const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     const zombieBatches = zombieCrowd.draw(
       zombies,
       vdt,
@@ -1724,6 +1753,12 @@ async function main() {
         flashlightBounce,
         flashlightAirLimit,
         flashlightBounceHeight,
+        flashlightOrigin: flashlightSlot >= 0 ? flashlightOrigin : undefined,
+        flashlightYaw,
+        flashlightPitch,
+        invViewProj: mat4.inverse(cam.viewProj, invViewProj),
+        beamReach,
+        weatherAir: settings.weather.weatherEnabled ? beamWeatherAir({ intensity: settings.weather.weatherIntensity, mist: settings.weather.weatherMist }) : 0,
         frameDt: fieldSnap || Math.hypot(sightX - lastSightX, sightY - lastSightY) > 2.5 ? 0 : dt,
         inInteriorView,
         streetHead: nearestStreetHead(camX, camY, currentIsStreamWindow),
@@ -1844,6 +1879,21 @@ async function main() {
     render.lightCount = count
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
+    const beamTier = BEAM_QUALITY_TIERS[Math.round(settings.flashlight.beamQuality)] ?? BEAM_QUALITY_TIERS[2]
+    render.volume = flashlightSlot >= 0 && beamTier.downscale && (settings.flashlight.beamVisibility > 0.001 || settings.flashlight.beamGlare > 0.001)
+      ? {
+          downscale: beamTier.downscale,
+          rect: beamScreenRect(
+            (x, y, z) => cam.project(x, y, z, 1, 1),
+            [flashlightOrigin[0], flashlightHeight, flashlightOrigin[1]],
+            flashlightYaw,
+            flashlightPitch ?? 0,
+            (settings.flashlight.flashlightCone * Math.PI) / 360,
+            beamReach,
+            playerGroundY,
+          ),
+        }
+      : null
     render.lampCount = town.lamps.length
     render.view = view
     render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, cam.damageFlash), settings.lighting.exposure]
