@@ -224,7 +224,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
       (p.reloadRemaining > 0 ? 8 : 0) |
       (p.exhausted ? 16 : 0)
     const lift = p.vault ? Math.sin(Math.min(1, p.vault.elapsed / Math.max(0.01, p.vault.duration)) * Math.PI) : 0
-    w.u8(slot.index).i16(cm(p.x)).i16(cm(p.y)).u16(packAngle(p.aim)).u8(flags)
+    w.u8(slot.index).i32(cm(p.x)).i32(cm(p.y)).u16(packAngle(p.aim)).u8(flags)
     w.u8(Math.round(Math.max(0, Math.min(1, p.flashlightOutput)) * 255))
     w.u8(Math.round(Math.max(0, Math.min(255, p.health))))
     w.u8(Math.round(Math.max(0, Math.min(1, p.recoil)) * 255))
@@ -237,7 +237,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
     const clamber = a.clamberWindowId ? Math.max(1, Math.round(Math.min(1, a.clamberElapsed / Math.max(0.1, a.clamberDuration)) * 255)) : 0
     w.u16(a.id).u8(STATES.indexOf(a.state) | (custom ? 128 : 0))
     if (custom) w.u32(a.seed)
-    w.i16(cm(a.x)).i16(cm(a.y)).u16(packAngle(a.aim))
+    w.i32(cm(a.x)).i32(cm(a.y)).u16(packAngle(a.aim))
     w.u8(Math.round(Math.max(0, Math.min(255, a.hp))))
     w.u8(Math.round(Math.max(0, Math.min(1, a.hitFlash)) * 255))
     w.u8(Math.min(255, Math.round(a.stateTime * 20)))
@@ -261,7 +261,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
   const shots = sim.combat.shots
   w.u8(shots.length)
   for (const s of shots) {
-    w.u32(s.id).f64(s.time).i16(cm(s.fromX)).i16(cm(s.fromY)).i16(cm(s.toX)).i16(cm(s.toY)).u16(packAngle(s.aim))
+    w.u32(s.id).f64(s.time).i32(cm(s.fromX)).i32(cm(s.fromY)).i32(cm(s.toX)).i32(cm(s.toY)).u16(packAngle(s.aim))
     w.u16(s.hitZombieId ?? 0xffff).u8((s.killed ? 1 : 0) | (BONES.indexOf(s.detachBone) << 1)).u32(s.seed).u8(shooters.get(s.id) ?? 0)
   }
   return w.finish()
@@ -276,8 +276,8 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
   const survivors: RemoteSurvivor[] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
     const index = r.u8()
-    const x = r.i16() / 100
-    const y = r.i16() / 100
+    const x = r.i32() / 100
+    const y = r.i32() / 100
     const aim = unpackAngle(r.u16())
     const flags = r.u8()
     survivors.push({
@@ -304,8 +304,8 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
     zombies.push({
       id,
       seed: seed ?? townSeed,
-      x: r.i16() / 100,
-      y: r.i16() / 100,
+      x: r.i32() / 100,
+      y: r.i32() / 100,
       aim: unpackAngle(r.u16()),
       state: STATES[code & 127] ?? "wander",
       hp: r.u8(),
@@ -328,10 +328,10 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
   for (let n = r.u8(), i = 0; i < n; i++) {
     const id = r.u32()
     const t = r.f64()
-    const fromX = r.i16() / 100
-    const fromY = r.i16() / 100
-    const toX = r.i16() / 100
-    const toY = r.i16() / 100
+    const fromX = r.i32() / 100
+    const fromY = r.i32() / 100
+    const toX = r.i32() / 100
+    const toY = r.i32() / 100
     const aim = unpackAngle(r.u16())
     const hit = r.u16()
     const flags = r.u8()

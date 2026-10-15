@@ -1,5 +1,5 @@
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
-import { OutbreakAISubsystem, type AIConfig } from "./ai"
+import { createAIAgent, OutbreakAISubsystem, type AIConfig } from "./ai"
 import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
 import { advanceHour } from "./day-cycle"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
@@ -28,6 +28,7 @@ import {
 import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import type { Command, SessionTuning, Survivor } from "./session"
+import { StreamingWorld, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
 export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
@@ -75,6 +76,7 @@ export function createSurvivor(x: number, y: number): Survivor {
  */
 export class CoopSim {
   readonly town: Town
+  readonly world: StreamingWorld
   readonly ai: OutbreakAISubsystem
   readonly combat: OutbreakCombatSubsystem
   readonly registry: InteractionRegistry
@@ -86,11 +88,22 @@ export class CoopSim {
   /** The survivor whose command is being applied (container searches channel on it). */
   private actor: Survivor | null = null
 
-  constructor(seed: number, houseSeed = seed, terrain = 0.22, aiConfig?: Partial<AIConfig>) {
+  constructor(
+    seed: number,
+    houseSeed = seed,
+    terrain = 0.22,
+    aiConfig?: Partial<AIConfig>,
+    worldMode: WorldMode = "streaming",
+  ) {
     this.town = makeTown(seed, houseSeed, terrain)
+    this.world = new StreamingWorld(seed, houseSeed, terrain, worldMode)
     const [sx, sy] = SPAWN_POINTS[0]!
-    this.ai = new OutbreakAISubsystem(this.town, sx, sy, aiConfig)
     this.combat = new OutbreakCombatSubsystem(this.town)
+    this.ai = new OutbreakAISubsystem(this.town, sx, sy, aiConfig)
+    if (worldMode === "procedural") {
+      this.world.syncTownFromActiveChunks(this.town, this.combat.containers, this.ai.portalStates)
+      this.ai.rebuildTopology(this.town, this.world.navTiles)
+    }
     this.registry = new InteractionRegistry([
       doorInteractionHandler,
       windowInteractionHandler,
@@ -149,14 +162,17 @@ export class CoopSim {
     }
     if (command.flashlight) toggleFlashlight(p)
 
+    const clampClassic = this.world.mode === "classic"
     const x = p.x
     const y = p.y
     if (stepInteractionState(town, p, dt)) {
       stepStamina(p, false, false, dt, tuning)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
-        p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
-        p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
+        if (clampClassic) {
+          p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
+          p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
+        }
       }
     } else {
       const rawLen = Math.hypot(command.mx, command.my)
@@ -168,10 +184,15 @@ export class CoopSim {
         p.x += ((command.mx / length) * speed * dt) / steps
         p.y += ((command.my / length) * speed * dt) / steps
         pushOut(p, 0.3, this.solids)
-        p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
-        p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
+        if (clampClassic) {
+          p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
+          p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
+        }
       }
       stepInteractionState(town, p, 0)
+    }
+    if (predict && !clampClassic) {
+      this.syncWorldChunks()
     }
 
     if (command.jump) {
@@ -238,10 +259,30 @@ export class CoopSim {
     }
   }
 
+  /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
+  syncWorldChunks(): boolean {
+    const survivors = this.slots.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y }))
+    const res = this.world.updateActiveWindows(
+      survivors,
+      this.town,
+      this.combat.containers,
+      this.ai.portalStates,
+      this.ai.agents,
+      (id, seed, x, y, aim) => createAIAgent(id, seed, x, y, aim),
+    )
+    if (res.changed) {
+      this.revision++
+      this.solids = solidRects(this.town)
+      this.ai.rebuildTopology(this.town, this.world.navTiles)
+    }
+    return res.changed
+  }
+
   /** Advances everything shared once per tick: clock, channels, flashlights, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
+    this.syncWorldChunks()
     const flashlightTuning = { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning }
 
     for (const slot of this.slots) {
@@ -250,8 +291,7 @@ export class CoopSim {
       const combatStep = this.combat.step(this.town, p, this.ai, dt, this.time)
       if (wasChannelling && !p.channel) slot.ensureCombatSlots = true
       if (combatStep.topologyChanged) {
-        this.revision++
-        this.solids = solidRects(this.town)
+        this.topologyChanged()
       }
       stepFlashlight(p, dt, this.time, flashlightTuning)
       syncFlashlightItem(slot.inventory, p.battery, p.flashlightOn)
@@ -274,8 +314,7 @@ export class CoopSim {
     const survivors = this.slots.map((s) => ({ ...s.survivor, id: s.id }))
     const aiStep = this.ai.stepSurvivors(this.town, survivors, this.hour, this.time, dt, flashlightTuning)
     if (aiStep.topologyChanged) {
-      this.revision++
-      this.solids = solidRects(this.town)
+      this.topologyChanged()
     }
     this.slots.forEach((slot, i) => {
       const damage = aiStep.damage[i]!
@@ -291,20 +330,27 @@ export class CoopSim {
 
   /** Re-derives survivor collision after doors or barricades changed (clients call this after a snapshot). */
   rebuildSolids(): void {
+    this.syncWorldChunks()
     this.solids = solidRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   /** Collision, crowd navigation and prompts after an external edit (Lab, harness pose). */
   rebuildCollision(): void {
+    this.syncWorldChunks()
     this.solids = solidRects(this.town)
-    this.ai.rebuildTopology(this.town)
+    this.world.rebuildActiveNavTiles(this.town, this.ai.portalStates)
+    this.ai.rebuildTopology(this.town, this.world.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   private topologyChanged(): void {
     this.revision++
+    for (const chunk of this.world.activeChunks.values()) {
+      this.world.captureChunkDelta(chunk, this.town, this.combat.containers, this.ai.portalStates, this.ai.agents)
+    }
+    this.world.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
-    this.ai.rebuildTopology(this.town)
+    this.ai.rebuildTopology(this.town, this.world.navTiles)
   }
 }

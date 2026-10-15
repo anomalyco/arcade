@@ -264,6 +264,30 @@ export class NetSession implements Session {
   /** Discrete shared state applies on arrival so collision and prompts match the room before replaying input. */
   private applyWorld(s: SharedSnapshot): void {
     const sim = this.sim
+    // Sync survivor slots from snapshot first so active chunk windows match the server's union of survivor windows
+    const present = new Set<number>()
+    for (const r of s.survivors) {
+      present.add(r.index)
+      if (r.index === this.local.index) continue
+      const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
+      let slot = sim.slots.find((sl) => sl.index === r.index)
+      if (!slot) slot = sim.addSurvivor(id, r.index)
+      slot.survivor.x = r.x
+      slot.survivor.y = r.y
+    }
+    const meSnap = s.survivors.find((r) => r.index === this.local.index)
+    if (meSnap) {
+      // Temporarily align local slot for chunk window calculation
+      const savedX = this.local.survivor.x
+      const savedY = this.local.survivor.y
+      this.local.survivor.x = meSnap.x
+      this.local.survivor.y = meSnap.y
+      sim.syncWorldChunks()
+      this.local.survivor.x = savedX
+      this.local.survivor.y = savedY
+    } else {
+      sim.syncWorldChunks()
+    }
     const town = sim.town
     let topology = false
     town.doors.forEach((d, i) => {

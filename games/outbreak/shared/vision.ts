@@ -13,10 +13,66 @@ const TAU = Math.PI * 2
 export class Vision {
   readonly rays = new Float32Array(POLAR_RAYS)
   readonly explored = new Uint8Array(FOG_SIZE * FOG_SIZE)
+  readonly chunkExplored = new Map<string, Uint8Array>()
+  originX = 0
+  originY = 0
   x = 0
   y = 0
   aim = 0
   settings: VisionSettings = { ...DEFAULT_VISION }
+
+  setWindowOrigin(ox: number, oy: number): boolean {
+    if (ox === this.originX && oy === this.originY) return false
+    this.saveWindowToChunks()
+    this.originX = ox
+    this.originY = oy
+    this.loadWindowFromChunks()
+    return true
+  }
+
+  private saveWindowToChunks(): void {
+    const baseCx = Math.round(this.originX / 32)
+    const baseCy = Math.round(this.originY / 32)
+    for (let dy = 0; dy < 3; dy++) {
+      for (let dx = 0; dx < 3; dx++) {
+        const key = `${baseCx + dx},${baseCy + dy}`
+        let tile = this.chunkExplored.get(key)
+        for (let ly = 0; ly < 64; ly++) {
+          const wy = dy * 64 + ly
+          for (let lx = 0; lx < 64; lx++) {
+            const v = this.explored[wy * FOG_SIZE + (dx * 64 + lx)]!
+            if (v > 0) {
+              if (!tile) {
+                tile = new Uint8Array(64 * 64)
+                this.chunkExplored.set(key, tile)
+              }
+              tile[ly * 64 + lx] = v
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private loadWindowFromChunks(): void {
+    this.explored.fill(0)
+    const baseCx = Math.round(this.originX / 32)
+    const baseCy = Math.round(this.originY / 32)
+    for (let dy = 0; dy < 3; dy++) {
+      for (let dx = 0; dx < 3; dx++) {
+        const tile = this.chunkExplored.get(`${baseCx + dx},${baseCy + dy}`)
+        if (!tile) continue
+        for (let ly = 0; ly < 64; ly++) {
+          const wy = dy * 64 + ly
+          const rowOff = wy * FOG_SIZE + dx * 64
+          const tileOff = ly * 64
+          for (let lx = 0; lx < 64; lx++) {
+            this.explored[rowOff + lx] = tile[tileOff + lx]!
+          }
+        }
+      }
+    }
+  }
 
   update(
     x: number,
@@ -43,10 +99,14 @@ export class Vision {
     }
     let changed = false
     const r = effectiveSettings.range
-    for (let gy = Math.max(0, Math.floor((oy - r) / FOG_CELL)); gy < Math.min(FOG_SIZE, Math.ceil((oy + r) / FOG_CELL)); gy++) {
-      for (let gx = Math.max(0, Math.floor((ox - r) / FOG_CELL)); gx < Math.min(FOG_SIZE, Math.ceil((ox + r) / FOG_CELL)); gx++) {
+    const minGy = Math.max(0, Math.floor((oy - this.originY - r) / FOG_CELL))
+    const maxGy = Math.min(FOG_SIZE, Math.ceil((oy - this.originY + r) / FOG_CELL))
+    const minGx = Math.max(0, Math.floor((ox - this.originX - r) / FOG_CELL))
+    const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + r) / FOG_CELL))
+    for (let gy = minGy; gy < maxGy; gy++) {
+      for (let gx = minGx; gx < maxGx; gx++) {
         const idx = gy * FOG_SIZE + gx
-        if (!this.explored[idx] && this.visible((gx + .5) * FOG_CELL, (gy + .5) * FOG_CELL)) {
+        if (!this.explored[idx] && this.visible(this.originX + (gx + .5) * FOG_CELL, this.originY + (gy + .5) * FOG_CELL)) {
           this.explored[idx] = 255; changed = true
         }
       }
@@ -112,7 +172,17 @@ export class Vision {
 
   state(x: number, y: number): "visible" | "explored" | "unexplored" {
     if (this.visible(x, y)) return "visible"
-    if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return "unexplored"
-    return this.explored[Math.floor(y / FOG_CELL) * FOG_SIZE + Math.floor(x / FOG_CELL)] ? "explored" : "unexplored"
+    const lx = x - this.originX
+    const ly = y - this.originY
+    if (lx >= 0 && ly >= 0 && lx < SIZE && ly < SIZE) {
+      return this.explored[Math.floor(ly / FOG_CELL) * FOG_SIZE + Math.floor(lx / FOG_CELL)] ? "explored" : "unexplored"
+    }
+    const cx = Math.floor(x / 32)
+    const cy = Math.floor(y / 32)
+    const tile = this.chunkExplored.get(`${cx},${cy}`)
+    if (!tile) return "unexplored"
+    const tx = Math.max(0, Math.min(63, Math.floor((x - cx * 32) / FOG_CELL)))
+    const ty = Math.max(0, Math.min(63, Math.floor((y - cy * 32) / FOG_CELL)))
+    return tile[ty * 64 + tx] ? "explored" : "unexplored"
   }
 }

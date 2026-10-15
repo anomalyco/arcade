@@ -138,9 +138,10 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-/** 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`. */
+/** 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, then streaming window uniforms (36). */
 export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 76
+export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 112
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -170,6 +171,9 @@ export type OutbreakLightingFrameState = {
     rippleIntensity: number
     snowAmount: number
   }
+  windowOrigin?: readonly [number, number]
+  isStreamWindow?: boolean
+  windowBuildings?: readonly Building[]
 }
 
 /**
@@ -249,6 +253,30 @@ export function packOutbreakLightingUniforms(
   out[41] = s.fogEdgeSoftness ?? 0.78
   out[42] = s.fogMemoryDim ?? 0.42
   out[43] = 0
+  // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  const winOx = state.windowOrigin?.[0] ?? 0
+  const winOz = state.windowOrigin?.[1] ?? 0
+  const blds = state.windowBuildings ?? []
+  const bldCount = Math.min(8, blds.length)
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET] = winOx
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 1] = winOz
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 2] = state.isStreamWindow ? 1 : 0
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 3] = bldCount
+  for (let i = 0; i < 8; i++) {
+    const base = OUTBREAK_WINDOW_UNIFORM_OFFSET + 4 + i * 4
+    const b = blds[i]
+    if (b) {
+      out[base] = b.rect[0]
+      out[base + 1] = b.rect[1]
+      out[base + 2] = b.rect[2]
+      out[base + 3] = b.rect[3]
+    } else {
+      out[base] = -99999
+      out[base + 1] = -99999
+      out[base + 2] = -99998
+      out[base + 3] = -99998
+    }
+  }
   return out
 }
 
@@ -743,6 +771,8 @@ struct OutbreakLightingUniforms {
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, reserved
   veg: FoliageWindConfig,
   vegActors: FoliageActors,
+  win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  bldRects: array<vec4f, 8>,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 var<private> outbreakFlashMask: f32;

@@ -1019,6 +1019,21 @@ Candidates from the code audits; measure and playtest before moving any into the
   barricades, loot and shots once per 20 Hz snapshot and prefixes each player's ack and private survivor state: about
   1.7 KB per snapshot, 33.7 KB/s per client, room tick 0.12 ms mean at 4 survivors + 60 zombies
   (`games/outbreak/scripts/coop-bench.ts`).
+- **Stream 32 m chunks from deterministic `(seed, cx, cy)` hashes, stitch a sliding 3×3 render window, and persist sparse `ChunkDelta`s.**
+  `games/outbreak/shared/world.ts` and `games/outbreak/src/world-streamer.ts` extend Outbreak beyond the fixed 96 m block
+  while keeping the starting `(0..2, 0..2)` neighbourhood bit-identical in Classic mode (`prove.ts` passes unchanged).
+  Macro-blocks (`3×3` chunks = 96 m) align arterial road centerlines (`lx = 1` / `ly = 1`, `40..48 m`) across chunk
+  borders and assign five districts (`suburb`, `commercial`, `civic`, `industrial`, `woodland`) and 13 building/POI
+  archetypes (`house`, `ranch`, `cottage`, `hardware`, `pharmacy`, `grocery`, `diner`, `gas_station`, `police`, `clinic`,
+  `church`, `warehouse`, `cabin`). Each chunk compiles its static meshes, `128×128` floor AO tile, `256×256` moon mask
+  tile, and `64×64` bounce tile once into a 45-chunk LRU cache, pre-warmed one chunk per frame (`< 2 ms`) and blitted
+  into the `384²`/`768²`/`192²` GPU textures via `writeTexture` without recreating textures or bind groups. `GridNav`
+  queries per-chunk `64×64` (`0.5 m`) walkability tiles across arbitrary chunk boundaries, and `net-protocol.ts` uses
+  `i32` centimetre coordinates (`±21,474 km`). Across a 1,152 m scripted Metal traversal (`scripts/prove-world.ts`, 117
+  chunks, 36 window shifts), frame time measured `11.5 ms` p50 and `16.3 ms` p95 (`22.2 ms` transition p95), JS heap
+  stayed bounded (`64.1 → 86.9 MB`), 98/98 client/server chunk hashes matched, unloaded chunk deltas (doors, locks,
+  barricades, searched containers, dead zombies) restored on return, and two co-op clients 1,200 m apart reconciled with
+  `0.000 m` drift. See `docs/outbreak-world.md`.
 
 ## Input
 

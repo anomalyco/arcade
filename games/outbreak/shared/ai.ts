@@ -238,7 +238,21 @@ export class OutbreakAISubsystem {
     }
   }
 
-  rebuildTopology(town: Town): void {
+  private ensurePortals(town: Town): void {
+    for (const d of town.doors) {
+      if (!this.portalStates.has(d.id)) {
+        this.portalStates.set(d.id, { integrity: 100, barricadePlanks: 0, barricadeHp: 0, lastBashTime: -Infinity })
+      }
+    }
+    for (const w of town.windows) {
+      if (!this.portalStates.has(w.id)) {
+        this.portalStates.set(w.id, { integrity: 100, barricadePlanks: 0, barricadeHp: 0, lastBashTime: -Infinity })
+      }
+    }
+  }
+
+  rebuildTopology(town: Town, chunkTiles?: ReadonlyMap<string, Uint8Array>): void {
+    this.ensurePortals(town)
     this.walls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
     this.closedDoors = town.doors
       .filter((d) => !d.open || (this.portalStates.get(d.id)?.barricadePlanks ?? 0) > 0)
@@ -281,13 +295,19 @@ export class OutbreakAISubsystem {
       }),
     ]
 
+    if (chunkTiles && chunkTiles.size > 0) {
+      this.nav.chunkTiles.clear()
+      for (const [k, tile] of chunkTiles) this.nav.chunkTiles.set(k, tile)
+      return
+    }
+    this.nav.chunkTiles.clear()
     const navObstacleRects = [
       ...town.barriers.map((b) => b.rect),
       ...town.props.flatMap((p) => {
         const s = propShape(p)
         return s ? [s.rect] : []
       }),
-      ...EXTERIOR_VEHICLE_COLLIDERS,
+      ...(town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS),
     ]
     this.nav.rebuild(navObstacleRects, this.portals, 0.28)
   }
@@ -458,6 +478,7 @@ export class OutbreakAISubsystem {
       tick: this.tick,
       dt,
       worldSize: SIZE,
+      worldBounds: town.worldBounds,
       nightFactor,
       solids: this.solids,
       walls: this.walls,
