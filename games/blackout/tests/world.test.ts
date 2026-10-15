@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { CLAYMORE, END_SECONDS, EQUIPS, FRAG, GUNS, HEALTH, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
+import { CLAYMORE, DT, END_SECONDS, EQUIPS, FRAG, GUNS, HEALTH, HIT_RADIUS, MATCH_SECONDS, RESPAWN_SECONDS, SPRINT_TO_FIRE } from "../shared/config"
 import { type Rect, RectGrid, pushOut, rayRect } from "../shared/geom"
 import { generateOffice } from "../shared/maps/office"
 import { Builder } from "../shared/maps/builder"
 import { Rng } from "../shared/rng"
 import { type Grenade, PROP_TOP, launch, obstaclesOf, stepGrenade } from "../shared/sim/gear"
 import { buildSnapshot } from "../shared/sim/view"
-import { World } from "../shared/sim/world"
+import { decodeClient, encodeClient } from "../shared/protocol"
+import { INTENT_OPS, NO_INTENT, REWIND_SECONDS, World } from "../shared/sim/world"
 import { place, run, world } from "./helpers"
 
 const east = 0
@@ -73,6 +74,42 @@ describe("shooting", () => {
     expect(b.health).toBeLessThan(HEALTH)
     run(w, 7)
     expect(b.health).toBe(HEALTH)
+  })
+
+  test("a shot lands where the shooter saw the target (lag compensation), within the rewind cap", () => {
+    // b strafes north at walking pace; a fires due east at where b was `lag` seconds earlier.
+    const shoot = (lag: number, compensate: boolean) => {
+      const w = world()
+      place(w, "a", 15, 10)
+      place(w, "b", 20, 14)
+      const b = w.players.get("b")!
+      const trail: { t: number; y: number }[] = []
+      for (let i = 0; i < 1 / DT; i++) {
+        run(w, DT, (id) => (id === "b" ? { my: -1 } : {}))
+        trail.push({ t: w.time, y: b.y })
+      }
+      const seen = trail.findLast((p) => p.t <= w.time - lag + 1e-9)!
+      place(w, "a", 15, seen.y)
+      w.players.get("a")!.cooldownUntil = 0
+      const before = b.health
+      const view = compensate ? { view: w.time - lag } : {}
+      run(w, DT, (id) => (id === "a" ? { aim: east, fire: true, firePressed: true, ...view } : { my: -1 }))
+      return { hit: b.health < before, moved: Math.abs(b.y - seen.y) }
+    }
+    const late = shoot(0.2, false)
+    expect(late.moved).toBeGreaterThan(HIT_RADIUS)
+    expect(late.hit).toBe(false)
+    expect(shoot(0.2, true).hit).toBe(true)
+    // Further back than REWIND_SECONDS the room only rewinds that far.
+    expect(REWIND_SECONDS).toBeLessThan(0.6)
+    expect(shoot(0.6, true).hit).toBe(false)
+  })
+
+  test("view times survive the wire and merges", () => {
+    const m = decodeClient(encodeClient({ type: "intent", seq: 1, i: { ...NO_INTENT, fire: true, firePressed: true, view: 12.345 } }))
+    expect(m?.type === "intent" && m.i.view).toBe(12.345)
+    const merged = INTENT_OPS.merge({ ...NO_INTENT, fire: true, firePressed: true, view: 3 }, { ...NO_INTENT })
+    expect(merged.view).toBe(3)
   })
 })
 

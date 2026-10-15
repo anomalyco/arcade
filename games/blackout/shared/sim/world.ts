@@ -1,5 +1,6 @@
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
-import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
+import { RewindHistory } from "@arcade/kit/net/rewind"
+import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, TICK_HZ, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapChoice, type MapDef, type MapKind, getMap } from "../maps"
 import { Rng } from "../rng"
@@ -28,8 +29,17 @@ export type Phase = "play" | "end"
  * kit has one; bare-handed, the trigger swings too. `enter` is a press of F that gets in or out of a vehicle; driving,
  * (mx, my) are the throttle and steering and `sprint` the handbrake; `horn` holds H.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean; cast?: CastIntent }
+/** `view`: the server time the client was drawing others at, sent while firing so the room can rewind them (lag compensation). */
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; view?: number; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean; cast?: CastIntent }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
+
+/**
+ * Lag compensation reaches back at most this far: a Wi-Fi player is drawing others ~200 ms behind the room; much
+ * further and victims get shot after reaching cover.
+ */
+export const REWIND_SECONDS = 0.3
+/** Soldiers on foot are rewound for hits; riders move with their vehicle, which isn't. */
+const rewindable = (p: Player): boolean => p.alive && !p.veh
 
 /** Presses that happen once: a fresh trigger pull, reload, equipment, melee, getting in or out, changing seat, a spell. */
 const hasEdges = (i: Intent): boolean => !!(i.firePressed || i.reload || i.equip || i.melee || i.enter || i.seat || i.cast)
@@ -40,7 +50,7 @@ export const INTENT_OPS: InputOps<Intent> = {
     if (!hasEdges(a)) return b
     const m: Intent = { ...b, reload: a.reload || b.reload, equip: a.equip || b.equip }
     // A tap released by the next tick still fires.
-    if (a.firePressed) Object.assign(m, { fire: true, firePressed: true })
+    if (a.firePressed) Object.assign(m, { fire: true, firePressed: true }, m.view === undefined && a.view !== undefined ? { view: a.view } : {})
     if (a.melee) m.melee = true
     if (a.enter) m.enter = true
     if (a.seat) m.seat = true
@@ -163,6 +173,8 @@ export class World {
   /** The modes the end screen offers, the current one first. */
   voteOptions: ModeId[] = []
   players = new Map<string, Player>()
+  /** Where everyone on foot was over the last second, for lag-compensated shots. */
+  readonly rewind = new RewindHistory<string>(TICK_HZ, REWIND_SECONDS)
   order: string[] = []
   events: SimEvent[] = []
   grenades: Grenade[] = []
@@ -413,13 +425,14 @@ export class World {
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
       const pressed = !!kit.gun && intent.fire && ready && (kit.auto || intent.firePressed || !p.triggerHeld)
-      if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
+      if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p, intent.view)
       if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (kit.regen && p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
     if (this.phase === "play") stepVehicles(this)
     if (this.phase === "play") this.stepGear()
     if (this.phase === "play") this.mode.step(this)
+    this.rewind.record(this.tick, this.time, [...this.players.values()], rewindable)
   }
 
   /** Throws the frag toward the cursor, or plants the claymore just ahead facing the aim. */
@@ -521,10 +534,20 @@ export class World {
     this.events.push({ k: "reload", by: p.id })
   }
 
-  private fire(p: Player): void {
-    const gun = GUNS[p.gun]
+  /**
+   * Pulls the trigger. With the shooter's `view` time, soldiers on foot are rewound to where the shooter saw them
+   * (at most `REWIND_SECONDS` back), so a shot on target hits whatever the latency.
+   */
+  private fire(p: Player, view?: number): void {
     p.cooldownUntil = this.time + p.kit.cooldown
     p.mag--
+    if (view === undefined || !p.human) return this.pellets(p)
+    const soldiers = [...this.players.values()].filter(rewindable)
+    this.rewind.withRewoundPositions(soldiers, view, () => this.pellets(p), p.id)
+  }
+
+  private pellets(p: Player): void {
+    const gun = GUNS[p.gun]
     for (let k = 0; k < gun.pellets; k++) {
       const spread = gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + this.rng.range(-0.02, 0.02) : this.rng.range(-gun.spread, gun.spread)
       this.bullet(p, p.aim + spread)
