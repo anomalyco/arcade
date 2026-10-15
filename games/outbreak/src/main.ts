@@ -39,6 +39,7 @@ import {
   collectFogSoundSprites,
   fogOfWarControls,
 } from "./fog-of-war"
+import { applyOutbreakDayNight } from "./day-night"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -78,6 +79,7 @@ const peaceful = params.has("peaceful")
 const settings = {
   hour: 18,
   timeScale: 120,
+  dayNightLook: 1,
   cone: 110,
   awareness: 2.5,
   range: 27,
@@ -308,6 +310,15 @@ async function main() {
     { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
     { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
     {
+      key: "dayNightLook",
+      label: "Look & threat by hour",
+      group: "Day cycle",
+      options: [
+        { label: "Dynamic (Day → Dusk → Noir)", value: 1 },
+        { label: "Fixed preset", value: 0 },
+      ],
+    },
+    {
       key: "infiniteAmmo",
       label: "Infinite ammo",
       group: "Combat",
@@ -537,7 +548,25 @@ async function main() {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
-      if (key === "hour") session.view.hour = wrapHour(settings.hour)
+      if (key === "hour") {
+        session.view.hour = wrapHour(settings.hour)
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+          lab.refresh()
+        }
+      }
+      if (key === "dayNightLook") {
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        } else {
+          const pid = resolveLookPresetId(settings.lookPreset) ?? "noir"
+          applyLookPreset(lookSettings, pid)
+          Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        }
+        lab.refresh()
+      }
       if (
         key === "houseSeed" ||
         key === "terrain" ||
@@ -570,6 +599,10 @@ async function main() {
         const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
         applyLookPreset(lookSettings, pid)
         Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        if (settings.dayNightLook === 1 && pid === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        }
         lab.refresh()
       }
       if (key === "weatherPreset") {
@@ -952,6 +985,7 @@ async function main() {
   })
   await renderer.texturesReady
   syncTextures()
+  let lastDayNightHour = -1
   function draw(dt: number) {
     if (settings.textures === 2) syncTextures()
     coop.net?.sync(dt)
@@ -962,6 +996,10 @@ async function main() {
     }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
+    if (settings.dayNightLook === 1 && settings.lookPreset === "noir" && Math.abs(hour - lastDayNightHour) > 1e-4) {
+      lastDayNightHour = hour
+      applyOutbreakDayNight(hour, lookSettings, settings)
+    }
     if (peek) {
       lastPeek = peek
       peekBlend = Math.min(1, peekBlend + dt * 6.5)
@@ -1436,10 +1474,23 @@ async function main() {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
     human: () => ({ profile: avatar.profile, bones: avatar.bones }),
-    state: () => ({
-      ...session.view,
-      peekBlend,
-      flashlight: {
+    state: () => {
+      const dc = dayCycle(session.view.hour)
+      return {
+        ...session.view,
+        peekBlend,
+        threat: dc.threat,
+        darkness: dc.darkness,
+        dayCycle: {
+          hour: session.view.hour,
+          phase: dc.phase,
+          darkness: dc.darkness,
+          threat: dc.threat,
+          sun: dc.sun,
+          twilight: dc.twilight,
+          lamps: dc.lamps,
+        },
+        flashlight: {
         on: session.view.player.flashlightOn,
         battery: session.view.player.battery,
         depleted: session.view.player.batteryDepleted,
@@ -1470,7 +1521,8 @@ async function main() {
         settings: toSharedWeatherSettings(settings),
         state: { ...weatherController.sim.state },
       },
-    }),
+      }
+    },
     fog: (x: number, y: number) => vision.state(x, y),
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
@@ -1509,7 +1561,25 @@ async function main() {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
-      if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
+      if (key === "hour" && typeof value === "number") {
+        session.view.hour = wrapHour(value)
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+          lab.refresh()
+        }
+      }
+      if (key === "dayNightLook") {
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        } else {
+          const pid = resolveLookPresetId(settings.lookPreset) ?? "noir"
+          applyLookPreset(lookSettings, pid)
+          Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        }
+        lab.refresh()
+      }
       if (
         key === "houseSeed" ||
         key === "terrain" ||
@@ -1542,6 +1612,10 @@ async function main() {
         const pid = resolveLookPresetId(value) ?? "current"
         applyLookPreset(lookSettings, pid)
         Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        if (settings.dayNightLook === 1 && pid === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        }
         lab.refresh()
       }
       if (key === "weatherPreset") {
@@ -1571,12 +1645,17 @@ async function main() {
       settings.lookPreset = pid
       applyLookPreset(lookSettings, pid)
       Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+      if (settings.dayNightLook === 1 && pid === "noir") {
+        lastDayNightHour = session.view.hour
+        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+      }
       lab.refresh()
       return { ...lookSettings }
     },
     setLook(patch: Partial<LookSettings>) {
       Object.assign(lookSettings, patch)
       if (patch.preset) settings.lookPreset = patch.preset
+      lastDayNightHour = session.view.hour
       lab.refresh()
       return { ...lookSettings }
     },

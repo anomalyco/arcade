@@ -22,7 +22,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
-  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0) * OL.u1.z)",
+  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
     let tight = max(0.5, OL.u0.w);
@@ -114,7 +114,7 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
   solidCutaway: "",
   surface: /* wgsl */ `
   outbreakFlashMask = 0.0;
-  let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
+  let nightLamps = clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0);
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
