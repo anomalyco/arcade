@@ -29,6 +29,9 @@
     },
     "games/carrier": {
       "name": "carrier",
+      "dependencies": {
+        "@arcade/kit": "workspace:*",
+      },
       "devDependencies": {
         "@cloudflare/workers-types": "^5.20261011.1",
         "@fontsource/ibm-plex-mono": "^5.2.5",

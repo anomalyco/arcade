@@ -466,7 +466,7 @@ fn applyOutbreakFogOfWar(
   if (visible >= 0.995 && mat != 2) {
     return colIn;
   }
-  let explored = textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
+  let explored = textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy, 0.0).r;
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = select(0.42, OL.u10.z, OL.u10.z > 0.01);
   let memDim = clamp(

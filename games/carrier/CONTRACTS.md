@@ -252,8 +252,8 @@ While reconnecting, `state` is `"connecting"` and `seaTime()` keeps running on t
 
 The `Net` interface (`src/net.ts`) adds the room's crew and ships to the above: `room`, `id` (my player id), `crew`,
 `ships` (every ship's authoritative pose by crew ship id), `serverNow()`, `refused`, `sendHelm(throttle, rudder)` and the
-crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm, `"hornet"` launches; the SHIP
-OPERATIONS menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip(team)`, `recover(how)` (the jet is gone,
+crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm, `"hornet"` launches; the DEPLOY
+menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip(team)`, `recover(how)` (the jet is gone,
 the pilot waits on deck), and the captain powers `promote(player)`, `kick(player)`, `lock(locked)`. Client messages
 `op`, `promote`, `kick`, `lock` (no `takehelm` / `launch`). `connect({ room, seed, name, private, onFull })`.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
@@ -319,8 +319,11 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   pilots (airborne / on deck / down) and a K/D column once `teams.stats` is set. Actions: JOIN (another team's ship
   switches team; disabled buttons say FULL / LOCKED / UNEVEN / KICKED 48S), CREATE SHIP, and on your own ship as
   captain LOCK, ★ CAPTAIN (promote) and KICK, each of the last two needing a second click within 3 s.
-- SHIP OPERATIONS (`ops-menu.ts`, `carrier.ops`): hold E to see it, tap E to pin, tap again or Esc closes; frees the
-  pointer. E is matched by physical key only (code KeyE; the "e" character is Dvorak's D, a movement key) and is free in flight (V cycles weapons). Each op a row with its number key,
+- DEPLOY (`ops-menu.ts`, `carrier.ops`): hold E to see it, tap E to pin, tap again or Esc closes; frees the
+  pointer. The seat line (`Hud.seat`) shows "E DEPLOY" with the layout's label for physical E. E is matched by physical
+  key only (code KeyE; the "e" character is Dvorak's D, a movement key). In a jet (catapult, flight, landing, the wait
+  after a crash) E is the rudder: `main.ts` decides once (`inJet`) and both shuts the menu (`ops.airborne`) and hides the
+  prompt (`hud.deployKey`); on deck, at the helm, in a gun seat and in the boat it works. Each op a row with its number key,
   its slots (name, READY / FREE, or a recharge ring with seconds) and its state; click or press its number to run it
   (the menu closes; digits never reach the helm's throttle presets while it is open). The only way to take the helm or
   launch: there is no LAUNCH button, no F/Enter launch and no take-helm key. In the air it is read-only (TAKE HELM:
@@ -330,7 +333,7 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   around the ship's centre (`CHASE.sensitivity` rad/px both axes, no invert, pitch 6-80°, fixed distance, back behind
   the ship after 4.5 s without movement). In the air the same lock is the flight stick (`FlightInput.grab = false` in
   the game; `?invert` flips only the stick), so ship ↔ jet hand-offs, crashes and recoveries keep it. Esc releases it
-  (the browser's), the next click takes it again. Tab, SHIP OPERATIONS and the debug menu `input.suspend()` it (free
+  (the browser's), the next click takes it again. Tab, DEPLOY and the debug menu `input.suspend()` it (free
   cursor); when the last one closes, `input.resume()` takes it back only if it was held when they opened (allowed
   without a click because the page released it). The free camera (C) unlocks and keeps drag-orbit, wheel and WASD;
   if Pointer Lock is denied, dragging orbits the chase camera. LMB at the helm only takes the lock.
@@ -379,8 +382,8 @@ weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is 
 Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captures: `scripts/daynight-shot.ts`.
 
 - Time of day is a pure function of (room seed, sea time, room override), like the weather. A day is `DAY_CYCLE`
-  (300 s = 5 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~175 s of day (07:00-17:00), ~31 s
-  of golden hour, sunset and dusk, ~62 s of night, ~31 s of dawn. Rooms start at 09:00-11:00 (seeded).
+  (600 s = 10 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~350 s of day (07:00-17:00), ~62 s
+  of golden hour, sunset and dusk, ~125 s of night, ~62 s of dawn. Rooms start at 09:00-11:00 (seeded).
   - `timelinePhase(seed, t)`: phase in days. `hourOfPhase` and `phaseOfHour` convert between phase and clock hour.
   - `skyAt(seed, phase)`: hour, sun and moon directions, the moon's lit fraction, the star rotation.
   - The sun's path is stylised for the views players get: it rises in the north at 06:00, stands 60° up at a bearing
@@ -439,13 +442,13 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   one step full thrust, the burner and the stroke: `STROKE` 285 m (87% of the runway) on `CENTERLINE_X` to the bow in
   `VEHICLES[kind].strokeTime` (Hornet 4.2 s, ~141 m/s; `catapult(kind)` derives the acceleration), glued to the hull
   pose every step; leaves with the ship's plan velocity plus the launch speed, nose up.
-- `shared/landing.ts`: `landTarget(plane, airborne, ship, hull, t, vehicle)` is the "F LAND" prompt (your own
+- `shared/landing.ts`: `landTarget(plane, airborne, ship, hull, t, vehicle)` is the "R LAND" prompt (your own
   carrier only, its deck open, within `LANDING.range` 1.2 km, under `ceiling` 600 m, the nose within `look` 30° of the
   line to it, above stall, `cooldown` 5 s after launch); `startLanding` / `landingStep` fly a scripted landing in the carrier's ship-local frame (curves to a
   join point behind the stern, a 3.5° glideslope, the trap, a hold) that always ends on the deck (`LANDING.timeout`
-  hard stop) and reports done exactly once. Input is ignored meanwhile; F is flares whenever the prompt is not up.
-- `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in SHIP OPERATIONS → the room gives
-  a ready aircraft slot → `start` → deck → catapult → flight; F at the prompt lands it (`Flight.land`,
+  hard stop) and reports done exactly once. Input is ignored meanwhile.
+- `src/flight/seam.ts` (`FlightModule`) is the game's `FlightSeam`: LAUNCH HORNET in DEPLOY → the room gives
+  a ready aircraft slot → `start` → deck → catapult → flight; R (physical KeyR) at the prompt lands it (`Flight.land`,
   `recover("landed")`), or 2.5 s after a crash, a shoot-down or the edge timeout (`recover("crashed")`) → on deck until
   the pilot launches again (a destroyed jet's slot recharges for 30 s). Nothing else ends a flight. The seam's `frame` runs every frame for every role
   (every jet drawn). No LAUNCH button and no launch key in the game; the offline harness launches with Enter. Camera handoffs ease over ~1.2 s (`flight/blend.ts`);
@@ -481,18 +484,18 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   slot order is the 1/2/3 key order.
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
   under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
-  cycles; F drops flares (F launches nothing anywhere). Space is no longer nose-up (`src/flight/input.ts`). None of
-  these keys is a movement key on QWERTY, AZERTY or Dvorak. While the HUD offers "F LAND", F lands instead of flaring
-  (`WeaponInput.flaresBlocked`, set by the flight seam). Weapons stay hot while the scripted landing has the jet: it can
+  cycles; F always drops flares (F launches and lands nothing). Space is no longer nose-up (`src/flight/input.ts`). R
+  (physical KeyR) lands while the HUD offers "R LAND" (`FlightInput.land`). None of these keys is a movement key on
+  QWERTY, AZERTY or Dvorak. Weapons stay hot while the scripted landing has the jet: it can
   be shot and locked, but cannot fire or flare.
 - Tuning is in `WEAPONS`:
   - Gun: 50 rps, 1,050 m/s muzzle speed plus the jet's velocity, gravity, 0.32° dispersion hashed from (owner, round),
     a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
     of fire and cools to 0.3 before it fires again.
-  - AIM-9: a 17° lock cone, 2.5 km range, locks in 1.4 s, keep cone ×1.3. Rails rearm one missile every 10 s. Pure PN
-    (N 3.4) at up to 16 g with a 0.22 s autopilot lag and a 42° gimbal. 12 m proximity fuse at closest approach,
-    74 damage at the centre to 42 at the edge. Breaking when it is 600–1,000 m out defeats it in the test geometry; an
-    earlier or later break does not. Firing without a lock is a dumbfire.
+  - AIM-9: a tight 6° lock cone (the lock builds only while the target stays in it, bleeding off outside), 2.5 km range, locks in 1.4 s, then holds within the keep cone (×3, 18°). Rails rearm one missile every 10 s. Pure PN
+    (N 3.4) at up to 35 g with a 0.12 s autopilot lag and a 42° gimbal: Battlefield-style, a locked missile out-turns
+    any jet, so flares are the escape (a break turn alone does not beat it). 12 m proximity fuse at closest approach,
+    74 damage at the centre to 42 at the edge. Firing without a lock is a dumbfire.
   - Flares: 3 pairs on a closed-form path with linear drag, reload 16 s each. They seduce a missile homing on their jet
     within 0.9 s of release if the missile is within 2 km and the flare is inside its gimbal. They also break and
     block locks for 1.6 s.
@@ -548,7 +551,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 
 ## Gunnery (`shared/gunnery.ts`, `src/gunnery/**`, `src/render/turret-*.ts`, `src/audio/turret-audio.ts`)
 
-- Crewed from SHIP OPERATIONS (`gun` ops above). The game's role `gunner` hands the camera to `Gunnery.update` (first
+- Crewed from DEPLOY (`gun` ops above). The game's role `gunner` hands the camera to `Gunnery.update` (first
   person at the weapon's sight, `TURRET_GEOMETRY`, on the ship's live settled pose: heave, pitch, roll and the sink
   offset come through; up = the deck's up). The mouse (the game's Pointer Lock) moves a world-stabilised aim, clamped to
   the mount's `yawArc`/`pitchArc` as the ship turns (the view stops at a limit; the arc gauge's end and a soft screen-edge
@@ -576,7 +579,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 
 ## Boat (`shared/boat.ts`, `src/boat/**`, `src/render/boat-*.ts`, `src/audio/boat-audio.ts`)
 
-- The Mk VII fast interceptor (`art/boat.glb`, `art/boat-README.md`): SHIP OPERATIONS → LAUNCH BOAT (`shared/ops.ts`
+- The Mk VII fast interceptor (`art/boat.glb`, `art/boat-README.md`): DEPLOY → LAUNCH BOAT (`shared/ops.ts`
   `boat: true` vehicle op, cap 1 per ship, recharge 40 s). The driver holds the boat's slot like a pilot holds a jet's
   (`plane` = the slot, `playerBoat`, `slotIsBoat`), but only the room ends the sortie: picked up alongside its carrier
   (`recover(.., "landed")`, the slot frees at once) or sunk (`"crashed"`, 40 s). Either way `recover` puts the driver back
@@ -631,7 +634,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
     scales top speed (to 55%) and rudder (to 60%). The room's sim and the helm's prediction both apply it.
   - DECK hits by bombs, missiles or crashes start a 15 s deck fire (the HUD counts it down: "DECK FIRE 12S"). While the deck burns (or the ship sinks),
-    `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the "F LAND" prompt skips it.
+    `deckOpen` is false: launching is refused (`deck-fire`, `sinking`) and the "R LAND" prompt skips it.
   - Anything else is the HULL side.
 - Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
   and all of them stay lit below 60% health.

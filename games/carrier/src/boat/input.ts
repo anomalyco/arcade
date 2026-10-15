@@ -7,7 +7,7 @@ import type { Input } from "../input"
  * - W / ↑ held: full ahead; S / ↓ held: astern (brakes first); neither: the engines idle and the hull coasts.
  * - A / D or ← / →: steer the waterjets. Shift: boost (a short burst that recharges).
  * - Mouse: aim (the chase camera turns; the turret follows within its arcs). Space or left mouse: fire.
- * E stays SHIP OPERATIONS (read-only while out in the boat); there is no key to quit the boat.
+ * E stays DEPLOY (read-only while out in the boat); there is no key to quit the boat.
  */
 export class BoatInput {
   enabled = true

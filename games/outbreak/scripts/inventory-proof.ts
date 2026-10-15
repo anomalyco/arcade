@@ -180,6 +180,22 @@ try {
     await snap(page, "field-craft", "Hold Q in the street at night: the squad's learned recipes, craftable from the belt", "hud")
   }
 
+  // Every Lab station scene stages without errors.
+  for (const scene of ["search", "strip", "bench", "dark-bench", "generator", "field-craft", "handoff"]) {
+    await page.evaluate(async (scene) => {
+      const h = (window as any).__arcadeHarness
+      h.freeze(true)
+      h.reset(7)
+      h.setLab("timeScale", 0)
+      h.setLab("zombieCount", 0)
+      h.stageProgression(scene)
+      for (let i = 0; i < 4; i++) await h.step()
+    }, scene)
+    if (scene === "dark-bench") await step(page, 1, { interact: true })
+    await step(page, 2)
+    await snap(page, `scene-${scene}`, `Lab station scene: ${scene}`, scene === "field-craft" ? "hud" : "prompt")
+  }
+
   assert.deepEqual(errors, [])
   writeFileSync(resolve(out, "index.json"), JSON.stringify({ adapter, shots }, null, 2))
   console.log(`inventory proof: ${shots.length} stills in ${out}`)

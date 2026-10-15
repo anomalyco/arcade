@@ -154,11 +154,8 @@ describe("missiles", () => {
     expect(hp).toBeLessThan(40)
   })
 
-  test("a well-timed break turn beats it; breaking too early or too late does not", () => {
-    expect(shot({ breakAt: 800 }).hp).toBe(100)
-    expect(shot({ breakAt: 700 }).hp).toBe(100)
-    expect(shot({ breakAt: 2000 }).hp).toBeLessThan(100)
-    expect(shot({ breakAt: 250 }).hp).toBeLessThan(100)
+  test("a break turn alone does not beat it, whenever it starts (flares are the escape)", () => {
+    for (const breakAt of [2000, 800, 700, 250]) expect(shot({ breakAt }).hp).toBeLessThan(100)
   })
 
   test("flares decoy an inbound missile in time; too late, it hits", () => {

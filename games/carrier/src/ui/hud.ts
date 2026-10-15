@@ -55,6 +55,8 @@ export class Hud {
   private lastHelm = ""
   private lastSeat = ""
   private seatEl: HTMLElement
+  /** The "E DEPLOY" prompt: off in a jet, where E is the rudder (main.ts decides, with the menu's own key). */
+  deployKey = true
 
   constructor(root: HTMLElement) {
     if (!document.getElementById("hud-css")) {
@@ -79,11 +81,11 @@ export class Hud {
   }
 
   /**
-   * Bottom left, one quiet line: ★ if I captain my ship, my role, the ship in my team's colour and a state ("ON DECK");
-   * above it a short-lived refusal.
+   * Bottom left, one quiet line: ★ if I captain my ship, my role, the ship in my team's colour, a state ("ON DECK") and
+   * the "E DEPLOY" prompt (unless `deployKey` is off); above it a short-lived refusal.
    */
   seat(v: { role: string; ship: string; state?: string; captain?: boolean; color: string; flash: string } | null): void {
-    const eKey = keyLabel("KeyE")
+    const eKey = this.deployKey ? keyLabel("KeyE") : ""
     const key = v ? `${v.role}|${v.ship}|${v.state}|${v.captain}|${v.color}|${v.flash}|${eKey}` : ""
     if (key === this.lastSeat) return
     this.lastSeat = key
@@ -94,7 +96,7 @@ export class Hud {
     role.innerHTML = `${v.captain ? "<em>★</em>" : ""}${v.role} · <b></b>${v.state ? "<i></i>" : ""}`
     role.querySelector("b")!.textContent = v.ship
     if (v.state) role.querySelector("i")!.textContent = ` · ${v.state}`
-    role.insertAdjacentHTML("beforeend", `<span class="ops">${keyCapHtml("KeyE")}SHIP OPS</span>`)
+    if (eKey) role.insertAdjacentHTML("beforeend", `<span class="ops">${keyCapHtml("KeyE")}DEPLOY</span>`)
     this.seatEl.querySelector(".flash")!.textContent = v.flash
   }
 

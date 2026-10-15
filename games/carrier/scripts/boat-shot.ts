@@ -5,7 +5,7 @@
 //   scp scripts/boat-shot.ts hailmary:/tmp/carrier-ocean/ && ssh hailmary 'cd /tmp/carrier-ocean && ~/.bun/bin/bun boat-shot.ts --out=/tmp/carrier-boat/out'
 //
 // Options: --base=URL  --size=1536x1024  --only=launch,drive,storm,gun,night,recover,hero,mp
-//   mp: the real game, two pages in one fresh room on opposite teams: A launches the boat from SHIP OPERATIONS (B
+//   mp: the real game, two pages in one fresh room on opposite teams: A launches the boat from DEPLOY (B
 //   watches the crane), drives at B's carrier and strafes it (B's hull drops, B sees the boat and its tracers, Tab lists
 //   A as BOAT), then B's Hornet strafes the boat until it sinks; A is back at the helm and the boat recharges.
 import { chromium, type Page } from "playwright-core"
@@ -461,12 +461,12 @@ async function mp(): Promise<void> {
   const b = await openGame(`room=${room}`, "BO")
   let mb = await muntil(b, (m) => m.online === "online" && m.role !== "none", 20_000)
   check(ma.team !== mb.team, `opposite teams: A ${mfmt(ma)} | B ${mfmt(mb)}`)
-  // A opens SHIP OPERATIONS: LAUNCH BOAT is there.
+  // A opens DEPLOY: LAUNCH BOAT is there.
   await a.keyboard.press("KeyE")
   await a.waitForTimeout(400)
   await shot(a, "mp-00-a-ops-menu")
   const row = await a.evaluate(() => (document.querySelector(".om") as HTMLElement | null)?.innerText ?? "")
-  check(/LAUNCH BOAT/.test(row), "SHIP OPERATIONS lists LAUNCH BOAT")
+  check(/LAUNCH BOAT/.test(row), "DEPLOY lists LAUNCH BOAT")
   await run(a, "carrier.ops.close()")
   // B watches A's carrier's port elevator from abeam.
   const aShip = ma.ship

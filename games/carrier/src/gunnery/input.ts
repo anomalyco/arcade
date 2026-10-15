@@ -6,7 +6,7 @@ import { KeyStateTracker, requestCanvasPointerLock } from "@arcade/kit/client/co
  *   `grab`). Without the lock (denied, headless) dragging aims.
  * - Left mouse (under the lock) or Space: fire (hold: the CIWS and the gun keep firing; a SAM leaves per press).
  * - Right mouse held: the sight's zoom.
- * Leaving the turret is SHIP OPERATIONS (E), not a key here.
+ * Leaving the turret is DEPLOY (E), not a key here.
  */
 export class TurretInput {
   /** Off: nothing is read (not manning a turret, menus, debug panel). */

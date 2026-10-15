@@ -73,7 +73,7 @@ export type FlightFrame = {
 }
 
 /**
- * The flight module in the real game (game.ts FlightSeam). LAUNCH HORNET in the SHIP OPERATIONS menu asks
+ * The flight module in the real game (game.ts FlightSeam). LAUNCH HORNET in the DEPLOY menu asks
  * the room for an aircraft slot; once granted, `start` puts a jet on this player's carrier and runs the catapult launch
  * on the carrier as drawn, then hands the stick over. R, or the respawn delay after a crash, recovers the player to
  * the deck. The jet is relayed to the room at 20 Hz; everyone else's jets are drawn here, interpolated, including their
@@ -222,7 +222,6 @@ export class FlightModule {
     this.ctx = null
     this.pose = null
     this.recovering = false
-    this.weaponInput.flaresBlocked = false
     this.flight.idle()
     this.weapons.land()
     this.wasArmed = false
@@ -241,12 +240,11 @@ export class FlightModule {
     if (!ctx || f.phase === "idle") return false
     const deck = ctx.deck()
     f.readInput(dt, paused)
-    // "F LAND": close to your own carrier, pointing at it, deck open: F lands (and drops no flares).
+    // "R LAND": close to your own carrier, pointing at it, deck open: R lands.
     const me = this.crew && playerOf(this.crew, this.net.id)
     const own = me ? this.drawnShips.find((s) => s.id === me.ship) : undefined
     const target = f.phase === "flying" && me ? landTarget(f.plane, f.airborne, own, this.hulls?.get(me.ship), this.seaT, landingVehicle(f.vehicle)) : null
     f.landPrompt = !!target
-    this.weaponInput.flaresBlocked = !!target
     if (target && !paused && this.input.land) f.land(target)
     if (deck) {
       // The first sight of the deck places the jet (start may have come before the hull was drawn).
@@ -342,7 +340,7 @@ export class FlightModule {
     this.net.sendPlane(s)
   }
 
-  /** Every frame, after the camera is placed: every jet drawn. (Launching is the SHIP OPERATIONS menu's job.) */
+  /** Every frame, after the camera is placed: every jet drawn. (Launching is the DEPLOY menu's job.) */
   frame(v: FlightFrame): void {
     const airborne = this.ctx !== null && this.flight.phase !== "idle"
     if (!airborne) this.hud.update(null)

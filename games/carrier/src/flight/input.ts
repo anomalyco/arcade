@@ -10,8 +10,8 @@ import type { PlaneControls } from "../../shared/plane"
  *   centre when the mouse stops, so a flick is a quick rate and a steady push holds a turn. Pull back (toward you) for
  *   nose up, like BF's default; `?invert` swaps it.
  * - Arrows: ↑ nose down, ↓ nose up, ←/→ roll (BF4's keyboard pitch/roll). Space fires (src/weapons/input.ts).
- * - Hold right or middle mouse, or X: free look (camera only). C: chase / cockpit camera. A flight only ends by landing
- *   on the carrier, a crash or being shot down: there is no key to quit it.
+ * - Hold right or middle mouse, or X: free look (camera only). C: chase / cockpit camera. R: land, while the HUD offers
+ *   "R LAND". A flight only ends by landing on the carrier, a crash or being shot down: there is no key to quit it.
  */
 export class FlightInput {
   /** Mouse stick sensitivity (stick units per CSS pixel) and its spring back to centre (s). */
@@ -104,12 +104,12 @@ export class FlightInput {
     return this.pressed("KeyC")
   }
 
-  /** F: land, while the HUD offers it (otherwise F is flares, src/weapons/input.ts). */
+  /** R: land, while the HUD offers it (F is always flares, src/weapons/input.ts). */
   get land(): boolean {
-    return this.pressed("KeyF")
+    return this.pressed("KeyR")
   }
 
-  /** Launch from the deck in the offline harness (flight.html): Enter. The game launches from SHIP OPERATIONS. */
+  /** Launch from the deck in the offline harness (flight.html): Enter. The game launches from DEPLOY. */
   get launch(): boolean {
     return this.pressed("Enter", "NumpadEnter")
   }

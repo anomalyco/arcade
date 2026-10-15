@@ -1364,7 +1364,7 @@ export function buildFoliageTree(
   }
 
   // Crown apex bouquet
-  const crownTone = palette[seed % palette.length]!
+  const crownTone = palette[Math.abs(seed) % palette.length]!
   const apexRx = clumpScale * (shape === "conical" ? 0.64 : 0.94)
   const apexRy = apexRx * (shape === "layered" ? 0.52 : 0.72)
   emitBoughCluster(
@@ -1492,7 +1492,7 @@ export function buildFoliageBush(
     Math.min(topR * 0.72, H * 0.42),
     centre,
     rng,
-    tones[seed % tones.length]!,
+    tones[Math.abs(seed) % tones.length]!,
     cards + 1,
     leaf,
     params.bushAO,

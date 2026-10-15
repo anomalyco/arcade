@@ -117,7 +117,7 @@ async function main() {
   flight.input.grab = false
   flight.input.invert = params.has("invert")
   game.setFlight(flight)
-  // Ship guns: a gunner's first-person turret (SHIP OPERATIONS → CIWS / SAM / 5-INCH), everyone's turrets and fire.
+  // Ship guns: a gunner's first-person turret (DEPLOY → CIWS / SAM / 5-INCH), everyone's turrets and fire.
   const gunnery = new Gunnery(renderer, canvas)
   const gunneryNet: GunneryNet = {
     aim: (a) => net.sendAim(a),
@@ -133,7 +133,7 @@ async function main() {
   }
   gunnery.teamOf = (id) => (net.crew ? (playerOf(net.crew, id)?.team ?? -1) : -1)
   game.setGunnery(gunnery)
-  // The boat (SHIP OPERATIONS → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
+  // The boat (DEPLOY → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
   // the kill feed and being a target for the jets' guns go through the jets' weapons.
   const boat = new BoatModule(renderer, input, canvas, net)
   boat.weapons = flight.weapons
@@ -186,7 +186,7 @@ async function main() {
   const forced = params.get("weather")
   if (forced && (WEATHER_KINDS as readonly string[]).includes(forced)) lab.force(forced as WeatherKind, 0)
 
-  // Tab: players and ships, switching ships and teams, captain powers. E: SHIP OPERATIONS (take the helm, launch).
+  // Tab: players and ships, switching ships and teams, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
     join: (ship) => net.board(ship),
     create: (team) => net.newShip(team),
@@ -351,9 +351,12 @@ async function main() {
     teams.update(crew, net.id, net.room, serverNow)
     const me = crew ? playerOf(crew, net.id) : undefined
     const myShip = crew ? shipOf(crew, me?.ship ?? -1) : undefined
-    // In the air E is the jet's rudder (the menu stays shut); at sea in the boat it opens read-only.
+    // In a jet (catapult, flight, landing, the wait after a crash) E is the rudder: no DEPLOY menu and no "E DEPLOY"
+    // prompt. On deck, at the helm, in a gun seat and in the boat (read-only there) E opens it.
     const inBoat = !!net.crew && !!me && playerBoat(net.crew, me.id)
-    ops.airborne = me?.role === "pilot" && me.plane >= 0 && !inBoat
+    const inJet = me?.role === "pilot" && me.plane >= 0 && !inBoat
+    ops.airborne = inJet
+    hud.deployKey = !inJet
     ops.atSea = inBoat
     // The guns act for this player: online the room decides, offline the local world. A gunner's kills read as theirs
     // in the jets' kill feed.
