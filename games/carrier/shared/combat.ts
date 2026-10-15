@@ -15,11 +15,11 @@
 
 import { BOW_Z, DECK_X0, DECK_X1, DECK_Y, ISLAND, STERN_Z } from "./carrier-spec"
 import { type Archipelago, terrainHeight } from "./islands"
-import { PLANE, type ShipPoseLike, type Vec3, worldToShip } from "./plane"
+import { PLANE, type Plane, type ShipPoseLike, type Vec3, bodyToWorld, worldToShip } from "./plane"
 import { type Sea, seaHeight } from "./sea"
 import { FLEET, waterlineDistance } from "./fleet"
 import { BOAT_ARMOR, BOAT_HEALTH } from "./boat"
-import { LOADOUTS, WEAPONS, type Target, type VehicleKind, type WeaponKind, type KillWeapon, canHurt, hash01 } from "./weapons"
+import { LOADOUTS, WEAPONS, type Target, type VehicleKind, type WeaponKind, type KillWeapon, bombStation, canHurt, hash01 } from "./weapons"
 
 const G = 9.81
 const MAX_PEAK = 640
@@ -456,6 +456,122 @@ export function bombDamage(d: number): number {
   const b = WEAPONS.bomb
   if (d > b.radius) return 0
   return b.damage + (b.edge - b.damage) * (d / b.radius)
+}
+
+// ---- bomb release and impact prediction ---------------------------------------------------------------------------------
+
+const rel: Vec3 = [0, 0, 0]
+const push: Vec3 = [0, 0, 0]
+
+/**
+ * The next bomb's release from jet `p` (`bombs` of `max` left on `vehicle`): from its station on the jet
+ * (shared/weapons.ts `bombStation`), at the jet's velocity plus the ejector's push out of the belly. What the jet
+ * releases (src/weapons/weapons.ts) and what the bombsight predicts from. Fills everything but owner and seq.
+ */
+export function bombLaunch(p: Plane, vehicle: VehicleKind, bombs: number, max: number, out: MissileLaunch): MissileLaunch {
+  const b = bombStation(vehicle, bombs, max)
+  const at = bodyToWorld(p, b[0], b[1], b[2], rel)
+  const v = bodyToWorld(p, 0, -WEAPONS.bomb.eject, 0, push)
+  out.t = p.t
+  out.x = p.x + at[0]
+  out.y = p.y + at[1]
+  out.z = p.z + at[2]
+  out.vx = p.vx + v[0]
+  out.vy = p.vy + v[1]
+  out.vz = p.vz + v[2]
+  out.target = -1
+  out.kind = "bomb"
+  return out
+}
+
+/** A carrier's plan motion (shared/ship.ts `Ship`): forward and starboard speed (m/s) and yaw rate (rad/s). */
+export type ShipMotion = { u: number; v: number; r: number }
+export type MovingShip = GroundShip & ShipMotion
+
+/** Moves a carrier's plan pose one step along its course at constant speed and yaw rate: shipStep's kinematics. */
+export function driftShip(s: MovingShip, dt: number): void {
+  s.heading += s.r * dt
+  const sh = Math.sin(s.heading)
+  const ch = Math.cos(s.heading)
+  s.x += (s.u * sh + s.v * ch) * dt
+  s.z += (-s.u * ch + s.v * sh) * dt
+}
+
+/** Where a bomb bursts (`bombImpact`). */
+export type BombImpact = {
+  /** What it strikes, "" when its life runs out first. */
+  kind: ImpactKind | ""
+  /** The burst point, as CombatWorld detonates it (on the sea's surface over water). */
+  x: number
+  y: number
+  z: number
+  /** Seconds from release to the burst. */
+  time: number
+  /** The carrier struck (index into `ships`, -1 none) and the strike in its frame (on the deck when it came through it). */
+  ship: number
+  local: Vec3
+}
+
+export const makeBombImpact = (): BombImpact => ({ kind: "", x: 0, y: 0, z: 0, time: 0, ship: -1, local: [0, 0, 0] })
+
+const probe = makeMissile()
+const drift: MovingShip[] = []
+const driftList: MovingShip[] = []
+const driftGround: Ground = { sea: null, arch: null, ships: driftList }
+
+/**
+ * Predicts where bomb launch `l` bursts by flying the world's own bomb: CombatWorld.tick's steps (`fall` at PLANE.tick:
+ * gravity and drag), each tested against the sea at that step's sea time, the islands and the carriers, every carrier
+ * drifted along its course (`driftShip`) step by step. Exact for carriers holding their speed and turn. Pure: `ships`
+ * is copied, never moved.
+ */
+export function bombImpact(g: Ground, ships: readonly MovingShip[], l: MissileLaunch, out: BombImpact): BombImpact {
+  const dt = PLANE.tick
+  launchMissile(probe, l, -1)
+  driftList.length = 0
+  for (let i = 0; i < ships.length; i++) {
+    const s = (drift[i] ??= { x: 0, z: 0, heave: 0, heading: 0, pitch: 0, roll: 0, u: 0, v: 0, r: 0 })
+    const o = ships[i]!
+    s.x = o.x
+    s.z = o.z
+    s.heave = o.heave
+    s.heading = o.heading
+    s.pitch = o.pitch
+    s.roll = o.roll
+    s.u = o.u
+    s.v = o.v
+    s.r = o.r
+    driftList.push(s)
+  }
+  driftGround.sea = g.sea
+  driftGround.arch = g.arch
+  out.kind = ""
+  out.ship = -1
+  while (probe.age < WEAPONS.bomb.life) {
+    for (const s of driftList) driftShip(s, dt)
+    const px = probe.x
+    const py = probe.y
+    const pz = probe.z
+    fall(probe, dt)
+    const t = l.t + probe.age
+    const kind = probe.y < MAX_PEAK ? groundHit(driftGround, probe.x, probe.y, probe.z, t) : ""
+    if (!kind) continue
+    out.kind = kind
+    out.x = probe.x
+    out.y = kind === "sea" && g.sea ? seaHeight(g.sea, probe.x, probe.z, t) : probe.y
+    out.z = probe.z
+    out.time = probe.age
+    if (kind === "ship") {
+      const sh = shipAt(driftGround, probe.x, probe.y, probe.z, out.local)
+      if (sh) {
+        out.ship = driftList.findIndex((s) => s === sh)
+        if (worldToShip(sh, px, py, pz, lq)[1] >= DECK_Y && out.local[1] < DECK_Y) out.local[1] = DECK_Y
+      }
+    }
+    return out
+  }
+  out.time = probe.age
+  return out
 }
 
 // ---- the world ----------------------------------------------------------------------------------------------------------

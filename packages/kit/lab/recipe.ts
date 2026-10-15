@@ -1,3 +1,4 @@
+import { FOLIAGE_PARAM_SPECS } from "../gpu/foliage"
 import type { LabValue } from "../lab-panel"
 import { vehicleEffectSettings } from "../vehicle/effect-settings"
 import { effectSpecs } from "./effects"
@@ -156,12 +157,16 @@ export function buildGameRecipe(opts: {
   }
 
   if (sectionId === "foliage") {
-    const presetId = String(settings.treePreset ?? "oak")
+    const tool = settings.tool === "bush" || settings.tool === "grass" ? settings.tool : "tree"
+    const presetId = String(settings[`${tool}Preset`] ?? "oak")
+    const table = tool === "tree" ? "TREE_PRESETS" : tool === "bush" ? "BUSH_PRESETS" : "GRASS_PRESETS"
+    const keys = new Set(FOLIAGE_PARAM_SPECS.filter(s => s.kind === tool).map(s => s.key as string))
+    if (tool === "tree") keys.add("crownShape")
     const values: Record<string, number | boolean | string> = {}
     for (const [k, v] of Object.entries(settings)) {
-      if (INTERNAL_KEYS.has(k) || k === "cameraMode" || k === "lightingPreset" || k === "compare" || k === "tuningSeed") continue
+      if (!keys.has(k)) continue
       if (typeof v === "number" && Number.isFinite(v)) values[k] = Number(v.toFixed(4))
-      else if (typeof v === "boolean" || typeof v === "string") values[k] = v
+      else if (typeof v === "string") values[k] = v
     }
     const entries = Object.entries(values)
       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
@@ -170,11 +175,11 @@ export function buildGameRecipe(opts: {
       schema: "arcade-game-recipe/v1",
       target: "foliage",
       modulePath: "packages/kit/gpu/foliage.ts",
-      exportName: "FOLIAGE_PRESETS",
+      exportName: table,
       group: presetId,
       seed,
       values,
-      codeSnippet: `// packages/kit/gpu/foliage.ts -> FOLIAGE_PRESETS.${presetId}.defaults\n${presetId}: { ${entries} },`,
+      codeSnippet: `// packages/kit/gpu/foliage.ts -> ${table}.${presetId}.values\n${presetId}: { ${entries} },`,
     }
   }
 

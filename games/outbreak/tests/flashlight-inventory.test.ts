@@ -7,12 +7,7 @@ import {
   flashlightControls,
   type FlashlightTuning,
 } from "../shared/flashlight"
-import {
-  HOTBAR_SIZE,
-  addItemToInventory,
-  createItem,
-  removeItemFromSlot,
-} from "../shared/inventory"
+import { HOTBAR_SIZE } from "../shared/inventory"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { DEFAULT_STAMINA_TUNING } from "../shared/stamina"
@@ -150,38 +145,20 @@ describe("flashlight battery, flicker, cutout, and awareness", () => {
 })
 
 describe("inventory 1-5 hotbar", () => {
-  test("selects slots 1-5 by Digit key, cycles with wheel delta, and slots future survival items", () => {
+  test("selects slots 1-5 by Digit key and cycles with the wheel", () => {
     const session = new LocalSession(7)
-    const inv = session.view.inventory
+    const view = () => session.view.inventory
 
-    expect(inv.slots).toHaveLength(HOTBAR_SIZE)
-    expect(inv.selectedSlot).toBe(0)
-    expect(inv.slots[0]?.kind).toBe("flashlight")
+    expect(view().slots).toHaveLength(HOTBAR_SIZE)
+    expect(view().selectedSlot).toBe(1)
+    expect(view().slots[0]?.kind).toBe("flashlight")
+    expect(view().slots[1]?.kind).toBe("pistol")
 
-    // Select slot 3 (index 2) via hotbarSlot command
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarSlot: 2 }, 0)
-    expect(inv.selectedSlot).toBe(2)
-
-    // Cycle forward and wrap around 0..4 via hotbarDelta
+    expect(view().selectedSlot).toBe(2)
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarDelta: 3 }, 0)
-    expect(inv.selectedSlot).toBe(0)
+    expect(view().selectedSlot).toBe(0)
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarDelta: -1 }, 0)
-    expect(inv.selectedSlot).toBe(4)
-
-    // Slot in crowbar, medkit (stackable), noisemaker, and key
-    expect(addItemToInventory(inv, createItem("crowbar"))).toBe(1)
-    expect(addItemToInventory(inv, createItem("medkit", { count: 1 }))).toBe(2)
-    expect(addItemToInventory(inv, createItem("medkit", { count: 2 }))).toBe(2) // Stacks onto slot 2
-    expect(inv.slots[2]?.count).toBe(3)
-    expect(addItemToInventory(inv, createItem("noisemaker"))).toBe(3)
-    expect(addItemToInventory(inv, createItem("key"))).toBe(4)
-    // Hotbar now full
-    expect(addItemToInventory(inv, createItem("crowbar"))).toBe(-1)
-
-    // Consume 1 medkit from slot 2 -> 2 remaining
-    removeItemFromSlot(inv, 2, 1)
-    expect(inv.slots[2]?.count).toBe(2)
-    removeItemFromSlot(inv, 1)
-    expect(inv.slots[1]).toBeNull()
+    expect(view().selectedSlot).toBe(4)
   })
 })

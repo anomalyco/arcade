@@ -1,7 +1,7 @@
 import "./style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { makeArchipelago, type Archipelago } from "../shared/islands"
-import { TEAMS, playerOf, shipOf } from "../shared/crew"
+import { teamCss, playerOf, shipOf } from "../shared/crew"
 import { playerBoat, shipOps } from "../shared/ops"
 import { FLEET } from "../shared/fleet"
 import { PLANE_MODE } from "../shared/protocol"
@@ -10,6 +10,7 @@ import { bakeSeabed } from "../shared/seabed"
 import { WEATHER_KINDS, type WeatherKind } from "../shared/weather"
 import { WeatherAudio } from "./audio/weather-audio"
 import { DebugMenu } from "./dev/debug-menu"
+import { controlsTab } from "./dev/controls-tab"
 import { MixerLab } from "./audio/mixer-lab"
 import { mixer } from "./audio/mixer"
 import { SoundsLab } from "./audio/sounds-lab"
@@ -116,7 +117,7 @@ async function main() {
   flight.input.grab = false
   flight.input.invert = params.has("invert")
   game.setFlight(flight)
-  // Ship guns: a gunner's first-person turret (SHIP OPERATIONS → CIWS / SAM / 5-INCH), everyone's turrets and fire.
+  // Ship guns: a gunner's first-person turret (DEPLOY → CIWS / SAM / 5-INCH), everyone's turrets and fire.
   const gunnery = new Gunnery(renderer, canvas)
   const gunneryNet: GunneryNet = {
     aim: (a) => net.sendAim(a),
@@ -132,7 +133,7 @@ async function main() {
   }
   gunnery.teamOf = (id) => (net.crew ? (playerOf(net.crew, id)?.team ?? -1) : -1)
   game.setGunnery(gunnery)
-  // The boat (SHIP OPERATIONS → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
+  // The boat (DEPLOY → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
   // the kill feed and being a target for the jets' guns go through the jets' weapons.
   const boat = new BoatModule(renderer, input, canvas, net)
   boat.weapons = flight.weapons
@@ -180,14 +181,15 @@ async function main() {
   debugMenu.addTab(new MixerLab(flight.audio).tab)
   // SOUNDS: the audition board (every sound slot's candidate takes; pick by ear). ?sounds=1 opens it.
   debugMenu.addTab(new SoundsLab().tab)
+  debugMenu.addTab(controlsTab)
   if (params.has("sounds")) debugMenu.open("sounds")
   const forced = params.get("weather")
   if (forced && (WEATHER_KINDS as readonly string[]).includes(forced)) lab.force(forced as WeatherKind, 0)
 
-  // Tab: players and ships, switching ships and teams, captain powers. E: SHIP OPERATIONS (take the helm, launch).
+  // Tab: players and ships (every carrier its own side), switching ships, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
     join: (ship) => net.board(ship),
-    create: (team) => net.newShip(team),
+    create: () => net.newShip(),
     promote: (player) => net.promote(player),
     kick: (player) => net.kick(player),
     lock: (locked) => net.lock(locked),
@@ -349,16 +351,19 @@ async function main() {
     teams.update(crew, net.id, net.room, serverNow)
     const me = crew ? playerOf(crew, net.id) : undefined
     const myShip = crew ? shipOf(crew, me?.ship ?? -1) : undefined
-    // In the air E is the jet's rudder (the menu stays shut); at sea in the boat it opens read-only.
+    // In a jet (catapult, flight, landing, the wait after a crash) E is the rudder: no DEPLOY menu and no "E DEPLOY"
+    // prompt. On deck, at the helm, in a gun seat and in the boat (read-only there) E opens it.
     const inBoat = !!net.crew && !!me && playerBoat(net.crew, me.id)
-    ops.airborne = me?.role === "pilot" && me.plane >= 0 && !inBoat
+    const inJet = me?.role === "pilot" && me.plane >= 0 && !inBoat
+    ops.airborne = inJet
+    hud.deployKey = !inJet
     ops.atSea = inBoat
     // The guns act for this player: online the room decides, offline the local world. A gunner's kills read as theirs
     // in the jets' kill feed.
     gunnery.setNet(net.state === "offline" ? null : gunneryNet)
     if (me) gunnery.setPlayer(net.id, me.team)
-    if (me?.role === "gunner" && flight.weapons.id !== net.id) flight.weapons.setPilot(net.id, me.team, me.name, TEAMS[me.team]?.color ?? "#f4f7fb")
-    ops.update(crew && myShip ? shipOps(crew, net.id, serverNow) : null, crew && myShip ? { ship: myShip.name, color: TEAMS[myShip.team]?.color ?? "", name: (id) => playerOf(crew, id)?.name ?? "?" } : null)
+    if (me?.role === "gunner" && flight.weapons.id !== net.id) flight.weapons.setPilot(net.id, me.team, me.name, teamCss(me.team))
+    ops.update(crew && myShip ? shipOps(crew, net.id, serverNow) : null, crew && myShip ? { ship: myShip.name, color: teamCss(myShip.team), name: (id) => playerOf(crew, id)?.name ?? "?" } : null)
     if (!game.update(dt, t, canvas.width / canvas.height)) {
       const free = !game.paused
       if (free) camera.orbit(input.dragX, input.dragY)

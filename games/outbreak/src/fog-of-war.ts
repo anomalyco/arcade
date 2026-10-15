@@ -1,9 +1,13 @@
-import { SPRITE_FLOATS } from "@arcade/kit/gpu/renderer"
+import { SPRITE_FLOATS, type VisibilityFieldShader } from "@arcade/kit/gpu/renderer"
+import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
+import { common } from "@arcade/kit/gpu/shaders"
 import type { BoneId, BonePose } from "@arcade/kit/human-pose"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { AIAgent, NoiseEvent } from "../shared/ai"
 import type { SceneryMemory } from "../shared/scenery-memory"
+import { SIZE } from "../shared/map"
 import { FOG_CELL, FOG_SIZE, type Vision } from "../shared/vision"
+import { outbreakLightingStructWgsl } from "./lighting"
 
 export type FogStyleId = 0 | 1 | 2
 
@@ -14,21 +18,33 @@ export type FogOfWarSettings = {
   fogUnknownGrain: number
   fogSoundCues: number
   fogGhostDuration: number
+  fogMemorySaturation: number
+  fogMemoryWarmth: number
+  fogPenumbra: number
+  fogPenumbraGrowth: number
+  fogRevealTime: number
+  fogFadeTime: number
 }
 
 export const DEFAULT_FOG_OF_WAR: FogOfWarSettings = {
   fogStyle: 1,
   fogEdgeSoftness: 0.78,
-  fogMemoryDim: 0.42,
-  fogUnknownGrain: 0.48,
-  fogSoundCues: 1.0,
+  fogMemoryDim: 0.5,
+  fogUnknownGrain: 0,
+  fogSoundCues: 0,
   fogGhostDuration: 3.2,
+  fogMemorySaturation: 0.22,
+  fogMemoryWarmth: 0.6,
+  fogPenumbra: 0.22,
+  fogPenumbraGrowth: 0.05,
+  fogRevealTime: 0.07,
+  fogFadeTime: 0.25,
 }
 
 export const FOG_STYLE_OPTIONS: readonly { label: string; value: FogStyleId }[] = [
-  { label: "Noir Memory + Echo", value: 1 },
-  { label: "Stark Cone + Pulse", value: 2 },
-  { label: "Soft Shroud (Classic)", value: 0 },
+  { label: "Soft memory", value: 1 },
+  { label: "Stark cone", value: 2 },
+  { label: "Light shroud", value: 0 },
 ] as const
 
 export const fogOfWarControls: LabControl[] = [
@@ -58,7 +74,7 @@ export const fogOfWarControls: LabControl[] = [
   },
   {
     key: "fogUnknownGrain",
-    label: "Unknown area grain",
+    label: "Unknown area grain (off by default)",
     group: "Vision",
     min: 0.0,
     max: 1.0,
@@ -67,7 +83,7 @@ export const fogOfWarControls: LabControl[] = [
   },
   {
     key: "fogSoundCues",
-    label: "Sound ripple cues",
+    label: "Sound ripple cues (off by default)",
     group: "Vision",
     min: 0.0,
     max: 1.5,
@@ -83,6 +99,12 @@ export const fogOfWarControls: LabControl[] = [
     step: 0.2,
     unit: "s",
   },
+  { key: "fogMemorySaturation", label: "Memory saturation", group: "Vision", min: 0, max: 1, step: 0.02, unit: "" },
+  { key: "fogMemoryWarmth", label: "Memory warmth", group: "Vision", min: 0, max: 1, step: 0.02, unit: "" },
+  { key: "fogPenumbra", label: "LOS penumbra at the eye", group: "Vision", min: 0, max: 1.5, step: 0.02, unit: "m" },
+  { key: "fogPenumbraGrowth", label: "LOS penumbra growth", group: "Vision", min: 0, max: 0.2, step: 0.005, unit: "m/m" },
+  { key: "fogRevealTime", label: "Reveal time", group: "Vision", min: 0.01, max: 0.5, step: 0.01, unit: "s" },
+  { key: "fogFadeTime", label: "Fade-to-memory time", group: "Vision", min: 0.01, max: 1.5, step: 0.01, unit: "s" },
 ]
 
 /**
@@ -420,38 +442,99 @@ export function collectFogSoundSprites(
   return alphaCount
 }
 
-export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
-fn eyeVisible(p: vec2f) -> f32 {
-  let delta = p - lights[0].pos.xz;
-  let d2 = dot(delta, delta);
-  let r = lights[0].pos.w;
-  if (d2 >= r * r) { return 0.0; }
-  let distance = sqrt(d2);
-  let soft = clamp(select(0.78, OL.u7.y, OL.u7.y > 0.01), 0.05, 1.5);
-  let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
-  let coneFeather = 0.04 + 0.14 * soft;
-  let cone = smoothstep(F.effects.y - coneFeather * 0.35, F.effects.y + coneFeather * 0.65, facing);
-  let near = (1.0 - smoothstep(0.35, F.effects.z + 0.55 * soft, distance)) * 0.42;
-  let mask = max(cone, near);
-  if (mask <= 0.0) { return 0.0; }
-  let range = 1.0 - smoothstep(r - (1.0 + 1.5 * soft), r, distance);
-  let a = (atan2(delta.y, delta.x) + TAU) % TAU;
-  let f = a / TAU * f32(RAYS) - 0.5;
-  let r0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
+/** Visibility field: 768² texels over the 96 m map window (12.5 cm), updated in a 512² window around the eye. */
+export const VIS_FIELD_SIZE = 768
+export const VIS_FIELD_DISPATCH = 512
+
+/**
+ * Soft line-of-sight field. Each texel takes the vision cone and awareness circle with feathered edges, then filters
+ * the eye's polar blocker distances across a lateral penumbra that widens with distance (7 Gaussian-weighted
+ * interpolated rays, radially tight so light never leaks through a wall), and eases toward that target with separate
+ * reveal and fade times. `y` keeps the brightest value ever seen as soft fine-grained memory. Gameplay visibility stays
+ * in shared/vision.ts; this only shades.
+ */
+export const visibilityFieldShader: VisibilityFieldShader = {
+  size: VIS_FIELD_SIZE,
+  dispatch: VIS_FIELD_DISPATCH,
+  code: /* wgsl */ `
+${common}
+${foliageWindDeclarationsWgsl}
+${outbreakLightingStructWgsl}
+@group(0) @binding(14) var<storage, read_write> fieldState: array<vec2f>;
+@group(0) @binding(15) var fieldOut: texture_storage_2d<rgba8unorm, write>;
+const FIELD_SIZE: i32 = ${VIS_FIELD_SIZE};
+const FIELD_HALF: i32 = ${VIS_FIELD_DISPATCH / 2};
+const FIELD_CELL: f32 = ${(SIZE / VIS_FIELD_SIZE).toFixed(6)};
+
+fn rayVis(f: f32, d: f32) -> f32 {
+  let lo = floor(f);
+  let r0 = u32(i32(lo) + i32(RAYS) * 4) % RAYS;
   let r1 = (r0 + 1u) % RAYS;
   let h0 = polar[r0 * 2u].x;
   let h1 = polar[r1 * 2u].x;
-  let pen = 0.08 + 0.18 * soft;
-  let v0 = 1.0 - smoothstep(h0 + 0.02, h0 + pen, distance);
-  let v1 = 1.0 - smoothstep(h1 + 0.02, h1 + pen, distance);
-  return mix(v0, v1, fract(f)) * mask * range;
+  let v0 = 1.0 - smoothstep(h0 - 0.03, h0 + 0.09, d);
+  let v1 = 1.0 - smoothstep(h1 - 0.03, h1 + 0.09, d);
+  return mix(v0, v1, f - lo);
+}
+
+fn softSight(p: vec2f) -> f32 {
+  let eye = lights[0].pos.xz;
+  let r = lights[0].pos.w;
+  let delta = p - eye;
+  let d = length(delta);
+  if (d >= r) { return 0.0; }
+  if (d < 0.08) { return 1.0; }
+  let soft = clamp(OL.u10.y, 0.05, 1.5);
+  let facing = dot(delta / d, vec2f(cos(F.effects.x), sin(F.effects.x)));
+  let feather = 0.05 + 0.2 * soft;
+  let cone = smoothstep(F.effects.y - feather, F.effects.y + feather, facing);
+  let near = 0.6 * (1.0 - smoothstep(F.effects.z * 0.5, F.effects.z + 0.8 + 1.2 * soft, d));
+  let mask = max(cone, near);
+  if (mask <= 0.0) { return 0.0; }
+  let range = 1.0 - smoothstep(r - (1.5 + 3.0 * soft), r, d);
+  let a = atan2(delta.y, delta.x);
+  let f = a / TAU * f32(RAYS) - 0.5;
+  let halfWidth = OL.u15.x + OL.u15.y * d;
+  let stepRays = halfWidth / (3.0 * d) / TAU * f32(RAYS);
+  var sum = 0.0;
+  var weights = 0.0;
+  for (var k = -3; k <= 3; k++) {
+    let w = exp(-f32(k * k) * 0.25);
+    sum += rayVis(f + f32(k) * stepRays, d) * w;
+    weights += w;
+  }
+  return mask * range * sum / weights;
+}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let origin = vec2i(floor((lights[0].pos.xz - OL.win.xy) / FIELD_CELL)) - vec2i(FIELD_HALF);
+  let tx = origin + vec2i(gid.xy);
+  if (any(tx < vec2i(0)) || any(tx >= vec2i(FIELD_SIZE))) { return; }
+  let idx = u32(tx.y * FIELD_SIZE + tx.x);
+  let goal = softSight((vec2f(tx) + 0.5) * FIELD_CELL + OL.win.xy);
+  var s = fieldState[idx];
+  s.x = mix(s.x, goal, select(OL.u15.w, OL.u15.z, goal > s.x));
+  s.y = max(s.y, s.x);
+  fieldState[idx] = s;
+  textureStore(fieldOut, tx, vec4f(s.x, s.y, 0.0, 1.0));
+}
+`,
+}
+
+export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
+/** Live sight (x) and soft fine-grained memory (y) from the visibility field, gated to the current sight range. */
+fn fieldSight(world: vec3f, n: vec3f) -> vec2f {
+  let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy, 0.0).rg;
+  let dEye = length(world.xz - lights[0].pos.xz);
+  let gate = 1.0 - smoothstep(lights[0].pos.w - 0.6, lights[0].pos.w + 0.4, dEye);
+  return vec2f(fv.x * gate, fv.y);
 }
 
 /**
- * Evaluates 3-state survival-horror Fog of War:
- * - State 1 (Live LOS, visible -> 1): Full scene lighting & flashlight colour restoration.
- * - State 2 (Remembered SceneryMemory, visible == 0, explored > 0): Desaturated cold steel-ash blueprint memory.
- * - State 3 (Unexplored Shroud, visible == 0, explored == 0): Deep Limbo charcoal ink with subtle animated static grain.
+ * Blends the lit frame into memory where the survivor can't see: remembered places become a dim, desaturated, warm
+ * wash; unexplored interiors a deep ink. The live field is soft, so there are no polygon edges. Leaves the live
+ * visibility in outbreakSeen for the flashlight and the colour mask.
  */
 fn applyOutbreakFogOfWar(
   colIn: vec3f,
@@ -462,13 +545,15 @@ fn applyOutbreakFogOfWar(
   mat: i32,
   warmth: f32,
 ) -> vec3f {
-  let visible = eyeVisible(world.xz + n.xz * 0.06);
-  if (visible >= 0.995 && mat != 2) {
+  let sight = fieldSight(world, n);
+  let visible = sight.x;
+  outbreakSeen = visible;
+  if (visible >= 0.996 && mat != 2) {
     return colIn;
   }
-  let explored = textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
-  let fogStyle = i32(floor(OL.u7.x * 0.25 + 1e-4));
-  let baseMemDim = select(0.42, OL.u7.z, OL.u7.z > 0.01);
+  let explored = max(textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy, 0.0).r, sight.y);
+  let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
+  let baseMemDim = OL.u10.z;
   let memDim = clamp(
     select(select(baseMemDim, baseMemDim * 0.52, fogStyle == 2), max(baseMemDim, 0.66), fogStyle == 0),
     0.10,
@@ -486,22 +571,24 @@ fn applyOutbreakFogOfWar(
   }
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
-  let warmBias = clamp((colIn.r - colIn.b * 1.15) / max(colIn.r + 0.005, 1e-4), 0.0, 1.0);
-  let memTint = mix(vec3f(0.74, 0.86, 1.06), vec3f(0.98, 0.94, 0.86), warmth * 0.65);
-  let memSat = select(0.06, 0.28, fogStyle == 0) + 0.14 * warmBias * warmth;
+  let memTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
+  let memSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0);
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
 
   if (inRoom && world.y < 2.8) {
-    let unknownGrainAmt = clamp(select(0.48, fract(OL.u7.x), OL.u7.z > 0.01), 0.0, 1.0) * select(1.0, 1.35, fogStyle == 2);
-    let tSalt = floor(F.cam.w * 16.0) * 7.3;
-    let shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * 0.014;
-    let unknownShroud = max(vec3f(0.0015, 0.0022, 0.0038), baseColor * 0.010 + vec3f(0.0035, 0.0048, 0.0072) + vec3f(shroudNoise));
+    let unknownGrainAmt = fract(OL.u10.x) * select(1.0, 1.35, fogStyle == 2);
+    var shroudNoise = 0.0;
+    if (unknownGrainAmt > 0.001) {
+      let tSalt = floor(F.cam.w * 16.0) * 7.3;
+      shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * 0.014;
+    }
+    let unknownShroud = max(vec3f(0.0015, 0.0018, 0.0024), baseColor * 0.012 + vec3f(0.0042, 0.0040, 0.0040) + vec3f(shroudNoise));
     let shroudScale = clamp(F.effects.w * 2.2, 0.35, 1.0);
     let roomMem = memoryTone * shroudScale;
     let unrevealed = mix(unknownShroud, roomMem, explored);
     return mix(unrevealed, colIn, visible);
   }
 
-  return mix(memoryTone * (0.76 + 0.24 * explored), colIn, visible);
+  return mix(memoryTone * (0.78 + 0.22 * explored), colIn, visible);
 }
 `

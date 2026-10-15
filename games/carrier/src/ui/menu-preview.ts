@@ -1,8 +1,8 @@
 // Menu previews with fake data, over the real offline sea (menu.html loads main.ts too).
 //   menu.html?seed=7&show=menu     the load screen (fake lobby: never leaves)
 //   menu.html?seed=7&show=teams    the Tab menu, pinned open, a busy room seen by a captain (?as=N: another player)
-//   menu.html?seed=7&show=ops      SHIP OPERATIONS, pinned open: one Hornet up, one recharging
-import { TEAMS, createShip, joinCrew, leaveCrew, makeCrew, playerOf, recover, runOp, shipOf } from "../../shared/crew"
+//   menu.html?seed=7&show=ops      DEPLOY, pinned open: one Hornet up, one recharging
+import { joinCrew, joinShip, makeCrew, playerOf, recover, runOp, scuttle, shipOf, teamCss } from "../../shared/crew"
 import { shipOps } from "../../shared/ops"
 import { setLock } from "../../shared/squad"
 import type { LobbyClient } from "./lobby"
@@ -22,13 +22,12 @@ if (show === "menu") {
   const now = 1_000_000
   const c = makeCrew(2026)
   NAMES.forEach((n, i) => joinCrew(c, i + 1, n, now + i))
-  // A second ship on each team (one locked), jets up, one shot down and recharging, and an empty ship adrift.
-  createShip(c, 11, 0, now + 20)
-  createShip(c, 12, 1, now + 20)
-  joinCrew(c, 20, "lee", now + 30)
-  createShip(c, 20, 1, now + 30)
-  leaveCrew(c, 20, now - 22_000)
-  setLock(c, 12, true)
+  // Four carriers for themselves: one locked, jets up, one shot down and recharging, and one sunk with its replacement
+  // still refitting (its crew moved to the first ship first).
+  const sunk = c.ships.find((s) => s.team === 3)!
+  for (const p of c.players.filter((p) => p.ship === sunk.id)) joinShip(c, p.id, c.ships[0]!.id, now + 20)
+  scuttle(c, sunk.id, now + 25)
+  setLock(c, 2, true)
   for (const p of c.players) if (p.role === "pilot") runOp(c, p.id, "hornet", now + 40)
   const downed = c.players.find((p) => p.plane >= 0 && p.team === 0)
   if (downed) recover(c, downed.id, "crashed", now - 11_000)
@@ -48,7 +47,7 @@ if (show === "menu") {
     const p = playerOf(c, me)!
     const s = shipOf(c, p.ship)!
     const ops = new OpsMenu(document.body, () => {})
-    const info = { ship: s.name, color: TEAMS[s.team]!.color, name: (id: number) => playerOf(c, id)?.name ?? "?" }
+    const info = { ship: s.name, color: teamCss(s.team), name: (id: number) => playerOf(c, id)?.name ?? "?" }
     ops.update(shipOps(c, me, at), info)
     ops.pin(true)
     let t = at

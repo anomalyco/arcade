@@ -4,8 +4,11 @@ import { makeTown } from "../shared/map"
 import {
   bakeOutbreakBounce,
   bakeOutbreakMoonMask,
+  DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
+  flashlightBeamControls,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_NOIR_UNIFORM_OFFSET,
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
@@ -25,6 +28,48 @@ describe("Outbreak lighting module & Lab controls", () => {
         expect(def).toBeLessThanOrEqual(control.max)
       }
     }
+  })
+
+  test("every flashlight beam setting has a Lab control with a unit and an in-range default", () => {
+    expect(flashlightBeamControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_FLASHLIGHT_BEAM).sort())
+    for (const control of flashlightBeamControls) {
+      expect("unit" in control && typeof control.unit === "string").toBe(true)
+      if ("min" in control && "max" in control) {
+        const def = DEFAULT_FLASHLIGHT_BEAM[control.key as keyof typeof DEFAULT_FLASHLIGHT_BEAM]
+        expect(def).toBeGreaterThanOrEqual(control.min)
+        expect(def).toBeLessThanOrEqual(control.max)
+      }
+    }
+  })
+
+  test("packs the physical beam: full range, outer cone, downward tilt toward the pool and snapped field blends", () => {
+    const settings = { ...DEFAULT_OUTBREAK_LIGHTING, flashlightIntensity: 0.48, flashlightRange: 19, flashlightCone: 56, flashlightWarmth: 0.92 }
+    const base = {
+      settings,
+      playerX: 30,
+      playerY: 41,
+      playerH: 0,
+      playerAim: 0,
+      flashlightOutput: 1,
+      flashlightSlot: 1,
+      flashlightHeight: 1.34,
+      inInteriorView: true,
+      streetHead: [36.86, 6.18, 47.49] as const,
+      zombies: [-999, -999, -999, -999] as const,
+    }
+    const N = OUTBREAK_NOIR_UNIFORM_OFFSET
+    const buf = packOutbreakLightingUniforms({ ...base, frameDt: 1 / 60 }, flashlightColor(0.92))
+    // Range is no longer clamped to a few metres indoors; the window in the shader ends it smoothly.
+    expect(buf[17]).toBe(19)
+    expect(buf[N + 1]).toBeCloseTo(Math.cos((28 * Math.PI) / 180), 5)
+    // Axis points down so it meets the ground at the pool distance.
+    const tilt = Math.atan2(buf[N + 8]! * -1, buf[N + 9]!)
+    expect(Math.tan(tilt) * DEFAULT_FLASHLIGHT_BEAM.beamPoolDistance).toBeCloseTo(1.34, 4)
+    expect(buf[N + 18]).toBeGreaterThan(0)
+    expect(buf[N + 18]).toBeLessThan(1)
+    const snapped = packOutbreakLightingUniforms({ ...base, frameDt: 0 }, flashlightColor(0.92))
+    expect(snapped[N + 18]).toBe(1)
+    expect(snapped[N + 19]).toBe(1)
   })
 
   test("selective practicals keep NW bedside lamp shadow-casting while tightening porch, window, and accent lamps", () => {

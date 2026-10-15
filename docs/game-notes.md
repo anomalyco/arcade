@@ -388,6 +388,33 @@ proven animation techniques to animation.md, not here.
   `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
 - **Pass per-pixel 3D flashlight irradiance in the HDR alpha channel for selective-colour Noir grading, and pair feathered memory fog with SoA last-known ghosts and jittered sound ripples.**
   In `packages/kit/gpu/look.ts` and `look-shaders.ts`, `Noir / Limbo` (`selectiveColor = L.u15.w = 1.24`, Outbreak's default look) desaturates the world outside the player's flashlight to near-monochrome (`saturation = 0.04`, `outsideChroma = 0.75 / 255` street, `0.54 / 255` interior) while restoring full natural colour inside the 3D polar-shadow-tested flashlight cone (`beamChroma = 30.48 / 41.19`, `selectiveColorRatio = 40.9× / 76.0×`, `ΔE = 5.69` street / `8.44` interior against `gpt-image-1.5` targets). Encoding `outAlpha = 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0)` in the 4× MSAA `rgba16float` scene pass keeps `1.0` as the fixed point of `one, one-minus-src-alpha` blending so unlit translucent sprites and decals outside the beam never trigger false colour retention, and adds zero render targets or texture bindings. Compiling a dedicated `compositeFast` entry point (1 `src` sample + rational Padé filmic curve without Kuwahara arrays or AgX matrices) and keeping `inst`/`glass` in `fsSolid` inside `ensureLookPipes()` cut `3456×1894` M5 Max Metal whole-frame GPU time from `39.34 → 15.653 ms` (street, MAD `0.026 ms`, fresh-submit `p95 = 18.400 ms`, `realtime_ratio = 0.9975`) and `31.84 → 16.040 ms` (interior, MAD `0.028 ms`, fresh-submit `p95 = 18.800 ms`, `realtime_ratio = 0.9969`). `Vision.actorVisible` (`games/outbreak/shared/vision.ts`) samples an actor's lateral shoulder disk against the polar blocker map so doorway/ray-boundary zombies are never falsely culled while walls/closed doors strictly occlude; `games/outbreak/src/shaders.ts` and `zombies.ts` add a top-down horizontal contour rim (`lumaP92 = 74–88 / 255`, contrast `52–72` in dark LOS), zero-allocation SoA last-known position ghosts (`seenPose` fading over `3.2 s` and clearing when the spot is seen empty), and spatially jittered (`±0.7–1.35 m`) Noir sound ripples across 3 Lab-selectable fog variants (`fogStyle` `0..2`, exposed in the Lab `fog` variation grid).
+- **Noir v2: shade the flashlight as a physical spotlight, drive selective colour from received light through a soft
+  knee, and render line of sight as a soft, temporally smoothed visibility field.** The survivor's flashlight
+  (`games/outbreak/src/lighting.ts`) is packed with `cone.w = 2`, which tells kit's `lightSum` to skip its plan-space
+  cone so `flashAttenuation` can shape the beam in 3D: inverse-square falloff softened inside a near-lens radius and
+  windowed to the beam range (`(1 - x⁴)²`), an axis tilted down toward a pool distance so the pool stretches at grazing
+  angles, a soft cone with a hot core, a wide dim spill and faint reflector rings. Running inside the existing lights
+  loop reuses its 5-tap `shadowAt`, wrap diffuse and specular; a new `lightAccumulate` hook leaves the flashlight's
+  received irradiance in a private for the colour mask. Air scatter is the top-down closed form (chord grows with
+  distance, intensity falls with its square, so the glow fades like 1 / distance from the lens inside the plan cone,
+  stopped at the first wall along the aim) and the bounce is one warm diffuse fill from where the axis lands. Paint-over
+  comparison on the street aimed down the road (`scripts/noir-proof.ts` + `scripts/noir-profile.py`, 1000×680): the
+  old beam was a flat plateau ending in a cliff at 7 m; the new pool peaks at Y `0.60` (target `0.68`) and falls
+  smoothly to 10% at 7.8 m (target 7.3 m), with a 28.5° FWHM at 5 m (target 28.5°). The selective-colour mask is
+  `1 - exp(-(flash + practicalColor × practical) / knee)`, so saturation rises with light instead of switching on: its
+  10–90% edge across the beam widened from 10.5° to 39° (street 9.8° → 30°). Noir keeps the world muted but not
+  monochrome (saturation `0.42`, warmer temperature `0.2`, toe `0.12`, black crush `0.004`, no film grain): median
+  frame L* rose from 5.4 to 9.2. Line of sight is a compute pass (`VisibilityFieldShader` in
+  `packages/kit/gpu/renderer.ts`, `visibilityFieldShader` in `games/outbreak/src/fog-of-war.ts`): 768² texels over the
+  map, a 512² window around the eye each frame, feathered vision cone and awareness circle, 7 interpolated polar rays
+  across a lateral penumbra that widens with distance (radially tight, so no light through walls), separate reveal
+  (0.07 s) and fade (0.25 s) times and a soft fine-grained memory channel; the scene samples it once instead of tracing
+  rays per pixel, and 1-code-value IGN dither in `compositeFast` stops 8-bit banding. Gameplay visibility stays in
+  `shared/vision.ts`. Sound ripples and unexplored-room grain are off-by-default Lab options. Cost: paired in-page A/B
+  says the field pass is unmeasurable (`+0.02 ms`); against `origin/main` on a shared, loaded M5 Max, whole-frame GPU
+  is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
+  samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
+  switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -548,6 +575,34 @@ proven animation techniques to animation.md, not here.
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
 
 ## Art direction
+
+### Vegetation looks: tree, bush, grass
+
+- **Three looks, tuned separately** (`packages/kit/gpu/foliage.ts`, Lab Vegetation section `packages/kit/lab/foliage.ts`).
+  Trees (Oak, Maple, Pine, Birch), bushes (Clipped hedge, Overgrown shrub, Hydrangea) and grass (Lawn, Overgrown lawn,
+  Weeds / dead grass) each have their own presets, typed parameters and seeded Randomize; one look never changes
+  another. Outbreak defaults stay Oak + Overgrown shrub + Overgrown lawn, which match the previously shipped values.
+- **Opaque leaf mounds under scalloped rosettes beat flat leaf cards from the top-down camera.** Main's 5-sided
+  cards rendered as visible pentagon plates (no `discard` in `fsSolid`), and without a mass under them the crowns
+  read as dark speckle at 23:00. Each bough cluster and bush lobe is now a jittered ellipsoid mound (~45–54 verts)
+  with 2–3 scalloped rosettes and an edge sprig on its outer shell, plus a cool moonlit sheen on upward leaves at
+  night. In the aligned `look-proof.ts` yard frame the woodland crowns read as rounded masses (crops in
+  `~/code/home/artifacts/2026-10-14-vegetation/sheets/yard-crops.png`, against the gpt-image-1.5 paint-over target).
+- **Bushes encode `aux = 3 + flex`.** Shaders decode it with `foliageTipWeight`/`foliageTranslucency`, so bushes get
+  their own wind, translucency and actor bending without a new vertex attribute. `bushTrim` clips the emitted
+  vertices toward a rounded box (flat top, straight sides, bent normals) to turn a wild shrub into a hedge.
+- **Actor bending**: the player and the seven nearest living zombies are packed into `OL.vegActors` each frame
+  (`nearestFoliageActors`, `packFoliageActors`); grass and bush leaves bend away with a `(1 - d/R)²` falloff. The
+  Lab's `grass-bend-off`/`grass-bend-on` captures (same tick, strength 0 vs 1) differ in 8,205 pixels around the
+  walkers. Flashlight transmission lights leaves and blades inside the beam whatever their facing.
+- **Contact shade** under every `plant()` call (house trees and foundation shrubs, not only `town.props` trees) is
+  stamped locally into the floor map, and bush skirts darken over their lowest 30 cm.
+- **Cost** (Mac Studio, Metal, headless; alternating `bench-outbreak.ts` runs vs `origin/main` 5458b60,
+  `perf/outbreak-vegetation-paired.json`): static vertices 294k → 321k; GPU street 17.09 → 17.69 ms (three runs each,
+  ranges 17.04–17.22 vs 17.66–17.71), interior 17.44 → 18.09 ms; realtime ratio ≥ 0.995 throughout. Fresh-submit p95
+  street 19.9 → 20.9 ms (main itself measured 19.1–21.2 here), interior 19.8 → 20.3–21.2 ms. Disabling actor bending
+  and the beam/sheen terms did not recover the interior cost (18.28 ms), so it is the fuller canopy coverage and
+  vertices. Grass density is cheap: GPU street 17.65 / 17.69 / 17.75 ms at density 0.5 / 1.0 / 1.5.
 
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
@@ -996,6 +1051,21 @@ Candidates from the code audits; measure and playtest before moving any into the
   barricades, loot and shots once per 20 Hz snapshot and prefixes each player's ack and private survivor state: about
   1.7 KB per snapshot, 33.7 KB/s per client, room tick 0.12 ms mean at 4 survivors + 60 zombies
   (`games/outbreak/scripts/coop-bench.ts`).
+- **Stream 32 m chunks from deterministic `(seed, cx, cy)` hashes, stitch a sliding 3×3 render window, and persist sparse `ChunkDelta`s.**
+  `games/outbreak/shared/world.ts` and `games/outbreak/src/world-streamer.ts` extend Outbreak beyond the fixed 96 m block
+  while keeping the starting `(0..2, 0..2)` neighbourhood bit-identical in Classic mode (`prove.ts` passes unchanged).
+  Macro-blocks (`3×3` chunks = 96 m) align arterial road centerlines (`lx = 1` / `ly = 1`, `40..48 m`) across chunk
+  borders and assign five districts (`suburb`, `commercial`, `civic`, `industrial`, `woodland`) and 13 building/POI
+  archetypes (`house`, `ranch`, `cottage`, `hardware`, `pharmacy`, `grocery`, `diner`, `gas_station`, `police`, `clinic`,
+  `church`, `warehouse`, `cabin`). Each chunk compiles its static meshes, `128×128` floor AO tile, `256×256` moon mask
+  tile, and `64×64` bounce tile once into a 45-chunk LRU cache, pre-warmed one chunk per frame (`< 2 ms`) and blitted
+  into the `384²`/`768²`/`192²` GPU textures via `writeTexture` without recreating textures or bind groups. `GridNav`
+  queries per-chunk `64×64` (`0.5 m`) walkability tiles across arbitrary chunk boundaries, and `net-protocol.ts` uses
+  `i32` centimetre coordinates (`±21,474 km`). Across a 1,152 m scripted Metal traversal (`scripts/prove-world.ts`, 117
+  chunks, 36 window shifts), frame time measured `11.5 ms` p50 and `16.3 ms` p95 (`22.2 ms` transition p95), JS heap
+  stayed bounded (`64.1 → 86.9 MB`), 98/98 client/server chunk hashes matched, unloaded chunk deltas (doors, locks,
+  barricades, searched containers, dead zombies) restored on return, and two co-op clients 1,200 m apart reconciled with
+  `0.000 m` drift. See `docs/outbreak-world.md`.
 
 ## Input
 
@@ -1037,7 +1107,7 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Support any keyboard layout.** Match both `e.code` (physical position) and `e.key` (character), so QWERTY and
   Dvorak both work without settings. Don't bind an action to a key that is a movement key on another layout (Blackout
   used `E` for plant/defuse, which is Dvorak's right strafe).
-- **A menu that takes number keys listens in the capture phase.** Carrier's SHIP OPERATIONS
+- **A menu that takes number keys listens in the capture phase.** Carrier's DEPLOY
   (`games/carrier/src/ui/ops-menu.ts`) runs its rows on 1-9, the same keys as the helm's throttle presets, and both
   listen on `window`. Registering the menu's keydown with `capture: true` and calling `stopImmediatePropagation()` on
   the keys it uses means the game's input never records them, so closing the menu on that key can't leak a press into
@@ -1087,6 +1157,18 @@ Candidates from the code audits; measure and playtest before moving any into the
   spent 0.039 to 0.049 ms per frame in style and layout, against 0.064 to 0.079 ms for the old status line, which
   rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
   18.0 ms at 0.9985.
+
+- **Put in-the-moment state on the character and keep it out of the aim.** Outbreak's callouts now sit screen-below
+  the survivor's feet by default (the lowest projected point of a 0.2 m feet circle, so the camera tilt is accounted
+  for), and stamina, reload, health and battery are small rings beside the body that appear only while they have
+  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](outbreak-hud.md)). When the
+  survivor aims within 55° of the side the HUD is on, it slides to the opposite side and returns past 68°
+  (`chooseSide`, `src/hud/placement.ts`), so the flashlight's near field stays clear without flicker. Rings use shape
+  for identity and colour for range, as Dead Space's RIG does. The same components run for co-op teammates from
+  replicated flags only, at 0.8× with their name tag. Metal proof (`scripts/hud-proof.ts`, 37 stills): `hud.update`
+  p95 0.2 ms with three callouts, three rings and a teammate live; a 7-pair same-page A/B against the old log and edge
+  bars measured style and layout −0.003 ms per frame (spread −0.016 to +0.006) and script +0.021 ms (−0.043 to
+  +0.101), both inside their spread.
 
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
@@ -1263,4 +1345,20 @@ Candidates from the code audits; measure and playtest before moving any into the
   rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
   drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
   interior's level to the chase view makes a camera switch change colour, not loudness.
-
+- **Generate many candidates, then let measurements do the first cut.** The shared library
+  (`scripts/sfx/library.ts`, [sfx-library.md](sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
+  them on numbers that catch bad takes without listening: near-silent takes (the first pistol prompt returned six
+  takes peaking at -22 to -39 dBFS), flat-topped runs (real clipping, unlike recoverable decoded overs), SNR over the
+  take's own noise floor, one onset for single events, decay by 0.2 s, timbre distance from the family median and
+  bed steadiness. Footsteps come from 6 s walking takes sliced at onsets and re-trimmed to each step's transient:
+  six consistent steps per surface from two requests. Contact sheets (waveform + spectrogram per candidate) show
+  the picks. It cannot tell whether a groan sounds like a zombie; that still needs ears.
+- **Pad Opus loops on both sides.** Opus decoding attenuates a stream's first samples, so a loop over the whole file
+  jumps at the seam (the interior bed's seam was larger than any sample step inside it). Wrapping the loop region in
+  0.25 s of its own tail before and head after, and looping `[loopStart, loopEnd)`, put every seam step inside the
+  bed's own distribution.
+- **Drive sound from state diffs, like the HUD.** Outbreak's `SoundDirector` reads `CoopSim` each frame (shots,
+  zombie states, doors, planks, bashes, each survivor's `FeedbackActor` fields), so co-op clients sound right from
+  snapshots with no new wire fields. Crowd sounds need explicit spacing: idle groans every 4.5 s / √n, never closer
+  than 0.7 s, each zombie at most every 8 s; alerts one per 0.35 s across the crowd. 100 zombies cost 0.013 ms per
+  frame in the director and 0.037 ms for the whole audio update in the browser.

@@ -132,10 +132,26 @@ describe("per-aircraft loadouts", () => {
     expect(l.bombs).toBe(l.spec.bombs - 2)
     for (let i = 0; i < steps(WEAPONS.bomb.reload + 0.1); i++) loadoutStep(l, DT)
     expect(l.bombs).toBe(l.spec.bombs - 1)
-    // A new sortie in a Hornet: the slot is kept when it exists.
+    // A new sortie in a Hornet starts on its gun.
     rearm(l, "hornet")
-    expect(weaponOf(l)).toBe("missile")
+    expect(weaponOf(l)).toBe("gun")
     expect(l.bombs).toBe(0)
+  })
+
+  test("an F-35C launches with its missiles selected, never its bombs (no bombsight off the catapult)", () => {
+    const l = makeLoadout("f35")
+    expect(weaponOf(l)).toBe("missile")
+    // Bombs selected when the last sortie ended (landed, crashed or shot down): the next one starts on missiles.
+    selectSlot(l, 1)
+    expect(weaponOf(l)).toBe("bomb")
+    rearm(l)
+    expect(weaponOf(l)).toBe("missile")
+    expect(l.bombs).toBe(LOADOUTS.f35.bombs)
+    // From a Hornet sortie on its missiles, too.
+    const h = makeLoadout("hornet")
+    selectSlot(h, 1)
+    rearm(h, "f35")
+    expect(weaponOf(h)).toBe("missile")
   })
 })
 
@@ -163,19 +179,28 @@ describe("seeker", () => {
     }
   })
 
-  test("picks the jet nearest the boresight and keeps it in the wider keep cone", () => {
+  test("picks the jet nearest the boresight; the lock builds only in the tight cone, then holds in the keep cone", () => {
+    const m = WEAPONS.missile
     const l = makeLoadout().lock
-    const a = enemy(1, 300, 1000, -1500)
-    const b = enemy(2, 60, 1000, -2000)
+    const a = enemy(1, Math.tan(m.cone * 0.8) * 1500, 1000, -1500)
+    const b = enemy(2, Math.tan(m.cone * 0.2) * 2000, 1000, -2000)
     lockStep(l, DT, shooter, [a, b])
     expect(l.target).toBe(2)
-    // b drifts past the lock cone but inside the keep cone: still tracked, and the lock completes.
-    b.x = Math.tan(WEAPONS.missile.cone * 1.15) * 2000
-    for (let i = 0; i < steps(WEAPONS.missile.lockTime + 0.1); i++) lockStep(l, DT, shooter, [a, b])
+    // b drifts past the lock cone but inside the keep cone: still tracked, but the lock does not build.
+    b.x = Math.tan(m.cone * 1.5) * 2000
+    for (let i = 0; i < steps(m.lockTime + 0.5); i++) lockStep(l, DT, shooter, [a, b])
+    expect(l.target).toBe(2)
+    expect(l.locked).toBe(false)
+    // Back on the nose: it locks after lockTime, then holds while b swings out to most of the keep cone.
+    b.x = Math.tan(m.cone * 0.2) * 2000
+    for (let i = 0; i < steps(m.lockTime + 0.1); i++) lockStep(l, DT, shooter, [a, b])
+    expect(l.locked).toBe(true)
+    b.x = Math.tan(m.cone * m.keep * 0.9) * 2000
+    lockStep(l, DT, shooter, [a, b])
     expect(l.target).toBe(2)
     expect(l.locked).toBe(true)
     // Past the keep cone: lost; the seeker starts over on a.
-    b.x = Math.tan(WEAPONS.missile.cone * 1.4) * 2000
+    b.x = Math.tan(m.cone * m.keep * 1.1) * 2000
     lockStep(l, DT, shooter, [a, b])
     expect(l.target).toBe(1)
     expect(l.locked).toBe(false)

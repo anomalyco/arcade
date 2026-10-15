@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { DRAFT } from "../shared/carrier-spec"
 import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { CREW } from "../shared/crew"
 import { SPAWN_RING, fleetSpawn } from "../shared/spawn"
 
 describe("fleet spawn", () => {
-  test("ships start spread around the map, in open water, facing inward", () => {
+  test("every carrier starts on its own part of the ring, in open water, facing inward", () => {
     for (const seed of [1, 7, 42, 2026, 0xdeadbeef, 95028]) {
       const arch = makeArchipelago(seed)
-      const at = [0, 1].flatMap((team) => [0, 1].map((slot) => ({ team, ...fleetSpawn(arch, team, slot) })))
+      const at = Array.from({ length: CREW.ships }, (_, team) => fleetSpawn(arch, team))
       for (let i = 0; i < at.length; i++) {
         const p = at[i]!
         expect(Math.hypot(p.x, p.z)).toBeGreaterThan(SPAWN_RING - 2600)
@@ -19,7 +20,7 @@ describe("fleet spawn", () => {
         for (let j = i + 1; j < at.length; j++) {
           const q = at[j]!
           const gap = Math.hypot(p.x - q.x, p.z - q.z)
-          expect(gap).toBeGreaterThan(p.team === q.team ? 1200 : 6000)
+          expect(gap).toBeGreaterThan(4000)
         }
       }
     }
@@ -27,6 +28,6 @@ describe("fleet spawn", () => {
 
   test("deterministic per world", () => {
     const a = makeArchipelago(9)
-    expect(fleetSpawn(a, 1, 0)).toEqual(fleetSpawn(makeArchipelago(9), 1, 0))
+    expect(fleetSpawn(a, 1)).toEqual(fleetSpawn(makeArchipelago(9), 1))
   })
 })

@@ -1,4 +1,6 @@
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import "./menu.css"
+import { keyLabel } from "@arcade/kit/client/controls"
 import { CREW, roomCode } from "../../shared/crew"
 import { type LobbyClient, type Start, lobbyClient, rememberName, setRoomParam, storedName } from "./lobby"
 
@@ -25,7 +27,7 @@ export function showMenu(root: HTMLElement, opts: { notice?: string; lobby?: Lob
     <div class="mn-join"><input class="mn-code" maxlength="8" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="ROOM CODE" /><button class="mn-btn" data-act="code">JOIN GAME</button></div>
     <p class="mn-stats"></p>
   </div>
-  <div class="mn-foot"><kbd>TAB</kbd> TEAMS &nbsp;·&nbsp; <kbd>E</kbd> SHIP OPERATIONS</div>`
+  <div class="mn-foot">${keyCapHtml("Tab")} SHIPS &nbsp;·&nbsp; ${keyCapHtml("KeyE")} DEPLOY</div>`
   root.append(el)
   document.body.classList.add("mn-open")
 

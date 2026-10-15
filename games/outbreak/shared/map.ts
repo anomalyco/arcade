@@ -4,12 +4,38 @@ import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 export const CHUNK = 32
 export const SIZE = CHUNK * 3
 export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number }
-export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean }
+/** `keyed` doors start locked and open only with a key or a crowbar. */
+export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean; keyed?: boolean }
 export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean }
-export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
-export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove"; variant: number }
+export type Building = {
+  id: string
+  kind: "house" | "hardware" | "pharmacy"
+  archetype?: string
+  district?: string
+  rect: Rect
+  color: number
+  footprint?: readonly Rect[]
+  chunkKey?: string
+}
+export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
-export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; windows: WindowOpening[]; props: Prop[]; lamps: Lamp[] }
+export type Town = {
+  seed: number
+  houseSeed: number
+  terrain: number
+  foliageDensity: number
+  chunks: Rect[]
+  buildings: Building[]
+  barriers: Barrier[]
+  doors: Door[]
+  windows: WindowOpening[]
+  props: Prop[]
+  lamps: Lamp[]
+  vehicles?: Rect[]
+  worldBounds?: Rect
+  windowOrigin?: readonly [number, number]
+  activeChunkKeys?: string[]
+}
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
@@ -25,6 +51,7 @@ export const EXTERIOR_VEHICLE_COLLIDERS: readonly Rect[] = [
 export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
 /** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + stepped north-east wing + full-width south block). */
 export function buildingFootprint(b: Building): readonly Rect[] {
+  if (b.footprint) return b.footprint
   const [x, z, r, e] = b.rect
   return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5], [x + 9.5, z + 1.5, r, z + 5.5]] : [b.rect]
 }
@@ -35,7 +62,7 @@ export function inBuildingFootprint(b: Building, px: number, pz: number): boolea
   return false
 }
 export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
-  const shapes = {bed:[1.72,2.6,1],sofa:[1.2,2.6,1.1],table:[1.5,1,.82],shelf:[1.7,.8,1.8],coffee:[1.1,1.5,.52],counter:[.8,2.4,1.02],fridge:[.8,.9,1.9],dresser:[2.2,.7,1.1],chair:[.55,.55,1.05],nightstand:[.55,.55,.65],stove:[.75,.8,.95]} as const
+  const shapes = {bed:[1.72,2.6,1],sofa:[1.2,2.6,1.1],table:[1.5,1,.82],shelf:[1.7,.8,1.8],coffee:[1.1,1.5,.52],counter:[.8,2.4,1.02],fridge:[.8,.9,1.9],dresser:[2.2,.7,1.1],chair:[.55,.55,1.05],nightstand:[.55,.55,.65],stove:[.75,.8,.95],workbench:[.7,1.6,.95],stash:[.6,.9,1.25]} as const
   if(p.kind==="tree") return undefined
   const [w,d,h]=shapes[p.kind]
   return {rect:[p.x-w/2,p.y-d/2,p.x+w/2,p.y+d/2],height:h}
@@ -88,7 +115,8 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
       addWindow("east", [r - .22, y + 4, r, y + 6.5], true)
       wall([r - .22, y + 6.5, r, b], color)
       wall([x, split, doorX, split + .2], color)
-      town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false })
+      // Stores keep their back room locked: a key or a crowbar gets you to the parts on its shelves.
+      town.doors.push({ id: `${id}-room`, rect: [doorX, split, doorX + 1.4, split + .2], open: false, locked: true, keyed: true })
       wall([doorX + 1.4, split, r, split + .2], color)
     }
     const prop = (px: number, py: number, type: Prop["kind"]) => town.props.push({ x: px, y: py, kind: type, variant: rng.next() })
@@ -100,6 +128,9 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
       prop(r-.8,b-2,"counter");prop(r-.8,b-4,"fridge")
       prop(r-.8,b-.65,"stove")
       prop(r-3.2,b-2.8,"table");prop(r-3.2,b-1.8,"chair");prop(r-3.2,b-3.7,"chair")
+      // Safehouse corner in the back bedroom: a workbench on the east wall and the squad's stash by the west wall.
+      // Fixed variants keep the seeded furniture after them unchanged.
+      town.props.push({ x: x + 8.9, y: y + 2.3, kind: "workbench", variant: .5 }, { x: x + 2.55, y: y + 4.6, kind: "stash", variant: .5 })
     } else {
       for (let px = x + 2; px < r - 1; px += 3) { prop(px, y + 2, "shelf"); prop(px, b - 4, "shelf") }
     }
@@ -133,7 +164,7 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
 
 /** Windows/fences remain movement blockers but never eye-height sight blockers. */
 export const sightRects = (town: Town): Rect[] => [...town.barriers.filter(b => b.kind === "wall").map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
-export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...EXTERIOR_VEHICLE_COLLIDERS]
+export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...(town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS)]
 
 export function nearbyDoor(town: Town, x: number, y: number): Door | undefined {
   return town.doors.filter(d => distToRect(x, y, d.rect) <= 1.8).sort((a, b) => distToRect(x, y, a.rect) - distToRect(x, y, b.rect))[0]

@@ -82,13 +82,13 @@ export interface Net {
   /** The helm's orders for this player's ship; sent when they change (dropped unless online and at the helm). */
   sendHelm(throttle: number, rudder: number): void
   // Crew requests (shared/crew.ts rules). The answer is a new `crew`, or `refused`.
-  /** Run a ship operation (shared/ops.ts): take the helm, launch a vehicle. The SHIP OPERATIONS menu's only path. */
+  /** Run a ship operation (shared/ops.ts): take the helm, launch a vehicle. The DEPLOY menu's only path. */
   op(id: string): void
   /** Board another ship as `as`, or at its helm if free, else as a pilot. */
   board(ship: number, as?: Role): void
-  newShip(team: number): void
-  /** `ship`: the friendly carrier the jet landed on, when not its own. */
-  recover(how: RecoverHow, ship?: number): void
+  /** Commission a ship on the team that has none (a sunk one's replacement not out yet). */
+  newShip(): void
+  recover(how: RecoverHow): void
   // Captain powers on my own ship (shared/squad.ts).
   promote(player: number): void
   kick(player: number): void
@@ -303,12 +303,12 @@ class NetClient implements Net {
     this.request(as === undefined ? { type: "board", ship } : { type: "board", ship, as }, (c) => joinShip(c, SOLO_ID, ship, this.serverNow(), as))
   }
 
-  newShip(team: number): void {
-    this.request({ type: "newship", team }, (c) => createShip(c, SOLO_ID, team, this.serverNow()))
+  newShip(): void {
+    this.request({ type: "newship" }, (c) => createShip(c, SOLO_ID, this.serverNow()))
   }
 
-  recover(how: RecoverHow, ship?: number): void {
-    this.request(ship === undefined ? { type: "recover", how } : { type: "recover", how, ship }, (c) => recover(c, SOLO_ID, how, this.serverNow(), ship ?? -1))
+  recover(how: RecoverHow): void {
+    this.request({ type: "recover", how }, (c) => recover(c, SOLO_ID, how, this.serverNow()))
   }
 
   close(): void {

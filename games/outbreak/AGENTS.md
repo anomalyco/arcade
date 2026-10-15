@@ -8,4 +8,7 @@
 - `shared/build.gen.ts` (gitignored) hashes `shared/`; `bun run check/build/dev` regenerate it. Co-op clients with another hash reload.
 - Every adjustable presentation value goes in the shared Lab panel. URL parameters are for session routing and automation only.
 - Proof: `bun scripts/prove.ts` from this directory, using headless Metal Chromium; no visible window or audio.
+- Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`). `SoundDirector` turns `CoopSim`
+  state changes into sounds; add a sound there by diffing state, not by adding wire fields or sim events. Never play
+  sound audibly in proofs: `bun scripts/prove-audio.ts` (via `hivemind run --kind browser`) uses `--mute-audio`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.

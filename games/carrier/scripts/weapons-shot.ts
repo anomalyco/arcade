@@ -5,7 +5,7 @@
 //   ssh hailmary 'cd /tmp/carrier-ocean && ~/.bun/bin/bun weapons-shot.ts --out=/tmp/carrier-weapons/out'
 //
 // Options: --base=URL  --size=1536x1024  --only=gun,missile,flares,f35,mp
-//   mp: the real game, two pages in one fresh room on opposite teams: A shoots B down with the gun, B flares A's first
+//   mp: the real game, two pages in one fresh room on rival carriers: A shoots B down with the gun, B flares A's first
 //   missile, A's missiles bring B down on B's next sortie; kill feed, Tab tallies and B's recharging slot checked.
 import { chromium, type Page } from "playwright-core"
 import { mkdirSync } from "node:fs"
@@ -361,9 +361,7 @@ async function mp(): Promise<void> {
   let ma = await muntil(a, (m) => m.online === "online" && m.role !== "none", 20_000)
   const b = await open(`room=${room}`, "", "carrier.flight")
   let mb = await muntil(b, (m) => m.online === "online" && m.role !== "none", 20_000)
-  await run(b, "carrier.net.newShip(1)")
-  mb = await muntil(b, (m) => m.team === 1, 5000)
-  check(ma.team === 0 && mb.team === 1, `opposite teams: A ${mfmt(ma)} | B ${mfmt(mb)}`)
+  check(ma.team === 0 && mb.team === 1, `rival carriers: A ${mfmt(ma)} | B ${mfmt(mb)}`)
   await run(a, 'carrier.net.op("hornet")')
   await run(b, 'carrier.net.op("hornet")')
   ma = await muntil(a, (m) => m.phase === "flying", 15_000)

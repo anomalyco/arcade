@@ -1,4 +1,4 @@
-// Dev-server routes for the Lab Overworld (dev only; production builds and Workers never include them):
+// Dev-server routes for Lab stations (dev only; production builds and Workers never include them):
 //   GET  /__arcade/lab/changes?paths=a,b&branches=x,y*   recent commits and unmerged branches for a station
 //   POST /__arcade/lab/feedback                           a voice note bundle: saved locally, then posted to the team board
 // Pages authenticate with the dev router's page token. The board token stays in this process and is never logged.
@@ -120,7 +120,7 @@ class Board {
 
 async function agentName(board: Board, cache: Cache): Promise<string> {
   if (cache.agent) return cache.agent
-  const out = await board.mcp("join", { session: "arcade-lab-feedback", task: "Files Kit's voice notes from the Lab Overworld stations" })
+  const out = await board.mcp("join", { session: "arcade-lab-feedback", task: "Files Kit's voice notes from Lab stations" })
   const name = out.match(/name: ([^\s·]+)/)?.[1]
   if (!name) throw new Error("The board didn't return an agent name")
   cache.agent = name
@@ -145,7 +145,7 @@ async function stationDecision(board: Board, station: NonNullable<Payload["stati
       as,
       feature,
       title,
-      question: `Voice notes from the Lab Overworld's ${station.title} station. Options are its variants; each note is filed on the one that was showing.`.slice(0, 160),
+      question: `Voice notes from the Lab's ${station.title} station. Options are its variants; each note is filed on the one that was showing.`.slice(0, 160),
       options,
       prototype: "none",
     })
@@ -169,7 +169,7 @@ function optionFor(station: NonNullable<Payload["station"]>, variant: string | n
 
 // ── local bundle ───────────────────────────────────────────────────────────────────────────────────────────────
 function summary(p: Payload, rev: string, extra: { board?: string; transcript?: Segment[]; transcriber?: string }) {
-  const station = p.station?.title ?? "Overworld"
+  const station = p.station?.title ?? "Lab"
   const variant = p.station?.variants.find(v => v.id === p.variant)?.label
   const transcript = extra.transcript ?? p.transcript
   const lines = [
@@ -241,7 +241,7 @@ export function createLabFeedback(opts: { root: string; pageToken: string; pageH
 
   async function feedback(p: Payload) {
     const started = new Date(p.startedAt || Date.now())
-    const stationId = (p.station?.id ?? "overworld").replace(/[^a-z0-9-]/g, "")
+    const stationId = (p.station?.id ?? "lab").replace(/[^a-z0-9-]/g, "")
     const dir = join(ARTIFACTS, `${stamp(started)}-${stationId}`)
     mkdirSync(join(dir, "frames"), { recursive: true })
     const rev = await git("rev-parse", "--short", "HEAD").catch(() => "unknown")
@@ -259,7 +259,7 @@ export function createLabFeedback(opts: { root: string; pageToken: string; pageH
     const creds = boardCreds()
     if (!creds) return { ok: true, dir, board: { error: "No board credentials (set BOARD_LOCAL or ~/.config/team-board/relay.json)" } }
     const board = new Board(creds)
-    const station = p.station ?? { id: "overworld", title: "Lab Overworld", board: { feature: "AR-21" }, variants: [] }
+    const station = p.station ?? { id: "lab", title: "Lab", board: { feature: "AR-21" }, variants: [] }
     const feature = station.board?.feature ?? "AR-21"
     try {
       const decision = await stationDecision(board, station, feature)

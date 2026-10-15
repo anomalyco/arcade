@@ -68,8 +68,7 @@
   font: inherit;
 }
 .fb-card footer { display: flex; gap: 6px; margin-top: 10px; }
-.fb-card .ow-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--line2); border-radius: 6px; background: var(--panel2); color: var(--tx); cursor: pointer; font: inherit; }
+.fb-card .fb-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 10px; border: 1px solid var(--line2); border-radius: 6px; background: var(--panel2); color: var(--tx); cursor: pointer; font: inherit; }
 .fb-card .fb-send { border-color: #ff3b3088; background: #3a1714; }
 .fb-status { margin: 8px 0 0; color: var(--tx2); }
 .fb-status[data-error="true"] { color: #ff9b94; }
-[data-recording="true"] .ow-hints { visibility: hidden; }

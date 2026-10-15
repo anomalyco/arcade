@@ -1175,10 +1175,15 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   var col = mix(turfCol * macroShade, soilCol, soilMask * 0.52);
 
   // Scattered warm autumn fallen leaf flecks on the lawn and verge
+  // Each fleck is a rotated ellipse at a jittered spot in its cell, not the whole square cell (reads as leaves, not pixels).
   let leafCell = floor(p * 7.4);
   let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
   let leafPatch = smoothstep(0.36, 0.68, clumpField);
-  let leafMask = step(0.942, leafHash) * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
+  let leafLocal = fract(p * 7.4) - (vec2f(hash2(leafCell + vec2f(1.3, 0.2)), hash2(leafCell + vec2f(4.1, 2.7))) * 0.4 + 0.3);
+  let leafAng = leafHash * 31.0;
+  let leafQ = vec2f(cos(leafAng) * leafLocal.x - sin(leafAng) * leafLocal.y, sin(leafAng) * leafLocal.x + cos(leafAng) * leafLocal.y);
+  let leafShape = 1.0 - smoothstep(0.14, 0.22, length(leafQ * vec2f(1.0, 1.8)));
+  let leafMask = step(0.942, leafHash) * leafShape * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
   let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
   col = mix(col, leafCol, leafMask * 0.78);
 

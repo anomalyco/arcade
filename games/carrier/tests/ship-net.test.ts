@@ -47,34 +47,40 @@ function room() {
     return c
   }
   const say = (c: FakeConn, msg: ClientMsg) => core.message(c, encode(msg))
-  return { core, run, join, say, now: () => now }
+  /** Joins (onto a carrier of their own while there are empty ones) and boards `of`'s carrier: a crewmate. */
+  const mate = (name: string, of: FakeConn) => {
+    const c = join(name)
+    say(c, { type: "board", ship: playerOf(core.crew!, of.id)!.ship })
+    return c
+  }
+  return { core, run, join, say, mate, now: () => now }
 }
 
 const shipIn = (frame: Extract<ServerMsg, { type: "ships" }> | undefined, id: number): ShipTuple | undefined => frame?.s.find((s) => s[0] === id)
 
 describe("room ships", () => {
   test("joiners share a world and a ship: the first takes the helm, the crew is sent to everyone", () => {
-    const { core, join } = room()
+    const { core, join, mate } = room()
     const a = join("ada")
     const c = join("cy")
-    const b = join("bo")
+    const b = mate("bo", a)
     const crew = core.crew!
     expect(playerOf(crew, a.id)!.plane).toBe(-1)
-    // The second joiner starts the other team at its first ship's helm; the third waits on a's deck as a pilot.
+    // The second joiner gets a carrier of their own (an enemy); bo boards a's and waits on deck as a pilot.
     expect(playerOf(crew, b.id)).toMatchObject({ ship: playerOf(crew, a.id)!.ship, role: "pilot", plane: -1 })
     expect(playerOf(crew, c.id)!.plane).toBe(-1)
     expect(playerOf(crew, c.id)!.team).not.toBe(playerOf(crew, a.id)!.team)
     expect(a.last("crew")!.crew).toEqual(crew)
     expect(b.last("crew")!.crew).toEqual(crew)
     expect(playerOf(crew, a.id)!.name).toBe("ada")
-    // Every new joiner gets the ships right away: both teams' two ships, out from the first join.
+    // Every new joiner gets the ships right away: all four carriers, out from the first join.
     expect(c.last("ships")!.s).toHaveLength(4)
   })
 
   test("the helm's orders drive its ship on the room's simulation; anyone else's are ignored", () => {
-    const { core, run, join, say } = room()
+    const { core, run, join, say, mate } = room()
     const a = join("ada")
-    const c = join("cy")
+    const c = mate("cy", a)
     join("bo")
     const ship = playerOf(core.crew!, a.id)!.ship
     say(c, { type: "helm", o: 1, r: 1 }) // c is a pilot, not the helm
@@ -105,10 +111,10 @@ describe("room ships", () => {
   })
 
   test("a ship whose helm leaves holds its throttle and centres the rudder", () => {
-    const { core, run, join, say } = room()
+    const { core, run, join, say, mate } = room()
     const a = join("ada")
     join("bo")
-    const c = join("cy")
+    const c = mate("cy", a)
     const ship = playerOf(core.crew!, a.id)!.ship
     say(a, { type: "helm", o: 0.6, r: 1 })
     run(3000)
@@ -125,19 +131,19 @@ describe("room ships", () => {
   })
 
   test("refused requests come back as nope; new ships spawn and get simulated", () => {
-    const { core, join, say, run } = room()
+    const { core, join, say, run, mate } = room()
     const a = join("ada")
     join("bo")
-    const c = join("cy")
+    const c = mate("cy", a)
     say(c, { type: "op", op: "helm" })
     expect(c.last("nope")).toEqual({ type: "nope", error: "helm-taken" })
-    // Both ships of the team are out: no third.
-    say(c, { type: "newship", team: playerOf(core.crew!, c.id)!.team })
+    // Every team has its carrier: no fifth.
+    say(c, { type: "newship" })
     expect(c.last("nope")).toEqual({ type: "nope", error: "fleet-full" })
     expect(core.ships.size).toBe(4)
-    // The team's two ships start apart.
-    const [s1, s2] = core.crew!.ships.filter((s) => s.team === playerOf(core.crew!, a.id)!.team).map((s) => core.ships.get(s.id)!)
-    expect(Math.hypot(s1!.x - s2!.x, s1!.z - s2!.z)).toBeGreaterThan(200)
+    // The carriers start far apart.
+    const at = [...core.ships.values()]
+    for (let i = 0; i < at.length; i++) for (let j = i + 1; j < at.length; j++) expect(Math.hypot(at[i]!.x - at[j]!.x, at[i]!.z - at[j]!.z)).toBeGreaterThan(280)
     run(200)
     expect(a.last("ships")!.s).toHaveLength(4)
   })
@@ -175,12 +181,12 @@ describe("room ships", () => {
   })
 
   test("two pilots launch, a third waits for a slot", () => {
-    const { core, join, say, run } = room()
+    const { core, join, say, run, mate } = room()
     const a = join("ada")
-    join("x1") // the other team
-    const b = join("bo")
+    join("x1") // another carrier
+    const b = mate("bo", a)
     join("x2")
-    const d = join("di")
+    const d = mate("di", a)
     expect(playerOf(core.crew!, d.id)!.ship).toBe(playerOf(core.crew!, a.id)!.ship)
     say(b, { type: "op", op: "hornet" })
     // One catapult: the second jet waits until the first has left the bow.
@@ -196,19 +202,19 @@ describe("room ships", () => {
     expect(a.last("nope")!.error).toBe("recharging")
   })
 
-  test("every team keeps its two ships, crewed or not", () => {
+  test("every carrier stays afloat, crewed or not", () => {
     const { core, join, run } = room()
     const a = join("ada")
-    run(CREW.emptyMs + 2000)
+    run(62_000)
     expect(core.ships.size).toBe(4)
     expect(a.last("ships")!.s).toHaveLength(4)
   })
 
   test("a reconnecting helm gets the helm back if free, else flies", () => {
-    const { core, join, say } = room()
+    const { core, join, say, mate } = room()
     const a = join("ada")
     join("cy")
-    const b = join("bo")
+    const b = mate("bo", a)
     const ship = playerOf(core.crew!, a.id)!.ship
     core.close(a)
     const again = join("ada", { back: { ship, role: "helm" } })
@@ -263,12 +269,12 @@ describe("room ships", () => {
 
 describe("captains on the room", () => {
   test("only the captain kicks, locks and promotes; the crew carries the captain, the lock and the bans", () => {
-    const { core, join, say, run } = room()
-    const a = join("ada") // captain of team 0's ship
-    const c = join("cy") // team 1
-    const b = join("bo")
-    join("x1") // team 1
-    const d = join("di") // team 0, ada's ship
+    const { core, join, say, run, mate } = room()
+    const a = join("ada") // captain of ship 1
+    const c = join("cy") // another carrier
+    const b = mate("bo", a)
+    join("x1") // another carrier
+    const d = mate("di", a)
     const ship = playerOf(core.crew!, a.id)!.ship
     expect(a.last("crew")!.crew.ships.find((s) => s.id === ship)).toMatchObject({ captain: a.id, locked: false, bans: [] })
     say(b, { type: "kick", player: d.id })
@@ -285,12 +291,12 @@ describe("captains on the room", () => {
     expect(c.last("nope")!.error).toBe("locked")
     const e = join("ed")
     expect(playerOf(core.crew!, e.id)!.ship).not.toBe(ship)
-    // Kick: di lands on another team-0 ship and is banned from this one.
+    // Kick: di lands on another carrier (an enemy now) and is banned from this one.
     run(500)
     say(a, { type: "kick", player: d.id })
     const di = playerOf(core.crew!, d.id)!
     expect(di.ship).not.toBe(ship)
-    expect(di.team).toBe(playerOf(core.crew!, a.id)!.team)
+    expect(di.team).not.toBe(playerOf(core.crew!, a.id)!.team)
     expect(d.last("crew")!.crew.ships.find((s) => s.id === ship)!.bans.map((x) => x.player)).toEqual([d.id])
     // Captain leaves: bo, the longest-serving member left, takes over.
     run(500)
@@ -314,10 +320,10 @@ describe("captains on the room", () => {
   })
 
   test("a locked ship still takes back a member whose connection dropped", () => {
-    const { core, join, say } = room()
+    const { core, join, say, mate } = room()
     const a = join("ada")
     join("cy")
-    const b = join("bo")
+    const b = mate("bo", a)
     const ship = playerOf(core.crew!, a.id)!.ship
     say(a, { type: "lock", locked: true })
     core.close(b)

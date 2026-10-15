@@ -42,7 +42,6 @@ function dogfight() {
   const say = (c: FakeConn, msg: ClientMsg) => core.message(c, encode(msg))
   const a = join("ada")
   const b = join("bo")
-  say(b, { type: "newship", team: 1 })
   say(a, { type: "op", op: "hornet" })
   say(b, { type: "op", op: "hornet" })
   /** Jets flying north at 140 m/s at 1,000 m: A starts `gap` metres behind B. */
@@ -129,13 +128,21 @@ describe("weapons over the network", () => {
     say(b, { type: "plane", p: [0, 1, 0, 1000, -5000, 0, 1, 0, 0, 0, 0, -140, 0.77, 0, 0, 0, 0] })
     say(a, { type: "hits", on: b.id, n: 10 })
     expect(core.hp(b.id)).toBe(100)
-    // A teammate of A on A's ship launches and claims hits on A.
+    // A crewmate of A (boarded A's ship) launches and claims hits on A.
     const c = join("cy")
+    say(c, { type: "board", ship: playerOf(core.crew!, a.id)!.ship })
     expect(playerOf(core.crew!, c.id)!.team).toBe(playerOf(core.crew!, a.id)!.team)
     say(c, { type: "op", op: "hornet" })
     say(c, { type: "plane", p: [0, 1, 0, 1000, 50, 0, 1, 0, 0, 0, 0, -140, 0.77, 0, 0, 0, 0] })
     say(c, { type: "hits", on: a.id, n: 5 })
     expect(core.hp(a.id)).toBe(100)
+    // A third carrier's pilot is everyone's enemy: the same claim lands.
+    const d = join("di")
+    expect(new Set([a, b, d].map((x) => playerOf(core.crew!, x.id)!.team)).size).toBe(3)
+    say(d, { type: "op", op: "hornet" })
+    say(d, { type: "plane", p: [0, 1, 0, 1000, 50, 0, 1, 0, 0, 0, 0, -140, 0.77, 0, 0, 0, 0] })
+    say(d, { type: "hits", on: a.id, n: 5 })
+    expect(core.hp(a.id)).toBeLessThan(100)
   })
 
   test("a missile the room flies hits B; others hear the launch; B gets the seeker warning", () => {
@@ -182,6 +189,7 @@ describe("weapons over the network", () => {
   test("an F-35C has no gun: the room takes no hits from it, but its bombs up to its load", () => {
     const { core, a, b, say, seaT, join, run } = dogfight()
     const c = join("cy")
+    say(c, { type: "board", ship: playerOf(core.crew!, a.id)!.ship })
     expect(playerOf(core.crew!, c.id)!.team).toBe(playerOf(core.crew!, a.id)!.team)
     // A's Hornet has left the ship's one catapult.
     run(catapultTime("hornet") * 1000)

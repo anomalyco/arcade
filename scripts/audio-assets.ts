@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { Plugin } from "vite"
+import { selectSfx, sfxUrl } from "../packages/kit/audio/library"
 import { DEFAULT_SAMPLE_MANIFEST } from "../packages/kit/audio/manifest"
 
 /** Request path relative to the host: the dev router strips `/arcade/<id>`, a standalone server with a base does not. */
@@ -9,19 +10,29 @@ export function hostPath(url: string | undefined, base: string) {
   return (base.length > 1 && pathname.startsWith(base) ? pathname.slice(base.length) : pathname).replace(/^\//, "")
 }
 
+const repo = (path: string) => fileURLToPath(new URL(`../${path}`, import.meta.url))
+const CONTENT_TYPES: Record<string, string> = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav" }
+
+export type AudioAssetOptions = {
+  /**
+   * Shared sound library ids this host plays (`gun.pistol.shot`, `zombie.*`, `game:outbreak`, or "all"). Each file is
+   * served and emitted once under `audio-assets/sfx/` from its single source in the repository.
+   */
+  sfx?: readonly string[] | "all"
+}
+
 /** Each Lab host owns an identical, manifest-bounded asset route under its own deployment prefix. */
-export function audioAssets(): Plugin {
-  const assets = new Map(DEFAULT_SAMPLE_MANIFEST.map(asset => [
-    `audio-assets/${asset.url}`,
-    fileURLToPath(new URL(`../games/getaway/public/sfx/${asset.url}`, import.meta.url)),
-  ]))
+export function audioAssets(options: AudioAssetOptions = {}): Plugin {
+  const assets = new Map(DEFAULT_SAMPLE_MANIFEST.map(asset => [`audio-assets/${asset.url}`, repo(`games/getaway/public/sfx/${asset.url}`)]))
+  for (const entry of selectSfx(options.sfx)) for (const file of entry.files) assets.set(`audio-assets/${sfxUrl(file)}`, repo(file.path))
   return {
     name: "arcade-audio-assets",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const file = assets.get(hostPath(req.url, server.config.base))
+        const path = hostPath(req.url, server.config.base)
+        const file = assets.get(path)
         if (!file) return next()
-        res.setHeader("Content-Type", "audio/mpeg")
+        res.setHeader("Content-Type", CONTENT_TYPES[path.split(".").pop()!] ?? "application/octet-stream")
         res.end(readFileSync(file))
       })
     },

@@ -9,9 +9,10 @@
 // - PROMOTE: the captain hands the captaincy to another member of the ship.
 // - LOCK / UNLOCK: a locked ship takes no new members at all (JOIN from the Tab menu, quick join's auto-assign, a
 //   kicked player's new home); everyone aboard stays. Invite links only pick the room, so they don't bypass it.
-// - KICK: the captain removes a member, who is moved to another ship on the same team with room (unlocked first: the
-//   most crewed, then the oldest), else onto a new ship of their own, else onto a locked ship with room. They can't
-//   come back to the ship they were kicked from for `SQUAD.kickMs`.
+// - KICK: the captain removes a member, who is moved to another ship with room as if joining the room (unlocked first:
+//   the least crewed, then the oldest), else onto a new ship of their own, else onto a locked ship with room. Every
+//   ship is its own side, so they are an enemy from then on. They can't come back to the ship they were kicked from for
+//   `SQUAD.kickMs`.
 
 import {
   type Crew,
@@ -26,7 +27,6 @@ import {
   joinShip,
   playerOf,
   shipOf,
-  teamShips,
 } from "./crew"
 
 export const SQUAD = {
@@ -98,14 +98,12 @@ export function setLock(c: Crew, by: number, locked: boolean): Outcome {
   return { events: [{ k: "lock", ship: s.id, locked }] }
 }
 
-/** Where a kicked player goes: another ship on the team with room (unlocked first), or null for a new ship. */
+/** Where a kicked player goes (see the header): another ship with room, "new" for a ship of their own, or null. */
 function kickTarget(c: Crew, from: CrewShip, target: number, now: number): CrewShip | "new" | null {
-  const others = teamShips(c, from.team)
-    .filter((s) => s !== from && hasRoom(s) && !kickedFrom(s, target, now))
-    .sort((a, b) => crewCount(b) - crewCount(a) || a.id - b.id)
+  const others = c.ships.filter((s) => s !== from && hasRoom(s) && !kickedFrom(s, target, now)).sort((a, b) => crewCount(a) - crewCount(b) || a.id - b.id)
   const open = others.find((s) => !s.locked)
   if (open) return open
-  if (!createShipError(c, target, from.team)) return "new"
+  if (!createShipError(c, target)) return "new"
   return others[0] ?? null
 }
 
@@ -115,7 +113,7 @@ export function kickError(c: Crew, by: number, target: number, now: number): Cre
   return kickTarget(c, captainShip(c, by)!, target, now) ? null : "fleet-full"
 }
 
-/** The captain kicks a member: moved to another ship of the team (see the header), banned from this one for a while. */
+/** The captain kicks a member: moved to another ship (see the header), banned from this one for a while. */
 export function kick(c: Crew, by: number, target: number, now: number): Outcome {
   const error = kickError(c, by, target, now)
   if (error) return fail(error)
@@ -125,7 +123,7 @@ export function kick(c: Crew, by: number, target: number, now: number): Outcome 
   // A locked ship takes a kicked player only when nothing else can: lift the lock for the move, then restore it.
   const relock = to !== "new" && to.locked
   if (relock) to.locked = false
-  const moved = to === "new" ? createShip(c, target, from.team, now) : joinShip(c, target, to.id, now)
+  const moved = to === "new" ? createShip(c, target, now) : joinShip(c, target, to.id, now)
   if (relock) to.locked = true
   if (moved.error) return fail(moved.error)
   from.bans = from.bans.filter((b) => b.until > now && b.player !== target)

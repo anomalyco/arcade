@@ -1,11 +1,21 @@
-import { keyLabel, moveClusterLabel } from "@arcade/kit/client/controls"
+import { moveClusterLabel } from "@arcade/kit/client/controls"
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { END_SECONDS, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS } from "../../shared/config"
 import { type City, shopAt } from "../../shared/sim/city"
 import { DRIVE, flatCount } from "../../shared/sim/vehicle"
 import type { CarView, SimEvent, WorldView } from "../../shared/sim/world"
 import type { Camera } from "../game/camera"
-import { attr, esc, flag, h, show, style, text } from "./dom"
+import { attr, esc, flag, h, html, show, style, text } from "./dom"
 import { Minimap } from "./minimap"
+
+const keysLine = (room: boolean) =>
+  [
+    `${keyCapHtml("KeyW", { label: moveClusterLabel() })} drive`,
+    `${keyCapHtml("Space")} drift`,
+    `${keyCapHtml("ShiftLeft")} nitro`,
+    `${keyCapHtml("KeyH")} engine`,
+    ...(room ? [`${keyCapHtml("Enter")} chat`] : []),
+  ].join(" <span class=\"k-sep\">·</span> ")
 
 export type HudContext = {
   myId: string
@@ -96,10 +106,10 @@ export class Hud {
     e.intro = h("div", "h-intro off", r, `<div class="i-line"></div><div class="i-sub"></div>`)
     e.iLine = e.intro.querySelector(".i-line")!
     e.iSub = e.intro.querySelector(".i-sub")!
-    e.keys = h("div", "h-keys off", r, `${moveClusterLabel()} drive · SPACE drift · SHIFT nitro · ${keyLabel("KeyH")} engine`)
+    e.keys = h("div", "h-keys off", r)
 
     e.flash = h("div", "h-flash off", r)
-    e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key">${esc(keyLabel("KeyQ"))}</span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
+    e.gadget = h("div", "h-gadget off", r, `<div class="g-row"><span class="g-key"></span><span class="g-name"></span><span class="g-pips">${"<i></i>".repeat(GADGETS.spike.charges)}</span></div><div class="g-bar"><b></b></div>`)
     e.gKey = e.gadget.querySelector(".g-key")!
     e.gName = e.gadget.querySelector(".g-name")!
     this.pips = [...e.gadget.querySelectorAll<HTMLElement>(".g-pips i")]
@@ -198,7 +208,7 @@ export class Hud {
       text(e.iSub!, view.phase === "headstart" ? `${isRobber ? "COPS IN" : "YOU ROLL IN"} ${Math.max(1, Math.ceil(left))}` : "")
     }
     show(e.keys!, this.firstRound && pre)
-    text(e.keys!, `${moveClusterLabel()} drive · SPACE drift · SHIFT nitro · ${keyLabel("KeyH")} engine${ctx.room ? " · ENTER chat" : ""}`)
+    html(e.keys!, keysLine(Boolean(ctx.room)))
 
     this.updateGadgets(view, ctx, isRobber)
     const mine = view.cars.find((c) => c.ownerId === ctx.myId && !c.ghost)
@@ -232,7 +242,7 @@ export class Hud {
     show(e.gadget!, !!g)
     if (g) {
       const spec = GADGETS[g.id]
-      text(e.gKey!, keyLabel("KeyQ"))
+      html(e.gKey!, keyCapHtml("KeyQ"))
       text(e.gName!, g.id === "spike" ? `${spec.name} · POPS A TIRE` : spec.name)
       // Pips: strips you can still lay before your oldest one is picked up.
       this.pips.forEach((pip, i) => flag(pip, "used", i >= g.charges))

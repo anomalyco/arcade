@@ -10,6 +10,8 @@ import type { FlightInput } from "./input"
 
 export type FlightPhase = "idle" | "deck" | "launching" | "flying" | "landing" | "crashed"
 
+/** The bombsight view waits this long after the catapult (s), so a launch with bombs still selected flies off first. */
+const SIGHT_AFTER_LAUNCH = 1.5
 /** Gear retraction time after leaving the deck (s), and the delay before it starts. */
 const GEAR_DELAY = 0.8
 const GEAR_TIME = 2.2
@@ -40,7 +42,9 @@ export class Flight {
   landing: Landing | null = null
   /** The carrier being landed on (until the flight ends). */
   landingShip: (LandingShip & { t: number }) | null = null
-  /** The host shows "F LAND" this frame (shared/landing.ts landTarget found a carrier). */
+  /** True while bombs are the selected weapon (the host's weapons): flying, the camera turns into the bombsight. */
+  bombsight: (() => boolean) | null = null
+  /** The host shows "R LAND" this frame (shared/landing.ts landTarget found a carrier). */
   landPrompt = false
   private prevLanding: Landing | null = null
   /** Gear 0 (up) .. 1 (down), and the tailhook. */
@@ -234,6 +238,8 @@ export class Flight {
     this.cam.framing.yaw = showDeck ? 0.5 : 0
     this.cam.framing.pitch = showDeck ? -0.32 : 0
     this.cam.framing.dist = showDeck ? 1.6 : 1
+    this.cam.nose = VEHICLES[this.vehicle].probes[0]![2]
+    this.cam.setBombs(this.phase === "flying" && this.airborne > SIGHT_AFTER_LAUNCH && !!this.bombsight?.())
     if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect, Math.min(1, this.trauma))
     else this.cam.update(p, dt, aspect, Math.min(1, this.trauma), look, this.eyeModel, VEHICLES[this.vehicle].flight)
 

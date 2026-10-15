@@ -1,5 +1,5 @@
 // Flight test harness (flight.html): the real sea, sky, islands and the sailing carrier, with a jet on its catapult.
-// Enter runs the takeoff, then you fly; a crash (or F near the carrier, the landing) puts you back on the deck. Offline, no
+// Enter runs the takeoff, then you fly; a crash (or R near the carrier, the landing) puts you back on the deck. Offline, no
 // network. URL: ?seed=N (world, default 7), ?ship=0.6 (carrier throttle), ?rudder=0 (carrier rudder -1..1),
 // ?invert (mouse pitch), ?cockpit, ?team=0|1 (accent colour of the jet and the carrier), ?f35 (fly the F-35C). `globalThis.carrier.flight` exposes everything for scripts/flight-shot.ts.
 import "../style.css"
@@ -22,7 +22,7 @@ import { PlaneFx } from "../render/plane-fx"
 import { loadPlaneModels } from "../render/plane-glb"
 import { type PlaneDrawPose, PlanePass } from "../render/plane-pass"
 import { teamColor } from "../render/team"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 import { DEFAULT_GRADE } from "../render/post"
 import { Renderer } from "../render/renderer"
 import { ShipPass, type ShipDrawPose } from "../render/ship-pass"
@@ -173,7 +173,7 @@ async function main() {
     const target = debug.paused ? simT : seaTime()
     if (target - ship.t > 4) ship.t = target - SHIP.tick
     flight.readInput(dt)
-    // "F LAND" near the carrier, as in the game (src/flight/seam.ts).
+    // "R LAND" near the carrier, as in the game (src/flight/seam.ts).
     flight.landPrompt = flight.phase === "flying" && !!landTarget(flight.plane, flight.airborne, ship, undefined, target, landingVehicle(flight.vehicle))
     if (flight.landPrompt && input.land) flight.land(ship)
     while (ship.t + SHIP.tick <= target) {
@@ -186,7 +186,7 @@ async function main() {
     lerpShip(shipPrev, ship, k, shipDraw)
     const aspect = canvas.width / canvas.height
     const pose = flight.frame(dt, k, aspect, (x, z) => seaHeight(sea, x, z, target), { w: innerWidth, h: innerHeight }, shipDraw)
-    hud.homeColor = TEAMS[debug.team]?.color ?? "#f4f7fb"
+    hud.homeColor = teamCss(debug.team)
     if (flight.phase === "deck" && input.launch) flight.requestLaunch()
     input.endFrame()
 

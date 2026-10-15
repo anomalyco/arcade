@@ -44,6 +44,13 @@ export class ByteWriter {
     return this
   }
 
+  i32(v: number): this {
+    this.ensure(4)
+    this.view.setInt32(this.length, Math.round(v) | 0, true)
+    this.length += 4
+    return this
+  }
+
   u32(v: number): this {
     this.ensure(4)
     this.view.setUint32(this.length, v >>> 0, true)
@@ -112,6 +119,12 @@ export class ByteReader {
   i16(): number {
     const v = this.view.getInt16(this.offset, true)
     this.offset += 2
+    return v
+  }
+
+  i32(): number {
+    const v = this.view.getInt32(this.offset, true)
+    this.offset += 4
     return v
   }
 

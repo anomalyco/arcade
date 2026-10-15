@@ -34,6 +34,9 @@ try {
     { name: "closed", x: 27.7, y: 31, aim: -Math.PI / 2, hour: 19, zoom: 34 },
     { name: "open", x: 27.7, y: 31, aim: -Math.PI / 2, hour: 19, zoom: 34 },
     { name: "yard", x: 20, y: 35, aim: -1.6, hour: 23, zoom: 42 },
+    { name: "day", x: 30, y: 41, aim: -Math.PI / 2, hour: 13, zoom: 42 },
+    { name: "dusk", x: 30, y: 41, aim: -Math.PI / 2, hour: 17, zoom: 42 },
+    { name: "night", x: 30, y: 41, aim: -Math.PI / 2, hour: 22, zoom: 42 },
   ]
   for (const scene of scenes) {
     await page.evaluate(async ({ s, labOverrides }) => {
@@ -50,11 +53,11 @@ try {
     }, { s: scene, labOverrides })
     await page.screenshot({ path: resolve(out, `${scene.name}.png`) })
     await page.evaluate(() => {
-      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt")) el.style.visibility = "hidden"
+      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout")) el.style.visibility = "hidden"
     })
     await page.locator("#game").screenshot({ path: resolve(out, `${scene.name}-canvas.png`) })
     await page.evaluate(() => {
-      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt")) el.style.visibility = ""
+      for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout")) el.style.visibility = ""
     })
   }
   const state=await page.evaluate(()=>(window as any).__arcadeHarness.state())

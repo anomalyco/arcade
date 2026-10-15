@@ -3,6 +3,7 @@ import { PISTOL_RELOAD_TIME, type CombatChannel } from "../../shared/combat"
 import type { InteractTarget } from "../../shared/interact"
 import type { InventoryState } from "../../shared/inventory"
 import type { Town } from "../../shared/map"
+import type { Notice } from "../../shared/progression"
 import type { CalloutKind, CalloutOptions } from "./callouts"
 
 /** The survivor fields feedback reads. Remote co-op players can pass their snapshot of the same shape. */
@@ -40,8 +41,10 @@ export type FeedbackContext = {
   pursuing?: number
   /** Battery fraction below which the flashlight flickers. */
   lowBattery?: number
-  /** Layout-aware label for the reload key. */
+  /** Label for the reload key (physical `KeyR`), QWERTY "R" by default; the callout draws it as a key cap. */
   reloadKey?: string
+  /** The simulation's feedback since the last frame (pickups, search results, "Inventory full", recipes). */
+  notices?: readonly Notice[]
 }
 
 export type CalloutSink = (text: string, kind: CalloutKind, options?: CalloutOptions) => void
@@ -103,20 +106,25 @@ export class ActorFeedback {
     }
 
     const loot = a.lootMessage && a.lootMessageUntil !== p.lootMessageUntil ? a.lootMessage : null
-    if (p.channel && !a.channel && !loot) emit("Stopped", "info", { key: "channel" })
+    const notices = ctx.notices ?? []
+    if (p.channel && !a.channel && !loot && !notices.length) emit("Stopped", "info", { key: "channel" })
     if (loot) {
       const callout = lootCallout(loot)
       // Item pops replace a successful search, so its ring fades out at once.
       if (!callout && p.channel) emit(p.channel.label.replace(/…$/, ""), "progress", { key: "channel", progress: 1, duration: 0 })
       if (callout) emit(callout.text, callout.kind, { key: p.channel ? "channel" : (callout.key ?? `loot:${callout.text}`) })
     }
-
-    if (a.reserveAmmo > p.reserveAmmo) emit(`+${a.reserveAmmo - p.reserveAmmo} 9mm`, "result")
-    const planks = a.planks - p.planks
-    if (planks > 0) emit(`+${planks} plank${planks > 1 ? "s" : ""}`, "result")
+    // A finished action's first notice takes over its progress ring; the rest stack as usual.
+    notices.forEach((n, i) => {
+      const resolves = i === 0 && p.channel && !a.channel && !loot
+      emit(n.text, n.kind, { key: resolves ? "channel" : (n.key ?? `${n.kind}:${n.text}`) })
+    })
 
     if (a.equippedItem === "pistol" && p.magAmmo > 0 && a.magAmmo === 0) {
-      if (a.reserveAmmo > 0) emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo" })
+      if (a.reserveAmmo > 0) {
+        const keyCap = ctx.reloadKey ? { code: "KeyR", label: ctx.reloadKey } : undefined
+        emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo", keyCap })
+      }
       else emit("Out of ammo", "warning", { key: "ammo" })
     }
 

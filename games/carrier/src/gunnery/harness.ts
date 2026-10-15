@@ -10,7 +10,7 @@ import "../style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { WEAPON_MOUNTS } from "../../shared/carrier-spec"
 import type { CombatWorld } from "../../shared/combat"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 import { GUNNERY, type GunWeapon, type GunneryEvent, leadPoint, muzzleWorld, predictImpact, shipPointVel } from "../../shared/gunnery"
 import { makeArchipelago, type Archipelago } from "../../shared/islands"
 import { type Vec3, shipToWorld, worldToShip } from "../../shared/plane"
@@ -148,7 +148,7 @@ async function main() {
   const ground = { sea, arch, ships }
 
   const weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), new WeaponInput(canvas), null, ground)
-  weapons.setPilot(ME, 0, "YOU", TEAMS[0]!.color)
+  weapons.setPilot(ME, 0, "YOU", teamCss(0))
   const drones = new Drones(num("drone", 3), { centre: [own.ship.x, own.ship.z], hostile: false, flares: params.has("flares"), team: 1 })
   drones.enlist(weapons.world)
 
@@ -295,7 +295,7 @@ async function main() {
   if (params.has("chase")) debug.inspect = { yaw: 2.4, pitch: 0.25, dist: 40 }
   const matrix = new Float32Array(16)
   const enemyAccent = teamColor(1)
-  const enemyCss = TEAMS[1]!.color
+  const enemyCss = teamCss(1)
   let last = performance.now()
   let simT = own.ship.t
   const tick = (now: number) => {

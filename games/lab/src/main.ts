@@ -3,7 +3,7 @@ import { lab } from "@arcade/kit/lab/main"
 import type { SectionFactory } from "@arcade/kit/lab/types"
 import type { SpawnFactory } from "@arcade/kit/lab/spawn-types"
 import { ALL_GAMES, LAB_GAMES, loadPlayground, resolveGames, type LabGameModule } from "./games/registry"
-import { prepareOverworld } from "./overworld"
+import { startStations } from "./station-host"
 import { SceneAudio } from "./sound/scene-audio"
 import { audioSection, bindMuteKey, sceneView, withSound } from "./sound/lab-sound"
 import { mountSpeaker } from "./sound/speaker"
@@ -11,13 +11,10 @@ import "./style.css"
 
 const params = new URLSearchParams(location.search)
 const bench = params.has("bench")
-// The overworld starts with only the shared sections; stations load a game's adapters when you open them.
-const overworld = params.has("overworld") && !bench ? prepareOverworld() : null
 const resolved = resolveGames(location.search, location.hash)
-const { choice } = resolved
-const games = overworld && !params.has("game") ? [] : resolved.games
+const { choice, games } = resolved
 const entry = LAB_GAMES.find(game => game.id === choice)
-if (!overworld && entry?.defaultSection && !location.hash && !params.has("section") && !bench) {
+if (entry?.defaultSection && !location.hash && !params.has("section") && !params.has("station") && !bench) {
   params.set("section", entry.defaultSection)
   history.replaceState(null, "", `${location.pathname}?${params}`)
 }
@@ -46,14 +43,6 @@ function gamePicker(slot: HTMLElement) {
     location.assign(`${location.pathname}${next.size ? `?${next}` : ""}`)
   })
   slot.append(select)
-  if (!overworld) {
-    const link = document.createElement("a")
-    link.className = "lab-btn"
-    link.href = "?overworld"
-    link.textContent = "Overworld"
-    link.title = "Stations for each demo, with quick travel and voice notes"
-    slot.append(link)
-  }
 }
 
 async function start() {
@@ -62,7 +51,7 @@ async function start() {
   const { getawaySpawn: playground, getawayLabAudio } = wantsPlayground ? await loadPlayground() : {}
   if (getawayLabAudio) sound.add(getawayLabAudio())
   for (const { module } of modules) if (module.audio) sound.add(module.audio())
-  const sections: SectionFactory[] = [...modules.flatMap(({ module }) => module.sections), audioSection(sound), ...(overworld ? [overworld.section] : [])]
+  const sections: SectionFactory[] = [...modules.flatMap(({ module }) => module.sections), audioSection(sound)]
   const spawn: SpawnFactory | undefined = playground && (context => {
     const base = playground(context)
     const characters = [...base.characters, ...modules.flatMap(({ module }) => module.characters?.(context) ?? [])]
@@ -82,26 +71,25 @@ async function start() {
     },
   })
   mode = () => api.workbench.getMode()
-  if (overworld) {
-    const loaded = new Map<string, Promise<boolean>>(modules.map(({ game }) => [game.id, Promise.resolve(true)]))
-    const ensureGame = (id: string) => {
-      let pending = loaded.get(id)
-      if (!pending) {
-        const game = LAB_GAMES.find(g => g.id === id)
-        pending = game
-          ? game.load().then(({ default: module }: { default: LabGameModule }) => {
-            api.addSections(module.sections)
-            if (module.audio) sound.add(module.audio())
-            return true
-          })
-          : Promise.resolve(false)
-        loaded.set(id, pending)
-        pending.catch(() => loaded.delete(id))
-      }
-      return pending
+  // A station whose section belongs to a game that isn't loaded fetches that game's adapters when it opens.
+  const loaded = new Map<string, Promise<boolean>>(modules.map(({ game }) => [game.id, Promise.resolve(true)]))
+  const ensureGame = (id: string) => {
+    let pending = loaded.get(id)
+    if (!pending) {
+      const game = LAB_GAMES.find(g => g.id === id)
+      pending = game
+        ? game.load().then(({ default: module }: { default: LabGameModule }) => {
+          api.addSections(module.sections)
+          if (module.audio) sound.add(module.audio())
+          return true
+        })
+        : Promise.resolve(false)
+      loaded.set(id, pending)
+      pending.catch(() => loaded.delete(id))
     }
-    await overworld.start(api, ensureGame)
+    return pending
   }
+  if (!bench) await startStations(api, ensureGame)
   let last = 0
   const tick = (now: number) => {
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0

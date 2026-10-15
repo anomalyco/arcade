@@ -1,4 +1,4 @@
-import { type Crew, type CrewPlayer, TEAMS } from "../../shared/crew"
+import { type Crew, type CrewPlayer, teamCss } from "../../shared/crew"
 import { ISLAND } from "../../shared/carrier-spec"
 import { FLEET, type Hull, deckOpen } from "../../shared/fleet"
 import { shipToWorld, type ShipPoseLike, type Vec3 } from "../../shared/plane"
@@ -119,7 +119,7 @@ export class ShipHud {
     if (best) {
       const h = hulls!.get(best.s.id)!
       this.enemy.style.transform = `translate(${best.x.toFixed(1)}px, ${(best.y - 18).toFixed(1)}px)`
-      this.enemy.style.setProperty("--tc", TEAMS[best.s.team]?.color ?? "#f4f7fb")
+      this.enemy.style.setProperty("--tc", teamCss(best.s.team))
       this.enemyFill.style.width = `${Math.max(0, (h.hp / FLEET.hp) * 100).toFixed(1)}%`
       const name = crew?.ships.find((x) => x.id === best!.s.id)?.name ?? ""
       if (this.enemyName.textContent !== name) this.enemyName.textContent = name

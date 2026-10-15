@@ -20,38 +20,62 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
    if that value only affects newly spawned particles or bodies. Test bright/dark rooms and gameplay zoom.
 4. Use transport Pause and Step where supported. Step advances `1/60 s`; Edit/Play determines input ownership,
    independently of the simulation clock. Reset and replay from the same seeds to compare the same tick.
-5. Copy the group for a parameter dictionary, or Export the versioned preset and save the JSON yourself.
+5. Copy a panel's values (the knobs Copy button or `⇧C`; a row selection copies just those rows) for a parameter
+   dictionary, or Export the versioned preset and save the JSON yourself.
    Promote approved values into the canonical production defaults, then check the actual game's rendering and input.
 
 Selecting a fixture intentionally changes scene state. Selecting a tool/effect should preserve the environment,
 lighting and authored placement unless the user explicitly changes or resets them. Current lighting survives section
 changes, but environments are section-owned and fixtures can replace them. There is no cross-reload saved-preset library.
 
-## Overworld stations
+## Stations
 
-`/arcade/lab/?overworld` opens the Lab as a map of stations, one plot per demo, drawn by the Lab's own Stage. Number
-keys `1`–`9` and `0`, a click on a plot or strip chip, `⌘K` ("Station: …") or `arcade station <id>` glide the camera
-there (320 ms, cut with reduced motion, interrupted by a drag or wheel) and open the station: its section runs with
-the workbench chrome hidden, and a panel shows status, variants (`1`–`9`), Grid and A/B, live GPU time, measured
-numbers with their sources, recent commits and unmerged branches (dev server only) and links to the live game.
-`[`/`]` step to the previous or next station, `Esc` returns to the map and Backquote shows the full workbench for
-tuning. The map starts with only the shared sections; a station whose section belongs to a game loads that game's
-adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`).
+A station is a saved workspace for one demo, inside the normal Lab. The station list sits at the top of the Outliner;
+number keys `1`–`9` and `0` (outside text fields, Play, the grid and the radial), a click on a list chip, `⌘K`
+("Station: …") or `arcade station <id>` open one in place. Its section and setup commands run, then its widgets fill
+three slots around the viewport: the Outliner column (`left`), the top of the Details column (`right`) and a dock under
+the viewport (`dock`, which takes the Library drawer's place until you open the Library again). `⇧1`–`⇧9` pick the
+open station's variants. ✕ in the list header (or `station.close`) goes back to the plain workbench, and choosing
+another section by hand does too. A station whose section belongs to a game that isn't loaded loads that game's
+adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`). `?station=<id>` opens one on
+load.
+
+Widgets (`packages/kit/lab/stations/widgets.ts`):
+
+| Widget | Shows |
+| --- | --- |
+| `status` | Status, board feature, summary, what it runs and the station's links |
+| `controls` | Knobs cards for chosen Details `groups` and single `keys`, over the same settings as Details |
+| `variants` | The variants as chips (`⇧1`–`⇧9`) |
+| `compare` | A/B wipe (pin A, pick a variant for B) and the variation grid when the station names one |
+| `perf` | Frame rate and the Lab's telemetry line (section counts, GPU time), twice a second |
+| `metrics` | Measured numbers with their sources |
+| `changes` | Recent commits and unmerged branches (dev server only) |
+| `notes` | Kit's notes for the station, kept in the browser |
+| `voice` | The voice-note button |
+| `links` | Links to where the thing lives in the games |
+
+✎ in the list header edits the layout: drag a card between slots or use its ⋯ menu (move to a slot, earlier or later,
+Configure for a title and the controls card's groups, Remove), and `+ Widget` adds one. Edits save per station in the
+browser (`arcade.lab.station-layouts.v1`) as you make them; Reset goes back to the station file's layout and Copy JSON
+gives the `layout` block to paste into the file. `arcade run station.layout` reads, replaces (`layout`), resets or
+opens the editor from the CLI. Without a `layout` the station gets the default: status and measurements left, a
+controls card for the section's first two groups with real tuning sliders right, and variants, compare, live numbers,
+voice and notes in the dock.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
 adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
-back to. The type is `LabStation` in `packages/kit/lab/overworld/types.ts`:
+back to. The type is `LabStation` in `packages/kit/lab/stations/types.ts` (older files import it from
+`@arcade/kit/lab/overworld/types`, which still works):
 
 ```ts
 import { defineStation } from "./define"
 
 export default defineStation({
-  id: "weather",                          // arcade station weather, ?overworld&station=weather
+  id: "weather",                          // arcade station weather, ?station=weather
   title: "Weather",
   summary: "Rain, fog and wind from the shared weather kit, in the Looks room.",
-  order: 30,                              // strip position; the first ten get keys 1–9 and 0
-  prop: "cloud",                          // diorama prop on the plot
-  color: 0x6f9fd8,
+  order: 30,                              // list position; the first ten get keys 1–9 and 0
   status: "in-progress",                  // live | in-progress | review | planned
   demo: { kind: "section", section: "weather", setup: [{ command: "weather.preset", args: { preset: "storm" } }] },
   defaultVariant: "storm",                // the variant the setup already shows
@@ -62,22 +86,29 @@ export default defineStation({
   paths: ["packages/kit/weather.ts"],     // recent commits touching these
   branches: ["weather-*"],                // unmerged branches matching these
   links: [{ label: "Outbreak street", href: "/arcade/outbreak/?peaceful=1&seed=7" }],
+  layout: {                               // optional; Kit's saved edits override it
+    right: [{ widget: "controls", groups: ["Precipitation", "Wind & Atmosphere"], title: "Rain" }],
+    dock: [{ widget: "variants" }, { widget: "compare" }, { widget: "perf" }, { widget: "voice" }],
+  },
 })
 ```
 
-Reference sections by id and put the real setup in commands the section already registers, so a station uses the
-production path exactly as `arcade run` would. If the section isn't merged yet the station still appears and says so.
-`gridVariants("smoke")` turns a variation-grid preset's tiles into variants. Page demos (`{ kind: "page", url }`)
-embed another Arcade page, such as the Characters page; their variants set `url` and run `setup` commands inside the
-page through its dev-control runtime. `bun test games/lab/tests` validates every station file.
+`prop` and `color` from the old Overworld still check; `color` tints the station's chip and cards. Reference sections by
+id and put the real setup in commands the section already registers, so a station uses the production path exactly as
+`arcade run` would. If the section isn't merged yet the station still appears and says so. `gridVariants("smoke")`
+turns a variation-grid preset's tiles into variants. Page demos (`{ kind: "page", url }`) embed another Arcade page,
+such as the Characters page, over the viewport; their variants set `url` and run `setup` commands inside the page
+through its dev-control runtime. `bun test games/lab/tests` validates every station file and
+`bun games/lab/scripts/prove-stations.ts --serve` proves the whole path headlessly.
 
 ### Voice notes
 
-In dev (`bun run dev`), `N` at any station starts a voice note, like Scrawl: talk, hold `Shift` and move to draw,
-`⌘Z` undoes a mark, number keys still switch variants and are logged, `Esc` cancels and `N` finishes. The review card
+In dev (`bun run dev`), `N` anywhere in the Lab (outside text fields) starts a voice note, like Scrawl: talk, hold
+`Shift` and move to draw, `⌘Z` undoes a mark, `⇧1`–`⇧9` still switch variants and are logged, `Esc` cancels and `N` finishes. The review card
 shows a contact sheet of keyframes (start, each mark, each variant change, end); `Enter` sends. The dev server
 (`scripts/lab-feedback.ts`) saves the bundle to `~/code/home/artifacts/lab-feedback/<time>-<station>/` (audio,
-contact sheet, frames, `state.json` with the preset JSON, seeds, camera and transport, `feedback.json`, `summary.md`)
+contact sheet, frames, `state.json` with the preset JSON, seeds, tuning seed, camera and transport, `feedback.json`,
+`summary.md`)
 and posts it to the station's decision on the team board (project `arcade`) through the board's feedback path, so
 Whisper transcribes it and the marks are described with their transcript. It then presses Send, which puts it in
 `board.ts inbox`, and writes `transcript.md` once Whisper finishes. Stations without `board.decision` get a
@@ -85,6 +116,16 @@ Whisper transcribes it and the marks are described with their transcript. It the
 token stays in the dev server; production builds don't include the recorder.
 
 ## Bind controls to typed production settings
+
+Every control panel is drawn by knobs ([Kit's library](https://github.com/kitlangton/knobs), vendored as
+`packages/knobs`): the Lab's Details column, station `controls` cards and each game's Backquote overlay. `LabControl`
+and the settings objects stay the source of truth. `packages/kit/lab-knobs.ts` turns rows into knobs fields (ranges with
+units and steps, choices, switches, action buttons, groups as cards) and sends edits back through `LabNavigation.set`,
+one transaction per gesture; `packages/kit/lab-tuning.ts` holds the pure mapping and the seeded Random. Knobs gives
+every panel its header (Random, Reset, Copy and, in games, Undo/Redo), per-group dice and resets, `⇧L` to lock a row
+out of Random, hold `\` to see the values from before the last change, `⇧S` saved variants (kept in the browser per
+section or page), the row menu and `?` for the rest. In the Lab, `u`/`z` in a panel use the workbench's undo, the same
+history as `⌘Z`. A panel only works while focus is inside it, and an open game overlay keeps every key from the game.
 
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`
@@ -116,13 +157,20 @@ New parameter Randomize paths must use a recorded deterministic tuning seed, res
 room and effect seeds unchanged. Randomize explores recipes; Retrigger repeats an effect; Reroll regenerates a room.
 Locks protect comparison state, not explicit parameter edits. Include the resulting settings and required seeds in Copy.
 
+The knobs dice (the header's for every row, a card's for its group, `⌥` to mutate instead) draw from the panel's
+recorded tuning seed (`LabPanel.tuning.seed`; each roll records the seed it used in `tuning.last` and moves to the
+next). They land ranges on their step lattice, skip switches, locked and dependency-disabled rows, and never touch the
+effect, environment and room pickers, the key-label layout or any seed. Copy adds `tuningSeed` when a roll produced the
+values, and voice notes save the tuning state. A group with its own `Randomize <group>` action keeps using it.
+
 Current limitations:
 
-- Generic `LabNavigation.randomize` uses `Math.random`, randomizes group ranges/selects (including dependency-disabled
-  values), and leaves toggles unchanged. Copy the result to reproduce it; a room seed alone cannot reproduce Randomize.
+- `LabNavigation.randomize` (still used by the `effect.randomize` command for sections without their own seeded
+  `Randomize` actions) uses `Math.random` and leaves toggles unchanged. Copy the result to reproduce it; a room seed
+  alone cannot reproduce it.
 - `game-effects.ts` provides a custom `Randomize <group>` action with seeded draws, but uses and increments
   `effectSeed`. It clears/retriggers the effect. It does not yet have a separate tuning seed.
-- Group Copy is a dictionary, not an importable full preset. The workbench's `LabPresetSchema` version 1 exports
+- Copy is a dictionary, not an importable full preset. The workbench's `LabPresetSchema` version 1 exports
   `section`, section `settings`, `lighting`, and optional spawn character ID/props. It omits camera, transport tick,
   placed lights and character position. Environment/seed values are carried only when present in section settings.
 - Import checks version, section, select choices and character/prop IDs, clamps numeric range settings and ignores
@@ -148,6 +196,26 @@ The material authoring goal is reusable typed recipes with base colour, roughnes
 surface response, tested under common lights and at gameplay distance. A complete recipe editor is not implemented.
 When adding one, connect the actual material shader, expose its tunables and retain production defaults; do not create
 a calibration-only shader and call it the game's material.
+
+### Vegetation
+
+The Vegetation section (`packages/kit/lab/foliage.ts`, deep link `#foliage`) tunes the production
+`packages/kit/gpu/foliage.ts` generators that Outbreak builds its town with. Its Tool picker chooses a test room:
+
+- **Tree**: three trees of the current recipe on a lawn by a street. Presets: Oak, Maple, Pine, Birch.
+- **Bush**: a house front with lit windows, foundation planting, a free-standing shrub and a hedge line. Presets:
+  Clipped hedge, Overgrown shrub, Hydrangea.
+- **Grass**: lawn, mulch edge, path and verge. Presets: Lawn, Overgrown lawn, Weeds / dead grass.
+- **Outbreak lot**: all three looks together around a bungalow.
+
+Each look has its own preset, parameters, Randomize (seeded by the Randomize seed, never the structure seed) and
+Reset; changing one look never touches the others. Structural parameters rebuild the room from the structure seed;
+wind, translucency and actor bending are live uniforms. Lighting is Night (2100K streetlamp, moon, the lead walker's
+flashlight), Dusk or Day. The Look picker applies the shared `lookGradeColor` post grade only; the games' scene-side
+look terms (palette, practical warmth) are not reproduced here. Walkers (a survivor and a zombie stand-in) loop
+through the room and bend grass and bushes with the same `foliageTrample` code Outbreak uses for the player and
+zombies. `foliage.set`, `foliage.randomize` and `foliage.preset` (preset JSON version 2; version 1 migrates) drive it
+from `arcade`/bench, and `bun packages/kit/lab/prove-foliage.ts` captures every preset.
 
 Gameplay rules and replicated simulation remain authoritative. Camera, cosmetic effects and presentation clutter stay
 local; Lab tuning must not silently add wire fields or change authoritative movement, damage or collision rules.
@@ -201,7 +269,9 @@ the game's `GameAudio` on its own `AudioEngine`, with the Lab car as the local p
 DriverVoice engine and gearbox, tyre squeal and scrub, nitro, crash and scrape samples, landing thumps, exhaust pops and
 the city bed. Blackout's (`games/blackout/src/lab/audio.ts`) drives its `Sound` the way `Game` does: animation-cued
 footsteps and gun mechanics for the soldier, plus gunshots, bullet impacts, casing and magazine clinks and explosions
-for effects. Outbreak has no sound yet. The shared runtime only stands in where no loaded game has a sound: glass,
+for effects. Outbreak plays the shared sound library in the game ([sfx-library.md](sfx-library.md)) but has no Lab
+scene-sound adapter yet. The Audio section's **Sound library** source browses every library id: pick a sound, a
+variant (0 = seeded round-robin) and a distance, then Audition (the only way to hear it) or Render offline. The shared runtime only stands in where no loaded game has a sound: glass,
 sparks, splats, vehicle-effect crashes, fire and water beds, and explosions when Blackout isn't loaded. Sections report
 effects through `LabContext.emit`; characters hand `LabCharacter.sound()` state to the adapters every simulated tick.
 `bun games/lab/scripts/prove-game-audio.ts` renders each game's path and the Lab's into separate offline contexts and

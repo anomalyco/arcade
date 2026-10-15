@@ -1,5 +1,7 @@
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
+
 /**
- * World-anchored action callouts: short labels stacked above an actor's head.
+ * World-anchored action callouts: short labels stacked on one side of an actor (below the feet by default).
  *
  * `CalloutModel` holds timing and stacking and has no DOM, so it is unit-tested directly. `CalloutLayer` wraps it
  * with a pooled DOM view that is projected once per frame. Any actor (the local survivor, a remote co-op player)
@@ -8,7 +10,7 @@
  *   layer.callout("p1", "+6 9mm", "result")
  *   layer.callout("p1", "Reloading", "progress", { key: "reload", progress: 0.4 })  // upsert each frame
  *   layer.end("p1", "reload")
- *   layer.render(dt, (id) => screenPointAboveHead(id))
+ *   layer.render(dt, (id) => ({ ...screenPointBelowFeet(id), ax: -0.5, ay: 0, sy: 1 }))
  */
 
 export type CalloutKind = "progress" | "result" | "info" | "warning" | "danger" | "noise"
@@ -20,6 +22,8 @@ export type CalloutOptions = {
   progress?: number
   /** Upsert key: a second call with the same actor and key updates the existing callout instead of stacking. */
   key?: string
+  /** Draws `label` inside the text as the shared key cap for physical `code` ("Empty, R to reload"). */
+  keyCap?: { code: string; label: string }
 }
 
 export type Callout = {
@@ -31,9 +35,10 @@ export type Callout = {
   born: number
   until: number
   progress: number
+  keyCap: { code: string; label: string } | null
   /** Stacking order; refreshed pops move back to the top. */
   order: number
-  /** Stack slot the view animates toward; 0 sits nearest the head. */
+  /** Stack slot the view animates toward; 0 sits nearest the body. */
   slot: number
   /** Animated slot position. */
   y: number
@@ -75,6 +80,7 @@ export class CalloutModel {
       const resolved = existing.kind === "progress" && kind !== "progress"
       existing.text = text
       existing.kind = kind
+      existing.keyCap = opts.keyCap ?? null
       existing.until = this.now + duration
       if (opts.progress !== undefined) existing.progress = clamp01(opts.progress)
       if (resolved) {
@@ -97,6 +103,7 @@ export class CalloutModel {
       key,
       text,
       kind,
+      keyCap: opts.keyCap ?? null,
       born: this.now,
       until: this.now + duration,
       progress: clamp01(opts.progress ?? 0),
@@ -143,7 +150,7 @@ export class CalloutModel {
     return Math.min(fadeIn, fadeOut)
   }
 
-  /** Extra upward drift in slot units: result and danger pops float up as they age. */
+  /** Extra drift in slot units, away from the body: result and danger pops float outward as they age. */
   drift(c: Callout, reducedMotion = false): number {
     if (reducedMotion || c.kind === "progress") return 0
     const age = this.now - c.born
@@ -157,7 +164,7 @@ export class CalloutModel {
   }
 
   /**
-   * Bottom-to-top order: in-progress actions sit nearest the head, then older to newer, so the newest pop is on top.
+   * Inside-out order: in-progress actions sit nearest the body, then older to newer, so the newest pop is outermost.
    * Fading callouts keep their slot until they are gone, so nothing slides under them. When more than `maxVisible`
    * live callouts exist, the oldest non-progress ones are removed at once.
    */
@@ -177,7 +184,17 @@ export class CalloutModel {
   }
 }
 
-export type ScreenPoint = { x: number; y: number }
+export type ScreenPoint = {
+  x: number
+  y: number
+  /** Label alignment as fractions of its own size: -0.5/-1 hangs it centred above the point (the default). */
+  ax?: number
+  ay?: number
+  /** Direction the stack grows in rows: -1 up (default), 1 down. */
+  sy?: number
+  /** Size multiplier for this actor, such as a smaller teammate. */
+  scale?: number
+}
 
 export type CalloutView = {
   /** CSS pixel font size. */
@@ -185,7 +202,17 @@ export type CalloutView = {
   reducedMotion: boolean
 }
 
-type Node = { el: HTMLDivElement; text: HTMLSpanElement; kind: string; label: string; transform: string; opacity: string; progress: string }
+type Node = {
+  el: HTMLDivElement
+  body: HTMLDivElement
+  text: HTMLSpanElement
+  kind: string
+  label: string
+  transform: string
+  align: string
+  opacity: string
+  progress: string
+}
 
 /** Pooled DOM renderer for a `CalloutModel`. Only visible callouts touch the DOM; an idle layer writes nothing. */
 export class CalloutLayer {
@@ -224,13 +251,13 @@ export class CalloutLayer {
     return this.view.reducedMotion || Boolean(this.reducedQuery?.matches)
   }
 
-  /** Advances and projects. `anchor` returns the CSS-pixel point just above an actor's head, or null if off screen. */
+  /** Advances and projects. `anchor` returns the CSS-pixel point the stack starts from, or null if off screen. */
   render(dt: number, anchor: (actorId: string) => ScreenPoint | null): void {
     const reduced = this.reducedMotion
     this.model.advance(dt, reduced)
     const items = this.model.items
     if (!items.length && !this.nodes.size) return
-    const rowPx = Math.round(this.view.size * 1.95)
+    const rowBase = this.view.size * 1.95
     const anchors = new Map<string, ScreenPoint | null>()
     const seen = new Set<number>()
     for (const c of items) {
@@ -251,15 +278,27 @@ export class CalloutLayer {
         node.kind = c.kind
         node.el.dataset.kind = c.kind
       }
-      if (node.label !== c.text) {
-        node.label = c.text
-        node.text.textContent = c.text
+      const label = c.keyCap ? `${c.text}\u0000${c.keyCap.code}` : c.text
+      if (node.label !== label) {
+        node.label = label
+        const cap = c.keyCap
+        const at = cap ? c.text.indexOf(cap.label) : -1
+        if (cap && at >= 0) {
+          node.text.innerHTML = `${escapeHtml(c.text.slice(0, at))}${keyCapHtml(cap.code, { label: cap.label })}${escapeHtml(c.text.slice(at + cap.label.length))}`
+        } else node.text.textContent = c.text
       }
-      const y = Math.round(a.y - (c.y + this.model.drift(c, reduced)) * rowPx)
-      const transform = `translate(${Math.round(a.x)}px,${y}px)`
+      const scale = a.scale ?? 1
+      const sy = a.sy ?? -1
+      const y = Math.round(a.y + sy * (c.y + this.model.drift(c, reduced)) * Math.round(rowBase * scale))
+      const transform = scale === 1 ? `translate(${Math.round(a.x)}px,${y}px)` : `translate(${Math.round(a.x)}px,${y}px) scale(${scale.toFixed(2)})`
       if (node.transform !== transform) {
         node.transform = transform
         node.el.style.transform = transform
+      }
+      const align = `translate(${Math.round((a.ax ?? -0.5) * 100)}%,${Math.round((a.ay ?? -1) * 100)}%)`
+      if (node.align !== align) {
+        node.align = align
+        node.body.style.transform = align
       }
       const opacity = this.model.alpha(c).toFixed(2)
       if (node.opacity !== opacity) {
@@ -280,6 +319,7 @@ export class CalloutLayer {
       node.el.remove()
       node.label = ""
       node.transform = ""
+      node.align = ""
       node.opacity = ""
       node.progress = ""
       this.pool.push(node)
@@ -302,8 +342,12 @@ export class CalloutLayer {
     const text = document.createElement("span")
     inner.append(ring, text)
     el.append(inner)
-    return { el, text, kind: "", label: "", transform: "", opacity: "", progress: "" }
+    return { el, body: inner, text, kind: "", label: "", transform: "", align: "", opacity: "", progress: "" }
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 }
 
 function clamp01(v: number): number {

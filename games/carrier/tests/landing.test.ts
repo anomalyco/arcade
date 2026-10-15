@@ -40,7 +40,7 @@ function nearShip(ship: ShipLike & { t: number }, dist: number, bearing: number,
 
 const carrier = (id: number, team: number, x = 0, z = 0): LandingShip => Object.assign(makeShip(x, z, 0.3, 10), { id, team })
 
-describe("the F LAND prompt", () => {
+describe("the R LAND prompt", () => {
   const own = carrier(1, 0)
   /** A jet at (x, z), its nose `off` degrees (yaw) off the line to the ship. */
   const at = (x: number, z: number, off = 0, y = DECK_Y + 300, speed = 140): Plane => {
@@ -98,7 +98,7 @@ function land(plane: Plane, shipAt: (t: number) => ShipLike & { t: number }, kin
     expect(plane.t).toBeCloseTo(t0 + DT, 9)
     steps++
     const loc = worldToShip(ship, plane.x, plane.y, plane.z)
-    // Never through the hull or the island (after the blend from where F was pressed).
+    // Never through the hull or the island (after the blend from where R was pressed).
     if (l.since > 0.8) {
       const overHull = loc[2] > STERN_Z && loc[2] < BOW_Z && Math.abs(loc[0]) < 38
       if (overHull) expect(loc[1]).toBeGreaterThan(DECK_Y + lv.rest - 0.05)
@@ -238,12 +238,11 @@ describe("after landing, back on deck as a pilot with the slot free", () => {
   test("on its own carrier: the slot frees at once (no recharge); a repeated recover is harmless", () => {
     const { core, join, say, now } = room()
     const a = join("ada")
-    const b = join("bo")
-    const c = join("cy")
-    const crew = core.crew!
-    // cy is on ada's ship (team 0) as a pilot on deck: launch, then land.
-    const ship = playerOf(crew, a.id)!.ship
-    const pilot = [b, c].find((x) => playerOf(crew, x.id)!.ship === ship)!
+    for (const n of ["bo", "cy", "di"]) join(n)
+    // The fifth joiner is on ada's carrier (each of the first four got one) as a pilot on deck: launch, then land.
+    const pilot = join("ed")
+    const ship = playerOf(core.crew!, a.id)!.ship
+    expect(playerOf(core.crew!, pilot.id)!.ship).toBe(ship)
     say(pilot, { type: "op", op: "hornet" })
     const p = playerOf(core.crew!, pilot.id)!
     const slot = p.plane
@@ -257,19 +256,14 @@ describe("after landing, back on deck as a pilot with the slot free", () => {
     expect(playerOf(core.crew!, pilot.id)).toMatchObject({ role: "pilot", plane: -1, ship })
   })
 
-  test("on another friendly carrier: aboard it as a pilot, its own slot free at once", () => {
-    const { core, join, say, now } = room()
+  test("only on its own carrier: an old client naming another ship still lands at home", () => {
+    const { core, join, say } = room()
     const a = join("ada")
-    join("bo")
-    const crew = core.crew!
-    const home = playerOf(crew, a.id)!.ship
-    const team = playerOf(crew, a.id)!.team
-    const other = crew.ships.find((s) => s.team === team && s.id !== home)!
-    expect(other).toBeDefined()
+    const b = join("bo")
+    const home = playerOf(core.crew!, a.id)!.ship
+    const other = playerOf(core.crew!, b.id)!.ship
     say(a, { type: "op", op: "hornet" })
-    const slot = playerOf(core.crew!, a.id)!.plane
-    say(a, { type: "recover", how: "landed", ship: other.id })
-    expect(playerOf(core.crew!, a.id)).toMatchObject({ role: "pilot", plane: -1, ship: other.id })
-    expect(slotReady(shipOf(core.crew!, home)!.aircraft[slot]!, now())).toBe(true)
+    core.message(a, JSON.stringify({ type: "recover", how: "landed", ship: other }))
+    expect(playerOf(core.crew!, a.id)).toMatchObject({ role: "pilot", plane: -1, ship: home })
   })
 })

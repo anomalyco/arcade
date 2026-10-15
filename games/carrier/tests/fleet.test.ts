@@ -204,65 +204,51 @@ describe("bombs and missiles against a moving, pitching carrier", () => {
 })
 
 describe("sinking and the crew", () => {
-  /**
-   * Team 1 has ship A (helm 1, pilot 2 on deck, pilot 3 in the air) and ship B (helm 4); team 0 has ship C (helm 5).
-   */
-  function fleet(): { c: Crew; sunk: number; other: number } {
+  /** Ship A (team 1: helm 1, pilot 2 on deck, pilot 3 in the air) and ship C (team 0: helm 5). */
+  function fleet(): { c: Crew; sunk: number } {
     const c: Crew = { seed: 1, made: 3, nextShip: 4, ships: [], players: [] }
     const ship = (id: number, team: number, helm: number, pilots: number[]) =>
-      c.ships.push({ id, name: `CV-0${id}`, hull: id, team, slot: id, helm, pilots, aircraft: [{ op: "hornet", pilot: null, readyAt: 0 }, { op: "hornet", pilot: null, readyAt: 0 }, { op: "f35", pilot: null, readyAt: 0 }], emptySince: null, captain: helm, locked: false, bans: [], catapultUntil: 0 })
+      c.ships.push({ id, name: `CV-0${id}`, hull: id, team, helm, pilots, aircraft: [{ op: "hornet", pilot: null, readyAt: 0 }, { op: "hornet", pilot: null, readyAt: 0 }, { op: "f35", pilot: null, readyAt: 0 }], emptySince: null, captain: helm, locked: false, bans: [], catapultUntil: 0 })
     ship(1, 1, 1, [2, 3])
-    ship(2, 1, 4, [])
     ship(3, 0, 5, [])
     const player = (id: number, team: number, shipId: number, role: "helm" | "pilot") => c.players.push({ id, name: `p${id}`, team, ship: shipId, role, plane: -1, mount: -1, sortie: 0, waitSince: 0, since: 0 })
     player(1, 1, 1, "helm")
     player(2, 1, 1, "pilot")
     player(3, 1, 1, "pilot")
-    player(4, 1, 2, "helm")
     player(5, 0, 3, "helm")
     expect(runOp(c, 3, "hornet", 2).error).toBeUndefined()
     expect(playerOf(c, 3)!.plane).toBe(0)
-    return { c, sunk: 1, other: 2 }
+    return { c, sunk: 1 }
   }
 
-  test("scuttling moves the helm and the deck crew to another ship; an airborne pilot keeps flying", () => {
-    const { c, sunk, other } = fleet()
+  test("scuttling moves the crew to a replacement on the same team; an airborne pilot keeps flying", () => {
+    const { c, sunk } = fleet()
     const sortie = playerOf(c, 3)!.sortie
     const out = scuttle(c, sunk, 10)
     expect(out.error).toBeUndefined()
-    expect(out.events[0]).toEqual({ k: "sink", ship: sunk })
+    expect(out.events.slice(0, 2)).toEqual([
+      { k: "sink", ship: sunk },
+      { k: "new", ship: 4, team: 1, by: null },
+    ])
     expect(shipOf(c, sunk)).toBeUndefined()
-    for (const id of [1, 2, 3]) {
-      const p = playerOf(c, id)!
-      expect(p.team).toBe(1)
-      expect(shipOf(c, p.ship)!.team).toBe(1)
-    }
+    for (const id of [1, 2, 3]) expect(playerOf(c, id)).toMatchObject({ team: 1, ship: 4 })
+    expect(playerOf(c, 1)!.role).toBe("helm")
     const flier = playerOf(c, 3)!
     expect(flier.plane).toBeGreaterThanOrEqual(0)
     expect(flier.sortie).toBe(sortie)
-    expect(shipOf(c, flier.ship)!.aircraft[flier.plane]!.pilot).toBe(3)
-    expect(playerOf(c, 1)!.ship === other || playerOf(c, 1)!.ship !== sunk).toBe(true)
-    // Nobody is aboard a ship that no longer exists, and ships stay within capacity.
+    expect(shipOf(c, 4)!.aircraft[flier.plane]!.pilot).toBe(3)
+    // The other carrier is untouched.
+    expect(shipOf(c, 3)).toMatchObject({ team: 0, helm: 5, pilots: [] })
     for (const s of c.ships) expect((s.helm !== null ? 1 : 0) + s.pilots.length).toBeLessThanOrEqual(CREW.capacity)
   })
 
-  test("the rescued airborne pilot lands on another friendly ship and joins it; its extra slot goes away", () => {
+  test("the rescued airborne pilot lands on the replacement and waits on its deck", () => {
     const { c, sunk } = fleet()
     scuttle(c, sunk, 10)
-    // Everyone went to ship 2 (the only team-1 ship with room): the flier holds one of its slots.
-    expect(playerOf(c, 3)!.ship).toBe(2)
-    // Team 1 commissions another ship; the flier lands on it and joins it.
-    createShip(c, 2, 1, 15)
-    const third = playerOf(c, 2)!.ship
-    expect(third).not.toBe(2)
-    const out = recover(c, 3, "landed", 20, third)
+    const out = recover(c, 3, "landed", 20)
     expect(out.error).toBeUndefined()
-    expect(playerOf(c, 3)).toMatchObject({ ship: third, plane: -1, role: "pilot" })
-    expect(out.events.some((e) => e.k === "board" && e.to === third)).toBe(true)
-    // A ship of the other team doesn't take a landing pilot.
-    runOp(c, 3, "hornet", 21)
-    recover(c, 3, "landed", 30, 3)
-    expect(playerOf(c, 3)!.ship).toBe(third)
+    expect(out.events).toEqual([{ k: "recover", player: 3, ship: 4, slot: 0, how: "landed", readyAt: 20 }])
+    expect(playerOf(c, 3)).toMatchObject({ ship: 4, plane: -1, role: "pilot" })
     for (const s of c.ships) expect(s.aircraft.length).toBeLessThanOrEqual(makeSlots().length)
   })
 })

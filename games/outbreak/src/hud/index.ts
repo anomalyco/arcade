@@ -1,64 +1,84 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { keyLabel } from "@arcade/kit/client/controls"
 import { clockText } from "../../shared/day-cycle"
-import type { SessionView } from "../../shared/session"
+import type { SessionView, Survivor } from "../../shared/session"
 import { supportHeight } from "../../shared/terrain"
 import { vaultLift } from "../../shared/interact"
 import { ActorFeedback } from "./actor-feedback"
-import { CalloutLayer, type CalloutKind, type CalloutOptions, type ScreenPoint } from "./callouts"
-import { HUD_MODE_LOG, type HudSettings } from "./settings"
+import { CharacterHud, LOCAL_ACTOR, type HudActorFrame } from "./character"
+import type { CalloutKind, CalloutOptions } from "./callouts"
+import type { BodyBox } from "./placement"
+import { RemoteAdapter, type HudRemote } from "./remote"
+import { TEAMMATE_ALL, TEAMMATE_OFF, type HudSettings } from "./settings"
+import { localVitals } from "./vitals"
 import "./hud.css"
 
 export { ActorFeedback } from "./actor-feedback"
 export { CalloutLayer, CalloutModel, type CalloutKind, type CalloutOptions } from "./callouts"
 export { DEFAULT_HUD_SETTINGS, hudControls, type HudSettings } from "./settings"
-
-export const LOCAL_ACTOR = "local"
+export type { HudRemote, RemoteSurvivorView } from "./remote"
+export { LOCAL_ACTOR, localVitals }
 
 /** Top of the survivor's hair above the ground, in metres. */
 const HEAD_TOP = 1.92
 /** Shoulder half-width used to keep callouts clear of the body when the camera looks straight down. */
 const BODY_RADIUS = 0.34
+/** Radius of the feet circle; its screen-lowest point is "below the feet" under the tilted camera. */
+const FOOT_RADIUS = 0.2
+/** Radius of the ground ring drawn around the feet in the Diegetic style. */
+const GROUND_RADIUS = 0.55
+/** Height of the body's middle, where side-placed rings and callouts centre. */
+const BODY_MID = 1.05
+
+type Feet = { x: number; y: number; z: number; aim?: number }
+type RemoteState = { adapter: RemoteAdapter; feedback: ActorFeedback; seen: boolean }
 
 /**
- * Outbreak's action feedback: callouts above the local survivor (and any other actor registered with an anchor),
- * plus the compact time and ammo summary. In log mode it stays silent and `main.ts` writes the old status line.
+ * Outbreak's character HUD in the game: projects the local survivor and co-op teammates to screen boxes, turns their
+ * state into callouts (`ActorFeedback`) and meter inputs, and hands both to `CharacterHud`. Also writes the compact
+ * time and ammo summary. In log mode the callouts stay silent and `main.ts` writes the old status line.
  */
 export class OutbreakHud {
-  readonly layer: CalloutLayer
+  readonly core: CharacterHud
   private readonly feedback: ActorFeedback
-  private readonly anchors = new Map<string, () => { x: number; y: number; z: number } | null>()
+  private readonly anchors = new Map<string, () => Feet | null>()
+  private readonly remotes = new Map<string, RemoteState>()
+  private readonly remoteViews = new Map<string, HudRemote>()
   private cam: Camera | null = null
   private view: SessionView | null = null
   private w = 1
   private h = 1
   private lastSummary = ""
-  private mode = -1
+  private prevSlot = -1
   private avoidEl: HTMLElement | null = null
-  private avoidRect: DOMRect | null = null
-  private lift = 0
-  private liftDt = 0
 
   constructor(
     parent: HTMLElement,
     private readonly settings: HudSettings,
   ) {
-    this.layer = new CalloutLayer(parent, { durationScale: settings.calloutDuration, maxVisible: settings.calloutMax })
-    this.feedback = new ActorFeedback((text, kind, options) => this.layer.callout(LOCAL_ACTOR, text, kind, options))
-    this.applySettings()
+    this.core = new CharacterHud(parent, settings)
+    this.feedback = new ActorFeedback((text, kind, options) => this.core.callout(LOCAL_ACTOR, text, kind, options))
+  }
+
+  get layer() {
+    return this.core.layer
+  }
+
+  get vitals() {
+    return this.core.vitals
   }
 
   get logMode(): boolean {
-    return this.settings.hudMode === HUD_MODE_LOG
+    return this.core.logMode
   }
 
-  /** Shows a callout above an actor. Co-op peers register an anchor with `track` first. */
+  /** Shows a callout on an actor. Other actors register an anchor with `track` first. */
   callout(actorId: string, text: string, kind: CalloutKind, options?: number | CalloutOptions): void {
-    if (!this.logMode) this.layer.callout(actorId, text, kind, options)
+    this.core.callout(actorId, text, kind, options)
   }
 
-  /** Registers where an actor's feet are in world space (x, ground height, plan y); null hides its callouts. */
-  track(actorId: string, feet: () => { x: number; y: number; z: number } | null): void {
+  /** Registers where an actor's feet are in world space (x, ground height, plan y, optional aim); null hides it. */
+  track(actorId: string, feet: () => Feet | null): void {
     this.anchors.set(actorId, feet)
   }
 
@@ -69,33 +89,40 @@ export class OutbreakHud {
 
   untrack(actorId: string): void {
     this.anchors.delete(actorId)
-    this.layer.clear(actorId)
+    this.core.forget(actorId)
   }
 
   reset(): void {
     this.feedback.reset()
-    this.layer.clear()
+    this.core.reset()
+    for (const id of [...this.remotes.keys()]) this.untrack(id)
+    this.remotes.clear()
+    this.remoteViews.clear()
   }
 
   applySettings(): void {
-    const s = this.settings
-    this.layer.model.tuning.durationScale = s.calloutDuration
-    this.layer.model.tuning.maxVisible = s.calloutMax
-    this.layer.setSize(s.calloutSize)
-    if (this.mode !== s.hudMode) {
-      this.mode = s.hudMode
-      document.body.dataset.hud = this.logMode ? "log" : "callouts"
+    const wasLog = this.core.logMode
+    this.core.applySettings()
+    if (wasLog !== this.core.logMode) {
       this.lastSummary = ""
       this.feedback.reset()
-      this.layer.clear()
     }
   }
 
   /**
    * Call once per drawn frame after the camera update. `noiseSource` is the local survivor's noise id ("player"
-   * offline, the seat id in co-op).
+   * offline, the seat id in co-op). `remotes` are the other survivors in a co-op room.
    */
-  update(dt: number, view: SessionView, cam: Camera, w: number, h: number, lowBattery: number, noiseSource = "player"): void {
+  update(
+    dt: number,
+    view: SessionView,
+    cam: Camera,
+    w: number,
+    h: number,
+    lowBattery: number,
+    noiseSource = "player",
+    remotes: readonly HudRemote[] = [],
+  ): void {
     this.cam = cam
     this.w = w
     this.h = h
@@ -105,28 +132,39 @@ export class OutbreakHud {
         const v = this.view
         if (!v) return null
         const q = v.player
-        return { x: q.x, y: supportHeight(v.town, q.x, q.y) + vaultLift(q), z: q.y }
+        return { x: q.x, y: supportHeight(v.town, q.x, q.y) + vaultLift(q), z: q.y, aim: q.aim }
       })
     }
     this.view = view
-    if (this.logMode) return
+    const tuning = { staminaLow: this.settings.staminaLow, batteryLow: lowBattery, healthLow: this.settings.healthLow }
+    const frames: HudActorFrame[] = []
+    this.syncRemotes(remotes, view, frames)
+
     // Read last frame's prompt box before any style writes this frame, so the read never forces a layout.
     const el = this.avoidEl
-    this.avoidRect = el && !el.hidden && this.layer.model.items.length ? el.getBoundingClientRect() : null
-    this.liftDt = dt
-    const pursuing = view.zombies.reduce((n, z) => n + (z.state === "chase" || z.state === "alert" || z.state === "bash" ? 1 : 0), 0)
-    this.feedback.observe(p, {
-      time: view.time,
-      town,
-      prompt: view.prompt,
-      inventory: view.inventory,
-      noises: view.noises,
-      noiseSource,
-      pursuing,
-      lowBattery,
-      reloadKey: keyLabel("KeyR"),
-    })
-    this.layer.render(dt, (id) => this.anchor(id))
+    const avoid = !this.logMode && el && !el.hidden && this.layer.model.items.length ? el.getBoundingClientRect() : null
+    if (!this.logMode) {
+      const pursuing = view.zombies.reduce((n, z) => n + (z.state === "chase" || z.state === "alert" || z.state === "bash" ? 1 : 0), 0)
+      this.feedback.observe(p, {
+        time: view.time,
+        town,
+        prompt: view.prompt,
+        inventory: view.inventory,
+        noises: view.noises,
+        noiseSource,
+        pursuing,
+        lowBattery,
+        reloadKey: keyLabel("KeyR"),
+        notices: view.notices.splice(0),
+      })
+    }
+    const slot = view.inventory.selectedSlot
+    if (this.prevSlot >= 0 && slot !== this.prevSlot) this.core.wakeHotbar()
+    this.prevSlot = slot
+
+    const feet = this.anchors.get(LOCAL_ACTOR)!()
+    frames.unshift({ id: LOCAL_ACTOR, box: feet ? this.body(feet) : null, vitals: localVitals(p) })
+    this.core.frame(dt, view.time, frames, avoid, tuning)
   }
 
   /** Compact top-left summary for callout mode, with an optional weather label. Returns null when unchanged. */
@@ -144,39 +182,103 @@ export class OutbreakHud {
     return text
   }
 
-  /** Smoothed upward shift that moves the stack above the avoided element when the two would overlap. */
-  private liftAbove(x: number, y: number): number {
-    const r = this.avoidRect
-    const stack = Math.max(1, this.layer.model.forActor(LOCAL_ACTOR).length) * Math.round(this.settings.calloutSize * 1.95)
-    const half = 9 * this.settings.calloutSize
-    const target = r && r.width > 0 && r.left < x + half && r.right > x - half && r.top < y && r.bottom > y - stack ? y - r.top + 6 : 0
-    const k = this.layer.reducedMotion ? 1 : 1 - Math.exp(-this.liftDt * 14)
-    this.lift += (target - this.lift) * k
-    return this.lift
+  /** Automation view: each actor's chosen sides and visible meters. */
+  inspect() {
+    return this.core.inspect()
   }
 
-  private anchor(actorId: string): ScreenPoint | null {
-    const cam = this.cam
-    const feet = this.anchors.get(actorId)?.()
-    if (!cam || !feet) return null
-    const { w, h } = this
-    const top = feet.y + HEAD_TOP
-    let minY = Infinity
-    let x = 0
-    for (const [dx, dy, dz] of [
-      [0, 0, 0],
-      [0, top - feet.y, 0],
-      [0, top - feet.y, -BODY_RADIUS],
-      [0, top - feet.y, BODY_RADIUS],
-    ] as const) {
-      const s = cam.project(feet.x + dx, feet.y + dy, feet.z + dz, w, h)
-      if (!s.ok) return null
-      if (dy > 0 && dz === 0) x = s.x
-      minY = Math.min(minY, s.y)
+  /** The local survivor's screen box this frame (for recording the HUD prototype's timeline). */
+  localBox(): BodyBox | null {
+    const feet = this.anchors.get(LOCAL_ACTOR)?.()
+    return feet ? this.body(feet) : null
+  }
+
+  /**
+   * Shows a sample for judging placement (Lab station, `arcade run hud.demo`): an action in progress, a loot pop and a
+   * noise on the local survivor, and half-spent stamina that refills live.
+   */
+  demo(player: Survivor) {
+    player.stamina = Math.min(player.stamina, 0.45)
+    player.regenCooldown = Math.max(player.regenCooldown, 1.5)
+    this.callout(LOCAL_ACTOR, "Reloading", "progress", { key: "reload", progress: 0.55, duration: 8 })
+    this.callout(LOCAL_ACTOR, "+6 9mm", "result", { duration: 8 })
+    this.callout(LOCAL_ACTOR, "Noise 18 m", "noise", { key: "noise", duration: 8 })
+    return this.inspect()
+  }
+
+  private syncRemotes(list: readonly HudRemote[], view: SessionView, frames: HudActorFrame[]): void {
+    for (const r of this.remotes.values()) r.seen = false
+    for (const remote of list) {
+      let r = this.remotes.get(remote.id)
+      if (!r) {
+        const id = remote.id
+        const feedback = new ActorFeedback((text, kind, options) => {
+          const filter = this.settings.teammateCallouts
+          if (filter === TEAMMATE_OFF) return
+          if (filter === TEAMMATE_ALL || kind === "progress" || kind === "warning" || kind === "danger") this.core.callout(id, text, kind, options)
+        })
+        r = { adapter: new RemoteAdapter(), feedback, seen: true }
+        this.remotes.set(id, r)
+        this.track(id, () => {
+          const v = this.remoteViews.get(id)
+          return v ? { x: v.survivor.x, y: v.ground, z: v.survivor.y, aim: v.survivor.aim } : null
+        })
+      }
+      r.seen = true
+      this.remoteViews.set(remote.id, remote)
+      const s = remote.survivor
+      r.adapter.update(s, view.time)
+      r.feedback.observe(r.adapter.feedback(s), { time: view.time })
+      const feet = remote.visible ? this.anchors.get(remote.id)!() : null
+      frames.push({ id: remote.id, box: feet ? this.body(feet) : null, vitals: r.adapter.vitals(s) })
     }
-    let y = minY - this.settings.calloutOffset
-    if (actorId === LOCAL_ACTOR) y -= this.liftAbove(x, y)
-    if (x < -200 || x > w + 200 || y < -200 || y > h + 200) return null
-    return { x, y }
+    for (const [id, r] of this.remotes) {
+      if (r.seen) continue
+      this.remotes.delete(id)
+      this.remoteViews.delete(id)
+      this.untrack(id)
+    }
+  }
+
+  /** Screen box of an actor's body from its feet, accounting for the camera tilt. */
+  private body(f: Feet): BodyBox | null {
+    const cam = this.cam
+    if (!cam) return null
+    const { w, h } = this
+    const top = f.y + HEAD_TOP
+    const head = cam.project(f.x, top, f.z, w, h)
+    const headBack = cam.project(f.x, top, f.z - BODY_RADIUS, w, h)
+    const headFront = cam.project(f.x, top, f.z + BODY_RADIUS, w, h)
+    const toe = cam.project(f.x, f.y, f.z + FOOT_RADIUS, w, h)
+    const mid = cam.project(f.x, f.y + BODY_MID, f.z, w, h)
+    const side = cam.project(f.x + BODY_RADIUS, f.y + BODY_MID, f.z, w, h)
+    if (!head.ok || !toe.ok || !mid.ok) return null
+    if (mid.x < -200 || mid.x > w + 200 || mid.y < -200 || mid.y > h + 200) return null
+    let aimX = 0
+    let aimY = 0
+    if (f.aim !== undefined) {
+      const ahead = cam.project(f.x + Math.cos(f.aim), f.y + BODY_MID, f.z + Math.sin(f.aim), w, h)
+      if (ahead.ok) {
+        aimX = ahead.x - mid.x
+        aimY = ahead.y - mid.y
+      }
+    }
+    const foot = cam.project(f.x, f.y + 0.02, f.z, w, h)
+    const fr = cam.project(f.x + GROUND_RADIUS, f.y + 0.02, f.z, w, h)
+    const ff = cam.project(f.x, f.y + 0.02, f.z + GROUND_RADIUS, w, h)
+    const fb = cam.project(f.x, f.y + 0.02, f.z - GROUND_RADIUS, w, h)
+    return {
+      x: head.x,
+      top: Math.min(head.y, headBack.y, headFront.y),
+      bottom: Math.max(toe.y, head.y),
+      half: Math.max(6, Math.abs(side.x - mid.x)),
+      mid: mid.y,
+      aimX,
+      aimY,
+      footX: foot.x,
+      footY: (ff.y + fb.y) / 2,
+      footW: Math.abs(fr.x - foot.x) * 2,
+      footH: Math.abs(ff.y - fb.y),
+    }
   }
 }

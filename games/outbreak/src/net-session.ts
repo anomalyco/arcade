@@ -50,7 +50,7 @@ const STATUS_CONNECTING = "Connecting to room…"
 /**
  * A co-op room as a `Session`: the local survivor is predicted with the room's own simulation code and reconciled
  * on every snapshot; remote survivors, zombies and the clock render 100 ms behind, between two snapshots; doors,
- * windows, barricades and searched containers apply as soon as they arrive.
+ * windows, barricades, containers, drops and the bench (ledger deltas) apply as soon as they arrive.
  */
 export class NetSession implements Session {
   readonly sim: CoopSim
@@ -256,7 +256,8 @@ export class NetSession implements Session {
       (cmd) => this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true),
     )
     this.smoother.correct(beforeX, beforeY, p.x, p.y)
-    if (personal.inventory) Object.assign(this.local.inventory, personal.inventory)
+    if (personal.ledger) this.sim.progression.ledger.applyDelta(personal.ledger)
+    if (personal.notices.length) this.local.notices.push(...personal.notices)
     this.sim.refreshPrompt(this.local)
     this.snapshots.push(shared.tick * TICK_DT, shared, this.now())
   }
@@ -264,6 +265,30 @@ export class NetSession implements Session {
   /** Discrete shared state applies on arrival so collision and prompts match the room before replaying input. */
   private applyWorld(s: SharedSnapshot): void {
     const sim = this.sim
+    // Sync survivor slots from snapshot first so active chunk windows match the server's union of survivor windows
+    const present = new Set<number>()
+    for (const r of s.survivors) {
+      present.add(r.index)
+      if (r.index === this.local.index) continue
+      const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
+      let slot = sim.slots.find((sl) => sl.index === r.index)
+      if (!slot) slot = sim.addSurvivor(id, r.index)
+      slot.survivor.x = r.x
+      slot.survivor.y = r.y
+    }
+    const meSnap = s.survivors.find((r) => r.index === this.local.index)
+    if (meSnap) {
+      // Temporarily align local slot for chunk window calculation
+      const savedX = this.local.survivor.x
+      const savedY = this.local.survivor.y
+      this.local.survivor.x = meSnap.x
+      this.local.survivor.y = meSnap.y
+      sim.syncWorldChunks()
+      this.local.survivor.x = savedX
+      this.local.survivor.y = savedY
+    } else {
+      sim.syncWorldChunks()
+    }
     const town = sim.town
     let topology = false
     town.doors.forEach((d, i) => {
@@ -294,7 +319,9 @@ export class NetSession implements Session {
       const st = sim.ai.portalStates.get(portals[bash.portal] ?? "")
       if (st) st.lastBashTime = s.time - bash.age
     }
-    sim.combat.containers.forEach((c, i) => (c.searched = Boolean(s.searched[i])))
+    const progression = sim.progression
+    progression.pings.splice(0, progression.pings.length, ...s.pings.map((p) => ({ id: p.id, by: p.by, x: p.x, y: p.y, label: p.label, until: s.time + p.left })))
+    progression.lures.splice(0, progression.lures.length, ...s.lures.map((l) => ({ id: l.id, x: l.x, y: l.y, until: s.time + l.left, next: Infinity })))
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
     if (topology) {

@@ -322,6 +322,31 @@ with no velocity lag.
 Rifle, shotgun and sniper scale the spring frequency (`*Ergonomics`). Recoil holds for 1 to 3 ticks before
 recovering. Reload, gear and melee clips own the hands while they play.
 
+**Carry equipped pistols in low ready and raise into a two-handed shoulder aim on fire.** Outbreak's survivor previously
+ran `unarmedHands` whenever `profile` was `undefined` while `OutbreakCombatFX` glued a pistol box onto `right.hand`:
+during firing, the arms kept swinging at the hips (`muzzleH = 67–74 cm`, `wristGap = 55.6–79.8 cm`, arm-to-aim error
+`78.7°` walking and `87.5°` idle). `Survivor.draw` (`games/outbreak/src/survivor.ts`) now reuses the soldier's
+stabilised shoulder weapon frame (`steadyPelvis`/`steadyTorso` without hip roll, spine twist, or 80% of vertical gait
+bob, with 1:1 root displacement and `dAim` feed-forward into `gunPos` and `weaponYaw`) and `poseArms`:
+
+- **Low ready (`aimWeight = 0`)**: when `equippedItem === "pistol"` and idle or moving without recent shots, the right
+  hand holds the pistol ahead of the right ribcage (`fwd 0.28 m`, `up 1.13 m`, `side 0.165 m`, muzzle pitched `-27.5°`
+  downward/forward) while the left arm guards or counter-swings with `unarmedHands` (low-ready walk arm RMSE `4.62°`).
+- **Raise, two-handed aim, recoil and hold (`Survivor aim` Lab group)**: on fire (`fireCooldown` or snapshot `recoil`
+  pulse), an underdamped spring (`ζ = 0.74`, `aimRaiseTime = 0.15 s` default) with an immediate upward launch impulse
+  lifts the pistol with **0.0 mm anticipation dip** to 90% in `150 ms` and 95% in `167 ms` (`2.8%` settle) into a
+  two-handed Weaver/isosceles grip at shoulder height (`fwd 0.375 m`, `up 1.35 m`, `side 0.045 m`, bladed chest
+  `+13.5°` clamped to `±aimTwistLimit = 1.05 rad` relative to the lower-body heading). Muzzle-to-aim error is `0.00°`
+  (`muzzleH = 136.0 cm` walk, `130.7 cm` run, `wristGap = 3.37 cm`, planted toe slip `< 3.6e-15 m`), cutting aimed arm
+  angle RMSE from `64.08°` to `2.54°` in walk and from `46.83°` to `4.24°` in run. Each shot kicks `recPitch` (`+11.0°`
+  peak at `33 ms`), `recBack` (`4.25 cm`), elbow flexion (`+9.6°` absorption) and `torsoKick` (`+1.8°`), recovering 90%
+  in `100 ms`. The raised aim holds for `aimHoldTime` (`2.50 s` default, measured `2.53 s`) after the last shot before
+  easing back to low ready over `0.40 s`.
+- **Reload (`reloadRemaining > 0`)**: a keyframed `1.15 s` clip cants the pistol inward at chest height (`42.4°` roll),
+  pitches the head down `16.0°`, reaches the left hand to the belt pouch (`1.68 cm` from `hipL`), carries a visible
+  magazine box into the grip well (`3.22 cm`), racks the slide, and returns to the two-handed grip (also driven for
+  co-op remote survivors from snapshot `reloading` and `recoil` state).
+
 ## Determinism and performance
 
 - Animation is presentation only. It has no simulation or wire fields, and the server owns movement, health and

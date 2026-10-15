@@ -11,7 +11,7 @@ import {
   unpackBoat,
 } from "../../shared/boat"
 import type { Ground } from "../../shared/combat"
-import { type Crew, type RecoverHow, TEAMS, playerOf } from "../../shared/crew"
+import { type Crew, type RecoverHow, teamCss, playerOf } from "../../shared/crew"
 import type { Archipelago } from "../../shared/islands"
 import type { Sea } from "../../shared/sea"
 import type { Target } from "../../shared/weapons"
@@ -66,7 +66,7 @@ export type BoatFrame = {
 }
 
 /**
- * The boat in the real game (game.ts BoatSeam), like the flight module for jets. LAUNCH BOAT in SHIP OPERATIONS gives
+ * The boat in the real game (game.ts BoatSeam), like the flight module for jets. LAUNCH BOAT in DEPLOY gives
  * the player the ship's boat slot; `start` puts the boat under the crane on their carrier, which lowers it over the port
  * side; then they drive and shoot it (src/boat/boat.ts) until the room picks it up alongside (back to their old role) or
  * it sinks. Online the room runs the authoritative sim (server/core.ts): the driver predicts it here on the same shared
@@ -149,12 +149,12 @@ export class BoatModule {
     d.team = me?.team ?? 0
     d.authority = !this.online
     d.launch(t)
-    d.hud.homeColor = TEAMS[d.team]?.color ?? "#f4f7fb"
+    d.hud.homeColor = teamCss(d.team)
     this.lastHp = 100
     const w = this.weapons
     if (w) {
       // The kill feed knows us by name; offline the jets' world keeps our health (a boat fighter, shared/combat.ts).
-      w.setPilot(this.net.id, d.team, me?.name ?? "YOU", TEAMS[d.team]?.color ?? "#f4f7fb")
+      w.setPilot(this.net.id, d.team, me?.name ?? "YOU", teamCss(d.team))
       w.world.spawn(this.net.id, d.team, "hornet", t, true)
     }
   }

@@ -1,7 +1,7 @@
 .callouts { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --callout-size: 12px }
-.callout { position: absolute; left: 0; top: 0; will-change: transform, opacity }
+.callout { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity }
 .callout-body {
-  position: absolute; left: 0; bottom: 0; transform: translateX(-50%);
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
   display: inline-flex; align-items: center; gap: .42em; padding: .2em .58em .22em;
   border: 1px solid #ffffff24; border-radius: .38em; background: #0a0e0fd9; color: #e4e1d2;
   font: 600 var(--callout-size)/1.25 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .01em;
@@ -13,6 +13,7 @@
   background: conic-gradient(currentColor calc(var(--p, 0) * 360deg), #ffffff2e 0);
   -webkit-mask: radial-gradient(circle, transparent 48%, #000 52%); mask: radial-gradient(circle, transparent 48%, #000 52%)
 }
+.callout-body .akc { --akc-size: 1.5em; font-size: .86em; margin: 0 .1em }
 .callout[data-kind="progress"] .callout-body { color: #f1eee0; border-color: #ffffff3a }
 .callout[data-kind="progress"] .callout-ring { display: inline-block }
 .callout[data-kind="result"] .callout-body { color: #cfe7ad; border-color: #b8d89650 }
@@ -22,7 +23,94 @@
 .callout[data-kind="noise"] .callout-body { color: #b9c4cc; font-weight: 500; border-style: dashed; border-color: #b9c4cc55 }
 .callout[data-kind="noise"] .callout-body::before { content: "))"; opacity: .7; letter-spacing: -.12em; margin-right: .12em }
 
-/* Callout mode: actions are reported above the survivor, so the corner HUD shrinks to a hotbar and a summary. */
+/* Character rings: stamina, reload, health and battery beside the survivor. Shape names the ring, colour its range. */
+.vitals { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --vital-size: 20px }
+.vital {
+  position: absolute; left: 0; top: 0; width: var(--vital-size); height: var(--vital-size); transform-origin: 0 0;
+  border-radius: 50%; background: #0a0e0fb8; box-shadow: 0 1px 6px #0000008c; color: #d3dcc2;
+  will-change: transform, opacity; --ring: calc(var(--vital-size) * .16); --track: #ffffff24
+}
+.vital-ring {
+  position: absolute; inset: 1px; border-radius: 50%;
+  background: conic-gradient(currentColor calc(var(--p, 1) * 360deg), var(--track) 0);
+  -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
+  mask: radial-gradient(circle closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px))
+}
+.vital b {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 700 calc(var(--vital-size) * .46)/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 #000
+}
+.vital[data-meter="health"] b::before {
+  content: ""; width: 38%; height: 38%;
+  background: linear-gradient(currentColor, currentColor) center / 32% 100% no-repeat, linear-gradient(currentColor, currentColor) center / 100% 32% no-repeat
+}
+.vital[data-meter="battery"] b::before {
+  content: ""; width: 26%; height: 42%; border: 1.5px solid currentColor; border-radius: 1.5px; box-sizing: border-box;
+  background: linear-gradient(to top, currentColor calc(var(--p, 1) * 100%), transparent 0)
+}
+.vital[data-meter="stamina"][data-draining="true"] { color: #eef4e0 }
+.vital[data-state="low"] { color: #f0b44a }
+.vital[data-state="critical"] { color: #ff6a4a; background: #1c0a07cc; --track: #ff6a4a70 }
+.vital[data-state="critical"] .vital-ring { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
+@keyframes vital-flash { from { opacity: 1 } to { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) { .vital[data-state="critical"] .vital-ring { animation: none } }
+.vitals[data-reduced="true"] .vital[data-state="critical"] .vital-ring { animation: none }
+
+/* Halo look (Zomboid Style, Diegetic): outlined text, no plate. */
+.callouts[data-look="halo"] .callout-body {
+  background: none; border-color: transparent; box-shadow: none; padding: .05em .2em;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000
+}
+.callouts[data-look="halo"] .callout[data-kind="noise"] .callout-body { border-color: transparent }
+/* Action bar over the head (Zomboid Style): a small label over a slim bar instead of a ringed label. */
+.callouts[data-action="bar"] .callout[data-kind="progress"] .callout-body { flex-direction: column; gap: .18em; font-size: .86em }
+.callouts[data-action="bar"] .callout[data-kind="progress"] .callout-ring { display: none }
+.callouts[data-action="bar"] .callout[data-kind="progress"] .callout-body::after {
+  content: ""; display: block; width: 5.2em; height: .42em; border: 1px solid #000; border-radius: 1px;
+  background: linear-gradient(90deg, #8fd16a calc(var(--p, 0) * 100%), #1a1f1acc 0)
+}
+
+/* Ring shapes. */
+.vitals[data-ring="wheel"] .vital[data-mode="row"] .vital-ring { -webkit-mask: none; mask: none; inset: 2px }
+.vitals[data-ring="arc"] .vital[data-mode="row"] .vital-ring {
+  background: conic-gradient(from 225deg, currentColor calc(var(--p, 1) * 270deg), var(--track) 0 270deg, transparent 0)
+}
+/* Bars under the feet (Hades Style). */
+.vital[data-mode="bar"] { border-radius: 1px; background: #050707d9; box-shadow: 0 0 0 1px #000000b0 }
+.vital[data-mode="bar"] .vital-ring { inset: 0; border-radius: 0; -webkit-mask: none; mask: none; background: linear-gradient(90deg, currentColor calc(var(--p, 1) * 100%), var(--track) 0) }
+.vital[data-mode="bar"] b { left: 100%; right: auto; width: auto; padding-left: 4px; font-size: 10px; place-items: center start }
+.vital[data-mode="bar"] b::before { display: none }
+.vital[data-mode="bar"][data-meter="health"] { color: #e06a55 }
+/* Ellipses on the ground (Diegetic). */
+.vital[data-mode="ground"] { background: none; box-shadow: none; --ring: 3px }
+.vital[data-mode="ground"] .vital-ring {
+  inset: 0; filter: drop-shadow(0 0 2px #000);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
+  mask: radial-gradient(closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
+  /* A 300° arc open at the top, where the body stands on it. */
+  background: conic-gradient(from 30deg, currentColor calc(var(--p, 1) * 300deg), var(--track) 0 300deg, transparent 0)
+}
+.vital[data-mode="ground"] b { display: none }
+.vital[data-mode="ground"][data-meter="health"] { color: #e06a55; --track: transparent }
+
+/* Status icons at the screen edge (Zomboid Style), like moodles. */
+.status-icons { position: fixed; right: 12px; top: 52px; z-index: 9; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; pointer-events: none }
+.status-icon {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border-radius: 4px; background: #0b1011cc;
+  border: 1px solid #ffffff1c; color: #e4e1d2; font: 600 10.5px/1.2 ui-monospace, "SF Mono", Menlo, monospace
+}
+.status-icon i { width: 18px; height: 18px; border-radius: 3px; background: currentColor; opacity: .9; display: grid; place-items: center }
+.status-icon i::before { color: #0b1011; font: 800 12px/1 ui-monospace, Menlo, monospace }
+.status-icon[data-meter="stamina"] i::before { content: "≈" }
+.status-icon[data-meter="health"] i::before { content: "+" }
+.status-icon[data-meter="battery"] i::before { content: "▮" }
+.status-icon[data-state="low"] { color: #f0b44a }
+.status-icon[data-state="critical"] { color: #ff6a4a }
+.status-icon[data-meter="health"][data-state="ok"] { color: #e8b3a6 }
+.status-icon[data-meter="stamina"][data-state="ok"] { color: #d3dcc2 }
+
+/* Callout mode: actions are reported on the survivor, so the corner HUD shrinks to a hotbar and a summary. */
 body[data-hud="callouts"] #hud { left: 0; right: 0; bottom: 12px; align-items: center; gap: 5px }
 body[data-hud="callouts"] #meters { gap: 4px }
 body[data-hud="callouts"] #stamina, body[data-hud="callouts"] #battery { width: 72px; height: 3px }
@@ -34,3 +122,10 @@ body[data-hud="callouts"] #status {
   position: fixed; left: 12px; top: 10px; padding: 3px 7px; border: 0; border-radius: 4px; background: #0b1011a0;
   color: #b9b7aa; font-size: 10.5px; opacity: .85
 }
+/* Rings on the survivor replace the stamina and battery bars. */
+body[data-vitals="character"] #meters { display: none }
+/* Screen chrome per style: quiet hides the summary and dims the hotbar; none shows the hotbar briefly after a change. */
+body[data-hud="callouts"][data-chrome="quiet"] #status, body[data-hud="callouts"][data-chrome="none"] #status { display: none }
+body[data-hud="callouts"][data-chrome="quiet"] :is(#hands, #belt) { opacity: .45; transition: opacity .3s ease }
+body[data-hud="callouts"][data-chrome="none"] :is(#hands, #belt) { opacity: 0; transition: opacity .4s ease }
+body[data-hud="callouts"][data-chrome][data-hotbar="awake"] :is(#hands, #belt) { opacity: 1; transition-duration: .12s }

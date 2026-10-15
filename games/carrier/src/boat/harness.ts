@@ -9,7 +9,7 @@ import "../style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { BOAT, BOAT_HEALTH, BoatCombat, type BoatControls, type BoatTarget, boatDamage, boatStep, copyBoat, lerpBoat, makeBoat, releaseBoat, GUN } from "../../shared/boat"
 import { CombatWorld } from "../../shared/combat"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 import { makeArchipelago, type Archipelago } from "../../shared/islands"
 import { shipToWorld } from "../../shared/plane"
 import { makeSea, seaHeight } from "../../shared/sea"
@@ -161,7 +161,7 @@ async function main() {
   const driver = new BoatDriver(new BoatInput(input, canvas), undefined, audio)
   driver.id = ME
   driver.team = team
-  driver.hud.homeColor = TEAMS[team]?.color ?? "#f4f7fb"
+  driver.hud.homeColor = teamCss(team)
 
   // Health: drones in a combat world (the 25 mm hits them through its gun-hit path), boats in a BoatCombat.
   const combat = new CombatWorld({ sea, arch, ships: [] }, true)
@@ -223,7 +223,7 @@ async function main() {
   const matrix = new Float32Array(16)
   const accent = teamColor(team)
   const enemyAccent = teamColor(enemyTeam)
-  const enemyCss = TEAMS[enemyTeam]?.color ?? "#fff"
+  const enemyCss = teamCss(enemyTeam)
   void enemyCss
   /** Screenshot helpers: `inspect` orbits the camera round the boat (yaw from the bow, pitch up, distance); `paused`
    *  freezes the clock; `speed` scales it. */
