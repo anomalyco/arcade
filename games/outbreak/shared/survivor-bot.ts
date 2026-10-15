@@ -507,6 +507,8 @@ export class SurvivorBot {
           awareness: this.skill.awarenessRadius,
         },
         slot.peek,
+        null,
+        false,
       )
       this.updateSpatialDiscovery(world, p.x, p.y)
       this.updateThreatPerception(world, slot, sightBlockers)
