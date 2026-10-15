@@ -60,7 +60,7 @@
 #pack-sheet .cell[data-covered="true"] { display: none }
 
 /* Field craft: a panel above the dock. */
-#craft { min-width: 340px; max-width: 420px; padding: var(--hud-3) var(--hud-4); white-space: normal }
+#craft { padding: var(--hud-3) var(--hud-4); white-space: normal }
 #craft[hidden] { display: none }
 #craft .strip-t { font-size: var(--hud-xs); letter-spacing: .07em; text-transform: uppercase; color: var(--hud-ink-3); margin-bottom: var(--hud-2) }
 #craft .strip-t span { margin-left: var(--hud-5); text-transform: none; letter-spacing: 0 }

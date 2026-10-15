@@ -3,9 +3,10 @@ import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { findFinisherTarget } from "../shared/combat"
 import { holdProgress, type InteractTarget } from "../shared/interact"
-import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
+import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
+import { itemIcon } from "./discovery/icons"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
 import { snapToPixels } from "./hud/motion"
@@ -56,8 +57,6 @@ export class InventoryHud {
       markers: HTMLElement | null
     },
     private readonly seatColour: (index: number) => string,
-    /** Every survivor in the world, for the light their flashlights add at a bench. */
-    private readonly squad: () => readonly { x: number; y: number; flashlightOn: boolean; flashlightOutput: number }[],
     /** The Discovery settings: searched containers and drops shown as props, prompt words that fade with use. */
     private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
     /** Dock dimming (Lab › HUD). */
@@ -128,7 +127,6 @@ export class InventoryHud {
       return index < view.progression.craftable().length ? { pick: { mode: "craft", index } } : {}
     }
     if (this.packOpen && index < PACK_SIZE) return { pick: { mode: "pack", index } }
-    if (view.prompt?.kind === "bench" && index < view.progression.benchRows().length) return { pick: { mode: "bench", index } }
     const store = this.stripStore(view, view.prompt)
     if (store && index < view.progression.contents(store).length) return { pick: { mode: "take", index } }
     return index < HOTBAR_SIZE ? { hotbarSlot: index } : {}
@@ -199,8 +197,10 @@ export class InventoryHud {
     }
     el.style.opacity = ""
     const isPeeking = Boolean(view.peek)
-    const anchorHeight = (isPeeking ? 0.15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
-    const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
+    // At a workbench the prompt hangs below the bench, clear of the mat and the corkboard.
+    const below = prompt.kind === "bench"
+    const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
+    const proj = cam.project(prompt.worldX, anchorHeight, below ? prompt.rect[3] + 0.2 : prompt.worldY, w, h)
     if (!proj.ok) {
       el.hidden = true
       return
@@ -212,7 +212,7 @@ export class InventoryHud {
     }
     el.dataset.strip = String(html.startsWith('<div class="strip'))
     el.hidden = false
-    el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
+    el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : below ? "8px" : "-100%"})`
   }
 
   private promptHtml(view: SessionView, prompt: InteractTarget, hold: number): string {
@@ -221,7 +221,6 @@ export class InventoryHud {
     if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt.label)}</span>`)
     if (prompt.secondary) parts.push(this.cap("KeyE", prompt, prompt.secondary.label, { hold: true, progress: hold }))
     const line = parts.join('<span class="sep">·</span>')
-    if (prompt.kind === "bench") return this.benchHtml(view, prompt, line)
     const store = this.stripStore(view, prompt)
     if (!store) return line
     const stacks = progression.contents(store)
@@ -236,51 +235,10 @@ export class InventoryHud {
     return `<div class="strip"><div class="strip-t">${esc(title)}</div><div class="strip-items">${items}</div><div class="strip-h">${hint}</div></div>`
   }
 
-  /** Cost line ("2 Scrap, 1 Battery") with what is missing marked. */
-  private costHtml(view: SessionView, cost: Readonly<Record<string, number>>, station?: string): { html: string; ok: boolean } {
-    const ledger = view.progression.ledger
-    let ok = true
-    const html = Object.entries(cost)
-      .map(([item, n]) => {
-        const have = ledger.count(view.actorId, item) + (station ? ledger.count(station, item) : 0)
-        if (have < n) ok = false
-        const name = ledger.label(item, true)
-        return `<span data-short="${have < n}">${n} ${esc(n === 1 && name === "Planks" ? "Plank" : name)}</span>`
-      })
-      .join(", ")
-    return { html, ok }
-  }
-
-  private benchHtml(view: SessionView, prompt: InteractTarget, line: string): string {
-    const progression = view.progression
-    const ledger = progression.ledger
-    const benchId = prompt.id
-    const tier = progression.tier(benchId)
-    const light = progression.benchLight(benchId, view.hour, this.squad())
-    const lit = light + 1e-6 >= progression.tuning.researchLight
-    const stock = progression.contents(benchId).filter((s) => ledger.items.get(s.item)?.tag !== "part")
-    const parts = [ledger.count(benchId, "toolbox") ? "Toolbox" : "", ledger.count(benchId, "car-battery") ? "Generator" : ""].filter(Boolean)
-    const ch = view.player.channel
-    const rows = progression.benchRows().map((r: Recipe, i) => {
-      const learned = progression.learned(r.id)
-      const locked = !learned && r.tier > tier
-      const cost = learned ? r.craft : r.research
-      const priced = cost ? this.costHtml(view, cost, benchId) : { html: "", ok: true }
-      const verb = learned ? (r.produces ? "Craft" : "Learned") : "Research"
-      const sub = locked ? "Needs the toolbox installed (tier 2)" : learned && !r.produces ? r.note : !learned && !lit ? `${r.note}. Too dark to research` : r.note
-      const running = ch && ch.label.endsWith(r.label) && (ch.kind === "research" || ch.kind === "craft") ? Math.min(1, ch.elapsed / Math.max(0.01, ch.duration)) : null
-      const off = locked || (learned && !r.produces) || !priced.ok || (!learned && !lit)
-      const prog = running !== null ? `<i class="prog" style="width:${(running * 100).toFixed(1)}%"></i>` : ""
-      return `<div class="row" data-off="${off}" data-done="${learned}">${learned && !r.produces ? '<span class="tick">✓</span>' : keyCapHtml(`Digit${i + 1}`)}<div><b>${verb} ${esc(r.label)}</b><small>${esc(sub)}</small></div>${learned && !r.produces ? "" : `<em>${priced.html}</em>`}${prog}</div>`
-    })
-    const empty = `<div class="row" data-off="true"><span></span><div><b>No recipes yet</b><small>Scrap, chem, planks and batteries each reveal what they make</small></div></div>`
-    const info = [`Tier ${tier}${parts.length ? ` · ${parts.join(", ")}` : ""}`, `<span data-short="${!lit}">${lit ? "Light: good" : "Light: too dark"}</span>`].join(" · ")
-    const stockLine = stock.length ? `Stock: ${esc(stock.map((s) => `${s.count} ${ledger.label(s.item, true)}`).join(", "))}` : "Stock: empty"
-    const range = rows.length > 1 ? `${keyCapHtml("Digit1")}–${keyCapHtml(`Digit${rows.length}`)}` : keyCapHtml("Digit1")
-    const hint = rows.length ? `${line}<span class="sep">·</span><span class="akp">${range}<span class="akp-label">Research or craft</span></span>` : line
-    return `<div class="strip bench"><div class="strip-t">Workbench<span>${info}</span></div><div class="strip-s">${stockLine}</div>${rows.length ? rows.join("") : empty}<div class="strip-h">${hint}</div></div>`
-  }
-
+  /**
+   * Field craft (hold Q): one row per learned recipe, drawn as what it makes and what it takes. No names; a cost the
+   * survivor cannot meet is dimmed. Nothing learned yet shows a blank card.
+   */
   private syncCraft(view: SessionView): void {
     const el = this.els.craft
     if (!el) return
@@ -289,15 +247,20 @@ export class InventoryHud {
       return
     }
     const progression = view.progression
-    const recipes = progression.craftable()
+    const ledger = progression.ledger
     const bench = view.prompt?.kind === "bench" ? view.prompt.id : undefined
-    const rows = recipes.map((r, i) => {
-      const priced = this.costHtml(view, r.craft!, bench)
-      return `<div class="row" data-off="${!priced.ok}">${keyCapHtml(`Digit${i + 1}`)}<div><b>${esc(r.label)}</b><small>${esc(r.note)}</small></div><em>${priced.html}</em></div>`
+    const rows = progression.craftable().map((r, i) => {
+      let ok = true
+      const cost = Object.entries(r.craft ?? {})
+        .map(([item, n]) => {
+          const have = ledger.count(view.actorId, item) + (bench ? ledger.count(bench, item) : 0)
+          if (have < n) ok = false
+          return `<span class="cost" data-short="${have < n}">${Array.from({ length: n }, () => itemIcon(item, 18)).join("")}</span>`
+        })
+        .join("")
+      return `<div class="craft-row" data-off="${!ok}">${keyCapHtml(`Digit${i + 1}`)}${itemIcon(r.produces!, 26)}<span class="from">${cost}</span></div>`
     })
-    const html = rows.length
-      ? `<div class="strip-t">Field craft<span>${progression.tuning.craftTime.toFixed(1)} s each</span></div>${rows.join("")}<div class="strip-h"><span class="akp">${keyCapHtml("Digit1")}<span class="akp-label">Craft</span></span><span class="sep">·</span>${keyPromptHtml("KeyQ", "Close")}</div>`
-      : `<div class="strip-t">Field craft</div><div class="row" data-off="true"><span></span><div><b>Nothing learned yet</b><small>Research recipes at a house workbench; the whole squad learns them</small></div></div>`
+    const html = rows.length ? `${rows.join("")}<div class="strip-h">${keyCapHtml("KeyQ")}</div>` : `<div class="craft-row" data-blank="true"></div>`
     if (el.innerHTML !== html) {
       el.innerHTML = html
       el.hidden = false

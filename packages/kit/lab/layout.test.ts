@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test"
 import { LabNavigation, type LabControl } from "../lab-navigation"
 import { filterLibrary, isLibraryAsset, isPlaceable, libraryCategoryOf, sectionLibraryCategory } from "./library"
-import { buildOutlinerRows, outlinerGroupOf, outlinerKindOf, rangeSelection } from "./outliner"
-import { fuzzyScore, parsePaletteQuery, rankPalette, type PaletteItem } from "./palette"
+import { buildOutlinerRows, buildOutlinerTree, outlinerGroupOf, outlinerKindOf, rangeSelection, selectedObjects } from "./outliner"
 import type { LabWorldObject } from "./types"
 
 const obj = (id: string, label: string, category: LabWorldObject["category"], extra: Partial<LabWorldObject> = {}): LabWorldObject => ({
@@ -64,6 +63,16 @@ test("outliner shift range covers visible rows and folds select all members", ()
   expect(rangeSelection(rows, "missing", "fold:props:cone")).toEqual(["prop:1", "prop:2", "prop:3", "prop:4", "prop:5"])
 })
 
+test("outliner tree: type groups, repeated kinds under one fold, and a fold row standing for its members", () => {
+  const nodes = buildOutlinerTree(scene)
+  expect(nodes.map(n => [n.id, n.ids.length])).toEqual([["group:vehicles", 1], ["group:props", 7], ["group:emitters", 1], ["group:lights", 1]])
+  const props = nodes.find(n => n.id === "group:props")!
+  expect(props.children!.map(n => [n.type, n.label])).toEqual([["fold", "Cone"], ["object", "Propane tank #6"], ["object", "Hydrant #7"]])
+  expect(props.children![0]!.children!.map(n => n.id)).toEqual(["obj:prop:1", "obj:prop:2", "obj:prop:3", "obj:prop:4", "obj:prop:5"])
+  expect(selectedObjects(nodes, ["fold:props:cone", "obj:prop:6", "group:lights"])).toEqual(["prop:1", "prop:2", "prop:3", "prop:4", "prop:5", "prop:6"])
+  expect(buildOutlinerTree(scene, new Set(["props"])).map(n => n.id)).not.toContain("group:props")
+})
+
 test("library maps legacy catalog entries and sections to drawer categories", () => {
   expect(libraryCategoryOf({ id: "material-recipe:wood", category: "objects", sectionId: "materials", tag: "Material" })).toBe("materials")
   expect(libraryCategoryOf({ id: "foliage-preset:oak", category: "objects", sectionId: "foliage", tag: "Foliage" })).toBe("foliage")
@@ -84,25 +93,6 @@ test("library maps legacy catalog entries and sections to drawer categories", ()
   ]
   expect(filterLibrary(entries, { category: "objects" }).map(e => e.id)).toEqual(["spawn-prop:cone"])
   expect(filterLibrary(entries, { category: "objects", query: "smoke" }).map(e => e.id)).toEqual(["effects:smoke"])
-})
-
-test("palette ranks scene objects, settings, library items and commands with kind prefixes", () => {
-  const run = () => {}
-  const items: PaletteItem[] = [
-    { id: "o1", kind: "object", label: "Hydrant #7", run },
-    { id: "s1", kind: "setting", label: "Skid width", meta: "Spawn · Vehicle & Skids", run },
-    { id: "s2", kind: "setting", label: "Width", meta: "Lighting · Lamp", run },
-    { id: "l1", kind: "library", label: "Place Hydrant", meta: "Objects · Street props", run },
-    { id: "c1", kind: "command", label: "Toggle Library Drawer", meta: "Navigation", run },
-    { id: "c2", kind: "command", label: "Delete Object", disabled: true, run },
-  ]
-  expect(rankPalette(items, "skid wid").map(i => i.id)).toEqual(["s1"])
-  expect(rankPalette(items, "hydrant").map(i => i.id)).toEqual(["o1", "l1"])
-  expect(rankPalette(items, ">lib").map(i => i.id)).toEqual(["c1"])
-  expect(rankPalette(items, "#width").map(i => i.id)).toEqual(["s2", "s1"])
-  expect(parsePaletteQuery("@ cone")).toEqual({ kind: "object", text: "cone" })
-  expect(fuzzyScore("Skid width", "skid")!).toBeLessThan(fuzzyScore("Disk wide", "skid") ?? Infinity)
-  expect(fuzzyScore("Radius", "xyz")).toBeNull()
 })
 
 test("navigation filter hides rows and empty groups; derived controls are never modified", () => {

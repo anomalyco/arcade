@@ -21,6 +21,7 @@ import {
   type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { Command } from "../shared/session"
+import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin } from "../shared/discovery/tinker"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
@@ -190,7 +191,7 @@ describe("CoopRoomCore", () => {
     for (const c of [a, b]) expect(c.ledger.count(site.id, "medkit")).toBe(0)
   })
 
-  test("two survivors researching the same recipe at once: the squad learns it once and pays once", () => {
+  test("a sketch made at the bench reaches every client with its maker's seat", () => {
     const core = new CoopRoomCore("test", options, Date.now, "test")
     const a = client(core, "Ann")
     const b = client(core, "Bob")
@@ -199,21 +200,23 @@ describe("CoopRoomCore", () => {
     const progression = core.sim.progression
     const ledger = progression.ledger
     const bench = progression.benches.find((x) => x.id === "bench:ash")!
-    ledger.apply({ kind: "grant", actor: a.id, item: "chem", count: 3 })
-    ledger.apply({ kind: "deposit", actor: a.id, to: bench.id })
-    expect(ledger.count(bench.id, "chem")).toBe(3)
+    ledger.apply({ kind: "grant", actor: b.id, item: "chem", count: 2 })
     Object.assign(core.sim.slot(a.id)!.survivor, { x: bench.bench.x - 0.8, y: bench.bench.y - 0.4, aim: 0 })
     Object.assign(core.sim.slot(b.id)!.survivor, { x: bench.bench.x - 0.8, y: bench.bench.y + 0.4, aim: 0 })
     core.sim.rebuildSolids()
     run(core, [a, b], 2)
-    const row = progression.benchRows().findIndex((r) => r.id === "bandage")
-    run(core, [a, b], 1, () => ({ ...idle(0), pick: { mode: "bench", index: row } }))
+    const chems = ALL_PAIRS.findIndex(([x, y]) => pairKey(x, y) === "chem+chem")
+    run(core, [b], 1, () => ({ ...idle(0), pick: { mode: "bench", index: chems } }))
+    run(core, [b], 1, () => ({ ...idle(0), interact: true, interactHeld: true }))
+    run(core, [b], Math.ceil(0.45 / TICK_DT), () => ({ ...idle(0), interactHeld: true }))
     run(core, [a, b], Math.ceil(3 / TICK_DT))
     expect(progression.learned("bandage")).toBe(true)
-    expect(ledger.count(bench.id, "chem")).toBe(1)
+    const seat = core.sim.slot(b.id)!.index
     for (const c of [a, b]) {
       expect(c.ledger.count("team/known", "learned:bandage")).toBe(1)
-      expect(c.notices).toContain("Squad learned Bandage. Hold Q to craft it anywhere")
+      expect(c.ledger.count(matStoreId(bench.id), "bandage")).toBe(1)
+      expect(readPin(c.ledger.store(pinStoreId("bandage")), "bandage")).toMatchObject({ actor: b.id, seat })
+      expect(c.notices.filter((t) => /learned/i.test(t))).toEqual([])
     }
   })
 

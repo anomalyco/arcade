@@ -106,9 +106,12 @@ export {
   type ZombieHitReaction,
 }
 
+/** Largest crowd the Lab population slider asks for; the director's own population still stops at 100. */
+export const MAX_POPULATION = 1000
+
 export const aiControls = [
   { key: "aiDebugOverlay", label: "Debug overlay", group: "AI" },
-  { key: "zombieCount", label: "Population", group: "AI", min: 0, max: 100, step: 1, unit: "" },
+  { key: "zombieCount", label: "Population", group: "AI", min: 0, max: MAX_POPULATION, step: 1, unit: "" },
   { key: "sightRange", label: "Sight range", group: "AI", min: 6, max: 36, step: 1, unit: "m" },
   { key: "sightCone", label: "Sight cone", group: "AI", min: 45, max: 180, step: 5, unit: "deg" },
   { key: "hearingScale", label: "Hearing scale", group: "AI", min: 0, max: 2.5, step: 0.1, unit: "×" },
@@ -386,14 +389,15 @@ export class OutbreakAISubsystem {
   }
 
   syncPopulation(town: Town, avoidX: number, avoidY: number): void {
-    const desired = Math.max(0, Math.min(100, Math.round(this.config.zombieCount)))
+    const desired = Math.max(0, Math.min(MAX_POPULATION, Math.round(this.config.zombieCount)))
     this.manualSpawnOnly = desired === 0
-    const living = this.agents.filter((a) => a.state !== "dead")
+    const counted = (a: AIAgent) => a.state !== "dead" && a.hordeId === undefined
+    const living = this.agents.filter(counted)
     if (living.length === desired) return
     if (living.length > desired) {
       let toRemove = living.length - desired
       for (let i = this.agents.length - 1; i >= 0 && toRemove > 0; i--) {
-        if (this.agents[i]!.state !== "dead") {
+        if (counted(this.agents[i]!)) {
           this.agents.splice(i, 1)
           toRemove--
         }
@@ -408,10 +412,12 @@ export class OutbreakAISubsystem {
       avoidY,
       Math.max(7.0, this.config.directorPacing > 0 ? this.config.safeRadius * 0.5 : 3.5),
     )
+    let count = living.length
     for (const a of extra) {
-      if (this.agents.filter((z) => z.state !== "dead").length >= desired) break
+      if (count >= desired) break
       a.id = this.nextAgentId++
       this.agents.push(a)
+      count++
     }
   }
 
@@ -425,7 +431,7 @@ export class OutbreakAISubsystem {
       agent.awareness = 0.6
     }
     this.agents.push(agent)
-    this.config.zombieCount = this.agents.filter((a) => a.state !== "dead").length
+    this.config.zombieCount = this.agents.filter((a) => a.state !== "dead" && a.hordeId === undefined).length
     return agent
   }
 

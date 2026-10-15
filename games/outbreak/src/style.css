@@ -36,7 +36,14 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 @media (prefers-reduced-motion: reduce) { #markers .marker[data-kind="lure"] { animation: none } }
 #prompt .strip-t span { margin-left: 14px; text-transform: none; letter-spacing: 0; color: #a9ad9f }
 #prompt .strip-s { margin: -2px 0 6px; font-size: 10.5px; color: #8c9488 }
-#prompt .bench, #craft { min-width: 340px; max-width: 420px; white-space: normal }
+#prompt .bench { min-width: 340px; max-width: 420px; white-space: normal }
+#craft .craft-row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-top: 1px solid #ffffff10 }
+#craft .craft-row:first-child { border-top: 0 }
+#craft .craft-row[data-off="true"] { opacity: .45 }
+#craft .craft-row[data-blank="true"] { width: 96px; height: 30px; border: 1px dashed #ffffff26; border-radius: 3px }
+#craft .craft-row .from { display: flex; gap: 4px; margin-left: 10px; padding-left: 10px; border-left: 1px solid #ffffff1c; color: #a9ad9f }
+#craft .craft-row .cost { display: flex; gap: 1px }
+#craft .glyph { display: block }
 #prompt .row, #craft .row { position: relative; display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 4px 2px; border-top: 1px solid #ffffff10; overflow: hidden }
 #prompt .row b, #craft .row b { font-weight: 500; color: #ece9dc }
 #prompt .row small, #craft .row small { display: block; font-size: 10.5px; color: #8c9488; margin-top: 1px }

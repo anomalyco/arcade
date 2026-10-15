@@ -182,7 +182,7 @@ try {
           ;(window as any).labWorkbench?.radial?.openAtScreen?.(x, y, true)
           return !document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden
         }, [cx, cy] as const)
-        const vp = (await page.locator(".lab-viewport canvas").boundingBox())!
+        const vp = (await page.locator(".lab-viewport > canvas").boundingBox())!
         await page.mouse.move(vp.x + vp.width * 0.3, vp.y + vp.height * 0.4)
         await page.mouse.down({ button: "right" })
         await page.mouse.up({ button: "right" })
@@ -304,10 +304,10 @@ try {
     await page.screenshot({ path: resolve(out, "details-search-porch-1440x900@1x.png"), clip: (await page.locator(".lab-inspector").boundingBox())! })
     await page.keyboard.press("Escape")
     // `/` on the canvas still opens the command palette.
-    await page.locator(".lab-viewport canvas").focus()
+    await page.locator(".lab-viewport > canvas").focus()
     await page.keyboard.press("/")
     await page.waitForTimeout(200)
-    const palette = await page.evaluate(() => document.querySelector<HTMLElement>(".lab-palette-backdrop")?.hidden === false)
+    const palette = await page.evaluate(() => Boolean(document.querySelector(".knobs-layers>.knobs-palette")))
     await page.keyboard.press("Escape")
     // The details filter command drives the same search; Modified narrows to changed rows.
     await invoke(page, "scene.set-param", { key: "skyFill", value: 1.5 })

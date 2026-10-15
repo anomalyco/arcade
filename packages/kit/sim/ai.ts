@@ -224,6 +224,8 @@ export type AIAgent = {
   focusId: string
   /** Id of the survivor who last damaged or killed this agent (for co-op attribution). */
   lastHitBy?: string
+  /** Set on members of a roaming horde: the game's horde layer owns them, not chunk streaming or pacing. */
+  hordeId?: number
 }
 
 export type PortalBashEvent = {
