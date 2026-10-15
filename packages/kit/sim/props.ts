@@ -66,7 +66,12 @@ export class Props {
   private mass = new Map<string, Mass>()
 
   constructor(readonly kinds: Readonly<Record<string, PropKindDef>>) {
-    for (const [k, d] of Object.entries(kinds)) this.mass.set(k, boxMass(d.mass, d.hl * 2, d.hw * 2))
+    this.retune()
+  }
+
+  /** Re-reads the kinds' masses and sizes after they change (Lab tuning). */
+  retune(): void {
+    for (const [k, d] of Object.entries(this.kinds)) this.mass.set(k, boxMass(d.mass, d.hl * 2, d.hw * 2))
   }
 
   add(kind: string, x: number, y: number, h = 0): Prop {

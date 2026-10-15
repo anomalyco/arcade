@@ -12,6 +12,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "vehicle"
+  | "creature" | "crowd" | "cooking"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -70,6 +71,7 @@ const step = (surface: string, gait: "walk" | "run") =>
   `One adult in sturdy shoes ${gait === "walk" ? "walking at a steady relaxed pace" : "running fast"} on ${surface}, recorded close, dry, every footstep distinct and evenly spaced. ${NO_SPEECH}`
 
 const OUTBREAK = ["outbreak"] as const
+const BRAWL = ["brawl"] as const
 
 const SURFACE_PHRASE: Record<SfxSurface, string> = { concrete: "a gritty concrete sidewalk", grass: "short dry grass and soft earth", wood: "old wooden floorboards inside a house" }
 
@@ -457,6 +459,23 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "ambience.threat", label: "Threat drone", group: "ambience", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
     range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [10, 31],
     generate: { prompt: `Ominous low ambient drone for a horror game: deep slow rumbling tone, hollow wind, faint distant moans echoing across empty streets. ${NO_SPEECH}`, duration: 24, candidates: 2, loop: true, influence: 0.4 },
+  },
+
+  // Party brawler powers
+  {
+    id: "creature.bees.swarm", label: "Bee swarm", group: "creature", bus: "foley", variants: 3, target: -24, gain: 0.8, pitchJitter: 0.08, gainJitter: 0.1,
+    cooldown: 0.4, maxVoices: 3, steal: "drop", range: { ref: 2, max: 18 }, wet: 0.05, usedBy: BRAWL, durationRange: [0.8, 2.2],
+    generate: { prompt: `A small angry swarm of honey bees buzzing close past the microphone: a dense rising and falling buzz with a few bees zipping by, dry, cartoonish and lively. ${NO_SPEECH}`, duration: 1.6, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "crowd.applause", label: "Studio applause", group: "crowd", bus: "foley", variants: 3, target: -20, gain: 0.85, pitchJitter: 0.03, gainJitter: 0.08,
+    cooldown: 0.5, maxVoices: 2, range: { ref: 4, max: 30 }, wet: 0.15, usedBy: BRAWL, durationRange: [1, 2.6],
+    generate: { prompt: `A television studio audience bursting into a short enthusiastic round of applause with cheers and whistles, starting loud at once and fading quickly. No words, no music, no voice-over.`, duration: 2.2, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "cooking.sizzle", label: "Pan sizzle", group: "cooking", bus: "foley", variants: 3, target: -22, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
+    cooldown: 0.15, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: BRAWL, durationRange: [0.6, 1.8],
+    generate: { prompt: `A hot oily frying pan slapped down on a surface: a sharp burst of loud sizzling hiss and crackling fat that dies away quickly, close and dry. ${NO_SPEECH}`, duration: 1.3, candidates: 4, influence: 0.55 },
   },
 
 

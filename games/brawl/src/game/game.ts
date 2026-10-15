@@ -260,11 +260,12 @@ export class Game {
           fx.light(t, e.x, e.y, 1.2, 9, [1, 0.5, 0.15], 4, 0.6)
           fx.ring(t, e.x, e.y, e.r * 1.1, [3, 1.2, 0.3], 0.3)
           snd.play("impact_crash_layered", e.x, e.y, { gain: 0.35, rate: 1.4 })
+          snd.play("cooking.sizzle", e.x, e.y, { gain: 0.7, rate: 0.85 })
         } else if (e.look === "applause") {
           fx.confetti(e.x, e.y, 1, 70, 7)
           fx.ring(t, e.x, e.y, e.r, [3, 2.6, 1], 0.4)
           fx.ring(t + 0.05, e.x, e.y, e.r * 0.7, [2.6, 1.4, 2.4], 0.35)
-          snd.play("ui_confirm", e.x, e.y, { gain: 0.8 })
+          snd.play("crowd.applause", e.x, e.y)
           snd.play("door.bash", e.x, e.y, { gain: 0.5, rate: 1.3 })
         } else {
           fx.dust(e.x, e.y, 16, e.r)
@@ -278,6 +279,7 @@ export class Game {
         if (e.look === "pan") {
           fx.sparks(e.x, e.y, 0.5, 14)
           snd.play("impact.bullet.metal", e.x, e.y)
+          snd.play("cooking.sizzle", e.x, e.y)
         } else if (e.look === "seed") {
           fx.leaves(e.x, e.y, 14)
           fx.dust(e.x, e.y, 6, 0.5)
@@ -676,7 +678,7 @@ export class Game {
         const yaw = Math.atan2(f.vz[i]!, f.vx[i]!)
         fp.push(this.abModels.bee!, f.x[i]!, f.y[i]!, f.z[i]!, yaw, [1, 1, 1], Math.sin(t * 40 + i) * 0.3, 0, 0, seen.has(id) ? 1 : 1 - fl.scatter * 0.8)
       }
-      if (seen.has(id) && this.fx.random() < adt * 4) this.sound.play("ui.tick", fl.x, fl.y, { gain: 0.25, rate: 2.2 })
+      if (seen.has(id) && this.fx.random() < adt * 1.2) this.sound.play("creature.bees.swarm", fl.x, fl.y, { gain: 0.6 })
     }
     // Zones.
     for (const z of b.ab.z) {

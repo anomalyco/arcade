@@ -33,7 +33,7 @@ audio.playCue("door.wood.open", { position: { x, z: y, refDistance: entry.range.
 
 ## Catalogue
 
-80 ids, 253 files, 2.12 MB the library owns (Ogg Opus: 64 kb/s mono for weapons and impacts, 48 kb/s other mono,
+91 ids, 281 files, 2.28 MB the library owns (Ogg Opus: 64 kb/s mono for weapons and impacts, 48 kb/s other mono,
 96 kb/s stereo beds; positional loops such as crafting and the horde are mono). Licence: "ElevenLabs commercial sound-generation license (Anomaly)" for every generated file;
 the reused UI files keep theirs. Per-file provenance (take, prompt influence, request id) is in `library-files.ts`.
 
@@ -87,6 +87,9 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `ambience.night.suburb` | 1 loop | ambience | 23.4 | 287 | ElevenLabs, 1 of 3 |
 | `ambience.day.suburb` | 1 loop | ambience | 23.4 | 210 | ElevenLabs, 1 of 3 |
 | `ambience.threat` | 1 loop | ambience | 23.4 | 215 | ElevenLabs, 1 of 2 |
+| `creature.bees.swarm` | 3 | foley | 1.47–1.54 | 28 | ElevenLabs, 3 of 4 (Brawl's bee swarm) |
+| `crowd.applause` | 3 | foley | 1.96–2.00 | 36 | ElevenLabs, 3 of 4 (Brawl's Standing Ovation) |
+| `cooking.sizzle` | 3 | foley | 1.28 | 21 | ElevenLabs, 3 of 4 (Brawl's pan and grease) |
 | `vehicle.tyre.screech` | 1 loop | tyre | 4.53 | 46 | reuses Getaway's `tire_screech_loop.mp3` (loop region measured by `build`) |
 | `vehicle.tyre.chirp` | 1 | tyre | 0.38 | 5 | reuses Getaway's `skid_short.mp3` |
 | `ui.click` | 1 | ui | 0.48 | 6 | reuses Getaway's `ui_click.mp3` |
@@ -128,6 +131,9 @@ was regenerated with a plainer prompt and its target lowered to -24.5 so the pea
 glass, a seated magazine and the ping are several onsets (crack and shards, scrape and click, a two-tone chime) and no
 longer count as single events; the dry item drop and the battery swap were lowered for the same gain limit; and Opus
 pushed one peak-capped take to -0.4 dBFS on decode, so `build` now re-encodes any file that decodes over -0.6.
+
+Brawl's bees, applause and sizzle took 12 generations and 224 credits; curation dropped one muffled bee take, one
+clipped applause take and one dull sizzle.
 
 ## Outbreak
 

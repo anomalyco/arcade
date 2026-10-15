@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>BRAWL Playground</title>
+    <link rel="icon" href="data:," />
+    <style>
+      #caption { position: fixed; left: 16px; top: 12px; display: flex; flex-direction: column; pointer-events: none; text-shadow: 0 2px 0 var(--ink); }
+      #caption b { font-weight: 800; font-size: 30px; line-height: 1; }
+      #caption span { font-weight: 600; font-size: 17px; opacity: 0.9; }
+      /* Lab rounds never end, so no clock. */
+      #hud .clock { display: none; }
+      #loop { position: fixed; left: 16px; top: 74px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+      #loop > div { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 10px; background: rgba(29, 18, 51, 0.55); }
+      #loop > div.on { background: #ff4f9a; }
+      #loop > div.cooling { opacity: 0.6; }
+      #loop b { font-weight: 800; font-size: 17px; }
+      #loop span { font-weight: 600; font-size: 14px; opacity: 0.8; margin-left: auto; padding-left: 10px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="menu"></div>
+    <div id="caption"></div>
+    <div id="loop"></div>
+    <script type="module" src="/src/dev/playground.ts"></script>
+  </body>
+</html>

@@ -38,11 +38,13 @@ export class LocalSession implements Session {
   /** Simulation speed (the Lab slows it down). */
   speed = 1
 
-  constructor(name: string, opts: { pick?: string; bots?: number; watch?: boolean; seed?: number } = {}) {
+  /** `stage` sets the world up instead (the Lab's scenes), adding "you" itself unless `watch`. */
+  constructor(name: string, opts: { pick?: string; bots?: number; watch?: boolean; seed?: number; stage?: (world: World) => void } = {}) {
     this.world = new World(opts.seed ?? (Math.random() * 2 ** 31) | 0)
     this.world.botFill = opts.bots ?? 4
     this.myId = opts.watch ? "" : "you"
-    if (opts.watch) {
+    if (opts.stage) opts.stage(this.world)
+    else if (opts.watch) {
       this.world.fill()
       this.world.startRound()
     } else this.world.addHuman(this.myId, name, opts.pick)
@@ -81,10 +83,14 @@ export class LocalSession implements Session {
       this.world.step()
       // Watching: straight into the next round instead of waiting on the select screen.
       if (!this.myId && this.world.phase === "select") this.world.startRound()
+      this.afterStep()
       this.events.push(...this.world.takeEvents())
       if (this.world.tick % this.every === 0) this.publish()
     }
   }
+
+  /** After every tick, before events go out (the Lab keeps its scenes going here). */
+  protected afterStep(): void {}
 
   private publish(): void {
     this.snap = { snap: buildSnapshot(this.world, this.myId), at: performance.now() }
