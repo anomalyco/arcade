@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arcade Network & Engine Architecture Options</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --panel: #131822;
+      --panel-alt: #181f2c;
+      --border: #263145;
+      --text: #e8edf5;
+      --muted: #93a1b8;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --amber: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+      padding: 24px 28px;
+      line-height: 1.45;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title-wrap h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .title-wrap p {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 3px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .tab {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 7px 13px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab.active {
+      background: #1c2940;
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.rec { background: rgba(63, 185, 80, 0.18); color: var(--green); border: 1px solid rgba(63, 185, 80, 0.4); }
+    .badge.warn { background: rgba(210, 153, 34, 0.18); color: var(--amber); border: 1px solid rgba(210, 153, 34, 0.4); }
+    .badge.bad { background: rgba(248, 81, 73, 0.18); color: var(--red); border: 1px solid rgba(248, 81, 73, 0.4); }
+    .badge.info { background: rgba(88, 166, 255, 0.18); color: var(--accent); border: 1px solid rgba(88, 166, 255, 0.4); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .arch-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .arch-box {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px 14px;
+    }
+    .arch-box.highlight {
+      border-color: var(--green);
+      background: rgba(63, 185, 80, 0.07);
+    }
+    .arch-box.warn-box {
+      border-color: var(--amber);
+      background: rgba(210, 153, 34, 0.07);
+    }
+    .arch-box.bad-box {
+      border-color: var(--red);
+      background: rgba(248, 81, 73, 0.07);
+    }
+    .arch-box .box-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+    .arch-box .box-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric .label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .metric .val {
+      font-size: 20px;
+      font-weight: 800;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric .sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .bars {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-top: 8px;
+    }
+    .bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .bar-label strong { color: var(--text); }
+    .bar-track {
+      height: 8px;
+      background: #0d1117;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .table th, .table td {
+      padding: 7px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .table th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+    .footer-grid {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .road-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .road-card h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .road-card ul {
+      list-style: none;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .road-card li strong { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title-wrap">
+      <h1 id="opt-title">Option 2: TypeScript Interest Deltas</h1>
+      <p id="opt-sub">Measured on 300-zombie + 4-survivor Outbreak Co-op room &amp; M5 Max Metal (V8 + JSC)</p>
+    </div>
+    <div class="tabs">
+      <button class="tab" onclick="setOpt(0)">1 · Today</button>
+      <button class="tab active" onclick="setOpt(1)">2 · TypeScript Interest Deltas ★</button>
+      <button class="tab" onclick="setOpt(2)">3 · Hybrid Leaf WASM</button>
+      <button class="tab" onclick="setOpt(3)">4 · Full Rust Rewrite</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>
+        <span id="left-heading">Architecture &amp; Data Flow</span>
+        <span id="opt-badge" class="badge rec">Recommended Now</span>
+      </h2>
+      <div class="arch-flow" id="arch-boxes"></div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>Measured 300-Zombie + 4-Survivor DO Benchmark</span>
+        <span class="badge info">20 Hz Snap / 60 Hz Sim</span>
+      </h2>
+      <div class="metrics" id="metrics-grid"></div>
+      <div class="bars" id="bars-list"></div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Codec / Runtime</th>
+            <th>Snap Size</th>
+            <th>V8 Encode</th>
+            <th>JSC Encode</th>
+            <th>60Hz DO Tick</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. Today (Full + JSON personal)</td>
+            <td>5,691 B</td>
+            <td>~14.0 µs</td>
+            <td>26.5 µs</td>
+            <td>741.0 µs</td>
+          </tr>
+          <tr style="color:#3fb950;font-weight:700;">
+            <td>2. Ideal TS (Interest + Delta + Flow)</td>
+            <td>778 B</td>
+            <td>1.5 µs</td>
+            <td>5.3 µs</td>
+            <td>15.3 µs (48.5x)</td>
+          </tr>
+          <tr style="color:#58a6ff;">
+            <td>3. Hybrid Leaf WASM (Zero-Copy)</td>
+            <td>778 B</td>
+            <td>1.2 µs</td>
+            <td>1.0 µs</td>
+            <td>8.1 µs (91.8x)</td>
+          </tr>
+          <tr style="color:#f85149;">
+            <td>4. Rust Codec + JS Sim Marshal</td>
+            <td>5,454 B</td>
+            <td>4.0 µs</td>
+            <td>3.0 µs</td>
+            <td>~725 µs</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer-grid">
+    <div class="road-card">
+      <h3>Next Week (Quick Wins)</h3>
+      <ul>
+        <li><strong>@arcade/kit/quality:</strong> Balanced 1.5x DPR (-5.6 ms Outbreak, -4.9 ms Getaway GPU)</li>
+        <li><strong>FlowFieldNav + RectGrid:</strong> 48.5x faster 300-zombie DO tick, 0 gunshot stalls</li>
+        <li><strong>QuantizedHistoryRing:</strong> 778 B single-MSS delta snaps + 200 ms hitscan rewind</li>
+      </ul>
+    </div>
+    <div class="road-card">
+      <h3>Next Month (Deep Modules)</h3>
+      <ul>
+        <li><strong>@arcade/kit/gpu/wgsl:</strong> wgslStruct + wgslSlot (-7.8 ms Noir GPU, 1 KB gzip)</li>
+        <li><strong>DO SQLite + RoomHost:</strong> 10s dirty chunk/ledger save + $0 idle hibernation</li>
+        <li><strong>Bake Web Worker:</strong> Off-thread Transferable chunk/seabed bakes (0 ms hitch)</li>
+      </ul>
+    </div>
+    <div class="road-card">
+      <h3>Next Quarter (Scale-Out)</h3>
+      <ul>
+        <li><strong>Ultra Tier + TRELLIS.2:</strong> uLampGrid, 2K ortho moon shadows, 24B hero props</li>
+        <li><strong>Optional Leaf WASM:</strong> Zero-copy 5,000-zombie siege or Q16.16 WeGo lockstep</li>
+        <li><strong>RegionDO Sharding:</strong> 512 m county regions with 16 m border aprons</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const OPTIONS = [
+      {
+        title: "Option 1: Today",
+        sub: "Current origin/main networking across Outbreak, Blackout, Getaway & Carrier",
+        badge: ["Baseline", "warn"],
+        boxes: [
+          {
+            cls: "bad-box",
+            title: "Outbreak Co-op: Unfiltered 300-Zombie Snapshots + JSON Personal",
+            desc: "Sends all 300 zombies (5,691 B = 4 TCP MSS segments, 111.2 KB/s per client) + JSON.stringify personal state; per-agent A* takes 741 µs/tick."
+          },
+          {
+            cls: "bad-box",
+            title: "Blackout & Getaway: Per-Player JSON.stringify + queue.splice Edge Loss",
+            desc: "Getaway 16p spends 1.73 ms/snap in JSON.stringify (9.1x physics step, 1.88 MB/s room egress); queue.splice drops fire/action edges on Wi-Fi bursts."
+          },
+          {
+            cls: "warn-box",
+            title: "Zero Hitscan Rewind & Public ID Seat Reclaim in Blackout/Getaway",
+            desc: "Blackout sniper raycasts against un-rewound server positions (missing by 0.50–0.63 m at 80 ms RTT) and lacks a 2-snapshot interpolation buffer."
+          },
+          {
+            cls: "arch-box",
+            title: "What Already Works Well on main",
+            desc: "Outbreak @arcade/kit/net (JitterBuffer, Seats, SnapshotBuffer), SoAZombieCrowdRenderer, GpuPerf timestamp envelope, and 32 m chunk streaming."
+          }
+        ],
+        metrics: [
+          { label: "300-Zombie Snap Size", val: "5,691 B", sub: "Spans 4 TCP MSS packets (HOL stall risk)", color: "#f85149" },
+          { label: "Per-Client Bandwidth", val: "111.2 KB/s", sub: "444.6 KB/s for a 4-player room", color: "#f85149" },
+          { label: "60 Hz DO Room Tick", val: "741.0 µs", sub: "1,013 µs p95 (per-agent A* + JSON)", color: "#d29922" },
+          { label: "Hitscan Rewind", val: "0 ms", sub: "Misses moving targets at 80 ms ping", color: "#f85149" }
+        ]
+      },
+      {
+        title: "Option 2: TypeScript Interest Deltas",
+        sub: "Recommended: Data-Oriented TS (QuantizedHistoryRing + FlowFieldNav + @arcade/kit/quality + wgslStruct)",
+        badge: ["Recommended ★", "rec"],
+        boxes: [
+          {
+            cls: "highlight",
+            title: "QuantizedHistoryRing (@arcade/kit/net/interest-delta.ts)",
+            desc: "32-tick Int16/Uint8 ring buffer provides BOTH 60 m interest-filtered acked delta snapshots (778 B = 1 TCP packet!) AND 200 ms server hitscan rewind."
+          },
+          {
+            cls: "highlight",
+            title: "FlowFieldNav + SpatialHash in Data-Oriented TypeScript",
+            desc: "6-slot LRU cached SLF-deque flow field + SoA typed arrays cut 300-zombie DO room tick by 48.5x (741 µs -> 15.3 µs, saving 99% of theoretical Rust gain)."
+          },
+          {
+            cls: "highlight",
+            title: "Unified JitterBuffer, Private Seat Tokens & 10s DO SQLite Checkpoints",
+            desc: "Extends @arcade/kit/net to Blackout & Getaway, adds 3-tick upstream command window [seq-2..seq], locationHint, and $0 idle SQLite hibernation."
+          },
+          {
+            cls: "arch-box",
+            title: "Zero WASM Build Step, Instant <50 ms Vite HMR, Shared TS Types",
+            desc: "Pair with @arcade/kit/quality (1.5x Balanced DPR = -5.6 ms GPU) and @arcade/kit/gpu/wgsl (-7.8 ms Noir GPU in 185 LOC)."
+          }
+        ],
+        metrics: [
+          { label: "300-Zombie Delta Snap", val: "778 B", sub: "7.3x smaller (fits in 1 TCP MSS packet)", color: "#3fb950" },
+          { label: "Per-Client Bandwidth", val: "15.2 KB/s", sub: "60.8 KB/s room egress (-86.3%)", color: "#3fb950" },
+          { label: "60 Hz DO Room Tick", val: "15.3 µs", sub: "48.5x faster than Today (0.015 ms)", color: "#3fb950" },
+          { label: "Hitscan Rewind", val: "200 ms", sub: "Sub-tick interpolated sampleRewindPose", color: "#3fb950" }
+        ]
+      },
+      {
+        title: "Option 3: Hybrid Leaf WASM",
+        sub: "Option 2 TypeScript Engine + Optional #![no_std] Rust -> WASM Leaf Only for 5,000-Zombie Hordes or Q16.16 Lockstep",
+        badge: ["Future Scale-Out", "info"],
+        boxes: [
+          {
+            cls: "highlight",
+            title: "Keep Simulation + Codec Together Inside WASM Linear Memory",
+            desc: "When 1,000–5,000 zombies live inside WASM linear memory, rust_step_world_and_encode_room runs in 8.1 µs (300z) with zero JS object marshaling."
+          },
+          {
+            cls: "highlight",
+            title: "Zero-Copy Wire & WebGPU Buffer Views",
+            desc: "DO sends new Uint8Array(wasm.memory.buffer, wirePtr, len) straight to ws.send(); client uploads instance matrices straight to queue.writeBuffer()."
+          },
+          {
+            cls: "highlight",
+            title: "100% Bit-Exact Q16.16 Fixed-Point Determinism Across V8 & JSC",
+            desc: "JS Math.sin/cos/atan2 diverge between Safari JSC (0x0353e76e) and Chrome/workerd V8 (0x307d903a); Q16.16 matches bit-for-bit (0xe7be7bee) in 0.82 µs."
+          },
+          {
+            cls: "warn-box",
+            title: "When to Trigger This Step",
+            desc: "Only needed when Outbreak adds a 1,000–5,000 zombie siege mode or a simultaneous-turn WeGo tactical game. At 300 zombies, it saves only 7.2 µs over Option 2."
+          }
+        ],
+        metrics: [
+          { label: "WASM Binary & Cold Start", val: "18 KB gz", sub: "0.17 ms compile + instantiate in V8", color: "#58a6ff" },
+          { label: "60 Hz DO Room Tick", val: "8.1 µs", sub: "91.8x vs Today (1.89x vs Ideal TS)", color: "#3fb950" },
+          { label: "Zero-Copy Delta Decode", val: "0.26 µs", sub: "Direct into WASM crowd interpolator", color: "#3fb950" },
+          { label: "Q16.16 Lockstep Parity", val: "100%", sub: "0xe7be7bee across Rust, V8 & JSC", color: "#58a6ff" }
+        ]
+      },
+      {
+        title: "Option 4: Full Rust Rewrite",
+        sub: "Rewriting codecs (bincode/postcard) or DO room shells (workers-rs) in Rust while keeping JS simulation objects",
+        badge: ["Not Recommended", "bad"],
+        boxes: [
+          {
+            cls: "bad-box",
+            title: "JS <-> WASM Boundary Marshaling Eats the Codec Speedup",
+            desc: "Copying 300 JS AIAgent objects into WASM linear memory takes 2.5–4.0 µs in V8 — 5x slower than writing directly from JS into a TypeScript DataView (0.80 µs)!"
+          },
+          {
+            cls: "bad-box",
+            title: "workers-rs Still Crosses V8 JS Bindings on Every I/O Call",
+            desc: "In workerd, WebSocket, DurableObjectStorage, and SqlStorage are V8 host objects; workers-rs adds wasm-bindgen glue overhead for 0.0 ms I/O gain."
+          },
+          {
+            cls: "bad-box",
+            title: "Zero GPU Frame-Time Gain on WebGPU",
+            desc: "Frames are 93–96% GPU-bound in WGSL fragment shaders (14–16 ms). wgpu in WASM still calls browser navigator.gpu across wasm-bindgen on every draw."
+          },
+          {
+            cls: "warn-box",
+            title: "High Migration Cost & Lost Tooling Locality",
+            desc: "Breaks zero-build @arcade/kit source sharing, Knobs/LabPanel live reflection, and <50 ms Vite HMR across all five games."
+          }
+        ],
+        metrics: [
+          { label: "V8 Encode (w/ JS Marshal)", val: "4.00 µs", sub: "5x slower than V8 TS DataView (0.80 µs)", color: "#f85149" },
+          { label: "Bincode Wire Size", val: "5,454 B", sub: "7.0x larger than TS Interest Delta (778 B)", color: "#f85149" },
+          { label: "GPU Frame Time Saved", val: "0.00 ms", sub: "WebGPU executes the same WGSL on Metal", color: "#f85149" },
+          { label: "Migration Cost", val: "3+ wks", sub: "Splits shared/ codebase across 2 languages", color: "#f85149" }
+        ]
+      }
+    ];
+
+    function setOpt(idx) {
+      const o = OPTIONS[idx] || OPTIONS[1];
+      document.getElementById("opt-title").textContent = o.title;
+      document.getElementById("opt-sub").textContent = o.sub;
+      const badge = document.getElementById("opt-badge");
+      badge.textContent = o.badge[0];
+      badge.className = "badge " + o.badge[1];
+      document.querySelectorAll(".tab").forEach((el, i) => {
+        el.classList.toggle("active", i === idx);
+      });
+      document.getElementById("arch-boxes").innerHTML = o.boxes.map(b => `
+        <div class="arch-box ${b.cls}">
+          <div class="box-title">${b.title}</div>
+          <div class="box-desc">${b.desc}</div>
+        </div>
+      `).join("");
+      document.getElementById("metrics-grid").innerHTML = o.metrics.map(m => `
+        <div class="metric">
+          <div class="label">${m.label}</div>
+          <div class="val" style="color:${m.color}">${m.val}</div>
+          <div class="sub">${m.sub}</div>
+        </div>
+      `).join("");
+
+      const bars = [
+        { label: "Snapshot Wire Size (lower is better)", val: idx === 0 ? "5,691 B" : idx === 3 ? "5,454 B" : "778 B (1 TCP seg)", pct: idx === 0 ? 100 : idx === 3 ? 96 : 14, col: idx === 0 || idx === 3 ? "#f85149" : "#3fb950" },
+        { label: "60 Hz DO Room Tick Time (lower is better)", val: idx === 0 ? "741.0 µs" : idx === 1 ? "15.3 µs" : idx === 2 ? "8.1 µs" : "725.0 µs", pct: idx === 0 ? 100 : idx === 1 ? 8 : idx === 2 ? 5 : 95, col: idx === 0 || idx === 3 ? "#d29922" : "#3fb950" }
+      ];
+      document.getElementById("bars-list").innerHTML = bars.map(b => `
+        <div class="bar-row">
+          <div class="bar-label"><span>${b.label}</span><strong>${b.val}</strong></div>
+          <div class="bar-track"><div class="bar-fill" style="width:${b.pct}%;background:${b.col}"></div></div>
+        </div>
+      `).join("");
+    }
+
+    const params = new URLSearchParams(location.search);
+    const v = params.get("v");
+    if (v === "1" || v === "A" || v === "a") setOpt(0);
+    else if (v === "2" || v === "B" || v === "b") setOpt(1);
+    else if (v === "3" || v === "C" || v === "c") setOpt(2);
+    else if (v === "4" || v === "D" || v === "d") setOpt(3);
+    else setOpt(1);
+  </script>
+</body>
+</html>
