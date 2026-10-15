@@ -46,11 +46,22 @@ import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
 import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
 import { boxIntersectsRect2D, drawContiguousChunks, drawContiguousChunksByMode } from "./cull"
+import {
+  PassList,
+  compileShaderModuleWithLog,
+  depthConfigForMode,
+  type PassContext,
+  type PassSlot,
+  type ScenePass,
+} from "./pass-graph"
 import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "./targets"
+
+export type { PassContext, PassSlot, ScenePass }
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
-const DEPTH: GPUTextureFormat = "depth24plus"
+const DEPTH_CFG = depthConfigForMode("standard")
+const DEPTH: GPUTextureFormat = DEPTH_CFG.format
 export { LIGHT_FLOATS }
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
@@ -255,6 +266,8 @@ export class Renderer {
   private sprites: GPUBuffer
   private targets: SceneTargets
   private bloomPyramid: BloomPyramid
+  private passes = new PassList()
+  readonly passContext: PassContext
   private gradeData = new Float32Array(8 + LOOK_UNIFORM_FLOATS)
   private postLayout: GPUBindGroupLayout
   private sampler: GPUSampler
@@ -351,6 +364,13 @@ export class Renderer {
       ],
     })
     this.sceneLayout = sceneLayout
+    this.passContext = {
+      device: d,
+      frameLayout: sceneLayout,
+      color: HDR,
+      depth: DEPTH,
+      samples: SAMPLES,
+    }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
       "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus")
     this.postLayout = d.createBindGroupLayout({
@@ -579,11 +599,16 @@ export class Renderer {
 
   /** Compiles a shader module and reports any compile errors with their line. */
   private module(code: string, label: string): GPUShaderModule {
-    const m = this.device.createShaderModule({ code, label })
-    void m.getCompilationInfo().then((info) => {
-      for (const msg of info.messages) if (msg.type === "error") console.error(`[wgsl ${label}:${msg.lineNum}:${msg.linePos}] ${msg.message}`)
-    })
-    return m
+    return compileShaderModuleWithLog(this.device, code, label)
+  }
+
+  /** Registers an optional `ScenePass` plugin in the `"sky"`, `"opaque"`, or `"alpha"` slot. */
+  addPass(slot: PassSlot, pass: ScenePass): void {
+    this.passes.add(slot, pass)
+  }
+
+  removePass(pass: ScenePass): boolean {
+    return this.passes.remove(pass)
   }
 
   private makeSceneGroup(): void {
@@ -1180,6 +1205,7 @@ export class Renderer {
     }
 
     const enc = d.createCommandEncoder()
+    this.passes.prepareAll(enc)
     if (f.shadowLightCount) {
       const cp = enc.beginComputePass({ timestampWrites: this.timing ? this.timer!.start : undefined })
       cp.setPipeline(this.polarPipe)
@@ -1197,9 +1223,10 @@ export class Renderer {
     const pass = enc.beginRenderPass({
       timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
       colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
+      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
+    this.passes.drawSlot("sky", pass)
     if (this.level?.count) {
       pass.setPipeline(scenePipes.level!)
       pass.setVertexBuffer(0, this.level.buf)
@@ -1229,6 +1256,10 @@ export class Renderer {
         pass.setVertexBuffer(0, m.buf)
         pass.draw(m.count, r.count, 0, r.first)
       }
+      if (!alpha) {
+        this.passes.drawSlot("opaque", pass)
+        pass.setBindGroup(0, this.sceneGroup)
+      }
       if (!alpha && this.glass?.count) {
         pass.setPipeline(scenePipes.glass!)
         pass.setVertexBuffer(0, this.glass.buf)
@@ -1252,6 +1283,7 @@ export class Renderer {
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
     if(f.weather)this.weatherRenderer!.draw(pass,motion)
+    this.passes.drawSlot("alpha", pass)
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {
