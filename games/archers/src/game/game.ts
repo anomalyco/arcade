@@ -54,6 +54,9 @@ export class Game {
   private prev = new Map<string, Hist>()
   private arrowPrev = new Map<number, Hist>()
   private trails = new Map<number, (Hist & { t: number })[]>()
+  /** When each arrow stuck, for the shaft's quiver; and who was drawing last tick, for the draw creak. */
+  private stuckAt = new Map<number, number>()
+  private wasDrawing = new Set<string>()
   private archerModels: ArcherModels[] = []
   private bowModel: number
   private arrowModels: Record<ArrowKind, number>
@@ -162,6 +165,11 @@ export class Game {
       for (const r of this.world.s.arrows) this.arrowPrev.set(r.id, { x: r.x, y: r.y })
       this.world.step((a) => this.input(a))
       for (const e of this.world.takeEvents()) this.onSim(e)
+      for (const a of this.world.s.archers) {
+        if (a.drawing && !this.wasDrawing.has(a.id) && a.quiver.length) this.sound.play("bow.draw", a.x, a.y + 0.8)
+        if (a.drawing) this.wasDrawing.add(a.id)
+        else this.wasDrawing.delete(a.id)
+      }
       if (this.hitStop > 0) {
         this.acc = 0
         break
@@ -196,7 +204,7 @@ export class Game {
         const c = linear(ARROW_COLOR[e.kind], 3)
         fx.flash(e.x, e.y, 2.2, c, 3, 18)
         fx.burst(P.spark, 5, e.x, e.y, 0.2, 4, e.dx * 0.6, e.dy * 0.6, 0.6)
-        snd.play("melee.swing.light", e.x, e.y, { rate: 1.5, gain: 0.5 })
+        snd.play("bow.release", e.x, e.y, { rate: e.kind === "normal" ? 1 : 0.9 })
         const v = this.views.get(e.by)
         if (v) v.looseAt = this.now
         break
@@ -209,7 +217,8 @@ export class Game {
         fx.burst(P.dust, 2, e.x, e.y, 0.2, 0.8, nx * 0.4, ny * 0.4, 0.5)
         fx.flash(e.x, e.y, 1.8, linear(ARROW_COLOR[e.kind], 2), 2, 14)
         this.cam.add(0.06, e.dx / l * 0.05, e.dy / l * 0.05)
-        snd.play("barricade.hammer", e.x, e.y, { rate: 1.35, gain: 0.45 })
+        snd.play("arrow.thunk", e.x, e.y, { rate: e.into === "floor" ? 0.95 : 1.05 })
+        this.stuckAt.set(e.id, this.now)
         break
       }
       case "kill": {
@@ -227,8 +236,8 @@ export class Game {
         this.hitStop = e.last ? 0.11 : 0.07
         if (e.last) this.slowUntil = this.now + 0.75
         this.hurt = Math.max(this.hurt, this.seats.some((s) => s.id === e.victim && s.device) ? 1 : 0)
-        snd.play("body.hurt", e.x, e.y, { gain: 0.8 })
-        snd.play("melee.break", e.x, e.y, { gain: 0.6, rate: 1.2 })
+        if (e.cause === "arrow") snd.play("arrow.hit", e.x, e.y)
+        snd.play("archer.feathers", e.x, e.y)
         break
       }
       case "catch": {
@@ -238,12 +247,12 @@ export class Game {
         fx.burst(P.spark, 10, e.x, e.y, 0.3, 5)
         fx.flash(e.x, e.y, 2.5, c, 3, 12)
         this.hitStop = Math.max(this.hitStop, 0.04)
-        snd.play("pickup.ammo", e.x, e.y, { rate: 1.3 })
+        snd.play("arrow.catch", e.x, e.y)
         break
       }
       case "jump":
         fx.burst(P.dust, e.kind === "wall" ? 4 : 3, e.x, e.y + (e.kind === "wall" ? 0.6 : 0.05), 0.1, 1.2, 0, 0.2, 1)
-        if (e.kind === "flap") snd.play("melee.swing.heavy", e.x, e.y, { rate: 1.8, gain: 0.3 })
+        if (e.kind === "flap") snd.play("wings.flap", e.x, e.y)
         break
       case "land": {
         const v = this.views.get(e.id)
@@ -256,19 +265,19 @@ export class Game {
       }
       case "dodge":
         fx.burst(P.dust, 3, e.x, e.y + 0.6, 0.1, 1.5, -e.dx * 0.4, -e.dy * 0.4, 0.8)
-        snd.play("melee.swing.heavy", e.x, e.y, { rate: 1.6, gain: 0.35 })
+        snd.play("archer.dodge", e.x, e.y)
         break
       case "grab":
         fx.burst(P.dust, 3, e.x, e.y + HH, 0.1, 0.8)
         break
       case "pickup":
         fx.ring(e.x, e.y + 0.3, 0.05, 0.45, 0.2, linear(ARROW_COLOR[e.kind], 2), 0.35)
-        snd.play("pickup.ammo", e.x, e.y, { gain: 0.5 })
+        snd.play("arrow.pickup", e.x, e.y)
         break
       case "chest":
         fx.burst(P.spark, 24, e.x, e.y + 0.5, 0.3, 6, 0, 0.6, 0.9)
         fx.flash(e.x, e.y + 0.6, 4, linear(ITEM_COLOR[e.item], 3), 4, 4)
-        snd.play("pack.open", e.x, e.y)
+        snd.play("chest.open", e.x, e.y)
         break
       case "item":
         fx.ring(e.x, e.y, 0.1, 1.4, 0.4, linear(ITEM_COLOR[e.item], 2.5), 1)
@@ -283,21 +292,21 @@ export class Game {
         fx.flash(e.x, e.y, 7, linear(FIRE, 4), 9, 5)
         this.cam.add(0.6, 0, 0)
         this.cam.zoomPunch(0.05)
-        snd.play("melee.break", e.x, e.y, { rate: 0.7 })
-        snd.play("barricade.break", e.x, e.y)
+        snd.play("bomb.explode", e.x, e.y)
         break
       case "laser":
         fx.beam(e.pts, linear(ARROW_COLOR.laser, 2.5))
         this.cam.add(0.15)
-        snd.play("glass.break", e.pts[0], e.pts[1], { rate: 1.8, gain: 0.5 })
+        snd.play("laser.beam", e.pts[0], e.pts[1])
         break
       case "shield":
         fx.ring(e.x, e.y, 0.6, 2.2, 0.35, linear(ITEM_COLOR.shield, 3), 1)
         fx.burst(P.spark, 14, e.x, e.y, 0.3, 6)
-        snd.play("glass.break", e.x, e.y)
+        snd.play("shield.break", e.x, e.y)
         break
       case "bramble":
         fx.burst(P.leaf, 12, (e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2, 0.3, 3)
+        snd.play("bramble.grow", (e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2)
         break
       case "dry":
         snd.play("gun.dry-fire", e.x, e.y, { gain: 0.5 })
@@ -546,8 +555,14 @@ export class Game {
       const c = ARROW_COLOR[r.kind]
       const flying = r.state === "fly"
       const z = flying ? 0.05 : r.state === "stuck" ? 0.25 : 0.1
+      // A freshly stuck shaft quivers about its head for a moment.
+      const since = r.state === "stuck" ? this.now - (this.stuckAt.get(r.id) ?? -9) : 9
+      const wob = since < 0.4 ? Math.sin(since * 70) * 0.22 * (1 - since / 0.4) ** 2 : 0
+      const cw = Math.cos(wob), sw = Math.sin(wob)
+      const wdx = dx * cw - dy * sw, wdy = dx * sw + dy * cw
       for (const [ox, oy] of this.wraps(x, y, 1.5)) {
-        const f = this.arrowFrame(x + ox - dx * len * (r.state === "stuck" ? 0.7 : 1), y + oy - dy * len * (r.state === "stuck" ? 0.7 : 1), dx, dy, z, r.state === "loose" ? r.age * 14 : 0)
+        const back = len * (r.state === "stuck" ? 0.7 : 1)
+        const f = this.arrowFrame(x + ox - wdx * back, y + oy - wdy * back, wdx, wdy, z, r.state === "loose" ? r.age * 14 : 0)
         this.pushPart(this.arrowModels[r.kind], f, scale, linear(c, flying ? 2.6 : 1.4), 0, 1, 0)
         const hx = x + ox, hy = y + oy
         this.add.push(hx, hy, 0.35, flying ? 0.32 : 0.2, flying ? 0.32 : 0.2, 0, Q.glow, linear(c, flying ? 1.8 : 1.1), flying ? 0.6 : 0.35 + 0.12 * Math.sin(this.now * 4 + r.id), 1)
@@ -567,6 +582,7 @@ export class Game {
       }
     }
     for (const id of this.trails.keys()) if (!live.has(id)) this.trails.delete(id)
+    for (const id of this.stuckAt.keys()) if (!live.has(id)) this.stuckAt.delete(id)
     for (const id of this.arrowPrev.keys()) if (!live.has(id)) this.arrowPrev.delete(id)
   }
 

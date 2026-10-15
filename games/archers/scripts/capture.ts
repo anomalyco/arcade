@@ -65,10 +65,10 @@ else {
     console.log(file)
   }
 }
-type Probe = { world: { s: { phase: string; round: number; archers: { name: string; wins: number; kills: number; alive: boolean }[] } }; counts: Record<string, number> }
+type Probe = { world: { s: { phase: string; round: number; archers: { name: string; wins: number; kills: number; alive: boolean }[] } }; counts: Record<string, number>; sound: { played: Record<string, number> } }
 const state = await page.evaluate(() => {
   const g = (globalThis as { archers?: Probe }).archers
-  return g ? { phase: g.world.s.phase, round: g.world.s.round, archers: g.world.s.archers.map((a) => `${a.name} w${a.wins} k${a.kills}${a.alive ? "" : " dead"}`), counts: g.counts } : null
+  return g ? { phase: g.world.s.phase, round: g.world.s.round, archers: g.world.s.archers.map((a) => `${a.name} w${a.wins} k${a.kills}${a.alive ? "" : " dead"}`), counts: g.counts, sounds: g.sound.played } : null
 })
 console.log(JSON.stringify(state))
 await context.close()
