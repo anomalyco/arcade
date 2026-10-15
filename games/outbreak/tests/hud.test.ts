@@ -5,6 +5,9 @@ import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
 import { ActorFeedback, lootCallout } from "../src/hud/actor-feedback"
 import { CalloutModel, FADE_OUT, type CalloutKind } from "../src/hud/callouts"
+import { alignFor, chooseSide, SideBlend } from "../src/hud/placement"
+import { RemoteAdapter } from "../src/hud/remote"
+import { ActorVitals, type VitalsInput } from "../src/hud/vitals"
 
 describe("callout model", () => {
   test("stacks newest on top, keeps progress nearest the head, and caps the stack", () => {
@@ -192,5 +195,137 @@ describe("actor feedback from simulation state", () => {
     expect(lootCallout("Out of 9mm ammo! Search houses (E) or shove (V)")).toEqual({ text: "Out of ammo", kind: "warning", key: "ammo" })
     expect(lootCallout("Blocked by barricade (2/3 planks)")?.text).toBe("Boarded up 2/3")
     expect(lootCallout("Already fully barricaded (3/3 planks)")?.text).toBe("Fully boarded")
+  })
+})
+
+describe("character HUD placement", () => {
+  test("a side is kept until the survivor aims into it, then swaps with hysteresis", () => {
+    const down = { x: 0, y: 1 }
+    expect(chooseSide("down", { x: 1, y: 0 }, null)).toBe("down")
+    expect(chooseSide("down", down, "down")).toBe("up")
+    // 60° off screen-down: inside the exit band, so whichever side is current stays.
+    const sixty = { x: Math.sin(Math.PI / 3), y: Math.cos(Math.PI / 3) }
+    expect(chooseSide("down", sixty, "down")).toBe("down")
+    expect(chooseSide("down", sixty, "up")).toBe("up")
+    expect(chooseSide("down", { x: 1, y: 0 }, "up")).toBe("down")
+    expect(chooseSide("right", { x: 1, y: 0.2 }, null)).toBe("left")
+    expect(chooseSide("down", down, null, false)).toBe("down")
+    expect(chooseSide("down", { x: 0, y: 0 }, "up")).toBe("up")
+  })
+
+  test("side swaps slide; reduced motion snaps", () => {
+    const box = { x: 100, top: 40, bottom: 120, half: 10, mid: 80, aimX: 0, aimY: 0 }
+    const b = new SideBlend()
+    expect(b.step(box, "down", 6, 1 / 60, false)).toEqual({ x: 100, y: 126 })
+    const mid = b.step(box, "up", 6, 1 / 60, false)
+    expect(mid.y).toBeLessThan(126)
+    expect(mid.y).toBeGreaterThan(34)
+    expect(b.align.ay).toBeLessThan(0)
+    expect(b.align.ay).toBeGreaterThan(-1)
+    expect(b.step(box, "up", 6, 1 / 60, true)).toEqual({ x: 100, y: 34 })
+    expect(b.align).toEqual(alignFor("up"))
+  })
+})
+
+describe("character rings", () => {
+  const tuning = { staminaLow: 0.3, batteryLow: 0.25, healthLow: 35 }
+  const base = (): VitalsInput => ({
+    health: 100,
+    maxHealth: 100,
+    stamina: 1,
+    sprinting: false,
+    exhausted: false,
+    reload: null,
+    pistol: true,
+    magAmmo: 8,
+    reserveAmmo: 12,
+    flashlightOn: true,
+    battery: 1,
+    batteryDepleted: false,
+    flashlightOutput: 1,
+  })
+  const run = (v: ActorVitals, input: VitalsInput, t0: number, seconds: number) => {
+    let t = t0
+    for (let i = 0; i < Math.round(seconds * 60); i++) v.observe(input, tuning, (t += 1 / 60), 1 / 60)
+    return t
+  }
+  const shown = (v: ActorVitals) => v.meters.filter((m) => m.alpha > 0.5).map((m) => `${m.id}:${m.state}`)
+
+  test("stamina shows while spent, ambers when low, reds when exhausted, and fades once full", () => {
+    const v = new ActorVitals()
+    let t = run(v, base(), 0, 0.5)
+    expect(shown(v)).toEqual([])
+    t = run(v, { ...base(), stamina: 0.7, sprinting: true }, t, 0.3)
+    expect(shown(v)).toEqual(["stamina:ok"])
+    expect(v.meter("stamina").draining).toBe(true)
+    t = run(v, { ...base(), stamina: 0.2, sprinting: true }, t, 0.1)
+    expect(shown(v)).toEqual(["stamina:low"])
+    t = run(v, { ...base(), stamina: 0, exhausted: true }, t, 0.1)
+    expect(shown(v)).toEqual(["stamina:critical"])
+    t = run(v, base(), t, 0.5)
+    expect(shown(v)).toEqual(["stamina:ok"])
+    run(v, base(), t, 0.6)
+    expect(v.presence).toBe(0)
+  })
+
+  test("reload rings the magazine count, lingers, and warns on an empty magazine", () => {
+    const v = new ActorVitals()
+    let t = run(v, { ...base(), magAmmo: 2, reload: 0.4 }, 0, 0.2)
+    expect(shown(v)).toEqual(["reload:ok"])
+    expect(v.meter("reload").text).toBe("2")
+    expect(v.meter("reload").fill).toBeCloseTo(0.4)
+    t = run(v, { ...base(), magAmmo: 8 }, t, 0.5)
+    expect(v.meter("reload").text).toBe("8")
+    expect(shown(v)).toEqual(["reload:ok"])
+    t = run(v, { ...base(), magAmmo: 8 }, t, 1)
+    expect(shown(v)).toEqual([])
+    run(v, { ...base(), magAmmo: 0, reserveAmmo: 6 }, t, 0.2)
+    expect(shown(v)).toEqual(["reload:critical"])
+  })
+
+  test("health appears after a hit and stays while low; battery only when running out", () => {
+    const v = new ActorVitals()
+    let t = run(v, base(), 0, 0.1)
+    t = run(v, { ...base(), health: 80 }, t, 0.2)
+    expect(shown(v)).toEqual(["health:ok"])
+    t = run(v, { ...base(), health: 80 }, t, 4)
+    expect(shown(v)).toEqual([])
+    t = run(v, { ...base(), health: 30 }, t, 5)
+    expect(shown(v)).toEqual(["health:critical"])
+    t = run(v, { ...base(), health: 30, battery: 0.1 }, t, 0.3)
+    expect(shown(v)).toEqual(["health:critical", "battery:low"])
+    run(v, { ...base(), health: 30, battery: 0.1, flashlightOn: false }, t, 1.5)
+    expect(shown(v)).toEqual(["health:critical"])
+  })
+})
+
+describe("remote survivors", () => {
+  test("replicated flags drive feedback and rings; private state is never read", () => {
+    const r = new RemoteAdapter()
+    const seen: { text: string; kind: CalloutKind }[] = []
+    const fb = new ActorFeedback((text, kind) => seen.push({ text, kind }))
+    const s = { x: 1, y: 2, aim: 0, health: 100, maxHealth: 100, sprinting: false, exhausted: false, equippedItem: "pistol" as const, reloadRemaining: 0, flashlightOn: true, flashlightOutput: 1 }
+    let t = 0
+    const tick = () => {
+      t += 1 / 60
+      r.update(s, t)
+      fb.observe(r.feedback(s), { time: t })
+    }
+    tick()
+    s.reloadRemaining = 0.5
+    for (let i = 0; i < 30; i++) tick()
+    expect(r.reload).toBeCloseTo(29 / 60 / PISTOL_RELOAD_TIME, 2)
+    expect(seen.at(-1)).toEqual({ text: "Reloading", kind: "progress" })
+    s.reloadRemaining = 0
+    s.health = 76
+    s.exhausted = true
+    tick()
+    expect(r.reload).toBeNull()
+    expect(seen.map((x) => x.text)).toEqual(expect.arrayContaining(["\u221224 HP", "Exhausted"]))
+    expect(seen.some((x) => /ammo|Empty|Reloaded/.test(x.text))).toBe(false)
+    const vitals = r.vitals(s)
+    expect(vitals.stamina).toBeNull()
+    expect(vitals.magAmmo).toBeNull()
+    expect(vitals.battery).toBeNull()
   })
 })

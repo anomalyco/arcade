@@ -1,5 +1,6 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { keyLabel } from "@arcade/kit/client/controls"
+import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { holdProgress, type InteractTarget } from "../shared/interact"
 import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression } from "../shared/progression"
@@ -7,7 +8,6 @@ import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-const kbd = (code: string) => `<kbd>${esc(keyLabel(code))}</kbd>`
 const MARKER_RANGE = 30
 
 /** Where an item lands when taken, for the strip's small tag. */
@@ -114,7 +114,7 @@ export class InventoryHud {
           else cells.push(`<div class="pk" data-heavy="${(ledger.items.get(s.item)?.slots ?? 1) > 1}"><kbd>${i + 1}</kbd>${esc(ledger.label(s.item))}</div>`)
         })
       }
-      this.els.pack.innerHTML = `<span class="tag">${kbd("Tab")} Pack ${used}/${PACK_SIZE}</span>${cells.join("")}`
+      this.els.pack.innerHTML = `<span class="tag">${keyCapHtml("Tab")} Pack ${used}/${PACK_SIZE}</span>${cells.join("")}`
       this.els.pack.dataset.open = String(this.packOpen)
     }
   }
@@ -135,26 +135,21 @@ export class InventoryHud {
       el.hidden = true
       return
     }
-    const html = this.promptHtml(view, prompt)
-    const hold = holdProgress(p)
-    const holdHtml = hold > 0 ? `<i class="hold" style="width:${(hold * 100).toFixed(1)}%"></i>` : ""
-    const full = html + holdHtml
-    if (full !== this.lastStrip) {
-      el.innerHTML = full
-      this.lastStrip = full
+    const html = this.promptHtml(view, prompt, holdProgress(p))
+    if (html !== this.lastStrip) {
+      el.innerHTML = html
+      this.lastStrip = html
     }
     el.dataset.strip = String(html.startsWith('<div class="strip'))
     el.hidden = false
     el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
   }
 
-  private promptHtml(view: SessionView, prompt: InteractTarget): string {
-    const E = kbd("KeyE")
+  private promptHtml(view: SessionView, prompt: InteractTarget, hold: number): string {
     const progression = view.progression
-    const action = (k: string, label: string) => `<span>${k}${esc(label)}</span>`
-    const parts = [action(E, prompt.primary.label)]
-    if (prompt.alt) parts.push(action(`${kbd("ShiftLeft")}${E}`, prompt.alt.label))
-    if (prompt.secondary) parts.push(action(`<kbd>Hold ${esc(keyLabel("KeyE"))}</kbd>`, prompt.secondary.label))
+    const parts = [keyPromptHtml("KeyE", prompt.primary.label)]
+    if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${keyPromptHtml("KeyE", prompt.alt.label)}</span>`)
+    if (prompt.secondary) parts.push(keyPromptHtml("KeyE", prompt.secondary.label, { hold: true, progress: hold }))
     const line = parts.join('<span class="sep">·</span>')
     const store = this.stripStore(view, prompt)
     if (!store) return line
@@ -165,8 +160,8 @@ export class InventoryHud {
           .map((s, i) => this.itemHtml(view, s, i, prompt.kind === "stash"))
           .join("")
       : `<span class="item" data-taken="true">Empty</span>`
-    const range = stacks.length > 1 ? `${kbd("Digit1")}–${kbd(`Digit${Math.min(stacks.length, 9)}`)}` : kbd("Digit1")
-    const hint = stacks.length ? `${line}<span class="sep">·</span><span>${range}Take one</span>` : line
+    const range = stacks.length > 1 ? `${keyCapHtml("Digit1")}–${keyCapHtml(`Digit${Math.min(stacks.length, 9)}`)}` : keyCapHtml("Digit1")
+    const hint = stacks.length ? `${line}<span class="sep">·</span><span class="akp">${range}<span class="akp-label">Take one</span></span>` : line
     return `<div class="strip"><div class="strip-t">${esc(title)}</div><div class="strip-items">${items}</div><div class="strip-h">${hint}</div></div>`
   }
 
@@ -176,7 +171,7 @@ export class InventoryHud {
     const installed = stash && dest === "pack"
     const room = progression.ledger.room(view.actorId, s.item, 1) > 0
     const tag = installed ? "installed" : room ? dest : "full"
-    return `<span class="item" data-dest="${dest}" data-full="${!room && !installed}" data-rare="${dest === "pack"}"><kbd>${i + 1}</kbd>${esc(progression.stackLabel(s))}<small>${tag}</small></span>`
+    return `<span class="item" data-dest="${dest}" data-full="${!room && !installed}" data-rare="${dest === "pack"}">${keyCapHtml(`Digit${i + 1}`)}${esc(progression.stackLabel(s))}<small>${tag}</small></span>`
   }
 
   private syncMarkers(view: SessionView, cam: Camera, w: number, h: number): void {

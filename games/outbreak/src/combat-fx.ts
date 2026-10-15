@@ -141,8 +141,9 @@ export class OutbreakCombatFX {
 
     const batches: Batch[] = []
 
-    // 1. Equipped 3D pistol in right hand
-    if (player.equippedItem === "pistol") {
+    // 1. Fallback pistol if caller did not draw a posed gun frame through Survivor.draw
+    const posedGun = (survivorBones as BonePose & { gun?: unknown }).gun
+    if (player.equippedItem === "pistol" && !posedGun) {
       const hand = attachment(survivorBones, "right.hand")
       const px = hand ? hand.p[0] : player.x + Math.cos(player.aim) * 0.32
       const py = hand ? hand.p[1] + 0.04 : support(player.x, player.y) + 1.18
@@ -262,7 +263,7 @@ export class OutbreakCombatFX {
         const u = 1 - age / 0.09
         const mx = (s.fromX + s.toX) * 0.5
         const mz = (s.fromY + s.toY) * 0.5
-        const my = support(mx, mz) + 1.18
+        const my = support(mx, mz) + 1.35
         const len = Math.hypot(s.toX - s.fromX, s.toY - s.fromY)
         if (len > 0.3) {
           pushAdd(mx, my, mz, len * 0.5, 1.0, 0.84, 0.45, u * 0.85, 4, s.aim, 0.025 / Math.max(0.5, len * 0.5), 0)
@@ -271,7 +272,7 @@ export class OutbreakCombatFX {
 
       if (this.seenShots.has(s.id)) continue
       this.seenShots.add(s.id)
-      const fy = support(s.fromX, s.fromY) + 1.2
+      const fy = support(s.fromX, s.fromY) + 1.36
       this.lastFlash = { x: s.fromX, y: fy, z: s.fromY, until: time + 0.08 }
 
       if (s.hitZombieId !== null && this.levelData) {

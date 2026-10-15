@@ -1,11 +1,9 @@
 * { box-sizing: border-box }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080b0d; color: #d6d4c6; font: 12px ui-monospace, monospace }
 #game { display: block; width: 100%; height: 100%; cursor: crosshair }
-#prompt { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid #ffffff29; border-radius: 5px; background: #0f1515e0; color: #e6e4d6; font-size: 11.5px; white-space: nowrap; box-shadow: 0 4px 14px #00000070; overflow: hidden }
+#prompt { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 5px; border: 1px solid #ffffff29; border-radius: 999px; background: #0f1515e6; color: #ece9dc; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 14px #00000070 }
 #prompt[hidden] { display: none !important }
-#prompt kbd { display: inline-block; padding: 1px 5px; margin-right: 4px; border: 1px solid #ffffff38; border-radius: 3px; background: #1d2626; color: #f2f0e4; font: inherit; font-weight: 600 }
 #prompt .sep { opacity: .45 }
-#prompt .hold { position: absolute; left: 0; bottom: 0; height: 2px; background: #c5cfb8; pointer-events: none }
 #hud { position: fixed; left: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 6px; pointer-events: none }
 #meters { display: flex; gap: 6px; align-items: center }
 #stamina, #battery { width: 108px; height: 4px; border-radius: 2px; background: #0b1011b8; border: 1px solid #ffffff1f; overflow: hidden; opacity: .32; transition: opacity .22s ease, border-color .18s ease }
@@ -30,22 +28,22 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #belt .pill[data-flash="true"] { border-color: #c5cfb880 }
 #hands { display: flex; gap: 8px; align-items: center }
 #pack { display: flex; gap: 4px; align-items: center; color: #8c9488; font-size: 10.5px }
-#pack .tag kbd { font: inherit; padding: 0 4px; margin-right: 4px; border: 1px solid #ffffff26; border-radius: 3px; color: #c9c7b9 }
+#pack .tag { display: inline-flex; align-items: center; gap: 5px }
 #pack .pk { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; border: 1px dashed #ffffff26; border-radius: 4px; background: #0f151599; color: #c9c4b2; white-space: nowrap }
 #pack .pk kbd { font: inherit; opacity: .65 }
 #pack .pk[data-empty="true"] { color: #6c746a }
 #pack .pk[data-heavy="true"] { min-width: 110px; border-style: solid; border-color: #e0894a77 }
-#prompt[data-strip="true"] { display: block; padding: 7px 9px; white-space: nowrap }
+#prompt[data-strip="true"] { display: block; padding: 8px 10px; border-radius: 6px }
 #prompt .strip-t { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: #8c9488; margin-bottom: 6px }
 #prompt .strip-items { display: flex; gap: 5px }
-#prompt .item { display: inline-flex; align-items: center; padding: 4px 7px; border: 1px solid #ffffff22; border-radius: 4px; background: #182121; font-size: 11.5px }
+#prompt .item { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 4px; border: 1px solid #ffffff22; border-radius: 4px; background: #182121; font-size: 11.5px }
 #prompt .item small { margin-left: 6px; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #8c9488 }
 #prompt .item[data-dest="belt"] small { color: #c5cfb8 }
 #prompt .item[data-rare="true"] { border-color: #f0d58488; color: #f0d584 }
 #prompt .item[data-full="true"] { opacity: .55 }
 #prompt .item[data-full="true"] small { color: #e09a48 }
 #prompt .item[data-taken="true"] { opacity: .45 }
-#prompt .strip-h { margin-top: 6px; display: flex; gap: 7px; align-items: center; font-size: 10.5px; color: #a9ad9f }
+#prompt .strip-h { margin-top: 7px; display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: #c9c7b9 }
 #markers { position: fixed; inset: 0; pointer-events: none; z-index: 9 }
 #markers .marker { position: absolute; left: 0; top: 0; padding: 2px 7px; border: 1px solid #ffffff26; border-radius: 999px; background: #0f1515cc; color: #e6e4d6; font-size: 10.5px; white-space: nowrap }
 #markers .marker[hidden] { display: none }

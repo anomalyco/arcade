@@ -43,6 +43,8 @@ button { font: inherit; color: inherit; }
 .i-line { font: 300 34px/1 var(--display); letter-spacing: 0.32em; padding-left: 0.32em; }
 .i-sub { margin-top: 12px; min-height: 13px; font: 500 12px/1 var(--display); letter-spacing: 0.4em; padding-left: 0.4em; color: var(--dim); }
 .h-keys { position: absolute; left: 0; right: 0; bottom: 28px; text-align: center; font: 500 12px/1 var(--display); letter-spacing: 0.3em; color: var(--faint); animation: fadein 1.2s ease-out; }
+.h-keys .akc { margin-right: 0.35em; letter-spacing: 0; }
+.h-keys .k-sep { margin: 0 0.6em; }
 @keyframes fadein { from { opacity: 0; } }
 
 .h-world { position: absolute; inset: 0; overflow: hidden; }
@@ -59,7 +61,7 @@ button { font: inherit; color: inherit; }
 /* Gadget hint (cops) and tire status (driver): one small line bottom-centre with a hairline bar under it. */
 .h-gadget, .h-tires { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.2s; }
 .g-row { display: flex; align-items: center; gap: 10px; font: 500 12px/1 var(--display); letter-spacing: 0.3em; }
-.g-key { display: grid; place-items: center; width: 18px; height: 18px; padding-left: 0.1em; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 3px; font-weight: 600; letter-spacing: 0.1em; color: var(--text); }
+.g-key { display: grid; place-items: center; font-size: 11px; }
 .g-name { color: var(--text); }
 .g-pips { display: flex; gap: 4px; }
 .g-pips i { width: 6px; height: 6px; border-radius: 50%; background: #ffc93a; box-shadow: 0 0 6px rgba(255, 201, 58, 0.6); }
