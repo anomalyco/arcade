@@ -917,6 +917,7 @@ async function main() {
           aim: { type: "number", description: "Aim angle in radians" },
           flashlight: { type: "boolean", description: "Flashlight on/off" },
           clearZombiesRadius: { type: "number", description: "Clear nearby zombies within radius" },
+          openDoor: { type: "boolean", description: "Open nearby interior doors" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
