@@ -51,7 +51,7 @@ export default defineStation({
     { label: "Outbreak street GPU, main → vegetation (Mac Studio, Metal, alternating runs)", value: "17.09 → 17.69 ms", source: "perf/outbreak-vegetation-paired.json" },
     { label: "Outbreak interior GPU, main → vegetation", value: "17.44 → 18.09 ms", source: "perf/outbreak-vegetation-paired.json" },
     { label: "Outbreak static vertices", value: "294k → 321k", source: "games/outbreak/tests/cutaway.test.ts" },
-    { label: "Pixels changed by actor bending at the same tick (strength 0 vs 1)", value: "8,205", source: "packages/kit/lab/prove-foliage.ts (grass-bend-off/on)" },
+    { label: "Pixels changed by actor bending at the same tick (strength 0 vs 1)", value: "8,205", source: "scripts/lab/prove-foliage.ts (grass-bend-off/on)" },
   ],
   paths: ["packages/kit/gpu/foliage.ts", "packages/kit/lab/foliage.ts", "games/outbreak/src/architecture.ts"],
   branches: ["vegetation-*", "foliage-*"],

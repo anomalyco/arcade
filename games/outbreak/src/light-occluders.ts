@@ -1,4 +1,4 @@
-import { OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { OCC_FLOATS } from "@arcade/kit/limits"
 import { propShape, type Town } from "../shared/map"
 
 type Rect = readonly [number, number, number, number]

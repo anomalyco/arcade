@@ -3,8 +3,8 @@ import { RectGrid, type Rect } from "../../shared/geom"
 import type { LightDef, LightKind, MapDef, MapKind, PropKind } from "../../shared/maps"
 import { deskMonitorLights } from "./models"
 
-import { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
-export { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/limits"
+export { LIGHT_FLOATS, OCC_FLOATS } from "@arcade/kit/limits"
 
 /** Heights of solid props for shadow casting; anything not listed casts none. */
 const PROP_H: Partial<Record<PropKind, number>> = {

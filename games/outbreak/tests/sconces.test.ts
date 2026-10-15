@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { LIGHT_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS } from "@arcade/kit/limits"
 import { QUALITY_PROFILES } from "@arcade/kit/quality"
 import { inBuildingFootprint, makeTown } from "../shared/map"
 import { generateWorldChunk } from "../shared/world"

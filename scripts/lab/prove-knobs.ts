@@ -4,8 +4,8 @@
 // and searchable, Details has tabs, search and a toolbar, seeds, headings and pairs use knobs' inspector fields, a
 // group's die runs its own Randomize, a multi-selection reads "—", a page's bare button rules don't reach knobs, and
 // the radial menu opens only from the viewport.
-//   hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts
-//   bun packages/kit/lab/prove-knobs.ts --shots-only --out captures/lab-knobs/before    screenshots only
+//   hivemind run --kind browser --fetch captures/lab-knobs -- bun scripts/lab/prove-knobs.ts
+//   bun scripts/lab/prove-knobs.ts --shots-only --out captures/lab-knobs/before    screenshots only
 // Never opens a visible window and never plays sound (muted browser, AudioContext blocked).
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -17,7 +17,7 @@ const arg = (name: string) => {
   const i = process.argv.indexOf(name)
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(root, arg("--out") ?? "captures/lab-knobs")
 const shotsOnly = process.argv.includes("--shots-only")
 mkdirSync(out, { recursive: true })

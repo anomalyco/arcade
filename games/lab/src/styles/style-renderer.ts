@@ -1,7 +1,7 @@
 import { mat4, vec4 } from "wgpu-matrix"
 import { Camera } from "@arcade/kit/client/camera"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/limits"
 import { FLOATS_PER_VERT, packVerts, VERT_BYTES, type Mesh } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"

@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
-import { LOOK_PRESETS, LOOK_PRESET_IDS, type LookPresetId } from "../gpu/look"
+import { LOOK_PRESETS, LOOK_PRESET_IDS, type LookPresetId } from "@arcade/kit/gpu/look"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.LOOKS_OUT ?? "/Users/kit/code/home/artifacts/2026-10-14-looks")
 const perfDir = resolve(root, "perf")
 mkdirSync(out, { recursive: true })

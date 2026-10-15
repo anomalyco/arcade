@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 // Headless proof for the Lab's resizable panels, compact Library and Library keyboard navigation.
-//   hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
-//   bun packages/kit/lab/prove-panels.ts --shots-only --out captures/lab-panels/before    screenshots + idle cost only
+//   hivemind run --kind browser --fetch captures/lab-panels -- bun scripts/lab/prove-panels.ts
+//   bun scripts/lab/prove-panels.ts --shots-only --out captures/lab-panels/before    screenshots + idle cost only
 // Checks: drag handles resize and persist across reload (per layout, stations included), double-click resets,
 // collapse to a rail and back, the canvas backing size follows the viewport at DPR 1 and 2 with no blank frames
 // while dragging, a keyboard-only sequence applies the right Library items, and an idle Lab does no layout work.
@@ -16,7 +16,7 @@ const arg = (name: string) => {
   const i = process.argv.indexOf(name)
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(root, arg("--out") ?? "captures/lab-panels")
 const shotsOnly = process.argv.includes("--shots-only")
 /** `--only keyboard` (or shots, resize, dpr) runs one part. */

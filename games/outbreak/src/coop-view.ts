@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { SurvivorSlot } from "../shared/coop-sim"
 import type { FlashlightTuning } from "../shared/flashlight"

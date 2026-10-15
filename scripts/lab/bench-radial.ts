@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 // Radial menu latency benchmark (headless Chrome, Metal WebGPU, Getaway Lab with a live render loop).
-// bun packages/kit/lab/bench-radial.ts --label before [--runs 7] [--out dir] [--shots]
+// bun scripts/lab/bench-radial.ts --label before [--runs 7] [--out dir] [--shots]
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
@@ -11,7 +11,7 @@ const { values: flags } = parseArgs({
   options: {
     label: { type: "string", default: "run" },
     runs: { type: "string", default: "7" },
-    out: { type: "string", default: resolve(import.meta.dir, "../../../captures/radial-bench") },
+    out: { type: "string", default: resolve(import.meta.dir, "../../captures/radial-bench") },
     shots: { type: "boolean", default: false },
     // Scene loop on matches the live Lab; off isolates the menu from headless WebGPU presentation cost.
     loop: { type: "string", default: "on" },
@@ -21,7 +21,7 @@ const runs = Number(flags.runs)
 const out = resolve(flags.out!)
 mkdirSync(out, { recursive: true })
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 // headless-shell paces frames near display rate; full headless Chrome on a display-less Mac paces at ~13 fps.
 const newest = (re: RegExp) => readdirSync(cache).filter(n => re.test(n)).sort((a, b) => Number(b.split("-").pop()) - Number(a.split("-").pop()))

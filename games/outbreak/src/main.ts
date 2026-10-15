@@ -16,7 +16,7 @@ import {
 } from "@arcade/kit/quality"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
