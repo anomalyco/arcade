@@ -394,3 +394,52 @@ export function uploadSplitSprites(
   }
   return { alphaCount, addCount, addByteOffset, halfCap }
 }
+
+/**
+ * Uploads a square RGBA8 decal/signage atlas texture and generates its full mip chain on the CPU
+ * using an alpha-weighted 2×2 box filter (with a `1.1×` alpha coverage boost so thin lettering and
+ * crosswalk stripes stay legible under alpha testing at oblique angles).
+ */
+export function uploadAlphaWeightedMipChain(
+  device: GPUDevice,
+  texture: GPUTexture,
+  img: { width: number; data: Uint8ClampedArray | Uint8Array },
+  alphaBoost = 1.1,
+): void {
+  let w = img.width
+  let level = new Uint8Array(img.data.buffer.slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength))
+  for (let mip = 0; w >= 1; mip++) {
+    device.queue.writeTexture({ texture, mipLevel: mip }, level, { bytesPerRow: w * 4 }, [w, w])
+    if (w === 1) break
+    const n = w >> 1
+    const next = new Uint8Array(n * n * 4)
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        let r = 0
+        let g = 0
+        let b = 0
+        let a = 0
+        for (const [dx, dy] of [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+          [1, 1],
+        ] as const) {
+          const i = ((y * 2 + dy) * w + x * 2 + dx) * 4
+          const al = level[i + 3]!
+          r += level[i]! * al
+          g += level[i + 1]! * al
+          b += level[i + 2]! * al
+          a += al
+        }
+        const o = (y * n + x) * 4
+        next[o] = a ? r / a : 0
+        next[o + 1] = a ? g / a : 0
+        next[o + 2] = a ? b / a : 0
+        next[o + 3] = Math.min(255, (a / 4) * alphaBoost)
+      }
+    }
+    level = next
+    w = n
+  }
+}
