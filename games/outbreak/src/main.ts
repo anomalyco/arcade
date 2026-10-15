@@ -206,7 +206,6 @@ async function main() {
       markers: document.querySelector<HTMLElement>("#markers"),
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
-    () => session.sim.slots.map((s) => s.survivor),
     () => settings.discovery,
   )
   if (!navigator.gpu) {

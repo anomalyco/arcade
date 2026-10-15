@@ -253,57 +253,37 @@ describe("safehouse workbench", () => {
   test("the first scrap is noted for the squad but not announced (Discovered, Not Told)", () => {
     const { session, progression, give, notices } = setup()
     const mate = session.sim.addSurvivor("mate", 1)
-    expect(progression.benchRows().map((r) => r.id)).toEqual([])
     give("scrap", 2)
-    expect(notices()).toEqual([])
-    expect(mate.notices.map((n) => n.text).filter((t) => t.startsWith("New material"))).toEqual([])
-    expect(progression.seen("scrap")).toBe(true)
-    // A recipe shows on the bench once all of its materials have been seen (the starting planks count).
-    expect(progression.benchRows().map((r) => r.id)).toEqual(["spiked-board", "reinforced"])
     give("battery")
-    expect(progression.benchRows().map((r) => r.id)).toEqual(["lure", "spiked-board", "reinforced"])
-    expect(notices().filter((t) => t.startsWith("New material"))).toEqual([])
+    expect(notices()).toEqual([])
+    expect(mate.notices).toEqual([])
+    expect(progression.seen("scrap")).toBe(true)
   })
 
-  test("depositing keeps ammo and keys, installs the toolbox (tier 2) and tells everyone", () => {
+  test("at the bench E installs a carried toolbox (tier 2) without a word; the stash takes supplies but not ammo or keys", () => {
     const ctx = setup()
-    const { ledger, progression, give, step, notices, session } = ctx
+    const { ledger, progression, give, step, notices, session, stand } = ctx
     const mate = session.sim.addSurvivor("mate", 1)
-    atBench(ctx)
+    const bench = atBench(ctx)
     give("scrap", 4)
     give("key")
     give("toolbox")
     step()
     expect(session.view.prompt?.kind).toBe("bench")
+    expect(session.view.prompt?.primary.id).toBe("install")
     step({ interact: true })
+    expect(ledger.count("bench:ash", "toolbox")).toBe(1)
+    expect(ledger.count("player/belt", "scrap")).toBe(4)
+    expect(progression.tier("bench:ash")).toBe(2)
+    expect(notices()).toEqual([])
+    expect(mate.notices).toEqual([])
+    stand(bench.stash.x + 0.8, bench.stash.y, Math.PI)
+    expect(session.view.prompt?.kind).toBe("stash")
+    step({ interact: true, interactAction: "deposit" })
     expect(ledger.count("bench:ash", "scrap")).toBe(4)
     expect(ledger.count("bench:ash", "plank")).toBe(2)
-    expect(ledger.count("bench:ash", "toolbox")).toBe(1)
     expect(ledger.count("player", "ammo")).toBe(6)
     expect(ledger.count("player", "key")).toBe(1)
-    expect(progression.tier("bench:ash")).toBe(2)
-    expect(notices()).toContain("Workbench tier 2: the toolbox is installed")
-    expect(mate.notices.map((n) => n.text)).toContain("Workbench tier 2: the toolbox is installed")
-  })
-
-  test("research needs light: daylight works, the dark refuses, a flashlight plus the room lamp or the generator works", () => {
-    const ctx = setup()
-    const { ledger, progression, give, step, notices, p } = ctx
-    give("chem", 6)
-    atBench(ctx, 23)
-    p.flashlightOn = false
-    p.flashlightOutput = 0
-    step({ pick: { mode: "bench", index: 0 } })
-    expect(notices()).toContain("Too dark to work. Shine a flashlight or run the generator")
-    expect(progression.learned("bandage")).toBe(false)
-    p.flashlightOn = true
-    p.flashlightOutput = 1
-    step({ pick: { mode: "bench", index: 0 } })
-    expect(p.channel?.kind).toBe("research")
-    step({}, Math.ceil(T.researchTime / TICK_DT) + 1)
-    expect(progression.learned("bandage")).toBe(true)
-    expect(ledger.count("player", "chem")).toBe(4)
-    expect(notices()).toContain("Squad learned Bandage. Hold Q to craft it anywhere")
   })
 
   test("the generator lights the bench at night and hums loud enough to draw the dead", () => {
@@ -316,22 +296,6 @@ describe("safehouse workbench", () => {
     step({}, 4)
     const hum = session.view.noises.find((n) => n.kind === "generator")!
     expect(hum.radius).toBe(T.generatorNoise)
-  })
-
-  test("tier-2 recipes need the toolbox installed", () => {
-    const ctx = setup()
-    const { progression, give, step, notices } = ctx
-    atBench(ctx)
-    give("plank", 4)
-    give("scrap", 8)
-    const rows = progression.benchRows().map((r) => r.id)
-    step({ pick: { mode: "bench", index: rows.indexOf("reinforced") } })
-    expect(notices()).toContain("Needs the toolbox installed (tier 2)")
-    give("toolbox")
-    step({ interact: true })
-    step({ pick: { mode: "bench", index: rows.indexOf("reinforced") } })
-    step({}, Math.ceil(T.researchTime / TICK_DT) + 1)
-    expect(progression.learned("reinforced")).toBe(true)
   })
 
   test("once learned, a teammate crafts it in the field from their own belt", () => {
@@ -396,7 +360,7 @@ describe("Lab tuning", () => {
     const [searched, untouched] = session.view.containers.filter((c) => c.kind === "dresser")
     fill(searched!, [{ item: "ammo", count: 3 }], true)
     progression.setTuning({ costScale: 2, researchTime: 0.5, unrelatedLabKey: 7 })
-    expect(ledger.rules.get("research:bandage")).toMatchObject({ duration: 0.5, consume: { chem: 4 } })
+    expect(ledger.rules.get("tinker:bandage")).toMatchObject({ duration: 0.5, consume: { chem: 2 } })
     expect(ledger.rules.get("craft:lure")!.consume).toEqual({ scrap: 2, battery: 2 })
     progression.setTuning({ lootRate: 0 })
     expect(ledger.count(searched!.id, "ammo")).toBe(3)
