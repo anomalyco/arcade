@@ -16,6 +16,7 @@ import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
+import { LIGHT_CURVE_KEYS } from "./light-ramps"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
@@ -431,9 +432,10 @@ export function exportOutbreakPreset(settings: OutbreakSubsystemMap): OutbreakPr
 }
 
 /** Curve settings' y ranges by field: their values are curves (JSON text, or points from a knobs Copy), not free text. */
-const CURVE_FIELDS: Readonly<Record<string, readonly [number, number]>> = Object.fromEntries(
-  Object.entries(DAY_NIGHT_CURVES).map(([field, c]) => [field, c.range]),
-)
+const CURVE_FIELDS: Readonly<Record<string, readonly [number, number]>> = Object.fromEntries([
+  ...Object.entries(DAY_NIGHT_CURVES).map(([field, c]) => [field, c.range]),
+  ...LIGHT_CURVE_KEYS.map(field => [field, [0, 1] as const]),
+])
 
 function validateAndCoerceValue(sample: unknown, value: unknown, field?: string): { ok: true; value: LabValue } | { ok: false; error: string } {
   const curveRange = field !== undefined ? CURVE_FIELDS[field] : undefined

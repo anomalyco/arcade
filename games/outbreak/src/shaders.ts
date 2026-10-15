@@ -46,6 +46,7 @@ export const outbreakSceneHooks: SceneHooks = {
     } else {
       let dn = max(d3, 0.85);
       let tight = max(0.5, OL.u0.w);
+      if (OL.rampOn.y > 0.5) { win = outbreakRamp(1u, sqrt(dPlan2) / r); }
       if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
         att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
       } else {

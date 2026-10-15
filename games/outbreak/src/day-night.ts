@@ -86,7 +86,7 @@ export const OUTBREAK_NIGHT_LOOK: Readonly<LookSettings> = {
   ...LOOK_PRESETS.noir.defaults,
 }
 
-export type DayNightLightingCurve = Omit<OutbreakLightingSettings, "lighting" | "actorLampShadow">
+export type DayNightLightingCurve = Omit<OutbreakLightingSettings, "lighting" | "actorLampShadow" | "lampFalloffCurve">
 
 export const OUTBREAK_DAY_LIGHTING: Readonly<DayNightLightingCurve> = {
   exposure: 1.08,
