@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 import { BUILD } from "../shared/build.gen"
 import { ROSTER } from "../shared/characters"
-import { STOCKS } from "../shared/config"
+import { RESULTS_SECONDS, SELECT_SECONDS, STOCKS } from "../shared/config"
 import { decodeClient, encodeServer } from "../shared/protocol"
 import { buildSnapshot } from "../shared/view"
 import { INTENT_OPS, NO_INTENT, World } from "../shared/world"
@@ -19,7 +19,7 @@ describe("brawl world", () => {
     w.botFill = 4
     w.fill()
     expect(w.players.size).toBe(4)
-    run(w, 26)
+    run(w, SELECT_SECONDS + 1)
     expect(w.phase).toBe("play")
     for (const f of w.players.values()) expect(f.stocks).toBe(STOCKS)
     let kos = 0
@@ -30,7 +30,7 @@ describe("brawl world", () => {
     expect(kos).toBeGreaterThan(0)
     expect(w.phase).toBe("results")
     expect(w.winner).not.toBe("")
-    run(w, 10)
+    run(w, RESULTS_SECONDS + 1)
     expect(w.phase).toBe("select")
   })
 

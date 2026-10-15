@@ -12,7 +12,7 @@ import type { Rect } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
 import { BLOCKS, CENTER, PROP_KINDS, ROPES, SOLIDS, STAGE, STAGE_SIZE } from "../../shared/arena"
 import { CHARACTERS, ROSTER, type CharacterDef } from "../../shared/characters"
-import { ACCEL, DT, PLAYER_RADIUS } from "../../shared/config"
+import { DT, FEEL, PLAYER_RADIUS } from "../../shared/config"
 import { F, type FighterView, type RosterRow, type Snapshot } from "../../shared/view"
 import type { Intent, SimEvent } from "../../shared/world"
 import type { Session } from "../session"
@@ -75,6 +75,8 @@ export class Game {
   private hurt = 0
   /** Popups the HUD draws: damage numbers and KO calls. */
   popups: { x: number; y: number; text: string; t0: number; color: Rgb; big?: boolean }[] = []
+  /** Most recent KO for the HUD banner callout. */
+  lastKo: { victim: string; by: string; stocks: number; at: number } | null = null
   private fallingProps: { kind: string; x: number; y: number; h: number; vx: number; vy: number; z: number; vz: number; t0: number }[] = []
   private lastProps = new Map<number, [number, string, number, number, number, number]>()
 
@@ -174,6 +176,16 @@ export class Game {
     // Holding the left button keeps swinging as the cooldown allows.
     if (cast < 0 && input.firing && (this.snap?.you?.cd[0] ?? 1) <= 0.05) cast = 0
     if (!this.play) cast = -1
+    if (cast >= 0 && (this.snap?.you?.cd[cast] ?? 0) <= 0.05) {
+      const d = this.fighters.get(this.myId)
+      const me = this.me
+      if (d && me && d.castSlot !== cast) {
+        d.castSlot = cast
+        d.castAt = this.now
+        const ab = this.def(me.c).abilities[cast]
+        if (ab?.effects[0]?.kind === "melee") swing(d.a, d.a.t)
+      }
+    }
     const i: Intent = { mx, my, aim: this.aim, tx: this.cursor.x, ty: this.cursor.y, cast }
     const seq = this.predictor.record(i) + 1
     this.session.send({ type: "intent", seq, i })
@@ -189,7 +201,7 @@ export class Game {
     const f = this.me
     if (!you || !f) return
     const d = this.def(f.c)
-    stepBody(b, you.move ? i.mx : 0, you.move ? i.my : 0, d.speed * you.speed, this.walk, DT, PLAYER_RADIUS, ACCEL * d.accel * you.accel)
+    stepBody(b, you.move ? i.mx : 0, you.move ? i.my : 0, d.speed * FEEL.moveScale * you.speed, this.walk, DT, PLAYER_RADIUS, FEEL.accel * d.accel * you.accel)
   }
 
   private reconcile(s: Snapshot): void {
@@ -334,33 +346,42 @@ export class Game {
         const by = this.fighterAt(e.by)
         const dx = by ? e.x - by.x : 0, dy = by ? e.y - by.y : 0
         if (target) {
-          flinch(target.a, dx, dy, Math.min(2, 0.5 + e.speed / 8))
-          target.a.flash = Math.min(0.6, 0.25 + e.speed / 40)
+          flinch(target.a, dx, dy, Math.min(2.2, 0.55 + e.speed / 7))
+          target.a.flash = Math.min(0.75, 0.3 + e.speed / 32)
         }
-        const strong = e.speed > 9
-        fx.sparks(e.x, e.y, 1, strong ? 18 : 8, strong ? 9 : 6)
-        fx.flash(t, e.x, e.y, 1, strong ? 1.6 : 0.9, [4, 3.4, 2.2], 0.12)
-        if (strong) fx.ring(t, e.x, e.y, 1.4, [3, 3, 3], 0.25, true)
-        this.popups.push({ x: e.x, y: e.y, text: `${Math.round(e.damage)}%`, t0: t, color: this.colorOf(e.by) })
-        snd.play(strong ? "melee.hit.metal" : "melee.hit.wood", e.x, e.y, { gain: Math.min(1, 0.4 + e.speed / 14) })
+        const strong = e.speed > 7.5
+        const col = this.colorOf(e.by)
+        fx.sparks(e.x, e.y, 1, strong ? 22 : 10, strong ? 10 : 6.5)
+        fx.flash(t, e.x, e.y, 1, strong ? 1.85 : 1.05, [4, 3.5, 2.2], 0.14)
+        fx.ring(t, e.x, e.y, strong ? 1.65 : 0.95, strong ? [3.2, 3, 2.6] : [col[0] * 2.5, col[1] * 2.5, col[2] * 2.5], strong ? 0.26 : 0.18, strong)
+        if (strong) fx.light(t, e.x, e.y, 1.3, 6.5, col, 2.8, 0.2)
+        this.popups.push({ x: e.x, y: e.y, text: `+${Math.round(e.damage)}%`, t0: t, color: col })
+        snd.play(strong ? "melee.hit.metal" : "melee.hit.wood", e.x, e.y, { gain: Math.min(1, 0.45 + e.speed / 13) })
+        const hitAng = Math.atan2(dy, dx)
         if (e.target === this.myId) {
-          this.hurt = Math.min(1, this.hurt + 0.25 + e.speed / 30)
-          this.cam.add(0.2 + e.speed / 40, Math.atan2(dy, dx))
-          snd.play("body.hurt", e.x, e.y, { gain: 0.6 })
-        } else if (e.by === this.myId) this.cam.add(0.1 + e.speed / 60, Math.atan2(dy, dx), 0.4)
-        if (strong) this.hitStop.trigger(Math.min(0.1, 0.03 + e.speed / 300), 0.08)
+          this.hurt = Math.min(1, this.hurt + 0.28 + e.speed / 26)
+          this.cam.add((0.24 + e.speed / 32) * FEEL.shakeScale, hitAng)
+          snd.play("body.hurt", e.x, e.y, { gain: 0.65 })
+        } else if (e.by === this.myId) {
+          this.cam.add((0.14 + e.speed / 45) * FEEL.shakeScale, hitAng, 0.45)
+        } else {
+          this.shakeNear(e.x, e.y, (0.08 + e.speed / 80) * FEEL.shakeScale)
+        }
+        if (e.speed > 10.5) this.cam.punch(0.28 * FEEL.shakeScale, 0.008)
+        if (e.speed > 5) this.hitStop.trigger(Math.min(0.11, (0.022 + e.speed / 220) * FEEL.hitStopScale), 0.06)
         break
       }
       case "ko": {
         const dir = Math.atan2(e.y - (STAGE[1] + STAGE[3]) / 2, e.x - (STAGE[0] + STAGE[2]) / 2)
         fx.ko(t, e.x, e.y, dir + Math.PI, this.colorOf(e.victim))
-        snd.play("impact_crash_layered", e.x, e.y, { gain: 0.9 })
-        snd.play("ui_confirm", undefined, undefined, { rate: 0.7 })
-        this.cam.add(0.6, dir)
-        this.cam.punch(0.6, 0.01)
-        this.hitStop.trigger(0.1, 0.05)
+        snd.play("impact_crash_layered", e.x, e.y, { gain: 0.95 })
+        snd.play("ui_confirm", undefined, undefined, { rate: 0.75 })
+        this.cam.add(0.75 * FEEL.shakeScale, dir)
+        this.cam.punch(0.85 * FEEL.shakeScale, 0.014)
+        this.hitStop.trigger(0.12 * FEEL.hitStopScale, 0.04)
         const victim = this.roster.find((r) => r.id === e.victim)
-        this.popups.push({ x: e.x, y: e.y, text: e.stocks > 0 ? "KO!" : "OUT!", t0: t, color: this.colorOf(e.victim), big: true })
+        this.popups.push({ x: e.x, y: e.y, text: e.stocks > 0 ? "RING OUT!" : "ELIMINATED!", t0: t, color: this.colorOf(e.victim), big: true })
+        this.lastKo = { victim: e.victim, by: e.by, stocks: e.stocks, at: t }
         if (victim && e.victim === this.myId) this.hurt = 1
         break
       }
@@ -440,11 +461,11 @@ export class Game {
     }
     // The ground the view covers is about 0.6 × distance tall at this pitch.
     const aspect = w / Math.max(1, h)
-    const span = Math.max((x1 - x0 + 7) / aspect, y1 - y0 + 6)
-    const want = Math.max(17, Math.min(31, span * 1.4))
+    const span = Math.max((x1 - x0 + 5.6) / aspect, y1 - y0 + 4.8)
+    const want = Math.max(14.5, Math.min(26.5, (span * 1.28) / Math.max(0.7, FEEL.camTightness)))
     this.cam.zoomOffset = (this.zoom ?? want) - 24
     const lean = me && mine && has(mine, F.alive)
-    this.cam.follow(cx, cy + 1, lean ? (this.cursor.x - me!.x) * 0.15 : 0, lean ? (this.cursor.y - me!.y) * 0.12 : 0, dt, false)
+    this.cam.follow(cx, cy + 0.85, lean ? (this.cursor.x - me!.x) * 0.16 : 0, lean ? (this.cursor.y - me!.y) * 0.13 : 0, dt, false)
   }
 
   build(w: number, h: number, dt: number): FrameInput {
@@ -609,6 +630,9 @@ export class Game {
       // Flying: the body tips back along the flight, and keeps tumbling over the edge.
       const ux = s.vx / sp, uy = s.vy / sp
       turn = { axis: [-uy, 0, ux], angle: -d.tumble * (0.9 + d.spin) }
+    }
+    if ((launched || d.fallAt > 0) && sp > 5 && adt > 0) {
+      this.fx.launchTrail(t, s.x, s.y, s.vx, s.vy, color)
     }
     // Just respawned: a soft pulsing shine while nothing can hit you.
     if (has(s, F.invuln)) d.a.flash = Math.max(d.a.flash, 0.12 + 0.1 * Math.sin(t * 18))

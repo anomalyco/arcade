@@ -133,9 +133,34 @@ export class Fx {
   }
 
   ko(t: number, x: number, y: number, dir: number, color: Rgb): void {
-    this.add({ kind: "ko", x, y, t0: t, life: 0.9, size: 7, color, rot: dir })
-    this.light(t, x, y, 2, 14, color, 6, 0.5)
-    this.confetti(x, y, 0.5, 40, 9)
+    this.add({ kind: "ko", x, y, t0: t, life: 0.95, size: 9.5, color, rot: dir })
+    this.ring(t, x, y, 3.2, [color[0] * 3, color[1] * 3, color[2] * 3], 0.45, true)
+    this.ring(t + 0.04, x, y, 2.2, [4, 3.6, 2.5], 0.35)
+    this.light(t, x, y, 2.2, 18, color, 8, 0.65)
+    this.sparks(x, y, 0.9, 28, 12)
+    this.confetti(x, y, 0.6, 45, 11)
+  }
+
+  /** Streak of smoke and sparks behind a launched fighter. */
+  launchTrail(t: number, x: number, y: number, vx: number, vy: number, color: Rgb): void {
+    const sp = Math.hypot(vx, vy)
+    if (sp < 5 || this.rand() > 0.65) return
+    const ux = -vx / sp, uy = -vy / sp
+    this.add({
+      kind: "poof",
+      x: x + ux * 0.35 + (this.rand() - 0.5) * 0.2,
+      y: y + uy * 0.35 + (this.rand() - 0.5) * 0.2,
+      h: 0.55 + this.rand() * 0.35,
+      t0: t,
+      life: 0.26 + this.rand() * 0.12,
+      size: Math.min(0.65, 0.24 + sp * 0.018),
+      color: [0.45 + color[0] * 0.55, 0.45 + color[1] * 0.55, 0.45 + color[2] * 0.55],
+      rot: Math.atan2(uy, ux),
+      extra: this.rand() * 6,
+    })
+    if (sp > 9.5 && this.rand() < 0.45) {
+      this.particles.spawn(spark, x + ux * 0.3, 0.7, y + uy * 0.3, ux * 3 + (this.rand() - 0.5) * 2, 1.5 + this.rand() * 2, uy * 3 + (this.rand() - 0.5) * 2, this.rand() * 100)
+    }
   }
 
   light(t: number, x: number, y: number, h: number, r: number, color: Rgb, power: number, life: number): void {
@@ -197,12 +222,12 @@ export class Fx {
         }
         case "ko": {
           // A star burst of rays from where the fighter left the stage, Smash style.
-          for (let i = 0; i < 9; i++) {
-            const a = e.rot + (i - 4) * 0.22
-            const len = e.size * (0.3 + 0.7 * Math.min(1, u * 3)) * (0.6 + 0.4 * ((i * 7) % 3) / 2)
-            fp.sprite(true, e.x + Math.cos(a) * len * 0.5, 1.2, e.y + Math.sin(a) * len * 0.5, len * 0.5, r * 3, g * 3, b * 3, (1 - u) ** 1.5, SPRITE.line, a, 0.06, 0)
+          for (let i = 0; i < 13; i++) {
+            const a = e.rot + (i - 6) * 0.17
+            const len = e.size * (0.35 + 0.65 * Math.min(1, u * 3.4)) * (0.55 + 0.45 * ((i * 7) % 3) / 2)
+            fp.sprite(true, e.x + Math.cos(a) * len * 0.5, 1.2, e.y + Math.sin(a) * len * 0.5, len * 0.5, r * 3.4, g * 3.4, b * 3.4, (1 - u) ** 1.4, SPRITE.line, a, 0.075, 0)
           }
-          fp.sprite(true, e.x, 1.2, e.y, 3 * (1 - u) + 0.5, 4, 4, 4, (1 - u) ** 2, SPRITE.glow)
+          fp.sprite(true, e.x, 1.2, e.y, 3.6 * (1 - u) + 0.6, 4, 4, 4, (1 - u) ** 1.8, SPRITE.glow)
           break
         }
         case "stars":

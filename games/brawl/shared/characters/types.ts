@@ -26,11 +26,11 @@ export const DODGE: AbilityDef = {
   name: "Dodge",
   blurb: "A quick hop that shrugs off some knockback.",
   windup: 0,
-  cooldown: 2.4,
+  cooldown: 1.7,
   moveScale: 1,
   effects: [
-    { kind: "dash", speed: 13, time: 0.17 },
-    { kind: "status", status: [{ kind: "shield", time: 0.3, amount: 0.5 }] },
+    { kind: "dash", speed: 16.5, time: 0.16 },
+    { kind: "status", status: [{ kind: "shield", time: 0.32, amount: 0.55 }] },
   ],
   botRange: 0,
 }
