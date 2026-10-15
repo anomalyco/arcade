@@ -149,7 +149,11 @@ export function openMenu(
         const mark = doc.createElement("mark")
         mark.textContent = item.label.slice(at, at + query.length)
         label.replaceChildren(item.label.slice(0, at), mark, item.label.slice(at + query.length))
-      } else if (label.childElementCount) label.textContent = item.label
+        label.dataset.marked = ""
+      } else if (label.childElementCount) {
+        label.textContent = item.label
+        delete label.dataset.marked
+      }
       if (at >= 0 && first < 0 && !item.disabled) first = i
     })
     empty.hidden = first >= 0

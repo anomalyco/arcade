@@ -328,6 +328,31 @@ try {
     await context.close()
   }
 
+  // Compare (hold `\`) right after a key nudge, held past the nudge's settle: the preview and its release apply, the
+  // nudge stays one undo step of its own and the preview is never one.
+  if (!shotsOnly) {
+    const { context, page } = await open("?section=outbreak-vignette", SIZES[0]!)
+    const value = () => page.evaluate(() => (window as any).labPanel.navigation.settings.fogEdgeSoftness as number)
+    const depth = () => page.evaluate(() => (window as any).labWorkbench.state().history.undoDepth as number)
+    const v0 = await value(), d0 = await depth()
+    await page.locator('.lab-inspector .knobs-row[data-field="fogEdgeSoftness"] [role="slider"]').focus()
+    await page.keyboard.press("ArrowRight")
+    const v1 = await value()
+    await page.keyboard.down("Backslash")
+    await page.waitForTimeout(700)
+    const held = await value()
+    await page.keyboard.up("Backslash")
+    await page.waitForTimeout(600)
+    const released = await value(), d1 = await depth()
+    await page.evaluate(() => (window as any).labWorkbench.undo())
+    await page.waitForTimeout(300)
+    const undone = await value()
+    report.compareHistory = { v0, v1, held, released, undone, depth: [d0, d1] }
+    assert(v1 !== v0 && held === v0 && released === v1, `compare previews the nudge's before-value and puts it back (${JSON.stringify(report.compareHistory)})`)
+    assert(d1 === d0 + 1 && undone === v0, `the nudge is one undo step and compare none (${JSON.stringify(report.compareHistory)})`)
+    await context.close()
+  }
+
   // Inspector fields: headings as dials, seeds with a die, a pair as one range, and a group's own Randomize.
   if (!shotsOnly) {
     const { context, page } = await open("?section=lighting", SIZES[0]!)

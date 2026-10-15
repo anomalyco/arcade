@@ -23,6 +23,11 @@ export interface TabStrip {
   set(tabs: readonly TabSpec[], active: string | undefined): void
   /** Marks `id` chosen and slides the underline to it (or places it, when `animate` is false). */
   select(id: string, animate?: boolean): void
+  /**
+   * A small count after a tab's label ("" takes it away); `label` is what it means, for
+   * assistive tech and the tooltip.
+   */
+  count(id: string, text: string, label?: string): void
   focus(options?: FocusOptions): void
   dispose(): void
 }
@@ -89,6 +94,35 @@ export function createTabStrip(doc: Document, choose: (id: string) => void): Tab
     },
     focus(options) {
       ;(strip.buttons.find((b) => b.dataset.tab === active) ?? strip.buttons[0])?.focus(options)
+    },
+    count(id, text, label = "") {
+      const b = strip.buttons.find((x) => x.dataset.tab === id)
+      if (!b) return
+      let node = b.querySelector<HTMLElement>(":scope > .knobs-tab-count")
+      // A count coming, going or changing width moves the chips after it: the underline follows.
+      const follow = () => {
+        const on = strip.buttons.find((x) => x.dataset.tab === active)
+        if (on && placed) place(on, false)
+      }
+      if (!text) {
+        if (node) {
+          node.remove()
+          b.removeAttribute("title")
+          follow()
+        }
+        return
+      }
+      if (!node) {
+        node = doc.createElement("span")
+        node.className = "knobs-tab-count"
+        node.setAttribute("aria-hidden", "true")
+        b.append(node)
+      }
+      if (node.textContent !== text) {
+        node.textContent = text
+        follow()
+      }
+      if (b.title !== label) b.title = label
     },
     dispose: () => ro.disconnect(),
   }
