@@ -1,9 +1,6 @@
 * { box-sizing: border-box }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080b0d; color: #d6d4c6; font: 12px ui-monospace, monospace }
 #game { display: block; width: 100%; height: 100%; cursor: crosshair }
-#prompt { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 5px; border: 1px solid #ffffff29; border-radius: 999px; background: #0f1515e6; color: #ece9dc; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 14px #00000070 }
-#prompt[hidden] { display: none !important }
-#prompt .sep { opacity: .45 }
 #hud { position: fixed; left: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 6px; pointer-events: none }
 #meters { display: flex; gap: 6px; align-items: center }
 #stamina, #battery { width: 108px; height: 4px; border-radius: 2px; background: #0b1011b8; border: 1px solid #ffffff1f; overflow: hidden; opacity: .32; transition: opacity .22s ease, border-color .18s ease }
@@ -14,45 +11,6 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #battery[data-low="true"] #battery-fill { background: #e09a48 }
 #stamina[data-exhausted="true"] #stamina-fill, #battery[data-depleted="true"] #battery-fill { background: #d96b43 }
 #status { padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; font-variant-numeric: tabular-nums }
-#prompt[data-strip="true"] { display: block; padding: 8px 10px; border-radius: 6px }
-#prompt .strip-t { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: #8c9488; margin-bottom: 6px }
-#prompt .strip-items { display: flex; gap: 5px }
-#prompt .item { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 4px; border: 1px solid #ffffff22; border-radius: 4px; background: #182121; font-size: 11.5px }
-#prompt .item small { margin-left: 6px; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #8c9488 }
-#prompt .item[data-dest="belt"] small { color: #c5cfb8 }
-#prompt .item[data-rare="true"] { border-color: #f0d58488; color: #f0d584 }
-#prompt .item[data-full="true"] { opacity: .55 }
-#prompt .item[data-full="true"] small { color: #e09a48 }
-#prompt .item[data-taken="true"] { opacity: .45 }
-#prompt .strip-h { margin-top: 7px; display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: #c9c7b9 }
-#markers { position: fixed; inset: 0; pointer-events: none; z-index: 9 }
-#markers .marker { position: absolute; left: 0; top: 0; padding: 2px 7px; border: 1px solid #ffffff26; border-radius: 999px; background: #0f1515cc; color: #e6e4d6; font-size: 10.5px; white-space: nowrap }
-#markers .marker[hidden] { display: none }
-#markers .marker[data-kind="drop"] { color: #c5cfb8; border-color: #c5cfb855 }
-#markers .marker[data-kind="drop"]::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 14px; height: 4px; margin-left: -7px; border: 1px solid #c5cfb888; border-radius: 50% }
-#markers .marker[data-kind="ping"] { border-color: var(--c, #f0d584); color: var(--c, #f0d584) }
-#markers .marker[data-kind="lure"] { color: #f0d584; border-color: #f0d58488; animation: lure-pulse 1s ease-in-out infinite }
-@keyframes lure-pulse { 50% { box-shadow: 0 0 0 5px #f0d58422 } }
-@media (prefers-reduced-motion: reduce) { #markers .marker[data-kind="lure"] { animation: none } }
-#prompt .strip-t span { margin-left: 14px; text-transform: none; letter-spacing: 0; color: #a9ad9f }
-#prompt .strip-s { margin: -2px 0 6px; font-size: 10.5px; color: #8c9488 }
-#prompt .bench { min-width: 340px; max-width: 420px; white-space: normal }
-#craft .craft-row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-top: 1px solid #ffffff10 }
-#craft .craft-row:first-child { border-top: 0 }
-#craft .craft-row[data-off="true"] { opacity: .45 }
-#craft .craft-row[data-blank="true"] { width: 96px; height: 30px; border: 1px dashed #ffffff26; border-radius: 3px }
-#craft .craft-row .from { display: flex; gap: 4px; margin-left: 10px; padding-left: 10px; border-left: 1px solid #ffffff1c; color: #a9ad9f }
-#craft .craft-row .cost { display: flex; gap: 1px }
-#craft .glyph { display: block }
-#prompt .row, #craft .row { position: relative; display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 4px 2px; border-top: 1px solid #ffffff10; overflow: hidden }
-#prompt .row b, #craft .row b { font-weight: 500; color: #ece9dc }
-#prompt .row small, #craft .row small { display: block; font-size: 10.5px; color: #8c9488; margin-top: 1px }
-#prompt .row em, #craft .row em { font-style: normal; font-size: 11px; color: #e3c878; white-space: nowrap }
-#prompt [data-short="true"], #craft [data-short="true"] { color: #e09a48 }
-#prompt .row[data-off="true"], #craft .row[data-off="true"] { opacity: .5 }
-#prompt .row[data-done="true"] b { color: #c5cfb8 }
-#prompt .row .tick { justify-self: center; color: #c5cfb8 }
-#prompt .row .prog { position: absolute; left: 0; bottom: 0; height: 2px; background: #c5cfb8 }
 #vehicle-hud { pointer-events: none; display: flex; flex-direction: column; gap: 5px; padding: 7px 12px; border: 1px solid #ffffff29; border-radius: 7px; background: #0f1515eb; color: #ece9dc; font-size: 11px; box-shadow: 0 6px 18px #00000080 }
 #vehicle-hud[hidden] { display: none !important }
 #vehicle-hud .vh-top { display: flex; align-items: center; gap: 14px; font-size: 10.5px; letter-spacing: .08em; color: #a9ad9f; font-variant-numeric: tabular-nums }

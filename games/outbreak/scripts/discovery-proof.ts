@@ -1,6 +1,7 @@
 // Headless Metal proof for D-19 "Discovered, Not Told": state read from the world instead of labels. Stills of the
 // low-battery beam against a full one, barricade boards at three wears, searched containers left open with what is
-// inside, drops lying on the floor, the workbench and corkboard, and found pages (the belt is the dock's now).
+// inside, drops lying on the floor, the dock dimmed until the pack is held open, the workbench
+// and corkboard, and found pages.
 // Run from games/outbreak: hivemind run --kind browser -- bun scripts/discovery-proof.ts
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -131,6 +132,26 @@ try {
     const markers = await page.evaluate(() => [...document.querySelectorAll("#markers .marker:not([hidden])")].map((m) => m.textContent))
     assert.deepEqual(markers, [], "drops are props, not labels")
     await snap(page, "drops", "Dropped supplies lie on the floor as props: no floating labels")
+  }
+
+  if (want("belt")) {
+    await reset(page, 26)
+    await run(page, `h.give("scrap", 3); h.give("chem", 2); h.pose(44, 44, 0)`)
+    await steps(page, 3)
+    // The dock never hides (Kit, AR-24): it settles dim when idle and brightens while the pack is open.
+    await page.waitForTimeout(4500)
+    await steps(page, 1)
+    await page.waitForTimeout(1200)
+    const hidden = await page.evaluate(() => getComputedStyle(document.querySelector("#dock")!).opacity)
+    await snap(page, "belt-hidden", "Walking around: the supply belt sits dim")
+    await page.keyboard.press("Tab")
+    await steps(page, 2)
+    await page.waitForTimeout(300)
+    const shown = await page.evaluate(() => getComputedStyle(document.querySelector("#dock")!).opacity)
+    console.log("dock opacity", hidden, "→", shown)
+    assert(Math.abs(Number(hidden) - 0.5) < 0.02, `idle dock opacity ${hidden}`)
+    assert(Number(shown) > 0.95, `open dock opacity ${shown}`)
+    await snap(page, "belt-open", "Holding the pack open (Tab) shows the belt's counts")
   }
 
   if (want("bench")) {

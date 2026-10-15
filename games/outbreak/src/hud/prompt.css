@@ -1,0 +1,44 @@
+/* The world prompt (prompt.ts): a 0×0 anchor placed per frame on whole device pixels, the panel hung from it, and
+   faces inside that crossfade. Sizes are whole pixels at rest so text stays crisp. */
+.prompt-anchor { position: fixed; left: 0; top: 0; z-index: 10; width: 0; height: 0; pointer-events: none; transition: opacity var(--m-default-ms, .3s) var(--m-default, ease) }
+#prompt { position: absolute; overflow: hidden; white-space: nowrap; --akc-size: 20px }
+#prompt[hidden] { display: none !important }
+#prompt .prompt-face { position: absolute; left: 0; width: max-content; padding: var(--hud-3) var(--hud-5) var(--hud-3) var(--hud-3) }
+#prompt[data-place="above"] .prompt-face { bottom: 0 }
+#prompt[data-place="below"] .prompt-face { top: 0 }
+#prompt .prompt-face.leaving { pointer-events: none }
+#prompt .prompt-line { display: flex; align-items: center; gap: var(--hud-4) }
+#prompt .akp-label { color: var(--hud-ink) }
+#prompt .sep { width: 1px; height: 14px; background: var(--hud-line-2) }
+#prompt[data-strip="true"] .prompt-face { padding: var(--hud-3) }
+#prompt .strip { display: flex; flex-direction: column; gap: var(--hud-3) }
+#prompt .strip .prompt-line { padding: 0 var(--hud-3) 0 0 }
+#prompt .strip-items { display: flex; gap: var(--hud-2) }
+#prompt .item {
+  display: inline-flex; align-items: center; gap: var(--hud-3); height: 28px; padding: 0 var(--hud-4) 0 var(--hud-1);
+  border-radius: var(--hud-r-cell); background: var(--hud-raised); box-shadow: inset 0 0 0 1px var(--hud-line); --akc-size: 20px
+}
+#prompt .item small { font-size: var(--hud-xs); color: var(--hud-ink-3) }
+#prompt .item[data-rare="true"] { box-shadow: inset 0 0 0 1px rgb(241 196 106 / .45); color: var(--hud-warm) }
+#prompt .item[data-full="true"] { opacity: .55 }
+#prompt .item[data-full="true"] small { color: var(--hud-caution) }
+#prompt .item[data-taken="true"] { opacity: .5; padding-left: var(--hud-4) }
+
+/* World markers: drops, pings and noisemakers. */
+#markers { position: fixed; inset: 0; pointer-events: none; z-index: 9 }
+#markers .marker {
+  position: absolute; left: 0; top: 0; padding: var(--hud-1) var(--hud-3); border-radius: var(--hud-r-chip);
+  background: var(--hud-chip); box-shadow: inset 0 0 0 1px var(--hud-line); color: var(--hud-ink);
+  font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); white-space: nowrap
+}
+#markers .marker[hidden] { display: none }
+#markers .marker[data-kind="drop"] { color: var(--hud-ink-2) }
+#markers .marker[data-kind="drop"]::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 14px; height: 4px; margin-left: -7px; border: 1px solid var(--hud-line-2); border-radius: 50% }
+#markers .marker[data-kind="ping"] { box-shadow: inset 0 0 0 1px var(--c, var(--hud-warm)); color: var(--c, var(--hud-warm)) }
+#markers .marker[data-kind="lure"] { color: var(--hud-warm); box-shadow: inset 0 0 0 1px rgb(241 196 106 / .5); animation: lure-pulse 1s ease-in-out infinite }
+@keyframes lure-pulse { 50% { box-shadow: inset 0 0 0 1px rgb(241 196 106 / .5), 0 0 0 5px rgb(241 196 106 / .14) } }
+@media (prefers-reduced-motion: reduce) { #markers .marker[data-kind="lure"] { animation: none } }
+/* Whole-pixel hold ring, so the row and its text keep whole-pixel heights. */
+#prompt .akc-hold { padding: 5px; margin: -5px 0 }
+#prompt .akc-hold::before { padding: 6px }
+#prompt .akc-ring { padding: 3px }

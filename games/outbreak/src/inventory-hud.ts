@@ -9,7 +9,8 @@ import { supportHeight } from "../shared/terrain"
 import { itemIcon } from "./discovery/icons"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
-import { snapToPixels } from "./hud/motion"
+import { hudMotion, snapToPixels } from "./hud/motion"
+import { PromptView } from "./hud/prompt"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const MARKER_RANGE = 30
@@ -44,8 +45,7 @@ export class InventoryHud {
   /** How many finishers the player has performed this session; the small bare key cap fades out after 2. */
   finisherCount = 0
   private wasFinishing = false
-  private lastStrip = ""
-  private markers: HTMLElement[] = []
+  private readonly markers = new Map<string, { el: HTMLElement; html: string; w: number; h: number; leaving: boolean }>()
 
   constructor(
     private readonly els: {
@@ -67,7 +67,11 @@ export class InventoryHud {
     const hud = dock?.closest<HTMLElement>("#hud")
     const sheet = dock?.querySelector<HTMLElement>("#pack-sheet")
     if (belt && hotbar && pack && dock && hud && sheet) this.dock = new Dock({ hud, dock, belt, hotbar, pack, sheet }, dockSettings)
+    if (els.prompt) this.prompt = new PromptView(els.prompt)
   }
+
+  /** The floating world prompt. */
+  readonly prompt: PromptView | null = null
 
   /** The bottom dock: belt, hand slots and pack. */
   readonly dock: Dock | null = null
@@ -83,7 +87,6 @@ export class InventoryHud {
     try {
       localStorage.setItem(FAMILIAR_KEY, JSON.stringify(this.familiar))
     } catch {}
-    this.lastStrip = ""
   }
 
   /** Forgets every learned prompt (Lab, proofs). */
@@ -92,7 +95,6 @@ export class InventoryHud {
     try {
       localStorage.removeItem(FAMILIAR_KEY)
     } catch {}
-    this.lastStrip = ""
   }
 
   /** The verb beside a key cap, or nothing once the player has used this kind of prompt often enough. */
@@ -161,78 +163,75 @@ export class InventoryHud {
   }
 
   private syncPrompt(view: SessionView, cam: Camera, w: number, h: number): void {
-    const el = this.els.prompt
-    if (!el) return
-    const { player: p, town, prompt } = view
+    const prompt = this.prompt
+    if (!prompt) return
+    const { player: p, town } = view
     const finishingNow = Boolean(p.meleeFinisher) || (p.stompAnim ?? 0) > 0
     if (finishingNow && !this.wasFinishing) this.finisherCount++
     this.wasFinishing = finishingNow
+    const target = view.prompt
 
-    if (!prompt) {
-      const finTarget =
-        !p.vault && !p.vehicleId && this.finisherCount < 2 ? findFinisherTarget(p, view.zombies) : null
-      if (!finTarget) {
-        el.hidden = true
-        el.style.opacity = ""
-        this.lastStrip = ""
+    if (!target) {
+      const finTarget = !p.vault && !p.vehicleId && this.finisherCount < 2 ? findFinisherTarget(p, view.zombies) : null
+      const proj = finTarget ? cam.project(finTarget.x, 0.72 + supportHeight(town, finTarget.x, finTarget.y), finTarget.y, w, h) : null
+      if (!finTarget || !proj?.ok) {
+        prompt.update(null)
         return
       }
-      const anchorHeight = 0.72 + supportHeight(town, finTarget.x, finTarget.y)
-      const proj = cam.project(finTarget.x, anchorHeight, finTarget.y, w, h)
-      if (!proj.ok) {
-        el.hidden = true
-        el.style.opacity = ""
-        return
-      }
-      const html = keyCapHtml("Mouse0")
-      if (html !== this.lastStrip) {
-        el.innerHTML = html
-        this.lastStrip = html
-      }
-      el.dataset.strip = "false"
-      el.style.opacity = this.finisherCount === 0 ? "0.78" : "0.42"
-      el.hidden = false
-      el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, -100%)`
+      prompt.update({
+        target: `finisher:${finTarget.id}`,
+        html: `<div class="prompt-line">${keyCapHtml("Mouse0")}</div>`,
+        x: proj.x,
+        y: proj.y,
+        place: "above",
+        gap: 0,
+        opacity: this.finisherCount === 0 ? 0.78 : 0.42,
+      })
       return
     }
-    el.style.opacity = ""
     const isPeeking = Boolean(view.peek)
     // At a workbench the prompt hangs below the bench, clear of the mat and the corkboard; under a page, clear of it.
-    const below = prompt.kind === "bench" || prompt.kind === "page"
-    const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
-    const proj = cam.project(prompt.worldX, anchorHeight, below ? prompt.rect[3] + 0.2 : prompt.worldY, w, h)
+    const below = target.kind === "bench" || target.kind === "page"
+    const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, target.worldX, target.worldY)
+    const proj = cam.project(target.worldX, anchorHeight, below ? target.rect[3] + 0.2 : target.worldY, w, h)
     if (!proj.ok) {
-      el.hidden = true
+      prompt.update(null)
       return
     }
-    const html = this.promptHtml(view, prompt, holdProgress(p))
-    if (html !== this.lastStrip) {
-      el.innerHTML = html
-      this.lastStrip = html
-    }
-    el.dataset.strip = String(html.startsWith('<div class="strip'))
-    el.hidden = false
-    el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : below ? "8px" : "-100%"})`
+    prompt.update({
+      target: `${target.kind}:${target.id}`,
+      html: this.promptHtml(view, target),
+      x: proj.x,
+      y: proj.y,
+      place: isPeeking || below ? "below" : "above",
+      gap: isPeeking ? 18 : below ? 8 : 0,
+      hold: holdProgress(p),
+    })
   }
 
-  private promptHtml(view: SessionView, prompt: InteractTarget, hold: number): string {
-    const progression = view.progression
-    const parts = [this.cap("KeyE", prompt, prompt.primary.label)]
+  /** The key row: E and its verb, the hold verb on the same ringed cap, and Shift+E when there is one. */
+  private lineHtml(prompt: InteractTarget): string {
+    const parts: string[] = []
+    const tap = this.word(prompt, prompt.primary.label)
+    if (prompt.secondary) {
+      const held = this.word(prompt, prompt.secondary.label)
+      const cap = keyCapHtml("KeyE", { hold: true })
+      parts.push(`<span class="akp akp-dual">${cap}${tap ? `<span class="akp-label">${esc(tap)}</span>` : ""}${held ? `<span class="akp-hold"><i aria-hidden="true"></i>${esc(held)}</span>` : ""}</span>`)
+    } else parts.push(this.cap("KeyE", prompt, prompt.primary.label))
     if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt.label)}</span>`)
-    if (prompt.secondary) parts.push(this.cap("KeyE", prompt, prompt.secondary.label, { hold: true, progress: hold }))
-    const line = parts.join('<span class="sep">·</span>')
+    return `<div class="prompt-line">${parts.join('<span class="sep" aria-hidden="true"></span>')}</div>`
+  }
+
+  private promptHtml(view: SessionView, prompt: InteractTarget): string {
+    const progression = view.progression
+    const line = this.lineHtml(prompt)
     const store = this.stripStore(view, prompt)
     if (!store) return line
     const stacks = progression.contents(store)
-    const title = prompt.label ?? "Contents"
     const items = stacks.length
-      ? stacks
-          .map((s, i) => this.itemHtml(view, s, i, prompt.kind === "stash"))
-          .join("")
+      ? stacks.map((s, i) => this.itemHtml(view, s, i, prompt.kind === "stash")).join("")
       : `<span class="item" data-taken="true">Empty</span>`
-    const range = stacks.length > 1 ? `${keyCapHtml("Digit1")}–${keyCapHtml(`Digit${Math.min(stacks.length, 9)}`)}` : keyCapHtml("Digit1")
-    const hint = stacks.length ? `${line}<span class="sep">·</span><span class="akp">${range}<span class="akp-label">Take one</span></span>` : line
-    return `<div class="strip"><div class="strip-t">${esc(title)}</div><div class="strip-items">${items}</div><div class="strip-h">${hint}</div></div>`
+    return `<div class="strip"><div class="strip-items">${items}</div>${line}</div>`
   }
 
   /**
@@ -269,20 +268,21 @@ export class InventoryHud {
     el.hidden = false
   }
 
+  /** One stack in a strip: its digit, name and count. Only "pack" (a rare part) and "full" get a tag. */
   private itemHtml(view: SessionView, s: Stack, i: number, stash: boolean): string {
     const progression = view.progression
     const dest = destination(progression, s.item)
     const installed = stash && dest === "pack"
     const room = progression.ledger.room(view.actorId, s.item, 1) > 0
-    const tag = installed ? "installed" : room ? dest : "full"
-    return `<span class="item" data-dest="${dest}" data-full="${!room && !installed}" data-rare="${dest === "pack"}">${keyCapHtml(`Digit${i + 1}`)}${esc(progression.stackLabel(s))}<small>${tag}</small></span>`
+    const tag = installed ? "installed" : !room ? "full" : dest === "pack" ? "pack" : ""
+    return `<span class="item" data-dest="${dest}" data-full="${!room && !installed}" data-rare="${dest === "pack"}">${keyCapHtml(`Digit${i + 1}`)}<span>${esc(progression.stackLabel(s))}</span>${tag ? `<small>${tag}</small>` : ""}</span>`
   }
 
   private syncMarkers(view: SessionView, cam: Camera, w: number, h: number): void {
     const root = this.els.markers
     if (!root) return
     const { progression, player: p, town, time } = view
-    const want: { x: number; y: number; z: number; html: string; kind: string; colour?: string }[] = []
+    const want: { key: string; x: number; y: number; z: number; html: string; kind: string; colour?: string }[] = []
     const props = this.discovery().discoveryGroundProps
     for (const st of progression.ledger.stores.values()) {
       if (props || !st.id.startsWith("drop:") || !st.at) continue
@@ -290,35 +290,49 @@ export class InventoryHud {
       const stacks = progression.contents(st.id)
       if (!stacks.length) continue
       const label = stacks.length === 1 ? progression.stackLabel(stacks[0]!) : `Supplies (${stacks.length})`
-      want.push({ x: st.at.x, y: st.at.y, z: 0.35, html: esc(label), kind: "drop" })
+      want.push({ key: st.id, x: st.at.x, y: st.at.y, z: 0.35, html: esc(label), kind: "drop" })
     }
     for (const ping of progression.pings) {
       if (time >= ping.until) continue
-      want.push({ x: ping.x, y: ping.y, z: 1.3, html: esc(ping.label), kind: "ping", colour: this.seatColour(ping.by) })
+      want.push({ key: `ping:${ping.by}:${ping.until}`, x: ping.x, y: ping.y, z: 1.3, html: esc(ping.label), kind: "ping", colour: this.seatColour(ping.by) })
     }
-    if (!props) for (const lure of progression.lures) want.push({ x: lure.x, y: lure.y, z: 0.4, html: "Noisemaker", kind: "lure" })
-    while (this.markers.length < want.length) {
-      const el = document.createElement("div")
-      el.className = "marker"
-      root.appendChild(el)
-      this.markers.push(el)
-    }
-    this.markers.forEach((el, i) => {
-      const m = want[i]
-      if (!m) {
-        el.hidden = true
-        return
-      }
+    if (!props) progression.lures.forEach((lure, i) => want.push({ key: `lure:${i}`, x: lure.x, y: lure.y, z: 0.4, html: "Noisemaker", kind: "lure" }))
+    const ratio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1
+    const seen = new Set<string>()
+    for (const m of want) {
       const proj = cam.project(m.x, m.z + supportHeight(town, m.x, m.y), m.y, w, h)
-      if (!proj.ok) {
-        el.hidden = true
-        return
+      if (!proj.ok) continue
+      seen.add(m.key)
+      let mk = this.markers.get(m.key)
+      if (!mk) {
+        const el = document.createElement("div")
+        el.className = "marker"
+        el.dataset.kind = m.kind
+        root.appendChild(el)
+        mk = { el, html: "", w: 0, h: 0, leaving: false }
+        this.markers.set(m.key, mk)
+        el.innerHTML = m.html
+        mk.html = m.html
+        mk.w = el.offsetWidth
+        mk.h = el.offsetHeight
+        hudMotion.enter(el, "default", { y: 4 })
       }
-      el.hidden = false
-      el.dataset.kind = m.kind
-      if (el.innerHTML !== m.html) el.innerHTML = m.html
-      el.style.setProperty("--c", m.colour ?? "")
-      el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, -100%)`
-    })
+      if (mk.html !== m.html) {
+        mk.el.innerHTML = m.html
+        mk.html = m.html
+        mk.w = mk.el.offsetWidth
+        mk.h = mk.el.offsetHeight
+      }
+      mk.el.style.setProperty("--c", m.colour ?? "")
+      const x = Math.round((proj.x - mk.w / 2) * ratio) / ratio
+      const y = Math.round((proj.y - mk.h) * ratio) / ratio
+      mk.el.style.translate = `${x}px ${y}px`
+    }
+    for (const [key, mk] of this.markers) {
+      if (seen.has(key) || mk.leaving) continue
+      mk.leaving = true
+      this.markers.delete(key)
+      void hudMotion.exit(mk.el, "snappy").then(() => mk.el.remove())
+    }
   }
 }

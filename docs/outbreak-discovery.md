@@ -36,7 +36,7 @@ client the moment they are hit. The AI's portal state already snapshots and rest
 - `tests/discovery.test.ts`: board looks by wear, the wire byte, co-op wear after a bash and on a full snapshot,
   wear through `toSnapshot`/`fromSnapshot`, the low beam, container layouts.
 - `scripts/discovery-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-discovery`): stills of
-  the beam at full and 12%, boards at three wears, opened containers and drops.
+  the beam at full and 12%, boards at three wears, opened containers, drops, and the dock dim until Tab.
 
 ## Slice 2: workbench tinkering and the corkboard
 

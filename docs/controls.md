@@ -35,6 +35,9 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
    - Draw `Hold E` as the hold key cap, not the word "Hold": `keyPromptHtml("KeyE", "Lock", { hold: true, progress })`
      puts a ring around a round cap and fills it from the game's own hold timer (Outbreak's `holdProgress`, Blackout's
      bomb `progress`). The empty ring alone marks the action as a hold.
+   - When tap and hold share a key, draw one cap, not two: Outbreak shows a single ringed E, the tap verb, then the hold
+     verb after a small ring glyph (`E Open ◦Lock`). While E is held the ring fills, the tap verb dims and the hold verb
+     turns warm.
    - `KeyF` is the dedicated **Flashlight** toggle in Outbreak (matching PC survival-horror conventions), accepted as a silent alias for `KeyE` in Blackout on foot, and used for aircraft countermeasures (flares) in Carrier flight (where `KeyQ`/`KeyE` are yaw rudder; carrier landing is `KeyR`).
 
 4. **Input ownership and release discipline.**
