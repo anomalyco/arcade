@@ -216,6 +216,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     description: "`LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub",
     match: (s) =>
       s === "@arcade/kit/dev-control" ||
+      s.startsWith("@arcade/kit/dev-control/") ||
       s === "@arcade/kit/lab-commands" ||
       s === "@arcade/kit/dev-hub" ||
       s === "@arcade/kit/dev-hub.css" ||
