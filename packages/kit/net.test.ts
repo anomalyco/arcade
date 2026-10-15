@@ -217,6 +217,31 @@ describe("Interest & Rewind", () => {
     expect(seenX).toBeCloseTo(11, 4)
     expect(entities[0]!.x).toBeCloseTo(14.5, 4)
   })
+
+  test("RewindHistory snapshot round-trips through JSON and keeps recording identically", () => {
+    const a = new RewindHistory<number>(4, 0.3)
+    const ents = [
+      { id: 1, x: 0.1, y: 5 },
+      { id: 2, x: 7.3, y: -2 },
+      { id: 3, x: 1, y: 1 },
+    ]
+    const live = (e: { id: number }) => e.id !== 3
+    for (let t = 0; t < 6; t++) {
+      for (const e of ents) e.x += 0.37 * e.id
+      a.record(t, t * 0.1, ents, live)
+    }
+    const b = new RewindHistory<number>(4, 0.3)
+    b.restore(JSON.parse(JSON.stringify(a.snapshot())))
+    expect(b.snapshot()).toEqual(a.snapshot())
+    expect(b.snapshot().length).toBe(4)
+    for (const q of [0.31, 0.37, 0.45, 0.5]) expect(b.sampleAtTime(q)).toEqual(a.sampleAtTime(q))
+    for (let t = 6; t < 9; t++) {
+      for (const e of ents) e.y -= 0.21 * e.id
+      a.record(t, t * 0.1, ents, live)
+      b.record(t, t * 0.1, ents, live)
+    }
+    expect(b.snapshot()).toEqual(a.snapshot())
+  })
 })
 
 describe("SnapshotBuffer", () => {

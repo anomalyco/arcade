@@ -8,6 +8,15 @@
 
 export type RewindPose = { x: number; y: number }
 
+/** One recorded tick as plain JSON: ids and their float32 positions, oldest frame first. */
+export type RewindFrameSnapshot<Id extends string | number = number> = {
+  tick: number
+  time: number
+  ids: Id[]
+  xs: number[]
+  ys: number[]
+}
+
 type Frame<Id extends string | number> = {
   tick: number
   time: number
@@ -145,5 +154,30 @@ export class RewindHistory<Id extends string | number = number> {
 
   clear(): void {
     this.frames.length = 0
+  }
+
+  /** Recorded frames as plain JSON, oldest first. Positions are float32 values, so they round-trip exactly. */
+  snapshot(): RewindFrameSnapshot<Id>[] {
+    return this.frames.map((f) => ({
+      tick: f.tick,
+      time: f.time,
+      ids: f.ids.slice(0, f.count),
+      xs: Array.from(f.xs.subarray(0, f.count)),
+      ys: Array.from(f.ys.subarray(0, f.count)),
+    }))
+  }
+
+  /** Replaces the history with `frames` from `snapshot()`; later queries and records match the recorded history. */
+  restore(frames: readonly RewindFrameSnapshot<Id>[]): void {
+    this.frames.length = 0
+    for (const f of frames.slice(-this.capacity)) {
+      const count = f.ids.length
+      const cap = Math.max(64, count)
+      const xs = new Float32Array(cap)
+      const ys = new Float32Array(cap)
+      xs.set(f.xs)
+      ys.set(f.ys)
+      this.frames.push({ tick: f.tick, time: f.time, count, ids: f.ids.slice(), xs, ys })
+    }
   }
 }
