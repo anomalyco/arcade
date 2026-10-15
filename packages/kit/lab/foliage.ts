@@ -925,6 +925,17 @@ export function createFoliage(context: LabContext): LabSection {
     settings,
     controls,
     library: { category: "foliage", label: "Vegetation", tag: "foliage", items: libraryItems },
+    // One tab per kind, where "Tree Structure" reads "Structure"; the room and the look's actions on Scene.
+    tabs: [
+      { label: "Scene", groups: ["Vegetation", "Test room", "Controls"] },
+      ...([["tree", "Trees"], ["bush", "Bushes"], ["grass", "Grass"]] as const).map(([kind, label]) => ({
+        label,
+        groups: [...new Set(FOLIAGE_PARAM_SPECS.filter(s => s.kind === kind).map(s => s.group))].map(group => {
+          const rest = group.slice(FOLIAGE_KIND_LABELS[kind].length + 1)
+          return [group, rest.charAt(0).toUpperCase() + rest.slice(1)] as const
+        }),
+      })),
+    ],
     detailsGroups: () => groupsFor(tool()),
     enter() {
       stage.sceneMode = 5

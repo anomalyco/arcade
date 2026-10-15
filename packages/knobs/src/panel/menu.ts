@@ -76,6 +76,7 @@ export function openMenu(
     "--k-shadow",
     "--k-font-weight",
     "--k-title-weight",
+    "--k-control-h",
   ])
     menu.style.setProperty(t, cs.getPropertyValue(t))
   menu.style.colorScheme = cs.colorScheme

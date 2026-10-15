@@ -128,8 +128,6 @@ export async function lab(options:LabOptions) {
         </div>
         <div class="lab-details-actions" data-details-actions></div>
         <div class="lab-details-tools">
-          <label class="lab-search"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.2 10.2 13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input type="search" data-control="details-search" aria-label="Search details" placeholder="Search details" /></label>
-          <button type="button" class="lab-chip" data-action="details-modified" aria-pressed="false" title="Show only settings that differ from their defaults">Modified<span class="lab-chip-n" data-modified-count></span></button>
           <button type="button" class="lab-chip" data-action="details-all" aria-pressed="false" title="Show section settings unrelated to the selection" hidden>All</button>
         </div>
         <div class="lab-inspector-body" data-inspector-mount></div>
@@ -266,7 +264,7 @@ export async function lab(options:LabOptions) {
     syncDebugOptions(id)
     const inPlayground=Boolean(spawn?.hasActiveScene()&&isPlaygroundSection(id))
     stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:id==="looks"||id==="weather"?5:0
-    panel?.clearControls();panel?.addControls(active.settings,active.controls,workbench?.sectionDefaults(id))
+    panel?.clearControls();panel?.setTabs(active.tabs);panel?.addControls(active.settings,active.controls,workbench?.sectionDefaults(id))
     panel?.addControls(keyLabels.settings,[keyLabels.control],keyLabels.defaults)
     if(!keepPlayground||id==="effects")active.enter?.()
     else if(id==="spawn")spawn?.section.enter?.()

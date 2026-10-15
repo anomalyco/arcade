@@ -54,7 +54,6 @@ export interface WorkbenchCommandsHost {
   playPauseBtn: HTMLButtonElement
   stepBtn: HTMLButtonElement
   speedSelect: HTMLSelectElement
-  detailsSearch: HTMLInputElement
   activeSection: () => LabSection
   resolveEnvOwner: () => LabSection
   selectSection: (id: string) => void
@@ -135,7 +134,6 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
     playPauseBtn,
     stepBtn,
     speedSelect,
-    detailsSearch,
     activeSection,
     resolveEnvOwner,
     selectSection,
@@ -2038,17 +2036,12 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
               ? !cur.modifiedOnly
               : cur.modifiedOnly
         const query = typeof args?.query === "string" ? args.query : cur.query
-        if (typeof args?.query === "string") detailsSearch.value = args.query
         const showAll = typeof args?.all === "boolean" ? args.all : cur.showAll
         setDetailsFilterState({ modifiedOnly, query, showAll })
         applyDetailsView()
         syncDetails()
-        return {
-          modifiedOnly,
-          query,
-          showAll,
-          visible: panel.navigation.visibleRows.filter(r => r.control).map(r => r.control!.key),
-        }
+        // knobs filters the rows on its next frames; the answer lists what shows once it has.
+        return new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done({ modifiedOnly, query, showAll, visible: panel.shownKeys() }))))
       },
     },
     {

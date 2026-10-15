@@ -120,7 +120,7 @@ export type LabSceneState = {
     /** Panel sizes for the current layout (`workbench` or a station id): stored, collapsed and as rendered. */
     panels?: { layout: string; sizes: Record<string, number>; collapsed: Record<string, boolean>; rendered: Record<string, number> }
     locked: string[]
-    details: { query: string; modifiedOnly: boolean; showAll: boolean; modified: string[] }
+    details: { query: string; modifiedOnly: boolean; showAll: boolean; tab: string | null; modified: string[] }
     watch: { section: string; key: string; label: string; value: string | null }[]
   }
   grid?: {

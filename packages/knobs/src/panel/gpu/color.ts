@@ -165,6 +165,15 @@ export interface PanelThemeTokens {
   readonly textControl: number
   readonly textMeta: number
   readonly textCap: number
+  /** Readouts' size (--k-value-size, else a half pixel under the body size). */
+  readonly valueSize: number
+  /** The button tokens (--k-button-*), where set; each element keeps its own look otherwise. */
+  readonly buttonBg: Rgba | null
+  readonly buttonLine: Rgba | null
+  readonly buttonHoverBg: Rgba | null
+  readonly buttonHoverLine: Rgba | null
+  readonly buttonRadius: number | null
+  readonly buttonFontSize: number | null
   readonly iconSize: number
   readonly iconSm: number
   readonly labelWeight: number
@@ -215,6 +224,17 @@ const lengthProp = (style: CSSStyleDeclaration, name: string, em: number, fallba
 }
 const colorProp = (style: CSSStyleDeclaration, name: string, fallback: Rgba): Rgba =>
   token(style, name).trim() ? parseCssColor(token(style, name), fallback) : fallback
+
+const optColor = (style: CSSStyleDeclaration, name: string): Rgba | null => {
+  const raw = style.getPropertyValue(`--k-${name}`).trim()
+  return raw ? parseCssColor(raw, [0, 0, 0, 0]) : null
+}
+const optLength = (style: CSSStyleDeclaration, name: string, em: number): number | null => {
+  const raw = style.getPropertyValue(`--k-${name}`).trim()
+  if (!raw) return null
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? (raw.endsWith("em") ? n * em : n) : null
+}
 
 const tokenCache = new WeakMap<HTMLElement, { version: number; tokens: PanelThemeTokens }>()
 
@@ -366,6 +386,13 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     textControl: fontSize - 0.5,
     textMeta: fontSize - 1,
     textCap: fontSize - 2,
+    valueSize: parseFloat(style.getPropertyValue("--kc-value-size")) || fontSize - 0.5,
+    buttonBg: optColor(style, "button-bg"),
+    buttonLine: optColor(style, "button-line"),
+    buttonHoverBg: optColor(style, "button-hover-bg"),
+    buttonHoverLine: optColor(style, "button-hover-line"),
+    buttonRadius: optLength(style, "button-radius", fontSize),
+    buttonFontSize: optLength(style, "button-font-size", fontSize),
     iconSize: numProp(style, "icon-size", 14),
     iconSm: numProp(style, "icon-sm", 13),
     labelWeight: numProp(style, "label-weight", 500),

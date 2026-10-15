@@ -3,7 +3,15 @@ import type { Bezier } from "./easing.js"
 import { RESHAPE, type Reshape } from "./internal.js"
 import {
   action,
+  angle,
   choice,
+  keybind,
+  range,
+  seed,
+  toolbar,
+  vec2,
+  vec3,
+  type Vec3,
   color,
   easing,
   flatSpring,
@@ -66,7 +74,25 @@ export interface ActionDescriptor extends DescriptorMeta {
   readonly default?: undefined
   readonly bind?: undefined
 }
-export type ControlDescriptor = ValueDescriptor | SpringBindingDescriptor | ActionDescriptor
+/** A row of buttons; pressing one calls `onAction(item.key)`. */
+export interface ToolbarDescriptor extends DescriptorMeta {
+  readonly kind: "toolbar"
+  readonly items: readonly {
+    readonly key: string
+    readonly label: string
+    readonly icon?: string
+    readonly shortcut?: string
+    readonly global?: boolean
+    readonly disabled?: boolean
+  }[]
+  readonly default?: undefined
+  readonly bind?: undefined
+}
+export type ControlDescriptor =
+  | ValueDescriptor
+  | SpringBindingDescriptor
+  | ActionDescriptor
+  | ToolbarDescriptor
 export interface ValueDescriptor extends DescriptorMeta {
   readonly bind?: undefined
   readonly kind:
@@ -79,7 +105,17 @@ export interface ValueDescriptor extends DescriptorMeta {
     | "color"
     | "point"
     | "easing"
-  /** Springs take `{ duration, bounce }`, colours a CSS string, points `{ x, y }`, easings `[x1, y1, x2, y2]`. */
+    | "vec2"
+    | "vec3"
+    | "range"
+    | "angle"
+    | "seed"
+    | "keybind"
+  /**
+   * Springs take `{ duration, bounce }`, colours a CSS string, points and vec2 `{ x, y }`, vec3
+   * `{ x, y, z }`, easings `[x1, y1, x2, y2]`, ranges `[low, high]`, keybinds a combination
+   * string (`"Meta+K"`).
+   */
   readonly default: Value
   readonly min?: number
   readonly max?: number
@@ -93,6 +129,11 @@ export interface ValueDescriptor extends DescriptorMeta {
   readonly choices?: readonly (string | ChoiceOption)[]
   readonly options?: readonly (string | ChoiceOption)[]
   readonly swiftType?: string
+  /** Vectors: show the link toggle for uniform scaling (`linked` starts it on). */
+  readonly link?: boolean
+  readonly linked?: boolean
+  /** Angles: carry past the ends a whole turn (on for a full turn by default). */
+  readonly wrap?: boolean
 }
 
 export interface RemoteControlsOptions {
@@ -175,6 +216,11 @@ const optionId = (o: string | ChoiceOption) =>
 export function descriptorToField(d: ControlDescriptor): Field {
   const meta = pickMeta(d)
   if (d.kind === "action") return action(d.label, meta)
+  if (d.kind === "toolbar")
+    return toolbar(
+      d.items.map(({ key, ...item }) => ({ ...item, id: key })),
+      meta,
+    )
   if (d.bind) return flatSpring({}, { ...meta, id: d.key }).duration
   if (d.kind === "knob" || d.kind === "number") {
     const def = typeof d.default === "number" && Number.isFinite(d.default) ? d.default : 0
@@ -212,6 +258,49 @@ export function descriptorToField(d: ControlDescriptor): Field {
   if (d.kind === "point")
     return point(d.default as Point, { min: d.min ?? 0, max: d.max ?? 1, step: d.step, ...meta })
   if (d.kind === "easing") return easing(d.default as Bezier, meta)
+  const numbers = {
+    ...(d.unit !== undefined ? { unit: d.unit } : {}),
+    ...(d.decimals !== undefined ? { decimals: d.decimals } : {}),
+    ...(d.step !== undefined ? { step: d.step } : {}),
+  }
+  if (d.kind === "vec2" || d.kind === "vec3") {
+    const v = (d.default ?? {}) as Partial<Vec3>
+    const opts = {
+      min: d.min ?? -1,
+      max: d.max ?? 1,
+      ...numbers,
+      ...(d.link ? { link: true } : {}),
+      ...(d.linked ? { linked: true } : {}),
+      ...meta,
+    }
+    return d.kind === "vec3"
+      ? vec3({ x: v.x ?? 0, y: v.y ?? 0, z: v.z ?? 0 }, opts)
+      : vec2({ x: v.x ?? 0, y: v.y ?? 0 }, opts)
+  }
+  if (d.kind === "range") {
+    const v = Array.isArray(d.default) ? d.default : [d.min ?? 0, d.max ?? 1]
+    return range([Number(v[0]), Number(v[1])], {
+      min: d.min ?? 0,
+      max: d.max ?? 1,
+      ...numbers,
+      ...meta,
+    })
+  }
+  if (d.kind === "angle")
+    return angle(typeof d.default === "number" ? d.default : 0, {
+      ...(d.min !== undefined ? { min: d.min } : {}),
+      ...(d.max !== undefined ? { max: d.max } : {}),
+      ...(d.step !== undefined ? { step: d.step } : {}),
+      ...(d.wrap !== undefined ? { wrap: d.wrap } : {}),
+      ...meta,
+    })
+  if (d.kind === "seed")
+    return seed(typeof d.default === "number" ? d.default : 0, {
+      ...(d.min !== undefined ? { min: d.min } : {}),
+      ...(d.max !== undefined ? { max: d.max } : {}),
+      ...meta,
+    })
+  if (d.kind === "keybind") return keybind(typeof d.default === "string" ? d.default : "", meta)
   return toggle(Boolean(d.default), meta)
 }
 
@@ -267,13 +356,34 @@ const swiftLiteral = (d: ValueDescriptor, v: Value): string => {
     const [x1, y1, x2, y2] = (v as Bezier).map(decimal)
     return `.bezier(startControlPoint: UnitPoint(x: ${x1}, y: ${y1}), endControlPoint: UnitPoint(x: ${x2}, y: ${y2}))`
   }
+  if (d.kind === "vec2" || d.kind === "vec3") {
+    const p = v as Vec3
+    return d.kind === "vec3"
+      ? `SIMD3<Double>(${decimal(p.x)}, ${decimal(p.y)}, ${decimal(p.z)})`
+      : `SIMD2<Double>(${decimal(p.x)}, ${decimal(p.y)})`
+  }
+  if (d.kind === "range") {
+    const [a, b] = v as readonly [number, number]
+    return `${decimal(a)}...${decimal(b)}`
+  }
+  if (d.kind === "keybind") return JSON.stringify(v)
+  if (d.kind === "seed") return String(Math.round(v as number))
   if (typeof v === "boolean") return String(v)
   if (typeof v === "string") return `.${v}`
   if (typeof v !== "number") return JSON.stringify(v)
   if (d.swiftType === "Int") return String(Math.round(v))
   return decimal(v)
 }
-const swiftTypes = { color: "Color", point: "CGPoint", easing: "UnitCurve" } as const
+const swiftTypes = {
+  color: "Color",
+  point: "CGPoint",
+  easing: "UnitCurve",
+  vec2: "SIMD2<Double>",
+  vec3: "SIMD3<Double>",
+  range: "ClosedRange<Double>",
+  seed: "Int",
+  keybind: "String",
+} as const
 
 export function formatSwift(
   descriptors: readonly ControlDescriptor[],
@@ -284,7 +394,7 @@ export function formatSwift(
   const done = new Set<string>()
   const lines: string[] = []
   for (const d of descriptors as readonly ValueDescriptor[]) {
-    if ((d.kind as string) === "action" || d.bind) continue
+    if ((d.kind as string) === "action" || (d.kind as string) === "toolbar" || d.bind) continue
     const changed = d.key in values && !same(values[d.key], d.default)
     if (!changed || done.has(d.key) || (group && d.group !== group)) continue
     const base = d.key.replace(/\.(duration|bounce)$/, "")

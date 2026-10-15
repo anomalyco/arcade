@@ -66,6 +66,7 @@ const defaultsCss = `
 @property --k-fill{syntax:"<percentage>";inherits:false;initial-value:0%}
 @property --k-fill-mix{syntax:"<percentage>";inherits:false;initial-value:20%}
 @property --k-readout{syntax:"<length>";inherits:true;initial-value:0px}
+@property --kc-value-size{syntax:"<length>";inherits:true;initial-value:11.5px}
 :where(:root,:host){
   --k-bg:#1c1c1e;--k-contrast:1;--k-surface:rgba(255,255,255,calc(.055 * var(--k-contrast)));--k-surface-hi:rgba(255,255,255,calc(.11 * var(--k-contrast)));--k-line:rgba(255,255,255,calc(.1 * var(--k-contrast)));--k-line-hi:rgba(255,255,255,calc(.18 * var(--k-contrast)));
   --k-text:rgba(255,255,255,.92);--k-label:rgba(255,255,255,.64);--k-dim:rgba(255,255,255,.42);--k-accent:#fff;--k-modified:rgba(255,255,255,.5);
@@ -96,7 +97,9 @@ const css = `
   --k-tray-pad:calc(var(--k-unit) * .5);
   --k-section-gap:calc(var(--k-gap) * 2);
   --k-group-gap:calc(var(--k-gap) * 3);
-  --k-control-h:calc(var(--k-row) - var(--k-unit) * 2);
+  /* Public sizes a host may set anywhere (:root, the panel, a preset); derived otherwise. */
+  --kc-control-h:var(--k-control-h,calc(var(--k-row) - var(--k-unit) * 2));
+  --kc-value-size:var(--k-value-size,calc(var(--k-font-size) - .5px));
   --k-action-h:calc(var(--k-row) - var(--k-unit));
   --k-track-h:calc(var(--k-row) - 14px);
   --k-icon-btn:22px;
@@ -225,7 +228,7 @@ const css = `
 .knobs-presets-pill{position:absolute;top:0;left:0;background:var(--k-pill-bg);border:1px solid var(--k-pill-border);border-radius:var(--k-radius-md);box-shadow:var(--k-lift-shadow),0 0 calc(var(--k-glow) * 10px) color-mix(in srgb,var(--k-accent) 24%,transparent);pointer-events:none;
   transition:left ${TRAIL_T},right ${LEAD_T},top ${LEAD_T},opacity .15s,scale .15s}
 .knobs-presets-pill[data-dir="left"]{transition:left ${LEAD_T},right ${TRAIL_T},top ${LEAD_T},opacity .15s,scale .15s}
-.knobs-panel .knobs-preset-chip{position:relative;z-index:1;height:var(--k-control-h);min-height:20px;padding:0 6px;font-size:var(--k-text-control);font-weight:var(--k-label-weight);color:var(--k-label);background:transparent!important;border-radius:var(--k-radius-md);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .15s}
+.knobs-panel .knobs-preset-chip{position:relative;z-index:1;height:var(--kc-control-h);min-height:20px;padding:0 6px;font-size:var(--k-text-control);font-weight:var(--k-label-weight);color:var(--k-label);background:transparent!important;border-radius:var(--k-radius-md);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .15s}
 .knobs-panel .knobs-preset-chip:hover{color:var(--k-text)}
 .knobs-panel .knobs-preset-chip[aria-checked="true"]{color:var(--k-text);font-weight:var(--k-title-weight)}
 .knobs-panel .knobs-preset-save{flex:none;width:calc((var(--k-inset) - var(--k-tray-pad)) * 2 + 8px);padding:0!important;color:var(--k-dim)!important;font-weight:400!important;font-size:var(--k-text-title)!important}
@@ -314,17 +317,17 @@ const css = `
 :is(.knobs-slider,.knobs-sub).knobs-modified .knobs-value::before{opacity:var(--k-readout-mark);transform:none}
 .knobs-label{position:absolute;left:var(--k-inset);top:50%;transform:translateY(-50%);max-width:calc(100% - var(--k-inset) * 2 - var(--k-readout,48px) - 8px - var(--k-accessory-w,0px));overflow:hidden;text-overflow:ellipsis;color:var(--k-label);font-weight:var(--k-label-weight);pointer-events:none;white-space:nowrap}
 .knobs-panel .knobs-value{position:absolute;right:var(--k-inset);top:50%;transform:translateY(-50%);transform-origin:100% 0;display:inline-flex;align-items:center;justify-content:flex-end;gap:0;padding:4px 0 4px 8px;background:transparent!important;border-radius:0!important;line-height:1.35;overflow:visible;white-space:nowrap;
-  color:var(--k-label);font-family:var(--k-value-font);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-size:var(--k-text-control);
+  color:var(--k-label);font-family:var(--k-value-font);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-size:var(--kc-value-size);
   border-bottom:1px solid transparent;cursor:text;transition:color .15s,border-color .15s .4s}
 .knobs-value:hover{border-bottom-color:var(--k-label)}
 .knobs-active .knobs-value,.knobs-track:focus-visible .knobs-value{color:var(--k-text)}
 .knobs-panel .knobs-number{position:absolute;right:var(--k-inset);top:50%;transform:translateY(-50%);z-index:2;width:6.5ch;padding:1px 4px;text-align:right;background:var(--k-bg)!important;
-  border-radius:var(--k-radius-sm)!important;border-bottom:1px solid var(--k-text)!important;color:var(--k-text);font-family:var(--k-value-font);font-variant-numeric:tabular-nums;font-size:var(--k-text-control);appearance:textfield}
+  border-radius:var(--k-radius-sm)!important;border-bottom:1px solid var(--k-text)!important;color:var(--k-text);font-family:var(--k-value-font);font-variant-numeric:tabular-nums;font-size:var(--kc-value-size);appearance:textfield}
 .knobs-number::-webkit-inner-spin-button,.knobs-number::-webkit-outer-spin-button{appearance:none}
 .knobs-number:focus-visible{outline:none;box-shadow:none}
 
 /* Segmented choice */
-.knobs-seg{position:relative;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:var(--k-tray-pad);height:var(--k-control-h);padding:var(--k-tray-pad);max-width:76%;background:var(--k-seg-bg);border-radius:var(--k-radius-md)}
+.knobs-seg{position:relative;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:var(--k-tray-pad);height:var(--kc-control-h);padding:var(--k-tray-pad);max-width:76%;background:var(--k-seg-bg);border-radius:var(--k-radius-md)}
 .knobs-seg-pill{position:absolute;top:var(--k-tray-pad);bottom:var(--k-tray-pad);left:0;right:100%;border-radius:var(--k-radius-sm);background:var(--k-pill-bg);box-shadow:var(--k-lift-shadow);pointer-events:none;
   transition:left ${TRAIL_T} ${DELAY},right ${LEAD_T} ${DELAY},opacity .15s}
 .knobs-seg-pill[data-dir="left"]{transition:left ${LEAD_T} ${DELAY},right ${TRAIL_T} ${DELAY},opacity .15s}
@@ -338,7 +341,7 @@ const css = `
 .knobs-seg button[aria-checked=true]{color:var(--k-text)}
 
 /* Long choices: a compact button that drops down a menu */
-.knobs-panel .knobs-select{position:relative;display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:62%;height:var(--k-control-h);padding:0 6px 0 10px;background:var(--k-seg-bg);border-radius:var(--k-radius-md);color:var(--k-label);font-size:var(--k-text-control);font-weight:var(--k-label-weight);cursor:pointer;transition:background var(--k-hover-t),color var(--k-hover-t)}
+.knobs-panel .knobs-select{position:relative;display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:62%;height:var(--kc-control-h);padding:0 6px 0 10px;background:var(--k-seg-bg);border-radius:var(--k-radius-md);color:var(--k-label);font-size:var(--k-text-control);font-weight:var(--k-label-weight);cursor:pointer;transition:background var(--k-hover-t),color var(--k-hover-t)}
 .knobs-panel .knobs-select:is(:hover,:focus-visible,[aria-expanded="true"]){background:var(--k-surface-hi);color:var(--k-text)}
 .knobs-select-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .knobs-panel .knobs-row-full .knobs-select{flex:1;max-width:none;justify-content:space-between}
@@ -391,7 +394,7 @@ const css = `
 .knobs-x-label::after{content:"";display:inline-block;width:4px;height:4px;margin-left:5px;border-radius:50%;background:var(--k-modified);vertical-align:middle;opacity:0;transform:scale(.4);transition:opacity .16s ease-out,transform .28s cubic-bezier(.34,1.5,.64,1)}
 .knobs-modified .knobs-x-label::after{opacity:.95;transform:none}
 .knobs-x-sum{display:flex;align-items:center;gap:8px;min-width:0}
-.knobs-x-read,.knobs-strip-read{color:var(--k-label);font-size:var(--k-text-control);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";white-space:nowrap}
+.knobs-x-read,.knobs-strip-read{color:var(--k-label);font-size:var(--kc-value-size);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";white-space:nowrap}
 .knobs-caret{width:10px;height:10px;flex:none;margin-right:-2.5px;color:var(--k-dim);transition:transform ${LEAD_T},color .15s}
 .knobs-caret path{fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .knobs-x-head:hover .knobs-caret{color:var(--k-label)}
@@ -434,6 +437,7 @@ const css = `
 .knobs-panel[data-rows] .knobs-card>*{background:var(--k-surface);border-radius:var(--k-radius);overflow:hidden}
 .knobs-panel[data-rows] .knobs-card>:is(:hover,.knobs-active){background:color-mix(in srgb,var(--k-surface-hi) 50%,var(--k-surface))}
 .knobs-panel[data-rows] :is(.knobs-card>*,.knobs-sub)::before{display:none}
+.knobs-panel[data-rows] .knobs-card>.knobs-subhead{background:transparent}
 .knobs-panel[data-rows] .knobs-card>.knobs-spring{flex-direction:column-reverse;gap:var(--k-row-gap);background:transparent;overflow:visible}
 .knobs-panel[data-rows] .knobs-spring-tracks{display:flex;flex-direction:column;gap:var(--k-row-gap);overflow:visible}
 .knobs-panel[data-rows] .knobs-sub{background:var(--k-surface);border-radius:var(--k-radius);overflow:hidden}
@@ -463,7 +467,115 @@ const css = `
 .knobs-mixed :is(.knobs-fill,.knobs-handle-zone,.knobs-marks){opacity:0}
 .knobs-panel .knobs-mixed .knobs-value>:is(.knobs-digits,.knobs-unit,.knobs-lock){display:none}
 .knobs-mixed .knobs-value::after{content:"—"}
+.knobs-mixed :is(.knobs-range-fill,.knobs-range-thumb,.knobs-dial-hand,.knobs-strip-thumb,.knobs-pad-puck,.knobs-pad-v,.knobs-pad-h,.knobs-ease-mini,.knobs-ease .knobs-curve,.knobs-arm,.knobs-ease-handle){opacity:0}
 .knobs-panel .knobs-toggle[aria-checked="mixed"] i{left:calc(50% - 7px);right:calc(50% - 7px)}
+
+/* Tabs: text over a hairline; the chosen one's underline slides to it, its leading edge first. */
+.knobs-tabs{position:relative;display:flex;align-items:stretch;gap:calc(var(--k-unit) * 4);margin:0 0 var(--k-section-gap);padding:0 var(--k-inset);overflow:hidden;transition:opacity .2s var(--k-ease)}
+.knobs-tabs::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;transform:scaleY(.5);transform-origin:bottom;background:var(--k-line);pointer-events:none}
+.knobs-panel .knobs-tab{flex:none;height:calc(var(--k-row) - var(--k-unit));padding:0;background:transparent;border-radius:0;font-size:var(--k-text-control);font-weight:var(--k-label-weight);color:var(--k-label);white-space:nowrap;cursor:pointer;transition:color .15s}
+.knobs-panel .knobs-tab:is(:hover,:focus-visible),.knobs-panel .knobs-tab[aria-selected="true"]{color:var(--k-text)}
+.knobs-tabs-bar{position:absolute;bottom:0;left:0;right:100%;height:1.5px;border-radius:1px;background:var(--k-accent);pointer-events:none;transition:left ${TRAIL_T},right ${LEAD_T}}
+.knobs-tabs-bar[data-dir="left"]{transition:left ${LEAD_T},right ${TRAIL_T}}
+/* A search spans every tab, so the strip steps back while it's on. */
+.knobs-panel[data-searching] .knobs-tabs{opacity:.4}
+
+/* Search: a field and its filter chips. Matches show in labels by colour alone. */
+.knobs-search{display:flex;align-items:center;gap:var(--k-tray-pad);margin:0 0 var(--k-section-gap)}
+.knobs-search-field{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:var(--kc-control-h);padding:0 8px;background:var(--k-seg-bg);border-radius:var(--k-radius-md);color:var(--k-dim);cursor:text}
+.knobs-search-field>.knobs-icon{width:calc(var(--k-icon-sm) - 2px);height:calc(var(--k-icon-sm) - 2px)}
+.knobs-panel .knobs-search input{flex:1;min-width:0;height:100%;padding:0;background:transparent;border-radius:0;color:var(--k-text);font-size:var(--k-text-control);-webkit-appearance:none;appearance:none}
+.knobs-panel .knobs-search input::placeholder{color:var(--k-dim)}
+.knobs-panel .knobs-search input::-webkit-search-cancel-button{display:none}
+.knobs-panel .knobs-search-chip{flex:none;display:inline-flex;align-items:center;gap:5px;height:var(--kc-control-h);padding:0 8px;background:transparent;border-radius:var(--k-radius-md);box-shadow:inset 0 0 0 1px var(--k-line);color:var(--k-label);font-size:var(--k-text-meta);font-weight:var(--k-label-weight);white-space:nowrap;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s,opacity .15s}
+.knobs-panel .knobs-search-chip:is(:hover,:focus-visible){color:var(--k-text);box-shadow:inset 0 0 0 1px var(--k-line-hi)}
+.knobs-panel .knobs-search-chip[aria-pressed="true"]{background:var(--k-pill-bg);box-shadow:inset 0 0 0 1px var(--k-pill-border);color:var(--k-text)}
+.knobs-panel .knobs-search-chip[data-none]{opacity:.5}
+.knobs-search-count{color:var(--k-dim);font-variant-numeric:tabular-nums}
+.knobs-search-chip[aria-pressed="true"] .knobs-search-count{color:var(--k-label)}
+.knobs-panel mark.knobs-match{background:none;color:var(--k-accent)}
+.knobs-panel[data-gpu-active="true"] .knobs-search{position:relative;z-index:2147480003}
+
+/* Sub-headings: a flat heading inside the group's card, split off by the card's hairline. */
+.knobs-panel .knobs-card>.knobs-subhead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:0;height:calc(var(--k-row) - var(--k-unit) * 2);padding:0 var(--k-inset);color:var(--k-label);font-size:var(--k-text-meta);font-weight:var(--k-title-weight);cursor:pointer;user-select:none}
+.knobs-subhead-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.knobs-subhead[aria-expanded="true"] .knobs-caret{transform:rotate(90deg)}
+.knobs-subhead:hover .knobs-caret{color:var(--k-label)}
+.knobs-card>.knobs-subhead:focus-visible::after{opacity:1}
+
+/* Inspector rows: number cells, ranges, dials, seeds and key combinations. */
+.knobs-panel .knobs-insp{gap:8px}
+.knobs-panel .knobs-insp[data-kind="vec"]>span:first-child{flex-shrink:0;max-width:34%}
+.knobs-cells{flex:0 1 auto;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:var(--k-tray-pad);width:calc(var(--k-row) * 5);max-width:64%}
+.knobs-cells:has(>:nth-child(3)){width:calc(var(--k-row) * 7.5);max-width:72%}
+.knobs-cell{position:relative;display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;height:var(--kc-control-h);padding:0 5px;border-radius:var(--k-radius-md);background:var(--k-seg-bg);cursor:ew-resize;user-select:none;touch-action:none;outline:none;transition:background var(--k-hover-t)}
+.knobs-cell:hover,.knobs-cell:focus-visible{background:color-mix(in srgb,var(--k-surface-hi) 70%,var(--k-seg-bg))}
+.knobs-active .knobs-cell:focus{background:var(--k-surface-hi)}
+.knobs-cell-axis{flex:none;font-style:normal;font-size:var(--k-text-cap);font-weight:var(--k-title-weight);color:var(--k-dim)}
+.knobs-cell-read,.knobs-range-read,.knobs-angle-read,.knobs-seed-read{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--k-label);font-family:var(--k-value-font);font-size:var(--kc-value-size);font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.knobs-cell:focus-visible .knobs-cell-read,.knobs-active .knobs-cell:focus .knobs-cell-read{color:var(--k-text)}
+.knobs-panel .knobs-link{flex:none;width:20px;height:20px;margin:0 -4px 0 auto;padding:0;display:inline-flex;align-items:center;justify-content:center;background:transparent;border-radius:var(--k-round);color:var(--k-dim);cursor:pointer;transition:background .15s,color .15s}
+.knobs-panel .knobs-link:hover{background:var(--k-surface-hi);color:var(--k-text)}
+.knobs-panel .knobs-link[aria-pressed="true"]{color:var(--k-text)}
+.knobs-link .knobs-icon{width:var(--k-icon-sm);height:var(--k-icon-sm)}
+/* The inline editor over a readout: above the GPU canvas, which leaves that readout to it. */
+.knobs-panel .knobs-cell-edit{position:absolute;z-index:3;right:var(--k-inset);top:50%;transform:translateY(-50%);width:7ch;height:auto;padding:1px 4px;text-align:right;background:var(--k-bg);border-radius:var(--k-radius-sm);border-bottom:1px solid var(--k-text);color:var(--k-text);font-family:var(--k-value-font);font-variant-numeric:tabular-nums;font-size:var(--kc-value-size)}
+.knobs-cell.knobs-editing>:not(.knobs-cell-edit){visibility:hidden}
+.knobs-panel .knobs-cell>.knobs-cell-edit{inset:0;width:auto;transform:none;padding:0 6px;border-radius:var(--k-radius-md)}
+.knobs-panel[data-gpu-active="true"] .knobs-cell-edit{z-index:2147480003}
+
+.knobs-panel .knobs-row.knobs-range{display:block;height:var(--k-row);padding:0}
+.knobs-range-track{position:absolute;inset:0;overflow:hidden;cursor:ew-resize;user-select:none;touch-action:none}
+.knobs-range-fill{position:absolute;inset:0;transform-origin:0 0;transform:scaleX(0);background:var(--k-fill-rest);pointer-events:none;transition:transform ${FILL_T} ${DELAY},background .15s}
+.knobs-range:hover .knobs-range-fill{background:color-mix(in srgb,var(--k-accent) var(--k-fill-hover-mix),var(--k-fill-base))}
+.knobs-range.knobs-active .knobs-range-fill{background:var(--k-fill-active)}
+.knobs-range-thumb{position:absolute;top:0;bottom:0;left:0;width:0;outline:none;transition:left ${FILL_T} ${DELAY}}
+.knobs-range-thumb::before{content:"";position:absolute;left:0;top:50%;width:3px;height:calc(var(--k-row) - 12px);margin-top:calc(6px - var(--k-row) / 2);translate:-50% 0;border-radius:var(--k-round);background:var(--k-handle);opacity:0;scale:.25 1;transition:opacity .15s,scale .22s var(--k-ease)}
+.knobs-range-thumb[data-end="lo"]::before{translate:0 0}
+.knobs-range-thumb[data-end="hi"]::before{translate:-100% 0}
+.knobs-range:hover .knobs-range-thumb::before{opacity:.5}
+.knobs-range-thumb:focus-visible::before,.knobs-range.knobs-active .knobs-range-thumb:focus::before{opacity:.95;scale:1}
+.knobs-range .knobs-label{max-width:calc(55% - var(--k-inset))}
+.knobs-range-read{position:absolute;right:var(--k-inset);top:50%;transform:translateY(-50%);pointer-events:none}
+.knobs-range.knobs-active .knobs-range-read,.knobs-range:has(:focus-visible) .knobs-range-read{color:var(--k-text)}
+.knobs-range.knobs-modified .knobs-range-read{color:color-mix(in srgb,var(--k-modified) calc(var(--k-readout-mark) * 100%),var(--k-label))}
+.knobs-range.knobs-editing .knobs-range-read{opacity:0}
+
+.knobs-angle{display:inline-flex;align-items:center;gap:8px;height:var(--kc-control-h);margin-left:auto;cursor:ew-resize;user-select:none;touch-action:none;outline:none}
+.knobs-angle:focus-visible .knobs-angle-read,.knobs-active .knobs-angle-read{color:var(--k-text)}
+.knobs-dial{position:relative;flex:none;width:var(--kc-control-h);height:var(--kc-control-h);border-radius:50%;background:var(--k-seg-bg);box-shadow:inset 0 0 0 1px var(--k-line);cursor:grab;transition:box-shadow .15s}
+.knobs-angle:is(:hover,:focus-visible) .knobs-dial,.knobs-active .knobs-dial{box-shadow:inset 0 0 0 1px var(--k-line-hi)}
+.knobs-active .knobs-dial{cursor:grabbing}
+.knobs-dial::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px;border-radius:50%;background:var(--k-accent)}
+.knobs-dial-hand{position:absolute;left:50%;top:18%;bottom:50%;width:1.5px;margin-left:-.75px;border-radius:1px;background:var(--k-accent);transform-origin:50% 100%;transition:rotate ${FILL_T} ${DELAY}}
+.knobs-active .knobs-dial-hand{transition:none}
+.knobs-insp.knobs-editing .knobs-angle-read,.knobs-insp.knobs-editing .knobs-seed-read{opacity:0}
+
+.knobs-panel .knobs-insp[data-kind="seed"]{gap:2px}
+.knobs-seed{display:inline-flex;align-items:center;height:var(--kc-control-h);margin-left:auto;padding:0 4px;border-radius:var(--k-radius-sm);cursor:text;outline:none}
+.knobs-seed:focus-visible .knobs-seed-read{color:var(--k-text)}
+.knobs-panel .knobs-seed-roll{flex:none;width:var(--k-icon-btn);height:var(--k-icon-btn);padding:0;display:inline-flex;align-items:center;justify-content:center;background:transparent;border-radius:var(--k-round);color:var(--k-dim);cursor:pointer;transition:background .15s,color .15s}
+.knobs-panel .knobs-seed-roll:hover{background:var(--k-surface-hi);color:var(--k-text)}
+.knobs-seed-roll .knobs-die-icon{width:var(--k-icon-sm);height:var(--k-icon-sm)}
+
+.knobs-panel .knobs-keys{flex:none;display:inline-flex;align-items:center;max-width:62%;height:var(--kc-control-h);padding:0 8px;background:var(--k-seg-bg);border-radius:var(--k-radius-md);color:var(--k-text);font-size:var(--kc-value-size);letter-spacing:.08em;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s}
+.knobs-panel .knobs-keys:is(:hover,:focus-visible){background:color-mix(in srgb,var(--k-surface-hi) 70%,var(--k-seg-bg))}
+.knobs-panel .knobs-keys[data-empty]{color:var(--k-dim);letter-spacing:0}
+.knobs-panel .knobs-keys[aria-pressed="true"]{background:var(--k-pill-bg);box-shadow:inset 0 0 0 1px var(--k-pill-border);color:var(--k-label);letter-spacing:.08em}
+.knobs-keys-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* Toolbars: icon, label and shortcut per button; they wrap. Buttons take the button tokens. */
+.knobs-panel .knobs-row.knobs-toolbar{flex-wrap:wrap;justify-content:flex-start;gap:var(--k-tray-pad);height:auto;min-height:var(--k-row);padding:calc((var(--k-row) - var(--k-button-h,var(--kc-control-h))) / 2) var(--k-inset)}
+.knobs-card>.knobs-toolbar:hover{background:transparent}
+.knobs-card>.knobs-toolbar:has(:focus-visible)::after{opacity:0}
+.knobs-panel .knobs-tool{display:inline-flex;align-items:center;gap:6px;height:var(--k-button-h,var(--kc-control-h));padding:0 8px;background:var(--k-button-bg,var(--k-seg-bg));border-radius:var(--k-button-radius,var(--k-radius-md));box-shadow:inset 0 0 0 1px var(--k-button-line,transparent);
+  color:var(--k-label);font-size:var(--k-button-font-size,var(--k-text-control));font-weight:var(--k-label-weight);white-space:nowrap;cursor:pointer;transition:background var(--k-hover-t),color .15s,box-shadow .15s,scale .12s var(--k-ease),opacity .15s}
+.knobs-panel .knobs-tool:is(:hover:not([disabled]),:focus-visible){background:var(--k-button-hover-bg,var(--k-surface-hi));box-shadow:inset 0 0 0 1px var(--k-button-hover-line,var(--k-button-line,transparent));color:var(--k-text)}
+.knobs-panel .knobs-tool:is(:active:not([disabled]),.knobs-pressed){scale:.96}
+.knobs-panel .knobs-tool[disabled]{opacity:var(--k-disabled-opacity);cursor:default}
+.knobs-tool .knobs-icon{width:var(--k-icon-sm);height:var(--k-icon-sm)}
+.knobs-panel .knobs-tool-key{font:inherit;font-size:var(--k-text-cap);color:var(--k-dim);letter-spacing:.06em}
+.knobs-panel :is([data-disabled],[data-readonly]) :is(.knobs-cell,.knobs-range-track,.knobs-angle,.knobs-dial,.knobs-seed,.knobs-keys,.knobs-tool){cursor:default}
 
 /* Row accessories (rowAccessory): the host's node, just after the label. */
 .knobs-accessory{display:inline-flex;align-items:center;gap:var(--k-tray-pad);flex:none;min-width:0;color:var(--k-label)}
@@ -498,15 +610,16 @@ const css = `
 
 /* Custom actions */
 .knobs-panel .knobs-custom-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:var(--k-gap);margin-top:var(--k-section-gap)}
-.knobs-panel .knobs-custom-actions button{height:var(--k-action-h);min-height:24px;padding:0 8px;font-size:var(--k-text-control);font-weight:var(--k-label-weight);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--k-label);cursor:pointer;transition:background .15s,color .15s,opacity .15s,transform .12s}
-.knobs-panel .knobs-custom-actions button:is(:hover:not([disabled]),:focus-visible){background:var(--k-surface-hi);color:var(--k-text)}
+.knobs-panel .knobs-custom-actions button{height:var(--k-button-h,var(--k-action-h));min-height:24px;padding:0 8px;font-size:var(--k-button-font-size,var(--k-text-control));font-weight:var(--k-label-weight);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--k-label);cursor:pointer;
+  background:var(--k-button-bg,var(--k-surface));border-radius:var(--k-button-radius,var(--k-radius));box-shadow:inset 0 0 0 1px var(--k-button-line,transparent);transition:background .15s,color .15s,opacity .15s,transform .12s,box-shadow .15s}
+.knobs-panel .knobs-custom-actions button:is(:hover:not([disabled]),:focus-visible){background:var(--k-button-hover-bg,var(--k-surface-hi));box-shadow:inset 0 0 0 1px var(--k-button-hover-line,var(--k-button-line,transparent));color:var(--k-text)}
 .knobs-panel .knobs-custom-actions button:active:not([disabled]){transform:scale(.97)}
 .knobs-panel .knobs-tile-body>.knobs-custom-actions button[disabled]{opacity:var(--k-disabled-opacity);cursor:default}
 
 /* Variants Disclosure Drawer */
 .knobs-transfer{display:grid;grid-template-columns:1fr 1fr;gap:var(--k-gap);margin-top:8px;padding-top:8px;border-top:1px solid var(--k-line)}
-.knobs-transfer button{height:24px;padding:0 8px;background:var(--k-surface);font-size:var(--k-text-meta);color:var(--k-label);cursor:pointer;transition:background .15s,color .15s}
-.knobs-transfer button:is(:hover,:focus-visible){background:var(--k-surface-hi);color:var(--k-text)}
+.knobs-transfer button{height:var(--k-button-h,24px);padding:0 8px;background:var(--k-button-bg,var(--k-surface));border-radius:var(--k-button-radius,var(--k-radius));box-shadow:inset 0 0 0 1px var(--k-button-line,transparent);font-size:var(--k-button-font-size,var(--k-text-meta));color:var(--k-label);cursor:pointer;transition:background .15s,color .15s,box-shadow .15s}
+.knobs-transfer button:is(:hover,:focus-visible){background:var(--k-button-hover-bg,var(--k-surface-hi));box-shadow:inset 0 0 0 1px var(--k-button-hover-line,var(--k-button-line,transparent));color:var(--k-text)}
 
 /* Context menu: borrows its panel's tokens (see menu.ts) and floats above everything. */
 .knobs-menu{position:fixed;z-index:2147480004;min-width:176px;padding:var(--k-unit);box-sizing:border-box;font:var(--k-font-weight) var(--k-text-control)/1.35 var(--k-font);color:var(--k-text);text-align:left;-webkit-font-smoothing:antialiased;
@@ -514,17 +627,17 @@ const css = `
   box-shadow:var(--k-shadow),inset 0 1px 0 var(--k-rim);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);outline:none;user-select:none}
 .knobs-menu{max-width:min(480px,calc(100vw - 12px))}
 .knobs-menu-list{max-height:min(360px,calc(100dvh - 120px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.knobs-menu-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:24px;height:var(--k-control-h);min-height:20px;padding:0 8px;border-radius:var(--k-radius-sm);cursor:default;white-space:nowrap;transition:background .08s}
+.knobs-menu-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:24px;height:var(--kc-control-h);min-height:20px;padding:0 8px;border-radius:var(--k-radius-sm);cursor:default;white-space:nowrap;transition:background .08s}
 .knobs-menu-item>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .knobs-menu-item[hidden]{display:none}
 /* The match shows by colour, not weight, so a filtered label keeps the width the menu measured. */
 .knobs-menu-item>span:has(>mark){color:var(--k-label)}
 .knobs-menu-item mark{background:none;color:var(--k-text)}
-.knobs-menu .knobs-menu-search{display:block;width:100%;height:var(--k-control-h);min-height:22px;margin:0 0 var(--k-unit);padding:0 8px;border:0;border-radius:var(--k-radius-sm);background:var(--k-seg-bg);color:var(--k-text);font:inherit;outline:none;-webkit-appearance:none;appearance:none}
+.knobs-menu .knobs-menu-search{display:block;width:100%;height:var(--kc-control-h);min-height:22px;margin:0 0 var(--k-unit);padding:0 8px;border:0;border-radius:var(--k-radius-sm);background:var(--k-seg-bg);color:var(--k-text);font:inherit;outline:none;-webkit-appearance:none;appearance:none}
 .knobs-menu .knobs-menu-search::placeholder{color:var(--k-dim)}
 .knobs-menu .knobs-menu-search::-webkit-search-cancel-button{display:none}
 .knobs-menu [hidden]{display:none!important}
-.knobs-menu-empty{padding:0 8px;height:var(--k-control-h);display:flex;align-items:center;color:var(--k-dim)}
+.knobs-menu-empty{padding:0 8px;height:var(--kc-control-h);display:flex;align-items:center;color:var(--k-dim)}
 .knobs-menu-item[data-active]{background:color-mix(in srgb,var(--k-accent) 14%,transparent)}
 .knobs-menu-item[aria-disabled]{opacity:var(--k-disabled-opacity);color:var(--k-label)}
 .knobs-menu-item kbd{font:var(--k-text-cap)/1 var(--k-mono);font-variant-numeric:tabular-nums;color:var(--k-dim);letter-spacing:0}
@@ -539,13 +652,17 @@ const css = `
 
 /* WebGPU Overlay Active Mirror State */
 .knobs-panel[data-gpu-active="true"]{background:transparent!important;border-color:transparent!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
-.knobs-panel[data-gpu-active="true"],.knobs-panel[data-gpu-active="true"] :where(*,:focus-visible):not(.knobs-live *){outline-color:transparent!important;box-shadow:none!important}
+.knobs-panel[data-gpu-active="true"],.knobs-panel[data-gpu-active="true"] :where(*,:focus-visible):not(.knobs-live *,.knobs-search *){outline-color:transparent!important;box-shadow:none!important}
 .knobs-panel[data-gpu-active="true"] :where(header strong,header button,.knobs-tile,.knobs-section-head,.knobs-group-label,.knobs-peek,.knobs-card>*,.knobs-presets,.knobs-preset-chip,.knobs-group-head,.knobs-group-head button,.knobs-card,.knobs-row,.knobs-row>span:first-child,.knobs-slider,.knobs-track,.knobs-label,.knobs-value,.knobs-digits,.knobs-digits *,.knobs-unit,.knobs-seg,.knobs-seg button,.knobs-custom-actions button,.knobs-action,.knobs-select,.knobs-select-value,
-  .knobs-sub,.knobs-x-head,.knobs-x-label,.knobs-x-read,.knobs-strip-label,.knobs-strip-read,.knobs-pad,.knobs-ease,.knobs-spring-curve,.knobs-ease-chips,.knobs-ease-chip):not(.knobs-live,.knobs-live *){
+  .knobs-sub,.knobs-x-head,.knobs-x-label,.knobs-x-read,.knobs-strip-label,.knobs-strip-read,.knobs-pad,.knobs-ease,.knobs-spring-curve,.knobs-ease-chips,.knobs-ease-chip,
+  .knobs-tabs,.knobs-tab,.knobs-subhead,.knobs-subhead-label,.knobs-match,.knobs-cell,.knobs-cell-axis,.knobs-cell-read,.knobs-link,.knobs-range-read,.knobs-angle,.knobs-angle-read,.knobs-dial,
+  .knobs-seed,.knobs-seed-read,.knobs-seed-roll,.knobs-keys,.knobs-keys-text,.knobs-tool,.knobs-tool-label,.knobs-tool-key):not(.knobs-live,.knobs-live *){
   background:transparent!important;color:transparent!important;border-color:transparent!important;box-shadow:none!important;
 }
 .knobs-panel[data-gpu-active="true"] :where(.knobs-seg-pill,.knobs-presets-pill,.knobs-fill,.knobs-notch,.knobs-handle,.knobs-marks i,.knobs-toggle,.knobs-toggle i,.knobs-hint,.knobs-icon,
-  .knobs-swatch,.knobs-caret,.knobs-strip-track,.knobs-pad>i,.knobs-ease>svg,.knobs-ease-handle,.knobs-ease-mini,.knobs-spring-curve>*):not(.knobs-live *),
+  .knobs-swatch,.knobs-caret,.knobs-strip-track,.knobs-pad>i,.knobs-ease>svg,.knobs-ease-handle,.knobs-ease-mini,.knobs-spring-curve>*,
+  .knobs-tabs-bar,.knobs-range-fill,.knobs-range-thumb,.knobs-dial-hand):not(.knobs-live *,.knobs-search *),
+.knobs-panel[data-gpu-active="true"] :is(.knobs-tabs,.knobs-dial)::after,
 .knobs-panel[data-gpu-active="true"] :is(.knobs-sub,.knobs-x-head,.knobs-x-label)::before,
 .knobs-panel[data-gpu-active="true"] :is(.knobs-sub,.knobs-x-head,.knobs-x-label)::after,
 .knobs-panel[data-gpu-active="true"] .knobs-card:not(.knobs-live *)>::before,
@@ -586,7 +703,7 @@ const css = `
 }
 .knobs-panel.knobs-page .knobs-page-tools .knobs-custom-actions{display:flex;gap:var(--k-tray-pad);margin:0 calc(var(--k-unit) * 2) 0 0}
 .knobs-panel.knobs-page .knobs-page-tools .knobs-custom-actions button{height:var(--k-icon-btn);min-height:0;padding:0 8px;background:transparent;border-radius:var(--k-round)}
-.knobs-panel .knobs-filter{width:0;height:var(--k-control-h);padding:0;margin:0;opacity:0;pointer-events:none;background:var(--k-seg-bg);border-radius:var(--k-radius-md);font-size:var(--k-text-control);color:var(--k-text);-webkit-appearance:none;appearance:none;
+.knobs-panel .knobs-filter{width:0;height:var(--kc-control-h);padding:0;margin:0;opacity:0;pointer-events:none;background:var(--k-seg-bg);border-radius:var(--k-radius-md);font-size:var(--k-text-control);color:var(--k-text);-webkit-appearance:none;appearance:none;
   transition:width ${LEAD_T},padding ${LEAD_T},margin ${LEAD_T},opacity .18s}
 .knobs-panel .knobs-filter::-webkit-search-cancel-button{display:none}
 .knobs-panel .knobs-filter::placeholder{color:var(--k-dim)}
@@ -602,6 +719,8 @@ const css = `
 .knobs-column>:not([hidden])~.knobs-section-head{margin-top:calc(var(--k-page-gap) * .75)}
 .knobs-tile{position:relative;min-width:0;padding:var(--k-pad);background:var(--k-bg);border:1px solid var(--k-line);border-radius:var(--k-panel-radius);box-shadow:inset 0 1px 0 var(--k-rim)}
 .knobs-tile>.knobs-card{margin:0}
+.knobs-tile[data-foldable]>.knobs-group-head{margin-bottom:0}
+.knobs-tile[data-foldable]>.knobs-card{margin-top:var(--k-head-gap)}
 /* A card's header is compact: as tall as its 20px controls, then a gap and a half before its rows. */
 .knobs-tile>.knobs-group-head{position:relative;margin:0 0 var(--k-head-gap);min-height:20px;color:var(--k-text);font-size:var(--k-text-title);font-weight:var(--k-title-weight);letter-spacing:-.01em;text-transform:none}
 .knobs-panel.knobs-page{--k-head-gap:calc(var(--k-gap) * 1.5)}

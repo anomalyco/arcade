@@ -73,6 +73,8 @@ export type LabSection = {
   duplicateObject?(id:string):string|null
   duplicateObjects?(ids?:readonly string[]):string[]
   groundHeight?(x:number,z:number):number
+  /** Details tabs over the section's groups (groups no tab names show on every tab). Omit for one list. */
+  tabs?:readonly import("../lab-navigation").LabTab[]
   /** Details panel: control groups relevant to the selection, in display order. Omit to show every group. */
   detailsGroups?(selected:readonly LabWorldObject[]):readonly string[]|undefined
   library?:LabSectionLibrary

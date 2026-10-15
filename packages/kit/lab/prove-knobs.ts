@@ -1,8 +1,9 @@
 /// <reference types="@webgpu/types" />
 // Headless proof for the Lab's knobs panels: they match the Lab chrome (square corners, the Lab's row height, flat
-// rows, Details-style buttons, one label/value font), a station shows each control group once, long choices are
-// readable and searchable, a multi-selection reads "—", a page's bare button rules don't reach knobs, and the radial
-// menu opens only from the viewport.
+// rows, the Lab's buttons, one label/value font), a station shows each control group once, long choices are readable
+// and searchable, Details has tabs, search and a toolbar, seeds, headings and pairs use knobs' inspector fields, a
+// group's die runs its own Randomize, a multi-selection reads "—", a page's bare button rules don't reach knobs, and
+// the radial menu opens only from the viewport.
 //   hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts
 //   bun packages/kit/lab/prove-knobs.ts --shots-only --out captures/lab-knobs/before    screenshots only
 // Never opens a visible window and never plays sound (muted browser, AudioContext blocked).
@@ -109,12 +110,12 @@ const styles = (page: Page) =>
       labelW: Math.round(row.querySelector(":scope>span:first-child")?.getBoundingClientRect().width ?? 0),
       rowW: Math.round(row.getBoundingClientRect().width),
     }))
-    const act = q(".lab-act")
     const props = ["font-size", "font-family", "border-radius", "background-color", "box-shadow", "height", "color"]
     return {
-      act: pick(act, props),
-      knobsButton: pick(q(".lab-knobs .knobs-action, .lab-knobs .knobs-custom-actions button, .lab-knobs .knobs-preset-chip"), props),
-      row: pick(q(".lab-inspector .lab-knobs .knobs-row"), ["height"]),
+      tool: pick(q(".lab-inspector .lab-toolbar .knobs-tool:not([disabled])"), props),
+      toolKeys: [...document.querySelectorAll(".lab-inspector .lab-toolbar .knobs-tool-key")].map(k => k.textContent?.trim() ?? ""),
+      knobsButton: pick(q('.lab-inspector .lab-knobs .knobs-action, .lab-inspector .lab-knobs .knobs-custom-actions button, .lab-inspector .lab-knobs .knobs-preset-chip:not([aria-checked="true"])'), props),
+      row: pick(q(".lab-inspector .lab-knobs:not(.lab-toolbar) .knobs-row"), ["height"]),
       slider: pick(q(".lab-inspector .lab-knobs .knobs-slider"), ["height"]),
       outlinerRow: pick(q(".lab-outliner [data-row], .lab-tree-row, .lab-outliner-row"), ["height"]),
       label: pick(q(".lab-inspector .knobs-row>span:first-child"), ["font-size", "font-family", "font-weight"]),
@@ -134,6 +135,9 @@ const styles = (page: Page) =>
 /** No visible frame: no padding, and a border that's absent or transparent. */
 const frameless = (p: Record<string, string | number> | null) =>
   Boolean(p && p["padding-left"] === "0px" && (p["border-top-width"] === "0px" || /\/ 0\)|rgba\(0, 0, 0, 0\)|transparent/.test(String(p["border-top-color"]))))
+
+/** The Lab's button (the old `.lab-act`): what knobs' button tokens and the `arcade` preset draw. */
+const LAB_BUTTON = { "font-size": "11px", "border-radius": "0px", "background-color": "rgb(25, 26, 30)", "box-shadow": "rgb(35, 37, 42) 0px 0px 0px 1px inset", height: "20px", color: "rgb(216, 219, 224)" }
 
 const radialOpen = (page: Page) => page.evaluate(() => !document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden)
 
@@ -159,7 +163,7 @@ try {
       // The radial opens only on the viewport: RMB and Ctrl-click on Details buttons do nothing, and a press on a
       // panel closes an open radial.
       if (!shotsOnly) {
-        const button = page.locator(".lab-inspector .lab-act").first()
+        const button = page.locator(".lab-inspector .lab-toolbar .knobs-tool").first()
         const b = (await button.boundingBox())!
         const cx = b.x + b.width / 2, cy = b.y + b.height / 2
         await page.mouse.move(cx, cy)
@@ -214,9 +218,11 @@ try {
         }
         assert(frameless(st.panel), `Details' knobs panel has no frame of its own (${JSON.stringify(st.panel)})`)
         assert(st.card && st.card["background-color"] === "rgba(0, 0, 0, 0)", `groups are flat rows, not cards (${st.card?.["background-color"]})`)
-        if (st.knobsButton) for (const p of ["font-size", "border-radius", "background-color", "box-shadow", "height", "color"] as const) {
-          assert.equal(st.knobsButton[p], st.act?.[p], `knobs buttons match the Details buttons: ${p}`)
+        for (const [name, b] of [["toolbar", st.tool], ["knobs button", st.knobsButton]] as const) {
+          assert(b, `a ${name} to measure`)
+          for (const [p, v] of Object.entries(LAB_BUTTON)) assert.equal(b![p], v, `the ${name} is drawn like the Lab's buttons: ${p}`)
         }
+        assert(["Space", "F", "P"].every(k => st.toolKeys.includes(k)), `the Details toolbar shows the canvas keys (${st.toolKeys.join(" ")})`)
         for (const r of st.choiceRows) {
           if (r.labelTruncated) {
             const rowEl = page.locator(".lab-inspector .knobs-row", { hasText: r.label }).first()
@@ -265,6 +271,118 @@ try {
     assert(before.mixed, `two lights with different power show a mixed Light power (${JSON.stringify(before)})`)
     assert(!after.mixed, `an edit applies one value and clears mixed (${JSON.stringify(after)})`)
     await context.close()
+  }
+
+  // Tabs, search and the toolbar in Details (the vignette has four tabs).
+  if (!shotsOnly) {
+    const { context, page } = await open("?section=outbreak-vignette", SIZES[0]!)
+    const tabs = () => page.evaluate(() => ({
+      labels: [...document.querySelectorAll(".lab-inspector .knobs-tab")].map(t => t.textContent?.trim() ?? ""),
+      current: (window as any).labPanel.tab as string | undefined,
+      groups: [...document.querySelectorAll(".lab-inspector .knobs-group-label")].filter(e => (e as HTMLElement).getClientRects().length).map(e => e.textContent?.trim() ?? ""),
+    }))
+    const first = await tabs()
+    // ⌥2 inside the panel shows the second tab.
+    await page.locator('.lab-inspector .knobs-row[data-field="fogEdgeSoftness"] [role="slider"]').focus()
+    await page.keyboard.press("Alt+Digit2")
+    await page.waitForTimeout(600)
+    const second = await tabs()
+    await page.screenshot({ path: resolve(out, "details-tabs-lights-1440x900@1x.png"), clip: (await page.locator(".lab-inspector").boundingBox())! })
+    // Jumping to a setting on another tab shows that tab.
+    await invoke(page, "details.reveal", { key: "flashlightAim" })
+    await page.waitForTimeout(400)
+    await invoke(page, "details.reveal", { key: "skyFill" })
+    await page.waitForTimeout(600)
+    const revealed = await tabs()
+    // `/` in the panel focuses its search; typing filters across every tab.
+    await page.locator('.lab-inspector .knobs-row[data-field="skyFill"] [role="slider"]').focus()
+    await page.keyboard.press("/")
+    const searchFocused = await page.evaluate(() => document.activeElement?.matches(".lab-inspector .knobs-search input") ?? false)
+    await page.keyboard.type("porch")
+    await page.waitForTimeout(500)
+    const searched = await page.evaluate(() => (window as any).labPanel.shownKeys() as string[])
+    await page.screenshot({ path: resolve(out, "details-search-porch-1440x900@1x.png"), clip: (await page.locator(".lab-inspector").boundingBox())! })
+    await page.keyboard.press("Escape")
+    // `/` on the canvas still opens the command palette.
+    await page.locator(".lab-viewport canvas").focus()
+    await page.keyboard.press("/")
+    await page.waitForTimeout(200)
+    const palette = await page.evaluate(() => document.querySelector<HTMLElement>(".lab-palette-backdrop")?.hidden === false)
+    await page.keyboard.press("Escape")
+    // The details filter command drives the same search; Modified narrows to changed rows.
+    await invoke(page, "scene.set-param", { key: "skyFill", value: 1.5 })
+    await page.waitForTimeout(300)
+    const filter = await invoke(page, "details.filter", { modified: true })
+    await page.waitForTimeout(500)
+    const modifiedKeys = await page.evaluate(() => { const p = (window as any).labPanel; return (p.shownKeys() as string[]).map(k => [k, p.isModified(k)] as const) })
+    await invoke(page, "details.filter", { modified: false, query: "" })
+    report.detailsTabs = { first, second, revealed, searchFocused, searched, palette, filter, modifiedKeys }
+    assert.deepEqual(first.labels, ["Scene", "Lights", "Materials", "Look"], "the vignette's Details has its four tabs")
+    assert(first.groups.includes("DIRECTION & VIEW") || first.groups.some(g => /direction/i.test(g)), `Scene shows Direction & View (${first.groups})`)
+    assert(second.current === "Lights" && second.groups.some(g => /flashlight/i.test(g)) && !second.groups.some(g => /direction/i.test(g)), `⌥2 shows Lights (${JSON.stringify(second)})`)
+    assert(revealed.current === "Scene", `jumping to a setting on another tab shows it (${JSON.stringify(revealed)})`)
+    assert(searchFocused, "/ in the panel focuses its search")
+    assert(searched.length > 0 && searched.every(k => /porch/i.test(k)), `typing filters across tabs (${searched})`)
+    assert(palette, "/ on the canvas still opens the command palette")
+    assert(modifiedKeys.length > 0 && modifiedKeys.every(([, m]) => m), `Modified shows only changed rows (${JSON.stringify(modifiedKeys)})`)
+    await context.close()
+  }
+
+  // Inspector fields: headings as dials, seeds with a die, a pair as one range, and a group's own Randomize.
+  if (!shotsOnly) {
+    const { context, page } = await open("?section=lighting", SIZES[0]!)
+    const kind = (key: string) => page.evaluate(k => document.querySelector<HTMLElement>(`.lab-inspector .knobs-row[data-field="${k}"]`)?.dataset.kind ?? null, key)
+    const yaw = await kind("spotYaw"), azimuth = await kind("moonAzimuth"), pitch = await kind("spotPitch")
+    await context.close()
+    const mat = await open("?section=materials", SIZES[0]!)
+    const seedKind = await mat.page.evaluate(() => document.querySelector<HTMLElement>('.lab-inspector .knobs-row[data-field="roomSeed"]')?.dataset.kind ?? null)
+    const before = await mat.page.evaluate(() => (window as any).labPanel.navigation.settings.roomSeed)
+    await mat.page.locator('.lab-inspector .knobs-row[data-field="roomSeed"] .knobs-seed-roll').click()
+    await mat.page.waitForTimeout(400)
+    const after = await mat.page.evaluate(() => (window as any).labPanel.navigation.settings.roomSeed)
+    await mat.context.close()
+    const sp = await open("?game=blackout&section=splatter", SIZES[0]!)
+    await sp.page.evaluate(() => (window as any).labWorkbench.invoke("scene.set-param", { key: "style", value: 1 }))
+    await sp.page.locator('.lab-inspector .knobs-subhead', { hasText: "Advanced" }).first().click()
+    await sp.page.waitForTimeout(500)
+    const pair = await sp.page.evaluate(() => {
+      const panel = (window as any).labPanel
+      const row = document.querySelector<HTMLElement>('.lab-inspector .knobs-row[data-field="sizeMin"]')
+      return {
+        thumbs: row?.querySelectorAll('[role="slider"]').length ?? 0,
+        className: row?.className ?? null,
+        alias: Boolean(row) && panel.getControlElement("sizeMax") === row,
+        low: panel.navigation.settings.sizeMin,
+        high: panel.navigation.settings.sizeMax,
+        subheads: [...document.querySelectorAll<HTMLElement>(".lab-inspector .knobs-subhead")].map(h => `${h.textContent?.trim()}:${h.getAttribute("aria-expanded")}:${h.getClientRects().length}`),
+        order: [...document.querySelectorAll<HTMLElement>('.lab-inspector .knobs-card .knobs-row[data-field], .lab-inspector .knobs-subhead')].map(e => e.dataset.field ?? `#${e.textContent?.trim()}`).join(" "),
+      }
+    })
+    await sp.page.screenshot({ path: resolve(out, "splatter-advanced-1440x900@1x.png"), clip: (await sp.page.locator(".lab-inspector").boundingBox())! })
+    const thumb = sp.page.locator('.lab-inspector .knobs-row[data-field="sizeMin"] [role="slider"]').first()
+    await thumb.focus()
+    await sp.page.keyboard.press("ArrowRight")
+    await sp.page.waitForTimeout(500)
+    const moved = await sp.page.evaluate(() => { const s = (window as any).labPanel.navigation.settings; return { low: s.sizeMin, high: s.sizeMax } })
+    await sp.context.close()
+    // Smoke's Shape group has its own seeded "Randomize Shape": its die runs that action, not knobs' roll.
+    const fx = await open("?section=effects", SIZES[0]!)
+    const read = () => fx.page.evaluate(() => { const p = (window as any).labPanel; const s = p.navigation.settings; return { radius: s.radius, height: s.height, softness: s.softness, billow: s.billowScale, last: p.tuning.last } })
+    const shapeBefore = await read()
+    await fx.page.locator('.lab-inspector .knobs-group-head[data-group="Shape"] .knobs-group-die').click()
+    await fx.page.waitForTimeout(500)
+    const shapeAfter = await read()
+    await fx.context.close()
+    report.inspectorFields = { yaw, azimuth, pitch, seedKind, seed: { before, after }, pair, moved, shapeBefore, shapeAfter }
+    assert(yaw === "angle" && azimuth === "angle", `full-turn headings are dials (${yaw}, ${azimuth})`)
+    assert(pitch !== "angle", `a partial angle stays a slider (${pitch})`)
+    assert(seedKind === "seed" && after !== before, `a seed row's die rolls a new seed (${before} → ${after})`)
+    assert(pair.thumbs === 2 && pair.alias, `Small and large drops are one range row (${JSON.stringify(pair)})`)
+    assert(/pooling #Advanced sizeMin drag gravity r g b persistence budget/.test(pair.order), `the Advanced sub-heading's rows sit together under it (${pair.order})`)
+    assert(moved.low > pair.low && moved.high === pair.high, `the low thumb moves only the low setting (${JSON.stringify(moved)})`)
+    // knobs' own roll would record a tuning seed; the section's action changes the values without one.
+    const changed = (["radius", "height", "softness", "billow"] as const).some(k => shapeAfter[k] !== shapeBefore[k])
+    assert(changed && shapeAfter.last === null, `the Shape die runs Randomize Shape (${JSON.stringify({ shapeBefore, shapeAfter })})`)
   }
 
   // Type-to-filter on a long choice list, in the first section that has one (more than eight options).
@@ -333,7 +451,7 @@ try {
         ? await panel.evaluate(el => {
             const cs = getComputedStyle(el)
             const card = el.querySelector(".knobs-card")
-            return { radius: cs.borderTopLeftRadius, border: cs.borderTopWidth, pad: cs.paddingLeft, card: card ? getComputedStyle(card).backgroundColor : null }
+            return { radius: cs.borderTopLeftRadius, border: cs.borderTopWidth, pad: cs.paddingLeft, card: card ? getComputedStyle(card).backgroundColor : null, modifiedChip: el.querySelector(".knobs-search-chip")?.textContent ?? null }
           })
         : "panel not shown"
       await page.screenshot({ path: resolve(out, "outbreak-floating-1440x900@1x.png") })
@@ -349,6 +467,11 @@ try {
         await page.waitForTimeout(100)
         const hostile = await read()
         report.hostCss = { clean, hostile }
+        // The overlay has a search field too; `/` with focus in the panel focuses it.
+        await page.locator("[data-lab-panel] .knobs-row [role=\"slider\"]").first().focus()
+        await page.keyboard.press("/")
+        report.overlaySearch = await page.evaluate(() => ({ field: Boolean(document.querySelector("[data-lab-panel] .knobs-search input")), focused: document.activeElement?.matches("[data-lab-panel] .knobs-search input") ?? false }))
+        assert.deepEqual(report.overlaySearch, { field: true, focused: true }, "the Backquote overlay has a search field that / focuses")
         assert.deepEqual(hostile, clean, "a page's bare button rules don't restyle knobs' buttons")
       }
       await context.close()
