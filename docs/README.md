@@ -13,6 +13,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
   posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
 - [audio-design.md](audio-design.md): the shared audio engine and Audio Lab. Read before changing game sound.
+- [sfx-library.md](sfx-library.md): the shared sound library (semantic ids, variants, licences, loudness targets),
+  its offline generation and curation pipeline, and Outbreak's positional sound. Read before adding or replacing a
+  sound; [sfx-inventory.md](sfx-inventory.md) measures every sound file in the repository.
 
 ## Shared code and conventions
 
