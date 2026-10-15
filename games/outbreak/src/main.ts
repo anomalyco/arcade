@@ -600,16 +600,10 @@ async function main() {
     ambientMotion.reset()
     vehicleRenderer.reset()
   }
-  let firstReset = true
   function reset(nextSeed = seed) {
-    if (firstReset) {
-      firstReset = false
-    } else {
-      if (session !== coop.net) session.close()
-      session = makeSession(nextSeed)
-      vision = new Vision()
-      scenery = new SceneryMemory()
-    }
+    if (session !== coop.net) session.close()
+    session = makeSession(nextSeed)
+    vision = new Vision()
     worldStreamer.reset()
     currentWindowOrigin = [0, 0]
     currentIsStreamWindow = false
@@ -625,6 +619,7 @@ async function main() {
     hud.reset()
     weatherController.reset(nextSeed)
     level()
+    scenery = new SceneryMemory()
     combinedFog.reset()
     combinedFog.update(vision, scenery, true)
     renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
