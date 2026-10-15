@@ -557,3 +557,10 @@ test("walk (<=1.8 m/s) stays upright with level head and no crouch, and unarmed 
   expect(survRun.body!.gun).toBeNull()
   expect(soldRun.body!.gun).not.toBeNull()
 })
+
+test("the shared avatar adapter normalises gait to Blackout's run speed and gun set", async () => {
+  const { AVATAR_RUN_SPEED, GUN_IDS: AVATAR_GUNS } = await import("@arcade/kit/avatar/gun")
+  const { SPEED, GUN_IDS } = await import("../shared/config")
+  expect(AVATAR_RUN_SPEED).toBe(SPEED)
+  expect(AVATAR_GUNS).toEqual(GUN_IDS)
+})

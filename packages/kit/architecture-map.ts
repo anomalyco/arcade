@@ -82,8 +82,18 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/sim/matchmaking",
   },
   {
+    area: "`sim/move`",
+    description: "Top-down circle body step with eased velocity and substepped push-out",
+    match: (s) => s === "@arcade/kit/sim/move",
+  },
+  {
+    area: "`server/*`",
+    description: "Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router",
+    match: (s) => s.startsWith("@arcade/kit/server/"),
+  },
+  {
     area: "`net/*`",
-    description: "Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother`",
+    description: "Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother`",
     match: (s) => s.startsWith("@arcade/kit/net/"),
   },
   {
@@ -184,6 +194,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/pose-diff",
   },
   {
+    area: "`avatar/*`",
+    description: "Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls",
+    match: (s) => s.startsWith("@arcade/kit/avatar/"),
+  },
+  {
     area: "`vehicle/*`",
     description: "Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth",
     match: (s) => s.startsWith("@arcade/kit/vehicle/"),
@@ -197,11 +212,12 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/client/chat.css",
   },
   {
-    area: "`client/{input,camera}` & `orbit-gestures`",
+    area: "`client/{input,camera,smooth}` & `orbit-gestures`",
     description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||
+      s === "@arcade/kit/client/smooth" ||
       s === "@arcade/kit/orbit-gestures",
   },
   {
