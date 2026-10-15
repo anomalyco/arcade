@@ -55,7 +55,7 @@ export default defineStation({
   title: "Outbreak flow-field hordes",
   summary:
     "Roaming hordes of 500–1,000 zombies. Out of range a horde is a point on the map that hears loud noises through walls and walks toward them; near a survivor it materializes and its members follow shared flow fields around buildings and through doors. Tunables are in the Hordes group, with a flow-field overlay and a camera that follows the horde.",
-  order: 121,
+  order: 122,
   prop: "figure",
   color: 0x8a6ad4,
   status: "live",
