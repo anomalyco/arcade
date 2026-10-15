@@ -946,6 +946,26 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
   Evidence: `captures/getaway-smoke-real/`, including the original, faceted reference, concept crop and cited Valve
   reference. No new per-frame JS storage is allocated by the smoke simulation, preparation or upload path.
 
+### Outbreak driving FX: per-wheel slip and multiplied skid decals (2026-10-15)
+
+Outbreak's cars already ran the shared `VehicleEmissions`, but through Getaway's drift proxy: slip came from the
+centre-of-mass sideways speed and the controls, its grounded test read Outbreak's absolute terrain height, ordinary
+braking never marked, and the sprite skids (RGB 0.02, 9 s) vanished on dark Noir asphalt. Kit saw no marks or smoke.
+
+- Slip is now per wheel from the replicated body (`kinematicContacts`): tyre velocity v + ω × r across its rolling
+  direction, fronts on the no-slip path, rear lock on the handbrake, all four locked by a hard stop above 7 m/s, and
+  burnouts. Defaults (slide 3 m/s before marking, full at +5 m/s) leave ordinary corners clean; a full-lock turn at
+  speed, a handbrake turn, a hard stop and a burnout all mark. Co-op clients derive the same marks from the same
+  replicated state.
+- Marks are decals that multiply the lit ground (`fx/skids.ts`). In Noir that is the right look for free: visible in
+  headlights, the flashlight and lamps, invisible in the dark, no lighting code, and the Look's alpha mask is kept.
+  They last 180 s (30 s fade) in a 4,096-segment ring, so a session's drifts stay on the streets in the streaming window.
+- Tyre smoke's unlit colour follows the sky ambient (`F.ambient × 2.6 + 0.035`): the old fixed grey glowed in the dark.
+  Lower values (0.9×) made the smoke disappear at night; this one reads as grey haze that lights up in the beams.
+- Measured (`games/outbreak/scripts/prove-driving-fx.ts`, headless Metal 1280×800): the station drift lays ~180
+  segments and peaks at ~110 smoke samples; a hard stop from 14 m/s lays ~90; 4,096 segments on screen cost
+  +0.05–0.08 ms GPU (paired). Screech follows slip frame by frame (`after.json` → `stationDrift.screech`).
+
 ## Researched, not yet adopted
 
 ### Outbreak survey §5 experiments rejected on measurement (2026-10-14)

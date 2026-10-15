@@ -18,7 +18,8 @@ export type VehicleSpec = {
   popSpeed?: number
 }
 export type GroundHeight = (x: number, z: number) => number
-export type SkidSink = { skidSegment(ax: number, az: number, bx: number, bz: number, alpha: number, y?: number): void }
+/** `surface` (0 asphalt, 1 dirt, 2 wet), `by` (height at b) and `along` (tread distance at a) are optional extras. */
+export type SkidSink = { skidSegment(ax: number, az: number, bx: number, bz: number, alpha: number, y?: number, surface?: number, by?: number, along?: number): void }
 export type SpriteSink = (list: "a" | "d", x: number, y: number, z: number, size: number, r: number, g: number, b: number, alpha: number, kind: number, rotation?: number, stretch?: number, extra?: number) => void
 export type LightSink = (x: number, y: number, z: number, radius: number, r: number, g: number, b: number, intensity: number, dx?: number, dy?: number, dz?: number, cone?: number) => void
 /** Context and clock also support OfflineAudioContext; the game owns unlock, mute and spatial buses. */

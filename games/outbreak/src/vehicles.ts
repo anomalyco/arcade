@@ -5,11 +5,13 @@ import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/k
 import { angleDiff } from "@arcade/kit/sim/geom"
 import { bodyPoint, type BodyPose } from "@arcade/kit/vehicle/body-pose"
 import { Chassis, wheelRotation } from "@arcade/kit/vehicle/chassis"
-import { EmissionState, VehicleEmissions } from "@arcade/kit/vehicle/emissions"
+import { DrivingFx } from "@arcade/kit/vehicle/driving-fx"
+import { EmissionState, TYRE_SURFACE, VehicleEmissions, type WheelContact } from "@arcade/kit/vehicle/emissions"
+import { kinematicContacts } from "@arcade/kit/vehicle/slip"
 import { Fx } from "@arcade/kit/vehicle/fx"
 import { drawLamps, LIGHT_DEFAULTS, type LightSettings } from "@arcade/kit/vehicle/lights"
 import type { Controls, SpriteSink, VehicleSpec as KitVehicleSpec, VehicleView as KitVehicleView } from "@arcade/kit/vehicle/types"
-import type { Town } from "../shared/map"
+import { inBuildingFootprint, SIZE, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 import {
   DEFAULT_VEHICLE_TUNING,
@@ -25,6 +27,29 @@ import {
 import { createVehicleModels, LAMPS, WHEELS } from "./vehicle-mesh"
 
 type Rgb3 = [number, number, number]
+
+const fold = (v: number) => (v >= 0 && v <= SIZE ? v : ((v % SIZE) + SIZE) % SIZE)
+
+/**
+ * What a tyre is on, mirroring `supportHeight` and the ground shader: the 38–50 m road and sidewalk bands on both
+ * axes, driveways and front walks are paved; lawns and verges are dirt. Paved ground is wet above half wetness.
+ */
+export function tyreSurfaceAt(town: Town, x: number, z: number, wetness = 0): number {
+  const lx = town.activeChunkKeys ? fold(x) : x
+  const lz = town.activeChunkKeys ? fold(z) : z
+  let paved = (lx >= 38 && lx <= 50) || (lz >= 38 && lz <= 50)
+  if (!paved) {
+    for (const b of town.buildings) {
+      const [a, c, , e] = b.rect
+      if (x < a - 3.5 || x > b.rect[2] + 0.5 || z < c - 0.5 || z > e + 8) continue
+      if (inBuildingFootprint(b, x, z) || (x >= a - 3 && x <= a - 0.35 && z >= c) || (x >= a + 4.4 && x <= a + 7 && z >= e)) {
+        paved = true
+        break
+      }
+    }
+  }
+  return paved ? (wetness > 0.5 ? TYRE_SURFACE.wet : TYRE_SURFACE.road) : TYRE_SURFACE.dirt
+}
 
 export function toKitVehicleSpec(kind: VehicleKind): KitVehicleSpec {
   const s = VEHICLES[kind]
@@ -71,6 +96,7 @@ export type VehicleDraw = {
   view: KitVehicleView
   input: Controls
   emissions: EmissionState
+  contacts: WheelContact[]
   chassis: Chassis<Town>
   pose: BodyPose
   x: number
@@ -102,6 +128,10 @@ export class OutbreakVehicleRenderer {
   readonly draws = new Map<number, VehicleDraw>()
   readonly emissions = new VehicleEmissions<Town>((town, x, z) => (town ? 1 : 1))
   readonly fx = new Fx()
+  /** Tyre marks, smoke and slip rules (Lab › Driving FX). Marks persist for the session, ring-buffered. */
+  readonly drivingFx = new DrivingFx()
+  /** Ground wetness 0–1 from the weather, for wet-road marks. */
+  wetness = 0
   private readonly models: Record<
     VehicleKind,
     { body: number; wreck: number; wheel: number; lens: number; tail: number; bar: number | null }
@@ -160,6 +190,7 @@ export class OutbreakVehicleRenderer {
   reset(): void {
     this.draws.clear()
     this.fx.clearSkids()
+    this.drivingFx.marks.clear()
     this.fx.add.length = 0
     this.emissions.reset()
     if (this.hudEl) {
@@ -232,6 +263,7 @@ export class OutbreakVehicleRenderer {
         view,
         input: { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false },
         emissions: new EmissionState(),
+        contacts: [],
         chassis,
         pose: { height: 0, roll: 0, pitch: 0 },
         x: v.x,
@@ -272,15 +304,21 @@ export class OutbreakVehicleRenderer {
     tuning: VehicleTuning = DEFAULT_VEHICLE_TUNING,
   ): { batches: Batch[]; lights: VehicleLightResult } {
     for (const k of this.partCounts.keys()) this.partCounts.set(k, 0)
+    const driving = this.drivingFx
+    driving.apply()
     this.fx.update(dt)
+    driving.marks.update(dt)
     this.emissions.city = town
-    this.emissions.skids = tuning.vehicleSmoke ? this.fx : null
+    this.emissions.skids = tuning.vehicleSmoke && driving.settings.skidMarks ? driving.marks : null
     this.emissions.update(dt)
+    const ground = (gx: number, gz: number) => supportHeight(town, gx, gz)
+    const surface = (gx: number, gz: number) => tyreSurfaceAt(town, gx, gz, this.wetness)
 
     const liveIds = new Set<number>()
     const [vx0, vy0, vx1, vy1] = viewRect
     const suspensionOn = Boolean(tuning.vehicleSuspension)
     const smokeOn = Boolean(tuning.vehicleSmoke)
+    const tyreSmokeOn = smokeOn && driving.settings.tyreSmoke
 
     const lightSettings: LightSettings = {
       ...LIGHT_DEFAULTS,
@@ -395,9 +433,12 @@ export class OutbreakVehicleRenderer {
       d.pose.pitch = d.chassis.pitch.x
       kv.impact = 0
 
-      // Update tyre emissions & backfire pops
+      // Per-wheel slip from the replicated body motion (every client sees the same marks), then backfire pops.
+      // The view's y already holds the ground height, so the exhaust gets no extra height.
+      kinematicContacts(d.contacts, kv, d.kitSpec, -d.w, null, d.input, ground, surface, driving.slip)
+      this.emissions.contacts(kv, d.emissions, d.contacts, dt, smokeOn)
       const popsBefore = this.emissions.pops
-      this.emissions.car(kv, d.kitSpec, d.emissions, d.input, dt, groundY, smokeOn, true)
+      this.emissions.exhaust(kv, d.kitSpec, d.emissions, d.input, dt, 0, true)
       if (this.emissions.pops > popsBefore) this.onPop?.(v)
 
       // Frustum cull distant vehicles for mesh & lamp submission
@@ -541,7 +582,7 @@ export class OutbreakVehicleRenderer {
       }
     }
     this.emissions.trail.prepare()
-    this.renderer.setSmoke?.(this.emissions.trail, smokeOn)
+    this.renderer.setSmoke?.(this.emissions.trail, tyreSmokeOn)
 
     const batches: Batch[] = []
     for (const [model, count] of this.partCounts) {
@@ -554,6 +595,26 @@ export class OutbreakVehicleRenderer {
       batches,
       lights: { lightCount, shadowLightCount, alphaCount, addCount },
     }
+  }
+
+  /** The car's loudest slipping tyre, for the screech (the same slip that lays its marks). */
+  tyreAudio(id: number): { slip: number; slipSpeed: number; surface: number } | undefined {
+    const d = this.draws.get(id)
+    if (!d) return undefined
+    let best = d.contacts[0]
+    for (const c of d.contacts) if (best && c.slip > best.slip) best = c
+    return best ? { slip: best.slip, slipSpeed: best.slipSpeed, surface: best.surface } : undefined
+  }
+
+  telemetry() {
+    const wheels: number[] = []
+    let emitting = 0
+    for (const d of this.draws.values()) {
+      for (const w of d.emissions.wheels) wheels.push(w.slip)
+      emitting += d.emissions.emittingWheels
+    }
+    const m = this.drivingFx.marks
+    return { skids: m.count, skidsWritten: m.written, skidsAlive: m.alive(), smoke: this.emissions.trail.count, sparks: this.fx.add.length, emittingWheels: emitting, slip: wheels }
   }
 
   /** Updates the DOM vehicle status & key-cap prompt bar when the local survivor is seated in a vehicle. */

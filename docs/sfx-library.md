@@ -19,8 +19,9 @@ const entry = sfxEntry("door.wood.open")
 audio.playCue("door.wood.open", { position: { x, z: y, refDistance: entry.range.ref, maxDistance: entry.range.max } })
 ```
 
-- Each source file exists once in the repository. Two ids reuse existing game files in place (`ui.click` is Getaway's
-  `ui_click.mp3`, `ui.tick` is Carrier's picked `ui-click-1.ogg`); the plugin copies a file only into the bundles of
+- Each source file exists once in the repository. Four ids reuse existing game files in place (`ui.click` is Getaway's
+  `ui_click.mp3`, `ui.tick` is Carrier's picked `ui-click-1.ogg`, `vehicle.tyre.screech`/`chirp` are Getaway's tyre
+  recordings); the plugin copies a file only into the bundles of
   the hosts that select it.
 - Each variant carries a playback `gain` that lands it on its id's loudness `target`: momentary-max LUFS (loudest
   400 ms) for one-shots, integrated LUFS for loops. Generated files are normalised in the file, so the gain only makes
@@ -86,6 +87,8 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `ambience.night.suburb` | 1 loop | ambience | 23.4 | 287 | ElevenLabs, 1 of 3 |
 | `ambience.day.suburb` | 1 loop | ambience | 23.4 | 210 | ElevenLabs, 1 of 3 |
 | `ambience.threat` | 1 loop | ambience | 23.4 | 215 | ElevenLabs, 1 of 2 |
+| `vehicle.tyre.screech` | 1 loop | tyre | 4.53 | 46 | reuses Getaway's `tire_screech_loop.mp3` (loop region measured by `build`) |
+| `vehicle.tyre.chirp` | 1 | tyre | 0.38 | 5 | reuses Getaway's `skid_short.mp3` |
 | `ui.click` | 1 | ui | 0.48 | 6 | reuses Getaway's `ui_click.mp3` |
 | `ui.tick` | 1 | ui | 0.48 | 7 | reuses Carrier's `ui-click-1.ogg` |
 
