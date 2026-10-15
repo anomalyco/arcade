@@ -431,11 +431,6 @@ export class SurvivorBot {
   private cachedWalls: Rect[] = []
   private cachedClosedDoors: Rect[] = []
   private stepCounter = 0
-  private lastHour = -1
-  private elapsedHours = 0
-  private accumulatedChaserLoad = 0
-  private kiteLoopIndex = 0
-  private lastKiteStepTime = -10
 
   private lastPosX = 0
   private lastPosY = 0
@@ -483,16 +478,7 @@ export class SurvivorBot {
       this.smoothedAim = p.aim
       this.lastPosX = p.x
       this.lastPosY = p.y
-      this.lastHour = world.hour
       this.aimInitialized = true
-    }
-
-    if (this.lastHour >= 0) {
-      const dh = world.hour >= this.lastHour ? world.hour - this.lastHour : 24 - this.lastHour + world.hour
-      if (dh > 0 && dh < 4) {
-        this.elapsedHours += dh
-      }
-      this.lastHour = world.hour
     }
 
     // 1. Update topology cache & player-bounded visual/acoustic perception (10 Hz cognitive cycle, always on first step)
@@ -564,19 +550,6 @@ export class SurvivorBot {
     const chaserCount = actionableThreats.filter(
       (z) => z.distance < 14 && (z.state === "chase" || z.state === "bash" || z.state === "alert"),
     ).length
-    const dayState = dayCycle(world.hour)
-    if (chaserCount > 0) {
-      const nightIntensity = 0.72 + 0.58 * dayState.threat
-      let proximityLoad = 0
-      for (const z of actionableThreats) {
-        if (z.distance < 13 && (z.state === "chase" || z.state === "bash" || z.state === "alert")) {
-          proximityLoad += 0.55 + Math.max(0, (9.0 - z.distance) / 5.5)
-        }
-      }
-      this.accumulatedChaserLoad += dt * Math.pow(proximityLoad, 1.18) * nightIntensity
-    } else {
-      this.accumulatedChaserLoad = Math.max(0, this.accumulatedChaserLoad - dt * 0.4)
-    }
     const healthFrac = clamp(p.health / Math.max(1, p.maxHealth), 0, 1)
     const rawPressure = clamp(
       closeThreats.length * 0.24 +
@@ -1108,10 +1081,9 @@ export class SurvivorBot {
   private pickOpenKitePoint(
     px: number,
     py: number,
-    _threats: readonly PerceivedThreat[],
+    threats: readonly PerceivedThreat[],
   ): { x: number; y: number; label: string } {
-    // Unobstructed clockwise rectangular street loop along the wide avenues (x=44, y=17, x=76, y=73)
-    const loopWaypoints: readonly { x: number; y: number; label: string }[] = [
+    const candidates: readonly { x: number; y: number; label: string }[] = [
       { x: 44.0, y: 44.0, label: "Central Crossroads" },
       { x: 44.0, y: 17.0, label: "North Avenue" },
       { x: 76.0, y: 17.0, label: "North-East Avenue" },
@@ -1119,24 +1091,37 @@ export class SurvivorBot {
       { x: 76.0, y: 73.0, label: "South-East Avenue" },
       { x: 44.0, y: 73.0, label: "South Avenue" },
     ]
-    if (this.currentIntent !== "flee-horde") {
-      // Snap to nearest loop entry when starting a kite loop
-      let bestIdx = 0
-      let bestDist = Infinity
-      for (let i = 0; i < loopWaypoints.length; i++) {
-        const d = Math.hypot(loopWaypoints[i]!.x - px, loopWaypoints[i]!.y - py)
-        if (d < bestDist) {
-          bestDist = d
-          bestIdx = i
+    let best = candidates[0]!
+    let bestScore = -Infinity
+    for (const c of candidates) {
+      const distToSelf = Math.hypot(c.x - px, c.y - py)
+      // Prefer a reachable open intersection (not already standing on it, not across the entire town)
+      let score = distToSelf < 7 ? -22 : 26 - Math.abs(distToSelf - 26) * 0.55
+      for (const z of threats) {
+        if (!z.actionable) continue
+        const dz = Math.hypot(c.x - z.x, c.y - z.y)
+        if (dz < 14) {
+          score -= (14 - dz) * 2.2
+        }
+        // Penalize running directly through a close threat toward the waypoint
+        if (z.distance < 8 && distToSelf > 1) {
+          const toWay = Math.atan2(c.y - py, c.x - px)
+          const toZ = Math.atan2(z.y - py, z.x - px)
+          const ang = Math.abs(angleDiff(toWay, toZ))
+          if (ang < 0.75) {
+            score -= (0.75 - ang) * 28
+          }
         }
       }
-      this.kiteLoopIndex = bestIdx
+      if (this.skill.decisionNoise > 0) {
+        score += (this.rng.next() - 0.5) * 2 * this.skill.decisionNoise * 18
+      }
+      if (score > bestScore) {
+        bestScore = score
+        best = c
+      }
     }
-    const cur = loopWaypoints[this.kiteLoopIndex % loopWaypoints.length]!
-    if (Math.hypot(cur.x - px, cur.y - py) < 6.5) {
-      this.kiteLoopIndex = (this.kiteLoopIndex + 1) % loopWaypoints.length
-    }
-    return loopWaypoints[this.kiteLoopIndex % loopWaypoints.length]!
+    return best
   }
 
   private findBarricadeCandidate(
@@ -1625,8 +1610,7 @@ export class SurvivorBot {
     const strikeRange =
       SHOVE_RANGE + (meleeWeapon?.item === "spiked-board" ? 0.32 : meleeWeapon ? 0.22 : 0)
     const canReflexStrike =
-      !this.isFatiguedPastHorizon() &&
-      (!panicking || nearest?.distance !== undefined && nearest.distance <= 1.55)
+      !panicking || (nearest?.distance !== undefined && nearest.distance <= 1.55)
     let meleeLockedAim = false
     if (
       nearest &&
@@ -1905,74 +1889,33 @@ export class SurvivorBot {
     return this.followPathTo(dt, world, slot, this.goalX, this.goalY, false)
   }
 
-  private currentNightsElapsed(): number {
-    const h = this.elapsedHours
-    if (h <= 2) return (h / 2) * 0.15
-    if (h <= 14) return 0.15 + ((h - 2) / 12) * 0.85
-    const afterNight1 = h - 14
-    const extraDays = Math.floor(afterNight1 / 24)
-    const rem = afterNight1 - extraDays * 24
-    const sub = rem <= 12 ? (rem / 12) * 0.2 : 0.2 + ((rem - 12) / 12) * 0.8
-    return 1 + extraDays + sub
-  }
-
-  private skillEnduranceHorizon(): number {
-    const s = this.skill
-    return (
-      0.95 +
-      s.staminaDiscipline * 1.4 +
-      s.ammoDiscipline * 1.6 +
-      Math.pow(s.ammoDiscipline, 2) * 1.85 -
-      s.panicUnderPressure * 0.35
-    )
-  }
-
-  private effectiveFatigueNights(): number {
-    const nights = this.currentNightsElapsed()
-    const pressureDrag = (this.accumulatedChaserLoad / 820) * (0.38 + this.skill.panicUnderPressure * 0.45)
-    return nights + pressureDrag
-  }
-
-  private isFatiguedPastHorizon(): boolean {
-    return this.effectiveFatigueNights() > this.skillEnduranceHorizon() + 0.12
-  }
-
   private computeCombatMoveScale(
     _now: number,
     p: SurvivorSlot["survivor"],
     closeChasers: number,
   ): number {
     const skillQuality = clamp(
-      1 - this.skill.panicUnderPressure * 0.55 - this.skill.aimTrackingLag * 0.6,
+      1 -
+        this.skill.reactionTime * 0.55 -
+        this.skill.decisionNoise * 0.45 -
+        this.skill.panicUnderPressure * 0.35,
       0,
       1,
     )
-    const baseMoveThrottle = clamp(0.82 + skillQuality * 0.17, 0.8, 0.99)
-    const chaserCapacity = 1.6 + skillQuality * 3.4
+    const baseMoveThrottle = clamp(0.76 + skillQuality * 0.23, 0.74, 0.99)
+    const chaserCapacity = 1.4 + skillQuality * 3.8
     const overCapacity = Math.max(0, closeChasers - chaserCapacity)
     const hordeCongestion = clamp(
-      1 - overCapacity * (0.045 + this.skill.panicUnderPressure * 0.055),
-      0.55,
+      1 - overCapacity * (0.06 + this.skill.panicUnderPressure * 0.08 + this.skill.decisionNoise * 0.05),
+      0.42,
       1.0,
     )
-    const horizon = this.skillEnduranceHorizon()
-    const fatigueExcess = Math.max(0, this.effectiveFatigueNights() - horizon)
-    const enduranceFactor = clamp(
-      1 - fatigueExcess * (1.25 + this.skill.panicUnderPressure * 0.55),
-      0.28,
-      1.0,
-    )
-    const exhaustedPenalty = p.exhausted ? 0.66 + this.skill.staminaDiscipline * 0.18 : 1.0
-    return clamp(
-      baseMoveThrottle * hordeCongestion * enduranceFactor * exhaustedPenalty,
-      0.28,
-      0.99,
-    )
+    const exhaustedPenalty = p.exhausted ? 0.64 + this.skill.staminaDiscipline * 0.2 : 1.0
+    return clamp(baseMoveThrottle * hordeCongestion * exhaustedPenalty, 0.38, 0.99)
   }
 
   private shouldSprint(p: SurvivorSlot["survivor"], emergency: boolean, _now = 0): boolean {
     if (p.exhausted) return false
-    if (this.isFatiguedPastHorizon()) return false
     if (emergency) return p.stamina > 0.08
     return p.stamina > Math.max(0.18, this.skill.staminaDiscipline)
   }
