@@ -7,7 +7,7 @@ import { chromium, type Page } from "playwright-core"
 import { createServer, type ViteDevServer } from "vite"
 
 const root = resolve(import.meta.dir, "../..")
-const out = resolve(process.env.EXPLOSION_OUT ?? "/Users/kit/code/home/artifacts/2026-10-14-explosion")
+const out = resolve(process.env.EXPLOSION_OUT ?? resolve(root, "captures/explosion"))
 const framesDir = resolve(out, "frames")
 mkdirSync(framesDir, { recursive: true })
 

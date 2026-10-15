@@ -8,7 +8,7 @@ import { WEATHER_PRESET_IDS, type WeatherPresetId } from "@arcade/kit/weather"
 const repoRoot = resolve(import.meta.dir, "../..")
 const outbreakRoot = resolve(repoRoot, "games/outbreak")
 const labRoot = resolve(repoRoot, "games/lab")
-const artifactDir = resolve(process.env.HOME ?? "/Users/kit", "code/home/artifacts/2026-10-14-weather")
+const artifactDir = resolve(process.env.WEATHER_OUT ?? resolve(repoRoot, "captures/weather"))
 mkdirSync(artifactDir, { recursive: true })
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
