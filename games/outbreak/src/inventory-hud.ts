@@ -7,9 +7,20 @@ import { holdProgress, type InteractTarget } from "../shared/interact"
 import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
+import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const MARKER_RANGE = 30
+const FAMILIAR_KEY = "arcade.outbreak.familiar"
+
+function loadFamiliar(): Record<string, number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FAMILIAR_KEY) ?? "{}") as unknown
+    return raw && typeof raw === "object" ? (raw as Record<string, number>) : {}
+  } catch {
+    return {}
+  }
+}
 
 /** Where an item lands when taken, for the strip's small tag. */
 function destination(progression: OutbreakProgression, item: string): "belt" | "hand" | "pack" {
@@ -47,12 +58,54 @@ export class InventoryHud {
     private readonly seatColour: (index: number) => string,
     /** Every survivor in the world, for the light their flashlights add at a bench. */
     private readonly squad: () => readonly { x: number; y: number; flashlightOn: boolean; flashlightOutput: number }[],
+    /** The Discovery settings: searched containers and drops shown as props, prompt words that fade with use. */
+    private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
   ) {}
+
+  /** How often this browser has acted on each kind of prompt; words drop off once an action is familiar. */
+  private readonly familiar = loadFamiliar()
+
+  /** Records that the player pressed the interact key on `target`, so its words can fade next time. */
+  noteUse(target: InteractTarget | undefined): void {
+    if (!target) return
+    const key = target.kind
+    this.familiar[key] = (this.familiar[key] ?? 0) + 1
+    try {
+      localStorage.setItem(FAMILIAR_KEY, JSON.stringify(this.familiar))
+    } catch {}
+    this.lastStrip = ""
+  }
+
+  /** Forgets every learned prompt (Lab, proofs). */
+  resetFamiliar(): void {
+    for (const k of Object.keys(this.familiar)) delete this.familiar[k]
+    try {
+      localStorage.removeItem(FAMILIAR_KEY)
+    } catch {}
+    this.lastStrip = ""
+  }
+
+  /** The verb beside a key cap, or nothing once the player has used this kind of prompt often enough. */
+  private word(target: InteractTarget, label: string): string {
+    const s = this.discovery()
+    if (s.discoveryFadeWords && (this.familiar[target.kind] ?? 0) >= s.discoveryFadeUses) return ""
+    // A searched container's contents are on show; taking them needs no words.
+    if (s.discoveryOpenContainers && target.kind === "container" && target.primary.id === "take") return ""
+    if (s.discoveryGroundProps && target.kind === "drop") return ""
+    return label
+  }
+
+  private cap(code: string, target: InteractTarget, label: string, options?: Parameters<typeof keyPromptHtml>[2]): string {
+    const word = this.word(target, label)
+    return word ? keyPromptHtml(code, word, options) : keyCapHtml(code, options)
+  }
 
   /** The store whose contents the strip above `target` lists, if it lists any. */
   private stripStore(view: SessionView, target: InteractTarget | undefined): string | null {
     const store = view.progression.storeFor(target)
     if (!store || target?.kind === "bench") return null
+    const d = this.discovery()
+    if ((d.discoveryOpenContainers && target?.kind === "container") || (d.discoveryGroundProps && target?.kind === "drop")) return null
     const st = view.progression.ledger.store(store)
     return st?.revealed ? store : null
   }
@@ -103,7 +156,7 @@ export class InventoryHud {
     const belt = ledger.store(`${actorId}/belt`)
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${p.meleeDurability}|${this.packOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${p.meleeDurability}|${this.packOpen}|${this.craftOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     if (key === this.lastBar) return
     this.lastBar = key
 
@@ -114,6 +167,7 @@ export class InventoryHud {
         return `<span class="pill" data-item="${item}" data-full="${n >= cap}"><b>${esc(ledger.label(item, true))}</b> ${n}<small>/${cap}</small></span>`
       })
       this.els.belt.innerHTML = pills.join("")
+      this.els.belt.dataset.open = String(this.packOpen || this.craftOpen)
     }
 
     if (this.els.hotbar && hotbar) {
@@ -202,9 +256,9 @@ export class InventoryHud {
 
   private promptHtml(view: SessionView, prompt: InteractTarget, hold: number): string {
     const progression = view.progression
-    const parts = [keyPromptHtml("KeyE", prompt.primary.label)]
-    if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${keyPromptHtml("KeyE", prompt.alt.label)}</span>`)
-    if (prompt.secondary) parts.push(keyPromptHtml("KeyE", prompt.secondary.label, { hold: true, progress: hold }))
+    const parts = [this.cap("KeyE", prompt, prompt.primary.label)]
+    if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt.label)}</span>`)
+    if (prompt.secondary) parts.push(this.cap("KeyE", prompt, prompt.secondary.label, { hold: true, progress: hold }))
     const line = parts.join('<span class="sep">·</span>')
     if (prompt.kind === "bench") return this.benchHtml(view, prompt, line)
     const store = this.stripStore(view, prompt)
@@ -301,8 +355,9 @@ export class InventoryHud {
     if (!root) return
     const { progression, player: p, town, time } = view
     const want: { x: number; y: number; z: number; html: string; kind: string; colour?: string }[] = []
+    const props = this.discovery().discoveryGroundProps
     for (const st of progression.ledger.stores.values()) {
-      if (!st.id.startsWith("drop:") || !st.at) continue
+      if (props || !st.id.startsWith("drop:") || !st.at) continue
       if (Math.hypot(st.at.x - p.x, st.at.y - p.y) > MARKER_RANGE) continue
       const stacks = progression.contents(st.id)
       if (!stacks.length) continue
@@ -313,7 +368,7 @@ export class InventoryHud {
       if (time >= ping.until) continue
       want.push({ x: ping.x, y: ping.y, z: 1.3, html: esc(ping.label), kind: "ping", colour: this.seatColour(ping.by) })
     }
-    for (const lure of progression.lures) want.push({ x: lure.x, y: lure.y, z: 0.4, html: "Noisemaker", kind: "lure" })
+    if (!props) for (const lure of progression.lures) want.push({ x: lure.x, y: lure.y, z: 0.4, html: "Noisemaker", kind: "lure" })
     while (this.markers.length < want.length) {
       const el = document.createElement("div")
       el.className = "marker"

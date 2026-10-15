@@ -690,14 +690,11 @@ export class OutbreakProgression {
       rules: progressionRules(this.tuning),
       knowledgeStore: "team/known",
     })
-    // Discoveries and lessons reach the whole squad however the item arrived (a take, a craft, a test's grant).
+    // Lessons reach the whole squad however the item arrived (a take, a craft, a test's grant). A new material is
+    // not announced: what it makes is for the squad to find out (D-19, Discovered, Not Told).
     this.ledger.on((ev) => {
-      if (ev.kind !== "unlocked" || this.quiet) return
-      if (ev.source === "discover") {
-        const material = ev.item.replace(/^seen:/, "")
-        const uses = recipesUsing(material).map((r) => r.label)
-        this.notifyAll(uses.length ? `New material: ${ev.label}. Bench recipes: ${uses.join(", ")}` : `New material: ${ev.label}`, "info", `seen:${material}`)
-      } else this.notifyAll(`Squad learned ${ev.label}. Hold Q to craft it anywhere`, "result", ev.item)
+      if (ev.kind !== "unlocked" || this.quiet || ev.source === "discover") return
+      this.notifyAll(`Squad learned ${ev.label}. Hold Q to craft it anywhere`, "result", ev.item)
     })
   }
 
