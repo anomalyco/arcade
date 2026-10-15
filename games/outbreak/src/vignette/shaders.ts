@@ -22,6 +22,7 @@ const vignetteInteriorRefs: InteriorWgslRefs = {
   buildingRect: i => `houseRect(${i})`,
   flashXZ: "Vig.params3.xy",
   classicLayout: "true",
+  authoredKitchen: () => "false",
 }
 
 export const vignetteSceneHooks: SceneHooks = {

@@ -5,6 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { interiorSignature } from "./interiors/plan"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
+import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
 import { emitCurvedGrassBlade, emitGrassClump, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
@@ -144,9 +145,14 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
   }
 }
 
+/** Which part of the origin build a chunk is: its source mesh (0..8 the 32 m chunk meshes, 9+ one per prop) and split role. */
+export type OriginRole = "opaque" | "screen" | "custom" | "cap" | "glass"
+export type OriginChunk = LevelChunk & { origin: { src: number; role: OriginRole; building: number } }
+export type OriginLevel = Omit<LevelData, "chunks" | "glass"> & { chunks: OriginChunk[]; glass: OriginChunk[] }
+
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
-const levelCache = new Map<string, LevelData>()
-export function buildLevel(town: Town): LevelData {
+const levelCache = new Map<string, OriginLevel>()
+export function buildLevel(town: Town): OriginLevel {
   const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}`
   const cached=levelCache.get(key)
   if(cached)return cached
@@ -156,7 +162,7 @@ export function buildLevel(town: Town): LevelData {
   return level
 }
 
-function compileLevel(town: Town): LevelData {
+function compileLevel(town: Town): OriginLevel {
   plantFootprints.length = 0
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
@@ -198,137 +204,20 @@ function compileLevel(town: Town): LevelData {
     })
   }
   // Dense front-lawn, walkway-edge & side-yard grass clumps + 3-layer volumetric fur shells around every building frontage.
+  const street = (x: number, z: number) => (x > 37.8 && x < 50.2) || (z > 37.8 && z < 50.2)
   for (const [bIdx, b] of town.buildings.entries()) {
-    const [bx0, bz0, bx1, bz1] = b.rect
-    const sidewalkZ = frontageEnd(b) - 0.08
-    const isHero = bIdx === 0
-    const lawnPatches: readonly [number, number, number, number, number][] = [
-      [bx0 + 0.20, bz1 + 0.72, bx0 + 4.90, sidewalkZ, isHero ? 32 : 14],
-      [bx0 + 6.50, bz1 + 0.72, Math.min(37.7, bx1 - 0.20), sidewalkZ, isHero ? 36 : 16],
-      [Math.max(2.0, bx0 - 7.5), bz0 + 0.5, bx0 - 3.15, sidewalkZ, isHero ? 20 : 12],
-      [bx1 + 0.35, bz0 + 0.5, Math.min(37.7, bx1 + 3.2), sidewalkZ, isHero ? 14 : 10],
-    ]
-    for (const [pIdx, [lx0, lz0, lx1, lz1, count]] of lawnPatches.entries()) {
-      if (lz1 <= lz0 + 0.2 || lx1 <= lx0 + 0.2 || (lx0 > 37.8 && lx0 < 50.2)) continue
-      const patchClumps = scatterGrassClumps({
-        seed: (town.seed ^ (bIdx * 4099 + pIdx * 613)) >>> 0,
-        bounds: [lx0, lz0, lx1, lz1],
-        clusterCount: Math.max(2, Math.round(count * (town.foliageDensity ?? 1))),
-        tuftsPerCluster: 3,
-        params: foliageSettings,
-        avoid: (gx, gz) => (gx > 37.8 && gx < 50.2) || (gz > 37.8 && gz < 50.2),
-      })
-      for (const t of patchClumps) {
-        const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
-        if (t.weed) { emitGrassClump(m, t, y, grassRng); continue }
-        emitGrassTuft(m, t.x, y, t.z, {
-          bladeCount: 3,
-          radius: t.radius * 0.96,
-          height: t.height * 0.90,
-          width: t.width * 0.86,
-          curvature: t.curvature,
-          leanAngle: t.leanAngle,
-          rootColor: t.rootColor,
-          tipColor: t.tipColor,
-          rng: grassRng,
-        })
-      }
-    }
+    emitLawnPatches(at, b, bIdx, town, grassRng, { hero: bIdx === 0, seed: town.seed, west: 2.0, east: 37.7, avoid: street })
   }
   // Shadowed root-collar tussock tufts around every exterior street/yard tree.
   for (const [pIdx, p] of town.props.entries()) {
     if (p.kind !== "tree") continue
-    const treeRng = new Rng((town.seed ^ (pIdx * 2749 + 0x517c)) >>> 0)
-    const collarCount = Math.max(3, Math.round(5 * (town.foliageDensity ?? 1)))
-    for (let c = 0; c < collarCount; c++) {
-      const a = c * 2.39996 + treeRng.next() * 0.45
-      const d = 0.42 + treeRng.next() * 1.15
-      const tx = p.x + Math.cos(a) * d
-      const tz = p.y + Math.sin(a) * d
-      if ((tx > 37.9 && tx < 50.1) || (tz > 37.9 && tz < 50.1)) continue
-      const y = supportHeight(town, tx, tz), m = at(tx, tz)
-      emitGrassTuft(m, tx, y, tz, {
-        bladeCount: 3,
-        radius: 0.14 + treeRng.next() * 0.08,
-        height: foliageSettings.bladeHeight * (0.85 + treeRng.next() * 0.35),
-        width: foliageSettings.bladeWidth * 0.95,
-        curvature: foliageSettings.bladeCurvature,
-        leanAngle: a + (treeRng.next() - 0.5) * 0.5,
-        rootColor: [foliageSettings.rootColorR * 0.85, foliageSettings.rootColorG * 0.85, foliageSettings.rootColorB * 0.85],
-        tipColor: [foliageSettings.tipColorR * 1.02, foliageSettings.tipColorG * 1.02, foliageSettings.tipColorB * 0.95],
-        rng: treeRng,
-      })
-    }
+    emitTreeCollar(at, p, town, new Rng((town.seed ^ (pIdx * 2749 + 0x517c)) >>> 0), (tx, tz) => (tx > 37.9 && tx < 50.1) || (tz > 37.9 && tz < 50.1))
   }
   // Radiating rosette grass & weed tussocks along curb verges, sidewalk borders, front walkways, and gravel driveways.
   const vergeRng = new Rng(town.seed ^ 0x91e1)
-  for (let v = 2.5; v < SIZE - 2.5; v += 0.64 + vergeRng.next() * 0.58) {
-    if (v > 37.5 && v < 50.5) continue
-    for (const zBase of [37.86, 39.55, 48.45, 50.14]) {
-      if (vergeRng.next() < 0.14) continue
-      if (town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25))) continue
-      const inCurbStrip = zBase > 39 && zBase < 49
-      const x = v + (vergeRng.next() - 0.5) * 0.30
-      const z = zBase + (vergeRng.next() - 0.5) * 0.14
-      const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
-      const m = at(x, z)
-      const h = (inCurbStrip ? 0.16 + vergeRng.next() * 0.12 : 0.13 + vergeRng.next() * 0.11) * (foliageSettings.bladeHeight / 0.20)
-      const rootCol = hex(vergeRng.pick([0x1c1e12, 0x181a10, 0x222214]))
-      const tipCol = hex(vergeRng.pick([0x3e3c24, 0x484226, 0x343820]))
-      emitGrassTuft(m, x, y, z, {
-        bladeCount: inCurbStrip ? 4 : 3,
-        radius: inCurbStrip ? 0.18 + vergeRng.next() * 0.06 : 0.15 + vergeRng.next() * 0.05,
-        height: h,
-        width: foliageSettings.bladeWidth * 0.96,
-        curvature: Math.min(1.0, foliageSettings.bladeCurvature * 1.15),
-        leanAngle: vergeRng.next() * Math.PI * 2,
-        rootColor: rootCol,
-        tipColor: tipCol,
-        rng: vergeRng,
-      })
-    }
-  }
-  for (const b of town.buildings) {
-    const [bx0, bz0, , bz1] = b.rect
-    const walkEnd = frontageEnd(b) - 0.12
-    for (let wz = bz1 + 1.05; wz < walkEnd; wz += 0.54 + vergeRng.next() * 0.42) {
-      for (const wx of [bx0 + 4.88, bx0 + 6.52]) {
-        const gx = wx + (vergeRng.next() - 0.5) * 0.14
-        const gz = wz + (vergeRng.next() - 0.5) * 0.18
-        const y = supportHeight(town, gx, gz)
-        emitGrassTuft(at(gx, gz), gx, y, gz, {
-          bladeCount: 3,
-          radius: 0.16 + vergeRng.next() * 0.05,
-          height: (0.14 + vergeRng.next() * 0.10) * (foliageSettings.bladeHeight / 0.20),
-          width: foliageSettings.bladeWidth * 0.92,
-          curvature: foliageSettings.bladeCurvature,
-          leanAngle: wx < bx0 + 5.5 ? 0.12 : Math.PI - 0.12,
-          rootColor: hex(0x1c1e12),
-          tipColor: hex(0x3e3c24),
-          rng: vergeRng,
-        })
-      }
-    }
-    for (let dz = bz0 + 1.2; dz < walkEnd; dz += 0.78 + vergeRng.next() * 0.58) {
-      for (const dx of [bx0 - 2.94, bx0 - 1.68, bx0 - 0.42]) {
-        if (dx === bx0 - 1.68 && vergeRng.next() < 0.42) continue
-        const gx = dx + (vergeRng.next() - 0.5) * 0.18
-        const gz = dz + (vergeRng.next() - 0.5) * 0.22
-        const y = supportHeight(town, gx, gz)
-        emitGrassTuft(at(gx, gz), gx, y, gz, {
-          bladeCount: 2,
-          radius: 0.13,
-          height: 0.12 + vergeRng.next() * 0.09,
-          width: foliageSettings.bladeWidth * 0.88,
-          curvature: foliageSettings.bladeCurvature,
-          leanAngle: vergeRng.next() * Math.PI * 2,
-          rootColor: hex(0x1a1c10),
-          tipColor: hex(0x3a3822),
-          rng: vergeRng,
-        })
-      }
-    }
-  }
+  emitStreetVerge(at, town, vergeRng, 2.5, SIZE - 2.5, [[37.86, false], [39.55, true], [48.45, true], [50.14, false]], v => v > 37.5 && v < 50.5,
+    v => town.buildings.some(b => Math.abs(v - (b.rect[0] + 5.7)) < 0.95 || (v > b.rect[0] - 3.1 && v < b.rect[0] - 0.25)))
+  for (const b of town.buildings) emitPathTufts(at, b, town, vergeRng)
   void emitWeedMat
   void emitCurvedGrassBlade
   // Segment streets at chunk edges to retain useful culling.
@@ -371,11 +260,7 @@ function compileLevel(town: Town): LevelData {
     if(b.kind==="house"&&end<40){
       m.quadAuto([x-3.18,.015,40.0],[x-.18,.015,40.0],[x-.30,.101,39.75],[x-3.05,.101,39.75],hex(0x5c5850),MAT.lit)
     }
-    const gravel=new Rng(town.seed+id*177)
-    for(let k=0;k<36;k++) {
-      const px=x-3+gravel.next()*2.65,pz=z+gravel.next()*(frontageEnd(b)+2-z),size=.025+gravel.next()*.045
-      m.prism(px,pz,size,size*.5,.036,.055,5,hex(gravel.pick([0x949084,0x65685f,0x79776a,0x585a50])))
-    }
+    emitGravelDriveway(m,b,town.seed+id*177)
     house(m,b,id,town)
     if (b.kind !== "house") {
       const color = hex(b.kind === "pharmacy" ? 0x406d62 : 0x8b593d)
@@ -511,14 +396,16 @@ function compileLevel(town: Town): LevelData {
     m.box(p.x - .08, 3.65, p.y - .08, p.x + .7, 3.8, p.y + .08, hex(0x353d3c))
     m.box(p.x + .3, 3.55, p.y - .18, p.x + .8, 3.65, p.y + .18, hex(0xffc980), MAT.lamp, id)
   }
-  const chunks = (list: Mesh[], split = false): LevelChunk[] => list.filter(m => m.count).flatMap(source => {
+  const chunks = (list: Mesh[], split = false): OriginChunk[] => list.flatMap((source, src): OriginChunk[] => {
+    if (!source.count) return []
+    const tag = (role: OriginRole, building = -1) => (c: LevelChunk): OriginChunk => ({ ...c, origin: { src, role, building } })
     if (!split) {
       let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, top = 0
       for (let i = 0; i < source.v.length; i += 11) {
         x0 = Math.min(x0, source.v[i]!); x1 = Math.max(x1, source.v[i]!)
         z0 = Math.min(z0, source.v[i + 2]!); z1 = Math.max(z1, source.v[i + 2]!); top = Math.max(top, source.v[i + 1]!)
       }
-      return [{ data: stampOutbreakVertexTone(source.pack()), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] }]
+      return [tag("glass")({ data: stampOutbreakVertexTone(source.pack()), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] })]
     }
     const opaque = new Mesh()
     const screen = new Mesh()
@@ -575,7 +462,7 @@ function compileLevel(town: Town): LevelData {
       }
       return [{ data: stampOutbreakVertexTone(m.pack()), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
     }
-    const screenChunks = (): LevelChunk[] => {
+    const screenChunks = (): OriginChunk[] => {
       if (!screen.count) return []
       // Bucket cuttable walls into 4m Z-bands so north/partition/south walls don't merge into one room-spanning cutBox.
       const bands = new Map<number, Mesh>()
@@ -587,16 +474,16 @@ function compileLevel(town: Town): LevelData {
         if (!bm) { bm = new Mesh(); bands.set(key, bm) }
         for (let k = i; k < i + 33; k++) bm.v.push(screen.v[k]!)
       }
-      return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => ({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
+      return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => tag("screen")({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }
     const customChunks = BUILDING_RECTS.flatMap((b, id) => {
       const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + 1.7] as const
       return [
-        ...pack(interiorCapByBuilding[id]!, bounds, "outside"),
-        ...pack(customByBuilding[id]!, bounds, true),
+        ...pack(interiorCapByBuilding[id]!, bounds, "outside").map(tag("cap", id)),
+        ...pack(customByBuilding[id]!, bounds, true).map(tag("custom", id)),
       ]
     })
-    return [...pack(opaque), ...screenChunks(), ...customChunks]
+    return [...pack(opaque).map(tag("opaque")), ...screenChunks(), ...customChunks]
   })
   // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
   const resolution = 384, scale = SIZE / resolution, data = new Uint8Array(resolution * resolution * 2)

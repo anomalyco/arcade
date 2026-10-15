@@ -10,6 +10,7 @@ import {
   buildingFootprint,
   CHUNK,
   frontageEnd,
+  makeTown,
   propShape,
   SIZE,
   type Building,
@@ -25,7 +26,9 @@ import {
   type WorldChunk,
   type WorldMode,
 } from "../shared/world"
-import { archSettings, house, plant, plantFootprints } from "./architecture"
+import { archSettings, house, houseFrontage, housePlanting, plant, plantFootprints, type HouseDecayState } from "./architecture"
+import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
+import { buildLevel, type OriginChunk } from "./level"
 import { DEFAULT_OUTBREAK_LIGHTING, resolveLampLight, stampOutbreakVertexTone } from "./lighting"
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
@@ -54,6 +57,9 @@ const HALF_INT = new Uint16Array([
   0x4b00, // 14
   0x4b80, // 15
 ])
+
+/** float16 bit pattern of `MAT.roof` (21). */
+const HALF_ROOF = 0x4d40
 
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) =>
   m.quad(
@@ -113,6 +119,10 @@ export type CompiledRoofChunk = {
   /** Index into the chunk's `buildings` (roofless buildings have no chunk, so this is not the array index). */
   buildingIndex: number
   lastGlobalId: number
+  /** Retag only roof-material vertices (origin parts, whose other vertices keep their own aux meaning). */
+  roofAuxOnly?: boolean
+  /** How the renderer cuts it while the survivor is inside `cutBox`; default "outside" (skipped whole). */
+  customCutaway?: true | "outside"
 }
 
 export type CompiledWorldChunk = {
@@ -318,6 +328,106 @@ const dummyTown: Town = {
   lamps: [],
 }
 
+/**
+ * A yard plant from `housePlanting`, built once per (height, radius, seed bucket) and copied into place. Every lot
+ * uses the same authored sizes, so a few dozen templates cover all of them and a streamed lot's 25 plants cost a copy
+ * each instead of ~0.1 ms of `plant()` apiece. Seeds fold into `YARD_SEED_BUCKETS` variants.
+ */
+const YARD_SEED_BUCKETS = 4
+const yardTemplates = new Map<string, PackedPropTemplate>()
+function yardPlantTemplate(h: number, radius: number, seed: number): PackedPropTemplate {
+  const bucket = (seed >>> 0) % YARD_SEED_BUCKETS
+  const key = `${h}:${radius}:${bucket}`
+  let tpl = yardTemplates.get(key)
+  if (tpl) return tpl
+  const m = new Mesh()
+  const footprints = plantFootprints.length
+  plant(m, 50, 50, h, radius, 7919 * (bucket + 1) + Math.round(h * 100), 0)
+  plantFootprints.length = footprints
+  tpl = packTemplate(m, 50, 50)
+  yardTemplates.set(key, tpl)
+  return tpl
+}
+
+function packTemplate(m: Mesh, ox: number, oz: number): PackedPropTemplate {
+  let minX = Infinity,
+    minZ = Infinity,
+    maxX = -Infinity,
+    maxZ = -Infinity
+  for (let i = 0; i < m.v.length; i += 11) {
+    const vx = (m.v[i]! -= ox)
+    const vz = (m.v[i + 2]! -= oz)
+    if (vx < minX) minX = vx
+    if (vx > maxX) maxX = vx
+    if (vz < minZ) minZ = vz
+    if (vz > maxZ) maxZ = vz
+  }
+  return { u8: new Uint8Array(stampOutbreakVertexTone(m.pack())), vertCount: m.count, minX, minZ, maxX, maxZ }
+}
+
+const isResidential = (b: Building) => {
+  const a = b.archetype ?? b.kind
+  return a === "house" || a === "ranch" || a === "cottage" || a === "cabin"
+}
+
+/**
+ * The origin lots' landscaping on a streamed lot, by the same rules (`architecture.ts`, `yard.ts`): L-plan bungalows
+ * get the porch, shutters and shed; every house gets foundation shrubs, framing trees and the driveway hedge; every
+ * lot gets lawn patches, walkway and driveway tufts and gravel. Seeded per lot. Plants become template placements;
+ * the rest goes to `mainScratch` (porch roof is cut with the building) or `opaqueScratch`.
+ */
+function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town, mode: WorldMode, x0: number, z0: number, x1: number, z1: number): void {
+  const be = b.rect[3]
+  const lotSeed = (Math.imul(town.houseSeed + 0x9e37, 0x85ebca6b) ^ Math.imul(chunk.cx, 0x27d4eb2f) ^ Math.imul(chunk.cy, 0x165667b1)) >>> 0
+  const street = (x: number, z: number) => {
+    const lx = macroLocalCoord(x), lz = macroLocalCoord(z)
+    return (lx > 37.8 && lx < 50.2) || (lz > 37.8 && lz < 50.2)
+  }
+  if (isResidential(b)) {
+    const windows: [number, number][] = []
+    for (const w of chunk.windows) {
+      if (w.buildingId === b.id && Math.abs(w.rect[3] - be) < 0.01 && w.rect[2] - w.rect[0] > 1) windows.push([w.rect[0], w.rect[2]])
+    }
+    const door = chunk.doors.find((d) => d.id === `${b.id}-front`)
+    const decay = (archSettings.houseDecay >= 1 && archSettings.houseDecay <= 4 ? archSettings.houseDecay : (lotSeed % 4) + 1) as HouseDecayState
+    if (b.kind === "house") houseFrontage(mainScratch, b, id, town, { windows, decay })
+    // Framing plants may reach into neighbouring chunks (the authored lots spill 5 m past the driveway), so they
+    // keep clear of every building and tree within a chunk, not just this lot's.
+    const others: Building[] = []
+    const trees = chunk.props.filter((p) => p.kind === "tree")
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue
+        const n = generateWorldChunk(town.seed, town.houseSeed, chunk.cx + dx, chunk.cy + dy, mode)
+        others.push(...n.buildings)
+        for (const p of n.props) if (p.kind === "tree") trees.push(p)
+      }
+    }
+    for (const o of chunk.buildings) if (o !== b) others.push(o)
+    const clear = (r: Rect, px: number, pz: number, m: number) => px < r[0] - m || px > r[2] + m || pz < r[1] - m || pz > r[3] + m
+    housePlanting(mainScratch, b, id, town, {
+      doorX: door?.rect[0],
+      windows,
+      seed: lotSeed,
+      keep: (px, pz, h) =>
+        Math.abs(px - (x0 + x1) / 2) < CHUNK &&
+        Math.abs(pz - (z0 + z1) / 2) < CHUNK &&
+        !street(px, pz) &&
+        clear(b.rect, px, pz, 0.25) &&
+        others.every((o) => clear(o.rect, px, pz, h > 2.1 ? 1.2 : 0.25)) &&
+        !trees.some((t) => Math.hypot(t.x - px, t.y - pz) < (h > 2.1 ? 3.2 : 1.4)),
+      plant: (_m, px, pz, h, radius, seed, ground) => {
+        yardPlacementsScratch.push({ x: px, y: ground, z: pz, tpl: yardPlantTemplate(h, radius, seed) })
+      },
+    })
+  }
+  const at = () => opaqueScratch
+  const lawn = (x: number, z: number) => street(x, z) || x < x0 || x > x1 || z < z0 || z > z1
+  emitLawnPatches(at, b, id, town, new Rng(lotSeed ^ 0x73c9), { hero: false, seed: lotSeed, west: x0 + 0.3, east: x1 - 0.3, avoid: lawn })
+  emitPathTufts(at, b, town, new Rng(lotSeed ^ 0x91e1))
+  emitGravelDriveway(opaqueScratch, b, lotSeed + 177)
+}
+
 function getPropTemplate(p: Prop): PackedPropTemplate {
   const key = p.kind === "tree" ? `tree:${Math.min(TREE_TEMPLATE_BUCKETS - 1, Math.floor(p.variant * TREE_TEMPLATE_BUCKETS))}` : p.kind
   let tpl = propTemplates.get(key)
@@ -434,6 +544,8 @@ const roofScratchPool: Mesh[] = []
 const bandScratchPool: Mesh[] = []
 const bandMap = new Map<number, Mesh>()
 const grassPlacementsScratch: { x: number; y: number; z: number; tplIdx: number }[] = []
+/** Yard bushes and trees placed by `housePlanting` as cached templates (see `yardPlantTemplate`). */
+const yardPlacementsScratch: { x: number; y: number; z: number; tpl: PackedPropTemplate }[] = []
 
 type TileSet = {
   floorTile: Uint8Array<ArrayBuffer>
@@ -442,6 +554,33 @@ type TileSet = {
   opaqueBuf?: ArrayBuffer
 }
 const tilePool: TileSet[] = []
+/** Pooled 768 KB opaque buffers set aside while a denser chunk used a larger one. */
+const spareOpaque: ArrayBuffer[] = []
+/** Larger opaque buffers by size class (whole multiples of 768 KB) for dressed lots and origin chunks. */
+const largeOpaquePools = new Map<number, ArrayBuffer[]>()
+
+/**
+ * Opaque buffers come in 768 KB size classes. A tile set carries a base-size one; a denser chunk takes a buffer of
+ * its own class and returns it to that class's pool, so the base pool never ratchets up to the largest chunk seen.
+ */
+const poolable = (buf?: ArrayBuffer) => (buf && buf.byteLength % POOL_OPAQUE_BYTES === 0 ? buf : undefined)
+
+function opaqueBuffer(tiles: TileSet, bytes: number): ArrayBuffer {
+  if (bytes <= POOL_OPAQUE_BYTES) return tiles.opaqueBuf ?? new ArrayBuffer(POOL_OPAQUE_BYTES)
+  if (tiles.opaqueBuf && spareOpaque.length < 8) spareOpaque.push(tiles.opaqueBuf)
+  const size = Math.ceil(bytes / POOL_OPAQUE_BYTES) * POOL_OPAQUE_BYTES
+  return largeOpaquePools.get(size)?.pop() ?? new ArrayBuffer(size)
+}
+
+/** Returns a recycled opaque buffer to its pool; the base size rides with the tile set. */
+function baseOpaque(buf?: ArrayBuffer): ArrayBuffer | undefined {
+  if (!buf || buf.byteLength % POOL_OPAQUE_BYTES !== 0) return undefined
+  if (buf.byteLength === POOL_OPAQUE_BYTES) return buf
+  let pool = largeOpaquePools.get(buf.byteLength)
+  if (!pool) largeOpaquePools.set(buf.byteLength, (pool = []))
+  if (pool.length < 12) pool.push(buf)
+  return undefined
+}
 
 function acquireTiles(): TileSet {
   const hit = tilePool.pop()
@@ -449,6 +588,7 @@ function acquireTiles(): TileSet {
     hit.floorTile.fill(0)
     hit.moonTile.fill(255)
     hit.bounceTile.fill(0)
+    hit.opaqueBuf ??= spareOpaque.pop()
     return hit
   }
   return {
@@ -471,7 +611,7 @@ export function recycleCompiledChunk(chunk: CompiledWorldChunk): void {
       floorTile: chunk.floorTile,
       moonTile: chunk.moonTile,
       bounceTile: chunk.bounceTile,
-      opaqueBuf: opaqueBuf && opaqueBuf.byteLength >= POOL_OPAQUE_BYTES ? opaqueBuf : undefined,
+      opaqueBuf: baseOpaque(opaqueBuf),
     })
   }
 }
@@ -492,7 +632,7 @@ export function recycleTileBuffers(
       floorTile: new Uint8Array(floorBuf),
       moonTile: new Uint8Array(moonBuf),
       bounceTile: new Uint8Array(bounceBuf),
-      opaqueBuf: opaqueBuf && opaqueBuf.byteLength >= POOL_OPAQUE_BYTES ? opaqueBuf : undefined,
+      opaqueBuf: baseOpaque(opaqueBuf),
     })
   }
 }
@@ -559,6 +699,118 @@ function packAndStampInto(v: readonly number[], dstBuf: ArrayBuffer): void {
   }
 }
 
+const originTowns = new Map<string, Town>()
+function originTown(seed: number, houseSeed: number, terrain: number, foliageDensity: number): Town {
+  const key = `${seed}:${houseSeed}:${terrain}:${foliageDensity}`
+  let town = originTowns.get(key)
+  if (!town) {
+    town = makeTown(seed, houseSeed, terrain, foliageDensity)
+    if (originTowns.size >= 4) originTowns.delete(originTowns.keys().next().value!)
+    originTowns.set(key, town)
+  }
+  return town
+}
+
+const concatParts = (parts: readonly LevelChunk[], tiles?: TileSet): { data: ArrayBuffer; byteLength: number } => {
+  let byteLength = 0
+  for (const p of parts) byteLength += p.data.byteLength
+  const data = tiles ? opaqueBuffer(tiles, byteLength) : new ArrayBuffer(byteLength)
+  const dst = new Uint8Array(data)
+  let off = 0
+  for (const p of parts) {
+    dst.set(new Uint8Array(p.data), off)
+    off += p.data.byteLength
+  }
+  return { data, byteLength }
+}
+
+const unionBox = (parts: readonly LevelChunk[]): readonly [number, number, number, number] => {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+  for (const p of parts) {
+    x0 = Math.min(x0, p.box[0]); z0 = Math.min(z0, p.box[1]); x1 = Math.max(x1, p.box[2]); z1 = Math.max(z1, p.box[3])
+  }
+  return [x0, z0, x1, z1]
+}
+
+/**
+ * A streamed chunk of the 96 m origin block, cut from the authored origin build (`buildLevel`) so the streamed window
+ * and the origin build draw the same triangles and lighting tiles there and swapping between them is invisible.
+ * The origin build is cached per settings key; every buffer is copied because compiled chunks are pooled and
+ * transferred out of workers.
+ */
+function compileOriginChunk(chunk: WorldChunk, seed: number, houseSeed: number, terrain: number, foliageDensity: number, t0: number): CompiledWorldChunk {
+  const town = originTown(seed, houseSeed, terrain, foliageDensity)
+  const level = buildLevel(town)
+  const idx = chunk.cy * 3 + chunk.cx
+  const meshCount = town.chunks.length
+  const propChunk = (p: Prop) => Math.max(0, Math.min(2, Math.floor(p.y / CHUNK))) * 3 + Math.max(0, Math.min(2, Math.floor(p.x / CHUNK)))
+  const ownsSource = (src: number) => (src < meshCount ? src === idx : propChunk(town.props[src - meshCount]!) === idx)
+  const opaque: LevelChunk[] = []
+  const screens: LevelChunk[] = []
+  const roofParts = chunk.buildings.map((): OriginChunk[] => [])
+  for (const c of level.chunks) {
+    const { src, role, building } = c.origin
+    if (role === "custom" || role === "cap") {
+      const id = town.buildings[building]?.id
+      const local = chunk.buildings.findIndex((b) => b.id === id)
+      if (local >= 0) roofParts[local]!.push({ ...c, origin: { ...c.origin, building: local } })
+    } else if (ownsSource(src)) {
+      ;(role === "screen" ? screens : opaque).push(c)
+    }
+  }
+  const tiles = acquireTiles()
+  const staticOpaqueChunks: LevelChunk[] = []
+  if (opaque.length) staticOpaqueChunks.push({ ...concatParts(opaque, tiles), box: unionBox(opaque) })
+  for (const s of screens) staticOpaqueChunks.push({ data: s.data.slice(0), box: s.box, cutBox: s.cutBox })
+  const roofChunks: CompiledRoofChunk[] = []
+  for (const c of roofParts.flat()) {
+    roofChunks.push({
+      data: c.data.slice(0),
+      box: c.box,
+      cutBox: c.cutBox!,
+      buildingIndex: c.origin.building,
+      // Origin roofs carry the town's building index in aux; force the first window pack to retag them.
+      lastGlobalId: -1,
+      roofAuxOnly: true,
+      customCutaway: c.customCutaway === "outside" ? "outside" : true,
+    })
+  }
+  const glass = level.glass.filter((c) => c.origin.src === idx)
+  const glassChunks: LevelChunk[] = glass.length ? [{ ...concatParts(glass), box: unionBox(glass) }] : []
+  const { floorTile, moonTile, bounceTile } = tiles
+  const blit = (src: Uint8Array, srcW: number, dst: Uint8Array, tile: number, channels: number) => {
+    const row = tile * channels
+    for (let r = 0; r < tile; r++) {
+      const from = ((chunk.cy * tile + r) * srcW + chunk.cx * tile) * channels
+      dst.set(src.subarray(from, from + row), r * row)
+    }
+  }
+  blit(level.floor.data, level.floor.w, floorTile, 128, 2)
+  blit(level.floor.moon!.data, level.floor.moon!.w, moonTile, 256, 1)
+  blit(level.bounce.data, level.bounce.w, bounceTile, 64, 4)
+  // The origin build's sconces (collectSconces) for the buildings this chunk owns.
+  const sconces: number[] = []
+  mainScratch.v.length = 0
+  for (const b of chunk.buildings) emitInteriorDecor(mainScratch, town.buildings.find((t) => t.id === b.id) ?? b, town, undefined, sconces)
+  mainScratch.v.length = 0
+  return {
+    key: chunk.key,
+    cx: chunk.cx,
+    cy: chunk.cy,
+    hash: chunk.hash,
+    staticOpaqueChunks,
+    glassChunks,
+    roofMeshes: [],
+    roofChunks,
+    buildings: chunk.buildings,
+    floorTile,
+    moonTile,
+    bounceTile,
+    sconces: new Float32Array(sconces),
+    compileMs: performance.now() - t0,
+  }
+}
+
 /**
  * Compiles a single 32×32 m `WorldChunk` into meshes and per-chunk lighting tiles:
  * - `floorTile`: 128×128 RG8 (0.25 m/texel)
@@ -571,10 +823,15 @@ export function compileSingleWorldChunk(
   houseSeed: number,
   terrain: number,
   foliageDensity = 1,
+  mode: WorldMode = "streaming",
 ): CompiledWorldChunk {
   const t0 = performance.now()
+  if (mode !== "procedural" && chunk.cx >= 0 && chunk.cx < 3 && chunk.cy >= 0 && chunk.cy < 3) {
+    return compileOriginChunk(chunk, seed, houseSeed, terrain, foliageDensity, t0)
+  }
   ensurePropTemplates()
   plantFootprints.length = 0
+  yardPlacementsScratch.length = 0
   mainScratch.v.length = 0
   glassScratch.v.length = 0
   opaqueScratch.v.length = 0
@@ -736,6 +993,33 @@ export function compileSingleWorldChunk(
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
     emitBuildingRugs(mainScratch, b, chunkTown)
     emitInteriorDecor(mainScratch, b, chunkTown, undefined, sconces)
+    emitStreamedLot(b, id, chunk, chunkTown, mode, x0, z0, x1, z1)
+  }
+  // Root-collar tufts around the chunk's trees and rosettes along an east-west street's verges, as at the origin.
+  const yardStreet = (x: number, z: number) => {
+    const lx = macroLocalCoord(x), lz = macroLocalCoord(z)
+    return (lx > 37.9 && lx < 50.1) || (lz > 37.9 && lz < 50.1)
+  }
+  for (let i = 0; i < chunk.props.length; i++) {
+    const p = chunk.props[i]!
+    if (p.kind === "tree") emitTreeCollar(() => opaqueScratch, p, chunkTown, new Rng((seed ^ Math.imul(i + 1, 2749) ^ Math.imul(chunk.cx * 31 + chunk.cy, 0x517c)) >>> 0), yardStreet)
+  }
+  if (chunk.ly === 1) {
+    // The origin's verge rows sit 1.86..2.14 m either side of the 40..48 m street; lots face it from both sides.
+    const lotX = x0 + (chunk.lx === 0 ? 13.5 : 3.5)
+    emitStreetVerge(
+      () => opaqueScratch,
+      chunkTown,
+      new Rng((seed ^ 0x91e1 ^ Math.imul(chunk.cx, 0x45d9f3b) ^ Math.imul(chunk.cy, 0x27d4eb2f)) >>> 0),
+      x0 + 0.3,
+      x1,
+      [[z0 + 5.86, false], [z0 + 7.55, true], [z0 + 16.45, true], [z0 + 18.14, false]],
+      (v) => {
+        const lx = macroLocalCoord(v)
+        return lx > 37.5 && lx < 50.5
+      },
+      (v) => chunk.lx !== 1 && (Math.abs(v - (lotX + 5.7)) < 0.95 || (v > lotX - 3.1 && v < lotX - 0.25)),
+    )
   }
 
   // 5. Walls, windows & fences
@@ -1020,15 +1304,17 @@ export function compileSingleWorldChunk(
       let maxY = -Infinity
       let hasRoof = false
       let hasScreen = false
+      let hasFoliage = false
       for (let j = 0; j < 33; j += 11) {
         const vy = mv[i + j + 1]!
         const mat = Math.round(mv[i + j + 9]!)
         if (vy < minY) minY = vy
         if (vy > maxY) maxY = vy
         if (mat === 21) hasRoof = true
+        if (mat === 22) hasFoliage = true
         if ((mat === 4 || mat === 9 || mat === 11) && vy > 1.0) hasScreen = true
       }
-      if (minY > 2.801) hasRoof = true
+      if (minY > 2.801 && !hasFoliage) hasRoof = true
       let dst: number[]
       if (hasRoof && chunk.buildings.length > 0) {
         const localId = Math.max(0, Math.min(chunk.buildings.length - 1, Math.round(mv[i + 10]!)))
@@ -1049,6 +1335,7 @@ export function compileSingleWorldChunk(
   for (let i = 0; i < grassPlacementsScratch.length; i++) {
     propVertsTotal += grassClusterTemplates[grassPlacementsScratch[i]!.tplIdx]!.vertCount
   }
+  for (let i = 0; i < yardPlacementsScratch.length; i++) propVertsTotal += yardPlacementsScratch[i]!.tpl.vertCount
   const baseOpaqueVerts = opaqueScratch.count
   const totalOpaqueVerts = baseOpaqueVerts + propVertsTotal
   if (totalOpaqueVerts > 0) {
@@ -1057,10 +1344,7 @@ export function compileSingleWorldChunk(
       bx1 = x1,
       bz1 = z1
     const neededBytes = totalOpaqueVerts * VERT_BYTES
-    const combinedBuf =
-      tiles.opaqueBuf && tiles.opaqueBuf.byteLength >= neededBytes
-        ? tiles.opaqueBuf
-        : new ArrayBuffer(Math.max(neededBytes, POOL_OPAQUE_BYTES))
+    const combinedBuf = opaqueBuffer(tiles, neededBytes)
     const combinedU8 = new Uint8Array(combinedBuf, 0, neededBytes)
     const combinedF32 = new Float32Array(combinedBuf, 0, totalOpaqueVerts * 6)
     if (baseOpaqueVerts > 0) {
@@ -1086,6 +1370,22 @@ export function compileSingleWorldChunk(
         combinedF32[fOff] = combinedF32[fOff]! + gx
         combinedF32[fOff + 1] = combinedF32[fOff + 1]! + gy
         combinedF32[fOff + 2] = combinedF32[fOff + 2]! + gz
+      }
+      vertCursor = endVert
+    }
+    for (let i = 0; i < yardPlacementsScratch.length; i++) {
+      const { x: px, y: py, z: pz, tpl } = yardPlacementsScratch[i]!
+      if (px + tpl.minX < bx0) bx0 = px + tpl.minX
+      if (px + tpl.maxX > bx1) bx1 = px + tpl.maxX
+      if (pz + tpl.minZ < bz0) bz0 = pz + tpl.minZ
+      if (pz + tpl.maxZ > bz1) bz1 = pz + tpl.maxZ
+      combinedU8.set(tpl.u8, vertCursor * VERT_BYTES)
+      const endVert = vertCursor + tpl.vertCount
+      for (let v = vertCursor; v < endVert; v++) {
+        const fOff = v * 6
+        combinedF32[fOff] = combinedF32[fOff]! + px
+        combinedF32[fOff + 1] = combinedF32[fOff + 1]! + py
+        combinedF32[fOff + 2] = combinedF32[fOff + 2]! + pz
       }
       vertCursor = endVert
     }
@@ -1153,7 +1453,8 @@ export function compileSingleWorldChunk(
     const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 7.5, b.rect[3] + southPad] as const
     roofChunks.push({
       data: stampOutbreakVertexTone(rm.pack()),
-      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + southPad] as const,
+      // L-plan bungalows carry the porch canopy (to e + 1.3) in their roof chunk.
+      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + (b.kind === "house" ? 1.7 : southPad)] as const,
       cutBox: bounds,
       buildingIndex: localId,
       lastGlobalId: localId,
@@ -1221,7 +1522,7 @@ function packChunkMeshesForWindow(
       const u16 = new Uint16Array(rc.data)
       const nVerts = rc.data.byteLength / VERT_BYTES
       for (let v = 0; v < nVerts; v++) {
-        u16[v * 12 + 11] = halfId
+        if (!rc.roofAuxOnly || u16[v * 12 + 10] === HALF_ROOF) u16[v * 12 + 11] = halfId
       }
     }
     outOpaque.push({
@@ -1229,7 +1530,7 @@ function packChunkMeshesForWindow(
       box: rc.box,
       cutBox: rc.cutBox,
       // Skipped whole while inside (keeps fsSolid/HSR for the roof elsewhere); the peek bubble still uses roofCut.
-      customCutaway: "outside",
+      customCutaway: rc.customCutaway ?? "outside",
       streamSlot: slot,
       streamKey,
     })
@@ -1242,10 +1543,10 @@ function packChunkMeshesForWindow(
 
 /**
  * Whether the hand-authored origin build (level.ts) should draw the origin block instead of the streamed window.
- * The two differ (the streamed copy of the origin chunks has none of the authored hedges, yard trees and porch
- * dressing), so leaving is held off until the camera footprint actually reaches past the origin build's edge, and
- * coming back needs the footprint 3 m inside it. Without the way back, panning near the edge once (walking down a
- * hall inside Ash House on a wide window) swapped the yards for their bare streamed copies for the rest of the run.
+ * The streamed origin chunks are cut from the same build (`compileOriginChunk`), so the swap is invisible; the origin
+ * build stays in use near spawn because it draws only the block. Leaving is held off until the camera footprint actually reaches past its edge, and
+ * coming back needs the footprint 3 m inside it, so panning along the edge (walking down Ash House's hall on a wide
+ * window) does not swap back and forth.
  */
 export function useOriginBuild(
   usingOrigin: boolean,
@@ -1363,7 +1664,7 @@ export class WorldClientStreamer {
       const bBuf = oldChunk.bounceTile.buffer
       const opBuf = oldChunk.staticOpaqueChunks[0]?.data
       const transfer: Transferable[] = [fBuf, mBuf, bBuf]
-      if (opBuf && opBuf.byteLength >= POOL_OPAQUE_BYTES) transfer.push(opBuf)
+      if (poolable(opBuf)) transfer.push(opBuf!)
       const targetWorker = this.workers[this.recycleWorkerIdx++ % this.workers.length]!
       targetWorker.postMessage(
         {
@@ -1371,7 +1672,7 @@ export class WorldClientStreamer {
           floorBuf: fBuf,
           moonBuf: mBuf,
           bounceBuf: bBuf,
-          opaqueBuf: opBuf && opBuf.byteLength >= POOL_OPAQUE_BYTES ? opBuf : undefined,
+          opaqueBuf: poolable(opBuf),
         },
         transfer,
       )
@@ -1426,6 +1727,8 @@ export class WorldClientStreamer {
           cy: item.cy,
           houseDecay: archSettings.houseDecay,
           weathering: archSettings.weathering,
+          clutterDensity: archSettings.clutterDensity,
+          clutterSeed: archSettings.clutterSeed,
           interior: { ...interiorSettings },
         })
         break
@@ -1476,7 +1779,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${interiorSignature()}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -1496,7 +1799,7 @@ export class WorldClientStreamer {
       return hit
     }
     const worldChunk = generateWorldChunk(seed, houseSeed, cx, cy, mode)
-    const compiled = compileSingleWorldChunk(worldChunk, seed, houseSeed, terrain, foliageDensity)
+    const compiled = compileSingleWorldChunk(worldChunk, seed, houseSeed, terrain, foliageDensity, mode)
     this.insertCachedChunk(k, compiled)
     return compiled
   }

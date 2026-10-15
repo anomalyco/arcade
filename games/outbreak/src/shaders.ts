@@ -106,21 +106,28 @@ export const outbreakSceneHooks: SceneHooks = {
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
+/** Streamed window building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
+fn slotLPlan(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(i)) & 1u) == 1u; }
+/** Whether the rect last returned by houseRect is an L-plan bungalow (cut and lit by wing, not by rect). */
+var<private> houseIsL: bool;
 fn houseRect(id: i32) -> vec4f {
+  houseIsL = false;
   if (OL.win.z > 0.5) {
     if (id >= 0 && id <= 7) {
       let b0 = OL.bldRects[id];
-      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { return b0; }
+      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { houseIsL = slotLPlan(id); return b0; }
     }
     let nBld = i32(OL.win.w);
     for (var i = 0; i < 8; i++) {
       if (i >= nBld) { break; }
       let bi = OL.bldRects[i];
-      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { return bi; }
+      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { houseIsL = slotLPlan(i); return bi; }
     }
     if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
+    houseIsL = slotLPlan(clamp(id, 0, 7));
     return OL.bldRects[clamp(id, 0, 7)];
   }
+  houseIsL = id == 0 || id == 1;
   switch id {
     ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
   }
@@ -131,7 +138,11 @@ fn interior(p:vec2f) -> bool {
     for (var i = 0; i < 8; i++) {
       if (i >= nBld) { break; }
       let b = OL.bldRects[i];
-      if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
+      if (slotLPlan(i)) {
+        if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22) { return true; }
+        if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72) { return true; }
+        if (p.x > b.x + 9.72 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
+      } else if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
     }
     return false;
   }
@@ -149,8 +160,8 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
   if (F.eye.z <= 1.0001) {
     if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
-    if (OL.win.z < 0.5 && id < 2) {
-      // The L-shaped classic house: south block, north-west hall and north-east wing (map.ts buildingFootprint).
+    if (houseIsL) {
+      // The L-shaped bungalow: south block, north-west hall and north-east wing (map.ts buildingFootprint).
       let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6) || (F.eye.x > b.x + 9.4 && F.eye.y > b.y + 1.4);
       if (!eyeIn) { return false; }
       let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
