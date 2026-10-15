@@ -1,6 +1,6 @@
 import { createAIAgent, type AIAgent, type NoiseEvent } from "@arcade/kit/sim/ai"
 import type { Rect } from "@arcade/kit/sim/geom"
-import type { CoopSim } from "../coop-sim"
+import type { OutbreakSim } from "../sim-types"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 
 /**
@@ -140,7 +140,7 @@ export function hordeTuning(resolved?: { features?: Readonly<Record<string, Reco
   return src ? { ...DEFAULT_HORDE_TUNING, ...src } : DEFAULT_HORDE_TUNING
 }
 
-export function hordesOf(sim: CoopSim): HordesState {
+export function hordesOf(sim: OutbreakSim): HordesState {
   let st = sim.getFeatureState<HordesState>("hordes")
   if (!st) {
     st = createHordesState(sim.seed)
@@ -149,7 +149,7 @@ export function hordesOf(sim: CoopSim): HordesState {
   return st
 }
 
-function bounds(sim: CoopSim): Rect {
+function bounds(sim: OutbreakSim): Rect {
   return sim.town.worldBounds ?? [0, 0, 96, 96]
 }
 
@@ -157,13 +157,13 @@ function insideBounds(b: Rect, x: number, y: number, inset: number): boolean {
   return x >= b[0] + inset && x <= b[2] - inset && y >= b[1] + inset && y <= b[3] - inset
 }
 
-function nearestSurvivor(sim: CoopSim, x: number, y: number): number {
+function nearestSurvivor(sim: OutbreakSim, x: number, y: number): number {
   let best = Infinity
   for (const s of sim.slots) best = Math.min(best, Math.hypot(s.survivor.x - x, s.survivor.y - y))
   return best
 }
 
-function insideBuilding(sim: CoopSim, x: number, y: number): boolean {
+function insideBuilding(sim: OutbreakSim, x: number, y: number): boolean {
   for (const b of sim.town.buildings) {
     const r = b.rect
     if (x >= r[0] - 0.4 && x <= r[2] + 0.4 && y >= r[1] - 0.4 && y <= r[3] + 0.4) return true
@@ -173,7 +173,7 @@ function insideBuilding(sim: CoopSim, x: number, y: number): boolean {
 
 /** Adds a horde of `size` members at `(x, y)`; it stays abstract until the next step decides otherwise. */
 export function addHorde(
-  sim: CoopSim,
+  sim: OutbreakSim,
   x: number,
   y: number,
   size: number,
@@ -202,7 +202,7 @@ export function addHorde(
 }
 
 /** Materializes every pending member of `horde` now, wherever it is (Lab staging and tests). */
-export function materializeHorde(sim: CoopSim, horde: Horde): number {
+export function materializeHorde(sim: OutbreakSim, horde: Horde): number {
   const st = hordesOf(sim)
   if (horde.goal !== HORDE_GOAL_NONE) updateLeg(sim, horde)
   let n = 0
@@ -215,7 +215,7 @@ export function materializeHorde(sim: CoopSim, horde: Horde): number {
 }
 
 /** Points `horde` at `(x, y)` as if it had heard something there. */
-export function directHorde(sim: CoopSim, horde: Horde, x: number, y: number, kind: 1 | 2 = HORDE_GOAL_NOISE): void {
+export function directHorde(sim: OutbreakSim, horde: Horde, x: number, y: number, kind: 1 | 2 = HORDE_GOAL_NOISE): void {
   horde.goal = kind
   horde.goalX = x
   horde.goalY = y
@@ -228,7 +228,7 @@ export function directHorde(sim: CoopSim, horde: Horde, x: number, y: number, ki
 const LEG_REACH = 36
 const LEG = 30
 
-function updateLeg(sim: CoopSim, h: Horde): void {
+function updateLeg(sim: OutbreakSim, h: Horde): void {
   const d = Math.hypot(h.goalX - h.x, h.goalY - h.y)
   if (d <= LEG_REACH) {
     h.legX = h.goalX
@@ -261,13 +261,13 @@ const LEG_TURNS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05]
 const LEG_LENGTHS = [LEG, LEG * 0.7, LEG * 1.3, LEG * 0.45]
 
 /** Removes `horde` and all its members from the world. */
-export function disbandHorde(sim: CoopSim, horde: Horde): void {
+export function disbandHorde(sim: OutbreakSim, horde: Horde): void {
   const st = hordesOf(sim)
   removeMembers(sim, (a) => a.hordeId === horde.id)
   st.hordes = st.hordes.filter((h) => h !== horde)
 }
 
-function removeMembers(sim: CoopSim, drop: (a: AIAgent) => boolean): number {
+function removeMembers(sim: OutbreakSim, drop: (a: AIAgent) => boolean): number {
   const agents = sim.ai.agents
   let w = 0
   for (let r = 0; r < agents.length; r++) {
@@ -292,7 +292,7 @@ function allocMemberId(st: HordesState, used: Set<number>): number {
   return -1
 }
 
-function materialize(sim: CoopSim, st: HordesState, h: Horde, count: number, inset: number): number {
+function materialize(sim: OutbreakSim, st: HordesState, h: Horde, count: number, inset: number): number {
   const b = bounds(sim)
   const nav = sim.ai.nav
   const used = new Set<number>()
@@ -364,7 +364,7 @@ function hears(h: Horde, ev: NoiseEvent, hearing: number): number {
 }
 
 /** One horde-layer tick: membership, hearing, goals, abstract movement, materializing, absorbing and directives. */
-export function stepHordes(sim: CoopSim, dt: number, tuning: HordeTuning): void {
+export function stepHordes(sim: OutbreakSim, dt: number, tuning: HordeTuning): void {
   const st = hordesOf(sim)
   if (st.hordes.length === 0 && Math.round(tuning.hordeCount) === st.seeded) {
     st.lastNoise = Math.max(st.lastNoise, lastNoiseId(sim))
@@ -515,18 +515,18 @@ export function stepHordes(sim: CoopSim, dt: number, tuning: HordeTuning): void 
   st.hordes = st.hordes.filter((h) => h.live + h.pending > 0 || hasLiveMember(sim, h.id))
 }
 
-function hasLiveMember(sim: CoopSim, id: number): boolean {
+function hasLiveMember(sim: OutbreakSim, id: number): boolean {
   for (const a of sim.ai.agents) if (a.hordeId === id && a.state !== "dead") return true
   return false
 }
 
-function lastNoiseId(sim: CoopSim): number {
+function lastNoiseId(sim: OutbreakSim): number {
   let m = 0
   for (const ev of sim.ai.noiseBus.events) m = Math.max(m, ev.id)
   return m
 }
 
-function syncSeeded(sim: CoopSim, st: HordesState, tuning: HordeTuning): void {
+function syncSeeded(sim: OutbreakSim, st: HordesState, tuning: HordeTuning): void {
   const want = Math.max(0, Math.round(tuning.hordeCount))
   if (want === st.seeded) return
   if (want < st.seeded) {

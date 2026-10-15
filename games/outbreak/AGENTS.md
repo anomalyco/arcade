@@ -3,8 +3,15 @@
 - Unlisted prototype: deployed at `/arcade/outbreak/`, accessible by link without login. Keep `noindex`, no landing panel, and no sitemap entry until promoted.
 - Simulation lives in `shared/` (deterministic, no DOM or Worker APIs), presentation in `src/`. `shared/coop-sim.ts` is the one
   world simulation: offline `LocalSession` runs it with one survivor, the co-op room (`server/room-core.ts`, Durable Object
-  `OutbreakRoom`) with up to four. Survivor actions belong in `CoopSim.stepSurvivor`, shared world updates in `stepWorld`.
-  Read `../../docs/outbreak-coop.md` before touching either, the wire protocol or `src/net-session.ts`.
+  `OutbreakRoom`) with up to four. Read `../../docs/outbreak-coop.md` before touching the sim, the wire protocol or
+  `src/net-session.ts`.
+- New features go in a folder and register; never edit `coop-sim.ts` or `src/main.ts` for a feature. A shared feature
+  lives in `shared/<feature>/`: domain modules plus an `index.ts` that only calls `registerOutbreakSharedFeature`
+  (`shared/feature-registry.ts`: sim step hooks, interactions, per-sim state and cloning, tuning namespace, net section
+  codec), and one import line in `shared/features.ts`. Features program against `OutbreakSim` and the other shapes in
+  `shared/sim-types.ts`, `shared/types.ts` and `shared/net-types.ts`, never `coop-sim.ts` or `net-protocol.ts`, and
+  other modules import a feature's domain files, never its `index.ts`. The client half lives in `src/<feature>/` and
+  registers with `src/feature-registry.ts` (Lab settings and controls, commands, harness, feel events, net hooks).
 - `shared/build.gen.ts` (gitignored) hashes `shared/`; `bun run check/build/dev` regenerate it. Co-op clients with another hash reload.
 - Every adjustable presentation value goes in the shared Lab panel. URL parameters are for session routing and automation only.
 - Proof: `bun scripts/prove.ts` from this directory, using headless Metal Chromium; no visible window or audio.

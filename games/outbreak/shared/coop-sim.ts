@@ -14,11 +14,10 @@ import {
   findFinisherTarget,
   OutbreakCombatSubsystem,
   type OutbreakCombatSnapshot,
-} from "./melee/index"
+} from "./combat"
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures } from "./feature-registry"
-import "./hordes/index"
-import "./discovery/index"
+import "./features"
 import { openingClockActive } from "./pacing"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
@@ -32,21 +31,16 @@ import {
   stepHoldInteraction,
   stepInteractionState,
   windowInteractionHandler,
-  type InteractTarget,
-  type PeekInfo,
 } from "./interact"
 import { makeTown, sightRects, SIZE, solidRects, type Door, type Town, type WindowOpening } from "./map"
-import {
-  OutbreakProgression,
-  type Notice,
-  type OutbreakProgressionSnapshot,
-  type ProgressionCommand,
-  type ProgressionTuning,
-  type WorldContext,
-} from "./progression/index"
+import { OutbreakProgression } from "./progression/progression"
+import type { ProgressionTuning } from "./progression/tuning"
+import type { OutbreakProgressionSnapshot, ProgressionCommand, WorldContext } from "./progression/types"
+import { resolveSessionTuning } from "./session-tuning"
+import type { Command, OutbreakSim, SessionTuning, Survivor, SurvivorSlot } from "./sim-types"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
-import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
-import { OutbreakVehicleSubsystem, vehicleSolidRects, type OutbreakVehicleSnapshot } from "./vehicles/index"
+import type { Notice } from "./types"
+import { OutbreakVehicleSubsystem, vehicleSolidRects, type OutbreakVehicleSnapshot } from "./vehicles"
 import { StreamingWorld, type StreamingWorldSnapshot, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
@@ -59,16 +53,7 @@ export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
 
 export const MAX_SURVIVORS = SPAWN_POINTS.length
 
-export type SurvivorSlot = {
-  /** Public id: "player" offline, the seat id in co-op. Also the AI target and noise source id. */
-  readonly id: string
-  readonly index: number
-  survivor: Survivor
-  prompt: InteractTarget | undefined
-  peek: PeekInfo | null
-  /** Feedback for this survivor (search results, recipes learned, "Inventory full"), drained by its presentation. */
-  notices: Notice[]
-}
+export type { SurvivorSlot } from "./sim-types"
 
 export function createSurvivor(x: number, y: number): Survivor {
   return {
@@ -161,7 +146,7 @@ function cloneSurvivorState(s: Survivor): Survivor {
  * Doors, windows, barricades, loot containers, ground drops, workbenches, zombies, shots and the clock are shared;
  * hotbar, belt, pack, stamina, battery and channels belong to each survivor. Items live in `progression.ledger`.
  */
-export class CoopSim {
+export class CoopSim implements OutbreakSim {
   readonly seed: number
   readonly houseSeed: number
   readonly terrain: number
@@ -226,7 +211,7 @@ export class CoopSim {
       this.progression.ensureContainerStores()
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
-    if (this.progression.boardHeldOut(this.town, this.ai)) this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
+    if (this.progression.knowledge.boardHeldOut(this.town, this.ai)) this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     this.vehicles = new OutbreakVehicleSubsystem(this.worldStream, this.town)
     this.featureStates = outbreakSharedFeatures.createSimStates(this)
     this.registry = new InteractionRegistry([
