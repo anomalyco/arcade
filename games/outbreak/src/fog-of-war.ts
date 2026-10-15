@@ -538,15 +538,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   fieldState[idx] = s;
   var edgeD = 0.0;
   if (OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001 && s.x < 0.998) {
-    let eye = lights[0].pos.xz;
-    let delta = p - eye;
-    let d = max(0.001, length(delta));
-    let soft = clamp(OL.unseen.edgeSoftness, 0.1, 2.0);
-    let feather = 0.05 + 0.2 * soft;
-    let facing = dot(delta / d, vec2f(cos(F.effects.x), sin(F.effects.x)));
-    let a = (atan2(delta.y, delta.x) + TAU) % TAU;
-    let rayF = a / TAU * f32(RAYS);
-    edgeD = evalUnseenEdgeDepth(p, s.x, d, facing, feather, soft, rayF);
+    edgeD = evalUnseenEdgeDepth(s.x, s.y, p);
   }
   textureStore(fieldOut, tx, vec4f(s.x, s.y, edgeD, 1.0));
 }

@@ -1391,6 +1391,7 @@ async function main() {
     adapter,
     device,
     renderer,
+    render,
     session: () => session,
     vision: () => vision,
     avatar: () => avatar,

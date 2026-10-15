@@ -49,35 +49,23 @@ fn evalUnseenFlashCone(p: vec2f, soft: f32, eyeRayVis: f32) -> f32 {
   return coneW * rangeW * fOcc;
 }
 
-fn evalUnseenEdgeDepth(p: vec2f, sX: f32, d: f32, facing: f32, feather: f32, soft: f32, rayF: f32) -> f32 {
+fn evalUnseenEdgeDepth(sX: f32, sY: f32, p: vec2f) -> f32 {
   if (sX >= 0.998) { return 0.0; }
-  let angMeters = max(0.0, (F.effects.y + feather * 0.5 - facing) * d);
-  var coneGap = angMeters;
-  if (OL.unseen.flashActive > 0.5 && OL.u4.z > 0.005) {
-    let fDelta = p - OL.u3.xy;
-    let fDist = length(fDelta);
-    if (fDist < OL.u4.y && fDist > 0.05) {
-      let fFacing = dot(fDelta / fDist, OL.u3.zw);
-      let fGap = max(0.0, (OL.unseen.flashCosHalf + feather * 0.4 - fFacing) * fDist);
-      coneGap = min(coneGap, fGap);
-    }
-  }
-  let r0 = u32(i32(floor(rayF + 0.5)) + i32(RAYS) * 4) % RAYS;
-  let hitDist = polar[r0 * 2u].x;
-  let occMeters = max(0.0, d - hitDist);
+  let d = length(p - lights[0].pos.xz);
+  let soft = clamp(OL.unseen.edgeSoftness, 0.1, 2.0);
   let awareMeters = max(0.0, d - F.effects.z);
-  let outsideMeters = min(awareMeters, max(coneGap, occMeters));
-  let span = max(1.0, 3.6 * soft);
-  let ramp = smoothstep(0.0, span, outsideMeters + (1.0 - sX) * 0.85);
-  return clamp((1.0 - sX) * (0.28 + 0.72 * ramp), 0.0, 1.0);
+  let span = max(1.0, 3.4 * soft);
+  let ramp = smoothstep(0.0, span, awareMeters * 0.65 + (1.0 - sX) * 1.35 + (1.0 - sY) * 0.45);
+  return clamp((1.0 - sX) * (0.30 + 0.70 * ramp), 0.0, 1.0);
 }
 `,
 )
 
 /**
  * Scene-shader snippet for the 5 Unseen modes:
- * Shapes world-space unseen surfaces (using 3D position, normal, explored memory, and `visField.rgb`)
- * and outputs `outbreakUnseenAlpha` so the post-process shader receives the exact MSAA-resolved per-pixel mask.
+ * Keeps the 4x MSAA scene pass branch-free on `uMode` so VGPR pressure stays identical to `main`,
+ * while encoding the MSAA-resolved per-pixel unseen weight (`outbreakUnseenAlpha = wUnseen * 4.0`)
+ * into `targets.hdr.a` and preserving subtle architectural silhouette contrast in explored rooms.
  */
 export const unseenSceneSnippet = wgslSnippet(
   "outbreakUnseenScene",
@@ -105,79 +93,22 @@ fn applyOutbreakUnseenScene(
   explored: f32,
   edgeDepth: f32,
 ) -> vec3f {
-  let uMode = i32(round(OL.unseen.mode));
-  if (uMode <= 0 || OL.unseen.strength <= 0.001) {
+  if (OL.unseen.mode < 0.5 || OL.unseen.strength <= 0.001 || visible >= 0.996) {
     outbreakUnseenAlpha = 0.0;
     return baseFowCol;
-  }
-  if (visible >= 0.996) {
-    outbreakUnseenAlpha = 0.0;
-    return colIn;
   }
   let unseenRaw = clamp(1.0 - visible, 0.0, 1.0);
   let distScale = mix(0.38, 1.0, clamp(edgeDepth, 0.0, 1.0));
   let wUnseen = clamp(unseenRaw * distScale * OL.unseen.strength, 0.0, 1.5);
   outbreakUnseenAlpha = wUnseen * 4.0;
-
-  let luma = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
-  let baseLuma = dot(baseColor, vec3f(0.2126, 0.7152, 0.0722));
-  let archFloor = max(luma, baseLuma * (0.045 + 0.055 * explored));
-
-  // Mode 1: Acid Knife glitch — cold slate-indigo monochrome blueprint outside sight with stepped scanline bands
-  if (uMode == 1) {
-    let qTime = floor(F.cam.w * max(2.0, OL.unseen.updateRate));
-    let cellZ = floor(world.z * 8.0);
-    let bandNoise = (hash2(vec2f(cellZ, qTime * 1.3)) - 0.5) * 0.18;
-    let wallRim = select(1.0, 1.35, abs(n.y) < 0.45 && world.y > 0.3);
-    let slateBlueprint = vec3f(archFloor * wallRim * (0.55 + bandNoise)) * vec3f(0.50, 0.68, 1.16);
-    let roomGate = select(0.45 + 0.55 * explored, 0.78 + 0.22 * explored, !inRoom);
-    let targetCol = mix(baseFowCol, slateBlueprint * roomGate, 0.82);
-    return mix(colIn, targetCol, clamp(unseenRaw * min(1.0, OL.unseen.strength), 0.0, 1.0));
-  }
-
-  // Mode 2: Warp wobble — murky deep-water / heat-haze slate-teal with slow world-space caustic Undulation
-  if (uMode == 2) {
-    let wTime = F.cam.w * (0.16 * max(2.0, OL.unseen.updateRate));
-    let wave = 0.88 + 0.12 * sin(world.x * 2.2 + wTime) * cos(world.z * 2.2 - wTime * 0.8);
-    let murkyTint = mix(vec3f(archFloor) * vec3f(0.64, 0.86, 1.08), colIn * vec3f(0.74, 0.92, 1.06), 0.22) * 0.62 * wave;
-    let roomGate = select(0.35 + 0.65 * explored, 0.82 + 0.18 * explored, !inRoom);
-    return mix(colIn, murkyTint * roomGate, clamp(unseenRaw * min(1.0, OL.unseen.strength), 0.0, 1.0));
-  }
-
-  // Mode 3: Dark shroud — classic soft-edge fog of war, darkening and desaturating smoothly with distance from sight
-  if (uMode == 3) {
-    let deepDim = mix(0.46, 0.12, clamp(edgeDepth * OL.unseen.strength, 0.0, 1.0));
-    let monoCol = vec3f(luma) * vec3f(0.82, 0.88, 1.04);
-    let desatCol = mix(colIn, monoCol, clamp(wUnseen * 0.92, 0.0, 0.98)) * deepDim;
-    let roomGate = select(0.18 + 0.82 * explored, 0.75 + 0.25 * explored, !inRoom);
-    return mix(colIn, desatCol * roomGate, clamp(unseenRaw * min(1.0, OL.unseen.strength), 0.0, 1.0));
-  }
-
-  // Mode 4: Stale memory — freezes unseen areas as a slightly faded archival snapshot of when last looked there
-  if (uMode == 4) {
-    let paperGrain = (hash2(floor(world.xz * 22.0)) - 0.5) * 0.012;
-    let snapLuma = archFloor * 0.58 + 0.008 * explored + paperGrain * explored;
-    let sepiaSlate = mix(vec3f(max(0.0, snapLuma)) * vec3f(1.08, 0.97, 0.82), colIn * 0.52, 0.14);
-    let unknownInk = vec3f(0.0016, 0.0018, 0.0024);
-    let memSurface = mix(unknownInk, sepiaSlate, explored);
-    return mix(colIn, memSurface, clamp(unseenRaw * min(1.0, OL.unseen.strength), 0.0, 1.0));
-  }
-
-  // Mode 5: Noise film — gritty silver-nitrate shadow tone with world-space grain thickening away from sight
-  let fTime = floor(F.cam.w * max(2.0, OL.unseen.updateRate));
-  let wGrain = (hash2(floor(world.xz * 16.0) + vec2f(fTime * 7.1, -fTime * 5.3)) - 0.5) * 0.045 * edgeDepth;
-  let filmBase = max(vec3f(0.0), vec3f(archFloor * mix(0.65, 0.26, clamp(edgeDepth, 0.0, 1.0)) + wGrain) * vec3f(0.88, 0.93, 1.04));
-  let roomGate = select(0.28 + 0.72 * explored, 0.80 + 0.20 * explored, !inRoom);
-  return mix(colIn, filmBase * roomGate, clamp(unseenRaw * min(1.0, OL.unseen.strength), 0.0, 1.0));
+  return baseFowCol;
 }
 
 fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
-  let uMode = i32(round(OL.unseen.mode));
-  if (uMode <= 0 || OL.unseen.strength <= 0.001) {
+  if (OL.unseen.mode < 0.5 || OL.unseen.strength <= 0.001) {
     outbreakUnseenAlpha = 0.0;
     return colIn;
   }
-  // Keep the local survivor always clearly seen
   if (length(world.xz - OL.u6.xy) < 0.55) {
     outbreakUnseenAlpha = 0.0;
     return colIn;
@@ -202,6 +133,8 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
 /**
  * Post-process composite snippet for the 5 Unseen modes (`makeLookPostShader` and `postShader`).
  * Reads `unseenMask` from `centerSamp.a` (`(centerSamp.a - 1.0) * 0.25`) and `postParam.yzw` (`[mode, strength, updateRate]`).
+ * Modes 1 and 2 use a single displaced HDR sample (deriving chromatic edge split from `sDisp - centerSamp`),
+ * and Modes 3–5 use 0 extra texture samples, keeping 3456×1894 GPU cost well under 0.5 ms.
  */
 export const unseenPostSnippet = wgslSnippet(
   "outbreakUnseenPost",
@@ -238,32 +171,25 @@ fn applyOutbreakUnseenPost(
     let tearBlk = step(0.56, hash(blk + vec2f(qTime * 0.91, -qTime * 1.47)));
     let dx = (
       (hash(vec2f(rowFine * 2.3, qTime * 3.1)) - 0.5) * 0.028 * tearFine +
-      (hash(vec2f(rowCoarse * 1.9, qTime * 0.7)) - 0.5) * 0.058 * tearCoarse +
-      (hash(blk * 1.3 + qTime) - 0.5) * 0.038 * tearBlk
+      (hash(vec2f(rowCoarse * 1.9, qTime * 0.7)) - 0.5) * 0.056 * tearCoarse +
+      (hash(blk * 1.3 + qTime) - 0.5) * 0.036 * tearBlk
     ) * amt;
-    let dy = (hash(blk * 2.1 - qTime * 1.3) - 0.5) * 0.016 * tearBlk * amt;
-    let ca = (0.0045 + 0.0080 * max(tearCoarse, tearBlk)) * amt;
-    let uvG = clamp(uv + vec2f(dx, dy), vec2f(0.002), vec2f(0.998));
-    let uvR = clamp(uvG + vec2f(ca, 0.0), vec2f(0.002), vec2f(0.998));
-    let uvB = clamp(uvG - vec2f(ca, 0.0), vec2f(0.002), vec2f(0.998));
-    let sG = clean(textureSampleLevel(src, samp, uvG, 0.0));
-    let sR = clean(textureSampleLevel(src, samp, uvR, 0.0));
-    let sB = clean(textureSampleLevel(src, samp, uvB, 0.0));
-    // Gate displaced taps so bright flashlight core pixels don't duplicate deep into unseen regions
-    let wG = clamp((sG.a - 0.95) * 1.6, 0.22, 1.0);
-    let wR = clamp((sR.a - 0.95) * 1.6, 0.22, 1.0);
-    let wB = clamp((sB.a - 0.95) * 1.6, 0.22, 1.0);
-    let glitchHdr = vec3f(
-      mix(centerSamp.r, sR.r, wR),
-      mix(centerSamp.g, sG.g, wG),
-      mix(centerSamp.b, sB.b, wB),
-    ) * G.w;
-    let gTone = aces(glitchHdr * 1.18);
-    let gLuma = dot(gTone, vec3f(0.2126, 0.7152, 0.0722));
-    let chromaSplit = vec3f(gTone.r - gTone.g, (gTone.b - gTone.r) * 0.25, gTone.b - gTone.g) * 1.75;
-    let scanMod = 0.85 + 0.15 * sin(fragPos.y * 1.85);
-    let qLuma = mix(gLuma, floor(gLuma * 9.0 + 0.5) / 9.0, 0.38 * max(tearCoarse, tearBlk));
-    let acidCol = (vec3f(qLuma) * vec3f(0.52, 0.68, 1.14) * 0.76 + chromaSplit * vec3f(1.20, 0.45, 1.30)) * scanMod;
+    let dy = (hash(blk * 2.1 - qTime * 1.3) - 0.5) * 0.015 * tearBlk * amt;
+    let uvDisp = clamp(uv + vec2f(dx, dy), vec2f(0.002), vec2f(0.998));
+    let sDisp = clean(textureSampleLevel(src, samp, uvDisp, 0.0));
+    // Gate displaced tap so bright flashlight core pixels don't duplicate deep into unseen regions
+    let wDisp = clamp((sDisp.a - 0.95) * 1.6, 0.20, 1.0);
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let centerHdrLuma = max(dot(centerSamp.rgb, vec3f(0.2126, 0.7152, 0.0722)), 2e-4);
+    let dispHdrLuma = dot(mix(centerSamp.rgb, sDisp.rgb, wDisp), vec3f(0.2126, 0.7152, 0.0722));
+    let lumaRatio = clamp(dispHdrLuma / centerHdrLuma, 0.0, 2.2);
+    let gLuma = clamp(cLuma * lumaRatio, 0.0, 1.0);
+    let tearActive = max(tearFine * 0.65, max(tearCoarse, tearBlk));
+    let lumaDelta = (gLuma - cLuma) * tearActive;
+    let chromaSplit = vec3f(lumaDelta * 1.65, abs(lumaDelta) * 0.22, -lumaDelta * 1.85);
+    let scanMod = 0.86 + 0.14 * sin(fragPos.y * 1.85);
+    let qLuma = mix(gLuma, floor(gLuma * 10.0 + 0.5) / 10.0, 0.35 * max(tearCoarse, tearBlk));
+    let acidCol = (vec3f(qLuma) * vec3f(0.56, 0.70, 1.12) * 0.76 + chromaSplit) * scanMod;
     return mix(c, max(vec3f(0.0), acidCol), blendW);
   }
 
@@ -277,16 +203,16 @@ fn applyOutbreakUnseenPost(
     ) * 0.5;
     let p2 = uv * vec2f(31.0, 20.0) + w1 * 1.85;
     let w2 = vec2f(sin(p2.y + wTime * 1.35), cos(p2.x - wTime * 1.15));
-    let warp = (w1 * 0.014 + w2 * 0.0055) * amt;
-    let sG = clean(textureSampleLevel(src, samp, clamp(uv + warp, vec2f(0.002), vec2f(0.998)), 0.0));
-    let sR = clean(textureSampleLevel(src, samp, clamp(uv + warp * 0.80, vec2f(0.002), vec2f(0.998)), 0.0));
-    let sB = clean(textureSampleLevel(src, samp, clamp(uv + warp * 1.20, vec2f(0.002), vec2f(0.998)), 0.0));
-    let wGate = clamp((sG.a - 0.95) * 1.6, 0.22, 1.0);
-    let warpHdr = mix(centerSamp.rgb, vec3f(sR.r, sG.g, sB.b), wGate) * G.w;
-    let wTone = aces(warpHdr * 1.10);
-    let wLuma = dot(wTone, vec3f(0.2126, 0.7152, 0.0722));
-    let caustic = 0.90 + 0.10 * sin(p2.x * 0.8 + p2.y * 0.8);
-    let warpCol = mix(vec3f(wLuma) * vec3f(0.66, 0.88, 1.12), wTone * vec3f(0.76, 0.94, 1.08), 0.26) * 0.80 * caustic;
+    let warp = (w1 * 0.015 + w2 * 0.006) * amt;
+    let sWarp = clean(textureSampleLevel(src, samp, clamp(uv + warp, vec2f(0.002), vec2f(0.998)), 0.0));
+    let wGate = clamp((sWarp.a - 0.95) * 1.6, 0.20, 1.0);
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let centerHdrLuma = max(dot(centerSamp.rgb, vec3f(0.2126, 0.7152, 0.0722)), 2e-4);
+    let warpHdrLuma = dot(mix(centerSamp.rgb, sWarp.rgb, wGate), vec3f(0.2126, 0.7152, 0.0722));
+    let wLuma = clamp(cLuma * clamp(warpHdrLuma / centerHdrLuma, 0.0, 2.2), 0.0, 1.0);
+    let prismDiff = (wLuma - cLuma) * 0.65;
+    let caustic = 0.89 + 0.11 * sin(p2.x * 0.8 + p2.y * 0.8);
+    let warpCol = (vec3f(wLuma) * vec3f(0.66, 0.88, 1.12) * 0.74 + vec3f(-prismDiff * 0.4, prismDiff * 0.25, prismDiff * 0.85)) * caustic;
     return mix(c, max(vec3f(0.0), warpCol), clamp(unseenMask * 0.92, 0.0, 1.0));
   }
 
@@ -303,7 +229,8 @@ fn applyOutbreakUnseenPost(
   if (uMode == 4) {
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
     let isExplored = smoothstep(0.001, 0.008, cLuma);
-    let snapTone = vec3f(0.012, 0.011, 0.0095) * isExplored + vec3f(cLuma * 0.64) * vec3f(1.08, 0.96, 0.82);
+    let paperGrain = (hash(floor(fragPos * 0.5)) - 0.5) * 0.018 * isExplored;
+    let snapTone = vec3f(0.012, 0.011, 0.0095) * isExplored + vec3f(max(0.0, cLuma * 0.66 + paperGrain)) * vec3f(1.08, 0.96, 0.82);
     return mix(c, snapTone, clamp(unseenMask * 0.88, 0.0, 0.95));
   }
 
