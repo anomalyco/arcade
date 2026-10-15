@@ -15,6 +15,7 @@ import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { LocalSession, type Command } from "../shared/session"
+import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
@@ -425,6 +426,7 @@ async function main() {
           jump: step.jump,
           interactHeld: step.interactHeld,
           fire: idx === 0 ? fireEdge : false,
+          fireHeld: input.firing,
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
@@ -650,7 +652,9 @@ async function main() {
         ? ` · Reloading…`
         : p.equippedItem === "pistol"
           ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
-          : ""
+          : p.meleeWeapon
+            ? ` · ${MELEE_WEAPONS[p.meleeWeapon].shortLabel} ${p.meleeDurability}/${p.meleeMaxDurability}`
+            : ""
     const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""

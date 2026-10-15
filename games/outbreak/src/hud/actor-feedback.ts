@@ -1,5 +1,5 @@
 import type { NoiseEvent } from "../../shared/ai"
-import { PISTOL_RELOAD_TIME, type CombatChannel } from "../../shared/combat"
+import { PISTOL_RELOAD_TIME, type CombatChannel, type MeleeWeaponId } from "../../shared/combat"
 import type { InteractTarget } from "../../shared/interact"
 import type { InventoryState } from "../../shared/inventory"
 import type { Town } from "../../shared/map"
@@ -9,7 +9,13 @@ import type { CalloutKind, CalloutOptions } from "./callouts"
 /** The survivor fields feedback reads. Remote co-op players can pass their snapshot of the same shape. */
 export type FeedbackActor = {
   health: number
-  equippedItem: "pistol" | "hands"
+  equippedItem: "pistol" | "hands" | MeleeWeaponId
+  meleeWeapon?: MeleeWeaponId | null
+  meleeDurability?: number
+  meleeMaxDurability?: number
+  meleePhase?: string
+  meleeCharge?: number
+  meleeHeavy?: boolean
   magAmmo: number
   magCapacity: number
   reserveAmmo: number
@@ -103,6 +109,14 @@ export class ActorFeedback {
         key: "channel",
         progress: a.channel.elapsed / Math.max(0.01, a.channel.duration),
       })
+    }
+    if (a.meleePhase === "windup" && (a.meleeCharge ?? 0) > 0.08) {
+      emit("Charging", "progress", {
+        key: "melee-charge",
+        progress: Math.min(1, a.meleeCharge ?? 0),
+      })
+    } else if (p.meleePhase === "windup" && (p.meleeCharge ?? 0) > 0.08 && a.meleePhase !== "windup") {
+      emit("Charging", "progress", { key: "melee-charge", progress: 1, duration: 0 })
     }
 
     const loot = a.lootMessage && a.lootMessageUntil !== p.lootMessageUntil ? a.lootMessage : null
@@ -198,6 +212,8 @@ export function lootCallout(message: string): { text: string; kind: CalloutKind;
   if (message.startsWith("Found ")) return null
   if (/^Searched .*: empty$/.test(message)) return { text: "Nothing here", kind: "info" }
   if (message.startsWith("Out of 9mm")) return { text: "Out of ammo", kind: "warning", key: "ammo" }
+  if (message.endsWith(" broke!")) return { text: message, kind: "warning", key: "durability" }
+  if (message.includes(" durability low")) return { text: message, kind: "warning", key: "durability" }
   if (message.startsWith("Need wooden planks")) return { text: "No planks", kind: "warning" }
   if ((m = message.match(/^Barricaded \((\d)\/3/))) return { text: `Boarded ${m[1]}/3`, kind: "result" }
   if (message.startsWith("Already fully barricaded")) return { text: "Fully boarded", kind: "info" }
@@ -209,6 +225,12 @@ function snapshot(a: FeedbackActor): FeedbackActor {
   return {
     health: a.health,
     equippedItem: a.equippedItem,
+    meleeWeapon: a.meleeWeapon,
+    meleeDurability: a.meleeDurability,
+    meleeMaxDurability: a.meleeMaxDurability,
+    meleePhase: a.meleePhase,
+    meleeCharge: a.meleeCharge,
+    meleeHeavy: a.meleeHeavy,
     magAmmo: a.magAmmo,
     magCapacity: a.magCapacity,
     reserveAmmo: a.reserveAmmo,

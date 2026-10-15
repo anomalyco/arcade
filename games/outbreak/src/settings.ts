@@ -4,6 +4,7 @@ import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/la
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
+import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
@@ -65,7 +66,7 @@ export type OutbreakViewSettings = CameraShakeSettings & {
   diagnostic: number
 }
 
-export type OutbreakCombatSettings = {
+export type OutbreakCombatSettings = MeleeTuning & {
   infiniteAmmo: number
   bloodStyle: number
 }
@@ -122,6 +123,7 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
   bloodStyle: 1,
+  ...DEFAULT_MELEE_TUNING,
 }
 
 export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {

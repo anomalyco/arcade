@@ -853,10 +853,15 @@ export class ZombieCrowdRenderer {
       const torsoOff = bOff + 12
       const headOff = bOff + 24
 
-      if (a.state === "dead") {
-        this.seenAt[s] = -1e9
+      if (a.state === "dead" || a.state === "knockdown") {
+        if (a.state === "dead") this.seenAt[s] = -1e9
         if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
-        const col = Math.min(1, this.collapse[s]! + dt * 4.2)
+        const col =
+          a.state === "dead"
+            ? Math.min(1, this.collapse[s]! + dt * 4.2)
+            : a.timer > 0.42
+              ? Math.min(0.88, this.collapse[s]! + dt * 5.4)
+              : Math.max(0.12, this.collapse[s]! - dt * 2.4)
         this.collapse[s] = col
         const c = smoother(col)
         const groundY = support(a.x, a.y)
@@ -983,6 +988,9 @@ export class ZombieCrowdRenderer {
           this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         }
         continue
+      }
+      if (this.collapse[s]! > 0) {
+        this.collapse[s] = Math.max(0, this.collapse[s]! - dt * 4.5)
       }
 
       const clamberLift = a.clamberWindowId
