@@ -9,7 +9,7 @@ import { join, resolve } from "node:path"
 const root = resolve(import.meta.dir, ".."), out = join(root, "captures/dev-hub")
 mkdirSync(out, { recursive: true })
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath = readdirSync(cache).filter(name => /^chromium-\d+$/.test(name)).reverse().map(name => `${cache}/${name}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath = readdirSync(cache).filter(name => /^chromium_headless_shell-\d+$/.test(name)).reverse().map(name => `${cache}/${name}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=user-gesture-required"] })
 const errors: string[] = [], report: Record<string, unknown> = {}, routers: ChildProcess[] = []
 const check = (ok: unknown, message: string) => { if (!ok) throw new Error(message) }

@@ -44,7 +44,7 @@ for (let r = 3; r < 9 && procedural.length < 3; r++) for (let cx = -r; cx <= r; 
 }
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const chrome = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).sort().reverse().map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const chrome = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse().map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(chrome)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const report: Record<string, unknown> = { phase, scenes: {} as Record<string, unknown> }

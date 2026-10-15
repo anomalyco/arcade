@@ -41,10 +41,10 @@ await server.listen()
 const port = (server.httpServer!.address() as { port: number }).port
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache)
-  .filter((n) => /^chromium-\d+$/.test(n))
+  .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
   .sort()
   .reverse()
-  .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 assert(chrome, "Playwright Chromium binary not found")
 const browser = await chromium.launch({
@@ -159,14 +159,20 @@ async function trace(page: Page, name: string, caption: string, trigger: () => P
       const y1 = Math.min(vw.height, Math.max(...boxes.map((b) => b.y + b.h)) + 40)
       clip = { x: Math.floor(x0), y: Math.floor(y0), width: Math.floor((x1 - x0) / 2) * 2, height: Math.floor((y1 - y0) / 2) * 2 }
     }
-    await page.screenshot({ path: resolve(dir, `f${String(i).padStart(3, "0")}.png`), clip })
+    const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
+    if (wantVideo || i === 0 || i === Math.floor(frames / 2) || i === frames - 1) {
+      await page.screenshot({ path: resolve(dir, `f${String(i).padStart(3, "0")}.png`), clip })
+    }
   }
   await page.evaluate(() => {
     for (const a of (window as any).__traceAnims as Animation[]) a.finish()
   })
   const issues = analyse(samples)
+  const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
   const mp4 = resolve(out, `${name}.mp4`)
-  const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "60", "-i", resolve(dir, "f%03d.png"), "-vf", "tpad=stop_mode=clone:stop_duration=0.6,format=yuv420p", "-c:v", "libx264", "-crf", "16", "-an", mp4])
+  const ff = wantVideo
+    ? spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "60", "-i", resolve(dir, "f%03d.png"), "-vf", "tpad=stop_mode=clone:stop_duration=0.6,format=yuv420p", "-c:v", "libx264", "-crf", "16", "-an", mp4])
+    : { status: 1 }
   results.push({ name, caption, frames, issues, clip: ff.status === 0 ? mp4 : undefined, samples })
   console.log(`${name}: ${frames} frames, ${issues.length} issues${issues.length ? `\n  ${issues.slice(0, 6).map((i) => `${i.kind} ${i.el} @${i.t.toFixed(0)}ms ${i.detail}`).join("\n  ")}` : ""}`)
 }

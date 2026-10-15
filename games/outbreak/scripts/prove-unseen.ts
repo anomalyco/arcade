@@ -32,10 +32,10 @@ const port = (server.httpServer!.address() as { port: number }).port
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache)
-  .filter((n) => /^chromium-\d+$/.test(n))
+  .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
   .sort()
   .reverse()
-  .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 assert(executablePath, "Chromium executable not found in ~/Library/Caches/ms-playwright")
 
@@ -267,14 +267,17 @@ try {
   stills.push(showZombiesStill)
 
   const benchOnly = process.argv.includes("--bench-only")
-  // Per-mode stills & 96-frame (3.2s @ 30fps) muted top-down clips
-  const totalFrames = 96
+  const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
+  // Per-mode stills (and optional 96-frame 3.2s @ 30fps muted top-down clips when --video / ARCADE_VIDEO=1)
+  const totalFrames = wantVideo ? 96 : 70
   for (const m of MODES) {
     if (benchOnly && m.id <= 5) continue
     await stageHouseScene({ mode: m.id, hour: 22, hideZombies: true, px: 27.7, py: 33.6, aim: -2.25 })
     const frameDir = resolve(outDir, `frames-${m.slug}`)
-    rmSync(frameDir, { recursive: true, force: true })
-    mkdirSync(frameDir, { recursive: true })
+    if (wantVideo) {
+      rmSync(frameDir, { recursive: true, force: true })
+      mkdirSync(frameDir, { recursive: true })
+    }
 
     for (let f = 0; f < totalFrames; f++) {
       await capPage.evaluate(async (frameIdx) => {
@@ -305,8 +308,10 @@ try {
         await h.step(1 / 30, { mx, my, aim })
       }, f)
 
-      const framePath = resolve(frameDir, `frame_${String(f).padStart(4, "0")}.jpg`)
-      await gameCanvas.screenshot({ path: framePath, type: "jpeg", quality: 95 })
+      if (wantVideo) {
+        const framePath = resolve(frameDir, `frame_${String(f).padStart(4, "0")}.jpg`)
+        await gameCanvas.screenshot({ path: framePath, type: "jpeg", quality: 95 })
+      }
       if (f === 69) {
         const stillPath = resolve(outDir, `${m.slug}.png`)
         await gameCanvas.screenshot({ path: stillPath })
@@ -314,34 +319,38 @@ try {
       }
     }
 
-    const mp4Path = resolve(outDir, `${m.slug}.mp4`)
-    const ff = Bun.spawnSync(
-      [
-        "ffmpeg",
-        "-y",
-        "-framerate",
-        "30",
-        "-i",
-        resolve(frameDir, "frame_%04d.jpg"),
-        "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-crf",
-        "20",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        mp4Path,
-      ],
-      { stdout: "pipe", stderr: "pipe" },
-    )
-    assert.equal(ff.exitCode, 0, `ffmpeg failed for ${m.slug}: ${ff.stderr.toString()}`)
-    rmSync(frameDir, { recursive: true, force: true })
-    clips.push(mp4Path)
-    console.log(`Captured ${m.slug}.png & ${m.slug}.mp4`)
+    if (wantVideo) {
+      const mp4Path = resolve(outDir, `${m.slug}.mp4`)
+      const ff = Bun.spawnSync(
+        [
+          "ffmpeg",
+          "-y",
+          "-framerate",
+          "30",
+          "-i",
+          resolve(frameDir, "frame_%04d.jpg"),
+          "-an",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "fast",
+          "-crf",
+          "20",
+          "-pix_fmt",
+          "yuv420p",
+          "-movflags",
+          "+faststart",
+          mp4Path,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      )
+      assert.equal(ff.exitCode, 0, `ffmpeg failed for ${m.slug}: ${ff.stderr.toString()}`)
+      rmSync(frameDir, { recursive: true, force: true })
+      clips.push(mp4Path)
+      console.log(`Captured ${m.slug}.png & ${m.slug}.mp4`)
+    } else {
+      console.log(`Captured ${m.slug}.png`)
+    }
   }
 
   assert.deepEqual(errors, [])

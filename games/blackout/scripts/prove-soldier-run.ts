@@ -137,6 +137,7 @@ try {
   // 4) Run east (d, f=120..160), 5) Hard stop (f=160..180).
   const initialPos = await cmpPage.evaluate(() => (window as any).__proof.ready[0])
   const totalVideoFrames = 180 // 6 seconds at 30 fps (360 60Hz mux ticks)
+  const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
   for (let f = 0; f < totalVideoFrames; f++) {
     if (f === 2) await cmpPage.keyboard.down("w")
     if (f === 45) {
@@ -155,7 +156,7 @@ try {
     }
     if (f === 160) await cmpPage.keyboard.up("d")
     await cmpPage.evaluate(() => (window as any).__advance(2))
-    await cmpPage.screenshot({ path: join(out, "frames", `${String(f).padStart(4, "0")}.png`) })
+    if (wantVideo) await cmpPage.screenshot({ path: join(out, "frames", `${String(f).padStart(4, "0")}.png`) })
     if (f === 28 || f === 65 || f === 105 || f === 145) {
       await cmpPage.screenshot({ path: join(out, `compare-frame-${String(f).padStart(3, "0")}.png`) })
     }
@@ -164,14 +165,16 @@ try {
   if (cmpProof.mismatch.length) throw new Error(`Compare mux mismatch: ${JSON.stringify(cmpProof.mismatch[0])}`)
   if (cmpProof.last[0].x === initialPos.x && cmpProof.last[0].y === initialPos.y) throw new Error("Compare player did not move")
 
-  const encode = spawnSync("ffmpeg", [
-    "-hide_banner", "-loglevel", "warning", "-y",
-    "-framerate", "30", "-i", join(out, "frames", "%04d.png"),
-    "-an", "-c:v", "h264_videotoolbox", "-profile:v", "high", "-q:v", "75",
-    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-    join(out, "compare-mux.mp4"),
-  ], { stdio: "inherit" })
-  if (encode.status !== 0) throw new Error("ffmpeg h264_videotoolbox encode failed")
+  if (wantVideo) {
+    const encode = spawnSync("ffmpeg", [
+      "-hide_banner", "-loglevel", "warning", "-y",
+      "-framerate", "30", "-i", join(out, "frames", "%04d.png"),
+      "-an", "-c:v", "h264_videotoolbox", "-profile:v", "high", "-q:v", "75",
+      "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+      join(out, "compare-mux.mp4"),
+    ], { stdio: "inherit" })
+    if (encode.status !== 0) throw new Error("ffmpeg h264_videotoolbox encode failed")
+  }
 
   // Build contact sheets (<= 1280 px on the long edge) directly on an HTML5 canvas inside the headless page.
   for (const [view, crop] of [

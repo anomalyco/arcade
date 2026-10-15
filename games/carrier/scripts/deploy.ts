@@ -7,6 +7,7 @@
 //
 //   bun scripts/deploy.ts               build and deploy
 //   bun scripts/deploy.ts --if-changed  build, then deploy only if the fingerprint differs from the live one
+//   bun scripts/deploy.ts --no-build    reuse the existing dist/ build (e.g. after `bun run check`)
 //   bun scripts/deploy.ts --dry         build and print the fingerprint, no deploy
 import { $ } from "bun"
 import { createHash } from "node:crypto"
@@ -20,6 +21,7 @@ const WORKER_OUT = ".wrangler/deploy-check"
 const args = process.argv.slice(2)
 const ifChanged = args.includes("--if-changed")
 const dry = args.includes("--dry")
+const noBuild = args.includes("--no-build")
 
 const files = (dir: string): string[] =>
   readdirSync(dir).flatMap((f) => {
@@ -27,9 +29,11 @@ const files = (dir: string): string[] =>
     return statSync(p).isDirectory() ? files(p) : [p]
   })
 
-await $`bun scripts/build-id.ts`
-rmSync("dist", { recursive: true, force: true })
-await $`bunx --no-install vite build`
+if (!noBuild) {
+  await $`bun scripts/build-id.ts`
+  rmSync("dist", { recursive: true, force: true })
+  await $`bunx --no-install vite build`
+}
 rmSync(WORKER_OUT, { recursive: true, force: true })
 await $`bunx --no-install wrangler deploy --dry-run --outdir=${WORKER_OUT}`.quiet()
 

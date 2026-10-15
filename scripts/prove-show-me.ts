@@ -49,9 +49,9 @@ function runArcade(args: string[], expectExit = 0): { status: number; stdout: st
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache)
-  .filter(name => /^chromium-\d+$/.test(name))
+  .filter(name => /^chromium_headless_shell-\d+$/.test(name))
   .reverse()
-  .map(name => `${cache}/${name}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map(name => `${cache}/${name}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 
 const browser = await chromium.launch({

@@ -13,7 +13,7 @@ assert.equal(Bun.spawnSync(["bun","run","build"],{cwd:game,stdout:"inherit",stde
 const root=resolve(game,"dist/arcade/outbreak")
 const fixture=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(req){const p=new URL(req.url).pathname,f=Bun.file(resolve(root,`.${p==="/"?"/index.html":p}`));return await f.exists()?new Response(f):new Response("Not found",{status:404})}})
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
-const chrome=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).sort().reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const chrome=readdirSync(cache).filter(n=>/^chromium_headless_shell-\d+$/.test(n)).sort().reverse().map(n=>`${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(chrome)
 const browser=await chromium.launch({executablePath:chrome,headless:true,args:["--enable-unsafe-webgpu","--use-angle=metal","--ignore-gpu-blocklist","--mute-audio"]})
 try {

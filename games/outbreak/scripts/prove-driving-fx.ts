@@ -38,8 +38,8 @@ if (before) {
 }
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).sort().reverse()
-  .map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
+  .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath, "Install Chromium for Playwright")
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const report: Record<string, unknown> = { phase }
@@ -88,12 +88,15 @@ try {
   if (!before) {
     // 2. Lab station stunts: handbrake drift at night (headlights end on the marks) and a burnout.
     await stage("drift-night")
+    const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
     const frames = join(out, "clip-frames")
-    rmSync(frames, { recursive: true, force: true }); mkdirSync(frames, { recursive: true })
+    if (wantVideo) {
+      rmSync(frames, { recursive: true, force: true }); mkdirSync(frames, { recursive: true })
+    }
     const drift: unknown[] = []
     for (let i = 0; i < 105; i++) {
       drift.push(await drive(2, null))
-      await page.screenshot({ path: join(frames, `${String(i).padStart(3, "0")}.png`) })
+      if (wantVideo) await page.screenshot({ path: join(frames, `${String(i).padStart(3, "0")}.png`) })
       if (i === 28) await shot("station-drift-mid")
     }
     await shot("station-drift-end")
@@ -106,8 +109,10 @@ try {
       chirps: (drift.at(-1) as any).chirps,
     }
     assert(Math.max(...drift.map((d: any) => d.screech ?? 0)) > 0.5, "the drift screeches")
-    const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", join(frames, "%03d.png"), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", join(out, "station-drift.mp4")])
-    report.clip = ff.exitCode === 0 ? "station-drift.mp4" : `ffmpeg unavailable (${ff.exitCode}); frames in clip-frames/`
+    if (wantVideo) {
+      const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", join(frames, "%03d.png"), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "23", join(out, "station-drift.mp4")])
+      report.clip = ff.exitCode === 0 ? "station-drift.mp4" : `ffmpeg unavailable (${ff.exitCode}); frames in clip-frames/`
+    }
 
     await stage("burnout-night")
     const burn = await drive(120, null)

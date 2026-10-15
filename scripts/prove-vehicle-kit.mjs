@@ -12,8 +12,8 @@ const root = resolve(import.meta.dir, ".."), gameRoot = join(root, "games", game
 const out = resolve(process.env.OUT ?? "captures/vehicle-kit")
 mkdirSync(out, { recursive: true })
 const cache = join(process.env.HOME, "Library/Caches/ms-playwright")
-const chrome = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).sort().reverse()
-  .map(n => join(cache, n, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")).find(existsSync)
+const chrome = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
+  .map(n => join(cache, n, "chrome-headless-shell-mac-arm64/chrome-headless-shell")).find(existsSync)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const report = { game, label, base, frames: [], errors: [] }
 try {

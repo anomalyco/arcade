@@ -7,7 +7,7 @@ import { join, resolve } from "node:path"
 const root=resolve(import.meta.dir,"../../.."),out=join(root,"captures/lab-spawn")
 mkdirSync(out,{recursive:true})
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath=readdirSync(cache).filter(n=>/^chromium_headless_shell-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 const browser=await chromium.launch({executablePath,headless:true,args:["--enable-unsafe-webgpu","--use-angle=metal","--ignore-gpu-blocklist","--mute-audio","--disable-dawn-features=timestamp_quantization"]})
 const errors:string[]=[],proof:any={}
 try{
