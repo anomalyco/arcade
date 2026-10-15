@@ -525,7 +525,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
 /** Live sight (x) and soft fine-grained memory (y) from the visibility field, gated to the current sight range. */
 fn fieldSight(world: vec3f, n: vec3f) -> vec2f {
-  let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy, 0.0).rg;
+  let uv = (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy;
+  let inWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(uv < vec2f(0.003)) || any(uv > vec2f(0.997))));
+  let fv = textureSampleLevel(visField, floorSamp, uv, 0.0).rg * inWin;
   let dEye = length(world.xz - lights[0].pos.xz);
   let gate = 1.0 - smoothstep(lights[0].pos.w - 0.6, lights[0].pos.w + 0.4, dEye);
   return vec2f(fv.x * gate, fv.y);
@@ -551,7 +553,9 @@ fn applyOutbreakFogOfWar(
   if (visible >= 0.996 && mat != 2) {
     return colIn;
   }
-  let explored = max(textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy, 0.0).r, sight.y);
+  let expUv = (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy;
+  let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
+  let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
   let memDim = clamp(
