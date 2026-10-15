@@ -174,6 +174,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       settings.view.zoom = zoom
       cam.dist = zoom
     },
+    /** Level chunks the renderer holds and drew last frame (regression guard for vanishing streamed geometry). */
+    levelDraw: () => ({ chunks: renderer.levelChunkCount, drawn: renderer.drawnChunks, draws: renderer.drawnChunkDraws }),
     quality: () => qualityController.state(devicePixelRatio),
     setQuality: (mode: QualityMode) => {
       const resolved = resolveQualityMode(mode)

@@ -11,6 +11,7 @@ import {
   CHUNK,
   frontageEnd,
   propShape,
+  SIZE,
   type Building,
   type Prop,
   type Town,
@@ -1233,6 +1234,25 @@ function packChunkMeshesForWindow(
     opaque: outOpaque,
     glass: compiled.glassChunks,
   }
+}
+
+/**
+ * Whether the hand-authored origin build (level.ts) should draw the origin block instead of the streamed window.
+ * The two differ (the streamed copy of the origin chunks has none of the authored hedges, yard trees and porch
+ * dressing), so leaving is held off until the camera footprint actually reaches past the origin build's edge, and
+ * coming back needs the footprint 3 m inside it. Without the way back, panning near the edge once (walking down a
+ * hall inside Ash House on a wide window) swapped the yards for their bare streamed copies for the rest of the run.
+ */
+export function useOriginBuild(
+  usingOrigin: boolean,
+  x: number,
+  y: number,
+  view: readonly [number, number, number, number],
+  zoom: number,
+): boolean {
+  if (x < 14 || x > 82 || y < 14 || y > 82 || zoom > 50) return false
+  const margin = usingOrigin ? 0 : 3
+  return view[0] >= margin && view[1] >= margin && view[2] <= SIZE - margin && view[3] <= SIZE - margin
 }
 
 type BakeTask = {

@@ -160,6 +160,13 @@ proven animation techniques to animation.md, not here.
   inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
   caps, and each roof's aux is looked up by building id in the window slots (slots are reused, roofless buildings
   have no chunk). `games/outbreak/scripts/interiors-proof.ts` captures procedural houses of each theme to keep this honest.
+- **Outbreak's origin block has two looks, so switching between them needs hysteresis and a way back.** At spawn the
+  96 m block is drawn by the authored origin build (`src/level.ts`: Ash/Elm foundation hedges, yard trees, driveway
+  sedan, dense lawn tufts). The streamed copy of the same chunks (`src/world-streamer.ts`) has none of that. A
+  one-way switch that fired when the camera came within 3 m of the block edge made walking down Ash's hall on a
+  1728 px window swap the yards for the bare copy for the rest of the run (drawn level chunks 48 → 22). Now
+  `useOriginBuild` leaves only when the camera footprint passes the edge and comes back once it is 3 m inside it.
+  `games/outbreak/scripts/foliage-house-proof.ts` walks in and out of houses (solo and `--coop`) and checks this.
 
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
   `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
