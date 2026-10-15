@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
-import type { AIConfig } from "../shared/ai"
+import { DEFAULT_PACING_TUNING, type AIConfig } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, SPAWN_POINTS, type SurvivorSlot } from "../shared/coop-sim"
 import type { Command } from "../shared/session"
@@ -34,7 +34,7 @@ const SOLO_ROUTE: readonly WaypointStep[] = [
   { until: 24.0, x: 27.7, y: 30.2, aim: -Math.PI / 2, interactAtArrival: true },
   // 24..31 s: search bedroom dresser (29.55, 25.7)
   { until: 31.0, x: 29.55, y: 25.7, aim: -Math.PI / 2, interactAtArrival: true },
-  // 31..39 s: reach Ash workbench (30.05, 26.3), deposit & research in late-afternoon daylight
+  // 31..39 s: reach Ash workbench (30.05, 26.3), deposit & research by the last daylight and the flashlight
   { until: 39.0, x: 30.05, y: 26.3, aim: 0, interactAtArrival: true, benchResearch: true },
   // 39..46 s: walk back out of Ash House to front porch/street
   { until: 46.0, x: 27.7, y: 37.5, aim: Math.PI / 2 },
@@ -89,6 +89,7 @@ export type RunReport = {
   zombiesWithin60mAtStart: number
   meanWithin15mFirst60s: number
   firstContactTimeSeconds: number | null
+  nightfallTimeSeconds: number | null
   firstEncounterChaserCount: number
   meanSimultaneousChasers: number
   p95SimultaneousChasers: number
@@ -127,7 +128,8 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
           directorPacing: 1,
           safeRadius: 20,
           initialDensity: 0.25,
-          startHour: 16.0,
+          startHour: DEFAULT_PACING_TUNING.startHour,
+          openingClock: DEFAULT_PACING_TUNING.openingClock,
           rampTime: 360,
           noiseSensitivity: 1.0,
           maxActiveNearPlayer: 4,
@@ -166,10 +168,12 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
   ]
 
   let firstContactTime: number | null = null
+  let nightfallTime: number | null = sim.hour >= 18 ? 0 : null
   let firstEncounterPeakChasers = 0
   let containersSearchedBeforeContact = 0
   let workbenchReachedBeforeContact = false
   let workbenchLightAtArrival = 0
+  let measureBenchLight = false
   const arrivedSteps = new Set<string>()
   const firedStepShots = new Set<string>()
 
@@ -204,6 +208,7 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
       let fire = false
       let melee = false
       let reload = false
+      let flashlight = false
 
       if (dist > 0.35 && !p.channel) {
         mx = dx / dist
@@ -225,9 +230,9 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
             }
           }
           if (wp.benchResearch && sIdx === 0) {
-            workbenchLightAtArrival = Number(
-              sim.progression.benchLight("bench:ash", sim.hour, []).toFixed(3),
-            )
+            // At dusk the daylight is nearly gone: switch the flashlight on to work, as the bench prompt asks
+            if (!p.flashlightOn && variant === "after") flashlight = true
+            measureBenchLight = true
             if (firstContactTime === null) {
               workbenchReachedBeforeContact = true
             }
@@ -279,12 +284,19 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
         }
       }
 
-      const cmd: Command = { mx, my, aim, interact, sprint, fire, melee, reload }
+      const cmd: Command = { mx, my, aim, interact, sprint, fire, melee, reload, flashlight }
       sim.stepSurvivor(slot, cmd, TICK_DT)
     }
 
     sim.stepWorld(TICK_DT, 120)
 
+    if (nightfallTime === null && sim.hour >= 18) nightfallTime = Number(t.toFixed(2))
+    if (measureBenchLight) {
+      measureBenchLight = false
+      workbenchLightAtArrival = Number(
+        sim.progression.benchLight("bench:ash", sim.hour, slots.map((s) => s.survivor)).toFixed(3),
+      )
+    }
     const tel = sim.ai.pacing.telemetry
     if (tel.activeChasers > 0 && firstContactTime === null) {
       firstContactTime = Number(t.toFixed(2))
@@ -341,6 +353,7 @@ function runTenMinuteSimulation(mode: "solo" | "coop-4p", variant: "before" | "a
     zombiesWithin60mAtStart: samples[0]!.within60m,
     meanWithin15mFirst60s: avg(first60.map((s) => s.within15m)),
     firstContactTimeSeconds: firstContactTime,
+    nightfallTimeSeconds: nightfallTime,
     firstEncounterChaserCount: firstEncounterPeakChasers,
     meanSimultaneousChasers: avg(chaserSeries),
     p95SimultaneousChasers: quantile(chaserSeries, 0.95),
@@ -371,11 +384,22 @@ assert(
   `Expected first contact >= 40 s in Solo After, got ${soloAfter.firstContactTimeSeconds}`,
 )
 assert(
+  (coopAfter.firstContactTimeSeconds ?? 0) >= 40,
+  `Expected first contact >= 40 s in 4p co-op After, got ${coopAfter.firstContactTimeSeconds}`,
+)
+assert.equal(coopAfter.workbenchReachedBeforeFirstContact, true, "4p co-op must reach the workbench before first contact")
+assert(
   (soloBefore.firstContactTimeSeconds ?? 999) < 5,
   `Expected immediate contact < 5 s in Solo Before, got ${soloBefore.firstContactTimeSeconds}`,
 )
 assert.equal(soloAfter.workbenchReachedBeforeFirstContact, true, "Player must reach workbench before first contact")
-assert(soloAfter.workbenchLightAtArrival >= 0.35, "Late afternoon start must supply >= 0.35 light at workbench")
+assert(soloAfter.workbenchLightAtArrival >= 0.35, "Dusk start must light the workbench (daylight + flashlight) >= 0.35 at arrival")
+for (const run of [soloAfter, coopAfter]) {
+  assert(
+    run.nightfallTimeSeconds !== null && run.nightfallTimeSeconds >= 50 && run.nightfallTimeSeconds <= 70,
+    `Expected nightfall (18:00) about a minute in (${run.mode}), got ${run.nightfallTimeSeconds}`,
+  )
+}
 assert(
   soloAfter.firstEncounterChaserCount >= 1 && soloAfter.firstEncounterChaserCount <= 3,
   `Expected 1–3 chasers in first encounter, got ${soloAfter.firstEncounterChaserCount}`,
@@ -455,7 +479,7 @@ try {
   })
   await snap("01-before-t0-street-rush")
 
-  // 2. After (t = 0, 16:00 late afternoon, 20 m safe radius, 0.25 initial density): clear safehouse & lawn
+  // 2. After (t = 0, 17:30 dusk, 20 m safe radius, 0.25 initial density): clear safehouse & lawn
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
@@ -464,9 +488,9 @@ try {
     await h.stagePacing("opening-calm")
     for (let i = 0; i < 6; i++) await h.step(1 / 60)
   })
-  await snap("02-after-t0-late-afternoon-safe")
+  await snap("02-after-t0-dusk-safe")
 
-  // 3. After (t = 28 s, 16:50): inside Ash House at the workbench with natural window daylight >= 0.35
+  // 3. After (t = 35 s, 17:48): inside Ash House at the workbench, lit by the last daylight and the flashlight
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
@@ -475,7 +499,7 @@ try {
     await h.stagePacing("safehouse-workbench")
     for (let i = 0; i < 6; i++) await h.step(1 / 60)
   })
-  await snap("03-after-t28-safehouse-workbench")
+  await snap("03-after-t35-safehouse-workbench")
 
   // 4. After (t = 55 s, 17:50 dusk): first scripted encounter of 2 shamblers approaching street outside Ash House
   await page.evaluate(async () => {
@@ -533,6 +557,7 @@ try {
           within60mAtStart: `${soloBefore.zombiesWithin60mAtStart} → ${soloAfter.zombiesWithin60mAtStart}`,
           meanWithin15mFirst60s: `${soloBefore.meanWithin15mFirst60s} → ${soloAfter.meanWithin15mFirst60s}`,
           firstContactTimeSeconds: `${soloBefore.firstContactTimeSeconds}s → ${soloAfter.firstContactTimeSeconds}s`,
+          nightfallTimeSeconds: `${soloBefore.nightfallTimeSeconds}s → ${soloAfter.nightfallTimeSeconds}s`,
           firstEncounterChasers: `${soloBefore.firstEncounterChaserCount} → ${soloAfter.firstEncounterChaserCount}`,
           meanSimultaneousChasers: `${soloBefore.meanSimultaneousChasers} → ${soloAfter.meanSimultaneousChasers}`,
           p95SimultaneousChasers: `${soloBefore.p95SimultaneousChasers} → ${soloAfter.p95SimultaneousChasers}`,
@@ -547,6 +572,7 @@ try {
           within60mAtStart: `${coopBefore.zombiesWithin60mAtStart} → ${coopAfter.zombiesWithin60mAtStart}`,
           meanWithin15mFirst60s: `${coopBefore.meanWithin15mFirst60s} → ${coopAfter.meanWithin15mFirst60s}`,
           firstContactTimeSeconds: `${coopBefore.firstContactTimeSeconds}s → ${coopAfter.firstContactTimeSeconds}s`,
+          nightfallTimeSeconds: `${coopBefore.nightfallTimeSeconds}s → ${coopAfter.nightfallTimeSeconds}s`,
           firstEncounterChasers: `${coopBefore.firstEncounterChaserCount} → ${coopAfter.firstEncounterChaserCount}`,
           meanSimultaneousChasers: `${coopBefore.meanSimultaneousChasers} → ${coopAfter.meanSimultaneousChasers}`,
           p95SimultaneousChasers: `${coopBefore.p95SimultaneousChasers} → ${coopAfter.p95SimultaneousChasers}`,
