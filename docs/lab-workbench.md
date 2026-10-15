@@ -27,8 +27,9 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
 └ status: focus pill · telemetry · hints ─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Outliner** (left) lists only what is in the scene (`allSceneObjects()`), grouped Characters, Vehicles, Props,
-  Emitters, Lights and Fixtures (specimens) with counts and collapse. Repeated kinds fold into one row (`Cone ×5`,
+- **Outliner** (left, `packages/kit/lab/outliner.ts`, a knobs/ui `tree`) lists only what is in the scene
+  (`allSceneObjects()`), grouped Characters, Vehicles, Props, Emitters, Lights and Fixtures (specimens) with counts and
+  collapse. Repeated kinds fold into one row (`Cone ×5`,
   expandable; clicking the fold selects every member). Type filter menu, `Search scene` field and a per-row lock
   (locked objects are skipped by viewport picking and the marquee). Selection syncs both ways: click replaces,
   `⌘`/`Ctrl`-click toggles, `Shift`-click selects a range; viewport clicks, Shift-clicks and marquees highlight and
@@ -248,7 +249,8 @@ Priority order:
    `Render previews` and the items; each keeps one tab stop. A focused item shows its whole name on a card over its
    neighbours.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
-   the Edit canvas shortcuts below.
+   the Edit canvas shortcuts below. Letters never jump to rows (knobs' type-ahead is off here): they stay the
+   workbench's shortcuts, and `Search scene` finds things by name.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
    - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
    - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.

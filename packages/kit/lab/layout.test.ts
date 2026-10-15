@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { LabNavigation, type LabControl } from "../lab-navigation"
 import { filterLibrary, isLibraryAsset, isPlaceable, libraryCategoryOf, sectionLibraryCategory } from "./library"
-import { buildOutlinerRows, outlinerGroupOf, outlinerKindOf, rangeSelection } from "./outliner"
+import { buildOutlinerRows, buildOutlinerTree, outlinerGroupOf, outlinerKindOf, rangeSelection, selectedObjects } from "./outliner"
 import type { LabWorldObject } from "./types"
 
 const obj = (id: string, label: string, category: LabWorldObject["category"], extra: Partial<LabWorldObject> = {}): LabWorldObject => ({
@@ -61,6 +61,16 @@ test("outliner shift range covers visible rows and folds select all members", ()
   const rows = buildOutlinerRows(scene)
   expect(rangeSelection(rows, "obj:character:active", "obj:prop:6")).toEqual(["character:active", "prop:1", "prop:2", "prop:3", "prop:4", "prop:5", "prop:6"])
   expect(rangeSelection(rows, "missing", "fold:props:cone")).toEqual(["prop:1", "prop:2", "prop:3", "prop:4", "prop:5"])
+})
+
+test("outliner tree: type groups, repeated kinds under one fold, and a fold row standing for its members", () => {
+  const nodes = buildOutlinerTree(scene)
+  expect(nodes.map(n => [n.id, n.ids.length])).toEqual([["group:vehicles", 1], ["group:props", 7], ["group:emitters", 1], ["group:lights", 1]])
+  const props = nodes.find(n => n.id === "group:props")!
+  expect(props.children!.map(n => [n.type, n.label])).toEqual([["fold", "Cone"], ["object", "Propane tank #6"], ["object", "Hydrant #7"]])
+  expect(props.children![0]!.children!.map(n => n.id)).toEqual(["obj:prop:1", "obj:prop:2", "obj:prop:3", "obj:prop:4", "obj:prop:5"])
+  expect(selectedObjects(nodes, ["fold:props:cone", "obj:prop:6", "group:lights"])).toEqual(["prop:1", "prop:2", "prop:3", "prop:4", "prop:5", "prop:6"])
+  expect(buildOutlinerTree(scene, new Set(["props"])).map(n => n.id)).not.toContain("group:props")
 })
 
 test("library maps legacy catalog entries and sections to drawer categories", () => {
