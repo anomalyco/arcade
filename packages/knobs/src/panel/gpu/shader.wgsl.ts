@@ -417,6 +417,30 @@ fn shadeLine(p: Prim, screen: vec2f) -> vec4f {
   return vec4f(p.color.rgb * a, a);
 }
 
+// kind 12: The area under a polyline (pts[extra.x .. extra.x + extra.y], x increasing) down to
+// extra.z (a y), its alpha fading from the line's highest point to extra.w × at the base, as a
+// readout's canvas gradient does.
+fn shadeArea(p: Prim, screen: vec2f, rect: vec4f) -> vec4f {
+  let start = u32(p.extra.x);
+  let count = u32(p.extra.y);
+  let x = screen.x;
+  var top = 1e5;
+  for (var i = 1u; i < count; i++) {
+    let a = pts[start + i - 1u];
+    let b = pts[start + i];
+    if (x >= a.x && x <= b.x) {
+      top = mix(a.y, b.y, clamp((x - a.x) / max(b.x - a.x, 1e-4), 0.0, 1.0));
+      break;
+    }
+  }
+  if (top > 1e4) { return vec4f(0.0); }
+  let base = p.extra.z;
+  let cov = clamp((screen.y - top) * view.dpr + 0.5, 0.0, 1.0) * clamp((base - screen.y) * view.dpr + 0.5, 0.0, 1.0);
+  let t = clamp((screen.y - rect.y) / max(base - rect.y, 1e-3), 0.0, 1.0);
+  let a = cov * p.color.a * mix(1.0, p.extra.w, t);
+  return vec4f(p.color.rgb * a, a);
+}
+
 // OKLCH → gamma sRGB, with chroma trimmed until the colour fits (as core/color.ts does).
 fn oklchLinear(l: f32, c: f32, h: f32) -> vec3f {
   let a = c * cos(radians(h));
@@ -463,15 +487,40 @@ fn stripColor(p: Prim, r: f32) -> vec3f {
 }
 
 // kind 9: OKLCH strip. Like the DOM's gradient: 25 stops, a radius (extra.y) in from each end,
-// blended in sRGB; the C strip (mode 1) spans 0 to maxChroma(l, h) (aux.w). color2 rims it.
+// blended in sRGB; the C strip (mode 1) spans 0 to maxChroma(l, h) (aux.w). Its corners round by
+// look.x (square with --k-radius 0); color2 rims it.
 fn shadeStrip(p: Prim, local: vec2f, size: vec2f) -> vec4f {
-  let dist = roundedBox(local, size, size.y * 0.5);
+  let dist = roundedBox(local, size, p.look.x);
   let cov = covSd(dist);
   if (cov <= 0.0) { return vec4f(0.0); }
   let r = clamp((local.x - p.extra.y) / max(1.0, size.x - p.extra.y * 2.0), 0.0, 1.0);
   let f = r * 24.0;
   let i = min(floor(f), 23.0);
   let rgb = mix(stripColor(p, i / 24.0), stripColor(p, (i + 1.0) / 24.0), f - i);
+  var out = vec4f(rgb * p.color.a, p.color.a) * cov;
+  out = over(out, premul(p.color2) * hairline(dist, 1.0));
+  return out;
+}
+
+// kind 13: A gradient strip drawn from its samples: pts[extra.x ..] holds a (r, g), (b, _) pair
+// per sample (gamma sRGB), extra.y of them spread evenly from extra.z in from each end, blended
+// in sRGB as the DOM's linear-gradient blends its stops. Corners as a track's; color2 rims it.
+fn rampColor(base: u32, i: u32) -> vec3f {
+  let a = pts[base + i * 2u];
+  let b = pts[base + i * 2u + 1u];
+  return vec3f(a.x, a.y, b.x);
+}
+fn shadeRamp(p: Prim, local: vec2f, size: vec2f) -> vec4f {
+  let dist = roundedBox4(local, size, radiiOf(p));
+  let cov = covSd(dist);
+  if (cov <= 0.0) { return vec4f(0.0); }
+  let n = max(u32(p.extra.y + 0.5), 2u);
+  let inset = p.extra.z;
+  let r = clamp((local.x - inset) / max(1.0, size.x - inset * 2.0), 0.0, 1.0);
+  let f = r * f32(n - 1u);
+  let i = min(u32(floor(f)), n - 2u);
+  let base = u32(p.extra.x + 0.5);
+  let rgb = mix(rampColor(base, i), rampColor(base, i + 1u), f - f32(i));
   var out = vec4f(rgb * p.color.a, p.color.a) * cov;
   out = over(out, premul(p.color2) * hairline(dist, 1.0));
   return out;
@@ -544,11 +593,19 @@ fn shadeShape(p: Prim, local: vec2f, size: vec2f) -> vec4f {
         let edge = min(in.screenPx.y - p.clip.y, p.clip.w - in.screenPx.y);
         out = out * smoothstep(0.0, p.extra.x, edge);
       }
+      // Gaps around a range's thumbs: aux.xy at, aux.z half-width, aux.w ramp; extra.yz strength.
+      if (p.aux.z > 0.0) {
+        let x = in.screenPx.x;
+        out = out * (1.0 - p.extra.y * (1.0 - smoothstep(p.aux.z, p.aux.z + p.aux.w, abs(x - p.aux.x))));
+        out = out * (1.0 - p.extra.z * (1.0 - smoothstep(p.aux.z, p.aux.z + p.aux.w, abs(x - p.aux.y))));
+      }
     }
     case 8: { out = shadeLine(p, in.screenPx); }
     case 9: { out = shadeStrip(p, local, size); }
     case 10: { out = shadeShape(p, local, size); }
     case 11: { out = shadeDie(p, in.rect, in.pos.xy); }
+    case 12: { out = shadeArea(p, in.screenPx, in.rect); }
+    case 13: { out = shadeRamp(p, local, size); }
     default: { out = shadeDot(p, local, size); }
   }
   return out * (clipCov * maskCov);

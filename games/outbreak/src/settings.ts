@@ -27,7 +27,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
-import { DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
+import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
@@ -348,6 +348,18 @@ export function createOutbreakSettings(params?: URLSearchParams): OutbreakSettin
   const settings = attachCompatibilityForwarders(subsystems)
   if (params) {
     migrateOutbreakUrlParams(params, settings)
+    const u = settings.unseen
+    if (
+      u.unseenMode >= 1 &&
+      u.unseenMode <= 8 &&
+      u.unseenGlitch === 0 &&
+      u.unseenWarp === 0 &&
+      u.unseenShroud === 0 &&
+      u.unseenMemory === 0 &&
+      u.unseenNoise === 0
+    ) {
+      applyUnseenModePreset(u, u.unseenMode)
+    }
   }
   return settings
 }

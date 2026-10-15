@@ -1,5 +1,6 @@
 import { maxChroma, parseColor } from "./color.js"
 import { EASING_Y } from "./easing.js"
+import { mutatePoints, mutateStops, type CurvePoint, type GradientStop } from "./ramp.js"
 import {
   SPRING,
   hasValue,
@@ -132,6 +133,13 @@ function shift(field: ValueField, value: Value, random: () => number): unknown {
       return nudge(value as number, field.min, field.max, 1, random)
     case "keybind":
       return value
+    case "gradient":
+      return mutateStops(value as readonly GradientStop[], random, MUTATE.hue, MUTATE.lightness)
+    case "curve":
+      return mutatePoints(value as readonly CurvePoint[], field.range, random, [
+        MUTATE.min,
+        MUTATE.max,
+      ])
   }
 }
 

@@ -1335,7 +1335,14 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
   if (bPow > 0.001 && db2 < 36.0 && world.y < 2.78) {
     // A diffuse source at the pool: surfaces facing it catch the fill, the ground around it barely does.
     let face = max(0.0, dot(n, toB * inverseSqrt(max(db2, 1e-4))));
-    let eb = bPow * face * (1.0 - db2 / 36.0) / (1.0 + db2 * 0.3) * 0.5;
+    var eb = bPow * face * (1.0 - db2 / 36.0) / (1.0 + db2 * 0.3) * 0.5;
+    // Only on the lens side of the first wall, closed door or closed window: one tap of the flashlight's polar row.
+    if (OL.u4.w > 0.5) {
+      let lr = world.xz - OL.u3.xy;
+      let ray = u32(i32(round((atan2(lr.y, lr.x) / TAU + 1.0) * f32(RAYS) - 0.5))) % RAYS;
+      let full = polar[(u32(round(OL.u4.w)) * RAYS + ray) * 2u].x;
+      eb *= 1.0 - smoothstep(full + 0.06, full + 0.18, length(lr));
+    }
     add += outbreakAlbedo * vec3f(1.0, 0.86, 0.7) * (eb * GAIN);
     irr += eb;
   }

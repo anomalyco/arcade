@@ -132,7 +132,9 @@ one transaction per gesture; `packages/kit/lab-tuning.ts` holds the pure mapping
 every panel its header (Random, Reset, Copy and, in games, Undo/Redo), per-group dice and resets, `⇧L` to lock a row
 out of Random, hold `\` to see the values from before the last change, `⇧S` saved variants (kept in the browser per
 section or page), the row menu and `?` for the rest. In the Lab, `u`/`z` in a panel use the workbench's undo, the same
-history as `⌘Z`. A panel only works while focus is inside it, and an open game overlay keeps every key from the game.
+history as `⌘Z`. Compare's preview and its release apply to the settings but are never undo steps: holding `\` first
+closes a gesture still settling, so that gesture stays one step of its own. A panel only works while focus is inside
+it, and an open game overlay keeps every key from the game.
 
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`

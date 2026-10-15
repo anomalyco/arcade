@@ -489,6 +489,11 @@ export class OutbreakVehicleRenderer {
             ]
             if (castShadow) {
               emittedPrimaryCone = true
+              // Unshadowed lamps already follow the shadowed slots: move the one in this slot to the end, don't drop it.
+              if (shadowLightCount < lightCount && lightCount < MAX_LIGHTS) {
+                lights.copyWithin(lightCount * LIGHT_FLOATS, shadowLightCount * LIGHT_FLOATS, (shadowLightCount + 1) * LIGHT_FLOATS)
+                lightCount++
+              }
               lights.set(packed, shadowLightCount * LIGHT_FLOATS)
               shadowLightCount++
               lightCount = Math.max(lightCount, shadowLightCount)

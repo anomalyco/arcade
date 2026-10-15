@@ -21,6 +21,7 @@ import {
 import {
   DEFAULT_DIFFICULTY_VECTOR,
   DEFAULT_PACING_TARGETS,
+  LEGACY_DIFFICULTY_VECTOR,
   DIFFICULTY_KNOB_SPECS,
   PACING_TARGET_SPECS,
   TARGET_SURVIVAL_CURVE,
@@ -58,6 +59,9 @@ const MAP_BUILDINGS = [
   { id: "pharmacy", name: "Pharmacy", kind: "pharmacy", rect: BUILDING_RECTS[3] },
 ] as const
 
+const LEGACY_LABEL = "Before D-22"
+const SHIPPED_LABEL = "Balanced Curve (shipped)"
+const RETUNE_LABEL = "Re-tune candidate"
 const EVAL_SEEDS = [101, 107, 113, 127, 131, 139, 151, 163]
 const SEARCH_SEEDS = [101, 113, 131, 151]
 const MAX_DURATION_S = 1260
@@ -186,14 +190,15 @@ async function runParallelCmaEs(pool: EvalPool) {
   const cmu = Math.min(1 - c1, (2 * (muEff - 2 + 1 / muEff)) / (Math.pow(dim + 2, 2) + muEff))
   const chiN = Math.sqrt(dim) * (1 - 1 / (4 * dim) + 1 / (21 * dim * dim))
 
+  // Brief local re-tune around the shipped D-22 Balanced Curve.
   let meanU = vectorToUnit(DEFAULT_DIFFICULTY_VECTOR)
-  let sigma = 0.24
+  let sigma = 0.12
   const pc = new Array<number>(dim).fill(0)
   const ps = new Array<number>(dim).fill(0)
   const diagC = new Array<number>(dim).fill(1.0)
 
   const baseline = await pool.evaluate({
-    label: "Today",
+    label: SHIPPED_LABEL,
     vector: DEFAULT_DIFFICULTY_VECTOR,
     seeds: SEARCH_SEEDS,
     presets,
@@ -424,98 +429,27 @@ async function computeBundle(): Promise<FullBundle> {
       `[survivor-bots] CMA-ES search complete in ${((performance.now() - t0) / 1000).toFixed(2)}s · baseline loss=${cmaResult.baseline.loss.toFixed(2)} -> best loss=${cmaResult.best.loss.toFixed(2)}`,
     )
 
-    const gentleOpeningVector: DifficultyVector = quantizeDifficultyVector({
-      ...cmaResult.best.vector,
-      zombieCount: Math.max(16, cmaResult.best.vector.zombieCount - 2),
-      initialDensity: Math.max(0.15, cmaResult.best.vector.initialDensity - 0.15),
-      rampTime: Math.min(540, cmaResult.best.vector.rampTime + 105),
-      safeRadius: Math.min(26, cmaResult.best.vector.safeRadius + 7),
-      sightRange: Math.max(16, cmaResult.best.vector.sightRange - 4),
-      hearingScale: Math.max(0.7, cmaResult.best.vector.hearingScale - 0.1),
-      aggression: Math.max(0.65, cmaResult.best.vector.aggression - 0.1),
-      nightMultiplier: Math.max(1.15, cmaResult.best.vector.nightMultiplier - 0.1),
-    })
+    const evalOptions = (label: string, vector: DifficultyVector) =>
+      pool.evaluate({
+        label,
+        vector,
+        seeds: EVAL_SEEDS,
+        presets: BOT_SKILL_PRESET_ORDER,
+        maxDurationSeconds: MAX_DURATION_S,
+        timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
+        recordReplayForSeed: EVAL_SEEDS[0],
+      })
 
-    const relentlessSiegeVector: DifficultyVector = quantizeDifficultyVector({
-      ...cmaResult.best.vector,
-      zombieCount: Math.min(36, cmaResult.best.vector.zombieCount + 5),
-      initialDensity: Math.min(0.4, cmaResult.best.vector.initialDensity + 0.05),
-      rampTime: Math.max(270, cmaResult.best.vector.rampTime - 75),
-      chaseSpeed: Math.min(2.45, cmaResult.best.vector.chaseSpeed + 0.25),
-      aggression: Math.min(1.15, cmaResult.best.vector.aggression + 0.25),
-      nightMultiplier: Math.min(1.4, cmaResult.best.vector.nightMultiplier + 0.1),
-      maxActiveNearPlayer: Math.min(5, cmaResult.best.vector.maxActiveNearPlayer + 1),
-    })
-
-    console.error(`[survivor-bots] Evaluating 4 options across ${EVAL_SEEDS.length} seeds × 5 presets in parallel...`)
-    let [evalToday, evalBalanced, evalGentle, evalRelentless] = await Promise.all([
-      pool.evaluate({
-        label: "Today",
-        vector: DEFAULT_DIFFICULTY_VECTOR,
-        seeds: EVAL_SEEDS,
-        presets: BOT_SKILL_PRESET_ORDER,
-        maxDurationSeconds: MAX_DURATION_S,
-        timeScale: TIME_SCALE,
-        tickDt: 1 / 15,
-        recordReplayForSeed: EVAL_SEEDS[0],
-      }),
-      pool.evaluate({
-        label: "Balanced Curve",
-        vector: cmaResult.best.vector,
-        seeds: EVAL_SEEDS,
-        presets: BOT_SKILL_PRESET_ORDER,
-        maxDurationSeconds: MAX_DURATION_S,
-        timeScale: TIME_SCALE,
-        tickDt: 1 / 15,
-        recordReplayForSeed: EVAL_SEEDS[0],
-      }),
-      pool.evaluate({
-        label: "Gentle Opening",
-        vector: gentleOpeningVector,
-        seeds: EVAL_SEEDS,
-        presets: BOT_SKILL_PRESET_ORDER,
-        maxDurationSeconds: MAX_DURATION_S,
-        timeScale: TIME_SCALE,
-        tickDt: 1 / 15,
-        recordReplayForSeed: EVAL_SEEDS[0],
-      }),
-      pool.evaluate({
-        label: "Relentless Siege",
-        vector: relentlessSiegeVector,
-        seeds: EVAL_SEEDS,
-        presets: BOT_SKILL_PRESET_ORDER,
-        maxDurationSeconds: MAX_DURATION_S,
-        timeScale: TIME_SCALE,
-        tickDt: 1 / 15,
-      }),
+    const retuned = cmaResult.best.label !== SHIPPED_LABEL
+    console.error(`[survivor-bots] Evaluating before/after${retuned ? " and re-tune" : ""} across ${EVAL_SEEDS.length} seeds × 5 presets in parallel...`)
+    const [evalBefore, evalShipped, evalRetune] = await Promise.all([
+      evalOptions(LEGACY_LABEL, LEGACY_DIFFICULTY_VECTOR),
+      evalOptions(SHIPPED_LABEL, DEFAULT_DIFFICULTY_VECTOR),
+      retuned ? evalOptions(RETUNE_LABEL, cmaResult.best.vector) : Promise.resolve(null),
     ])
-
-    if (evalGentle.loss < evalBalanced.loss) {
-      evalBalanced = {
-        ...evalGentle,
-        label: "Balanced Curve",
-        runs: evalGentle.runs.map((r) => ({ ...r, configLabel: "Balanced Curve" })),
-      }
-      const softerGentleVec: DifficultyVector = quantizeDifficultyVector({
-        ...evalBalanced.vector,
-        zombieCount: Math.max(16, evalBalanced.vector.zombieCount - 2),
-        initialDensity: Math.max(0.1, evalBalanced.vector.initialDensity - 0.05),
-        rampTime: Math.min(540, evalBalanced.vector.rampTime + 75),
-        safeRadius: Math.min(28, evalBalanced.vector.safeRadius + 2),
-        sightRange: Math.max(16, evalBalanced.vector.sightRange - 1),
-        nightMultiplier: Math.max(1.2, evalBalanced.vector.nightMultiplier - 0.05),
-        lootRate: 1.15,
-      })
-      evalGentle = await pool.evaluate({
-        label: "Gentle Opening",
-        vector: softerGentleVec,
-        seeds: EVAL_SEEDS,
-        presets: BOT_SKILL_PRESET_ORDER,
-        maxDurationSeconds: MAX_DURATION_S,
-        timeScale: TIME_SCALE,
-        tickDt: 1 / 15,
-      })
-    }
+    // Only offer the re-tune when it beats the shipped curve on the full evaluation seeds.
+    const optionEvals = [evalBefore, evalShipped, ...(evalRetune && evalRetune.loss < evalShipped.loss - 2 ? [evalRetune] : [])]
 
     console.error(`[survivor-bots] Running 12-knob sensitivity analysis in parallel...`)
     const sensPresets: readonly BotSkillPresetId[] = ["Novice", "Casual", "Skilled"]
@@ -523,12 +457,12 @@ async function computeBundle(): Promise<FullBundle> {
       DIFFICULTY_KNOB_SPECS.map(async (spec) => {
         const span = spec.max - spec.min
         const lowVec = quantizeDifficultyVector({
-          ...cmaResult.best.vector,
-          [spec.key]: clamp(cmaResult.best.vector[spec.key] - span * 0.22, spec.min, spec.max),
+          ...DEFAULT_DIFFICULTY_VECTOR,
+          [spec.key]: clamp(DEFAULT_DIFFICULTY_VECTOR[spec.key] - span * 0.22, spec.min, spec.max),
         })
         const highVec = quantizeDifficultyVector({
-          ...cmaResult.best.vector,
-          [spec.key]: clamp(cmaResult.best.vector[spec.key] + span * 0.22, spec.min, spec.max),
+          ...DEFAULT_DIFFICULTY_VECTOR,
+          [spec.key]: clamp(DEFAULT_DIFFICULTY_VECTOR[spec.key] + span * 0.22, spec.min, spec.max),
         })
         const [lowEval, highEval] = await Promise.all([
           pool.evaluate({
@@ -560,7 +494,7 @@ async function computeBundle(): Promise<FullBundle> {
           key: spec.key,
           label: spec.label,
           unit: spec.unit,
-          defaultValue: cmaResult.best.vector[spec.key],
+          defaultValue: DEFAULT_DIFFICULTY_VECTOR[spec.key],
           lowValue: lowVec[spec.key],
           highValue: highVec[spec.key],
           lowMeanNights: lowNights,
@@ -585,7 +519,7 @@ async function computeBundle(): Promise<FullBundle> {
       [1, 2, 4].map((playerCount) =>
         pool.evaluate({
           label: `coop-${playerCount}p`,
-          vector: cmaResult.best.vector,
+          vector: DEFAULT_DIFFICULTY_VECTOR,
           seeds: SEARCH_SEEDS,
           presets: ["Casual", "Skilled"],
           playerCount,
@@ -625,30 +559,30 @@ async function computeBundle(): Promise<FullBundle> {
       checkpointEvery: number
     }[] = [
       {
-        id: "today-casual-101",
-        title: "Today · Casual (seed 101) — Night 1 Overrun",
-        optionLabel: "Today",
-        vector: DEFAULT_DIFFICULTY_VECTOR,
+        id: "before-casual-101",
+        title: `${LEGACY_LABEL} · Casual (seed 101)`,
+        optionLabel: LEGACY_LABEL,
+        vector: LEGACY_DIFFICULTY_VECTOR,
         seed: 101,
         preset: "Casual",
         presetIndex: 1,
         checkpointEvery: 25,
       },
       {
-        id: "balanced-casual-101",
-        title: "Balanced Curve · Casual (seed 101) — Paced Night 1→2",
-        optionLabel: "Balanced Curve",
-        vector: evalBalanced.vector,
+        id: "shipped-casual-101",
+        title: `${SHIPPED_LABEL} · Casual (seed 101)`,
+        optionLabel: SHIPPED_LABEL,
+        vector: DEFAULT_DIFFICULTY_VECTOR,
         seed: 101,
         preset: "Casual",
         presetIndex: 1,
         checkpointEvery: 45,
       },
       {
-        id: "balanced-skilled-107",
-        title: "Balanced Curve · Skilled (seed 107) — Multi-Night L4D Waves",
-        optionLabel: "Balanced Curve",
-        vector: evalBalanced.vector,
+        id: "shipped-skilled-107",
+        title: `${SHIPPED_LABEL} · Skilled (seed 107)`,
+        optionLabel: SHIPPED_LABEL,
+        vector: DEFAULT_DIFFICULTY_VECTOR,
         seed: 107,
         preset: "Skilled",
         presetIndex: 2,
@@ -681,7 +615,7 @@ async function computeBundle(): Promise<FullBundle> {
       })
       reviewableRuns.push({
         id: fSpec.id,
-        title: fSpec.title,
+        title: `${fSpec.title} — ${fullRun.survived ? `survived ${fullRun.nightsSurvived.toFixed(2)}n` : `died at ${fullRun.nightsSurvived.toFixed(2)}n (${fullRun.causeOfDeath})`}`,
         optionLabel: fSpec.optionLabel,
         seed: fSpec.seed,
         preset: fSpec.preset,
@@ -704,23 +638,13 @@ async function computeBundle(): Promise<FullBundle> {
     }
 
     const replays: Record<string, BotReplayLog> = {}
-    for (const r of evalToday.runs) {
-      if (r.replay) {
-        replays[`today-${r.preset.toLowerCase()}-seed-${r.seed}.json`] = r.replay
-      }
-    }
-    for (const r of evalBalanced.runs) {
-      if (r.replay) {
-        replays[`balanced-${r.preset.toLowerCase()}-seed-${r.seed}.json`] = r.replay
+    for (const [prefix, ev] of [["before-d22", evalBefore], ["shipped", evalShipped]] as const) {
+      for (const r of ev.runs) {
+        if (r.replay) replays[`${prefix}-${r.preset.toLowerCase()}-seed-${r.seed}.json`] = r.replay
       }
     }
 
-    const allPrimaryRuns = [
-      ...evalToday.runs,
-      ...evalBalanced.runs,
-      ...evalGentle.runs,
-      ...evalRelentless.runs,
-    ].map(({ replay: _replay, checkpoints: _checkpoints, ...rest }) => rest)
+    const allPrimaryRuns = optionEvals.flatMap((ev) => ev.runs).map(({ replay: _replay, checkpoints: _checkpoints, ...rest }) => rest)
 
     const summaryData: SummaryPayload = {
       generatedAt: new Date().toISOString(),
@@ -734,12 +658,7 @@ async function computeBundle(): Promise<FullBundle> {
       knobSpecs: DIFFICULTY_KNOB_SPECS,
       buildings: MAP_BUILDINGS,
       purityAudit: PURITY_AUDIT,
-      options: [
-        stripRuns(evalToday),
-        stripRuns(evalBalanced),
-        stripRuns(evalGentle),
-        stripRuns(evalRelentless),
-      ],
+      options: optionEvals.map(stripRuns),
       reviewableRuns,
       cmaHistory: cmaResult.history,
       sensitivity,
@@ -1076,8 +995,8 @@ function buildReportHtml(data: SummaryPayload): string {
 
   <div class="grid-2">
     <div class="card">
-      <h2>12-Knob Difficulty Comparison (Today vs Selected Option)</h2>
-      <p class="desc">Shipped defaults remain untouched in code until a board option is approved on D-22.</p>
+      <h2>12-Knob Difficulty Comparison (Before D-22 vs Selected)</h2>
+      <p class="desc">Kit picked the Balanced Curve on D-22; it is now Outbreak's default. Saved presets keep the values they were saved with.</p>
       <table id="knobs-table"></table>
     </div>
 
@@ -1120,7 +1039,7 @@ function buildReportHtml(data: SummaryPayload): string {
       <button class="tab-btn" id="reset-pacing-targets-btn" style="padding:4px 10px;font-size:11.5px;">Reset to Defaults</button>
     </h2>
     <p class="desc">
-      Mirrors the 11 typed knobs in Outbreak's shared Lab panel (<code>Backquote › Pacing targets</code>). Drag any target slider to re-score all 4 difficulty candidates against your survival & Left 4 Dead pacing targets in real time.
+      Mirrors the 11 typed knobs in Outbreak's shared Lab panel (<code>Backquote › Pacing targets</code>). Drag any target slider to re-score every difficulty option against your survival & Left 4 Dead pacing targets in real time.
     </p>
     <div class="knob-grid" id="pacing-knobs-grid"></div>
     <table id="live-loss-comparison-table"></table>
@@ -1238,7 +1157,7 @@ function buildReportHtml(data: SummaryPayload): string {
         const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
         const btn = document.createElement("button");
         btn.className = "tab-btn" + (idx === activeIdx ? " active" : "");
-        btn.textContent = \`Option \${idx + 1}: \${opt.label} (total loss \${lb.total.toFixed(1)})\`;
+        btn.textContent = \`\${opt.label} (total loss \${lb.total.toFixed(1)})\`;
         btn.onclick = () => {
           activeIdx = idx;
           renderAll();
@@ -1264,7 +1183,7 @@ function buildReportHtml(data: SummaryPayload): string {
       for (let n = 0; n <= 4; n++) {
         const x = xOf(n);
         html += \`<line x1="\${x}" y1="\${padT}" x2="\${x}" y2="\${H - padB}" stroke="#263044" stroke-dasharray="4 4" stroke-width="1"/>\`;
-        html += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">\${n === 0 ? "16:00 Dusk" : "Night " + n}</text>\`;
+        html += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">\${n === 0 ? "Start (dusk)" : "Night " + n}</text>\`;
       }
 
       const customMed = {
@@ -1284,7 +1203,7 @@ function buildReportHtml(data: SummaryPayload): string {
       }
 
       const todayOpt = DATA.options[0];
-      if (opt.label !== "Today") {
+      if (opt !== DATA.options[0]) {
         for (const preset of ["Novice", "Casual", "Skilled", "Expert"]) {
           const pts = todayOpt.survivalCurves[preset]
             .map((p) => \`\${xOf(p.night).toFixed(1)},\${yOf(p.aliveFraction).toFixed(1)}\`)
@@ -1363,7 +1282,7 @@ function buildReportHtml(data: SummaryPayload): string {
     function renderKnobsTable(opt) {
       const todayVec = DATA.options[0].vector;
       const tbl = document.getElementById("knobs-table");
-      let html = \`<thead><tr><th>Knob</th><th>Today</th><th>\${opt.label}</th><th>Delta</th></tr></thead><tbody>\`;
+      let html = \`<thead><tr><th>Knob</th><th>Before D-22</th><th>\${opt.label}</th><th>Delta</th></tr></thead><tbody>\`;
       for (const spec of DATA.knobSpecs) {
         const v0 = todayVec[spec.key];
         const v1 = opt.vector[spec.key];
@@ -1652,7 +1571,7 @@ function buildReportHtml(data: SummaryPayload): string {
       for (const row of scored) {
         const isBest = Math.abs(row.lb.total - minLoss) < 1e-4;
         html += \`<tr style="background:\${isBest ? "rgba(74, 222, 128, 0.07)" : "transparent"}">
-          <td><strong>Option \${row.idx + 1}: \${row.opt.label}</strong> \${isBest ? '<span style="color:#4ade80;font-size:11px;font-weight:600">★ Best Fit</span>' : ""}</td>
+          <td><strong>\${row.opt.label}</strong> \${isBest ? '<span style="color:#4ade80;font-size:11px;font-weight:600">★ Best Fit</span>' : ""}</td>
           <td>\${row.lb.survivalCurveLoss.toFixed(2)}</td>
           <td>\${row.lb.pacingFunLoss.toFixed(2)}</td>
           <td>\${row.lb.monotonicityLoss.toFixed(2)}</td>
@@ -1723,13 +1642,13 @@ function buildReportHtml(data: SummaryPayload): string {
       const opt = DATA.options[activeIdx];
       const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
       if (cardParam !== null) {
-        document.getElementById("page-title").textContent = \`Option \${activeIdx + 1} · \${opt.label}\`;
+        document.getElementById("page-title").textContent = \`Outbreak difficulty · \${opt.label}\`;
       }
       document.getElementById("header-badges").innerHTML = \`
         <div class="badge">Option: <strong>\${opt.label}</strong></div>
         <div class="badge">Total Loss: <strong>\${lb.total.toFixed(2)}</strong> (Surv \${lb.survivalCurveLoss.toFixed(1)} · Pacing \${lb.pacingFunLoss.toFixed(1)})</div>
         <div class="badge">Novice→Expert Medians: <strong>\${opt.byPreset.Novice.medianNights.toFixed(2)}n / \${opt.byPreset.Casual.medianNights.toFixed(2)}n / \${opt.byPreset.Skilled.medianNights.toFixed(2)}n / \${opt.byPreset.Expert.medianNights.toFixed(2)}n</strong></div>
-        <div class="badge">Warned Deaths: <strong>\${Math.round((opt.byPreset.Casual.warnedDeathRate ?? 1) * 100)}%</strong> · Unfair Spawns: <strong>0</strong></div>
+        <div class="badge">Warned Deaths: <strong>\${Math.round((opt.byPreset.Casual.warnedDeathRate ?? 1) * 100)}%</strong> · Unfair Spawns: <strong>\${["Novice", "Casual", "Skilled", "Expert", "Perfect"].reduce((n, p) => n + (opt.byPreset[p].unfairSpawns ?? 0), 0)}</strong></div>
       \`;
       renderTabs();
       renderSurvivalCurve(opt);

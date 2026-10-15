@@ -27,7 +27,7 @@ import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
 import { DiscoveryProps, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
-import { sightRects, propShape, SIZE } from "../shared/map"
+import { sightRects, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
@@ -60,6 +60,7 @@ import { Survivor } from "./survivor"
 import { OutbreakHud } from "./hud"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
+import { packLightOccluders, windowStateKey } from "./light-occluders"
 import { MAP_KEY, OutbreakMap } from "./map"
 import { gameMapFrame } from "./map/game"
 import { type ProgressionLabHost } from "./progression-lab"
@@ -497,6 +498,9 @@ async function main() {
   let blockers = sightRects(session.view.town)
   let revision = -1
   let lightOccluders = 0
+  let lightWindowKey = 0
+  // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
+  let lightWalls: readonly (readonly [number, number, number, number])[] = blockers
   let frozen = params.has("bench")
   let frames = 0
   let meterAt = performance.now()
@@ -929,27 +933,14 @@ async function main() {
         }
       }
     }
-    if (revision !== session.view.revision) {
+    const windowKey = windowStateKey(town)
+    if (revision !== session.view.revision || windowKey !== lightWindowKey) {
       revision = session.view.revision
+      lightWindowKey = windowKey
       blockers = sightRects(town)
-      occluders.fill(0)
-      const maxOcc = MAX_OCCLUDERS - 4
-      let occIdx = 0
-      for (let i = 0; i < blockers.length && occIdx < maxOcc; i++) {
-        occluders.set([...blockers[i]!, 2.8, 0, 0, 0], occIdx++ * OCC_FLOATS)
-      }
-      lightOccluders = occIdx
-      for (const b of town.barriers) {
-        if (b.kind === "window" && lightOccluders < maxOcc) {
-          occluders.set([...b.rect, 0.85, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
-        }
-      }
-      for (const pr of town.props) {
-        if (pr.kind === "coffee" || pr.kind === "table" || pr.kind === "chair" || pr.kind === "nightstand") continue
-        if (lightOccluders >= maxOcc) break
-        const s = propShape(pr)
-        if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
-      }
+      const packed = packLightOccluders(town, blockers, occluders, MAX_OCCLUDERS - 4)
+      lightOccluders = packed.count
+      lightWalls = packed.walls
     }
     const drivingHeadlights =
       Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
@@ -1083,7 +1074,7 @@ async function main() {
               yaw: beamAim,
               pitch: -0.18,
             }
-          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, lightWalls)
       const fx = beam.x
       const fy = beam.y
       const fh = beam.h
@@ -1098,7 +1089,7 @@ async function main() {
       flashlightOrigin[1] = fy
       flashlightYaw = beam.yaw
       flashlightPitch = beam.pitch
-      const wall = raycast(fx, fy, dx, dy, blockers, beamRange)
+      const wall = raycast(fx, fy, dx, dy, lightWalls, beamRange)
       const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
       const hit = Math.min(wall, reach, beamRange)
       flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
@@ -1127,7 +1118,7 @@ async function main() {
         -1,
       )
     }
-    count = coop.flashlights(lights, count, town, settings, lightOccluders, blockers)
+    count = coop.flashlights(lights, count, town, settings, lightOccluders, lightWalls)
 
     const zombieBatches = zombieCrowd.draw(
       zombies,
@@ -1140,6 +1131,7 @@ async function main() {
         fogGhostDuration: settings.fog.fogGhostDuration,
         hideUnseenZombies: unseenEval.hideZombies,
         unseenMode: unseenEval.mode,
+        unseenMemory: unseenEval.layers.memory,
       },
       Boolean(settings.ai.aiDebugOverlay),
       time,
@@ -1436,7 +1428,7 @@ async function main() {
       vehAlphaStart,
     )
     const effectiveFogSettings =
-      unseenEval.mode > 0 && unseenEval.hideZombies
+      unseenEval.active && unseenEval.hideZombies
         ? {
             ...settings.fog,
             fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
