@@ -13,7 +13,7 @@ const server = await createServer({ root, server: { host: "127.0.0.1", port: 0 }
     if (variant === "before" && id === resolve(root,"src/level.ts")) return code.replace("chunks([...meshes,...props],true)","chunks([...meshes,...props],false)")
     if (variant === "before" && id === resolve(root,"src/shaders.ts")) return code.replace('solidCutaway: "",','')
     if (id !== resolve(root, "src/main.ts")) return
-    return code.replace("const harness = {", "const harness = { renderer, render, vision: () => vision,")
+    return code.replace("Object.assign(harness, { map })", "Object.assign(harness, { map, renderer, render, vision: () => vision })")
   },
 }] })
 await server.listen()

@@ -2,6 +2,12 @@ import { cameraShakeControls } from "@arcade/kit/client/camera"
 import { motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, type LookSettings } from "@arcade/kit/look"
+import {
+  qualityControls,
+  resolveQualityMode,
+  saveQualityMode,
+  type AdaptiveQualityController,
+} from "@arcade/kit/quality"
 import { aiControls } from "../shared/ai"
 import { wrapHour } from "../shared/day-cycle"
 import { flashlightControls } from "../shared/flashlight"
@@ -43,6 +49,7 @@ export interface OutbreakLabControlHost {
   readonly botsLab: BotsLabController
   readonly hud: OutbreakHud
   readonly map: OutbreakMap
+  readonly qualityController: AdaptiveQualityController
   readonly updateProfile: () => void
   readonly regenerate: () => void
   readonly reset: (nextSeed?: number) => void
@@ -299,6 +306,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
       options: LOOK_PRESET_IDS.map((id) => ({ label: LOOK_PRESETS[id].label, value: id })),
     },
     ...outbreakLightingControls,
+    ...qualityControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
     {
       key: "worldMode",
@@ -403,6 +411,17 @@ export function handleOutbreakSettingChanged(
     key === "clutterSeed"
   ) {
     host.syncTextures()
+  }
+  if (key === "quality") {
+    const qMode = resolveQualityMode(value ?? settings.view.quality)
+    settings.view.quality = qMode
+    host.qualityController.setMode(qMode)
+    if (!navigator.webdriver) {
+      try {
+        saveQualityMode(localStorage, qMode)
+      } catch {}
+    }
+    lab.refresh()
   }
   if (key === "lookPreset") {
     const pid = resolveLookPresetId(value ?? settings.dayCycle.lookPreset) ?? "current"

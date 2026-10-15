@@ -1,4 +1,4 @@
-import { raycast, rayRect, type Rect } from "@arcade/kit/sim/geom"
+import { rayRect, type Rect } from "@arcade/kit/sim/geom"
 import { POLAR_RAYS } from "@arcade/kit/gpu/limits"
 import type { PeekInfo } from "./interact"
 import { SIZE } from "./map"
@@ -27,7 +27,6 @@ for (let i = 0; i < POLAR_RAYS; i++) {
 export class Vision {
   readonly rays = new Float32Array(POLAR_RAYS)
   readonly explored = new Uint8Array(FOG_SIZE * FOG_SIZE)
-  private readonly nearBlockers: Rect[] = []
   readonly chunkExplored = new Map<string, Uint8Array>()
   private readonly tilePool: Uint8Array[] = []
   private readonly maxCachedTiles = 64
@@ -128,6 +127,7 @@ export class Vision {
     settings = this.settings,
     peek?: PeekInfo | null,
     flashlight?: VisionFlashlightInfo | null,
+    trackExplored = true,
   ): boolean {
     const ox = peek ? peek.eyeX : x
     const oy = peek ? peek.eyeY : y
@@ -163,24 +163,47 @@ export class Vision {
     const maxBx = ox + maxCastRange
     const minBy = oy - maxCastRange
     const maxBy = oy + maxCastRange
-    const near = this.nearBlockers
-    near.length = 0
+    const rays = this.rays
+    const invTauRays = POLAR_RAYS / TAU
+    rays.fill(maxCastRange)
     for (let b = 0; b < blockers.length; b++) {
       const rect = blockers[b]!
-      if (rect[2] >= minBx && rect[0] <= maxBx && rect[3] >= minBy && rect[1] <= maxBy) {
-        near.push(rect)
+      if (rect[2] < minBx || rect[0] > maxBx || rect[3] < minBy || rect[1] > maxBy) continue
+      const dx0 = rect[0] - ox
+      const dy0 = rect[1] - oy
+      const dx1 = rect[2] - ox
+      const dy1 = rect[3] - oy
+      if (dx0 <= 1e-4 && dx1 >= -1e-4 && dy0 <= 1e-4 && dy1 >= -1e-4) {
+        for (let i = 0; i < POLAR_RAYS; i++) {
+          const t = rayRect(ox, oy, RAY_COS[i]!, RAY_SIN[i]!, rect, rays[i]!)
+          if (t < rays[i]!) rays[i] = t
+        }
+        continue
+      }
+      const a0 = Math.atan2(dy0, dx0)
+      let minD = 0
+      let maxD = 0
+      const d1 = ((Math.atan2(dy0, dx1) - a0 + Math.PI * 3) % TAU) - Math.PI
+      if (d1 < minD) minD = d1
+      else if (d1 > maxD) maxD = d1
+      const d2 = ((Math.atan2(dy1, dx0) - a0 + Math.PI * 3) % TAU) - Math.PI
+      if (d2 < minD) minD = d2
+      else if (d2 > maxD) maxD = d2
+      const d3 = ((Math.atan2(dy1, dx1) - a0 + Math.PI * 3) % TAU) - Math.PI
+      if (d3 < minD) minD = d3
+      else if (d3 > maxD) maxD = d3
+      let startA = a0 + minD
+      if (startA < 0) startA += TAU
+      else if (startA >= TAU) startA -= TAU
+      const startIdx = Math.floor(startA * invTauRays)
+      const count = Math.min(POLAR_RAYS, Math.ceil((maxD - minD) * invTauRays) + 2)
+      for (let k = 0; k <= count; k++) {
+        const i = (startIdx + k) & (POLAR_RAYS - 1)
+        const t = rayRect(ox, oy, RAY_COS[i]!, RAY_SIN[i]!, rect, rays[i]!)
+        if (t < rays[i]!) rays[i] = t
       }
     }
-    for (let i = 0; i < POLAR_RAYS; i++) {
-      const dx = RAY_COS[i]!
-      const dy = RAY_SIN[i]!
-      let best = maxCastRange
-      for (let b = 0; b < near.length; b++) {
-        const t = rayRect(ox, oy, dx, dy, near[b]!, best)
-        if (t < best) best = t
-      }
-      this.rays[i] = best
-    }
+    if (!trackExplored) return false
     let changed = false
     const r2 = range * range
     const fR2 = fRange * fRange
@@ -194,9 +217,7 @@ export class Vision {
     const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + maxCastRange) / FOG_CELL))
     const baseWx = this.originX + 0.5 * FOG_CELL - ox
     const baseWy = this.originY + 0.5 * FOG_CELL - oy
-    const rays = this.rays
     const explored = this.explored
-    const invTauRays = POLAR_RAYS / TAU
 
     for (let gy = minGy; gy < maxGy; gy++) {
       const dy = baseWy + gy * FOG_CELL

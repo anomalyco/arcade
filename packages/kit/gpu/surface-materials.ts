@@ -1219,10 +1219,12 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   // Scattered warm autumn fallen leaf flecks on the lawn and verge
   let leafQ = p * 7.4;
   let leafHash = hash2(floor(leafQ) + vec2f(3.7, 7.9));
-  let leafD = (fract(leafQ) - vec2f(fract(leafHash * 13.7), fract(leafHash * 29.3)) * 0.4 - 0.3) * vec2f(1.0, 1.6);
-  let leafMask = step(0.942, leafHash) * (1.0 - smoothstep(0.0196, 0.0484, dot(leafD, leafD))) * smoothstep(0.36, 0.68, clumpField) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
-  let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
-  col = mix(col, leafCol, leafMask * 0.78);
+  if (leafHash >= 0.942 && surfaceFootprint * 7.4 < 0.55) {
+    let leafD = (fract(leafQ) - vec2f(fract(leafHash * 13.7), fract(leafHash * 29.3)) * 0.4 - 0.3) * vec2f(1.0, 1.6);
+    let leafMask = (1.0 - smoothstep(0.0196, 0.0484, dot(leafD, leafD))) * smoothstep(0.36, 0.68, clumpField) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
+    let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
+    col = mix(col, leafCol, leafMask * 0.78);
+  }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.04), localRough, cavity);
 }

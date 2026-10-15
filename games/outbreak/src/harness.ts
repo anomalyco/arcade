@@ -8,6 +8,7 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "@arcade/kit/look"
+import { resolveQualityMode, type AdaptiveQualityController, type QualityMode } from "@arcade/kit/quality"
 import type { AIState } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
@@ -71,6 +72,7 @@ export interface OutbreakHarnessHost {
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
   readonly botsLab: BotsLabController
+  readonly qualityController: AdaptiveQualityController
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void
@@ -78,6 +80,7 @@ export interface OutbreakHarnessHost {
   readonly getWindowState: () => { origin: [number, number]; isStream: boolean }
   readonly reset: (nextSeed?: number) => void
   readonly setFrozen: (value: boolean) => void
+  readonly isFrozen: () => boolean
   readonly onSettingChanged: (rawKey: string, value?: number | boolean | string) => void
   readonly setLastDayNightHour: (hour: number) => void
   readonly incrementFrames: () => void
@@ -107,6 +110,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     audio,
     vehicleAudio,
     botsLab,
+    qualityController,
     promptEl,
   } = host
 
@@ -168,6 +172,15 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       settings.view.zoom = zoom
       cam.dist = zoom
     },
+    quality: () => qualityController.state(devicePixelRatio),
+    setQuality: (mode: QualityMode) => {
+      const resolved = resolveQualityMode(mode)
+      settings.view.quality = resolved
+      qualityController.setMode(resolved)
+      lab.refresh()
+      if (!host.isFrozen() && renderer.inflight === 0) host.draw(1 / 60)
+      return qualityController.state(devicePixelRatio)
+    },
     state: () => {
       const session = host.session()
       const vision = host.vision()
@@ -205,6 +218,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           ...evaluateUnseenFrame(settings.unseen, dc.darkness, session.view.player.health, session.view.player.maxHealth),
         },
         vertices: host.getVertices(),
+        quality: qualityController.state(devicePixelRatio),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },
         camera: {
