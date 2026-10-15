@@ -73,7 +73,7 @@ async function sim(page: Page, fn: string) {
   return page.evaluate((fn) => {
     const h = (window as any).__arcadeHarness
     const view = h.session().view
-    return new Function("progression", "ledger", "view", "hud", fn)(view.progression, view.progression.ledger, view, h.inventoryHud)
+    return new Function("progression", "ledger", "view", "hud", fn)(view.progression, view.progression.ledger, view, h.inventoryHud())
   }, fn)
 }
 
