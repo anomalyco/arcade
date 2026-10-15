@@ -806,9 +806,11 @@ export class OutbreakPacingDirector {
     }
     this.noiseHeat = Math.max(0, this.noiseHeat - dt * 0.022)
 
+    // Roaming hordes (shared/hordes) come on top of the director's population, not out of it.
     let livingCount = 0
     for (let i = 0; i < agents.length; i++) {
-      if (agents[i]!.state !== "dead") livingCount++
+      const a = agents[i]!
+      if (a.state !== "dead" && a.hordeId === undefined) livingCount++
     }
 
     this.telemetry = this.evaluateCurve(config, hour, time, pCount, livingCount)
@@ -990,7 +992,7 @@ export class OutbreakPacingDirector {
         let nudged = 0
         for (let i = 0; i < agents.length && nudged < maxWaveSize; i++) {
           const a = agents[i]!
-          if (a.state !== "wander") continue
+          if (a.state !== "wander" || a.hordeId !== undefined) continue
           const targetSurvivor = survivors[nudged % survivors.length]!
           const d = Math.hypot(a.x - targetSurvivor.x, a.y - targetSurvivor.y)
           if (d > 18 && d < 62) {
@@ -1128,11 +1130,12 @@ export class OutbreakPacingDirector {
       }
     }
 
-    // Gather pursuing agents (`chase` | `alert` | `bash`)
+    // Gather pursuing agents (`chase` | `alert` | `bash`). Horde members are a horde's whole point: the chaser cap
+    // and the near-15 m hold below leave them alone.
     const pursuers: { agent: AIAgent; minDist: number; priority: number }[] = []
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]!
-      if (a.state === "dead") continue
+      if (a.state === "dead" || a.hordeId !== undefined) continue
       if (a.state === "chase" || a.state === "alert" || a.state === "bash") {
         let minDist = Infinity
         for (let k = 0; k < survivors.length; k++) {
@@ -1185,7 +1188,7 @@ export class OutbreakPacingDirector {
       const near15: { agent: AIAgent; dist: number; surv: PacingSurvivorView }[] = []
       for (let i = 0; i < agents.length; i++) {
         const a = agents[i]!
-        if (a.state === "dead") continue
+        if (a.state === "dead" || a.hordeId !== undefined) continue
         let bestS = survivors[0]!
         let bestD = Math.hypot(a.x - bestS.x, a.y - bestS.y)
         for (let k = 1; k < survivors.length; k++) {
