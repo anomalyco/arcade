@@ -60,11 +60,17 @@ export class SplatterSurfaces {
     // Keep the actual hit triangle even if a dense mesh exhausts the bounded neighbor list.
     out[offset+n++]=hit.triangle;this.stamps[hit.triangle]=this.stamp
     const xa=Math.max(this.x0,Math.floor((hit.x-radius)/CELL)),xb=Math.min(this.x0+this.width-1,Math.floor((hit.x+radius)/CELL)),za=Math.max(this.z0,Math.floor((hit.z-radius)/CELL)),zb=Math.min(this.z0+this.depth-1,Math.floor((hit.z+radius)/CELL))
-    for(let z=za;z<=zb;z++)for(let x=xa;x<=xb;x++)for(const id of this.grid[(z-this.z0)*this.width+x-this.x0]){
-      if(this.stamps[id]===this.stamp)continue;this.stamps[id]=this.stamp
-      const o=id*STRIDE,dot=p[o+12]*hit.nx+p[o+13]*hit.ny+p[o+14]*hit.nz
-      if(p[o+3]!==material||Math.abs(dot)<.999||Math.abs((hit.x-p[o])*hit.nx+(hit.y-p[o+1])*hit.ny+(hit.z-p[o+2])*hit.nz)>.001)continue
-      if(n<cap)out[offset+n++]=id
+    for(let pass=0;pass<2;pass++){
+      if(pass===1&&(n>=cap||hit.ny<=.85))break
+      const minDot=pass===0?.999:.95,maxDist=pass===0?.002:.022
+      for(let z=za;z<=zb;z++)for(let x=xa;x<=xb;x++)for(const id of this.grid[(z-this.z0)*this.width+x-this.x0]){
+        if(this.stamps[id]===this.stamp)continue
+        const o=id*STRIDE,dot=p[o+12]*hit.nx+p[o+13]*hit.ny+p[o+14]*hit.nz
+        const planeDist=Math.abs((hit.x-p[o])*hit.nx+(hit.y-p[o+1])*hit.ny+(hit.z-p[o+2])*hit.nz)
+        if(p[o+3]!==material||Math.abs(dot)<minDot||planeDist>maxDist)continue
+        this.stamps[id]=this.stamp
+        if(n<cap)out[offset+n++]=id
+      }
     }
     return n
   }

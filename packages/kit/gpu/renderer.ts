@@ -10,7 +10,7 @@ import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { installFramePacer } from "../gpu-perf"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
-import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
+import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
 import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
@@ -90,6 +90,7 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 
 export type FrameInput = {
   splatter?:Splatter
+  splatterLegacy?:boolean
   fxParticles?: Particles
   weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
@@ -113,6 +114,8 @@ export type FrameInput = {
   addMotionKeys?: (MotionKey | undefined)[]
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
+  /** Optional game-feel post-processing burst: [blurX, blurY, radialBlur, chromaticBoost] */
+  feel?: readonly [number, number, number, number]
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
@@ -882,10 +885,51 @@ export class Renderer {
   private draw(f: FrameInput, targetView?: GPUTextureView): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
-    if(f.splatter){
-      this.splatterRenderer??=new SplatterRenderer(d)
-      for(let i=0;i<3;i++)this.splatterEye[i]=f.frame[16+i]!
-      this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
+    const effectiveLook = f.look !== undefined ? f.look : this.activeLook
+    const effectiveCompare = f.lookCompare ?? this.activeLookCompare
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    if (f.splatter) {
+      this.splatterRenderer ??= new SplatterRenderer(d)
+      for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
+      const noirMode = Boolean(useLookPipes && effectiveLook && (effectiveLook.preset === "noir" || effectiveLook.selectiveColor > 0.5))
+      let flashlight: SplatterLightingInput["flashlight"] = null
+      let pointLight: SplatterLightingInput["pointLight"] = null
+      let bestPointPower = 0
+      for (let i = 0; i < f.lightCount; i++) {
+        const k = i * LIGHT_FLOATS
+        const power = f.lights[k + 7]!
+        if (power <= 0.001) continue
+        if (!flashlight && f.lights[k + 11]! > 0.5 && f.lights[k + 15]! < -0.5) {
+          flashlight = {
+            x: f.lights[k]!,
+            y: f.lights[k + 1]!,
+            z: f.lights[k + 2]!,
+            range: f.lights[k + 3]!,
+            color: [f.lights[k + 4]!, f.lights[k + 5]!, f.lights[k + 6]!] as const,
+            power,
+            dirX: f.lights[k + 8]!,
+            dirZ: f.lights[k + 9]!,
+            cosHalf: f.lights[k + 10]!,
+          }
+        } else if (power > bestPointPower) {
+          bestPointPower = power
+          pointLight = {
+            x: f.lights[k]!,
+            y: f.lights[k + 1]!,
+            z: f.lights[k + 2]!,
+            radius: f.lights[k + 3]!,
+            color: [f.lights[k + 4]!, f.lights[k + 5]!, f.lights[k + 6]!] as const,
+            power,
+          }
+        }
+      }
+      this.splatterRenderer.prepare(f.splatter, f.frame, this.splatterEye, motion, {
+        ambient: [Math.max(0.14, f.frame[28]!), Math.max(0.15, f.frame[29]!), Math.max(0.18, f.frame[30]!)],
+        noirMode,
+        legacy: f.splatterLegacy,
+        flashlight,
+        pointLight,
+      })
     }
     if (f.fxParticles && f.fxParticles.count > 0) {
       this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
@@ -905,9 +949,6 @@ export class Renderer {
       this.weatherRenderer.prepare(f.weather)
     }
     if (motion) this.prepareMotion()
-    const effectiveLook = f.look !== undefined ? f.look : this.activeLook
-    const effectiveCompare = f.lookCompare ?? this.activeLookCompare
-    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
     const lookVariant: LookVariantMode = useLookPipes
       ? this.shaders && !this.shaders.lookSceneVariant
         ? "generic"
@@ -942,14 +983,22 @@ export class Renderer {
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
-    this.gradeData[4] = f.frame[45]! & 1
+    const feel = f.feel
     if (useLookPipes && effectiveLook) {
+      this.gradeData[4] = feel ? feel[0]! : 0
+      this.gradeData[5] = feel ? feel[1]! : 0
+      this.gradeData[6] = feel ? feel[2]! : 0
+      this.gradeData[7] = feel ? feel[3]! : 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
       })
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
+      this.gradeData[4] = (f.frame[45]! & 1) + (feel ? Math.min(0.48, Math.max(0, feel[3]!)) : 0)
+      this.gradeData[5] = feel ? feel[0]! : 0
+      this.gradeData[6] = feel ? feel[1]! : 0
+      this.gradeData[7] = feel ? feel[2]! : 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 
@@ -1124,7 +1173,14 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    const hasFeelBurst =
+      Boolean(f.feel) &&
+      (Math.abs(f.feel![0]!) > 0.00018 ||
+        Math.abs(f.feel![1]!) > 0.00018 ||
+        f.feel![2]! > 0.00018 ||
+        f.feel![3]! > 0.002)
     const useFastLookPost =
+      !hasFeelBurst &&
       useLookPipes &&
       effectiveLook &&
       (effectiveCompare.mode ?? 1) === 1 &&
