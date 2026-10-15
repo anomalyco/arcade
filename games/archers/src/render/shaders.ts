@@ -409,6 +409,15 @@ fn clean(c: vec4f) -> vec4f {
   var c = lookGradeColor(L, hdr, bloom, uv, o.pos.xy, F.eye.w, dot(shafts, vec3f(0.33)) * 2.0, 0.35, 0.6, 0.25, keep);
   let gray = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   c = mix(c, vec3f(gray), F.misc.w * (1.0 - keep));
+  // Painted texture, fixed to the screen like paper: a broad mottle and a fine speckle that break up the flat fog,
+  // and a faint lift of the same in the blacks so silhouettes read as matter, not holes.
+  let sp = o.pos.xy * (720.0 / F.screen.y);
+  let mottle = fbm(sp / 11.0) - 0.47;
+  let speck = vnoise(sp / 1.7) - 0.5;
+  let lum = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  let lit = smoothstep(0.015, 0.2, lum) * (1.0 - keep);
+  c *= 1.0 + (mottle * 0.22 + speck * 0.06) * lit;
+  c += vec3f(max(0.0, mottle + 0.12) * 0.004 * (1.0 - lit) * (1.0 - keep));
   let v = length((uv - 0.5) * vec2f(1.0, 0.8));
   // A deep frame of shadow: the corners fall to near black like the painted concept.
   c *= mix(1.0, 0.45, smoothstep(0.38, 0.85, v));

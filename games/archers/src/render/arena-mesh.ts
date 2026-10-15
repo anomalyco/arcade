@@ -223,12 +223,14 @@ function tufts(mesh: Mesh, r: Rng, x0: number, x1: number, y: number, z0: number
  * the backdrop layers behind them (pines and hills, the bell tower, broken arcades, near pillars) and a few black
  * foreground shapes. Returns the mesh and the point light shafts radiate from.
  */
-export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, number] } {
+export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, number]; glow: [number, number] } {
   const mesh = new Mesh()
   const r = new Rng(seedOf(a.id))
   const W = a.w, H = a.h
   for (const [ox, oy] of [[0, 0], [-W, 0], [W, 0], [0, -H], [0, H], [-W, -H], [W, -H], [-W, H], [W, H]] as const) blocks(mesh, a, new Rng(seedOf(a.id) ^ 0x51ed), ox, oy)
   let sun: [number, number, number] = [W / 2, H + 4, -40]
+  /** Where the fog's light core sits relative to the projected light source, in screen uv (y down). */
+  let glow: [number, number] = [-0.02, 0.13]
   const cx = W / 2
   if (a.backdrop === "belltower") {
     // Far hills and forest, pale in the fog.
@@ -241,7 +243,9 @@ export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, n
     for (let i = 0; i < 60; i++) pine(mesh, r, -70 + r.next() * 172, -2 + r.next() * 5, 9 + r.next() * 12, -62 - r.next() * 16, FAR, M.far)
     tower(mesh, r, cx + 22, -9, -58, FAR, M.far)
     // The bell tower, its window the light everything is backlit by.
-    sun = tower(mesh, r, cx + 0.5, -6, -24, FAR, M.far)
+    // Low enough that its window and bell sit in the open band under the top platform, the concept's landmark.
+    sun = tower(mesh, r, cx + 0.5, -16, -24, FAR, M.far)
+    glow = [0, 0.035]
     // A darker band of woods behind the arena floor, and ruined arcades.
     for (let i = 0; i < 26; i++) {
       const side = i % 2 ? 1 : -1
@@ -387,7 +391,7 @@ export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, n
     vines(mesh, r, x0, x1, H + 1.2, 1.9, 0.9, 3.2, INK, M.foliage)
     for (let i = 0; i < 7; i++) leafClump(mesh, r, x0 + r.next() * (x1 - x0), H + 0.6 + r.next() * 0.8, 0.8 + r.next() * 0.7, 2 + r.next(), INK, M.foliage, true)
   }
-  return { mesh, sun }
+  return { mesh, sun, glow }
 }
 
 /** Gameplay blocks with faces only toward open tiles, crumbly rims, moss on top and vines below. */

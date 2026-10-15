@@ -11,6 +11,8 @@
   static silhouette layers, instanced parts, 4× MSAA HDR plus a shaft-source target, half-res god rays from the
   tower window, screen-space silhouette rim, kit bloom, kit particles and the kit `noir_silhouette` look grade.
   HDR alpha is the colour-retention mask: fire, arrows, marks and scarves write it so the grade keeps their colour.
+  The composite adds a screen-fixed paper texture (an fbm mottle and a fine speckle on lit fog, a faint lift in the
+  blacks); keep the black lift tiny, since gamma turns a 0.01 linear lift into visible static.
 - `src/game/archer-pose.ts`: ground locomotion is kit `animate()` (unarmed) in a private rig-space lane; air, wall
   slide, ledge hang and dodge poses are built with the rig's IK and blended in; the bow arms layer on top. Read
   `docs/animation.md` and use the procedural-animation-iteration skill before changing poses.
