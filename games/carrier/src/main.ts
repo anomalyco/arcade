@@ -130,6 +130,15 @@ async function main() {
     hits: (on, n) => net.sendTurretHits(on, n),
     shipHits: (ship, n) => net.sendTurretShipHits(ship, n),
     intercept: (i) => net.sendIntercept(i),
+    lock: (on, locked) => net.sendSeek(on, locked),
+  }
+  // SAM locks and SAMs in flight warn a pilot like missiles do (src/weapons/weapons.ts).
+  flight.weapons.sams = {
+    inbound: (id, x, y, z) => gunnery.world.inbound(id, x, y, z),
+    gunner: (id) => {
+      const c = net.crew
+      return !!c && playerOf(c, id)?.role === "gunner"
+    },
   }
   // Offline the local gunnery world decides: its damage lands in the jets' local world.
   gunnery.onEvent = (e) => {

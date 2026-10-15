@@ -1076,6 +1076,12 @@ export class AudioRuntime {
     }
   }
 
+  /** Voices playing or scheduled, without the allocation of `telemetry()`. */
+  get activeVoiceCount(): number {
+    this.pruneVoices()
+    return this.voices.size
+  }
+
   telemetry(): AudioTelemetry {
     this.pruneVoices()
     const categoryVoices: Record<MixCategory, number> = {

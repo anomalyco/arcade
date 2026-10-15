@@ -17,6 +17,8 @@ const rounds = Number(process.env.AB_ROUNDS ?? 12)
 const hackB = process.env.AB_HACK_B ?? ""
 // Optional hack applied to variant A after setup, e.g. to undo a persistent B hack.
 const hackA = process.env.AB_HACK_A ?? ""
+// Optional survivor aim in radians for every scene (default north, -PI/2).
+const aim = Number(process.env.AB_AIM ?? -Math.PI / 2)
 const server = await createServer({
   root,
   logLevel: "error",
@@ -56,14 +58,14 @@ try {
   ]
   const out: Record<string, unknown> = {}
   for (const scene of scenes) {
-    const res = await page.evaluate(async ({ scene, A, B, rounds, hackA, hackB }) => {
+    const res = await page.evaluate(async ({ scene, A, B, rounds, hackA, hackB, aim }) => {
       const h = (window as any).__arcadeHarness
       const hack = new Function("h", hackB)
       const unhack = new Function("h", hackA)
       const setup = async (lab: Record<string, number>) => {
         h.freeze(true); h.reset(7); h.setLab("timeScale", 0); h.setLab("zoom", scene.zoom); h.setLab("hour", scene.hour)
         for (const [k, v] of Object.entries(lab)) h.setLab(k, v)
-        h.pose(scene.x, scene.y, -Math.PI / 2)
+        h.pose(scene.x, scene.y, aim)
         await h.step(1 / 60)
       }
       const time = async () => {
@@ -83,7 +85,7 @@ try {
         if (r % 2) { await run("b"); await run("a") } else { await run("a"); await run("b") }
       }
       return { a, b }
-    }, { scene, A, B, rounds, hackA, hackB })
+    }, { scene, A, B, rounds, hackA, hackB, aim })
     const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
     const diffs = res.a.map((x, i) => res.b[i]! - x)
     out[scene.name] = { a: med(res.a), b: med(res.b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), raw: res }

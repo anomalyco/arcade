@@ -20,6 +20,8 @@ export class Room extends DurableObject<Env> {
   private code = ""
   /** Made with Create game: the Lobby keeps it out of quick join. */
   private priv: boolean | null = null
+  /** Open sockets, joined or not: a socket whose hello is still on its way keeps the room ticking. */
+  private sockets = new Set<Conn>()
   private reported = ""
   private reportAt = 0
 
@@ -48,16 +50,23 @@ export class Room extends DurableObject<Env> {
         } catch {}
       },
     }
+    this.sockets.add(conn)
+    const closed = () => {
+      this.sockets.delete(conn)
+      this.core.close(conn)
+    }
     socket.addEventListener("message", (e) => this.core.message(conn, e.data))
-    socket.addEventListener("close", () => this.core.close(conn))
-    socket.addEventListener("error", () => this.core.close(conn))
+    socket.addEventListener("close", closed)
+    socket.addEventListener("error", closed)
     this.timer ??= setInterval(() => this.loop(), TICK_MS)
     return new Response(null, { status: 101, webSocket: pair[0] })
   }
 
   private loop(): void {
     this.core.step()
-    if (this.core.players === 0) {
+    // Stop only when nobody is connected: the first tick can come before the first hello (a slow link), and stopping
+    // then left a new room frozen until another socket arrived.
+    if (this.core.players === 0 && this.sockets.size === 0) {
       clearInterval(this.timer!)
       this.timer = null
       this.report(true)

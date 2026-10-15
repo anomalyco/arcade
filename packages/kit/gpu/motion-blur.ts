@@ -1,8 +1,82 @@
+import type { LabControl } from "../lab-panel"
+
 /** Shared screen-space shutter blur. Velocities are current-minus-previous UV, before exposure scaling. */
-export const motionBlurDefaults = () => ({ enabled: true, strength: 0.65, shutter: 0.5 })
+export const motionBlurDefaults = () => ({
+  enabled: true,
+  strength: 0.65,
+  shutter: 0.5,
+  burst: 1,
+  burstDecay: 14,
+})
 export type MotionBlurSettings = ReturnType<typeof motionBlurDefaults>
 export type MotionIdentity=string|number|object
 export type MotionKey={initial?:readonly [number,number,number];maxTravel?:number}
+
+export const motionBlurControls: readonly LabControl[] = [
+  { key: "enabled", label: "Motion blur", group: "Motion" },
+  { key: "strength", label: "Strength", group: "Motion", min: 0, max: 2, step: 0.05 },
+  { key: "shutter", label: "Shutter", group: "Motion", min: 0, max: 1, step: 0.05 },
+  { key: "burst", label: "Impulse burst", group: "Motion", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "burstDecay", label: "Burst decay", group: "Motion", min: 4, max: 30, step: 1, unit: "/s" },
+]
+
+/**
+ * Short screen-space motion-blur impulse (directional recoil/lunge + radial blast/hit punch).
+ * Decays exponentially and feeds `MotionBlur`'s camera velocity pass.
+ */
+export class MotionBlurBurst {
+  dx = 0
+  dy = 0
+  radial = 0
+  shutterBoost = 0
+
+  add(opts: { dir?: number; directional?: number; radial?: number; boost?: number }, scale = 1): void {
+    const s = Math.max(0, scale)
+    if (s <= 0) return
+    if (opts.dir !== undefined && opts.directional) {
+      const amt = opts.directional * s
+      this.dx = Math.max(-0.028, Math.min(0.028, this.dx + Math.cos(opts.dir) * amt))
+      this.dy = Math.max(-0.028, Math.min(0.028, this.dy + Math.sin(opts.dir) * amt))
+    }
+    if (opts.radial) {
+      this.radial = Math.max(-0.032, Math.min(0.032, this.radial + opts.radial * s))
+    }
+    if (opts.boost) {
+      this.shutterBoost = Math.min(1.5, this.shutterBoost + opts.boost * s)
+    }
+  }
+
+  step(dt: number, decay = 14): void {
+    if (dt <= 0) return
+    const k = Math.exp(-dt * Math.max(1, decay))
+    this.dx *= k
+    this.dy *= k
+    this.radial *= k
+    this.shutterBoost *= k
+    if (Math.hypot(this.dx, this.dy) < 1e-4) {
+      this.dx = 0
+      this.dy = 0
+    }
+    if (Math.abs(this.radial) < 1e-4) this.radial = 0
+    if (this.shutterBoost < 1e-3) this.shutterBoost = 0
+  }
+
+  reset(): void {
+    this.dx = 0
+    this.dy = 0
+    this.radial = 0
+    this.shutterBoost = 0
+  }
+
+  get active(): boolean {
+    return (
+      Math.abs(this.dx) > 1e-4 ||
+      Math.abs(this.dy) > 1e-4 ||
+      Math.abs(this.radial) > 1e-4 ||
+      this.shutterBoost > 1e-3
+    )
+  }
+}
 
 /** Rig owners keep stable per-model part identities while their draw arrays are rebuilt. */
 export class MotionKeys {
@@ -90,7 +164,11 @@ struct Out {@location(0) motion:vec4f,@builtin(frag_depth) depth:f32}
  ${multisampled?'for(var i=1;i<4;i++){z=min(z,textureLoad(depth,p,i));}':''}
  let world=M.inverse*vec4f(o.uv*vec2f(2,-2)+vec2f(-1,1),z,1);
  let old=M.previous*(world/world.w);var result:Out;
- result.motion=vec4f(select(vec2f(0),o.uv-motionUV(old),old.w>0.0&&z<1.0),z,1);
+ let camVel=select(vec2f(0),o.uv-motionUV(old),old.w>0.0&&z<1.0);
+ let fromC=o.uv-0.5;
+ let edgeW=smoothstep(0.06,0.38,length(fromC));
+ let burstVel=M.size.zw*(0.45+0.55*edgeW)+fromC*(M.exposure.z*1.45*edgeW);
+ result.motion=vec4f(camVel*M.exposure.w+burstVel,z,1);
  result.depth=z;return result;
 }
 `
@@ -129,6 +207,9 @@ export class MotionBlur {
   readonly layout:GPUBindGroupLayout
   readonly group:GPUBindGroup
   readonly data=new Float32Array(56)
+  readonly burst=new MotionBlurBurst()
+  private width=0
+  private height=0
   private camera:GPURenderPipeline
   private gather:GPURenderPipeline
   private cameraGroup!:GPUBindGroup
@@ -148,8 +229,15 @@ export class MotionBlur {
     this.format=format
   }
   private format:GPUTextureFormat
+  addBurst(opts: { dir?: number; directional?: number; radial?: number; boost?: number }, scale = 1): void {
+    this.burst.add(opts, scale)
+  }
+  stepBurst(dt: number, decay = 14): void {
+    this.burst.step(dt, decay)
+  }
   /** Resize only when source attachments change. Optional external velocity replaces the camera/instance field. */
   resize(width:number,height:number,color:GPUTextureView,depth:GPUTextureView,velocityTarget?:GPUTextureView){
+    this.width=width;this.height=height
     for(const t of this.textures)t.destroy();this.textures=[]
     const texture=(w:number,h:number,format:GPUTextureFormat)=>{const t=this.device.createTexture({size:[w,h],format,usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});this.textures.push(t);return t.createView()}
     this.velocityView=texture(Math.ceil(width/2),Math.ceil(height/2),'rgba16float')
@@ -159,10 +247,19 @@ export class MotionBlur {
     this.gatherGroup=this.device.createBindGroup({layout:this.gather.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniform}},{binding:1,resource:color},{binding:2,resource:velocityTarget??this.velocityView},{binding:3,resource:this.device.createSampler({minFilter:'linear',magFilter:'linear'})}]})
     this.data.set([width,height,0,0],48)
   }
-  update(current:Float32Array,inverse:Float32Array,previous:Float32Array,dt:number,strength:number,shutter:number,valid=true,maxPixels=32){
+  update(current:Float32Array,inverse:Float32Array,previous:Float32Array,dt:number,strength:number,shutter:number,valid=true,maxPixels=32,burstScale=1){
     this.data.set(inverse.subarray(0,16));this.data.set(previous.subarray(0,16),16);this.data.set(current.subarray(0,16),32)
+    const bScale=Math.max(0,burstScale)
+    const hasBurst=bScale>0&&this.burst.active
+    const effStrength=Math.max(0,strength)+(hasBurst?this.burst.shutterBoost*bScale:0)
     // Shutter is a fraction of a 60 Hz frame; motion remains stable across render rates.
-    this.data.set([valid?Math.max(0,strength)*Math.min(1,Math.max(0,shutter))/(60*Math.max(1/240,dt)):0,maxPixels,0,0],52)
+    const baseExp=valid?effStrength*Math.min(1,Math.max(0,shutter))/(60*Math.max(1/240,dt)):0
+    const effExp=hasBurst?Math.max(baseExp,0.5):baseExp
+    const camScale=effExp>1e-6?baseExp/effExp:1
+    const invExp=effExp>1e-6?1/effExp:0
+    this.data[50]=hasBurst?this.burst.dx*bScale*invExp:0
+    this.data[51]=hasBurst?this.burst.dy*bScale*invExp:0
+    this.data.set([effExp,maxPixels,hasBurst?this.burst.radial*bScale*invExp:0,camScale],52)
     this.device.queue.writeBuffer(this.uniform,0,this.data)
   }
   encode(encoder:GPUCommandEncoder,drawVelocity?:(pass:GPURenderPassEncoder)=>void){
