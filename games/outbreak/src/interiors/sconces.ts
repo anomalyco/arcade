@@ -1,4 +1,4 @@
-import { LIGHT_FLOATS, MAX_MAP_LIGHTS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 
 /**
  * One sconce pair (a single light), as `emitInteriorDecor` records it: centre between the bulbs x, z, height; wall

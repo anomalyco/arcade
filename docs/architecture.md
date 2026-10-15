@@ -68,7 +68,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — | Yes |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes |
 | `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — | Yes |
-| `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — | Yes |
+| `gpu/{renderer,shaders,level}` & `limits` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — | Yes |
 | `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | — | — | Yes |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — | Yes |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — | Yes |

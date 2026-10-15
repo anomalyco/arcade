@@ -1,5 +1,5 @@
 import type { Rect } from "../sim/geom"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "./limits"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "../limits"
 import type { FloorMap } from "./level"
 import { FRAME_FLOATS } from "./shaders"
 

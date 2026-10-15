@@ -5,9 +5,9 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
-import { BUSH_PRESET_IDS, GRASS_PRESET_IDS, TREE_PRESETS, TREE_PRESET_IDS } from "../gpu/foliage"
+import { BUSH_PRESET_IDS, GRASS_PRESET_IDS, TREE_PRESETS, TREE_PRESET_IDS } from "@arcade/kit/gpu/foliage"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.FOLIAGE_OUT ?? `${process.env.HOME}/code/home/artifacts/2026-10-14-vegetation/lab`)
 mkdirSync(out, { recursive: true })
 

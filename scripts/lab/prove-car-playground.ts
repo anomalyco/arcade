@@ -6,7 +6,7 @@ import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { createServer, type ViteDevServer } from "vite"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.CAR_PROOF_OUT ?? resolve(root, "captures/lab-car-playground"))
 mkdirSync(out, { recursive: true })
 

@@ -1,4 +1,4 @@
-import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS, LIGHT_FLOATS, OCC_FLOATS } from "./limits"
+import { MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS, LIGHT_FLOATS, OCC_FLOATS } from "../limits"
 import { directionalMask, type LevelData } from "./level"
 import { VERT_BYTES, type Mesh } from "./mesh"
 import { mat4 } from "wgpu-matrix"

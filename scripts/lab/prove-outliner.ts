@@ -1,13 +1,13 @@
 /// <reference types="@webgpu/types" />
 // Headless proof for the Outliner on knobs/ui's tree: groups and folds, selection both ways, keys, lock and search.
-//   hivemind run --kind browser -- bun packages/kit/lab/prove-outliner.ts
+//   hivemind run --kind browser -- bun scripts/lab/prove-outliner.ts
 // Never opens a visible window and never plays sound (muted browser, AudioContext blocked).
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium, type Page } from "playwright-core"
 import { createServer } from "vite"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(root, "captures/lab-outliner")
 mkdirSync(out, { recursive: true })
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`

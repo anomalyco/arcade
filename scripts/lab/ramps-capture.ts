@@ -1,7 +1,7 @@
 // Deterministic Lab Effects captures (seed 7, frozen camera, fixed frame counts) for pixel-diffing two builds: the
 // particle effects that take the over-life ramps, at a few points of their life. Works on a tree without ramps too
 // (copy it into an older export), so a capture of main and one of a branch can be compared pixel for pixel.
-// RAMPS_OUT=<dir> [RAMPS_SETTINGS='{"sizeOverLife":"…"}'] [RAMPS_PANEL=1] bun packages/kit/lab/ramps-capture.ts
+// RAMPS_OUT=<dir> [RAMPS_SETTINGS='{"sizeOverLife":"…"}'] [RAMPS_PANEL=1] bun scripts/lab/ramps-capture.ts
 /// <reference types="@webgpu/types" />
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -9,7 +9,7 @@ import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { createServer } from "vite"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.RAMPS_OUT ?? resolve(root, "captures/lab-ramps"))
 mkdirSync(out, { recursive: true })
 const overrides: Record<string, unknown> = JSON.parse(process.env.RAMPS_SETTINGS ?? "{}")

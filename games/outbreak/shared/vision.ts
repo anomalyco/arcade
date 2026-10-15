@@ -1,5 +1,5 @@
 import { rayRect, type Rect } from "@arcade/kit/sim/geom"
-import { POLAR_RAYS } from "@arcade/kit/gpu/limits"
+import { POLAR_RAYS } from "@arcade/kit/limits"
 import type { PeekInfo } from "./interact"
 import { SIZE } from "./map"
 

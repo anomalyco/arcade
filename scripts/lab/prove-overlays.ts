@@ -4,7 +4,7 @@
 // ranked results), a confirm before deleting several objects (Esc keeps them, Delete removes them, the toast's Undo
 // brings them back), Watch pins as readouts that only change when their setting does, and the frame-time readout
 // (graph with a 16.7 ms line, CPU and GPU meters) with what it costs the main thread.
-//   hivemind run --kind browser --fetch captures/lab-overlays -- bun packages/kit/lab/prove-overlays.ts
+//   hivemind run --kind browser --fetch captures/lab-overlays -- bun scripts/lab/prove-overlays.ts
 // Never opens a visible window and never plays sound (muted browser, AudioContext blocked).
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -16,7 +16,7 @@ const arg = (name: string) => {
   const i = process.argv.indexOf(name)
   return i > 0 ? process.argv[i + 1] : undefined
 }
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(root, arg("--out") ?? "captures/lab-overlays")
 mkdirSync(out, { recursive: true })
 

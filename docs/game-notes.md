@@ -247,7 +247,7 @@ proven animation techniques to animation.md, not here.
   and `explosionFlashLight`. Legacy per-game fire/ring/scorch sprite loops (`PropParticles` kind 12, `Game.explode` sprite
   loops, `Vehicles.burst`, `FireWater` kind 8 quads, and `WeaponFx` `RockPool` fireball/debris rocks) and duplicate Lab
   Library explosion entries are removed. Across seven alternating pairs of 30 active blast frames on M5 Max/Metal
-  (`packages/kit/lab/prove-explosion-unify.ts`, `perf/explosion-unify.json`), whole-frame GPU mean / peak costs are:
+  (`scripts/lab/prove-explosion-unify.ts`, `perf/explosion-unify.json`), whole-frame GPU mean / peak costs are:
   - **Getaway (`960×720`)**: single blast **0.648→0.761 ms** mean (**0.676→0.803 ms** peak, delta `+0.113 ms`, MAD `0.001`);
     4× simultaneous propane/fuel worst-case **0.697→0.818 ms** mean (**0.735→0.889 ms** peak, delta `+0.121 ms`, MAD `0.001`).
   - **Blackout (`960×720`)**: single grenade **1.000→0.870 ms** mean (**1.421→1.032 ms** peak, delta `-0.130 ms`, MAD `0.263`);
@@ -349,7 +349,7 @@ proven animation techniques to animation.md, not here.
   (`1280×800`, 1 warmup + 7 alternating rounds), whole-frame Debug Room GPU medians are `1.442 ms` (`Current`),
   `1.659 ms` (`Noir / Limbo`), and `1.630 ms` (`Painterly`); in Outbreak (`1000×680`), queue-completed frame-span
   medians are `3.313 ms` (`Current`), `4.025 ms` (`Noir / Limbo`), and `3.813 ms` (`Painterly`). Evidence:
-  `perf/looks.json` and `packages/kit/lab/prove-looks.ts`.
+  `perf/looks.json` and `scripts/lab/prove-looks.ts`.
 - **Share procedural material recipes between the Lab swatch and production scene shader.** `packages/kit/gpu/surface-materials.ts`
   and `packages/kit/lab/materials.ts` evaluate the same WGSL recipes for matte wood planks (`roughness = 0.84`, no broad
   specular sheen, staggered board lengths, butt-joint AO, warm/cool plank tint), 2×2 quadrant Voronoi cobblestone
@@ -424,7 +424,7 @@ proven animation techniques to animation.md, not here.
   and deterministic `tuningSeed` randomization (`effect.randomize`, `effect.trigger`, `effect.loop`) that retriggers
   one-shot effects immediately. Across 7 alternating Metal pairs at `1280×800` (20 active explosion frames per run,
   including dynamic polar-shadow flash lighting), median whole-frame GPU time is `0.8041 ms` vs `0.4542 ms` baseline
-  (`+0.3464 ms`, MAD `0.0107 ms`; `packages/kit/lab/prove-explosion.ts`).
+  (`+0.3464 ms`, MAD `0.0107 ms`; `scripts/lab/prove-explosion.ts`).
 - **Keep extracted tyre smoke exact.** The canonical solver and shader live in `packages/kit/fx/smoke-trail.ts` and
   `tyre-renderer.ts`, shared by Getaway and both Lab hosts. Integration adopts the approved main billow algorithm and
   vertex-lit shader, replacing the older connected-field study. Tunable constants retain the shipped defaults.
@@ -1344,7 +1344,7 @@ Candidates from the code audits; measure and playtest before moving any into the
   the matching pointermove to the detached node, so it never reached the viewport listener and the selection skipped
   that move. The ring now builds its sector DOM once per open. A move only rotates the highlight wedge and direction
   pointer, swaps two `data-active` flags and changes caption text when it differs. Its position is a transform, and the
-  OS cursor replaces the drawn viewport glyph while the menu is open. `bun packages/kit/lab/bench-radial.ts`
+  OS cursor replaces the drawn viewport glyph while the menu is open. `bun scripts/lab/bench-radial.ts`
   (headless-shell, Metal, 1 warm-up + 7 runs) measured main-thread time per open-menu move with the scene loop off:
   2.12 → 1.04 ms task, 0.25 → 0.02 ms layout, 0.26 → 0.02 ms paint. Giving the highlight, pointer and root
   `will-change` layers cost more in Layerize than it saved in paint (0.87 vs 1.31 ms task per move), so they share the

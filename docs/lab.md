@@ -266,7 +266,7 @@ flashlight), Dusk or Day. The Look picker applies the shared `lookGradeColor` po
 look terms (palette, practical warmth) are not reproduced here. Walkers (a survivor and a zombie stand-in) loop
 through the room and bend grass and bushes with the same `foliageTrample` code Outbreak uses for the player and
 zombies. `foliage.set`, `foliage.randomize` and `foliage.preset` (preset JSON version 2; version 1 migrates) drive it
-from `arcade`/bench, and `bun packages/kit/lab/prove-foliage.ts` captures every preset.
+from `arcade`/bench, and `bun scripts/lab/prove-foliage.ts` captures every preset.
 
 Gameplay rules and replicated simulation remain authoritative. Camera, cosmetic effects and presentation clutter stay
 local; Lab tuning must not silently add wire fields or change authoritative movement, damage or collision rules.

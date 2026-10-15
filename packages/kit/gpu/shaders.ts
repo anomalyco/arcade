@@ -1,4 +1,4 @@
-import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "./limits"
+import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../limits"
 import type { PostFinishOptions } from "./look-shaders"
 import { motionGather, motionOutput } from "./motion"
 import { wgslSnippet } from "./wgsl"

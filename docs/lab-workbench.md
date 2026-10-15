@@ -306,11 +306,11 @@ Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
 hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
-hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
-hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
+hivemind run --kind browser --fetch captures/lab-panels -- bun scripts/lab/prove-panels.ts
+hivemind run --fetch captures/lab-car-playground -- bun scripts/lab/prove-car-playground.ts
 ```
 
-`hivemind run --kind browser --fetch captures/lab-overlays -- bun packages/kit/lab/prove-overlays.ts` proves the
+`hivemind run --kind browser --fetch captures/lab-overlays -- bun scripts/lab/prove-overlays.ts` proves the
 readouts and overlays in Spawn: the Frame button's tooltip with its `F` chip and no native `title` left in the top bar;
 ⌘K finding and running Frame Scene, and `palette.open` returning Details fields through `commandsFrom`; deleting two
 selected lights asks first, Esc keeps them, Delete removes them and the toast's Undo restores them; a numeric Watch
@@ -318,7 +318,7 @@ pin is a sparkline and a choice a watch, an idle Watch list makes no DOM changes
 the frame-time readout shows its graph and two meters, with main-thread task time per second hidden and shown.
 It also proves (in `prove-knobs.ts`) that compare (hold `\`) held past a key nudge's settle leaves the nudge one undo step.
 
-`hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs panels
+`hivemind run --kind browser --fetch captures/lab-knobs -- bun scripts/lab/prove-knobs.ts` proves the knobs panels
 at 1440×900 and 1728×1117@2x on the Outbreak scenes station and the vignette section: no rounded box anywhere in the
 workbench outside the viewport, 24 px knobs rows, labels, values and choices in one 11.5 px font, no visible frame around
 inline panels, flat groups, the Details toolbar and knobs buttons drawn as the Lab's 20 px square buttons with the
@@ -339,7 +339,7 @@ runs `Randomize Shape` instead of knobs' roll. `--shots-only` captures a before/
 the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.
 `games/getaway/scripts/prove-lab-effects.ts` and `prove-lab-spawn.ts` still read that DOM and need knobs selectors.
 
-`hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts` proves the panels
+`hivemind run --kind browser --fetch captures/lab-panels -- bun scripts/lab/prove-panels.ts` proves the panels
 and Library at 1440×900 (DPR 1) and 1728×1117 (DPR 2): previews render for every Foliage item; dragging the Outliner,
 Details and Library handles resizes them by the drag, the canvas backing size matches the viewport on every frame
 (no lag) and screenshots taken mid-drag are never blank; sizes survive a reload; double-click resets; Details

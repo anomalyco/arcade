@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { createServer } from "vite"
-import { WEATHER_PRESET_IDS, type WeatherPresetId } from "../weather"
+import { WEATHER_PRESET_IDS, type WeatherPresetId } from "@arcade/kit/weather"
 
-const repoRoot = resolve(import.meta.dir, "../../..")
+const repoRoot = resolve(import.meta.dir, "../..")
 const outbreakRoot = resolve(repoRoot, "games/outbreak")
 const labRoot = resolve(repoRoot, "games/lab")
 const artifactDir = resolve(process.env.HOME ?? "/Users/kit", "code/home/artifacts/2026-10-14-weather")

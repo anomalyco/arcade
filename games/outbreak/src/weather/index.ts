@@ -1,4 +1,4 @@
-import { LIGHT_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS } from "@arcade/kit/limits"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import {
   WEATHER_PRESETS,

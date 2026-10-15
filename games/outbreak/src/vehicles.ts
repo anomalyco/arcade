@@ -1,4 +1,4 @@
-import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import { angleDiff } from "@arcade/kit/sim/geom"
 import { bodyPoint, type BodyPose } from "@arcade/kit/vehicle/body-pose"

@@ -3,9 +3,9 @@ import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { createServer } from "vite"
 
-const repoRoot = resolve(import.meta.dir, "../../..")
+const repoRoot = resolve(import.meta.dir, "../..")
 const getawayRoot = join(repoRoot, "games/getaway")
-const outDir = process.env.OUT_DIR ?? join(import.meta.dir, "proof-output")
+const outDir = process.env.OUT_DIR ?? join(repoRoot, "captures/audio-lab")
 mkdirSync(outDir, { recursive: true })
 
 const virtualHtml = `<!doctype html>

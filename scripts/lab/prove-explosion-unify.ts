@@ -6,7 +6,7 @@ import { resolve, join } from "node:path"
 import { chromium, type Page } from "playwright-core"
 import { createServer, type ViteDevServer } from "vite"
 
-const root = resolve(import.meta.dir, "../../..")
+const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.EXPLOSION_UNIFY_OUT ?? "/Users/kit/code/home/artifacts/2026-10-14-explosion-unify")
 const framesRoot = join(out, "video-frames")
 mkdirSync(framesRoot, { recursive: true })

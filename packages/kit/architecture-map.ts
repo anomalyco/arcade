@@ -121,13 +121,13 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/pass-graph",
   },
   {
-    area: "`gpu/{renderer,shaders,level,limits}`",
+    area: "`gpu/{renderer,shaders,level}` & `limits`",
     description: "Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom",
     match: (s) =>
       s === "@arcade/kit/gpu/renderer" ||
       s === "@arcade/kit/gpu/shaders" ||
       s === "@arcade/kit/gpu/level" ||
-      s === "@arcade/kit/gpu/limits",
+      s === "@arcade/kit/limits",
   },
   {
     area: "`gpu/{boot,scene-frame}`",

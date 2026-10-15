@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { OCC_FLOATS } from "@arcade/kit/limits"
 import { makeTown, sightRects } from "../shared/map"
 import { OPEN_WINDOW_SILL, packLightOccluders, WALL_CASTER_HEIGHT, windowStateKey } from "../src/light-occluders"
 
