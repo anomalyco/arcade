@@ -1,5 +1,5 @@
 import { Spring, springMotion } from "../core/spring.js"
-import { applyLook, frameLoop, ICONS, reducedMotion, type UiLook } from "./look.js"
+import { applyLook, frameLoop, ICONS, reducedMotion, syncFrame, type UiLook } from "./look.js"
 import {
   dropTarget,
   flatten,
@@ -172,6 +172,7 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
   let indent = 14
   let inset = 8
   const measure = () => {
+    syncFrame(root)
     const probe = doc.createElement("div")
     probe.style.cssText =
       "position:absolute;visibility:hidden;height:var(--ku-row);width:var(--ku-indent);padding-left:var(--ku-inset)"
@@ -891,7 +892,7 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
     if (refocus) root.focus({ preventScroll: true })
   }
 
-  const ro = new ResizeObserver(() => {
+  const remeasure = () => {
     const was = h
     measure()
     if (h !== was) {
@@ -899,8 +900,14 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
       return
     }
     sync("scroll")
-  })
+  }
+  const ro = new ResizeObserver(remeasure)
   ro.observe(root)
+  root.addEventListener("knobs-restyle", () => {
+    measure()
+    sync("snap")
+    rebindAll(true)
+  })
 
   recompute()
   sync("snap")

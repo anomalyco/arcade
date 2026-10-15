@@ -1,6 +1,6 @@
 import { createRemoteControls, type ControlDescriptor } from "@arcade/knobs"
 import { mountPanel } from "@arcade/knobs/panel"
-import { arcadePreset } from "../lab-knobs"
+import { LAB_LOOK } from "../lab-knobs"
 
 export type WatchPin = {
   sectionId: string
@@ -64,7 +64,7 @@ export function createWatchList(host: HTMLElement, deps: WatchDeps) {
   el.setAttribute("aria-label", "Watch")
   el.hidden = true
   host.append(el)
-  const store = createRemoteControls("lab-watch", [], { storage: null, persist: "none", theme: "dark", density: "compact" })
+  const store = createRemoteControls("lab-watch", [], { storage: null, persist: "none", theme: "dark" })
   let pins: WatchPin[] = []
   let shape = ""
   let marks = ""
@@ -91,9 +91,7 @@ export function createWatchList(host: HTMLElement, deps: WatchDeps) {
   const panel = mountPanel(store, el, {
     title: false,
     header: false,
-    preset: arcadePreset,
-    theme: "dark",
-    density: "compact",
+    ...LAB_LOOK,
     renderer: "dom",
     variants: false,
     haptics: false,

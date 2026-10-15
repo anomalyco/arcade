@@ -47,10 +47,11 @@
 
 .lh-back {
   margin-left: auto;
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid var(--line2);
-  background: transparent;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--tx);
   font: inherit;
   cursor: pointer;
@@ -60,7 +61,7 @@
 }
 .lh-back:hover,
 .lh-back:focus-visible {
-  border-color: var(--acc);
+  background: var(--acc-b);
   outline: none;
 }
 
@@ -68,14 +69,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  margin: 18px 0 14px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--line2);
+  height: 36px;
+  margin: 18px 3px 10px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--tx3);
 }
 .lh-search:focus-within {
-  border-bottom-color: var(--acc);
+  box-shadow: inset 0 0 0 1px var(--line2);
   color: var(--tx2);
 }
 .lh-search-input {
@@ -102,6 +104,7 @@
   height: 16px;
   padding: 0 4px;
   border: 1px solid var(--line2);
+  border-radius: 4px;
   color: var(--tx3);
   font: 10px var(--mono);
 }
@@ -116,16 +119,17 @@
 
 .lh-dot {
   display: block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   margin: auto;
+  border-radius: 50%;
   background: var(--c);
 }
 
 .lh-about {
   height: 100%;
   overflow: auto;
-  padding: 2px 4px 24px 22px;
+  padding: 16px 20px 24px;
 }
 .lh-about-head h2 {
   margin: 0;
@@ -177,19 +181,20 @@
   height: 26px;
   margin-top: 22px;
   padding: 0 8px 0 12px;
-  border: 1px solid var(--acc);
-  background: var(--acc-a);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--acc-b);
   color: var(--tx);
   font: inherit;
   cursor: pointer;
 }
 .lh-open:hover,
 .lh-open:focus-visible {
-  background: var(--acc-b);
+  background: color-mix(in srgb, var(--acc) 24%, transparent);
   outline: none;
 }
 .lh-open kbd {
-  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+  border-color: var(--line2);
   color: var(--tx2);
 }
 .lh-empty {
@@ -201,7 +206,7 @@
   gap: 18px;
   height: 40px;
   align-items: center;
-  border-top: 1px solid var(--line);
+  padding: 0 6px;
   color: var(--tx3);
 }
 .lh-foot span {
@@ -250,6 +255,7 @@
   font: 12px var(--sans);
 }
 .lab-crumb-menu button {
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -268,7 +274,7 @@
   font-size: 11px;
 }
 .lab-crumb-menu button[data-active="true"] {
-  color: var(--acc);
+  background: var(--surface);
 }
 .lab-crumb-menu button:hover,
 .lab-crumb-menu button:focus-visible {
@@ -284,10 +290,11 @@
 
 .lh-new {
   margin-left: auto;
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid var(--line2);
-  background: transparent;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--tx2);
   font: inherit;
   cursor: pointer;
@@ -297,7 +304,7 @@
 }
 .lh-new:hover,
 .lh-new:focus-visible {
-  border-color: var(--acc);
+  background: var(--acc-b);
   color: var(--tx);
   outline: none;
 }
@@ -318,7 +325,8 @@
   align-items: center;
   height: 26px;
   padding: 0 10px;
-  border: 1px solid transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--tx2);
   font: inherit;
@@ -326,14 +334,14 @@
 }
 .lh-act:hover,
 .lh-act:focus-visible {
-  border-color: var(--line2);
+  background: var(--surface);
   color: var(--tx);
   outline: none;
 }
 .lh-act[data-danger]:hover,
 .lh-act[data-danger]:focus-visible {
-  border-color: color-mix(in srgb, #ff5a5a 60%, transparent);
-  color: #ff8a8a;
+  background: color-mix(in srgb, #ff453a 16%, transparent);
+  color: #ff6961;
 }
 
 .lh-kinds {
@@ -347,6 +355,7 @@
 .lh-kind {
   display: grid;
   gap: 1px;
+  border-radius: var(--radius-sm);
   padding: 6px 12px;
   border: 0;
   background: transparent;

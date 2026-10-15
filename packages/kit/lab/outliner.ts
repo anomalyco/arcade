@@ -1,5 +1,5 @@
 import { popover, tree, type Tree } from "@arcade/knobs/ui"
-import { arcadePreset } from "../lab-knobs"
+import { LAB_LOOK } from "../lab-knobs"
 import { tip } from "./overlays"
 import type { LabWorldObject } from "./types"
 
@@ -223,8 +223,7 @@ export function createOutliner(host: HTMLElement, deps: OutlinerDeps) {
   const nodeById = new Map<string, OutlinerNode>()
   const icon = (n: OutlinerNode) => (n.type === "group" ? undefined : OUTLINER_GROUPS.find(g => g.id === n.group)!.icon)
   const outline: Tree<OutlinerNode> = tree<OutlinerNode>(body, {
-    preset: arcadePreset,
-    theme: "dark",
+    ...LAB_LOOK,
     items: [],
     label: "Scene objects",
     empty: "Nothing placed yet. Open the Library (Ctrl+Space) to add objects.",
