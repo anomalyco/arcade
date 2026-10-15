@@ -62,6 +62,14 @@ export const DEFAULT_HUD_SETTINGS = {
   teammateCallouts: TEAMMATE_IMPORTANT,
   /** Size of other survivors' callouts and rings relative to yours. */
   teammateScale: 0.8,
+  /** Opacity the bottom dock settles to after a few idle seconds; it brightens on any change. */
+  dockIdleOpacity: 0.5,
+  /** Seconds without a change before the dock dims. */
+  dockDimAfter: 3,
+  /** Multiplies every HUD spring's speed (1 = Kit's palette). */
+  hudMotionSpeed: 1,
+  /** Drops HUD travel and keeps short fades, as with the system's reduced-motion setting. */
+  hudReducedMotion: false,
 }
 
 export type HudSettings = typeof DEFAULT_HUD_SETTINGS
@@ -139,4 +147,8 @@ export const hudControls: LabControl[] = [
     ],
   },
   { key: "teammateScale", label: "Teammate HUD size", group: "HUD", min: 0.5, max: 1, step: 0.05, unit: "×" },
+  { key: "dockIdleOpacity", label: "Idle dock opacity", group: "HUD motion", min: 0.2, max: 1, step: 0.05, unit: "" },
+  { key: "dockDimAfter", label: "Dim dock after", group: "HUD motion", min: 0.5, max: 10, step: 0.5, unit: "s" },
+  { key: "hudMotionSpeed", label: "Motion speed", group: "HUD motion", min: 0.25, max: 3, step: 0.05, unit: "×" },
+  { key: "hudReducedMotion", label: "Reduced motion", group: "HUD motion" },
 ]

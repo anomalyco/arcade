@@ -5,6 +5,14 @@ import { createAIAgent, type AIAgent, type AIState } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { PISTOL_NOISE } from "../shared/combat"
 import { CoopSim, hashSimState } from "../shared/coop-sim"
+import {
+  addHorde as placeHorde,
+  DEFAULT_HORDE_TUNING,
+  HORDE_ID_BASE,
+  hordesOf,
+  materializeHorde,
+  type Horde,
+} from "../shared/hordes/index"
 
 const HARDWARE = [53, 23, 73, 38] as const
 
@@ -227,4 +235,129 @@ describe("flow-field hordes", () => {
     const progress = crawlers.reduce((s, a, i) => s + (start[i]! - dist(a, goal)), 0) / crawlers.length
     expect(progress).toBeGreaterThan(8)
   })
+})
+
+/** Classic town at night, one idle survivor at `(x, y)`, no director, no crowd. */
+function roamWorld(x: number, y: number, ai: Record<string, number> = {}, mode: "classic" | "streaming" = "classic"): CoopSim {
+  const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0, directorPacing: 0, startHour: 23, ...ai }, mode)
+  sim.addSurvivor("player", 0)
+  Object.assign(sim.slots[0]!.survivor, { x, y, flashlightOn: false })
+  sim.ai.agents.length = 0
+  return sim
+}
+
+const members = (sim: CoopSim, h: Horde) => sim.ai.agents.filter((a) => a.hordeId === h.id && a.state !== "dead")
+
+describe("roaming hordes", () => {
+  test("a horde out of town hears a gunshot through the walls, walks in and materializes", () => {
+    const sim = roamWorld(45, 46)
+    const h = placeHorde(sim, -10, 46, 160)
+    let materializedAt = -1
+    run(sim, 60, (t) => {
+      if (t === 60) sim.ai.emitNoise(45, 46, PISTOL_NOISE, "gunshot", sim.time, "player", 2.2)
+      if (materializedAt < 0 && h.live > 0) materializedAt = t * TICK_DT
+    })
+    expect(materializedAt).toBeGreaterThan(10)
+    expect(materializedAt).toBeLessThan(35)
+    const live = members(sim, h)
+    expect(live.length).toBe(160)
+    expect(live.filter((a) => Math.hypot(a.x - 45, a.y - 46) < 10).length).toBeGreaterThanOrEqual(120)
+  }, 20_000)
+
+  test("a horde too far to hear the shot stays where it is", () => {
+    const sim = roamWorld(45, 46)
+    const h = placeHorde(sim, -40, 46, 200)
+    run(sim, 20, (t) => {
+      if (t === 60) sim.ai.emitNoise(45, 46, PISTOL_NOISE, "gunshot", sim.time, "player", 2.2)
+    })
+    expect(h.goal).toBe(0)
+    expect(h.x).toBe(-40)
+    expect(h.live).toBe(0)
+  })
+
+  test("a quiet horde nobody is near folds back into a point and comes back whole", () => {
+    const sim = roamWorld(12, 12)
+    const h = placeHorde(sim, 80, 78, 120)
+    materializeHorde(sim, h)
+    expect(members(sim, h).length).toBe(120)
+    run(sim, 1)
+    expect(h.live).toBe(0)
+    expect(h.pending).toBe(120)
+    expect(members(sim, h).length).toBe(0)
+    Object.assign(sim.slots[0]!.survivor, { x: 60, y: 62 })
+    run(sim, 12)
+    expect(h.live + h.pending).toBe(120)
+    expect(members(sim, h).length).toBe(120)
+  })
+
+  test("streaming: horde members stay out of chunk deltas and fold back when their window unloads", () => {
+    const sim = roamWorld(48, 48, {}, "streaming")
+    const h = placeHorde(sim, 66, 48, 150)
+    materializeHorde(sim, h)
+    run(sim, 2)
+    expect(h.live).toBe(150)
+    for (const chunk of sim.worldStream.activeChunks.values()) {
+      sim.worldStream.captureChunkDelta(chunk, sim.town, sim.progression.containers, sim.ai.portalStates, sim.ai.agents)
+    }
+    Object.assign(sim.slots[0]!.survivor, { x: 48 + 32 * 6, y: 48 })
+    run(sim, 1)
+    expect(h.live).toBe(0)
+    expect(h.pending).toBe(150)
+    expect(sim.ai.agents.some((a) => a.hordeId !== undefined)).toBe(false)
+    const ids = [...sim.worldStream.deltas.values()].flatMap((d) => Object.keys(d.zombies).map(Number))
+    expect(ids.some((id) => id >= HORDE_ID_BASE)).toBe(false)
+  })
+
+  test("the director's chaser cap leaves horde members alone", () => {
+    const sim = roamWorld(45, 46, { directorPacing: 1, zombieCount: 16, maxActiveNearPlayer: 3 })
+    const h = placeHorde(sim, 45, 66, 40, { x: 45, y: 46 })
+    materializeHorde(sim, h)
+    let peak = 0
+    run(sim, 15, () => {
+      peak = Math.max(peak, members(sim, h).filter((a) => a.state === "chase" || a.state === "alert").length)
+    })
+    expect(peak).toBeGreaterThan(sim.ai.pacing.telemetry.effectiveMaxActive + 10)
+  })
+
+  test("hordeCount seeds roaming hordes 70–120 m out and the default seeds none", () => {
+    const off = roamWorld(28, 57)
+    run(off, 1)
+    expect(hordesOf(off).hordes.length).toBe(0)
+    const on = roamWorld(28, 57)
+    const tuning = { hordes: { ...DEFAULT_HORDE_TUNING, hordeCount: 3, hordeSize: 80 } }
+    on.stepWorld(TICK_DT, 240, tuning as never)
+    const hordes = hordesOf(on).hordes
+    expect(hordes.length).toBe(3)
+    for (const h of hordes) {
+      const d = Math.hypot(h.x - 28, h.y - 57)
+      expect(d).toBeGreaterThanOrEqual(70)
+      expect(d).toBeLessThanOrEqual(120)
+      expect(h.pending).toBe(80)
+    }
+  })
+
+  test("a live horde and a migrating one replay bit for bit from a mid-run snapshot", () => {
+    const sim = roamWorld(45, 46)
+    sim.addSurvivor("p2", 1)
+    Object.assign(sim.slots[1]!.survivor, { x: 60, y: 60, flashlightOn: true })
+    const a = placeHorde(sim, 30, 70, 100, { x: 45, y: 46 })
+    materializeHorde(sim, a)
+    placeHorde(sim, -8, 50, 120)
+    const step = (s: CoopSim, t: number) => {
+      for (const slot of s.slots) {
+        slot.survivor.health = slot.survivor.maxHealth
+        s.stepSurvivor(slot, { mx: 0, my: 0, aim: 0, interact: false }, TICK_DT)
+      }
+      if (t % 240 === 30) s.ai.emitNoise(45, 46, PISTOL_NOISE, "gunshot", s.time, "player", 2.2)
+      s.stepWorld(TICK_DT, 240)
+    }
+    for (let t = 0; t < 600; t++) step(sim, t)
+    const mid = sim.toSnapshot()
+    expect((mid.featureStates.hordes as { hordes: Horde[] }).hordes.length).toBe(2)
+    for (let t = 600; t < 2100; t++) step(sim, t)
+    const replay = CoopSim.fromSnapshot(mid)
+    for (let t = 600; t < 2100; t++) step(replay, t)
+    expect(hashSimState(replay.toSnapshot())).toBe(hashSimState(sim.toSnapshot()))
+    expect(hordesOf(sim).hordes.reduce((s, h) => s + h.live, 0)).toBeGreaterThan(150)
+  }, 20_000)
 })

@@ -1,3 +1,5 @@
+import type { CurveInterp, CurvePoint, GradientSpace, GradientStop } from "./ramps"
+
 export type LabValue = boolean | number | string
 export type LabSettings = Record<string, LabValue>
 export type LabControl = {
@@ -29,7 +31,18 @@ export type LabControl = {
   | { type?: "select"; options: readonly { value: number | string; label: string }[] }
   | { type?: "toggle"; on?: number; off?: number }
   | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
+  /** A colour over 0…1. The setting holds the stops as JSON text (see `ramps.ts`). */
+  | { type: "gradient"; space?: GradientSpace; presets?: Readonly<Record<string, readonly GradientStop[]>> }
+  /** A number over 0…1, y in `range` ([0, 1] by default). The setting holds the points as JSON text (see `ramps.ts`). */
+  | { type: "curve"; range?: readonly [number, number]; interp?: CurveInterp; presets?: Readonly<Record<string, readonly CurvePoint[]>> }
 )
+/** Gradient and curve rows: edited in knobs' ramp editors, never stepped, cycled or randomized by the Lab itself. */
+export const isRampControl = (control: LabControl): control is Extract<LabControl, { type: "gradient" | "curve" }> =>
+  control.type === "gradient" || control.type === "curve"
+/** On/off rows: what is left once actions, ranges, choices and ramps are set aside. */
+export type LabSwitch = Exclude<LabControl, { type: "action" | "gradient" | "curve" } | { min: number } | { options: readonly unknown[] }>
+export const isSwitchControl = (control: LabControl): control is LabSwitch =>
+  control.type !== "action" && !isRampControl(control) && !("min" in control) && !("options" in control)
 export type LabRow = { group: string; control?: LabControl }
 /**
  * A Details tab (the inspector layout): the groups it shows, each by its id or as `[id, label]` when the tab makes part
@@ -159,7 +172,7 @@ export class LabNavigation {
   }
   adjust(direction: number, shift = false, alt = false) {
     const c = this.active?.control
-    if (!c || c.type === "action" || c.enabled?.(this.settings) === false) return
+    if (!c || c.type === "action" || isRampControl(c) || c.enabled?.(this.settings) === false) return
     if ("min" in c) {
       const delta = direction * (c.step ?? .01) * (shift ? 10 : 1) * (alt ? 0.1 : 1)
       this.set(c, Number(Math.max(c.min, Math.min(c.max, Number(this.settings[c.key]) + delta)).toPrecision(12)))

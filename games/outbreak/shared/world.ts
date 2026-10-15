@@ -1148,6 +1148,7 @@ export class StreamingWorld {
     if (!modified) {
       for (let i = 0; i < agents.length; i++) {
         const a = agents[i]!
+        if (a.hordeId !== undefined) continue
         const inBounds = a.x >= x0 && a.x < x1 && a.y >= y0 && a.y < y1
         const spawnSpec = chunk.zombieSpawns.find((s) => s.id === a.id)
         if (!inBounds && !spawnSpec) continue
@@ -1215,6 +1216,8 @@ export class StreamingWorld {
     let livingCount = 0
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]!
+      // Horde members belong to their horde (shared/hordes), which absorbs them before their chunk unloads.
+      if (a.hordeId !== undefined) continue
       const inBounds = a.x >= x0 && a.x < x1 && a.y >= y0 && a.y < y1
       const isSpawnedHere = chunk.zombieSpawns.some((s) => s.id === a.id)
       if (!inBounds && !isSpawnedHere) continue
@@ -1356,6 +1359,7 @@ export class StreamingWorld {
         const [x0, y0, x1, y1] = chunk.bounds
         for (let i = agents.length - 1; i >= 0; i--) {
           const a = agents[i]!
+          if (a.hordeId !== undefined) continue
           const inChunk = a.x >= x0 && a.x < x1 && a.y >= y0 && a.y < y1
           const spawnedInChunk = chunk.zombieSpawns.some((s) => s.id === a.id)
           if (inChunk || spawnedInChunk) {

@@ -492,7 +492,12 @@ function createSparkline(env: ReadoutEnv): ReadoutView {
     notify: () => rt.request(),
     /** Focus reads like hover: the extent. */
     hover: setHover,
-    refresh: () => canvas.repaint(env.gpu?.() ?? false),
+    refresh: () => {
+      canvas.repaint(env.gpu?.() ?? false)
+      // A restyle's new colours: drawn afresh on the next frame.
+      dirty = true
+      rt.request()
+    },
     retune(next) {
       field = next as SparklineField
       dirty = true
@@ -743,7 +748,12 @@ function createGraph(env: ReadoutEnv): ReadoutView {
     },
     buttons: () => [],
     notify: () => rt.request(),
-    refresh: () => canvas.repaint(env.gpu?.() ?? false),
+    refresh: () => {
+      canvas.repaint(env.gpu?.() ?? false)
+      // A restyle's new colours: drawn afresh on the next frame.
+      dirty = true
+      rt.request()
+    },
     retune(next) {
       const before = field
       field = next as GraphField
@@ -871,7 +881,12 @@ function createMeter(env: ReadoutEnv): ReadoutView {
     texts: () => value.texts(paletteOf(root)),
     buttons: () => [],
     notify: () => rt.request(),
-    refresh: () => canvas.repaint(env.gpu?.() ?? false),
+    refresh: () => {
+      canvas.repaint(env.gpu?.() ?? false)
+      // A restyle's new colours: drawn afresh on the next frame.
+      dirty = true
+      rt.request()
+    },
     retune(next) {
       field = next as MeterField
       seq = textSeq = -1
@@ -1407,6 +1422,8 @@ export function createReadout(env: ReadoutEnv): ReadoutView {
               ? createTable(env)
               : createLog(env)
   view.element.dataset.kind = env.field.kind
+  // restyle() changed the tokens: canvases draw again in the new colours.
+  view.element.addEventListener("knobs-restyle", () => view.refresh())
   if (env.field.kind === "log")
     view.element.style.setProperty("--knobs-rd-lines", String((env.field as LogField).lines))
   return view

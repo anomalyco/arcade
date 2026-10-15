@@ -1,4 +1,4 @@
-export { injectUiStyles, type UiLook, type UiTheme } from "./look.js"
+export { injectUiStyles, restyle, type RestyleLook, type UiLook, type UiTheme } from "./look.js"
 export { commandsFrom, type CommandsFromOptions } from "./commands.js"
 export { confirm, type ConfirmOptions } from "./confirm.js"
 export { overlayLook, type Anchor } from "./layer.js"

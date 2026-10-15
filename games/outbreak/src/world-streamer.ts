@@ -11,6 +11,7 @@ import {
   CHUNK,
   frontageEnd,
   propShape,
+  SIZE,
   type Building,
   type Prop,
   type Town,
@@ -127,6 +128,8 @@ export type CompiledWorldChunk = {
   floorTile: Uint8Array<ArrayBuffer> // 128 × 128 × 2 (RG8)
   moonTile: Uint8Array<ArrayBuffer> // 256 × 256 (R8)
   bounceTile: Uint8Array<ArrayBuffer> // 64 × 64 × 4 (RGBA8)
+  /** Wall-sconce lights, `SCONCE_FLOATS` each (see interiors/sconces.ts). */
+  sconces: Float32Array<ArrayBuffer>
   compileMs: number
 }
 
@@ -597,6 +600,7 @@ export function compileSingleWorldChunk(
   }
 
   const footprints = chunk.buildings.map(buildingFootprint)
+  const sconces: number[] = []
   const isClassicOriginChunk =
     chunk.cx >= 0 &&
     chunk.cx < 3 &&
@@ -731,7 +735,7 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
     emitBuildingRugs(mainScratch, b, chunkTown)
-    emitInteriorDecor(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown, undefined, sconces)
   }
 
   // 5. Walls, windows & fences
@@ -1171,6 +1175,7 @@ export function compileSingleWorldChunk(
     floorTile,
     moonTile,
     bounceTile,
+    sconces: new Float32Array(sconces),
     compileMs: performance.now() - t0,
   }
 }
@@ -1235,6 +1240,25 @@ function packChunkMeshesForWindow(
   }
 }
 
+/**
+ * Whether the hand-authored origin build (level.ts) should draw the origin block instead of the streamed window.
+ * The two differ (the streamed copy of the origin chunks has none of the authored hedges, yard trees and porch
+ * dressing), so leaving is held off until the camera footprint actually reaches past the origin build's edge, and
+ * coming back needs the footprint 3 m inside it. Without the way back, panning near the edge once (walking down a
+ * hall inside Ash House on a wide window) swapped the yards for their bare streamed copies for the rest of the run.
+ */
+export function useOriginBuild(
+  usingOrigin: boolean,
+  x: number,
+  y: number,
+  view: readonly [number, number, number, number],
+  zoom: number,
+): boolean {
+  if (x < 14 || x > 82 || y < 14 || y > 82 || zoom > 50) return false
+  const margin = usingOrigin ? 0 : 3
+  return view[0] >= margin && view[1] >= margin && view[2] <= SIZE - margin && view[3] <= SIZE - margin
+}
+
 type BakeTask = {
   cx: number
   cy: number
@@ -1282,6 +1306,8 @@ export class WorldClientStreamer {
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
   windowBuildings: Building[] = []
+  /** Sconce lists of the chunks in the current window. */
+  windowSconces: Float32Array[] = []
   private readonly buildingSlots: (Building | null)[] = [null, null, null, null, null, null, null, null]
   lastWindowKey = ""
   bakeStepsCompleted = 0
@@ -1427,6 +1453,7 @@ export class WorldClientStreamer {
     this.center = { cx: 1, cy: 1 }
     this.windowOrigin = [0, 0]
     this.windowBuildings = []
+    this.windowSconces = []
     this.buildingSlots.fill(null)
     this.lastWindowKey = ""
     this.lastPlayerX = NaN
@@ -1764,8 +1791,10 @@ export class WorldClientStreamer {
     if (nextOuterRingDirty) this.outerRingDirty = true
 
     this.renderedChunkKeys.clear()
+    this.windowSconces = []
     for (let i = 0; i < allRenderedChunks.length; i++) {
       this.renderedChunkKeys.add(allRenderedChunks[i]!.key)
+      if (allRenderedChunks[i]!.sconces?.length) this.windowSconces.push(allRenderedChunks[i]!.sconces)
     }
 
     // Select the 8 buildings closest to (playerX, playerY) so the building the survivor is inside (dist = 0)

@@ -14,7 +14,7 @@ import {
   type DistrictKind,
 } from "../shared/world"
 import { NetSession } from "../src/net-session"
-import { WorldClientStreamer, compileSingleWorldChunk, ensurePropTemplates, recycleCompiledChunk } from "../src/world-streamer"
+import { WorldClientStreamer, compileSingleWorldChunk, ensurePropTemplates, recycleCompiledChunk, useOriginBuild } from "../src/world-streamer"
 import { Loopback } from "./loopback"
 
 describe("Procedural world generation & chunk streaming", () => {
@@ -444,5 +444,30 @@ describe("Procedural world generation & chunk streaming", () => {
     const fadeDone = streamer.updateWindow(px, py, session.view.town, "streaming", maxZoomView, 0, 0, 10.35)
     expect(streamer.chunkFadeAlpha).toBe(0)
     expect(fadeDone.level!.chunks.some((c) => c.customCutaway === "fade")).toBe(false)
+  })
+})
+
+describe("Origin build vs streamed window", () => {
+  // Ash House porch on a 1728×1000 window: the camera footprint sits 3.2 m inside the origin build's west edge, and
+  // walking down Ash's hall pans it to 1.1 m. That pan used to swap to the streamed window (which has none of the
+  // authored hedges and yard trees) and never come back.
+  const porch = [3.2, 21.7, 52.2, 50.9] as const
+  const hall = [1.1, 17.1, 50, 46.3] as const
+
+  test("panning near the origin edge inside a house keeps the origin build", () => {
+    expect(useOriginBuild(true, 27.7, 37.6, porch, 24)).toBe(true)
+    expect(useOriginBuild(true, 24.1, 33, hall, 24)).toBe(true)
+  })
+
+  test("leaves only once the footprint passes the origin build's edge, and comes back 3 m inside it", () => {
+    expect(useOriginBuild(true, 20, 33, [-0.4, 17, 49, 46], 24)).toBe(false)
+    expect(useOriginBuild(false, 24.1, 33, hall, 24)).toBe(false)
+    expect(useOriginBuild(false, 27.7, 37.6, porch, 24)).toBe(true)
+    expect(useOriginBuild(false, 27.7, 37.6, [3.2, 21.7, 93.4, 50.9], 24)).toBe(false)
+  })
+
+  test("outside the origin box or zoomed far out always streams", () => {
+    expect(useOriginBuild(true, 90, 40, [70, 20, 110, 60], 24)).toBe(false)
+    expect(useOriginBuild(true, 48, 48, [20, 20, 76, 76], 60)).toBe(false)
   })
 })

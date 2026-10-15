@@ -1,4 +1,4 @@
-import { Emitter, Particles, type ParticleSpec } from "../fx/particles"
+import { Emitter, lifeRamp, Particles, type ParticleSpec } from "../fx/particles"
 import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
 import {
@@ -15,6 +15,7 @@ import {
 } from "../fx/explosion"
 import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
 import type { LabControl } from "../lab-panel"
+import { curveTable, curveText, gradientTable, gradientText, parseCurve, parseGradient } from "../ramps"
 import { walls, type LabLight } from "./stage"
 import type { LabContext, LabSection } from "./types"
 
@@ -31,6 +32,31 @@ export const effectOptions=[
   {value:"debris",label:"Debris"},{value:"fire",label:"Fire"},
 ]
 const specs=effectSpecs
+/** Effects whose particles come from `effectSpecs` and take the over-life ramps. */
+const rampEffects=new Set(["sparks","debris","water","fire","nitro"])
+const SIZE_RANGE=[0,3] as const
+const flat=(y:number)=>[{x:0,y},{x:1,y}]
+/** Over-life defaults: a white tint and flat ×1 curves, which leave every particle exactly as the kind draws it. */
+export const lifeRampDefaults={
+  tintOverLife:gradientText([{at:0,color:"#ffffff"},{at:1,color:"#ffffff"}]),
+  sizeOverLife:curveText(flat(1),{range:SIZE_RANGE}),
+  opacityOverLife:curveText(flat(1)),
+}
+/** Ramp settings as JSON text, or as stops/points when a variation grid tile passes them that way. */
+type LifeRampSettings={tintOverLife:unknown;sizeOverLife:unknown;opacityOverLife:unknown}
+const asText=(v:unknown)=>typeof v==="string"?v:JSON.stringify(v)
+const WHITE=parseGradient(lifeRampDefaults.tintOverLife,[])
+/** The `ParticleSpec.ramp` for these settings: 0 while all three are at their identity. */
+export function lifeRampFor(settings:LifeRampSettings):number{
+  const key=`${asText(settings.tintOverLife)}|${asText(settings.sizeOverLife)}|${asText(settings.opacityOverLife)}`
+  if(key===`${lifeRampDefaults.tintOverLife}|${lifeRampDefaults.sizeOverLife}|${lifeRampDefaults.opacityOverLife}`)return 0
+  const size=parseCurve(settings.sizeOverLife,flat(1),{range:SIZE_RANGE}),opacity=parseCurve(settings.opacityOverLife,flat(1))
+  const tint=parseGradient(settings.tintOverLife,WHITE)
+  const one=(points:readonly {y:number}[])=>points.every(p=>Math.abs(p.y-1)<1e-6)
+  const tintTable=gradientTable(tint),white=tintTable.every(v=>Math.abs(v-1)<1e-4)
+  if(white&&one(size)&&one(opacity))return 0
+  return lifeRamp(key,()=>({tint:white?null:tintTable,size:one(size)?null:curveTable(size),opacity:one(opacity)?null:curveTable(opacity)}))
+}
 const stageLightX=[-4,4,-4,4,0,0,-7,7],stageLightZ=[-2,2,3,-3,-6,6,0,0]
 
 export function createEffects(context:LabContext) {
@@ -45,6 +71,7 @@ export function createEffects(context:LabContext) {
     density:1,
     interval:2.2,
     effect:"smoke",
+    ...lifeRampDefaults,
     playing:true,
     loop:true,
     targetX:-1,
@@ -69,7 +96,7 @@ export function createEffects(context:LabContext) {
   const current:ParticleSpec={...specs.sparks}
   const emit=(x:number,y:number,z:number)=>{
     const name=effect==="explosion"?"fire":effect,spec=specs[name]??specs.sparks
-    Object.assign(current,spec);current.size*=params.size;current.alpha*=params.density
+    Object.assign(current,spec);current.size*=params.size;current.alpha*=params.density;current.ramp=lifeRampFor(params)
     const angle=random()*Math.PI*2,speed=(effect==="nitro"?3:effect==="fire"?0.7:2+random()*6)*params.speed
     let vx=Math.cos(angle)*speed,vy=(2+random()*5)*params.speed,vz=Math.sin(angle)*speed
     if(effect==="water"){vx*=0.3;vz*=0.3;vy=8*params.speed+random()*3}
@@ -181,6 +208,9 @@ export function createEffects(context:LabContext) {
       params.density=Number((Math.round((0.4+rng()*1.3)/0.05)*0.05).toFixed(2))
       reset()
     }},
+    {key:"tintOverLife",label:"Tint over life",group:"Over Life",type:"gradient",unit:"· retrigger",visible:s=>rampEffects.has(String(s.effect)),change:retriggerIfOneShot},
+    {key:"sizeOverLife",label:"Size over life",group:"Over Life",type:"curve",range:SIZE_RANGE,unit:"× · retrigger",visible:s=>rampEffects.has(String(s.effect)),change:retriggerIfOneShot},
+    {key:"opacityOverLife",label:"Opacity over life",group:"Over Life",type:"curve",unit:"× · retrigger",visible:s=>rampEffects.has(String(s.effect)),change:retriggerIfOneShot},
     ...(Object.keys(explosionRanges) as ExplosionNumericKey[]).map((key):LabControl=>{
       const [min,max,step,unit,group,label]=explosionRanges[key]
       return {
@@ -319,7 +349,7 @@ export function createEffects(context:LabContext) {
       const name = eff
       const spec = specs[name] ?? specs.sparks
       for (let i = 0; i < p.rate; i++) {
-        const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density }
+        const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density, ramp: lifeRampFor(p) }
         const angle = slotRng() * Math.PI * 2
         const spd = (2 + slotRng() * 6) * p.speed
         slot.particles.spawn(cSpec, tx, gy + 0.8, tz, Math.cos(angle) * spd, (2 + slotRng() * 5) * p.speed, Math.sin(angle) * spd, slotRng() * 6.28)
@@ -384,7 +414,7 @@ export function createEffects(context:LabContext) {
       if (eff === "water" || eff === "fire" || eff === "nitro") {
         slot.emitter.step(tx, 0.3, tz, dt, p.rate, "rate", (ex, ey, ez) => {
           const spec = specs[eff] ?? specs.sparks
-          const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density }
+          const cSpec: ParticleSpec = { ...spec, size: spec.size * p.size, alpha: spec.alpha * p.density, ramp: lifeRampFor(p) }
           const angle = slotRng() * Math.PI * 2
           const spd = (eff === "nitro" ? 3 : eff === "fire" ? 0.7 : 2 + slotRng() * 6) * p.speed
           let vx = Math.cos(angle) * spd

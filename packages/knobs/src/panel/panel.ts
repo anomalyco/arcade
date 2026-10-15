@@ -3659,7 +3659,7 @@ function buildPanel<S extends Schema>(
   const rowsObserver = new MutationObserver(syncRows)
   rowsObserver.observe(root, {
     attributes: true,
-    attributeFilter: ["style", "class", "data-theme"],
+    attributeFilter: ["style", "class", "data-theme", "data-preset", "data-density"],
   })
   layoutRows(false)
   const unsubscribe = controls.subscribe(update)

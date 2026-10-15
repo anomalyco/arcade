@@ -328,7 +328,7 @@ class PageControlRuntime implements NoteOverlayStateReader {
       return
     }
     if (event.key === "Escape" && this.activeNote.dismissible !== false) {
-      const modalOpen = Boolean(document.querySelector(".lab-palette-backdrop:not([hidden]), .lab-modal-backdrop:not([hidden])"))
+      const modalOpen = Boolean(document.querySelector(".knobs-layers>.knobs-palette, .lab-modal-backdrop:not([hidden])"))
       if (modalOpen) return
       this.clearNote()
       this.sendStatus()

@@ -2,8 +2,9 @@ import { mat4 } from "wgpu-matrix"
 import { lab } from "@arcade/kit/lab/main"
 import type { SectionFactory } from "@arcade/kit/lab/types"
 import type { SpawnFactory } from "@arcade/kit/lab/spawn-types"
-import { ALL_GAMES, LAB_GAMES, loadPlayground, resolveGames, type LabGameModule } from "./games/registry"
-import { startStations } from "./station-host"
+import { LAB_GAMES, loadPlayground, resolveGames, type LabGameModule } from "./games/registry"
+import { startHome } from "./home"
+import { startStations, stationList } from "./station-host"
 import { SceneAudio } from "./sound/scene-audio"
 import { audioSection, bindMuteKey, sceneView, withSound } from "./sound/lab-sound"
 import { mountSpeaker } from "./sound/speaker"
@@ -14,7 +15,7 @@ const bench = params.has("bench")
 const resolved = resolveGames(location.search, location.hash)
 const { choice, games } = resolved
 const entry = LAB_GAMES.find(game => game.id === choice)
-if (entry?.defaultSection && !location.hash && !params.has("section") && !params.has("station") && !bench) {
+if (entry?.defaultSection && !location.hash && !params.has("section") && !params.has("station") && !params.has("lab") && !bench) {
   params.set("section", entry.defaultSection)
   history.replaceState(null, "", `${location.pathname}?${params}`)
 }
@@ -27,23 +28,6 @@ if (!bench || params.has("sound")) sound.arm()
 let mode: () => "edit" | "play" | undefined = () => undefined
 bindMuteKey(sound, () => mode())
 Object.assign(window, { labSound: { telemetry: () => sound.telemetry(), set: sound.set.bind(sound), toggleMute: sound.toggleMute.bind(sound) } })
-
-function gamePicker(slot: HTMLElement) {
-  const select = document.createElement("select")
-  select.className = "lab-select lab-game"
-  select.dataset.control = "game"
-  select.setAttribute("aria-label", "Game")
-  select.title = "Which game's adapters the Lab loads"
-  select.add(new Option("All games", ALL_GAMES))
-  for (const game of LAB_GAMES) select.add(new Option(game.label, game.id))
-  select.value = choice
-  select.addEventListener("change", () => {
-    const next = new URLSearchParams()
-    if (select.value !== ALL_GAMES) next.set("game", select.value)
-    location.assign(`${location.pathname}${next.size ? `?${next}` : ""}`)
-  })
-  slot.append(select)
-}
 
 async function start() {
   const modules = await Promise.all(games.map(async game => ({ game, module: (await game.load()).default })))
@@ -59,7 +43,7 @@ async function start() {
   })
   const api = await lab({
     brand: "",
-    toolbar: slot => { gamePicker(slot); mountSpeaker(slot, sound) },
+    toolbar: slot => mountSpeaker(slot, sound),
     onEvent: event => sound.event(event),
     sections,
     spawn,
@@ -89,7 +73,12 @@ async function start() {
     }
     return pending
   }
-  if (!bench) await startStations(api, ensureGame)
+  if (!bench) {
+    const stations = await startStations(api, ensureGame)
+    const labs = startHome(api, stations, stationList())
+    Object.assign(window, { labs })
+    await labs.start()
+  }
   let last = 0
   const tick = (now: number) => {
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0

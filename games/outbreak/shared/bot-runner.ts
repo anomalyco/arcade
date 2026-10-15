@@ -481,7 +481,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
           y: Number(lead.y.toFixed(1)),
         })
       }
-    } else if (ev.kind === "unlocked" && ev.source === "rule") {
+    } else if (ev.kind === "unlocked" && ev.source === "rule" && ev.item.startsWith("learned:")) {
       recipesResearched.push(ev.item.replace(/^learned:/, ""))
       if (timeToWorkbench === null) {
         timeToWorkbench = Number(sim.time.toFixed(2))

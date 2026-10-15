@@ -1,53 +1,14 @@
 import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type HostHistory, type PanelKeys, type RemoteControls, type StoragePort, type Value } from "@arcade/knobs"
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
-import { labPreset, type TokenPreset } from "@arcade/knobs/themes"
-import type { LabControl, LabNavigation, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
+import { commandsFrom, type Command, type CommandsFromOptions } from "@arcade/knobs/ui"
+import { isRampControl, type LabControl, type LabNavigation, type LabRow, type LabSettings, type LabTab, type LabValue } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
-/** The Lab's button (20 px, square, a hairline inset) for what knobs' button tokens don't reach. */
-const ACT = 'height:20px;min-height:20px;padding:0 6px;border:0;border-radius:0;background:#191a1e!important;box-shadow:inset 0 0 0 1px #23252a;color:#d8dbe0;font:400 11px/20px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;letter-spacing:0;text-transform:none'
-const ACT_HOVER = "background:#1e2024!important;box-shadow:inset 0 0 0 1px #2c2f35;color:#d8dbe0"
-const BUTTONS = ":is(.knobs-action,.knobs-preset-chip)"
-
 /**
- * knobs' `labPreset` (square, flat, the Lab's palette) with the Lab's 24 px rows, its UI font and one text size for
- * labels and values, 20 px fields, and buttons (toolbars, panel actions, the variants menu) drawn like the Details
- * actions through knobs' button tokens. The `css` is what no token reaches yet: action rows and preset chips as buttons,
- * and toolbar labels at full strength.
+ * How the Lab's knobs pieces look: knobs' own default theme and chrome, in its dark mode to sit with the Lab's dark
+ * viewport. No preset and no overrides; anything that looks wrong goes to knobs rather than into Arcade CSS.
  */
-export const arcadePreset: TokenPreset = {
-  ...labPreset,
-  name: "arcade",
-  dark: {
-    ...labPreset.dark,
-    row: "24px",
-    width: "100%",
-    "value-font": "var(--k-font)",
-    "value-size": "var(--k-font-size)",
-    "text-control": "var(--k-font-size)",
-    "control-h": "20px",
-    "action-h": "20px",
-    "button-h": "20px",
-    "button-radius": "0px",
-    "button-font-size": "11px",
-    "button-bg": "#191a1e",
-    "button-line": "#23252a",
-    "button-hover-bg": "#1e2024",
-    "button-hover-line": "#2c2f35",
-  },
-  css: [
-    `& ${BUTTONS}{${ACT}}`,
-    `& ${BUTTONS}:is(:hover:not([disabled]),:focus-visible){${ACT_HOVER}}`,
-    `& ${BUTTONS}:focus-visible{outline:1px solid #4d8dff;outline-offset:0}`,
-    `& .knobs-preset-chip[aria-checked="true"]{background:color-mix(in srgb,#4d8dff 18%,#191a1e)!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,#4d8dff 32%,transparent);font-weight:400}`,
-    `& .knobs-action-row{display:flex;align-items:center;padding:0 var(--k-inset)}`,
-    `& .knobs-action{width:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
-    `& .knobs-custom-actions{display:flex;flex-wrap:wrap;gap:4px;margin:6px var(--k-inset) 8px}`,
-    `& .knobs-presets{background:transparent;padding:0 var(--k-inset);gap:4px}`,
-    `& .knobs-presets-pill{display:none}`,
-    `& .knobs-tool{color:var(--k-text)}`,
-  ].join(""),
-}
+export const LAB_LOOK = { theme: "dark" } as const
 
 /** What a view needs from its LabPanel: the settings, one transaction per gesture, the tuning seed and history. */
 export interface LabKnobsHost {
@@ -88,7 +49,8 @@ export type LabKnobsViewOptions = {
 /** A row knobs draws; `upper` is the second key of a low–high pair (both stay their own settings). */
 type Row = LabRow & { control: LabControl; upper?: LabControl }
 
-const same = (a: Value | undefined, b: Value | undefined) => a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]))
+const same = (a: Value | undefined, b: Value | undefined) =>
+  a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i] || (typeof v === "object" && JSON.stringify(v) === JSON.stringify(b[i]))))
 
 /** Saved variants live in the browser (knobs keeps only those: `persist: "variants"`), with legacy keys renamed. */
 function variantStorage(id: string | undefined, rows: () => readonly LabRow[]): StoragePort | null {
@@ -144,7 +106,6 @@ export class LabKnobsView {
       },
       ...(host.history ? { history: host.history } : {}),
       theme: "dark",
-      density: "compact",
       onSet: (key, value, meta) => this.onSet(key, value, meta),
       onReset: target => this.onReset(target),
       onAction: key => void this.onAction(key),
@@ -162,9 +123,7 @@ export class LabKnobsView {
     this.refreshShape(true)
     this.panel = mountPanel(this.store, this.element, {
       title: options.title ?? false,
-      preset: arcadePreset,
-      theme: "dark",
-      density: "compact",
+      ...LAB_LOOK,
       renderer: "dom",
       variants: Boolean(options.variantsId),
       // The Lab's canvas keeps focus when a section's panel is rebuilt.
@@ -265,6 +224,11 @@ export class LabKnobsView {
   }
 
   get keys(): string[] { return [...this.rows.keys()] }
+
+  /** The view's actions, presets and fields as ⌘K commands (knobs' `commandsFrom`). */
+  commands(options: CommandsFromOptions = {}): Command[] {
+    return this.disposed ? [] : commandsFrom(this.store, options)
+  }
 
   /** Whether this view shows a row when it is visible (its own filter, not the control's `visible`). */
   includes(row: LabRow): boolean {
@@ -395,7 +359,7 @@ export class LabKnobsView {
     this.host.edited(this)
     if (meta.source === "compare") return
     // A drag ends on release; keys and discrete changes settle once they stop arriving.
-    if (!this.held.size) this.schedule(meta.source === "local" && "min" in row.control ? 350 : 0)
+    if (!this.held.size) this.schedule(meta.source === "local" && ("min" in row.control || isRampControl(row.control)) ? 350 : 0)
   }
 
   /** knobs skips disabled rows and then reports the rest key by key: they join one transaction. */
@@ -532,9 +496,7 @@ export class LabToolbar {
     this.panel = mountPanel(this.store, this.element, {
       title: false,
       header: false,
-      preset: arcadePreset,
-      theme: "dark",
-      density: "compact",
+      ...LAB_LOOK,
       renderer: "dom",
       variants: false,
       session: false,
@@ -587,13 +549,13 @@ export function ensureLabKnobsStyles() {
 .lab-knobs .knobs-panel.knobs-inline{width:100%}
 .lab-knobs-accessory{display:inline-flex;align-items:center;gap:4px}
 .lab-knobs-spawn{display:inline-block;width:5px;height:5px;border-radius:50%;background:#d9a03c}
-.lab-knobs-pin{width:12px;height:16px;padding:0;border:0;background:none;color:#5b6068;cursor:pointer;opacity:0;font:10px/16px system-ui}
+.lab-knobs-pin{width:12px;height:16px;padding:0;border:0;background:none;color:var(--k-dim);cursor:pointer;opacity:0;font:10px/16px system-ui}
 .lab-knobs-pin::before{content:"•"}
 .knobs-row:hover .lab-knobs-pin,.lab-knobs-pin[aria-pressed="true"]{opacity:1}
-.lab-knobs-pin[aria-pressed="true"]{color:#4d8dff}
-.lab-knobs-pin:hover{color:#d8dbe0}
+.lab-knobs-pin[aria-pressed="true"]{color:var(--k-accent)}
+.lab-knobs-pin:hover{color:var(--k-text)}
 [data-lab-flash]{animation:lab-knobs-flash 1.3s ease-out}
-@keyframes lab-knobs-flash{0%,35%{background:color-mix(in srgb,#4d8dff 38%,transparent)}100%{background:transparent}}
+@keyframes lab-knobs-flash{0%,35%{background:color-mix(in srgb,var(--k-accent,#fff) 24%,transparent)}100%{background:transparent}}
 `
   document.head.append(style)
 }

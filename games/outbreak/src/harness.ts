@@ -23,11 +23,13 @@ import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
+import { isCurveValue } from "@arcade/kit/ramps"
 import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
 import type { OutbreakMap } from "./map"
+import "./hordes/index"
 import "./melee/index"
 import type { NetSession } from "./net-session"
 import { type ProgressionLabHost } from "./progression-lab"
@@ -176,6 +178,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       settings.view.zoom = zoom
       cam.dist = zoom
     },
+    /** Level chunks the renderer holds and drew last frame (regression guard for vanishing streamed geometry). */
+    levelDraw: () => ({ chunks: renderer.levelChunkCount, drawn: renderer.drawnChunks, draws: renderer.drawnChunkDraws }),
     quality: () => qualityController.state(devicePixelRatio),
     setQuality: (mode: QualityMode) => {
       const resolved = resolveQualityMode(mode)
@@ -298,9 +302,12 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
     /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
-    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings } }),
+    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings }, sconceLights: host.interiors.sconces.lastCount }),
+    /** Sconces of the current level or streamed window (positions, wall normals, building rects). */
+    sconces: () => host.interiors.sconces.list(),
     setInterior(key: string, value: number) {
       if (!(key in host.interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
+      if ((host.interiors.settings as Record<string, number>)[key] === value) return
       ;(host.interiors.settings as Record<string, number>)[key] = value
       if (host.interiors.apply(key) === "structural") host.rebuildLevel()
     },
@@ -320,7 +327,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         if (
           "min" in control
             ? typeof value !== "number" || !Number.isFinite(value) || value < control.min || value > control.max
-            : "options" in control && !control.options.some((o) => o.value === value)
+            : control.type === "curve"
+              ? !isCurveValue(value)
+              : "options" in control && !control.options.some((o) => o.value === value)
         ) {
           throw new Error(`Invalid lab value: ${String(rawKey)}`)
         }

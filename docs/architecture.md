@@ -80,6 +80,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | — | Yes | — | Yes | — |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — |
 | `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | — |
+| `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | Yes | — | Yes | — |
 | `lab/*` & `compare` | Lab workbench, sections, adapters, A/B compare, variation grid, and stations | Yes | Yes | Yes | — | Yes | — |
 | `dev-control`, `lab-commands` & `dev-hub` | `LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub | Yes | Yes | Yes | Yes | Yes | — |
 
@@ -195,10 +196,10 @@ Cross-runtime benchmarks across V8 (`workerd` / Chromium) and JavaScriptCore (`b
 
 ### Self-contained feature registries (`OutbreakSharedFeatureRegistry` & `OutbreakClientFeatureRegistry`)
 
-In Outbreak, adding or modifying a feature (`map`, `weather`, `pacing`, `progression`, `vehicles`, `melee`) does not require editing central simulation, wire-protocol, Lab control, command, harness, feel-event, or co-op client files:
+In Outbreak, adding or modifying a feature (`map`, `weather`, `pacing`, `progression`, `vehicles`, `melee`, `hordes`) does not require editing central simulation, wire-protocol, Lab control, command, harness, feel-event, or co-op client files:
 
 - **Shared simulation & wire hooks (`games/outbreak/shared/feature-registry.ts`, `outbreakSharedFeatures`)**: Server/Worker-safe registry (zero DOM imports) ordered deterministically by `(order, id)`. Features register per-`CoopSim` state allocation (`createState`) and deterministic cloning (`cloneState`, `CoopSim.cloneFeatureStatesTo`) so simulations remain pure and forkable for headless bot rollouts, alongside simulation step hooks (`registerInteractions`, `onChunkSync`, `onTopologyChanged`, `stepSurvivorMovement`, `pushOutSurvivor`, `stepSurvivorActions`, `stepWorld`, `transformAISurvivor`, `modifySurvivorDamage`, `refreshPrompt`), tuning namespaces (`resolveTuningNamespaces`), and binary snapshot section codecs (`OutbreakNetSectionCodec`).
-- **Client presentation, Lab & harness hooks (`games/outbreak/src/feature-registry.ts`, `outbreakClientFeatures`)**: Browser/client registry where each feature folder (`src/{map,weather,pacing,progression,vehicles,melee}/index.ts`) self-registers its `settingsGroup`, `labControls`, `onSettingChanged`, `gameCommands`, `harnessMethods`, `harnessState`, `feel` (`reset`, `processFrame`), and `netSession` (`onApplyWorld`, `onReconcileLocal`, `onSyncFrame`) hooks.
+- **Client presentation, Lab & harness hooks (`games/outbreak/src/feature-registry.ts`, `outbreakClientFeatures`)**: Browser/client registry where each feature folder (`src/{map,weather,pacing,progression,vehicles,melee,hordes}/index.ts`) self-registers its `settingsGroup`, `labControls`, `onSettingChanged`, `gameCommands`, `harnessMethods`, `harnessState`, `feel` (`reset`, `processFrame`), and `netSession` (`onApplyWorld`, `onReconcileLocal`, `onSyncFrame`) hooks.
 
 ### Typed subsystem settings and Knobs / `LabPanel`
 

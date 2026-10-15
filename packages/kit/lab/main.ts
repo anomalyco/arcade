@@ -48,18 +48,18 @@ export async function lab(options:LabOptions) {
   document.body.innerHTML=`
     <div class="lab-workbench" data-lab-workbench>
       <header class="lab-topbar" aria-label="Workbench toolbar">
-        <a class="lab-btn lab-hub" href="${hubHref}" aria-label="Dev Hub" title="Dev Hub">Hub</a>
+        <a class="lab-btn lab-hub" href="${hubHref}" aria-label="Dev Hub" data-tip="Dev Hub">Hub</a>
         <span class="lab-brand"><b>Lab</b><span data-readout="game">${game}</span></span>
         <div class="lab-mode-seg" role="group" aria-label="Interaction mode">
           <button type="button" class="lab-btn" data-action="mode-edit" aria-label="Edit mode" aria-pressed="true">Edit</button>
-          <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" title="Enter Play mode and possess character (P · Alt+P · F8 eject · Esc stop)">▶ Play</button>
+          <button type="button" class="lab-btn" data-action="mode-play" aria-label="Play mode" aria-pressed="false" data-tip="Enter Play mode and possess a character (F8 ejects, Esc stops)" data-tip-shortcut="P">▶ Play</button>
         </div>
         <div class="lab-divider"></div>
         <div class="lab-transport" role="group" aria-label="Transport">
-          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-retrigger" aria-label="Transport retrigger" title="Retrigger with same seed (Space)">⟲</button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-play" aria-label="Transport play" aria-pressed="true" title="Pause / play (K)">❚❚</button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-step" aria-label="Transport step" title="Step 1/60 s frame (.)">⏭</button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-loop" aria-label="Transport loop" aria-pressed="true" title="Loop">↻</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-retrigger" aria-label="Transport retrigger" data-tip="Retrigger with the same seed" data-tip-shortcut="Space">⟲</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-play" aria-label="Transport play" aria-pressed="true" data-tip="Pause" data-tip-shortcut="K">❚❚</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-step" aria-label="Transport step" data-tip="Step one 1/60 s frame" data-tip-shortcut=".">⏭</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="transport-loop" aria-label="Transport loop" aria-pressed="true" data-tip="Loop">↻</button>
           <select class="lab-select lab-speed" data-control="transport-speed" aria-label="Simulation speed">
             <option value="0.1">0.1×</option>
             <option value="0.25">0.25×</option>
@@ -71,16 +71,16 @@ export async function lab(options:LabOptions) {
         </div>
         <div class="lab-topbar-right">
           <div class="lab-topbar-extra" data-topbar-extra></div>
-          <select class="lab-select lab-view" data-control="debug" aria-label="Debug view" title="Debug view"></select>
-          <button type="button" class="lab-search-btn" data-action="palette" aria-label="Search everything" title="Search scene, library, commands and settings (⌘K)">
+          <select class="lab-select lab-view" data-control="debug" aria-label="Debug view" data-tip="Debug view"></select>
+          <button type="button" class="lab-search-btn" data-action="palette" aria-label="Search everything" data-tip="Search scene, library, commands and settings" data-tip-shortcut="Mod+K">
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.2 10.2 13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             <span>Search</span><kbd>⌘K</kbd>
           </button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="frame" aria-label="Frame target" title="Frame selected object or emitter (F)">⌖</button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="undo" aria-label="Undo edit" disabled>↶</button>
-          <button type="button" class="lab-btn lab-icon-btn" data-action="redo" aria-label="Redo edit" disabled>↷</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="frame" aria-label="Frame target" data-tip="Frame the selected object or emitter" data-tip-shortcut="F">⌖</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="undo" aria-label="Undo edit" data-tip="Undo" data-tip-shortcut="Mod+Z" disabled>↶</button>
+          <button type="button" class="lab-btn lab-icon-btn" data-action="redo" aria-label="Redo edit" data-tip="Redo" data-tip-shortcut="Shift+Mod+Z" disabled>↷</button>
           <div class="lab-more">
-            <button type="button" class="lab-btn lab-icon-btn" data-action="more" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" title="Recipe, export, import">⋯</button>
+            <button type="button" class="lab-btn lab-icon-btn" data-action="more" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" data-tip="Recipe, export, import">⋯</button>
             <div class="lab-menu" data-more-menu role="menu" hidden>
               <button type="button" class="lab-menu-item" role="menuitem" data-action="export" aria-label="Export preset">Export preset JSON</button>
               <button type="button" class="lab-menu-item" role="menuitem" data-action="import" aria-label="Import preset">Import preset JSON</button>
@@ -96,6 +96,7 @@ export async function lab(options:LabOptions) {
       <aside class="lab-outliner" aria-label="Outliner">
         <nav class="lab-stations" data-station-list aria-label="Stations" hidden></nav>
         <div class="lab-station-slot" data-station-slot="left" hidden></div>
+        <div class="lab-card lab-outliner-card">
         <div class="lab-outliner-tree" data-outliner-mount></div>
         <div class="lab-world" aria-label="World">
           <div class="lab-panel-head lab-world-head"><span class="lab-panel-title">World</span></div>
@@ -104,23 +105,24 @@ export async function lab(options:LabOptions) {
           <div class="lab-world-row">
             <span class="lab-mono lab-field-label" data-readout="seed">Seed 7</span>
             <span class="lab-fill"></span>
-            <button type="button" class="lab-btn" data-action="reroll" aria-label="Reroll room seed" title="Reroll room seed keeping effect locked (R)">Reroll</button>
-            <button type="button" class="lab-btn" data-action="lock-effect" aria-label="Lock effect seed" aria-pressed="true" title="Keep effect locked while rerolling room">Lock FX</button>
-            <button type="button" class="lab-btn" data-action="lock-env" aria-label="Lock environment seed" aria-pressed="false" title="Lock room seed">Lock Env</button>
+            <button type="button" class="lab-btn" data-action="reroll" aria-label="Reroll room seed" data-tip="Reroll the room seed, keeping the effect locked" data-tip-shortcut="R">Reroll</button>
+            <button type="button" class="lab-btn" data-action="lock-effect" aria-label="Lock effect seed" aria-pressed="true" data-tip="Keep the effect locked while rerolling the room">Lock FX</button>
+            <button type="button" class="lab-btn" data-action="lock-env" aria-label="Lock environment seed" aria-pressed="false" data-tip="Lock the room seed">Lock Env</button>
           </div>
+        </div>
         </div>
       </aside>
       <main class="lab-viewport" data-lab-viewport>
         <canvas tabindex="0" aria-label="Lab scene"></canvas>
         <div class="lab-viewport-hud">
           <div class="lab-hud-badge lab-mono" data-hud-badge>Effects · Grenade smoke</div>
-          <div class="lab-hud-toast" data-hud-toast hidden role="status" aria-live="polite"></div>
         </div>
       </main>
       <section class="lab-station-slot lab-station-dock" data-station-slot="dock" aria-label="Station dock" hidden></section>
       <section class="lab-library" aria-label="Library" data-library-mount></section>
       <aside class="lab-inspector" aria-label="Details">
         <div class="lab-station-slot" data-station-slot="right" hidden></div>
+        <div class="lab-card lab-details">
         <div class="lab-panel-head"><span class="lab-panel-title">Details</span><span class="lab-fill"></span><span class="lab-inspector-sub">Effects</span></div>
         <div class="lab-details-head">
           <span class="lab-details-icon" data-details-icon aria-hidden="true">✺</span>
@@ -128,9 +130,10 @@ export async function lab(options:LabOptions) {
         </div>
         <div class="lab-details-actions" data-details-actions></div>
         <div class="lab-details-tools">
-          <button type="button" class="lab-chip" data-action="details-all" aria-pressed="false" title="Show section settings unrelated to the selection" hidden>All</button>
+          <button type="button" class="lab-chip" data-action="details-all" aria-pressed="false" data-tip="Show section settings unrelated to the selection" hidden>All</button>
         </div>
         <div class="lab-inspector-body" data-inspector-mount></div>
+        </div>
       </aside>
       <footer class="lab-bottombar" aria-label="Status and shortcuts">
         <span class="lab-focus-pill" data-focus-pill>Edit · Canvas</span>
@@ -504,9 +507,13 @@ export async function lab(options:LabOptions) {
   }
   let last=0
   const tick=(now:number)=>{
-    const dt=last?Math.max(0,Math.min(0.033,(now-last)/1000)):0;last=now
+    const interval=last?now-last:0,dt=Math.max(0,Math.min(0.033,interval/1000));last=now
     requestAnimationFrame(tick)
-    if(!bench&&!document.hidden&&!suspended){advance(dt);void render()}
+    if(!bench&&!document.hidden&&!suspended){
+      const start=performance.now()
+      advance(dt);void render()
+      if(workbench?.perf.visible)workbench.perf.push(interval,performance.now()-start,stage.gpuMs)
+    }
   }
   await render()
   if(bench)Object.assign(window,{lab:api,fx:{adapter:adapter.info,...effects,particles,volume,trail,stage,render,debug:(n:number)=>{settings.debug=n;syncDebugOptions(settings.section);panel!.sync()}}})

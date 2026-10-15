@@ -1,4 +1,5 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES } from "../light-ramps"
 
 /**
  * Unseen post-process & visibility preset/mode IDs:
@@ -37,6 +38,8 @@ export type UnseenSettings = {
   unseenEdgeSoftness: number
   unseenUpdateRate: number
   hideUnseenZombies: boolean
+  /** Strength by depth past the visible edge, as curve text (see `light-ramps.ts`). */
+  unseenDepthCurve: string
 }
 
 export const DEFAULT_UNSEEN_SETTINGS: UnseenSettings = {
@@ -52,6 +55,7 @@ export const DEFAULT_UNSEEN_SETTINGS: UnseenSettings = {
   unseenEdgeSoftness: 0.85,
   unseenUpdateRate: 10,
   hideUnseenZombies: true,
+  unseenDepthCurve: DEFAULT_LIGHT_CURVES.unseenDepthCurve,
 }
 
 export const UNSEEN_PRESETS: Readonly<Record<Exclude<UnseenModeId, 9>, UnseenLayerWeights>> = {
@@ -166,6 +170,12 @@ export const unseenControls: LabControl[] = [
     max: 2.0,
     step: 0.05,
     unit: "",
+  },
+  {
+    key: "unseenDepthCurve",
+    label: LIGHT_CURVES.unseenDepthCurve.label,
+    group: "Unseen",
+    type: "curve",
   },
   {
     key: "unseenUpdateRate",

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
+import { isRampControl, isSwitchControl, resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
+import { curveText, gradientText } from "./ramps"
 import { createRemoteControls, type State, type Value } from "@arcade/knobs"
 import { describe as describeRow, fromKnobs, isStructuralKey, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
@@ -53,6 +54,29 @@ describe("LabControl as knobs", () => {
     const low: LabControl = { key: "lo", label: "Small", group: "Drops", min: 0, max: 1, pair: { key: "hi", label: "Drop size" } }
     const raw = JSON.stringify({ variants: [{ name: "a", values: { lo: 0.2, hi: 0.6 } }] })
     expect(JSON.parse(migrateKnobsVariantJson(raw, [row(low)])).variants[0].values).toEqual({ lo: [0.2, 0.6] })
+  })
+  test("curves and gradients travel as JSON text and draw as knobs' ramp editors", () => {
+    const sizeCurve: LabControl = { key: "sizeOverLife", label: "Size over life", group: "Over life", type: "curve", range: [0, 2], interp: "linear" }
+    const tint: LabControl = { key: "tintOverLife", label: "Tint over life", group: "Over life", type: "gradient" }
+    const text = curveText([{ x: 0, y: 1 }, { x: 1, y: 0.5 }], { range: [0, 2] })
+    const white = gradientText([{ at: 0, color: "#ffffff" }, { at: 1, color: "#ffffff" }])
+    expect(describeRow(row(sizeCurve), { sizeOverLife: text }, { sizeOverLife: text })).toMatchObject({ kind: "curve", range: [0, 2], interp: "linear", random: false, default: [{ x: 0, y: 1 }, { x: 1, y: 0.5 }] })
+    expect(describeRow(row(tint), { tintOverLife: white }, { tintOverLife: white })).toMatchObject({ kind: "gradient", random: false })
+    const points = toKnobs(sizeCurve, text)!
+    expect(fromKnobs(sizeCurve, points)).toBe(text)
+    expect(fromKnobs(tint, toKnobs(tint, white)!)).toBe(white)
+    // Broken text falls back to a usable ramp instead of throwing.
+    expect(toKnobs(sizeCurve, "nope")).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }])
+    expect(fromKnobs(sizeCurve, 1 as Value)).toBeUndefined()
+    expect(isTunable(sizeCurve, {})).toBe(false)
+    expect(isRampControl(tint) && !isSwitchControl(tint)).toBe(true)
+  })
+  test("a ramp survives a round trip through knobs unchanged", () => {
+    const c: LabControl = { key: "fog", label: "Fog", group: "Sky", type: "curve", range: [0, 0.4] }
+    const text = curveText([{ x: 0, y: 0.04 }, { x: 0.5, y: 0.2 }, { x: 1, y: 0.1 }], { range: [0, 0.4] })
+    const settings = { fog: text }
+    const remote = createRemoteControls("ramps", [describeRow(row(c), settings, settings)!])
+    expect(fromKnobs(c, remote.get().fog as Value)).toBe(text)
   })
   test("seeds stay out of Random, gated rows are disabled now, folded groups say so", () => {
     expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ random: false, kind: "seed" })

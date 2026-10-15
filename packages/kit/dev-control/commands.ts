@@ -6,6 +6,7 @@ import {
   resolveLookPresetId,
 } from "../gpu/look"
 import type { LabCommandRegistry } from "../lab-commands"
+import { parseCurve, parseGradient } from "../ramps"
 import { formatLabValue, inferControlUnit, type LabControl, type LabPanel, type LabRow, type LabValue } from "../lab-panel"
 import type { Stage } from "../lab/stage"
 import type { PanelLabCommandOptions, StageCameraCommandOptions } from "./types"
@@ -187,6 +188,14 @@ export function findControlRow(
 
 export function coerceControlValue(control: LabControl, rawValue: unknown): LabValue {
   if (control.type === "action") return true
+  if (control.type === "curve" || control.type === "gradient") {
+    const value = control.type === "curve" ? parseCurve(rawValue, [], { range: control.range }) : parseGradient(rawValue, [])
+    if (value.length < 2) {
+      const shape = control.type === "curve" ? '[{"x":0,"y":1},{"x":1,"y":0}]' : '[{"at":0,"color":"#000"},{"at":1,"color":"#fff"}]'
+      throw new Error(`Invalid ${control.type} for "${control.label}". Expected JSON such as ${shape}.`)
+    }
+    return JSON.stringify(value)
+  }
   if ("options" in control) {
     const str = String(rawValue).toLowerCase()
     const match = control.options.find(

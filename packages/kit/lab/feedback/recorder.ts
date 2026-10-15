@@ -451,7 +451,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
       }
     }
     if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat && !opts.isBusy()) {
-      if (document.querySelector(".lab-palette-backdrop:not([hidden]), .lab-modal-backdrop:not([hidden])")) return
+      if (document.querySelector(".knobs-layers>.knobs-palette, .lab-modal-backdrop:not([hidden])")) return
       e.preventDefault(); e.stopImmediatePropagation()
       toggle()
     }

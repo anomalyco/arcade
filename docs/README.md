@@ -33,7 +33,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [lab.md](lab.md): the Lab authoring contract for tunable effects, materials, physics, audio and rendering
   options. Read before adding or tuning any of them.
 - [lab-workbench.md](lab-workbench.md): the current Lab shell and its input API.
+- [knobs-requests.md](knobs-requests.md): what Arcade has asked knobs for, and whether a sync has brought it yet.
 - [lab-effects.md](lab-effects.md): how to tune Blackout and Getaway effects in the Lab.
+- [lab-scenes.md](lab-scenes.md): proposal for focused labs, lab kinds and collections (AR-25), and its data-model spike.
 - [dev-control.md](dev-control.md): the `arcade` CLI for driving Kit's open browser tab, tours and pinned notes.
 - [dev-hub.md](dev-hub.md): the local Dev Hub that serves every game from one origin.
 
