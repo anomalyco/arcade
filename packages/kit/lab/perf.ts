@@ -30,7 +30,7 @@ export function createPerfReadout(host: HTMLElement) {
         {
           kind: "graph",
           key: "frame",
-          label: "Frame time",
+          label: "Time",
           series: [
             { id: "frame", label: "Frame", area: true },
             { id: "cpu", label: "CPU" },

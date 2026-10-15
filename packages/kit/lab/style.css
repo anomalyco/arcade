@@ -1002,7 +1002,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   right: 8px;
   top: 8px;
-  width: 268px;
+  width: 320px;
   border-radius: 0;
   background: rgb(20 21 24 / 92%);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
