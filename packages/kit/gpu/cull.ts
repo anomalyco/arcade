@@ -109,6 +109,29 @@ export function boxIntersectsRect2D(
 }
 
 /**
+ * Tests whether a static chunk should be drawn into an orthographic directional shadow map:
+ * the chunk must rise above `minHeight`, intersect `shadowPlanes`, and its swept shadow
+ * (`maxX + maxY * sweepSlope`, `maxZ + maxY * sweepSlope`) must intersect `camPlanes`.
+ */
+export function isShadowCasterVisible(
+  shadowPlanes: Float32Array,
+  camPlanes: Float32Array,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+  sweepSlope = 0.92,
+  minHeight = 0.05,
+): boolean {
+  if (maxY <= minHeight) return false
+  if (!aabbInFrustum(shadowPlanes, minX, minY, minZ, maxX, maxY, maxZ)) return false
+  const sweep = Math.max(0, maxY) * sweepSlope
+  return aabbInFrustum(camPlanes, minX, 0, minZ, maxX + sweep, maxY, maxZ + sweep)
+}
+
+/**
  * Culls `chunks` using `isVisible` and merges adjacent visible chunks whose vertex ranges
  * are contiguous (`runFirst + runCount === chunk.first`) into single `pass.draw` calls.
  */

@@ -9,7 +9,8 @@ import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { GetawayFrameStruct, GetawayLightStruct, MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
-import { aabbInFrustum, drawContiguousChunks, extractFrustumPlanes } from "@arcade/kit/gpu/cull"
+import { aabbInFrustum, drawContiguousChunks, extractFrustumPlanes, isShadowCasterVisible } from "@arcade/kit/gpu/cull"
+import { PassList, compileShaderModuleWithLog, depthConfigForMode, type PassSlot, type ScenePass } from "@arcade/kit/gpu/pass-graph"
 import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "@arcade/kit/gpu/targets"
 import { MotionBlur, PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
 import { motionBlur, vehicleVelocityPipeline, particleVelocityPipeline, spriteMotionKeys } from './motion'
@@ -18,6 +19,7 @@ import { mat4 } from 'wgpu-matrix'
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
 const HDR: GPUTextureFormat = "rgba16float"
+const DEPTH_CFG = depthConfigForMode("stencil")
 export const FRAME_FLOATS = GetawayFrameStruct.floatCount
 export const LIGHT_FLOATS = GetawayLightStruct.floatCount
 const LIGHT_VP_OFFSET = GetawayFrameStruct.offsetOf("lightViewProj")
@@ -82,6 +84,7 @@ export class Renderer {
   private models: Model[] = []
   private targets: SceneTargets
   private bloomPyramid: BloomPyramid
+  private passes = new PassList()
   private compositeParams: GPUBuffer
   private compositeData = new Float32Array(4)
   private camPlanes = new Float32Array(24)
@@ -157,7 +160,7 @@ export class Renderer {
       ],
     })
     this.smoke = new SmokeRenderer(d, mainLayout)
-    this.fxParticles = new ParticleRenderer(d, "depth24plus-stencil8", SAMPLES)
+    this.fxParticles = new ParticleRenderer(d, DEPTH_CFG.format, SAMPLES)
     this.fxVolumes = new VolumeRenderer(d)
     const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
     this.shadowGroup = d.createBindGroup({ layout: shadowLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
@@ -201,7 +204,7 @@ export class Renderer {
     }
 
     const main = d.createPipelineLayout({ bindGroupLayouts: [mainLayout] })
-    const lit = d.createShaderModule({ code: litShader })
+    const lit = compileShaderModuleWithLog(d, litShader, "getaway-lit")
     // Cars write stencil 1 where they are visible; the silhouette pass draws only hidden car pixels (depth greater, stencil != 1).
     const scene = (
       vs: string,
@@ -216,9 +219,9 @@ export class Renderer {
         fragment: { module, entryPoint: fs, targets: [{ format: HDR, blend: opts.blend }] },
         primitive: { topology: "triangle-list", cullMode: opts.cull ?? "back" },
         depthStencil: {
-          format: "depth24plus-stencil8",
+          format: DEPTH_CFG.format,
           depthWriteEnabled: opts.depthWrite ?? true,
-          depthCompare: opts.compare ?? "less",
+          depthCompare: opts.compare ?? DEPTH_CFG.compare,
           stencilFront: opts.stencil,
           stencilBack: opts.stencil,
         },
@@ -229,8 +232,8 @@ export class Renderer {
       alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
     }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
-    const sprite = d.createShaderModule({ code: spriteShader })
-    const shadowMod = d.createShaderModule({ code: shadowShader })
+    const sprite = compileShaderModuleWithLog(d, spriteShader, "getaway-sprite")
+    const shadowMod = compileShaderModuleWithLog(d, shadowShader, "getaway-shadow")
     const shadowPipe = (vs: string, buffers: GPUVertexBufferLayout[]) =>
       d.createRenderPipeline({
         layout: d.createPipelineLayout({ bindGroupLayouts: [shadowLayout] }),
@@ -238,7 +241,7 @@ export class Renderer {
         primitive: { topology: "triangle-list", cullMode: "none" },
         depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1.2 },
       })
-    const post = d.createShaderModule({ code: postShader })
+    const post = compileShaderModuleWithLog(d, postShader, "getaway-post")
     const postLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
     const postPipe = (fs: string, format: GPUTextureFormat, blend?: GPUBlendState) =>
       d.createRenderPipeline({ layout: postLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: post, entryPoint: fs, targets: [{ format, blend }] }, primitive: { topology: "triangle-list" } })
@@ -246,7 +249,7 @@ export class Renderer {
       city: scene("vsStatic", "fs", [meshLayout]),
       inst: scene("vsInst", "fs", [meshLayout, instLayout], { stencil: { compare: "always", passOp: "replace" } }),
       ghost: scene("vsGhost", "fsGhost", [meshLayout, instLayout], { blend: alpha, depthWrite: false, compare: "greater", cull: "back", stencil: { compare: "not-equal", passOp: "keep" } }),
-      beam: scene("vs", "fs", [meshLayout], { blend: additive, depthWrite: false, cull: "none" }, d.createShaderModule({ code: beamShader })),
+      beam: scene("vs", "fs", [meshLayout], { blend: additive, depthWrite: false, cull: "none" }, compileShaderModuleWithLog(d, beamShader, "getaway-beam")),
       spriteAlpha: scene("vs", "fs", [spriteLayout], { blend: alpha, depthWrite: false, cull: "none" }, sprite),
       spriteAdd: scene("vs", "fs", [spriteLayout], { blend: additive, depthWrite: false, cull: "none" }, sprite),
       shadowCity: shadowPipe("vsStatic", [meshPosOnly]),
@@ -323,6 +326,14 @@ export class Renderer {
     model.vbuf.destroy(); model.vbuf = vbuf; model.count = mesh.count
   }
   setSmoke(trail: SmokeTrail, visible: boolean) { this.smoke.upload(trail, visible) }
+
+  addPass(slot: PassSlot, pass: ScenePass): void {
+    this.passes.add(slot, pass)
+  }
+
+  removePass(pass: ScenePass): boolean {
+    return this.passes.remove(pass)
+  }
 
   resize(w: number, h: number) {
     if (!this.targets.resize(w, h)) return
@@ -470,6 +481,7 @@ export class Renderer {
     }
 
     const enc = d.createCommandEncoder()
+    this.passes.prepareAll(enc)
     const sp = enc.beginRenderPass({
       timestampWrites: this.measure ? this.timer!.start : undefined,
       colorAttachments: [],
@@ -481,15 +493,9 @@ export class Renderer {
     if (this.city) {
       sp.setPipeline(this.pipes.shadowCity!)
       sp.setVertexBuffer(0, this.city.vbuf)
-      const shadowStats = drawContiguousChunks(sp, this.city.chunks, (c) => {
-        // Only cast shadows above ground level, and only if the chunk or its moon shadow intersects the camera frustum.
-        const sweep = Math.max(0, c.maxY) * 0.92
-        return (
-          c.maxY > 0.05 &&
-          aabbInFrustum(this.shadowPlanes, c.minX, c.minY, c.minZ, c.maxX, c.maxY, c.maxZ) &&
-          aabbInFrustum(this.camPlanes, c.minX, 0, c.minZ, c.maxX + sweep, c.maxY, c.maxZ + sweep)
-        )
-      })
+      const shadowStats = drawContiguousChunks(sp, this.city.chunks, (c) =>
+        isShadowCasterVisible(this.shadowPlanes, this.camPlanes, c.minX, c.minY, c.minZ, c.maxX, c.maxY, c.maxZ),
+      )
       shadowCityVerts = shadowStats.vertsDrawn
       shadowChunks = shadowStats.chunksDrawn
     }
@@ -509,7 +515,7 @@ export class Renderer {
       colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 }, loadOp: "clear", storeOp: "discard" }],
       depthStencilAttachment: {
         view: this.targets.depthView,
-        depthClearValue: 1,
+        depthClearValue: DEPTH_CFG.clearValue,
         depthLoadOp: "clear",
         depthStoreOp: blurOn || hasFxVolumes ? "store" : "discard",
         stencilClearValue: 0,
@@ -518,6 +524,7 @@ export class Renderer {
       },
     })
     pass.setBindGroup(0, this.mainGroup)
+    this.passes.drawSlot("sky", pass)
     pass.setStencilReference(1)
     let mainCityVerts = 0
     let mainChunks = 0
@@ -547,6 +554,7 @@ export class Renderer {
       pass.setVertexBuffer(0, m.vbuf)
       pass.draw(m.count, r.count, 0, r.first)
     }
+    this.passes.drawSlot("opaque", pass)
     if (alphaCount) {
       pass.setPipeline(this.pipes.spriteAlpha!)
       pass.setVertexBuffer(0, this.spriteBuf, 0)
@@ -577,6 +585,7 @@ export class Renderer {
       this.fxParticles.draw(pass)
       pass.setBindGroup(0, this.mainGroup)
     }
+    this.passes.drawSlot("alpha", pass)
     pass.end()
 
     if (hasFxVolumes && opts.fxVolumes) {
