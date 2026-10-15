@@ -6,6 +6,7 @@ import { type ModeId, modeOf } from "./sim/modes"
 import type { RosterRow, Snapshot } from "./sim/view"
 import type { Intent, SimEvent } from "./sim/world"
 import { spellConfig, type SpellConfig, type CastIntent } from "./sim/spell-config"
+import { type PackedSnapshot, packSnapshot, unpackSnapshot } from "./wire"
 
 export type ClientMsg =
   | { type: "spells"; config: SpellConfig }
@@ -30,15 +31,16 @@ export type ServerMsg = RoomFrame<RosterRow, SimEvent> | Snapshot
 
 export const NAME_MAX = 14
 
-/** Rounds floats to 3 decimals to keep frames small. */
+/** Snapshots go out packed (`./wire`); every other float is rounded to 3 decimals to keep frames small. */
 export function encodeServer(msg: ServerMsg): string {
-  return JSON.stringify(msg, (_k, v: unknown) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v))
+  return JSON.stringify(msg.type === "snap" ? packSnapshot(msg) : msg, (_k, v: unknown) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v))
 }
 
 export function decodeServer(raw: string): ServerMsg | null {
   try {
-    const m = JSON.parse(raw) as ServerMsg
-    return m && typeof m.type === "string" ? m : null
+    const m = JSON.parse(raw) as ServerMsg | PackedSnapshot
+    if (!m || typeof m.type !== "string") return null
+    return m.type === "snap" && "P" in m ? unpackSnapshot(m) : (m as ServerMsg)
   } catch {
     return null
   }

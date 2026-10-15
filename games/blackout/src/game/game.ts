@@ -24,6 +24,8 @@ import { FRAME_FLOATS } from "../render/shaders"
 import type { Input, MuxState } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
+import { Predictor } from "@arcade/kit/net/prediction"
+import { Glide, type RemoteSample, pushSnapshot, remoteBuffer, sampleRemote, soldierAt } from "./remote"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 import { objectiveBanner } from "./objective-fx"
 import { type Kit, gunKit, kitSprints } from "../../shared/sim/kit"
@@ -171,8 +173,12 @@ export class Game {
   private lastLocalShot = -10
   private triggerHeld = false
   private wasAlive = false
-  private seq = 0
-  private pending: { seq: number; i: Intent }[] = []
+  /** Your inputs the server hasn't acknowledged yet, replayed on every snapshot. */
+  private predictor = new Predictor<Intent>()
+  /** Recent snapshots: remote soldiers and vehicles are drawn between the two around now − delay. */
+  private remote = remoteBuffer()
+  private bracket: RemoteSample | null = null
+  private glides = new Map<string, Glide>()
   private acc = 0
   private now = 0
   private tracers: Tracer[] = []
@@ -311,7 +317,7 @@ export class Game {
     this.tracers = []
     this.particles = []
     this.body = null
-    this.pending = []
+    this.predictor.reset()
     this.wasAlive = false
     this.grenades.clear()
     this.trips.clear()
@@ -364,7 +370,7 @@ export class Game {
     this.aim = state.aim
     this.ground = { x: state.tx, y: state.ty }
     this.cursor = { x: state.tx, y: state.ty }
-    this.pending = []
+    this.predictor.reset()
     if (reconcileWorld && this.session instanceof SandboxSession) this.session.sync(state)
   }
 
@@ -402,7 +408,11 @@ export class Game {
         a.bare = !!p.bare && !s.spells
         a.alive = p.alive
       }
-      for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) this.avatars.delete(id)
+      for (const id of [...this.avatars.keys()]) if (!s.players.some((p) => p.id === id)) {
+        this.avatars.delete(id)
+        this.glides.delete(id)
+      }
+      pushSnapshot(this.remote, s, this.now)
       this.veh.ingest(s, this.now)
       const mine = s.players.find((p) => p.id === this.myId)
       if (mine) this.reconcile(s, mine)
@@ -437,7 +447,7 @@ export class Game {
         this.equipLeft = you.equipLeft
       }
       this.place({ x: mine.x, y: mine.y, vx: 0, vy: 0 })
-      this.pending = []
+      this.predictor.reset()
       this.corpses = this.corpses.filter((c) => c.id !== this.myId)
     }
     this.wasAlive = mine.alive
@@ -453,21 +463,23 @@ export class Game {
       this.readyAt = this.now + 0.3
       this.avatarMe.raiseAt = this.now
     }
-    this.pending = this.pending.filter((p) => p.seq > s.ack)
     const was = this.riding
     this.riding = mine.veh ? { veh: mine.veh, seat: mine.seat ?? 0 } : null
-    if (this.riding) {
+    const riding = this.riding
+    if (riding) {
       // Riding, the vehicle carries you. Driving, your inputs drive it: replay them on the server's vehicle.
-      if (this.riding.seat === 0) this.veh.reconcile(this.riding.veh, this.pending, this.solids)
+      this.predictor.reconcile(s.ack - 1, () => {}, () => {})
+      if (riding.seat === 0) this.veh.reconcile(riding.veh, this.predictor.unacked.map((p) => ({ i: p.cmd })), this.solids)
       else this.veh.pred = null
     } else {
       if (was) this.veh.pred = null
       const b: Body = { x: mine.x, y: mine.y, vx: mine.vx, vy: mine.vy }
-      for (const p of this.pending) {
-        if (s.spells?.forced.includes(this.myId)) break
-        stepBody(b, p.i.mx, p.i.my, kitSprints(p.i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
+      const forced = !!s.spells?.forced.includes(this.myId)
+      this.predictor.reconcile(s.ack - 1, () => {}, (i) => {
+        if (forced) return
+        stepBody(b, i.mx, i.my, kitSprints(i, this.kit) ? this.kit.run : this.kit.walk, this.solids, DT)
         this.veh.pushOut(b)
-      }
+      })
       // Adopt the replayed state exactly; a small correction is smoothed out of the drawn position, a big one snaps.
       if (!was && this.body && Math.hypot(b.x - this.body.x, b.y - this.body.y) < 1.5) {
         this.drawn.correct(b.x - this.body.x, b.y - this.body.y)
@@ -764,14 +776,11 @@ export class Game {
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
       if (this.snap && carries(this.snap.mode, this.myId)) Object.assign(i, slowCarrier(i))
-      const seq = ++this.seq
-      this.session.send({ type: "intent", seq, i })
+      this.session.send({ type: "intent", seq: this.predictor.record(i) + 1, i })
       if (!live || !this.body) {
         this.triggerHeld = fire
         continue
       }
-      this.pending.push({ seq, i })
-      if (this.pending.length > 90) this.pending.shift()
       const sprint = !this.riding && kitSprints(i, this.kit)
       if (this.riding) {
         if (driving) this.veh.tick(i, this.solids)
@@ -789,7 +798,8 @@ export class Game {
       this.localGun(i.fire, reload, sprint, melee && !this.riding, firePressed)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
-    this.veh.frame(dt, this.acc / DT, this.now)
+    this.bracket = sampleRemote(this.remote, this.now)
+    this.veh.frame(dt, this.acc / DT, this.now, this.bracket)
     this.rideAlong()
     this.vehicleSounds()
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
@@ -1372,23 +1382,26 @@ export class Game {
       arr.push(x, y, z, yaw, tint[0], tint[1], tint[2], 1, pitch, roll, alpha, flash)
       this.motionKeys.record(arr, model)
     }
-    const k = 1 - Math.exp(-dt * 16)
     if (snap?.spells) this.spellFx.draw(snap.spells,snap.t,dt,parts,(...args)=>this.sprite(...args))
     if (this.juice.sparks) for (const m of this.monitors) if (m.broken) push(this.sheetModels.screen, m.x, 0, m.y, m.yaw, [1, 1, 1], 0, 0, 0)
     for (const a of this.avatars.values()) {
       if (!a.alive) continue
       this.motionKeys.begin(a)
       this.spriteKeys.begin(a)
-      // Chase the server position, extrapolated a little along its velocity.
-      const tx = a.tx + a.tvx * 0.05
-      const ty = a.ty + a.tvy * 0.05
-      const nx = a.x + (tx - a.x) * k
-      const ny = a.y + (ty - a.y) * k
-      const vx = dt > 0 ? (nx - a.x) / dt : 0
-      const vy = dt > 0 ? (ny - a.y) / dt : 0
+      // Between the two snapshots around the render time; across a respawn, at the newest.
+      const at = this.bracket ? soldierAt(this.bracket, a.id) : null
+      if (at) a.aim = at.aim
+      let glide = this.glides.get(a.id)
+      if (!glide) this.glides.set(a.id, (glide = new Glide()))
       const col = this.colorOf(a.id)
-      if (this.rider(a, a.id, adt, t, push, col)) continue
-      this.cues(a, animate(a, adt, t, nx, ny, a.vx + (vx - a.vx) * 0.3, a.vy + (vy - a.vy) * 0.3, a.aim, this.wizardLook), false)
+      if (this.rider(a, a.id, adt, t, push, col)) {
+        glide.reset()
+        continue
+      }
+      const vx = at?.vx ?? a.tvx
+      const vy = at?.vy ?? a.tvy
+      const drawn = glide.step(at?.x ?? a.tx, at?.y ?? a.ty, vx, vy, dt)
+      this.cues(a, animate(a, adt, t, drawn.x, drawn.y, vx, vy, a.aim, this.wizardLook), false)
       pose(push, a, col, this.models)
       if (infected(snap, this.roster, a.id)) eyes(a, t, (...e) => this.sprite(...e))
       const gc = glow(col, 0.9)

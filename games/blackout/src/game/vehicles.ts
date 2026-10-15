@@ -9,6 +9,7 @@ import type { Caster, DynLight } from "../render/lighting"
 import type { Renderer } from "../render/renderer"
 import { LAMPS, vehicleModels } from "../render/vehicle-mesh"
 import type { Avatar } from "./anim"
+import { Glide, type RemoteSample, VEHICLE_JUMP, vehicleAt } from "./remote"
 import { VehiclePresentation, groundHeight } from "./vehicle-presentation"
 import { blackoutEffects } from "../lab/settings"
 import { VehicleEmissions } from "@arcade/kit/vehicle/emissions"
@@ -34,7 +35,7 @@ export type VehDraw = {
   vx: number
   vy: number
   w: number
-  /** Latest server state and when it arrived (seconds); the drawn pose dead-reckons from it. */
+  /** Latest server state and when it arrived (seconds); the drawn pose is interpolated (`./remote`). */
   s: VehicleView
   at: number
   /** Wheel spin, steering angle, body roll and pitch, hit flash (all smoothed), forward speed last frame. */
@@ -50,6 +51,8 @@ export type VehDraw = {
   skid: { x: number; y: number }[] | null
   presentation: VehiclePresentation
   scrapeAt: number
+  /** Blends out the jump when a stalled snapshot stream resumes. */
+  glide: Glide
 }
 
 /** The vehicle you drive, predicted: the body now, before the last tick, and a correction being blended out. */
@@ -97,7 +100,7 @@ export class VehicleFx {
       let d = this.draws.get(v.id)
       // New, or back from a wreck at its spot: start it there.
       if (!d || (d.s.wreck && !v.wreck)) {
-        d = { id: v.id, kind: v.kind, spec: VEHICLES[v.kind], x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, s: v, at: now, spin: 0, steer: 0, roll: 0, pitch: 0, flash: 0, vf: 0, puff: 0, smoke: 0, skid: null, presentation: new VehiclePresentation(v), scrapeAt: -10 }
+        d = { id: v.id, kind: v.kind, spec: VEHICLES[v.kind], x: v.x, y: v.y, h: v.h, vx: v.vx, vy: v.vy, w: v.w, s: v, at: now, spin: 0, steer: 0, roll: 0, pitch: 0, flash: 0, vf: 0, puff: 0, smoke: 0, skid: null, presentation: new VehiclePresentation(v), scrapeAt: -10, glide: new Glide(10, VEHICLE_JUMP) }
         this.draws.set(v.id, d)
       }
       d.s = v
@@ -252,11 +255,10 @@ export class VehicleFx {
 
   /**
    * Moves every drawn vehicle: yours between the last two predicted ticks plus the fading correction, the others
-   * dead-reckoned from their last snapshot and eased toward it.
+   * between the two snapshots around the render time (`./remote`), or at the newest one across a respawn or wreck.
    */
-  frame(dt: number, alpha: number, now: number): void {
+  frame(dt: number, alpha: number, now: number, bracket: RemoteSample | null): void {
     this.now = now
-    const k = 1 - Math.exp(-dt * 14)
     const p = this.pred
     if (p) {
       const kc = Math.exp(-dt * 9)
@@ -269,24 +271,16 @@ export class VehicleFx {
       const py = d.y
       const ph = d.h
       if (p && p.id === d.id) {
+        d.glide.reset()
         d.x = p.px + (p.body.x - p.px) * alpha + p.ox
         d.y = p.py + (p.body.y - p.py) * alpha + p.oy
         d.h = p.ph + angleDiff(p.body.h, p.ph) * alpha + p.oh
       } else {
-        const s = d.s
-        const ahead = Math.min(0.25, now - d.at)
-        const tx = s.x + s.vx * ahead
-        const ty = s.y + s.vy * ahead
-        const th = s.h + s.w * ahead
-        if (Math.hypot(tx - d.x, ty - d.y) > 6) {
-          d.x = tx
-          d.y = ty
-          d.h = th
-        } else {
-          d.x += (tx - d.x) * k
-          d.y += (ty - d.y) * k
-          d.h += angleDiff(th, d.h) * k
-        }
+        const at = (bracket && vehicleAt(bracket, d.id)) ?? d.s
+        const drawn = d.glide.step(at.x, at.y, at.vx, at.vy, dt)
+        d.x = drawn.x
+        d.y = drawn.y
+        d.h = at.h
       }
       if (dt > 0) {
         const vx = (d.x - px) / dt
