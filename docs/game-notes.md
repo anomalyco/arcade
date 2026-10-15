@@ -389,6 +389,33 @@ proven animation techniques to animation.md, not here.
   `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
 - **Pass per-pixel 3D flashlight irradiance in the HDR alpha channel for selective-colour Noir grading, and pair feathered memory fog with SoA last-known ghosts and jittered sound ripples.**
   In `packages/kit/gpu/look.ts` and `look-shaders.ts`, `Noir / Limbo` (`selectiveColor = L.u15.w = 1.24`, Outbreak's default look) desaturates the world outside the player's flashlight to near-monochrome (`saturation = 0.04`, `outsideChroma = 0.75 / 255` street, `0.54 / 255` interior) while restoring full natural colour inside the 3D polar-shadow-tested flashlight cone (`beamChroma = 30.48 / 41.19`, `selectiveColorRatio = 40.9× / 76.0×`, `ΔE = 5.69` street / `8.44` interior against `gpt-image-1.5` targets). Encoding `outAlpha = 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0)` in the 4× MSAA `rgba16float` scene pass keeps `1.0` as the fixed point of `one, one-minus-src-alpha` blending so unlit translucent sprites and decals outside the beam never trigger false colour retention, and adds zero render targets or texture bindings. Compiling a dedicated `compositeFast` entry point (1 `src` sample + rational Padé filmic curve without Kuwahara arrays or AgX matrices) and keeping `inst`/`glass` in `fsSolid` inside `ensureLookPipes()` cut `3456×1894` M5 Max Metal whole-frame GPU time from `39.34 → 15.653 ms` (street, MAD `0.026 ms`, fresh-submit `p95 = 18.400 ms`, `realtime_ratio = 0.9975`) and `31.84 → 16.040 ms` (interior, MAD `0.028 ms`, fresh-submit `p95 = 18.800 ms`, `realtime_ratio = 0.9969`). `Vision.actorVisible` (`games/outbreak/shared/vision.ts`) samples an actor's lateral shoulder disk against the polar blocker map so doorway/ray-boundary zombies are never falsely culled while walls/closed doors strictly occlude; `games/outbreak/src/shaders.ts` and `zombies.ts` add a top-down horizontal contour rim (`lumaP92 = 74–88 / 255`, contrast `52–72` in dark LOS), zero-allocation SoA last-known position ghosts (`seenPose` fading over `3.2 s` and clearing when the spot is seen empty), and spatially jittered (`±0.7–1.35 m`) Noir sound ripples across 3 Lab-selectable fog variants (`fogStyle` `0..2`, exposed in the Lab `fog` variation grid).
+- **Noir v2: shade the flashlight as a physical spotlight, drive selective colour from received light through a soft
+  knee, and render line of sight as a soft, temporally smoothed visibility field.** The survivor's flashlight
+  (`games/outbreak/src/lighting.ts`) is packed with `cone.w = 2`, which tells kit's `lightSum` to skip its plan-space
+  cone so `flashAttenuation` can shape the beam in 3D: inverse-square falloff softened inside a near-lens radius and
+  windowed to the beam range (`(1 - x⁴)²`), an axis tilted down toward a pool distance so the pool stretches at grazing
+  angles, a soft cone with a hot core, a wide dim spill and faint reflector rings. Running inside the existing lights
+  loop reuses its 5-tap `shadowAt`, wrap diffuse and specular; a new `lightAccumulate` hook leaves the flashlight's
+  received irradiance in a private for the colour mask. Air scatter is the top-down closed form (chord grows with
+  distance, intensity falls with its square, so the glow fades like 1 / distance from the lens inside the plan cone,
+  stopped at the first wall along the aim) and the bounce is one warm diffuse fill from where the axis lands. Paint-over
+  comparison on the street aimed down the road (`scripts/noir-proof.ts` + `scripts/noir-profile.py`, 1000×680): the
+  old beam was a flat plateau ending in a cliff at 7 m; the new pool peaks at Y `0.60` (target `0.68`) and falls
+  smoothly to 10% at 7.8 m (target 7.3 m), with a 28.5° FWHM at 5 m (target 28.5°). The selective-colour mask is
+  `1 - exp(-(flash + practicalColor × practical) / knee)`, so saturation rises with light instead of switching on: its
+  10–90% edge across the beam widened from 10.5° to 39° (street 9.8° → 30°). Noir keeps the world muted but not
+  monochrome (saturation `0.42`, warmer temperature `0.2`, toe `0.12`, black crush `0.004`, no film grain): median
+  frame L* rose from 5.4 to 9.2. Line of sight is a compute pass (`VisibilityFieldShader` in
+  `packages/kit/gpu/renderer.ts`, `visibilityFieldShader` in `games/outbreak/src/fog-of-war.ts`): 768² texels over the
+  map, a 512² window around the eye each frame, feathered vision cone and awareness circle, 7 interpolated polar rays
+  across a lateral penumbra that widens with distance (radially tight, so no light through walls), separate reveal
+  (0.07 s) and fade (0.25 s) times and a soft fine-grained memory channel; the scene samples it once instead of tracing
+  rays per pixel, and 1-code-value IGN dither in `compositeFast` stops 8-bit banding. Gameplay visibility stays in
+  `shared/vision.ts`. Sound ripples and unexplored-room grain are off-by-default Lab options. Cost: paired in-page A/B
+  says the field pass is unmeasurable (`+0.02 ms`); against `origin/main` on a shared, loaded M5 Max, whole-frame GPU
+  is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
+  samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
+  switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.

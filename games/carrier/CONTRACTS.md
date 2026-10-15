@@ -253,7 +253,7 @@ While reconnecting, `state` is `"connecting"` and `seaTime()` keeps running on t
 The `Net` interface (`src/net.ts`) adds the room's crew and ships to the above: `room`, `id` (my player id), `crew`,
 `ships` (every ship's authoritative pose by crew ship id), `serverNow()`, `refused`, `sendHelm(throttle, rudder)` and the
 crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm, `"hornet"` launches; the DEPLOY
-menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip(team)`, `recover(how)` (the jet is gone,
+menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip()`, `recover(how)` (the jet is gone,
 the pilot waits on deck), and the captain powers `promote(player)`, `kick(player)`, `lock(locked)`. Client messages
 `op`, `promote`, `kick`, `lock` (no `takehelm` / `launch`). `connect({ room, seed, name, private, onFull })`.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
@@ -266,17 +266,23 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   public room, else a shared fresh code), `POST /api/create` (fresh private code; quick join never hands it out),
   `GET /api/room/:code`, `GET /api/stats`. Rooms report `{ code, players, private }` (1 s throttle, 10 s heartbeat,
   30 s stale). Codes are 4 characters of `CODE_CHARS`. `/ws?room=CODE[&private=1]`.
-- Crew rules (`shared/crew.ts` header): a room holds `CREW.roomMax` (32) players: two teams of `CREW.shipsPerTeam` (2)
-  ships, `CREW.capacity` (8) people per ship whatever their roles (helm, pilots, gunners; the op caps still apply). The
-  room keeps both teams at two ships (`ensureFleet`: all four come out on the first join, crewed or not; empty ones stay
-  afloat; a ship sunk in battle is replaced after `CREW.refitMs` 15 s, at once if its crew overflows the team's other
-  ship). Roles: one HELM per ship, PILOTs (flying or waiting on deck, `plane: -1`) and GUNNERs (`role: "gunner"`,
-  `CrewPlayer.mount` = the `WEAPON_MOUNTS` index, -1 otherwise; gunners sit in `CrewShip.pilots`, which lists everyone
-  but the helm). Joining the room puts you on the team with fewer players (ties: team 0), aboard its most crewed
-  unlocked ship with room, at the helm if free, else as a pilot on deck. Team switches must keep the teams within one
-  (or improve them). CREATE SHIP only while a team is short of ships (`fleet-full` otherwise; the Tab button shows
-  FLEET FULL, disabled). A vacated helm holds the throttle and centres the rudder; a reconnecting helm gets the helm back
-  if free, else is a pilot on deck (a reconnecting gunner too; a locked ship still takes a reconnecting member back).
+- Crew rules (`shared/crew.ts` header): every carrier for itself. A room holds `CREW.roomMax` (32) players on
+  `CREW.ships` (4) carriers, `CREW.capacity` (8) people per ship whatever their roles (helm, pilots, gunners; the op caps
+  still apply). Each carrier is its own team: `CrewShip.team` (0..3) is its side, its colour (`TEAM_COLORS` / `teamCss`:
+  orange, cyan, pink, lime; `src/render/team.ts teamColor` for the shaders) and its spawn on the ring (`shared/spawn.ts
+  fleetSpawn(arch, team)`, evenly spaced), no two afloat share one, and `CrewPlayer.team` is always the player's ship's.
+  That one value is the whole hostility rule: `canHurt` (shared/weapons.ts), missile and SAM locks, gun, CIWS, shell and
+  boat rounds, ship damage, crash damage, kill credit and the kill feed all compare it, so friendly is your own
+  carrier's crew only. The room keeps every team afloat (`ensureFleet`: all four come out on the first join, crewed or
+  not; empty ones stay afloat). Roles: one HELM per ship, PILOTs (flying or waiting on deck, `plane: -1`) and GUNNERs
+  (`role: "gunner"`, `CrewPlayer.mount` = the `WEAPON_MOUNTS` index, -1 otherwise; gunners sit in `CrewShip.pilots`,
+  which lists everyone but the helm). Joining the room puts you aboard the least crewed unlocked ship with room (ties:
+  the older), so the first four players each get a carrier; at the helm if free, else as a pilot on deck. JOIN (Tab)
+  moves you to any ship with room, unlocked and not banning you, and its side becomes yours (no balancing). CREATE SHIP
+  only while a team has no carrier (`freeTeam`: one sunk and its replacement not out; `fleet-full` otherwise), and the
+  new ship takes that team. A vacated helm holds the throttle and centres the rudder; a reconnecting helm gets the helm
+  back if free, else is a pilot on deck (a reconnecting gunner too; a locked ship still takes a reconnecting member
+  back).
 - Ship operations (`shared/ops.ts`, data): `OPS` lists `{ id, label, name, kind: "helm" | "vehicle" | "gun", vehicle?,
   mount?, cap, recharge (s) }`. The guns (see "Gunnery"): CIWS PORT, CIWS STBD, SAM PORT, SAM STBD, 5-INCH GUN
   (`ciws-port` … `gun-5in`), cap 1 per mount, no recharge; taking one frees the helm or another gun, launching or taking
@@ -302,8 +308,9 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   the lower id) takes over (a `captain` event); a role change aboard keeps it; an emptied ship has none and unlocks.
   Captain powers on their own ship only, validated by the room (`not-captain`, `not-member`, `self`), 400 ms cooldown
   per player: PROMOTE a member; LOCK/UNLOCK (`locked`: no new members at all, neither JOIN nor auto-assign; members
-  stay; invite links only pick the room); KICK a member, who moves to another ship of the team with room (unlocked
-  first, most crewed), else a new ship of their own (as its captain), else a locked ship with room, and is in the ship's
+  stay; invite links only pick the room); KICK a member, who moves to another carrier with room as a joiner would
+  (unlocked, least crewed), else a new ship of their own in a free berth (as its captain), else a locked ship with room
+  (an enemy from then on), and is in the ship's
   `bans` for 60 s (`SQUAD.kickMs`; JOIN refused with `kicked`). Crew snapshot fields: `CrewShip.captain`, `locked`,
   `bans: { player, until }[]`, `CrewPlayer.since`.
 - The room is authoritative: `RoomCore` holds the crew and runs every ship (`shipStep`, fixed SHIP.tick on sea time,
@@ -315,10 +322,12 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   new `sortie` with an aircraft slot), `update` per frame, `stop` when it ends (a pilot on deck watches the ship); the
   flight side calls `recover("landed" | "crashed")` (`crashed` covers shot down and lost). See Flight below.
 - Tab menu (`team-menu.ts`, `carrier.teams`, alias `carrier.roster`): hold Tab, tap (or PIN) to pin, Esc closes; frees
-  the pointer. Players and team switching only: both teams side by side, each ship with its captain (★), lock, helm and
-  pilots (airborne / on deck / down) and a K/D column once `teams.stats` is set. Actions: JOIN (another team's ship
-  switches team; disabled buttons say FULL / LOCKED / UNEVEN / KICKED 48S), CREATE SHIP, and on your own ship as
-  captain LOCK, ★ CAPTAIN (promote) and KICK, each of the last two needing a second click within 3 s.
+  the pointer. Header CARRIER · FREE FOR ALL. One card per team in team order, in that carrier's colour (swatch, name,
+  top rule): crew count n/8, hull bar, captain (★), lock, helm and pilots (airborne / on deck / down) and a K/D column
+  once `teams.stats` is set; a sunk carrier whose replacement is not out yet is a dashed NO CARRIER · REFITTING berth.
+  Actions: JOIN (disabled buttons say FULL / LOCKED / KICKED 48S), + CREATE SHIP in the free berth, and on your own
+  ship as captain LOCK, ★ CAPTAIN (promote) and KICK, each of the last two needing a second click within 3 s. The load
+  screen's footer reads TAB SHIPS · E DEPLOY.
 - DEPLOY (`ops-menu.ts`, `carrier.ops`): hold E to see it, tap E to pin, tap again or Esc closes; frees the
   pointer. The seat line (`Hud.seat`) shows "E DEPLOY" with the layout's label for physical E. E is matched by physical
   key only (code KeyE; the "e" character is Dvorak's D, a movement key). In a jet (catapult, flight, landing, the wait
@@ -337,9 +346,11 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   cursor); when the last one closes, `input.resume()` takes it back only if it was held when they opened (allowed
   without a click because the page released it). The free camera (C) unlocks and keeps drag-orbit, wheel and WASD;
   if Pointer Lock is denied, dragging orbits the chase camera. LMB at the helm only takes the lock.
-- Previews with fake data: `menu.html?seed=7&show=menu|teams|ops` (`&as=N` views the crew as player N). Real-GPU
-  checks: `scripts/ui-shot.ts` (Tab, captains, ship operations; captures in `captures/ui/`) and `scripts/mp-shot.ts`
-  (older, still drives the removed roster and seats).
+- Previews with fake data: `menu.html?seed=7&show=menu|teams|ops` (`&as=N` views the crew as player N; the Tab preview
+  has three crewed carriers and a refitting berth). Real-GPU checks: `scripts/ffa-shot.ts` (three pages on three
+  carriers damage each other; Tab, kill feed and colours in `captures/ffa/`), `scripts/ui-shot.ts` (Tab, captains,
+  ship operations; captures in `captures/ui/`) and `scripts/mp-shot.ts` (older, still drives the removed roster, seats
+  and teams).
 
 URL params (read in `main.ts`): `?room=name` (join that room, skipping the menu), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea
 time at S), `?cam=x,z,yaw,pitch,dist` (initial camera; yaw and pitch in degrees, yaw 0 looks north (-z), 90 east,
@@ -471,6 +482,29 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `captures/explosions/`); `scripts/f35-shot.ts` (the F-35C in the game: ops, deck, catapult, flight, bay, bombs, landing, and a Hornet and an
   F-35C in one room; captures in `captures/f35/`).
 
+## Pilot's map (`src/flight/{radar,target-markers}.ts`, `src/dev/radar-lab.ts`)
+
+- Built only from what the client already draws (no messages): `FlightModule.frame` fills one `RadarScene` (the crew
+  player, our jet's draw pose while flying or landing, the drawn carriers and hulls, `Weapons.jets`, `Weapons.boats`
+  (the boats handed to `surface`), `Weapons.world.missiles`) and hands it to `Radar` and `TargetMarkers`. Enemy means
+  `hostile(me, team, id)` = the weapons' `canHurt`, colours `teamCss`: no team comparisons of its own.
+- Radar (bottom left, above the hull bar, while flying): heading-up on our jet's nose, rings at half and full range,
+  N on the rim, islands baked once per world into a 640² mask (±9.6 km, land with coastlines and the reef shelf; 24
+  rows per frame, skipping open sea), the world edge dashed. Enemy carriers are filled hulls in their colour (pinned
+  to the rim as a triangle when out of range), ours an outline; jets arrows along their nose (filled enemies,
+  outlined friends; a tick above or below past ±250 m), boats diamonds, missiles homing on us blinking red dots. Range
+  2/5/10/20 km: auto covers the nearest enemy jet or boat, else the nearest enemy carrier (up at once, down after
+  1.5 s), easing on the wall clock.
+- Full map: physical G held (tap < 250 ms pins, a second tap or Esc closes), any role, not while a menu is open:
+  north-up over the world edge (`PLANE.edge`) with a 2 km grid and scale bar, every carrier named, every jet and boat,
+  our jet.
+- Target markers (flying): corner brackets on enemy carriers in view, diamonds on enemy jets (within `markerJets`
+  km) and boats (4 km), each with its distance; a chevron at the screen edge toward the nearest enemy carrier when it
+  is out of view, kept clear of the radar's corner (`Radar.box`).
+- Settings: `RADAR` (`RadarSettings`, `RADAR_DEFAULTS`, `RADAR_CONTROLS`) on the Lab panel in the debug menu's RADAR
+  tab; read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
+  in `captures/radar/`.
+
 ## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
 
 - Loadouts are per aircraft (`LOADOUTS` in `shared/weapons.ts`), keyed by `VehicleKind`. The F/A-18E (`hornet`) has
@@ -481,7 +515,21 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   switching away shuts the doors. Bombs are plain gravity bombs that burst on sea, land or ships and only hurt jets in the blast; ships
   and ground targets take no damage yet. Their burst (`WeaponFx.bombBlast`) is a tall white spout with a crown and a
   rolling base surge on the sea, a fireball, flung earth and a dust column on land or a deck. Guided bombs are planned. Weapon kinds are `"gun" | "missile" | "bomb"`;
-  slot order is the 1/2/3 key order.
+  slot order is the 1/2/3 key order. Every sortie starts on the first slot (`rearm`): the F-35C launches on its
+  missiles, never its bombs.
+- Bombsight (F-35C). Selecting bombs turns the flight camera into a first-person view from just ahead of and under the
+  nose, tipped down and zoomed (`FlightCam.setBombs`/`sighting`, fed by `Flight.bombsight`; 1.5 s after the catapult,
+  never while landing or crashed); another weapon gives back chase or cockpit, and C toggles between the sight and
+  that view while bombs are selected. `src/weapons/bombsight.ts` draws a CCIP sight: the bomb fall line from the
+  flight-path marker to a pipper on the continuously computed impact point, solid in the cue colour when the bomb
+  would hit an enemy carrier, damage one with a near miss or catch an enemy boat in the blast, with the fall time and
+  slant range beside it, and a horizon and pitch bars in the sight view. The impact comes from the game's own bomb:
+  `bombLaunch` (shared/combat.ts, also what `Weapons.tick` releases) then `bombImpact`, which flies `fall` at the
+  world's step against the sea at each step's sea time, the islands and every carrier drifted along its course
+  (`driftShip`); `tests/bombsight.test.ts` checks it against released bombs in a `CombatWorld`. Near a moving enemy the
+  pipper is drawn in that enemy's frame (where it is now). Tunables: SIGHT tab of the debug menu (the shared Lab panel:
+  `SIGHT_CAM` in `src/flight/camera.ts`, `SIGHT_STYLE` in `src/weapons/bombsight.ts`). GPU check:
+  `scripts/bombsight-shot.ts` (captures in `captures/bombsight/`).
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
   under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
   cycles; F always drops flares (F launches and lands nothing). Space is no longer nose-up (`src/flight/input.ts`). R
@@ -629,7 +677,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
     25 m.
   - Enemy jet crashing into the ship: 50.
-  - Friendly fire is off: `Fleet.hit` refuses the ship's own team.
+  - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
 - Zones (`hullZone`, ship-local):
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
     scales top speed (to 55%) and rudder (to 60%). The room's sim and the helm's prediction both apply it.
@@ -650,16 +698,16 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     near }` with the ship-local entry point; a bomb that came down through the deck counts as on the deck. A bomb in
     the sea emits a near miss for every ship within 25 m.
   - Heat-seekers only lock jets, but a dumbfire (or any missile that strikes a hull) hits it.
-  - A jet the room sees reported crashed inside or near a ship's box damages that ship, if it is an enemy jet.
+  - A jet the room sees reported crashed inside or near a ship's box damages that ship, if it is another carrier's.
 - Sinking: at 0 health `sinkAt` is set. The ship loses power, the helm is ignored, and the room sends `sunk { ship,
   name, team, by }`, which shows on the kill feed as "ADA SUNK CV-07 VALIANT" with a SUNK confirmation for the killer.
   It goes down by the bow over 25 s, 70 m deep. Then the room scuttles it (`shared/crew.ts scuttle`):
-  - The helm and pilots on deck move to the most crewed ship of the team with room, else a new ship.
+  - Its crew moves at once to a replacement of the same team (a new name, at the team's spawn, unlocked, the first
+    aboard captains it); with nobody aboard the replacement comes out after `CREW.refitMs` (15 s).
   - Airborne pilots move with their jet: same sortie, a slot on the new ship (an extra one past the cap if needed,
     trimmed when free). The client keeps flying: `flightChange` only restarts on a new sortie.
-- Landing on any friendly ship: `Flight.landables`, the friendly drawn ships with an open deck, own ship first. A
-  landing on another ship sends that ship's id in the plane tuple's `qw` (mode 3, 0 = own) so others place it on the
-  right hull, and `recover("landed", ship)`. The pilot then joins that ship if it has room.
+- Landing only on your own carrier (`landTarget` offers only it; `recover` carries no ship). The plane tuple's landing
+  `qw` (mode 3, 0 = own) is always 0 now.
 - Client:
   - `ShipFx` draws the fires (taller and blacker as health falls), the deck fire, an island smoke column below half
     health, and the sinking (walking explosions, deck fires, spray), all in ship-local space.
@@ -668,15 +716,16 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - The Tab menu shows a hairline health bar per ship (`teams.hull`).
 - Hooks for ship guns (gunnery), on `RoomCore`:
   - `damageShip(shipId, amount, at, by, kind = "shell")` damages a ship by an explicit amount from a world-space hit
-    point. The zone, fires and list come from where the point lands. Friendly fire is refused by `by`'s team. It
+    point. The zone, fires and list come from where the point lands. Friendly fire is refused by `by`'s team (their
+    carrier). It
     broadcasts like any other hit.
   - `stores()` lists the room's missiles and bombs in flight (owner, seq, kind, position, velocity, team) for CIWS/SAM
     targeting.
   - `interceptStore(owner, seq)` destroys one: it bursts harmlessly for everyone (`CombatWorld.intercept`).
   - `hullPoseList` gives the settled ship poses with id and team, for gunnery's own hit tests.
   - `ShipHit.amount` / `ShipDamageKind` carry the shell type into `Fleet.hit`.
-- Real-GPU check: `scripts/ships-shot.ts`. Three pages: A's F-35C bombs B's carrier (direct hit, near miss), C's Hornet
-  strafes it and fires dumbfires, A's bombs finish it, B is reassigned. Captures go to `captures/ships/damage/`.
+- Real-GPU check: `scripts/ships-shot.ts`. Three pages on three carriers: A's F-35C bombs B's carrier (direct hit, near
+  miss), C's Hornet strafes it and fires dumbfires, A's bombs finish it, B moves to its replacement. Captures go to `captures/ships/damage/`.
 
 ## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 

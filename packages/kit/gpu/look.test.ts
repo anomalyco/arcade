@@ -89,10 +89,12 @@ describe("LookSettings & Presets (@arcade/kit/look)", () => {
     expect(lookPost).toContain("kuwaharaPost")
     expect(lookPost).toContain("flashMask")
 
-    // Noir preset enables light-driven selective colour restoration (u15.w = selectiveColor > 1.0)
+    // Noir preset restores colour where light lands (u15.w = selectiveColor) over a muted but not monochrome world
     const noir = createLookSettings("noir")
-    expect(noir.selectiveColor).toBeGreaterThan(1.0)
-    expect(noir.saturation).toBeLessThan(0.15)
+    expect(noir.selectiveColor).toBeGreaterThan(0.5)
+    expect(noir.saturation).toBeGreaterThan(0.2)
+    expect(noir.saturation).toBeLessThan(0.6)
+    expect(noir.grain).toBe(0)
     expect(packLookUniforms(noir)[63]).toBeCloseTo(noir.selectiveColor, 5)
   })
 

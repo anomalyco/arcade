@@ -132,10 +132,26 @@ describe("per-aircraft loadouts", () => {
     expect(l.bombs).toBe(l.spec.bombs - 2)
     for (let i = 0; i < steps(WEAPONS.bomb.reload + 0.1); i++) loadoutStep(l, DT)
     expect(l.bombs).toBe(l.spec.bombs - 1)
-    // A new sortie in a Hornet: the slot is kept when it exists.
+    // A new sortie in a Hornet starts on its gun.
     rearm(l, "hornet")
-    expect(weaponOf(l)).toBe("missile")
+    expect(weaponOf(l)).toBe("gun")
     expect(l.bombs).toBe(0)
+  })
+
+  test("an F-35C launches with its missiles selected, never its bombs (no bombsight off the catapult)", () => {
+    const l = makeLoadout("f35")
+    expect(weaponOf(l)).toBe("missile")
+    // Bombs selected when the last sortie ended (landed, crashed or shot down): the next one starts on missiles.
+    selectSlot(l, 1)
+    expect(weaponOf(l)).toBe("bomb")
+    rearm(l)
+    expect(weaponOf(l)).toBe("missile")
+    expect(l.bombs).toBe(LOADOUTS.f35.bombs)
+    // From a Hornet sortie on its missiles, too.
+    const h = makeLoadout("hornet")
+    selectSlot(h, 1)
+    rearm(h, "f35")
+    expect(weaponOf(h)).toBe("missile")
   })
 })
 

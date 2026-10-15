@@ -3,6 +3,7 @@ import { LOOK_PRESETS, blendLookSettings, blendLookSettings3, packLookUniforms }
 import { OutbreakAISubsystem } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { makeTown } from "../shared/map"
+import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "../src/lighting"
 import {
   OUTBREAK_DAY_LOOK,
   OUTBREAK_DUSK_LOOK,
@@ -65,10 +66,12 @@ describe("Outbreak Day -> Dusk -> Noir Night look & threat cycle", () => {
     expect(night.phase).toBe("night")
     expect(night.darkness).toBe(1)
     expect(night.threat).toBe(1)
-    expect(night.look.saturation).toBeCloseTo(0.04, 3)
-    expect(night.look.selectiveColor).toBeCloseTo(1.24, 3)
-    expect(night.lighting.practicalWarmth).toBeCloseTo(0.0, 3)
-    expect(night.fog.fogMemoryDim).toBeCloseTo(0.42, 3)
+    expect(night.look.saturation).toBeCloseTo(LOOK_PRESETS.noir.defaults.saturation, 3)
+    expect(night.look.selectiveColor).toBeCloseTo(LOOK_PRESETS.noir.defaults.selectiveColor, 3)
+    expect(night.lighting.practicalWarmth).toBeCloseTo(OUTBREAK_LOOK_LIGHTING_PRESETS.noir.practicalWarmth!, 3)
+    expect(night.fog.fogMemoryDim).toBeCloseTo(0.5, 3)
+    expect(night.look.grain).toBe(0)
+    expect("fogSoundCues" in night.fog).toBe(false)
 
     // Verify C1 continuity (no pops) across all 240 steps of a 24-hour cycle including 23.9 -> 0.0 wrap
     let prev = evaluateOutbreakDayNight(23.9)

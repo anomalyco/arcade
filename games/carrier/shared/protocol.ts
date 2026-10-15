@@ -34,9 +34,10 @@ export type ClientMsg =
   | { type: "op"; op: string }
   /** Board another ship as `as`, or at its helm if free, else as a pilot. */
   | { type: "board"; ship: number; as?: Role }
-  | { type: "newship"; team: number }
-  /** A flight ended; `ship`: the friendly carrier it landed on, when not its own (the pilot joins it if it has room). */
-  | { type: "recover"; how: RecoverHow; ship?: number }
+  /** Commission a ship on the team that has none (shared/crew.ts createShip). */
+  | { type: "newship" }
+  /** A flight ended (landed on its own carrier, or destroyed). */
+  | { type: "recover"; how: RecoverHow }
   /** Captain powers (shared/squad.ts), on the sender's own ship; ignored with a `nope` from anyone else. */
   | { type: "promote"; player: number }
   | { type: "kick"; player: number }
@@ -261,7 +262,7 @@ function aircraftOf(v: unknown): Aircraft | null {
 function crewShipOf(v: unknown): CrewShip | null {
   if (!v || typeof v !== "object") return null
   const o = v as Record<string, unknown>
-  if (!isCount(o.id) || !isStr(o.name, 40) || !isCount(o.hull) || !isCount(o.team) || !isCount(o.slot) || !(o.helm === null || isCount(o.helm))) return null
+  if (!isCount(o.id) || !isStr(o.name, 40) || !isCount(o.hull) || !isCount(o.team) || o.team >= CREW.ships || !(o.helm === null || isCount(o.helm))) return null
   if (!Array.isArray(o.pilots) || !o.pilots.every(isCount) || !Array.isArray(o.aircraft)) return null
   if (o.emptySince !== null && !isTime(o.emptySince)) return null
   if (!(o.captain === null || isCount(o.captain)) || typeof o.locked !== "boolean" || !Array.isArray(o.bans)) return null
@@ -277,7 +278,6 @@ function crewShipOf(v: unknown): CrewShip | null {
     name: o.name,
     hull: o.hull,
     team: o.team,
-    slot: o.slot,
     helm: o.helm as number | null,
     pilots: o.pilots as number[],
     aircraft: aircraft as Aircraft[],
@@ -332,10 +332,10 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       if (!isCount(o.ship)) return null
       return isRole(o.as) ? { type: "board", ship: o.ship, as: o.as } : { type: "board", ship: o.ship }
     case "newship":
-      return isCount(o.team) ? { type: "newship", team: o.team } : null
+      return { type: "newship" }
     case "recover":
       if (!HOW.includes(o.how as RecoverHow)) return null
-      return isCount(o.ship) ? { type: "recover", how: o.how as RecoverHow, ship: o.ship } : { type: "recover", how: o.how as RecoverHow }
+      return { type: "recover", how: o.how as RecoverHow }
     case "shiphits":
       return isCount(o.ship) && isCount(o.n) && o.n > 0 && o.n <= 200 ? { type: "shiphits", ship: o.ship, n: o.n } : null
     case "plane": {

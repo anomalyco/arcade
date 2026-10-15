@@ -39,12 +39,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
       let topCatch = max(0.22, dot(n, moonRimDir));
       let surfBoost = select(select(0.48, 0.24, interior(o.world.xz)), 1.38, mat == 21 || mat == 22);
-      col += o.color * vec3f(0.054, 0.074, 0.110) * topCatch * surfBoost * LK.u5.z;
-      if (mat != 12) {
-        col += (o.color * 0.85 + vec3f(0.072, 0.062, 0.044)) * lookFlashIrradiance * 0.58;
-      } else {
-        col += o.color * vec3f(0.65, 0.62, 0.52) * lookFlashIrradiance;
-      }
+      col += o.color * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.u5.z;
     } else if (presetIdx == 2 || LK.u10.w > 0.35) {
       let dab = noise2(o.world.xz * 3.8 + vec2f(o.world.y * 1.8, 3.7)) - 0.5;
       let tint = select(vec3f(0.88, 0.94, 1.18), vec3f(1.22, 0.96, 0.68), interior(o.world.xz) && o.world.y < 2.8);
@@ -349,6 +344,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
   ${finish?.diagnostics ? `if (G.y > 0.5) {
     var diagHdr = clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;
     if (i32(G.y) == 5) { diagHdr = bloom * baseBloom; }
+    if (i32(G.y) == 7) { return vec4f(vec3f(clamp(1.0 - clean(textureSampleLevel(src, samp, uv, 0.0)).a, 0.0, 1.0)), 1.0); }
     return vec4f(pow(max(diagHdr, vec3f(0.0)), vec3f(1.0 / 2.2)), 1.0);
   }` : ""}
 
@@ -457,6 +453,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
   ${finish?.diagnostics ? `if (G.y > 0.5) {
     var diagHdr = centerSamp.rgb;
     if (i32(G.y) == 5) { diagHdr = bloom * baseBloom; }
+    if (i32(G.y) == 7) { return vec4f(vec3f(clamp(1.0 - centerSamp.a, 0.0, 1.0)), 1.0); }
     return vec4f(pow(max(diagHdr, vec3f(0.0)), vec3f(1.0 / 2.2)), 1.0);
   }` : ""}
 
@@ -488,7 +485,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
     let hLum = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
     hdr *= pow(hLum / 0.18, contrast - 1.0);
   }
-  var c = lookApplyTonemapFast(hdr, tonemapMode, max(baseHuePres, beamRetain * 0.45));
+  var c = lookApplyTonemapFast(hdr, tonemapMode, max(baseHuePres, beamRetain * 0.55));
   if (shoulder > 0.001) {
     let knee = 1.0 - shoulder * 0.45;
     let invSpan = 1.0 / max(1.0 - knee, 0.06);
@@ -515,7 +512,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
     let beamSplit = mix(activeSplit, vec3f(1.05, 1.00, 0.94), beamRetain * 0.92);
     let beamSat = clamp(max(saturation, 1.15 * min(selectiveColor, 1.35)), 0.0, 1.55);
     let beamCol = mix(vec3f(luma) * beamSplit, c * beamSplit, beamSat);
-    c = mix(outsideCol, beamCol, smoothstep(0.0, 1.0, beamRetain));
+    c = mix(outsideCol, beamCol, beamRetain);
   } else {
     c = outsideCol;
   }
@@ -540,6 +537,9 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
   let v = length(fromC * vec2f(1.0, 0.8));
   c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
+  // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
+  let ign = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));
+  c += (ign - 0.5) / 255.0;
   return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `

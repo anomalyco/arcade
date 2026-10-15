@@ -1,7 +1,7 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
-import { outbreakFogOfWarDeclarationsWgsl } from "./fog-of-war"
+import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
@@ -28,13 +28,16 @@ export const outbreakSceneHooks: SceneHooks = {
   lightAttenuation: `let dn = max(d3, 0.85);
     let tight = max(0.5, OL.u0.w);
     var att = power * win * (0.025 + 2.25 / (1.0 + dn * dn * 0.62 * tight));
-    if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
+    if (L.cone.w > 1.5) {
+      att = flashAttenuation(ldir, d3, power);
+    } else if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
       att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
     } else if (L.extra.w > -0.5 && L.pos.w > 4.2 && L.cone.w < -0.5 && hl > 2.0) {
       let xFall = max(0.0, 1.0 - dv.x * dv.x * 0.16);
       att *= 0.88 + 0.78 * smoothstep(0.0, 3.4, dv.y) * xFall * xFall;
     }
     if (att <= 0.0035) { continue; }`,
+  lightAccumulate: "if (L.cone.w > 1.5) { outbreakFlashIrr = att * diffuse * vis; }",
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
   ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.03, 0.88, select(1.0, select(fd.g * 0.28, 0.03, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.004, 0.0024, 0.0010), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
@@ -47,7 +50,9 @@ export const outbreakSceneHooks: SceneHooks = {
     let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
       * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
       * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
-    albedo *= vTone;`,
+    albedo *= vTone;
+    outbreakAlbedo = albedo;
+    outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
@@ -57,6 +62,7 @@ export const outbreakSceneHooks: SceneHooks = {
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
+@group(0) @binding(14) var visField: texture_2d<f32>;
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
@@ -216,13 +222,15 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
     }
-    let beamAdd = evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
+    let beamAdd = evalFlashlight(o.world, n);
+    let flashIrr = outbreakFlashMask;
+    outbreakSeen = 1.0;
     if (mat != 12) {
       col = applyOutbreakFogOfWar(col, o.world, n, o.color, inRoom, mat, w);
     } else {
       // Actors in LOS: Limbo/Noir top-down contour rim + anatomical form shading so zombies stay clearly readable even in dark areas
       let isLiveActor = o.extra.z >= 0.92;
-      let inBeam = clamp(outbreakFlashMask, 0.0, 1.0);
+      let inBeam = outbreakColorMask(flashIrr);
       let darkLosScale = select(0.42, 1.0 - 0.72 * inBeam, isLiveActor);
       let v1 = 1.0 - max(dot(n, V), 0.0);
       let viewRim = v1 * v1;
@@ -236,9 +244,15 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
       let darkReadFloor = o.color * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
       col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
     }
-    col += beamAdd;
+    col += beamAdd * outbreakSeen;
+    outbreakFlashMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2) * outbreakSeen;
   }
+  if (mat == 6) { outbreakFlashMask = 0.55; }
   if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }
+  if (i32(round(F.map.z)) == 8) {
+    let fieldDiag = fieldSight(o.world, n);
+    col = vec3f(fieldDiag.x, fieldDiag.y * 0.35, select(0.0, 0.25, mat == 12));
+  }
 `,
 }
 
@@ -249,4 +263,5 @@ export const shaders = {
   scene: makeSceneShader(outbreakSceneHooks),
   lookScene: makeLookSceneShader(outbreakSceneHooks),
   lookPost: makeLookPostShader(outbreakPostFinish),
+  visField: visibilityFieldShader,
 }
