@@ -1,6 +1,6 @@
 // Headless Metal proof for D-19 "Discovered, Not Told": state read from the world instead of labels. Stills of the
 // low-battery beam against a full one, barricade boards at three wears, searched containers left open with what is
-// inside, drops lying on the floor, and the belt hidden until the pack is held open.
+// inside, drops lying on the floor, the workbench and corkboard, and found pages (the belt is the dock's now).
 // Run from games/outbreak: hivemind run --kind browser -- bun scripts/discovery-proof.ts
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -131,22 +131,6 @@ try {
     const markers = await page.evaluate(() => [...document.querySelectorAll("#markers .marker:not([hidden])")].map((m) => m.textContent))
     assert.deepEqual(markers, [], "drops are props, not labels")
     await snap(page, "drops", "Dropped supplies lie on the floor as props: no floating labels")
-  }
-
-  if (want("belt")) {
-    await reset(page, 26)
-    await run(page, `h.give("scrap", 3); h.give("chem", 2); h.pose(44, 44, 0)`)
-    await steps(page, 3)
-    const hidden = await page.evaluate(() => getComputedStyle(document.querySelector("#belt")!).opacity)
-    await snap(page, "belt-hidden", "Walking around: no supply counters on screen")
-    await page.keyboard.press("Tab")
-    await steps(page, 2)
-    await page.waitForTimeout(300)
-    const shown = await page.evaluate(() => getComputedStyle(document.querySelector("#belt")!).opacity)
-    console.log("belt opacity", hidden, "→", shown)
-    assert.equal(hidden, "0")
-    assert.equal(shown, "1")
-    await snap(page, "belt-open", "Holding the pack open (Tab) shows the belt's counts")
   }
 
   if (want("bench")) {

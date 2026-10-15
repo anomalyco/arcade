@@ -13,7 +13,7 @@ Code: `shared/discovery/` (simulation, deterministic) and `src/discovery/` (pres
 | --- | --- | --- |
 | Battery ring, "Battery low", "Battery dead" | Below the flicker threshold the beam narrows (25%), shortens (30%) and warms to amber on top of the sim's dimming and sputter | `src/discovery/flashlight.ts`, applied in `main.ts` for the local beam, vision cone and lighting pack |
 | "New material: Scrap. Bench recipes: …" on first pickup | Nothing. The material is still noted (`seen:*` in `team/known`) | `shared/progression.ts` |
-| Belt pills always on screen | Belt counts show only while the pack (Tab) or field craft (hold Q) is open | `src/hud/hud.css`, `inventory-hud.ts` |
+| Belt pills always on screen | Belt counts show only while the pack (Tab) or field craft (hold Q) is open. Since the HUD polish (#141) the dock owns this: always there, dimmed when idle (`src/hud/dock.ts`) | `src/hud/dock.ts` |
 | Barricades flat at any health | Boards bow inward and split at half health and hang from one nail near the end; damage comes off the last board nailed | `shared/discovery/barricade.ts`, `src/discovery/barricades.ts` |
 | Container strip `[1] 9mm ×6 …` | A searched container stays open (dresser drawer pulled out, cabinet and fridge doors swung wide, shelf top) with what is left inside as small props; the prompt is a bare key cap | `src/discovery/props.ts`, `src/discovery/items.ts` |
 | Drop and noisemaker labels | Drops lie on the floor as props; a thrown noisemaker rattles where it landed | `src/discovery/props.ts` |
@@ -36,7 +36,7 @@ client the moment they are hit. The AI's portal state already snapshots and rest
 - `tests/discovery.test.ts`: board looks by wear, the wire byte, co-op wear after a bash and on a full snapshot,
   wear through `toSnapshot`/`fromSnapshot`, the low beam, container layouts.
 - `scripts/discovery-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-discovery`): stills of
-  the beam at full and 12%, boards at three wears, opened containers, drops, and the belt hidden until Tab.
+  the beam at full and 12%, boards at three wears, opened containers and drops.
 
 ## Slice 2: workbench tinkering and the corkboard
 
