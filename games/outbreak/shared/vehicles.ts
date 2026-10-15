@@ -969,6 +969,15 @@ function overlapsRects(x: number, y: number, r: number, rects: readonly Rect[]):
   return false
 }
 
+export type OutbreakVehicleSnapshot = {
+  tuning: VehicleTuning
+  nextCustomId: number
+  lastEngineNoiseAt: [number, number][]
+  lastHornNoiseAt: [number, number][]
+  list: OutbreakVehicle[]
+  recentHits: VehicleZombieHitEvent[]
+}
+
 /**
  * Authoritative vehicle subsystem for Outbreak (`CoopSim`).
  * Manages vehicle spawning across streaming chunks, `ChunkDelta` persistence when a vehicle is left somewhere,
@@ -987,6 +996,45 @@ export class OutbreakVehicleSubsystem {
   constructor(worldStream: StreamingWorld, town: Town, tuning?: Partial<VehicleTuning>) {
     if (tuning) Object.assign(this.tuning, tuning)
     this.syncChunks(worldStream, town)
+  }
+
+  snapshot(): OutbreakVehicleSnapshot {
+    return {
+      tuning: { ...this.tuning },
+      nextCustomId: this.nextCustomId,
+      lastEngineNoiseAt: [...this.lastEngineNoiseAt.entries()],
+      lastHornNoiseAt: [...this.lastHornNoiseAt.entries()],
+      list: this.list.map((v) => ({
+        ...v,
+        seats: [...v.seats],
+        drive: { ...v.drive },
+      })),
+      recentHits: this.recentHits.map((h) => ({ ...h })),
+    }
+  }
+
+  restore(snap: OutbreakVehicleSnapshot, slots: readonly VehicleRiderSlot[] = []): void {
+    this.tuning = { ...snap.tuning }
+    this.nextCustomId = snap.nextCustomId
+    this.lastEngineNoiseAt.clear()
+    for (const [k, v] of snap.lastEngineNoiseAt) this.lastEngineNoiseAt.set(k, v)
+    this.lastHornNoiseAt.clear()
+    for (const [k, v] of snap.lastHornNoiseAt) this.lastHornNoiseAt.set(k, v)
+    this.list.length = 0
+    for (const v of snap.list) {
+      this.list.push({
+        ...v,
+        lastBangAt: v.lastBangAt ?? -Infinity,
+        lastCrashAt: v.lastCrashAt ?? -Infinity,
+        lastSputterAt: v.lastSputterAt ?? -Infinity,
+        spec: VEHICLES[v.kind] ?? v.spec,
+        seats: [...v.seats],
+        drive: { ...v.drive },
+      })
+    }
+    this.recentHits.length = 0
+    for (const h of snap.recentHits) this.recentHits.push({ ...h })
+    for (const slot of slots) this.bindActor(slot)
   }
 
   bindActor(slot: VehicleRiderSlot): void {

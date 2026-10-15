@@ -1,6 +1,14 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import type { LabControl } from "@arcade/kit/lab-panel"
-import type { BotReplayLog } from "../shared/bot-runner"
+import {
+  evaluateCheckpointRollouts,
+  type BotReplayLog,
+  type ForkMomentAnalysis,
+  type ForkSnapshotCheckpoint,
+} from "../shared/bot-runner"
+import { TICK_DT } from "../shared/clock"
+import { hashSimState } from "../shared/coop-sim"
+import { pacingTargetControls } from "../shared/difficulty-tuner"
 import { LocalSession, type Command } from "../shared/session"
 import {
   BOT_SKILL_PRESETS,
@@ -34,17 +42,32 @@ export class BotsLabController {
   private lastPresetIndex = -1
   private lastSessionRef: LocalSession | null = null
   private activeReplay: { log: BotReplayLog; cursor: number } | null = null
+  private pendingSeekSeconds: number | null = null
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
 
   constructor(private readonly settings: OutbreakSettings) {
     this.lastPresetIndex = Math.round(settings.bots.botSkillPreset)
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      const seekRaw = params.get("botSeek") ?? params.get("replayTime")
+      if (seekRaw !== null) {
+        const sec = Number(seekRaw)
+        if (Number.isFinite(sec) && sec > 0) {
+          this.pendingSeekSeconds = Math.min(1800, sec)
+          if (this.settings.bots.botEnabled === 0) {
+            this.settings.bots.botEnabled = 1
+          }
+        }
+      }
+    }
   }
 
-  /** Extra Lab action controls for the `Bots` group. */
+  /** Extra Lab controls for the `Bots` and `Pacing targets` groups. */
   controls(getSession: () => LocalSession | null, resetSession: (seed: number) => void): LabControl[] {
     return [
       ...botControls,
+      ...pacingTargetControls,
       {
         key: "botResetSeed",
         label: "Restart bot run",
@@ -66,11 +89,112 @@ export class BotsLabController {
     this.activeReplay = null
   }
 
-  loadReplay(log: BotReplayLog, resetSession: (seed: number) => void): void {
+  loadReplay(log: BotReplayLog, resetSession: (seed: number) => void, seekSeconds = 0): void {
     this.settings.bots.botCount = log.playerCount
     this.settings.bots.botEnabled = 1
     resetSession(log.seed)
     this.activeReplay = { log, cursor: 0 }
+    if (seekSeconds > 0) {
+      this.pendingSeekSeconds = seekSeconds
+    }
+  }
+
+  /**
+   * Deterministically fast-forwards the active `LocalSession` (either via a loaded `BotReplayLog`
+   * or live procedural `SurvivorBot` execution) to `targetSeconds` so Run Viewer links open at that exact moment.
+   */
+  seekToSeconds(session: LocalSession, targetSeconds: number): { time: number; hour: number; x: number; y: number; health: number } {
+    this.ensureSquadSlots(session)
+    const { preset, skill } = this.syncSkillFromSettings()
+    const stepDt = this.activeReplay?.log.tickDt ?? TICK_DT
+    const timeScale = this.activeReplay?.log.timeScale ?? this.settings.dayCycle.timeScale
+    const seed = session.view.town.seed
+    let guard = 0
+    const maxSteps = Math.ceil(Math.max(0, targetSeconds - session.sim.time) / stepDt) + 2
+
+    while (session.sim.time + 1e-6 < targetSeconds && guard++ < maxSteps) {
+      if (this.activeReplay) {
+        const frame = this.activeReplay.log.frames[this.activeReplay.cursor++]
+        if (!frame) {
+          this.activeReplay = null
+          break
+        }
+        for (let i = 1; i < session.sim.slots.length; i++) {
+          const slot = session.sim.slots[i]!
+          const cmd = frame.commands[i] ?? { mx: 0, my: 0, aim: slot.survivor.aim, interact: false }
+          session.sim.stepSurvivor(slot, cmd, stepDt, this.settings)
+        }
+        const leadCmd = frame.commands[0] ?? { mx: 0, my: 0, aim: session.slot.survivor.aim, interact: false }
+        session.update(stepDt, leadCmd, timeScale, this.settings)
+      } else {
+        const worldView = createBotWorldView(session.sim)
+        for (let i = 1; i < session.sim.slots.length; i++) {
+          const slot = session.sim.slots[i]!
+          const bot = this.getOrCreateBot(slot.id, slot.index, seed + i * 97, preset, skill)
+          const cmd =
+            slot.survivor.health > 0
+              ? bot.step(stepDt, worldView)
+              : { mx: 0, my: 0, aim: slot.survivor.aim, interact: false }
+          session.sim.stepSurvivor(slot, cmd, stepDt, this.settings)
+        }
+        const leadBot = this.getOrCreateBot(session.slot.id, 0, seed, preset, skill)
+        const leadCmd = leadBot.step(stepDt, worldView)
+        session.update(stepDt, leadCmd, timeScale, this.settings)
+      }
+      if (!session.sim.slots.some((s) => s.survivor.health > 0)) break
+    }
+    const p = session.slot.survivor
+    return {
+      time: Number(session.sim.time.toFixed(2)),
+      hour: Number(session.sim.hour.toFixed(2)),
+      x: Number(p.x.toFixed(2)),
+      y: Number(p.y.toFixed(2)),
+      health: Number(p.health.toFixed(1)),
+    }
+  }
+
+  /**
+   * Captures a pure `ForkSnapshotCheckpoint` of the live `LocalSession` and runs `N` parallel rollouts
+   * across seeds/skills from this exact moment.
+   */
+  forkRolloutsFromSession(
+    session: LocalSession,
+    options?: {
+      rolloutSeeds?: readonly number[]
+      presets?: readonly BotSkillPresetId[]
+      horizonSeconds?: number
+    },
+  ): ForkMomentAnalysis {
+    this.ensureSquadSlots(session)
+    const { preset, skill } = this.syncSkillFromSettings()
+    const seed = session.view.town.seed
+    const simState = session.sim.toSnapshot()
+    const botStates = session.sim.slots.map((slot, i) =>
+      this.getOrCreateBot(slot.id, slot.index, seed + i * 97, preset, skill).toSnapshot(),
+    )
+    const lead = session.slot.survivor
+    const checkpoint: ForkSnapshotCheckpoint = {
+      t: Number(session.sim.time.toFixed(1)),
+      hour: Number(session.sim.hour.toFixed(2)),
+      nights: Number(((session.sim.time * this.settings.dayCycle.timeScale) / (3600 * 21)).toFixed(2)),
+      tick: session.sim.ai.tick,
+      stateHash: hashSimState(simState),
+      simState,
+      botStates,
+      summary: {
+        health: Number(lead.health.toFixed(1)),
+        stamina: Number(lead.stamina.toFixed(2)),
+        totalAmmo: lead.magAmmo + lead.reserveAmmo,
+        planks: lead.planks,
+        activeChasers: session.sim.ai.pacing.telemetry.activeChasers,
+        intensity: 0.25,
+        phase: session.sim.ai.pacing.telemetry.activeChasers >= 2 ? "peak" : "build-up",
+        intent: this.bots.get(session.slot.id)?.getTelemetry().intent ?? "loot",
+        x: Number(lead.x.toFixed(1)),
+        y: Number(lead.y.toFixed(1)),
+      },
+    }
+    return evaluateCheckpointRollouts(checkpoint, options)
   }
 
   private syncSkillFromSettings(): { preset: BotSkillPresetId; skill: BotSkillConfig } {
@@ -153,6 +277,11 @@ export class BotsLabController {
    */
   stepBeforeSessionUpdate(dt: number, session: LocalSession, humanCommand: Command): Command {
     this.ensureSquadSlots(session)
+    if (this.pendingSeekSeconds !== null && this.pendingSeekSeconds > session.sim.time + dt) {
+      const target = this.pendingSeekSeconds
+      this.pendingSeekSeconds = null
+      this.seekToSeconds(session, target - dt)
+    }
     const { preset, skill } = this.syncSkillFromSettings()
 
     if (this.activeReplay) {

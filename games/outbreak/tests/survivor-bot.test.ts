@@ -1,15 +1,30 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
-import { CoopSim } from "../shared/coop-sim"
 import {
+  cloneSimState,
+  CoopSim,
+  diffSimState,
+  hashSimState,
+  loadSimState,
+  saveSimState,
+  stepSim,
+} from "../shared/coop-sim"
+import {
+  analyzeRunBranchingTimeline,
   BotReplayPlayer,
   computeNightsSurvived,
+  evaluateCheckpointRollouts,
   runHeadlessBotGame,
+  runSingleForkRollout,
 } from "../shared/bot-runner"
 import {
   computeDifficultyLoss,
+  computeDifficultyLossBreakdown,
   DEFAULT_DIFFICULTY_VECTOR,
+  DEFAULT_PACING_TARGETS,
   evaluateDifficultyCandidate,
+  PACING_TARGET_SPECS,
+  pacingTargetControls,
   quantizeDifficultyVector,
 } from "../shared/difficulty-tuner"
 import {
@@ -17,6 +32,7 @@ import {
   createBotWorldView,
   SurvivorBot,
 } from "../shared/survivor-bot"
+import { createOutbreakSettings, getOutbreakSetting, setOutbreakSetting } from "../src/settings"
 
 describe("SurvivorBot perception, input-only contract, determinism, and tuning", () => {
   test("never mutates simulation state during step() and acts strictly via Command", () => {
@@ -184,5 +200,153 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     expect(evalRes.runs.length).toBe(2)
     expect(Number.isFinite(computeDifficultyLoss(evalRes.byPreset))).toBe(true)
     expect(BOT_SKILL_PRESETS.Expert.reactionTime).toBeLessThan(BOT_SKILL_PRESETS.Novice.reactionTime)
+  })
+
+  test("pure stepSim(state, inputs, dt) -> state and bit-exact snapshot save/load/diff/hash", () => {
+    const sim = new CoopSim(7, 7, 0.22)
+    sim.addSurvivor("player", 0)
+    const s0 = sim.toSnapshot()
+    const s0Copy = cloneSimState(s0)
+    const hashBefore = hashSimState(s0)
+
+    const cmd = { mx: 0.7, my: -0.7, aim: -0.5, interact: true, sprint: true, fire: true }
+    const s1a = stepSim(s0, [cmd], TICK_DT, { timeScale: 240 })
+    const s1b = stepSim(s0, [cmd], TICK_DT, { timeScale: 240 })
+
+    // Calling stepSim never mutates input state s0
+    expect(hashSimState(s0)).toBe(hashBefore)
+    expect(diffSimState(s0, s0Copy)).toEqual([])
+
+    // Pure transition produces bit-identical output states
+    expect(hashSimState(s1a)).toBe(hashSimState(s1b))
+    expect(diffSimState(s1a, s1b)).toEqual([])
+
+    // Interrupted run (save JSON at tick 60 -> load JSON -> continue 60 ticks) matches uninterrupted 120-tick run
+    const simContinuous = new CoopSim(7, 7, 0.22)
+    const slotC = simContinuous.addSurvivor("player", 0)
+    const botC = new SurvivorBot("player", 0, 7, "Skilled")
+
+    let savedSimJson = ""
+    let savedBotSnap = botC.toSnapshot()
+
+    for (let tick = 1; tick <= 120; tick++) {
+      const c = botC.step(TICK_DT * 3, createBotWorldView(simContinuous))
+      simContinuous.stepSurvivor(slotC, c, TICK_DT * 3)
+      simContinuous.stepWorld(TICK_DT * 3, 240)
+      if (tick === 60) {
+        savedSimJson = saveSimState(simContinuous.toSnapshot())
+        savedBotSnap = JSON.parse(JSON.stringify(botC.toSnapshot()))
+      }
+    }
+
+    const restoredSim = CoopSim.fromSnapshot(loadSimState(savedSimJson))
+    const restoredBot = SurvivorBot.fromSnapshot(savedBotSnap)
+    for (let tick = 61; tick <= 120; tick++) {
+      const c = restoredBot.step(TICK_DT * 3, createBotWorldView(restoredSim))
+      restoredSim.stepSurvivor(restoredSim.slots[0]!, c, TICK_DT * 3)
+      restoredSim.stepWorld(TICK_DT * 3, 240)
+    }
+
+    const finalContinuous = simContinuous.toSnapshot()
+    const finalRestored = restoredSim.toSnapshot()
+    expect(diffSimState(finalContinuous, finalRestored)).toEqual([])
+    expect(hashSimState(finalContinuous)).toBe(hashSimState(finalRestored))
+  })
+
+  test("fork and roll out from any snapshot across seeds and skills + replay seek", () => {
+    const run = runHeadlessBotGame({
+      seed: 101,
+      preset: "Casual",
+      maxDurationSeconds: 180,
+      timeScale: 240,
+      captureCheckpointsEverySeconds: 45,
+      recordReplay: true,
+    })
+
+    expect(run.checkpoints).toBeDefined()
+    expect(run.checkpoints!.length).toBeGreaterThanOrEqual(2)
+
+    const cp = run.checkpoints![1]!
+    // Unperturbed rollout from checkpoint matches the run's own continuation bit-identically
+    const exactRollout = runSingleForkRollout(cp, {
+      horizonSeconds: 500,
+      maxAbsoluteSeconds: 180,
+      timeScale: 240,
+    })
+    expect(exactRollout.survivalTime).toBe(run.survivalTime)
+    expect(exactRollout.survived).toBe(run.survived)
+
+    // Multi-seed / multi-skill rollout distribution from checkpoint
+    const dist = evaluateCheckpointRollouts(cp, {
+      rolloutSeeds: [11, 22, 33],
+      presets: ["Novice", "Expert"],
+      horizonSeconds: 120,
+      maxAbsoluteSeconds: 180,
+      timeScale: 240,
+    })
+    expect(dist.rolloutCount).toBe(6)
+    expect(dist.branches.length).toBe(6)
+    expect(dist.survivalProbability).toBeGreaterThanOrEqual(0)
+    expect(dist.survivalProbability).toBeLessThanOrEqual(1)
+    expect(dist.survivalBySkill.Expert).toBeGreaterThanOrEqual(dist.survivalBySkill.Novice)
+
+    const branching = analyzeRunBranchingTimeline(run, {
+      rolloutSeeds: [11, 22],
+      presets: ["Casual"],
+      horizonSeconds: 120,
+      maxAbsoluteSeconds: 180,
+    })
+    expect(branching.checkpoints.length).toBe(run.checkpoints!.length)
+
+    // Replay seek to intermediate moment
+    const seeker = new BotReplayPlayer(run.replay!)
+    const mid = seeker.stepUntilTime(cp.t)
+    expect(mid.time).toBeCloseTo(cp.t, 1)
+    expect(mid.x).toBeCloseTo(cp.summary.x, 0)
+    expect(mid.y).toBeCloseTo(cp.summary.y, 0)
+  })
+
+  test("computes Left 4 Dead-style pacing metrics and registers 'Pacing targets' Lab knobs", () => {
+    const run = runHeadlessBotGame({
+      seed: 7,
+      preset: "Casual",
+      maxDurationSeconds: 150,
+      timeScale: 240,
+    })
+
+    expect(run.pacing).toBeDefined()
+    expect(run.pacing.meanIntensity).toBeGreaterThanOrEqual(0)
+    expect(run.pacing.peakIntensity).toBeGreaterThanOrEqual(run.pacing.meanIntensity)
+    expect(
+      run.pacing.highIntensityFraction + run.pacing.buildUpFraction + run.pacing.relaxFraction,
+    ).toBeCloseTo(1.0, 2)
+    expect(run.series.every((s) => s.phase === "relax" || s.phase === "build-up" || s.phase === "peak")).toBe(true)
+
+    // Verify all 11 Pacing targets knobs are registered in settings & Lab controls
+    expect(pacingTargetControls.length).toBe(11)
+    expect(pacingTargetControls.every((c) => c.group === "Pacing targets")).toBe(true)
+    const settings = createOutbreakSettings()
+    for (const spec of PACING_TARGET_SPECS) {
+      expect(getOutbreakSetting(settings, spec.key)).toBe(DEFAULT_PACING_TARGETS[spec.key])
+      expect(getOutbreakSetting(settings, `pacingTargets.${spec.key}`)).toBe(DEFAULT_PACING_TARGETS[spec.key])
+    }
+    setOutbreakSetting(settings, "targetCasualNights", 2.15)
+    expect(settings.bots.targetCasualNights).toBe(2.15)
+
+    const evalRes = evaluateDifficultyCandidate({
+      label: "pacing-test",
+      vector: DEFAULT_DIFFICULTY_VECTOR,
+      seeds: [7],
+      presets: ["Casual", "Skilled"],
+      maxDurationSeconds: 90,
+      timeScale: 240,
+      pacingTargets: { targetCasualNights: 2.1, targetPeaksPerNight: 2.5 },
+    })
+    expect(evalRes.lossBreakdown.total).toBe(evalRes.loss)
+    const customBreakdown = computeDifficultyLossBreakdown(evalRes.byPreset, {
+      targetCasualNights: 3.5,
+      targetHighIntensityPct: 45,
+    })
+    expect(customBreakdown.total).not.toBe(evalRes.lossBreakdown.total)
   })
 })

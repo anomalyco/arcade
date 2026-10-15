@@ -222,7 +222,13 @@ export type SerializedStore = Omit<StoreState, "slots" | "counts"> & {
   counts?: Record<ItemId, number>
 }
 
-export type LedgerSnapshot = { rev: number; nextDropId: number; stores: SerializedStore[] }
+export type LedgerSnapshot = {
+  rev: number
+  nextDropId: number
+  stores: SerializedStore[]
+  channels?: Channel[]
+  removedStores?: [StoreId, number][]
+}
 
 export type LedgerDelta = { toRev: number; nextDropId: number; upserted: SerializedStore[]; removed: StoreId[] }
 
@@ -783,10 +789,33 @@ export class Ledger {
       .map((id) => this.stores.get(id)!)
       .filter((st) => this.matches(st, filter))
       .map((st) => this.serialize(st))
-    return { rev: this.rev, nextDropId: this.nextDropId, stores }
+    const channels =
+      !filter && this.channels.size > 0
+        ? [...this.channels.keys()]
+            .sort()
+            .map((actor) => {
+              const ch = this.channels.get(actor)!
+              return {
+                ...ch,
+                tx: { ...ch.tx },
+                ...(ch.at ? { at: { ...ch.at } } : {}),
+              }
+            })
+        : undefined
+    const removedStores =
+      !filter && this.removedStores.size > 0
+        ? [...this.removedStores.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        : undefined
+    return {
+      rev: this.rev,
+      nextDropId: this.nextDropId,
+      stores,
+      ...(channels ? { channels } : {}),
+      ...(removedStores ? { removedStores } : {}),
+    }
   }
 
-  /** Replaces all stores with a snapshot's. Channels are cleared. */
+  /** Replaces all stores (and active channels if present in the snapshot) with a snapshot's. */
   restore(snap: LedgerSnapshot): void {
     this.stores.clear()
     this.removedStores.clear()
@@ -794,6 +823,20 @@ export class Ledger {
     this.rev = snap.rev
     this.nextDropId = snap.nextDropId
     for (const s of snap.stores) this.stores.set(s.id, this.deserialize(s))
+    if (snap.channels) {
+      for (const ch of snap.channels) {
+        this.channels.set(ch.actor, {
+          ...ch,
+          tx: { ...ch.tx },
+          ...(ch.at ? { at: { ...ch.at } } : {}),
+        })
+      }
+    }
+    if (snap.removedStores) {
+      for (const [id, at] of snap.removedStores) {
+        this.removedStores.set(id, at)
+      }
+    }
   }
 
   /** Stores changed or removed since `sinceRev` (0 for everything), or null when nothing changed. */

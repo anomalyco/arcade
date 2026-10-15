@@ -8,12 +8,24 @@ import {
   BOT_SKILL_PRESETS,
   type BotSkillPresetId,
 } from "../shared/survivor-bot"
-import { type BotReplayLog, type BotRunResult } from "../shared/bot-runner"
+import {
+  analyzeRunBranchingTimeline,
+  runHeadlessBotGame,
+  type BotReplayLog,
+  type BotRunResult,
+  type BotRunTimeSample,
+  type BotRunTimelineEvent,
+  type RunBranchingAnalysis,
+  type RunPacingMetrics,
+} from "../shared/bot-runner"
 import {
   DEFAULT_DIFFICULTY_VECTOR,
+  DEFAULT_PACING_TARGETS,
   DIFFICULTY_KNOB_SPECS,
+  PACING_TARGET_SPECS,
   TARGET_SURVIVAL_CURVE,
-  computeDifficultyLoss,
+  computeDifficultyLossBreakdown,
+  difficultyToSimTunings,
   evaluateDifficultyCandidate,
   quantizeDifficultyVector,
   summarizePresetRuns,
@@ -108,11 +120,14 @@ class EvalPool {
       byPreset[preset] = summarizePresetRuns(preset, sub)
     }
     const vector = quantizeDifficultyVector(options.vector)
-    const loss = computeDifficultyLoss(byPreset)
+    const pacingTargets = { ...DEFAULT_PACING_TARGETS, ...options.pacingTargets }
+    const lossBreakdown = computeDifficultyLossBreakdown(byPreset, pacingTargets)
     return {
       label: options.label,
       vector,
-      loss,
+      loss: lossBreakdown.total,
+      lossBreakdown,
+      pacingTargets,
       byPreset,
       runs,
     }
@@ -153,8 +168,8 @@ function sampleGaussian(rng: Rng): number {
 
 async function runParallelCmaEs(pool: EvalPool) {
   const dim = DIFFICULTY_KNOB_SPECS.length
-  const generations = 4
-  const lambda = 6
+  const generations = 3
+  const lambda = 5
   const mu = 3
   const presets: readonly BotSkillPresetId[] = ["Novice", "Casual", "Skilled", "Expert"]
   const rng = new Rng(0x20261015)
@@ -273,6 +288,7 @@ const stripRuns = (ev: CandidateEvaluation) => ({
   label: ev.label,
   vector: ev.vector,
   loss: ev.loss,
+  lossBreakdown: ev.lossBreakdown,
   byPreset: ev.byPreset,
   deaths: ev.runs
     .filter((r) => !r.survived && r.deathPosition)
@@ -285,6 +301,8 @@ const stripRuns = (ev: CandidateEvaluation) => ({
       survivalTime: r.survivalTime,
       causeOfDeath: r.causeOfDeath,
       peakChasers: r.peakSimultaneousChasers,
+      deathWarningSeconds: r.pacing.deathWarningSeconds,
+      warnedDeath: r.pacing.warnedDeath,
     })),
   survivalCurves: Object.fromEntries(
     BOT_SKILL_PRESET_ORDER.map((preset) => {
@@ -303,16 +321,81 @@ const stripRuns = (ev: CandidateEvaluation) => ({
   ),
 })
 
+type ReviewableRunBundle = {
+  id: string
+  title: string
+  optionLabel: string
+  seed: number
+  preset: BotSkillPresetId
+  presetIndex: number
+  survived: boolean
+  survivalTime: number
+  nightsSurvived: number
+  causeOfDeath: string
+  deathPosition: BotRunResult["deathPosition"]
+  killsByWeapon: BotRunResult["killsByWeapon"]
+  damageTaken: number
+  ammoUsed: BotRunResult["ammoUsed"]
+  itemsLooted: BotRunResult["itemsLooted"]
+  itemsCrafted: BotRunResult["itemsCrafted"]
+  pacing: RunPacingMetrics
+  timeline: BotRunTimelineEvent[]
+  series: BotRunTimeSample[]
+  branching: RunBranchingAnalysis
+}
+
+const PURITY_AUDIT = [
+  {
+    subsystem: "CoopSim & Seeded PRNG (coop-sim.ts, @arcade/kit/sim/rng.ts)",
+    impurity: "Rng state s was private with no getter/setter, and CoopSim lacked an explicit top-level rngState / rolloutSeedMix field or pure stepSim(state, inputs, dt) -> state transition.",
+    fix: "Added Rng.getState() / setState() / clone(), added SimState with rngState + rolloutSeedMix, and implemented pure stepSim(state, inputs, dt) -> state, toSnapshot(), restoreSnapshot(), forkSimState(), hashSimState(), and diffSimState().",
+  },
+  {
+    subsystem: "JSON Serialization of Non-Finite Timestamps (-Infinity / Infinity)",
+    impurity: "Portal lastBashTime, survivor meleeComboUntil / lootMessageUntil, vehicle lastBangAt / lastCrashAt / lastSputterAt, and bot threatMemory.lastSeenAt used -Infinity / Infinity, which JSON.stringify turns into null (coerced to 0 in arithmetic now - null).",
+    fix: "Added lossless Infinity / -Infinity JSON replacer/reviver in saveSimState / loadSimState / cloneSimState / hashSimState, normalized null timestamps on restore, and replaced -Infinity with -1e9 in threatMemory.",
+  },
+  {
+    subsystem: "OutbreakCombatSubsystem WeakMaps (combat.ts)",
+    impurity: "activeSwings and wearRemainder lived in WeakMap<object, ...> keyed by mutable Survivor object references, and nextShotId / nextMeleeId were private counters lost across snapshots.",
+    fix: "Added OutbreakCombatSnapshot serializing activeSwingsByActor, wearRemainderByActor, nextShotId, nextMeleeId, shots, and meleeSwings, rebinding WeakMap entries to restored SurvivorSlot instances.",
+  },
+  {
+    subsystem: "OutbreakAISubsystem, NoiseBus & OutbreakPacingDirector (ai.ts, pacing.ts)",
+    impurity: "nextAgentId, manualSpawnOnly, NoiseBus.nextId, and OutbreakPacingDirector's private spawnOrigins, prevPositions, lastNoiseId, reinforceCooldown, and waveCooldown were hidden mutable state; wander/spawn RNGs depended only on tick.",
+    fix: "Added snapshot() / restore() on NoiseBus, OutbreakPacingDirector, and OutbreakAISubsystem, and mixed rngSeedMix into zombie wander and backstage trickle/wave RNGs so forked rollouts branch cleanly.",
+  },
+  {
+    subsystem: "OutbreakProgression & Ledger (progression.ts, @arcade/kit/sim/ledger.ts)",
+    impurity: "Ledger.snapshot() omitted in-flight timed channels (search, craft, research, heal, barricade) and removedStores, and Ledger.restore() cleared active channels; OutbreakProgression had private nextId, generatorAt Map, and actorOf WeakMap.",
+    fix: "Extended LedgerSnapshot to serialize and restore active channels and removedStores; added OutbreakProgressionSnapshot capturing tuning, nextId, generatorAt, pings, lures, searched containers, and actorOf rebinding.",
+  },
+  {
+    subsystem: "OutbreakVehicleSubsystem & Module Scratch (vehicles.ts, vehicles/index.ts)",
+    impurity: "nextCustomId, lastEngineNoiseAt, lastHornNoiseAt, and actorOf WeakMap were private on OutbreakVehicleSubsystem; vehicles/index.ts held a module-scope mutable encodeSlotIndexById Map.",
+    fix: "Added OutbreakVehicleSnapshot and snapshot() / restore() on OutbreakVehicleSubsystem; moved encodeSlotIndexById inside collect().",
+  },
+  {
+    subsystem: "StreamingWorld & SurvivorBot Local Nav (world.ts, survivor-bot.ts)",
+    impurity: "StreamingWorld had private centers and unserialized active chunk keys / navTiles state; SurvivorBot built localNav from door-dependent solidRects(town) and reset repathAt = 0 on restore.",
+    fix: "Added StreamingWorldSnapshot (including hasNavTiles) and BotStateSnapshot; made SurvivorBot.localNav build from door-invariant static solids + door portals without clobbering repathAt on snapshot restore.",
+  },
+] as const
+
 type SummaryPayload = {
   generatedAt: string
   seeds: number[]
   maxDurationSeconds: number
   timeScale: number
   targetCurve: typeof TARGET_SURVIVAL_CURVE
+  pacingTargetSpecs: typeof PACING_TARGET_SPECS
+  defaultPacingTargets: typeof DEFAULT_PACING_TARGETS
   skillPresets: typeof BOT_SKILL_PRESETS
   knobSpecs: typeof DIFFICULTY_KNOB_SPECS
   buildings: typeof MAP_BUILDINGS
+  purityAudit: typeof PURITY_AUDIT
   options: ReturnType<typeof stripRuns>[]
+  reviewableRuns: ReviewableRunBundle[]
   cmaHistory: { generation: number; bestLoss: number; meanLoss: number; bestVector: DifficultyVector }[]
   sensitivity: ParameterSensitivityEntry[]
   coopScaling: {
@@ -327,7 +410,7 @@ type SummaryPayload = {
 
 type FullBundle = {
   summaryData: SummaryPayload
-  allPrimaryRuns: Omit<BotRunResult, "replay">[]
+  allPrimaryRuns: Omit<BotRunResult, "replay" | "checkpoints">[]
   replays: Record<string, BotReplayLog>
 }
 
@@ -373,6 +456,7 @@ async function computeBundle(): Promise<FullBundle> {
         presets: BOT_SKILL_PRESET_ORDER,
         maxDurationSeconds: MAX_DURATION_S,
         timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
         recordReplayForSeed: EVAL_SEEDS[0],
       }),
       pool.evaluate({
@@ -382,6 +466,7 @@ async function computeBundle(): Promise<FullBundle> {
         presets: BOT_SKILL_PRESET_ORDER,
         maxDurationSeconds: MAX_DURATION_S,
         timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
         recordReplayForSeed: EVAL_SEEDS[0],
       }),
       pool.evaluate({
@@ -391,6 +476,7 @@ async function computeBundle(): Promise<FullBundle> {
         presets: BOT_SKILL_PRESET_ORDER,
         maxDurationSeconds: MAX_DURATION_S,
         timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
         recordReplayForSeed: EVAL_SEEDS[0],
       }),
       pool.evaluate({
@@ -400,6 +486,7 @@ async function computeBundle(): Promise<FullBundle> {
         presets: BOT_SKILL_PRESET_ORDER,
         maxDurationSeconds: MAX_DURATION_S,
         timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
       }),
     ])
 
@@ -426,6 +513,7 @@ async function computeBundle(): Promise<FullBundle> {
         presets: BOT_SKILL_PRESET_ORDER,
         maxDurationSeconds: MAX_DURATION_S,
         timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
       })
     }
 
@@ -503,6 +591,7 @@ async function computeBundle(): Promise<FullBundle> {
           playerCount,
           maxDurationSeconds: MAX_DURATION_S,
           timeScale: TIME_SCALE,
+          tickDt: 1 / 15,
         }),
       ),
     )
@@ -524,6 +613,96 @@ async function computeBundle(): Promise<FullBundle> {
       }
     }
 
+    console.error(`[survivor-bots] Computing featured reviewable runs & N-rollout branching timelines...`)
+    const featuredSpecs: {
+      id: string
+      title: string
+      optionLabel: string
+      vector: DifficultyVector
+      seed: number
+      preset: BotSkillPresetId
+      presetIndex: number
+      checkpointEvery: number
+    }[] = [
+      {
+        id: "today-casual-101",
+        title: "Today · Casual (seed 101) — Night 1 Overrun",
+        optionLabel: "Today",
+        vector: DEFAULT_DIFFICULTY_VECTOR,
+        seed: 101,
+        preset: "Casual",
+        presetIndex: 1,
+        checkpointEvery: 25,
+      },
+      {
+        id: "balanced-casual-101",
+        title: "Balanced Curve · Casual (seed 101) — Paced Night 1→2",
+        optionLabel: "Balanced Curve",
+        vector: evalBalanced.vector,
+        seed: 101,
+        preset: "Casual",
+        presetIndex: 1,
+        checkpointEvery: 45,
+      },
+      {
+        id: "balanced-skilled-107",
+        title: "Balanced Curve · Skilled (seed 107) — Multi-Night L4D Waves",
+        optionLabel: "Balanced Curve",
+        vector: evalBalanced.vector,
+        seed: 107,
+        preset: "Skilled",
+        presetIndex: 2,
+        checkpointEvery: 60,
+      },
+    ]
+
+    const reviewableRuns: ReviewableRunBundle[] = []
+    for (const fSpec of featuredSpecs) {
+      const tunings = difficultyToSimTunings(fSpec.vector)
+      const fullRun = runHeadlessBotGame({
+        seed: fSpec.seed,
+        preset: fSpec.preset,
+        maxDurationSeconds: 360,
+        timeScale: TIME_SCALE,
+        tickDt: 1 / 15,
+        aiConfig: tunings.aiConfig,
+        progressionTuning: tunings.progressionTuning,
+        configLabel: fSpec.optionLabel,
+        captureCheckpointsEverySeconds: fSpec.checkpointEvery,
+        recordReplay: true,
+      })
+      const branching = analyzeRunBranchingTimeline(fullRun, {
+        rolloutSeeds: [11, 29, 53],
+        presets: ["Novice", "Casual", "Skilled", "Expert"],
+        horizonSeconds: 120,
+        maxAbsoluteSeconds: 360,
+        timeScale: TIME_SCALE,
+        tickDt: 1 / 12,
+      })
+      reviewableRuns.push({
+        id: fSpec.id,
+        title: fSpec.title,
+        optionLabel: fSpec.optionLabel,
+        seed: fSpec.seed,
+        preset: fSpec.preset,
+        presetIndex: fSpec.presetIndex,
+        survived: fullRun.survived,
+        survivalTime: fullRun.survivalTime,
+        nightsSurvived: fullRun.nightsSurvived,
+        causeOfDeath: fullRun.causeOfDeath,
+        deathPosition: fullRun.deathPosition,
+        killsByWeapon: fullRun.killsByWeapon,
+        damageTaken: fullRun.damageTaken,
+        ammoUsed: fullRun.ammoUsed,
+        itemsLooted: fullRun.itemsLooted,
+        itemsCrafted: fullRun.itemsCrafted,
+        pacing: fullRun.pacing,
+        timeline: fullRun.timeline,
+        series: fullRun.series,
+        branching,
+      })
+    }
+
     const replays: Record<string, BotReplayLog> = {}
     for (const r of evalToday.runs) {
       if (r.replay) {
@@ -541,7 +720,7 @@ async function computeBundle(): Promise<FullBundle> {
       ...evalBalanced.runs,
       ...evalGentle.runs,
       ...evalRelentless.runs,
-    ].map(({ replay: _replay, ...rest }) => rest)
+    ].map(({ replay: _replay, checkpoints: _checkpoints, ...rest }) => rest)
 
     const summaryData: SummaryPayload = {
       generatedAt: new Date().toISOString(),
@@ -549,15 +728,19 @@ async function computeBundle(): Promise<FullBundle> {
       maxDurationSeconds: MAX_DURATION_S,
       timeScale: TIME_SCALE,
       targetCurve: TARGET_SURVIVAL_CURVE,
+      pacingTargetSpecs: PACING_TARGET_SPECS,
+      defaultPacingTargets: DEFAULT_PACING_TARGETS,
       skillPresets: BOT_SKILL_PRESETS,
       knobSpecs: DIFFICULTY_KNOB_SPECS,
       buildings: MAP_BUILDINGS,
+      purityAudit: PURITY_AUDIT,
       options: [
         stripRuns(evalToday),
         stripRuns(evalBalanced),
         stripRuns(evalGentle),
         stripRuns(evalRelentless),
       ],
+      reviewableRuns,
       cmaHistory: cmaResult.history,
       sensitivity,
       coopScaling,
@@ -576,7 +759,7 @@ function buildReportHtml(data: SummaryPayload): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Outbreak · Survivor Bots & Difficulty Tuner</title>
+  <title>Outbreak · Pure Sim, Branching Rollouts & L4D Pacing Tuner</title>
   <style>
     :root {
       --bg: #0c0e12;
@@ -682,6 +865,7 @@ function buildReportHtml(data: SummaryPayload): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
     .card p.desc {
       margin: 0 0 12px;
@@ -743,39 +927,114 @@ function buildReportHtml(data: SummaryPayload): string {
       height: 100%;
       border-radius: 4px;
     }
+    .replay-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #1d283a;
+      color: #38bdf8;
+      border: 1px solid #2b4466;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .replay-btn:hover {
+      background: #24344d;
+      border-color: #38bdf8;
+    }
+    .decisive-box {
+      background: rgba(248, 113, 113, 0.08);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .knob-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px 16px;
+      margin-bottom: 14px;
+    }
+    .knob-item {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 11.5px;
+    }
+    .knob-item label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .knob-item label strong {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .knob-item input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
     body.card-mode {
-      padding: 18px 24px;
+      padding: 12px 20px;
       width: 1200px;
-      height: 750px;
+      height: 850px;
       overflow: hidden;
     }
     body.card-mode header {
-      padding-bottom: 12px;
-      margin-bottom: 14px;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    body.card-mode h1 {
+      font-size: 20px;
+      margin-bottom: 2px;
+    }
+    body.card-mode .subtitle {
+      font-size: 12px;
     }
     body.card-mode .hide-in-card {
       display: none !important;
     }
     body.card-mode .grid-2 {
       grid-template-columns: 1.32fr 1fr;
-      gap: 14px;
-      margin-bottom: 12px;
+      gap: 10px;
+      margin-bottom: 8px;
     }
     body.card-mode .card {
-      padding: 13px 16px;
+      padding: 9px 13px;
+    }
+    body.card-mode .card h2 {
+      font-size: 13.5px;
+      margin-bottom: 2px;
+    }
+    body.card-mode .card p.desc {
+      margin-bottom: 6px;
+      font-size: 11px;
+    }
+    body.card-mode #survival-svg {
+      height: 195px !important;
+    }
+    body.card-mode #heatmap-svg {
+      width: 185px !important;
+      height: 185px !important;
     }
     body.card-mode th, body.card-mode td {
-      padding: 3.5px 7px;
-      font-size: 11.5px;
+      padding: 2.2px 6px;
+      font-size: 10.5px;
     }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1 id="page-title">Outbreak · Survivor Bots & Black-Box Difficulty Tuner</h1>
+      <h1 id="page-title">Outbreak · Pure Sim, Branching Rollouts & L4D Pacing Tuner</h1>
       <p class="subtitle" id="page-subtitle">
-        Player-bounded Command bots across 5 human skill presets · Seeded batch runs · CMA-ES 12-knob survival curve tuning
+        Pure step(state, inputs, dt) → state · Snapshot fork & N-rollout survival curves · Left 4 Dead tension/relaxation targets
       </p>
     </div>
     <div class="badge-row" id="header-badges"></div>
@@ -791,7 +1050,7 @@ function buildReportHtml(data: SummaryPayload): string {
       </h2>
       <p class="desc">Dashed vertical lines mark Nights 1–4. Shaded bars at 50% show target median survival bands per skill tier.</p>
       <div class="legend">
-        <span><i class="swatch" style="background:var(--novice)"></i>Novice (target ~0.9n)</span>
+        <span><i class="swatch" style="background:var(--novice)"></i>Novice (target ~0.55n)</span>
         <span><i class="swatch" style="background:var(--casual)"></i>Casual (target ~1.6n)</span>
         <span><i class="swatch" style="background:var(--skilled)"></i>Skilled (target ~3.1n)</span>
         <span><i class="swatch" style="background:var(--expert)"></i>Expert (target ~3.7n)</span>
@@ -802,12 +1061,12 @@ function buildReportHtml(data: SummaryPayload): string {
 
     <div class="card">
       <h2>
-        <span>96×96 m Death Heatmap & Building Layout</span>
+        <span>96×96 m Death Heatmap & L4D Pacing Summary</span>
         <span id="death-count-label" style="font-size:12px;color:var(--muted)"></span>
       </h2>
-      <p class="desc">Each marker is a bot death location colored by skill tier; buildings & safehouse shown in outline.</p>
+      <p class="desc">Each marker is a bot death location colored by skill tier; table shows survival medians + L4D pacing metrics.</p>
       <div style="display:flex;gap:14px;align-items:center;">
-        <svg id="heatmap-svg" viewBox="0 0 250 250" width="240" height="240" style="background:#090c10;border:1px solid var(--border);border-radius:8px;flex-shrink:0;"></svg>
+        <svg id="heatmap-svg" viewBox="0 0 250 250" width="230" height="230" style="background:#090c10;border:1px solid var(--border);border-radius:8px;flex-shrink:0;"></svg>
         <div style="flex:1">
           <table id="preset-summary-table"></table>
         </div>
@@ -818,22 +1077,60 @@ function buildReportHtml(data: SummaryPayload): string {
   <div class="grid-2">
     <div class="card">
       <h2>12-Knob Difficulty Comparison (Today vs Selected Option)</h2>
-      <p class="desc">Shipped defaults remain untouched in code until a board option is approved.</p>
+      <p class="desc">Shipped defaults remain untouched in code until a board option is approved on D-22.</p>
       <table id="knobs-table"></table>
     </div>
 
     <div class="card">
-      <h2>Parameter Sensitivity Ranking (±22% Span Perturbation)</h2>
-      <p class="desc">Ranked by absolute shift in mean nights survived across Novice–Skilled.</p>
-      <table id="sensitivity-table"></table>
+      <h2>Left 4 Dead Pacing & Loss Breakdown by Skill Tier</h2>
+      <p class="desc">Tension peaks/night, relax windows (s), high-intensity time %, close calls/night, and fair warned deaths %.</p>
+      <table id="pacing-tier-table"></table>
     </div>
+  </div>
+
+  <!-- Interactive Run Viewer & Fork/Rollout Branching Timeline -->
+  <div class="card hide-in-card" style="margin-bottom:20px;">
+    <h2>
+      <span>Interactive Run Viewer · Snapshot Fork & N-Rollout Branching Timeline</span>
+      <div style="display:flex;gap:8px;align-items:center;" id="run-selector-tabs"></div>
+    </h2>
+    <p class="desc">
+      Every checkpoint captures a pure, serialisable <code>SimState</code> + <code>BotStateSnapshot</code>, clones it, and rolls out <strong>16 parallel simulations</strong> (4 seeds × 4 skill presets) to answer: <em>"From here, will they survive or die, and how often?"</em> Click any checkpoint node on the timeline to inspect that fork and replay in Outbreak at that exact second.
+    </p>
+    <div id="decisive-banner" class="decisive-box"></div>
+    <div class="grid-2" style="margin-bottom:0;">
+      <div>
+        <div class="legend">
+          <span><i class="swatch" style="background:#f2a65a"></i>Overall Rollout Survival %</span>
+          <span><i class="swatch" style="background:var(--casual)"></i>Casual Rollout %</span>
+          <span><i class="swatch" style="background:var(--skilled)"></i>Skilled Rollout %</span>
+          <span><i class="swatch" style="background:var(--expert)"></i>Expert Rollout %</span>
+          <span><i class="swatch" style="background:#f43f5e"></i>L4D Tension / Intensity I(t)</span>
+        </div>
+        <svg id="branching-timeline-svg" viewBox="0 0 680 310" width="100%" height="310" style="cursor:pointer;background:#0a0d13;border:1px solid var(--border);border-radius:8px;"></svg>
+      </div>
+      <div id="checkpoint-inspector" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Interactive 'Pacing targets' Lab Knobs Sandbox -->
+  <div class="card hide-in-card" style="margin-bottom:20px;">
+    <h2>
+      <span>Interactive 'Pacing targets' Lab Knobs (Live Loss Re-Evaluation)</span>
+      <button class="tab-btn" id="reset-pacing-targets-btn" style="padding:4px 10px;font-size:11.5px;">Reset to Defaults</button>
+    </h2>
+    <p class="desc">
+      Mirrors the 11 typed knobs in Outbreak's shared Lab panel (<code>Backquote › Pacing targets</code>). Drag any target slider to re-score all 4 difficulty candidates against your survival & Left 4 Dead pacing targets in real time.
+    </p>
+    <div class="knob-grid" id="pacing-knobs-grid"></div>
+    <table id="live-loss-comparison-table"></table>
   </div>
 
   <div class="grid-2 hide-in-card">
     <div class="card">
-      <h2>Difficulty Over Time (Chaser & Noise Escalation Across Nights 1–4)</h2>
-      <p class="desc">Mean active chasers and cumulative pressure across Day 1 dusk rush through Night 4 siege.</p>
-      <svg id="escalation-svg" viewBox="0 0 600 220" width="100%" height="220"></svg>
+      <h2>Parameter Sensitivity Ranking (±22% Span Perturbation)</h2>
+      <p class="desc">Ranked by absolute shift in mean nights survived across Novice–Skilled.</p>
+      <table id="sensitivity-table"></table>
     </div>
 
     <div class="card">
@@ -841,6 +1138,13 @@ function buildReportHtml(data: SummaryPayload): string {
       <p class="desc">Multiple bots coordinate container scavenging, door/window barricading, and focus fire.</p>
       <table id="coop-table"></table>
     </div>
+  </div>
+
+  <!-- Pure Sim Impurity Audit -->
+  <div class="card hide-in-card">
+    <h2>Pure, Reviewable Sim Audit · step(state, inputs, dt) → state</h2>
+    <p class="desc">Every hidden/mutable state and serialization impurity found in Outbreak's shared simulation and how it was fixed.</p>
+    <table id="purity-audit-table"></table>
   </div>
 
   <script>
@@ -856,18 +1160,85 @@ function buildReportHtml(data: SummaryPayload): string {
     const params = new URLSearchParams(location.search);
     const cardParam = params.get("card");
     let activeIdx = cardParam !== null ? Math.max(0, Math.min(DATA.options.length - 1, Number(cardParam))) : 1;
+    let activeRunIdx = 0;
+    let activeCheckpointIdx = 0;
+    const livePacingTargets = { ...DATA.defaultPacingTargets };
 
     if (cardParam !== null) {
       document.body.classList.add("card-mode");
     }
 
+    function computeClientLossBreakdown(byPreset, pt) {
+      const customMed = {
+        Novice: pt.targetNoviceNights,
+        Casual: pt.targetCasualNights,
+        Skilled: pt.targetSkilledNights,
+        Expert: pt.targetExpertNights,
+      };
+      const presets = ["Novice", "Casual", "Skilled", "Expert"];
+      let survivalCurveLoss = 0, pacingFunLoss = 0, monotonicityLoss = 0, fairnessLoss = 0;
+      for (const p of presets) {
+        const sum = byPreset[p];
+        if (!sum) continue;
+        const t = DATA.targetCurve[p];
+        const targetMed = customMed[p];
+        const medErr = sum.medianNights - targetMed;
+        const meanErr = sum.meanNights - targetMed;
+        survivalCurveLoss += medErr * medErr * 14.0 + meanErr * meanErr * 8.0;
+        const minBand = Math.min(t.minMedianNights, targetMed - 0.25);
+        const maxBand = Math.max(t.maxMedianNights, targetMed + 0.35);
+        if (sum.medianNights < minBand) survivalCurveLoss += Math.pow(minBand - sum.medianNights, 2) * 28.0;
+        else if (sum.medianNights > maxBand) survivalCurveLoss += Math.pow(sum.medianNights - maxBand, 2) * 28.0;
+        const n1Err = sum.night1SurvivalRate - t.targetNight1SurvivalRate;
+        survivalCurveLoss += n1Err * n1Err * 10.0;
+        const earlyDeathRate = 1 - sum.eveningSurvivalRate;
+        if (earlyDeathRate > t.maxEarlyEveningDeathRate) {
+          survivalCurveLoss += Math.pow(earlyDeathRate - t.maxEarlyEveningDeathRate, 2) * 35.0;
+        }
+        const tierW = p === "Casual" || p === "Skilled" ? 1.0 : 0.6;
+        const peakErr = (sum.meanPeaksPerNight ?? 2) - pt.targetPeaksPerNight;
+        pacingFunLoss += tierW * peakErr * peakErr * 1.8;
+        const hiErr = (sum.highIntensityFraction ?? 0.25) - pt.targetHighIntensityPct / 100;
+        pacingFunLoss += tierW * hiErr * hiErr * 22.0;
+        if ((sum.meanMinRelaxWindowSeconds ?? 20) < pt.minRelaxWindowSeconds) {
+          const def = (pt.minRelaxWindowSeconds - sum.meanMinRelaxWindowSeconds) / Math.max(5, pt.minRelaxWindowSeconds);
+          pacingFunLoss += tierW * def * def * 6.0;
+        }
+        if ((sum.meanMaxRelaxWindowSeconds ?? 80) > pt.maxRelaxWindowSeconds) {
+          const exc = (sum.meanMaxRelaxWindowSeconds - pt.maxRelaxWindowSeconds) / Math.max(20, pt.maxRelaxWindowSeconds);
+          pacingFunLoss += tierW * exc * exc * 5.0;
+        }
+        const ccErr = (sum.meanCloseCallsPerNight ?? 1) - pt.targetCloseCallsPerNight;
+        pacingFunLoss += tierW * ccErr * ccErr * 2.2;
+        const targetWarn = pt.minWarnedDeathPct / 100;
+        if ((sum.warnedDeathRate ?? 1) < targetWarn) {
+          fairnessLoss += Math.pow(targetWarn - sum.warnedDeathRate, 2) * 24.0;
+        }
+        if ((sum.meanDeathWarningSeconds ?? 6) < pt.minDeathWarningSeconds) {
+          fairnessLoss += Math.pow(pt.minDeathWarningSeconds - sum.meanDeathWarningSeconds, 2) * 0.8;
+        }
+        fairnessLoss += (sum.unfairSpawns ?? 0) * 50.0;
+      }
+      for (let i = 0; i < presets.length - 1; i++) {
+        const lo = byPreset[presets[i]], hi = byPreset[presets[i + 1]];
+        if (!lo || !hi) continue;
+        const minGap = 0.35;
+        if (hi.medianNights - lo.medianNights < minGap) monotonicityLoss += Math.pow(minGap - (hi.medianNights - lo.medianNights), 2) * 45.0;
+        if (hi.meanNights - lo.meanNights < minGap) monotonicityLoss += Math.pow(minGap - (hi.meanNights - lo.meanNights), 2) * 35.0;
+      }
+      const total = survivalCurveLoss + pacingFunLoss + monotonicityLoss + fairnessLoss;
+      return { total, survivalCurveLoss, pacingFunLoss, monotonicityLoss, fairnessLoss };
+    }
+
     function renderTabs() {
       const wrap = document.getElementById("option-tabs");
+      if (!wrap) return;
       wrap.innerHTML = "";
       DATA.options.forEach((opt, idx) => {
+        const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
         const btn = document.createElement("button");
         btn.className = "tab-btn" + (idx === activeIdx ? " active" : "");
-        btn.textContent = \`Option \${idx + 1}: \${opt.label} (loss \${opt.loss.toFixed(1)})\`;
+        btn.textContent = \`Option \${idx + 1}: \${opt.label} (total loss \${lb.total.toFixed(1)})\`;
         btn.onclick = () => {
           activeIdx = idx;
           renderAll();
@@ -896,11 +1267,17 @@ function buildReportHtml(data: SummaryPayload): string {
         html += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">\${n === 0 ? "16:00 Dusk" : "Night " + n}</text>\`;
       }
 
+      const customMed = {
+        Novice: livePacingTargets.targetNoviceNights,
+        Casual: livePacingTargets.targetCasualNights,
+        Skilled: livePacingTargets.targetSkilledNights,
+        Expert: livePacingTargets.targetExpertNights,
+      };
       for (const preset of ["Novice", "Casual", "Skilled", "Expert"]) {
         const t = DATA.targetCurve[preset];
         const xMin = xOf(t.minMedianNights);
         const xMax = xOf(t.maxMedianNights);
-        const xMed = xOf(t.targetMedianNights);
+        const xMed = xOf(customMed[preset]);
         const y50 = yOf(0.5);
         html += \`<line x1="\${xMin}" y1="\${y50}" x2="\${xMax}" y2="\${y50}" stroke="\${COLORS[preset]}" stroke-width="5" stroke-opacity="0.22" stroke-linecap="round"/>\`;
         html += \`<circle cx="\${xMed}" cy="\${y50}" r="3.5" fill="none" stroke="\${COLORS[preset]}" stroke-width="1.5" stroke-dasharray="2 1"/>\`;
@@ -925,9 +1302,10 @@ function buildReportHtml(data: SummaryPayload): string {
         html += \`<circle cx="\${xOf(med)}" cy="\${yOf(0.5)}" r="4.5" fill="\${COLORS[preset]}" stroke="#0c0e12" stroke-width="1.5"/>\`;
       }
 
+      const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
       svg.innerHTML = html;
       document.getElementById("curve-title").textContent = \`\${opt.label} · Survival Curve by Skill Tier\`;
-      document.getElementById("curve-loss").textContent = \`Curve Loss: \${opt.loss.toFixed(2)}\`;
+      document.getElementById("curve-loss").textContent = \`Total Loss: \${lb.total.toFixed(2)} (Surv \${lb.survivalCurveLoss.toFixed(1)} · Pacing \${lb.pacingFunLoss.toFixed(1)})\`;
     }
 
     function renderHeatmap(opt) {
@@ -964,17 +1342,18 @@ function buildReportHtml(data: SummaryPayload): string {
       document.getElementById("death-count-label").textContent = \`\${opt.deaths.length} deaths / \${DATA.seeds.length * 5} runs\`;
 
       const tbl = document.getElementById("preset-summary-table");
-      let rows = \`<thead><tr><th>Tier</th><th>Median</th><th>Target</th><th>Night 1</th><th>Kills</th></tr></thead><tbody>\`;
+      let rows = \`<thead><tr><th>Tier</th><th>Median</th><th>Target</th><th>Night 1</th><th>Peaks/N</th><th>Warned</th></tr></thead><tbody>\`;
       for (const preset of ["Novice", "Casual", "Skilled", "Expert", "Perfect"]) {
         const s = opt.byPreset[preset];
         const t = DATA.targetCurve[preset];
         const inBand = s.medianNights >= t.minMedianNights && s.medianNights <= t.maxMedianNights;
         rows += \`<tr>
           <td><span style="color:\${COLORS[preset]};font-weight:600">\${preset}</span></td>
-          <td><strong style="color:\${inBand ? "#4ade80" : "#facc15"}">\${s.medianNights.toFixed(2)}n</strong> <span style="color:var(--muted);font-size:10.5px">(\${Math.round(s.medianSurvivalTime)}s)</span></td>
+          <td><strong style="color:\${inBand ? "#4ade80" : "#facc15"}">\${s.medianNights.toFixed(2)}n</strong></td>
           <td style="color:var(--muted)">\${t.targetMedianNights.toFixed(1)}n</td>
           <td>\${Math.round(s.night1SurvivalRate * 100)}%</td>
-          <td>\${s.meanKills.toFixed(1)}</td>
+          <td>\${(s.meanPeaksPerNight ?? 2).toFixed(1)}</td>
+          <td style="color:#4ade80">\${Math.round((s.warnedDeathRate ?? 1) * 100)}%</td>
         </tr>\`;
       }
       rows += "</tbody>";
@@ -1002,8 +1381,292 @@ function buildReportHtml(data: SummaryPayload): string {
       tbl.innerHTML = html;
     }
 
+    function renderPacingTierTable(opt) {
+      const tbl = document.getElementById("pacing-tier-table");
+      if (!tbl) return;
+      const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
+      let html = \`<thead><tr><th>Tier</th><th>Mean / Peak I(t)</th><th>High-I %</th><th>Peaks / N</th><th>Relax Min..Max</th><th>Close Calls / N</th><th>Warned Death</th></tr></thead><tbody>\`;
+      for (const preset of ["Novice", "Casual", "Skilled", "Expert", "Perfect"]) {
+        const s = opt.byPreset[preset];
+        html += \`<tr>
+          <td><span style="color:\${COLORS[preset]};font-weight:600">\${preset}</span></td>
+          <td>\${(s.meanIntensity ?? 0).toFixed(2)} / \${(s.peakIntensity ?? 0).toFixed(2)}</td>
+          <td>\${Math.round((s.highIntensityFraction ?? 0) * 100)}% <span style="color:var(--muted)">(tgt \${livePacingTargets.targetHighIntensityPct}%)</span></td>
+          <td>\${(s.meanPeaksPerNight ?? 0).toFixed(2)}/n</td>
+          <td>\${Math.round(s.meanMinRelaxWindowSeconds ?? 0)}s..\${Math.round(s.meanMaxRelaxWindowSeconds ?? 0)}s</td>
+          <td>\${(s.meanCloseCallsPerNight ?? 0).toFixed(2)}/n</td>
+          <td style="color:#4ade80">\${Math.round((s.warnedDeathRate ?? 1) * 100)}% (\${(s.meanDeathWarningSeconds ?? 0).toFixed(1)}s lead)</td>
+        </tr>\`;
+      }
+      html += \`<tr>
+        <td colspan="7" style="padding-top:8px;color:var(--muted);font-size:11.5px;">
+          <strong>Loss Breakdown (\${opt.label}):</strong>
+          Survival Curve = <strong style="color:var(--text)">\${lb.survivalCurveLoss.toFixed(2)}</strong> ·
+          L4D Pacing/Fun = <strong style="color:var(--accent)">\${lb.pacingFunLoss.toFixed(2)}</strong> ·
+          Monotonicity = <strong style="color:var(--text)">\${lb.monotonicityLoss.toFixed(2)}</strong> ·
+          Fairness = <strong style="color:#4ade80">\${lb.fairnessLoss.toFixed(2)}</strong> ·
+          Total = <strong style="color:var(--accent)">\${lb.total.toFixed(2)}</strong>
+        </td>
+      </tr></tbody>\`;
+      tbl.innerHTML = html;
+    }
+
+    function renderRunViewer() {
+      const tabsWrap = document.getElementById("run-selector-tabs");
+      if (!tabsWrap || !DATA.reviewableRuns || DATA.reviewableRuns.length === 0) return;
+      tabsWrap.innerHTML = "";
+      DATA.reviewableRuns.forEach((run, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "tab-btn" + (idx === activeRunIdx ? " active" : "");
+        btn.style.padding = "5px 11px";
+        btn.style.fontSize = "11.5px";
+        btn.textContent = run.title;
+        btn.onclick = () => {
+          activeRunIdx = idx;
+          const cps = run.branching.checkpoints;
+          activeCheckpointIdx = Math.max(0, Math.min(cps.length - 1, Math.floor(cps.length / 2)));
+          renderRunViewer();
+        };
+        tabsWrap.appendChild(btn);
+      });
+
+      const run = DATA.reviewableRuns[activeRunIdx];
+      const cps = run.branching.checkpoints;
+      if (activeCheckpointIdx >= cps.length) activeCheckpointIdx = Math.max(0, cps.length - 1);
+      const cp = cps[activeCheckpointIdx];
+      const dm = run.branching.decisiveMoment;
+
+      const banner = document.getElementById("decisive-banner");
+      if (dm) {
+        const evText = dm.eventsInWindow.length > 0
+          ? dm.eventsInWindow.map((e) => \`[t=\${e.t}s] \${e.detail}\`).join(" · ")
+          : "Continuous horde pressure & stamina/ammo attrition";
+        banner.innerHTML = \`
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <strong style="color:#f87171">Decisive Moment Detected (t = \${dm.fromT}s → \${dm.toT}s · Hour \${dm.fromHour.toFixed(1)} → \${dm.toHour.toFixed(1)}):</strong>
+              \${dm.whySummary}<br/>
+              <span style="color:var(--muted)">Events in window: \${evText}</span>
+            </div>
+            <a class="replay-btn" target="_blank" href="/arcade/outbreak/?seed=\${run.seed}&botEnabled=1&botSkillPreset=\${run.presetIndex}&botDebugOverlay=1&botSeek=\${Math.max(0, dm.fromT)}">
+              ▶ Replay Decisive Window (t = \${dm.fromT}s)
+            </a>
+          </div>
+        \`;
+      } else {
+        banner.innerHTML = \`<strong style="color:#4ade80">Run Survived Window (\${run.nightsSurvived.toFixed(2)} nights · \${run.survivalTime}s):</strong> Survival probability stayed resilient across checkpoints.\`;
+      }
+
+      // Draw dual-track SVG timeline
+      const svg = document.getElementById("branching-timeline-svg");
+      const W = 680, H = 310, padL = 44, padR = 18;
+      const maxT = Math.max(60, run.survivalTime, cps.length ? cps[cps.length - 1].t : 60);
+      const xOf = (t) => padL + (Math.min(maxT, Math.max(0, t)) / maxT) * (W - padL - padR);
+
+      // Top track: y = 16..142 (Survival Probability 0..100%)
+      const topT = 16, topB = 142, topH = topB - topT;
+      const ySurv = (p) => topT + (1 - p) * topH;
+
+      // Bottom track: y = 172..282 (L4D Intensity I(t) 0..1 & HP 0..100%)
+      const botT = 172, botB = 282, botH = botB - botT;
+      const yInt = (v) => botT + (1 - v) * botH;
+
+      let s = "";
+      // Decisive moment highlight band
+      if (dm) {
+        const x0 = xOf(dm.fromT), x1 = xOf(dm.toT);
+        s += \`<rect x="\${x0}" y="\${topT}" width="\${Math.max(6, x1 - x0)}" height="\${botB - topT}" fill="#f87171" fill-opacity="0.13"/>\`;
+      }
+
+      // Grid lines top track
+      for (const pct of [0, 0.5, 1.0]) {
+        const y = ySurv(pct);
+        s += \`<line x1="\${padL}" y1="\${y}" x2="\${W - padR}" y2="\${y}" stroke="#1e2636" stroke-width="1"/>\`;
+        s += \`<text x="\${padL - 6}" y="\${y + 4}" fill="#8b95ab" font-size="10" text-anchor="end">\${Math.round(pct * 100)}%</text>\`;
+      }
+      s += \`<text x="\${padL + 6}" y="\${topT + 11}" fill="#939db3" font-size="10.5" font-weight="600">Fork Rollout Survival Probability P(survive | state_t)</text>\`;
+
+      // Grid lines bottom track
+      for (const v of [0, 0.5, 1.0]) {
+        const y = yInt(v);
+        s += \`<line x1="\${padL}" y1="\${y}" x2="\${W - padR}" y2="\${y}" stroke="#1e2636" stroke-width="1"/>\`;
+        s += \`<text x="\${padL - 6}" y="\${y + 4}" fill="#8b95ab" font-size="10" text-anchor="end">\${v.toFixed(1)}</text>\`;
+      }
+      s += \`<text x="\${padL + 6}" y="\${botT + 11}" fill="#939db3" font-size="10.5" font-weight="600">L4D Director Intensity I(t) (Peak ≥ 0.50 · Relax ≤ 0.24) & Survivor HP</text>\`;
+
+      // Time ticks
+      const stepT = maxT <= 180 ? 30 : maxT <= 360 ? 60 : 90;
+      for (let t = 0; t <= maxT; t += stepT) {
+        const x = xOf(t);
+        s += \`<line x1="\${x}" y1="\${topT}" x2="\${x}" y2="\${botB}" stroke="#19202e" stroke-dasharray="3 3"/>\`;
+        s += \`<text x="\${x}" y="\${H - 8}" fill="#8b95ab" font-size="10" text-anchor="middle">\${t}s</text>\`;
+      }
+
+      // Skill-specific survival probability curves across checkpoints
+      for (const skill of ["Novice", "Casual", "Skilled", "Expert"]) {
+        const pts = cps.map((c) => \`\${xOf(c.t).toFixed(1)},\${ySurv(c.survivalBySkill[skill] ?? 0).toFixed(1)}\`).join(" ");
+        s += \`<polyline fill="none" stroke="\${COLORS[skill]}" stroke-width="1.5" stroke-opacity="0.65" stroke-dasharray="3 2" points="\${pts}"/>\`;
+      }
+      // Overall survival probability curve
+      if (cps.length > 0) {
+        const overallPts = cps.map((c) => \`\${xOf(c.t).toFixed(1)},\${ySurv(c.survivalProbability).toFixed(1)}\`).join(" ");
+        s += \`<polyline fill="none" stroke="#f2a65a" stroke-width="2.8" points="\${overallPts}"/>\`;
+      }
+
+      // Bottom track: Intensity area & HP curve
+      if (run.series.length > 0) {
+        const intPts = run.series.map((pt) => \`\${xOf(pt.t).toFixed(1)},\${yInt(pt.intensity ?? 0).toFixed(1)}\`).join(" ");
+        const areaPts = \`\${xOf(run.series[0].t).toFixed(1)},\${botB} \${intPts} \${xOf(run.series[run.series.length - 1].t).toFixed(1)},\${botB}\`;
+        s += \`<polygon fill="rgba(244, 63, 94, 0.18)" points="\${areaPts}"/>\`;
+        s += \`<polyline fill="none" stroke="#f43f5e" stroke-width="2.2" points="\${intPts}"/>\`;
+
+        const hpPts = run.series.map((pt) => \`\${xOf(pt.t).toFixed(1)},\${yInt((pt.health ?? 100) / 100).toFixed(1)}\`).join(" ");
+        s += \`<polyline fill="none" stroke="#4ade80" stroke-width="1.6" stroke-dasharray="4 2" points="\${hpPts}"/>\`;
+      }
+
+      // Active checkpoint vertical cursor line
+      if (cp) {
+        const cx = xOf(cp.t);
+        s += \`<line x1="\${cx}" y1="\${topT}" x2="\${cx}" y2="\${botB}" stroke="#38bdf8" stroke-width="1.8"/>\`;
+      }
+
+      // Clickable checkpoint nodes
+      cps.forEach((c, idx) => {
+        const cx = xOf(c.t);
+        const cy = ySurv(c.survivalProbability);
+        const isSel = idx === activeCheckpointIdx;
+        s += \`<circle data-cp="\${idx}" cx="\${cx.toFixed(1)}" cy="\${cy.toFixed(1)}" r="\${isSel ? 6.5 : 4.5}" fill="\${isSel ? "#38bdf8" : "#f2a65a"}" stroke="#0c0e12" stroke-width="1.5"/>\`;
+      });
+
+      // Timeline event markers along bottom track
+      for (const ev of run.timeline) {
+        const ex = xOf(ev.t);
+        const col = ev.kind === "death" ? "#f87171" : ev.kind === "close-call" ? "#facc15" : ev.kind === "first-contact" ? "#fb923c" : "#38bdf8";
+        s += \`<circle cx="\${ex.toFixed(1)}" cy="\${botB - 4}" r="3" fill="\${col}"><title>[\${ev.t}s] \${ev.kind}: \${ev.detail}</title></circle>\`;
+      }
+
+      svg.innerHTML = s;
+      svg.onclick = (e) => {
+        const rect = svg.getBoundingClientRect();
+        const clickX = ((e.clientX - rect.left) / rect.width) * W;
+        let bestIdx = 0, bestDist = Infinity;
+        cps.forEach((c, idx) => {
+          const d = Math.abs(xOf(c.t) - clickX);
+          if (d < bestDist) { bestDist = d; bestIdx = idx; }
+        });
+        activeCheckpointIdx = bestIdx;
+        renderRunViewer();
+      };
+
+      // Render Checkpoint Inspector panel
+      const insp = document.getElementById("checkpoint-inspector");
+      if (cp) {
+        const causesStr = Object.entries(cp.causesOfDeath)
+          .map(([k, v]) => \`\${k}: \${v}/\${cp.rolloutCount}\`)
+          .join(" · ");
+        const replayUrl = \`/arcade/outbreak/?seed=\${run.seed}&botEnabled=1&botSkillPreset=\${run.presetIndex}&botDebugOverlay=1&botSeek=\${Math.round(cp.t)}\`;
+        insp.innerHTML = \`
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:8px;">
+            <div>
+              <strong style="font-size:13.5px;color:#38bdf8">Snapshot @ t = \${cp.t}s (Tick \${cp.tick} · Hour \${cp.hour.toFixed(2)})</strong>
+              <div style="font-size:11px;color:var(--muted);font-family:monospace;">SimState Hash: \${cp.stateHash}</div>
+            </div>
+            <a class="replay-btn" target="_blank" href="\${replayUrl}">▶ Replay Here (t = \${Math.round(cp.t)}s)</a>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11.5px;">
+            <div class="knob-item">HP: <strong>\${cp.summary.health}</strong></div>
+            <div class="knob-item">Ammo: <strong>\${cp.summary.totalAmmo}</strong></div>
+            <div class="knob-item">Chasers: <strong>\${cp.summary.activeChasers}</strong></div>
+            <div class="knob-item">Phase: <strong style="text-transform:uppercase">\${cp.summary.phase} (\${cp.summary.intensity.toFixed(2)})</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Forked Bot Skill</th><th>Rollout Survival %</th><th>Outcome from Snapshot</th></tr></thead>
+            <tbody>
+              \${["Novice", "Casual", "Skilled", "Expert"].map((sk) => {
+                const p = cp.survivalBySkill[sk] ?? 0;
+                const pct = Math.round(p * 100);
+                return \`<tr>
+                  <td><strong style="color:\${COLORS[sk]}">\${sk}</strong></td>
+                  <td><strong>\${pct}%</strong></td>
+                  <td><div class="bar-track"><div class="bar-fill" style="width:\${pct}%;background:\${COLORS[sk]}"></div></div></td>
+                </tr>\`;
+              }).join("")}
+            </tbody>
+          </table>
+          <div style="font-size:11.5px;color:var(--muted);">
+            <strong>Remaining Survival (IQR across \${cp.rolloutCount} rollouts):</strong> Median <strong>+\${cp.medianRemainingSeconds}s</strong> (p25 +\${cp.p25RemainingSeconds}s .. p75 +\${cp.p75RemainingSeconds}s)<br/>
+            <strong>Rollout Outcomes:</strong> \${causesStr}<br/>
+            <strong>Run Pacing Summary:</strong> \${run.pacing.peakCount} peaks (\${run.pacing.peaksPerNight}/n) · Relax windows \${run.pacing.minRelaxWindowSeconds}s..\${run.pacing.maxRelaxWindowSeconds}s · Close calls \${run.pacing.closeCallsPerNight}/n · Death warning lead: \${run.pacing.deathWarningSeconds !== null ? run.pacing.deathWarningSeconds + "s" : "Survived"}
+          </div>
+        \`;
+      }
+    }
+
+    function renderPacingTargetsSandbox() {
+      const grid = document.getElementById("pacing-knobs-grid");
+      const tbl = document.getElementById("live-loss-comparison-table");
+      if (!grid || !tbl) return;
+
+      if (grid.children.length === 0) {
+        for (const spec of DATA.pacingTargetSpecs) {
+          const item = document.createElement("div");
+          item.className = "knob-item";
+          item.innerHTML = \`
+            <label>
+              <span>\${spec.label}</span>
+              <strong id="pt-val-\${spec.key}">\${livePacingTargets[spec.key]}\${spec.unit}</strong>
+            </label>
+            <input type="range" id="pt-input-\${spec.key}" min="\${spec.min}" max="\${spec.max}" step="\${spec.step}" value="\${livePacingTargets[spec.key]}" />
+          \`;
+          grid.appendChild(item);
+          const input = item.querySelector("input");
+          input.oninput = () => {
+            livePacingTargets[spec.key] = Number(input.value);
+            document.getElementById(\`pt-val-\${spec.key}\`).textContent = \`\${livePacingTargets[spec.key]}\${spec.unit}\`;
+            renderAll();
+          };
+        }
+        const resetBtn = document.getElementById("reset-pacing-targets-btn");
+        if (resetBtn) {
+          resetBtn.onclick = () => {
+            Object.assign(livePacingTargets, DATA.defaultPacingTargets);
+            for (const spec of DATA.pacingTargetSpecs) {
+              const inp = document.getElementById(\`pt-input-\${spec.key}\`);
+              if (inp) inp.value = String(livePacingTargets[spec.key]);
+              const lbl = document.getElementById(\`pt-val-\${spec.key}\`);
+              if (lbl) lbl.textContent = \`\${livePacingTargets[spec.key]}\${spec.unit}\`;
+            }
+            renderAll();
+          };
+        }
+      }
+
+      const scored = DATA.options.map((opt, idx) => ({
+        idx,
+        opt,
+        lb: computeClientLossBreakdown(opt.byPreset, livePacingTargets),
+      }));
+      const minLoss = Math.min(...scored.map((s) => s.lb.total));
+
+      let html = \`<thead><tr><th>Difficulty Option</th><th>Survival Curve Loss</th><th>L4D Pacing/Fun Loss</th><th>Monotonicity Loss</th><th>Fairness Loss</th><th>Total Loss</th></tr></thead><tbody>\`;
+      for (const row of scored) {
+        const isBest = Math.abs(row.lb.total - minLoss) < 1e-4;
+        html += \`<tr style="background:\${isBest ? "rgba(74, 222, 128, 0.07)" : "transparent"}">
+          <td><strong>Option \${row.idx + 1}: \${row.opt.label}</strong> \${isBest ? '<span style="color:#4ade80;font-size:11px;font-weight:600">★ Best Fit</span>' : ""}</td>
+          <td>\${row.lb.survivalCurveLoss.toFixed(2)}</td>
+          <td>\${row.lb.pacingFunLoss.toFixed(2)}</td>
+          <td>\${row.lb.monotonicityLoss.toFixed(2)}</td>
+          <td>\${row.lb.fairnessLoss.toFixed(2)}</td>
+          <td><strong style="color:\${isBest ? "#4ade80" : "var(--accent)"}">\${row.lb.total.toFixed(2)}</strong></td>
+        </tr>\`;
+      }
+      html += "</tbody>";
+      tbl.innerHTML = html;
+    }
+
     function renderSensitivityTable() {
       const tbl = document.getElementById("sensitivity-table");
+      if (!tbl) return;
       const maxAbs = Math.max(0.1, ...DATA.sensitivity.map((s) => s.absDeltaNights));
       let html = \`<thead><tr><th>Parameter</th><th>Low → High</th><th>Δ Nights</th><th>Impact</th></tr></thead><tbody>\`;
       for (const s of DATA.sensitivity.slice(0, 12)) {
@@ -1024,7 +1687,7 @@ function buildReportHtml(data: SummaryPayload): string {
       tbl.innerHTML = html;
     }
 
-    function renderCoopAndEscalation() {
+    function renderCoopAndAudit() {
       const coopTbl = document.getElementById("coop-table");
       if (coopTbl) {
         let html = \`<thead><tr><th>Squad Size</th><th>Bot Tier</th><th>Median Nights</th><th>Night 1 Survival</th><th>Mean Team Kills</th></tr></thead><tbody>\`;
@@ -1041,48 +1704,42 @@ function buildReportHtml(data: SummaryPayload): string {
         coopTbl.innerHTML = html;
       }
 
-      const escSvg = document.getElementById("escalation-svg");
-      if (escSvg) {
-        const W = 600, H = 220, padL = 42, padR = 18, padT = 18, padB = 30;
-        const plotW = W - padL - padR, plotH = H - padT - padB;
-        const xOf = (n) => padL + (n / 4) * plotW;
-        const yOf = (v) => padT + (1 - v / 10) * plotH;
-        let svg = "";
-        for (let n = 0; n <= 4; n++) {
-          const x = xOf(n);
-          svg += \`<line x1="\${x}" y1="\${padT}" x2="\${x}" y2="\${H - padB}" stroke="#263044" stroke-dasharray="3 3"/>\`;
-          svg += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">Night \${n}</text>\`;
+      const auditTbl = document.getElementById("purity-audit-table");
+      if (auditTbl && DATA.purityAudit) {
+        let html = \`<thead><tr><th>Subsystem / Module</th><th>Impurity Discovered</th><th>How Fixed for Pure step(state, inputs, dt) → state</th></tr></thead><tbody>\`;
+        for (const row of DATA.purityAudit) {
+          html += \`<tr>
+            <td style="width:24%"><strong>\${row.subsystem}</strong></td>
+            <td style="width:38%;color:var(--muted)">\${row.impurity}</td>
+            <td style="width:38%;color:#4ade80">\${row.fix}</td>
+          </tr>\`;
         }
-        const pts = [];
-        for (let i = 0; i <= 40; i++) {
-          const n = i * 0.1;
-          const cyc = n % 1;
-          const isNight = cyc >= 0.15 && cyc <= 0.85;
-          const base = 1.6 + n * 1.15 + (isNight ? 2.1 + n * 0.55 : 0);
-          pts.push(\`\${xOf(n).toFixed(1)},\${yOf(Math.min(9.5, base)).toFixed(1)}\`);
-        }
-        svg += \`<polyline fill="none" stroke="#f2a65a" stroke-width="2.4" points="\${pts.join(" ")}"/>\`;
-        escSvg.innerHTML = svg;
+        html += "</tbody>";
+        auditTbl.innerHTML = html;
       }
     }
 
     function renderAll() {
       const opt = DATA.options[activeIdx];
+      const lb = computeClientLossBreakdown(opt.byPreset, livePacingTargets);
       if (cardParam !== null) {
         document.getElementById("page-title").textContent = \`Option \${activeIdx + 1} · \${opt.label}\`;
       }
       document.getElementById("header-badges").innerHTML = \`
         <div class="badge">Option: <strong>\${opt.label}</strong></div>
-        <div class="badge">Curve Loss: <strong>\${opt.loss.toFixed(2)}</strong></div>
+        <div class="badge">Total Loss: <strong>\${lb.total.toFixed(2)}</strong> (Surv \${lb.survivalCurveLoss.toFixed(1)} · Pacing \${lb.pacingFunLoss.toFixed(1)})</div>
         <div class="badge">Novice→Expert Medians: <strong>\${opt.byPreset.Novice.medianNights.toFixed(2)}n / \${opt.byPreset.Casual.medianNights.toFixed(2)}n / \${opt.byPreset.Skilled.medianNights.toFixed(2)}n / \${opt.byPreset.Expert.medianNights.toFixed(2)}n</strong></div>
-        <div class="badge">Unfair Spawns: <strong>0</strong></div>
+        <div class="badge">Warned Deaths: <strong>\${Math.round((opt.byPreset.Casual.warnedDeathRate ?? 1) * 100)}%</strong> · Unfair Spawns: <strong>0</strong></div>
       \`;
       renderTabs();
       renderSurvivalCurve(opt);
       renderHeatmap(opt);
       renderKnobsTable(opt);
+      renderPacingTierTable(opt);
+      renderRunViewer();
+      renderPacingTargetsSandbox();
       renderSensitivityTable();
-      renderCoopAndEscalation();
+      renderCoopAndAudit();
     }
 
     renderAll();

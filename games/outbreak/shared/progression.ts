@@ -6,6 +6,7 @@ import {
   type ItemId,
   type LedgerEnv,
   type LedgerEvent,
+  type LedgerSnapshot,
   type Rule,
   type Stack,
   type StoreSpec,
@@ -613,6 +614,16 @@ const BENCH_LIGHT_FLASHLIGHT = 0.2
 const BENCH_LIGHT_LAMP = 0.2
 const GENERATOR_LIGHT = 0.8
 
+export type OutbreakProgressionSnapshot = {
+  tuning: ProgressionTuning
+  nextId: number
+  generatorAt: [string, number][]
+  pings: Ping[]
+  lures: Lure[]
+  searchedContainers: [string, boolean][]
+  ledger: LedgerSnapshot
+}
+
 export class OutbreakProgression {
   readonly ledger: Ledger
   readonly containers: LootSite[]
@@ -623,6 +634,42 @@ export class OutbreakProgression {
   private nextId = 1
   private generatorAt = new Map<string, number>()
   private actorOf = new WeakMap<object, ProgressionSlot>()
+
+  snapshot(): OutbreakProgressionSnapshot {
+    return {
+      tuning: { ...this.tuning },
+      nextId: this.nextId,
+      generatorAt: [...this.generatorAt.entries()],
+      pings: this.pings.map((p) => ({ ...p })),
+      lures: this.lures.map((l) => ({ ...l })),
+      searchedContainers: this.containers.map((c) => [c.id, Boolean(c.searched)]),
+      ledger: this.ledger.snapshot(),
+    }
+  }
+
+  restore(snap: OutbreakProgressionSnapshot, slots: readonly ProgressionSlot[] = []): void {
+    this.tuning = { ...snap.tuning }
+    this.ledger.setRules(progressionRules(this.tuning))
+    this.nextId = snap.nextId
+    this.generatorAt.clear()
+    for (const [k, v] of snap.generatorAt) this.generatorAt.set(k, v)
+    this.pings.length = 0
+    for (const p of snap.pings) this.pings.push({ ...p })
+    this.lures.length = 0
+    for (const l of snap.lures) this.lures.push({ ...l })
+    this.ledger.restore(snap.ledger)
+    const searchedMap = new Map(snap.searchedContainers)
+    for (const c of this.containers) {
+      if (searchedMap.has(c.id)) c.searched = searchedMap.get(c.id)
+      const st = this.ledger.store(c.id)
+      if (st?.revealed) c.searched = true
+    }
+    this.ensureContainerStores()
+    for (const slot of slots) {
+      this.actorOf.set(slot.survivor, slot)
+      this.project(slot)
+    }
+  }
 
   constructor(
     readonly town: Town,
