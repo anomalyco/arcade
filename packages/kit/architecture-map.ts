@@ -24,6 +24,8 @@ export interface ArchitectureMapRow {
 
 const RENDERER_TRANSITIVE_SPECS = [
   "@arcade/kit/gpu/wgsl",
+  "@arcade/kit/gpu/cull",
+  "@arcade/kit/gpu/targets",
   "@arcade/kit/gpu/motion",
   "@arcade/kit/gpu/motion-blur",
   "@arcade/kit/gpu/look-shaders",
@@ -87,6 +89,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     area: "`gpu/mesh`",
     description: "24-byte packed vertex builder (`Mesh`, `packVerts`)",
     match: (s) => s === "@arcade/kit/gpu/mesh",
+  },
+  {
+    area: "`gpu/{cull,targets}`",
+    description: "Frustum/rect chunk culling, contiguous draw merging, MSAA/HDR targets, and 5-level bloom",
+    match: (s) => s === "@arcade/kit/gpu/cull" || s === "@arcade/kit/gpu/targets",
   },
   {
     area: "`gpu/{renderer,shaders,level,limits}`",

@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [feedbackPlugin(), sfxPicksPlugin()],
   build: { target: "esnext", outDir: "dist/arcade/carrier", emptyOutDir: true, rolldownOptions: { input: { main: "index.html", ship: "ship.html", menu: "menu.html" } } },
   server: {
+    fs: { allow: ["../.."] },
     port: 5197,
     strictPort: true,
     allowedHosts: true,

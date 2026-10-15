@@ -45,6 +45,8 @@ import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
 import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
+import { boxIntersectsRect2D, drawContiguousChunks, drawContiguousChunksByMode } from "./cull"
+import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "./targets"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -55,7 +57,7 @@ export const SPRITE_FLOATS = 12
 /** Size of the game's custom uniform block at binding 13. */
 export const CUSTOM_UNIFORM_BYTES = 1024
 const MAX_SPRITES = 8192
-const BLOOM_LEVELS = 5
+const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
@@ -249,23 +251,17 @@ export class Renderer {
   private level: Buf | null = null
   private glass: Buf | null = null
   private models: Buf[] = []
-  private inst: Buf
+  private inst: GrowableInstanceBuffer
   private sprites: GPUBuffer
-  private msaa!: GPUTexture
-  private msaaView!: GPUTextureView
-  private depth!: GPUTexture
-  private depthView!: GPUTextureView
-  private hdr!: GPUTexture
-  private hdrView!: GPUTextureView
-  private bloom: GPUTexture[] = []
-  private bloomViews: GPUTextureView[] = []
+  private targets: SceneTargets
+  private bloomPyramid: BloomPyramid
   private gradeData = new Float32Array(8 + LOOK_UNIFORM_FLOATS)
   private postLayout: GPUBindGroupLayout
-  private postGroups: { down: GPUBindGroup[]; up: GPUBindGroup[]; composite: GPUBindGroup } | null = null
-  private postParams: GPUBuffer[] = []
   private sampler: GPUSampler
   /** Level chunks drawn last frame, for diagnostics. */
   drawnChunks = 0
+  /** Coalesced level chunk draw calls issued last frame. */
+  drawnChunkDraws = 0
   /** Successfully submitted frames, not draw requests or confirmed screen presentations. */
   submittedFrames = 0
   width = 0
@@ -320,9 +316,11 @@ export class Renderer {
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
     this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: U.UNIFORM | U.COPY_DST })
     this.customBuf = d.createBuffer({ size: CUSTOM_UNIFORM_BYTES, usage: U.UNIFORM | U.COPY_DST })
-    this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
+    this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
+    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: true })
+    this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: HDR, upTexelSource: "target" })
 
     const S = GPUShaderStage
     const computeLayout = d.createBindGroupLayout({
@@ -555,7 +553,6 @@ export class Renderer {
       vertex: { module: motionPost, entryPoint: "vs" },
       fragment: { module: motionPost, entryPoint: "composite", targets: [{ format }] },
     })
-    for (let i = 0; i < BLOOM_LEVELS; i++) this.postParams.push(d.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST }))
     this.texturesReady = this.initMaterialTextures()
   }
 
@@ -639,7 +636,7 @@ export class Renderer {
     march.setBindGroup(0, v.group)
     march.draw(3)
     march.end()
-    const add = enc.beginRenderPass({ colorAttachments: [{ view: this.hdrView, loadOp: "load", storeOp: "store" }] })
+    const add = enc.beginRenderPass({ colorAttachments: [{ view: this.targets.hdrView, loadOp: "load", storeOp: "store" }] })
     scissor(add, this.width, this.height)
     add.setPipeline(v.composite)
     add.setBindGroup(0, v.compositeGroup!)
@@ -815,58 +812,25 @@ export class Renderer {
   }
 
   resize(w: number, h: number): void {
-    if (w === this.width && h === this.height) return
+    if (!this.targets.resize(w, h)) return
     this.width = w
     this.height = h
-    this.measureTarget?.destroy();this.measureTarget=null
+    this.measureTarget?.destroy()
+    this.measureTarget = null
     this.sharedBlurGroups = null
     this.blurReady = false
     this.previousFrame = null
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
     this.velocity = this.velocityMSAA = null
-    this.msaa?.destroy()
-    this.depth?.destroy()
-    this.hdr?.destroy()
-    for (const b of this.bloom) b.destroy()
-    const d = this.device
-    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-    this.msaa = d.createTexture({ size: [w, h], format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
-    this.msaaView = this.msaa.createView()
-    this.depth = d.createTexture({ size: [w, h], format: DEPTH, sampleCount: SAMPLES, usage })
-    this.depthView = this.depth.createView()
-    this.smokeRenderer.resize(w,h,this.depthView)
-    this.hdr = d.createTexture({ size: [w, h], format: HDR, usage })
-    this.hdrView = this.hdr.createView()
-    this.bloom = []
-    this.bloomViews = []
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const s = 2 ** (i + 1)
-      const tex = d.createTexture({ size: [Math.max(1, Math.floor(w / s)), Math.max(1, Math.floor(h / s))], format: HDR, usage })
-      this.bloom.push(tex)
-      this.bloomViews.push(tex.createView())
-    }
-    const group = (srcView: GPUTextureView, params: GPUBuffer, extraView: GPUTextureView = srcView) =>
-      d.createBindGroup({
-        layout: this.postLayout,
-        entries: [
-          { binding: 0, resource: srcView },
-          { binding: 1, resource: this.sampler },
-          { binding: 2, resource: { buffer: params } },
-          { binding: 3, resource: extraView },
-          { binding: 4, resource: { buffer: this.gradeBuf } },
-        ],
-      })
-    const down: GPUBindGroup[] = []
-    const up: GPUBindGroup[] = []
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const src = i === 0 ? this.hdr : this.bloom[i - 1]!
-      const srcView = i === 0 ? this.hdrView : this.bloomViews[i - 1]!
-      down.push(group(srcView, this.postParams[i]!))
-      d.queue.writeBuffer(this.postParams[i]!, 0, new Float32Array([1 / src.width, 1 / src.height, i === 0 ? 1 : 0, 0]))
-    }
-    for (let i = BLOOM_LEVELS - 1; i > 0; i--) up.push(group(this.bloomViews[i]!, this.postParams[i]!))
-    this.postGroups = { down, up, composite: group(this.hdrView, this.postParams[0]!, this.bloomViews[0]!) }
+    this.smokeRenderer.resize(w, h, this.targets.depthView)
+    this.bloomPyramid.resize({
+      hdr: this.targets.hdr,
+      hdrView: this.targets.hdrView,
+      layout: this.postLayout,
+      sampler: this.sampler,
+      gradeBuffer: this.gradeBuf,
+    })
   }
 
   setVisibility(data: Uint8Array<ArrayBuffer>, w: number, h: number): void {
@@ -886,9 +850,9 @@ export class Renderer {
     this.velocityView = this.velocity.createView()
     this.velocityMSAAView = this.velocityMSAA.createView()
     this.motionComposite = d.createBindGroup({ layout: this.motionPostLayout, entries: [
-      { binding: 0, resource: this.hdrView }, { binding: 1, resource: this.sampler },
-      { binding: 2, resource: { buffer: this.postParams[0]! } },
-      { binding: 3, resource: this.bloomViews[0]! },
+      { binding: 0, resource: this.targets.hdrView }, { binding: 1, resource: this.sampler },
+      { binding: 2, resource: { buffer: this.bloomPyramid.downParams[0]! } },
+      { binding: 3, resource: this.bloomPyramid.views[0]! },
       { binding: 4, resource: { buffer: this.gradeBuf } }, { binding: 5, resource: this.velocityView },
     ] })
   }
@@ -1177,47 +1141,32 @@ export class Renderer {
       this.previousInst.destroy()
       this.previousInst = d.createBuffer({ size: this.previousData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     }
-    if (total > this.inst.cap) {
-      this.inst.buf.destroy()
-      this.inst.cap = Math.ceil(total * 1.5)
-      this.inst.buf = d.createBuffer({ size: this.inst.cap * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
-    }
+    this.inst.ensureCapacity(total)
     const ranges: { model: number; first: number; count: number; alpha: boolean }[] = []
     let off = 0
-    let firstBuf: ArrayBuffer | null = null
-    let firstByteOff = 0
-    let contiguous = true
     for (const b of f.batches) {
       if (!b.count) continue
-      if (firstBuf === null) {
-        firstBuf = b.data.buffer
-        firstByteOff = b.data.byteOffset
-      } else if (b.data.buffer !== firstBuf || b.data.byteOffset !== firstByteOff + off * INST_FLOATS * 4) {
-        contiguous = false
-      }
       ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
       if (motion) for (let i = 0; i < b.count; i++) this.history.write(this.previousData, (off + i) * INST_FLOATS, b.data, i * INST_FLOATS, b.motionKeys?.[i])
       off += b.count
     }
-    if (off > 0) {
-      if (contiguous && firstBuf) {
-        d.queue.writeBuffer(this.inst.buf, 0, firstBuf, firstByteOff, off * INST_FLOATS * 4)
-      } else {
-        let cur = 0
-        for (const b of f.batches) {
-          if (!b.count) continue
-          d.queue.writeBuffer(this.inst.buf, cur * INST_FLOATS * 4, b.data.buffer, b.data.byteOffset, b.count * INST_FLOATS * 4)
-          cur += b.count
-        }
-      }
-    }
-    const half = MAX_SPRITES / 2
+    this.inst.uploadBatches(f.batches)
     if (motion && off) d.queue.writeBuffer(this.previousInst, 0, this.previousData.buffer, 0, off * INST_FLOATS * 4)
-    const alphaCount = Math.min(f.alphaCount, half)
-    const addCount = Math.min(f.addCount, half)
-    if (alphaCount) d.queue.writeBuffer(this.sprites, 0, f.alphaSprites.buffer, 0, alphaCount * SPRITE_FLOATS * 4)
-    const addOffset = half * SPRITE_FLOATS * 4
-    if (addCount) d.queue.writeBuffer(this.sprites, addOffset, f.addSprites.buffer, 0, addCount * SPRITE_FLOATS * 4)
+    const {
+      alphaCount,
+      addCount,
+      addByteOffset: addOffset,
+      halfCap: half,
+    } = uploadSplitSprites(
+      d,
+      this.sprites,
+      MAX_SPRITES,
+      SPRITE_FLOATS,
+      f.alphaSprites,
+      f.alphaCount,
+      f.addSprites,
+      f.addCount,
+    )
     if (motion) {
       this.spriteHistory.set(f.alphaSprites.subarray(0, alphaCount * SPRITE_FLOATS))
       for (let i = 0; i < alphaCount; i++) this.spriteHistory[i * SPRITE_FLOATS + 3] = 0
@@ -1247,30 +1196,28 @@ export class Renderer {
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass({
       timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
-      colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
+      colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
+      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
-    const [vx0, vy0, vx1, vy1] = f.view
     if (this.level?.count) {
       pass.setPipeline(scenePipes.level!)
       pass.setVertexBuffer(0, this.level.buf)
-      let drawn = 0
-      let cut = false
-      for (const c of this.chunks) {
-        if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
-        const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
-        const peeking = f.frame[26]! > 1.001
-        if (c.customCutaway === "outside" && insideCustom && !peeking) continue
-        drawn++
-        const next = c.customCutaway ? (insideCustom && peeking) : intersectsCutaway(c.cutBox, f.frame)
-        if (cut !== next) {
-          cut = next
-          pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!)
-        }
-        pass.draw(c.count, 1, c.first)
-      }
-      this.drawnChunks = drawn
+      const levelStats = drawContiguousChunksByMode(
+        pass,
+        this.chunks,
+        (c) => {
+          if (!boxIntersectsRect2D(c.box, f.view)) return null
+          const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
+          const peeking = f.frame[26]! > 1.001
+          if (c.customCutaway === "outside" && insideCustom && !peeking) return null
+          return c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
+        },
+        (cut) => pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!),
+        false,
+      )
+      this.drawnChunks = levelStats.chunksDrawn
+      this.drawnChunkDraws = levelStats.drawCalls
     }
     pass.setVertexBuffer(1, this.inst.buf)
     if (motion) pass.setVertexBuffer(2, this.previousInst)
@@ -1285,10 +1232,7 @@ export class Renderer {
       if (!alpha && this.glass?.count) {
         pass.setPipeline(scenePipes.glass!)
         pass.setVertexBuffer(0, this.glass.buf)
-        for (const c of this.glassChunks) {
-          if (c.box[0] > vx1 || c.box[2] < vx0 || c.box[1] > vy1 || c.box[3] < vy0) continue
-          pass.draw(c.count, 1, c.first)
-        }
+        drawContiguousChunks(pass, this.glassChunks, (c) => boxIntersectsRect2D(c.box, f.view))
         pass.setVertexBuffer(1, this.inst.buf)
       }
     }
@@ -1322,32 +1266,35 @@ export class Renderer {
         lightStride: LIGHT_FLOATS,
         volumes: f.smoke,
       })
-      this.smokeRenderer.render(enc, this.hdrView, f.smoke)
+      this.smokeRenderer.render(enc, this.targets.hdrView, f.smoke)
     }
 
     if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect)
 
-    const g = this.postGroups!
-    let activeDown0 = g.down[0]!
-    let activeComposite = g.composite
+    let activeDown0: GPUBindGroup | undefined
+    let activeComposite = this.bloomPyramid.compositeGroup
     if (runSharedBlur && mb) {
       this.sharedBlur ??= new MotionBlur(d, HDR, true)
       if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== this.width || this.sharedBlurGroups.h !== this.height) {
-        this.sharedBlur.resize(this.width, this.height, this.hdrView, this.depthView)
-        const makeGroup = (srcView: GPUTextureView, params: GPUBuffer, extraView: GPUTextureView = srcView) =>
-          d.createBindGroup({
-            layout: this.postLayout,
-            entries: [
-              { binding: 0, resource: srcView },
-              { binding: 1, resource: this.sampler },
-              { binding: 2, resource: { buffer: params } },
-              { binding: 3, resource: extraView },
-              { binding: 4, resource: { buffer: this.gradeBuf } },
-            ],
-          })
+        this.sharedBlur.resize(this.width, this.height, this.targets.hdrView, this.targets.depthView)
+        const down0Param = this.bloomPyramid.downParams[0]!
         this.sharedBlurGroups = {
-          down0: makeGroup(this.sharedBlur.output, this.postParams[0]!),
-          composite: makeGroup(this.sharedBlur.output, this.postParams[0]!, this.bloomViews[0]!),
+          down0: this.bloomPyramid.makeBindGroup(
+            this.postLayout,
+            this.sampler,
+            this.sharedBlur.output,
+            down0Param,
+            this.sharedBlur.output,
+            this.gradeBuf,
+          ),
+          composite: this.bloomPyramid.makeBindGroup(
+            this.postLayout,
+            this.sampler,
+            this.sharedBlur.output,
+            down0Param,
+            this.bloomPyramid.views[0]!,
+            this.gradeBuf,
+          ),
           w: this.width,
           h: this.height,
         }
@@ -1377,20 +1324,7 @@ export class Renderer {
       activeDown0 = this.sharedBlurGroups.down0
       activeComposite = this.sharedBlurGroups.composite
     }
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-      p.setPipeline(this.pipes.down!)
-      p.setBindGroup(0, i === 0 ? activeDown0 : g.down[i]!)
-      p.draw(3)
-      p.end()
-    }
-    for (let k = 0; k < BLOOM_LEVELS - 1; k++) {
-      const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[BLOOM_LEVELS - 2 - k]!, loadOp: "load", storeOp: "store" }] })
-      p.setPipeline(this.pipes.up!)
-      p.setBindGroup(0, g.up[k]!)
-      p.draw(3)
-      p.end()
-    }
+    this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     const useFastLookPost =
