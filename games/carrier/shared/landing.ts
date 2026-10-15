@@ -1,4 +1,4 @@
-// Carrier landing on request: near a friendly carrier the HUD offers "F LAND"; pressing it hands the jet to a short
+// Carrier landing on request: near a friendly carrier the HUD offers "R LAND"; pressing it hands the jet to a short
 // scripted landing that cannot fail. Pure and DOM-free, fixed timestep, deterministic.
 //
 // The sequence is flown in the carrier's ship-local frame (carrier-spec: +Z bow, +X port, +Y up) and placed in the world
@@ -22,7 +22,7 @@ import { type Plane, type Quat, type ShipPoseLike, type Vec3, planeSpeed, quatAx
 const DEG = Math.PI / 180
 
 export const LANDING = {
-  // The "F LAND" prompt (your own carrier only).
+  // The "R LAND" prompt (your own carrier only).
   /** Plan distance from its centre (m), height above its deck (m), how far off the nose it may be (rad), and no prompt
    *  this long after a launch (s). */
   range: 1200,
@@ -207,7 +207,7 @@ export type LandingShip = ShipLike & { id: number; team: number }
 const nose: Vec3 = [0, 0, 0]
 
 /**
- * Whether the "F LAND" prompt offers `ship` (your own carrier): its deck open (no deck fire, not sinking: `hull`), within
+ * Whether the "R LAND" prompt offers `ship` (your own carrier): its deck open (no deck fire, not sinking: `hull`), within
  * LANDING.range in plan, the jet below LANDING.ceiling above the deck and pointing at it (nose within LANDING.look of the
  * line to the ship), flying above stall, at least LANDING.cooldown s after its launch (`airborne`).
  */
@@ -356,7 +356,7 @@ function flyApproach(l: Landing, dt: number): void {
 }
 
 /**
- * Takes the jet over to land on `ship` from wherever it is (the player pressed F at the prompt). The sequence starts
+ * Takes the jet over to land on `ship` from wherever it is (the player pressed R at the prompt). The sequence starts
  * exactly where the jet is and blends its attitude in, so nothing jumps.
  */
 export function startLanding(plane: Plane, ship: ShipLike, vehicle: LandingVehicle): Landing {

@@ -62,6 +62,7 @@ import { Survivor, survivorAimControls, survivorAimTuning } from "./survivor"
 import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { audioControls, DEFAULT_AUDIO_SETTINGS, OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
+import { applyProgressionSetting, DEFAULT_PROGRESSION_TUNING, PROGRESSION_SCENES, progressionLabControls, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
@@ -127,6 +128,7 @@ const settings = {
   ...survivorAimTuning,
   ...DEFAULT_HUD_SETTINGS,
   ...DEFAULT_AUDIO_SETTINGS,
+  ...DEFAULT_PROGRESSION_TUNING,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -213,7 +215,8 @@ async function main() {
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params)
   const makeSession = (s: number) =>
-    coop.net ?? new LocalSession(s, settings.houseSeed, settings.terrain, settings, resolveWorldMode(settings.worldMode))
+    coop.net ??
+    new LocalSession(s, settings.houseSeed, settings.terrain, settings, settings, resolveWorldMode(settings.worldMode))
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
     const s = session
@@ -295,6 +298,16 @@ async function main() {
           ? { ...humanProfiles.soldier, runPosture: 0.34, crouchDepth: 0.095 }
           : undefined
   }
+  const progressionHost: ProgressionLabHost = {
+    view: () => session.view,
+    pose: (x, y, aim) => harness.pose(x, y, aim),
+    setHour: (hour) => {
+      settings.hour = hour
+      session.view.hour = wrapHour(hour)
+    },
+    hud: inventoryHud,
+    offline: () => !coop.net,
+  }
   const controls: LabControl[] = [
     ...aiControls,
     ...audioControls,
@@ -345,6 +358,7 @@ async function main() {
     },
     ...flashlightControls,
     ...staminaControls,
+    ...progressionLabControls(progressionHost),
     ...groundControls,
     {
       key: "randomizeGroundTuning",
@@ -635,6 +649,7 @@ async function main() {
     (key) => {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
       if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
+      applyProgressionSetting(progressionHost, key, settings)
       if (key === "zombieCount") {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
@@ -881,6 +896,21 @@ async function main() {
         },
       },
       {
+        id: "progression.stage",
+        label: "Stage an Inventory or Workbench Scene",
+        shortLabel: "Progression Scene",
+        category: "Scene",
+        undoable: false,
+        args: { scene: { type: "string", description: `Scene (${PROGRESSION_SCENES.join(", ")})` } },
+        enabled: () => !coop.net,
+        run: (_ctx, args) => {
+          const scene = String(args?.scene ?? "bench") as ProgressionScene
+          if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
+          stageProgression(progressionHost, scene)
+          return { scene }
+        },
+      },
+      {
         id: "hud.demo",
         label: "Show Character HUD Sample",
         shortLabel: "HUD Sample",
@@ -1026,6 +1056,7 @@ async function main() {
       previous.town.seed,
       settings.houseSeed,
       settings.terrain,
+      settings,
       settings,
       resolveWorldMode(settings.worldMode),
     )
@@ -1941,6 +1972,10 @@ async function main() {
       }
       const slot = session.sim.slot(actorId)
       if (slot) progression.project(slot)
+    },
+    /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
+    stageProgression(scene: ProgressionScene) {
+      stageProgression(progressionHost, scene)
     },
     /** Gives the local survivor an item, routed to belt, hand or pack. */
     give(item: string, count = 1) {

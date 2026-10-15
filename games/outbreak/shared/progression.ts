@@ -134,6 +134,30 @@ export type ProgressionTuning = {
   generatorNoise: number
 }
 
+/** Lab controls for every progression tunable (bound to the shared LabPanel by `src/progression-lab.ts`). */
+export const progressionControls = [
+  { key: "lootRate", label: "Loot rate", group: "Progression", min: 0, max: 2.5, step: 0.05, unit: "×" },
+  { key: "searchQuietTime", label: "Quiet search time", group: "Progression", min: 0.2, max: 4, step: 0.05, unit: "s" },
+  { key: "searchQuietNoise", label: "Quiet search noise", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "searchSmashTime", label: "Smash time", group: "Progression", min: 0.1, max: 2, step: 0.05, unit: "s" },
+  { key: "searchSmashNoise", label: "Smash noise", group: "Progression", min: 2, max: 40, step: 1, unit: "m" },
+  { key: "barricadeTime", label: "Board-up time", group: "Progression", min: 0.2, max: 3, step: 0.05, unit: "s" },
+  { key: "barricadeNoise", label: "Board-up noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
+  { key: "reinforcedPlankHp", label: "Reinforced plank HP", group: "Progression", min: 100, max: 400, step: 10, unit: "HP" },
+  { key: "healTime", label: "Medkit time", group: "Progression", min: 0.3, max: 5, step: 0.1, unit: "s" },
+  { key: "medkitHeal", label: "Medkit heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
+  { key: "bandageHeal", label: "Bandage heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
+  { key: "craftTime", label: "Field craft time", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
+  { key: "researchTime", label: "Research time", group: "Progression", min: 0.2, max: 10, step: 0.1, unit: "s" },
+  { key: "researchLight", label: "Light needed to research", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
+  { key: "costScale", label: "Recipe cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
+  { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
+  { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
+  { key: "lureNoise", label: "Noisemaker radius", group: "Progression", min: 5, max: 60, step: 1, unit: "m" },
+  { key: "lureSeconds", label: "Noisemaker duration", group: "Progression", min: 1, max: 30, step: 0.5, unit: "s" },
+  { key: "generatorNoise", label: "Generator hum", group: "Progression", min: 0, max: 40, step: 1, unit: "m" },
+] as const satisfies readonly { key: keyof ProgressionTuning; label: string; group: string; min: number; max: number; step: number; unit: string }[]
+
 export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   lootRate: 1,
   searchQuietTime: 1.2,
@@ -155,6 +179,14 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   lureNoise: 30,
   lureSeconds: 8,
   generatorNoise: 18,
+}
+
+/** The progression tunables in `src` (a Lab settings object may hold many other keys), over `base`. */
+export function pickProgressionTuning(src: object, base: ProgressionTuning = DEFAULT_PROGRESSION_TUNING): ProgressionTuning {
+  const out = { ...base }
+  const from = src as Record<string, unknown>
+  for (const key of Object.keys(out) as (keyof ProgressionTuning)[]) if (typeof from[key] === "number") out[key] = from[key] as number
+  return out
 }
 
 const scaleCost = (cost: Readonly<Record<ItemId, number>>, k: number) =>
@@ -391,9 +423,9 @@ export class OutbreakProgression {
 
   constructor(
     readonly town: Town,
-    tuning: Partial<ProgressionTuning> = {},
+    tuning: object = {},
   ) {
-    this.tuning = { ...DEFAULT_PROGRESSION_TUNING, ...tuning }
+    this.tuning = pickProgressionTuning(tuning)
     const loot = lootSites(town, this.tuning)
     this.containers = loot.sites
     this.benches = benchSites(town)
@@ -421,12 +453,24 @@ export class OutbreakProgression {
   /** Set while granting a starting kit, so spawning does not announce planks as a discovery. */
   private quiet = false
 
-  /** Applies Lab tuning; recipe costs and times change at once, loot rates on the next town. */
-  setTuning(tuning: Partial<ProgressionTuning>): void {
-    const next = { ...this.tuning, ...tuning }
+  /** Applies Lab tuning: recipe costs and times change at once; a new loot rate restocks unsearched containers. */
+  setTuning(tuning: object): void {
+    const next = pickProgressionTuning(tuning, this.tuning)
     if (JSON.stringify(next) === JSON.stringify(this.tuning)) return
+    const restock = next.lootRate !== this.tuning.lootRate
     this.tuning = next
     this.ledger.setRules(progressionRules(next))
+    if (restock) this.restock()
+  }
+
+  /** Re-rolls every container nobody has searched yet with the current loot rate. */
+  restock(): void {
+    for (const spec of lootSites(this.town, this.tuning).stores) {
+      const st = this.ledger.store(spec.id)
+      if (!st || st.revealed) continue
+      st.slots = Array.from({ length: st.size }, (_, i) => (spec.initial as readonly (Stack | null)[])[i] ?? null).map((x) => (x ? { ...x } : null))
+      st.rev = ++this.ledger.rev
+    }
   }
 
   /** Ensures ledger stores exist for any newly streamed chunk containers and syncs their `searched` flag. */

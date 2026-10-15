@@ -96,10 +96,12 @@ export const WEAPONS = {
     /** Ejection off the rail: the missile drops this fast (m/s) for the first `drop` seconds before it steers. */
     ejectDrop: 6,
     drop: 0.18,
-    /** Proportional navigation constant, achievable lateral acceleration (g) at top speed and the autopilot lag (s). */
+    /** Proportional navigation constant, achievable lateral acceleration (g) at top speed and the autopilot lag (s).
+     *  Battlefield-style: a locked missile out-turns any jet (it pulls ~2.5× a jet's best turn), so flares are the escape;
+     *  only a late break at the edge of range can still make it miss. */
     nav: 3.4,
-    maxG: 16,
-    lag: 0.22,
+    maxG: 35,
+    lag: 0.12,
     /** Seeker gimbal (rad off the missile's nose): a target outside it is lost for good (the missile flies on dumb). */
     gimbal: 42 * DEG,
     /** Proximity fuse radius (m), armed after `arm` seconds. Damage falls from `damage` at the centre to `edge` at the radius. */

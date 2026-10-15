@@ -1,4 +1,4 @@
-// Ship gunnery: the carrier's CIWS, SAM launchers and 5-inch gun, crewed from SHIP OPERATIONS. Pure and DOM-free,
+// Ship gunnery: the carrier's CIWS, SAM launchers and 5-inch gun, crewed from DEPLOY. Pure and DOM-free,
 // fixed timestep (PLANE.tick), deterministic for the same inputs. Tuning in `GUNNERY`; mounts in shared/carrier-spec.ts
 // `WEAPON_MOUNTS` (yaw/pitch arcs); the meshes in src/render/ship-weapons.ts (`TURRET_GEOMETRY` mirrors their pivots).
 //

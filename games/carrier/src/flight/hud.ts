@@ -20,7 +20,7 @@ export type FlightHudView = {
   cockpit: boolean
   /** The scripted landing has the jet. */
   landing?: boolean
-  /** Near a friendly carrier: show "F LAND". */
+  /** Near a friendly carrier: show "R LAND". */
   prompt?: boolean
   /** Your carrier: a tiny tick under it at (x, y) when in view (`on`), else a small edge chevron pointing along `angle`
    *  (screen radians, 0 = right, y down); distance in km. Null hides it. */
@@ -165,7 +165,7 @@ export class FlightHud {
     }
     this.land.hidden = !v.prompt
     if (v.prompt) {
-      const fk = keyCapHtml("KeyF")
+      const fk = keyCapHtml("KeyR")
       if (this.landKeyHtml !== fk) this.landKey.innerHTML = this.landKeyHtml = fk
     }
     let warn = ""

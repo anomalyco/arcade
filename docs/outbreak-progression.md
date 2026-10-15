@@ -57,6 +57,19 @@ store, `bench:<house>`.
 | Reinforced barricade | 2 planks, 3 scrap (2) | none | Each board also takes a scrap and holds 180 instead of 100 |
 | Flashlight battery | 2 scrap, 1 chem (2) | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
 
+## Lab
+
+Every tunable is a typed row in the shared LabPanel's **Progression** group (`progressionControls` in
+`shared/progression.ts`, bound by `src/progression-lab.ts`): loot rate, search, smash, board-up, heal, craft,
+research and pry times, their noise, the light research needs, a recipe cost multiplier, reinforced plank HP, heal
+amounts, noisemaker radius and duration, and the generator hum. Costs and times apply at once; a new loot rate
+restocks containers nobody has searched. In co-op the room keeps its defaults. The group also has actions to give
+bench materials, learn every recipe, restock, and jump to the Ash workbench.
+
+The Lab overworld's **Outbreak inventory and workbench** station (`games/lab/src/stations/outbreak-progression.ts`)
+opens the live game and stages each scene with the `progression.stage` command: an unsearched dresser, its strip,
+the bench by day and by night, the generator, field crafting and hand-offs.
+
 ## Rules and channels
 
 Timed actions (search, barricade, heal, pry, research, craft) are ledger channels. The sim cancels a channel when the

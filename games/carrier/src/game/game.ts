@@ -332,7 +332,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       lerpShip(prev, cur, k, draw)
     }
     if (role === "helm") net.sendHelm(controls.throttle, controls.rudder)
-    // Taking the helm and launching happen only in the SHIP OPERATIONS menu (src/ui/ops-menu.ts).
+    // Taking the helm and launching happen only in the DEPLOY menu (src/ui/ops-menu.ts).
 
     pass.begin()
     turrets.begin(camera.eye)

@@ -1075,7 +1075,7 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Support any keyboard layout.** Match both `e.code` (physical position) and `e.key` (character), so QWERTY and
   Dvorak both work without settings. Don't bind an action to a key that is a movement key on another layout (Blackout
   used `E` for plant/defuse, which is Dvorak's right strafe).
-- **A menu that takes number keys listens in the capture phase.** Carrier's SHIP OPERATIONS
+- **A menu that takes number keys listens in the capture phase.** Carrier's DEPLOY
   (`games/carrier/src/ui/ops-menu.ts`) runs its rows on 1-9, the same keys as the helm's throttle presets, and both
   listen on `window`. Registering the menu's keydown with `capture: true` and calling `stopImmediatePropagation()` on
   the keys it uses means the game's input never records them, so closing the menu on that key can't leak a press into
