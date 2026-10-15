@@ -126,3 +126,15 @@ Arcade Lab workbench standard:
 - **Multi-Tile Variation Grid (`⊞ Grid` button, `1`–`9`, `Esc` / `G`)**:
   - Clicking `⊞ Grid` in the top Compare bar (or running `arcade grid [preset]`) splits the single WebGPU canvas into 2–9 synchronized variant tiles sharing one camera, simulation clock, and seed.
   - Clicking a tile or pressing `1`–`9` focuses that tile full-size; pressing `Esc` or `G` returns to the multi-tile grid (or closes the grid when already in multi-tile view).
+
+## Lab Overworld
+
+- **Map**: `Digit1`–`Digit9`, `Digit0` travel to stations 1–10; arrows move the highlight between plots; `Enter`
+  opens it; click a plot, label or strip chip to travel; `⌘K` lists "Station: …" commands. Digits and arrows are
+  taken in the capture phase on the map so they don't open Library categories or orbit the camera.
+- **Station**: `Digit1`–`Digit9` pick variants (the variation grid keeps them while it's open); `[`/`]` previous or
+  next station; `Esc` back to the map once the workbench has nothing left to cancel; Backquote shows the workbench,
+  and `Esc` hides it again. In an embedded page (Characters, Carrier) the same keys are forwarded from the page.
+- **Voice note** (dev only): logical `N` starts and finishes (mnemonic, so Dvorak users press the key labelled N);
+  hold `Shift` and move to draw; `⌘Z` undoes the last mark; `Esc` cancels; `Enter` sends from the review card.
+

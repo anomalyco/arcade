@@ -316,6 +316,18 @@ export async function lab(options:LabOptions) {
     workbench?.onTick(dt)
   }
 
+  let suspended=false
+  const addSections=(factories:readonly SectionFactory[])=>{
+    const added:LabSection[]=[]
+    for(const create of factories){
+      const section=create(context)
+      if(ids.has(section.id))continue
+      ids.add(section.id);sections.push(section);sectionSelect.add(new Option(section.label,section.id))
+      workbench!.addSection(section)
+      added.push(section)
+    }
+    return added
+  }
   workbench=createWorkbench({
     root:workbenchRoot,
     canvas,
@@ -386,6 +398,14 @@ export async function lab(options:LabOptions) {
     render,
     advance,
     attachPhysics:physics.attach,
+    /** Sections a host loads after start-up; ids already present are skipped. */
+    addSections,
+    viewport:viewportHost,
+    canvas,
+    /** The workbench chrome (Backquote): top bar, Outliner, Library, Details and status bar. */
+    chrome:{visible:()=>panel!.visible,set:(visible:boolean)=>{if(panel!.visible!==visible)panel!.toggle()}},
+    /** Stops simulating and drawing while something else owns the viewport (an embedded page). */
+    suspend:(value:boolean)=>{suspended=value},
     looks,
     weather,
     spawn:spawn?{inspect:spawn.inspect}:undefined,
@@ -396,6 +416,7 @@ export async function lab(options:LabOptions) {
       importPreset:(json:string)=>workbench!.applyPresetJson(json),
       setMode:(m:"edit"|"play")=>workbench!.setPlayMode(m),
       getMode:()=>workbench!.mode,
+      gridOpen:()=>workbench!.variationGridOpen,
       getEjected:()=>workbench!.ejected,
       toggleEject:()=>workbench!.toggleEject(),
       frame:()=>workbench!.frameActiveTarget(),
@@ -416,7 +437,7 @@ export async function lab(options:LabOptions) {
   const tick=(now:number)=>{
     const dt=last?Math.max(0,Math.min(0.033,(now-last)/1000)):0;last=now
     requestAnimationFrame(tick)
-    if(!bench&&!document.hidden){advance(dt);void render()}
+    if(!bench&&!document.hidden&&!suspended){advance(dt);void render()}
   }
   await render()
   if(bench)Object.assign(window,{lab:api,fx:{adapter:adapter.info,...effects,particles,volume,trail,stage,render,debug:(n:number)=>{settings.debug=n;syncDebugOptions(settings.section);panel!.sync()}}})

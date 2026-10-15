@@ -19,6 +19,7 @@ import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/ki
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
+import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { aiControls, DEFAULT_AI_CONFIG, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightColor, flashlightControls } from "../shared/flashlight"
@@ -45,6 +46,7 @@ import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
 import {
   DEFAULT_OUTBREAK_LIGHTING,
+  OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   OUTBREAK_LOOK_LIGHTING_PRESETS,
   outbreakLightingControls,
@@ -71,6 +73,11 @@ import { ZombieCrowdRenderer } from "./zombies"
 import { zombieControls, zombieProfile, zombieTuning } from "./zombie-profile"
 import { shaders } from "./shaders"
 import "./style.css"
+
+/** Player first, then the nearest living zombies: grass and bushes bend away from them (presentation only). */
+function foliageActors(p: { x: number; y: number }, zombies: readonly { x: number; y: number; state: string }[]) {
+  return nearestFoliageActors(p.x, p.y, zombies.filter((z) => z.state !== "dead").map((z) => ({ x: z.x, z: z.y })))
+}
 
 const params = new URLSearchParams(location.search)
 const lookSettings = createLookSettings("noir")
@@ -1200,6 +1207,8 @@ async function main() {
       flashRgb,
       lightingUniforms,
     )
+    packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
+    packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     renderer.setCustomUniforms(lightingUniforms)
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)

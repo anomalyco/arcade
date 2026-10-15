@@ -16,6 +16,8 @@ const holdMs = Number(process.env.BENCH_HOLD_MS ?? 2000)
 const runAblations = process.env.BENCH_ABLATE === "1"
 // Optional Lab overrides for A/B experiments, e.g. BENCH_LAB='{"streetAirHaze":1}'.
 const labOverrides: Record<string, number> = JSON.parse(process.env.BENCH_LAB ?? "{}")
+// Foliage density sweeps (GPU cost per density): BENCH_FOLIAGE_DENSITY=0.5 is shorthand for BENCH_LAB='{"foliageDensity":0.5}'.
+if (process.env.BENCH_FOLIAGE_DENSITY) labOverrides.foliageDensity = Number(process.env.BENCH_FOLIAGE_DENSITY)
 mkdirSync(out, { recursive: true })
 
 function sampleThermal(): { host: string; thermalPressure: string; pmset: string } {
