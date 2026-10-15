@@ -27,6 +27,12 @@ export const DEFAULT_DISCOVERY_SETTINGS = {
   discoveryBenchCentre: 0.8,
   /** Seconds the mat's materials shake and settle after a try that came to nothing. */
   discoveryClatterTime: 0.55,
+  /** Size of a page lying in a building (flyer, chart, photo), against its size on the corkboard. */
+  discoveryPageScale: 1.5,
+  /** Reading a page holds its diagram up to the camera for a moment, with no words. */
+  discoveryPageGlance: true,
+  /** Seconds the page's diagram stays up after reading it. */
+  discoveryGlanceTime: 2,
 }
 
 export type DiscoverySettings = typeof DEFAULT_DISCOVERY_SETTINGS
@@ -45,4 +51,7 @@ export const discoveryControls: LabControl[] = [
   { key: "discoveryBenchZoom", label: "Bench camera distance", group: "Discovery", min: 6, max: 30, step: 0.5, unit: "m" },
   { key: "discoveryBenchCentre", label: "Bench camera centring", group: "Discovery", min: 0, max: 1, step: 0.05, unit: "" },
   { key: "discoveryClatterTime", label: "Failed try shake", group: "Discovery", min: 0, max: 1.5, step: 0.05, unit: "s" },
+  { key: "discoveryPageScale", label: "Page size in buildings", group: "Discovery", min: 0.5, max: 3, step: 0.1, unit: "×" },
+  { key: "discoveryPageGlance", label: "Reading shows the page's diagram", group: "Discovery" },
+  { key: "discoveryGlanceTime", label: "Page diagram time", group: "Discovery", min: 0.5, max: 5, step: 0.1, unit: "s" },
 ]

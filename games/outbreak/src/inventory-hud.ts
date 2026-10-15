@@ -236,8 +236,8 @@ export class InventoryHud {
     }
     el.style.opacity = ""
     const isPeeking = Boolean(view.peek)
-    // At a workbench the prompt hangs below the bench, clear of the mat and the corkboard.
-    const below = prompt.kind === "bench"
+    // At a workbench the prompt hangs below the bench, clear of the mat and the corkboard; under a page, clear of it.
+    const below = prompt.kind === "bench" || prompt.kind === "page"
     const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
     const proj = cam.project(prompt.worldX, anchorHeight, below ? prompt.rect[3] + 0.2 : prompt.worldY, w, h)
     if (!proj.ok) {

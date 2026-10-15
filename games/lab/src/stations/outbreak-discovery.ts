@@ -15,13 +15,17 @@ const variants: StationVariant[] = [
   { id: "bench-tinker", label: "Bench tinkering", note: "Plank and scrap are on the mat. Hold E to try them; tap E to lay out the next pair you can make up.", setup: stage("bench-tinker") },
   { id: "corkboard", label: "Corkboard", note: "Sketches pinned in three players' colours, an idea waiting on the toolbox, and two crossed-out tries.", setup: stage("corkboard") },
   { id: "dark-bench", label: "Bench at night", note: "Chem and chem on the mat with the flashlight off: too dark to try. Press F and hold E again.", setup: stage("dark-bench") },
+  { id: "page", label: "A page in the hardware store", note: "A printed flyer lies on a shelf. E reads it: the squad learns the reinforced barricade and the flyer goes up on the corkboard.", setup: stage("page") },
+  { id: "page-read", label: "Reading a page", note: "The pharmacy's chart held up to the camera after reading it: two materials and what they make, no words.", setup: stage("page-read") },
+  { id: "found-pages", label: "Found pages on the corkboard", note: "A sketch made at the bench beside a flyer, a chart and a photo found in town, each pinned in the finder's colour.", setup: stage("found-pages") },
+  { id: "held-out", label: "A held-out window", note: "Someone boarded the hardware store's east window from inside and strapped it with steel. Stand still and look at it to learn how.", setup: stage("held-out") },
 ]
 
 export default defineStation({
   id: "outbreak-discovery",
   title: "Outbreak: Discovered, Not Told",
   summary:
-    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Tunables are in the Discovery and Progression groups.",
+    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Knowledge is found too: flyers, charts and photos left in buildings, a reinforced window to study, and hands that board up faster and quieter with practice or from watching a teammate. Tunables are in the Discovery and Progression groups.",
   order: 121,
   prop: "panels",
   color: 0xd8b878,
@@ -30,7 +34,7 @@ export default defineStation({
   defaultVariant: "weakened-barricade",
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-29", decision: "D-19" },
-  metrics: [{ label: "Discovery tests", value: "6 + 11 tinkering + 1 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, coop.test.ts" }],
+  metrics: [{ label: "Discovery tests", value: "6 + 11 tinkering + 12 found + 2 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, found.test.ts, coop.test.ts" }],
   paths: ["games/outbreak/shared/discovery", "games/outbreak/src/discovery"],
   branches: ["discovery*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],

@@ -39,6 +39,7 @@ import {
   triedToken,
   type TinkerOutcome,
 } from "./discovery/tinker"
+import { HELD_OUT_PLANKS, heldOutWindow, looksReinforced, pageSite, practiceFactor, PIN_FOUND, type PageSite } from "./discovery/found"
 import {
   INTERACT_RANGE,
   type InteractAction,
@@ -176,6 +177,16 @@ export type ProgressionTuning = {
   researchLight: number
   /** How far a failed try clatters. */
   clatterNoise: number
+  /** Board-up time once fully practised, as a share of the first boards' (practice: ten boards nailed). */
+  practiceTimeFloor: number
+  /** Board-up noise once fully practised, as a share of the first boards'. */
+  practiceNoiseFloor: number
+  /** How close, in clear sight, a teammate picks up practice by watching someone board up. */
+  watchRange: number
+  /** Practice a watcher gains per board they see nailed (the nailer gains 1). */
+  watchShare: number
+  /** Seconds of looking closely at a reinforced barricade to see how it was done. */
+  studyTime: number
   /** Multiplies every field-craft cost (rounded, at least 1). */
   costScale: number
   pryTime: number
@@ -202,6 +213,11 @@ export const progressionControls = [
   { key: "researchTime", label: "Tinker time", group: "Progression", min: 0.2, max: 10, step: 0.1, unit: "s" },
   { key: "researchLight", label: "Light needed to tinker", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
   { key: "clatterNoise", label: "Failed tinker clatter", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "practiceTimeFloor", label: "Practised board-up time", group: "Progression", min: 0.2, max: 1, step: 0.05, unit: "×" },
+  { key: "practiceNoiseFloor", label: "Practised board-up noise", group: "Progression", min: 0.2, max: 1, step: 0.05, unit: "×" },
+  { key: "watchRange", label: "Learn by watching within", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "watchShare", label: "Practice from watching", group: "Progression", min: 0, max: 1, step: 0.05, unit: "×" },
+  { key: "studyTime", label: "Study a reinforced barricade", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
   { key: "costScale", label: "Field-craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
@@ -227,6 +243,11 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   researchTime: 2.5,
   researchLight: 0.35,
   clatterNoise: 6,
+  practiceTimeFloor: 0.6,
+  practiceNoiseFloor: 0.63,
+  watchRange: 8,
+  watchShare: 0.5,
+  studyTime: 1.5,
   costScale: 1,
   pryTime: 1.2,
   pryNoise: 12,
@@ -619,11 +640,23 @@ export type ProgressionSlot = { id: string; index: number; survivor: Progression
 
 export type WorldContext = { town: Town; ai: OutbreakAISubsystem; time: number; hour: number; slots: readonly ProgressionSlot[] }
 
+/** A survivor looking closely at a reinforced barricade: which, for how long, and where they stood last tick. */
+export type Study = { portal: string; t: number; x: number; y: number }
+
 /** Selected-item behaviour on the primary button. */
 export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw"
 
 const CHANNEL_SLACK = 0.65
 const DROP_RANGE = 1.6
+const PAGE_RANGE = 1.4
+/** How square on, in radians, a survivor must face a reinforced barricade to study it. */
+const STUDY_CONE = 0.6
+/** Movement, in metres per second, under which a survivor counts as standing still to study. */
+const STUDY_STILL = 0.4
+/** How close, in metres, a survivor must stand to a reinforced barricade to study it. */
+const STUDY_RANGE = 2.2
+/** How far off their aim, in radians, a teammate can be and still be watching someone work. */
+const WATCH_CONE = 1.3
 const PING_SECONDS = 6
 const BUNDLE = { ammo: 6, plank: 2 } as const
 const LURE_RANGE = 11
@@ -640,6 +673,12 @@ export type OutbreakProgressionSnapshot = {
   lures: Lure[]
   searchedContainers: [string, boolean][]
   ledger: LedgerSnapshot
+  /** Practice per survivor and skill (D-19 slice 3). Absent in older snapshots. */
+  mastery?: Record<string, Record<string, number>>
+  /** Who is looking closely at which reinforced barricade, and for how long. */
+  study?: Record<string, Study>
+  /** Buildings whose held-out window has been boarded (once, so a broken one stays broken). */
+  heldOut?: string[]
 }
 
 export class OutbreakProgression {
@@ -653,6 +692,14 @@ export class OutbreakProgression {
   private generatorAt = new Map<string, number>()
   /** The world as of the last command or tick, for interactions that need light (tinkering). */
   private world: WorldContext | undefined
+  /** Practice per survivor and skill: boarding up gets faster and quieter, with no bar to show it. */
+  mastery: Record<string, Record<string, number>> = {}
+  /** Survivors looking closely at a reinforced barricade they could learn from. */
+  study: Record<string, Study> = {}
+  /** Held-out buildings already boarded up (see `heldOutWindow`). */
+  heldOut: string[] = []
+  /** Pages left in buildings (flyers, charts, photos), one per building type that has one. */
+  readonly pages: PageSite[] = []
   private actorOf = new WeakMap<object, ProgressionSlot>()
 
   snapshot(): OutbreakProgressionSnapshot {
@@ -664,6 +711,9 @@ export class OutbreakProgression {
       lures: this.lures.map((l) => ({ ...l })),
       searchedContainers: this.containers.map((c) => [c.id, Boolean(c.searched)]),
       ledger: this.ledger.snapshot(),
+      mastery: JSON.parse(JSON.stringify(this.mastery)),
+      study: JSON.parse(JSON.stringify(this.study)),
+      heldOut: [...this.heldOut],
     }
   }
 
@@ -684,6 +734,9 @@ export class OutbreakProgression {
       const st = this.ledger.store(c.id)
       if (st?.revealed) c.searched = true
     }
+    this.mastery = JSON.parse(JSON.stringify(snap.mastery ?? {}))
+    this.study = JSON.parse(JSON.stringify(snap.study ?? {}))
+    this.heldOut = [...(snap.heldOut ?? [])]
     this.ensureContainerStores()
     this.ensureMatStores()
     for (const slot of slots) {
@@ -712,6 +765,7 @@ export class OutbreakProgression {
     })
     // Nothing is announced: a new material, a lesson or a better bench shows on the bench and its corkboard (D-19).
     this.ensureMatStores()
+    this.ensurePageStores()
   }
 
   /** The mat on each bench: two slots for materials, and what they make. Created for snapshots that predate it. */
@@ -743,8 +797,23 @@ export class OutbreakProgression {
     }
   }
 
+  /**
+   * The pages in the buildings now in the world, and a store for each the first time its building appears (a read
+   * page is an empty store, so it stays read when its chunk streams out and back).
+   */
+  ensurePageStores(): void {
+    this.pages.length = 0
+    for (const b of this.town.buildings) {
+      const site = pageSite(this.town, b)
+      if (!site) continue
+      this.pages.push(site)
+      if (!this.ledger.store(site.id)) this.ledger.createStore({ id: site.id, mode: "counters", scope: "shared", at: { x: site.x, y: site.y }, initial: { page: 1 } })
+    }
+  }
+
   /** Ensures ledger stores exist for any newly streamed chunk containers and syncs their `searched` flag. */
   ensureContainerStores(): void {
+    this.ensurePageStores()
     for (const c of this.containers) {
       let st = this.ledger.store(c.id)
       if (!st) {
@@ -927,7 +996,7 @@ export class OutbreakProgression {
 
   /** Containers, ground drops, workbenches and stashes as interaction targets. */
   handlers(): InteractionHandler[] {
-    return [this.containerHandler(), this.dropHandler(), this.benchHandler(), this.stashHandler()]
+    return [this.containerHandler(), this.dropHandler(), this.benchHandler(), this.stashHandler(), this.pageHandler()]
   }
 
   private containerHandler(): InteractionHandler {
@@ -1061,6 +1130,39 @@ export class OutbreakProgression {
         return { handled: false }
       },
     }
+  }
+
+  /** A page left in a building: E reads it. A page the squad already knows is still read, and just as gone. */
+  private pageHandler(): InteractionHandler {
+    return {
+      kind: "page",
+      candidates: (town, actor) => {
+        if (actor.peekingWindowId) return []
+        const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        const out: RawInteractCandidate[] = []
+        for (const site of this.pages) {
+          if (site.buildingId !== here || Math.hypot(actor.x - site.x, actor.y - site.y) > PAGE_RANGE) continue
+          if (this.ledger.count(site.id, "page") <= 0) continue
+          const primary: InteractAction = { id: "read", label: "Read" }
+          const r = 0.2
+          out.push({ kind: "page", id: site.id, label: "Page", rect: [site.x - r, site.y - r, site.x + r, site.y + r], worldX: site.x, worldY: site.y, primary, actions: [primary], priority: 3 })
+        }
+        return out
+      },
+      execute: (_town, actor, targetId, action) => {
+        const slot = this.actorOf.get(actor)
+        const site = this.pages.find((p) => p.id === targetId)
+        if (!slot || !site || action !== "read" || Math.hypot(actor.x - site.x, actor.y - site.y) > PAGE_RANGE + CHANNEL_SLACK) return { handled: false }
+        return { handled: this.readPage(slot, site), kind: "page", targetId, action }
+      },
+    }
+  }
+
+  private readPage(slot: ProgressionSlot, site: PageSite): boolean {
+    const res = this.ledger.apply({ kind: "drain", store: site.id, item: "page", actor: slot.id })
+    if (!res.ok) return false
+    this.learnRecipe(slot, site.recipe, { x: site.x, y: site.y }, PIN_FOUND[site.style])
+    return true
   }
 
   private isMaterial(item: ItemId): boolean {
@@ -1330,7 +1432,40 @@ export class OutbreakProgression {
     const res = this.ledger.start({ kind: "run", actor: slot.id, rule, ref: best.id, label }, this.envFor(slot, world), { x: best.x, y: best.y })
     if (!res.ok && res.reason === "missing_item") this.notify(slot, "No planks", "warning", "barricade")
     else this.feedback(slot, res.events)
-    return res.ok ? res.noise : 0
+    if (!res.ok) return 0
+    // Practice: hands that have nailed a few boards do it faster and quieter. Nothing on screen says so.
+    const practice = this.practice(slot.id, "barricade")
+    const ch = this.ledger.channel(slot.id)
+    const noise = res.noise * practiceFactor(practice, this.tuning.practiceNoiseFloor)
+    if (ch) {
+      ch.duration *= practiceFactor(practice, this.tuning.practiceTimeFloor)
+      ch.noise = noise
+    }
+    return noise
+  }
+
+  /** Teammates close enough, facing the right way and in clear sight, to pick something up from watching `slot`. */
+  private watchers(slot: ProgressionSlot, world: WorldContext): ProgressionSlot[] {
+    const p = slot.survivor
+    const walls = sightRects(world.town)
+    return world.slots.filter((o) => {
+      if (o === slot || o.survivor.health <= 0) return false
+      const q = o.survivor
+      const d = Math.hypot(p.x - q.x, p.y - q.y)
+      if (d > this.tuning.watchRange) return false
+      if (d > 1 && Math.abs(angleDiff(Math.atan2(p.y - q.y, p.x - q.x), q.aim)) > WATCH_CONE) return false
+      return clearLine(q.x, q.y, p.x, p.y, walls)
+    })
+  }
+
+  /** How practised a survivor is at a skill (boards nailed, plus a share of those watched). */
+  practice(actor: string, skill: string): number {
+    return this.mastery[actor]?.[skill] ?? 0
+  }
+
+  private practise(actor: string, skill: string, amount: number): void {
+    const skills = (this.mastery[actor] ??= {})
+    skills[skill] = Number(((skills[skill] ?? 0) + amount).toFixed(3))
   }
 
   private barricadeTarget(p: ProgressionActor, world: WorldContext): { id: string; x: number; y: number } | null {
@@ -1495,8 +1630,75 @@ export class OutbreakProgression {
         this.generatorAt.set(b.id, world.time + 3)
       }
     }
+    if (this.boardHeldOut(world.town, world.ai)) {
+      world.ai.rebuildTopology(world.town)
+      topologyChanged = true
+    }
+    this.stepStudy(dt, world)
     for (const slot of world.slots) this.project(slot)
     return { topologyChanged }
+  }
+
+  /**
+   * Boards up each held-out building's window the first time it is in the world: reinforced, two planks. The sim
+   * calls this once it is built and the room's step calls it for buildings streamed in later. Returns whether any
+   * window was boarded (the caller rebuilds topology).
+   */
+  boardHeldOut(town: Town, ai: OutbreakAISubsystem): boolean {
+    let changed = false
+    for (const b of town.buildings) {
+      if (this.heldOut.includes(b.id)) continue
+      const id = heldOutWindow(town, b)
+      if (!id || !ai.portalStates.has(id)) continue
+      this.heldOut.push(b.id)
+      for (let i = 0; i < HELD_OUT_PLANKS; i++) ai.addBarricadePlank(id, this.tuning.reinforcedPlankHp)
+      const win = town.windows.find((w) => w.id === id)
+      if (win) win.open = false
+      changed = true
+    }
+    return changed
+  }
+
+  /**
+   * Learning by looking: a survivor who stands still close to a reinforced barricade, facing it, for `studyTime`
+   * works out how it was done. The squad learns it and their sketch goes up on the board.
+   */
+  private stepStudy(dt: number, world: WorldContext): void {
+    if (this.learned("reinforced")) {
+      for (const k of Object.keys(this.study)) delete this.study[k]
+      return
+    }
+    for (const slot of world.slots) {
+      const p = slot.survivor
+      const prev = this.study[slot.id]
+      const target = p.health > 0 && !p.channel ? this.studyTarget(p, world) : null
+      if (!target) {
+        delete this.study[slot.id]
+        continue
+      }
+      const still = prev && prev.portal === target.id && Math.hypot(p.x - prev.x, p.y - prev.y) <= STUDY_STILL * dt + 1e-6
+      const t = still ? prev.t + dt : 0
+      if (t + 1e-6 >= this.tuning.studyTime) {
+        this.learnRecipe(slot, "reinforced", { x: target.x, y: target.y }, 0)
+        for (const k of Object.keys(this.study)) delete this.study[k]
+        return
+      }
+      this.study[slot.id] = { portal: target.id, t: Number(t.toFixed(4)), x: p.x, y: p.y }
+    }
+  }
+
+  /** The reinforced barricade a survivor is close to and squarely facing, if any. */
+  private studyTarget(p: ProgressionActor, world: WorldContext): { id: string; x: number; y: number } | null {
+    for (const o of [...world.town.doors, ...world.town.windows]) {
+      const st = world.ai.portalStates.get(o.id)
+      if (!st || !looksReinforced(st.barricadePlanks, st.barricadeHp)) continue
+      const x = (o.rect[0] + o.rect[2]) / 2
+      const y = (o.rect[1] + o.rect[3]) / 2
+      if (distToRect(p.x, p.y, o.rect) > STUDY_RANGE) continue
+      if (Math.abs(angleDiff(Math.atan2(y - p.y, x - p.x), p.aim)) > STUDY_CONE) continue
+      return { id: o.id, x, y }
+    }
+    return null
   }
 
   /** Writes the ledger's view onto the survivor's legacy fields (HUD, wire, combat animation). */
@@ -1570,6 +1772,8 @@ export class OutbreakProgression {
       if (win) win.open = false
       world.ai.rebuildTopology(world.town)
       this.notify(slot, `Boarded ${world.ai.getBarricadePlanks(ev.ref)}/3`, "result", "barricade")
+      this.practise(slot.id, "barricade", 1)
+      for (const other of this.watchers(slot, world)) this.practise(other.id, "barricade", this.tuning.watchShare)
       return true
     }
     if (ev.rule.startsWith("heal:")) {
@@ -1617,9 +1821,24 @@ export class OutbreakProgression {
     const recipe = RECIPES.find((r) => rule === `tinker:${r.id}`)
     if (!recipe) return
     if (recipe.produces) this.ledger.apply({ kind: "grant", actor: slot.id, item: recipe.produces, store: mat })
-    if (!this.ledger.store(pinStoreId(recipe.id))) {
-      this.ledger.createStore({ id: pinStoreId(recipe.id), mode: "counters", scope: "shared", owner: slot.id, at, initial: { seat: slot.index + 1 } })
-    }
+    this.pinRecipe(slot, recipe.id, at, 0)
+  }
+
+  /**
+   * Teaches the squad a recipe they picked up away from the bench (a page, a barricade studied) and pins it: a sketch
+   * in the learner's hand, or the page itself (`found`, see `PIN_FOUND`). Returns whether it was new to them.
+   */
+  private learnRecipe(slot: ProgressionSlot, recipe: string, at: { x: number; y: number }, found: number): boolean {
+    if (this.learned(recipe)) return false
+    this.ledger.apply({ kind: "grant", actor: slot.id, item: `learned:${recipe}`, store: "team/known" })
+    this.pinRecipe(slot, recipe, at, found)
+    return true
+  }
+
+  private pinRecipe(slot: ProgressionSlot, recipe: string, at: { x: number; y: number }, found: number): void {
+    if (this.ledger.store(pinStoreId(recipe))) return
+    const initial: Record<string, number> = found ? { seat: slot.index + 1, found } : { seat: slot.index + 1 }
+    this.ledger.createStore({ id: pinStoreId(recipe), mode: "counters", scope: "shared", owner: slot.id, at, initial })
   }
 
   /** Turns ledger events into notices: discoveries, lessons, rejections and search results. */

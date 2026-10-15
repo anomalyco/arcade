@@ -1,10 +1,10 @@
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin, TINKER_MATERIALS } from "../../shared/discovery/tinker"
+import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin, TINKER_MATERIALS, type PinSource } from "../../shared/discovery/tinker"
 import { RECIPES, type BenchSite, type OutbreakProgression } from "../../shared/progression"
 import { hex } from "../level"
 import { isLongItem, registerItemModels, type ItemModels } from "./items"
-import { CARD, ideaCard, pinMesh, SCRAP, sketchCard, triedCard } from "./sketches"
+import { CARD, foundCard, ideaCard, pinMesh, SCRAP, sketchCard, triedCard } from "./sketches"
 
 const RANGE = 24
 const MAX = 64
@@ -21,6 +21,8 @@ const TRIED_U = 0.085
 const SLOT_PITCH = 0.285
 
 const FAILED_PAIRS = ALL_PAIRS.map(([a, b]) => pairKey(a, b)).filter((p) => !RECIPES.some((r) => pairKey(r.tinker[0], r.tinker[1]) === p))
+
+const FOUND_STYLES = ["flyer", "chart", "photo"] as const
 
 type Pool = Map<number, { data: Float32Array<ArrayBuffer>; count: number }>
 type Mover = { x: number; y: number; channel: { kind: string; elapsed: number; duration: number; x: number; y: number } | null }
@@ -59,13 +61,13 @@ export const triedSlot = (pair: string) => (FAILED_PAIRS.indexOf(pair) - (FAILED
  */
 export class WorkbenchProps {
   private readonly items: ItemModels
-  private readonly models: { mat: number; board: number; pin: number; sketch: Map<string, number>; idea: Map<string, number>; tried: Map<string, number> }
+  private readonly models: { mat: number; board: number; pin: number; sketch: Map<string, number>; idea: Map<string, number>; tried: Map<string, number>; found: Map<string, number> }
   private readonly pool: Pool = new Map()
   private readonly out: Batch[] = []
   private readonly shake = new Map<string, number>()
   private readonly lastChannel = new Map<number, { bench: string; progress: number; mat: string } | null>()
   /** Proof readout: bench id → what is on its mat and which cards are pinned. */
-  readonly shown = new Map<string, { mat: string[]; sketches: string[]; ideas: string[]; tried: string[]; shaking: boolean }>()
+  readonly shown = new Map<string, { mat: string[]; sketches: string[]; ideas: string[]; tried: string[]; found: string[]; shaking: boolean }>()
 
   constructor(renderer: Pick<Renderer, "addModel">, items?: ItemModels) {
     this.items = items ?? registerItemModels(renderer)
@@ -84,13 +86,26 @@ export class WorkbenchProps {
     board.box(0.025, FACE - 0.004, -bl + 0.025, BOARD_LEN - 0.025, FACE - 0.001, bl - 0.025, hex(0xa98458), MAT.lit)
     const sketch = new Map<string, number>()
     const idea = new Map<string, number>()
+    const found = new Map<string, number>()
     for (const r of RECIPES) {
       sketch.set(r.id, renderer.addModel(sketchCard(r.id, r.tinker)))
       idea.set(r.id, renderer.addModel(ideaCard(r.id, r.tinker)))
+      for (const style of FOUND_STYLES) found.set(`${style}:${r.id}`, renderer.addModel(foundCard(style, r.id, r.tinker)))
     }
     const tried = new Map<string, number>()
     for (const p of FAILED_PAIRS) tried.set(p, renderer.addModel(triedCard(p.split("+") as [string, string])))
-    this.models = { mat: renderer.addModel(mat), board: renderer.addModel(board), pin: renderer.addModel(pinMesh()), sketch, idea, tried }
+    this.models = { mat: renderer.addModel(mat), board: renderer.addModel(board), pin: renderer.addModel(pinMesh()), sketch, idea, tried, found }
+  }
+
+  /** The model of a found page: a flyer, chart or photo for `recipe`. */
+  foundModel(style: (typeof FOUND_STYLES)[number], recipe: string): number | undefined {
+    return this.models.found.get(`${style}:${recipe}`)
+  }
+
+  /** The card a learned recipe's pin holds up: the maker's sketch, or the page they found. */
+  private cardModel(recipe: string, source: PinSource | undefined): number {
+    const found = source && source !== "sketch" ? this.foundModel(source, recipe) : undefined
+    return found ?? this.models.sketch.get(recipe)!
   }
 
   collect(
@@ -107,7 +122,9 @@ export class WorkbenchProps {
     this.shown.clear()
     this.noticeClatter(progression, survivors, clatterTime)
     const board = progression.corkboard()
+    const found: string[] = []
     for (const site of progression.benches) {
+      found.length = 0
       if (Math.abs(site.bench.x - centre.x) > RANGE || Math.abs(site.bench.y - centre.y) > RANGE) continue
       const f = benchFrame(site)
       const ground = support(site.bench.x, site.bench.y)
@@ -147,8 +164,9 @@ export class WorkbenchProps {
         const idea = !learned && board.ideas.includes(r.id)
         if (!learned && !idea) continue
         const at = onBoard(site, SKETCH_U, sketchSlot(r.id))
-        this.put((learned ? this.models.sketch : this.models.idea).get(r.id)!, at.x, ground + at.y, at.z, 0, BOARD_TILT, 0, 1)
         const pin = readPin(progression.ledger.store(pinStoreId(r.id)), r.id)
+        this.put(learned ? this.cardModel(r.id, pin?.source) : this.models.idea.get(r.id)!, at.x, ground + at.y, at.z, 0, BOARD_TILT, 0, 1)
+        if (learned && pin && pin.source !== "sketch") found.push(`${pin.source}:${r.id}`)
         const colour = learned && pin?.seat !== null && pin?.seat !== undefined ? seatColour(pin.seat) : ([0.78, 0.62, 0.3] as const)
         const head = onBoard(site, SKETCH_U + CARD.w / 2 - 0.022, sketchSlot(r.id), FACE + 0.003)
         this.put(this.models.pin, head.x, ground + head.y, head.z, 0, BOARD_TILT, 0, 1, colour)
@@ -161,7 +179,7 @@ export class WorkbenchProps {
         const head = onBoard(site, TRIED_U + SCRAP.w / 2 - 0.014, triedSlot(pair), FACE + 0.003)
         this.put(this.models.pin, head.x, ground + head.y, head.z, 0, BOARD_TILT, 0, 0.8, [0.78, 0.62, 0.3])
       }
-      this.shown.set(site.id, { mat: mat.map((s) => s.item), sketches: board.learned, ideas: board.ideas, tried: board.tried, shaking: shakeLeft > 0 })
+      this.shown.set(site.id, { mat: mat.map((s) => s.item), sketches: board.learned, ideas: board.ideas, tried: board.tried, found: [...found], shaking: shakeLeft > 0 })
     }
     for (const [model, v] of this.pool) if (v.count) this.out.push({ model, data: v.data, count: v.count })
     return this.out

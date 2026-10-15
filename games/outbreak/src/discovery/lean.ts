@@ -2,8 +2,9 @@ import type { SessionView } from "../../shared/session"
 import type { DiscoverySettings } from "./settings"
 
 /**
- * The camera leans in at a workbench so the mat and the corkboard can be read: it eases closer and towards the bench
- * while the survivor faces it or is trying something on its mat, and eases back out when they turn away.
+ * The camera leans in at a workbench so the mat and the corkboard can be read, and at a page left in a building: it
+ * eases closer and towards the bench or page while the survivor faces it or is trying something on its mat, and
+ * eases back out when they turn away.
  */
 export class BenchLean {
   blend = 0
@@ -14,7 +15,8 @@ export class BenchLean {
     const p = view.player
     let bench: { x: number; y: number } | null = null
     if (settings.discoveryBenchFocus && !p.vehicleId) {
-      if (view.prompt?.kind === "bench") bench = { x: view.prompt.worldX, y: view.prompt.worldY }
+      // A page lying in a building gets the same closer look, so its drawing can be made out before reading it.
+      if (view.prompt?.kind === "bench" || view.prompt?.kind === "page") bench = { x: view.prompt.worldX, y: view.prompt.worldY }
       else if (p.channel?.kind === "tinker") bench = { x: p.channel.x, y: p.channel.y }
     }
     if (bench) {

@@ -1,20 +1,35 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
+import { PIN_FOUND, type PageSite } from "../../shared/discovery/found"
 import { ideaToken, matStoreId, pinStoreId, triedToken } from "../../shared/discovery/tinker"
 import type { SessionView } from "../../shared/session"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { ProgressionLabHost } from "../progression/index"
+import type { PageGlance } from "./glance"
 import type { DiscoveryProps } from "./props"
 import { DEFAULT_DISCOVERY_SETTINGS, discoveryControls } from "./settings"
 
 export { DEFAULT_DISCOVERY_SETTINGS, discoveryControls, type DiscoverySettings } from "./settings"
 export { DiscoveryProps } from "./props"
 export { BenchLean } from "./lean"
+export { PageGlance } from "./glance"
 
 /** What the Discovery Lab scenes need: the progression host (view, pose, clock, inventory HUD) and the world props. */
-export type DiscoveryHost = ProgressionLabHost & { props: DiscoveryProps }
+export type DiscoveryHost = ProgressionLabHost & { props: DiscoveryProps; glance: PageGlance }
 
 /** Staged scenes for the `outbreak-discovery` Lab station and proofs. */
-export const DISCOVERY_SCENES = ["low-flashlight", "weakened-barricade", "open-containers", "drops", "bench-tinker", "corkboard", "dark-bench"] as const
+export const DISCOVERY_SCENES = [
+  "low-flashlight",
+  "weakened-barricade",
+  "open-containers",
+  "drops",
+  "bench-tinker",
+  "corkboard",
+  "dark-bench",
+  "page",
+  "page-read",
+  "found-pages",
+  "held-out",
+] as const
 export type DiscoveryScene = (typeof DISCOVERY_SCENES)[number]
 
 function stock(view: SessionView, id: string, items: readonly (readonly [string, number])[]): void {
@@ -49,18 +64,31 @@ function atBench(host: DiscoveryHost, hour: number, items: readonly (readonly [s
   return bench.id
 }
 
-/** Pins `recipe` to the corkboard as if the survivor in `seat` had made it. Lab staging only. */
-function pin(view: SessionView, recipe: string, seat: number): void {
+/** Pins `recipe` to the corkboard as if the survivor in `seat` had made it, or found it as a page. Lab staging only. */
+function pin(view: SessionView, recipe: string, seat: number, found: keyof typeof PIN_FOUND | null = null): void {
   const ledger = view.progression.ledger
   const bench = view.progression.benches.find((b) => b.id === "bench:ash")!
   if (!view.progression.learned(recipe)) ledger.apply({ kind: "grant", actor: view.actorId, item: `learned:${recipe}`, store: "team/known" })
   if (ledger.store(pinStoreId(recipe))) ledger.deleteStore(pinStoreId(recipe))
-  ledger.createStore({ id: pinStoreId(recipe), mode: "counters", scope: "shared", owner: `seat${seat}`, at: { x: bench.bench.x, y: bench.bench.y }, initial: { seat: seat + 1 } })
+  const initial: Record<string, number> = found ? { seat: seat + 1, found: PIN_FOUND[found] } : { seat: seat + 1 }
+  ledger.createStore({ id: pinStoreId(recipe), mode: "counters", scope: "shared", owner: `seat${seat}`, at: { x: bench.bench.x, y: bench.bench.y }, initial })
+}
+
+/** Puts a building's page back where it lay, unread. */
+function unread(view: SessionView, building: string): PageSite {
+  const site = view.progression.pages.find((p) => p.buildingId === building)!
+  const st = view.progression.ledger.store(site.id)
+  if (st) {
+    st.counts.page = 1
+    st.rev = ++view.progression.ledger.rev
+  }
+  return site
 }
 
 export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: OutbreakAISubsystem): void {
   const view = host.view()
   host.hud.close()
+  host.glance.hide()
   const ash = view.town.buildings.find((b) => b.id === "ash")!
   const ledger = view.progression.ledger
   switch (scene) {
@@ -90,6 +118,44 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       const bench = atBench(host, 23, [["chem", 2]])
       view.player.flashlightOn = false
       ledger.apply({ kind: "deposit", actor: view.actorId, to: matStoreId(bench), items: { chem: 2 } })
+      return
+    }
+    case "page": {
+      // A flyer left on a hardware-store shelf, unread: walk up and press E.
+      host.setHour(14)
+      view.player.flashlightOn = false
+      const site = unread(view, "hardware")
+      host.pose(site.x - 0.35, site.y + 1.05, -Math.PI / 2 + 0.3)
+      return
+    }
+    case "page-read": {
+      // The pharmacy's chart just read: its diagram held up to the camera.
+      host.setHour(14)
+      view.player.flashlightOn = false
+      const site = unread(view, "pharmacy")
+      host.pose(site.x - 0.35, site.y + 1.05, -Math.PI / 2 + 0.3)
+      host.glance.show(site, 3600)
+      return
+    }
+    case "found-pages": {
+      // Days in: a sketch made at this bench beside a flyer, a chart and a photo found in town, each on its pin.
+      atBench(host, 15, [])
+      view.player.flashlightOn = false
+      pin(view, "spiked-board", 0)
+      pin(view, "reinforced", 1, "flyer")
+      pin(view, "bandage", 2, "chart")
+      pin(view, "lure", 3, "photo")
+      return
+    }
+    case "held-out": {
+      // Outside the hardware store's south-east window, boarded and strapped from inside before the game began.
+      host.setHour(14)
+      view.player.flashlightOn = false
+      const win = view.town.windows.find((w) => w.id === "hardware-south-east")!
+      boardUp(view, ai, win.id, 2, 1.8)
+      const cx = (win.rect[0] + win.rect[2]) / 2
+      const cy = (win.rect[1] + win.rect[3]) / 2
+      host.pose(cx - 0.4, cy + 1.6, Math.atan2(-1.6, 0.4))
       return
     }
     case "low-flashlight": {
@@ -193,6 +259,10 @@ export const outbreakDiscoveryFeature = registerOutbreakClientFeature({
       shown: Object.fromEntries(host.discoveryHost.props.shown),
       barricades: Object.fromEntries(host.discoveryHost.props.barricades.looks),
       bench: Object.fromEntries(host.discoveryHost.props.bench.shown),
+      reinforced: [...host.discoveryHost.props.barricades.reinforced],
+      glance: host.discoveryHost.glance.showing,
+      pages: host.session().view.progression.pages.map((p) => ({ ...p, unread: host.session().view.progression.ledger.count(p.id, "page") })),
+      practice: { ...host.session().view.progression.mastery },
     },
   }),
 })

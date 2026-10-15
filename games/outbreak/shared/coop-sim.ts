@@ -219,6 +219,7 @@ export class CoopSim {
       this.progression.ensureContainerStores()
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
+    if (this.progression.boardHeldOut(this.town, this.ai)) this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     this.vehicles = new OutbreakVehicleSubsystem(this.worldStream, this.town)
     this.featureStates = outbreakSharedFeatures.createSimStates(this)
     this.registry = new InteractionRegistry([
