@@ -65,7 +65,8 @@ replace the existing GPU geometry and destroy the old vertex buffer.
 
 ## Proof covers the controls and default game stills
 
-Run from the repository root against the existing local Nexus previews:
+These two scripts still read the pre-knobs panel DOM and need knobs selectors before they run again. Run them from
+the repository root:
 
 ```sh
 bun games/getaway/scripts/prove-lab-effects.ts

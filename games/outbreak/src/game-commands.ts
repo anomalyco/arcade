@@ -10,6 +10,7 @@ import type { LocalSession } from "../shared/session"
 import { FOG_SIZE, type Vision } from "../shared/vision"
 import type { CoopView } from "./coop-view"
 import type { OutbreakFeelTracker } from "./feel-events"
+import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
 import type { NetSession } from "./net-session"
 import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
@@ -33,6 +34,7 @@ export interface OutbreakGameCommandsHost {
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
   readonly weatherController: OutbreakWeatherController
+  readonly harness: () => OutbreakHarness
   readonly resetPeek: () => void
   readonly draw: (dt: number) => void
 }
@@ -274,6 +276,25 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
           stageProgression(progressionHost, scene)
           return { scene }
+        },
+      },
+      {
+        id: "pacing.stage",
+        label: "Stage First-Night Pacing Scene",
+        shortLabel: "Pacing Scene",
+        category: "Scene",
+        undoable: false,
+        args: {
+          scene: {
+            type: "string",
+            description: "Scene (opening-calm, safehouse-workbench, first-contact, late-night-horde, legacy-rush)",
+          },
+        },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const out = host.harness().stagePacing(String(args?.scene ?? "opening-calm"))
+          await host.harness().step(1 / 60)
+          return out
         },
       },
       {
