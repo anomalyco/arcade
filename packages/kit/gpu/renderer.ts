@@ -8,7 +8,14 @@ import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { installFramePacer } from "../gpu-perf"
-import { MotionHistory, motionSettings, type MotionKey } from "./motion"
+import {
+  MotionBlur,
+  MotionHistory,
+  motionSettings,
+  type MotionBlurBurst,
+  type MotionBlurSettings,
+  type MotionKey,
+} from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
 import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
@@ -22,7 +29,18 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "./look"
-import { FRAME_FLOATS, makeLookPostShader, makeLookSceneShader, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
+import {
+  FRAME_FLOATS,
+  makeLookPostShader,
+  makeLookSceneShader,
+  polarShader,
+  postShader,
+  resolveLookVariant,
+  sceneShader,
+  spriteShader,
+  common,
+  type LookVariantMode,
+} from "./shaders"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
@@ -75,6 +93,30 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
  */
 export type VisibilityFieldShader = { code: string; size: number; dispatch: number }
 
+/**
+ * Optional game volumetric-light pass. `code` provides `@vertex fn vs` (fullscreen triangle) and `@fragment fn fs`
+ * bound to the frame (0), lights (1), polar map (2) and custom uniforms (13). It renders at 1/`FrameInput.volume`
+ * resolution into rgba16float: rgb is in-scattered radiance, a how much it should restore selective colour. The
+ * renderer adds rgb into the resolved HDR target and multiplies its alpha by 1 - a before smoke and bloom.
+ */
+export type VolumeLightShader = { code: string }
+
+const volumeCompositeShader = /* wgsl */ `
+@group(0) @binding(0) var volumeTex: texture_2d<f32>;
+@group(0) @binding(1) var volumeSamp: sampler;
+struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: VO;
+  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+@fragment fn fs(o: VO) -> @location(0) vec4f {
+  return textureSampleLevel(volumeTex, volumeSamp, o.uv, 0.0);
+}
+`
+
 export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
@@ -101,10 +143,19 @@ export type FrameInput = {
   addSprites: Float32Array<ArrayBuffer>
   addCount: number
   addMotionKeys?: (MotionKey | undefined)[]
+  /**
+   * Volumetric-light pass (renderer `shaders.volume`): resolution divisor and optional screen rect [x0, y0, x1, y1]
+   * in 0..1 (top-left origin) that bounds the light, so both passes skip the rest of the screen. Omit or null to skip.
+   */
+  volume?: { downscale: number; rect?: readonly [number, number, number, number] } | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
-  /** Optional game-feel post-processing burst: [blurX, blurY, radialBlur, chromaticBoost] */
-  feel?: readonly [number, number, number, number]
+  /** Optional shared screen-space shutter + impulse motion blur (`@arcade/kit/gpu/motion-blur`). */
+  motionBlur?: {
+    settings: MotionBlurSettings
+    burst?: MotionBlurBurst
+    dt?: number
+  }
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
@@ -142,6 +193,15 @@ export class Renderer {
   private visibilityTex: GPUTexture
   private fieldTex: GPUTexture
   private field: { pipe: GPUComputePipeline; group: GPUBindGroup; state: GPUBuffer; dispatch: number } | null = null
+  private volume: {
+    pipe: GPURenderPipeline
+    group: GPUBindGroup
+    composite: GPURenderPipeline
+    compositeLayout: GPUBindGroupLayout
+    tex: GPUTexture | null
+    compositeGroup: GPUBindGroup | null
+    downscale: number
+  } | null = null
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private materialTex: GPUTexture
@@ -160,7 +220,7 @@ export class Renderer {
   private pipes: Record<string, GPURenderPipeline> = {}
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
-  private lookPipes: Record<string, GPURenderPipeline> | null = null
+  private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
   private activeLook: LookSettings | null = null
   private activeLookCompare: { mode?: LookCompareMode; wipeSplit?: number } = {}
   private lookSceneData = new Float32Array(LOOK_UNIFORM_FLOATS)
@@ -178,6 +238,14 @@ export class Renderer {
   private velocityMSAAView!: GPUTextureView
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
+  private sharedBlur: MotionBlur | null = null
+  private sharedBlurGroups: { down0: GPUBindGroup; composite: GPUBindGroup; w: number; h: number } | null = null
+  private readonly blurPrevVP = new Float32Array(16)
+  private readonly blurLastVP = new Float32Array(16)
+  private readonly blurInverseVP = new Float32Array(16)
+  private readonly blurLastEye = new Float32Array(3)
+  private blurLastTime = -1
+  private blurReady = false
   private level: Buf | null = null
   private glass: Buf | null = null
   private models: Buf[] = []
@@ -207,7 +275,17 @@ export class Renderer {
     private device: GPUDevice,
     private context: GPUCanvasContext,
     private readonly format: GPUTextureFormat,
-    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string; visField?: VisibilityFieldShader },
+    private shaders?: {
+      scene: string
+      sprite: string
+      post?: string
+      lookScene?: string
+      lookPost?: string
+      lookSceneVariant?: (variant: LookVariantMode) => string
+      lookPostVariant?: (variant: LookVariantMode) => string
+      visField?: VisibilityFieldShader
+      volume?: VolumeLightShader
+    },
   ) {
     const d = device
     this.notifyPacer = installFramePacer(
@@ -309,6 +387,58 @@ export class Renderer {
       layout: d.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: this.module(polarShader, "polar"), entryPoint: "main" },
     })
+    if (shaders?.volume) {
+      const layout = d.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+          { binding: 1, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
+          { binding: 2, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
+          { binding: 13, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+        ],
+      })
+      const compositeLayout = d.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: S.FRAGMENT, texture: {} },
+          { binding: 1, visibility: S.FRAGMENT, sampler: {} },
+        ],
+      })
+      const mod = this.module(shaders.volume.code, "volume light")
+      const compositeMod = this.module(volumeCompositeShader, "volume composite")
+      this.volume = {
+        pipe: d.createRenderPipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
+          vertex: { module: mod, entryPoint: "vs" },
+          fragment: { module: mod, entryPoint: "fs", targets: [{ format: HDR }] },
+          primitive: { topology: "triangle-list" },
+        }),
+        group: d.createBindGroup({
+          layout,
+          entries: [
+            { binding: 0, resource: { buffer: this.frameBuf } },
+            { binding: 1, resource: { buffer: this.lightBuf } },
+            { binding: 2, resource: { buffer: this.polarBuf } },
+            { binding: 13, resource: { buffer: this.customBuf } },
+          ],
+        }),
+        composite: d.createRenderPipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [compositeLayout] }),
+          vertex: { module: compositeMod, entryPoint: "vs" },
+          fragment: {
+            module: compositeMod,
+            entryPoint: "fs",
+            targets: [{
+              format: HDR,
+              blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one-minus-src-alpha" } },
+            }],
+          },
+          primitive: { topology: "triangle-list" },
+        }),
+        compositeLayout,
+        tex: null,
+        compositeGroup: null,
+        downscale: 0,
+      }
+    }
     if (shaders?.visField) {
       const vf = shaders.visField
       const fieldLayout = d.createBindGroupLayout({
@@ -480,6 +610,41 @@ export class Renderer {
         { binding: 14, resource: this.fieldTex.createView() },
       ],
     })
+  }
+
+  private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
+    const v = this.volume!
+    const w = Math.max(1, Math.ceil(this.width / downscale))
+    const h = Math.max(1, Math.ceil(this.height / downscale))
+    if (!v.tex || v.tex.width !== w || v.tex.height !== h) {
+      v.tex?.destroy()
+      v.tex = this.device.createTexture({ size: [w, h], format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+      v.compositeGroup = this.device.createBindGroup({
+        layout: v.compositeLayout,
+        entries: [{ binding: 0, resource: v.tex.createView() }, { binding: 1, resource: this.sampler }],
+      })
+    }
+    const r = rect ?? [0, 0, 1, 1]
+    const scissor = (pass: GPURenderPassEncoder, sw: number, sh: number) => {
+      const x0 = Math.max(0, Math.floor(r[0] * sw))
+      const y0 = Math.max(0, Math.floor(r[1] * sh))
+      const x1 = Math.min(sw, Math.ceil(r[2] * sw))
+      const y1 = Math.min(sh, Math.ceil(r[3] * sh))
+      pass.setScissorRect(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0))
+    }
+    if (r[2] <= r[0] || r[3] <= r[1]) return
+    const march = enc.beginRenderPass({ colorAttachments: [{ view: v.tex.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+    scissor(march, w, h)
+    march.setPipeline(v.pipe)
+    march.setBindGroup(0, v.group)
+    march.draw(3)
+    march.end()
+    const add = enc.beginRenderPass({ colorAttachments: [{ view: this.hdrView, loadOp: "load", storeOp: "store" }] })
+    scissor(add, this.width, this.height)
+    add.setPipeline(v.composite)
+    add.setBindGroup(0, v.compositeGroup!)
+    add.draw(3)
+    add.end()
   }
 
   /** Forgets everything the visibility field remembers (new level or session). */
@@ -654,6 +819,8 @@ export class Renderer {
     this.width = w
     this.height = h
     this.measureTarget?.destroy();this.measureTarget=null
+    this.sharedBlurGroups = null
+    this.blurReady = false
     this.previousFrame = null
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
@@ -757,8 +924,13 @@ export class Renderer {
     return this.activeLook ? { ...this.activeLook } : null
   }
 
-  private ensureLookPipes(): Record<string, GPURenderPipeline> {
-    if (this.lookPipes) return this.lookPipes
+  get compiledLookVariants(): LookVariantMode[] {
+    return [...this.lookPipesByVariant.keys()]
+  }
+
+  private ensureLookPipes(variant: LookVariantMode = "generic"): Record<string, GPURenderPipeline> {
+    const cached = this.lookPipesByVariant.get(variant)
+    if (cached) return cached
     const d = this.device
     const meshLayout: GPUVertexBufferLayout = {
       arrayStride: VERT_BYTES,
@@ -780,7 +952,10 @@ export class Renderer {
     }
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
-    const lookSceneMod = this.module(this.shaders?.lookScene ?? makeLookSceneShader(), "scene look")
+    const sceneCode =
+      this.shaders?.lookSceneVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookScene ? this.shaders.lookScene : makeLookSceneShader(undefined, variant))
+    const lookSceneMod = this.module(sceneCode, `scene look (${variant})`)
     const pipe = (vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, fs = "fs") =>
       d.createRenderPipeline({
         layout,
@@ -790,9 +965,12 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES },
       })
-    const lookPostMod = this.module(this.shaders?.lookPost ?? makeLookPostShader(), "post look")
+    const postCode =
+      this.shaders?.lookPostVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookPost ? this.shaders.lookPost : makeLookPostShader(undefined, variant))
+    const lookPostMod = this.module(postCode, `post look (${variant})`)
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    this.lookPipes = {
+    const pipes = {
       level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
       levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
       glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
@@ -811,7 +989,8 @@ export class Renderer {
         primitive: { topology: "triangle-list" },
       }),
     }
-    return this.lookPipes
+    this.lookPipesByVariant.set(variant, pipes)
+    return pipes
   }
 
   render(f: FrameInput): void {
@@ -917,10 +1096,15 @@ export class Renderer {
       this.weatherRenderer.prepare(f.weather)
     }
     if (motion) this.prepareMotion()
+    const lookVariant: LookVariantMode = useLookPipes
+      ? this.shaders && !this.shaders.lookSceneVariant
+        ? "generic"
+        : resolveLookVariant(effectiveLook, effectiveCompare)
+      : "generic"
     const scenePipes = motion
       ? this.motionPipes
       : useLookPipes
-        ? this.ensureLookPipes()
+        ? this.ensureLookPipes(lookVariant)
         : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512)
           ? this.pipes
           : this.baselinePipes
@@ -946,24 +1130,46 @@ export class Renderer {
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
-    const feel = f.feel
     if (useLookPipes && effectiveLook) {
-      this.gradeData[4] = feel ? feel[0]! : 0
-      this.gradeData[5] = feel ? feel[1]! : 0
-      this.gradeData[6] = feel ? feel[2]! : 0
-      this.gradeData[7] = feel ? feel[3]! : 0
+      this.gradeData[4] = 0
+      this.gradeData[5] = 0
+      this.gradeData[6] = 0
+      this.gradeData[7] = 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
       })
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
-      this.gradeData[4] = (f.frame[45]! & 1) + (feel ? Math.min(0.48, Math.max(0, feel[3]!)) : 0)
-      this.gradeData[5] = feel ? feel[0]! : 0
-      this.gradeData[6] = feel ? feel[1]! : 0
-      this.gradeData[7] = feel ? feel[2]! : 0
+      this.gradeData[4] = f.frame[45]! & 1
+      this.gradeData[5] = 0
+      this.gradeData[6] = 0
+      this.gradeData[7] = 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
+
+    const mb = f.motionBlur
+    const frameTime = f.frame[19]!
+    const rawBlurDt = mb?.dt ?? (this.blurLastTime >= 0 ? frameTime - this.blurLastTime : 1 / 60)
+    const blurDt = Math.max(1 / 240, rawBlurDt > 0 && rawBlurDt < 0.25 ? rawBlurDt : 1 / 60)
+    const eyeMove = this.blurReady
+      ? Math.hypot(
+          f.frame[16]! - this.blurLastEye[0]!,
+          f.frame[17]! - this.blurLastEye[1]!,
+          f.frame[18]! - this.blurLastEye[2]!,
+        )
+      : 0
+    const blurValid = this.blurReady && eyeMove < 8
+    this.blurPrevVP.set(blurValid ? this.blurLastVP : f.frame.subarray(0, 16))
+    this.blurLastVP.set(f.frame.subarray(0, 16))
+    this.blurLastEye[0] = f.frame[16]!
+    this.blurLastEye[1] = f.frame[17]!
+    this.blurLastEye[2] = f.frame[18]!
+    this.blurLastTime = frameTime
+    this.blurReady = true
+    const mbContinuous = Boolean(mb?.settings.enabled && mb.settings.strength > 0.001 && mb.settings.shutter > 0.001)
+    const mbBurst = Boolean(mb?.settings.enabled && mb.settings.burst > 0.001 && mb.burst?.active)
+    const runSharedBlur = !motion && (mbContinuous || mbBurst)
 
     const total = f.batches.reduce((s, b) => s + b.count, 0)
     if (motion && total * INST_FLOATS > this.previousData.length) {
@@ -1042,7 +1248,7 @@ export class Renderer {
     const pass = enc.beginRenderPass({
       timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
       colorAttachments: [{ view: this.msaaView, resolveTarget: this.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke ? "store" : "discard" },
+      depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
     })
     pass.setBindGroup(0, this.sceneGroup)
     const [vx0, vy0, vx1, vy1] = f.view
@@ -1119,11 +1325,62 @@ export class Renderer {
       this.smokeRenderer.render(enc, this.hdrView, f.smoke)
     }
 
+    if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect)
+
     const g = this.postGroups!
+    let activeDown0 = g.down[0]!
+    let activeComposite = g.composite
+    if (runSharedBlur && mb) {
+      this.sharedBlur ??= new MotionBlur(d, HDR, true)
+      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== this.width || this.sharedBlurGroups.h !== this.height) {
+        this.sharedBlur.resize(this.width, this.height, this.hdrView, this.depthView)
+        const makeGroup = (srcView: GPUTextureView, params: GPUBuffer, extraView: GPUTextureView = srcView) =>
+          d.createBindGroup({
+            layout: this.postLayout,
+            entries: [
+              { binding: 0, resource: srcView },
+              { binding: 1, resource: this.sampler },
+              { binding: 2, resource: { buffer: params } },
+              { binding: 3, resource: extraView },
+              { binding: 4, resource: { buffer: this.gradeBuf } },
+            ],
+          })
+        this.sharedBlurGroups = {
+          down0: makeGroup(this.sharedBlur.output, this.postParams[0]!),
+          composite: makeGroup(this.sharedBlur.output, this.postParams[0]!, this.bloomViews[0]!),
+          w: this.width,
+          h: this.height,
+        }
+      }
+      const curVP = f.frame.subarray(0, 16)
+      mat4.inverse(curVP, this.blurInverseVP)
+      if (mb.burst) {
+        this.sharedBlur.burst.dx = mb.burst.dx
+        this.sharedBlur.burst.dy = mb.burst.dy
+        this.sharedBlur.burst.radial = mb.burst.radial
+        this.sharedBlur.burst.shutterBoost = mb.burst.shutterBoost
+      } else {
+        this.sharedBlur.burst.reset()
+      }
+      this.sharedBlur.update(
+        curVP,
+        this.blurInverseVP,
+        this.blurPrevVP,
+        blurDt,
+        mb.settings.strength,
+        mb.settings.shutter,
+        blurValid,
+        32,
+        mb.settings.burst,
+      )
+      this.sharedBlur.encode(enc)
+      activeDown0 = this.sharedBlurGroups.down0
+      activeComposite = this.sharedBlurGroups.composite
+    }
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
-      p.setBindGroup(0, g.down[i]!)
+      p.setBindGroup(0, i === 0 ? activeDown0 : g.down[i]!)
       p.draw(3)
       p.end()
     }
@@ -1136,14 +1393,7 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    const hasFeelBurst =
-      Boolean(f.feel) &&
-      (Math.abs(f.feel![0]!) > 0.00018 ||
-        Math.abs(f.feel![1]!) > 0.00018 ||
-        f.feel![2]! > 0.00018 ||
-        f.feel![3]! > 0.002)
     const useFastLookPost =
-      !hasFeelBurst &&
       useLookPipes &&
       effectiveLook &&
       (effectiveCompare.mode ?? 1) === 1 &&
@@ -1154,12 +1404,14 @@ export class Renderer {
       motion
         ? this.motionPipes.composite!
         : useLookPipes
-          ? (useFastLookPost ? this.ensureLookPipes().compositeFast! : this.ensureLookPipes().composite!)
+          ? (useFastLookPost
+              ? this.ensureLookPipes(lookVariant).compositeFast!
+              : this.ensureLookPipes(lookVariant).composite!)
           : f.frame[45]! & 1
             ? this.pipes.composite!
             : this.baselinePipes.composite!,
     )
-    fp.setBindGroup(0, motion ? this.motionComposite : g.composite)
+    fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
     fp.draw(3)
     fp.end()
     if(this.timing) this.timer!.finish(enc,output)

@@ -13,7 +13,7 @@
     "build:id": "bun scripts/build-id.ts",
     "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun test && vite build",
     "shot": "bun scripts/shot.ts",
-    "deploy": "bun scripts/build-id.ts && rm -rf dist && vite build && wrangler deploy"
+    "deploy": "bun scripts/deploy.ts"
   },
   "dependencies": {
     "@arcade/kit": "workspace:*"
