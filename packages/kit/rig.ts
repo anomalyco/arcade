@@ -6,7 +6,7 @@ export type V3 = [number, number, number]
 export type Frame = { p: V3; x: V3; y: V3; z: V3 }
 
 /** Human proportions shared by the procedural mesh and planted-foot IK. Metres. */
-export const RIG = { hipW: .11, thigh: .42, shin: .41, ankle: .085, waist: .1, shoulderY: .43, shoulderW: .235, neckY: .5, upper: .29, fore: .27 }
+export const RIG = { hipW: .11, thigh: .42, shin: .41, ankle: .085, heel: .06, foot: .125, toe: .065, waist: .1, shoulderY: .43, shoulderW: .235, neckY: .5, upper: .29, fore: .27 }
 export const HIP = .86
 export const SHOULDER = 1.38
 

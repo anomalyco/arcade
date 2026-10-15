@@ -25,8 +25,10 @@ test("shared zombie gait locks toes, bounds uneven timing and drags only the swi
     for (let i = 0; i < 2; i++) {
       if (n > 0 && before[i] && a.feet[i]!.planted) {
         expect(a.motion.toes[i]).toEqual(toes[i])
-        const toe = at(legs.ft[i]!, 0.19, -RIG.ankle, 0)
-        toe.forEach((v, j) => expect(v).toBeCloseTo(toes[i]![j]!, 12))
+        const ball = legs.toe[i]!.p
+        ball.forEach((v, j) => expect(v).toBeCloseTo(toes[i]![j]!, 12))
+        const toeTip = at(legs.toe[i]!, RIG.toe, 0, 0)
+        expect(toeTip[1]).toBeCloseTo(0, 12)
         contacts++
       }
       expect(a.motion.durations[i]!).toBeGreaterThanOrEqual(0.077)
@@ -87,7 +89,8 @@ test("detachment copies exact frames and seeds translational and angular velocit
 test("cosmetic limb IDs remain stable and offset emitters inherit rotational motion", () => {
   expect(limbIds).toEqual({ pelvis: 0, torso: 1, head: 2, "left.upperArm": 3, "right.upperArm": 4,
     "left.foreArm": 5, "right.foreArm": 6, "left.thigh": 7, "right.thigh": 8,
-    "left.shin": 9, "right.shin": 10, "left.foot": 11, "right.foot": 12 })
+    "left.shin": 9, "right.shin": 10, "left.foot": 11, "right.foot": 12,
+    "left.toe": 13, "right.toe": 14 })
   const frame = yawFrame([10, 2, 4], 0)
   const part = { frame, linear: [1, 0, 0] as V3, angular: [0, 0, 2] as V3 }
   expect(pointVelocity(part, frame.p)).toEqual([1, 0, 0])
@@ -369,6 +372,14 @@ test("pose-diff normalization, FK angle synthesis and unarmed walk/run arm kinem
   expect(rk.hipFlexMaxDeg).toBeGreaterThan(50)
   expect(wk.kneeFlexMaxDeg).toBeGreaterThan(64)
   expect(wk.kneeFlexMaxDeg).toBeLessThan(76)
+  // Toe (ball-of-foot) joint dorsiflexion during push-off (> 20 deg in walk, > 24 deg in run) and lengthened walk stride
+  expect(RIG.foot + RIG.toe).toBeCloseTo(0.19, 10)
+  expect(wk.toePitchMaxDeg).toBeGreaterThan(20)
+  expect(rk.toePitchMaxDeg).toBeGreaterThan(24)
+  expect(walkRes.cyc.cadenceStepsPerMin).toBeGreaterThan(115)
+  expect(walkRes.cyc.cadenceStepsPerMin).toBeLessThan(132)
+  expect(walkRes.comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(15.5)
+  expect(runRes.comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(27.0)
 })
 
 test("seeded per-step variation, crowd personality desync, start/stop weight shift and secondary lag preserve zero toe slip", () => {
@@ -394,7 +405,7 @@ test("seeded per-step variation, crowd personality desync, start/stop weight shi
     locomotion(a, dt, distStep, n === 0, profile)
     const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
     const legs = poseLegs(a, pelvis)
-    const toes: [V3, V3] = [at(legs.ft[0], 0.19, -RIG.ankle, 0), at(legs.ft[1], 0.19, -RIG.ankle, 0)]
+    const toes: [V3, V3] = [legs.toe[0].p, legs.toe[1].p]
 
     if (n === 0) {
       // Start anticipation triggers lateral weight-shift velocity and crouch dip

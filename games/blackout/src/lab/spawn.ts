@@ -14,7 +14,7 @@ export function blackoutSpawn(context:LabContext):CharacterSpawnable {
     if(!models){
       const source=personModels(),add=(m:Mesh)=>meshes.add(m.v,11,c=>c===8?-1.5:[2,3].includes(c)?1.5:0)
       const by=(set:Record<typeof GUN_IDS[number],Mesh>)=>({rifle:add(set.rifle),shotgun:add(set.shotgun),sniper:add(set.sniper)})
-      models={pelvis:add(source.pelvis),torso:add(source.torso),head:add(source.head),upperArm:add(source.upperArm),foreArm:add(source.foreArm),thigh:add(source.thigh),shin:add(source.shin),foot:add(source.foot),pump:add(source.pump),hole:add(source.hole),gun:by(source.gun),mag:by(source.mag),casing:by(source.casing)}
+      models={pelvis:add(source.pelvis),torso:add(source.torso),head:add(source.head),upperArm:add(source.upperArm),foreArm:add(source.foreArm),thigh:add(source.thigh),shin:add(source.shin),foot:add(source.foot),toe:add(source.toe),pump:add(source.pump),hole:add(source.hole),gun:by(source.gun),mag:by(source.mag),casing:by(source.casing)}
     }
     const point={...at},body={x:at.x,y:at.z,vx:0,vy:0},avatar=newAvatar("lab",at.x,at.z,-Math.PI/2,"rifle")
     let time=0,aim=-Math.PI/2,ev=0
