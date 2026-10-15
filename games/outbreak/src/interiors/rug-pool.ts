@@ -112,6 +112,7 @@ export class RugPool {
   step(): void {
     this.clock++
     const job = this.ready.shift()
+    if (!job && this.inflight.size === 0 && this.settled) return
     if (job) {
       const t0 = performance.now()
       if (job.tiles) {

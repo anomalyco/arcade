@@ -66,6 +66,8 @@ export class InteriorPresenter {
   pool: RugPool
   private lastPlan = 0
   private lastKey = ""
+  private lastBuildingsRef: readonly Building[] | null = null
+  private lastBuildingsIds = ""
 
   constructor(private readonly device: GPUDevice, private readonly bind: (view: GPUTextureView) => void, readonly settings: InteriorLabSettings = { ...DEFAULT_INTERIOR_SETTINGS }) {
     this.syncShared()
@@ -108,9 +110,25 @@ export class InteriorPresenter {
   }
 
   /** Chooses the rugs to bake (nearest rooms first). Call every frame; replanning is throttled. */
-  update(buildings: readonly Building[], houseSeed: number, px: number, py: number, now = performance.now()): void {
-    const key = `${houseSeed}|${buildings.map(b => b.id).join(",")}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}`
-    if (key !== this.lastKey || now - this.lastPlan > 1000) {
+  update(
+    buildings: readonly Building[],
+    houseSeed: number,
+    px: number,
+    py: number,
+    now = performance.now(),
+    deferStep = false,
+  ): void {
+    if (buildings !== this.lastBuildingsRef) {
+      this.lastBuildingsRef = buildings
+      let ids = ""
+      for (let i = 0; i < buildings.length; i++) {
+        if (i > 0) ids += ","
+        ids += buildings[i]!.id
+      }
+      this.lastBuildingsIds = ids
+    }
+    const key = `${houseSeed}|${this.lastBuildingsIds}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}`
+    if (key !== this.lastKey || (!deferStep && now - this.lastPlan > 1000)) {
       this.lastKey = key
       this.lastPlan = now
       const reqs: RugRequest[] = []
@@ -129,7 +147,9 @@ export class InteriorPresenter {
       }
       this.pool.setRequests(reqs)
     }
-    this.pool.step()
+    if (!deferStep) {
+      this.pool.step()
+    }
   }
 
   private handmadeUrl(style: string, room: string, seed: number): string {

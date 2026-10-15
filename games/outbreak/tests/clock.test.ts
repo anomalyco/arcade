@@ -238,4 +238,18 @@ describe("fixed-tick clock policy", () => {
     expect(finalSub[0]!.data[0]).toBeCloseTo(final60[0]!.data[0]!, 3)
     expect(finalSub[0]!.data[1]).toBeCloseTo(final60[0]!.data[1]!, 2)
   })
+
+  test("primeIdleMove aligns fixed-tick phase on idle-to-moving edge for immediate step while rate-limiting rapid taps", () => {
+    const clock = new FrameClock()
+    clock.reset(0, { mx: 0, my: 0 })
+    expect(clock.readyForStep(2)).toBe(false)
+    expect(clock.primeIdleMove(2, { mx: 1, my: 0 })).toBe(true)
+    expect(clock.readyForStep(2)).toBe(true)
+    const steps = clock.frame(2, { mx: 1, my: 0 })
+    expect(steps).toHaveLength(1)
+    expect(steps[0]!.mx).toBe(1)
+    // Subsequent rapid tap within 200 ms is rate-limited
+    clock.frame(2 + TICK_MS + 4, { mx: 0, my: 0 })
+    expect(clock.primeIdleMove(25, { mx: 1, my: 0 })).toBe(false)
+  })
 })
