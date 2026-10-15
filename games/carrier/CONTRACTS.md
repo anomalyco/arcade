@@ -490,9 +490,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
     of fire and cools to 0.3 before it fires again.
   - AIM-9: a 17° lock cone, 2.5 km range, locks in 1.4 s, keep cone ×1.3. Rails rearm one missile every 10 s. Pure PN
-    (N 3.4) at up to 16 g with a 0.22 s autopilot lag and a 42° gimbal. 12 m proximity fuse at closest approach,
-    74 damage at the centre to 42 at the edge. Breaking when it is 600–1,000 m out defeats it in the test geometry; an
-    earlier or later break does not. Firing without a lock is a dumbfire.
+    (N 3.4) at up to 35 g with a 0.12 s autopilot lag and a 42° gimbal: Battlefield-style, a locked missile out-turns
+    any jet, so flares are the escape (a break turn alone does not beat it). 12 m proximity fuse at closest approach,
+    74 damage at the centre to 42 at the edge. Firing without a lock is a dumbfire.
   - Flares: 3 pairs on a closed-form path with linear drag, reload 16 s each. They seduce a missile homing on their jet
     within 0.9 s of release if the missile is within 2 km and the flare is inside its gimbal. They also break and
     block locks for 1.6 s.
