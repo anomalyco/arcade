@@ -72,7 +72,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `fx/{explosion,fire-water,splatter*}` | Multi-stage explosions, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
 | `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | — | — |
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | — | — | Yes | — |
-| `client/{controls,key-cap}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, and key-cap UI | Yes | Yes | Yes | Yes | Yes | — |
+| `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — |
 | `client/{input,camera}` & `orbit-gestures` | Top-down `Input` and `Camera`, plus 3D viewport orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — |
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | — | Yes | — | Yes | — |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — |
