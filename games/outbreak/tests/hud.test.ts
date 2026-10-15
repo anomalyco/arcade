@@ -375,10 +375,11 @@ describe("ground ring", () => {
     const nums = (d: string) => d.split(/[ML]/).filter(Boolean).map((p) => p.split(" ").map(Number))
     const left = nums(groundArc(pts, 1))
     const right = nums(groundArc(pts, -1))
-    // Both start near the front (bottom) and climb; stamina goes left, health right; neither reaches the top (y < 96.5).
+    // Both start near the front (bottom); stamina goes round to the left side, health to the right; neither climbs
+    // past the middle of the ellipse, so the back half (behind the feet) stays open.
     expect(left[0]![1]).toBeGreaterThan(104)
-    expect(left.at(-1)![0]).toBeLessThan(95)
-    expect(right.at(-1)![0]).toBeGreaterThan(105)
-    expect(Math.min(...left.map((p) => p[1]!), ...right.map((p) => p[1]!))).toBeGreaterThan(96.5)
+    expect(left.at(-1)![0]).toBeLessThan(91)
+    expect(right.at(-1)![0]).toBeGreaterThan(109)
+    expect(Math.min(...left.map((p) => p[1]!), ...right.map((p) => p[1]!))).toBeGreaterThan(99)
   })
 })

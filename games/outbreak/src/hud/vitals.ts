@@ -200,8 +200,11 @@ const GROUND_METERS = new Set<MeterId>(["stamina", "health"])
 export const GROUND_SEGMENTS = 48
 /** Half-gap at the front of the ring, between the stamina and health arcs (radians of plan angle). */
 const GROUND_FRONT_GAP = 0.09 * Math.PI
-/** Length of each arc. What is left at the back (about 110°) is where the body stands, so nothing crosses the legs. */
-const GROUND_ARC = 0.6 * Math.PI
+/**
+ * Length of each arc: from the front round to just past the side, so the ring reads as a shape on the ground in front
+ * of the feet and never climbs up beside the legs. The back half stays open.
+ */
+const GROUND_ARC = 0.44 * Math.PI
 
 /** Screen point of the projected ground circle at plan angle `theta`, interpolated between samples. */
 function ringPoint(points: readonly number[], theta: number): [number, number] {

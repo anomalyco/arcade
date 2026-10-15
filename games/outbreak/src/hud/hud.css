@@ -51,7 +51,7 @@
   content: ""; width: 26%; height: 42%; border: 1.5px solid currentColor; border-radius: 1.5px; box-sizing: border-box;
   background: linear-gradient(to top, currentColor calc(var(--p, 1) * 100%), transparent 0)
 }
-.vital[data-meter="stamina"][data-draining="true"] { color: #eef4e0 }
+.vital[data-meter="stamina"][data-state="ok"][data-draining="true"] { color: #eef4e0 }
 .vital[data-state="low"] { color: #f0b44a }
 .vital[data-state="critical"] { color: #ff6a4a; background: #1c0a07cc; --track: #ff6a4a70 }
 .vital[data-state="critical"] .vital-ring { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
@@ -98,7 +98,7 @@
 .ground-ring .fill { stroke: currentColor; stroke-width: calc(var(--ground-w) * 1px); stroke-dasharray: 1 1 }
 .ground-ring g { transition: none }
 .ground-ring g[data-meter="stamina"] { color: #d3dcc2 }
-.ground-ring g[data-meter="stamina"][data-draining="true"] { color: #eef4e0 }
+.ground-ring g[data-meter="stamina"][data-state="ok"][data-draining="true"] { color: #eef4e0 }
 .ground-ring g[data-meter="health"] { color: #e8a090 }
 .ground-ring g[data-state="low"] { color: #f0b44a }
 .ground-ring g[data-meter="health"][data-state="low"] { color: #ef7a5c }
