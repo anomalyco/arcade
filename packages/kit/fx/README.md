@@ -89,11 +89,49 @@ and `perf/fx-kit.md` for the original cost and noise. The refined front's captur
 
 ## The tyre port preserves Getaway's image
 
+`SmokeTrail.follow(..., y, dust)` spawns at the tyre's ground height and marks dust puffs (stored as negative
+strength, drawn in `TYRE_DUST_BASE`). `tyreShader` and `SmokeRenderer` take `base`/`dust` WGSL colour expressions for
+the unlit term; the kit `Renderer` reads them from `shaders.tyreSmoke` (Outbreak uses its sky ambient so smoke stays
+dim at night until a light reaches it). Defaults keep Getaway's constants: its drift, burnout, launch and pops
+captures are byte-identical to `origin/main` (`games/getaway/scripts/prove-driving-fx-parity.ts`).
+
 `tyreShader(commonWGSL)` accepts a host frame/light declaration. `TyreRenderer` uses the host bind group at index 0
 and its own noise bindings at index 1. The Getaway adapter supplies its original `common`; the Lab
 supplies the smaller declaration it needs. The approved main billows use vertex-evaluated lighting and no density
 field. Live solver constants retain shipped defaults. `prepare()` and `upload(trail, visible)` replace the old
 style argument. The matched main/shared drift-frame proof has zero differing pixels.
+
+## Skid marks are persistent decals multiplied onto the lit ground
+
+`SkidMarks` (`fx/skids.ts`) is a ring buffer of decal strips; `SkidRenderer` (`fx/skid-renderer.ts`) draws all of
+them in one instanced draw inside the HDR pass, after opaque geometry. The kit `Renderer` does this when a frame
+passes `skids` (and `skidsVisible`); other hosts call `prepare(marks, viewProj)` then `draw(pass, motion)` and rebind
+their own group 0 afterwards.
+
+```ts
+import { SkidMarks } from "@arcade/kit/fx/skids"
+
+const marks = new SkidMarks(4096, { life: 180, fade: 30 })   // capacity and settings are per instance
+marks.segment(ax, ay, az, bx, by, bz, strength, surface)    // world XYZ, strength 0–1, 0 asphalt, 1 dirt, 2 wet
+marks.update(dt)                                             // presentation clock; fades run on the GPU
+render.skids = marks
+```
+
+- Each segment stores both end heights, so strips follow terrain and kerbs, plus its birth time, life, fade and
+  the tread distance at its start for a continuous tread pattern. `VehicleEmissions.contacts` lays consecutive
+  segments that share endpoints, so a mark is one strip.
+- Surfaces set the multiply colour, width, life and darkness: asphalt black rubber, dirt wider brown ruts that last
+  60% as long, wet faint marks that dry in 8% of the life.
+- The blend is `dst × mix(1, tint, a)` with destination alpha kept: the mark darkens whatever lighting is already
+  there, so under Noir it shows where headlights, the flashlight and lamps fall and is invisible in the dark, and the
+  Look's alpha masks are untouched. A 12 mm lift plus depth bias keeps it off the ground without z-fighting.
+- Only slots written since the last frame are uploaded (`takeDirty`, at most two ranges). Expired slots collapse in
+  the vertex shader; there is no per-frame CPU work besides that copy.
+- Cost: with all 4,096 segments on screen in Outbreak at 1280×800 (M-series Metal), the paired whole-frame GPU
+  delta was 0.05–0.08 ms across runs (`captures/driving-fx/after.json`, `games/outbreak/scripts/prove-driving-fx.ts`).
+
+Getaway still draws its skids as kind-4 sprites through `vehicle/fx.ts` (`Fx.skidSegment`, 1,600 slots, 9 s); both
+implement `SkidSink`, so `VehicleEmissions` feeds either.
 
 ## Surface splatter
 

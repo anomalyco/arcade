@@ -58,6 +58,17 @@ remains game-owned. Both workflows already trigger on `packages/kit/**`, and bot
 FX source. `packages/kit/lab/` owns the sandbox, controls and test scene. Each game's `src/lab.ts` supplies camera
 matrices and material catalogs. FX proof and GPU-cost limitations are in `perf/fx-kit.md`.
 
+Driving FX are shared too. Getaway's skid ribbons, tyre smoke, sparks and exhaust already lived in
+`packages/kit/vehicle` (`fx.ts`, `emissions.ts`) and `packages/kit/fx` (`smoke-trail.ts`, `tyre-renderer.ts`);
+Outbreak used them only through Getaway's drift proxy, which rarely fired on its grippy cars, drew near-black 9 s
+sprite marks on dark asphalt and self-lit smoke. Now `fx/skids.ts` + `fx/skid-renderer.ts` add persistent multiplied
+decals (kit `Renderer` `skids` input), `vehicle/slip.ts` estimates per-wheel slip from body motion,
+`VehicleEmissions.contacts` takes per-wheel contacts with road/dirt/wet surfaces, and `vehicle/driving-fx.ts` is the
+shared Lab group. Getaway keeps its proxy path and sprite skids with byte-identical captures
+(`games/getaway/scripts/prove-driving-fx-parity.ts`); Outbreak uses the new path
+(`games/outbreak/scripts/prove-driving-fx.ts`). Blackout's vehicles still use `car()` and sprite skids and could
+switch to `contacts()` + `SkidMarks` the same way; Carrier has no ground vehicles.
+
 All Lab tuning uses `LabPanel`, including the section/effect/debug selects, parameter sliders and playback,
 copy and carve actions. `LabControl` supports toggles, typed selects, ranges and actions; `addControls(settings,
 controls)` binds another game-owned settings object without copying it. Toggle presets leave selects and ranges

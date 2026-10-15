@@ -9,6 +9,8 @@ import type { LightSettings, LightStyle } from "../render/car-lights"
 import { motionBlurControls, motionBlurDefaults } from "@arcade/kit/gpu/motion-blur"
 import { motionBlur } from "../render/motion"
 import { lightControls } from "@arcade/kit/vehicle/lab"
+import { drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
+import { getawayEffects } from "../lab/settings"
 
 /** Presentation only; these values never enter shared vehicle physics. */
 export const juice = { ...chassisSettings(true), clutter: true, explosions: true, physicsDebug: false }
@@ -95,6 +97,13 @@ export class DebugOverlay extends LabPanel {
     })
     this.addControls(emissionsBag, emissionsControls, { emissions: scene.emissions.visible, coldExhaust: vehicleEffects.coldExhaust })
     this.addControls(juice, juiceControls, { ...juice })
+    // The shared Driving FX group, bound to Getaway's own skid ribbons (its slip comes from the drift proxy).
+    const skids = getawayEffects.skids, drivingBag: Record<string, boolean | number | string> = {}
+    Object.defineProperties(drivingBag, {
+      markLife: { enumerable: true, configurable: true, get: () => skids.life, set: (v) => { skids.life = Number(v) } },
+      markWidth: { enumerable: true, configurable: true, get: () => skids.width, set: (v) => { skids.width = Number(v) } },
+    })
+    this.addControls(drivingBag, drivingFxControls(["markLife", "markWidth"]).map(c => ({ ...c, folded: true })), { markLife: skids.life, markWidth: skids.width })
     if (sound) {
       const audioBag: Record<string, boolean | number | string> = {}
       Object.defineProperty(audioBag, "proceduralAudio", {
