@@ -152,6 +152,7 @@ async function trace(page: Page, name: string, caption: string, trigger: () => P
       }, crop)
       const vw = page.viewportSize()!
       const boxes = [rect, after].filter(Boolean) as { x: number; y: number; w: number; h: number }[]
+      if (!boxes.length) boxes.push({ x: 120, y: 120, w: vw.width - 240, h: vw.height - 160 })
       const x0 = Math.max(0, Math.min(...boxes.map((b) => b.x)) - 120)
       const y0 = Math.max(0, Math.min(...boxes.map((b) => b.y)) - 120)
       const x1 = Math.min(vw.width, Math.max(...boxes.map((b) => b.x + b.w)) + 120)
@@ -197,6 +198,19 @@ function analyse(samples: Sample[]): Issue[] {
 }
 
 const want = (name: string) => !only || only.includes(name)
+
+/** Stands next to the first ordinary door whose prompt shows. */
+async function faceDoor(page: Page) {
+  const spots = (await sim(page, `return view.town.doors.filter((d) => !d.keyed && !d.lockedBy && d.id !== "hardware-room").slice(0, 24).map((o) => ({ x: (o.rect[0] + o.rect[2]) / 2, y: (o.rect[1] + o.rect[3]) / 2 }))`)) as { x: number; y: number }[]
+  for (const c of spots) {
+    for (const [dx, dy] of [[0, 0.75], [0, -0.75], [0.75, 0], [-0.75, 0]] as const) {
+      await stage(page, { x: c.x + dx, y: c.y + dy, aim: Math.atan2(-dy, -dx) })
+      await step(page, 2)
+      if ((await sim(page, `return view.prompt?.kind ?? null`)) === "door") return { x: c.x + dx, y: c.y + dy, aim: Math.atan2(-dy, -dx) }
+    }
+  }
+  throw new Error("no door prompt found")
+}
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: dpr, reducedMotion: reduced ? "reduce" : "no-preference" })
@@ -257,6 +271,36 @@ try {
     await page.waitForTimeout(3500)
     await trace(page, "dim", "Idle: the dock dims", async () => void (await step(page, 1)), ["#dock"], "#dock", 900)
     await trace(page, "brighten", "A change: the dock brightens", async () => (await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "plank", count: 1 })`), await step(page, 1)), ["#dock"], "#dock", 400)
+  }
+
+  const promptSel = ["#prompt", "#prompt .prompt-face", "#prompt .akc"]
+  if (want("prompt-appear") || want("prompt-change") || want("prompt-leave")) {
+    const at = await faceDoor(page)
+    if (want("prompt-appear")) {
+      await sim(page, `h.pose(44, 44, 0)`)
+      await step(page, 30)
+      await page.waitForTimeout(600)
+      await sim(page, `h.pose(${at.x}, ${at.y}, ${at.aim})`)
+      await step(page, 30)
+      await page.waitForTimeout(600)
+      await sim(page, `h.pose(44, 44, 0)`)
+      await step(page, 30)
+      await page.waitForTimeout(600)
+      await trace(page, "prompt-appear", "Walking up to a door: the prompt fades in", async () => (await sim(page, `h.pose(${at.x}, ${at.y}, ${at.aim})`), await step(page, 4)), promptSel, "#prompt", 500)
+    }
+    if (want("prompt-change")) await trace(page, "prompt-change", "Opening the door: Open becomes Close in place", async () => (await step(page, 1, { interact: true }), await step(page, 3)), promptSel, "#prompt", 600)
+    if (want("prompt-leave")) await trace(page, "prompt-leave", "Walking away: the prompt fades out where it was", async () => (await sim(page, `h.pose(44, 44, 0)`), await step(page, 4)), promptSel, "#prompt", 500)
+  }
+
+  if (want("prompt-strip")) {
+    const dresser = await sim(page, `const c = view.containers.find((x) => x.kind === "dresser" && x.buildingId === "ash"); return { id: c.id, x: c.x, y: c.y }`)
+    await stage(page, { x: dresser.x, y: dresser.y + 0.75, aim: -Math.PI / 2 })
+    await sim(page, `const st = ledger.store(${JSON.stringify(dresser.id)}); st.slots.fill(null); st.slots[0] = { item: "ammo", count: 6 }; st.slots[1] = { item: "medkit", count: 1 }; st.slots[2] = { item: "scrap", count: 2 }; st.revealed = false; st.rev = ++ledger.rev`)
+    await step(page, 2)
+    await step(page, 1, { interact: true })
+    await step(page, 70)
+    await page.waitForTimeout(800)
+    await trace(page, "prompt-take", "Taking the first aid kit: the strip resizes around what is left", async () => (await step(page, 1, { pick: { mode: "take", index: 1 } }), await step(page, 2)), [...promptSel, "#prompt .item"], "#prompt", 600)
   }
 
   assert.deepEqual(errors, [])

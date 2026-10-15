@@ -1402,25 +1402,24 @@ export class OutbreakVehicleSubsystem {
           const box = boxOf(v, v.spec)
           const d = distToBox(actor.x, actor.y, box)
           if (d > VEH_REACH) continue
-          const used = v.seats.filter(Boolean).length
-          const total = v.seats.length
           const ready = v.hasBattery && v.hasKeys && v.fuel > 0
           const sup = slot ? this.canSupply(slot.id, v, progression) : { canInstallBattery: false, canUnlockKey: false, canRefuel: false }
+          // Short verbs; the car's state is in the world and on the dashboard once seated.
           let actionLabel = v.seats[0] === "" ? "Drive" : "Ride"
           let statusTag = `${Math.round((v.fuel / v.maxFuel) * 100)}% fuel`
           if (!ready) {
             if (!v.hasBattery) {
-              actionLabel = sup.canInstallBattery ? "Install battery & drive" : "Enter (Needs battery)"
+              actionLabel = sup.canInstallBattery ? "Fit battery" : "No battery"
               statusTag = "No battery"
             } else if (!v.hasKeys) {
-              actionLabel = sup.canUnlockKey ? "Unlock & drive" : "Enter (Needs keys)"
+              actionLabel = sup.canUnlockKey ? "Unlock" : "No keys"
               statusTag = "Locked ignition"
             } else {
-              actionLabel = sup.canRefuel ? "Refuel & drive" : "Enter (Empty tank)"
+              actionLabel = sup.canRefuel ? "Refuel" : "Empty tank"
               statusTag = "0% fuel"
             }
           }
-          const primary: InteractAction = { id: "enter", label: `${actionLabel} ${v.spec.label} (${used}/${total} · ${statusTag})` }
+          const primary: InteractAction = { id: "enter", label: actionLabel }
           const aabb = aabbOf(v, v.spec)
           out.push({
             kind: "vehicle",

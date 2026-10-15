@@ -115,7 +115,24 @@ at DPR 1, 1.5 and 2.
 recording each tracked element's box and effective opacity; it flags a jump (more than 10 px and more than a third
 of the element's travel in one frame) or a pop (opacity changing by more than 0.34 in a frame, or appearing or
 vanishing while visible), and writes the frames as a muted MP4. Tab open, Tab close, a quick double Tab, a pickup,
-dimming and brightening all pass with no jumps or pops.
+dimming and brightening, a prompt appearing, changing (Open to Close), leaving, and a strip losing an item all pass with
+no jumps or pops.
+
+## World prompt
+
+The floating prompt over whatever the survivor faces is one panel whose contents change (`src/hud/prompt.ts`,
+`prompt.css`). Tap and hold on E share one ringed cap: the tap verb follows it and the hold verb comes after a small
+ring (`E Open ◦Lock`); holding fills the ring, dims the tap verb and warms the hold verb. Hold progress is written into
+the cap each frame instead of rebuilding the markup. New content crossfades in (blur 3 px to 0) while the panel
+resizes around it on the default spring, so the panel's edges move but the text inside stays put relative to the
+anchor. Switching to another target glides the panel from where it was (calm spring); walking up fades and scales it
+in from 0.96, and walking away fades, blurs and shrinks it on the snappy spring. The anchor is placed on whole
+device pixels each frame. Fewer words: container strips drop the title, the "belt"/"hand" tags (only "pack" and "full"
+remain) and the "1–3 Take one" hint, since each item already carries its digit; car prompts say Drive, Ride, Fit
+battery, Unlock, Refuel, No battery, No keys or Empty tank instead of "Drive Sedan (0/4 · 85% fuel)".
+
+Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
+softening instead of being reused by index.
 
 ## Diegetic ground ring
 
