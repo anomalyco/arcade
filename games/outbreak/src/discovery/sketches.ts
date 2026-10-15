@@ -76,6 +76,8 @@ class Pen {
     private readonly mesh: Mesh,
     private readonly seed: number,
     private readonly top: number,
+    /** How far strokes wander, as a share of their width: a hand's wobble, or 0 for print. */
+    private readonly jitter = 0.6,
   ) {}
 
   private wobble(): number {
@@ -84,7 +86,7 @@ class Pen {
   }
 
   line(x0: number, y0: number, x1: number, y1: number, width: number, colour: Rgb, dash = 0): void {
-    const j = width * 0.6
+    const j = width * this.jitter
     const ax = x0 + this.wobble() * j
     const ay = y0 + this.wobble() * j
     const bx = x1 + this.wobble() * j
@@ -165,6 +167,108 @@ export function triedCard(pair: readonly [string, string]): Mesh {
   pen.line(-0.04, 0.045, 0.04, -0.03, W * 1.1, RED_PENCIL)
   pen.line(-0.04, -0.03, 0.04, 0.045, W * 1.1, RED_PENCIL)
   return m
+}
+
+/** A flat patch printed on a card, in picture coordinates (y up), at `lift` over the paper. */
+function patch(m: Mesh, x0: number, y0: number, x1: number, y1: number, colour: Rgb, lift = 0.0004): void {
+  m.box(x0, THICK, -y1, x1, THICK + lift, -y0, colour, MAT.lit)
+}
+
+const INK = hex(0x1d1c1e)
+const FLYER_RED = hex(0xb2342a)
+const FLYER_PAPER = hex(0xe9e2cf)
+const CHART_PAPER = hex(0xd3dfd8)
+const CHART_GRID = hex(0xa7bab1)
+const CHART_INK = hex(0x27384a)
+const PHOTO_FRAME = hex(0xe6e3d8)
+const PHOTO_DARK = hex(0x2b2723)
+const PHOTO_LIGHT = hex(0xcfc6ae)
+
+/**
+ * A store flyer found in a hardware store or a garage: printed, not drawn. A red band across the top with what it
+ * makes knocked out in paper, the two materials and an arrow in bold ink, and tear-off tabs along the foot.
+ */
+export function flyerCard(recipe: string, pair: readonly [string, string]): Mesh {
+  const m = new Mesh()
+  const { w, h } = CARD
+  paper(m, w, h, FLYER_PAPER)
+  patch(m, -w / 2, h / 2 - 0.07, w / 2, h / 2, FLYER_RED)
+  const top = THICK + 0.0008
+  const print = new Pen(m, 1, top, 0)
+  print.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, h / 2 - 0.035, 0.026, W * 1.1, FLYER_PAPER)
+  print.draw(pair[0], -0.052, 0.022, 0.032, W * 1.35, INK)
+  print.draw(pair[1], 0.052, 0.022, 0.032, W * 1.35, INK)
+  print.line(-0.012, 0.022, 0.012, 0.022, W * 1.35, INK)
+  print.line(0, 0.01, 0, 0.034, W * 1.35, INK)
+  print.line(0, -0.022, 0, -0.06, W * 1.6, FLYER_RED)
+  print.line(0, -0.064, -0.013, -0.048, W * 1.6, FLYER_RED)
+  print.line(0, -0.064, 0.013, -0.048, W * 1.6, FLYER_RED)
+  // Tear-off tabs: short cuts up from the foot.
+  for (let i = 1; i < 7; i++) patch(m, -w / 2 + (i * w) / 7 - 0.0012, -h / 2, -w / 2 + (i * w) / 7 + 0.0012, -h / 2 + 0.03, hex(0x8b826c))
+  patch(m, -w / 2, -h / 2 + 0.03, w / 2, -h / 2 + 0.0322, hex(0x8b826c))
+  return m
+}
+
+/**
+ * A pharmacy chart: pale green-grey paper ruled in a grid, a red cross in the corner, and the steps as a little
+ * flow diagram, each material boxed and what they make circled.
+ */
+export function chartCard(recipe: string, pair: readonly [string, string]): Mesh {
+  const m = new Mesh()
+  const { w, h } = CARD
+  paper(m, w, h, CHART_PAPER)
+  for (let i = 1; i < 8; i++) patch(m, -w / 2, -h / 2 + (i * h) / 8 - 0.0006, w / 2, -h / 2 + (i * h) / 8 + 0.0006, CHART_GRID, 0.0003)
+  for (let i = 1; i < 6; i++) patch(m, -w / 2 + (i * w) / 6 - 0.0006, -h / 2, -w / 2 + (i * w) / 6 + 0.0006, h / 2, CHART_GRID, 0.0003)
+  // The red cross, top left.
+  const cx = -w / 2 + 0.03
+  const cy = h / 2 - 0.03
+  patch(m, cx - 0.017, cy - 0.006, cx + 0.017, cy + 0.006, FLYER_RED, 0.0006)
+  patch(m, cx - 0.006, cy - 0.017, cx + 0.006, cy + 0.017, FLYER_RED, 0.0006)
+  const top = THICK + 0.0009
+  const print = new Pen(m, 2, top, 0)
+  const box = (x: number, y: number, s: number) => {
+    for (const [a, b, c, d] of [[x - s, y - s, x + s, y - s], [x + s, y - s, x + s, y + s], [x + s, y + s, x - s, y + s], [x - s, y + s, x - s, y - s]] as const) print.line(a, b, c, d, W * 0.8, CHART_INK)
+  }
+  box(-0.05, 0.045, 0.038)
+  box(0.05, 0.045, 0.038)
+  print.draw(pair[0], -0.05, 0.045, 0.026, W, CHART_INK)
+  print.draw(pair[1], 0.05, 0.045, 0.026, W, CHART_INK)
+  print.line(-0.05, 0.005, 0, -0.03, W, CHART_INK)
+  print.line(0.05, 0.005, 0, -0.03, W, CHART_INK)
+  print.line(0, -0.03, 0, -0.045, W, CHART_INK)
+  for (let i = 0; i < 16; i++) {
+    const a0 = (i / 16) * Math.PI * 2
+    const a1 = ((i + 1) / 16) * Math.PI * 2
+    print.line(Math.cos(a0) * 0.04, -0.085 + Math.sin(a0) * 0.04, Math.cos(a1) * 0.04, -0.085 + Math.sin(a1) * 0.04, W * 0.8, CHART_INK)
+  }
+  print.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, -0.085, 0.026, W * 1.1, CHART_INK)
+  return m
+}
+
+/**
+ * A snapshot found in a police station or a garage: a white-bordered print of the thing itself, light on dark,
+ * and the two materials it took pencilled in the margin underneath by whoever kept it.
+ */
+export function photoCard(recipe: string, pair: readonly [string, string]): Mesh {
+  const m = new Mesh()
+  const { w, h } = CARD
+  paper(m, w, h, PHOTO_FRAME)
+  const border = 0.014
+  patch(m, -w / 2 + border, -h / 2 + 0.06, w / 2 - border, h / 2 - border, PHOTO_DARK)
+  const top = THICK + 0.0008
+  const print = new Pen(m, 3, top, 0.2)
+  print.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, 0.03, 0.06, W * 1.5, PHOTO_LIGHT)
+  const pen = new Pen(m, recipe.length * 2.3 + 5, top)
+  pen.draw(pair[0], -0.04, -h / 2 + 0.03, 0.017, W * 0.8, GRAPHITE)
+  pen.line(-0.012, -h / 2 + 0.03, 0.006, -h / 2 + 0.03, W * 0.8, GRAPHITE)
+  pen.line(-0.003, -h / 2 + 0.021, -0.003, -h / 2 + 0.039, W * 0.8, GRAPHITE)
+  pen.draw(pair[1], 0.034, -h / 2 + 0.03, 0.017, W * 0.8, GRAPHITE)
+  return m
+}
+
+/** The card for a found page of `style`. */
+export function foundCard(style: "flyer" | "chart" | "photo", recipe: string, pair: readonly [string, string]): Mesh {
+  return style === "flyer" ? flyerCard(recipe, pair) : style === "chart" ? chartCard(recipe, pair) : photoCard(recipe, pair)
 }
 
 /** A drawing pin: white in the mesh, tinted by the instance (the maker's colour, or brass). */

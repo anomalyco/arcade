@@ -13,7 +13,7 @@ Code: `shared/discovery/` (simulation, deterministic) and `src/discovery/` (pres
 | --- | --- | --- |
 | Battery ring, "Battery low", "Battery dead" | Below the flicker threshold the beam narrows (25%), shortens (30%) and warms to amber on top of the sim's dimming and sputter | `src/discovery/flashlight.ts`, applied in `main.ts` for the local beam, vision cone and lighting pack |
 | "New material: Scrap. Bench recipes: …" on first pickup | Nothing. The material is still noted (`seen:*` in `team/known`) | `shared/progression.ts` |
-| Belt pills always on screen | Belt counts show only while the pack (Tab) or field craft (hold Q) is open | `src/hud/hud.css`, `inventory-hud.ts` |
+| Belt pills always on screen | Belt counts show only while the pack (Tab) or field craft (hold Q) is open. Since the HUD polish (#141) the dock owns this: always there, dimmed when idle (`src/hud/dock.ts`) | `src/hud/dock.ts` |
 | Barricades flat at any health | Boards bow inward and split at half health and hang from one nail near the end; damage comes off the last board nailed | `shared/discovery/barricade.ts`, `src/discovery/barricades.ts` |
 | Container strip `[1] 9mm ×6 …` | A searched container stays open (dresser drawer pulled out, cabinet and fridge doors swung wide, shelf top) with what is left inside as small props; the prompt is a bare key cap | `src/discovery/props.ts`, `src/discovery/items.ts` |
 | Drop and noisemaker labels | Drops lie on the floor as props; a thrown noisemaker rattles where it landed | `src/discovery/props.ts` |
@@ -36,7 +36,7 @@ client the moment they are hit. The AI's portal state already snapshots and rest
 - `tests/discovery.test.ts`: board looks by wear, the wire byte, co-op wear after a bash and on a full snapshot,
   wear through `toSnapshot`/`fromSnapshot`, the low beam, container layouts.
 - `scripts/discovery-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-discovery`): stills of
-  the beam at full and 12%, boards at three wears, opened containers, drops, and the belt hidden until Tab.
+  the beam at full and 12%, boards at three wears, opened containers, drops, and the dock dim until Tab.
 
 ## Slice 2: workbench tinkering and the corkboard
 
@@ -92,3 +92,64 @@ tinker time, light and clatter tunables.
 - `tests/coop.test.ts`: a sketch made at the bench reaches both clients' mirrors with its maker's seat.
 - `scripts/discovery-proof.ts bench`: stills of the laid-out pair, the assembled board and its sketch, an idea and a
   crossed-out try, a full corkboard, the dark bench refused then lit, and the wordless field-craft strip.
+
+## Slice 3: found knowledge
+
+Recipes can be learned away from the bench, and hands get better with use. None of it is announced; what you learned
+shows on the corkboard and in how fast the next board goes up.
+
+**Pages** (`shared/discovery/found.ts`): every building of a type that has one holds a single wordless page, lying on
+its first counter, shelf, table or dresser (houses hold none). Each is a ledger store `page:<building>` with
+`{ page: 1 }`, created when the building first enters the world, so a read page stays read when its chunk streams out
+and back.
+
+| Building (`archetype ?? kind`) | Page | Recipe |
+| --- | --- | --- |
+| hardware, warehouse | flyer: red band, the result knocked out in paper, bold ink pair and arrow, tear-off tabs | reinforced boards |
+| pharmacy | chart: ruled grid, red cross, each material boxed, the result circled | bandage |
+| gas station | flyer | flashlight battery |
+| police | photo: the thing itself light on dark, the pair pencilled in the margin | noisemaker |
+| garage | photo | spiked board |
+
+Walking up to a page the camera leans in as it does at a bench. E reads it (`read`, appended to the wire's action
+list): the page is drained, the squad learns the recipe, and unless someone already knew it the page itself is pinned
+to the corkboard in the reader's colour (`pin:<recipe>` with `found` = 1 flyer, 2 chart, 3 photo; `readPin().source`).
+For two seconds (`discoveryGlanceTime`) the page is held up beside the survivor, drawings only (`src/discovery/glance.ts`);
+it watches the page stores, so co-op readers see it the same way. A page candidate carries `priority: 3` so it wins
+over the shelf it lies on.
+
+**Practice** (`OutbreakProgression.mastery`, per survivor and skill, snapshotted): each board nailed adds 1 to
+`barricade`; each board a teammate sees nailed adds `watchShare` (0.5) to theirs, if they are within `watchRange`
+(8 m), facing within 1.3 rad and in clear sight (`sightRects`). A board's time and noise scale by
+`practiceFactor(practice, floor)`, linear from 1 to `practiceTimeFloor` (0.6) and `practiceNoiseFloor` (0.63) over
+`PRACTICE_FULL` (10) boards. The ledger channel's duration and noise are scaled right after `start`. There is no bar.
+
+**Learning by looking**: streamed warehouses were held out from inside before the game began. Their southernmost
+window (the face the camera sees; `heldOutWindow`) starts with two planks of `reinforcedPlankHp` (360 hp in all), once
+per building (`OutbreakProgression.heldOut`, snapshotted), seeded by the room's step when the building streams in (and
+when a sim is built with it already in the world); its chunk then carries a delta. Boards make a window bashable, so a
+held-out window is also a way in for the dead; the classic town's hardware store is left alone so its horde routes stay
+as tuned, and teaches reinforcing with its flyer. Reinforced boards show two steel straps crossed on each face for as
+long as they hold over 110% of plain boards (`looksReinforced`); the plank wire byte now carries strength up to twice
+nominal so clients can tell. Standing still (under 0.4 m/s), within 2.2 m, squarely facing (0.6 rad) a reinforced
+barricade, a player's own included, for `studyTime` (1.5 s) teaches it and pins the student's sketch
+(`OutbreakProgression.study`, snapshotted).
+
+Can tripwire disarming and repair practice arrive with their verbs in slice 4.
+
+Lab: Discovery › Stage: page, page read, found pages, held out; Discovery › page size, page diagram, its time;
+Progression › practised board-up time and noise, learn by watching within, practice from watching, study time. The
+station has matching variants.
+
+### Proof
+
+- `tests/found.test.ts`: the same pages in the same places in two rooms and none in houses; reading learns, drains and
+  pins the page as found with the reader's seat and no notice; a page already known keeps its sketch; a read page
+  survives a snapshot; the practice curve; three boards each faster and quieter; practice survives a snapshot and the
+  fork's next board matches; a teammate in the room learns by watching, one behind a wall or looking away does not;
+  a warehouse's held-out window, boarded once (the classic town's hardware store is left alone); standing and looking
+  teaches, pacing past or looking away does not; a study cut by a snapshot finishes the same way in the fork.
+- `tests/coop.test.ts`: a page Bob reads is gone on both clients and pinned as his chart.
+- `tests/discovery.test.ts`: the plank byte round-trips strength, and plain boards never look reinforced.
+- `scripts/discovery-proof.ts found`: stills of the flyer on its shelf, the flyer held up after reading, the chart,
+  a corkboard of a sketch, flyer, chart and photo, and a strapped window (staged), which then teaches by looking.

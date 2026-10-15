@@ -473,7 +473,7 @@ export function packOutbreakLightingUniforms(
   out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
   out[N + 26] = state.chunkFadeAlpha ?? 0
-  out[N + 27] = 0
+  out[N + 27] = windowBuildingBits(state.windowBuildings ?? [])
   // Volumetric beam: inverse view-projection, then density, dust, glare, samples; air boost, indoors, ground, reserved
   const B = OUTBREAK_BEAM_UNIFORM_OFFSET
   if (state.invViewProj) for (let i = 0; i < 16; i++) out[B + i] = state.invViewProj[i]!
@@ -1059,6 +1059,21 @@ export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
   return buf
 }
 
+/**
+ * Per streamed-window building slot (0..7): bit i when it has the L-plan bungalow footprint (roof cut and interior
+ * by wing), bit 8 + i when it is an authored origin house (tiled kitchen). Exact in a float up to 2^24.
+ */
+export function windowBuildingBits(buildings: readonly { id: string; kind: string }[]): number {
+  let bits = 0
+  for (let i = 0; i < Math.min(8, buildings.length); i++) {
+    const b = buildings[i]!
+    if (!b.id) continue
+    if (b.kind === "house") bits |= 1 << i
+    if (b.id === "ash" || b.id === "elm") bits |= 1 << (8 + i)
+  }
+  return bits
+}
+
 /** Custom uniform block at binding 13, shared by the scene shader and the visibility-field compute pass. */
 export const outbreakLightingStructWgsl = /* wgsl */ `
 ${unseenUniformsStruct.wgsl}
@@ -1084,7 +1099,7 @@ struct OutbreakLightingUniforms {
   u14: vec4f, // bounceX, bounceY, bouncePower, airScatter
   u15: vec4f, // fogPenumbra, fogPenumbraGrowth, fieldRevealBlend, fieldFadeBlend
   u16: vec4f, // fogMemoryWarmth, practicalColor, flashCosSpillCut, flashAirLimit
-  u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
+  u17: vec4f, // bounceHeight, 1 / outer half-angle, chunkFadeAlpha, windowBuildingBits
   invViewProj: mat4x4f,
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
   u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}

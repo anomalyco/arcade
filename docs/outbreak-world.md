@@ -101,6 +101,21 @@ Each macro-block and lot is assigned a **District** and **Building / POI Archety
     - Spawns two background module Web Workers (`src/world-worker.ts`) that compile directional lookahead chunks off-thread and return transferable `ArrayBuffer`s (`postMessage(..., transfer)`), while `Renderer.setLevel` partitions its static level vertex buffer into 9 toroidal `768 KB` slots (`streamSlot = (cy % 3) * 3 + (cx % 3)`) with stable building indices (`0..7`) so the 6 surviving chunks in each `3 × 3` window shift stay resident on the GPU with zero CPU copy or `writeBuffer` upload.
     - When the `3 × 3` window shifts by one chunk, all 9 chunks are pre-warmed in the 24-slot LRU cache (`0` synchronous transition-frame bakes), and stitching the 9 cached tiles into the $384^2$ / $768^2$ / $192^2$ textures uses zero-allocation `Float64Array` row copies (`< 0.05 ms`).
     - On the 1,152 m scripted walk (`scripts/prove-world.ts`, Metal `1280 × 800`), frame times drop from **`p50 11.5 ms / p95 16.3 ms / transition p95 22.2 ms / worst 25.3 ms`** to **`p50 8.0 ms / p95 11.9 ms / transition p95 13.7 ms / worst 14.0 ms`**, and across three 2.3 km back-and-forth round-trip walks (`6.9 km`, `208` chunk transitions), JS heap stays flat (`101.83 → 104.03 MB` on the 1.15 km walk; `103.67 → 104.26 MB` across Walk 1 → Walk 3, `+0.59 MB` retained delta vs `+22.8 MB` before).
+- **Origin chunks and dressed lots (`src/world-streamer.ts`, `src/architecture.ts`, `src/yard.ts`):**
+  - The nine origin chunks are not re-emitted: `compileOriginChunk` cuts them from the authored origin build
+    (`buildLevel`, tagged per source mesh and split role) together with its floor, moon and bounce maps, so the
+    streamed window and the origin build draw the same triangles there (`scripts/origin-switch-proof.ts`).
+  - Every other lot is dressed by the origin's rules: L-plan bungalows get the porch, shutters, shed and foundation
+    shrubs (`houseFrontage`, `housePlanting`), other houses the shrubs and framing trees, and every lot the lawn
+    patches, walkway and driveway tufts and gravel; trees get root collars and east–west streets get verge rosettes.
+    Seeded per chunk; plants are copied from templates (`yardPlantTemplate`). Driveway cars stay the real parked
+    vehicles from `generateChunkVehicleSpawns`.
+  - Cost on 216 non-origin chunks around the origin (`scripts/bench-chunk-compile.ts`, M2 Max): compile median
+    `0.63 → 0.81 ms`, p95 `2.4 → 3.0 ms`, a dressed bungalow chunk `~3 → ~5 ms`; opaque bytes median
+    `380 → 489 KB`, p95 `684 → 1,595 KB`. Stream slots grow in 768 KB steps to the densest chunk, and opaque
+    buffers above 768 KB are pooled per size class. On `scripts/prove-world.ts` (studio, two runs each) the 1.15 km
+    walk's transition p95 goes `6.6 / 5.1 → 7.7 / 6.0 ms` and worst frame `8.7 / 9.6 → 8.3 / 12.9 ms`, inside its
+    17 ms and 20 ms budgets, and retained heap over three round trips stays flat (`−0.9 / −0.3 MB`).
 - **Per-Chunk Fog & Scenery Memory:**
   - `WorldFogMemory` stores a persistent `64 × 64` (`0.5 m` cell) exploration and room-discovery mask per visited chunk key `"cx,cy"`.
   - Moving 1 km away and returning restores every previously explored street and room into the active `192 × 192` `exploredTex`.

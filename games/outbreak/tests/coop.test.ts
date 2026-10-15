@@ -220,6 +220,28 @@ describe("CoopRoomCore", () => {
     }
   })
 
+  test("a page one survivor reads is gone for everyone, and goes up on every client's board as theirs", () => {
+    const core = new CoopRoomCore("test", options, Date.now, "test")
+    const a = client(core, "Ann")
+    const b = client(core, "Bob")
+    run(core, [a, b], 3)
+    const progression = core.sim.progression
+    const page = progression.pages.find((p) => p.buildingId === "pharmacy")!
+    for (const c of [a, b]) expect(c.ledger.count(page.id, "page")).toBe(1)
+    Object.assign(core.sim.slot(b.id)!.survivor, { x: page.x, y: page.y + 1, aim: -Math.PI / 2 })
+    core.sim.rebuildSolids()
+    run(core, [a, b], 2, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    run(core, [b], 1, () => ({ ...idle(-Math.PI / 2), interact: true }))
+    run(core, [a, b], 3, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    expect(progression.learned("bandage")).toBe(true)
+    const seat = core.sim.slot(b.id)!.index
+    for (const c of [a, b]) {
+      expect(c.ledger.count(page.id, "page")).toBe(0)
+      expect(c.ledger.count("team/known", "learned:bandage")).toBe(1)
+      expect(readPin(c.ledger.store(pinStoreId("bandage")), "bandage")).toMatchObject({ actor: b.id, seat, source: "chart" })
+    }
+  })
+
   test("a dropped bundle reaches a teammate, and a seat that expires leaves its kit on the floor", () => {
     let now = 0
     const core = new CoopRoomCore("test", options, () => now, "test")

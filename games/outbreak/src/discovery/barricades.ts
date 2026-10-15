@@ -2,6 +2,7 @@ import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import type { OutbreakAISubsystem } from "../../shared/ai"
 import { barricadeWear, plankHealths, plankLook } from "../../shared/discovery/barricade"
+import { looksReinforced } from "../../shared/discovery/found"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
 import { hex } from "../level"
@@ -31,9 +32,13 @@ export class BarricadeBoards {
   private readonly halfModel: number
   private readonly fullData = new Float32Array(MAX_PLANKS * INST_FLOATS)
   private readonly halfData = new Float32Array(MAX_PLANKS * 2 * INST_FLOATS)
+  private readonly strapModel: number
+  private readonly strapData = new Float32Array(MAX_PLANKS * INST_FLOATS)
   private readonly batches: Batch[] = []
   /** The last frame's board looks per portal, for proofs. */
   readonly looks = new Map<string, string[]>()
+  /** Portals whose boards showed their reinforcing straps last frame, for proofs. */
+  readonly reinforced = new Set<string>()
 
   constructor(renderer: Pick<Renderer, "addModel">) {
     const plank = new Mesh()
@@ -49,12 +54,23 @@ export class BarricadeBoards {
     half.box(HALF - 0.09, 0.02, -0.02, HALF - 0.03, 0.065, 0.02, hex(0xa98a60), MAT.timber)
     half.box(0.1, -0.02, -0.032, 0.14, 0.02, 0.032, hex(0x353738), MAT.actor)
     this.halfModel = renderer.addModel(half)
+
+    // Reinforcement: a flat strip of scrap steel bolted across the boards, rust at the bolt holes.
+    const strap = new Mesh()
+    strap.box(-0.62, -0.03, -0.006, 0.62, 0.03, 0.006, hex(0x5d6264), MAT.shiny)
+    for (const x of [-0.55, -0.18, 0.18, 0.55]) {
+      strap.box(x - 0.022, -0.022, -0.012, x + 0.022, 0.022, 0.012, hex(0x2a2b2c), MAT.actor)
+      strap.box(x - 0.04, -0.03, -0.0075, x + 0.04, 0.03, 0.0075, hex(0x7a4a2c), MAT.timber)
+    }
+    this.strapModel = renderer.addModel(strap)
   }
 
   collect(town: Town, ai: OutbreakAISubsystem, support: (x: number, z: number) => number): readonly Batch[] {
     let full = 0
     let halves = 0
+    let straps = 0
     this.looks.clear()
+    this.reinforced.clear()
     const put = (data: Float32Array, i: number, x: number, y: number, z: number, yaw: number, pitch: number) => {
       data.set([x, y, z, yaw, 1, 1, 1, 1, pitch, 0, 1, 0], i * INST_FLOATS)
     }
@@ -107,6 +123,18 @@ export class BarricadeBoards {
           )
         }
       })
+      // Reinforced boards carry two steel straps crossed over them on each face, for as long as they hold more than
+      // plain boards could. Whoever looks closely enough can see how it was done.
+      if (looksReinforced(n, st.barricadeHp)) {
+        this.reinforced.add(id)
+        const y = ground + baseH + 0.01
+        for (const face of [-1, 1]) {
+          for (const tilt of [-0.42, 0.42]) {
+            if (straps >= MAX_PLANKS) break
+            put(this.strapData, straps++, cx + nx * face * 0.045, y, cz + nz * face * 0.045, yaw, tilt)
+          }
+        }
+      }
       this.looks.set(id, looks)
     }
     for (const d of town.doors) portal(d.id, d.rect, 1.25, inwardSign(town, d.rect))
@@ -114,6 +142,7 @@ export class BarricadeBoards {
     this.batches.length = 0
     if (full) this.batches.push({ model: this.fullModel, data: this.fullData, count: full })
     if (halves) this.batches.push({ model: this.halfModel, data: this.halfData, count: halves })
+    if (straps) this.batches.push({ model: this.strapModel, data: this.strapData, count: straps })
     return this.batches
   }
 }

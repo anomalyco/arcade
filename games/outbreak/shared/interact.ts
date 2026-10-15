@@ -23,6 +23,7 @@ export type InteractActionId =
   | "install"
   | "place"
   | "tinker"
+  | "read"
   | "store"
   | "unlock"
   | "pry"
@@ -120,6 +121,8 @@ export type RawInteractCandidate = {
   actions: InteractAction[]
   /** While E is held, wait for the release before taking the tap action, so a hold reaches `secondary` cleanly. */
   deferPrimary?: boolean
+  /** Added to the target's score: something small lying on furniture (a page) wins over the furniture itself. */
+  priority?: number
 }
 
 export type InteractTarget = RawInteractCandidate & {
@@ -507,7 +510,7 @@ export function selectInteractTarget(
         ...raw,
         dist,
         facing,
-        score: score + peekBoost,
+        score: score + peekBoost + (raw.priority ?? 0),
         activeAction: raw.primary,
       })
     }
