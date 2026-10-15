@@ -80,6 +80,8 @@ bun games/blackout/scripts/animation/gait-metrics.ts --tag before [--out dir] [-
 bun games/blackout/scripts/animation/pose-diff.ts --tag before [--out dir] [--baseline <checkout>] [--no-render]
 bun games/blackout/scripts/animation/render-sheets.ts --tag before [--out dir]
 bun games/blackout/scripts/animation/render-video.ts [--out dir]
+bun games/blackout/scripts/animation/strafe.ts --tag before [--out dir] [--no-render]
+bun games/blackout/scripts/animation/render-strafe-video.ts --tag before|after [--outbreak-root dir] | --stitch
 ```
 
 - `gait-metrics.ts`: the step-3 metrics for nine actor/speed cases plus mocap reference curves, saved
@@ -94,6 +96,13 @@ bun games/blackout/scripts/animation/render-video.ts [--out dir]
   `stitch-sheets.py` builds `*-sheet-<tag>-*.png` and before/ideal/after comparisons. Takes about 2 min.
 - `render-video.ts`: a 4 s side-view clip, 2 s walking then 2 s running, encoded with ffmpeg. Use it
   only to show Kit, not to judge timing (see Pitfalls).
+- `strafe.ts`: travel-vs-aim sweep (0° to 180°, slow/walk/jog/run) for survivor, soldier and Outbreak's
+  aimed survivor, aim sweeps and circle strafes, against the mocap walk-left/right/back clips and the authored
+  side-step and crossover references in `strafe-reference.ts`; saved as `strafe-<tag>.json`.
+  `strafe-render.py` (Pillow) draws top and front `line-rig-*` sheets (before | reference | after),
+  `angles-*` and `sweep-*` plots.
+- `render-strafe-video.ts`: muted top-down Outbreak clip circle-strafing a target while aiming at it;
+  capture each checkout's frames, then `--stitch` before | after.
 - `common.ts`: argument parsing, paths, and the mocap loader. The walk and run BVH clips download
   into `fixtures/mocap/` on first use and are hash-checked; pass `--bvh-dir` to use local copies.
 - `@arcade/kit/pose-diff` (`packages/kit/pose-diff.ts`): `extractBodyJoints`, `extractBonePoseJoints`,
