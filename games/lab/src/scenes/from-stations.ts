@@ -11,6 +11,7 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
   { id: "outbreak", title: "Outbreak", stations: ["outbreak", "outbreak-flashlight", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-unseen", "outbreak-discovery", "outbreak-hordes", "survivor-bots"] },
   { id: "audio", title: "Audio", stations: ["audio"] },
   { id: "carrier", title: "Carrier", stations: ["carrier"] },
+  { id: "brawl", title: "Brawl", stations: ["brawl"] },
 ]
 const FALLBACK = { id: "stations", title: "Stations" }
 

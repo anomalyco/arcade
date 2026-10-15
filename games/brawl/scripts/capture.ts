@@ -4,6 +4,7 @@
  *
  *   bun scripts/capture.ts --query "watch&seed=3" --shots 2,6,10 --out captures/brawl
  *   bun scripts/capture.ts --query "watch&seed=3" --video 24 --out captures/brawl
+ *   bun scripts/capture.ts --page "playground.html" --query "nolab" --hash "gallery/bea" --shots 2,5 --out captures/lab
  */
 import { mkdirSync } from "node:fs"
 import { resolve, sep } from "node:path"
@@ -12,7 +13,9 @@ import { chromium } from "playwright-core"
 
 const { values: o } = parseArgs({
   options: {
+    page: { type: "string", default: "" },
     query: { type: "string", default: "watch&seed=3" },
+    hash: { type: "string", default: "" },
     shots: { type: "string", default: "3" },
     out: { type: "string", default: "captures" },
     video: { type: "string" },
@@ -46,7 +49,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => {
   if (m.type() === "error" || m.type() === "warning") errors.push(m.text())
 })
-await page.goto(`http://127.0.0.1:${server.port}${prefix}?${o.query}`, { waitUntil: "load" })
+await page.goto(`http://127.0.0.1:${server.port}${prefix}${o.page}?${o.query}${o.hash ? `#${o.hash}` : ""}`, { waitUntil: "load" })
 try {
   await page.waitForFunction(() => (globalThis as { brawl?: unknown }).brawl, null, { timeout: 15_000 })
 } catch (e) {
