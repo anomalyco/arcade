@@ -24,8 +24,9 @@ import {
 } from "@arcade/kit/net/interest"
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import type { LedgerDelta } from "@arcade/kit/sim/ledger"
-import type { AIAgent, AIState } from "./ai"
+import { zombieTraitsFromSeed, type AIAgent, type AIState } from "./ai"
 import {
+  DETACHABLE_BONES,
   MELEE_WEAPON_IDS,
   MELEE_WEAPONS,
   type CombatMeleeEvent,
@@ -355,16 +356,10 @@ const STATES: readonly AIState[] = [
   "stagger",
   "dead",
   "knockdown",
+  "crawler",
 ]
-const BONES: readonly CombatShotEvent["detachBone"][] = [null, "head", "left.upperArm", "right.upperArm", "right.foreArm"]
-const MELEE_BONES: readonly CombatMeleeHit["detachBone"][] = [
-  null,
-  "head",
-  "left.upperArm",
-  "right.upperArm",
-  "left.foreArm",
-  "right.foreArm",
-]
+const BONES: readonly CombatShotEvent["detachBone"][] = [null, ...DETACHABLE_BONES]
+const MELEE_BONES: readonly CombatMeleeHit["detachBone"][] = [null, ...DETACHABLE_BONES]
 const MELEE_PHASES: readonly MeleeSwingPhase[] = ["idle", "windup", "active", "recovery"]
 
 export type RemoteSurvivor = {
@@ -399,6 +394,7 @@ export type ZombieState = {
   stateTime: number
   timer: number
   clamber: number
+  limbMask?: number
 }
 
 export type VehicleState = {
@@ -494,7 +490,7 @@ const SEC_VEHICLES = 64
 const SEC_MELEE = 128
 const V2_MAGIC_BIT = 0x80000000
 
-const timerCapFor = (state: AIState) => (state === "knockdown" ? 1.85 : 0.75)
+const timerCapFor = (state: AIState) => (state === "knockdown" ? 2.8 : 0.85)
 
 function sameVehicleState(a: VehicleState, b: VehicleState): boolean {
   return (
@@ -619,6 +615,14 @@ function defaultZombieSeed(id: number, townSeed: number): number {
   return (townSeed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0
 }
 
+function packLimbMask(a: Pick<AIAgent, "detachedLimbs" | "limping">): number {
+  let mask = a.limping ? 128 : 0
+  for (let i = 0; i < DETACHABLE_BONES.length; i++) {
+    if (a.detachedLimbs.includes(DETACHABLE_BONES[i]!)) mask |= 1 << i
+  }
+  return mask
+}
+
 function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
   const x = cm(a.x) / 100
   const y = cm(a.y) / 100
@@ -634,6 +638,7 @@ function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
   const clamber = a.clamberWindowId
     ? Math.max(1, Math.round(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * 255)) / 255
     : 0
+  const limbMask = packLimbMask(a)
   return {
     id: a.id,
     seed: (a.seed ?? townSeed) >>> 0,
@@ -646,6 +651,7 @@ function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
     stateTime,
     timer,
     clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
   }
 }
 
@@ -659,7 +665,9 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
   const stByte = Math.min(255, Math.round(z.stateTime * 20))
   const tCap = timerCapFor(z.state)
   const tmByte = Math.round(clamp(z.timer / tCap, 0, 1) * 255)
-  const hasOpt = hpByte !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2
+  const limbByte = (z.limbMask ?? 0) & 0xff
+  const hasOpt =
+    hpByte !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2 || limbByte > 0
   w.u16(z.id)
   w.u8((stateIdx & 7) | (seedMode << 3) | (hasOpt ? 32 : 0) | (stateIdx & 8 ? 64 : 0))
   w.i32(cm(z.x)).i32(cm(z.y)).u8(packAngle8(z.aim))
@@ -670,7 +678,8 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
       (clByte > 0 ? 4 : 0) |
       (stByte > 0 ? 8 : 0) |
       (tmByte > 0 ? 16 : 0) |
-      (seedMode === 2 ? 32 : 0)
+      (seedMode === 2 ? 32 : 0) |
+      (limbByte > 0 ? 64 : 0)
     w.u8(opt)
     if (opt & 1) w.u8(hpByte)
     if (opt & 2) w.u8(hfByte)
@@ -678,6 +687,7 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
     if (opt & 8) w.u8(stByte)
     if (opt & 16) w.u8(tmByte)
     if (opt & 32) w.u32(z.seed)
+    if (opt & 64) w.u8(limbByte)
   }
 }
 
@@ -696,6 +706,7 @@ function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
   let clamber = 0
   let stateTime = 0
   let timer = 0
+  let limbMask = 0
   const tCap = timerCapFor(state)
   let seed = seedMode === 0 ? defaultZombieSeed(id, townSeed) : (townSeed >>> 0)
   if (hasOpt) {
@@ -706,8 +717,22 @@ function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
     if (opt & 8) stateTime = r.u8() / 20
     if (opt & 16) timer = (r.u8() / 255) * tCap
     if (opt & 32) seed = r.u32()
+    if (opt & 64) limbMask = r.u8()
   }
-  return { id, seed, x, y, aim, state, hp, hitFlash, stateTime, timer, clamber }
+  return {
+    id,
+    seed,
+    x,
+    y,
+    aim,
+    state,
+    hp,
+    hitFlash,
+    stateTime,
+    timer,
+    clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
+  }
 }
 
 /**
@@ -1035,7 +1060,8 @@ export function encodeShared(
         cur.hitFlash !== prev.hitFlash ||
         cur.clamber !== prev.clamber ||
         cur.stateTime !== prev.stateTime ||
-        cur.timer !== prev.timer
+        cur.timer !== prev.timer ||
+        (cur.limbMask ?? 0) !== (prev.limbMask ?? 0)
       )
     })
     writeBitset(w, changedBits)
@@ -1060,7 +1086,8 @@ export function encodeShared(
         cur.hitFlash !== prev.hitFlash ||
         cur.clamber !== prev.clamber ||
         cur.stateTime !== prev.stateTime ||
-        cur.timer !== prev.timer
+        cur.timer !== prev.timer ||
+        (cur.limbMask ?? 0) !== (prev.limbMask ?? 0)
       const hdr =
         posMode |
         (aimChanged ? 4 : 0) |
@@ -1079,12 +1106,14 @@ export function encodeShared(
           (cur.hitFlash !== prev.hitFlash ? 1 : 0) |
           (cur.clamber !== prev.clamber ? 2 : 0) |
           (cur.stateTime !== prev.stateTime ? 4 : 0) |
-          (cur.timer !== prev.timer ? 8 : 0)
+          (cur.timer !== prev.timer ? 8 : 0) |
+          ((cur.limbMask ?? 0) !== (prev.limbMask ?? 0) ? 16 : 0)
         w.u8(fxFlags)
         if (fxFlags & 1) w.u8(Math.round(cur.hitFlash * 255))
         if (fxFlags & 2) w.u8(Math.round(cur.clamber * 255))
         if (fxFlags & 4) w.u8(Math.min(255, Math.round(cur.stateTime * 20)))
         if (fxFlags & 8) w.u8(Math.round((cur.timer / timerCapFor(cur.state)) * 255))
+        if (fxFlags & 16) w.u8((cur.limbMask ?? 0) & 0xff)
       }
     }
 
@@ -1150,7 +1179,8 @@ export function encodeShared(
         (m.weaponBroke ? 8 : 0) |
         (m.durabilityLow ? 16 : 0) |
         (m.doorBroke ? 32 : 0) |
-        (m.hitDoorId ? 64 : 0)
+        (m.hitDoorId ? 64 : 0) |
+        (m.finisher ? 128 : 0)
       w.uvar(m.id)
       w.u16(ageMs)
       w.u8(((m.attackerIndex & 0x0f) << 4) | (wpnIdx & 0x0f))
@@ -1170,7 +1200,9 @@ export function encodeShared(
           (h.killed ? 1 : 0) |
           (h.knockdown ? 2 : 0) |
           (h.headshot ? 4 : 0) |
-          (Math.max(0, MELEE_BONES.indexOf(h.detachBone)) << 3)
+          (Math.max(0, MELEE_BONES.indexOf(h.detachBone)) << 3) |
+          (h.finisher ? 64 : 0) |
+          (h.crawler ? 128 : 0)
         w.u8(hFlags)
         w.u32(h.seed)
       }
@@ -1283,14 +1315,29 @@ export function decodeShared(
       let clamber = prev.clamber
       let stateTime = prev.stateTime
       let timer = prev.timer
+      let limbMask = prev.limbMask ?? 0
       if (hdr & 32) {
         const fxFlags = r.u8()
         if (fxFlags & 1) hitFlash = r.u8() / 255
         if (fxFlags & 2) clamber = r.u8() / 255
         if (fxFlags & 4) stateTime = r.u8() / 20
         if (fxFlags & 8) timer = (r.u8() / 255) * timerCapFor(state)
+        if (fxFlags & 16) limbMask = r.u8()
       }
-      updatedRetained[i] = { id: prev.id, seed: prev.seed, x, y, aim, state, hp, hitFlash, stateTime, timer, clamber }
+      updatedRetained[i] = {
+        id: prev.id,
+        seed: prev.seed,
+        x,
+        y,
+        aim,
+        state,
+        hp,
+        hitFlash,
+        stateTime,
+        timer,
+        clamber,
+        ...(limbMask > 0 ? { limbMask } : {}),
+      }
     }
     const addedCount = r.uvar()
     const added: ZombieState[] = []
@@ -1417,6 +1464,8 @@ export function decodeShared(
           killed: Boolean(hFlags & 1),
           knockdown: Boolean(hFlags & 2),
           headshot: Boolean(hFlags & 4),
+          ...(hFlags & 64 ? { finisher: true } : {}),
+          ...(hFlags & 128 ? { crawler: true } : {}),
           detachBone: MELEE_BONES[(hFlags >>> 3) & 7] ?? null,
           seed: hSeed,
         })
@@ -1434,6 +1483,7 @@ export function decodeShared(
         reach,
         combo,
         heavy,
+        ...(flags & 128 ? { finisher: true } : {}),
         charge,
         hits,
         hitDoorId,
@@ -1531,7 +1581,8 @@ export function encodePersonal(
     survivor.reloadRemaining > 0 ||
     survivor.shoveCooldown > 0 ||
     survivor.recoil > 0 ||
-    survivor.shoveAnim > 0
+    survivor.shoveAnim > 0 ||
+    (survivor.stompAnim ?? 0) > 0
   const hasPeek = Boolean(survivor.peekingWindowId)
   const hasHold = Boolean(survivor.holdTargetId || survivor.holdElapsed > 0 || survivor.holdTriggered || survivor.holdPendingPrimary)
   const hasVault = Boolean(survivor.vault)
@@ -1568,7 +1619,8 @@ export function encodePersonal(
       (survivor.reloadRemaining > 0 ? 8 : 0) |
       (survivor.shoveCooldown > 0 ? 16 : 0) |
       (survivor.recoil > 0 ? 32 : 0) |
-      (survivor.shoveAnim > 0 ? 64 : 0)
+      (survivor.shoveAnim > 0 ? 64 : 0) |
+      ((survivor.stompAnim ?? 0) > 0 ? 128 : 0)
     w.u8(tmMask)
     if (tmMask & 1) w.f32(survivor.regenCooldown)
     if (tmMask & 2) w.f32(survivor.batteryCooldown)
@@ -1577,6 +1629,7 @@ export function encodePersonal(
     if (tmMask & 16) w.f32(survivor.shoveCooldown)
     if (tmMask & 32) w.f32(survivor.recoil)
     if (tmMask & 64) w.f32(survivor.shoveAnim)
+    if (tmMask & 128) w.f32(survivor.stompAnim ?? 0)
   }
   if (hasPeek) {
     w.str(survivor.peekingWindowId ?? "")
@@ -1609,7 +1662,8 @@ export function encodePersonal(
       (phaseIdx & 3) |
         ((((survivor.meleeCombo ?? 1) - 1) & 3) << 2) |
         (survivor.meleeHeavy ? 16 : 0) |
-        (survivor.meleeComboQueued ? 32 : 0),
+        (survivor.meleeComboQueued ? 32 : 0) |
+        (survivor.meleeFinisher ? 64 : 0),
     )
     w.f32(survivor.meleePhaseTime ?? 0)
     w.f32(survivor.meleePhaseDuration ?? 0)
@@ -1664,6 +1718,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     meleeCombo: 1,
     meleeCharge: 0,
     meleeHeavy: false,
+    meleeFinisher: false,
     meleeComboQueued: false,
     meleeComboUntil: -Infinity,
     meleeSwingId: 0,
@@ -1680,6 +1735,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     shoveCooldown: 0,
     recoil: 0,
     shoveAnim: 0,
+    stompAnim: 0,
     peekingWindowId: null,
     peekOriginX: 0,
     peekOriginY: 0,
@@ -1705,6 +1761,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     if (tmMask & 16) survivor.shoveCooldown = r.f32()
     if (tmMask & 32) survivor.recoil = r.f32()
     if (tmMask & 64) survivor.shoveAnim = r.f32()
+    if (tmMask & 128) survivor.stompAnim = r.f32()
   }
   if (mask & P_PEEK) {
     const pw = r.str()
@@ -1750,6 +1807,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     survivor.meleeCombo = (((mFlags >>> 2) & 3) + 1) as 1 | 2 | 3
     survivor.meleeHeavy = Boolean(mFlags & 16)
     survivor.meleeComboQueued = Boolean(mFlags & 32)
+    survivor.meleeFinisher = Boolean(mFlags & 64)
     survivor.meleePhaseTime = r.f32()
     survivor.meleePhaseDuration = r.f32()
     survivor.meleeCharge = r.f32()
@@ -1843,6 +1901,7 @@ export function inspectSnapshotBreakdown(
         if (fx & 2) r.u8()
         if (fx & 4) r.u8()
         if (fx & 8) r.u8()
+        if (fx & 16) r.u8()
       }
     }
     const addedCount = r.uvar()
@@ -1885,4 +1944,19 @@ export function applyZombieState(a: AIAgent, z: ZombieState): void {
   a.clamberWindowId = z.clamber > 0 ? "net" : null
   a.clamberElapsed = z.clamber
   a.clamberDuration = 1
+  if (z.seed !== undefined && a.seed !== z.seed) {
+    a.seed = z.seed
+    const traits = zombieTraitsFromSeed(z.seed)
+    a.toughness = traits.toughness
+    a.hitReaction = traits.hitReaction
+    a.deathVariant = traits.deathVariant
+  }
+  const mask = z.limbMask ?? 0
+  a.limping = Boolean(mask & 128)
+  for (let i = 0; i < DETACHABLE_BONES.length; i++) {
+    if (mask & (1 << i)) {
+      const bone = DETACHABLE_BONES[i]!
+      if (!a.detachedLimbs.includes(bone)) a.detachedLimbs.push(bone)
+    }
+  }
 }

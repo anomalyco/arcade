@@ -366,6 +366,16 @@ bob, with 1:1 root displacement and `dAim` feed-forward into `gunPos` and `weapo
   pitches the head down `16.0°`, reaches the left hand to the belt pouch (`1.68 cm` from `hipL`), carries a visible
   magazine box into the grip well (`3.22 cm`), racks the slide, and returns to the two-handed grip (also driven for
   co-op remote survivors from snapshot `reloading` and `recoil` state).
+- **Top-down melee swings, downward finishers, and zombie knockdown/crawler/death states (`packages/kit/human-melee.ts`,
+  `games/outbreak/src/survivor.ts`, `games/outbreak/src/zombies.ts`)**: `meleeTorsoModulation` and `poseMeleeArms` drive
+  `windup` → `active` → `recovery` across `one-blunt` (`crowbar`, `pipe`, `hammer`), `one-blade` (`knife`, `machete`),
+  and `two-heavy` (`bat`, `spiked-board`, `axe`, `fire-axe`) weapons while standing or walking (`crowbar` tip sweep
+  `210.5°` 1L / `197.2°` 2L / `287.1°` 3H, torso twist `56.6°–101.5°`, `0.500 m` arm chord, `0.0e+0` planted toe slip).
+  Contextual finishers on downed or crawling zombies either pitch the torso (`+0.38 rad`) and weapon (`-0.58 rad`) into
+  a downward strike or lift and slam the right boot (`stompAnim`). Zombies pose deterministically across three stagger
+  reactions (flinch back, spin-twist, knee-buckle), four death variants (fall forward, fall backward, spin crumple,
+  collapse to knees), floor knockdown with recovery struggle, prone leg-severed `crawler` hauling (one-leg and
+  torso-only via `BONE_SUBTREE_MASK`), and `limping` hip dip (`6.8 cm`).
 
 ## Determinism and performance
 

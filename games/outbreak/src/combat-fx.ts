@@ -531,8 +531,11 @@ export class OutbreakCombatFX {
       for (const h of m.hits) {
         if (age >= 0 && age <= 0.16) {
           const uHit = 1 - age / 0.16
-          const hy = support(h.x, h.y) + (h.headshot ? 1.32 : 1.04)
-          pushAdd(h.x, hy, h.y, 0.34 * (1.2 - 0.4 * uHit), 0.72, 0.06, 0.08, uHit * 0.85, 0, 0, 1, 0)
+          const hy = support(h.x, h.y) + (h.finisher ? 0.36 : h.headshot ? 1.32 : 1.04)
+          pushAdd(h.x, hy, h.y, (h.finisher ? 0.48 : 0.34) * (1.2 - 0.4 * uHit), 0.72, 0.06, 0.08, uHit * 0.85, 0, 0, 1, 0)
+          if (h.finisher || h.knockdown || h.crawler) {
+            pushAdd(h.x, support(h.x, h.y) + 0.08, h.y, 0.42 + (1 - uHit) * 0.45, 0.65, 0.04, 0.06, uHit * 0.78, 2, 0, 0.1, 0)
+          }
         }
         const hitKey = `${m.id}:${h.zombieId}`
         if (this.seenMeleeHits.has(hitKey)) continue
@@ -544,7 +547,7 @@ export class OutbreakCombatFX {
         this.hasEmitted = true
         const z = ai.agents.find((a) => a.id === h.zombieId)
         const groundY = support(h.x, h.y)
-        const hitY = groundY + (h.headshot || h.detachBone === "head" ? 1.34 : 1.05)
+        const hitY = groundY + (h.finisher ? 0.34 : h.crawler ? 0.52 : h.headshot || h.detachBone === "head" ? 1.34 : 1.05)
 
         // Direction of blood spray: blades fan along the slash tangent + forward; blunt blasts radially away
         const sweepSign = m.combo === 2 ? 1 : -1
@@ -590,8 +593,9 @@ export class OutbreakCombatFX {
 
         const amountScale =
           (h.killed ? 1.15 : 0.75) *
-          (m.heavy ? 1.3 : m.combo === 3 ? 1.15 : 1.0) *
+          (h.finisher ? 1.45 : m.heavy ? 1.3 : m.combo === 3 ? 1.15 : 1.0) *
           (h.headshot ? 1.2 : 1.0) *
+          (h.crawler || h.knockdown ? 1.25 : 1.0) *
           (def.material === "blade" ? 1.18 : 1.0)
 
         this.splatter.emit(
