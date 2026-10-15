@@ -205,7 +205,7 @@ describe("Outbreak AI & survival combat integration", () => {
       zombieTuning,
       true,
     )
-    expect(batches.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
+    expect(batches.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000])
 
     const first = session.view.zombies[0]!
     const stateBefore = crowd.getAgentBones(first.id)
@@ -226,6 +226,6 @@ describe("Outbreak AI & survival combat integration", () => {
       true,
     )
     // 500 zombies minus 1 detached upperArm/foreArm + 1 debris piece each = 1000
-    expect(batchesAfter.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
+    expect(batchesAfter.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000])
   })
 })

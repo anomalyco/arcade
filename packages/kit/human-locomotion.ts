@@ -1,6 +1,6 @@
 import { HIP, RIG } from "./rig"
 import { humanProfiles, type HumanProfile } from "./human-profile"
-import { at, clamp, moved, pitch, smooth, smoother, spring, stepSpring, yawFrame, type Spring, type V3 } from "./rig"
+import { at, clamp, moved, pitch, smooth, smoother, spring, stepSpring, yawFrame, type Frame, type Spring, type V3 } from "./rig"
 
 export type Foot = { p: V3; yaw: number; pitch: number; planted: boolean; lift: V3; liftYaw: number }
 /** Presentation state only. No game, weapon, mesh, DOM or network dependency. */
