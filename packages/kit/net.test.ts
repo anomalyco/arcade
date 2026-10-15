@@ -26,7 +26,7 @@ import {
 import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "./net/interpolate"
 import { ClockSync } from "./net/clock-sync"
 import { roomLocationHint } from "./net/room-core"
-import { DEFAULT_JITTER, JitterBuffer, type InputOps } from "./net/jitter-buffer"
+import { DEFAULT_JITTER, JitterBuffer, type InputOps, socketJitter } from "./net/jitter-buffer"
 import { Predictor, Smoother } from "./net/prediction"
 import { RewindHistory } from "./net/rewind"
 import { Seats } from "./net/seats"
@@ -98,6 +98,56 @@ describe("JitterBuffer", () => {
     expect(twice).toBe(true)
     expect(all.map((i) => i.n)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
     expect(all.filter((i) => i.fire).length).toBe(1)
+  })
+})
+
+describe("socketJitter", () => {
+  /** Inputs at 30 Hz arriving `late(seq)` ticks after they were sent; returns how many ticks each waited in all. */
+  function run(late: (seq: number) => number, ticks = 900) {
+    const jb = new JitterBuffer(ops, socketJitter(30))
+    const arrivals = new Map<number, number[]>()
+    for (let seq = 0; seq < ticks; seq++) {
+      const at = seq + late(seq)
+      arrivals.set(at, [...(arrivals.get(at) ?? []), seq])
+    }
+    const waited: number[] = []
+    for (let tick = 0; tick < ticks; tick++) {
+      for (const seq of arrivals.get(tick) ?? []) jb.push(seq, { mx: 1, fire: seq % 50 === 7, n: seq }, tick)
+      for (const i of jb.take(tick)) if (i.n >= 0) waited.push(tick - i.n)
+    }
+    return { jb, waited }
+  }
+
+  test("a clean link is taken the tick it arrives", () => {
+    const { jb, waited } = run(() => 1)
+    expect(jb.stats.synthesized).toBe(0)
+    expect(waited.slice(-100).every((w) => w === 1)).toBe(true)
+  })
+
+  test("TCP stalls are bridged with stand-ins instead of holding every later input back", () => {
+    // ±1 tick of jitter, and every 90 ticks a 6-tick stall that releases everything at once (in order).
+    const stalled = (seq: number) => seq % 90 >= 84
+    const late = (seq: number) => (stalled(seq) ? 90 - (seq % 90) : 1 + (seq % 3 === 0 ? 1 : 0))
+    const { jb, waited } = run(late)
+    expect(jb.stats.synthesized).toBeGreaterThan(0)
+    // Between stalls inputs wait at most the jitter, not the stall.
+    const calm = waited.slice(-200).filter((w) => w <= 3)
+    expect(calm.length / 200).toBeGreaterThan(0.9)
+    expect(jb.snapshot().target).toBeLessThanOrEqual(2)
+  })
+
+  test("presses survive stalls", () => {
+    const fired: number[] = []
+    const jb = new JitterBuffer(ops, socketJitter(30))
+    for (let tick = 0, seq = 0; tick < 600; tick++) {
+      // Everything sent in ticks 200-209 arrives at tick 210.
+      if (tick < 200 || tick >= 210) {
+        const upTo = tick >= 210 && seq < 210 ? 210 : tick + 1
+        for (; seq < upTo; seq++) jb.push(seq, { mx: 1, fire: seq % 50 === 7, n: seq }, tick)
+      }
+      for (const i of jb.take(tick)) if (i.fire) fired.push(tick)
+    }
+    expect(fired.length).toBe(12)
   })
 })
 

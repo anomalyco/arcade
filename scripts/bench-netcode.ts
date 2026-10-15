@@ -12,7 +12,7 @@
  * - shooter lag: how far behind the server the actor's view of others is when its press applies, net of any
  *   server rewind; times 5 m/s it is how far a strafing target has moved from where the shot was aimed;
  * - corrections: the actor holds WASD-like keys and predicts every input; a change in (server − predicted)
- *   position at an acked input is a correction pop, in cm at 5 m/s;
+ *   position between two of its snapshots is a correction pop when it reconciles, in cm at 5 m/s;
  * - snapshot rate and downlink bytes per client, and server tick cost.
  *
  *   bun scripts/bench-netcode.ts [--label=before] [--seconds=60] [--seeds=2] [--games=outbreak,blackout]
@@ -67,14 +67,33 @@ const build = async (game: string) => ((await import(`../games/${game}/shared/bu
 const json = (data: Data) => (typeof data === "string" ? (JSON.parse(data) as Record<string, unknown>) : null)
 const move = (tick: number, keys: Move) => ({ mx: keys[0], my: keys[1], aim: (tick * 0.02) % 6 })
 
-/** Brawl and Blackout share `@arcade/kit/net/room-core`: hook its `push(id, ack, intent)`. */
+/**
+ * Brawl and Blackout share `@arcade/kit/net/room-core`: hook the actor's jitter buffer. A tick it hands over nothing
+ * stops the player (the worlds use a neutral intent); two inputs are applied as one (the later's movement).
+ */
 function kitWatch(edge: (i: Record<string, unknown>) => boolean) {
+  type Jitter = { ack: number; take(t: number): readonly Record<string, unknown>[] }
   return (core: Core, id: string, applied: Applied) => {
-    const c = core as unknown as { push(id: string, ack: number, i: Record<string, unknown>): void }
-    const push = c.push.bind(c)
-    c.push = (who, ack, i) => {
-      if (who === id) applied(ack, edge(i), [[Number(i.mx), Number(i.my)]])
-      push(who, ack, i)
+    const seats = (core as unknown as { seats: { byId(id: string): { data: { jitter: Jitter } } | undefined } }).seats
+    let watched: Jitter | null = null
+    let took = false
+    const step = core.step.bind(core)
+    core.step = () => {
+      const j = seats.byId(id)?.data.jitter
+      if (j && j !== watched) {
+        watched = j
+        const take = j.take.bind(j)
+        j.take = (t) => {
+          const out = take(t)
+          took = true
+          const last = out[out.length - 1]
+          applied(j.ack, out.some(edge), [last ? [Number(last.mx), Number(last.my)] : [0, 0]])
+          return out
+        }
+      }
+      took = false
+      step()
+      if (!took) throw new Error("kit room didn't take input this tick")
     }
   }
 }
@@ -232,7 +251,7 @@ type Run = {
   snaps: number
   bytes: number
   tickMs: number[]
-  /** Prediction corrections: changes in (server − predicted) position, in ticks of full-speed movement. */
+  /** Prediction corrections: changes in (server − predicted) position between snapshots, in ticks of movement. */
   corrections: number[]
 }
 
@@ -242,6 +261,7 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
   let now = 0
   const core = await game.core(() => now)
 
+  let onActorSnapshot = () => {}
   type Client = { conn: Conn; up: TcpLink; down: TcpLink; inbox: { at: number; data: Data }[]; outbox: { at: number; data: Data }[]; snapArrivals: { at: number; sent: number }[]; id: string | null; bytes: number; snaps: number }
   const client = (): Client => {
     const c: Client = {
@@ -259,6 +279,7 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
           c.inbox.push({ at, data })
           c.bytes += typeof data === "string" ? data.length : data.byteLength
           if (game.isSnapshot(data)) {
+            if (c === actor) onActorSnapshot()
             c.snaps++
             c.snapArrivals.push({ at, sent: now })
           }
@@ -298,6 +319,13 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
   }
   const serverPos = [0, 0]
   let lastErr: Move = [0, 0]
+  // Reconciliation happens per snapshot: what the player sees is the error's change since the previous one.
+  let shownErr: Move = [0, 0]
+  onActorSnapshot = () => {
+    const d = Math.hypot(lastErr[0] - shownErr[0], lastErr[1] - shownErr[1])
+    if (d > 0.01) r.corrections.push(d)
+    shownErr = lastErr
+  }
   game.watch(core, actor.id!, (ack, edge, moves) => {
     for (const m of moves) {
       serverPos[0]! += m[0]
@@ -305,8 +333,6 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
     }
     const p = predicted[Math.max(0, Math.min(ack, predicted.length - 1))]!
     const err: Move = [serverPos[0]! - p[0], serverPos[1]! - p[1]]
-    const d = Math.hypot(err[0] - lastErr[0], err[1] - lastErr[1])
-    if (d > 0.01) r.corrections.push(d)
     lastErr = err
     // A stand-in for a late press takes its sequence number without its edge, which rides on an input after the late
     // original arrives; a press is lost once half a second of later inputs applied without it.

@@ -36,8 +36,7 @@ const INPUT_OPS: InputOps<Input> = {
   standIn: (last) => last,
   hasEdges: (i) => (i.gadget ?? null) !== null || !!i.engine,
 }
-const JITTER = { ...ROOM_JITTER, initialTarget: 1 }
-const newJitter = () => new JitterBuffer(INPUT_OPS, JITTER)
+const newJitter = () => new JitterBuffer(INPUT_OPS, ROOM_JITTER)
 /** With no input for this long (tab hidden, stalled link) the car lets go of the pedals. */
 const STARVE_TICKS = 15
 const CHAT_BURST = 3
@@ -104,7 +103,8 @@ export class RoomCore {
     if (msg.type === "chat") return this.chat(p, msg.text)
     if (!sameInput(msg.input, p.last) || !sameInput(msg.input, NO_INPUT)) p.idle = 0
     p.last = msg.input
-    p.jitter.push(msg.seq, msg.input, this.tick)
+    // step() advances the tick before taking, so this input can be applied from the next tick on.
+    p.jitter.push(msg.seq, msg.input, this.tick + 1)
   }
 
   private chat(p: Player, text: string) {
