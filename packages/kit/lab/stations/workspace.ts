@@ -24,7 +24,6 @@ export type StationHost = {
   onSection(listener: (id: string) => void): void
   invoke(id: string, args?: Record<string, unknown>): LabCommandInvokeResult
   suspend(value: boolean): void
-  telemetry(): string
   mode(): "edit" | "play" | undefined
   /** Number keys from the workbench (outside text fields, Play, the grid and the radial): true if used. */
   onDigit(handler: (n: number, shift: boolean) => boolean): void
@@ -582,11 +581,12 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
   })
 
   // ── live readouts ──────────────────────────────────────────────────────────────────────────────────────────────
+  /** Frame rate plus the Lab's own telemetry line (section counts and GPU time), as the status bar shows it. */
   function live() {
     if (current?.demo.kind === "page") return "Running in its own page"
+    const telemetry = host.panel.header.textContent?.trim()
     const gpu = host.stage.gpuMs
-    const first = (host.telemetry().split("\n")[0] ?? "").replace(/\s*\{.*$/, "")
-    return `${gpu === null ? "GPU —" : `GPU ${gpu.toFixed(2)} ms`} · ${frameTimes.length} fps${first ? ` · ${first}` : ""}`
+    return `${frameTimes.length} fps · ${telemetry ? telemetry.replace(/\n/g, " · ") : gpu === null ? "GPU —" : `GPU ${gpu.toFixed(2)} ms`}`
   }
   const countFrame = (now: number) => {
     frameTimes.push(now)

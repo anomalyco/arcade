@@ -106,7 +106,7 @@ try {
   assert(densityKey, "weather has a Drop density control")
   await page.evaluate(() => (window as unknown as W).labWorkbench.invoke("weather.preset", { preset: "rain" }))
   const before = await drops()
-  const slider = page.locator(`[data-widget="controls"] .knobs-row[data-field="${densityKey}"] [role="slider"]`).first()
+  const slider = page.locator(`[data-widget="controls"] [data-field="${densityKey}"] [role="slider"]`).first()
   await slider.focus()
   for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight")
   await page.waitForTimeout(500)
@@ -115,8 +115,27 @@ try {
   report.knobsDrive = { key: densityKey, density, dropsBefore: before, dropsAfter: after }
   assert(after > before, `drops went from ${before} to ${after}`)
   // The Details column shows the same value: one source of truth.
-  const detailsValue = await page.locator(`.lab-inspector-body .knobs-row[data-field="${densityKey}"]`).first().getAttribute("class")
+  const detailsValue = await page.locator(`.lab-inspector-body [data-field="${densityKey}"]`).first().getAttribute("class")
   assert(detailsValue?.includes("knobs-modified"), "Details marks the edited row as modified")
+
+  // The Watch pin on a Details row still works on knobs rows.
+  const pin = page.locator(`.lab-inspector-body [data-field="${densityKey}"] .lab-knobs-pin`).first()
+  await pin.click({ force: true })
+  assert.equal(await pin.getAttribute("aria-pressed"), "true", "pinning a Details row marks it")
+  await pin.click({ force: true })
+
+  // Hold \ in the card: the section shows the value from before the last change, and gets it back on release.
+  const setting = () => page.evaluate(k => (window as unknown as W).labPanel.navigation.settings[k] as number, densityKey)
+  await slider.focus()
+  await page.keyboard.down("Backslash")
+  await page.waitForTimeout(150)
+  const held = await setting()
+  await page.keyboard.up("Backslash")
+  await page.waitForTimeout(150)
+  const released = await setting()
+  report.compare = { changed: density, held, released }
+  assert(held < (density as number), `holding \\ shows the earlier value (${held} < ${density})`)
+  assert.equal(released, density, "releasing \\ brings the current value back")
 
   // 3. Random draws from the tuning seed: the same seed gives the same values; room and effect seeds stay.
   const roll = async (seed: number) => page.evaluate(async seed => {
@@ -125,7 +144,7 @@ try {
     const card = document.querySelector('[data-widget="controls"] .knobs-panel')!
     card.querySelector<HTMLButtonElement>('header button[aria-label="Random"]')!.click()
     await new Promise(r => setTimeout(r, 300))
-    const keys = [...card.querySelectorAll<HTMLElement>(".knobs-row[data-field]")].map(r => r.dataset.field!)
+    const keys = [...card.querySelectorAll<HTMLElement>("[data-field]")].map(r => r.dataset.field!)
     return Object.fromEntries(keys.map(k => [k, win.labPanel.navigation.settings[k]]))
   }, seed)
   const roomSeed = await page.evaluate(() => (window as unknown as W).labPanel.navigation.settings.seed)
@@ -170,6 +189,13 @@ try {
   assert.equal(await page.locator('.ls-card[data-widget-id="controls"] .ls-card-title').textContent(), "Rain and wind")
   await page.waitForTimeout(1200)
   await page.screenshot({ path: resolve(out, "04-weather-saved-layout.png") })
+
+  // Text fields own their keys: typing in the notes widget neither switches station nor starts a voice note.
+  await page.locator(".ls-notes").click()
+  await page.keyboard.type("3n1")
+  assert.equal((await snap()).station?.id, "weather", "digits typed into notes don't switch station")
+  assert.equal(await page.locator(".fb-pill:not([hidden])").count(), 0, "N typed into notes doesn't record")
+  assert.equal(await page.locator(".ls-notes").inputValue(), "3n1")
 
   // 5. Voice note at the station: talk (fake mic), draw with Shift held, switch variant, finish, save.
   await page.locator('canvas[aria-label="Lab scene"]').click({ position: { x: 500, y: 300 } })

@@ -127,14 +127,16 @@ Arcade Lab workbench standard:
   - Clicking `⊞ Grid` in the top Compare bar (or running `arcade grid [preset]`) splits the single WebGPU canvas into 2–9 synchronized variant tiles sharing one camera, simulation clock, and seed.
   - Clicking a tile or pressing `1`–`9` focuses that tile full-size; pressing `Esc` or `G` returns to the multi-tile grid (or closes the grid when already in multi-tile view).
 
-## Lab Overworld
+## Lab stations
 
-- **Map**: `Digit1`–`Digit9`, `Digit0` travel to stations 1–10; arrows move the highlight between plots; `Enter`
-  opens it; click a plot, label or strip chip to travel; `⌘K` lists "Station: …" commands. Digits and arrows are
-  taken in the capture phase on the map so they don't open Library categories or orbit the camera.
-- **Station**: `Digit1`–`Digit9` pick variants (the variation grid keeps them while it's open); `[`/`]` previous or
-  next station; `Esc` back to the map once the workbench has nothing left to cancel; Backquote shows the workbench,
-  and `Esc` hides it again. In an embedded page (Characters, Carrier) the same keys are forwarded from the page.
+- **Stations**: `Digit1`–`Digit9`, `Digit0` open stations 1–10 from the Edit canvas (outside text fields, Play, the
+  variation grid and the radial, which keep their own number keys; with focus in the Library drawer digits still pick
+  Library categories). `Shift` + `Digit1`–`Digit9` pick the open station's variants. Click a chip in the Outliner's
+  station list or use `⌘K` ("Station: …"); ✕ in the list header closes the station. In an embedded page (Characters,
+  Carrier) the same keys are forwarded from the page.
+- **Knobs panels** (Details, station controls cards, game overlays): keys work only while focus is inside a panel and
+  are knobs' own (`?` lists them): arrows move and adjust, `r` / `⌥R` random / mutate, `g` the focused group, `⇧L`
+  lock, hold `\` compare, `⌫` reset a row, `⇧C` copy, `⇧S` save a variant, `u`/`z` undo, `Esc` hands focus back.
 - **Voice note** (dev only): logical `N` starts and finishes (mnemonic, so Dvorak users press the key labelled N);
   hold `Shift` and move to draw; `⌘Z` undoes the last mark; `Esc` cancels; `Enter` sends from the review card.
 

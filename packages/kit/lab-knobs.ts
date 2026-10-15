@@ -105,6 +105,8 @@ export class LabKnobsView {
     const self = this
     const remote = createRemoteControls(`lab:${options.id}`, [], {
       enabled: true,
+      // The settings object is local: there are no late echoes to hold back, so outside changes (undo) land at once.
+      echo: 0,
       nullDefaults: false,
       storage: variantStorage(options.variantsId),
       theme: "dark",
@@ -166,7 +168,7 @@ export class LabKnobsView {
 
   /** The row element for a setting, if this view shows it. */
   rowElement(key: string): HTMLElement | null {
-    return this.panel.element.querySelector<HTMLElement>(`.knobs-row[data-field="${CSS.escape(key)}"]`)
+    return this.panel.element.querySelector<HTMLElement>(`:is(.knobs-row,.knobs-slider)[data-field="${CSS.escape(key)}"]`)
   }
 
   /** Focuses a setting's control (or the first row) inside the panel. */
@@ -385,12 +387,12 @@ export function ensureLabKnobsStyles() {
 :where(.lab-knobs,[data-lab-panel]) :is(button,input,select,textarea):is(button,input,select,textarea){font:inherit;color:inherit;letter-spacing:inherit;text-transform:none;background:var(--k-surface);border:0;border-radius:var(--k-radius);padding:revert;margin:revert;min-width:0;min-height:revert;box-shadow:none;outline:revert;user-select:revert}
 .lab-knobs{min-width:0}
 .lab-knobs .knobs-panel.knobs-inline{width:100%}
-.knobs-row[data-lab-disabled]{opacity:.38;pointer-events:none}
-.knobs-row[data-lab-spawn]>span:first-child::after,.knobs-row[data-lab-spawn] .knobs-label::after{content:"";display:inline-block;width:5px;height:5px;margin-left:5px;border-radius:50%;background:#d9a03c;vertical-align:middle}
-.knobs-row{position:relative}
+[data-lab-disabled]:is(.knobs-row,.knobs-slider){opacity:.38;pointer-events:none}
+.knobs-row[data-lab-spawn]>span:first-child::after,.knobs-slider[data-lab-spawn] .knobs-label::after{content:"";display:inline-block;width:5px;height:5px;margin-left:5px;border-radius:50%;background:#d9a03c;vertical-align:middle}
+:is(.knobs-row,.knobs-slider):has(>.lab-knobs-pin){position:relative}
 .lab-knobs-pin{position:absolute;left:-2px;top:50%;width:12px;height:16px;margin-top:-8px;padding:0;border:0;border-radius:3px;background:none;color:#5b6068;cursor:pointer;opacity:0;font:10px/16px system-ui;z-index:2}
 .lab-knobs-pin::before{content:"•"}
-.knobs-row:hover>.lab-knobs-pin,.lab-knobs-pin[aria-pressed="true"]{opacity:1}
+:is(.knobs-row,.knobs-slider):hover>.lab-knobs-pin,.lab-knobs-pin[aria-pressed="true"]{opacity:1}
 .lab-knobs-pin[aria-pressed="true"]{color:#4d8dff}
 .lab-knobs-pin:hover{color:#d8dbe0}
 [data-lab-flash]{animation:lab-knobs-flash 1.3s ease-out}

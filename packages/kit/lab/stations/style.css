@@ -157,7 +157,7 @@ p.ls-dim, .ls-summary, .ls-missing { margin: 0; }
 .ls-status { display: inline-flex; align-items: center; gap: 5px; color: var(--tx); }
 .ls-tag { color: var(--acc); font: 10.5px var(--mono); text-decoration: none; }
 .ls-tag:hover { text-decoration: underline; }
-.ls-row { display: flex; align-items: baseline; gap: 6px; color: var(--tx3); }
+.ls-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: var(--tx3); }
 .ls-row code, .ls-metric code, .ls-change code { font: 10.5px var(--mono); color: var(--tx2); }
 .ls-row a, .ls-links a { color: var(--acc); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
 .ls-links { display: flex; flex-direction: column; gap: 4px; }

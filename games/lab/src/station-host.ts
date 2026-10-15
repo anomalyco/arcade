@@ -43,7 +43,6 @@ export async function startStations(api: LabApi, ensureGame: (game: string) => P
       onSection: listener => void api.onSection(listener),
       invoke: (id, args) => api.workbench.invoke(id, args),
       suspend: api.suspend,
-      telemetry: () => api.sections.find(s => s.id === api.settings.section)?.telemetry?.() ?? "",
       mode: () => api.workbench.getMode(),
       onDigit: handler => api.workbench.onDigit(handler),
       ensureGame,
