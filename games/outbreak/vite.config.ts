@@ -19,5 +19,12 @@ export default defineConfig({
       },
     },
   },
-  server: { host: "127.0.0.1", port: Number(process.env.PORT) || 5197, allowedHosts: true },
+  server: {
+    host: "127.0.0.1",
+    port: Number(process.env.PORT) || 5197,
+    allowedHosts: true,
+    warmup: {
+      clientFiles: ["./src/main.ts", "./src/world-worker.ts"],
+    },
+  },
 })

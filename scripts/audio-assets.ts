@@ -25,6 +25,15 @@ export type AudioAssetOptions = {
 export function audioAssets(options: AudioAssetOptions = {}): Plugin {
   const assets = new Map(DEFAULT_SAMPLE_MANIFEST.map(asset => [`audio-assets/${asset.url}`, repo(`games/getaway/public/sfx/${asset.url}`)]))
   for (const entry of selectSfx(options.sfx)) for (const file of entry.files) assets.set(`audio-assets/${sfxUrl(file)}`, repo(file.path))
+  const byteCache = new Map<string, Buffer>()
+  const readCached = (file: string): Buffer => {
+    let buf = byteCache.get(file)
+    if (!buf) {
+      buf = readFileSync(file)
+      byteCache.set(file, buf)
+    }
+    return buf
+  }
   return {
     name: "arcade-audio-assets",
     configureServer(server) {
@@ -32,15 +41,18 @@ export function audioAssets(options: AudioAssetOptions = {}): Plugin {
         const path = hostPath(req.url, server.config.base)
         const file = assets.get(path)
         if (!file) return next()
+        const buf = readCached(file)
         res.setHeader("Content-Type", CONTENT_TYPES[path.split(".").pop()!] ?? "application/octet-stream")
-        res.end(readFileSync(file))
+        res.setHeader("Content-Length", String(buf.byteLength))
+        res.setHeader("Cache-Control", "public, max-age=3600")
+        res.end(buf)
       })
     },
     generateBundle() {
       if ([...this.getModuleIds()].some(id => id.endsWith("/audio/test-context.ts"))) {
         this.error("The deterministic audio test context must not enter a browser bundle")
       }
-      for (const [fileName, file] of assets) this.emitFile({ type: "asset", fileName, source: readFileSync(file) })
+      for (const [fileName, file] of assets) this.emitFile({ type: "asset", fileName, source: readCached(file) })
     },
   }
 }
