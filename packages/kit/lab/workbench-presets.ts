@@ -1,4 +1,5 @@
 import type { LabPanel, LabValue } from "../lab-panel"
+import { parseCurve, parseGradient } from "../ramps"
 import type { LookLabController } from "./looks"
 import type { createSpawn } from "./spawn"
 import type { Stage } from "./stage"
@@ -117,8 +118,13 @@ export function applyWorkbenchPresetJson(
       } else {
         targetSec.settings[k] = v
       }
-    } else if (typeof v === "boolean" || typeof v === "string") {
-      targetSec.settings[k] = v
+    } else if (typeof v === "boolean" || typeof v === "string" || Array.isArray(v)) {
+      const ctrl = targetSec.controls.find(c => c.key === k)
+      if (ctrl?.type === "curve" || ctrl?.type === "gradient") {
+        // Ramps arrive as JSON text (a saved preset) or as stops/points (a knobs Copy); anything else keeps the current ramp.
+        const ramp = ctrl.type === "curve" ? parseCurve(v, [], { range: ctrl.range }) : parseGradient(v, [])
+        if (ramp.length >= 2) targetSec.settings[k] = JSON.stringify(ramp)
+      } else if (!Array.isArray(v)) targetSec.settings[k] = v
     }
   }
   if (obj.lighting && typeof obj.lighting === "object") {
