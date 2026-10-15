@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "bun scripts/build-id.ts && vite --host 127.0.0.1",
     "build": "bun scripts/build-id.ts && vite build",
-    "test": "bun scripts/build-id.ts && bun test --parallel tests",
-    "check": "bun scripts/build-id.ts && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && bun test --parallel tests && vite build",
+    "test": "bun scripts/build-id.ts && bun test --parallel --timeout=20000 tests",
+    "check": "bun scripts/build-id.ts && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && bun test --parallel --timeout=20000 tests && vite build",
     "deploy": "bun run build && wrangler deploy",
     "dev:server": "bun scripts/build-id.ts && vite build && wrangler dev --port 8797"
   },

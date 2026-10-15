@@ -113,7 +113,8 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
         if (dedupeKit) cmd = cmd.replace(/\s+\.\.\/\.\.\/packages\/kit\b/, "")
         // bun's default is one worker per core, which oversubscribes the shared Studio. Several simulation tests take
         // 1.5-2.5 s idle, so the 5 s default timeout (a hang guard) fails them under load; CI keeps the default.
-        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`).replace(/^bun test\b/, "bun test --timeout=20000")
+        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`)
+        if (!/--timeout\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --timeout=20000")
       } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)
       steps.push({ id, cwd, cmd, deps: kind === "other" && build ? [...prep, build] : [...prep], kind })
