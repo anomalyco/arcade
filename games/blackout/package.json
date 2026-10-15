@@ -7,7 +7,7 @@
     "dev:client": "vite --host 0.0.0.0 --port 5191 --strictPort",
     "dev:server": "wrangler dev --port 8788",
     "build": "bun scripts/build-id.ts && vite build",
-    "test": "bun scripts/build-id.ts && bun test . ../../packages/kit",
+    "test": "bun scripts/build-id.ts && bun test --parallel . ../../packages/kit",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json",
     "build:id": "bun scripts/build-id.ts",
