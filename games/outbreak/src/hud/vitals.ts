@@ -9,6 +9,9 @@
  * `VitalsModel` is DOM-free and unit-tested; `VitalsLayer` draws it with pooled elements.
  */
 
+import { PISTOL_RELOAD_TIME } from "../../shared/combat"
+import type { Survivor } from "../../shared/session"
+
 export type MeterId = "stamina" | "reload" | "health" | "battery"
 export type MeterState = "ok" | "low" | "critical"
 
@@ -308,7 +311,7 @@ export class VitalsLayer {
   }
 
   private bar(scale: number) {
-    return { w: Math.round(this.size * 2.3 * scale), h: Math.max(3, this.size * 0.2 * scale), gap: Math.max(2, this.size * 0.14 * scale) }
+    return { w: Math.round(this.size * 2.3 * scale), h: Math.max(3, this.size * 0.22 * scale), gap: Math.max(2, this.size * 0.14 * scale) }
   }
 
   private place(n: RingNode, m: Meter, mode: Mode, transform: string, size: string, reducedMotion: boolean): void {
@@ -432,4 +435,25 @@ function setOpacity(n: RingNode, value: string): void {
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v
+}
+
+/** Meter inputs for the local survivor, whose full state is known. */
+export function localVitals(
+  p: Pick<Survivor, "health" | "maxHealth" | "stamina" | "sprinting" | "exhausted" | "reloadRemaining" | "equippedItem" | "magAmmo" | "reserveAmmo" | "flashlightOn" | "battery" | "batteryDepleted" | "flashlightOutput">,
+): VitalsInput {
+  return {
+    health: p.health,
+    maxHealth: p.maxHealth,
+    stamina: p.stamina,
+    sprinting: p.sprinting,
+    exhausted: p.exhausted,
+    reload: p.reloadRemaining > 0 ? 1 - p.reloadRemaining / PISTOL_RELOAD_TIME : null,
+    pistol: p.equippedItem === "pistol",
+    magAmmo: p.magAmmo,
+    reserveAmmo: p.reserveAmmo,
+    flashlightOn: p.flashlightOn,
+    battery: p.battery,
+    batteryDepleted: p.batteryDepleted,
+    flashlightOutput: p.flashlightOutput,
+  }
 }

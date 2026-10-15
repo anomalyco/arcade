@@ -145,7 +145,7 @@ export class CharacterHud {
       let ringSide: Side | null = null
       if (vitalsMode === VITALS_BESIDE || vitalsMode === VITALS_FEET || vitalsMode === VITALS_GROUND) {
         // Rings: beside the body or in a row under the feet. Ground mode keeps reload and battery as rings beside.
-        ringSide = chooseSide(vitalsMode === VITALS_FEET ? "down" : "right", { x: box.aimX, y: box.aimY }, st.vitalsSide.side, this.settings.avoidAim)
+        ringSide = chooseSide(vitalsMode === VITALS_FEET ? "down" : "right", { x: box.aimX, y: box.aimY }, st.vitalsSide.side, style.avoid)
         const gap = this.settings.vitalOffset + (ringSide === "up" && !local ? NAME_TAG_PX : 0)
         const at = st.vitalsSide.step(box, ringSide, gap, dt, reduced)
         const al = st.vitalsSide.align
@@ -165,7 +165,7 @@ export class CharacterHud {
       if (local) this.status.draw(vitalsMode === VITALS_ICONS ? st.vitals : null)
 
       if (this.logMode) continue
-      const side = chooseSide(style.callouts, { x: box.aimX, y: box.aimY }, st.callouts.side, this.settings.avoidAim)
+      const side = chooseSide(style.callouts, { x: box.aimX, y: box.aimY }, st.callouts.side, style.avoid)
       let gap = this.settings.calloutOffset + (side === "up" && !local ? NAME_TAG_PX : 0)
       // Start the stack past whatever meters share its side.
       if (drawn && st.vitals.presence > 0.001) {

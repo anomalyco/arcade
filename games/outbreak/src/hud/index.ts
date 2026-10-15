@@ -1,7 +1,6 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { keyLabel } from "@arcade/kit/client/controls"
 import { clockText } from "../../shared/day-cycle"
-import { PISTOL_RELOAD_TIME } from "../../shared/combat"
 import type { SessionView, Survivor } from "../../shared/session"
 import { supportHeight } from "../../shared/terrain"
 import { vaultLift } from "../../shared/interact"
@@ -11,14 +10,14 @@ import type { CalloutKind, CalloutOptions } from "./callouts"
 import type { BodyBox } from "./placement"
 import { RemoteAdapter, type HudRemote } from "./remote"
 import { TEAMMATE_ALL, TEAMMATE_OFF, type HudSettings } from "./settings"
-import type { VitalsInput } from "./vitals"
+import { localVitals } from "./vitals"
 import "./hud.css"
 
 export { ActorFeedback } from "./actor-feedback"
 export { CalloutLayer, CalloutModel, type CalloutKind, type CalloutOptions } from "./callouts"
 export { DEFAULT_HUD_SETTINGS, hudControls, type HudSettings } from "./settings"
 export type { HudRemote, RemoteSurvivorView } from "./remote"
-export { LOCAL_ACTOR }
+export { LOCAL_ACTOR, localVitals }
 
 /** Top of the survivor's hair above the ground, in metres. */
 const HEAD_TOP = 1.92
@@ -280,24 +279,5 @@ export class OutbreakHud {
       footW: Math.abs(fr.x - foot.x) * 2,
       footH: Math.abs(ff.y - fb.y),
     }
-  }
-}
-
-/** Ring inputs for the local survivor, whose full state is known. */
-export function localVitals(p: Survivor): VitalsInput {
-  return {
-    health: p.health,
-    maxHealth: p.maxHealth,
-    stamina: p.stamina,
-    sprinting: p.sprinting,
-    exhausted: p.exhausted,
-    reload: p.reloadRemaining > 0 ? 1 - p.reloadRemaining / PISTOL_RELOAD_TIME : null,
-    pistol: p.equippedItem === "pistol",
-    magAmmo: p.magAmmo,
-    reserveAmmo: p.reserveAmmo,
-    flashlightOn: p.flashlightOn,
-    battery: p.battery,
-    batteryDepleted: p.batteryDepleted,
-    flashlightOutput: p.flashlightOutput,
   }
 }

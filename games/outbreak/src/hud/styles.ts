@@ -37,25 +37,27 @@ export type StyleSpec = {
   chrome: Chrome
   /** Hide informational callouts (flashlight, slot, door) and keep progress, results, warnings and damage. */
   quiet: boolean
+  /** Swap sides when the survivor aims into the HUD. Today predates it. */
+  avoid: boolean
 }
 
 export const STYLES: Record<number, StyleSpec> = {
-  [STYLE_TODAY]: { label: "Today", callouts: "up", look: "box", actionBar: false, vitals: VITALS_EDGE, chrome: "full", quiet: false },
-  [STYLE_BELOW]: { label: "Below Feet", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BESIDE, chrome: "full", quiet: false },
-  [STYLE_HADES]: { label: "Hades Style", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BARS, chrome: "quiet", quiet: false },
-  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false },
-  [STYLE_DIEGETIC]: { label: "Diegetic", callouts: "down", look: "halo", actionBar: false, vitals: VITALS_GROUND, chrome: "none", quiet: true },
+  [STYLE_TODAY]: { label: "Today", callouts: "up", look: "box", actionBar: false, vitals: VITALS_EDGE, chrome: "full", quiet: false, avoid: false },
+  [STYLE_BELOW]: { label: "Below Feet", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BESIDE, chrome: "full", quiet: false, avoid: true },
+  [STYLE_HADES]: { label: "Hades Style", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BARS, chrome: "quiet", quiet: false, avoid: true },
+  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false, avoid: true },
+  [STYLE_DIEGETIC]: { label: "Diegetic", callouts: "down", look: "halo", actionBar: false, vitals: VITALS_GROUND, chrome: "none", quiet: true, avoid: true },
 }
 
 export type ResolvedStyle = StyleSpec & { id: number }
 
 const PLACEMENT_SIDE: Record<number, Side> = { [CALLOUTS_ABOVE]: "up", [CALLOUTS_BESIDE]: "left" }
 
-export function resolveStyle(s: { hudStyle: number; calloutPlacement: number; vitalsPlacement: number }): ResolvedStyle {
+export function resolveStyle(s: { hudStyle: number; calloutPlacement: number; vitalsPlacement: number; avoidAim: boolean }): ResolvedStyle {
   const spec = STYLES[s.hudStyle] ?? STYLES[STYLE_BELOW]!
   const callouts = s.calloutPlacement === CALLOUTS_STYLE ? spec.callouts : (PLACEMENT_SIDE[s.calloutPlacement] ?? "down")
   const vitals = s.vitalsPlacement === VITALS_STYLE ? spec.vitals : s.vitalsPlacement
-  return { ...spec, id: s.hudStyle in STYLES ? s.hudStyle : STYLE_BELOW, callouts, vitals }
+  return { ...spec, id: s.hudStyle in STYLES ? s.hudStyle : STYLE_BELOW, callouts, vitals, avoid: spec.avoid && s.avoidAim }
 }
 
 /** Whether a vitals mode draws on the character (as opposed to the screen edge or the status icons). */

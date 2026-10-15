@@ -64,6 +64,7 @@ async function stage(page: Page, s: Stage) {
     h.setLab("hour", s.hour ?? 19)
     h.setLab("zoom", s.zoom ?? 34)
     h.setLab("zombieCount", s.zombies ?? 0)
+    h.setLab("hudStyle", 1)
     h.setLab("calloutPlacement", 0)
     h.setLab("vitalsPlacement", 0)
     h.setLab("avoidAim", true)
@@ -262,6 +263,37 @@ try {
     await step(page, 18)
     st = await snap(page, `crowded-${look}`, `Crowded: three zombies, a hurt teammate, reload and exhaustion · ${LOOKS[look]}`)
     assert(hudOf(st).meters.length >= 2, "local rings in the crowd")
+  }
+
+  // 6b. Every HUD style (the board's D-13 options) at the same moment: staged callouts, sprinting low, hurt.
+  const STYLE_NAMES = ["today", "below", "hades", "zomboid", "diegetic"]
+  for (const [value, name] of STYLE_NAMES.entries()) {
+    for (const look of Object.keys(LOOKS) as Look[]) {
+      await stage(page, { x: 30, y: 41, aim: -Math.PI / 4, zoom: 34, hour: 21, look, hud: { hudStyle: value, calloutPlacement: -1, vitalsPlacement: -1 } })
+      await mutate(page, { stamina: 0.25, health: 100 })
+      await step(page, 2)
+      await mutate(page, { health: 72 })
+      await stagedStack(page)
+      await step(page, 14, { sprint: true, mx: 0.001 })
+      await mutate(page, { x: 30, y: 41, vx: 0, vy: 0 })
+      await step(page, 2, { sprint: true, mx: 0.001 })
+      const dom = await page.evaluate(() => ({
+        chrome: document.body.dataset.chrome,
+        vitals: document.body.dataset.vitals,
+        modes: [...document.querySelectorAll<HTMLElement>(".vital")].filter((e) => Number(e.style.opacity) > 0.05).map((e) => `${e.dataset.meter}:${e.dataset.mode}`),
+        icons: [...document.querySelectorAll<HTMLElement>(".status-icon")].filter((e) => !e.hidden).map((e) => e.dataset.meter),
+        look: document.querySelector<HTMLElement>(".callouts")!.dataset.look,
+      }))
+      await snap(page, `style-${name}-${look}`, `${["Today", "Below Feet", "Hades Style", "Zomboid Style", "Diegetic"][value]} · ${LOOKS[look]}`)
+      const expected: Record<string, () => void> = {
+        today: () => assert(dom.vitals === "edge" && dom.modes.length === 0),
+        below: () => assert(dom.modes.includes("stamina:row") && dom.modes.includes("health:row")),
+        hades: () => assert(dom.chrome === "quiet" && dom.modes.includes("stamina:bar") && dom.modes.includes("health:bar")),
+        zomboid: () => assert(dom.look === "halo" && dom.icons.includes("stamina") && dom.icons.includes("health") && dom.modes.length === 0),
+        diegetic: () => assert(dom.chrome === "none" && dom.modes.includes("stamina:ground") && dom.modes.includes("health:ground")),
+      }
+      expected[name]!()
+    }
   }
 
   // 7. Screen-edge fallback and the old log.
