@@ -86,6 +86,30 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
  */
 export type VisibilityFieldShader = { code: string; size: number; dispatch: number }
 
+/**
+ * Optional game volumetric-light pass. `code` provides `@vertex fn vs` (fullscreen triangle) and `@fragment fn fs`
+ * bound to the frame (0), lights (1), polar map (2) and custom uniforms (13). It renders at 1/`FrameInput.volume`
+ * resolution into rgba16float: rgb is in-scattered radiance, a how much it should restore selective colour. The
+ * renderer adds rgb into the resolved HDR target and multiplies its alpha by 1 - a before smoke and bloom.
+ */
+export type VolumeLightShader = { code: string }
+
+const volumeCompositeShader = /* wgsl */ `
+@group(0) @binding(0) var volumeTex: texture_2d<f32>;
+@group(0) @binding(1) var volumeSamp: sampler;
+struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: VO;
+  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+@fragment fn fs(o: VO) -> @location(0) vec4f {
+  return textureSampleLevel(volumeTex, volumeSamp, o.uv, 0.0);
+}
+`
+
 export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
@@ -112,6 +136,11 @@ export type FrameInput = {
   addSprites: Float32Array<ArrayBuffer>
   addCount: number
   addMotionKeys?: (MotionKey | undefined)[]
+  /**
+   * Volumetric-light pass (renderer `shaders.volume`): resolution divisor and optional screen rect [x0, y0, x1, y1]
+   * in 0..1 (top-left origin) that bounds the light, so both passes skip the rest of the screen. Omit or null to skip.
+   */
+  volume?: { downscale: number; rect?: readonly [number, number, number, number] } | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
   /** Optional game-feel post-processing burst: [blurX, blurY, radialBlur, chromaticBoost] */
@@ -153,6 +182,15 @@ export class Renderer {
   private visibilityTex: GPUTexture
   private fieldTex: GPUTexture
   private field: { pipe: GPUComputePipeline; group: GPUBindGroup; state: GPUBuffer; dispatch: number } | null = null
+  private volume: {
+    pipe: GPURenderPipeline
+    group: GPUBindGroup
+    composite: GPURenderPipeline
+    compositeLayout: GPUBindGroupLayout
+    tex: GPUTexture | null
+    compositeGroup: GPUBindGroup | null
+    downscale: number
+  } | null = null
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private materialTex: GPUTexture
@@ -227,6 +265,7 @@ export class Renderer {
       lookSceneVariant?: (variant: LookVariantMode) => string
       lookPostVariant?: (variant: LookVariantMode) => string
       visField?: VisibilityFieldShader
+      volume?: VolumeLightShader
     },
   ) {
     const d = device
@@ -329,6 +368,58 @@ export class Renderer {
       layout: d.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: this.module(polarShader, "polar"), entryPoint: "main" },
     })
+    if (shaders?.volume) {
+      const layout = d.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+          { binding: 1, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
+          { binding: 2, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
+          { binding: 13, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+        ],
+      })
+      const compositeLayout = d.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: S.FRAGMENT, texture: {} },
+          { binding: 1, visibility: S.FRAGMENT, sampler: {} },
+        ],
+      })
+      const mod = this.module(shaders.volume.code, "volume light")
+      const compositeMod = this.module(volumeCompositeShader, "volume composite")
+      this.volume = {
+        pipe: d.createRenderPipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
+          vertex: { module: mod, entryPoint: "vs" },
+          fragment: { module: mod, entryPoint: "fs", targets: [{ format: HDR }] },
+          primitive: { topology: "triangle-list" },
+        }),
+        group: d.createBindGroup({
+          layout,
+          entries: [
+            { binding: 0, resource: { buffer: this.frameBuf } },
+            { binding: 1, resource: { buffer: this.lightBuf } },
+            { binding: 2, resource: { buffer: this.polarBuf } },
+            { binding: 13, resource: { buffer: this.customBuf } },
+          ],
+        }),
+        composite: d.createRenderPipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [compositeLayout] }),
+          vertex: { module: compositeMod, entryPoint: "vs" },
+          fragment: {
+            module: compositeMod,
+            entryPoint: "fs",
+            targets: [{
+              format: HDR,
+              blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one-minus-src-alpha" } },
+            }],
+          },
+          primitive: { topology: "triangle-list" },
+        }),
+        compositeLayout,
+        tex: null,
+        compositeGroup: null,
+        downscale: 0,
+      }
+    }
     if (shaders?.visField) {
       const vf = shaders.visField
       const fieldLayout = d.createBindGroupLayout({
@@ -500,6 +591,41 @@ export class Renderer {
         { binding: 14, resource: this.fieldTex.createView() },
       ],
     })
+  }
+
+  private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
+    const v = this.volume!
+    const w = Math.max(1, Math.ceil(this.width / downscale))
+    const h = Math.max(1, Math.ceil(this.height / downscale))
+    if (!v.tex || v.tex.width !== w || v.tex.height !== h) {
+      v.tex?.destroy()
+      v.tex = this.device.createTexture({ size: [w, h], format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+      v.compositeGroup = this.device.createBindGroup({
+        layout: v.compositeLayout,
+        entries: [{ binding: 0, resource: v.tex.createView() }, { binding: 1, resource: this.sampler }],
+      })
+    }
+    const r = rect ?? [0, 0, 1, 1]
+    const scissor = (pass: GPURenderPassEncoder, sw: number, sh: number) => {
+      const x0 = Math.max(0, Math.floor(r[0] * sw))
+      const y0 = Math.max(0, Math.floor(r[1] * sh))
+      const x1 = Math.min(sw, Math.ceil(r[2] * sw))
+      const y1 = Math.min(sh, Math.ceil(r[3] * sh))
+      pass.setScissorRect(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0))
+    }
+    if (r[2] <= r[0] || r[3] <= r[1]) return
+    const march = enc.beginRenderPass({ colorAttachments: [{ view: v.tex.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+    scissor(march, w, h)
+    march.setPipeline(v.pipe)
+    march.setBindGroup(0, v.group)
+    march.draw(3)
+    march.end()
+    const add = enc.beginRenderPass({ colorAttachments: [{ view: this.hdrView, loadOp: "load", storeOp: "store" }] })
+    scissor(add, this.width, this.height)
+    add.setPipeline(v.composite)
+    add.setBindGroup(0, v.compositeGroup!)
+    add.draw(3)
+    add.end()
   }
 
   /** Forgets everything the visibility field remembers (new level or session). */
@@ -1155,6 +1281,8 @@ export class Renderer {
       })
       this.smokeRenderer.render(enc, this.hdrView, f.smoke)
     }
+
+    if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect)
 
     const g = this.postGroups!
     for (let i = 0; i < BLOOM_LEVELS; i++) {
