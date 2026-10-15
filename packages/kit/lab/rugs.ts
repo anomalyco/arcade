@@ -40,11 +40,9 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) world: vec3f, @locatio
   let L = normalize(U.light.xyz);
   let ambient = U.cfg.w;
   if (o.layer < 0.0) {
-    // Dark walnut boards so rug edges and fringes read against a believable floor.
-    let board = floor(o.world.x * 6.0);
-    let tone = 0.85 + 0.15 * fract(sin(board * 91.7) * 4375.5);
-    let seam = smoothstep(0.0, 0.04, fract(o.world.x * 6.0)) * 0.25 + 0.75;
-    let albedo = vec3f(0.11, 0.065, 0.04) * tone * seam;
+    // Plain dark walnut with a soft vignette: no fine pattern to alias against the rug at grazing angles.
+    let fall = 1.0 - smoothstep(4.0, 11.0, length(o.world.xz));
+    let albedo = vec3f(0.10, 0.062, 0.038) * mix(0.55, 1.0, fall);
     return vec4f(albedo * (ambient + max(L.y, 0.0) * U.light.w), 1.0);
   }
   let li = i32(round(o.layer));
@@ -358,6 +356,7 @@ export function createRugsSection(context: LabContext): LabSection {
       pass.setVertexBuffer(0, vertexBuf)
       pass.draw(vertexCount)
     },
+    busy: () => inflight.size > 0 || wanted.some((k, i) => k !== layerKeys[i]),
     telemetry() {
       const resident = layerKeys.filter((k, i) => k && k === wanted[i]).length
       const mb = (texSize * texSize * 4 * (4 / 3) * texLayers) / 1048576

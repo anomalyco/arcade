@@ -47,6 +47,9 @@ try {
       assert.equal(res.ok, true, `${label}: ${step.command} ${JSON.stringify(step.args)} → ${JSON.stringify(res)}`)
     }
     for (let i = 0; i < 4; i++) await page.evaluate(async () => { (window as any).lab.advance(1 / 30); await (window as any).lab.render() })
+    // Sections that bake off the main thread report busy until their results land.
+    await page.waitForFunction(() => !(window as any).lab.busy?.(), undefined, { timeout: 30000 })
+    for (let i = 0; i < 2; i++) await page.evaluate(async () => { (window as any).lab.advance(1 / 30); await (window as any).lab.render() })
   }
   await run(demo.setup, "demo")
   await page.locator("canvas").first().screenshot({ path: resolve(out, "demo.png") })

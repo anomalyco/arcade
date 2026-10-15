@@ -2223,6 +2223,11 @@ async function main() {
       if (interiors.apply(key) === "structural") level()
     },
     setLab(rawKey: string, value: number | boolean | string) {
+      if (rawKey in interiors.settings) {
+        ;(interiors.settings as Record<string, number>)[rawKey] = Number(value)
+        if (interiors.apply(rawKey) === "structural") level()
+        return
+      }
       const routed = resolveOutbreakSettingTarget(String(rawKey))
       const control = controls.find(
         (c) =>

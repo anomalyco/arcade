@@ -431,6 +431,8 @@ export async function lab(options:LabOptions) {
     select,
     render,
     advance,
+    /** True while the active section is still loading asynchronous results (Worker bakes); captures wait on it. */
+    busy:()=>Boolean(active?.busy?.()),
     attachPhysics:physics.attach,
     /** Sections a host loads after start-up; ids already present are skipped. */
     addSections,
