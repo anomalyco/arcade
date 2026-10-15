@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { ByteReader, ByteWriter } from "@arcade/kit/net/bytes"
 import { DEFAULT_INTEREST } from "@arcade/kit/net/interest"
 import { CoopSim } from "../shared/coop-sim"
-import { OutbreakSharedFeatureRegistry } from "../shared/feature-registry"
+import { outbreakSharedFeatures, OutbreakSharedFeatureRegistry } from "../shared/feature-registry"
 import { outbreakClientFeatures, OutbreakClientFeatureRegistry } from "../src/feature-registry"
 import { outbreakMapFeature } from "../src/map"
+import { outbreakPacingFeature, outbreakPacingSharedFeature } from "../src/pacing"
 import { outbreakWeatherFeature } from "../src/weather"
 
 describe("OutbreakSharedFeatureRegistry", () => {
@@ -234,5 +235,19 @@ describe("OutbreakClientFeatureRegistry", () => {
     const methods = weatherFeature?.harnessMethods?.({} as any, {} as any) ?? {}
     expect(typeof methods.setWeatherPreset).toBe("function")
     expect(typeof methods.strikeLightning).toBe("function")
+  })
+
+  test("registers the pacing feature in both shared and client registries", () => {
+    expect(outbreakSharedFeatures.get("pacing")).toBe(outbreakPacingSharedFeature)
+    expect(outbreakPacingSharedFeature.tuning?.namespace).toBe("pacing")
+
+    const pacingClient = outbreakClientFeatures.get("pacing")
+    expect(pacingClient).toBe(outbreakPacingFeature)
+    const controls = pacingClient?.labControls?.({} as any) ?? []
+    expect(controls.some((c) => c.key === "safeRadius")).toBe(true)
+    const commands = pacingClient?.gameCommands?.({} as any) ?? []
+    expect(commands.map((c) => c.id)).toEqual(["pacing.stage"])
+    const methods = pacingClient?.harnessMethods?.({} as any, {} as any) ?? {}
+    expect(typeof methods.stagePacing).toBe("function")
   })
 })

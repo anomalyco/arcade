@@ -333,25 +333,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
         },
       },
       {
-        id: "pacing.stage",
-        label: "Stage First-Night Pacing Scene",
-        shortLabel: "Pacing Scene",
-        category: "Scene",
-        undoable: false,
-        args: {
-          scene: {
-            type: "string",
-            description: "Scene (opening-calm, safehouse-workbench, first-contact, late-night-horde, legacy-rush)",
-          },
-        },
-        enabled: () => !coop.net,
-        run: async (_ctx, args) => {
-          const out = host.harness().stagePacing(String(args?.scene ?? "opening-calm"))
-          await host.harness().step(1 / 60)
-          return out
-        },
-      },
-      {
         id: "hud.demo",
         label: "Show Character HUD Sample",
         shortLabel: "HUD Sample",
