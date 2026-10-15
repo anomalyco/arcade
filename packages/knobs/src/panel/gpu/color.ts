@@ -174,6 +174,10 @@ export interface PanelThemeTokens {
   readonly buttonHoverLine: Rgba | null
   readonly buttonRadius: number | null
   readonly buttonFontSize: number | null
+  /** Buttons' label colour at rest (--k-button-color). */
+  readonly buttonColor: Rgba | null
+  /** A fill or outline is set: action rows and preset chips are buttons (`[data-buttons]`). */
+  readonly boxed: boolean
   readonly iconSize: number
   readonly iconSm: number
   readonly labelWeight: number
@@ -393,6 +397,11 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     buttonHoverLine: optColor(style, "button-hover-line"),
     buttonRadius: optLength(style, "button-radius", fontSize),
     buttonFontSize: optLength(style, "button-font-size", fontSize),
+    buttonColor: optColor(style, "button-color"),
+    boxed: Boolean(
+      style.getPropertyValue("--k-button-bg").trim() ||
+        style.getPropertyValue("--k-button-line").trim(),
+    ),
     iconSize: numProp(style, "icon-size", 14),
     iconSm: numProp(style, "icon-sm", 13),
     labelWeight: numProp(style, "label-weight", 500),

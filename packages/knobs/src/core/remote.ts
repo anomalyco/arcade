@@ -36,6 +36,7 @@ import {
   watch,
   type Knob,
   type Point,
+  type ToolbarShortcut,
   type Schema,
   same,
   type State,
@@ -46,6 +47,7 @@ import type { StoragePort } from "./storage.js"
 import {
   defineControls,
   type ChangeMeta,
+  type GestureEvent,
   type ControlAction,
   type GroupPreset,
   type Controls,
@@ -94,7 +96,7 @@ export interface ToolbarDescriptor extends DescriptorMeta {
     readonly key: string
     readonly label: string
     readonly icon?: string
-    readonly shortcut?: string
+    readonly shortcut?: string | ToolbarShortcut
     readonly global?: boolean
     readonly disabled?: boolean
   }[]
@@ -174,6 +176,8 @@ export interface ValueDescriptor extends DescriptorMeta {
   /** Vectors: show the link toggle for uniform scaling (`linked` starts it on). */
   readonly link?: boolean
   readonly linked?: boolean
+  /** Vectors: what the cells are called (`["x", "z"]`), their letters and accessible names. */
+  readonly axes?: readonly string[]
   /** Angles: carry past the ends a whole turn (on for a full turn by default). */
   readonly wrap?: boolean
   /** Gradients: blend in `oklab` (default) or `srgb`. */
@@ -247,6 +251,8 @@ export interface RemoteControlsOptions {
     changes: Array<{ key: string; value: Value | null }>,
     meta: ChangeMeta,
   ) => void
+  /** A key went into the hand or out of it: a drag, an inline edit, a burst of arrow keys. */
+  readonly onGesture?: (event: GestureEvent) => void
   /** A key, a group, or (`{}`) everything was reset. */
   readonly onReset?: (target: { key?: string; group?: string }) => void
   /** An action row was pressed. */
@@ -354,6 +360,7 @@ export function descriptorToField(d: ControlDescriptor): Field {
       ...numbers,
       ...(d.link ? { link: true } : {}),
       ...(d.linked ? { linked: true } : {}),
+      ...(d.axes ? { axes: d.axes } : {}),
       ...meta,
     }
     return d.kind === "vec3"
@@ -651,6 +658,7 @@ export function createRemoteControls(
       send(changes, meta)
     },
     onReset,
+    onGesture: options.onGesture,
     ...{ [RESET_KEYS]: resetKeys },
     onAction: (key) => options.onAction?.(key),
   })

@@ -193,6 +193,8 @@ export interface VecField<N extends 2 | 3 = 2 | 3> extends FieldMeta {
   readonly link?: boolean
   /** Starts linked (implies `link`). */
   readonly linked?: boolean
+  /** The cells' names, in order (`["x", "z"]` for a ground-plane pair): their letters and labels. */
+  readonly axisLabels?: readonly string[]
 }
 /** A `[low, high]` pair on one slider with two thumbs that can't cross. */
 export interface RangeField extends FieldMeta {
@@ -225,6 +227,15 @@ export interface KeybindField extends FieldMeta {
   readonly kind: "keybind"
   readonly value: string
 }
+/**
+ * A toolbar button's key and where it presses the button: while the panel has focus (`"panel"`),
+ * anywhere on the page but a text field (`"page"`), or nowhere (`"none"`: the chip only, for a
+ * key the host binds itself).
+ */
+export interface ToolbarShortcut {
+  readonly key: string
+  readonly scope?: "page" | "panel" | "none"
+}
 /** A toolbar button: an optional icon, a label and a shortcut chip. */
 export interface ToolbarItem {
   /** Reported to `onAction`; the label by default. */
@@ -232,9 +243,12 @@ export interface ToolbarItem {
   readonly label: string
   /** A built-in icon name (`play`, `frame`, `retrigger`, …) or SVG path data on a 256 grid. */
   readonly icon?: string
-  /** A key or combination (`"Space"`, `"f"`, `"Shift+P"`): it presses the button. */
-  readonly shortcut?: string
-  /** The shortcut works anywhere on the page, not only while the panel has focus. */
+  /**
+   * A key or combination (`"Space"`, `"f"`, `"Shift+P"`) that presses the button while the panel
+   * has focus, or `{ key, scope }` to say where it works (see `ToolbarShortcut`).
+   */
+  readonly shortcut?: string | ToolbarShortcut
+  /** A plain-string shortcut works anywhere on the page (as `scope: "page"`). */
   readonly global?: boolean
   readonly disabled?: boolean
   readonly run?: () => void
@@ -606,9 +620,18 @@ const numberMeta = (o: NumberOptions) => ({
   ...(o.unit !== undefined ? { unit: o.unit } : {}),
   ...(o.decimals !== undefined ? { decimals: o.decimals } : {}),
 })
-type VecOptions = FieldMeta & NumberOptions & { readonly link?: boolean; readonly linked?: boolean }
+type VecOptions = FieldMeta &
+  NumberOptions & {
+    readonly link?: boolean
+    readonly linked?: boolean
+    /** What the cells are called (`["x", "z"]`): their letters and accessible names. */
+    readonly axes?: readonly string[]
+  }
 function vec<N extends 2 | 3>(axes: N, value: Point | Vec3, options: VecOptions): VecField<N> {
   const step = bounds(options, "A vector")
+  const names = options.axes
+  if (names && (names.length !== axes || names.some((n) => typeof n !== "string" || !n.trim())))
+    throw new Error(`A vector's axes need ${axes} names.`)
   const field = {
     kind: "vec" as const,
     axes,
@@ -619,6 +642,7 @@ function vec<N extends 2 | 3>(axes: N, value: Point | Vec3, options: VecOptions)
     ...numberMeta(options),
     ...(options.link || options.linked ? { link: true } : {}),
     ...(options.linked ? { linked: true } : {}),
+    ...(names ? { axisLabels: Object.freeze(names.map((n) => n.trim())) } : {}),
   } as VecField<N>
   return withMeta(
     { ...field, value: normalizeField(field, value) as VecField<N>["value"] },
@@ -768,6 +792,15 @@ export function curve(
     },
     options,
   )
+}
+/** A toolbar item's shortcut as `{ key, scope }`, or undefined without one. */
+export function toolbarShortcut(
+  item: ToolbarItem,
+): { readonly key: string; readonly scope: "page" | "panel" | "none" } | undefined {
+  const s = item.shortcut
+  if (!s) return undefined
+  if (typeof s === "string") return { key: s, scope: item.global ? "page" : "panel" }
+  return s.key ? { key: s.key, scope: s.scope ?? (item.global ? "page" : "panel") } : undefined
 }
 /** A wrapping row of buttons with icons and shortcut chips; holds no value. */
 export function toolbar(items: readonly ToolbarItem[], meta?: FieldMeta): ToolbarField {

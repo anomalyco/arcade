@@ -245,14 +245,68 @@ function plot(doc: Document, cls: string, onSize: () => void) {
 }
 
 /** Text that grows its box to the widest it has been (in ch), so new values never reflow the row. */
-function growing(el: HTMLElement, min = 0) {
+function growing(el: HTMLElement, min = 0, grew?: () => void) {
   let ch = min
   if (min) el.style.minWidth = `${min}ch`
   return (text: string) => {
     if (text.length > ch) {
       ch = text.length
       el.style.minWidth = `${ch}ch`
+      grew?.()
     }
+  }
+}
+
+/**
+ * A block's head keeps its title's words; what goes with it (a graph's legend, a log's tools)
+ * gives way instead: first its units go (`data-short`, where it has any), then it wraps onto a
+ * line of its own under the title (`data-wrap`), units back, and drops them again only if it
+ * still doesn't fit. Checked when the head's width changes and when the tools grow.
+ */
+function fitHead(doc: Document, head: HTMLElement, tools: HTMLElement, units: boolean) {
+  const obs = observersOf(doc)
+  const win = doc.defaultView!
+  const over = () => tools.scrollWidth > tools.clientWidth + 0.5
+  const set = (short: boolean, wrap: boolean) => {
+    if (head.hasAttribute("data-short") !== short) head.toggleAttribute("data-short", short)
+    if (head.hasAttribute("data-wrap") !== wrap) head.toggleAttribute("data-wrap", wrap)
+  }
+  const run = () => {
+    if (!head.isConnected || head.clientWidth <= 0) return
+    const steps: [boolean, boolean][] = units
+      ? [
+          [false, false],
+          [true, false],
+          [false, true],
+          [true, true],
+        ]
+      : [
+          [false, false],
+          [false, true],
+        ]
+    for (const [short, wrap] of steps) {
+      set(short, wrap)
+      if (!over()) return
+    }
+  }
+  let frame = 0
+  obs.on.set(head, run)
+  obs.ro.observe(head)
+  return {
+    run,
+    /** Checks again on the next frame (the tools grew). */
+    request() {
+      if (!frame)
+        frame = win.requestAnimationFrame(() => {
+          frame = 0
+          run()
+        })
+    },
+    dispose() {
+      win.cancelAnimationFrame(frame)
+      obs.ro.unobserve(head)
+      obs.on.delete(head)
+    },
   }
 }
 
@@ -330,13 +384,15 @@ const fontClass: Record<ReadoutFont, string> = {
 }
 
 /** `[num][unit]`, right-aligned; the overlay draws the number at the unit's left. */
-function valueBox(doc: Document) {
+function valueBox(doc: Document, grew?: () => void) {
   const el = make(doc)
   const box = el("span", "knobs-rd-value")
   const num = el("span", `knobs-rd-num ${fontClass.value}`, "—")
   const unit = el("span", `knobs-rd-unit ${fontClass.value}`)
   box.append(num, unit)
-  const grow = growing(box, 3)
+  // The figures keep the widest width they've had, so the value doesn't shuffle as it changes;
+  // the unit beside them can go (a legend's that gives way).
+  const grow = growing(num, 3, grew)
   let shown = { num: "—", unit: "" }
   return {
     box,
@@ -349,7 +405,7 @@ function valueBox(doc: Document) {
         unit.hidden = !next.unit
       }
       shown = next
-      grow(next.unit ? `${next.num} ${next.unit}` : next.num)
+      grow(next.num)
     },
     texts(p: Palette, color = p.text): TextItem[] {
       const items: TextItem[] = []
@@ -521,6 +577,7 @@ function createGraph(env: ReadoutEnv): ReadoutView {
   if (env.label) head.append(env.label)
   const legend = el("span", "knobs-rd-legend")
   head.append(legend)
+  const fit = fitHead(env.doc, head, legend, true)
   const box = el("div", "knobs-rd-plotbox")
   box.tabIndex = -1
   box.setAttribute("role", "img")
@@ -547,7 +604,7 @@ function createGraph(env: ReadoutEnv): ReadoutView {
       const key = el("span", "knobs-rd-key")
       const swatch = el("i", "knobs-rd-swatch")
       const name = el("span", `knobs-rd-name ${fontClass.meta}`, s.label ?? s.id)
-      const value = valueBox(env.doc)
+      const value = valueBox(env.doc, () => fit.request())
       key.append(swatch, name, value.box)
       legend.append(key)
       return { id: s.id, swatch, name, value }
@@ -750,8 +807,9 @@ function createGraph(env: ReadoutEnv): ReadoutView {
     notify: () => rt.request(),
     refresh: () => {
       canvas.repaint(env.gpu?.() ?? false)
-      // A restyle's new colours: drawn afresh on the next frame.
+      // A restyle's new colours: drawn afresh on the next frame (and its type measured again).
       dirty = true
+      fit.request()
       rt.request()
     },
     retune(next) {
@@ -766,9 +824,11 @@ function createGraph(env: ReadoutEnv): ReadoutView {
         build()
       dirty = true
       shownSeq = -1
+      fit.request()
       rt.retune(next)
     },
     dispose() {
+      fit.dispose()
       canvas.dispose()
       rt.dispose()
     },
@@ -1094,7 +1154,10 @@ function createLog(env: ReadoutEnv): ReadoutView {
   copy.type = "button"
   copy.tabIndex = -1
   copy.setAttribute("aria-label", "Copy the log")
-  head.append(chips, find, copy)
+  const tools = el("span", "knobs-rd-tools")
+  tools.append(chips, find, copy)
+  head.append(tools)
+  const fit = fitHead(doc, head, tools, false)
   const scroller = el("div", "knobs-rd-scroll")
   scroller.tabIndex = -1
   scroller.setAttribute("role", "log")
@@ -1392,7 +1455,9 @@ function createLog(env: ReadoutEnv): ReadoutView {
       { el: jump, look: "pill" as const, alpha: jumpShown.x },
     ],
     notify: () => rt.request(),
-    refresh() {},
+    refresh() {
+      fit.request()
+    },
     retune(next) {
       field = next as LogField
       root.style.setProperty("--knobs-rd-lines", String(field.lines))
@@ -1400,6 +1465,7 @@ function createLog(env: ReadoutEnv): ReadoutView {
       rt.retune(next)
     },
     dispose() {
+      fit.dispose()
       obs.ro.unobserve(scroller)
       obs.on.delete(scroller)
       rt.dispose()

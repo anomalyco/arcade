@@ -41,6 +41,10 @@ export interface PresenceOptions {
   readonly dy?: number
   /** Perceptual duration in, s (0.32). */
   readonly duration?: number
+  /** Bounce in (0.2); exits never bounce. */
+  readonly bounce?: number
+  /** Perceptual duration out, s (0.2): exits run shorter than entrances. */
+  readonly exit?: number
   /** Called once it has gone (faded all the way out). */
   onGone?(): void
   /** Each frame, with progress (0 → 1, may overshoot a little). */
@@ -105,14 +109,14 @@ export function presence(el: HTMLElement, o: PresenceOptions = {}): Presence {
       shown = true
       gone = []
       el.style.pointerEvents = ""
-      tune(o.duration ?? 0.32, 0.8)
+      tune(o.duration ?? 0.32, 1 - (o.bounce ?? 0.2))
       spring.set(1)
       loop.wake()
     },
     hide() {
       shown = false
       el.style.pointerEvents = "none"
-      tune(0.2, 1)
+      tune(o.exit ?? 0.2, 1)
       spring.set(0)
       loop.wake()
       return new Promise<void>((resolve) => gone.push(resolve))

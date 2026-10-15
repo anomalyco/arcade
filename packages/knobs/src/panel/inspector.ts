@@ -4,6 +4,7 @@
 import { comboFromEvent, comboLabel, heldMods, matchesCombo } from "../core/keys.js"
 import {
   same,
+  toolbarShortcut,
   wrapAngle,
   type AngleField,
   type KeybindField,
@@ -259,8 +260,9 @@ export function vecRow(c: RowContext<VecField>): EditorRow {
     cell.tabIndex = 0
     cell.dataset.axis = axis
     cell.setAttribute("role", "spinbutton")
-    cell.setAttribute("aria-label", `${c.display} ${axis}`)
-    const letter = el("i", "knobs-cell-axis", axis.toUpperCase())
+    const name = c.field.axisLabels?.[axes.indexOf(axis)] ?? axis
+    cell.setAttribute("aria-label", `${c.display} ${name}`)
+    const letter = el("i", "knobs-cell-axis", name.toUpperCase())
     letter.setAttribute("aria-hidden", "true")
     const read = el("span", "knobs-cell-read")
     cell.append(letter, read)
@@ -270,7 +272,7 @@ export function vecRow(c: RowContext<VecField>): EditorRow {
     const editor = inlineEdit(
       c.doc,
       cell,
-      `${c.display} ${axis} value`,
+      `${c.display} ${name} value`,
       (v) => {
         g.start()
         g.set(withAxis(c.get() as Vec, axis, v))
@@ -1153,10 +1155,12 @@ export function toolbarRow(
       const name = el("span", "knobs-tool-label", item.label)
       b.append(name)
       let chip: HTMLElement | undefined
-      if (item.shortcut) {
-        chip = el("kbd", "knobs-tool-key", comboLabel(item.shortcut))
+      const key = toolbarShortcut(item)
+      if (key) {
+        chip = el("kbd", "knobs-tool-key", comboLabel(key.key))
         b.append(chip)
-        b.setAttribute("aria-keyshortcuts", item.shortcut)
+        // A chip only (`scope: "none"`) is the host's key, which the button doesn't answer to.
+        if (key.scope !== "none") b.setAttribute("aria-keyshortcuts", key.key)
       }
       b.onclick = () => {
         last = i
@@ -1204,13 +1208,15 @@ export function toolbarRow(
     },
     update() {},
     match(event, global) {
-      return field.items.find(
-        (item) =>
-          item.shortcut &&
+      return field.items.find((item) => {
+        const key = toolbarShortcut(item)
+        return (
+          key !== undefined &&
           !item.disabled &&
-          Boolean(item.global) === global &&
-          matchesCombo(item.shortcut, event),
-      )
+          key.scope === (global ? "page" : "panel") &&
+          matchesCombo(key.key, event)
+        )
+      })
     },
     press(item) {
       const i = field.items.indexOf(item)

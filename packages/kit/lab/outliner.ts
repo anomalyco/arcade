@@ -226,6 +226,8 @@ export function createOutliner(host: HTMLElement, deps: OutlinerDeps) {
     ...LAB_LOOK,
     items: [],
     label: "Scene objects",
+    // Letters are workbench shortcuts (F, G, P…), not type-ahead.
+    typeahead: false,
     empty: "Nothing placed yet. Open the Library (Ctrl+Space) to add objects.",
     icon,
     detail: n => (n.type === "group" ? String(n.ids.length) : n.type === "fold" ? `×${n.ids.length}` : undefined),
@@ -273,14 +275,6 @@ export function createOutliner(host: HTMLElement, deps: OutlinerDeps) {
   const treeEl = outline.element
   treeEl.dataset.outlinerTree = ""
 
-  // Letters are workbench shortcuts, not type-ahead: the tree never sees them, the workbench does.
-  treeEl.addEventListener("keydown", e => {
-    if (e.key.length !== 1 || e.key === " " || e.metaKey || e.ctrlKey || e.altKey) return
-    if ((e.target as Element).closest(".knobs-tree-edit")) return
-    e.stopImmediatePropagation()
-    e.preventDefault()
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, shiftKey: e.shiftKey, repeat: e.repeat, bubbles: true, cancelable: true }))
-  }, true)
   treeEl.addEventListener("keydown", e => {
     if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault()

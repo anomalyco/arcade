@@ -17,6 +17,7 @@ export {
   gradient,
   curve,
   toolbar,
+  toolbarShortcut,
   watch,
   sparkline,
   graph,
@@ -48,6 +49,7 @@ export {
   type CurveField,
   type ToolbarField,
   type ToolbarItem,
+  type ToolbarShortcut,
   type WatchField,
   type SparklineField,
   type GraphField,
@@ -84,6 +86,7 @@ export { bezierCss, bezierPoint, EASINGS, type Bezier, type EasingName } from ".
 export {
   defineControls,
   type ChangeMeta,
+  type GestureEvent,
   type ChangeSource,
   type ControlAction,
   type Controls,

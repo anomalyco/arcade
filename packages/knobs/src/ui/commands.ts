@@ -1,6 +1,6 @@
 // commandsFrom(controls): a store's actions, toolbar buttons, presets and fields as palette
 // commands, so ⌘K reaches everything a panel shows.
-import { hasValue, isReadout, type Field } from "../core/schema.js"
+import { hasValue, isReadout, toolbarShortcut, type Field } from "../core/schema.js"
 import type { Controls } from "../core/store.js"
 import type { Command } from "./palette.js"
 
@@ -41,7 +41,7 @@ export function commandsFrom(
           id: id(`${key}/${item.id ?? item.label}`),
           label: item.label,
           section: sec(field.label ?? "Actions"),
-          ...(item.shortcut ? { shortcut: item.shortcut } : {}),
+          ...(toolbarShortcut(item) ? { shortcut: toolbarShortcut(item)!.key } : {}),
           ...(item.disabled ? { disabled: true } : {}),
           run: () => controls.action(key, item.id ?? item.label),
         })

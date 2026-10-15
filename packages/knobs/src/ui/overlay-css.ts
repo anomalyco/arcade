@@ -7,15 +7,36 @@ export const overlayCss = `
   font:var(--ku-font-weight) var(--ku-font-size)/1.4 var(--ku-font);color:var(--ku-text);letter-spacing:normal;text-align:left;text-transform:none;
   -webkit-font-smoothing:antialiased;will-change:transform,opacity,filter}
 /* The overlays' own elements stop a host's element rules; what you put in a popover is yours. */
-:where(.knobs-layers,.knobs-toast) :is(.knobs-kbd,.knobs-palette-input,.knobs-palette-label>mark,.knobs-confirm-title,.knobs-confirm-body,.knobs-confirm-btn,.knobs-toast-action){all:revert;box-sizing:border-box;font:inherit;color:inherit;letter-spacing:inherit;
+:where(.knobs-layers,.knobs-toast) :is(.knobs-kbd,.knobs-mitem,.knobs-menu-sep,.knobs-palette-input,.knobs-palette-label>mark,.knobs-confirm-title,.knobs-confirm-body,.knobs-confirm-btn,.knobs-toast-action){all:revert;box-sizing:border-box;font:inherit;color:inherit;letter-spacing:inherit;
   background:transparent;border:0;margin:0;padding:0;outline:none;box-shadow:none}
 .knobs-layers .knobs-layer *{box-sizing:border-box}
 /* A floating surface: frosted, a hairline rim, a soft shadow. */
-.knobs-layers>:is(.knobs-popover-layer,.knobs-palette,.knobs-confirm){background:color-mix(in srgb,var(--ku-bg) 88%,transparent);
+.knobs-layers>:is(.knobs-popover-layer,.knobs-palette,.knobs-confirm,.knobs-menu-layer){background:color-mix(in srgb,var(--ku-bg) 88%,transparent);
   -webkit-backdrop-filter:blur(28px) saturate(1.7);backdrop-filter:blur(28px) saturate(1.7);border-radius:var(--ku-panel-radius);
   box-shadow:0 0 0 .5px var(--ku-line-hi),inset 0 1px 0 var(--ku-rim),0 12px 40px rgba(0,0,0,.36),0 2px 8px rgba(0,0,0,.18)}
 .knobs-layers>.knobs-popover-layer{min-width:120px;max-width:min(420px,calc(100vw - 16px));padding:6px}
 .knobs-popover-layer .knobs-popover-text{padding:4px 6px;color:var(--ku-label)}
+
+/* Menus: rows of the panel's control height, a soft wash on the active one (never an outline),
+   concentric corners inside the surface. */
+.knobs-layers>.knobs-menu-layer{display:flex;flex-direction:column;min-width:184px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:5px;
+  scrollbar-width:thin;overscroll-behavior:contain;user-select:none;-webkit-user-select:none}
+.knobs-menu-layer .knobs-mitem{position:relative;display:flex;align-items:center;gap:8px;flex:none;height:max(22px,calc(var(--ku-row) - 6px));padding:0 8px;
+  border-radius:max(0px,calc(var(--ku-panel-radius) - 5px));color:var(--ku-text);cursor:default;white-space:nowrap}
+.knobs-menu-layer .knobs-mitem[data-active],.knobs-menu-layer .knobs-mitem[data-open]{background:var(--ku-wash-hi)}
+.knobs-menu-layer .knobs-mitem[data-destructive]{color:var(--ku-critical)}
+.knobs-menu-layer .knobs-mitem[data-destructive][data-active]{background:color-mix(in srgb,var(--ku-critical) 16%,transparent)}
+.knobs-menu-layer .knobs-mitem[aria-disabled="true"]{opacity:.38}
+.knobs-menu-layer .knobs-menu-lead{flex:none;display:flex;align-items:center;justify-content:center;width:14px;margin-left:-2px;color:var(--ku-label);font-size:calc(var(--ku-font-size) - 1px)}
+.knobs-menu-layer .knobs-mitem[data-destructive] .knobs-menu-lead,.knobs-menu-layer .knobs-mitem[aria-checked="true"] .knobs-menu-lead{color:inherit}
+.knobs-menu-layer .knobs-menu-lead svg{width:13px;height:13px}
+.knobs-menu-layer .knobs-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.knobs-menu-layer .knobs-menu-hint{flex:none;color:var(--ku-dim)}
+.knobs-menu-layer .knobs-menu-keys{display:inline-flex;gap:2px;flex:none;margin-left:12px}
+.knobs-menu-layer .knobs-mitem[data-active] .knobs-kbd{background:color-mix(in srgb,var(--ku-text) 14%,transparent);color:var(--ku-text)}
+.knobs-menu-layer .knobs-menu-caret{flex:none;display:flex;margin-left:8px;margin-right:-3px;color:var(--ku-dim)}
+.knobs-menu-layer .knobs-menu-caret svg{width:10px;height:10px}
+.knobs-menu-layer .knobs-menu-sep{flex:none;height:1px;margin:4px 8px;background:var(--ku-line)}
 
 .knobs-layers>.knobs-tooltip{display:inline-flex;align-items:center;gap:7px;max-width:300px;padding:4px 8px;pointer-events:none;white-space:nowrap;
   font-size:calc(var(--ku-font-size) - .5px);background:var(--ku-bg);color:var(--ku-text);border-radius:min(var(--ku-radius),6px);

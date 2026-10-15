@@ -11,6 +11,7 @@ import {
   type Value,
   type Values,
 } from "../core/schema.js"
+import { REFRESHES } from "../core/internal.js"
 import type { SpringValue } from "../core/spring.js"
 import type {
   ControlAction,
@@ -106,13 +107,25 @@ export interface Panel {
   fold(group: string, folded?: boolean): void
   /** Shows tab `id` (when given) and returns the tab shown, if the panel has tabs. */
   tab(id?: string): string | undefined
+  /**
+   * Searches for `query` (when given) with exactly `chips` on (when given), as typing and clicking
+   * would, and returns what the search holds now; undefined without `search`.
+   */
+  search(query?: string, chips?: readonly string[]): PanelSearch | undefined
   dispose(): void
+}
+/** A panel's search: the query as typed and the chips that are on. */
+export interface PanelSearch {
+  readonly query: string
+  readonly chips: readonly string[]
 }
 let layer = 2147480001
 /** The tab each panel last showed, by controls id, so a panel mounted again opens on it. */
 const lastTab = new Map<string, string>()
 /** A highlight's reveal waits this long (ms) after the user last scrolled, typed or touched. */
 const REVEAL_QUIET_MS = 2000
+/** Arrow keys pressed again within this long (ms) of the last one coming up are one gesture. */
+const NUDGE_BURST_MS = 300
 
 /** "synth-voice" → "Synth voice", "knobsTokens" → "Knobs tokens"; titles with spaces are kept. */
 export function readableTitle(id: string): string {
@@ -1049,7 +1062,29 @@ function buildPanel<S extends Schema>(
         section: field.section,
       })
     }
-    return specs
+    return gatherSubsections(specs)
+  }
+  /**
+   * Within each run of a group's rows, rows without a sub-heading come first, then each
+   * sub-heading's rows together (in the order the sub-headings first appear), so a heading never
+   * splits in two.
+   */
+  const gatherSubsections = (specs: RowSpec[]): RowSpec[] => {
+    const out: RowSpec[] = []
+    for (let i = 0; i < specs.length; ) {
+      let end = i
+      while (end < specs.length && specs[end]!.group === specs[i]!.group) end++
+      const loose: RowSpec[] = []
+      const subs = new Map<string, RowSpec[]>()
+      for (const spec of specs.slice(i, end)) {
+        const name = spec.field.subsection
+        if (name === undefined) loose.push(spec)
+        else subs.set(name, [...(subs.get(name) ?? []), spec])
+      }
+      out.push(...loose, ...[...subs.values()].flat())
+      i = end
+    }
+    return out
   }
   const shapeOf = (spec: RowSpec) => {
     const f = spec.field
@@ -1063,7 +1098,8 @@ function buildPanel<S extends Schema>(
       isReadout(f)
     )
       return `${f.kind}\u0000${where}`
-    if (f.kind === "vec") return `vec\u0000${f.axes}\u0000${f.link ? 1 : 0}\u0000${where}`
+    if (f.kind === "vec")
+      return `vec\u0000${f.axes}\u0000${f.axisLabels?.join(",") ?? ""}\u0000${f.link ? 1 : 0}\u0000${where}`
     if (f.kind === "range" || f.kind === "angle" || f.kind === "seed" || f.kind === "keybind")
       return `${f.kind}\u0000${where}`
     if (f.kind === "choice")
@@ -1425,6 +1461,7 @@ function buildPanel<S extends Schema>(
     const slot = el("span")
     slot.className = "knobs-accessory"
     row.accessory = slot
+    row.row.dataset.accessory = ""
     if (row.slider) row.slider.slot(slot)
     else if (row.field.kind === "spring" && row.editor?.tracks[0])
       row.editor.tracks[0].slider.slot(slot)
@@ -2219,6 +2256,7 @@ function buildPanel<S extends Schema>(
     })
   }
   const isMixed = (r: Row) => r.keys.some((k) => controls.isMixed(k as keyof S & string))
+  let lastRefresh = (controls as unknown as { [REFRESHES]?: number })[REFRESHES] ?? 0
   function update() {
     if (!controls.enabled) {
       close?.()
@@ -2313,6 +2351,12 @@ function buildPanel<S extends Schema>(
         row.input.setAttribute("aria-checked", mixed ? "mixed" : String(Boolean(value)))
     }
     for (const row of rows) applyState(row)
+    // controls.refresh(): the accessories are asked again too.
+    const refreshes = (controls as unknown as { [REFRESHES]?: number })[REFRESHES] ?? 0
+    if (refreshes !== lastRefresh) {
+      lastRefresh = refreshes
+      for (const r of rows) fillAccessory(r)
+    }
     if (!initialized || moving.length > 0 || landing || turn > 0 || rows.some(fresh)) {
       let anyMod = false
       for (const [groupName, gReset] of groupResetButtons) {
@@ -2939,7 +2983,8 @@ function buildPanel<S extends Schema>(
       !["range", "checkbox", "radio", "button"].includes(target.type))
   /**
    * Presses the toolbar button whose shortcut this is: any of them while the panel has focus,
-   * only `global` ones from elsewhere on the page. A disabled toolbar row takes none.
+   * only page-scoped ones (`global`) from elsewhere on the page, and never a chip-only one
+   * (`scope: "none"`). A disabled toolbar row takes none.
    */
   const pressTool = (event: KeyboardEvent, inPanel: boolean) => {
     if (event.repeat) return false
@@ -3614,22 +3659,65 @@ function buildPanel<S extends Schema>(
   // Rows in hand (a drag, an inline edit) hold their key against incoming values until let go.
   const inHand = new Set<string>()
   const grab = (target: EventTarget | null) => {
+    if (blockedAt(target) || (target instanceof Element && target.closest(".knobs-accessory")))
+      return
     const at = rowAt(target as Node | null)
     for (const k of rows[at]?.keys ?? []) {
       inHand.add(k)
       controls.hold(k)
     }
   }
+  let pressing = false
   const letGo = () => {
-    if (!inHand.size || root.querySelector(":is(.knobs-number,.knobs-cell-edit):not([hidden])"))
+    if (
+      !inHand.size ||
+      pressing ||
+      root.querySelector(":is(.knobs-number,.knobs-cell-edit):not([hidden])")
+    )
       return
     const held = [...inHand]
     inHand.clear()
     for (const k of held) controls.hold(k, false)
   }
-  root.addEventListener("pointerdown", (event) => grab(event.target), true)
+  root.addEventListener(
+    "pointerdown",
+    (event) => {
+      pressing = true
+      grab(event.target)
+    },
+    true,
+  )
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
     root.addEventListener(type, () => setTimeout(letGo))
+  // Wherever the press ends (a drag let go outside the panel too).
+  const pressEnded = () => {
+    if (!pressing) return
+    pressing = false
+    setTimeout(letGo)
+  }
+  for (const type of ["pointerup", "pointercancel"]) doc.addEventListener(type, pressEnded, true)
+  // A burst of arrow keys on a row (held down, or pressed again and again) is one gesture too:
+  // its key is in hand from the first press until the keys have been up for a moment.
+  const NUDGE_KEYS = new Set(["ArrowLeft", "ArrowRight", "PageUp", "PageDown"])
+  let nudgeEnd: ReturnType<typeof setTimeout> | undefined
+  root.addEventListener(
+    "keydown",
+    (event) => {
+      if (!NUDGE_KEYS.has(event.key) || event.metaKey || event.ctrlKey) return
+      clearTimeout(nudgeEnd)
+      grab(event.target)
+    },
+    true,
+  )
+  root.addEventListener("keyup", (event) => {
+    if (!NUDGE_KEYS.has(event.key)) return
+    clearTimeout(nudgeEnd)
+    nudgeEnd = setTimeout(letGo, NUDGE_BURST_MS)
+  })
+  root.addEventListener("focusout", () => {
+    clearTimeout(nudgeEnd)
+    setTimeout(letGo)
+  })
   const isEditField = (node: EventTarget | null) =>
     node instanceof HTMLElement &&
     (node.classList.contains("knobs-number") || node.classList.contains("knobs-cell-edit"))
@@ -3655,12 +3743,21 @@ function buildPanel<S extends Schema>(
       else delete root.dataset.frame
       wakeGpu()
     }
+    // A button fill or outline makes action rows and preset chips buttons (see [data-buttons]).
+    const boxed =
+      cs.getPropertyValue("--k-button-bg").trim() || cs.getPropertyValue("--k-button-line").trim()
+    if (root.hasAttribute("data-buttons") !== Boolean(boxed)) {
+      root.toggleAttribute("data-buttons", Boolean(boxed))
+      wakeGpu()
+    }
   }
   const rowsObserver = new MutationObserver(syncRows)
   rowsObserver.observe(root, {
     attributes: true,
     attributeFilter: ["style", "class", "data-theme", "data-preset", "data-density"],
   })
+  // The frame and button looks are known before the first row is built, so nothing glides in.
+  syncRows()
   layoutRows(false)
   const unsubscribe = controls.subscribe(update)
   const unlisten = readoutPort?.listen((key) => readouts.get(key)?.notify())
@@ -3819,6 +3916,11 @@ function buildPanel<S extends Schema>(
       if (id !== undefined) selectTab(id)
       return activeTab
     },
+    search(query, chips) {
+      if (!search) return undefined
+      search.set(query, chips)
+      return { query: search.input.value, chips: [...search.active()] }
+    },
     reopen() {
       if (!morph?.closing || !root.isConnected) return false
       root.style.pointerEvents = ""
@@ -3826,7 +3928,12 @@ function buildPanel<S extends Schema>(
       return true
     },
     dispose() {
+      for (const type of ["pointerup", "pointercancel"])
+        doc.removeEventListener(type, pressEnded, true)
       clearTimeout(statusTimer)
+      clearTimeout(nudgeEnd)
+      for (const k of inHand) controls.hold(k, false)
+      inHand.clear()
       for (const t of peekTimers.values()) clearTimeout(t)
       for (const r of [...rows, ...leavingRows]) dropGpu(r)
       for (const c of groupChips.values()) c.dispose()

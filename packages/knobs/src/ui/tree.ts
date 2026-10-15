@@ -75,6 +75,12 @@ export interface TreeOptions<T> extends UiLook {
   readonly label?: string
   /** Shown with no rows. */
   readonly empty?: string
+  /**
+   * Letters jump to a matching label (on by default). `false` leaves every letter to the page (a
+   * host's single-key shortcuts), and a function decides by key which ones start a jump; once one
+   * has, the letters typed right after it carry on the run.
+   */
+  readonly typeahead?: boolean | ((key: string) => boolean)
 }
 
 export interface Tree<T> {
@@ -762,7 +768,13 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
 
   // Keys.
   let typed = ""
-  let typedAt = 0
+  let typedAt = -Infinity
+  /** Whether a letter goes to type-ahead (see `typeahead`); a run already going takes it. */
+  const typesAhead = (key: string, running: boolean) => {
+    const rule = options.typeahead ?? true
+    if (rule === false) return false
+    return rule === true || (running && typed !== "") || rule(key)
+  }
   root.addEventListener("keydown", (e) => {
     if ((e.target as Element).closest(".knobs-tree-edit")) return
     if (dragging) {
@@ -817,7 +829,14 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
       else handled = false
     } else if (e.key.toLowerCase() === "a" && (e.metaKey || e.ctrlKey)) {
       setSelection({ ids: rows.map((r) => r.id), anchor: active }, active)
-    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && e.key !== " ") {
+    } else if (
+      e.key.length === 1 &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      e.key !== " " &&
+      typesAhead(e.key, performance.now() - typedAt <= 700)
+    ) {
       const now = performance.now()
       typed = now - typedAt > 700 ? e.key : typed + e.key
       typedAt = now
