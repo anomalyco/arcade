@@ -1462,11 +1462,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } else {
       focusPill.textContent = "Edit · Canvas"
       if (sec.id === "spawn") {
-        hintText.textContent = "Click Select · ⇧Click Add · Drag Box · 2F/RMB Orbit · RMB Tap Radial · G Move · P Play · F Frame · ⇧Tab Outliner · Ctrl+Space Library · ⌘K Search"
+        hintText.textContent = `Click Select · ⇧Click Add · Drag Box · 2F/RMB Orbit · RMB Tap Radial · G Move · P Play · F Frame · ⇧Tab Outliner${libraryHint()} · ⌘K Search`
       } else {
-        hintText.textContent = "2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll · Ctrl+Space Library · ⌘K Search"
+        hintText.textContent = `2F/RMB Orbit · ⇧Pan · Pinch/Wheel Zoom · RMB Tap Radial · Space Retrigger · F Frame · R Reroll${libraryHint()} · ⌘K Search`
       }
     }
+  }
+
+  /** A host turns the Library off (`data-library="off"` on the root) while a focused lab is open. */
+  function libraryOff() {
+    return root.dataset.library === "off"
+  }
+  function libraryHint() {
+    return libraryOff() ? "" : " · Ctrl+Space Library"
   }
 
   function syncStageMarkers() {
@@ -3035,7 +3043,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     // Ctrl+Space toggles the Library drawer (layout-independent: physical Space key)
     if (event.ctrlKey && !event.metaKey && event.code === "Space") {
       event.preventDefault()
-      if (!event.repeat) commands.execute("library.toggle", { pickedObject: null, groundHit: null, source: "ui" })
+      if (!event.repeat && !libraryOff()) commands.execute("library.toggle", { pickedObject: null, groundHit: null, source: "ui" })
       return
     }
 

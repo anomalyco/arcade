@@ -35,7 +35,10 @@ described beside it (`split`). `/` or `⌘K` searches (every word must match the
 `↑`/`↓` move, `←`/`→` fold a collection, `↵` or a double-click opens, and `Esc` goes back to the lab you came from.
 Home covers the workbench, which stops drawing until a lab opens. In a lab the top bar shows `Labs › collection › lab`;
 `H` (or Labs) comes back to Home, the lab's name lists the others in its collection, and `⌥[` `⌥]` step through them.
-`1`–`9` pick the open lab's variants. `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
+`1`–`9` pick the open lab's variants, and `⇧` with a number shows what you see now beside that variant as an A/B wipe
+(section labs; a page lab just switches). A lab shows only its own panels: the Library drawer and the World footer
+(the global section, environment and seed pickers) are hidden and `Ctrl+Space` does nothing while one is open
+(`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
 work. `arcade run lab.list`, `lab.open {"id": "look-and-light/weather"}` and `lab.home` do the same from the CLI.
 
 Labs come from station files for now (`games/lab/src/home/catalog.ts`): each station becomes a kept lab in an area

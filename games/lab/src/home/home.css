@@ -278,3 +278,9 @@
   background: var(--hover);
   outline: none;
 }
+
+/* A focused lab hides the workbench's global pickers: the Library drawer and the World footer. */
+[data-lab-focused] .lab-library,
+[data-lab-focused] .lab-world {
+  display: none !important;
+}

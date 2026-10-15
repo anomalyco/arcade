@@ -45,10 +45,18 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
     const ok = await stations.open(lab.station())
     if (!ok) return false
     current = lab
+    focus(true)
     api.suspend(home.open || isPage())
     renderCrumb()
     syncUrl()
     return true
+  }
+
+  /** A lab shows only its own panels: no Library drawer and no World footer (they pick other sections and things). */
+  function focus(on: boolean) {
+    if (on) api.slots.root.dataset.library = "off"
+    else delete api.slots.root.dataset.library
+    api.slots.root.toggleAttribute("data-lab-focused", on)
   }
 
   function syncUrl() {
@@ -182,6 +190,7 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
   stations.on(event => {
     if (event.kind === "station" && event.station === null && current) {
       current = null
+      focus(false)
       renderCrumb()
       syncUrl()
     }
