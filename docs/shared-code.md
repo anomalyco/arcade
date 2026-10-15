@@ -354,8 +354,13 @@ In rough order of value against risk:
      and Blackout; follow-up candidates are migrating Getaway's `Scene.shake`/`hitStop` and Carrier's camera `trauma²`
      loops onto `@arcade/kit/client/camera` helpers.
 9. **Remaining candidates:**
-   - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
-     handshake, and seat bookkeeping.
+   - **Room plumbing (Blackout and Brawl):** `@arcade/kit/net/room-core` (`RoomCore`: build handshake, seats held 15 s
+     for a reconnect, idle kick with a countdown, fixed-tick broadcast of events, roster changes and snapshots),
+     `@arcade/kit/server/{room-object,lobby-object,worker}` (the Room Durable Object's socket accept, bounded catch-up
+     tick loop and throttled Lobby reports with a heartbeat; the storage-backed Lobby; the `/arcade/<game>` Worker
+     router) and `@arcade/kit/net/room-socket` (the client socket with seat reclaim, backoff and version reload).
+     Blackout's `server/room.ts` keeps only its World hooks and room options. Getaway, Outbreak and Carrier still own
+     theirs.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
      vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
    - **Session & snapshot interpolation:** `@arcade/kit/net` now has the shared pieces (Outbreak co-op is the first
