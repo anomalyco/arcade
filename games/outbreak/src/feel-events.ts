@@ -3,6 +3,7 @@ import { MotionBlurBurst } from "@arcade/kit/gpu/motion-blur"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { NetSession } from "./net-session"
 import type { OutbreakSettings } from "./settings"
 import type { ZombieCrowdRenderer } from "./zombies"
@@ -42,6 +43,7 @@ export class OutbreakFeelTracker {
     this.prevPortalPlanks.clear()
     this.prevDoorOpen.clear()
     this.processedVehicleHits.clear()
+    outbreakClientFeatures.resetFeel(this, player)
   }
 
   triggerShot(aim: number, power = 1): void {
@@ -330,6 +332,19 @@ export class OutbreakFeelTracker {
         }
       },
     )
+
+    addCount = outbreakClientFeatures.processFeelFrame({
+      tracker: this,
+      session,
+      combatFx,
+      zombieCrowd,
+      addSprites,
+      addCount,
+      playerGroundY,
+      dt,
+      settings,
+      cam,
+    })
 
     return addCount
   }

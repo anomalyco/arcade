@@ -21,11 +21,13 @@ import type { OutbreakAudio } from "./audio"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
+import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
-import { stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import {
   applyOutbreakPreset,
   exportOutbreakPreset,
@@ -38,11 +40,7 @@ import type { Survivor } from "./survivor"
 import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
 import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  toSharedWeatherSettings,
-  type OutbreakWeatherController,
-} from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
@@ -65,6 +63,7 @@ export interface OutbreakHarnessHost {
   readonly weatherController: OutbreakWeatherController
   readonly worldStreamer: WorldClientStreamer
   readonly hud: OutbreakHud
+  readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly audio: OutbreakAudio
   readonly vehicleAudio: OutbreakVehicleAudio
@@ -100,13 +99,11 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     lab,
     feelTracker,
     combatFx,
-    weatherController,
     worldStreamer,
     hud,
     coop,
     audio,
     vehicleAudio,
-    progressionHost,
     vehicleHost,
     promptEl,
   } = host
@@ -189,7 +186,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           twilight: dc.twilight,
           lamps: dc.lamps,
         },
-        pacing: { ...session.ai.pacing.telemetry },
         flashlight: {
           on: session.view.player.flashlightOn,
           battery: session.view.player.battery,
@@ -209,12 +205,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         vertices: host.getVertices(),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },
-        weather: {
-          enabled: settings.weather.weatherEnabled,
-          preset: settings.weather.weatherPreset,
-          settings: toSharedWeatherSettings(settings.weather),
-          state: { ...weatherController.sim.state },
-        },
         camera: {
           shakeScale: settings.view.shakeScale,
           kickScale: settings.view.kickScale,
@@ -269,6 +259,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           grabbingZombies: v.grabbingZombies,
           bangCount: v.bangCount,
         })),
+        ...outbreakClientFeatures.collectHarnessState(host),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -326,14 +317,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       if (res.ok) lab.refresh()
       return res
     },
-    setWeatherPreset(preset: string) {
-      const applied = applyOutbreakWeatherPreset(settings.weather, preset)
-      lab.refresh()
-      return applied
-    },
-    strikeLightning(seed?: number) {
-      return weatherController.strikeNow(seed)
-    },
     setLookPreset(preset: LookPresetId | string) {
       const session = host.session()
       const pid = resolveLookPresetId(preset)
@@ -383,24 +366,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       host.avatar().reset()
       cam.snap(x, y)
       cam.dist = settings.view.zoom
-    },
-    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
-    stock(loaded?: number, belt: Record<string, number> = {}) {
-      const session = host.session()
-      const { progression, actorId } = session.view
-      const ledger = progression.ledger
-      if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
-      for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count(`${actorId}/belt`, item)
-        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
-        if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
-      }
-      const slot = session.sim.slot(actorId)
-      if (slot) progression.project(slot)
-    },
-    /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
-    stageProgression(scene: ProgressionScene) {
-      stageProgression(progressionHost, scene)
     },
     /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally stages combat states. */
     stageMelee(
@@ -541,95 +506,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     stageVehicle(scene: VehicleScene) {
       stageVehicleScene(vehicleHost, scene)
     },
-    /** Stages a first-night pacing scene (`pacing.stage`). */
-    stagePacing(scene: string) {
-      const session = host.session()
-      session.ai.noiseBus.reset()
-      session.view.notices.length = 0
-      hud.reset()
-      if (scene === "legacy-rush") {
-        settings.ai.directorPacing = 0
-        settings.ai.safeRadius = 3.5
-        settings.ai.initialDensity = 1.0
-        settings.ai.startHour = 18.0
-        settings.dayCycle.hour = 18.0
-        session.view.hour = 18.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      } else if (scene === "safehouse-workbench") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        stageProgression(progressionHost, "bench")
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-      } else if (scene === "first-contact") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.dayCycle.hour = 17.85
-        session.view.hour = 17.85
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(29.5, 41.2, 0)
-        const s1 = session.ai.spawnZombie(session.view.town, 37.8, 41.8, "investigate", Math.PI)
-        const s2 = session.ai.spawnZombie(session.view.town, 39.2, 43.4, "investigate", Math.PI - 0.15)
-        s1.targetX = 31.0
-        s1.targetY = 41.2
-        s2.targetX = 31.5
-        s2.targetY = 42.0
-        session.ai.pacing.firstEncounterStage = "staged"
-      } else if (scene === "late-night-horde") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.maxActiveNearPlayer = 4
-        settings.dayCycle.hour = 22.5
-        session.view.hour = 22.5
-        session.view.time = 420
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.syncPopulation(session.view.town, 44, 44)
-        harness.pose(41.5, 43.5, 0)
-        session.ai.emitNoise(41.5, 43.5, 34, "gunshot", session.view.time, "player", 2.0)
-        for (const [zx, zy] of [
-          [48.2, 42.6],
-          [49.4, 44.5],
-          [47.5, 45.8],
-          [51.0, 43.2],
-        ] as const) {
-          const z = session.ai.spawnZombie(session.view.town, zx, zy, "chase", Math.PI)
-          z.targetX = 41.5
-          z.targetY = 43.5
-        }
-      } else {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.0
-        session.view.hour = 16.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      }
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        host.setLastDayNightHour(session.view.hour)
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      }
-      lab.refresh()
-      return { scene, pacing: { ...session.ai.pacing.telemetry }, hour: session.view.hour }
-    },
-    /** Gives the local survivor an item, routed to belt, hand or pack. */
-    give(item: string, count = 1) {
-      const session = host.session()
-      return session.view.progression.ledger.apply({ kind: "grant", actor: session.view.actorId, item, count }).ok
-    },
     spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
       const session = host.session()
       const z = session.ai.spawnZombie(session.view.town, x, y, state, aim)
@@ -694,6 +570,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       return harness.state()
     },
   }
+  Object.assign(harness, outbreakClientFeatures.collectHarnessMethods(host, harness))
   return harness
 }
 

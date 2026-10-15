@@ -12,24 +12,21 @@ import { supportHeight } from "../shared/terrain"
 import { audioControls } from "./audio"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
 import { groundControls, randomizeGroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
-import { DEFAULT_MAP_SETTINGS, mapControls, type OutbreakMap } from "./map"
+import type { OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
 import type { NetSession } from "./net-session"
-import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
+import "./pacing"
+import { type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
 import { unseenControls } from "./unseen"
 import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  outbreakWeatherControls,
-  randomizeOutbreakWeather,
-  type OutbreakWeatherController,
-} from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 import { zombieControls } from "./zombie-profile"
 
 export interface OutbreakLabControlHost {
@@ -51,8 +48,8 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost } = host
-  return [
+  const { settings, feelTracker, combatFx, progressionHost, vehicleHost } = host
+  const raw: LabControl[] = [
     ...aiControls,
     ...audioControls,
     {
@@ -106,7 +103,6 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
-    ...progressionLabControls(progressionHost),
     ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
@@ -175,7 +171,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...zombieControls,
     ...survivorAimControls,
     ...hudControls,
-    ...mapControls,
+    ...outbreakClientFeatures.collectLabControls(host),
     {
       key: "bloodStyle",
       label: "Blood splatter",
@@ -367,28 +363,15 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
       ],
     },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    ...outbreakWeatherControls,
-    {
-      key: "triggerWeatherLightning",
-      label: "Trigger lightning strike",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        weatherController.strikeNow()
-      },
-    },
-    {
-      key: "randomizeWeatherTuning",
-      label: "Randomize weather",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        randomizeOutbreakWeather(settings.weather, settings.weather.weatherTuningSeed)
-        host.lab().refresh()
-      },
-    },
   ]
+  const seen = new Set<string>()
+  const out: LabControl[] = []
+  for (const c of raw) {
+    if (seen.has(c.key)) continue
+    seen.add(c.key)
+    out.push(c)
+  }
+  return out
 }
 
 export function handleOutbreakSettingChanged(
@@ -396,36 +379,17 @@ export function handleOutbreakSettingChanged(
   rawKey: string,
   value?: number | boolean | string,
 ): void {
-  const { settings, lookSettings, progressionHost, hud } = host
+  const { settings, lookSettings, hud } = host
   const session = host.session()
   const lab = host.lab()
   const routed = resolveOutbreakSettingTarget(rawKey)
   const key = routed?.field ?? rawKey
+  outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
-  if (key in DEFAULT_MAP_SETTINGS) host.map.applySettings()
-  applyProgressionSetting(progressionHost, key, settings.progression)
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
-  }
-  if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
-    Object.assign(session.ai.config, settings.ai)
-    if (progressionHost.offline() && session.view.time < 5) {
-      session.ai.resetOpeningPopulation(
-        session.view.town,
-        session.sim.slots.map((s) => s.survivor),
-      )
-    }
-  }
-  if (key === "startHour") {
-    settings.dayCycle.hour = wrapHour(settings.ai.startHour)
-    session.view.hour = settings.dayCycle.hour
-    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-      host.setLastDayNightHour(session.view.hour)
-      applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      lab.refresh()
-    }
   }
   if (key === "hour") {
     session.view.hour = wrapHour(settings.dayCycle.hour)
@@ -485,22 +449,6 @@ export function handleOutbreakSettingChanged(
     if (settings.dayCycle.dayNightLook === 1 && pid === "noir") {
       host.setLastDayNightHour(session.view.hour)
       applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-    }
-    lab.refresh()
-  }
-  if (key === "weatherPreset") {
-    applyOutbreakWeatherPreset(settings.weather, String(value ?? settings.weather.weatherPreset))
-    lab.refresh()
-  }
-  if (key === "weatherEnabled") {
-    if (
-      settings.weather.weatherEnabled &&
-      settings.weather.weatherPreset === "clear" &&
-      settings.weather.weatherIntensity <= 0.001
-    ) {
-      applyOutbreakWeatherPreset(settings.weather, "rain")
-    } else if (!settings.weather.weatherEnabled) {
-      settings.weather.weather = 0
     }
     lab.refresh()
   }

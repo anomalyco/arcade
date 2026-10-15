@@ -10,15 +10,17 @@ import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
 import { FOG_SIZE, type Vision } from "../shared/vision"
 import type { CoopView } from "./coop-view"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
+import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
-import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
 import { stageVehicleScene, VEHICLE_SCENES, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
-import { applyOutbreakWeatherPreset, type OutbreakWeatherController } from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 
 export interface OutbreakGameCommandsHost {
   readonly device: GPUDevice
@@ -32,6 +34,7 @@ export interface OutbreakGameCommandsHost {
   readonly settings: OutbreakSettings
   readonly feelTracker: OutbreakFeelTracker
   readonly hud: OutbreakHud
+  readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
@@ -52,9 +55,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
     feelTracker,
     hud,
     coop,
-    lab,
-    progressionHost,
-    weatherController,
   } = host
 
   registerGameCommands((commands) => {
@@ -267,21 +267,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
         },
       },
       {
-        id: "progression.stage",
-        label: "Stage an Inventory or Workbench Scene",
-        shortLabel: "Progression Scene",
-        category: "Scene",
-        undoable: false,
-        args: { scene: { type: "string", description: `Scene (${PROGRESSION_SCENES.join(", ")})` } },
-        enabled: () => !coop.net,
-        run: (_ctx, args) => {
-          const scene = String(args?.scene ?? "bench") as ProgressionScene
-          if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
-          stageProgression(progressionHost, scene)
-          return { scene }
-        },
-      },
-      {
         id: "melee.stage",
         label: "Equip Melee Weapon & Stage Arena",
         shortLabel: "Melee Stage",
@@ -329,25 +314,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           if (!VEHICLE_SCENES.includes(scene)) throw new Error(`Unknown vehicle scene ${scene}`)
           stageVehicleScene(host.vehicleHost, scene)
           return { scene }
-        },
-      },
-      {
-        id: "pacing.stage",
-        label: "Stage First-Night Pacing Scene",
-        shortLabel: "Pacing Scene",
-        category: "Scene",
-        undoable: false,
-        args: {
-          scene: {
-            type: "string",
-            description: "Scene (opening-calm, safehouse-workbench, first-contact, late-night-horde, legacy-rush)",
-          },
-        },
-        enabled: () => !coop.net,
-        run: async (_ctx, args) => {
-          const out = host.harness().stagePacing(String(args?.scene ?? "opening-calm"))
-          await host.harness().step(1 / 60)
-          return out
         },
       },
       {
@@ -412,42 +378,7 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           }
         },
       },
-      {
-        id: "weather.preset",
-        label: "Set Outbreak Weather Preset",
-        shortLabel: "Weather Preset",
-        category: "Scene",
-        undoable: false,
-        args: {
-          preset: {
-            type: "string",
-            required: true,
-            description: "Weather preset ID (clear, drizzle, rain, storm, fog, snow)",
-          },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const applied = applyOutbreakWeatherPreset(settings.weather, String(args?.preset ?? "rain"))
-          lab.refresh()
-          host.draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { preset: settings.weather.weatherPreset, enabled: settings.weather.weatherEnabled, settings: applied }
-        },
-      },
-      {
-        id: "weather.strike",
-        label: "Trigger Outbreak Lightning Strike",
-        shortLabel: "Lightning Strike",
-        category: "Scene",
-        undoable: false,
-        enabled: () => true,
-        run: async () => {
-          const strike = weatherController.strikeNow()
-          host.draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { triggered: true, strike }
-        },
-      },
+      ...outbreakClientFeatures.collectGameCommands(host),
     ])
   })
 }
