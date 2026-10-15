@@ -253,6 +253,14 @@ function readBonePose(buf: Float32Array, baseOff: number): BonePose {
   return out
 }
 
+const scratchAgentTuning: ZombieTuning = {
+  zombieVariant: 0,
+  zombieLurch: 0,
+  zombieAsymmetry: 0,
+  zombieDrag: 0,
+  zombieReach: 0,
+}
+
 /** Computes a zombie's dynamic HumanProfile from global Lab tuning + individual traits + AI state/speed. */
 export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out?: HumanProfile): HumanProfile {
   const stateBoost =
@@ -264,19 +272,18 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out
   const speed = Math.hypot(agent.vx, agent.vy)
   const speedNorm = clamp(speed / 3.0, 0, 1)
 
-  const lurch = clamp(baseTuning.zombieLurch * (0.75 + 0.35 * agent.lurch) + 0.16 * stateBoost, 0, 1)
-  const asymmetry = clamp(baseTuning.zombieAsymmetry * (0.7 + 0.4 * agent.asymmetry), 0, 1)
-  const drag = clamp(baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost), 0, 1)
-  const reach = clamp(baseTuning.zombieReach * (0.65 + 0.35 * agent.reach) + 0.28 * stateBoost + 0.1 * speedNorm, 0, 1)
+  scratchAgentTuning.zombieVariant = baseTuning.zombieVariant
+  scratchAgentTuning.zombieLurch = clamp(baseTuning.zombieLurch * (0.75 + 0.35 * agent.lurch) + 0.16 * stateBoost, 0, 1)
+  scratchAgentTuning.zombieAsymmetry = clamp(baseTuning.zombieAsymmetry * (0.7 + 0.4 * agent.asymmetry), 0, 1)
+  scratchAgentTuning.zombieDrag = clamp(baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost), 0, 1)
+  scratchAgentTuning.zombieReach = clamp(
+    baseTuning.zombieReach * (0.65 + 0.35 * agent.reach) + 0.28 * stateBoost + 0.1 * speedNorm,
+    0,
+    1,
+  )
 
   const profile = zombieProfile(
-    {
-      zombieVariant: baseTuning.zombieVariant,
-      zombieLurch: lurch,
-      zombieAsymmetry: asymmetry,
-      zombieDrag: drag,
-      zombieReach: reach,
-    },
+    scratchAgentTuning,
     agent.id === 1 && (baseTuning.zombieVariant ?? 0) === 0 ? 0 : agent.seed,
     out,
   )
@@ -338,6 +345,10 @@ export class ZombieCrowdRenderer {
   private readonly ghostPoolBatches: Batch[]
   private readonly scratchProfile: HumanProfile = { ...humanProfiles.zombie }
   private readonly scratchTorsoFrame: Frame = { p: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
+  private readonly scratchHands: [V3, V3] = [
+    [0, 0, 0],
+    [0, 0, 0],
+  ]
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
   private overlayCanvas: HTMLCanvasElement | null = null
@@ -1274,7 +1285,7 @@ export class ZombieCrowdRenderer {
       tf.y[0] = tyAxisX; tf.y[1] = tyAxisY; tf.y[2] = tyAxisZ
       tf.z[0] = tzAxisX; tf.z[1] = tzAxisY; tf.z[2] = tzAxisZ
       const runBlend = clamp((speed - 1.5) / 1.5, 0, 1)
-      const [hL, hR] = shambleHandsFK(tf, curPhase, shambleGait, runBlend, profile, actorSeed)
+      const [hL, hR] = shambleHandsFK(tf, curPhase, shambleGait, runBlend, profile, actorSeed, this.scratchHands)
 
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1

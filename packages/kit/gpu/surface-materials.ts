@@ -1208,14 +1208,16 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   // Each fleck is a rotated ellipse at a jittered spot in its cell, not the whole square cell (reads as leaves, not pixels).
   let leafCell = floor(p * 7.4);
   let leafHash = hash2(leafCell + vec2f(3.7, 7.9));
-  let leafPatch = smoothstep(0.36, 0.68, clumpField);
-  let leafLocal = fract(p * 7.4) - (vec2f(hash2(leafCell + vec2f(1.3, 0.2)), hash2(leafCell + vec2f(4.1, 2.7))) * 0.4 + 0.3);
-  let leafAng = leafHash * 31.0;
-  let leafQ = vec2f(cos(leafAng) * leafLocal.x - sin(leafAng) * leafLocal.y, sin(leafAng) * leafLocal.x + cos(leafAng) * leafLocal.y);
-  let leafShape = 1.0 - smoothstep(0.14, 0.22, length(leafQ * vec2f(1.0, 1.8)));
-  let leafMask = step(0.942, leafHash) * leafShape * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
-  let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
-  col = mix(col, leafCol, leafMask * 0.78);
+  if (leafHash >= 0.942 && surfaceFootprint * 7.4 < 0.55) {
+    let leafPatch = smoothstep(0.36, 0.68, clumpField);
+    let leafLocal = fract(p * 7.4) - (vec2f(hash2(leafCell + vec2f(1.3, 0.2)), hash2(leafCell + vec2f(4.1, 2.7))) * 0.4 + 0.3);
+    let leafAng = leafHash * 31.0;
+    let leafQ = vec2f(cos(leafAng) * leafLocal.x - sin(leafAng) * leafLocal.y, sin(leafAng) * leafLocal.x + cos(leafAng) * leafLocal.y);
+    let leafShape = 1.0 - smoothstep(0.14, 0.22, length(leafQ * vec2f(1.0, 1.8)));
+    let leafMask = leafShape * leafPatch * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 7.4));
+    let leafCol = select(vec3f(0.16, 0.095, 0.032), vec3f(0.21, 0.14, 0.045), fract(leafHash * 19.3) > 0.5);
+    col = mix(col, leafCol, leafMask * 0.78);
+  }
 
   // High-frequency ground detail normal + tuft mound normal so the lawn never reads as a flat plane
   let normAtten = 1.0 - smoothstep(0.14, 0.85, surfaceFootprint);
@@ -1359,7 +1361,7 @@ export const surfaceMaterial = /* wgsl */ `
           vEdge = smoothstep(0.0, 0.08, vDist);
           grassTint = vec3f(0.082, 0.098, 0.042) * (0.78 + 0.22 * vEdge);
         }
-        let s = evalGrassSoil(p, grassTint, false, defaultMaterialRecipe(4));
+        let s = evalGrassSoil(p, grassTint, false, ${defaultRecipeStructWgsl("grass_soil")});
         albedo = s.albedo * s.cavity * select(1.0, 0.84 + 0.16 * vEdge, isConcreteGrass);
         if (texOn) {
           let tex = sampleMaterialFast(8, p, 0.58 * texScaleMult);
@@ -1367,14 +1369,14 @@ export const surfaceMaterial = /* wgsl */ `
         }
         n = normalize(n + surfaceNormalShift * 1.35);
       } else if (kind == 1) {
-        let s = evalAsphaltConcrete(p, albedo, false, defaultMaterialRecipe(3));
+        let s = evalAsphaltConcrete(p, albedo, false, ${defaultRecipeStructWgsl("asphalt_concrete")});
         albedo = s.albedo;
         if (texOn) {
           let tex = sampleMaterialFast(7, p, 0.55 * texScaleMult);
           albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.85 * texContrastMult);
         }
       } else if (kind == 2) {
-        let s = evalAsphaltConcrete(p, albedo, true, defaultMaterialRecipe(3));
+        let s = evalAsphaltConcrete(p, albedo, true, ${defaultRecipeStructWgsl("asphalt_concrete")});
         albedo = s.albedo * s.cavity;
         if (texOn) {
           let tex = sampleMaterialFast(6, p, 0.58 * texScaleMult);
@@ -1406,7 +1408,7 @@ export const surfaceMaterial = /* wgsl */ `
             albedo = modulateFast(albedo, tex, vec3f(0.6427, 0.5308, 0.3801), 0.82 * texContrastMult);
           }
         } else {
-          let s = evalWoodPlanks(p, albedo * 1.04, defaultMaterialRecipe(0));
+          let s = evalWoodPlanks(p, albedo * 1.04, ${defaultRecipeStructWgsl("wood_planks")});
           albedo = s.albedo;
           if (texOn && floorStyleBits < 2u) {
             let styleScale = select(0.65, 0.95, floorStyleBits == 1u) * texScaleMult;
@@ -1455,7 +1457,7 @@ export const surfaceMaterial = /* wgsl */ `
       let wallUv = vec2f(o.world.x + o.world.z, o.world.y);
       let inWallRoom = interior(o.world.xz + n.xz * 0.3);
       if (inWallRoom || o.aux > 20.5) {
-        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.34, 0.29, 0.22), inWallRoom), defaultMaterialRecipe(2));
+        let s = evalPlasterWall(o.world, n, select(albedo, vec3f(0.34, 0.29, 0.22), inWallRoom), ${defaultRecipeStructWgsl("plaster_wall")});
         albedo = s.albedo;
         if (texOn && (!inWallRoom || wallStyleBits < 2u) && o.world.y >= 0.96) {
           let wallScale = select(0.78, select(0.78, 1.15, wallStyleBits == 1u), inWallRoom) * texScaleMult;
@@ -1562,7 +1564,7 @@ export const surfaceMaterial = /* wgsl */ `
         let crestHighlight = smoothstep(0.44, 0.74, crestNoise) * 0.14 * bladeT;
         albedo = mix(albedo * (0.90 + vein), vec3f(0.24, 0.26, 0.14), crestHighlight) * rootAO * mix(0.68, 0.98, pow(bladeT, 0.65));
       } else {
-        let s = evalFoliageCanopy(o.world, n, albedo, defaultMaterialRecipe(5));
+        let s = evalFoliageCanopy(o.world, n, albedo, ${defaultRecipeStructWgsl("foliage_canopy")});
         albedo = s.albedo * mix(0.60, 1.04, s.cavity);
         n = normalize(n + surfaceNormalShift);
       }

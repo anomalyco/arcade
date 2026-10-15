@@ -75,9 +75,25 @@ export function zombieProfileOverrides(tuning: ZombieTuningInput) {
 }
 
 export function zombieProfile(tuning: ZombieTuningInput, seed = 0, out?: HumanProfile): HumanProfile {
-  const ov = zombieProfileOverrides(tuning)
-  const base: HumanProfile = out ? Object.assign(out, humanProfiles.zombie, ov) : { ...humanProfiles.zombie, ...ov }
+  const lurch = clamp(tuning.zombieLurch, 0, 1)
+  const asymmetry = clamp(tuning.zombieAsymmetry, 0, 1)
+  const drag = clamp(tuning.zombieDrag, 0, 1)
+  const reach = clamp(tuning.zombieReach, 0, 1)
   const variantCode = Math.round(clamp(tuning.zombieVariant ?? 0, 0, 4))
+  const zombieVariant = VARIANT_MAP[variantCode] ?? "auto"
+  const base: HumanProfile = out ? Object.assign(out, humanProfiles.zombie) : { ...humanProfiles.zombie }
+  base.strideScale = .94 - .24 * lurch
+  base.torsoLean = .05 + .24 * lurch
+  base.chestHz = 5 - 3 * lurch
+  base.headHz = 7 - 5.8 * lurch
+  base.timingBias = .28 * asymmetry
+  base.torsoRoll = .12 * asymmetry
+  base.headTilt = .2 * asymmetry
+  base.armAsymmetry = .13 * asymmetry
+  base.footDrag = .95 * drag
+  base.armReach = .2 + .32 * reach
+  base.handPose = "reach"
+  if (variantCode > 0) base.zombieVariant = zombieVariant
   if (variantCode > 0 || seed !== 0) {
     const resolved = resolveZombieVariant(VARIANT_MAP[variantCode], seed)
     base.zombieVariant = resolved

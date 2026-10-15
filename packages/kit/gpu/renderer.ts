@@ -213,6 +213,12 @@ export class Renderer {
   submittedFrames = 0
   width = 0
   height = 0
+  /** Most recent GPU queue-completion latency (ms) from flushPending. */
+  lastGpuMs = 0
+  /** Exponential moving average of GPU queue-completion latency (ms). */
+  emaGpuMs = 0
+  private bloomLevels = BLOOM_LEVELS
+  private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean }[] = []
 
   constructor(
     private device: GPUDevice,
@@ -869,14 +875,23 @@ export class Renderer {
     })
   }
 
+  setBloomLevels(levels: number): void {
+    this.bloomLevels = Math.max(1, Math.min(BLOOM_LEVELS, Math.round(levels)))
+  }
+
   private flushPending(): void {
     const f = this.pending
     if (!f || this.inflight >= 1) return
     this.pending = null
+    const submitAt = performance.now()
     this.draw(f)
     this.inflight++
     void this.device.queue.onSubmittedWorkDone().then(() => {
+      const gpuMs = Math.max(0, performance.now() - submitAt)
+      this.lastGpuMs = gpuMs
+      this.emaGpuMs = this.emaGpuMs > 0 ? this.emaGpuMs + (gpuMs - this.emaGpuMs) * 0.2 : gpuMs
       this.inflight--
+      if (this.pending) this.schedule()
       this.onIdle?.()
       this.notifyPacer()
     })
@@ -1002,7 +1017,8 @@ export class Renderer {
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 
-    const total = f.batches.reduce((s, b) => s + b.count, 0)
+    let total = 0
+    for (let i = 0; i < f.batches.length; i++) total += f.batches[i]!.count
     if (motion && total * INST_FLOATS > this.previousData.length) {
       this.previousData = new Float32Array(total * INST_FLOATS * 2)
       this.previousInst.destroy()
@@ -1013,12 +1029,14 @@ export class Renderer {
       this.inst.cap = Math.ceil(total * 1.5)
       this.inst.buf = d.createBuffer({ size: this.inst.cap * INST_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     }
-    const ranges: { model: number; first: number; count: number; alpha: boolean }[] = []
+    const ranges = this.drawRanges
+    let rangeCount = 0
     let off = 0
     let firstBuf: ArrayBuffer | null = null
     let firstByteOff = 0
     let contiguous = true
-    for (const b of f.batches) {
+    for (let bIdx = 0; bIdx < f.batches.length; bIdx++) {
+      const b = f.batches[bIdx]!
       if (!b.count) continue
       if (firstBuf === null) {
         firstBuf = b.data.buffer
@@ -1026,7 +1044,16 @@ export class Renderer {
       } else if (b.data.buffer !== firstBuf || b.data.byteOffset !== firstByteOff + off * INST_FLOATS * 4) {
         contiguous = false
       }
-      ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      const existing = ranges[rangeCount]
+      if (existing) {
+        existing.model = b.model
+        existing.first = off
+        existing.count = b.count
+        existing.alpha = !!b.alpha
+      } else {
+        ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      }
+      rangeCount++
       if (motion) for (let i = 0; i < b.count; i++) this.history.write(this.previousData, (off + i) * INST_FLOATS, b.data, i * INST_FLOATS, b.motionKeys?.[i])
       off += b.count
     }
@@ -1107,7 +1134,8 @@ export class Renderer {
     if (motion) pass.setVertexBuffer(2, this.previousInst)
     for (const alpha of [false, true]) {
       pass.setPipeline(alpha ? scenePipes.instAlpha! : scenePipes.inst!)
-      for (const r of ranges) {
+      for (let rIdx = 0; rIdx < rangeCount; rIdx++) {
+        const r = ranges[rIdx]!
         if (r.alpha !== alpha) continue
         const m = this.models[r.model]!
         pass.setVertexBuffer(0, m.buf)
@@ -1157,14 +1185,15 @@ export class Renderer {
     }
 
     const g = this.postGroups!
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
+    const activeBloom = this.bloomLevels
+    for (let i = 0; i < activeBloom; i++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
       p.setPipeline(this.pipes.down!)
       p.setBindGroup(0, g.down[i]!)
       p.draw(3)
       p.end()
     }
-    for (let k = 0; k < BLOOM_LEVELS - 1; k++) {
+    for (let k = BLOOM_LEVELS - activeBloom; k < BLOOM_LEVELS - 1; k++) {
       const p = enc.beginRenderPass({ colorAttachments: [{ view: this.bloomViews[BLOOM_LEVELS - 2 - k]!, loadOp: "load", storeOp: "store" }] })
       p.setPipeline(this.pipes.up!)
       p.setBindGroup(0, g.up[k]!)

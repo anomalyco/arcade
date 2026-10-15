@@ -80,6 +80,8 @@ export class CoopSim {
   time = 0
   revision = 0
   private solids: Rect[]
+  private sights: Rect[]
+  private readonly chunkRefs: { id: string; x: number; y: number }[] = []
 
   constructor(
     seed: number,
@@ -115,6 +117,7 @@ export class CoopSim {
       ...progression.handlers(),
     ])
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
   }
 
   /** What progression needs to know about the world this tick. */
@@ -261,7 +264,7 @@ export class CoopSim {
     const ammo = progression.pistol(slot.id)
     const use = progression.heldUse(slot.id)
     const held = progression.selected(slot.id)?.item
-    const blockers = sightRects(town)
+    const blockers = this.sights
     if (command.reload) {
       // R swaps a spare battery into the flashlight when it is in hand and low; otherwise it reloads the pistol.
       const battery = held === "flashlight" && (p.battery < 0.95 || p.batteryDepleted) && progression.ledger.count(slot.id, "battery") > 0
@@ -296,7 +299,19 @@ export class CoopSim {
 
   /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
   syncWorldChunks(): boolean {
-    const survivors = this.slots.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y }))
+    const survivors = this.chunkRefs
+    survivors.length = this.slots.length
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = this.slots[i]!
+      const ref = survivors[i]
+      if (ref) {
+        ref.id = s.id
+        ref.x = s.survivor.x
+        ref.y = s.survivor.y
+      } else {
+        survivors[i] = { id: s.id, x: s.survivor.x, y: s.survivor.y }
+      }
+    }
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
     const res = this.worldStream.updateActiveWindows(
@@ -311,6 +326,7 @@ export class CoopSim {
       this.progression.ensureContainerStores()
       this.revision++
       this.solids = solidRects(this.town)
+      this.sights = sightRects(this.town)
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     return res.changed
@@ -367,6 +383,7 @@ export class CoopSim {
   rebuildSolids(): void {
     this.syncWorldChunks()
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
@@ -374,6 +391,7 @@ export class CoopSim {
   rebuildCollision(): void {
     this.syncWorldChunks()
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
@@ -387,6 +405,7 @@ export class CoopSim {
     }
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
   }
 }

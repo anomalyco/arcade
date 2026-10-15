@@ -444,6 +444,10 @@ export function shambleHandsFK(
   run: number,
   profile: HumanProfile,
   seed = 0,
+  out: [V3, V3] = [
+    [0, 0, 0],
+    [0, 0, 0],
+  ],
 ): [V3, V3] {
   const variant = resolveZombieVariant((profile as { zombieVariant?: ZombieVariant }).zombieVariant, seed)
   const dragFoot = resolveDragFoot(seed)
@@ -515,7 +519,7 @@ export function shambleHandsFK(
   const seedShOffset = seed !== 0 ? zombieSeedHash(seed, 4) * 5.5 : 0
   const seedElbOffset = seed !== 0 ? zombieSeedHash(seed, 5) * 4.5 : 0
 
-  const buildHand = (i: 0 | 1): V3 => {
+  const buildHand = (i: 0 | 1, dst: V3): V3 => {
     const side = i === 0 ? -1 : 1
     const isTrail = (i === 1 && dragSign > 0) || (i === 0 && dragSign < 0)
     const wave = isTrail ? trailWave : catchWave
@@ -548,7 +552,10 @@ export function shambleHandsFK(
 
     // Project in horizontal heading of torso (yaw-aligned, world-vertical) so world shoulder/elbow angles
     // match the authored FK trajectories regardless of torso pitch/roll hunch.
-    const sh = at(torso, 0, RIG.shoulderY, side * RIG.shoulderW)
+    const shZLocal = side * RIG.shoulderW
+    const sh0 = torso.p[0] + torso.y[0] * RIG.shoulderY + torso.z[0] * shZLocal
+    const sh1 = torso.p[1] + torso.y[1] * RIG.shoulderY + torso.z[1] * shZLocal
+    const sh2 = torso.p[2] + torso.y[2] * RIG.shoulderY + torso.z[2] * shZLocal
     const hx = torso.x[0], hz = torso.x[2]
     const hLen = Math.hypot(hx, hz) || 1
     const fx = hx / hLen, fz = hz / hLen
@@ -556,14 +563,15 @@ export function shambleHandsFK(
     const dx = u1x * RIG.upper + u2x * RIG.fore
     const dy = u1y * RIG.upper + u2y * RIG.fore
     const dz = u1z * RIG.upper + u2z * RIG.fore
-    return [
-      sh[0] + fx * dx + rx * dz,
-      sh[1] + dy,
-      sh[2] + fz * dx + rz * dz,
-    ]
+    dst[0] = sh0 + fx * dx + rx * dz
+    dst[1] = sh1 + dy
+    dst[2] = sh2 + fz * dx + rz * dz
+    return dst
   }
 
-  return [buildHand(0), buildHand(1)]
+  buildHand(0, out[0])
+  buildHand(1, out[1])
+  return out
 }
 
 const MOD_ZERO = Object.freeze({

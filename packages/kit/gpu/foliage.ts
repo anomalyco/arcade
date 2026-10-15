@@ -2124,15 +2124,16 @@ export function packFoliageActors(
   offset = 0,
 ): Float32Array {
   const n = Math.min(FOLIAGE_MAX_ACTORS, actors.length)
-  const p: number[] = []
-  for (let i = 0; i < n; i++) {
-    p.push(actors[i]!.x, actors[i]!.z)
+  out[offset] = n
+  out[offset + 1] = 0
+  out[offset + 2] = 0
+  out[offset + 3] = 0
+  for (let i = 0; i < FOLIAGE_MAX_ACTORS; i++) {
+    const a = i < n ? actors[i] : undefined
+    out[offset + 4 + i * 2] = a ? a.x : 0
+    out[offset + 5 + i * 2] = a ? a.z : 0
   }
-  return FoliageActorsStruct.pack(
-    { count: n, pad0: 0, pad1: 0, pad2: 0, p },
-    out as Float32Array<ArrayBuffer>,
-    offset,
-  )
+  return out
 }
 
 /** The focus actor plus the nearest others within `radius` metres, capped at `FOLIAGE_MAX_ACTORS`. */

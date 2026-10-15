@@ -2,6 +2,7 @@ import { DEFAULT_FEEL_SETTINGS, type FeelSettings } from "@arcade/kit/feel"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
+import type { QualityMode } from "@arcade/kit/quality"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
@@ -61,6 +62,7 @@ export type OutbreakDayCycleSettings = {
 export type OutbreakViewSettings = {
   zoom: number
   diagnostic: number
+  quality: QualityMode
 }
 
 export type OutbreakCombatSettings = {
@@ -117,6 +119,7 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   zoom: 46,
   diagnostic: 0,
+  quality: "auto",
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
