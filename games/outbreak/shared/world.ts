@@ -856,22 +856,18 @@ export function selectActiveWindowCenter(
   x: number,
   y: number,
   prevCenter?: ChunkCoord,
-  edgeMargin = 14.0,
+  edgeMargin = 10.0,
 ): ChunkCoord {
   const inOrigin = x >= edgeMargin && x <= MACRO_SIZE - edgeMargin && y >= edgeMargin && y <= MACRO_SIZE - edgeMargin
   if (!prevCenter) {
     return inOrigin ? { cx: 1, cy: 1 } : worldToChunk(x, y)
   }
-  if (prevCenter.cx === 1 && prevCenter.cy === 1 && inOrigin) {
-    return { cx: 1, cy: 1 }
-  }
-  const hyst = 4.0
-  const centerMinX = prevCenter.cx * CHUNK - hyst
-  const centerMaxX = (prevCenter.cx + 1) * CHUNK + hyst
-  const centerMinY = prevCenter.cy * CHUNK - hyst
-  const centerMaxY = (prevCenter.cy + 1) * CHUNK + hyst
-  const outX = x < centerMinX || x > centerMaxX
-  const outY = y < centerMinY || y > centerMaxY
+  const winMinX = (prevCenter.cx - 1) * CHUNK + edgeMargin
+  const winMaxX = (prevCenter.cx + 2) * CHUNK - edgeMargin
+  const winMinY = (prevCenter.cy - 1) * CHUNK + edgeMargin
+  const winMaxY = (prevCenter.cy + 2) * CHUNK - edgeMargin
+  const outX = x < winMinX || x > winMaxX
+  const outY = y < winMinY || y > winMaxY
   if ((outX || outY) && inOrigin) return { cx: 1, cy: 1 }
   const cx = outX ? Math.floor(x / CHUNK) : prevCenter.cx
   const cy = outY ? Math.floor(y / CHUNK) : prevCenter.cy

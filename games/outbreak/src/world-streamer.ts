@@ -1692,12 +1692,33 @@ export class WorldClientStreamer {
         } else {
           const k = this.cacheKey(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
           const chunkKeyStr = `${cx},${cy}`
-          if (isStepTransition && !this.renderedChunkKeys.has(chunkKeyStr)) {
+          if (this.workers.length === 0) {
             if (viewRect) {
+              const [vx0, vz0, vx1, vz1] = viewRect
+              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+              if (cx1 >= vx0 - 14 && cx0 <= vx1 + 14 && cz1 >= vz0 - 14 && cz0 <= vz1 + 14) {
+                c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+              } else {
+                c = this.cache.get(k)
+              }
+            } else {
+              c = this.cache.get(k)
+            }
+          } else if (isTeleport) {
+            c = this.cache.get(k)
+            if (!c && viewRect) {
               const [vx0, vz0, vx1, vz1] = viewRect
               const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
               if (cx1 >= vx0 - 2 && cx0 <= vx1 + 2 && cz1 >= vz0 - 2 && cz0 <= vz1 + 2) {
                 c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+              }
+            }
+          } else if (isStepTransition && !this.renderedChunkKeys.has(chunkKeyStr)) {
+            if (viewRect) {
+              const [vx0, vz0, vx1, vz1] = viewRect
+              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+              if (cx1 >= vx0 - 2 && cx0 <= vx1 + 2 && cz1 >= vz0 - 2 && cz0 <= vz1 + 2) {
+                c = this.cache.get(k)
               } else if (this.cache.has(k)) {
                 nextOuterRingDirty = true
               }
@@ -1706,19 +1727,12 @@ export class WorldClientStreamer {
             }
           } else {
             c = this.cache.get(k)
-            if (!c && viewRect) {
-              const [vx0, vz0, vx1, vz1] = viewRect
-              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
-              if (cx1 >= vx0 - 14 && cx0 <= vx1 + 14 && cz1 >= vz0 - 14 && cz0 <= vz1 + 14) {
-                c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
-              }
-            }
           }
         }
         if (!c) continue
         allRenderedChunks.push(c)
         // If a chunk arrives late while its bounds are already well inside the visible ground frustum, fade it in smoothly
-        if (hadRenderedBefore && !this.renderedChunkKeys.has(c.key) && viewRect && timeSec > 0) {
+        if (!isTeleport && hadRenderedBefore && !this.renderedChunkKeys.has(c.key) && viewRect && timeSec > 0) {
           const [vx0, vz0, vx1, vz1] = viewRect
           const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
           if (cx1 > vx0 + 6 && cx0 < vx1 - 6 && cz1 > vz0 + 6 && cz0 < vz1 - 6) {
