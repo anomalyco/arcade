@@ -110,7 +110,8 @@ export class Dock {
     const belt = ledger.store(`${actorId}/belt`)
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.meleeDurability}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const pendKey = view.pendingItems?.size ? [...view.pendingItems].join(",") : ""
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     const animate = !this.first
     if (key !== this.lastKey) {
       this.wake(now)
@@ -170,6 +171,7 @@ export class Dock {
         chip.full = full
         chip.el.dataset.full = String(full)
       }
+      chip.el.dataset.pending = String(Boolean(view.pendingItems?.has(item)))
       if (animate && chip.count >= 0 && n > chip.count) this.pulse(chip.el)
       chip.count = n
     }
@@ -199,6 +201,7 @@ export class Dock {
       slot.el.dataset.selected = String(sel)
       slot.el.dataset.on = String(Boolean(on))
       slot.el.dataset.empty = String(!s)
+      slot.el.dataset.pending = String(Boolean(s && view.pendingItems?.has(s.item)))
       const def = s ? ledger.items.get(s.item) : undefined
       const label = s ? (def?.shortLabel ?? s.item) : ""
       const extra = s?.item === "flashlight" ? keyCapHtml("KeyF", { className: "slot-cap" }) : ""
@@ -210,7 +213,7 @@ export class Dock {
         if (animate && s) this.motion.enter(slot.item, "default", { y: had ? 0 : 6 })
         if (animate && !s && had) this.pulse(slot.el)
       }
-      const count = s?.item === "pistol" ? (s.charge ?? 0) : s && s.count > 1 ? s.count : null
+      const count = s?.item === "pistol" ? p.magAmmo : s && s.count > 1 ? s.count : null
       slot.el.dataset.count = String(count !== null)
       if (count !== null) slot.roll.set(count, animate && slot.count !== null)
       if (animate && count !== null && slot.count !== null && count > slot.count) this.pulse(slot.el)

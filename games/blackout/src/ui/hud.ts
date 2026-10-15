@@ -113,8 +113,10 @@ export class Hud {
     xh.style.transform = `translate(${mouse.x}px, ${mouse.y}px)`
     const spread = 6 + g.bloom * 26 + (GUNS[g.gun].pellets > 1 ? 10 : 0)
     xh.style.setProperty("--s", `${spread}px`)
-    const hitAge = (performance.now() / 1000 - g.hitAt) / 0.22
-    const killAge = (performance.now() / 1000 - g.killAt) / 0.5
+    const now = performance.now() / 1000
+    const hitAge = (now - g.hitAt) / 0.22
+    const killAge = (now - g.killAt) / 0.5
+    const tentAge = (now - g.tentativeHitAt) / 0.18
     const hm = el.hm!
     if (killAge < 1) {
       hm.className = "kill"
@@ -124,6 +126,10 @@ export class Hud {
       hm.className = ""
       hm.style.opacity = String(1 - hitAge)
       hm.style.setProperty("--m", `${8 + (1 - hitAge) * 5}px`)
+    } else if (tentAge < 1) {
+      hm.className = "tentative"
+      hm.style.opacity = String((1 - tentAge) * 0.55)
+      hm.style.setProperty("--m", `${6 + (1 - tentAge) * 3}px`)
     } else hm.style.opacity = "0"
     xh.style.display = alive ? "block" : "none"
 

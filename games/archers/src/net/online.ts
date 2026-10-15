@@ -19,7 +19,10 @@ const PING_MS = 2000
  */
 export class OnlineSession {
   readonly socket: RoomSocket<ClientMsg>
-  readonly rb = new RollbackClient(rollbackSim(() => this.slot))
+  onReject: ((e: SimEvent, tick: number) => void) | null = null
+  readonly rb = new RollbackClient(rollbackSim(() => this.slot), {
+    onReject: (e, tick) => this.onReject?.(e, tick),
+  })
   readonly pacer = new TickPacer(TICK_MS)
   roster: RosterRow[] = []
   slot = -1

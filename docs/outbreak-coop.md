@@ -48,8 +48,9 @@ Game-agnostic pieces, so Blackout and Getaway can adopt them later (their own be
   poses and temporarily rewinds hitscan targets to the shooter's rendered `viewTime` (clamped to `maxRewindSeconds`).
 - `interpolate.ts`: `SnapshotBuffer`, a time-stamped buffer that renders remote entities between the two snapshots
   bracketing `now − delay`.
-- `prediction.ts`: `Predictor`, pending commands keyed by sequence, replay on ack, and a decaying visual error offset
-  so corrections never pop.
+- `prediction.ts`: `Predictor`, pending commands keyed by sequence, replay on ack, a decaying visual error offset
+  (`Smoother`) so corrections never pop, and `OptimisticEvents` for press-frame cosmetic feedback (shots, melee swings,
+  shoves, reloads, doors/windows, item pickups) with confirm/rollback/reapply hooks.
 
 ## Vision and presentation
 

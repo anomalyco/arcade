@@ -1,7 +1,17 @@
 import { ByteWriter } from "@arcade/kit/net/bytes"
 import { AckHistory } from "@arcade/kit/net/interest"
 import { lerp, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
-import { Predictor, Smoother } from "@arcade/kit/net/prediction"
+import { OptimisticEvents, Predictor, Smoother } from "@arcade/kit/net/prediction"
+import {
+  matchServerCombatEvents,
+  prepareOutbreakLedgerReconcile,
+  reconcileOutbreakOptimistic,
+  stepOutbreakDoorAngles,
+  stepOutbreakOptimisticTick,
+  type OutbreakOptimisticHost,
+  type OutbreakOptimisticKind,
+  type OutbreakOptimisticPayload,
+} from "./optimistic"
 import { createAIAgent, type AIAgent, type OutbreakAISubsystem } from "../shared/ai"
 import type { OutbreakCombatSubsystem } from "../shared/combat"
 import { BUILD } from "../shared/build.gen"
@@ -72,11 +82,17 @@ const STATUS_CONNECTING = "Connecting to room…"
  * on every snapshot; remote survivors, zombies and the clock render 100 ms behind, between two snapshots; doors,
  * windows, barricades, containers, drops and the bench (ledger deltas) apply as soon as they arrive.
  */
-export class NetSession implements Session {
+export class NetSession implements Session, OutbreakOptimisticHost {
   readonly sim: CoopSim
   local: SurvivorSlot
   readonly view: SessionView
   readonly predictor = new Predictor<Command>()
+  readonly optimistic = new OptimisticEvents<OutbreakOptimisticKind, OutbreakOptimisticPayload>()
+  readonly pendingPickupItems = new Set<string>()
+  readonly hitStats = { predicted: 0, truePositive: 0, trueNegative: 0, falsePositive: 0, falseNegative: 0 }
+  nextLocalEventId = 0
+  tentativeHitUntil = 0
+  confirmedHitUntil = 0
   readonly smoother = new Smoother(14, 2.5)
   readonly snapshots: SnapshotBuffer<SharedSnapshot>
   readonly snapHistory = new AckHistory<SharedSnapshot>(32)
@@ -116,6 +132,7 @@ export class NetSession implements Session {
     this.sim = new CoopSim(o.seed, o.houseSeed, o.terrain, { zombieCount: 0 })
     this.local = this.sim.addSurvivor("local", 0)
     this.view = slotView(this.sim, () => this.local)
+    this.view.pendingItems = this.pendingPickupItems
     this.snapshots = new SnapshotBuffer(options.delay ?? 0.1)
     this.now = options.now ?? (() => performance.now() / 1000)
     this.storage = options.storage
@@ -160,6 +177,7 @@ export class NetSession implements Session {
     if (!this.outbox.length) this.outboxSeq = seq
     this.outbox.push(tuple)
     this.sim.stepSurvivor(this.local, quantCmd, TICK_DT, COOP_TUNING, true)
+    stepOutbreakOptimisticTick(this, seq, quantCmd, TICK_DT, true)
     this.sim.refreshPrompt(this.local)
     if (this.outbox.length >= 2) this.flush()
   }
@@ -186,6 +204,7 @@ export class NetSession implements Session {
   sync(dt: number): void {
     this.flush()
     this.smoother.step(dt)
+    stepOutbreakDoorAngles(this, dt)
     const bracket = this.snapshots.sample(this.now())
     if (!bracket) return
     const { a, b, t } = bracket
@@ -278,6 +297,8 @@ export class NetSession implements Session {
         }
         this.index = msg.index
         this.predictor.reset()
+        this.optimistic.reset()
+        this.pendingPickupItems.clear()
         this.outbox = []
         this.prevSent = []
         this.lastServerTick = 0
@@ -311,6 +332,8 @@ export class NetSession implements Session {
     if (shared.tick > this.lastServerTick) this.lastServerTick = shared.tick
     this.snapshotCount++
     this.applyWorld(shared)
+    prepareOutbreakLedgerReconcile(this)
+    if (personal.ledger) this.sim.progression.ledger.applyDelta(personal.ledger)
     const p = this.local.survivor
     const beforeX = p.x
     const beforeY = p.y
@@ -321,10 +344,13 @@ export class NetSession implements Session {
         Object.assign(p, personal.survivor)
         this.options.features.reconcileNetLocal(this, personal, shared)
       },
-      (cmd) => this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true),
+      (cmd, seq) => {
+        this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true)
+        stepOutbreakOptimisticTick(this, seq, cmd, TICK_DT, false)
+      },
     )
+    reconcileOutbreakOptimistic(this, personal, shared)
     this.smoother.correct(beforeX, beforeY, p.x, p.y)
-    if (personal.ledger) this.sim.progression.ledger.applyDelta(personal.ledger)
     if (personal.notices.length) this.local.notices.push(...personal.notices)
     this.sim.refreshPrompt(this.local)
     this.snapshots.push(shared.tick * TICK_DT, shared, this.now())
@@ -394,8 +420,7 @@ export class NetSession implements Session {
         if (wear.planks === st.barricadePlanks) st.barricadeHp = wear.hp
       }
     }
-    const shots = sim.combat.shots
-    for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
+    matchServerCombatEvents(this, s)
     if (this.options.features.applyNetWorld(this, s)) {
       topology = true
     }

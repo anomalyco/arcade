@@ -230,6 +230,9 @@ export class Game {
    */
   private updateOnline(dt: number): void {
     const o = this.online!
+    o.onReject ??= (e) => {
+      if (e.k === "stick") this.stuckAt.delete(e.id)
+    }
     if (this.hitStop > 0) this.hitStop -= dt
     this.timeScale = 1
     this.now += dt

@@ -21,6 +21,7 @@
 #belt .chip .roll { color: var(--hud-ink) }
 #belt .chip small, #pack small { font-size: var(--hud-xs); color: var(--hud-ink-3); margin-left: calc(-1 * var(--hud-2)) }
 #belt .chip[data-full="true"] .roll, #belt .chip[data-full="true"] small { color: var(--hud-warm) }
+#belt .chip[data-pending="true"], #hotbar .slot[data-pending="true"] { box-shadow: inset 0 0 0 1px var(--hud-line-2); opacity: .86 }
 #pack { gap: var(--hud-3); padding-left: var(--hud-1); --akc-size: 16px }
 #pack .pack-cap { display: inline-flex; font-size: 11px }
 #pack .roll { color: var(--hud-ink) }

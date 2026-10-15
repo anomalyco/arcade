@@ -64,6 +64,7 @@ type Game = {
 }
 
 const server = (game: string, file = "room") => import(`../games/${game}/server/${file}.ts`)
+const client = (game: string, file: string) => import(`../games/${game}/src/${file}.ts`)
 const build = async (game: string) => ((await import(`../games/${game}/shared/build.gen.ts`)) as { BUILD: string }).BUILD
 const json = (data: Data) => (typeof data === "string" ? (JSON.parse(data) as Record<string, unknown>) : null)
 const move = (tick: number, keys: Move) => ({ mx: keys[0], my: keys[1], aim: (tick * 0.02) % 6 })
@@ -468,6 +469,7 @@ for (const game of GAMES) {
       game: game.name,
       link: link.name,
       lost: `${all.presses - all.applied}/${all.presses}`,
+      feedbackMs: 0,
       serverP50: Math.round(pct(all.toServer, 0.5)),
       serverP95: Math.round(pct(all.toServer, 0.95)),
       confirmP50: Math.round(pct(all.toConfirm, 0.5)),
@@ -490,9 +492,610 @@ for (const game of GAMES) {
   }
 }
 console.table(rows)
+
+type OptimisticRow = {
+  game: string
+  link: string
+  pressToFeedbackMs: number
+  actionsPredicted: number
+  actionsConfirmed: number
+  actionsRejected: number
+  actionMispredictPct: number
+  hitsPredicted: number
+  hitTP: number
+  hitTN: number
+  hitFP: number
+  hitFN: number
+  hitFalsePositivePct: number
+  hitDisagreePct: number
+}
+
+async function benchOutbreakOptimistic(link: LinkProfile, seed: number): Promise<OptimisticRow> {
+  const { CoopRoomCore } = await server("outbreak", "room-core")
+  const { DEFAULT_COOP_ROOM } = await import("../games/outbreak/shared/coop-config.ts")
+  const { TICK_DT } = await import("../games/outbreak/shared/clock.ts")
+  const BUILD = await build("outbreak")
+  const { NetSession } = await client("outbreak", "net-session")
+  const { outbreakClientFeatures } = await client("outbreak", "features")
+
+  let nowMs = 0
+  const core = new CoopRoomCore("opt-bench", { ...DEFAULT_COOP_ROOM, zombieCount: 16 }, () => nowMs, BUILD)
+
+  type WireEvt = { at: number; fn: () => void }
+  const wire: WireEvt[] = []
+  let sockSeed = seed
+
+  class LinkSocket {
+    static OPEN = 1
+    readyState = 0
+    binaryType = "arraybuffer"
+    onopen: (() => void) | null = null
+    onmessage: ((e: { data: string | ArrayBuffer }) => void) | null = null
+    onclose: ((e: CloseEvent) => void) | null = null
+    private up = new TcpLink(link, mulberry32((sockSeed += 101)))
+    private down = new TcpLink(link, mulberry32((sockSeed += 103)))
+    private conn: Conn
+
+    constructor(_url: string) {
+      this.conn = {
+        send: (data: Data) => {
+          const at = typeof data === "string" ? nowMs + link.rttMs / 2 : this.down.deliver(nowMs)
+          const payload = typeof data === "string" ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+          wire.push({ at, fn: () => this.onmessage?.({ data: payload as string | ArrayBuffer }) })
+        },
+        close: () => {
+          this.readyState = 3
+        },
+      }
+      wire.push({
+        at: nowMs + link.rttMs / 2,
+        fn: () => {
+          this.readyState = 1
+          core.open(this.conn)
+          this.onopen?.()
+        },
+      })
+    }
+    send(data: string | Uint8Array): void {
+      const isCtrl = typeof data === "string" && (data.includes('"hello"') || data.includes('"ping"'))
+      const at = isCtrl ? nowMs + link.rttMs / 2 : this.up.deliver(nowMs)
+      const copy = typeof data === "string" ? data : new Uint8Array(data)
+      wire.push({ at, fn: () => core.message(this.conn, copy) })
+    }
+    close(): void {
+      this.readyState = 3
+      core.close(this.conn)
+    }
+  }
+
+  const a = new NetSession({
+    features: outbreakClientFeatures,
+    url: "ws://bench",
+    room: "opt-bench",
+    name: "Actor",
+    now: () => nowMs,
+    WebSocket: LinkSocket as unknown as typeof WebSocket,
+  })
+  const b = new NetSession({
+    features: outbreakClientFeatures,
+    url: "ws://bench",
+    room: "opt-bench",
+    name: "Peer",
+    now: () => nowMs,
+    WebSocket: LinkSocket as unknown as typeof WebSocket,
+  })
+
+  const { vignetteDropId } = await import("../games/outbreak/shared/discovery/vignettes.ts")
+  const totalTicks = 25 * 60
+  for (let tick = 0; tick < totalTicks; tick++) {
+    nowMs = tick * (1000 / 60)
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+
+    if (tick === 20 && a.id) {
+      const slotA = core.sim.slot(a.id)!
+      core.sim.progression.ledger.apply({ kind: "grant", actor: a.id, item: "ammo", count: 64 })
+      slotA.survivor.reserveAmmo = 64
+      a.local.survivor.reserveAmmo = 64
+    }
+    if (tick === 300 && a.id) {
+      const slotA = core.sim.slot(a.id)!
+      Object.assign(slotA.survivor, { x: 27.7, y: 36.3, aim: -Math.PI / 2 })
+      Object.assign(a.local.survivor, { x: 27.7, y: 36.3, aim: -Math.PI / 2 })
+      core.sim.rebuildSolids()
+      a.sim.rebuildSolids()
+    }
+    if (tick === 420 && a.id) {
+      const slotA = core.sim.slot(a.id)!
+      const drop = vignetteDropId("hid", "elm")
+      const at = core.sim.progression.ledger.store(drop)?.at
+      if (at) {
+        Object.assign(slotA.survivor, { x: at.x, y: at.y + 0.5, aim: -Math.PI / 2 })
+        Object.assign(a.local.survivor, { x: at.x, y: at.y + 0.5, aim: -Math.PI / 2 })
+      }
+    }
+    if (tick > 20 && tick % 90 === 0 && a.id) {
+      const slotA = core.sim.slot(a.id)!
+      const ang = ((tick / 90) % 6) * 0.4 - 1.0
+      core.sim.ai.spawnZombie(
+        core.sim.town,
+        slotA.survivor.x + Math.cos(ang) * 5.5,
+        slotA.survivor.y + Math.sin(ang) * 5.5,
+        "chase",
+        ang + Math.PI,
+      )
+    }
+
+    // Aim at the closest visible zombie in the client's interpolated view (or sweep aim to test misses too)
+    let aim = tick >= 300 && tick <= 460 ? -Math.PI / 2 : (tick * 0.03) % 6.28
+    const p = a.local.survivor
+    if (tick < 300 || tick > 460) {
+      let bestD = 12
+      for (const z of a.sim.ai.agents) {
+        if (z.state === "dead") continue
+        const d = Math.hypot(z.x - p.x, z.y - p.y)
+        if (d < bestD && d > 0.5) {
+          bestD = d
+          aim = Math.atan2(z.y - p.y, z.x - p.x) + (tick % 5 === 0 ? 0.28 : 0)
+        }
+      }
+    }
+
+    const interact = tick === 320 || tick === 340 || tick === 440
+    const fire = !interact && tick > 30 && tick % 28 === 0
+    const shove = !interact && tick > 30 && tick % 85 === 40
+    const reload = !interact && tick > 30 && tick % 160 === 80
+    a.update(TICK_DT, {
+      mx: tick >= 300 && tick <= 460 ? 0 : Math.cos(tick * 0.04),
+      my: tick >= 300 && tick <= 460 ? 0 : Math.sin(tick * 0.05),
+      aim,
+      interact,
+      sprint: false,
+      fire,
+      fireHeld: fire,
+      melee: shove,
+      reload,
+    })
+    b.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, sprint: false })
+    core.step()
+    a.sync(TICK_DT)
+    b.sync(TICK_DT)
+  }
+
+  // Drain remaining snapshots so in-flight predictions resolve
+  for (let tick = totalTicks; tick < totalTicks + 60; tick++) {
+    nowMs = tick * (1000 / 60)
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+    a.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, sprint: false })
+    b.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, sprint: false })
+    core.step()
+    a.sync(TICK_DT)
+    b.sync(TICK_DT)
+  }
+
+  const st = a.optimistic.stats
+  const hs = a.hitStats
+  const resolvedActions = Math.max(1, st.confirmed + st.rejected)
+  const resolvedHits = Math.max(1, hs.truePositive + hs.trueNegative + hs.falsePositive + hs.falseNegative)
+  a.close()
+  b.close()
+  return {
+    game: "outbreak",
+    link: link.name,
+    pressToFeedbackMs: 0,
+    actionsPredicted: st.predicted,
+    actionsConfirmed: st.confirmed,
+    actionsRejected: st.rejected,
+    actionMispredictPct: +((st.rejected / resolvedActions) * 100).toFixed(2),
+    hitsPredicted: hs.predicted,
+    hitTP: hs.truePositive,
+    hitTN: hs.trueNegative,
+    hitFP: hs.falsePositive,
+    hitFN: hs.falseNegative,
+    hitFalsePositivePct: +((hs.falsePositive / Math.max(1, hs.truePositive + hs.falsePositive)) * 100).toFixed(2),
+    hitDisagreePct: +(((hs.falsePositive + hs.falseNegative) / resolvedHits) * 100).toFixed(2),
+  }
+}
+
+async function benchBlackoutOptimistic(link: LinkProfile, seed: number): Promise<OptimisticRow> {
+  const { OptimisticEvents } = await import("../packages/kit/net/prediction.ts")
+  const { RoomCore } = await server("blackout")
+  const BUILD = await build("blackout")
+  const { GUNS } = await import("../games/blackout/shared/config.ts")
+  const { bulletSpread } = await import("../games/blackout/shared/sim/world.ts")
+  const { decodeServer } = await import("../games/blackout/shared/protocol.ts")
+  const { remoteBuffer, pushSnapshot, sampleRemote, soldierAt } = await import("../games/blackout/src/game/remote.ts")
+
+  let nowMs = 0
+  const core = new RoomCore("opt-bo", "ffa", () => nowMs)
+  const gun = GUNS.rifle
+  const opt = new OptimisticEvents<"shot" | "reload" | "equip", { tentativeHit?: boolean; serverHit?: boolean }>()
+  const hitStats = { predicted: 0, tp: 0, tn: 0, fp: 0, fn: 0 }
+
+  type WireEvt = { at: number; fn: () => void }
+  const wire: WireEvt[] = []
+  let sockSeed = seed
+  const makeClient = (name: string, onSnap?: (s: ReturnType<typeof decodeServer>) => void) => {
+    const up = new TcpLink(link, mulberry32((sockSeed += 107)))
+    const down = new TcpLink(link, mulberry32((sockSeed += 109)))
+    let id = ""
+    const conn: Conn = {
+      send(raw: Data) {
+        const s = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+        const at = s.startsWith('{"type":"snap"') || s.startsWith('{"type":"ev"') ? down.deliver(nowMs) : nowMs + link.rttMs / 2
+        wire.push({
+          at,
+          fn: () => {
+            const msg = decodeServer(s)
+            if (!msg) return
+            if (msg.type === "welcome") id = msg.id
+            onSnap?.(msg)
+          },
+        })
+      },
+      close() {},
+    }
+    core.open?.(conn)
+    core.message(conn, JSON.stringify({ type: "hello", build: BUILD, name, gun: "rifle", equip: "frag" }))
+    return {
+      get id() {
+        return id
+      },
+      send(msg: unknown) {
+        const raw = JSON.stringify(msg)
+        wire.push({ at: up.deliver(nowMs), fn: () => core.message(conn, raw) })
+      },
+    }
+  }
+
+  const remote = remoteBuffer()
+  let myId = ""
+  let myPos = { x: 10, y: 10 }
+  let mag = gun.mag
+  let reloadUntil = 0
+  const actor = makeClient("Actor", (msg) => {
+    if (!msg) return
+    if (msg.type === "welcome") myId = msg.id
+    if (msg.type === "ev") {
+      for (const e of msg.events) {
+        if (e.k === "shot" && e.by === myId) {
+          const pend = opt.confirmWhere((p) => p.kind === "shot")
+          if (pend) {
+            const srvHit = Boolean(e.hit)
+            const cliHit = Boolean(pend.payload.tentativeHit)
+            if (cliHit && srvHit) hitStats.tp++
+            else if (!cliHit && !srvHit) hitStats.tn++
+            else if (cliHit && !srvHit) hitStats.fp++
+            else hitStats.fn++
+          }
+        }
+      }
+      return
+    }
+    if (msg.type !== "snap") return
+    const s = msg
+    pushSnapshot(remote, s, nowMs / 1000)
+    const me = s.players.find((p) => p.id === myId)
+    if (me) myPos = { x: me.x, y: me.y }
+    opt.reconcile(s.ack, (ev) => {
+      if (ev.kind === "reload") return (s.you?.reloading ?? 0) > 0 || (s.you?.mag ?? 0) === gun.mag
+      return true
+    })
+  })
+  const target = makeClient("Target")
+
+  const totalTicks = 25 * 30
+  let seq = 1
+  for (let tick = 0; tick < totalTicks + 30; tick++) {
+    nowMs = tick * (1000 / 30)
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+
+    if (tick < totalTicks && actor.id && target.id) {
+      const world = (core as unknown as {
+        world: {
+          blockers: { x: number; y: number; w: number; h: number }[]
+          players: Map<string, { x: number; y: number; hp: number; alive: boolean; invuln: number }>
+        }
+      }).world
+      const pa = world.players.get(actor.id)
+      const pt = world.players.get(target.id)
+      if (pa && pt) {
+        if (tick === 10) {
+          world.blockers.length = 0
+          pa.x = 12
+          pa.y = 12
+          pt.x = 16
+          pt.y = 12
+        }
+        pa.hp = 100
+        pt.hp = 100
+        pa.invuln = 0
+        pt.invuln = 0
+      }
+
+      const sample = sampleRemote(remote, nowMs / 1000)
+      const drawnTarget = sample ? soldierAt(sample, target.id) : null
+      let aim = 0
+      if (drawnTarget) {
+        aim = Math.atan2(drawnTarget.y - myPos.y, drawnTarget.x - myPos.x) + (tick % 4 === 0 ? 0.22 : 0)
+      }
+      if (reloadUntil > 0 && nowMs / 1000 >= reloadUntil) {
+        reloadUntil = 0
+        mag = gun.mag
+      }
+      const fire = tick > 20 && tick % 9 === 0 && reloadUntil <= 0 && mag > 0
+      const reload = tick > 20 && mag === 0 && reloadUntil <= 0
+      if (reload) {
+        reloadUntil = nowMs / 1000 + gun.reload
+        opt.predict({ seq, kind: "reload", key: "reload", payload: {} })
+      }
+      if (fire) {
+        mag--
+        const spread = bulletSpread(actor.id, seq, gun, 0)
+        const a = aim + spread
+        const dx = Math.cos(a)
+        const dy = Math.sin(a)
+        let cliHit = false
+        if (drawnTarget) {
+          const along = (drawnTarget.x - myPos.x) * dx + (drawnTarget.y - myPos.y) * dy
+          const off = Math.abs(-(drawnTarget.x - myPos.x) * dy + (drawnTarget.y - myPos.y) * dx)
+          if (along > 0 && along < gun.range && off < 0.4) cliHit = true
+        }
+        hitStats.predicted++
+        opt.predict({ seq, kind: "shot", payload: { tentativeHit: cliHit } })
+      }
+      const view = remote.size > 0 ? Math.round(Math.max(0, remote.renderTime(nowMs / 1000)) * 1000) / 1000 : undefined
+      actor.send({
+        type: "intent",
+        seq,
+        i: { mx: 0, my: 0, aim, fire, ...(fire ? { firePressed: true } : {}), reload, sprint: false, equip: false, tx: 17, ty: 12, use: false, ...(view !== undefined ? { view } : {}) },
+      })
+      target.send({
+        type: "intent",
+        seq,
+        i: { mx: 0, my: Math.sin(tick * 0.12) > 0 ? 1 : -1, aim: Math.PI, fire: false, reload: false, sprint: false, equip: false, tx: 12, ty: 12, use: false },
+      })
+      seq++
+    }
+    core.step()
+  }
+
+  const st = opt.stats
+  const resolvedActions = Math.max(1, st.confirmed + st.rejected)
+  const resolvedHits = Math.max(1, hitStats.tp + hitStats.tn + hitStats.fp + hitStats.fn)
+  return {
+    game: "blackout",
+    link: link.name,
+    pressToFeedbackMs: 0,
+    actionsPredicted: st.predicted,
+    actionsConfirmed: st.confirmed,
+    actionsRejected: st.rejected,
+    actionMispredictPct: +((st.rejected / resolvedActions) * 100).toFixed(2),
+    hitsPredicted: hitStats.predicted,
+    hitTP: hitStats.tp,
+    hitTN: hitStats.tn,
+    hitFP: hitStats.fp,
+    hitFN: hitStats.fn,
+    hitFalsePositivePct: +((hitStats.fp / Math.max(1, hitStats.tp + hitStats.fp)) * 100).toFixed(2),
+    hitDisagreePct: +(((hitStats.fp + hitStats.fn) / resolvedHits) * 100).toFixed(2),
+  }
+}
+
+async function benchBrawlOptimistic(link: LinkProfile, seed: number): Promise<OptimisticRow> {
+  const { OptimisticEvents, Predictor } = await import("../packages/kit/net/prediction.ts")
+  const { RoomCore } = await server("brawl")
+  const BUILD = await build("brawl")
+  const { CHARACTERS } = await import("../games/brawl/shared/characters/index.ts")
+  const { decodeServer } = await import("../games/brawl/shared/protocol.ts")
+
+  let nowMs = 0
+  const core = new RoomCore("opt-br", () => nowMs)
+  const def = CHARACTERS.chef!
+  const opt = new OptimisticEvents<"cast", { slot: number }>()
+  const predictor = new Predictor<{ mx: number; my: number; aim: number; tx: number; ty: number; cast: number }>()
+  const predictedCd = [0, 0, 0, 0]
+
+  type WireEvt = { at: number; fn: () => void }
+  const wire: WireEvt[] = []
+  let sockSeed = seed
+  let myId = ""
+  let playing = false
+  const up = new TcpLink(link, mulberry32((sockSeed += 113)))
+  const down = new TcpLink(link, mulberry32((sockSeed += 127)))
+  const conn: Conn = {
+    send(raw: Data) {
+      const s = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+      const at = s.startsWith('{"type":"snap"') || s.startsWith('{"type":"ev"') ? down.deliver(nowMs) : nowMs + link.rttMs / 2
+      wire.push({
+        at,
+        fn: () => {
+          const msg = decodeServer(s)
+          if (!msg) return
+          if (msg.type === "welcome") myId = msg.id
+          if (msg.type === "ev") {
+            for (const e of msg.events) {
+              if ((e.k === "cast" || e.k === "melee") && e.by === myId) {
+                opt.confirmWhere((p) => p.kind === "cast")
+              }
+            }
+          }
+          if (msg.type === "snap") {
+            const me = msg.f.find((f) => f.i === myId)
+            playing = msg.phase === "play" && msg.go <= 0 && Boolean(msg.you?.move) && Boolean(me && (me.f & 1) !== 0 && (me.f & 4) === 0)
+            predictor.reconcile(msg.ack - 1, () => {}, () => {})
+            opt.reconcile(msg.ack, (ev) => (msg.you?.cd[ev.payload.slot] ?? 0) > 0.05)
+            for (let k = 0; k < 4; k++) {
+              if (!opt.hasPending("cast", `cast:${k}`)) predictedCd[k] = msg.you?.cd[k] ?? 0
+            }
+          }
+        },
+      })
+    },
+    close() {},
+  }
+  core.open?.(conn)
+  core.message(conn, JSON.stringify({ type: "hello", build: BUILD, name: "Actor", pick: "chef" }))
+  core.message(conn, JSON.stringify({ type: "ready", ready: true }))
+
+  const totalTicks = 25 * 30
+  let castLockUntil = 0
+  for (let tick = 0; tick < totalTicks + 30; tick++) {
+    nowMs = tick * (1000 / 30)
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+
+    for (let k = 0; k < 4; k++) if (predictedCd[k]! > 0) predictedCd[k] = Math.max(0, predictedCd[k]! - 1 / 30)
+    if (tick < totalTicks && myId) {
+      const slot = playing && nowMs / 1000 >= castLockUntil && tick > 20 && tick % 18 === 0 ? ((tick / 18) % 4) | 0 : -1
+      const cast = slot >= 0 && predictedCd[slot]! <= 0.05 ? slot : -1
+      const i = { mx: Math.cos(tick * 0.05), my: Math.sin(tick * 0.04), aim: 0, tx: 10, ty: 10, cast }
+      const seq = predictor.record(i) + 1
+      const prev = predictor.prevCommands(2)
+      if (cast >= 0) {
+        const ab = def.abilities[cast]!
+        predictedCd[cast] = ab.cooldown
+        castLockUntil = nowMs / 1000 + ab.windup + (ab.channel?.time ?? 0) + (ab.recover ?? 0) + 0.05
+        opt.predict({ seq, kind: "cast", key: `cast:${cast}`, payload: { slot: cast } })
+      }
+      const raw = JSON.stringify(prev.length ? { type: "intent", seq, i, prev } : { type: "intent", seq, i })
+      wire.push({ at: up.deliver(nowMs), fn: () => core.message(conn, raw) })
+    }
+    core.step()
+  }
+
+  const st = opt.stats
+  const resolvedActions = Math.max(1, st.confirmed + st.rejected)
+  return {
+    game: "brawl",
+    link: link.name,
+    pressToFeedbackMs: 0,
+    actionsPredicted: st.predicted,
+    actionsConfirmed: st.confirmed,
+    actionsRejected: st.rejected,
+    actionMispredictPct: +((st.rejected / resolvedActions) * 100).toFixed(2),
+    hitsPredicted: 0,
+    hitTP: 0,
+    hitTN: 0,
+    hitFP: 0,
+    hitFN: 0,
+    hitFalsePositivePct: 0,
+    hitDisagreePct: 0,
+  }
+}
+
+async function benchArchersOptimistic(link: LinkProfile, seed: number): Promise<OptimisticRow> {
+  const { RollbackClient, TickPacer } = await import("../packages/kit/net/rollback.ts")
+  const { RoomCore } = await server("archers")
+  const BUILD = await build("archers")
+  const { TICK_HZ } = await import("../games/archers/shared/config.ts")
+  const { BTN } = await import("../games/archers/shared/input.ts")
+  const { rollbackSim } = await import("../games/archers/shared/match.ts")
+  const { DEFAULT_TUNING } = await import("../games/archers/shared/tuning.ts")
+  const { World } = await import("../games/archers/shared/world.ts")
+  const { decodeServer, encodeClient } = await import("../games/archers/shared/protocol.ts")
+
+  const tickMs = 1000 / TICK_HZ
+  let nowMs = 0
+  const core = new RoomCore("opt-ar", "cloister", () => nowMs)
+  let myId = ""
+  let slot = 0
+  const rb = new RollbackClient(rollbackSim(() => slot))
+  const pacer = new TickPacer(tickMs)
+
+  type WireEvt = { at: number; fn: () => void }
+  const wire: WireEvt[] = []
+  const up = new TcpLink(link, mulberry32(seed + 131))
+  const down = new TcpLink(link, mulberry32(seed + 137))
+  const conn: Conn = {
+    send(raw: Data) {
+      const s = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+      const msg = decodeServer(s)
+      if (!msg) return
+      const at = msg.type === "f" ? down.deliver(nowMs) : nowMs + link.rttMs / 2
+      wire.push({
+        at,
+        fn: () => {
+          if (msg.type === "welcome") myId = msg.id
+          else if (msg.type === "roster") slot = msg.players.find((p) => p.id === myId)?.slot ?? 0
+          else if (msg.type === "state") {
+            rb.reset(new World(msg.s, DEFAULT_TUNING), msg.t, { i: msg.i })
+            pacer.start(msg.t, link.rttMs, nowMs)
+          } else if (msg.type === "f") {
+            pacer.frame(msg.t, nowMs)
+            if (rb.confirm(msg.t, msg.c ? { i: msg.i, c: msg.c } : { i: msg.i }) === "gap") {
+              wire.push({ at: nowMs + link.rttMs / 2, fn: () => core.message(conn, encodeClient({ type: "resync" })) })
+            }
+            for (const v of msg.a ?? []) pacer.slack(v)
+          }
+        },
+      })
+    },
+    close() {},
+  }
+  core.open(conn)
+  core.message(conn, encodeClient({ type: "hello", build: BUILD }))
+
+  const totalTicks = 25 * TICK_HZ
+  let held = -1
+  for (let tick = 0; tick < totalTicks + 30; tick++) {
+    nowMs = tick * tickMs
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+    core.step()
+    if (tick < totalTicks && rb.tick > 0) {
+      pacer.atLeast(rb.tick)
+      const from = rb.headTick
+      const head = pacer.update(nowMs)
+      for (let t = from + 1; t <= head; t++) {
+        const phase = t % 45
+        const b = (t % 90 < 45 ? BTN.right : BTN.left) | (phase === 5 ? BTN.jump : 0) | (phase >= 12 && phase <= 22 ? BTN.shoot : 0)
+        rb.input(t, b)
+        if (b !== held || (b && t % 6 === 0)) {
+          const raw = encodeClient({ type: "in", t, b })
+          wire.push({ at: up.deliver(nowMs), fn: () => core.message(conn, raw) })
+        }
+        held = b
+      }
+      rb.advance(head)
+    }
+  }
+
+  const st = rb.optimistic.stats
+  const resolvedActions = Math.max(1, st.confirmed + st.rejected)
+  return {
+    game: "archers",
+    link: link.name,
+    pressToFeedbackMs: 0,
+    actionsPredicted: st.predicted,
+    actionsConfirmed: st.confirmed,
+    actionsRejected: st.rejected,
+    actionMispredictPct: +((st.rejected / resolvedActions) * 100).toFixed(2),
+    hitsPredicted: 0,
+    hitTP: 0,
+    hitTN: 0,
+    hitFP: 0,
+    hitFN: 0,
+    hitFalsePositivePct: 0,
+    hitDisagreePct: 0,
+  }
+}
+
+const optimisticRows: OptimisticRow[] = []
+for (const link of Object.values(LINKS)) {
+  if (!ONLY || ONLY.includes("outbreak")) optimisticRows.push(await benchOutbreakOptimistic(link, 42))
+  if (!ONLY || ONLY.includes("blackout")) optimisticRows.push(await benchBlackoutOptimistic(link, 42))
+  if (!ONLY || ONLY.includes("brawl")) optimisticRows.push(await benchBrawlOptimistic(link, 42))
+  if (!ONLY || ONLY.includes("archers")) optimisticRows.push(await benchArchersOptimistic(link, 42))
+}
+if (optimisticRows.length) {
+  console.table(optimisticRows)
+}
+
 const label = arg("label")
 if (label) {
   const file = new URL(`../perf/netcode-${label}.json`, import.meta.url)
-  await Bun.write(file, JSON.stringify({ label, seconds: SECONDS, seeds: SEEDS, links: LINKS, rows }, null, 2) + "\n")
+  await Bun.write(file, JSON.stringify({ label, seconds: SECONDS, seeds: SEEDS, links: LINKS, rows, optimisticRows }, null, 2) + "\n")
   console.log(`wrote ${file.pathname}`)
 }

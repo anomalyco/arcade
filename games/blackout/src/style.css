@@ -578,6 +578,12 @@ tr.me td {
   height: 3px;
 }
 
+#hm.tentative i {
+  width: 6px;
+  left: -3px;
+  height: 1.5px;
+}
+
 #hm i:nth-child(1) {
   transform: rotate(45deg) translateX(calc(var(--m)));
 }

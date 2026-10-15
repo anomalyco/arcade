@@ -25,6 +25,7 @@ import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin } from "../shared/d
 import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/discovery/vignettes"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { outbreakClientFeatures as features } from "../src/features"
+import { SoundDirector } from "../src/audio/director"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
 
@@ -682,5 +683,137 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
         expect(page1FirstZombieRef!.x).toBe(page1FirstZombieX)
       }
     }
+  })
+
+  test("optimistic feedback fires at 0 ms on the press frame, confirms without duplicate sounds, and rolls back rejected pickups", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("opt", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 4, 0)
+    const sock = net.socketClass()
+    const a = new NetSession({ features, url: "loop", room: "opt", name: "Ann", now: () => net.now, WebSocket: sock })
+    const b = new NetSession({ features, url: "loop", room: "opt", name: "Bob", now: () => net.now, WebSocket: sock })
+    const sound = new SoundDirector(11)
+    const soundWorld = () => ({
+      time: a.sim.time,
+      hour: a.sim.hour,
+      town: a.sim.town,
+      zombies: a.sim.ai.agents,
+      shots: a.sim.combat.shots,
+      meleeSwings: a.sim.combat.meleeSwings,
+      portals: a.sim.ai.portalStates,
+      survivors: a.sim.slots.map((s) => ({ id: s.id, survivor: s.survivor })),
+      progression: a.sim.progression,
+    })
+
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle())
+      b.update(TICK_DT, idle())
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+      sound.observe(soundWorld(), a.view.player)
+    }
+
+    // 1. Place a zombie in front of Ann and fire: press-frame feedback is 0 ms, zombie hit sound waits for server confirm
+    const srvA = core.sim.slot(a.id)!
+    core.sim.ai.spawnZombie(core.sim.town, srvA.survivor.x + 4, srvA.survivor.y, "chase", Math.PI)
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(0))
+      b.update(TICK_DT, idle(0))
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+      sound.observe(soundWorld(), a.view.player)
+    }
+
+    const magBefore = a.view.player.magAmmo
+    a.update(TICK_DT, { ...idle(0), fire: true })
+    // Press frame (0 ms): mag decrements, recoil kicks, predicted shot with tentativeHit is present, gunshot sound plays
+    expect(a.view.player.magAmmo).toBe(magBefore - 1)
+    expect(a.view.player.recoil).toBeGreaterThan(0.7)
+    expect(a.sim.combat.shots.at(-1)?.predicted).toBe(true)
+    expect(a.sim.combat.shots.at(-1)?.tentativeHit).toBe(true)
+    const pressSounds = sound.observe(soundWorld(), a.view.player).map((e) => e.id)
+    expect(pressSounds).toContain("gun.pistol.shot")
+    expect(pressSounds).not.toContain("zombie.hit")
+
+    // Advance until server snapshot confirms the shot: zombie.hit plays on confirm, gun.pistol.shot does NOT double-play
+    const confirmSounds: string[] = []
+    for (let i = 0; i < 18; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(0))
+      b.update(TICK_DT, idle(0))
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+      confirmSounds.push(...sound.observe(soundWorld(), a.view.player).map((e) => e.id))
+    }
+    expect(confirmSounds.filter((id) => id === "gun.pistol.shot")).toHaveLength(0)
+    expect(confirmSounds).toContain("zombie.hit")
+    expect(a.hitStats.truePositive).toBe(1)
+
+    // 2. Door toggle: opens on press frame (0 ms) with door.wood.open sound, no duplicate sound on confirm
+    Object.assign(srvA.survivor, { x: 27.7, y: 36.3, aim: -Math.PI / 2 })
+    Object.assign(a.local.survivor, { x: 27.7, y: 36.3, aim: -Math.PI / 2 })
+    core.sim.rebuildSolids()
+    a.sim.rebuildSolids()
+    for (let i = 0; i < 10; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(-Math.PI / 2))
+      a.sync(TICK_DT)
+      sound.observe(soundWorld(), a.view.player)
+    }
+    const ashDoor = a.sim.town.doors.find((d) => d.id === "ash-front")!
+    expect(ashDoor.open).toBe(false)
+    a.update(TICK_DT, { ...idle(-Math.PI / 2), interact: true })
+    expect(ashDoor.open).toBe(true)
+    const doorPressSounds = sound.observe(soundWorld(), a.view.player).map((e) => e.id)
+    expect(doorPressSounds).toContain("door.wood.open")
+    const doorConfirmSounds: string[] = []
+    for (let i = 0; i < 18; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(-Math.PI / 2))
+      a.sync(TICK_DT)
+      doorConfirmSounds.push(...sound.observe(soundWorld(), a.view.player).map((e) => e.id))
+    }
+    expect(doorConfirmSounds.filter((id) => id.startsWith("door.wood."))).toHaveLength(0)
+    expect(ashDoor.open).toBe(true)
+
+    // 3. Item pickup: enters HUD with pending state at 0 ms, and rolls back cleanly if taken on the server first
+    const drop = vignetteDropId("hid", "elm")
+    const at = core.sim.progression.ledger.store(drop)!.at!
+    Object.assign(srvA.survivor, { x: at.x, y: at.y + 0.5, aim: -Math.PI / 2 })
+    Object.assign(a.local.survivor, { x: at.x, y: at.y + 0.5, aim: -Math.PI / 2 })
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(-Math.PI / 2))
+      a.sync(TICK_DT)
+      sound.observe(soundWorld(), a.view.player)
+    }
+    // Bob steals the battery on the server right before Ann's press arrives
+    core.sim.progression.ledger.deleteStore(drop)
+    const batteriesBefore = a.sim.progression.ledger.count(a.id, "battery")
+    a.update(TICK_DT, { ...idle(-Math.PI / 2), interact: true })
+    // Press frame (0 ms): battery optimistically enters Ann's belt with pending state
+    expect(a.sim.progression.ledger.count(a.id, "battery")).toBe(batteriesBefore + 1)
+    expect(a.view.pendingItems?.has("battery")).toBe(true)
+    // Once the server acknowledges Ann's command without granting the battery, it rolls back quietly
+    for (let i = 0; i < 18; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle(-Math.PI / 2))
+      a.sync(TICK_DT)
+    }
+    expect(a.view.pendingItems?.has("battery")).toBe(false)
+    expect(a.sim.progression.ledger.count(a.id, "battery")).toBe(batteriesBefore)
+    expect(a.optimistic.stats.rejected).toBeGreaterThanOrEqual(1)
+
+    a.close()
+    b.close()
   })
 })

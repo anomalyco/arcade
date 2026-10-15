@@ -27,7 +27,7 @@ import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "./net/interpolate"
 import { ClockSync } from "./net/clock-sync"
 import { roomLocationHint } from "./net/room-core"
 import { DEFAULT_JITTER, JitterBuffer, type InputOps, socketJitter } from "./net/jitter-buffer"
-import { Predictor, Smoother } from "./net/prediction"
+import { OptimisticEvents, Predictor, Smoother } from "./net/prediction"
 import { RewindHistory } from "./net/rewind"
 import { Seats } from "./net/seats"
 
@@ -388,5 +388,71 @@ describe("Predictor & ClockSync & LocationHint", () => {
     smoother.step(1)
     expect(Math.abs(smoother.x)).toBeLessThan(1e-3)
     expect(predictor.reconcile(2, () => (x = 0), () => {})).toBe(0)
+  })
+
+  test("OptimisticEvents predicts, reapplies in-flight overlays, confirms, and rolls back rejections", () => {
+    const opt = new OptimisticEvents<"door" | "shot" | "pickup", { open?: boolean; item?: string }>()
+    let doorOpen = false
+    let ammo = 8
+    const rolledBack: string[] = []
+
+    const shotEv = opt.predict({
+      seq: 1,
+      kind: "shot",
+      payload: {},
+      rollback: () => {
+        ammo++
+        rolledBack.push("shot")
+      },
+    })
+    ammo--
+    expect(shotEv.id).toBe(1)
+
+    opt.predict({
+      seq: 2,
+      kind: "door",
+      key: "door:d1",
+      payload: { open: true },
+      reapply: () => {
+        doorOpen = true
+      },
+      rollback: () => {
+        doorOpen = false
+        rolledBack.push("door")
+      },
+    })
+    doorOpen = true
+
+    opt.predict({
+      seq: 3,
+      kind: "pickup",
+      key: "pickup:drop1",
+      payload: { item: "medkit" },
+      rollback: () => rolledBack.push("pickup"),
+    })
+
+    // Server event confirms the shot before snapshot ack
+    expect(opt.confirmWhere((e) => e.kind === "shot")?.id).toBe(shotEv.id)
+    expect(opt.stats.confirmed).toBe(1)
+
+    // Snapshot ack = 1: door (seq 2) and pickup (seq 3) are still in flight, so reapply keeps doorOpen = true
+    doorOpen = false
+    opt.reconcile(1, () => false)
+    expect(doorOpen).toBe(true)
+
+    // Snapshot ack = 2: server confirms the door opened
+    opt.reconcile(2, (ev) => ev.kind === "door")
+    expect(opt.stats.confirmed).toBe(2)
+    expect(rolledBack).toEqual([])
+
+    // Snapshot ack = 3: another player took the medkit first, so pickup is rejected and rolled back
+    const res = opt.reconcile(3, () => false)
+    expect(res.rejected).toHaveLength(1)
+    expect(rolledBack).toEqual(["pickup"])
+    expect(opt.stats.predicted).toBe(3)
+    expect(opt.stats.confirmed).toBe(2)
+    expect(opt.stats.rejected).toBe(1)
+    expect(opt.mispredictionRate).toBeCloseTo(1 / 3, 5)
+    expect(ammo).toBe(7)
   })
 })
