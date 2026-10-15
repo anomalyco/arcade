@@ -20,6 +20,9 @@ export type InteractActionId =
   | "smash"
   | "take"
   | "deposit"
+  | "install"
+  | "place"
+  | "tinker"
   | "store"
   | "unlock"
   | "pry"
@@ -115,6 +118,8 @@ export type RawInteractCandidate = {
   /** Shift+E alternative. */
   alt?: InteractAction
   actions: InteractAction[]
+  /** While E is held, wait for the release before taking the tap action, so a hold reaches `secondary` cleanly. */
+  deferPrimary?: boolean
 }
 
 export type InteractTarget = RawInteractCandidate & {
@@ -540,9 +545,8 @@ export function executeInteraction(
     // defer the tap action until release if E is actively held down so a Hold-E gesture can complete without climbing/closing first.
     if (
       interactHeld &&
-      target.kind === "window" &&
       target.secondary &&
-      (target.primary.id === "climb" || actor.peekingWindowId === target.id)
+      (target.deferPrimary || (target.kind === "window" && (target.primary.id === "climb" || actor.peekingWindowId === target.id)))
     ) {
       actor.holdTargetId = target.id
       actor.holdElapsed = 0

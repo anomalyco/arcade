@@ -190,6 +190,10 @@ export const outbreakProgressionFeature = registerOutbreakClientFeature({
     stageProgression(scene: ProgressionScene) {
       stageProgression(host.progressionHost, scene)
     },
+    /** The inventory HUD (pack, field craft, prompts), for proofs. */
+    inventoryHud() {
+      return host.progressionHost.hud
+    },
     /** Gives the local survivor an item, routed to belt, hand or pack. */
     give(item: string, count = 1) {
       const session = host.session()

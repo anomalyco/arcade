@@ -68,7 +68,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x785636),MAT.timber)
     m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xa89060))
   } else if(kind==="workbench") {
-    // Safehouse workbench against the wall: plank top on trestle legs, a pegboard with tools, a vise and a parts tray.
+    // Safehouse workbench against the wall: plank top on trestle legs, a pegboard with tools, a vise and a lower shelf.
     const {rect:[a,c,r,e]}=propShape(p)!
     m.bevelBox(a,.86,c,r,.95,e,.02,hex(0x6a4a2c),hex(0x7c5834),MAT.timber,MAT.timber)
     for(const dz of [c+.1,e-.16])for(const dx of [a+.06,r-.12])m.box(dx,.13,dz,dx+.06,.86,dz+.06,legs,MAT.timber)
@@ -76,8 +76,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(r-.06,.95,c+.05,r,1.75,e-.05,hex(0x5a4a36),MAT.timber)
     for(const [dz,h] of [[.32,.32],[.62,.22],[.98,.28],[1.25,.18]] as const)m.box(r-.1,1.32-h/2,c+dz-.025,r-.06,1.32+h/2,c+dz+.025,hex(0x8a8c88),MAT.shiny)
     m.box(a+.12,.95,c+.18,a+.32,1.06,c+.38,hex(0x50585a),MAT.shiny)
-    m.yawBox(a+.36,e-.42,.24,.16,.95,1.0,.08,hex(0x7e6a4a),MAT.timber)
-    m.prism(a+.3,e-.78,.07,.06,.95,1.07,8,hex(0xb07a3a),MAT.lit)
+    // The rest of the top is the felt mat and the corkboard leaning on the pegboard (src/discovery/workbench.ts).
   } else if(kind==="stash") {
     // The squad's stash: a dented steel footlocker under stacked supply crates.
     const {rect:[a,c,r,e]}=propShape(p)!
@@ -545,7 +544,9 @@ function compileLevel(town: Town): LevelData {
         if (id >= 2) return minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
         const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.55 && maxZ < b[3] + 1.65
         const inNorth = minX > b[0] + 2.25 && maxX < b[0] + 9.25 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
-        return inSouth || inNorth
+        // North-east wing (map.ts buildingFootprint): its roof starts just past the wing's north wall.
+        const inWing = minX > b[0] + 9.25 && maxX < b[2] - .35 && minZ > b[1] + 1.3 && maxZ < b[3] + 1.65
+        return inSouth || inNorth || inWing
       }
       if (hasRoof) {
         const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))

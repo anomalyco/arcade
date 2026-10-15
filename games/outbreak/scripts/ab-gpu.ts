@@ -8,10 +8,11 @@ import { createServer } from "vite"
  * Paired in-page GPU cost of Lab settings at 3456×1894: alternates variants A and B on the same page, same frozen
  * state, timing each with the renderer's timestamp queries, so cross-run drift on a shared machine cancels out.
  * AB_A / AB_B are JSON Lab overrides; AB_ROUNDS alternations (default 12) × 6 timed frames per variant per round.
+ * AB_SCENES optionally replaces the street/interior poses: JSON `[{ name, x, y, zoom, hour }]`.
  */
 const root = resolve(import.meta.dir, "..")
-const A: Record<string, number> = JSON.parse(process.env.AB_A ?? "{}")
-const B: Record<string, number> = JSON.parse(process.env.AB_B ?? "{}")
+const A: Record<string, number | string> = JSON.parse(process.env.AB_A ?? "{}")
+const B: Record<string, number | string> = JSON.parse(process.env.AB_B ?? "{}")
 const rounds = Number(process.env.AB_ROUNDS ?? 12)
 // Optional diagnostic hack applied to variant B after setup (e.g. "h.render.shadowLightCount = 0"); never shipped.
 const hackB = process.env.AB_HACK_B ?? ""
@@ -52,7 +53,7 @@ try {
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready)
-  const scenes = [
+  const scenes: { name: string; x: number; y: number; zoom: number; hour: number }[] = JSON.parse(process.env.AB_SCENES ?? "null") ?? [
     { name: "street", x: 30, y: 41, zoom: 46, hour: 18 },
     { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19 },
   ]
@@ -62,7 +63,7 @@ try {
       const h = (window as any).__arcadeHarness
       const hack = new Function("h", hackB)
       const unhack = new Function("h", hackA)
-      const setup = async (lab: Record<string, number>) => {
+      const setup = async (lab: Record<string, number | string>) => {
         h.freeze(true); h.reset(7); h.setLab("timeScale", 0); h.setLab("zoom", scene.zoom); h.setLab("hour", scene.hour)
         for (const [k, v] of Object.entries(lab)) h.setLab(k, v)
         h.pose(scene.x, scene.y, aim)
