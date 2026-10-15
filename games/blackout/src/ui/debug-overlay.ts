@@ -1,7 +1,7 @@
+import { cameraShakeControls, cameraShakeDefaults } from "@arcade/kit/client/camera"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
-import { applyFeelPreset, createFeelSettings, feelControls } from "@arcade/kit/feel"
 import { animationControls, animationLab } from "../game/anim-settings"
 import { motionSettings } from "../render/motion"
 import { bloodSplatterSettings } from "../game/splatter"
@@ -9,7 +9,7 @@ import { LIGHT_DEFAULTS, type LightSettings } from "@arcade/kit/vehicle/lights"
 import { lightControls } from "@arcade/kit/vehicle/lab"
 import { SPELL_CONTROLS, spellDefaults, type SpellConfig } from "../../shared/sim/spell-config"
 
-export const blackoutFeelSettings = createFeelSettings("blackout")
+export const cameraShakeSettings = cameraShakeDefaults()
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
@@ -158,23 +158,15 @@ export class DebugOverlay extends LabPanel {
     this.addControls(motionSettings,[
       {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
       {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
+      {key:"burst",label:"Impulse burst",group:"Motion",min:0,max:2,step:.05,unit:"×"},
+      {key:"burstDecay",label:"Burst decay",group:"Motion",min:4,max:30,step:1,unit:"/s"},
     ])
     const keyLabels = keyLabelSetting()
     this.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
     this.addControls(
-      blackoutFeelSettings as unknown as Record<string, string | number | boolean>,
-      feelControls.map(c =>
-        c.key === "feelPreset"
-          ? {
-              ...c,
-              folded: true,
-              change: () => {
-                applyFeelPreset(blackoutFeelSettings, blackoutFeelSettings.feelPreset)
-                this.refresh()
-              },
-            }
-          : { ...c, folded: true },
-      ),
+      cameraShakeSettings as unknown as Record<string, string | number | boolean>,
+      cameraShakeControls.map(c => ({ ...c, folded: true })),
+      cameraShakeDefaults(),
     )
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {

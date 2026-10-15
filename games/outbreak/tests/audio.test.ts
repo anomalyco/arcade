@@ -3,7 +3,13 @@ import { SFX_BY_ID } from "@arcade/kit/audio"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim } from "../shared/coop-sim"
 import { LocalSession } from "../shared/session"
+import { PISTOL_RELOAD_TIME, type CombatShotEvent } from "../shared/combat"
+import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { SoundDirector, type SoundEvent, type SoundWorld, type SoundZombie } from "../src/audio/director"
+import { shotImpacts } from "../src/audio/impacts"
+import { PICKUP_SOUND } from "../src/audio/inventory"
+import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
+import { ZombieFootsteps } from "../src/audio/zombie-steps"
 import { SoundOcclusion, surfaceAt } from "../src/audio/space"
 import { pursuers, soundWorld } from "../src/audio/world"
 
@@ -18,6 +24,11 @@ describe("Outbreak sound director", () => {
       expect(emitted.length).toBeGreaterThan(15)
       for (const id of emitted) expect(SFX_BY_ID.has(id), id).toBe(true)
       for (const s of ["concrete", "grass", "wood"]) for (const g of ["walk", "run"]) expect(SFX_BY_ID.has(`foot.${s}.${g}`)).toBe(true)
+      for (const s of ["concrete", "grass", "wood"]) for (const k of ["step", "shuffle", "drag"]) expect(SFX_BY_ID.has(`zombie.foot.${k}.${s}`)).toBe(true)
+      for (const s of ["wood", "plaster", "concrete", "metal", "glass"]) expect(SFX_BY_ID.has(`impact.bullet.${s}`)).toBe(true)
+      for (const id of Object.values(PICKUP_SOUND)) expect(SFX_BY_ID.has(id), id).toBe(true)
+      for (const k of ["medical", "tinker", "wood"]) for (const p of ["loop", "done"]) expect(SFX_BY_ID.has(`craft.${k}.${p}`)).toBe(true)
+      for (const e of RELOAD_EVENTS) expect(SFX_BY_ID.has(e.id)).toBe(true)
     })
   })
 
@@ -47,7 +58,9 @@ describe("Outbreak sound director", () => {
 
     for (let i = 0; i < 18; i++) session.update(TICK_DT, idle, 0), hear()
     session.update(TICK_DT, { ...idle, reload: true }, 0)
-    expect(ids(hear())).toContain("gun.pistol.reload")
+    const reload = ids(hear())
+    for (let i = 0; i < 10; i++) session.update(TICK_DT, idle, 0), reload.push(...ids(hear()))
+    expect(reload).toContain("gun.pistol.mag-release")
 
     const door = session.view.town.doors[0]!
     door.open = !door.open
@@ -68,6 +81,162 @@ describe("Outbreak sound director", () => {
     const events = director.observe(soundWorld(sim), a.survivor)
     expect(events.find((e) => e.id === "flashlight.click")).toMatchObject({ x: 40, y: 30, source: "b" })
     expect(ids(events)).toContain("body.hurt")
+  })
+
+  test("the reload plays in four parts at the reload pose's events, for local and remote survivors", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const director = new SoundDirector()
+    const p = session.view.player
+    Object.assign(p, { x: 30, y: 44, aim: 0 })
+    session.sim.progression.ledger.apply({ kind: "useCharge", actor: "player", item: "pistol", amount: 3 })
+    const hear = () => director.observe(soundWorld(session.sim), p)
+    hear()
+    session.update(TICK_DT, { ...idle, reload: true }, 0)
+    const start = session.view.time - TICK_DT
+    const heard: { id: string; at: number }[] = []
+    for (let i = 0; i < 90; i++) {
+      for (const e of hear()) if (e.id.startsWith("gun.pistol.")) heard.push({ id: e.id, at: session.view.time + (e.delay ?? 0) - start })
+      session.update(TICK_DT, idle, 0)
+    }
+    expect(heard.map((h) => h.id)).toEqual(RELOAD_STARTS.map((r) => r.id))
+    // Each lands within a tick of its pose time, in order, inside the 1.15 s reload.
+    heard.forEach((h, i) => expect(Math.abs(h.at - RELOAD_STARTS[i]!.start)).toBeLessThan(TICK_DT * 1.5))
+    expect(heard.at(-1)!.at).toBeLessThan(PISTOL_RELOAD_TIME)
+
+    // A co-op peer only replicates "reloading" (0.5 held): the parts follow the time since it was first seen.
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const me = sim.addSurvivor("a", 0)
+    const peer = sim.addSurvivor("b", 1)
+    const remote = new SoundDirector()
+    remote.observe(soundWorld(sim), me.survivor)
+    const parts: number[] = []
+    peer.survivor.reloadRemaining = 0.5
+    for (let f = 0; f < 80; f++) {
+      sim.time += TICK_DT
+      for (const e of remote.observe(soundWorld(sim), me.survivor)) if (e.id.startsWith("gun.pistol.")) parts.push(f * TICK_DT + (e.delay ?? 0))
+    }
+    expect(parts).toHaveLength(4)
+    parts.forEach((at, i) => expect(Math.abs(at - RELOAD_STARTS[i]!.start)).toBeLessThan(TICK_DT * 1.5))
+  })
+
+  test("missed shots strike the surface they stopped on, seen from the shooter, and ring off what they passed", () => {
+    const town = new LocalSession(7).view.town
+    const shot = (fromX: number, fromY: number, toX: number, toY: number): CombatShotEvent => ({ id: 1, time: 0, fromX, fromY, toX, toY, aim: 0, hitZombieId: null, killed: false, detachBone: null, seed: 1 })
+    const house = town.buildings.find((b) => b.id === "ash")!
+    const shop = town.buildings.find((b) => b.kind === "hardware")!
+    const surfaces = (s: CombatShotEvent) => shotImpacts(town, s).map((h) => `${h.through ? "through " : ""}${h.surface}`)
+    // Ash's west wall at x 22–22.22, from the yard (behind its fence, which the round passes) and from the living room.
+    expect(surfaces(shot(19, 31, house.rect[0], 31))).toEqual(["wood"])
+    expect(surfaces(shot(16, 31, house.rect[0], 31))).toEqual(["through wood", "wood"])
+    expect(surfaces(shot(26, 31, house.rect[0] + 0.22, 31))).toEqual(["plaster"])
+    // The hardware store's west wall from the street is brick and concrete.
+    expect(surfaces(shot(48, 28, shop.rect[0], 28))).toEqual(["concrete"])
+    // Through Ash's south-west window pane (closed) into the far wall; boarded, it is a plank.
+    const win = town.windows.find((w) => w.id === "ash-south-west")!
+    const wx = (win.rect[0] + win.rect[2]) / 2
+    expect(surfaces(shot(wx, 40, wx, house.rect[1] + 5.7))).toEqual(["through glass", "plaster"])
+    expect(shotImpacts(town, shot(wx, 40, wx, house.rect[1] + 5.7), (id) => (id === win.id ? 2 : 0))[0]!.surface).toBe("wood")
+    // Through the abandoned sedan on the west street, out of range: metal only.
+    expect(surfaces(shot(6, 46.2, 6 + 26, 46.2))).toEqual(["through metal"])
+    // Hits on zombies are flesh (`zombie.hit`), not a wall.
+    expect(shotImpacts(town, { ...shot(16, 31, 22, 31), hitZombieId: 3 })).toEqual([])
+  })
+
+  test("pickups sound like their item class; drops, deposits, pings and noisemakers sound where they happen", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const progression = session.sim.progression
+    const ledger = progression.ledger
+    const p = session.view.player
+    const director = new SoundDirector()
+    const hear = () => director.observe(soundWorld(session.sim), p)
+    hear()
+    const grant = (item: string, count = 1) => ledger.apply({ kind: "grant", actor: "player", item, count })
+    grant("crowbar")
+    expect(ids(hear())).toEqual(["pickup.tool"])
+    grant("key")
+    expect(ids(hear())).toEqual(["pickup.key"])
+    grant("toolbox")
+    grant("medkit")
+    const two = hear()
+    expect(ids(two).sort()).toEqual(["pickup.medical", "pickup.part"])
+    expect(two[1]!.delay).toBeGreaterThan(0.1)
+    grant("battery")
+    expect(ids(hear())).toEqual(["pickup.battery"])
+    // A dropped stack lands where it was dropped.
+    ledger.apply({ kind: "drop", actor: "player", at: { x: 31, y: 41 }, items: { ammo: 2 } })
+    expect(hear().find((e) => e.id === "item.drop")).toMatchObject({ x: 31, y: 41 })
+    // Supplies deposited at a bench sound at the bench.
+    const bench = progression.benches[0]!
+    ledger.apply({ kind: "deposit", actor: "player", to: bench.id, items: { plank: 1 } })
+    expect(hear().find((e) => e.id === "bench.deposit")).toMatchObject({ x: bench.bench.x, y: bench.bench.y })
+    progression.pings.push({ id: 9, by: 0, x: 40, y: 40, label: "Zombie", until: 99 })
+    expect(ids(hear())).toEqual(["ui.ping"])
+    progression.lures.push({ id: 4, x: 45, y: 42, until: 99, next: 1 })
+    expect(ids(hear())).toEqual(["lure.land"])
+    expect(director.holds).toEqual([{ key: "lure:4", id: "lure.loop", x: 45, y: 42 }])
+    progression.lures.length = 0
+    hear()
+    expect(director.holds).toEqual([])
+    // The generator runs at night once a car battery is wired into the bench.
+    ledger.apply({ kind: "grant", actor: "player", item: "car-battery", store: bench.id })
+    session.sim.hour = 23
+    hear()
+    expect(director.holds.map((h) => h.id)).toEqual(["generator.loop"])
+  })
+
+  test("crafting holds its kind's loop while the channel runs and finishes with its own sound, without a pickup", () => {
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const ledger = sim.progression.ledger
+    const mate = sim.addSurvivor("mate", 0)
+    Object.assign(mate.survivor, { x: 60, y: 45 })
+    ledger.apply({ kind: "grant", actor: "mate", item: "learned:bandage", store: "team/known" })
+    ledger.apply({ kind: "grant", actor: "mate", item: "chem", count: 1 })
+    const director = new SoundDirector()
+    const cmd = { mx: 0, my: 0, aim: 0, interact: false }
+    const heard: string[] = []
+    const holds = new Set<string>()
+    const tick = (c = cmd) => {
+      sim.stepSurvivor(mate, c, TICK_DT)
+      sim.stepWorld(TICK_DT, 0)
+      heard.push(...ids(director.observe(soundWorld(sim), mate.survivor)))
+      for (const h of director.holds) holds.add(h.id)
+    }
+    director.observe(soundWorld(sim), mate.survivor)
+    tick({ ...cmd, pick: { mode: "craft", index: 0 } } as typeof cmd)
+    for (let i = 0; i < Math.ceil(DEFAULT_PROGRESSION_TUNING.craftTime / TICK_DT) + 2; i++) tick()
+    expect(ledger.count("mate", "bandage")).toBe(1)
+    expect([...holds]).toEqual(["craft.medical.loop"])
+    expect(director.holds).toEqual([])
+    expect(heard.filter((id) => id.startsWith("craft.") || id.startsWith("pickup."))).toEqual(["craft.medical.done"])
+  })
+
+  test("zombie feet: only the nearest few step, within the crowd budget; the rest of a horde is the bed", () => {
+    const steps = new ZombieFootsteps()
+    const listener = { x: 0, y: 0 }
+    const zombies: SoundZombie[] = Array.from({ length: 100 }, (_, i) => {
+      const a = i * 2.399
+      const r = 1.5 + (i % 25) * 0.8
+      return { id: i + 1, x: Math.cos(a) * r, y: Math.sin(a) * r, vx: 0.9, vy: 0, state: "chase", seed: i * 0.37 + 0.1, drag: 0.9 }
+    })
+    const nearest = new Set([...zombies].sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y)).slice(0, steps.tuning.voices).map((z) => z.id))
+    const kinds = new Set<string>()
+    let played = 0
+    const seconds = 10
+    for (let f = 0; f < seconds * 60; f++) {
+      // The rig reports contacts for every animated zombie: far more than the budget allows.
+      for (const z of zombies.slice(0, 30)) if ((f + z.id) % 24 === 0) steps.contact(z.id, z.x, z.y, 0.9, z.id % 3 ? 0 : 0.8, z.id % 2 ? "limper" : "reacher")
+      for (const s of steps.update(zombies, listener, f / 60, 1 / 60, () => "concrete")) {
+        played++
+        kinds.add(s.id)
+        expect(Math.hypot(s.x, s.y)).toBeLessThanOrEqual(steps.tuning.hearing)
+      }
+    }
+    expect(played / seconds).toBeLessThanOrEqual(steps.tuning.rate + steps.tuning.burst / seconds)
+    expect(played / seconds).toBeGreaterThan(2)
+    expect(steps.counts.skipped).toBeGreaterThan(steps.counts.played)
+    expect(steps.horde.level).toBeGreaterThan(0.8)
+    expect([...kinds].every((id) => /^zombie\.foot\.(step|shuffle|drag)\.concrete$/.test(id))).toBe(true)
+    void nearest
   })
 
   function crowd(n: number): { world: SoundWorld; zombies: SoundZombie[] } {

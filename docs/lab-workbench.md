@@ -10,26 +10,6 @@ with `LabPanel` in `layout: "inspector"` and `capture: "focus"`. Both draw with 
 `packages/kit/lab-knobs.ts` ([lab.md](lab.md#bind-controls-to-typed-production-settings)); stations add widget slots
 around the viewport ([lab.md](lab.md#stations)).
 
-## Pain points in the previous Lab UI
-
-Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.png`,
-`2026-10-13-lab-workbench/before-default.png`, and
-`2026-10-13-lab-workbench/before-blackout-effects.png`.
-
-1. **Floating 285 px overlay over a full-window grid:** A single narrow `<section>` in the top-right corner covered the
-   right side of the scene and scrolled through every control in one column.
-2. **Duplicate `▾ Controls` headings:** `main.ts` registered global `Section`/`Debug view` controls without a group
-   name and then appended the active section's ungrouped controls, creating two separate `▾ Controls` headers stacked
-   together; clicking `Randomize` on the first randomized the `Section` and `Debug view` selects.
-3. **Overloaded `Section` dropdown:** One flat select mixed `Effects`, `Lighting`, `Materials`, `Physics`, `Spawn`,
-   `Blackout effects`, `Getaway effects`, `Fire and water`, `Splatter` and `Audio`.
-4. **All 20 parameter groups rendered at once:** Selecting `Blackout effects` mounted all 19 effect parameter groups
-   (80+ controls) simultaneously regardless of the chosen effect.
-5. **Unreadable default scale and fixed camera:** Effects opened at a 31.8 m camera distance (`eye = focus + [0,22,23]`)
-   with no orbit, pan, zoom or target framing (`F`).
-6. **Implicit gameplay input in `Spawn`:** Clicking the canvas immediately drove the vehicle or soldier, so Dvorak `e`
-   and `Space` competed with editing controls.
-
 ## Layout: Outliner + Details + Library drawer
 
 Board decision D-4 (AR-13) picked concept 1 from `2026-10-14-lab-layout/` (Unreal/Unity style), plus ⌘K universal
@@ -170,21 +150,6 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
     `games/getaway/src/render/shaders.ts` so consecutive skid ribbon segments (`kind = 4`, up to 1,600 segments) join
     end-to-end along curves and diagonals, and adds car contact shadow (`kind = 9`, `shape = 5`) and forward headlight
     fan support (`shape = 6`).
-  - **Lamp pose & fixture sphere fix:** Restricts `stage-shader.ts`'s `0.12 m` debug light-core sphere raytracing to the
-    `Lighting` calibration stage (`F.options.w < 2.0`), eliminating the floating orange/red spheres on the car hood and
-    rear bumper. Builds Lab cars with `buildCar(spec, undefined, 4)` (`Soft pool` bevelled 3D headlamp/taillamp lenses
-    without duplicate `lights = 0` polygons) and computes both front spot `headlights` (preserving the twin rounded
-    headlight arcs), rear `tailLights`, and lens bloom halos from `lampMounts(spec)` + `bodyPoint(car, pose, ...)` using
-    full chassis `height`, `roll` and `pitch` (with vertical aim pitch clamped to `[-0.42, -0.18]` so brake dive brings
-    the twin arcs closer without throttle squat flinging them to the horizon).
-  - **Front fender & side seam fix (`car-mesh.ts`):** Previously `hullStations` added the full longitudinal `archR`
-    (`0.47 m`) vertically to `wheelR` (`0.37 m`), pushing `k.b` (`0.84 m`) above the belt crease `k.s` (`0.74–0.80 m`)
-    and folding the side/shoulder bands upside-down over the front wheel arch; `muscle` also had its front width/height
-    kink at `z = zf - 0.8 = 1.45` right on top of the front axle (`1.48`), a door `seam` extending to `y = 0.90` above
-    the `0.83` belt crease into empty air, and a lower rocker strip floating `3.4 cm` outside the lower chamfer. Keeping
-    arch lift below `k.s - 0.05`, moving the full-width fender station ahead of the arch (`zf - 0.32`), and keeping
-    `seam` and rocker trim flush within the vertical side wall eliminates the fender fold, silhouette spike and brake-dive
-    tire poke-through while preserving exact vertex counts for `splitChassis`.
   - Exposes `Vehicle & Skids` in the car inspector (`Skid marks`, `Skid width` `0.04–0.45 m`, `Skid life` `1–30 s`,
     `Tyre smoke`, `Clear skids`, `Reset scene`) with exact value entry.
 - **Persistent Playground and switchable environments (`packages/kit/lab/yard.ts`, `spawn.ts`, `main.ts`, `workbench.ts`):**
@@ -259,51 +224,10 @@ audio builds the same node graph and automation as the games' own paths.
 Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
-hivemind run --fetch captures/lab-workbench -- bun packages/kit/lab/prove-workbench.ts
+hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
-hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
-hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
-`prove-workbench.ts` step 12 runs the layout at 1920×1080 and 1280×800 on both hosts: Outliner grouping, counts
-and the `Cone ×5` fold; nothing selected → Environment first; fold multi-select (Transform + Items, no Vehicle &
-Skids); vehicle selection groups; Shift-range; viewport click revealed in the Outliner; `⇧Tab`/arrow/`Esc` keyboard
-flow; lock skips picking; modified highlight, `Modified` filter, per-field reset with one undo entry; Watch pins with
-live values; ⌘K object, setting and command results; `Ctrl+Space`; dragging a Library tile to place a prop;
-`library.place` and `outliner.select kind=cone`. Captures `layout-*-{1920,1280}.png` and the earlier set are in
-`2026-10-14-lab-layout-impl/` relative to the local artifact root.
-
-Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, `2026-10-13-lab-car-playground/`, and `2026-10-13-lab-interaction/`, relative to the local artifact root:
-
-- `after-radial-menu.png` — 8-sector fixed-compass Radial Marking Menu opened over the scene with disabled-in-place slots and shortcut badges.
-- `after-marquee-multiselect.png` — `Alt+Drag` marquee box selection across multiple props with live count badge and multi-select Inspector.
-- `after-transform-gizmo.png` — in-viewport Move (`✥`) and Rotate (`↻`) handles with inline `X` / `Z` / `°` numeric entry.
-- `after-compare-ab-wipe.png` — frozen-frame `f35` split-screen A/B wipe comparing `Slot A (Baseline)` vs. `Slot B (Candidate)` with parameter delta readout.
-- `before-car-skids-1280x800.png` and `after-car-skids-1280x800.png` — matched 1280×800 workbench pair on the identical
-  keyboard launch + drift + handbrake trajectory (`0/1600` vs `188/1600` connected rear-wheel skid segments).
-- `before-canvas-native-1280x800.png` and `after-canvas-native-1280x800.png` — full-bleed native game scale canvas pair.
-- `after-shared-playground-effects.png` and `after-select-car-inspector.png` — switching `Effects` (`Grenade smoke`),
-  `Lighting` and `Objects` (`Getaway · Muscle`) in the same persistent Playground while retaining the car, 6 props and
-  `73/1600` skid segments.
-- `after-street-environment-skids.png` — switching `Env` to `Getaway · Street`, relocating to a validated street spawn,
-  and painting `86/1600` skid segments across the crosswalk.
-- `closeup-before-front-fender.png` and `closeup-before-rear.png` — pre-fix close-ups showing the floating orange/red
-  light-core spheres, front fender wheel-arch Z-fold, protruding door seam and floating rocker strip.
-- `closeup-front-fender.png`, `closeup-rear-lamps.png`, `closeup-throttle-squat.png`, `closeup-brake-dive.png` and
-  `closeup-kerb-roll.png` — post-fix close-ups showing clean fender geometry, bevelled 3D lenses, preserved twin
-  headlight arcs, and `bodyPoint`-locked lamps through throttle squat (`pitch = -0.0707 rad`, `headY = 0.6818 m`),
-  brake dive (`pitch = +0.0899 rad`, `headY = 0.2880 m`) and kerb roll (`roll = -0.0805 rad`).
-- `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
-- `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
-  all 20 effect groups exposed.
-- `after-default-1280x800.png` — workbench layout at 1280×800 with the Outliner, framed smoke room, Details, the
-  Library drawer and the top-bar transport.
-- `after-glass-default.png`, `after-glass-shard-size.png`, `after-glass-rerolled.png` — keyboard-selected `Glass shards`
-  in the meeting room (`▾ Emitter`, `▾ Glass shards`, `▾ Environment` only), framed at the glass pane, shard size
-  adjusted to a `2.2×` scale factor, and room seed rerolled with the effect locked. Integration labels the new
-  glass/paper size controls as multipliers rather than metres.
-- `after-spawn-play.png` and `after-spawn-edit.png` — `Car into cones` fixture driven in `Play` mode (`10.92 m/s`),
-  exited with `Esc` (`throttle: 0`), and inspected in `Edit` mode without stuck input.
-- `after-audio-silent.png` — Audio Lab selected and rendered offline with `0` live `AudioContext` attempts.
-- `after-flame-hydrant-1920x1080.png` — responsive 1920×1080 layout on the `Flame & hydrant` fixture.
-- `workbench-proof.json` — machine-verified assertions across both `getaway` and `blackout` Lab hosts on Apple Metal.
+`prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
+the pre-knobs panel DOM and was deleted; there is no layout regression proof until the Lab scenes redesign settles.
+`games/getaway/scripts/prove-lab-effects.ts` and `prove-lab-spawn.ts` still read that DOM and need knobs selectors.

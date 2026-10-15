@@ -59,6 +59,8 @@ export type GunneryNet = {
   shipHits(ship: number, n: number): void
   /** Our CIWS shot down a store (missile or bomb: 0; SAM or shell: 1). */
   intercept(i: InterceptTuple): void
+  /** Our SAM seeker: tracking jet `on` (-1 none), locked or not (the room warns that jet, like a missile lock). */
+  lock(on: number, locked: boolean): void
 }
 
 /** A carrier as the gunnery sees it this frame: the settled pose with its crew id, team and plan speeds. */
@@ -132,6 +134,8 @@ export class Gunnery {
   /** Team of a player (remote launches), from the host's crew. */
   teamOf: ((id: number) => number) | null = null
   private net: GunneryNet | null = null
+  /** The SAM seeker state last told to the room (target · 2 + locked; -2 none). */
+  private sentLock = -2
   private remotes = new Map<number, Remote>()
   private drawAngles = new Map<number, Float32Array>()
   private simT = -1
@@ -632,6 +636,12 @@ export class Gunnery {
     const st = this.state
     const seek: 0 | 1 | 2 = st && st.kind === "sam" && st.lock.target >= 0 ? (st.lock.locked ? 2 : 1) : 0
     this.audio.update(v.dt, this.firingNow(), farCiws, seek)
+    const on = seek && st ? st.lock.target : -1
+    const lk = on < 0 ? -2 : on * 2 + (seek === 2 ? 1 : 0)
+    if (lk !== this.sentLock) {
+      this.sentLock = lk
+      this.net?.lock(on, seek === 2)
+    }
     if (!seat || !st || !this.ship || v.paused || !v.project) {
       this.hud.update(v.dt, null)
       return

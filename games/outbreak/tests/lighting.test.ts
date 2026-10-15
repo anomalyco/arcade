@@ -33,6 +33,7 @@ describe("Outbreak lighting module & Lab controls", () => {
   test("every flashlight beam setting has a Lab control with a unit and an in-range default", () => {
     expect(flashlightBeamControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_FLASHLIGHT_BEAM).sort())
     for (const control of flashlightBeamControls) {
+      if ("options" in control) continue
       expect("unit" in control && typeof control.unit === "string").toBe(true)
       if ("min" in control && "max" in control) {
         const def = DEFAULT_FLASHLIGHT_BEAM[control.key as keyof typeof DEFAULT_FLASHLIGHT_BEAM]
