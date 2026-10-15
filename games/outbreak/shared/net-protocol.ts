@@ -33,7 +33,7 @@ import {
   type CombatMeleeHit,
   type CombatShotEvent,
   type MeleeWeaponId,
-} from "./combat"
+} from "./melee/index"
 import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import { outbreakSharedFeatures } from "./feature-registry"
@@ -488,7 +488,6 @@ const SEC_LURES = 4
 const SEC_BASHES = 8
 const SEC_SHOTS = 16
 const SEC_DELTA = 32
-const SEC_MELEE = 128
 const V2_MAGIC_BIT = 0x80000000
 
 const timerCapFor = (state: AIState) => (state === "knockdown" ? 2.8 : 0.85)
@@ -886,31 +885,6 @@ export function encodeShared(
     ? [...baseSnap.shots.filter((s) => sim.time - s.time <= 0.6), ...newShots]
     : newShots
 
-  const maxBaseMeleeId = isDelta ? (baseSnap.meleeSwings ?? []).reduce((m, s) => Math.max(m, s.id), 0) : 0
-  const newMelee: CombatMeleeEvent[] = []
-  for (const m of sim.combat.meleeSwings) {
-    if (isDelta && m.id <= maxBaseMeleeId) continue
-    const ageMs = clamp(Math.round((sim.time - m.time) * 1000), 0, 65535)
-    newMelee.push({
-      ...m,
-      time: Number((sim.time - ageMs / 1000).toFixed(4)),
-      x: cm(m.x) / 100,
-      y: cm(m.y) / 100,
-      aim: unpackAngle(packAngle(m.aim)),
-      arc: Math.round(m.arc * 100) / 100,
-      reach: Math.round(m.reach * 100) / 100,
-      charge: Math.round(m.charge * 100) / 100,
-      hits: m.hits.map((h) => ({
-        ...h,
-        x: cm(h.x) / 100,
-        y: cm(h.y) / 100,
-      })),
-    })
-  }
-  const allMelee = isDelta
-    ? [...(baseSnap.meleeSwings ?? []).filter((m) => sim.time - m.time <= 0.6), ...newMelee]
-    : newMelee
-
   const registeredSections = outbreakSharedFeatures.netSections().map(({ feature, codec }) => {
     const collected = codec.collect({
       sim,
@@ -937,7 +911,6 @@ export function encodeShared(
     (bashes.length > 0 ? SEC_BASHES : 0) |
     (newShots.length > 0 ? SEC_SHOTS : 0) |
     (isDelta ? SEC_DELTA : 0) |
-    (newMelee.length > 0 ? SEC_MELEE : 0) |
     extraSectionBits
 
   const hourQuant = Math.round((((sim.hour % 24) + 24) % 24) * 2000) & 0xffff
@@ -959,7 +932,6 @@ export function encodeShared(
       lures,
       bashes,
       shots: allShots,
-      ...(allMelee.length > 0 ? { meleeSwings: allMelee } : {}),
     }
     for (const { codec, collected } of registeredSections) {
       if (collected.snapshotValue !== undefined) {
@@ -1161,46 +1133,6 @@ export function encodeShared(
       w.uvar(s.hitZombieId === null ? 0 : s.hitZombieId + 1)
       w.u8((s.killed ? 1 : 0) | (BONES.indexOf(s.detachBone) << 1) | ((s.shooter & 0x0f) << 4))
       w.u32(s.seed)
-    }
-  }
-  if (sectionFlags & SEC_MELEE) {
-    w.u8(newMelee.length)
-    for (const m of newMelee) {
-      const ageMs = clamp(Math.round((timeF32 - m.time) * 1000), 0, 65535)
-      const wpnIdx = Math.max(0, MELEE_WEAPON_IDS.indexOf(m.weapon))
-      const flags =
-        ((m.combo - 1) & 3) |
-        (m.heavy ? 4 : 0) |
-        (m.weaponBroke ? 8 : 0) |
-        (m.durabilityLow ? 16 : 0) |
-        (m.doorBroke ? 32 : 0) |
-        (m.hitDoorId ? 64 : 0) |
-        (m.finisher ? 128 : 0)
-      w.uvar(m.id)
-      w.u16(ageMs)
-      w.u8(((m.attackerIndex & 0x0f) << 4) | (wpnIdx & 0x0f))
-      w.u8(flags)
-      w.i32(cm(m.x)).i32(cm(m.y)).u16(packAngle(m.aim))
-      w.u8(Math.round(clamp(m.arc, 0, 2.55) * 100))
-      w.u8(Math.round(clamp(m.reach, 0, 2.55) * 100))
-      w.u8(Math.round(clamp(m.charge, 0, 1) * 100))
-      if (m.hitDoorId) w.str(m.hitDoorId)
-      w.u32(m.seed)
-      w.u8(m.hits.length)
-      for (const h of m.hits) {
-        w.uvar(h.zombieId)
-        w.i32(cm(h.x)).i32(cm(h.y))
-        w.u8(Math.round(clamp(h.damage, 0, 255)))
-        const hFlags =
-          (h.killed ? 1 : 0) |
-          (h.knockdown ? 2 : 0) |
-          (h.headshot ? 4 : 0) |
-          (Math.max(0, MELEE_BONES.indexOf(h.detachBone)) << 3) |
-          (h.finisher ? 64 : 0) |
-          (h.crawler ? 128 : 0)
-        w.u8(hFlags)
-        w.u32(h.seed)
-      }
     }
   }
   for (const { codec, collected } of registeredSections) {
@@ -1460,80 +1392,6 @@ export function decodeShared(
     ? [...baseSnap.shots.filter((s) => time - s.time <= 0.6), ...newShots]
     : newShots
 
-  const newMelee: CombatMeleeEvent[] = []
-  if (sectionFlags & SEC_MELEE) {
-    for (let n = r.u8(), i = 0; i < n; i++) {
-      const id = r.uvar()
-      const ageMs = r.u16()
-      const attAndWpn = r.u8()
-      const attackerIndex = (attAndWpn >>> 4) & 0x0f
-      const weapon = MELEE_WEAPON_IDS[attAndWpn & 0x0f] ?? "crowbar"
-      const flags = r.u8()
-      const combo = (((flags & 3) + 1) as 1 | 2 | 3)
-      const heavy = Boolean(flags & 4)
-      const weaponBroke = Boolean(flags & 8)
-      const durabilityLow = Boolean(flags & 16)
-      const doorBroke = Boolean(flags & 32)
-      const hasDoor = Boolean(flags & 64)
-      const x = r.i32() / 100
-      const y = r.i32() / 100
-      const aim = unpackAngle(r.u16())
-      const arc = r.u8() / 100
-      const reach = r.u8() / 100
-      const charge = r.u8() / 100
-      const hitDoorId = hasDoor ? r.str() : null
-      const seed = r.u32()
-      const hitCount = r.u8()
-      const hits: CombatMeleeHit[] = []
-      for (let k = 0; k < hitCount; k++) {
-        const zombieId = r.uvar()
-        const hx = r.i32() / 100
-        const hy = r.i32() / 100
-        const damage = r.u8()
-        const hFlags = r.u8()
-        const hSeed = r.u32()
-        hits.push({
-          zombieId,
-          x: hx,
-          y: hy,
-          damage,
-          killed: Boolean(hFlags & 1),
-          knockdown: Boolean(hFlags & 2),
-          headshot: Boolean(hFlags & 4),
-          ...(hFlags & 64 ? { finisher: true } : {}),
-          ...(hFlags & 128 ? { crawler: true } : {}),
-          detachBone: MELEE_BONES[(hFlags >>> 3) & 7] ?? null,
-          seed: hSeed,
-        })
-      }
-      newMelee.push({
-        id,
-        time: Number((time - ageMs / 1000).toFixed(4)),
-        attackerId: `seat:${attackerIndex}`,
-        attackerIndex,
-        weapon,
-        x,
-        y,
-        aim,
-        arc,
-        reach,
-        combo,
-        heavy,
-        ...(flags & 128 ? { finisher: true } : {}),
-        charge,
-        hits,
-        hitDoorId,
-        doorBroke,
-        weaponBroke,
-        durabilityLow,
-        seed,
-      })
-    }
-  }
-  const meleeSwings = isDelta && baseSnap
-    ? [...(baseSnap.meleeSwings ?? []).filter((m) => time - m.time <= 0.6), ...newMelee]
-    : newMelee
-
   const snap: SharedSnapshot = {
     tick,
     time,
@@ -1549,16 +1407,28 @@ export function decodeShared(
     lures,
     bashes,
     shots,
-    ...(meleeSwings.length > 0 ? { meleeSwings } : {}),
   }
   for (const { codec } of outbreakSharedFeatures.netSections()) {
     if (sectionFlags & codec.bit) {
-      ;(snap as Record<string, unknown>)[codec.key] = codec.decode(r, {
+      const val = codec.decode(r, {
         tick,
         time,
         isDelta,
         baseSnap,
       })
+      if (val !== undefined) {
+        ;(snap as Record<string, unknown>)[codec.key] = val
+      }
+    } else if (codec.decodeOmitted) {
+      const val = codec.decodeOmitted({
+        tick,
+        time,
+        isDelta,
+        baseSnap,
+      })
+      if (val !== undefined) {
+        ;(snap as Record<string, unknown>)[codec.key] = val
+      }
     } else if (isDelta && baseSnap && codec.key in baseSnap) {
       ;(snap as Record<string, unknown>)[codec.key] = (baseSnap as Record<string, unknown>)[codec.key]
     }

@@ -5,6 +5,7 @@ import { CoopSim } from "../shared/coop-sim"
 import { outbreakSharedFeatures, OutbreakSharedFeatureRegistry } from "../shared/feature-registry"
 import { outbreakClientFeatures, OutbreakClientFeatureRegistry } from "../src/feature-registry"
 import { outbreakMapFeature } from "../src/map"
+import { outbreakMeleeFeature, outbreakMeleeSharedFeature } from "../src/melee/index"
 import { outbreakPacingFeature, outbreakPacingSharedFeature } from "../src/pacing"
 import { outbreakProgressionFeature, outbreakProgressionSharedFeature } from "../src/progression"
 import { outbreakVehiclesFeature, outbreakVehiclesSharedFeature } from "../src/vehicles/index"
@@ -278,5 +279,18 @@ describe("OutbreakClientFeatureRegistry", () => {
     expect(commands.map((c) => c.id)).toEqual(["vehicle.stage"])
     const methods = vehiclesClient?.harnessMethods?.({} as any, {} as any) ?? {}
     expect(typeof methods.stageVehicle).toBe("function")
+  })
+
+  test("registers the melee feature in both shared and client registries", () => {
+    expect(outbreakSharedFeatures.get("melee")).toBe(outbreakMeleeSharedFeature)
+    expect(outbreakMeleeSharedFeature.tuning?.namespace).toBe("melee")
+    expect(outbreakMeleeSharedFeature.netSection?.key).toBe("meleeSwings")
+
+    const meleeClient = outbreakClientFeatures.get("melee")
+    expect(meleeClient).toBe(outbreakMeleeFeature)
+    const commands = meleeClient?.gameCommands?.({} as any) ?? []
+    expect(commands.map((c) => c.id)).toEqual(["melee.stage"])
+    const methods = meleeClient?.harnessMethods?.({} as any, {} as any) ?? {}
+    expect(typeof methods.stageMelee).toBe("function")
   })
 })
