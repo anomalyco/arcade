@@ -1,6 +1,6 @@
 import { maxChroma } from "./color.js"
 import { EASINGS } from "./easing.js"
-import { normalize, type Schema, type ValueField, type Values } from "./schema.js"
+import { hasValue, normalize, type Schema, type ValueField, type Values } from "./schema.js"
 
 const lattice = (min: number, max: number, step: number, r: number) =>
   min + Math.floor(r * (Math.floor((max - min) / step + 1e-9) + 1)) * step
@@ -32,6 +32,24 @@ function pick(field: ValueField, random: () => number) {
       const curves = Object.values(EASINGS)
       return curves[Math.floor(r() * curves.length)]
     }
+    case "vec": {
+      const axis = () => lattice(field.min, field.max, field.step, r())
+      return field.axes === 3 ? { x: axis(), y: axis(), z: axis() } : { x: axis(), y: axis() }
+    }
+    case "range":
+      return [
+        lattice(field.min, field.max, field.step, r()),
+        lattice(field.min, field.max, field.step, r()),
+      ]
+    case "angle": {
+      // A wrapping angle never lands on its max (the same direction as its min).
+      const top = field.wrap ? field.max - field.step : field.max
+      return lattice(field.min, Math.max(field.min, top), field.step, r())
+    }
+    case "seed":
+      return lattice(field.min, field.max, 1, r())
+    case "keybind":
+      return field.value
   }
 }
 
@@ -40,7 +58,7 @@ export function randomValues<S extends Schema>(schema: S, random = Math.random):
     schema,
     Object.fromEntries(
       Object.entries(schema).flatMap(([key, field]) =>
-        field.kind === "action" ? [] : [[key, pick(field, random)]],
+        hasValue(field) ? [[key, pick(field, random)]] : [],
       ),
     ),
   )

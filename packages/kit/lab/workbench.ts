@@ -1,4 +1,5 @@
 import { formatLabValue, inferControlUnit, LabPanel, type LabControl, type LabSettings, type LabValue } from "../lab-panel"
+import { LabToolbar } from "../lab-knobs"
 import {
   findControlRow,
   formatControlValue,
@@ -233,21 +234,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const statsReadout = bottombar.querySelector<HTMLElement>('[data-readout="stats"]')!
   const detailsIcon = inspectorEl.querySelector<HTMLElement>("[data-details-icon]")!
   const detailsMeta = inspectorEl.querySelector<HTMLElement>("[data-details-meta]")!
-  const detailsActions = inspectorEl.querySelector<HTMLElement>("[data-details-actions]")!
-  const detailsSearch = inspectorEl.querySelector<HTMLInputElement>('[data-control="details-search"]')!
-  const detailsModifiedBtn = inspectorEl.querySelector<HTMLButtonElement>('[data-action="details-modified"]')!
-  const detailsModifiedCount = inspectorEl.querySelector<HTMLElement>("[data-modified-count]")!
+  // The Details actions are a knobs toolbar; its chips are the canvas keys, and they press it while it has focus.
+  const detailsToolbar = new LabToolbar(inspectorEl.querySelector<HTMLElement>("[data-details-actions]")!, "Actions", id => {
+    const res = commands.invoke(id, undefined, { source: "ui" })
+    if (!res.ok) showToast(res.error, true)
+    syncChrome()
+  })
   const detailsAllBtn = inspectorEl.querySelector<HTMLButtonElement>('[data-action="details-all"]')!
   /** Approved defaults captured before any fixture or user edit; drive Reset and modified highlighting. */
   const defaultsBySection = new Map(sections.map(s => [s.id, { ...s.settings } as LabSettings]))
   const lockedIds = new Set<string>()
   let watchPins: WatchPin[] = loadWatchPins()
-  let detailsQuery = ""
-  let detailsModifiedOnly = false
   let detailsShowAll = false
   let detailsViewSig = ""
   let detailsRelevant: Set<string> | null = null
-  let detailsActionsSig = ""
   let lastSelectionSig = ""
   let selectingFromOutliner = false
   let telemetryText = ""
@@ -653,6 +653,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
     drawGridOverlayToCanvas(target, variationGrid, focusedGridTile)
   }
 
+  // Who follows whether Undo and Redo can run (knobs' header buttons); told only when that changes.
+  const historyListeners = new Set<() => void>()
+  let historyShown = ""
+  function notifyHistory() {
+    const now = `${undoStack.length > 0}${redoStack.length > 0}`
+    if (now === historyShown) return
+    historyShown = now
+    for (const listener of historyListeners) listener()
+  }
+
   function recordHistory(label: string, before: FullSnapshot) {
     const after = captureSnapshot()
     if (JSON.stringify(before) === JSON.stringify(after)) return
@@ -668,6 +678,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     redoStack.push(entry)
     restoreSnapshot(entry.before)
     showToast(`Undid ${entry.label}`)
+    notifyHistory()
     return true
   }
 
@@ -677,6 +688,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     undoStack.push(entry)
     restoreSnapshot(entry.after)
     showToast(`Redid ${entry.label}`)
+    notifyHistory()
     return true
   }
 
@@ -1043,7 +1055,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
     playPauseBtn,
     stepBtn,
     speedSelect,
-    detailsSearch,
     activeSection,
     resolveEnvOwner,
     selectSection,
@@ -1098,10 +1109,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
     getWatchPins: () => watchPins,
     setWatchPins,
     pinSetting,
-    getDetailsFilterState: () => ({ query: detailsQuery, modifiedOnly: detailsModifiedOnly, showAll: detailsShowAll }),
+    getDetailsFilterState: () => ({ query: panel.search.query, modifiedOnly: panel.search.modified, showAll: detailsShowAll }),
     setDetailsFilterState: patch => {
-      if (patch.query !== undefined) detailsQuery = patch.query
-      if (patch.modifiedOnly !== undefined) detailsModifiedOnly = patch.modifiedOnly
+      panel.setSearch({ query: patch.query, modified: patch.modifiedOnly })
       if (patch.showAll !== undefined) detailsShowAll = patch.showAll
     },
     applyDetailsView,
@@ -1182,7 +1192,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
             library: { open: libraryDrawer.open, category: libraryDrawer.category, query: libraryDrawer.query, view: libraryDrawer.view, focused: libraryDrawer.focused, cursor: libraryDrawer.cursor, previews: thumbs.size, readback: { ...thumbStats } },
             panels: panels.state(),
             locked: [...lockedIds],
-            details: { query: detailsQuery, modifiedOnly: detailsModifiedOnly, showAll: detailsShowAll, modified: panel.modifiedControls().map(c => c.key) },
+            details: { query: panel.search.query, modifiedOnly: panel.search.modified, showAll: detailsShowAll, tab: panel.tab ?? null, modified: panel.modifiedControls().map(c => c.key) },
             watch: watchPins.map(p => ({ section: p.sectionId, key: p.key, label: p.label, value: readWatchPin(p)?.text ?? null })),
           }
         : undefined,
@@ -1608,6 +1618,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncCompareWipeOverlay()
     syncVariationGridOverlay()
 
+    notifyHistory()
     undoBtn.disabled = undoStack.length === 0
     undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
     redoBtn.disabled = redoStack.length === 0
@@ -2260,9 +2271,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   paletteBtn.onclick = () => palette.open()
 
   function clearDetailsFilters() {
-    detailsQuery = ""
-    detailsSearch.value = ""
-    detailsModifiedOnly = false
+    panel.setSearch({ query: "", modified: false })
     detailsShowAll = true
     detailsViewSig = ""
     applyDetailsView()
@@ -2346,27 +2355,18 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const selected = detailsSelection()
     const relevant = sec.detailsGroups?.(selected)
     const only = relevant && selected.length && !detailsShowAll ? new Set(relevant) : null
-    const q = detailsQuery.trim().toLowerCase()
-    const sig = JSON.stringify([sec.id, relevant ?? null, only ? [...only] : null, q, detailsModifiedOnly, panel.navigation.rows.length])
+    const sig = JSON.stringify([sec.id, relevant ?? null, only ? [...only] : null, panel.navigation.rows.length])
     detailsAllBtn.hidden = !(relevant && selected.length)
     detailsAllBtn.setAttribute("aria-pressed", String(detailsShowAll))
-    detailsModifiedBtn.setAttribute("aria-pressed", String(detailsModifiedOnly))
     detailsRelevant = only
     if (!force && sig === detailsViewSig) return
     detailsViewSig = sig
-    panel.setView({
-      order: relevant ?? [],
-      filter:
-        only || q || detailsModifiedOnly
-          ? (row, modified) => {
-              if (only && !only.has(row.group)) return false
-              if (detailsModifiedOnly && !modified) return false
-              if (q && !`${row.control?.label ?? ""} ${row.control?.key ?? ""} ${row.group}`.toLowerCase().includes(q)) return false
-              return true
-            }
-          : undefined,
-    })
+    // Search and Modified are knobs' (the panel's search field); the selection keeps Details to its groups.
+    panel.setView({ order: relevant ?? [], filter: only ? row => only.has(row.group) : undefined })
   }
+
+  /** The Details toolbar's keys by the names knobs reads (the commands show glyphs). */
+  const TOOL_KEYS: Record<string, string> = { "⌫": "Backspace" }
 
   const CATEGORY_ICON: Record<string, string> = { character: "♟", prop: "▣", emitter: "✺", light: "✦", specimen: "◇" }
 
@@ -2412,9 +2412,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
       detailsMeta.textContent = ["Nothing selected · scene settings", envLabel, seed !== undefined ? `seed ${seed}` : null].filter(Boolean).join(" · ")
       detailsIcon.textContent = LIBRARY_CATEGORIES.find(c => c.id === (sec.library?.category ?? sectionLibraryCategory(sec.id)))?.icon ?? "◇"
     }
-    const relevantRows = new Set(panel.navigation.rows.filter(r => r.control && (!detailsRelevant || detailsRelevant.has(r.group))).map(r => r.control!))
-    const n = panel.modifiedControls().filter(c => relevantRows.has(c)).length
-    detailsModifiedCount.textContent = n ? String(n) : ""
 
     const actionIds = selList.length
       ? ["object.trigger", "object.frame", "object.duplicate", "object.delete", "object.move", ...(spawn ? ["object.possess"] : [])]
@@ -2424,64 +2421,19 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const cmd = commands.get(id)
       return { id, cmd, enabled: Boolean(cmd && mode !== "play" && cmd.enabled(ctx)) }
     })
-    const sig = JSON.stringify(states.map(s => [s.id, s.enabled]))
-    if (sig !== detailsActionsSig) {
-      detailsActionsSig = sig
-      detailsActions.replaceChildren()
-      for (const { id, cmd, enabled } of states) {
-        if (!cmd) continue
-        const b = document.createElement("button")
-        b.type = "button"
-        b.className = "lab-act"
-        b.dataset.command = id
-        b.disabled = !enabled
-        b.title = enabled ? cmd.label : cmd.disabledReason?.(ctx) ?? "Unavailable"
-        const label = id === "ground.trigger-here" ? "Retrigger" : id === "ground.clear" ? "Clear FX" : id === "object.possess" ? "Play" : cmd.shortLabel
-        b.append(label)
-        if (cmd.shortcut) {
-          const k = document.createElement("kbd")
-          k.textContent = cmd.shortcut
-          b.append(k)
-        }
-        b.onclick = () => {
-          const res = commands.invoke(id, undefined, { source: "ui" })
-          if (!res.ok) showToast(res.error, true)
-          syncChrome()
-        }
-        detailsActions.append(b)
-      }
-    }
+    detailsToolbar.set(states.flatMap(({ id, cmd, enabled }) => {
+      if (!cmd) return []
+      const label = id === "ground.trigger-here" ? "Retrigger" : id === "ground.clear" ? "Clear FX" : id === "object.possess" ? "Play" : cmd.shortLabel ?? cmd.label
+      return [{
+        id,
+        label,
+        shortcut: cmd.shortcut ? (TOOL_KEYS[cmd.shortcut] ?? cmd.shortcut) : undefined,
+        disabled: !enabled,
+        title: enabled ? cmd.label : cmd.disabledReason?.(ctx) ?? "Unavailable",
+      }]
+    }))
   }
 
-  detailsSearch.addEventListener("input", () => {
-    detailsQuery = detailsSearch.value
-    applyDetailsView()
-    syncDetails()
-  })
-  detailsSearch.addEventListener("focus", () => {
-    if (mode === "play") setPlayMode("edit")
-  })
-  detailsSearch.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      event.preventDefault()
-      if (detailsSearch.value) {
-        detailsSearch.value = ""
-        detailsQuery = ""
-        applyDetailsView()
-      } else canvas.focus({ preventScroll: true })
-    } else if (event.key === "Enter" || event.key === "ArrowDown") {
-      event.preventDefault()
-      panel.setReturnFocus(canvas)
-      focusZone = "inspector"
-      panel.focusFirst()
-      syncTransportAndHints()
-    }
-  })
-  detailsModifiedBtn.onclick = () => {
-    detailsModifiedOnly = !detailsModifiedOnly
-    applyDetailsView()
-    syncDetails()
-  }
   detailsAllBtn.onclick = () => {
     detailsShowAll = !detailsShowAll
     applyDetailsView()
@@ -3509,6 +3461,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         undoStack.push({ label, before: beforeSnap, after: afterSnap })
         if (undoStack.length > 50) undoStack.shift()
         redoStack.length = 0
+        notifyHistory()
       }
       const sec = activeSection()
       const isPaused = "playing" in sec.settings && !sec.settings.playing
@@ -3593,6 +3546,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
     captureSnapshot,
     undo,
     redo,
+    canUndo: () => undoStack.length > 0,
+    canRedo: () => redoStack.length > 0,
+    /** Calls `listener` when whether Undo or Redo can run changes; returns an unsubscribe. */
+    onHistoryChange(listener: () => void) {
+      historyListeners.add(listener)
+      return () => { historyListeners.delete(listener) }
+    },
     applyPresetJson,
     exportPresetJson: () => JSON.stringify(buildPresetPayload(), null, 2),
     exportGameRecipe: buildCurrentGameRecipe,

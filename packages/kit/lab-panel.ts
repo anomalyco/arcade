@@ -6,12 +6,14 @@ import {
   type LabControl,
   type LabRow,
   type LabSettings,
+  type LabTab,
   type LabValue,
 } from "./lab-navigation"
+import type { HostHistory } from "@arcade/knobs"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
 export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
-export type { LabControl, LabRow, LabSettings, LabValue } from "./lab-navigation"
+export type { LabControl, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
 export type LabOptions = {
   open?: boolean
@@ -26,8 +28,8 @@ export type LabOptions = {
   pill?: boolean
   /** Saved variants are kept per this id (by default per page and section); `false` turns them off. */
   variants?: string | false | (() => string | false)
-  /** The host's undo and redo (the Lab workbench). Without them knobs keeps its own history. */
-  history?: { undo(): void; redo(): void }
+  /** The host's undo stack (the Lab workbench); knobs' Undo and Redo follow it. Without it knobs keeps its own history. */
+  history?: HostHistory
   onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
   onToggle?: (visible: boolean) => void
   onFocusChange?: (focused: boolean, activeRow?: LabRow) => void
@@ -65,7 +67,7 @@ export class LabPanel implements LabKnobsHost {
   readonly header = document.createElement("header")
   readonly navigation: LabNavigation
   readonly tuning: LabKnobsHost["tuning"] = { seed: 1, last: null }
-  readonly history?: { undo(): void; redo(): void }
+  readonly history?: HostHistory
   readonly pin?: LabKnobsHost["pin"]
   private body = document.createElement("div")
   private pill = document.createElement("button")
@@ -89,6 +91,7 @@ export class LabPanel implements LabKnobsHost {
   private leaving = false
   private detachControl?: () => void
   private view: LabPanelView = {}
+  private tabs: readonly LabTab[] = []
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
@@ -313,10 +316,11 @@ export class LabPanel implements LabKnobsHost {
     this.main = new LabKnobsView(this, this.body, {
       id: `${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
-      floating: this.layoutMode === "floating",
       include: row => (!this.navigation.filter || this.navigation.filter(row)) && !this.claimed(row),
       order: () => this.view.order ?? [],
       keys: this.keys(),
+      search: true,
+      tabs: this.tabs,
       actions: this.allowPresets && switches.length ? [
         { label: "All on", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.on ?? true) } },
         { label: "All off", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.off ?? false) } },
@@ -358,6 +362,38 @@ export class LabPanel implements LabKnobsHost {
     return out
   }
 
+  /**
+   * Tabs over the panel's groups (the Lab sets each section's). Call before `addControls`; a change rebuilds the
+   * panel's own view.
+   */
+  setTabs(tabs: readonly LabTab[] = []) {
+    if (JSON.stringify(tabs) === JSON.stringify(this.tabs)) return
+    this.tabs = tabs
+    if (this.main) {
+      this.main.dispose()
+      this.main = null
+      this.sync()
+    }
+  }
+
+  /** The tab the panel shows, when it has tabs. */
+  get tab(): string | undefined { return this.main?.tab }
+
+  /** The panel's search text and Modified chip. */
+  get search(): { query: string; modified: boolean } {
+    return this.main?.search() ?? { query: "", modified: false }
+  }
+
+  /** Sets the panel's search text and Modified chip, as typing and clicking would. */
+  setSearch(next: { query?: string; modified?: boolean }) {
+    this.ensureMain()?.setSearch(next)
+  }
+
+  /** The settings the panel's own view shows on screen now (after its tab, folds and search). */
+  shownKeys(): string[] {
+    return this.main?.shownKeys() ?? []
+  }
+
   /** Apply Details ordering and filtering (inspector layout). */
   setView(view: LabPanelView) {
     this.view = view
@@ -374,6 +410,7 @@ export class LabPanel implements LabKnobsHost {
     if (!this.visible) this.toggle()
     this.navigation.jump(row)
     this.sync()
+    for (const v of this.views) v.show(key)
     const view = this.viewFor(key)
     const element = view?.rowElement(key)
     if (!view || !element) return false

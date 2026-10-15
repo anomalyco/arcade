@@ -1,18 +1,33 @@
-import { raycast, type Rect } from "@arcade/kit/sim/geom"
+import { raycast, rayRect, type Rect } from "@arcade/kit/sim/geom"
 import { POLAR_RAYS } from "@arcade/kit/gpu/limits"
 import type { PeekInfo } from "./interact"
 import { SIZE } from "./map"
 
 export type VisionSettings = { range: number; cone: number; awareness: number }
+export type VisionFlashlightInfo = {
+  active: boolean
+  range: number
+  cone: number
+  aim?: number
+}
 export const DEFAULT_VISION: VisionSettings = { range: 27, cone: 110, awareness: 2.5 }
 export const FOG_CELL = .5
 export const FOG_SIZE = SIZE / FOG_CELL
 const TAU = Math.PI * 2
 
+const RAY_COS = new Float64Array(POLAR_RAYS)
+const RAY_SIN = new Float64Array(POLAR_RAYS)
+for (let i = 0; i < POLAR_RAYS; i++) {
+  const a = ((i + 0.5) / POLAR_RAYS) * TAU
+  RAY_COS[i] = Math.cos(a)
+  RAY_SIN[i] = Math.sin(a)
+}
+
 /** CPU counterpart to the shared polar compute pass, for persistent exploration (no GPU readback). */
 export class Vision {
   readonly rays = new Float32Array(POLAR_RAYS)
   readonly explored = new Uint8Array(FOG_SIZE * FOG_SIZE)
+  private readonly nearBlockers: Rect[] = []
   readonly chunkExplored = new Map<string, Uint8Array>()
   private readonly tilePool: Uint8Array[] = []
   private readonly maxCachedTiles = 64
@@ -99,6 +114,11 @@ export class Vision {
   private aimCos = 1
   private aimSin = 0
   private coneCos = Math.cos((DEFAULT_VISION.cone * Math.PI) / 360)
+  private flashActive = false
+  private flashRange = 0
+  private flashAimCos = 1
+  private flashAimSin = 0
+  private flashConeCos = 1
 
   update(
     x: number,
@@ -107,6 +127,7 @@ export class Vision {
     blockers: readonly Rect[],
     settings = this.settings,
     peek?: PeekInfo | null,
+    flashlight?: VisionFlashlightInfo | null,
   ): boolean {
     const ox = peek ? peek.eyeX : x
     const oy = peek ? peek.eyeY : y
@@ -127,18 +148,50 @@ export class Vision {
     this.aimSin = aimSin
     this.coneCos = coneCos
 
+    const fActive = Boolean(flashlight?.active && flashlight.range > 0.5)
+    const fRange = fActive ? flashlight!.range : 0
+    const fAim = flashlight?.aim ?? oAim
+    const fCone = fActive ? Math.max(10, Math.min(160, flashlight!.cone)) : 0
+    this.flashActive = fActive
+    this.flashRange = fRange
+    this.flashAimCos = Math.cos(fAim)
+    this.flashAimSin = Math.sin(fAim)
+    this.flashConeCos = Math.cos((fCone * Math.PI) / 360)
+
+    const maxCastRange = Math.max(range, fRange)
+    const minBx = ox - maxCastRange
+    const maxBx = ox + maxCastRange
+    const minBy = oy - maxCastRange
+    const maxBy = oy + maxCastRange
+    const near = this.nearBlockers
+    near.length = 0
+    for (let b = 0; b < blockers.length; b++) {
+      const rect = blockers[b]!
+      if (rect[2] >= minBx && rect[0] <= maxBx && rect[3] >= minBy && rect[1] <= maxBy) {
+        near.push(rect)
+      }
+    }
     for (let i = 0; i < POLAR_RAYS; i++) {
-      const a = ((i + 0.5) / POLAR_RAYS) * TAU
-      this.rays[i] = Math.min(range, raycast(ox, oy, Math.cos(a), Math.sin(a), blockers, range))
+      const dx = RAY_COS[i]!
+      const dy = RAY_SIN[i]!
+      let best = maxCastRange
+      for (let b = 0; b < near.length; b++) {
+        const t = rayRect(ox, oy, dx, dy, near[b]!, best)
+        if (t < best) best = t
+      }
+      this.rays[i] = best
     }
     let changed = false
     const r2 = range * range
+    const fR2 = fRange * fRange
+    const maxR2 = Math.max(r2, fR2)
     const aware2 = awareness * awareness
     const coneCos2 = coneCos * Math.abs(coneCos)
-    const minGy = Math.max(0, Math.floor((oy - this.originY - range) / FOG_CELL))
-    const maxGy = Math.min(FOG_SIZE, Math.ceil((oy - this.originY + range) / FOG_CELL))
-    const minGx = Math.max(0, Math.floor((ox - this.originX - range) / FOG_CELL))
-    const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + range) / FOG_CELL))
+    const fConeCos2 = this.flashConeCos * Math.abs(this.flashConeCos)
+    const minGy = Math.max(0, Math.floor((oy - this.originY - maxCastRange) / FOG_CELL))
+    const maxGy = Math.min(FOG_SIZE, Math.ceil((oy - this.originY + maxCastRange) / FOG_CELL))
+    const minGx = Math.max(0, Math.floor((ox - this.originX - maxCastRange) / FOG_CELL))
+    const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + maxCastRange) / FOG_CELL))
     const baseWx = this.originX + 0.5 * FOG_CELL - ox
     const baseWy = this.originY + 0.5 * FOG_CELL - oy
     const rays = this.rays
@@ -150,18 +203,23 @@ export class Vision {
       const dy2 = dy * dy
       const rowOff = gy * FOG_SIZE
       const dySin = dy * aimSin
+      const fDySin = dy * this.flashAimSin
       for (let gx = minGx; gx < maxGx; gx++) {
         const idx = rowOff + gx
         if (explored[idx]) continue
         const dx = baseWx + gx * FOG_CELL
         const d2 = dx * dx + dy2
-        if (d2 > r2) continue
-        if (d2 > aware2) {
+        if (d2 > maxR2) continue
+        let inCone = d2 <= aware2
+        if (!inCone && d2 <= r2) {
           const dot = dx * aimCos + dySin
-          if (coneCos >= 0 ? dot < 0 || dot * dot < d2 * coneCos2 : dot < 0 && dot * dot > d2 * -coneCos2) {
-            continue
-          }
+          inCone = !(coneCos >= 0 ? dot < 0 || dot * dot < d2 * coneCos2 : dot < 0 && dot * dot > d2 * -coneCos2)
         }
+        if (!inCone && fActive && d2 <= fR2) {
+          const fDot = dx * this.flashAimCos + fDySin
+          inCone = !(this.flashConeCos >= 0 ? fDot < 0 || fDot * fDot < d2 * fConeCos2 : fDot < 0 && fDot * fDot > d2 * -fConeCos2)
+        }
+        if (!inCone) continue
         const distance = Math.sqrt(d2)
         const a = Math.atan2(dy, dx)
         const ray = Math.floor((a < 0 ? a + TAU : a) * invTauRays) % POLAR_RAYS
@@ -180,12 +238,19 @@ export class Vision {
     const dy = y - this.y
     const d2 = dx * dx + dy * dy
     const r = this.settings.range
-    if (d2 > r * r) return false
+    const maxR = this.flashActive ? Math.max(r, this.flashRange) : r
+    if (d2 > maxR * maxR) return false
     const distance = Math.sqrt(d2)
     const a = Math.atan2(dy, dx)
     const ray = Math.floor(((a < 0 ? a + TAU : a) / TAU) * POLAR_RAYS) % POLAR_RAYS
     if (distance > this.rays[ray]! + 0.025) return false
-    return distance <= this.settings.awareness || (dx * this.aimCos + dy * this.aimSin) / distance >= this.coneCos
+    if (distance <= r && (distance <= this.settings.awareness || (dx * this.aimCos + dy * this.aimSin) / distance >= this.coneCos)) {
+      return true
+    }
+    if (this.flashActive && distance <= this.flashRange) {
+      return (dx * this.flashAimCos + dy * this.flashAimSin) / Math.max(1e-5, distance) >= this.flashConeCos
+    }
+    return false
   }
 
   /**
@@ -197,7 +262,8 @@ export class Vision {
     const dx = x - this.x
     const dy = y - this.y
     const distance = Math.hypot(dx, dy)
-    if (distance > this.settings.range + radius) return 0
+    const maxR = this.flashActive ? Math.max(this.settings.range, this.flashRange) : this.settings.range
+    if (distance > maxR + radius) return 0
     if (distance <= 0.05) return 1
     const invD = 1 / distance
     const px = -dy * invD * radius * 0.85
@@ -206,30 +272,50 @@ export class Vision {
     const aimSin = Math.sin(this.aim)
     const cosHalf = Math.cos((this.settings.cone * Math.PI) / 360)
     const featherCos = cosHalf - 0.065
+    const fFeatherCos = this.flashConeCos - 0.055
     let best = 0
     for (let k = -1; k <= 1; k++) {
       const sdx = dx + px * k
       const sdy = dy + py * k
       const sDist = Math.hypot(sdx, sdy)
-      if (sDist > this.settings.range || sDist <= 1e-4) continue
+      if (sDist > maxR || sDist <= 1e-4) continue
       const a = (Math.atan2(sdy, sdx) + TAU) % TAU
       const ray = Math.floor((a / TAU) * POLAR_RAYS) % POLAR_RAYS
       if (sDist > this.rays[ray]! + 0.055) continue
-      let coneWeight = 0
-      if (sDist <= this.settings.awareness) {
-        coneWeight = 1
-      } else if (sDist <= this.settings.awareness + 0.35) {
-        coneWeight = 1 - (sDist - this.settings.awareness) / 0.35
+      let wSample = 0
+      if (sDist <= this.settings.range) {
+        let coneWeight = 0
+        if (sDist <= this.settings.awareness) {
+          coneWeight = 1
+        } else if (sDist <= this.settings.awareness + 0.35) {
+          coneWeight = 1 - (sDist - this.settings.awareness) / 0.35
+        }
+        const facing = (sdx * aimCos + sdy * aimSin) / sDist
+        if (facing >= cosHalf) {
+          coneWeight = 1
+        } else if (facing > featherCos) {
+          coneWeight = Math.max(coneWeight, (facing - featherCos) / (cosHalf - featherCos))
+        }
+        if (coneWeight > 0) {
+          const rangeWeight = sDist <= this.settings.range - 1.2 ? 1 : Math.max(0, (this.settings.range - sDist) / 1.2)
+          wSample = coneWeight * rangeWeight
+        }
       }
-      const facing = (sdx * aimCos + sdy * aimSin) / sDist
-      if (facing >= cosHalf) {
-        coneWeight = 1
-      } else if (facing > featherCos) {
-        coneWeight = Math.max(coneWeight, (facing - featherCos) / (cosHalf - featherCos))
+      if (this.flashActive && sDist <= this.flashRange) {
+        const fFacing = (sdx * this.flashAimCos + sdy * this.flashAimSin) / sDist
+        let fWeight = 0
+        if (fFacing >= this.flashConeCos) {
+          fWeight = 1
+        } else if (fFacing > fFeatherCos) {
+          fWeight = (fFacing - fFeatherCos) / (this.flashConeCos - fFeatherCos)
+        }
+        if (fWeight > 0) {
+          const fRangeWeight = sDist <= this.flashRange - 1.0 ? 1 : Math.max(0, (this.flashRange - sDist) / 1.0)
+          wSample = Math.max(wSample, fWeight * fRangeWeight)
+        }
       }
-      if (coneWeight <= 0) continue
-      const rangeWeight = sDist <= this.settings.range - 1.2 ? 1 : Math.max(0, (this.settings.range - sDist) / 1.2)
-      const w = coneWeight * rangeWeight * (k === 0 ? 1 : 0.92)
+      if (wSample <= 0) continue
+      const w = wSample * (k === 0 ? 1 : 0.92)
       if (w > best) best = w
     }
     return Number(best.toFixed(4))

@@ -56,6 +56,8 @@ export type LabSection = {
   /** Optional instanced meshes/debug geometry inside the Lab's 4x MSAA RGBA16F/depth24plus pass. */
   draw?(pass:GPURenderPassEncoder):void
   telemetry?():string
+  /** True while asynchronous results (for example Worker bakes) have not landed yet; proofs wait before capturing. */
+  busy?():boolean
   /** Workbench hooks for transport, framing, environment reroll and world object manipulation. */
   retrigger?():void
   reroll?():void
@@ -71,6 +73,8 @@ export type LabSection = {
   duplicateObject?(id:string):string|null
   duplicateObjects?(ids?:readonly string[]):string[]
   groundHeight?(x:number,z:number):number
+  /** Details tabs over the section's groups (groups no tab names show on every tab). Omit for one list. */
+  tabs?:readonly import("../lab-navigation").LabTab[]
   /** Details panel: control groups relevant to the selection, in display order. Omit to show every group. */
   detailsGroups?(selected:readonly LabWorldObject[]):readonly string[]|undefined
   library?:LabSectionLibrary

@@ -143,6 +143,8 @@ export type SceneHooks = {
   vertex?: string
   surface?: string
   lookSurface?: string
+  /** WGSL expression for the surface base colour the look's moon rim reads (default `o.color`). */
+  lookBaseColor?: string
   directional?: string
   ao?: string
   bounce?: string
@@ -327,17 +329,18 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
   let base = slot * RAYS;
   let stepR = max(size * 0.22 / max(d, 0.4) * f32(RAYS) / TAU, 0.35);
   ${looks || hooks.smoothShadows ? `${hooks.smoothShadows && hooks.shadowTaps === 5 ? `{
-    var sum = 0.0;
-    let step = max(stepR * 1.35, 0.65);
-    for (var k = -1; k <= 1; k++) {
-      let ray = f + f32(k) * step;
-      let lo = floor(ray);
-      let a = tapVis(base, lo, d, y, hl, size);
-      let b = tapVis(base, lo + 1.0, d, y, hl, size);
-      let w = select(0.7557837, 1.0, k == 0);
-      sum += mix(a, b, fract(ray)) * w;
+    let lo0 = floor(f);
+    let fr0 = fract(f);
+    let t1 = tapVis(base, lo0, d, y, hl, size);
+    let t2 = tapVis(base, lo0 + 1.0, d, y, hl, size);
+    let cVis = mix(t1, t2, fr0);
+    if ((t1 >= 0.999 && t2 >= 0.999) || (t1 <= 0.001 && t2 <= 0.001)) {
+      return cVis;
     }
-    return sum * 0.3981576;
+    let step = max(stepR * 1.35, 0.65);
+    let t0 = tapVis(base, floor(f - step), d, y, hl, size);
+    let t3 = tapVis(base, floor(f + step) + 1.0, d, y, hl, size);
+    return cVis * 0.52 + (t0 + t3) * 0.24;
   }` : `if ((u32(F.effects.y) & 512u) != 0u) {
     // Interpolate visibility, not blocker distance: interpolating distances leaks across silhouettes.
     // A denser angular kernel removes the five repeated hard silhouettes of the old sparse PCF.
@@ -399,34 +402,37 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     let power = L.color.w;
     ${hooks.lightMask ?? ""}
     if (power <= 0.001) { continue; }
-    let dPlan = sqrt(dPlan2);
     let hl = L.pos.y;
-    let l3 = vec3f(lp.x, hl, lp.y) - world;
-    let d3 = max(length(l3), 0.05);
-    let ldir = l3 / d3;
-    let x = dPlan / r;
-    var win = 1.0 - x * x;
+    let dy = hl - world.y;
+    let d3 = max(sqrt(dPlan2 + dy * dy), 0.05);
+    let ldir = vec3f(-dv.x, dy, -dv.y) / d3;
+    var win = 1.0 - dPlan2 / (r * r);
     win *= win;
     // Surfaces right next to a fixture (wall tops, desks under a panel) never get hotter than the floor below it.
     ${hooks.lightAttenuation ?? `let dn = max(d3, max(hl, 1.25));
     var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));`}
     // cone.w 2 marks a spotlight whose cone the game's lightAttenuation hook already shaped.
-    if (L.cone.w > 0.5 && L.cone.w < 1.5 && dPlan > 0.001) {
-      let c = dot(dv / dPlan, L.cone.xy);
+    if (L.cone.w > 0.5 && L.cone.w < 1.5 && dPlan2 > 1e-6) {
+      let c = dot(dv * inverseSqrt(dPlan2), L.cone.xy);
       let t = clamp((c - L.cone.z) / 0.25, 0.0, 1.0);
       att *= t * t * (3.0 - 2.0 * t);
     }
     if (att <= 0.0005) { continue; }
     let ndl = dot(n, ldir);
     ${hooks.diffuseTerm ?? "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);"}
-    // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
-    var sp = plan;
-    if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
     var vis = 1.0;
-    if (L.extra.y > 0.5) { vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y); }
+    if (L.extra.y > 0.5 && ${hooks.postLightMaterial ? "(diffuse > 0.0001 || att > 0.25)" : "(diffuse > 0.0001 || att > 0.25 || shin > 0.0)"}) {
+      // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
+      var sp = plan;
+      if (n.y > 0.5 && world.y > 0.15) {
+        let dPlan = sqrt(dPlan2);
+        sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan);
+      }
+      vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
+    }
     out.diff += L.color.rgb * att * (diffuse * vis + ${hooks.lightLeak ?? "0.035"});
     ${hooks.lightAccumulate ?? ""}
-    if (shin > 0.0) {
+    ${hooks.postLightMaterial ? "" : `if (shin > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.004;
       out.spec += L.color.rgb * att * s * vis;
@@ -444,7 +450,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
         let r2 = across * across / (sz * sz) + along * along / (sz * sz * 25.0);
         out.spec += L.color.rgb * power * exp(-r2) * shin * 0.0016 * vis;
       }
-    }
+    }`}
   }
   return out;
 }
@@ -633,7 +639,7 @@ fn shadeScene(o: VOut) -> vec4f {
     return vec4f(o.color * a, 0.0);
   }`}
   var n = normalize(o.normal);
-  let V = normalize(F.cam.xyz - o.world);
+  ${hooks.postLightMaterial ? "" : "let V = normalize(F.cam.xyz - o.world);"}
   var col: vec3f;
   var alpha = 1.0;
   ${hooks.postLightMaterial ? "" : `if (mat == 7) {
@@ -686,7 +692,7 @@ fn shadeScene(o: VOut) -> vec4f {
     }`}
     let floorish = n.y > 0.5 && o.world.y < 0.15;
     let wrap = select(0.35, 0.0, floorish);
-    let lit = lightSum(o.world, n, V, gloss.x, wrap);
+    let lit = lightSum(o.world, n, ${hooks.postLightMaterial ? "vec3f(0.0)" : "V"}, gloss.x, wrap);
     ${hooks.postLightMaterial ?? ""}
     let fd = floorData(o.world.xz);
     var amb = ${hooks.ambient ?? "ambientAt(n)"};
@@ -727,6 +733,7 @@ fn shadeScene(o: VOut) -> vec4f {
     }` : ""}
     if (mat == 12) {
       // Soldiers: a cool rim and a little fill so they read against dark floors.
+      ${hooks.postLightMaterial ? "let V = normalize(F.cam.xyz - o.world);" : ""}
       let rim = pow(1.0 - max(dot(n, V), 0.0), 2.5);
       col += albedo * vec3f(0.05, 0.06, 0.09) + vec3f(0.07, 0.09, 0.15) * rim;
     }

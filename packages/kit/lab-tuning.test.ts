@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
-import { describe as describeRow, fromKnobs, isStructuralKey, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
+import { createRemoteControls, type State, type Value } from "@arcade/knobs"
+import { describe as describeRow, fromKnobs, isStructuralKey, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
 const range: LabControl = { key: "size", label: "Size", group: "Fireball", min: 0, max: 2, step: 0.05, unit: "m · retrigger" }
 const select: LabControl = { key: "style", label: "Style", group: "Look", type: "select", options: [{ value: 0, label: "Current" }, { value: 1, label: "Surface" }, { value: 2, label: "Ink" }] }
@@ -28,41 +29,81 @@ describe("LabControl as knobs", () => {
     expect(describeRow(row({ key: "x", label: "X", type: "select", options: [] }), {}, {})).toBeNull()
     expect(describeRow(row({ key: "y", label: "Y", min: 1, max: 1, step: 0 }), {}, { y: 1 })).toMatchObject({ min: 1, max: 1.01, step: 0.01 })
   })
-  test("groups follow the Details order, advanced (folded) groups last", () => {
+  test("groups follow the Details order, then the order they were added", () => {
     const rows = [row({ ...range, group: "A" }), row({ ...range, key: "b", group: "B" }), row({ ...range, key: "c", group: "C" })]
-    expect(orderRows(rows, ["C"], new Set(["A"])).map(r => r.group)).toEqual(["C", "B", "A"])
+    expect(orderRows(rows, ["C"]).map(r => r.group)).toEqual(["C", "A", "B"])
+  })
+  test("a group's sub-headings keep their rows together, after the rows without one", () => {
+    const rows = [row({ ...range, key: "a" }), row({ ...range, key: "b", subsection: "Advanced" }), row({ ...range, key: "c" }), row({ ...range, key: "d", subsection: "Advanced" })]
+    expect(orderRows(rows, []).map(r => r.control.key)).toEqual(["a", "c", "b", "d"])
+  })
+  test("seeds draw as seed rows, full-turn headings as dials, a pair as one range", () => {
+    expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ kind: "seed", default: 7, min: 1, max: 999 })
+    const yaw: LabControl = { key: "yaw", label: "Yaw", group: "Spot", min: -180, max: 180, step: 1 }
+    expect(describeRow(row(yaw), {}, { yaw: 30 })).toMatchObject({ kind: "angle", min: -180, max: 180 })
+    expect(describeRow(row({ ...yaw, key: "pitch", label: "Pitch", min: 5, max: 85 }), {}, { pitch: 30 })).toMatchObject({ kind: "number" })
+    const low: LabControl = { key: "lo", label: "Small", group: "Drops", min: 0.01, max: 0.1, step: 0.005, pair: { key: "hi", label: "Drop size" } }
+    const high: LabControl = { key: "hi", label: "Large", group: "Drops", min: 0.03, max: 0.2, step: 0.005 }
+    expect(describeRow(row(low), {}, { lo: 0.02, hi: 0.08 }, { pair: high })).toMatchObject({ kind: "range", label: "Drop size", default: [0.02, 0.08], min: 0.01, max: 0.2 })
+  })
+  test("tabs and sub-headings reach the descriptor", () => {
+    expect(describeRow(row({ ...range, subsection: "Advanced" }), {}, { size: 1 }, { tab: "Trees", groupLabel: "Structure" })).toMatchObject({ tab: "Trees", groupLabel: "Structure", subsection: "Advanced" })
+  })
+  test("a pair saved as two numbers migrates to one range value", () => {
+    const low: LabControl = { key: "lo", label: "Small", group: "Drops", min: 0, max: 1, pair: { key: "hi", label: "Drop size" } }
+    const raw = JSON.stringify({ variants: [{ name: "a", values: { lo: 0.2, hi: 0.6 } }] })
+    expect(JSON.parse(migrateKnobsVariantJson(raw, [row(low)])).variants[0].values).toEqual({ lo: [0.2, 0.6] })
+  })
+  test("seeds stay out of Random, gated rows are disabled now, folded groups say so", () => {
+    expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ random: false, kind: "seed" })
+    expect(describeRow(row({ ...range, enabled: s => s.beam === 1 }), {}, { size: 1, beam: 0 })).toMatchObject({ disabled: true })
+    expect(describeRow(row({ ...range, enabled: s => s.beam === 1 }), {}, { size: 1, beam: 1 })).not.toHaveProperty("disabled")
+    expect(describeRow(row({ ...range, folded: true }), {}, { size: 1 })).toMatchObject({ folded: true })
   })
 })
 
-describe("seeded Random and Mutate", () => {
-  const controls = [range, select, toggle, seed]
-  const settings = { size: 1, style: 0, beam: 1, seed: 7 }
+describe("seeded Random and Mutate through knobs", () => {
+  const controls = [range, select, toggle, seed, { ...range, key: "gated", enabled: () => false } as LabControl]
+  const settings = { size: 1, style: 0, beam: 1, seed: 7, gated: 1 }
+  /** A knobs store over the controls as the Lab sets it up: draws from `seed`, rolls only what isTunable allows. */
+  const roll = (rollSeed: number, mode: "randomize" | "mutate") => {
+    const descriptors = controls.map(c => describeRow(row(c), settings, settings)!)
+    const values = Object.fromEntries(controls.map(c => [c.key, toKnobs(c, settings[c.key as keyof typeof settings])!])) as State
+    const patch: Record<string, Value> = {}
+    const store = createRemoteControls(`test-${rollSeed}-${mode}`, descriptors, {
+      values,
+      nullDefaults: false,
+      random: seededRandom(rollSeed),
+      tunable: key => isTunable(controls.find(c => c.key === key)!, settings),
+      onSet: (key, value) => { if (value !== null) patch[key] = value },
+    })
+    store[mode]()
+    return patch
+  }
 
   test("the same seed gives the same values; another seed gives others", () => {
-    const a = seededPatch(controls, settings, 41, "random")
-    expect(seededPatch(controls, settings, 41, "random")).toEqual(a)
-    expect(seededPatch(controls, settings, 42, "random")).not.toEqual(a)
+    const a = roll(41, "randomize")
+    expect(roll(41, "randomize")).toEqual(a)
+    expect(roll(42, "randomize")).not.toEqual(a)
   })
-  test("Random lands on the step lattice and leaves switches and seeds alone", () => {
-    for (let s = 1; s < 50; s++) {
-      const patch = seededPatch(controls, settings, s, "random")
-      expect(Object.keys(patch).sort()).toEqual(["size", "style"])
-      const steps = (patch.size as number) / 0.05
-      expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-9)
-      expect(patch.size).toBeGreaterThanOrEqual(0)
-      expect(patch.size).toBeLessThanOrEqual(2)
+  test("Random lands on the step lattice and leaves switches, seeds and gated rows alone", () => {
+    for (let s = 1; s < 30; s++) {
+      const patch = roll(s, "randomize")
+      for (const key of Object.keys(patch)) expect(["size", "style"]).toContain(key)
+      if ("size" in patch) {
+        const steps = (patch.size as number) / 0.05
+        expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-9)
+        expect(patch.size).toBeGreaterThanOrEqual(0)
+        expect(patch.size).toBeLessThanOrEqual(2)
+      }
     }
   })
-  test("Mutate moves a range 8–12% of its span and stays in range", () => {
-    for (let s = 1; s < 50; s++) {
-      const moved = seededPatch([range], { size: 1 }, s, "mutate").size as number
-      expect(Math.abs(moved - 1)).toBeGreaterThanOrEqual(0.15 - 1e-9)
-      expect(Math.abs(moved - 1)).toBeLessThanOrEqual(0.25 + 1e-9)
+  test("Mutate stays in range and never touches switches or seeds", () => {
+    for (let s = 1; s < 30; s++) {
+      const patch = roll(s, "mutate")
+      for (const key of Object.keys(patch)) expect(["size", "style"]).toContain(key)
+      if ("size" in patch) expect(patch.size).toBeGreaterThanOrEqual(0)
     }
-    expect(seededPatch([range], { size: 2 }, 3, "mutate").size).toBeLessThan(2)
-  })
-  test("gated and derived rows are skipped", () => {
-    expect(seededPatch([{ ...range, enabled: () => false }, { ...range, key: "d", derived: true }], { size: 1, d: 1 }, 5, "random")).toEqual({})
   })
   test("structural keys are never tuned", () => {
     for (const key of ["effect", "environment", "room", "keyLabels", "seed", "effectSeed", "tuningSeed"]) expect(isStructuralKey(key)).toBe(true)

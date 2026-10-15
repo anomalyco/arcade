@@ -7,10 +7,12 @@ import { attachment, limbIds, pointVelocity, type BonePose } from "@arcade/kit/h
 import type { V3 } from "@arcade/kit/rig"
 import type { OutbreakAISubsystem } from "../shared/ai"
 import {
+  findFinisherTarget,
   MELEE_WEAPONS,
   type CombatMeleeEvent,
   type CombatMeleeHit,
   type CombatShotEvent,
+  type MeleeWeaponId,
   type SurvivorCombatState,
 } from "../shared/combat"
 import type { Town } from "../shared/map"
@@ -73,14 +75,50 @@ const LEGACY_BLOOD_PRESET = {
   budget: 192,
 } as const
 
+export type BrokenWeaponPiece = {
+  x: number
+  y: number
+  z: number
+  vx: number
+  vy: number
+  vz: number
+  yaw: number
+  pitch: number
+  roll: number
+  vyaw: number
+  vpitch: number
+  vroll: number
+  r: number
+  g: number
+  b: number
+  bornAt: number
+  settled: boolean
+}
+
+const WEAPON_BREAK_PALETTES: Record<MeleeWeaponId, readonly (readonly [number, number, number])[]> = {
+  crowbar: [hex(0xb5322a), hex(0x8c96a0), hex(0x6e7780), hex(0x942a24)],
+  pipe: [hex(0x697279), hex(0x4e565d), hex(0x869098), hex(0x36393c)],
+  hammer: [hex(0x4a5158), hex(0x9a6e42), hex(0x6e7780), hex(0x75522f)],
+  knife: [hex(0xd8dfe4), hex(0x9aa2a8), hex(0x28231e), hex(0x7c8286)],
+  machete: [hex(0xd8e0e6), hex(0xc2cbd2), hex(0x3a2a1d), hex(0x8c969e)],
+  bat: [hex(0xc69862), hex(0xb88b58), hex(0x7a5634), hex(0x282a2c)],
+  "spiked-board": [hex(0x8e6b44), hex(0x6b4f30), hex(0x9ca6ae), hex(0x524c44)],
+  axe: [hex(0xc8d2da), hex(0x966a3e), hex(0x3a4046), hex(0x73502d)],
+  "fire-axe": [hex(0x9e2420), hex(0xd8e2ea), hex(0xa87c4f), hex(0x761b18)],
+}
+
 export class OutbreakCombatFX {
   private readonly pistolModel: number
   private readonly plankModel: number
+  private readonly shardModel: number
   private readonly pistolData = new Float32Array(INST_FLOATS)
   private readonly plankData = new Float32Array(64 * INST_FLOATS)
+  private readonly shardData = new Float32Array(32 * INST_FLOATS)
   private readonly seenShots = new Set<number>()
   private readonly seenMeleeSwings = new Set<number>()
   private readonly seenMeleeHits = new Set<string>()
+  private readonly seenMeleeBreaks = new Set<number>()
+  readonly brokenPieces: BrokenWeaponPiece[] = []
   private syntheticEventId = 100_000
   private levelData: LevelData | null = null
   splatter: Splatter | null = null
@@ -101,6 +139,11 @@ export class OutbreakCombatFX {
     plank.box(-0.68, -0.02, -0.032, -0.64, 0.02, 0.032, hex(0x353738), MAT.actor)
     plank.box(0.64, -0.02, -0.032, 0.68, 0.02, 0.032, hex(0x353738), MAT.actor)
     this.plankModel = renderer.addModel(plank)
+
+    const shard = new Mesh()
+    shard.box(-0.14, -0.022, -0.02, 0.14, 0.022, 0.02, [1, 1, 1], MAT.shiny)
+    shard.box(0.06, -0.014, -0.028, 0.19, 0.032, 0.016, [0.82, 0.84, 0.86], MAT.actor)
+    this.shardModel = renderer.addModel(shard)
   }
 
   setLevel(level: LevelData): void {
@@ -113,6 +156,8 @@ export class OutbreakCombatFX {
     this.seenShots.clear()
     this.seenMeleeSwings.clear()
     this.seenMeleeHits.clear()
+    this.seenMeleeBreaks.clear()
+    this.brokenPieces.length = 0
     this.splatter?.reset()
     this.hasEmitted = false
     this.lastFlash = null
@@ -239,6 +284,60 @@ export class OutbreakCombatFX {
       const strength = (this.lastFlash.until - time) / 0.08
       muzzleLight = [this.lastFlash.x, this.lastFlash.y, this.lastFlash.z, strength * 1.35]
       pushAdd(this.lastFlash.x, this.lastFlash.y, this.lastFlash.z, 0.26 * strength, 1.0, 0.78, 0.35, 0.95, 0, 0, 1, 0)
+    }
+
+    // 4. Step & draw broken melee weapon pieces lying or bouncing on the ground
+    let shardCount = 0
+    for (let i = this.brokenPieces.length - 1; i >= 0; i--) {
+      const p = this.brokenPieces[i]!
+      const age = time - p.bornAt
+      if (age > 18) {
+        this.brokenPieces.splice(i, 1)
+        continue
+      }
+      if (!p.settled && dt > 0) {
+        p.x += p.vx * dt
+        p.y += p.vy * dt
+        p.z += p.vz * dt
+        p.vy -= 14.0 * dt
+        p.yaw += p.vyaw * dt
+        p.pitch += p.vpitch * dt
+        p.roll += p.vroll * dt
+        const floorY = support(p.x, p.z) + 0.025
+        if (p.y <= floorY) {
+          p.y = floorY
+          if (Math.abs(p.vy) > 0.85) {
+            p.vy = -p.vy * 0.28
+            p.vx *= 0.48
+            p.vz *= 0.48
+            p.vpitch *= 0.4
+            p.vroll *= 0.4
+          } else {
+            p.vy = p.vx = p.vz = 0
+            p.pitch = 0.04
+            p.roll = 0.22
+            p.settled = true
+          }
+        }
+      }
+      if (shardCount < 32) {
+        const alpha = age > 15 ? Math.max(0, 1 - (age - 15) / 3) : 1
+        this.shardData.set(
+          [p.x, p.y, p.z, p.yaw, p.r, p.g, p.b, 1, p.pitch, p.roll, alpha, 0],
+          shardCount++ * INST_FLOATS,
+        )
+      }
+    }
+    if (shardCount > 0) {
+      batches.push({ model: this.shardModel, data: this.shardData, count: shardCount })
+    }
+
+    // 5. Subtle diegetic ground pulse under a downed zombie in finisher range
+    const finTarget = findFinisherTarget(player, ai.agents)
+    if (finTarget) {
+      const gy = support(finTarget.x, finTarget.y) + 0.04
+      const pulse = 0.42 + 0.04 * Math.sin(time * 5.2)
+      pushAdd(finTarget.x, gy, finTarget.y, pulse, 0.72, 0.14, 0.1, 0.22, 2, 0, 0.08, 0)
     }
 
     void zombieCrowd
@@ -528,11 +627,51 @@ export class OutbreakCombatFX {
         onNewSwing?.(m)
       }
 
+      if (m.weaponBroke && !this.seenMeleeBreaks.has(m.id)) {
+        this.seenMeleeBreaks.add(m.id)
+        const hit0 = m.hits[0]
+        const bx = hit0 ? hit0.x : m.x + Math.cos(m.aim) * 0.68
+        const bz = hit0 ? hit0.y : m.y + Math.sin(m.aim) * 0.68
+        const by = support(bx, bz) + 1.04
+        const palette = WEAPON_BREAK_PALETTES[m.weapon] ?? WEAPON_BREAK_PALETTES.crowbar
+        pushAdd(bx, by, bz, 0.44, 0.96, 0.78, 0.42, 0.9, 0, 0, 1, 0)
+        for (let k = 0; k < 5; k++) {
+          const h = ((m.seed ^ Math.imul(k + 1, 0x85ebca6b)) >>> 0) / 0xffffffff
+          const h2 = ((m.seed ^ Math.imul(k + 7, 0xc2b2ae35)) >>> 0) / 0xffffffff
+          const ang = m.aim + (k - 2) * 0.52 + (h - 0.5) * 0.35
+          const spd = 1.6 + h2 * 2.1
+          const col = palette[k % palette.length]!
+          if (this.brokenPieces.length >= 32) this.brokenPieces.shift()
+          this.brokenPieces.push({
+            x: bx + Math.cos(ang) * 0.08,
+            y: by + (k % 2) * 0.06,
+            z: bz + Math.sin(ang) * 0.08,
+            vx: Math.cos(ang) * spd,
+            vy: 1.8 + h * 1.9,
+            vz: Math.sin(ang) * spd,
+            yaw: ang,
+            pitch: (h - 0.5) * 1.2,
+            roll: (h2 - 0.5) * 1.2,
+            vyaw: (h - 0.5) * 9,
+            vpitch: (h2 - 0.5) * 11,
+            vroll: (h - h2) * 10,
+            r: col[0],
+            g: col[1],
+            b: col[2],
+            bornAt: time,
+            settled: false,
+          })
+        }
+      }
+
       for (const h of m.hits) {
         if (age >= 0 && age <= 0.16) {
           const uHit = 1 - age / 0.16
-          const hy = support(h.x, h.y) + (h.headshot ? 1.32 : 1.04)
-          pushAdd(h.x, hy, h.y, 0.34 * (1.2 - 0.4 * uHit), 0.72, 0.06, 0.08, uHit * 0.85, 0, 0, 1, 0)
+          const hy = support(h.x, h.y) + (h.finisher ? 0.36 : h.headshot ? 1.32 : 1.04)
+          pushAdd(h.x, hy, h.y, (h.finisher ? 0.48 : 0.34) * (1.2 - 0.4 * uHit), 0.72, 0.06, 0.08, uHit * 0.85, 0, 0, 1, 0)
+          if (h.finisher || h.knockdown || h.crawler) {
+            pushAdd(h.x, support(h.x, h.y) + 0.08, h.y, 0.42 + (1 - uHit) * 0.45, 0.65, 0.04, 0.06, uHit * 0.78, 2, 0, 0.1, 0)
+          }
         }
         const hitKey = `${m.id}:${h.zombieId}`
         if (this.seenMeleeHits.has(hitKey)) continue
@@ -544,7 +683,7 @@ export class OutbreakCombatFX {
         this.hasEmitted = true
         const z = ai.agents.find((a) => a.id === h.zombieId)
         const groundY = support(h.x, h.y)
-        const hitY = groundY + (h.headshot || h.detachBone === "head" ? 1.34 : 1.05)
+        const hitY = groundY + (h.finisher ? 0.34 : h.crawler ? 0.52 : h.headshot || h.detachBone === "head" ? 1.34 : 1.05)
 
         // Direction of blood spray: blades fan along the slash tangent + forward; blunt blasts radially away
         const sweepSign = m.combo === 2 ? 1 : -1
@@ -590,8 +729,9 @@ export class OutbreakCombatFX {
 
         const amountScale =
           (h.killed ? 1.15 : 0.75) *
-          (m.heavy ? 1.3 : m.combo === 3 ? 1.15 : 1.0) *
+          (h.finisher ? 1.45 : m.heavy ? 1.3 : m.combo === 3 ? 1.15 : 1.0) *
           (h.headshot ? 1.2 : 1.0) *
+          (h.crawler || h.knockdown ? 1.25 : 1.0) *
           (def.material === "blade" ? 1.18 : 1.0)
 
         this.splatter.emit(

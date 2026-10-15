@@ -3,8 +3,11 @@ import { MotionBlurBurst } from "@arcade/kit/gpu/motion-blur"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { NetSession } from "./net-session"
+import "./melee/index"
 import type { OutbreakSettings } from "./settings"
+import "./vehicles/index"
 import type { ZombieCrowdRenderer } from "./zombies"
 
 /**
@@ -21,7 +24,6 @@ export class OutbreakFeelTracker {
   private readonly prevPortalBashTime = new Map<string, number>()
   private readonly prevPortalPlanks = new Map<string, number>()
   private readonly prevDoorOpen = new Map<string, boolean>()
-  private readonly processedVehicleHits = new Set<string>()
 
   constructor(
     private readonly cam: Camera,
@@ -41,7 +43,7 @@ export class OutbreakFeelTracker {
     this.prevPortalBashTime.clear()
     this.prevPortalPlanks.clear()
     this.prevDoorOpen.clear()
-    this.processedVehicleHits.clear()
+    outbreakClientFeatures.resetFeel(this, player)
   }
 
   triggerShot(aim: number, power = 1): void {
@@ -235,32 +237,6 @@ export class OutbreakFeelTracker {
     }
 
     combatFx.legacyMode = settings.combat.bloodStyle === 2
-    for (const hit of session.sim.vehicles.recentHits) {
-      const hitKey = `${hit.vehicleId}:${hit.zombieId}:${hit.time.toFixed(3)}`
-      if (this.processedVehicleHits.has(hitKey)) continue
-      this.processedVehicleHits.add(hitKey)
-      if (this.processedVehicleHits.size > 128) {
-        this.processedVehicleHits.delete(this.processedVehicleHits.keys().next().value!)
-      }
-      if (settings.combat.bloodStyle !== 0) {
-        combatFx.emitShoveHit(
-          hit.x,
-          hit.y,
-          Math.atan2(hit.dirY, hit.dirX),
-          supportHeight(town, hit.x, hit.y),
-          hit.killed ? 3 : 1,
-          Math.floor(hit.time * 1000) + hit.zombieId,
-        )
-      }
-      if (hit.vehicleId === p.vehicleId) {
-        const pwr = Math.min(1.4, 0.65 + hit.speed * 0.08)
-        const dir = Math.atan2(hit.dirY, hit.dirX)
-        cam.add((hit.killed ? 0.24 : 0.14) * pwr, dir, (hit.killed ? 0.9 : 0.5) * pwr)
-        if (hit.killed) {
-          cam.punch(-0.16 * pwr, 0)
-        }
-      }
-    }
     let addCount = combatFx.processShots(
       shots,
       time,
@@ -290,46 +266,18 @@ export class OutbreakFeelTracker {
       },
     )
 
-    addCount = combatFx.processMeleeSwings(
-      session.view.meleeSwings,
-      time,
-      dt,
-      session.ai,
+    addCount = outbreakClientFeatures.processFeelFrame({
+      tracker: this,
+      session,
+      combatFx,
       zombieCrowd,
-      (x, z) => supportHeight(town, x, z),
       addSprites,
       addCount,
-      (swing) => {
-        const distFromMe = Math.hypot(swing.x - p.x, swing.y - p.y)
-        const isLocal = swing.attackerId === session.view.actorId || distFromMe < 1.6
-        if (isLocal) {
-          const hitCount = swing.hits.length
-          const anyKill = swing.hits.some((h) => h.killed)
-          const anySever = swing.hits.some((h) => Boolean(h.detachBone))
-          const anyHead = swing.hits.some((h) => h.headshot)
-          const heavyScale = swing.heavy ? 1.45 + 0.25 * swing.charge : swing.combo === 3 ? 1.25 : 1.0
-          if (hitCount > 0 || swing.hitDoorId) {
-            const k = heavyScale * (1 + Math.min(2, Math.max(0, hitCount - 1)) * 0.28) * (anySever ? 1.22 : 1.0)
-            cam.add((anyKill ? 0.36 : 0.24) * k, swing.aim, (anyKill ? 2.6 : 1.7) * k)
-            cam.punch(-0.24 * k, (swing.combo === 2 ? -1 : 1) * 0.011 * k)
-            const stopDur = (swing.heavy ? 0.044 : anyKill || anyHead ? 0.036 : 0.026) * (anySever ? 1.15 : 1.0)
-            this.hitStop.trigger(stopDur, 0.06, !cam.isReducedMotion())
-            if (!cam.isReducedMotion()) {
-              this.motionBurst.add(
-                { dir: swing.aim, directional: 0.0065 * k, radial: 0.0045 * k, boost: 0.45 * k },
-                this.settings.motion.burst,
-              )
-            }
-          } else {
-            cam.add(0.09 * heavyScale, swing.aim, 0.55 * heavyScale)
-            cam.punch(-0.07 * heavyScale, (swing.combo === 2 ? -1 : 1) * 0.005 * heavyScale)
-          }
-        } else if (distFromMe < 14 && (swing.hits.length > 0 || swing.hitDoorId)) {
-          const peerAtt = attenuateShake(distFromMe, 14) * 0.35
-          cam.add(0.22 * peerAtt, swing.aim, 1.2 * peerAtt)
-        }
-      },
-    )
+      playerGroundY,
+      dt,
+      settings,
+      cam,
+    })
 
     return addCount
   }

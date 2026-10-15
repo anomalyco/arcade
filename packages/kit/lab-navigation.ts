@@ -15,6 +15,15 @@ export type LabControl = {
   visible?: (settings: Readonly<LabSettings>) => boolean
   change?: (value: LabValue) => void
   enabled?: (settings: Readonly<LabSettings>) => boolean
+  /** A sub-heading inside the group (knobs' `subsection`). Sub-headings named "Advanced" start folded. */
+  subsection?: string
+  /**
+   * Draws this range and the range `pair.key` (its upper end) as one low–high row with two thumbs that can't cross.
+   * Both keys stay separate settings; the pair is only how they show.
+   */
+  pair?: { key: string; label: string }
+  /** True while the value differs across a multi-selection: the row reads "—" until edited, and the edit sets them all. */
+  mixed?: (settings: Readonly<LabSettings>) => boolean
 } & (
   | { type?: "range"; min: number; max: number; step?: number }
   | { type?: "select"; options: readonly { value: number | string; label: string }[] }
@@ -22,6 +31,11 @@ export type LabControl = {
   | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
 )
 export type LabRow = { group: string; control?: LabControl }
+/**
+ * A Details tab (the inspector layout): the groups it shows, each by its id or as `[id, label]` when the tab makes part
+ * of the name redundant ("Tree Structure" on the Trees tab reads "Structure"). Ids stay the groups' identity.
+ */
+export type LabTab = { label: string; groups: readonly (string | readonly [group: string, label: string])[] }
 
 /** Resolves the property name on a subsystem `settings` object for a `LabControl`. */
 export function resolveControlField(control: LabControl, settings: Readonly<Record<string, unknown>>): string {
@@ -61,7 +75,7 @@ export class LabNavigation {
   readonly folded = new Set<string>()
   readonly defaults: LabSettings
   active: LabRow | undefined
-  /** Optional view filter (Details search, Modified only, selection relevance). Applies to keyboard navigation too. */
+  /** Optional view filter (Details' selection relevance; search and Modified are knobs'). Applies to keyboard navigation too. */
   filter: ((row: LabRow) => boolean) | undefined
 
   constructor(readonly settings: LabSettings, controls: LabControl[], private change?: (key: string, value: LabValue) => void) {

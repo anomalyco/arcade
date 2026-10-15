@@ -212,8 +212,8 @@ export function lootCallout(message: string): { text: string; kind: CalloutKind;
   if (message.startsWith("Found ")) return null
   if (/^Searched .*: empty$/.test(message)) return { text: "Nothing here", kind: "info" }
   if (message.startsWith("Out of 9mm")) return { text: "Out of ammo", kind: "warning", key: "ammo" }
-  if (message.endsWith(" broke!")) return { text: message, kind: "warning", key: "durability" }
-  if (message.includes(" durability low")) return { text: message, kind: "warning", key: "durability" }
+  if (message.endsWith(" broke!")) return null
+  if (message.includes(" durability low")) return null
   if (message.startsWith("Need wooden planks")) return { text: "No planks", kind: "warning" }
   if ((m = message.match(/^Barricaded \((\d)\/3/))) return { text: `Boarded ${m[1]}/3`, kind: "result" }
   if (message.startsWith("Already fully barricaded")) return { text: "Fully boarded", kind: "info" }

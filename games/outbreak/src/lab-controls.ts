@@ -9,7 +9,6 @@ import {
   type AdaptiveQualityController,
 } from "@arcade/kit/quality"
 import { aiControls } from "../shared/ai"
-import { meleeControls, MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../shared/combat"
 import { wrapHour } from "../shared/day-cycle"
 import { flashlightControls } from "../shared/flashlight"
 import { LocalSession } from "../shared/session"
@@ -19,23 +18,22 @@ import { audioControls } from "./audio"
 import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
 import { groundControls, randomizeGroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
-import { DEFAULT_MAP_SETTINGS, mapControls, type OutbreakMap } from "./map"
+import type { OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
+import "./melee/index"
 import type { NetSession } from "./net-session"
-import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
+import "./pacing"
+import { type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
-import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  outbreakWeatherControls,
-  randomizeOutbreakWeather,
-  type OutbreakWeatherController,
-} from "./weather"
+import { unseenControls } from "./unseen"
+import { type VehicleLabHost } from "./vehicles/index"
+import type { OutbreakWeatherController } from "./weather"
 import { zombieControls } from "./zombie-profile"
 
 export interface OutbreakLabControlHost {
@@ -60,8 +58,8 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost, botsLab } = host
-  return [
+  const { settings, feelTracker, combatFx, botsLab } = host
+  const raw: LabControl[] = [
     ...aiControls,
     ...botsLab.controls(
       () => {
@@ -122,8 +120,6 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
-    ...progressionLabControls(progressionHost),
-    ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
       key: "randomizeGroundTuning",
@@ -191,7 +187,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...zombieControls,
     ...survivorAimControls,
     ...hudControls,
-    ...mapControls,
+    ...outbreakClientFeatures.collectLabControls(host),
     {
       key: "bloodStyle",
       label: "Blood splatter",
@@ -297,57 +293,12 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
         { label: "On", value: 1 },
       ],
     },
-    ...meleeControls,
-    {
-      key: "equipNextMeleeWeapon",
-      label: "Cycle melee weapon",
-      group: "Melee",
-      type: "action",
-      run: () => {
-        if (!progressionHost.offline()) return
-        const session = host.session()
-        const { progression, actorId } = session.view
-        const ledger = progression.ledger
-        const hb = ledger.store(`${actorId}/hotbar`)
-        const curItem = hb?.slots[2]?.item ?? session.view.player.meleeWeapon
-        const idx = curItem ? MELEE_WEAPON_IDS.indexOf(curItem as (typeof MELEE_WEAPON_IDS)[number]) : -1
-        const nextId = MELEE_WEAPON_IDS[(idx + 1) % MELEE_WEAPON_IDS.length]!
-        const def = MELEE_WEAPONS[nextId]
-        if (hb) {
-          hb.slots[2] = { item: nextId, count: 1, charge: def.durability }
-          hb.selected = 2
-          hb.rev = ++ledger.rev
-        }
-        const slot = session.sim.slot(actorId)
-        if (slot) progression.project(slot)
-      },
-    },
-    {
-      key: "repairMeleeWeapon",
-      label: "Repair held weapon",
-      group: "Melee",
-      type: "action",
-      run: () => {
-        if (!progressionHost.offline()) return
-        const session = host.session()
-        const { progression, actorId } = session.view
-        const ledger = progression.ledger
-        const hb = ledger.store(`${actorId}/hotbar`)
-        const st = hb?.slots[2]
-        if (st && st.item in MELEE_WEAPONS) {
-          const def = MELEE_WEAPONS[st.item as keyof typeof MELEE_WEAPONS]
-          st.charge = def.durability
-          hb.rev = ++ledger.rev
-          const slot = session.sim.slot(actorId)
-          if (slot) progression.project(slot)
-        }
-      },
-    },
     { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
     ...fogOfWarControls,
+    ...unseenControls,
     {
       key: "lookPreset",
       label: "Style preset",
@@ -383,28 +334,15 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
       ],
     },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    ...outbreakWeatherControls,
-    {
-      key: "triggerWeatherLightning",
-      label: "Trigger lightning strike",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        weatherController.strikeNow()
-      },
-    },
-    {
-      key: "randomizeWeatherTuning",
-      label: "Randomize weather",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        randomizeOutbreakWeather(settings.weather, settings.weather.weatherTuningSeed)
-        host.lab().refresh()
-      },
-    },
   ]
+  const seen = new Set<string>()
+  const out: LabControl[] = []
+  for (const c of raw) {
+    if (seen.has(c.key)) continue
+    seen.add(c.key)
+    out.push(c)
+  }
+  return out
 }
 
 export function handleOutbreakSettingChanged(
@@ -412,36 +350,17 @@ export function handleOutbreakSettingChanged(
   rawKey: string,
   value?: number | boolean | string,
 ): void {
-  const { settings, lookSettings, progressionHost, hud } = host
+  const { settings, lookSettings, hud } = host
   const session = host.session()
   const lab = host.lab()
   const routed = resolveOutbreakSettingTarget(rawKey)
   const key = routed?.field ?? rawKey
+  outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
-  if (key in DEFAULT_MAP_SETTINGS) host.map.applySettings()
-  applyProgressionSetting(progressionHost, key, settings.progression)
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
-  }
-  if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
-    Object.assign(session.ai.config, settings.ai)
-    if (progressionHost.offline() && session.view.time < 5) {
-      session.ai.resetOpeningPopulation(
-        session.view.town,
-        session.sim.slots.map((s) => s.survivor),
-      )
-    }
-  }
-  if (key === "startHour") {
-    settings.dayCycle.hour = wrapHour(settings.ai.startHour)
-    session.view.hour = settings.dayCycle.hour
-    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-      host.setLastDayNightHour(session.view.hour)
-      applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      lab.refresh()
-    }
   }
   if (key === "hour") {
     session.view.hour = wrapHour(settings.dayCycle.hour)
@@ -512,22 +431,6 @@ export function handleOutbreakSettingChanged(
     if (settings.dayCycle.dayNightLook === 1 && pid === "noir") {
       host.setLastDayNightHour(session.view.hour)
       applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-    }
-    lab.refresh()
-  }
-  if (key === "weatherPreset") {
-    applyOutbreakWeatherPreset(settings.weather, String(value ?? settings.weather.weatherPreset))
-    lab.refresh()
-  }
-  if (key === "weatherEnabled") {
-    if (
-      settings.weather.weatherEnabled &&
-      settings.weather.weatherPreset === "clear" &&
-      settings.weather.weatherIntensity <= 0.001
-    ) {
-      applyOutbreakWeatherPreset(settings.weather, "rain")
-    } else if (!settings.weather.weatherEnabled) {
-      settings.weather.weather = 0
     }
     lab.refresh()
   }

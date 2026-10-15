@@ -172,6 +172,8 @@ export type FrameInput = {
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
+  /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
+  postParams?: readonly [number, number, number]
 }
 
 /**
@@ -220,6 +222,9 @@ export class Renderer {
   private materialTex: GPUTexture
   private materialTexView: GPUTextureView
   private materialSampler: GPUSampler
+  /** Game-owned texture array at binding 15 (Outbreak's baked rugs); a 1×1 placeholder until a game sets one. */
+  private detailView: GPUTextureView
+  private detailSampler: GPUSampler
   private surfaceTexBuf: GPUBuffer
   private surfaceTexData = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS)
   private surfaceTexInput: SurfaceTexUniformInput = { enabled: 1 }
@@ -331,6 +336,9 @@ export class Renderer {
     this.materialTex = fallbackMaterials.texture
     this.materialTexView = fallbackMaterials.view
     this.materialSampler = createMaterialSampler(d)
+    const detail = d.createTexture({ size: [1, 1, 1], format: "rgba8unorm-srgb", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.detailView = detail.createView({ dimension: "2d-array" })
+    this.detailSampler = d.createSampler({ label: "detail-anisotropic", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 16 })
     this.surfaceTexBuf = d.createBuffer({ size: SURFACE_TEX_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
@@ -375,6 +383,8 @@ export class Renderer {
         { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 13, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 14, visibility: S.FRAGMENT, texture: {} },
+        { binding: 15, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
+        { binding: 16, visibility: S.FRAGMENT, sampler: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -638,8 +648,16 @@ export class Renderer {
         { binding: 12, resource: { buffer: this.surfaceTexBuf } },
         { binding: 13, resource: { buffer: this.customBuf } },
         { binding: 14, resource: this.fieldTex.createView() },
+        { binding: 15, resource: this.detailView },
+        { binding: 16, resource: this.detailSampler },
       ],
     })
+  }
+
+  /** Binds a game's texture array at `@binding(15)` (sampled with the anisotropic clamp sampler at 16). */
+  setDetailTextureArray(view: GPUTextureView): void {
+    this.detailView = view
+    this.makeSceneGroup()
   }
 
   private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
@@ -1147,7 +1165,8 @@ export class Renderer {
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
-    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    const hasPostParams = Boolean(f.postParams && f.postParams[0] > 0.5)
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2 || hasPostParams)
     if (f.splatter) {
       this.splatterRenderer ??= new SplatterRenderer(d)
       for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
@@ -1245,9 +1264,9 @@ export class Renderer {
     this.gradeData.set(f.grade)
     if (useLookPipes && effectiveLook) {
       this.gradeData[4] = 0
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
@@ -1255,9 +1274,9 @@ export class Renderer {
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
       this.gradeData[4] = f.frame[45]! & 1
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 

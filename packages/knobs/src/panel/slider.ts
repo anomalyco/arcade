@@ -76,6 +76,8 @@ export interface Slider {
   readonly field: KnobField
   /** Open the inline editor (used when a digit is typed on the track). */
   edit(): void
+  /** Puts a row accessory just after the label; the ticks and handle keep clear of it too. */
+  slot(node: HTMLElement): void
   dispose(): void
 }
 
@@ -195,10 +197,17 @@ export function createSlider(
   root.append(track)
   // Hover ticks and the default notch stay clear of both the readout and the label.
   let trackWidth = 0
+  let accessory: HTMLElement | undefined
   const ro = new ResizeObserver(() => {
     trackWidth = track.offsetWidth
     if (value.offsetWidth) track.style.setProperty("--k-readout", `${value.offsetWidth}px`)
-    track.style.setProperty("--k-label-end", `${label.offsetLeft + label.offsetWidth}px`)
+    const right = label.offsetLeft + label.offsetWidth
+    const extra = accessory?.offsetWidth ? accessory.offsetWidth + 4 : 0
+    track.style.setProperty("--k-label-end", `${right + extra}px`)
+    if (accessory) {
+      track.style.setProperty("--k-label-right", `${right}px`)
+      track.style.setProperty("--k-accessory-w", `${extra}px`)
+    }
   })
   ro.observe(value)
   ro.observe(track)
@@ -536,7 +545,8 @@ export function createSlider(
 
   track.onpointerdown = (event) => {
     const target = event.target as Node | null
-    if (event.button !== 0 || (target && number.contains(target))) return
+    if (event.button !== 0 || (target && (number.contains(target) || accessory?.contains(target))))
+      return
     event.preventDefault()
     fromValue = Boolean(target && value.contains(target))
     tokensAt = Number.NEGATIVE_INFINITY
@@ -770,6 +780,11 @@ export function createSlider(
     isEditing: () => !number.hidden,
     update,
     edit,
+    slot(node) {
+      accessory = node
+      track.insertBefore(node, value)
+      ro.observe(node)
+    },
     dispose() {
       ro.disconnect()
       clearTimeout(rollTimer)

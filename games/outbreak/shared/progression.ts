@@ -775,7 +775,7 @@ export class OutbreakProgression {
         const stack = l.activeItem(id)
         if (!stack || stack.item !== weaponId) return { remaining: 0, broke: false, low: false }
         const before = stack.charge ?? def.durability
-        const lowThresh = Math.max(3, Math.ceil(def.durability * 0.2))
+        const lowThresh = Math.max(4, Math.ceil(def.durability * 0.35))
         const next = Math.max(0, before - amount)
         if (next <= 0) {
           const hb = l.store(`${id}/hotbar`)
@@ -786,7 +786,7 @@ export class OutbreakProgression {
           return { remaining: 0, broke: true, low: false }
         }
         l.apply({ kind: "setCharge", actor: id, item: weaponId, charge: next })
-        return { remaining: next, broke: false, low: before > lowThresh && next <= lowThresh }
+        return { remaining: next, broke: false, low: next <= lowThresh }
       },
     }
   }

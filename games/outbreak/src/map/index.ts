@@ -1,10 +1,11 @@
 import type { LabCommand } from "@arcade/kit/lab/commands"
 import { CHUNK } from "../../shared/map"
 import { districtAtBlock, MACRO_CHUNKS, type WorldMode } from "../../shared/world"
+import { registerOutbreakClientFeature } from "../feature-registry"
 import { MapCompass, MapMinimap, type Project } from "./compass"
 import { blockName, DISTRICT_LABELS, groupSightings, MapMemory, type ChunkSource, type VisionWindow } from "./memory"
 import { MapScreen, type MapActor, type MapPing, type MapVehicle } from "./screen"
-import { MINIMAP_COMPASS, MINIMAP_CORNER, type MapSettings } from "./settings"
+import { DEFAULT_MAP_SETTINGS, mapControls, MINIMAP_COMPASS, MINIMAP_CORNER, type MapSettings } from "./settings"
 import { PALETTES } from "./style"
 import { MapTiles } from "./tiles"
 import "./map.css"
@@ -351,3 +352,22 @@ export class OutbreakMap {
     this.screen.stats.maxLiveMs = 0
   }
 }
+
+export const outbreakMapFeature = registerOutbreakClientFeature({
+  id: "map",
+  order: 50,
+  settingsGroup: {
+    subsystem: "map",
+    defaults: DEFAULT_MAP_SETTINGS,
+  },
+  labControls: () => mapControls,
+  onSettingChanged: (host, rawKey, routed) => {
+    if (routed?.subsystem === "map" || rawKey in DEFAULT_MAP_SETTINGS) {
+      host.map.applySettings()
+      return true
+    }
+    return false
+  },
+  gameCommands: (host) => (host.map ? host.map.labCommands() : []),
+  harnessMethods: (host) => (host.map ? { map: host.map } : {}),
+})

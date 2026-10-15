@@ -1,4 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
+import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -45,6 +46,7 @@ import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   packOutbreakLightingUniforms,
   resolveLampLight,
   STREET_LAMP_POSTS,
@@ -78,11 +80,11 @@ import {
   resolveWorldMode,
 } from "./settings"
 import { OutbreakFeelTracker } from "./feel-events"
-import { registerGameCommands } from "@arcade/kit/dev-control"
 import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
 import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
 import { shaders } from "./shaders"
+import { evaluateUnseenFrame } from "./unseen"
 import "./style.css"
 
 const foliageActorPool = Array.from({ length: FOLIAGE_MAX_ACTORS }, () => ({ x: 0, z: 0 }))
@@ -221,6 +223,7 @@ async function main() {
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
+  const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params)
@@ -610,7 +613,6 @@ async function main() {
   )
   bindOutbreakLabControls(lab, settings, controls)
 
-  registerGameCommands((commands) => commands.registerAll(map.labCommands()))
   registerOutbreakGameCommands({
     device,
     renderer,
@@ -623,6 +625,7 @@ async function main() {
     settings,
     feelTracker,
     hud,
+    map,
     coop,
     lab,
     progressionHost,
@@ -641,6 +644,11 @@ async function main() {
   lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
+  )
+  lab.addControls(
+    interiors.settings as unknown as Record<string, string | number | boolean>,
+    interiorControls(() => { interiors.apply("interiorTheme"); level() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
+    { ...DEFAULT_INTERIOR_SETTINGS },
   )
   let vertices = 0
   function level() {
@@ -944,7 +952,25 @@ async function main() {
           cone: Math.max(settings.vision.cone, 130),
         }
       : settings.vision
-    const visChanged = vision.update(p.x, p.y, effectiveVisionAim, blockers, effectiveVisionSettings, peek)
+    const flashVisionActive =
+      (drivingHeadlights || p.flashlightOutput > 0.01) &&
+      (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
+    const visChanged = vision.update(
+      p.x,
+      p.y,
+      effectiveVisionAim,
+      blockers,
+      effectiveVisionSettings,
+      peek,
+      flashVisionActive
+        ? {
+            active: true,
+            range: drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange,
+            cone: drivingHeadlights ? 68 : settings.flashlight.flashlightCone,
+            aim: effectiveVisionAim,
+          }
+        : null,
+    )
     if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
@@ -979,6 +1005,7 @@ async function main() {
       return true
     }
     const day = dayCycle(hour)
+    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth)
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
     const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
@@ -1098,7 +1125,12 @@ async function main() {
       (x, z) => supportHeight(town, x, z),
       vision,
       view,
-      settings.zombies,
+      {
+        ...settings.zombies,
+        fogGhostDuration: settings.fog.fogGhostDuration,
+        hideUnseenZombies: unseenEval.hideZombies,
+        unseenMode: unseenEval.mode,
+      },
       Boolean(settings.ai.aiDebugOverlay),
       time,
     )
@@ -1268,6 +1300,7 @@ async function main() {
         windowOrigin: currentWindowOrigin,
         isStreamWindow: currentIsStreamWindow,
         windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings,
+        unseen: unseenEval,
         chunkFadeAlpha: currentIsStreamWindow ? worldStreamer.chunkFadeAlpha : 0,
       },
       flashRgb,
@@ -1275,6 +1308,9 @@ async function main() {
     )
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
+    const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
+    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y)
+    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, interiorBuildings, town.houseSeed)
     renderer.setCustomUniforms(lightingUniforms)
     lastSightX = sightX
     lastSightY = sightY
@@ -1379,6 +1415,13 @@ async function main() {
       alphaSprites,
       vehAlphaStart,
     )
+    const effectiveFogSettings =
+      unseenEval.mode > 0 && unseenEval.hideZombies
+        ? {
+            ...settings.fog,
+            fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
+          }
+        : settings.fog
     const fogSoundAlphaCount = collectFogSoundSprites(
       zombies,
       noises,
@@ -1386,7 +1429,7 @@ async function main() {
       vision,
       time,
       (x, z) => supportHeight(town, x, z),
-      settings.fog,
+      effectiveFogSettings,
       alphaSprites,
       debugAlphaCount,
     )
@@ -1457,6 +1500,7 @@ async function main() {
     }
     render.look = lookSettings
     render.lookCompare = lookCompare
+    render.postParams = unseenEval.postParams
     renderer.render(render)
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     if (staminaEl && staminaFill) {
@@ -1644,10 +1688,7 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
-      else {
-        if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
-        scheduleFrame()
-      }
+      else scheduleFrame()
     }
   }
   draw(TICK_DT)
@@ -1655,6 +1696,7 @@ async function main() {
     adapter,
     device,
     renderer,
+    render,
     session: () => session,
     vision: () => vision,
     avatar: () => avatar,
@@ -1669,6 +1711,7 @@ async function main() {
     weatherController,
     worldStreamer,
     hud,
+    map,
     coop,
     audio,
     vehicleAudio,
@@ -1709,8 +1752,10 @@ async function main() {
       frames++
     },
     draw: (dt) => draw(dt),
+    interiors,
+    rebuildLevel: () => level(),
   })
-  Object.assign(window, { __arcadeHarness: Object.assign(harness, { map }) })
+  Object.assign(window, { __arcadeHarness: harness })
   scheduleFrame()
 }
 

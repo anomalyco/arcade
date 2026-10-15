@@ -143,6 +143,24 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Bake detailed textures off the main thread into a small texture-array pool, nearest rooms first, and carry their UV
+  in the vertex colour.** Outbreak's rugs (`packages/kit/textures/rug.ts`, `games/outbreak/src/interiors/`) are
+  generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
+  also Turkmen gul, kilim, Art Deco, braided oval, 70s shag) by `packages/kit/textures/rug-worker.ts` at 1024 px with
+  mips and pile height in alpha. `RugPool` keeps 8 layers plus one interior-tile mask layer (≈50 MB) in the renderer's
+  detail array (bindings 15/16), uploads at most one finished bake per frame (0.6–2.2 ms measured on the Air) and reuses the least
+  recently needed layer. A rug quad's vertex colour holds `(u, v, axis)` and its aux holds `streamSlot × 4 + index`, so
+  the shader looks the layer up in a 9×4 directory in the OL uniform; no per-rug material or draw call. Measured:
+  bakes 0.15–1 s each in the Worker (up to 5 s on a busy Air), pool settled 0.8–1.6 s after teleporting into a house,
+  paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
+  rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
+  reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Streamed house roofs are `customCutaway: "outside"` chunks.** Since the TBDR pass (d86d5df) custom-cutaway chunks
+  only use the discard pipeline while peeking, so streamed roofs marked `true` never opened when the survivor stood
+  inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
+  caps, and each roof's aux is looked up by building id in the window slots (slots are reused, roofless buildings
+  have no chunk). `games/outbreak/scripts/interiors-proof.ts` captures procedural houses of each theme to keep this honest.
+
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
   `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
   share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
@@ -431,6 +449,8 @@ proven animation techniques to animation.md, not here.
   is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
   samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
   switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
+- **Encode per-pixel unseen LOS weight into negative `lookFlashIrradiance` (`hdr.a > 1.0`) and run the 5 Unseen fog-of-war modes in `compositeFast` with at most one displaced HDR tap.**
+  In `games/outbreak/src/unseen/` (`settings.ts`, `shader.ts`, using `@arcade/kit/gpu/wgsl`), Outbreak's opt-in `Unseen` visibility treatment (`unseenMode = 0` off by default) combines the local survivor's 512-ray polar blocker field, wide facing/aim cone, close 360° awareness circle, and active flashlight cone (`evalUnseenFlashCone` in `visibilityFieldShader` and `FlashlightSightInput` in `shared/vision.ts`), plus an edge-depth ramp in `visField.b` (`evalUnseenEdgeDepth`). Keeping the 4× MSAA scene pass branch-free on `uMode` (`applyOutbreakUnseenScene` only sets `outbreakUnseenAlpha = wUnseen * 4.0`, packed into `targets.hdr.a = 1.0 + outbreakUnseenAlpha` via negative `lookFlashIrradiance` while `0..1` stays reserved for selective-colour flashlight retention) avoids VGPR inflation in the MSAA scene shader and requires zero extra bind-group entries or render targets. In `compositeFast` (`makeLookPostShader` / `postShader`), `applyOutbreakUnseenPost` reads `unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.5)` and `GL.pad.yzw` (`[mode, effectiveStrength, updateRate]`, scaled automatically with `dayCycle(hour).darkness` and low-health panic) to drive five modes in one shader: (1) **Acid Knife glitch** (Powerhoof-inspired low-Hz stepped horizontal scanline and macro-block UV displacement, red/cyan chromatic edge split derived from `gLuma - cLuma` using a single displaced `src` tap, and a cold slate-indigo wash), (2) **Warp wobble** (two-octave domain-warped refraction outside the cone with 1 displaced tap), (3) **Dark shroud** (classic soft-edge desaturated darkness with 0 extra taps), (4) **Stale memory** (faded archival snapshot of explored rooms with static paper grain and last-seen zombie ghosts), and (5) **Noise film** (stepped 16mm silver-nitrate grain and 4×4 Bayer dither thickening away from sight). At full Retina `3456×1894` on Apple M5 Max Metal (`games/outbreak/scripts/prove-unseen.ts`), paired GPU pass deltas measure **`+0.198 ms`** (Acid Knife glitch), **`+0.176 ms`** (Warp wobble), **`+0.163 ms`** (Dark shroud), **`+0.232 ms`** (Stale memory), and **`+0.057 ms`** (Noise film) — all well below the `< 1.0 ms` target — while the CPU 512-ray visibility mask + flashlight cone + unseen evaluation measures **`0.090 ms`** (`< 0.5 ms` target).
 - **Give a top-down flashlight a visible shaft with a separate reduced-resolution march, and hang it on the rig.**
   From Outbreak's steep camera a flashlight that only lights surfaces reads as a pool starting at the feet. The light
   now rides the survivor rig every frame (`Survivor.light`: under the pistol barrel when drawn, following low-ready,

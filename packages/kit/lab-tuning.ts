@@ -29,6 +29,13 @@ function rangeOf(c: Range) {
   return { min, max: max === min ? min + step : max, step }
 }
 
+/** Seeds draw as knobs' seed row: a whole number with a die that rolls a new one (never part of Random). */
+export const isSeed = (control: LabControl): boolean => "min" in control && /seed$/i.test(control.key)
+
+/** Headings (a full turn in degrees: yaw, azimuth, wind direction, texture rotation) draw as an angle dial. */
+export const isHeading = (control: LabControl): boolean =>
+  "min" in control && /^(°|deg)$/.test(displayUnit(control)) && control.max - control.min === 360
+
 /** The knobs value for a LabControl's current setting. */
 export function toKnobs(control: LabControl, value: LabValue | undefined): Value | undefined {
   if (control.type === "action") return undefined
@@ -48,12 +55,45 @@ export function fromKnobs(control: LabControl, value: Value): LabValue | undefin
   return value ? control.on ?? true : control.off ?? false
 }
 
-/** One row as a knobs descriptor, or null when knobs can't draw it (a select with no options). */
-export function describe(row: LabRow & { control: LabControl }, defaults: Readonly<LabSettings>, settings: Readonly<LabSettings>): ControlDescriptor | null {
+/** Where a row sits in a view: its tab and heading there, and the upper end it pairs with (a low–high range). */
+export type DescribePlace = { tab?: string; groupLabel?: string; pair?: LabControl }
+
+/**
+ * One row as a knobs descriptor, or null when knobs can't draw it (a select with no options). `disabled` is the row's
+ * enabled state now, a plain flag: when another setting flips it, the descriptors change and every view redraws the row,
+ * including views that don't show the setting that gates it. Seeds and pickers say `random: false`; groups marked
+ * `folded` start folded.
+ */
+export function describe(row: LabRow & { control: LabControl }, defaults: Readonly<LabSettings>, settings: Readonly<LabSettings>, place: DescribePlace = {}): ControlDescriptor | null {
   const c = row.control
-  const base = { key: c.key, label: c.label, group: row.group }
+  const upper = place.pair
+  const base = {
+    key: c.key,
+    label: upper ? c.pair!.label : c.label,
+    group: row.group,
+    ...(place.groupLabel ? { groupLabel: place.groupLabel } : {}),
+    ...(place.tab ? { tab: place.tab } : {}),
+    ...(c.subsection ? { subsection: c.subsection } : {}),
+    ...(c.enabled?.(settings) === false || upper?.enabled?.(settings) === false ? { disabled: true } : {}),
+    ...(isStructuralKey(c.key) ? { random: false } : {}),
+    ...(c.folded ? { folded: true } : {}),
+  }
   if (c.type === "action") return { ...base, kind: "action" }
   const initial = c.key in defaults ? defaults[c.key] : settings[c.key]
+  if (upper && "min" in c && "min" in upper) {
+    const lo = rangeOf(c), hi = rangeOf(upper)
+    const unit = displayUnit(c)
+    const top = upper.key in defaults ? defaults[upper.key] : settings[upper.key]
+    return { ...base, kind: "range", default: [toKnobs(c, initial) as number, toKnobs(upper, top) as number], min: Math.min(lo.min, hi.min), max: Math.max(lo.max, hi.max), step: Math.min(lo.step, hi.step), ...(unit ? { unit } : {}) }
+  }
+  if ("min" in c && isSeed(c)) {
+    const { min, max } = rangeOf(c)
+    return { ...base, kind: "seed", default: Math.round(toKnobs(c, initial) as number), min: Math.ceil(min), max: Math.floor(max) }
+  }
+  if ("min" in c && isHeading(c)) {
+    const { min, max, step } = rangeOf(c)
+    return { ...base, kind: "angle", default: toKnobs(c, initial) as number, min, max, step }
+  }
   if ("min" in c) {
     const { min, max, step } = rangeOf(c)
     const unit = displayUnit(c)
@@ -74,18 +114,30 @@ export function describe(row: LabRow & { control: LabControl }, defaults: Readon
   return { ...base, kind: "toggle", default: toKnobs(c, initial) as boolean }
 }
 
-/** Rows in display order: groups ranked by `order`, then in the order they were added; folded (advanced) groups last. */
-export function orderRows<R extends LabRow>(rows: readonly R[], order: readonly string[], folded: ReadonlySet<string>): R[] {
+/**
+ * Rows in display order: groups ranked by `order`, then in the order they were added (folded groups fold in place).
+ * Inside a group, rows without a sub-heading come first and each sub-heading's rows sit together under it.
+ */
+export function orderRows<R extends LabRow>(rows: readonly R[], order: readonly string[]): R[] {
   const firstSeen = new Map<string, number>()
-  rows.forEach((row, i) => { if (!firstSeen.has(row.group)) firstSeen.set(row.group, i) })
+  const subFirst = new Map<string, number>()
+  rows.forEach((row, i) => {
+    if (!firstSeen.has(row.group)) firstSeen.set(row.group, i)
+    const sub = row.control?.subsection
+    if (sub && !subFirst.has(`${row.group}\u0000${sub}`)) subFirst.set(`${row.group}\u0000${sub}`, i)
+  })
   const rank = (group: string) => {
     const i = order.indexOf(group)
-    return i >= 0 ? i : order.length + (folded.has(group) ? rows.length : 0) + firstSeen.get(group)!
+    return i >= 0 ? i : order.length + firstSeen.get(group)!
   }
-  return rows.map((row, index) => ({ row, index })).sort((a, b) => rank(a.row.group) - rank(b.row.group) || a.index - b.index).map(x => x.row)
+  const subRank = (row: LabRow) => (row.control?.subsection ? 1 + subFirst.get(`${row.group}\u0000${row.control.subsection}`)! : 0)
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => rank(a.row.group) - rank(b.row.group) || subRank(a.row) - subRank(b.row) || a.index - b.index)
+    .map(x => x.row)
 }
 
-/** A small, fast seeded generator (mulberry32). The same seed always gives the same sequence. */
+/** A small, fast seeded generator (mulberry32), what knobs' Random and Mutate draw from. The same seed always gives the same sequence. */
 export function seededRandom(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -97,54 +149,11 @@ export function seededRandom(seed: number): () => number {
   }
 }
 
-const onLattice = (min: number, step: number, n: number) => Number((min + n * step).toPrecision(12))
-
 /** Whether Random and Mutate may change this control: tuning values only, not switches, pickers, seeds or gated rows. */
 export function isTunable(control: LabControl, settings: Readonly<LabSettings>): boolean {
   if (control.type === "action" || control.derived || isStructuralKey(control.key)) return false
   if (control.enabled?.(settings) === false) return false
   return "min" in control || ("options" in control && control.options.length > 1)
-}
-
-/**
- * Random or Mutate for `controls`, drawn from `seed` in the order given. Ranges land on their step lattice; Mutate moves
- * a range 8-12% of its span and changes a choice 15% of the time. Switches stay as they are, as they always have in the
- * Lab: they gate features rather than tune them.
- */
-export function seededPatch(controls: readonly LabControl[], settings: Readonly<LabSettings>, seed: number, mode: "random" | "mutate"): LabSettings {
-  const random = seededRandom(seed)
-  const patch: LabSettings = {}
-  for (const c of controls) {
-    if (!isTunable(c, settings)) continue
-    if ("min" in c) {
-      const { min, max, step } = rangeOf(c)
-      const top = Math.floor((max - min) / step + 1e-9)
-      if (mode === "random") patch[c.key] = onLattice(min, step, Math.min(top, Math.floor(random() * (top + 1))))
-      else {
-        const v = Number(settings[c.key])
-        const current = Number.isFinite(v) ? v : min
-        const sign = random() < 0.5 ? -1 : 1
-        const by = (max - min) * (0.08 + 0.04 * random())
-        let next = current + sign * by
-        if (next > max || next < min) next = current - sign * by
-        let n = Math.max(0, Math.min(top, Math.round((next - min) / step)))
-        if (onLattice(min, step, n) === current) {
-          const dir = (sign > 0 && n < top) || n === 0 ? 1 : -1
-          n = Math.max(0, Math.min(top, n + dir))
-        }
-        patch[c.key] = onLattice(min, step, n)
-      }
-    } else if ("options" in c) {
-      const options = c.options
-      if (mode === "random") patch[c.key] = options[Math.floor(random() * options.length)]!.value
-      else if (random() < 0.15) {
-        const at = options.findIndex(o => o.value === settings[c.key])
-        const others = options.filter((_, i) => i !== at)
-        patch[c.key] = others[Math.floor(random() * others.length)]!.value
-      }
-    }
-  }
-  return patch
 }
 
 /** The next tuning seed after `seed`: a deterministic walk (1 to 999999), so a recorded seed reproduces every later roll. */
@@ -155,12 +164,14 @@ export const nextTuningSeed = (seed: number) => Math.floor(seededRandom(seed ^ 0
  */
 export function migrateKnobsVariantJson(rawJson: string, rows: readonly LabRow[]): string {
   const aliases = new Map<string, string>()
+  const pairs = new Map<string, string>()
   for (const row of rows) {
     const c = row.control
+    if (c?.pair) pairs.set(c.key, c.pair.key)
     if (!c?.legacyKeys) continue
     for (const legacy of c.legacyKeys) aliases.set(legacy, c.key)
   }
-  if (!aliases.size) return rawJson
+  if (!aliases.size && !pairs.size) return rawJson
   try {
     const parsed = JSON.parse(rawJson) as Record<string, unknown>
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.variants)) return rawJson
@@ -178,6 +189,14 @@ export function migrateKnobsVariantJson(rawJson: string, rows: readonly LabRow[]
           itemChanged = true
           changed = true
         }
+      }
+      // A pair saved as two numbers (before it drew as one range) becomes one [low, high] value.
+      for (const [low, high] of pairs) {
+        if (typeof values[low] !== "number") continue
+        values[low] = [values[low], typeof values[high] === "number" ? values[high] : values[low]]
+        delete values[high]
+        itemChanged = true
+        changed = true
       }
       return itemChanged ? { ...rec, values } : item
     })

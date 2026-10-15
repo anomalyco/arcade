@@ -1,7 +1,7 @@
 import type { MeleeSwingPhase, MeleeWeaponClass } from "@arcade/kit/human-melee"
 import { angleDiff, clearLine, distToRect, raycast, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
-import type { AIAgent, OutbreakAISubsystem } from "./ai"
+import { hasSeveredLeg, type AIAgent, type OutbreakAISubsystem } from "./ai"
 import type { Town } from "./map"
 import type { ChannelView, PistolAmmo } from "./progression"
 
@@ -17,9 +17,52 @@ export const SHOVE_RANGE = 1.75
 export const SHOVE_ARC = 1.15
 export const SHOVE_COOLDOWN = 0.65
 export const SHOVE_NOISE = 5.0
+export const FINISHER_RANGE = 1.45
 export const ZOMBIE_CAPSULE_RADIUS = 0.36
 
-export type DetachableBone = "head" | "left.upperArm" | "right.upperArm" | "left.foreArm" | "right.foreArm"
+export const DETACHABLE_BONES = [
+  "head",
+  "left.upperArm",
+  "right.upperArm",
+  "left.foreArm",
+  "right.foreArm",
+  "left.thigh",
+  "right.thigh",
+] as const
+
+export type DetachableBone = (typeof DETACHABLE_BONES)[number]
+
+/**
+ * Finds a downed or crawling zombie at the survivor's feet that can be finished off
+ * with a contextual stomp or downward melee strike.
+ */
+export function findFinisherTarget(
+  player: { x: number; y: number; aim: number },
+  agents: readonly AIAgent[],
+  sightBlockers?: readonly Rect[],
+): AIAgent | null {
+  let best: AIAgent | null = null
+  let bestScore = Infinity
+  for (let i = 0; i < agents.length; i++) {
+    const z = agents[i]!
+    if (z.state !== "knockdown" && z.state !== "crawler") continue
+    const dx = z.x - player.x
+    const dy = z.y - player.y
+    const d = Math.hypot(dx, dy)
+    if (d > FINISHER_RANGE) continue
+    const ang = Math.abs(angleDiff(Math.atan2(dy, dx), player.aim))
+    if (d > 0.65 && ang > 1.25) continue
+    if (sightBlockers && sightBlockers.length > 0 && !clearLine(player.x, player.y, z.x, z.y, sightBlockers)) {
+      continue
+    }
+    const score = d + ang * 0.35
+    if (score < bestScore) {
+      bestScore = score
+      best = z
+    }
+  }
+  return best
+}
 
 export type CombatShotEvent = {
   id: number
@@ -31,7 +74,10 @@ export type CombatShotEvent = {
   aim: number
   hitZombieId: number | null
   killed: boolean
-  detachBone: "head" | "left.upperArm" | "right.upperArm" | "left.foreArm" | "right.foreArm" | null
+  knockdown?: boolean
+  crawler?: boolean
+  limp?: boolean
+  detachBone: DetachableBone | null
   seed: number
 }
 
@@ -317,7 +363,10 @@ export type CombatMeleeHit = {
   killed: boolean
   knockdown: boolean
   headshot: boolean
-  detachBone: "head" | "left.upperArm" | "right.upperArm" | "left.foreArm" | "right.foreArm" | null
+  finisher?: boolean
+  crawler?: boolean
+  limp?: boolean
+  detachBone: DetachableBone | null
   seed: number
 }
 
@@ -334,6 +383,7 @@ export type CombatMeleeEvent = {
   reach: number
   combo: 1 | 2 | 3
   heavy: boolean
+  finisher?: boolean
   charge: number
   hits: CombatMeleeHit[]
   hitDoorId: string | null
@@ -366,6 +416,7 @@ export type SurvivorCombatState = {
   meleeCombo: 1 | 2 | 3
   meleeCharge: number
   meleeHeavy: boolean
+  meleeFinisher?: boolean
   meleeComboQueued: boolean
   meleeComboUntil: number
   meleeSwingId: number
@@ -378,6 +429,7 @@ export type SurvivorCombatState = {
   recoil: number
   shoveCooldown: number
   shoveAnim: number
+  stompAnim?: number
   channel: CombatChannel | null
   lootMessage: string | null
   lootMessageUntil: number
@@ -395,6 +447,7 @@ export function createSurvivorCombatState(): SurvivorCombatState {
     meleeCombo: 1,
     meleeCharge: 0,
     meleeHeavy: false,
+    meleeFinisher: false,
     meleeComboQueued: false,
     meleeComboUntil: -Infinity,
     meleeSwingId: 0,
@@ -407,6 +460,7 @@ export function createSurvivorCombatState(): SurvivorCombatState {
     recoil: 0,
     shoveCooldown: 0,
     shoveAnim: 0,
+    stompAnim: 0,
     channel: null,
     lootMessage: null,
     lootMessageUntil: -Infinity,
@@ -494,11 +548,20 @@ export class OutbreakCombatSubsystem {
     const hitX = ox + dx * bestT
     const hitY = oy + dy * bestT
     let killed = false
+    let knockdown = false
+    let crawler = false
+    let limp = false
     let detachBone: CombatShotEvent["detachBone"] = null
     const shotSeed = ((this.nextShotId * 0x9e3779b9) ^ Math.floor(time * 1000)) >>> 0
 
     if (bestZombie) {
       const rng = new Rng((shotSeed ^ bestZombie.seed) >>> 0)
+      const fx = bestZombie.x - ox
+      const fy = bestZombie.y - oy
+      const proj = fx * dx + fy * dy
+      const perpDist = Math.sqrt(Math.max(0, fx * fx + fy * fy - proj * proj))
+      const perpSide = fx * -dy + fy * dx
+
       const damage = bestT < 6.5 ? 55 : 42
       bestZombie.hp = Math.max(0, bestZombie.hp - damage)
       bestZombie.hitFlash = 1.0
@@ -518,7 +581,44 @@ export class OutbreakCombatSubsystem {
         killed = true
         bestZombie.state = "dead"
         bestZombie.stateTime = 0
+        bestZombie.staggerVx = dx * 4.5
+        bestZombie.staggerVy = dy * 4.5
         detachBone = rng.pick(detachable)
+        if (detachBone && !bestZombie.detachedLimbs.includes(detachBone)) {
+          bestZombie.detachedLimbs.push(detachBone)
+        }
+      } else if (perpDist >= 0.14 || (bestT >= 6.5 && rng.next() < 0.42)) {
+        // Off-center hip/leg shot or medium-range impact: can blow a leg off (crawler), knock down, or cripple into a limp
+        const legRoll = rng.next()
+        const legChoice: DetachableBone = perpSide >= 0 ? "right.thigh" : "left.thigh"
+        if (legRoll < 0.36 && !hasSeveredLeg(bestZombie)) {
+          detachBone = legChoice
+          bestZombie.detachedLimbs.push(detachBone)
+          bestZombie.state = "crawler"
+          bestZombie.stateTime = 0
+          bestZombie.staggerVx = dx * 4.2
+          bestZombie.staggerVy = dy * 4.2
+          crawler = true
+        } else if (legRoll < 0.72) {
+          knockdown = true
+          bestZombie.state = "knockdown"
+          bestZombie.stateTime = 0
+          bestZombie.timer = 2.0 + rng.next() * 0.65
+          bestZombie.staggerVx = dx * 4.8
+          bestZombie.staggerVy = dy * 4.8
+          if (rng.next() < 0.55) {
+            bestZombie.limping = true
+            limp = true
+          }
+        } else {
+          bestZombie.limping = true
+          limp = true
+          bestZombie.state = "stagger"
+          bestZombie.stateTime = 0
+          bestZombie.timer = 0.34
+          bestZombie.staggerVx = dx * 3.6
+          bestZombie.staggerVy = dy * 3.6
+        }
       } else {
         bestZombie.state = "stagger"
         bestZombie.timer = 0.26
@@ -526,6 +626,9 @@ export class OutbreakCombatSubsystem {
         bestZombie.staggerVy = dy * 3.4
         if (bestZombie.hp <= 45 && bestZombie.detachedLimbs.length === 0 && rng.next() < 0.65) {
           detachBone = rng.pick(["left.upperArm", "right.upperArm", "right.foreArm"])
+          if (detachBone && !bestZombie.detachedLimbs.includes(detachBone)) {
+            bestZombie.detachedLimbs.push(detachBone)
+          }
         }
       }
     }
@@ -540,6 +643,9 @@ export class OutbreakCombatSubsystem {
       aim: player.aim,
       hitZombieId: bestZombie?.id ?? null,
       killed,
+      ...(knockdown ? { knockdown: true } : {}),
+      ...(crawler ? { crawler: true } : {}),
+      ...(limp ? { limp: true } : {}),
       detachBone,
       seed: shotSeed,
     }
@@ -630,8 +736,138 @@ export class OutbreakCombatSubsystem {
     player.meleePhaseDuration = windupDuration
     player.meleeCharge = 0
     player.meleeHeavy = false
+    player.meleeFinisher = false
     player.meleeComboQueued = false
     player.channel = null
+  }
+
+  /**
+   * Executes a contextual downward melee strike or heavy boot stomp on a downed or crawling zombie
+   * at the survivor's feet without spending pistol ammo.
+   */
+  executeFinisher(
+    player: {
+      x: number
+      y: number
+      aim: number
+      stamina: number
+      exhausted?: boolean
+      regenCooldown?: number
+      noise: number
+      vault: unknown
+    } & SurvivorCombatState,
+    target: AIAgent,
+    ai: OutbreakAISubsystem,
+    durability: MeleeDurabilityHandle | null,
+    time: number,
+    tuning: MeleeTuning = DEFAULT_MELEE_TUNING,
+    attackerId = "player",
+    attackerIndex = 0,
+    onNotice?: (text: string, kind: "result" | "info" | "warning", key?: string) => void,
+  ): CombatMeleeEvent | null {
+    if (player.vault || player.meleePhase !== "idle" || (player.stompAnim ?? 0) > 0.05) return null
+    const weaponId = player.meleeWeapon ?? (isMeleeWeapon(player.equippedItem) ? player.equippedItem : null)
+    const weapon = weaponId ? MELEE_WEAPONS[weaponId] : MELEE_WEAPONS.crowbar
+    const toTargetAngle = Math.atan2(target.y - player.y, target.x - player.x)
+    player.aim = toTargetAngle
+    player.channel = null
+    player.stamina = Math.max(0, player.stamina - 0.12 * Math.max(0, tuning.meleeStaminaScale))
+    if (player.stamina <= 1e-4) player.exhausted = true
+    if (player.regenCooldown !== undefined) {
+      player.regenCooldown = Math.max(player.regenCooldown, 0.85)
+    }
+
+    const swingId = this.nextMeleeId++
+    const swingSeed = ((swingId * 0x9e3779b9) ^ Math.floor(time * 1000)) >>> 0
+    const hitSeed = ((swingSeed ^ target.seed ^ Math.imul(target.id + 1, 0x9e3779b9)) >>> 0)
+    const detachBone: DetachableBone = !target.detachedLimbs.includes("head") ? "head" : "right.foreArm"
+    if (!target.detachedLimbs.includes(detachBone)) {
+      target.detachedLimbs.push(detachBone)
+    }
+
+    const dx = target.x - player.x
+    const dy = target.y - player.y
+    const d = Math.hypot(dx, dy) || 1
+    const ux = dx / d
+    const uy = dy / d
+
+    target.hp = 0
+    target.state = "dead"
+    target.stateTime = 0
+    target.hitFlash = 1.0
+    target.lastHitBy = attackerId
+    target.staggerVx = ux * 2.4
+    target.staggerVy = uy * 2.4
+
+    const ev: CombatMeleeEvent = {
+      id: swingId,
+      time,
+      attackerId,
+      attackerIndex,
+      weapon: weaponId ?? "crowbar",
+      x: player.x,
+      y: player.y,
+      aim: player.aim,
+      arc: 0.95,
+      reach: 1.45,
+      combo: 3,
+      heavy: true,
+      finisher: true,
+      charge: 1.0,
+      hits: [
+        {
+          zombieId: target.id,
+          x: target.x,
+          y: target.y,
+          damage: 150,
+          killed: true,
+          knockdown: false,
+          headshot: true,
+          finisher: true,
+          detachBone,
+          seed: hitSeed,
+        },
+      ],
+      hitDoorId: null,
+      doorBroke: false,
+      weaponBroke: false,
+      durabilityLow: false,
+      seed: swingSeed,
+    }
+
+    if (weaponId) {
+      player.meleeWeapon = weaponId
+      player.equippedItem = weaponId
+      player.meleeCombo = 3
+      player.meleePhase = "active"
+      player.meleePhaseTime = 0
+      player.meleePhaseDuration = 0.22
+      player.meleeCharge = 1.0
+      player.meleeHeavy = true
+      player.meleeFinisher = true
+      player.meleeSwingId = swingId
+      const runtime: ActiveSwingRuntime = {
+        event: ev,
+        hitZombieIds: new Set([target.id]),
+        durabilitySpent: false,
+        attackerId,
+        attackerIndex,
+      }
+      this.spendSwingDurability(player, weapon, runtime, durability, tuning, time, onNotice)
+    } else {
+      player.stompAnim = 0.38
+      player.shoveCooldown = 0.48
+      player.meleeFinisher = true
+      player.meleeSwingId = swingId
+    }
+
+    const finNoise = 6.0 * Math.max(0, tuning.meleeNoiseScale)
+    player.noise = Math.max(player.noise, finNoise)
+    ai.emitNoise(player.x, player.y, finNoise, "shove", time, attackerId, 0.75)
+
+    if (this.meleeSwings.length >= 24) this.meleeSwings.shift()
+    this.meleeSwings.push(ev)
+    return ev
   }
 
   /**
@@ -830,16 +1066,17 @@ export class OutbreakCombatSubsystem {
         this.beginWindup(player, weapon, nextCombo, tuning)
         return { topologyChanged, event: null }
       }
-      if (player.meleePhaseTime >= player.meleePhaseDuration) {
-        const wasFinisher = player.meleeCombo >= weapon.comboLength || player.meleeHeavy
-        player.meleePhase = "idle"
-        player.meleePhaseTime = 0
-        player.meleePhaseDuration = 0
-        player.meleeCharge = 0
-        player.meleeHeavy = false
-        player.meleeComboQueued = false
-        player.meleeComboUntil = wasFinisher ? -Infinity : time + tuning.meleeComboWindow
-      }
+        if (player.meleePhaseTime >= player.meleePhaseDuration) {
+          const wasFinisher = player.meleeCombo >= weapon.comboLength || player.meleeHeavy || Boolean(player.meleeFinisher)
+          player.meleePhase = "idle"
+          player.meleePhaseTime = 0
+          player.meleePhaseDuration = 0
+          player.meleeCharge = 0
+          player.meleeHeavy = false
+          player.meleeFinisher = false
+          player.meleeComboQueued = false
+          player.meleeComboUntil = wasFinisher ? -Infinity : time + tuning.meleeComboWindow
+        }
     }
 
     return { topologyChanged, event: null }
@@ -869,16 +1106,11 @@ export class OutbreakCombatSubsystem {
       runtime.event.weaponBroke = true
       player.meleeWeapon = null
       player.meleeComboQueued = false
-      const msg = `${weapon.label} broke!`
-      player.lootMessage = msg
-      player.lootMessageUntil = time + 2.6
-      onNotice?.(msg, "warning", "durability")
+      void time
+      void onNotice
+      void weapon
     } else if (res.low) {
       runtime.event.durabilityLow = true
-      const msg = `${weapon.label} durability low (${res.remaining} left)`
-      player.lootMessage = msg
-      player.lootMessageUntil = time + 2.2
-      onNotice?.(msg, "warning", "durability")
     }
   }
 
@@ -955,12 +1187,13 @@ export class OutbreakCombatSubsystem {
         const exhScale = player.exhausted ? 0.65 : 1.0
         const comboMult = ev.combo === 2 ? 1.08 : ev.combo === 3 ? 1.2 : 1.0
         const heavyMult = ev.heavy ? 1.4 + 0.45 * ev.charge : 1.0
-        const downedMult = z.state === "knockdown" ? 1.35 : 1.0
+        const downedMult = z.state === "knockdown" || z.state === "crawler" ? 1.4 : 1.0
+        const toughScale = z.hp <= 100 ? 1 / clamp(z.toughness ?? 1, 0.82, 1.24) : 1.0
 
         const sweetSpotArc = ev.heavy || ev.combo === 3 ? 0.32 : 0.24
         const headshot =
           (Math.abs(relAngle) <= sweetSpotArc && d >= weapon.reach * 0.35) ||
-          (z.state === "knockdown" && Math.abs(relAngle) <= 0.36)
+          ((z.state === "knockdown" || z.state === "crawler") && Math.abs(relAngle) <= 0.36)
         const headMult = headshot ? weapon.headMultiplier : 1.0
 
         const rawDamage =
@@ -970,9 +1203,11 @@ export class OutbreakCombatSubsystem {
           heavyMult *
           exhScale *
           downedMult *
-          headMult
+          headMult *
+          toughScale
         const damage = Math.max(1, Math.round(rawDamage))
         const wasDowned = z.state === "knockdown"
+        const wasCrawler = z.state === "crawler" || hasSeveredLeg(z)
         z.hp = Math.max(0, z.hp - damage)
         z.hitFlash = 1.0
         z.awareness = 1.0
@@ -992,6 +1227,8 @@ export class OutbreakCombatSubsystem {
 
         let killed = false
         let knockdown = false
+        let crawler = false
+        let limp = false
         let detachBone: CombatMeleeHit["detachBone"] = null
 
         const sharp = weapon.material === "blade" || weapon.id === "spiked-board"
@@ -999,6 +1236,8 @@ export class OutbreakCombatSubsystem {
           ev.combo === 2
             ? ["left.foreArm", "left.upperArm", "right.foreArm"]
             : ["right.foreArm", "right.upperArm", "left.upperArm"]
+        const legChoices: NonNullable<CombatMeleeHit["detachBone"]>[] =
+          ev.combo === 2 ? ["left.thigh", "right.thigh"] : ["right.thigh", "left.thigh"]
 
         if (z.hp <= 0) {
           killed = true
@@ -1016,34 +1255,64 @@ export class OutbreakCombatSubsystem {
             detachBone = headshot && !z.detachedLimbs.includes("head") ? "head" : rng.pick(armChoices)
           }
         } else {
-          const shouldKnockdown =
-            wasDowned ||
-            (ev.heavy && kb >= 1.2) ||
-            (ev.combo === 3 && kb >= 1.55) ||
-            (weapon.weaponClass === "two-heavy" && (ev.heavy || ev.combo === 3 || headshot))
-          if (shouldKnockdown) {
-            knockdown = true
-            z.state = "knockdown"
-            z.stateTime = 0
-            z.timer = clamp(1.25 + 0.25 * kb, 1.15, 1.85)
-            z.staggerVx = ux * (5.6 + 2.4 * kb)
-            z.staggerVy = uy * (5.6 + 2.4 * kb)
-          } else {
-            z.state = "stagger"
-            z.stateTime = 0
-            z.timer = clamp(0.36 + 0.22 * kb, 0.28, 0.85)
-            z.staggerVx = ux * (4.4 + 2.4 * kb)
-            z.staggerVy = uy * (4.4 + 2.4 * kb)
+          // Non-lethal leg severing -> Crawler (including second-leg severing -> torso-only crawler)
+          const canSeverLeg =
+            !headshot &&
+            ((sharp && (ev.heavy || ev.combo === 3 || z.hp <= 55) && rng.next() < (ev.heavy ? 0.52 : 0.34)) ||
+              (!sharp && ev.heavy && z.hp <= 50 && !wasCrawler && rng.next() < 0.3))
+          if (canSeverLeg) {
+            const availLeg = legChoices.find((b) => !z.detachedLimbs.includes(b))
+            if (availLeg) {
+              detachBone = availLeg
+              z.detachedLimbs.push(availLeg)
+              z.state = "crawler"
+              z.stateTime = 0
+              z.staggerVx = ux * (4.2 + 1.8 * kb)
+              z.staggerVy = uy * (4.2 + 1.8 * kb)
+              crawler = true
+            }
           }
 
-          // Non-lethal limb detachment on heavy/sharp blows
-          if (sharp && (ev.heavy || ev.combo === 3 || headshot || z.hp <= 60) && z.detachedLimbs.length < 2) {
-            const avail = armChoices.find((b) => !z.detachedLimbs.includes(b))
-            if (avail && (ev.heavy || ev.combo === 3 || rng.next() < 0.75)) {
-              detachBone = avail
+          if (!crawler) {
+            if (wasCrawler) {
+              z.state = "crawler"
+              z.staggerVx = ux * (3.2 + 1.5 * kb)
+              z.staggerVy = uy * (3.2 + 1.5 * kb)
+            } else {
+              const shouldKnockdown =
+                wasDowned ||
+                (ev.heavy && kb >= 1.2) ||
+                (ev.combo === 3 && kb >= 1.55) ||
+                (weapon.weaponClass === "two-heavy" && (ev.heavy || ev.combo === 3 || headshot))
+              if (shouldKnockdown) {
+                knockdown = true
+                z.state = "knockdown"
+                z.stateTime = 0
+                z.timer = clamp(1.85 + 0.3 * kb, 1.8, 2.75)
+                z.staggerVx = ux * (5.6 + 2.4 * kb)
+                z.staggerVy = uy * (5.6 + 2.4 * kb)
+              } else {
+                z.state = "stagger"
+                z.stateTime = 0
+                z.timer = clamp(0.36 + 0.22 * kb, 0.28, 0.85)
+                z.staggerVx = ux * (4.4 + 2.4 * kb)
+                z.staggerVy = uy * (4.4 + 2.4 * kb)
+              }
+              if (!headshot && !z.limping && (ev.heavy || ev.combo >= 2 || rng.next() < 0.35)) {
+                z.limping = true
+                limp = true
+              }
             }
-          } else if (!sharp && ev.heavy && z.hp <= 45 && z.detachedLimbs.length === 0) {
-            detachBone = "right.foreArm"
+
+            // Non-lethal arm detachment on heavy/sharp blows
+            if (sharp && (ev.heavy || ev.combo === 3 || headshot || z.hp <= 60) && z.detachedLimbs.length < 2) {
+              const avail = armChoices.find((b) => !z.detachedLimbs.includes(b))
+              if (avail && (ev.heavy || ev.combo === 3 || rng.next() < 0.75)) {
+                detachBone = avail
+              }
+            } else if (!sharp && ev.heavy && z.hp <= 45 && z.detachedLimbs.length === 0) {
+              detachBone = "right.foreArm"
+            }
           }
         }
 
@@ -1059,6 +1328,8 @@ export class OutbreakCombatSubsystem {
           killed,
           knockdown,
           headshot,
+          ...(crawler ? { crawler: true } : {}),
+          ...(limp ? { limp: true } : {}),
           detachBone,
           seed: hitSeed,
         })
@@ -1190,6 +1461,12 @@ export class OutbreakCombatSubsystem {
     if (player.fireCooldown > 0) player.fireCooldown = Math.max(0, player.fireCooldown - dt)
     if (player.shoveCooldown > 0) player.shoveCooldown = Math.max(0, player.shoveCooldown - dt)
     if (player.shoveAnim > 0) player.shoveAnim = Math.max(0, player.shoveAnim - dt)
+    if ((player.stompAnim ?? 0) > 0) {
+      player.stompAnim = Math.max(0, (player.stompAnim ?? 0) - dt)
+      if (player.stompAnim === 0 && player.meleePhase === "idle") {
+        player.meleeFinisher = false
+      }
+    }
     if (player.recoil > 0) player.recoil = Math.max(0, player.recoil - dt * 5.5)
 
     if (player.reloadRemaining > 0) {
