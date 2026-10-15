@@ -53,6 +53,7 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
     compiled.floorTile.buffer,
     compiled.moonTile.buffer,
     compiled.bounceTile.buffer,
+    compiled.sconces.buffer,
   ]
   for (const c of compiled.staticOpaqueChunks) transfer.push(c.data)
   for (const c of compiled.glassChunks) transfer.push(c.data)

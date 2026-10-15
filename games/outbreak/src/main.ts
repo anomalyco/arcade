@@ -1,5 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
+import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -252,6 +252,7 @@ async function main() {
   const worldStreamer = new WorldClientStreamer()
   let currentWindowOrigin: [number, number] = [0, 0]
   let currentIsStreamWindow = false
+  let originSconces: Float32Array[] = []
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -677,6 +678,7 @@ async function main() {
     worldStreamer.windowOrigin = [0, 0]
     worldStreamer.lastWindowKey = ""
     const data = buildLevel(session.view.town)
+    originSconces = [collectSconces(session.view.town)]
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
     combatFx.setLevel(data)
@@ -1235,6 +1237,20 @@ async function main() {
       const dstOff = count++ * LIGHT_FLOATS
       for (let f = 0; f < LIGHT_FLOATS; f++) lights[dstOff + f] = unshadowedLampBuf[srcOff + f]!
     }
+    const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
+    lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
+    interiors.sconces.setSources(currentIsStreamWindow ? worldStreamer.windowSconces : originSconces)
+    count = interiors.sconces.write(
+      lights,
+      count,
+      MAX_LIGHTS,
+      inInteriorView ? (interiors.settings.sconceLights >= 0 ? interiors.settings.sconceLights : qProfile.maxSconceLights) : 0,
+      cutX,
+      cutY,
+      sconceLevel,
+      settings.lighting.practicalWarmth,
+      interiors.settings,
+    )
     const vehOut = vehicleRenderer.collect(
       vdt,
       time,
@@ -1521,7 +1537,7 @@ async function main() {
           ),
         }
       : null
-    render.lampCount = town.lamps.length
+    render.lampCount = SCONCE_LAMP_SLOT + 1
     render.view = view
     render.grade[0] = time
     render.grade[1] = settings.view.diagnostic

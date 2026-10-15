@@ -2,6 +2,7 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { Rng } from "@arcade/kit/sim/rng"
 import { inBuildingFootprint, propShape, type Building, type Town } from "../../shared/map"
 import { buildingSeed, buildingStreamSlot, interiorSettings, isResidential, planInterior, RUG_Y, rugKey, type InteriorPlan, type InteriorTheme, type RugPlacement } from "./plan"
+import { SCONCE_FLOATS, SCONCE_LAMP_SLOT } from "./sconces"
 import { MAT_RUG } from "./wgsl"
 
 const rgb = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
@@ -183,10 +184,51 @@ function fireplace(m: Mesh, f: Face, a: number, theme: InteriorTheme, lamp: numb
   }
 }
 
-function sconce(m: Mesh, f: Face, a: number, lamp: number): void {
+/** Bulb centre: 0.165 m off the face, 1.79 m up (the shade below). */
+const SCONCE_OUT = 0.165
+const SCONCE_Y = 1.79
+
+function sconce(m: Mesh, f: Face, a: number): void {
   faceBox(m, f, a, 0, 0.08, 0.03, 1.62, 1.78, rgb(0x6a5428), MAT.shiny)
   faceBox(m, f, a, 0.03, 0.03, 0.12, 1.68, 1.71, rgb(0x6a5428), MAT.shiny)
-  faceBox(m, f, a, 0.1, 0.13, 0.13, 1.72, 1.86, rgb(0xd8a860), lamp >= 0 ? MAT.lamp : MAT.lit, undefined, Math.max(0, lamp))
+  faceBox(m, f, a, 0.1, 0.13, 0.13, 1.72, 1.86, rgb(0xd8a860), MAT.lamp, undefined, SCONCE_LAMP_SLOT)
+}
+
+/**
+ * Records a pair of sconces centred at `a`, `half` either side, as one light (layout in `sconces.ts`). `back` puts the
+ * half-space cut just inside the wall so the face they hang on is lit but the room behind is not; `left`/`right` clip
+ * the light to its room along the wall, found by scanning for perpendicular walls 0.4 m in front of the face (a
+ * doorway gap lets it through, as it would).
+ */
+function pushSconcePair(out: number[], f: Face, a: number, half: number, b: Building, town: Town): void {
+  const [wx0, wz0, wx1, wz1] = f.wall
+  const thickness = f.axis === "x" ? wz1 - wz0 : wx1 - wx0
+  const line = f.at + f.side * 0.4
+  let left = 4, right = 4
+  for (const w of town.barriers) {
+    if (w.kind === "fence" || w.rect === f.wall) continue
+    const [x0, z0, x1, z1] = w.rect
+    if (x1 < b.rect[0] - 0.05 || x0 > b.rect[2] + 0.05 || z1 < b.rect[1] - 0.05 || z0 > b.rect[3] + 0.05) continue
+    const [c0, c1, s0, s1] = f.axis === "x" ? [z0, z1, x0, x1] : [x0, x1, z0, z1]
+    if (line < c0 || line > c1) continue
+    if (s0 >= a) right = Math.min(right, s0 - a)
+    else if (s1 <= a) left = Math.min(left, a - s1)
+  }
+  const along = f.at + f.side * SCONCE_OUT
+  const start = out.length
+  out.push(
+    f.axis === "x" ? a : along,
+    f.axis === "x" ? along : a,
+    SCONCE_Y,
+    f.axis === "x" ? 0 : f.side,
+    f.axis === "x" ? f.side : 0,
+    SCONCE_OUT + Math.min(0.06, thickness * 0.5),
+    left,
+    right,
+    half,
+    b.rect[0], b.rect[1], b.rect[2], b.rect[3],
+  )
+  if (out.length - start !== SCONCE_FLOATS) throw new Error("sconce layout drifted")
 }
 
 function typewriterDesk(m: Mesh, f: Face, a: number): void {
@@ -211,7 +253,7 @@ const nearestLamp = (town: Town, x: number, z: number) => {
 }
 
 /** Resident Evil dressing for a building: wainscoting, portraits, a clock, a fireplace, sconces and a save-room desk. */
-export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed)): void {
+export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[]): void {
   if (plan.theme === "plain" || !interiorSettings.decor) return
   const faces = interiorFaces(b, town)
   if (interiorSettings.wainscot) for (const f of faces) wainscot(m, f, plan.theme)
@@ -255,13 +297,24 @@ export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: Interi
   const paintings = residential ? 3 : 2
   for (let i = 0; i < paintings; i++) {
     const w = 0.55 + rng.next() * 0.5
-    const p = take(w + (gilt ? 0.7 : 0.3))
+    const p = take(w + (gilt || plan.theme === "station" ? 0.7 : 0.3))
     if (!p) break
     painting(m, p.f, p.a, w, w * (1.15 + rng.next() * 0.3), 1.62, rng, gilt || rng.next() < 0.4)
-    if (gilt) {
-      const x = p.f.axis === "x" ? p.a : p.f.at, z = p.f.axis === "x" ? p.f.at : p.a
-      const lamp = nearestLamp(town, x, z)
-      for (const s of [-1, 1]) sconce(m, p.f, p.a + s * (w / 2 + 0.22), lamp)
+    if (gilt || plan.theme === "station") {
+      const half = w / 2 + 0.22
+      for (const s of [-1, 1]) sconce(m, p.f, p.a + s * half)
+      if (sconces) pushSconcePair(sconces, p.f, p.a, half, b, town)
     }
   }
+}
+
+/** Sconce lights of a town's buildings, as `emitInteriorDecor` places them (for levels built on the main thread). */
+export function collectSconces(town: Town): Float32Array<ArrayBuffer> {
+  const out: number[] = []
+  const scratch = new Mesh()
+  for (const b of town.buildings) {
+    scratch.v.length = 0
+    emitInteriorDecor(scratch, b, town, undefined, out)
+  }
+  return new Float32Array(out)
 }

@@ -4,13 +4,15 @@ import { distToRect } from "@arcade/kit/sim/geom"
 import type { Building } from "../../shared/map"
 import { buildingStreamSlot, INTERIOR_THEMES, INTERIOR_THEME_LABELS, interiorSettings, planInterior, rugKey, themeIndex } from "./plan"
 import { RugPool, type RugRequest } from "./rug-pool"
+import { DEFAULT_SCONCE_LIGHT_SETTINGS, SconceLights, type SconceLightSettings } from "./sconces"
 import { INTERIOR_UNIFORM_FLOATS, RUG_DIRECTORY_SLOTS } from "./wgsl"
 
-export { emitBuildingRugs, emitInteriorDecor } from "./mesh"
+export { collectSconces, emitBuildingRugs, emitInteriorDecor } from "./mesh"
 export { interiorSettings, planInterior } from "./plan"
+export { SCONCE_LAMP_SLOT, SconceLights } from "./sconces"
 
 /** Typed Lab settings for rugs and themed interiors. */
-export type InteriorLabSettings = {
+export type InteriorLabSettings = SconceLightSettings & {
   /** 0 procedural bake, 1 the hand-painted manifest rugs, 2 flat placeholder colour. */
   rugSource: number
   rugResolution: number
@@ -35,6 +37,7 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
   rugSeed: 0,
   interiorDecor: 1,
   wainscot: 1,
+  ...DEFAULT_SCONCE_LIGHT_SETTINGS,
 }
 
 /** Keys whose change rebuilds static level geometry (rug quads, decor) rather than updating uniforms. */
@@ -51,6 +54,9 @@ export function interiorControls(onStructural: () => void, onPool: () => void, o
     { key: "rugRelief", label: "Pile relief", group, min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "interiorDecor", label: "RE dressing", group, type: "toggle", change: onStructural },
     { key: "wainscot", label: "Wainscoting", group, type: "toggle", change: onStructural },
+    { key: "sconceLights", label: "Lit sconce pairs", group, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 3, label: "3" }, { value: 4, label: "4" }] },
+    { key: "sconcePower", label: "Sconce brightness", group, min: 0, max: 3, step: 0.05, unit: "×" },
+    { key: "sconceRadius", label: "Sconce reach", group, min: 1.5, max: 5, step: 0.1, unit: "m" },
     { key: "rugResolution", label: "Rug texture size", group, type: "select", folded: true, options: [{ value: 512, label: "512 px" }, { value: 1024, label: "1024 px" }, { value: 2048, label: "2048 px" }], change: onPool },
     { key: "rugLayers", label: "Rug texture layers", group, min: 2, max: 16, step: 1, unit: "", folded: true, change: onPool },
   ]
@@ -64,6 +70,7 @@ const HANDMADE = { persian: "rug_persian_burgundy.webp", sage: "rug_oriental_sag
  */
 export class InteriorPresenter {
   pool: RugPool
+  readonly sconces = new SconceLights()
   private lastPlan = 0
   private lastKey = ""
   private lastBuildingsRef: readonly Building[] | null = null
