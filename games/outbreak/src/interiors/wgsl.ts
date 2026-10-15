@@ -107,8 +107,8 @@ fn themedFloor(base: vec3f, p: vec2f, t: i32, variant: f32) -> vec3f {
     let s = textureSampleGrad(detailTex, detailSamp, p * scale, 0, floorUvGrad.xy * scale, floorUvGrad.zw * scale);
     let wood = select(vec3f(0.115, 0.058, 0.026), vec3f(0.070, 0.036, 0.018), t == 4 || variant > 0.6);
     let tone = 0.62 + 0.62 * s.b;
-    let macro = 0.85 + 0.3 * surfaceNoise(p * 0.45 + vec2f(5.2, 1.3));
-    return wood * tone * mix(0.28, 1.0, s.a) * macro;
+    let macroV = 0.85 + 0.3 * surfaceNoise(p * 0.45 + vec2f(5.2, 1.3));
+    return wood * tone * mix(0.28, 1.0, s.a) * macroV;
   }
   if (t == 3) {
     let c = floor(p / 0.32);
