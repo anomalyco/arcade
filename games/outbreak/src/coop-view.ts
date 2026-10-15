@@ -135,7 +135,10 @@ export class CoopView {
     this.hud.update()
     const net = this.net
     const others = this.others
-    if (!net && !others.length) return
+    if (!net && !others.length) {
+      this.hud.nameTags([])
+      return
+    }
     this.hud.nameTags(
       others.map((slot) => {
         const p = slot.survivor

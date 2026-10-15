@@ -317,7 +317,7 @@ describe("HUD styles", () => {
     expect(resolveStyle({ ...base, hudStyle: STYLE_TODAY })).toMatchObject({ callouts: "up", vitals: VITALS_EDGE, avoid: false })
     expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW })).toMatchObject({ callouts: "down", vitals: VITALS_BESIDE, avoid: true })
     expect(resolveStyle({ ...base, hudStyle: STYLE_HADES })).toMatchObject({ vitals: VITALS_BARS, chrome: "quiet" })
-    expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID })).toMatchObject({ callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID })).toMatchObject({ callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, avoid: false })
     expect(resolveStyle({ ...base, hudStyle: STYLE_DIEGETIC })).toMatchObject({ vitals: VITALS_GROUND, chrome: "none", quiet: true })
     expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID, calloutPlacement: 0, vitalsPlacement: VITALS_FEET })).toMatchObject({ callouts: "down", vitals: VITALS_FEET })
     expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW, avoidAim: false }).avoid).toBe(false)

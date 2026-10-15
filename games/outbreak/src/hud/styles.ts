@@ -37,7 +37,7 @@ export type StyleSpec = {
   chrome: Chrome
   /** Hide informational callouts (flashlight, slot, door) and keep progress, results, warnings and damage. */
   quiet: boolean
-  /** Swap sides when the survivor aims into the HUD. Today predates it. */
+  /** Swap sides when the survivor aims into the HUD. Today predates it; Zomboid keeps its bar over the head. */
   avoid: boolean
 }
 
@@ -45,7 +45,7 @@ export const STYLES: Record<number, StyleSpec> = {
   [STYLE_TODAY]: { label: "Today", callouts: "up", look: "box", actionBar: false, vitals: VITALS_EDGE, chrome: "full", quiet: false, avoid: false },
   [STYLE_BELOW]: { label: "Below Feet", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BESIDE, chrome: "full", quiet: false, avoid: true },
   [STYLE_HADES]: { label: "Hades Style", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BARS, chrome: "quiet", quiet: false, avoid: true },
-  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false, avoid: true },
+  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false, avoid: false },
   [STYLE_DIEGETIC]: { label: "Diegetic", callouts: "down", look: "halo", actionBar: false, vitals: VITALS_GROUND, chrome: "none", quiet: true, avoid: true },
 }
 
