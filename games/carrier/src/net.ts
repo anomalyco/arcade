@@ -6,6 +6,9 @@ import { type Hull, unpackHull } from "../shared/fleet"
 import type { AimTuple, GunFireTuple, InterceptTuple } from "../shared/gunnery"
 import type { BoatCtlTuple, BoatTuple } from "../shared/boat"
 import { type ClientMsg, type FireTuple, type FlareTuple, type PlaneTuple, type ServerMsg, type ShipTuple, type World, decodeServer, encode, roomName } from "../shared/protocol"
+import { type ObjectiveView, unpackObjective } from "../shared/objective"
+import type { BotCmd, BotInfo } from "../shared/bots"
+import { CHAT, ChatLimiter, type ChatLine, cleanChat } from "../shared/chat"
 import { RoomTime, TIME_OVERRIDE_LEAD, timeOverride, unpackTime } from "../shared/daycycle"
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type Weather, type WeatherKind, overrideTo, packWeather, unpackOverride } from "../shared/weather"
 
@@ -14,6 +17,8 @@ export type CombatMsg = Extract<ServerMsg, { type: "gun" | "fire" | "flare" | "s
 const COMBAT_TYPES = new Set(["gun", "fire", "flare", "seek", "boom", "hp", "kill", "sunk"])
 /** Queued combat messages beyond this are dropped (nobody is draining them). */
 const COMBAT_MAX = 512
+/** Queued chat lines beyond this are dropped (nobody is draining them). */
+const CHAT_QUEUE_MAX = 64
 /** The room's ship-gun messages (shared/gunnery.ts), queued for src/gunnery/gunnery.ts. */
 export type GunneryMsg = Extract<ServerMsg, { type: "turrets" | "gfire" | "gboom" }>
 const GUNNERY_TYPES = new Set(["turrets", "gfire", "gboom"])
@@ -75,10 +80,26 @@ export interface Net {
   readonly boatsAt: number
   /** Every carrier's health, zones and fires (shared/fleet.ts), by crew ship id, as of the last `hulls` (empty offline). */
   readonly hulls: ReadonlyMap<number, Hull>
+  /** Carrier collisions from the room in arrival order; the game empties it every frame (absent offline and in fakes). */
+  readonly bumps?: Extract<ServerMsg, { type: "bump" }>[]
   /** Combat messages from the room in arrival order; the consumer empties it every frame. */
   readonly combat: CombatMsg[]
   /** Kills and deaths by player id, as the room counts them (empty offline). */
   readonly stats: ReadonlyMap<number, { kills: number; deaths: number }>
+  /** The room's objective (shared/objective.ts: zones, captures, scores) as last sent, null offline or before it. */
+  readonly objective: ObjectiveView | null
+  /** Dev rooms: new objective rules (shared/objective.ts packRules); the round restarts with them. Dropped unless online. */
+  sendObjective(rules: number[]): void
+  /** The room runs in dev mode (its welcome said so): it takes the dev tools (weather, time, objective, bots). */
+  readonly dev: boolean
+  /** Dev rooms: every live bot (shared/bots.ts), as the room last sent them (~2 Hz). */
+  readonly bots: readonly BotInfo[]
+  /** Dev rooms: a BOTS panel command (dropped unless online; anywhere else the room refuses it). */
+  sendBot(cmd: BotCmd): void
+  /** Chat lines in arrival order (the room's, or offline our own echoed); the chat feed empties it every frame. */
+  readonly chat: ChatLine[]
+  /** Sends a chat line to the room (`crew`: my carrier only); offline it echoes locally. False: over the rate limit, not sent. */
+  sendChat(text: string, crew: boolean): boolean
   /** The helm's orders for this player's ship; sent when they change (dropped unless online and at the helm). */
   sendHelm(throttle: number, rudder: number): void
   // Crew requests (shared/crew.ts rules). The answer is a new `crew`, or `refused`.
@@ -86,9 +107,9 @@ export interface Net {
   op(id: string): void
   /** Board another ship as `as`, or at its helm if free, else as a pilot. */
   board(ship: number, as?: Role): void
-  newShip(team: number): void
-  /** `ship`: the friendly carrier the jet landed on, when not its own. */
-  recover(how: RecoverHow, ship?: number): void
+  /** Commission a ship on the team that has none (a sunk one's replacement not out yet). */
+  newShip(): void
+  recover(how: RecoverHow): void
   // Captain powers on my own ship (shared/squad.ts).
   promote(player: number): void
   kick(player: number): void
@@ -105,6 +126,10 @@ export type ConnectOpts = {
   private?: boolean
   /** The room is full: the caller should offer another. */
   onFull?: () => void
+  /** Dev builds: a stand-in for the WebSocket (src/dev/local-room.ts, an in-page dev room for `?seed=N&bots`). */
+  socket?: (url: string) => WebSocket
+  /** With `socket`: the world an empty room adopts (the in-page room plays seed `seed`). */
+  world?: World
 }
 
 /** No welcome by then: play offline. */
@@ -149,7 +174,14 @@ class NetClient implements Net {
   readonly combat: CombatMsg[] = []
   readonly gunnery: GunneryMsg[] = []
   readonly stats = new Map<number, { kills: number; deaths: number }>()
+  readonly chat: ChatLine[] = []
+  /** The room's chat budget, a little stricter here so jitter never gets a line dropped there silently. */
+  private chatLimit = new ChatLimiter(CHAT.burst, CHAT.windowMs + 300)
+  objective: ObjectiveView | null = null
+  dev = false
+  bots: readonly BotInfo[] = []
   readonly hulls = new Map<number, Hull>()
+  readonly bumps: Extract<ServerMsg, { type: "bump" }>[] = []
   readonly boats = new Map<number, BoatTuple>()
   boatsAt = 0
   private boatSent = { key: "", at: 0 }
@@ -264,6 +296,27 @@ class NetClient implements Net {
     this.send({ type: "bhits", k, on, n })
   }
 
+  sendChat(raw: string, crew: boolean): boolean {
+    const text = cleanChat(raw)
+    if (!text) return true
+    if (!this.chatLimit.allow(0, performance.now())) return false
+    if (this.state === "offline") {
+      const me = this.crew && playerOf(this.crew, this.id)
+      if (me && this.chat.length < CHAT_QUEUE_MAX) this.chat.push({ from: me.id, name: me.name, team: me.team, text, channel: crew ? "crew" : "all" })
+      return true
+    }
+    this.send(crew ? { type: "chat", text, crew: true } : { type: "chat", text })
+    return true
+  }
+
+  sendBot(cmd: BotCmd): void {
+    this.send({ type: "bot", cmd })
+  }
+
+  sendObjective(rules: number[]): void {
+    this.send({ type: "objective", r: rules })
+  }
+
   sendWeather(to: WeatherKind | Weather | null, fade: number): void {
     const f = Math.max(0, Math.min(600, fade))
     // Offline the local room is this client: apply the same override the server would.
@@ -303,12 +356,12 @@ class NetClient implements Net {
     this.request(as === undefined ? { type: "board", ship } : { type: "board", ship, as }, (c) => joinShip(c, SOLO_ID, ship, this.serverNow(), as))
   }
 
-  newShip(team: number): void {
-    this.request({ type: "newship", team }, (c) => createShip(c, SOLO_ID, team, this.serverNow()))
+  newShip(): void {
+    this.request({ type: "newship" }, (c) => createShip(c, SOLO_ID, this.serverNow()))
   }
 
-  recover(how: RecoverHow, ship?: number): void {
-    this.request(ship === undefined ? { type: "recover", how } : { type: "recover", how, ship }, (c) => recover(c, SOLO_ID, how, this.serverNow(), ship ?? -1))
+  recover(how: RecoverHow): void {
+    this.request({ type: "recover", how }, (c) => recover(c, SOLO_ID, how, this.serverNow()))
   }
 
   close(): void {
@@ -378,7 +431,8 @@ class NetClient implements Net {
   private open(): void {
     let ws: WebSocket
     try {
-      ws = new WebSocket(socketUrl(this.room!, !!this.opts.private))
+      const url = socketUrl(this.room!, !!this.opts.private)
+      ws = this.opts.socket ? this.opts.socket(url) : new WebSocket(url)
     } catch {
       return this.lost(null)
     }
@@ -389,6 +443,7 @@ class NetClient implements Net {
       this.helloAt = performance.now()
       const hello: Extract<ClientMsg, { type: "hello" }> = { type: "hello", build: BUILD }
       if (this.world) hello.resume = { seed: this.world.seed, epoch: this.world.epoch }
+      else if (this.opts.world) hello.resume = this.opts.world
       if (this.opts.name) hello.name = this.opts.name
       // Back to the ship and role we had before the connection dropped.
       const me = this.crew && playerOf(this.crew, this.id)
@@ -447,6 +502,18 @@ class NetClient implements Net {
         for (const id of this.hulls.keys()) if (!seen.has(id)) this.hulls.delete(id)
         return
       }
+      case "chat":
+        if (this.chat.length < CHAT_QUEUE_MAX) this.chat.push({ from: msg.from, name: msg.name, team: msg.team, text: msg.text, channel: msg.crew ? "crew" : "all" })
+        return
+      case "obj":
+        this.objective = unpackObjective(msg.o)
+        return
+      case "bump":
+        if (this.bumps.length < COMBAT_MAX) this.bumps.push(msg)
+        return
+      case "bots":
+        this.bots = msg.b
+        return
       case "stats":
         this.stats.clear()
         for (const [id, kills, deaths] of msg.s) this.stats.set(id, { kills, deaths })
@@ -507,6 +574,7 @@ class NetClient implements Net {
         this.seed = msg.seed
         this.players = msg.players
         this.id = msg.id
+        this.dev = msg.dev === true
         this.state = "online"
         this.retries = 0
         this.helmSent = { o: -1, r: -2, at: 0 }

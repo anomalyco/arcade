@@ -1,4 +1,4 @@
-import { type Crew, type CrewPlayer, type RecoverHow, TEAMS, playerOf, shipOf, spawnAt } from "../../shared/crew"
+import { type Crew, type CrewPlayer, type RecoverHow, teamCss, playerOf, shipOf, spawnAt } from "../../shared/crew"
 import { fleetSpawn } from "../../shared/spawn"
 import type { Archipelago } from "../../shared/islands"
 import { hullLimits, settled } from "../../shared/fleet"
@@ -11,6 +11,7 @@ import type { Gunnery } from "../gunnery/gunnery"
 import { TurretPass } from "../render/turret-pass"
 import type { Sea } from "../../shared/sea"
 import type { VehicleKind } from "../../shared/vehicles"
+import { collideHulls, hullSolid, makeContact } from "../../shared/ship-collide"
 import { KNOT, SHIP, type Ship, type ShipPose, copyShip, extrapolatePose, headingTo, lerpShip, makeShip, shipStep } from "../../shared/ship"
 import type { Input } from "../input"
 import type { Net } from "../net"
@@ -46,7 +47,6 @@ const REFUSED: Record<string, string> = {
   "ship-full": "THAT SHIP IS FULL",
   "deck-fire": "DECK ON FIRE",
   sinking: "SHIP IS SINKING",
-  unbalanced: "TEAMS WOULD BE UNEVEN",
 }
 
 /** A hull as drawn this frame: the ship's state settled by its damage, its crew ship id and team. */
@@ -62,7 +62,7 @@ export type Role = "helm" | "pilot" | "gunner" | "none"
  * flight ends (landed, or crashed: a crash, shot down or lost off the map); there is no manual way out of a flight.
  */
 export type FlightSeam = {
-  start(ctx: { ship: number; slot: number; vehicle?: VehicleKind; deck: () => Ship | null; recover: (how: RecoverHow, ship?: number) => void; ships?: () => readonly Ship[] }): void
+  start(ctx: { ship: number; slot: number; vehicle?: VehicleKind; deck: () => Ship | null; recover: (how: RecoverHow) => void; ships?: () => readonly Ship[] }): void
   /** Drives the camera; return false to let the game show the carrier instead. `paused`: a menu has the mouse. */
   update(dt: number, t: number, aspect: number, paused?: boolean): boolean
   stop(): void
@@ -138,6 +138,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
   const cur = makeShip(0, 0, 0)
   const prev = makeShip(0, 0, 0)
   const draw = makeShip(0, 0, 0)
+  const bumpOut = makeContact()
   /** My ship as drawn this frame (predicted or remote), for the cameras and the HUD. */
   const mine = makeShip(0, 0, 0)
   let hasMine = false
@@ -185,7 +186,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       Object.assign(cur, makeShip(p.x, p.z, p.heading, t), { u: p.u, v: p.v, r: p.r, order: p.order, rudder: p.rudder, power: tuple[10] })
     } else {
       const s = shipOf(crew, id)!
-      const at = arch ? fleetSpawn(arch, s.team, s.slot) : spawnAt(s.team, s.slot, heading0)
+      const at = arch ? fleetSpawn(arch, s.team) : spawnAt(s.team, heading0)
       Object.assign(cur, makeShip(at.x, at.z, at.heading, t))
     }
     cur.t = t
@@ -240,7 +241,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
     // A new sortie is a fresh jet. A ship change with the same sortie is a jet rescued from a sunk carrier: it flies on.
     const fresh = sortie >= 0 && sortie !== lastSortie
     if (lastSortie >= 0 && (sortie < 0 || fresh)) flight?.stop()
-    if (fresh && me) flight?.start({ ship: me.ship, slot: me.plane, vehicle: playerVehicle(net.crew, me.id), deck: () => (hasMine ? mine : null), recover: (how, ship) => net.recover(how, ship), ships: () => drawnList })
+    if (fresh && me) flight?.start({ ship: me.ship, slot: me.plane, vehicle: playerVehicle(net.crew, me.id), deck: () => (hasMine ? mine : null), recover: (how) => net.recover(how), ships: () => drawnList })
     if (role !== lastRole || me?.ship !== lastShip) {
       // Helm ↔ jet: ease the view across instead of cutting.
       if ((role === "pilot") !== (lastRole === "pilot") && lastRole !== "none") blend.begin(camera, role === "pilot" ? 1.3 : 1.1)
@@ -323,8 +324,23 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       }
       now += SHIP.tick
       remotes.step(sea, now, SHIP.tick)
+      // Our hull stops against the others where the room's does (the room moves them and decides the damage).
+      if (predicted >= 0) for (const [id, r] of remotes.ships) if (hullSolid(net.hulls.get(id), now)) collideHulls(cur, r.ship, bumpOut, true)
     }
     simT = now
+    // The room's collisions: a shake on both hulls and one hull-slam sound (ship-audio.ts plays a new `slams`).
+    if (net.bumps?.length) {
+      for (const m of net.bumps.splice(0)) {
+        let sound = m.k >= 0.05
+        for (const id of [m.a, m.b]) {
+          const s = id === predicted ? cur : remotes.ships.get(id)?.ship
+          if (!s) continue
+          s.slam = Math.max(s.slam, m.k)
+          if (sound) s.slams++
+          sound = false
+        }
+      }
+    }
     const k = Math.max(0, Math.min(1, (goal - now) / SHIP.tick))
     if (predicted >= 0) {
       const tuple = net.ships.get(predicted)
@@ -374,7 +390,6 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
     turrets.upload()
     wake.upload()
 
-    const team = crew && me ? TEAMS[me.team] : undefined
     const ship = crew && me ? shipOf(crew, me.ship) : undefined
     const refused = net.refused && performance.now() - net.refused.at < FLASH_MS ? (REFUSED[net.refused.error] ?? `CAN'T: ${net.refused.error.replace(/-/g, " ")}`) : ""
     hud.seat(
@@ -384,7 +399,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
             ship: ship.name,
             state: role === "pilot" && me.plane < 0 ? "ON DECK" : role === "gunner" ? (gunOp(me.mount)?.label ?? "") : lastBoatSortie >= 0 ? "BOAT" : "",
             captain: ship.captain === me.id,
-            color: team?.color ?? "",
+            color: me ? teamCss(me.team) : "",
             flash: refused,
           }
         : null,

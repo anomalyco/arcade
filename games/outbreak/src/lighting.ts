@@ -58,10 +58,10 @@ export const OUTBREAK_LOOK_LIGHTING_PRESETS: Readonly<Record<LookPresetId, Parti
   current: { ...DEFAULT_OUTBREAK_LIGHTING },
   sodium_70s: { ...DEFAULT_OUTBREAK_LIGHTING },
   noir: {
-    exposure: 1.03,
-    skyFill: 0.40,
+    exposure: 1.08,
+    skyFill: 0.46,
     moonFill: 0.90,
-    practicalWarmth: 0.0,
+    practicalWarmth: 0.4,
     porchPower: 0.36,
     windowPower: 0.38,
     roomPower: 0.56,
@@ -138,28 +138,124 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-/** 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, then streaming window uniforms (36). */
+/**
+ * The survivor's flashlight as a physical spotlight: inverse-square falloff softened near the lens and windowed to the
+ * beam range, a hot core inside a soft cone with a wide dim spill and faint reflector rings, tilted down so the pool
+ * lands ahead of the survivor and stretches at grazing angles, plus air scatter and one warm bounce. `beamColorKnee` is
+ * the received irradiance where the selective-colour mask reaches 63%, so saturation rises smoothly through the falloff.
+ */
+export type FlashlightBeamSettings = {
+  beamInner: number
+  beamCore: number
+  beamCoreWidth: number
+  beamSpill: number
+  beamSpillWidth: number
+  beamCookie: number
+  beamPoolDistance: number
+  beamNearSoftening: number
+  beamAirScatter: number
+  beamBounce: number
+  beamColorKnee: number
+  practicalColor: number
+}
+
+export const DEFAULT_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
+  beamInner: 0.35,
+  beamCore: 0.6,
+  beamCoreWidth: 0.34,
+  beamSpill: 0.05,
+  beamSpillWidth: 1.5,
+  beamCookie: 0.45,
+  beamPoolDistance: 3.6,
+  beamNearSoftening: 2.0,
+  beamAirScatter: 0.35,
+  beamBounce: 0.35,
+  beamColorKnee: 0.16,
+  practicalColor: 0.55,
+}
+
+export const flashlightBeamControls: LabControl[] = [
+  { key: "beamInner", label: "Inner cone (share of outer)", group: "Flashlight", min: 0, max: 0.95, step: 0.01, unit: "" },
+  { key: "beamCore", label: "Hot core strength", group: "Flashlight", min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "beamCoreWidth", label: "Hot core width (share of outer)", group: "Flashlight", min: 0.05, max: 1, step: 0.01, unit: "" },
+  { key: "beamSpill", label: "Spill level", group: "Flashlight", min: 0, max: 0.5, step: 0.005, unit: "×" },
+  { key: "beamSpillWidth", label: "Spill width (× outer cone)", group: "Flashlight", min: 1, max: 3.5, step: 0.05, unit: "×" },
+  { key: "beamCookie", label: "Reflector rings", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "" },
+  { key: "beamPoolDistance", label: "Pool centre distance (tilt)", group: "Flashlight", min: 2, max: 30, step: 0.25, unit: "m" },
+  { key: "beamNearSoftening", label: "Near-lens softening", group: "Flashlight", min: 0.5, max: 6, step: 0.1, unit: "m" },
+  { key: "beamAirScatter", label: "Air scatter", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "beamBounce", label: "Bounce light", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "beamColorKnee", label: "Colour knee (irradiance)", group: "Flashlight", min: 0.02, max: 1, step: 0.01, unit: "" },
+  { key: "practicalColor", label: "Practical lights restore colour", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
+]
+
+/**
+ * 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at
+ * `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, the streaming window (36) at `OUTBREAK_WINDOW_UNIFORM_OFFSET`, then the Noir flashlight and
+ * visibility-field block (28) at `OUTBREAK_NOIR_UNIFORM_OFFSET`.
+ */
 export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
 export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 112
+export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 140
+
+export type OutbreakLightingUniformSettings =
+  | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
+      flashlightIntensity: number
+      flashlightRange: number
+      flashlightCone: number
+      flashlightWarmth: number
+      fogStyle?: number
+      fogEdgeSoftness?: number
+      fogMemoryDim?: number
+      fogUnknownGrain?: number
+      fogMemorySaturation?: number
+      fogMemoryWarmth?: number
+      fogPenumbra?: number
+      fogPenumbraGrowth?: number
+      fogRevealTime?: number
+      fogFadeTime?: number
+    })
+  | {
+      lighting: OutbreakLightingSettings
+      flashlight: Partial<FlashlightBeamSettings> & {
+        flashlightIntensity: number
+        flashlightRange: number
+        flashlightCone: number
+        flashlightWarmth: number
+      }
+      fog?: {
+        fogStyle?: number
+        fogEdgeSoftness?: number
+        fogMemoryDim?: number
+        fogUnknownGrain?: number
+        fogMemorySaturation?: number
+        fogMemoryWarmth?: number
+        fogPenumbra?: number
+        fogPenumbraGrowth?: number
+        fogRevealTime?: number
+        fogFadeTime?: number
+      }
+    }
 
 export type OutbreakLightingFrameState = {
-  settings: OutbreakLightingSettings & {
-    flashlightIntensity: number
-    flashlightRange: number
-    flashlightCone: number
-    flashlightWarmth: number
-    fogStyle?: number
-    fogEdgeSoftness?: number
-    fogMemoryDim?: number
-    fogUnknownGrain?: number
-  }
+  settings: OutbreakLightingUniformSettings
   playerX: number
   playerY: number
   playerH: number
   playerAim: number
   flashlightOutput: number
   flashlightSlot: number
+  /** Lens height above the world origin (ground plus hand height). */
+  flashlightHeight?: number
+  /** Where the beam's axis first meets a wall or the ground, for the bounce. */
+  flashlightBounce?: readonly [number, number]
+  /** World height of the bounce source. */
+  flashlightBounceHeight?: number
+  /** Distance along the aim to the first wall (or the beam range), where the air glow stops. */
+  flashlightAirLimit?: number
+  /** Seconds since the last frame; 0 snaps the visibility field (teleports, resets). */
+  frameDt?: number
   inInteriorView: boolean
   /** Lens centre of the streetlamp nearest the camera target. */
   streetHead: readonly [number, number, number]
@@ -194,12 +290,16 @@ export function packOutbreakLightingUniforms(
   flashColor: readonly [number, number, number],
   out: Float32Array<ArrayBuffer> = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS),
 ): Float32Array<ArrayBuffer> {
-  const { settings: s } = state
+  const raw = state.settings
+  const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog } : raw
   const dirX = Math.cos(state.playerAim)
   const dirY = Math.sin(state.playerAim)
   const handX = state.playerX + dirX * 0.24
   const handY = state.playerY + dirY * 0.24
-  const halfRad = (Math.max(18, Math.min(90, s.flashlightCone * 0.55)) * Math.PI) / 360
+  const halfRad = (Math.max(10, Math.min(120, s.flashlightCone)) * Math.PI) / 360
+  const beam = { ...DEFAULT_FLASHLIGHT_BEAM, ...s }
+  const lensH = state.flashlightHeight ?? state.playerH + 1.34
+  const tilt = Math.atan2(Math.max(0.3, lensH - state.playerH), Math.max(0.5, beam.beamPoolDistance))
 
   // u0
   out[0] = s.skyFill
@@ -223,7 +323,7 @@ export function packOutbreakLightingUniforms(
   out[15] = dirY
   // u4
   out[16] = Math.tan(halfRad)
-  out[17] = state.inInteriorView ? Math.min(s.flashlightRange, 7.2) : Math.min(s.flashlightRange, 9.8)
+  out[17] = s.flashlightRange
   out[18] = state.flashlightOutput * s.flashlightIntensity
   out[19] = state.flashlightSlot
   // u5
@@ -252,7 +352,45 @@ export function packOutbreakLightingUniforms(
   out[40] = (s.fogStyle ?? 1) * 4 + Math.max(0, Math.min(0.999, s.fogUnknownGrain ?? 0.48))
   out[41] = s.fogEdgeSoftness ?? 0.78
   out[42] = s.fogMemoryDim ?? 0.42
-  out[43] = 0
+  out[43] = s.fogMemorySaturation ?? 0.2
+  const N = OUTBREAK_NOIR_UNIFORM_OFFSET
+  // u11: lens height, cos(outer half-angle), inner share, core strength
+  out[N + 0] = lensH
+  out[N + 1] = Math.cos(halfRad)
+  out[N + 2] = beam.beamInner
+  out[N + 3] = beam.beamCore
+  // u12: core width share, spill level, spill width share, reflector rings
+  out[N + 4] = beam.beamCoreWidth
+  out[N + 5] = beam.beamSpill
+  out[N + 6] = beam.beamSpillWidth
+  out[N + 7] = beam.beamCookie
+  // u13: axis y, axis plan scale, near-lens softening, colour knee
+  out[N + 8] = -Math.sin(tilt)
+  out[N + 9] = Math.cos(tilt)
+  out[N + 10] = beam.beamNearSoftening
+  out[N + 11] = beam.beamColorKnee
+  // u14: bounce point, bounce power, air scatter
+  const bounce = state.flashlightBounce ?? [handX + dirX * beam.beamPoolDistance, handY + dirY * beam.beamPoolDistance]
+  out[N + 12] = bounce[0]
+  out[N + 13] = bounce[1]
+  out[N + 14] = state.flashlightOutput * s.flashlightIntensity * beam.beamBounce
+  out[N + 15] = beam.beamAirScatter
+  // u15: penumbra base, penumbra growth per metre, reveal and fade blend factors for this frame
+  const dt = state.frameDt ?? 1 / 60
+  out[N + 16] = s.fogPenumbra ?? 0.22
+  out[N + 17] = s.fogPenumbraGrowth ?? 0.05
+  out[N + 18] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogRevealTime ?? 0.07))
+  out[N + 19] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogFadeTime ?? 0.25))
+  // u16: memory warmth, practical-light colour weight, cos of the spill cutoff, air glow limit
+  out[N + 20] = s.fogMemoryWarmth ?? 0.6
+  out[N + 21] = beam.practicalColor
+  out[N + 22] = Math.cos(Math.min(Math.PI * 0.95, halfRad * beam.beamSpillWidth * 1.7))
+  out[N + 23] = state.flashlightAirLimit ?? s.flashlightRange
+  // u17: bounce height (a ground pool sits low, a wall hotspot at chest height)
+  out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
+  out[N + 25] = 1 / Math.max(1e-3, halfRad)
+  out[N + 26] = 0
+  out[N + 27] = 0
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -756,7 +894,8 @@ export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
   return buf
 }
 
-export const outbreakLightingDeclarationsWgsl = /* wgsl */ `
+/** Custom uniform block at binding 13, shared by the scene shader and the visibility-field compute pass. */
+export const outbreakLightingStructWgsl = /* wgsl */ `
 struct OutbreakLightingUniforms {
   u0: vec4f, // skyFill, moonFill, practicalWarmth, lightFalloff
   u1: vec4f, // porchPower, windowPower, roomPower, streetPower
@@ -768,14 +907,30 @@ struct OutbreakLightingUniforms {
   u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
-  u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, reserved
+  u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
   veg: FoliageWindConfig,
   vegActors: FoliageActors,
   win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   bldRects: array<vec4f, 8>,
+  u11: vec4f, // flashLensHeight, flashCosOuter, flashInnerShare, flashCore
+  u12: vec4f, // flashCoreShare, flashSpill, flashSpillShare, flashCookie
+  u13: vec4f, // flashAxisY, flashAxisPlan, flashNearSoftening, flashColorKnee
+  u14: vec4f, // bounceX, bounceY, bouncePower, airScatter
+  u15: vec4f, // fogPenumbra, fogPenumbraGrowth, fieldRevealBlend, fieldFadeBlend
+  u16: vec4f, // fogMemoryWarmth, practicalColor, flashCosSpillCut, flashAirLimit
+  u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
+`
+
+export const outbreakLightingDeclarationsWgsl = /* wgsl */ `
+${outbreakLightingStructWgsl}
 var<private> outbreakFlashMask: f32;
+var<private> outbreakFlashIrr: f32;
+var<private> outbreakAlbedo: vec3f;
+var<private> outbreakPracticalIrr: f32;
+var<private> outbreakSeen: f32;
+
 
 /**
  * Temperature-balanced twilight sky fill: smoothly transitions between cool steel-blue night (practicalWarmth -> 0)
@@ -863,8 +1018,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     var wetPuddle = 0.0;
     if (OL.u8.y > 0.01) {
       if (world.y < 0.35 && n.y > 0.75) {
-        let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u8.y * (0.45 + 0.85 * q.x * q.y);
+        // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
+        let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+        wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
         col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
       }
     }
@@ -942,62 +1098,76 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
   return col;
 }
 
+/** Radiant intensity of the lens relative to the other lights, so beam intensity 1 reads as a strong torch. */
+const FLASH_RADIANCE: f32 = 9.0;
+
+/** Beam intensity at angle acos(cosT) off the axis: soft cone, hot core, reflector rings and a wide dim spill. */
+fn flashProfile(cosT: f32) -> f32 {
+  let t = acos(clamp(cosT, -1.0, 1.0)) * OL.u17.y;
+  let cone = 1.0 - smoothstep(OL.u11.z, 1.0, t);
+  let dark = (t - OL.u12.x * 1.35) * 9.0;
+  let bright = (t - 0.84) * 12.5;
+  let rings = 1.0 + OL.u12.w * (0.2 * exp(-bright * bright) - 0.18 * exp(-dark * dark) + 0.035 * sin(t * 29.0) * cone);
+  let tc = t / max(OL.u12.x, 0.05);
+  let ts = t / max(OL.u12.z, 1.0);
+  return cone * rings + OL.u11.w * exp(-tc * tc) + OL.u12.y * exp(-ts * ts);
+}
+
+/** Attenuation of the local flashlight (cone.w 2) for lightSum; toLight points from the surface to the lens. */
+fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
+  let cosT = -dot(toLight, vec3f(OL.u3.z * OL.u13.y, OL.u13.x, OL.u3.w * OL.u13.y));
+  if (cosT <= OL.u16.z) { return 0.0; }
+  return power * FLASH_RADIANCE * flashProfile(cosT) * flashFalloff(d3 * d3);
+}
+
+/** Inverse-square falloff softened inside the near-lens radius and windowed smoothly to zero at the beam range. */
+fn flashFalloff(d2: f32) -> f32 {
+  let r = max(OL.u4.y, 1.0);
+  let x2 = d2 / (r * r);
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
+  let soft = max(OL.u13.z, 0.1);
+  return win * win / (1.0 + d2 / (soft * soft));
+}
+
 /**
- * Blog Game Tip #2: Analytical Ray-Cone Volumetric Flashlight + Shadow-Gated 3D Drifting Dust Motes (dustAt).
- * Always 100% live on polar slot 1 (shadowAt).
+ * Flashlight light the lights loop doesn't give. Direct light comes from lightSum through flashAttenuation (cone.w 2),
+ * which leaves the received irradiance in outbreakFlashIrr. Air scatter is the closed form of looking straight down
+ * through the cone: the chord through the beam grows with distance while intensity falls with its square, so the glow
+ * fades like 1 / distance from the lens, shaped by the plan cone and stopped at the first wall along the aim. The
+ * bounce is one warm diffuse fill from where the axis lands (the caller multiplies by live sight, which keeps both out
+ * of unseen rooms). Leaves the received flashlight irradiance in outbreakFlashMask.
  */
-fn evalFlashlightBeam(world: vec3f, n: vec3f, baseAlbedo: vec3f, inRoom: bool, mat: i32) -> vec3f {
-  outbreakFlashMask = 0.0;
-  if (OL.u4.z <= 0.001 || OL.u4.w < 0.5 || OL.u2.x <= 0.01) { return vec3f(0.0); }
-  let fOrig = OL.u3.xy;
-  let fDir = OL.u3.zw;
-  let fSide = vec2f(-fDir.y, fDir.x);
-  let rel = world.xz - fOrig;
-  let along = dot(rel, fDir);
-  let across = abs(dot(rel, fSide));
-  let tanHalf = max(0.16, OL.u4.x * 1.18);
-  let fRange = max(2.8, OL.u4.y);
-  let coneR = 0.18 + max(0.0, along) * tanHalf;
-  if (along < -0.55 || along > fRange || across > coneR * 1.45 || world.y > 1.85) {
-    return vec3f(0.0);
+fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
+  var irr = outbreakFlashIrr;
+  var add = vec3f(0.0);
+  let air = OL.u14.w * OL.u2.x * OL.u4.z;
+  let rel = world.xz - OL.u3.xy;
+  let along = dot(rel, OL.u3.zw);
+  if (air > 0.001 && along > 0.0 && along < OL.u16.w) {
+    let c = along * inverseSqrt(max(dot(rel, rel), 1e-6));
+    let cone = smoothstep(mix(OL.u11.y, 1.0, 0.1), mix(OL.u11.y, 1.0, 0.75), c);
+    let core = smoothstep(mix(OL.u11.y, 1.0, 0.7), 1.0, c);
+    let fade = smoothstep(0.05, 0.45, along) * (1.0 - smoothstep(OL.u16.w - 0.8, OL.u16.w, along)) * clamp(1.0 - along / OL.u4.y, 0.0, 1.0);
+    add += vec3f(air * (cone + OL.u11.w * core * core) * fade / (1.0 + along * 1.4) * 0.5);
   }
-  let d0 = length(rel);
-  var footAdd = vec3f(0.0);
-  if (inRoom && world.y < 0.35 && d0 < 2.2) {
-    let footSpill = (1.0 - d0 / 2.2) * (1.0 - min(1.0, across / 1.1));
-    footAdd = baseAlbedo * vec3f(0.28, 0.20, 0.11) * footSpill;
-    outbreakFlashMask = clamp(footSpill * 1.1, 0.0, 0.85);
+  let bPow = OL.u14.z * FLASH_RADIANCE;
+  let toB = vec3f(OL.u14.x, OL.u17.x, OL.u14.y) - world;
+  let db2 = dot(toB, toB);
+  if (bPow > 0.001 && db2 < 36.0 && world.y < 2.78) {
+    // A diffuse source at the pool: surfaces facing it catch the fill, the ground around it barely does.
+    let face = max(0.0, dot(n, toB * inverseSqrt(max(db2, 1e-4))));
+    let eb = bPow * face * (1.0 - db2 / 36.0) / (1.0 + db2 * 0.3) * 0.5;
+    add += outbreakAlbedo * vec3f(1.0, 0.86, 0.7) * (eb * GAIN);
+    irr += eb;
   }
-  if (along < -0.12 || (mat == 12 && length(world.xz - OL.u6.xy) < 0.55)) {
-    return footAdd;
-  }
-  let fSlot = u32(round(OL.u4.w));
-  let radial = exp(-pow(across / (coneR * 0.78), 2.0)) * (1.0 - smoothstep(coneR * 0.72, coneR * 1.45, across));
-  let axial = smoothstep(-0.12, 0.18, along) * pow(clamp(1.0 - along / fRange, 0.0, 1.0), 1.25);
-  let profile = radial * axial;
-  if (profile <= 0.008) { return footAdd; }
+  outbreakFlashMask = irr;
+  return add * OL.u5.rgb;
+}
 
-  let aF = (atan2(rel.y, rel.x) + TAU) % TAU;
-  let rayF = u32(i32(floor(aF / TAU * f32(RAYS))) + i32(RAYS)) % RAYS;
-  let hitF = polar[(fSlot * RAYS + rayF) * 2u].x;
-  let vis = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, d0);
-  if (vis <= 0.001) { return footAdd; }
-
-  outbreakFlashMask = max(outbreakFlashMask, clamp(profile * vis * 3.4, 0.0, 1.0));
-
-  let moteCell = floor(world.xz * 7.5 + vec2f(F.cam.w * 0.18, -F.cam.w * 0.14));
-  let moteHash = hash2(moteCell);
-  let moteGlint = smoothstep(0.92, 0.99, moteHash) * (0.5 + 0.5 * sin(F.cam.w * 2.4 + moteHash * 31.0));
-
-  let surfW = select(0.36 + 0.58 * max(0.0, dot(n.xz, -fDir)), 1.0 + select(0.0, OL.u8.y * OL.u2.y * 0.85, !inRoom), world.y < 0.32 && n.y > 0.65);
-  let w = clamp(OL.u0.z, 0.0, 1.0);
-  let beamCol = mix(vec3f(1.08, 0.96, 0.78), vec3f(1.0, 0.62, 0.24), w * 0.78);
-  let mist = (profile / (0.38 + max(0.0, along) * 0.22) + moteGlint * 0.18) * (OL.u2.x + select(0.0, OL.u8.y * 0.35, !inRoom)) * 0.28 * surfW;
-  var beamAlbedo = baseAlbedo;
-  if (mat == 22 || mat == 20) {
-    beamAlbedo = mix(baseAlbedo, baseAlbedo * vec3f(0.95, 1.35, 0.74), outbreakFlashMask * 0.48);
-  }
-  return footAdd + (beamAlbedo * 1.65 + beamCol * 0.05) * beamCol * OL.u4.z * mist * vis;
+/** Selective-colour mask from received flashlight, bounce and practical light, through a soft exponential knee. */
+fn outbreakColorMask(flashIrr: f32) -> f32 {
+  let e = flashIrr + outbreakPracticalIrr * OL.u16.y;
+  return 1.0 - exp(-e / max(OL.u13.w, 0.01));
 }
 
 /**

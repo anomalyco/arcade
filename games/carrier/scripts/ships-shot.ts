@@ -1,7 +1,7 @@
-// Ship damage on a real GPU. Runs ON hailmary (Mac Studio): three pages in one fresh room. B (team 1) helms its carrier
-// at half speed; A (team 0) bombs it from an F-35C (direct hits and a near miss); C (team 0) strafes it and fires
-// dumbfire missiles from a Hornet; A's bombs rearm and finish it. B watches its health drop, the edge flash, the deck
-// burn, the sinking, and lands aboard another ship of its team. Captures through each game's own device under the DOM.
+// Ship damage on a real GPU. Runs ON hailmary (Mac Studio): three pages in one fresh room, each on a carrier of its own.
+// B (team 1) helms its carrier at half speed; A (team 0) bombs it from an F-35C (direct hits and a near miss); C (team 2)
+// strafes it and fires dumbfire missiles from a Hornet; A's bombs rearm and finish it. B watches its health drop, the
+// edge flash, the deck burn, the sinking, and moves to its replacement. Captures through each game's own device under the DOM.
 //
 //   ssh hailmary 'cd /tmp/carrier-ocean && ~/.bun/bin/bun ships-shot.ts --out=/tmp/carrier-ships/out'
 //
@@ -234,13 +234,12 @@ const a = await open(room, "ADA")
 let ma = await until(a, (m) => m.online === "online" && m.role !== "none", 20_000)
 const b = await open(room, "BO")
 let mb = await until(b, (m) => m.online === "online" && m.role !== "none", 20_000)
-await run(b, "carrier.net.newShip(1)")
 mb = await until(b, (m) => m.team === 1 && m.role === "helm", 5000)
 const c = await open(room, "CY")
 let mc = await until(c, (m) => m.online === "online" && m.role !== "none", 20_000)
 const target = mb.ship
 console.log(`room ${room}: A ${fmt(ma)}\nB ${fmt(mb)}\nC ${fmt(mc)}`)
-check(ma.team === 0 && mb.team === 1 && mc.team === 0, "A and C on team 0, B helms team 1's carrier")
+check(ma.team === 0 && mb.team === 1 && mc.team === 2, "A, B and C each on a carrier of their own; B helms team 1's")
 // B rings up half speed (helm preset 5): the deck moves under the bombs.
 await b.bringToFront()
 await b.keyboard.press("Digit5")
@@ -375,7 +374,7 @@ await shot(b, "damage/10-b-going-under", target)
 await b.waitForTimeout(8000)
 await shot(b, "damage/10b-b-bow-under", target)
 mb = await until(b, (m) => m.ship !== target, 25_000, target)
-check(mb.ship !== target && mb.team === 1 && mb.ships >= 2, `B moved to another team-1 ship after the sinking: ${fmt(mb)}`)
+check(mb.ship !== target && mb.team === 1 && mb.ships >= 2, `B moved to its replacement (team 1) after the sinking: ${fmt(mb)}`)
 await b.waitForTimeout(2500)
 await shot(b, "damage/11-b-new-ship", target)
 console.log(logs.slice(0, 30).join("\n"))

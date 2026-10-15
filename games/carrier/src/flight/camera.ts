@@ -1,3 +1,4 @@
+import type { LabControl } from "@arcade/kit/lab-panel"
 import { mat4d } from "wgpu-matrix"
 import { PLANE, type Plane, type PlaneTuning, type Quat, planeQuat, planeSpeed, quatAxis, quatMul, quatRotate, quatSlerp, type Vec3 } from "../../shared/plane"
 import { FAR, NEAR } from "../render/camera"
@@ -37,6 +38,31 @@ export const FLIGHT_CAM = {
 
 export type ViewMode = "chase" | "cockpit"
 
+/**
+ * The bombsight view, typed settings bound to the Lab panel (debug menu, SIGHT tab): first person from just ahead of
+ * the nose and under it, tipped down so the ground ahead and below shows on the run in, zoomed a little. Live edits.
+ */
+export type SightCamSettings = {
+  /** Selecting bombs switches to the bombsight view. */
+  sightView: boolean
+  /** Tilt below the jet's nose (degrees). */
+  sightDown: number
+  /** Vertical field of view (degrees). */
+  sightFov: number
+  /** Eye ahead of the nose tip and below the jet's centre line (m). */
+  sightAhead: number
+  sightBelow: number
+}
+export const SIGHT_CAM_DEFAULTS: Readonly<SightCamSettings> = { sightView: true, sightDown: 14, sightFov: 42, sightAhead: 1.2, sightBelow: 0.7 }
+export const SIGHT_CAM: SightCamSettings = { ...SIGHT_CAM_DEFAULTS }
+export const SIGHT_CAM_CONTROLS: LabControl[] = [
+  { key: "sightView", label: "Bombsight view with bombs", group: "Bombsight view", type: "toggle" },
+  { key: "sightDown", label: "Look down", group: "Bombsight view", min: 0, max: 35, step: 0.5, unit: "°" },
+  { key: "sightFov", label: "Field of view", group: "Bombsight view", min: 20, max: 70, step: 1, unit: "°" },
+  { key: "sightAhead", label: "Eye ahead of nose", group: "Bombsight view", min: 0, max: 4, step: 0.1, unit: "m" },
+  { key: "sightBelow", label: "Eye below centre line", group: "Bombsight view", min: 0, max: 2, step: 0.05, unit: "m" },
+]
+
 const ease = (dt: number, lag: number) => 1 - Math.exp(-dt / lag)
 
 /**
@@ -47,6 +73,8 @@ const ease = (dt: number, lag: number) => 1 - Math.exp(-dt / lag)
  */
 export class FlightCam {
   mode: ViewMode = "chase"
+  /** The flown type's nose tip (body z from the centre, m): the bombsight eye sits just ahead of it. */
+  nose = 9
   readonly eye: Vec3 = [0, 0, 0]
   readonly forward: Vec3 = [0, 0, -1]
   readonly up: Vec3 = [0, 1, 0]
@@ -75,11 +103,35 @@ export class FlightCam {
   private tmp: Quat = [0, 0, 0, 1]
   private v: Vec3 = [0, 0, 0]
 
+  /** Bombs are selected while flying (the host sets it every frame). */
+  private bombs = false
+  /** C left the bombsight for the chase or cockpit view, until bombs are selected again. */
+  private sightOff = false
+
   reset(): void {
     this.placed = false
   }
 
+  /** Bombs selected (flying): the bombsight view takes over from chase or cockpit; any other weapon gives it back. */
+  setBombs(on: boolean): void {
+    if (on === this.bombs) return
+    this.bombs = on
+    this.sightOff = false
+    this.placed = false
+  }
+
+  /** The bombsight view is showing. */
+  get sighting(): boolean {
+    return this.bombs && !this.sightOff && SIGHT_CAM.sightView
+  }
+
+  /** C: chase ⇄ cockpit; with bombs selected, the bombsight ⇄ the view it replaced. */
   toggle(): void {
+    if (this.bombs && SIGHT_CAM.sightView) {
+      this.sightOff = !this.sightOff
+      this.placed = false
+      return
+    }
     this.mode = this.mode === "chase" ? "cockpit" : "chase"
   }
 
@@ -101,7 +153,8 @@ export class FlightCam {
     const out = (1 - FLIGHT_CAM.rollFollow) * (ab < Math.PI / 2 ? ab : Math.PI - ab) * Math.sign(bank) * (1 - vertical)
     // Removing bank b (right wing down +) is a roll left about the body +Z axis by -b.
     quatMul(pq, quatAxis(0, 0, 1, -out, this.tmp), pq)
-    if (!this.placed || this.mode === "cockpit") {
+    const sight = this.sighting
+    if (!this.placed || this.mode === "cockpit" || sight) {
       this.q[0] = pq[0]
       this.q[1] = pq[1]
       this.q[2] = pq[2]
@@ -133,7 +186,18 @@ export class FlightCam {
     const jy = s2 * (Math.sin(n * 47.9 + 0.7) * 0.6 + Math.sin(n * 73.3 + 2.1) * 0.4)
 
     let fov: number
-    if (this.mode === "cockpit") {
+    if (sight) {
+      // Under the nose with the jet's full attitude (the horizon banks as in the cockpit), free look still works.
+      const q0 = planeQuat(p, this.tq)
+      const e = quatRotate(q0[0], q0[1], q0[2], q0[3], 0, -SIGHT_CAM.sightBelow, this.nose + SIGHT_CAM.sightAhead, this.v)
+      this.eye[0] = p.x + e[0]
+      this.eye[1] = p.y + e[1]
+      this.eye[2] = p.z + e[2]
+      quatMul(q0, quatAxis(0, 1, 0, this.lookYaw, this.tmp), cq)
+      quatMul(cq, quatAxis(1, 0, 0, -this.lookPitch, this.tq), cq)
+      fov = SIGHT_CAM.sightFov * DEG
+      this.placed = false
+    } else if (this.mode === "cockpit") {
       const q0 = planeQuat(p, this.tq)
       const e = quatRotate(q0[0], q0[1], q0[2], q0[3], eyeModel[0], eyeModel[1] - P.centre, eyeModel[2], this.v)
       this.eye[0] = p.x + e[0]
@@ -165,7 +229,7 @@ export class FlightCam {
     }
     this.fov += (fov - this.fov) * ease(dt, 0.5)
     // Look along the camera's forward, tipped down a little so the jet sits below centre; wobble with trauma.
-    const down = this.mode === "chase" ? FLIGHT_CAM.lookDown : FLIGHT_CAM.cockpitDown
+    const down = sight ? SIGHT_CAM.sightDown * DEG : this.mode === "chase" ? FLIGHT_CAM.lookDown : FLIGHT_CAM.cockpitDown
     const wob = s2 * FLIGHT_CAM.shakeAngle
     quatMul(cq, quatAxis(1, 0, 0, down + wob * Math.sin(n * 53.7), this.tq), cq)
     quatMul(cq, quatAxis(0, 0, 1, wob * Math.sin(n * 59.3 + 1), this.tq), cq)

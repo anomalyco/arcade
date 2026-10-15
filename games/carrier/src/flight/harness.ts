@@ -22,7 +22,7 @@ import { PlaneFx } from "../render/plane-fx"
 import { loadPlaneModels } from "../render/plane-glb"
 import { type PlaneDrawPose, PlanePass } from "../render/plane-pass"
 import { teamColor } from "../render/team"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 import { DEFAULT_GRADE } from "../render/post"
 import { Renderer } from "../render/renderer"
 import { ShipPass, type ShipDrawPose } from "../render/ship-pass"
@@ -186,7 +186,7 @@ async function main() {
     lerpShip(shipPrev, ship, k, shipDraw)
     const aspect = canvas.width / canvas.height
     const pose = flight.frame(dt, k, aspect, (x, z) => seaHeight(sea, x, z, target), { w: innerWidth, h: innerHeight }, shipDraw)
-    hud.homeColor = TEAMS[debug.team]?.color ?? "#f4f7fb"
+    hud.homeColor = teamCss(debug.team)
     if (flight.phase === "deck" && input.launch) flight.requestLaunch()
     input.endFrame()
 

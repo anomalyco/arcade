@@ -4,7 +4,7 @@ import { PISTOL_RELOAD_TIME } from "../shared/combat"
 import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
 import { ActorFeedback, lootCallout } from "../src/hud/actor-feedback"
-import { CalloutModel, FADE_OUT, type CalloutKind } from "../src/hud/callouts"
+import { CalloutModel, FADE_OUT, type CalloutKind, type CalloutOptions } from "../src/hud/callouts"
 import { alignFor, chooseSide, SideBlend, VITALS_BARS, VITALS_BESIDE, VITALS_EDGE, VITALS_FEET, VITALS_GROUND, VITALS_ICONS } from "../src/hud/placement"
 import { DEFAULT_HUD_SETTINGS } from "../src/hud/settings"
 import { resolveStyle, STYLE_BELOW, STYLE_DIEGETIC, STYLE_HADES, STYLE_TODAY, STYLE_ZOMBOID } from "../src/hud/styles"
@@ -96,7 +96,7 @@ describe("actor feedback from simulation state", () => {
         noises: session.view.noises,
         noiseSource: "player",
         lowBattery: 0.25,
-        reloadKey: "P",
+        reloadKey: "R",
         notices: session.view.notices.splice(0),
       })
     const step = (cmd: Partial<Command> = {}, n = 1) => {
@@ -189,6 +189,21 @@ describe("actor feedback from simulation state", () => {
     p.health -= 12
     step()
     expect(seen.at(-1)).toEqual({ text: "\u221212 HP", kind: "danger" })
+  })
+
+  test("an empty magazine names the reload key in QWERTY and draws it as a key cap", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const seen: { text: string; options?: CalloutOptions }[] = []
+    const fb = new ActorFeedback((text, _kind, options) => seen.push({ text, options }))
+    const observe = () => fb.observe(session.view.player, { time: session.view.time, reloadKey: "R" })
+    observe()
+    // Fire the magazine dry (one shot every few ticks), with spare rounds left.
+    for (let i = 0; i < 600 && session.view.player.magAmmo > 0; i++) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: i % 12 === 0 }, 0)
+      observe()
+    }
+    expect(session.view.player.reserveAmmo).toBeGreaterThan(0)
+    expect(seen.find((s) => s.text === "Empty, R to reload")?.options?.keyCap).toEqual({ code: "KeyR", label: "R" })
   })
 
   test("loot sentences map to short callouts", () => {
@@ -343,5 +358,7 @@ describe("HUD styles", () => {
     expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID, calloutPlacement: 0, vitalsPlacement: VITALS_FEET })).toMatchObject({ callouts: "down", vitals: VITALS_FEET })
     expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW, avoidAim: false }).avoid).toBe(false)
     expect(DEFAULT_HUD_SETTINGS.hudStyle).toBe(STYLE_BELOW)
+    // Kit turned the noise tags off; they stay a Lab option (HUD › Noise callouts).
+    expect(DEFAULT_HUD_SETTINGS.noiseCallouts).toBe(false)
   })
 })

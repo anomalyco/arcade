@@ -5,7 +5,7 @@
 // The model (tuning in `FLEET`):
 // - HULL: health, `FLEET.hp` (1,000). A full gun overheat run (160 rounds) takes ~4%, a missile 5%, a direct bomb hit
 //   17.5% (an F-35C's four bombs ≈ 70%), a bomb bursting in the water within `near` m of the hull 1.5–7%, a jet
-//   crashing into the ship 5%. Friendly fire is off: only the other team's weapons (and jets) hurt a ship.
+//   crashing into the ship 5%. Friendly fire is off: only other carriers' weapons (and jets) hurt a ship.
 // - Zones, from where a hit lands in ship-local space (`hullZone`): the ISLAND (bridge) box, the DECK (on or above the
 //   flight deck), else the HULL side. Island hits also damage the bridge (`island` 0..1): the ship's top speed and
 //   rudder authority fall with it (`hullLimits`, up to 45% slower). Bombs and missiles on the deck start a deck fire:
@@ -19,7 +19,7 @@
 //   physics, so every client and the room agree from health alone.
 // - Sinking: at 0 health the ship starts sinking (`sinkAt`): engines stop, the helm is ignored, fires and explosions,
 //   it goes down by the bow over `sinkTime` s (`settled` grows the offset), then the room scuttles it
-//   (shared/crew.ts `scuttle`: its crew moves to another ship of the team; airborne pilots keep flying).
+//   (shared/crew.ts `scuttle`: its crew moves to its replacement; airborne pilots keep flying).
 
 import { BEAM_WL, BOW_Z, DECK_Y, ISLAND, STERN_Z } from "./carrier-spec"
 import type { WeaponKind } from "./weapons"
@@ -107,8 +107,9 @@ export function waterlineDistance(x: number, z: number): number {
   return Math.hypot(dx, dz)
 }
 
-/** What can damage a ship: jet weapons, a jet crashing into it, and ship guns' shells (gunnery, by explicit amount). */
-export type ShipDamageKind = WeaponKind | "crash" | "shell"
+/** What can damage a ship: jet weapons, a jet crashing into it, ship guns' shells (gunnery, by explicit amount) and
+ *  another carrier ramming it (shared/ship-collide.ts, by explicit amount). */
+export type ShipDamageKind = WeaponKind | "crash" | "shell" | "ram"
 
 /** Damage a weapon does to a ship: a direct hit (near 0), or a bomb bursting in the water `near` m from the hull. */
 export function shipDamage(w: ShipDamageKind, near = 0): number {
@@ -116,12 +117,13 @@ export function shipDamage(w: ShipDamageKind, near = 0): number {
   if (w === "shell") return FLEET.shell
   if (w === "missile") return FLEET.missile
   if (w === "crash") return FLEET.crash
+  if (w === "ram") return 0
   if (near <= 0) return FLEET.bomb
   if (near > FLEET.near) return 0
   return FLEET.nearMax + (FLEET.nearMin - FLEET.nearMax) * (near / FLEET.near)
 }
 
-const ISLAND_DAMAGE: Record<ShipDamageKind, number> = { gun: FLEET.islandGun, missile: FLEET.islandMissile, bomb: FLEET.islandBomb, crash: FLEET.islandMissile, shell: FLEET.islandMissile * 0.4 }
+const ISLAND_DAMAGE: Record<ShipDamageKind, number> = { gun: FLEET.islandGun, missile: FLEET.islandMissile, bomb: FLEET.islandBomb, crash: FLEET.islandMissile, shell: FLEET.islandMissile * 0.4, ram: 0 }
 
 /**
  * A hit on a ship, as the fleet applies it: (x, y, z) is the ship-local point; `near` > 0 for a bomb in the water; `n`
@@ -171,7 +173,7 @@ export class Fleet {
     s.by = h.by
     s.side += Math.sign(h.x) * dmg
     if (zone === "island") s.island = Math.min(1, s.island + ISLAND_DAMAGE[h.w] * n)
-    const big = h.w === "bomb" || h.w === "missile" || h.w === "crash" || (h.w === "shell" && dmg >= 20)
+    const big = h.w === "bomb" || h.w === "missile" || h.w === "crash" || ((h.w === "shell" || h.w === "ram") && dmg >= 20)
     if (big && zone === "deck") s.deckFire = t + FLEET.deckFire
     if (big && h.near <= 0) {
       s.fires.push({ x: h.x, y: Math.max(h.y, zone === "hull" ? 4 : h.y), z: h.z, t })

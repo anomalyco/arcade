@@ -90,13 +90,13 @@ async function mutate(page: Page, patch: Record<string, unknown>) {
   await page.evaluate((patch) => Object.assign((window as any).__arcadeHarness.state().player, patch), patch)
 }
 
-/** The same three callouts for every placement: an action in progress, a loot pop and a noise. */
+/** The same three callouts for every placement: an action in progress and two loot pops (noise tags are off by default). */
 async function stagedStack(page: Page) {
   await page.evaluate(() => {
     const layer = (window as any).__arcadeHarness.hud.layer
     layer.callout("local", "Reloading", "progress", { key: "reload", progress: 0.55, duration: 30 })
     layer.callout("local", "+6 9mm", "result", { duration: 30 })
-    layer.callout("local", "Noise 18 m", "noise", { key: "noise", duration: 30 })
+    layer.callout("local", "+1 plank", "result", { duration: 30 })
   })
 }
 

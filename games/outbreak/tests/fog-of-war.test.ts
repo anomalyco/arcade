@@ -138,6 +138,8 @@ describe("Outbreak actor visibility & fog-of-war rules", () => {
     expect(offset).toBeLessThan(1.5)
 
     const sprites = new Float32Array(64 * SPRITE_FLOATS)
+    // Sound ripples are an off-by-default Lab option.
+    expect(collectFogSoundSprites([unseen, visible], [], { x: 30, y: 41 }, v, 1.25, () => 0, DEFAULT_FOG_OF_WAR, sprites, 0)).toBe(0)
     const count = collectFogSoundSprites(
       [unseen, visible],
       [],
@@ -145,7 +147,7 @@ describe("Outbreak actor visibility & fog-of-war rules", () => {
       v,
       1.25,
       () => 0,
-      DEFAULT_FOG_OF_WAR,
+      { ...DEFAULT_FOG_OF_WAR, fogSoundCues: 1 },
       sprites,
       0,
     )

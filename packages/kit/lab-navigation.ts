@@ -2,6 +2,10 @@ export type LabValue = boolean | number | string
 export type LabSettings = Record<string, LabValue>
 export type LabControl = {
   key: string
+  /** Property name on the bound subsystem `settings` object when `key` is prefixed (e.g. `key: "ai.walkSpeed"`, `field: "walkSpeed"`). */
+  field?: string
+  /** Legacy flat keys migrated to `key` when loading presets, URLs, or saved browser variants. */
+  legacyKeys?: readonly string[]
   label: string
   group?: string
   unit?: string
@@ -18,6 +22,18 @@ export type LabControl = {
   | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
 )
 export type LabRow = { group: string; control?: LabControl }
+
+/** Resolves the property name on a subsystem `settings` object for a `LabControl`. */
+export function resolveControlField(control: LabControl, settings: Readonly<Record<string, unknown>>): string {
+  if (control.field) return control.field
+  if (control.key in settings) return control.key
+  const dot = control.key.indexOf(".")
+  if (dot > 0) {
+    const leaf = control.key.slice(dot + 1)
+    if (leaf in settings) return leaf
+  }
+  return control.key
+}
 const wrap = (index: number, length: number) => (index % length + length) % length
 
 export function inferControlUnit(key: string, label: string, explicit?: string): string {

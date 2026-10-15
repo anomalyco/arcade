@@ -261,7 +261,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
     index: 1,
     label: "Noir / Limbo",
     directionRef: "Outbreak Dir 3 + Lamplight amber-limbo / hybrid-noir",
-    summary: "Desaturated Limbo/Noir world with cold steel tint, deep readable blacks, crisp silhouette rims, and film grain, while the player's 3D flashlight beam restores full natural colour.",
+    summary: "Muted, warm-grey night with readable mid-tones and soft silhouette rims, where received light (the player's flashlight first, then practical lamps) restores natural colour through a soft knee.",
     palette: {
       sky: [0.42, 0.56, 0.72],
       practical: [1.0, 0.62, 0.24],
@@ -276,21 +276,21 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       preset: "noir",
       exposure: 1.1,
       tonemap: 1,
-      contrast: 1.22,
-      toe: 0.24,
+      contrast: 1.1,
+      toe: 0.12,
       shoulder: 0.28,
-      blackCrush: 0.012,
-      saturation: 0.04,
-      temperature: -0.08,
+      blackCrush: 0.004,
+      saturation: 0.42,
+      temperature: 0.2,
       splitTone: 0.32,
-      shadowTintR: 0.9,
-      shadowTintG: 0.96,
-      shadowTintB: 1.06,
+      shadowTintR: 1.04,
+      shadowTintG: 0.98,
+      shadowTintB: 0.9,
       highlightTintR: 0.98,
       highlightTintG: 1.0,
-      highlightTintB: 1.02,
+      highlightTintB: 0.96,
       paletteMix: 0.24,
-      selectiveColor: 1.24,
+      selectiveColor: 0.92,
       foliageShift: -0.14,
       ambientFill: 0.38,
       shadowColorR: 0.84,
@@ -312,7 +312,7 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       bloom: 1.1,
       halation: 0.14,
       vignette: 0.82,
-      grain: 0.38,
+      grain: 0.0,
       grainSeed: 73,
       grainAnimated: true,
       chromatic: 0.1,
@@ -1409,7 +1409,7 @@ fn lookGradeColor(
     let beamSplit = mix(activeSplit, vec3f(1.05, 1.00, 0.94), beamRetain * 0.92);
     let beamSat = clamp(max(saturation, 1.15 * min(selectiveColor, 1.35)), 0.0, 1.55);
     let beamCol = mix(vec3f(luma) * beamSplit, c * beamSplit, beamSat);
-    c = mix(outsideCol, beamCol, smoothstep(0.0, 1.0, beamRetain));
+    c = mix(outsideCol, beamCol, beamRetain);
   } else {
     c = outsideCol;
   }

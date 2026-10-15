@@ -52,6 +52,7 @@
 
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 8px 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);

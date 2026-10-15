@@ -1,4 +1,4 @@
-import { type Crew, type RecoverHow, TEAMS, playerOf } from "../../shared/crew"
+import { type Crew, type RecoverHow, teamCss, playerOf } from "../../shared/crew"
 import type { Archipelago } from "../../shared/islands"
 import { PLANE, makePlane, planeSpeed } from "../../shared/plane"
 import { PLANE_MODE, type PlaneTuple } from "../../shared/protocol"
@@ -20,7 +20,7 @@ import type { Net } from "../net"
 import { WeaponHud } from "../weapons/hud"
 import { WeaponInput } from "../weapons/input"
 import { Weapons, type WeaponsNet } from "../weapons/weapons"
-import { type KillWeapon, type Target, isKillWeapon } from "../../shared/weapons"
+import { type KillWeapon, type Target, isKillWeapon, weaponOf } from "../../shared/weapons"
 import type { CombatWorld } from "../../shared/combat"
 import { playerVehicle } from "../../shared/ops"
 import { type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
@@ -33,6 +33,8 @@ import { ShipHud } from "../weapons/ship-hud"
 import { FlightHud } from "./hud"
 import { FlightInput } from "./input"
 import { RemotePlanes } from "./remote-planes"
+import { Radar, type RadarScene } from "./radar"
+import { TargetMarkers } from "./target-markers"
 
 /** What the flight module needs from the connection: the jet relay, the weapon events and the room's combat queue. */
 export type FlightNet = Pick<Net, "state" | "id" | "sendPlane" | "sendGun" | "sendHits" | "sendShipHits" | "sendFire" | "sendFlare" | "sendSeek" | "combat">
@@ -49,8 +51,8 @@ export type FlightStart = {
   vehicle?: VehicleKind
   /** The pilot's carrier as drawn this frame. */
   deck: () => Ship | null
-  /** The flight ended; `ship`: the friendly carrier it landed on, when not its own. */
-  recover: (how: RecoverHow, ship?: number) => void
+  /** The flight ended. */
+  recover: (how: RecoverHow) => void
   /** Every carrier as simulated here, to crash into. */
   ships?: () => readonly Ship[]
 }
@@ -101,6 +103,10 @@ export class FlightModule {
   private seaT = 0
   /** Own ship health, the damage flash and enemy ship health in the air (src/weapons/ship-hud.ts). */
   readonly shipHud = new ShipHud()
+  /** The pilot's radar and full map (src/flight/radar.ts) and the target markers on screen. */
+  readonly radar = new Radar()
+  readonly markers = new TargetMarkers()
+  private scene: RadarScene = { me: null, crew: null, jet: null, ships: [], hulls: null, jets: new Map(), boats: [], missiles: [] }
   private recovering = false
   /** Granted before the hull was drawn: place the jet on the first deck seen. */
   private unplaced = false
@@ -153,7 +159,7 @@ export class FlightModule {
     }
     this.weapons.resolve = (id) => {
       const p = this.crew && playerOf(this.crew, id)
-      return p ? { name: p.name, color: TEAMS[p.team]?.color ?? "#f4f7fb" } : null
+      return p ? { name: p.name, color: teamCss(p.team) } : null
     }
     // Falling bombs wear the F-35C's own store mesh (the only type that carries them).
     this.weapons.drawBomb = (x, y, z, vx, vy, vz) => {
@@ -162,6 +168,9 @@ export class FlightModule {
     }
     // Shot down: the jet is lost like a crash; the respawn delay then recovers it ("crashed": the slot recharges).
     this.weapons.onDestroyed = () => this.flight.shootDown()
+    // Bombs selected: the camera turns into the bombsight (src/flight/camera.ts) and the weapons draw its ladder.
+    this.flight.bombsight = () => weaponOf(this.weapons.loadout) === "bomb"
+    this.weapons.sightView = () => this.flight.cam.sighting
     void loadPlaneModels().then((m) => {
       this.models = m
       this.pass = new PlanePass(renderer, m)
@@ -183,6 +192,7 @@ export class FlightModule {
     this.world.sea = sea
     this.world.arch = arch
     this.weapons.setGround(this.world)
+    this.radar.setWorld(arch)
     this.boom.world = this.world
     this.boom.wind = [sea.wind[0] * 4, sea.wind[1] * 4]
   }
@@ -199,11 +209,7 @@ export class FlightModule {
     f.vehicle = ctx.vehicle ?? playerVehicle(this.crew, this.net.id)
     if (this.models) f.eyeModel = this.models[f.vehicle].eye
     f.onRespawn = () => this.recover("crashed")
-    // Landed on another friendly carrier: the room moves the pilot aboard it if it has room.
-    f.onLanded = () => {
-      const on = f.landingShip?.id
-      this.recover("landed", on !== undefined && on !== this.ctx?.ship ? on : undefined)
-    }
+    f.onLanded = () => this.recover("landed")
     this.unplaced = !ship
     if (ship) f.toDeck(ship)
     else {
@@ -213,8 +219,8 @@ export class FlightModule {
     f.requestLaunch()
     f.cam.reset()
     const me = this.crew && playerOf(this.crew, this.net.id)
-    this.weapons.setPilot(this.net.id, me?.team ?? 0, me?.name ?? "YOU", TEAMS[me?.team ?? 0]?.color ?? "#f4f7fb")
-    this.hud.homeColor = TEAMS[me?.team ?? 0]?.color ?? "#f4f7fb"
+    this.weapons.setPilot(this.net.id, me?.team ?? 0, me?.name ?? "YOU", teamCss(me?.team ?? 0))
+    this.hud.homeColor = teamCss(me?.team ?? 0)
     this.weapons.sortie(f.vehicle)
   }
 
@@ -227,10 +233,10 @@ export class FlightModule {
     this.wasArmed = false
   }
 
-  private recover(how: RecoverHow, ship?: number): void {
+  private recover(how: RecoverHow): void {
     if (!this.ctx || this.recovering) return
     this.recovering = true
-    this.ctx.recover(how, ship)
+    this.ctx.recover(how)
   }
 
   /** Steps the jet to sea time t and drives the camera. False until the jet exists. */
@@ -420,7 +426,7 @@ export class FlightModule {
       const m = pass ? pass.modelMatrix(pose, this.matrix) : undefined
       const p = v.crew && playerOf(v.crew, id)
       const live = last[1] === PLANE_MODE.flying || last[1] === PLANE_MODE.landing
-      const jet = w.jet(id, p?.team ?? 0, pose, last[9], last[10], last[11], live, p?.name ?? `#${id}`, TEAMS[p?.team ?? 0]?.color ?? "#f4f7fb", kind, m)
+      const jet = w.jet(id, p?.team ?? 0, pose, last[9], last[10], last[11], live, p?.name ?? `#${id}`, teamCss(p?.team ?? 0), kind, m)
       pose.stores = jet.rack.bombs
       this.audio.remote(id, pose, last)
       if (pass && fx && m) {
@@ -442,6 +448,18 @@ export class FlightModule {
     if (v.ships) w.fleet(v.ships, hulls ?? null, me?.team ?? -1, v.t, v.dt)
     this.shipHud.update(v.dt, v.t, me ?? null, v.crew, v.ships ?? [], hulls ?? null, cam, airborne && (f.phase === "flying" || f.phase === "landing"), v.paused)
     w.frame(v.dt, v.t, v.eye, cam?.fov ?? this.camera.fov, innerHeight, (x, y, z) => (cam ? cam.project(x, y, z, innerWidth, innerHeight) : null), v.paused)
+    const flying = airborne && (f.phase === "flying" || f.phase === "landing")
+    const sc = this.scene
+    sc.me = me ?? null
+    sc.crew = v.crew
+    sc.jet = flying ? f.draw : null
+    sc.ships = v.ships ?? []
+    sc.hulls = hulls ?? null
+    sc.jets = w.jets
+    sc.boats = w.boats
+    sc.missiles = w.world.missiles
+    this.radar.update(v.dt, sc, flying, v.paused)
+    this.markers.update(sc, flying ? cam : null, this.radar.box)
     this.boom.end()
     if (pass && fx) {
       pass.upload()

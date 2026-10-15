@@ -92,9 +92,10 @@ export const WEAPONS = {
     accel: 230,
     topSpeed: 640,
     burn: 2.6,
-    drag: 0.00011,
-    /** Self-destructs after this long (s). */
-    life: 7,
+    drag: 0.00005,
+    /** Self-destructs after this long (s): long enough to run down a jet fleeing on afterburner from the edge of the
+     *  lock range (a locked missile only misses when flared or outmanoeuvred up close). */
+    life: 14,
     /** Ejection off the rail: the missile drops this fast (m/s) for the first `drop` seconds before it steers. */
     ejectDrop: 6,
     drop: 0.18,
@@ -238,11 +239,10 @@ export function cycleWeapon(l: Loadout, dir: number): boolean {
   return true
 }
 
-/** Fresh sortie, optionally in another aircraft: everything full and cold (keeps the slot when it still exists). */
+/** Fresh sortie, optionally in another aircraft: everything full and cold, on its first weapon (the F-35C's missiles,
+ *  never its bombs: those turn the camera into the bombsight). */
 export function rearm(l: Loadout, vehicle: VehicleKind = l.vehicle): void {
-  const slot = l.slot
   Object.assign(l, makeLoadout(vehicle))
-  if (slot < l.spec.weapons.length) l.slot = slot
 }
 
 /**
@@ -433,7 +433,7 @@ export function hash01(a: number, b: number): number {
   return (h >>> 0) / 4294967296
 }
 
-/** Can `a`'s weapons hurt `b`? Friendly fire is off: only the other team, never yourself. */
+/** Can `a`'s weapons hurt `b`? Friendly fire is off: only another team (every carrier is its own, shared/crew.ts), never yourself. */
 export const canHurt = (attackerTeam: number, attacker: number, victimTeam: number, victim: number): boolean => attacker !== victim && attackerTeam !== victimTeam
 
 /** Damage state of a health value: 0 fine, 1 smoking, 2 burning, 3 destroyed. */

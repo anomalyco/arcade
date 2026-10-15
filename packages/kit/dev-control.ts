@@ -277,7 +277,13 @@ export function findControlRow(
 
   for (const entry of allRows) {
     const { control } = entry
-    if (control.key === trimmed || control.key.toLowerCase() === trimmed.toLowerCase()) return entry
+    if (
+      control.key === trimmed ||
+      control.key.toLowerCase() === trimmed.toLowerCase() ||
+      control.legacyKeys?.some(k => k === trimmed || k.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      return entry
+    }
   }
   for (const entry of allRows) {
     const { row, control } = entry

@@ -43,7 +43,6 @@ function battle() {
   const say = (c: FakeConn, msg: ClientMsg) => core.message(c, encode(msg))
   const a = join("ada")
   const b = join("bo")
-  say(b, { type: "newship", team: 1 })
   const seaT = () => (now - EPOCH) / 1000
   const run = (ms: number, each?: () => void) => {
     for (let left = ms; left > 0; left -= 50) {
@@ -83,8 +82,9 @@ function bombAt(w: ReturnType<typeof battle>, seq: number, x: number, z: number)
 }
 
 describe("ships take damage over the network", () => {
-  test("protocol round-trips hulls, sunk, shiphits and a landing on another ship", () => {
-    for (const m of [{ type: "shiphits", ship: 3, n: 20 }, { type: "recover", how: "landed", ship: 4 }, { type: "recover", how: "crashed" }] as ClientMsg[]) expect(decodeClient(encode(m))).toEqual(m)
+  test("protocol round-trips hulls, sunk, shiphits and recover (landing is on its own carrier only)", () => {
+    for (const m of [{ type: "shiphits", ship: 3, n: 20 }, { type: "recover", how: "landed" }, { type: "recover", how: "crashed" }] as ClientMsg[]) expect(decodeClient(encode(m))).toEqual(m)
+    expect(decodeClient(JSON.stringify({ type: "recover", how: "landed", ship: 4 }))).toEqual({ type: "recover", how: "landed" })
     expect(decodeClient(encode({ type: "shiphits", ship: 3, n: 0 }))).toBeNull()
     for (const m of [{ type: "hulls", h: [[2, 812.5, 400, 12, -1, 1, 10, 26, -40, 3]] }, { type: "sunk", ship: 2, name: "CV-07 VALIANT", team: 1, by: 4 }] as ServerMsg[]) expect(decodeServer(encode(m))).toEqual(m)
     expect(decodeServer(JSON.stringify({ type: "hulls", h: [[2, 1, 2]] }))).toBeNull()

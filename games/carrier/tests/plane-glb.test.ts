@@ -5,7 +5,7 @@ import { parseGlb } from "../src/dev/glb"
 import { FLOATS_PER_VERT } from "../src/render/mesh"
 import { ACCENT, ACCENT_FIN_Y, ACCENT_RAIL_X, MODEL_SPECS, type PlaneModel, buildPlaneModel } from "../src/render/plane-glb"
 import { NO_TEAM, teamColor } from "../src/render/team"
-import { TEAMS } from "../shared/crew"
+import { TEAM_COLORS, teamCss } from "../shared/crew"
 import { VEHICLES, VEHICLE_KINDS, type VehicleKind } from "../shared/vehicles"
 
 const load = (name: string) => {
@@ -67,11 +67,12 @@ describe("GLB hornet with team accents", () => {
     expect(verts(model.canopy).some((v) => Math.round(v[9]!) === ACCENT)).toBe(false)
   })
 
-  test("team colours come from TEAMS, linear, with a neutral fallback", () => {
-    const h = Number.parseInt(TEAMS[0]!.color.slice(1), 16)
+  test("team colours come from TEAM_COLORS, one per carrier, linear, with a neutral fallback", () => {
+    const h = Number.parseInt(teamCss(0).slice(1), 16)
     expect(teamColor(0)[0]).toBeCloseTo((((h >> 16) & 255) / 255) ** 2.2, 6)
-    expect(teamColor(1)).not.toEqual(teamColor(0))
+    expect(new Set(TEAM_COLORS.map((_, t) => teamColor(t).join())).size).toBe(TEAM_COLORS.length)
     expect(teamColor(undefined)).toBe(NO_TEAM)
+    expect(teamColor(TEAM_COLORS.length)).toBe(NO_TEAM)
   })
 })
 

@@ -1,12 +1,15 @@
 # Shared code
 
-Code both games carry their own copy of, and what to extract. Extract something only when it is the same idea in
-both games and has a current consumer in each. Game rules, maps, meshes and the look stay in the games.
+Code the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`) and `lab` carry their own copy of, and what to
+extract. Extract something only when it is the same idea across multiple games and has a current consumer in each. Game
+rules, maps, meshes and the look stay in the games. For the full engine layer map and the generated per-game adoption
+table across Getaway, Blackout, Outbreak, Carrier, Lab and Wings, see [architecture.md](architecture.md).
 
 ## Where it goes
 
 `packages/kit/` is the private, versionless `@arcade/kit` Bun workspace package: plain TypeScript source, no build
-step. Getaway and Blackout declare `"@arcade/kit": "workspace:*"` and import subpaths, for example:
+step. Getaway, Blackout, Outbreak, Carrier and Lab declare `"@arcade/kit": "workspace:*"` and import subpaths, for
+example:
 
 ```ts
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -15,23 +18,24 @@ import "@arcade/kit/compare.css"
 
 Its exports resolve directly to `.ts` source (and `.css` assets); Vite and Wrangler bundle them in each game.
 `packages/kit/tsconfig.json` checks every shared TypeScript file independently, including files no game imports yet.
-Existing navigation tests run with `bun run --cwd packages/kit check` or root `bun run check:packages` and remain
-part of both games' checks.
+Shared package tests (including `packages/kit/architecture-map.test.ts`, which checks `docs/architecture.md`) run with
+`bun run --cwd packages/kit check` or root `bun run check:packages`.
 
 ## Install, check and ship
 
 Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
-`games/blackout`, `games/outbreak`, `games/carrier` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
+`games/blackout`, `games/outbreak`, `games/carrier`, `games/lab` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
 Wings, landing and redirects retain their independent installs, lockfiles and workflows.
 
 Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
 Wrangler, TypeScript and Playwright versions aligned in the game manifests. Root scripts declare their own tooling
 dependencies in the root manifest and use normal package imports rather than reaching into a game's `node_modules`.
 
-All four workspace game workflows install at the root, then check and smoke-load the game's production bundle. Their paths include
+All workspace game workflows (`getaway.yml`, `blackout.yml`, `outbreak.yml`, `carrier.yml`, `lab.yml`) install at the root, then check and smoke-load the game's production bundle. Their paths include
 `packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check all consumers.
-Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck. A separate
-`packages.yml` workflow runs the shared package's typecheck and tests. Deploy jobs stay per game.
+Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck, and Blackout and Outbreak watch
+`games/getaway/public/sfx/**` for the shared audio asset route. A separate
+`packages.yml` workflow runs the shared packages' typecheck and tests. Deploy jobs stay per game.
 
 For Cloudflare Builds, use the repository root for installation (`bun install --frozen-lockfile`) and then target the
 game (`bun run --cwd games/blackout build` / `bun run --cwd games/blackout deploy`). A game-only source upload omits
@@ -304,15 +308,16 @@ Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect compar
 In rough order of value against risk:
 
 1. **Matchmaker and lobby Durable Object (completed in `@arcade/kit/sim/matchmaking`).** `SharedMatchmaker`,
-   `pickOpenRoom`, `randomRoomCode`, and `cleanPlayerName` are shared across Getaway, Blackout, and Carrier, with
-   configurable `maxPlayers`, `staleMs`, `isOpen`, and `preferPhase`. All three `Lobby` Durable Objects persist room
+   `pickOpenRoom`, `randomRoomCode`, and `cleanPlayerName` are shared across Getaway, Blackout, Outbreak, and Carrier,
+   with configurable `maxPlayers`, `staleMs`, `isOpen`, and `preferPhase`. All four `Lobby` Durable Objects persist room
    reports in `ctx.storage`.
 2. **2D OBB contacts, spatial grids, and binary min-heaps (completed in `@arcade/kit/sim/{obb,geom}`).** `obb.ts`
    provides the shared Box2D 2-point SAT manifold and block impulse solver across Getaway (`ShapeXZ`, `resolveXZ`) and
-   Blackout (`ShapeXY`, `resolveXY`); `geom.ts` provides `RectGrid` and `MinHeap` across `ai.ts`, `nav.ts`,
-   `level-mesh.ts`, and `lighting.ts`.
-3. **Seeded RNG and hashing (completed in `@arcade/kit/sim/rng`).** One module exports `mulberry32`, `Rng` (with
-   `.seed()`), `seedOf`, `hash2`, and `hash3` across all games and the audio runtime.
+   Blackout (`ShapeXY`, `resolveXY`); `geom.ts` provides `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, and `MinHeap`
+   across Blackout and Outbreak (`ai.ts`, `nav.ts`, `level-mesh.ts`, `lighting.ts`, `world-gen.ts`).
+3. **Seeded RNG, hashing, and progression ledger (completed in `@arcade/kit/sim/{rng,ledger}`).** `rng.ts` exports
+   `mulberry32`, `Rng` (with `.seed()`), `seedOf`, `hash2`, and `hash3` across Getaway, Blackout, Outbreak, Carrier,
+   Lab, and the audio runtime; `ledger.ts` powers Outbreak's deterministic inventory, containers, and workbench crafting.
 4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input,key-cap}`).** Physical
    `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, QWERTY
    `keyLabel` / `moveClusterLabel` prompts with the opt-in `keyLabelSetting`, and the `keyCapHtml` / `keyPromptHtml`
@@ -330,8 +335,10 @@ In rough order of value against risk:
    `WeatherRenderer` (GPU-instanced two-layer streaks/snowflakes, splash rings + upward crowns + roof-eave drips,
    interior building exclusion rects, and 12-light cone/pool illumination with `litOnly` gating). Carrier retains its
    ocean-specific `games/carrier/src/render/rain.ts` and `shared/weather.ts` because its splash pass is displaced directly
-   onto `SEA_WGSL` Gerstner waves under a reversed-Z `RelView` ocean camera; Wings (`games/wings/src/render/world/rain.ts`)
-   retains its Three.js TSL node-material rain/spray in its independent project.
+   onto `SEA_WGSL` Gerstner waves under a reversed-Z `RelView` ocean camera, while sharing `@arcade/kit/gpu/mesh`,
+   `@arcade/kit/fx/{particles,particle-renderer,explosion}`, `@arcade/kit/sim/{matchmaking,rng}`,
+   `@arcade/kit/client/{controls,key-cap}`, `@arcade/kit/lab-panel`, and `@arcade/kit/dev-control`. Wings
+   (`games/wings/src/render/world/rain.ts`) retains its Three.js TSL node-material rain/spray in its independent project.
 8. **Remaining candidates:**
    - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
      handshake, and seat bookkeeping.

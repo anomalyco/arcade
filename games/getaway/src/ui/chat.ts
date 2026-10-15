@@ -18,9 +18,9 @@ export class Chat {
     private controls: Controls,
     private session: Session,
   ) {
-    this.el = h("div", "h-chat", root)
-    this.log = h("div", "c-log", this.el)
-    this.input = h("input", "c-input off", this.el)
+    this.el = h("div", "h-chat achat", root)
+    this.log = h("div", "achat-log", this.el)
+    this.input = h("input", "achat-input off", this.el)
     this.input.maxLength = CHAT_MAX
     this.input.placeholder = "Say something…"
     this.input.autocomplete = "off"
@@ -74,10 +74,10 @@ export class Chat {
   }
 
   private add(m: ChatMsg) {
-    const line = h("div", `c-line ${m.role}`, this.log)
-    const name = h("span", "c-name", line)
+    const line = h("div", `achat-line ${m.role}`, this.log)
+    const name = h("span", "achat-name", line)
     name.textContent = m.name
-    const body = h("span", "c-text", line)
+    const body = h("span", "achat-text", line)
     body.textContent = m.role === "system" ? ` ${m.text}` : m.text
     while (this.log.children.length > MAX_LINES) this.log.firstElementChild!.remove()
     setTimeout(() => line.classList.add("old"), FADE_MS)

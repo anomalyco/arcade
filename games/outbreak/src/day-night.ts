@@ -39,7 +39,7 @@ export const OUTBREAK_DAY_LOOK: Readonly<LookSettings> = {
   bloom: 0.32,
   halation: 0.14,
   vignette: 0.18,
-  grain: 0.04,
+  grain: 0,
   chromatic: 0.06,
 }
 
@@ -76,14 +76,11 @@ export const OUTBREAK_DUSK_LOOK: Readonly<LookSettings> = {
   bloom: 0.52,
   halation: 0.28,
   vignette: 0.44,
-  grain: 0.12,
+  grain: 0,
   chromatic: 0.14,
 }
 
-/**
- * Full Noir / Limbo night look: desaturated cold-steel night where only the 3D shadow-tested
- * flashlight beam restores full natural colour.
- */
+/** Full Noir night look: a muted, warm-grey world where received light restores colour. */
 export const OUTBREAK_NIGHT_LOOK: Readonly<LookSettings> = {
   ...LOOK_PRESETS.noir.defaults,
 }
@@ -141,13 +138,12 @@ export const OUTBREAK_NIGHT_LIGHTING: Readonly<DayNightLightingCurve> = {
   streetAirHaze: 1.0,
 }
 
-export type DayNightFogCurve = Omit<FogOfWarSettings, "fogStyle"> & { shroud: number }
+/** Unknown-area grain and sound ripples are off-by-default Lab options, so the cycle leaves them alone. */
+export type DayNightFogCurve = Pick<FogOfWarSettings, "fogEdgeSoftness" | "fogMemoryDim" | "fogGhostDuration"> & { shroud: number }
 
 export const OUTBREAK_DAY_FOG: Readonly<DayNightFogCurve> = {
   fogEdgeSoftness: 1.08,
   fogMemoryDim: 0.72,
-  fogUnknownGrain: 0.10,
-  fogSoundCues: 0.45,
   fogGhostDuration: 2.0,
   shroud: 0.40,
 }
@@ -155,17 +151,13 @@ export const OUTBREAK_DAY_FOG: Readonly<DayNightFogCurve> = {
 export const OUTBREAK_DUSK_FOG: Readonly<DayNightFogCurve> = {
   fogEdgeSoftness: 0.92,
   fogMemoryDim: 0.56,
-  fogUnknownGrain: 0.28,
-  fogSoundCues: 0.75,
   fogGhostDuration: 2.6,
   shroud: 0.35,
 }
 
 export const OUTBREAK_NIGHT_FOG: Readonly<DayNightFogCurve> = {
   fogEdgeSoftness: 0.78,
-  fogMemoryDim: 0.42,
-  fogUnknownGrain: 0.48,
-  fogSoundCues: 1.0,
+  fogMemoryDim: 0.5,
   fogGhostDuration: 3.2,
   shroud: 0.32,
 }
@@ -190,8 +182,6 @@ const LIGHTING_KEYS: readonly (keyof DayNightLightingCurve)[] = [
 const FOG_KEYS: readonly (keyof DayNightFogCurve)[] = [
   "fogEdgeSoftness",
   "fogMemoryDim",
-  "fogUnknownGrain",
-  "fogSoundCues",
   "fogGhostDuration",
   "shroud",
 ]
@@ -259,16 +249,26 @@ export function evaluateOutbreakDayNight(
 export function applyOutbreakDayNight(
   hour: number,
   lookSettings: LookSettings,
-  settings: Record<string, any>,
+  settings: {
+    lighting?: Partial<OutbreakLightingSettings>
+    fog?: Partial<FogOfWarSettings>
+    vision?: { shroud?: number }
+  } & Record<string, any>,
 ): OutbreakDayNightEvaluation {
   const evalOut = evaluateOutbreakDayNight(hour, lookSettings)
+  const lightingTarget =
+    settings.lighting && typeof settings.lighting === "object" ? (settings.lighting as Record<string, any>) : settings
+  const fogTarget =
+    settings.fog && typeof settings.fog === "object" ? (settings.fog as Record<string, any>) : settings
+  const visionTarget =
+    settings.vision && typeof settings.vision === "object" ? (settings.vision as Record<string, any>) : settings
   for (let i = 0; i < LIGHTING_KEYS.length; i++) {
     const k = LIGHTING_KEYS[i]!
-    settings[k] = evalOut.lighting[k]
+    lightingTarget[k] = evalOut.lighting[k]
   }
-  for (let i = 0; i < FOG_KEYS.length; i++) {
-    const k = FOG_KEYS[i]!
-    settings[k] = evalOut.fog[k]
-  }
+  fogTarget.fogEdgeSoftness = evalOut.fog.fogEdgeSoftness
+  fogTarget.fogMemoryDim = evalOut.fog.fogMemoryDim
+  fogTarget.fogGhostDuration = evalOut.fog.fogGhostDuration
+  visionTarget.shroud = evalOut.fog.shroud
   return evalOut
 }

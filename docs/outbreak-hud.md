@@ -69,14 +69,25 @@ different option is that one value.
 | Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and hotbar |
 | Diegetic | outlined text below the feet, info callouts dropped | stamina and health as a ground ring open behind the body; reload and battery as rings | hotbar only for 2.2 s after a slot change |
 
-Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that draws rings.
+Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that draws rings. Noise callouts
+("Noise 32 m" for actions heard 9 m or more away) are off by default since Kit didn't like them; Lab › HUD › Noise
+callouts turns them back on. `ActorFeedback` still reports them, and `CharacterHud` drops them unless the setting is on.
+
+Key names follow the controls rule (docs/controls.md): bindings are physical `KeyboardEvent.code`, and labels are the
+QWERTY name of that key on every layout. The "Empty, R to reload" callout draws R with the shared key cap
+(`keyCapHtml` from `@arcade/kit/client/key-cap`, passed as the callout's `keyCap` option), and the world prompt's
+Hold E is that component's hold cap, whose ring fills with the game's hold timer.
 
 The structure is `OutbreakHud` (projection, `ActorFeedback`, teammates) feeding `CharacterHud` (`src/hud/character.ts`),
 which only needs each actor's screen box and meter inputs. The board prototype uses that split:
-`scripts/hud-moment.ts` records a 10 s scripted moment (search a shelf, walk, reload, a zombie hit, sprint to
-exhaustion) as headless frames with the HUD hidden, plus a timeline of the survivor's box, state and every callout
+`scripts/hud-moment.ts` records a 14 s scripted moment (hold E to lock a door, search a kitchen cabinet and take
+what it reveals, fire the pistol dry, reload, a zombie hit, sprint to exhaustion) as headless frames with the HUD hidden, plus a timeline of the survivor's box, state and every callout
 the game emitted. The prototype plays the frames as a muted loop and replays the timeline through `CharacterHud`
 bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the game's HUD code, not a mockup.
+
+The `outbreak-hud` Lab station (`arcade station outbreak-hud`, `games/lab/src/stations/outbreak-hud.ts`) runs the live
+game with one variant per style; each variant sets the style and runs `hud.demo`, which puts a sample on the survivor.
+`games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle` proves every variant.
 
 ## Measured
 

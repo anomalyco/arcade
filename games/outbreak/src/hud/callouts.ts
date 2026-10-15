@@ -1,3 +1,5 @@
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
+
 /**
  * World-anchored action callouts: short labels stacked on one side of an actor (below the feet by default).
  *
@@ -20,6 +22,8 @@ export type CalloutOptions = {
   progress?: number
   /** Upsert key: a second call with the same actor and key updates the existing callout instead of stacking. */
   key?: string
+  /** Draws `label` inside the text as the shared key cap for physical `code` ("Empty, R to reload"). */
+  keyCap?: { code: string; label: string }
 }
 
 export type Callout = {
@@ -31,6 +35,7 @@ export type Callout = {
   born: number
   until: number
   progress: number
+  keyCap: { code: string; label: string } | null
   /** Stacking order; refreshed pops move back to the top. */
   order: number
   /** Stack slot the view animates toward; 0 sits nearest the body. */
@@ -75,6 +80,7 @@ export class CalloutModel {
       const resolved = existing.kind === "progress" && kind !== "progress"
       existing.text = text
       existing.kind = kind
+      existing.keyCap = opts.keyCap ?? null
       existing.until = this.now + duration
       if (opts.progress !== undefined) existing.progress = clamp01(opts.progress)
       if (resolved) {
@@ -97,6 +103,7 @@ export class CalloutModel {
       key,
       text,
       kind,
+      keyCap: opts.keyCap ?? null,
       born: this.now,
       until: this.now + duration,
       progress: clamp01(opts.progress ?? 0),
@@ -271,9 +278,14 @@ export class CalloutLayer {
         node.kind = c.kind
         node.el.dataset.kind = c.kind
       }
-      if (node.label !== c.text) {
-        node.label = c.text
-        node.text.textContent = c.text
+      const label = c.keyCap ? `${c.text}\u0000${c.keyCap.code}` : c.text
+      if (node.label !== label) {
+        node.label = label
+        const cap = c.keyCap
+        const at = cap ? c.text.indexOf(cap.label) : -1
+        if (cap && at >= 0) {
+          node.text.innerHTML = `${escapeHtml(c.text.slice(0, at))}${keyCapHtml(cap.code, { label: cap.label })}${escapeHtml(c.text.slice(at + cap.label.length))}`
+        } else node.text.textContent = c.text
       }
       const scale = a.scale ?? 1
       const sy = a.sy ?? -1
@@ -332,6 +344,10 @@ export class CalloutLayer {
     el.append(inner)
     return { el, body: inner, text, kind: "", label: "", transform: "", align: "", opacity: "", progress: "" }
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 }
 
 function clamp01(v: number): number {

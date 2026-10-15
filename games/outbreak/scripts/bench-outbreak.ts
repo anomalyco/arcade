@@ -243,7 +243,7 @@ try {
         { scene, weatherPreset, labOverrides },
       )
 
-      await page.locator("canvas").click()
+      await page.locator("#game").click()
       await page.evaluate(() => {
         const w = window as any
         w.__pacing.active = true
