@@ -66,6 +66,27 @@ try {
   const scene = await audio()
   assert(scene.played > walked.played, "the shot and the door should play")
 
+  // A miss into Ash's front wall from the lawn (wood siding), a reload in parts, a pickup, the pack and a dropped item.
+  await page.evaluate(() => (window as any).__arcadeHarness.pose(31, 40, -Math.PI / 2))
+  await step(2)
+  await step(1, { fire: true, aim: -Math.PI / 2 })
+  await step(20)
+  await page.evaluate(() => (window as any).__arcadeHarness.stock(2, { ammo: 12 }))
+  await step(1, { reload: true })
+  await step(80)
+  await page.evaluate(() => (window as any).__arcadeHarness.give("crowbar"))
+  await step(2)
+  await page.keyboard.press("Tab")
+  await step(4)
+  await page.keyboard.press("Tab")
+  await step(4)
+  await step(1, { drop: true })
+  await step(10)
+  const foley = await audio()
+  const heard = (id: string) => foley.playedById[id] ?? 0
+  assert(heard("impact.bullet.wood") >= 1, `the miss should strike wood: ${JSON.stringify(foley.playedById)}`)
+  for (const id of ["gun.pistol.mag-release", "gun.pistol.mag-out", "gun.pistol.mag-in", "gun.pistol.slide", "pickup.tool", "pack.open", "pack.close", "item.drop"]) assert(heard(id) >= 1, `${id} should play`)
+
   // A crowd: 100 zombies around the survivor at night, chasing; measure main-thread cost and voices for 10 s.
   await page.evaluate(() => { const h = (window as any).__arcadeHarness; h.setLab("zombieCount", 100); h.pose(44, 44, 0) })
   await step(30)
@@ -80,6 +101,7 @@ try {
     maxVoices = Math.max(maxVoices, (await audio()).voices)
   }
   const crowd = await audio()
+  const crowdFeet = crowd.zombieFeet
   // The same 10 s with the audio graph muted, for the audio layer's share of frame time.
   await page.evaluate(() => (window as any).__arcadeHarness.setLab("audioMuted", 1))
   const mutedTimings: number[] = []
@@ -109,13 +131,22 @@ try {
       medianFrameMsAudioOn: Math.round(median(timings) * 100) / 100,
       medianFrameMsAudioMuted: Math.round(median(mutedTimings) * 100) / 100,
       beds: crowd.beds,
+      horde: crowd.horde,
+      zombieSteps: crowd.zombieSteps - crowdStart.zombieSteps,
+      zombieStepsPerSecond: (crowd.zombieSteps - crowdStart.zombieSteps) / 10,
+      rigContacts: crowdFeet.contacts - crowdStart.zombieFeet.contacts,
+      cadenceSteps: crowdFeet.cadence - crowdStart.zombieFeet.cadence,
+      maxVoicesSeen: crowd.maxVoicesSeen,
     },
+    foley: Object.fromEntries(Object.entries(foley.playedById).filter(([id]) => /^(impact|gun\.pistol\.(mag|slide)|pickup|pack|item)/.test(id))),
     errors,
   }
   writeFileSync(resolve(out, "audio-proof.json"), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result, null, 2))
   assert.equal(crowd.loadedSamples, shipped.length, "every shipped file decodes")
   assert(maxVoices <= crowd.maxVoices + 3, "voices stay under the cap (beds excepted)")
+  assert(result.crowd.zombieStepsPerSecond <= 9, "zombie feet stay within the crowd budget")
+  assert(result.crowd.zombieSteps > 0, "a moving crowd is heard stepping")
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

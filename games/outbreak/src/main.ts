@@ -304,6 +304,7 @@ async function main() {
   avatar.onFootfall = footfall
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
+  zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
   let prevHealth = session.view.player.health
   let prevShoveAnim = session.view.player.shoveAnim
@@ -1872,7 +1873,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlight.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
-    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
+    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     inventoryHud.sync(session.view, cam, w, h)
