@@ -1,4 +1,5 @@
 import { catapultTime } from "../shared/launch"
+import { playerVehicle } from "../shared/ops"
 import { describe, expect, test } from "bun:test"
 import { type Conn, RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
@@ -28,7 +29,7 @@ class FakeConn implements Conn {
 const EPOCH = 1_000_000
 
 /** A room with A (team 0) and B (team 1) both airborne in Hornets; `fly` relays straight-and-level jets every step. */
-function dogfight() {
+function dogfight(kind: "hornet" | "f35" = "hornet") {
   let now = EPOCH
   const core = new RoomCore(
     () => now,
@@ -42,7 +43,7 @@ function dogfight() {
   const say = (c: FakeConn, msg: ClientMsg) => core.message(c, encode(msg))
   const a = join("ada")
   const b = join("bo")
-  say(a, { type: "op", op: "hornet" })
+  say(a, { type: "op", op: kind })
   say(b, { type: "op", op: "hornet" })
   /** Jets flying north at 140 m/s at 1,000 m: A starts `gap` metres behind B. */
   const pos = new Map<FakeConn, { x: number; z: number }>([
@@ -178,6 +179,17 @@ describe("weapons over the network", () => {
     say(c, { type: "seek", on: b.id, locked: true })
     core.close(c)
     expect(b.last("seek")).toEqual({ type: "seek", by: c.id, s: 0 })
+  })
+
+  test("an F-35C's lock and missile warn the target the same way", () => {
+    const { core, a, b, say, run, seaT } = dogfight("f35")
+    expect(playerVehicle(core.crew!, a.id)).toBe("f35")
+    say(a, { type: "seek", on: b.id, locked: true })
+    expect(b.last("seek")).toEqual({ type: "seek", by: a.id, s: 2 })
+    say(a, { type: "fire", m: [0, seaT(), 0, 999, -10, 0, 0, -140, b.id, 0] })
+    expect(b.last("fire")?.id).toBe(a.id)
+    run(6000)
+    expect(core.hp(b.id)).toBeLessThan(100)
   })
 
   test("B's flares decoy the missile", () => {
