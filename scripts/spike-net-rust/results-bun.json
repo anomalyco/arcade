@@ -1,0 +1,200 @@
+{
+  "runtime": "Bun 1.4.2 (JavaScriptCore)",
+  "wasmBinaryBytes": 66118,
+  "wasmColdStartCompileInstantiateMs": {
+    "medianMs": 0.189,
+    "p95Ms": 0.704
+  },
+  "scenario": {
+    "zombies": 300,
+    "survivors": 4,
+    "snapshotHz": 20,
+    "simHz": 60
+  },
+  "codecs300Zombies": {
+    "1_current_outbreak_ts_json_personal": {
+      "encode": {
+        "medianUs": 26.46,
+        "madUs": 0.54,
+        "p95Us": 68.14,
+        "medianMs": 0.0265
+      },
+      "decode": {
+        "medianUs": 5.27,
+        "madUs": 0.14,
+        "p95Us": 15.49,
+        "medianMs": 0.0053
+      },
+      "bytesPerPlayerSnap": 5691,
+      "sharedBytes": 5520,
+      "perClientKBpsAt20Hz": 111.15,
+      "room4pEgressKBpsAt20Hz": 444.61
+    },
+    "2_ts_dataview_binary_full": {
+      "encode": {
+        "medianUs": 19.2,
+        "madUs": 0.24,
+        "p95Us": 36.67,
+        "medianMs": 0.0192
+      },
+      "decode": {
+        "medianUs": 3.29,
+        "madUs": 0.08,
+        "p95Us": 14.04,
+        "medianMs": 0.0033
+      },
+      "bytesPerPlayerSnap": 5572,
+      "perClientKBpsAt20Hz": 108.83,
+      "room4pEgressKBpsAt20Hz": 435.31
+    },
+    "3_ideal_ts_interest60m_delta_bitpack": {
+      "encodeKeyframe": {
+        "medianUs": 4.47,
+        "madUs": 0.12,
+        "p95Us": 5.18,
+        "medianMs": 0.0045
+      },
+      "encodeDelta": {
+        "medianUs": 5.34,
+        "madUs": 0.02,
+        "p95Us": 5.48,
+        "medianMs": 0.0053
+      },
+      "decodeDelta": {
+        "medianUs": 0.82,
+        "madUs": 0,
+        "p95Us": 0.84,
+        "medianMs": 0.0008
+      },
+      "keyframeBytesPerSnap": 2668,
+      "deltaBytesPerSnap": 778,
+      "perClientKBpsAt20Hz": 15.2,
+      "room4pEgressKBpsAt20Hz": 60.78
+    },
+    "4a_rust_wasm_bincode": {
+      "encodeZeroCopy": {
+        "medianUs": 1.21,
+        "madUs": 0,
+        "p95Us": 1.25,
+        "medianMs": 0.0012
+      },
+      "encodeWithJsMarshal": {
+        "medianUs": 2.97,
+        "madUs": 0.29,
+        "p95Us": 3.65,
+        "medianMs": 0.003
+      },
+      "decodeZeroCopy": {
+        "medianUs": 1.24,
+        "madUs": 0,
+        "p95Us": 1.27,
+        "medianMs": 0.0012
+      },
+      "decodeWithJsMarshal": {
+        "medianUs": 2.38,
+        "madUs": 0.13,
+        "p95Us": 3.25,
+        "medianMs": 0.0024
+      },
+      "bytesPerPlayerSnap": 5454,
+      "perClientKBpsAt20Hz": 106.52
+    },
+    "4b_rust_wasm_postcard_varint": {
+      "encodeZeroCopy": {
+        "medianUs": 0.91,
+        "madUs": 0,
+        "p95Us": 0.94,
+        "medianMs": 0.0009
+      },
+      "encodeWithJsMarshal": {
+        "medianUs": 2.61,
+        "madUs": 0.01,
+        "p95Us": 2.65,
+        "medianMs": 0.0026
+      },
+      "decodeZeroCopy": {
+        "medianUs": 0.85,
+        "madUs": 0,
+        "p95Us": 0.86,
+        "medianMs": 0.0009
+      },
+      "decodeWithJsMarshal": {
+        "medianUs": 1.85,
+        "madUs": 0.01,
+        "p95Us": 1.9,
+        "medianMs": 0.0019
+      },
+      "bytesPerPlayerSnap": 2577,
+      "perClientKBpsAt20Hz": 50.33
+    },
+    "4c_rust_wasm_bitcode_delta_interest": {
+      "encodeZeroCopy": {
+        "medianUs": 1.03,
+        "madUs": 0,
+        "p95Us": 1.05,
+        "medianMs": 0.001
+      },
+      "encodeWithJsMarshal": {
+        "medianUs": 2.5,
+        "madUs": 0,
+        "p95Us": 2.57,
+        "medianMs": 0.0025
+      },
+      "decodeZeroCopy": {
+        "medianUs": 0.26,
+        "madUs": 0,
+        "p95Us": 0.7,
+        "medianMs": 0.0003
+      },
+      "decodeWithJsMarshal": {
+        "medianUs": 0.79,
+        "madUs": 0.01,
+        "p95Us": 0.81,
+        "medianMs": 0.0008
+      },
+      "bytesPerPlayerSnap": 778,
+      "perClientKBpsAt20Hz": 15.2,
+      "room4pEgressKBpsAt20Hz": 60.78
+    }
+  },
+  "durableObjectRoomTick300Zombies": {
+    "currentOutbreakTs60HzTick": {
+      "medianUs": 740.99,
+      "madUs": 91.93,
+      "p95Us": 1013.1,
+      "medianMs": 0.741
+    },
+    "dataOrientedTs60HzTick": {
+      "medianUs": 15.28,
+      "madUs": 1.64,
+      "p95Us": 20.34,
+      "medianMs": 0.0153
+    },
+    "sharedRustWasm60HzTick": {
+      "medianUs": 8.07,
+      "madUs": 1.44,
+      "p95Us": 15.58,
+      "medianMs": 0.0081
+    },
+    "dataOrientedTsVsCurrentSpeedup": 48.49,
+    "rustWasmVsDataOrientedTsSpeedup": 1.89,
+    "rustWasmVsCurrentTsSpeedup": 91.82
+  },
+  "fixedPointQ16_16Determinism1000Ticks": {
+    "rustWasmDigestHex": "0xe7be7bee",
+    "tsInt32DigestHex": "0xe7be7bee",
+    "bitExactMatch": true,
+    "rustStepPerTick": {
+      "medianUs": 0.82,
+      "madUs": 0.02,
+      "p95Us": 0.87,
+      "medianMs": 0.0008
+    },
+    "tsStepPerTick": {
+      "medianUs": 1.33,
+      "madUs": 0.04,
+      "p95Us": 1.43,
+      "medianMs": 0.0013
+    }
+  }
+}

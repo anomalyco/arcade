@@ -1,0 +1,72 @@
+{
+  "jscTranscendentalFloat": {
+    "digestHex": "0x0353e76e",
+    "finalVal": -0.112467545648754,
+    "sampleSin": 0.9440057250452666,
+    "sampleAtan2": 0.4048917862850834
+  },
+  "v8Chromium": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "wasmColdStartCompileInstantiateMeanMs": 0.165,
+    "v8TsFullEncode": {
+      "medianUs": 0.8,
+      "p95Us": 1.2
+    },
+    "v8TsFullDecode": {
+      "medianUs": 0.4,
+      "p95Us": 0.8
+    },
+    "v8RustBincodeZeroCopyEncode": {
+      "medianUs": 2,
+      "p95Us": 2.4
+    },
+    "v8RustBincodeMarshalEncode": {
+      "medianUs": 4,
+      "p95Us": 4.4
+    },
+    "v8RustBincodeZeroCopyDecode": {
+      "medianUs": 1.6,
+      "p95Us": 2.4
+    },
+    "v8RustBincodeMarshalDecode": {
+      "medianUs": 2,
+      "p95Us": 2.4
+    },
+    "v8RustPostcardZeroCopyEncode": {
+      "medianUs": 1.2,
+      "p95Us": 1.6
+    },
+    "v8RustPostcardMarshalEncode": {
+      "medianUs": 3.2,
+      "p95Us": 4
+    },
+    "v8RustDeltaZeroCopyEncode": {
+      "medianUs": 1.2,
+      "p95Us": 1.6
+    },
+    "v8RustDeltaMarshalEncode": {
+      "medianUs": 3.6,
+      "p95Us": 6
+    },
+    "v8RustDeltaZeroCopyDecode": {
+      "medianUs": 0.4,
+      "p95Us": 0.8
+    },
+    "v8RustDeltaMarshalDecode": {
+      "medianUs": 0.8,
+      "p95Us": 0.8
+    },
+    "v8RustRoomTick": {
+      "medianUs": 92,
+      "p95Us": 112
+    },
+    "v8TranscendentalFloat": {
+      "digestHex": "0x307d903a",
+      "finalVal": -0.112467545648754,
+      "sampleSin": 0.9440057250452666,
+      "sampleAtan2": 0.4048917862850834
+    },
+    "v8FixedPointQ16_16DigestHex": "0xe7be7bee"
+  },
+  "floatTranscendentalMatchBetweenJscAndV8": false
+}
