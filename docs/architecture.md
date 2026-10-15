@@ -71,7 +71,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu-perf` & `fx/frame-timer` | Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — |
-| `fx/{explosion,fire-water,splatter*}` | Multi-stage explosions, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
+| `fx/{explosion,projectile-trail,fire-water,splatter*}` | Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
 | `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | — |
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — |
 | `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — |
