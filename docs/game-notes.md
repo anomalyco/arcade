@@ -158,7 +158,9 @@ proven animation techniques to animation.md, not here.
     segments (`eaves`) emit concentrated drip lines. Omitting `discard` in premultiplied-alpha `streakFs`/`splashFs`/`mistFs`
     preserves Apple Silicon TBDR early-Z, and folding `OL.u8.yzw` (`wetness`, `puddleCoverage`, `snowAmount`)
     into `applySceneLightBounceAndHaze` and `evalFlashlightBeam` avoids crossing the 32-register SIMD occupancy cliff in
-    `fsSolid`.
+    `fsSolid`. Because the 6.2 m streetlamp's geometric mirror point for Outbreak's steep camera lands at `z ≈ 49.3` on
+    the far sidewalk under the tree canopy, wet-road and puddle sheen is shaped on the road/walk pools themselves with
+    `4.5 : 1` band-limited streaks elongated toward `F.cam.xz` (producing zero single-pixel fireflies or bloom shimmer).
   - Across 7 alternating Metal rounds in the Lab (`1280×800`, `perf/weather-lab.json`), whole-frame GPU medians are
     **`1.32 ms` (`Clear`)**, **`1.39 ms` (`Drizzle`)**, **`1.72 ms` (`Rain`)**, **`1.53 ms` (`Storm`)**, **`1.26 ms` (`Fog`)**,
     and **`1.28 ms` (`Snow`)**. In Outbreak (`1000×680`), whole-frame GPU medians are **`3.85 / 3.69 / 3.37 / 3.24 / 3.11 / 2.99 ms`**
@@ -803,6 +805,9 @@ Evidence and patches: `~/code/home/artifacts/2026-10-14-visual-experiments/progr
   lights in the benchmark frames; 11 rejected dummy lights cost +2.2–2.5 ms, so revisit if light counts grow.
 - **Directional actor bounce and wet asphalt lamp sheen**: actor pixels moved under 2/255. The 6.2 m lens's mirror point
   for this camera lands on the far sidewalk under the tree canopy, so a physically placed sheen never reaches the road.
+  Weather (`@arcade/kit/weather` and `games/outbreak/src/lighting.ts`) now owns wet surfaces, shaping wet-asphalt and
+  puddle sheen as camera-stretched streaks on the road/walk pools (`sPos`) driven by `wetness` and `puddleCoverage`
+  (`OL.u8.yz`) instead of the geometric mirror point.
 - **Foliage contact bend and Karis bloom average**: the bend darkened the shrub mass instead of reading as parting.
   With `bloom = 0.068` and a 0.9 threshold, the Karis average changed the frame by at most 3/255 and frame-to-frame
   shimmer not at all.

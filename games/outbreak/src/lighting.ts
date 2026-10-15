@@ -812,46 +812,41 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
   if (inRoom && abs(n.y) < 0.5 && world.y < 2.15) {
     col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
   }
-  let w = clamp(OL.u0.z, 0.0, 1.0);
   let isInView = OL.u5.w > 0.5;
   let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
-  let texAlbedo = (surfCol * 1.48 + baseColor * 0.21);
 
   if (!inRoom) {
     var wetPuddle = 0.0;
     if (OL.u8.y > 0.01) {
       if (world.y < 0.35 && n.y > 0.75) {
-        let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u8.y * (0.45 + 0.85 * q.x * q.y);
+        // 3.7:1 camera-stretched puddle cells along z toward F.cam.xz
+        let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+        wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
         col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
       }
     }
     if (OL.u8.w > 0.01 && n.y > 0.45) {
       col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u8.w * 0.55 * n.y);
     }
-    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
-    let sScale = OL.u1.w;
-    if (sScale > 0.001) {
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + camera-stretched wet road sheen
+    if (OL.u1.w > 0.001) {
       let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
-        let sodiumCol = vec3f(1.0, 0.45, 0.09);
         let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
-        col += texAlbedo * (1.0 + wetPuddle * OL.u2.y * 1.15) * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
+        col += (surfCol * 1.48 + baseColor * 0.21) * (1.0 + wetPuddle * OL.u2.y * 1.35) * vec3f(1.0, 0.45, 0.09) * poolS * select(1.12, 2.75, isInView) * OL.u1.w;
       }
     }
 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
-    let pScale = OL.u1.x;
-    let wScale = OL.u1.y;
-    if ((pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
+    if ((OL.u1.x > 0.001 || OL.u1.y > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
       let dWinL2 = dot((world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64));
       let dWinR2 = dot((world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64));
       let dPorch2 = dot((world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52));
       let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView);
-      let spill = ((exp(-dWinL2 / 14.5) + exp(-dWinR2 / 14.5)) * wScale * 0.88 + exp(-dPorch2 / 15.5) * pScale * 1.05) * cutZoneScale * groundMask;
-      col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
+      let spill = ((exp(-dWinL2 / 14.5) + exp(-dWinR2 / 14.5)) * OL.u1.y * 0.88 + exp(-dPorch2 / 15.5) * OL.u1.x * 1.05) * cutZoneScale * groundMask;
+      col += (surfCol * 1.48 + baseColor * 0.21) * vec3f(1.0, 0.54, 0.14) * spill * clamp(OL.u0.z, 0.0, 1.0) * (1.0 + wetPuddle * OL.u2.y * 1.15);
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0)
@@ -859,7 +854,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
     if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9) {
       let pPool = exp(-dp2 / 7.5);
-      col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (0.4 + 0.6 * w) * (1.0 + wetPuddle * 0.65);
+      col += (surfCol * 1.48 + baseColor * 0.21) * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (0.4 + 0.6 * clamp(OL.u0.z, 0.0, 1.0)) * (1.0 + wetPuddle * 0.65);
     }
   } else if (world.y < 2.72) {
     // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
@@ -957,42 +952,39 @@ fn gaussLineAir(ro: vec3f, rd: vec3f, tMax: f32, c: vec3f, sigma: f32, slack: f3
 }
 
 fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
+  let head = OL.u7.xyz;
+  if (world.x < head.x - 8.5) { return vec3f(0.0); }
   let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
-  if (nightLamps <= 0.001) { return vec3f(0.0); }
+  let haze = OL.u7.w * OL.u1.w * select(1.0, 0.6, inView) * nightLamps;
+  if (haze <= 0.001) { return vec3f(0.0); }
   let ro = F.cam.xyz;
   let seg = world - ro;
   let tMax = length(seg);
   let rd = seg / tMax;
-  var out = vec3f(0.0);
-  let haze = OL.u7.w * OL.u1.w * select(1.0, 0.6, inView);
-  if (haze > 0.001) {
-    let head = OL.u7.xyz;
-    let k = 0.58;
-    var air = 0.0;
-    if (rd.y < -1e-4) {
-      let t0 = max(0.0, (head.y - 0.04 - ro.y) / rd.y);
-      let t1 = min(tMax, -ro.y / rd.y);
-      if (t1 > t0) {
-        let oxz = ro.xz - head.xz;
-        let tAx = clamp(-dot(oxz, rd.xz) / max(dot(rd.xz, rd.xz), 1e-6), t0, t1);
-        if (length(oxz + rd.xz * tAx) < k * head.y * 1.2 + 0.5) {
-          let dt = (t1 - t0) / 6.0;
-          for (var i = 0; i < 6; i++) {
-            let p = ro + rd * (t0 + (f32(i) + 0.5) * dt);
-            let depth = head.y - p.y;
-            let coneR = 0.2 + k * depth;
-            let r2 = dot(p.xz - head.xz, p.xz - head.xz);
-            air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
-          }
-          air *= dt;
+  let k = 0.58;
+  var air = 0.0;
+  if (rd.y < -1e-4) {
+    let t0 = max(0.0, (head.y - 0.04 - ro.y) / rd.y);
+    let t1 = min(tMax, -ro.y / rd.y);
+    if (t1 > t0) {
+      let oxz = ro.xz - head.xz;
+      let tAx = clamp(-dot(oxz, rd.xz) / max(dot(rd.xz, rd.xz), 1e-6), t0, t1);
+      if (length(oxz + rd.xz * tAx) < k * head.y * 1.2 + 0.5) {
+        let dt = (t1 - t0) / 6.0;
+        for (var i = 0; i < 6; i++) {
+          let p = ro + rd * (t0 + (f32(i) + 0.5) * dt);
+          let depth = head.y - p.y;
+          let coneR = 0.2 + k * depth;
+          let r2 = dot(p.xz - head.xz, p.xz - head.xz);
+          air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
         }
+        air *= dt;
       }
     }
-    let lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
-    let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
-    out += vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
   }
-  return out * nightLamps;
+  let lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
+  let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
+  return vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
 }
 
 /**
@@ -1019,15 +1011,16 @@ fn evalActorGroundShadow(world: vec3f, n: vec3f, inRoom: bool) -> f32 {
   let k = OL.u8.x;
   if (k <= 0.001 || n.y < 0.6 || world.y > OL.u6.z + 0.35) { return 1.0; }
   let g = world.xz;
-  let p = OL.u6.xy;
-  let z0 = OL.u9.xy;
-  let z1 = OL.u9.zw;
-  let near = min(dot(g - p, g - p), min(dot(g - z0, g - z0), dot(g - z1, g - z1)));
-  if (near > 9.0) { return 1.0; }
-  // Outdoors the sodium lens is the dominant caster; indoors only the boot contact remains.
+  let d0 = dot(g - OL.u6.xy, g - OL.u6.xy);
+  let d1 = dot(g - OL.u9.xy, g - OL.u9.xy);
+  let d2 = dot(g - OL.u9.zw, g - OL.u9.zw);
+  if (min(d0, min(d1, d2)) > 9.0) { return 1.0; }
   let lamp = OL.u7.xyz;
   let directional = select(1.0, 0.0, inRoom || OL.u5.w > 0.5);
-  let occ = max(actorShadowTerm(g, p, lamp, 1.72, directional), max(actorShadowTerm(g, z0, lamp, 1.68, directional), actorShadowTerm(g, z1, lamp, 1.68, directional)));
+  var occ = 0.0;
+  if (d0 <= 9.0) { occ = actorShadowTerm(g, OL.u6.xy, lamp, 1.72, directional); }
+  if (d1 <= 9.0) { occ = max(occ, actorShadowTerm(g, OL.u9.xy, lamp, 1.68, directional)); }
+  if (d2 <= 9.0) { occ = max(occ, actorShadowTerm(g, OL.u9.zw, lamp, 1.68, directional)); }
   return 1.0 - occ * k;
 }
 `
