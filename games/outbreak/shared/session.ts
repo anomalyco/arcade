@@ -43,6 +43,7 @@ export type SessionView = {
   revision: number
   prompt: InteractTarget | undefined
   peek: PeekInfo | null
+  pendingItems?: ReadonlySet<string>
 }
 
 /** Transport boundary: M4 can implement the same update/view contract with snapshots. */

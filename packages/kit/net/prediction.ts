@@ -85,3 +85,109 @@ export class Smoother {
     if (Math.abs(this.y) < 1e-4) this.y = 0
   }
 }
+
+/**
+ * One optimistically predicted action ("predict the feedback, confirm the outcome").
+ * Cosmetic feedback fires on the press frame (`seq`); when the server acknowledges `seq` (or sends a matching
+ * event), the prediction is either confirmed (suppressing duplicate local feedback) or rejected (invoking `rollback`
+ * to quietly ease local state back without a pop). While `seq > ack`, `reapply` keeps optimistic world overlays
+ * active across intermediate snapshots.
+ */
+export type OptimisticEvent<K extends string = string, P = unknown> = {
+  id: number
+  seq: number
+  kind: K
+  key?: string
+  payload: P
+  reapply?: () => void
+  rollback?: (event: OptimisticEvent<K, P>) => void
+  confirm?: (event: OptimisticEvent<K, P>) => void
+}
+
+export class OptimisticEvents<K extends string = string, P = unknown> {
+  private pending: OptimisticEvent<K, P>[] = []
+  private nextId = 0
+  readonly stats = { predicted: 0, confirmed: 0, rejected: 0 }
+
+  get entries(): readonly OptimisticEvent<K, P>[] {
+    return this.pending
+  }
+
+  get mispredictionRate(): number {
+    const resolved = this.stats.confirmed + this.stats.rejected
+    return resolved > 0 ? this.stats.rejected / resolved : 0
+  }
+
+  /** Records a new optimistic action on the press frame and returns its assigned event (with monotonic `id`). */
+  predict(init: Omit<OptimisticEvent<K, P>, "id">): OptimisticEvent<K, P> {
+    if (init.key !== undefined) {
+      const idx = this.pending.findIndex((e) => e.key === init.key)
+      if (idx >= 0) this.pending.splice(idx, 1)
+    }
+    const ev: OptimisticEvent<K, P> = { ...init, id: ++this.nextId }
+    this.stats.predicted++
+    this.pending.push(ev)
+    if (this.pending.length > 256) this.pending.shift()
+    return ev
+  }
+
+  /** Confirms and removes the oldest pending event matching `match` (for example when a server event arrives). */
+  confirmWhere(match: (event: OptimisticEvent<K, P>) => boolean): OptimisticEvent<K, P> | undefined {
+    const idx = this.pending.findIndex(match)
+    if (idx < 0) return undefined
+    const [ev] = this.pending.splice(idx, 1)
+    if (!ev) return undefined
+    this.stats.confirmed++
+    ev.confirm?.(ev)
+    return ev
+  }
+
+  /** Confirms and removes a pending event by its `key`. */
+  confirmByKey(key: string): OptimisticEvent<K, P> | undefined {
+    return this.confirmWhere((e) => e.key === key)
+  }
+
+  /**
+   * Resolves all pending events with `seq <= ackSeq`: each event is confirmed if `isConfirmed(ev)` returns true,
+   * or rejected (calling `ev.rollback`) otherwise. Remaining in-flight events (`seq > ackSeq`) run `ev.reapply()`.
+   */
+  reconcile(
+    ackSeq: number,
+    isConfirmed?: (event: OptimisticEvent<K, P>) => boolean,
+  ): { confirmed: OptimisticEvent<K, P>[]; rejected: OptimisticEvent<K, P>[] } {
+    const confirmed: OptimisticEvent<K, P>[] = []
+    const rejected: OptimisticEvent<K, P>[] = []
+    let i = 0
+    while (i < this.pending.length) {
+      const ev = this.pending[i]!
+      if (ev.seq <= ackSeq) {
+        this.pending.splice(i, 1)
+        if (isConfirmed?.(ev)) {
+          this.stats.confirmed++
+          ev.confirm?.(ev)
+          confirmed.push(ev)
+        } else {
+          this.stats.rejected++
+          ev.rollback?.(ev)
+          rejected.push(ev)
+        }
+      } else {
+        i++
+      }
+    }
+    for (const ev of this.pending) ev.reapply?.()
+    return { confirmed, rejected }
+  }
+
+  hasPending(kind?: K, key?: string): boolean {
+    return this.pending.some((e) => (kind === undefined || e.kind === kind) && (key === undefined || e.key === key))
+  }
+
+  findPending(match: (event: OptimisticEvent<K, P>) => boolean): OptimisticEvent<K, P> | undefined {
+    return this.pending.find(match)
+  }
+
+  reset(): void {
+    this.pending.length = 0
+  }
+}

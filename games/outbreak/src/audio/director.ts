@@ -106,15 +106,17 @@ export class SoundDirector {
     for (const shot of world.shots) {
       if (this.shots.has(shot.id)) continue
       this.shots.add(shot.id)
-      emit({ id: "gun.pistol.shot", x: shot.fromX, y: shot.fromY, source: "shot" })
-      emit({ id: "gun.casing", x: shot.fromX, y: shot.fromY, delay: 0.38 + this.rng() * 0.12, source: "shot" })
+      if (!shot.confirmedLocal) {
+        emit({ id: "gun.pistol.shot", x: shot.fromX, y: shot.fromY, source: "shot" })
+        emit({ id: "gun.casing", x: shot.fromX, y: shot.fromY, delay: 0.38 + this.rng() * 0.12, source: "shot" })
+      }
       if (shot.hitZombieId !== null) {
         emit({ id: "zombie.hit", x: shot.toX, y: shot.toY, delay: 0.02, source: "shot" })
         if (shot.killed && !this.deaths.has(shot.hitZombieId)) {
           this.deaths.add(shot.hitZombieId)
           emit({ id: "zombie.death", x: shot.toX, y: shot.toY, delay: 0.1, source: "shot" })
         }
-      } else if (this.started) {
+      } else if (this.started && !shot.confirmedLocal && !shot.tentativeHit) {
         for (const hit of shotImpacts(world.town, shot, (id) => world.portals.get(id)?.barricadePlanks ?? 0)) {
           emit({ id: `impact.bullet.${hit.surface}`, x: hit.x, y: hit.y, delay: impactDelay(hit.t), gain: hit.through ? 0.8 : 1, source: "shot" })
         }
@@ -139,14 +141,16 @@ export class SoundDirector {
         const hitRate = wear > 0.08 ? Number((1 - wear * 0.22).toFixed(3)) : undefined
         if (!this.meleeSwings.has(m.id)) {
           this.meleeSwings.add(m.id)
-          const isHeavy = m.heavy || w.weaponClass === "two-heavy"
-          emit({
-            id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
-            x: m.x,
-            y: m.y,
-            ...(hitRate ? { rate: Number((1 - wear * 0.1).toFixed(3)) } : {}),
-            source: m.attackerId,
-          })
+          if (!m.confirmedLocal) {
+            const isHeavy = m.heavy || w.weaponClass === "two-heavy"
+            emit({
+              id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
+              x: m.x,
+              y: m.y,
+              ...(hitRate ? { rate: Number((1 - wear * 0.1).toFixed(3)) } : {}),
+              source: m.attackerId,
+            })
+          }
         }
         for (const h of m.hits) {
           const hitKey = `${m.id}:${h.zombieId}`

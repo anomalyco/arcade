@@ -12,6 +12,8 @@
  * Pure: no timers, sockets or DOM, so tests drive it with `./link-sim`.
  */
 
+import { OptimisticEvents } from "./prediction"
+
 export type RollbackSim<S, F, E> = {
   clone(s: S): S
   /** Runs one tick of `frame` on `s` and returns the tick's events. */
@@ -25,11 +27,13 @@ export type RollbackSim<S, F, E> = {
   sig?(e: E): string
 }
 
-export type RollbackOptions = {
+export type RollbackOptions<E = unknown> = {
   /** An event re-simulated this many ticks from where it was shown is the same event (default 4). */
   dedupeTicks?: number
   /** Furthest the prediction runs past the confirmed tick; beyond it the head waits (default 36, 0.6 s at 60 Hz). */
   maxAhead?: number
+  /** Called when a predicted event was never confirmed within `dedupeTicks` after the room passed its tick. */
+  onReject?: (e: E, tick: number) => void
 }
 
 export class RollbackClient<S, F, E> {
@@ -41,7 +45,10 @@ export class RollbackClient<S, F, E> {
   private own = new Map<number, number>()
   private shown = new Map<number, Set<string>>()
   private readonly dedupeTicks: number
+  private readonly onReject?: (e: E, tick: number) => void
   readonly maxAhead: number
+  /** Shared optimistic event tracker: records predicted events and confirms or rejects them as room frames arrive. */
+  readonly optimistic = new OptimisticEvents<string, E>()
   /** The confirmed tick. */
   tick = 0
   /** Ticks re-simulated by the last `advance` (0 when it only stepped forward). */
@@ -49,10 +56,11 @@ export class RollbackClient<S, F, E> {
 
   constructor(
     private readonly sim: RollbackSim<S, F, E>,
-    opts: RollbackOptions = {},
+    opts: RollbackOptions<E> = {},
   ) {
     this.dedupeTicks = opts.dedupeTicks ?? 4
     this.maxAhead = opts.maxAhead ?? 36
+    this.onReject = opts.onReject
   }
 
   get ready(): boolean {
@@ -80,6 +88,7 @@ export class RollbackClient<S, F, E> {
     this.tick = tick
     this.predicted = null
     this.dirty = true
+    this.optimistic.reset()
     for (const t of this.own.keys()) if (t <= tick) this.own.delete(t)
   }
 
@@ -100,8 +109,16 @@ export class RollbackClient<S, F, E> {
     this.lastFrame = frame
     this.own.delete(tick)
     this.dirty = true
+    const sig = this.sim.sig
+    if (sig) {
+      for (const e of events) {
+        const suffix = `:${sig(e)}`
+        this.optimistic.confirmWhere((p) => p.key?.endsWith(suffix) === true && Math.abs(p.seq - tick) <= this.dedupeTicks)
+      }
+      this.optimistic.reconcile(tick - this.dedupeTicks)
+    }
     for (const t of this.shown.keys()) if (t < tick - 4 * this.dedupeTicks) this.shown.delete(t)
-    return this.fresh(tick, events)
+    return this.fresh(tick, events, false)
   }
 
   /**
@@ -126,12 +143,12 @@ export class RollbackClient<S, F, E> {
       const events = this.sim.step(this.predicted, this.sim.predict(this.lastFrame, this.own.get(t)))
       this.predictedTick = t
       after?.(this.predicted, t)
-      out.push(...this.fresh(t, events))
+      out.push(...this.fresh(t, events, true))
     }
     return out
   }
 
-  private fresh(tick: number, events: E[]): E[] {
+  private fresh(tick: number, events: E[], predicted: boolean): E[] {
     const sig = this.sim.sig
     if (!sig) return events
     const out: E[] = []
@@ -143,6 +160,15 @@ export class RollbackClient<S, F, E> {
       let set = this.shown.get(tick)
       if (!set) this.shown.set(tick, (set = new Set()))
       set.add(key)
+      if (predicted) {
+        this.optimistic.predict({
+          seq: tick,
+          kind: key.split(":")[0] ?? key,
+          key: `${tick}:${key}`,
+          payload: e,
+          rollback: (ev) => this.onReject?.(ev.payload, ev.seq),
+        })
+      }
       out.push(e)
     }
     return out

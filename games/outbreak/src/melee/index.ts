@@ -134,7 +134,7 @@ export const outbreakMeleeFeature = registerOutbreakClientFeature({
                   settings.motion.burst,
                 )
               }
-            } else {
+            } else if (!swing.confirmedLocal) {
               cam.add(0.09 * heavyScale, swing.aim, 0.55 * heavyScale)
               cam.punch(-0.07 * heavyScale, (swing.combo === 2 ? -1 : 1) * 0.005 * heavyScale)
             }

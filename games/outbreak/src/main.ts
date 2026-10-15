@@ -1444,7 +1444,7 @@ async function main() {
       doorData[o] = door.rect[0]
       doorData[o + 1] = 0
       doorData[o + 2] = (door.rect[1] + door.rect[3]) / 2
-      doorData[o + 3] = door.open ? -Math.PI / 2 : 0
+      doorData[o + 3] = (door as { angle?: number }).angle ?? (door.open ? -Math.PI / 2 : 0)
       doorData[o + 4] = 1
       doorData[o + 5] = 1
       doorData[o + 6] = 1

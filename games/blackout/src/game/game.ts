@@ -24,7 +24,7 @@ import { FRAME_FLOATS } from "../render/shaders"
 import type { Input, MuxState } from "./input"
 import type { Session } from "./session"
 import { Smoothed } from "./smooth"
-import { Predictor } from "@arcade/kit/net/prediction"
+import { OptimisticEvents, Predictor } from "@arcade/kit/net/prediction"
 import { Glide, type RemoteSample, pushSnapshot, remoteBuffer, sampleRemote, soldierAt } from "./remote"
 import { TEAM_COLORS, canUse, modeSprites, teamOf } from "./mode-fx"
 import { objectiveBanner } from "./objective-fx"
@@ -143,8 +143,9 @@ export class Game {
   avatars = new Map<string, Avatar>()
   corpses: Corpse[] = []
   feed: FeedLine[] = []
-  /** Last hitmarker and kill-confirm times (seconds), for the HUD. */
+  /** Last hitmarker, tentative hitmarker, and kill-confirm times (seconds), for the HUD. */
   hitAt = -10
+  tentativeHitAt = -10
   killAt = -10
   banner: { text: string; t: number } | null = null
   /** Crosshair spread from recent firing, 0..1. */
@@ -175,6 +176,10 @@ export class Game {
   private wasAlive = false
   /** Your inputs the server hasn't acknowledged yet, replayed on every snapshot. */
   private predictor = new Predictor<Intent>()
+  readonly optimistic = new OptimisticEvents<
+    "shot" | "reload" | "equip" | "melee",
+    { tentativeHit?: boolean; pelletsLeft?: number; serverHit?: boolean }
+  >()
   /** Recent snapshots: remote soldiers and vehicles are drawn between the two around now − delay. */
   private remote = remoteBuffer()
   private bracket: RemoteSample | null = null
@@ -487,9 +492,16 @@ export class Game {
       } else this.place(b)
     }
     if (you) {
+      this.optimistic.reconcile(s.ack, (ev) => {
+        if (ev.kind === "reload") return you.reloading > 0 || you.mag === this.kit.mag
+        if (ev.kind === "equip") return you.equipLeft < this.kit.equipCount
+        return true
+      })
       if (you.reloading > 0 && this.reloadUntil <= this.now) this.reloadUntil = this.now + you.reloading
-      if (this.now - this.lastLocalShot > 0.6 && this.reloadUntil <= this.now) this.mag = you.mag
-      if (this.now - this.lastEquip > 0.6) {
+      if (!this.optimistic.hasPending("shot") && !this.optimistic.hasPending("reload") && this.reloadUntil <= this.now && this.now - this.lastLocalShot > 0.2) {
+        this.mag = you.mag
+      }
+      if (!this.optimistic.hasPending("equip") && this.now - this.lastEquip > 0.2) {
         this.equip = you.equip
         this.equipLeft = you.equipLeft
       }
@@ -523,10 +535,22 @@ export class Game {
           this.blood(e.x1, e.y1, dir, by === "shotgun" ? 0.4 : 1)
         }
         if (e.by === this.myId) {
-          if (e.hit && t - this.hitSoundAt > 0.04) {
-            this.hitAt = t
-            this.hitSoundAt = t
-            this.sound.hit(false)
+          const pend = this.optimistic.findPending((p) => p.kind === "shot")
+          if (e.hit) {
+            if (pend) pend.payload.serverHit = true
+            this.tentativeHitAt = -10
+            if (t - this.hitSoundAt > 0.04) {
+              this.hitAt = t
+              this.hitSoundAt = t
+              this.sound.hit(false)
+            }
+          }
+          if (pend) {
+            pend.payload.pelletsLeft = (pend.payload.pelletsLeft ?? 1) - 1
+            if (pend.payload.pelletsLeft <= 0) {
+              if (!pend.payload.serverHit) this.tentativeHitAt = -10
+              this.optimistic.confirmWhere((p) => p.id === pend.id)
+            }
           }
           return
         }
@@ -606,13 +630,17 @@ export class Game {
       }
       case "throw": {
         this.grenades.set(e.id, { id: e.id, by: e.by, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, at: t + e.fuse, spin: 0, yaw: Math.random() * 6.28 })
-        if (e.by === this.myId) return
+        if (e.by === this.myId) {
+          this.optimistic.confirmWhere((p) => p.kind === "equip")
+          return
+        }
         const a = this.avatars.get(e.by)
         if (a) useGear(a, t, false)
         if (me) this.sound.toss(e.x - me.x, e.y - me.y, false)
         return
       }
       case "plant": {
+        if (e.by === this.myId) this.optimistic.confirmWhere((p) => p.kind === "equip")
         const a = e.by === this.myId ? null : this.avatars.get(e.by)
         if (a) useGear(a, t, true)
         if (me && e.by !== this.myId && Math.hypot(e.x - me.x, e.y - me.y) < 7) this.sound.plant(e.x - me.x, e.y - me.y)
@@ -797,7 +825,7 @@ export class Game {
         this.triggerHeld = fire
         continue
       }
-      if (equip && this.equipLeft > 0) this.localEquip()
+      if (equip && this.equipLeft > 0) this.localEquip(seq)
       this.localGun(i.fire, reload, sprint, melee && !this.riding, firePressed, seq)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
@@ -810,11 +838,19 @@ export class Game {
   }
 
   /** Your own throw or plant animates and sounds at once; the frag itself arrives with the server's throw event. */
-  private localEquip(): void {
+  private localEquip(seq: number): void {
     const t = this.now
     this.equipLeft--
     this.lastEquip = t
     this.cooldownUntil = Math.max(this.cooldownUntil, t + EQUIP_LOCK)
+    this.optimistic.predict({
+      seq,
+      kind: "equip",
+      payload: {},
+      rollback: () => {
+        this.equipLeft = Math.min(this.kit.equipCount, this.equipLeft + 1)
+      },
+    })
     useGear(this.avatarMe, t, this.equip === "claymore")
     if (this.equip === "claymore") this.sound.plant(0, 0)
     else this.sound.toss(0, 0, true)
@@ -827,6 +863,7 @@ export class Game {
     if ((melee || (!kit.gun && fire)) && kit.melee && t >= this.swingReady) {
       this.swingReady = t + MELEE.cooldown
       this.swingLand = t + MELEE.windup
+      this.optimistic.predict({ seq, kind: "melee", payload: {} })
       swing(this.avatarMe, t)
       if (this.juice.trauma) this.cam?.add(0.18, this.aim, 1.1)
       this.sound.swipe(0, 0, true)
@@ -848,6 +885,15 @@ export class Game {
     }
     if (kit.reload && this.reloadUntil === 0 && ((reload && this.mag < kit.mag) || (fire && this.mag === 0))) {
       this.reloadUntil = t + gun.reload
+      this.optimistic.predict({
+        seq,
+        kind: "reload",
+        key: "reload",
+        payload: {},
+        rollback: () => {
+          this.reloadUntil = 0
+        },
+      })
     }
     const ready = t >= this.readyAt
     const pressed = fire && ready && (kit.auto || firePressed || !this.triggerHeld)
@@ -860,6 +906,7 @@ export class Game {
     const me = this.avatarMe
     shoot(me, t)
     const muzzle = this.muzzle(me)
+    let anyHit = false
     for (let k = 0; k < gun.pellets; k++) {
       const spread = bulletSpread(this.myId, seq, gun, k)
       const a = this.aim + spread
@@ -881,13 +928,27 @@ export class Game {
           hit = true
         }
       }
-      if (hit) stop = nearest
+      if (hit) {
+        stop = nearest
+        anyHit = true
+      }
       const x1 = b.x + dx * stop
       const y1 = b.y + dy * stop
       this.tracer(muzzle.x, muzzle.y, muzzle.z, x1, y1, this.gun)
       if (!hit && car) this.veh.ping(-1, x1, y1, a, this.fxv)
       else if (!hit && stop < gun.range) this.impact(x1, y1, a, this.gun)
     }
+    const wallNow = performance.now() / 1000
+    if (anyHit) this.tentativeHitAt = wallNow
+    this.optimistic.predict({
+      seq,
+      kind: "shot",
+      payload: { tentativeHit: anyHit, pelletsLeft: gun.pellets, serverHit: false },
+      rollback: () => {
+        this.mag = Math.min(kit.mag, this.mag + 1)
+        if (this.tentativeHitAt === wallNow) this.tentativeHitAt = -10
+      },
+    })
     this.muzzleFlash(muzzle.x, muzzle.y, muzzle.z, this.aim, this.gun)
     this.casing(me)
     this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.34 : 0.9))

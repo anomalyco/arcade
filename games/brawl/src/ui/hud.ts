@@ -172,7 +172,7 @@ export class Hud {
       const def = CHARACTERS[me.c]!
       let ab = ""
       def.abilities.forEach((a, i) => {
-        const cd = you.cd[i] ?? 0
+        const cd = focusId === g.myId ? g.cooldownOf(i) : (you.cd[i] ?? 0)
         const full = a.cooldown || 1
         const p = Math.max(0, Math.min(1, cd / full))
         ab += `<div class="ab${cd > 0.05 ? " cooling" : ""}" style="--p:${p.toFixed(3)}">

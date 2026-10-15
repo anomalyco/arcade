@@ -267,8 +267,10 @@ export class OutbreakFeelTracker {
         const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
         const isLocalShot = distFromMe < 1.8
         if (isLocalShot) {
-          this.triggerShot(shot.aim, 1)
-          if (shot.hitZombieId !== null) {
+          if (!shot.confirmedLocal) {
+            this.triggerShot(shot.aim, 1)
+          }
+          if (!shot.predicted && shot.hitZombieId !== null) {
             const pwr = shot.detachBone ? 1.25 : 1.0
             cam.add((shot.killed ? 0.22 : 0.12) * pwr, shot.aim, (shot.killed ? 0.85 : 0.45) * pwr)
             if (shot.killed) {

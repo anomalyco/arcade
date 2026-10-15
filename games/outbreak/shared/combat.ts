@@ -79,6 +79,9 @@ export type CombatShotEvent = {
   limp?: boolean
   detachBone: DetachableBone | null
   seed: number
+  predicted?: boolean
+  confirmedLocal?: boolean
+  tentativeHit?: boolean
 }
 
 export const MELEE_WEAPON_IDS = [
@@ -391,6 +394,8 @@ export type CombatMeleeEvent = {
   weaponBroke: boolean
   durabilityLow: boolean
   seed: number
+  predicted?: boolean
+  confirmedLocal?: boolean
 }
 
 /** Handle to spend durability on the held melee weapon in the progression ledger. */

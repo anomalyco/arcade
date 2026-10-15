@@ -354,7 +354,7 @@ export class OutbreakCombatFX {
 
     for (const s of shots) {
       const age = time - s.time
-      if (age >= 0 && age <= 0.09) {
+      if (!s.confirmedLocal && age >= 0 && age <= 0.09) {
         const u = 1 - age / 0.09
         const mx = (s.fromX + s.toX) * 0.5
         const mz = (s.fromY + s.toY) * 0.5
@@ -363,13 +363,19 @@ export class OutbreakCombatFX {
         if (len > 0.3) {
           pushAdd(mx, my, mz, len * 0.5, 1.0, 0.84, 0.45, u * 0.85, 4, s.aim, 0.025 / Math.max(0.5, len * 0.5), 0)
         }
+        if (s.tentativeHit) {
+          const hy = support(s.toX, s.toY) + 1.12
+          pushAdd(s.toX, hy, s.toY, 0.22 * u, 1.0, 0.86, 0.52, u * 0.65, 0, 0, 1, 0)
+        }
       }
 
       if (this.seenShots.has(s.id)) continue
       this.seenShots.add(s.id)
       onNewShot?.(s)
-      const fy = support(s.fromX, s.fromY) + 1.36
-      this.lastFlash = { x: s.fromX, y: fy, z: s.fromY, until: time + 0.08 }
+      if (!s.confirmedLocal) {
+        const fy = support(s.fromX, s.fromY) + 1.36
+        this.lastFlash = { x: s.fromX, y: fy, z: s.fromY, until: time + 0.08 }
+      }
 
       if (s.hitZombieId !== null && this.levelData) {
         this.splatter ??= new Splatter(outbreakSplatterSurfaces(this.levelData))
@@ -555,7 +561,7 @@ export class OutbreakCombatFX {
     for (const m of meleeSwings) {
       const def = MELEE_WEAPONS[m.weapon] ?? MELEE_WEAPONS.crowbar
       const age = time - m.time
-      if (age >= 0 && age <= 0.14) {
+      if (!m.confirmedLocal && age >= 0 && age <= 0.14) {
         const u = Math.min(1, age / 0.14)
         const fade = Math.sin(u * Math.PI)
         const sweepDir = m.combo === 2 ? 1 : -1

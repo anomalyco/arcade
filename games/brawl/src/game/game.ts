@@ -6,7 +6,7 @@ import type { Mesh } from "@arcade/kit/gpu/mesh"
 import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import { SceneLights, type Caster, type SceneLight, newSceneFrame, packSceneFrame } from "@arcade/kit/gpu/scene-frame"
 import { Glide, SnapshotBuffer, hermite2, lerp, lerpAngle } from "@arcade/kit/net/interpolate"
-import { Predictor } from "@arcade/kit/net/prediction"
+import { OptimisticEvents, Predictor } from "@arcade/kit/net/prediction"
 import { Flock } from "@arcade/kit/sim/boids"
 import { type Rect, pushOut, raycast } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
@@ -56,6 +56,9 @@ export class Game {
   private lights = new SceneLights()
   private frame = newSceneFrame()
   private predictor = new Predictor<Intent>()
+  readonly optimistic = new OptimisticEvents<"cast", { slot: number; swiped: boolean }>()
+  private predictedCd = [0, 0, 0, 0]
+  private castLockUntil = 0
   private body: Body | null = null
   private smoothed = new Smoothed()
   /** Where you were drawn when prediction switched on or off, and the offset blending that jump out. */
@@ -134,6 +137,11 @@ export class Game {
     this.queued = slot
   }
 
+  /** Effective cooldown (s) for ability slot `slot`, including optimistic press-frame start. */
+  cooldownOf(slot: number): number {
+    return Math.max(this.snap?.you?.cd[slot] ?? 0, this.predictedCd[slot] ?? 0)
+  }
+
   // Simulation side -------------------------------------------------------------------------------------------------
 
   update(dt: number, input: Input, w: number, h: number): void {
@@ -170,26 +178,51 @@ export class Game {
 
   private tick(input: Input): void {
     if (!this.myId) return
+    for (let k = 0; k < 4; k++) if (this.predictedCd[k]! > 0) this.predictedCd[k] = Math.max(0, this.predictedCd[k]! - DT)
     const { mx, my } = input.move()
     let cast = this.queued
     this.queued = -1
     if (cast < 0 && input.takeFirePress()) cast = 0
     // Holding the left button keeps swinging as the cooldown allows.
-    if (cast < 0 && input.firing && (this.snap?.you?.cd[0] ?? 1) <= 0.05) cast = 0
+    if (cast < 0 && input.firing && this.cooldownOf(0) <= 0.05) cast = 0
     if (!this.play) cast = -1
-    if (cast >= 0 && (this.snap?.you?.cd[cast] ?? 0) <= 0.05) {
-      const d = this.fighters.get(this.myId)
-      const me = this.me
-      if (d && me && d.castSlot !== cast) {
-        d.castSlot = cast
-        d.castAt = this.now
-        const ab = this.def(me.c).abilities[cast]
-        if (ab?.effects[0]?.kind === "melee") swing(d.a, d.a.t)
-      }
-    }
     const view = cast >= 0 && this.buf.size > 0 ? Math.round(Math.max(0, this.buf.renderTime(performance.now() / 1000)) * 1000) / 1000 : undefined
     const i: Intent = { mx, my, aim: this.aim, tx: this.cursor.x, ty: this.cursor.y, cast, ...(view !== undefined ? { view } : {}) }
     const seq = this.predictor.record(i) + 1
+    if (cast >= 0 && this.now >= this.castLockUntil && this.cooldownOf(cast) <= 0.05) {
+      const d = this.fighters.get(this.myId)
+      const me = this.me
+      const ab = me && has(me, F.alive) && !has(me, F.falling) ? this.def(me.c).abilities[cast] : undefined
+      if (me && ab) {
+        const eff0 = ab.effects[0]
+        const kind = eff0?.kind
+        const pos = this.body ?? me
+        const swiped = ab.windup === 0 && kind === "melee"
+        this.predictedCd[cast] = ab.cooldown
+        this.castLockUntil = this.now + ab.windup + (ab.channel?.time ?? 0) + (ab.recover ?? 0)
+        if (d && d.castSlot !== cast) {
+          d.castSlot = cast
+          d.castAt = this.now
+          if (kind === "melee") swing(d.a, d.a.t)
+        }
+        if (kind === "melee") this.sound.play(cast === 0 && me.c === "slab" ? "melee.swing.heavy" : "melee.swing.light", pos.x, pos.y)
+        else if (kind === "dash") this.sound.play("melee.swing.heavy", pos.x, pos.y, { rate: 0.8 })
+        else this.sound.play("spell_arcane_cast", pos.x, pos.y, { gain: 0.5 })
+        if (swiped && eff0?.kind === "melee") this.fx.swipe(this.now, pos.x, pos.y, this.aim, eff0.range, [2, 2, 2.2])
+        this.optimistic.predict({
+          seq,
+          kind: "cast",
+          key: `cast:${cast}`,
+          payload: { slot: cast, swiped },
+          rollback: () => {
+            this.predictedCd[cast] = 0
+            this.castLockUntil = 0
+            const draw = this.fighters.get(this.myId)
+            if (draw && draw.castSlot === cast) draw.castSlot = -1
+          },
+        })
+      }
+    }
     const prev = this.predictor.prevCommands(2)
     this.session.send(prev.length ? { type: "intent", seq, i, prev } : { type: "intent", seq, i })
     if (this.predicting && this.body) {
@@ -262,6 +295,10 @@ export class Game {
     const b = this.body
     const bx = b.x, by = b.y
     this.predictor.reconcile(s.ack - 1, () => Object.assign(b, { x: f.x, y: f.y, vx: f.vx, vy: f.vy, dash: null }), (cmd) => this.step(b, cmd))
+    this.optimistic.reconcile(s.ack, (ev) => (s.you?.cd[ev.payload.slot] ?? 0) > 0.05)
+    for (let k = 0; k < 4; k++) {
+      if (!this.optimistic.hasPending("cast", `cast:${k}`)) this.predictedCd[k] = s.you?.cd[k] ?? 0
+    }
     if (Math.hypot(b.x - bx, b.y - by) > 2) this.smoothed.reset(b)
     else this.smoothed.correct(b.x - bx, b.y - by)
   }
@@ -284,6 +321,13 @@ export class Game {
     const snd = this.sound
     switch (e.k) {
       case "cast": {
+        if (e.by === this.myId) {
+          const pend = this.optimistic.findPending((p) => p.kind === "cast" && p.payload.slot === e.slot)
+          if (pend) {
+            if (!pend.payload.swiped) this.optimistic.confirmByKey(`cast:${e.slot}`)
+            break
+          }
+        }
         const f = this.snap?.f.find((q) => q.i === e.by)
         const def = f ? this.def(f.c).abilities[e.slot] : undefined
         const kind = def?.effects[0]?.kind
@@ -293,6 +337,7 @@ export class Game {
         break
       }
       case "melee":
+        if (e.by === this.myId && this.optimistic.confirmWhere((p) => p.kind === "cast" && p.payload.swiped)) break
         fx.swipe(t, e.x, e.y, e.aim, e.range, [2, 2, 2.2])
         break
       case "burst": {
