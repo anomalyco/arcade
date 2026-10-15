@@ -141,14 +141,23 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
   - `onFocusChange?: (focused: boolean, activeRow?: LabRow) => void` and `onToggle?: (visible: boolean) => void`.
 - `LabOptions` also takes `history` (the workbench's undo and redo, used by knobs' `u`/`z`), `variants` (where saved
   knobs variants are kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
-- Knobs draws each group as a card with a die (Random, `⌥` Mutate) and a reset icon that shows while the group differs
-  from its defaults; the header has Random, Reset, Copy and `?`.
+- Knobs draws each group under a heading with a die (Random, `⌥` Mutate) and a reset icon that shows while the group
+  differs from its defaults; the header has Random, Reset, Copy and `?`.
+- Every LabPanel wears the `arcade` knobs preset (`arcadePreset` in `packages/kit/lab-knobs.ts`), so its rows match the
+  Lab chrome: square corners (the Lab chrome is square too), 24 px rows, flat rows split by hairlines instead of cards,
+  11.5 px labels and values in the UI font with tabular figures, choice fields like the Lab's selects and action
+  buttons, the variants strip and All on/All off like the Details buttons (`.lab-act`). An inline panel has no frame of
+  its own. A choice row's label column is as wide as its group's longest choice label (measured once per new set of
+  rows, at most 48% of the row) and the field takes the rest; a focused field spreads over its row to show the whole
+  value, and labels and values carry their full text as tooltips. Change the look through the preset's tokens and
+  `css`, never in `packages/knobs`; gaps go to Kit's knobs session (`knobs-requests.md`).
 - Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
   highlighting; `setView({ order, filter })` orders groups and filters rows; `reveal(key)` focuses, scrolls and flashes
   a row; `resetControl(key)`; `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin (a dot at
-  the row's left edge on hover). `panel.mountView(el, { id, include })` adds another knobs card over the same settings
-  (station `controls` widgets), sharing the write path, transactions, tuning seed and history.
-  Floating game overlays keep their previous look.
+  the row's left edge on hover). `panel.mountView(el, { id, include, claim })` adds another knobs card over the same
+  settings (station `controls` widgets), sharing the write path, transactions, tuning seed and history. With
+  `claim: true` (station cards) Details leaves those rows out while the card is mounted, so each setting shows once;
+  `reveal(key)` finds a claimed row in its card.
 - Horizontal pointer dragging on `<output>` (and holding `F` over an active numeric row) scrubs values continuously
   (`Shift` ×10, `Alt` ×0.1; `Escape` cancels an active `F`-scrub).
 
@@ -263,6 +272,14 @@ hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
 hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 ```
+
+`hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs look
+at 1440×900 and 1728×1117@2x on the Outbreak scenes station and the vignette section: no rounded box anywhere in the
+workbench outside the viewport, 24 px knobs rows, labels, values and choices in one 11.5 px font, no frame around inline
+panels, flat groups, knobs buttons computed-style equal to `.lab-act`, no group in both the station's controls card and
+Details, cut labels and values readable (tooltip, and a focused choice spans its row), RMB and Ctrl-click on a Details
+button never open the radial while an RMB tap on the canvas does, a press on a panel closes it, and Outbreak's floating
+overlay wears the same preset. `--shots-only` captures a before/after pair.
 
 `prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
 the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.
