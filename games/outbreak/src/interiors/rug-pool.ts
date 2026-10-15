@@ -1,6 +1,6 @@
 import { rugSpecKey, type RugSpec } from "@arcade/kit/textures/rug"
 import { RUG_DIRECTORY_SLOTS } from "./wgsl"
-import type { RugWorkerRequest, RugWorkerResponse } from "./rug-worker"
+import { createRugWorker, type RugWorkerRequest, type RugWorkerResponse } from "@arcade/kit/textures/rug-baker"
 
 export type RugRequest = {
   /** Directory key (stream slot × 4 + rug index). */
@@ -50,7 +50,7 @@ export class RugPool {
     })
     this.view = this.texture.createView({ dimension: "2d-array" })
     this.layers = Array.from({ length: this.rugLayers }, () => ({ key: null, used: 0 }))
-    this.worker = opts.worker !== undefined ? opts.worker : typeof Worker !== "undefined" ? new Worker(new URL("./rug-worker.ts", import.meta.url), { type: "module" }) : null
+    this.worker = opts.worker !== undefined ? opts.worker : createRugWorker()
     if (this.worker) {
       this.worker.onmessage = (ev: MessageEvent<RugWorkerResponse>) => this.receive(ev.data)
       this.post({ id: 0, kind: "tiles", size: this.size }, "tiles", true)

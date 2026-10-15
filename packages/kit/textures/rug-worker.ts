@@ -1,5 +1,5 @@
-import { bakeInteriorTiles } from "@arcade/kit/textures/interior-tiles"
-import { bakeRug, buildRugMips, type RugSpec } from "@arcade/kit/textures/rug"
+import { bakeInteriorTiles } from "./interior-tiles"
+import { bakeRug, buildRugMips, type RugSpec } from "./rug"
 
 export type RugWorkerRequest =
   | { id: number; kind: "rug"; spec: RugSpec; size: number }

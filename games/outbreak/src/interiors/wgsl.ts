@@ -26,6 +26,10 @@ export type InteriorWgslRefs = {
   /** Number of buildings to search and the rect of building `i`. */
   buildingCount: string
   buildingRect: (i: string) => string
+  /** Flashlight origin in plan (vec2f) for the pile rake. */
+  flashXZ: string
+  /** True when the hand-built origin houses (and their tiled kitchens) are on screen. */
+  classicLayout: string
 }
 
 export const outbreakInteriorRefs: InteriorWgslRefs = {
@@ -34,6 +38,8 @@ export const outbreakInteriorRefs: InteriorWgslRefs = {
   theme: i => `OL.bldTheme[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
   buildingCount: "select(4, i32(OL.win.w), OL.win.z > 0.5)",
   buildingRect: i => `houseRect(${i})`,
+  flashXZ: "OL.u3.xy",
+  classicLayout: "OL.win.z < 0.5",
 }
 
 export function interiorDeclarationsWgsl(r: InteriorWgslRefs): string {
@@ -157,7 +163,7 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
         if (n.y > 0.5) {
           n = normalize(vec3f(-slope.x * 0.35, 1.0, -slope.y * 0.35));
           // Bump the response to the flashlight and moon too: their direct light was summed with the flat normal.
-          let toFlash = normalize(vec3f(OL.u3.x - o.world.x, 1.1, OL.u3.y - o.world.z));
+          let toFlash = normalize(vec3f(${r.flashXZ}.x - o.world.x, 1.1, ${r.flashXZ}.y - o.world.z));
           let rake = clamp(dot(n, toFlash) / max(dot(flatN, toFlash), 0.08), 0.55, 1.6);
           albedo = t.rgb * mix(rake, 1.0, 0.35);
         } else {
@@ -179,7 +185,7 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
           } else {
             ${classicKitchen ? `let kb = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0);
             let pk = o.world.xz;
-            let inKitchen = OL.win.z < 0.5 && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
+            let inKitchen = (${r.classicLayout}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
             if (!inKitchen) { albedo = themedFloor(albedo, o.world.xz, th, variant); }
           }
         }
