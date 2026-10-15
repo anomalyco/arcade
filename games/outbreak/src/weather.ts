@@ -20,6 +20,7 @@ import {
 import type { Town } from "../shared/map"
 
 export type OutbreakWeatherSettings = {
+  weather: number
   weatherEnabled: boolean
   weatherPreset: WeatherPresetId
   weatherIntensity: number
@@ -43,6 +44,7 @@ export type OutbreakWeatherSettings = {
 const clearBase = createWeatherSettings("clear")
 
 export const DEFAULT_OUTBREAK_WEATHER: OutbreakWeatherSettings = {
+  weather: 0,
   weatherEnabled: false,
   weatherPreset: "clear",
   weatherIntensity: clearBase.intensity,

@@ -1,7 +1,7 @@
 import type { AIAgent, AIConfig, NoiseEvent, OutbreakAISubsystem } from "./ai"
 import type { CombatShotEvent, OutbreakCombatSubsystem, SurvivorCombatState } from "./combat"
 import { CoopSim, type SurvivorSlot } from "./coop-sim"
-import type { FlashlightState, FlashlightTuning } from "./flashlight"
+import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightState, type FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
 import { inventoryView, type InventoryState } from "./inventory"
 import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning } from "./progression"
@@ -10,10 +10,79 @@ import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
 import type { StreamingWorld, WorldMode } from "./world"
 
-export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & {
-  aiWalkSpeed?: number
-  /** Dev cheat: keeps the pistol magazine full. 1 = on. */
-  infiniteAmmo?: number
+export type NamespacedSessionTuning = {
+  stamina?: Partial<StaminaTuning>
+  flashlight?: Partial<FlashlightTuning>
+  ai?: Partial<AIConfig>
+  combat?: {
+    /** Dev cheat: keeps the pistol magazine full. 1 = on. */
+    infiniteAmmo?: number
+  }
+}
+
+export type LegacyFlatSessionTuning = Partial<StaminaTuning> &
+  Partial<FlashlightTuning> &
+  Partial<AIConfig> & {
+    /** Dev cheat: keeps the pistol magazine full. 1 = on. */
+    infiniteAmmo?: number
+  }
+
+export type SessionTuning = NamespacedSessionTuning | LegacyFlatSessionTuning
+
+export type ResolvedSessionTuning = {
+  stamina: StaminaTuning
+  flashlight: FlashlightTuning
+  ai: Partial<AIConfig> | undefined
+  infiniteAmmo: boolean
+}
+
+function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedSessionTuning {
+  return "stamina" in tuning || "flashlight" in tuning || "ai" in tuning || "combat" in tuning
+}
+
+export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTuning {
+  if (!tuning) {
+    return {
+      stamina: DEFAULT_STAMINA_TUNING,
+      flashlight: DEFAULT_FLASHLIGHT_TUNING,
+      ai: undefined,
+      infiniteAmmo: false,
+    }
+  }
+  if (isNamespacedSessionTuning(tuning)) {
+    return {
+      stamina: tuning.stamina ? { ...DEFAULT_STAMINA_TUNING, ...tuning.stamina } : DEFAULT_STAMINA_TUNING,
+      flashlight: tuning.flashlight ? { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning.flashlight } : DEFAULT_FLASHLIGHT_TUNING,
+      ai: tuning.ai,
+      infiniteAmmo: Boolean(tuning.combat?.infiniteAmmo),
+    }
+  }
+  const hasAiKeys =
+    tuning.sightRange !== undefined ||
+    tuning.sightCone !== undefined ||
+    tuning.hearingScale !== undefined ||
+    tuning.chaseSpeed !== undefined ||
+    tuning.aggression !== undefined ||
+    tuning.nightMultiplier !== undefined ||
+    tuning.directorPacing !== undefined ||
+    tuning.aiDebugOverlay !== undefined
+  return {
+    stamina: { ...DEFAULT_STAMINA_TUNING, ...tuning },
+    flashlight: { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning },
+    ai: hasAiKeys
+      ? {
+          sightRange: tuning.sightRange,
+          sightCone: tuning.sightCone,
+          hearingScale: tuning.hearingScale,
+          chaseSpeed: tuning.chaseSpeed,
+          aggression: tuning.aggression,
+          nightMultiplier: tuning.nightMultiplier,
+          directorPacing: tuning.directorPacing,
+          aiDebugOverlay: tuning.aiDebugOverlay,
+        }
+      : undefined,
+    infiniteAmmo: Boolean(tuning.infiniteAmmo),
+  }
 }
 
 export type Command = {
