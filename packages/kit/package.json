@@ -15,7 +15,8 @@
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
-    "@arcade/knobs": "workspace:*"
+    "@arcade/knobs": "workspace:*",
+    "@fontsource/barlow-condensed": "^5.3.0"
   },
   "devDependencies": {
     "wgpu-matrix": "^3.4.2",

@@ -99,7 +99,9 @@ id and put the real setup in commands the section already registers, so a statio
 turns a variation-grid preset's tiles into variants. Page demos (`{ kind: "page", url }`) embed another Arcade page,
 such as the Characters page, over the viewport; their variants set `url` and run `setup` commands inside the page
 through its dev-control runtime. `bun test games/lab/tests` validates every station file and
-`bun games/lab/scripts/prove-stations.ts --serve` proves the whole path headlessly.
+`bun games/lab/scripts/prove-stations.ts --serve` proves the whole path headlessly. For one page-demo station,
+`bun games/lab/scripts/prove-page-station.ts <id> --serve --read key,key` starts the dev router in the same job, picks
+each variant through `station.variant` and records the page's Lab settings, body data attributes and a frame.
 
 ### Voice notes
 

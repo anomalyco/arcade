@@ -2,6 +2,7 @@ import {
   LabNavigation,
   formatLabValue,
   inferControlUnit,
+  resolveControlField,
   type LabControl,
   type LabRow,
   type LabSettings,
@@ -9,7 +10,7 @@ import {
 } from "./lab-navigation"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
-export { formatLabValue, inferControlUnit } from "./lab-navigation"
+export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
 export type { LabControl, LabRow, LabSettings, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
 export type LabOptions = {
@@ -101,7 +102,7 @@ export class LabPanel implements LabKnobsHost {
     this.history = opts.history
     if (opts.onPin) this.pin = { toggle: opts.onPin, has: key => Boolean(opts.isPinned?.(key)) }
     this.navigation = new LabNavigation({}, [], (key, value) => {
-      if (controls.some(control => control.key === key)) change?.(key, value)
+      change?.(key, value)
     })
     ensureLabKnobsStyles()
     if (!document.querySelector("style[data-lab-panel-css]")) {
@@ -254,8 +255,16 @@ export class LabPanel implements LabKnobsHost {
   /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
   addControls(settings: LabSettings, controls: readonly LabControl[], defaults?: Readonly<LabSettings>) {
     for (const c of controls) if (c.type !== "action") {
-      Object.defineProperty(this.navigation.settings, c.key, { configurable: true, enumerable: true, get: () => settings[c.key], set: value => { settings[c.key] = value } })
-      if (!(c.key in this.navigation.defaults)) this.navigation.defaults[c.key] = defaults && c.key in defaults ? defaults[c.key]! : settings[c.key]!
+      const field = resolveControlField(c, settings)
+      Object.defineProperty(this.navigation.settings, c.key, {
+        configurable: true,
+        enumerable: true,
+        get: () => settings[field],
+        set: value => { settings[field] = value },
+      })
+      if (!(c.key in this.navigation.defaults)) {
+        this.navigation.defaults[c.key] = defaults && field in defaults ? defaults[field]! : settings[field]!
+      }
     }
     this.navigation.append(controls)
     this.sync()
@@ -405,7 +414,8 @@ export class LabPanel implements LabKnobsHost {
   /** Backquote toggles; an open floating panel (capture "open") keeps every other key from the game. */
   private keyboard(event: KeyboardEvent, forwarded = false) {
     if (!this.host.isConnected) return false
-    const inside = this.host.contains(event.composedPath()[0] as Node | null)
+    const first = event.composedPath()[0]
+    const inside = first instanceof Node && this.host.contains(first)
     const typing = this.typingTarget(event)
     if (event.code === "Backquote" && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.stopImmediatePropagation()

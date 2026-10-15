@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Bullets, CombatWorld, type CombatEvent, type Ground, flareAt, flareBurst, sweep } from "../shared/combat"
+import { Bullets, CombatWorld, type CombatEvent, type Ground, flareAt, flareBurst, guide, launchMissile, makeMissile, sweep } from "../shared/combat"
 import { PLANE, type Plane, type PlaneControls, type Vec3, makePlane, planeAttitude, planeStep, quatAxis, setPlaneQuat } from "../shared/plane"
 import { LOADOUTS, WEAPONS, makeTarget, type Target } from "../shared/weapons"
 
@@ -152,6 +152,21 @@ describe("missiles", () => {
     expect(events.find((e) => e.k === "boom")).toMatchObject({ on: 2 })
     expect(hp).toBeGreaterThan(0)
     expect(hp).toBeLessThan(40)
+  })
+
+  test("from dead astern it runs down a jet fleeing on afterburner from the edge of the lock range", () => {
+    const m = WEAPONS.missile
+    const range = m.range * m.keepRange
+    const v = PLANE.boostSpeed
+    const s = launchMissile(makeMissile(), { owner: 0, seq: 0, t: 0, x: 0, y: 1000, z: 0, vx: 0, vy: 0, vz: -v, target: 1 }, 0)
+    let tz = -range
+    let best = Infinity
+    for (let t = 0; t < m.life; t += DT) {
+      tz -= v * DT
+      guide(s, DT, true, 0, 1000, tz, 0, 0, -v)
+      best = Math.min(best, Math.hypot(s.x, s.y - 1000, s.z - tz))
+    }
+    expect(best).toBeLessThan(m.fuse)
   })
 
   test("a break turn alone does not beat it, whenever it starts (flares are the escape)", () => {

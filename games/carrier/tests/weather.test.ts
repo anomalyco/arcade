@@ -516,9 +516,11 @@ describe("room weather (protocol + server)", () => {
       return { sent, send: (d: string) => void sent.push(decodeServer(d)!), close: () => {} }
     }
     let now = 1_000_000
+    // Overrides are dev tools: only a dev room takes them (tests/bots.test.ts checks a production room refuses them).
     const core = new RoomCore(
       () => now,
       () => 42,
+      { dev: true },
     )
     const a = conn()
     core.message(a, encode({ type: "hello", build: BUILD, name: "ada" }))
