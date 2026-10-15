@@ -1235,6 +1235,12 @@ Candidates from the code audits; measure and playtest before moving any into the
   queue cap, gives fire/interact/reload to the next applied input; catch-up returns two inputs that the room applies as two
   movement steps, so client prediction still matches. Over a 3 + 0–8 tick jittery loopback, all five shots landed and the
   predicted survivor converged within 1 cm (`games/outbreak/tests/coop.test.ts`).
+  `@arcade/kit/net/room-core` (Blackout, Brawl) runs the same buffer per seat but hands its World one merged intent
+  when catching up (the later movement, both presses), so a catch-up tick costs the client a one-tick correction that
+  its smoother hides. With one intent per 60 Hz tick over an 80 ± 30 ms link with 2% TCP loss (200 ms retransmit),
+  the old `queue.splice(0, length - 3)` trim lost 15% of presses (Brawl 71/474 casts, Blackout 70/474 trigger pulls);
+  the buffer lost 0/474, at +1 tick median latency and +2–7 ticks at p95 for presses stuck behind a retransmit
+  (`scripts/bench-input-drops.ts`, `perf/input-drops-{before,after}.json`).
 - **Per-bubble interest culling, priority cadence, and bit-packed delta compression against `ackSnapTick`.**
   `packages/kit/net/{interest,rewind,bytes}.ts`, `games/outbreak/shared/net-protocol.ts` and `server/room-core.ts` scope
   each recipient's zombie updates to their `128 × 128 m` (`±64 m`) chunk bubble, throttle non-urgent mid/far/idle

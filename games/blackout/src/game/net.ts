@@ -11,7 +11,7 @@ import type { Session } from "./session"
 /** Set before a version reload: main.ts rejoins this room without the landing page. */
 export const REJOIN_KEY = rejoinKey("blackout")
 
-/** A room on the server (`@arcade/kit/net/room-socket`). Reconnects with the same id, so a dropped player keeps their seat for the match. */
+/** A room on the server (`@arcade/kit/net/room-socket`). Reconnects with the seat's private token, so a dropped player keeps their seat for the match. */
 export class NetSession implements Session {
   private socket: RoomSocket<ClientMsg>
   private snap: { snap: Snapshot; at: number } | null = null
@@ -35,7 +35,7 @@ export class NetSession implements Session {
       game: "blackout",
       room,
       query: { private: priv ? "1" : null, mode, map: maps },
-      hello: (id) => ({ type: "hello", name, id, gun: this.gun, equip: this.equip, build: BUILD }),
+      hello: (token) => ({ type: "hello", name, token, gun: this.gun, equip: this.equip, build: BUILD }),
       receive: (msg) => this.receive(msg as ServerMsg),
       fatal: onFatal,
       encode: (msg) => encodeClient(msg as ClientMsg),

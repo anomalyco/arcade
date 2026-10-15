@@ -99,7 +99,7 @@ export class LocalSession implements Session {
   close(): void {}
 }
 
-/** A room on the server (`@arcade/kit/net/room-socket`). Reconnects with the same id and keeps the seat. */
+/** A room on the server (`@arcade/kit/net/room-socket`). Reconnects with the seat's private token and keeps the seat. */
 export class NetSession implements Session {
   private socket: RoomSocket<ClientMsg>
   private snap: { snap: Snapshot; at: number } | null = null
@@ -111,7 +111,7 @@ export class NetSession implements Session {
       game: GAME.id,
       room,
       query: { private: priv ? "1" : null },
-      hello: (id) => ({ type: "hello", name, id, build: BUILD, pick: this.pick || undefined }),
+      hello: (token) => ({ type: "hello", name, token, build: BUILD, pick: this.pick || undefined }),
       receive: (msg) => this.receive(msg as ServerMsg),
       fatal: onFatal,
       encode: (msg) => encodeClient(msg as ClientMsg),

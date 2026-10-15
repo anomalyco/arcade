@@ -1,3 +1,4 @@
+import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapChoice, type MapDef, type MapKind, getMap } from "../maps"
@@ -29,6 +30,30 @@ export type Phase = "play" | "end"
  */
 export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean; cast?: CastIntent }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
+
+/** Presses that happen once: a fresh trigger pull, reload, equipment, melee, getting in or out, changing seat, a spell. */
+const hasEdges = (i: Intent): boolean => !!(i.firePressed || i.reload || i.equip || i.melee || i.enter || i.seat || i.cast)
+
+/** Merges the presses of a skipped or late input into the next one; held movement, aim and trigger come from the later. */
+export const INTENT_OPS: InputOps<Intent> = {
+  merge(a, b) {
+    if (!hasEdges(a)) return b
+    const m: Intent = { ...b, reload: a.reload || b.reload, equip: a.equip || b.equip }
+    // A tap released by the next tick still fires.
+    if (a.firePressed) Object.assign(m, { fire: true, firePressed: true })
+    if (a.melee) m.melee = true
+    if (a.enter) m.enter = true
+    if (a.seat) m.seat = true
+    if (a.cast && !b.cast) m.cast = a.cast
+    return m
+  },
+  standIn(last) {
+    if (!hasEdges(last)) return last
+    const { firePressed: _f, melee: _m, enter: _e, seat: _s, cast: _c, ...held } = last
+    return { ...held, reload: false, equip: false }
+  },
+  hasEdges,
+}
 
 /** Sprinting needs Shift and movement; pulling the trigger cancels it. Shared by the server and client prediction. */
 export const sprints = (i: Intent): boolean => i.sprint && !i.fire && Math.hypot(i.mx, i.my) > 0.1
@@ -313,13 +338,16 @@ export class World {
     p.swingAt = 0
   }
 
+  /** Queues one tick of input (the room's jitter buffer hands over one per tick; a reconnect may restart `seq`). */
   push(id: string, seq: number, intent: Intent): void {
     const p = this.players.get(id)
     if (!p || !p.human) return
-    const last = p.queue.length ? p.queue[p.queue.length - 1]!.seq : p.ack
-    if (seq <= last) return
     p.queue.push({ seq, intent })
-    if (p.queue.length > 8) p.queue.splice(0, p.queue.length - 3)
+    // Never drop a press: an overflowing queue folds its oldest input into the next one.
+    if (p.queue.length > 8) {
+      const a = p.queue.shift()!
+      p.queue[0] = { seq: p.queue[0]!.seq, intent: INTENT_OPS.merge(a.intent, p.queue[0]!.intent) }
+    }
   }
 
   takeEvents(): SimEvent[] {

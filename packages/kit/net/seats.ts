@@ -73,6 +73,12 @@ export class Seats<P> {
     seat.leftAt = this.clock()
   }
 
+  /** Frees a seat at once (an idle kick), whether or not its owner is connected. */
+  remove(id: string): Seat<P> | undefined {
+    const i = this.seats.findIndex((s) => s.id === id)
+    return i < 0 ? undefined : this.seats.splice(i, 1)[0]
+  }
+
   /** Removes seats whose owners have been gone longer than the grace window; returns them. */
   expire(): Seat<P>[] {
     const now = this.clock()

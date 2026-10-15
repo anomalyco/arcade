@@ -33,7 +33,7 @@ try {
       ws.onMessage((raw) => {
         const m = decodeClient(raw)
         if (m?.type === "hello") {
-          ws.send(encodeServer({ type: "welcome", id: "tester", room: "proof" }))
+          ws.send(encodeServer({ type: "welcome", id: "tester", token: "0".repeat(32), room: "proof" }))
           ws.send(encodeServer({ type: "roster", players: rosterOf(server) }))
           ws.send(encodeServer(buildSnapshot(server, "tester")))
         } else if (m?.type === "intent") {

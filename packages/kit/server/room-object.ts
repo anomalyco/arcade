@@ -5,6 +5,8 @@ import type { Conn } from "../net/room-core"
 export type TickedCore = {
   readonly code: string
   readonly connections: number
+  /** Called when a socket is accepted, before its first message. */
+  open?(conn: Conn): void
   message(conn: Conn, raw: unknown): void
   close(conn: Conn): void
   step(): void
@@ -56,6 +58,7 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report> extends D
         } catch {}
       },
     }
+    core.open?.(conn)
     socket.addEventListener("message", (e) => core.message(conn, e.data))
     socket.addEventListener("close", () => core.close(conn))
     socket.addEventListener("error", () => core.close(conn))

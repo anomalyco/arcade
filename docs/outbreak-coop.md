@@ -121,9 +121,10 @@ rest of the shared world, a remote shot or door is heard one snapshot late.
 - No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. A survivor
   whose seat expires leaves what they carried on the floor. No lobby or
   quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
-- Blackout and Getaway still carry their own room loops; `@arcade/kit/net/{jitter-buffer,seats,interpolate,rewind,interest}`
+- Blackout and Brawl share `@arcade/kit/net/room-core`, which now uses the same `seats` tokens, `jitter-buffer` and
+  per-socket rate limit as this room; Getaway still carries its own room loop. `@arcade/kit/net/{interpolate,rewind,interest}`
   are ready for Blackout to replace its exponential remote avatar chase (`SnapshotBuffer`) and add 20-tick server
-  hitscan rewind (`RewindHistory`), and for both games to replace `queue.splice` input trimming and public-id reconnect.
+  hitscan rewind (`RewindHistory`).
 
 ## Proof
 
