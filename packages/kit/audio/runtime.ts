@@ -22,7 +22,7 @@ import type {
   WeightedSampleRef,
 } from "./types"
 
-const CATEGORIES: readonly MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui"]
+export const MIX_CATEGORIES: readonly MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui", "weapon", "foley", "voice"]
 const SOUND_SPEED = 260
 
 /**
@@ -380,7 +380,7 @@ export class AudioRuntime {
     }
 
     const buses = {} as Record<MixCategory, GainNode>
-    for (const category of CATEGORIES) {
+    for (const category of MIX_CATEGORIES) {
       const g = ctx.createGain()
       g.gain.value = 1
       // UI bypasses duck and daze so interface feedback and player hit stingers stay crisp.
@@ -905,6 +905,11 @@ export class AudioRuntime {
     src.buffer = buf
     const isLoop = layer.loop ?? cueLoop
     src.loop = isLoop
+    const loopEnd = isLoop ? this.sampleBank.manifest.get(picked.id)?.loopEnd : undefined
+    if (loopEnd) {
+      src.loopStart = this.sampleBank.manifest.get(picked.id)?.loopStart ?? 0
+      src.loopEnd = loopEnd
+    }
     const baseRate = (layer.rate ?? 1) * picked.rate
     const playbackRate = clamp(baseRate * pitchScale, 0.25, 4.0)
     src.playbackRate.setValueAtTime(playbackRate, startTime)
@@ -1016,6 +1021,9 @@ export class AudioRuntime {
       ambience: 0,
       spell: 0,
       ui: 0,
+      weapon: 0,
+      foley: 0,
+      voice: 0,
     }
     for (const v of this.voices.values()) {
       if (v.active) categoryVoices[v.category]++

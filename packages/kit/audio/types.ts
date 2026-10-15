@@ -1,6 +1,7 @@
 import type { LabControl, LabSettings } from "../lab-panel"
 
-export type MixCategory = "engine" | "tyre" | "impact" | "ambience" | "spell" | "ui"
+/** Mix buses. `weapon`, `foley` and `voice` carry the shared sound library's guns, movement/handling and creatures. */
+export type MixCategory = "engine" | "tyre" | "impact" | "ambience" | "spell" | "ui" | "weapon" | "foley" | "voice"
 
 export type MaterialTag =
   | "metal"

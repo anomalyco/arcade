@@ -9,7 +9,7 @@ import {
   type AudioAnalysisStats,
   type ReplayScenarioResult,
 } from "./offline"
-import { AudioRuntime, createBoxOcclusionQuery } from "./runtime"
+import { AudioRuntime, createBoxOcclusionQuery, MIX_CATEGORIES } from "./runtime"
 import { clamp } from "./synth"
 import { getOfflineAudioContextConstructor } from "./browser-context"
 import type { AudioLabSection, MaterialTag, MixCategory, SurfaceTag } from "./types"
@@ -812,7 +812,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     ctx2d.fillStyle = "#8fa3b0"
     ctx2d.fillText("CATEGORY BUSES", rx, ry)
     ry += 14
-    const cats: MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui"]
+    const cats: readonly MixCategory[] = MIX_CATEGORIES
     for (const cat of cats) {
       const count = tel.categoryVoices[cat]
       const activeEmitter =
