@@ -362,6 +362,28 @@ pitch is the eye's elevation seen from the focus, 8-85), `?weather=clear|light|m
 the start, for scripted captures: the room's physics keep the room's weather), `?lab=weather` (debug menu open on the
 weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is untouched).
 
+## Bots (dev only: `shared/bots.ts`, `server/bots.ts`, `src/dev/{bots-tab,local-room}.ts`, `tests/bots.test.ts`)
+
+- Bots are crew players without a socket, run by the room (dev rooms only, `RoomCore.dev`). A bot's `role` is a ship
+  operation id (`hornet`, `f35`, `boat`, a gun op, `helm`): it joins the chosen carrier (`joinCrew`, `joinShip`) and
+  runs that op through `opError`/`runOp` like a player, so caps, recharges, sides and capacity apply (`rules` off lets
+  a bot take an extra slot, trimmed when it goes; an air start doesn't hold the catapult). Named `BOT·VIPER` etc.
+- Each room step `RoomBots.step` flies jets on `planeStep` (air start or the real catapult), steers boats through the
+  room's own boat sim, aims turrets with `slewTurret`, fires `Bullets`/`TurretRounds`/`BoatRounds`, AIM-9s, bombs
+  (`bombImpact` decides the release), SAMs, shells and flares, and hands it all to `RoomCore.handle` as the messages a
+  client sends (`plane`, `gun`, `hits`, `shiphits`, `fire`, `flare`, `seek`, `boat`, `bhits`, `aim`, `gfire`, `thits`,
+  `intercept`, `helm`, `op`, `recover`): the same validation, damage, kill credit and relays as a player's. Invulnerable
+  bots drop damage events (`RoomBots.absorb`); infinite ammo refills stores and budgets.
+- Behaviors (`BotSettings`, ranges in `BOT_RANGES`): jets straight / orbit / eight / evasive (jinks, breaks, flares on a
+  seeker or missile) / dogfight (lead pursuit, gun, AIM-9) / bomber (F-35C bomb runs, Hornet strafing); boats idle /
+  patrol / attack; gunners hold / engage; helms stop / cruise / circle / chase. Skill, aggression, accuracy, weapons,
+  flares, ammo, invulnerable, respawn, target player, target ship.
+- Wire: client `{ type: "bot", cmd }` (`BotCmd`: spawn, set, kill, remove, clear; `botCmdOf` validates and clamps);
+  server `bots` (`BotInfo[]`, ~2 Hz while any exist) and `welcome.dev`.
+- BOTS tab: scenarios (1v1 dogfight · 2 km, bomber run on my carrier, swarm of 4, carrier battle, target practice ×3,
+  boat attack ×2, remove all), a spawner and behavior on the shared Lab panel, the live list (LOAD, APPLY, SHOOT DOWN,
+  REMOVE, per group APPLY/REMOVE). Real-GPU check: `scripts/bots-shot.ts` (captures in `captures/bots/`).
+
 ## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{debug-menu,weather-lab}.ts`)
 
 - Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded

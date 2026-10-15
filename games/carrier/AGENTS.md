@@ -10,15 +10,21 @@
 - No params: the load screen (quick join, create, join by code; see CONTRACTS.md "Multiplayer"). URL params:
   `?room=name` (join it directly), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea time),
   `?cam=x,z,yaw,pitch,dist` (yaw/pitch in degrees, yaw 0 looks north), `?weather=clear|light|medium|heavy` (local
-  weather preview from the start, for scripted captures), `?lab=weather` (opens the debug menu on its weather tab),
-  `?tod=H` (freeze the local clock at hour H, 0-24, for scripted captures).
+  weather preview from the start, dev builds), `?lab=weather` (dev: opens the debug menu on its weather tab),
+  `?tod=H` (freeze the local clock at hour H, 0-24, for scripted captures), `?bots` (dev: opens the BOTS tab; with
+  `?seed=N` it plays on an in-page dev room, `src/dev/local-room.ts`, so bots work offline).
   `globalThis.carrier` exposes the renderer, camera, net, frame, grade and atmosphere (the live-editable sunny bases;
-  the time of day, then the weather, are applied on top), `weather`, `lab`, `daynight`, `stars`, `lights` and
-  `debugMenu` for debugging and screenshots.
-- ` (or F2) opens the debug menu (`src/dev/debug-menu.ts`, in production builds too): tabs added with
-  `debugMenu.addTab({ id, label, mount, unmount?, frame?, css? })`. WEATHER tab: timeline/manual, presets, every
-  weather parameter, strike now, sea-time pause/speed, readouts, copy/paste JSON, BROADCAST TO ROOM. TIME tab: clock,
-  sun/moon readouts, local hour scrub, presets, speed/freeze, BROADCAST TO ROOM (see CONTRACTS.md "Day-night").
+  the time of day, then the weather, are applied on top), `weather`, `daynight`, `stars`, `lights`, and in dev builds
+  `lab`, `debugMenu` and `bots`, for debugging and screenshots.
+- Dev only: ` (or F2) opens the debug menu (`src/dev/debug-menu.ts`). `src/main.ts` imports `src/dev/dev-tools.ts`
+  behind `import.meta.env.DEV`, so production bundles contain no menu, tab or bot code: add dev tabs in
+  `dev-tools.ts`, never statically in main.ts. WEATHER tab: timeline/manual, presets, every weather parameter, strike
+  now, sea-time pause/speed, readouts, copy/paste JSON, BROADCAST TO ROOM. TIME tab: clock, sun/moon readouts, local
+  hour scrub, presets, speed/freeze, BROADCAST TO ROOM (see CONTRACTS.md "Day-night"). BOTS tab: see CONTRACTS.md
+  "Bots".
+- Dev rooms: a room runs in dev mode only when the Worker's own config says so (`CARRIER_DEV=1` in `.dev.vars`, read
+  by `wrangler dev`, never uploaded by `wrangler deploy`). Only then does it take `shared/protocol.ts` `DEV_MESSAGES`
+  (weather, time, objective, bot); anywhere else `RoomCore.message` answers `nope` "dev-only", the one gate.
 - Rooms: up to 32 players, free for all: 4 carriers, each its own side in its own colour (orange, cyan, pink, lime),
   8 aboard each; friendly means your own carrier's crew, every other carrier and its jets, boats and guns are enemies
   (one rule: a ship's `team`, shared/crew.ts). Roles: a ship's HELM, a PILOT or a GUNNER (one per
