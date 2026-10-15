@@ -60,6 +60,10 @@ export const survivorAimTuning = {
   aimHoldTime: 2.5,
   aimRecoil: 1.0,
   aimTwistLimit: 1.05,
+  sideStepTurn: humanProfiles.soldier.sideStepTurn,
+  strafeHipTurn: humanProfiles.soldier.strafeHipTurn,
+  crossoverSpeed: humanProfiles.soldier.crossoverSpeed,
+  strafeGap: humanProfiles.soldier.strafeGap,
 }
 export type SurvivorAimTuning = typeof survivorAimTuning
 
@@ -68,6 +72,10 @@ export const survivorAimControls: LabControl[] = [
   { key: "aimHoldTime", label: "Hold time", group: "Survivor aim", min: 0.5, max: 5.0, step: 0.1, unit: "s" },
   { key: "aimRecoil", label: "Recoil", group: "Survivor aim", min: 0, max: 2.5, step: 0.05, unit: "×" },
   { key: "aimTwistLimit", label: "Twist limit · rad", group: "Survivor aim", min: 0.45, max: 1.55, step: 0.05, unit: "rad" },
+  { key: "sideStepTurn", label: "Side-step hip turn · rad", group: "Survivor strafe", min: 0, max: 0.8, step: 0.05, unit: "rad" },
+  { key: "strafeHipTurn", label: "Strafe hip turn · rad", group: "Survivor strafe", min: 0.3, max: 1.05, step: 0.05, unit: "rad" },
+  { key: "crossoverSpeed", label: "Crossover speed · m/s", group: "Survivor strafe", min: 1.2, max: 5, step: 0.1, unit: "m/s" },
+  { key: "strafeGap", label: "Side-step boot gap · m", group: "Survivor strafe", min: 0.12, max: 0.32, step: 0.01, unit: "m" },
 ]
 
 export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
@@ -163,6 +171,7 @@ export class Survivor {
   private back = false
   private yawOffset = spring()
   private pelvisYaw = spring()
+  private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
@@ -330,6 +339,10 @@ export class Survivor {
     const holdTime = clamp(tune.aimHoldTime, 0.5, 5.0)
     const recoilScale = clamp(tune.aimRecoil, 0, 2.5)
     const twistLimit = clamp(tune.aimTwistLimit, 0.45, 1.55)
+    this.strafeProfile.sideStepTurn = tune.sideStepTurn
+    this.strafeProfile.strafeHipTurn = tune.strafeHipTurn
+    this.strafeProfile.crossoverSpeed = tune.crossoverSpeed
+    this.strafeProfile.strafeGap = tune.strafeGap
 
     if (fired) {
       const sc = ++this.shotCount
@@ -388,7 +401,7 @@ export class Survivor {
       const vy = this.svy + (p.vy - this.svy) * k
       const speed = Math.hypot(vx, vy)
       moving = Math.min(1, speed / 3.4)
-      const activeProfile = profile ?? humanProfiles.soldier
+      const activeProfile = profile ?? this.strafeProfile
       // Direction-aware stepping shared with Blackout: hips turn partly toward travel, side-steps never cross and
       // run-speed strafes cross over cleanly (strafeStance), with a continuous forward/backpedal flip.
       const travelDir = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
