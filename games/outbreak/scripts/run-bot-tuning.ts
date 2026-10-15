@@ -1183,7 +1183,7 @@ function buildReportHtml(data: SummaryPayload): string {
       for (let n = 0; n <= 4; n++) {
         const x = xOf(n);
         html += \`<line x1="\${x}" y1="\${padT}" x2="\${x}" y2="\${H - padB}" stroke="#263044" stroke-dasharray="4 4" stroke-width="1"/>\`;
-        html += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">\${n === 0 ? "16:00 Dusk" : "Night " + n}</text>\`;
+        html += \`<text x="\${x}" y="\${H - 8}" fill="#939db3" font-size="11" text-anchor="middle">\${n === 0 ? "Start (dusk)" : "Night " + n}</text>\`;
       }
 
       const customMed = {
