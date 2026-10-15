@@ -258,12 +258,22 @@ if (only.includes("panel") || only.includes("duel")) {
     const botId = await js<number>(a, "return n.bots[0]?.id ?? -1")
     // Hold its fire (the panel's set command) so ADA lives to return it.
     await js(a, `n.sendBot({ c: "set", ids: [${botId}], s: { weapons: false } })`)
+    // Shot down by it? Launch again (the ship's other Hornet) and come in 600 m behind it.
+    if (!(await js<boolean>(a, "return f.mode === 1 && c.flight.weapons.world.hp(n.id) > 0"))) {
+      await until(a, "f.phase === 'idle' || f.mode === 0", 10_000)
+      await a.waitForTimeout(3000)
+      await js(a, `n.op("hornet")`)
+      check(await until(a, "f.mode === 1", 20_000), "ADA launched again")
+    }
+    const tail = await js<number[] | null>(a, `const t = n.planes.get(${botId}); if (!t) return null; const sp = Math.hypot(t[9], t[11]) || 1; return [t[2] - t[9] / sp * 600, t[3], t[4] - t[11] / sp * 600, Math.atan2(t[9], -t[11])]`)
+    if (tail) await warp(a, tail[0]!, tail[1]!, tail[2]!, tail[3]!, 170)
     let down = false
     for (let i = 0; i < 160 && !down; i++) {
       await js(a, `const t = n.planes.get(${botId}); const p = f.plane; if (t && Math.hypot(t[2] - p.x, t[3] - p.y, t[4] - p.z) < 1600) n.sendHits(${botId}, 30)`)
       await a.waitForTimeout(250)
       down = await js<boolean>(a, `return n.planes.get(${botId})?.[1] === 2`)
     }
+    if (!down) console.log("shoot diag", await js(a, `const t = n.planes.get(${botId}); const p = f.plane; return JSON.stringify({ d: t ? Math.round(Math.hypot(t[2] - p.x, t[3] - p.y, t[4] - p.z)) : null, mode: t?.[1], me: c.flight.weapons.world.hp(n.id), phase: f.phase, bot: n.bots.map(b => [b.state, b.hp, b.note]) })`))
     check(down, "ADA's rounds shot the bot down (its relayed jet reads crashed)")
     await a.waitForTimeout(250)
     const wreck = await js<number[] | null>(a, `const t = n.planes.get(${botId}); return t ? [t[2], t[3], t[4]] : null`)
