@@ -66,6 +66,25 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x6e4e30),MAT.timber,MAT.timber)
     m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x785636),MAT.timber)
     m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xa89060))
+  } else if(kind==="workbench") {
+    // Safehouse workbench against the wall: plank top on trestle legs, a pegboard with tools, a vise and a parts tray.
+    const {rect:[a,c,r,e]}=propShape(p)!
+    m.bevelBox(a,.86,c,r,.95,e,.02,hex(0x6a4a2c),hex(0x7c5834),MAT.timber,MAT.timber)
+    for(const dz of [c+.1,e-.16])for(const dx of [a+.06,r-.12])m.box(dx,.13,dz,dx+.06,.86,dz+.06,legs,MAT.timber)
+    m.box(a+.08,.34,c+.12,r-.08,.38,e-.12,hex(0x4e3620),MAT.timber)
+    m.box(r-.06,.95,c+.05,r,1.75,e-.05,hex(0x5a4a36),MAT.timber)
+    for(const [dz,h] of [[.32,.32],[.62,.22],[.98,.28],[1.25,.18]] as const)m.box(r-.1,1.32-h/2,c+dz-.025,r-.06,1.32+h/2,c+dz+.025,hex(0x8a8c88),MAT.shiny)
+    m.box(a+.12,.95,c+.18,a+.32,1.06,c+.38,hex(0x50585a),MAT.shiny)
+    m.yawBox(a+.36,e-.42,.24,.16,.95,1.0,.08,hex(0x7e6a4a),MAT.timber)
+    m.prism(a+.3,e-.78,.07,.06,.95,1.07,8,hex(0xb07a3a),MAT.lit)
+  } else if(kind==="stash") {
+    // The squad's stash: a dented steel footlocker under stacked supply crates.
+    const {rect:[a,c,r,e]}=propShape(p)!
+    m.bevelBox(a,.13,c,r,.62,e,.03,hex(0x4a5248),hex(0x566050),MAT.shiny,MAT.shiny)
+    m.box(a-.01,.5,c+.08,r+.01,.53,e-.08,hex(0x3a4038),MAT.shiny)
+    m.box(r,.36,(c+e)/2-.08,r+.03,.44,(c+e)/2+.08,hex(0xa89060))
+    m.yawBox((a+r)/2,(c+e)/2-.12,.25,.3,.62,.98,.06,hex(0x6e5636),MAT.timber,0,hex(0x7c6240))
+    m.yawBox((a+r)/2+.02,(c+e)/2+.04,.2,.22,.98,1.25,-.1,hex(0x8a7a5c),MAT.lit)
   } else if(kind==="stove") {
     m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x584028),MAT.timber)
     m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x685e50))

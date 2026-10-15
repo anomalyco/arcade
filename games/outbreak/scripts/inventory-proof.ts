@@ -167,6 +167,17 @@ try {
     await step(page, 1, { interact: true })
     await step(page, 4)
     await snap(page, "bench", "The workbench: deposit, the tier, and the recipes the squad's materials have revealed", "prompt")
+    const row = await sim(page, `return progression.benchRows().findIndex((r) => r.id === "bandage")`)
+    await step(page, 1, { pick: { mode: "bench", index: row } })
+    await step(page, 70)
+    await snap(page, "researching", "Researching a bandage at the lit bench (2.5 s)", "prompt")
+    await step(page, 100)
+    assert.equal(await sim(page, `return progression.learned("bandage")`), true)
+    await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 2 }); hud.toggleCraft()`)
+    await stage(page, { x: 44, y: 44, aim: 0, hour: 22 })
+    await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:bandage", store: "team/known" }); ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:lure", store: "team/known" }); ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 2 }); if (!hud.craftOpen) hud.toggleCraft()`)
+    await step(page, 2)
+    await snap(page, "field-craft", "Hold Q in the street at night: the squad's learned recipes, craftable from the belt", "hud")
   }
 
   assert.deepEqual(errors, [])

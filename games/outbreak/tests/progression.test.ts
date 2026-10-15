@@ -231,6 +231,164 @@ describe("inventory baseline", () => {
   })
 })
 
+describe("safehouse workbench", () => {
+  const atBench = (ctx: ReturnType<typeof setup>, hour = 12) => {
+    const bench = ctx.progression.benches.find((b) => b.id === "bench:ash")!
+    ctx.session.sim.hour = hour
+    ctx.stand(bench.bench.x - 0.85, bench.bench.y, 0)
+    return bench
+  }
+
+  test("every house archetype gets a bench and stash in its back room; stores do not", () => {
+    const { progression, session } = setup()
+    expect(progression.benches.map((b) => b.id)).toEqual(["bench:ash", "bench:elm"])
+    for (const b of progression.benches) {
+      const house = session.view.town.buildings.find((x) => x.id === b.buildingId)!
+      expect(b.bench.y).toBeLessThan(house.rect[1] + 5.5)
+      expect(b.stash.y).toBeLessThan(house.rect[1] + 5.5)
+    }
+  })
+
+  test("the first scrap reveals the recipes it feeds, to the whole squad", () => {
+    const { session, progression, give, notices } = setup()
+    const mate = session.sim.addSurvivor("mate", 1)
+    expect(progression.benchRows().map((r) => r.id)).toEqual([])
+    give("scrap", 2)
+    const text = "New material: Scrap. Bench recipes: Noisemaker, Spiked Board, Reinforced Barricade, Flashlight Battery"
+    expect(notices()).toContain(text)
+    expect(mate.notices.map((n) => n.text)).toContain(text)
+    // A recipe shows on the bench once all of its materials have been seen (the starting planks count).
+    expect(progression.benchRows().map((r) => r.id)).toEqual(["spiked-board", "reinforced"])
+    give("battery")
+    expect(progression.benchRows().map((r) => r.id)).toEqual(["lure", "spiked-board", "reinforced"])
+    expect(notices().filter((t) => t.startsWith("New material"))).toEqual(["New material: Batteries. Bench recipes: Noisemaker"])
+  })
+
+  test("depositing keeps ammo and keys, installs the toolbox (tier 2) and tells everyone", () => {
+    const ctx = setup()
+    const { ledger, progression, give, step, notices, session } = ctx
+    const mate = session.sim.addSurvivor("mate", 1)
+    atBench(ctx)
+    give("scrap", 4)
+    give("key")
+    give("toolbox")
+    step()
+    expect(session.view.prompt?.kind).toBe("bench")
+    step({ interact: true })
+    expect(ledger.count("bench:ash", "scrap")).toBe(4)
+    expect(ledger.count("bench:ash", "plank")).toBe(2)
+    expect(ledger.count("bench:ash", "toolbox")).toBe(1)
+    expect(ledger.count("player", "ammo")).toBe(6)
+    expect(ledger.count("player", "key")).toBe(1)
+    expect(progression.tier("bench:ash")).toBe(2)
+    expect(notices()).toContain("Workbench tier 2: the toolbox is installed")
+    expect(mate.notices.map((n) => n.text)).toContain("Workbench tier 2: the toolbox is installed")
+  })
+
+  test("research needs light: daylight works, the dark refuses, a flashlight plus the room lamp or the generator works", () => {
+    const ctx = setup()
+    const { ledger, progression, give, step, notices, p } = ctx
+    give("chem", 6)
+    atBench(ctx, 23)
+    p.flashlightOn = false
+    p.flashlightOutput = 0
+    step({ pick: { mode: "bench", index: 0 } })
+    expect(notices()).toContain("Too dark to work. Shine a flashlight or run the generator")
+    expect(progression.learned("bandage")).toBe(false)
+    p.flashlightOn = true
+    p.flashlightOutput = 1
+    step({ pick: { mode: "bench", index: 0 } })
+    expect(p.channel?.kind).toBe("research")
+    step({}, Math.ceil(T.researchTime / TICK_DT) + 1)
+    expect(progression.learned("bandage")).toBe(true)
+    expect(ledger.count("player", "chem")).toBe(4)
+    expect(notices()).toContain("Squad learned Bandage. Hold Q to craft it anywhere")
+  })
+
+  test("the generator lights the bench at night and hums loud enough to draw the dead", () => {
+    const ctx = setup()
+    const { ledger, progression, step, session } = ctx
+    atBench(ctx, 23)
+    ledger.apply({ kind: "grant", actor: "player", item: "car-battery", store: "bench:ash" })
+    expect(progression.tier("bench:ash")).toBe(2)
+    expect(progression.benchLight("bench:ash", 23, [])).toBeGreaterThan(T.researchLight)
+    step({}, 4)
+    const hum = session.view.noises.find((n) => n.kind === "generator")!
+    expect(hum.radius).toBe(T.generatorNoise)
+  })
+
+  test("tier-2 recipes need the toolbox installed", () => {
+    const ctx = setup()
+    const { progression, give, step, notices } = ctx
+    atBench(ctx)
+    give("plank", 4)
+    give("scrap", 8)
+    const rows = progression.benchRows().map((r) => r.id)
+    step({ pick: { mode: "bench", index: rows.indexOf("reinforced") } })
+    expect(notices()).toContain("Needs the toolbox installed (tier 2)")
+    give("toolbox")
+    step({ interact: true })
+    step({ pick: { mode: "bench", index: rows.indexOf("reinforced") } })
+    step({}, Math.ceil(T.researchTime / TICK_DT) + 1)
+    expect(progression.learned("reinforced")).toBe(true)
+  })
+
+  test("once learned, a teammate crafts it in the field from their own belt", () => {
+    const ctx = setup()
+    const { session, ledger, progression } = ctx
+    ledger.apply({ kind: "grant", actor: "player", item: "learned:bandage", store: "team/known" })
+    const mate = session.sim.addSurvivor("mate", 1)
+    Object.assign(mate.survivor, { x: 60, y: 45 })
+    ledger.apply({ kind: "grant", actor: "mate", item: "chem", count: 1 })
+    expect(progression.craftable().map((r) => r.id)).toEqual(["bandage"])
+    const cmd = { mx: 0, my: 0, aim: 0, interact: false }
+    session.sim.stepSurvivor(mate, { ...cmd, pick: { mode: "craft", index: 0 } }, TICK_DT)
+    expect(mate.survivor.channel).toBeNull()
+    session.sim.stepWorld(TICK_DT, 0)
+    expect(mate.survivor.channel?.kind).toBe("craft")
+    for (let i = 0; i < Math.ceil(T.craftTime / TICK_DT) + 1; i++) {
+      session.sim.stepSurvivor(mate, cmd, TICK_DT)
+      session.sim.stepWorld(TICK_DT, 0)
+    }
+    expect(ledger.count("mate", "bandage")).toBe(1)
+    expect(ledger.count("mate", "chem")).toBe(0)
+    expect(mate.notices.map((n) => n.text)).toContain("Crafted Bandage")
+  })
+
+  test("a reinforced board costs a scrap and holds 80% more", () => {
+    const { session, ledger, step, stand, give } = setup()
+    ledger.apply({ kind: "grant", actor: "player", item: "learned:reinforced", store: "team/known" })
+    give("scrap", 1)
+    stand(27.7, 36.2, -Math.PI / 2)
+    step({ barricade: true })
+    step({}, Math.ceil(T.barricadeTime / TICK_DT) + 1)
+    expect(session.ai.portalStates.get("ash-front")!.barricadeHp).toBe(T.reinforcedPlankHp)
+    expect(ledger.count("player", "scrap")).toBe(0)
+    step({ barricade: true })
+    step({}, Math.ceil(T.barricadeTime / TICK_DT) + 1)
+    expect(session.ai.portalStates.get("ash-front")!.barricadeHp).toBe(T.reinforcedPlankHp + 100)
+  })
+
+  test("the stash takes the held item, gives items back by digit, and keeps installed parts", () => {
+    const ctx = setup()
+    const { session, ledger, give, step, stand, progression, notices } = ctx
+    const bench = progression.benches.find((b) => b.id === "bench:ash")!
+    give("medkit")
+    ledger.apply({ kind: "grant", actor: "player", item: "toolbox", store: "bench:ash" })
+    stand(bench.stash.x + 0.8, bench.stash.y, Math.PI)
+    expect(session.view.prompt?.kind).toBe("stash")
+    step({ hotbarSlot: 3 })
+    step({ interact: true })
+    expect(ledger.count("bench:ash", "medkit")).toBe(1)
+    expect(ledger.count("player", "medkit")).toBe(0)
+    const order = progression.contents("bench:ash").map((s) => s.item)
+    step({ pick: { mode: "take", index: order.indexOf("toolbox") } })
+    expect(notices()).toContain("That part is installed in the bench")
+    step({ pick: { mode: "take", index: order.indexOf("medkit") } })
+    expect(ledger.count("player", "medkit")).toBe(1)
+  })
+})
+
 describe("loot from building archetypes", () => {
   test("every container is seeded from its building's table, deterministically, and the hardware back room holds the parts", () => {
     const town = makeTown(7, 7)

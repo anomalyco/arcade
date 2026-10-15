@@ -370,7 +370,9 @@ const DROP_RANGE = 1.6
 const PING_SECONDS = 6
 const BUNDLE = { ammo: 6, plank: 2 } as const
 const LURE_RANGE = 11
-const BENCH_LIGHT_FLASHLIGHT = 0.25
+/** Light at a bench: one flashlight plus the room lamp clears the research threshold at night; the generator alone does. */
+const BENCH_LIGHT_FLASHLIGHT = 0.2
+const BENCH_LIGHT_LAMP = 0.2
 const GENERATOR_LIGHT = 0.8
 
 export class OutbreakProgression {
@@ -402,7 +404,19 @@ export class OutbreakProgression {
       rules: progressionRules(this.tuning),
       knowledgeStore: "team/known",
     })
+    // Discoveries and lessons reach the whole squad however the item arrived (a take, a craft, a test's grant).
+    this.ledger.on((ev) => {
+      if (ev.kind !== "unlocked" || this.quiet) return
+      if (ev.source === "discover") {
+        const material = ev.item.replace(/^seen:/, "")
+        const uses = recipesUsing(material).map((r) => r.label)
+        this.notifyAll(uses.length ? `New material: ${ev.label}. Bench recipes: ${uses.join(", ")}` : `New material: ${ev.label}`, "info", `seen:${material}`)
+      } else this.notifyAll(`Squad learned ${ev.label}. Hold Q to craft it anywhere`, "result", ev.item)
+    })
   }
+
+  /** Set while granting a starting kit, so spawning does not announce planks as a discovery. */
+  private quiet = false
 
   /** Applies Lab tuning; recipe costs and times change at once, loot rates on the next town. */
   setTuning(tuning: Partial<ProgressionTuning>): void {
@@ -416,11 +430,13 @@ export class OutbreakProgression {
     this.actorOf.set(slot.survivor, slot)
     if (this.ledger.store(`${slot.id}/hotbar`)) return
     this.ledger.addActor(slot.id)
+    this.quiet = true
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "flashlight" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "pistol" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "ammo", count: 6 })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank", count: 2 })
     this.ledger.apply({ kind: "select", actor: slot.id, slot: 1 })
+    this.quiet = false
     this.project(slot)
   }
 
@@ -486,11 +502,12 @@ export class OutbreakProgression {
     return RECIPES.filter((r) => Object.keys(r.research).every((m) => this.seen(m)))
   }
 
-  /** Light at a bench: daylight indoors, the generator, and flashlights of survivors standing at it. */
+  /** Light at a bench: daylight indoors, the room lamp at night, the generator, and flashlights of survivors at it. */
   benchLight(benchId: string, hour: number, survivors: readonly { x: number; y: number; flashlightOn: boolean; flashlightOutput: number }[]): number {
     const site = this.benches.find((b) => b.id === benchId)
     if (!site) return 0
-    let light = dayCycle(hour).sun * 0.9
+    const day = dayCycle(hour)
+    let light = day.sun * 0.9 + day.lamps * BENCH_LIGHT_LAMP
     if (this.ledger.count(benchId, "car-battery") > 0) light += GENERATOR_LIGHT
     for (const s of survivors) {
       if (s.flashlightOn && s.flashlightOutput > 0.2 && Math.hypot(s.x - site.bench.x, s.y - site.bench.y) < 3.2) light += BENCH_LIGHT_FLASHLIGHT
@@ -502,7 +519,7 @@ export class OutbreakProgression {
 
   /** Containers, ground drops, workbenches and stashes as interaction targets. */
   handlers(): InteractionHandler[] {
-    return [this.containerHandler(), this.dropHandler(), this.benchHandler()]
+    return [this.containerHandler(), this.dropHandler(), this.benchHandler(), this.stashHandler()]
   }
 
   private containerHandler(): InteractionHandler {
@@ -589,19 +606,35 @@ export class OutbreakProgression {
       kind: "bench",
       candidates: (town, actor) => {
         if (actor.peekingWindowId) return []
-        const out: RawInteractCandidate[] = []
         const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        const out: RawInteractCandidate[] = []
         for (const b of this.benches) {
-          if (b.buildingId !== here) continue
-          if (distToRect(actor.x, actor.y, b.bench.rect) <= 1.45) {
-            const primary: InteractAction = { id: "deposit", label: "Deposit supplies" }
-            out.push({ kind: "bench", id: b.id, label: `Workbench · tier ${this.tier(b.id)}`, rect: b.bench.rect, worldX: b.bench.x, worldY: b.bench.y, primary, actions: [primary] })
-          }
-          if (distToRect(actor.x, actor.y, b.stash.rect) <= 1.45) {
-            const primary: InteractAction = { id: "store", label: "Store held item" }
-            const secondary: InteractAction = { id: "deposit", label: "Deposit supplies", hold: true }
-            out.push({ kind: "stash", id: `${b.id}#stash`, label: "House stash", rect: b.stash.rect, worldX: b.stash.x, worldY: b.stash.y, primary, secondary, actions: [primary, secondary] })
-          }
+          if (b.buildingId !== here || distToRect(actor.x, actor.y, b.bench.rect) > 1.45) continue
+          const primary: InteractAction = { id: "deposit", label: "Deposit supplies" }
+          out.push({ kind: "bench", id: b.id, label: `Workbench · tier ${this.tier(b.id)}`, rect: b.bench.rect, worldX: b.bench.x, worldY: b.bench.y, primary, actions: [primary] })
+        }
+        return out
+      },
+      execute: (_town, actor, targetId, action) => {
+        const slot = this.actorOf.get(actor)
+        if (!slot || action !== "deposit" || !this.ledger.store(targetId)) return { handled: false }
+        return { handled: this.deposit(slot, targetId), kind: "bench", targetId, action }
+      },
+    }
+  }
+
+  private stashHandler(): InteractionHandler {
+    return {
+      kind: "stash",
+      candidates: (town, actor) => {
+        if (actor.peekingWindowId) return []
+        const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        const out: RawInteractCandidate[] = []
+        for (const b of this.benches) {
+          if (b.buildingId !== here || distToRect(actor.x, actor.y, b.stash.rect) > 1.45) continue
+          const primary: InteractAction = { id: "store", label: "Store held item" }
+          const secondary: InteractAction = { id: "deposit", label: "Deposit supplies", hold: true }
+          out.push({ kind: "stash", id: `${b.id}#stash`, label: "House stash · shared with the bench", rect: b.stash.rect, worldX: b.stash.x, worldY: b.stash.y, primary, secondary, actions: [primary, secondary] })
         }
         return out
       },
@@ -609,24 +642,22 @@ export class OutbreakProgression {
         const slot = this.actorOf.get(actor)
         const benchId = targetId.replace(/#.*$/, "")
         if (!slot || !this.ledger.store(benchId)) return { handled: false }
-        if (action === "deposit") return { handled: this.deposit(slot, benchId), kind: "bench", targetId, action }
-        if (action === "store") {
-          const hotbar = this.hotbar(slot.id)!
-          const held = hotbar.slots[hotbar.selected]
-          if (!held) {
-            this.notify(slot, "Nothing in hand", "info")
-            return { handled: false }
-          }
-          if (held.item === "flashlight" || held.item === "pistol") {
-            this.notify(slot, `Keep the ${this.ledger.label(held.item).toLowerCase()}`, "info")
-            return { handled: false }
-          }
-          const res = this.ledger.apply({ kind: "deposit", actor: slot.id, to: benchId, from: { store: hotbar.id, slot: hotbar.selected } })
-          if (res.ok) this.notify(slot, `Stored ${this.ledger.label(held.item)}`, "result")
-          this.feedback(slot, res.events)
-          return { handled: res.ok, kind: "stash", targetId, action }
+        if (action === "deposit") return { handled: this.deposit(slot, benchId), kind: "stash", targetId, action }
+        if (action !== "store") return { handled: false }
+        const hotbar = this.hotbar(slot.id)!
+        const held = hotbar.slots[hotbar.selected]
+        if (!held) {
+          this.notify(slot, "Nothing in hand", "info")
+          return { handled: false }
         }
-        return { handled: false }
+        if (held.item === "flashlight" || held.item === "pistol") {
+          this.notify(slot, `Keep the ${this.ledger.label(held.item).toLowerCase()}`, "info")
+          return { handled: false }
+        }
+        const res = this.ledger.apply({ kind: "deposit", actor: slot.id, to: benchId, from: { store: hotbar.id, slot: hotbar.selected } })
+        if (res.ok) this.notify(slot, `Stored ${this.ledger.label(held.item)}`, "result")
+        this.feedback(slot, res.events)
+        return { handled: res.ok, kind: "stash", targetId, action }
       },
     }
   }
@@ -1063,13 +1094,7 @@ export class OutbreakProgression {
   /** Turns ledger events into notices: discoveries, lessons, rejections and search results. */
   private feedback(slot: ProgressionSlot, events: readonly LedgerEvent[]): void {
     for (const ev of events) {
-      if (ev.kind === "unlocked" && ev.source === "discover") {
-        const material = ev.item.replace(/^seen:/, "")
-        const uses = recipesUsing(material).map((r) => r.label)
-        this.notifyAll(uses.length ? `New material: ${ev.label}. Bench recipes: ${uses.join(", ")}` : `New material: ${ev.label}`, "info", `seen:${material}`)
-      } else if (ev.kind === "unlocked" && ev.source === "rule") {
-        this.notifyAll(`Squad learned ${ev.label}. Hold Q to craft it anywhere`, "result", ev.item)
-      } else if (ev.kind === "revealed") {
+      if (ev.kind === "revealed") {
         this.notify(slot, ev.items.length ? `Found ${this.describe(ev.items)}` : "Nothing here", ev.items.length ? "result" : "info", "search")
       } else if (ev.kind === "rejected") {
         const text = this.rejectionText(ev)
@@ -1083,7 +1108,7 @@ export class OutbreakProgression {
       case "full":
         return ev.store?.startsWith("bench:") ? "The stash is full" : "Inventory full"
       case "low_light":
-        return "Too dark to work. Bring light"
+        return "Too dark to work. Shine a flashlight or run the generator"
       case "missing_item":
         return ev.item ? `Need ${this.ledger.label(ev.item).toLowerCase()}` : "Missing materials"
       case "missing_requirement":

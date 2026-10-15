@@ -174,9 +174,11 @@ async function main() {
       hotbar: document.querySelector<HTMLElement>("#hotbar"),
       belt: document.querySelector<HTMLElement>("#belt"),
       pack: document.querySelector<HTMLElement>("#pack"),
+      craft: document.querySelector<HTMLElement>("#craft"),
       markers: document.querySelector<HTMLElement>("#markers"),
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
+    () => session.sim.slots.map((s) => s.survivor),
   )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
@@ -238,9 +240,11 @@ async function main() {
       if (down && !h.fired && now - h.at >= HOLD_DURATION * 1000) {
         h.fired = true
         if (code === "KeyG") pendingVerbs.bundle = true
+        else if (!inventoryHud.craftOpen) inventoryHud.toggleCraft()
       } else if (!down) {
         if (!h.fired) {
           if (code === "KeyG") pendingVerbs.drop = true
+          else if (inventoryHud.craftOpen) inventoryHud.close()
           else pendingVerbs.ping = true
         }
         holds.delete(code)
