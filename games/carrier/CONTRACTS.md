@@ -482,6 +482,29 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `captures/explosions/`); `scripts/f35-shot.ts` (the F-35C in the game: ops, deck, catapult, flight, bay, bombs, landing, and a Hornet and an
   F-35C in one room; captures in `captures/f35/`).
 
+## Pilot's map (`src/flight/{radar,target-markers}.ts`, `src/dev/radar-lab.ts`)
+
+- Built only from what the client already draws (no messages): `FlightModule.frame` fills one `RadarScene` (the crew
+  player, our jet's draw pose while flying or landing, the drawn carriers and hulls, `Weapons.jets`, `Weapons.boats`
+  (the boats handed to `surface`), `Weapons.world.missiles`) and hands it to `Radar` and `TargetMarkers`. Enemy means
+  `hostile(me, team, id)` = the weapons' `canHurt`, colours `teamCss`: no team comparisons of its own.
+- Radar (bottom left, above the hull bar, while flying): heading-up on our jet's nose, rings at half and full range,
+  N on the rim, islands baked once per world into a 640² mask (±9.6 km, land with coastlines and the reef shelf; 24
+  rows per frame, skipping open sea), the world edge dashed. Enemy carriers are filled hulls in their colour (pinned
+  to the rim as a triangle when out of range), ours an outline; jets arrows along their nose (filled enemies,
+  outlined friends; a tick above or below past ±250 m), boats diamonds, missiles homing on us blinking red dots. Range
+  2/5/10/20 km: auto covers the nearest enemy jet or boat, else the nearest enemy carrier (up at once, down after
+  1.5 s), easing on the wall clock.
+- Full map: physical G held (tap < 250 ms pins, a second tap or Esc closes), any role, not while a menu is open:
+  north-up over the world edge (`PLANE.edge`) with a 2 km grid and scale bar, every carrier named, every jet and boat,
+  our jet.
+- Target markers (flying): corner brackets on enemy carriers in view, diamonds on enemy jets (within `markerJets`
+  km) and boats (4 km), each with its distance; a chevron at the screen edge toward the nearest enemy carrier when it
+  is out of view, kept clear of the radar's corner (`Radar.box`).
+- Settings: `RADAR` (`RadarSettings`, `RADAR_DEFAULTS`, `RADAR_CONTROLS`) on the Lab panel in the debug menu's RADAR
+  tab; read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
+  in `captures/radar/`.
+
 ## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
 
 - Loadouts are per aircraft (`LOADOUTS` in `shared/weapons.ts`), keyed by `VehicleKind`. The F/A-18E (`hornet`) has
@@ -492,7 +515,21 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   switching away shuts the doors. Bombs are plain gravity bombs that burst on sea, land or ships and only hurt jets in the blast; ships
   and ground targets take no damage yet. Their burst (`WeaponFx.bombBlast`) is a tall white spout with a crown and a
   rolling base surge on the sea, a fireball, flung earth and a dust column on land or a deck. Guided bombs are planned. Weapon kinds are `"gun" | "missile" | "bomb"`;
-  slot order is the 1/2/3 key order.
+  slot order is the 1/2/3 key order. Every sortie starts on the first slot (`rearm`): the F-35C launches on its
+  missiles, never its bombs.
+- Bombsight (F-35C). Selecting bombs turns the flight camera into a first-person view from just ahead of and under the
+  nose, tipped down and zoomed (`FlightCam.setBombs`/`sighting`, fed by `Flight.bombsight`; 1.5 s after the catapult,
+  never while landing or crashed); another weapon gives back chase or cockpit, and C toggles between the sight and
+  that view while bombs are selected. `src/weapons/bombsight.ts` draws a CCIP sight: the bomb fall line from the
+  flight-path marker to a pipper on the continuously computed impact point, solid in the cue colour when the bomb
+  would hit an enemy carrier, damage one with a near miss or catch an enemy boat in the blast, with the fall time and
+  slant range beside it, and a horizon and pitch bars in the sight view. The impact comes from the game's own bomb:
+  `bombLaunch` (shared/combat.ts, also what `Weapons.tick` releases) then `bombImpact`, which flies `fall` at the
+  world's step against the sea at each step's sea time, the islands and every carrier drifted along its course
+  (`driftShip`); `tests/bombsight.test.ts` checks it against released bombs in a `CombatWorld`. Near a moving enemy the
+  pipper is drawn in that enemy's frame (where it is now). Tunables: SIGHT tab of the debug menu (the shared Lab panel:
+  `SIGHT_CAM` in `src/flight/camera.ts`, `SIGHT_STYLE` in `src/weapons/bombsight.ts`). GPU check:
+  `scripts/bombsight-shot.ts` (captures in `captures/bombsight/`).
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
   under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
   cycles; F always drops flares (F launches and lands nothing). Space is no longer nose-up (`src/flight/input.ts`). R

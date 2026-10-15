@@ -1,4 +1,4 @@
-import { Bullets, CombatWorld, type CombatEvent, type Ground, type MissileLaunch, flareAt, groundHit } from "../../shared/combat"
+import { Bullets, CombatWorld, type CombatEvent, type Ground, type MissileLaunch, bombLaunch, flareAt, groundHit } from "../../shared/combat"
 import { PLANE, type Plane, type Quat, type Vec3, bodyToWorld, quatAxis, quatMul, quatRotate } from "../../shared/plane"
 import { VEHICLES } from "../../shared/vehicles"
 import {
@@ -9,7 +9,6 @@ import {
   type VehicleKind,
   type WeaponKind,
   type KillWeapon,
-  bombStation,
   clearLock,
   cycleWeapon,
   damageState,
@@ -32,6 +31,7 @@ import type { JetBreakup } from "../render/explosions"
 import type { WeaponHud, WeaponHudView } from "./hud"
 import type { WeaponInput } from "./input"
 import { type FxShip, ShipFx } from "./ship-fx"
+import { BombSight, type SightShip, aimBomb, makeBombAim } from "./bombsight"
 import type { Hull } from "../../shared/fleet"
 import { teamCss } from "../../shared/crew"
 
@@ -122,6 +122,8 @@ export class Weapons {
   doors = 0
   /** Draws a falling bomb with the jet model's own store mesh (the host's PlanePass); false falls back to a rock. */
   drawBomb: ((x: number, y: number, z: number, vx: number, vy: number, vz: number) => boolean) | null = null
+  /** True while the host's camera shows the bombsight view (it draws the horizon and pitch bars then). */
+  sightView: (() => boolean) | null = null
   /** Names and team colours of players not in view (the kill feed), from the host's crew. */
   resolve: ((id: number) => { name: string; color: string } | null) | null = null
   /** When each jet was last shot down (presentation clock), so the host can skip its generic crash effect. */
@@ -153,6 +155,9 @@ export class Weapons {
   private time = 0
   private ear: Vec3 = [0, 0, 0]
   private hudView: WeaponHudView
+  /** The bombsight's symbols and its continuously computed impact point (src/weapons/bombsight.ts). */
+  private sight = new BombSight()
+  private aim = makeBombAim()
   private lockView = { x: 0, y: 0, progress: 0, locked: false }
   private shooter: Shooter = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, team: 0 }
 
@@ -264,7 +269,8 @@ export class Weapons {
   surface(list: readonly Target[]): void {
     this.boats = list
   }
-  private boats: readonly Target[] = []
+  /** The boats last handed to `surface` (the pilot's radar reads them too). */
+  boats: readonly Target[] = []
 
   /** Our jet's model matrix this frame (to hang the missiles on its rails). */
   setOwnModel(m: Float32Array | null): void {
@@ -427,11 +433,11 @@ export class Weapons {
   // ---- our jet -------------------------------------------------------------------------------------------------------
 
   /** Every carrier as drawn this frame and the room's hulls: their fires and smoke draw with the other effects. */
-  fleet(ships: readonly FxShip[], hulls: ReadonlyMap<number, Hull> | null, _team: number, _t: number, _dt: number): void {
+  fleet(ships: readonly (FxShip & SightShip)[], hulls: ReadonlyMap<number, Hull> | null, _team: number, _t: number, _dt: number): void {
     this.fleetShips = ships
     this.fleetHulls = hulls
   }
-  private fleetShips: readonly FxShip[] = []
+  private fleetShips: readonly (FxShip & SightShip)[] = []
   private fleetHulls: ReadonlyMap<number, Hull> | null = null
 
   /** A carrier started sinking: a kill feed line, the killer's confirmation, and its big first explosion. */
@@ -547,12 +553,11 @@ export class Weapons {
     const inBay = l.spec.bombs - l.bombs < VEHICLES[l.vehicle].bay
     if (this.bombQueued && (!inBay || this.doors >= DOOR_RELEASE)) {
       this.bombQueued = false
-      const b = bombStation(l.vehicle, l.bombs, l.spec.bombs)
+      const drop = bombLaunch(p, l.vehicle, l.bombs, l.spec.bombs, { owner: this.id, seq: 0, t: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, target: -1 })
       const seq = takeBomb(l)
       if (seq >= 0) {
-        const at = bodyToWorld(p, b[0], b[1], b[2], tmp)
-        bodyToWorld(p, 0, -WEAPONS.bomb.eject, 0, up)
-        this.launch({ owner: this.id, seq, t: p.t, x: p.x + at[0], y: p.y + at[1], z: p.z + at[2], vx: p.vx + up[0], vy: p.vy + up[1], vz: p.vz + up[2], target: -1, kind: "bomb" })
+        drop.seq = seq
+        this.launch(drop)
         this.audio.bomb(this.dist(p.x, p.y, p.z))
       }
     }
@@ -713,6 +718,7 @@ export class Weapons {
     this.audio.update(dt, this.flying && weapon === "gun" && this.wantFire && !l.overheated && this.own.alive, farGun, seek, warn)
     if (!this.flying || !this.own.alive || paused) {
       this.hud.update(dt, null)
+      this.sight.update(null)
       return
     }
     const v = this.hudView
@@ -745,6 +751,11 @@ export class Weapons {
       v.nose = project(own.x + fwd[0] * 1000, own.y + fwd[1] * 1000, own.z + fwd[2] * 1000)
     }
     this.hud.update(dt, v)
+    // Bombs selected: where one released now lands, by the world's own bomb (shared/combat.ts bombImpact).
+    if (own && weapon === "bomb") {
+      const aim = l.bombs > 0 ? aimBomb(own, l.vehicle, l.bombs, l.spec.bombs, this.world.ground, this.fleetShips, this.boats, this.team, this.aim) : null
+      this.sight.update({ aim, p: own, eye, view: this.sightView?.() ?? false, project })
+    } else this.sight.update(null)
   }
 
   private drawRounds(b: Bullets): void {

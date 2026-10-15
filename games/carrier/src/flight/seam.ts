@@ -20,7 +20,7 @@ import type { Net } from "../net"
 import { WeaponHud } from "../weapons/hud"
 import { WeaponInput } from "../weapons/input"
 import { Weapons, type WeaponsNet } from "../weapons/weapons"
-import { type KillWeapon, type Target, isKillWeapon } from "../../shared/weapons"
+import { type KillWeapon, type Target, isKillWeapon, weaponOf } from "../../shared/weapons"
 import type { CombatWorld } from "../../shared/combat"
 import { playerVehicle } from "../../shared/ops"
 import { type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
@@ -33,6 +33,8 @@ import { ShipHud } from "../weapons/ship-hud"
 import { FlightHud } from "./hud"
 import { FlightInput } from "./input"
 import { RemotePlanes } from "./remote-planes"
+import { Radar, type RadarScene } from "./radar"
+import { TargetMarkers } from "./target-markers"
 
 /** What the flight module needs from the connection: the jet relay, the weapon events and the room's combat queue. */
 export type FlightNet = Pick<Net, "state" | "id" | "sendPlane" | "sendGun" | "sendHits" | "sendShipHits" | "sendFire" | "sendFlare" | "sendSeek" | "combat">
@@ -101,6 +103,10 @@ export class FlightModule {
   private seaT = 0
   /** Own ship health, the damage flash and enemy ship health in the air (src/weapons/ship-hud.ts). */
   readonly shipHud = new ShipHud()
+  /** The pilot's radar and full map (src/flight/radar.ts) and the target markers on screen. */
+  readonly radar = new Radar()
+  readonly markers = new TargetMarkers()
+  private scene: RadarScene = { me: null, crew: null, jet: null, ships: [], hulls: null, jets: new Map(), boats: [], missiles: [] }
   private recovering = false
   /** Granted before the hull was drawn: place the jet on the first deck seen. */
   private unplaced = false
@@ -162,6 +168,9 @@ export class FlightModule {
     }
     // Shot down: the jet is lost like a crash; the respawn delay then recovers it ("crashed": the slot recharges).
     this.weapons.onDestroyed = () => this.flight.shootDown()
+    // Bombs selected: the camera turns into the bombsight (src/flight/camera.ts) and the weapons draw its ladder.
+    this.flight.bombsight = () => weaponOf(this.weapons.loadout) === "bomb"
+    this.weapons.sightView = () => this.flight.cam.sighting
     void loadPlaneModels().then((m) => {
       this.models = m
       this.pass = new PlanePass(renderer, m)
@@ -183,6 +192,7 @@ export class FlightModule {
     this.world.sea = sea
     this.world.arch = arch
     this.weapons.setGround(this.world)
+    this.radar.setWorld(arch)
     this.boom.world = this.world
     this.boom.wind = [sea.wind[0] * 4, sea.wind[1] * 4]
   }
@@ -438,6 +448,18 @@ export class FlightModule {
     if (v.ships) w.fleet(v.ships, hulls ?? null, me?.team ?? -1, v.t, v.dt)
     this.shipHud.update(v.dt, v.t, me ?? null, v.crew, v.ships ?? [], hulls ?? null, cam, airborne && (f.phase === "flying" || f.phase === "landing"), v.paused)
     w.frame(v.dt, v.t, v.eye, cam?.fov ?? this.camera.fov, innerHeight, (x, y, z) => (cam ? cam.project(x, y, z, innerWidth, innerHeight) : null), v.paused)
+    const flying = airborne && (f.phase === "flying" || f.phase === "landing")
+    const sc = this.scene
+    sc.me = me ?? null
+    sc.crew = v.crew
+    sc.jet = flying ? f.draw : null
+    sc.ships = v.ships ?? []
+    sc.hulls = hulls ?? null
+    sc.jets = w.jets
+    sc.boats = w.boats
+    sc.missiles = w.world.missiles
+    this.radar.update(v.dt, sc, flying, v.paused)
+    this.markers.update(sc, flying ? cam : null, this.radar.box)
     this.boom.end()
     if (pass && fx) {
       pass.upload()

@@ -31,7 +31,7 @@
   "Boat"); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
   Space/LMB fire, 1/2/3 or wheel/V weapons, F flares, or close to and pointing at your own carrier R LAND (a scripted landing; a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: every carrier in its colour with its crew; JOIN switches ship and so side,
-  CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
+  CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
 - Sound: one mix in `src/audio/mixer.ts`; every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
   `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`). SOUNDS tab in the
   debug menu (or `?sounds=1`): audition every take and pick by ear; AUDIO tab: levels. See CONTRACTS.md "Sound".

@@ -238,11 +238,10 @@ export function cycleWeapon(l: Loadout, dir: number): boolean {
   return true
 }
 
-/** Fresh sortie, optionally in another aircraft: everything full and cold (keeps the slot when it still exists). */
+/** Fresh sortie, optionally in another aircraft: everything full and cold, on its first weapon (the F-35C's missiles,
+ *  never its bombs: those turn the camera into the bombsight). */
 export function rearm(l: Loadout, vehicle: VehicleKind = l.vehicle): void {
-  const slot = l.slot
   Object.assign(l, makeLoadout(vehicle))
-  if (slot < l.spec.weapons.length) l.slot = slot
 }
 
 /**

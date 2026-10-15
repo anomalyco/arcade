@@ -40,6 +40,7 @@ import { Drones } from "./drones"
 import { WeaponHud } from "./hud"
 import { WeaponInput } from "./input"
 import { Weapons } from "./weapons"
+import { weaponOf } from "../../shared/weapons"
 
 const MAX_DPR = 1.5
 const RADAR_RPS = 0.25
@@ -137,6 +138,9 @@ async function main() {
 
   // Shot down: the jet is lost like a crash (the flight's crash flow and respawn take over).
   weapons.onDestroyed = () => flight.shootDown()
+  // Bombs selected: the bombsight view and its ladder.
+  flight.bombsight = () => weaponOf(weapons.loadout) === "bomb"
+  weapons.sightView = () => flight.cam.sighting
 
   const shipPose: ShipDrawPose = { x: 0, heave: 0, z: 0, heading: 0, pitch: 0, roll: 0, radar: 0 }
   const warp = (x: number, y: number, z: number, heading: number, pitch: number, speed: number) => {
