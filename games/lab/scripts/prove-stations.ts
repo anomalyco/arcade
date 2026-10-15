@@ -48,7 +48,7 @@ const report: Record<string, unknown> = { base }
 type Snapshot = { view: string; station: { id: string } | null; variant: { id: string } | null; section: string | null }
 type W = {
   stations: { snapshot(): Snapshot; open(id: string): Promise<boolean>; close(): void; layout(): Record<string, { widget: string; groups?: string[] }[]> | null; setEditing(on: boolean): void; editing: boolean }
-  labPanel: { tuning: { seed: number }; navigation: { settings: Record<string, unknown>; rows: { group: string; control?: { key: string; label: string } }[] }; sync(): void }
+  labPanel: { tuning: { seed: number; last: { seed: number; keys: string[] } | null }; navigation: { settings: Record<string, unknown>; rows: { group: string; control?: { key: string; label: string } }[] }; sync(): void }
   labWorkbench: { undo(): void; invoke(id: string, args?: Record<string, unknown>): { ok: boolean } }
 }
 const w = (page: Page) => page.evaluate.bind(page)
@@ -150,6 +150,10 @@ try {
   }, seed)
   const roomSeed = await page.evaluate(() => (window as unknown as W).labPanel.navigation.settings.seed)
   const first = await roll(41)
+  // The roll recorded the seed it drew from and moved the tuning seed on.
+  const recorded = await page.evaluate(() => { const t = (window as unknown as W).labPanel.tuning; return { last: t.last, seed: t.seed } })
+  assert.equal(recorded.last?.seed, 41, "the roll records its tuning seed")
+  assert(recorded.last && recorded.last.keys.length > 0 && recorded.seed !== 41, `the tuning seed moves on after a roll (${JSON.stringify(recorded)})`)
   await page.evaluate(() => (window as unknown as W).labWorkbench.undo())
   const again = await roll(41)
   const other = await roll(42)

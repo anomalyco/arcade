@@ -6,4 +6,8 @@ import type { Schema, State } from "./schema.js"
  */
 export const RESHAPE: unique symbol = Symbol.for("knobs.reshape") as never
 
-export type Reshape = (schema: Schema, values: State, options?: { land?: boolean }) => void
+export type Reshape = (
+  schema: Schema,
+  values: State,
+  options?: { land?: boolean; mixed?: readonly string[] },
+) => void

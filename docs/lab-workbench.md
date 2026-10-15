@@ -139,18 +139,21 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
     across slider drags, `<output>` horizontal scrubs, `F`-hold scrubs, arrow-key holds, exact number edits, group
     resets and group randomizations.
   - `onFocusChange?: (focused: boolean, activeRow?: LabRow) => void` and `onToggle?: (visible: boolean) => void`.
-- `LabOptions` also takes `history` (the workbench's undo and redo, used by knobs' `u`/`z`), `variants` (where saved
-  knobs variants are kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
+- `LabOptions` also takes `history` (the workbench's undo stack as knobs' `HostHistory`: `undo`, `redo`, `canUndo`,
+  `canRedo`, `subscribe`; knobs' header Undo/Redo and `u`/`z` follow it), `variants` (where saved knobs variants are
+  kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
+- `LabControl.mixed?(settings)` marks a value that differs across a multi-selection (Spawn's Light power and radius
+  with two different lights selected): the row reads "—" until edited, and the edit sets every selected item.
 - Knobs draws each group under a heading with a die (Random, `⌥` Mutate) and a reset icon that shows while the group
-  differs from its defaults; the header has Random, Reset, Copy and `?`.
-- Every LabPanel wears the `arcade` knobs preset (`arcadePreset` in `packages/kit/lab-knobs.ts`), so its rows match the
-  Lab chrome: square corners (the Lab chrome is square too), 24 px rows, flat rows split by hairlines instead of cards,
-  11.5 px labels and values in the UI font with tabular figures, choice fields like the Lab's selects and action
-  buttons, the variants strip and All on/All off like the Details buttons (`.lab-act`). An inline panel has no frame of
-  its own. A choice row's label column is as wide as its group's longest choice label (measured once per new set of
-  rows, at most 48% of the row) and the field takes the rest; a focused field spreads over its row to show the whole
-  value, and labels and values carry their full text as tooltips. Change the look through the preset's tokens and
-  `css`, never in `packages/knobs`; gaps go to Kit's knobs session (`knobs-requests.md`).
+  differs from its defaults; the header has Random, Reset, Copy, Undo, Redo and `?`. Groups marked `folded` fold in
+  place and open from their heading (or when `reveal(key)` lands in them).
+- Every LabPanel wears the `arcade` preset (`arcadePreset` in `packages/kit/lab-knobs.ts`): knobs' `labPreset`
+  (square, `--k-frame: flat`, the Lab's palette, title and font weights) with 24 px rows and the UI font for values.
+  Inline panels have no frame of their own. knobs gives long choices a tooltip with the whole value, keeps labels' words
+  up to half the row, and opens lists of more than eight options with a search field (type to filter). The preset's
+  `css` holds only what knobs has no token for yet: the panel filling its column, 20 px fields and one text size in
+  24 px rows, and action rows, All on/All off and the variants strip drawn like the Details buttons (`.lab-act`).
+  Change the look through tokens first, never in `packages/knobs`; gaps go to Kit's knobs session (`knobs-requests.md`).
 - Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
   highlighting; `setView({ order, filter })` orders groups and filters rows; `reveal(key)` focuses, scrolls and flashes
   a row; `resetControl(key)`; `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin (a dot at
@@ -273,13 +276,16 @@ hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 ```
 
-`hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs look
+`hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs panels
 at 1440×900 and 1728×1117@2x on the Outbreak scenes station and the vignette section: no rounded box anywhere in the
-workbench outside the viewport, 24 px knobs rows, labels, values and choices in one 11.5 px font, no frame around inline
-panels, flat groups, knobs buttons computed-style equal to `.lab-act`, no group in both the station's controls card and
-Details, cut labels and values readable (tooltip, and a focused choice spans its row), RMB and Ctrl-click on a Details
-button never open the radial while an RMB tap on the canvas does, a press on a panel closes it, and Outbreak's floating
-overlay wears the same preset. `--shots-only` captures a before/after pair.
+workbench outside the viewport, 24 px knobs rows, labels, values and choices in one 11.5 px font, no visible frame around
+inline panels, flat groups, knobs buttons computed-style equal to `.lab-act`, no group in both the station's controls
+card and Details, no cut menu labels and a tooltip on every cut value, RMB and Ctrl-click on a Details button never open
+the radial while an RMB tap on the canvas does, and a press on a panel closes it. It also types into the first choice
+list longer than eight options (Materials' texture map) and checks the list filters, selects a spotlight and a lamp in
+Spawn and checks Light power reads "—" until an edit sets both, and checks Outbreak's floating overlay wears the same
+preset and that a page's bare `button`/`span` rules don't restyle knobs' buttons. `--shots-only` captures a
+before/after pair.
 
 `prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
 the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.

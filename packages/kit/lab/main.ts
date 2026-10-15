@@ -273,6 +273,8 @@ export async function lab(options:LabOptions) {
     workbench?.onSectionChanged()
     for(const listener of sectionListeners)listener(id)
   }
+  // knobs' Undo and Redo follow the workbench's stack, which exists only once the workbench does.
+  const historyListeners=new Set<()=>void>()
   panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(),{
     open:true,
     presets:false,
@@ -280,7 +282,13 @@ export async function lab(options:LabOptions) {
     capture:"focus",
     layout:"inspector",
     variants:()=>`arcade-lab-${settings.section}`,
-    history:{undo:()=>workbench?.undo(),redo:()=>workbench?.redo()},
+    history:{
+      undo:()=>workbench?.undo(),
+      redo:()=>workbench?.redo(),
+      canUndo:()=>Boolean(workbench?.canUndo()),
+      canRedo:()=>Boolean(workbench?.canRedo()),
+      subscribe:listener=>{historyListeners.add(listener);return()=>{historyListeners.delete(listener)}},
+    },
     onTransaction:(label,before)=>workbench?.onPanelTransaction(label,before as LabSettings),
     onFocusChange:focused=>workbench?.onPanelFocusChange(focused),
     onPin:(control,group)=>workbench?.togglePin(control,group),
@@ -382,6 +390,7 @@ export async function lab(options:LabOptions) {
     looks,
     effects,
   })
+  workbench.onHistoryChange(()=>{for(const listener of historyListeners)listener()})
 
   select("effects")
   const resolveDeepSection=()=>{

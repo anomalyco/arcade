@@ -164,11 +164,16 @@ New parameter Randomize paths must use a recorded deterministic tuning seed, res
 room and effect seeds unchanged. Randomize explores recipes; Retrigger repeats an effect; Reroll regenerates a room.
 Locks protect comparison state, not explicit parameter edits. Include the resulting settings and required seeds in Copy.
 
-The knobs dice (the header's for every row, a card's for its group, `⌥` to mutate instead) draw from the panel's
-recorded tuning seed (`LabPanel.tuning.seed`; each roll records the seed it used in `tuning.last` and moves to the
-next). They land ranges on their step lattice, skip switches, locked and dependency-disabled rows, and never touch the
-effect, environment and room pickers, the key-label layout or any seed. Copy adds `tuningSeed` when a roll produced the
-values, and voice notes save the tuning state. A group with its own `Randomize <group>` action keeps using it.
+The knobs dice (the header's for every row, a card's for its group, `⌥` to mutate instead) are knobs' own Random and
+Mutate, drawing from the panel's recorded tuning seed (knobs' `random` option over `seededRandom(LabPanel.tuning.seed)`;
+each roll records the seed it used in `tuning.last` and moves to the next). knobs draws only for the keys a roll
+changes, in row order, so a recorded seed replays the roll. Its `tunable` option and `random: false` on seeds keep
+switches, locked and dependency-disabled rows, the effect, environment and room pickers, the key-label layout and every
+seed out. Copy adds `tuningSeed` when a roll produced the values, and voice notes save the tuning state. A group with
+its own `Randomize <group>` action keeps using it. Tuning seeds recorded before the switch to knobs' draws (Arcade's
+`seededPatch`, until October 2026) give different values now; none were recorded (every saved voice note has
+`tuning.last: null`). Section seeds such as Looks', Weather's or Effects' `tuningSeed` drive their own randomizers and
+are unchanged.
 
 Current limitations:
 

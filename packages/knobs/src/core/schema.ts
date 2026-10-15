@@ -15,6 +15,42 @@ export interface FieldMeta {
   /** What the section's heading shows (the first field that gives one wins); `section` by default. */
   readonly sectionLabel?: string
   readonly shortcut?: string
+  /** `false` keeps the field out of Random and Mutate, as a lock does, but by declaration. */
+  readonly random?: boolean
+  /**
+   * The row dims and takes no edits from the pointer or keys (focus can still reach it, to read
+   * it); Random, Mutate and Reset skip it. A function decides from the current values, e.g.
+   * `(v) => v.light !== "spot"`.
+   */
+  readonly disabled?: boolean | ((values: State) => boolean)
+  /** Shows the value at full strength but takes no edits; Random, Mutate and Reset skip it. */
+  readonly readOnly?: boolean | ((values: State) => boolean)
+  /**
+   * The group's card starts folded (the first field of a group that says wins), and its header
+   * folds and opens it. `mountPanel` only; a page's cards don't fold yet. `groupFolded` on the
+   * mount overrides it.
+   */
+  readonly folded?: boolean
+}
+/** Meta keys copied from a field's options or a descriptor onto the field. */
+export const META_KEYS = [
+  "label",
+  "group",
+  "groupLabel",
+  "section",
+  "sectionLabel",
+  "shortcut",
+  "random",
+  "disabled",
+  "readOnly",
+  "folded",
+] as const satisfies readonly (keyof FieldMeta)[]
+/** The meta `source` gives, without undefined keys. */
+export function pickMeta(source: FieldMeta | undefined, skip: readonly string[] = []): FieldMeta {
+  const out: Record<string, unknown> = {}
+  if (source)
+    for (const k of META_KEYS) if (source[k] !== undefined && !skip.includes(k)) out[k] = source[k]
+  return out as FieldMeta
 }
 /** Marks a knob as half of a flat spring: two number keys drawn as one spring card. */
 export interface SpringPart {
@@ -128,15 +164,7 @@ export function valueKeys(schema: Schema): string[] {
 }
 function withMeta<T extends object>(base: T, meta?: FieldMeta): T {
   checkShortcut(meta?.shortcut)
-  return Object.freeze({
-    ...base,
-    ...(meta?.label !== undefined ? { label: meta.label } : {}),
-    ...(meta?.group !== undefined ? { group: meta.group } : {}),
-    ...(meta?.groupLabel !== undefined ? { groupLabel: meta.groupLabel } : {}),
-    ...(meta?.section !== undefined ? { section: meta.section } : {}),
-    ...(meta?.sectionLabel !== undefined ? { sectionLabel: meta.sectionLabel } : {}),
-    ...(meta?.shortcut !== undefined ? { shortcut: meta.shortcut } : {}),
-  })
+  return Object.freeze({ ...base, ...pickMeta(meta) })
 }
 
 export function knob(
@@ -219,10 +247,7 @@ export function flatSpring(
     return Object.freeze({
       ...base,
       ...(base.label === undefined ? { label: part === "duration" ? "Duration" : "Bounce" } : {}),
-      ...(meta.group !== undefined ? { group: meta.group } : {}),
-      ...(meta.groupLabel !== undefined ? { groupLabel: meta.groupLabel } : {}),
-      ...(meta.section !== undefined ? { section: meta.section } : {}),
-      ...(meta.sectionLabel !== undefined ? { sectionLabel: meta.sectionLabel } : {}),
+      ...pickMeta(meta, ["label", "shortcut"]),
       spring: Object.freeze({
         id,
         part,
