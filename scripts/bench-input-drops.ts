@@ -29,6 +29,10 @@ type Conn = { send(data: string): void; close(): void }
 type Queued = { seq: number; intent: Record<string, unknown> }
 type Core = { message(conn: Conn, raw: unknown): void; step(): void; world: { players: Map<string, { queue: Queued[] }> } }
 
+type RoomCoreClass = new (code: string, ...rest: unknown[]) => Core
+/** Loaded by path so the root scripts typecheck (without Worker types) doesn't follow it into the Durable Objects. */
+const server = (game: string): Promise<{ RoomCore: RoomCoreClass }> => import(`../games/${game}/server/room.ts`)
+
 type Game = {
   name: string
   core(clock: () => number): Promise<Core>
@@ -41,8 +45,8 @@ const GAMES: Game[] = [
   {
     name: "brawl",
     async core(clock) {
-      const { RoomCore } = await import("../games/brawl/server/room")
-      return new RoomCore("bench", clock) as unknown as Core
+      const { RoomCore } = await server("brawl")
+      return new RoomCore("bench", clock)
     },
     hello: { name: "bench", pick: "chef" },
     intent: (tick, press) => ({ mx: Math.sin(tick * 0.05), my: Math.cos(tick * 0.03), aim: (tick * 0.02) % 6, tx: 10, ty: 10, cast: press ? 1 : -1 }),
@@ -51,8 +55,8 @@ const GAMES: Game[] = [
   {
     name: "blackout",
     async core(clock) {
-      const { RoomCore } = await import("../games/blackout/server/room")
-      return new RoomCore("bench", "ffa", clock) as unknown as Core
+      const { RoomCore } = await server("blackout")
+      return new RoomCore("bench", "ffa", clock)
     },
     hello: { name: "bench", gun: "rifle", equip: "frag" },
     intent: (tick, press) => ({ mx: Math.sin(tick * 0.05), my: Math.cos(tick * 0.03), aim: (tick * 0.02) % 6, fire: press, ...(press ? { firePressed: true } : {}), reload: false, sprint: false, equip: false, tx: 10, ty: 10, use: false }),
