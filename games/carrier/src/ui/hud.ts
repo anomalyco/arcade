@@ -1,4 +1,5 @@
 import { keyLabel } from "@arcade/kit/client/controls"
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 
 /** What the helm readout shows. */
 export type HelmView = { order: number; power: number; knots: number; heading: number; rudder: number }
@@ -30,8 +31,8 @@ const CSS = `
 #bl .role b { font-weight: 300; color: var(--team, var(--ink)); }
 #bl .role i { font-style: normal; opacity: 0.6; }
 #bl .role em { font-style: normal; color: #ffd34a; margin-right: 0.5em; }
-#bl .role kbd { font: inherit; opacity: 0.7; margin-left: 1.4em; }
-#bl .role kbd b { color: var(--ink); border: 1px solid currentColor; padding: 0 0.35em; margin-right: 0.7em; letter-spacing: 0; }
+#bl .role .ops { opacity: 0.85; margin-left: 1.4em; }
+#bl .role .ops .akc { margin-right: 0.7em; font-size: 11px; }
 #bl .flash { padding-left: 10px; font-size: 10px; letter-spacing: 0.28em; color: #ffd34a; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 10px rgba(0, 0, 0, 0.4); }
 #br .rudder i { position: absolute; bottom: 0; width: 2px; height: 9px; margin-left: -1px; background: #ffd34a; }
 `
@@ -93,8 +94,7 @@ export class Hud {
     role.innerHTML = `${v.captain ? "<em>★</em>" : ""}${v.role} · <b></b>${v.state ? "<i></i>" : ""}`
     role.querySelector("b")!.textContent = v.ship
     if (v.state) role.querySelector("i")!.textContent = ` · ${v.state}`
-    role.insertAdjacentHTML("beforeend", "<kbd><b></b>SHIP OPS</kbd>")
-    role.querySelector("kbd b")!.textContent = eKey
+    role.insertAdjacentHTML("beforeend", `<span class="ops">${keyCapHtml("KeyE")}SHIP OPS</span>`)
     this.seatEl.querySelector(".flash")!.textContent = v.flash
   }
 

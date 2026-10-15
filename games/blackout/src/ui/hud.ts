@@ -1,5 +1,6 @@
 import "./vehicles.css"
 import { keyLabel, moveClusterLabel } from "@arcade/kit/client/controls"
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { EQUIPS, EQUIP_IDS, type Equip, GUNS, GUN_IDS, type Weapon } from "../../shared/config"
 import { mapLabel } from "../../shared/maps"
 import type { Camera } from "../render/camera"
@@ -47,7 +48,7 @@ export class Hud {
     const t = performance.now() / 1000
     el.status!.textContent = status ?? ""
     if (!s) return
-    el.help!.textContent = s.spells ? `${moveClusterLabel()} move · CLICK cast · 1 / 2 / WHEEL spell · ${keyLabel("KeyV")} bonk · SHIFT sprint · ~ Lab` : `${moveClusterLabel()} move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · ${keyLabel("KeyR")} reload · ${keyLabel("KeyG")} equipment · ${keyLabel("KeyV")} melee · ${keyLabel("KeyE")} vehicle · TAB scores`
+    el.help!.textContent = s.spells ? `${moveClusterLabel()} move · CLICK cast · 1 / 2 / WHEEL spell · ${keyLabel("KeyV")} bonk · SHIFT sprint · ${keyLabel("Backquote")} Lab` : `${moveClusterLabel()} move · MOUSE aim · CLICK shoot · SHIFT sprint · RIGHT CLICK look · ${keyLabel("KeyR")} reload · ${keyLabel("KeyG")} equipment · ${keyLabel("KeyV")} melee · ${keyLabel("KeyE")} vehicle · TAB scores`
     this.root.querySelector(".brand")!.textContent = s.spells ? "WIZARDS" : "BLACKOUT"
     el.br!.style.display = s.spells ? "none" : ""
     el.tc!.style.display = s.spells ? "none" : ""
@@ -73,7 +74,7 @@ export class Hud {
     const rb = el.rbar!.firstElementChild as HTMLElement
     rb.style.width = reloading ? `${(1 - (g.reloadUntil - t) / gun.reload) * 100}%` : "0%"
 
-    el.equip!.innerHTML = kit.equip ? `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span><kbd>${esc(keyLabel("KeyG"))}</kbd>` : kit.melee && kit.gun ? `<span>MELEE</span><kbd>${esc(keyLabel("KeyV"))}</kbd>` : ""
+    el.equip!.innerHTML = kit.equip ? `<span class="${g.equipLeft > 0 ? "" : "out"}">${equipLabel(g.equip)} ×${g.equipLeft}</span>${keyCapHtml("KeyG")}` : kit.melee && kit.gun ? `<span>MELEE</span>${keyCapHtml("KeyV")}` : ""
 
     const b = g.banner && t - g.banner.t < 2.2 ? g.banner : null
     el.banner!.textContent = b?.text ?? ""
@@ -95,14 +96,14 @@ export class Hud {
     const ride = alive ? g.ride : null
     const vh = ride ? Math.max(0, ride.hp / ride.max) : 0
     const segs = ride ? Array.from({ length: 10 }, (_, i) => `<i class="${i < Math.ceil(vh * 10) ? "on" : ""}"></i>`).join("") : ""
-    const interactKey = esc(keyLabel("KeyE"))
+    const interactKey = keyCapHtml("KeyE")
     el.veh!.innerHTML = ride
-      ? `<div class="vl">VEHICLE: ${ride.label} · ${ride.driver ? "DRIVER" : "PASSENGER"}<span>${ride.used}/${ride.seats} SEATS</span></div><div class="vbar${vh < 0.35 ? " low" : ""}">${segs}</div><div class="vk"><kbd>${interactKey}</kbd> EXIT · <kbd>${esc(keyLabel("KeyC"))}</kbd> SEAT${ride.driver ? ` · <kbd>${esc(keyLabel("KeyH"))}</kbd> HORN · <kbd>SHIFT</kbd> HANDBRAKE` : ""}</div>`
+      ? `<div class="vl">VEHICLE: ${ride.label} · ${ride.driver ? "DRIVER" : "PASSENGER"}<span>${ride.used}/${ride.seats} SEATS</span></div><div class="vbar${vh < 0.35 ? " low" : ""}">${segs}</div><div class="vk">${interactKey} EXIT · ${keyCapHtml("KeyC")} SEAT${ride.driver ? ` · ${keyCapHtml("KeyH")} HORN · ${keyCapHtml("ShiftLeft")} HANDBRAKE` : ""}</div>`
       : ""
     const vp = g.vehiclePrompt
     const vpp = vp ? cam.project(vp.x, 2.4, vp.y, w, h) : null
     if (vp && vpp?.ok) {
-      el.vprompt!.innerHTML = `<kbd>${interactKey}</kbd> ENTER ${vp.spec.label} <span>${vp.s.seats.filter(Boolean).length}/${vp.s.seats.length}</span>`
+      el.vprompt!.innerHTML = `${interactKey} ENTER ${vp.spec.label} <span>${vp.s.seats.filter(Boolean).length}/${vp.s.seats.length}</span>`
       el.vprompt!.style.transform = `translate(${vpp.x.toFixed(1)}px, ${vpp.y.toFixed(1)}px) translate(-50%, -100%)`
       el.vprompt!.style.opacity = "1"
     } else el.vprompt!.style.opacity = "0"

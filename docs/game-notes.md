@@ -1126,6 +1126,18 @@ Candidates from the code audits; measure and playtest before moving any into the
   rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
   18.0 ms at 0.9985.
 
+- **Put in-the-moment state on the character and keep it out of the aim.** Outbreak's callouts now sit screen-below
+  the survivor's feet by default (the lowest projected point of a 0.2 m feet circle, so the camera tilt is accounted
+  for), and stamina, reload, health and battery are small rings beside the body that appear only while they have
+  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](outbreak-hud.md)). When the
+  survivor aims within 55° of the side the HUD is on, it slides to the opposite side and returns past 68°
+  (`chooseSide`, `src/hud/placement.ts`), so the flashlight's near field stays clear without flicker. Rings use shape
+  for identity and colour for range, as Dead Space's RIG does. The same components run for co-op teammates from
+  replicated flags only, at 0.8× with their name tag. Metal proof (`scripts/hud-proof.ts`, 37 stills): `hud.update`
+  p95 0.2 ms with three callouts, three rings and a teammate live; a 7-pair same-page A/B against the old log and edge
+  bars measured style and layout −0.003 ms per frame (spread −0.016 to +0.006) and script +0.021 ms (−0.043 to
+  +0.101), both inside their spread.
+
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
   tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps
@@ -1301,4 +1313,20 @@ Candidates from the code audits; measure and playtest before moving any into the
   rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
   drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
   interior's level to the chase view makes a camera switch change colour, not loudness.
-
+- **Generate many candidates, then let measurements do the first cut.** The shared library
+  (`scripts/sfx/library.ts`, [sfx-library.md](sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
+  them on numbers that catch bad takes without listening: near-silent takes (the first pistol prompt returned six
+  takes peaking at -22 to -39 dBFS), flat-topped runs (real clipping, unlike recoverable decoded overs), SNR over the
+  take's own noise floor, one onset for single events, decay by 0.2 s, timbre distance from the family median and
+  bed steadiness. Footsteps come from 6 s walking takes sliced at onsets and re-trimmed to each step's transient:
+  six consistent steps per surface from two requests. Contact sheets (waveform + spectrogram per candidate) show
+  the picks. It cannot tell whether a groan sounds like a zombie; that still needs ears.
+- **Pad Opus loops on both sides.** Opus decoding attenuates a stream's first samples, so a loop over the whole file
+  jumps at the seam (the interior bed's seam was larger than any sample step inside it). Wrapping the loop region in
+  0.25 s of its own tail before and head after, and looping `[loopStart, loopEnd)`, put every seam step inside the
+  bed's own distribution.
+- **Drive sound from state diffs, like the HUD.** Outbreak's `SoundDirector` reads `CoopSim` each frame (shots,
+  zombie states, doors, planks, bashes, each survivor's `FeedbackActor` fields), so co-op clients sound right from
+  snapshots with no new wire fields. Crowd sounds need explicit spacing: idle groans every 4.5 s / √n, never closer
+  than 0.7 s, each zombie at most every 8 s; alerts one per 0.35 s across the crowd. 100 zombies cost 0.013 ms per
+  frame in the director and 0.037 ms for the whole audio update in the browser.

@@ -216,6 +216,25 @@ coordinate and renderer contracts. Each game supplies terrain, interpolated cont
 sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
 game-owned. The smoke pool and GPU pipeline are canonical in `kit/fx`; vehicle smoke paths are compatibility adapters.
 
+## Sound
+
+The shared sound library (`@arcade/kit/audio/library`, [sfx-library.md](sfx-library.md)) holds sounds by semantic id
+with one source file each. Migrations checked against [sfx-inventory.md](sfx-inventory.md) and left as follow-ups,
+because none is a clean swap:
+
+- **Blackout guns, footsteps and mechanics** are procedural (`games/blackout/src/audio/sound.ts`), animation-cued and
+  proven graph-identical to the Lab's path (`games/lab/scripts/prove-game-audio.ts`). Library samples would change
+  their sound and break that proof. Blackout has no pistol; the library has no rifle, shotgun or sniper. To share them,
+  render Blackout's synth into library entries or give the library procedural entries.
+- **Blackout vehicle samples** (`public/sfx/vehicles/`): its crash takes are different encodes of Getaway's crash
+  family (not byte-identical, different lengths and loudness), and six engine loops plus `skid.mp3` (about 250 KB) are
+  no longer referenced since engines became procedural. Pick one crash family and delete the unused loops.
+- **Getaway** sounds are vehicle, siren, radio and round stings: nothing in the library overlaps except `ui.click`,
+  which the library reuses from Getaway's own file in place. `repair.mp3` clips (67 samples, +1.4 dBFS).
+- **Carrier** has its own slot bank, picks and SOUNDS audition board (naval weapons, ocean, weather). `ui.tick` reuses
+  its picked click in place. 99 alternate takes (5.8 MB) are in the repo but load only when auditioned.
+- **Wings** is procedural and an independent project.
+
 ### Outbreak M1 extractions
 
 Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits,level}`,
@@ -293,9 +312,10 @@ In rough order of value against risk:
    `level-mesh.ts`, and `lighting.ts`.
 3. **Seeded RNG and hashing (completed in `@arcade/kit/sim/rng`).** One module exports `mulberry32`, `Rng` (with
    `.seed()`), `seedOf`, `hash2`, and `hash3` across all games and the audio runtime.
-4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input}`).** Physical
-   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, and
-   layout-aware `keyLabel` / `moveClusterLabel` prompts are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
+4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input,key-cap}`).** Physical
+   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, QWERTY
+   `keyLabel` / `moveClusterLabel` prompts with the opt-in `keyLabelSetting`, and the `keyCapHtml` / `keyPromptHtml`
+   key caps (tap, hold ring, wide, mouse) are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
 5. **Dev supervisors, build hashes, and rolling perf telemetry (completed in `scripts/{build-id,game-dev}.ts` & `@arcade/kit/gpu-perf`).**
    `writeBuildId` and `runGameDev` unify per-game build-ID and dev supervisors; `PerfSampler` unifies rolling p50/p95/FPS
    telemetry formatting across `DebugOverlay` panels.

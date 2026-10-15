@@ -412,7 +412,7 @@ try {
   const coopSeparationM = Math.hypot(netB.view.player.x - netA.view.player.x, netB.view.player.y - netA.view.player.y)
   const coopDriftA = Math.hypot(netA.view.player.x - slotA.survivor.x, netA.view.player.y - slotA.survivor.y)
   const coopDriftB = Math.hypot(netB.view.player.x - slotB.survivor.x, netB.view.player.y - slotB.survivor.y)
-  const coopActiveServerChunks = room.sim.world.activeChunks.size
+  const coopActiveServerChunks = room.sim.worldStream.activeChunks.size
   netA.close()
   netB.close()
 

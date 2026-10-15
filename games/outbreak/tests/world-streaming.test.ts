@@ -243,9 +243,9 @@ describe("Procedural world generation & chunk streaming", () => {
     core.sim.syncWorldChunks()
 
     // Both Alice's 3×3 chunks (around 0,1) and Bob's 3×3 chunks (around 38,1) are active simultaneously on the room
-    expect(core.sim.world.activeChunks.has(chunkKey(0, 1))).toBe(true)
-    expect(core.sim.world.activeChunks.has(chunkKey(38, 1))).toBe(true)
-    expect(core.sim.world.activeChunks.size).toBe(18)
+    expect(core.sim.worldStream.activeChunks.has(chunkKey(0, 1))).toBe(true)
+    expect(core.sim.worldStream.activeChunks.has(chunkKey(38, 1))).toBe(true)
+    expect(core.sim.worldStream.activeChunks.size).toBe(18)
 
     for (let i = 0; i < 80; i++) {
       virtualMs = net.now * 1000

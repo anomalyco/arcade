@@ -1,7 +1,7 @@
-import type { AIAgent, AIState, NavPortal } from "@arcade/kit/sim/ai"
+import type { AIAgent, AIState } from "@arcade/kit/sim/ai"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
-import { hash2, hash3, Rng } from "@arcade/kit/sim/rng"
-import { buildLootContainers, type LootContainer } from "./combat"
+import { hash3, Rng } from "@arcade/kit/sim/rng"
+import { DEFAULT_PROGRESSION_TUNING, lootSites, type LootSite } from "./progression"
 import {
   CHUNK,
   EXTERIOR_VEHICLE_COLLIDERS,
@@ -16,6 +16,8 @@ import {
   type Town,
   type WindowOpening,
 } from "./map"
+
+export type LootContainer = LootSite
 
 export type WorldMode = "classic" | "streaming" | "procedural"
 
@@ -232,8 +234,8 @@ export function hashWorldChunk(c: Omit<WorldChunk, "hash">): number {
   }
   for (const ct of c.containers) {
     mixStr(ct.id)
-    mix(ct.ammo)
-    mix(ct.planks)
+    mix(ct.ammo ?? 0)
+    mix(ct.planks ?? 0)
   }
   return h >>> 0
 }
@@ -305,10 +307,10 @@ function cloneClassicChunk(seed: number, houseSeed: number, cx: number, cy: numb
     inChunk((v[0] + v[2]) * 0.5, (v[1] + v[3]) * 0.5),
   ).map((v) => [...v] as Rect)
 
-  const allContainers = buildLootContainers(base)
-  const containers = allContainers
+  const allContainers = lootSites(base, DEFAULT_PROGRESSION_TUNING).sites
+  const containers: LootContainer[] = allContainers
     .filter((c) => inChunk(c.x, c.y))
-    .map((c) => ({ ...c, rect: [...c.rect] as Rect }))
+    .map((c) => ({ ...c, rect: [...c.rect] as Rect, searched: Boolean(c.searched), ammo: c.ammo ?? 4, planks: c.planks ?? 1 }))
 
   const zRng = new Rng((seed ^ Math.imul(cx * 31 + cy * 97 + 1, 0x7a4f9b13)) >>> 0)
   const baseId = chunkZombieIdBase(cx, cy)
@@ -728,6 +730,7 @@ export function generateWorldChunk(
       rect: shape.rect,
       x: p.x,
       y: p.y,
+      buildingId: bld?.id ?? null,
       searched: false,
       ammo,
       planks,
@@ -1249,14 +1252,14 @@ export class StreamingWorld {
       for (const d of this.deltas.values()) {
         for (const [cid, s] of Object.entries(d.searched)) if (s) prevSearched.add(cid)
       }
-      const freshContainers = buildLootContainers(town).map((c) => {
+      const freshContainers = lootSites(town, DEFAULT_PROGRESSION_TUNING).sites.map((c) => {
         const existing = prevById.get(c.id)
         if (existing) {
           if (prevSearched.has(c.id)) existing.searched = true
           return existing
         }
         if (prevSearched.has(c.id)) c.searched = true
-        return c
+        return { ...c, searched: Boolean(c.searched), ammo: c.ammo ?? 4, planks: c.planks ?? 1 }
       })
       containers.length = 0
       containers.push(...freshContainers)
