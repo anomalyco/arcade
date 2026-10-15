@@ -479,8 +479,10 @@ export class LabPanel implements LabKnobsHost {
     } else {
       this.sync()
       if (this.hasFocus()) {
-        if (this.previousFocus?.isConnected) this.previousFocus.focus({ preventScroll: true })
-        else (document.activeElement as HTMLElement | null)?.blur()
+        if (this.previousFocus?.isConnected && this.previousFocus !== document.body) {
+          this.previousFocus.focus({ preventScroll: true })
+        }
+        if (this.hasFocus()) (document.activeElement as HTMLElement | null)?.blur()
       }
     }
     this.onToggle?.(this.visible)

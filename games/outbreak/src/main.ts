@@ -8,12 +8,17 @@ import {
   type LookCompareMode,
 } from "@arcade/kit/look"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
+import {
+  AdaptiveQualityController,
+  loadSavedQualityMode,
+  resolveQualityMode,
+} from "@arcade/kit/quality"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
-import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
+import { FOLIAGE_MAX_ACTORS, FOLIAGE_WIND_FLOATS, foliageSettings, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
@@ -44,6 +49,7 @@ import {
   resolveLampLight,
   STREET_LAMP_POSTS,
   streetLampHead,
+  type ResolvedLamp,
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
@@ -78,9 +84,46 @@ import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLa
 import { shaders } from "./shaders"
 import "./style.css"
 
-/** Player first, then the nearest living zombies: grass and bushes bend away from them (presentation only). */
+const foliageActorPool = Array.from({ length: FOLIAGE_MAX_ACTORS }, () => ({ x: 0, z: 0 }))
+const foliageActorOut: { x: number; z: number }[] = []
+const foliageNearDist = new Float32Array(FOLIAGE_MAX_ACTORS - 1)
+const foliageNearIdx = new Int32Array(FOLIAGE_MAX_ACTORS - 1)
+
+/** Player first, then the nearest living zombies: grass and bushes bend away from them (presentation only, zero-alloc). */
 function foliageActors(p: { x: number; y: number }, zombies: readonly { x: number; y: number; state: string }[]) {
-  return nearestFoliageActors(p.x, p.y, zombies.filter((z) => z.state !== "dead").map((z) => ({ x: z.x, z: z.y })))
+  const maxOthers = FOLIAGE_MAX_ACTORS - 1
+  const maxD2 = 24 * 24
+  let found = 0
+  for (let i = 0; i < zombies.length; i++) {
+    const z = zombies[i]!
+    if (z.state === "dead") continue
+    const dx = z.x - p.x
+    const dz = z.y - p.y
+    const d2 = dx * dx + dz * dz
+    if (d2 >= maxD2) continue
+    if (found < maxOthers || d2 < foliageNearDist[found - 1]!) {
+      let ins = found < maxOthers ? found++ : maxOthers - 1
+      while (ins > 0 && foliageNearDist[ins - 1]! > d2) {
+        foliageNearDist[ins] = foliageNearDist[ins - 1]!
+        foliageNearIdx[ins] = foliageNearIdx[ins - 1]!
+        ins--
+      }
+      foliageNearDist[ins] = d2
+      foliageNearIdx[ins] = i
+    }
+  }
+  foliageActorPool[0]!.x = p.x
+  foliageActorPool[0]!.z = p.y
+  foliageActorOut.length = 1 + found
+  foliageActorOut[0] = foliageActorPool[0]!
+  for (let k = 0; k < found; k++) {
+    const z = zombies[foliageNearIdx[k]!]!
+    const slot = foliageActorPool[k + 1]!
+    slot.x = z.x
+    slot.z = z.y
+    foliageActorOut[k + 1] = slot
+  }
+  return foliageActorOut
 }
 
 const params = new URLSearchParams(location.search)
@@ -90,6 +133,15 @@ try {
   migrateOutbreakLocalStorage(localStorage)
 } catch {}
 const settings = createOutbreakSettings(params)
+if (!params.has("quality") && !params.has("view.quality") && !navigator.webdriver) {
+  try {
+    const savedQuality = loadSavedQualityMode(localStorage)
+    if (savedQuality) settings.view.quality = savedQuality
+  } catch {}
+}
+const qualityController = new AdaptiveQualityController({
+  mode: resolveQualityMode(settings.view.quality),
+})
 
 const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
 function nearestStreetHead(x: number, y: number, isStream = false): readonly [number, number, number] {
@@ -309,6 +361,7 @@ async function main() {
     vehicleHost,
     hud,
     map,
+    qualityController,
     updateProfile,
     regenerate: () => regenerate(),
     syncTextures: () => syncTextures(),
@@ -345,6 +398,58 @@ async function main() {
   let lastPeek: PeekInfo | null = null
   const frame = new Float32Array(FRAME_FLOATS)
   const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
+  const unshadowedLampBuf = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
+  const scratchResolvedLamp: ResolvedLamp = {
+    lx: 0,
+    lh: 0,
+    ly: 0,
+    r: 0,
+    rEff: 0,
+    color: [0, 0, 0],
+    power: 0,
+    fixtureBrightness: 0,
+    cone: [0, 0, 0, 0],
+    softness: 0,
+    castShadows: false,
+  }
+  const writeLightSlot = (
+    buf: Float32Array,
+    slot: number,
+    lx: number,
+    lh: number,
+    ly: number,
+    r: number,
+    cr: number,
+    cg: number,
+    cb: number,
+    power: number,
+    cx: number,
+    cy: number,
+    cz: number,
+    cw: number,
+    s0: number,
+    s1: number,
+    s2: number,
+    s3: number,
+  ) => {
+    const o = slot * LIGHT_FLOATS
+    buf[o] = lx
+    buf[o + 1] = lh
+    buf[o + 2] = ly
+    buf[o + 3] = r
+    buf[o + 4] = cr
+    buf[o + 5] = cg
+    buf[o + 6] = cb
+    buf[o + 7] = power
+    buf[o + 8] = cx
+    buf[o + 9] = cy
+    buf[o + 10] = cz
+    buf[o + 11] = cw
+    buf[o + 12] = s0
+    buf[o + 13] = s1
+    buf[o + 14] = s2
+    buf[o + 15] = s3
+  }
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_MAP_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
@@ -640,8 +745,11 @@ async function main() {
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.view.zoom
     pendingDrawDt = 0
+    lastWallDrawAt = 0
+    qualityController.reset()
     clock.reset(performance.now(), liveMove())
   }
+  let lastWallDrawAt = 0
   reset()
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   let lastNotice: { text: string; until: number } | null = null
@@ -696,6 +804,13 @@ async function main() {
   syncTextures()
   let lastDayNightHour = -1
   function draw(dt: number) {
+    const nowDraw = performance.now()
+    if (!frozen && lastWallDrawAt > 0) {
+      qualityController.recordFrame(nowDraw - lastWallDrawAt, renderer.lastGpuMs, nowDraw)
+    }
+    lastWallDrawAt = nowDraw
+    const qProfile = qualityController.getProfile()
+    renderer.setBloomLevels(qProfile.bloomLevels)
     if (settings.materials.textures === 2) syncTextures()
     coop.net?.sync(dt)
     if (coop.localPalette !== avatarPalette) {
@@ -733,11 +848,11 @@ async function main() {
     const activePeek = peek ?? (peekBlend > 0.001 ? lastPeek : null)
     const w = innerWidth
     const h = innerHeight
-    const dpr = Math.min(devicePixelRatio, 2)
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-      canvas.width = Math.round(w * dpr)
-      canvas.height = Math.round(h * dpr)
-      renderer.resize(canvas.width, canvas.height)
+    const { width: targetW, height: targetH } = qualityController.canvasDimensions(w, h, devicePixelRatio)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+      renderer.resize(targetW, targetH)
     }
     const localVehicle = session.sim.vehicles.vehicleOf(p)
     const vehSpeed = localVehicle ? Math.hypot(localVehicle.vx, localVehicle.vy) : 0
@@ -877,7 +992,9 @@ async function main() {
     const sightAwareness = activePeek
       ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
       : effectiveVisionSettings.awareness
-    lights.set([
+    writeLightSlot(
+      lights,
+      0,
       sightX,
       1.65 + supportHeight(town, p.x, p.y),
       sightY,
@@ -894,7 +1011,7 @@ async function main() {
       blockers.length,
       0.01,
       -1,
-    ])
+    )
     let count = 1
     let flashlightSlot = -1
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
@@ -955,9 +1072,25 @@ async function main() {
       flashlightAirLimit = wall
       beamReach = Math.min(beamRange, wall + 1.5, 13)
       flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
-      lights.set(
-        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
-        count++ * LIGHT_FLOATS,
+      writeLightSlot(
+        lights,
+        count++,
+        fx,
+        fh,
+        fy,
+        beamRange,
+        flashRgb[0],
+        flashRgb[1],
+        flashRgb[2],
+        power,
+        dx,
+        dy,
+        cosHalf,
+        2,
+        0,
+        frameLightOccluders,
+        0.06,
+        -1,
       )
     }
     count = coop.flashlights(lights, count, town, settings, lightOccluders, blockers)
@@ -988,7 +1121,7 @@ async function main() {
     addCount = fxOut.addCount
     if (fxOut.muzzleLight && count < MAX_LIGHTS) {
       const [mx, my, mz, mPower] = fxOut.muzzleLight
-      lights.set([mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1], count++ * LIGHT_FLOATS)
+      writeLightSlot(lights, count++, mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1)
     }
 
     const cutX = activePeek ? activePeek.cutX : drawn.x
@@ -996,13 +1129,29 @@ async function main() {
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
-    const inBldCheck = (b: { rect: readonly [number, number, number, number] }) =>
-      cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
-    const inInteriorView =
-      town.buildings.some(inBldCheck) || (currentIsStreamWindow && worldStreamer.windowBuildings.some(inBldCheck))
-    const unshadowedLamps: number[][] = []
-    for (const [i, lamp] of town.lamps.entries()) {
-      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView)
+    let inInteriorView = false
+    for (let i = 0; i < town.buildings.length; i++) {
+      const b = town.buildings[i]!
+      if (cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1) {
+        inInteriorView = true
+        break
+      }
+    }
+    if (!inInteriorView && currentIsStreamWindow) {
+      const wb = worldStreamer.windowBuildings
+      for (let i = 0; i < wb.length; i++) {
+        const b = wb[i]!
+        if (cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1) {
+          inInteriorView = true
+          break
+        }
+      }
+    }
+    let unshadowedCount = 0
+    const maxUnshadowed = qProfile.maxUnshadowedLamps
+    for (let i = 0; i < town.lamps.length; i++) {
+      const lamp = town.lamps[i]!
+      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, scratchResolvedLamp)
       lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
       const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
@@ -1011,9 +1160,14 @@ async function main() {
       if (inInteriorView && !castShadows) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
-        const b = town.buildings.find(
-          (bld) => lamp.x >= bld.rect[0] && lamp.x <= bld.rect[2] && lamp.y >= bld.rect[1] && lamp.y <= bld.rect[3],
-        )
+        let b: (typeof town.buildings)[number] | undefined
+        for (let bIdx = 0; bIdx < town.buildings.length; bIdx++) {
+          const bld = town.buildings[bIdx]!
+          if (lamp.x >= bld.rect[0] && lamp.x <= bld.rect[2] && lamp.y >= bld.rect[1] && lamp.y <= bld.rect[3]) {
+            b = bld
+            break
+          }
+        }
         if (b) {
           const roofOpen =
             cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
@@ -1021,17 +1175,19 @@ async function main() {
         }
       }
       const usePolarShadow = castShadows && lamp.kind === "room"
-      const packed = [lx, lh, ly, r, ...color, power, ...cone, 0, usePolarShadow ? lightOccluders : 0, softness, i]
       if (usePolarShadow) {
-        lights.set(packed, count++ * LIGHT_FLOATS)
-      } else {
-        unshadowedLamps.push(packed)
+        if (count < MAX_LIGHTS) {
+          writeLightSlot(lights, count++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, lightOccluders, softness, i)
+        }
+      } else if (unshadowedCount < maxUnshadowed) {
+        writeLightSlot(unshadowedLampBuf, unshadowedCount++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, 0, softness, i)
       }
     }
     let shadowLightCount = count
-    for (const packed of unshadowedLamps) {
-      if (count >= MAX_LIGHTS) break
-      lights.set(packed, count++ * LIGHT_FLOATS)
+    for (let u = 0; u < unshadowedCount && count < MAX_LIGHTS; u++) {
+      const srcOff = u * LIGHT_FLOATS
+      const dstOff = count++ * LIGHT_FLOATS
+      for (let f = 0; f < LIGHT_FLOATS; f++) lights[dstOff + f] = unshadowedLampBuf[srcOff + f]!
     }
     const vehOut = vehicleRenderer.collect(
       vdt,
@@ -1071,6 +1227,7 @@ async function main() {
       lights,
       lightCount: count,
       ambientLum: ambLum,
+      particleScale: qProfile.weatherParticleScale,
     })
     const activeWeather = weatherOut.prepareInput
       ? {
@@ -1125,7 +1282,10 @@ async function main() {
     lastSightX = sightX
     lastSightY = sightY
     frame.set(cam.viewProj, 0)
-    frame.set([...cam.eye, time], 16)
+    frame[16] = cam.eye[0]!
+    frame[17] = cam.eye[1]!
+    frame[18] = cam.eye[2]!
+    frame[19] = time
     const texCfgBits =
       ((settings.materials.textures & 3) >>> 0) |
       (((settings.materials.rugStyle & 3) << 2) >>> 0) |
@@ -1134,39 +1294,78 @@ async function main() {
       ((Math.round((settings.materials.texScale - 0.5) / 0.05) & 63) << 8) |
       ((Math.round(settings.materials.texContrast / 0.05) & 63) << 14) |
       ((Math.round(settings.world.weathering * 5) & 15) << 20)
-    frame.set([canvas.width, canvas.height, count, texCfgBits], 20)
-    frame.set([cutX, cutY, cutFlag, cutRadius], 24)
+    frame[20] = canvas.width
+    frame[21] = canvas.height
+    frame[22] = count
+    frame[23] = texCfgBits
+    frame[24] = cutX
+    frame[25] = cutY
+    frame[26] = cutFlag
+    frame[27] = cutRadius
     const lightningFlash = weatherOut.prepareInput ? weatherOut.state.flash : 0
-    frame.set(
-      [
-        ...day.ambient.map((v) => v * settings.lighting.skyFill * (1 - settings.weather.weather * 0.3) + lightningFlash * 0.16),
-        day.strength * settings.lighting.moonFill * (1 - settings.weather.weather * 0.85) + lightningFlash * 0.65,
-      ],
-      28,
-    )
+    const ambScale = settings.lighting.skyFill * (1 - settings.weather.weather * 0.3)
+    const ambAdd = lightningFlash * 0.16
+    frame[28] = day.ambient[0] * ambScale + ambAdd
+    frame[29] = day.ambient[1] * ambScale + ambAdd
+    frame[30] = day.ambient[2] * ambScale + ambAdd
+    frame[31] = day.strength * settings.lighting.moonFill * (1 - settings.weather.weather * 0.85) + lightningFlash * 0.65
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)
-    frame.set([(focus.x / w) * 2 - 1, 1 - (focus.y / h) * 2, cutHeight, count], 32)
-    frame.set([...day.direction, day.sun], 36)
-    frame.set([1 / SIZE, 1 / SIZE, settings.view.diagnostic, packGroundCfgBits(settings.ground)], 40)
-    frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.vision.shroud], 44)
+    frame[32] = (focus.x / w) * 2 - 1
+    frame[33] = 1 - (focus.y / h) * 2
+    frame[34] = cutHeight
+    frame[35] = count
+    frame[36] = day.direction[0]
+    frame[37] = day.direction[1]
+    frame[38] = day.direction[2]
+    frame[39] = day.sun
+    frame[40] = 1 / SIZE
+    frame[41] = 1 / SIZE
+    frame[42] = settings.view.diagnostic
+    frame[43] = packGroundCfgBits(settings.ground)
+    frame[44] = sightAim
+    frame[45] = Math.cos((sightCone * Math.PI) / 360)
+    frame[46] = sightAwareness
+    frame[47] = settings.vision.shroud
     let doorCount = 0
     for (let i = 0; i < town.doors.length && doorCount < 64; i++) {
       const door = town.doors[i]!
-      doorData.set(
-        [door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0],
-        doorCount++ * 12,
-      )
+      const o = doorCount++ * 12
+      doorData[o] = door.rect[0]
+      doorData[o + 1] = 0
+      doorData[o + 2] = (door.rect[1] + door.rect[3]) / 2
+      doorData[o + 3] = door.open ? -Math.PI / 2 : 0
+      doorData[o + 4] = 1
+      doorData[o + 5] = 1
+      doorData[o + 6] = 1
+      doorData[o + 7] = 1
+      doorData[o + 8] = 0
+      doorData[o + 9] = 0
+      doorData[o + 10] = 1
+      doorData[o + 11] = 0
     }
     doorBatch.count = doorCount
     let openWindows = 0
-    for (const win of town.windows) {
+    for (let i = 0; i < town.windows.length; i++) {
+      const win = town.windows[i]!
       if (!win.open || openWindows >= 64) continue
       const [wx0, wy0, wx1, wy1] = win.rect
       const horizontal = wx1 - wx0 > wy1 - wy0
       const yaw = horizontal ? 0 : Math.PI / 2
-      sashData.set([(wx0 + wx1) / 2, 0.38, (wy0 + wy1) / 2, yaw, 1, 1, 1, 1, 0, 0, 1, 0], openWindows++ * 12)
+      const o = openWindows++ * 12
+      sashData[o] = (wx0 + wx1) / 2
+      sashData[o + 1] = 0.38
+      sashData[o + 2] = (wy0 + wy1) / 2
+      sashData[o + 3] = yaw
+      sashData[o + 4] = 1
+      sashData[o + 5] = 1
+      sashData[o + 6] = 1
+      sashData[o + 7] = 1
+      sashData[o + 8] = 0
+      sashData[o + 9] = 0
+      sashData[o + 10] = 1
+      sashData[o + 11] = 0
     }
     sashBatch.count = openWindows
     const debugAlphaCount = zombieCrowd.renderDebugOverlay(
@@ -1197,34 +1396,36 @@ async function main() {
     const tightView = cam.groundRect(0.8)
     const groundWearBatches = groundWear.collectBatches(town, tightView, settings.ground)
     const clutterBatches = exteriorClutter.collectBatches(town, tightView, settings.ground)
-    const motionOut = ambientMotion.stepAndCollect(
-      dt,
-      time,
-      town,
-      p,
-      tightView,
-      settings.ground,
-      alphaSprites,
-      fogSoundAlphaCount,
-    )
+    const motionOut = qProfile.ambientMotion
+      ? ambientMotion.stepAndCollect(
+          dt,
+          time,
+          town,
+          p,
+          tightView,
+          settings.ground,
+          alphaSprites,
+          fogSoundAlphaCount,
+        )
+      : { alphaCount: fogSoundAlphaCount, batches: [] as readonly Batch[] }
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter =
       settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.splatterLegacy = settings.combat.bloodStyle === 2
     render.weather = weatherOut.prepareInput
-    render.batches = [
-      ...groundWearBatches,
-      ...clutterBatches,
-      ...vehOut.batches,
-      ...motionOut.batches,
-      ...survivorBatches,
-      ...coopBatches,
-      ...fxOut.batches,
-      ...zombieBatches,
-      doorBatch,
-      ...(openWindows ? [sashBatch] : []),
-    ]
+    const rBatches = render.batches
+    rBatches.length = 0
+    for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
+    for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
+    for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
+    for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
+    for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
+    for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
+    for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
+    for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)
+    rBatches.push(doorBatch)
+    if (openWindows) rBatches.push(sashBatch)
     render.lightCount = count
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
@@ -1245,7 +1446,10 @@ async function main() {
       : null
     render.lampCount = town.lamps.length
     render.view = view
-    render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, cam.damageFlash), settings.lighting.exposure]
+    render.grade[0] = time
+    render.grade[1] = settings.view.diagnostic
+    render.grade[2] = Math.max(lightningFlash * 0.35, cam.damageFlash)
+    render.grade[3] = settings.lighting.exposure
     render.motionBlur = {
       settings: {
         ...settings.motion,
@@ -1409,6 +1613,7 @@ async function main() {
     vehicleAudio,
     progressionHost,
     vehicleHost,
+    qualityController,
     promptEl,
     getPeekBlend: () => peekBlend,
     resetPeek: () => {
@@ -1430,6 +1635,7 @@ async function main() {
       clock.reset(performance.now(), liveMove())
       if (!frozen) scheduleFrame()
     },
+    isFrozen: () => frozen,
     onSettingChanged,
     setLastDayNightHour: (hour) => {
       lastDayNightHour = hour

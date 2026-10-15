@@ -280,6 +280,12 @@ export class Renderer {
   submittedFrames = 0
   width = 0
   height = 0
+  /** Most recent GPU queue-completion latency (ms) from flushPending. */
+  lastGpuMs = 0
+  /** Exponential moving average of GPU queue-completion latency (ms). */
+  emaGpuMs = 0
+  private bloomLevels = BLOOM_LEVELS
+  private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean }[] = []
 
   constructor(
     private device: GPUDevice,
@@ -1114,14 +1120,23 @@ export class Renderer {
     })
   }
 
+  setBloomLevels(levels: number): void {
+    this.bloomLevels = Math.max(1, Math.min(BLOOM_LEVELS, Math.round(levels)))
+  }
+
   private flushPending(): void {
     const f = this.pending
     if (!f || this.inflight >= 1) return
     this.pending = null
+    const submitAt = performance.now()
     this.draw(f)
     this.inflight++
     void this.device.queue.onSubmittedWorkDone().then(() => {
+      const gpuMs = Math.max(0, performance.now() - submitAt)
+      this.lastGpuMs = gpuMs
+      this.emaGpuMs = this.emaGpuMs > 0 ? this.emaGpuMs + (gpuMs - this.emaGpuMs) * 0.2 : gpuMs
       this.inflight--
+      if (this.pending) this.schedule()
       this.onIdle?.()
       this.notifyPacer()
     })
@@ -1269,18 +1284,30 @@ export class Renderer {
     const mbBurst = Boolean(mb?.settings.enabled && mb.settings.burst > 0.001 && mb.burst?.active)
     const runSharedBlur = !motion && (mbContinuous || mbBurst)
 
-    const total = f.batches.reduce((s, b) => s + b.count, 0)
+    let total = 0
+    for (let i = 0; i < f.batches.length; i++) total += f.batches[i]!.count
     if (motion && total * INST_FLOATS > this.previousData.length) {
       this.previousData = new Float32Array(total * INST_FLOATS * 2)
       this.previousInst.destroy()
       this.previousInst = d.createBuffer({ size: this.previousData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     }
     this.inst.ensureCapacity(total)
-    const ranges: { model: number; first: number; count: number; alpha: boolean }[] = []
+    const ranges = this.drawRanges
+    let rangeCount = 0
     let off = 0
-    for (const b of f.batches) {
+    for (let bIdx = 0; bIdx < f.batches.length; bIdx++) {
+      const b = f.batches[bIdx]!
       if (!b.count) continue
-      ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      const existing = ranges[rangeCount]
+      if (existing) {
+        existing.model = b.model
+        existing.first = off
+        existing.count = b.count
+        existing.alpha = !!b.alpha
+      } else {
+        ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      }
+      rangeCount++
       if (motion) for (let i = 0; i < b.count; i++) this.history.write(this.previousData, (off + i) * INST_FLOATS, b.data, i * INST_FLOATS, b.motionKeys?.[i])
       off += b.count
     }
@@ -1362,7 +1389,8 @@ export class Renderer {
     if (motion) pass.setVertexBuffer(2, this.previousInst)
     for (const alpha of [false, true]) {
       pass.setPipeline(alpha ? scenePipes.instAlpha! : scenePipes.inst!)
-      for (const r of ranges) {
+      for (let rIdx = 0; rIdx < rangeCount; rIdx++) {
+        const r = ranges[rIdx]!
         if (r.alpha !== alpha) continue
         const m = this.models[r.model]!
         pass.setVertexBuffer(0, m.buf)
@@ -1468,7 +1496,7 @@ export class Renderer {
       activeDown0 = this.sharedBlurGroups.down0
       activeComposite = this.sharedBlurGroups.composite
     }
-    this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0)
+    this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     const useFastLookPost =
