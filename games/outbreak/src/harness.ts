@@ -1,4 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
+import type { DiscoveryHost } from "./discovery/index"
 import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import {
@@ -70,6 +71,7 @@ export interface OutbreakHarnessHost {
   readonly audio: OutbreakAudio
   readonly vehicleAudio: OutbreakVehicleAudio
   readonly progressionHost: ProgressionLabHost
+  readonly discoveryHost: DiscoveryHost
   readonly vehicleHost: VehicleLabHost
   readonly botsLab: BotsLabController
   readonly qualityController: AdaptiveQualityController

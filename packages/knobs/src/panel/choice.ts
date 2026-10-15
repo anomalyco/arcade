@@ -272,6 +272,8 @@ export function createChoice(
         if (next[i]) b.textContent = next[i]!.label
       })
       menuValue.textContent = labelOf(o.value())
+      // New labels move the segments; the pill follows (showing the same value doesn't measure).
+      if (!asMenu) placeSegPill(seg, buttons, o.value(), true)
     },
     step,
     dispose() {

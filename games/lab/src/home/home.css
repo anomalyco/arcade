@@ -1,0 +1,369 @@
+/* The Lab's Home: one calm page over the workbench. Lab palette, 24 px rows, one accent. */
+.lh {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--tx);
+  font: 12px/1.45 var(--sans);
+}
+
+.lh-frame {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100vw);
+  height: 100%;
+  padding: 28px 28px 0;
+}
+
+.lh-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  height: 28px;
+}
+
+.lh-hub {
+  color: var(--tx3);
+  text-decoration: none;
+}
+.lh-hub:hover,
+.lh-hub:focus-visible {
+  color: var(--tx);
+}
+
+.lh-brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lh-count {
+  color: var(--tx3);
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-back {
+  margin-left: auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-back span {
+  color: var(--tx2);
+}
+.lh-back:hover,
+.lh-back:focus-visible {
+  border-color: var(--acc);
+  outline: none;
+}
+
+.lh-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 18px 0 14px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line2);
+  color: var(--tx3);
+}
+.lh-search:focus-within {
+  border-bottom-color: var(--acc);
+  color: var(--tx2);
+}
+.lh-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--tx);
+  font: 14px var(--sans);
+}
+.lh-search-input::placeholder {
+  color: var(--tx3);
+}
+.lh-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.lh kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--line2);
+  color: var(--tx3);
+  font: 10px var(--mono);
+}
+
+.lh-body {
+  flex: 1;
+  min-height: 0;
+}
+.lh-body > .knobs-split {
+  height: 100%;
+}
+
+.lh-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: auto;
+  background: var(--c);
+}
+
+.lh-about {
+  height: 100%;
+  overflow: auto;
+  padding: 2px 4px 24px 22px;
+}
+.lh-about-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.lh-meta {
+  margin: 4px 0 0;
+  color: var(--tx2);
+}
+.lh-meta span {
+  margin: 0 6px;
+  color: var(--tx3);
+}
+.lh-summary {
+  margin: 14px 0 0;
+  color: var(--tx2);
+  line-height: 1.55;
+}
+.lh-about h3 {
+  margin: 20px 0 6px;
+  color: var(--tx3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lh-variants {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lh-variants li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+}
+.lh-variants .lh-more {
+  padding-left: 24px;
+  color: var(--tx3);
+}
+.lh-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  margin-top: 22px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--acc);
+  background: var(--acc-a);
+  color: var(--tx);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-open:hover,
+.lh-open:focus-visible {
+  background: var(--acc-b);
+  outline: none;
+}
+.lh-open kbd {
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+  color: var(--tx2);
+}
+.lh-empty {
+  color: var(--tx3);
+}
+
+.lh-foot {
+  display: flex;
+  gap: 18px;
+  height: 40px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  color: var(--tx3);
+}
+.lh-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.lh-foot kbd {
+  margin-right: 3px;
+}
+
+/* In a lab: where you are, and the way back. */
+.lab-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: 2px;
+  color: var(--tx3);
+  white-space: nowrap;
+}
+.lab-crumb button {
+  border: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  cursor: pointer;
+}
+.lab-crumb button:hover,
+.lab-crumb button:focus-visible {
+  color: var(--tx);
+  outline: none;
+}
+.lab-crumb [data-crumb="lab"] {
+  overflow: hidden;
+  max-width: 260px;
+  color: var(--tx);
+  text-overflow: ellipsis;
+}
+
+.lab-crumb-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  font: 12px var(--sans);
+}
+.lab-crumb-menu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lab-crumb-menu button small {
+  margin-left: auto;
+  color: var(--tx3);
+  font-size: 11px;
+}
+.lab-crumb-menu button[data-active="true"] {
+  color: var(--acc);
+}
+.lab-crumb-menu button:hover,
+.lab-crumb-menu button:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+/* A focused lab hides the workbench's global pickers: the Library drawer and the World footer. */
+[data-lab-focused] .lab-library,
+[data-lab-focused] .lab-world {
+  display: none !important;
+}
+
+.lh-new {
+  margin-left: auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-new + .lh-back {
+  margin-left: 0;
+}
+.lh-new:hover,
+.lh-new:focus-visible {
+  border-color: var(--acc);
+  color: var(--tx);
+  outline: none;
+}
+
+.lh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+}
+.lh-actions .lh-open {
+  margin-top: 0;
+  margin-right: 6px;
+}
+.lh-act {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-act:hover,
+.lh-act:focus-visible {
+  border-color: var(--line2);
+  color: var(--tx);
+  outline: none;
+}
+.lh-act[data-danger]:hover,
+.lh-act[data-danger]:focus-visible {
+  border-color: color-mix(in srgb, #ff5a5a 60%, transparent);
+  color: #ff8a8a;
+}
+
+.lh-kinds {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: min(520px, 70vh);
+  overflow: auto;
+  font: 12px var(--sans);
+}
+.lh-kind {
+  display: grid;
+  gap: 1px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lh-kind b {
+  font-weight: 500;
+}
+.lh-kind span {
+  color: var(--tx3);
+  font-size: 11px;
+}
+.lh-kind:hover,
+.lh-kind:focus-visible {
+  background: var(--hover);
+  outline: none;
+}

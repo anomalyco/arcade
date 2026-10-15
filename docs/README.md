@@ -34,6 +34,7 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   options. Read before adding or tuning any of them.
 - [lab-workbench.md](lab-workbench.md): the current Lab shell and its input API.
 - [lab-effects.md](lab-effects.md): how to tune Blackout and Getaway effects in the Lab.
+- [lab-scenes.md](lab-scenes.md): proposal for focused labs, lab kinds and collections (AR-25), and its data-model spike.
 - [dev-control.md](dev-control.md): the `arcade` CLI for driving Kit's open browser tab, tours and pinned notes.
 - [dev-hub.md](dev-hub.md): the local Dev Hub that serves every game from one origin.
 
@@ -49,6 +50,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, belt, pack, containers, drops)
   and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
   items, loot, crafting or `shared/progression.ts`.
+- [outbreak-discovery.md](outbreak-discovery.md): D-19 "Discovered, Not Told": state read from the world instead of
+  labels (beam, boards, open containers), and how the squad learns recipes. Read before adding HUD text or recipes.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
 - [outbreak-map.md](outbreak-map.md): Outbreak's map (N): what it shows, its input, the optional compass ring and
   minimap, and how per-chunk memory and cached tiles keep it cheap in a streamed world.

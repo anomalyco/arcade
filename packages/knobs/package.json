@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./panel": "./src/panel/index.ts",
-    "./themes": "./src/themes/index.ts"
+    "./themes": "./src/themes/index.ts",
+    "./ui": "./src/ui/index.ts"
   },
   "scripts": {
     "sync": "bun scripts/sync.ts",

@@ -62,10 +62,10 @@ fn evalUnseenEdgeDepth(sX: f32, sY: f32, p: vec2f) -> f32 {
 )
 
 /**
- * Scene-shader snippet for the 5 Unseen modes:
+ * Scene-shader snippet for the Unseen modes and combinable layers:
  * Keeps the 4x MSAA scene pass branch-free on `uMode` so VGPR pressure stays identical to `main`,
- * while encoding the MSAA-resolved per-pixel unseen weight (`outbreakUnseenAlpha = wUnseen * 4.0`)
- * into `targets.hdr.a` and preserving subtle architectural silhouette contrast in explored rooms.
+ * while encoding the MSAA-resolved normalized spatial unseen mask (`outbreakUnseenAlpha = wUnseen * 4.0`)
+ * into `targets.hdr.a` (`1.0 + outbreakUnseenAlpha`).
  */
 export const unseenSceneSnippet = wgslSnippet(
   "outbreakUnseenScene",
@@ -102,7 +102,7 @@ fn applyOutbreakUnseenScene(
   }
   let unseenRaw = clamp(1.0 - visible, 0.0, 1.0);
   let distScale = mix(0.38, 1.0, clamp(edgeDepth, 0.0, 1.0));
-  let wUnseen = clamp(unseenRaw * distScale * OL.unseen.strength, 0.0, 1.5);
+  let wUnseen = clamp(unseenRaw * distScale, 0.0, 1.0);
   outbreakUnseenAlpha = wUnseen * 4.0;
   return baseFowCol;
 }
@@ -124,7 +124,7 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
   }
   let unseenRaw = clamp(1.0 - sight.x, 0.0, 1.0);
   let distScale = mix(0.38, 1.0, clamp(sight.z, 0.0, 1.0));
-  let wUnseen = clamp(unseenRaw * distScale * OL.unseen.strength, 0.0, 1.5);
+  let wUnseen = clamp(unseenRaw * distScale, 0.0, 1.0);
   outbreakUnseenAlpha = wUnseen * 4.0;
   let luma = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
   let dimCol = vec3f(luma) * vec3f(0.62, 0.74, 1.02) * 0.48;
@@ -134,10 +134,11 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
 )
 
 /**
- * Post-process composite snippet for the 5 Unseen modes (`makeLookPostShader` and `postShader`).
- * Reads `unseenMask` from `centerSamp.a` (`(centerSamp.a - 1.0) * 0.25`) and `postParam.yzw` (`[mode, strength, updateRate]`).
- * Modes 1 and 2 use a single displaced HDR sample (deriving chromatic edge split from `sDisp - centerSamp`),
- * and Modes 3–5 use 0 extra texture samples, keeping 3456×1894 GPU cost well under 0.5 ms.
+ * Post-process composite snippet for the 5 combinable Unseen layers (`makeLookPostShader` and `postShader`).
+ * Unpacks the 5 layer weights (`wGlitch`, `wWarp`, `wShroud`, `wMemory`, `wNoise`), `uEdgeBand`, and `uRate`
+ * from `postParam.yzw` (`GL.pad.yzw`), and reads the MSAA-resolved spatial mask `unseenMask` from `centerSamp.a`.
+ * Even when Glitch and Warp are combined, they share a single displaced HDR sample (`lumaRatio = dispHdrLuma / centerHdrLuma`),
+ * keeping full-Retina 3456×1894 GPU cost under 0.35 ms for any solo mode or multi-layer combination.
  */
 export const unseenPostSnippet = wgslSnippet(
   "outbreakUnseenPost",
@@ -150,42 +151,115 @@ fn applyOutbreakUnseenPost(
   G: vec4f,
   postParam: vec4f,
 ) -> vec3f {
-  if (postParam.y < 0.5 || postParam.z <= 0.001) {
+  if (postParam.y <= 0.0 && postParam.z <= 0.0 && postParam.w <= 0.0) {
     return cIn;
   }
-  let unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.5);
+  let unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.0);
   if (unseenMask <= 0.001) {
     return cIn;
   }
-  let uMode = i32(round(postParam.y));
-  let uRate = max(2.0, postParam.w);
-  let amt = clamp(unseenMask, 0.0, 1.35);
-  let blendW = clamp(unseenMask * 0.95, 0.0, 1.0);
-  var c = cIn;
+  let py = u32(postParam.y + 0.5);
+  let pz = u32(postParam.z + 0.5);
+  let pw = u32(postParam.w + 0.5);
+  let wGlitch = f32(py & 4095u) * (1.0 / 1024.0);
+  let wWarp = f32((py >> 12u) & 4095u) * (1.0 / 1024.0);
+  let wShroud = f32(pz & 4095u) * (1.0 / 1024.0);
+  let wMemory = f32((pz >> 12u) & 4095u) * (1.0 / 1024.0);
+  let wNoise = f32(pw & 1023u) * (1.0 / 256.0);
+  if (wGlitch + wWarp + wShroud + wMemory + wNoise <= 0.001) {
+    return cIn;
+  }
+  let uEdgeBand = f32((pw >> 10u) & 127u) * (1.0 / 127.0);
+  let uRate = max(2.0, f32((pw >> 17u) & 63u));
 
-  // Mode 1: Acid Knife glitch — stepped low-Hz block & scanline UV tear, chroma split, cold slate-indigo wash
-  if (uMode == 1) {
-    let qTime = floor(G.x * uRate);
-    let rowFine = floor(uv.y * 156.0);
-    let rowCoarse = floor(uv.y * 34.0);
-    let blk = floor(uv * vec2f(26.0, 44.0));
-    let tearFine = step(0.44, hash(vec2f(rowFine, qTime * 1.73)));
-    let tearCoarse = step(0.64, hash(vec2f(rowCoarse, qTime * 2.39)));
-    let tearBlk = step(0.56, hash(blk + vec2f(qTime * 0.91, -qTime * 1.47)));
-    let dx = (
-      (hash(vec2f(rowFine * 2.3, qTime * 3.1)) - 0.5) * 0.028 * tearFine +
-      (hash(vec2f(rowCoarse * 1.9, qTime * 0.7)) - 0.5) * 0.056 * tearCoarse +
-      (hash(blk * 1.3 + qTime) - 0.5) * 0.036 * tearBlk
-    ) * amt;
-    let dy = (hash(blk * 2.1 - qTime * 1.3) - 0.5) * 0.015 * tearBlk * amt;
-    let uvDisp = clamp(uv + vec2f(dx, dy), vec2f(0.002), vec2f(0.998));
+  let mFull = unseenMask;
+  let edgeBell = smoothstep(0.01, 0.16, unseenMask) * (1.0 - smoothstep(0.24, 0.68, unseenMask));
+  let mGlitch = mix(mFull, edgeBell * 1.25, uEdgeBand);
+
+  let aGlitch = clamp(mGlitch * wGlitch, 0.0, 1.4);
+  let aWarp = clamp(mFull * wWarp, 0.0, 1.4);
+  let aShroud = clamp(mFull * wShroud, 0.0, 1.4);
+  let aMemory = clamp(mFull * wMemory, 0.0, 1.4);
+  let aNoise = clamp(mFull * wNoise, 0.0, 1.4);
+
+  var c = cIn;
+  var lumaRatio = 1.0;
+  var tearFine = 0.0;
+  var tearCoarse = 0.0;
+  var tearBlk = 0.0;
+  var caustic = 1.0;
+
+  // Combined spatial displacement (at most 1 texture fetch even when Acid Knife glitch + Warp wobble are layered)
+  if (aGlitch > 0.002 || aWarp > 0.002) {
+    var uvOffset = vec2f(0.0);
+    if (aGlitch > 0.002) {
+      let qTime = floor(G.x * uRate);
+      let rowFine = floor(uv.y * 156.0);
+      let rowCoarse = floor(uv.y * 34.0);
+      let blk = floor(uv * vec2f(26.0, 44.0));
+      tearFine = step(0.44, hash(vec2f(rowFine, qTime * 1.73)));
+      tearCoarse = step(0.64, hash(vec2f(rowCoarse, qTime * 2.39)));
+      tearBlk = step(0.56, hash(blk + vec2f(qTime * 0.91, -qTime * 1.47)));
+      let dx = (
+        (hash(vec2f(rowFine * 2.3, qTime * 3.1)) - 0.5) * 0.028 * tearFine +
+        (hash(vec2f(rowCoarse * 1.9, qTime * 0.7)) - 0.5) * 0.056 * tearCoarse +
+        (hash(blk * 1.3 + qTime) - 0.5) * 0.036 * tearBlk
+      ) * aGlitch;
+      let dy = (hash(blk * 2.1 - qTime * 1.3) - 0.5) * 0.015 * tearBlk * aGlitch;
+      uvOffset += vec2f(dx, dy);
+    }
+    if (aWarp > 0.002) {
+      let wTime = G.x * (0.16 * uRate);
+      let p1 = uv * vec2f(15.0, 10.0);
+      let w1 = vec2f(
+        sin(p1.y * 1.35 + wTime) + cos(p1.x * 1.15 - wTime * 0.75),
+        cos(p1.x * 1.25 + wTime * 0.85) - sin(p1.y * 1.15 + wTime * 0.65),
+      ) * 0.5;
+      let p2 = uv * vec2f(31.0, 20.0) + w1 * 1.85;
+      let w2 = vec2f(sin(p2.y + wTime * 1.35), cos(p2.x - wTime * 1.15));
+      caustic = 0.89 + 0.11 * sin(p2.x * 0.8 + p2.y * 0.8);
+      uvOffset += (w1 * 0.015 + w2 * 0.006) * aWarp;
+    }
+    let uvDisp = clamp(uv + uvOffset, vec2f(0.002), vec2f(0.998));
     let sDisp = clean(textureSampleLevel(src, samp, uvDisp, 0.0));
     // Gate displaced tap so bright flashlight core pixels don't duplicate deep into unseen regions
     let wDisp = clamp((sDisp.a - 0.95) * 1.6, 0.20, 1.0);
-    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
     let centerHdrLuma = max(dot(centerSamp.rgb, vec3f(0.2126, 0.7152, 0.0722)), 2e-4);
     let dispHdrLuma = dot(mix(centerSamp.rgb, sDisp.rgb, wDisp), vec3f(0.2126, 0.7152, 0.0722));
-    let lumaRatio = clamp(dispHdrLuma / centerHdrLuma, 0.0, 2.2);
+    lumaRatio = clamp(dispHdrLuma / centerHdrLuma, 0.0, 2.2);
+  }
+
+  // Layer 4: Stale memory — faded archival snapshot tone curve with lifted dusty toe
+  if (aMemory > 0.002) {
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let memLuma = cLuma * mix(1.0, lumaRatio, clamp(aWarp * 0.85, 0.0, 1.0));
+    let isExplored = smoothstep(0.001, 0.008, memLuma);
+    let paperGrain = (hash(floor(fragPos * 0.5)) - 0.5) * 0.018 * isExplored;
+    let snapTone = vec3f(0.012, 0.011, 0.0095) * isExplored + vec3f(max(0.0, memLuma * 0.66 + paperGrain)) * vec3f(1.08, 0.96, 0.82);
+    c = mix(c, snapTone, clamp(aMemory * 0.88, 0.0, 0.95));
+  }
+
+  // Layer 2: Warp wobble — continuous two-octave domain-warped refraction outside the cone
+  if (aWarp > 0.002) {
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let wLuma = clamp(cLuma * lumaRatio, 0.0, 1.0);
+    let prismDiff = (wLuma - cLuma) * 0.65;
+    let warpTint = mix(vec3f(0.66, 0.88, 1.12) * 0.74, vec3f(0.92, 0.96, 1.04) * 0.86, clamp(aMemory * 0.75, 0.0, 0.75));
+    let warpCol = (vec3f(wLuma) * warpTint + vec3f(-prismDiff * 0.4, prismDiff * 0.25, prismDiff * 0.85)) * caustic;
+    c = mix(c, max(vec3f(0.0), warpCol), clamp(aWarp * 0.92, 0.0, 1.0));
+  }
+
+  // Layer 3: Dark shroud — classic darker & desaturated fog of war with soft penumbra fade
+  if (aShroud > 0.002) {
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let shroudDark = mix(1.0, 0.22, clamp(aShroud * 0.88, 0.0, 0.94));
+    let shroudMono = vec3f(cLuma) * vec3f(0.80, 0.88, 1.06);
+    c = mix(c, shroudMono, clamp(aShroud * 0.94, 0.0, 0.98)) * shroudDark;
+  }
+
+  // Layer 1: Acid Knife glitch — stepped low-Hz block & scanline UV tear, chroma split, cold slate-indigo wash
+  if (aGlitch > 0.002) {
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
     let gLuma = clamp(cLuma * lumaRatio, 0.0, 1.0);
     let tearActive = max(tearFine * 0.65, max(tearCoarse, tearBlk));
     let lumaDelta = (gLuma - cLuma) * tearActive;
@@ -193,63 +267,28 @@ fn applyOutbreakUnseenPost(
     let scanMod = 0.86 + 0.14 * sin(fragPos.y * 1.85);
     let qLuma = mix(gLuma, floor(gLuma * 10.0 + 0.5) / 10.0, 0.35 * max(tearCoarse, tearBlk));
     let acidCol = (vec3f(qLuma) * vec3f(0.56, 0.70, 1.12) * 0.76 + chromaSplit) * scanMod;
-    return mix(c, max(vec3f(0.0), acidCol), blendW);
+    c = mix(c, max(vec3f(0.0), acidCol), clamp(aGlitch * 0.95, 0.0, 1.0));
   }
 
-  // Mode 2: Warp wobble — continuous two-octave domain-warped refraction outside the cone
-  if (uMode == 2) {
-    let wTime = G.x * (0.16 * uRate);
-    let p1 = uv * vec2f(15.0, 10.0);
-    let w1 = vec2f(
-      sin(p1.y * 1.35 + wTime) + cos(p1.x * 1.15 - wTime * 0.75),
-      cos(p1.x * 1.25 + wTime * 0.85) - sin(p1.y * 1.15 + wTime * 0.65),
-    ) * 0.5;
-    let p2 = uv * vec2f(31.0, 20.0) + w1 * 1.85;
-    let w2 = vec2f(sin(p2.y + wTime * 1.35), cos(p2.x - wTime * 1.15));
-    let warp = (w1 * 0.015 + w2 * 0.006) * amt;
-    let sWarp = clean(textureSampleLevel(src, samp, clamp(uv + warp, vec2f(0.002), vec2f(0.998)), 0.0));
-    let wGate = clamp((sWarp.a - 0.95) * 1.6, 0.20, 1.0);
+  // Layer 5: Noise film — heavy 16mm silver-halide grain and ordered Bayer dither thickening away from sight
+  if (aNoise > 0.002) {
+    let fTime = floor(G.x * uRate);
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-    let centerHdrLuma = max(dot(centerSamp.rgb, vec3f(0.2126, 0.7152, 0.0722)), 2e-4);
-    let warpHdrLuma = dot(mix(centerSamp.rgb, sWarp.rgb, wGate), vec3f(0.2126, 0.7152, 0.0722));
-    let wLuma = clamp(cLuma * clamp(warpHdrLuma / centerHdrLuma, 0.0, 2.2), 0.0, 1.0);
-    let prismDiff = (wLuma - cLuma) * 0.65;
-    let caustic = 0.89 + 0.11 * sin(p2.x * 0.8 + p2.y * 0.8);
-    let warpCol = (vec3f(wLuma) * vec3f(0.66, 0.88, 1.12) * 0.74 + vec3f(-prismDiff * 0.4, prismDiff * 0.25, prismDiff * 0.85)) * caustic;
-    return mix(c, max(vec3f(0.0), warpCol), clamp(unseenMask * 0.92, 0.0, 1.0));
+    let gCoarse = hash(floor(fragPos * 0.5) + vec2f(fTime * 17.3, -fTime * 11.7)) - 0.5;
+    let gFine = hash(floor(fragPos) + vec2f(-fTime * 23.1, fTime * 31.9)) - 0.5;
+    let grain = gCoarse * 0.75 + gFine * 0.50;
+    let bp = vec2u(fragPos) % 4u;
+    let bIdx = bp.y * 4u + bp.x;
+    let bayer = (f32(((bIdx & 1u) << 3u) | ((bIdx & 2u) << 1u) | ((bIdx & 4u) >> 1u) | ((bIdx & 8u) >> 3u)) + 0.5) / 16.0 - 0.5;
+    let otherDark = clamp(aShroud * 0.75 + aMemory * 0.35 + aGlitch * 0.35, 0.0, 0.85);
+    let silverDim = mix(1.0, mix(0.45, 0.88, otherDark), clamp(aNoise * 0.75, 0.0, 0.86));
+    let silverBase = mix(c, vec3f(cLuma) * vec3f(0.86, 0.92, 1.04), clamp(aNoise * 0.85, 0.0, 0.95)) * silverDim;
+    let noiseVeil = (grain * 0.16 + bayer * 0.10) * aNoise * (0.38 + 0.62 * smoothstep(0.0, 0.24, cLuma + 0.05));
+    let noisyCol = max(vec3f(0.0), silverBase + vec3f(noiseVeil));
+    c = mix(c, noisyCol, clamp(aNoise * 0.95, 0.0, 1.0));
   }
 
-  // Mode 3: Dark shroud — classic darker & desaturated fog of war with soft edges
-  if (uMode == 3) {
-    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-    let shroudDark = mix(1.0, 0.22, clamp(amt * 0.88, 0.0, 0.94));
-    let shroudMono = vec3f(cLuma) * vec3f(0.80, 0.88, 1.06);
-    let shroudCol = mix(c, shroudMono, clamp(amt * 0.94, 0.0, 0.98)) * shroudDark;
-    return shroudCol;
-  }
-
-  // Mode 4: Stale memory — faded archival snapshot tone curve with lifted dusty toe and static stillness
-  if (uMode == 4) {
-    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-    let isExplored = smoothstep(0.001, 0.008, cLuma);
-    let paperGrain = (hash(floor(fragPos * 0.5)) - 0.5) * 0.018 * isExplored;
-    let snapTone = vec3f(0.012, 0.011, 0.0095) * isExplored + vec3f(max(0.0, cLuma * 0.66 + paperGrain)) * vec3f(1.08, 0.96, 0.82);
-    return mix(c, snapTone, clamp(unseenMask * 0.88, 0.0, 0.95));
-  }
-
-  // Mode 5: Noise film — heavy 16mm grain and ordered Bayer dither thickening away from sight
-  let fTime = floor(G.x * uRate);
-  let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-  let gCoarse = hash(floor(fragPos * 0.5) + vec2f(fTime * 17.3, -fTime * 11.7)) - 0.5;
-  let gFine = hash(floor(fragPos) + vec2f(-fTime * 23.1, fTime * 31.9)) - 0.5;
-  let grain = gCoarse * 0.75 + gFine * 0.50;
-  let bp = vec2u(fragPos) % 4u;
-  let bIdx = bp.y * 4u + bp.x;
-  let bayer = (f32(((bIdx & 1u) << 3u) | ((bIdx & 2u) << 1u) | ((bIdx & 4u) >> 1u) | ((bIdx & 8u) >> 3u)) + 0.5) / 16.0 - 0.5;
-  let silverBase = vec3f(cLuma) * vec3f(0.86, 0.92, 1.04) * mix(1.0, 0.45, clamp(amt * 0.75, 0.0, 0.86));
-  let noiseVeil = (grain * 0.16 + bayer * 0.10) * amt * (0.35 + 0.65 * smoothstep(0.0, 0.24, cLuma + 0.04));
-  let noisyCol = max(vec3f(0.0), silverBase + vec3f(noiseVeil));
-  return mix(c, noisyCol, blendW);
+  return c;
 }
 `,
 )
