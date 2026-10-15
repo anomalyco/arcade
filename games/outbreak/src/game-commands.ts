@@ -20,7 +20,7 @@ import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type Pro
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
 import { stageVehicleScene, VEHICLE_SCENES, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
-import { applyOutbreakWeatherPreset, type OutbreakWeatherController } from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 
 export interface OutbreakGameCommandsHost {
   readonly device: GPUDevice
@@ -55,9 +55,7 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
     feelTracker,
     hud,
     coop,
-    lab,
     progressionHost,
-    weatherController,
   } = host
 
   registerGameCommands((commands) => {
@@ -413,42 +411,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
             holdRemaining: avatar.holdRemaining,
             legacyBefore: avatar.legacyUnarmedPistol,
           }
-        },
-      },
-      {
-        id: "weather.preset",
-        label: "Set Outbreak Weather Preset",
-        shortLabel: "Weather Preset",
-        category: "Scene",
-        undoable: false,
-        args: {
-          preset: {
-            type: "string",
-            required: true,
-            description: "Weather preset ID (clear, drizzle, rain, storm, fog, snow)",
-          },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const applied = applyOutbreakWeatherPreset(settings.weather, String(args?.preset ?? "rain"))
-          lab.refresh()
-          host.draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { preset: settings.weather.weatherPreset, enabled: settings.weather.weatherEnabled, settings: applied }
-        },
-      },
-      {
-        id: "weather.strike",
-        label: "Trigger Outbreak Lightning Strike",
-        shortLabel: "Lightning Strike",
-        category: "Scene",
-        undoable: false,
-        enabled: () => true,
-        run: async () => {
-          const strike = weatherController.strikeNow()
-          host.draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { triggered: true, strike }
         },
       },
       ...outbreakClientFeatures.collectGameCommands(host),

@@ -40,11 +40,7 @@ import type { Survivor } from "./survivor"
 import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
 import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  toSharedWeatherSettings,
-  type OutbreakWeatherController,
-} from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
@@ -103,7 +99,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     lab,
     feelTracker,
     combatFx,
-    weatherController,
     worldStreamer,
     hud,
     coop,
@@ -209,12 +204,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         vertices: host.getVertices(),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },
-        weather: {
-          enabled: settings.weather.weatherEnabled,
-          preset: settings.weather.weatherPreset,
-          settings: toSharedWeatherSettings(settings.weather),
-          state: { ...weatherController.sim.state },
-        },
         camera: {
           shakeScale: settings.view.shakeScale,
           kickScale: settings.view.kickScale,
@@ -326,14 +315,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       const res = applyOutbreakPreset(settings, raw)
       if (res.ok) lab.refresh()
       return res
-    },
-    setWeatherPreset(preset: string) {
-      const applied = applyOutbreakWeatherPreset(settings.weather, preset)
-      lab.refresh()
-      return applied
-    },
-    strikeLightning(seed?: number) {
-      return weatherController.strikeNow(seed)
     },
     setLookPreset(preset: LookPresetId | string) {
       const session = host.session()
