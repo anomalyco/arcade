@@ -567,29 +567,17 @@ async function main() {
     pendingDrawDt += stepped
     return substeps.length
   }
-  window.addEventListener(
-    "keydown",
-    () => {
-      const now = performance.now()
-      if (!frozen && !document.hidden) stepSimulation(now)
-    },
-    true,
-  )
-  window.addEventListener(
-    "keyup",
-    () => {
-      const now = performance.now()
-      if (!frozen && !document.hidden) stepSimulation(now)
-    },
-    true,
-  )
   window.addEventListener("keydown", () => {
-    clock.recordMove(performance.now(), liveMove())
-    scheduleFrame()
+    const now = performance.now()
+    clock.recordMove(now, liveMove())
+    if (!frozen && !document.hidden && canDrawNow(now)) tick(now)
+    else scheduleFrame()
   })
   window.addEventListener("keyup", () => {
-    clock.recordMove(performance.now(), liveMove())
-    scheduleFrame()
+    const now = performance.now()
+    clock.recordMove(now, liveMove())
+    if (!frozen && !document.hidden && canDrawNow(now)) tick(now)
+    else scheduleFrame()
   })
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clock.pause(performance.now())
@@ -1537,11 +1525,11 @@ async function main() {
     }
     if (!pacerTimer && !channelPending) {
       const rem = msUntilNextDraw(performance.now())
-      if (renderer.inflight === 0 && rem <= 1.8) {
+      if (renderer.inflight === 0 && rem <= 0.4) {
         channelPending = true
         paceChannel.port2.postMessage(null)
       } else {
-        const waitMs = Math.max(1, Math.floor(rem - 1.6))
+        const waitMs = renderer.inflight === 0 && rem <= 4.0 ? 0 : Math.max(1, Math.floor(rem - 3.5))
         pacerTimer = window.setTimeout(() => {
           pacerTimer = 0
           if (!frozen && !document.hidden && !channelPending) {
@@ -1550,6 +1538,49 @@ async function main() {
           }
         }, waitMs)
       }
+    }
+  }
+  let gpuPacerPending = false,
+    gpuPacerUntil = 0
+  const stepGpuPacer = () => {
+    if (gpuPacerPending || frozen || document.hidden) return
+    const now = performance.now()
+    if (canDrawNow(now)) {
+      tick(now)
+      if (performance.now() < gpuPacerUntil) queueMicrotask(stepGpuPacer)
+      return
+    }
+    if (now >= gpuPacerUntil) return
+    gpuPacerPending = true
+    if (renderer.inflight === 0) {
+      device.queue.submit([device.createCommandEncoder().finish()])
+    }
+    void device.queue.onSubmittedWorkDone().then(() => {
+      gpuPacerPending = false
+      if (frozen || document.hidden) return
+      const t = performance.now()
+      if (canDrawNow(t)) {
+        tick(t)
+        if (performance.now() < gpuPacerUntil) queueMicrotask(stepGpuPacer)
+      } else if (t < gpuPacerUntil) {
+        stepGpuPacer()
+      } else {
+        scheduleFrame()
+      }
+    })
+  }
+  const kickGpuPacer = (durationMs = 150) => {
+    gpuPacerUntil = Math.max(gpuPacerUntil, performance.now() + durationMs)
+    stepGpuPacer()
+  }
+  window.addEventListener("pointerdown", () => kickGpuPacer(150), true)
+  window.addEventListener("keydown", () => kickGpuPacer(150), true)
+  window.addEventListener("keyup", () => kickGpuPacer(150), true)
+  audio.runtime.onTick = () => {
+    if (!frozen && !document.hidden) {
+      const now = performance.now()
+      if (canDrawNow(now)) tick(now)
+      else scheduleFrame()
     }
   }
   const rafLoop = (now: number) => {
@@ -1646,7 +1677,10 @@ async function main() {
       lastDrawAt = -Infinity
       input.release()
       clock.reset(performance.now(), liveMove())
-      if (!frozen) scheduleFrame()
+      if (!frozen) {
+        scheduleFrame()
+        kickGpuPacer(150)
+      }
     },
     isFrozen: () => frozen,
     onSettingChanged,

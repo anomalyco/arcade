@@ -361,12 +361,14 @@ export class SampleBank {
   }
 
   /** Registers an already-decoded AudioBuffer or raw PCM channels under `id`. */
-  setDecoded(id: string, buffer: AudioBuffer | DecodedPcm): void {
-    this.contextCache = new WeakMap()
+  setDecoded(id: string, buffer: AudioBuffer | DecodedPcm, keepContextCache = false): void {
+    if (!keepContextCache) {
+      this.contextCache = new WeakMap()
+    }
     if ("getChannelData" in buffer) {
       const channels: Float32Array[] = []
       for (let c = 0; c < buffer.numberOfChannels; c++) {
-        channels.push(new Float32Array(buffer.getChannelData(c)))
+        channels.push(keepContextCache ? buffer.getChannelData(c) : new Float32Array(buffer.getChannelData(c)))
       }
       this.decodedPcm.set(id, { sampleRate: buffer.sampleRate, channels })
     } else {
@@ -395,7 +397,7 @@ export class SampleBank {
               try {
                 const decoded = await ctx.decodeAudioData(bytes.slice(0))
                 const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
-                this.setDecoded(id, trimmed)
+                this.setDecoded(id, trimmed, true)
                 this.decodedAssets.add(id)
                 this.cacheForContext(ctx).set(id, trimmed)
                 return
