@@ -55,6 +55,7 @@ import {
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
 import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
+import { audioControls, DEFAULT_AUDIO_SETTINGS, OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
   DEFAULT_OUTBREAK_WEATHER,
@@ -110,6 +111,7 @@ const settings = {
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
   ...DEFAULT_HUD_SETTINGS,
+  ...DEFAULT_AUDIO_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -202,7 +204,16 @@ async function main() {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
+  const audio = new OutbreakAudio(settings, {
+    baseUrl: new URL("./audio-assets/", document.baseURI).href,
+    storage: (() => { try { return localStorage } catch { return null } })(),
+    automated: navigator.webdriver,
+  })
+  audio.arm()
+  const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
+  coop.onFootfall = footfall
   let avatar = new Survivor(renderer)
+  avatar.onFootfall = footfall
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
@@ -220,6 +231,7 @@ async function main() {
   }
   const controls: LabControl[] = [
     ...aiControls,
+    ...audioControls,
     {
       key: "spawnZombieHere",
       label: "Spawn zombie ahead",
@@ -958,6 +970,7 @@ async function main() {
     if (coop.localPalette !== avatarPalette) {
       avatarPalette = coop.localPalette
       avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      avatar.onFootfall = footfall
       updateProfile()
     }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
@@ -1322,6 +1335,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player")
+    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
@@ -1475,6 +1489,7 @@ async function main() {
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
+    audio: () => audio.telemetry(),
     reset,
     freeze: (value = true) => {
       frozen = value

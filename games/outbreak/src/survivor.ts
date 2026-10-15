@@ -33,6 +33,8 @@ export class Survivor {
   private leanY = spring()
   private data = new Float32Array(15 * 12)
   readonly batches: Batch[] = []
+  /** Each foot contact (plan x, y and body speed in m/s): footstep sounds land on the rig's own gait. */
+  onFootfall?: (x: number, y: number, speed: number) => void
 
   /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
   constructor(renderer: Pick<Renderer, "addModel">, palette: { torso: number; legs: number } = { torso: 0x8c6b42, legs: 0x41474b }) {
@@ -145,7 +147,7 @@ export class Survivor {
           const py = Math.max(support(px, pz), f.lift[1] + (target[1] - f.lift[1]) * e + liftBell * ((.085 + .125 * runBlend) * clearance + boost))
           f.p = [px, py, pz]
           f.yaw += angleDiff(this.yaw + f.stepToe, f.yaw) * e
-        } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]) }
+        } else if (!f.planted) { f.planted = true; f.prevU = 0; f.p[1] = support(f.p[0],f.p[2]); this.onFootfall?.(f.p[0], f.p[2], speed) }
       })
       // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).
       const footSupport = (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * .5
