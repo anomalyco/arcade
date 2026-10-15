@@ -88,6 +88,8 @@ export class Game {
   events: SimEvent[] = []
   readonly counts: Record<string, number> = {}
   onEvent: ((e: SimEvent) => void) | null = null
+  /** Scripted buttons (the Lab's power-up gallery): a number overrides devices and bots for that archer. */
+  script: ((a: Archer, w: World) => Buttons | null) | null = null
   /** Online play: the room session drives the world instead of local stepping. */
   online: OnlineSession | null = null
   private loadedArena = ""
@@ -152,7 +154,30 @@ export class Game {
     return null
   }
 
+  /**
+   * A fresh match on `arena` with these seats, keeping the live tuning (the Lab's knobs edit `world.t` in place).
+   * Effects, trails and poses start over.
+   */
+  restart(seed: number, arena: string, seats: Seat[]): void {
+    const t = this.world.t
+    this.world = World.create(seed, arena, t)
+    this.seats = seats
+    for (const s of seats) this.world.add(s.id, s.name, !s.device)
+    this.arrowPrev.clear()
+    this.trails.clear()
+    this.stuckAt.clear()
+    this.wasDrawing.clear()
+    this.offsets.clear()
+    this.fx.clear()
+    this.hitStop = 0
+    this.slowUntil = 0
+    this.timeScale = 1
+    this.loadArena()
+  }
+
   private input(a: Archer): Buttons {
+    const scripted = this.script?.(a, this.world)
+    if (scripted !== null && scripted !== undefined) return scripted
     const seat = this.seats.find((s) => s.id === a.id)
     if (!seat?.device) return botButtons(this.world, a)
     return this.controls.buttons(seat.device)

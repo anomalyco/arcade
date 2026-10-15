@@ -121,6 +121,8 @@ export function navGraph(arena: Arena, t: Tuning = DEFAULT_TUNING): NavGraph {
   }
   const g: NavGraph = { arena, edges, into }
   cache.set(key, g)
+  // The Lab's move knobs make a graph per tuning they pass through; keep the newest few.
+  while (cache.size > 6) cache.delete(cache.keys().next().value!)
   return g
 }
 

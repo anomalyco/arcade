@@ -12,6 +12,7 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
   { id: "audio", title: "Audio", stations: ["audio"] },
   { id: "carrier", title: "Carrier", stations: ["carrier"] },
   { id: "brawl", title: "Brawl", stations: ["brawl"] },
+  { id: "archers", title: "Archers", stations: ["archers"] },
 ]
 const FALLBACK = { id: "stations", title: "Stations" }
 
