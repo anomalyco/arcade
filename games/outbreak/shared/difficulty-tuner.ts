@@ -1,5 +1,5 @@
 import { Rng } from "@arcade/kit/sim/rng"
-import { DEFAULT_AI_CONFIG, type AIConfig } from "./ai"
+import { DEFAULT_AI_CONFIG, LEGACY_AI_CONFIG, type AIConfig } from "./ai"
 import { runHeadlessBotGame, type BotRunResult } from "./bot-runner"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "./progression"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "./survivor-bot"
@@ -45,6 +45,22 @@ export const DIFFICULTY_KNOB_SPECS: readonly KnobSpec[] = [
   { key: "maxActiveNearPlayer", label: "Max active chasers", unit: "", min: 2, max: 8, step: 1, defaultValue: DEFAULT_AI_CONFIG.maxActiveNearPlayer, integer: true },
   { key: "lootRate", label: "Loot rate", unit: "×", min: 0.65, max: 1.6, step: 0.05, defaultValue: DEFAULT_PROGRESSION_TUNING.lootRate },
 ] as const
+
+/** The 12 knobs as shipped before D-22 picked the Balanced Curve. Kept as the tuner's "before" reference. */
+export const LEGACY_DIFFICULTY_VECTOR: DifficultyVector = {
+  zombieCount: LEGACY_AI_CONFIG.zombieCount,
+  initialDensity: LEGACY_AI_CONFIG.initialDensity,
+  rampTime: LEGACY_AI_CONFIG.rampTime,
+  safeRadius: LEGACY_AI_CONFIG.safeRadius,
+  sightRange: LEGACY_AI_CONFIG.sightRange,
+  hearingScale: LEGACY_AI_CONFIG.hearingScale,
+  noiseSensitivity: LEGACY_AI_CONFIG.noiseSensitivity,
+  chaseSpeed: LEGACY_AI_CONFIG.chaseSpeed,
+  aggression: LEGACY_AI_CONFIG.aggression,
+  nightMultiplier: LEGACY_AI_CONFIG.nightMultiplier,
+  maxActiveNearPlayer: LEGACY_AI_CONFIG.maxActiveNearPlayer,
+  lootRate: 1,
+}
 
 export const DEFAULT_DIFFICULTY_VECTOR: DifficultyVector = {
   zombieCount: DEFAULT_AI_CONFIG.zombieCount,

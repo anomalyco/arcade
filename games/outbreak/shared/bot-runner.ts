@@ -1116,7 +1116,8 @@ export function runSingleForkRollout(
 
   const startHour = sim.ai.config.startHour
   const initialDeadCount = sim.ai.agents.filter((a) => a.state === "dead").length
-  const maxSteps = Math.max(1, Math.ceil((maxEndSeconds - sim.time) / stepDt))
+  // Round like runHeadlessBotGame's tick budget so a run capped at maxAbsoluteSeconds ends on the same tick.
+  const maxSteps = Math.max(1, Math.round((maxEndSeconds - sim.time) / stepDt))
   const traceIntervalSteps = Math.max(1, Math.round(15 / stepDt))
   const trace: ForkRolloutOutcome["trace"] = [
     {

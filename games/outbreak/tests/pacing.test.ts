@@ -9,6 +9,7 @@ import {
   isInsideSafeZone,
   isSpawnBehindPlayer,
   isSpawnInView,
+  LEGACY_AI_CONFIG,
   pacingControls,
   STARTING_SAFEHOUSE_RECT,
 } from "../shared/ai"
@@ -32,11 +33,12 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
     const settings = createOutbreakSettings()
     expect(settings.ai.startHour).toBe(16.0)
     expect(settings.dayCycle.hour).toBe(16.0)
-    expect(settings.ai.safeRadius).toBe(20)
-    expect(settings.ai.initialDensity).toBe(0.25)
-    expect(settings.ai.rampTime).toBe(360)
-    expect(settings.ai.noiseSensitivity).toBe(1.0)
-    expect(settings.ai.maxActiveNearPlayer).toBe(4)
+    // D-22 Balanced Curve
+    expect(settings.ai.safeRadius).toBe(17)
+    expect(settings.ai.initialDensity).toBe(0.1)
+    expect(settings.ai.rampTime).toBe(405)
+    expect(settings.ai.noiseSensitivity).toBe(1.05)
+    expect(settings.ai.maxActiveNearPlayer).toBe(3)
 
     setOutbreakSetting(settings, "safeRadius", 26)
     setOutbreakSetting(settings, "pacing.maxActiveNearPlayer", 6)
@@ -59,34 +61,36 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
   })
 
   test("opening spawn clears safeRadius around spawn and Ash House, spaces out sparse shamblers, and never spawns in view or behind player", () => {
-    const session = new LocalSession(7)
-    const p = session.view.player
-    const town = session.view.town
-    const blockers = sightRects(town)
-    const zombies = session.view.zombies
+    // D-22 defaults (10% of 16 = 2 shamblers) and the denser pre-D-22 opening (25% of 28 = 7), which saved presets still load.
+    for (const [config, expected] of [[DEFAULT_AI_CONFIG, 2], [LEGACY_AI_CONFIG, 7]] as const) {
+      const session = new LocalSession(7, 7, 0.22, config)
+      const p = session.view.player
+      const town = session.view.town
+      const blockers = sightRects(town)
+      const zombies = session.view.zombies
 
-    // 25% of 28 = 7 initial wandering shamblers
-    expect(zombies.length).toBe(initialSpawnCount(DEFAULT_AI_CONFIG.zombieCount, DEFAULT_AI_CONFIG.initialDensity, 1, 1))
-    expect(zombies.length).toBe(7)
+      expect(zombies.length).toBe(initialSpawnCount(config.zombieCount, config.initialDensity, 1, 1))
+      expect(zombies.length).toBe(expected)
 
-    const [sx0, sy0, sx1, sy1] = STARTING_SAFEHOUSE_RECT
-    for (const z of zombies) {
-      expect(z.state).toBe("wander")
-      expect(z.awareness).toBe(0)
-      const dist = Math.hypot(z.x - p.x, z.y - p.y)
-      expect(dist).toBeGreaterThanOrEqual(DEFAULT_AI_CONFIG.safeRadius)
-      // Never inside Ash House
-      const inAsh = z.x >= sx0 && z.x <= sx1 && z.y >= sy0 && z.y <= sy1
-      expect(inAsh).toBe(false)
-      // Never in initial sight cone or flashlight beam
-      expect(isSpawnInView(z.x, z.y, [p], blockers)).toBe(false)
-    }
+      const [sx0, sy0, sx1, sy1] = STARTING_SAFEHOUSE_RECT
+      for (const z of zombies) {
+        expect(z.state).toBe("wander")
+        expect(z.awareness).toBe(0)
+        const dist = Math.hypot(z.x - p.x, z.y - p.y)
+        expect(dist).toBeGreaterThanOrEqual(config.safeRadius)
+        // Never inside Ash House
+        const inAsh = z.x >= sx0 && z.x <= sx1 && z.y >= sy0 && z.y <= sy1
+        expect(inAsh).toBe(false)
+        // Never in initial sight cone or flashlight beam
+        expect(isSpawnInView(z.x, z.y, [p], blockers)).toBe(false)
+      }
 
-    // Check pairwise spacing of initial zombies (spaced out, not clumped)
-    for (let i = 0; i < zombies.length; i++) {
-      for (let j = i + 1; j < zombies.length; j++) {
-        const d = Math.hypot(zombies[i]!.x - zombies[j]!.x, zombies[i]!.y - zombies[j]!.y)
-        expect(d).toBeGreaterThanOrEqual(8.0)
+      // Check pairwise spacing of initial zombies (spaced out, not clumped)
+      for (let i = 0; i < zombies.length; i++) {
+        for (let j = i + 1; j < zombies.length; j++) {
+          const d = Math.hypot(zombies[i]!.x - zombies[j]!.x, zombies[i]!.y - zombies[j]!.y)
+          expect(d).toBeGreaterThanOrEqual(8.0)
+        }
       }
     }
   })
