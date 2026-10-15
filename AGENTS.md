@@ -5,9 +5,9 @@ game's own `AGENTS.md`.
 
 ## Workspace and checks
 
-- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/`, `games/lab/` and
-  `packages/*` share the root `bun.lock`. Run `bun install --frozen-lockfile` at the root, `bun run check:packages`,
-  then `bun run check` inside each affected game.
+- Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/`, `games/brawl/`,
+  `games/lab/` and `packages/*` share the root `bun.lock`. Run `bun install --frozen-lockfile` at the root; `bun run
+  verify` (below) runs the checks.
 - `bunfig.toml` selects hoisted dependencies for shared tooling and historical benchmark exports. Keep Vite,
   Wrangler, TypeScript and Playwright versions aligned across workspace games.
 - `landing/`, `redirects/` and `games/wings/` are independent projects with their own lockfiles and install/check
@@ -19,6 +19,11 @@ game's own `AGENTS.md`.
   `git archive` export of HEAD, root frozen install, then every workspace target's check commands, smoke and dry-run
   with cold caches. Commit first; it ignores uncommitted changes. Dry-runs do not deploy. The per-game
   `bun run check` and `bun run check:packages` still work and are what CI runs.
+- Hivemind workers sync files without a usable `.git`. There `verify` checks every workspace target unless
+  `--changed <file>` (newline-separated paths) narrows it, and `verify:release` copies the synced tree, minus ignored
+  output, as its export, so uncommitted files are included. `--export <dir|tar>` verifies a pre-made `git archive`.
+- Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
+  Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
 
 ## Routing and deploy
@@ -37,8 +42,8 @@ game's own `AGENTS.md`.
   deployment. Local `bun run deploy` still runs inside a game. Cloudflare Builds must install from the repository
   root before running the game's build/deploy command (for example `bun run --cwd games/getaway build`).
 - Adding a game: put it in `games/<name>`, give its Worker the name `arcade-<name>` with the routes above, set Vite's
-  outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, and add a panel to
-  `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
+  outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, add it to the root
+  `package.json` workspaces and `WORKSPACE_GAMES` in `scripts/verify.ts`, and add a panel to `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
 - Prototypes are unlisted: deploy normally, skip the landing panel, add `noindex`, and list the game in the README's
   prototypes section. Promote a game by adding the landing panel and removing `noindex`.
 
@@ -47,8 +52,10 @@ game's own `AGENTS.md`.
 - `packages/kit/` is the private, versionless `@arcade/kit` source package. Import subpaths such as
   `@arcade/kit/lab-panel` and `@arcade/kit/compare.css`; Vite and Wrangler bundle source directly, with no package
   build. Declare tooling dependencies in the package that uses them; never import another game's `node_modules`.
-- [docs/shared-code.md](docs/shared-code.md) lists code the games duplicate and what to extract into
-  `packages/kit/`; check it before writing something a game already has.
+- [docs/shared-code.md](docs/shared-code.md) lists what the games still duplicate and what to extract into
+  `packages/kit/`; [docs/architecture.md](docs/architecture.md) shows which kit modules each game already uses. Check
+  both before writing something a game already has. `games/*/shared/` imports only pure kit modules (`sim/`, `net/`,
+  `limits`).
 - Read [docs/game-notes.md](docs/game-notes.md) and [docs/rendering-techniques.md](docs/rendering-techniques.md)
   before rendering, performance, input, multiplayer or feel work. Add a technique to `docs/game-notes.md` once it
   is proven in a game, with where it lives and what it measured (animation techniques go in `docs/animation.md`).

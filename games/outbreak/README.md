@@ -86,6 +86,6 @@ Furniture and trees are visual props in M1. Sun/moon direction shades surfaces, 
 shadow map. Practical lights use polar shadows. The look study reports measured queue-completed frame spans;
 pure GPU time and higher-DPR devices remain unmeasured.
 
-`docs/shared-code.md` records the shared renderer, input, camera, rig and geometry extractions and the remaining
-animation/material seams. Promotion requires a landing panel and removing `noindex`; the prototype has neither a
+`docs/architecture.md` maps the shared renderer, input, camera, rig and geometry modules Outbreak uses;
+`docs/shared-code.md` lists what is still duplicated. Promotion requires a landing panel and removing `noindex`; the prototype has neither a
 landing link nor a sitemap entry.
