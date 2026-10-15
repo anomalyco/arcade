@@ -24,6 +24,8 @@ export class SnapshotBuffer<S> {
   private times: number[] = []
   private snaps: S[] = []
   private offset: number | null = null
+  private shift: number | null = null
+  private lastLocal = Number.NaN
   /** Exponential moving average of arrival jitter above the minimum clock offset (seconds). */
   jitter = 0
 
@@ -49,6 +51,8 @@ export class SnapshotBuffer<S> {
     this.times.length = 0
     this.snaps.length = 0
     this.offset = null
+    this.shift = null
+    this.lastLocal = Number.NaN
     this.jitter = 0
   }
 
@@ -61,8 +65,12 @@ export class SnapshotBuffer<S> {
       this.offset = sample
     } else {
       const dev = sample - this.offset
-      this.jitter += (dev - this.jitter) * 0.15
-      this.offset += dev * 0.02
+      this.jitter += (Math.min(dev, 0.08) - this.jitter) * 0.12
+      this.offset += Math.min(dev, 0.02) * 0.01
+    }
+    if (this.shift === null) {
+      this.shift = this.offset + this.effectiveDelay()
+      this.lastLocal = localTime
     }
     this.times.push(serverTime)
     this.snaps.push(snap)
@@ -75,12 +83,24 @@ export class SnapshotBuffer<S> {
   /** Active interpolation delay in seconds (fixed `delay` unless `adaptive` is configured). */
   effectiveDelay(): number {
     if (!this.adaptive) return this.delay
-    return Math.max(this.adaptive.min, Math.min(this.adaptive.max, this.adaptive.min + this.jitter * 2.5))
+    return Math.max(this.adaptive.min, Math.min(this.adaptive.max, this.adaptive.min + this.jitter * 1.5))
   }
 
-  /** Server time to render at local time `localTime`. */
+  /** Server time to render at local time `localTime` (time-stretched so clock/delay updates never jump a frame). */
   renderTime(localTime: number): number {
-    return localTime - (this.offset ?? 0) - this.effectiveDelay()
+    const target = (this.offset ?? 0) + this.effectiveDelay()
+    if (this.shift === null || Number.isNaN(this.lastLocal) || Math.abs(target - this.shift) > 0.5) {
+      this.shift = target
+      this.lastLocal = localTime
+    } else if (localTime > this.lastLocal) {
+      const dt = localTime - this.lastLocal
+      this.lastLocal = localTime
+      const diff = target - this.shift
+      const maxStep = 0.02 * dt
+      const eased = diff * (1 - Math.exp(-dt * 2))
+      this.shift += Math.max(-maxStep, Math.min(maxStep, eased))
+    }
+    return localTime - this.shift
   }
 
   /** The two snapshots around the render time, the blend factor `t`, their time `span`, and stall `over`. */

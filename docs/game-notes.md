@@ -1016,15 +1016,13 @@ braking never marked, and the sprite skids (RGB 0.02, 9 s) vanished on dark Noir
 
 ## Researched, not yet adopted
 
-### Blackout snapshot rate and adaptive interpolation delay (2026-10-16)
+### Blackout snapshot rate (2026-10-16)
 
 Tried with `scripts/bench-netcode.ts` and `games/blackout/scripts/bench-remote.ts` (2 seeds): snapshots every tick
 (30 Hz instead of 15) took the Wi-Fi remote delay from 242 to 208 ms p50 but doubled bandwidth (7.3 → 14.6 KB/s) and
 made remote soldiers rougher (velocity jumps 165 → 290 per minute clean: the curve follows tick-level motion more
-closely), and starvation rose 2.9 → 5.2%. `SnapshotBuffer`'s adaptive delay (jitter EWMA × 2.5 over a 70–80 ms floor)
-saved ~20 ms on a clean link but raised delay on Wi-Fi and roughly doubled vehicle velocity jumps, because the delay
-changes instantly rather than easing. Kept 15 Hz and a fixed 100 ms; an eased (time-stretched) adaptive delay is the
-thing to try next.
+closely), and starvation rose 2.9 → 5.2%. Kept 15 Hz; adaptive interpolation delay shipped once `SnapshotBuffer.renderTime`
+was time-stretched (see Multiplayer).
 
 ### Outbreak survey §5 experiments rejected on measurement (2026-10-14)
 
@@ -1345,7 +1343,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   `decodeServer`, so nothing past the socket changed. Downtown, 8 soldiers and 5 vehicles: 1,994 → 1,069 B per
   snapshot (−46%); office 1,478 → 807 B. Positions and velocities keep 3 decimals so your own prediction's
   corrections are unchanged (identical in the bench); 2 decimals saved another ~35 B downtown but, in a 20 s trial,
-  raised the mean correction from 1.0 to 4.8 mm.
+  raised the mean correction from 1.0 to 4.8 mm. Getaway (`games/getaway/shared/wire.ts`) does the same for `WorldView`,
+  cars, helicopter, standings, props and `you`: 2-player chase snapshots drop 1,918 → 577 B (−69.9%), downlink
+  bandwidth 29.4 → 10.9 KB/s (−62.9%), and server tick time ~30% while keeping `you` and `phaseT` exact for replay.
+- **Time-stretch `SnapshotBuffer.renderTime` so clock and adaptive-delay shifts never jump a frame.** Calling
+  `localTime - offset - effectiveDelay()` directly stepped `renderTime` by up to ±2 ms on snapshot arrival frames,
+  creating 1.5–3 m/s velocity spikes on fast vehicles at 120 fps. Slewing the combined shift (`offset + effectiveDelay()`)
+  within ±2% of `dt` per frame (`packages/kit/net/interpolate.ts`) and capping TCP retransmit bursts at 80 ms in the
+  jitter EWMA cut Blackout's lossy-link vehicle velocity jumps from 187.2 to 58.2 /min (−68.9%) and clean-link vehicle
+  jerk p99 from 10,325 to 3,538 m/s³ while letting `{ min: 0.08, max: 0.1 }` adaptive delay shave 16 ms off clean remote
+  latency (`games/blackout/scripts/bench-remote.ts`).
 - **Per-bubble interest culling, priority cadence, and bit-packed delta compression against `ackSnapTick`.**
   `packages/kit/net/{interest,rewind,bytes}.ts`, `games/outbreak/shared/net-protocol.ts` and `server/room-core.ts` scope
   each recipient's zombie updates to their `128 × 128 m` (`±64 m`) chunk bubble, throttle non-urgent mid/far/idle

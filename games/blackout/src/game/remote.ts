@@ -25,7 +25,7 @@ export type VehiclePose = { x: number; y: number; h: number; vx: number; vy: num
 export type RemoteSample = { a: Snapshot; b: Snapshot; t: number; over: number }
 
 export function remoteBuffer(): SnapshotBuffer<Snapshot> {
-  return new SnapshotBuffer<Snapshot>(REMOTE_DELAY, 32, MAX_COAST)
+  return new SnapshotBuffer<Snapshot>(REMOTE_DELAY, 32, MAX_COAST, { min: 0.08, max: 0.1 })
 }
 
 /** Adds a snapshot; a server time that went backwards (a fresh room), a new match or map starts the buffer over. */

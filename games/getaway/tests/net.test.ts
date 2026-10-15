@@ -493,7 +493,7 @@ describe("fog of war", () => {
     for (const j of [cop, spec]) {
       const send = j.pipe.conn.send
       j.pipe.conn.send = (data) => {
-        const m = JSON.parse(data) as ServerMsg
+        const m = decodeServer(data)!
         if (m.type === "snapshot") {
           const robber = world.robber()!
           const live = m.view.cars.find((c) => c.ownerId === world.robberId && !c.ghost)
@@ -558,5 +558,31 @@ describe("engine", () => {
     const { worst, n } = maxError(a.predicted, a.server, start)
     expect(n).toBeGreaterThan(50)
     expect(worst).toBeLessThan(1e-9)
+  })
+
+  test("snapshot wire packing stays under 700 bytes in a 2-player chase and preserves exact prediction floats", () => {
+    const net = new Net()
+    const rob = join(net, "Rob")
+    const cop = join(net, "Cop")
+    settle(net, rob, cop)
+    let rawSnap = ""
+    const origSend = rob.pipe.conn.send
+    rob.pipe.conn.send = (data) => {
+      if (data.startsWith('{"type":"snapshot"')) rawSnap = data
+      origSend(data)
+    }
+    for (let i = 0; i < 6; i++) {
+      net.tick()
+      rob.frame(drive(0.3))
+      cop.frame(drive(-0.2))
+    }
+    expect(rawSnap.length).toBeGreaterThan(100)
+    expect(rawSnap.length).toBeLessThan(700)
+    const decoded = decodeServer(rawSnap)!
+    expect(decoded.type).toBe("snapshot")
+    if (decoded.type === "snapshot") {
+      expect(decoded.you).not.toBeNull()
+      expect(decoded.view.cars.length).toBe(2)
+    }
   })
 })

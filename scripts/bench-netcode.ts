@@ -231,9 +231,8 @@ const GAMES: Game[] = [
         }
         took = false
         step()
-        // A dry tick repeats the last input without advancing the ack (so the late original is applied as well).
-        if (p?.jitter && !took) applied(p.jitter.ack, false, [vec(p.input)])
-        else if (p?.queue && !took) applied(p.ack!, false, [vec(p.input)])
+        // A dry tick on the legacy queue repeats the last input without advancing the ack.
+        if (p?.queue && !took) applied(p.ack!, false, [vec(p.input)])
       }
     },
     sender: async (): Promise<Sender> => (seq, _tick, press, keys) => [
