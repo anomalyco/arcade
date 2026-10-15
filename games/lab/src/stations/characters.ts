@@ -56,7 +56,7 @@ export default defineStation({
     { label: "Outbreak zombie shamble overall / arm RMSE", value: "20.1° → 6.84° / 24.8° → 4.08°", source: "games/blackout/scripts/animation/shamble-crouch.ts" },
     { label: "Run strafe 90° cadence (forward 239 steps/min)", value: "369 → 239 steps/min", source: "games/blackout/scripts/animation/strafe.ts" },
     { label: "Knee vs boot direction, worst strafe angle at a run (mocap 4–7°)", value: "23° → 8°", source: "games/blackout/scripts/animation/strafe.ts" },
-    { label: "Outbreak aimed strafe sweep peak hip yaw rate (walk)", value: "1154 → 177 °/s", source: "games/blackout/scripts/animation/strafe.ts" },
+    { label: "Outbreak aimed strafe sweep peak hip yaw rate (walk)", value: "1116 → 169 °/s", source: "games/blackout/scripts/animation/strafe.ts" },
   ],
   paths: ["packages/kit/human-locomotion.ts", "packages/kit/human-pose.ts", "packages/kit/rig.ts", "games/outbreak/src/survivor.ts", "games/outbreak/src/zombies.ts", "docs/animation.md"],
   branches: ["strafe", "toe-joints", "survivor-aim", "zombie-shamble", "run-realism", "locomotion-pass", "walk-audit"],

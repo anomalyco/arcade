@@ -154,8 +154,9 @@ separated from it by 53 cm. That is the main cause of "legs kick out".
 **Point the knee over the boot.** `kneePole(pelvis, footYaw, side)` in `human-pose.ts` aims the knee pole along
 the boot's heading with a small outward bias (`KNEE_OUT = 0.12`), so the knee tracks over the toes when the feet
 turn away from the hips. The old pole was fixed in pelvis space (`dirIn(pelvis, 1, 0.28, ±0.25)`), which bowed the
-knees 15° to 25° off the boots (21° in crouch-run, 22° to 25° in Outbreak, 4° to 7° in mocap); now the worst case
-across all strafe angles is 7.5° to 9°. The price is crouch-run leg RMSE 10.7° → 11.2°.
+knees 14° to 24° off the boots (21° in crouch-run, 23° to 24° in Outbreak, 4° to 7° in mocap); now the worst case
+across all strafe angles is 7.5° to 9°. The price is crouch-run leg RMSE 10.7° → 11.2° and +0.1° to +0.3° leg RMSE
+in the forward walk and run pose-diffs.
 
 **Keep the knee pole orthogonal to the swing chord.** During running swing heel kick-up (`cx < 0`, when the ankle kicks up behind the hip), the chord points
 backward and downward at `~−135°`, which is nearly anti-parallel to `(1, +0.28)`. `poseLegs` tilts the swing pole
@@ -276,7 +277,7 @@ of aim error, backpedal within 0.45 rad of its limit), so at the flip both legs 
 barely moves. Any residue goes into `m.yawOffset`, which decays at `transitionHz` (6 Hz), so heading and its
 velocity stay continuous (Bollo, GDC 2018). The flip uses hysteresis: forward to back above `BACK_ENTER = 2.35` rad
 of aim error, back to forward below `BACK_EXIT = 2.1`. Outbreak's survivor used to flip instantly: its pelvis turned
-at 1154°/s in an aim sweep; with the shared goal it peaks at 177°/s walking and 236°/s running.
+at 1116°/s in an aim sweep; with the shared goal it peaks at 169°/s walking and 236°/s running.
 
 **Anticipate starts.** On leaving rest the pelvis dips (`a.dip.v −= 0.14`), the body leans into the acceleration,
 and the first step comes from the foot on the side of any sideways motion (the left foot when moving straight). The
@@ -331,14 +332,16 @@ toward travel both feet step symmetrically.
 15%, lengthens swings by up to 12% and swaps heel strike for a small toe-down landing. The mocap backpedal lands
 toe-first, about 30° toe-down, and rolls the heel down within 0.13 s; foot roll itself lives in `plantedFoot`.
 
+Measured on main with the toe joints (before) and this pass (after):
+
 | Case | Before | After | Reference |
 | --- | --- | --- | --- |
 | Run 90° cadence | 369 steps/min | 239 | 238 (authored crossover), 239 forward |
-| Walk 90° cadence | 236 | 220 | 240 (authored side-step at 0.8 m/s) |
-| Walk 90° closest boot gap | 20 cm | 26 cm | 20 to 28 cm |
-| Knee vs boot, worst angle (survivor / Outbreak run) | 23° / 25° | 8° / 8° | 4° to 7° (mocap) |
-| Aim sweep, max pelvis turn (Blackout run / Outbreak walk) | 284 / 1154 °/s | 242 / 177 °/s | |
-| Circle strafe, r = 3 m (walk / jog), step direction error | 22° / 30° | 4° / 13° | |
+| Walk 90° cadence | 221 | 215 | 240 (authored side-step at 0.8 m/s), 127 forward |
+| Walk 90° closest boot gap | 21 cm | 26 cm | 20 to 28 cm |
+| Knee vs boot, worst angle (survivor / Outbreak run) | 22° / 24° | 8° / 8° | 4° to 7° (mocap) |
+| Aim sweep, max pelvis turn (Blackout run / Outbreak walk) | 284 / 1116 °/s | 242 / 169 °/s | |
+| Circle strafe, r = 3 m (walk / jog), step direction error | 23° / 32° | 6° / 12° | |
 | Circle strafe (jog), cadence | 360 steps/min | 235 | 222 forward |
 
 Planted slip stays at 0 and survivor-aim muzzle error at 0° in every case.
@@ -453,10 +456,8 @@ comparison. Presentation settings never touch simulation or network state.
 - **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`127` / `239` steps/min)** and lock swing
   targets at `u >= 0.75`, but still step their own terrain-support contact loop (`Survivor.draw`, `src/zombies.ts`)
   rather than calling `locomotion` directly.
-- **Outbreak's walk pose-diff reads 23.9° leg RMSE against mocap** (23.6° before the strafe pass); the 12.9° quoted
-  by the leg-lift pass has not been reproduced on release-6 and needs a look.
 - **Strafe gaps.** Hips stay fairly square (20° to 24° from aim) in the 120° to 135° back-diagonal band, where the
-  crossover fades into the backpedal; side-steps at 1.4 m/s take 220 steps/min (forward walk 145), because a step
+  crossover fades into the backpedal; side-steps at 1.4 m/s take 215 steps/min (forward walk 127), because a step
   that cannot cross is short; Outbreak's aimed run at 90° turns its planted boots 17° from the pelvis (mocap 10° to
   13°). The Bandai Namco set has no true side-step or run-strafe clip (its walk-left/right are forward walks with the
   hips toward travel), so the side-step and crossover references are authored.
