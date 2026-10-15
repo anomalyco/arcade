@@ -96,7 +96,7 @@ effects, low-end performance or high-DPR performance is made.
 ## Verification and reproduction
 
 The measurements and check totals below describe the refinement source branch. Combined-branch checks and captures
-are recorded in [integration.md](integration.md); they do not imply a new GPU-speedup measurement.
+are in the release 1 PR (#13); they do not imply a new GPU-speedup measurement.
 
 Outbreak tests cover independently regenerated packed meshes, exact terrain/support contacts, furniture-free
 circulation across four seeds, doors and actor LOS after scenery discovery. The Metal proof exercises F,

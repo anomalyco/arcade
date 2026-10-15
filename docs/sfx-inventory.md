@@ -12,14 +12,7 @@ Every sound file in the repository, measured silently by `bun scripts/sfx/invent
 | games/blackout/public/sfx/vehicles/crash-thump-2.mp3 | impact | blackout | 0.40 | -17.5 | -17.5 | -1.0 | mp3 1ch 49k | 3 | ok |
 | games/blackout/public/sfx/vehicles/door.mp3 | foley | blackout | 0.54 | -20.3 | -18.1 | -0.9 | mp3 1ch 72k | 5 | ok |
 | games/blackout/public/sfx/vehicles/horn.mp3 | vehicle | blackout | 1.79 | -20.0 | -19.4 | -9.5 | mp3 1ch 62k | 14 | ok |
-| games/blackout/public/sfx/vehicles/jeep-drive.mp3 | vehicle | blackout (unreferenced) | 3.70 | -19.9 | -19.7 | -7.9 | mp3 1ch 72k | 33 | ok |
-| games/blackout/public/sfx/vehicles/jeep-idle.mp3 | vehicle | blackout (unreferenced) | 3.74 | -19.9 | -19.4 | -6.1 | mp3 1ch 74k | 34 | ok |
-| games/blackout/public/sfx/vehicles/scooter-drive.mp3 | vehicle | blackout (unreferenced) | 2.58 | -20.0 | -19.1 | -7.4 | mp3 1ch 73k | 23 | ok |
-| games/blackout/public/sfx/vehicles/scooter-idle.mp3 | vehicle | blackout (unreferenced) | 2.63 | -19.9 | -19.5 | -5.1 | mp3 1ch 81k | 26 | ok |
-| games/blackout/public/sfx/vehicles/skid.mp3 | tyre | blackout | 4.03 | -19.9 | -18.5 | -10.0 | mp3 1ch 74k | 37 | ok |
 | games/blackout/public/sfx/vehicles/start.mp3 | vehicle | blackout | 1.60 | -17.9 | -16.1 | -4.4 | mp3 1ch 89k | 18 | ok |
-| games/blackout/public/sfx/vehicles/van-drive.mp3 | vehicle | blackout (unreferenced) | 3.53 | -20.0 | -19.7 | -8.7 | mp3 1ch 74k | 32 | ok |
-| games/blackout/public/sfx/vehicles/van-idle.mp3 | vehicle | blackout (unreferenced) | 3.27 | -20.0 | -19.2 | -5.7 | mp3 1ch 76k | 31 | ok |
 | games/carrier/public/sfx/boom/bomb-water-2.mp3 | impact | carrier (alternate take) | 4.00 | -15.8 | -10.2 | -0.5 | mp3 1ch 96k | 48 | ok |
 | games/carrier/public/sfx/boom/far-1.mp3 | other | carrier (alternate take) | 4.04 | -18.1 | -14.2 | -0.5 | mp3 1ch 96k | 48 | ok |
 | games/carrier/public/sfx/v3/boat-engine-1.ogg | vehicle | carrier (alternate take) | 6.85 | -20.0 | -19.7 | -11.8 | opus 2ch 90k | 76 | ok |
