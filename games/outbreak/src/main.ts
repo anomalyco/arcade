@@ -208,6 +208,7 @@ async function main() {
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
     () => settings.discovery,
+    settings.hud,
   )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."

@@ -13,8 +13,6 @@ export const LOCAL_ACTOR = "local"
 
 /** Extra room above a remote survivor's head for its name tag. */
 const NAME_TAG_PX = 16
-/** Seconds the hotbar stays up after a slot change when the style hides it. */
-const HOTBAR_WAKE = 2.2
 
 export type HudActorFrame = {
   id: string
@@ -43,8 +41,6 @@ export class CharacterHud {
   private avoidRect: DOMRect | null = null
   private dt = 0
   private now = 0
-  private hotbarUntil = -Infinity
-  private hotbarAwake = ""
 
   constructor(
     parent: HTMLElement,
@@ -96,11 +92,6 @@ export class CharacterHud {
     if (this.style.quiet && kind === "info") return
     if (this.style.worldState && typeof options === "object" && options.key === "flashlight") return
     this.layer.callout(actorId, text, kind, options)
-  }
-
-  /** The hotbar shows for a moment after a slot change in styles that hide it. */
-  wakeHotbar(): void {
-    this.hotbarUntil = this.now + HOTBAR_WAKE
   }
 
   get reducedMotion(): boolean {
@@ -192,12 +183,6 @@ export class CharacterHud {
       st.box = null
       st.calloutAt = null
       this.vitals.draw(id, st.vitals, null, reduced)
-    }
-    const awake = now < this.hotbarUntil ? "true" : ""
-    if (awake !== this.hotbarAwake) {
-      this.hotbarAwake = awake
-      if (awake) this.body.dataset.hotbar = "awake"
-      else delete this.body.dataset.hotbar
     }
     if (!this.logMode) this.layer.render(dt, (id) => this.anchor(id))
   }

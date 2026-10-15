@@ -117,17 +117,17 @@ export const KEY_CAP_CSS = `
   text-transform: none;
   white-space: nowrap;
   box-shadow: 0 0.14em 0 var(--akc-edge, #7d7a71), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0.2em 0.55em rgba(0, 0, 0, 0.55);
-  transform: translateY(-0.07em);
+  transform: translateY(-1px);
   transition: transform 70ms ease-out, box-shadow 70ms ease-out;
 }
 .akc[data-down="true"] .akc-cap {
-  transform: translateY(0.05em);
+  transform: translateY(1px);
   box-shadow: 0 0.02em 0 var(--akc-edge, #7d7a71), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0.1em 0.3em rgba(0, 0, 0, 0.5);
 }
-.akc-t { font-size: 0.86em; }
+.akc-t { font-size: 0.86em; font-size: round(nearest, 0.86em, 1px); line-height: 1; }
 .akc-wide { min-width: 2.9em; padding: 0 0.55em; }
 .akc-space { min-width: 4.4em; }
-.akc-wide .akc-t, .akc-space .akc-t { font-size: 0.7em; letter-spacing: 0.02em; }
+.akc-wide .akc-t, .akc-space .akc-t { font-size: 0.7em; font-size: round(nearest, 0.7em, 1px); letter-spacing: 0.02em; }
 .akc-mouse { width: 0.9em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
 .akc-mouse .akc-hot { fill: currentColor; stroke: none; }
 .akc-cap.akc-mouse { padding: 0; min-width: var(--akc-size, 1.7em); }
