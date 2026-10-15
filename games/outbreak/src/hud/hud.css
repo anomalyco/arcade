@@ -103,6 +103,8 @@
 .ground-ring g[data-state="low"] { color: #f0b44a }
 .ground-ring g[data-meter="health"][data-state="low"] { color: #ef7a5c }
 .ground-ring g[data-state="critical"] { color: #ff5a3c }
+/* Spent reads as a red arc even when the fill is empty, like an exhausted stamina wheel. */
+.ground-ring g[data-state="critical"] .track { stroke: currentColor; stroke-opacity: .5 }
 .ground-ring g[data-state="critical"] .fill, .ground-ring g[data-state="critical"] .track { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
 @media (prefers-reduced-motion: reduce) { .ground-ring g[data-state="critical"] :is(.fill, .track) { animation: none } }
 .vitals[data-reduced="true"] .ground-ring g[data-state="critical"] :is(.fill, .track) { animation: none }
