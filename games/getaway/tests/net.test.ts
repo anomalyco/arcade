@@ -331,6 +331,30 @@ describe("room", () => {
     expect(c.client!.body).not.toBeNull()
   })
 
+  test("a burst after a stall doesn't leave inputs queued: the server is back to a tick or two behind", () => {
+    const net = new Net()
+    const a = join(net, "Ada", 2)
+    settle(net, a)
+    let stall = false
+    for (let i = 0; i < 300; i++) {
+      // A 200 ms Wi-Fi stall every 3 s: everything sent meanwhile arrives at once.
+      stall = i % 90 >= 84
+      if (!stall) for (const m of a.pipe.up) m.at = Math.min(m.at, net.t + 2)
+      else for (const m of a.pipe.up) m.at = Infinity
+      net.tick()
+      a.frame(drive(i))
+    }
+    for (const m of a.pipe.up) m.at = net.t + 2
+    for (let i = 0; i < 60; i++) {
+      net.tick()
+      a.frame(drive(i))
+    }
+    const last = a.pipe.received.findLast((m) => m.type === "snapshot")
+    expect(last?.type).toBe("snapshot")
+    // Two ticks of latency each way plus at most a couple of ticks held in the buffer.
+    expect(a.client!.seq - (last as Extract<ServerMsg, { type: "snapshot" }>).ack).toBeLessThanOrEqual(7)
+  })
+
   test("a reconnect within the grace period resumes the same seat and car", () => {
     const net = new Net()
     const { a, b } = pair(net)
