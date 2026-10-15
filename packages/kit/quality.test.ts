@@ -6,7 +6,10 @@ import {
   resolveQualityMode,
   saveQualityMode,
   selectStartupTier,
+  type QualityScaling,
+  type QualityTiers,
 } from "./quality"
+import { GameQuality, qualityStorageKey } from "./client/quality"
 
 describe("@arcade/kit/quality", () => {
   test("resolves quality modes and storage persistence", () => {
@@ -130,5 +133,58 @@ describe("@arcade/kit/quality", () => {
     expect(st.activeTier).toBe("balanced")
     expect(st.resolutionScale).toBe(1.0)
     expect(st.pixelRatio).toBe(QUALITY_PROFILES.balanced.dprCap)
+  })
+
+  test("GameQuality: per-game tiers, saved choice, URL pin, floor-sized canvas and change callbacks", () => {
+    const tiers: QualityTiers<QualityScaling & { shadows: number }> = {
+      high: { tier: "high", label: "High", dprCap: 2, minScale: 0.7, shadows: 2048 },
+      balanced: { tier: "balanced", label: "Balanced", dprCap: 1.5, minScale: 0.6, shadows: 2048 },
+      low: { tier: "low", label: "Low", dprCap: 1, minScale: 0.5, shadows: 1024 },
+    }
+    const store = new Map<string, string>()
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
+    const seen: number[] = []
+    const q = new GameQuality({ game: "demo", tiers, storage, onChange: (p) => seen.push(p.shadows) })
+    expect(q.mode).toBe("auto")
+    expect(q.profile.tier).toBe("high")
+    const canvas = { width: 0, height: 0 }
+    expect(q.fit(canvas, 1001, 701, 2)).toBe(true)
+    expect(canvas).toEqual({ width: 2002, height: 1402 })
+    expect(q.fit(canvas, 1001, 701, 2)).toBe(false)
+
+    q.setMode("low")
+    expect(seen).toEqual([1024])
+    expect(store.get(qualityStorageKey("demo"))).toBe("low")
+    q.fit(canvas, 1001, 701, 2)
+    expect(canvas).toEqual({ width: 1001, height: 701 })
+    q.setMode("balanced")
+    q.fit(canvas, 1001, 701, 2)
+    // floor(1001 × 1.5): the same size the games' old MAX_DPR = 1.5 resize produced.
+    expect(canvas).toEqual({ width: 1501, height: 1051 })
+
+    expect(new GameQuality({ game: "demo", tiers, storage }).mode).toBe("balanced")
+    const pinned = new GameQuality({ game: "demo", tiers, storage, params: new URLSearchParams("quality=high") })
+    expect(pinned.mode).toBe("high")
+    expect(store.get(qualityStorageKey("demo"))).toBe("balanced")
+    expect((pinned.labControl() as unknown as { options: { value: string }[] }).options.map((o) => o.value)).toEqual(["auto", "high", "balanced", "low"])
+  })
+
+  test("GameQuality Auto steps a slow GPU down to a smaller tier and reports it", () => {
+    const tiers: QualityTiers = {
+      high: { tier: "high", label: "High", dprCap: 2, minScale: 0.7 },
+      balanced: { tier: "balanced", label: "Balanced", dprCap: 1.5, minScale: 0.6 },
+      low: { tier: "low", label: "Low", dprCap: 1, minScale: 0.5 },
+    }
+    let gpu = 26
+    const tiersSeen: string[] = []
+    const q = new GameQuality({ game: "slow", tiers, storage: null, gpuMs: () => gpu, onChange: (p) => tiersSeen.push(p.tier) })
+    let now = 1000
+    for (let i = 0; i < 60; i++) q.frame((now += 30))
+    expect(q.profile.tier).toBe("low")
+    expect(tiersSeen.at(-1)).toBe("low")
+    expect(q.describe(2)).toContain("Auto → Low")
+    gpu = 4
+    q.pause()
+    expect(q.pixelRatio(2)).toBe(1)
   })
 })

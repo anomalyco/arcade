@@ -148,6 +148,8 @@ export class Post {
   private composite: GPURenderPipeline
   private finalAttachment: GPURenderPassColorAttachment | null = null
   private finalPass: GPURenderPassDescriptor | null = null
+  /** Bloom levels drawn (the quality tier's; up to `BLOOM_LEVELS`). */
+  bloomLevels = BLOOM_LEVELS
 
   constructor(
     private device: GPUDevice,
@@ -201,7 +203,7 @@ export class Post {
       0,
     )
     this.device.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
-    this.bloomPyramid.encode(enc, this.down, this.up)
+    this.bloomPyramid.encode(enc, this.down, this.up, undefined, this.bloomLevels)
     if (!this.finalAttachment) this.finalAttachment = { view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }
     this.finalAttachment.view = target
     this.finalPass ??= { colorAttachments: [this.finalAttachment] }

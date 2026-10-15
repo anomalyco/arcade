@@ -2,11 +2,13 @@ import "../style.css"
 import "@fontsource/barlow-condensed/600.css"
 import "@fontsource/barlow-condensed/800.css"
 import { Input } from "@arcade/kit/client/input"
+import { GameQuality } from "@arcade/kit/client/quality"
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { attachLabPanelControl, registerGameCommands } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { createLookSettings } from "@arcade/kit/gpu/look"
 import { Renderer } from "@arcade/kit/gpu/renderer"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { type LabControl, LabPanel, type LabValue } from "@arcade/kit/lab-panel"
 import { cooldowns } from "@arcade/kit/sim/abilities"
 import { CENTER } from "../../shared/arena"
@@ -18,9 +20,9 @@ import { Sound } from "../sound"
 import { Hud, SLOT_KEYS } from "../ui/hud"
 import { type LabScene, LabSession } from "./lab-session"
 import { tuning } from "./lab-tuning"
+import { BRAWL_QUALITY } from "../quality"
 
 const SCENES: readonly LabScene[] = ["gallery", "props", "bots"]
-const MAX_DPR = 1.5
 
 /**
  * The Brawl playground page (the Lab's `brawl` station embeds it): the character gallery, the prop playground and a bots
@@ -40,6 +42,15 @@ async function main() {
   const hud = new Hud(document.getElementById("hud")!)
   const caption = document.getElementById("caption")!
   const loop = document.getElementById("loop")!
+  let perf: GpuPerf | null = null
+  // The same saved quality choice as the game (View → Quality).
+  const quality = new GameQuality({
+    game: GAME.id,
+    tiers: BRAWL_QUALITY,
+    params,
+    gpuMs: () => perf?.gpuMs ?? renderer?.lastGpuMs,
+    onChange: (tier) => renderer?.setBloomLevels(tier.bloomLevels),
+  }).expose()
 
   const [hScene, hArg, hLoop] = location.hash.replace(/^#/, "").split("/")
   const scene0: LabScene = SCENES.includes(hScene as LabScene) ? (hScene as LabScene) : "gallery"
@@ -110,6 +121,7 @@ async function main() {
     capture: "focus",
     onFocusChange: (focused) => (panelFocused = focused),
   })
+  quality.addTo(panel)
   attachLabPanelControl(panel)
 
   const set = (key: string, value: LabValue | undefined) => {
@@ -168,10 +180,7 @@ async function main() {
   }
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, MAX_DPR)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer?.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer?.resize(canvas.width, canvas.height)
     document.documentElement.style.setProperty("--hud", String(Math.max(0.6, Math.min(1, innerWidth / 1500, innerHeight / 950))))
   }
   const g = await openGpu(canvas, `${GAME.title} Playground`)
@@ -179,8 +188,11 @@ async function main() {
     document.getElementById("menu")!.textContent = g
     return
   }
+  perf = new GpuPerf(g.device)
   renderer = new Renderer(g.device, g.context, g.format)
   renderer.setLook(createLookSettings("night_ring"))
+  renderer.setBloomLevels(quality.profile.bloomLevels)
+  canvas.width = canvas.height = 0
   resize()
   addEventListener("resize", resize)
   start()
@@ -193,6 +205,9 @@ async function main() {
     last = now
     const w = innerWidth
     const h = innerHeight
+    quality.frame(now)
+    perf.enabled = quality.wantsGpuTiming
+    if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
     if (game && session) {
       input.enabled = session.scene === "props" && !panelFocused
       game.update(dt, input, w, h)

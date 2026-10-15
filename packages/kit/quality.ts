@@ -6,13 +6,21 @@ export type QualityMode = "auto" | QualityTier
 export const QUALITY_TIERS: readonly QualityTier[] = ["low", "balanced", "high"] as const
 export const QUALITY_MODES: readonly QualityMode[] = ["auto", "high", "balanced", "low"] as const
 
-export interface QualityProfile {
+/** What the controller itself needs from a tier: how many pixels it may draw. Games add their own tier contents. */
+export interface QualityScaling {
   readonly tier: QualityTier
   readonly label: string
   /** Maximum devicePixelRatio before dynamic resolution scaling. */
   readonly dprCap: number
   /** Minimum dynamic resolution scale multiplier in `auto` mode. */
   readonly minScale: number
+}
+
+/** A game's three tiers: resolution plus whatever passes it scales (shadows, bloom, volumetrics…). */
+export type QualityTiers<P extends QualityScaling = QualityScaling> = Readonly<Record<QualityTier, P>>
+
+/** Outbreak's tiers (the controller's default). */
+export interface QualityProfile extends QualityScaling {
   /** Active bloom mip chain depth (1..5). */
   readonly bloomLevels: number
   /** Multiplier for weather particle count (0.25..1). */
@@ -135,10 +143,10 @@ export function saveQualityMode(
   } catch {}
 }
 
-export interface QualityState {
+export interface QualityState<P extends QualityScaling = QualityProfile> {
   mode: QualityMode
   activeTier: QualityTier
-  profile: QualityProfile
+  profile: P
   /** Dynamic resolution multiplier (0.5..1.0) applied on top of `min(devicePixelRatio, profile.dprCap)`. */
   resolutionScale: number
   /** Effective pixel ratio (`roundTo05(min(devicePixelRatio, profile.dprCap) * resolutionScale)`). */
@@ -153,8 +161,10 @@ export interface QualityState {
   startupResolved: boolean
 }
 
-export interface AdaptiveQualityOptions {
+export interface AdaptiveQualityOptions<P extends QualityScaling = QualityProfile> {
   mode?: QualityMode
+  /** The game's tiers; Outbreak's `QUALITY_PROFILES` when omitted. */
+  profiles?: QualityTiers<P>
   targetFps?: number
   /** Initial warmup frames skipped before startup auto-select (default: 15). */
   warmupFrames?: number
@@ -203,7 +213,8 @@ export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, bu
  *   stepping back up by +0.05 so resolution never oscillates.
  * - Manual override (`high` / `balanced` / `low`): locks `activeTier` and `resolutionScale = 1` for deterministic rendering.
  */
-export class AdaptiveQualityController {
+export class AdaptiveQualityController<P extends QualityScaling = QualityProfile> {
+  readonly profiles: QualityTiers<P>
   private mode: QualityMode
   private activeTier: QualityTier
   private resolutionScale = 1.0
@@ -227,7 +238,8 @@ export class AdaptiveQualityController {
   private readonly windowFrames: number[] = []
   private readonly windowGpus: number[] = []
 
-  constructor(options: AdaptiveQualityOptions = {}) {
+  constructor(options: AdaptiveQualityOptions<P> = {}) {
+    this.profiles = options.profiles ?? (QUALITY_PROFILES as unknown as QualityTiers<P>)
     this.mode = options.mode ?? "auto"
     this.activeTier = this.mode === "auto" ? "high" : this.mode
     this.startupResolved = this.mode !== "auto"
@@ -247,8 +259,8 @@ export class AdaptiveQualityController {
     return this.activeTier
   }
 
-  getProfile(): QualityProfile {
-    return QUALITY_PROFILES[this.activeTier]
+  getProfile(): P {
+    return this.profiles[this.activeTier]
   }
 
   getResolutionScale(): number {
@@ -288,7 +300,7 @@ export class AdaptiveQualityController {
 
   effectivePixelRatio(devicePixelRatio = 1): number {
     const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
-    const base = Math.min(dpr, QUALITY_PROFILES[this.activeTier].dprCap)
+    const base = Math.min(dpr, this.profiles[this.activeTier].dprCap)
     if (this.mode !== "auto") return base
     return roundPixelRatio(base * this.resolutionScale)
   }
@@ -379,8 +391,7 @@ export class AdaptiveQualityController {
     this.lastFrameMs = medFrame
     if (medGpu > 0) this.lastGpuMs = medGpu
 
-    const profile = QUALITY_PROFILES[this.activeTier]
-    const minScale = profile.minScale
+    const minScale = this.profiles[this.activeTier].minScale
     // Only shed pixels when GPU is plausibly the bottleneck (or when GPU telemetry is unavailable).
     const gpuBound = medGpu === 0 || medGpu > budget * 0.85
     const overloaded = (medFrame > budget * 1.25 && gpuBound) || medGpu > budget * 1.15
@@ -426,8 +437,8 @@ export class AdaptiveQualityController {
     return false
   }
 
-  state(devicePixelRatio = 1): QualityState {
-    const profile = QUALITY_PROFILES[this.activeTier]
+  state(devicePixelRatio = 1): QualityState<P> {
+    const profile = this.profiles[this.activeTier]
     return {
       mode: this.mode,
       activeTier: this.activeTier,

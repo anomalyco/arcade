@@ -17,12 +17,13 @@ import { Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
 import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { GameQuality } from "@arcade/kit/client/quality"
+import { BLACKOUT_QUALITY } from "./quality"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { Rng } from "../shared/rng"
 import { SpellHud } from "./ui/spell-hud"
 
-const MAX_DPR = 1.5
 const NAME_KEY = "blackout.name"
 const GUN_KEY = "blackout.gun"
 const EQUIP_KEY = "blackout.equip"
@@ -59,6 +60,15 @@ async function main() {
   if (automatedLook && params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
   const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
+  // Resolution, bloom and smoke volumes follow the quality tier (Auto by default; View → Quality in the Lab).
+  const quality = new GameQuality({
+    game: "blackout",
+    tiers: BLACKOUT_QUALITY,
+    params,
+    gpuMs: () => telemetry.gpuMs ?? renderer.lastGpuMs,
+    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
+  }).addTo(debug).expose()
+  renderer.setBloomLevels(quality.profile.bloomLevels)
   input.onWheel = (delta) => {
     if (game?.snap?.spells) { if (delta) game.selectedSpell = game.selectedSpell === "moon" ? "necromancy" : "moon"; return }
     cam.zoomOffset = Math.max(-10, Math.min(24, cam.zoomOffset + Math.sign(delta)))
@@ -208,10 +218,7 @@ async function main() {
   })
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, MAX_DPR)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     document.documentElement.style.setProperty("--hud", String(Math.max(0.55, Math.min(1, innerWidth / 1500, innerHeight / 950))))
   }
   resize()
@@ -268,6 +275,9 @@ async function main() {
     last = now
     const w = innerWidth
     const h = innerHeight
+    if (manual) quality.pause()
+    else quality.frame(now)
+    if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
     if (game && session) {
       cam.pitch = game.snap?.spells ? settings.wizardPitch : 1.1
       input.enabled = game.snap?.phase === "play"
@@ -288,13 +298,15 @@ async function main() {
       const lz = lead ? lead.y : alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
       cam.follow(fx, fz, input.mux ? 0 : lx, input.mux ? 0 : lz, dt, !body, alive && !!game.riding)
       if (input.mux && body) { cam.snap(body.x, body.y); cam.dist = 24 + cam.zoomOffset }
-      renderer.render(game.build(cam, w, h, manual ? manualRenderDt : dt))
+      const scene = game.build(cam, w, h, manual ? manualRenderDt : dt)
+      if (!quality.profile.volumes) scene.smokeEnabled = false
+      renderer.render(scene)
       manualRenderDt=0
       hud.update(game, cam, w, h, input.mouse, session.status())
       spellHud.draw(game)
       modeHud.update(game, cam, w, h)
       menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
-      telemetry.enabled = debug.visible || input.mux
+      telemetry.enabled = debug.visible || input.mux || quality.wantsGpuTiming
       const chunks = renderer.drawnChunks
       const perf = debug.sample(now, elapsed, telemetry, chunks, game.lightCount)
       if (perf && parent !== window) {

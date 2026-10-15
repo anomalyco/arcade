@@ -54,6 +54,8 @@ export type InstanceBatch = { model: number; data: Float32Array; count: number; 
 
 export class Renderer {
   private timer: FrameTimer | null = null
+  /** Passes the quality tier allows (off on Low); the effect settings still decide within them. */
+  readonly tier = { motionBlur: true, volumes: true }
   measure = false
   measureNextFrame() {
     if (!this.device.features.has("timestamp-query")) throw new Error("Total GPU timing requires timestamp-query")
@@ -398,7 +400,7 @@ export class Renderer {
       this.history.begin();this.particleHistory.begin();this.motionReady=true
     }
     mat4.inverse(opts.frame.subarray(0,16),this.inverseVP)
-    const blurOn=motionBlur.enabled&&motionBlur.strength>0&&motionBlur.shutter>0
+    const blurOn=this.tier.motionBlur&&motionBlur.enabled&&motionBlur.strength>0&&motionBlur.shutter>0
     this.blur.update(opts.frame,this.inverseVP,this.previousVP,this.motionDt,motionBlur.strength*(1+(opts.rush??0)*.8),motionBlur.shutter,this.motionValid)
 
     const ranges: { model: number; first: number; count: number; noShadow?: boolean }[] = []
@@ -451,7 +453,7 @@ export class Renderer {
     extractFrustumPlanes(opts.frame, LIGHT_VP_OFFSET, this.shadowPlanes)
 
     const hasFxParticles = Boolean(opts.fxParticles && opts.fxParticles.count > 0)
-    const hasFxVolumes = Boolean(opts.fxVolumes && opts.fxVolumes.count > 0)
+    const hasFxVolumes = this.tier.volumes && Boolean(opts.fxVolumes && opts.fxVolumes.count > 0)
     if (hasFxParticles && opts.fxParticles) {
       this.fxParticles.setFrame({
         vp: opts.frame,
