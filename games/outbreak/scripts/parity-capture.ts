@@ -69,6 +69,8 @@ async function capture(label: string): Promise<void> {
       })
       await page.goto(`http://127.0.0.1:${server.port}/?solo&seed=${seed}&bench`, { waitUntil: "networkidle" })
       await page.waitForFunction(() => (window as any).__arcadeHarness?.ready)
+      // Baked rugs arrive from a Worker whenever it finishes, so a frame may or may not have them: draw flat rugs.
+      await page.evaluate(() => (window as any).__arcadeHarness.setInterior("rugSource", 2))
       for (const pose of POSES) {
         const state = await page.evaluate(async (p) => {
           const h = (window as any).__arcadeHarness
@@ -81,7 +83,9 @@ async function capture(label: string): Promise<void> {
           return { hour: s.dayCycle.hour, chunk: s.world.chunk, explored: s.explored }
         }, pose)
         const name = `seed${seed}-${pose.name}`
-        await page.screenshot({ path: join(out, `${name}.png`) })
+        // The HUD eases on wall-clock CSS transitions; let them land so a frame never catches one mid-way.
+        await page.waitForTimeout(800)
+        await page.screenshot({ path: join(out, `${name}.png`), animations: "disabled" })
         manifest[name] = state
       }
       manifest[`seed${seed}-errors`] = errors
@@ -96,7 +100,7 @@ async function capture(label: string): Promise<void> {
 }
 
 async function compare(a: string, b: string): Promise<void> {
-  const names = readdirSync(a).filter((n) => n.endsWith(".png")).sort()
+  const names = readdirSync(a).filter((n) => n.endsWith(".png") && !n.endsWith(".diff.png")).sort()
   assert(names.length > 0, `no captures in ${a}`)
   const browser = await launch()
   const page = await browser.newPage()
@@ -111,7 +115,7 @@ async function compare(a: string, b: string): Promise<void> {
         worst = 1
         continue
       }
-      const share = await page.evaluate(
+      const { share, mask } = await page.evaluate(
         async ({ left, right }) => {
           const load = async (src: string) => {
             const img = new Image()
@@ -120,18 +124,32 @@ async function compare(a: string, b: string): Promise<void> {
             const c = new OffscreenCanvas(img.width, img.height)
             const g = c.getContext("2d")!
             g.drawImage(img, 0, 0)
-            return g.getImageData(0, 0, img.width, img.height).data
+            return g.getImageData(0, 0, img.width, img.height)
           }
           const [p, q] = await Promise.all([load(left), load(right)])
-          if (p.length !== q.length) return 1
+          if (p.data.length !== q.data.length) return { share: 1, mask: null }
+          const mask = new ImageData(p.width, p.height)
           let differ = 0
-          for (let i = 0; i < p.length; i += 4) {
-            if (Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!) > 6) differ++
+          for (let i = 0; i < p.data.length; i += 4) {
+            const d = Math.abs(p.data[i]! - q.data[i]!) + Math.abs(p.data[i + 1]! - q.data[i + 1]!) + Math.abs(p.data[i + 2]! - q.data[i + 2]!)
+            mask.data[i] = d > 6 ? 255 : p.data[i]! * 0.3
+            mask.data[i + 1] = p.data[i + 1]! * 0.3
+            mask.data[i + 2] = p.data[i + 2]! * 0.3
+            mask.data[i + 3] = 255
+            if (d > 6) differ++
           }
-          return differ / (p.length / 4)
+          if (!differ) return { share: 0, mask: null }
+          const c = new OffscreenCanvas(p.width, p.height)
+          c.getContext("2d")!.putImageData(mask, 0, 0)
+          const blob = await c.convertToBlob({ type: "image/png" })
+          const bytes = new Uint8Array(await blob.arrayBuffer())
+          let bin = ""
+          for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+          return { share: differ / (p.data.length / 4), mask: btoa(bin) }
         },
         { left, right },
       )
+      if (mask) writeFileSync(join(b, name.replace(/\.png$/, ".diff.png")), Buffer.from(mask, "base64"))
       worst = Math.max(worst, share)
       rows.push(`${name}: ${(share * 100).toFixed(3)}% pixels differ`)
     }
