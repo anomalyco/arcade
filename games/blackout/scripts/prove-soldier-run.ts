@@ -211,7 +211,7 @@ try {
         g.fillText(`${tile.varId} t=${(tile.tick / 60).toFixed(2)}s`, c * tw + 6, y + th + 12)
       }
       return canvas.toDataURL("image/jpeg", 0.92)
-    }, { view, crop, tiles, ticks: [...sampleTicks], vars: variants.map(v => v.id) })
+    }, { view, crop, tiles, ticks: [...sampleTicks], vars: variants.map((v): string => v.id) })
     writeFileSync(join(out, `contact-sheet-${view}.jpg`), Buffer.from(dataUrl.split(",")[1]!, "base64"))
   }
 

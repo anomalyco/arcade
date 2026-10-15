@@ -41,7 +41,7 @@ for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["s
     const a = newAvatar("lock", 0, 0, 0, "rifle")
     let contacts = 0, steps = 0
     for (let n = 0; n < 360; n++) {
-      const old = a.feet.map((f, i) => ({ planted: f.planted, p: [...f.p], rendered: a.body ? a.body.toe![i]!.p : null }))
+      const old = a.feet.map((f, i) => ({ planted: f.planted, p: f.p.slice() as typeof f.p, rendered: a.body ? a.body.toe![i]!.p : null }))
       animate(a, dt, n * dt, vx * n * dt, vy * n * dt, vx, vy, spin * n * dt)
       for (let i = 0; i < 2; i++) {
         if (!old[i]!.planted && a.feet[i]!.planted) steps++

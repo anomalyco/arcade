@@ -42,7 +42,7 @@ try {
         for (let i = 0; i < 30; i++) { await b.step(i, 1/30, true); await w.__gpuDrain() }
         b.reset()
         w.__clearGpuSamples()
-        const scene = (await import(/* @vite-ignore */ "/src/game/scene.ts")).Scene.prototype
+        const scene = (await import(/* @vite-ignore */ String("/src/game/scene.ts"))).Scene.prototype
         const draw = scene.draw
         let sceneCpu = 0
         scene.draw = function(...args: any[]) { const start = performance.now(); const out = draw.apply(this, args); sceneCpu += performance.now()-start; return out }
