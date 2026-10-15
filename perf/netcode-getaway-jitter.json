@@ -1,0 +1,94 @@
+{
+  "label": "getaway-jitter",
+  "seconds": 60,
+  "seeds": 3,
+  "links": {
+    "good": {
+      "name": "good · 30 ms",
+      "rttMs": 30,
+      "jitterMs": 3,
+      "loss": 0
+    },
+    "wifi": {
+      "name": "wifi · 80 ms ± 15, 1%, stalls",
+      "rttMs": 80,
+      "jitterMs": 15,
+      "loss": 0.01,
+      "stallEveryMs": 10000,
+      "stallMs": 150
+    },
+    "bad": {
+      "name": "bad · 150 ms ± 30, 2%, stalls",
+      "rttMs": 150,
+      "jitterMs": 30,
+      "loss": 0.02,
+      "stallEveryMs": 5000,
+      "stallMs": 250
+    }
+  },
+  "rows": [
+    {
+      "game": "getaway",
+      "link": "good · 30 ms",
+      "lost": "0/118",
+      "serverP50": 33,
+      "serverP95": 33,
+      "confirmP50": 50,
+      "confirmP95": 84,
+      "remoteP50": 145,
+      "remoteP95": 179,
+      "starvedPct": 0,
+      "longestStarveMs": 0,
+      "shooterLagP50": 145,
+      "correctionsPerMin": 0,
+      "correctionP95Cm": 0,
+      "missCmAt5ms": 73,
+      "snapHz": 15,
+      "downKBs": 30.3,
+      "tickMeanMs": 0.015,
+      "tickP99Ms": 0.042
+    },
+    {
+      "game": "getaway",
+      "link": "wifi · 80 ms ± 15, 1%, stalls",
+      "lost": "0/114",
+      "serverP50": 100,
+      "serverP95": 100,
+      "confirmP50": 144,
+      "confirmP95": 186,
+      "remoteP50": 225,
+      "remoteP95": 258,
+      "starvedPct": 3.7,
+      "longestStarveMs": 192,
+      "shooterLagP50": 225,
+      "correctionsPerMin": 20,
+      "correctionP95Cm": 37,
+      "missCmAt5ms": 113,
+      "snapHz": 15,
+      "downKBs": 30.2,
+      "tickMeanMs": 0.013,
+      "tickP99Ms": 0.028
+    },
+    {
+      "game": "getaway",
+      "link": "bad · 150 ms ± 30, 2%, stalls",
+      "lost": "0/116",
+      "serverP50": 133,
+      "serverP95": 133,
+      "confirmP50": 228,
+      "confirmP95": 349,
+      "remoteP50": 312,
+      "remoteP95": 386,
+      "starvedPct": 15.16,
+      "longestStarveMs": 325,
+      "shooterLagP50": 278,
+      "correctionsPerMin": 45,
+      "correctionP95Cm": 47,
+      "missCmAt5ms": 139,
+      "snapHz": 15,
+      "downKBs": 30.3,
+      "tickMeanMs": 0.012,
+      "tickP99Ms": 0.026
+    }
+  ]
+}

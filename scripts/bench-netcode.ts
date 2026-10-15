@@ -173,26 +173,44 @@ const GAMES: Game[] = [
     isSnapshot: (d) => typeof d === "string" && d.startsWith('{"type":"snapshot"'),
     watch(core, id, applied) {
       type In = { gadget: number | null; steer: number; throttle: number; brake: number }
-      const players = (core as unknown as { players: Map<string, { ack: number; input: In; queue: { seq: number; input: In }[] }> }).players
+      type Jitter = { ack: number; take(t: number): readonly In[] }
+      type P = { ack?: number; input: In; queue?: { seq: number; input: In }[]; jitter?: Jitter }
+      const players = (core as unknown as { players: Map<string, P> }).players
+      const vec = (i: In): Move => [i.steer, i.throttle - i.brake]
+      // The input buffer is replaced on reconnect; re-hook whenever it changes.
       let watched: unknown = null
-      // The queue array is replaced on reconnect; re-hook whenever it changes.
+      let took = false
       const step = core.step.bind(core)
       core.step = () => {
-        const q = players.get(id)?.queue
-        if (q && q !== watched) {
-          watched = q
-          const shift = q.shift.bind(q)
-          q.shift = () => {
-            const item = shift()
-            if (item) applied(item.seq, item.input.gadget !== null, [[item.input.steer, item.input.throttle - item.input.brake]])
-            return item
+        const p = players.get(id)
+        const buf = p?.jitter ?? p?.queue
+        if (p && buf && buf !== watched) {
+          watched = buf
+          if (p.jitter) {
+            const j = p.jitter
+            const take = j.take.bind(j)
+            j.take = (t) => {
+              const out = take(t)
+              took = out.length > 0
+              if (took) applied(j.ack, out.some((i) => i.gadget !== null), [vec(out[out.length - 1]!)])
+              return out
+            }
+          } else {
+            const q = p.queue!
+            const shift = q.shift.bind(q)
+            q.shift = () => {
+              const item = shift()
+              took = !!item
+              if (item) applied(item.seq, item.input.gadget !== null, [vec(item.input)])
+              return item
+            }
           }
         }
-        const p = players.get(id)
-        const dry = !!p && !p.queue.length
+        took = false
         step()
-        // A dry tick repeats the last input (and the late original is applied as well when it comes).
-        if (p && dry) applied(p.ack, false, [[p.input.steer, p.input.throttle - p.input.brake]])
+        // A dry tick repeats the last input without advancing the ack (so the late original is applied as well).
+        if (p?.jitter && !took) applied(p.jitter.ack, false, [vec(p.input)])
+        else if (p?.queue && !took) applied(p.ack!, false, [vec(p.input)])
       }
     },
     sender: async (): Promise<Sender> => (seq, _tick, press, keys) => [
@@ -285,7 +303,7 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
       serverPos[0]! += m[0]
       serverPos[1]! += m[1]
     }
-    const p = predicted[Math.min(ack, predicted.length - 1)]!
+    const p = predicted[Math.max(0, Math.min(ack, predicted.length - 1))]!
     const err: Move = [serverPos[0]! - p[0], serverPos[1]! - p[1]]
     const d = Math.hypot(err[0] - lastErr[0], err[1] - lastErr[1])
     if (d > 0.01) r.corrections.push(d)

@@ -1,5 +1,7 @@
 import { IDLE_COP_KICK_SECONDS, IDLE_DARK_KICK_SECONDS, IDLE_KICK_SECONDS, IDLE_WARN_SECONDS, MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ, DT } from "../shared/config"
 import { type ClientMsg, type Picks, type RosterEntry, type ServerMsg, decodeClient, encodeServer, seedOf } from "../shared/protocol"
+import { type InputOps, JitterBuffer } from "@arcade/kit/net/jitter-buffer"
+import { ROOM_JITTER } from "@arcade/kit/net/room-core"
 import { type Input, NO_INPUT } from "../shared/sim/vehicle"
 import { type Participant, World } from "../shared/sim/world"
 
@@ -11,8 +13,7 @@ type Player = {
   name: string
   picks: Picks
   conn: Conn | null
-  queue: { seq: number; input: Input }[]
-  ack: number
+  jitter: JitterBuffer<Input>
   input: Input
   starve: number
   goneAt: number
@@ -26,9 +27,17 @@ type Player = {
 
 /** Disconnected players keep their seat (and car) this long so a reconnect resumes seamlessly. */
 const GRACE_TICKS = 15 * TICK_HZ
-/** Server-side input buffer. Beyond this the oldest inputs are dropped so latency stays bounded. */
-const MAX_QUEUE = 10
-const TRIM_QUEUE = 3
+/**
+ * The world latches gadget and engine presses when their held value changes, so a stand-in keeps the held keys (no
+ * spurious edge) and merging keeps the earlier input's press when the later one has let go.
+ */
+const INPUT_OPS: InputOps<Input> = {
+  merge: (a, b) => ({ ...b, gadget: b.gadget ?? a.gadget ?? null, engine: !!(b.engine || a.engine) }),
+  standIn: (last) => last,
+  hasEdges: (i) => (i.gadget ?? null) !== null || !!i.engine,
+}
+const JITTER = { ...ROOM_JITTER, initialTarget: 1 }
+const newJitter = () => new JitterBuffer(INPUT_OPS, JITTER)
 /** With no input for this long (tab hidden, stalled link) the car lets go of the pedals. */
 const STARVE_TICKS = 15
 const CHAT_BURST = 3
@@ -79,7 +88,7 @@ export class RoomCore {
     if (p.conn !== conn) return
     p.conn = null
     p.goneAt = this.tick
-    p.queue = []
+    p.jitter = newJitter()
     p.input = NO_INPUT
     this.world?.setInput(p.id, NO_INPUT)
     this.broadcastRoster()
@@ -93,12 +102,9 @@ export class RoomCore {
     const p = this.byConn.get(conn)
     if (!p || p.conn !== conn) return
     if (msg.type === "chat") return this.chat(p, msg.text)
-    const last = p.queue.length ? p.queue[p.queue.length - 1]!.seq : p.ack
-    if (msg.seq <= last) return
     if (!sameInput(msg.input, p.last) || !sameInput(msg.input, NO_INPUT)) p.idle = 0
     p.last = msg.input
-    p.queue.push({ seq: msg.seq, input: msg.input })
-    if (p.queue.length > MAX_QUEUE) p.queue.splice(0, p.queue.length - TRIM_QUEUE)
+    p.jitter.push(msg.seq, msg.input, this.tick)
   }
 
   private chat(p: Player, text: string) {
@@ -122,8 +128,7 @@ export class RoomCore {
     if (p) {
       // Resume: the client starts a fresh input stream, so forget the old acks.
       p.conn = conn
-      p.queue = []
-      p.ack = 0
+      p.jitter = newJitter()
       p.starve = 0
       p.picks = msg.picks
     } else {
@@ -135,7 +140,7 @@ export class RoomCore {
       // First person into an empty room gets a fresh game instead of a stale round.
       if (this.players.size === 0) this.world = null
       const id = msg.id && !this.players.has(msg.id) ? msg.id : newId()
-      p = { id, name: msg.name, picks: msg.picks, conn, queue: [], ack: 0, input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
+      p = { id, name: msg.name, picks: msg.picks, conn, jitter: newJitter(), input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
       this.players.set(id, p)
       this.syncParticipants()
       this.system(p.name, "joined")
@@ -183,10 +188,11 @@ export class RoomCore {
     if (!world) return
     for (const p of this.players.values()) {
       if (!p.conn) continue
-      const next = p.queue.shift()
-      if (next) {
-        p.input = next.input
-        p.ack = next.seq
+      // One input per tick from the jitter buffer: it stands in for late inputs (without applying the original
+      // twice) and, catching up, hands over two, applied as the later one with both presses.
+      const got = p.jitter.take(this.tick)
+      if (got.length) {
+        p.input = got.length === 1 ? got[0]! : INPUT_OPS.merge(got[0]!, got[1]!)
         p.starve = 0
       } else if (++p.starve > STARVE_TICKS) p.input = NO_INPUT
       world.setInput(p.id, p.input)
@@ -251,7 +257,7 @@ export class RoomCore {
     if (!world || !p.conn) return
     const car = world.carOf(p.id)
     const idleIn = this.idleIn(p.id)
-    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: p.ack, view: world.view(this.viewerFor(p.id), base), you: car ? car.body : null, ...(idleIn === undefined ? {} : { idleIn }) })
+    this.send(p.conn, { type: "snapshot", tick: this.tick, ack: Math.max(0, p.jitter.ack), view: world.view(this.viewerFor(p.id), base), you: car ? car.body : null, ...(idleIn === undefined ? {} : { idleIn }) })
   }
 
   private broadcastRoster() {
