@@ -1,6 +1,6 @@
 # Shared code
 
-What the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`, `brawl`, `lab`) still carry their own copy of,
+What the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`, `brawl`, `archers`, `lab`) still carry their own copy of,
 and what to do about it. What is already shared, and which game uses which `@arcade/kit` module, is the generated
 table in [architecture.md](architecture.md); check it before writing something a game might already have.
 
