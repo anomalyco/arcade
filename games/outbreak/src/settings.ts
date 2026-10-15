@@ -23,6 +23,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
+import { DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
@@ -135,6 +136,7 @@ export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
 export type OutbreakSubsystemMap = {
   lighting: OutbreakLightingSettings
   fog: FogOfWarSettings
+  unseen: UnseenSettings
   ai: AIConfig
   stamina: StaminaTuning
   flashlight: OutbreakFlashlightSettings
@@ -166,6 +168,7 @@ export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
 export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakLightingSettings &
   FogOfWarSettings &
+  UnseenSettings &
   Omit<AIConfig, "walkSpeed"> &
   StaminaTuning &
   OutbreakFlashlightSettings &
@@ -189,6 +192,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
   "fog",
+  "unseen",
   "ai",
   "stamina",
   "flashlight",
@@ -217,6 +221,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
       ...OUTBREAK_LOOK_LIGHTING_PRESETS.noir,
     },
     fog: { ...DEFAULT_FOG_OF_WAR },
+    unseen: { ...DEFAULT_UNSEEN_SETTINGS },
     ai: { ...DEFAULT_AI_CONFIG },
     stamina: { ...DEFAULT_STAMINA_TUNING },
     flashlight: { ...DEFAULT_OUTBREAK_FLASHLIGHT },

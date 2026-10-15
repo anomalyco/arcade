@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import type { Renderer } from "@arcade/kit/gpu/renderer"
+import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import {
   applyLookPreset,
@@ -12,6 +12,7 @@ import type { AIState } from "../shared/ai"
 import { MELEE_WEAPONS, type MeleeWeaponId } from "../shared/combat"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
+import { sightRects } from "../shared/map"
 import type { Command, LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
@@ -34,6 +35,7 @@ import {
   type OutbreakSettings,
 } from "./settings"
 import type { Survivor } from "./survivor"
+import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
 import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import {
@@ -48,6 +50,7 @@ export interface OutbreakHarnessHost {
   readonly adapter: GPUAdapter
   readonly device: GPUDevice
   readonly renderer: Renderer
+  readonly render: FrameInput
   readonly session: () => LocalSession | NetSession
   readonly vision: () => Vision
   readonly avatar: () => Survivor
@@ -88,6 +91,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     adapter,
     device,
     renderer,
+    render,
     cam,
     settings,
     lookSettings,
@@ -110,6 +114,36 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
+    renderer,
+    render,
+    measureCpuMask(iterations = 200) {
+      const session = host.session()
+      const vision = host.vision()
+      const p = session.view.player
+      const blockers = sightRects(session.view.town)
+      const dc = dayCycle(session.view.hour)
+      const t0 = performance.now()
+      for (let i = 0; i < iterations; i++) {
+        const angle = p.aim + (i % 16) * 0.02
+        vision.update(
+          p.x,
+          p.y,
+          angle,
+          blockers,
+          settings.vision,
+          null,
+          {
+            active: p.flashlightOutput > 0.01,
+            range: settings.flashlight.flashlightRange,
+            cone: settings.flashlight.flashlightCone,
+            aim: angle,
+          },
+        )
+        evaluateUnseenFrame(settings.unseen, dc.darkness, p.health, p.maxHealth)
+      }
+      const elapsed = performance.now() - t0
+      return Number((elapsed / Math.max(1, iterations)).toFixed(4))
+    },
     human: () => {
       const avatar = host.avatar()
       return {
@@ -165,6 +199,10 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           color: flashlightColor(settings.flashlight.flashlightWarmth),
         },
         explored: vision.exploredCount,
+        unseen: {
+          ...settings.unseen,
+          ...evaluateUnseenFrame(settings.unseen, dc.darkness, session.view.player.health, session.view.player.maxHealth),
+        },
         vertices: host.getVertices(),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },

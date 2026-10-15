@@ -14,6 +14,7 @@ import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
+import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
 import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
 
 export const outbreakPostFinish: PostFinishOptions = {
@@ -29,6 +30,8 @@ export const outbreakPostFinish: PostFinishOptions = {
   shadowTint: [1.06, 0.97, 0.82],
   highlightTint: [1.14, 0.96, 0.72],
   huePreserve: 0.52,
+  customDeclarations: outbreakUnseenPostWgsl,
+  customPostHook: outbreakUnseenPostHookWgsl,
 }
 
 export const outbreakSceneHooks: SceneHooks = {
@@ -165,6 +168,7 @@ ${interiorDeclarationsWgsl(outbreakInteriorRefs)}`,
 function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string {
   return /* wgsl */ `
   outbreakFlashMask = 0.0;
+  outbreakUnseenAlpha = 0.0;
   let nightLamps = clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0);
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
@@ -180,6 +184,12 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let extRoofScale = select(1.0, 0.46, OL.u5.w > 0.5);
     let roofGlint = (0.58 * eave + 0.36 * courseStep + 0.95 * ridgeRim + 2.15 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y);
     col = (col * mix(1.08, 1.66, eave) + roofTint * roofGlint) * extRoofScale;
+    if (OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001) {
+      let rSight = fieldSight3(o.world, n);
+      let rExp = max(textureSampleLevel(exploredTex, floorSamp, (o.world.xz - OL.win.xy) * F.map.xy, 0.0).r, rSight.y);
+      col = applyOutbreakUnseenScene(col, col * 0.55, o.world, n, o.color, false, mat, rSight.x, rExp, rSight.z);
+      outbreakFlashMask = -outbreakUnseenAlpha;
+    }
   } else {
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let w = clamp(OL.u0.z, 0.0, 1.0);
@@ -276,9 +286,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let rimCol = mix(vec3f(0.072, 0.088, 0.112), vec3f(0.065, 0.052, 0.038), w);
       let darkReadFloor = o.color * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
       col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
+      col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen;
-    outbreakFlashMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2) * outbreakSeen;
+    let baseFlashMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2) * outbreakSeen;
+    outbreakFlashMask = select(baseFlashMask, baseFlashMask - outbreakUnseenAlpha, outbreakUnseenAlpha > 0.0);
   }
   if (mat == 6) { outbreakFlashMask = 0.55; }
   ${includeLampAirAndActorShadow ? "if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }" : ""}

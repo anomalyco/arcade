@@ -22,6 +22,7 @@ import type { NetSession } from "./net-session"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
+import { unseenControls } from "./unseen"
 import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
 import {
   applyOutbreakWeatherPreset,
@@ -331,6 +332,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
     ...fogOfWarControls,
+    ...unseenControls,
     {
       key: "lookPreset",
       label: "Style preset",
