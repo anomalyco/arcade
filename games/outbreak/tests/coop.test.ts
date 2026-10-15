@@ -559,4 +559,57 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
     const mean2 = secondHalfCorr.reduce((a, b) => a + b, 0) / secondHalfCorr.length
     expect(mean2).toBeLessThanOrEqual(mean1 + 0.02)
   })
+
+  test("decodeShared reuses pooled ZombieState pages across the 72-snapshot ring without mutating active snapshots", () => {
+    const sim = new CoopSim(7, 17, 0.25, { zombieCount: 16 })
+    const slot = sim.addSurvivor("p0", 0)
+    const serverHist = new AckHistory<SharedSnapshot>(32)
+    const clientHist = new AckHistory<SharedSnapshot>(32)
+    const shooters = new Map<number, number>()
+    let prevBubbleSnap: SharedSnapshot | undefined
+
+    let page0ListRef: SharedSnapshot["zombies"] | undefined
+    let page0FirstZombieRef: SharedSnapshot["zombies"][number] | undefined
+    let page0FirstZombieX = 0
+    let page1FirstZombieRef: SharedSnapshot["zombies"][number] | undefined
+    let page1FirstZombieX = 0
+
+    for (let s = 1; s <= 73; s++) {
+      const tick = s * 3
+      sim.stepSurvivor(slot, { mx: Math.cos(s * 0.2), my: Math.sin(s * 0.2), aim: s * 0.1, interact: false }, TICK_DT)
+      sim.stepWorld(TICK_DT, 120)
+      const baseTick = s > 1 ? (s - 1) * 3 : 0
+      const out: { snap?: SharedSnapshot } = {}
+      const bytes = encodeShared(sim, tick, shooters, undefined, {
+        viewerCenter: { cx: 1, cy: 1 },
+        baseSnap: baseTick > 0 ? serverHist.get(baseTick) : undefined,
+        prevBubbleSnap,
+        snapIndex: s,
+        outSnapshot: out,
+      })
+      prevBubbleSnap = out.snap
+      serverHist.record(tick, out.snap!)
+      const decoded = decodeShared(bytes, 7, clientHist)
+      clientHist.record(tick, decoded)
+      expect(decoded.zombies).toEqual(out.snap!.zombies)
+
+      if (s === 1) {
+        page0ListRef = decoded.zombies
+        page0FirstZombieRef = decoded.zombies[0]
+        page0FirstZombieX = decoded.zombies[0]!.x
+      } else if (s === 2) {
+        page1FirstZombieRef = decoded.zombies[0]
+        page1FirstZombieX = decoded.zombies[0]!.x
+        // Page 1 must not alias or mutate Page 0 while Page 0 is still in the active history window
+        expect(page1FirstZombieRef).not.toBe(page0FirstZombieRef)
+        expect(page0FirstZombieRef!.x).toBe(page0FirstZombieX)
+      } else if (s === 73) {
+        // After 72 snapshots, page 0 (long evicted from 32-entry AckHistory & SnapshotBuffer) is reused in place
+        expect(decoded.zombies).toBe(page0ListRef!)
+        expect(decoded.zombies[0]).toBe(page0FirstZombieRef!)
+        // Page 1 has not yet wrapped around on snapshot 73
+        expect(page1FirstZombieRef!.x).toBe(page1FirstZombieX)
+      }
+    }
+  })
 })
