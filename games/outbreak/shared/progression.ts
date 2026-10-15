@@ -71,7 +71,7 @@ export const ITEMS: readonly ItemDef[] = [
         meleeKnockback: { add: w.knockback },
         meleeDurability: { add: w.durability },
         meleeNoise: { add: w.noise },
-        shoveDamage: { add: w.damage - 15 },
+        shoveDamage: { add: 5 },
         shoveStagger: { mul: w.knockback },
         shoveRange: { add: Number((w.reach - 1.75).toFixed(2)) },
       },
@@ -1096,6 +1096,7 @@ export class OutbreakProgression {
     if (res.ok) {
       const gained = this.diffCarried(before, this.carried(slot.id))
       if (gained) this.notify(slot, gained, "result", `take:${storeId}`)
+      this.project(slot)
     }
     this.feedback(slot, res.events)
     return res.ok
@@ -1132,6 +1133,7 @@ export class OutbreakProgression {
       const hotbar = this.hotbar(slot.id)!
       const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: pick.index }, b: { store: hotbar.id, slot: hotbar.selected } })
       if (!res.ok) this.notify(slot, res.reason === "full" ? "That goes in the pack, not your hands" : "Empty pack slot", "info", "pack")
+      else this.project(slot)
       return
     }
     if (pick.mode === "craft") {

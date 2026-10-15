@@ -38,6 +38,7 @@ import { createSurvivor, type CoopSim } from "./coop-sim"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
+import { VEHICLE_KINDS, type VehicleKind } from "./vehicles"
 import type { ChunkCoord } from "./world"
 
 /** Co-op wire protocol. Text frames are JSON control messages; binary frames are snapshots and compact inputs. */
@@ -109,7 +110,7 @@ export function encodeClientIn(
           packAngle(next[2] ?? 0) === aim &&
           ((next[3] ?? 0) & FLAG_MAX) === flags,
       )
-    w.i16(mx).i16(my).u16(aim).u16(flags | (hasExtra ? 0x8000 : 0) | (repeatNext ? 0x4000 : 0))
+    w.i16(mx).i16(repeatNext ? my + (my >= 0 ? 10000 : -10000) : my).u16(aim).u16(flags | (hasExtra ? 0x8000 : 0))
     if (hasExtra) {
       w.u8(((t[4] ?? -1) + 1) & 0xff)
       w.u8(((t[5] ?? 0) + 128) & 0xff)
@@ -149,7 +150,9 @@ function decodeBinaryIn(bytes: Uint8Array): ClientMsg | null {
     while (c.length < count) {
       if (r.remaining < 8) return null
       const mx = r.i16() / 1000
-      const my = r.i16() / 1000
+      const rawMy = r.i16()
+      const repeatNext = Math.abs(rawMy) > 5000
+      const my = (repeatNext ? rawMy - (rawMy >= 0 ? 10000 : -10000) : rawMy) / 1000
       const aim = unpackAngle(r.u16())
       const rawFlags = r.u16()
       const flags = rawFlags & FLAG_MAX
@@ -166,7 +169,7 @@ function decodeBinaryIn(bytes: Uint8Array): ClientMsg | null {
         tuple = [mx, my, aim, flags]
       }
       c.push(tuple)
-      if ((rawFlags & 0x4000) && c.length < count) {
+      if (repeatNext && c.length < count) {
         c.push([...tuple] as CommandTuple)
       }
     }
@@ -248,9 +251,11 @@ const FLAG = {
   drop: 512,
   bundle: 1024,
   ping: 2048,
-  fireHeld: 4096,
+  seat: 4096,
+  horn: 8192,
+  fireHeld: 16384,
 } as const
-const FLAG_MAX = 8191
+const FLAG_MAX = 32767
 const ACTIONS: readonly (InteractActionId | undefined)[] = [
   undefined,
   "toggle",
@@ -265,6 +270,7 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "store",
   "unlock",
   "pry",
+  "enter",
 ]
 const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
 
@@ -301,7 +307,7 @@ export function unpackCommand(t: unknown): Command {
   return c
 }
 
-const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade", "drop", "bundle", "ping"] as const
+const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade", "drop", "bundle", "ping", "seat"] as const
 
 /** Jitter-buffer semantics: movement is held, presses are one-shot edges. */
 export const commandOps: InputOps<Command> = {
@@ -322,6 +328,7 @@ export const commandOps: InputOps<Command> = {
       sprint: last.sprint,
       interactHeld: last.interactHeld,
       fireHeld: last.fireHeld,
+      ...(last.horn ? { horn: true } : {}),
       interact: false,
     }
   },
@@ -394,6 +401,30 @@ export type ZombieState = {
   clamber: number
 }
 
+export type VehicleState = {
+  id: number
+  kind: VehicleKind
+  x: number
+  y: number
+  h: number
+  vx: number
+  vy: number
+  w: number
+  hp: number
+  fuel: number
+  hasBattery: boolean
+  hasKeys: boolean
+  headlights: boolean
+  engineOn: boolean
+  horn: boolean
+  wreck: boolean
+  handbrake: boolean
+  throttle: number
+  steer: number
+  /** Survivor seat index (0..3) per vehicle seat, or -1 when empty. */
+  seats: number[]
+}
+
 export type SharedSnapshot = {
   tick: number
   time: number
@@ -401,6 +432,7 @@ export type SharedSnapshot = {
   revision: number
   survivors: RemoteSurvivor[]
   zombies: ZombieState[]
+  vehicles?: VehicleState[]
   doors: { open: boolean; locked: boolean }[]
   windows: { open: boolean; openable: boolean }[]
   planks: number[]
@@ -458,11 +490,131 @@ const SEC_LURES = 4
 const SEC_BASHES = 8
 const SEC_SHOTS = 16
 const SEC_DELTA = 32
-const SEC_MELEE = 64
+const SEC_VEHICLES = 64
+const SEC_MELEE = 128
 const V2_MAGIC_BIT = 0x80000000
 
 const timerCapFor = (state: AIState) => (state === "knockdown" ? 1.85 : 0.75)
 
+function sameVehicleState(a: VehicleState, b: VehicleState): boolean {
+  return (
+    a.id === b.id &&
+    a.kind === b.kind &&
+    cm(a.x) === cm(b.x) &&
+    cm(a.y) === cm(b.y) &&
+    packAngle(a.h) === packAngle(b.h) &&
+    Math.round(a.vx * 100) === Math.round(b.vx * 100) &&
+    Math.round(a.vy * 100) === Math.round(b.vy * 100) &&
+    Math.round(a.w * 100) === Math.round(b.w * 100) &&
+    a.hp === b.hp &&
+    a.fuel === b.fuel &&
+    a.hasBattery === b.hasBattery &&
+    a.hasKeys === b.hasKeys &&
+    a.headlights === b.headlights &&
+    a.engineOn === b.engineOn &&
+    a.horn === b.horn &&
+    a.wreck === b.wreck &&
+    a.handbrake === b.handbrake &&
+    Math.round(a.throttle * 7) === Math.round(b.throttle * 7) &&
+    Math.round(a.steer * 7) === Math.round(b.steer * 7) &&
+    a.seats.length === b.seats.length &&
+    a.seats.every((s, i) => s === b.seats[i])
+  )
+}
+
+function writeVehicleState(w: ByteWriter, v: VehicleState): void {
+  const kindIdx = Math.max(0, VEHICLE_KINDS.indexOf(v.kind))
+  const vFlags =
+    (v.hasBattery ? 1 : 0) |
+    (v.hasKeys ? 2 : 0) |
+    (v.headlights ? 4 : 0) |
+    (v.engineOn ? 8 : 0) |
+    (v.horn ? 16 : 0) |
+    (v.wreck ? 32 : 0) |
+    (v.handbrake ? 64 : 0)
+  const vxI = Math.round(clamp(v.vx, -320, 320) * 100)
+  const vyI = Math.round(clamp(v.vy, -320, 320) * 100)
+  const wI = Math.round(clamp(v.w, -30, 30) * 100)
+  const thrQ = Math.round(clamp(v.throttle, -1, 1) * 7)
+  const strQ = Math.round(clamp(v.steer, -1, 1) * 7)
+  const moving = vxI !== 0 || vyI !== 0 || wI !== 0 || thrQ !== 0 || strQ !== 0
+  const occupied = v.seats.some((s) => s >= 0)
+  w.u16(v.id)
+  w.u8((kindIdx & 7) | (moving ? 8 : 0) | (occupied ? 16 : 0))
+  w.u8(vFlags)
+  w.i32(cm(v.x)).i32(cm(v.y)).u16(packAngle(v.h))
+  w.u16(Math.round(clamp(v.hp, 0, 65535))).u8(Math.round(clamp(v.fuel, 0, 255)))
+  if (moving) {
+    w.i16(vxI).i16(vyI).i16(wI)
+    w.u8(packNibblePair(thrQ, strQ))
+  }
+  if (occupied) {
+    let packedSeats = 0
+    for (let i = 0; i < 4; i++) {
+      const s = v.seats[i] ?? -1
+      const nib = s >= 0 && s <= 7 ? s : 0x0f
+      packedSeats |= nib << (i * 4)
+    }
+    w.u16(packedSeats)
+  }
+}
+
+function readVehicleState(r: ByteReader): VehicleState {
+  const id = r.u16()
+  const hdr = r.u8()
+  const kind = VEHICLE_KINDS[hdr & 7] ?? "sedan"
+  const moving = Boolean(hdr & 8)
+  const occupied = Boolean(hdr & 16)
+  const vFlags = r.u8()
+  const x = r.i32() / 100
+  const y = r.i32() / 100
+  const h = unpackAngle(r.u16())
+  const hp = r.u16()
+  const fuel = r.u8()
+  let vx = 0
+  let vy = 0
+  let w = 0
+  let throttle = 0
+  let steer = 0
+  if (moving) {
+    vx = r.i16() / 100
+    vy = r.i16() / 100
+    w = r.i16() / 100
+    const [thrQ, strQ] = unpackNibblePair(r.u8())
+    throttle = thrQ / 7
+    steer = strQ / 7
+  }
+  const seats = [-1, -1, -1, -1]
+  if (occupied) {
+    const packedSeats = r.u16()
+    for (let i = 0; i < 4; i++) {
+      const nib = (packedSeats >>> (i * 4)) & 0x0f
+      seats[i] = nib === 0x0f ? -1 : nib
+    }
+  }
+  return {
+    id,
+    kind,
+    x,
+    y,
+    h,
+    vx,
+    vy,
+    w,
+    hp,
+    fuel,
+    hasBattery: Boolean(vFlags & 1),
+    hasKeys: Boolean(vFlags & 2),
+    headlights: Boolean(vFlags & 4),
+    engineOn: Boolean(vFlags & 8),
+    horn: Boolean(vFlags & 16),
+    wreck: Boolean(vFlags & 32),
+    handbrake: Boolean(vFlags & 64),
+    throttle,
+    steer,
+    seats,
+  }
+}
 function defaultZombieSeed(id: number, townSeed: number): number {
   return (townSeed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0
 }
@@ -737,6 +889,43 @@ export function encodeShared(
     ? [...(baseSnap.meleeSwings ?? []).filter((m) => sim.time - m.time <= 0.6), ...newMelee]
     : newMelee
 
+  // 4. Vehicles in the recipient's interest bubble
+  const slotIndexById = new Map(sim.slots.map((s) => [s.id, s.index]))
+  const emittedVehicles: VehicleState[] = []
+  for (const v of sim.vehicles.list) {
+    if (viewerCenter && !inInterestBubble(v.x, v.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent + 16)) continue
+    const thrQ = Math.round(clamp(v.drive.throttle, -1, 1) * 7)
+    const strQ = Math.round(clamp(v.drive.steer, -1, 1) * 7)
+    emittedVehicles.push({
+      id: v.id,
+      kind: v.kind,
+      x: cm(v.x) / 100,
+      y: cm(v.y) / 100,
+      h: unpackAngle(packAngle(v.h)),
+      vx: Math.round(clamp(v.vx, -320, 320) * 100) / 100,
+      vy: Math.round(clamp(v.vy, -320, 320) * 100) / 100,
+      w: Math.round(clamp(v.w, -30, 30) * 100) / 100,
+      hp: Math.round(clamp(v.hp, 0, 65535)),
+      fuel: Math.round(clamp(v.fuel, 0, 255)),
+      hasBattery: v.hasBattery,
+      hasKeys: v.hasKeys,
+      headlights: v.headlights,
+      engineOn: v.engineOn,
+      horn: v.horn,
+      wreck: v.wreck,
+      handbrake: v.drive.handbrake,
+      throttle: thrQ / 7,
+      steer: strQ / 7,
+      seats: v.seats.map((sid) => (sid ? (slotIndexById.get(sid) ?? -1) : -1)),
+    })
+  }
+  const baseVehicles = baseSnap?.vehicles ?? []
+  const hasVehicles =
+    !isDelta
+      ? emittedVehicles.length > 0
+      : emittedVehicles.length !== baseVehicles.length ||
+        emittedVehicles.some((v, i) => !sameVehicleState(v, baseVehicles[i]!))
+
   const sectionFlags =
     (hasPortals ? SEC_PORTALS : 0) |
     (pings.length > 0 ? SEC_PINGS : 0) |
@@ -744,6 +933,7 @@ export function encodeShared(
     (bashes.length > 0 ? SEC_BASHES : 0) |
     (newShots.length > 0 ? SEC_SHOTS : 0) |
     (isDelta ? SEC_DELTA : 0) |
+    (hasVehicles ? SEC_VEHICLES : 0) |
     (newMelee.length > 0 ? SEC_MELEE : 0)
 
   const hourQuant = Math.round((((sim.hour % 24) + 24) % 24) * 2000) & 0xffff
@@ -757,6 +947,7 @@ export function encodeShared(
       revision: sim.revision & 0xffff,
       survivors,
       zombies: emittedZombies,
+      vehicles: emittedVehicles,
       doors,
       windows,
       planks,
@@ -984,6 +1175,10 @@ export function encodeShared(
         w.u32(h.seed)
       }
     }
+  }
+  if (sectionFlags & SEC_VEHICLES) {
+    w.u8(emittedVehicles.length)
+    for (const v of emittedVehicles) writeVehicleState(w, v)
   }
 
   return w.finish()
@@ -1253,6 +1448,13 @@ export function decodeShared(
     ? [...(baseSnap.meleeSwings ?? []).filter((m) => time - m.time <= 0.6), ...newMelee]
     : newMelee
 
+  let vehicles: VehicleState[]
+  if (sectionFlags & SEC_VEHICLES) {
+    vehicles = []
+    for (let n = r.u8(), i = 0; i < n; i++) vehicles.push(readVehicleState(r))
+  } else {
+    vehicles = baseSnap?.vehicles ?? []
+  }
   const snap: SharedSnapshot = {
     tick,
     time,
@@ -1260,6 +1462,7 @@ export function decodeShared(
     revision,
     survivors,
     zombies,
+    vehicles,
     doors,
     windows,
     planks,
@@ -1286,7 +1489,8 @@ const P_LOOT_MSG = 32
 const P_CAPS = 64
 const P_LEDGER = 128
 const P_NOTICES = 256
-const P_MELEE = 512
+const P_VEHICLE = 512
+const P_MELEE = 1024
 
 /** The private part for one player: packed binary survivor state, ledger delta, and notices. */
 export function encodePersonal(
@@ -1336,6 +1540,7 @@ export function encodePersonal(
   const hasCaps = (survivor.maxHealth ?? 100) !== 100 || (survivor.magCapacity ?? 8) !== 8
   const hasLedger = Boolean(ledger)
   const hasNotices = notices.length > 0
+  const hasVehicle = Boolean(survivor.vehicleId)
   const hasMelee =
     Boolean(survivor.meleeWeapon) ||
     (survivor.meleePhase !== undefined && survivor.meleePhase !== "idle") ||
@@ -1351,6 +1556,7 @@ export function encodePersonal(
     (hasCaps ? P_CAPS : 0) |
     (hasLedger ? P_LEDGER : 0) |
     (hasNotices ? P_NOTICES : 0) |
+    (hasVehicle ? P_VEHICLE : 0) |
     (hasMelee ? P_MELEE : 0)
   w.u16(mask)
 
@@ -1392,6 +1598,7 @@ export function encodePersonal(
   }
   if (hasLedger) w.str(JSON.stringify(ledger))
   if (hasNotices) w.str(JSON.stringify(notices))
+  if (hasVehicle) w.u16(survivor.vehicleId ?? 0).u8(survivor.seatIndex ?? 0)
   if (hasMelee) {
     const wpnIdx = survivor.meleeWeapon ? MELEE_WEAPON_IDS.indexOf(survivor.meleeWeapon) + 1 : 0
     const phaseIdx = Math.max(0, MELEE_PHASES.indexOf(survivor.meleePhase ?? "idle"))
@@ -1485,6 +1692,8 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     channel: null,
     lootMessage: null,
     lootMessageUntil: -Infinity,
+    vehicleId: null,
+    seatIndex: 0,
   }
 
   if (mask & P_TIMERS) {
@@ -1524,6 +1733,11 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
   }
   const ledger = mask & P_LEDGER ? (JSON.parse(r.str()) as LedgerDelta) : null
   const notices = mask & P_NOTICES ? (JSON.parse(r.str()) as Notice[]) : []
+  if (mask & P_VEHICLE) {
+    const vid = r.u16()
+    survivor.vehicleId = vid > 0 ? vid : null
+    survivor.seatIndex = r.u8()
+  }
   if (mask & P_MELEE) {
     const wpnIdx = r.u8()
     const wpn = wpnIdx > 0 ? (MELEE_WEAPON_IDS[wpnIdx - 1] ?? null) : null

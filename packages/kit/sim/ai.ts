@@ -1234,6 +1234,20 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
     if (a.state === "dead") {
+      a.stateTime += dt
+      if (a.stateTime < 0.35 && (Math.abs(a.staggerVx) > 0.05 || Math.abs(a.staggerVy) > 0.05)) {
+        a.x += a.staggerVx * dt
+        a.y += a.staggerVy * dt
+        const damp = Math.exp(-dt * 8)
+        a.staggerVx *= damp
+        a.staggerVy *= damp
+        pushOut(a, 0.28, solids)
+        a.x = clamp(a.x, minX, maxX)
+        a.y = clamp(a.y, minY, maxY)
+      } else {
+        a.staggerVx = 0
+        a.staggerVy = 0
+      }
       a.vx = 0
       a.vy = 0
       a.hitFlash = Math.max(0, a.hitFlash - dt * 4)

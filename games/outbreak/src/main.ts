@@ -51,6 +51,9 @@ import { OutbreakHud } from "./hud"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
 import { type ProgressionLabHost } from "./progression-lab"
+import { type VehicleLabHost } from "./vehicle-lab"
+import { OutbreakVehicleAudio } from "./vehicle-audio"
+import { OutbreakVehicleRenderer } from "./vehicles"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import { OutbreakWeatherController } from "./weather"
@@ -250,6 +253,15 @@ async function main() {
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
+  const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
+  const vehicleAudio = new OutbreakVehicleAudio(audio)
+  vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
+  vehicleRenderer.onCrash = (_v, impact) => {
+    cam.impact(impact)
+  }
+  vehicleRenderer.onBang = () => {
+    cam.bump(0.32)
+  }
   const updateProfile = () => {
     avatar.profile =
       settings.zombies.humanProfile === 1
@@ -268,6 +280,16 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
+  const vehicleHost: VehicleLabHost = {
+    sim: () => session.sim,
+    view: () => session.view,
+    pose: (x, y, aim) => harness.pose(x, y, aim),
+    setHour: (hour) => {
+      settings.dayCycle.hour = hour
+      session.view.hour = wrapHour(hour)
+    },
+    offline: () => !coop.net,
+  }
   const labControlHost: OutbreakLabControlHost = {
     session: () => session,
     settings,
@@ -277,6 +299,7 @@ async function main() {
     combatFx,
     weatherController,
     progressionHost,
+    vehicleHost,
     hud,
     updateProfile,
     regenerate: () => regenerate(),
@@ -378,6 +401,9 @@ async function main() {
     const fireEdge = input.takeFirePress()
     const reloadEdge = input.takeReload()
     const meleeEdge = input.takeMelee()
+    const seatEdge = input.takeSeat()
+    const hornHeld = input.held("KeyH")
+    const spaceHeld = Boolean(session.view.player.vehicleId) && input.held("Space")
     const barricadeEdge = pendingBarricade
     pollHolds(wallNow)
     const verbs = pendingVerbs
@@ -393,7 +419,7 @@ async function main() {
         {
           mx: step.mx,
           my: step.my,
-          sprint: step.sprint,
+          sprint: step.sprint || spaceHeld,
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
           flashlight: step.flashlight,
@@ -404,6 +430,8 @@ async function main() {
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
+          ...(idx === 0 && seatEdge ? { seat: true } : {}),
+          ...(hornHeld ? { horn: true } : {}),
           ...(idx === 0 ? verbs : {}),
           ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
           ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
@@ -487,6 +515,7 @@ async function main() {
     coop,
     lab,
     progressionHost,
+    vehicleHost,
     weatherController,
     harness: () => harness,
     resetPeek: () => {
@@ -571,6 +600,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    vehicleRenderer.reset()
   }
   function reset(nextSeed = seed) {
     if (session !== coop.net) session.close()
@@ -585,6 +615,7 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    vehicleRenderer.reset()
     feelTracker.reset(session.view.player)
     ambientMotion.reset()
     hud.reset()
@@ -698,11 +729,18 @@ async function main() {
       canvas.height = Math.round(h * dpr)
       renderer.resize(canvas.width, canvas.height)
     }
-    cam.zoomOffset = settings.view.zoom - 24
+    const localVehicle = session.sim.vehicles.vehicleOf(p)
+    const vehSpeed = localVehicle ? Math.hypot(localVehicle.vx, localVehicle.vy) : 0
+    const speedPullback = localVehicle
+      ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
+      : 0
+    cam.zoomOffset = settings.view.zoom - 24 + speedPullback
     const drawn = coop.pose(p)
     const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
-    cam.follow(camX, camY, 0, 0, dt, false)
+    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
+    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
+    cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.update(w / h)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
@@ -718,10 +756,11 @@ async function main() {
           town.terrain,
           town.foliageDensity ?? 1,
           mode,
+          vehSpeed,
         )
         worldStreamer.stepBakeQueue(1.8)
       } else {
-        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
+        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode, vehSpeed)
         currentWindowOrigin = streamed.origin
         currentIsStreamWindow = true
         if (streamed.changed && streamed.level) {
@@ -756,7 +795,17 @@ async function main() {
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings.vision, peek)
+    const drivingHeadlights =
+      Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
+    const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const effectiveVisionSettings = drivingHeadlights
+      ? {
+          ...settings.vision,
+          range: Math.max(settings.vision.range, settings.vehicle.headlightRange + 4),
+          cone: Math.max(settings.vision.cone, 130),
+        }
+      : settings.vision
+    const visChanged = vision.update(p.x, p.y, effectiveVisionAim, blockers, effectiveVisionSettings, peek)
     if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
@@ -795,18 +844,18 @@ async function main() {
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
     const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
-    const sightAim = peek ? peek.aim : p.aim
+    const sightAim = peek ? peek.aim : effectiveVisionAim
     const sightCone = activePeek
-      ? settings.vision.cone + (Math.max(settings.vision.cone, activePeek.cone) - settings.vision.cone) * peekBlend
-      : settings.vision.cone
+      ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
+      : effectiveVisionSettings.cone
     const sightAwareness = activePeek
-      ? settings.vision.awareness + (Math.max(settings.vision.awareness, activePeek.awareness) - settings.vision.awareness) * peekBlend
-      : settings.vision.awareness
+      ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
+      : effectiveVisionSettings.awareness
     lights.set([
       sightX,
       1.65 + supportHeight(town, p.x, p.y),
       sightY,
-      settings.vision.range,
+      effectiveVisionSettings.range,
       0,
       0,
       0,
@@ -824,7 +873,14 @@ async function main() {
     let flashlightSlot = -1
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift, settings.survivor)
+    const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
+    const survivorBatches = avatar.draw(
+      localVehicle ? { ...drawn, vx: 0, vy: 0 } : drawn,
+      vdt,
+      time,
+      (x, z) => supportHeight(town, x, z) + lift - riderSink,
+      settings.survivor,
+    )
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     let flashlightHeight = 1.34 + playerGroundY
     let flashlightAirLimit = 0
@@ -833,33 +889,48 @@ async function main() {
     let flashlightPitch: number | undefined
     let flashlightBounceHeight = playerGroundY + 0.3
     const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
-    if (p.flashlightOutput > 0.001 && settings.flashlight.flashlightIntensity > 0.001) {
-      // Lens and direction from the posed rig; the shadow pass uses the same origin as the shading.
-      const beam = beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
+    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
+    const beamIntensity = drivingHeadlights
+      ? settings.vehicle.headlightPower * 0.85
+      : settings.flashlight.flashlightIntensity
+    if (beamOutput > 0.001 && beamIntensity > 0.001) {
+      // Lens and direction from the posed rig on foot, or the vehicle front fascia when driving with headlights on.
+      const beam =
+        drivingHeadlights && localVehicle
+          ? {
+              x: localVehicle.x + Math.cos(beamAim) * (localVehicle.spec.length * 0.48),
+              y: localVehicle.y + Math.sin(beamAim) * (localVehicle.spec.length * 0.48),
+              h: 0.72 + playerGroundY,
+              yaw: beamAim,
+              pitch: -0.18,
+            }
+          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
       const fx = beam.x
       const fy = beam.y
       const fh = beam.h
       const dx = Math.cos(beam.yaw)
       const dy = Math.sin(beam.yaw)
-      const cosHalf = Math.cos((settings.flashlight.flashlightCone * Math.PI) / 360)
+      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
       // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
-      const power = p.flashlightOutput * settings.flashlight.flashlightIntensity
+      const power = beamOutput * beamIntensity
       flashlightSlot = count
       flashlightHeight = fh
       flashlightOrigin[0] = fx
       flashlightOrigin[1] = fy
       flashlightYaw = beam.yaw
       flashlightPitch = beam.pitch
-      const wall = raycast(fx, fy, dx, dy, blockers, settings.flashlight.flashlightRange)
+      const wall = raycast(fx, fy, dx, dy, blockers, beamRange)
       const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
-      const hit = Math.min(wall, reach, settings.flashlight.flashlightRange)
+      const hit = Math.min(wall, reach, beamRange)
       flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
       flashlightBounce[1] = fy + dy * Math.max(0.3, hit - 0.15)
       flashlightAirLimit = wall
-      beamReach = Math.min(settings.flashlight.flashlightRange, wall + 1.5, 13)
+      beamReach = Math.min(beamRange, wall + 1.5, 13)
       flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
       lights.set(
-        [fx, fh, fy, settings.flashlight.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
+        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -930,11 +1001,33 @@ async function main() {
         unshadowedLamps.push(packed)
       }
     }
-    const shadowLightCount = count
+    let shadowLightCount = count
     for (const packed of unshadowedLamps) {
       if (count >= MAX_LIGHTS) break
       lights.set(packed, count++ * LIGHT_FLOATS)
     }
+    const vehOut = vehicleRenderer.collect(
+      vdt,
+      time,
+      town,
+      session.view.vehicles,
+      p.vehicleId,
+      view,
+      cam.eye,
+      lights,
+      count,
+      shadowLightCount,
+      frameLightOccluders,
+      alphaSprites,
+      0,
+      addSprites,
+      addCount,
+      settings.vehicle,
+    )
+    count = vehOut.lights.lightCount
+    shadowLightCount = vehOut.lights.shadowLightCount
+    addCount = vehOut.lights.addCount
+    const vehAlphaStart = vehOut.lights.alphaCount
     const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
     const weatherOut = weatherController.stepAndPrepare({
       dt,
@@ -973,8 +1066,8 @@ async function main() {
         playerX: p.x,
         playerY: p.y,
         playerH: playerGroundY,
-        playerAim: p.aim,
-        flashlightOutput: p.flashlightOutput,
+        playerAim: beamAim,
+        flashlightOutput: beamOutput,
         flashlightSlot,
         flashlightHeight,
         flashlightBounce,
@@ -1060,7 +1153,7 @@ async function main() {
       w,
       h,
       alphaSprites,
-      0,
+      vehAlphaStart,
     )
     const fogSoundAlphaCount = collectFogSoundSprites(
       zombies,
@@ -1095,6 +1188,7 @@ async function main() {
     render.batches = [
       ...groundWearBatches,
       ...clutterBatches,
+      ...vehOut.batches,
       ...motionOut.batches,
       ...survivorBatches,
       ...coopBatches,
@@ -1152,6 +1246,8 @@ async function main() {
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
+    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
+    vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     inventoryHud.sync(session.view, cam, w, h)
@@ -1281,7 +1377,9 @@ async function main() {
     hud,
     coop,
     audio,
+    vehicleAudio,
     progressionHost,
+    vehicleHost,
     promptEl,
     getPeekBlend: () => peekBlend,
     resetPeek: () => {

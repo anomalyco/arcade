@@ -108,10 +108,11 @@ export function buildMeleeWeaponMeshes(): Record<MeleeWeaponId, Mesh> {
   pipe.box(0.54, -0.032, -0.032, 0.64, 0.032, 0.032, hex(0x4e565d), MAT.shiny)
 
   const crowbar = new Mesh()
-  crowbar.box(-0.06, -0.018, -0.018, 0.64, 0.018, 0.018, hex(0x8e2b27), MAT.actor)
-  crowbar.box(-0.08, -0.022, -0.012, -0.02, 0.022, 0.012, hex(0x68727a), MAT.shiny)
-  crowbar.box(0.6, -0.022, -0.022, 0.72, 0.055, 0.022, hex(0x6e7880), MAT.shiny)
-  crowbar.box(0.64, 0.055, -0.022, 0.71, 0.092, 0.022, hex(0x848e96), MAT.shiny)
+  crowbar.box(-0.06, -0.021, -0.021, 0.64, 0.021, 0.021, hex(0xb5322a), MAT.actor)
+  crowbar.box(0.02, -0.023, -0.023, 0.18, 0.023, 0.023, hex(0x2e3135), MAT.actor)
+  crowbar.box(-0.09, -0.025, -0.015, -0.02, 0.025, 0.015, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.58, -0.025, -0.026, 0.72, 0.062, 0.028, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.62, 0.055, -0.026, 0.71, 0.105, 0.036, hex(0x9ca8b2), MAT.shiny)
 
   const machete = new Mesh()
   machete.box(-0.05, -0.02, -0.016, 0.13, 0.02, 0.016, hex(0x3a2a1d), MAT.timber)
@@ -375,12 +376,14 @@ export class Survivor {
     const isZombie = Boolean(profile && profile.handPose === "reach")
     const isStaff = Boolean(profile && profile.handPose === "staff")
     const meleeId: MeleeWeaponId | null =
-      !isZombie && !isStaff && !p.channel
+      !isZombie && !isStaff && (!p.channel || p.channel.kind === "pry")
         ? isMeleeWeapon(p.meleeWeapon)
           ? p.meleeWeapon
           : isMeleeWeapon(p.equippedItem)
             ? p.equippedItem
-            : null
+            : p.channel?.kind === "pry"
+              ? "crowbar"
+              : null
         : null
     const isMelee = meleeId !== null
     const isPistol =

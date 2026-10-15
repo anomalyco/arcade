@@ -17,6 +17,7 @@ import type { NetSession } from "./net-session"
 import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
+import { stageVehicleScene, VEHICLE_SCENES, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import { applyOutbreakWeatherPreset, type OutbreakWeatherController } from "./weather"
 
 export interface OutbreakGameCommandsHost {
@@ -34,6 +35,7 @@ export interface OutbreakGameCommandsHost {
   readonly coop: CoopView
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly weatherController: OutbreakWeatherController
   readonly harness: () => OutbreakHarness
   readonly resetPeek: () => void
@@ -304,6 +306,21 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           host.draw(1 / 60)
           await device.queue.onSubmittedWorkDone()
           return res
+        },
+      },
+      {
+        id: "vehicle.stage",
+        label: "Stage a Vehicle Scene",
+        shortLabel: "Vehicle Scene",
+        category: "Scene",
+        undoable: false,
+        args: { scene: { type: "string", description: `Scene (${VEHICLE_SCENES.join(", ")})` } },
+        enabled: () => !coop.net,
+        run: (_ctx, args) => {
+          const scene = String(args?.scene ?? "driveway") as VehicleScene
+          if (!VEHICLE_SCENES.includes(scene)) throw new Error(`Unknown vehicle scene ${scene}`)
+          stageVehicleScene(host.vehicleHost, scene)
+          return { scene }
         },
       },
       {

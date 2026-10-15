@@ -60,11 +60,14 @@ describe("Melee weapons catalog & loot tables", () => {
       expect(item?.slot).toBe(2)
       expect(item?.charge?.max).toBe(def.durability)
       expect(item?.charge?.ammo).toBeUndefined()
-      expect(def.damage).toBeGreaterThanOrEqual(30)
+      expect(def.damage).toBeGreaterThanOrEqual(18)
       expect(def.reach).toBeGreaterThan(1.3)
       expect(def.arc).toBeGreaterThan(1.0)
       expect(def.noise).toBeLessThan(12)
     }
+    // Crowbar takes 4 light body hits (3-5 body hits, 2-3 headshots) to kill a 100 HP zombie, knocking back on every hit
+    expect(MELEE_WEAPONS.crowbar.damage).toBe(24)
+    expect(MELEE_WEAPONS.crowbar.knockback).toBeGreaterThan(1.5)
     // Granting a melee weapon places it in hotbar slot 2 with full durability
     expect(ledger.apply({ kind: "grant", actor: "player", item: "bat" }).ok).toBe(true)
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarSlot: 2 }, 0)
@@ -315,7 +318,7 @@ describe("Co-op melee attribution & friendly-fire off", () => {
     Object.assign(slotA.survivor, { x: 44, y: 44, aim: 0 })
     Object.assign(slotB.survivor, { x: 45.0, y: 44.1, aim: Math.PI, health: 100 })
     const z = core.sim.ai.spawnZombie(core.sim.town, 45.2, 43.9, "wander", Math.PI)
-    z.hp = 50
+    z.hp = 30
 
     for (let i = 0; i < 15; i++) {
       core.message(

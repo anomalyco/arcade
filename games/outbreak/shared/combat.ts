@@ -90,17 +90,17 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "KNIFE",
     weaponClass: "one-blade",
     material: "blade",
-    damage: 30,
+    damage: 18,
     reach: 1.38,
     arc: 1.08,
     speed: 2.55,
     stamina: 0.06,
-    knockback: 0.58,
+    knockback: 0.78,
     durability: 22,
     noise: 3.5,
     maxTargets: 1,
     comboLength: 3,
-    headMultiplier: 1.85,
+    headMultiplier: 1.7,
     doorDamage: 0,
     length: 0.42,
   },
@@ -110,17 +110,17 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "HAMMER",
     weaponClass: "one-blunt",
     material: "metal",
-    damage: 36,
+    damage: 21,
     reach: 1.5,
     arc: 1.2,
     speed: 2.05,
     stamina: 0.08,
-    knockback: 1.1,
+    knockback: 1.25,
     durability: 32,
     noise: 5.5,
     maxTargets: 2,
     comboLength: 3,
-    headMultiplier: 1.55,
+    headMultiplier: 1.6,
     doorDamage: 18,
     length: 0.46,
   },
@@ -130,17 +130,17 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "PIPE",
     weaponClass: "one-blunt",
     material: "metal",
-    damage: 40,
+    damage: 23,
     reach: 1.64,
     arc: 1.3,
     speed: 1.8,
     stamina: 0.1,
-    knockback: 1.3,
+    knockback: 1.45,
     durability: 36,
     noise: 6.5,
     maxTargets: 2,
     comboLength: 3,
-    headMultiplier: 1.55,
+    headMultiplier: 1.6,
     doorDamage: 20,
     length: 0.64,
   },
@@ -150,17 +150,17 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "PRY",
     weaponClass: "one-blunt",
     material: "metal",
-    damage: 44,
+    damage: 24,
     reach: 1.74,
     arc: 1.36,
     speed: 1.72,
     stamina: 0.11,
-    knockback: 1.38,
+    knockback: 1.65,
     durability: 45,
     noise: 6.5,
     maxTargets: 2,
     comboLength: 3,
-    headMultiplier: 1.55,
+    headMultiplier: 1.65,
     doorDamage: 25,
     length: 0.72,
   },
@@ -170,12 +170,12 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "MACHETE",
     weaponClass: "one-blade",
     material: "blade",
-    damage: 54,
+    damage: 30,
     reach: 1.8,
     arc: 1.44,
     speed: 1.85,
     stamina: 0.1,
-    knockback: 0.9,
+    knockback: 1.15,
     durability: 28,
     noise: 4.5,
     maxTargets: 2,
@@ -190,17 +190,17 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "BAT",
     weaponClass: "two-heavy",
     material: "wood",
-    damage: 48,
+    damage: 27,
     reach: 1.96,
     arc: 1.6,
     speed: 1.52,
     stamina: 0.12,
-    knockback: 1.68,
+    knockback: 1.85,
     durability: 30,
     noise: 7.0,
     maxTargets: 3,
     comboLength: 3,
-    headMultiplier: 1.6,
+    headMultiplier: 1.65,
     doorDamage: 28,
     length: 0.78,
   },
@@ -210,12 +210,12 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "SPIKE",
     weaponClass: "two-heavy",
     material: "wood",
-    damage: 58,
+    damage: 29,
     reach: 2.02,
     arc: 1.64,
     speed: 1.44,
     stamina: 0.13,
-    knockback: 1.62,
+    knockback: 1.95,
     durability: 20,
     noise: 7.5,
     maxTargets: 3,
@@ -230,12 +230,12 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "AXE",
     weaponClass: "two-heavy",
     material: "blade",
-    damage: 65,
+    damage: 34,
     reach: 1.94,
     arc: 1.5,
     speed: 1.34,
     stamina: 0.14,
-    knockback: 1.45,
+    knockback: 1.75,
     durability: 32,
     noise: 8.0,
     maxTargets: 3,
@@ -250,12 +250,12 @@ export const MELEE_WEAPONS: Readonly<Record<MeleeWeaponId, MeleeWeaponDef>> = {
     shortLabel: "FIRE AXE",
     weaponClass: "two-heavy",
     material: "blade",
-    damage: 78,
+    damage: 38,
     reach: 2.14,
     arc: 1.68,
     speed: 1.15,
     stamina: 0.17,
-    knockback: 1.8,
+    knockback: 1.95,
     durability: 38,
     noise: 9.0,
     maxTargets: 3,
@@ -953,7 +953,7 @@ export class OutbreakCombatSubsystem {
         const hitSeed = ((ev.seed ^ z.seed ^ Math.imul(z.id + 1, 0x9e3779b9)) >>> 0)
         const rng = new Rng(hitSeed)
         const exhScale = player.exhausted ? 0.65 : 1.0
-        const comboMult = ev.combo === 2 ? 1.1 : ev.combo === 3 ? 1.3 : 1.0
+        const comboMult = ev.combo === 2 ? 1.08 : ev.combo === 3 ? 1.2 : 1.0
         const heavyMult = ev.heavy ? 1.4 + 0.45 * ev.charge : 1.0
         const downedMult = z.state === "knockdown" ? 1.35 : 1.0
 
@@ -1004,6 +1004,8 @@ export class OutbreakCombatSubsystem {
           killed = true
           z.state = "dead"
           z.stateTime = 0
+          z.staggerVx = ux * (4.2 + 2.0 * kb)
+          z.staggerVy = uy * (4.2 + 2.0 * kb)
           if (sharp) {
             if (headshot || ev.heavy || ev.combo === 3) {
               detachBone = !z.detachedLimbs.includes("head") ? "head" : rng.pick(armChoices)
@@ -1017,21 +1019,21 @@ export class OutbreakCombatSubsystem {
           const shouldKnockdown =
             wasDowned ||
             (ev.heavy && kb >= 1.2) ||
-            (ev.combo === 3 && kb >= 1.35) ||
+            (ev.combo === 3 && kb >= 1.55) ||
             (weapon.weaponClass === "two-heavy" && (ev.heavy || ev.combo === 3 || headshot))
           if (shouldKnockdown) {
             knockdown = true
             z.state = "knockdown"
             z.stateTime = 0
-            z.timer = clamp(1.15 + 0.25 * kb, 1.1, 1.85)
-            z.staggerVx = ux * (5.2 + 2.2 * kb)
-            z.staggerVy = uy * (5.2 + 2.2 * kb)
+            z.timer = clamp(1.25 + 0.25 * kb, 1.15, 1.85)
+            z.staggerVx = ux * (5.6 + 2.4 * kb)
+            z.staggerVy = uy * (5.6 + 2.4 * kb)
           } else {
             z.state = "stagger"
             z.stateTime = 0
-            z.timer = clamp(0.32 + 0.22 * kb, 0.25, 0.85)
-            z.staggerVx = ux * (3.6 + 2.0 * kb)
-            z.staggerVy = uy * (3.6 + 2.0 * kb)
+            z.timer = clamp(0.36 + 0.22 * kb, 0.28, 0.85)
+            z.staggerVx = ux * (4.4 + 2.4 * kb)
+            z.staggerVy = uy * (4.4 + 2.4 * kb)
           }
 
           // Non-lethal limb detachment on heavy/sharp blows

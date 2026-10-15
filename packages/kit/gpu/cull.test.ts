@@ -8,8 +8,14 @@ import {
   extractFrustumPlanes,
   isShadowCasterVisible,
 } from "./cull"
-import { PassList, depthConfigForMode, type ScenePass } from "./pass-graph"
-import { GrowableInstanceBuffer, uploadSplitSprites } from "./targets"
+import {
+  PassList,
+  STENCIL_GHOST_FACE,
+  STENCIL_OCCLUDER_FACE,
+  depthConfigForMode,
+  type ScenePass,
+} from "./pass-graph"
+import { GrowableInstanceBuffer, uploadAlphaWeightedMipChain, uploadSplitSprites } from "./targets"
 
 describe("gpu/cull & gpu/targets", () => {
   test("extractFrustumPlanes & aabbInFrustum cull boxes outside WebGPU 0..1 clip volume", () => {
@@ -218,5 +224,36 @@ describe("gpu/cull & gpu/targets", () => {
       compare: "greater-equal",
       hasStencil: false,
     })
+    expect(STENCIL_OCCLUDER_FACE).toEqual({ compare: "always", passOp: "replace" })
+    expect(STENCIL_GHOST_FACE).toEqual({ compare: "not-equal", passOp: "keep" })
+  })
+
+  test("uploadAlphaWeightedMipChain builds alpha-weighted mip pyramid down to 1x1", () => {
+    const writes: { mipLevel: number; width: number; rgba: number[] }[] = []
+    const device = {
+      queue: {
+        writeTexture(
+          dest: { mipLevel?: number },
+          data: Uint8Array,
+          _layout: { bytesPerRow: number },
+          size: [number, number],
+        ) {
+          writes.push({ mipLevel: dest.mipLevel ?? 0, width: size[0], rgba: [...data.slice(0, 4)] })
+        },
+      },
+    } as unknown as GPUDevice
+
+    // 2x2 image: 1 opaque red pixel [255, 0, 0, 255] and 3 transparent black pixels [0, 0, 0, 0]
+    const data = new Uint8Array([
+      255, 0, 0, 255,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ])
+    uploadAlphaWeightedMipChain(device, {} as GPUTexture, { width: 2, data })
+    expect(writes).toHaveLength(2)
+    expect(writes[0]).toEqual({ mipLevel: 0, width: 2, rgba: [255, 0, 0, 255] })
+    // Alpha-weighted RGB stays pure red [255, 0, 0] instead of bleeding to 63, and alpha is (255/4)*1.1 = 70
+    expect(writes[1]).toEqual({ mipLevel: 1, width: 1, rgba: [255, 0, 0, 70] })
   })
 })

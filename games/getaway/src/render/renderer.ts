@@ -9,9 +9,25 @@ import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
 import { GetawayFrameStruct, GetawayLightStruct, MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
-import { aabbInFrustum, drawContiguousChunks, extractFrustumPlanes, isShadowCasterVisible } from "@arcade/kit/gpu/cull"
-import { PassList, compileShaderModuleWithLog, depthConfigForMode, type PassSlot, type ScenePass } from "@arcade/kit/gpu/pass-graph"
-import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "@arcade/kit/gpu/targets"
+import { aabbInFrustum, drawContiguousChunks, extractFrustumPlanes } from "@arcade/kit/gpu/cull"
+import {
+  DirectionalShadowPass,
+  PassList,
+  STENCIL_GHOST_FACE,
+  STENCIL_OCCLUDER_FACE,
+  compileShaderModuleWithLog,
+  depthConfigForMode,
+  type PassSlot,
+  type ScenePass,
+} from "@arcade/kit/gpu/pass-graph"
+import {
+  BloomPyramid,
+  DEFAULT_BLOOM_LEVELS,
+  GrowableInstanceBuffer,
+  SceneTargets,
+  uploadAlphaWeightedMipChain,
+  uploadSplitSprites,
+} from "@arcade/kit/gpu/targets"
 import { MotionBlur, PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
 import { motionBlur, vehicleVelocityPipeline, particleVelocityPipeline, spriteMotionKeys } from './motion'
 import { mat4 } from 'wgpu-matrix'
@@ -73,10 +89,8 @@ export class Renderer {
   private lightBuf: GPUBuffer
   private inst: GrowableInstanceBuffer
   private spriteBuf: GPUBuffer
-  private shadowTex: GPUTexture
-  private shadowView: GPUTextureView
+  private shadowPass: DirectionalShadowPass
   private mainGroup: GPUBindGroup
-  private shadowGroup: GPUBindGroup
   private pipes: Record<string, GPURenderPipeline> = {}
   private city: CityModel | null = null
   private beams: { buf: GPUBuffer; count: number; cap: number } | null = null
@@ -119,12 +133,29 @@ export class Renderer {
     this.inst = new GrowableInstanceBuffer(d, 512, INST_FLOATS)
     this.spriteBuf = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     this.compositeParams = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
-    this.shadowTex = d.createTexture({ size: [SHADOW_SIZE, SHADOW_SIZE], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-    this.shadowView = this.shadowTex.createView()
+    const meshPosOnly: GPUVertexBufferLayout = { arrayStride: FLOATS_PER_VERT * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }
+    const instLayout: GPUVertexBufferLayout = {
+      arrayStride: INST_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [
+        { shaderLocation: 4, offset: 0, format: "float32x4" },
+        { shaderLocation: 5, offset: 16, format: "float32x4" },
+        { shaderLocation: 6, offset: 32, format: "float32x4" },
+      ],
+    }
+    this.shadowPass = new DirectionalShadowPass({
+      device: d,
+      frameBuf: this.frameBuf,
+      shadowShaderCode: shadowShader,
+      meshPosLayout: meshPosOnly,
+      instLayout,
+      size: SHADOW_SIZE,
+      label: "getaway-shadow",
+    })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.targets = new SceneTargets(d, {
       hdrFormat: HDR,
-      depthFormat: "depth24plus-stencil8",
+      depthFormat: DEPTH_CFG.format,
       samples: SAMPLES,
       depthTextureBinding: true,
     })
@@ -153,8 +184,8 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.frameBuf } },
         { binding: 1, resource: { buffer: this.lightBuf } },
-        { binding: 2, resource: this.shadowView },
-        { binding: 3, resource: d.createSampler({ compare: "less", magFilter: "linear", minFilter: "linear" }) },
+        { binding: 2, resource: this.shadowPass.view },
+        { binding: 3, resource: this.shadowPass.sampler },
         { binding: 4, resource: this.atlas.createView() },
         { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 }) },
       ],
@@ -162,8 +193,6 @@ export class Renderer {
     this.smoke = new SmokeRenderer(d, mainLayout)
     this.fxParticles = new ParticleRenderer(d, DEPTH_CFG.format, SAMPLES)
     this.fxVolumes = new VolumeRenderer(d)
-    const shadowLayout = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] })
-    this.shadowGroup = d.createBindGroup({ layout: shadowLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
     this.postLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -181,16 +210,6 @@ export class Renderer {
         { shaderLocation: 2, offset: 24, format: "float32x3" },
         { shaderLocation: 3, offset: 36, format: "float32" },
         { shaderLocation: 7, offset: 40, format: "float32x2" },
-      ],
-    }
-    const meshPosOnly: GPUVertexBufferLayout = { arrayStride: FLOATS_PER_VERT * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }
-    const instLayout: GPUVertexBufferLayout = {
-      arrayStride: INST_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 4, offset: 0, format: "float32x4" },
-        { shaderLocation: 5, offset: 16, format: "float32x4" },
-        { shaderLocation: 6, offset: 32, format: "float32x4" },
       ],
     }
     const spriteLayout: GPUVertexBufferLayout = {
@@ -233,27 +252,17 @@ export class Renderer {
     }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const sprite = compileShaderModuleWithLog(d, spriteShader, "getaway-sprite")
-    const shadowMod = compileShaderModuleWithLog(d, shadowShader, "getaway-shadow")
-    const shadowPipe = (vs: string, buffers: GPUVertexBufferLayout[]) =>
-      d.createRenderPipeline({
-        layout: d.createPipelineLayout({ bindGroupLayouts: [shadowLayout] }),
-        vertex: { module: shadowMod, entryPoint: vs, buffers },
-        primitive: { topology: "triangle-list", cullMode: "none" },
-        depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1.2 },
-      })
     const post = compileShaderModuleWithLog(d, postShader, "getaway-post")
     const postLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
     const postPipe = (fs: string, format: GPUTextureFormat, blend?: GPUBlendState) =>
       d.createRenderPipeline({ layout: postLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: post, entryPoint: fs, targets: [{ format, blend }] }, primitive: { topology: "triangle-list" } })
     this.pipes = {
       city: scene("vsStatic", "fs", [meshLayout]),
-      inst: scene("vsInst", "fs", [meshLayout, instLayout], { stencil: { compare: "always", passOp: "replace" } }),
-      ghost: scene("vsGhost", "fsGhost", [meshLayout, instLayout], { blend: alpha, depthWrite: false, compare: "greater", cull: "back", stencil: { compare: "not-equal", passOp: "keep" } }),
+      inst: scene("vsInst", "fs", [meshLayout, instLayout], { stencil: STENCIL_OCCLUDER_FACE }),
+      ghost: scene("vsGhost", "fsGhost", [meshLayout, instLayout], { blend: alpha, depthWrite: false, compare: "greater", cull: "back", stencil: STENCIL_GHOST_FACE }),
       beam: scene("vs", "fs", [meshLayout], { blend: additive, depthWrite: false, cull: "none" }, compileShaderModuleWithLog(d, beamShader, "getaway-beam")),
       spriteAlpha: scene("vs", "fs", [spriteLayout], { blend: alpha, depthWrite: false, cull: "none" }, sprite),
       spriteAdd: scene("vs", "fs", [spriteLayout], { blend: additive, depthWrite: false, cull: "none" }, sprite),
-      shadowCity: shadowPipe("vsStatic", [meshPosOnly]),
-      shadowInst: shadowPipe("vsInst", [meshPosOnly, instLayout]),
       down: postPipe("down", HDR),
       up: postPipe("up", HDR, additive),
       composite: postPipe("composite", format),
@@ -275,33 +284,7 @@ export class Renderer {
 
   /** Uploads the decal atlas and builds its mip chain on the CPU (box filter, alpha-weighted). */
   setAtlas(img: ImageData) {
-    let w = img.width
-    let level = new Uint8Array(img.data.buffer.slice(0))
-    for (let mip = 0; w >= 1; mip++) {
-      this.device.queue.writeTexture({ texture: this.atlas, mipLevel: mip }, level, { bytesPerRow: w * 4 }, [w, w])
-      if (w === 1) break
-      const n = w >> 1
-      const next = new Uint8Array(n * n * 4)
-      for (let y = 0; y < n; y++)
-        for (let x = 0; x < n; x++) {
-          let r = 0, g = 0, b = 0, a = 0
-          for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-            const i = ((y * 2 + dy!) * w + x * 2 + dx!) * 4
-            const al = level[i + 3]!
-            r += level[i]! * al
-            g += level[i + 1]! * al
-            b += level[i + 2]! * al
-            a += al
-          }
-          const o = (y * n + x) * 4
-          next[o] = a ? r / a : 0
-          next[o + 1] = a ? g / a : 0
-          next[o + 2] = a ? b / a : 0
-          next[o + 3] = Math.min(255, (a / 4) * 1.1)
-        }
-      level = next
-      w = n
-    }
+    uploadAlphaWeightedMipChain(this.device, this.atlas, img)
   }
 
   /** World-space beam geometry (heli spotlight cone, extraction column), rewritten every frame. */
@@ -482,34 +465,15 @@ export class Renderer {
 
     const enc = d.createCommandEncoder()
     this.passes.prepareAll(enc)
-    const sp = enc.beginRenderPass({
+    const { vertsDrawn: shadowCityVerts, chunksDrawn: shadowChunks } = this.shadowPass.encode(enc, {
+      staticMesh: this.city,
+      shadowPlanes: this.shadowPlanes,
+      camPlanes: this.camPlanes,
+      instBuf: this.inst.buf,
+      models: this.models,
+      ranges,
       timestampWrites: this.measure ? this.timer!.start : undefined,
-      colorAttachments: [],
-      depthStencilAttachment: { view: this.shadowView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" },
     })
-    sp.setBindGroup(0, this.shadowGroup)
-    let shadowCityVerts = 0
-    let shadowChunks = 0
-    if (this.city) {
-      sp.setPipeline(this.pipes.shadowCity!)
-      sp.setVertexBuffer(0, this.city.vbuf)
-      const shadowStats = drawContiguousChunks(sp, this.city.chunks, (c) =>
-        isShadowCasterVisible(this.shadowPlanes, this.camPlanes, c.minX, c.minY, c.minZ, c.maxX, c.maxY, c.maxZ),
-      )
-      shadowCityVerts = shadowStats.vertsDrawn
-      shadowChunks = shadowStats.chunksDrawn
-    }
-    sp.setPipeline(this.pipes.shadowInst!)
-    sp.setVertexBuffer(1, this.inst.buf)
-    for (let i = 0; i < ranges.length; i++) {
-      const r = ranges[i]!
-      if (r.noShadow) continue
-      const m = this.models[r.model]!
-      if (!m.castsShadow) continue
-      sp.setVertexBuffer(0, m.vbuf)
-      sp.draw(m.count, r.count, 0, r.first)
-    }
-    sp.end()
 
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 }, loadOp: "clear", storeOp: "discard" }],

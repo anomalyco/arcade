@@ -529,6 +529,11 @@ export class OutbreakCombatFX {
       }
 
       for (const h of m.hits) {
+        if (age >= 0 && age <= 0.16) {
+          const uHit = 1 - age / 0.16
+          const hy = support(h.x, h.y) + (h.headshot ? 1.32 : 1.04)
+          pushAdd(h.x, hy, h.y, 0.34 * (1.2 - 0.4 * uHit), 0.72, 0.06, 0.08, uHit * 0.85, 0, 0, 1, 0)
+        }
         const hitKey = `${m.id}:${h.zombieId}`
         if (this.seenMeleeHits.has(hitKey)) continue
         this.seenMeleeHits.add(hitKey)

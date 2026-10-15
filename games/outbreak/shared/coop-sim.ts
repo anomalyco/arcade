@@ -22,6 +22,7 @@ import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
 import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
+import { boxOf, OutbreakVehicleSubsystem, pushOutBox, vehicleSolidRects } from "./vehicles"
 import { StreamingWorld, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
@@ -54,6 +55,8 @@ export function createSurvivor(x: number, y: number): Survivor {
     aim: -Math.PI / 2,
     health: 100,
     maxHealth: 100,
+    vehicleId: null,
+    seatIndex: 0,
     ...createStaminaState(),
     ...createFlashlightState(true),
     ...createInteractActorState(),
@@ -72,6 +75,7 @@ export class CoopSim {
   readonly worldStream: StreamingWorld
   readonly ai: OutbreakAISubsystem
   readonly combat: OutbreakCombatSubsystem
+  readonly vehicles: OutbreakVehicleSubsystem
   readonly registry: InteractionRegistry
   readonly progression: OutbreakProgression
   readonly rewind = new RewindHistory<number>(24, 0.25)
@@ -80,6 +84,7 @@ export class CoopSim {
   time = 0
   revision = 0
   private solids: Rect[]
+  private vehicleSolids: Rect[]
 
   constructor(
     seed: number,
@@ -109,13 +114,16 @@ export class CoopSim {
       this.progression.ensureContainerStores()
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
+    this.vehicles = new OutbreakVehicleSubsystem(this.worldStream, this.town)
     this.registry = new InteractionRegistry([
       createDoorHandler({ access: (actor) => progression.doorAccess(actor), open: (actor, door, how) => progression.openKeyed(actor, door, how) }),
       windowInteractionHandler,
       fenceInteractionHandler,
+      this.vehicles.handler(progression, this.ai, () => this.time),
       ...progression.handlers(),
     ])
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
   }
 
   /** What progression needs to know about the world this tick. */
@@ -133,6 +141,7 @@ export class CoopSim {
     if (index > 0) pushOut(survivor, 0.3, this.solids)
     const slot: SurvivorSlot = { id, index, survivor, prompt: undefined, peek: null, notices: [] }
     this.progression.addActor(slot)
+    this.vehicles.bindActor(slot)
     slot.prompt = selectInteractTarget(this.town, survivor, this.registry)
     this.slots.push(slot)
     this.slots.sort((a, b) => a.index - b.index)
@@ -144,6 +153,7 @@ export class CoopSim {
     const i = this.slots.findIndex((s) => s.id === id)
     if (i < 0) return
     const p = this.slots[i]!.survivor
+    this.vehicles.leaveSeat(id, p)
     this.slots.splice(i, 1)
     this.progression.removeActor(id, dropItems ? { x: p.x, y: p.y } : undefined)
   }
@@ -162,9 +172,59 @@ export class CoopSim {
     viewTime?: number,
   ): void {
     const resolved = resolveSessionTuning(tuning)
+    Object.assign(this.vehicles.tuning, resolved.vehicle)
     const p = slot.survivor
     const town = this.town
     if (!p.vault) p.aim = command.aim
+
+    const clampClassic = this.worldStream.mode === "classic"
+    if (p.vehicleId) {
+      const wasPassenger = (p.seatIndex ?? 0) > 0
+      const handled = this.vehicles.stepSeatedSurvivor(
+        slot,
+        command,
+        dt,
+        this.vehicleSolids,
+        this.progression,
+        this.ai,
+        this.time,
+        predict,
+      )
+      if (handled) {
+        stepStamina(p, false, false, dt, resolved.stamina)
+        if (p.vehicleId && wasPassenger && (p.seatIndex ?? 0) > 0) {
+          if (!predict && command.hotbarSlot !== undefined) {
+            this.progression.select(slot, command.hotbarSlot)
+            this.progression.project(slot)
+          }
+          if (!predict && command.hotbarDelta) {
+            this.progression.select(slot, undefined, command.hotbarDelta)
+            this.progression.project(slot)
+          }
+          if (command.flashlight) toggleFlashlight(p)
+          if (!predict) {
+            const ammo = this.progression.pistol(slot.id)
+            const use = this.progression.heldUse(slot.id)
+            const blockers = sightRects(town)
+            if (command.reload) this.combat.startReload(p, this.ai, this.time, ammo)
+            if (command.fire && use === "fire") {
+              if (resolved.infiniteAmmo) ammo.fill()
+              if (viewTime !== undefined && viewTime < this.time) {
+                this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
+                  this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+                )
+              } else {
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+              }
+            }
+          }
+        }
+        if (predict && !clampClassic) {
+          this.syncWorldChunks()
+        }
+        return
+      }
+    }
 
     if (!predict && command.hotbarSlot !== undefined) {
       this.progression.select(slot, command.hotbarSlot)
@@ -176,13 +236,13 @@ export class CoopSim {
     }
     if (command.flashlight) toggleFlashlight(p)
 
-    const clampClassic = this.worldStream.mode === "classic"
     const x = p.x
     const y = p.y
     if (stepInteractionState(town, p, dt)) {
       stepStamina(p, false, false, dt, resolved.stamina)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
+        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -198,6 +258,7 @@ export class CoopSim {
         p.x += ((command.mx / length) * speed * dt) / steps
         p.y += ((command.my / length) * speed * dt) / steps
         pushOut(p, 0.3, this.solids)
+        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -367,16 +428,19 @@ export class CoopSim {
     )
     if (res.changed) {
       this.progression.ensureContainerStores()
+      this.vehicles.syncChunks(this.worldStream, this.town)
       this.revision++
       this.solids = solidRects(this.town)
+      this.vehicleSolids = vehicleSolidRects(this.town)
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     return res.changed
   }
 
-  /** Advances everything shared once per tick: clock, channels, flashlights, the crowd and its attacks, prompts. */
+  /** Advances everything shared once per tick: clock, channels, flashlights, vehicles, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     const resolved = resolveSessionTuning(tuning)
+    Object.assign(this.vehicles.tuning, resolved.vehicle)
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
     this.syncWorldChunks()
@@ -389,6 +453,8 @@ export class CoopSim {
     if (this.progression.step(dt, this.world()).topologyChanged) {
       this.topologyChanged()
     }
+
+    this.vehicles.stepWorld(dt, this.time, this.town, this.vehicleSolids, this.slots, this.ai, this.progression)
 
     if (resolved.ai) {
       const config = this.ai.config
@@ -409,20 +475,45 @@ export class CoopSim {
       if (resolved.ai.maxActiveNearPlayer !== undefined) config.maxActiveNearPlayer = resolved.ai.maxActiveNearPlayer
     }
 
-    const survivors = this.slots.map((s) => ({ ...s.survivor, id: s.id }))
+    const survivors = this.slots.map((s) => {
+      const p = s.survivor
+      const v = this.vehicles.vehicleOf(p)
+      if (v && (p.seatIndex ?? 0) === 0) {
+        const hlOn = v.headlights && v.hasBattery && !v.wreck
+        return {
+          ...p,
+          id: s.id,
+          aim: hlOn ? v.h : p.aim,
+          flashlightOn: hlOn || p.flashlightOn,
+          flashlightOutput: hlOn ? 1 : p.flashlightOutput,
+          lightSignature: hlOn ? this.vehicles.tuning.headlightRange : p.lightSignature,
+          noise: v.engineOn ? Math.max(p.noise, this.vehicles.tuning.engineNoise * 0.45) : p.noise,
+        }
+      }
+      return { ...p, id: s.id }
+    })
     const aiStep = this.ai.stepSurvivors(this.town, survivors, this.hour, this.time, dt, flashlightTuning)
     if (aiStep.topologyChanged) {
       this.topologyChanged()
     }
     this.slots.forEach((slot, i) => {
       const damage = aiStep.damage[i]!
-      if (damage > 0) slot.survivor.health = Math.max(0, slot.survivor.health - damage)
+      if (damage > 0) {
+        const v = this.vehicles.vehicleOf(slot.survivor)
+        const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
+        slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
+      }
     })
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   refreshPrompt(slot: SurvivorSlot): void {
+    if (slot.survivor.vehicleId) {
+      slot.peek = null
+      slot.prompt = undefined
+      return
+    }
     slot.peek = peekInfoFor(this.town, slot.survivor)
     slot.prompt = selectInteractTarget(this.town, slot.survivor, this.registry)
   }
@@ -430,14 +521,18 @@ export class CoopSim {
   /** Re-derives survivor collision after doors or barricades changed (clients call this after a snapshot). */
   rebuildSolids(): void {
     this.syncWorldChunks()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   /** Collision, crowd navigation and prompts after an external edit (Lab, harness pose). */
   rebuildCollision(): void {
     this.syncWorldChunks()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
@@ -446,11 +541,13 @@ export class CoopSim {
   private topologyChanged(): void {
     this.revision++
     this.progression.ensureContainerStores()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     for (const chunk of this.worldStream.activeChunks.values()) {
       this.worldStream.captureChunkDelta(chunk, this.town, this.progression.containers, this.ai.portalStates, this.ai.agents)
     }
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
   }
 }
