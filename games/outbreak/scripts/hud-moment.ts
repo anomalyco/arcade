@@ -1,4 +1,5 @@
-// Records a short scripted Outbreak moment for the HUD prototype: real headless Metal frames with every HUD element
+// Records a short scripted Outbreak moment for the HUD prototype (door hold, search, firing dry, reload, a zombie hit,
+// sprint to exhaustion): real headless Metal frames with every HUD element
 // hidden, plus a per-frame timeline of what the HUD needs (the survivor's screen box, its state, the callouts the game
 // emitted, the interaction prompt, the hotbar and the summary). The prototype replays the timeline through the game's
 // own HUD code over the frames. No visible window, no audio.
@@ -76,7 +77,7 @@ async function frame(page: Page, command: Record<string, unknown> = {}) {
       for (let i = 0; i < n; i++) {
         const p = h.state().player
         await h.step(1 / 60, { aim: p.aim, ...command })
-        if (i === 0) for (const k of ["reload", "interact", "fire", "barricade", "flashlight"]) delete command[k]
+        if (i === 0) for (const k of ["reload", "interact", "fire", "barricade", "flashlight", "pick"]) delete command[k]
       }
       const st = h.state()
       const p = st.player
@@ -104,6 +105,8 @@ async function frame(page: Page, command: Record<string, unknown> = {}) {
         emits,
         prompt: prompt.hidden ? null : { html: prompt.innerHTML, transform: prompt.style.transform },
         hotbar: document.querySelector("#hotbar")!.innerHTML,
+        belt: document.querySelector("#belt")?.innerHTML ?? "",
+        pack: document.querySelector("#pack")?.innerHTML ?? "",
         status: document.querySelector("#status")!.textContent,
       }
     },
@@ -138,32 +141,57 @@ try {
     }
   })
 
-  // Shot 1, interior: walk to the supply shelf and search it.
-  const c = await page.evaluate(() => {
-    const st = (window as any).__arcadeHarness.state()
-    const c = st.containers.find((x: any) => x.ammo > 0 && x.planks > 0) ?? st.containers.find((x: any) => x.ammo > 0)
-    return { x: c.x, y: c.y }
-  })
-  await stage(page, { x: c.x, y: c.y + 1.9, aim: -Math.PI / 2 })
-  shots.push({ at: 0, label: "Search" })
+  // Shot 1, the front door: tap E is Open, holding E fills the hold ring and locks it.
+  await stage(page, { x: 27.7, y: 37.1, aim: -Math.PI / 2 })
+  shots.push({ at: 0, label: "Door" })
+  for (let i = 0; i < seconds(0.25); i++) await frame(page, { my: -1 })
   for (let i = 0; i < seconds(0.6); i++) await frame(page)
-  for (let i = 0; i < seconds(0.45); i++) await frame(page, { my: -1 })
-  await frame(page, { interact: true })
-  for (let i = 0; i < seconds(2.4); i++) await frame(page)
+  await frame(page, { interact: true, interactHeld: true })
+  for (let i = 0; i < seconds(0.6); i++) await frame(page, { interactHeld: true })
+  for (let i = 0; i < seconds(1.2); i++) await frame(page)
 
-  // Shot 2, street: walk, reload, take a zombie hit, sprint to exhaustion.
-  await stage(page, { x: 23.5, y: 41, aim: 0 })
+  // Shot 2, interior: face a container in the same house that has at least two things in it, search it, and take them.
+  const spot = await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    const v = h.session().view
+    const full = v.containers.filter((x: any) => x.y < 40 && v.progression.contents(x.id).length >= 2)
+    for (const c of full) {
+      for (const [dx, dy, aim] of [[0, 0.75, -Math.PI / 2], [0, -0.75, Math.PI / 2], [0.75, 0, Math.PI], [-0.75, 0, 0]]) {
+        h.pose(c.x + dx, c.y + dy, aim)
+        await h.step(1 / 60, { aim })
+        if (v.prompt?.kind === "container" && v.prompt.id === c.id) return { x: c.x + dx, y: c.y + dy, aim, label: c.label }
+      }
+    }
+    return null
+  })
+  assert(spot, "no reachable container with loot")
+  await stage(page, spot)
+  shots.push({ at: frames.length, label: "Search" })
+  for (let i = 0; i < seconds(0.6); i++) await frame(page, { aim: spot.aim })
+  await frame(page, { interact: true })
+  for (let i = 0; i < seconds(1.3); i++) await frame(page)
+  // Take the first two things the search revealed (digit 1 on the strip).
+  await frame(page, { pick: { mode: "take", index: 0 } })
+  for (let i = 0; i < seconds(0.45); i++) await frame(page)
+  await frame(page, { pick: { mode: "take", index: 0 } })
+  for (let i = 0; i < seconds(1.1); i++) await frame(page)
+
+  // Shot 3, street: walk while firing the magazine dry into the yard ("Empty, R to reload"), reload, take a zombie
+  // hit, sprint to exhaustion.
+  await stage(page, { x: 23.5, y: 41, aim: -1.2 })
   shots.push({ at: frames.length, label: "Street" })
-  await page.evaluate(() => Object.assign((window as any).__arcadeHarness.state().player, { magAmmo: 2 }))
-  for (let i = 0; i < seconds(0.5); i++) await frame(page, { mx: 1 })
-  await page.evaluate(() => (window as any).__arcadeHarness.spawnZombie(33.5, 41.1, "chase", Math.PI))
-  for (let i = 0; i < seconds(0.5); i++) await frame(page, { mx: 1 })
-  await frame(page, { mx: 1, reload: true })
-  for (let i = 0; i < seconds(1.3); i++) await frame(page, { mx: 0.6 })
+  await page.evaluate(() => (window as any).__arcadeHarness.spawnZombie(38, 41.1, "chase", Math.PI))
+  for (let i = 0; i < seconds(2.4); i++) {
+    const f = (await frame(page, { mx: 1, aim: -1.2, fire: i % 5 === 0 })) as any
+    if (f.player.magAmmo === 0) break
+  }
+  for (let i = 0; i < seconds(0.7); i++) await frame(page, { mx: 1, aim: -0.6 })
+  await frame(page, { mx: 1, aim: 0, reload: true })
+  for (let i = 0; i < seconds(1.3); i++) await frame(page, { mx: 0.6, aim: 0 })
   let hurt = false
-  for (let i = 0; i < seconds(2.5) && !hurt; i++) hurt = ((await frame(page)) as any).player.health < 100
+  for (let i = 0; i < seconds(3) && !hurt; i++) hurt = ((await frame(page, { aim: 0 })) as any).player.health < 100
   assert(hurt, "the zombie did not land a hit")
-  for (let i = 0; i < seconds(0.35); i++) await frame(page)
+  for (let i = 0; i < seconds(0.35); i++) await frame(page, { aim: 0 })
   await page.evaluate(() => Object.assign((window as any).__arcadeHarness.state().player, { stamina: 0.42 }))
   let exhausted = false
   for (let i = 0; i < seconds(3) && !exhausted; i++) exhausted = ((await frame(page, { mx: -1, sprint: true, aim: Math.PI })) as any).player.exhausted
@@ -172,6 +200,11 @@ try {
   for (let i = 0; i < seconds(0.8); i++) await frame(page, { aim: Math.PI })
 
   assert.deepEqual(errors, [])
+  const all = frames.flatMap((f: any) => f.emits.map((e: any) => e.text))
+  console.log("emitted:", [...new Set(all)].join(" | "), "| prompts:", [...new Set(frames.slice(0, 70).map((f: any) => f.prompt?.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()))].join(" / "))
+  assert(all.includes("Door locked"), "the hold did not lock the door")
+  assert(all.includes("Empty, R to reload"), "no QWERTY reload hint")
+  assert(all.some((t: string) => t.startsWith("+")), "the search took nothing")
   const emitted = frames.flatMap((f: any) => f.emits.map((e: any) => e.text))
   writeFileSync(resolve(out, "timeline.json"), JSON.stringify({ fps: FPS, width: 1280, height: 800, shots, frames }))
   console.log(`${frames.length} frames (${(frames.length / FPS).toFixed(1)} s); callouts: ${[...new Set(emitted)].join(", ")}`)

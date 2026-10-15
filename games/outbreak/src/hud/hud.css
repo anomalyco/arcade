@@ -13,6 +13,7 @@
   background: conic-gradient(currentColor calc(var(--p, 0) * 360deg), #ffffff2e 0);
   -webkit-mask: radial-gradient(circle, transparent 48%, #000 52%); mask: radial-gradient(circle, transparent 48%, #000 52%)
 }
+.callout-body .akc { --akc-size: 1.5em; font-size: .86em; margin: 0 .1em }
 .callout[data-kind="progress"] .callout-body { color: #f1eee0; border-color: #ffffff3a }
 .callout[data-kind="progress"] .callout-ring { display: inline-block }
 .callout[data-kind="result"] .callout-body { color: #cfe7ad; border-color: #b8d89650 }
@@ -125,6 +126,6 @@ body[data-hud="callouts"] #status {
 body[data-vitals="character"] #meters { display: none }
 /* Screen chrome per style: quiet hides the summary and dims the hotbar; none shows the hotbar briefly after a change. */
 body[data-hud="callouts"][data-chrome="quiet"] #status, body[data-hud="callouts"][data-chrome="none"] #status { display: none }
-body[data-hud="callouts"][data-chrome="quiet"] #hotbar { opacity: .45; transition: opacity .3s ease }
-body[data-hud="callouts"][data-chrome="none"] #hotbar { opacity: 0; transition: opacity .4s ease }
-body[data-hud="callouts"][data-chrome][data-hotbar="awake"] #hotbar { opacity: 1; transition-duration: .12s }
+body[data-hud="callouts"][data-chrome="quiet"] :is(#hands, #belt) { opacity: .45; transition: opacity .3s ease }
+body[data-hud="callouts"][data-chrome="none"] :is(#hands, #belt) { opacity: 0; transition: opacity .4s ease }
+body[data-hud="callouts"][data-chrome][data-hotbar="awake"] :is(#hands, #belt) { opacity: 1; transition-duration: .12s }

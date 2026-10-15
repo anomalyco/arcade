@@ -71,10 +71,15 @@ different option is that one value.
 
 Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that draws rings.
 
+Key names follow the controls rule (docs/controls.md): bindings are physical `KeyboardEvent.code`, and labels are the
+QWERTY name of that key on every layout. The "Empty, R to reload" callout draws R with the shared key cap
+(`keyCapHtml` from `@arcade/kit/client/key-cap`, passed as the callout's `keyCap` option), and the world prompt's
+Hold E is that component's hold cap, whose ring fills with the game's hold timer.
+
 The structure is `OutbreakHud` (projection, `ActorFeedback`, teammates) feeding `CharacterHud` (`src/hud/character.ts`),
 which only needs each actor's screen box and meter inputs. The board prototype uses that split:
-`scripts/hud-moment.ts` records a 10 s scripted moment (search a shelf, walk, reload, a zombie hit, sprint to
-exhaustion) as headless frames with the HUD hidden, plus a timeline of the survivor's box, state and every callout
+`scripts/hud-moment.ts` records a 14 s scripted moment (hold E to lock a door, search a kitchen cabinet and take
+what it reveals, fire the pistol dry, reload, a zombie hit, sprint to exhaustion) as headless frames with the HUD hidden, plus a timeline of the survivor's box, state and every callout
 the game emitted. The prototype plays the frames as a muted loop and replays the timeline through `CharacterHud`
 bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the game's HUD code, not a mockup.
 

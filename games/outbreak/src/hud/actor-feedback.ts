@@ -41,7 +41,7 @@ export type FeedbackContext = {
   pursuing?: number
   /** Battery fraction below which the flashlight flickers. */
   lowBattery?: number
-  /** Layout-aware label for the reload key. */
+  /** Label for the reload key (physical `KeyR`), QWERTY "R" by default; the callout draws it as a key cap. */
   reloadKey?: string
   /** The simulation's feedback since the last frame (pickups, search results, "Inventory full", recipes). */
   notices?: readonly Notice[]
@@ -121,7 +121,10 @@ export class ActorFeedback {
     })
 
     if (a.equippedItem === "pistol" && p.magAmmo > 0 && a.magAmmo === 0) {
-      if (a.reserveAmmo > 0) emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo" })
+      if (a.reserveAmmo > 0) {
+        const keyCap = ctx.reloadKey ? { code: "KeyR", label: ctx.reloadKey } : undefined
+        emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo", keyCap })
+      }
       else emit("Out of ammo", "warning", { key: "ammo" })
     }
 
