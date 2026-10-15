@@ -222,9 +222,9 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
         let dxRoad = (p.x - 31.5) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * gParams.z;
+        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * (gParams.z + OL.u7.w * 1.45);
         let roadSheenCol = mix(vec3f(0.030, 0.038, 0.060), vec3f(0.078, 0.076, 0.072), w);
-        col += roadSheenCol * F.ambient.w * OL.u2.y * sheen;
+        col = col * (1.0 - OL.u7.w * 0.22) + roadSheenCol * F.ambient.w * OL.u2.y * sheen;
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.28 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.72);
         if (!inVerge) {
@@ -235,7 +235,7 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
           if (abs(dxWalk) < 4.5 && o.world.z > 34.8 && o.world.z < 40.4) {
             let walkCore = exp(-(dxWalk * dxWalk) / 1.25) * smoothstep(40.4, 35.0, o.world.z);
             let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.05, 0.68, OL.u5.w > 0.5);
+            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u7.w * 0.85);
             col += col * vec3f(1.15, 0.68, 0.24) * (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
           }
         }

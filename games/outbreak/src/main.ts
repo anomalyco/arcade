@@ -33,6 +33,12 @@ import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
+import {
+  CombinedFogMemory,
+  DEFAULT_FOG_OF_WAR,
+  collectFogSoundSprites,
+  fogOfWarControls,
+} from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -46,7 +52,9 @@ import {
   STREET_LAMP_POSTS,
   streetLampHead,
 } from "./lighting"
+import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
+import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
   DEFAULT_OUTBREAK_WEATHER,
@@ -64,7 +72,7 @@ import { shaders } from "./shaders"
 import "./style.css"
 
 const params = new URLSearchParams(location.search)
-const lookSettings = createLookSettings("current")
+const lookSettings = createLookSettings("noir")
 const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
 const peaceful = params.has("peaceful")
 const settings = {
@@ -90,8 +98,10 @@ const settings = {
   texContrast: 1.0,
   texRoughness: 0.0,
   humanProfile: 0,
-  lookPreset: "current",
+  lookPreset: "noir",
   ...DEFAULT_OUTBREAK_LIGHTING,
+  ...OUTBREAK_LOOK_LIGHTING_PRESETS.noir,
+  ...DEFAULT_FOG_OF_WAR,
   ...DEFAULT_AI_CONFIG,
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
@@ -99,6 +109,7 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
+  ...DEFAULT_HUD_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -144,6 +155,8 @@ async function main() {
   const batteryEl = document.querySelector<HTMLElement>("#battery")
   const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
   const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
+  const hud = new OutbreakHud(document.body, settings)
+  hud.avoid(promptEl)
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -169,6 +182,7 @@ async function main() {
   let session: LocalSession | NetSession = makeSession(seed)
   let vision = new Vision()
   let scenery = new SceneryMemory()
+  const combinedFog = new CombinedFogMemory()
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -197,7 +211,12 @@ async function main() {
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
   const updateProfile = () => {
-    avatar.profile = settings.humanProfile === 1 ? zombieProfile(settings) : undefined
+    avatar.profile =
+      settings.humanProfile === 1
+        ? zombieProfile(settings)
+        : settings.humanProfile === 2
+          ? { ...humanProfiles.soldier, runPosture: 0.34, crouchDepth: 0.095 }
+          : undefined
   }
   const controls: LabControl[] = [
     ...aiControls,
@@ -273,9 +292,11 @@ async function main() {
       options: [
         { label: "Survivor", value: 0 },
         { label: "Zombie", value: 1 },
+        { label: "Crouch-run", value: 2 },
       ],
     },
     ...zombieControls,
+    ...hudControls,
     {
       key: "diagnostic",
       label: "Contribution",
@@ -299,6 +320,7 @@ async function main() {
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
     { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
+    ...fogOfWarControls,
     { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
     ...outbreakLightingControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
@@ -510,6 +532,7 @@ async function main() {
     },
     (key) => {
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
@@ -825,10 +848,13 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    hud.reset()
     weatherController.reset(nextSeed)
     level()
     scenery = new SceneryMemory()
-    renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+    combinedFog.reset()
+    combinedFog.update(vision, scenery, true)
+    renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
     pendingDrawDt = 0
@@ -904,12 +930,23 @@ async function main() {
       const label = item
         ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}`
         : "—"
-      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
+      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!item}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
     }).join("")
+  }
+  const syncStatus = () => {
+    if (hud.logMode) status.textContent = formatStatus()
+    else {
+      const weather =
+        settings.weatherEnabled && settings.weatherPreset !== "clear"
+          ? (WEATHER_PRESETS[settings.weatherPreset]?.label ?? settings.weatherPreset)
+          : ""
+      const summary = hud.summary(session.view, weather)
+      if (summary !== null) status.textContent = summary
+    }
   }
   onKeyLayoutChange(() => {
     lastHotbarKey = ""
-    status.textContent = formatStatus()
+    syncStatus()
     syncWorldPrompt(innerWidth, innerHeight)
     syncHotbar()
   })
@@ -962,7 +999,12 @@ async function main() {
       }
     }
     vision.update(p.x, p.y, p.aim, blockers, settings, peek)
-    if (scenery.update(town, vision)) renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
+    if (scenery.update(town, vision)) {
+      combinedFog.markDirty()
+      combinedFog.update(vision, scenery, true)
+      renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
+    }
+    const frameLightOccluders = lightOccluders
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -1020,14 +1062,14 @@ async function main() {
       )
       const fx = p.x + Math.cos(p.aim) * 0.25
       const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.18 + playerGroundY
+      const fh = 1.34 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
+      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.35
       const power = p.flashlightOutput * settings.flashlightIntensity * directScale
       const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 6.4)
       flashlightSlot = count
       lights.set(
-        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, lightOccluders, 0.06, -1],
+        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -1044,6 +1086,7 @@ async function main() {
       view,
       settings,
       Boolean(settings.aiDebugOverlay),
+      time,
     )
 
     let addCount = combatFx.processShots(
@@ -1215,6 +1258,17 @@ async function main() {
       alphaSprites,
       0,
     )
+    const fogSoundAlphaCount = collectFogSoundSprites(
+      zombies,
+      noises,
+      p,
+      vision,
+      time,
+      (x, z) => supportHeight(town, x, z),
+      settings,
+      alphaSprites,
+      debugAlphaCount,
+    )
     const tightView = cam.groundRect(0.8)
     const groundWearBatches = groundWear.collectBatches(town, tightView, settings)
     const clutterBatches = exteriorClutter.collectBatches(town, tightView, settings)
@@ -1226,7 +1280,7 @@ async function main() {
       tightView,
       settings,
       alphaSprites,
-      debugAlphaCount,
+      fogSoundAlphaCount,
     )
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
@@ -1245,7 +1299,7 @@ async function main() {
     ]
     render.lightCount = count
     render.shadowLightCount = shadowLightCount
-    render.occluderCount = lightOccluders
+    render.occluderCount = frameLightOccluders
     render.lampCount = town.lamps.length
     render.view = view
     render.grade = [time, settings.diagnostic, lightningFlash * 0.35, settings.exposure]
@@ -1267,7 +1321,8 @@ async function main() {
       batteryEl.style.opacity =
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
-    status.textContent = formatStatus()
+    hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player")
+    syncStatus()
     coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
     syncHotbar()
@@ -1312,14 +1367,19 @@ async function main() {
     }
     if (!pacerTimer && !channelPending) {
       const rem = msUntilNextDraw(performance.now())
-      const waitMs = renderer.inflight === 0 && rem <= 3.5 ? 0 : Math.max(1, Math.floor(rem - 1.5))
-      pacerTimer = window.setTimeout(() => {
-        pacerTimer = 0
-        if (!frozen && !document.hidden && !channelPending) {
-          channelPending = true
-          paceChannel.port2.postMessage(null)
-        }
-      }, waitMs)
+      if (renderer.inflight === 0 && rem <= 1.8) {
+        channelPending = true
+        paceChannel.port2.postMessage(null)
+      } else {
+        const waitMs = Math.max(1, Math.floor(rem - 1.6))
+        pacerTimer = window.setTimeout(() => {
+          pacerTimer = 0
+          if (!frozen && !document.hidden && !channelPending) {
+            channelPending = true
+            paceChannel.port2.postMessage(null)
+          }
+        }, waitMs)
+      }
     }
   }
   const rafLoop = (now: number) => {
@@ -1412,6 +1472,8 @@ async function main() {
       },
     }),
     fog: (x: number, y: number) => vision.state(x, y),
+    callouts: () =>
+      hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
     reset,
     freeze: (value = true) => {
@@ -1442,6 +1504,7 @@ async function main() {
         ;(settings as Record<string, unknown>)[key] = value
       }
       if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
+      if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
       if (key === "zombieCount") {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
@@ -1478,6 +1541,7 @@ async function main() {
       if (key === "lookPreset") {
         const pid = resolveLookPresetId(value) ?? "current"
         applyLookPreset(lookSettings, pid)
+        Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
         lab.refresh()
       }
       if (key === "weatherPreset") {
@@ -1506,6 +1570,7 @@ async function main() {
       if (!pid) throw new Error(`Unknown look preset: ${preset}`)
       settings.lookPreset = pid
       applyLookPreset(lookSettings, pid)
+      Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
       lab.refresh()
       return { ...lookSettings }
     },

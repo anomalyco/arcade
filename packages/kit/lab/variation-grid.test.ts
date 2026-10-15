@@ -96,6 +96,7 @@ describe("variation-grid", () => {
       "materials",
       "foliage",
       "lighting",
+      "fog",
       "weather",
     ])
   })

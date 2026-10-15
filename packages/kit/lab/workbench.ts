@@ -737,12 +737,12 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
-  let isRenderingGrid = false
+  let activeGridRender: Promise<number | null> | null = null
 
   async function renderVariationGrid(width: number, height: number, debug: number): Promise<number | null> {
     if (!variationGrid || focusedGridTile !== null) return null
-    if (isRenderingGrid) return variationGridCostMs
-    isRenderingGrid = true
+    if (activeGridRender) return activeGridRender
+    const run = (async () => {
     const sec = activeSection()
     const config = variationGrid
     const layout = computeVariationGridLayout(config.tiles.length, width, height, config.cols)
@@ -756,7 +756,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       for (let i = 0; i < config.tiles.length; i++) {
         const tile = config.tiles[i]!
         const rect = layout.rects[i]!
-        stage.resize(width, height, layout.tileWidth, layout.tileHeight)
+        stage.resize(width, height, rect.width, rect.height)
         stage.updateCamera()
         stage.meshes.reset()
         stage.transients.reset()
@@ -809,13 +809,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
     } finally {
       for (const [k, v] of Object.entries(savedSecSettings)) sec.settings[k] = v
       Object.assign(stage.lighting, savedLighting)
-      isRenderingGrid = false
+      activeGridRender = null
     }
 
     const dtMs = performance.now() - t0
     variationGridCostMs = variationGridCostMs === null ? dtMs : variationGridCostMs * 0.8 + dtMs * 0.2
     syncVariationGridOverlay()
     return variationGridCostMs
+    })()
+    activeGridRender = run
+    return run
   }
 
   function drawVariationGridOverlayToCanvas(target: HTMLCanvasElement) {
@@ -6070,6 +6073,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
     get speed() {
       return simSpeed
+    },
+    /** Whether the multi-tile variation grid is open (it owns 1–9, G and Esc). */
+    get variationGridOpen() {
+      return variationGrid !== null
+    },
+    /** A section the host loaded after start-up (a game's adapters fetched on demand). */
+    addSection(section: LabSection) {
+      if (!defaultsBySection.has(section.id)) defaultsBySection.set(section.id, { ...section.settings } as LabSettings)
+      section.registerCommands?.(commands)
     },
     onTick(dt: number) {
       stage.stepCamera(dt)

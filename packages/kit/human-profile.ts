@@ -1,5 +1,6 @@
 import type { LabControl } from "./lab-navigation"
 import { at, clamp, pitch, roll, type Frame, type V3 } from "./rig"
+import type { ZombieVariant } from "./shamble-crouch"
 
 /** Flat, serializable presentation values; metres, radians and Hz. */
 export type HumanProfile = {
@@ -11,6 +12,7 @@ export type HumanProfile = {
   timingBias: number; footDrag: number; torsoLean: number; torsoRoll: number
   headTilt: number; armAsymmetry: number; armReach: number
   handPose: "weapon" | "staff" | "reach"
+  zombieVariant: ZombieVariant
 }
 export type HumanPreset = "soldier" | "wizard" | "zombie"
 const soldier: Readonly<HumanProfile> = Object.freeze({
@@ -21,6 +23,7 @@ const soldier: Readonly<HumanProfile> = Object.freeze({
   bodyHz: 3, footCentreHz: 4, chestHz: 5, headHz: 7,
   timingBias: 0, footDrag: 0, torsoLean: 0, torsoRoll: 0,
   headTilt: 0, armAsymmetry: 0, armReach: 0.42, handPose: "weapon",
+  zombieVariant: "auto",
 })
 export const humanProfiles: Readonly<Record<HumanPreset, Readonly<HumanProfile>>> = Object.freeze({
   soldier,
@@ -31,7 +34,7 @@ export const humanProfiles: Readonly<Record<HumanPreset, Readonly<HumanProfile>>
     armSwing: 0.75, stepVariation: 0.65, transitionHz: 4,
     runPosture: 0.18, crouchDepth: 0.03, headStability: 0.2, timingBias: 0.28, footDrag: 0.9,
     chestHz: 2, headHz: 1, torsoLean: 0.24, torsoRoll: 0.12, headTilt: 0.2,
-    armAsymmetry: 0.13, handPose: "reach" }),
+    armAsymmetry: 0.13, handPose: "reach", zombieVariant: "dragger" }),
 })
 
 /** Apply before constructing shoulders/neck so their attachments never open a gap. */
@@ -78,5 +81,12 @@ export const humanProfileControls: LabControl[] = [
   range("armReach", "Reach", 0.2, 0.52, 0.02, "m"),
   { key: "handPose", label: "Hands", group: "Animation", options: [
     { label: "Weapon", value: "weapon" }, { label: "Staff", value: "staff" }, { label: "Reach", value: "reach" },
+  ] },
+  { key: "zombieVariant", label: "Zombie variant", group: "Animation", options: [
+    { label: "Auto (crowd mix)", value: "auto" },
+    { label: "Limper", value: "limper" },
+    { label: "Dragger", value: "dragger" },
+    { label: "Reacher", value: "reacher" },
+    { label: "Fast lunger", value: "lunger" },
   ] },
 ]

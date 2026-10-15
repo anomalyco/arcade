@@ -40,7 +40,7 @@ export function computeWeatherLod(
   const intensity = Math.max(0, Math.min(1, settings.intensity))
   const density = Math.max(0, Math.min(3, settings.density))
   const distScale = cameraDist > 48 ? Math.max(0.55, 48 / cameraDist) : 1.0
-  const hiDpiScale = viewportWidth > 2200 ? 0.58 : 1.0
+  const hiDpiScale = viewportWidth > 2200 ? 0.34 : 1.0
   const effScale = distScale * hiDpiScale
   const rawAmount = Math.min(MAX_DENSITY_SCALE, intensity * density) * effScale
   const splashAmount = Math.min(MAX_DENSITY_SCALE, intensity * settings.splashRate) * effScale
@@ -562,7 +562,7 @@ export class WeatherRenderer {
     })
     const blend: GPUBlendState = {
       color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
-      alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+      alpha: { srcFactor: "zero", dstFactor: "one" },
     }
     const pipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.layout] })
     const makePipe = (vs: string, fs: string, mod = module, mrt = false) =>
@@ -600,7 +600,7 @@ export class WeatherRenderer {
     })
     const blend: GPUBlendState = {
       color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
-      alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+      alpha: { srcFactor: "zero", dstFactor: "one" },
     }
     const pipeLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.layout] })
     const makePipe = (vs: string, fs: string) =>
@@ -734,22 +734,23 @@ export class WeatherRenderer {
     u[58] = input.ambientLum ?? 0.35
     u[59] = eaveCount
 
+    const hiDpiBoost = vpW > 2200 ? 1.24 : 1.0
     if (settings.snowMode) {
       u[60] = 0.78
       u[61] = 0.85
       u[62] = 0.96
-      u[63] = Math.min(0.88, 0.58 * (0.35 + 0.65 * settings.intensity))
+      u[63] = Math.min(0.92, 0.58 * (0.35 + 0.65 * settings.intensity) * hiDpiBoost)
     } else {
       u[60] = 0.45
       u[61] = 0.56
       u[62] = 0.74
-      u[63] = Math.min(0.82, 0.54 * (0.35 + 0.65 * settings.intensity))
+      u[63] = Math.min(0.88, 0.54 * (0.35 + 0.65 * settings.intensity) * hiDpiBoost)
     }
 
     u[64] = 0.54
     u[65] = 0.64
     u[66] = 0.80
-    u[67] = Math.min(0.80, 0.48 * (0.35 + 0.65 * settings.intensity))
+    u[67] = Math.min(0.86, 0.48 * (0.35 + 0.65 * settings.intensity) * hiDpiBoost)
 
     for (let i = 0; i < lightCount; i++) {
       const l = lights[i]!

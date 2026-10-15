@@ -386,6 +386,8 @@ proven animation techniques to animation.md, not here.
   A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
   Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
   `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Pass per-pixel 3D flashlight irradiance in the HDR alpha channel for selective-colour Noir grading, and pair feathered memory fog with SoA last-known ghosts and jittered sound ripples.**
+  In `packages/kit/gpu/look.ts` and `look-shaders.ts`, `Noir / Limbo` (`selectiveColor = L.u15.w = 1.24`, Outbreak's default look) desaturates the world outside the player's flashlight to near-monochrome (`saturation = 0.04`, `outsideChroma = 0.75 / 255` street, `0.54 / 255` interior) while restoring full natural colour inside the 3D polar-shadow-tested flashlight cone (`beamChroma = 30.48 / 41.19`, `selectiveColorRatio = 40.9× / 76.0×`, `ΔE = 5.69` street / `8.44` interior against `gpt-image-1.5` targets). Encoding `outAlpha = 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0)` in the 4× MSAA `rgba16float` scene pass keeps `1.0` as the fixed point of `one, one-minus-src-alpha` blending so unlit translucent sprites and decals outside the beam never trigger false colour retention, and adds zero render targets or texture bindings. Compiling a dedicated `compositeFast` entry point (1 `src` sample + rational Padé filmic curve without Kuwahara arrays or AgX matrices) and keeping `inst`/`glass` in `fsSolid` inside `ensureLookPipes()` cut `3456×1894` M5 Max Metal whole-frame GPU time from `39.34 → 15.653 ms` (street, MAD `0.026 ms`, fresh-submit `p95 = 18.400 ms`, `realtime_ratio = 0.9975`) and `31.84 → 16.040 ms` (interior, MAD `0.028 ms`, fresh-submit `p95 = 18.800 ms`, `realtime_ratio = 0.9969`). `Vision.actorVisible` (`games/outbreak/shared/vision.ts`) samples an actor's lateral shoulder disk against the polar blocker map so doorway/ray-boundary zombies are never falsely culled while walls/closed doors strictly occlude; `games/outbreak/src/shaders.ts` and `zombies.ts` add a top-down horizontal contour rim (`lumaP92 = 74–88 / 255`, contrast `52–72` in dark LOS), zero-allocation SoA last-known position ghosts (`seenPose` fading over `3.2 s` and clearing when the spot is seen empty), and spatially jittered (`±0.7–1.35 m`) Noir sound ripples across 3 Lab-selectable fog variants (`fogStyle` `0..2`, exposed in the Lab `fog` variation grid).
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -1072,6 +1074,19 @@ Candidates from the code audits; measure and playtest before moving any into the
   measurement. Physical-display latency is unmeasured.
 
 ## Feel
+
+- **Report actions above the actor, not in a corner.** Outbreak's `src/hud/` shows every player action as a short
+  DOM callout stacked over the survivor's head: progress rings for reload, search and barricade, item pops that float
+  up (`+5 9mm`), amber warnings (`Out of ammo`), red damage, and dashed noise tags for actions heard 9 m or more away.
+  `ActorFeedback` diffs the actor's state each frame, so `shared/` is unchanged and co-op snapshots can reuse it;
+  `CalloutLayer.callout(actorId, text, kind, { key, progress, duration })` is the API, and a `key` updates a callout in
+  place instead of stacking. Progress sits nearest the head, newest pops on top, at most three per actor (Lab HUD).
+  The anchor is the highest projected point of the head and shoulders, and it lifts over the floating E / Hold E
+  prompt when the two would overlap. Only visible callouts touch the DOM. Metal proof (`scripts/hud-proof.ts`, 14
+  stills): `hud.update` averaged 0.025 ms per frame with three callouts live. In a paired same-page A/B, callout mode
+  spent 0.039 to 0.049 ms per frame in style and layout, against 0.064 to 0.079 ms for the old status line, which
+  rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
+  18.0 ms at 0.9985.
 
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and

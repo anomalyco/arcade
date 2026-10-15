@@ -4,6 +4,7 @@ import { RIG, HIP, at, clamp, dirIn, emit, ik, limb, pitch, roll, smooth, spring
 import { angleSpring, gaitAt, stepHash } from "@arcade/kit/human-locomotion"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import { angleDiff } from "@arcade/kit/sim/geom"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
@@ -94,8 +95,10 @@ export class Survivor {
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw)
       const rest = (i: number): V3 => { const x=sx-s*(i?.145:-.145),z=sy+c*(i?.145:-.145); return [x,support(x,z),z] }
       if (teleport && step === 1) this.feet.forEach((f, i) => { f.p = rest(i); f.lift = [...f.p]; f.target = [...f.p]; f.prevU = 0; f.planted = true; f.yaw = this.yaw })
+      const isZombiePose = profile?.handPose === "reach"
       const needsStep = this.feet.some((f, i) => Math.hypot(f.p[0] - rest(i)[0], f.p[2] - rest(i)[2]) > .2 || !f.planted)
-      const rate = speed > .2 ? Math.max(.85, speed / curGait.stride) : (needsStep ? 1.7 : 0)
+      const dragSlow = isZombiePose ? 1 - .22 * clamp(profile?.footDrag ?? 0, 0, .95) * (1 - .5 * runBlend) : 1
+      const rate = speed > .2 ? Math.max(.72, (speed / curGait.stride) * dragSlow) : (needsStep ? 1.7 : 0)
       this.phase = (this.phase + rate * h) % 1
       const duty = curGait.duty
       this.feet.forEach((f, i) => {
@@ -175,34 +178,34 @@ export class Survivor {
     const gait = smooth((curSpeed - .15) / .35)
     const curGait = gaitAt(curSpeed, false, 0, profile ?? humanProfiles.soldier)
     const runBlend = curGait.run
+    const isZombie = Boolean(profile && profile.handPose === "reach")
+    const shambleMod = isZombie && profile ? shambleTorsoModulation(this.phase, gait, profile, 0) : null
+    const crouchT = clamp(((profile?.crouchDepth ?? 0) - .082) / .015, 0, 1) * runBlend
+    const crouchDrop = crouchT * .055
     const footSupport = (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * .5
     const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 1.15
-    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - (.008 + .022 * runBlend) * gait - (.021 + .008 * runBlend) * gait * Math.sin(bobPhase) - this.reachDrop.x
-    const pelvis = roll(yawFrame([p.x, height, p.y], this.yaw + this.twist.x), Math.cos(this.phase * Math.PI * 2) * (.07 + .03 * (profile?.hipDrop ?? 0)) * moving)
+    const height = (support(p.x,p.y) * .65 + footSupport * .35) + HIP - (.008 + .022 * runBlend) * gait - crouchDrop + (shambleMod?.pelvisBobAdd ?? 0) * .45 - (.021 + .008 * runBlend) * gait * Math.sin(bobPhase) - this.reachDrop.x
+    let pelvis = roll(yawFrame([p.x, height, p.y], this.yaw + this.twist.x), Math.cos(this.phase * Math.PI * 2) * (.07 + .03 * (profile?.hipDrop ?? 0)) * moving + (shambleMod?.pelvisRollAdd ?? 0))
+    if (crouchT > 0 || shambleMod) pelvis = pitch(pelvis, -.22 * crouchT - .35 * (shambleMod?.torsoPitchAdd ?? 0))
     const ca = Math.cos(p.aim), sa = Math.sin(p.aim)
     const lean = this.leanX.x * ca + this.leanY.x * sa
     const sideLean = (-this.leanX.x * sa + this.leanY.x * ca) * (profile?.turnBank ?? 1)
-    if (profile) { angleSpring(this.chest, p.aim - this.twist.x * .65, profile.chestHz, dt); angleSpring(this.head, p.aim, profile.headHz, dt) }
+    if (profile) { angleSpring(this.chest, p.aim - this.twist.x * .65 + (shambleMod?.torsoYawAdd ?? 0), profile.chestHz, dt); angleSpring(this.head, p.aim + (shambleMod?.headYawAdd ?? 0), profile.headHz, dt) }
     const torsoYaw = profile ? this.chest.x : p.aim - this.twist.x * .65
-    let torso = roll(pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw), -.05 - lean - .14 * runBlend * (profile?.runPosture ?? .18)), sideLean * .75)
+    let torso = roll(pitch(yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw), -.05 - lean - (shambleMod?.torsoPitchAdd ?? 0) - .14 * runBlend * (profile?.runPosture ?? .18) - .24 * crouchT), sideLean * .75 + (shambleMod?.torsoRollAdd ?? 0))
     if (profile) torso = profileTorso(torso, profile)
-    let head = pitch(yawFrame(at(torso, .02, RIG.neckY, 0), profile ? this.head.x : p.aim), lean * .35 * (profile?.headStability ?? .75))
-    if (profile) head = roll(head, profile.headTilt)
+    let head = pitch(yawFrame(at(torso, .02, RIG.neckY, 0), profile ? this.head.x : p.aim), lean * .35 * (profile?.headStability ?? .75) - (shambleMod?.headPitchAdd ?? 0))
+    if (profile) head = roll(head, profile.headTilt + (shambleMod?.headRollAdd ?? 0))
     const rawHands = profile && profileHands(torso, profile)
     let hands = rawHands
-    if (rawHands && profile?.handPose === "reach" && moving > 0) {
-      const th = this.phase * Math.PI * 2
-      const lurch = Math.sin(th) * .055 * moving, claw = Math.cos(th) * .035 * moving
-      hands = [
-        [rawHands[0][0] + torso.x[0] * lurch, rawHands[0][1] + claw, rawHands[0][2] + torso.x[2] * lurch],
-        [rawHands[1][0] - torso.x[0] * lurch * .7, rawHands[1][1] - claw * .8, rawHands[1][2] - torso.x[2] * lurch * .7],
-      ]
+    if (rawHands && profile?.handPose === "reach") {
+      hands = shambleHandsFK(torso, this.phase, gait, runBlend, profile, 0)
     }
     const unarmed = poseUnarmedArms(
       torso,
-      ...unarmedHands({ gait, motion: { run: runBlend, arms: this.arms, hands: this.hands } }, torso, time * 2),
+      ...unarmedHands({ gait, motion: { run: runBlend, crouch: { x: crouchT * .09 }, arms: this.arms, hands: this.hands } as never }, torso, time * 2),
     )
-    const arms = hands ? poseArms(torso, ...hands) : unarmed
+    const arms = hands ? (profile?.handPose === "reach" ? poseUnarmedArms(torso, ...hands) : poseArms(torso, ...hands)) : unarmed
     this.bones = { pelvis, torso, head }
     this.batches.length = 0
     let index = 0
@@ -222,8 +225,9 @@ export class Survivor {
       const kickBell = sinU * sinU * (.42 + .92 * Math.pow(u, .80)) * lateTaper
       const tuckBell = sinU * sinU * Math.pow(u, .95) * 1.65 * lateTaper
       const clearance = (i === 1 ? 1 - (profile?.footDrag ?? 0) : 1) * foot.stepLift
-      const heelKick = foot.planted ? 0 : (.018 * (1 - runBlend) + .22 * runBlend) * clearance * kickBell
-      const heelTuck = foot.planted ? 0 : (.025 * (1 - runBlend) + .24 * runBlend) * clearance * tuckBell
+      const crouchKickScale = 1 - .55 * crouchT
+      const heelKick = foot.planted ? 0 : (.018 * (1 - runBlend) + .22 * runBlend * crouchKickScale) * clearance * kickBell
+      const heelTuck = foot.planted ? 0 : (.025 * (1 - runBlend) + .24 * runBlend * (1 - .35 * crouchT)) * clearance * tuckBell
       const fc = Math.cos(foot.yaw), fs = Math.sin(foot.yaw)
       const ankle: V3 = [foot.p[0] - fc * heelTuck, foot.p[1] + RIG.ankle + heelKick, foot.p[2] - fs * heelTuck]
       const chordX = (ankle[0] - hip[0]) * pelvis.x[0] + (ankle[1] - hip[1]) * pelvis.x[1] + (ankle[2] - hip[2]) * pelvis.x[2]
@@ -240,7 +244,13 @@ export class Survivor {
       const shinPitch = -Math.atan2(shin.y[0] * fc + shin.y[2] * fs, shin.y[1])
       const swingRel = -(.20 + .15 * runBlend) * (1 - smooth((u - .50) / .34)) + (.04 + .16 * runBlend) * smooth((u - .60) / .28)
       const footPitch = foot.planted ? stancePitch : stancePitch + (shinPitch + swingRel - stancePitch) * smooth(u / .10) * (1 - smooth((u - .78) / .18))
-      const boot = pitch(yawFrame(end, foot.yaw), footPitch)
+      let boot = pitch(yawFrame(end, foot.yaw), footPitch)
+      if (foot.planted) {
+        const toeWorld: V3 = [foot.p[0] + fc * .19, foot.p[1], foot.p[2] + fs * .19]
+        const f0 = pitch(yawFrame([0, 0, 0], foot.yaw), stancePitch)
+        const off = at(f0, .19, -RIG.ankle, 0)
+        boot = { ...f0, p: [toeWorld[0] - off[0], toeWorld[1] - off[1], toeWorld[2] - off[2]] }
+      }
       const name = i === 0 ? "left" : "right"
       this.bones[`${name}.thigh`] = thigh; this.bones[`${name}.shin`] = shin; this.bones[`${name}.foot`] = boot
       draw(5, thigh); draw(6, shin); draw(7, boot)
