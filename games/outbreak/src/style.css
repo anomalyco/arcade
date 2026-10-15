@@ -20,3 +20,36 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #hotbar .slot kbd { font: inherit; opacity: .65 }
 #hotbar .slot b { font-weight: 500 }
 #status { padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; font-variant-numeric: tabular-nums }
+#belt { display: flex; gap: 4px; flex-wrap: wrap; max-width: 420px }
+#belt .pill { padding: 2px 7px; border: 1px solid #ffffff17; border-radius: 999px; background: #0f1515b0; color: #c9c7b9; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap }
+#belt .pill b { font-weight: 400; color: #8c9488; margin-right: 3px }
+#belt .pill small { color: #6c746a }
+#belt .pill[data-full="true"] { color: #f0d584 }
+#belt .pill[data-flash="true"] { border-color: #c5cfb880 }
+#hands { display: flex; gap: 8px; align-items: center }
+#pack { display: flex; gap: 4px; align-items: center; color: #8c9488; font-size: 10.5px }
+#pack .tag { display: inline-flex; align-items: center; gap: 5px }
+#pack .pk { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; border: 1px dashed #ffffff26; border-radius: 4px; background: #0f151599; color: #c9c4b2; white-space: nowrap }
+#pack .pk kbd { font: inherit; opacity: .65 }
+#pack .pk[data-empty="true"] { color: #6c746a }
+#pack .pk[data-heavy="true"] { min-width: 110px; border-style: solid; border-color: #e0894a77 }
+#prompt[data-strip="true"] { display: block; padding: 8px 10px; border-radius: 6px }
+#prompt .strip-t { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: #8c9488; margin-bottom: 6px }
+#prompt .strip-items { display: flex; gap: 5px }
+#prompt .item { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 4px; border: 1px solid #ffffff22; border-radius: 4px; background: #182121; font-size: 11.5px }
+#prompt .item small { margin-left: 6px; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #8c9488 }
+#prompt .item[data-dest="belt"] small { color: #c5cfb8 }
+#prompt .item[data-rare="true"] { border-color: #f0d58488; color: #f0d584 }
+#prompt .item[data-full="true"] { opacity: .55 }
+#prompt .item[data-full="true"] small { color: #e09a48 }
+#prompt .item[data-taken="true"] { opacity: .45 }
+#prompt .strip-h { margin-top: 7px; display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: #c9c7b9 }
+#markers { position: fixed; inset: 0; pointer-events: none; z-index: 9 }
+#markers .marker { position: absolute; left: 0; top: 0; padding: 2px 7px; border: 1px solid #ffffff26; border-radius: 999px; background: #0f1515cc; color: #e6e4d6; font-size: 10.5px; white-space: nowrap }
+#markers .marker[hidden] { display: none }
+#markers .marker[data-kind="drop"] { color: #c5cfb8; border-color: #c5cfb855 }
+#markers .marker[data-kind="drop"]::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 14px; height: 4px; margin-left: -7px; border: 1px solid #c5cfb888; border-radius: 50% }
+#markers .marker[data-kind="ping"] { border-color: var(--c, #f0d584); color: var(--c, #f0d584) }
+#markers .marker[data-kind="lure"] { color: #f0d584; border-color: #f0d58488; animation: lure-pulse 1s ease-in-out infinite }
+@keyframes lure-pulse { 50% { box-shadow: 0 0 0 5px #f0d58422 } }
+@media (prefers-reduced-motion: reduce) { #markers .marker[data-kind="lure"] { animation: none } }

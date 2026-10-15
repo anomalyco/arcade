@@ -20,7 +20,7 @@ export default defineStation({
   title: "Outbreak HUD",
   summary:
     "The live game with the character HUD: action callouts under the survivor and stamina, reload, health and battery rings beside them. Variants switch placement.",
-  order: 105,
+  order: 112,
   prop: "figure",
   color: 0xe0b45a,
   status: "review",

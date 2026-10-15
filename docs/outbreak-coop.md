@@ -20,8 +20,10 @@ interpolate remote survivors + zombies       per-player header: ack + private su
   survivor and produces the same trace as before. Zombies pick, per agent, the survivor that gives the strongest sight
   stimulus (`@arcade/kit/sim/ai`'s `stepAICrowd` takes several targets; one target behaves exactly as before). Noise
   from any survivor reaches the bus; attacks damage the survivor they target.
-- **Shared per room, private per player.** Doors, windows, barricades, searched containers, zombies, shots and the
-  clock are shared. Inventory, ammo, planks, stamina, battery and channels belong to each survivor.
+- **Shared per room, private per player.** Doors, windows, barricades, containers and their contents, ground drops,
+  zombies, shots, pings, noisemakers and the clock are shared. Hotbar, belt, pack, stamina, battery and channels
+  belong to each survivor. Items live in one progression ledger (`docs/outbreak-progression.md`); a take is one
+  atomic transaction, so two survivors grabbing the last medkit in the same tick cannot both get it.
 - **Authority.** The room decides everything. A client predicts only its own movement, stamina, vault/peek state and
   flashlight toggle; doors, loot, barricades and shots take effect when the room's snapshot arrives (one round trip).
 
@@ -55,9 +57,11 @@ change the offline session.
 - Down, text: `welcome` (public id, private token, seat index, room options), `roster`, `pong`, `error`, `reload`.
 - Down, binary snapshot at 20 Hz: `frame(personal, shared)`. `shared` (encoded once): tick, clock, survivors
   (position cm, packed aim, flags, light, health, recoil, vault lift), zombies (15 bytes each: id, state, position,
-  aim, hp, hit flash, state time, stagger, clamber), door/window/container bit fields, barricade planks, recent bashes
-  and shots with shooter seat. `personal`: ack and the survivor's fields as a positional JSON array, plus the
-  inventory only when it changed. Velocities are derived from the two interpolated snapshots.
+  aim, hp, hit flash, state time, stagger, clamber), door/window bit fields, barricade planks, pings and noisemakers,
+  recent bashes and shots with shooter seat. `personal`: ack, the survivor's fields as a positional JSON array, the
+  ledger stores this player can see (shared ones and their own) that changed since the revision they last received
+  (everything on join or reconnect), and that player's notices ("Inventory full", recipes learned). Velocities are
+  derived from the two interpolated snapshots.
 
 ## Measured
 
@@ -82,7 +86,8 @@ rest of the shared world, a remote shot or door is heard one snapshot late.
 - Remote survivors show body, flashlight, name tag, and the character HUD (callouts and health, reload and exhaustion
   rings, see [outbreak-hud.md](outbreak-hud.md)) built from replicated flags, but not their pistol. Reload progress
   is timed on the viewer's side because the snapshot carries only a reloading flag.
-- No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. No lobby or
+- No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. A survivor
+  whose seat expires leaves what they carried on the floor. No lobby or
   quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
 - All zombies are sent to everyone every snapshot (no interest management or deltas); fine at 60, not at 300.
 
