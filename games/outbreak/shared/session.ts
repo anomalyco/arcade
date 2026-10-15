@@ -4,7 +4,7 @@ import { CoopSim, type SurvivorSlot } from "./coop-sim"
 import type { FlashlightState, FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
 import { inventoryView, type InventoryState } from "./inventory"
-import type { LootSite, Notice, OutbreakProgression, PickMode } from "./progression"
+import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning } from "./progression"
 import type { Town } from "./map"
 import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
@@ -139,8 +139,8 @@ export class LocalSession implements Session {
   readonly sim: CoopSim
   readonly slot: SurvivorSlot
   readonly view: SessionView
-  constructor(seed: number, houseSeed = seed, terrain = 0.22, aiConfig?: Partial<AIConfig>) {
-    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig)
+  constructor(seed: number, houseSeed = seed, terrain = 0.22, aiConfig?: Partial<AIConfig>, progression?: Partial<ProgressionTuning>) {
+    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig, progression)
     const slot = this.sim.addSurvivor("player", 0)
     this.slot = slot
     this.view = slotView(this.sim, () => slot)

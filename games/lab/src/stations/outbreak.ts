@@ -74,5 +74,8 @@ export default defineStation({
   metrics: [{ label: "ΔE2000 to the 70s target, street at 18:00", value: "12.8 → 5.8", source: "docs/integration.md (release 5)" }],
   paths: ["games/outbreak/src/vignette", "games/outbreak/src/lighting.ts", "games/outbreak/src/level.ts"],
   branches: ["outbreak-*"],
-  links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?peaceful=1&seed=7" }],
+  links: [
+    { label: "Play Outbreak", href: "/arcade/outbreak/?peaceful=1&seed=7" },
+    { label: "Inventory and workbench", href: "/arcade/lab/?overworld&station=outbreak-progression" },
+  ],
 })

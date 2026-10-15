@@ -389,6 +389,22 @@ describe("safehouse workbench", () => {
   })
 })
 
+describe("Lab tuning", () => {
+  test("costs and times change live; a new loot rate restocks only unsearched containers", () => {
+    const { progression, ledger, fill, session } = setup()
+    const [searched, untouched] = session.view.containers.filter((c) => c.kind === "dresser")
+    fill(searched!, [{ item: "ammo", count: 3 }], true)
+    progression.setTuning({ costScale: 2, researchTime: 0.5, unrelatedLabKey: 7 })
+    expect(ledger.rules.get("research:bandage")).toMatchObject({ duration: 0.5, consume: { chem: 4 } })
+    expect(ledger.rules.get("craft:lure")!.consume).toEqual({ scrap: 2, battery: 2 })
+    progression.setTuning({ lootRate: 0 })
+    expect(ledger.count(searched!.id, "ammo")).toBe(3)
+    expect(progression.contents(untouched!.id)).toEqual([])
+    progression.setTuning({ lootRate: 2.5 })
+    expect(progression.contents(untouched!.id).length).toBeGreaterThan(0)
+  })
+})
+
 describe("loot from building archetypes", () => {
   test("every container is seeded from its building's table, deterministically, and the hardware back room holds the parts", () => {
     const town = makeTown(7, 7)
