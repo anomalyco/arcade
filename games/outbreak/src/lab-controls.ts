@@ -1,4 +1,5 @@
 import { cameraShakeControls } from "@arcade/kit/client/camera"
+import type { DiscoveryHost } from "./discovery/index"
 import { motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, type LookSettings } from "@arcade/kit/look"
@@ -45,6 +46,7 @@ export interface OutbreakLabControlHost {
   readonly combatFx: OutbreakCombatFX
   readonly weatherController: OutbreakWeatherController
   readonly progressionHost: ProgressionLabHost
+  readonly discoveryHost: DiscoveryHost
   readonly vehicleHost: VehicleLabHost
   readonly botsLab: BotsLabController
   readonly hud: OutbreakHud

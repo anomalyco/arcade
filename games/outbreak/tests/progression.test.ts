@@ -250,19 +250,19 @@ describe("safehouse workbench", () => {
     }
   })
 
-  test("the first scrap reveals the recipes it feeds, to the whole squad", () => {
+  test("the first scrap is noted for the squad but not announced (Discovered, Not Told)", () => {
     const { session, progression, give, notices } = setup()
     const mate = session.sim.addSurvivor("mate", 1)
     expect(progression.benchRows().map((r) => r.id)).toEqual([])
     give("scrap", 2)
-    const text = "New material: Scrap. Bench recipes: Noisemaker, Spiked Board, Reinforced Barricade, Flashlight Battery"
-    expect(notices()).toContain(text)
-    expect(mate.notices.map((n) => n.text)).toContain(text)
+    expect(notices()).toEqual([])
+    expect(mate.notices.map((n) => n.text).filter((t) => t.startsWith("New material"))).toEqual([])
+    expect(progression.seen("scrap")).toBe(true)
     // A recipe shows on the bench once all of its materials have been seen (the starting planks count).
     expect(progression.benchRows().map((r) => r.id)).toEqual(["spiked-board", "reinforced"])
     give("battery")
     expect(progression.benchRows().map((r) => r.id)).toEqual(["lure", "spiked-board", "reinforced"])
-    expect(notices().filter((t) => t.startsWith("New material"))).toEqual(["New material: Batteries. Bench recipes: Noisemaker"])
+    expect(notices().filter((t) => t.startsWith("New material"))).toEqual([])
   })
 
   test("depositing keeps ammo and keys, installs the toolbox (tier 2) and tells everyone", () => {

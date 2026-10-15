@@ -28,6 +28,7 @@ import {
 } from "../shared/net-protocol"
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
 import type { OutbreakVehicleSubsystem } from "../shared/vehicles"
+import { NOMINAL_PLANK_HP, unpackPlanks } from "../shared/discovery/barricade"
 import { outbreakClientFeatures } from "./feature-registry"
 import "./melee/index"
 import "./progression"
@@ -373,14 +374,17 @@ export class NetSession implements Session {
         const planks = s.planks[i] ?? 0
         if (st.barricadePlanks !== planks) topology = true
         st.barricadePlanks = planks
-        st.barricadeHp = planks * 100
+        st.barricadeHp = s.plankHp[i] ?? planks * NOMINAL_PLANK_HP
       })
     }
     if (s.bashes.length) {
       const portals = [...town.doors.map((d) => d.id), ...town.windows.map((w) => w.id)]
       for (const bash of s.bashes) {
         const st = sim.ai.portalStates.get(portals[bash.portal] ?? "")
-        if (st) st.lastBashTime = s.time - bash.age
+        if (!st) continue
+        st.lastBashTime = s.time - bash.age
+        const wear = unpackPlanks(bash.planks)
+        if (wear.planks === st.barricadePlanks) st.barricadeHp = wear.hp
       }
     }
     const shots = sim.combat.shots

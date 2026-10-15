@@ -109,10 +109,8 @@ const WEAPON_BREAK_PALETTES: Record<MeleeWeaponId, readonly (readonly [number, n
 
 export class OutbreakCombatFX {
   private readonly pistolModel: number
-  private readonly plankModel: number
   private readonly shardModel: number
   private readonly pistolData = new Float32Array(INST_FLOATS)
-  private readonly plankData = new Float32Array(64 * INST_FLOATS)
   private readonly shardData = new Float32Array(32 * INST_FLOATS)
   private readonly seenShots = new Set<number>()
   private readonly seenMeleeSwings = new Set<number>()
@@ -133,12 +131,6 @@ export class OutbreakCombatFX {
     pistol.box(-0.05, 0.0, -0.022, 0.16, 0.048, 0.022, hex(0x3a3f42), MAT.actor)
     pistol.box(0.14, 0.048, -0.006, 0.155, 0.058, 0.006, hex(0xd8ccb8), MAT.actor)
     this.pistolModel = renderer.addModel(pistol)
-
-    const plank = new Mesh()
-    plank.box(-0.78, -0.065, -0.025, 0.78, 0.065, 0.025, hex(0x8e6f48), MAT.timber)
-    plank.box(-0.68, -0.02, -0.032, -0.64, 0.02, 0.032, hex(0x353738), MAT.actor)
-    plank.box(0.64, -0.02, -0.032, 0.68, 0.02, 0.032, hex(0x353738), MAT.actor)
-    this.plankModel = renderer.addModel(plank)
 
     const shard = new Mesh()
     shard.box(-0.14, -0.022, -0.02, 0.14, 0.022, 0.02, [1, 1, 1], MAT.shiny)
@@ -226,33 +218,6 @@ export class OutbreakCombatFX {
       const recoilPitch = player.recoil * 0.38 - (player.reloadRemaining > 0 ? 0.55 : 0)
       this.pistolData.set([px, py, pz, player.aim, 1, 1, 1, 1, recoilPitch, 0, 1, 0])
       batches.push({ model: this.pistolModel, data: this.pistolData, count: 1 })
-    }
-
-    // 2. Barricade planks across doors and windows
-    let plankCount = 0
-    const addPortalPlanks = (id: string, rect: readonly [number, number, number, number], baseH: number) => {
-      const n = ai.getBarricadePlanks(id)
-      if (n <= 0) return
-      const [x0, y0, x1, y1] = rect
-      const horizontal = x1 - x0 > y1 - y0
-      const cx = (x0 + x1) * 0.5
-      const cz = (y0 + y1) * 0.5
-      const yaw = horizontal ? 0 : Math.PI / 2
-      const groundY = support(cx, cz)
-      const heights = [baseH, baseH + 0.34, baseH - 0.32]
-      const tilts = [0.06, -0.08, 0.03]
-      for (let k = 0; k < Math.min(3, n); k++) {
-        if (plankCount >= 64) break
-        this.plankData.set(
-          [cx, groundY + heights[k]!, cz, yaw, 1, 1, 1, 1, tilts[k]!, 0, 1, 0],
-          plankCount++ * INST_FLOATS,
-        )
-      }
-    }
-    for (const d of town.doors) addPortalPlanks(d.id, d.rect, 1.25)
-    for (const w of town.windows) addPortalPlanks(w.id, w.rect, 1.42)
-    if (plankCount > 0) {
-      batches.push({ model: this.plankModel, data: this.plankData, count: plankCount })
     }
 
     // 3. Muzzle flash, door/barricade bash impact splinters, & tracer sprites
