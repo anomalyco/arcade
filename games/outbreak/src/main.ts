@@ -1458,22 +1458,30 @@ async function main() {
     render.look = lookSettings
     render.lookCompare = lookCompare
     renderer.render(render)
+    hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     if (staminaEl && staminaFill) {
       const pct = Math.max(0, Math.min(100, p.stamina * 100))
-      staminaFill.style.width = `${pct.toFixed(1)}%`
-      staminaEl.dataset.active = String(p.sprinting || p.exhausted || p.stamina < 0.999)
-      staminaEl.dataset.exhausted = String(p.exhausted)
+      const width = `${pct.toFixed(1)}%`
+      const active = String(p.sprinting || p.exhausted || p.stamina < 0.999)
+      const exhausted = String(p.exhausted)
+      if (staminaFill.style.width !== width) staminaFill.style.width = width
+      if (staminaEl.dataset.active !== active) staminaEl.dataset.active = active
+      if (staminaEl.dataset.exhausted !== exhausted) staminaEl.dataset.exhausted = exhausted
     }
     if (batteryEl && batteryFill) {
       const pct = Math.max(0, Math.min(100, p.battery * 100))
-      batteryFill.style.width = `${pct.toFixed(1)}%`
-      batteryEl.dataset.active = String(p.flashlightOn || p.batteryDepleted || p.battery < 0.999)
-      batteryEl.dataset.low = String(p.battery > 0 && p.battery < settings.flashlight.flashlightFlicker)
-      batteryEl.dataset.depleted = String(p.batteryDepleted)
-      batteryEl.style.opacity =
+      const width = `${pct.toFixed(1)}%`
+      const active = String(p.flashlightOn || p.batteryDepleted || p.battery < 0.999)
+      const low = String(p.battery > 0 && p.battery < settings.flashlight.flashlightFlicker)
+      const depleted = String(p.batteryDepleted)
+      const opacity =
         p.flashlightOn && p.battery < settings.flashlight.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
+      if (batteryFill.style.width !== width) batteryFill.style.width = width
+      if (batteryEl.dataset.active !== active) batteryEl.dataset.active = active
+      if (batteryEl.dataset.low !== low) batteryEl.dataset.low = low
+      if (batteryEl.dataset.depleted !== depleted) batteryEl.dataset.depleted = depleted
+      if (batteryEl.style.opacity !== opacity) batteryEl.style.opacity = opacity
     }
-    hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
     vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
@@ -1507,8 +1515,7 @@ async function main() {
     const paceWait = Math.max(0, TICK_DT * 1000 - 0.55 - (nowMs - lastDrawAt))
     return Math.max(stepWait, paceWait)
   }
-  paceChannel.port1.onmessage = () => {
-    channelPending = false
+  const onPacerWake = () => {
     if (frozen || document.hidden) return
     const now = performance.now()
     if (canDrawNow(now)) {
@@ -1517,25 +1524,36 @@ async function main() {
       scheduleFrame()
     }
   }
+  paceChannel.port1.onmessage = () => {
+    channelPending = false
+    onPacerWake()
+  }
   const scheduleFrame = () => {
     if (frozen || document.hidden) return
     if (!rafScheduled) {
       rafScheduled = true
       requestAnimationFrame(rafLoop)
     }
-    if (!pacerTimer && !channelPending) {
+    if (!channelPending) {
       const rem = msUntilNextDraw(performance.now())
-      if (renderer.inflight === 0 && rem <= 0.4) {
+      if (renderer.inflight === 0 && rem <= 0.35) {
+        if (pacerTimer) {
+          clearTimeout(pacerTimer)
+          pacerTimer = 0
+        }
         channelPending = true
         paceChannel.port2.postMessage(null)
-      } else {
-        const waitMs = renderer.inflight === 0 && rem <= 4.0 ? 0 : Math.max(1, Math.floor(rem - 3.5))
+      } else if (renderer.inflight === 0 && rem <= 3.6) {
+        if (pacerTimer) {
+          clearTimeout(pacerTimer)
+          pacerTimer = 0
+        }
+        kickGpuPacer(rem + 1.0)
+      } else if (!pacerTimer) {
+        const waitMs = Math.max(1, Math.floor(rem - 3.5))
         pacerTimer = window.setTimeout(() => {
           pacerTimer = 0
-          if (!frozen && !document.hidden && !channelPending) {
-            channelPending = true
-            paceChannel.port2.postMessage(null)
-          }
+          onPacerWake()
         }, waitMs)
       }
     }

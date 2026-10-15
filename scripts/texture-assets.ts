@@ -15,6 +15,15 @@ export function textureAssets(): Plugin {
       fileURLToPath(new URL(`../packages/kit/textures/assets/${asset.url}`, import.meta.url)),
     ]),
   )
+  const byteCache = new Map<string, Buffer>()
+  const readCached = (file: string): Buffer => {
+    let buf = byteCache.get(file)
+    if (!buf) {
+      buf = readFileSync(file)
+      byteCache.set(file, buf)
+    }
+    return buf
+  }
   return {
     name: "arcade-texture-assets",
     configureServer(server) {
@@ -22,13 +31,16 @@ export function textureAssets(): Plugin {
         const path = hostPath(req.url, server.config.base)
         const file = assets.get(path)
         if (!file) return next()
+        const buf = readCached(file)
         res.setHeader("Content-Type", path.endsWith(".webp") ? "image/webp" : "image/png")
-        res.end(readFileSync(file))
+        res.setHeader("Content-Length", String(buf.byteLength))
+        res.setHeader("Cache-Control", "public, max-age=3600")
+        res.end(buf)
       })
     },
     generateBundle() {
       for (const [fileName, file] of assets) {
-        this.emitFile({ type: "asset", fileName, source: readFileSync(file) })
+        this.emitFile({ type: "asset", fileName, source: readCached(file) })
       }
     },
   }
