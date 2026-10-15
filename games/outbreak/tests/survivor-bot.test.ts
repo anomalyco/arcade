@@ -32,6 +32,7 @@ import {
   createBotWorldView,
   SurvivorBot,
 } from "../shared/survivor-bot"
+import { sightRects } from "../shared/map"
 import { createOutbreakSettings, getOutbreakSetting, setOutbreakSetting } from "../src/settings"
 
 describe("SurvivorBot perception, input-only contract, determinism, and tuning", () => {
@@ -251,6 +252,16 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     const finalRestored = restoredSim.toSnapshot()
     expect(diffSimState(finalContinuous, finalRestored)).toEqual([])
     expect(hashSimState(finalContinuous)).toBe(hashSimState(finalRestored))
+  })
+
+  test("a restored sim sees through doors that were open when the snapshot was taken", () => {
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 }, undefined, "classic")
+    sim.addSurvivor("player", 0)
+    for (const d of sim.town.doors) d.open = !d.open
+    const restored = CoopSim.fromSnapshot(cloneSimState(sim.toSnapshot()))
+    // Shove and shot line-of-sight checks read this cache; it must match the restored doors, not a fresh town's.
+    const key = (rects: readonly (readonly number[])[]) => rects.map((r) => r.join(",")).sort().join("|")
+    expect(key((restored as unknown as { sights: number[][] }).sights)).toBe(key(sightRects(restored.town)))
   })
 
   test("fork and roll out from any snapshot across seeds and skills + replay seek", () => {

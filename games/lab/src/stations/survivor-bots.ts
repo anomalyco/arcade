@@ -8,12 +8,16 @@ const setupBotVariant = (opts: {
   count: number
   overlay?: boolean
   scene?: string
+  /** A Discovery › Stage scene (a D-19 verb set up in front of the survivor) to hand to the bot. */
+  verb?: string
 }): StationCommand[] => [
   { command: "scene.set-param", args: { key: "botEnabled", value: 1 } },
   { command: "scene.set-param", args: { key: "botSkillPreset", value: opts.preset } },
   { command: "scene.set-param", args: { key: "botCount", value: opts.count } },
   { command: "scene.set-param", args: { key: "botDebugOverlay", value: opts.overlay ?? true } },
   ...(opts.scene ? [{ command: "pacing.stage", args: { scene: opts.scene } }] : []),
+  // After the pacing scene, so a calm town is reset around the bot before the verb is set up in front of it.
+  ...(opts.verb ? [{ command: "discovery.stage", args: { scene: opts.verb } }] : []),
 ]
 
 const variants: StationVariant[] = [
@@ -46,6 +50,30 @@ const variants: StationVariant[] = [
     label: "Perfect reference bot",
     note: "Zero reaction latency and zero aim error upper-bound bot for verifying maximum theoretical survival and fairness ceilings.",
     setup: setupBotVariant({ preset: 4, count: 1, overlay: true, scene: "late-night-horde" }),
+  },
+  {
+    id: "verb-tripwire",
+    label: "Bot disarms a tripwire",
+    note: "The pharmacy's cans in front of a Skilled bot. It crouches up to the line, works it loose without a rattle, keeps the cans and learns the tripwire.",
+    setup: setupBotVariant({ preset: 2, count: 1, overlay: true, scene: "opening-calm", verb: "tripwire" }),
+  },
+  {
+    id: "verb-closet",
+    label: "Bot hiding in a closet",
+    note: "A Casual bot in a bedroom closet at night. It watches the room through the doors and steps out once nothing has been near for a few seconds.",
+    setup: setupBotVariant({ preset: 1, count: 1, overlay: true, scene: "opening-calm", verb: "closet" }),
+  },
+  {
+    id: "verb-repair",
+    label: "Bot re-nails a barricade",
+    note: "A worn barricade and a crowbar. A Skilled bot takes the crowbar in hand and re-nails the boards to full instead of adding planks.",
+    setup: setupBotVariant({ preset: 2, count: 1, overlay: true, scene: "opening-calm", verb: "repair" }),
+  },
+  {
+    id: "verb-glass",
+    label: "Bot crouches over glass",
+    note: "Bottles broken in a line from the pharmacy door. A Skilled bot crouches over the glass so its steps do not crunch, and over the cans at the door.",
+    setup: setupBotVariant({ preset: 2, count: 1, overlay: true, scene: "opening-calm", verb: "lured" }),
   },
 ]
 
@@ -90,8 +118,9 @@ export default defineStation({
     "games/outbreak/shared/difficulty-tuner.ts",
     "games/outbreak/src/bots-lab.ts",
     "games/outbreak/tests/survivor-bot.test.ts",
+    "games/outbreak/tests/bot-verbs.test.ts",
   ],
-  branches: ["survivor-bots", "balanced-difficulty"],
+  branches: ["survivor-bots", "balanced-difficulty", "bot-verbs"],
   links: [
     { label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" },
     { label: "First-night pacing", href: "/arcade/lab/?station=first-night" },

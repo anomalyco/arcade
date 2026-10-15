@@ -190,6 +190,29 @@ variants. The harness reports `discovery.verbs` {lines, sprung, glass, smashed, 
   the closet's slats, the peephole view, a bottle in hand and thrown, a car with its window in and indicators
   flashing, and a barricade before and after a re-nail.
 
+### Survivor bots
+
+The procedural survivor bots (`shared/survivor-bot.ts`) use the same verbs through `Command` and the interact paths,
+from what they have seen:
+
+- **Crouch** within 1.7 m of a line they know is armed, within 1.1 m of broken glass (slice 5), and (Skilled and up)
+  past the dead that have not noticed them. Never with the dead within 6 m: then speed wins.
+- **Closets**: chased while worn out (exhausted, low stamina, no ammo or under 45 HP) or by three or more, a free closet
+  they know within 10 m, with the dead further from it than they are. In for at least 6 s, out once nothing has been
+  within 7 m for 3 s.
+- **Tripwires**: disarm lines they did not string when calm; string carried cans across a safehouse door at night.
+- **Bottles** only at the dead that are coming but have not locked on (investigating, searching, alerted), at a car
+  it can see (it may have an alarm) or past them. One chasing by sight ignores the noise.
+- **Peephole** before opening a shut outer door at night (map knowledge 0.5 and up), holding it shut if the dead are
+  outside.
+- **Crowbar repair** of a building's worst barricade (30% worn or more), swapping the crowbar in from the pack.
+- **Cars**: never smashed on purpose (the alarm would bring the horde to them), and the door path never presses E on
+  a car or closet.
+
+Usage is counted per run in `BotRunResult.verbs` (`bot-runner.ts`). On 32 seeds × 5 presets, survival is unchanged
+within noise and glass crunches fall by a third to 40%. Lab: the `survivor-bots` station's `verb-*` variants hand a
+staged scene to a bot. Proof: `tests/bot-verbs.test.ts`.
+
 ## Slice 5: environmental vignettes
 
 Small scenes of what happened to the people before you, seeded per home, shop and abandoned car so a few turn up in

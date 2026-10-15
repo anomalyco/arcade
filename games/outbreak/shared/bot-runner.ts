@@ -3,6 +3,7 @@ import { TICK_DT } from "./clock"
 import { isMeleeWeapon } from "./combat"
 import { cloneSimState, CoopSim, forkSimState, hashSimState, type SimState, type SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
+import { carStoreId, crossing, portals, tripLine, tripStoreId } from "./discovery/verbs"
 import { DEFAULT_PACING_TUNING } from "./pacing"
 import { buildingAt, type ProgressionTuning } from "./progression"
 import type { Command } from "./session"
@@ -76,10 +77,46 @@ export type BotRunTimelineEvent = {
     | "nightfall"
     | "dawn"
     | "death"
+    | "verb"
   detail: string
   x: number
   y: number
 }
+
+export type BotVerbUsage = {
+  crouchSeconds: number
+  hides: number
+  hiddenSeconds: number
+  peeks: number
+  tripwiresDisarmed: number
+  tripwiresSet: number
+  /** Cans a survivor walked through upright. */
+  tripwiresSprungBySurvivors: number
+  /** Cans the dead walked through. */
+  tripwiresSprungByZombies: number
+  bottlesThrown: number
+  carsSmashed: number
+  alarmsTriggered: number
+  repairs: number
+  /** Steps onto broken glass upright (each a 9.5 m crunch). */
+  glassCrunches: number
+}
+
+export const emptyBotVerbUsage = (): BotVerbUsage => ({
+  crouchSeconds: 0,
+  hides: 0,
+  hiddenSeconds: 0,
+  peeks: 0,
+  tripwiresDisarmed: 0,
+  tripwiresSet: 0,
+  tripwiresSprungBySurvivors: 0,
+  tripwiresSprungByZombies: 0,
+  bottlesThrown: 0,
+  carsSmashed: 0,
+  alarmsTriggered: 0,
+  repairs: 0,
+  glassCrunches: 0,
+})
 
 export type BotRunTimeSample = {
   t: number
@@ -283,6 +320,8 @@ export type BotRunResult = {
   }
   /** Left 4 Dead AI Director-style tension, build-up/peak/relax window, and death-warning telemetry. */
   pacing: RunPacingMetrics
+  /** D-19 slice 4 verbs, summed over the squad. */
+  verbs: BotVerbUsage
   timeline: BotRunTimelineEvent[]
   series: BotRunTimeSample[]
   replay?: BotReplayLog
@@ -406,6 +445,13 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
   let barricadesBuilt = 0
   let healsUsed = 0
   let timeToWorkbench: number | null = null
+  const verbs = emptyBotVerbUsage()
+  const wasHidden = new Array<boolean>(playerCount).fill(false)
+  const verbEvent = (detail: string, x: number, y: number) => {
+    if (timeline.length < 160) {
+      timeline.push({ t: Number(sim.time.toFixed(1)), hour: Number(sim.hour.toFixed(2)), kind: "verb", detail, x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) })
+    }
+  }
 
   const visitedBuildings = new Set<string>()
   let peakChasers = 0
@@ -517,6 +563,18 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
             y: Number(lead.y.toFixed(1)),
           })
         }
+      } else if (ev.rule === "disarm:tripwire") {
+        verbs.tripwiresDisarmed++
+        verbEvent(`Disarmed cans at ${ev.ref ?? "a doorway"}`, lead.x, lead.y)
+      } else if (ev.rule === "set:tripwire" || ev.rule === "arm:tripwire") {
+        verbs.tripwiresSet++
+        verbEvent(`Strung cans across ${ev.ref ?? "a doorway"}`, lead.x, lead.y)
+      } else if (ev.rule === "throw:bottle") {
+        verbs.bottlesThrown++
+        verbEvent("Threw a bottle", lead.x, lead.y)
+      } else if (ev.rule === "repair") {
+        verbs.repairs++
+        verbEvent(`Re-nailed ${ev.ref ?? "a barricade"}`, lead.x, lead.y)
       } else if (ev.rule.startsWith("heal:")) {
         healsUsed++
         timeline.push({
@@ -551,8 +609,22 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
 
       const heldItem = sim.progression.selected(slot.id)?.item ?? "hands"
       const deadBefore = sim.ai.agents.filter((a) => a.state === "dead").length
+      const peekable = slot.prompt?.kind === "door" && slot.prompt.alt?.id === "peek"
       sim.stepSurvivor(slot, cmd, stepDt)
       const deadAfter = sim.ai.agents.filter((a) => a.state === "dead").length
+
+      if (slot.survivor.crouching) verbs.crouchSeconds += stepDt
+      if (peekable && cmd.interact && cmd.interactAction === "peek") {
+        verbs.peeks++
+        verbEvent(`Peeked through ${slot.prompt?.id ?? "a door"}`, slot.survivor.x, slot.survivor.y)
+      }
+      const hiddenNow = Boolean(sim.progression.hiddenIn(slot.id))
+      if (hiddenNow) verbs.hiddenSeconds += stepDt
+      if (hiddenNow && !wasHidden[i]) {
+        verbs.hides++
+        verbEvent("Hid in a closet", slot.survivor.x, slot.survivor.y)
+      }
+      wasHidden[i] = hiddenNow
 
       if (deadAfter > deadBefore) {
         // Check if deaths came from pistol shots or melee/shove
@@ -604,7 +676,55 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
       replayFrames.push({ tick, commands: tickCommands })
     }
 
+    // Who is walking through which armed cans, and which cars are quiet, before the world steps the verbs.
+    const armedLines: { id: string; bySurvivor: boolean }[] = []
+    for (const portal of portals(sim.town)) {
+      if (!sim.progression.ledger.store(tripStoreId(portal.id))?.counts.armed) continue
+      const line = tripLine(sim.town, portal)
+      const bySurvivor = slots.some((s) => {
+        const q = s.survivor
+        return q.health > 0 && !q.crouching && Math.hypot(q.vx ?? 0, q.vy ?? 0) > 0.3 && crossing(line, q.x, q.y, 0.38)
+      })
+      armedLines.push({ id: portal.id, bySurvivor })
+    }
+    let glassStepsBefore = 0
+    for (const st of sim.progression.ledger.stores.values()) if (st.id.startsWith("glass:")) glassStepsBefore += st.counts.steps ?? 0
+    const carBefore = sim.progression.cars.map((c) => {
+      const st = sim.progression.ledger.store(carStoreId(c.key))
+      return { smashed: Boolean(st?.counts.smashed), alarm: Boolean(st?.counts.alarm) }
+    })
+
     sim.stepWorld(stepDt, timeScale)
+
+    let glassStepsAfter = 0
+    for (const st of sim.progression.ledger.stores.values()) if (st.id.startsWith("glass:")) glassStepsAfter += st.counts.steps ?? 0
+    // Swept bottle glass takes its count with it, so only count increases.
+    if (glassStepsAfter > glassStepsBefore) verbs.glassCrunches += glassStepsAfter - glassStepsBefore
+    for (const line of armedLines) {
+      const st = sim.progression.ledger.store(tripStoreId(line.id))
+      if (!st || st.counts.armed || st.counts.down) continue
+      const lead = slots[0]!.survivor
+      if (line.bySurvivor) {
+        verbs.tripwiresSprungBySurvivors++
+        verbEvent(`Walked into the cans at ${line.id}`, lead.x, lead.y)
+      } else {
+        verbs.tripwiresSprungByZombies++
+        verbEvent(`The dead rattled the cans at ${line.id}`, lead.x, lead.y)
+      }
+    }
+    for (let c = 0; c < sim.progression.cars.length; c++) {
+      const car = sim.progression.cars[c]!
+      const st = sim.progression.ledger.store(carStoreId(car.key))
+      const before = carBefore[c]
+      if (st?.counts.smashed && !before?.smashed) {
+        verbs.carsSmashed++
+        verbEvent(`Smashed a car window at ${car.key}`, car.x, car.y)
+      }
+      if (st?.counts.alarm && !before?.alarm) {
+        verbs.alarmsTriggered++
+        verbEvent(`Set off a car alarm at ${car.key}`, car.x, car.y)
+      }
+    }
 
     // Track per-survivor health, stamina, reload, and visited buildings
     let damageThisTick = 0
@@ -958,6 +1078,11 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
       behindPlayer: tel.behindSpawns,
     },
     pacing,
+    verbs: {
+      ...verbs,
+      crouchSeconds: Number(verbs.crouchSeconds.toFixed(2)),
+      hiddenSeconds: Number(verbs.hiddenSeconds.toFixed(2)),
+    },
     timeline,
     series,
     ...(checkpointIntervalTicks > 0 ? { checkpoints } : {}),

@@ -816,6 +816,7 @@ export class CoopSim {
     }
 
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
     this.vehicleSolids = vehicleSolidRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }

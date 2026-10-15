@@ -4,6 +4,7 @@
 // variant. The page runtime only exists under the dev router, so --serve starts it in the same job:
 //   hivemind run --kind browser --fetch captures/lab-station -- bun games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle
 //   bun games/lab/scripts/prove-page-station.ts <id> --base http://127.0.0.1:5180      uses a running dev router
+//   --only a,b proves just those variants; --wait <ms> holds each before its frame (default 2200) to see it play out.
 // No visible window, no audio.
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
@@ -22,6 +23,8 @@ const root = resolve(import.meta.dir, "../../..")
 const station = (await import(resolve(import.meta.dir, `../src/stations/${id}.ts`))).default as LabStation
 assert(station.demo.kind === "page", "this proof is for page demos; use prove-station.ts for section demos")
 const reads = (arg("--read") ?? "").split(",").filter(Boolean)
+const only = (arg("--only") ?? "").split(",").filter(Boolean)
+const wait = Number(arg("--wait") ?? 2200)
 const out = resolve(root, arg("--out") ?? `captures/lab-station/${id}`)
 mkdirSync(out, { recursive: true })
 
@@ -96,11 +99,11 @@ try {
       }
     }, reads)
 
-  for (const v of station.variants ?? []) {
+  for (const v of (station.variants ?? []).filter((v) => !only.length || only.includes(v.id))) {
     const res = await page.evaluate((v) => (window as any).labWorkbench.invoke("station.variant", { id: v }), v.id)
     assert(res.ok, `station.variant ${v.id}: ${res.error ?? "failed"}`)
     // Setup runs inside the page after a short settle; give it time, then read what it changed.
-    await page.waitForTimeout(2200)
+    await page.waitForTimeout(wait)
     const s = await state(reads)
     assert(!s.toast?.error, `${v.id}: ${s.toast?.text}`)
     report.variants.push({ id: v.id, ...s })
