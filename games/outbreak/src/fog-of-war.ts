@@ -8,6 +8,7 @@ import type { SceneryMemory } from "../shared/scenery-memory"
 import { SIZE } from "../shared/map"
 import { FOG_CELL, FOG_SIZE, type Vision } from "../shared/vision"
 import { outbreakLightingStructWgsl } from "./lighting"
+import { outbreakUnseenFieldWgsl, outbreakUnseenSceneWgsl } from "./unseen"
 
 export type FogStyleId = 0 | 1 | 2
 
@@ -477,20 +478,34 @@ fn rayVis(f: f32, d: f32) -> f32 {
   return mix(v0, v1, f - lo);
 }
 
+${outbreakUnseenFieldWgsl}
+
 fn softSight(p: vec2f) -> f32 {
   let eye = lights[0].pos.xz;
   let r = lights[0].pos.w;
   let delta = p - eye;
   let d = length(delta);
-  if (d >= r) { return 0.0; }
+  let maxR = select(r, max(r, OL.u4.y), OL.unseen.flashActive > 0.5 && OL.u4.z > 0.005);
+  if (d >= maxR) { return 0.0; }
   if (d < 0.08) { return 1.0; }
-  let soft = clamp(OL.u10.y, 0.05, 1.5);
+  let unseenActive = OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001;
+  let soft = clamp(select(OL.u10.y, OL.unseen.edgeSoftness, unseenActive), 0.05, 2.0);
   let facing = dot(delta / d, vec2f(cos(F.effects.x), sin(F.effects.x)));
   let feather = 0.05 + 0.2 * soft;
   let cone = smoothstep(F.effects.y - feather, F.effects.y + feather, facing);
-  let near = 0.6 * (1.0 - smoothstep(F.effects.z * 0.5, F.effects.z + 0.8 + 1.2 * soft, d));
-  let mask = max(cone, near);
-  if (mask <= 0.0) { return 0.0; }
+  let nearScale = select(0.6, 1.0, unseenActive);
+  let near = nearScale * (1.0 - smoothstep(F.effects.z * 0.5, F.effects.z + 0.8 + 1.2 * soft, d));
+  let mask = max(cone, near) * step(d, r);
+  var canFlash = false;
+  if (unseenActive && OL.unseen.flashActive > 0.5 && OL.u4.z > 0.005) {
+    let fDelta = p - OL.u3.xy;
+    let fDist = length(fDelta);
+    if (fDist < OL.u4.y) {
+      let fFacing = select(1.0, dot(fDelta / max(fDist, 1e-4), OL.u3.zw), fDist > 0.12);
+      canFlash = fFacing >= (OL.unseen.flashCosHalf - (0.04 + 0.16 * soft));
+    }
+  }
+  if (mask <= 0.0 && !canFlash) { return 0.0; }
   let range = 1.0 - smoothstep(r - (1.5 + 3.0 * soft), r, d);
   let a = atan2(delta.y, delta.x);
   let f = a / TAU * f32(RAYS) - 0.5;
@@ -503,7 +518,10 @@ fn softSight(p: vec2f) -> f32 {
     sum += rayVis(f + f32(k) * stepRays, d) * w;
     weights += w;
   }
-  return mask * range * sum / weights;
+  let eyeRayVis = sum / weights;
+  let coneSight = mask * range * eyeRayVis;
+  if (!canFlash) { return coneSight; }
+  return max(coneSight, evalUnseenFlashCone(p, soft, eyeRayVis));
 }
 
 @compute @workgroup_size(8, 8)
@@ -512,17 +530,31 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let tx = origin + vec2i(gid.xy);
   if (any(tx < vec2i(0)) || any(tx >= vec2i(FIELD_SIZE))) { return; }
   let idx = u32(tx.y * FIELD_SIZE + tx.x);
-  let goal = softSight((vec2f(tx) + 0.5) * FIELD_CELL + OL.win.xy);
+  let p = (vec2f(tx) + 0.5) * FIELD_CELL + OL.win.xy;
+  let goal = softSight(p);
   var s = fieldState[idx];
   s.x = mix(s.x, goal, select(OL.u15.w, OL.u15.z, goal > s.x));
   s.y = max(s.y, s.x);
   fieldState[idx] = s;
-  textureStore(fieldOut, tx, vec4f(s.x, s.y, 0.0, 1.0));
+  var edgeD = 0.0;
+  if (OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001 && s.x < 0.998) {
+    let eye = lights[0].pos.xz;
+    let delta = p - eye;
+    let d = max(0.001, length(delta));
+    let soft = clamp(OL.unseen.edgeSoftness, 0.1, 2.0);
+    let feather = 0.05 + 0.2 * soft;
+    let facing = dot(delta / d, vec2f(cos(F.effects.x), sin(F.effects.x)));
+    let a = (atan2(delta.y, delta.x) + TAU) % TAU;
+    let rayF = a / TAU * f32(RAYS);
+    edgeD = evalUnseenEdgeDepth(p, s.x, d, facing, feather, soft, rayF);
+  }
+  textureStore(fieldOut, tx, vec4f(s.x, s.y, edgeD, 1.0));
 }
 `,
 }
 
 export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
+${outbreakUnseenSceneWgsl}
 /** Live sight (x) and soft fine-grained memory (y) from the visibility field, gated to the current sight range. */
 fn fieldSight(world: vec3f, n: vec3f) -> vec2f {
   let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy, 0.0).rg;
@@ -545,9 +577,11 @@ fn applyOutbreakFogOfWar(
   mat: i32,
   warmth: f32,
 ) -> vec3f {
-  let sight = fieldSight(world, n);
+  let sight = fieldSight3(world, n);
   let visible = sight.x;
+  let edgeDepth = sight.z;
   outbreakSeen = visible;
+  outbreakUnseenAlpha = 0.0;
   if (visible >= 0.996 && mat != 2) {
     return colIn;
   }
@@ -567,7 +601,7 @@ fn applyOutbreakFogOfWar(
     } else {
       lampCol *= mix(memDim * (0.55 + 0.45 * explored), 1.0, visible);
     }
-    return lampCol;
+    return applyOutbreakUnseenScene(colIn, lampCol, world, n, baseColor, inRoom, mat, visible, explored, edgeDepth);
   }
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
@@ -575,6 +609,7 @@ fn applyOutbreakFogOfWar(
   let memSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0);
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
 
+  var baseFowCol: vec3f;
   if (inRoom && world.y < 2.8) {
     let unknownGrainAmt = fract(OL.u10.x) * select(1.0, 1.35, fogStyle == 2);
     var shroudNoise = 0.0;
@@ -586,9 +621,11 @@ fn applyOutbreakFogOfWar(
     let shroudScale = clamp(F.effects.w * 2.2, 0.35, 1.0);
     let roomMem = memoryTone * shroudScale;
     let unrevealed = mix(unknownShroud, roomMem, explored);
-    return mix(unrevealed, colIn, visible);
+    baseFowCol = mix(unrevealed, colIn, visible);
+  } else {
+    baseFowCol = mix(memoryTone * (0.78 + 0.22 * explored), colIn, visible);
   }
 
-  return mix(memoryTone * (0.78 + 0.22 * explored), colIn, visible);
+  return applyOutbreakUnseenScene(colIn, baseFowCol, world, n, baseColor, inRoom, mat, visible, explored, edgeDepth);
 }
 `

@@ -72,6 +72,7 @@ import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
 import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
 import { shaders } from "./shaders"
+import { evaluateUnseenFrame } from "./unseen"
 import "./style.css"
 
 /** Player first, then the nearest living zombies: grass and bushes bend away from them (presentation only). */
@@ -801,7 +802,25 @@ async function main() {
           cone: Math.max(settings.vision.cone, 130),
         }
       : settings.vision
-    const visChanged = vision.update(p.x, p.y, effectiveVisionAim, blockers, effectiveVisionSettings, peek)
+    const flashVisionActive =
+      (drivingHeadlights || p.flashlightOutput > 0.01) &&
+      (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
+    const visChanged = vision.update(
+      p.x,
+      p.y,
+      effectiveVisionAim,
+      blockers,
+      effectiveVisionSettings,
+      peek,
+      flashVisionActive
+        ? {
+            active: true,
+            range: drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange,
+            cone: drivingHeadlights ? 68 : settings.flashlight.flashlightCone,
+            aim: effectiveVisionAim,
+          }
+        : null,
+    )
     if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
@@ -837,6 +856,7 @@ async function main() {
       return true
     }
     const day = dayCycle(hour)
+    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth)
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
     const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
@@ -938,7 +958,12 @@ async function main() {
       (x, z) => supportHeight(town, x, z),
       vision,
       view,
-      settings.zombies,
+      {
+        ...settings.zombies,
+        fogGhostDuration: settings.fog.fogGhostDuration,
+        hideUnseenZombies: unseenEval.hideZombies,
+        unseenMode: unseenEval.mode,
+      },
       Boolean(settings.ai.aiDebugOverlay),
       time,
     )
@@ -1083,6 +1108,7 @@ async function main() {
         windowOrigin: currentWindowOrigin,
         isStreamWindow: currentIsStreamWindow,
         windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings,
+        unseen: unseenEval,
       },
       flashRgb,
       lightingUniforms,
@@ -1151,6 +1177,13 @@ async function main() {
       alphaSprites,
       vehAlphaStart,
     )
+    const effectiveFogSettings =
+      unseenEval.mode > 0 && unseenEval.hideZombies
+        ? {
+            ...settings.fog,
+            fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
+          }
+        : settings.fog
     const fogSoundAlphaCount = collectFogSoundSprites(
       zombies,
       noises,
@@ -1158,7 +1191,7 @@ async function main() {
       vision,
       time,
       (x, z) => supportHeight(town, x, z),
-      settings.fog,
+      effectiveFogSettings,
       alphaSprites,
       debugAlphaCount,
     )
@@ -1224,6 +1257,7 @@ async function main() {
     }
     render.look = lookSettings
     render.lookCompare = lookCompare
+    render.postParams = unseenEval.postParams
     renderer.render(render)
     if (staminaEl && staminaFill) {
       const pct = Math.max(0, Math.min(100, p.stamina * 100))

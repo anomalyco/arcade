@@ -172,6 +172,8 @@ export type FrameInput = {
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
+  /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
+  postParams?: readonly [number, number, number]
 }
 
 /**
@@ -1120,7 +1122,8 @@ export class Renderer {
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
-    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    const hasPostParams = Boolean(f.postParams && f.postParams[0] > 0.5)
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2 || hasPostParams)
     if (f.splatter) {
       this.splatterRenderer ??= new SplatterRenderer(d)
       for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
@@ -1218,9 +1221,9 @@ export class Renderer {
     this.gradeData.set(f.grade)
     if (useLookPipes && effectiveLook) {
       this.gradeData[4] = 0
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
@@ -1228,9 +1231,9 @@ export class Renderer {
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
       this.gradeData[4] = f.frame[45]! & 1
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 

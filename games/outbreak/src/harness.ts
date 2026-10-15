@@ -33,6 +33,7 @@ import {
   type OutbreakSettings,
 } from "./settings"
 import type { Survivor } from "./survivor"
+import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
 import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import {
@@ -158,6 +159,10 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           color: flashlightColor(settings.flashlight.flashlightWarmth),
         },
         explored: vision.exploredCount,
+        unseen: {
+          ...settings.unseen,
+          ...evaluateUnseenFrame(settings.unseen, dc.darkness, session.view.player.health, session.view.player.maxHealth),
+        },
         vertices: host.getVertices(),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },

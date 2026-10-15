@@ -15,6 +15,8 @@ export type PostFinishOptions = {
   shadowLiftColor?: readonly [number, number, number]
   shadowTint?: readonly [number, number, number]
   highlightTint?: readonly [number, number, number]
+  customDeclarations?: string
+  customPostHook?: string
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"
@@ -79,7 +81,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       surface: `${surfBody}
   let lookCompare = i32(round(LK.compareMode));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;
-  let lookFlashIrradiance = select(0.0, clamp(outbreakFlashMask, 0.0, 1.0), lookUseAfter);
+  let lookFlashIrradiance = select(clamp(outbreakFlashMask, -6.0, 0.0), clamp(outbreakFlashMask, -6.0, 1.0), lookUseAfter);
   if (lookUseAfter) {
     let presetIdx = i32(round(LK.presetIndex));
     ${presetBranches}
@@ -326,6 +328,7 @@ struct GradeAndLook {
   L: LookUniforms,
 }
 @group(0) @binding(4) var<uniform> GL: GradeAndLook;
+${finish?.customDeclarations ?? ""}
 
 ${
   includeKuwahara
@@ -403,6 +406,7 @@ ${
     c *= mix(${finish?.shadowTint ? `vec3f(${finish.shadowTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.93, 0.97, 1.06)"}, ${finish?.highlightTint ? `vec3f(${finish.highlightTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(1.04, 1.0, 0.95)"}, smoothstep(0.2, 0.8, l));
     let v = length(fromC * vec2f(1.0, 0.8));
     c *= mix(1.0, baseVig, smoothstep(0.32, 0.85, v));
+    ${finish?.customPostHook ? `let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));\n    ${finish.customPostHook}` : ""}
     c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
     c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
     let px = o.pos.xy;
@@ -466,6 +470,7 @@ ${
     baseHuePres,
     flashMask,
   );
+  ${finish?.customPostHook ?? ""}
   let v = length(fromC * vec2f(1.0, 0.8));
   c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
@@ -572,6 +577,7 @@ ${
     let amp = (0.026 + 0.008 * clamp(L.shaftStrength, 0.0, 1.0)) * grainStrength * (0.25 + 0.75 * midMask);
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
   }
+  ${finish?.customPostHook ?? ""}
   let v = length(fromC * vec2f(1.0, 0.8));
   c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));

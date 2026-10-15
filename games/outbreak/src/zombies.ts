@@ -737,7 +737,7 @@ export class ZombieCrowdRenderer {
     support: (x: number, z: number) => number,
     vision: Vision,
     viewRect: readonly [number, number, number, number],
-    zombieTune: ZombieTuning & { fogGhostDuration?: number },
+    zombieTune: ZombieTuning & { fogGhostDuration?: number; hideUnseenZombies?: boolean; unseenMode?: number },
     debugOverlay: boolean,
     time = 0,
   ): Batch[] {
@@ -745,7 +745,10 @@ export class ZombieCrowdRenderer {
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
     const [vx0, vy0, vx1, vy1] = viewRect
-    const ghostDuration = zombieTune.fogGhostDuration ?? 3.2
+    const hideUnseen = zombieTune.hideUnseenZombies ?? true
+    const unseenMode = zombieTune.unseenMode ?? 0
+    const baseGhostDuration = zombieTune.fogGhostDuration ?? 3.2
+    const ghostDuration = unseenMode === 4 ? Math.max(baseGhostDuration, 12.0) : baseGhostDuration
 
     // Step detached limb debris
     for (let i = this.debris.length - 1; i >= 0; i--) {
@@ -810,7 +813,7 @@ export class ZombieCrowdRenderer {
 
       const visWeight = typeof vision.actorVisible === "function" ? vision.actorVisible(a.x, a.y) : vision.visible(a.x, a.y) ? 1 : 0
       const isVisible = visWeight > 0.02
-      if (!isVisible && !debugOverlay) {
+      if (!isVisible && hideUnseen && !debugOverlay) {
         const s = this.slotById.get(a.id)
         if (s !== undefined && ghostDuration > 0.05 && a.state !== "dead") {
           const age = time - this.seenAt[s]!
@@ -820,7 +823,7 @@ export class ZombieCrowdRenderer {
             if (Math.hypot(a.x - sx, a.y - sy) > 0.85 && vision.visible(sx, sy)) {
               this.seenAt[s] = -1e9
             } else {
-              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * 0.56
+              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * (unseenMode === 4 ? 0.68 : 0.56)
               if (gAlpha > 0.02) {
                 const hidden = this.hiddenMask[s]!
                 const bOff = s * BONE_STRIDE
@@ -844,10 +847,11 @@ export class ZombieCrowdRenderer {
       }
 
       const shade = 0.88 + ((a.id * 19) % 7) * 0.035
-      const tintR = !isVisible && debugOverlay ? 0.55 : shade
-      const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98
-      const tintB = !isVisible && debugOverlay ? 0.85 : shade * 0.94
-      const alpha = !isVisible && debugOverlay ? 0.58 : Math.min(1.0, 0.25 + 0.75 * visWeight)
+      const visFade = hideUnseen || !unseenMode ? Math.min(1.0, 0.25 + 0.75 * visWeight) : 1.0
+      const tintR = !isVisible && debugOverlay ? 0.55 : shade * (unseenMode > 0 ? visFade : 1.0)
+      const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98 * (unseenMode > 0 ? visFade : 1.0)
+      const tintB = !isVisible && debugOverlay ? 0.85 : shade * 0.94 * (unseenMode > 0 ? visFade : 1.0)
+      const alpha = !isVisible && debugOverlay ? 0.58 : unseenMode > 0 ? 1.0 : Math.min(1.0, 0.25 + 0.75 * visWeight)
       const bOff = s * BONE_STRIDE
       const pelvisOff = bOff
       const torsoOff = bOff + 12

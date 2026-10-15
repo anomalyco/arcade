@@ -3,6 +3,7 @@ import { VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
+import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
 export const STREET_LAMP_POSTS = [
@@ -224,10 +225,11 @@ export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
 export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
 /** Volumetric beam block: inverse view-projection (16) then two vec4f. */
 export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 164
+export const OUTBREAK_UNSEEN_UNIFORM_OFFSET = 164
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 172
 
 export type OutbreakLightingUniformSettings =
-  | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
+  | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
       flashlightIntensity: number
       flashlightRange: number
       flashlightCone: number
@@ -263,6 +265,7 @@ export type OutbreakLightingUniformSettings =
         fogRevealTime?: number
         fogFadeTime?: number
       }
+      unseen?: Partial<UnseenSettings>
     }
 
 export type OutbreakLightingFrameState = {
@@ -308,6 +311,7 @@ export type OutbreakLightingFrameState = {
   windowOrigin?: readonly [number, number]
   isStreamWindow?: boolean
   windowBuildings?: readonly Building[]
+  unseen?: Partial<UnseenFrameEvaluation>
 }
 
 /**
@@ -329,7 +333,7 @@ export function packOutbreakLightingUniforms(
   out: Float32Array<ArrayBuffer> = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS),
 ): Float32Array<ArrayBuffer> {
   const raw = state.settings
-  const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog } : raw
+  const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog, ...raw.unseen } : raw
   const dirX = Math.cos(state.playerAim)
   const dirY = Math.sin(state.playerAim)
   const handX = state.flashlightOrigin?.[0] ?? state.playerX + dirX * 0.24
@@ -445,6 +449,28 @@ export function packOutbreakLightingUniforms(
   out[B + 21] = state.inInteriorView ? 1 : 0
   out[B + 22] = state.playerH
   out[B + 23] = state.beamReach ?? 13
+  // Unseen block (offset 164..171): mode, effectiveStrength, edgeSoftness, updateRate, nightFactor, flashCosHalf, flashActive, hideZombies
+  const uMode = state.unseen?.mode ?? s.unseenMode ?? 0
+  const uStrength = state.unseen?.effectiveStrength ?? (uMode > 0 ? (s.unseenStrength ?? 1.0) : 0)
+  const uSoft = state.unseen?.edgeSoftness ?? s.unseenEdgeSoftness ?? 0.85
+  const uRate = state.unseen?.updateRate ?? s.unseenUpdateRate ?? 10
+  const uNight = state.unseen?.nightFactor ?? 1.0
+  const uHide = state.unseen?.hideZombies ?? s.hideUnseenZombies ?? true
+  const flashActive = state.flashlightOutput > 0.01 && s.flashlightIntensity > 0.01 ? 1 : 0
+  unseenUniformsStruct.pack(
+    {
+      mode: uMode,
+      strength: uStrength,
+      edgeSoftness: uSoft,
+      updateRate: uRate,
+      nightFactor: uNight,
+      flashCosHalf: Math.cos(halfRad),
+      flashActive,
+      hideZombies: uHide ? 1 : 0,
+    },
+    out,
+    OUTBREAK_UNSEEN_UNIFORM_OFFSET,
+  )
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -950,6 +976,7 @@ export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
 
 /** Custom uniform block at binding 13, shared by the scene shader and the visibility-field compute pass. */
 export const outbreakLightingStructWgsl = /* wgsl */ `
+${unseenUniformsStruct.wgsl}
 struct OutbreakLightingUniforms {
   u0: vec4f, // skyFill, moonFill, practicalWarmth, lightFalloff
   u1: vec4f, // porchPower, windowPower, roomPower, streetPower
@@ -976,6 +1003,7 @@ struct OutbreakLightingUniforms {
   invViewProj: mat4x4f,
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
   u19: vec4f, // weatherAir, indoors, groundY, beamReach
+  unseen: UnseenUniforms,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 `
