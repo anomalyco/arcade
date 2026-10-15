@@ -25,15 +25,12 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   if (hooks.postLightMaterial) {
     // Fast-path for games with postLightMaterial (Outbreak): keep register pressure identical to makeSceneShader
     // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
-    const declBody = (hooks.declarations ?? "")
-      .replace(/\s*u8:\s*vec4f[^\n]*\n\s*u9:\s*vec4f[^\n]*\n\s*u10:\s*vec4f[^\n]*\n(\s*veg:[^\n]*\n\s*vegActors:[^\n]*\n)?/, "\n")
-      .replace(/fn gaussLineAir[\s\S]*?return 1\.0 - occ \* k;\n\}/, "")
     const surfBody = (hooks.surface ?? "")
       .replace("if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }", "")
       .replace("if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }", "")
     const base = makeSceneShader({
       ...hooks,
-      declarations: `${declBody}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
+      declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
       surface: `${surfBody}
   let lookCompare = i32(round(LK.u12.w));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.u13.w, lookCompare == 2) && LK.u11.w > 0.5;
