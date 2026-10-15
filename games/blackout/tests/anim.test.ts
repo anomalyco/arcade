@@ -41,13 +41,13 @@ for (const [name, vx, vy, spin] of [["walk", 1.4, 0, 0], ["run", 4.2, 0, 0], ["s
     const a = newAvatar("lock", 0, 0, 0, "rifle")
     let contacts = 0, steps = 0
     for (let n = 0; n < 360; n++) {
-      const old = a.feet.map((f, i) => ({ planted: f.planted, p: [...f.p], rendered: a.body ? at(a.body.ft[i]!, 0.19, -RIG.ankle, 0) : null }))
+      const old = a.feet.map((f, i) => ({ planted: f.planted, p: [...f.p], rendered: a.body ? a.body.toe![i]!.p : null }))
       animate(a, dt, n * dt, vx * n * dt, vy * n * dt, vx, vy, spin * n * dt)
       for (let i = 0; i < 2; i++) {
         if (!old[i]!.planted && a.feet[i]!.planted) steps++
         if (n > 0 && old[i]!.planted && a.feet[i]!.planted) {
           expect(a.feet[i]!.p).toEqual(old[i]!.p)
-          const toe = at(a.body!.ft[i]!, 0.19, -RIG.ankle, 0)
+          const toe = a.body!.toe![i]!.p
           for (let axis = 0; axis < 3; axis++) expect(toe[axis]!).toBeCloseTo(old[i]!.rendered![axis]!, 12)
           contacts++
         }
@@ -428,7 +428,7 @@ test("reversals, sharp turns, strafe transitions, hard stops and mux stepping ha
       const b = a.body!
       const footP = a.feet.map(f => [...f.p] as [number, number, number])
       const ankles = b.ft.map(f => [...f.p] as [number, number, number])
-      const toes = b.ft.map(f => at(f, 0.19, -RIG.ankle, 0))
+      const toes = b.toe!.map(t => [...t.p] as [number, number, number])
       const planted = a.feet.map(f => f.planted)
       const pelPitch = Math.asin(b.pelvis.x[1]), pelY = b.pelvis.p[1]
       if (n > 0) {

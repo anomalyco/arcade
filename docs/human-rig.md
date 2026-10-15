@@ -70,7 +70,10 @@ The linear velocity is at the frame origin, not at the centre of mass. `pointVel
 `linear + angular × (worldPoint − frame.p)` for an offset centre of mass or emitter. Debris physics owns the copied
 frames and begins integrating on the next tick; integrating before the first emission would introduce a spawn pop.
 
-Semantic IDs are `pelvis`, `torso`, `head`, and `left`/`right` `.upperArm`, `.foreArm`, `.thigh`, `.shin`, `.foot`.
+Semantic IDs are `pelvis`, `torso`, `head`, and `left`/`right` `.upperArm`, `.foreArm`, `.thigh`, `.shin`, `.foot`,
+`.toe` (`left.toe` is `limbId 13` parented to `left.foot`; `right.toe` is `limbId 14` parented to `right.foot`, keeping
+existing IDs `0..12` unchanged). The foot splits at the ball (MTP joint) into `RIG.foot = 0.125 m` (ankle to ball) and
+`RIG.toe = 0.065 m` (ball to toe tip, `0.19 m` total forward reach, `RIG.heel = 0.06 m`), exposed on `HumanBody.toe`.
 Attachments are `left.hand`, `right.hand`, `head.top`. `limbIds` gives explicit stable numeric cosmetic IDs; never
 derive IDs from model registration order. Blackout's corpse adapter copies the visibility mask on death. Detaching
 from a corpse samples `bodyBones(ragdollBody(...))`, not its last living pose; hidden constraints remain visual-only.
@@ -94,7 +97,7 @@ Open `/arcade/blackout/characters.html` (reachable from the Dev Hub top bar unde
 - Switch profiles per actor, trigger `Walk loop`, `Run loop`, `Stop`, `Detach limb` (any bone subtree, with surface blood splatter) or `Reset`, and control transport with `Pause`, `Step` (`1/60 s`) and `Speed`.
 - The `Lab ~` button (`Backquote`) toggles the shared `LabPanel` scoped to the selected actor's `Profile` controls.
 
-For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`f5a333ae` New parity; `8223033` Old parity).
+For scripted A/B fixtures, `anim.html?lab=1` retains `Profile walk`, `Three profiles` and `Detached forearm`. Production defaults remain the neutral soldier profile (`4500970e` New parity; `8223033` Old parity).
 
 `games/blackout/scripts/prove-characters.ts` and `games/blackout/scripts/prove-human.ts` exercise interactive possession, camera gestures, per-actor profiles, attachments, detach handoff and Lab input on headless Metal through Hivemind. Shared tests cover contact locking, asymmetry bounds, semantic IDs, attachment visibility and origin/offset motion. Blackout tests cover default/profile parity, dt spikes, missing limbs, weapon stability and corpse detachment. Visual proof and release-base results belong in `perf/human-rig.md`.
 
