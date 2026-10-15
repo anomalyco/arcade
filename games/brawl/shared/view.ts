@@ -29,6 +29,7 @@ export type Snapshot = {
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100
+const r3 = (v: number) => Math.round(v * 1000) / 1000
 
 export function snapshotEntities(w: World): Pick<Snapshot, "f" | "p" | "ab"> {
   const now = w.time
@@ -40,9 +41,9 @@ export function snapshotEntities(w: World): Pick<Snapshot, "f" | "p" | "ab"> {
         (f.ab.carriedBy ? F.carried : 0) | (f.ab.carry ? F.carrying : 0) | (f.ab.dash ? F.dashing : 0) | (has("stun") ? F.stunned : 0) |
         (has("root") ? F.rooted : 0) | (has("slide") ? F.slide : 0) | (has("shield") ? F.shield : 0) | (has("slow") ? F.slow : 0) | (has("haste") ? F.haste : 0)
       const c = f.ab.cast
-      return { i: f.id, c: f.char, x: r2(f.x), y: r2(f.y), vx: r2(f.vx), vy: r2(f.vy), a: r2(f.aim), d: Math.round(f.damage), s: f.stocks, f: flags, ...(c ? { k: [c.slot, r2(now - c.at)] as [number, number] } : {}) }
+      return { i: f.id, c: f.char, x: r3(f.x), y: r3(f.y), vx: r3(f.vx), vy: r3(f.vy), a: r3(f.aim), d: Math.round(f.damage), s: f.stocks, f: flags, ...(c ? { k: [c.slot, r2(now - c.at)] as [number, number] } : {}) }
     }),
-    p: w.props.list.filter((p) => p.alive).map((p) => [p.id, p.kind, r2(p.x), r2(p.y), r2(p.h), r2(p.z)]),
+    p: w.props.list.filter((p) => p.alive).map((p) => [p.id, p.kind, r3(p.x), r3(p.y), r3(p.h), r2(p.z)]),
     ab: abilityView(w.abilitySystem, now),
   }
 }
@@ -53,7 +54,7 @@ export function buildSnapshot(w: World, viewer: string, entities = snapshotEntit
   return {
     type: "snap",
     tick: w.tick,
-    t: r2(w.time),
+    t: r3(w.time),
     ack: me?.ack ?? 0,
     phase: w.phase,
     left: r2(Math.max(0, w.phaseEnd - w.time)),

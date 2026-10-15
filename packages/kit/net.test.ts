@@ -23,7 +23,9 @@ import {
   PriorityAccumulator,
   selectInterestStride,
 } from "./net/interest"
-import { lerpAngle, SnapshotBuffer } from "./net/interpolate"
+import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "./net/interpolate"
+import { ClockSync } from "./net/clock-sync"
+import { roomLocationHint } from "./net/room-core"
 import { DEFAULT_JITTER, JitterBuffer, type InputOps } from "./net/jitter-buffer"
 import { Predictor, Smoother } from "./net/prediction"
 import { RewindHistory } from "./net/rewind"
@@ -255,11 +257,41 @@ describe("SnapshotBuffer", () => {
     expect([s.a, s.b]).toEqual([5, 6])
     expect(s.t).toBeGreaterThan(0)
     expect(s.t).toBeLessThan(1)
+    expect(s.span).toBeCloseTo(0.05, 5)
+    expect(s.over).toBe(0)
     expect(lerpAngle(3, -3, 0.5)).toBeCloseTo(Math.PI, 1)
+  })
+
+  test("hermite2 coasts through a stall and Glide blends out the resume jump", () => {
+    const a = { x: 0, y: 0, vx: 6, vy: 0 }
+    const b = { x: 0.4, y: 0, vx: 6, vy: 0 }
+    const mid = hermite2(a, b, 0.4 / 6, 0.5, 0)
+    expect(mid.x).toBeCloseTo(0.2, 4)
+    expect(mid.vx).toBeCloseTo(6, 4)
+    const coasted = hermite2(a, b, 0.4 / 6, 1, 0.1)
+    expect(coasted.x).toBeCloseTo(1.0, 4)
+    const g = new Glide(10, 4)
+    g.step(0, 0, 6, 0, 0.016)
+    const jumped = g.step(0.5, 0, 6, 0, 0.016)
+    expect(jumped.x).toBeLessThan(0.2)
   })
 })
 
-describe("Predictor", () => {
+describe("Predictor & ClockSync & LocationHint", () => {
+  test("prevCommands returns recent unacknowledged commands and ClockSync slews monotonically", () => {
+    const pred = new Predictor<string>()
+    pred.record("a")
+    pred.record("b")
+    pred.record("c")
+    expect(pred.prevCommands(2)).toEqual(["a", "b"])
+    const clock = new ClockSync()
+    clock.add(100, 1050, 120)
+    const t0 = clock.now(150)
+    const t1 = clock.now(166)
+    expect(t1).toBeGreaterThan(t0)
+    expect(roomLocationHint({ cf: { continent: "NA", country: "US", regionCode: "CA" } })).toBe("wnam")
+    expect(roomLocationHint({ cf: { continent: "EU", country: "DE" } })).toBe("weur")
+  })
   test("reconciliation replays unacknowledged commands on top of the server state", () => {
     // A 1D survivor: x += mx each tick. The server lags two commands behind and once disagrees by 0.5.
     const predictor = new Predictor<number>()

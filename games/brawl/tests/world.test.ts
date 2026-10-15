@@ -223,4 +223,33 @@ describe("brawl world", () => {
     }
     expect(b.toSnapshot()).toEqual(a.toSnapshot())
   })
+
+  test("lag-compensated cast (intent.view) hits a moving target at its rendered past position", () => {
+    const w = new World(31)
+    w.botFill = 0
+    const a = w.addHuman("a", "Alice", "slab")
+    const b = w.addHuman("b", "Bob", "chef")
+    w.setReady("a", true)
+    w.setReady("b", true)
+    w.step()
+    while (w.time < w.goAt + 0.1) w.step()
+    a.invulnUntil = b.invulnUntil = 0
+    a.x = 12
+    a.y = 10
+    b.x = 13.4
+    b.y = 10
+    const hitTime = w.time
+    w.rewind.record(w.tick, w.time, w.actors, (f) => f.alive)
+    // Bob moves 2.5 m away over the next 4 ticks (133 ms later on the server)
+    for (let i = 0; i < 4; i++) {
+      b.x += 0.65
+      w.time += DT
+      w.tick++
+      w.rewind.record(w.tick, w.time, w.actors, (f) => f.alive)
+    }
+    // Alice swings at +X (0 rad) with `view: hitTime` (when Bob was at x = 13.4, within melee range)
+    w.push("a", 1, { ...NO_INTENT, aim: 0, tx: 14, ty: 10, cast: 0, view: hitTime })
+    for (let i = 0; i < 8; i++) w.step()
+    expect(b.damage).toBeGreaterThan(0)
+  })
 })

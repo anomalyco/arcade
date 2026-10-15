@@ -1,4 +1,5 @@
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
+import { RewindHistory } from "@arcade/kit/net/rewind"
 import {
   Abilities, type AbilitiesSnapshot, type AbilityActor, type AbilityEvent, type AbilityHost,
   type HitDef, abilityState, cloneAbilityState, movement, shieldScale,
@@ -17,13 +18,13 @@ import {
 
 export type Phase = "select" | "play" | "results"
 
-/** One tick of input: move, aim (radians) and the floor point under the cursor, and the slot pressed this tick (-1 none). */
-export type Intent = { mx: number; my: number; aim: number; tx: number; ty: number; cast: number }
+/** One tick of input: move, aim (radians) and the floor point under the cursor, the slot pressed this tick (-1 none), and optional client render `view` time (s) for lag compensation. */
+export type Intent = { mx: number; my: number; aim: number; tx: number; ty: number; cast: number; view?: number }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, tx: 0, ty: 0, cast: -1 }
 
-/** The cast is the one-shot edge (with the floor point it was aimed at); movement and aim are held. */
+/** The cast is the one-shot edge (with the floor point and render time it was aimed at); movement and aim are held. */
 export const INTENT_OPS: InputOps<Intent> = {
-  merge: (a, b) => (b.cast >= 0 || a.cast < 0 ? b : { ...b, cast: a.cast, tx: a.tx, ty: a.ty }),
+  merge: (a, b) => (b.cast >= 0 || a.cast < 0 ? b : { ...b, cast: a.cast, tx: a.tx, ty: a.ty, ...(a.view !== undefined ? { view: a.view } : {}) }),
   standIn: (last) => (last.cast < 0 ? last : { ...last, cast: -1 }),
   hasEdges: (i) => i.cast >= 0,
 }
@@ -58,6 +59,8 @@ export type Fighter = AbilityActor & {
   lastHitAt: number
   queue: { seq: number; intent: Intent }[]
   ack: number
+  /** Client render timestamp (s) captured when the current cast started, for lag-compensated release. */
+  castView?: number
   /** Order of elimination, for placing: higher went out later. */
   outAt: number
   slot: number
@@ -132,6 +135,8 @@ export class World implements AbilityHost<Fighter> {
   events: SimEvent[] = []
   readonly props = new Props(PROP_KINDS)
   readonly abilitySystem: Abilities<Fighter>
+  /** 24-tick (800 ms) position history for lag-compensated melee/grab/burst release (capped at 350 ms rewind). */
+  readonly rewind = new RewindHistory<string>(24, 0.35)
   solids: Rect[] = SOLIDS
   readonly bodySolids: Rect[] = [...SOLIDS, ...ROPES]
   /** What walking fighters bump into: blocks, ropes and grounded props. */
@@ -445,9 +450,16 @@ export class World implements AbilityHost<Fighter> {
       if (intent.cast >= 0 && intent.cast < 4) {
         // Pressing the grab again throws early.
         if (f.ab.carry && intent.cast === 1) this.abilitySystem.throw(f)
-        else this.abilitySystem.cast(f, intent.cast, intent.tx, intent.ty)
+        else if (this.abilitySystem.cast(f, intent.cast, intent.tx, intent.ty)) {
+          f.castView = intent.view
+        }
       }
-      this.abilitySystem.stepActor(f)
+      if (f.castView !== undefined && f.ab.cast && now >= f.ab.cast.release) {
+        this.rewind.withRewoundPositions(this.actors, f.castView, () => this.abilitySystem.stepActor(f), f.id)
+      } else {
+        this.abilitySystem.stepActor(f)
+      }
+      if (!f.ab.cast) f.castView = undefined
       if (!onStage(f.x, f.y, -0.05) && !f.ab.carriedBy) {
         f.fallAt = now
         f.ab.cast = null
@@ -456,6 +468,7 @@ export class World implements AbilityHost<Fighter> {
     }
     if (live) {
       this.abilitySystem.step()
+      this.rewind.record(this.tick, now, this.actors, (f) => f.alive && !f.fallAt)
       const events: PropEvent[] = []
       const pushers = this.actors.filter((f) => f.alive && !f.fallAt && !f.ab.carriedBy)
       this.props.step(dt, SOLIDS, pushers, events, ROPES)

@@ -64,7 +64,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | — | Yes | — |
 | `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | — | — | — | Yes | — |
 | `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | — | Yes | — | — | — | — | Yes | — |
-| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | Yes | Yes | — | — | — | Yes | — |
+| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | Yes | Yes | Yes | — | — | Yes | — |
 | `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |

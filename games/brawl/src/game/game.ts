@@ -5,10 +5,10 @@ import { Smoothed } from "@arcade/kit/client/smooth"
 import type { Mesh } from "@arcade/kit/gpu/mesh"
 import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import { SceneLights, type Caster, type SceneLight, newSceneFrame, packSceneFrame } from "@arcade/kit/gpu/scene-frame"
-import { SnapshotBuffer, lerp, lerpAngle } from "@arcade/kit/net/interpolate"
+import { Glide, SnapshotBuffer, hermite2, lerp, lerpAngle } from "@arcade/kit/net/interpolate"
 import { Predictor } from "@arcade/kit/net/prediction"
 import { Flock } from "@arcade/kit/sim/boids"
-import type { Rect } from "@arcade/kit/sim/geom"
+import { type Rect, pushOut, raycast } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
 import { BLOCKS, CENTER, PROP_KINDS, ROPES, SOLIDS, STAGE, STAGE_SIZE } from "../../shared/arena"
 import { CHARACTERS, ROSTER, type CharacterDef } from "../../shared/characters"
@@ -28,7 +28,7 @@ type Rgb = readonly [number, number, number]
 /** Player slot colours: the ring under each fighter, their HUD card and their accent bands. */
 export const SLOT_COLORS: Rgb[] = [[1, 0.25, 0.45], [0.2, 0.62, 1], [1, 0.82, 0.15], [0.3, 0.86, 0.38], [0.72, 0.4, 1], [1, 0.55, 0.15], [0.2, 0.9, 0.85], [0.95, 0.95, 0.95]]
 
-type Body = { x: number; y: number; vx: number; vy: number }
+type Body = { x: number; y: number; vx: number; vy: number; dash?: { vx: number; vy: number; left: number } | null }
 type Shown = FighterView & { draw: FighterDraw }
 
 const has = (f: FighterView, flag: number) => (f.f & flag) !== 0
@@ -44,6 +44,7 @@ export class Game {
   readonly hitStop = new HitStop()
   readonly cam: Camera
   private buf = new SnapshotBuffer<Snapshot>(0.1)
+  private glides = new Map<string, Glide>()
   private lastAt = -1
   private fighters = new Map<string, FighterDraw>()
   private decoys = new Map<number, FighterDraw>()
@@ -186,21 +187,51 @@ export class Game {
         if (ab?.effects[0]?.kind === "melee") swing(d.a, d.a.t)
       }
     }
-    const i: Intent = { mx, my, aim: this.aim, tx: this.cursor.x, ty: this.cursor.y, cast }
+    const view = cast >= 0 && this.buf.size > 0 ? Math.round(Math.max(0, this.buf.renderTime(performance.now() / 1000)) * 1000) / 1000 : undefined
+    const i: Intent = { mx, my, aim: this.aim, tx: this.cursor.x, ty: this.cursor.y, cast, ...(view !== undefined ? { view } : {}) }
     const seq = this.predictor.record(i) + 1
-    this.session.send({ type: "intent", seq, i })
+    const prev = this.predictor.prevCommands(2)
+    this.session.send(prev.length ? { type: "intent", seq, i, prev } : { type: "intent", seq, i })
     if (this.predicting && this.body) {
       this.smoothed.tick(this.body)
       this.step(this.body, i)
     }
   }
 
-  /** The server's walking rule (`World.stepPlay`), replayed locally for your own fighter. */
+  /** The server's walking and instant-dash rules (`World.stepPlay`), replayed locally for your own fighter. */
   private step(b: Body, i: Intent): void {
     const you = this.snap?.you
     const f = this.me
     if (!you || !f) return
     const d = this.def(f.c)
+    if (i.cast >= 0 && (you.cd[i.cast] ?? 0) <= 0.05 && !b.dash) {
+      const ab = d.abilities[i.cast]
+      const eff = ab?.windup === 0 ? ab.effects[0] : undefined
+      if (eff?.kind === "dash") {
+        b.dash = { vx: Math.cos(i.aim) * eff.speed, vy: Math.sin(i.aim) * eff.speed, left: eff.time }
+      }
+    }
+    if (b.dash && b.dash.left > 0) {
+      const sp = Math.hypot(b.dash.vx, b.dash.vy)
+      if (sp > 1e-4) {
+        const walls = [...SOLIDS, ...ROPES]
+        const ahead = raycast(b.x, b.y, b.dash.vx / sp, b.dash.vy / sp, walls, sp * DT + PLAYER_RADIUS)
+        const dist = Math.max(0, Math.min(sp * DT, ahead - PLAYER_RADIUS))
+        b.x += (b.dash.vx / sp) * dist
+        b.y += (b.dash.vy / sp) * dist
+        b.vx = b.dash.vx
+        b.vy = b.dash.vy
+        pushOut(b, PLAYER_RADIUS, walls)
+        b.dash.left -= DT
+        if (b.dash.left <= 0 || ahead < PLAYER_RADIUS + 0.02) {
+          b.dash = null
+          b.vx *= 0.3
+          b.vy *= 0.3
+        }
+        return
+      }
+      b.dash = null
+    }
     stepBody(b, you.move ? i.mx : 0, you.move ? i.my : 0, d.speed * FEEL.moveScale * you.speed, this.walk, DT, PLAYER_RADIUS, FEEL.accel * d.accel * you.accel)
   }
 
@@ -230,7 +261,7 @@ export class Game {
     }
     const b = this.body
     const bx = b.x, by = b.y
-    this.predictor.reconcile(s.ack - 1, () => Object.assign(b, { x: f.x, y: f.y, vx: f.vx, vy: f.vy }), (cmd) => this.step(b, cmd))
+    this.predictor.reconcile(s.ack - 1, () => Object.assign(b, { x: f.x, y: f.y, vx: f.vx, vy: f.vy, dash: null }), (cmd) => this.step(b, cmd))
     if (Math.hypot(b.x - bx, b.y - by) > 2) this.smoothed.reset(b)
     else this.smoothed.correct(b.x - bx, b.y - by)
   }
@@ -411,24 +442,42 @@ export class Game {
 
   // Presentation side -----------------------------------------------------------------------------------------------
 
+  private glideOf(id: string): Glide {
+    let g = this.glides.get(id)
+    if (!g) this.glides.set(id, (g = new Glide(10, 3)))
+    return g
+  }
+
   /** Interpolated fighters this frame, with your own predicted position. */
-  private sampleFighters(now: number): Shown[] {
+  private sampleFighters(now: number, dt = DT): Shown[] {
     const br = this.buf.sample(now)
     if (!br) return []
     const out: Shown[] = []
     for (const b of br.b.f) {
       const a = br.a.f.find((q) => q.i === b.i) ?? b
-      const jump = Math.hypot(b.x - a.x, b.y - a.y) > 3
-      const k = jump ? 1 : br.t
-      let x = lerp(a.x, b.x, k), y = lerp(a.y, b.y, k)
+      const jump = !has(a, F.alive) || !has(b, F.alive) || Math.hypot(b.x - a.x, b.y - a.y) > 3
+      let x = b.x, y = b.y, vx = b.vx, vy = b.vy
       if (b.i === this.myId && this.predicting && this.body) {
         x = this.smoothed.x
         y = this.smoothed.y
+        vx = this.body.vx
+        vy = this.body.vy
+        this.glideOf(b.i).reset()
+      } else if (jump) {
+        this.glideOf(b.i).reset()
+      } else {
+        const at = hermite2(a, b, br.span, br.t, br.over)
+        const g = this.glideOf(b.i).step(at.x, at.y, at.vx, at.vy, dt)
+        x = g.x
+        y = g.y
+        vx = at.vx
+        vy = at.vy
       }
       let draw = this.fighters.get(b.i)
       const scale = this.fighterModels[b.c]?.scale ?? 1
       if (!draw || draw.char !== b.c) this.fighters.set(b.i, (draw = new FighterDraw(b.i, b.c, x, y, b.a, scale)))
-      out.push({ ...b, x, y, vx: lerp(a.vx, b.vx, k), vy: lerp(a.vy, b.vy, k), a: b.i === this.myId && this.predicting ? this.aim : lerpAngle(a.a, b.a, k), draw })
+      const k = jump ? 1 : br.t
+      out.push({ ...b, x, y, vx, vy, a: b.i === this.myId && this.predicting ? this.aim : lerpAngle(a.a, b.a, k), draw })
     }
     // Your own handoff (prediction on or off) blends out instead of jumping.
     const mine = out.find((s) => s.i === this.myId)
@@ -474,7 +523,7 @@ export class Game {
     const adt = this.hitStop.step(dt)
     const fp = this.fp
     fp.begin()
-    this.shown = this.sampleFighters(performance.now() / 1000)
+    this.shown = this.sampleFighters(performance.now() / 1000, dt)
     const kb = Math.exp(-dt * 10)
     this.blend.x *= kb
     this.blend.y *= kb
