@@ -139,6 +139,7 @@ try {
     cozy_golden_hour: [],
     party_pop: [],
     night_ring: [],
+    noir_silhouette: [],
   }
   for (let round = -1; round < 7; round++) {
     const order = round % 2 === 0 ? [...LOOK_PRESET_IDS] : [...LOOK_PRESET_IDS].reverse()
@@ -290,6 +291,7 @@ try {
     cozy_golden_hour: [],
     party_pop: [],
     night_ring: [],
+    noir_silhouette: [],
   }
   for (let round = -1; round < 7; round++) {
     const order = round % 2 === 0 ? [...LOOK_PRESET_IDS] : [...LOOK_PRESET_IDS].reverse()

@@ -11,6 +11,7 @@ export type LookPresetId =
   | "cozy_golden_hour"
   | "party_pop"
   | "night_ring"
+  | "noir_silhouette"
 
 export type LookTonemapMode = 0 | 1 | 2 | 3
 export type LookCompareMode = 0 | 1 | 2
@@ -735,6 +736,74 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       outlineWidth: 1.5,
     },
   },
+  noir_silhouette: {
+    id: "noir_silhouette",
+    index: 8,
+    label: "Noir silhouette",
+    directionRef: "Archers look D-24 option 2 (Limbo-style shadow play in grey fog)",
+    summary: "Side-view shadow play: near-black silhouettes against pale layered fog, filmic tone curve, heavy grain and vignette, everything grey except warm fire and the player marks the scene flags to keep their colour.",
+    palette: {
+      sky: [0.62, 0.62, 0.6],
+      practical: [1.0, 0.52, 0.16],
+      wall: [0.05, 0.05, 0.055],
+      wood: [0.06, 0.055, 0.05],
+      stone: [0.055, 0.055, 0.06],
+      asphalt: [0.04, 0.04, 0.045],
+      foliage: [0.045, 0.05, 0.045],
+      ink: [0.01, 0.01, 0.012],
+    },
+    defaults: {
+      preset: "noir_silhouette",
+      exposure: 1.0,
+      tonemap: 1,
+      contrast: 1.12,
+      toe: 0.18,
+      shoulder: 0.34,
+      blackCrush: 0.01,
+      saturation: 0.08,
+      temperature: 0.02,
+      splitTone: 0.22,
+      shadowTintR: 0.98,
+      shadowTintG: 1.0,
+      shadowTintB: 1.04,
+      highlightTintR: 1.02,
+      highlightTintG: 1.0,
+      highlightTintB: 0.96,
+      paletteMix: 0.0,
+      selectiveColor: 1.2,
+      foliageShift: 0.0,
+      ambientFill: 0.3,
+      shadowColorR: 0.9,
+      shadowColorG: 0.94,
+      shadowColorB: 1.0,
+      practicalWarmth: 0.9,
+      practicalIntensity: 1.2,
+      moonIntensity: 1.0,
+      rimStrength: 1.2,
+      contactShade: 0.6,
+      surfaceWetness: 0.0,
+      fogDensity: 0.56,
+      fogHeightFalloff: 2.2,
+      fogColorR: 0.6,
+      fogColorG: 0.6,
+      fogColorB: 0.59,
+      shaftStrength: 1.0,
+      shaftSlats: 0.0,
+      bloom: 1.2,
+      halation: 0.22,
+      vignette: 0.95,
+      grain: 0.56,
+      grainSeed: 73,
+      grainAnimated: true,
+      chromatic: 0.08,
+      diffuseWrap: 0.15,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.0,
+      outlineWidth: 1.0,
+    },
+  },
 }
 
 export const LOOK_PRESET_IDS = Object.keys(LOOK_PRESETS) as readonly LookPresetId[]
@@ -785,6 +854,10 @@ export function resolveLookPresetId(raw: unknown): LookPresetId | null {
     nightring: "night_ring",
     spotlitring: "night_ring",
     fightnight: "night_ring",
+    noirsilhouette: "noir_silhouette",
+    silhouette: "noir_silhouette",
+    shadowplay: "noir_silhouette",
+    archers: "noir_silhouette",
   }
   if (slug in aliases) return aliases[slug]!
   for (const id of LOOK_PRESET_IDS) {

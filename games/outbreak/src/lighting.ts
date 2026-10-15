@@ -132,6 +132,7 @@ export const OUTBREAK_LOOK_LIGHTING_PRESETS: Readonly<Record<LookPresetId, Parti
     rimStrength: 1.25,
     vignetteDarkness: 0.58,
   },
+  noir_silhouette: { ...DEFAULT_OUTBREAK_LIGHTING },
 }
 
 export const outbreakLightingControls: LabControl[] = [
