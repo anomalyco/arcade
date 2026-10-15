@@ -13,5 +13,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "scripts/prove-lab-keyboard.ts", "../../scripts/dev.ts", "../../scripts/dev-control-server.ts", "../../scripts/arcade.ts", "../../scripts/prove-dev-control.ts"]
+  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "../../scripts/dev.ts", "../../scripts/dev-control-server.ts", "../../scripts/arcade.ts", "../../scripts/prove-dev-control.ts"]
 }

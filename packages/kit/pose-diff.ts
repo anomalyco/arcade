@@ -16,10 +16,12 @@ export const POSE_JOINTS = [
   "hipL",
   "kneeL",
   "ankleL",
+  "ballL",
   "toeL",
   "hipR",
   "kneeR",
   "ankleR",
+  "ballR",
   "toeR",
 ] as const
 
@@ -45,13 +47,15 @@ export const RIG_SEGMENTS: readonly RigSegment[] = [
   { from: "elbowL", to: "wristL", group: "left" },
   { from: "hipL", to: "kneeL", group: "left" },
   { from: "kneeL", to: "ankleL", group: "left" },
-  { from: "ankleL", to: "toeL", group: "left" },
+  { from: "ankleL", to: "ballL", group: "left" },
+  { from: "ballL", to: "toeL", group: "left" },
   // Right limbs (orange)
   { from: "shoulderR", to: "elbowR", group: "right" },
   { from: "elbowR", to: "wristR", group: "right" },
   { from: "hipR", to: "kneeR", group: "right" },
   { from: "kneeR", to: "ankleR", group: "right" },
-  { from: "ankleR", to: "toeR", group: "right" },
+  { from: "ankleR", to: "ballR", group: "right" },
+  { from: "ballR", to: "toeR", group: "right" },
 ] as const
 
 const DEG = 180 / Math.PI
@@ -75,11 +79,13 @@ export function extractBodyJoints(body: HumanBody, gun?: Frame | null, muzzleDis
   const hipL = [...body.th[0].p] as V3
   const kneeL = [...body.sh[0].p] as V3
   const ankleL = [...body.ft[0].p] as V3
-  const toeL = at(body.ft[0], 0.19, -RIG.ankle, 0)
+  const ballL = body.toe?.[0] ? ([...body.toe[0].p] as V3) : at(body.ft[0], RIG.foot, -RIG.ankle, 0)
+  const toeL = body.toe?.[0] ? at(body.toe[0], RIG.toe, 0, 0) : at(body.ft[0], RIG.foot + RIG.toe, -RIG.ankle, 0)
   const hipR = [...body.th[1].p] as V3
   const kneeR = [...body.sh[1].p] as V3
   const ankleR = [...body.ft[1].p] as V3
-  const toeR = at(body.ft[1], 0.19, -RIG.ankle, 0)
+  const ballR = body.toe?.[1] ? ([...body.toe[1].p] as V3) : at(body.ft[1], RIG.foot, -RIG.ankle, 0)
+  const toeR = body.toe?.[1] ? at(body.toe[1], RIG.toe, 0, 0) : at(body.ft[1], RIG.foot + RIG.toe, -RIG.ankle, 0)
   const out: RigJointMap = {
     pelvis,
     waist,
@@ -95,10 +101,12 @@ export function extractBodyJoints(body: HumanBody, gun?: Frame | null, muzzleDis
     hipL,
     kneeL,
     ankleL,
+    ballL,
     toeL,
     hipR,
     kneeR,
     ankleR,
+    ballR,
     toeR,
   }
   if (gun) {
@@ -119,6 +127,7 @@ export function extractBonePoseJoints(pose: BonePose): RigJointMap {
     th: [pose["left.thigh"]!, pose["right.thigh"]!],
     sh: [pose["left.shin"]!, pose["right.shin"]!],
     ft: [pose["left.foot"]!, pose["right.foot"]!],
+    ...(pose["left.toe"] && pose["right.toe"] ? { toe: [pose["left.toe"]!, pose["right.toe"]!] } : {}),
   }
   return extractBodyJoints(b)
 }
@@ -240,6 +249,9 @@ export type PoseAngles = {
   /** Foot pitch relative to floor (deg, 0 = flat, + = dorsiflexed / toe up, - = plantarflexed / toe down). */
   anklePitchL: number
   anklePitchR: number
+  /** Toe (ball-of-foot MTP) dorsiflexion(+)/plantarflexion(-) relative to the foot sole (deg). */
+  toePitchL: number
+  toePitchR: number
   /** Pelvis vertical displacement from standing/mean height in cm. */
   pelvisBobCm: number
   /** Foot clearance above floor in cm. */
@@ -291,26 +303,31 @@ export function computePoseAngles(
   const leftA = armMetrics(-1, j.shoulderL, j.elbowL, j.wristL)
   const rightA = armMetrics(1, j.shoulderR, j.elbowR, j.wristR)
 
-  const legMetrics = (hip: V3, knee: V3, ank: V3, toe: V3) => {
+  const legMetrics = (hip: V3, knee: V3, ank: V3, ball: V3, toe: V3) => {
     const th = sub(knee, hip)
     const shn = sub(ank, knee)
-    const ft = sub(toe, ank)
+    const ft = sub(ball, ank)
+    const toeSeg = sub(toe, ball)
     const hipFlex = Math.atan2(th[0], Math.max(1e-4, -th[1])) * DEG
     const cosKnee = clamp(dot(th, shn) / ((len(th) || 1e-4) * (len(shn) || 1e-4)), -1, 1)
     const kneeFlex = Math.acos(cosKnee) * DEG
-    // Flat foot has ankle at y = RIG.ankle and toe at y = 0, so baseline pitch is atan2(-RIG.ankle, 0.19).
+    // Flat foot has ankle at y = RIG.ankle and ball at y = 0, so baseline pitch is atan2(-RIG.ankle, RIG.foot).
     // Measure anatomical ankle dorsiflexion(+)/plantarflexion(-) relative to the shin in the sagittal plane.
-    const baseFootPitch = Math.atan2(-RIG.ankle, 0.19)
+    const baseFootPitch = Math.atan2(-RIG.ankle, RIG.foot)
     const footWorldPitch = Math.atan2(ft[1], ft[0]) - baseFootPitch
     const shinWorldPitch = Math.atan2(shn[0], -shn[1])
     let ankleRel = (footWorldPitch - shinWorldPitch) * DEG
     while (ankleRel > 180) ankleRel -= 360
     while (ankleRel < -180) ankleRel += 360
-    return { hipFlex, kneeFlex, anklePitch: clamp(ankleRel, -65, 65) }
+    const toeWorldPitch = Math.atan2(toeSeg[1], toeSeg[0])
+    let toeRel = (toeWorldPitch - footWorldPitch) * DEG
+    while (toeRel > 180) toeRel -= 360
+    while (toeRel < -180) toeRel += 360
+    return { hipFlex, kneeFlex, anklePitch: clamp(ankleRel, -65, 65), toePitch: clamp(toeRel, -65, 75) }
   }
 
-  const leftL = legMetrics(j.hipL, j.kneeL, j.ankleL, j.toeL)
-  const rightL = legMetrics(j.hipR, j.kneeR, j.ankleR, j.toeR)
+  const leftL = legMetrics(j.hipL, j.kneeL, j.ankleL, j.ballL, j.toeL)
+  const rightL = legMetrics(j.hipR, j.kneeR, j.ankleR, j.ballR, j.toeR)
 
   const baseAnkleNorm = RIG.ankle / HIP
   const footLiftLCm = Math.max(0, (j.ankleL[1] - np.groundY - baseAnkleNorm) * cmScale)
@@ -340,6 +357,8 @@ export function computePoseAngles(
     kneeFlexR: r2(rightL.kneeFlex),
     anklePitchL: r2(leftL.anklePitch),
     anklePitchR: r2(rightL.anklePitch),
+    toePitchL: r2(leftL.toePitch),
+    toePitchR: r2(rightL.toePitch),
     pelvisBobCm: r2(np.pelvisBobNorm * cmScale),
     footLiftLCm: r2(footLiftLCm),
     footLiftRCm: r2(footLiftRCm),
@@ -403,7 +422,7 @@ export function jointsFromAngles(a: KeyPoseAngles): RigJointMap {
   const [shoulderL, elbowL, wristL] = buildArm(-1, a.shoulderFlexL, a.shoulderAbdL, a.elbowFlexL, a.forearmInwardL ?? 6)
   const [shoulderR, elbowR, wristR] = buildArm(1, a.shoulderFlexR, a.shoulderAbdR, a.elbowFlexR, a.forearmInwardR ?? 6)
 
-  const buildLeg = (side: -1 | 1, hipFlexDeg: number, kneeFlexDeg: number, ankPitchDeg: number): [V3, V3, V3, V3] => {
+  const buildLeg = (side: -1 | 1, hipFlexDeg: number, kneeFlexDeg: number, ankPitchDeg: number): [V3, V3, V3, V3, V3] => {
     const hip: V3 = [
       pelvis[0] - side * RIG.hipW * Math.sin(pelYaw),
       pelvis[1] + side * RIG.hipW * Math.sin(pelRoll),
@@ -415,15 +434,18 @@ export function jointsFromAngles(a: KeyPoseAngles): RigJointMap {
     const sf = (hipFlexDeg - kneeFlexDeg) * RAD
     const shDir: V3 = [Math.sin(sf), -Math.cos(sf), 0]
     const ankle: V3 = [knee[0] + shDir[0] * RIG.shin, knee[1] + shDir[1] * RIG.shin, knee[2]]
-    const baseFootAngle = Math.atan2(-RIG.ankle, 0.19)
-    const footAngle = baseFootAngle + sf + ankPitchDeg * RAD
-    const footLen = Math.hypot(0.19, RIG.ankle)
-    const toe: V3 = [ankle[0] + Math.cos(footAngle) * footLen, ankle[1] + Math.sin(footAngle) * footLen, ankle[2]]
-    return [hip, knee, ankle, toe]
+    const baseFootAngle = Math.atan2(-RIG.ankle, RIG.foot)
+    const worldFootPitch = sf + ankPitchDeg * RAD
+    const footAngle = baseFootAngle + worldFootPitch
+    const footLen = Math.hypot(RIG.foot, RIG.ankle)
+    const ball: V3 = [ankle[0] + Math.cos(footAngle) * footLen, ankle[1] + Math.sin(footAngle) * footLen, ankle[2]]
+    const toeAngle = ball[1] <= 0.02 && worldFootPitch < 0 ? 0 : worldFootPitch
+    const toe: V3 = [ball[0] + Math.cos(toeAngle) * RIG.toe, Math.max(0, ball[1] + Math.sin(toeAngle) * RIG.toe), ball[2]]
+    return [hip, knee, ankle, ball, toe]
   }
 
-  const [hipL, kneeL, ankleL, toeL] = buildLeg(-1, a.hipFlexL, a.kneeFlexL, a.anklePitchL)
-  const [hipR, kneeR, ankleR, toeR] = buildLeg(1, a.hipFlexR, a.kneeFlexR, a.anklePitchR)
+  const [hipL, kneeL, ankleL, ballL, toeL] = buildLeg(-1, a.hipFlexL, a.kneeFlexL, a.anklePitchL)
+  const [hipR, kneeR, ankleR, ballR, toeR] = buildLeg(1, a.hipFlexR, a.kneeFlexR, a.anklePitchR)
 
   return {
     pelvis,
@@ -440,10 +462,12 @@ export function jointsFromAngles(a: KeyPoseAngles): RigJointMap {
     hipL,
     kneeL,
     ankleL,
+    ballL,
     toeL,
     hipR,
     kneeR,
     ankleR,
+    ballR,
     toeR,
   }
 }
@@ -585,26 +609,34 @@ export function retargetBvhFrame(p: Record<string, V3>, meanPelvisY: number, min
   const hipL = step(pelvis, hipBarDir, -RIG.hipW)
   const hipR = step(pelvis, hipBarDir, RIG.hipW)
 
-  // Compensate for the 14.87° rest-pose slope difference between BVH Foot->Toes (-38.97°) and RIG ankle->toe (-24.10°)
+  // Compensate for the rest-pose slope difference between BVH Foot->Toes (-38.97°) and RIG ankle->ball
+  const baseFootAngle = Math.atan2(-RIG.ankle, RIG.foot)
   const alignBvhFoot = (d: V3): V3 => {
-    const footDelta = 14.87 * RAD
+    const footDelta = baseFootAngle - -38.97 * RAD
     const c = Math.cos(footDelta), s = Math.sin(footDelta)
     return norm([d[0] * c - d[1] * s, d[0] * s + d[1] * c, d[2]])
   }
 
+  const footLen = Math.hypot(RIG.foot, RIG.ankle)
   const thDirL = dir(p.UpperLeg_L!, p.LowerLeg_L!)
   const shDirL = dir(p.LowerLeg_L!, p.Foot_L!)
   const ftDirL = alignBvhFoot(dir(p.Foot_L!, p.Toes_L!))
   const kneeL = step(hipL, thDirL, RIG.thigh)
   const ankleL = step(kneeL, shDirL, RIG.shin)
-  const toeL = step(ankleL, ftDirL, Math.hypot(0.19, RIG.ankle))
+  const ballL = step(ankleL, ftDirL, footLen)
+  const footPitchL = Math.atan2(ftDirL[1], ftDirL[0]) - baseFootAngle
+  const toePitchL = ballL[1] <= 0.025 && footPitchL < 0 ? 0 : footPitchL
+  const toeL: V3 = [ballL[0] + Math.cos(toePitchL) * RIG.toe, Math.max(0, ballL[1] + Math.sin(toePitchL) * RIG.toe), ballL[2]]
 
   const thDirR = dir(p.UpperLeg_R!, p.LowerLeg_R!)
   const shDirR = dir(p.LowerLeg_R!, p.Foot_R!)
   const ftDirR = alignBvhFoot(dir(p.Foot_R!, p.Toes_R!))
   const kneeR = step(hipR, thDirR, RIG.thigh)
   const ankleR = step(kneeR, shDirR, RIG.shin)
-  const toeR = step(ankleR, ftDirR, Math.hypot(0.19, RIG.ankle))
+  const ballR = step(ankleR, ftDirR, footLen)
+  const footPitchR = Math.atan2(ftDirR[1], ftDirR[0]) - baseFootAngle
+  const toePitchR = ballR[1] <= 0.025 && footPitchR < 0 ? 0 : footPitchR
+  const toeR: V3 = [ballR[0] + Math.cos(toePitchR) * RIG.toe, Math.max(0, ballR[1] + Math.sin(toePitchR) * RIG.toe), ballR[2]]
 
   return {
     pelvis,
@@ -621,10 +653,12 @@ export function retargetBvhFrame(p: Record<string, V3>, meanPelvisY: number, min
     hipL,
     kneeL,
     ankleL,
+    ballL,
     toeL,
     hipR,
     kneeR,
     ankleR,
+    ballR,
     toeR,
   }
 }
@@ -756,10 +790,12 @@ export function extractBvhCycle(bvh: BvhClip, mode: "walk" | "run", searchStart 
       hipL: avgV(f.hipL, mirrorV(opp.hipR)),
       kneeL: avgV(f.kneeL, mirrorV(opp.kneeR)),
       ankleL: avgV(f.ankleL, mirrorV(opp.ankleR)),
+      ballL: avgV(f.ballL, mirrorV(opp.ballR)),
       toeL: avgV(f.toeL, mirrorV(opp.toeR)),
       hipR: avgV(f.hipR, mirrorV(opp.hipL)),
       kneeR: avgV(f.kneeR, mirrorV(opp.kneeL)),
       ankleR: avgV(f.ankleR, mirrorV(opp.ankleL)),
+      ballR: avgV(f.ballR, mirrorV(opp.ballL)),
       toeR: avgV(f.toeR, mirrorV(opp.toeL)),
     }
   })
@@ -909,6 +945,8 @@ export type CycleComparison = {
       kneeFlexMaxDeg: number
       anklePitchMinDeg: number
       anklePitchMaxDeg: number
+      toePitchMinDeg: number
+      toePitchMaxDeg: number
       footLiftMaxCm: number
       armOppositeLegCorr: number
       armPhaseLagDeg: number
@@ -934,6 +972,8 @@ export type CycleComparison = {
       kneeFlexMaxDeg: number
       anklePitchMinDeg: number
       anklePitchMaxDeg: number
+      toePitchMinDeg: number
+      toePitchMaxDeg: number
       footLiftMaxCm: number
       armOppositeLegCorr: number
       armPhaseLagDeg: number
@@ -991,6 +1031,7 @@ function computeArmPhaseStats(samples: PhaseSample[]) {
   const hip = samples.flatMap(s => [s.angles.hipFlexL, s.angles.hipFlexR])
   const knee = samples.flatMap(s => [s.angles.kneeFlexL, s.angles.kneeFlexR])
   const ank = samples.flatMap(s => [s.angles.anklePitchL, s.angles.anklePitchR])
+  const toe = samples.flatMap(s => [s.angles.toePitchL, s.angles.toePitchR])
   const lift = samples.flatMap(s => [s.angles.footLiftLCm, s.angles.footLiftRCm])
 
   return {
@@ -1014,6 +1055,8 @@ function computeArmPhaseStats(samples: PhaseSample[]) {
     kneeFlexMaxDeg: r2(Math.max(...knee)),
     anklePitchMinDeg: r2(Math.min(...ank)),
     anklePitchMaxDeg: r2(Math.max(...ank)),
+    toePitchMinDeg: r2(Math.min(...toe)),
+    toePitchMaxDeg: r2(Math.max(...toe)),
     footLiftMaxCm: r2(Math.max(...lift)),
     armOppositeLegCorr: r4(corr),
     armPhaseLagDeg: r2(lagDeg),

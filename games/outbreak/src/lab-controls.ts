@@ -3,6 +3,7 @@ import { motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, type LookSettings } from "@arcade/kit/look"
 import { aiControls } from "../shared/ai"
+import { meleeControls, MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../shared/combat"
 import { wrapHour } from "../shared/day-cycle"
 import { flashlightControls } from "../shared/flashlight"
 import type { LocalSession } from "../shared/session"
@@ -21,6 +22,7 @@ import type { NetSession } from "./net-session"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
+import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
 import {
   applyOutbreakWeatherPreset,
   outbreakWeatherControls,
@@ -38,6 +40,7 @@ export interface OutbreakLabControlHost {
   readonly combatFx: OutbreakCombatFX
   readonly weatherController: OutbreakWeatherController
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly hud: OutbreakHud
   readonly map: OutbreakMap
   readonly updateProfile: () => void
@@ -47,7 +50,7 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost } = host
+  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost } = host
   return [
     ...aiControls,
     ...audioControls,
@@ -103,6 +106,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightBeamControls,
     ...staminaControls,
     ...progressionLabControls(progressionHost),
+    ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
       key: "randomizeGroundTuning",
@@ -276,6 +280,52 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
         { label: "On", value: 1 },
       ],
     },
+    ...meleeControls,
+    {
+      key: "equipNextMeleeWeapon",
+      label: "Cycle melee weapon",
+      group: "Melee",
+      type: "action",
+      run: () => {
+        if (!progressionHost.offline()) return
+        const session = host.session()
+        const { progression, actorId } = session.view
+        const ledger = progression.ledger
+        const hb = ledger.store(`${actorId}/hotbar`)
+        const curItem = hb?.slots[2]?.item ?? session.view.player.meleeWeapon
+        const idx = curItem ? MELEE_WEAPON_IDS.indexOf(curItem as (typeof MELEE_WEAPON_IDS)[number]) : -1
+        const nextId = MELEE_WEAPON_IDS[(idx + 1) % MELEE_WEAPON_IDS.length]!
+        const def = MELEE_WEAPONS[nextId]
+        if (hb) {
+          hb.slots[2] = { item: nextId, count: 1, charge: def.durability }
+          hb.selected = 2
+          hb.rev = ++ledger.rev
+        }
+        const slot = session.sim.slot(actorId)
+        if (slot) progression.project(slot)
+      },
+    },
+    {
+      key: "repairMeleeWeapon",
+      label: "Repair held weapon",
+      group: "Melee",
+      type: "action",
+      run: () => {
+        if (!progressionHost.offline()) return
+        const session = host.session()
+        const { progression, actorId } = session.view
+        const ledger = progression.ledger
+        const hb = ledger.store(`${actorId}/hotbar`)
+        const st = hb?.slots[2]
+        if (st && st.item in MELEE_WEAPONS) {
+          const def = MELEE_WEAPONS[st.item as keyof typeof MELEE_WEAPONS]
+          st.charge = def.durability
+          hb.rev = ++ledger.rev
+          const slot = session.sim.slot(actorId)
+          if (slot) progression.project(slot)
+        }
+      },
+    },
     { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
     { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
     { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
@@ -356,6 +406,24 @@ export function handleOutbreakSettingChanged(
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
+  }
+  if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
+    Object.assign(session.ai.config, settings.ai)
+    if (progressionHost.offline() && session.view.time < 5) {
+      session.ai.resetOpeningPopulation(
+        session.view.town,
+        session.sim.slots.map((s) => s.survivor),
+      )
+    }
+  }
+  if (key === "startHour") {
+    settings.dayCycle.hour = wrapHour(settings.ai.startHour)
+    session.view.hour = settings.dayCycle.hour
+    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
+      host.setLastDayNightHour(session.view.hour)
+      applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+      lab.refresh()
+    }
   }
   if (key === "hour") {
     session.view.hour = wrapHour(settings.dayCycle.hour)

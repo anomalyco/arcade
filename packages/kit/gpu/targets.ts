@@ -16,11 +16,15 @@ export interface SceneTargetsOptions {
   readonly depthFormat: GPUTextureFormat
   readonly samples?: number
   readonly depthTextureBinding?: boolean
+  readonly clearValue?: GPUColorDict
+  readonly depthClearValue?: number
+  readonly hasStencil?: boolean
 }
 
 /**
- * Manages the MSAA color target, MSAA depth-stencil target, and resolved HDR color target
- * resized together when the canvas dimensions change.
+ * Manages the MSAA color target, MSAA depth-stencil target, resolved HDR color target,
+ * and pre-allocated main render-pass descriptors (mutated in place on resize/render for
+ * zero per-frame descriptor allocations).
  */
 export class SceneTargets {
   width = 0
@@ -31,6 +35,13 @@ export class SceneTargets {
   depthView!: GPUTextureView
   hdr!: GPUTexture
   hdrView!: GPUTextureView
+
+  readonly clearColor: GPUColorDict
+  readonly colorAttachment: GPURenderPassColorAttachment
+  readonly depthAttachment: GPURenderPassDepthStencilAttachment
+  readonly mainPass: GPURenderPassDescriptor
+  private readonly singleColorAttachments: [GPURenderPassColorAttachment]
+  private readonly dualColorAttachments: [GPURenderPassColorAttachment, GPURenderPassColorAttachment]
 
   private readonly hdrFormat: GPUTextureFormat
   private readonly depthFormat: GPUTextureFormat
@@ -46,6 +57,33 @@ export class SceneTargets {
     this.samples = opts.samples ?? 4
     this.depthUsage =
       TEX_RENDER_ATTACHMENT | (opts.depthTextureBinding ? TEX_TEXTURE_BINDING : 0)
+    this.clearColor = opts.clearValue ? { ...opts.clearValue } : { r: 0, g: 0, b: 0, a: 1 }
+    this.colorAttachment = {
+      view: null as unknown as GPUTextureView,
+      resolveTarget: undefined,
+      clearValue: this.clearColor,
+      loadOp: "clear",
+      storeOp: "discard",
+    }
+    this.depthAttachment = {
+      view: null as unknown as GPUTextureView,
+      depthClearValue: opts.depthClearValue ?? (opts.depthFormat === "depth32float" ? 0 : 1),
+      depthLoadOp: "clear",
+      depthStoreOp: "discard",
+      ...(opts.hasStencil || opts.depthFormat.includes("stencil")
+        ? {
+            stencilClearValue: 0,
+            stencilLoadOp: "clear" as const,
+            stencilStoreOp: "discard" as const,
+          }
+        : {}),
+    }
+    this.singleColorAttachments = [this.colorAttachment]
+    this.dualColorAttachments = [this.colorAttachment, this.colorAttachment]
+    this.mainPass = {
+      colorAttachments: this.singleColorAttachments,
+      depthStencilAttachment: this.depthAttachment,
+    }
   }
 
   resize(w: number, h: number): boolean {
@@ -80,7 +118,29 @@ export class SceneTargets {
       usage: hdrUsage,
     })
     this.hdrView = this.hdr.createView()
+    this.colorAttachment.view = this.msaaView
+    this.colorAttachment.resolveTarget = this.hdrView
+    this.depthAttachment.view = this.depthView
     return true
+  }
+
+  /**
+   * Mutates and returns the pre-allocated `mainPass` descriptor in place for the current frame.
+   */
+  configureMainPass(opts?: {
+    storeDepth?: boolean
+    timestampWrites?: GPURenderPassTimestampWrites
+    extraColorAttachment?: GPURenderPassColorAttachment | null
+  }): GPURenderPassDescriptor {
+    this.depthAttachment.depthStoreOp = opts?.storeDepth ? "store" : "discard"
+    this.mainPass.timestampWrites = opts?.timestampWrites
+    if (opts?.extraColorAttachment) {
+      this.dualColorAttachments[1] = opts.extraColorAttachment
+      this.mainPass.colorAttachments = this.dualColorAttachments
+    } else {
+      this.mainPass.colorAttachments = this.singleColorAttachments
+    }
+    return this.mainPass
   }
 
   destroy(): void {
@@ -393,4 +453,55 @@ export function uploadSplitSprites(
     )
   }
   return { alphaCount, addCount, addByteOffset, halfCap }
+}
+
+/**
+ * Uploads a square RGBA8 decal/signage atlas texture and generates its full mip chain on the CPU
+ * using an alpha-weighted 2×2 box filter (with a `1.1×` alpha coverage boost so thin lettering and
+ * crosswalk stripes stay legible under alpha testing at oblique angles).
+ */
+export function uploadAlphaWeightedMipChain(
+  device: GPUDevice,
+  texture: GPUTexture,
+  img: { width: number; data: Uint8ClampedArray | Uint8Array },
+  alphaBoost = 1.1,
+): void {
+  let w = img.width
+  let level: Uint8Array<ArrayBuffer> = new Uint8Array(
+    (img.data.buffer as ArrayBuffer).slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength),
+  )
+  for (let mip = 0; w >= 1; mip++) {
+    device.queue.writeTexture({ texture, mipLevel: mip }, level, { bytesPerRow: w * 4 }, [w, w])
+    if (w === 1) break
+    const n = w >> 1
+    const next: Uint8Array<ArrayBuffer> = new Uint8Array(n * n * 4)
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        let r = 0
+        let g = 0
+        let b = 0
+        let a = 0
+        for (const [dx, dy] of [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+          [1, 1],
+        ] as const) {
+          const i = ((y * 2 + dy) * w + x * 2 + dx) * 4
+          const al = level[i + 3]!
+          r += level[i]! * al
+          g += level[i + 1]! * al
+          b += level[i + 2]! * al
+          a += al
+        }
+        const o = (y * n + x) * 4
+        next[o] = a ? r / a : 0
+        next[o + 1] = a ? g / a : 0
+        next[o + 2] = a ? b / a : 0
+        next[o + 3] = Math.min(255, (a / 4) * alphaBoost)
+      }
+    }
+    level = next
+    w = n
+  }
 }

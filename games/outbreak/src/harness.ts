@@ -9,6 +9,7 @@ import {
   type LookSettings,
 } from "@arcade/kit/look"
 import type { AIState } from "../shared/ai"
+import { MELEE_WEAPONS, type MeleeWeaponId } from "../shared/combat"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
 import type { Command, LocalSession } from "../shared/session"
@@ -33,6 +34,8 @@ import {
   type OutbreakSettings,
 } from "./settings"
 import type { Survivor } from "./survivor"
+import type { OutbreakVehicleAudio } from "./vehicle-audio"
+import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import {
   applyOutbreakWeatherPreset,
   toSharedWeatherSettings,
@@ -60,7 +63,9 @@ export interface OutbreakHarnessHost {
   readonly hud: OutbreakHud
   readonly coop: CoopView
   readonly audio: OutbreakAudio
+  readonly vehicleAudio: OutbreakVehicleAudio
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void
@@ -92,7 +97,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     hud,
     coop,
     audio,
+    vehicleAudio,
     progressionHost,
+    vehicleHost,
     promptEl,
   } = host
 
@@ -106,6 +113,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         bones: avatar.bones,
         gun: avatar.gun,
         mag: avatar.mag,
+        meleeWeaponFrame: avatar.meleeWeaponFrame,
+        meleeTip: avatar.meleeTip,
         aimWeight: avatar.aimWeight,
         holdRemaining: avatar.holdRemaining,
       }
@@ -139,6 +148,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           twilight: dc.twilight,
           lamps: dc.lamps,
         },
+        pacing: { ...session.ai.pacing.telemetry },
         flashlight: {
           on: session.view.player.flashlightOn,
           battery: session.view.player.battery,
@@ -184,6 +194,32 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           lastBakeMs: worldStreamer.lastBakeMs,
           deltasCount: session.sim.worldStream.deltas.size,
         },
+        vehicles: session.view.vehicles.map((v) => ({
+          id: v.id,
+          kind: v.kind,
+          label: v.spec.label,
+          x: v.x,
+          y: v.y,
+          h: v.h,
+          vx: v.vx,
+          vy: v.vy,
+          speed: Math.hypot(v.vx, v.vy),
+          hp: v.hp,
+          maxHp: v.maxHp,
+          fuel: v.fuel,
+          maxFuel: v.maxFuel,
+          hasBattery: v.hasBattery,
+          hasKeys: v.hasKeys,
+          headlights: v.headlights,
+          engineOn: v.engineOn,
+          horn: v.horn,
+          wreck: v.wreck,
+          seats: [...v.seats],
+          zombieHits: v.zombieHits,
+          zombieKills: v.zombieKills,
+          grabbingZombies: v.grabbingZombies,
+          bangCount: v.bangCount,
+        })),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -200,7 +236,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         progress: c.progress,
       })),
     coop: () => coop.inspect(),
-    audio: () => audio.telemetry(),
+    audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
@@ -270,6 +306,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     getLook: () => ({ ...lookSettings }),
     pose(x: number, y: number, aim: number) {
       const session = host.session()
+      session.sim.vehicles.leaveSeat(session.view.actorId, session.view.player)
       Object.assign(session.view.player, {
         x,
         y,
@@ -307,6 +344,165 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
+    },
+    /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally swings. */
+    stageMelee(weapon: MeleeWeaponId = "crowbar", swing: "none" | "light" | "heavy" | "combo" = "light") {
+      const session = host.session()
+      const { progression, actorId } = session.view
+      const ledger = progression.ledger
+      const def = MELEE_WEAPONS[weapon] ?? MELEE_WEAPONS.crowbar
+      const hb = ledger.store(`${actorId}/hotbar`)
+      if (hb) {
+        hb.slots[2] = { item: def.id, count: 1, charge: def.durability }
+        hb.selected = 2
+        hb.rev = ++ledger.rev
+      }
+      const slot = session.sim.slot(actorId)
+      if (slot) {
+        slot.survivor.meleePhase = "idle"
+        slot.survivor.meleePhaseTime = 0
+        slot.survivor.meleePhaseDuration = 0
+        slot.survivor.meleeCombo = 1
+        slot.survivor.meleeCharge = 0
+        slot.survivor.meleeHeavy = false
+        slot.survivor.meleeComboQueued = false
+        slot.survivor.meleeComboUntil = 0
+        slot.survivor.stamina = 1
+        slot.survivor.exhausted = false
+        progression.project(slot)
+      }
+
+      harness.pose(44, 44, 0)
+      session.ai.agents.length = 0
+      const z1 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.6, def.reach * 0.78), 43.85, "chase", Math.PI)
+      const z2 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.75, def.reach * 0.85), 44.32, "chase", Math.PI)
+      z1.targetX = z2.targetX = 44
+      z1.targetY = z2.targetY = 44
+
+      if (swing === "light") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 6; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
+      } else if (swing === "heavy") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true, fireHeld: true }, 0, settings)
+        for (let i = 0; i < 24; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: true }, 0, settings)
+        }
+        for (let i = 0; i < 5; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: false }, 0, settings)
+        }
+      } else if (swing === "combo") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 16; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: i === 9 }, 0, settings)
+        }
+      } else {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+      }
+
+      const p = session.view.player
+      return {
+        weapon: p.meleeWeapon,
+        label: def.label,
+        weaponClass: def.weaponClass,
+        durability: p.meleeDurability,
+        maxDurability: p.meleeMaxDurability,
+        phase: p.meleePhase,
+        combo: p.meleeCombo,
+        heavy: p.meleeHeavy,
+        charge: p.meleeCharge,
+        stamina: p.stamina,
+        zombies: session.view.zombies.map((z) => ({ id: z.id, hp: z.hp, state: z.state, detached: z.detachedLimbs })),
+      }
+    },
+    /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
+    stageVehicle(scene: VehicleScene) {
+      stageVehicleScene(vehicleHost, scene)
+    },
+    /** Stages a first-night pacing scene (`pacing.stage`). */
+    stagePacing(scene: string) {
+      const session = host.session()
+      session.ai.noiseBus.reset()
+      session.view.notices.length = 0
+      hud.reset()
+      if (scene === "legacy-rush") {
+        settings.ai.directorPacing = 0
+        settings.ai.safeRadius = 3.5
+        settings.ai.initialDensity = 1.0
+        settings.ai.startHour = 18.0
+        settings.dayCycle.hour = 18.0
+        session.view.hour = 18.0
+        Object.assign(session.ai.config, settings.ai)
+        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
+        harness.pose(27.7, 41, -Math.PI / 2)
+      } else if (scene === "safehouse-workbench") {
+        settings.ai.directorPacing = 1
+        settings.ai.safeRadius = 20
+        settings.ai.initialDensity = 0.25
+        settings.ai.startHour = 16.0
+        settings.dayCycle.hour = 16.8
+        session.view.hour = 16.8
+        Object.assign(session.ai.config, settings.ai)
+        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
+        stageProgression(progressionHost, "bench")
+        settings.dayCycle.hour = 16.8
+        session.view.hour = 16.8
+      } else if (scene === "first-contact") {
+        settings.ai.directorPacing = 1
+        settings.ai.safeRadius = 20
+        settings.ai.initialDensity = 0.25
+        settings.dayCycle.hour = 17.85
+        session.view.hour = 17.85
+        Object.assign(session.ai.config, settings.ai)
+        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
+        harness.pose(29.5, 41.2, 0)
+        const s1 = session.ai.spawnZombie(session.view.town, 37.8, 41.8, "investigate", Math.PI)
+        const s2 = session.ai.spawnZombie(session.view.town, 39.2, 43.4, "investigate", Math.PI - 0.15)
+        s1.targetX = 31.0
+        s1.targetY = 41.2
+        s2.targetX = 31.5
+        s2.targetY = 42.0
+        session.ai.pacing.firstEncounterStage = "staged"
+      } else if (scene === "late-night-horde") {
+        settings.ai.directorPacing = 1
+        settings.ai.safeRadius = 20
+        settings.ai.initialDensity = 0.25
+        settings.ai.maxActiveNearPlayer = 4
+        settings.dayCycle.hour = 22.5
+        session.view.hour = 22.5
+        session.view.time = 420
+        Object.assign(session.ai.config, settings.ai)
+        session.ai.syncPopulation(session.view.town, 44, 44)
+        harness.pose(41.5, 43.5, 0)
+        session.ai.emitNoise(41.5, 43.5, 34, "gunshot", session.view.time, "player", 2.0)
+        for (const [zx, zy] of [
+          [48.2, 42.6],
+          [49.4, 44.5],
+          [47.5, 45.8],
+          [51.0, 43.2],
+        ] as const) {
+          const z = session.ai.spawnZombie(session.view.town, zx, zy, "chase", Math.PI)
+          z.targetX = 41.5
+          z.targetY = 43.5
+        }
+      } else {
+        settings.ai.directorPacing = 1
+        settings.ai.safeRadius = 20
+        settings.ai.initialDensity = 0.25
+        settings.ai.startHour = 16.0
+        settings.dayCycle.hour = 16.0
+        session.view.hour = 16.0
+        Object.assign(session.ai.config, settings.ai)
+        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
+        harness.pose(27.7, 41, -Math.PI / 2)
+      }
+      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
+        host.setLastDayNightHour(session.view.hour)
+        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+      }
+      lab.refresh()
+      return { scene, pacing: { ...session.ai.pacing.telemetry }, hour: session.view.hour }
     },
     /** Gives the local survivor an item, routed to belt, hand or pack. */
     give(item: string, count = 1) {
@@ -379,3 +575,5 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
   }
   return harness
 }
+
+export type OutbreakHarness = ReturnType<typeof createOutbreakHarness>

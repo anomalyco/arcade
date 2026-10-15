@@ -584,7 +584,8 @@ export function buildWorkbenchCatalog(ctx: WorkbenchCatalogContext): CatalogEntr
       category: "lighting",
       collection: "shared",
       tag: "Preset",
-      sectionId: globalSettings.section,
+      // Not the active section: a Foliage, Looks or Materials section id would move these into that drawer tab.
+      sectionId: "lighting",
       isActive: () => getActiveCatalogId() === id,
       run: () => {
         const before = captureSnapshot()

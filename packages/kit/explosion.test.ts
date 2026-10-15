@@ -171,3 +171,45 @@ test("computeExplosionLod and SmokeVolumes cap concurrent load and coalesce near
   expect(v.count).toBeLessThanOrEqual(VOLUMES)
   expect(p.count).toBeLessThan(800)
 })
+
+const countKind = (p: Particles, kind: number) => {
+  let n = 0
+  for (let i = 0; i < p.count; i++) if (p.data[i * PARTICLE_STRIDE + 16] === kind) n++
+  return n
+}
+const countTrailing = (p: Particles) => {
+  let n = 0
+  for (let i = 0; i < p.count; i++) if (p.data[i * PARTICLE_STRIDE + 22]! > 0) n++
+  return n
+}
+
+test("ship hits throw burning fragments that lay their own smoke trails, pop, and splash into water", () => {
+  const p = new Particles()
+  p.water = 0
+  spawnExplosion(p, null, 0, 28, 0, EXPLOSION_PRESETS.ship.settings, seededRng(3), 5, 1, { distanceToEye: 150, referenceDist: 160 })
+  expect(countTrailing(p)).toBe(EXPLOSION_PRESETS.ship.settings.fragmentCount)
+  const soft0 = countKind(p, 0)
+  let fireballsAfterPops = 0
+  for (let f = 0; f < 60; f++) {
+    p.update(1 / 60, [], () => -1e9)
+    if (f === 40) fireballsAfterPops = countKind(p, 7)
+  }
+  expect(countKind(p, 0)).toBeGreaterThan(soft0 + 150)
+  expect(fireballsAfterPops).toBeGreaterThan(0)
+  for (let f = 0; f < 180; f++) p.update(1 / 60, [], () => -1e9)
+  expect(countTrailing(p)).toBeLessThan(EXPLOSION_PRESETS.ship.settings.fragmentCount)
+  expect(countKind(p, 3)).toBeGreaterThan(0)
+})
+
+test("small blasts keep no trailing fragments and the pool never overflows its trail budget", () => {
+  for (const id of ["grenade", "pop"] as const) {
+    const p = new Particles()
+    spawnExplosion(p, null, 0, 0, 0, EXPLOSION_PRESETS[id].settings, seededRng(5))
+    expect(countTrailing(p)).toBe(0)
+  }
+  const p = new Particles()
+  p.water = 0
+  for (let i = 0; i < 6; i++) spawnExplosion(p, null, i * 20, 28, 0, EXPLOSION_PRESETS.ship.settings, seededRng(i + 1), 5, 1, { referenceDist: 160 })
+  for (let f = 0; f < 240; f++) p.update(1 / 60, [], () => -1e9)
+  expect(p.count).toBeLessThanOrEqual(2048)
+})

@@ -150,8 +150,15 @@ function shin(): Mesh {
 
 function foot(): Mesh {
   const m = new Body()
-  m.box(-0.075, -0.07, -0.065, 0.18, 0.02, 0.065, BOOT)
-  m.box(-0.08, -0.085, -0.068, 0.19, -0.065, 0.068, SOLE)
+  m.box(-0.075, -0.07, -0.065, 0.125, 0.02, 0.065, BOOT)
+  m.box(-0.08, -0.085, -0.068, 0.128, -0.065, 0.068, SOLE)
+  return m
+}
+
+function toe(): Mesh {
+  const m = new Body()
+  m.box(-0.008, 0.015, -0.062, 0.058, 0.082, 0.062, BOOT)
+  m.box(-0.006, 0, -0.066, 0.065, 0.02, 0.066, SOLE)
   return m
 }
 
@@ -259,6 +266,7 @@ export type PersonModels = {
   thigh: Mesh
   shin: Mesh
   foot: Mesh
+  toe: Mesh
   pump: Mesh
   gun: Record<Gun, Mesh>
   mag: Record<Gun, Mesh>
@@ -268,5 +276,5 @@ export type PersonModels = {
 
 export function personModels(): PersonModels {
   const by = <T>(f: (g: Gun) => T) => Object.fromEntries(GUN_IDS.map((g) => [g, f(g)])) as Record<Gun, T>
-  return { pelvis: pelvis(), torso: torso(), head: head(), upperArm: upperArm(), foreArm: foreArm(), thigh: thigh(), shin: shin(), foot: foot(), pump: pump(), gun: by(gun), mag: by(mag), casing: by(casing), hole: hole() }
+  return { pelvis: pelvis(), torso: torso(), head: head(), upperArm: upperArm(), foreArm: foreArm(), thigh: thigh(), shin: shin(), foot: foot(), toe: toe(), pump: pump(), gun: by(gun), mag: by(mag), casing: by(casing), hole: hole() }
 }

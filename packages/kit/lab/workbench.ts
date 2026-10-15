@@ -42,7 +42,9 @@ import {
   type TransformMode,
 } from "./transform"
 import type { LabSection, LabWorldObject } from "./types"
-import { createLibrary, isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, libraryCategoryOf, sectionLibraryCategory } from "./library"
+import { createLibrary, isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, libraryCategoryOf, sectionLibraryCategory, type LibraryView } from "./library"
+import { captureThumb, createThumbCache, thumbStats } from "./library-thumbs"
+import { createPanels, PANEL_IDS, PANELS_CHANGE_EVENT, type PanelId, type Panels } from "./panels"
 import { createOutliner, OUTLINER_GROUPS, outlinerGroupOf } from "./outliner"
 import { createPalette, type PaletteItem } from "./palette"
 import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin } from "./watch"
@@ -637,6 +639,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
         syncVariationGridOverlay()
         return variationGridCostMs
       } finally {
+        if (variationGrid && focusedGridTile !== null && focusedGridTile >= 1 && focusedGridTile <= variationGrid.tiles.length) {
+          applyTileSettingsToSection(activeSection(), variationGrid.tiles[focusedGridTile - 1]!)
+        }
         activeGridRender = null
       }
     })()
@@ -1174,7 +1179,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
         : null,
       layout: chromeReady
         ? {
-            library: { open: libraryDrawer.open, category: libraryDrawer.category, query: libraryDrawer.query },
+            library: { open: libraryDrawer.open, category: libraryDrawer.category, query: libraryDrawer.query, view: libraryDrawer.view, focused: libraryDrawer.focused, cursor: libraryDrawer.cursor, previews: thumbs.size, readback: { ...thumbStats } },
+            panels: panels.state(),
             locked: [...lockedIds],
             details: { query: detailsQuery, modifiedOnly: detailsModifiedOnly, showAll: detailsShowAll, modified: panel.modifiedControls().map(c => c.key) },
             watch: watchPins.map(p => ({ section: p.sectionId, key: p.key, label: p.label, value: readWatchPin(p)?.text ?? null })),
@@ -1895,15 +1901,88 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   let dragGhostActive = false
+  const thumbs = createThumbCache()
+  /** Scene-level items get a viewport preview; single props, lights, characters and sounds keep their icon. */
+  const previewable = (entry: CatalogEntry) => !isPlaceable(entry.id) && libraryCategoryOf(entry) !== "audio"
+  let pendingThumb: { id: string; due: number } | null = null
+  let previewsRunning = false
+
+  /** After an item runs, its first settled frame becomes its preview, once. */
+  function scheduleThumb(entry: CatalogEntry) {
+    pendingThumb = previewable(entry) && !thumbs.has(entry.id) ? { id: entry.id, due: performance.now() + 900 } : null
+  }
+
+  function maybeCaptureThumb() {
+    if (!pendingThumb || previewsRunning || performance.now() < pendingThumb.due) return
+    const { id } = pendingThumb
+    pendingThumb = null
+    const active = buildCatalog().find(e => e.id === id)
+    // Only when nothing else covers the scene: no Play, grid, wipe, ghost or open radial.
+    if (!active?.isActive?.() || mode !== "edit" || variationGrid || compareWipeEnabled || spawn?.getGhost?.() || radialState.phase !== "closed" || root.dataset.closed === "true") return
+    void captureThumb(canvas, t => stage.captureToCanvas(t)).then(url => {
+      if (url) thumbs.set(id, url)
+    })
+  }
+
+  const nextFrame = () => new Promise<void>(done => requestAnimationFrame(() => done()))
+
+  /**
+   * Renders a preview for each entry offline: the live loop is paused, each item runs from the same starting
+   * scene and is simulated for a fixed 40 ticks, and the scene, camera and active item are restored afterwards.
+   */
+  async function renderLibraryPreviews(list: CatalogEntry[], progress: (done: number, total: number) => void) {
+    if (previewsRunning) return
+    previewsRunning = true
+    if (mode === "play") setPlayMode("edit")
+    const base = captureSnapshot()
+    const baseCatalog = activeCatalogId
+    const cam = { focus: [...stage.focus], target: [...stage.targetFocus], yaw: stage.camYaw, pitch: stage.camPitch, dist: stage.camDist }
+    opts.suspend?.(true)
+    try {
+      for (const [i, entry] of list.entries()) {
+        try {
+          restoreSnapshot(base)
+          entry.run(false)
+          panel.sync()
+          for (let t = 0; t < 40; t++) advanceSim(1 / 60)
+          await renderNow()
+          await nextFrame()
+          const url = await captureThumb(canvas, t => stage.captureToCanvas(t))
+          if (url) thumbs.set(entry.id, url)
+        } catch (err) {
+          console.warn(`[library] preview for ${entry.id} failed`, err)
+        }
+        progress(i + 1, list.length)
+      }
+    } finally {
+      restoreSnapshot(base)
+      activeCatalogId = baseCatalog
+      stage.frameTarget(cam.target[0]!, cam.target[1]!, cam.target[2]!, cam.dist)
+      stage.camYaw = cam.yaw
+      stage.camPitch = cam.pitch
+      stage.focus.splice(0, 3, ...cam.focus)
+      stage.updateCamera()
+      opts.suspend?.(false)
+      previewsRunning = false
+      panel.sync()
+      syncChrome()
+      void renderNow()
+    }
+  }
+
   const libraryDrawer = createLibrary<CatalogEntry>(libraryEl, {
     entries: () => buildCatalog(),
     run: entry => {
       if (mode === "play") setPlayMode("edit")
       entry.run(true)
+      scheduleThumb(entry)
       panel.sync()
       syncChrome()
       void renderNow()
     },
+    thumbnail: entry => thumbs.get(entry.id),
+    previewable,
+    renderPreviews: (list, progress) => renderLibraryPreviews(list, progress),
     dragOver: (entry, clientX, clientY) => {
       const vRect = viewportEl.getBoundingClientRect()
       const placeable = Boolean(spawn) && isPlaceable(entry.id)
@@ -1955,6 +2034,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         localStorage.setItem("arcade.lab.library-open", String(isOpen))
       } catch {}
       root.dataset.drawer = String(isOpen)
+      root.dispatchEvent(new Event(PANELS_CHANGE_EVENT))
       void renderNow()
     },
     onFocusChange: focused => {
@@ -1977,6 +2057,76 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   })())
   root.dataset.drawer = String(libraryDrawer.open)
+  thumbs.onChange(() => libraryDrawer.render())
+
+  const panels: Panels = createPanels({ root, library: libraryDrawer })
+  topbar.querySelector<HTMLButtonElement>('[data-action="panels-reset"]')?.addEventListener("click", () => {
+    panels.reset()
+    showToast(`Panel sizes reset for ${panels.layoutKey === "workbench" ? "the workbench" : `station ${panels.layoutKey}`}`)
+  })
+  commands.registerAll([
+    {
+      id: "library.view",
+      label: "Library View",
+      shortLabel: "View",
+      category: "Navigation",
+      args: {
+        view: { type: "string", enum: ["tiles", "list"], description: "Tiles with previews, or a compact list" },
+        group: { type: "string", description: "Collection to show (omit for all)" },
+        focus: { type: "boolean", description: "Move keyboard focus into the item grid" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        if (args?.view === "tiles" || args?.view === "list") libraryDrawer.setView(args.view as LibraryView)
+        if (typeof args?.group === "string") libraryDrawer.setGroup(args.group || null)
+        if (args?.focus === true) libraryDrawer.focusGrid()
+        return { view: libraryDrawer.view, visible: libraryDrawer.visibleIds, cursor: libraryDrawer.cursor }
+      },
+    },
+    {
+      id: "library.previews",
+      label: "Render Library Previews",
+      shortLabel: "Previews",
+      category: "Navigation",
+      undoable: false,
+      args: {
+        ids: { type: "string", description: "Comma list of catalog ids (default: previewable items in the current view without one)" },
+        clear: { type: "boolean", description: "Forget the stored previews instead (all, or just ids)" },
+      },
+      enabled: () => !previewsRunning,
+      run: async (_ctx, args) => {
+        const ids = typeof args?.ids === "string" && args.ids ? args.ids.split(",").map(s => s.trim()) : null
+        if (args?.clear === true) {
+          thumbs.clear(ids ?? undefined)
+          return { previews: thumbs.size }
+        }
+        const catalog = buildCatalog().filter(isLibraryAsset)
+        const list = ids ? catalog.filter(e => ids.includes(e.id)) : catalog.filter(e => libraryDrawer.visibleIds.includes(e.id) && previewable(e) && !thumbs.has(e.id))
+        await renderLibraryPreviews(list, () => {})
+        return { rendered: list.filter(e => thumbs.has(e.id)).map(e => e.id), missing: list.filter(e => !thumbs.has(e.id)).map(e => e.id), previews: thumbs.size }
+      },
+    },
+    {
+      id: "layout.panels",
+      label: "Resize Panels",
+      shortLabel: "Panels",
+      category: "Navigation",
+      args: {
+        panel: { type: "string", enum: [...PANEL_IDS], description: "left (Outliner), right (Details), drawer (Library), dock, leftSlot, rightSlot" },
+        size: { type: "number", description: "Size in CSS pixels (width for left/right, height otherwise)" },
+        collapsed: { type: "boolean", description: "Collapse to a thin bar, or expand" },
+        reset: { type: "boolean", description: "Back to the default size (one panel, or all when panel is omitted)" },
+      },
+      enabled: () => true,
+      run: (_ctx, args) => {
+        const id = typeof args?.panel === "string" && (PANEL_IDS as readonly string[]).includes(args.panel) ? (args.panel as PanelId) : null
+        if (args?.reset === true) panels.reset(id ?? undefined)
+        if (id && typeof args?.size === "number") panels.setSize(id, args.size)
+        if (id && typeof args?.collapsed === "boolean") panels.setCollapsed(id, args.collapsed)
+        return panels.state()
+      },
+    },
+  ])
 
   const outliner = createOutliner(root.querySelector<HTMLElement>("[data-outliner-mount]")!, {
     objects: () => allSceneObjects(),
@@ -2408,6 +2558,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
+  // An open radial belongs to the viewport: a press or focus anywhere else (a panel, a station card) closes it.
+  for (const type of ["pointerdown", "focusin"] as const) {
+    document.addEventListener(type, event => {
+      if (radialState.phase !== "closed" && !viewportEl.contains(event.target as Node | null)) closeRadial()
+    }, { capture: true })
+  }
+
   // Exiting Play mode and hiding custom viewport cursor whenever user interacts with UI panels outside canvas
   for (const zone of [topbar, outlinerEl, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
     zone.addEventListener("pointerenter", () => {
@@ -2487,7 +2644,25 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return best
   }
 
+  /** Whether a screen point is on the viewport itself, not on a panel, menu or the chrome over or beside it. */
+  function onViewport(clientX: number, clientY: number): boolean {
+    const rect = viewportEl.getBoundingClientRect()
+    if (clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) return false
+    const hit = document.elementFromPoint(clientX, clientY)
+    return hit === canvas || (hit !== null && transformGizmo.root.contains(hit))
+  }
+
+  function closeRadial() {
+    if (radialState.phase === "closed") return
+    radialState.close()
+    radialDOM.sync()
+    viewportCursor.update({ state: "hidden" })
+    syncTransportAndHints()
+  }
+
+  /** Opens the radial at an RMB tap or Ctrl-click; only on the viewport, never over the panels. */
   function openRadialAtScreen(clientX: number, clientY: number, viaKeyboard = false) {
+    if (!onViewport(clientX, clientY)) return
     const rect = viewportEl.getBoundingClientRect()
     const [u, v] = canvasUV({ clientX, clientY })
     const sec = activeSection()
@@ -3195,9 +3370,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       setPlayMode("play")
     } else if (event.key === "ContextMenu" && !event.repeat) {
-      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key.
+      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key, and
+      // the key only while the viewport (not a panel button) has focus.
       event.preventDefault()
-      openRadialFromKeyboard()
+      if (document.activeElement === canvas || document.activeElement === document.body) openRadialFromKeyboard()
     } else if (key === "i" && !event.repeat) {
       event.preventDefault()
       commands.execute("object.inspect")
@@ -3299,6 +3475,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       }
       syncStageMarkers()
       if (chromeReady) watchList.render(watchPins)
+      if (pendingThumb) maybeCaptureThumb()
     },
     onSectionChanged() {
       elapsed = 0
@@ -3389,6 +3566,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
     onPanelToggle(visible: boolean) {
       root.dataset.closed = String(!visible)
+      root.dispatchEvent(new Event(PANELS_CHANGE_EVENT))
       syncStageMarkers()
     },
     sectionDefaults: (id: string) => defaultsBySection.get(id),

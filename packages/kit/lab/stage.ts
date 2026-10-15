@@ -445,16 +445,19 @@ export class Stage {
           })
           this.tileCustomOutputView=this.tileCustomOutput.createView()
         }
-        const ms=await this.customRender(this.width,this.height,this.tileCustomOutputView!,this.tileCustomOutput,debug,false)
+        const tileTex=this.tileCustomOutput
+        const tileView=this.tileCustomOutputView!
+        const ms=await this.customRender(this.width,this.height,tileView,tileTex,debug,false)
+        if(!this.tileCustomOutput||this.tileCustomOutput!==tileTex)return ms
         const enc=this.device.createCommandEncoder()
         if(tileViewport.clear){
           const clr=enc.beginRenderPass({colorAttachments:[{view:this.outputView,loadOp:"clear",storeOp:"store",clearValue:{r:0.04,g:0.05,b:0.06,a:1}}]})
           clr.end()
         }
-        const copyW=Math.min(this.width,tileViewport.width)
-        const copyH=Math.min(this.height,tileViewport.height)
+        const copyW=Math.min(tileTex.width,tileViewport.width)
+        const copyH=Math.min(tileTex.height,tileViewport.height)
         enc.copyTextureToTexture(
-          {texture:this.tileCustomOutput},
+          {texture:tileTex},
           {texture:this.output,origin:[tileViewport.x,tileViewport.y,0]},
           [copyW,copyH],
         )

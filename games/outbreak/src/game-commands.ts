@@ -4,17 +4,20 @@ import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabPanel } from "@arcade/kit/lab-panel"
 import type { AIState } from "../shared/ai"
+import { isMeleeWeapon, MELEE_WEAPON_IDS, type MeleeWeaponId } from "../shared/combat"
 import { sightRects } from "../shared/map"
 import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
 import { FOG_SIZE, type Vision } from "../shared/vision"
 import type { CoopView } from "./coop-view"
 import type { OutbreakFeelTracker } from "./feel-events"
+import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
 import type { NetSession } from "./net-session"
 import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
+import { stageVehicleScene, VEHICLE_SCENES, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import { applyOutbreakWeatherPreset, type OutbreakWeatherController } from "./weather"
 
 export interface OutbreakGameCommandsHost {
@@ -32,7 +35,9 @@ export interface OutbreakGameCommandsHost {
   readonly coop: CoopView
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly weatherController: OutbreakWeatherController
+  readonly harness: () => OutbreakHarness
   readonly resetPeek: () => void
   readonly draw: (dt: number) => void
 }
@@ -274,6 +279,67 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
           stageProgression(progressionHost, scene)
           return { scene }
+        },
+      },
+      {
+        id: "melee.stage",
+        label: "Equip Melee Weapon & Stage Arena",
+        shortLabel: "Melee Stage",
+        category: "Scene",
+        undoable: false,
+        args: {
+          weapon: {
+            type: "string",
+            description: `Melee weapon ID (${MELEE_WEAPON_IDS.join(", ")})`,
+          },
+          swing: {
+            type: "string",
+            description: "Optional swing action (none, light, heavy, combo)",
+          },
+        },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const rawWpn = String(args?.weapon ?? "crowbar")
+          const weapon: MeleeWeaponId = isMeleeWeapon(rawWpn) ? rawWpn : "crowbar"
+          const swing = String(args?.swing ?? "light") as "none" | "light" | "heavy" | "combo"
+          const res = host.harness().stageMelee(weapon, swing)
+          host.draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return res
+        },
+      },
+      {
+        id: "vehicle.stage",
+        label: "Stage a Vehicle Scene",
+        shortLabel: "Vehicle Scene",
+        category: "Scene",
+        undoable: false,
+        args: { scene: { type: "string", description: `Scene (${VEHICLE_SCENES.join(", ")})` } },
+        enabled: () => !coop.net,
+        run: (_ctx, args) => {
+          const scene = String(args?.scene ?? "driveway") as VehicleScene
+          if (!VEHICLE_SCENES.includes(scene)) throw new Error(`Unknown vehicle scene ${scene}`)
+          stageVehicleScene(host.vehicleHost, scene)
+          return { scene }
+        },
+      },
+      {
+        id: "pacing.stage",
+        label: "Stage First-Night Pacing Scene",
+        shortLabel: "Pacing Scene",
+        category: "Scene",
+        undoable: false,
+        args: {
+          scene: {
+            type: "string",
+            description: "Scene (opening-calm, safehouse-workbench, first-contact, late-night-horde, legacy-rush)",
+          },
+        },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const out = host.harness().stagePacing(String(args?.scene ?? "opening-calm"))
+          await host.harness().step(1 / 60)
+          return out
         },
       },
       {

@@ -3,6 +3,7 @@ import { FRAME, FRAME_BINDING_WGSL } from "./frame"
 import type { Renderer, ScenePass } from "./renderer"
 import { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
+import { spawnWaterSplash } from "@arcade/kit/fx/projectile-trail"
 import {
   EXPLOSION_PRESETS,
   explosionFlashLight,
@@ -468,6 +469,10 @@ export class WeaponFx implements ScenePass {
       bindGroupIndex: 1,
       extraBindGroupLayouts: [ctx.frameLayout],
     })
+    // Explosion fragments splash into the sea; their smoke trails drift on a sea breeze.
+    this.fxParticles.water = 0
+    this.fxParticles.windX = 3
+    this.fxParticles.windZ = 1.2
   }
 
   /** Start of a frame: advances every particle by dt and lays the survivors into this frame's instance lists. */
@@ -824,9 +829,7 @@ export class WeaponFx implements ScenePass {
   /** Where a round struck: a white spout on the sea, dust on land, sparks off a carrier or a jet. */
   impact(kind: "sea" | "land" | "ship" | "jet", x: number, y: number, z: number): void {
     if (kind === "sea") {
-      const n = 3
-      for (let i = 0; i < n; i++) this.spawnRock(0, x + rnd(-0.6, 0.6), y, z + rnd(-0.6, 0.6), rnd(-2, 2), rnd(9, 16), rnd(-2, 2), rnd(0.9, 1.3), rnd(0.5, 0.8), rnd(1.1, 1.7), 0.92, 0.95, 0.97, 0, 0, 0.85, 9.81, 0.4, [1, rnd(1.6, 2.4), 1])
-      this.puff(1, x, y + 0.5, z, 0, 2, 0, 1.2, 1, 4, 0.9, 0.93, 0.95, 0.4, 0.8)
+      spawnWaterSplash(this.fxParticles, x, y, z, 0.22, Math.random, { height: 0.55, mist: 1, crown: 4 })
       return
     }
     if (kind === "land") {
@@ -992,17 +995,20 @@ export class WeaponFx implements ScenePass {
         0.8,
       )
     }
+    if (chosen === "ship") {
+      // A hull hit is a bigger class of blast: a tall dark column keeps rising and leaning downwind long after.
+      for (let i = 0; i < 8; i++) {
+        const k = i / 7
+        this.puff(1, x + rnd(-2, 2) * s, y + (1 + k * 9) * s, z + rnd(-2, 2) * s, vx * 0.1 + 1.5 * k, rnd(6, 9) + k * 3, vz * 0.1 + 0.6 * k, rnd(8, 11), (3 + k * 2) * s, rnd(13, 19) * s, 0.1, 0.095, 0.09, 0.62, 0.45, 0.5)
+      }
+    }
     if (water) this.splash(x, y, z, 1.4 * s)
   }
 
-  /** A big white column of spray (a missile or a jet into the sea). */
+  /** A big white column of spray (a missile or a jet into the sea): droplets, a crown and mist, no faceted chunks. */
   splash(x: number, y: number, z: number, size = 1): void {
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2
-      const r = rnd(1, 4) * size
-      this.spawnRock(0, x + Math.cos(a) * r, y, z + Math.sin(a) * r, Math.cos(a) * rnd(2, 6), rnd(18, 34) * size, Math.sin(a) * rnd(2, 6), rnd(2.2, 3.2), rnd(2, 3) * size, rnd(3, 4.5) * size, 0.93, 0.96, 0.98, 0, 0, 0.9, 9.81, 0.5, [1, rnd(1.5, 2.6), 1])
-    }
-    this.puff(1, x, y + 3, z, 0, 3, 0, 4, 6 * size, 20 * size, 0.92, 0.95, 0.97, 0.45, 0.5)
+    spawnWaterSplash(this.fxParticles, x, y, z, size, Math.random, { mist: 0 })
+    this.puff(1, x, y + 3, z, 0, 3, 0, 4, 6 * size, 20 * size, 0.92, 0.95, 0.97, 0.3, 0.5)
   }
 
   /**
@@ -1015,23 +1021,9 @@ export class WeaponFx implements ScenePass {
     const hot = 0.3 + 0.7 * near
     if (water) {
       this.puff(0, x, y + 2, z, 0, 0, 0, 0.2, 8, 20, 5 * hot, 3 * hot, 1.4 * hot, 1, 2)
-      // The spout: a fast, narrow jet over a slower, fatter stem.
-      for (let i = 0; i < 18; i++) {
-        const a = rnd(0, Math.PI * 2)
-        const r = rnd(0, 4)
-        this.spawnRock(0, x + Math.cos(a) * r, y, z + Math.sin(a) * r, Math.cos(a) * rnd(1, 4), rnd(45, 70), Math.sin(a) * rnd(1, 4), rnd(3.2, 4.4), rnd(2.5, 4), rnd(5, 8), 0.95, 0.97, 0.99, 0, 0, 0.95, 9.81, 0.32, [1, rnd(2.2, 3.6), 1])
-      }
-      for (let i = 0; i < 12; i++) {
-        const a = rnd(0, Math.PI * 2)
-        const r = rnd(1, 6)
-        this.spawnRock(0, x + Math.cos(a) * r, y, z + Math.sin(a) * r, Math.cos(a) * rnd(2, 6), rnd(18, 34), Math.sin(a) * rnd(2, 6), rnd(2.8, 3.8), rnd(4, 6), rnd(7, 10), 0.93, 0.96, 0.98, 0, 0, 0.95, 9.81, 0.4, [1, rnd(1.6, 2.4), 1])
-      }
-      // The crown, thrown outward and falling back in a ring.
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * Math.PI * 2 + rnd(-0.15, 0.15)
-        const r = rnd(5, 9)
-        this.spawnRock(0, x + Math.cos(a) * r, y, z + Math.sin(a) * r, Math.cos(a) * rnd(14, 24), rnd(16, 28), Math.sin(a) * rnd(14, 24), rnd(2.4, 3.4), rnd(1.6, 2.6), rnd(3.5, 5), 0.92, 0.95, 0.98, 0, 0, 0.9, 9.81, 0.45, [1, rnd(1.4, 2.2), 1])
-      }
+      // The spout: a tall column of droplets and mist 50-70 m high that falls back, a crown thrown outward and a
+      // base surge rolling out over the water.
+      spawnWaterSplash(this.fxParticles, x, y, z, 2.2, Math.random, { height: 1.15, mist: 6, crown: 20, surge: 10 })
       // A low ring of mist rolling out over the water, and a thin hanging cloud.
       for (let i = 0; i < 14; i++) {
         const a = (i / 14) * Math.PI * 2
