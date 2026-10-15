@@ -11,8 +11,12 @@ import { dayCycle } from "./day-cycle"
 import { BUILDING_RECTS, SIZE, type Town } from "./map"
 
 export type PacingTuning = {
-  /** Starting clock hour (0..24) on the first night. Default 16.5 (16:30 late afternoon). */
+  /** Starting clock hour (0..24) on the first night. Default 17.5 (17:30 dusk, already in the Noir palette). */
   startHour: number
+  /** Multiplier (0.1..1) on the day-cycle time scale from the start until the first 18:00, so nightfall still takes about a minute. */
+  openingClock: number
+  /** Seconds (0..180) over which zombie perception eases from daytime to the hour's nocturnal threat at the start. */
+  openingCalm: number
   /** Radius (m) around spawn and the starting safehouse kept clear of zombies at start. */
   safeRadius: number
   /** Fraction (0..1) of target zombieCount present at t = 0. */
@@ -25,8 +29,14 @@ export type PacingTuning = {
   maxActiveNearPlayer: number
 }
 
-export const DEFAULT_PACING_TUNING: PacingTuning = {
-  startHour: 16.0,
+/**
+ * Opening pacing with the difficulty knobs as they were before D-22 (Balanced Curve); the D-18 opening clock is shared.
+ * Saved presets that carry these values keep them.
+ */
+export const LEGACY_PACING_TUNING: PacingTuning = {
+  startHour: 17.5,
+  openingClock: 0.25,
+  openingCalm: 50,
   safeRadius: 20,
   initialDensity: 0.25,
   rampTime: 360,
@@ -34,21 +44,55 @@ export const DEFAULT_PACING_TUNING: PacingTuning = {
   maxActiveNearPlayer: 4,
 }
 
+/** D-22 Balanced Curve, tuned by the survivor-bot CMA-ES search (games/outbreak/scripts/run-bot-tuning.ts). */
+export const DEFAULT_PACING_TUNING: PacingTuning = {
+  ...LEGACY_PACING_TUNING,
+  safeRadius: 17,
+  initialDensity: 0.1,
+  rampTime: 405,
+  noiseSensitivity: 1.05,
+  maxActiveNearPlayer: 3,
+}
+
 /**
  * Lab controls for opening pacing (`Pacing` group).
  * Update boundaries:
  * - `startHour`: Live & session-start value (updates current hour immediately when scrubbed and sets starting hour on reset).
+ * - `openingClock`: Live; slows the clock only before the first 18:00 (see `openingClockActive`).
+ * - `openingCalm`: Live; eases the threat the crowd and director read during the opening (see `openingThreat`).
  * - `safeRadius`, `initialDensity`: Spawn-time & opening clearance values (re-syncs opening population when adjusted in the opening window).
  * - `rampTime`, `noiseSensitivity`, `maxActiveNearPlayer`: Live director parameters evaluated each tick.
  */
 export const pacingControls = [
   { key: "startHour", label: "Start hour", group: "Pacing", min: 12, max: 22, step: 0.25, unit: "h" },
+  { key: "openingClock", label: "Opening clock", group: "Pacing", min: 0.1, max: 1, step: 0.05, unit: "×" },
+  { key: "openingCalm", label: "Opening calm", group: "Pacing", min: 0, max: 180, step: 5, unit: "s" },
   { key: "safeRadius", label: "Safe radius", group: "Pacing", min: 0, max: 45, step: 1, unit: "m" },
   { key: "initialDensity", label: "Initial density", group: "Pacing", min: 0, max: 1, step: 0.05, unit: "×" },
   { key: "rampTime", label: "Ramp time", group: "Pacing", min: 30, max: 900, step: 15, unit: "s" },
   { key: "noiseSensitivity", label: "Noise sensitivity", group: "Pacing", min: 0, max: 2.5, step: 0.1, unit: "×" },
   { key: "maxActiveNearPlayer", label: "Max active near player", group: "Pacing", min: 1, max: 30, step: 1, unit: "" },
 ] as const
+
+/** Hour at which the first night has fallen and the opening clock returns to normal speed. */
+export const NIGHTFALL_HOUR = 18
+
+/**
+ * True while the opening clock applies: the director is on, the first night has not fallen yet (fewer than 12 game
+ * hours elapsed) and the clock reads between noon and 18:00.
+ */
+export function openingClockActive(directorPacing: number, hour: number, elapsedHours: number): boolean {
+  return directorPacing > 0 && elapsedHours < 12 && hour >= 12 && hour < NIGHTFALL_HOUR
+}
+
+/**
+ * Threat the crowd and director read: the hour's nocturnal threat, eased in over the first `openingCalm` seconds so a
+ * dusk start keeps the calm, daytime-perception opening (the curve a 16:00 start produced at the default clock).
+ */
+export function openingThreat(threat: number, time: number, config: Pick<PacingTuning, "openingCalm"> & { directorPacing: number }): number {
+  if (config.directorPacing <= 0 || config.openingCalm <= 0) return threat
+  return threat * smoothstep(config.openingCalm * 0.2, config.openingCalm, time)
+}
 
 export type PacingSurvivorView = {
   id?: string
@@ -522,7 +566,7 @@ export type PacingDirectorSnapshot = {
 
 /**
  * Authoritative Opening & Night Pacing Director.
- * Drives the transition from a quiet late-afternoon safehouse opening to a first 1–3 zombie encounter at dusk,
+ * Drives the transition from a quiet dusk safehouse opening to a first 1–3 zombie encounter as night falls,
  * followed by a gradual night ramp governed by time, distance explored, player noise, nocturnal threat, and co-op squad size.
  */
 export class OutbreakPacingDirector {
@@ -624,7 +668,7 @@ export class OutbreakPacingDirector {
     playerCount: number,
     livingPopulation: number,
   ): PacingTelemetry {
-    const threat = dayCycle(hour).threat
+    const threat = openingThreat(dayCycle(hour).threat, time, config)
     const pCount = Math.max(1, playerCount)
     const coopScale = coopPopulationScale(pCount)
     const chaserScale = coopChaserScale(pCount)

@@ -1,4 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
+import type { DiscoveryHost } from "./discovery/index"
 import type { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
@@ -38,6 +39,7 @@ export interface OutbreakGameCommandsHost {
   readonly coop: CoopView
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
+  readonly discoveryHost: DiscoveryHost
   readonly vehicleHost: VehicleLabHost
   readonly weatherController: OutbreakWeatherController
   readonly harness: () => OutbreakHarness

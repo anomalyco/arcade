@@ -94,6 +94,7 @@ export class CharacterHud {
     if (this.logMode) return
     if (kind === "noise" && !this.settings.noiseCallouts) return
     if (this.style.quiet && kind === "info") return
+    if (this.style.worldState && typeof options === "object" && options.key === "flashlight") return
     this.layer.callout(actorId, text, kind, options)
   }
 

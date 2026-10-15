@@ -1,5 +1,6 @@
 import { maxChroma } from "./color.js"
 import { EASINGS } from "./easing.js"
+import { randomPoints, randomStops } from "./ramp.js"
 import { hasValue, normalize, type Schema, type ValueField, type Values } from "./schema.js"
 
 const lattice = (min: number, max: number, step: number, r: number) =>
@@ -50,6 +51,11 @@ function pick(field: ValueField, random: () => number) {
       return lattice(field.min, field.max, 1, r())
     case "keybind":
       return field.value
+    // A ramp keeps its stop count and reads as one ramp; a curve takes a built-in shape.
+    case "gradient":
+      return randomStops(field.value.length, r)
+    case "curve":
+      return randomPoints(field.range, r)
   }
 }
 

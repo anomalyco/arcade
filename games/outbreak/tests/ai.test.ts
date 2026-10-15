@@ -26,12 +26,13 @@ describe("Outbreak AI & survival combat integration", () => {
   test("spawns deterministic wandering zombies and emits noise on door/window/sprint actions", () => {
     const a = new LocalSession(7)
     const b = new LocalSession(7)
-    expect(a.view.zombies.length).toBeGreaterThanOrEqual(6)
-    expect(a.view.zombies.length).toBeLessThanOrEqual(10)
+    // D-22 Balanced Curve opens sparse: 10% of 16
+    expect(a.view.zombies.length).toBeGreaterThanOrEqual(2)
+    expect(a.view.zombies.length).toBeLessThanOrEqual(4)
     expect(a.view.zombies.map((z) => ({ id: z.id, x: z.x, y: z.y, state: z.state }))).toEqual(
       b.view.zombies.map((z) => ({ id: z.id, x: z.x, y: z.y, state: z.state })),
     )
-    const full = new LocalSession(7, 7, 0.22, { initialDensity: 1, safeRadius: 3.5 })
+    const full = new LocalSession(7, 7, 0.22, { zombieCount: 28, initialDensity: 1, safeRadius: 3.5 })
     expect(full.view.zombies.length).toBeGreaterThan(20)
 
     // Sprint to emit sprint noise on the bus and attract nearby zombies
@@ -82,7 +83,8 @@ describe("Outbreak AI & survival combat integration", () => {
   })
 
   test("pistol firing spends ledger rounds, emits loud gunshot noise, staggers/kills zombie, and reloads from the belt with R", () => {
-    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    // No opening calm: with D-22's 0.75 hearing, the D-18 calm keeps a 24 m zombie deaf to the first shots.
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
     const p = session.view.player
     Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0 })
     stock(session, 2, { ammo: 6 })

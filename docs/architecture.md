@@ -58,6 +58,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | — | — |
 | `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — |
 | `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — |
+| `sim/flow-field` | Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles | — | — | Yes | — | — | — |
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — |
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — |
 | `net/*` | Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | — | Yes | — | — | — |

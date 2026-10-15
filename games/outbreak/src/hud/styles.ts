@@ -39,14 +39,16 @@ export type StyleSpec = {
   quiet: boolean
   /** Swap sides when the survivor aims into the HUD. Today predates it; Zomboid keeps its bar over the head. */
   avoid: boolean
+  /** Read the flashlight's charge off its beam (narrower, warmer, sputtering) instead of a ring or "Battery low". */
+  worldState: boolean
 }
 
 export const STYLES: Record<number, StyleSpec> = {
-  [STYLE_TODAY]: { label: "Today", callouts: "up", look: "box", actionBar: false, vitals: VITALS_EDGE, chrome: "full", quiet: false, avoid: false },
-  [STYLE_BELOW]: { label: "Below Feet", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BESIDE, chrome: "full", quiet: false, avoid: true },
-  [STYLE_HADES]: { label: "Hades Style", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BARS, chrome: "quiet", quiet: false, avoid: true },
-  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false, avoid: false },
-  [STYLE_DIEGETIC]: { label: "Diegetic", callouts: "down", look: "halo", actionBar: false, vitals: VITALS_GROUND, chrome: "none", quiet: true, avoid: true },
+  [STYLE_TODAY]: { label: "Today", callouts: "up", look: "box", actionBar: false, vitals: VITALS_EDGE, chrome: "full", quiet: false, avoid: false, worldState: false },
+  [STYLE_BELOW]: { label: "Below Feet", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BESIDE, chrome: "full", quiet: false, avoid: true, worldState: false },
+  [STYLE_HADES]: { label: "Hades Style", callouts: "down", look: "box", actionBar: false, vitals: VITALS_BARS, chrome: "quiet", quiet: false, avoid: true, worldState: false },
+  [STYLE_ZOMBOID]: { label: "Zomboid Style", callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, chrome: "full", quiet: false, avoid: false, worldState: false },
+  [STYLE_DIEGETIC]: { label: "Diegetic", callouts: "down", look: "halo", actionBar: false, vitals: VITALS_GROUND, chrome: "none", quiet: true, avoid: true, worldState: true },
 }
 
 export type ResolvedStyle = StyleSpec & { id: number }

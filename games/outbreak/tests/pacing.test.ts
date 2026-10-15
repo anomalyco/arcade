@@ -9,11 +9,14 @@ import {
   isInsideSafeZone,
   isSpawnBehindPlayer,
   isSpawnInView,
+  LEGACY_AI_CONFIG,
   pacingControls,
   STARTING_SAFEHOUSE_RECT,
 } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, SPAWN_POINTS } from "../shared/coop-sim"
+import { dayCycle } from "../shared/day-cycle"
+import { NIGHTFALL_HOUR, openingClockActive, openingThreat } from "../shared/pacing"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { createOutbreakSettings, setOutbreakSetting } from "../src/settings"
@@ -30,13 +33,15 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
     }
 
     const settings = createOutbreakSettings()
-    expect(settings.ai.startHour).toBe(16.0)
-    expect(settings.dayCycle.hour).toBe(16.0)
-    expect(settings.ai.safeRadius).toBe(20)
-    expect(settings.ai.initialDensity).toBe(0.25)
-    expect(settings.ai.rampTime).toBe(360)
-    expect(settings.ai.noiseSensitivity).toBe(1.0)
-    expect(settings.ai.maxActiveNearPlayer).toBe(4)
+    expect(settings.ai.startHour).toBe(17.5)
+    expect(settings.ai.openingClock).toBe(0.25)
+    expect(settings.dayCycle.hour).toBe(17.5)
+    // D-22 Balanced Curve
+    expect(settings.ai.safeRadius).toBe(17)
+    expect(settings.ai.initialDensity).toBe(0.1)
+    expect(settings.ai.rampTime).toBe(405)
+    expect(settings.ai.noiseSensitivity).toBe(1.05)
+    expect(settings.ai.maxActiveNearPlayer).toBe(3)
 
     setOutbreakSetting(settings, "safeRadius", 26)
     setOutbreakSetting(settings, "pacing.maxActiveNearPlayer", 6)
@@ -44,49 +49,87 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
     expect(settings.ai.maxActiveNearPlayer).toBe(6)
   })
 
-  test("starting at 16:00 late afternoon gives sufficient natural light (>= 0.35) to research at the Ash workbench without a flashlight", () => {
+  test("starting at 17:30 dusk opens in the Noir palette, and the workbench is lit by daylight at first and the flashlight after", () => {
     const session = new LocalSession(7)
-    expect(session.view.hour).toBe(16.0)
+    expect(session.view.hour).toBe(17.5)
+    expect(dayCycle(session.view.hour).darkness).toBeGreaterThan(0.75)
+    const T = session.sim.progression.tuning
     const benchLightAtStart = session.sim.progression.benchLight("bench:ash", session.view.hour, [])
-    expect(benchLightAtStart).toBeGreaterThan(0.35)
-    // Even 32 s into the session (17:04, after searching 3 containers), natural bench light is still > 0.35
-    const benchLightAt32s = session.sim.progression.benchLight("bench:ash", 17.07, [])
-    expect(benchLightAt32s).toBeGreaterThan(0.35)
+    expect(benchLightAtStart).toBeGreaterThanOrEqual(T.researchLight)
+    // About 35 s in (17:48) the route reaches the bench: daylight alone is too dim, the flashlight (on by default) makes up the rest
+    const bench = session.sim.progression.benches.find((b) => b.id === "bench:ash")!.bench
+    const atBench = { x: bench.x - 0.85, y: bench.y, flashlightOn: true, flashlightOutput: 1 }
+    expect(session.sim.progression.benchLight("bench:ash", 17.8, [])).toBeLessThan(T.researchLight)
+    expect(session.sim.progression.benchLight("bench:ash", 17.8, [atBench])).toBeGreaterThanOrEqual(T.researchLight)
+  })
 
-    // At 18:00 (old start hour) with flashlight off, the workbench was already too dark (< 0.35)
-    const benchLightAt18 = session.sim.progression.benchLight("bench:ash", 18.0, [])
-    expect(benchLightAt18).toBeLessThan(0.35)
+  test("the opening clock makes nightfall take about a minute of real time, then the clock runs at normal speed, solo and co-op", () => {
+    for (const players of [1, 4]) {
+      const sim = new CoopSim(7, 7, 0.22)
+      for (let i = 0; i < players; i++) sim.addSurvivor(i === 0 ? "player" : `p${i}`, i)
+      let nightfallAt: number | null = null
+      for (let tick = 1; tick <= 90 * 60; tick++) {
+        sim.stepWorld(TICK_DT, 120)
+        if (nightfallAt === null && sim.hour >= NIGHTFALL_HOUR) nightfallAt = tick * TICK_DT
+      }
+      expect(nightfallAt).not.toBeNull()
+      expect(nightfallAt!).toBeGreaterThan(55)
+      expect(nightfallAt!).toBeLessThan(65)
+      // After nightfall the remaining ~30 s ran at the normal 120x: 2 game minutes per real second
+      expect(sim.hour).toBeCloseTo(NIGHTFALL_HOUR + ((90 - nightfallAt!) * 120) / 3600, 1)
+      expect(sim.elapsedHours).toBeCloseTo(sim.hour - 17.5, 6)
+    }
+    // The next evening runs at the normal speed, and the legacy unpaced mode never slows the clock
+    expect(openingClockActive(1, 17.5, 0)).toBe(true)
+    expect(openingClockActive(1, 17.5, 24)).toBe(false)
+    expect(openingClockActive(0, 17.5, 0)).toBe(false)
+    expect(openingClockActive(1, 18.5, 0.5)).toBe(false)
+  })
+
+  test("the opening calm eases dusk threat in over the first 50 s, like the 16:00 start did, and leaves unpaced mode alone", () => {
+    const paced = { directorPacing: 1, openingCalm: DEFAULT_PACING_TUNING.openingCalm }
+    const duskThreat = dayCycle(17.5).threat
+    expect(openingThreat(duskThreat, 0, paced)).toBe(0)
+    expect(openingThreat(duskThreat, 30, paced)).toBeGreaterThan(0.3)
+    expect(openingThreat(duskThreat, 30, paced)).toBeLessThan(0.6)
+    expect(openingThreat(duskThreat, 50, paced)).toBeCloseTo(duskThreat, 6)
+    expect(openingThreat(duskThreat, 0, { directorPacing: 0, openingCalm: 50 })).toBe(duskThreat)
+    // 30 s into the old 16:00 start the clock read 17:00, whose threat sits in the same band
+    expect(dayCycle(17).threat).toBeGreaterThan(0.3)
+    expect(dayCycle(17).threat).toBeLessThan(0.6)
   })
 
   test("opening spawn clears safeRadius around spawn and Ash House, spaces out sparse shamblers, and never spawns in view or behind player", () => {
-    const session = new LocalSession(7)
-    const p = session.view.player
-    const town = session.view.town
-    const blockers = sightRects(town)
-    const zombies = session.view.zombies
+    // D-22 defaults (10% of 16 = 2 shamblers) and the denser pre-D-22 opening (25% of 28 = 7), which saved presets still load.
+    for (const [config, expected] of [[DEFAULT_AI_CONFIG, 2], [LEGACY_AI_CONFIG, 7]] as const) {
+      const session = new LocalSession(7, 7, 0.22, config)
+      const p = session.view.player
+      const town = session.view.town
+      const blockers = sightRects(town)
+      const zombies = session.view.zombies
 
-    // 25% of 28 = 7 initial wandering shamblers
-    expect(zombies.length).toBe(initialSpawnCount(DEFAULT_AI_CONFIG.zombieCount, DEFAULT_AI_CONFIG.initialDensity, 1, 1))
-    expect(zombies.length).toBe(7)
+      expect(zombies.length).toBe(initialSpawnCount(config.zombieCount, config.initialDensity, 1, 1))
+      expect(zombies.length).toBe(expected)
 
-    const [sx0, sy0, sx1, sy1] = STARTING_SAFEHOUSE_RECT
-    for (const z of zombies) {
-      expect(z.state).toBe("wander")
-      expect(z.awareness).toBe(0)
-      const dist = Math.hypot(z.x - p.x, z.y - p.y)
-      expect(dist).toBeGreaterThanOrEqual(DEFAULT_AI_CONFIG.safeRadius)
-      // Never inside Ash House
-      const inAsh = z.x >= sx0 && z.x <= sx1 && z.y >= sy0 && z.y <= sy1
-      expect(inAsh).toBe(false)
-      // Never in initial sight cone or flashlight beam
-      expect(isSpawnInView(z.x, z.y, [p], blockers)).toBe(false)
-    }
+      const [sx0, sy0, sx1, sy1] = STARTING_SAFEHOUSE_RECT
+      for (const z of zombies) {
+        expect(z.state).toBe("wander")
+        expect(z.awareness).toBe(0)
+        const dist = Math.hypot(z.x - p.x, z.y - p.y)
+        expect(dist).toBeGreaterThanOrEqual(config.safeRadius)
+        // Never inside Ash House
+        const inAsh = z.x >= sx0 && z.x <= sx1 && z.y >= sy0 && z.y <= sy1
+        expect(inAsh).toBe(false)
+        // Never in initial sight cone or flashlight beam
+        expect(isSpawnInView(z.x, z.y, [p], blockers)).toBe(false)
+      }
 
-    // Check pairwise spacing of initial zombies (spaced out, not clumped)
-    for (let i = 0; i < zombies.length; i++) {
-      for (let j = i + 1; j < zombies.length; j++) {
-        const d = Math.hypot(zombies[i]!.x - zombies[j]!.x, zombies[i]!.y - zombies[j]!.y)
-        expect(d).toBeGreaterThanOrEqual(8.0)
+      // Check pairwise spacing of initial zombies (spaced out, not clumped)
+      for (let i = 0; i < zombies.length; i++) {
+        for (let j = i + 1; j < zombies.length; j++) {
+          const d = Math.hypot(zombies[i]!.x - zombies[j]!.x, zombies[i]!.y - zombies[j]!.y)
+          expect(d).toBeGreaterThanOrEqual(8.0)
+        }
       }
     }
   })

@@ -11,3 +11,11 @@ export type Reshape = (
   values: State,
   options?: { land?: boolean; mixed?: readonly string[] },
 ) => void
+
+/**
+ * What a remote store hears from `reset(keys)` in place of an `onReset({ key })` per key, so it
+ * can send the keys' resets together (see `RemoteControlsOptions.onSetBatch`).
+ */
+export const RESET_KEYS: unique symbol = Symbol.for("knobs.resetKeys") as never
+
+export type ResetKeys = (keys: readonly string[]) => void

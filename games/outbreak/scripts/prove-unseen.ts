@@ -17,6 +17,9 @@ const MODES = [
   { id: 3, slug: "mode-3-dark-shroud", label: "Dark shroud" },
   { id: 4, slug: "mode-4-stale-memory", label: "Stale memory" },
   { id: 5, slug: "mode-5-noise-film", label: "Noise film" },
+  { id: 6, slug: "mode-6-shroud-noise", label: "Combo: Shroud + Noise" },
+  { id: 7, slug: "mode-7-memory-warp", label: "Combo: Memory + Warp" },
+  { id: 8, slug: "mode-8-edge-glitch-shroud", label: "Combo: Edge glitch + Shroud" },
 ] as const
 
 const server = await createServer({
@@ -263,9 +266,11 @@ try {
   await gameCanvas.screenshot({ path: showZombiesStill })
   stills.push(showZombiesStill)
 
+  const benchOnly = process.argv.includes("--bench-only")
   // Per-mode stills & 96-frame (3.2s @ 30fps) muted top-down clips
   const totalFrames = 96
   for (const m of MODES) {
+    if (benchOnly && m.id <= 5) continue
     await stageHouseScene({ mode: m.id, hour: 22, hideZombies: true, px: 27.7, py: 33.6, aim: -2.25 })
     const frameDir = resolve(outDir, `frames-${m.slug}`)
     rmSync(frameDir, { recursive: true, force: true })

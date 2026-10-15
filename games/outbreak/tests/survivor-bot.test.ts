@@ -177,12 +177,12 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
   })
 
   test("difficulty tuner quantizes vectors, computes nights, and evaluates multi-preset batches", () => {
-    const n0 = computeNightsSurvived(20, 240, 16.0)
+    const n0 = computeNightsSurvived((20 * 240) / 3600, 16.0)
     expect(n0.completedNights).toBe(0)
     expect(n0.nightsSurvived).toBeGreaterThan(0)
     expect(n0.nightsSurvived).toBeLessThan(0.15)
 
-    const n1 = computeNightsSurvived(210, 240, 16.0)
+    const n1 = computeNightsSurvived((210 * 240) / 3600, 16.0)
     expect(n1.completedNights).toBe(1)
     expect(n1.nightsSurvived).toBeCloseTo(1.0, 2)
 

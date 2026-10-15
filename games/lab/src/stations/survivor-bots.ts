@@ -64,9 +64,14 @@ export default defineStation({
   board: { feature: "AR-27" },
   metrics: [
     {
-      label: "Skill preset median survival (Balanced Curve, total loss 21.66 vs Today 75.80)",
-      value: "Novice 0.50n · Casual 1.86n · Skilled 2.69n · Expert 3.87n",
+      label: "Shipped D-22 Balanced Curve, median survival with the D-18 dusk opening (total loss 40.80 vs 75.50 before D-22)",
+      value: "Novice 0.47n · Casual 1.64n · Skilled 3.73n · Expert 3.87n",
       source: "games/outbreak/shared/difficulty-tuner.ts",
+    },
+    {
+      label: "Pacing loss before → after D-22 (8 seeds × 5 skills)",
+      value: "18.50 → 15.97 · survival-curve loss 56.41 → 12.90",
+      source: "games/outbreak/scripts/run-bot-tuning.ts",
     },
     {
       label: "Pure step(state, inputs, dt) -> state & N-rollout branching",
@@ -75,7 +80,7 @@ export default defineStation({
     },
     {
       label: "L4D Pacing & Fairness (peaks/night · warned deaths · unfair spawns)",
-      value: "2.3 peaks/n · 34–87s relax windows · 100% warned deaths · 0/0 unfair spawns",
+      value: "1.4–3.1 peaks/n · 25–89s relax windows · 100% warned deaths · 0/0 unfair spawns",
       source: "games/outbreak/shared/bot-runner.ts",
     },
   ],
@@ -86,7 +91,7 @@ export default defineStation({
     "games/outbreak/src/bots-lab.ts",
     "games/outbreak/tests/survivor-bot.test.ts",
   ],
-  branches: ["survivor-bots"],
+  branches: ["survivor-bots", "balanced-difficulty"],
   links: [
     { label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" },
     { label: "First-night pacing", href: "/arcade/lab/?station=first-night" },

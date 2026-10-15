@@ -163,7 +163,12 @@ export class OutbreakHud {
     this.prevSlot = slot
 
     const feet = this.anchors.get(LOCAL_ACTOR)!()
-    frames.unshift({ id: LOCAL_ACTOR, box: feet ? this.body(feet) : null, vitals: localVitals(p) })
+    const vitals = localVitals(p)
+    if (this.core.style.worldState) {
+      vitals.battery = null
+      vitals.batteryDepleted = false
+    }
+    frames.unshift({ id: LOCAL_ACTOR, box: feet ? this.body(feet) : null, vitals })
     this.core.frame(dt, view.time, frames, avoid, tuning)
   }
 

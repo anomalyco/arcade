@@ -74,10 +74,28 @@ const variants: StationVariant[] = [
     boardOption: "6",
   },
   {
+    id: "shroud-noise",
+    label: "Combo: Shroud + Noise",
+    note: "Dark shroud (0.85×) + 16mm Noise film (0.75×): deep survival-horror penumbra with tactile analog grain.",
+    setup: nightPose(6),
+  },
+  {
+    id: "memory-warp",
+    label: "Combo: Memory + Warp",
+    note: "Stale memory (0.90×) + Warp wobble (0.65×): faded archival room memory swimming under slow dark-water refraction.",
+    setup: nightPose(7),
+  },
+  {
+    id: "edge-glitch-shroud",
+    label: "Combo: Edge glitch + Shroud",
+    note: "Acid Knife glitch confined to the LOS boundary band (0.85) + Dark shroud (0.85×) + subtle Noise film (0.35×).",
+    setup: nightPose(8),
+  },
+  {
     id: "daylight",
     label: "By day (subtle)",
-    note: "Daylight at 14:00 scales unseen strength down automatically via Night scaling.",
-    setup: dayPose(1),
+    note: "Daylight at 14:00 scales unseen layers down automatically via Night scaling.",
+    setup: dayPose(8),
   },
 ]
 
@@ -85,24 +103,29 @@ export default defineStation({
   id: "outbreak-unseen",
   title: "Outbreak unseen",
   summary:
-    "How areas outside the survivor's line-of-sight cone, close awareness circle, and flashlight beam are treated. Variants compare Off against five shader modes at night plus automatic daylight scaling.",
+    "How areas outside the survivor's line-of-sight cone, close awareness circle, and flashlight beam are treated. Variants compare Off, five solo layers, and curated multi-layer combos (Shroud + Noise, Memory + Warp, Edge glitch + Shroud); mix any combination live in the Unseen layers panel.",
   order: 102,
   prop: "house",
   color: 0x6b8cff,
   status: "review",
   demo: { kind: "page", url: page },
-  defaultVariant: "acid-knife",
+  defaultVariant: "edge-glitch-shroud",
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-31", decision: "D-21" },
   metrics: [
     {
-      label: "Unseen GPU pass delta across all 5 modes at 3456×1894 (Apple M5 Max Metal, paired)",
-      value: "+0.057 to +0.232 ms (< 1 ms budget)",
+      label: "Solo modes (1–5) GPU pass delta at 3456×1894 (Apple M5 Max Metal, paired)",
+      value: "+0.070 to +0.389 ms (< 1 ms budget)",
+      source: "games/outbreak/scripts/prove-unseen.ts",
+    },
+    {
+      label: "Multi-layer combos (6–8) GPU pass delta at 3456×1894 (Apple M5 Max Metal, paired)",
+      value: "+0.275 ms (Shroud+Noise), +0.472 ms (Memory+Warp), +0.760 ms (Edge glitch+Shroud)",
       source: "games/outbreak/scripts/prove-unseen.ts",
     },
     {
       label: "CPU 512-ray visibility mask + flashlight cone + unseen frame eval",
-      value: "0.090 ms (< 0.5 ms budget)",
+      value: "0.050 ms (< 0.5 ms budget)",
       source: "games/outbreak/scripts/prove-unseen.ts",
     },
   ],
@@ -116,7 +139,11 @@ export default defineStation({
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
-    right: [{ widget: "links" }, { widget: "changes" }],
+    right: [
+      { widget: "controls", title: "Unseen layers", groups: ["Unseen"] },
+      { widget: "links" },
+      { widget: "changes" },
+    ],
     dock: [{ widget: "variants" }, { widget: "voice" }, { widget: "notes" }],
   },
 })

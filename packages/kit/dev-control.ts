@@ -89,7 +89,15 @@ export type {
   TourStepDefinition,
 }
 
-// Singleton per-page DevControl runtime (only active in DEV when served by the Arcade dev router)
+function isStationEmbed(): boolean {
+  try {
+    return typeof window !== "undefined" && Boolean(window.frameElement?.closest("[data-station-page]"))
+  } catch {
+    return false
+  }
+}
+
+// Singleton per-page DevControl runtime (active in DEV or when embedded in a Lab page station)
 class PageControlRuntime implements NoteOverlayStateReader {
   readonly panels = new Set<LabPanel>()
   private adapter: DevControlAdapter | null = null
@@ -117,7 +125,7 @@ class PageControlRuntime implements NoteOverlayStateReader {
 
   constructor() {
     this.pageId = this.resolvePageId()
-    if (!import.meta.env?.DEV) return
+    if (!import.meta.env?.DEV && !isStationEmbed()) return
     if (typeof window === "undefined" || typeof document === "undefined") return
     this.routerConfig = this.readRouterConfig()
     this.restoreStudioSession()
@@ -1209,13 +1217,13 @@ class PageControlRuntime implements NoteOverlayStateReader {
 }
 
 function getRuntime(): PageControlRuntime | null {
-  if (!import.meta.env?.DEV) return null
+  if (!import.meta.env?.DEV && !isStationEmbed()) return null
   if (typeof window === "undefined" || typeof document === "undefined") return null
   window.__arcadeDevControl ??= new PageControlRuntime()
   return window.__arcadeDevControl
 }
 
-if (import.meta.env?.DEV) {
+if (import.meta.env?.DEV || isStationEmbed()) {
   getRuntime()
 }
 

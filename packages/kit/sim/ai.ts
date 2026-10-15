@@ -1,4 +1,5 @@
 import { angleDiff, clearLine, distToRect, MinHeap, pushOut, rayRect, raycast, type Rect, type Vec } from "./geom"
+import type { FlowFieldCache } from "./flow-field"
 import { Rng } from "./rng"
 
 export type AIState =
@@ -32,10 +33,11 @@ export function zombieTraitsFromSeed(seed: number): {
 
 export function hasSeveredLeg(a: Pick<AIAgent, "detachedLimbs">): boolean {
   return (
-    a.detachedLimbs.includes("left.thigh") ||
+    a.detachedLimbs.length > 0 &&
+    (a.detachedLimbs.includes("left.thigh") ||
     a.detachedLimbs.includes("right.thigh") ||
-    a.detachedLimbs.includes("left.shin") ||
-    a.detachedLimbs.includes("right.shin")
+      a.detachedLimbs.includes("left.shin") ||
+      a.detachedLimbs.includes("right.shin"))
   )
 }
 
@@ -130,6 +132,11 @@ export type AIConfig = {
   directorPacing: number
   nightMultiplier: number
   aiDebugOverlay: boolean
+  /**
+   * Crowd navigation when the world provides flow fields (`AIWorldContext.flow`): 0 = per-agent A* only,
+   * 1 = flow fields once more than `FLOW_MIN_CROWD` agents are alive (small groups keep their A* feel), 2 = always.
+   */
+  flowFields?: number
 }
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
@@ -663,11 +670,11 @@ export class SpatialHash {
   }
 }
 
-const CELL_FREE = 0
-const CELL_BLOCKED = 1
-const CELL_CLOSED_DOOR = 2
-const CELL_OPEN_WINDOW = 3
-const CELL_BARRICADED = 4
+export const CELL_FREE = 0
+export const CELL_BLOCKED = 1
+export const CELL_CLOSED_DOOR = 2
+export const CELL_OPEN_WINDOW = 3
+export const CELL_BARRICADED = 4
 
 /**
  * 8-connected A* navigation grid with portal support (open/closed/barricaded doors and open windows).
@@ -688,6 +695,8 @@ export class GridNav {
   private readonly seen: Uint32Array
   private stamp = 0
   private readonly heap = new MinHeap()
+  /** Bumps whenever walkability may have changed (grid rebuilt or chunk tiles swapped/edited). Caches key on it. */
+  revision = 0
 
   constructor(width: number, height: number, cell = 0.5) {
     this.cell = cell
@@ -701,6 +710,7 @@ export class GridNav {
   }
 
   rebuild(solids: readonly Rect[], portals: readonly NavPortal[], agentRadius = 0.28): void {
+    this.revision++
     this.grid.fill(CELL_FREE)
     const pad = agentRadius + 0.02
     const { w, h, cell, grid } = this
@@ -756,9 +766,61 @@ export class GridNav {
   }
 
   invalidateChunkTileCache(): void {
+    this.revision++
     this.intTilesSyncedSize = -1
     this.lastTileKey = 0x7fffffff
     this.lastTile = undefined
+  }
+
+  /** Cell code at global grid coordinates (chunk tiles when streaming, otherwise the flat grid; blocked outside). */
+  codeAt(gx: number, gy: number): number {
+    return this.cellCodeAtGrid(gx, gy)
+  }
+
+  /** True when the nav reads 64×64 chunk tiles (unbounded streaming world) instead of its flat grid. */
+  get streaming(): boolean {
+    return this.chunkTiles.size > 0
+  }
+
+  /**
+   * Copies the `w×h` block of cell codes starting at global cell `(gx0, gy0)` into `out` (row-major), with cells
+   * outside the walkable world reported as blocked. Rows are copied as tile or grid runs, not cell by cell.
+   */
+  copyCodes(gx0: number, gy0: number, w: number, h: number, out: Uint8Array): void {
+    if (this.chunkTiles.size > 0) {
+      if (this.intTilesSyncedSize !== this.chunkTiles.size) this.syncIntChunkTiles()
+      for (let y = 0; y < h; y++) {
+        const gy = gy0 + y
+        const row = y * w
+        let x = 0
+        while (x < w) {
+          const gx = gx0 + x
+          const run = Math.min(w - x, 64 - (gx & 63))
+          const tile = this.intChunkTiles.get((((gx >> 6) & 0xffff) << 16) | ((gy >> 6) & 0xffff))
+          if (tile) {
+            const src = ((gy & 63) << 6) | (gx & 63)
+            out.set(tile.subarray(src, src + run), row + x)
+          } else {
+            out.fill(CELL_BLOCKED, row + x, row + x + run)
+          }
+          x += run
+        }
+      }
+      return
+    }
+    for (let y = 0; y < h; y++) {
+      const gy = gy0 + y
+      const row = y * w
+      if (gy < 0 || gy >= this.h) {
+        out.fill(CELL_BLOCKED, row, row + w)
+        continue
+      }
+      const sx0 = Math.max(0, gx0)
+      const sx1 = Math.min(this.w, gx0 + w)
+      if (sx0 > gx0) out.fill(CELL_BLOCKED, row, row + Math.min(w, sx0 - gx0))
+      if (sx1 > sx0) out.set(this.grid.subarray(gy * this.w + sx0, gy * this.w + sx1), row + (sx0 - gx0))
+      if (sx1 < gx0 + w) out.fill(CELL_BLOCKED, row + Math.max(0, sx1 - gx0), row + w)
+    }
   }
 
   private cellCodeAtGrid(gx: number, gy: number): number {
@@ -1163,6 +1225,24 @@ export type AIWorldContext = {
   noiseBus: NoiseBus
   config: AIConfig
   targets: readonly PerceptionTarget[]
+  /** Shared per-goal flow fields; hunters farther than a few metres from their goal steer by these instead of A*. */
+  flow?: FlowFieldCache
+}
+
+/** Above this many living agents the crowd paths by shared flow fields (when `flowFields` is 1, the default). */
+export const FLOW_MIN_CROWD = 64
+/** Within this distance of its goal an agent paths on its own (A*) rather than by the shared field. */
+const FLOW_NEAR = 3.5
+/** Downhill cells walked when picking a flow waypoint (6 m at 0.5 m cells). */
+const FLOW_LOOKAHEAD = 12
+const flowWaypoint: Vec = { x: 0, y: 0 }
+const flowTo: Vec = { x: 0, y: 0 }
+let flowAgent: AIAgent | null = null
+let flowNav: GridNav | null = null
+const flowClear = (tx: number, ty: number): boolean => {
+  flowTo.x = tx
+  flowTo.y = ty
+  return flowNav!.straightFree(flowAgent!, flowTo)
 }
 
 export type AIStepResult = {
@@ -1171,6 +1251,45 @@ export type AIStepResult = {
 }
 
 const neighborScratch: number[] = []
+
+/**
+ * Struct-of-arrays copy of the fields the neighbour loop reads (position, heading, id, wandering), loaded at the start
+ * of a crowd step and rewritten as each agent finishes moving. Neighbour scans then walk contiguous typed arrays
+ * instead of chasing a thousand agent objects around the heap. The agents stay the record; this is a hot-loop view.
+ */
+class CrowdColumns {
+  x = new Float64Array(256)
+  y = new Float64Array(256)
+  aim = new Float64Array(256)
+  id = new Int32Array(256)
+  wander = new Uint8Array(256)
+
+  load(agents: readonly AIAgent[]): void {
+    if (agents.length > this.x.length) {
+      const n = Math.ceil(agents.length * 1.5)
+      this.x = new Float64Array(n)
+      this.y = new Float64Array(n)
+      this.aim = new Float64Array(n)
+      this.id = new Int32Array(n)
+      this.wander = new Uint8Array(n)
+    }
+    for (let i = 0; i < agents.length; i++) this.write(i, agents[i]!)
+  }
+
+  write(i: number, a: AIAgent): void {
+    this.x[i] = a.x
+    this.y[i] = a.y
+    this.aim[i] = a.aim
+    this.id[i] = a.id
+    this.wander[i] = a.state === "wander" ? 1 : 0
+  }
+}
+const crowd = new CrowdColumns()
+const zombieSourceIds: string[] = []
+/** Noise-bus source id of agent `id` (`zombie-<id>`), interned so the per-event comparison never builds a string. */
+function zombieSourceId(id: number): string {
+  return (zombieSourceIds[id] ??= `zombie-${id}`)
+}
 
 function pickWanderPoint(
   agent: AIAgent,
@@ -1274,6 +1393,12 @@ function focusScore(a: AIAgent, target: PerceptionTarget, sight: SightEvaluation
  */
 export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResult {
   const { dt, time, tick, worldSize, worldBounds, rngSeedMix = 0, nightFactor, solids, walls, closedDoors, sightBlockers, portals, nav, spatial, noiseBus, config, targets } = ctx
+  let living = 0
+  for (let i = 0; i < agents.length; i++) if (agents[i]!.state !== "dead") living++
+  const flowMode = config.flowFields ?? 1
+  const flow = flowMode === 2 || (flowMode === 1 && living > FLOW_MIN_CROWD) ? ctx.flow : undefined
+  flow?.beginTick(targets)
+  flowNav = nav
   const minX = worldBounds ? worldBounds[0] + 0.5 : 0.5
   const minY = worldBounds ? worldBounds[1] + 0.5 : 0.5
   const maxX = worldBounds ? worldBounds[2] - 0.5 : worldSize - 0.5
@@ -1283,6 +1408,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
 
   noiseBus.prune(time)
   spatial.rebuild(agents)
+  crowd.load(agents)
 
   // Emit continuous movement noise from targets into the noise bus (throttled via coalesceWindow).
   for (const t of targets) {
@@ -1309,6 +1435,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
   const largeCrowd = agents.length > 64
 
   for (let i = 0; i < agents.length; i++) {
+    // Agents before i have finished their step: publish it so neighbours read where they are now.
+    if (i > 0) crowd.write(i - 1, agents[i - 1]!)
     const a = agents[i]!
     if (a.state === "dead") {
       a.stateTime += dt
@@ -1468,11 +1596,12 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       }
 
       // Check discrete noise events on the bus
+      const selfSource = zombieSourceId(a.id)
       let bestNoiseScore = 0
       let bestNoise: NoiseEvent | null = null
       for (let eIdx = 0; eIdx < noiseBus.events.length; eIdx++) {
         const ev = noiseBus.events[eIdx]!
-        if (ev.sourceId === `zombie-${a.id}`) continue
+        if (ev.sourceId === selfSource) continue
         // Groans from other zombies only pull wanderers/searchers, not already-chasing zombies
         if (ev.kind === "groan" && (a.state === "chase" || a.state === "alert" || a.state === "bash")) continue
         const att = attenuateNoise(
@@ -1530,7 +1659,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           radius: 8.5,
           loudness: 0.7,
           kind: "groan",
-          sourceId: `zombie-${a.id}`,
+          sourceId: zombieSourceId(a.id),
           time,
           ttl: 0.7,
           coalesceWindow: 1.5,
@@ -1551,7 +1680,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           radius: 8.5,
           loudness: 0.7,
           kind: "groan",
-          sourceId: `zombie-${a.id}`,
+          sourceId: zombieSourceId(a.id),
           time,
           ttl: 0.7,
           coalesceWindow: 1.5,
@@ -1621,7 +1750,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
             radius: 14.0,
             loudness: 1.1,
             kind: "bash",
-            sourceId: `zombie-${a.id}`,
+            sourceId: zombieSourceId(a.id),
             time,
             ttl: 0.85,
             coalesceWindow: 0.4,
@@ -1670,8 +1799,9 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const goalY = a.targetY
       const distToGoal = Math.hypot(goalX - a.x, goalY - a.y)
       const isCrawler = a.state === "crawler"
-      const leftArmGone = a.detachedLimbs.includes("left.upperArm") || a.detachedLimbs.includes("left.foreArm")
-      const rightArmGone = a.detachedLimbs.includes("right.upperArm") || a.detachedLimbs.includes("right.foreArm")
+      const limbs = a.detachedLimbs
+      const leftArmGone = limbs.length > 0 && (limbs.includes("left.upperArm") || limbs.includes("left.foreArm"))
+      const rightArmGone = limbs.length > 0 && (limbs.includes("right.upperArm") || limbs.includes("right.foreArm"))
       const armFactor = leftArmGone && rightArmGone ? 0.52 : leftArmGone || rightArmGone ? 0.78 : 1.0
 
       // Check close-range attack against survivor when chasing or crawling (ankle-grab)
@@ -1716,7 +1846,35 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           moveDirX = (effGoalX - a.x) / ed
           moveDirY = (effGoalY - a.y) / ed
         } else {
-          if ((time >= a.repathAt || a.path.length === 0) && repathsThisTick < MAX_REPATHS_PER_TICK) {
+          const repathDue = time >= a.repathAt || a.path.length === 0
+          let routed = false
+          // Shared flow field: every agent heading for the same goal reads one cost field and steers to the farthest
+          // downhill cell it can walk straight to. Close in (or off the field) the agent falls back to its own A*.
+          if (flow && distToGoal > FLOW_NEAR) {
+            while (a.path.length > 0 && Math.hypot(a.path[0]!.x - a.x, a.path[0]!.y - a.y) < 0.48) {
+              a.path.shift()
+            }
+          }
+          if (flow && distToGoal > FLOW_NEAR && (time >= a.repathAt || a.path.length === 0)) {
+            const field = flow.field(goalX, goalY)
+            flowAgent = a
+            let found = field !== null && field.waypoint(a.x, a.y, FLOW_LOOKAHEAD, flowClear, flowWaypoint)
+            // At the field's seed (a coarse goal quantum) the rest is the agent's own: straight if it can.
+            if (field !== null && !found && flowClear(goalX, goalY)) {
+              flowWaypoint.x = goalX
+              flowWaypoint.y = goalY
+              found = true
+            }
+            if (found) {
+              const wp = a.path.length === 1 ? a.path[0]! : { x: 0, y: 0 }
+              wp.x = flowWaypoint.x
+              wp.y = flowWaypoint.y
+              if (a.path.length !== 1) a.path = [wp]
+              a.repathAt = time + 0.24 + (a.id % 5) * 0.03
+              routed = true
+            }
+          }
+          if (!routed && (repathDue || a.path.length === 0) && repathsThisTick < MAX_REPATHS_PER_TICK) {
             repathsThisTick++
             a.path = nav.path(a, { x: goalX, y: goalY }, maxPathSteps) ?? [{ x: goalX, y: goalY }]
             a.repathAt = time + (a.state === "chase" || isCrawler ? 0.42 : 0.75) + (a.id % 5) * 0.07
@@ -1807,16 +1965,18 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     let alignY = 0
     let flockCount = 0
 
+    const { x: colX, y: colY, aim: colAim, id: colId, wander: colWander } = crowd
+    const ax = a.x
+    const ay = a.y
     for (let k = 0; k < neighbors.length; k++) {
       const j = neighbors[k]!
       if (j === i) continue
-      const b = agents[j]!
-      const dx = a.x - b.x
-      const dy = a.y - b.y
+      const dx = ax - colX[j]!
+      const dy = ay - colY[j]!
       const d2 = dx * dx + dy * dy
       if (d2 >= maxR2) continue
       if (d2 < 1e-6) {
-        sepX += (a.id > b.id ? 1 : -1) * 0.7
+        sepX += (a.id > colId[j]! ? 1 : -1) * 0.7
         continue
       }
       if (d2 < sepR2) {
@@ -1825,11 +1985,11 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         const push = u * u * 1.85 + u * 0.55
         sepX += (dx / d) * push
         sepY += (dy / d) * push
-      } else if (isWander && b.state === "wander" && d2 >= 1.8 * 1.8) {
-        cohX += b.x
-        cohY += b.y
-        alignX += Math.cos(b.aim)
-        alignY += Math.sin(b.aim)
+      } else if (isWander && colWander[j] === 1 && d2 >= 1.8 * 1.8) {
+        cohX += colX[j]!
+        cohY += colY[j]!
+        alignX += Math.cos(colAim[j]!)
+        alignY += Math.sin(colAim[j]!)
         flockCount++
       }
     }
@@ -1893,6 +2053,11 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       pickWanderPoint(a, nav, worldSize, tick + 7, worldBounds)
     }
 
+    // Big crowds keep headings wrapped so angleDiff never loops (small groups stay bit-identical to before).
+    if (largeCrowd) {
+      if (a.aim > Math.PI) a.aim -= Math.PI * 2
+      else if (a.aim < -Math.PI) a.aim += Math.PI * 2
+    }
     a.vx = dt > 0 ? (a.x - prevX) / dt : 0
     a.vy = dt > 0 ? (a.y - prevY) / dt : 0
   }

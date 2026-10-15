@@ -14,12 +14,18 @@ export { Spring, VelocityTracker } from "./motion.js"
 export { createPanel, mountPage, mountPanel, type Panel } from "./panel.js"
 export {
   balancedRuns,
+  type FoldSummaryInfo,
   type MountPageOptions,
   type Page,
   type PageAction,
   type PageCard,
   type PageCardOptions,
   type PageControl,
+  type PageFoldOptions,
+  type PageFoldSource,
+  type PageGroupInfo,
+  type PageHighlight,
+  type PageSectionInfo,
 } from "./page.js"
 export {
   createPresetStrip,
