@@ -148,7 +148,7 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       return
     }
     case "held-out": {
-      // Outside the hardware store's south-east window, boarded and strapped from inside before the game began.
+      // A held-out window, as streamed warehouses have one: here the hardware store's, boarded and strapped from inside.
       host.setHour(14)
       view.player.flashlightOn = false
       const win = view.town.windows.find((w) => w.id === "hardware-south-east")!

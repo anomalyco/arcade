@@ -67,13 +67,17 @@ export function pageSite(town: Town, b: Building): PageSite | null {
   }
 }
 
-/** Buildings someone already held out in: one window left reinforced, for a survivor to look at and learn from. */
-export const HELD_OUT_ARCHETYPES: readonly string[] = ["hardware", "warehouse"]
+/**
+ * Buildings someone already held out in: one window left reinforced, for a survivor to look at and learn from.
+ * Streamed warehouses only. Boards make a window bashable, so a boarded window is a way in for the dead; the classic
+ * town's hardware store stays as its horde routes were tuned (it teaches reinforcing with its flyer instead).
+ */
+export const HELD_OUT_ARCHETYPES: readonly string[] = ["warehouse"]
 export const HELD_OUT_PLANKS = 2
 
 /** The window a held-out building was boarded from inside: its southernmost (the face the camera sees), first by id. */
 export function heldOutWindow(town: Town, b: Building): string | null {
-  if (!HELD_OUT_ARCHETYPES.includes(b.archetype ?? b.kind)) return null
+  if (!b.archetype || !HELD_OUT_ARCHETYPES.includes(b.archetype)) return null
   const windows = town.windows.filter((w) => w.buildingId === b.id)
   windows.sort((p, q) => q.rect[3] - p.rect[3] || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))
   return windows[0]?.id ?? null

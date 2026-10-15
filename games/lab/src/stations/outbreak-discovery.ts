@@ -18,7 +18,7 @@ const variants: StationVariant[] = [
   { id: "page", label: "A page in the hardware store", note: "A printed flyer lies on a shelf. E reads it: the squad learns the reinforced barricade and the flyer goes up on the corkboard.", setup: stage("page") },
   { id: "page-read", label: "Reading a page", note: "The pharmacy's chart held up to the camera after reading it: two materials and what they make, no words.", setup: stage("page-read") },
   { id: "found-pages", label: "Found pages on the corkboard", note: "A sketch made at the bench beside a flyer, a chart and a photo found in town, each pinned in the finder's colour.", setup: stage("found-pages") },
-  { id: "held-out", label: "A held-out window", note: "Someone boarded the hardware store's east window from inside and strapped it with steel. Stand still and look at it to learn how.", setup: stage("held-out") },
+  { id: "held-out", label: "A held-out window", note: "A window someone boarded from inside and strapped with steel, as streamed warehouses have (staged on the hardware store). Stand still and look at it to learn how.", setup: stage("held-out") },
 ]
 
 export default defineStation({

@@ -310,8 +310,7 @@ describe("Procedural world generation & chunk streaming", () => {
       session.rebuildCollision()
       streamer.updateWindow(x, 44, session.view.town, "streaming")
     }
-    // The one delta is the hardware store's window someone boarded up from inside before the game began.
-    expect([...session.world.deltas.values()].map((d) => Object.keys(d.windows))).toEqual([["hardware-south-east"]])
+    expect(session.world.deltas.size).toBe(0)
     expect(streamer.cachedChunkCount).toBeLessThanOrEqual(48)
   })
 

@@ -124,14 +124,16 @@ over the shelf it lies on.
 `practiceFactor(practice, floor)`, linear from 1 to `practiceTimeFloor` (0.6) and `practiceNoiseFloor` (0.63) over
 `PRACTICE_FULL` (10) boards. The ledger channel's duration and noise are scaled right after `start`. There is no bar.
 
-**Learning by looking**: hardware stores and warehouses were held out from inside before the game began. Their
-southernmost window (the face the camera sees; `heldOutWindow`) starts with two planks of `reinforcedPlankHp` (360 hp in all),
-once per building (`OutbreakProgression.heldOut`, snapshotted), seeded when the sim is built and, for buildings streamed
-in later, by the room's step. That chunk now carries a delta. Reinforced boards show two steel straps crossed on each
-face for as long as they hold over 110% of plain boards (`looksReinforced`); the plank wire byte now carries strength
-up to twice nominal so clients can tell. Standing still (under 0.4 m/s), within 2.2 m, squarely facing (0.6 rad) a
-reinforced barricade for `studyTime` (1.5 s) teaches it and pins the student's sketch (`OutbreakProgression.study`,
-snapshotted).
+**Learning by looking**: streamed warehouses were held out from inside before the game began. Their southernmost
+window (the face the camera sees; `heldOutWindow`) starts with two planks of `reinforcedPlankHp` (360 hp in all), once
+per building (`OutbreakProgression.heldOut`, snapshotted), seeded by the room's step when the building streams in (and
+when a sim is built with it already in the world); its chunk then carries a delta. Boards make a window bashable, so a
+held-out window is also a way in for the dead; the classic town's hardware store is left alone so its horde routes stay
+as tuned, and teaches reinforcing with its flyer. Reinforced boards show two steel straps crossed on each face for as
+long as they hold over 110% of plain boards (`looksReinforced`); the plank wire byte now carries strength up to twice
+nominal so clients can tell. Standing still (under 0.4 m/s), within 2.2 m, squarely facing (0.6 rad) a reinforced
+barricade, a player's own included, for `studyTime` (1.5 s) teaches it and pins the student's sketch
+(`OutbreakProgression.study`, snapshotted).
 
 Can tripwire disarming and repair practice arrive with their verbs in slice 4.
 
@@ -145,9 +147,9 @@ station has matching variants.
   pins the page as found with the reader's seat and no notice; a page already known keeps its sketch; a read page
   survives a snapshot; the practice curve; three boards each faster and quieter; practice survives a snapshot and the
   fork's next board matches; a teammate in the room learns by watching, one behind a wall or looking away does not;
-  the hardware store's held-out window; standing and looking teaches, pacing past or looking away does not; a study
-  cut by a snapshot finishes the same way in the fork.
+  a warehouse's held-out window, boarded once (the classic town's hardware store is left alone); standing and looking
+  teaches, pacing past or looking away does not; a study cut by a snapshot finishes the same way in the fork.
 - `tests/coop.test.ts`: a page Bob reads is gone on both clients and pinned as his chart.
 - `tests/discovery.test.ts`: the plank byte round-trips strength, and plain boards never look reinforced.
 - `scripts/discovery-proof.ts found`: stills of the flyer on its shelf, the flyer held up after reading, the chart,
-  a corkboard of a sketch, flyer, chart and photo, and the strapped window, which then teaches by looking.
+  a corkboard of a sketch, flyer, chart and photo, and a strapped window (staged), which then teaches by looking.

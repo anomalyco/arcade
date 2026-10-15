@@ -13,8 +13,12 @@ const STUDY = Math.ceil(T.studyTime / TICK_DT) + 2
 
 type Pose = { x: number; y: number; aim: number }
 
-function room(poses: Record<string, Pose>) {
+function room(poses: Record<string, Pose>, strapped = false) {
   const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+  if (strapped) {
+    for (let i = 0; i < 2; i++) sim.ai.addBarricadePlank("hardware-south-east", T.reinforcedPlankHp)
+    sim.ai.rebuildTopology(sim.town)
+  }
   sim.hour = 12
   const slots: SurvivorSlot[] = Object.entries(poses).map(([id, pose], i) => {
     const slot = sim.addSurvivor(id, i)
@@ -178,10 +182,17 @@ describe("practice", () => {
 })
 
 describe("learning by looking", () => {
-  test("the hardware store was held out from inside: one window boarded and reinforced before anyone arrives", () => {
+  test("a warehouse was held out from inside: its south window boarded and reinforced once, before anyone arrives", () => {
     const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    // The classic town's hardware store is left as it was; dressed as a streamed warehouse, it is held out.
+    expect(sim.ai.getBarricadePlanks("hardware-south-east")).toBe(0)
+    expect(sim.progression.heldOut).toEqual([])
     const hardware = sim.town.buildings.find((b) => b.id === "hardware")!
+    expect(heldOutWindow(sim.town, hardware)).toBeNull()
+    hardware.archetype = "warehouse"
     expect(heldOutWindow(sim.town, hardware)).toBe("hardware-south-east")
+    expect(sim.progression.boardHeldOut(sim.town, sim.ai)).toBe(true)
+    expect(sim.progression.boardHeldOut(sim.town, sim.ai)).toBe(false)
     const st = sim.ai.portalStates.get("hardware-south-east")!
     expect(st.barricadePlanks).toBe(2)
     expect(looksReinforced(st.barricadePlanks, st.barricadeHp)).toBe(true)
@@ -189,7 +200,7 @@ describe("learning by looking", () => {
   })
 
   test("standing still and looking closely at a reinforced barricade teaches how it was done", () => {
-    const { tick, ledger, progression } = room({ ann: STUDY_SPOT })
+    const { tick, ledger, progression } = room({ ann: STUDY_SPOT }, true)
     tick({}, Math.floor(STUDY / 2))
     expect(progression.learned("reinforced")).toBe(false)
     expect(progression.study.ann?.portal).toBe("hardware-south-east")
@@ -200,16 +211,16 @@ describe("learning by looking", () => {
   })
 
   test("walking past it or looking away teaches nothing", () => {
-    const pace = room({ ann: STUDY_SPOT })
+    const pace = room({ ann: STUDY_SPOT }, true)
     for (let i = 0; i < STUDY * 2; i++) pace.tick({ ann: { mx: i % 60 < 30 ? 1 : -1, aim: STUDY_SPOT.aim } })
     expect(pace.progression.learned("reinforced")).toBe(false)
-    const away = room({ ann: { ...STUDY_SPOT, aim: -Math.PI / 2 } })
+    const away = room({ ann: { ...STUDY_SPOT, aim: -Math.PI / 2 } }, true)
     away.tick({}, STUDY * 2)
     expect(away.progression.learned("reinforced")).toBe(false)
   })
 
   test("a study cut short by a snapshot finishes the same way in the restored fork", () => {
-    const { sim, tick } = room({ ann: STUDY_SPOT })
+    const { sim, tick } = room({ ann: STUDY_SPOT }, true)
     tick({}, Math.floor(STUDY / 2))
     const fork = CoopSim.fromSnapshot(JSON.parse(JSON.stringify(sim.toSnapshot())))
     expect(fork.progression.study).toEqual(sim.progression.study)

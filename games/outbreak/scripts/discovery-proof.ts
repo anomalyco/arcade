@@ -242,7 +242,7 @@ try {
     const held = await state()
     console.log("held out", held.reinforced, held.barricades["hardware-south-east"])
     assert(held.reinforced.includes("hardware-south-east"), "the held-out window shows its straps")
-    await snap(page, "held-out", "The hardware store's south-east window, boarded from inside before the game began, steel straps bolted across the boards")
+    await snap(page, "held-out", "A held-out window (streamed warehouses start with one; staged here on the hardware store): boarded from inside, steel straps bolted across the boards")
     await run(page, `h.setLab("studyTime", 1.5)`)
     await steps(page, 110)
     assert.equal(await run(page, `return h.session().view.progression.learned("reinforced")`), true, "standing and looking teaches it")
