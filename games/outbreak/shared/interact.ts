@@ -25,6 +25,7 @@ export type InteractActionId =
   | "pry"
   | "locked"
   | "barricade"
+  | "enter"
 /** `modifier: "shift"` marks an alternative taken with Shift+E (smash a container instead of searching it). */
 export type InteractAction = { id: InteractActionId; label: string; hold?: boolean; modifier?: "shift" }
 

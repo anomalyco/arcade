@@ -51,6 +51,7 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   items, loot, crafting or `shared/progression.ts`.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
 - [outbreak-look.md](outbreak-look.md), [outbreak-look-v2.md](outbreak-look-v2.md): Outbreak's look studies.
+- [style-playground.md](style-playground.md): the 9-style rendering playground on Outbreak's room sim, measured GPU costs, and full-game scaling verdicts.
 - [outbreak-zombie-profile.md](outbreak-zombie-profile.md): Outbreak's zombie art controls on the shared rig.
 
 ## Agent skills

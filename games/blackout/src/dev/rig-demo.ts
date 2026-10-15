@@ -22,7 +22,7 @@ export function registerPartModels(renderer: Pick<Renderer, "addModel">, p: Pers
   const reg = (mesh: Mesh) => renderer.addModel(mesh)
   const guns = (r: typeof p.gun) => ({ rifle: reg(r.rifle), shotgun: reg(r.shotgun), sniper: reg(r.sniper) })
   return { pelvis: reg(p.pelvis), torso: reg(p.torso), head: reg(p.head), upperArm: reg(p.upperArm),
-    foreArm: reg(p.foreArm), thigh: reg(p.thigh), shin: reg(p.shin), foot: reg(p.foot), pump: reg(p.pump),
+    foreArm: reg(p.foreArm), thigh: reg(p.thigh), shin: reg(p.shin), foot: reg(p.foot), toe: reg(p.toe), pump: reg(p.pump),
     gun: guns(p.gun), mag: guns(p.mag), casing: guns(p.casing), hole: reg(p.hole) }
 }
 
@@ -34,6 +34,7 @@ export function modelForBone(models: PartModels, bone: BoneId): number {
   if (bone.endsWith(".foreArm")) return models.foreArm
   if (bone.endsWith(".thigh")) return models.thigh
   if (bone.endsWith(".shin")) return models.shin
+  if (bone.endsWith(".toe")) return models.toe ?? models.foot
   return models.foot
 }
 

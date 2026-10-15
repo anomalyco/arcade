@@ -128,7 +128,7 @@ export function jointsFromExtendedAngles(a: ExtendedKeyPoseAngles): RigJointMap 
     kneeFlexDeg: number,
     ankPitchDeg: number,
     worldFootPitchDeg?: number,
-  ): [V3, V3, V3, V3] => {
+  ): [V3, V3, V3, V3, V3] => {
     const hip = at(pelFrame, 0, 0, side * RIG.hipW)
     const hf = hipFlexDeg * RAD
     const thDir: V3 = [Math.sin(hf), -Math.cos(hf), 0]
@@ -136,25 +136,33 @@ export function jointsFromExtendedAngles(a: ExtendedKeyPoseAngles): RigJointMap 
     const sf = (hipFlexDeg - kneeFlexDeg) * RAD
     const shDir: V3 = [Math.sin(sf), -Math.cos(sf), 0]
     const ankle: V3 = [knee[0] + shDir[0] * RIG.shin, knee[1] + shDir[1] * RIG.shin, knee[2]]
-    const baseFootAngle = Math.atan2(-RIG.ankle, 0.19)
-    const footAngle = baseFootAngle + sf + ankPitchDeg * RAD
-    const footLen = Math.hypot(0.19, RIG.ankle)
-    const toe: V3 = [
+    const baseFootAngle = Math.atan2(-RIG.ankle, RIG.foot)
+    const worldFootPitch = sf + ankPitchDeg * RAD
+    const footAngle = baseFootAngle + worldFootPitch
+    const footLen = Math.hypot(RIG.foot, RIG.ankle)
+    const ball: V3 = [
       ankle[0] + Math.cos(footAngle) * footLen,
       ankle[1] + Math.sin(footAngle) * footLen,
       ankle[2],
     ]
-    return [hip, knee, ankle, toe]
+    const toeAngle = ball[1] <= 0.02 && worldFootPitch < 0 ? 0 : worldFootPitch
+    const toe: V3 = [
+      ball[0] + Math.cos(toeAngle) * RIG.toe,
+      Math.max(0, ball[1] + Math.sin(toeAngle) * RIG.toe),
+      ball[2],
+    ]
+    void worldFootPitchDeg
+    return [hip, knee, ankle, ball, toe]
   }
 
-  const [hipL, kneeL, ankleL, toeL] = buildLeg(
+  const [hipL, kneeL, ankleL, ballL, toeL] = buildLeg(
     -1,
     a.hipFlexL,
     a.kneeFlexL,
     a.anklePitchL,
     a.footWorldPitchL,
   )
-  const [hipR, kneeR, ankleR, toeR] = buildLeg(
+  const [hipR, kneeR, ankleR, ballR, toeR] = buildLeg(
     1,
     a.hipFlexR,
     a.kneeFlexR,
@@ -177,10 +185,12 @@ export function jointsFromExtendedAngles(a: ExtendedKeyPoseAngles): RigJointMap 
     hipL,
     kneeL,
     ankleL,
+    ballL,
     toeL,
     hipR,
     kneeR,
     ankleR,
+    ballR,
     toeR,
   }
 }

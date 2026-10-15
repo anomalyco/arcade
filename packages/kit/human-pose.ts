@@ -1,9 +1,9 @@
-import { add, at, clamp, cross, dirIn, dot, ik, len, lerp3, limb, moved, pitch, RIG, scale, smooth, sub, yawFrame, type Frame, type V3 } from "./rig"
-import { plantedFoot, type Locomotion } from "./human-locomotion"
+import { add, at, clamp, cross, dirIn, dot, ik, len, lerp3, limb, moved, pitch, RIG, scale, smooth, smoother, sub, yawFrame, type Frame, type V3 } from "./rig"
+import { plantedFoot, plantedToe, type Locomotion } from "./human-locomotion"
 
 export type HumanBody = {
   pelvis: Frame; torso: Frame; head: Frame
-  ua: [Frame, Frame]; fa: [Frame, Frame]; th: [Frame, Frame]; sh: [Frame, Frame]; ft: [Frame, Frame]
+  ua: [Frame, Frame]; fa: [Frame, Frame]; th: [Frame, Frame]; sh: [Frame, Frame]; ft: [Frame, Frame]; toe?: [Frame, Frame]
 }
 
 /** Solve the arms after the final torso attitude and action-specific hand targets are known. */
@@ -127,9 +127,9 @@ export function kneePole(pelvis: Frame, footYaw: number, side: number, up = 0.28
   return dirIn(pelvis, Math.cos(toward), up, Math.sin(toward) + side * KNEE_OUT * out)
 }
 
-/** Contact owns the rendered boot; relaxed swing ankles recover before touchdown. */
-export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "sh" | "ft"> {
-  const th: Frame[] = [], sh: Frame[] = [], ft: Frame[] = [], m = a.motion
+/** Contact owns the rendered boot and ball-of-foot toe joint; relaxed swing ankles and toes clear the floor and recover before touchdown. */
+export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody, "th" | "sh" | "ft" | "toe">> {
+  const th: Frame[] = [], sh: Frame[] = [], ft: Frame[] = [], toe: Frame[] = [], m = a.motion
   const run = clamp(m.run * a.gait, 0, 1)
   const sp = Math.hypot(a.svx, a.svy)
   const fwdFlow = sp > 0.2 ? clamp((a.svx * Math.cos(a.legYaw) + a.svy * Math.sin(a.legYaw)) / sp, 0, 1) : 0
@@ -138,7 +138,10 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
     const side = i === 0 ? -1 : 1, f = a.feet[i]!
     const hip = at(pelvis, 0, 0, side * RIG.hipW)
     const contact = f.planted ? plantedFoot(a, i) : null
-    const u = m.swings[i]!
+    // A reversal restarts the swing path at u = 0.25 (redirectFrom = the u it left); the pose phase carries on from
+    // there to 1 so the heel kick and tuck do not jump.
+    const from = m.redirectFrom?.[i] ?? 0
+    const u = from > 0 && m.swings[i]! >= 0.25 ? from + (1 - from) * (m.swings[i]! - 0.25) / 0.75 : m.swings[i]!
     // Up-biased pole in pelvis space (+0.28 y) counteracts forward crouch-run pelvis pitch so the
     // pole vector stays above the hip->ankle swing chord and follows the boot's heading.
     const pole = kneePole(pelvis, f.yaw, side)
@@ -146,6 +149,7 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       const [knee, ank] = ik(hip, contact.p, RIG.thigh, RIG.shin, pole)
       th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
       ft.push(contact)
+      toe.push(plantedToe(a, i, contact))
     } else {
       const isDrag = i === (m.dragFoot ?? 1) && (m.footDrag ?? 0) > 0
       const drag = isDrag ? clamp(m.footDrag ?? 0, 0, 0.95) : 0
@@ -154,31 +158,36 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       // scale swing heel-kick so the thigh drives to ~46° instead of jackknifing into the crouched chest.
       const crouchT = clamp(((m.crouch?.x ?? 0) - 0.025) / 0.065, 0, 1)
       const crouchSwingScale = 1 - 0.55 * crouchT
-      // Smoothly release from the terminal-stance toe-off pivot over the first 25% of swing,
-      // and blend into the heel-strike contact frame over the last 25% of swing so liftoff and touchdown are C1 continuous.
-      const liftOffBlend = (1 - smooth(u / 0.25)) * a.gait * dragKeep
-      const toeOffPitch = -(0.20 + 0.06 * m.run) * liftOffBlend
+      // Smoothly release from the terminal-stance ball-of-foot pivot over the first 36% of swing,
+      // and blend into the heel-strike contact frame over the last 28% of swing so liftoff and touchdown are C1 continuous.
+      const liftOffBlend = (1 - smooth(u / (0.36 - 0.10 * run))) * a.gait * dragKeep
+      const toeOffPitch = -(0.44 + 0.08 * m.run) * liftOffBlend * (1 - 0.55 * drag)
       const toeFrame = pitch(yawFrame([0, 0, 0], f.yaw), toeOffPitch)
-      const toeOff = at(toeFrame, 0.19, -RIG.ankle, 0)
-      const liftToeX = f.lift[0] + Math.cos(f.liftYaw) * 0.19
-      const liftToeZ = f.lift[2] + Math.sin(f.liftYaw) * 0.19
-      const liftAnkX = liftToeX - toeOff[0] - f.lift[0]
-      const liftAnkY = Math.max(0, -toeOff[1] - RIG.ankle)
-      const liftAnkZ = liftToeZ - toeOff[2] - f.lift[2]
+      const ballOff = at(toeFrame, RIG.foot, -RIG.ankle, 0)
+      const liftBallX = f.lift[0] + Math.cos(f.liftYaw) * RIG.foot
+      const liftBallZ = f.lift[2] + Math.sin(f.liftYaw) * RIG.foot
+      const liftAnkX = liftBallX - ballOff[0] - f.lift[0]
+      const liftAnkY = Math.max(0, -ballOff[1] - RIG.ankle)
+      const liftAnkZ = liftBallZ - ballOff[2] - f.lift[2]
 
-      // Mocap-calibrated swing heel kick-up (butt-kick in mid-swing) and horizontal heel-tuck lag so the
-      // thigh drives high in front with a 105..125° knee bend in run, tapering to 0 before u=0.94 so touchdown velocity is ~0.
+      // Mocap-calibrated swing heel kick-up (butt-kick in mid-swing), early push-off drive, and late-swing heel-tuck lag
+      // so 5/8 advances the swing hip, 6/8..7/8 keep the shin tucked under the knee, and u=1 settles at zero velocity.
       const liftVar = m.stepLiftVar?.[i] ?? 1
       const sinU = Math.sin(Math.PI * u)
-      const lateTaper = 1 - smooth((u - 0.74) / 0.18)
+      const uprightRun = 1 - crouchT
+      const lateTaper = 1 - smoother((u - (0.74 + 0.08 * uprightRun)) / 0.16)
       const kickBell = sinU * sinU * (0.42 + 0.92 * Math.pow(u, 0.80)) * lateTaper
-      const tuckBell = sinU * sinU * Math.pow(u, 0.95) * 1.65 * lateTaper
-      const heelKickUp = (0.018 * (1 - run) + 0.22 * run * crouchSwingScale) * liftVar * athletic * kickBell * dragKeep
-      const heelTuckBack = (0.025 * (1 - run) + 0.24 * run * (1 - 0.35 * crouchT)) * athletic * tuckBell * dragKeep
+      const tuckBell = sinU * sinU * Math.pow(u, 0.95 - 0.10 * uprightRun) * (1.65 + 0.13 * uprightRun) * lateTaper
+      const earlyPushFwd = (0.085 * (1 - run) + 0.025 * run * uprightRun) * athletic * Math.sin(Math.PI * clamp(u / 0.46, 0, 1)) ** 2 * dragKeep
+      const lateWalkTuck = 0.125 * (1 - run) * athletic * Math.sin(Math.PI * clamp((u - 0.42) / 0.52, 0, 1)) ** 2 * dragKeep
+      const heelKickUp = (0.022 * (1 - run) * smooth((u - 0.22) / 0.35) + 0.22 * run * crouchSwingScale) * liftVar * athletic * kickBell * dragKeep
+      const heelTuckBack = (0.015 * (1 - run) + (0.24 + 0.035 * uprightRun) * run * (1 - 0.35 * crouchT)) * athletic * tuckBell * dragKeep + lateWalkTuck - earlyPushFwd
       const fwdX = Math.cos(f.yaw), fwdZ = Math.sin(f.yaw)
+      const walkEarlyDamp = 1 - 0.62 * (1 - run) * (1 - smooth((u - 0.15) / 0.32))
+      const swingLiftY = f.p[1] * (1 - 0.32 * crouchT) * walkEarlyDamp
       const ankle: V3 = [
         f.p[0] + liftAnkX * liftOffBlend - fwdX * heelTuckBack,
-        f.p[1] * (1 - 0.32 * crouchT) + RIG.ankle + liftAnkY * liftOffBlend + heelKickUp,
+        swingLiftY + RIG.ankle + liftAnkY * liftOffBlend * (0.25 + 0.75 * run) + heelKickUp,
         f.p[2] + liftAnkZ * liftOffBlend - fwdZ * heelTuckBack,
       ]
       // When the heel kicks up behind the hip (cx < 0), tilt the pole downward from +0.28 toward -0.35
@@ -189,27 +198,55 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Pick<HumanBody, "th" | "
       const swingPole = kneePole(pelvis, f.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * run * kickBell * dragKeep)
       const [knee0, ank0] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
       const sh0 = limb(knee0, ank0, swingPole, pelvis.x)
-      const relaxed = smooth(u / 0.10) * (1 - smooth((u - 0.72) / 0.18))
-      const shinFwd = sh0.y[0] * fwdX + sh0.y[2] * fwdZ
-      const shinPitch = -Math.atan2(shinFwd, sh0.y[1])
-      const basePitch = f.pitch + toeOffPitch
-      const swingAnkleRel = -(0.20 + 0.15 * run) * (1 - smooth((u - 0.50) / 0.34)) + (0.04 + 0.16 * run) * smooth((u - 0.60) / 0.28)
-      let footPitch = basePitch + (shinPitch + swingAnkleRel - basePitch) * relaxed
+      const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20))
+      const tdBlend = smoother((u - 0.72) / 0.28)
+      const heelStrike0 = a.back ? 0 : (0.26 - 0.04 * m.run) * (1 - 0.55 * crouchT) * a.gait * dragKeep
+      const tdPitch = heelStrike0 * tdBlend
+      const basePitch = toeOffPitch + tdPitch + f.pitch * (1 - liftOffBlend) * (1 - tdBlend)
+      const swingAnkleRel = -(0.24 + 0.12 * run) * (1 - smooth((u - 0.46) / 0.30)) + (0.04 + (0.16 + 0.08 * uprightRun) * run) * smooth((u - (0.60 - 0.08 * uprightRun)) / 0.26)
+      const shinFwd0 = sh0.y[0] * fwdX + sh0.y[2] * fwdZ
+      const shinPitch0 = -Math.atan2(shinFwd0, sh0.y[1])
+      let footPitch = basePitch + (shinPitch0 + swingAnkleRel - basePitch) * relaxed
+      // Toe joint relative pitch: keeps toe dorsiflexed against the floor during early push-off, then dorsiflexes in mid-swing for floor clearance.
+      const liftOffToe = Math.max(0, -footPitch) * (1 - smooth(u / 0.34))
+      const pushOffCurl = -0.12 * Math.sin(Math.PI * clamp((u - 0.18) / 0.26, 0, 1)) * a.gait * dragKeep
+      const swingClearanceToe = (0.20 + 0.10 * run) * Math.sin(Math.PI * clamp((u - 0.28) / 0.56, 0, 1)) * a.gait * dragKeep
+      let toeRelPitch = liftOffToe + pushOffCurl + swingClearanceToe - tdPitch
       if (drag > 0) {
-        // A dragged foot's toe scrapes along the floor rather than pitching underground and levitating the ankle.
-        const maxNoseDown = -Math.asin(clamp(Math.max(0, ankle[1] - RIG.ankle) / 0.19, 0, 0.95))
+        // A dragged foot's ball and toe scrape along the floor rather than pitching underground and levitating the ankle.
+        const maxNoseDown = -Math.asin(clamp(Math.max(0, ankle[1] - RIG.ankle) / (RIG.foot + RIG.toe), 0, 0.95))
         footPitch = Math.max(footPitch, maxNoseDown * (1 - drag) + footPitch * (1 - drag))
+        // Bend the dragged toe flat along the ground when the midfoot pitches nose-down.
+        if (footPitch < 0) toeRelPitch = -footPitch * drag
       }
       const testFoot = pitch(yawFrame(ankle, f.yaw), footPitch)
-      const low = Math.min(at(testFoot, -0.08, -RIG.ankle, 0)[1], at(testFoot, 0.19, -RIG.ankle, 0)[1])
+      const testBall = at(testFoot, RIG.foot, -RIG.ankle, 0)
+      const testToe = pitch(yawFrame(testBall, f.yaw), footPitch + toeRelPitch)
+      const low = Math.min(at(testFoot, -0.08 * (1 - tdBlend), -RIG.ankle, 0)[1], testBall[1], at(testToe, RIG.toe, 0, 0)[1])
       if (low < 0) ankle[1] -= low
       const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
-      th.push(limb(hip, knee, swingPole, pelvis.x)); sh.push(limb(knee, ank, swingPole, pelvis.x))
+      const shFinal = limb(knee, ank, swingPole, pelvis.x)
+      if (low < 0 && drag === 0) {
+        const shinFwd = shFinal.y[0] * fwdX + shFinal.y[2] * fwdZ
+        const shinPitch = -Math.atan2(shinFwd, shFinal.y[1])
+        footPitch = basePitch + (shinPitch + swingAnkleRel - basePitch) * relaxed
+      }
+      th.push(limb(hip, knee, swingPole, pelvis.x)); sh.push(shFinal)
       const swingReach = smooth(u / 0.22) * (1 - smooth((u - 0.68) / 0.24))
-      ft.push(pitch(yawFrame(lerp3(ankle, ank, swingReach), f.yaw), footPitch))
+      const finalFoot = pitch(yawFrame(lerp3(ankle, ank, swingReach), f.yaw), footPitch)
+      const finalBall = at(finalFoot, RIG.foot, -RIG.ankle, 0)
+      const finalToe = pitch(yawFrame(finalBall, f.yaw), footPitch + toeRelPitch)
+      ft.push(finalFoot)
+      toe.push(finalToe)
     }
   }
-  return { th: [th[0]!, th[1]!], sh: [sh[0]!, sh[1]!], ft: [ft[0]!, ft[1]!] }
+  return { th: [th[0]!, th[1]!], sh: [sh[0]!, sh[1]!], ft: [ft[0]!, ft[1]!], toe: [toe[0]!, toe[1]!] }
+}
+
+/** Active world-locked ground contact pivot on a planted foot: heel during heel-strike roll, ball during foot-flat and heel-rise. */
+export function plantedContactPoint(ft: Frame, toe?: Frame): V3 {
+  if (!toe) return at(ft, RIG.foot + RIG.toe, -RIG.ankle, 0)
+  return toe.p[1] > 1e-5 ? at(ft, -RIG.heel, -RIG.ankle, 0) : toe.p
 }
 
 export function jointVelocities(points: V3[], previous: V3[], dt: number, limit = 15): V3[] {
@@ -217,13 +254,14 @@ export function jointVelocities(points: V3[], previous: V3[], dt: number, limit 
 }
 /** Semantic IDs are independent of array order and model registration. Left is index 0. */
 export const boneIds = ["pelvis", "torso", "head", "left.upperArm", "right.upperArm", "left.foreArm", "right.foreArm",
-  "left.thigh", "right.thigh", "left.shin", "right.shin", "left.foot", "right.foot"] as const
+  "left.thigh", "right.thigh", "left.shin", "right.shin", "left.foot", "right.foot", "left.toe", "right.toe"] as const
 export type BoneId = typeof boneIds[number]
 /** Stable cosmetic IDs, not array positions or renderer model IDs. Never renumber existing entries. */
 export const limbIds = {
   pelvis: 0, torso: 1, head: 2,
   "left.upperArm": 3, "right.upperArm": 4, "left.foreArm": 5, "right.foreArm": 6,
   "left.thigh": 7, "right.thigh": 8, "left.shin": 9, "right.shin": 10, "left.foot": 11, "right.foot": 12,
+  "left.toe": 13, "right.toe": 14,
 } as const satisfies Record<BoneId, number>
 export type BonePose = Partial<Record<BoneId, Frame>>
 export type HiddenBones = ReadonlySet<BoneId>
@@ -231,13 +269,15 @@ export const boneParent: Record<BoneId, BoneId | null> = {
   pelvis: null, torso: "pelvis", head: "torso",
   "left.upperArm": "torso", "right.upperArm": "torso", "left.foreArm": "left.upperArm", "right.foreArm": "right.upperArm",
   "left.thigh": "pelvis", "right.thigh": "pelvis", "left.shin": "left.thigh", "right.shin": "right.thigh",
-  "left.foot": "left.shin", "right.foot": "right.shin",
+  "left.foot": "left.shin", "right.foot": "right.shin", "left.toe": "left.foot", "right.toe": "right.foot",
 }
 export function bodyBones(b: HumanBody): BonePose {
+  const toeL = b.toe?.[0] ?? moved(b.ft[0], at(b.ft[0], RIG.foot, -RIG.ankle, 0))
+  const toeR = b.toe?.[1] ?? moved(b.ft[1], at(b.ft[1], RIG.foot, -RIG.ankle, 0))
   return { pelvis: b.pelvis, torso: b.torso, head: b.head,
     "left.upperArm": b.ua[0], "right.upperArm": b.ua[1], "left.foreArm": b.fa[0], "right.foreArm": b.fa[1],
     "left.thigh": b.th[0], "right.thigh": b.th[1], "left.shin": b.sh[0], "right.shin": b.sh[1],
-    "left.foot": b.ft[0], "right.foot": b.ft[1] }
+    "left.foot": b.ft[0], "right.foot": b.ft[1], "left.toe": toeL, "right.toe": toeR }
 }
 export function boneVisible(id: BoneId, hidden?: HiddenBones): boolean {
   for (let bone: BoneId | null = id; bone; bone = boneParent[bone]) if (hidden?.has(bone)) return false

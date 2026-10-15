@@ -1,20 +1,11 @@
-import { Camera, HitStop, attenuateShake, cameraShakeControls } from "@arcade/kit/client/camera"
+import { Camera } from "@arcade/kit/client/camera"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
-import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { Input } from "@arcade/kit/client/input"
-import { registerGameCommands } from "@arcade/kit/dev-control"
-import { MotionBlurBurst, motionBlurControls } from "@arcade/kit/gpu/motion-blur"
-import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { LabPanel } from "@arcade/kit/lab-panel"
 import {
-  LOOK_PRESETS,
-  LOOK_PRESET_IDS,
-  applyLookPreset,
   createLookControls,
   createLookSettings,
-  resolveLookPresetId,
   type LookCompareMode,
-  type LookPresetId,
-  type LookSettings,
 } from "@arcade/kit/look"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
@@ -23,11 +14,9 @@ import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
-import { aiControls, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
-import { flashlightColor, flashlightControls } from "../shared/flashlight"
+import { flashlightColor } from "../shared/flashlight"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
-import { staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, propShape, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
@@ -40,56 +29,48 @@ import { ExteriorClutterRenderer } from "./clutter"
 import {
   CombinedFogMemory,
   collectFogSoundSprites,
-  fogOfWarControls,
 } from "./fog-of-war"
 import { applyOutbreakDayNight } from "./day-night"
-import { GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
+import { GroundWearRenderer, packGroundCfgBits } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
 import { WorldClientStreamer } from "./world-streamer"
-import { districtAtChunk, worldToChunk } from "../shared/world"
 import {
   BEAM_QUALITY_TIERS,
-  flashlightBeamControls,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
-  OUTBREAK_LOOK_LIGHTING_PRESETS,
-  outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
   STREET_LAMP_POSTS,
   streetLampHead,
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
-import { Survivor, survivorAimControls } from "./survivor"
-import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
-import { audioControls, OutbreakAudio, pursuers, soundWorld } from "./audio"
+import { Survivor } from "./survivor"
+import { OutbreakHud } from "./hud"
+import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
-import { applyProgressionSetting, PROGRESSION_SCENES, progressionLabControls, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
+import { type VehicleLabHost } from "./vehicle-lab"
+import { OutbreakVehicleAudio } from "./vehicle-audio"
+import { OutbreakVehicleRenderer } from "./vehicles"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
-import {
-  OutbreakWeatherController,
-  applyOutbreakWeatherPreset,
-  outbreakWeatherControls,
-  randomizeOutbreakWeather,
-  toSharedWeatherSettings,
-} from "./weather"
+import { OutbreakWeatherController } from "./weather"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
 import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
-import { zombieControls, zombieProfile } from "./zombie-profile"
+import { zombieProfile } from "./zombie-profile"
 import {
-  applyOutbreakPreset,
   bindOutbreakLabControls,
   createOutbreakSettings,
-  exportOutbreakPreset,
   migrateOutbreakLocalStorage,
-  resolveOutbreakSettingTarget,
   resolveWorldMode,
-  setOutbreakSetting,
 } from "./settings"
+import { OutbreakFeelTracker } from "./feel-events"
+import { registerOutbreakGameCommands } from "./game-commands"
+import { createOutbreakHarness } from "./harness"
+import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
 import { shaders } from "./shaders"
 import "./style.css"
 
@@ -251,50 +232,6 @@ async function main() {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera(settings.view)
-  const hitStop = new HitStop()
-  const motionBurst = new MotionBlurBurst()
-  let shotParity = 0
-  const triggerShot = (aim: number, power = 1) => {
-    shotParity ^= 1
-    cam.add(0.32 * power, aim + Math.PI, 2.2 * power)
-    cam.punch(0.28 * power, (shotParity ? 1 : -1) * 0.008 * power)
-    if (!cam.isReducedMotion()) {
-      motionBurst.add({ dir: aim, directional: 0.006 * power, radial: 0.003 * power, boost: 0.45 * power }, settings.motion.burst)
-    }
-  }
-  const triggerShove = (aim: number, hits = 1) => {
-    const k = hits > 0 ? 1 + Math.min(2, hits - 1) * 0.3 : 0.45
-    cam.add((hits > 0 ? 0.3 : 0.14) * k, aim, (hits > 0 ? 2.4 : 1.0) * k)
-    cam.punch(hits > 0 ? -0.22 : -0.08, 0.009 * k)
-    if (hits > 0) {
-      hitStop.trigger(0.028, 0.08, !cam.isReducedMotion())
-      if (!cam.isReducedMotion()) {
-        motionBurst.add({ dir: aim, directional: 0.005 * k, radial: 0.004 * k, boost: 0.35 * k }, settings.motion.burst)
-      }
-    }
-  }
-  const triggerHitTaken = (atkDx: number, atkDz: number, damage = 25) => {
-    const scale = Math.max(0.35, Math.min(1.6, damage / 20))
-    const dir = Math.atan2(atkDz, atkDx)
-    cam.add(0.52 * scale, dir, 3.2 * scale)
-    cam.punch(0.38 * scale, 0.016 * scale)
-    cam.addFlash(0.65 * scale)
-    hitStop.trigger(0.026, 0.08, !cam.isReducedMotion())
-    if (!cam.isReducedMotion()) {
-      motionBurst.add({ dir, directional: 0.007 * scale, radial: 0.008 * scale, boost: 0.6 * scale }, settings.motion.burst)
-    }
-  }
-  const triggerBlast = (x: number, z: number, listenerX: number, listenerZ: number, radius = 24, power = 1) => {
-    const dist = Math.hypot(x - listenerX, z - listenerZ)
-    const att = attenuateShake(dist, radius) * power
-    if (att <= 0) return
-    const dir = dist > 1e-3 ? Math.atan2(listenerZ - z, listenerX - x) : 0
-    cam.add(0.62 * att, dir, 3.4 * att)
-    cam.punch(0.45 * att, 0.018 * att)
-    if (!cam.isReducedMotion()) {
-      motionBurst.add({ dir, directional: 0.005 * att, radial: 0.009 * att, boost: 0.65 * att }, settings.motion.burst)
-    }
-  }
   const audio = new OutbreakAudio(settings.audio, {
     baseUrl: new URL("./audio-assets/", document.baseURI).href,
     storage: (() => { try { return localStorage } catch { return null } })(),
@@ -309,16 +246,21 @@ async function main() {
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
-  let prevHealth = session.view.player.health
-  let prevShoveAnim = session.view.player.shoveAnim
-  let wasVaulting = Boolean(session.view.player.vault)
-  const prevPortalBashTime = new Map<string, number>()
-  const prevPortalPlanks = new Map<string, number>()
-  const prevDoorOpen = new Map<string, boolean>()
+  const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player)
+  const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
+  const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
+  const vehicleAudio = new OutbreakVehicleAudio(audio)
+  vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
+  vehicleRenderer.onCrash = (_v, impact) => {
+    cam.impact(impact)
+  }
+  vehicleRenderer.onBang = () => {
+    cam.bump(0.32)
+  }
   const updateProfile = () => {
     avatar.profile =
       settings.zombies.humanProfile === 1
@@ -337,241 +279,35 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
-  const controls: LabControl[] = [
-    ...aiControls,
-    ...audioControls,
-    {
-      key: "spawnZombieHere",
-      label: "Spawn zombie ahead",
-      group: "AI",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        session.ai.spawnZombie(
-          session.view.town,
-          p.x + Math.cos(p.aim) * 4.5,
-          p.y + Math.sin(p.aim) * 4.5,
-          "wander",
-        )
-        settings.ai.zombieCount = session.view.zombies.filter((z) => z.state !== "dead").length
-      },
+  const vehicleHost: VehicleLabHost = {
+    sim: () => session.sim,
+    view: () => session.view,
+    pose: (x, y, aim) => harness.pose(x, y, aim),
+    setHour: (hour) => {
+      settings.dayCycle.hour = hour
+      session.view.hour = wrapHour(hour)
     },
-    {
-      key: "makeNoiseHere",
-      label: "Emit test noise",
-      group: "AI",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        session.ai.emitNoise(p.x, p.y, 18, "glass", session.view.time, "player", 1.3)
-      },
+    offline: () => !coop.net,
+  }
+  const labControlHost: OutbreakLabControlHost = {
+    session: () => session,
+    settings,
+    lookSettings,
+    lab: () => lab,
+    feelTracker,
+    combatFx,
+    weatherController,
+    progressionHost,
+    vehicleHost,
+    hud,
+    updateProfile,
+    regenerate: () => regenerate(),
+    syncTextures: () => syncTextures(),
+    setLastDayNightHour: (hour) => {
+      lastDayNightHour = hour
     },
-    {
-      key: "alertNearbyZombies",
-      label: "Alert all to player",
-      group: "AI",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        session.ai.setZombieState("chase", p.x, p.y)
-      },
-    },
-    {
-      key: "calmAllZombies",
-      label: "Reset all to wander",
-      group: "AI",
-      type: "action",
-      run: () => {
-        session.ai.setZombieState("wander")
-      },
-    },
-    ...flashlightControls,
-    ...flashlightBeamControls,
-    ...staminaControls,
-    ...progressionLabControls(progressionHost),
-    ...groundControls,
-    {
-      key: "randomizeGroundTuning",
-      label: "Randomize ground & clutter",
-      group: "Ground & Clutter",
-      type: "action",
-      run: () => {
-        Object.assign(settings.ground, randomizeGroundSettings(settings.ground, settings.ground.groundTuningSeed))
-        lab.refresh()
-      },
-    },
-    { key: "textures", label: "Material mode", group: "Materials", options: [{ label: "Textured + procedural", value: 1 }, { label: "Procedural fallback", value: 0 }, { label: "A/B split", value: 2 }] },
-    { key: "rugStyle", label: "Rug style", group: "Materials", options: [{ label: "Oriental & Persian", value: 0 }, { label: "Swapped Medallion", value: 1 }, { label: "Procedural geometric", value: 2 }] },
-    { key: "wallStyle", label: "Wall finish", group: "Materials", options: [{ label: "Damask & plaster", value: 0 }, { label: "Fine linen plaster", value: 1 }, { label: "Procedural plaster", value: 2 }] },
-    { key: "floorStyle", label: "Floorboards", group: "Materials", options: [{ label: "Wide honey oak", value: 0 }, { label: "Narrow strip oak", value: 1 }, { label: "Procedural planks", value: 2 }] },
-    { key: "texScale", label: "Texture scale", group: "Materials", min: 0.5, max: 2, step: 0.05, unit: "×" },
-    { key: "texContrast", label: "Texture contrast", group: "Materials", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "texRoughness", label: "Roughness trim", group: "Materials", min: -0.3, max: 0.3, step: 0.02, unit: "" },
-    {
-      key: "humanProfile",
-      label: "Pose",
-      group: "Zombie",
-      options: [
-        { label: "Survivor", value: 0 },
-        { label: "Zombie", value: 1 },
-        { label: "Crouch-run", value: 2 },
-      ],
-    },
-    ...zombieControls,
-    ...survivorAimControls,
-    ...hudControls,
-    {
-      key: "bloodStyle",
-      label: "Blood splatter",
-      group: "Combat",
-      options: [
-        { label: "Wet ballistic + Noir", value: 1 },
-        { label: "Legacy flat", value: 2 },
-        { label: "Off", value: 0 },
-      ],
-    },
-    ...cameraShakeControls,
-    ...motionBlurControls,
-    {
-      key: "triggerFeelShot",
-      label: "Trigger shot impulse",
-      group: "Camera",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        triggerShot(p.aim, 1)
-      },
-    },
-    {
-      key: "triggerFeelShove",
-      label: "Trigger shove impulse",
-      group: "Camera",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        triggerShove(p.aim, 1)
-      },
-    },
-    {
-      key: "triggerFeelHitTaken",
-      label: "Trigger hit-taken impulse",
-      group: "Camera",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), 25)
-        combatFx.emitSurvivorHit(
-          p.x,
-          p.y,
-          -Math.cos(p.aim),
-          -Math.sin(p.aim),
-          supportHeight(session.view.town, p.x, p.y),
-          25,
-          Math.floor(session.view.time * 1000) + 1,
-        )
-      },
-    },
-    {
-      key: "triggerFeelExplosion",
-      label: "Trigger blast impulse",
-      group: "Camera",
-      type: "action",
-      run: () => {
-        const p = session.view.player
-        triggerBlast(
-          p.x + Math.cos(p.aim) * 4.5,
-          p.y + Math.sin(p.aim) * 4.5,
-          p.x,
-          p.y,
-          24,
-          1,
-        )
-      },
-    },
-    {
-      key: "diagnostic",
-      label: "Contribution",
-      group: "Diagnostics",
-      options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory", "Colour mask", "Visibility field"].map(
-        (label, value) => ({ label, value }),
-      ),
-    },
-    { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
-    { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
-    {
-      key: "dayNightLook",
-      label: "Look & threat by hour",
-      group: "Day cycle",
-      options: [
-        { label: "Dynamic (Day → Dusk → Noir)", value: 1 },
-        { label: "Fixed preset", value: 0 },
-      ],
-    },
-    {
-      key: "infiniteAmmo",
-      label: "Infinite ammo",
-      group: "Combat",
-      options: [
-        { label: "Off", value: 0 },
-        { label: "On", value: 1 },
-      ],
-    },
-    { key: "cone", label: "Vision cone", group: "Vision", min: 60, max: 180, step: 1 },
-    { key: "awareness", label: "Close awareness", group: "Vision", min: 0, max: 5, step: 0.1 },
-    { key: "range", label: "Sight range", group: "Vision", min: 8, max: 40, step: 1 },
-    { key: "shroud", label: "Explored shroud", group: "Vision", min: 0.02, max: 0.4, step: 0.01 },
-    ...fogOfWarControls,
-    { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
-    ...outbreakLightingControls,
-    { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
-    {
-      key: "worldMode",
-      label: "World mode",
-      group: "Generation",
-      options: [
-        { label: "Streaming infinite", value: 1 },
-        { label: "Procedural districts", value: 2 },
-        { label: "Classic 96m block", value: 0 },
-      ],
-    },
-    { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
-    { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
-    { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
-    {
-      key: "houseDecay",
-      label: "House decay",
-      group: "Generation",
-      options: [
-        { label: "Auto (by seed)", value: 0 },
-        { label: "Tidy", value: 1 },
-        { label: "Abandoned", value: 2 },
-        { label: "Ransacked", value: 3 },
-        { label: "Barricaded", value: 4 },
-      ],
-    },
-    { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    ...outbreakWeatherControls,
-    {
-      key: "triggerWeatherLightning",
-      label: "Trigger lightning strike",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        weatherController.strikeNow()
-      },
-    },
-    {
-      key: "randomizeWeatherTuning",
-      label: "Randomize weather",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        randomizeOutbreakWeather(settings.weather, settings.weather.weatherTuningSeed)
-        lab.refresh()
-      },
-    },
-  ]
+  }
+  const controls = buildOutbreakLabControls(labControlHost)
   const doorMesh = new Mesh()
   // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
   doorMesh.box(0, 0.13, -0.09, 1.4, 2.3, 0.09, hex(0x322216), MAT.timber)
@@ -664,6 +400,9 @@ async function main() {
     const fireEdge = input.takeFirePress()
     const reloadEdge = input.takeReload()
     const meleeEdge = input.takeMelee()
+    const seatEdge = input.takeSeat()
+    const hornHeld = input.held("KeyH")
+    const spaceHeld = Boolean(session.view.player.vehicleId) && input.held("Space")
     const barricadeEdge = pendingBarricade
     pollHolds(wallNow)
     const verbs = pendingVerbs
@@ -679,7 +418,7 @@ async function main() {
         {
           mx: step.mx,
           my: step.my,
-          sprint: step.sprint,
+          sprint: step.sprint || spaceHeld,
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
           flashlight: step.flashlight,
@@ -689,6 +428,8 @@ async function main() {
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
+          ...(idx === 0 && seatEdge ? { seat: true } : {}),
+          ...(hornHeld ? { horn: true } : {}),
           ...(idx === 0 ? verbs : {}),
           ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
           ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
@@ -743,106 +484,8 @@ async function main() {
       splitX: session.view.player.x,
     })
   }
-  const onSettingChanged = (rawKey: string, value?: number | boolean | string) => {
-    const routed = resolveOutbreakSettingTarget(rawKey)
-    const key = routed?.field ?? rawKey
-    if (key === "humanProfile" || key.startsWith("zombie")) updateProfile()
-    if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
-    applyProgressionSetting(progressionHost, key, settings.progression)
-    if (key === "zombieCount") {
-      session.ai.config.zombieCount = settings.ai.zombieCount
-      session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
-    }
-    if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
-      Object.assign(session.ai.config, settings.ai)
-      if (!coop.net && session.view.time < 5) {
-        session.ai.resetOpeningPopulation(
-          session.view.town,
-          session.sim.slots.map((s) => s.survivor),
-        )
-      }
-    }
-    if (key === "startHour") {
-      settings.dayCycle.hour = wrapHour(settings.ai.startHour)
-      session.view.hour = settings.dayCycle.hour
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-        lab.refresh()
-      }
-    }
-    if (key === "hour") {
-      session.view.hour = wrapHour(settings.dayCycle.hour)
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-        lab.refresh()
-      }
-    }
-    if (key === "dayNightLook") {
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      } else {
-        const pid = resolveLookPresetId(settings.dayCycle.lookPreset) ?? "noir"
-        applyLookPreset(lookSettings, pid)
-        Object.assign(settings.lighting, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
-      }
-      lab.refresh()
-    }
-    if (
-      key === "worldMode" ||
-      key === "houseSeed" ||
-      key === "terrain" ||
-      key === "foliageDensity" ||
-      key === "houseDecay" ||
-      key === "clutterDensity" ||
-      key === "weathering" ||
-      key === "clutterSeed"
-    )
-      regenerate()
-    if (
-      key === "textures" ||
-      key === "rugStyle" ||
-      key === "wallStyle" ||
-      key === "floorStyle" ||
-      key === "texScale" ||
-      key === "texContrast" ||
-      key === "texRoughness" ||
-      key === "wearAmount" ||
-      key === "curbDirt" ||
-      key === "puddleWetness" ||
-      key === "clutterDensity" ||
-      key === "rubbleAmount" ||
-      key === "motionStrength" ||
-      key === "windGustiness" ||
-      key === "clutterSeed"
-    )
-      syncTextures()
-    if (key === "lookPreset") {
-      const pid = resolveLookPresetId(value ?? settings.dayCycle.lookPreset) ?? "current"
-      settings.dayCycle.lookPreset = pid
-      applyLookPreset(lookSettings, pid)
-      Object.assign(settings.lighting, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
-      if (settings.dayCycle.dayNightLook === 1 && pid === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      }
-      lab.refresh()
-    }
-    if (key === "weatherPreset") {
-      applyOutbreakWeatherPreset(settings.weather, String(value ?? settings.weather.weatherPreset))
-      lab.refresh()
-    }
-    if (key === "weatherEnabled") {
-      if (settings.weather.weatherEnabled && settings.weather.weatherPreset === "clear" && settings.weather.weatherIntensity <= 0.001) {
-        applyOutbreakWeatherPreset(settings.weather, "rain")
-      } else if (!settings.weather.weatherEnabled) {
-        settings.weather.weather = 0
-      }
-      lab.refresh()
-    }
-  }
+  const onSettingChanged = (rawKey: string, value?: number | boolean | string) =>
+    handleOutbreakSettingChanged(labControlHost, rawKey, value)
   const lab = new LabPanel(
     {},
     [],
@@ -855,343 +498,29 @@ async function main() {
   )
   bindOutbreakLabControls(lab, settings, controls)
 
-  registerGameCommands((commands) => {
-    commands.registerAll([
-      {
-        id: "ai.spawn",
-        label: "Spawn Zombie",
-        shortLabel: "Spawn Zombie",
-        category: "Scene",
-        undoable: false,
-        args: {
-          x: { type: "number", description: "World X (default: ahead of survivor)" },
-          y: { type: "number", description: "World Y (default: ahead of survivor)" },
-          state: { type: "string", description: "Initial AI state (wander, investigate, alert, chase, search)" },
-        },
-        enabled: () => true,
-        run: (_ctx, args) => {
-          const p = session.view.player
-          const x = typeof args?.x === "number" ? args.x : p.x + Math.cos(p.aim) * 4.5
-          const y = typeof args?.y === "number" ? args.y : p.y + Math.sin(p.aim) * 4.5
-          const state = (typeof args?.state === "string" ? args.state : "wander") as AIState
-          const z = session.ai.spawnZombie(session.view.town, x, y, state)
-          z.targetX = p.x
-          z.targetY = p.y
-          settings.ai.zombieCount = session.view.zombies.filter((a) => a.state !== "dead").length
-          return { spawned: z.id, x: z.x, y: z.y, state: z.state, total: settings.ai.zombieCount }
-        },
-      },
-      {
-        id: "ai.set-state",
-        label: "Set Zombie AI State",
-        shortLabel: "Set AI State",
-        category: "Scene",
-        undoable: false,
-        args: {
-          state: { type: "string", required: true, description: "Target AI state (wander, investigate, alert, chase, search)" },
-          id: { type: "number", description: "Optional specific zombie ID" },
-        },
-        enabled: () => true,
-        run: (_ctx, args) => {
-          const p = session.view.player
-          const state = String(args?.state ?? "wander") as AIState
-          const id = typeof args?.id === "number" ? args.id : undefined
-          const updated = session.ai.setZombieState(state, p.x, p.y, id)
-          return { state, updated }
-        },
-      },
-      {
-        id: "ai.make-noise",
-        label: "Emit AI Noise Event",
-        shortLabel: "Make Noise",
-        category: "Scene",
-        undoable: false,
-        args: {
-          x: { type: "number", description: "World X (default: survivor X)" },
-          y: { type: "number", description: "World Y (default: survivor Y)" },
-          radius: { type: "number", description: "Noise radius in metres (default: 18)" },
-          kind: { type: "string", description: "Noise kind (gunshot, glass, door, vault, sprint)" },
-        },
-        enabled: () => true,
-        run: (_ctx, args) => {
-          const p = session.view.player
-          const x = typeof args?.x === "number" ? args.x : p.x
-          const y = typeof args?.y === "number" ? args.y : p.y
-          const radius = typeof args?.radius === "number" ? args.radius : 18
-          const kind = typeof args?.kind === "string" ? args.kind : "glass"
-          const ev = session.ai.emitNoise(x, y, radius, kind, session.view.time, "player")
-          return { noise: ev }
-        },
-      },
-      {
-        id: "player.pose",
-        label: "Position Survivor & Aim",
-        shortLabel: "Pose",
-        category: "Scene",
-        undoable: false,
-        args: {
-          x: { type: "number", required: true, description: "World X coordinate" },
-          y: { type: "number", required: true, description: "World Y/Z coordinate" },
-          aim: { type: "number", description: "Aim angle in radians" },
-          flashlight: { type: "boolean", description: "Flashlight on/off" },
-          clearZombiesRadius: { type: "number", description: "Clear nearby zombies within radius" },
-          openDoor: { type: "boolean", description: "Open nearby interior doors" },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const x = Number(args?.x ?? session.view.player.x)
-          const y = Number(args?.y ?? session.view.player.y)
-          const aim = typeof args?.aim === "number" ? args.aim : session.view.player.aim
-          Object.assign(session.view.player, {
-            x,
-            y,
-            aim,
-            vx: 0,
-            vy: 0,
-            peekingWindowId: null,
-            holdTargetId: null,
-            holdElapsed: 0,
-            holdTriggered: false,
-            holdPendingPrimary: null,
-            vault: null,
-            channel: null,
-          })
-          if (typeof args?.flashlight === "boolean") {
-            session.view.player.flashlightOn = args.flashlight
-            session.view.player.flashlightOutput = args.flashlight ? 1 : 0
-          }
-          if (typeof args?.clearZombiesRadius === "number" && args.clearZombiesRadius > 0) {
-            const rad = args.clearZombiesRadius
-            for (const z of session.view.zombies) {
-              if (Math.hypot(z.x - x, z.y - y) < rad) {
-                z.x = 6
-                z.y = 6
-                z.state = "wander"
-              }
-            }
-          }
-          if (args?.openDoor) {
-            for (const d of session.view.town.doors) {
-              if (d.id.startsWith("0-")) d.open = true
-            }
-            const bRects = sightRects(session.view.town)
-            for (const [vx, vy, va] of [
-              [30, 41, -1.57],
-              [20, 35, -1.57],
-              [20, 26, 0],
-              [30, 21, 1.57],
-              [38, 32, 3.14],
-            ] as const) {
-              vision.update(vx, vy, va, bRects, settings.vision, null)
-              scenery.update(session.view.town, vision)
-            }
-            renderer.setVisibility(scenery.mask, FOG_SIZE, FOG_SIZE)
-            session.view.revision++
-          }
-          peekBlend = 0
-          lastPeek = null
-          session.rebuildCollision()
-          avatar.reset()
-          cam.snap(x, y)
-          cam.dist = settings.view.zoom
-          cam.update(innerWidth / Math.max(1, innerHeight))
-          const ahead = cam.project(x + Math.cos(aim) * 4, 0, y + Math.sin(aim) * 4, innerWidth, innerHeight)
-          if (ahead.ok) {
-            input.mouse.x = ahead.x
-            input.mouse.y = ahead.y
-          }
-          session.update(
-            1 / 60,
-            { mx: 0, my: 0, aim, interact: false },
-            settings.dayCycle.timeScale,
-            settings,
-          )
-          draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return {
-            x: session.view.player.x,
-            y: session.view.player.y,
-            aim: session.view.player.aim,
-            flashlightOn: session.view.player.flashlightOn,
-            prompt: session.view.prompt
-              ? {
-                  id: session.view.prompt.id,
-                  kind: session.view.prompt.kind,
-                  primary: session.view.prompt.primary.label,
-                  secondary: session.view.prompt.secondary?.label,
-                }
-              : null,
-          }
-        },
-      },
-      {
-        id: "camera.impulse",
-        label: "Trigger Camera & Motion Impulse",
-        shortLabel: "Impulse",
-        category: "Scene",
-        undoable: false,
-        args: {
-          kind: {
-            type: "string",
-            required: true,
-            description: "Impulse kind (shot, shove, hit-taken, explosion)",
-          },
-          power: { type: "number", description: "Multiplier (default: 1)" },
-          damage: { type: "number", description: "Damage amount for hit-taken" },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const p = session.view.player
-          const kind = String(args?.kind ?? "shot")
-          const power = typeof args?.power === "number" ? args.power : 1
-          const damage = typeof args?.damage === "number" ? args.damage : 25
-          if (kind === "shove") triggerShove(p.aim, 1)
-          else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
-          else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
-          else triggerShot(p.aim, power)
-          draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return {
-            kind,
-            trauma: cam.trauma,
-            damageFlash: cam.damageFlash,
-            hitStopRemaining: hitStop.remaining,
-            offset: { ...cam.offset },
-            burst: { dx: motionBurst.dx, dy: motionBurst.dy, radial: motionBurst.radial, shutterBoost: motionBurst.shutterBoost },
-          }
-        },
-      },
-      {
-        id: "progression.stage",
-        label: "Stage an Inventory or Workbench Scene",
-        shortLabel: "Progression Scene",
-        category: "Scene",
-        undoable: false,
-        args: { scene: { type: "string", description: `Scene (${PROGRESSION_SCENES.join(", ")})` } },
-        enabled: () => !coop.net,
-        run: (_ctx, args) => {
-          const scene = String(args?.scene ?? "bench") as ProgressionScene
-          if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
-          stageProgression(progressionHost, scene)
-          return { scene }
-        },
-      },
-      {
-        id: "pacing.stage",
-        label: "Stage First-Night Pacing Scene",
-        shortLabel: "Pacing Scene",
-        category: "Scene",
-        undoable: false,
-        args: {
-          scene: {
-            type: "string",
-            description: "Scene (opening-calm, safehouse-workbench, first-contact, late-night-horde, legacy-rush)",
-          },
-        },
-        enabled: () => !coop.net,
-        run: async (_ctx, args) => {
-          const out = harness.stagePacing(String(args?.scene ?? "opening-calm"))
-          await harness.step(1 / 60)
-          return out
-        },
-      },
-      {
-        id: "hud.demo",
-        label: "Show Character HUD Sample",
-        shortLabel: "HUD Sample",
-        category: "Scene",
-        undoable: false,
-        enabled: () => true,
-        run: () => hud.demo(session.view.player),
-      },
-      {
-        id: "survivor.aim-demo",
-        label: "Preview Survivor Pistol Stance",
-        shortLabel: "Aim Demo",
-        category: "Scene",
-        undoable: false,
-        args: {
-          mode: {
-            type: "string",
-            description: "Stance mode (aim-fire, low-ready, reload, before)",
-          },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const mode = String(args?.mode ?? "aim-fire")
-          const p = session.view.player
-          p.equippedItem = "pistol"
-          p.magAmmo = p.magCapacity
-          p.reserveAmmo = 16
-          avatar.legacyUnarmedPistol = mode === "before"
-          if (mode === "low-ready") {
-            p.fireCooldown = 0
-            p.recoil = 0
-            p.reloadRemaining = 0
-            avatar.holdRemaining = 0
-            avatar.aimWeight = 0
-            for (let i = 0; i < 24; i++) draw(1 / 60)
-          } else if (mode === "reload") {
-            p.magAmmo = 2
-            p.reloadRemaining = 0.68
-            avatar.holdRemaining = settings.survivor.aimHoldTime
-            for (let i = 0; i < 12; i++) draw(1 / 60)
-          } else {
-            p.reloadRemaining = 0
-            session.update(
-              1 / 60,
-              { mx: 0, my: 0, aim: p.aim, interact: false, fire: true },
-              0,
-              settings,
-            )
-            for (let i = 0; i < 12; i++) draw(1 / 60)
-          }
-          await device.queue.onSubmittedWorkDone()
-          return {
-            mode,
-            aimWeight: avatar.aimWeight,
-            holdRemaining: avatar.holdRemaining,
-            legacyBefore: avatar.legacyUnarmedPistol,
-          }
-        },
-      },
-      {
-        id: "weather.preset",
-        label: "Set Outbreak Weather Preset",
-        shortLabel: "Weather Preset",
-        category: "Scene",
-        undoable: false,
-        args: {
-          preset: {
-            type: "string",
-            required: true,
-            description: "Weather preset ID (clear, drizzle, rain, storm, fog, snow)",
-          },
-        },
-        enabled: () => true,
-        run: async (_ctx, args) => {
-          const applied = applyOutbreakWeatherPreset(settings.weather, String(args?.preset ?? "rain"))
-          lab.refresh()
-          draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { preset: settings.weather.weatherPreset, enabled: settings.weather.weatherEnabled, settings: applied }
-        },
-      },
-      {
-        id: "weather.strike",
-        label: "Trigger Outbreak Lightning Strike",
-        shortLabel: "Lightning Strike",
-        category: "Scene",
-        undoable: false,
-        enabled: () => true,
-        run: async () => {
-          const strike = weatherController.strikeNow()
-          draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return { triggered: true, strike }
-        },
-      },
-    ])
+  registerOutbreakGameCommands({
+    device,
+    renderer,
+    session: () => session,
+    vision: () => vision,
+    scenery: () => scenery,
+    avatar: () => avatar,
+    cam,
+    input,
+    settings,
+    feelTracker,
+    hud,
+    coop,
+    lab,
+    progressionHost,
+    vehicleHost,
+    weatherController,
+    harness: () => harness,
+    resetPeek: () => {
+      peekBlend = 0
+      lastPeek = null
+    },
+    draw: (dt) => draw(dt),
   })
 
   const keyLabels = keyLabelSetting("HUD")
@@ -1269,6 +598,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    vehicleRenderer.reset()
   }
   function reset(nextSeed = seed) {
     if (session !== coop.net) session.close()
@@ -1283,15 +613,8 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
-    cam.resetShake()
-    hitStop.reset()
-    motionBurst.reset()
-    prevHealth = session.view.player.health
-    prevShoveAnim = session.view.player.shoveAnim
-    wasVaulting = Boolean(session.view.player.vault)
-    prevPortalBashTime.clear()
-    prevPortalPlanks.clear()
-    prevDoorOpen.clear()
+    vehicleRenderer.reset()
+    feelTracker.reset(session.view.player)
     ambientMotion.reset()
     hud.reset()
     weatherController.reset(nextSeed)
@@ -1367,7 +690,7 @@ async function main() {
       avatar.onFootfall = footfall
       updateProfile()
     }
-    const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
+    const { player: p, town, hour, time, peek, zombies, noises } = session.view
     settings.dayCycle.hour = Math.round(hour * 20) / 20
     if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir" && Math.abs(hour - lastDayNightHour) > 1e-4) {
       lastDayNightHour = hour
@@ -1375,119 +698,13 @@ async function main() {
     }
     const playerGroundY = supportHeight(town, p.x, p.y)
 
-    // Detect presentation-only combat impulses (never mutates shared simulation or co-op state)
-    if (p.shoveAnim > prevShoveAnim + 0.05) {
-      let shovedHits = 0
-      for (const z of zombies) {
-        if (z.state === "stagger" && z.hitFlash > 0.45 && Math.hypot(z.x - p.x, z.y - p.y) < 2.2) {
-          shovedHits++
-        }
-      }
-      triggerShove(p.aim, shovedHits)
-      if (shovedHits > 0 && settings.combat.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.combat.bloodStyle === 2
-        combatFx.emitShoveHit(p.x, p.y, p.aim, playerGroundY, shovedHits, Math.floor(time * 1000) + 17)
-      }
-    }
-    prevShoveAnim = p.shoveAnim
-
-    if (p.health < prevHealth - 0.1 && time > 0.02) {
-      const damage = prevHealth - p.health
-      let atkDx = -Math.cos(p.aim)
-      let atkDz = -Math.sin(p.aim)
-      let bestDist = 2.5
-      for (const z of zombies) {
-        if (z.state === "dead") continue
-        const d = Math.hypot(p.x - z.x, p.y - z.y)
-        if (d < bestDist && d > 0.01) {
-          bestDist = d
-          atkDx = (p.x - z.x) / d
-          atkDz = (p.y - z.y) / d
-        }
-      }
-      triggerHitTaken(atkDx, atkDz, damage)
-      if (settings.combat.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.combat.bloodStyle === 2
-        combatFx.emitSurvivorHit(p.x, p.y, atkDx, atkDz, playerGroundY, damage, Math.floor(time * 1000) + 31)
-      }
-    }
-    prevHealth = p.health
-
-    const nowVaulting = Boolean(p.vault)
-    if (wasVaulting && !nowVaulting) {
-      cam.add(0.14, p.aim, 0.7)
-      cam.punch(0.1, 0)
-    }
-    wasVaulting = nowVaulting
-
-    for (const d of town.doors) {
-      const st = session.ai.portalStates.get(d.id)
-      if (!st) continue
-      const lastBash = prevPortalBashTime.get(d.id) ?? -Infinity
-      const prevPlanks = prevPortalPlanks.get(d.id) ?? st.barricadePlanks
-      const wasOpen = prevDoorOpen.get(d.id) ?? d.open
-      if (st.lastBashTime > lastBash && time - st.lastBashTime < 0.12) {
-        const cx = (d.rect[0] + d.rect[2]) * 0.5
-        const cz = (d.rect[1] + d.rect[3]) * 0.5
-        const broke = st.barricadePlanks < prevPlanks || (d.open && !wasOpen)
-        const dist = Math.hypot(cx - p.x, cz - p.y)
-        const att = attenuateShake(dist, 16)
-        if (att > 0) {
-          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
-        }
-      }
-      prevPortalBashTime.set(d.id, st.lastBashTime)
-      prevPortalPlanks.set(d.id, st.barricadePlanks)
-      prevDoorOpen.set(d.id, d.open)
-    }
-    for (const win of town.windows) {
-      const st = session.ai.portalStates.get(win.id)
-      if (!st) continue
-      const lastBash = prevPortalBashTime.get(win.id) ?? -Infinity
-      const prevPlanks = prevPortalPlanks.get(win.id) ?? st.barricadePlanks
-      if (st.lastBashTime > lastBash && time - st.lastBashTime < 0.12) {
-        const cx = (win.rect[0] + win.rect[2]) * 0.5
-        const cz = (win.rect[1] + win.rect[3]) * 0.5
-        const broke = st.barricadePlanks < prevPlanks
-        const dist = Math.hypot(cx - p.x, cz - p.y)
-        const att = attenuateShake(dist, 16)
-        if (att > 0) {
-          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
-        }
-      }
-      prevPortalBashTime.set(win.id, st.lastBashTime)
-      prevPortalPlanks.set(win.id, st.barricadePlanks)
-    }
-
-    combatFx.legacyMode = settings.combat.bloodStyle === 2
-    let addCount = combatFx.processShots(
-      shots,
-      time,
-      dt,
-      session.ai,
+    let addCount = feelTracker.processFrame(
+      session,
+      combatFx,
       zombieCrowd,
-      (x, z) => supportHeight(town, x, z),
       addSprites,
-      0,
-      (shot) => {
-        const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
-        const isLocalShot = distFromMe < 1.8
-        if (isLocalShot) {
-          triggerShot(shot.aim, 1)
-          if (shot.hitZombieId !== null) {
-            const pwr = shot.detachBone ? 1.25 : 1.0
-            cam.add((shot.killed ? 0.22 : 0.12) * pwr, shot.aim, (shot.killed ? 0.85 : 0.45) * pwr)
-            if (shot.killed) {
-              cam.punch(-0.18 * pwr, 0)
-              hitStop.trigger(0.022 * pwr, 0.08, !cam.isReducedMotion())
-            }
-          }
-        } else if (distFromMe < 16) {
-          // Co-op peer shot nearby: subtle distance-attenuated local presentation only
-          const peerAtt = attenuateShake(distFromMe, 16) * 0.35
-          triggerShot(shot.aim, peerAtt)
-        }
-      },
+      playerGroundY,
+      dt,
     )
 
     const vdt = hitStop.step(dt, !cam.isReducedMotion())
@@ -1508,11 +725,18 @@ async function main() {
       canvas.height = Math.round(h * dpr)
       renderer.resize(canvas.width, canvas.height)
     }
-    cam.zoomOffset = settings.view.zoom - 24
+    const localVehicle = session.sim.vehicles.vehicleOf(p)
+    const vehSpeed = localVehicle ? Math.hypot(localVehicle.vx, localVehicle.vy) : 0
+    const speedPullback = localVehicle
+      ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
+      : 0
+    cam.zoomOffset = settings.view.zoom - 24 + speedPullback
     const drawn = coop.pose(p)
     const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
-    cam.follow(camX, camY, 0, 0, dt, false)
+    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
+    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
+    cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.update(w / h)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
@@ -1528,10 +752,11 @@ async function main() {
           town.terrain,
           town.foliageDensity ?? 1,
           mode,
+          vehSpeed,
         )
         worldStreamer.stepBakeQueue(1.8)
       } else {
-        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
+        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode, vehSpeed)
         currentWindowOrigin = streamed.origin
         currentIsStreamWindow = true
         if (streamed.changed && streamed.level) {
@@ -1566,7 +791,17 @@ async function main() {
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings.vision, peek)
+    const drivingHeadlights =
+      Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
+    const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const effectiveVisionSettings = drivingHeadlights
+      ? {
+          ...settings.vision,
+          range: Math.max(settings.vision.range, settings.vehicle.headlightRange + 4),
+          cone: Math.max(settings.vision.cone, 130),
+        }
+      : settings.vision
+    const visChanged = vision.update(p.x, p.y, effectiveVisionAim, blockers, effectiveVisionSettings, peek)
     if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
@@ -1605,18 +840,18 @@ async function main() {
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
     const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
-    const sightAim = peek ? peek.aim : p.aim
+    const sightAim = peek ? peek.aim : effectiveVisionAim
     const sightCone = activePeek
-      ? settings.vision.cone + (Math.max(settings.vision.cone, activePeek.cone) - settings.vision.cone) * peekBlend
-      : settings.vision.cone
+      ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
+      : effectiveVisionSettings.cone
     const sightAwareness = activePeek
-      ? settings.vision.awareness + (Math.max(settings.vision.awareness, activePeek.awareness) - settings.vision.awareness) * peekBlend
-      : settings.vision.awareness
+      ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
+      : effectiveVisionSettings.awareness
     lights.set([
       sightX,
       1.65 + supportHeight(town, p.x, p.y),
       sightY,
-      settings.vision.range,
+      effectiveVisionSettings.range,
       0,
       0,
       0,
@@ -1634,7 +869,14 @@ async function main() {
     let flashlightSlot = -1
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift, settings.survivor)
+    const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
+    const survivorBatches = avatar.draw(
+      localVehicle ? { ...drawn, vx: 0, vy: 0 } : drawn,
+      vdt,
+      time,
+      (x, z) => supportHeight(town, x, z) + lift - riderSink,
+      settings.survivor,
+    )
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     let flashlightHeight = 1.34 + playerGroundY
     let flashlightAirLimit = 0
@@ -1643,33 +885,48 @@ async function main() {
     let flashlightPitch: number | undefined
     let flashlightBounceHeight = playerGroundY + 0.3
     const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
-    if (p.flashlightOutput > 0.001 && settings.flashlight.flashlightIntensity > 0.001) {
-      // Lens and direction from the posed rig; the shadow pass uses the same origin as the shading.
-      const beam = beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
+    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
+    const beamIntensity = drivingHeadlights
+      ? settings.vehicle.headlightPower * 0.85
+      : settings.flashlight.flashlightIntensity
+    if (beamOutput > 0.001 && beamIntensity > 0.001) {
+      // Lens and direction from the posed rig on foot, or the vehicle front fascia when driving with headlights on.
+      const beam =
+        drivingHeadlights && localVehicle
+          ? {
+              x: localVehicle.x + Math.cos(beamAim) * (localVehicle.spec.length * 0.48),
+              y: localVehicle.y + Math.sin(beamAim) * (localVehicle.spec.length * 0.48),
+              h: 0.72 + playerGroundY,
+              yaw: beamAim,
+              pitch: -0.18,
+            }
+          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
       const fx = beam.x
       const fy = beam.y
       const fh = beam.h
       const dx = Math.cos(beam.yaw)
       const dy = Math.sin(beam.yaw)
-      const cosHalf = Math.cos((settings.flashlight.flashlightCone * Math.PI) / 360)
+      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
       // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
-      const power = p.flashlightOutput * settings.flashlight.flashlightIntensity
+      const power = beamOutput * beamIntensity
       flashlightSlot = count
       flashlightHeight = fh
       flashlightOrigin[0] = fx
       flashlightOrigin[1] = fy
       flashlightYaw = beam.yaw
       flashlightPitch = beam.pitch
-      const wall = raycast(fx, fy, dx, dy, blockers, settings.flashlight.flashlightRange)
+      const wall = raycast(fx, fy, dx, dy, blockers, beamRange)
       const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
-      const hit = Math.min(wall, reach, settings.flashlight.flashlightRange)
+      const hit = Math.min(wall, reach, beamRange)
       flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
       flashlightBounce[1] = fy + dy * Math.max(0.3, hit - 0.15)
       flashlightAirLimit = wall
-      beamReach = Math.min(settings.flashlight.flashlightRange, wall + 1.5, 13)
+      beamReach = Math.min(beamRange, wall + 1.5, 13)
       flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
       lights.set(
-        [fx, fh, fy, settings.flashlight.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
+        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -1740,11 +997,33 @@ async function main() {
         unshadowedLamps.push(packed)
       }
     }
-    const shadowLightCount = count
+    let shadowLightCount = count
     for (const packed of unshadowedLamps) {
       if (count >= MAX_LIGHTS) break
       lights.set(packed, count++ * LIGHT_FLOATS)
     }
+    const vehOut = vehicleRenderer.collect(
+      vdt,
+      time,
+      town,
+      session.view.vehicles,
+      p.vehicleId,
+      view,
+      cam.eye,
+      lights,
+      count,
+      shadowLightCount,
+      frameLightOccluders,
+      alphaSprites,
+      0,
+      addSprites,
+      addCount,
+      settings.vehicle,
+    )
+    count = vehOut.lights.lightCount
+    shadowLightCount = vehOut.lights.shadowLightCount
+    addCount = vehOut.lights.addCount
+    const vehAlphaStart = vehOut.lights.alphaCount
     const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
     const weatherOut = weatherController.stepAndPrepare({
       dt,
@@ -1783,8 +1062,8 @@ async function main() {
         playerX: p.x,
         playerY: p.y,
         playerH: playerGroundY,
-        playerAim: p.aim,
-        flashlightOutput: p.flashlightOutput,
+        playerAim: beamAim,
+        flashlightOutput: beamOutput,
         flashlightSlot,
         flashlightHeight,
         flashlightBounce,
@@ -1870,7 +1149,7 @@ async function main() {
       w,
       h,
       alphaSprites,
-      0,
+      vehAlphaStart,
     )
     const fogSoundAlphaCount = collectFogSoundSprites(
       zombies,
@@ -1905,6 +1184,7 @@ async function main() {
     render.batches = [
       ...groundWearBatches,
       ...clutterBatches,
+      ...vehOut.batches,
       ...motionOut.batches,
       ...survivorBatches,
       ...coopBatches,
@@ -1962,6 +1242,8 @@ async function main() {
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
+    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
+    vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     inventoryHud.sync(session.view, cam, w, h)
@@ -2071,127 +1353,39 @@ async function main() {
     }
   }
   draw(TICK_DT)
-  const harness = {
-    ready: true,
-    adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
-    human: () => ({
-      profile: avatar.profile,
-      bones: avatar.bones,
-      gun: avatar.gun,
-      mag: avatar.mag,
-      aimWeight: avatar.aimWeight,
-      holdRemaining: avatar.holdRemaining,
-    }),
-    setLegacyPistol: (legacy: boolean) => {
-      avatar.legacyUnarmedPistol = legacy
-      avatar.reset()
+  const harness = createOutbreakHarness({
+    adapter,
+    device,
+    renderer,
+    session: () => session,
+    vision: () => vision,
+    avatar: () => avatar,
+    cam,
+    settings,
+    lookSettings,
+    lookCompare,
+    controls,
+    lab,
+    feelTracker,
+    combatFx,
+    weatherController,
+    worldStreamer,
+    hud,
+    coop,
+    audio,
+    vehicleAudio,
+    progressionHost,
+    vehicleHost,
+    promptEl,
+    getPeekBlend: () => peekBlend,
+    resetPeek: () => {
+      peekBlend = 0
+      lastPeek = null
     },
-    setZoomRaw: (zoom: number) => {
-      settings.view.zoom = zoom
-      cam.dist = zoom
-    },
-    state: () => {
-      const dc = dayCycle(session.view.hour)
-      return {
-        ...session.view,
-        peekBlend,
-        threat: dc.threat,
-        darkness: dc.darkness,
-        dayCycle: {
-          hour: session.view.hour,
-          phase: dc.phase,
-          darkness: dc.darkness,
-          threat: dc.threat,
-          sun: dc.sun,
-          twilight: dc.twilight,
-          lamps: dc.lamps,
-        },
-        pacing: { ...session.ai.pacing.telemetry },
-        flashlight: {
-        on: session.view.player.flashlightOn,
-        battery: session.view.player.battery,
-        depleted: session.view.player.batteryDepleted,
-        output: session.view.player.flashlightOutput,
-        signature: session.view.player.lightSignature,
-        cone: settings.flashlight.flashlightCone,
-        range: settings.flashlight.flashlightRange,
-        intensity: settings.flashlight.flashlightIntensity,
-        color: flashlightColor(settings.flashlight.flashlightWarmth),
-      },
-      explored: vision.exploredCount,
-      vertices,
-      splatter: combatFx.splatter?.inspect() ?? null,
-      ground: { ...settings.ground },
-      weather: {
-        enabled: settings.weather.weatherEnabled,
-        preset: settings.weather.weatherPreset,
-        settings: toSharedWeatherSettings(settings.weather),
-        state: { ...weatherController.sim.state },
-      },
-      camera: {
-        shakeScale: settings.view.shakeScale,
-        kickScale: settings.view.kickScale,
-        damageFlashScale: settings.view.damageFlashScale,
-        reduceMotion: cam.isReducedMotion(),
-        trauma: cam.trauma,
-        damageFlash: cam.damageFlash,
-        hitStopRemaining: hitStop.remaining,
-        offset: { ...cam.offset },
-        burst: {
-          dx: motionBurst.dx,
-          dy: motionBurst.dy,
-          radial: motionBurst.radial,
-          shutterBoost: motionBurst.shutterBoost,
-        },
-      },
-      world: {
-        mode: resolveWorldMode(settings.world.worldMode),
-        chunk: worldToChunk(session.view.player.x, session.view.player.y),
-        district: districtAtChunk(
-          session.view.town.seed,
-          Math.floor(session.view.player.x / 32),
-          Math.floor(session.view.player.y / 32),
-        ),
-        windowOrigin: currentWindowOrigin,
-        isStreamWindow: currentIsStreamWindow,
-        activeChunks: [...session.sim.worldStream.activeChunks.keys()],
-        cachedRenderChunks: worldStreamer.cachedChunkCount,
-        pendingBakes: worldStreamer.pendingBakeCount,
-        bakeStepsCompleted: worldStreamer.bakeStepsCompleted,
-        lastBakeMs: worldStreamer.lastBakeMs,
-        deltasCount: session.sim.worldStream.deltas.size,
-      },
-      }
-    },
-    triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
-      const p = session.view.player
-      const power = opts?.power ?? 1
-      const damage = opts?.damage ?? 25
-      if (kind === "shove") triggerShove(p.aim, 1)
-      else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
-      else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
-      else triggerShot(p.aim, power)
-      return {
-        trauma: cam.trauma,
-        damageFlash: cam.damageFlash,
-        hitStopRemaining: hitStop.remaining,
-        offset: { ...cam.offset },
-        burst: {
-          dx: motionBurst.dx,
-          dy: motionBurst.dy,
-          radial: motionBurst.radial,
-          shutterBoost: motionBurst.shutterBoost,
-        },
-      }
-    },
-    fog: (x: number, y: number) => vision.state(x, y),
-    callouts: () =>
-      hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
-    coop: () => coop.inspect(),
-    audio: () => audio.telemetry(),
-    hudState: () => hud.inspect(),
+    getVertices: () => vertices,
+    getWindowState: () => ({ origin: currentWindowOrigin, isStream: currentIsStreamWindow }),
     reset,
-    freeze: (value = true) => {
+    setFrozen: (value = true) => {
       frozen = value
       if (pacerTimer) {
         clearTimeout(pacerTimer)
@@ -2203,251 +1397,15 @@ async function main() {
       clock.reset(performance.now(), liveMove())
       if (!frozen) scheduleFrame()
     },
-    setLab(rawKey: string, value: number | boolean | string) {
-      const routed = resolveOutbreakSettingTarget(String(rawKey))
-      const control = controls.find(
-        (c) =>
-          c.key === rawKey ||
-          c.legacyKeys?.includes(String(rawKey)) ||
-          (routed && resolveOutbreakSettingTarget(c.key)?.subsystem === routed.subsystem && resolveOutbreakSettingTarget(c.key)?.field === routed.field),
-      )
-      if (!control || !routed) throw new Error(`Invalid lab key: ${String(rawKey)}`)
-      if (typeof value !== "boolean") {
-        if (
-          "min" in control
-            ? typeof value !== "number" || !Number.isFinite(value) || value < control.min || value > control.max
-            : "options" in control && !control.options.some((o) => o.value === value)
-        ) {
-          throw new Error(`Invalid lab value: ${String(rawKey)}`)
-        }
-      }
-      setOutbreakSetting(settings, control.key, value)
-      onSettingChanged(control.key, value)
+    onSettingChanged,
+    setLastDayNightHour: (hour) => {
+      lastDayNightHour = hour
     },
-    exportPreset: () => exportOutbreakPreset(settings),
-    importPreset: (raw: unknown) => {
-      const res = applyOutbreakPreset(settings, raw)
-      if (res.ok) lab.refresh()
-      return res
-    },
-    setWeatherPreset(preset: string) {
-      const applied = applyOutbreakWeatherPreset(settings.weather, preset)
-      lab.refresh()
-      return applied
-    },
-    strikeLightning(seed?: number) {
-      return weatherController.strikeNow(seed)
-    },
-    setLookPreset(preset: LookPresetId | string) {
-      const pid = resolveLookPresetId(preset)
-      if (!pid) throw new Error(`Unknown look preset: ${preset}`)
-      settings.dayCycle.lookPreset = pid
-      applyLookPreset(lookSettings, pid)
-      Object.assign(settings.lighting, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
-      if (settings.dayCycle.dayNightLook === 1 && pid === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      }
-      lab.refresh()
-      return { ...lookSettings }
-    },
-    setLook(patch: Partial<LookSettings>) {
-      Object.assign(lookSettings, patch)
-      if (patch.preset) settings.dayCycle.lookPreset = patch.preset
-      lastDayNightHour = session.view.hour
-      lab.refresh()
-      return { ...lookSettings }
-    },
-    setLookCompare(mode: LookCompareMode, wipeSplit = 0.5) {
-      lookCompare.mode = mode
-      lookCompare.wipeSplit = wipeSplit
-    },
-    getLook: () => ({ ...lookSettings }),
-    pose(x: number, y: number, aim: number) {
-      Object.assign(session.view.player, {
-        x,
-        y,
-        aim,
-        vx: 0,
-        vy: 0,
-        peekingWindowId: null,
-        holdTargetId: null,
-        holdElapsed: 0,
-        holdTriggered: false,
-        holdPendingPrimary: null,
-        vault: null,
-        channel: null,
-      })
-      peekBlend = 0
-      lastPeek = null
-      session.rebuildCollision()
-      avatar.reset()
-      cam.snap(x, y)
-      cam.dist = settings.view.zoom
-    },
-    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
-    stock(loaded?: number, belt: Record<string, number> = {}) {
-      const { progression, actorId } = session.view
-      const ledger = progression.ledger
-      if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
-      for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count(`${actorId}/belt`, item)
-        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
-        if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
-      }
-      const slot = session.sim.slot(actorId)
-      if (slot) progression.project(slot)
-    },
-    /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
-    stageProgression(scene: ProgressionScene) {
-      stageProgression(progressionHost, scene)
-    },
-    /** Stages a first-night pacing scene (`pacing.stage`). */
-    stagePacing(scene: string) {
-      session.ai.noiseBus.reset()
-      session.view.notices.length = 0
-      hud.reset()
-      if (scene === "legacy-rush") {
-        settings.ai.directorPacing = 0
-        settings.ai.safeRadius = 3.5
-        settings.ai.initialDensity = 1.0
-        settings.ai.startHour = 18.0
-        settings.dayCycle.hour = 18.0
-        session.view.hour = 18.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      } else if (scene === "safehouse-workbench") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        stageProgression(progressionHost, "bench")
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-      } else if (scene === "first-contact") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.dayCycle.hour = 17.85
-        session.view.hour = 17.85
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(29.5, 41.2, 0)
-        const s1 = session.ai.spawnZombie(session.view.town, 37.8, 41.8, "investigate", Math.PI)
-        const s2 = session.ai.spawnZombie(session.view.town, 39.2, 43.4, "investigate", Math.PI - 0.15)
-        s1.targetX = 31.0
-        s1.targetY = 41.2
-        s2.targetX = 31.5
-        s2.targetY = 42.0
-        session.ai.pacing.firstEncounterStage = "staged"
-      } else if (scene === "late-night-horde") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.maxActiveNearPlayer = 4
-        settings.dayCycle.hour = 22.5
-        session.view.hour = 22.5
-        session.view.time = 420
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.syncPopulation(session.view.town, 44, 44)
-        harness.pose(41.5, 43.5, 0)
-        session.ai.emitNoise(41.5, 43.5, 34, "gunshot", session.view.time, "player", 2.0)
-        for (const [zx, zy] of [
-          [48.2, 42.6],
-          [49.4, 44.5],
-          [47.5, 45.8],
-          [51.0, 43.2],
-        ] as const) {
-          const z = session.ai.spawnZombie(session.view.town, zx, zy, "chase", Math.PI)
-          z.targetX = 41.5
-          z.targetY = 43.5
-        }
-      } else {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.0
-        session.view.hour = 16.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      }
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        lastDayNightHour = session.view.hour
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      }
-      lab.refresh()
-      return { scene, pacing: { ...session.ai.pacing.telemetry }, hour: session.view.hour }
-    },
-    /** Gives the local survivor an item, routed to belt, hand or pack. */
-    give(item: string, count = 1) {
-      return session.view.progression.ledger.apply({ kind: "grant", actor: session.view.actorId, item, count }).ok
-    },
-    spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
-      const z = session.ai.spawnZombie(session.view.town, x, y, state, aim)
-      settings.ai.zombieCount = session.view.zombies.filter((a) => a.state !== "dead").length
-      return z
-    },
-    setZombieState(state: AIState, id?: number) {
-      const p = session.view.player
-      return session.ai.setZombieState(state, p.x, p.y, id)
-    },
-    makeNoise(x: number, y: number, radius = 18, kind = "glass") {
-      return session.ai.emitNoise(x, y, radius, kind, session.view.time, "player")
-    },
-    resolveTargetRect(target: { objectId?: string; world?: [number, number, number]; selector?: string }) {
-      const w = innerWidth
-      const h = innerHeight
-      if (target.world) {
-        const [wx, wy, wz] = target.world
-        const proj = cam.project(wx, wy, wz, w, h)
-        if (proj.ok) {
-          return { x: proj.x - 42, y: proj.y - 42, width: 84, height: 84, shape: "pill" as const }
-        }
-      }
-      if (target.objectId === "prompt" && promptEl && !promptEl.hidden) {
-        const r = promptEl.getBoundingClientRect()
-        if (r.width > 0 && r.height > 0) {
-          return { x: r.left, y: r.top, width: r.width, height: r.height, shape: "rect" as const }
-        }
-      }
-      if (target.objectId === "player" || target.objectId === "survivor") {
-        const p = session.view.player
-        const gy = supportHeight(session.view.town, p.x, p.y)
-        const proj = cam.project(p.x, gy + 0.9, p.y, w, h)
-        if (proj.ok) {
-          return { x: proj.x - 36, y: proj.y - 44, width: 72, height: 88, shape: "pill" as const }
-        }
-      }
-      return null
-    },
-    async step(dt = 1 / 60, command?: Partial<Command>) {
-      while (renderer.inflight > 0 || renderer.hasPending) {
-        await Promise.resolve()
-        await device.queue.onSubmittedWorkDone()
-      }
-      session.update(
-        dt,
-        { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command },
-        settings.dayCycle.timeScale,
-        settings,
-      )
+    incrementFrames: () => {
       frames++
-      draw(dt)
-      await Promise.resolve()
-      while (renderer.inflight > 0 || renderer.hasPending) {
-        await device.queue.onSubmittedWorkDone()
-        await Promise.resolve()
-      }
-      return harness.state()
     },
-  }
+    draw: (dt) => draw(dt),
+  })
   Object.assign(window, { __arcadeHarness: harness })
   scheduleFrame()
 }

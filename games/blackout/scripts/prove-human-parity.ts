@@ -11,15 +11,15 @@ const EXPECTED_HASHES = {
   old: "00bde28afe7d26930d81018826ee561968bf95508793210202b301ee80a6e9ac",
   // Deliberately updated from 756db0b50d8755b4941daa5d490e3ea669682932408842e857b86b3ecd7914ff ->
   // dcca71fd2a0ce386aeff806a3f15f6afa2fc96f1f76643b7e47242fb8f332f79 ->
-  // e1a01135fc8524456b19cdea06a8f276d6c23efe4490633b0e3caa51896a5b1e after the
-  // run-realism pass and crouch-run leg calibration: mocap-calibrated running heel kick-up and knee drive in
-  // poseLegs, crouch-depth swing heel-kick attenuation (preventing the crouched pelvis from jackknifing the
-  // swing thigh into the chest), unwrapped sagittal shin-relative swing ankle pitch, seeded pair-balanced
-  // per-step variation, start/stop weight transfer, turn banking, and secondary head lag.
-  // Then -> 112f1d46fb4336a72c808e75a5d2ba20c78f5118bd489888975a5de7dc8a90b6 for the strafe pass: this run circles
+  // e1a01135fc8524456b19cdea06a8f276d6c23efe4490633b0e3caa51896a5b1e ->
+  // 4500970e7c43082a069f90b5fe917f06a409b2ae168b0c1352f866b69859753c after the
+  // toe-joints pass: ball-of-foot (MTP) toe joint (RIG.foot = 0.125 m, RIG.toe = 0.065 m) on HumanBody.toe,
+  // heel-strike -> foot-flat -> heel-rise -> toe-off roll in stance, toe dorsiflexion in push-off, swing toe
+  // clearance, and lengthened walking stride reach (cadence 145 -> 127 steps/min at 1.4 m/s without lowering the pelvis).
+  // Then -> cc9073ae1c60ea1d918adf4d411f88b948a0ae092fcdaf725e7a12f82d51caec for the strafe pass: this run circles
   // while aiming, so the soldier now turns its hips toward travel, side-steps without crossing or crosses over at run
   // speed, flips to backpedal without a hip jump, and tracks its knees over its boots.
-  new: "112f1d46fb4336a72c808e75a5d2ba20c78f5118bd489888975a5de7dc8a90b6",
+  new: "cc9073ae1c60ea1d918adf4d411f88b948a0ae092fcdaf725e7a12f82d51caec",
 } as const
 
 type Api = {
@@ -79,7 +79,8 @@ function measurePosture(api: Api, mode: "old" | "new") {
       for (let i = 0; i < 2; i++) {
         if (prevBody && prevFeet[i]!.planted && a.feet[i]!.planted) {
           maxLockSlip = Math.max(maxLockSlip, Math.hypot(...a.feet[i]!.p.map((v, k) => v - prevFeet[i]!.p[k]!)))
-          const beforeToe = at(prevBody.ft[i]!, 0.19, -RIG.ankle, 0), afterToe = at(a.body!.ft[i]!, 0.19, -RIG.ankle, 0)
+          const beforeToe = prevBody.toe ? prevBody.toe[i]!.p : at(prevBody.ft[i]!, 0.19, -RIG.ankle, 0)
+          const afterToe = a.body!.toe ? a.body!.toe[i]!.p : at(a.body!.ft[i]!, 0.19, -RIG.ankle, 0)
           maxToeSlip = Math.max(maxToeSlip, Math.hypot(...afterToe.map((v, k) => v - beforeToe[k]!)))
         }
       }

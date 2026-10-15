@@ -169,6 +169,7 @@ export class Survivor {
   private sinceShot = 10
   private shotCount = 0
   private back = false
+  private backness = 0
   private yawOffset = spring()
   private pelvisYaw = spring()
   private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
@@ -193,7 +194,7 @@ export class Survivor {
   private svy = 0
   private leanX = spring()
   private leanY = spring()
-  private data = new Float32Array(15 * 12)
+  private data = new Float32Array(17 * 12)
   readonly batches: Batch[] = []
   /** Each foot contact (plan x, y and body speed in m/s): footstep sounds land on the rig's own gait. */
   onFootfall?: (x: number, y: number, speed: number) => void
@@ -214,7 +215,12 @@ export class Survivor {
     torso.box(-0.3, 0.28, -0.14, -0.28, 0.32, 0.14, hex(0xa3a48a), MAT.actor)
     const head = box(0.18, 0.01, 0.24, 0.18, 0xad8266)
     head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hex(0x3b342d), MAT.actor)
-    const foot = box(0.21, -0.075, 0.09, 0.14, 0x3b3029)
+    const foot = new Mesh()
+    foot.box(-0.075, -0.075, -0.068, 0.125, 0.015, 0.068, hex(0x3b3029), MAT.actor)
+    foot.box(-0.078, -0.085, -0.07, 0.128, -0.065, 0.07, hex(0x181412), MAT.actor)
+    const toe = new Mesh()
+    toe.box(-0.008, 0.015, -0.065, 0.06, 0.082, 0.065, hex(0x3b3029), MAT.actor)
+    toe.box(-0.006, 0, -0.068, 0.065, 0.02, 0.068, hex(0x181412), MAT.actor)
 
     // Compact 9mm semi-auto pistol (grip at origin, barrel along +x, muzzle at +0.20 m)
     const pistol = new Mesh()
@@ -240,6 +246,7 @@ export class Survivor {
       foot,
       pistol,
       mag,
+      toe,
     ].map(m => renderer.addModel(m))
   }
 
@@ -407,6 +414,7 @@ export class Survivor {
       const travelDir = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
       const stance = strafeStance(speed > 0.2 ? speed : 0, this.yaw, travelDir, activeProfile)
       const curGait = gaitAt(speed, stance.backness, stance.sideStep, activeProfile)
+      this.backness = stance.backness
       const runBlend = curGait.run
       const leanScale = 0.25 + 0.75 * runBlend
       stepSpring(this.leanX, 90, 0.38, h, vx * 0.028 * leanScale + ((vx - this.svx) / h) * 0.003)
@@ -474,8 +482,8 @@ export class Survivor {
             f.stepLift = 1 + varAmt * 0.15 * stepHash(this.seed, sc, 3)
             f.stepToe = varAmt * 0.06 * stepHash(this.seed, sc, 4)
           }
-          if (firstSwingFrame || u < 0.75) {
-            const lead = Math.min(0.34, (1 - phase) / rate + (duty / rate) * 0.48) * f.stepReach
+          if ( firstSwingFrame || u < 0.75) {
+            const lead = Math.min(0.41, (1 - phase) / rate + (duty / rate) * 0.48) * f.stepReach
             const target = rest(i)
             target[0] += vx * lead - s * f.stepLat
             target[2] += vy * lead + c * f.stepLat
@@ -525,11 +533,13 @@ export class Survivor {
       const footSupport =
         (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
       const supportY = support(sx, sy) * 0.65 + footSupport * 0.35
-      const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 1.15
+      const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 0.45
       const baseHeight = supportY + HIP - 0.012 * moving - (0.021 + 0.008 * runBlend) * moving * Math.sin(bobPhase)
       let desiredDrop = 0
       for (const f of this.feet) {
-        const distance = Math.min(0.72, Math.hypot(f.p[0] - sx, f.p[2] - sy))
+        if (!f.planted) continue
+        const effDist = Math.max(0, Math.hypot(f.p[0] - sx, f.p[2] - sy) - 0.10 * moving * (1 - 0.4 * runBlend))
+        const distance = Math.min(0.72, effDist)
         const reachY = Math.sqrt(Math.max(0, 0.825 ** 2 - distance ** 2)) + RIG.ankle + f.p[1]
         desiredDrop = Math.max(desiredDrop, Math.max(0, Math.min(0.18, baseHeight - reachY)))
       }
@@ -589,7 +599,7 @@ export class Survivor {
     const footSupport =
       (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
     const curSupportY = support(p.x, p.y) * 0.65 + footSupport * 0.35
-    const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 1.15
+    const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 0.45
     const bobOffset = (0.021 + 0.008 * runBlend) * gait * Math.sin(bobPhase)
     const height =
       curSupportY +
@@ -857,26 +867,12 @@ export class Survivor {
       const foot = this.feet[i]!
       const hip = at(pelvis, 0, 0, side * RIG.hipW)
       const u = foot.planted ? 0 : foot.prevU
-      const sinU = Math.sin(Math.PI * u)
-      const lateTaper = 1 - smooth((u - 0.74) / 0.18)
-      const kickBell = sinU * sinU * (0.42 + 0.92 * Math.pow(u, 0.80)) * lateTaper
-      const tuckBell = sinU * sinU * Math.pow(u, 0.95) * 1.65 * lateTaper
-      const clearance = (i === 1 ? 1 - (profile?.footDrag ?? 0) : 1) * foot.stepLift
-      const crouchKickScale = 1 - 0.55 * crouchT
-      const heelKick = foot.planted ? 0 : (0.018 * (1 - runBlend) + 0.22 * runBlend * crouchKickScale) * clearance * kickBell
-      const heelTuck =
-        foot.planted ? 0 : (0.025 * (1 - runBlend) + 0.24 * runBlend * (1 - 0.35 * crouchT)) * clearance * tuckBell
+      const isDrag = i === 1 && (profile?.footDrag ?? 0) > 0
+      const drag = isDrag ? clamp(profile?.footDrag ?? 0, 0, 0.95) : 0
+      const dragKeep = 1 - drag
       const fc = Math.cos(foot.yaw)
       const fs = Math.sin(foot.yaw)
-      const ankle: V3 = [foot.p[0] - fc * heelTuck, foot.p[1] + RIG.ankle + heelKick, foot.p[2] - fs * heelTuck]
-      const chordX =
-        (ankle[0] - hip[0]) * pelvis.x[0] + (ankle[1] - hip[1]) * pelvis.x[1] + (ankle[2] - hip[2]) * pelvis.x[2]
-      const backKick = runBlend * kickBell * clamp(-chordX / 0.35, 0, 1)
-      const pole = kneePole(pelvis, foot.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * runBlend * kickBell)
-      const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
-      const thigh = limb(hip, knee, pole, pelvis.x)
-      const shin = limb(knee, end, pole, pelvis.x)
-      // Terrain-conforming boot pitch in stance + plantarflexed push-off and dorsiflexed recovery in swing.
+      // Terrain-conforming boot pitch in stance + heel-strike -> foot-flat -> heel-rise -> toe-off roll on the ball.
       const groundSlope = clamp(
         (support(foot.p[0] + fc * 0.12, foot.p[2] + fs * 0.12) -
           support(foot.p[0] - fc * 0.08, foot.p[2] - fs * 0.08)) /
@@ -887,28 +883,96 @@ export class Survivor {
       const footPhase = (this.phase + i * (0.5 + (profile?.timingBias ?? 0) * 0.25)) % 1
       const dutyNow = curGait.duty
       const stanceFrac = foot.planted ? clamp(footPhase / Math.max(0.1, dutyNow), 0, 1) : 0
-      const stancePitch = groundSlope - (0.18 + 0.06 * runBlend) * smooth((stanceFrac - 0.58) / 0.42) * gait
-      const shinPitch = -Math.atan2(shin.y[0] * fc + shin.y[2] * fs, shin.y[1])
-      const swingRel =
-        -(0.20 + 0.15 * runBlend) * (1 - smooth((u - 0.50) / 0.34)) +
-        (0.04 + 0.16 * runBlend) * smooth((u - 0.60) / 0.28)
-      const footPitch = foot.planted
-        ? stancePitch
-        : stancePitch + (shinPitch + swingRel - stancePitch) * smooth(u / 0.10) * (1 - smooth((u - 0.78) / 0.18))
-      let boot = pitch(yawFrame(end, foot.yaw), footPitch)
+      const sFlat = 0.16 - 0.04 * runBlend
+      const heelStrike0 = (1 - this.backness) * (0.26 - 0.04 * runBlend) * (1 - 0.55 * crouchT) * gait * dragKeep
+      const heelStrikePitch = stanceFrac < sFlat ? heelStrike0 * (1 - smooth(stanceFrac / sFlat)) : 0
+      const sHeelRise = 0.44 - 0.04 * runBlend
+      const heelRiseMax = (0.44 + 0.08 * runBlend) * gait * (1 - 0.55 * drag)
+      const riseU = smooth((stanceFrac - sHeelRise) / (1 - sHeelRise))
+      const heelRisePitch = stanceFrac > sHeelRise ? -heelRiseMax * riseU : 0
+      const stancePitch = groundSlope + heelStrikePitch + heelRisePitch
+
+      let thigh: Frame
+      let shin: Frame
+      let boot: Frame
+      let toeFrame: Frame
       if (foot.planted) {
-        const toeWorld: V3 = [foot.p[0] + fc * 0.19, foot.p[1], foot.p[2] + fs * 0.19]
+        const ballWorld: V3 = [foot.p[0] + fc * RIG.foot, foot.p[1], foot.p[2] + fs * RIG.foot]
         const f0 = pitch(yawFrame([0, 0, 0], foot.yaw), stancePitch)
-        const off = at(f0, 0.19, -RIG.ankle, 0)
-        boot = { ...f0, p: [toeWorld[0] - off[0], toeWorld[1] - off[1], toeWorld[2] - off[2]] }
+        const riseFrame = pitch(yawFrame([0, 0, 0], foot.yaw), groundSlope + heelRisePitch)
+        const off = at(riseFrame, RIG.foot, -RIG.ankle, 0)
+        boot = { ...f0, p: [ballWorld[0] - off[0], ballWorld[1] - off[1], ballWorld[2] - off[2]] }
+        toeFrame = pitch(yawFrame(ballWorld, foot.yaw), groundSlope)
+        const pole = kneePole(pelvis, foot.yaw, side)
+        const [knee, end] = ik(hip, boot.p, RIG.thigh, RIG.shin, pole)
+        thigh = limb(hip, knee, pole, pelvis.x)
+        shin = limb(knee, end, pole, pelvis.x)
+      } else {
+        const liftOffBlend = (1 - smooth(u / (0.36 - 0.10 * runBlend))) * gait * dragKeep
+        const toeOffPitch = -(0.44 + 0.08 * runBlend) * liftOffBlend * (1 - 0.55 * drag)
+        const liftFrame = pitch(yawFrame([0, 0, 0], foot.yaw), toeOffPitch)
+        const ballOff = at(liftFrame, RIG.foot, -RIG.ankle, 0)
+        const liftAnkX = fc * RIG.foot - ballOff[0]
+        const liftAnkY = Math.max(0, -ballOff[1] - RIG.ankle)
+        const liftAnkZ = fs * RIG.foot - ballOff[2]
+
+        const sinU = Math.sin(Math.PI * u)
+        const uprightRun = 1 - crouchT
+        const lateTaper = 1 - smoother((u - (0.74 + 0.08 * uprightRun)) / 0.16)
+        const kickBell = sinU * sinU * (0.42 + 0.92 * Math.pow(u, 0.80)) * lateTaper
+        const tuckBell = sinU * sinU * Math.pow(u, 0.95 - 0.10 * uprightRun) * (1.65 + 0.13 * uprightRun) * lateTaper
+        const clearance = dragKeep * foot.stepLift
+        const crouchKickScale = 1 - 0.55 * crouchT
+        const earlyPushFwd = (0.085 * (1 - runBlend) + 0.025 * runBlend * uprightRun) * clearance * Math.sin(Math.PI * clamp(u / 0.46, 0, 1)) ** 2
+        const lateWalkTuck = 0.125 * (1 - runBlend) * clearance * Math.sin(Math.PI * clamp((u - 0.42) / 0.52, 0, 1)) ** 2
+        const heelKick = (0.022 * (1 - runBlend) * smooth((u - 0.22) / 0.35) + 0.22 * runBlend * crouchKickScale) * clearance * kickBell
+        const heelTuck = (0.015 * (1 - runBlend) + (0.24 + 0.035 * uprightRun) * runBlend * (1 - 0.35 * crouchT)) * clearance * tuckBell + lateWalkTuck - earlyPushFwd
+        const baseY = foot.p[1] - (foot.lift[1] + (foot.target[1] - foot.lift[1]) * smoother(u))
+        const terrY = foot.p[1] - baseY
+        const walkEarlyDamp = 1 - 0.62 * (1 - runBlend) * (1 - smooth((u - 0.15) / 0.32))
+        const swingLiftY = baseY * walkEarlyDamp
+        const ankle: V3 = [
+          foot.p[0] + liftAnkX * liftOffBlend - fc * heelTuck,
+          terrY + swingLiftY + RIG.ankle + liftAnkY * liftOffBlend * (0.25 + 0.75 * runBlend) + heelKick,
+          foot.p[2] + liftAnkZ * liftOffBlend - fs * heelTuck,
+        ]
+        const chordX =
+          (ankle[0] - hip[0]) * pelvis.x[0] + (ankle[1] - hip[1]) * pelvis.x[1] + (ankle[2] - hip[2]) * pelvis.x[2]
+        const backKick = runBlend * kickBell * clamp(-chordX / 0.35, 0, 1) * dragKeep
+        const pole = kneePole(pelvis, foot.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * runBlend * kickBell * dragKeep)
+        const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
+        thigh = limb(hip, knee, pole, pelvis.x)
+        shin = limb(knee, end, pole, pelvis.x)
+        const shinPitch = -Math.atan2(shin.y[0] * fc + shin.y[2] * fs, shin.y[1])
+        const tdBlend = smoother((u - 0.72) / 0.28)
+        const tdPitch = heelStrike0 * tdBlend
+        const basePitch = groundSlope + toeOffPitch + tdPitch
+        const swingRel =
+          -(0.24 + 0.12 * runBlend) * (1 - smooth((u - 0.46) / 0.30)) +
+          (0.04 + (0.16 + 0.08 * uprightRun) * runBlend) * smooth((u - (0.60 - 0.08 * uprightRun)) / 0.26)
+        const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20))
+        let footPitch = basePitch + (shinPitch + swingRel - basePitch) * relaxed
+        const liftOffToe = Math.max(0, -footPitch) * (1 - smooth(u / 0.34))
+        const pushOffCurl = -0.12 * Math.sin(Math.PI * clamp((u - 0.18) / 0.26, 0, 1)) * gait * dragKeep
+        const swingClearanceToe = (0.20 + 0.10 * runBlend) * Math.sin(Math.PI * clamp((u - 0.28) / 0.56, 0, 1)) * gait * dragKeep
+        let toeRelPitch = liftOffToe + pushOffCurl + swingClearanceToe - tdPitch
+        if (drag > 0) {
+          const maxNoseDown = -Math.asin(clamp(Math.max(0, end[1] - terrY - RIG.ankle) / (RIG.foot + RIG.toe), 0, 0.95))
+          footPitch = Math.max(footPitch, maxNoseDown * (1 - drag) + footPitch * (1 - drag))
+          if (footPitch < groundSlope) toeRelPitch = (groundSlope - footPitch) * drag
+        }
+        boot = pitch(yawFrame(end, foot.yaw), footPitch)
+        toeFrame = pitch(yawFrame(at(boot, RIG.foot, -RIG.ankle, 0), foot.yaw), footPitch + toeRelPitch)
       }
       const name = i === 0 ? "left" : "right"
       this.bones[`${name}.thigh`] = thigh
       this.bones[`${name}.shin`] = shin
       this.bones[`${name}.foot`] = boot
+      this.bones[`${name}.toe`] = toeFrame
       draw(5, thigh)
       draw(6, shin)
       draw(7, boot)
+      draw(10, toeFrame)
       const upper = arms.ua[i]!
       const fore = arms.fa[i]!
       this.bones[`${name}.upperArm`] = upper

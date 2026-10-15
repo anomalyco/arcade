@@ -62,7 +62,7 @@ browser (`arcade.lab.station-layouts.v1`) as you make them; Reset goes back to t
 gives the `layout` block to paste into the file. `arcade run station.layout` reads, replaces (`layout`), resets or
 opens the editor from the CLI. Without a `layout` the station gets the default: status and measurements left, a
 controls card for the section's first two groups with real tuning sliders right, and variants, compare, live numbers,
-voice and notes in the dock.
+voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
 adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
@@ -123,7 +123,8 @@ token stays in the dev server; production builds don't include the recorder.
 Every control panel is drawn by knobs ([Kit's library](https://github.com/kitlangton/knobs), vendored as
 `packages/knobs`): the Lab's Details column, station `controls` cards and each game's Backquote overlay. `LabControl`
 and the settings objects stay the source of truth. `packages/kit/lab-knobs.ts` turns rows into knobs fields (ranges with
-units and steps, choices, switches, action buttons, groups as cards) and sends edits back through `LabNavigation.set`,
+units and steps, choices, switches, action buttons, groups as flat rows under a heading, in the Lab chrome's `arcade`
+preset) and sends edits back through `LabNavigation.set`,
 one transaction per gesture; `packages/kit/lab-tuning.ts` holds the pure mapping and the seeded Random. Knobs gives
 every panel its header (Random, Reset, Copy and, in games, Undo/Redo), per-group dice and resets, `⇧L` to lock a row
 out of Random, hold `\` to see the values from before the last change, `⇧S` saved variants (kept in the browser per
@@ -253,7 +254,9 @@ and `packages/kit/lab/viewport-input.ts`):
   is active) and orbits elsewhere (Catalogue, Characters, or Lab sections without selectable objects; `Shift+drag` pans
   when not adding to an existing selection).
 - **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or the `ContextMenu` key opens the
-  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab ring
+  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab opens it only on the
+  viewport itself (the canvas or the gizmo, never a panel or button over or beside it; the key only while the canvas
+  has focus), and a press or focus anywhere outside the viewport closes it. The Lab ring
   (`packages/kit/lab/radial.ts`) draws 8 equal wedges with an icon and short label each; the wedge under the pointer's
   bearing from the centre is highlighted (not the label under the pointer), a press anywhere on the disc selects by
   direction, the hub names the target, and the caption below shows the full label and shortcut or the disabled reason.

@@ -22,6 +22,7 @@ import { bodyPoint } from "./car-pose"
 import { StreetProps } from "./props"
 import { spriteMotionKeys } from "../render/motion"
 import { getawayEffects as effectSettings } from "../lab/settings"
+import { texelSnappedOrthoLightMatrix } from "@arcade/kit/gpu/pass-graph"
 
 const MAX_SPRITES_PER_LIST = 3000
 const ROBBER_TINT: [number, number, number] = [1.0, 0.55, 0.12]
@@ -674,27 +675,5 @@ function cone(m: Mesh, apex: number[], base: number[], radius: number, color: [n
 }
 
 function lightMatrix(eye: number[], target: number[]) {
-  const z = normalizeV([eye[0]! - target[0]!, eye[1]! - target[1]!, eye[2]! - target[2]!])
-  const x = normalizeV([z[2], 0, -z[0]])
-  const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]]
-  const S = 150
-  const near = 50
-  const far = 600
-  const step = (2 * S) / 2048
-  const tx = Math.round(-dot(x, eye) / step) * step
-  const ty = Math.round(-dot(y, eye) / step) * step
-  // Column-major ortho * lookAt, depth 0..1.
-  const view = [x[0], y[0]!, z[0], 0, x[1], y[1]!, z[1], 0, x[2], y[2]!, z[2], 0, tx, ty, -dot(z, eye), 1]
-  const proj = [1 / S, 0, 0, 0, 0, 1 / S, 0, 0, 0, 0, -1 / (far - near), 0, 0, 0, -near / (far - near), 1]
-  return mul(proj, view)
-}
-
-function dot(a: number[], b: number[]) {
-  return a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
-}
-
-function mul(a: number[], b: number[]) {
-  const r = new Array<number>(16).fill(0)
-  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) for (let k = 0; k < 4; k++) r[c * 4 + rr]! += a[k * 4 + rr]! * b[c * 4 + k]!
-  return r
+  return texelSnappedOrthoLightMatrix(eye, target)
 }

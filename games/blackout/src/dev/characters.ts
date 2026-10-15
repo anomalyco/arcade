@@ -144,6 +144,7 @@ export type StageActor = {
   pieces: DetachedPiece[]
   noPop: boolean
   detachCount: number
+  rigidBoot?: boolean
 }
 
 const LIMB_CHOICES: { value: BoneId; label: string }[] = [
@@ -158,6 +159,8 @@ const LIMB_CHOICES: { value: BoneId; label: string }[] = [
   { value: "left.shin", label: "Left shin" },
   { value: "right.foot", label: "Right foot" },
   { value: "left.foot", label: "Left foot" },
+  { value: "right.toe", label: "Right toe" },
+  { value: "left.toe", label: "Left toe" },
 ]
 
 function buildSelectionRing(): Mesh {
@@ -886,6 +889,23 @@ async function main() {
       },
     },
     {
+      id: "character.toe-joint",
+      aliases: ["rig.toe-joint"],
+      label: "Toggle Ball-of-Foot Toe Joint",
+      shortLabel: "Toe joint",
+      category: "Object",
+      args: {
+        enabled: { type: "boolean", description: "Enable ball-of-foot MTP toe bend (false for legacy rigid boot)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const enabled = ctx?.args?.enabled !== false
+        selected.rigidBoot = !enabled
+        selected.profile.strideScale = enabled ? humanProfiles[selected.preset].strideScale : humanProfiles[selected.preset].strideScale * 0.87
+        return { actorId: selected.id, toeJoint: enabled }
+      },
+    },
+    {
       id: "limb.detach",
       aliases: ["detach", "character.detach"],
       label: "Detach Character Limb",
@@ -1482,6 +1502,12 @@ async function main() {
     a.profile = actor.profile
     a.unarmed = actor.unarmedSwing && actor.profile.handPose === "weapon"
     animate(a, dt, a.t + dt, nextX, nextY, vx, vy, aim, actor.wizardCast)
+    if (actor.rigidBoot && a.body?.toe) {
+      a.body.toe = [
+        moved(a.body.ft[0], at(a.body.ft[0], 0.125, 0, 0)),
+        moved(a.body.ft[1], at(a.body.ft[1], 0.125, 0, 0)),
+      ]
+    }
   }
 
   function stepSimulation(dt: number) {
