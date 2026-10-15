@@ -315,7 +315,7 @@ struct VSOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
     let pk = max(c.r, max(c.g, c.b));
     bloom += c * pow(clamp((pk - 0.6) / 0.8, 0.0, 1.0), 2.0) * 0.125;
   }
-  let graded = lookGradeColor(L, hdr, bloom, o.uv, o.pos.xy, P.x, 0.0, 0.32, 0.55, 0.0);
+  let graded = lookGradeColor(L, hdr, bloom, o.uv, o.pos.xy, P.x, 0.0, 0.32, 0.55, 0.0, 0.0);
   return vec4f(graded, 1.0);
 }
 `
