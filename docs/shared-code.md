@@ -217,6 +217,25 @@ coordinate and renderer contracts. Each game supplies terrain, interpolated cont
 sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
 game-owned. The smoke pool and GPU pipeline are canonical in `kit/fx`; vehicle smoke paths are compatibility adapters.
 
+## Sound
+
+The shared sound library (`@arcade/kit/audio/library`, [sfx-library.md](sfx-library.md)) holds sounds by semantic id
+with one source file each. Migrations checked against [sfx-inventory.md](sfx-inventory.md) and left as follow-ups,
+because none is a clean swap:
+
+- **Blackout guns, footsteps and mechanics** are procedural (`games/blackout/src/audio/sound.ts`), animation-cued and
+  proven graph-identical to the Lab's path (`games/lab/scripts/prove-game-audio.ts`). Library samples would change
+  their sound and break that proof. Blackout has no pistol; the library has no rifle, shotgun or sniper. To share them,
+  render Blackout's synth into library entries or give the library procedural entries.
+- **Blackout vehicle samples** (`public/sfx/vehicles/`): its crash takes are different encodes of Getaway's crash
+  family (not byte-identical, different lengths and loudness), and six engine loops plus `skid.mp3` (about 250 KB) are
+  no longer referenced since engines became procedural. Pick one crash family and delete the unused loops.
+- **Getaway** sounds are vehicle, siren, radio and round stings: nothing in the library overlaps except `ui.click`,
+  which the library reuses from Getaway's own file in place. `repair.mp3` clips (67 samples, +1.4 dBFS).
+- **Carrier** has its own slot bank, picks and SOUNDS audition board (naval weapons, ocean, weather). `ui.tick` reuses
+  its picked click in place. 99 alternate takes (5.8 MB) are in the repo but load only when auditioned.
+- **Wings** is procedural and an independent project.
+
 ### Outbreak M1 extractions
 
 Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits,level}`,

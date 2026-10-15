@@ -1298,4 +1298,20 @@ Candidates from the code audits; measure and playtest before moving any into the
   rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
   drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
   interior's level to the chase view makes a camera switch change colour, not loudness.
-
+- **Generate many candidates, then let measurements do the first cut.** The shared library
+  (`scripts/sfx/library.ts`, [sfx-library.md](sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
+  them on numbers that catch bad takes without listening: near-silent takes (the first pistol prompt returned six
+  takes peaking at -22 to -39 dBFS), flat-topped runs (real clipping, unlike recoverable decoded overs), SNR over the
+  take's own noise floor, one onset for single events, decay by 0.2 s, timbre distance from the family median and
+  bed steadiness. Footsteps come from 6 s walking takes sliced at onsets and re-trimmed to each step's transient:
+  six consistent steps per surface from two requests. Contact sheets (waveform + spectrogram per candidate) show
+  the picks. It cannot tell whether a groan sounds like a zombie; that still needs ears.
+- **Pad Opus loops on both sides.** Opus decoding attenuates a stream's first samples, so a loop over the whole file
+  jumps at the seam (the interior bed's seam was larger than any sample step inside it). Wrapping the loop region in
+  0.25 s of its own tail before and head after, and looping `[loopStart, loopEnd)`, put every seam step inside the
+  bed's own distribution.
+- **Drive sound from state diffs, like the HUD.** Outbreak's `SoundDirector` reads `CoopSim` each frame (shots,
+  zombie states, doors, planks, bashes, each survivor's `FeedbackActor` fields), so co-op clients sound right from
+  snapshots with no new wire fields. Crowd sounds need explicit spacing: idle groans every 4.5 s / √n, never closer
+  than 0.7 s, each zombie at most every 8 s; alerts one per 0.35 s across the crowd. 100 zombies cost 0.013 ms per
+  frame in the director and 0.037 ms for the whole audio update in the browser.

@@ -29,6 +29,8 @@ function actorVisibility(vision: Vision, x: number, y: number): number {
 export class CoopView {
   readonly hud: CoopHud
   private avatars = new Map<number, Survivor>()
+  /** Remote survivors' foot contacts, for positional footsteps. */
+  onFootfall?: (x: number, y: number, speed: number) => void
   /**
    * Extra survivors in an offline session, drawn exactly like remote ones. Only automation adds them (the HUD proof
    * stages a teammate this way); normal offline play has none.
@@ -118,6 +120,7 @@ export class CoopView {
       let avatar = this.avatars.get(slot.index)
       if (!avatar) {
         avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[slot.index % SURVIVOR_COLOURS.length]!)
+        avatar.onFootfall = (x, y, speed) => this.onFootfall?.(x, y, speed)
         this.avatars.set(slot.index, avatar)
       }
       const p = slot.survivor
