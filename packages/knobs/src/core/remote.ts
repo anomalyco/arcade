@@ -3,15 +3,25 @@ import type { Bezier } from "./easing.js"
 import { RESHAPE, type Reshape } from "./internal.js"
 import {
   action,
+  angle,
   choice,
+  keybind,
+  range,
+  seed,
+  toolbar,
+  vec2,
+  vec3,
+  type Vec3,
   color,
   easing,
   flatSpring,
   knob,
+  pickMeta,
   point,
   spring,
   toggle,
   type Field,
+  type FieldMeta,
   type Knob,
   type Point,
   type Schema,
@@ -29,7 +39,9 @@ import {
   type Controls,
   type DensityMode,
   type GroupPresetDisplay,
+  type HostHistory,
   type PanelKeys,
+  type PersistMode,
   type PanelModule,
   type RendererMode,
   type SyncOptions,
@@ -42,17 +54,8 @@ export interface ChoiceOption {
   readonly value?: string
   readonly label?: string
 }
-interface DescriptorMeta {
+interface DescriptorMeta extends FieldMeta {
   readonly key: string
-  readonly label?: string
-  readonly group?: string
-  /** What the group's header shows, when not the `group` id (see `FieldMeta.groupLabel`). */
-  readonly groupLabel?: string
-  /** The page region the descriptor's group sits in (see `mountPage`). */
-  readonly section?: string
-  /** What the section's heading shows, when not the `section` id. */
-  readonly sectionLabel?: string
-  readonly shortcut?: string
 }
 /**
  * Two flat number keys drawn as one spring card (a curve and two sliders). Values stay flat:
@@ -71,7 +74,25 @@ export interface ActionDescriptor extends DescriptorMeta {
   readonly default?: undefined
   readonly bind?: undefined
 }
-export type ControlDescriptor = ValueDescriptor | SpringBindingDescriptor | ActionDescriptor
+/** A row of buttons; pressing one calls `onAction(item.key)`. */
+export interface ToolbarDescriptor extends DescriptorMeta {
+  readonly kind: "toolbar"
+  readonly items: readonly {
+    readonly key: string
+    readonly label: string
+    readonly icon?: string
+    readonly shortcut?: string
+    readonly global?: boolean
+    readonly disabled?: boolean
+  }[]
+  readonly default?: undefined
+  readonly bind?: undefined
+}
+export type ControlDescriptor =
+  | ValueDescriptor
+  | SpringBindingDescriptor
+  | ActionDescriptor
+  | ToolbarDescriptor
 export interface ValueDescriptor extends DescriptorMeta {
   readonly bind?: undefined
   readonly kind:
@@ -84,7 +105,17 @@ export interface ValueDescriptor extends DescriptorMeta {
     | "color"
     | "point"
     | "easing"
-  /** Springs take `{ duration, bounce }`, colours a CSS string, points `{ x, y }`, easings `[x1, y1, x2, y2]`. */
+    | "vec2"
+    | "vec3"
+    | "range"
+    | "angle"
+    | "seed"
+    | "keybind"
+  /**
+   * Springs take `{ duration, bounce }`, colours a CSS string, points and vec2 `{ x, y }`, vec3
+   * `{ x, y, z }`, easings `[x1, y1, x2, y2]`, ranges `[low, high]`, keybinds a combination
+   * string (`"Meta+K"`).
+   */
   readonly default: Value
   readonly min?: number
   readonly max?: number
@@ -98,6 +129,11 @@ export interface ValueDescriptor extends DescriptorMeta {
   readonly choices?: readonly (string | ChoiceOption)[]
   readonly options?: readonly (string | ChoiceOption)[]
   readonly swiftType?: string
+  /** Vectors: show the link toggle for uniform scaling (`linked` starts it on). */
+  readonly link?: boolean
+  readonly linked?: boolean
+  /** Angles: carry past the ends a whole turn (on for a full turn by default). */
+  readonly wrap?: boolean
 }
 
 export interface RemoteControlsOptions {
@@ -126,6 +162,14 @@ export interface RemoteControlsOptions {
   readonly groupPresetDisplay?: GroupPresetDisplay
   readonly actions?: readonly ControlAction<State>[]
   readonly storage?: StoragePort | null
+  /** What `storage` keeps (see `ControlsOptions.persist`). */
+  readonly persist?: PersistMode
+  /** What Random and Mutate draw from (see `ControlsOptions.random`). */
+  readonly random?: () => number
+  /** Whether Random and Mutate may change a key (see `ControlsOptions.tunable`). */
+  readonly tunable?: (key: string, values: State) => boolean
+  /** An undo stack the host owns (see `HostHistory`). */
+  readonly history?: HostHistory
   readonly theme?: ThemeMode
   readonly density?: DensityMode
   readonly renderer?: RendererMode
@@ -155,12 +199,13 @@ export interface RemoteControls extends Controls<Schema> {
    *
    * Undo history starts over when the descriptors change shape or `land` is set: it belonged to
    * the previous set. `land: true` (a different item arrived) also places every value at once,
-   * without springing or rolling.
+   * without springing or rolling. `mixed` names the keys whose values differ across a
+   * multi-selection (see `SyncOptions.mixed`).
    */
   update(
     descriptors: readonly ControlDescriptor[],
     values?: State,
-    options?: { land?: boolean },
+    options?: { land?: boolean; mixed?: readonly string[] },
   ): void
   swift(group?: string): string
 }
@@ -169,15 +214,13 @@ const optionId = (o: string | ChoiceOption) =>
   typeof o === "string" ? o : String(o.id ?? o.value ?? o.label ?? "")
 
 export function descriptorToField(d: ControlDescriptor): Field {
-  const meta = {
-    ...(d.label !== undefined ? { label: d.label } : {}),
-    ...(d.group !== undefined ? { group: d.group } : {}),
-    ...(d.groupLabel !== undefined ? { groupLabel: d.groupLabel } : {}),
-    ...(d.section !== undefined ? { section: d.section } : {}),
-    ...(d.sectionLabel !== undefined ? { sectionLabel: d.sectionLabel } : {}),
-    ...(d.shortcut !== undefined ? { shortcut: d.shortcut } : {}),
-  }
+  const meta = pickMeta(d)
   if (d.kind === "action") return action(d.label, meta)
+  if (d.kind === "toolbar")
+    return toolbar(
+      d.items.map(({ key, ...item }) => ({ ...item, id: key })),
+      meta,
+    )
   if (d.bind) return flatSpring({}, { ...meta, id: d.key }).duration
   if (d.kind === "knob" || d.kind === "number") {
     const def = typeof d.default === "number" && Number.isFinite(d.default) ? d.default : 0
@@ -215,6 +258,49 @@ export function descriptorToField(d: ControlDescriptor): Field {
   if (d.kind === "point")
     return point(d.default as Point, { min: d.min ?? 0, max: d.max ?? 1, step: d.step, ...meta })
   if (d.kind === "easing") return easing(d.default as Bezier, meta)
+  const numbers = {
+    ...(d.unit !== undefined ? { unit: d.unit } : {}),
+    ...(d.decimals !== undefined ? { decimals: d.decimals } : {}),
+    ...(d.step !== undefined ? { step: d.step } : {}),
+  }
+  if (d.kind === "vec2" || d.kind === "vec3") {
+    const v = (d.default ?? {}) as Partial<Vec3>
+    const opts = {
+      min: d.min ?? -1,
+      max: d.max ?? 1,
+      ...numbers,
+      ...(d.link ? { link: true } : {}),
+      ...(d.linked ? { linked: true } : {}),
+      ...meta,
+    }
+    return d.kind === "vec3"
+      ? vec3({ x: v.x ?? 0, y: v.y ?? 0, z: v.z ?? 0 }, opts)
+      : vec2({ x: v.x ?? 0, y: v.y ?? 0 }, opts)
+  }
+  if (d.kind === "range") {
+    const v = Array.isArray(d.default) ? d.default : [d.min ?? 0, d.max ?? 1]
+    return range([Number(v[0]), Number(v[1])], {
+      min: d.min ?? 0,
+      max: d.max ?? 1,
+      ...numbers,
+      ...meta,
+    })
+  }
+  if (d.kind === "angle")
+    return angle(typeof d.default === "number" ? d.default : 0, {
+      ...(d.min !== undefined ? { min: d.min } : {}),
+      ...(d.max !== undefined ? { max: d.max } : {}),
+      ...(d.step !== undefined ? { step: d.step } : {}),
+      ...(d.wrap !== undefined ? { wrap: d.wrap } : {}),
+      ...meta,
+    })
+  if (d.kind === "seed")
+    return seed(typeof d.default === "number" ? d.default : 0, {
+      ...(d.min !== undefined ? { min: d.min } : {}),
+      ...(d.max !== undefined ? { max: d.max } : {}),
+      ...meta,
+    })
+  if (d.kind === "keybind") return keybind(typeof d.default === "string" ? d.default : "", meta)
   return toggle(Boolean(d.default), meta)
 }
 
@@ -249,14 +335,7 @@ export function fromDescriptors(descriptors: readonly ControlDescriptor[]): Sche
     }
     const pair = flatSpring(
       { duration: half("duration"), bounce: half("bounce") },
-      {
-        id: d.key,
-        ...(d.label !== undefined ? { label: d.label } : {}),
-        ...(d.group !== undefined ? { group: d.group } : {}),
-        ...(d.groupLabel !== undefined ? { groupLabel: d.groupLabel } : {}),
-        ...(d.section !== undefined ? { section: d.section } : {}),
-        ...(d.sectionLabel !== undefined ? { sectionLabel: d.sectionLabel } : {}),
-      },
+      { id: d.key, ...pickMeta(d, ["shortcut"]) },
     )
     entries.push([d.bind.duration, pair.duration], [d.bind.bounce, pair.bounce])
   }
@@ -277,13 +356,34 @@ const swiftLiteral = (d: ValueDescriptor, v: Value): string => {
     const [x1, y1, x2, y2] = (v as Bezier).map(decimal)
     return `.bezier(startControlPoint: UnitPoint(x: ${x1}, y: ${y1}), endControlPoint: UnitPoint(x: ${x2}, y: ${y2}))`
   }
+  if (d.kind === "vec2" || d.kind === "vec3") {
+    const p = v as Vec3
+    return d.kind === "vec3"
+      ? `SIMD3<Double>(${decimal(p.x)}, ${decimal(p.y)}, ${decimal(p.z)})`
+      : `SIMD2<Double>(${decimal(p.x)}, ${decimal(p.y)})`
+  }
+  if (d.kind === "range") {
+    const [a, b] = v as readonly [number, number]
+    return `${decimal(a)}...${decimal(b)}`
+  }
+  if (d.kind === "keybind") return JSON.stringify(v)
+  if (d.kind === "seed") return String(Math.round(v as number))
   if (typeof v === "boolean") return String(v)
   if (typeof v === "string") return `.${v}`
   if (typeof v !== "number") return JSON.stringify(v)
   if (d.swiftType === "Int") return String(Math.round(v))
   return decimal(v)
 }
-const swiftTypes = { color: "Color", point: "CGPoint", easing: "UnitCurve" } as const
+const swiftTypes = {
+  color: "Color",
+  point: "CGPoint",
+  easing: "UnitCurve",
+  vec2: "SIMD2<Double>",
+  vec3: "SIMD3<Double>",
+  range: "ClosedRange<Double>",
+  seed: "Int",
+  keybind: "String",
+} as const
 
 export function formatSwift(
   descriptors: readonly ControlDescriptor[],
@@ -294,7 +394,7 @@ export function formatSwift(
   const done = new Set<string>()
   const lines: string[] = []
   for (const d of descriptors as readonly ValueDescriptor[]) {
-    if ((d.kind as string) === "action" || d.bind) continue
+    if ((d.kind as string) === "action" || (d.kind as string) === "toolbar" || d.bind) continue
     const changed = d.key in values && !same(values[d.key], d.default)
     if (!changed || done.has(d.key) || (group && d.group !== group)) continue
     const base = d.key.replace(/\.(duration|bounce)$/, "")
@@ -341,6 +441,10 @@ export function formatSwift(
 }
 
 /** How long a local change outranks the peer's state for that key. */
+/**
+ * The longest echo hold; a key is released early once the remote reports its new value. Raise it
+ * (`echo`) for peers that acknowledge slowly: a stale echo and a clamped value look alike.
+ */
 const ECHO_MS = 600
 
 /** Copies `source`'s properties, getters as getters, then `extra`'s. */
@@ -369,6 +473,10 @@ export function createRemoteControls(
     ship: options.ship,
     echo: options.echo ?? ECHO_MS,
     storage: options.storage ?? null,
+    persist: options.persist,
+    random: options.random,
+    tunable: options.tunable,
+    history: options.history,
     presets: options.presets,
     groupPresets: options.groupPresets,
     onPreset: options.onPreset,
@@ -408,10 +516,14 @@ export function createRemoteControls(
     get descriptors() {
       return frozenDescriptors
     },
-    update(next: readonly ControlDescriptor[], values: State = {}, opts?: { land?: boolean }) {
+    update(
+      next: readonly ControlDescriptor[],
+      values: State = {},
+      opts?: { land?: boolean; mixed?: readonly string[] },
+    ) {
       // The same array: only the values can have changed.
       if (next === given || next === frozenDescriptors)
-        return controls.sync(values, { replace: true, land: opts?.land })
+        return controls.sync(values, { replace: true, land: opts?.land, mixed: opts?.mixed })
       given = next
       frozenDescriptors = Object.freeze([...next])
       reshape(fromDescriptors(frozenDescriptors), values, opts)

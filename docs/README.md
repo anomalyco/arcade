@@ -51,6 +51,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
   items, loot, crafting or `shared/progression.ts`.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
+- [outbreak-map.md](outbreak-map.md): Outbreak's map (N): what it shows, its input, the optional compass ring and
+  minimap, and how per-chunk memory and cached tiles keep it cheap in a streamed world.
 - [outbreak-look.md](outbreak-look.md), [outbreak-look-v2.md](outbreak-look-v2.md): Outbreak's look studies.
 - [style-playground.md](style-playground.md): the 9-style rendering playground on Outbreak's room sim, measured GPU costs, and full-game scaling verdicts.
 - [outbreak-zombie-profile.md](outbreak-zombie-profile.md): Outbreak's zombie art controls on the shared rig.

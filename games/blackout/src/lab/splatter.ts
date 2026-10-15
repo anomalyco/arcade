@@ -65,9 +65,10 @@ export const splatterSection:SectionFactory=context=>{
   const ranges:Record<keyof typeof splatterPresets.blood,readonly [number,number,number]>={amount:[1,128,1],impulse:[.1,15,.1],spread:[0,2,.05],sizeMin:[.01,.1,.005],sizeMax:[.03,.2,.005],drag:[0,5,.1],gravity:[0,20,.1],r:[0,1,.01],g:[0,1,.01],b:[0,1,.01],opacity:[.1,1,.05],decalSize:[1,8,.1],persistence:[1,60,1],pooling:[0,1,.05],budget:[16,256,16]}
   const labels:Record<string,string>={r:"Red",g:"Green",b:"Blue",sizeMin:"Small drops",sizeMax:"Large drops",decalSize:"Decal size"}
   const primaryKeys=new Set(["amount","impulse","spread","decalSize","opacity","pooling"])
+  // Advanced values sit under a folded "Advanced" sub-heading; the drop sizes are one low–high range.
   for(const [key,range] of Object.entries(ranges)){
     const adv=!primaryKeys.has(key)
-    controls.push({key,label:labels[key]??key[0].toUpperCase()+key.slice(1),group:adv?"Advanced Splatter":"Splatter",folded:adv,type:"range",min:range[0],max:range[1],step:range[2],enabled:()=>s.style===1,change:trigger})
+    controls.push({key,label:labels[key]??key[0].toUpperCase()+key.slice(1),group:"Splatter",...(adv?{subsection:"Advanced"}:{}),...(key==="sizeMin"?{pair:{key:"sizeMax",label:"Drop size"}}:{}),type:"range",min:range[0],max:range[1],step:range[2],enabled:()=>s.style===1,change:trigger})
   }
   const targets:Record<string,{label:string;x:number;y:number;z:number}>={
     floor:{label:"Floor Target",x:13.5,y:0.2,z:11.5},

@@ -3,16 +3,21 @@ import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/mot
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
+import type { QualityMode } from "@arcade/kit/quality"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
+import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
+import { DEFAULT_PACING_TARGETS, type PacingTargetConfig } from "../shared/difficulty-tuner"
+import { BOT_SKILL_PRESETS } from "../shared/survivor-bot"
 import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
   DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
@@ -21,6 +26,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
+import { DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
@@ -63,11 +69,28 @@ export type OutbreakDayCycleSettings = {
 export type OutbreakViewSettings = CameraShakeSettings & {
   zoom: number
   diagnostic: number
+  quality: QualityMode
 }
 
-export type OutbreakCombatSettings = {
+export type OutbreakCombatSettings = MeleeTuning & {
   infiniteAmmo: number
   bloodStyle: number
+}
+
+export type OutbreakBotSettings = PacingTargetConfig & {
+  botEnabled: number
+  botCount: number
+  botSkillPreset: number
+  botDebugOverlay: boolean
+  botReactionTime: number
+  botAimError: number
+  botAimTrackingLag: number
+  botDecisionNoise: number
+  botAwarenessRadius: number
+  botPanicUnderPressure: number
+  botStaminaDiscipline: number
+  botAmmoDiscipline: number
+  botMapKnowledge: number
 }
 
 export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
@@ -116,12 +139,14 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   zoom: 46,
   diagnostic: 0,
+  quality: "auto",
   ...cameraShakeDefaults(),
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
   bloodStyle: 1,
+  ...DEFAULT_MELEE_TUNING,
 }
 
 export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
@@ -129,9 +154,27 @@ export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
   strength: 0,
 }
 
+export const DEFAULT_OUTBREAK_BOTS: OutbreakBotSettings = {
+  botEnabled: 0,
+  botCount: 1,
+  botSkillPreset: 2,
+  botDebugOverlay: false,
+  botReactionTime: BOT_SKILL_PRESETS.Skilled.reactionTime,
+  botAimError: BOT_SKILL_PRESETS.Skilled.aimError,
+  botAimTrackingLag: BOT_SKILL_PRESETS.Skilled.aimTrackingLag,
+  botDecisionNoise: BOT_SKILL_PRESETS.Skilled.decisionNoise,
+  botAwarenessRadius: BOT_SKILL_PRESETS.Skilled.awarenessRadius,
+  botPanicUnderPressure: BOT_SKILL_PRESETS.Skilled.panicUnderPressure,
+  botStaminaDiscipline: BOT_SKILL_PRESETS.Skilled.staminaDiscipline,
+  botAmmoDiscipline: BOT_SKILL_PRESETS.Skilled.ammoDiscipline,
+  botMapKnowledge: BOT_SKILL_PRESETS.Skilled.mapKnowledge,
+  ...DEFAULT_PACING_TARGETS,
+}
+
 export type OutbreakSubsystemMap = {
   lighting: OutbreakLightingSettings
   fog: FogOfWarSettings
+  unseen: UnseenSettings
   ai: AIConfig
   stamina: StaminaTuning
   flashlight: OutbreakFlashlightSettings
@@ -140,6 +183,7 @@ export type OutbreakSubsystemMap = {
   zombies: OutbreakZombieSettings
   survivor: SurvivorAimTuning
   hud: HudSettings
+  map: MapSettings
   audio: AudioSettings
   progression: ProgressionTuning
   world: OutbreakWorldSettings
@@ -150,6 +194,7 @@ export type OutbreakSubsystemMap = {
   combat: OutbreakCombatSettings
   motion: MotionBlurSettings
   vehicle: VehicleTuning
+  bots: OutbreakBotSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -162,6 +207,7 @@ export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
 export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakLightingSettings &
   FogOfWarSettings &
+  UnseenSettings &
   Omit<AIConfig, "walkSpeed"> &
   StaminaTuning &
   OutbreakFlashlightSettings &
@@ -170,6 +216,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakZombieSettings &
   SurvivorAimTuning &
   HudSettings &
+  MapSettings &
   AudioSettings &
   ProgressionTuning &
   OutbreakWorldSettings &
@@ -179,11 +226,13 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakViewSettings &
   OutbreakCombatSettings &
   MotionBlurSettings &
-  VehicleTuning
+  VehicleTuning &
+  OutbreakBotSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
   "fog",
+  "unseen",
   "ai",
   "stamina",
   "flashlight",
@@ -192,6 +241,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "zombies",
   "survivor",
   "hud",
+  "map",
   "audio",
   "progression",
   "world",
@@ -202,6 +252,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "combat",
   "motion",
   "vehicle",
+  "bots",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -211,6 +262,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
       ...OUTBREAK_LOOK_LIGHTING_PRESETS.noir,
     },
     fog: { ...DEFAULT_FOG_OF_WAR },
+    unseen: { ...DEFAULT_UNSEEN_SETTINGS },
     ai: { ...DEFAULT_AI_CONFIG },
     stamina: { ...DEFAULT_STAMINA_TUNING },
     flashlight: { ...DEFAULT_OUTBREAK_FLASHLIGHT },
@@ -219,6 +271,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     zombies: { ...DEFAULT_OUTBREAK_ZOMBIES },
     survivor: { ...survivorAimTuning },
     hud: { ...DEFAULT_HUD_SETTINGS },
+    map: { ...DEFAULT_MAP_SETTINGS },
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
     world: { ...DEFAULT_OUTBREAK_WORLD },
@@ -229,6 +282,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
     motion: { ...DEFAULT_OUTBREAK_MOTION },
     vehicle: { ...DEFAULT_VEHICLE_TUNING },
+    bots: { ...DEFAULT_OUTBREAK_BOTS },
   }
 }
 
@@ -250,6 +304,9 @@ const KEY_ROUTING: Readonly<Record<string, KeyTarget>> = (() => {
   map.aiWalkSpeed = { subsystem: "ai", field: "walkSpeed", sample: DEFAULTS_TEMPLATE.ai.walkSpeed }
   for (const field of ["startHour", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
     map[`pacing.${field}`] = { subsystem: "ai", field, sample: DEFAULTS_TEMPLATE.ai[field] }
+  }
+  for (const field of Object.keys(DEFAULT_PACING_TARGETS) as (keyof PacingTargetConfig)[]) {
+    map[`pacingTargets.${field}`] = { subsystem: "bots", field, sample: DEFAULTS_TEMPLATE.bots[field] }
   }
   return map
 })()

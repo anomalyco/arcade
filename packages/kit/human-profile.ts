@@ -11,6 +11,8 @@ export type HumanProfile = {
   bodyHz: number; footCentreHz: number; chestHz: number; headHz: number
   timingBias: number; footDrag: number; torsoLean: number; torsoRoll: number
   headTilt: number; armAsymmetry: number; armReach: number
+  /** Strafing: hip turn toward travel at a slow side-step and at speed (rad), crossover blend speed (m/s), side-step boot gap (m). */
+  sideStepTurn: number; strafeHipTurn: number; crossoverSpeed: number; strafeGap: number
   handPose: "weapon" | "staff" | "reach"
   zombieVariant: ZombieVariant
 }
@@ -22,7 +24,8 @@ const soldier: Readonly<HumanProfile> = Object.freeze({
   runPosture: 0.34, crouchDepth: 0.08, headStability: 0.8,
   bodyHz: 3, footCentreHz: 4, chestHz: 5, headHz: 7,
   timingBias: 0, footDrag: 0, torsoLean: 0, torsoRoll: 0,
-  headTilt: 0, armAsymmetry: 0, armReach: 0.42, handPose: "weapon",
+  headTilt: 0, armAsymmetry: 0, armReach: 0.42,
+  sideStepTurn: 0.3, strafeHipTurn: 0.95, crossoverSpeed: 2.6, strafeGap: 0.2, handPose: "weapon",
   zombieVariant: "auto",
 })
 export const humanProfiles: Readonly<Record<HumanPreset, Readonly<HumanProfile>>> = Object.freeze({
@@ -79,6 +82,10 @@ export const humanProfileControls: LabControl[] = [
   range("torsoLean", "Hunch", -0.15, 0.35, 0.02, "rad"), range("torsoRoll", "Torso cant", -0.2, 0.2, 0.02, "rad"),
   range("headTilt", "Head tilt", -0.3, 0.3, 0.02, "rad"), range("armAsymmetry", "Arm asymmetry", -0.18, 0.18, 0.02, "m"),
   range("armReach", "Reach", 0.2, 0.52, 0.02, "m"),
+  range("sideStepTurn", "Side-step hip turn · rad", 0, 0.8, 0.05, "rad"),
+  range("strafeHipTurn", "Strafe hip turn · rad", 0.3, 1.05, 0.05, "rad"),
+  range("crossoverSpeed", "Crossover speed · m/s", 1.2, 5, 0.1, "m/s"),
+  range("strafeGap", "Side-step boot gap · m", 0.12, 0.32, 0.01, "m"),
   { key: "handPose", label: "Hands", group: "Animation", options: [
     { label: "Weapon", value: "weapon" }, { label: "Staff", value: "staff" }, { label: "Reach", value: "reach" },
   ] },

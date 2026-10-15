@@ -64,6 +64,12 @@ export interface PassContext {
   readonly color: GPUTextureFormat
   /** Depth attachment format (`"depth24plus"`, `"depth24plus-stencil8"`, or `"depth32float"`). */
   readonly depth: GPUTextureFormat
+  /** Depth convention (`"standard"`, `"stencil"`, or `"reversed-z"`). */
+  readonly depthMode?: DepthMode
+  /** Default depth comparison function (`"less-equal"`, `"less"`, or `"greater-equal"`). */
+  readonly depthCompare?: GPUCompareFunction
+  /** Default depth clear value (`1` for standard/stencil, `0` for reversed-Z). */
+  readonly depthClearValue?: number
   /** MSAA sample count (4). */
   readonly samples: number
 }
@@ -175,11 +181,24 @@ export interface ShadowInstanceRange {
   readonly noShadow?: boolean
 }
 
+export interface DirectionalShadowEncodeInput<C extends ShadowChunkAabb = ShadowChunkAabb> {
+  readonly staticMesh?: { vbuf: GPUBuffer; chunks: readonly C[] } | null
+  readonly shadowPlanes: Float32Array
+  readonly camPlanes: Float32Array
+  readonly instBuf: GPUBuffer
+  readonly models: readonly ShadowModelEntry[]
+  readonly ranges: readonly ShadowInstanceRange[]
+  readonly timestampWrites?: GPURenderPassTimestampWrites
+  readonly sweepSlope?: number
+  readonly minHeight?: number
+}
+
 /**
  * Reusable orthographic directional sun/moon shadow-map pass (`depth32float`, default `2048²`)
- * with shadow-sweep frustum culling (`isShadowCasterVisible`) and contiguous chunk draw merging.
+ * with shadow-sweep frustum culling (`isShadowCasterVisible`), contiguous chunk draw merging,
+ * pre-allocated render-pass descriptor, and `ScenePass` (`prepare(enc)`) plugin compatibility.
  */
-export class DirectionalShadowPass {
+export class DirectionalShadowPass implements ScenePass {
   readonly size: number
   readonly texture: GPUTexture
   readonly view: GPUTextureView
@@ -188,6 +207,9 @@ export class DirectionalShadowPass {
   readonly group: GPUBindGroup
   readonly staticPipeline: GPURenderPipeline
   readonly instPipeline: GPURenderPipeline
+  private readonly passDesc: GPURenderPassDescriptor
+  private pendingInput: DirectionalShadowEncodeInput | null = null
+  lastStats = { vertsDrawn: 0, chunksDrawn: 0 }
 
   constructor(opts: {
     device: GPUDevice
@@ -216,6 +238,15 @@ export class DirectionalShadowPass {
       layout: this.layout,
       entries: [{ binding: 0, resource: { buffer: opts.frameBuf } }],
     })
+    this.passDesc = {
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.view,
+        depthClearValue: 1,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
+    }
     const shadowMod = compileShaderModuleWithLog(d, opts.shadowShaderCode, opts.label ?? "directional-shadow")
     const pipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.layout] })
     const makePipe = (vs: string, buffers: GPUVertexBufferLayout[]) =>
@@ -235,30 +266,28 @@ export class DirectionalShadowPass {
     this.instPipeline = makePipe("vsInst", [opts.meshPosLayout, opts.instLayout])
   }
 
+  /** Queues the current frame's shadow casters when registered in a `PassList` via `addPass`. */
+  setFrameInput<C extends ShadowChunkAabb>(input: DirectionalShadowEncodeInput<C>): void {
+    this.pendingInput = input
+  }
+
+  prepare(enc: GPUCommandEncoder): void {
+    if (!this.pendingInput) return
+    const input = this.pendingInput
+    this.pendingInput = null
+    this.encode(enc, input)
+  }
+
+  draw(_pass: GPURenderPassEncoder): void {
+    // Offscreen depth-only shadow pass runs during `prepare(enc)` or explicit `encode(enc, ...)`.
+  }
+
   encode<C extends ShadowChunkAabb>(
     enc: GPUCommandEncoder,
-    opts: {
-      staticMesh?: { vbuf: GPUBuffer; chunks: readonly C[] } | null
-      shadowPlanes: Float32Array
-      camPlanes: Float32Array
-      instBuf: GPUBuffer
-      models: readonly ShadowModelEntry[]
-      ranges: readonly ShadowInstanceRange[]
-      timestampWrites?: GPURenderPassTimestampWrites
-      sweepSlope?: number
-      minHeight?: number
-    },
+    opts: DirectionalShadowEncodeInput<C>,
   ): { vertsDrawn: number; chunksDrawn: number } {
-    const sp = enc.beginRenderPass({
-      timestampWrites: opts.timestampWrites,
-      colorAttachments: [],
-      depthStencilAttachment: {
-        view: this.view,
-        depthClearValue: 1,
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
-      },
-    })
+    this.passDesc.timestampWrites = opts.timestampWrites
+    const sp = enc.beginRenderPass(this.passDesc)
     sp.setBindGroup(0, this.group)
     let vertsDrawn = 0
     let chunksDrawn = 0
@@ -293,6 +322,54 @@ export class DirectionalShadowPass {
       sp.draw(m.count, r.count, 0, r.first)
     }
     sp.end()
-    return { vertsDrawn, chunksDrawn }
+    this.lastStats = { vertsDrawn, chunksDrawn }
+    return this.lastStats
   }
+}
+
+/**
+ * Computes a column-major WebGPU `[0..1]` orthographic directional light view-projection matrix
+ * whose view-space translation (`tx`, `ty`) is snapped to shadow-map texel increments (`2 * halfExtent / shadowSize`),
+ * eliminating sub-texel shadow edge shimmer as the camera pans.
+ */
+export function texelSnappedOrthoLightMatrix(
+  eye: readonly number[],
+  target: readonly number[],
+  opts?: { halfExtent?: number; near?: number; far?: number; shadowSize?: number },
+): number[] {
+  const dx = eye[0]! - target[0]!
+  const dy = eye[1]! - target[1]!
+  const dz = eye[2]! - target[2]!
+  const zLen = Math.hypot(dx, dy, dz) || 1
+  const zx = dx / zLen
+  const zy = dy / zLen
+  const zz = dz / zLen
+  const xLen = Math.hypot(zz, 0, -zx) || 1
+  const xx = zz / xLen
+  const xy = 0
+  const xz = -zx / xLen
+  const yx = zy * xz - zz * xy
+  const yy = zz * xx - zx * xz
+  const yz = zx * xy - zy * xx
+  const S = opts?.halfExtent ?? 150
+  const near = opts?.near ?? 50
+  const far = opts?.far ?? 600
+  const shadowSize = opts?.shadowSize ?? 2048
+  const step = (2 * S) / shadowSize
+  const dotX = xx * eye[0]! + xy * eye[1]! + xz * eye[2]!
+  const dotY = yx * eye[0]! + yy * eye[1]! + yz * eye[2]!
+  const dotZ = zx * eye[0]! + zy * eye[1]! + zz * eye[2]!
+  const tx = Math.round(-dotX / step) * step
+  const ty = Math.round(-dotY / step) * step
+  const view = [xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, tx, ty, -dotZ, 1]
+  const proj = [1 / S, 0, 0, 0, 0, 1 / S, 0, 0, 0, 0, -1 / (far - near), 0, 0, 0, -near / (far - near), 1]
+  const r = new Array<number>(16).fill(0)
+  for (let c = 0; c < 4; c++) {
+    for (let rr = 0; rr < 4; rr++) {
+      for (let k = 0; k < 4; k++) {
+        r[c * 4 + rr]! += proj[k * 4 + rr]! * view[c * 4 + k]!
+      }
+    }
+  }
+  return r
 }

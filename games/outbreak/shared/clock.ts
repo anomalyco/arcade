@@ -38,6 +38,8 @@ export class FrameClock {
   private activeMove: { mx: number; my: number; sprint: boolean } = { mx: 0, my: 0, sprint: false }
   private latestMove: { mx: number; my: number; sprint: boolean } = { mx: 0, my: 0, sprint: false }
   private transitions: MoveTransition[] = []
+  private lastPrimeMs = -Infinity
+  private primedStepPending = false
 
   reset(nowMs: number | null = null, move: MoveSample = { mx: 0, my: 0 }): void {
     this.lastMs = nowMs
@@ -46,6 +48,7 @@ export class FrameClock {
     this.activeMove = { mx: move.mx, my: move.my, sprint: Boolean(move.sprint) }
     this.latestMove = { mx: move.mx, my: move.my, sprint: Boolean(move.sprint) }
     this.transitions.length = 0
+    this.primedStepPending = false
   }
 
   pause(nowMs: number | null = null): void {
@@ -54,6 +57,28 @@ export class FrameClock {
     this.simCursorMs = nowMs ?? 0
     this.activeMove = { ...this.latestMove }
     this.transitions.length = 0
+    this.primedStepPending = false
+  }
+
+  /**
+   * Aligns the fixed-tick phase to `nowMs` on an idle-to-moving input edge so the first movement step
+   * executes and submits in the same frame without waiting up to 16.67 ms for the trailing tick boundary.
+   * Rate-limited so rapid tapping cannot accelerate simulation time.
+   */
+  primeIdleMove(nowMs: number, move: MoveSample): boolean {
+    if (move.mx === 0 && move.my === 0) return false
+    if (this.activeMove.mx !== 0 || this.activeMove.my !== 0) return false
+    if (nowMs - this.lastPrimeMs < 200) return false
+    if (this.readyForStep(nowMs)) return false
+    this.lastPrimeMs = nowMs
+    this.lastMs = nowMs
+    this.accMs = TICK_MS
+    this.simCursorMs = nowMs - TICK_MS
+    this.activeMove = { mx: move.mx, my: move.my, sprint: Boolean(move.sprint) }
+    this.latestMove = { ...this.activeMove }
+    this.transitions.length = 0
+    this.primedStepPending = true
+    return true
   }
 
   /** Record a movement transition at its wall-clock timestamp so substeps do not replay it across earlier time. */
@@ -172,6 +197,10 @@ export class FrameClock {
         jump: i === 0 ? jump : false,
         interactHeld,
       })
+    }
+    if (this.primedStepPending) {
+      this.primedStepPending = false
+      this.lastMs = nowMs + 3.0
     }
     return out
   }

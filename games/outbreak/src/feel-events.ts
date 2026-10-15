@@ -3,8 +3,11 @@ import { MotionBlurBurst } from "@arcade/kit/gpu/motion-blur"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { NetSession } from "./net-session"
+import "./melee/index"
 import type { OutbreakSettings } from "./settings"
+import "./vehicles/index"
 import type { ZombieCrowdRenderer } from "./zombies"
 
 /**
@@ -21,7 +24,6 @@ export class OutbreakFeelTracker {
   private readonly prevPortalBashTime = new Map<string, number>()
   private readonly prevPortalPlanks = new Map<string, number>()
   private readonly prevDoorOpen = new Map<string, boolean>()
-  private readonly processedVehicleHits = new Set<string>()
 
   constructor(
     private readonly cam: Camera,
@@ -41,7 +43,7 @@ export class OutbreakFeelTracker {
     this.prevPortalBashTime.clear()
     this.prevPortalPlanks.clear()
     this.prevDoorOpen.clear()
-    this.processedVehicleHits.clear()
+    outbreakClientFeatures.resetFeel(this, player)
   }
 
   triggerShot(aim: number, power = 1): void {
@@ -235,33 +237,7 @@ export class OutbreakFeelTracker {
     }
 
     combatFx.legacyMode = settings.combat.bloodStyle === 2
-    for (const hit of session.sim.vehicles.recentHits) {
-      const hitKey = `${hit.vehicleId}:${hit.zombieId}:${hit.time.toFixed(3)}`
-      if (this.processedVehicleHits.has(hitKey)) continue
-      this.processedVehicleHits.add(hitKey)
-      if (this.processedVehicleHits.size > 128) {
-        this.processedVehicleHits.delete(this.processedVehicleHits.keys().next().value!)
-      }
-      if (settings.combat.bloodStyle !== 0) {
-        combatFx.emitShoveHit(
-          hit.x,
-          hit.y,
-          Math.atan2(hit.dirY, hit.dirX),
-          supportHeight(town, hit.x, hit.y),
-          hit.killed ? 3 : 1,
-          Math.floor(hit.time * 1000) + hit.zombieId,
-        )
-      }
-      if (hit.vehicleId === p.vehicleId) {
-        const pwr = Math.min(1.4, 0.65 + hit.speed * 0.08)
-        const dir = Math.atan2(hit.dirY, hit.dirX)
-        cam.add((hit.killed ? 0.24 : 0.14) * pwr, dir, (hit.killed ? 0.9 : 0.5) * pwr)
-        if (hit.killed) {
-          cam.punch(-0.16 * pwr, 0)
-        }
-      }
-    }
-    return combatFx.processShots(
+    let addCount = combatFx.processShots(
       shots,
       time,
       dt,
@@ -289,5 +265,20 @@ export class OutbreakFeelTracker {
         }
       },
     )
+
+    addCount = outbreakClientFeatures.processFeelFrame({
+      tracker: this,
+      session,
+      combatFx,
+      zombieCrowd,
+      addSprites,
+      addCount,
+      playerGroundY,
+      dt,
+      settings,
+      cam,
+    })
+
+    return addCount
   }
 }

@@ -11,6 +11,18 @@ import {
 import { SurfaceTexUniformsStruct, surfaceMaterialCoreWgsl } from "@arcade/kit/gpu/surface-materials"
 import { BUILDING_RECTS } from "../../shared/map"
 import { outbreakPostFinish } from "../shaders"
+import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, interiorUniformFieldsWgsl, MAT_RUG, type InteriorWgslRefs } from "../interiors/wgsl"
+
+/** The vignette's one house is `houseRect(0)`; rug directory, config and theme are appended to `Vig`. */
+const vignetteInteriorRefs: InteriorWgslRefs = {
+  dir: s => `Vig.rugDir[clamp(${s}, 0, 8)]`,
+  cfg: "Vig.rugCfg",
+  theme: i => `Vig.bldTheme[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
+  buildingCount: "1",
+  buildingRect: i => `houseRect(${i})`,
+  flashXZ: "Vig.params3.xy",
+  classicLayout: "true",
+}
 
 export const vignetteSceneHooks: SceneHooks = {
   ao: "0.42",
@@ -25,7 +37,9 @@ export const vignetteSceneHooks: SceneHooks = {
   smoothShadows: true,
   shadowTaps: 5,
   lightMask: "if (L.cone.w < -0.5 && world.y > 2.75) { continue; } if (L.extra.w < -0.5 && !useVignetteWorld(world)) { continue; }",
-  fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
+  fragmentStart: `surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w; ${interiorFragmentStartWgsl}`,
+  // Rugs carry uv in the vertex colour; the look's moon rim reads the rug's albedo instead.
+  lookBaseColor: `select(o.color, vigBaseAlbedo, mat == ${MAT_RUG})`,
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
     let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig(), noFoliageActors());
@@ -62,10 +76,11 @@ struct VignetteUniforms {
   // x: tanHalfAngle, y: flashRange, z: flashHaze, w: flashSlot (<0 if off)
   params4: vec4f,
   // x: fogStyle (0=soft, 1=noir memory, 2=stark cone), y: fogEdgeSoftness, z: fogMemoryDim, w: fogUnknownGrain
-  params5: vec4f,
+  params5: vec4f,${interiorUniformFieldsWgsl}
 }
 @group(0) @binding(13) var<uniform> Vig: VignetteUniforms;
 var<private> surfaceTexRatio: vec3f;
+var<private> vigBaseAlbedo: vec3f;
 
 fn useVignetteActive(fragPos: vec4f) -> bool {
   let mode = i32(round(Vig.params0.x));
@@ -172,6 +187,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   let range = 1.0 - smoothstep(lights[0].pos.w - (1.0 + 2.0 * soft), lights[0].pos.w, distance);
   return clamp(los * max(cone, near) * range, 0.0, 1.0);
 }
+${interiorDeclarationsWgsl(vignetteInteriorRefs)}
 `,
     material: /* wgsl */ `
     let activeVignette = useVignetteActive(o.pos);
@@ -371,7 +387,9 @@ fn eyeVisible(p: vec2f) -> f32 {
       }
       gloss = vec2f(0.0);
     }
-    surfaceTexRatio = clamp(albedo / max(o.color, vec3f(0.02)), vec3f(0.55), vec3f(1.55));
+    ${interiorMaterialWgsl(vignetteInteriorRefs, true)}
+    vigBaseAlbedo = albedo;
+    surfaceTexRatio = select(clamp(albedo / max(o.color, vec3f(0.02)), vec3f(0.55), vec3f(1.55)), vec3f(1.0), mat == ${MAT_RUG});
 `,
     directional:
       "mix(vec3f(0.46, 0.68, 1.08), vec3f(1.05, 0.76, 0.44), clamp(F.monitorBounds.w + select(0.0, Vig.params1.z * 0.65, useVignetteActive(o.pos)), 0.0, 1.0)) * select(fd.g * 0.35, 1.0, !interior(o.world.xz) || o.world.y > 2.8) * F.ambient.w * select(1.0, Vig.params2.w, useVignetteActive(o.pos)) * max(0.0, dot(n, F.monitorBounds.xyz))",

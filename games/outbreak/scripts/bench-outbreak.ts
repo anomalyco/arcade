@@ -42,6 +42,7 @@ const server = await createServer({
         if (id !== resolve(root, "src/main.ts")) return
         return code
           .replace("const harness = {", "const harness = { renderer, render, lab, session: () => session, vision: () => vision,")
+          .replace("Object.assign(harness, { map })", "Object.assign(harness, { map, renderer, render, lab, session: () => session, vision: () => vision })")
           .replace(
             "function tick(now: number) {",
             "function tick(now: number) { const stats = (window as any).__pacing; if (stats?.active) stats.callbacks.push({ wall: performance.now(), raf: now, hidden: document.hidden, frozen });",

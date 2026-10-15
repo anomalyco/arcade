@@ -1,9 +1,12 @@
+import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
+import { interiorSettings, interiorSignature } from "./interiors/plan"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import {
+  BUILDING_RECTS,
   buildingFootprint,
   CHUNK,
   frontageEnd,
@@ -106,6 +109,8 @@ export type CompiledRoofChunk = {
   data: ArrayBuffer
   box: readonly [number, number, number, number]
   cutBox: readonly number[]
+  /** Index into the chunk's `buildings` (roofless buildings have no chunk, so this is not the array index). */
+  buildingIndex: number
   lastGlobalId: number
 }
 
@@ -149,10 +154,20 @@ export function emitPoiArchitecture(m: Mesh, b: Building, id: number, town: Town
     const ridge = arch === "church" ? 5.15 : arch === "cabin" ? 3.85 : arch === "house" ? 4.35 : 4.15
     const roofCol = hex(arch === "church" ? 0x3e4248 : arch === "cabin" ? 0x3c3228 : 0x4e4b46)
     const eaveCol = hex(0x58534a)
-    m.quadAuto([x - 0.35, 2.82, e + 0.35], [r + 0.35, 2.82, e + 0.35], [r + 0.35, ridge, midZ], [x - 0.35, ridge, midZ], roofCol, MAT.roof, id)
-    m.quadAuto([r + 0.35, 2.82, z - 0.35], [x - 0.35, 2.82, z - 0.35], [x - 0.35, ridge, midZ], [r + 0.35, ridge, midZ], roofCol, MAT.roof, id)
-    m.facet([x - 0.01, 2.8, z], [x - 0.01, ridge, midZ], [x - 0.01, 2.8, e], hex(b.color), MAT.roof, id)
-    m.facet([r + 0.01, 2.8, e], [r + 0.01, ridge, midZ], [r + 0.01, 2.8, z], hex(b.color), MAT.roof, id)
+    if (b.id === "ash" || b.id === "elm") {
+      // Classic origin L-shaped bungalow roof matching the stepped-in north bedroom & NE wing walls
+      m.quadAuto([x - 0.35, 2.82, e + 0.35], [r + 0.35, 2.82, e + 0.35], [r + 0.35, ridge, midZ], [x - 0.35, ridge, midZ], roofCol, MAT.roof, id)
+      m.quadAuto([x + 9.75, 2.82, z - 0.35], [x + 1.85, 2.82, z - 0.35], [x + 1.85, ridge, midZ], [x + 9.75, ridge, midZ], roofCol, MAT.roof, id)
+      m.quadAuto([x - 0.35, 2.84, z + 1.2], [x - 0.35, 2.84, z + 5.55], [x + 2.05, 3.48, z + 5.55], [x + 2.05, 3.48, z + 1.2], roofCol, MAT.roof, id)
+      m.quadAuto([x + 9.45, 3.46, z + 5.55], [r - 0.35, 3.46, z + 5.55], [r - 0.35, 2.84, z + 1.45], [x + 9.45, 2.84, z + 1.45], roofCol, MAT.roof, id)
+      m.facet([x - 0.01, 2.8, z + 5.5], [x - 0.01, ridge, midZ], [x - 0.01, 2.8, e], hex(b.color), MAT.roof, id)
+      m.facet([r + 0.01, 2.8, e], [r + 0.01, ridge, midZ], [r + 0.01, 2.8, z + 5.5], hex(b.color), MAT.roof, id)
+    } else {
+      m.quadAuto([x - 0.35, 2.82, e + 0.35], [r + 0.35, 2.82, e + 0.35], [r + 0.35, ridge, midZ], [x - 0.35, ridge, midZ], roofCol, MAT.roof, id)
+      m.quadAuto([r + 0.35, 2.82, z - 0.35], [x - 0.35, 2.82, z - 0.35], [x - 0.35, ridge, midZ], [r + 0.35, ridge, midZ], roofCol, MAT.roof, id)
+      m.facet([x - 0.01, 2.8, z], [x - 0.01, ridge, midZ], [x - 0.01, 2.8, e], hex(b.color), MAT.roof, id)
+      m.facet([r + 0.01, 2.8, e], [r + 0.01, ridge, midZ], [r + 0.01, 2.8, z], hex(b.color), MAT.roof, id)
+    }
     m.box(x - 0.38, 2.72, e + 0.28, r + 0.38, 2.84, e + 0.38, eaveCol, MAT.roof, id)
     m.box(x - 0.38, ridge - 0.04, midZ - 0.12, r + 0.38, ridge + 0.05, midZ + 0.12, hex(0x666056), MAT.roof, id)
 
@@ -447,7 +462,7 @@ export function recycleCompiledChunk(chunk: CompiledWorldChunk): void {
     chunk.floorTile.byteLength === 128 * 128 * 2 &&
     chunk.moonTile.byteLength === 256 * 256 &&
     chunk.bounceTile.byteLength === 64 * 64 * 4 &&
-    tilePool.length < 32
+    tilePool.length < 56
   ) {
     tilePool.push({
       floorTile: chunk.floorTile,
@@ -468,7 +483,7 @@ export function recycleTileBuffers(
     floorBuf.byteLength === 128 * 128 * 2 &&
     moonBuf.byteLength === 256 * 256 &&
     bounceBuf.byteLength === 64 * 64 * 4 &&
-    tilePool.length < 32
+    tilePool.length < 56
   ) {
     tilePool.push({
       floorTile: new Uint8Array(floorBuf),
@@ -582,6 +597,17 @@ export function compileSingleWorldChunk(
   }
 
   const footprints = chunk.buildings.map(buildingFootprint)
+  const isClassicOriginChunk =
+    chunk.cx >= 0 &&
+    chunk.cx < 3 &&
+    chunk.cy >= 0 &&
+    chunk.cy < 3 &&
+    (chunk.buildings.length === 0 || !chunk.buildings[0]!.id.startsWith("c"))
+  const terrainFootprints = isClassicOriginChunk
+    ? BUILDING_RECTS.map((r, idx) =>
+        buildingFootprint({ id: idx < 2 ? "house" : "store", kind: idx < 2 ? "house" : "hardware", rect: [...r] as Rect, color: 0 }),
+      )
+    : footprints
 
   // 1. Precompute 33×33 terrain height grid and emit 1×1m terrain cells directly into opaqueScratch
   for (let dz = 0; dz <= CHUNK; dz++) {
@@ -603,8 +629,8 @@ export function compileSingleWorldChunk(
       const lx = macroLocalCoord(x)
       if (lx >= 40 && lx < 48) continue
       let inFp = false
-      for (let bIdx = 0; bIdx < footprints.length && !inFp; bIdx++) {
-        const fp = footprints[bIdx]!
+      for (let bIdx = 0; bIdx < terrainFootprints.length && !inFp; bIdx++) {
+        const fp = terrainFootprints[bIdx]!
         for (let fIdx = 0; fIdx < fp.length; fIdx++) {
           const f = fp[fIdx]!
           if (x >= f[0] && x + 1 <= f[2] && z >= f[1] && z + 1 <= f[3]) {
@@ -704,6 +730,8 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
+    emitBuildingRugs(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown)
   }
 
   // 5. Walls, windows & fences
@@ -984,16 +1012,19 @@ export function compileSingleWorldChunk(
   if (mainScratch.count) {
     const mv = mainScratch.v
     for (let i = 0; i < mv.length; i += 33) {
+      let minY = Infinity
       let maxY = -Infinity
       let hasRoof = false
       let hasScreen = false
       for (let j = 0; j < 33; j += 11) {
         const vy = mv[i + j + 1]!
         const mat = Math.round(mv[i + j + 9]!)
+        if (vy < minY) minY = vy
         if (vy > maxY) maxY = vy
         if (mat === 21) hasRoof = true
         if ((mat === 4 || mat === 9 || mat === 11) && vy > 1.0) hasScreen = true
       }
+      if (minY > 2.801) hasRoof = true
       let dst: number[]
       if (hasRoof && chunk.buildings.length > 0) {
         const localId = Math.max(0, Math.min(chunk.buildings.length - 1, Math.round(mv[i + 10]!)))
@@ -1112,11 +1143,15 @@ export function compileSingleWorldChunk(
     const b = chunk.buildings[localId]!
     const rm = roofScratchPool[localId]!
     if (!rm.count) continue
-    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 6.5, b.rect[3] + 1.7] as const
+    const isOriginHouse = b.id === "ash" || b.id === "elm"
+    const southPad = isOriginHouse ? 1.7 : 0.1
+    // "outside" chunks are skipped while the survivor stands inside this box, so it hugs the walls (no porch margin).
+    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 7.5, b.rect[3] + southPad] as const
     roofChunks.push({
       data: stampOutbreakVertexTone(rm.pack()),
-      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + 1.7] as const,
+      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + southPad] as const,
       cutBox: bounds,
+      buildingIndex: localId,
       lastGlobalId: localId,
     })
   }
@@ -1146,31 +1181,35 @@ export function compileSingleWorldChunk(
 function packChunkMeshesForWindow(
   compiled: CompiledWorldChunk,
   windowBuildings: readonly Building[],
+  isFading = false,
 ): { opaque: LevelChunk[]; glass: LevelChunk[] } {
-  const slot = (((compiled.cy % 3) + 3) % 3) * 3 + (((compiled.cx % 3) + 3) % 3)
+  const slot = (((compiled.cy % 5) + 5) % 5) * 5 + (((compiled.cx % 5) + 5) % 5)
   const rChunks = compiled.roofChunks
-  if (!rChunks || rChunks.length === 0 || compiled.buildings.length === 0) {
-    const streamKey = `${compiled.key}:${compiled.hash}`
-    const outOpaque: LevelChunk[] = []
-    for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
-      const c = compiled.staticOpaqueChunks[i]!
-      outOpaque.push({ ...c, streamSlot: slot, streamKey })
-    }
-    return { opaque: outOpaque, glass: compiled.glassChunks }
-  }
-  const bldIndexOffset = Math.max(
-    0,
-    windowBuildings.findIndex((b) => b.id === compiled.buildings[0]?.id),
-  )
-  const streamKey = `${compiled.key}:${compiled.hash}:${bldIndexOffset}`
+  const globalIds =
+    rChunks && rChunks.length > 0 && compiled.buildings.length > 0
+      ? rChunks.map((rc) => {
+          const id = compiled.buildings[rc.buildingIndex]?.id
+          const s = id ? windowBuildings.findIndex((b) => b.id === id) : -1
+          return s >= 0 ? Math.min(15, s) : 15
+        })
+      : []
+  const streamKey = globalIds.length > 0 ? `${compiled.key}:${compiled.hash}:${globalIds.join(",")}` : `${compiled.key}:${compiled.hash}`
   const outOpaque: LevelChunk[] = []
   for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
     const c = compiled.staticOpaqueChunks[i]!
-    outOpaque.push({ ...c, streamSlot: slot, streamKey })
+    outOpaque.push({
+      ...c,
+      ...(isFading ? { customCutaway: "fade" as const } : {}),
+      streamSlot: slot,
+      streamKey,
+    })
+  }
+  if (!rChunks || rChunks.length === 0 || compiled.buildings.length === 0) {
+    return { opaque: outOpaque, glass: compiled.glassChunks }
   }
   for (let localId = 0; localId < rChunks.length; localId++) {
     const rc = rChunks[localId]!
-    const globalId = Math.min(15, bldIndexOffset + localId)
+    const globalId = globalIds[localId]!
     if (rc.lastGlobalId !== globalId) {
       rc.lastGlobalId = globalId
       const halfId = HALF_INT[globalId]!
@@ -1184,7 +1223,8 @@ function packChunkMeshesForWindow(
       data: rc.data,
       box: rc.box,
       cutBox: rc.cutBox,
-      customCutaway: true,
+      // Skipped whole while inside (keeps fsSolid/HSR for the roof elsewhere); the peek bubble still uses roofCut.
+      customCutaway: "outside",
       streamSlot: slot,
       streamKey,
     })
@@ -1206,15 +1246,17 @@ type BakeTask = {
   priority: number
 }
 
+const CHUNK_FADE_DURATION = 0.28
+
 /**
- * Client-side 3×3 chunk window streamer with a pooled LRU cache of compiled chunk tiles,
- * directional lookahead pre-warming, and off-thread Web Worker compilation with transferable buffers.
+ * Client-side 5×5 rendered / 3×3 lit chunk window streamer with a 25-slot toroidal GPU vertex buffer,
+ * speed-scaled directional lookahead pre-warming, off-thread Web Worker compilation, and smooth late-chunk fade-in.
  */
 export class WorldClientStreamer {
   private readonly cache = new Map<string, CompiledWorldChunk>()
   private readonly bakeQueue: BakeTask[] = []
   private readonly inflightKeys = new Set<string>()
-  private readonly maxCachedChunks = 24
+  private readonly maxCachedChunks = 48
 
   private readonly stitchedFloor = new Uint8Array(384 * 384 * 2)
   private readonly stitchedMoon = new Uint8Array(768 * 768)
@@ -1226,11 +1268,16 @@ export class WorldClientStreamer {
   private workers: Worker[] = []
   private workerBusy: boolean[] = []
   private nextReqId = 1
+  private recycleWorkerIdx = 0
   private lastPlayerX = NaN
   private lastPlayerY = NaN
   private dirX = 1
   private dirY = 0
+  private outerRingDirty = false
   private fastLookahead = false
+  private lastViewRect: readonly [number, number, number, number] | undefined = undefined
+  private readonly renderedChunkKeys = new Set<string>()
+  private readonly chunkFadeStart = new Map<string, number>()
 
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
@@ -1239,6 +1286,7 @@ export class WorldClientStreamer {
   lastWindowKey = ""
   bakeStepsCompleted = 0
   lastBakeMs = 0
+  chunkFadeAlpha = 0
 
   constructor() {
     this.initWorkers()
@@ -1257,6 +1305,9 @@ export class WorldClientStreamer {
           this.inflightKeys.delete(cacheKey)
           if (!this.cache.has(cacheKey)) {
             this.insertCachedChunk(cacheKey, compiled)
+            if (Math.abs(compiled.cx - this.center.cx) <= 2 && Math.abs(compiled.cy - this.center.cy) <= 2) {
+              this.outerRingDirty = true
+            }
           } else {
             recycleCompiledChunk(compiled)
           }
@@ -1287,7 +1338,8 @@ export class WorldClientStreamer {
       const opBuf = oldChunk.staticOpaqueChunks[0]?.data
       const transfer: Transferable[] = [fBuf, mBuf, bBuf]
       if (opBuf && opBuf.byteLength >= POOL_OPAQUE_BYTES) transfer.push(opBuf)
-      this.workers[0]!.postMessage(
+      const targetWorker = this.workers[this.recycleWorkerIdx++ % this.workers.length]!
+      targetWorker.postMessage(
         {
           type: "recycle",
           floorBuf: fBuf,
@@ -1304,9 +1356,12 @@ export class WorldClientStreamer {
 
   private insertCachedChunk(k: string, compiled: CompiledWorldChunk): void {
     if (this.cache.size >= this.maxCachedChunks && !this.cache.has(k)) {
-      // Evict oldest chunk that is not inside the active 3×3 window
+      // Evict oldest chunk that is not inside the active 5×5 rendered window or lookahead corridor
       for (const [oldKey, oldChunk] of this.cache) {
-        if (Math.abs(oldChunk.cx - this.center.cx) <= 1 && Math.abs(oldChunk.cy - this.center.cy) <= 1) continue
+        const dx = oldChunk.cx - this.center.cx
+        const dy = oldChunk.cy - this.center.cy
+        if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) continue
+        if (dx * this.dirX + dy * this.dirY > 0 && Math.abs(dx) <= 5 && Math.abs(dy) <= 2) continue
         this.evictChunk(oldKey, oldChunk)
         break
       }
@@ -1345,6 +1400,7 @@ export class WorldClientStreamer {
           cy: item.cy,
           houseDecay: archSettings.houseDecay,
           weathering: archSettings.weathering,
+          interior: { ...interiorSettings },
         })
         break
       }
@@ -1359,6 +1415,12 @@ export class WorldClientStreamer {
     return this.bakeQueue.length + this.inflightKeys.size
   }
 
+  /** Explicitly triggers a smooth 0.28s fade-in for a chunk key (used when a chunk arrives late inside view). */
+  triggerChunkFade(chunkKeyStr: string, nowSec: number): void {
+    this.chunkFadeStart.set(chunkKeyStr, nowSec)
+    this.outerRingDirty = true
+  }
+
   reset(): void {
     ensurePropTemplates()
     this.bakeQueue.length = 0
@@ -1371,7 +1433,11 @@ export class WorldClientStreamer {
     this.lastPlayerY = NaN
     this.dirX = 1
     this.dirY = 0
+    this.outerRingDirty = false
     this.fastLookahead = false
+    this.renderedChunkKeys.clear()
+    this.chunkFadeStart.clear()
+    this.chunkFadeAlpha = 0
   }
 
   private cacheKey(
@@ -1383,7 +1449,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${interiorSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -1409,8 +1475,8 @@ export class WorldClientStreamer {
   }
 
   /**
-   * Queues uncached chunks along the movement direction and active window corridor
-   * for background Worker compilation and time-sliced pre-warming.
+   * Queues uncached chunks across the 5×5 resident window and ahead along the 2D movement direction
+   * scaled by speed (4..8 chunks ahead = 128..256 m for walking, sprinting, and vehicles).
    */
   prewarmAround(
     playerX: number,
@@ -1420,45 +1486,52 @@ export class WorldClientStreamer {
     terrain: number,
     foliageDensity: number,
     mode: WorldMode,
-    speed = 0,
+    velX = 0,
+    velY = 0,
   ): void {
-    this.fastLookahead = speed > 6.0
+    const vSpeed = Math.hypot(velX, velY)
+    let frameDist = 0
     if (Number.isFinite(this.lastPlayerX)) {
       const dx = playerX - this.lastPlayerX
       const dy = playerY - this.lastPlayerY
-      const dist = Math.hypot(dx, dy)
-      if (dist > 0.05) {
-        this.dirX = dx / dist
-        this.dirY = dy / dist
+      const rawDist = Math.hypot(dx, dy)
+      if (rawDist < 16) {
+        frameDist = rawDist
+        if (vSpeed > 0.25) {
+          this.dirX = velX / vSpeed
+          this.dirY = velY / vSpeed
+        } else if (rawDist > 0.05) {
+          this.dirX = dx / rawDist
+          this.dirY = dy / rawDist
+        }
+      } else {
+        this.dirX = vSpeed > 0.25 ? velX / vSpeed : 1
+        this.dirY = vSpeed > 0.25 ? velY / vSpeed : 0
       }
     }
     this.lastPlayerX = playerX
     this.lastPlayerY = playerY
 
+    const speed = Math.max(vSpeed, Math.min(25, frameDist * 60))
+    this.fastLookahead = vSpeed > 6.0
+    const lookahead = 4 + Math.min(2, Math.ceil(Math.max(0, speed - 3.5) / 6.0))
+
     const cCx = this.center.cx
     const cCy = this.center.cy
-    const winMinY = (cCy - 1) * CHUNK + 10.0
-    const winMaxY = (cCy + 2) * CHUNK - 10.0
-    const nearNorth = playerY < winMinY + 8.0 || (this.fastLookahead && this.dirY < -0.5)
-    const nearSouth = playerY > winMaxY - 8.0 || (this.fastLookahead && this.dirY > 0.5)
-    const minDy = nearNorth ? (this.fastLookahead && this.dirY < -0.5 ? -3 : -2) : -1
-    const maxDy = nearSouth ? (this.fastLookahead && this.dirY > 0.5 ? 3 : 2) : 1
 
-    const stepX = this.dirX >= -0.25 ? 1 : -1
-    const dxList = this.fastLookahead
-      ? stepX > 0
-        ? [0, 1, 2, 3, 4, 5, -1]
-        : [0, -1, -2, -3, -4, -5, 1]
-      : stepX > 0
-        ? [0, 1, 2, 3, 4, -1]
-        : [0, -1, -2, -3, -4, 1]
-    const maxRelX = this.fastLookahead ? 5 : 4
-
-    // Prune stale queue items that are behind or outside the active lookahead corridor
+    // Prune stale queue items that are behind the 5×5 window or from an old seed/mode
     for (let i = this.bakeQueue.length - 1; i >= 0; i--) {
       const q = this.bakeQueue[i]!
-      const relX = (q.cx - cCx) * stepX
-      if (relX < -1 || relX > maxRelX || q.cy < cCy + minDy || q.cy > cCy + maxDy || q.seed !== seed || q.mode !== mode) {
+      const rx = q.cx - cCx
+      const ry = q.cy - cCy
+      const along = rx * this.dirX + ry * this.dirY
+      if (
+        (Math.abs(rx) > 2 && Math.abs(ry) > 2 && along < -0.5) ||
+        Math.abs(rx) > lookahead + 1 ||
+        Math.abs(ry) > lookahead + 1 ||
+        q.seed !== seed ||
+        q.mode !== mode
+      ) {
         this.bakeQueue.splice(i, 1)
       } else {
         q.priority = 99
@@ -1466,24 +1539,59 @@ export class WorldClientStreamer {
     }
 
     let added = false
-    for (let xi = 0; xi < dxList.length; xi++) {
-      const dx = dxList[xi]!
-      for (let dy = minDy; dy <= maxDy; dy++) {
-        const cx = cCx + dx
-        const cy = cCy + dy
-        const k = this.cacheKey(seed, houseSeed, terrain, foliageDensity, mode, cx, cy)
-        if (this.cache.has(k) || this.inflightKeys.has(k)) continue
-        const priority = xi * 4 + Math.abs(dy)
-        const existing = this.bakeQueue.find((q) => q.cx === cx && q.cy === cy && q.seed === seed && q.mode === mode)
-        if (existing) {
+    const enqueue = (cx: number, cy: number, priority: number) => {
+      const k = this.cacheKey(seed, houseSeed, terrain, foliageDensity, mode, cx, cy)
+      const hit = this.cache.get(k)
+      if (hit) {
+        this.cache.delete(k)
+        this.cache.set(k, hit)
+        return
+      }
+      if (this.inflightKeys.has(k)) return
+      const existing = this.bakeQueue.find((q) => q.cx === cx && q.cy === cy && q.seed === seed && q.mode === mode)
+      if (existing) {
+        if (priority < existing.priority) {
           existing.priority = priority
           added = true
-          continue
         }
-        this.bakeQueue.push({ cx, cy, seed, houseSeed, terrain, foliageDensity, mode, priority })
-        added = true
+        return
+      }
+      this.bakeQueue.push({ cx, cy, seed, houseSeed, terrain, foliageDensity, mode, priority })
+      added = true
+    }
+
+    // 1. Immediate 3×3 lighting/simulation ring (priority 0..4)
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const align = dx * this.dirX + dy * this.dirY
+        enqueue(cCx + dx, cCy + dy, Math.max(0, 2 - align))
       }
     }
+
+    // 2. Speed-scaled 2D directional lookahead corridor (steps 2..lookahead along dir, priority >= 8 so background Workers compile off-thread)
+    const perpX = -this.dirY
+    const perpY = this.dirX
+    const wideFrustum = this.lastViewRect ? this.lastViewRect[2] - this.lastViewRect[0] > 56 : false
+    const latRadius = wideFrustum ? 2 : 1
+    for (let step = 2; step <= lookahead; step++) {
+      for (let lat = -latRadius; lat <= latRadius; lat++) {
+        const dx = Math.round(this.dirX * step + perpX * lat)
+        const dy = Math.round(this.dirY * step + perpY * lat)
+        const priority = 8 + (step - 2) * 4 + Math.abs(lat)
+        enqueue(cCx + dx, cCy + dy, priority)
+      }
+    }
+
+    // 3. When zoomed out (5×5 frustum), also pre-warm the remaining 5×5 outer-ring chunks
+    if (wideFrustum) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue
+          enqueue(cCx + dx, cCy + dy, 9 + Math.abs(dx) + Math.abs(dy))
+        }
+      }
+    }
+
     if (added && this.bakeQueue.length > 1) {
       this.bakeQueue.sort((a, b) => a.priority - b.priority)
     }
@@ -1513,53 +1621,159 @@ export class WorldClientStreamer {
   }
 
   /**
-   * Updates the 3×3 render window centered on `(playerX, playerY)` and stitches the 9 cached chunk tiles
-   * into `LevelData` whenever the window moves or generation settings change.
+   * Computes the chunk radius `(rx, ry)` required to cover the camera's visible ground footprint (`viewRect`)
+   * across the 4 m center-chunk hysteresis range plus an off-screen safety margin.
+   */
+  static computeRenderRadius(viewRect?: readonly [number, number, number, number]): { rx: number; ry: number } {
+    const halfW = viewRect ? (viewRect[2] - viewRect[0]) * 0.5 : 36
+    const halfH = viewRect ? (viewRect[3] - viewRect[1]) * 0.5 : 22
+    const rx = Math.max(2, Math.min(2, Math.ceil((20 + halfW + 12 - 16) / CHUNK)))
+    const ry = Math.max(2, Math.min(2, Math.ceil((20 + halfH + 12 - 16) / CHUNK)))
+    return { rx, ry }
+  }
+
+  /**
+   * Updates the 5×5 resident render window (computed from camera frustum vs 32 m chunks) and 3×3 stitched lighting
+   * textures centered on `(playerX, playerY)`.
    */
   updateWindow(
     playerX: number,
     playerY: number,
     town: Town,
     mode: WorldMode,
-    speed = 0,
-  ): { changed: boolean; level?: LevelData; origin: [number, number]; buildings: Building[] } {
+    viewRect?: readonly [number, number, number, number],
+    velX = 0,
+    velY = 0,
+    timeSec = 0,
+  ): { changed: boolean; geometryOnly?: boolean; level?: LevelData; origin: [number, number]; buildings: Building[] } {
     const foliageDensity = town.foliageDensity ?? 1
+    const prevCenter = this.center
     this.center = selectActiveWindowCenter(playerX, playerY, this.center)
+    const isTeleport = Math.abs(this.center.cx - prevCenter.cx) > 1 || Math.abs(this.center.cy - prevCenter.cy) > 1
+    if (isTeleport) {
+      this.renderedChunkKeys.clear()
+      this.chunkFadeStart.clear()
+      this.chunkFadeAlpha = 0
+    }
     const originX = (this.center.cx - 1) * CHUNK
     const originZ = (this.center.cy - 1) * CHUNK
     this.windowOrigin = [originX, originZ]
+    this.lastViewRect = viewRect
 
-    this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode, speed)
+    this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode, velX, velY)
 
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${this.center.cx},${this.center.cy}`
-    if (winKey === this.lastWindowKey) {
+    // Advance any active late-chunk fades
+    let maxFadeProgress = 0
+    for (const [fKey, startSec] of this.chunkFadeStart) {
+      const elapsed = Math.max(0, timeSec - startSec)
+      if (elapsed >= CHUNK_FADE_DURATION) {
+        this.chunkFadeStart.delete(fKey)
+        this.outerRingDirty = true
+      } else {
+        const alpha = Math.max(0.03, elapsed / CHUNK_FADE_DURATION)
+        if (alpha > maxFadeProgress) maxFadeProgress = alpha
+      }
+    }
+    this.chunkFadeAlpha = maxFadeProgress
+
+    const { rx, ry } = WorldClientStreamer.computeRenderRadius(viewRect)
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
+    const centerMoved = winKey !== this.lastWindowKey
+
+    if (!centerMoved && !this.outerRingDirty) {
       // Non-transition frame: pre-warm up to 1 lookahead chunk on main thread if not already handled by Workers
       this.stepBakeQueue(1.8, 1)
       return { changed: false, origin: this.windowOrigin, buildings: this.windowBuildings }
     }
+    const geometryOnly = !centerMoved && this.outerRingDirty
     this.lastWindowKey = winKey
+    this.outerRingDirty = false
 
-    // Assemble the 3×3 chunks in row-major order and maintain stable building slot indices (0..7)
-    const gridChunks: CompiledWorldChunk[] = []
-    const activeBlds: Building[] = []
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const c = this.getOrCompileChunk(
-          town.seed,
-          town.houseSeed,
-          town.terrain,
-          foliageDensity,
-          mode,
-          this.center.cx + dx,
-          this.center.cy + dy,
-        )
-        gridChunks.push(c)
+    const hadRenderedBefore = this.renderedChunkKeys.size > 0
+    const isStepTransition = centerMoved && !isTeleport && hadRenderedBefore
+    let nextOuterRingDirty = false
+    const innerGridChunks: CompiledWorldChunk[] = []
+    const allRenderedChunks: CompiledWorldChunk[] = []
+    const candidateBlds: Building[] = []
+
+    for (let dy = -ry; dy <= ry; dy++) {
+      for (let dx = -rx; dx <= rx; dx++) {
+        const cx = this.center.cx + dx
+        const cy = this.center.cy + dy
+        const isInner = Math.abs(dx) <= 1 && Math.abs(dy) <= 1
+        let c: CompiledWorldChunk | undefined
+        if (isInner) {
+          c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+          innerGridChunks.push(c)
+        } else {
+          const k = this.cacheKey(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+          const chunkKeyStr = `${cx},${cy}`
+          if (this.workers.length === 0) {
+            if (viewRect) {
+              const [vx0, vz0, vx1, vz1] = viewRect
+              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+              if (cx1 >= vx0 - 14 && cx0 <= vx1 + 14 && cz1 >= vz0 - 14 && cz0 <= vz1 + 14) {
+                c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+              } else {
+                c = this.cache.get(k)
+              }
+            } else {
+              c = this.cache.get(k)
+            }
+          } else if (isTeleport) {
+            c = this.cache.get(k)
+            if (!c && viewRect) {
+              const [vx0, vz0, vx1, vz1] = viewRect
+              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+              if (cx1 >= vx0 - 2 && cx0 <= vx1 + 2 && cz1 >= vz0 - 2 && cz0 <= vz1 + 2) {
+                c = this.getOrCompileChunk(town.seed, town.houseSeed, town.terrain, foliageDensity, mode, cx, cy)
+              }
+            }
+          } else if (isStepTransition && !this.renderedChunkKeys.has(chunkKeyStr)) {
+            if (viewRect) {
+              const [vx0, vz0, vx1, vz1] = viewRect
+              const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+              if (cx1 >= vx0 - 2 && cx0 <= vx1 + 2 && cz1 >= vz0 - 2 && cz0 <= vz1 + 2) {
+                c = this.cache.get(k)
+              } else if (this.cache.has(k)) {
+                nextOuterRingDirty = true
+              }
+            } else if (this.cache.has(k)) {
+              nextOuterRingDirty = true
+            }
+          } else {
+            c = this.cache.get(k)
+          }
+        }
+        if (!c) continue
+        allRenderedChunks.push(c)
+        // If a chunk arrives late while its bounds are already well inside the visible ground frustum, fade it in smoothly
+        if (!isTeleport && hadRenderedBefore && !this.renderedChunkKeys.has(c.key) && viewRect && timeSec > 0) {
+          const [vx0, vz0, vx1, vz1] = viewRect
+          const cx0 = cx * CHUNK, cz0 = cy * CHUNK, cx1 = cx0 + CHUNK, cz1 = cz0 + CHUNK
+          if (cx1 > vx0 + 6 && cx0 < vx1 - 6 && cz1 > vz0 + 6 && cz0 < vz1 - 6) {
+            this.chunkFadeStart.set(c.key, timeSec)
+            if (this.chunkFadeAlpha <= 0) this.chunkFadeAlpha = 0.03
+          }
+        }
         for (let i = 0; i < c.buildings.length; i++) {
-          if (activeBlds.length < 8) activeBlds.push(c.buildings[i]!)
+          candidateBlds.push(c.buildings[i]!)
         }
       }
     }
-    // Evict buildings that left the 3×3 window
+    if (nextOuterRingDirty) this.outerRingDirty = true
+
+    this.renderedChunkKeys.clear()
+    for (let i = 0; i < allRenderedChunks.length; i++) {
+      this.renderedChunkKeys.add(allRenderedChunks[i]!.key)
+    }
+
+    // Select the 8 buildings closest to (playerX, playerY) so the building the survivor is inside (dist = 0)
+    // and its immediate neighbours are always resident in OL.bldRects[0..7]
+    candidateBlds.sort((a, b) => distToRect(playerX, playerY, a.rect) - distToRect(playerX, playerY, b.rect))
+    const activeBlds = candidateBlds.slice(0, 8)
+
+    // Evict buildings that left the closest-8 set
     for (let s = 0; s < 8; s++) {
       const cur = this.buildingSlots[s]
       if (cur && !activeBlds.some((b) => b.id === cur.id)) {
@@ -1583,37 +1797,43 @@ export class WorldClientStreamer {
 
     const allOpaque: LevelChunk[] = []
     const allGlass: LevelChunk[] = []
-    const dstFloorF64 = this.stitchedFloorF64
-    const dstMoonF64 = this.stitchedMoonF64
-    const dstBounceF64 = this.stitchedBounceF64
+    for (let i = 0; i < allRenderedChunks.length; i++) {
+      const c = allRenderedChunks[i]!
+      const isFading = this.chunkFadeStart.has(c.key)
+      const packed = packChunkMeshesForWindow(c, windowBuildings, isFading)
+      for (let j = 0; j < packed.opaque.length; j++) allOpaque.push(packed.opaque[j]!)
+      for (let j = 0; j < packed.glass.length; j++) allGlass.push(packed.glass[j]!)
+    }
 
-    for (let gy = 0; gy < 3; gy++) {
-      for (let gx = 0; gx < 3; gx++) {
-        const c = gridChunks[gy * 3 + gx]!
-        const packed = packChunkMeshesForWindow(c, windowBuildings)
-        for (let i = 0; i < packed.opaque.length; i++) allOpaque.push(packed.opaque[i]!)
-        for (let i = 0; i < packed.glass.length; i++) allGlass.push(packed.glass[i]!)
+    if (!geometryOnly) {
+      const dstFloorF64 = this.stitchedFloorF64
+      const dstMoonF64 = this.stitchedMoonF64
+      const dstBounceF64 = this.stitchedBounceF64
 
-        // Zero-allocation 64-bit row blits (32 Float64s = 256 bytes per row for floorTile, moonTile, and bounceTile)
-        const srcFloorF64 = new Float64Array(c.floorTile.buffer, c.floorTile.byteOffset, 128 * 32)
-        for (let row = 0; row < 128; row++) {
-          const dstOff = (gy * 128 + row) * 96 + gx * 32
-          const srcOff = row * 32
-          for (let k = 0; k < 32; k++) dstFloorF64[dstOff + k] = srcFloorF64[srcOff + k]!
-        }
+      for (let gy = 0; gy < 3; gy++) {
+        for (let gx = 0; gx < 3; gx++) {
+          const c = innerGridChunks[gy * 3 + gx]!
+          // Zero-allocation 64-bit row blits (32 Float64s = 256 bytes per row for floorTile, moonTile, and bounceTile)
+          const srcFloorF64 = new Float64Array(c.floorTile.buffer, c.floorTile.byteOffset, 128 * 32)
+          for (let row = 0; row < 128; row++) {
+            const dstOff = (gy * 128 + row) * 96 + gx * 32
+            const srcOff = row * 32
+            for (let k = 0; k < 32; k++) dstFloorF64[dstOff + k] = srcFloorF64[srcOff + k]!
+          }
 
-        const srcMoonF64 = new Float64Array(c.moonTile.buffer, c.moonTile.byteOffset, 256 * 32)
-        for (let row = 0; row < 256; row++) {
-          const dstOff = (gy * 256 + row) * 96 + gx * 32
-          const srcOff = row * 32
-          for (let k = 0; k < 32; k++) dstMoonF64[dstOff + k] = srcMoonF64[srcOff + k]!
-        }
+          const srcMoonF64 = new Float64Array(c.moonTile.buffer, c.moonTile.byteOffset, 256 * 32)
+          for (let row = 0; row < 256; row++) {
+            const dstOff = (gy * 256 + row) * 96 + gx * 32
+            const srcOff = row * 32
+            for (let k = 0; k < 32; k++) dstMoonF64[dstOff + k] = srcMoonF64[srcOff + k]!
+          }
 
-        const srcBounceF64 = new Float64Array(c.bounceTile.buffer, c.bounceTile.byteOffset, 64 * 32)
-        for (let row = 0; row < 64; row++) {
-          const dstOff = (gy * 64 + row) * 96 + gx * 32
-          const srcOff = row * 32
-          for (let k = 0; k < 32; k++) dstBounceF64[dstOff + k] = srcBounceF64[srcOff + k]!
+          const srcBounceF64 = new Float64Array(c.bounceTile.buffer, c.bounceTile.byteOffset, 64 * 32)
+          for (let row = 0; row < 64; row++) {
+            const dstOff = (gy * 64 + row) * 96 + gx * 32
+            const srcOff = row * 32
+            for (let k = 0; k < 32; k++) dstBounceF64[dstOff + k] = srcBounceF64[srcOff + k]!
+          }
         }
       }
     }
@@ -1632,8 +1852,9 @@ export class WorldClientStreamer {
         w: 192,
         h: 192,
       },
+      geometryOnly,
     }
 
-    return { changed: true, level, origin: this.windowOrigin, buildings: this.windowBuildings }
+    return { changed: true, geometryOnly, level, origin: this.windowOrigin, buildings: this.windowBuildings }
   }
 }

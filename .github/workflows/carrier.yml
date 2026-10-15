@@ -41,7 +41,8 @@ jobs:
         working-directory: .
       - run: bun run check
       - name: Install smoke browser
-        run: bunx --no-install playwright-core install --with-deps chromium --only-shell
+        # The runner image already has Chrome's system libraries; --with-deps spent ~15 s on apt fonts.
+        run: bunx --no-install playwright-core install chromium --only-shell
       - name: Smoke production bundle
         timeout-minutes: 1
         run: bun ../../scripts/smoke.mjs

@@ -8,6 +8,7 @@ import {
   normalize,
   normalizeField,
   same,
+  hasValue,
   type Field,
   type Schema,
   type State,
@@ -106,6 +107,14 @@ export type PanelKeys = { readonly [C in PanelCommand]?: string | boolean } & {
   /** `false` stops ↑/↓ at the first and last rows instead of wrapping around. */
   readonly wrap?: boolean
 }
+/** A header button (see `MountPanelOptions.header`). */
+export type HeaderButton = "random" | "reset" | "copy" | "undo" | "redo" | "help" | "close"
+export interface HeaderOptions {
+  /** `false` hides the title; the buttons stay at the right. */
+  readonly title?: boolean
+  /** Which buttons show, all of them (that are on) by default. */
+  readonly buttons?: readonly HeaderButton[]
+}
 export interface MountPanelOptions extends LabelOptions {
   readonly title?: string | false
   /**
@@ -123,8 +132,47 @@ export interface MountPanelOptions extends LabelOptions {
   readonly marks?: boolean
   /** Token values to style the panel with, e.g. `problemsPreset` (see `TokenPreset`). */
   readonly preset?: TokenPreset
-  /** `false` drops the header (title and buttons) for a host that draws its own. */
-  readonly header?: boolean
+  /**
+   * `false` drops the header (title and buttons) for a host that draws its own. An object keeps
+   * it and chooses what shows: `{ title: false, buttons: ["random", "undo", "redo"] }`. A button
+   * left out keeps its key; a command that's off (`keys`) loses its button either way.
+   */
+  readonly header?: boolean | HeaderOptions
+  /**
+   * `false`: no per-tab session, so a rebuilt panel doesn't take focus back to the row it last
+   * had or reopen editors and folded groups. On while the store has storage.
+   */
+  readonly session?: boolean
+  /** Groups folded (`true`) or open (`false`) at first, over their fields' `folded`. */
+  readonly groupFolded?: Readonly<Record<string, boolean>>
+  /** Sub-headings (fields' `subsection`) that start folded (`true`), by name. */
+  readonly subsectionFolded?: Readonly<Record<string, boolean>>
+  /**
+   * The tab strip's order and labels: tab ids, or `{ id, label }`. Tabs the fields name that
+   * aren't listed follow in the order they first appear.
+   */
+  readonly tabs?: readonly (string | { readonly id: string; readonly label?: string })[]
+  /** The tab shown first; otherwise the one last shown for these controls, else the first. */
+  readonly tab?: string
+  /** Called when the shown tab changes (by a click, a key or `panel.tab()`). */
+  readonly onTab?: (tab: string) => void
+  /**
+   * A search field under the header that filters rows by label, key or group as you type, with
+   * filter chips (`"modified"`, with its count, by default). `/` focuses it.
+   */
+  readonly search?: boolean | SearchOptions
+  /**
+   * A group's Random (its die, `g`, ⌥ for Mutate) asks the host first: returning `true` means the
+   * host rolled the group itself (its own seeded "Randomize <group>"), and the panel only tumbles
+   * the die.
+   */
+  readonly groupRandom?: (group: string, mode: "random" | "mutate") => boolean | void
+  /**
+   * A node for a row's accessory slot, just after its label (a pin, a marker), or null. Called
+   * with the row's key when the row is built; `panel.updateAccessories()` asks again. The node
+   * stays the host's: style it, listen on it. With the WebGPU renderer it stays DOM (see README).
+   */
+  readonly rowAccessory?: (key: string) => Node | null
   /**
    * Light haptic ticks on phones (a stepped slider crossing a stop, the default's magnet, a
    * choice changing mid-pan, a switch flipping); on by default, `false` turns them off.
@@ -144,9 +192,44 @@ export interface MountPanelOptions extends LabelOptions {
   readonly actions?: readonly ControlAction<any>[]
   readonly onClose?: () => void
 }
+/** A search field's filter chip: it narrows the rows to those `test` accepts. */
+export interface SearchChip {
+  readonly id: string
+  readonly label: string
+  /** Shows how many rows it would keep beside its label. */
+  readonly count?: boolean
+  test(key: string, controls: Controls<any>): boolean
+}
+export interface SearchOptions {
+  readonly placeholder?: string
+  /** `"modified"` (rows off their defaults) or chips of your own; `["modified"]` by default. */
+  readonly chips?: readonly ("modified" | SearchChip)[]
+}
+/**
+ * An undo stack the host owns (an editor's ⌘Z that covers more than these values). The panel's
+ * undo and redo buttons and keys call it; compare (hold `\`) still previews knobs' own last entry.
+ */
+export interface HostHistory {
+  undo(): void
+  redo(): void
+  canUndo(): boolean
+  canRedo(): boolean
+  /** Called when `canUndo` or `canRedo` may have changed; returns an unsubscribe. */
+  subscribe?(cb: () => void): () => void
+}
+/**
+ * What `storage` keeps: `"all"` (values, locks and saved variants; the default), `"variants"`
+ * (only saved variants, for values the host owns) or `"none"`.
+ */
+export type PersistMode = "all" | "variants" | "none"
 export interface SyncOptions {
   /** Keys missing from `values` return to their defaults. */
   readonly replace?: boolean
+  /**
+   * Keys whose values differ across what the host is showing (a multi-selection): they show an
+   * indeterminate "—" until edited. Replaces the store's mixed keys (see `Controls.setMixed`).
+   */
+  readonly mixed?: readonly string[]
   /**
    * A different item arrived: panels place the values without springing or rolling, and undo
    * history starts over (it belonged to the previous item).
@@ -181,11 +264,27 @@ export interface ControlsOptions<S extends Schema> extends LabelOptions {
    */
   ship?: () => Promise<PanelModule>
   /**
-   * How long (ms) a key changed here outranks incoming values for it (see `sync`), so an echo of
-   * an older value still in flight can't pull it back. 0 by default; remote controls use 600.
+   * The longest (ms) a key changed here outranks incoming values for it (see `sync`), so an echo
+   * of an older value still in flight can't pull it back. The hold ends early once the remote
+   * reports the value that was sent (for numbers, within half a step). 0 by default; remote
+   * controls use 600. Raise it for peers that acknowledge slowly.
    */
   echo?: number
   storage?: StoragePort | null
+  /** What `storage` keeps: everything, only saved variants, or nothing (see `PersistMode`). */
+  persist?: PersistMode
+  /**
+   * The source Random and Mutate draw from, `[0, 1)` like `Math.random` (the default). Pass a
+   * seeded generator to make a roll reproducible.
+   */
+  random?: () => number
+  /**
+   * Whether Random and Mutate may change a key, beside locks and each field's `random: false`
+   * (e.g. never seeds or structural pickers).
+   */
+  tunable?: (key: keyof S & string, values: Values<S>) => boolean
+  /** An undo stack the host owns; undo and redo call it (see `HostHistory`). */
+  history?: HostHistory
   presets?: Readonly<Record<string, Partial<Values<S>>>>
   /**
    * Numbered presets per group, shown as 1, 2, 3… on the group's card in a page. A group's
@@ -203,8 +302,8 @@ export interface ControlsOptions<S extends Schema> extends LabelOptions {
   marks?: boolean
   onChange?: (patch: Partial<Values<S>>, values: Values<S>, meta: ChangeMeta) => void
   onReset?: (target: { key?: keyof S & string; group?: string }) => void
-  /** An action row was pressed (after its own `run`). */
-  onAction?: (key: keyof S & string) => void
+  /** An action row was pressed (after its own `run`), or a toolbar button (with its item's id). */
+  onAction?: (key: string) => void
   /** A group's numbered preset was applied (after its values are set). */
   onPreset?: (target: { group: string; index: number; name: string }) => void
 }
@@ -214,6 +313,8 @@ export interface Controls<S extends Schema = Schema> {
   readonly locked: Values<S>
   readonly enabled: boolean
   readonly storage: StoragePort | null
+  /** What `storage` keeps (see `PersistMode`). */
+  readonly persist: PersistMode
   readonly presets: Readonly<Record<string, Values<S>>>
   readonly variants: Variants<Values<S>>
   readonly actions: readonly ControlAction<Values<S>>[]
@@ -251,8 +352,11 @@ export interface Controls<S extends Schema = Schema> {
   hold(key: string, held?: boolean): void
   /** Whether incoming values for `key` are held back right now (see `sync`). */
   isHeld(key: string): boolean
-  /** Presses an action row: its `run`, then `onAction(key)`. */
-  action(key: keyof S & string): void
+  /**
+   * Presses an action row: its `run`, then `onAction(key)`. For a toolbar, `item` names the
+   * button (its id, else its label) and `onAction` gets the item's id.
+   */
+  action(key: keyof S & string, item?: string): void
   /** True while the change being notified landed (`sync(…, { land: true })`): place, don't animate. */
   readonly landing: boolean
   undo(): void
@@ -260,19 +364,40 @@ export interface Controls<S extends Schema = Schema> {
   readonly canUndo: boolean
   readonly canRedo: boolean
   subscribe(cb: () => void): () => void
-  /** Back to the defaults: every field, or only `keys`. Locks don't apply. */
+  /**
+   * Back to the defaults: every field, or only `keys`. Locks don't apply; disabled and read-only
+   * fields keep their values.
+   */
   reset(keys?: readonly (keyof S & string)[]): void
   resetKey(key: keyof S & string): void
   resetGroup(group: string): void
   isModified(key?: keyof S & string): boolean
   modified(): Partial<Values<S>>
-  /** Random values for every unlocked field, or the unlocked ones among `keys`. One undo step. */
+  /**
+   * Random values for every field that can roll (see `canRoll`), or those among `keys`, drawn
+   * from `random`. One undo step.
+   */
   randomize(keys?: readonly (keyof S & string)[]): void
-  /** Small changes around the current values instead of a re-roll; skips locked fields. */
+  /** Small changes around the current values instead of a re-roll; skips what can't roll. */
   mutate(keys?: readonly (keyof S & string)[]): void
   /** Keeps fields out of Random and Mutate (or lets them back in). Saved with the values. */
   lock(keys: (keyof S & string) | readonly (keyof S & string)[], locked?: boolean): void
   isLocked(key: keyof S & string): boolean
+  /**
+   * Whether Random and Mutate may change `key`: it holds a value and isn't locked, `random:
+   * false`, refused by `tunable`, disabled or read-only.
+   */
+  canRoll(key: keyof S & string): boolean
+  /** Whether the field is disabled now (`disabled`, static or from the values). */
+  isDisabled(key: keyof S & string): boolean
+  /** Whether the field is read-only now (`readOnly`, static or from the values). */
+  isReadOnly(key: keyof S & string): boolean
+  /**
+   * Marks keys as mixed (a multi-selection whose items differ): panels show "—" until the key is
+   * edited, and the first edit reaches `onChange` even when it picks the value shown.
+   */
+  setMixed(keys: (keyof S & string) | readonly (keyof S & string)[], mixed?: boolean): void
+  isMixed(key: keyof S & string): boolean
   /**
    * While held, `get()` shows the values from before the last change (the previous undo entry);
    * releasing restores the current ones. Nothing is recorded or stored; `onChange` reports
@@ -305,8 +430,10 @@ export function sameField(a: unknown, b: unknown): boolean {
   return ka.every((k) => {
     const x = (a as Record<string, unknown>)[k]
     const y = (b as Record<string, unknown>)[k]
+    // Predicates (`disabled`, `readOnly`) are new closures on every rebuild; they don't reshape.
+    if (typeof x === "function" && typeof y === "function") return true
     return Array.isArray(x) && Array.isArray(y)
-      ? x.length === y.length && x.every((v, i) => same(v, y[i]))
+      ? x.length === y.length && x.every((v, i) => same(v, y[i]) || sameField(v, y[i]))
       : same(x, y) || (typeof x === "object" && sameField(x, y))
   })
 }
@@ -332,10 +459,19 @@ export function defineControls<const S extends Schema>(
           (typeof location !== "undefined" &&
             ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)))))
   const storage = () => (options.storage === undefined ? browserStorage() : options.storage)
+  const persistMode: PersistMode = options.persist ?? "all"
+  /** Where values and locks are kept: nowhere unless everything persists. */
+  const valueStorage = () => (persistMode === "all" ? storage() : null)
+  const variantStorage = () => (persistMode === "none" ? null : storage())
+  const draw = options.random ?? Math.random
+  const hostHistory = options.history
+  let unsubscribeHistory: (() => void) | undefined
   const listeners = new Set<() => void>()
   const notify = () => {
     for (const cb of [...listeners]) cb()
   }
+  /** Keys showing "—" until edited (a multi-selection whose items differ). */
+  const mixed = new Set<string>()
   let current = locked
   let read = false
   let error: string | null = null
@@ -347,6 +483,8 @@ export function defineControls<const S extends Schema>(
   /** Keys in hand, and when each key last changed here (for the echo window). */
   const grabbed = new Set<string>()
   const changedAt = new Map<string, number>()
+  /** The value each held key was last set to here: its acknowledgement ends the hold. */
+  const sent = new Map<string, unknown>()
   /** The newest incoming value for each held key, applied when the hold ends. */
   const pending = new Map<string, unknown>()
   let echoTimer: ReturnType<typeof setTimeout> | undefined
@@ -379,7 +517,7 @@ export function defineControls<const S extends Schema>(
             (named.length
               ? named
               : Object.keys(schema).filter((k) => schema[k]!.group === group)
-            ).filter((k) => schema[k]!.kind !== "action"),
+            ).filter((k) => hasValue(schema[k]!)),
           )
           return [
             group,
@@ -426,7 +564,7 @@ export function defineControls<const S extends Schema>(
     if (!read) {
       read = true
       try {
-        const raw = storage()?.getItem(stateKey)
+        const raw = valueStorage()?.getItem(stateKey)
         if (raw) {
           const data = JSON.parse(raw)
           if (data?.version === 1) {
@@ -451,7 +589,7 @@ export function defineControls<const S extends Schema>(
   }
   function persist() {
     try {
-      storage()?.setItem(
+      valueStorage()?.setItem(
         stateKey,
         JSON.stringify({
           version: 1,
@@ -472,7 +610,7 @@ export function defineControls<const S extends Schema>(
   const fieldKeys = () => valueKeys(schema)
   const valueField = (k: string) => {
     const field = Object.hasOwn(schema, k) ? schema[k] : undefined
-    return field && field.kind !== "action" ? field : undefined
+    return field && hasValue(field) ? field : undefined
   }
   function changes(from: Values<S>, to: Values<S>) {
     const diff: Record<string, unknown> = {}
@@ -487,9 +625,26 @@ export function defineControls<const S extends Schema>(
     options.onChange?.(changes(shown, current), current, { source: "compare" })
     notify()
   }
-  const unlocked = (keys?: readonly string[]) => {
+  /** A field's `disabled` or `readOnly`, static or decided from the values. */
+  const flag = (k: string, name: "disabled" | "readOnly") => {
+    const v = valueField(k)?.[name]
+    return typeof v === "function" ? Boolean(v(get())) : Boolean(v)
+  }
+  /** Fields a coarse edit (Random, Mutate, Reset) leaves alone. */
+  const blocked = (k: string) => flag(k, "disabled") || flag(k, "readOnly")
+  const rollable = (k: string) => {
+    const field = valueField(k)
+    return Boolean(
+      field &&
+        !locks.has(k) &&
+        field.random !== false &&
+        !blocked(k) &&
+        (!options.tunable || options.tunable(k as keyof S & string, get())),
+    )
+  }
+  const pool = (keys?: readonly string[]) => {
     load()
-    return (keys ?? fieldKeys()).filter((k) => valueField(k) && !locks.has(k))
+    return (keys ?? fieldKeys()).filter(rollable)
   }
   function applyPatch(base: Values<S>, previous: Values<S>, patch: Partial<Values<S>>) {
     const out: Record<string, unknown> = { ...base }
@@ -529,7 +684,10 @@ export function defineControls<const S extends Schema>(
   const markChanged = (diff: Record<string, unknown>) => {
     if (echo > 0) {
       const at = now()
-      for (const k of Object.keys(diff)) changedAt.set(k, at)
+      for (const k of Object.keys(diff)) {
+        changedAt.set(k, at)
+        sent.set(k, diff[k])
+      }
       scheduleEcho()
     }
     for (const k of Object.keys(diff)) pending.delete(k)
@@ -541,9 +699,24 @@ export function defineControls<const S extends Schema>(
     if (!enabled()) return
     release()
     const previous = load()
-    const applied = applyPatch(previous, previous, patch)
-    if (!applied) return
+    // A mixed key's first edit is news even when it picks the value shown: it applies to all.
+    const forced = mixed.size ? Object.keys(patch).filter((k) => mixed.has(k) && valueField(k)) : []
+    for (const k of forced) mixed.delete(k)
+    const applied = applyPatch(previous, previous, patch) ?? {
+      next: previous,
+      diff: {} as Record<string, unknown>,
+    }
     const { next, diff } = applied
+    for (const k of forced) if (!(k in diff)) diff[k] = next[k]
+    if (Object.keys(diff).length === 0) return
+    if (next === previous) {
+      notify()
+      options.onChange?.(diff as Partial<Values<S>>, next, {
+        source: setOpts?.source ?? "local",
+        ...(setOpts?.key ? { key: setOpts.key } : {}),
+      })
+      return
+    }
     if (!setOpts?.coalesce || past.length === 0) {
       past.push(previous)
       if (past.length > HISTORY) past.shift()
@@ -572,6 +745,15 @@ export function defineControls<const S extends Schema>(
       landing = false
     }
   }
+  /** Whether an incoming value is the one sent for `key` (numbers within half a step). */
+  function acknowledges(key: string, value: unknown) {
+    if (!sent.has(key)) return false
+    const was = sent.get(key)
+    const field = schema[key] as { kind?: string; step?: number } | undefined
+    if (field?.kind === "knob" && typeof value === "number" && typeof was === "number")
+      return Math.abs(value - was) <= (field.step ?? 0) / 2 + 1e-9
+    return same(value, was)
+  }
   /** Splits incoming values into what lands now and what waits for its key's hold to end. */
   function incoming(values: Record<string, unknown>, replace: boolean) {
     const current = load() as Record<string, unknown>
@@ -579,6 +761,11 @@ export function defineControls<const S extends Schema>(
     for (const k of replace ? fieldKeys() : Object.keys(values)) {
       if (!valueField(k)) continue
       const target = Object.hasOwn(values, k) ? values[k] : locked[k]
+      // The remote reporting what was sent ends the key's echo hold (not a drag still in hand).
+      if (!grabbed.has(k) && changedAt.has(k) && acknowledges(k, target)) {
+        changedAt.delete(k)
+        sent.delete(k)
+      }
       if (isHeld(k)) {
         pending.set(k, target)
         out[k] = current[k]
@@ -590,20 +777,31 @@ export function defineControls<const S extends Schema>(
     if (pending.size) scheduleEcho()
     return out
   }
+  /** Replaces the mixed keys; whether that changed anything. */
+  function replaceMixed(keys: readonly string[] | undefined) {
+    if (!keys) return false
+    const next = new Set(keys.filter((k) => valueField(k)))
+    if (next.size === mixed.size && [...next].every((k) => mixed.has(k))) return false
+    mixed.clear()
+    for (const k of next) mixed.add(k)
+    return true
+  }
   function sync(values: Partial<Values<S>>, syncOpts?: SyncOptions) {
     if (!enabled()) return
     release()
     const land = Boolean(syncOpts?.land)
     if (land) settle()
     const before = current
+    const remixed = replaceMixed(syncOpts?.mixed)
     place(incoming(values as Record<string, unknown>, Boolean(syncOpts?.replace)), false, land)
-    if (land && current === before) announce(true)
+    if ((land || remixed) && current === before) announce(land)
   }
   /** A different item arrived: history and echo windows belonged to the last one. */
   function settle() {
     past.length = 0
     future.length = 0
     changedAt.clear()
+    sent.clear()
     for (const k of [...pending.keys()]) if (!grabbed.has(k)) pending.delete(k)
     scheduleEcho()
   }
@@ -648,6 +846,16 @@ export function defineControls<const S extends Schema>(
       Object.keys(before).length !== Object.keys(next).length ||
       Object.keys(next).some((k) => !sameField(before[k], next[k]))
     const land = Boolean(reshapeOpts?.land)
+    // New closures (a `disabled` predicate) on fields that are otherwise the same are taken
+    // quietly: values and history stay.
+    const fresh =
+      !changed &&
+      Object.keys(next).some((k) => {
+        const a = before[k] as unknown as Record<string, unknown>
+        const b = next[k] as unknown as Record<string, unknown>
+        return Object.keys(b).some((p) => typeof b[p] === "function" && a[p] !== b[p])
+      })
+    if (fresh) schema = Object.freeze({ ...next }) as S
     if (changed) {
       const previous = load() as Record<string, unknown>
       schema = Object.freeze({ ...next }) as S
@@ -656,6 +864,7 @@ export function defineControls<const S extends Schema>(
       groupPresets = buildGroupPresets()
       for (const k of [...locks]) if (!valueField(k)) locks.delete(k)
       for (const k of [...pending.keys()]) if (!valueField(k)) pending.delete(k)
+      for (const k of [...mixed]) if (!valueField(k)) mixed.delete(k)
       // Keys that persist keep their value for now (the incoming one follows, held or not);
       // new keys start at their defaults.
       const kept: Record<string, unknown> = {}
@@ -667,11 +876,12 @@ export function defineControls<const S extends Schema>(
       past.length = 0
       future.length = 0
     }
+    const remixed = replaceMixed(reshapeOpts?.mixed)
     const target = incoming(values as Record<string, unknown>, true)
     const before2 = current
     place(target, false, land)
     // A new shape with no value changes still has to reach the panels.
-    if (current === before2 && (changed || land)) announce(land)
+    if (current === before2 && (changed || fresh || land || remixed)) announce(land)
   }
   const controls: Controls<S> & { [RESHAPE]: Reshape } = {
     id,
@@ -711,11 +921,12 @@ export function defineControls<const S extends Schema>(
       return error
     },
     get canUndo() {
-      return past.length > 0
+      return hostHistory ? hostHistory.canUndo() : past.length > 0
     },
     get canRedo() {
-      return future.length > 0
+      return hostHistory ? hostHistory.canRedo() : future.length > 0
     },
+    persist: persistMode,
     get comparing() {
       return comparing !== null
     },
@@ -733,14 +944,23 @@ export function defineControls<const S extends Schema>(
       flush()
     },
     isHeld,
-    action(key) {
+    action(key, item) {
       const field = schema[key]
+      if (field?.kind === "toolbar") {
+        const found = field.items.find((i) => (i.id ?? i.label) === item)
+        if (!found) throw new Error(`Unknown toolbar item: ${key} ${item}`)
+        if (found.disabled) return
+        found.run?.()
+        options.onAction?.(found.id ?? found.label)
+        return
+      }
       if (!field || field.kind !== "action") throw new Error(`Unknown action: ${key}`)
       field.run?.()
       options.onAction?.(key)
     },
     undo() {
       release()
+      if (hostHistory) return hostHistory.undo()
       const previous = past.pop()
       if (!previous) return
       const before = load()
@@ -752,6 +972,7 @@ export function defineControls<const S extends Schema>(
     },
     redo() {
       release()
+      if (hostHistory) return hostHistory.redo()
       const next = future.pop()
       if (!next) return
       const before = load()
@@ -764,34 +985,48 @@ export function defineControls<const S extends Schema>(
     getServerSnapshot: () => locked,
     subscribe(cb) {
       listeners.add(cb)
+      // The host's history is heard while anyone listens, so buttons follow its canUndo.
+      if (hostHistory?.subscribe && !unsubscribeHistory)
+        unsubscribeHistory = hostHistory.subscribe(notify)
       return () => {
         listeners.delete(cb)
+        if (!listeners.size && unsubscribeHistory) {
+          unsubscribeHistory()
+          unsubscribeHistory = undefined
+        }
       }
     },
     reset(keys) {
       if (!enabled()) return
-      if (!keys) {
+      // Disabled and read-only fields keep their values; a reset that skips some is reported
+      // key by key rather than as "everything".
+      const skipped = fieldKeys().some(blocked)
+      if (!keys && !skipped) {
         set(locked, { source: "reset" })
         options.onReset?.({})
         return
       }
       const patch: Record<string, unknown> = {}
-      for (const k of keys) if (valueField(k)) patch[k] = locked[k]
+      for (const k of keys ?? fieldKeys()) if (valueField(k) && !blocked(k)) patch[k] = locked[k]
       set(patch as Partial<Values<S>>, { source: "reset" })
       for (const key of Object.keys(patch)) options.onReset?.({ key })
     },
     resetKey(key) {
       if (!enabled()) return
       if (!valueField(key)) throw new Error(`Unknown control key: ${key}`)
+      if (blocked(key)) return
       set({ [key]: locked[key] } as Partial<Values<S>>, { source: "reset", key })
       options.onReset?.({ key })
     },
     resetGroup(group) {
       if (!enabled()) return
+      const keys = Object.keys(schema).filter(
+        (k) => schema[k]!.group === group && hasValue(schema[k]!),
+      )
+      const open = keys.filter((k) => !blocked(k))
+      if (open.length < keys.length) return controls.reset(open as (keyof S & string)[])
       const patch: Record<string, unknown> = {}
-      for (const [k, field] of Object.entries(schema)) {
-        if (field.group === group && field.kind !== "action") patch[k] = locked[k]
-      }
+      for (const k of keys) patch[k] = locked[k]
       set(patch as Partial<Values<S>>, { source: "reset", group })
       options.onReset?.({ group })
     },
@@ -810,18 +1045,18 @@ export function defineControls<const S extends Schema>(
     },
     randomize(keys) {
       if (!enabled()) return
-      const pool = unlocked(keys)
-      if (pool.length === 0) return
-      const all = randomValues(schema) as Record<string, unknown>
-      const patch = Object.fromEntries(pool.map((k) => [k, all[k]]))
-      set(patch as Partial<Values<S>>, { source: "randomize" })
+      const chosen = pool(keys)
+      if (chosen.length === 0) return
+      // Only the chosen fields draw, in schema order, so a seeded roll reproduces.
+      const sub = Object.fromEntries(chosen.map((k) => [k, schema[k]])) as Schema
+      set(randomValues(sub, draw) as Partial<Values<S>>, { source: "randomize" })
     },
     mutate(keys) {
       if (!enabled()) return
       release()
-      const pool = unlocked(keys)
-      if (pool.length === 0) return
-      set(mutateValues(schema, load(), pool) as Partial<Values<S>>, { source: "mutate" })
+      const chosen = pool(keys)
+      if (chosen.length === 0) return
+      set(mutateValues(schema, load(), chosen, draw) as Partial<Values<S>>, { source: "mutate" })
     },
     lock(keys, on = true) {
       if (!enabled()) return
@@ -843,6 +1078,24 @@ export function defineControls<const S extends Schema>(
       load()
       return locks.has(key)
     },
+    canRoll(key) {
+      if (!enabled()) return false
+      load()
+      return rollable(key)
+    },
+    isDisabled: (key) => flag(key, "disabled"),
+    isReadOnly: (key) => flag(key, "readOnly"),
+    setMixed(keys, on = true) {
+      let changed = false
+      for (const key of typeof keys === "string" ? [keys] : keys) {
+        if (!valueField(key) || mixed.has(key) === on) continue
+        if (on) mixed.add(key)
+        else mixed.delete(key)
+        changed = true
+      }
+      if (changed) notify()
+    },
+    isMixed: (key) => mixed.has(key),
     compare(hold) {
       if (!enabled()) return
       if (!hold) return release()
@@ -879,7 +1132,7 @@ export function defineControls<const S extends Schema>(
       () => schema,
       id,
       storageKey(id, "variants"),
-      storage,
+      variantStorage,
       get,
       (v) => set(v, { source: "variant" }),
       notify,

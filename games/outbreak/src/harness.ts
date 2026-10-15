@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import type { Renderer } from "@arcade/kit/gpu/renderer"
+import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import {
   applyLookPreset,
@@ -8,22 +8,28 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "@arcade/kit/look"
+import { resolveQualityMode, type AdaptiveQualityController, type QualityMode } from "@arcade/kit/quality"
 import type { AIState } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
-import type { Command, LocalSession } from "../shared/session"
+import { sightRects } from "../shared/map"
+import { LocalSession, type Command } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
 import { districtAtChunk, worldToChunk } from "../shared/world"
 import type { OutbreakAudio } from "./audio"
+import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
+import type { OutbreakMap } from "./map"
+import "./melee/index"
 import type { NetSession } from "./net-session"
-import { stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import {
   applyOutbreakPreset,
   exportOutbreakPreset,
@@ -33,19 +39,18 @@ import {
   type OutbreakSettings,
 } from "./settings"
 import type { Survivor } from "./survivor"
+import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
-import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  toSharedWeatherSettings,
-  type OutbreakWeatherController,
-} from "./weather"
+import { type VehicleLabHost } from "./vehicles/index"
+import type { OutbreakWeatherController } from "./weather"
+import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
 export interface OutbreakHarnessHost {
   readonly adapter: GPUAdapter
   readonly device: GPUDevice
   readonly renderer: Renderer
+  readonly render: FrameInput
   readonly session: () => LocalSession | NetSession
   readonly vision: () => Vision
   readonly avatar: () => Survivor
@@ -60,11 +65,14 @@ export interface OutbreakHarnessHost {
   readonly weatherController: OutbreakWeatherController
   readonly worldStreamer: WorldClientStreamer
   readonly hud: OutbreakHud
+  readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly audio: OutbreakAudio
   readonly vehicleAudio: OutbreakVehicleAudio
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
+  readonly botsLab: BotsLabController
+  readonly qualityController: AdaptiveQualityController
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void
@@ -72,10 +80,14 @@ export interface OutbreakHarnessHost {
   readonly getWindowState: () => { origin: [number, number]; isStream: boolean }
   readonly reset: (nextSeed?: number) => void
   readonly setFrozen: (value: boolean) => void
+  readonly isFrozen: () => boolean
   readonly onSettingChanged: (rawKey: string, value?: number | boolean | string) => void
   readonly setLastDayNightHour: (hour: number) => void
   readonly incrementFrames: () => void
   readonly draw: (dt: number) => void
+  /** Rugs and themed interiors, and the level rebuild a structural interior change needs. */
+  readonly interiors: InteriorPresenter
+  readonly rebuildLevel: () => void
 }
 
 export function createOutbreakHarness(host: OutbreakHarnessHost) {
@@ -83,6 +95,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     adapter,
     device,
     renderer,
+    render,
     cam,
     settings,
     lookSettings,
@@ -91,20 +104,52 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     lab,
     feelTracker,
     combatFx,
-    weatherController,
     worldStreamer,
     hud,
     coop,
     audio,
     vehicleAudio,
-    progressionHost,
-    vehicleHost,
+    botsLab,
+    qualityController,
     promptEl,
   } = host
 
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
+    renderer,
+    render,
+    lab,
+    session: () => host.session(),
+    vision: () => host.vision(),
+    measureCpuMask(iterations = 200) {
+      const session = host.session()
+      const vision = host.vision()
+      const p = session.view.player
+      const blockers = sightRects(session.view.town)
+      const dc = dayCycle(session.view.hour)
+      const t0 = performance.now()
+      for (let i = 0; i < iterations; i++) {
+        const angle = p.aim + (i % 16) * 0.02
+        vision.update(
+          p.x,
+          p.y,
+          angle,
+          blockers,
+          settings.vision,
+          null,
+          {
+            active: p.flashlightOutput > 0.01,
+            range: settings.flashlight.flashlightRange,
+            cone: settings.flashlight.flashlightCone,
+            aim: angle,
+          },
+        )
+        evaluateUnseenFrame(settings.unseen, dc.darkness, p.health, p.maxHealth)
+      }
+      const elapsed = performance.now() - t0
+      return Number((elapsed / Math.max(1, iterations)).toFixed(4))
+    },
     human: () => {
       const avatar = host.avatar()
       return {
@@ -112,6 +157,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         bones: avatar.bones,
         gun: avatar.gun,
         mag: avatar.mag,
+        meleeWeaponFrame: avatar.meleeWeaponFrame,
+        meleeTip: avatar.meleeTip,
         aimWeight: avatar.aimWeight,
         holdRemaining: avatar.holdRemaining,
       }
@@ -124,6 +171,15 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     setZoomRaw: (zoom: number) => {
       settings.view.zoom = zoom
       cam.dist = zoom
+    },
+    quality: () => qualityController.state(devicePixelRatio),
+    setQuality: (mode: QualityMode) => {
+      const resolved = resolveQualityMode(mode)
+      settings.view.quality = resolved
+      qualityController.setMode(resolved)
+      lab.refresh()
+      if (!host.isFrozen() && renderer.inflight === 0) host.draw(1 / 60)
+      return qualityController.state(devicePixelRatio)
     },
     state: () => {
       const session = host.session()
@@ -145,7 +201,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           twilight: dc.twilight,
           lamps: dc.lamps,
         },
-        pacing: { ...session.ai.pacing.telemetry },
         flashlight: {
           on: session.view.player.flashlightOn,
           battery: session.view.player.battery,
@@ -158,15 +213,14 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           color: flashlightColor(settings.flashlight.flashlightWarmth),
         },
         explored: vision.exploredCount,
+        unseen: {
+          ...settings.unseen,
+          ...evaluateUnseenFrame(settings.unseen, dc.darkness, session.view.player.health, session.view.player.maxHealth),
+        },
         vertices: host.getVertices(),
+        quality: qualityController.state(devicePixelRatio),
         splatter: combatFx.splatter?.inspect() ?? null,
         ground: { ...settings.ground },
-        weather: {
-          enabled: settings.weather.weatherEnabled,
-          preset: settings.weather.weatherPreset,
-          settings: toSharedWeatherSettings(settings.weather),
-          state: { ...weatherController.sim.state },
-        },
         camera: {
           shakeScale: settings.view.shakeScale,
           kickScale: settings.view.kickScale,
@@ -184,6 +238,10 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           ),
           windowOrigin: winState.origin,
           isStreamWindow: winState.isStream,
+          viewRect: cam.groundRect(5.5),
+          windowBuildings: (winState.isStream ? worldStreamer.windowBuildings : session.view.town.buildings)
+            .filter((b) => b.id !== "")
+            .map((b) => ({ id: b.id, kind: b.kind, archetype: b.archetype ?? b.kind, rect: b.rect })),
           activeChunks: [...session.sim.worldStream.activeChunks.keys()],
           cachedRenderChunks: worldStreamer.cachedChunkCount,
           pendingBakes: worldStreamer.pendingBakeCount,
@@ -191,32 +249,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           lastBakeMs: worldStreamer.lastBakeMs,
           deltasCount: session.sim.worldStream.deltas.size,
         },
-        vehicles: session.view.vehicles.map((v) => ({
-          id: v.id,
-          kind: v.kind,
-          label: v.spec.label,
-          x: v.x,
-          y: v.y,
-          h: v.h,
-          vx: v.vx,
-          vy: v.vy,
-          speed: Math.hypot(v.vx, v.vy),
-          hp: v.hp,
-          maxHp: v.maxHp,
-          fuel: v.fuel,
-          maxFuel: v.maxFuel,
-          hasBattery: v.hasBattery,
-          hasKeys: v.hasKeys,
-          headlights: v.headlights,
-          engineOn: v.engineOn,
-          horn: v.horn,
-          wreck: v.wreck,
-          seats: [...v.seats],
-          zombieHits: v.zombieHits,
-          zombieKills: v.zombieKills,
-          grabbingZombies: v.grabbingZombies,
-          bangCount: v.bangCount,
-        })),
+        ...outbreakClientFeatures.collectHarnessState(host),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -233,11 +266,33 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         progress: c.progress,
       })),
     coop: () => coop.inspect(),
+    bots: () => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.getSnapshots(s) : []
+    },
+    loadBotReplay: (log: Parameters<typeof botsLab.loadReplay>[0], seekSeconds = 0) =>
+      botsLab.loadReplay(log, (s) => host.reset(s), seekSeconds),
+    seekBotToSeconds: (targetSeconds: number) => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.seekToSeconds(s, targetSeconds) : null
+    },
+    forkBotRollouts: (options?: Parameters<typeof botsLab.forkRolloutsFromSession>[1]) => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.forkRolloutsFromSession(s, options) : null
+    },
     audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
+    /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
+    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings } }),
+    setInterior(key: string, value: number) {
+      if (!(key in host.interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
+      ;(host.interiors.settings as Record<string, number>)[key] = value
+      if (host.interiors.apply(key) === "structural") host.rebuildLevel()
+    },
     setLab(rawKey: string, value: number | boolean | string) {
+      if (rawKey in host.interiors.settings) return harness.setInterior(rawKey, Number(value))
       const routed = resolveOutbreakSettingTarget(String(rawKey))
       const control = controls.find(
         (c) =>
@@ -265,14 +320,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       const res = applyOutbreakPreset(settings, raw)
       if (res.ok) lab.refresh()
       return res
-    },
-    setWeatherPreset(preset: string) {
-      const applied = applyOutbreakWeatherPreset(settings.weather, preset)
-      lab.refresh()
-      return applied
-    },
-    strikeLightning(seed?: number) {
-      return weatherController.strikeNow(seed)
     },
     setLookPreset(preset: LookPresetId | string) {
       const session = host.session()
@@ -324,117 +371,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       cam.snap(x, y)
       cam.dist = settings.view.zoom
     },
-    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
-    stock(loaded?: number, belt: Record<string, number> = {}) {
-      const session = host.session()
-      const { progression, actorId } = session.view
-      const ledger = progression.ledger
-      if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
-      for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count(`${actorId}/belt`, item)
-        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
-        if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
-      }
-      const slot = session.sim.slot(actorId)
-      if (slot) progression.project(slot)
-    },
-    /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
-    stageProgression(scene: ProgressionScene) {
-      stageProgression(progressionHost, scene)
-    },
-    /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
-    stageVehicle(scene: VehicleScene) {
-      stageVehicleScene(vehicleHost, scene)
-    },
-    /** Stages a first-night pacing scene (`pacing.stage`). */
-    stagePacing(scene: string) {
-      const session = host.session()
-      session.ai.noiseBus.reset()
-      session.view.notices.length = 0
-      hud.reset()
-      if (scene === "legacy-rush") {
-        settings.ai.directorPacing = 0
-        settings.ai.safeRadius = 3.5
-        settings.ai.initialDensity = 1.0
-        settings.ai.startHour = 18.0
-        settings.dayCycle.hour = 18.0
-        session.view.hour = 18.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      } else if (scene === "safehouse-workbench") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        stageProgression(progressionHost, "bench")
-        settings.dayCycle.hour = 16.8
-        session.view.hour = 16.8
-      } else if (scene === "first-contact") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.dayCycle.hour = 17.85
-        session.view.hour = 17.85
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(29.5, 41.2, 0)
-        const s1 = session.ai.spawnZombie(session.view.town, 37.8, 41.8, "investigate", Math.PI)
-        const s2 = session.ai.spawnZombie(session.view.town, 39.2, 43.4, "investigate", Math.PI - 0.15)
-        s1.targetX = 31.0
-        s1.targetY = 41.2
-        s2.targetX = 31.5
-        s2.targetY = 42.0
-        session.ai.pacing.firstEncounterStage = "staged"
-      } else if (scene === "late-night-horde") {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.maxActiveNearPlayer = 4
-        settings.dayCycle.hour = 22.5
-        session.view.hour = 22.5
-        session.view.time = 420
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.syncPopulation(session.view.town, 44, 44)
-        harness.pose(41.5, 43.5, 0)
-        session.ai.emitNoise(41.5, 43.5, 34, "gunshot", session.view.time, "player", 2.0)
-        for (const [zx, zy] of [
-          [48.2, 42.6],
-          [49.4, 44.5],
-          [47.5, 45.8],
-          [51.0, 43.2],
-        ] as const) {
-          const z = session.ai.spawnZombie(session.view.town, zx, zy, "chase", Math.PI)
-          z.targetX = 41.5
-          z.targetY = 43.5
-        }
-      } else {
-        settings.ai.directorPacing = 1
-        settings.ai.safeRadius = 20
-        settings.ai.initialDensity = 0.25
-        settings.ai.startHour = 16.0
-        settings.dayCycle.hour = 16.0
-        session.view.hour = 16.0
-        Object.assign(session.ai.config, settings.ai)
-        session.ai.resetOpeningPopulation(session.view.town, session.sim.slots.map((s) => s.survivor))
-        harness.pose(27.7, 41, -Math.PI / 2)
-      }
-      if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-        host.setLastDayNightHour(session.view.hour)
-        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      }
-      lab.refresh()
-      return { scene, pacing: { ...session.ai.pacing.telemetry }, hour: session.view.hour }
-    },
-    /** Gives the local survivor an item, routed to belt, hand or pack. */
-    give(item: string, count = 1) {
-      const session = host.session()
-      return session.view.progression.ledger.apply({ kind: "grant", actor: session.view.actorId, item, count }).ok
-    },
     spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
       const session = host.session()
       const z = session.ai.spawnZombie(session.view.town, x, y, state, aim)
@@ -483,9 +419,14 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         await Promise.resolve()
         await device.queue.onSubmittedWorkDone()
       }
+      const rawCmd: Command = { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }
+      const effCmd =
+        session instanceof LocalSession && !command
+          ? botsLab.stepBeforeSessionUpdate(dt, session, rawCmd)
+          : rawCmd
       session.update(
         dt,
-        { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command },
+        effCmd,
         settings.dayCycle.timeScale,
         settings,
       )
@@ -499,6 +440,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       return harness.state()
     },
   }
+  Object.assign(harness, outbreakClientFeatures.collectHarnessMethods(host, harness))
   return harness
 }
 

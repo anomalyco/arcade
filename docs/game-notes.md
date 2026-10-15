@@ -143,6 +143,24 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Bake detailed textures off the main thread into a small texture-array pool, nearest rooms first, and carry their UV
+  in the vertex colour.** Outbreak's rugs (`packages/kit/textures/rug.ts`, `games/outbreak/src/interiors/`) are
+  generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
+  also Turkmen gul, kilim, Art Deco, braided oval, 70s shag) by `packages/kit/textures/rug-worker.ts` at 1024 px with
+  mips and pile height in alpha. `RugPool` keeps 8 layers plus one interior-tile mask layer (≈50 MB) in the renderer's
+  detail array (bindings 15/16), uploads at most one finished bake per frame (0.6–2.2 ms measured on the Air) and reuses the least
+  recently needed layer. A rug quad's vertex colour holds `(u, v, axis)` and its aux holds `streamSlot × 4 + index`, so
+  the shader looks the layer up in a 9×4 directory in the OL uniform; no per-rug material or draw call. Measured:
+  bakes 0.15–1 s each in the Worker (up to 5 s on a busy Air), pool settled 0.8–1.6 s after teleporting into a house,
+  paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
+  rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
+  reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Streamed house roofs are `customCutaway: "outside"` chunks.** Since the TBDR pass (d86d5df) custom-cutaway chunks
+  only use the discard pipeline while peeking, so streamed roofs marked `true` never opened when the survivor stood
+  inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
+  caps, and each roof's aux is looked up by building id in the window slots (slots are reused, roofless buildings
+  have no chunk). `games/outbreak/scripts/interiors-proof.ts` captures procedural houses of each theme to keep this honest.
+
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
   `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
   share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
@@ -200,6 +218,19 @@ proven animation techniques to animation.md, not here.
   - **Carrier (`960×720`)**: single deck strike **0.351→0.377 ms** mean (**0.400→0.450 ms** peak, delta `+0.039 ms`, MAD `0.051`);
     4× simultaneous ship+airburst+boat worst-case **0.687→0.602 ms** mean (**0.725→0.725 ms** peak, delta `-0.085 ms`, MAD `0.059`).
   All single and worst-case scenarios remain well within the 16.67 ms (60 Hz) frame budget; non-exploding frames add zero draws or passes.
+  R-1 follow-up (`explosion-r1`): big hits now throw **burning fragments that lay their own smoke trails** instead of
+  straight smoke beams. `ParticleSpec.trail` (metres) marks a particle as a projectile; `Particles.update` lays thinning,
+  wind-drifting puffs by distance travelled (capped at ~40 puffs/s per fragment, widened to match), a short hot spark at
+  the head, a splash when it crosses `Particles.water`, and `ParticleSpec.pop` fires a delayed fireball burst where a
+  particle expires (`packages/kit/fx/projectile-trail.ts`). Presets gain `fragmentCount`/`secondaryPops` (ship 16/3,
+  missile 6/0, car 4/1, barrel 3/1, propane 2/0, grenade and pop none); the ship hit also lingers 7 s with a taller
+  column. Carrier's faceted white spray balls (the "ice shards" in R-1's boat and bench frames) are replaced by
+  `spawnWaterSplash`: velocity-stretched droplets, a crown and soft mist. Peak pool use: ship 1,129 of 2,048 at Lab scale.
+  On Mac Studio/Metal against the R-1 head (`perf/explosion-unify.json`, seven alternating pairs, whole frame), paired
+  GPU mean deltas stay within noise: Getaway single `-0.014 ms` (MAD `0.257`), 4x `-0.024 ms`; Blackout single
+  `+0.005 ms`, 5-grenade `+0.149 ms` (MAD `0.371`, peak 7.92 ms vs 7.51 ms; grenades throw no fragments); Carrier single
+  `-0.002 ms` (0.43 ms mean), 4x `-0.013 ms`. The Carrier proof camera now passes radians to `Camera.set` (it was
+  clamped to top-down) and clears every effect pool between beats.
 
 - **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate shared `MotionBlur` impulse bursts to active frames (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `packages/kit/fx/splatter*.ts`).**
   Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and running `@arcade/kit/gpu/motion-blur` (`MotionBlur` + `MotionBlurBurst`) before bloom/composite only when continuous shutter blur or an impulse burst is active (`0.000 ms` steady-state overhead when inactive; `compositeFast` runs on every Noir frame) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and keep steady-state `3456×1894` GPU time within noise (`+0.007 ms` street / `-0.016 ms` interior).
@@ -418,6 +449,8 @@ proven animation techniques to animation.md, not here.
   is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
   samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
   switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
+- **Encode per-pixel unseen LOS weight into negative `lookFlashIrradiance` (`hdr.a > 1.0`) and run the 5 Unseen fog-of-war modes in `compositeFast` with at most one displaced HDR tap.**
+  In `games/outbreak/src/unseen/` (`settings.ts`, `shader.ts`, using `@arcade/kit/gpu/wgsl`), Outbreak's opt-in `Unseen` visibility treatment (`unseenMode = 0` off by default) combines the local survivor's 512-ray polar blocker field, wide facing/aim cone, close 360° awareness circle, and active flashlight cone (`evalUnseenFlashCone` in `visibilityFieldShader` and `FlashlightSightInput` in `shared/vision.ts`), plus an edge-depth ramp in `visField.b` (`evalUnseenEdgeDepth`). Keeping the 4× MSAA scene pass branch-free on `uMode` (`applyOutbreakUnseenScene` only sets `outbreakUnseenAlpha = wUnseen * 4.0`, packed into `targets.hdr.a = 1.0 + outbreakUnseenAlpha` via negative `lookFlashIrradiance` while `0..1` stays reserved for selective-colour flashlight retention) avoids VGPR inflation in the MSAA scene shader and requires zero extra bind-group entries or render targets. In `compositeFast` (`makeLookPostShader` / `postShader`), `applyOutbreakUnseenPost` reads `unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.5)` and `GL.pad.yzw` (`[mode, effectiveStrength, updateRate]`, scaled automatically with `dayCycle(hour).darkness` and low-health panic) to drive five modes in one shader: (1) **Acid Knife glitch** (Powerhoof-inspired low-Hz stepped horizontal scanline and macro-block UV displacement, red/cyan chromatic edge split derived from `gLuma - cLuma` using a single displaced `src` tap, and a cold slate-indigo wash), (2) **Warp wobble** (two-octave domain-warped refraction outside the cone with 1 displaced tap), (3) **Dark shroud** (classic soft-edge desaturated darkness with 0 extra taps), (4) **Stale memory** (faded archival snapshot of explored rooms with static paper grain and last-seen zombie ghosts), and (5) **Noise film** (stepped 16mm silver-nitrate grain and 4×4 Bayer dither thickening away from sight). At full Retina `3456×1894` on Apple M5 Max Metal (`games/outbreak/scripts/prove-unseen.ts`), paired GPU pass deltas measure **`+0.198 ms`** (Acid Knife glitch), **`+0.176 ms`** (Warp wobble), **`+0.163 ms`** (Dark shroud), **`+0.232 ms`** (Stale memory), and **`+0.057 ms`** (Noise film) — all well below the `< 1.0 ms` target — while the CPU 512-ray visibility mask + flashlight cone + unseen evaluation measures **`0.090 ms`** (`< 0.5 ms` target).
 - **Give a top-down flashlight a visible shaft with a separate reduced-resolution march, and hang it on the rig.**
   From Outbreak's steep camera a flashlight that only lights surfaces reads as a pool starting at the feet. The light
   now rides the survivor rig every frame (`Survivor.light`: under the pistol barrel when drawn, following low-ready,
@@ -436,6 +469,8 @@ proven animation techniques to animation.md, not here.
   across the screen; High (14 samples) `0.10 / 0.09 ms`. Lab: Flashlight › Volumetric beam, Dust, Lens glare,
   Volumetric quality (Off/Low/Medium/High). Proof: `NOIR_SCENES=beam bun scripts/noir-proof.ts`,
   `bun scripts/beam-sweep.ts`.
+- **Inline `MaterialRecipe` struct literals per material branch in `surfaceMaterial`, pace frames across Chromium input deferral, and adapt resolution/passes via `@arcade/kit/quality`.**
+  Calling `defaultMaterialRecipe(id)` inside `surfaceMaterial` (`packages/kit/gpu/surface-materials.ts`) prevented Tint/Metal from constant-folding the 12-field `MaterialRecipe` across the six material branches, spilling VGPRs across 4× MSAA fragments and costing `39.7–79.2 ms` GPU time at `3456×1894` Retina (`1728×947` CSS at `2×` DPR) on the merged 5×5 interior/rug scene shader. Emitting `defaultRecipeStructWgsl(recipe)` directly in each branch (`packages/kit/gpu/surface-materials.ts`) and early-outing `evalCanopyCookie`/`evalLampAir` (`games/outbreak/src/lighting.ts`) cut `3456×1894` M5 Max Metal whole-frame GPU time by **`14.6×–23.6×`** across all scenarios (`street_noir` `39.650 → 2.718 ms`, `interior` `79.227 → 3.361 ms`, `zombies_100` `55.642 → 2.685 ms`, `streaming_walk` `41.989 → 2.494 ms`) with **zero pixel difference** (`diffPixels = 0, maxDiff = 0` across `6,545,664` pixels at `3456×1894`). Removing the `MessageChannel` / `setTimeout(0)` busy-spin in `scheduleFrame` (`>11,000 → 42` `TimerFire`/s), resuming `AudioContext` before bounded 12-worker `sampleBank.loadAll` with in-place `trimLoopPadding` (`packages/kit/audio/runtime.ts`, `manifest.ts`), making `SampleBank.seedFallbacks()` lazy (`403.2 → 1.5 ms` startup, `74.4 → 0 MB` upfront PCM), caching dev audio/texture buffers with `Cache-Control` + Vite `server.warmup` (`878 → 299 ms` cold dev load, `644 → 228 ms` warm dev load), ordering `staminaEl`/`batteryEl` DOM writes after `hud.update()` (`2.54 → 0 ms` forced layout), priming the fixed-tick phase on idle-to-moving `keydown` edges (`FrameClock.primeIdleMove` in `games/outbreak/shared/clock.ts`), and keeping the `device.queue.onSubmittedWorkDone()` pacer active across held movement (`games/outbreak/src/main.ts`) bring `games/outbreak/scripts/bench-outbreak.ts` (`3456×1894`, 1 warmup + 3 runs vs `3b0d7de`) from `p50 19.55 → 16.70 ms`, `p95 22.00 → 17.10 ms` (MAD `0.00 ms`), `p99 30.70 → 17.20 ms`, `48.2 → 60.37 states/s`, `GPU 18.90 → 5.24 ms`, `keydown→submit 85.0 → 2.60 ms`, and `keydown→GPU complete 116.0 → 13.90 ms` on `street`, and from `p50 20.65 → 16.70 ms`, `p95 22.10 → 17.10 ms` (MAD `0.00 ms`), `p99 17.40 ms`, `59.91 states/s`, `GPU 18.70 → 3.37 ms`, `keydown→submit 66.3 → 1.00 ms`, and `keydown→GPU complete 87.3 → 13.10 ms` on `interior`. Reusing per-frame buffers in `shambleHandsFK`, `zombieProfile`, `ZombieCrowdRenderer`, `OutbreakWeatherController`, `packFoliageActors`, `CoopSim.sightRects`, and `games/outbreak/src/main.ts` cut steady-state `draw(dt)` heap allocations **`6.2×` (`231.4 → 37.1 KB/frame`)**, and `@arcade/kit/quality` (`packages/kit/quality.ts`) adds shared `low` / `balanced` / `high` / `auto` adaptive quality with hysteresis (`high` `3456×1894`: `2.65–3.35 ms`; `balanced` `2592×1421` `1.5×` DPR: `1.54–2.10 ms`; `low` `1728×947` `1.0×` DPR: `0.94–1.43 ms`; `auto` holds `high` at `2.0×` Retina on M5 Max).
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -1118,6 +1153,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   `0.000 m` drift. See `docs/outbreak-world.md`.
 
 ## Input
+
+- **Exploration maps: per-chunk memory, tiles built on demand.** Outbreak's map (`games/outbreak/src/map/`) keeps
+  1 m explored cells per 32 m chunk (1 KB each) plus a compact copy of each explored chunk's layout, and draws them
+  through a tile pyramid (16 to 1/16 px per metre, halving) where a tile exists only if something in it was explored
+  and is rebuilt only when stale and on screen, within 3 ms a frame. Prebuilding the opening view's stale tiles while
+  the map is closed (0.6 ms every 120 ms) left 10 of 65 tiles to build on the first open after a 1 km walk (2.2 ms);
+  the first draw took 11 ms and the map's per-frame cost with the sheet closed was p95 0.3 ms. Labels and badges are drawn in screen space at
+  device resolution, never scaled from a tile, so they stay sharp at DPR 2. `docs/outbreak-map.md`.
 
 - **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn
   adapters and stage with one canvas. The first headless Metal proof on both hosts registered 25 assets,

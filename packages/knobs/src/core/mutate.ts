@@ -2,6 +2,7 @@ import { maxChroma, parseColor } from "./color.js"
 import { EASING_Y } from "./easing.js"
 import {
   SPRING,
+  hasValue,
   normalizeField,
   same,
   type Schema,
@@ -106,6 +107,31 @@ function shift(field: ValueField, value: Value, random: () => number): unknown {
     }
     case "toggle":
       return random() < MUTATE.flip ? !value : value
+    case "vec": {
+      const v = value as { x: number; y: number; z?: number }
+      const axis = (n: number) => nudge(n, field.min, field.max, field.step, random)
+      return field.axes === 3
+        ? { x: axis(v.x), y: axis(v.y), z: axis(v.z ?? 0) }
+        : { x: axis(v.x), y: axis(v.y) }
+    }
+    case "range": {
+      const [a, b] = value as readonly [number, number]
+      return [
+        nudge(a, field.min, field.max, field.step, random),
+        nudge(b, field.min, field.max, field.step, random),
+      ]
+    }
+    case "angle": {
+      const v = value as number
+      if (!field.wrap) return nudge(v, field.min, field.max, field.step, random)
+      // A wrapping dial turns on past its ends instead of bouncing off them.
+      const span = field.max - field.min
+      return v + signed(random) * span * between(MUTATE.min, MUTATE.max, random())
+    }
+    case "seed":
+      return nudge(value as number, field.min, field.max, 1, random)
+    case "keybind":
+      return value
   }
 }
 
@@ -129,7 +155,7 @@ export function mutateValues<S extends Schema>(
   let changed = false
   for (const key of keys) {
     const field = schema[key]
-    if (!field || field.kind === "action") continue
+    if (!field || !hasValue(field)) continue
     const before = current[key] ?? field.value
     const next = normalizeField(field, shift(field, before, random))
     out[key] = next

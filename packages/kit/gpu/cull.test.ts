@@ -13,9 +13,10 @@ import {
   STENCIL_GHOST_FACE,
   STENCIL_OCCLUDER_FACE,
   depthConfigForMode,
+  texelSnappedOrthoLightMatrix,
   type ScenePass,
 } from "./pass-graph"
-import { GrowableInstanceBuffer, uploadAlphaWeightedMipChain, uploadSplitSprites } from "./targets"
+import { GrowableInstanceBuffer, SceneTargets, uploadAlphaWeightedMipChain, uploadSplitSprites } from "./targets"
 
 describe("gpu/cull & gpu/targets", () => {
   test("extractFrustumPlanes & aabbInFrustum cull boxes outside WebGPU 0..1 clip volume", () => {
@@ -255,5 +256,34 @@ describe("gpu/cull & gpu/targets", () => {
     expect(writes[0]).toEqual({ mipLevel: 0, width: 2, rgba: [255, 0, 0, 255] })
     // Alpha-weighted RGB stays pure red [255, 0, 0] instead of bleeding to 63, and alpha is (255/4)*1.1 = 70
     expect(writes[1]).toEqual({ mipLevel: 1, width: 1, rgba: [255, 0, 0, 70] })
+  })
+
+  test("texelSnappedOrthoLightMatrix snaps sub-texel camera pans and SceneTargets reuses mainPass descriptor in place", () => {
+    // Sub-texel pan (< 300 / 2048 = 0.14648 m) along the shadow X/Y axes produces identical translation
+    const m1 = texelSnappedOrthoLightMatrix([100, 220, 80], [0, 0, 0])
+    const m2 = texelSnappedOrthoLightMatrix([100.01, 220, 80.01], [0.01, 0, 0.01])
+    expect(m1).toHaveLength(16)
+    expect(m1[12]).toBeCloseTo(m2[12]!, 6)
+    expect(m1[13]).toBeCloseTo(m2[13]!, 6)
+
+    const mockDevice = {
+      createTexture: (desc: { label: string }) => ({
+        label: desc.label,
+        createView: () => ({ label: `${desc.label}-view` }) as unknown as GPUTextureView,
+        destroy: () => undefined,
+      }),
+    } as unknown as GPUDevice
+    const targets = new SceneTargets(mockDevice, {
+      depthFormat: "depth24plus-stencil8",
+      clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 },
+    })
+    expect(targets.resize(800, 600)).toBe(true)
+    expect(targets.resize(800, 600)).toBe(false)
+    const p1 = targets.configureMainPass({ storeDepth: false })
+    expect(p1).toBe(targets.mainPass)
+    expect(targets.depthAttachment.depthStoreOp).toBe("discard")
+    const p2 = targets.configureMainPass({ storeDepth: true })
+    expect(p2).toBe(p1)
+    expect(targets.depthAttachment.depthStoreOp).toBe("store")
   })
 })

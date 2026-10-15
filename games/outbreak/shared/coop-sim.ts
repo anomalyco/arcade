@@ -1,8 +1,22 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
-import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
-import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
+import { Rng } from "@arcade/kit/sim/rng"
+import {
+  canSpawnZombieAt,
+  createAIAgent,
+  DEFAULT_PACING_TUNING,
+  OutbreakAISubsystem,
+  type AIConfig,
+  type OutbreakAISnapshot,
+} from "./ai"
+import {
+  createSurvivorCombatState,
+  findFinisherTarget,
+  OutbreakCombatSubsystem,
+  type OutbreakCombatSnapshot,
+} from "./melee/index"
 import { advanceHour } from "./day-cycle"
+import { outbreakSharedFeatures } from "./feature-registry"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
   createDoorHandler,
@@ -18,12 +32,19 @@ import {
   type InteractTarget,
   type PeekInfo,
 } from "./interact"
-import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
-import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression"
+import { makeTown, sightRects, SIZE, solidRects, type Door, type Town, type WindowOpening } from "./map"
+import {
+  OutbreakProgression,
+  type Notice,
+  type OutbreakProgressionSnapshot,
+  type ProgressionCommand,
+  type ProgressionTuning,
+  type WorldContext,
+} from "./progression/index"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
-import { boxOf, OutbreakVehicleSubsystem, pushOutBox, vehicleSolidRects } from "./vehicles"
-import { StreamingWorld, type WorldMode } from "./world"
+import { OutbreakVehicleSubsystem, vehicleSolidRects, type OutbreakVehicleSnapshot } from "./vehicles/index"
+import { StreamingWorld, type StreamingWorldSnapshot, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
 export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
@@ -64,6 +85,66 @@ export function createSurvivor(x: number, y: number): Survivor {
   }
 }
 
+export type SerializedSurvivorSlot = {
+  id: string
+  index: number
+  survivor: Survivor
+  notices: Notice[]
+}
+
+/**
+ * Pure, plain JSON-serialisable snapshot of the entire authoritative `CoopSim` state.
+ * Can be diffed, hashed, saved to disk/JSON, loaded, inspected, or forked into parallel rollouts.
+ */
+export type SimState = {
+  version: 1
+  seed: number
+  houseSeed: number
+  terrain: number
+  worldMode: WorldMode
+  /** Seeded PRNG state living inside the simulation state. */
+  rngState: number
+  /** Non-zero when forked with a rollout seed to branch stochastic world events. */
+  rolloutSeedMix: number
+  time: number
+  hour: number
+  revision: number
+  town: {
+    doors: Door[]
+    windows: WindowOpening[]
+  }
+  worldStream: StreamingWorldSnapshot
+  slots: SerializedSurvivorSlot[]
+  ai: OutbreakAISnapshot
+  combat: OutbreakCombatSnapshot
+  progression: OutbreakProgressionSnapshot
+  vehicles: OutbreakVehicleSnapshot
+  featureStates: Record<string, unknown>
+}
+
+export type SimInputs = Readonly<Record<string, Command>> | readonly Command[]
+
+export type StepSimOptions = {
+  timeScale?: number
+  tuning?: SessionTuning
+}
+
+export type SimStateDiffEntry = {
+  path: string
+  before: unknown
+  after: unknown
+}
+
+function cloneSurvivorState(s: Survivor): Survivor {
+  return {
+    ...s,
+    meleeComboUntil: s.meleeComboUntil ?? -Infinity,
+    lootMessageUntil: s.lootMessageUntil ?? (s.lootMessage ? Infinity : -Infinity),
+    vault: s.vault ? { ...s.vault } : null,
+    channel: s.channel ? { ...s.channel } : null,
+  }
+}
+
 /**
  * The authoritative Outbreak world for any number of survivors. `LocalSession` runs it with one survivor; the co-op
  * room runs it with up to four. Each tick: `stepSurvivor` for every survivor's command(s), then `stepWorld` once.
@@ -71,6 +152,11 @@ export function createSurvivor(x: number, y: number): Survivor {
  * hotbar, belt, pack, stamina, battery and channels belong to each survivor. Items live in `progression.ledger`.
  */
 export class CoopSim {
+  readonly seed: number
+  readonly houseSeed: number
+  readonly terrain: number
+  readonly rng: Rng
+  rolloutSeedMix = 0
   readonly town: Town
   readonly worldStream: StreamingWorld
   readonly ai: OutbreakAISubsystem
@@ -80,11 +166,21 @@ export class CoopSim {
   readonly progression: OutbreakProgression
   readonly rewind = new RewindHistory<number>(24, 0.25)
   readonly slots: SurvivorSlot[] = []
+  readonly featureStates: Map<string, unknown>
   hour = DEFAULT_PACING_TUNING.startHour
   time = 0
   revision = 0
-  private solids: Rect[]
-  private vehicleSolids: Rect[]
+  solids: Rect[]
+  private sights: Rect[]
+  vehicleSolids: Rect[]
+  private readonly chunkRefs: {
+    id: string
+    x: number
+    y: number
+    aim: number
+    flashlightOn: boolean
+    flashlightOutput: number
+  }[] = []
 
   constructor(
     seed: number,
@@ -94,6 +190,10 @@ export class CoopSim {
     progressionTuningOrWorldMode?: Partial<ProgressionTuning> | WorldMode,
     worldMode: WorldMode = "streaming",
   ) {
+    this.seed = seed >>> 0
+    this.houseSeed = houseSeed >>> 0
+    this.terrain = terrain
+    this.rng = new Rng(((this.seed ^ 0x9e3779b9) >>> 0) || 1)
     const progTuning =
       typeof progressionTuningOrWorldMode === "object" && progressionTuningOrWorldMode !== null
         ? progressionTuningOrWorldMode
@@ -115,6 +215,7 @@ export class CoopSim {
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     this.vehicles = new OutbreakVehicleSubsystem(this.worldStream, this.town)
+    this.featureStates = outbreakSharedFeatures.createSimStates(this)
     this.registry = new InteractionRegistry([
       createDoorHandler({ access: (actor) => progression.doorAccess(actor), open: (actor, door, how) => progression.openKeyed(actor, door, how) }),
       windowInteractionHandler,
@@ -122,8 +223,24 @@ export class CoopSim {
       this.vehicles.handler(progression, this.ai, () => this.time),
       ...progression.handlers(),
     ])
+    for (const feature of outbreakSharedFeatures.list()) {
+      feature.registerInteractions?.(this, this.registry, this.featureStates.get(feature.id))
+    }
     this.solids = solidRects(this.town)
+    this.sights = sightRects(this.town)
     this.vehicleSolids = vehicleSolidRects(this.town)
+  }
+
+  /** Retrieves pure per-simulation state registered by a shared feature (`id`). */
+  getFeatureState<T = unknown>(id: string): T | undefined {
+    return this.featureStates.get(id) as T | undefined
+  }
+
+  /** Deterministically clones all registered per-simulation feature states onto `targetSim` when forking a simulation. */
+  cloneFeatureStatesTo(targetSim: CoopSim): void {
+    const cloned = outbreakSharedFeatures.cloneSimStates(this.featureStates, targetSim, this)
+    targetSim.featureStates.clear()
+    for (const [k, v] of cloned) targetSim.featureStates.set(k, v)
   }
 
   /** What progression needs to know about the world this tick. */
@@ -178,50 +295,32 @@ export class CoopSim {
     if (!p.vault) p.aim = command.aim
 
     const clampClassic = this.worldStream.mode === "classic"
-    if (p.vehicleId) {
-      const wasPassenger = (p.seatIndex ?? 0) > 0
-      const handled = this.vehicles.stepSeatedSurvivor(
-        slot,
-        command,
-        dt,
-        this.vehicleSolids,
-        this.progression,
-        this.ai,
-        this.time,
-        predict,
-      )
-      if (handled) {
-        stepStamina(p, false, false, dt, resolved.stamina)
-        if (p.vehicleId && wasPassenger && (p.seatIndex ?? 0) > 0) {
-          if (!predict && command.hotbarSlot !== undefined) this.progression.select(slot, command.hotbarSlot)
-          if (!predict && command.hotbarDelta) this.progression.select(slot, undefined, command.hotbarDelta)
-          if (command.flashlight) toggleFlashlight(p)
-          if (!predict) {
-            const ammo = this.progression.pistol(slot.id)
-            const use = this.progression.heldUse(slot.id)
-            const blockers = sightRects(town)
-            if (command.reload) this.combat.startReload(p, this.ai, this.time, ammo)
-            if (command.fire && use === "fire") {
-              if (resolved.infiniteAmmo) ammo.fill()
-              if (viewTime !== undefined && viewTime < this.time) {
-                this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
-                  this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
-                )
-              } else {
-                this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
-              }
-            }
-          }
-        }
-        if (predict && !clampClassic) {
-          this.syncWorldChunks()
-        }
+    for (const feature of outbreakSharedFeatures.list()) {
+      if (
+        feature.stepSurvivorMovement?.({
+          sim: this,
+          slot,
+          command,
+          dt,
+          resolved,
+          predict,
+          clampClassic,
+          viewTime,
+          state: this.featureStates.get(feature.id),
+        })
+      ) {
         return
       }
     }
 
-    if (!predict && command.hotbarSlot !== undefined) this.progression.select(slot, command.hotbarSlot)
-    if (!predict && command.hotbarDelta) this.progression.select(slot, undefined, command.hotbarDelta)
+    if (!predict && command.hotbarSlot !== undefined) {
+      this.progression.select(slot, command.hotbarSlot)
+      this.progression.project(slot)
+    }
+    if (!predict && command.hotbarDelta) {
+      this.progression.select(slot, undefined, command.hotbarDelta)
+      this.progression.project(slot)
+    }
     if (command.flashlight) toggleFlashlight(p)
 
     const x = p.x
@@ -230,7 +329,9 @@ export class CoopSim {
       stepStamina(p, false, false, dt, resolved.stamina)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
-        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
+        for (const feature of outbreakSharedFeatures.list()) {
+          feature.pushOutSurvivor?.(this, p, 0.3, this.featureStates.get(feature.id))
+        }
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -246,7 +347,9 @@ export class CoopSim {
         p.x += ((command.mx / length) * speed * dt) / steps
         p.y += ((command.my / length) * speed * dt) / steps
         pushOut(p, 0.3, this.solids)
-        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
+        for (const feature of outbreakSharedFeatures.list()) {
+          feature.pushOutSurvivor?.(this, p, 0.3, this.featureStates.get(feature.id))
+        }
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -266,13 +369,20 @@ export class CoopSim {
       if (!predict && outcome.topologyChanged) this.topologyChanged()
     }
 
-    if (!predict) this.applyActions(slot, command, dt, resolved.infiniteAmmo, viewTime)
+    if (!predict) this.applyActions(slot, command, dt, resolved, viewTime)
 
     p.vx = dt > 0 ? (p.x - x) / dt : 0
     p.vy = dt > 0 ? (p.y - y) / dt : 0
   }
 
-  private applyActions(slot: SurvivorSlot, command: Command, dt: number, infiniteAmmo: boolean, viewTime?: number): void {
+  private applyActions(
+    slot: SurvivorSlot,
+    command: Command,
+    dt: number,
+    resolved: ReturnType<typeof resolveSessionTuning>,
+    viewTime?: number,
+  ): void {
+    const infiniteAmmo = resolved.infiniteAmmo
     const p = slot.survivor
     const town = this.town
     const progression = this.progression
@@ -317,29 +427,60 @@ export class CoopSim {
     const ammo = progression.pistol(slot.id)
     const use = progression.heldUse(slot.id)
     const held = progression.selected(slot.id)?.item
-    const blockers = sightRects(town)
+    const blockers = this.sights
     if (command.reload) {
       // R swaps a spare battery into the flashlight when it is in hand and low; otherwise it reloads the pistol.
       const battery = held === "flashlight" && (p.battery < 0.95 || p.batteryDepleted) && progression.ledger.count(slot.id, "battery") > 0
       if (battery) verbs.reload = true
-      else if (this.combat.startReload(p, this.ai, this.time, ammo)) progression.ledger.cancel(slot.id)
+      else if (this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
+    }
+    const tryFinisher = () => {
+      const runFinisher = () => {
+        const finTarget = findFinisherTarget(p, this.ai.agents, blockers)
+        if (!finTarget) return null
+        return this.combat.executeFinisher(
+          p,
+          finTarget,
+          this.ai,
+          progression.melee(slot.id),
+          this.time,
+          resolved.melee,
+          slot.id,
+          slot.index,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      }
+      const ev =
+        viewTime !== undefined && viewTime < this.time
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runFinisher)
+          : runFinisher()
+      if (ev) progression.ledger.cancel(slot.id)
+      return Boolean(ev)
     }
     const shove = () => {
+      if (tryFinisher()) return
       const ready = p.shoveCooldown <= 0
-      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id))
+      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id), slot.id)
       if (ready) progression.ledger.cancel(slot.id)
     }
     if (command.melee) shove()
     if (command.fire) {
-      if (use === "fire") {
+      if ((use === "melee" || use === "shove" || use === "fire") && tryFinisher()) {
+        // Contextual finisher on downed or crawling zombie handled
+      } else if (use === "fire") {
         if (infiniteAmmo) ammo.fill()
         const fired =
           viewTime !== undefined && viewTime < this.time
             ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
-                this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id),
               )
-            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id)
         if (fired) progression.ledger.cancel(slot.id)
+      } else if (use === "melee") {
+        const wpn = progression.heldMeleeWeapon(slot.id)
+        if (wpn && this.combat.startMeleeSwing(p, wpn, this.time, resolved.melee)) {
+          progression.ledger.cancel(slot.id)
+        }
       } else if (use === "shove") shove()
       else verbs.fire = true
     }
@@ -348,21 +489,51 @@ export class CoopSim {
       p.noise = Math.max(p.noise, made.noise)
       this.ai.emitNoise(p.x, p.y, made.noise, made.noiseKind, this.time, slot.id)
     }
+    const clampClassic = this.worldStream.mode === "classic"
+    for (const feature of outbreakSharedFeatures.list()) {
+      const res = feature.stepSurvivorActions?.({
+        sim: this,
+        slot,
+        command,
+        dt,
+        resolved,
+        predict: false,
+        clampClassic,
+        viewTime,
+        state: this.featureStates.get(feature.id),
+      })
+      if (res?.topologyChanged) this.topologyChanged()
+    }
   }
 
   /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
   syncWorldChunks(): boolean {
-    const survivors = this.slots.map((s) => ({
-      id: s.id,
-      x: s.survivor.x,
-      y: s.survivor.y,
-      aim: s.survivor.aim,
-      flashlightOn: s.survivor.flashlightOn,
-      flashlightOutput: s.survivor.flashlightOutput,
-    }))
+    const survivors = this.chunkRefs
+    survivors.length = this.slots.length
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = this.slots[i]!
+      const ref = survivors[i]
+      if (ref) {
+        ref.id = s.id
+        ref.x = s.survivor.x
+        ref.y = s.survivor.y
+        ref.aim = s.survivor.aim
+        ref.flashlightOn = s.survivor.flashlightOn
+        ref.flashlightOutput = s.survivor.flashlightOutput
+      } else {
+        survivors[i] = {
+          id: s.id,
+          x: s.survivor.x,
+          y: s.survivor.y,
+          aim: s.survivor.aim,
+          flashlightOn: s.survivor.flashlightOn,
+          flashlightOutput: s.survivor.flashlightOutput,
+        }
+      }
+    }
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
-    const blockers = sightRects(this.town)
+    const blockers = this.sights
     const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75) : 6.0
     const res = this.worldStream.updateActiveWindows(
       survivors,
@@ -381,11 +552,12 @@ export class CoopSim {
         }),
     )
     if (res.changed) {
-      this.progression.ensureContainerStores()
-      this.vehicles.syncChunks(this.worldStream, this.town)
+      for (const feature of outbreakSharedFeatures.list()) {
+        feature.onChunkSync?.(this, this.featureStates.get(feature.id))
+      }
       this.revision++
       this.solids = solidRects(this.town)
-      this.vehicleSolids = vehicleSolidRects(this.town)
+      this.sights = sightRects(this.town)
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     return res.changed
@@ -394,7 +566,8 @@ export class CoopSim {
   /** Advances everything shared once per tick: clock, channels, flashlights, vehicles, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     const resolved = resolveSessionTuning(tuning)
-    Object.assign(this.vehicles.tuning, resolved.vehicle)
+    this.rng.next()
+    this.ai.rngSeedMix = this.rolloutSeedMix ? ((this.rng.getState() ^ this.rolloutSeedMix) >>> 0) : 0
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
     this.syncWorldChunks()
@@ -404,11 +577,17 @@ export class CoopSim {
       this.combat.step(slot.survivor, dt, this.time, this.progression.pistol(slot.id))
       stepFlashlight(slot.survivor, dt, this.time, flashlightTuning)
     }
-    if (this.progression.step(dt, this.world()).topologyChanged) {
-      this.topologyChanged()
-    }
 
-    this.vehicles.stepWorld(dt, this.time, this.town, this.vehicleSolids, this.slots, this.ai, this.progression)
+    for (const feature of outbreakSharedFeatures.list()) {
+      const res = feature.stepWorld?.({
+        sim: this,
+        dt,
+        timeScale,
+        resolved,
+        state: this.featureStates.get(feature.id),
+      })
+      if (res?.topologyChanged) this.topologyChanged()
+    }
 
     if (resolved.ai) {
       const config = this.ai.config
@@ -419,43 +598,36 @@ export class CoopSim {
       if (resolved.ai.chaseSpeed !== undefined) config.chaseSpeed = resolved.ai.chaseSpeed
       if (resolved.ai.aggression !== undefined) config.aggression = resolved.ai.aggression
       if (resolved.ai.nightMultiplier !== undefined) config.nightMultiplier = resolved.ai.nightMultiplier
-      if (resolved.ai.directorPacing !== undefined) config.directorPacing = resolved.ai.directorPacing
       if (resolved.ai.aiDebugOverlay !== undefined) config.aiDebugOverlay = resolved.ai.aiDebugOverlay
-      if (resolved.ai.startHour !== undefined) config.startHour = resolved.ai.startHour
-      if (resolved.ai.safeRadius !== undefined) config.safeRadius = resolved.ai.safeRadius
-      if (resolved.ai.initialDensity !== undefined) config.initialDensity = resolved.ai.initialDensity
-      if (resolved.ai.rampTime !== undefined) config.rampTime = resolved.ai.rampTime
-      if (resolved.ai.noiseSensitivity !== undefined) config.noiseSensitivity = resolved.ai.noiseSensitivity
-      if (resolved.ai.maxActiveNearPlayer !== undefined) config.maxActiveNearPlayer = resolved.ai.maxActiveNearPlayer
     }
 
     const survivors = this.slots.map((s) => {
-      const p = s.survivor
-      const v = this.vehicles.vehicleOf(p)
-      if (v && (p.seatIndex ?? 0) === 0) {
-        const hlOn = v.headlights && v.hasBattery && !v.wreck
-        return {
-          ...p,
-          id: s.id,
-          aim: hlOn ? v.h : p.aim,
-          flashlightOn: hlOn || p.flashlightOn,
-          flashlightOutput: hlOn ? 1 : p.flashlightOutput,
-          lightSignature: hlOn ? this.vehicles.tuning.headlightRange : p.lightSignature,
-          noise: v.engineOn ? Math.max(p.noise, this.vehicles.tuning.engineNoise * 0.45) : p.noise,
+      let view: Survivor & { id: string } = { ...s.survivor, id: s.id }
+      for (const feature of outbreakSharedFeatures.list()) {
+        if (feature.transformAISurvivor) {
+          view = feature.transformAISurvivor(this, s, view, this.featureStates.get(feature.id))
         }
       }
-      return { ...p, id: s.id }
+      return view
     })
     const aiStep = this.ai.stepSurvivors(this.town, survivors, this.hour, this.time, dt, flashlightTuning)
     if (aiStep.topologyChanged) {
       this.topologyChanged()
     }
     this.slots.forEach((slot, i) => {
-      const damage = aiStep.damage[i]!
+      let damage = aiStep.damage[i]!
       if (damage > 0) {
-        const v = this.vehicles.vehicleOf(slot.survivor)
-        const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
-        slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
+        for (const feature of outbreakSharedFeatures.list()) {
+          if (feature.modifySurvivorDamage) {
+            damage = feature.modifySurvivorDamage(this, slot, damage, this.featureStates.get(feature.id))
+          }
+        }
+        slot.survivor.health = Math.max(0, slot.survivor.health - damage)
+        if (aiStep.ankleGrabbed[i] && !slot.survivor.vehicleId) {
+          slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)
+          slot.survivor.vx *= 0.45
+          slot.survivor.vy *= 0.45
+        }
       }
     })
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")
@@ -463,10 +635,8 @@ export class CoopSim {
   }
 
   refreshPrompt(slot: SurvivorSlot): void {
-    if (slot.survivor.vehicleId) {
-      slot.peek = null
-      slot.prompt = undefined
-      return
+    for (const feature of outbreakSharedFeatures.list()) {
+      if (feature.refreshPrompt?.(this, slot, this.featureStates.get(feature.id))) return
     }
     slot.peek = peekInfoFor(this.town, slot.survivor)
     slot.prompt = selectInteractTarget(this.town, slot.survivor, this.registry)
@@ -475,18 +645,22 @@ export class CoopSim {
   /** Re-derives survivor collision after doors or barricades changed (clients call this after a snapshot). */
   rebuildSolids(): void {
     this.syncWorldChunks()
-    this.vehicles.syncChunks(this.worldStream, this.town)
+    for (const feature of outbreakSharedFeatures.list()) {
+      feature.onChunkSync?.(this, this.featureStates.get(feature.id))
+    }
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
+    this.sights = sightRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   /** Collision, crowd navigation and prompts after an external edit (Lab, harness pose). */
   rebuildCollision(): void {
     this.syncWorldChunks()
-    this.vehicles.syncChunks(this.worldStream, this.town)
+    for (const feature of outbreakSharedFeatures.list()) {
+      feature.onChunkSync?.(this, this.featureStates.get(feature.id))
+    }
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
+    this.sights = sightRects(this.town)
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
@@ -494,14 +668,297 @@ export class CoopSim {
 
   private topologyChanged(): void {
     this.revision++
-    this.progression.ensureContainerStores()
-    this.vehicles.syncChunks(this.worldStream, this.town)
+    for (const feature of outbreakSharedFeatures.list()) {
+      feature.onTopologyChanged?.(this, this.featureStates.get(feature.id))
+    }
     for (const chunk of this.worldStream.activeChunks.values()) {
       this.worldStream.captureChunkDelta(chunk, this.town, this.progression.containers, this.ai.portalStates, this.ai.agents)
     }
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
+    this.sights = sightRects(this.town)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
   }
+
+  /** Produces a pure, plain JSON-serialisable snapshot of the entire `CoopSim` state. */
+  toSnapshot(): SimState {
+    const featureStatesObj: Record<string, unknown> = {}
+    const clonedFeatures = outbreakSharedFeatures.cloneSimStates(this.featureStates, this, this)
+    for (const [k, v] of clonedFeatures) {
+      if (v !== undefined) featureStatesObj[k] = JSON.parse(JSON.stringify(v))
+    }
+    return {
+      version: 1,
+      seed: this.seed,
+      houseSeed: this.houseSeed,
+      terrain: this.terrain,
+      worldMode: this.worldStream.mode,
+      rngState: this.rng.getState(),
+      rolloutSeedMix: this.rolloutSeedMix,
+      time: this.time,
+      hour: this.hour,
+      revision: this.revision,
+      town: {
+        doors: this.town.doors.map((d) => ({ ...d, rect: [...d.rect] as Rect })),
+        windows: this.town.windows.map((w) => ({ ...w, rect: [...w.rect] as Rect })),
+      },
+      worldStream: this.worldStream.snapshot(),
+      slots: this.slots.map((s) => ({
+        id: s.id,
+        index: s.index,
+        survivor: cloneSurvivorState(s.survivor),
+        notices: s.notices.map((n) => ({ ...n })),
+      })),
+      ai: this.ai.snapshot(),
+      combat: this.combat.snapshot(this.slots),
+      progression: this.progression.snapshot(),
+      vehicles: this.vehicles.snapshot(),
+      featureStates: featureStatesObj,
+    }
+  }
+
+  /** Restores a `SimState` snapshot onto this `CoopSim` instance so future ticks are bit-identical. */
+  restoreSnapshot(state: SimState): void {
+    this.rng.setState(state.rngState)
+    this.rolloutSeedMix = state.rolloutSeedMix ?? 0
+    this.time = state.time
+    this.hour = state.hour
+    this.revision = state.revision
+
+    this.worldStream.restore(state.worldStream)
+    const portalMap = new Map(state.ai.portalStates)
+    if (state.worldMode === "procedural" || !this.worldStream.isOriginNineOnly()) {
+      this.worldStream.syncTownFromActiveChunks(this.town, this.progression.containers, portalMap)
+    }
+
+    const doorById = new Map(state.town.doors.map((d) => [d.id, d]))
+    for (const d of this.town.doors) {
+      const sd = doorById.get(d.id)
+      if (sd) {
+        d.open = sd.open
+        d.locked = sd.locked
+        d.keyed = sd.keyed
+      }
+    }
+    const winById = new Map(state.town.windows.map((w) => [w.id, w]))
+    for (const w of this.town.windows) {
+      const sw = winById.get(w.id)
+      if (sw) {
+        w.open = sw.open
+        w.openable = sw.openable
+      }
+    }
+    for (const ch of this.worldStream.activeChunks.values()) {
+      for (const d of ch.doors) {
+        const sd = doorById.get(d.id)
+        if (sd) {
+          d.open = sd.open
+          d.locked = sd.locked
+          d.keyed = sd.keyed
+        }
+      }
+      for (const w of ch.windows) {
+        const sw = winById.get(w.id)
+        if (sw) {
+          w.open = sw.open
+          w.openable = sw.openable
+        }
+      }
+    }
+
+    this.slots.length = 0
+    for (const s of state.slots) {
+      const survivor = cloneSurvivorState(s.survivor)
+      const slot: SurvivorSlot = {
+        id: s.id,
+        index: s.index,
+        survivor,
+        prompt: undefined,
+        peek: null,
+        notices: s.notices.map((n) => ({ ...n })),
+      }
+      this.slots.push(slot)
+    }
+    this.slots.sort((a, b) => a.index - b.index)
+
+    this.progression.restore(state.progression, this.slots)
+    if (state.worldStream.hasNavTiles) {
+      this.worldStream.rebuildActiveNavTiles(this.town, portalMap)
+    }
+    this.ai.restore(
+      this.town,
+      state.ai,
+      this.worldStream.navTiles.size > 0 ? this.worldStream.navTiles : undefined,
+    )
+    this.combat.restore(state.combat, this.slots)
+    this.vehicles.restore(state.vehicles, this.slots)
+
+    for (const [k, v] of Object.entries(state.featureStates ?? {})) {
+      this.featureStates.set(k, JSON.parse(JSON.stringify(v)))
+    }
+
+    this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
+    for (const slot of this.slots) this.refreshPrompt(slot)
+  }
+
+  /** Constructs a fresh `CoopSim` restored from a plain `SimState` value. */
+  static fromSnapshot(state: SimState): CoopSim {
+    const sim = new CoopSim(
+      state.seed,
+      state.houseSeed,
+      state.terrain,
+      state.ai.config,
+      state.progression.tuning,
+      state.worldMode,
+    )
+    sim.restoreSnapshot(state)
+    return sim
+  }
+
+  /** Deep-clones this `CoopSim` via its plain serialisable `SimState`. */
+  clone(): CoopSim {
+    return CoopSim.fromSnapshot(this.toSnapshot())
+  }
+}
+
+/**
+ * Pure simulation transition function `step(state, inputs, dt) -> state`:
+ * Treats the entire game state as an immutable value with no hidden globals, clocks, or `Math.random`.
+ */
+export function stepSim(
+  state: SimState,
+  inputs: SimInputs,
+  dt: number,
+  options: StepSimOptions = {},
+): SimState {
+  const sim = CoopSim.fromSnapshot(state)
+  const tuning = options.tuning ?? DEFAULT_STAMINA_TUNING
+  const timeScale = options.timeScale ?? 240
+  for (let i = 0; i < sim.slots.length; i++) {
+    const slot = sim.slots[i]!
+    const cmd: Command = Array.isArray(inputs)
+      ? (inputs[i] ?? { mx: 0, my: 0, aim: slot.survivor.aim, interact: false })
+      : ((inputs as Readonly<Record<string, Command>>)[slot.id] ?? {
+          mx: 0,
+          my: 0,
+          aim: slot.survivor.aim,
+          interact: false,
+        })
+    sim.stepSurvivor(slot, cmd, dt, tuning)
+  }
+  sim.stepWorld(dt, timeScale, tuning)
+  return sim.toSnapshot()
+}
+
+const JSON_INF = "__arcade_inf__"
+const JSON_NEG_INF = "__arcade_neg_inf__"
+
+function simJsonReplacer(_key: string, value: unknown): unknown {
+  if (value === Infinity) return JSON_INF
+  if (value === -Infinity) return JSON_NEG_INF
+  return value
+}
+
+function simJsonReviver(_key: string, value: unknown): unknown {
+  if (value === JSON_INF) return Infinity
+  if (value === JSON_NEG_INF) return -Infinity
+  return value
+}
+
+export function cloneSimState(state: SimState): SimState {
+  return JSON.parse(JSON.stringify(state, simJsonReplacer), simJsonReviver) as SimState
+}
+
+export function saveSimState(state: SimState): string {
+  return JSON.stringify(state, simJsonReplacer)
+}
+
+export function loadSimState(json: string): SimState {
+  return JSON.parse(json, simJsonReviver) as SimState
+}
+
+/**
+ * Creates a forked copy of `state` with an optional new `rolloutSeed` (or AI/progression tuning overrides)
+ * so parallel rollouts from the same snapshot explore distinct future stochastic trajectories.
+ */
+export function forkSimState(
+  state: SimState,
+  options: {
+    rolloutSeed?: number
+    aiConfig?: Partial<AIConfig>
+    progressionTuning?: Partial<ProgressionTuning>
+  } = {},
+): SimState {
+  const next = cloneSimState(state)
+  if (options.rolloutSeed !== undefined) {
+    const mix = (Math.imul((options.rolloutSeed >>> 0) + 1, 0x85ebca6b) || 1) >>> 0
+    next.rngState = ((next.rngState ^ Math.imul((options.rolloutSeed >>> 0) + 1, 0x9e3779b9)) >>> 0) || 1
+    next.rolloutSeedMix = mix
+    next.ai.rngSeedMix = mix
+  }
+  if (options.aiConfig) {
+    Object.assign(next.ai.config, options.aiConfig)
+  }
+  if (options.progressionTuning) {
+    Object.assign(next.progression.tuning, options.progressionTuning)
+  }
+  return next
+}
+
+/**
+ * Computes a deterministic 64-bit FNV-1a hex digest (`"16-hex-chars"`) over a `SimState` snapshot.
+ */
+export function hashSimState(state: SimState): string {
+  const str = JSON.stringify(state, simJsonReplacer)
+  let h1 = 0x811c9dc5 >>> 0
+  let h2 = 0xcbf29ce4 >>> 0
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 ^ ((c << 3) ^ (c >>> 2)), 0x100000001b3 & 0xffffffff) >>> 0
+  }
+  return `${h1.toString(16).padStart(8, "0")}${h2.toString(16).padStart(8, "0")}`
+}
+
+/**
+ * Structural recursive diff between two `SimState` snapshots `a` and `b`.
+ * Returns `[]` when the two states are bit-identical.
+ */
+export function diffSimState(a: SimState, b: SimState, maxDiffs = 64): SimStateDiffEntry[] {
+  const diffs: SimStateDiffEntry[] = []
+  const visit = (va: unknown, vb: unknown, path: string) => {
+    if (diffs.length >= maxDiffs) return
+    if (Object.is(va, vb)) return
+    if (
+      typeof va !== "object" ||
+      va === null ||
+      typeof vb !== "object" ||
+      vb === null ||
+      Array.isArray(va) !== Array.isArray(vb)
+    ) {
+      diffs.push({ path, before: va, after: vb })
+      return
+    }
+    if (Array.isArray(va) && Array.isArray(vb)) {
+      if (va.length !== vb.length) {
+        diffs.push({ path: `${path}.length`, before: va.length, after: vb.length })
+      }
+      const len = Math.min(va.length, vb.length)
+      for (let i = 0; i < len; i++) {
+        visit(va[i], vb[i], `${path}[${i}]`)
+        if (diffs.length >= maxDiffs) return
+      }
+      return
+    }
+    const oa = va as Record<string, unknown>
+    const ob = vb as Record<string, unknown>
+    const keys = new Set([...Object.keys(oa), ...Object.keys(ob)])
+    for (const k of [...keys].sort()) {
+      visit(oa[k], ob[k], path ? `${path}.${k}` : k)
+      if (diffs.length >= maxDiffs) return
+    }
+  }
+  visit(a, b, "")
+  return diffs
 }

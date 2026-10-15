@@ -6,12 +6,14 @@ import {
   type LabControl,
   type LabRow,
   type LabSettings,
+  type LabTab,
   type LabValue,
 } from "./lab-navigation"
+import type { HostHistory } from "@arcade/knobs"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
 export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
-export type { LabControl, LabRow, LabSettings, LabValue } from "./lab-navigation"
+export type { LabControl, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
 export type LabOptions = {
   open?: boolean
@@ -26,8 +28,8 @@ export type LabOptions = {
   pill?: boolean
   /** Saved variants are kept per this id (by default per page and section); `false` turns them off. */
   variants?: string | false | (() => string | false)
-  /** The host's undo and redo (the Lab workbench). Without them knobs keeps its own history. */
-  history?: { undo(): void; redo(): void }
+  /** The host's undo stack (the Lab workbench); knobs' Undo and Redo follow it. Without it knobs keeps its own history. */
+  history?: HostHistory
   onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
   onToggle?: (visible: boolean) => void
   onFocusChange?: (focused: boolean, activeRow?: LabRow) => void
@@ -46,8 +48,8 @@ const CSS = `
 [data-lab-panel]{position:fixed;z-index:1000;right:10px;top:10px;width:300px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px);display:flex;flex-direction:column;align-items:stretch;gap:6px;color:#d8dbe0;font:11.5px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
 [data-lab-panel][data-layout=inspector]{position:relative;right:auto;top:auto;z-index:auto;width:100%;height:100%;max-width:none;max-height:none;gap:0}
 [data-lab-panel] [hidden]{display:none!important}
-[data-lab-panel]>.lab-panel-pill{align-self:flex-end;font:inherit;color:inherit;background:#141518;border:1px solid #2c2f35;border-radius:999px;padding:3px 10px;cursor:pointer}
-[data-lab-panel]>.lab-panel-body{display:flex;flex-direction:column;min-height:0;overflow:auto;border-radius:8px;background:#141518;border:1px solid #23252a;box-shadow:0 12px 36px rgba(0,0,0,.5)}
+[data-lab-panel]>.lab-panel-pill{align-self:flex-end;font:inherit;color:inherit;background:#141518;border:1px solid #2c2f35;border-radius:0;padding:3px 10px;cursor:pointer}
+[data-lab-panel]>.lab-panel-body{display:flex;flex-direction:column;min-height:0;overflow:auto;border-radius:0;background:#141518;border:1px solid #23252a;box-shadow:0 12px 36px rgba(0,0,0,.5)}
 [data-lab-panel][data-layout=inspector]>.lab-panel-body{flex:1;border:0;border-radius:0;box-shadow:none;background:transparent}
 [data-lab-panel] .lab-panel-telemetry{font:10px/1.5 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-line;font-variant-numeric:tabular-nums;color:#8b9098;padding:8px 10px 0}
 [data-lab-panel][data-layout=inspector] .lab-panel-telemetry{display:none}
@@ -65,12 +67,14 @@ export class LabPanel implements LabKnobsHost {
   readonly header = document.createElement("header")
   readonly navigation: LabNavigation
   readonly tuning: LabKnobsHost["tuning"] = { seed: 1, last: null }
-  readonly history?: { undo(): void; redo(): void }
+  readonly history?: HostHistory
   readonly pin?: LabKnobsHost["pin"]
   private body = document.createElement("div")
   private pill = document.createElement("button")
   private empty = document.createElement("div")
   private views = new Set<LabKnobsView>()
+  /** Views whose rows the panel's own view leaves out, so a setting shows once (a station's controls card). */
+  private claims = new Set<LabKnobsView>()
   private main: LabKnobsView | null = null
   private events = new AbortController()
   private allowPresets = true
@@ -87,6 +91,7 @@ export class LabPanel implements LabKnobsHost {
   private leaving = false
   private detachControl?: () => void
   private view: LabPanelView = {}
+  private tabs: readonly LabTab[] = []
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
@@ -209,12 +214,33 @@ export class LabPanel implements LabKnobsHost {
    * Another knobs card over these settings (a station widget): its own rows, the same write path, transactions,
    * tuning seed and history. Dispose it when the widget goes.
    */
-  mountView(container: HTMLElement, options: LabKnobsViewOptions): LabKnobsView {
-    const view = new LabKnobsView(this, container, { keys: this.keys(), ...options })
+  mountView(container: HTMLElement, options: LabKnobsViewOptions & { claim?: boolean }): LabKnobsView {
+    const { claim, ...rest } = options
+    const view = new LabKnobsView(this, container, { keys: this.keys(), ...rest })
     const dispose = view.dispose.bind(view)
-    view.dispose = () => { this.views.delete(view); dispose() }
+    view.dispose = () => {
+      this.views.delete(view)
+      dispose()
+      if (this.claims.delete(view)) this.main?.sync()
+    }
     this.views.add(view)
+    if (claim) {
+      this.claims.add(view)
+      this.main?.sync()
+    }
     return view
+  }
+
+  private claimed(row: LabRow): boolean {
+    for (const view of this.claims) if (view.includes(row)) return true
+    return false
+  }
+
+  /** The view showing a setting: the panel's own, or the card that claimed it. */
+  private viewFor(key: string): LabKnobsView | null {
+    if (this.main?.rowElement(key)) return this.main
+    for (const view of this.claims) if (view.rowElement(key)) return view
+    return null
   }
 
   // ── LabPanel API ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -290,10 +316,11 @@ export class LabPanel implements LabKnobsHost {
     this.main = new LabKnobsView(this, this.body, {
       id: `${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
-      floating: this.layoutMode === "floating",
-      include: row => !this.navigation.filter || this.navigation.filter(row),
+      include: row => (!this.navigation.filter || this.navigation.filter(row)) && !this.claimed(row),
       order: () => this.view.order ?? [],
       keys: this.keys(),
+      search: true,
+      tabs: this.tabs,
       actions: this.allowPresets && switches.length ? [
         { label: "All on", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.on ?? true) } },
         { label: "All off", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.off ?? false) } },
@@ -335,6 +362,38 @@ export class LabPanel implements LabKnobsHost {
     return out
   }
 
+  /**
+   * Tabs over the panel's groups (the Lab sets each section's). Call before `addControls`; a change rebuilds the
+   * panel's own view.
+   */
+  setTabs(tabs: readonly LabTab[] = []) {
+    if (JSON.stringify(tabs) === JSON.stringify(this.tabs)) return
+    this.tabs = tabs
+    if (this.main) {
+      this.main.dispose()
+      this.main = null
+      this.sync()
+    }
+  }
+
+  /** The tab the panel shows, when it has tabs. */
+  get tab(): string | undefined { return this.main?.tab }
+
+  /** The panel's search text and Modified chip. */
+  get search(): { query: string; modified: boolean } {
+    return this.main?.search() ?? { query: "", modified: false }
+  }
+
+  /** Sets the panel's search text and Modified chip, as typing and clicking would. */
+  setSearch(next: { query?: string; modified?: boolean }) {
+    this.ensureMain()?.setSearch(next)
+  }
+
+  /** The settings the panel's own view shows on screen now (after its tab, folds and search). */
+  shownKeys(): string[] {
+    return this.main?.shownKeys() ?? []
+  }
+
   /** Apply Details ordering and filtering (inspector layout). */
   setView(view: LabPanelView) {
     this.view = view
@@ -351,9 +410,11 @@ export class LabPanel implements LabKnobsHost {
     if (!this.visible) this.toggle()
     this.navigation.jump(row)
     this.sync()
-    const element = this.main?.rowElement(key)
-    if (!element) return false
-    if (focus) this.main!.focus(key)
+    for (const v of this.views) v.show(key)
+    const view = this.viewFor(key)
+    const element = view?.rowElement(key)
+    if (!view || !element) return false
+    if (focus) view.focus(key)
     element.scrollIntoView({ block: "center" })
     element.removeAttribute("data-lab-flash")
     void element.offsetWidth
@@ -371,7 +432,7 @@ export class LabPanel implements LabKnobsHost {
       this.body.hidden = false
       this.sync()
     }
-    const element = this.main?.rowElement(key) ?? null
+    const element = this.viewFor(key)?.rowElement(key) ?? null
     if (revealIfFolded) element?.scrollIntoView({ block: "nearest" })
     return element
   }
@@ -455,8 +516,10 @@ export class LabPanel implements LabKnobsHost {
     } else {
       this.sync()
       if (this.hasFocus()) {
-        if (this.previousFocus?.isConnected) this.previousFocus.focus({ preventScroll: true })
-        else (document.activeElement as HTMLElement | null)?.blur()
+        if (this.previousFocus?.isConnected && this.previousFocus !== document.body) {
+          this.previousFocus.focus({ preventScroll: true })
+        }
+        if (this.hasFocus()) (document.activeElement as HTMLElement | null)?.blur()
       }
     }
     this.onToggle?.(this.visible)

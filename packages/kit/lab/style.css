@@ -47,7 +47,7 @@ kbd {
   font: 500 10px/1 var(--mono);
   color: var(--tx3);
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: 0;
   background: #d8dbe00f;
 }
 
@@ -112,7 +112,7 @@ kbd {
   color: var(--tx2);
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   padding: 0 6px;
   height: 22px;
   line-height: 22px;
@@ -166,7 +166,6 @@ kbd {
 .lab-select:focus-visible,
 .lab-search:focus-within,
 .lab-chip:focus-visible,
-.lab-act:focus-visible,
 .lab-drawer-cat:focus-visible,
 .lab-drawer-group:focus-visible,
 .lab-search-btn:focus-visible {
@@ -187,7 +186,7 @@ button.lab-icon-btn:not(.lab-btn) {
   width: 22px;
   height: 20px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 0;
   background: none;
   color: var(--tx3);
   padding: 0;
@@ -203,7 +202,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: inline-flex;
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 1px;
   gap: 1px;
 }
@@ -212,7 +211,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   line-height: 20px;
   padding: 0 7px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .lab-mode-seg .lab-btn[aria-pressed="true"] {
@@ -246,7 +245,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx3);
@@ -278,7 +277,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   padding: 0 7px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: none;
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx2);
@@ -417,7 +416,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   padding: 0 4px 0 8px;
   margin: 0 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx3);
@@ -447,7 +446,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   z-index: 100;
   min-width: 190px;
   padding: 4px 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--panel);
   box-shadow: 0 0 0 1px var(--line2), 0 16px 40px rgb(0 0 0 / 50%);
   display: flex;
@@ -585,7 +584,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--panel2);
   box-shadow: 0 0 0 1px var(--line2);
   color: var(--tx2);
@@ -865,7 +864,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   width: 20px;
   height: 18px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 0;
   background: none;
   color: var(--tx3);
   opacity: 0;
@@ -972,7 +971,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   align-items: center;
   gap: 6px;
   background: rgb(12 13 15 / 78%);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 3px 8px;
   font: 10.5px/1.3 var(--mono);
   color: var(--tx);
@@ -985,7 +984,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   top: 8px;
   right: 8px;
   background: #23252af0;
-  border-radius: 5px;
+  border-radius: 0;
   padding: 4px 9px;
   font-size: 11px;
   color: #eef0f3;
@@ -1005,7 +1004,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   bottom: 8px;
   width: 268px;
   padding: 4px 0 2px;
-  border-radius: 6px;
+  border-radius: 0;
   background: rgb(20 21 24 / 92%);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
   pointer-events: auto;
@@ -1065,7 +1064,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 18px;
   line-height: 18px;
   padding: 0 6px;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
   font: 11px/18px var(--mono);
@@ -1088,7 +1087,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   width: 18px;
   height: 18px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 0;
   background: none;
   color: var(--tx3);
   font-size: 13px;
@@ -1128,7 +1127,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 22px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: none;
   color: var(--tx);
   font: inherit;
@@ -1170,7 +1169,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 22px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: none;
   color: var(--tx2);
   font: inherit;
@@ -1303,7 +1302,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   background: #d8dbe00a;
   color: var(--tx2);
   font: inherit;
@@ -1363,7 +1362,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 7px;
   padding: 2px 6px 2px 2px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: var(--panel2);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx);
@@ -1402,7 +1401,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--fieldbg);
   color: var(--tx2);
 }
@@ -1445,7 +1444,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   column-gap: 5px;
   min-height: 36px;
   background: inherit;
-  border-radius: 0 5px 5px 0;
+  border-radius: 0;
 }
 
 .lab-tile:focus-visible .lab-tile-tag {
@@ -1457,7 +1456,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   grid-template-columns: 16px minmax(0, 1fr);
   gap: 6px;
   padding: 0 6px 0 4px;
-  border-radius: 4px;
+  border-radius: 0;
   background: none;
   box-shadow: none;
 }
@@ -1503,7 +1502,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   top: 0;
   z-index: 3000;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--panel2);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 20px rgb(0 0 0 / 50%);
   color: var(--tx);
@@ -1573,39 +1572,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 }
 
 .lab-details-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 8px 6px;
+  padding: 0 0 2px;
   flex: none;
-}
-
-.lab-act {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 3px;
-  background: var(--panel2);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--tx);
-  font: inherit;
-  font-size: 11px;
-}
-
-.lab-act:hover:not(:disabled) {
-  background: var(--hover);
-  box-shadow: inset 0 0 0 1px var(--line2);
-}
-
-.lab-act:disabled {
-  opacity: 0.4;
-}
-
-.lab-act kbd {
-  padding: 1px 3px;
 }
 
 .lab-details-tools {
@@ -1616,8 +1584,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   border-bottom: 1px solid var(--line);
 }
 
-.lab-details-tools .lab-search {
-  flex: 1;
+.lab-details-tools:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 .lab-inspector-body {
@@ -1685,7 +1653,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-radius: 8px;
+  border-radius: 0;
   box-shadow: 0 0 0 1px var(--line2), 0 24px 60px rgb(0 0 0 / 55%);
   overflow: hidden;
 }
@@ -1727,7 +1695,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   padding: 0 7px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 0;
   background: none;
   color: var(--tx2);
   font: inherit;
@@ -1826,7 +1794,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   max-width: calc(100vw - 32px);
   background: var(--panel);
   border: 1px solid var(--line2);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 10px;
   box-shadow: 0 16px 40px #00000099;
   display: flex;
@@ -1840,7 +1808,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   background: var(--fieldbg);
   color: var(--tx);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 8px;
   font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
@@ -2061,7 +2029,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   max-width: 260px;
   padding: 4px 8px;
-  border-radius: 5px;
+  border-radius: 0;
   background: rgb(17 18 21 / 92%);
   box-shadow: 0 0 0 1px rgb(255 255 255 / 8%), 0 6px 16px rgb(0 0 0 / 40%);
   font: 500 11px/1.25 var(--sans);
@@ -2088,7 +2056,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   color: var(--tx2);
   background: rgb(255 255 255 / 6%);
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 /* Marquee Box Selection Overlay */
@@ -2096,7 +2064,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   border: 1.5px dashed var(--acc);
   background: var(--acc)24;
-  border-radius: 3px;
+  border-radius: 0;
   pointer-events: none;
   z-index: 45;
   display: flex;
@@ -2211,7 +2179,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   padding: 3px 6px;
   background: #11171ef2;
   border: 1px solid #2d3b48;
-  border-radius: 5px;
+  border-radius: 0;
   box-shadow: 0 4px 12px #00000099;
   pointer-events: auto;
 }
@@ -2227,7 +2195,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-gizmo-input {
   width: 46px;
   padding: 1px 3px;
-  border-radius: 3px;
+  border-radius: 0;
   border: 1px solid #2b3844;
   background: #0d1217;
   color: #e2edf5;
@@ -2305,7 +2273,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   left: 14px;
   top: -8px;
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: 0;
   background: #10161de8;
   border: 1px solid #2b3946;
   color: #d6e6f2;
@@ -2334,7 +2302,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   top: 38px;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 0;
   background: #0f151cf0;
   border: 1px solid #2f4050;
   color: #dce9f5;
@@ -2392,7 +2360,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-toast-btn {
   padding: 1px 6px;
   font-size: 9.5px;
-  border-radius: 3px;
+  border-radius: 0;
   background: #213744;
   border: 1px solid var(--acc)99;
   color: #ffffff;
@@ -2435,7 +2403,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   height: 22px;
   padding: 0 8px 0 6px;
-  border-radius: 5px;
+  border-radius: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(11, 14, 18, 0.88);
   backdrop-filter: blur(6px);
@@ -2458,7 +2426,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   min-width: 15px;
   height: 15px;
   padding: 0 3px;
-  border-radius: 3px;
+  border-radius: 0;
   background: rgba(77, 141, 255, 0.24);
   color: #8cc0ff;
   font: 700 10px/1 var(--mono);
@@ -2474,7 +2442,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   bottom: 7px;
   max-width: calc(100% - 14px);
   padding: 2px 7px;
-  border-radius: 4px;
+  border-radius: 0;
   background: rgba(10, 13, 17, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #9fb0bd;
@@ -2503,7 +2471,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 8px;
   height: 26px;
   padding: 0 8px 0 10px;
-  border-radius: 6px;
+  border-radius: 0;
   background: rgba(12, 15, 20, 0.92);
   border: 1px solid #2c333d;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
@@ -2529,7 +2497,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-grid-focus-badge {
   font: 700 10px/1 var(--mono);
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: 0;
   background: rgba(77, 141, 255, 0.22);
   color: #8cc0ff;
 }
@@ -2545,7 +2513,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   min-width: 20px;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: 0;
   border: 1px solid #2b313a;
   background: #171a20;
   color: var(--tx2);

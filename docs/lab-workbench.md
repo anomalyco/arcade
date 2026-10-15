@@ -19,8 +19,8 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
 ```
 ┌ top bar: Hub · Lab <game> · Edit/Play/Box/2F · transport ⟲ ❚❚ ⏭ ↻ speed clock · A V Wipe · View · ⌘K Search · ⌖ ↶ ↷ ⋯ ┐
 ├ Outliner ─────────┬ viewport (canvas, HUD badge, toast, Watch list) ─────────┬ Details ───────────────────┤
-│ search · filter   │                                                          │ selection header + chips  │
-│ Vehicles 1        │                                                          │ search · Modified · All   │
+│ search · filter   │                                                          │ selection header, toolbar │
+│ Vehicles 1        │                                                          │ tabs · search · Modified  │
 │ Props 6 ▸ Cone ×5 ├ Library drawer: categories · collections · tiles ────────┤ Transform → object groups │
 │ World: section,   │ (Ctrl+Space; drag a tile into the viewport or click)     │ → relevant section groups │
 │ env, seed, locks  │                                                          │                           │
@@ -37,13 +37,15 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   are not implemented (sections have no per-object hide hook yet). The World footer holds Section, Environment,
   seed, Reroll and the effect/environment locks.
 - **Details** (right) shows the selection first: header (name, group, kind, position or a multi-selection summary),
-  registry-backed action chips (Trigger, Frame, Duplicate, Delete, Move, Play), then `LabPanel` groups ordered by
+  a toolbar of registry commands (Trigger, Frame, Duplicate, Delete, Move, Play, each with its canvas key as a chip;
+  knobs' toolbar, `LabToolbar` in `packages/kit/lab-knobs.ts`), then `LabPanel` groups ordered by
   the section's `detailsGroups(selection)`: Transform, then object groups (Character, Vehicle & Skids for a vehicle;
   Items for a prop; Light and Lights for a light; Effects for an emitter). Unrelated groups are hidden while
   something is selected; `All` shows them. Nothing selected shows scene settings (Spawn starts with Environment).
   Multi-selection keeps the shared Position X/Z/Yaw (and light) fields. Non-default values are accent-coloured with a
-  per-field `↺` reset (one undo entry) and a modified count per group; `Modified` filters to changed fields and
-  `Search details` filters by label/key/group. Spawn-time values (units ending `· retrigger`) show an amber dot.
+  per-field `↺` reset (one undo entry). knobs' search field (`/` with focus in the panel) filters by label, key, group
+  or sub-heading across every tab, and its `Modified` chip (with a count) narrows to changed fields. Sections with many
+  groups split them into tabs (`LabSection.tabs`). Spawn-time values (units ending `· retrigger`) show an amber dot.
   Defaults are the section's settings captured when the workbench starts, before fixtures or edits.
 - **Library drawer** (bottom, `Ctrl+Space`) holds everything you can add: Effects (Starting Fixtures first), Objects,
   Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with
@@ -139,16 +141,45 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
     across slider drags, `<output>` horizontal scrubs, `F`-hold scrubs, arrow-key holds, exact number edits, group
     resets and group randomizations.
   - `onFocusChange?: (focused: boolean, activeRow?: LabRow) => void` and `onToggle?: (visible: boolean) => void`.
-- `LabOptions` also takes `history` (the workbench's undo and redo, used by knobs' `u`/`z`), `variants` (where saved
-  knobs variants are kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
-- Knobs draws each group as a card with a die (Random, `⌥` Mutate) and a reset icon that shows while the group differs
-  from its defaults; the header has Random, Reset, Copy and `?`.
+- `LabOptions` also takes `history` (the workbench's undo stack as knobs' `HostHistory`: `undo`, `redo`, `canUndo`,
+  `canRedo`, `subscribe`; knobs' header Undo/Redo and `u`/`z` follow it), `variants` (where saved knobs variants are
+  kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
+- Section and control shape (all knobs Phase B, knobs `bc769f0`):
+  - `LabSection.tabs` puts the section's groups on Details tabs (`{ label, groups }`; a group as `[id, label]` reads
+    shorter there: Vegetation's Trees tab shows "Tree Structure" as "Structure"). Groups no tab names show on every
+    tab. Only the panel's own Details view has tabs; station cards and game overlays don't. `⌥1`–`⌥9` pick a tab while
+    focus is in the panel, `reveal(key)` shows the row's tab, and the search reaches every tab. Vegetation (Scene,
+    Trees, Bushes, Grass) and the Outbreak vignette (Scene, Lights, Materials, Look) have tabs.
+  - `LabControl.subsection` puts rows under a sub-heading inside their group (Materials: Texture, Colour & roughness,
+    Pattern & wear); sub-headings named "Advanced" start folded (Splatter). A group's rows without one come first.
+  - `LabControl.pair: { key, label }` draws a range and its upper end as one low–high row with two thumbs (Splatter's
+    Small/Large drops as Drop size); both stay separate settings, Copy lists both, and saved variants migrate.
+  - Seeds (keys ending `seed`) draw as knobs' seed row: the number and a die that rolls a new one (never part of
+    Random). Full-turn headings (a 360° range in degrees: yaw, azimuth, wind direction, texture rotation) draw as an
+    angle dial; partial angles stay sliders. The Lab has no key bindings to capture and every vector is a ground-plane
+    X/Z pair, which knobs' vec2 letters X/Y, so neither keybind nor vec2/vec3 fields are used yet.
+  - A group's die runs the group's own `Randomize <group>` action when it has one (knobs' `groupRandom`).
+- `LabControl.mixed?(settings)` marks a value that differs across a multi-selection (Spawn's Light power and radius
+  with two different lights selected): the row reads "—" until edited, and the edit sets every selected item.
+- Knobs draws each group under a heading with a die (Random, `⌥` Mutate) and a reset icon that shows while the group
+  differs from its defaults; the header has Random, Reset, Copy, Undo, Redo and `?`. Groups marked `folded` fold in
+  place and open from their heading (or when `reveal(key)` lands in them).
+- Every LabPanel wears the `arcade` preset (`arcadePreset` in `packages/kit/lab-knobs.ts`): knobs' `labPreset`
+  (square, `--k-frame: flat`, the Lab's palette, title and font weights) with 24 px rows, the UI font and one 11.5 px
+  size for labels and values, 20 px fields (`--k-control-h`, `--k-value-size`) and the Lab's 20 px square buttons
+  through knobs' `--k-button-*` tokens (toolbars, All on/All off, the variants menu). Inline panels have no frame of
+  their own and use the DOM renderer. knobs gives long choices a tooltip with the whole value, keeps labels' words up
+  to half the row, and opens lists of more than eight options with a search field (type to filter). The preset's
+  `css` holds only what no token reaches yet: action rows and preset chips drawn as the Lab's buttons, and toolbar
+  labels at full strength.
+  Change the look through tokens first, never in `packages/knobs`; gaps go to Kit's knobs session (`knobs-requests.md`).
 - Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
   highlighting; `setView({ order, filter })` orders groups and filters rows; `reveal(key)` focuses, scrolls and flashes
   a row; `resetControl(key)`; `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin (a dot at
-  the row's left edge on hover). `panel.mountView(el, { id, include })` adds another knobs card over the same settings
-  (station `controls` widgets), sharing the write path, transactions, tuning seed and history.
-  Floating game overlays keep their previous look.
+  the row's left edge on hover). `panel.mountView(el, { id, include, claim })` adds another knobs card over the same
+  settings (station `controls` widgets), sharing the write path, transactions, tuning seed and history. With
+  `claim: true` (station cards) Details leaves those rows out while the card is mounted, so each setting shows once;
+  `reveal(key)` finds a claimed row in its card.
 - Horizontal pointer dragging on `<output>` (and holding `F` over an active numeric row) scrubs values continuously
   (`Shift` ×10, `Alt` ×0.1; `Escape` cancels an active `F`-scrub).
 
@@ -263,6 +294,23 @@ hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
 hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 ```
+
+`hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs panels
+at 1440×900 and 1728×1117@2x on the Outbreak scenes station and the vignette section: no rounded box anywhere in the
+workbench outside the viewport, 24 px knobs rows, labels, values and choices in one 11.5 px font, no visible frame around
+inline panels, flat groups, the Details toolbar and knobs buttons drawn as the Lab's 20 px square buttons with the
+canvas keys as chips, no group in both the station's controls
+card and Details, no cut menu labels and a tooltip on every cut value, RMB and Ctrl-click on a Details button never open
+the radial while an RMB tap on the canvas does, and a press on a panel closes it. It also types into the first choice
+list longer than eight options (Materials' texture map) and checks the list filters, selects a spotlight and a lamp in
+Spawn and checks Light power reads "—" until an edit sets both, and checks Outbreak's floating overlay wears the same
+preset, has a search field that `/` focuses, and that a page's bare `button`/`span` rules don't restyle knobs' buttons.
+On the vignette's Details it checks the four tabs, `⌥2` showing Lights, `details.reveal` switching back to the row's
+tab, `/` in the panel focusing the search (typing "porch" leaves only the porch lights, across tabs) while `/` on the
+canvas still opens ⌘K, and `details.filter { modified }` leaving only changed rows. It checks Lighting's yaw and
+azimuth are dials (pitch stays a slider), a Materials seed die rolls a new seed, Splatter's drops are one range whose
+low thumb moves only `sizeMin` with the Advanced rows together under their sub-heading, and that Smoke's Shape die
+runs `Randomize Shape` instead of knobs' roll. `--shots-only` captures a before/after pair.
 
 `prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
 the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.

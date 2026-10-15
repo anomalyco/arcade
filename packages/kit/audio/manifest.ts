@@ -238,6 +238,18 @@ export function trimLoopPadding(ctx: BaseAudioContext, buf: AudioBuffer): AudioB
   while (a < b && Math.abs(d[a]!) < 1e-5) a++
   while (b > a && Math.abs(d[b - 1]!) < 1e-5) b--
   if (b - a < 64) return buf
+  if (a === 0 && b === d.length) {
+    const fade = Math.min(64, Math.floor(b / 4))
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const ch = buf.getChannelData(c)
+      for (let i = 0; i < fade; i++) {
+        const w = i / fade
+        ch[i]! *= w
+        ch[b - 1 - i]! *= w
+      }
+    }
+    return buf
+  }
   const out = ctx.createBuffer(buf.numberOfChannels, b - a, buf.sampleRate)
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const slice = new Float32Array(buf.getChannelData(c).subarray(a, b))
@@ -339,6 +351,9 @@ export class SampleBank {
   private decodedAssets = new Set<string>()
   private contextCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>()
   private baseUrl = defaultSfxBaseUrl()
+  private fallbackSeeded = false
+  private fallbackSampleRate = 48000
+  loadingInFlight = false
 
   constructor(entries: readonly SampleAssetMeta[] = DEFAULT_SAMPLE_MANIFEST, baseUrl = defaultSfxBaseUrl()) {
     this.registerManifest(entries, baseUrl)
@@ -351,22 +366,21 @@ export class SampleBank {
     }
   }
 
-  /** Pre-populates deterministic fallback stems so offline/unit renders work immediately without network I/O. */
+  /** Marks deterministic fallback stems ready for on-demand synthesis so offline/unit renders work immediately without network I/O or upfront 74 MB allocation. */
   seedFallbacks(sampleRate = 48000): void {
-    for (const [id, meta] of this.manifest) {
-      if (!this.decodedPcm.has(id)) {
-        this.decodedPcm.set(id, synthesizeFallbackPcm(meta, sampleRate))
-      }
-    }
+    this.fallbackSeeded = true
+    this.fallbackSampleRate = sampleRate
   }
 
   /** Registers an already-decoded AudioBuffer or raw PCM channels under `id`. */
-  setDecoded(id: string, buffer: AudioBuffer | DecodedPcm): void {
-    this.contextCache = new WeakMap()
+  setDecoded(id: string, buffer: AudioBuffer | DecodedPcm, keepContextCache = false): void {
+    if (!keepContextCache) {
+      this.contextCache = new WeakMap()
+    }
     if ("getChannelData" in buffer) {
       const channels: Float32Array[] = []
       for (let c = 0; c < buffer.numberOfChannels; c++) {
-        channels.push(new Float32Array(buffer.getChannelData(c)))
+        channels.push(keepContextCache ? buffer.getChannelData(c) : new Float32Array(buffer.getChannelData(c)))
       }
       this.decodedPcm.set(id, { sampleRate: buffer.sampleRate, channels })
     } else {
@@ -376,44 +390,53 @@ export class SampleBank {
 
   /** Fetches and decodes manifest URLs against `ctx`, falling back cleanly to synthesized stems if a URL is unreachable. */
   async loadAll(ctx: BaseAudioContext, fetchImpl: typeof fetch | undefined = typeof fetch !== "undefined" ? fetch : undefined): Promise<number> {
-    const tasks: Promise<void>[] = []
-    for (const [id, meta] of this.manifest) {
-      tasks.push(
-        (async () => {
-          if (this.decodedAssets.has(id)) return
-          if (fetchImpl) {
-            let rawPromise = this.rawBytes.get(id)
-            if (!rawPromise) {
-              const url = meta.url.startsWith("http") || meta.url.startsWith("/") ? meta.url : `${this.baseUrl}${meta.url}`
-              rawPromise = fetchImpl(url)
-                .then(r => (r.ok ? r.arrayBuffer() : null))
-                .catch(() => null)
-              this.rawBytes.set(id, rawPromise)
+    this.loadingInFlight = true
+    try {
+      const entries = [...this.manifest.entries()]
+      const concurrency = Math.min(12, Math.max(1, entries.length))
+      let cursor = 0
+      const workers: Promise<void>[] = []
+      for (let w = 0; w < concurrency; w++) {
+        workers.push(
+          (async () => {
+            while (cursor < entries.length) {
+              const [id, meta] = entries[cursor++]!
+              if (this.decodedAssets.has(id)) continue
+              if (fetchImpl) {
+                let rawPromise = this.rawBytes.get(id)
+                if (!rawPromise) {
+                  const url = meta.url.startsWith("http") || meta.url.startsWith("/") ? meta.url : `${this.baseUrl}${meta.url}`
+                  rawPromise = fetchImpl(url)
+                    .then(r => (r.ok ? r.arrayBuffer() : null))
+                    .catch(() => null)
+                  this.rawBytes.set(id, rawPromise)
+                }
+                const bytes = await rawPromise
+                if (bytes && bytes.byteLength > 0) {
+                  try {
+                    const decoded = await ctx.decodeAudioData(bytes.slice(0))
+                    const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
+                    this.setDecoded(id, trimmed, true)
+                    this.decodedAssets.add(id)
+                    this.cacheForContext(ctx).set(id, trimmed)
+                    continue
+                  } catch {}
+                }
+              }
+              this.fallbackSeeded = true
             }
-            const bytes = await rawPromise
-            if (bytes && bytes.byteLength > 0) {
-              try {
-                const decoded = await ctx.decodeAudioData(bytes.slice(0))
-                const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
-                this.setDecoded(id, trimmed)
-                this.decodedAssets.add(id)
-                this.cacheForContext(ctx).set(id, trimmed)
-                return
-              } catch {}
-            }
-          }
-          if (!this.decodedPcm.has(id)) {
-            this.decodedPcm.set(id, synthesizeFallbackPcm(meta, ctx.sampleRate))
-          }
-        })(),
-      )
+          })(),
+        )
+      }
+      await Promise.all(workers)
+      return this.loadedCount
+    } finally {
+      this.loadingInFlight = false
     }
-    await Promise.all(tasks)
-    return this.decodedPcm.size
   }
 
   get loadedCount(): number {
-    return this.decodedPcm.size
+    return this.fallbackSeeded ? this.manifest.size : this.decodedPcm.size
   }
 
   /** Successfully fetched and browser-decoded assets, excluding procedural fallbacks. */
@@ -427,6 +450,7 @@ export class SampleBank {
       target.decodedPcm.set(id, pcm)
     }
     for (const id of this.decodedAssets) target.decodedAssets.add(id)
+    if (this.fallbackSeeded) target.seedFallbacks(this.fallbackSampleRate)
   }
 
   getBuffer(ctx: BaseAudioContext, id: string): AudioBuffer | undefined {

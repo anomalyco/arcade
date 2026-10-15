@@ -24,10 +24,14 @@ import {
   type ServerMsg,
   type SharedSnapshot,
   type VehicleState,
+  type ZombieState,
 } from "../shared/net-protocol"
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
-import { createVehicleFromSpawn, seatPos, VEHICLES, type OutbreakVehicleSubsystem } from "../shared/vehicles"
-import { chunkKey, worldToChunk } from "../shared/world"
+import type { OutbreakVehicleSubsystem } from "../shared/vehicles"
+import { outbreakClientFeatures } from "./feature-registry"
+import "./melee/index"
+import "./progression"
+import "./vehicles/index"
 
 /** Seat colours, by seat index: torso, trousers. Also used for name tags. */
 export const SURVIVOR_COLOURS: readonly { torso: number; legs: number; css: string }[] = [
@@ -87,6 +91,10 @@ export class NetSession implements Session {
   private prevSentSeq = 0
   private outWriter = new ByteWriter(64)
   private agents = new Map<number, AIAgent>()
+  private readonly prevZombies = new Map<number, ZombieState>()
+  private readonly seenZombies = new Set<number>()
+  private readonly prevSurvivors = new Map<number, RemoteSurvivor>()
+  private readonly presentSurvivors = new Set<number>()
   private lastAppliedRevision = -1
   private retries = 0
   private closed = false
@@ -178,7 +186,7 @@ export class NetSession implements Session {
     this.sim.hour = Math.abs(b.hour - a.hour) > 12 ? b.hour : lerp(a.hour, b.hour, t)
     this.placeZombies(a, b, t, span)
     this.placeSurvivors(a, b, t, span)
-    this.placeVehicles(a, b, t, span)
+    outbreakClientFeatures.syncNetFrame(this, a, b, t, span)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
   }
@@ -303,28 +311,7 @@ export class NetSession implements Session {
       personal.ack,
       () => {
         Object.assign(p, personal.survivor)
-        if (p.vehicleId) {
-          const sv = shared.vehicles?.find((x) => x.id === p.vehicleId)
-          const lv = this.sim.vehicles.byId(p.vehicleId)
-          if (sv && lv) {
-            lv.x = sv.x
-            lv.y = sv.y
-            lv.h = sv.h
-            lv.vx = sv.vx
-            lv.vy = sv.vy
-            lv.w = sv.w
-            lv.hp = sv.hp
-            lv.fuel = sv.fuel
-            lv.hasBattery = sv.hasBattery
-            lv.hasKeys = sv.hasKeys
-            lv.headlights = sv.headlights
-            lv.engineOn = sv.engineOn
-            lv.horn = sv.horn
-            lv.wreck = sv.wreck
-            lv.drive = { throttle: sv.throttle, steer: sv.steer, handbrake: sv.handbrake }
-            lv.seats[p.seatIndex ?? 0] = this.local.id
-          }
-        }
+        outbreakClientFeatures.reconcileNetLocal(this, personal, shared)
       },
       (cmd) => this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true),
     )
@@ -396,25 +383,10 @@ export class NetSession implements Session {
         if (st) st.lastBashTime = s.time - bash.age
       }
     }
-    const progression = sim.progression
-    if (progression.pings.length || s.pings.length) {
-      progression.pings.splice(
-        0,
-        progression.pings.length,
-        ...s.pings.map((p) => ({ id: p.id, by: p.by, x: p.x, y: p.y, label: p.label, until: s.time + p.left })),
-      )
-    }
-    if (progression.lures.length || s.lures.length) {
-      progression.lures.splice(
-        0,
-        progression.lures.length,
-        ...s.lures.map((l) => ({ id: l.id, x: l.x, y: l.y, until: s.time + l.left, next: Infinity })),
-      )
-    }
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
-    if (s.vehicles) {
-      this.syncSnapshotVehicles(s.vehicles)
+    if (outbreakClientFeatures.applyNetWorld(this, s)) {
+      topology = true
     }
     if (topology) {
       sim.revision++
@@ -422,95 +394,19 @@ export class NetSession implements Session {
     }
   }
 
-  private syncSnapshotVehicles(netVehicles: readonly VehicleState[]): void {
-    const sim = this.sim
-    const slotIdByIndex = new Map(sim.slots.map((sl) => [sl.index, sl.id]))
-    const localDrivenId =
-      this.local.survivor.vehicleId && (this.local.survivor.seatIndex ?? 0) === 0
-        ? this.local.survivor.vehicleId
-        : null
-    for (const sv of netVehicles) {
-      let lv = sim.vehicles.byId(sv.id)
-      if (!lv) {
-        const coord = worldToChunk(sv.x, sv.y)
-        lv = createVehicleFromSpawn({
-          id: sv.id,
-          kind: sv.kind,
-          originChunkKey: chunkKey(coord.cx, coord.cy),
-          x: sv.x,
-          y: sv.y,
-          h: sv.h,
-          fuel: sv.fuel,
-          hasBattery: sv.hasBattery,
-          hasKeys: sv.hasKeys,
-          headlights: sv.headlights,
-        })
-        sim.vehicles.list.push(lv)
-      }
-      lv.kind = sv.kind
-      lv.spec = VEHICLES[sv.kind]
-      lv.hp = sv.hp
-      lv.fuel = sv.fuel
-      lv.hasBattery = sv.hasBattery
-      lv.hasKeys = sv.hasKeys
-      lv.headlights = sv.headlights
-      lv.engineOn = sv.engineOn
-      lv.horn = sv.horn
-      lv.wreck = sv.wreck
-      lv.seats = sv.seats.map((idx) => (idx >= 0 ? (slotIdByIndex.get(idx) ?? `remote${idx}`) : ""))
-      if (lv.id !== localDrivenId) {
-        lv.x = sv.x
-        lv.y = sv.y
-        lv.h = sv.h
-        lv.vx = sv.vx
-        lv.vy = sv.vy
-        lv.w = sv.w
-        lv.drive = { throttle: sv.throttle, steer: sv.steer, handbrake: sv.handbrake }
-      }
-    }
-  }
-
-  private placeVehicles(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
-    if (!b.vehicles) return
-    const prev = new Map((a.vehicles ?? []).map((v) => [v.id, v]))
-    const localDrivenId =
-      this.local.survivor.vehicleId && (this.local.survivor.seatIndex ?? 0) === 0
-        ? this.local.survivor.vehicleId
-        : null
-    for (const vb of b.vehicles) {
-      const lv = this.sim.vehicles.byId(vb.id)
-      if (!lv || lv.id === localDrivenId) continue
-      const va = prev.get(vb.id) ?? vb
-      const teleport = Math.hypot(vb.x - va.x, vb.y - va.y) > 8
-      lv.x = teleport ? vb.x : lerp(va.x, vb.x, t)
-      lv.y = teleport ? vb.y : lerp(va.y, vb.y, t)
-      lv.h = lerpAngle(va.h, vb.h, t)
-      lv.vx = teleport ? vb.vx : (vb.x - va.x) / span
-      lv.vy = teleport ? vb.vy : (vb.y - va.y) / span
-      // Place any passengers (including local passenger) on their interpolated seat positions
-      for (let s = 0; s < lv.seats.length; s++) {
-        const sid = lv.seats[s]!
-        if (!sid) continue
-        const slot = this.sim.slots.find((sl) => sl.id === sid)
-        if (slot && (slot !== this.local || s > 0)) {
-          const sp = seatPos(lv, lv.spec, s)
-          slot.survivor.x = sp.x
-          slot.survivor.y = sp.y
-          slot.survivor.vx = lv.vx
-          slot.survivor.vy = lv.vy
-          slot.survivor.vehicleId = lv.id
-          slot.survivor.seatIndex = s
-        }
-      }
-    }
-  }
-
   private placeZombies(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
-    const prev = new Map(a.zombies.map((z) => [z.id, z]))
+    const prev = this.prevZombies
+    prev.clear()
+    for (let i = 0; i < a.zombies.length; i++) {
+      const z = a.zombies[i]!
+      prev.set(z.id, z)
+    }
     const list = this.sim.ai.agents
     list.length = 0
-    const seen = new Set<number>()
-    for (const z of b.zombies) {
+    const seen = this.seenZombies
+    seen.clear()
+    for (let i = 0; i < b.zombies.length; i++) {
+      const z = b.zombies[i]!
       let agent = this.agents.get(z.id)
       if (!agent) {
         agent = createAIAgent(z.id, z.seed, z.x, z.y, z.aim)
@@ -531,9 +427,16 @@ export class NetSession implements Session {
   }
 
   private placeSurvivors(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
-    const prev = new Map(a.survivors.map((s) => [s.index, s]))
-    const present = new Set<number>()
-    for (const r of b.survivors) {
+    const prev = this.prevSurvivors
+    prev.clear()
+    for (let i = 0; i < a.survivors.length; i++) {
+      const s = a.survivors[i]!
+      prev.set(s.index, s)
+    }
+    const present = this.presentSurvivors
+    present.clear()
+    for (let i = 0; i < b.survivors.length; i++) {
+      const r = b.survivors[i]!
       if (r.index === this.local.index) continue
       present.add(r.index)
       const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
@@ -541,7 +444,8 @@ export class NetSession implements Session {
       if (!slot) slot = this.sim.addSurvivor(id, r.index)
       writeRemote(slot, prev.get(r.index) ?? r, r, t, span)
     }
-    for (const slot of [...this.sim.slots]) {
+    for (let i = this.sim.slots.length - 1; i >= 0; i--) {
+      const slot = this.sim.slots[i]!
       if (slot !== this.local && !present.has(slot.index)) this.sim.removeSurvivor(slot.id)
     }
   }
@@ -559,7 +463,12 @@ function writeRemote(slot: SurvivorSlot, a: RemoteSurvivor, b: RemoteSurvivor, t
   p.flashlightOutput = lerp(a.flashlightOutput, b.flashlightOutput, t)
   p.sprinting = b.sprinting
   p.exhausted = b.exhausted
-  p.equippedItem = b.pistol ? "pistol" : "hands"
+  p.meleeWeapon = b.meleeWeapon ?? null
+  p.equippedItem = b.meleeWeapon ? b.meleeWeapon : b.pistol ? "pistol" : "hands"
+  p.meleePhase = b.meleePhase ?? "idle"
+  p.meleeCombo = b.meleeCombo ?? 1
+  p.meleePhaseDuration = b.meleePhase && b.meleePhase !== "idle" ? 0.14 : 0
+  p.meleePhaseTime = b.meleePhase && b.meleePhase !== "idle" ? (b.meleeProgress ?? 0.5) * 0.14 : 0
   p.reloadRemaining = b.reloading ? 0.5 : 0
   p.health = b.health
   p.recoil = lerp(a.recoil, b.recoil, t)

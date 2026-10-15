@@ -44,6 +44,9 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `gun.dry-fire` | 3 | weapon | 0.23–0.48 | 9 | ElevenLabs, 3 of 4 |
 | `gun.casing` | 3 | foley | 0.80 | 16 | ElevenLabs, 3 of 4 |
 | `melee.shove` | 3 | foley | 0.60–0.72 | 12 | ElevenLabs, 3 of 4 |
+| `melee.swing.{light,heavy}` | 3 each | weapon | 0.27–0.65 | 8–10 | ElevenLabs, 3 of 4 each |
+| `melee.hit.{wood,metal,blade}` | 3 each | impact | 0.26–0.71 | 9–13 | ElevenLabs, 3 of 4 each |
+| `melee.break` | 2 | impact | 0.80–0.85 | 12 | ElevenLabs, 2 of 3 |
 | `foot.{concrete,grass,wood}.walk` | 6 each | foley | 0.30–0.42 | 13–14 | ElevenLabs, steps sliced from 2 takes |
 | `foot.{concrete,grass,wood}.run` | 6 each | foley | 0.19–0.30 | 10–11 | ElevenLabs, steps sliced from 2 takes |
 | `door.wood.open` | 3 | foley | 0.97–1.20 | 19 | ElevenLabs, 3 of 4 |

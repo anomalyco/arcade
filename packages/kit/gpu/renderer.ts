@@ -72,7 +72,7 @@ const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" | "fade" }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
 function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, custom = false): boolean {
@@ -172,6 +172,8 @@ export type FrameInput = {
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
+  /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
+  postParams?: readonly [number, number, number]
 }
 
 /**
@@ -220,6 +222,9 @@ export class Renderer {
   private materialTex: GPUTexture
   private materialTexView: GPUTextureView
   private materialSampler: GPUSampler
+  /** Game-owned texture array at binding 15 (Outbreak's baked rugs); a 1×1 placeholder until a game sets one. */
+  private detailView: GPUTextureView
+  private detailSampler: GPUSampler
   private surfaceTexBuf: GPUBuffer
   private surfaceTexData = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS)
   private surfaceTexInput: SurfaceTexUniformInput = { enabled: 1 }
@@ -249,6 +254,7 @@ export class Renderer {
   private velocityMSAA: GPUTexture | null = null
   private velocityView!: GPUTextureView
   private velocityMSAAView!: GPUTextureView
+  private velocityAttachment: GPURenderPassColorAttachment | null = null
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
   private sharedBlur: MotionBlur | null = null
@@ -279,6 +285,12 @@ export class Renderer {
   submittedFrames = 0
   width = 0
   height = 0
+  /** Most recent GPU queue-completion latency (ms) from flushPending. */
+  lastGpuMs = 0
+  /** Exponential moving average of GPU queue-completion latency (ms). */
+  emaGpuMs = 0
+  private bloomLevels = BLOOM_LEVELS
+  private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean }[] = []
 
   constructor(
     private device: GPUDevice,
@@ -324,6 +336,9 @@ export class Renderer {
     this.materialTex = fallbackMaterials.texture
     this.materialTexView = fallbackMaterials.view
     this.materialSampler = createMaterialSampler(d)
+    const detail = d.createTexture({ size: [1, 1, 1], format: "rgba8unorm-srgb", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.detailView = detail.createView({ dimension: "2d-array" })
+    this.detailSampler = d.createSampler({ label: "detail-anisotropic", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 16 })
     this.surfaceTexBuf = d.createBuffer({ size: SURFACE_TEX_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
@@ -332,7 +347,14 @@ export class Renderer {
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
-    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: true })
+    this.targets = new SceneTargets(d, {
+      hdrFormat: HDR,
+      depthFormat: DEPTH,
+      samples: SAMPLES,
+      depthTextureBinding: true,
+      clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 },
+      depthClearValue: DEPTH_CFG.clearValue,
+    })
     this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: HDR, upTexelSource: "target" })
 
     const S = GPUShaderStage
@@ -361,6 +383,8 @@ export class Renderer {
         { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 13, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 14, visibility: S.FRAGMENT, texture: {} },
+        { binding: 15, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
+        { binding: 16, visibility: S.FRAGMENT, sampler: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -369,6 +393,9 @@ export class Renderer {
       frameLayout: sceneLayout,
       color: HDR,
       depth: DEPTH,
+      depthMode: DEPTH_CFG.mode,
+      depthCompare: DEPTH_CFG.compare,
+      depthClearValue: DEPTH_CFG.clearValue,
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
@@ -621,8 +648,16 @@ export class Renderer {
         { binding: 12, resource: { buffer: this.surfaceTexBuf } },
         { binding: 13, resource: { buffer: this.customBuf } },
         { binding: 14, resource: this.fieldTex.createView() },
+        { binding: 15, resource: this.detailView },
+        { binding: 16, resource: this.detailSampler },
       ],
     })
+  }
+
+  /** Binds a game's texture array at `@binding(15)` (sampled with the anisotropic clamp sampler at 16). */
+  setDetailTextureArray(view: GPUTextureView): void {
+    this.detailView = view
+    this.makeSceneGroup()
   }
 
   private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
@@ -674,8 +709,8 @@ export class Renderer {
 
   private levelStaging = new Uint8Array(0)
   private glassStaging = new Uint8Array(0)
-  private readonly streamSlotKeys: string[] = ["", "", "", "", "", "", "", "", ""]
-  private readonly streamSlotChunks: Chunk[][] = [[], [], [], [], [], [], [], [], []]
+  private readonly streamSlotKeys: string[] = Array.from({ length: 25 }, () => "")
+  private readonly streamSlotChunks: Chunk[][] = Array.from({ length: 25 }, () => [])
 
   private upload(data: ArrayBuffer, prev: Buf | null, byteLength = data.byteLength): Buf {
     const needed = Math.max(64, byteLength)
@@ -693,13 +728,14 @@ export class Renderer {
   /** Static level: opaque chunks (each culled against the view), translucent glass and haze chunks, and the baked floor map. */
   setLevel(level: LevelData): void {
     this.previousFrame = null
+    const STREAM_SLOT_COUNT = 25
     const STREAM_SLOT_BYTES = 768 * 1024
     const isStreamedSlots =
       level.chunks.length > 0 &&
       level.chunks.every((c) => c.streamSlot !== undefined && c.streamKey !== undefined)
 
     if (isStreamedSlots) {
-      const totalCap = 9 * STREAM_SLOT_BYTES
+      const totalCap = STREAM_SLOT_COUNT * STREAM_SLOT_BYTES
       if (!this.level || this.level.cap < totalCap) {
         this.level?.buf.destroy()
         this.level = {
@@ -709,16 +745,23 @@ export class Renderer {
         }
         this.streamSlotKeys.fill("")
       }
-      const bySlot: LevelData["chunks"][] = [[], [], [], [], [], [], [], [], []]
+      const bySlot: LevelData["chunks"][] = Array.from({ length: STREAM_SLOT_COUNT }, () => [])
       for (let i = 0; i < level.chunks.length; i++) {
         const c = level.chunks[i]!
         bySlot[c.streamSlot!]!.push(c)
       }
       let slotOverflow = false
-      for (let s = 0; s < 9; s++) {
+      for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
         const list = bySlot[s]!
-        const key = list[0]?.streamKey ?? "empty"
-        if (key === this.streamSlotKeys[s]) continue
+        if (list.length === 0) continue
+        const key = list[0]!.streamKey!
+        if (key === this.streamSlotKeys[s]) {
+          const sc = this.streamSlotChunks[s]!
+          for (let i = 0; i < sc.length && i < list.length; i++) {
+            sc[i]!.customCutaway = list[i]!.customCutaway
+          }
+          continue
+        }
         let slotBytes = 0
         for (let i = 0; i < list.length; i++) slotBytes += list[i]!.byteLength ?? list[i]!.data.byteLength
         if (slotBytes > STREAM_SLOT_BYTES) {
@@ -748,7 +791,8 @@ export class Renderer {
       }
       if (!slotOverflow) {
         const mergedChunks: Chunk[] = []
-        for (let s = 0; s < 9; s++) {
+        for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
+          if (bySlot[s]!.length === 0) continue
           const sc = this.streamSlotChunks[s]!
           for (let i = 0; i < sc.length; i++) mergedChunks.push(sc[i]!)
         }
@@ -770,6 +814,9 @@ export class Renderer {
     this.glassChunks = glsChunks
     this.glass = this.upload(glsBuf, this.glass, glsBytes)
     const f = level.floor
+    if (level.geometryOnly && this.floorTex.width === f.w && this.floorTex.height === f.h) {
+      return
+    }
     let rebound = false
     if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
       this.floorTex.destroy()
@@ -839,6 +886,7 @@ export class Renderer {
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
     this.velocity = this.velocityMSAA = null
+    this.velocityAttachment = null
     this.smokeRenderer.resize(w, h, this.targets.depthView)
     this.bloomPyramid.resize({
       hdr: this.targets.hdr,
@@ -952,6 +1000,13 @@ export class Renderer {
     this.velocityMSAA = d.createTexture({ size, format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.velocityView = this.velocity.createView()
     this.velocityMSAAView = this.velocityMSAA.createView()
+    this.velocityAttachment = {
+      view: this.velocityMSAAView,
+      resolveTarget: this.velocityView,
+      clearValue: { r: 0, g: 0, b: 1000, a: 1 },
+      loadOp: "clear",
+      storeOp: "discard",
+    }
     this.motionComposite = d.createBindGroup({ layout: this.motionPostLayout, entries: [
       { binding: 0, resource: this.targets.hdrView }, { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: this.bloomPyramid.downParams[0]! } },
@@ -1083,14 +1138,23 @@ export class Renderer {
     })
   }
 
+  setBloomLevels(levels: number): void {
+    this.bloomLevels = Math.max(1, Math.min(BLOOM_LEVELS, Math.round(levels)))
+  }
+
   private flushPending(): void {
     const f = this.pending
     if (!f || this.inflight >= 1) return
     this.pending = null
+    const submitAt = performance.now()
     this.draw(f)
     this.inflight++
     void this.device.queue.onSubmittedWorkDone().then(() => {
+      const gpuMs = Math.max(0, performance.now() - submitAt)
+      this.lastGpuMs = gpuMs
+      this.emaGpuMs = this.emaGpuMs > 0 ? this.emaGpuMs + (gpuMs - this.emaGpuMs) * 0.2 : gpuMs
       this.inflight--
+      if (this.pending) this.schedule()
       this.onIdle?.()
       this.notifyPacer()
     })
@@ -1101,7 +1165,8 @@ export class Renderer {
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
-    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    const hasPostParams = Boolean(f.postParams && f.postParams[0] > 0.5)
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2 || hasPostParams)
     if (f.splatter) {
       this.splatterRenderer ??= new SplatterRenderer(d)
       for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
@@ -1199,9 +1264,9 @@ export class Renderer {
     this.gradeData.set(f.grade)
     if (useLookPipes && effectiveLook) {
       this.gradeData[4] = 0
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
@@ -1209,9 +1274,9 @@ export class Renderer {
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
       this.gradeData[4] = f.frame[45]! & 1
-      this.gradeData[5] = 0
-      this.gradeData[6] = 0
-      this.gradeData[7] = 0
+      this.gradeData[5] = f.postParams?.[0] ?? 0
+      this.gradeData[6] = f.postParams?.[1] ?? 0
+      this.gradeData[7] = f.postParams?.[2] ?? 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 
@@ -1238,18 +1303,30 @@ export class Renderer {
     const mbBurst = Boolean(mb?.settings.enabled && mb.settings.burst > 0.001 && mb.burst?.active)
     const runSharedBlur = !motion && (mbContinuous || mbBurst)
 
-    const total = f.batches.reduce((s, b) => s + b.count, 0)
+    let total = 0
+    for (let i = 0; i < f.batches.length; i++) total += f.batches[i]!.count
     if (motion && total * INST_FLOATS > this.previousData.length) {
       this.previousData = new Float32Array(total * INST_FLOATS * 2)
       this.previousInst.destroy()
       this.previousInst = d.createBuffer({ size: this.previousData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     }
     this.inst.ensureCapacity(total)
-    const ranges: { model: number; first: number; count: number; alpha: boolean }[] = []
+    const ranges = this.drawRanges
+    let rangeCount = 0
     let off = 0
-    for (const b of f.batches) {
+    for (let bIdx = 0; bIdx < f.batches.length; bIdx++) {
+      const b = f.batches[bIdx]!
       if (!b.count) continue
-      ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      const existing = ranges[rangeCount]
+      if (existing) {
+        existing.model = b.model
+        existing.first = off
+        existing.count = b.count
+        existing.alpha = !!b.alpha
+      } else {
+        ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+      }
+      rangeCount++
       if (motion) for (let i = 0; i < b.count; i++) this.history.write(this.previousData, (off + i) * INST_FLOATS, b.data, i * INST_FLOATS, b.motionKeys?.[i])
       off += b.count
     }
@@ -1298,11 +1375,13 @@ export class Renderer {
     }
 
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
-    const pass = enc.beginRenderPass({
-      timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
-      colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
-    })
+    const pass = enc.beginRenderPass(
+      this.targets.configureMainPass({
+        storeDepth: hasSmoke || runSharedBlur,
+        timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
+        extraColorAttachment: motion ? this.velocityAttachment : null,
+      }),
+    )
     pass.setBindGroup(0, this.sceneGroup)
     this.passes.drawSlot("sky", pass)
     if (this.level?.count) {
@@ -1313,10 +1392,11 @@ export class Renderer {
         this.chunks,
         (c) => {
           if (!boxIntersectsRect2D(c.box, f.view)) return null
-          const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
+          const isFade = c.customCutaway === "fade"
+          const insideCustom = c.customCutaway && !isFade ? intersectsCutaway(c.cutBox, f.frame, true) : false
           const peeking = f.frame[26]! > 1.001
           if (c.customCutaway === "outside" && insideCustom && !peeking) return null
-          return c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
+          return isFade ? true : c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
         },
         (cut) => pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!),
         false,
@@ -1328,7 +1408,8 @@ export class Renderer {
     if (motion) pass.setVertexBuffer(2, this.previousInst)
     for (const alpha of [false, true]) {
       pass.setPipeline(alpha ? scenePipes.instAlpha! : scenePipes.inst!)
-      for (const r of ranges) {
+      for (let rIdx = 0; rIdx < rangeCount; rIdx++) {
+        const r = ranges[rIdx]!
         if (r.alpha !== alpha) continue
         const m = this.models[r.model]!
         pass.setVertexBuffer(0, m.buf)
@@ -1434,7 +1515,7 @@ export class Renderer {
       activeDown0 = this.sharedBlurGroups.down0
       activeComposite = this.sharedBlurGroups.composite
     }
-    this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0)
+    this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     const useFastLookPost =

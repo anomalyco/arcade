@@ -49,10 +49,6 @@ export class Renderer {
   private foliage: Stream | null = null
   private view: [number, number, number, number] = [0, 0, 0, 0]
   private targets: SceneTargets
-  private clear: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 }
-  private colorAttachment: GPURenderPassColorAttachment | null = null
-  private depthAttachment: GPURenderPassDepthStencilAttachment | null = null
-  private mainPass: GPURenderPassDescriptor | null = null
 
   constructor(
     private device: GPUDevice,
@@ -67,8 +63,23 @@ export class Renderer {
       entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
     })
     this.frameGroup = d.createBindGroup({ layout: frameLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
-    this.context = { device: d, frameLayout, color: HDR, depth: DEPTH, samples: SAMPLES }
-    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: false })
+    this.context = {
+      device: d,
+      frameLayout,
+      color: HDR,
+      depth: DEPTH,
+      depthMode: DEPTH_CFG.mode,
+      depthCompare: DEPTH_CFG.compare,
+      depthClearValue: DEPTH_CFG.clearValue,
+      samples: SAMPLES,
+    }
+    this.targets = new SceneTargets(d, {
+      hdrFormat: HDR,
+      depthFormat: DEPTH,
+      samples: SAMPLES,
+      depthTextureBinding: false,
+      depthClearValue: DEPTH_CFG.clearValue,
+    })
     this.lit = createLitPipelines(this.context, this.module(LIT_WGSL, "lit"))
     this.post = new Post(d, HDR, format, (code, label) => this.module(code, label))
   }
@@ -115,9 +126,6 @@ export class Renderer {
     if (!this.targets.resize(w, h)) return
     this.width = w
     this.height = h
-    this.colorAttachment = { view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: this.clear, loadOp: "clear", storeOp: "discard" }
-    this.depthAttachment = { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: "discard" }
-    this.mainPass = { colorAttachments: [this.colorAttachment], depthStencilAttachment: this.depthAttachment }
     this.post.resize(this.targets.hdr, this.targets.hdrView, HDR)
   }
 
@@ -150,7 +158,7 @@ export class Renderer {
     this.scheduled = false
     const f = this.pendingFrame
     const g = this.pendingGrade
-    if (!f || !g || this.inflight >= 1 || !this.mainPass) return
+    if (!f || !g || this.inflight >= 1 || !this.targets.hdr) return
     this.pendingFrame = null
     this.pendingGrade = null
     this.draw(f, g)
@@ -168,15 +176,15 @@ export class Renderer {
     const d = this.device
     this.currentFrame.set(frame.subarray(0, FRAME_FLOATS))
     d.queue.writeBuffer(this.frameBuf, 0, frame.buffer, frame.byteOffset, FRAME_FLOATS * 4)
-    this.clear.r = frame[FRAME.horizon]!
-    this.clear.g = frame[FRAME.horizon + 1]!
-    this.clear.b = frame[FRAME.horizon + 2]!
+    this.targets.clearColor.r = frame[FRAME.horizon]!
+    this.targets.clearColor.g = frame[FRAME.horizon + 1]!
+    this.targets.clearColor.b = frame[FRAME.horizon + 2]!
     // viewProj is the Frame's first 16 floats, so the Frame itself serves as the matrix.
     frustumGroundRect(frame, STATIC_Y0, STATIC_Y1, this.view)
 
     const enc = d.createCommandEncoder()
     this.passes.prepareAll(enc)
-    const pass = enc.beginRenderPass(this.mainPass!)
+    const pass = enc.beginRenderPass(this.targets.mainPass)
     pass.setBindGroup(0, this.frameGroup)
     this.passes.drawSlot("sky", pass)
     this.drawnChunks = 0

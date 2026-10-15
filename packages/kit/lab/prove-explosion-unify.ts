@@ -11,10 +11,14 @@ const out = resolve(process.env.EXPLOSION_UNIFY_OUT ?? "/Users/kit/code/home/art
 const framesRoot = join(out, "video-frames")
 mkdirSync(framesRoot, { recursive: true })
 
-// Pre-unification commit on main before explosion-unify landed
-const baseline = process.env.EXPLOSION_BASELINE ?? "457167a"
+// Before = what review R-1 showed (release-6 head before explosion-r1); 457167a is the pre-unification commit.
+const baseline = process.env.EXPLOSION_BASELINE ?? "a035957"
+// Only the pre-unification baseline lacks the shared trigger hooks; any later baseline is driven like the current tree.
+const legacy = (variant: "before" | "after") => (variant === "before" && baseline === "457167a" ? "before" : "after")
+const steps = new Set((process.env.EXPLOSION_STEPS ?? "lab,getaway,blackout,carrier").split(","))
 const baselineFiles = [
   "packages/kit/fx/explosion.ts",
+  "packages/kit/fx/particles.ts",
   "packages/kit/fx/particle-renderer.ts",
   "packages/kit/fx/index.ts",
   "packages/kit/fx/fire-water.ts",
@@ -122,7 +126,7 @@ const report: Record<string, unknown> = { baseline, budgetMs: 16.67 }
 try {
   // 1. Lab unification & LOD verification
   console.log("Step 1: Lab unification & LOD verification...")
-  {
+  if (steps.has("lab")) {
     const { url, server } = await startGameServer("lab", "after")
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
     page.on("pageerror", e => errors.push(`lab: ${e.message}`))
@@ -191,7 +195,7 @@ try {
 
   // 2. Getaway: Single-blast + Worst-case (4 simultaneous propane/fuel blasts) perf + 300-frame (10s @ 30fps) Before/After video capture
   console.log("Step 2: Getaway perf (single + 4x worst-case) & video capture...")
-  {
+  if (steps.has("getaway")) {
     const bSrv = await startGameServer("getaway", "before")
     const aSrv = await startGameServer("getaway", "after")
     const pages = {
@@ -267,7 +271,7 @@ try {
                 cpuPeakMs: Number(max(cpus).toFixed(4)),
               }
             },
-            { variant: v, mode },
+            { variant: legacy(v), mode },
           )
         }
         if (pair > 0) {
@@ -298,7 +302,7 @@ try {
       }
     }
 
-    report.getawayPerf = {
+    if (process.env.SKIP_PERF !== "1") report.getawayPerf = {
       singleBlast: await runGetawayBench("single"),
       worstCase4x: await runGetawayBench("worst"),
     }
@@ -330,7 +334,7 @@ try {
         } else {
           scene.clutter.trigger("propane", px, pz)
         }
-      }, variant)
+      }, legacy(variant))
       const canvas = page.locator("#view")
       for (let vf = 1; vf <= 240; vf++) {
         if (vf === 121) {
@@ -360,7 +364,7 @@ try {
             } else {
               scene.clutter.explodeCar(px, pz, 0, 0, { x: s0.pose.x, z: s0.pose.z })
             }
-          }, variant)
+          }, legacy(variant))
         }
         await page.evaluate(async () => {
           const b = (window as any).__getawayBench
@@ -378,7 +382,7 @@ try {
 
   // 3. Blackout: Single-blast + Worst-case (5-grenade spam) perf + 240-frame (8.0s @ 30fps) Before/After video capture
   console.log("Step 3: Blackout perf (single + 5x grenade spam) & video capture...")
-  {
+  if (steps.has("blackout")) {
     const bSrv = await startGameServer("blackout", "before")
     const aSrv = await startGameServer("blackout", "after")
     const pages = {
@@ -466,7 +470,7 @@ try {
       }
     }
 
-    report.blackoutPerf = {
+    if (process.env.SKIP_PERF !== "1") report.blackoutPerf = {
       singleBlast: await runBlackoutBench("single"),
       worstCase5xGrenadeSpam: await runBlackoutBench("worst"),
     }
@@ -498,7 +502,7 @@ try {
             } else {
               f.game.explode({ k: "explode", id: -1, by: "viewer", x: cx, y: cy, kind: "frag", aim: 0 }, "car")
             }
-          }, variant)
+          }, legacy(variant))
         }
         await page.evaluate(async () => {
           const f = (window as any).fxProof
@@ -516,7 +520,7 @@ try {
 
   // 4. Carrier: Single-blast + Worst-case (4 simultaneous explosions) perf + 270-frame (9.0s @ 30fps) Before/After video capture
   console.log("Step 4: Carrier perf (single + 4x worst-case) & video capture...")
-  {
+  if (steps.has("carrier")) {
     const bSrv = await startGameServer("carrier", "before")
     const aSrv = await startGameServer("carrier", "after")
     const pages = {
@@ -535,6 +539,15 @@ try {
         globalThis.requestAnimationFrame = cb => {
           cbs.push(cb)
           return cbs.length
+        }
+        // Kill every live weapon effect (sprites, faceted rocks, kit particles) so one beat never leaks into the next.
+        ;(globalThis as any).__clearCarrierFx = () => {
+          const fx = (globalThis as any).carrier.flight.weapons.fx
+          for (const pool of [fx.sp, fx.rk]) {
+            pool.age.fill(0)
+            pool.life.fill(0)
+          }
+          fx.fxParticles.reset()
         }
         ;(globalThis as any).__stepCarrier = async (dtSec = 1 / 60) => {
           nowMs += dtSec * 1000
@@ -555,10 +568,11 @@ try {
           await page.bringToFront()
           row[v] = await page.evaluate(async mode => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
-            if (c.flight.weapons.fx.fxParticles) c.flight.weapons.fx.fxParticles.reset()
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
+            ;(globalThis as any).__clearCarrierFx()
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
             if (mode === "worst") {
               c.flight.weapons.fx.explosion(s.x - 14, s.heave + 28, s.z - 22, 0, 0, 0, 1.6, false)
@@ -621,15 +635,15 @@ try {
       }
     }
 
-    report.carrierPerf = {
+    if (process.env.SKIP_PERF !== "1") report.carrierPerf = {
       singleBlast: await runCarrierBench("single"),
       worstCase4xSimultaneous: await runCarrierBench("worst"),
     }
 
-    // Record 270 video frames (9.0s @ 30fps = 540 sim steps @ 60Hz):
-    // Beat 1 (frames 1..90, 0..3s): Missile hit on carrier ship deck
-    // Beat 2 (frames 91..180, 3..6s): Missile airburst over sea
-    // Beat 3 (frames 181..270, 6..9s): Boat explosion on water
+    // Record 315 video frames (10.5s @ 30fps = 630 sim steps @ 60Hz):
+    // Beat 1 (frames 1..135, 0..4.5s): Missile hit on carrier ship deck (long enough for the fragment trails to land)
+    // Beat 2 (frames 136..225, 4.5..7.5s): Missile airburst over sea
+    // Beat 3 (frames 226..315, 7.5..10.5s): Boat explosion on water
     const caDir = join(framesRoot, "carrier")
     mkdirSync(caDir, { recursive: true })
     const shotCarrierFrame = async (page: Page, filepath: string) => {
@@ -689,35 +703,38 @@ try {
     }
 
     if (process.env.SKIP_VIDEO_FRAMES !== "1") for (const [variant, page] of Object.entries(pages) as ["before" | "after", Page][]) {
-      for (let vf = 1; vf <= 270; vf++) {
+      for (let vf = 1; vf <= 315; vf++) {
         if (vf === 1) {
           // Beat 1: Ship deck hit
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
-            if (c.flight.weapons.fx.fxParticles) c.flight.weapons.fx.fxParticles.reset()
+            ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
           })
-        } else if (vf === 91) {
+        } else if (vf === 136) {
           // Beat 2: Missile airburst
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
-            if (c.flight.weapons.fx.fxParticles) c.flight.weapons.fx.fxParticles.reset()
+            ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z - 220, yaw: 0, pitch: 15, dist: 95 })
+            c.camera.set({ x: s.x, z: s.z - 220, yaw: 180 * DEG, pitch: 15 * DEG, dist: 95 })
             c.flight.weapons.fx.explosion(s.x, 22, s.z - 220, 0, 0, 0, 1.2, false)
           })
-        } else if (vf === 181) {
+        } else if (vf === 226) {
           // Beat 3: Boat explosion on water
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
-            if (c.flight.weapons.fx.fxParticles) c.flight.weapons.fx.fxParticles.reset()
+            ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x + 180, z: s.z - 120, yaw: 20, pitch: 16, dist: 75 })
+            c.camera.set({ x: s.x + 180, z: s.z - 120, yaw: 20 * DEG, pitch: 16 * DEG, dist: 75 })
             c.flight.weapons.fx.explosion(s.x + 180, 2.2, s.z - 120, 0, 2, 0, 1.15, true)
           })
         }
@@ -736,21 +753,14 @@ try {
 
   assert.deepEqual(errors, [])
   writeFileSync(join(out, "unify-report.json"), JSON.stringify(report, null, 2) + "\n")
+  const summary = (perf: any) =>
+    perf && Object.fromEntries(Object.entries(perf).map(([k, v]: [string, any]) => [k, { ...v, pairs: undefined }]))
   console.log(
     JSON.stringify(
       {
-        getawayPerf: {
-          singleBlast: { ...(report.getawayPerf as any).singleBlast, pairs: undefined },
-          worstCase4x: { ...(report.getawayPerf as any).worstCase4x, pairs: undefined },
-        },
-        blackoutPerf: {
-          singleBlast: { ...(report.blackoutPerf as any).singleBlast, pairs: undefined },
-          worstCase5xGrenadeSpam: { ...(report.blackoutPerf as any).worstCase5xGrenadeSpam, pairs: undefined },
-        },
-        carrierPerf: {
-          singleBlast: { ...(report.carrierPerf as any).singleBlast, pairs: undefined },
-          worstCase4xSimultaneous: { ...(report.carrierPerf as any).worstCase4xSimultaneous, pairs: undefined },
-        },
+        getawayPerf: summary(report.getawayPerf),
+        blackoutPerf: summary(report.blackoutPerf),
+        carrierPerf: summary(report.carrierPerf),
       },
       null,
       2,

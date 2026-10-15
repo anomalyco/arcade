@@ -16,11 +16,15 @@ export interface SceneTargetsOptions {
   readonly depthFormat: GPUTextureFormat
   readonly samples?: number
   readonly depthTextureBinding?: boolean
+  readonly clearValue?: GPUColorDict
+  readonly depthClearValue?: number
+  readonly hasStencil?: boolean
 }
 
 /**
- * Manages the MSAA color target, MSAA depth-stencil target, and resolved HDR color target
- * resized together when the canvas dimensions change.
+ * Manages the MSAA color target, MSAA depth-stencil target, resolved HDR color target,
+ * and pre-allocated main render-pass descriptors (mutated in place on resize/render for
+ * zero per-frame descriptor allocations).
  */
 export class SceneTargets {
   width = 0
@@ -31,6 +35,13 @@ export class SceneTargets {
   depthView!: GPUTextureView
   hdr!: GPUTexture
   hdrView!: GPUTextureView
+
+  readonly clearColor: GPUColorDict
+  readonly colorAttachment: GPURenderPassColorAttachment
+  readonly depthAttachment: GPURenderPassDepthStencilAttachment
+  readonly mainPass: GPURenderPassDescriptor
+  private readonly singleColorAttachments: [GPURenderPassColorAttachment]
+  private readonly dualColorAttachments: [GPURenderPassColorAttachment, GPURenderPassColorAttachment]
 
   private readonly hdrFormat: GPUTextureFormat
   private readonly depthFormat: GPUTextureFormat
@@ -46,6 +57,33 @@ export class SceneTargets {
     this.samples = opts.samples ?? 4
     this.depthUsage =
       TEX_RENDER_ATTACHMENT | (opts.depthTextureBinding ? TEX_TEXTURE_BINDING : 0)
+    this.clearColor = opts.clearValue ? { ...opts.clearValue } : { r: 0, g: 0, b: 0, a: 1 }
+    this.colorAttachment = {
+      view: null as unknown as GPUTextureView,
+      resolveTarget: undefined,
+      clearValue: this.clearColor,
+      loadOp: "clear",
+      storeOp: "discard",
+    }
+    this.depthAttachment = {
+      view: null as unknown as GPUTextureView,
+      depthClearValue: opts.depthClearValue ?? (opts.depthFormat === "depth32float" ? 0 : 1),
+      depthLoadOp: "clear",
+      depthStoreOp: "discard",
+      ...(opts.hasStencil || opts.depthFormat.includes("stencil")
+        ? {
+            stencilClearValue: 0,
+            stencilLoadOp: "clear" as const,
+            stencilStoreOp: "discard" as const,
+          }
+        : {}),
+    }
+    this.singleColorAttachments = [this.colorAttachment]
+    this.dualColorAttachments = [this.colorAttachment, this.colorAttachment]
+    this.mainPass = {
+      colorAttachments: this.singleColorAttachments,
+      depthStencilAttachment: this.depthAttachment,
+    }
   }
 
   resize(w: number, h: number): boolean {
@@ -80,7 +118,29 @@ export class SceneTargets {
       usage: hdrUsage,
     })
     this.hdrView = this.hdr.createView()
+    this.colorAttachment.view = this.msaaView
+    this.colorAttachment.resolveTarget = this.hdrView
+    this.depthAttachment.view = this.depthView
     return true
+  }
+
+  /**
+   * Mutates and returns the pre-allocated `mainPass` descriptor in place for the current frame.
+   */
+  configureMainPass(opts?: {
+    storeDepth?: boolean
+    timestampWrites?: GPURenderPassTimestampWrites
+    extraColorAttachment?: GPURenderPassColorAttachment | null
+  }): GPURenderPassDescriptor {
+    this.depthAttachment.depthStoreOp = opts?.storeDepth ? "store" : "discard"
+    this.mainPass.timestampWrites = opts?.timestampWrites
+    if (opts?.extraColorAttachment) {
+      this.dualColorAttachments[1] = opts.extraColorAttachment
+      this.mainPass.colorAttachments = this.dualColorAttachments
+    } else {
+      this.mainPass.colorAttachments = this.singleColorAttachments
+    }
+    return this.mainPass
   }
 
   destroy(): void {
@@ -241,8 +301,10 @@ export class BloomPyramid {
     downPipe: GPURenderPipeline,
     upPipe: GPURenderPipeline,
     firstDownGroup?: GPUBindGroup,
+    activeLevels = this.levels,
   ): void {
-    for (let i = 0; i < this.levels; i++) {
+    const active = Math.max(1, Math.min(this.levels, Math.round(activeLevels)))
+    for (let i = 0; i < active; i++) {
       const p = enc.beginRenderPass({
         colorAttachments: [
           {
@@ -258,7 +320,7 @@ export class BloomPyramid {
       p.draw(3)
       p.end()
     }
-    for (let k = 0; k < this.levels - 1; k++) {
+    for (let k = this.levels - active; k < this.levels - 1; k++) {
       const p = enc.beginRenderPass({
         colorAttachments: [
           {
