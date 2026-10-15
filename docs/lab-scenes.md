@@ -1,9 +1,9 @@
 # Focused labs
 
 Status: board feature AR-25, decision D-16 (Kit chose Home and Labs), being built in slices. Shipped: Home, opening a
-lab, the top-bar path and its keys ([lab.md](lab.md#home-and-labs)). Still to come: each lab showing only its kind's
-panels (no Library drawer, World footer or station list), the rest of the keyboard model, and making, keeping,
-archiving and deleting labs from Home.
+lab, the top-bar path and its keys, and a lab without the Library drawer or World footer, with `⇧` and a number for an
+A/B wipe ([lab.md](lab.md#home-and-labs)). Still to come: making, keeping, archiving and deleting labs from Home, and
+the rest of the keyboard model.
 
 A **lab** is one focused workspace about one subject: an explosion, a tree, rain, the walk cycle, a HUD, a car. Its
 **kind** decides which shared patterns it shows (knobs controls, choices, an add-picker, the variant strip, compare,

@@ -138,8 +138,9 @@ Arcade Lab workbench standard:
   `BracketRight`) step to the previous or next lab in the collection, unless a studio tour is running, which keeps them
   for its tabs. Both work from the canvas and the chrome, not while typing, in Play or with focus in Details.
   `Digit1`–`Digit9` pick the lab's variants (outside text fields, Play, the variation grid and the radial, which keep
-  their own number keys; with focus in the Library drawer digits still pick Library categories); `Shift` + a digit
-  does the same for now. In an embedded page (Characters, Carrier) number keys are forwarded from the page.
+  their own number keys); `Shift` + a digit shows the current state beside that variant as an A/B wipe (section labs).
+  `Ctrl+Space` does nothing in a lab: there is no Library drawer. In an embedded page (Characters, Carrier) number
+  keys are forwarded from the page.
 - **Knobs panels** (Details, station controls cards, game overlays): keys work only while focus is inside a panel and
   are knobs' own (`?` lists them): arrows move and adjust, `r` / `⌥R` random / mutate, `g` the focused group, `⇧L`
   lock, hold `\` compare, `⌫` reset a row, `⇧C` copy, `⇧S` save a variant, `u`/`z` undo, `Esc` hands focus back.

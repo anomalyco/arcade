@@ -574,10 +574,24 @@ export function createStations(opts: {
     emit({ kind: "variant", station: current.id, variant: v.id })
   }
 
-  /** Number keys open stations; ⇧ with a number picks the open station's variant. Without the list, both pick variants. */
+  /**
+   * With the station list, number keys open stations and ⇧ with a number picks the open station's variant. Without it
+   * (the Lab's Home), a number picks the open lab's variant and ⇧ with a number shows what you see now beside that
+   * variant as an A/B wipe.
+   */
   function digit(n: number, shift: boolean) {
     if (host.mode() === "play") return false
-    if (shift || !listed) {
+    if (!listed) {
+      const v = current?.variants?.[n === 0 ? 9 : n - 1]
+      if (!v) return false
+      if (shift && current?.demo.kind === "section" && v.id !== variant?.id) {
+        const pinned = host.invoke("compare.pin-a")
+        if (pinned.ok) abPending = true
+      }
+      chooseVariant(v)
+      return true
+    }
+    if (shift) {
       const v = current?.variants?.[n === 0 ? 9 : n - 1]
       if (!v) return false
       chooseVariant(v)

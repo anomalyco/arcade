@@ -86,6 +86,22 @@ try {
   await p.waitForTimeout(500)
   s = await state(p)
   check(s.variant === "drizzle", `2 picks the second variant (${s.variant})`)
+  const chrome = await p.evaluate(() => ({
+    library: getComputedStyle(document.querySelector(".lab-library")!).display,
+    world: getComputedStyle(document.querySelector(".lab-world")!).display,
+  }))
+  check(chrome.library === "none" && chrome.world === "none", `a lab hides the Library drawer and World footer (${JSON.stringify(chrome)})`)
+  await p.keyboard.press("Control+Space")
+  await p.waitForTimeout(300)
+  const libraryOpen = await p.evaluate(() => document.querySelector(".lab-workbench")!.getAttribute("data-drawer"))
+  check(libraryOpen !== "true", "Ctrl+Space does nothing in a lab")
+  await p.keyboard.press("Shift+Digit3")
+  await p.waitForTimeout(800)
+  s = await state(p)
+  const wipe = await p.evaluate(() => { const w = document.querySelector<HTMLElement>(".lab-wipe-overlay"); return Boolean(w && !w.hidden && getComputedStyle(w).display !== "none") })
+  check(s.variant === "storm" && wipe, `⇧3 shows Drizzle beside Storm as an A/B wipe (${s.variant}, wipe ${wipe})`)
+  await p.screenshot({ path: resolve(out, "lab-wipe.png") })
+  await p.evaluate(() => (window as unknown as { labWorkbench: { invoke(id: string): unknown } }).labWorkbench.invoke("compare.wipe"))
 
   await p.keyboard.press("Alt+BracketRight")
   await p.waitForTimeout(2500)
