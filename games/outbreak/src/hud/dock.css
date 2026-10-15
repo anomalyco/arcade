@@ -65,3 +65,11 @@
 #craft .strip-t { font-size: var(--hud-xs); letter-spacing: .07em; text-transform: uppercase; color: var(--hud-ink-3); margin-bottom: var(--hud-2) }
 #craft .strip-t span { margin-left: var(--hud-5); text-transform: none; letter-spacing: 0 }
 #craft .strip-h { margin-top: var(--hud-3); display: flex; gap: var(--hud-4); align-items: center; color: var(--hud-ink-2) }
+#craft .craft-row { display: flex; align-items: center; gap: var(--hud-4); padding: var(--hud-2) var(--hud-1); border-top: 1px solid var(--hud-line) }
+#craft .craft-row:first-child { border-top: 0 }
+#craft .craft-row[data-off="true"] { opacity: .45 }
+#craft .craft-row[data-blank="true"] { width: 96px; height: 30px; border: 1px dashed var(--hud-line-2); border-radius: var(--hud-r-cell) }
+#craft .craft-row .from { display: flex; gap: var(--hud-2); margin-left: var(--hud-4); padding-left: var(--hud-4); border-left: 1px solid var(--hud-line); color: var(--hud-ink-2) }
+#craft .craft-row .cost { display: flex; gap: 1px }
+#craft [data-short="true"] { color: var(--hud-caution) }
+#craft .glyph { display: block }
