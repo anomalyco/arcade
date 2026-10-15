@@ -999,6 +999,16 @@ braking never marked, and the sprite skids (RGB 0.02, 9 s) vanished on dark Noir
 
 ## Researched, not yet adopted
 
+### Blackout snapshot rate and adaptive interpolation delay (2026-10-16)
+
+Tried with `scripts/bench-netcode.ts` and `games/blackout/scripts/bench-remote.ts` (2 seeds): snapshots every tick
+(30 Hz instead of 15) took the Wi-Fi remote delay from 242 to 208 ms p50 but doubled bandwidth (7.3 → 14.6 KB/s) and
+made remote soldiers rougher (velocity jumps 165 → 290 per minute clean: the curve follows tick-level motion more
+closely), and starvation rose 2.9 → 5.2%. `SnapshotBuffer`'s adaptive delay (jitter EWMA × 2.5 over a 70–80 ms floor)
+saved ~20 ms on a clean link but raised delay on Wi-Fi and roughly doubled vehicle velocity jumps, because the delay
+changes instantly rather than easing. Kept 15 Hz and a fixed 100 ms; an eased (time-stretched) adaptive delay is the
+thing to try next.
+
 ### Outbreak survey §5 experiments rejected on measurement (2026-10-14)
 
 Evidence and patches: `~/code/home/artifacts/2026-10-14-visual-experiments/progress.md`.
@@ -1259,6 +1269,27 @@ Candidates from the code audits; measure and playtest before moving any into the
   the trim depth); `DEFAULT_JITTER` lost 0 at 300–333 ms; `ROOM_JITTER` lost 0 at 133 ms p50 (Brawl p95 233 ms,
   Blackout 133 ms). Clean 20 ms: 0 lost and unchanged latency in all three (`scripts/bench-input-drops.ts`,
   `perf/input-drops-{before,after}.json`).
+  Superseded by `socketJitter` (next).
+- **Size a WebSocket input buffer from how late inputs arrive, not from underruns.** TCP never reorders, so
+  ordinary jitter is all a room's input buffer should cover; retransmits and Wi-Fi stalls (a hold, then a burst) are
+  better bridged by stand-ins than buffered for. `socketJitter(tickHz)` (`@arcade/kit/net/jitter-buffer`) sets the
+  target to the 90th percentile of arrival lateness over a 3 s window, starts at zero depth, grows only on a tick that
+  already needs a stand-in, catches up only past a real backlog, and keeps the measured schedule when re-priming after a
+  stall. Rooms whose `step()` advances the tick before taking must push inputs for the next tick, or every on-time
+  input looks a tick late (Getaway and Outbreak did). Two playing clients over an 80 ms ± 15, 1% loss, 150 ms
+  stalls link (`scripts/bench-netcode.ts`, 3 × 60 s): press → server p50 Outbreak 150 → 83 ms, Blackout 100 → 67,
+  Brawl 67 → 67, Getaway 267 → 67 (its old queue never drained after a stall); no presses lost; corrections per
+  minute 4 → 6, 11 → 10, 13 → 10, 4 → 11 (`perf/netcode-{before,socket-jitter}.json`).
+- **Rewind targets to the shooter's view for hitscan.** Blackout's client sends the server time it draws others at
+  (`SnapshotBuffer.renderTime`) while firing; the World records soldiers on foot every tick (`RewindHistory`) and runs
+  the shot's pellets with them rewound, capped at 300 ms. Shooter lag (how old the view is when the shot resolves)
+  fell from 150 / 201 / 290 ms to 0 on the good / Wi-Fi / bad profiles, about a metre of lead on a strafing soldier
+  (`games/blackout/shared/sim/world.ts`, `perf/netcode-blackout-lagcomp.json`). Outbreak (zombies, 250 ms) and Brawl
+  (casts, 350 ms) do the same.
+- **Measure netcode headless over a TCP link model.** `@arcade/kit/net/link-sim` models one direction of a
+  WebSocket (jitter, 200 ms retransmits and Wi-Fi stalls, delivered in order) and `scripts/bench-netcode.ts` drives
+  each room core with two playing clients, reporting press → server / confirm / remote latency, remote starvation,
+  shooter lag net of rewind, prediction corrections per snapshot, snapshot rate, bandwidth and tick cost.
 - **Draw remote players on a cubic through each snapshot's velocity, coast through stalls, and glide out the
   resume.** Blackout (`src/game/remote.ts`) samples `@arcade/kit/net/interpolate`'s `SnapshotBuffer` 100 ms behind
   and, instead of lerping, follows a Hermite curve through both snapshots with their velocities as tangents (a velocity

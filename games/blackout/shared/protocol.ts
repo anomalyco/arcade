@@ -80,7 +80,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
         ? { spell: c.spell, quality: num(c.quality, 0, 1), x: num(c.x,-1000,1000), y: num(c.y,-1000,1000) } : undefined
       if (cast) i.cast = cast
       else delete i.cast
-      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, ...(i.firePressed === true ? { firePressed: true } : {}), reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(cast ? { cast } : {}), ...(i.enter === true ? { enter: true } : {}), ...(i.seat === true ? { seat: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
+      return { type: "intent", seq: o.seq, i: { mx: num(i.mx, -1, 1), my: num(i.my, -1, 1), aim: num(i.aim, -7, 7), fire: i.fire === true, ...(i.firePressed === true ? { firePressed: true } : {}), ...(typeof i.view === "number" && Number.isFinite(i.view) && i.view >= 0 ? { view: Math.min(i.view, 1e7) } : {}), reload: i.reload === true, sprint: i.sprint === true, equip: i.equip === true, tx: num(i.tx, -1000, 1000), ty: num(i.ty, -1000, 1000), use: i.use === true, melee: i.melee === true, ...(cast ? { cast } : {}), ...(i.enter === true ? { enter: true } : {}), ...(i.seat === true ? { seat: true } : {}), ...(i.horn === true ? { horn: true } : {}) } }
     }
     case "gun":
       return { type: "gun", gun: gunOf(o.gun) }

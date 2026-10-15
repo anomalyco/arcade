@@ -17,6 +17,7 @@
  *
  *   bun scripts/bench-netcode.ts [--label=before] [--seconds=60] [--seeds=2] [--games=outbreak,blackout]
  */
+import { SnapshotBuffer } from "../packages/kit/net/interpolate"
 import { LINKS, type LinkProfile, TcpLink } from "../packages/kit/net/link-sim"
 import { mulberry32 } from "../packages/kit/sim/rng"
 
@@ -45,8 +46,8 @@ type Sender = (seq: number, tick: number, press: boolean, keys: Move) => Data[]
 type Game = {
   name: string
   tickHz: number
-  /** Seconds the client draws remotes behind the newest server state. */
-  interp: number
+  /** The client's remote interpolation buffer, configured as the game's client does. */
+  buffer(): Promise<SnapshotBuffer<unknown>>
   /** Seconds of server-side rewind for the actor's hits (0: none). */
   rewind: number
   core(clock: () => number): Promise<Core>
@@ -102,7 +103,7 @@ const GAMES: Game[] = [
   {
     name: "outbreak",
     tickHz: 60,
-    interp: 0.1,
+    buffer: async () => new SnapshotBuffer(0.1),
     rewind: 0.25,
     async core(clock) {
       const { CoopRoomCore } = await server("outbreak", "room-core")
@@ -148,8 +149,9 @@ const GAMES: Game[] = [
   {
     name: "blackout",
     tickHz: 30,
-    interp: 0.1,
-    rewind: 0,
+    buffer: async () => (await import("../games/blackout/src/game/remote")).remoteBuffer() as SnapshotBuffer<unknown>,
+    // Shots carry the client's render time; soldiers on foot are rewound up to REWIND_SECONDS.
+    rewind: (await import("../games/blackout/shared/sim/world")).REWIND_SECONDS,
     async core(clock) {
       const { RoomCore } = await server("blackout")
       return new RoomCore("bench", "ffa", clock) as Core
@@ -165,8 +167,9 @@ const GAMES: Game[] = [
   {
     name: "brawl",
     tickHz: 30,
-    interp: 0.1,
-    rewind: 0,
+    buffer: async () => new SnapshotBuffer(0.1),
+    // Casts carry the client's render time; the world rewinds others up to 350 ms for melee, grabs and bursts.
+    rewind: 0.35,
     async core(clock) {
       const { RoomCore } = await server("brawl")
       return new RoomCore("bench", clock) as Core
@@ -180,7 +183,8 @@ const GAMES: Game[] = [
   {
     name: "getaway",
     tickHz: 30,
-    interp: 0.1,
+    // NetClient draws others INTERP_TICKS (100 ms) behind its estimate of the server tick.
+    buffer: async () => new SnapshotBuffer(0.1),
     rewind: 0,
     async core() {
       const { RoomCore } = await server("getaway", "core")
@@ -262,9 +266,24 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
   const core = await game.core(() => now)
 
   let onActorSnapshot = () => {}
-  type Client = { conn: Conn; up: TcpLink; down: TcpLink; inbox: { at: number; data: Data }[]; outbox: { at: number; data: Data }[]; snapArrivals: { at: number; sent: number }[]; id: string | null; bytes: number; snaps: number }
-  const client = (): Client => {
+  type Client = {
+    conn: Conn
+    up: TcpLink
+    down: TcpLink
+    inbox: { at: number; data: Data; sent: number; snap: boolean }[]
+    outbox: { at: number; data: Data }[]
+    snapArrivals: { at: number; sent: number }[]
+    buf: SnapshotBuffer<unknown>
+    /** Server time (ms) of the newest snapshot received. */
+    newest: number
+    id: string | null
+    bytes: number
+    snaps: number
+  }
+  const client = async (): Promise<Client> => {
     const c: Client = {
+      buf: await game.buffer(),
+      newest: -Infinity,
       up: new TcpLink(link, rand),
       down: new TcpLink(link, rand),
       inbox: [],
@@ -276,9 +295,10 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
       conn: {
         send(data) {
           const at = c.down.deliver(now)
-          c.inbox.push({ at, data })
+          const snap = game.isSnapshot(data)
+          c.inbox.push({ at, data, sent: now, snap })
           c.bytes += typeof data === "string" ? data.length : data.byteLength
-          if (game.isSnapshot(data)) {
+          if (snap) {
             if (c === actor) onActorSnapshot()
             c.snaps++
             c.snapArrivals.push({ at, sent: now })
@@ -292,8 +312,8 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
   }
   const send = await game.sender()
   const sendObserver = await game.sender()
-  const actor = client()
-  const observer = client()
+  const actor = await client()
+  const observer = await client()
   for (const c of [actor, observer]) {
     core.open?.(c.conn)
     core.message(c.conn, await game.hello())
@@ -302,8 +322,9 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
 
   const r: Run = { presses: 0, applied: 0, toServer: [], toConfirm: [], toRemote: [], shooterLag: [], frames: 0, starved: 0, longestStarve: 0, snaps: 0, bytes: 0, tickMs: [], corrections: [] }
   // Presses in flight: sequence number and keydown time. Applied ones wait for their snapshot.
-  const pending: { seq: number; at: number }[] = []
+  const pending: { seq: number; at: number; view: number }[] = []
   const shown: { at: number; applied: number }[] = []
+  const remote: { at: number; applied: number }[] = []
   // Held keys change every 0.2-1.2 s, like a player on WASD. The client predicts every input; the server's
   // position is the sum of what it applied. A change in their difference at an acked input is a correction.
   const keysAt: Move[] = []
@@ -342,10 +363,11 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
       r.applied++
       r.toServer.push(now - p.at)
       shown.push({ at: p.at, applied: now })
+      remote.push({ at: p.at, applied: now })
+      r.shooterLag.push(Math.max(0, now - p.view - game.rewind * 1000))
     }
   })
 
-  const minOneWay = link.rttMs / 2 - link.jitterMs
   const ticks = Math.round(SECONDS * game.tickHz)
   const startBytes = observer.bytes
   const startSnaps = observer.snaps
@@ -362,7 +384,8 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
         if (press) {
           nextPress = tick + game.tickHz + Math.floor(rand() * game.tickHz)
           r.presses++
-          pending.push({ seq, at: now })
+          // The actor aims at what it draws now.
+          pending.push({ seq, at: now, view: actor.buf.renderTime(now / 1000) * 1000 })
         }
         for (const data of send(seq, tick, press, keysAt[seq - 1]!)) actor.outbox.push({ at: actor.up.deliver(now), data })
         // The observer plays too (a silent one is idle-kicked), without presses.
@@ -371,14 +394,27 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
       }
       for (const c of [actor, observer]) {
         while (c.outbox.length && c.outbox[0]!.at <= now) core.message(c.conn, c.outbox.shift()!.data)
-        while (c.inbox.length && c.inbox[0]!.at <= now) c.inbox.shift()
+        while (c.inbox.length && c.inbox[0]!.at <= now) {
+          const m = c.inbox.shift()!
+          if (!m.snap) continue
+          c.buf.push(m.sent / 1000, null, now / 1000)
+          c.newest = m.sent
+        }
       }
-      // The observer's interpolation: render time = now − (fastest one-way) − delay, starved past the newest snapshot.
-      const arrived = observer.snapArrivals.filter((s) => s.at <= now)
-      if (tick > game.tickHz && arrived.length) {
-        const newest = arrived[arrived.length - 1]!.sent
+      // The observer's interpolation: starved when its render time is past the newest snapshot.
+      const observerAt = observer.buf.renderTime(now / 1000) * 1000
+      for (let i = remote.length - 1; i >= 0; i--) {
+        // Drawn once the first snapshot after the press applied has arrived and the render time reaches it.
+        const s = remote[i]!
+        const snap = observer.snapArrivals.find((a) => a.sent >= s.applied)
+        if (snap && snap.at <= now && observerAt >= snap.sent) {
+          r.toRemote.push(now - s.at)
+          remote.splice(i, 1)
+        }
+      }
+      if (tick > game.tickHz && observer.newest > -Infinity) {
         r.frames++
-        if (now - minOneWay - game.interp * 1000 > newest + 1) {
+        if (observerAt > observer.newest + 1) {
           r.starved++
           starveRun += tickMs / SUB
           r.longestStarve = Math.max(r.longestStarve, starveRun)
@@ -394,17 +430,12 @@ async function run(game: Game, link: LinkProfile, seed: number): Promise<Run> {
     for (let i = shown.length - 1; i >= 0; i--) {
       const s = shown[i]!
       const mine = actor.snapArrivals.find((a) => a.sent >= s.applied)
-      const theirs = observer.snapArrivals.find((a) => a.sent >= s.applied)
-      if (!mine || !theirs) continue
+      if (!mine) continue
       r.toConfirm.push(mine.at - s.at)
-      r.toRemote.push(Math.max(theirs.at, theirs.sent + minOneWay + game.interp * 1000) - s.at)
-      // The actor aimed at what it drew at keydown: server time (keydown − fastest one-way − delay).
-      const lag = s.applied - (s.at - minOneWay - game.interp * 1000)
-      r.shooterLag.push(Math.max(0, lag - game.rewind * 1000))
       shown.splice(i, 1)
     }
     // Keep arrival lists short.
-    for (const c of [actor, observer]) if (c.snapArrivals.length > 64) c.snapArrivals.splice(0, c.snapArrivals.length - 64)
+    for (const c of [actor, observer]) if (c.snapArrivals.length > 256) c.snapArrivals.splice(0, c.snapArrivals.length - 256)
   }
   r.snaps = observer.snaps - startSnaps
   r.bytes = observer.bytes - startBytes

@@ -766,7 +766,9 @@ export class Game {
       const seat = live && input.takeSeat() && !!this.riding
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
-      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, ...(firePressed ? { firePressed: true } : {}), reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
+      // While firing, tell the room what time we're drawing everyone else at so it can rewind them for the hit.
+      const view = fire && this.remote.size > 0 ? Math.round(Math.max(0, this.remote.renderTime(this.now)) * 1000) / 1000 : undefined
+      const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, ...(firePressed ? { firePressed: true } : {}), ...(view !== undefined ? { view } : {}), reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
       const click = input.takeCast()
       if (live && this.snap?.spells && click) {
         const target = cam.unproject(click.x, click.y, w, h, 0)
