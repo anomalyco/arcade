@@ -9,7 +9,7 @@ import {
 } from "@arcade/kit/look"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
@@ -50,6 +50,8 @@ import { Survivor } from "./survivor"
 import { OutbreakHud } from "./hud"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
+import { MAP_KEY, OutbreakMap } from "./map"
+import { gameMapFrame } from "./map/game"
 import { type ProgressionLabHost } from "./progression-lab"
 import { type VehicleLabHost } from "./vehicle-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
@@ -69,6 +71,7 @@ import {
   resolveWorldMode,
 } from "./settings"
 import { OutbreakFeelTracker } from "./feel-events"
+import { registerGameCommands } from "@arcade/kit/dev-control"
 import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
 import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
@@ -134,6 +137,7 @@ async function main() {
   const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
   const hud = new OutbreakHud(document.body, settings.hud)
   hud.avoid(promptEl)
+  const map = new OutbreakMap(document.body, settings.map, (() => { try { return localStorage } catch { return null } })())
   const inventoryHud = new InventoryHud(
     {
       prompt: promptEl,
@@ -210,6 +214,9 @@ async function main() {
     if (code === "KeyB") pendingBarricade = true
     if (code === "Tab") inventoryHud.togglePack()
     if (code === "Escape") inventoryHud.close()
+    if (code === MAP_KEY) map.toggle()
+    else if (code === "Escape") map.close()
+    else map.key(code)
     if (code === "KeyG" || code === "KeyQ") holds.set(code, { at: performance.now(), fired: false })
   }
   const pollHolds = (now: number) => {
@@ -301,6 +308,7 @@ async function main() {
     progressionHost,
     vehicleHost,
     hud,
+    map,
     updateProfile,
     regenerate: () => regenerate(),
     syncTextures: () => syncTextures(),
@@ -338,7 +346,7 @@ async function main() {
   const frame = new Float32Array(FRAME_FLOATS)
   const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
-  const lampPower = new Float32Array(MAX_LIGHTS)
+  const lampPower = new Float32Array(MAX_MAP_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const flashlightBounce: [number, number] = [0, 0]
   const flashlightOrigin: [number, number] = [0, 0]
@@ -500,6 +508,7 @@ async function main() {
   )
   bindOutbreakLabControls(lab, settings, controls)
 
+  registerGameCommands((commands) => commands.registerAll(map.labCommands()))
   registerOutbreakGameCommands({
     device,
     renderer,
@@ -619,6 +628,7 @@ async function main() {
     feelTracker.reset(session.view.player)
     ambientMotion.reset()
     hud.reset()
+    map.reset()
     weatherController.reset(nextSeed)
     level()
     scenery = new SceneryMemory()
@@ -745,6 +755,7 @@ async function main() {
     const view = cam.groundRect(5.5)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
+    let windowMoved = false
     if (mode !== "classic") {
       const moveVx = localVehicle ? localVehicle.vx : p.vx
       const moveVy = localVehicle ? localVehicle.vy : p.vy
@@ -782,7 +793,7 @@ async function main() {
           renderer.setLevel(streamed.level)
           combatFx.setLevel(streamed.level)
           if (!streamed.geometryOnly) {
-            vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
+            windowMoved = vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
             scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
             combinedFog.markDirty()
           }
@@ -1267,6 +1278,7 @@ async function main() {
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
+    map.update(gameMapFrame({ session, coop, vision, cam, w, h, ground: playerGroundY, visionChanged: visChanged, windowChanged: windowMoved }))
     inventoryHud.sync(session.view, cam, w, h)
     const meterNow = performance.now()
     const elapsed = (meterNow - meterAt) / 1000
@@ -1427,7 +1439,7 @@ async function main() {
     },
     draw: (dt) => draw(dt),
   })
-  Object.assign(window, { __arcadeHarness: harness })
+  Object.assign(window, { __arcadeHarness: Object.assign(harness, { map }) })
   scheduleFrame()
 }
 
