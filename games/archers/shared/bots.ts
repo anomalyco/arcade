@@ -162,7 +162,11 @@ export function botButtons(w: World, a: Archer): Buttons {
 function pickGoal(w: World, a: Archer, br: BrainState, g: NavGraph): number {
   const s = w.s
   const W = w.arena.w, H = w.arena.h
-  const dist = (x: number, y: number) => Math.hypot(wrapDelta(x - a.x, W), wrapDelta(y - a.y, H))
+  // sqrt, not Math.hypot: hypot's rounding isn't specified, so engines may disagree in the last bit.
+  const dist = (x: number, y: number) => {
+    const dx = wrapDelta(x - a.x, W), dy = wrapDelta(y - a.y, H)
+    return Math.sqrt(dx * dx + dy * dy)
+  }
   let tx = a.x, ty = a.y, best = Infinity
   const consider = (x: number, y: number, weight: number) => {
     const d = dist(x, y) * weight

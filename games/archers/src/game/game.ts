@@ -15,6 +15,7 @@ import type { Sound } from "../sound"
 import { type ArcherModels, ArcherView, type Push, RIG_SCALE, pushBody } from "./archer-pose"
 import type { Controls, Device } from "./controls"
 import { EMBER, FIRE, Fx, Lights, P, Q, Quads } from "./fx"
+import type { OnlineSession } from "../net/online"
 
 /** The colour each arrow kind burns with: fire for normal arrows, distinct hot colours for the specials. */
 export const ARROW_COLOR: Record<ArrowKind, Rgb> = {
@@ -30,6 +31,13 @@ export type Seat = { id: string; name: string; device: Device | null }
 export type GameOptions = { arena: string; seats: Seat[]; seed: number; tuning?: Tuning }
 
 type Hist = { x: number; y: number }
+type Spots = { archers: Map<string, Hist>; arrows: Map<number, Hist> }
+const spotsOf = (w: World): Spots => ({
+  archers: new Map(w.s.archers.map((a) => [a.id, { x: a.x, y: a.y }])),
+  arrows: new Map(w.s.arrows.map((r) => [r.id, { x: r.x, y: r.y }])),
+})
+/** A rollback moving an archer further than this is a respawn or a wrap, not a correction to glide over. */
+const GLIDE_MAX = 3
 /** Seconds of flight an arrow's trail shows, independent of frame rate. */
 const TRAIL_SECONDS = 0.085
 const KINDS: readonly ArrowKind[] = ["normal", "bomb", "laser", "drill", "bramble"]
@@ -80,6 +88,11 @@ export class Game {
   events: SimEvent[] = []
   readonly counts: Record<string, number> = {}
   onEvent: ((e: SimEvent) => void) | null = null
+  /** Online play: the room session drives the world instead of local stepping. */
+  online: OnlineSession | null = null
+  private loadedArena = ""
+  /** How far each archer was drawn from where a rollback put it: eased to zero so corrections glide, not pop. */
+  private offsets = new Map<string, Hist>()
 
   constructor(readonly renderer: Renderer, readonly controls: Controls, readonly sound: Sound, opts: GameOptions) {
     this.world = World.create(opts.seed, opts.arena, opts.tuning ?? { ...DEFAULT_TUNING })
@@ -108,6 +121,7 @@ export class Game {
   }
 
   private loadArena(): void {
+    this.loadedArena = this.world.s.arena
     const scene = buildArenaScene(this.arena)
     this.renderer.setStatic(scene.mesh)
     this.sunPoint = scene.sun
@@ -147,6 +161,8 @@ export class Game {
   // Update --------------------------------------------------------------------------------------------------------
 
   update(realDt: number): void {
+    // Online time can't be dropped: the room keeps going, so a long frame still advances the head in full.
+    if (this.online?.ready) return this.updateOnline(Math.min(1, realDt))
     const dt = Math.min(0.1, realDt)
     if (this.hitStop > 0) {
       this.hitStop -= dt
@@ -179,6 +195,63 @@ export class Game {
     this.fx.update(sdt)
     this.hurt *= Math.exp(-dt * 3)
     this.ambient(sdt)
+  }
+
+  /**
+   * Online: the session runs rollback to its head tick and this presents the result. The room's clock can't stop, so
+   * hit-stop only freezes effects and there is no slow motion; corrections to where archers were drawn are eased out.
+   */
+  private updateOnline(dt: number): void {
+    const o = this.online!
+    if (this.hitStop > 0) this.hitStop -= dt
+    this.timeScale = 1
+    this.now += dt
+    const oldHead = o.rb.headTick
+    const before = spotsOf(o.world)
+    let cur = before
+    let prev: Spots | null = null
+    let atOld: Spots | null = null
+    const device = (b: number) => b | this.controls.buttons("pad0")
+    const events = o.update(() => device(this.controls.buttons("kb")), (w, t) => {
+      prev = cur
+      cur = spotsOf(w)
+      if (t === oldHead && o.rb.resimulated > 0) atOld = cur
+    })
+    this.world = o.world
+    if (this.world.s.arena !== this.loadedArena) this.loadArena()
+    if (o.id && this.seats[0]?.id !== o.id) this.seats = [{ id: o.id, name: "YOU", device: "kb" }]
+    if (prev) {
+      this.prev = (prev as Spots).archers
+      this.arrowPrev = (prev as Spots).arrows
+    }
+    if (atOld) {
+      const W = this.arena.w, H = this.arena.h
+      for (const [id, was] of before.archers) {
+        const now = (atOld as Spots).archers.get(id)
+        if (!now) continue
+        const dx = wrapDelta(was.x - now.x, W), dy = wrapDelta(was.y - now.y, H)
+        if (Math.abs(dx) > GLIDE_MAX || Math.abs(dy) > GLIDE_MAX) continue
+        const off = this.offsets.get(id) ?? { x: 0, y: 0 }
+        this.offsets.set(id, { x: off.x + dx, y: off.y + dy })
+      }
+    }
+    const k = Math.exp(-dt * 14)
+    for (const [id, off] of this.offsets) {
+      off.x *= k
+      off.y *= k
+      if (Math.abs(off.x) + Math.abs(off.y) < 1e-3) this.offsets.delete(id)
+    }
+    this.acc = o.fraction * DT
+    for (const e of events) this.onSim(e)
+    for (const a of this.world.s.archers) {
+      if (a.drawing && !this.wasDrawing.has(a.id) && a.quiver.length) this.sound.play("bow.draw", a.x, a.y + 0.8)
+      if (a.drawing) this.wasDrawing.add(a.id)
+      else this.wasDrawing.delete(a.id)
+    }
+    const fdt = Math.min(0.1, dt)
+    this.fx.update(this.hitStop > 0 ? 0 : fdt)
+    this.hurt *= Math.exp(-fdt * 3)
+    this.ambient(fdt)
   }
 
   private ambient(dt: number): void {
@@ -333,9 +406,11 @@ export class Game {
   private lerpPos(a: Archer): Hist {
     const p = this.prev.get(a.id)
     const k = Math.min(1, this.acc / DT)
-    if (!p) return { x: a.x, y: a.y }
+    const off = this.offsets.get(a.id)
+    const ox = off?.x ?? 0, oy = off?.y ?? 0
     const W = this.arena.w, H = this.arena.h
-    return { x: mod(p.x + wrapDelta(a.x - p.x, W) * k, W), y: mod(p.y + wrapDelta(a.y - p.y, H) * k, H) }
+    if (!p) return { x: mod(a.x + ox, W), y: mod(a.y + oy, H) }
+    return { x: mod(p.x + wrapDelta(a.x - p.x, W) * k + ox, W), y: mod(p.y + wrapDelta(a.y - p.y, H) * k + oy, H) }
   }
 
   build(w: number, h: number, realDt: number): SceneFrame {

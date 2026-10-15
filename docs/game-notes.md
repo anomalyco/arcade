@@ -1216,6 +1216,25 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Build the shared part of each tick's snapshot once.** Rooms used to build and serialise a full view per connected
   player. Building shared entities once and adding per-player fields cut 1,000 ticks from 66 → 45 ms (Getaway, 8
   players) and 43.5 → 32.8 ms (Blackout, 10 players). Benchmark: `scripts/bench-multiplayer.ts`.
+- **Rollback over an input relay for a deterministic 60 Hz platformer.** Archers' room is the input authority, not the
+  world authority: each tick it takes every person's buttons from `InputRelay` (a late input applies on the next
+  tick, a missing one holds the last), runs the shared `World` and broadcasts only that frame (about 45 bytes); each
+  client steps its own copy with confirmed frames and draws a prediction re-simulated to its head with its own
+  buttons as typed and others' held (`@arcade/kit/net/rollback`, `games/archers/shared/match.ts`). A world hash every
+  30 ticks catches desyncs; the room sends the whole state only on join, reconnect or mismatch. One step with four
+  bots costs 6.4 µs and a clone 10 µs, so re-simulating 20 ticks a frame is free. The `TickPacer` estimates the room's
+  tick from the fastest recent frame (so it follows a room clock that runs slow; local `wrangler dev` ticks at about
+  54 Hz) and learns its lead from the room's slack report at the 20th percentile, not the minimum: over TCP one lost
+  segment holds 200 ms of inputs, and chasing those kept the lead 12–17 ticks instead of 4–5. Measured with the real
+  room core over `link-sim` (`ONLINE_BENCH=1 bun test games/archers/tests/online.test.ts -t bench`, 2 people + 2 bots,
+  60 s): on Wi-Fi the head runs 4 ticks ahead, 5.7% of input changes land late, other people are drawn within 0.25 tile
+  of where the room puts them on 80% of frames (median error 0), against 40% for drawing the room's world one round
+  trip plus 100 ms ago (median 0.69 tile); zero hash mismatches on good, Wi-Fi and bad links. Two headless tabs on
+  real Durable Objects behind an 80 ms proxy: zero desyncs (`games/archers/scripts/online-proof.ts`). Corrections
+  are eased out of the drawn position over about 70 ms, and an event re-simulated within 4 ticks shows once.
+- **Determinism across engines:** only + − × ÷, `Math.sqrt`, `Math.floor`/`round`/`min`/`max`/`abs` and integer
+  `Math.imul` are bit-identical everywhere. `Math.hypot`, trig, `exp`, `log` and `pow` are not specified to the last
+  bit; Archers had one `Math.hypot` in bot goal choice, replaced with `sqrt` before going online.
 - **Keep the simulation in `shared/` deterministic** and free of DOM and Worker APIs, so the server, solo mode,
   prediction and benchmarks all run the same code.
 - **Version handshake.** Hash `shared/` at build time and send it in `hello`; a server with another hash asks the client

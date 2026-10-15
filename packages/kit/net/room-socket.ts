@@ -12,6 +12,8 @@ export type RoomSocketOptions<Hello> = {
   receive: (msg: { type: string }) => void
   /** The room refused or ended the session; show the message. */
   fatal: (message: string) => void
+  /** The room answered a `ping` sent at `t` (for round-trip readouts). */
+  pong?: (t: number) => void
   encode: (msg: unknown) => string
   decode: (raw: string) => { type: string } | null
 }
@@ -116,6 +118,7 @@ export class RoomSocket<Hello> {
         this.idleIn = m.seconds
         return
       case "pong":
+        this.o.pong?.(m.t)
         return
       default:
         this.o.receive(msg)
