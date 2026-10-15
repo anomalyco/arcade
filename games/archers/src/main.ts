@@ -6,6 +6,7 @@ import { ARENAS } from "../shared/arena"
 import { GAME, MAX_PLAYERS } from "../shared/config"
 import { Controls, type Device } from "./game/controls"
 import { Game, type Seat } from "./game/game"
+import { OnlineSession } from "./net/online"
 import { Renderer } from "./render/renderer"
 import { Sound } from "./sound"
 import { Hud } from "./ui/hud"
@@ -13,10 +14,16 @@ import { Hud } from "./ui/hud"
 const MAX_DPR = 1.5
 const BOT_NAMES = ["TEAL", "WINE", "MOSS", "OCHRE"]
 
+/** A room code from the URL, if it looks like one. */
+const roomCode = (v: string | null) => (v && /^[a-z0-9]{4,8}$/i.test(v) ? v.toLowerCase() : null)
+
 /**
  * Local couch play. `?watch` is four bots (captures use it); otherwise one keyboard player against bots, with
  * gamepads joining on A and a second keyboard player on Enter (the keyboard splits in two). `?arena=cloister` and
  * `?seed=` pick the arena and the match seed.
+ *
+ * Online: `?room=code` takes a seat in that room (bots hold the others), `?online` quick-joins an open room or opens
+ * one, and P in couch play does the same. The room's first arrival can set `&arena=` and `&private=1`.
  */
 async function main() {
   document.title = GAME.title
@@ -29,9 +36,21 @@ async function main() {
   }
   const renderer = new Renderer(g.device, g.context, g.format)
   const params = new URLSearchParams(location.search)
+  if (params.has("online") && !roomCode(params.get("room"))) {
+    try {
+      const r = (await (await fetch("api/quick")).json()) as { room: string }
+      params.delete("online")
+      params.set("room", r.room)
+      history.replaceState(null, "", `?${params}`)
+    } catch {
+      hudEl.innerHTML = `<div class="notice"><div class="logo">${GAME.title}</div><div>Couldn't reach the lobby. Reload to try again.</div></div>`
+      return
+    }
+  }
+  const room = roomCode(params.get("room"))
   const seed = Number(params.get("seed")) || ((Math.random() * 1e9) | 0)
   const arena = ARENAS[params.get("arena") ?? ""] ? params.get("arena")! : "belltower"
-  const watch = params.has("watch")
+  const watch = params.has("watch") || !!room
   const sound = new Sound()
   const controls = new Controls()
   const hud = new Hud(hudEl)
@@ -43,6 +62,12 @@ async function main() {
   }
   const game = new Game(renderer, controls, sound, { arena, seats, seed })
   ;(globalThis as { archers?: Game }).archers = game
+  if (room) game.online = new OnlineSession(room, undefined, { arena: params.get("arena"), private: params.get("private") })
+  const invite = () => {
+    const url = new URL(location.href)
+    url.search = `?room=${room}`
+    void navigator.clipboard?.writeText(url.toString())
+  }
   if (params.get("focus")) {
     game.focus = params.get("focus")
     game.focusSpan = Number(params.get("span")) || 6
@@ -82,11 +107,14 @@ async function main() {
       }
       if (controls.pressed("Digit1")) game.setArena("belltower")
       if (controls.pressed("Digit2")) game.setArena("cloister")
+      if (controls.pressed("KeyP")) location.search = "?online"
     }
     game.update(dt)
     renderer.render(game.build(innerWidth, innerHeight, dt))
     sound.listen(game.cam.cx, game.cam.cy)
-    hud.update(game, innerWidth, innerHeight, !watch && now - started < 14000)
+    const o = game.online
+    hud.update(game, innerWidth, innerHeight, (!watch || !!o?.ready) && now - started < 14000)
+    if (o) hud.net(room, o.rtt, o.fatal ?? o.socket.status() ?? (o.ready ? null : "Joining…"), invite)
     controls.endFrame()
     requestAnimationFrame(frame)
   }

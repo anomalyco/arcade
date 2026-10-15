@@ -9,6 +9,6 @@ export default defineConfig({
   server: {
     fs: { allow: ["../.."] },
     allowedHosts: true,
-    proxy: { "/api": { target: "http://localhost:8792" } },
+    proxy: { "/ws": { target: "ws://localhost:8792", ws: true }, "/api": { target: "http://localhost:8792" } },
   },
 })

@@ -15,15 +15,30 @@ export class Hud {
   private card: HTMLDivElement
   private tags: HTMLDivElement
   private help: HTMLDivElement
+  private netEl: HTMLDivElement
+  private netHtml = ""
   private lastCard = ""
   private tagEls = new Map<string, HTMLDivElement>()
 
   constructor(readonly root: HTMLElement) {
-    root.innerHTML = `<div class="strip"></div><div class="card"></div><div class="tags"></div><div class="help"></div>`
+    root.innerHTML = `<div class="strip"></div><div class="card"></div><div class="tags"></div><div class="help"></div><div class="net"></div>`
     this.strip = root.querySelector(".strip")!
     this.card = root.querySelector(".card")!
     this.tags = root.querySelector(".tags")!
     this.help = root.querySelector(".help")!
+    this.netEl = root.querySelector(".net")!
+  }
+
+  /** The room line in the corner: code, round trip, an invite button and any connection problem. */
+  net(room: string | null, rttMs: number, problem: string | null, invite?: () => void): void {
+    const html = room
+      ? `<div>ROOM <b>${room.toUpperCase()}</b>${rttMs ? ` · ${Math.round(rttMs)} MS` : ""}<button>COPY INVITE</button></div>${problem ? `<div class="problem">${problem}</div>` : ""}`
+      : ""
+    if (html === this.netHtml) return
+    this.netHtml = html
+    this.netEl.innerHTML = html
+    const b = this.netEl.querySelector("button")
+    if (b && invite) b.onclick = invite
   }
 
   update(g: Game, w: number, h: number, showHelp: boolean): void {
@@ -91,7 +106,7 @@ export class Hud {
       const k = KEYSETS[d as keyof typeof KEYSETS]
       const caps = (codes: string[]) => codes.slice(0, 1).map((c) => keyCapHtml(c)).join("")
       return `<div class="row">${caps(k.left)}${caps(k.up)}${caps(k.down)}${caps(k.right)} move/aim · ${caps(k.jump)} jump · ${caps(k.shoot)} hold to draw · ${caps(k.dodge)} dodge</div>`
-    }).join("") + `<div class="row dim">Gamepad A or ${keyCapHtml("Enter")} to join</div>` : ""
+    }).join("") + (g.online ? "" : `<div class="row dim">Gamepad A or ${keyCapHtml("Enter")} to join · ${keyCapHtml("KeyP")} play online</div>`) : ""
     if (this.help.innerHTML !== helpHtml) this.help.innerHTML = helpHtml
   }
 }

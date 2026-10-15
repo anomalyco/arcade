@@ -30,3 +30,8 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 #hud .help { position: absolute; bottom: calc(14px * var(--hud)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: calc(6px * var(--hud)); font-weight: 600; font-size: calc(16px * var(--hud)); letter-spacing: 0.06em; color: var(--ash); text-shadow: 0 1px 0 #000; }
 #hud .help .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 #hud .help .row.dim { opacity: 0.7; font-size: 0.85em; }
+
+#hud .net { position: absolute; top: calc(10px * var(--hud)); left: calc(14px * var(--hud)); font-weight: 600; font-size: calc(14px * var(--hud)); letter-spacing: 0.12em; color: var(--ash); text-shadow: 0 1px 0 #000; pointer-events: auto; }
+#hud .net b { color: var(--bone); font-weight: 800; letter-spacing: 0.2em; }
+#hud .net button { all: unset; cursor: pointer; margin-left: 8px; color: var(--bone); border-bottom: 1px solid var(--ash); }
+#hud .net .problem { margin-top: 4px; color: #e9a07a; }
