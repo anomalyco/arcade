@@ -24,6 +24,7 @@ import {
   type ServerMsg,
   type SharedSnapshot,
   type VehicleState,
+  type ZombieState,
 } from "../shared/net-protocol"
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
 import { createVehicleFromSpawn, seatPos, VEHICLES, type OutbreakVehicleSubsystem } from "../shared/vehicles"
@@ -87,6 +88,12 @@ export class NetSession implements Session {
   private prevSentSeq = 0
   private outWriter = new ByteWriter(64)
   private agents = new Map<number, AIAgent>()
+  private readonly prevZombies = new Map<number, ZombieState>()
+  private readonly seenZombies = new Set<number>()
+  private readonly prevSurvivors = new Map<number, RemoteSurvivor>()
+  private readonly presentSurvivors = new Set<number>()
+  private readonly prevVehicles = new Map<number, VehicleState>()
+  private readonly slotIdByIndex = new Map<number, string>()
   private lastAppliedRevision = -1
   private retries = 0
   private closed = false
@@ -430,7 +437,12 @@ export class NetSession implements Session {
 
   private syncSnapshotVehicles(netVehicles: readonly VehicleState[]): void {
     const sim = this.sim
-    const slotIdByIndex = new Map(sim.slots.map((sl) => [sl.index, sl.id]))
+    const slotIdByIndex = this.slotIdByIndex
+    slotIdByIndex.clear()
+    for (let i = 0; i < sim.slots.length; i++) {
+      const sl = sim.slots[i]!
+      slotIdByIndex.set(sl.index, sl.id)
+    }
     const localDrivenId =
       this.local.survivor.vehicleId && (this.local.survivor.seatIndex ?? 0) === 0
         ? this.local.survivor.vehicleId
@@ -478,7 +490,15 @@ export class NetSession implements Session {
 
   private placeVehicles(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
     if (!b.vehicles) return
-    const prev = new Map((a.vehicles ?? []).map((v) => [v.id, v]))
+    const prev = this.prevVehicles
+    prev.clear()
+    const aVehicles = a.vehicles
+    if (aVehicles) {
+      for (let i = 0; i < aVehicles.length; i++) {
+        const v = aVehicles[i]!
+        prev.set(v.id, v)
+      }
+    }
     const localDrivenId =
       this.local.survivor.vehicleId && (this.local.survivor.seatIndex ?? 0) === 0
         ? this.local.survivor.vehicleId
@@ -512,11 +532,18 @@ export class NetSession implements Session {
   }
 
   private placeZombies(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
-    const prev = new Map(a.zombies.map((z) => [z.id, z]))
+    const prev = this.prevZombies
+    prev.clear()
+    for (let i = 0; i < a.zombies.length; i++) {
+      const z = a.zombies[i]!
+      prev.set(z.id, z)
+    }
     const list = this.sim.ai.agents
     list.length = 0
-    const seen = new Set<number>()
-    for (const z of b.zombies) {
+    const seen = this.seenZombies
+    seen.clear()
+    for (let i = 0; i < b.zombies.length; i++) {
+      const z = b.zombies[i]!
       let agent = this.agents.get(z.id)
       if (!agent) {
         agent = createAIAgent(z.id, z.seed, z.x, z.y, z.aim)
@@ -537,9 +564,16 @@ export class NetSession implements Session {
   }
 
   private placeSurvivors(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
-    const prev = new Map(a.survivors.map((s) => [s.index, s]))
-    const present = new Set<number>()
-    for (const r of b.survivors) {
+    const prev = this.prevSurvivors
+    prev.clear()
+    for (let i = 0; i < a.survivors.length; i++) {
+      const s = a.survivors[i]!
+      prev.set(s.index, s)
+    }
+    const present = this.presentSurvivors
+    present.clear()
+    for (let i = 0; i < b.survivors.length; i++) {
+      const r = b.survivors[i]!
       if (r.index === this.local.index) continue
       present.add(r.index)
       const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
@@ -547,7 +581,8 @@ export class NetSession implements Session {
       if (!slot) slot = this.sim.addSurvivor(id, r.index)
       writeRemote(slot, prev.get(r.index) ?? r, r, t, span)
     }
-    for (const slot of [...this.sim.slots]) {
+    for (let i = this.sim.slots.length - 1; i >= 0; i--) {
+      const slot = this.sim.slots[i]!
       if (slot !== this.local && !present.has(slot.index)) this.sim.removeSurvivor(slot.id)
     }
   }
