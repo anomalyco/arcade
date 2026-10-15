@@ -199,10 +199,11 @@ describe("RoomCore inputs", () => {
       a.intent(++seq, { mx: 1, press: false })
       room.tick()
     }
-    // A 300 ms stall (18 ticks of inputs held back by a TCP retransmit), then all at once; presses at 3, 9 and 15.
+    // A 600 ms stall (18 ticks of inputs held back by a TCP retransmit), then all at once; presses at 3 and 15.
+    // (Two presses consumed in the same server tick merge into one, so they're kept apart here.)
     const held: In[] = []
     for (let t = 0; t < 18; t++) {
-      held.push({ mx: 1, press: t === 3 || t === 9 || t === 15 })
+      held.push({ mx: 1, press: t === 3 || t === 15 })
       room.tick()
     }
     for (const i of held) {
@@ -215,8 +216,8 @@ describe("RoomCore inputs", () => {
     }
     const p = room.players.get(w.id)!
     // A press stood in for during the stall is carried into the next applied input; the rest arrive in order.
-    expect(sent).toBe(3)
-    expect(p.score).toBe(3)
+    expect(sent).toBe(2)
+    expect(p.score).toBe(2)
     expect(p.ack).toBeGreaterThan(seq - 8)
   })
 

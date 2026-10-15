@@ -7,46 +7,46 @@
     {
       "game": "brawl",
       "link": "clean (20 ms)",
-      "presses": 482,
-      "applied": 482,
+      "presses": 244,
+      "applied": 244,
       "dropped": 0,
       "dropPct": 0,
-      "latencyP50Ticks": 3,
-      "latencyP95Ticks": 3,
+      "latencyP50Ms": 67,
+      "latencyP95Ms": 67,
       "heldBack": 0
     },
     {
       "game": "brawl",
       "link": "lossy (80 ± 30 ms, 2% loss)",
-      "presses": 474,
-      "applied": 474,
+      "presses": 235,
+      "applied": 235,
       "dropped": 0,
       "dropPct": 0,
-      "latencyP50Ticks": 11,
-      "latencyP95Ticks": 19,
-      "heldBack": 5874
+      "latencyP50Ms": 133,
+      "latencyP95Ms": 233,
+      "heldBack": 945
     },
     {
       "game": "blackout",
       "link": "clean (20 ms)",
-      "presses": 482,
-      "applied": 482,
+      "presses": 244,
+      "applied": 244,
       "dropped": 0,
       "dropPct": 0,
-      "latencyP50Ticks": 2,
-      "latencyP95Ticks": 3,
+      "latencyP50Ms": 33,
+      "latencyP95Ms": 33,
       "heldBack": 0
     },
     {
       "game": "blackout",
       "link": "lossy (80 ± 30 ms, 2% loss)",
-      "presses": 474,
-      "applied": 474,
+      "presses": 235,
+      "applied": 235,
       "dropped": 0,
       "dropPct": 0,
-      "latencyP50Ticks": 11,
-      "latencyP95Ticks": 14,
-      "heldBack": 5874
+      "latencyP50Ms": 133,
+      "latencyP95Ms": 133,
+      "heldBack": 945
     }
   ]
 }

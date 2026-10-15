@@ -1,7 +1,7 @@
 /**
  * How many one-shot presses (Brawl casts, Blackout trigger pulls) survive a lossy link, measured at the point where
  * the authoritative World consumes its input queue. Drives each game's real `RoomCore` with a simulated WebSocket:
- * one intent per 60 Hz client tick, one-way delay `--delay` ± `--jitter` ms, and `--loss` packet loss. A WebSocket
+ * one intent per client tick at the game's `TICK_HZ` (30 Hz for both), one-way delay `--delay` ± `--jitter` ms, and `--loss` packet loss. A WebSocket
  * runs over TCP, so a lost segment is retransmitted (`--rto` ms later) and everything behind it waits: losses arrive
  * as bursts, the case `queue.splice` trimming used to drop.
  *
@@ -23,7 +23,6 @@ const DELAY = opt("delay", 80)
 const JITTER = opt("jitter", 30)
 const LOSS = opt("loss", 0.02)
 const RTO = opt("rto", 200)
-const TICK_MS = 1000 / 60
 
 type Conn = { send(data: string): void; close(): void }
 type Queued = { seq: number; intent: Record<string, unknown> }
@@ -69,9 +68,11 @@ async function build(game: Game) {
   return BUILD as string
 }
 
-type Result = { sent: number; applied: number; latencies: number[]; heldBack: number }
+type Result = { sent: number; applied: number; latencies: number[]; heldBack: number; tickMs: number }
 
 async function run(game: Game, seed: number, delay: number, jitter: number, loss: number): Promise<Result> {
+  const { TICK_HZ } = (await import(`../games/${game.name}/shared/config.ts`)) as { TICK_HZ: number }
+  const TICK_MS = 1000 / TICK_HZ
   const rand = mulberry32(seed)
   let now = 0
   const core = await game.core(() => now)
@@ -93,7 +94,7 @@ async function run(game: Game, seed: number, delay: number, jitter: number, loss
   const pressAt = new Map<number, number>()
   let nextPress = 30
   let seq = 0
-  const result: Result = { sent: 0, applied: 0, latencies: [], heldBack: 0 }
+  const result: Result = { sent: 0, applied: 0, latencies: [], heldBack: 0, tickMs: TICK_MS }
 
   // Watch the World consume its queue: every shifted intent is one the simulation applies.
   let watched: Queued[] | null = null
@@ -114,12 +115,12 @@ async function run(game: Game, seed: number, delay: number, jitter: number, loss
     }
   }
 
-  const ticks = SECONDS * 60
+  const ticks = Math.round(SECONDS * TICK_HZ)
   for (tick = 0; tick < ticks; tick++) {
     now = tick * TICK_MS
     // Client tick: one intent, a press every 30-60 ticks (tagged in tx so its latency can be measured).
     // No new presses in the last two seconds, so every press sent has time to arrive.
-    const press = tick === nextPress && tick < ticks - 120
+    const press = tick === nextPress && tick < ticks - 2 * TICK_HZ
     if (press) nextPress = tick + 30 + Math.floor(rand() * 30)
     const intent = game.intent(tick, press, rand)
     if (press) {
@@ -153,13 +154,14 @@ const scenarios = [
 const rows: Record<string, unknown>[] = []
 for (const game of GAMES) {
   for (const s of scenarios) {
-    const total: Result = { sent: 0, applied: 0, latencies: [], heldBack: 0 }
+    const total: Result = { sent: 0, applied: 0, latencies: [], heldBack: 0, tickMs: 0 }
     for (let seed = 1; seed <= SEEDS; seed++) {
       const r = await run(game, seed * 7919, s.delay, s.jitter, s.loss)
       total.sent += r.sent
       total.applied += r.applied
       total.latencies.push(...r.latencies)
       total.heldBack += r.heldBack
+      total.tickMs = r.tickMs
     }
     const row = {
       game: game.name,
@@ -168,8 +170,8 @@ for (const game of GAMES) {
       applied: total.applied,
       dropped: total.sent - total.applied,
       dropPct: +(((total.sent - total.applied) / total.sent) * 100).toFixed(2),
-      latencyP50Ticks: pct(total.latencies, 0.5),
-      latencyP95Ticks: pct(total.latencies, 0.95),
+      latencyP50Ms: Math.round(pct(total.latencies, 0.5) * total.tickMs),
+      latencyP95Ms: Math.round(pct(total.latencies, 0.95) * total.tickMs),
       heldBack: total.heldBack,
     }
     rows.push(row)

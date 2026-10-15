@@ -51,6 +51,7 @@ export type RoomCoreOptions<I> = {
   snapEvery: number
   /** How intents merge and stand in (`./jitter-buffer`): which fields are one-shot edges. */
   inputs: InputOps<I>
+  /** Defaults to `ROOM_JITTER`. */
   jitter?: JitterConfig
   clock?: () => number
   /** A dropped player's seat (and score) is kept this long for a reconnect. */
@@ -66,7 +67,15 @@ export type RoomCoreOptions<I> = {
 export const DEFAULT_GRACE_MS = 15_000
 export const DEFAULT_IDLE_KICK_MS = 90_000
 export const DEFAULT_IDLE_WARN_MS = 15_000
-/** Clients send one intent per 60 Hz tick; twice that leaves room for pings and menu frames. */
+/**
+ * The jitter buffer for 30 Hz rooms over a WebSocket. TCP turns a lost segment into a stall of everything behind it
+ * (a retransmit, ~200 ms) followed by a burst, so growing the buffer after every stall (`DEFAULT_JITTER`, tuned for
+ * Outbreak's 60 Hz stream) only adds standing input delay. This keeps the buffer at most 2 ticks deep, bridges a stall
+ * with up to 8 stand-ins (267 ms) and drains a burst at once. 80 ± 30 ms with 2% loss: press latency p50 133 ms
+ * (300 ms with `DEFAULT_JITTER`), no presses lost (`scripts/bench-input-drops.ts`).
+ */
+export const ROOM_JITTER: JitterConfig = { ...DEFAULT_JITTER, maxTarget: 2, maxSynth: 8, catchupMargin: 1, window: 90 }
+/** Clients send one intent per 30 Hz tick; four times that leaves room for pings and menu frames. */
 export const DEFAULT_MSG_RATE = 120
 export const DEFAULT_MSG_BURST = 240
 
@@ -94,7 +103,7 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
       maxPlayers: options.maxPlayers,
       snapEvery: options.snapEvery,
       inputs: options.inputs,
-      jitter: options.jitter ?? DEFAULT_JITTER,
+      jitter: options.jitter ?? ROOM_JITTER,
       graceMs: options.graceMs ?? DEFAULT_GRACE_MS,
       idleKickMs: options.idleKickMs ?? DEFAULT_IDLE_KICK_MS,
       idleWarnMs: options.idleWarnMs ?? DEFAULT_IDLE_WARN_MS,
