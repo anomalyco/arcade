@@ -1,3 +1,4 @@
+import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
 import { animationControls, animationLab } from "../game/anim-settings"
@@ -56,6 +57,8 @@ export class DebugOverlay extends LabPanel {
       {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
       {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
     ])
+    const keyLabels = keyLabelSetting()
+    this.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
     return this.sampler.update(now, elapsed, { ...gpu, chunks, lights }, this.header)

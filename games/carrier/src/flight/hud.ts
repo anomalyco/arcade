@@ -1,4 +1,4 @@
-import { keyLabel } from "@arcade/kit/client/controls"
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { KNOT, PLANE } from "../../shared/plane"
 import { CenterCard, HomeMarker, homeAndCenterCss, type HomeMarkerView } from "../ui/hud-common"
 
@@ -55,7 +55,7 @@ const CSS = `
 #fl .warn.cue { color: var(--ink); opacity: 0.9; }
 #fl .land { position: absolute; left: 50%; top: 68%; transform: translateX(-50%); zoom: var(--hud, 1); font-size: 13px; letter-spacing: 0.32em;
   padding: 5px calc(10px - 0.32em) 5px 10px; background: rgba(6, 16, 30, 0.62); text-shadow: none; white-space: nowrap; }
-#fl .land b { font-weight: 300; border: 1px solid currentColor; padding: 0 0.35em; margin-right: 0.9em; letter-spacing: 0; }
+#fl .land b { font-weight: 300; margin-right: 0.9em; letter-spacing: 0; font-size: 12px; }
 #fl .warn.pulse { animation: fl-pulse 0.7s ease-in-out infinite alternate; }
 @keyframes fl-pulse { from { opacity: 0.35 } to { opacity: 1 } }
 ${homeAndCenterCss("#fl")}
@@ -84,6 +84,7 @@ export class FlightHud {
   private warn: HTMLElement
   private land: HTMLElement
   private landKey: HTMLElement
+  private landKeyHtml = ""
   private homeMarker: HomeMarker
   private centerCard: CenterCard
   private last = ""
@@ -97,7 +98,7 @@ export class FlightHud {
     }
     const root = document.createElement("div")
     root.id = "fl"
-    root.innerHTML = `<div class="mark nose"></div><div class="mark fpm"></div><div class="warn"></div><div class="land" hidden><b>F</b>LAND</div>
+    root.innerHTML = `<div class="mark nose"></div><div class="mark fpm"></div><div class="warn"></div><div class="land" hidden><b></b>LAND</div>
 <div class="home" hidden><div class="tick"></div><div class="chev"></div><div class="km"></div></div>
 <div class="read"><div class="row"><span class="big spd"></span><span class="sep"></span><span class="big alt"></span></div>
 <div class="row small"><span class="bar"><i></i><b></b></span><span class="thr"></span><span class="boost"><i></i></span><span class="hdg"></span></div></div>
@@ -164,8 +165,8 @@ export class FlightHud {
     }
     this.land.hidden = !v.prompt
     if (v.prompt) {
-      const fk = keyLabel("KeyF")
-      if (this.landKey.textContent !== fk) this.landKey.textContent = fk
+      const fk = keyCapHtml("KeyF")
+      if (this.landKeyHtml !== fk) this.landKey.innerHTML = this.landKeyHtml = fk
     }
     let warn = ""
     if (v.edgeLeft !== null) warn = `RETURN  ${Math.ceil(v.edgeLeft)}`
