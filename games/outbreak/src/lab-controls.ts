@@ -12,10 +12,11 @@ import { aiControls } from "../shared/ai"
 import { meleeControls, MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../shared/combat"
 import { wrapHour } from "../shared/day-cycle"
 import { flashlightControls } from "../shared/flashlight"
-import type { LocalSession } from "../shared/session"
+import { LocalSession } from "../shared/session"
 import { staminaControls } from "../shared/stamina"
 import { supportHeight } from "../shared/terrain"
 import { audioControls } from "./audio"
+import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight } from "./day-night"
 import type { OutbreakFeelTracker } from "./feel-events"
@@ -47,19 +48,28 @@ export interface OutbreakLabControlHost {
   readonly weatherController: OutbreakWeatherController
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
+  readonly botsLab: BotsLabController
   readonly hud: OutbreakHud
   readonly map: OutbreakMap
   readonly qualityController: AdaptiveQualityController
   readonly updateProfile: () => void
   readonly regenerate: () => void
+  readonly reset: (nextSeed?: number) => void
   readonly syncTextures: () => void
   readonly setLastDayNightHour: (hour: number) => void
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost } = host
+  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost, botsLab } = host
   return [
     ...aiControls,
+    ...botsLab.controls(
+      () => {
+        const s = host.session()
+        return s instanceof LocalSession ? s : null
+      },
+      (s) => host.reset(s),
+    ),
     ...audioControls,
     {
       key: "spawnZombieHere",
