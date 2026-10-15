@@ -9,10 +9,19 @@ export const FOG_CELL = .5
 export const FOG_SIZE = SIZE / FOG_CELL
 const TAU = Math.PI * 2
 
+const RAY_COS = new Float64Array(POLAR_RAYS)
+const RAY_SIN = new Float64Array(POLAR_RAYS)
+for (let i = 0; i < POLAR_RAYS; i++) {
+  const a = ((i + 0.5) / POLAR_RAYS) * TAU
+  RAY_COS[i] = Math.cos(a)
+  RAY_SIN[i] = Math.sin(a)
+}
+
 /** CPU counterpart to the shared polar compute pass, for persistent exploration (no GPU readback). */
 export class Vision {
   readonly rays = new Float32Array(POLAR_RAYS)
   readonly explored = new Uint8Array(FOG_SIZE * FOG_SIZE)
+  private readonly nearBlockers: Rect[] = []
   readonly chunkExplored = new Map<string, Uint8Array>()
   private readonly tilePool: Uint8Array[] = []
   private readonly maxCachedTiles = 64
@@ -127,9 +136,20 @@ export class Vision {
     this.aimSin = aimSin
     this.coneCos = coneCos
 
+    const minBx = ox - range
+    const maxBx = ox + range
+    const minBy = oy - range
+    const maxBy = oy + range
+    const near = this.nearBlockers
+    near.length = 0
+    for (let b = 0; b < blockers.length; b++) {
+      const rect = blockers[b]!
+      if (rect[2] >= minBx && rect[0] <= maxBx && rect[3] >= minBy && rect[1] <= maxBy) {
+        near.push(rect)
+      }
+    }
     for (let i = 0; i < POLAR_RAYS; i++) {
-      const a = ((i + 0.5) / POLAR_RAYS) * TAU
-      this.rays[i] = Math.min(range, raycast(ox, oy, Math.cos(a), Math.sin(a), blockers, range))
+      this.rays[i] = Math.min(range, raycast(ox, oy, RAY_COS[i]!, RAY_SIN[i]!, near, range))
     }
     let changed = false
     const r2 = range * range

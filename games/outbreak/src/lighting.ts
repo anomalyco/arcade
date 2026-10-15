@@ -194,9 +194,9 @@ export const flashlightBeamControls: LabControl[] = [
  * `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, the streaming window (36) at `OUTBREAK_WINDOW_UNIFORM_OFFSET`, then the Noir flashlight and
  * visibility-field block (28) at `OUTBREAK_NOIR_UNIFORM_OFFSET`.
  */
-export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
-export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
-export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
+export const OUTBREAK_NOIR_UNIFORM_OFFSET = 44
+export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 72
+export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 108
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 140
 
 export type OutbreakLightingUniformSettings =
@@ -908,10 +908,6 @@ struct OutbreakLightingUniforms {
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
-  veg: FoliageWindConfig,
-  vegActors: FoliageActors,
-  win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
-  bldRects: array<vec4f, 8>,
   u11: vec4f, // flashLensHeight, flashCosOuter, flashInnerShare, flashCore
   u12: vec4f, // flashCoreShare, flashSpill, flashSpillShare, flashCookie
   u13: vec4f, // flashAxisY, flashAxisPlan, flashNearSoftening, flashColorKnee
@@ -919,6 +915,10 @@ struct OutbreakLightingUniforms {
   u15: vec4f, // fogPenumbra, fogPenumbraGrowth, fieldRevealBlend, fieldFadeBlend
   u16: vec4f, // fogMemoryWarmth, practicalColor, flashCosSpillCut, flashAirLimit
   u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
+  win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  bldRects: array<vec4f, 8>,
+  veg: FoliageWindConfig,
+  vegActors: FoliageActors,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 `
@@ -930,6 +930,7 @@ var<private> outbreakFlashIrr: f32;
 var<private> outbreakAlbedo: vec3f;
 var<private> outbreakPracticalIrr: f32;
 var<private> outbreakSeen: f32;
+var<private> outbreakInRoom: bool;
 
 
 /**
@@ -1003,30 +1004,35 @@ fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
   return 1.0 + fibre * 0.16;
 }
 
+fn fastExpNeg(x: f32) -> f32 {
+  let c = max(0.0, x);
+  return 1.0 / (1.0 + c * (1.0 + c * (0.48 + c * 0.16)));
+}
+
 /**
  * Albedo-multiplying indirect bounce & localized bulb halation for sodium streetlamps and tungsten practicals,
  * plus Blog Game Tip #5 elongated window floor/driveway reflection sheen (openGlassSheen).
  */
-fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColor: vec3f, inRoom: bool, mat: i32) -> vec3f {
-  var col = surfCol;
+fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: bool, mat: i32) -> vec3f {
+  if (mat == 2 || mat == 3 || mat == 6 || mat == 12 || world.y >= 2.72) { return surfCol; }
   let w = clamp(OL.u0.z, 0.0, 1.0);
-  let isInView = OL.u5.w > 0.5;
-  let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
-  let texAlbedo = (surfCol * 1.48 + baseColor * 0.21);
-
+  if (!inRoom && OL.u1.w <= 0.20 && w <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
+  var col = surfCol;
   if (!inRoom) {
+    let isInView = OL.u5.w > 0.5;
+    let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
     var wetPuddle = 0.0;
-    if (OL.u8.y > 0.01) {
-      if (world.y < 0.35 && n.y > 0.75) {
-        // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
-        let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
-        col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
-      }
+    if (OL.u8.y > 0.01 && world.y < 0.35 && n.y > 0.75) {
+      // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
+      let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+      wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
+      col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
     }
     if (OL.u8.w > 0.01 && n.y > 0.45) {
       col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u8.w * 0.55 * n.y);
     }
+    if (groundMask <= 0.001) { return col; }
+    let texAlbedo = surfCol * 1.48 + outbreakAlbedo * 0.21;
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
     let sScale = OL.u1.w;
     if (sScale > 0.20) {
@@ -1035,7 +1041,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
         let sodiumCol = vec3f(1.0, 0.45, 0.09);
-        let poolS = exp(-dS2 / select(20.0, 28.0, isInView)) * groundMask;
+        let poolS = fastExpNeg(dS2 * select(0.05, 0.035714, isInView)) * groundMask;
         col += texAlbedo * (1.0 + wetPuddle * OL.u2.y * 1.15) * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
       }
     }
@@ -1044,55 +1050,70 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
     if (w > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
-      let dWinL2 = dot((world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64));
-      let dWinR2 = dot((world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64), (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64));
-      let dPorch2 = dot((world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52), (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52));
+      let vWL = (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64);
+      let vWR = (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64);
+      let vP = (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52);
       let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView);
-      let spill = ((exp(-dWinL2 / 14.5) + exp(-dWinR2 / 14.5)) * wScale * 0.88 + exp(-dPorch2 / 15.5) * pScale * 1.05) * cutZoneScale * groundMask;
+      let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655) + fastExpNeg(dot(vWR, vWR) * 0.0689655)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516) * pScale * 1.05) * cutZoneScale * groundMask;
       col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0) — scaled by w*w so Noir street stays dark outside the flashlight
-    let dp = world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85);
-    let dp2 = dot(dp * vec2f(0.60, 0.76), dp * vec2f(0.60, 0.76));
-    if (!isInView && dp2 < 26.0 && world.y < 0.45 && world.z > 39.9 && w > 0.15) {
-      let pPool = exp(-dp2 / 7.5);
-      col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (w * w) * (1.0 + wetPuddle * 0.65);
+    if (!isInView && world.y < 0.45 && world.z > 39.9 && w > 0.15) {
+      let dp = (world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85)) * vec2f(0.60, 0.76);
+      let dp2 = dot(dp, dp);
+      if (dp2 < 26.0) {
+        let pPool = fastExpNeg(dp2 * 0.133333);
+        col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (w * w) * (1.0 + wetPuddle * 0.65);
+      }
     }
-  } else if (world.y < 2.72) {
+  } else {
     col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
-    // Interior indirect room bounce & wall-wash halos (partitioned by quadrant so only 1 exp() runs per interior pixel)
+    // Interior indirect room bounce & wall-wash halos (branchless quadrant selection)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
       let warmTungsten = vec3f(1.0, 0.50, 0.08);
-      let roomAlbedo = surfCol * 1.35 + baseColor * 0.18;
-      if (world.z < 29.6) {
-        if (world.x < 27.2) {
-          let vNW = (world.xz - vec2f(25.1, 25.4)) * vec2f(0.66, 0.74);
-          let nwPool = exp(-dot(vNW, vNW) / 4.8);
-          let wallBoost = select(0.55, 1.35, abs(n.y) < 0.45 && world.z < 26.8);
-          col += (surfCol * 1.35 + vec3f(0.011, 0.0042, 0.0006)) * warmTungsten * nwPool * wallBoost * roomScale;
-        } else {
-          let vNE = (world.xz - vec2f(29.0, 26.2)) * vec2f(0.70, 0.76);
-          let nePool = exp(-dot(vNE, vNE) / 4.8);
-          let wallBoost = select(0.62, 1.25, abs(n.y) < 0.45 && world.z < 26.2);
-          col += (roomAlbedo * 1.15 + vec3f(0.012, 0.0048, 0.0008)) * warmTungsten * nePool * wallBoost * roomScale;
-        }
-      } else if (world.x > 30.6) {
-        let vSink = (world.xz - vec2f(33.4, 30.1)) * vec2f(0.66, 0.76);
-        let sinkPool = exp(-dot(vSink, vSink) / 5.2) * select(0.75, 1.65, abs(n.y) < 0.45 && world.z < 30.4 && world.y > 0.85);
+      let roomAlbedo = surfCol * 1.35 + outbreakAlbedo * 0.18;
+      let isNorth = world.z < 29.6;
+      let isWestN = world.x < 27.2;
+      let isEastS = !isNorth && world.x > 30.6;
+      let isWestS = !isNorth && !isEastS && world.x < 27.0;
+      let cPos = select(
+        select(select(vec2f(28.2, 32.6), vec2f(25.0, 32.8), isWestS), vec2f(33.4, 30.1), isEastS),
+        select(vec2f(29.0, 26.2), vec2f(25.1, 25.4), isWestN),
+        isNorth
+      );
+      let cScale = select(
+        select(select(vec2f(0.66, 0.56), vec2f(0.62, 0.62), isWestS), vec2f(0.66, 0.76), isEastS),
+        select(vec2f(0.70, 0.76), vec2f(0.66, 0.74), isWestN),
+        isNorth
+      );
+      let invDenom = select(
+        select(select(1.0 / 4.5, 1.0 / 5.2, isWestS), 1.0 / 5.2, isEastS),
+        1.0 / 4.8,
+        isNorth
+      );
+      let v0 = (world.xz - cPos) * cScale;
+      var pool = fastExpNeg(dot(v0, v0) * invDenom);
+      let isVertWall = abs(n.y) < 0.45;
+      if (isNorth) {
+        pool *= select(select(0.62, 1.25, isVertWall && world.z < 26.2), select(0.55, 1.35, isVertWall && world.z < 26.8), isWestN);
+      } else if (isEastS) {
         let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
-        let dinPool = exp(-dot(vDin, vDin) / 5.8);
-        col += (roomAlbedo * 1.68 + vec3f(0.022, 0.0088, 0.0014)) * warmTungsten * (sinkPool + dinPool) * roomScale;
-      } else if (world.x < 27.0) {
-        let vSW = (world.xz - vec2f(25.0, 32.8)) * vec2f(0.62, 0.62);
-        let swPool = exp(-dot(vSW, vSW) / 5.2);
-        col += (roomAlbedo * 1.28 + vec3f(0.014, 0.0056, 0.0009)) * warmTungsten * swPool * roomScale;
-      } else {
-        let vHall = (world.xz - vec2f(28.2, 32.6)) * vec2f(0.66, 0.56);
-        let hallPool = exp(-dot(vHall, vHall) / 4.5);
-        col += (roomAlbedo * 0.65 + vec3f(0.005, 0.0020, 0.0003)) * warmTungsten * hallPool * roomScale;
+        pool = pool * select(0.75, 1.65, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 5.8));
       }
+      let aScale = select(
+        select(select(0.65, 1.28, isWestS), 1.68, isEastS),
+        select(1.15, 1.0, isWestN),
+        isNorth
+      );
+      let bias = select(
+        select(select(vec3f(0.005, 0.0020, 0.0003), vec3f(0.014, 0.0056, 0.0009), isWestS), vec3f(0.022, 0.0088, 0.0014), isEastS),
+        select(vec3f(0.012, 0.0048, 0.0008), vec3f(0.011, 0.0042, 0.0006), isWestN),
+        isNorth
+      );
+      let baseTerm = select(roomAlbedo * aScale, surfCol * 1.35, isNorth && isWestN);
+      col += (baseTerm + bias) * warmTungsten * (pool * roomScale);
     }
   }
   return col;
@@ -1103,14 +1124,21 @@ const FLASH_RADIANCE: f32 = 9.0;
 
 /** Beam intensity at angle acos(cosT) off the axis: soft cone, hot core, reflector rings and a wide dim spill. */
 fn flashProfile(cosT: f32) -> f32 {
-  let t = acos(clamp(cosT, -1.0, 1.0)) * OL.u17.y;
+  let omc = max(0.0, 1.0 - clamp(cosT, -1.0, 1.0));
+  let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * OL.u17.y;
   let cone = 1.0 - smoothstep(OL.u11.z, 1.0, t);
   let dark = (t - OL.u12.x * 1.35) * 9.0;
   let bright = (t - 0.84) * 12.5;
-  let rings = 1.0 + OL.u12.w * (0.2 * exp(-bright * bright) - 0.18 * exp(-dark * dark) + 0.035 * sin(t * 29.0) * cone);
+  let bBell = 1.0 / (1.0 + bright * bright * (1.0 + 0.35 * bright * bright));
+  let dBell = 1.0 / (1.0 + dark * dark * (1.0 + 0.35 * dark * dark));
+  let rings = 1.0 + OL.u12.w * (0.2 * bBell - 0.18 * dBell);
   let tc = t / max(OL.u12.x, 0.05);
   let ts = t / max(OL.u12.z, 1.0);
-  return cone * rings + OL.u11.w * exp(-tc * tc) + OL.u12.y * exp(-ts * ts);
+  let tc2 = tc * tc;
+  let ts2 = ts * ts;
+  let core = 1.0 / (1.0 + tc2 * (1.0 + 0.48 * tc2));
+  let spill = 1.0 / (1.0 + ts2 * (1.0 + 0.48 * ts2));
+  return cone * rings + OL.u11.w * core + OL.u12.y * spill;
 }
 
 /** Attenuation of the local flashlight (cone.w 2) for lightSum; toLight points from the surface to the lens. */
@@ -1167,7 +1195,7 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
 /** Selective-colour mask from received flashlight, bounce and practical light, through a soft exponential knee. */
 fn outbreakColorMask(flashIrr: f32) -> f32 {
   let e = flashIrr + outbreakPracticalIrr * OL.u16.y;
-  return 1.0 - exp(-e / max(OL.u13.w, 0.01));
+  return 1.0 - fastExpNeg(e / max(OL.u13.w, 0.01));
 }
 
 /**
