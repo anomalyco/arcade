@@ -191,7 +191,10 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           ),
           windowOrigin: winState.origin,
           isStreamWindow: winState.isStream,
-          windowBuildings: winState.isStream ? worldStreamer.windowBuildings.map((b) => ({ id: b.id, kind: b.kind, rect: b.rect })) : [],
+          viewRect: cam.groundRect(5.5),
+          windowBuildings: (winState.isStream ? worldStreamer.windowBuildings : session.view.town.buildings)
+            .filter((b) => b.id !== "")
+            .map((b) => ({ id: b.id, kind: b.kind, archetype: b.archetype ?? b.kind, rect: b.rect })),
           activeChunks: [...session.sim.worldStream.activeChunks.keys()],
           cachedRenderChunks: worldStreamer.cachedChunkCount,
           pendingBakes: worldStreamer.pendingBakeCount,

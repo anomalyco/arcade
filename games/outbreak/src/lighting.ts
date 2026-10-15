@@ -311,6 +311,7 @@ export type OutbreakLightingFrameState = {
   windowOrigin?: readonly [number, number]
   isStreamWindow?: boolean
   windowBuildings?: readonly Building[]
+  chunkFadeAlpha?: number
 }
 
 /**
@@ -435,7 +436,7 @@ export function packOutbreakLightingUniforms(
   // u17: bounce height (a ground pool sits low, a wall hotspot at chest height)
   out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
-  out[N + 26] = 0
+  out[N + 26] = state.chunkFadeAlpha ?? 0
   out[N + 27] = 0
   // Volumetric beam: inverse view-projection, then density, dust, glare, samples; air boost, indoors, ground, reserved
   const B = OUTBREAK_BEAM_UNIFORM_OFFSET

@@ -72,7 +72,7 @@ const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" | "fade" }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
 function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, custom = false): boolean {
@@ -701,8 +701,8 @@ export class Renderer {
 
   private levelStaging = new Uint8Array(0)
   private glassStaging = new Uint8Array(0)
-  private readonly streamSlotKeys: string[] = ["", "", "", "", "", "", "", "", ""]
-  private readonly streamSlotChunks: Chunk[][] = [[], [], [], [], [], [], [], [], []]
+  private readonly streamSlotKeys: string[] = Array.from({ length: 25 }, () => "")
+  private readonly streamSlotChunks: Chunk[][] = Array.from({ length: 25 }, () => [])
 
   private upload(data: ArrayBuffer, prev: Buf | null, byteLength = data.byteLength): Buf {
     const needed = Math.max(64, byteLength)
@@ -720,13 +720,14 @@ export class Renderer {
   /** Static level: opaque chunks (each culled against the view), translucent glass and haze chunks, and the baked floor map. */
   setLevel(level: LevelData): void {
     this.previousFrame = null
+    const STREAM_SLOT_COUNT = 25
     const STREAM_SLOT_BYTES = 768 * 1024
     const isStreamedSlots =
       level.chunks.length > 0 &&
       level.chunks.every((c) => c.streamSlot !== undefined && c.streamKey !== undefined)
 
     if (isStreamedSlots) {
-      const totalCap = 9 * STREAM_SLOT_BYTES
+      const totalCap = STREAM_SLOT_COUNT * STREAM_SLOT_BYTES
       if (!this.level || this.level.cap < totalCap) {
         this.level?.buf.destroy()
         this.level = {
@@ -736,16 +737,23 @@ export class Renderer {
         }
         this.streamSlotKeys.fill("")
       }
-      const bySlot: LevelData["chunks"][] = [[], [], [], [], [], [], [], [], []]
+      const bySlot: LevelData["chunks"][] = Array.from({ length: STREAM_SLOT_COUNT }, () => [])
       for (let i = 0; i < level.chunks.length; i++) {
         const c = level.chunks[i]!
         bySlot[c.streamSlot!]!.push(c)
       }
       let slotOverflow = false
-      for (let s = 0; s < 9; s++) {
+      for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
         const list = bySlot[s]!
-        const key = list[0]?.streamKey ?? "empty"
-        if (key === this.streamSlotKeys[s]) continue
+        if (list.length === 0) continue
+        const key = list[0]!.streamKey!
+        if (key === this.streamSlotKeys[s]) {
+          const sc = this.streamSlotChunks[s]!
+          for (let i = 0; i < sc.length && i < list.length; i++) {
+            sc[i]!.customCutaway = list[i]!.customCutaway
+          }
+          continue
+        }
         let slotBytes = 0
         for (let i = 0; i < list.length; i++) slotBytes += list[i]!.byteLength ?? list[i]!.data.byteLength
         if (slotBytes > STREAM_SLOT_BYTES) {
@@ -775,7 +783,8 @@ export class Renderer {
       }
       if (!slotOverflow) {
         const mergedChunks: Chunk[] = []
-        for (let s = 0; s < 9; s++) {
+        for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
+          if (bySlot[s]!.length === 0) continue
           const sc = this.streamSlotChunks[s]!
           for (let i = 0; i < sc.length; i++) mergedChunks.push(sc[i]!)
         }
@@ -797,6 +806,9 @@ export class Renderer {
     this.glassChunks = glsChunks
     this.glass = this.upload(glsBuf, this.glass, glsBytes)
     const f = level.floor
+    if (level.geometryOnly && this.floorTex.width === f.w && this.floorTex.height === f.h) {
+      return
+    }
     let rebound = false
     if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
       this.floorTex.destroy()
@@ -1350,10 +1362,11 @@ export class Renderer {
         this.chunks,
         (c) => {
           if (!boxIntersectsRect2D(c.box, f.view)) return null
-          const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
+          const isFade = c.customCutaway === "fade"
+          const insideCustom = c.customCutaway && !isFade ? intersectsCutaway(c.cutBox, f.frame, true) : false
           const peeking = f.frame[26]! > 1.001
           if (c.customCutaway === "outside" && insideCustom && !peeking) return null
-          return c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
+          return isFade ? true : c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
         },
         (cut) => pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!),
         false,

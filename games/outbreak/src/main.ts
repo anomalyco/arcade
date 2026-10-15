@@ -558,7 +558,7 @@ async function main() {
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     const p = session.view.player
-    const inOriginBox = p.x >= 10 && p.x <= 86 && p.y >= 10 && p.y <= 86
+    const inOriginBox = p.x >= 14 && p.x <= 82 && p.y >= 14 && p.y <= 82 && settings.view.zoom <= 50
     if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
       currentWindowOrigin = [0, 0]
       currentIsStreamWindow = false
@@ -572,7 +572,7 @@ async function main() {
       return
     }
     worldStreamer.lastWindowKey = ""
-    const streamed = worldStreamer.updateWindow(p.x, p.y, session.view.town, mode)
+    const streamed = worldStreamer.updateWindow(p.x, p.y, session.view.town, mode, cam.groundRect(5.5), p.vx, p.vy, session.view.time)
     currentWindowOrigin = streamed.origin
     currentIsStreamWindow = true
     if (streamed.level) {
@@ -760,35 +760,51 @@ async function main() {
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.update(w / h)
+    const view = cam.groundRect(5.5)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     let windowMoved = false
     if (mode !== "classic") {
-      const inOriginBox = p.x >= 10 && p.x <= 86 && p.y >= 10 && p.y <= 86
+      const moveVx = localVehicle ? localVehicle.vx : p.vx
+      const moveVy = localVehicle ? localVehicle.vy : p.vy
+      const frustumInOrigin = view[0] >= 3.0 && view[1] >= 3.0 && view[2] <= 93.0 && view[3] <= 93.0
+      const inOriginBox = drawn.x >= 14 && drawn.x <= 82 && drawn.y >= 14 && drawn.y <= 82 && frustumInOrigin
       if (mode !== "procedural" && !currentIsStreamWindow && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
         // Pre-warm upcoming border chunks incrementally while inside the origin block
         worldStreamer.prewarmAround(
-          p.x,
-          p.y,
+          drawn.x,
+          drawn.y,
           town.seed,
           town.houseSeed,
           town.terrain,
           town.foliageDensity ?? 1,
           mode,
-          vehSpeed,
+          moveVx,
+          moveVy,
         )
         worldStreamer.stepBakeQueue(1.8)
       } else {
-        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode, vehSpeed)
+        const streamed = worldStreamer.updateWindow(
+          activePeek ? activePeek.cutX : drawn.x,
+          activePeek ? activePeek.cutY : drawn.y,
+          town,
+          mode,
+          view,
+          moveVx,
+          moveVy,
+          time,
+        )
         currentWindowOrigin = streamed.origin
         currentIsStreamWindow = true
         if (streamed.changed && streamed.level) {
           vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + (c.byteLength ?? c.data.byteLength) / 24, 0)
           renderer.setLevel(streamed.level)
           combatFx.setLevel(streamed.level)
-          windowMoved = vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
-          scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
-          combinedFog.markDirty()
+          if (!streamed.geometryOnly) {
+            windowMoved = vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
+            scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
+            combinedFog.markDirty()
+          }
         }
       }
     }
@@ -841,7 +857,6 @@ async function main() {
       for (const z of zombies) if (z.state !== "dead") casters(z.x, z.y)
       for (const o of coop.otherPositions()) casters(o[0], o[1])
     }
-    const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
     const inLightFrustum = (lx: number, ly: number, r: number): boolean => {
@@ -984,14 +999,15 @@ async function main() {
       lights.set([mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1], count++ * LIGHT_FLOATS)
     }
 
-    const cutX = activePeek ? activePeek.cutX : p.x
-    const cutY = activePeek ? activePeek.cutY : p.y
+    const cutX = activePeek ? activePeek.cutX : drawn.x
+    const cutY = activePeek ? activePeek.cutY : drawn.y
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
-    const inInteriorView = town.buildings.some(
-      (b) => cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1,
-    )
+    const inBldCheck = (b: { rect: readonly [number, number, number, number] }) =>
+      cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
+    const inInteriorView =
+      town.buildings.some(inBldCheck) || (currentIsStreamWindow && worldStreamer.windowBuildings.some(inBldCheck))
     const unshadowedLamps: number[][] = []
     for (const [i, lamp] of town.lamps.entries()) {
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView)
@@ -1106,6 +1122,7 @@ async function main() {
         windowOrigin: currentWindowOrigin,
         isStreamWindow: currentIsStreamWindow,
         windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings,
+        chunkFadeAlpha: currentIsStreamWindow ? worldStreamer.chunkFadeAlpha : 0,
       },
       flashRgb,
       lightingUniforms,

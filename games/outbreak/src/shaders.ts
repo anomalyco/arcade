@@ -80,6 +80,16 @@ ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   if (OL.win.z > 0.5) {
+    if (id >= 0 && id <= 7) {
+      let b0 = OL.bldRects[id];
+      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { return b0; }
+    }
+    let nBld = i32(OL.win.w);
+    for (var i = 0; i < 8; i++) {
+      if (i >= nBld) { break; }
+      let bi = OL.bldRects[i];
+      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { return bi; }
+    }
     if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
     return OL.bldRects[clamp(id, 0, 7)];
   }
@@ -133,7 +143,8 @@ ${outbreakFogOfWarDeclarationsWgsl}
 ${interiorDeclarationsWgsl(outbreakInteriorRefs)}`,
   directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
-      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
+      if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
+      if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
         let nCut = select(4, i32(OL.win.w), OL.win.z > 0.5);
         for(var i=0;i<nCut;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
