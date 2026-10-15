@@ -41,7 +41,7 @@ import { applyOutbreakDayNight } from "./day-night"
 import { GroundWearRenderer, packGroundCfgBits } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
-import { WorldClientStreamer } from "./world-streamer"
+import { useOriginBuild, WorldClientStreamer } from "./world-streamer"
 import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
@@ -651,6 +651,18 @@ async function main() {
     { ...DEFAULT_INTERIOR_SETTINGS },
   )
   let vertices = 0
+  /** Draws the origin block with the authored origin build; its window origin matches the streamed (1,1) window. */
+  function showOriginBuild() {
+    currentWindowOrigin = [0, 0]
+    currentIsStreamWindow = false
+    worldStreamer.center = { cx: 1, cy: 1 }
+    worldStreamer.windowOrigin = [0, 0]
+    worldStreamer.lastWindowKey = ""
+    const data = buildLevel(session.view.town)
+    vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+    renderer.setLevel(data)
+    combatFx.setLevel(data)
+  }
   function level() {
     session.view.town.foliageDensity = settings.world.foliageDensity
     archSettings.houseDecay = settings.world.houseDecay
@@ -661,18 +673,7 @@ async function main() {
     session.sim.worldStream.mode = mode
     const p = session.view.player
     const inOriginBox = p.x >= 14 && p.x <= 82 && p.y >= 14 && p.y <= 82 && settings.view.zoom <= 50
-    if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
-      currentWindowOrigin = [0, 0]
-      currentIsStreamWindow = false
-      worldStreamer.center = { cx: 1, cy: 1 }
-      worldStreamer.windowOrigin = [0, 0]
-      worldStreamer.lastWindowKey = ""
-      const data = buildLevel(session.view.town)
-      vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
-      renderer.setLevel(data)
-      combatFx.setLevel(data)
-      return
-    }
+    if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) return showOriginBuild()
     worldStreamer.lastWindowKey = ""
     const streamed = worldStreamer.updateWindow(p.x, p.y, session.view.town, mode, cam.groundRect(5.5), p.vx, p.vy, session.view.time)
     currentWindowOrigin = streamed.origin
@@ -879,9 +880,15 @@ async function main() {
     if (mode !== "classic") {
       const moveVx = localVehicle ? localVehicle.vx : p.vx
       const moveVy = localVehicle ? localVehicle.vy : p.vy
-      const frustumInOrigin = view[0] >= 3.0 && view[1] >= 3.0 && view[2] <= 93.0 && view[3] <= 93.0
-      const inOriginBox = drawn.x >= 14 && drawn.x <= 82 && drawn.y >= 14 && drawn.y <= 82 && frustumInOrigin
-      if (mode !== "procedural" && !currentIsStreamWindow && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
+      const originBuild =
+        mode !== "procedural" &&
+        session.sim.worldStream.isOriginNineOnly() &&
+        useOriginBuild(!currentIsStreamWindow, drawn.x, drawn.y, view, settings.view.zoom)
+      if (originBuild && currentIsStreamWindow && worldStreamer.center.cx === 1 && worldStreamer.center.cy === 1) {
+        // Back inside the origin block: return to the authored build (same window origin, so fog and vision carry over).
+        showOriginBuild()
+      }
+      if (originBuild && !currentIsStreamWindow) {
         // Pre-warm upcoming border chunks incrementally while inside the origin block
         worldStreamer.prewarmAround(
           drawn.x,
