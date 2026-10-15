@@ -543,3 +543,81 @@ test("zombie shamble and crouch-run reference cycles, FK shamble arms, variants 
   // 10.7° before the knee pole followed the boot; knees over toes (stance knee-vs-foot 21° → 7°) costs 0.5° here.
   expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.5)
 })
+
+/** Drives `locomotion` at constant velocity `rel` rad from a fixed aim; returns per-frame samples after warm-up. */
+function strafeRun(speed: number, rel: number, frames = 540, warm = 180, aim = (_n: number) => 0) {
+  const a = actor(), dt = 1 / 60
+  a.vx = a.svx = 0; a.vy = a.svy = 0
+  const out: { legYaw: number; aim: number; feet: { p: V3; yaw: number; planted: boolean }[]; pelvis: ReturnType<typeof yawFrame>; legs: ReturnType<typeof poseLegs> }[] = []
+  let touchdowns = 0
+  for (let n = 0; n < frames; n++) {
+    a.aim = aim(n)
+    const dir = a.aim + rel
+    a.vx = a.svx = speed * Math.cos(dir); a.vy = a.svy = speed * Math.sin(dir)
+    a.x += a.vx * dt; a.y += a.vy * dt
+    const before = a.feet.map(f => f.planted)
+    locomotion(a, dt, speed * dt, n === 0)
+    if (n >= warm) {
+      touchdowns += a.feet.filter((f, i) => f.planted && !before[i]).length
+      const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+      out.push({ legYaw: a.legYaw, aim: a.aim, feet: a.feet.map(f => ({ p: [...f.p] as V3, yaw: f.yaw, planted: f.planted })), pelvis, legs: poseLegs(a, pelvis) })
+    }
+  }
+  return { out, cadence: touchdowns / ((frames - warm) * dt) * 60 }
+}
+const wrapAngle = (d: number) => Math.atan2(Math.sin(d), Math.cos(d))
+
+test("slow side-steps open and close without the feet ever passing", () => {
+  for (const rel of [Math.PI / 2, -Math.PI / 2]) {
+    const { out } = strafeRun(0.8, rel)
+    for (const s of out) {
+      const r = [-Math.sin(s.legYaw), Math.cos(s.legYaw)]
+      const lat = (s.feet[1]!.p[0] - s.feet[0]!.p[0]) * r[0]! + (s.feet[1]!.p[2] - s.feet[0]!.p[2]) * r[1]!
+      expect(lat).toBeGreaterThan(0.15)
+      // Hips stay nearly square to the aim: a side-step, not a turned walk.
+      expect(Math.abs(wrapAngle(s.legYaw - s.aim))).toBeLessThan(0.55)
+    }
+  }
+})
+
+test("run-speed strafes turn the hips toward travel and cross over at the forward cadence without boots touching", () => {
+  const forward = strafeRun(4.2, 0).cadence
+  for (const rel of [Math.PI / 2, -Math.PI / 2]) {
+    const { out, cadence } = strafeRun(4.2, rel)
+    expect(Math.abs(cadence / forward - 1)).toBeLessThan(0.05)
+    const turned = out.reduce((s, f) => s + wrapAngle(f.legYaw - f.aim), 0) / out.length
+    expect(turned * Math.sign(rel)).toBeGreaterThan(0.75)
+    for (const s of out) {
+      if (Math.max(s.feet[0]!.p[1], s.feet[1]!.p[1]) > 0.04) continue
+      const [l, r] = s.feet
+      expect(Math.hypot(l!.p[0] - r!.p[0], l!.p[2] - r!.p[2])).toBeGreaterThan(0.15)
+    }
+  }
+})
+
+test("sweeping travel round the aim keeps the hips continuous through the backpedal flip", () => {
+  for (const speed of [1.4, 4.2]) {
+    const { out } = strafeRun(speed, 0, 60 * 26, 120, n => -2 * Math.PI * Math.max(0, n - 120) / (60 * 24))
+    for (let k = 1; k < out.length; k++) {
+      // Aim turns 0.0044 rad per frame; the legs never jump more than a few times that.
+      expect(Math.abs(wrapAngle(out[k]!.legYaw - out[k - 1]!.legYaw))).toBeLessThan(0.05)
+    }
+  }
+})
+
+test("stance knees track over the boots when strafing feet turn from the hips", () => {
+  for (const [speed, rel] of [[1.4, 0], [1.4, Math.PI / 2], [4.2, Math.PI / 2], [4.2, Math.PI]] as const) {
+    const { out } = strafeRun(speed, rel)
+    let n = 0, err = 0
+    for (const s of out) for (let i = 0; i < 2; i++) {
+      if (!s.feet[i]!.planted) continue
+      const hip = s.legs.th[i]!.p, knee = s.legs.sh[i]!.p, ankle = s.legs.ft[i]!.p
+      const ax = ankle[0] - hip[0], ay = ankle[1] - hip[1], az = ankle[2] - hip[2]
+      const u = ((knee[0] - hip[0]) * ax + (knee[1] - hip[1]) * ay + (knee[2] - hip[2]) * az) / (ax * ax + ay * ay + az * az)
+      const ox = knee[0] - hip[0] - ax * u, oz = knee[2] - hip[2] - az * u
+      if (Math.hypot(ox, oz) < 0.03) continue
+      err += Math.abs(wrapAngle(Math.atan2(oz, ox) - s.feet[i]!.yaw)); n++
+    }
+    expect(err / Math.max(1, n)).toBeLessThan(0.2)
+  }
+})
