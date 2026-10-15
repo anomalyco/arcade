@@ -160,9 +160,10 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/look-shaders",
   },
   {
-    area: "`gpu-perf` & `fx/frame-timer`",
-    description: "Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry",
-    match: (s) => s === "@arcade/kit/gpu-perf" || s === "@arcade/kit/fx/frame-timer" || s === "@arcade/kit/quality",
+    area: "`gpu-perf`, `fx/frame-timer` & `quality`",
+    description: "Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`)",
+    match: (s) =>
+      s === "@arcade/kit/gpu-perf" || s === "@arcade/kit/fx/frame-timer" || s === "@arcade/kit/quality" || s === "@arcade/kit/client/quality",
   },
   {
     area: "`fx/{particles,particle-renderer}`",

@@ -1,6 +1,6 @@
 /**
  * The viewport canvas's backing size, tracked with a ResizeObserver so the render loop never reads layout.
- * Resolution follows the display's pixel ratio: `auto` caps it at 1.5× (the games' MAX_DPR), `device` at 2×, and
+ * Resolution follows the display's pixel ratio: `auto` caps it at 1.5× (the games' Balanced quality tier), `device` at 2×, and
  * `css` renders one pixel per CSS pixel.
  */
 

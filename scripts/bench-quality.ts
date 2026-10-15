@@ -12,7 +12,7 @@ import { chromium, type Browser } from "playwright-core"
 
 const opt = (k: string, d: string) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
 const games = opt("games", "brawl,blackout,getaway,carrier").split(",")
-const [vw, vh] = opt("viewport", "2560x1440").split("x").map(Number) as [number, number]
+const [vw = 2560, vh = 1440] = opt("viewport", "2560x1440").split("x").map(Number)
 const dpr = Number(opt("dpr", "2"))
 const seconds = Number(opt("seconds", "6"))
 const autoSeconds = Number(opt("auto-seconds", "14"))
@@ -20,7 +20,7 @@ const jsonOut = opt("json", "")
 const modes = opt("modes", "high,balanced,low,auto").split(",")
 
 /** A live scene per game: bots, a sandbox, a solo chase, an offline sea. */
-const SCENES: Record<string, string> = {
+const SCENES: Record<string, string | undefined> = {
   brawl: "watch&bots=6&seed=3",
   blackout: "sandbox=1&seed=1",
   getaway: "solo",
@@ -63,7 +63,7 @@ async function measure(browser: Browser, game: string, port: number, mode: strin
   const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: dpr })
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
-  await page.goto(`http://127.0.0.1:${port}/arcade/${game}/?${SCENES[game]}&quality=${mode}`)
+  await page.goto(`http://127.0.0.1:${port}/arcade/${game}/?${SCENES[game] ?? ""}&quality=${mode}`)
   // Builds from before quality tiers have no hook: they still report frame times.
   await page.waitForFunction(() => typeof (globalThis as { __quality?: unknown }).__quality === "object", null, { timeout: 15_000 }).catch(() => undefined)
   const run = mode === "auto" ? autoSeconds : seconds
@@ -121,7 +121,7 @@ try {
   for (const game of games) {
     const server = serve(game)
     for (const mode of modes) {
-      const row = await measure(browser, game, server.port, mode)
+      const row = await measure(browser, game, server.port ?? 0, mode)
       rows.push(row)
       console.log(JSON.stringify(row))
     }

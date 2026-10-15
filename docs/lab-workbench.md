@@ -71,7 +71,7 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   `arcade.lab.panels.v1`: the plain workbench, and each station by id, so a station's dock height comes back when it
   reopens. `⋯` → `Reset panel sizes` resets the current layout.
 - **Viewport resolution** (`packages/kit/lab/viewport-size.ts`, `⋯` menu): `Auto` renders at the display's pixel
-  ratio up to 1.5× (the games' `MAX_DPR`), `Device pixels` up to 2×, `1×` at CSS pixels. A ResizeObserver tracks the
+  ratio up to 1.5× (the games' Balanced quality tier), `Device pixels` up to 2×, `1×` at CSS pixels. A ResizeObserver tracks the
   viewport box, so the render loop no longer reads layout every frame; a panel change marks the size stale and the
   next frame measures it once, because Chrome delivered ResizeObserver callbacks 7–8 frames late while dragging. The
   canvas is resized right before it is drawn, so a resize never presents an empty canvas.

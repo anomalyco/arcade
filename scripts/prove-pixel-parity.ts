@@ -15,7 +15,7 @@ if (!game || !baseDir || !headDir) throw Error("usage: prove-pixel-parity.ts <ga
 const query = opt("query", "sandbox=1&manual&seed=1")
 const advance = Number(opt("advance", "2500"))
 const dpr = Number(opt("dpr", "1"))
-const [vw, vh] = opt("viewport", "1280x800").split("x").map(Number) as [number, number]
+const [vw = 1280, vh = 800] = opt("viewport", "1280x800").split("x").map(Number)
 const drive = opt("drive", "advance")
 const out = resolve(opt("out", `captures/pixel-parity/${game}`))
 mkdirSync(out, { recursive: true })
