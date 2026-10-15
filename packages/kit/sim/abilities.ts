@@ -97,6 +97,76 @@ export type AbilityState = { ready: number[]; cast: Cast | null; status: Status[
 
 export const abilityState = (slots: number): AbilityState => ({ ready: new Array(slots).fill(0), cast: null, status: [], dash: null, carry: null, carriedBy: "" })
 
+function cloneHitDef(h: HitDef): HitDef {
+  return {
+    ...h,
+    ...(h.status ? { status: h.status.map((s) => ({ ...s })) } : {}),
+  }
+}
+
+function cloneTrailDef(t: TrailDef): TrailDef {
+  return {
+    ...t,
+    ...(t.status ? { status: t.status.map((s) => ({ ...s })) } : {}),
+  }
+}
+
+export function cloneEffectDef<E extends EffectDef>(e: E): E {
+  switch (e.kind) {
+    case "melee":
+    case "burst":
+    case "swarm":
+    case "grab":
+      return { ...e, hit: cloneHitDef(e.hit) }
+    case "projectile":
+      return {
+        ...e,
+        ...(e.hit ? { hit: cloneHitDef(e.hit) } : {}),
+        ...(e.onHit ? { onHit: e.onHit.map((x) => cloneEffectDef(x)) } : {}),
+        ...(e.onEnd ? { onEnd: e.onEnd.map((x) => cloneEffectDef(x)) } : {}),
+      }
+    case "zone":
+      return {
+        ...e,
+        ...(e.status ? { status: e.status.map((s) => ({ ...s })) } : {}),
+        ...(e.tick ? { tick: cloneHitDef(e.tick) } : {}),
+      }
+    case "dash":
+      return {
+        ...e,
+        ...(e.hit ? { hit: cloneHitDef(e.hit) } : {}),
+        ...(e.trail ? { trail: cloneTrailDef(e.trail) } : {}),
+        ...(e.then ? { then: e.then.map((x) => cloneEffectDef(x)) } : {}),
+      }
+    case "status":
+      return { ...e, status: e.status.map((s) => ({ ...s })) }
+    case "decoy":
+    case "swap":
+    case "blink":
+      return { ...e }
+  }
+}
+
+export function cloneAbilityState(ab: AbilityState): AbilityState {
+  return {
+    ready: [...ab.ready],
+    cast: ab.cast ? { ...ab.cast } : null,
+    status: ab.status.map((s) => ({ ...s })),
+    dash: ab.dash ? { ...ab.dash, def: cloneEffectDef(ab.dash.def), struck: [...ab.dash.struck] } : null,
+    carry: ab.carry ? { ...ab.carry, def: cloneEffectDef(ab.carry.def) } : null,
+    carriedBy: ab.carriedBy,
+  }
+}
+
+export type AbilitiesSnapshot = {
+  next: number
+  projectiles: Projectile[]
+  swarms: Swarm[]
+  zones: Zone[]
+  decoys: Decoy[]
+  events: AbilityEvent[]
+}
+
 export interface AbilityActor {
   id: string
   x: number
@@ -194,6 +264,26 @@ export class Abilities<A extends AbilityActor> {
     this.swarms = []
     this.zones = []
     this.decoys = []
+  }
+
+  toSnapshot(): AbilitiesSnapshot {
+    return {
+      next: this.next,
+      projectiles: this.projectiles.map((p) => ({ ...p, def: cloneEffectDef(p.def), struck: [...p.struck] })),
+      swarms: this.swarms.map((s) => ({ ...s, def: cloneEffectDef(s.def) })),
+      zones: this.zones.map((z) => ({ ...z, def: cloneEffectDef(z.def) })),
+      decoys: this.decoys.map((d) => ({ ...d })),
+      events: this.events.map((e) => ({ ...e })),
+    }
+  }
+
+  restoreSnapshot(snap: AbilitiesSnapshot): void {
+    this.next = snap.next
+    this.projectiles = snap.projectiles.map((p) => ({ ...p, def: cloneEffectDef(p.def), struck: [...p.struck] }))
+    this.swarms = snap.swarms.map((s) => ({ ...s, def: cloneEffectDef(s.def) }))
+    this.zones = snap.zones.map((z) => ({ ...z, def: cloneEffectDef(z.def) }))
+    this.decoys = snap.decoys.map((d) => ({ ...d }))
+    this.events = snap.events.map((e) => ({ ...e }))
   }
 
   /** Drops everything an actor owns or holds (they left or were knocked out). */

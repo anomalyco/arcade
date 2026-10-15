@@ -55,6 +55,11 @@ export type PropEvent =
   | { k: "prop-break"; id: number; kind: string; x: number; y: number; by: string }
   | { k: "prop-boom"; id: number; x: number; y: number; radius: number; by: string }
 
+export type PropsSnapshot = {
+  next: number
+  list: Prop[]
+}
+
 const PROP_PROP: Response = { restitution: 0.3, friction: 0.3 }
 const PROP_WALL: Response = { restitution: 0.35, friction: 0.25 }
 const GRAVITY = 18
@@ -88,6 +93,19 @@ export class Props {
 
   clear(): void {
     this.list.length = 0
+  }
+
+  toSnapshot(): PropsSnapshot {
+    return {
+      next: this.next,
+      list: this.list.map((p) => ({ ...p })),
+    }
+  }
+
+  restoreSnapshot(snap: PropsSnapshot): void {
+    this.next = snap.next
+    this.list.length = 0
+    for (const p of snap.list) this.list.push({ ...p })
   }
 
   def(p: Prop): PropKindDef {
@@ -162,8 +180,8 @@ export class Props {
         if (sp > 0) {
           const fr = d.friction / (p.slick > 0 ? 8 : 1)
           const k = Math.max(0, sp - fr * dt) / sp
-          p.vx *= k
-          p.vy *= k
+          p.vx = (p.vx * k) || 0
+          p.vy = (p.vy * k) || 0
         }
         p.w *= Math.exp(-SPIN_DAMP * dt * (p.slick > 0 ? 0.25 : 1))
       }
