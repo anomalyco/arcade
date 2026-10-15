@@ -4,7 +4,6 @@ import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabPanel } from "@arcade/kit/lab-panel"
 import type { AIState } from "../shared/ai"
-import { isMeleeWeapon, MELEE_WEAPON_IDS, type MeleeWeaponId } from "../shared/combat"
 import { sightRects } from "../shared/map"
 import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
@@ -15,6 +14,7 @@ import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
 import type { OutbreakMap } from "./map"
+import "./melee/index"
 import type { NetSession } from "./net-session"
 import { type ProgressionLabHost } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
@@ -264,41 +264,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
             kind,
             ...feelTracker.inspect(),
           }
-        },
-      },
-      {
-        id: "melee.stage",
-        label: "Equip Melee Weapon & Stage Arena",
-        shortLabel: "Melee Stage",
-        category: "Scene",
-        undoable: false,
-        args: {
-          weapon: {
-            type: "string",
-            description: `Melee weapon ID (${MELEE_WEAPON_IDS.join(", ")})`,
-          },
-          swing: {
-            type: "string",
-            description: "Optional swing/state action (none, light, heavy, combo, knockdown, finisher, crawler, limp)",
-          },
-        },
-        enabled: () => !coop.net,
-        run: async (_ctx, args) => {
-          const rawWpn = String(args?.weapon ?? "crowbar")
-          const weapon: MeleeWeaponId = isMeleeWeapon(rawWpn) ? rawWpn : "crowbar"
-          const swing = String(args?.swing ?? "light") as
-            | "none"
-            | "light"
-            | "heavy"
-            | "combo"
-            | "knockdown"
-            | "finisher"
-            | "crawler"
-            | "limp"
-          const res = host.harness().stageMelee(weapon, swing)
-          host.draw(1 / 60)
-          await device.queue.onSubmittedWorkDone()
-          return res
         },
       },
       {

@@ -29,6 +29,7 @@ import {
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
 import type { OutbreakVehicleSubsystem } from "../shared/vehicles"
 import { outbreakClientFeatures } from "./feature-registry"
+import "./melee/index"
 import "./progression"
 import "./vehicles/index"
 
@@ -188,8 +189,6 @@ export class NetSession implements Session {
     outbreakClientFeatures.syncNetFrame(this, a, b, t, span)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
-    const melee = this.sim.combat.meleeSwings
-    for (let i = melee.length - 1; i >= 0; i--) if (this.sim.time - melee[i]!.time > 0.6) melee.splice(i, 1)
   }
 
   close(): void {
@@ -386,10 +385,6 @@ export class NetSession implements Session {
     }
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
-    if (s.meleeSwings?.length) {
-      const swings = sim.combat.meleeSwings
-      for (const m of s.meleeSwings) if (!swings.some((x) => x.id === m.id)) swings.push(m)
-    }
     if (outbreakClientFeatures.applyNetWorld(this, s)) {
       topology = true
     }

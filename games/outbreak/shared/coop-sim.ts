@@ -1,7 +1,7 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
 import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
-import { createSurvivorCombatState, findFinisherTarget, OutbreakCombatSubsystem } from "./combat"
+import { createSurvivorCombatState, findFinisherTarget, OutbreakCombatSubsystem } from "./melee/index"
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures } from "./feature-registry"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
@@ -384,28 +384,6 @@ export class CoopSim {
         }
       } else if (use === "shove") shove()
       else verbs.fire = true
-    }
-    if (p.meleePhase !== "idle" || p.meleeWeapon) {
-      const runSwing = () =>
-        this.combat.stepMelee(
-          p,
-          dt,
-          this.time,
-          Boolean(command.fireHeld),
-          this.ai,
-          blockers,
-          progression.melee(slot.id),
-          resolved.melee,
-          slot.id,
-          slot.index,
-          town,
-          (text, kind, key) => progression.notify(slot, text, kind, key),
-        )
-      const meleeRes =
-        viewTime !== undefined && viewTime < this.time && p.meleePhase !== "idle"
-          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runSwing)
-          : runSwing()
-      if (meleeRes.topologyChanged) this.topologyChanged()
     }
     const made = progression.act(slot, verbs, world, target)
     if (made.noise > 0) {

@@ -66,7 +66,9 @@ export interface OutbreakNetSectionCodec<TState = unknown, TSection = unknown, T
   /** Writes the binary section payload when `shouldWrite` is true. */
   encode(w: ByteWriter, payload: TWritePayload, ctx: OutbreakNetSectionEncodeContext): void
   /** Reads the binary section payload when `sections & bit` is set. */
-  decode(r: ByteReader, ctx: OutbreakNetSectionDecodeContext): TSection
+  decode(r: ByteReader, ctx: OutbreakNetSectionDecodeContext): TSection | undefined
+  /** Optional handler when `sections & bit` is 0 (e.g. delta snapshot filtering expiring events). */
+  decodeOmitted?(ctx: OutbreakNetSectionDecodeContext): TSection | undefined
   /** Optional fast-skip for `inspectSnapshotBreakdown`. When omitted, `decode` advances the reader. */
   skip?(r: ByteReader, ctx: { isDelta: boolean }): void
 }

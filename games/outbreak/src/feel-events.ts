@@ -5,6 +5,7 @@ import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { outbreakClientFeatures } from "./feature-registry"
 import type { NetSession } from "./net-session"
+import "./melee/index"
 import type { OutbreakSettings } from "./settings"
 import "./vehicles/index"
 import type { ZombieCrowdRenderer } from "./zombies"
@@ -261,47 +262,6 @@ export class OutbreakFeelTracker {
         } else if (distFromMe < 16) {
           const peerAtt = attenuateShake(distFromMe, 16) * 0.35
           this.triggerShot(shot.aim, peerAtt)
-        }
-      },
-    )
-
-    addCount = combatFx.processMeleeSwings(
-      session.view.meleeSwings,
-      time,
-      dt,
-      session.ai,
-      zombieCrowd,
-      (x, z) => supportHeight(town, x, z),
-      addSprites,
-      addCount,
-      (swing) => {
-        const distFromMe = Math.hypot(swing.x - p.x, swing.y - p.y)
-        const isLocal = swing.attackerId === session.view.actorId || distFromMe < 1.6
-        if (isLocal) {
-          const hitCount = swing.hits.length
-          const anyKill = swing.hits.some((h) => h.killed)
-          const anySever = swing.hits.some((h) => Boolean(h.detachBone))
-          const anyHead = swing.hits.some((h) => h.headshot)
-          const heavyScale = swing.heavy ? 1.45 + 0.25 * swing.charge : swing.combo === 3 ? 1.25 : 1.0
-          if (hitCount > 0 || swing.hitDoorId) {
-            const k = heavyScale * (1 + Math.min(2, Math.max(0, hitCount - 1)) * 0.28) * (anySever ? 1.22 : 1.0)
-            cam.add((anyKill ? 0.36 : 0.24) * k, swing.aim, (anyKill ? 2.6 : 1.7) * k)
-            cam.punch(-0.24 * k, (swing.combo === 2 ? -1 : 1) * 0.011 * k)
-            const stopDur = (swing.heavy ? 0.044 : anyKill || anyHead ? 0.036 : 0.026) * (anySever ? 1.15 : 1.0)
-            this.hitStop.trigger(stopDur, 0.06, !cam.isReducedMotion())
-            if (!cam.isReducedMotion()) {
-              this.motionBurst.add(
-                { dir: swing.aim, directional: 0.0065 * k, radial: 0.0045 * k, boost: 0.45 * k },
-                this.settings.motion.burst,
-              )
-            }
-          } else {
-            cam.add(0.09 * heavyScale, swing.aim, 0.55 * heavyScale)
-            cam.punch(-0.07 * heavyScale, (swing.combo === 2 ? -1 : 1) * 0.005 * heavyScale)
-          }
-        } else if (distFromMe < 14 && (swing.hits.length > 0 || swing.hitDoorId)) {
-          const peerAtt = attenuateShake(distFromMe, 14) * 0.35
-          cam.add(0.22 * peerAtt, swing.aim, 1.2 * peerAtt)
         }
       },
     )
