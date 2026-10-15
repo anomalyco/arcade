@@ -1240,13 +1240,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   buttons as typed and others' held (`@arcade/kit/net/rollback`, `games/archers/shared/match.ts`). A world hash every
   30 ticks catches desyncs; the room sends the whole state only on join, reconnect or mismatch. One step with four
   bots costs 6.4 µs and a clone 10 µs, so re-simulating 20 ticks a frame is free. The `TickPacer` estimates the room's
-  tick from the fastest recent frame (so it follows a room clock that runs slow; local `wrangler dev` ticks at about
-  54 Hz) and learns its lead from the room's slack report at the 20th percentile, not the minimum: over TCP one lost
-  segment holds 200 ms of inputs, and chasing those kept the lead 12–17 ticks instead of 4–5. Measured with the real
-  room core over `link-sim` (`ONLINE_BENCH=1 bun test games/archers/tests/online.test.ts -t bench`, 2 people + 2 bots,
-  60 s): on Wi-Fi the head runs 4 ticks ahead, 5.7% of input changes land late, other people are drawn within 0.25 tile
-  of where the room puts them on 80% of frames (median error 0), against 40% for drawing the room's world one round
-  trip plus 100 ms ago (median 0.69 tile); zero hash mismatches on good, Wi-Fi and bad links. Two headless tabs on
+  tick from the fastest frame of the last half second and learns its lead from the room's measurement of each input's
+  arrival, as a running quantile (10% may land less than a tick early), not the worst case: over TCP one lost segment
+  holds 200 ms of inputs, and chasing those kept the lead 12–17 ticks instead of 4–5. Learn once per arrival: the first
+  version re-applied a 2-second quantile on every frame the room sent, a stale integral that overshot and left
+  clients running at 0.6x. Measured with the real room core over `link-sim` (`ONLINE_BENCH=1 bun test
+  games/archers/tests/online.test.ts -t bench`, 2 people + 2 bots, 60 s): on Wi-Fi the head runs 4 ticks ahead, 4.1%
+  of input changes land late, other people are drawn within 0.25 tile of where the room puts them on 80% of frames
+  (median error 0), against 33% for drawing the room's world one round trip plus 100 ms ago (median 0.83 tile); zero hash mismatches on good, Wi-Fi and bad links. Two headless tabs on
   real Durable Objects behind an 80 ms proxy: zero desyncs (`games/archers/scripts/online-proof.ts`). Corrections
   are eased out of the drawn position over about 70 ms, and an event re-simulated within 4 ticks shows once.
 - **Determinism across engines:** only + − × ÷, `Math.sqrt`, `Math.floor`/`round`/`min`/`max`/`abs` and integer

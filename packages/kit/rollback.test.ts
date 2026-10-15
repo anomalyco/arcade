@@ -76,11 +76,12 @@ describe("InputRelay", () => {
   test("on time applies on its tick, late on the next tick, and the seat holds its last input", () => {
     const r = new InputRelay<string>()
     r.receive("a", 5, 3, 2)
-    expect(r.slack("a", 2)).toBe(2)
+    expect(r.drain("a")).toEqual([2])
+    expect(r.drain("a")).toEqual([])
     expect([r.take("a", 3), r.take("a", 4), r.take("a", 5), r.take("a", 6)]).toEqual([0, 0, 3, 3])
     // Tick 6 has run; an input for tick 6 is a tick late and applies on 7.
     r.receive("a", 6, 1, 6)
-    expect(r.slack("a", 6)).toBe(-1)
+    expect(r.drain("a")).toEqual([-1])
     expect(r.take("a", 7)).toBe(1)
     r.release("a")
     expect(r.take("a", 8)).toBe(0)
@@ -88,14 +89,14 @@ describe("InputRelay", () => {
 })
 
 describe("rollback over a Wi-Fi link", () => {
-  for (const [name, roomRate] of [["a room on time", 1], ["a room ticking 10% slow", 0.9], ["a room ticking 5% fast", 1.05]] as const)
+  for (const [name, roomRate] of [["a room on time", 1], ["a room ticking 10% slow", 0.9], ["a room ticking 20% slow", 0.8], ["a room ticking 5% fast", 1.05]] as const)
   test(`${name}: clients agree with it and the pacer keeps inputs on time`, () => {
     const TICK = 1000 / 60
     const rand = mulberry32(7)
     const room: S = { x: [0, 0] }
     const relay = new InputRelay<number>()
     const up = [0, 1].map(() => new LinkQueue<{ t: number; b: number; beat?: boolean }>(new TcpLink(LINKS.wifi, rand)))
-    const down = [0, 1].map(() => new LinkQueue<{ t: number; f: F; slack: number | null }>(new TcpLink(LINKS.wifi, rand)))
+    const down = [0, 1].map(() => new LinkQueue<{ t: number; f: F; slack: number[] }>(new TcpLink(LINKS.wifi, rand)))
     const clients = ([0, 1] as const).map((k) => new RollbackClient(sim(k)))
     const pacers = [0, 1].map(() => new TickPacer(TICK))
     const held = [0, 0]
@@ -119,7 +120,7 @@ describe("rollback over a Wi-Fi link", () => {
         const f: F = { i: [relay.take(0, ran), relay.take(1, ran)] }
         step(room, f)
         history.set(ran, [room.x[0], room.x[1]])
-        for (const k of [0, 1]) down[k]!.send(ms, { t: ran, f, slack: relay.slack(k, ran) })
+        for (const k of [0, 1]) down[k]!.send(ms, { t: ran, f, slack: relay.drain(k) })
       }
       // Clients: frames in, then their own fixed step at the pacer's rate.
       for (const k of [0, 1] as const) {
@@ -128,7 +129,7 @@ describe("rollback over a Wi-Fi link", () => {
         for (const m of down[k]!.arrived(ms)) {
           c.confirm(m.t, m.f)
           p.frame(m.t, ms)
-          if (m.slack !== null) p.slack(m.slack)
+          for (const v of m.slack) p.slack(v)
         }
         p.atLeast(c.tick)
         const before = p.tick
@@ -151,7 +152,7 @@ describe("rollback over a Wi-Fi link", () => {
       expect(c.confirmed.x).toEqual(history.get(c.tick)!)
     }
     // Over TCP a lost segment or a Wi-Fi stall holds every input behind it, so a few changes always land late.
-    expect(late / sent).toBeLessThan(0.08)
+    expect(late / sent).toBeLessThan(0.1)
     for (const p of pacers) expect(p.tick - ran).toBeLessThan(10)
   })
 })

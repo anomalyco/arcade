@@ -27,10 +27,13 @@ export type ClientMsg =
 
 export type ServerMsg =
   | RoomFrame<RosterRow, never>
-  /** The frame for tick `t`; `h` is the world's hash after it (every HASH_EVERY ticks); `a` is your input slack. */
-  | { type: "f"; t: number; i: number[]; c?: Cmd[]; h?: number; a: number | null }
+  /**
+   * The frame for tick `t`; `h` is the world's hash after it (every HASH_EVERY ticks); `a` is how many ticks early
+   * each of your inputs since the last frame arrived.
+   */
+  | { type: "f"; t: number; i: number[]; c?: Cmd[]; h?: number; a?: number[] }
   /** The whole world after tick `t` (on join, reconnect or resync), with that tick's frame inputs. */
-  | { type: "state"; t: number; s: SimState; i: number[]; a: number | null }
+  | { type: "state"; t: number; s: SimState; i: number[] }
 
 export const NAME_MAX = 10
 /** Ticks between world hashes in the frame stream. */
