@@ -10,7 +10,7 @@ import type { CalloutKind, CalloutOptions } from "./callouts"
 import type { BodyBox } from "./placement"
 import { RemoteAdapter, type HudRemote } from "./remote"
 import { TEAMMATE_ALL, TEAMMATE_OFF, type HudSettings } from "./settings"
-import { localVitals } from "./vitals"
+import { GROUND_SEGMENTS, localVitals } from "./vitals"
 import "./hud.css"
 
 export { ActorFeedback } from "./actor-feedback"
@@ -25,8 +25,8 @@ const HEAD_TOP = 1.92
 const BODY_RADIUS = 0.34
 /** Radius of the feet circle; its screen-lowest point is "below the feet" under the tilted camera. */
 const FOOT_RADIUS = 0.2
-/** Radius of the ground ring drawn around the feet in the Diegetic style. */
-const GROUND_RADIUS = 0.55
+/** Radius of the ground ring drawn around the feet in the Diegetic style, in metres: just outside the feet and shadow. */
+const GROUND_RADIUS = 0.62
 /** Height of the body's middle, where side-placed rings and callouts centre. */
 const BODY_MID = 1.05
 
@@ -266,10 +266,14 @@ export class OutbreakHud {
         aimY = ahead.y - mid.y
       }
     }
-    const foot = cam.project(f.x, f.y + 0.02, f.z, w, h)
-    const fr = cam.project(f.x + GROUND_RADIUS, f.y + 0.02, f.z, w, h)
-    const ff = cam.project(f.x, f.y + 0.02, f.z + GROUND_RADIUS, w, h)
-    const fb = cam.project(f.x, f.y + 0.02, f.z - GROUND_RADIUS, w, h)
+    // The ground circle, projected point by point so the ellipse has the camera's real perspective.
+    const ground: number[] = new Array(GROUND_SEGMENTS * 2)
+    for (let i = 0; i < GROUND_SEGMENTS; i++) {
+      const t = (i / GROUND_SEGMENTS) * Math.PI * 2
+      const p = cam.project(f.x + Math.cos(t) * GROUND_RADIUS, f.y + 0.02, f.z + Math.sin(t) * GROUND_RADIUS, w, h)
+      ground[i * 2] = p.x
+      ground[i * 2 + 1] = p.y
+    }
     return {
       x: head.x,
       top: Math.min(head.y, headBack.y, headFront.y),
@@ -278,10 +282,7 @@ export class OutbreakHud {
       mid: mid.y,
       aimX,
       aimY,
-      footX: foot.x,
-      footY: (ff.y + fb.y) / 2,
-      footW: Math.abs(fr.x - foot.x) * 2,
-      footH: Math.abs(ff.y - fb.y),
+      ground,
     }
   }
 }

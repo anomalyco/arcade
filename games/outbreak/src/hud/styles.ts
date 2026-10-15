@@ -54,10 +54,10 @@ export type ResolvedStyle = StyleSpec & { id: number }
 const PLACEMENT_SIDE: Record<number, Side> = { [CALLOUTS_ABOVE]: "up", [CALLOUTS_BESIDE]: "left" }
 
 export function resolveStyle(s: { hudStyle: number; calloutPlacement: number; vitalsPlacement: number; avoidAim: boolean }): ResolvedStyle {
-  const spec = STYLES[s.hudStyle] ?? STYLES[STYLE_BELOW]!
+  const spec = STYLES[s.hudStyle] ?? STYLES[STYLE_DIEGETIC]!
   const callouts = s.calloutPlacement === CALLOUTS_STYLE ? spec.callouts : (PLACEMENT_SIDE[s.calloutPlacement] ?? "down")
   const vitals = s.vitalsPlacement === VITALS_STYLE ? spec.vitals : s.vitalsPlacement
-  return { ...spec, id: s.hudStyle in STYLES ? s.hudStyle : STYLE_BELOW, callouts, vitals, avoid: spec.avoid && s.avoidAim }
+  return { ...spec, id: s.hudStyle in STYLES ? s.hudStyle : STYLE_DIEGETIC, callouts, vitals, avoid: spec.avoid && s.avoidAim }
 }
 
 /** Whether a vitals mode draws on the character (as opposed to the screen edge or the status icons). */
