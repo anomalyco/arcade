@@ -1,0 +1,36 @@
+.callouts { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --callout-size: 12px }
+.callout { position: absolute; left: 0; top: 0; will-change: transform, opacity }
+.callout-body {
+  position: absolute; left: 0; bottom: 0; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: .42em; padding: .2em .58em .22em;
+  border: 1px solid #ffffff24; border-radius: .38em; background: #0a0e0fd9; color: #e4e1d2;
+  font: 600 var(--callout-size)/1.25 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .01em;
+  white-space: nowrap; text-shadow: 0 1px 0 #000; box-shadow: 0 2px 8px #00000066;
+  font-variant-numeric: tabular-nums
+}
+.callout-ring {
+  display: none; flex: none; width: .92em; height: .92em; border-radius: 50%;
+  background: conic-gradient(currentColor calc(var(--p, 0) * 360deg), #ffffff2e 0);
+  -webkit-mask: radial-gradient(circle, transparent 48%, #000 52%); mask: radial-gradient(circle, transparent 48%, #000 52%)
+}
+.callout[data-kind="progress"] .callout-body { color: #f1eee0; border-color: #ffffff3a }
+.callout[data-kind="progress"] .callout-ring { display: inline-block }
+.callout[data-kind="result"] .callout-body { color: #cfe7ad; border-color: #b8d89650 }
+.callout[data-kind="info"] .callout-body { color: #cfccbf; font-weight: 500 }
+.callout[data-kind="warning"] .callout-body { color: #ffcf6e; border-color: #f0b44a80; background: #19130ae0 }
+.callout[data-kind="danger"] .callout-body { color: #ff9a80; border-color: #e86a4e90; background: #1c0d0ae0 }
+.callout[data-kind="noise"] .callout-body { color: #b9c4cc; font-weight: 500; border-style: dashed; border-color: #b9c4cc55 }
+.callout[data-kind="noise"] .callout-body::before { content: "))"; opacity: .7; letter-spacing: -.12em; margin-right: .12em }
+
+/* Callout mode: actions are reported above the survivor, so the corner HUD shrinks to a hotbar and a summary. */
+body[data-hud="callouts"] #hud { left: 0; right: 0; bottom: 12px; align-items: center; gap: 5px }
+body[data-hud="callouts"] #meters { gap: 4px }
+body[data-hud="callouts"] #stamina, body[data-hud="callouts"] #battery { width: 72px; height: 3px }
+body[data-hud="callouts"] #hotbar { gap: 2px }
+body[data-hud="callouts"] #hotbar .slot { min-width: 0; height: 20px; padding: 0 6px; gap: 4px; border-color: transparent; background: #0f1515a0; font-size: 10px }
+body[data-hud="callouts"] #hotbar .slot[data-selected="true"] { border-color: #d6d4c666; background: #182121d8 }
+body[data-hud="callouts"] #hotbar .slot[data-empty="true"] b { display: none }
+body[data-hud="callouts"] #status {
+  position: fixed; left: 12px; top: 10px; padding: 3px 7px; border: 0; border-radius: 4px; background: #0b1011a0;
+  color: #b9b7aa; font-size: 10.5px; opacity: .85
+}

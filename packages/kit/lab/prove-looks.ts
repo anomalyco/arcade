@@ -212,6 +212,10 @@ try {
   }
 
   // Street frame aligned with ~/code/home/artifacts/2026-10-14-outbreak-directions/ (pos 30, 41, 18:00, zoom 42)
+  await obPage.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    h.setLookPreset("current")
+  })
   await poseOutbreak(30, 41, -Math.PI / 2, 18, 42)
   const streetBaselineBytes = await obPage.locator("#game").screenshot({ path: resolve(out, "outbreak-street-current.png") })
 
