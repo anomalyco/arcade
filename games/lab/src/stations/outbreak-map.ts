@@ -5,7 +5,7 @@ const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean) => ({ command: "scene.set-param", args: { key, value } })
 // map.demo reveals ground around the survivor as if walked, drops two marks and two zombie sightings, and opens the sheet.
 const sheet = (style: number, zoom: number): StationCommand[] => [set("mapStyle", style), set("mapMinimap", 0), { command: "map.demo" }, { command: "map.open", args: { zoom } }]
-const onScreen = (mode: number): StationCommand[] => [set("mapMinimap", mode), { command: "map.demo" }, { command: "map.close" }]
+const onScreen = (mode: number): StationCommand[] => [set("mapStyle", 0), set("mapMinimap", mode), { command: "map.demo" }, { command: "map.close" }]
 
 const variants: StationVariant[] = [
   { id: "survey", label: "Survey paper", note: "Default. N opens the map; drag or two-finger swipe to pan, pinch to zoom, click to mark.", setup: sheet(0, 2.4) },

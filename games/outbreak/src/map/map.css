@@ -29,7 +29,7 @@
   align-items: flex-end; gap: 16px; pointer-events: none; color: var(--map-soft, #6a5b45); font-size: 11px
 }
 .obmap-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center }
-.obmap-legend > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.obmap-legend > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 2px 6px; border-radius: 3px; background: color-mix(in srgb, var(--map-sheet, #d6cbb0) 82%, transparent) }
 .obmap-scale { display: flex; flex-direction: column; align-items: flex-end; gap: 3px }
 .obmap-scale i { display: block; height: 5px; border: 1.5px solid var(--map-text, #2a231b); border-top: 0 }
 .obmap-scale em { font-style: normal; color: var(--map-text, #2a231b); font-variant-numeric: tabular-nums }
