@@ -11,7 +11,7 @@ export const readoutCss = `
 .knobs-rd .knobs-rd-mono{font:400 var(--ku-text-meta)/1.25 var(--ku-mono);font-variant-numeric:tabular-nums;white-space:pre}
 .knobs-rd .knobs-rd-meta{font:var(--ku-font-weight) var(--ku-text-meta)/1.25 var(--ku-font);white-space:nowrap}
 .knobs-rd .knobs-rd-value{display:inline-flex;justify-content:flex-end;align-items:baseline;flex:none;margin-left:auto;contain:layout paint style}
-.knobs-rd .knobs-rd-num{color:var(--ku-text);transition:color .15s}
+.knobs-rd .knobs-rd-num{color:var(--ku-text);text-align:right;transition:color .15s}
 .knobs-rd .knobs-rd-unit{margin-left:var(--k-unit-gap,.28em);color:var(--ku-dim)}
 .knobs-rd .knobs-rd-unit[hidden]{display:none}
 .knobs-rd.knobs-rd-watch{flex:1 1 auto;justify-content:flex-end}
@@ -24,8 +24,17 @@ export const readoutCss = `
 /* Blocks: a head line (the label and what goes with it) over a body. In a panel the row grows to fit. */
 .knobs-panel .knobs-row.knobs-rd-rowblock{display:block;height:auto}
 .knobs-rd.knobs-rd-block{display:flex;flex-direction:column;align-items:stretch;gap:2px;width:100%}
-.knobs-rd .knobs-rd-head{display:flex;align-items:center;gap:10px;height:var(--ku-row);min-width:0}
+.knobs-rd .knobs-rd-head{display:flex;align-items:center;gap:0 10px;min-height:var(--ku-row);min-width:0}
+/* The title keeps its words; the legend or tools beside it give way (see fitHead). */
+.knobs-rd .knobs-rd-head>span:first-child{flex:0 0 auto;max-width:100%}
 .knobs-rd .knobs-rd-legend{display:flex;align-items:center;gap:12px;margin-left:auto;min-width:0;overflow:hidden}
+.knobs-rd .knobs-rd-tools{display:flex;align-items:center;gap:10px;margin-left:auto;min-width:0}
+.knobs-rd .knobs-rd-tools>.knobs-rd-find{flex:1 1 56px;min-width:56px;max-width:84px}
+.knobs-rd .knobs-rd-head[data-short] .knobs-rd-legend .knobs-rd-unit{display:none}
+.knobs-rd .knobs-rd-head[data-wrap]{flex-wrap:wrap;padding-bottom:4px}
+.knobs-rd .knobs-rd-head[data-wrap]>span:first-child{display:flex;align-items:center;min-height:var(--ku-row)}
+.knobs-rd .knobs-rd-head[data-wrap]>:is(.knobs-rd-legend,.knobs-rd-tools){flex:1 0 100%;margin-left:0}
+.knobs-rd .knobs-rd-head[data-wrap]>.knobs-rd-tools{flex-wrap:wrap;row-gap:4px}
 .knobs-rd .knobs-rd-key{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .knobs-rd .knobs-rd-swatch{flex:none;width:8px;height:2px;border-radius:1px}
 .knobs-rd .knobs-rd-name{color:var(--ku-label)}
@@ -49,7 +58,7 @@ export const readoutCss = `
 .knobs-rd .knobs-rd-td[data-num]{text-align:right}
 
 .knobs-rd.knobs-rd-log{--rd-lh:18px}
-.knobs-rd .knobs-rd-chips{display:inline-flex;align-items:center;gap:2px;margin-left:auto}
+.knobs-rd .knobs-rd-chips{display:inline-flex;align-items:center;gap:2px;margin-right:auto}
 .knobs-ui .knobs-rd-chip,.knobs-ui .knobs-rd-copy{height:calc(var(--ku-control-h) - 2px);padding:0 7px;border-radius:min(var(--ku-radius),5px);color:var(--ku-label);cursor:pointer;transition:background .15s,color .15s}
 .knobs-ui .knobs-rd-chip:hover,.knobs-ui .knobs-rd-copy:hover{background:var(--ku-wash);color:var(--ku-text)}
 .knobs-ui .knobs-rd-chip[aria-checked="true"]{background:var(--ku-wash-hi);color:var(--ku-text)}

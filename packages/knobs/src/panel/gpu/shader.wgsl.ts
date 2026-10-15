@@ -83,6 +83,12 @@ fn roundedBox(p: vec2f, size: vec2f, r: f32) -> f32 {
   return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - rad;
 }
 
+// The box grown by g, as CSS spreads a shadow: a rounded box concentrically, a square one square.
+fn grownBox(p: vec2f, size: vec2f, r: f32, g: f32) -> f32 {
+  if (g <= 0.0 || r > 0.0) { return roundedBox(p, size, r) - max(g, 0.0); }
+  return roundedBox(p + vec2f(g), size + vec2f(2.0 * g), 0.0);
+}
+
 // Per-corner radii (tl, tr, br, bl), e.g. the first and last rows of a grouped card.
 fn roundedBox4(p: vec2f, size: vec2f, radii: vec4f) -> f32 {
   let c = p - size * 0.5;
@@ -533,9 +539,9 @@ fn shadeShape(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   let d = roundedBox(local, size, r);
   let ring = p.look.y;
   var out = vec4f(0.0);
-  let grown = d - max(ring, 0.0);
+  let grown = grownBox(local, size, r, ring);
   if (p.extra.x > 0.0) {
-    let sd = roundedBox(local - vec2f(0.0, p.extra.z), size, r) - max(ring, 0.0);
+    let sd = grownBox(local - vec2f(0.0, p.extra.z), size, r, ring);
     let sigma = max(0.5, p.extra.y * 0.5);
     let sh = p.extra.x * (1.0 - smoothstep(-sigma * 1.5, sigma * 2.0, sd));
     out = vec4f(0.0, 0.0, 0.0, sh * (1.0 - covSd(grown)));

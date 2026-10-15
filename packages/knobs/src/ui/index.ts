@@ -4,8 +4,12 @@ export { confirm, type ConfirmOptions } from "./confirm.js"
 export { overlayLook, type Anchor } from "./layer.js"
 export {
   fuzzy,
+  inTriangle,
   marks,
+  matchItem,
   place,
+  safeTriangle,
+  stepItem,
   rank,
   type Box,
   type FuzzyMatch,
@@ -20,6 +24,17 @@ export {
   type CommandPalette,
   type CommandPaletteOptions,
 } from "./palette.js"
+export {
+  contextMenu,
+  menu,
+  type ContextMenu,
+  type ContextMenuOptions,
+  type Menu,
+  type MenuCloseReason,
+  type MenuEntry,
+  type MenuItem,
+  type MenuOptions,
+} from "./menu.js"
 export { popover, type Popover, type PopoverCloseReason, type PopoverOptions } from "./popover.js"
 export { readout, type Readout } from "./readouts.js"
 export { toast, type Toast, type ToastOptions } from "./toast.js"
@@ -42,6 +57,31 @@ export {
   type SplitDirection,
   type SplitLayout,
 } from "./split-model.js"
+export {
+  timeline,
+  type SeekSource,
+  type Timeline,
+  type TimelineMarker,
+  type TimelineOptions,
+  type TimelineRange,
+} from "./timeline.js"
+export {
+  adjacentMarker,
+  advance,
+  clampView,
+  followView,
+  frameTime,
+  magnet,
+  rulerTicks,
+  scrubTime,
+  timeLabel,
+  toFrame,
+  zoomView,
+  type Tick,
+  type Ticks,
+  type TimeUnits,
+  type TimeView,
+} from "./timeline-model.js"
 export { tree, type Tree, type TreeOptions, type TreeRowContext, type TreeToggle } from "./tree.js"
 export {
   applyMove,

@@ -220,13 +220,11 @@ try {
             const box = await rowEl.boundingBox()
             if (box) await page.screenshot({ path: resolve(out, `cut-label-${r.label.replace(/\W+/g, "-")}-${tag}.png`), clip: { x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8 } })
           }
-          // Segmented rows (no menu button on screen) still squeeze their label in knobs 9da5381: reported, not failed.
-          if (r.valueW === 0) { if (r.labelTruncated) (report.segmentedCutLabels ??= [] as string[]) && (report.segmentedCutLabels as string[]).push(`${r.label} @ ${tag}`); continue }
+          // A choice row's label keeps its words; only the value is cut, and segments that would squeeze it become a menu.
           assert(!r.labelTruncated, `${r.label}: the label is not cut`)
+          if (r.valueW === 0) continue
           assert(!r.valueTruncated || r.valueTitle === r.value, `${r.label}: a cut value has its full text on hover`)
-          // How knobs splits a menu row between label and value in its default density is with knobs (reported
-          // 2026-10-15 with "Look & threat by hour"); a cut value under 40% of the row is recorded, not failed.
-          if (r.valueTruncated && r.valueW < r.rowW * 0.4) (report.narrowValues ??= [] as string[]) && (report.narrowValues as string[]).push(`${r.label}: ${r.valueW} of ${r.rowW} @ ${tag}`)
+          if (r.valueTruncated) (report.cutValues ??= [] as string[]) && (report.cutValues as string[]).push(`${r.label}: ${r.valueW} of ${r.rowW} @ ${tag}`)
         }
       }
       await context.close()

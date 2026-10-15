@@ -213,6 +213,66 @@ const css = `
 .knobs-tree-ghost{position:fixed;left:0;top:0;z-index:2147480004;padding:2px 8px;background:var(--ku-bg);color:var(--ku-text);border-radius:var(--ku-radius);
   box-shadow:0 0 0 1px var(--ku-line-hi),0 6px 18px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;font:var(--ku-font-weight) var(--ku-font-size)/1.6 var(--ku-font)}
 .knobs-tree-empty{padding:10px var(--ku-inset);color:var(--ku-dim)}
+
+/* Timeline: a transport (play, the time) beside a track: the ruler's canvas over a lane of
+   markers, ranges as soft bands, and the playhead, a hairline in the accent with a cap. */
+:where(.knobs-timeline,.knobs-timeline *){box-sizing:border-box}
+.knobs-ui.knobs-timeline{display:flex;align-items:stretch;gap:10px;width:100%;height:100%;min-height:52px;padding:6px var(--ku-inset) 8px 8px;outline:none;user-select:none;-webkit-user-select:none;
+  font:var(--ku-font-weight) var(--ku-font-size)/1.35 var(--ku-font);color:var(--ku-text);letter-spacing:normal;text-align:left}
+:where(.knobs-ui) :is(.knobs-tl-play,.knobs-tl-edit){all:revert;box-sizing:border-box;font:inherit;color:inherit;letter-spacing:inherit;background:transparent;border:0;margin:0;padding:0;outline:none;box-shadow:none}
+.knobs-tl-transport{flex:none;display:flex;align-items:center;gap:8px;min-width:96px}
+.knobs-ui .knobs-tl-play{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--ku-control-h);height:var(--ku-control-h);min-width:22px;min-height:22px;border-radius:calc(var(--ku-radius) * 999);
+  background:var(--ku-surface-hi);color:var(--ku-text);cursor:pointer;transition:background .15s,transform .15s var(--ku-ease)}
+.knobs-ui .knobs-tl-play:hover{background:color-mix(in srgb,var(--ku-text) 16%,transparent)}
+.knobs-ui .knobs-tl-play:active{transform:scale(.94)}
+.knobs-tl-play svg{width:12px;height:12px}
+.knobs-timeline[data-playing] .knobs-tl-play{background:var(--ku-accent);color:var(--ku-bg)}
+.knobs-tl-time{display:flex;flex-direction:column;line-height:1.2;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.knobs-tl-now{font:var(--ku-font-weight) var(--ku-value-size)/1.2 var(--ku-value-font);color:var(--ku-text);white-space:nowrap}
+.knobs-tl-sub{font-size:var(--ku-text-meta);color:var(--ku-dim);white-space:nowrap}
+.knobs-tl-track{position:relative;flex:1;min-width:0;overflow:hidden;border-radius:var(--ku-radius);background:var(--ku-surface);cursor:col-resize;touch-action:none;
+  transition:background calc(var(--ku-hover-out) * 1ms)}
+.knobs-timeline:focus-visible .knobs-tl-track,.knobs-timeline[data-keyboard]:focus .knobs-tl-track{background:color-mix(in srgb,var(--ku-surface-hi) 80%,transparent)}
+.knobs-tl-ruler{position:absolute;left:0;top:0;height:22px;pointer-events:none}
+.knobs-tl-lane{position:absolute;left:0;right:0;top:22px;bottom:0;pointer-events:none}
+/* Ranges: a soft band through the lane, its edges handles; the loop range in the accent. */
+.knobs-tl-range{position:absolute;left:0;top:0;bottom:0;width:0;background:color-mix(in srgb,var(--ku-text) 6%,transparent);will-change:transform}
+.knobs-tl-range[data-loop]{background:color-mix(in srgb,var(--ku-accent) 11%,transparent)}
+.knobs-tl-range[data-selected]{background:color-mix(in srgb,var(--ku-accent) 18%,transparent)}
+.knobs-tl-edge{position:absolute;top:0;bottom:0;width:9px;cursor:ew-resize}
+.knobs-tl-edge[data-edge="start"]{left:-4px}
+.knobs-tl-edge[data-edge="end"]{right:-5px}
+.knobs-tl-edge::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:color-mix(in srgb,var(--ku-accent) 55%,transparent);transition:background .15s,box-shadow .15s}
+.knobs-tl-edge:hover::after,.knobs-tl-range[data-selected] .knobs-tl-edge::after{background:var(--ku-accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--ku-accent) 22%,transparent)}
+.knobs-tl-rlabel{position:absolute;left:5px;bottom:3px;padding:0 5px;border-radius:max(0px,calc(var(--ku-radius) - 3px));font-size:var(--ku-text-meta);line-height:16px;color:var(--ku-label);cursor:grab;white-space:nowrap}
+.knobs-tl-rlabel:empty{display:none}
+.knobs-tl-rlabel:hover{background:var(--ku-wash-hi);color:var(--ku-text)}
+/* Markers: a diamond on the ruler's edge and a label chip below it. */
+.knobs-tl-marker{position:absolute;left:0;top:-22px;bottom:0;width:0;will-change:transform;pointer-events:none;--knobs-tl-c:var(--knobs-tl-color,var(--ku-label))}
+.knobs-tl-marker::before{content:"";position:absolute;top:22px;bottom:0;left:-.5px;width:1px;background:color-mix(in srgb,var(--knobs-tl-c) 40%,transparent)}
+.knobs-tl-pin{position:absolute;top:13px;left:-5px;width:10px;height:10px;pointer-events:auto;cursor:grab}
+.knobs-tl-pin::after{content:"";position:absolute;inset:1.5px;border-radius:min(2px,var(--ku-radius));background:var(--knobs-tl-c);rotate:45deg;transition:background .15s,scale .2s var(--ku-ease)}
+.knobs-tl-mlabel{position:absolute;top:26px;left:3px;max-width:140px;padding:0 6px;border-radius:max(0px,calc(var(--ku-radius) - 3px));background:var(--ku-surface-hi);color:var(--ku-text);
+  font-size:var(--ku-text-meta);line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:grab;transition:background .15s,color .15s}
+.knobs-tl-marker[data-selected]{--knobs-tl-c:var(--ku-accent)}
+.knobs-tl-marker[data-selected] .knobs-tl-mlabel{background:color-mix(in srgb,var(--ku-accent) 24%,var(--ku-surface-hi))}
+.knobs-tl-marker[data-selected] .knobs-tl-pin::after{scale:1.2}
+.knobs-timeline[data-dragging] .knobs-tl-marker[data-selected] :is(.knobs-tl-pin,.knobs-tl-mlabel){cursor:grabbing}
+.knobs-tl-marker[data-editing] .knobs-tl-mlabel{visibility:hidden}
+.knobs-ui .knobs-tl-edit{position:absolute;top:26px;left:3px;width:120px;height:17px;padding:0 6px;font-size:var(--ku-text-meta);color:var(--ku-text);caret-color:var(--ku-accent);
+  background:var(--ku-bg);border-radius:max(0px,calc(var(--ku-radius) - 3px));box-shadow:inset 0 -1px 0 var(--ku-text);pointer-events:auto}
+/* The playhead: an accent hairline with a rounded cap in the ruler; it glows a little while held
+   on a marker. */
+.knobs-tl-head{position:absolute;left:0;top:0;bottom:0;width:0;will-change:transform;pointer-events:none}
+.knobs-tl-head::before{content:"";position:absolute;top:4px;bottom:0;left:-.75px;width:1.5px;background:var(--ku-accent)}
+.knobs-tl-head::after{content:"";position:absolute;top:3px;left:-4.5px;width:9px;height:13px;border-radius:min(4.5px,var(--ku-radius)) min(4.5px,var(--ku-radius)) min(4.5px,var(--ku-radius)) min(4.5px,var(--ku-radius));
+  background:var(--ku-accent);box-shadow:0 1px 3px rgba(0,0,0,calc(.3 * var(--k-lift,1)));transition:box-shadow .15s,scale .18s var(--ku-ease)}
+.knobs-timeline[data-scrubbing] .knobs-tl-head::after{scale:1.12}
+.knobs-timeline[data-stuck] .knobs-tl-head::after{box-shadow:0 0 0 3px color-mix(in srgb,var(--ku-accent) 26%,transparent)}
+.knobs-tl-hover{position:absolute;left:0;top:0;bottom:0;width:1px;margin-left:-.5px;background:var(--ku-line-hi);transform:translateX(-100px);pointer-events:none;opacity:0;transition:opacity .15s}
+.knobs-tl-track:hover .knobs-tl-hover{opacity:1}
+.knobs-timeline[data-scrubbing] .knobs-tl-hover{opacity:0}
+@media(prefers-reduced-motion:reduce){.knobs-timeline :where(*,::before,::after){transition:none!important}}
 @media(prefers-reduced-motion:reduce){:is(.knobs-tree,.knobs-split>.knobs-divider,.knobs-pane-head,.knobs-pane-rail) :where(*,::before,::after){transition:none!important}}
 `
 

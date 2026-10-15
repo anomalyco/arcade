@@ -19,3 +19,6 @@ export type Reshape = (
 export const RESET_KEYS: unique symbol = Symbol.for("knobs.resetKeys") as never
 
 export type ResetKeys = (keys: readonly string[]) => void
+
+/** How many times `controls.refresh()` was called: panels ask their accessories again when it moves. */
+export const REFRESHES: unique symbol = Symbol.for("knobs.refreshes") as never

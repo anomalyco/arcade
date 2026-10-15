@@ -1,7 +1,7 @@
 import { formatCode, type CodeFormat } from "./code.js"
 import { mutateValues } from "./mutate.js"
 import { randomValues } from "./random.js"
-import { RESET_KEYS, RESHAPE, type Reshape, type ResetKeys } from "./internal.js"
+import { REFRESHES, RESET_KEYS, RESHAPE, type Reshape, type ResetKeys } from "./internal.js"
 import {
   pushReadout,
   READOUT,
@@ -44,6 +44,15 @@ export type ChangeSource =
   | "randomize"
   | "mutate"
   | "compare"
+/**
+ * A key going into the hand and out of it: a drag or a press on its row, an inline edit, or a
+ * burst of arrow keys. Changes between a key's `start` and `end` are one gesture, so a host can
+ * open one undo entry at `start` and close it at `end`.
+ */
+export interface GestureEvent {
+  readonly key: string
+  readonly phase: "start" | "end"
+}
 export interface ChangeMeta {
   readonly source: ChangeSource
   readonly coalesce?: boolean
@@ -324,6 +333,8 @@ export interface ControlsOptions<S extends Schema> extends LabelOptions {
   /** How a page's sections start, under the mount's `sectionFolded` (see `SectionFolded`). */
   sectionFolded?: SectionFolded
   onChange?: (patch: Partial<Values<S>>, values: Values<S>, meta: ChangeMeta) => void
+  /** A key went into the hand or out of it (see `GestureEvent`). */
+  onGesture?: (event: GestureEvent) => void
   onReset?: (target: { key?: keyof S & string; group?: string }) => void
   /** An action row was pressed (after its own `run`), or a toolbar button (with its item's id). */
   onAction?: (key: string) => void
@@ -433,6 +444,11 @@ export interface Controls<S extends Schema = Schema> {
   /** Whether the field is read-only now (`readOnly`, static or from the values). */
   isReadOnly(key: keyof S & string): boolean
   /**
+   * Asks panels to read again what they derive without new values: function `disabled` and
+   * `readOnly` flags (which may read state elsewhere, another store's say) and row accessories.
+   */
+  refresh(): void
+  /**
    * Marks keys as mixed (a multi-selection whose items differ): panels show "—" until the key is
    * edited, and the first edit reaches `onChange` even when it picks the value shown.
    */
@@ -507,6 +523,7 @@ export function defineControls<const S extends Schema>(
   const hostHistory = options.history
   let unsubscribeHistory: (() => void) | undefined
   const listeners = new Set<() => void>()
+  let refreshes = 0
   const notify = () => {
     for (const cb of [...listeners]) cb()
   }
@@ -959,7 +976,11 @@ export function defineControls<const S extends Schema>(
       return () => readoutListeners.delete(cb)
     },
   }
-  const controls: Controls<S> & { [RESHAPE]: Reshape; [READOUT]: ReadoutPort } = {
+  const controls: Controls<S> & {
+    [RESHAPE]: Reshape
+    [READOUT]: ReadoutPort
+    readonly [REFRESHES]: number
+  } = {
     id,
     get schema() {
       return schema
@@ -1029,10 +1050,13 @@ export function defineControls<const S extends Schema>(
     },
     hold(key, on = true) {
       if (on) {
+        if (grabbed.has(key)) return
         grabbed.add(key)
+        options.onGesture?.({ key, phase: "start" })
         return
       }
       if (!grabbed.delete(key)) return
+      options.onGesture?.({ key, phase: "end" })
       // A drag that changed the key keeps it for the echo window; one that didn't lets go now.
       flush()
     },
@@ -1180,6 +1204,13 @@ export function defineControls<const S extends Schema>(
     },
     isDisabled: (key) => flag(key, "disabled"),
     isReadOnly: (key) => flag(key, "readOnly"),
+    refresh() {
+      refreshes++
+      notify()
+    },
+    get [REFRESHES]() {
+      return refreshes
+    },
     setMixed(keys, on = true) {
       let changed = false
       for (const key of typeof keys === "string" ? [keys] : keys) {

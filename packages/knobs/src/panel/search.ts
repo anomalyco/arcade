@@ -24,6 +24,8 @@ export interface SearchBar {
   counts(counts: ReadonlyMap<string, number>): void
   /** Empties the query and turns the chips off. */
   clear(): void
+  /** Sets the query as typed, and (when given) exactly which chips are on. */
+  set(query: string | undefined, chips?: readonly string[]): void
   focus(): void
 }
 
@@ -88,6 +90,23 @@ export function createSearch(
         const none = text === "0" && !on.has(b.dataset.chip!)
         if (b.hasAttribute("data-none") !== none) b.toggleAttribute("data-none", none)
       }
+    },
+    set(query, next) {
+      let changed = false
+      if (query !== undefined && input.value !== query) {
+        input.value = query
+        changed = true
+      }
+      if (next) {
+        const want = new Set(next.filter((id) => chips.some((b) => b.dataset.chip === id)))
+        if (want.size !== on.size || [...want].some((id) => !on.has(id))) {
+          on.clear()
+          for (const id of want) on.add(id)
+          for (const b of chips) b.setAttribute("aria-pressed", String(on.has(b.dataset.chip!)))
+          changed = true
+        }
+      }
+      if (changed) options.change()
     },
     clear() {
       const had = input.value !== "" || on.size > 0

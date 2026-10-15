@@ -224,3 +224,52 @@ export function marks(text: string, indices: readonly number[]) {
   }
   return runs
 }
+
+// ——— menus ———
+
+/** The next item from `from` by `by` (±1) that `ok` accepts, wrapping; `from` -1 starts outside. */
+export function stepItem(count: number, from: number, by: 1 | -1, ok: (i: number) => boolean) {
+  for (let k = 1; k <= count; k++) {
+    const i = ((((from < 0 ? (by > 0 ? -1 : 0) : from) + by * k) % count) + count) % count
+    if (ok(i)) return i
+  }
+  return from
+}
+
+/**
+ * Type-ahead over menu labels: the first item after `from` starting with `typed` (repeating one
+ * letter cycles through the items that start with it; more letters refine from where it is).
+ */
+export function matchItem(labels: readonly (string | null)[], from: number, typed: string): number {
+  const q = typed.toLowerCase()
+  if (!q || !labels.length) return from
+  const same = q.length > 1 && [...q].every((c) => c === q[0])
+  const word = same ? q[0]! : q
+  const start = q.length > 1 && !same ? Math.max(0, from) : from + 1
+  for (let k = 0; k < labels.length; k++) {
+    const i = (((start + k) % labels.length) + labels.length) % labels.length
+    if (labels[i]?.toLowerCase().startsWith(word)) return i
+  }
+  return from
+}
+
+type Pt = { readonly x: number; readonly y: number }
+/** Whether `p` is inside the triangle `a b c` (either winding). */
+export function inTriangle(p: Pt, a: Pt, b: Pt, c: Pt): boolean {
+  const s = (p1: Pt, p2: Pt, p3: Pt) =>
+    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+  const d1 = s(p, a, b)
+  const d2 = s(p, b, c)
+  const d3 = s(p, c, a)
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))
+}
+
+/**
+ * The safe triangle of a submenu's hover intent: from where the pointer was to the submenu's
+ * near edge (a little past its corners). While the pointer travels inside it, the submenu stays.
+ */
+export function safeTriangle(from: Pt, sub: Box): [Pt, Pt, Pt] {
+  const right = sub.x >= from.x
+  const edge = right ? sub.x : sub.x + sub.w
+  return [from, { x: edge, y: sub.y - 4 }, { x: edge, y: sub.y + sub.h + 4 }]
+}

@@ -42,10 +42,15 @@ export function maxChroma(l: number, h: number): number {
   return lo
 }
 
-/** Gamut-mapped sRGB channels 0…1: chroma drops until the colour fits, keeping lightness and hue. */
+/**
+ * Gamut-mapped sRGB channels 0…1: a colour inside sRGB (any hex, as the string keeps it) converts
+ * as it is; one outside drops chroma until it fits, keeping lightness and hue.
+ */
 export function oklchToRgb(color: Oklch): [number, number, number] {
-  const c = Math.min(color.c, maxChroma(color.l, color.h))
-  const [r, g, b] = oklchToLinear({ ...color, c })
+  let rgb = oklchToLinear(color)
+  if (!inGamut(rgb))
+    rgb = oklchToLinear({ ...color, c: Math.min(color.c, maxChroma(color.l, color.h)) })
+  const [r, g, b] = rgb
   return [clamp01(gamma(r)), clamp01(gamma(g)), clamp01(gamma(b))]
 }
 
@@ -85,19 +90,22 @@ export function parseColor(input: unknown): Oklch | undefined {
   return parts.every(Number.isFinite) ? { l: parts[0]!, c: parts[1]!, h: parts[2]! } : undefined
 }
 
-/** Clamps into range and into sRGB (by chroma), rounded to what the string keeps. */
+/**
+ * Clamps into range and into sRGB (by chroma), rounded to what the string keeps: five places for
+ * lightness and chroma and three for hue, enough for every hex to come back exactly.
+ */
 export function fitColor({ l, c, h }: Oklch): Oklch {
-  const L = round(clamp01(l), 4)
-  const H = round(((h % 360) + 360) % 360, 2) % 360
-  // Colours already inside sRGB (like any hex) keep their chroma, give or take the rounding.
+  const L = round(clamp01(l), 5)
+  const H = round(((h % 360) + 360) % 360, 3) % 360
+  const C0 = round(Math.min(CHROMA_MAX, Math.max(0, c)), 5)
+  // Colours already inside sRGB (like any hex) keep their chroma, as rounded.
+  if (inGamut(oklchToLinear({ l: L, c: C0, h: H }))) return { l: L, c: C0, h: H }
   const max = Math.min(CHROMA_MAX, maxChroma(L, H))
-  const C =
-    Math.max(0, c) <= max + 5e-4 ? round(Math.max(0, c), 4) : Math.floor(max * 10000) / 10000
-  return { l: L, c: C, h: H }
+  return { l: L, c: Math.min(C0, Math.floor(max * 1e5) / 1e5), h: H }
 }
 
 export function formatColor({ l, c, h }: Oklch): string {
-  return `oklch(${round(l, 4)} ${round(c, 4)} ${round(h, 2)})`
+  return `oklch(${round(l, 5)} ${round(c, 5)} ${round(h, 3)})`
 }
 
 /** A colour field's value as `#rrggbb` (sRGB). */

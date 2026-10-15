@@ -18,6 +18,8 @@ export const COMPACT_CHOICES = 4
 export const SEARCH_CHOICES = 8
 /** The least room (px) either side of a segment's label before the row turns into a menu. */
 const MIN_PAD = 6
+/** How much of a menu's value (em, beside its chrome) shows before the row's label gives way. */
+const VALUE_FLOOR_EM = 4
 /** Finger travel (px) per option when panning over the menu button. */
 const MENU_PAN_STEP = 28
 
@@ -206,45 +208,109 @@ export function createChoice(
     if (had) (next ? menu : seg).focus({ preventScroll: true, focusVisible: false } as FocusOptions)
     o.wake?.()
   }
-  const fits = () => {
+  /** The segments' natural width: every label with its padding, the gaps and the tray's own. */
+  const segNeed = () => {
     const cs = getComputedStyle(buttons[0] ?? seg)
     const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
     const segCs = getComputedStyle(seg)
     const gap = parseFloat(segCs.columnGap) || 0
     const tray = (parseFloat(segCs.paddingLeft) || 0) + (parseFloat(segCs.paddingRight) || 0)
-    const need =
+    return (
       items.reduce((sum, i) => sum + measure(i.label, font) + MIN_PAD * 2, 0) +
       gap * Math.max(0, items.length - 1) +
       tray
+    )
+  }
+  const label = o.room ? null : row.querySelector<HTMLElement>(":scope > span:first-child")
+  const watched = new WeakSet<Element>()
+  /** The shares last set (--k-label-cap, --k-acc-over). */
+  let shared = ""
+  const range = doc.createRange()
+  /** A node's text at its natural width, wherever its box cuts it. */
+  const textWidth = (node: HTMLElement) => {
+    range.selectNodeContents(node)
+    return range.getBoundingClientRect().width
+  }
+  /**
+   * The row's room, shared out (see .knobs-row[data-display]). The label keeps its words, and the
+   * control gives way first: a menu's value truncates (its whole text shows on hover) down to a
+   * few letters, and only then does the label, never below half the row. A row accessory (a
+   * host's pin, often hidden at rest) takes room from the value too, never from the label: where
+   * there's none left it lies over the label's end, which fades under it while the row is hovered
+   * or focused. Returns whether segments fit beside the label.
+   */
+  const arrange = (): boolean => {
+    const need = segNeed()
     if (o.room) return need <= o.room()
+    if (!row.clientWidth) return !asMenu
     const rowCs = getComputedStyle(row)
-    const label = row.querySelector<HTMLElement>(":scope > span:first-child")
-    const labelW = label
-      ? measure(
-          label.textContent ?? "",
-          `${getComputedStyle(label).fontWeight} ${rowCs.fontSize} ${rowCs.fontFamily}`,
-        ) +
-        (parseFloat(rowCs.columnGap) || 0) +
-        10
-      : 0
     const inner =
       row.clientWidth - (parseFloat(rowCs.paddingLeft) || 0) - (parseFloat(rowCs.paddingRight) || 0)
+    const gap = parseFloat(rowCs.columnGap) || 0
+    const after = label && getComputedStyle(label, "::after")
+    const labelW = label
+      ? Math.ceil(
+          textWidth(label) + (parseFloat(after!.width) || 0) + (parseFloat(after!.marginLeft) || 0),
+        ) + 1
+      : 0
+    const capFor = (control: number) => Math.max(inner / 2, inner - gap - control)
     // The tray's own cap (.knobs-seg's max-width) counts too.
-    const cap = segCs.maxWidth.endsWith("%")
+    const segCs = getComputedStyle(seg)
+    const segCap = segCs.maxWidth.endsWith("%")
       ? (parseFloat(segCs.maxWidth) / 100) * inner
       : parseFloat(segCs.maxWidth) || Infinity
-    return need <= Math.min(inner - labelW, cap)
+    const segFits = need <= Math.min(segCap, inner - gap - Math.min(labelW, capFor(need)))
+    if (!label) return segFits
+    let control = need
+    if (asMenu) {
+      const chrome = menu.offsetWidth - menuValue.clientWidth
+      const floor =
+        chrome + VALUE_FLOOR_EM * (parseFloat(getComputedStyle(menuValue).fontSize) || 12)
+      control = Math.min(chrome + textWidth(menuValue), floor)
+    }
+    const cap = capFor(control)
+    const kept = Math.min(labelW, cap)
+    const acc = row.querySelector<HTMLElement>(":scope > .knobs-accessory")
+    if (acc && !watched.has(acc)) {
+      watched.add(acc)
+      ro.observe(acc)
+    }
+    // The accessory sits 4px after the label (see .knobs-accessory), and the gap follows it.
+    const extra = acc?.offsetWidth ? acc.offsetWidth + gap - 4 : 0
+    const over = Math.max(0, Math.min(extra, extra - (inner - kept - gap - control)))
+    const next = `${cap}px ${over}px`
+    if (next !== shared) {
+      shared = next
+      row.style.setProperty("--k-label-cap", `${cap}px`)
+      row.style.setProperty("--k-acc-over", `${over}px`)
+      row.toggleAttribute("data-acc-over", over > 4)
+      // The label and value moved inside an unchanged panel: the GPU measures them again.
+      row.dispatchEvent(new Event("knobs-layout", { bubbles: true }))
+    }
+    return segFits
   }
-  const ro =
-    display === "auto" && items.length <= compact
-      ? new ResizeObserver(() => {
-          if (!row.isConnected || !(o.observe ?? row).clientWidth) return
-          const next = !fits()
-          if (next !== asMenu) apply(next)
-          else if (!next) placeSegPill(seg, buttons, o.value(), true)
-        })
-      : undefined
-  ro?.observe(o.observe ?? row)
+  const check = () => {
+    if (!row.isConnected || !(o.observe ?? row).clientWidth) return
+    const fits = arrange()
+    if (display === "auto" && items.length <= compact && fits === asMenu) {
+      apply(!fits)
+      arrange()
+    } else if (!asMenu) placeSegPill(seg, buttons, o.value(), true)
+  }
+  const ro = new ResizeObserver(check)
+  ro.observe(o.observe ?? row)
+  if (label) ro.observe(label)
+  // On the next frame, with the rest of a change's writes done: measuring now would force a
+  // layout per row in the middle of them (a preset changing many values at once).
+  let queued = 0
+  const win = doc.defaultView
+  const rearrange = () => {
+    if (queued || !win) return
+    queued = win.requestAnimationFrame(() => {
+      queued = 0
+      check()
+    })
+  }
   const pillRo = new ResizeObserver(() => {
     if (!asMenu) placeSegPill(seg, buttons, o.value(), true)
   })
@@ -261,7 +327,11 @@ export function createChoice(
     show(value, instant = false, mixed = false) {
       placeSegPill(seg, buttons, mixed ? "\u0000mixed" : value, instant)
       const text = mixed ? "—" : labelOf(value)
-      if (menuValue.textContent !== text) menuValue.textContent = text
+      if (menuValue.textContent !== text) {
+        menuValue.textContent = text
+        // A longer or shorter value shares the row out again.
+        if (asMenu) rearrange()
+      }
       // The whole label on hover, where the button's room truncates it.
       if (menu.title !== text) menu.title = text
       menu.toggleAttribute("data-none", !mixed && !items.some((i) => i.value === value))
@@ -272,12 +342,14 @@ export function createChoice(
         if (next[i]) b.textContent = next[i]!.label
       })
       menuValue.textContent = labelOf(o.value())
+      rearrange()
       // New labels move the segments; the pill follows (showing the same value doesn't measure).
       if (!asMenu) placeSegPill(seg, buttons, o.value(), true)
     },
     step,
     dispose() {
-      ro?.disconnect()
+      if (queued) win?.cancelAnimationFrame(queued)
+      ro.disconnect()
       pillRo.disconnect()
       open?.close(false)
     },
