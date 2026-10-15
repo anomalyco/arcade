@@ -1,7 +1,7 @@
 import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type PanelKeys, type RemoteControls, type StoragePort, type TokenPreset, type Value } from "@arcade/knobs"
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import type { LabControl, LabNavigation, LabRow, LabSettings } from "./lab-navigation"
-import { describe, fromKnobs, isSpawnTime, isTunable, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
+import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
 
 /** The Lab's dark chrome as knobs tokens: dense rows, the Lab's greys and its one blue accent. */
 export const arcadePreset: TokenPreset = {
@@ -71,13 +71,17 @@ export type LabKnobsViewOptions = {
 type Row = LabRow & { control: LabControl }
 
 /** Saved variants persist in the browser; the values themselves never do (the settings object owns them). */
-function variantStorage(id: string | undefined): StoragePort | null {
+function variantStorage(id: string | undefined, rows: () => readonly LabRow[]): StoragePort | null {
   if (!id) return null
   let local: Storage | null = null
   try { local = localStorage } catch { return null }
   const own = (key: string) => key.endsWith(":variants:v1")
   return {
-    getItem: key => (own(key) ? local!.getItem(key) : null),
+    getItem: key => {
+      if (!own(key)) return null
+      const raw = local!.getItem(key)
+      return raw ? migrateKnobsVariantJson(raw, rows()) : null
+    },
     setItem: (key, value) => { if (own(key)) local!.setItem(key, value) },
   }
 }
@@ -110,7 +114,7 @@ export class LabKnobsView {
       // The settings object is local: there are no late echoes to hold back, so outside changes (undo) land at once.
       echo: 0,
       nullDefaults: false,
-      storage: variantStorage(options.variantsId),
+      storage: variantStorage(options.variantsId, () => host.navigation.rows),
       theme: "dark",
       density: "compact",
       onSet: (key, value, meta) => this.onSet(key, value, meta),

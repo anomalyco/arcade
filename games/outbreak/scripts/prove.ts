@@ -57,8 +57,9 @@ try {
   // Actual shared Lab input path and input isolation, not just the automation setters.
   await page.keyboard.press("Backquote")
   const time = page.getByRole("slider", { name: "Time", exact: true })
-  await time.fill("12")
-  await time.dispatchEvent("input")
+  await time.focus()
+  await page.keyboard.type("12")
+  await page.keyboard.press("Enter")
   const hour = await page.evaluate(() => (window as any).__arcadeHarness.state().hour)
   assert.equal(hour, 12)
   const before = await page.evaluate(() => (window as any).__arcadeHarness.state().player)

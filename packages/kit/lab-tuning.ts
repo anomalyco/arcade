@@ -149,3 +149,40 @@ export function seededPatch(controls: readonly LabControl[], settings: Readonly<
 
 /** The next tuning seed after `seed`: a deterministic walk (1 to 999999), so a recorded seed reproduces every later roll. */
 export const nextTuningSeed = (seed: number) => Math.floor(seededRandom(seed ^ 0x5bd1e995)() * 999999) + 1
+
+/**
+ * Migrates saved knobs variant JSON (`:variants:v1`) when controls declare `legacyKeys` (for example `aiWalkSpeed` -> `ai.walkSpeed`).
+ */
+export function migrateKnobsVariantJson(rawJson: string, rows: readonly LabRow[]): string {
+  const aliases = new Map<string, string>()
+  for (const row of rows) {
+    const c = row.control
+    if (!c?.legacyKeys) continue
+    for (const legacy of c.legacyKeys) aliases.set(legacy, c.key)
+  }
+  if (!aliases.size) return rawJson
+  try {
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.variants)) return rawJson
+    let changed = false
+    const variants = parsed.variants.map((item: unknown) => {
+      if (!item || typeof item !== "object") return item
+      const rec = item as Record<string, unknown>
+      if (!rec.values || typeof rec.values !== "object" || Array.isArray(rec.values)) return item
+      const values = { ...(rec.values as Record<string, unknown>) }
+      let itemChanged = false
+      for (const [legacy, canonical] of aliases) {
+        if (legacy in values) {
+          if (!(canonical in values)) values[canonical] = values[legacy]
+          delete values[legacy]
+          itemChanged = true
+          changed = true
+        }
+      }
+      return itemChanged ? { ...rec, values } : item
+    })
+    return changed ? JSON.stringify({ ...parsed, variants }) : rawJson
+  } catch {
+    return rawJson
+  }
+}

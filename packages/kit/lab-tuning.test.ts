@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { LabControl, LabRow } from "./lab-navigation"
-import { describe as describeRow, fromKnobs, isStructuralKey, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
+import { resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
+import { describe as describeRow, fromKnobs, isStructuralKey, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
 
 const range: LabControl = { key: "size", label: "Size", group: "Fireball", min: 0, max: 2, step: 0.05, unit: "m · retrigger" }
 const select: LabControl = { key: "style", label: "Style", group: "Look", type: "select", options: [{ value: 0, label: "Current" }, { value: 1, label: "Surface" }, { value: 2, label: "Ink" }] }
@@ -74,5 +74,26 @@ describe("seeded Random and Mutate", () => {
     for (let i = 0; i < 1000; i++) { s = nextTuningSeed(s); expect(s).toBeGreaterThan(0); expect(s).toBeLessThan(1_000_000); seen.add(s) }
     expect(seen.size).toBeGreaterThan(990)
     expect(nextTuningSeed(41)).toBe(nextTuningSeed(41))
+  })
+  test("resolveControlField and migrateKnobsVariantJson support namespaced keys and legacy aliases", () => {
+    const aiWalk: LabControl = {
+      key: "ai.walkSpeed",
+      field: "walkSpeed",
+      legacyKeys: ["aiWalkSpeed"],
+      label: "Wander speed",
+      group: "AI",
+      min: 0.4,
+      max: 2.2,
+      step: 0.05,
+    }
+    expect(resolveControlField(aiWalk, { walkSpeed: 0.95 })).toBe("walkSpeed")
+    expect(resolveControlField({ key: "ai.chaseSpeed", label: "Chase", min: 1, max: 5 }, { chaseSpeed: 2.3 })).toBe("chaseSpeed")
+    const raw = JSON.stringify({
+      version: 1,
+      controls: "lab:arcade-outbreak",
+      variants: [{ id: "v1", name: "Fast shamblers", values: { aiWalkSpeed: 1.4, walkSpeed: 3.8 } }],
+    })
+    const migrated = JSON.parse(migrateKnobsVariantJson(raw, [row(aiWalk)]))
+    expect(migrated.variants[0].values).toEqual({ "ai.walkSpeed": 1.4, walkSpeed: 3.8 })
   })
 })

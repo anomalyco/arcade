@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
@@ -243,6 +244,24 @@ function walkTsFiles(dir: string): string[] {
   return out
 }
 
+function listRepoTsFiles(root: string, relDir: string): string[] {
+  if (existsSync(join(root, ".git"))) {
+    const res = spawnSync("git", ["ls-files", "-co", "--exclude-standard", "--", relDir], {
+      cwd: root,
+      encoding: "utf8",
+    })
+    if (res.status === 0 && res.stdout) {
+      return res.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.endsWith(".ts") && !line.endsWith(".test.ts"))
+        .map((line) => resolve(root, line))
+        .filter((full) => existsSync(full))
+    }
+  }
+  return walkTsFiles(resolve(root, relDir))
+}
+
 export function collectGameSharedImports(repoRoot: string): Record<ArchitectureGameId, Set<string>> {
   const root = resolve(repoRoot)
   const kitRoot = resolve(root, "packages/kit")
@@ -251,7 +270,7 @@ export function collectGameSharedImports(repoRoot: string): Record<ArchitectureG
   for (const game of ARCHITECTURE_GAMES) {
     const specs = new Set<string>()
     for (const relDir of game.dirs) {
-      for (const file of walkTsFiles(resolve(root, relDir))) {
+      for (const file of listRepoTsFiles(root, relDir)) {
         const src = readFileSync(file, "utf8")
         for (const match of src.matchAll(/from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g)) {
           const raw = match[1] ?? match[2]
