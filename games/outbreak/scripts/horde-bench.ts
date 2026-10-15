@@ -2,13 +2,15 @@
 // hunting, with a gunshot every 2 s. Measures the full shared tick (stepSurvivor + stepWorld) and the crowd step alone.
 //
 // Usage (via the fleet): hivemind run --kind browser -- bun scripts/horde-bench.ts [--zombies=28,150,500,1000] [--seconds=6]
-//   [--json=out.json] [--label=after]
+//   [--json=out.json] [--label=after] [--roaming=1]
+// --roaming=1 stages the zombies as one live roaming horde (shared/hordes) 30 m out instead of scattering them.
 import { writeFileSync } from "node:fs"
 import { Rng } from "@arcade/kit/sim/rng"
 import { createAIAgent } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, hashSimState } from "../shared/coop-sim"
 import { PISTOL_NOISE } from "../shared/combat"
+import { addHorde, materializeHorde } from "../shared/hordes/index"
 import type { Command } from "../shared/session"
 
 const arg = (name: string, fallback: string) =>
@@ -19,6 +21,7 @@ const seconds = Number(arg("seconds", "6"))
 const label = arg("label", "current")
 const jsonOut = arg("json", "")
 const flowFields = Number(arg("flow", "1"))
+const roaming = arg("roaming", "0") === "1"
 
 const pct = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0
 const r3 = (v: number) => Math.round(v * 1000) / 1000
@@ -46,6 +49,17 @@ export function hordeSim(count: number, seed = 7, flowFields = 1): CoopSim {
   return sim
 }
 
+/** One live roaming horde of `count` staged 30 m north of the survivor's loop and sent at it. */
+export function roamingSim(count: number, seed = 7, flowFields = 1): CoopSim {
+  const sim = new CoopSim(seed, seed, 0.22, { zombieCount: 0, directorPacing: 0, startHour: 23, flowFields })
+  sim.addSurvivor("player", 0)
+  sim.ai.agents.length = 0
+  const p = sim.slots[0]!.survivor
+  const h = addHorde(sim, 45, 12, count, { x: p.x, y: p.y })
+  materializeHorde(sim, h)
+  return sim
+}
+
 export function hordeCommand(tick: number): Command {
   const phase = tick / 140
   return { mx: Math.cos(phase), my: Math.sin(phase), aim: phase, interact: false, sprint: tick % 300 < 90 }
@@ -62,7 +76,7 @@ export function stepHorde(sim: CoopSim, tick: number): void {
 }
 
 function run(count: number) {
-  const sim = hordeSim(count, 7, flowFields)
+  const sim = roaming ? roamingSim(count, 7, flowFields) : hordeSim(count, 7, flowFields)
   const ticks = Math.round(seconds / TICK_DT)
   const tickMs: number[] = []
   const shotMs: number[] = []
@@ -134,5 +148,5 @@ function run(count: number) {
 }
 
 const results = import.meta.main ? counts.map(run) : []
-if (import.meta.main) console.log(JSON.stringify({ label, flowFields, seconds, results }, null, 2))
-if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ label, flowFields, seconds, results }, null, 2))
+if (import.meta.main) console.log(JSON.stringify({ label, flowFields, roaming, seconds, results }, null, 2))
+if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ label, flowFields, roaming, seconds, results }, null, 2))

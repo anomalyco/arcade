@@ -1085,6 +1085,42 @@ Candidates from the code audits; measure and playtest before moving any into the
   baseline with its own `cacheDir`; sharing the dependency cache caused `504 Outdated Optimize Dep` failures.
   The isolated fixture completed the 180-frame before/after capture. This is a tooling fix, not a measured game-speed win.
 
+## Crowds
+
+- **Share one flow field per goal once a crowd is big.** Outbreak's zombies each ran their own capped A*
+  (`MAX_REPATHS_PER_TICK = 4`), so at 500–1,000 most hunters waited for a repath and 3.3–3.5% stood still each
+  second. `packages/kit/sim/flow-field.ts` builds an integer cost field per goal quantum (Dial's bucket queue,
+  10/14 per step, door/window/barricade penalties, 112-cell window, ~0.43 ms per build) and every agent heading
+  there steers to the farthest downhill cell it can walk straight to. Fields are keyed by the nav grid's revision
+  and a per-tick goal budget counts goals asked for, cached or not, so a restored sim replays bit for bit. Survivors
+  get an anchor that only moves after 1.5 m, plus a short trail of old anchors where last-known positions cluster.
+  Stuck share fell to 0.6–0.8%; at 400 zombies a crowd crossing the hardware store reached the far side in 45 s
+  instead of 90 s, and a door funnel had 0 wall crossings instead of 24. Below 64 zombies the game still uses A*
+  and is bit-identical to before, so the survivor-bot curves don't move. Bench: `scripts/horde-bench.ts`.
+- **A horde off screen is a point, not 800 agents.** `games/outbreak/shared/hordes/` keeps an abstract horde as a
+  position, a goal and a head count in JSON feature state. It hears loud noises from radius × 2.5 (× the AI hearing
+  scale), through walls, because a building attenuates sound so much that a horde behind one would never react.
+  It materializes 64 members a tick once its centre is 8 m inside the active window and within 46 m of a survivor,
+  and folds back once every member is 64 m from every survivor and none is fighting. The 18 m gap and an 8 s
+  cool-down stop flicker at window edges. Members carry `hordeId`, take ids from 60416–65535 (above every chunk's
+  range, inside the wire's u16), and are skipped by chunk deltas, chunk unloads, the director's chaser cap and its
+  near-15 m hold.
+- **Walk far goals in legs.** A field only covers 56 m around its goal, so an 800-strong horde sent 75 m down the
+  street fell back to per-agent A* and crawled. Sending members to a point 30 m along the way (never indoors, or
+  the horde files through a front door to cut a corner) and moving it on as they catch up keeps every member on a
+  shared field: the horde walked 60 m in 48 s at a steady 1.25 m/s with 4 field builds.
+- **A gunshot alone lures a crowd for about 4 s.** Zombie awareness decays, so a shot turns heads but only carries
+  them a few metres. Horde directives re-send idle members toward the horde's goal every 0.5 s until half of them
+  are there.
+- **Measured (fleet Mac mini, Metal):** one live roaming horde closing on a walking survivor costs a sim tick of
+  0.51 / 1.61 ms (p50 / p95) at 500 and 0.86 / 2.27 ms at 1,000, and replays bit for bit from a mid-run snapshot.
+  Rendered at 1728×947 @2× (high tier): GPU 5.09 ms empty, 5.23 ms with 500, 6.98 ms with 1,000. In co-op with four
+  players and a live horde, each player receives 24 KB/s at 500 and 41 KB/s at 1,000 (4 KB/s without a horde);
+  the room tick is 2.3 / 3.3 ms (p50 / p95) at 500. Proof: `scripts/horde-proof.ts`, `scripts/coop-bench.ts --horde=`.
+- **To watch a horde, move the view with the camera.** Fog of war and actor visibility follow the survivor, so a
+  camera on a horde 40 m away showed ghosts. The Lab's "Camera follows horde" also moves vision to the horde's centre
+  (360°, 40 m).
+
 ## Multiplayer
 
 - **Pair snapshot benchmarks on the same source.** `scripts/bench-multiplayer.ts --paired` alternates shared and

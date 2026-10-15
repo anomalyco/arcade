@@ -12,6 +12,7 @@ import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
 import { DEFAULT_PACING_TARGETS, type PacingTargetConfig } from "../shared/difficulty-tuner"
 import { BOT_SKILL_PRESETS } from "../shared/survivor-bot"
 import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
+import { DEFAULT_HORDE_TUNING, type HordeTuning } from "../shared/hordes/index"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
@@ -172,6 +173,16 @@ export const DEFAULT_OUTBREAK_BOTS: OutbreakBotSettings = {
   ...DEFAULT_PACING_TARGETS,
 }
 
+/** Horde-layer tuning (shared/hordes) plus two Lab views only the client reads: the flow-field overlay and a camera
+ * that follows the biggest live horde. */
+export type OutbreakHordeSettings = HordeTuning & { hordeFlowOverlay: boolean; hordeWatch: boolean }
+
+export const DEFAULT_OUTBREAK_HORDES: OutbreakHordeSettings = {
+  ...DEFAULT_HORDE_TUNING,
+  hordeFlowOverlay: false,
+  hordeWatch: false,
+}
+
 export type OutbreakSubsystemMap = {
   lighting: OutbreakLightingSettings
   fog: FogOfWarSettings
@@ -197,6 +208,7 @@ export type OutbreakSubsystemMap = {
   motion: MotionBlurSettings
   vehicle: VehicleTuning
   bots: OutbreakBotSettings
+  hordes: OutbreakHordeSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -230,7 +242,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakCombatSettings &
   MotionBlurSettings &
   VehicleTuning &
-  OutbreakBotSettings
+  OutbreakBotSettings &
+  OutbreakHordeSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -257,6 +270,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "motion",
   "vehicle",
   "bots",
+  "hordes",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -288,6 +302,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     motion: { ...DEFAULT_OUTBREAK_MOTION },
     vehicle: { ...DEFAULT_VEHICLE_TUNING },
     bots: { ...DEFAULT_OUTBREAK_BOTS },
+    hordes: { ...DEFAULT_OUTBREAK_HORDES },
   }
 }
 

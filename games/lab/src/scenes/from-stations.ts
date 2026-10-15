@@ -8,7 +8,7 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
   { id: "effects", title: "Effects", stations: ["explosions", "smoke-fire", "blackout", "getaway"] },
   { id: "look-and-light", title: "Look and light", stations: ["weather", "vegetation", "looks", "styles", "lighting", "materials", "rugs", "rugs-interiors"] },
   { id: "characters", title: "Characters and feel", stations: ["characters", "survivor-aim", "game-feel"] },
-  { id: "outbreak", title: "Outbreak", stations: ["outbreak", "outbreak-flashlight", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-unseen", "outbreak-discovery", "survivor-bots"] },
+  { id: "outbreak", title: "Outbreak", stations: ["outbreak", "outbreak-flashlight", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-unseen", "outbreak-discovery", "outbreak-hordes", "survivor-bots"] },
   { id: "audio", title: "Audio", stations: ["audio"] },
   { id: "carrier", title: "Carrier", stations: ["carrier"] },
 ]
