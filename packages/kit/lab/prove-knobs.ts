@@ -307,7 +307,7 @@ try {
     await page.locator(".lab-viewport canvas").focus()
     await page.keyboard.press("/")
     await page.waitForTimeout(200)
-    const palette = await page.evaluate(() => document.querySelector<HTMLElement>(".lab-palette-backdrop")?.hidden === false)
+    const palette = await page.evaluate(() => Boolean(document.querySelector(".knobs-layers>.knobs-palette")))
     await page.keyboard.press("Escape")
     // The details filter command drives the same search; Modified narrows to changed rows.
     await invoke(page, "scene.set-param", { key: "skyFill", value: 1.5 })

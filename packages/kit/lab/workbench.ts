@@ -47,8 +47,8 @@ import { createLibrary, isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, library
 import { captureThumb, createThumbCache, thumbStats } from "./library-thumbs"
 import { createPanels, PANEL_IDS, PANELS_CHANGE_EVENT, type PanelId, type Panels } from "./panels"
 import { createOutliner, OUTLINER_GROUPS, outlinerGroupOf } from "./outliner"
-import { createPalette, type PaletteItem } from "./palette"
-import { notify, setupLabOverlays, tip } from "./overlays"
+import { commandPalette, rank as rankCommands, type Command as PaletteCommand } from "@arcade/knobs/ui"
+import { knobsCombo, notify, setupLabOverlays, tip } from "./overlays"
 import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin } from "./watch"
 import {
   applyArrowCameraKey,
@@ -1438,7 +1438,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       hintText.textContent = "↑↓ Select · ⇧↑↓ Extend · ←→ Collapse/Expand · Space Toggle · ⌘Click Toggle · ⇧Click Range · Enter Frame · ⌫ Delete · Esc Canvas"
     } else if (focusZone === "palette") {
       focusPill.textContent = "Search"
-      hintText.textContent = "@ Scene · # Settings · + Library · > Commands · ↑↓ Move · Enter Run · Esc Close"
+      hintText.textContent = "Type to search · ↑↓ Move · Enter Run · Esc Close"
     } else {
       focusPill.textContent = "Edit · Canvas"
       if (sec.id === "spawn") {
@@ -2165,14 +2165,20 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return OUTLINER_GROUPS.find(g => g.id === outlinerGroupOf(obj))!.label
   }
 
-  function paletteItems(): PaletteItem[] {
-    const items: PaletteItem[] = []
+  /**
+   * Everything ⌘K reaches: scene objects, the workbench's commands (by their registry ids, as the `arcade` CLI runs
+   * them), the Details panel's own actions, presets and fields (knobs' `commandsFrom`), the Library, and every other
+   * section's settings.
+   */
+  function paletteCommands(): PaletteCommand[] {
+    const out: PaletteCommand[] = []
     for (const obj of allSceneObjects()) {
-      items.push({
+      out.push({
         id: `object:${obj.id}`,
-        kind: "object",
         label: obj.label,
-        meta: `${objectGroupLabel(obj)} · ${obj.id}`,
+        section: "In scene",
+        hint: objectGroupLabel(obj),
+        keywords: [obj.id],
         run: () => {
           setSelectionIds([obj.id])
           stage.frameTarget(obj.x, obj.y, obj.z, 14)
@@ -2182,15 +2188,36 @@ export function createWorkbench(opts: WorkbenchOptions) {
         },
       })
     }
+    const ctx = { pickedObject: null, groundHit: null, source: "ui" } as const
+    for (const cmd of commands.all()) {
+      if (cmd.id.startsWith("palette.")) continue
+      if (Object.values(cmd.args ?? {}).some(a => a.required)) continue
+      const shortcut = knobsCombo(cmd.shortcut)
+      out.push({
+        id: `command:${cmd.id}`,
+        label: cmd.label,
+        section: "Commands",
+        keywords: [cmd.id, cmd.category],
+        ...(shortcut ? { shortcut } : {}),
+        disabled: !cmd.enabled(ctx),
+        run: () => {
+          const res = commands.invoke(cmd.id, undefined, { source: "ui" })
+          if (!res.ok) showToast(res.error, true)
+          syncChrome()
+        },
+      })
+    }
+    const sec = activeSection()
+    out.push(...panel.commands({ title: "Details", reveal: key => void revealSetting(sec.id, key) }))
     for (const entry of buildCatalog()) {
       if (!isLibraryAsset(entry)) continue
       const cat = LIBRARY_CATEGORIES.find(c => c.id === libraryCategoryOf(entry))!
-      items.push({
+      out.push({
         id: `library:${entry.id}`,
-        kind: "library",
         label: entry.label,
-        meta: `${cat.label} · ${entry.group}`,
-        hint: entry.tag,
+        section: "Library",
+        hint: `${cat.label} · ${entry.group}`,
+        keywords: [entry.tag ?? "", entry.group],
         run: () => {
           if (mode === "play") setPlayMode("edit")
           libraryDrawer.setCategory(cat.id)
@@ -2201,50 +2228,52 @@ export function createWorkbench(opts: WorkbenchOptions) {
         },
       })
     }
-    for (const cmd of commands.all()) {
-      if (cmd.id.startsWith("palette.")) continue
-      if (Object.values(cmd.args ?? {}).some(a => a.required)) continue
-      const enabled = cmd.enabled({ pickedObject: null, groundHit: null, source: "ui" })
-      items.push({
-        id: `command:${cmd.id}`,
-        kind: "command",
-        label: cmd.label,
-        meta: `${cmd.category} · ${cmd.id}`,
-        hint: cmd.shortcut,
-        disabled: !enabled,
-        run: () => {
-          const res = commands.invoke(cmd.id, undefined, { source: "ui" })
-          if (!res.ok) showToast(res.error, true)
-          syncChrome()
-        },
-      })
-    }
-    for (const sec of sections) {
-      for (const c of sec.controls) {
+    for (const other of sections) {
+      if (other.id === sec.id) continue
+      for (const c of other.controls) {
         if (c.type === "action") continue
-        items.push({
-          id: `setting:${sec.id}:${c.key}`,
-          kind: "setting",
+        out.push({
+          id: `setting:${other.id}:${c.key}`,
           label: c.label,
-          meta: `${sec.label} · ${c.group ?? "Controls"}`,
-          run: () => {
-            revealSetting(sec.id, c.key)
-          },
+          section: "Settings",
+          hint: `${other.label} · ${c.group ?? "Controls"}`,
+          keywords: [c.key, other.label],
+          run: () => void revealSetting(other.id, c.key),
         })
       }
     }
-    return items
+    return out
   }
 
-  const palette = createPalette(root, {
-    items: paletteItems,
-    onOpenChange: open => {
-      if (open) {
-        if (mode === "play") setPlayMode("edit")
-        focusZone = "palette"
-      } else if (focusZone === "palette") focusZone = "canvas"
+  const paletteUi = commandPalette({
+    commands: paletteCommands,
+    // ⌘K and `/` go through the workbench's own keys (Play mode, text fields and the `palette.open` command).
+    hotkey: false,
+    recents: "arcade-lab",
+    placeholder: "Search scene, commands, Details, library and settings",
+  })
+  const palette = {
+    open(query = "") {
+      if (mode === "play") setPlayMode("edit")
+      focusZone = "palette"
       syncTransportAndHints()
+      paletteUi.open(query)
     },
+    close: () => paletteUi.close(),
+    get isOpen() {
+      return paletteUi.isOpen
+    },
+    /** What the palette lists for a query, best first (knobs' ranking); for the `palette.open` command's reply. */
+    results(query: string): PaletteCommand[] {
+      const all = paletteCommands()
+      return query.trim() ? rankCommands(all, query).map(r => r.item) : all
+    },
+  }
+  // Closing hands focus back (Esc, a click outside or a run): the zone follows it.
+  document.addEventListener("focusin", () => {
+    if (focusZone !== "palette" || paletteUi.isOpen) return
+    focusZone = "canvas"
+    syncTransportAndHints()
   })
   paletteBtn.onclick = () => palette.open()
 

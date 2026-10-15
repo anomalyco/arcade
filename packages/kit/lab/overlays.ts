@@ -23,3 +23,22 @@ export function tip(el: HTMLElement, text: string, shortcut?: string) {
 export function notify(message: string, isError = false, action?: { label: string; run: () => void }) {
   toast(message, { tone: isError ? "error" : "info", ...(action ? { action, linger: 5000 } : {}) })
 }
+
+const GLYPH_MODS: Record<string, string> = { "⌘": "Mod", "⇧": "Shift", "⌥": "Alt", "⌃": "Ctrl" }
+
+/** A command's shortcut as the Lab writes it (`⇧⌘Z`, `⌫`, `Ctrl Space`) in knobs' combo form; none for ranges like `1–9`. */
+export function knobsCombo(shortcut: string | undefined): string | undefined {
+  if (!shortcut || shortcut.includes("–")) return undefined
+  const mods: string[] = []
+  let rest = shortcut.trim()
+  if (rest.startsWith("Ctrl ")) {
+    mods.push("Ctrl")
+    rest = rest.slice(5)
+  }
+  while (rest && GLYPH_MODS[rest[0]!]) {
+    mods.push(GLYPH_MODS[rest[0]!]!)
+    rest = rest.slice(1)
+  }
+  const key = rest === "⌫" ? "Backspace" : rest === "Esc" ? "Escape" : rest
+  return key ? [...mods, key].join("+") : undefined
+}
