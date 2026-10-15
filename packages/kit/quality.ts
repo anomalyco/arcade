@@ -155,6 +155,8 @@ export interface QualityState<P extends QualityScaling = QualityProfile> {
   frameMs: number
   /** Rolling median GPU completion time (ms) from the most recent window. */
   gpuMs: number
+  /** Share of the most recent window's frames that took over 1.25× the frame budget. */
+  missedShare: number
   /** Number of startup or runtime adaptation transitions that have occurred. */
   adaptations: number
   /** True once the startup auto-select probe has completed (or immediately for manual tiers). */
@@ -176,6 +178,15 @@ export interface AdaptiveQualityOptions<P extends QualityScaling = QualityProfil
   minWindowSamples?: number
   /** Consecutive comfortable windows required before stepping resolution/tier up (default: 3). */
   recoverWindows?: number
+  /** Consecutive CPU-bound windows (slow frames, idle GPU) before dropping a tier, which sheds CPU-side work (default: 3). */
+  cpuWindows?: number
+}
+
+/** A one-line readout for Lab telemetry: `Quality Auto → High (Retina 2.0×) · 1.80× · GPU 11.2 ms · 14% slow`. */
+export function describeQualityState(s: QualityState<QualityScaling>): string {
+  const mode = s.mode === "auto" ? `Auto → ${s.profile.label}` : s.profile.label
+  const slow = s.missedShare > 0 ? ` · ${Math.round(s.missedShare * 100)}% slow` : ""
+  return `Quality ${mode} · ${s.pixelRatio.toFixed(2)}×${s.gpuMs ? ` · GPU ${s.gpuMs.toFixed(1)} ms` : ""}${slow}`
 }
 
 function medianOf(values: readonly number[]): number {
@@ -195,7 +206,8 @@ function roundPixelRatio(pr: number): number {
 export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, budgetMs = 1000 / 60): QualityTier {
   if (gpuMedianMs > 0) {
     if (gpuMedianMs > budgetMs * 1.35) return "low"
-    if (gpuMedianMs > budgetMs * 0.92) return "balanced"
+    // Leave headroom: the first scene is rarely the heaviest, and a frame's CPU work adds to its GPU time.
+    if (gpuMedianMs > budgetMs * 0.85) return "balanced"
     return "high"
   }
   if (frameMedianMs > budgetMs * 1.65) return "low"
@@ -208,9 +220,13 @@ export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, bu
  * - Tiers: `low`, `balanced`, `high`, `auto` (default `auto`).
  * - Startup auto-select: skips initial shader/pipeline warm-up frames, then picks `high` / `balanced` / `low`
  *   from the median GPU / frame time so Retina laptops keep full 2.0× when it fits and step down cleanly when it doesn't.
- * - Runtime hysteresis: evaluates 1 s rolling medians, drops `resolutionScale` (and then `activeTier` in `auto` mode)
- *   quickly when GPU-bound frames exceed budget, and requires `recoverWindows` consecutive comfortable windows before
- *   stepping back up by +0.05 so resolution never oscillates.
+ * - Runtime hysteresis: evaluates 1 s windows. It sheds pixels (`resolutionScale`, then `activeTier`) when frames miss
+ *   the budget and the GPU carries a real share of them (a game with one frame in flight pays CPU + GPU per frame, so
+ *   a 12 ms GPU frame plus 5 ms of CPU misses 60 fps even though neither alone is over), or when GPU time alone
+ *   leaves no headroom. Slow frames with an idle GPU (CPU-bound, or main-thread hitches over 3× the budget) drop a
+ *   tier after `cpuWindows` windows instead, since resolution would not help. Medians alone hide a third of frames
+ *   missing, so the window also counts missed frames. Stepping back up needs `recoverWindows` comfortable windows, and
+ *   that wait doubles each time a step up is undone within a few seconds, so it never oscillates.
  * - Manual override (`high` / `balanced` / `low`): locks `activeTier` and `resolutionScale = 1` for deterministic rendering.
  */
 export class AdaptiveQualityController<P extends QualityScaling = QualityProfile> {
@@ -224,14 +240,20 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   private readonly adaptWindowMs: number
   private readonly minWindowSamples: number
   private readonly recoverWindows: number
+  private readonly cpuWindows: number
 
   private seenFrames = 0
   private startupResolved = false
   private okWindows = 0
+  private cpuBoundWindows = 0
+  /** Comfortable windows needed before the next step up; doubles when a step up is undone soon after. */
+  private upgradeWindows = 3
+  private lastUpgradeAt = -Infinity
   private adaptations = 0
   private lastAdaptAt = 0
   private lastFrameMs = 0
   private lastGpuMs = 0
+  private lastMissedShare = 0
 
   private readonly startupFrameBuf: number[] = []
   private readonly startupGpuBuf: number[] = []
@@ -249,6 +271,8 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     this.adaptWindowMs = options.adaptWindowMs ?? 1000
     this.minWindowSamples = options.minWindowSamples ?? 10
     this.recoverWindows = options.recoverWindows ?? 3
+    this.cpuWindows = options.cpuWindows ?? 3
+    this.upgradeWindows = this.recoverWindows
   }
 
   getMode(): QualityMode {
@@ -273,6 +297,9 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     const prevScale = this.resolutionScale
     this.mode = resolved
     this.okWindows = 0
+    this.cpuBoundWindows = 0
+    this.upgradeWindows = this.recoverWindows
+    this.lastUpgradeAt = -Infinity
     this.windowFrames.length = 0
     this.windowGpus.length = 0
     if (resolved === "auto") {
@@ -296,6 +323,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     this.lastAdaptAt = 0
     this.lastFrameMs = 0
     this.lastGpuMs = 0
+    this.lastMissedShare = 0
   }
 
   effectivePixelRatio(devicePixelRatio = 1): number {
@@ -386,46 +414,65 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
 
     const medFrame = medianOf(this.windowFrames)
     const medGpu = this.windowGpus.length >= 4 ? medianOf(this.windowGpus) : 0
+    let missed = 0
+    let hitches = 0
+    for (const f of this.windowFrames) {
+      if (f > budget * 1.25) missed++
+      if (f > budget * 3) hitches++
+    }
+    const missedShare = missed / this.windowFrames.length
     this.windowFrames.length = 0
     this.windowGpus.length = 0
     this.lastFrameMs = medFrame
     if (medGpu > 0) this.lastGpuMs = medGpu
+    this.lastMissedShare = missedShare
 
     const minScale = this.profiles[this.activeTier].minScale
-    // Only shed pixels when GPU is plausibly the bottleneck (or when GPU telemetry is unavailable).
-    const gpuBound = medGpu === 0 || medGpu > budget * 0.85
-    const overloaded = (medFrame > budget * 1.25 && gpuBound) || medGpu > budget * 1.15
-    const severelyOverloaded = (medFrame > budget * 1.65 && gpuBound) || medGpu > budget * 1.45
+    const slow = missedShare >= 0.12 || medFrame > budget * 1.25
+    // Shed pixels when the GPU is a real part of slow frames (or telemetry is unavailable), or has no headroom left.
+    const gpuShare = medGpu === 0 || medGpu > budget * 0.5
+    const overloaded = (slow && gpuShare) || medGpu > budget * 0.9
+    const severelyOverloaded = (medFrame > budget * 1.65 && gpuShare) || medGpu > budget * 1.45
+    const cpuBound = !overloaded && (slow || hitches >= 3)
 
     if (overloaded) {
       this.okWindows = 0
+      this.cpuBoundWindows = 0
+      this.noteDowngrade(nowMs)
       if (this.resolutionScale > minScale + 1e-3) {
         const drop = severelyOverloaded ? 0.2 : 0.1
         this.resolutionScale = Math.max(minScale, Math.round((this.resolutionScale - drop) * 20) / 20)
         this.adaptations++
         return true
       }
-      if (this.activeTier !== "low") {
-        this.activeTier = this.activeTier === "high" ? "balanced" : "low"
-        this.resolutionScale = 1.0
-        this.adaptations++
-        return true
+      return this.dropTier()
+    }
+
+    if (cpuBound) {
+      this.okWindows = 0
+      if (++this.cpuBoundWindows >= this.cpuWindows) {
+        this.cpuBoundWindows = 0
+        this.noteDowngrade(nowMs)
+        return this.dropTier()
       }
       return false
     }
+    this.cpuBoundWindows = 0
 
-    const comfortable = medFrame < budget * 1.06 && (medGpu === 0 || medGpu < budget * 0.55)
+    const comfortable = missedShare < 0.05 && medFrame < budget * 1.06 && (medGpu === 0 || medGpu < budget * 0.55)
     if (comfortable && (this.resolutionScale < 1 - 1e-3 || this.activeTier !== "high")) {
-      if (++this.okWindows >= this.recoverWindows) {
+      if (++this.okWindows >= this.upgradeWindows) {
         this.okWindows = 0
         if (this.resolutionScale < 1 - 1e-3) {
           this.resolutionScale = Math.min(1.0, Math.round((this.resolutionScale + 0.05) * 20) / 20)
+          this.lastUpgradeAt = nowMs
           this.adaptations++
           return true
         }
         if (this.activeTier !== "high" && (medGpu === 0 || medGpu < budget * 0.38)) {
           this.activeTier = this.activeTier === "low" ? "balanced" : "high"
           this.resolutionScale = 0.85
+          this.lastUpgradeAt = nowMs
           this.adaptations++
           return true
         }
@@ -435,6 +482,24 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     }
 
     return false
+  }
+
+  /** A step down soon after a step up means the step up did not fit: wait twice as long before the next one. */
+  private noteDowngrade(nowMs: number): void {
+    if (nowMs - this.lastUpgradeAt < this.adaptWindowMs * 6) this.upgradeWindows = Math.min(this.upgradeWindows * 2, 48)
+    this.lastUpgradeAt = -Infinity
+  }
+
+  /** One tier down, starting no sharper than the pixel ratio already reached so the step never adds pixels. */
+  private dropTier(): boolean {
+    if (this.activeTier === "low") return false
+    const from = this.profiles[this.activeTier]
+    const reached = from.dprCap * this.resolutionScale
+    this.activeTier = this.activeTier === "high" ? "balanced" : "low"
+    const to = this.profiles[this.activeTier]
+    this.resolutionScale = Math.max(to.minScale, Math.min(1, Math.round((reached / to.dprCap) * 20) / 20))
+    this.adaptations++
+    return true
   }
 
   state(devicePixelRatio = 1): QualityState<P> {
@@ -447,6 +512,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
       pixelRatio: this.effectivePixelRatio(devicePixelRatio),
       frameMs: Math.round(this.lastFrameMs * 100) / 100,
       gpuMs: Math.round(this.lastGpuMs * 100) / 100,
+      missedShare: Math.round(this.lastMissedShare * 100) / 100,
       adaptations: this.adaptations,
       startupResolved: this.startupResolved,
     }

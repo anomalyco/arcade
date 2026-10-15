@@ -11,6 +11,7 @@ import {
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import {
   AdaptiveQualityController,
+  describeQualityState,
   loadSavedQualityMode,
   resolveQualityMode,
 } from "@arcade/kit/quality"
@@ -1627,7 +1628,7 @@ async function main() {
     const meterNow = performance.now()
     const elapsed = (meterNow - meterAt) / 1000
     if (elapsed > 0.25) {
-      lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks · ${zombies.filter((z) => z.state !== "dead").length} zombies\n${clockText(hour)} · seed ${town.seed}`
+      lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks · ${zombies.filter((z) => z.state !== "dead").length} zombies\n${clockText(hour)} · seed ${town.seed}\n${describeQualityState(qualityController.state(devicePixelRatio))}`
       if (lab.visible) lab.refresh()
       frames = 0
       meterAt = meterNow
