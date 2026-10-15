@@ -31,14 +31,36 @@ export default defineStation({
     ],
   },
   defaultVariant: "grenade",
-  variants: presets.map(([id, label]): StationVariant => ({
-    id,
-    label,
-    setup: [
-      { command: "scene.set-param", args: { key: "explosionPreset", value: id } },
-      { command: "effect.trigger", args: { seed: 7 } },
-    ],
-  })),
+  variants: [
+    ...presets.map(([id, label]): StationVariant => ({
+      id,
+      label,
+      setup: [
+        { command: "scene.set-param", args: { key: "effect", value: "explosion" } },
+        { command: "scene.set-param", args: { key: "explosionPreset", value: id } },
+        { command: "effect.trigger", args: { seed: 7 } },
+      ],
+    })),
+    {
+      id: "blood-wet",
+      label: "Blood splatter (Wet ballistic)",
+      note: "Surface-clipped ballistic splatter with coagulated venous core, arterial rim, directional streaks, and wet meniscus specular.",
+      setup: [
+        { command: "scene.select-section", args: { id: "splatter" } },
+        { command: "scene.set-param", args: { key: "style", value: 1 } },
+        { command: "scene.set-param", args: { key: "preset", value: "zombieBlood" } },
+      ],
+    },
+    {
+      id: "blood-legacy",
+      label: "Blood splatter (Legacy flat)",
+      note: "Previous particle-sprite blood for A/B comparison.",
+      setup: [
+        { command: "scene.select-section", args: { id: "splatter" } },
+        { command: "scene.set-param", args: { key: "style", value: 0 } },
+      ],
+    },
+  ],
   grid: "explosions",
   board: { feature: "AR-15" },
   metrics: [

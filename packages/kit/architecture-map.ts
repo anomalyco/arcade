@@ -188,6 +188,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/orbit-gestures",
   },
   {
+    area: "`feel/*`",
+    description: "`GameFeel` trauma² shake, directional recoil kick, hit-stop, impulse blur, and reduced-motion",
+    match: (s) => s === "@arcade/kit/feel" || s.startsWith("@arcade/kit/feel/"),
+  },
+  {
     area: "`audio/*`",
     description: "Web Audio runtime, offline renderer, procedural synth, and `sfx-library`",
     match: (s) => s === "@arcade/kit/audio" || s.startsWith("@arcade/kit/audio/"),

@@ -339,7 +339,20 @@ In rough order of value against risk:
    `@arcade/kit/fx/{particles,particle-renderer,explosion}`, `@arcade/kit/sim/{matchmaking,rng}`,
    `@arcade/kit/client/{controls,key-cap}`, `@arcade/kit/lab-panel`, and `@arcade/kit/dev-control`. Wings
    (`games/wings/src/render/world/rain.ts`) retains its Three.js TSL node-material rain/spray in its independent project.
-8. **Remaining candidates:**
+8. **Shared Game Feel toolkit & Wet Ballistic Blood (`@arcade/kit/feel`, `packages/kit/fx/splatter*.ts`).**
+   `GameFeel` maps semantic events (`shot`, `shove`, `hit-confirmed`, `kill`, `hit-taken`, `explosion`, `barricade-bash`, `land`)
+   through per-game presets (`outbreak`, `blackout`, `getaway`, `subtle`, `off`) to Squirrel Eiserloh's `trauma²` 2-octave
+   smooth-noise shake, 240 Hz critically-damped directional recoil/lunge kick, zoom & roll punch, sim-safe presentation
+   hit-stop (`visualDt`), periphery-weighted directional/radial impulse shutter blur, dark crimson damage vignette, and
+   chromatic nudge. All amounts live in the shared `LabPanel` (`Feel` group) with a global intensity slider, an
+   accessibility `feelReduceMotion` setting, and automatic `prefers-reduced-motion: reduce` support. `Splatter` and
+   `SplatterRenderer` add `zombieBlood` and `survivorBlood` presets, 3-tier exit-wound/floor-fan/wall-arc trajectories,
+   two-pass coplanar-first terrain receiver projection, Beer–Lambert optical depth (coagulated venous core to arterial
+   rim), raised meniscus wet specular glints, vertical wall gravity drips, and Noir selective-colour preservation
+   (`alpha: { srcFactor: "zero", dstFactor: "one" }`). Adopted in Outbreak and Blackout; follow-up candidates are migrating
+   Getaway's `Scene.shake`/`hitStop` and Carrier's `TurretCam`/`FlightCam`/`ChaseCam`/`BoatCam` `trauma²` loops to
+   `GameFeel` adapters.
+9. **Remaining candidates:**
    - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
      handshake, and seat bookkeeping.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
