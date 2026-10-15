@@ -54,5 +54,6 @@ export default defineStation({
     { label: "debug-room GPU, Current look, 1280×800", value: "1.02 ms", source: "perf/looks.json" },
   ],
   paths: ["packages/kit/gpu/look.ts", "packages/kit/gpu/look-shaders.ts", "packages/kit/lab/looks.ts"],
-  branches: ["looks", "outbreak-noir", "noir-v2"],
+  branches: ["looks", "outbreak-noir", "noir-v2", "flashlight-beam"],
+  links: [{ label: "Noir flashlight beam off / on (live game)", href: "/arcade/lab/?overworld&station=outbreak-flashlight" }],
 })

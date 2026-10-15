@@ -27,14 +27,26 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).sort().reverse().map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
 assert(chrome)
 
-type Scene = { name: string; x: number; y: number; aim: number; hour: number; zoom: number; open?: boolean; zombies?: [number, number][] }
-const scenes: Scene[] = [
+type Scene = { name: string; x: number; y: number; aim: number; hour: number; zoom: number; open?: boolean; zombies?: [number, number][]; fire?: boolean; weather?: string }
+// NOIR_SCENES=beam captures the flashlight-shaft set: across the screen, toward and away from the camera, raised aim,
+// a zombie in the beam, rain, into a wall and through a doorway.
+const beamScenes: Scene[] = [
+  { name: "beam-east", x: 24, y: 44, aim: 0.12, hour: 22, zoom: 42, zombies: [[29.5, 44.9]] },
+  { name: "beam-south", x: 30, y: 41.5, aim: Math.PI / 2, hour: 22, zoom: 42 },
+  { name: "beam-north", x: 30, y: 46, aim: -Math.PI / 2, hour: 22, zoom: 42 },
+  { name: "beam-raised", x: 24, y: 44, aim: -0.35, hour: 22, zoom: 42, fire: true },
+  { name: "beam-rain", x: 24, y: 44, aim: 0.12, hour: 22, zoom: 42, weather: "rain" },
+  { name: "beam-door", x: 27.7, y: 31, aim: Math.PI, hour: 22, zoom: 34, open: true },
+  { name: "beam-wall", x: 27.7, y: 31, aim: 0, hour: 22, zoom: 34, open: true },
+]
+const lookScenes: Scene[] = [
   { name: "street", x: 30, y: 41, aim: -Math.PI / 2, hour: 18, zoom: 42, zombies: [[27.5, 37.6], [32.6, 37.4]] },
   { name: "street-long", x: 20, y: 44, aim: 0.12, hour: 22, zoom: 42 },
   { name: "interior", x: 27.7, y: 31, aim: -Math.PI / 2, hour: 19, zoom: 34, open: true },
   { name: "interior-wall", x: 27.7, y: 31, aim: Math.PI, hour: 19, zoom: 34, open: true },
   { name: "yard", x: 20, y: 35, aim: -1.6, hour: 23, zoom: 42 },
 ]
+const scenes = process.env.NOIR_SCENES === "beam" ? beamScenes : lookScenes
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 try {
@@ -60,6 +72,8 @@ try {
       }
       h.pose(s.x, s.y, s.aim)
       if (s.open) await h.step(1 / 60, { interact: true })
+      if (s.weather) h.setWeatherPreset(s.weather)
+      if (s.fire) await h.step(1 / 60, { fire: true })
       for (const [zx, zy] of s.zombies ?? []) h.spawnZombie(zx, zy, "wander", Math.PI / 2)
       for (let i = 0; i < 24; i++) await h.step()
       const st = h.state()

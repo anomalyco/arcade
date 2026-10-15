@@ -25,7 +25,7 @@ export type LabGameEntry = {
 export const LAB_GAMES: readonly LabGameEntry[] = [
   { id: "getaway", label: "Getaway", sections: ["getaway-effects"], load: () => import("./getaway") },
   { id: "blackout", label: "Blackout", sections: ["blackout-effects", "fire-water", "splatter"], load: () => import("./blackout") },
-  { id: "outbreak", label: "Outbreak", sections: ["outbreak-vignette"], defaultSection: "outbreak-vignette", load: () => import("./outbreak") },
+  { id: "outbreak", label: "Outbreak", sections: ["outbreak-vignette", "styles"], defaultSection: "outbreak-vignette", load: () => import("./outbreak") },
 ]
 
 /** Carrier has its own sound and mixer pages but no Lab adapters yet, so it is not offered. */

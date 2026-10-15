@@ -1,7 +1,9 @@
 .callouts { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --callout-size: 12px }
-.callout { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity }
+/* Labels are positioned by their top-left corner on whole device pixels (callouts.ts) and never scaled or promoted to
+   their own compositor layer, so glyphs are rasterised once at their final size and position. */
+.callout { position: absolute; left: 0; top: 0 }
 .callout-body {
-  position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
+  position: absolute; left: 0; top: 0;
   display: inline-flex; align-items: center; gap: .42em; padding: .2em .58em .22em;
   border: 1px solid #ffffff24; border-radius: .38em; background: #0a0e0fd9; color: #e4e1d2;
   font: 600 var(--callout-size)/1.25 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .01em;
@@ -28,7 +30,7 @@
 .vital {
   position: absolute; left: 0; top: 0; width: var(--vital-size); height: var(--vital-size); transform-origin: 0 0;
   border-radius: 50%; background: #0a0e0fb8; box-shadow: 0 1px 6px #0000008c; color: #d3dcc2;
-  will-change: transform, opacity; --ring: calc(var(--vital-size) * .16); --track: #ffffff24
+  --ring: calc(var(--vital-size) * .16); --track: #ffffff24
 }
 .vital-ring {
   position: absolute; inset: 1px; border-radius: 50%;
@@ -49,7 +51,7 @@
   content: ""; width: 26%; height: 42%; border: 1.5px solid currentColor; border-radius: 1.5px; box-sizing: border-box;
   background: linear-gradient(to top, currentColor calc(var(--p, 1) * 100%), transparent 0)
 }
-.vital[data-meter="stamina"][data-draining="true"] { color: #eef4e0 }
+.vital[data-meter="stamina"][data-state="ok"][data-draining="true"] { color: #eef4e0 }
 .vital[data-state="low"] { color: #f0b44a }
 .vital[data-state="critical"] { color: #ff6a4a; background: #1c0a07cc; --track: #ff6a4a70 }
 .vital[data-state="critical"] .vital-ring { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
@@ -57,11 +59,15 @@
 @media (prefers-reduced-motion: reduce) { .vital[data-state="critical"] .vital-ring { animation: none } }
 .vitals[data-reduced="true"] .vital[data-state="critical"] .vital-ring { animation: none }
 
-/* Halo look (Zomboid Style, Diegetic): outlined text, no plate. */
+/* Halo look (Zomboid Style, Diegetic): text with a hard dark outline drawn under the fill, no plate and no blurred
+   shadow, so it reads over Noir's darks and lights without going soft. */
 .callouts[data-look="halo"] .callout-body {
   background: none; border-color: transparent; box-shadow: none; padding: .05em .2em;
-  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000
+  font-weight: 700; letter-spacing: .02em;
+  -webkit-text-stroke: .24em #050708e6; paint-order: stroke fill; text-shadow: 0 1px 0 #000
 }
+.callouts[data-look="halo"] .callout-body .akc, .callouts[data-look="halo"] .callout-ring { -webkit-text-stroke: 0; text-shadow: none }
+.callout-body .akc { text-shadow: none }
 .callouts[data-look="halo"] .callout[data-kind="noise"] .callout-body { border-color: transparent }
 /* Action bar over the head (Zomboid Style): a small label over a slim bar instead of a ringed label. */
 .callouts[data-action="bar"] .callout[data-kind="progress"] .callout-body { flex-direction: column; gap: .18em; font-size: .86em }
@@ -82,17 +88,26 @@
 .vital[data-mode="bar"] b { left: 100%; right: auto; width: auto; padding-left: 4px; font-size: 10px; place-items: center start }
 .vital[data-mode="bar"] b::before { display: none }
 .vital[data-mode="bar"][data-meter="health"] { color: #e06a55 }
-/* Ellipses on the ground (Diegetic). */
-.vital[data-mode="ground"] { background: none; box-shadow: none; --ring: 3px }
-.vital[data-mode="ground"] .vital-ring {
-  inset: 0; filter: drop-shadow(0 0 2px #000);
-  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
-  mask: radial-gradient(closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
-  /* A 300° arc open at the top, where the body stands on it. */
-  background: conic-gradient(from 30deg, currentColor calc(var(--p, 1) * 300deg), var(--track) 0 300deg, transparent 0)
-}
-.vital[data-mode="ground"] b { display: none }
-.vital[data-mode="ground"][data-meter="health"] { color: #e06a55; --track: transparent }
+/* Ring on the ground (Diegetic): one ellipse projected from a real ground circle, stamina on the left arc and health
+   on the right, both filling from the front. The back of the ring is left open where the body stands. Strokes are
+   constant screen widths: a dark casing, the empty track and the fill. */
+.ground-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; --ground-w: 2.6 }
+.ground-ring path { fill: none; stroke-linecap: round; stroke-linejoin: round }
+.ground-ring .casing { stroke: #040607; stroke-opacity: .55; stroke-width: calc(var(--ground-w) * 1px + 2.4px) }
+.ground-ring .track { stroke: #e9ecdf; stroke-opacity: .16; stroke-width: calc(var(--ground-w) * 1px) }
+.ground-ring .fill { stroke: currentColor; stroke-width: calc(var(--ground-w) * 1px); stroke-dasharray: 1 1 }
+.ground-ring g { transition: none }
+.ground-ring g[data-meter="stamina"] { color: #d3dcc2 }
+.ground-ring g[data-meter="stamina"][data-state="ok"][data-draining="true"] { color: #eef4e0 }
+.ground-ring g[data-meter="health"] { color: #e8a090 }
+.ground-ring g[data-state="low"] { color: #f0b44a }
+.ground-ring g[data-meter="health"][data-state="low"] { color: #ef7a5c }
+.ground-ring g[data-state="critical"] { color: #ff5a3c }
+/* Spent reads as a red arc even when the fill is empty, like an exhausted stamina wheel. */
+.ground-ring g[data-state="critical"] .track { stroke: currentColor; stroke-opacity: .5 }
+.ground-ring g[data-state="critical"] .fill, .ground-ring g[data-state="critical"] .track { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
+@media (prefers-reduced-motion: reduce) { .ground-ring g[data-state="critical"] :is(.fill, .track) { animation: none } }
+.vitals[data-reduced="true"] .ground-ring g[data-state="critical"] :is(.fill, .track) { animation: none }
 
 /* Status icons at the screen edge (Zomboid Style), like moodles. */
 .status-icons { position: fixed; right: 12px; top: 52px; z-index: 9; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; pointer-events: none }

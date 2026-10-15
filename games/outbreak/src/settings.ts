@@ -1,4 +1,5 @@
-import { DEFAULT_FEEL_SETTINGS, type FeelSettings } from "@arcade/kit/feel"
+import { cameraShakeDefaults, type CameraShakeSettings } from "@arcade/kit/client/camera"
+import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
@@ -58,16 +59,13 @@ export type OutbreakDayCycleSettings = {
   lookPreset: LookPresetId
 }
 
-export type OutbreakViewSettings = {
+export type OutbreakViewSettings = CameraShakeSettings & {
   zoom: number
   diagnostic: number
 }
 
 export type OutbreakCombatSettings = {
   infiniteAmmo: number
-}
-
-export type OutbreakFeelSettings = FeelSettings & {
   bloodStyle: number
 }
 
@@ -108,7 +106,7 @@ export const DEFAULT_OUTBREAK_MATERIALS: OutbreakMaterialSettings = {
 }
 
 export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
-  hour: 18,
+  hour: DEFAULT_AI_CONFIG.startHour,
   timeScale: 120,
   dayNightLook: 1,
   lookPreset: "noir",
@@ -117,15 +115,17 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   zoom: 46,
   diagnostic: 0,
+  ...cameraShakeDefaults(),
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
+  bloodStyle: 1,
 }
 
-export const DEFAULT_OUTBREAK_FEEL: OutbreakFeelSettings = {
-  ...DEFAULT_FEEL_SETTINGS,
-  bloodStyle: 1,
+export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
+  ...motionBlurDefaults(),
+  strength: 0,
 }
 
 export type OutbreakSubsystemMap = {
@@ -147,7 +147,7 @@ export type OutbreakSubsystemMap = {
   dayCycle: OutbreakDayCycleSettings
   view: OutbreakViewSettings
   combat: OutbreakCombatSettings
-  feel: OutbreakFeelSettings
+  motion: MotionBlurSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -176,7 +176,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakDayCycleSettings &
   OutbreakViewSettings &
   OutbreakCombatSettings &
-  OutbreakFeelSettings
+  MotionBlurSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -197,7 +197,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "dayCycle",
   "view",
   "combat",
-  "feel",
+  "motion",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -223,7 +223,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     dayCycle: { ...DEFAULT_OUTBREAK_DAY_CYCLE },
     view: { ...DEFAULT_OUTBREAK_VIEW },
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
-    feel: { ...DEFAULT_OUTBREAK_FEEL },
+    motion: { ...DEFAULT_OUTBREAK_MOTION },
   }
 }
 
@@ -243,6 +243,9 @@ const KEY_ROUTING: Readonly<Record<string, KeyTarget>> = (() => {
     }
   }
   map.aiWalkSpeed = { subsystem: "ai", field: "walkSpeed", sample: DEFAULTS_TEMPLATE.ai.walkSpeed }
+  for (const field of ["startHour", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
+    map[`pacing.${field}`] = { subsystem: "ai", field, sample: DEFAULTS_TEMPLATE.ai[field] }
+  }
   return map
 })()
 
@@ -547,7 +550,12 @@ export function migrateOutbreakUrlParams(
     if (!routed) continue
     if (typeof routed.sample === "number") {
       const n = Number(rawVal)
-      if (Number.isFinite(n)) setField(routed.subsystem, routed.field, n)
+      if (Number.isFinite(n)) {
+        setField(routed.subsystem, routed.field, n)
+        if (routed.field === "startHour" && !params.has("hour") && !params.has("dayCycle.hour")) {
+          setField("dayCycle", "hour", n)
+        }
+      }
     } else if (typeof routed.sample === "boolean") {
       if (rawVal === "1" || rawVal === "true") setField(routed.subsystem, routed.field, true)
       else if (rawVal === "0" || rawVal === "false") setField(routed.subsystem, routed.field, false)
