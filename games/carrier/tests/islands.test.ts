@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEEP, MAX_ISLANDS, MIN_ISLANDS, SPAWN_CLEAR, archBlobs, coralAt, islandFootprint, makeArchipelago, terrainHeight, type Archipelago, type IslandKind } from "../shared/islands"
+import { DEEP, MAX_ISLANDS, MIN_ISLANDS, SPAWN_CLEAR, archBlobs, archipelagoFor, coralAt, islandFootprint, makeArchipelago, terrainHeight, type Archipelago, type IslandKind } from "../shared/islands"
 import { bakeSeabed, seabedAt } from "../shared/seabed"
 import { Rng } from "../shared/rng"
 import { buildIslandMesh, buildIslandProps, countTriangles, INSTANCE_FLOATS, TRI_BUDGET } from "../src/render/island-mesh"
@@ -34,8 +34,13 @@ describe("archipelago", () => {
     }
   })
 
+  test("a shared archipelago is the generated one, reused per seed", () => {
+    expect(archipelagoFor(7)).toEqual(makeArchipelago(7))
+    expect(archipelagoFor(7)).toBe(archipelagoFor(7))
+  })
+
   test("different seeds give different worlds", () => {
-    const worlds = SEEDS.map((s) => makeArchipelago(s))
+    const worlds = SEEDS.map((s) => archipelagoFor(s))
     for (let i = 0; i < worlds.length; i++) {
       for (let j = i + 1; j < worlds.length; j++) {
         expect(worlds[i]!.islands.map((k) => [k.x, k.z])).not.toEqual(worlds[j]!.islands.map((k) => [k.x, k.z]))
@@ -102,7 +107,7 @@ describe("archipelago", () => {
 
   test("height range is sane and land only appears on islands", () => {
     for (const seed of SEEDS) {
-      const arch = makeArchipelago(seed)
+      const arch = archipelagoFor(seed)
       const fps = arch.islands.map((i) => ({ i, ...islandFootprint(i, arch.seed) }))
       let lo = Infinity
       let hi = -Infinity
@@ -134,7 +139,7 @@ describe("archipelago", () => {
   })
 
   test("islands sit in a shallow reef shelf with coral that ends before the drop", () => {
-    const arch = makeArchipelago(42)
+    const arch = archipelagoFor(42)
     for (const i of arch.islands) {
       if (i.kind === "stacks") continue
       // Walk outward from the centre in a few directions. Shelf width varies a lot around an island (almost none on
@@ -187,7 +192,7 @@ describe("archipelago", () => {
 describe("seabed", () => {
   test("agrees with terrainHeight and coralAt", () => {
     for (const seed of [7, 42]) {
-      const arch = makeArchipelago(seed)
+      const arch = archipelagoFor(seed)
       const bed = bakeSeabed(arch, 1024)
       expect(bed.data.length).toBe(1024 * 1024 * 4)
       const texel = bed.size / bed.res
@@ -230,7 +235,7 @@ describe("seabed", () => {
   })
 
   test("distance to shore is a true distance", () => {
-    const arch = makeArchipelago(42)
+    const arch = archipelagoFor(42)
     const bed = bakeSeabed(arch, 1024)
     const texel = bed.size / bed.res
     const r = new Rng(5)
@@ -266,7 +271,7 @@ describe("seabed", () => {
 describe("island mesh", () => {
   test("is deterministic, chunked, finite and within the triangle budget", () => {
     for (const seed of [42, 95028]) {
-      const arch = makeArchipelago(seed)
+      const arch = archipelagoFor(seed)
       const a = buildIslandMesh(arch)
       const b = buildIslandMesh(makeArchipelago(seed))
       expect(a.length).toBe(b.length)
@@ -296,7 +301,7 @@ describe("island mesh", () => {
   })
 
   test("instance lists match the merged mesh", () => {
-    const arch = makeArchipelago(42)
+    const arch = archipelagoFor(42)
     const props = buildIslandProps(arch)
     const terrain = countTriangles(buildIslandMesh(arch, { props: false }))
     let propTris = 0
@@ -311,7 +316,7 @@ describe("island mesh", () => {
   })
 
   test("props stand on the ground", () => {
-    const arch = makeArchipelago(7)
+    const arch = archipelagoFor(7)
     const props = buildIslandProps(arch)
     props.instances.forEach((list, k) => {
       const name = props.protos[k]!.name

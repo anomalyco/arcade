@@ -19,7 +19,7 @@ import {
 } from "../shared/crew"
 import { fleetSpawn } from "../shared/spawn"
 import { kick, promote, setLock } from "../shared/squad"
-import { type Archipelago, makeArchipelago } from "../shared/islands"
+import { type Archipelago, archipelagoFor } from "../shared/islands"
 import { Objective, type ObjectiveShip, packObjective, rulesOf } from "../shared/objective"
 import { CombatWorld, type CombatEvent, type GroundShip } from "../shared/combat"
 import { BOW_Z, DECK_X0, DECK_X1, ISLAND, STERN_Z } from "../shared/carrier-spec"
@@ -1084,7 +1084,7 @@ export class RoomCore {
       this.sea = this.weatherSea.sea
       this.roomWeather = new RoomWeather(world.seed)
       this.roomTime = new RoomTime(world.seed)
-      this.arch = makeArchipelago(world.seed)
+      this.arch = archipelagoFor(world.seed)
       this.objective = new Objective(this.arch, (now - world.epoch) / 1000)
       const goal = this.arch.islands[0]
       this.heading = goal ? headingTo(0, 0, goal.x, goal.z) : 0

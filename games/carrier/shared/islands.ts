@@ -1625,6 +1625,24 @@ export const MAX_ISLANDS = 36
 /** Coast-to-coast gaps between neighbours in a group (metres); skewed toward the low end. */
 const GAP: [number, number] = [300, 1200]
 
+const archipelagos = new Map<number, Archipelago>()
+const ARCHIPELAGO_CACHE = 6
+
+/**
+ * `makeArchipelago(seed)`, shared between callers: rooms and tests that ask for the same seed get the same instance
+ * (and its terrain index) while it stays among the last `ARCHIPELAGO_CACHE` seeds used. Treat the result as read-only.
+ */
+export function archipelagoFor(seed: number): Archipelago {
+  let arch = archipelagos.get(seed)
+  if (arch) archipelagos.delete(seed)
+  else {
+    arch = makeArchipelago(seed)
+    if (archipelagos.size >= ARCHIPELAGO_CACHE) archipelagos.delete(archipelagos.keys().next().value!)
+  }
+  archipelagos.set(seed, arch)
+  return arch
+}
+
 /**
  * Islands come in groups. Group 0 surrounds the centrepiece (2.3-3.3 km north of the spawn) and spills toward the
  * spawn, so the default view looks over cays and stacks at the big island, its neighbour, an atoll and a cliff island
@@ -1661,9 +1679,10 @@ export function makeArchipelago(seed: number): Archipelago {
     let { radius, peak } = s
     const islandSeed = rng.seed()
     for (let shrink = 0; shrink < 5; shrink++) {
+      // The island's footprint at the origin: the same for every attempt at this size.
+      const fp0 = footprint({ x: 0, z: 0, radius: Math.round(radius), peak: Math.round(peak * 10) / 10, kind: s.kind, seed: islandSeed }, wind)
       for (let attempt = 0; attempt < 160; attempt++) {
         const island: Island = { x: 0, z: 0, radius: Math.round(radius), peak: Math.round(peak * 10) / 10, kind: s.kind, seed: islandSeed }
-        const fp0 = footprint(island, wind)
         let x: number
         let z: number
         const mine = members[group]!

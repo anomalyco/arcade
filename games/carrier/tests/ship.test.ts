@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { DRAFT } from "../shared/carrier-spec"
-import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { archipelagoFor, terrainHeight } from "../shared/islands"
 import { type Sea, makeSea, seaHeight } from "../shared/sea"
 import { HULL_POINTS, KNOT, SHIP, type Ship, extrapolatePose, headingTo, makeShip, poseOf, seaStorm, shipFloat, shipStep } from "../shared/ship"
 import { WEATHER_PRESETS, type WeatherKind, makeWeatherSea } from "../shared/weather"
@@ -280,7 +280,7 @@ describe("ship", () => {
   })
 
   test("runs aground on an island instead of passing through it", () => {
-    const arch = makeArchipelago(7)
+    const arch = archipelagoFor(7)
     const isl = arch.islands[0]!
     const sea = calm()
     const d = Math.hypot(isl.x, isl.z)
