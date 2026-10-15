@@ -86,9 +86,10 @@ export class CharacterHud {
     }
   }
 
-  /** Shows a callout on an actor, unless log mode or the style's quiet rule drops it. */
+  /** Shows a callout on an actor, unless log mode, the noise setting or the style's quiet rule drops it. */
   callout(actorId: string, text: string, kind: CalloutKind, options?: number | CalloutOptions): void {
     if (this.logMode) return
+    if (kind === "noise" && !this.settings.noiseCallouts) return
     if (this.style.quiet && kind === "info") return
     this.layer.callout(actorId, text, kind, options)
   }

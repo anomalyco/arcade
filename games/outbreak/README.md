@@ -10,7 +10,8 @@ secondary action shown simultaneously in the floating object prompt (open/close 
 (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
 Action feedback appears under the survivor (`src/hud/`): reload, search and barricade show a progress ring, loot
-pops float out, and warnings, damage and loud noises get their own colours. Stamina, reload, health and battery are
+pops float out, and warnings and damage get their own colours (noise tags such as "Noise 32 m" are an off-by-default
+Lab option). Stamina, reload, health and battery are
 small rings beside the survivor that appear only while they matter. Both move to the other side when you aim into
 them, and co-op teammates get the same at a smaller size. The hotbar sits at the bottom centre and a one-line time
 and ammo summary sits top left. The Lab's HUD group picks one of five HUD styles (Today,
