@@ -1,4 +1,6 @@
 import { LabPanel, type LabSettings } from "../lab-panel"
+import { isTunable } from "../lab-tuning"
+import { keyLabelSetting } from "../client/controls"
 import { Particles } from "../fx/particles"
 import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
@@ -84,6 +86,8 @@ export async function lab(options:LabOptions) {
         </div>
       </header>
       <aside class="lab-outliner" aria-label="Outliner">
+        <nav class="lab-stations" data-station-list aria-label="Stations" hidden></nav>
+        <div class="lab-station-slot" data-station-slot="left" hidden></div>
         <div class="lab-outliner-tree" data-outliner-mount></div>
         <div class="lab-world" aria-label="World">
           <div class="lab-panel-head lab-world-head"><span class="lab-panel-title">World</span></div>
@@ -105,8 +109,10 @@ export async function lab(options:LabOptions) {
           <div class="lab-hud-toast" data-hud-toast hidden role="status" aria-live="polite"></div>
         </div>
       </main>
+      <section class="lab-station-slot lab-station-dock" data-station-slot="dock" aria-label="Station dock" hidden></section>
       <section class="lab-library" aria-label="Library" data-library-mount></section>
       <aside class="lab-inspector" aria-label="Details">
+        <div class="lab-station-slot" data-station-slot="right" hidden></div>
         <div class="lab-panel-head"><span class="lab-panel-title">Details</span><span class="lab-fill"></span><span class="lab-inspector-sub">Effects</span></div>
         <div class="lab-details-head">
           <span class="lab-details-icon" data-details-icon aria-hidden="true">✺</span>
@@ -160,6 +166,7 @@ export async function lab(options:LabOptions) {
   const particles=new Particles(),volume=new SmokeVolumes(),trail=new SmokeTrail()
   const input=new LabInput(canvas)
   let panel:LabPanel|undefined,active:LabSection,workbench:ReturnType<typeof createWorkbench>|undefined
+  const keyLabels=keyLabelSetting("Controls")
   let spawn:ReturnType<typeof createSpawn>|undefined
   const isPlaygroundSection=(id:string)=>id==="spawn"||id==="effects"||id==="lighting"||id==="physics"
   const context:LabContext={
@@ -219,6 +226,7 @@ export async function lab(options:LabOptions) {
     spawn.spawnItems("one",{x:-13,y:0,z:-7,yaw:0})
     spawn.section.selectObject?.("character:active")
   }
+  const sectionListeners=new Set<(id:string)=>void>()
   function select(id:string) {
     const next=sections.find(s=>s.id===id)
     if(!next)throw new Error(`Unknown Lab section: ${id}`)
@@ -238,9 +246,11 @@ export async function lab(options:LabOptions) {
     const inPlayground=Boolean(spawn?.hasActiveScene()&&isPlaygroundSection(id))
     stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:id==="looks"||id==="weather"?5:0
     panel?.clearControls();panel?.addControls(active.settings,active.controls,workbench?.sectionDefaults(id))
+    panel?.addControls(keyLabels.settings,[keyLabels.control],keyLabels.defaults)
     if(!keepPlayground||id==="effects")active.enter?.()
     else if(id==="spawn")spawn?.section.enter?.()
     workbench?.onSectionChanged()
+    for(const listener of sectionListeners)listener(id)
   }
   panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(),{
     open:true,
@@ -248,6 +258,8 @@ export async function lab(options:LabOptions) {
     shortcut:true,
     capture:"focus",
     layout:"inspector",
+    variants:()=>`arcade-lab-${settings.section}`,
+    history:{undo:()=>workbench?.undo(),redo:()=>workbench?.redo()},
     onTransaction:(label,before)=>workbench?.onPanelTransaction(label,before as LabSettings),
     onFocusChange:focused=>workbench?.onPanelFocusChange(focused),
     onPin:(control,group)=>workbench?.togglePin(control,group),
@@ -276,14 +288,18 @@ export async function lab(options:LabOptions) {
       return prefix||raw
     }
   }
+  // The status bar shows telemetry; the panel's own header is hidden in this layout, so only changes are written.
+  const setHeader=(text:string)=>{
+    if(panel!.header.textContent!==text)panel!.header.textContent=text
+    workbench?.setTelemetry(text)
+  }
   const render=async(measure=false)=>{
     const width=Math.max(1,Math.round(viewportHost.clientWidth||innerWidth))
     const height=Math.max(1,Math.round(viewportHost.clientHeight||innerHeight))
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}
     if(workbench?.isVariationGridMultiView()){
       const ms=await workbench.renderVariationGrid(width,height,settings.debug)
-      panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGrid ${workbench.variationGridCostMs?.toFixed(2)??"—"} ms`
-      workbench.setTelemetry(panel!.header.textContent)
+      setHeader(`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGrid ${workbench.variationGridCostMs?.toFixed(2)??"—"} ms`)
       return ms
     }
     stage.resize(width,height)
@@ -299,8 +315,7 @@ export async function lab(options:LabOptions) {
       ?(pass:GPURenderPassEncoder)=>{spawn!.section.draw?.(pass);active.draw?.(pass)}
       :active.draw
     const ms=await stage.render(particles,volume,trail,settings.debug,measure,drawPass)
-    panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGPU ${stage.gpuMs?.toFixed(2)??"—"} ms${stage.gpuMs===null?" (unavailable)":""}`
-    workbench?.setTelemetry(panel!.header.textContent)
+    setHeader(`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGPU ${stage.gpuMs?.toFixed(2)??"—"} ms${stage.gpuMs===null?" (unavailable)":""}`)
     return ms
   }
   const advance=(dt:number)=>{
@@ -313,6 +328,18 @@ export async function lab(options:LabOptions) {
     workbench?.onTick(dt)
   }
 
+  let suspended=false
+  const addSections=(factories:readonly SectionFactory[])=>{
+    const added:LabSection[]=[]
+    for(const create of factories){
+      const section=create(context)
+      if(ids.has(section.id))continue
+      ids.add(section.id);sections.push(section);sectionSelect.add(new Option(section.label,section.id))
+      workbench!.addSection(section)
+      added.push(section)
+    }
+    return added
+  }
   workbench=createWorkbench({
     root:workbenchRoot,
     canvas,
@@ -383,6 +410,36 @@ export async function lab(options:LabOptions) {
     render,
     advance,
     attachPhysics:physics.attach,
+    /** Sections a host loads after start-up; ids already present are skipped. */
+    addSections,
+    viewport:viewportHost,
+    canvas,
+    /** The Details panel: knobs over the active section's settings; `panel.mountView` adds cards for station widgets. */
+    panel,
+    /** Called after every section change, with the new section's id. */
+    onSection:(listener:(id:string)=>void)=>{sectionListeners.add(listener);return()=>sectionListeners.delete(listener)},
+    /** A section's Details groups in order, with how many tuning sliders each has (seeds and pickers aside). */
+    groups:(id:string)=>{
+      const section=sections.find(s=>s.id===id)
+      const out=new Map<string,number>()
+      for(const c of section?.controls??[]){
+        const g=c.group??"Controls"
+        out.set(g,(out.get(g)??0)+(section&&isTunable(c,section.settings)&&"min" in c?1:0))
+      }
+      return [...out].map(([name,tunable])=>({name,tunable}))
+    },
+    /** Where stations put their list and widgets. */
+    slots:{
+      root:workbenchRoot,
+      list:workbenchRoot.querySelector<HTMLElement>("[data-station-list]")!,
+      left:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="left"]')!,
+      right:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="right"]')!,
+      dock:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="dock"]')!,
+    },
+    /** The workbench chrome (Backquote): top bar, Outliner, Library, Details and status bar. */
+    chrome:{visible:()=>panel!.visible,set:(visible:boolean)=>{if(panel!.visible!==visible)panel!.toggle()}},
+    /** Stops simulating and drawing while something else owns the viewport (an embedded page). */
+    suspend:(value:boolean)=>{suspended=value},
     looks,
     weather,
     spawn:spawn?{inspect:spawn.inspect}:undefined,
@@ -393,6 +450,7 @@ export async function lab(options:LabOptions) {
       importPreset:(json:string)=>workbench!.applyPresetJson(json),
       setMode:(m:"edit"|"play")=>workbench!.setPlayMode(m),
       getMode:()=>workbench!.mode,
+      gridOpen:()=>workbench!.variationGridOpen,
       getEjected:()=>workbench!.ejected,
       toggleEject:()=>workbench!.toggleEject(),
       frame:()=>workbench!.frameActiveTarget(),
@@ -401,6 +459,8 @@ export async function lab(options:LabOptions) {
       invoke:(id:string,args?:Record<string,unknown>)=>workbench!.invoke(id,args),
       radial:workbench!.radial,
       getSelectedIds:()=>workbench!.getSelectedIds(),
+      onDigit:(handler:(n:number,shift:boolean)=>boolean)=>workbench!.onDigit(handler),
+      libraryOpen:()=>workbench!.library.open,
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
       transform:workbench!.transform,
       compare:workbench!.compare,
@@ -413,7 +473,7 @@ export async function lab(options:LabOptions) {
   const tick=(now:number)=>{
     const dt=last?Math.max(0,Math.min(0.033,(now-last)/1000)):0;last=now
     requestAnimationFrame(tick)
-    if(!bench&&!document.hidden){advance(dt);void render()}
+    if(!bench&&!document.hidden&&!suspended){advance(dt);void render()}
   }
   await render()
   if(bench)Object.assign(window,{lab:api,fx:{adapter:adapter.info,...effects,particles,volume,trail,stage,render,debug:(n:number)=>{settings.debug=n;syncDebugOptions(settings.section);panel!.sync()}}})

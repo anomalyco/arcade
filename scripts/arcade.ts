@@ -16,6 +16,7 @@
 //   bun run arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
 //   bun run arcade tour <file.json|name> | tour --json '[...]' [--multi-tab] [--open pro|local|none] [--base-url <url>]
 //   bun run arcade tour --add-step <name|file> --title "<title>" [--kind page|scene] [--url <url>] [--body <text>] [--markdown <md>] [--images <files>]
+//   bun run arcade station <id> | station list [--json]
 //   bun run arcade screenshot [--out <file.png>] [--max-size <px>|--downscale <px>|--full]
 //   bun run arcade state [--json]
 
@@ -238,6 +239,22 @@ async function invokeRemote(
   }
 }
 
+/** Station ids and titles from the Lab's station registry files, so `station list` works with no page open. */
+function stationFiles(): { id: string; title: string; board: string | null }[] {
+  const dir = join(repoRoot, "games/lab/src/stations")
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter(f => f.endsWith(".ts") && f !== "index.ts" && f !== "define.ts")
+    .map(f => {
+      const text = readFileSync(join(dir, f), "utf8")
+      const pick = (key: string) => text.match(new RegExp(`\\n  ${key}: "([^"]+)"`))?.[1]
+      const order = Number(text.match(/\n  order: (\d+)/)?.[1] ?? 999)
+      return { id: pick("id") ?? f.replace(/\.ts$/, ""), title: pick("title") ?? f, board: text.match(/feature: "([A-Z]+-\d+)"/)?.[1] ?? null, order }
+    })
+    .sort((a, b) => a.order - b.order)
+    .map(({ id, title, board }) => ({ id, title, board }))
+}
+
 function parseAutoValue(raw: string): string | number | boolean {
   const trimmed = raw.trim()
   if (trimmed === "true") return true
@@ -273,6 +290,7 @@ Mutating commands (show unobtrusive page indicator, respect live user input, rec
   arcade transport play|pause|step [n]|speed <mult>|retrigger [--seed <n>]
   arcade possess [id|name]                     Possess character / enter Play mode (mode.play)
   arcade release                               Exit Play mode & release held input (mode.play)
+  arcade station <id> | station list           Open a station in the Lab tab (navigates to /arcade/lab/?station=<id> if needed)
   arcade grid [preset] [--json '[...]']        Open multi-tile Variation Grid (looks, explosions, smoke, materials, foliage, lighting)
   arcade grid focus <1..9|0> | grid close      Focus a Variation Grid tile full-size or close the grid
   arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
@@ -738,6 +756,31 @@ async function main() {
       const res = await invokeRemote(target, flags, "mode.play", { mode: "edit" })
       if (flags.json) console.log(JSON.stringify(res, null, 2))
       else console.log(`Released character -> mode=${res.result.mode}`)
+      return
+    }
+
+    if (sub === "station" || sub === "stations") {
+      const id = (sub === "stations" ? "list" : args[0] ?? "list").trim().toLowerCase()
+      if (id === "list") {
+        const stations = stationFiles()
+        if (flags.json) console.log(JSON.stringify({ ok: true, stations }, null, 2))
+        else for (const s of stations) console.log(`  ${s.id.padEnd(14)} ${s.title}${s.board ? `  (${s.board})` : ""}`)
+        return
+      }
+      const known = stationFiles()
+      if (known.length && !known.some(s => s.id === id)) {
+        throw new CliError(4, "invalid_args", `Unknown station "${id}". Stations: ${known.map(s => s.id).join(", ")}.`)
+      }
+      let res
+      try {
+        res = await invokeRemote(target, flags, "station.open", { id })
+      } catch (err) {
+        if (!(err instanceof CliError) || err.code !== "unknown_command") throw err
+        // The active page isn't the Lab: navigate it there; the Lab opens the station on load.
+        res = await invokeRemote(target, flags, "nav.open", { target: `/arcade/lab/?station=${encodeURIComponent(id)}` })
+      }
+      if (flags.json) console.log(JSON.stringify(res, null, 2))
+      else console.log(`Station ${id} on ${res.page.id} (${res.page.url})`)
       return
     }
 

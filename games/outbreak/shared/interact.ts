@@ -11,8 +11,22 @@ export const PEEK_CONE = 165
 export const PEEK_AWARENESS = 4.2
 
 export type InteractableKind = "door" | "window" | "fence" | (string & {})
-export type InteractActionId = "toggle" | "lock" | "peek" | "climb" | "search" | "barricade"
-export type InteractAction = { id: InteractActionId; label: string; hold?: boolean }
+export type InteractActionId =
+  | "toggle"
+  | "lock"
+  | "peek"
+  | "climb"
+  | "search"
+  | "smash"
+  | "take"
+  | "deposit"
+  | "store"
+  | "unlock"
+  | "pry"
+  | "locked"
+  | "barricade"
+/** `modifier: "shift"` marks an alternative taken with Shift+E (smash a container instead of searching it). */
+export type InteractAction = { id: InteractActionId; label: string; hold?: boolean; modifier?: "shift" }
 
 export type VaultState = {
   windowId: string
@@ -91,10 +105,14 @@ export type RawInteractCandidate = {
   rect: Rect
   worldX: number
   worldY: number
+  /** What the target is, for prompts and strips ("Dresser", "Workbench · tier 2"). */
+  label?: string
   buildingId?: string
   buildingIndex?: number
   primary: InteractAction
   secondary?: InteractAction
+  /** Shift+E alternative. */
+  alt?: InteractAction
   actions: InteractAction[]
 }
 
@@ -112,6 +130,7 @@ export type InteractOutcome = {
   action?: InteractActionId
   topologyChanged?: boolean
   noise?: number
+  noiseKind?: string
 }
 
 export type InteractionHandler = {
@@ -150,7 +169,19 @@ function applyVaultStaminaCost(actor: InteractActorState, cost = VAULT_STAMINA_C
   }
 }
 
-function doorActions(door: Door): { primary: InteractAction; secondary?: InteractAction; actions: InteractAction[] } {
+/** How an actor can open a keyed door (locked from the start, not by a survivor). */
+export type DoorKeys = {
+  access(actor: InteractActorState): { key: boolean; pry: boolean }
+  open(actor: InteractActorState, door: Door, how: "unlock" | "pry"): { handled: boolean; noise?: number }
+}
+
+function doorActions(door: Door, actor?: InteractActorState, keys?: DoorKeys): { primary: InteractAction; secondary?: InteractAction; actions: InteractAction[] } {
+  if (door.locked && door.keyed) {
+    const can = actor && keys ? keys.access(actor) : { key: false, pry: false }
+    const primary: InteractAction = can.key ? { id: "unlock", label: "Unlock with key" } : can.pry ? { id: "pry", label: "Pry open" } : { id: "locked", label: "Locked" }
+    const secondary: InteractAction | undefined = can.key && can.pry ? { id: "pry", label: "Pry open", hold: true } : undefined
+    return { primary, secondary, actions: secondary ? [primary, secondary] : [primary] }
+  }
   if (door.locked) {
     const unlock: InteractAction = { id: "lock", label: "Unlock" }
     return { primary: unlock, actions: [unlock] }
@@ -235,13 +266,17 @@ function computeVaultDestination(
   }
 }
 
-export const doorInteractionHandler: InteractionHandler = {
+export const doorInteractionHandler: InteractionHandler = createDoorHandler()
+
+/** Doors: open, close, lock; keyed doors open with a key or a crowbar when `keys` is given. */
+export function createDoorHandler(keys?: DoorKeys): InteractionHandler {
+  return {
   kind: "door",
   candidates(town, actor) {
     const out: RawInteractCandidate[] = []
     for (const door of town.doors) {
       if (distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) continue
-      const { primary, secondary, actions } = doorActions(door)
+      const { primary, secondary, actions } = doorActions(door, actor, keys)
       out.push({
         kind: "door",
         id: door.id,
@@ -258,6 +293,12 @@ export const doorInteractionHandler: InteractionHandler = {
   execute(town, actor, targetId, action) {
     const door = town.doors.find((d) => d.id === targetId)
     if (!door || distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) return { handled: false }
+    if (door.keyed && door.locked) {
+      if (!keys || (action !== "unlock" && action !== "pry")) return { handled: false, kind: "door", targetId: door.id, action }
+      const res = keys.open(actor, door, action)
+      if (res.noise) actor.noise = Math.max(actor.noise, res.noise)
+      return { handled: res.handled, kind: "door", targetId: door.id, action, topologyChanged: action === "unlock" && res.handled, noise: res.noise }
+    }
     if (action === "lock") {
       if (door.open) {
         if (distToRect(actor.x, actor.y, door.rect) < 0.35) return { handled: false }
@@ -282,6 +323,7 @@ export const doorInteractionHandler: InteractionHandler = {
     }
     return { handled: false }
   },
+  }
 }
 
 export const windowInteractionHandler: InteractionHandler = {

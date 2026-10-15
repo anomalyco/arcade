@@ -138,7 +138,10 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 44
+/** 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, then streaming window uniforms (36). */
+export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
+export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 112
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -168,6 +171,9 @@ export type OutbreakLightingFrameState = {
     rippleIntensity: number
     snowAmount: number
   }
+  windowOrigin?: readonly [number, number]
+  isStreamWindow?: boolean
+  windowBuildings?: readonly Building[]
 }
 
 /**
@@ -247,6 +253,30 @@ export function packOutbreakLightingUniforms(
   out[41] = s.fogEdgeSoftness ?? 0.78
   out[42] = s.fogMemoryDim ?? 0.42
   out[43] = 0
+  // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  const winOx = state.windowOrigin?.[0] ?? 0
+  const winOz = state.windowOrigin?.[1] ?? 0
+  const blds = state.windowBuildings ?? []
+  const bldCount = Math.min(8, blds.length)
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET] = winOx
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 1] = winOz
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 2] = state.isStreamWindow ? 1 : 0
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 3] = bldCount
+  for (let i = 0; i < 8; i++) {
+    const base = OUTBREAK_WINDOW_UNIFORM_OFFSET + 4 + i * 4
+    const b = blds[i]
+    if (b) {
+      out[base] = b.rect[0]
+      out[base + 1] = b.rect[1]
+      out[base + 2] = b.rect[2]
+      out[base + 3] = b.rect[3]
+    } else {
+      out[base] = -99999
+      out[base + 1] = -99999
+      out[base + 2] = -99998
+      out[base + 3] = -99998
+    }
+  }
   return out
 }
 
@@ -739,6 +769,10 @@ struct OutbreakLightingUniforms {
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, reserved
+  veg: FoliageWindConfig,
+  vegActors: FoliageActors,
+  win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  bldRects: array<vec4f, 8>,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 var<private> outbreakFlashMask: f32;
@@ -1028,13 +1062,19 @@ fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional:
   let contact = exp(-dot(rel, rel) / 0.035);
   let away = feet - lamp.xz;
   let dh = length(away);
-  let reach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
-  let dir = away / max(dh, 1e-3);
+  let sunAmt = clamp(F.monitorBounds.w, 0.0, 1.0);
+  let lampDir = away / max(dh, 1e-3);
+  let sunHoriz = -F.monitorBounds.xz;
+  let sunDir = sunHoriz / max(length(sunHoriz), 1e-3);
+  let dir = normalize(mix(lampDir, sunDir, sunAmt));
+  let lampReach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
+  let sunReach = clamp(actorH * length(sunHoriz) / max(F.monitorBounds.y, 0.22), 0.55, 2.85);
+  let reach = mix(lampReach, sunReach, sunAmt);
   let t = clamp(dot(rel, dir) / reach, 0.0, 1.0);
   let dist = length(rel - dir * (t * reach));
   let radius = 0.17 + 0.22 * t;
-  let lampNear = (1.0 - smoothstep(8.0, 16.0, dh)) * directional;
-  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * lampNear;
+  let casterStrength = mix(1.0 - smoothstep(8.0, 16.0, dh), 0.72, sunAmt) * directional;
+  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * casterStrength;
   return max(shadow * 0.72, contact * 0.48);
 }
 

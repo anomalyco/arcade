@@ -101,7 +101,7 @@ const ca: TurretAngles = { yaw: 0, pitch: 0 }
 
 /**
  * The ship's guns from the gunner's seat, and everyone's turrets. The host (the game, or gunnery.html) feeds it:
- * - `setPlayer(id, team)` once known; `man(ship, mount)` when this player takes a gun from SHIP OPERATIONS, `unman()`
+ * - `setPlayer(id, team)` once known; `man(ship, mount)` when this player takes a gun from DEPLOY, `unman()`
  *   when they leave it;
  * - every frame while manning: `update(dt, t, aspect, ship)` (aims, slews, fires, places `cam`), then for everyone
  *   `frame(v)` (the world, remote turrets, effects, HUD, sound);
@@ -185,7 +185,7 @@ export class Gunnery {
     this.team = team
   }
 
-  /** This player takes mount `mount` of ship `ship` (from SHIP OPERATIONS). */
+  /** This player takes mount `mount` of ship `ship` (from DEPLOY). */
   man(ship: number, mount: number): void {
     if (this.seat && this.seat.ship === ship && this.seat.mount === mount) return
     this.seat = { ship, mount }
@@ -527,10 +527,17 @@ export class Gunnery {
     } else {
       fx.glowAt(l.x, l.y, l.z, 6, 12, 7, 2.5, 1)
       fx.beam(l.x, l.y, l.z, l.x + dx * 14, l.y + dy * 14, l.z + dz * 14, 2.6, 0.6, 10, 5, 1.6, 1)
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2
+      // Your own shot (dist 0): a thin, quick wisp well clear of the sight, so the splash stays visible.
+      const own = dist === 0
+      const n = own ? 4 : 12
+      const off = own ? 16 : 4
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2
         const k = 10 + Math.random() * 25
-        fx.spawn(1, l.x + dx * 4, l.y + dy * 4, l.z + dz * 4, l.x + dx * 4, l.y + dy * 4, l.z + dz * 4, dx * k + Math.cos(a) * 6, dy * k + Math.sin(a) * 6 + 1, dz * k + Math.sin(a) * 6, 2.5 + Math.random() * 2, 2, 10 + Math.random() * 5, 0.7, 0.69, 0.66, 0.55, 2.2, 0.3)
+        const ox = l.x + dx * off
+        const oy = l.y + dy * off
+        const oz = l.z + dz * off
+        fx.spawn(1, ox, oy, oz, ox, oy, oz, dx * k + Math.cos(a) * 6, dy * k + Math.sin(a) * 6 + 1, dz * k + Math.sin(a) * 6, own ? 0.8 : 2.5 + Math.random() * 2, 2, own ? 5 : 10 + Math.random() * 5, 0.7, 0.69, 0.66, own ? 0.18 : 0.55, 2.2, 0.3)
       }
       this.audio.gunShot(dist)
     }

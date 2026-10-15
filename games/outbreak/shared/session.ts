@@ -1,12 +1,14 @@
 import type { AIAgent, AIConfig, NoiseEvent, OutbreakAISubsystem } from "./ai"
-import type { CombatShotEvent, LootContainer, OutbreakCombatSubsystem, SurvivorCombatState } from "./combat"
+import type { CombatShotEvent, OutbreakCombatSubsystem, SurvivorCombatState } from "./combat"
 import { CoopSim, type SurvivorSlot } from "./coop-sim"
 import type { FlashlightState, FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
-import type { InventoryState } from "./inventory"
+import { inventoryView, type InventoryState } from "./inventory"
+import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning } from "./progression"
 import type { Town } from "./map"
 import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
+import type { StreamingWorld, WorldMode } from "./world"
 
 export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & {
   aiWalkSpeed?: number
@@ -30,6 +32,14 @@ export type Command = {
   melee?: boolean
   barricade?: boolean
   interactAction?: InteractActionId
+  /** G tap: drop the held item. */
+  drop?: boolean
+  /** G hold: leave a bundle of ammo and planks. */
+  bundle?: boolean
+  /** Q tap: mark what you are looking at for the squad. */
+  ping?: boolean
+  /** A digit while a strip is open (container, stash, bench, field craft or pack). */
+  pick?: { mode: PickMode; index: number }
 }
 
 export type Survivor = {
@@ -48,11 +58,16 @@ export type Survivor = {
 export type SessionView = {
   town: Town
   player: Survivor
+  /** The local survivor's id in the progression ledger. */
+  actorId: string
   inventory: InventoryState
+  progression: OutbreakProgression
+  /** Feedback for the local survivor since the presentation last drained it. */
+  notices: Notice[]
   zombies: AIAgent[]
   noises: NoiseEvent[]
   shots: CombatShotEvent[]
-  containers: LootContainer[]
+  containers: LootSite[]
   hour: number
   time: number
   revision: number
@@ -74,8 +89,16 @@ export function slotView(sim: CoopSim, slot: () => SurvivorSlot): SessionView {
     get player() {
       return slot().survivor
     },
+    get actorId() {
+      return slot().id
+    },
     get inventory() {
-      return slot().inventory
+      const s = slot()
+      return inventoryView(sim.progression, s.id, s.survivor)
+    },
+    progression: sim.progression,
+    get notices() {
+      return slot().notices
     },
     get zombies() {
       return sim.ai.agents
@@ -84,7 +107,7 @@ export function slotView(sim: CoopSim, slot: () => SurvivorSlot): SessionView {
       return sim.ai.noiseBus.events
     },
     shots: sim.combat.shots,
-    containers: sim.combat.containers,
+    containers: sim.progression.containers,
     get hour() {
       return sim.hour
     },
@@ -117,11 +140,22 @@ export class LocalSession implements Session {
   readonly sim: CoopSim
   readonly slot: SurvivorSlot
   readonly view: SessionView
-  constructor(seed: number, houseSeed = seed, terrain = 0.22, aiConfig?: Partial<AIConfig>) {
-    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig)
+  constructor(
+    seed: number,
+    houseSeed = seed,
+    terrain = 0.22,
+    aiConfig?: Partial<AIConfig>,
+    progressionTuningOrWorldMode?: Partial<ProgressionTuning> | WorldMode,
+    worldMode: WorldMode = "streaming",
+  ) {
+    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig, progressionTuningOrWorldMode, worldMode)
     const slot = this.sim.addSurvivor("player", 0)
     this.slot = slot
     this.view = slotView(this.sim, () => slot)
+  }
+
+  get world(): StreamingWorld {
+    return this.sim.worldStream
   }
 
   get ai(): OutbreakAISubsystem {

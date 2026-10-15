@@ -12,7 +12,7 @@ function crewWithPilot(): { crew: Crew; id: number } {
   const crew = makeCrew(7)
   joinCrew(crew, 1, "ada", 0)
   joinCrew(crew, 2, "bo", 0) // joins ada's ship as a pilot on deck
-  runOp(crew, 2, "hornet", 0) // and launches from SHIP OPERATIONS
+  runOp(crew, 2, "hornet", 0) // and launches from DEPLOY
   return { crew, id: 2 }
 }
 

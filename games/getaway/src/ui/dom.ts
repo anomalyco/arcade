@@ -17,6 +17,12 @@ export function text(el: HTMLElement | SVGElement, s: string) {
   el.textContent = s
 }
 
+export function html(el: HTMLElement, s: string) {
+  if (textCache.get(el) === s) return
+  textCache.set(el, s)
+  el.innerHTML = s
+}
+
 export function style(el: HTMLElement | SVGElement, prop: string, v: string) {
   let m = styleCache.get(el)
   if (!m) styleCache.set(el, (m = new Map()))

@@ -124,11 +124,16 @@ through `Game.cosmeticSplatter`; a detachment producer can pass its world-space 
 velocity without importing game rules into the effect. An animation-side caller is still pending.
 
 The fixed 120 Hz solver sweeps points against actual static triangles. It stores at most 256 droplets and 256
-deposits, with a default recycling budget of 192 each. Every deposit clips to at most 12 coplanar receiver triangles.
-Grazing impacts stretch along the projected velocity; absorbent surfaces spread less and fade sooner. Glass
-blocks without receiving. The renderer uses one non-additive, depth-tested HDR draw and a preallocated instance
-buffer. Its optional motion-MRT pipeline preserves the velocity attachment. Rebuild the system when static
-receivers change; moving actors and vehicles are not receivers. The current tint is unlit and has no specular lobe.
+deposits, with a default recycling budget of 192 each (`224` for `zombieBlood`). Every deposit clips to at most 12
+coplanar or gently sloped receiver triangles (exact coplanar triangles take priority over underlying sloped terrain).
+Grazing impacts stretch along the projected velocity into asymmetric ballistic fans with seed-varied radial fingers,
+satellite droplets, and vertical gravity wall drips; absorbent surfaces spread less and fade sooner. Glass blocks
+without receiving. The renderer uses one non-additive, depth-tested HDR draw, preserves destination HDR alpha so
+Look/Noir flashlight selective-colour masks remain intact, shades deposits with Beer–Lambert optical depth (coagulated
+dark venous core to saturated arterial rim that darkens with age) and a raised meniscus normal catching wet specular
+glints from the flashlight and nearby lamps, and supports `blood`, `zombieBlood`, `survivorBlood`, `ink`, `slime`,
+`oil` and `potion` presets. Its optional motion-MRT pipeline preserves the velocity attachment. Rebuild the system
+when static receivers change; moving actors and vehicles are not receivers.
 
 `games/blackout/scripts/prove-splatter.ts` records matched captures and paired whole-frame GPU samples against
 the current blood. See `perf/lab-splatter.md` for reproduction, measured costs and limits.

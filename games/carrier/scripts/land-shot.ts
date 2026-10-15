@@ -1,9 +1,9 @@
-// "F LAND" captures and checks on a real GPU. Runs ON hailmary (Mac Studio): Chrome with WebGPU on Metal loads the live
+// "R LAND" captures and checks on a real GPU. Runs ON hailmary (Mac Studio): Chrome with WebGPU on Metal loads the live
 // dev server's game and captures the frame under the DOM (the HUD) as scripts/f35-shot.ts does.
 //
 //   ssh hailmary 'cd /tmp/carrier-land && ~/.bun/bin/bun land-shot.ts --out=/tmp/carrier-land/out'
 //
-// solo (offline, ?seed=7): launch, fly near the carrier (the prompt), press F, the landing frames, then back on deck as
+// solo (offline, ?seed=7): launch, fly near the carrier (the prompt), press R, the landing frames, then back on deck as
 // a pilot with the slot free and the page still running. mp: two pages in a fresh room on one team: A lands on its own
 // carrier (B watches the landing glued to the deck), then on the other friendly carrier and ends up aboard it.
 // launch (--only=launch, into <out>/launch-v2/): the one continuous catapult launch, pinned at 0, 0.5, 1.5, 3 s after
@@ -175,14 +175,14 @@ async function launch(page: Page, name: string): Promise<void> {
   check(await until(page, "f.phase === 'flying'", 15_000), `${name}: launched and flying`)
 }
 
-/** Presses F at the prompt and follows the landing, capturing `prefix`-NN frames; checks it ends back on deck. */
+/** Presses R at the prompt and follows the landing, capturing `prefix`-NN frames; checks it ends back on deck. */
 async function landNow(page: Page, prefix: string, name: string): Promise<void> {
-  check(await until(page, "f.landPrompt", 3000), `${name}: F LAND prompt shows`)
+  check(await until(page, "f.landPrompt", 3000), `${name}: R LAND prompt shows`)
   await shot(page, `${prefix}-1-prompt`)
   const flares = await js<number>(page, "return c.flight.weapons.loadout.flares")
-  await page.keyboard.press("f")
-  check(await until(page, "f.phase === 'landing'", 2000), `${name}: F starts the landing`)
-  check((await js<number>(page, "return c.flight.weapons.loadout.flares")) === flares, `${name}: F dropped no flares at the prompt`)
+  await page.keyboard.press("KeyR")
+  check(await until(page, "f.phase === 'landing'", 2000), `${name}: R starts the landing`)
+  check((await js<number>(page, "return c.flight.weapons.loadout.flares")) === flares, `${name}: R dropped no flares`)
   await page.waitForTimeout(1500)
   await shot(page, `${prefix}-2-approach`)
   await until(page, "f.landing && f.landing.seg === f.landing.segs.length - 1", 20_000)
@@ -216,8 +216,8 @@ async function solo(): Promise<void> {
   await launch(page, "solo 2")
   await warpNear(page, 1500, 0, 300)
   await page.waitForTimeout(300)
-  await page.keyboard.press("f")
-  check(await until(page, "f.phase === 'landing'", 2000), "solo head-on: F starts the landing")
+  await page.keyboard.press("KeyR")
+  check(await until(page, "f.phase === 'landing'", 2000), "solo head-on: R starts the landing")
   await page.waitForTimeout(4500)
   await shot(page, "solo-6-head-on-swing")
   check(await until(page, "c.flight.phase === 'idle'", 25_000), "solo head-on: landed")
@@ -240,8 +240,8 @@ async function mp(): Promise<void> {
   // A lands on its own carrier; B watches A's jet on the deck.
   await launch(a, "A")
   await warpNear(a, 1200, Math.PI * 0.75, 300, 0.3)
-  check(await until(a, "f.landPrompt", 3000), "A: F LAND prompt (own carrier)")
-  await a.keyboard.press("f")
+  check(await until(a, "f.landPrompt", 3000), "A: R LAND prompt (own carrier)")
+  await a.keyboard.press("KeyR")
   check(await until(a, "f.phase === 'landing'", 2000), "A: landing on its own carrier")
   check(await until(b, "[...c.flight.remotes.jets.values()].some((j) => j.snaps.length && j.snaps[j.snaps.length - 1][1] === 3)", 8000), "B receives A's landing (ship-relative mode)")
   await until(a, "f.landing && f.landing.seg === f.landing.segs.length - 1", 20_000)
@@ -262,9 +262,9 @@ async function mp(): Promise<void> {
   }
   await launch(a, "A 2")
   await warpNear(a, 900, Math.PI * 0.8, 250, 0.2, other)
-  check(await until(a, "f.landPrompt", 3000), "A: F LAND prompt (other friendly carrier)")
+  check(await until(a, "f.landPrompt", 3000), "A: R LAND prompt (other friendly carrier)")
   await shot(a, "mp-3-a-prompt-other")
-  await a.keyboard.press("f")
+  await a.keyboard.press("KeyR")
   check(await until(a, `f.phase === 'landing' && f.landingShip && f.landingShip.id === ${other}`, 2000), `A: landing on ship ${other}`)
   await page2frames(a)
   check(await until(a, "c.flight.phase === 'idle'", 25_000), "A: flight ended on the other carrier")

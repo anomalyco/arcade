@@ -40,7 +40,7 @@ function nearShip(ship: ShipLike & { t: number }, dist: number, bearing: number,
 
 const carrier = (id: number, team: number, x = 0, z = 0): LandingShip => Object.assign(makeShip(x, z, 0.3, 10), { id, team })
 
-describe("the F LAND prompt", () => {
+describe("the R LAND prompt", () => {
   const own = carrier(1, 0)
   /** A jet at (x, z), its nose `off` degrees (yaw) off the line to the ship. */
   const at = (x: number, z: number, off = 0, y = DECK_Y + 300, speed = 140): Plane => {
@@ -98,7 +98,7 @@ function land(plane: Plane, shipAt: (t: number) => ShipLike & { t: number }, kin
     expect(plane.t).toBeCloseTo(t0 + DT, 9)
     steps++
     const loc = worldToShip(ship, plane.x, plane.y, plane.z)
-    // Never through the hull or the island (after the blend from where F was pressed).
+    // Never through the hull or the island (after the blend from where R was pressed).
     if (l.since > 0.8) {
       const overHull = loc[2] > STERN_Z && loc[2] < BOW_Z && Math.abs(loc[0]) < 38
       if (overHull) expect(loc[1]).toBeGreaterThan(DECK_Y + lv.rest - 0.05)

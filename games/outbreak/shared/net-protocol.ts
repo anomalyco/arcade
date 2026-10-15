@@ -4,7 +4,8 @@ import type { AIAgent, AIState } from "./ai"
 import type { CombatShotEvent } from "./combat"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import type { InteractActionId } from "./interact"
-import type { InventoryState } from "./inventory"
+import type { LedgerDelta } from "@arcade/kit/sim/ledger"
+import type { Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
 
 /** Co-op wire protocol. Text frames are JSON control messages; binary frames are snapshots. */
@@ -70,8 +71,8 @@ export function decodeServerText(raw: string): ServerMsg | null {
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** [mx, my, aim, flags, hotbarSlot (−1 none), hotbarDelta, interactAction code] */
-export type CommandTuple = [number, number, number, number, number?, number?, number?]
+/** [mx, my, aim, flags, hotbarSlot (−1 none), hotbarDelta, interactAction code, pick code (mode·8 + index + 1)] */
+export type CommandTuple = [number, number, number, number, number?, number?, number?, number?]
 
 const FLAG = {
   interact: 1,
@@ -83,8 +84,13 @@ const FLAG = {
   reload: 64,
   melee: 128,
   barricade: 256,
+  drop: 512,
+  bundle: 1024,
+  ping: 2048,
 } as const
-const ACTIONS: readonly (InteractActionId | undefined)[] = [undefined, "toggle", "lock", "peek", "climb", "search", "barricade"]
+const FLAG_MAX = 4095
+const ACTIONS: readonly (InteractActionId | undefined)[] = [undefined, "toggle", "lock", "peek", "climb", "search", "barricade", "smash", "take", "deposit", "store", "unlock", "pry"]
+const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
 
 const q3 = (v: number) => Math.round(v * 1000) / 1000
 
@@ -92,8 +98,10 @@ export function packCommand(c: Command): CommandTuple {
   let flags = 0
   for (const k of Object.keys(FLAG) as (keyof typeof FLAG)[]) if (c[k]) flags |= FLAG[k]
   const t: CommandTuple = [q3(c.mx), q3(c.my), q3(c.aim), flags]
-  const action = c.interactAction ? ACTIONS.indexOf(c.interactAction) : 0
-  if (c.hotbarSlot !== undefined || c.hotbarDelta || action) t.push(c.hotbarSlot ?? -1, c.hotbarDelta ?? 0, action)
+  const action = c.interactAction ? Math.max(0, ACTIONS.indexOf(c.interactAction)) : 0
+  const pick = c.pick ? PICKS.indexOf(c.pick.mode) * 8 + c.pick.index + 1 : 0
+  if (c.hotbarSlot !== undefined || c.hotbarDelta || action || pick) t.push(c.hotbarSlot ?? -1, c.hotbarDelta ?? 0, action)
+  if (pick) t.push(pick)
   return t
 }
 
@@ -102,7 +110,7 @@ const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Nu
 /** Validates a client tuple into a command. Never throws. */
 export function unpackCommand(t: unknown): Command {
   const a = Array.isArray(t) ? t : []
-  const flags = num(a[3], 0, 1023) | 0
+  const flags = num(a[3], 0, FLAG_MAX) | 0
   const c: Command = { mx: num(a[0], -1.5, 1.5), my: num(a[1], -1.5, 1.5), aim: num(a[2], -100, 100), interact: false }
   for (const k of Object.keys(FLAG) as (keyof typeof FLAG)[]) if (flags & FLAG[k]) c[k] = true
   const slot = num(a[4], -1, 9) | 0
@@ -111,10 +119,12 @@ export function unpackCommand(t: unknown): Command {
   if (delta) c.hotbarDelta = delta
   const action = ACTIONS[num(a[6], 0, ACTIONS.length - 1) | 0]
   if (action) c.interactAction = action
+  const pick = num(a[7], 0, PICKS.length * 8) | 0
+  if (pick > 0) c.pick = { mode: PICKS[Math.floor((pick - 1) / 8)]!, index: (pick - 1) % 8 }
   return c
 }
 
-const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade"] as const
+const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade", "drop", "bundle", "ping"] as const
 
 /** Jitter-buffer semantics: movement is held, presses are one-shot edges. */
 export const commandOps: InputOps<Command> = {
@@ -124,13 +134,14 @@ export const commandOps: InputOps<Command> = {
     if (earlier.interactAction && !later.interactAction) out.interactAction = earlier.interactAction
     if (earlier.hotbarSlot !== undefined && later.hotbarSlot === undefined) out.hotbarSlot = earlier.hotbarSlot
     if (earlier.hotbarDelta) out.hotbarDelta = (later.hotbarDelta ?? 0) + earlier.hotbarDelta
+    if (earlier.pick && !later.pick) out.pick = earlier.pick
     return out
   },
   standIn(last) {
     return { mx: last.mx, my: last.my, aim: last.aim, sprint: last.sprint, interactHeld: last.interactHeld, interact: false }
   },
   hasEdges(c) {
-    return EDGE_KEYS.some((k) => c[k]) || c.hotbarSlot !== undefined || Boolean(c.hotbarDelta) || Boolean(c.interactAction)
+    return EDGE_KEYS.some((k) => c[k]) || c.hotbarSlot !== undefined || Boolean(c.hotbarDelta) || Boolean(c.interactAction) || Boolean(c.pick)
   },
 }
 
@@ -179,12 +190,14 @@ export type SharedSnapshot = {
   doors: { open: boolean; locked: boolean }[]
   windows: { open: boolean; openable: boolean }[]
   planks: number[]
-  searched: boolean[]
+  pings: { id: number; by: number; x: number; y: number; label: string; left: number }[]
+  lures: { id: number; x: number; y: number; left: number }[]
   bashes: { portal: number; age: number }[]
   shots: (CombatShotEvent & { shooter: number })[]
 }
 
-export type PersonalSnapshot = { ack: number; survivor: Partial<Survivor>; inventory: InventoryState | null }
+/** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */
+export type PersonalSnapshot = { ack: number; survivor: Partial<Survivor>; ledger: LedgerDelta | null; notices: Notice[] }
 
 const cm = (v: number) => Math.round(v * 100)
 
@@ -224,7 +237,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
       (p.reloadRemaining > 0 ? 8 : 0) |
       (p.exhausted ? 16 : 0)
     const lift = p.vault ? Math.sin(Math.min(1, p.vault.elapsed / Math.max(0.01, p.vault.duration)) * Math.PI) : 0
-    w.u8(slot.index).i16(cm(p.x)).i16(cm(p.y)).u16(packAngle(p.aim)).u8(flags)
+    w.u8(slot.index).i32(cm(p.x)).i32(cm(p.y)).u16(packAngle(p.aim)).u8(flags)
     w.u8(Math.round(Math.max(0, Math.min(1, p.flashlightOutput)) * 255))
     w.u8(Math.round(Math.max(0, Math.min(255, p.health))))
     w.u8(Math.round(Math.max(0, Math.min(1, p.recoil)) * 255))
@@ -237,7 +250,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
     const clamber = a.clamberWindowId ? Math.max(1, Math.round(Math.min(1, a.clamberElapsed / Math.max(0.1, a.clamberDuration)) * 255)) : 0
     w.u16(a.id).u8(STATES.indexOf(a.state) | (custom ? 128 : 0))
     if (custom) w.u32(a.seed)
-    w.i16(cm(a.x)).i16(cm(a.y)).u16(packAngle(a.aim))
+    w.i32(cm(a.x)).i32(cm(a.y)).u16(packAngle(a.aim))
     w.u8(Math.round(Math.max(0, Math.min(255, a.hp))))
     w.u8(Math.round(Math.max(0, Math.min(1, a.hitFlash)) * 255))
     w.u8(Math.min(255, Math.round(a.stateTime * 20)))
@@ -250,7 +263,11 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
   const portals = [...town.doors.map((d) => d.id), ...town.windows.map((x) => x.id)]
   w.u16(portals.length)
   for (const id of portals) w.u8(sim.ai.getBarricadePlanks(id))
-  writeBits(w, sim.combat.containers.map((c) => c.searched))
+  const progression = sim.progression
+  w.u8(progression.pings.length)
+  for (const p of progression.pings) w.u16(p.id & 0xffff).u8(p.by).i16(cm(p.x)).i16(cm(p.y)).u8(Math.round(Math.max(0, Math.min(25.5, p.until - sim.time)) * 10)).str(p.label)
+  w.u8(progression.lures.length)
+  for (const l of progression.lures) w.u16(l.id & 0xffff).i16(cm(l.x)).i16(cm(l.y)).u8(Math.round(Math.max(0, Math.min(25.5, l.until - sim.time)) * 10))
   const bashes: [number, number][] = []
   portals.forEach((id, i) => {
     const age = sim.time - (sim.ai.portalStates.get(id)?.lastBashTime ?? -Infinity)
@@ -261,7 +278,7 @@ export function encodeShared(sim: CoopSim, tick: number, shooters: ReadonlyMap<n
   const shots = sim.combat.shots
   w.u8(shots.length)
   for (const s of shots) {
-    w.u32(s.id).f64(s.time).i16(cm(s.fromX)).i16(cm(s.fromY)).i16(cm(s.toX)).i16(cm(s.toY)).u16(packAngle(s.aim))
+    w.u32(s.id).f64(s.time).i32(cm(s.fromX)).i32(cm(s.fromY)).i32(cm(s.toX)).i32(cm(s.toY)).u16(packAngle(s.aim))
     w.u16(s.hitZombieId ?? 0xffff).u8((s.killed ? 1 : 0) | (BONES.indexOf(s.detachBone) << 1)).u32(s.seed).u8(shooters.get(s.id) ?? 0)
   }
   return w.finish()
@@ -276,8 +293,8 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
   const survivors: RemoteSurvivor[] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
     const index = r.u8()
-    const x = r.i16() / 100
-    const y = r.i16() / 100
+    const x = r.i32() / 100
+    const y = r.i32() / 100
     const aim = unpackAngle(r.u16())
     const flags = r.u8()
     survivors.push({
@@ -304,8 +321,8 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
     zombies.push({
       id,
       seed: seed ?? townSeed,
-      x: r.i16() / 100,
-      y: r.i16() / 100,
+      x: r.i32() / 100,
+      y: r.i32() / 100,
       aim: unpackAngle(r.u16()),
       state: STATES[code & 127] ?? "wander",
       hp: r.u8(),
@@ -321,17 +338,20 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
   const windows = Array.from({ length: windowBits.length / 2 }, (_, i) => ({ open: windowBits[i * 2]!, openable: windowBits[i * 2 + 1]! }))
   const planks: number[] = []
   for (let n = r.u16(), i = 0; i < n; i++) planks.push(r.u8())
-  const searched = readBits(r)
+  const pings: SharedSnapshot["pings"] = []
+  for (let n = r.u8(), i = 0; i < n; i++) pings.push({ id: r.u16(), by: r.u8(), x: r.i16() / 100, y: r.i16() / 100, left: r.u8() / 10, label: r.str() })
+  const lures: SharedSnapshot["lures"] = []
+  for (let n = r.u8(), i = 0; i < n; i++) lures.push({ id: r.u16(), x: r.i16() / 100, y: r.i16() / 100, left: r.u8() / 10 })
   const bashes: SharedSnapshot["bashes"] = []
   for (let n = r.u8(), i = 0; i < n; i++) bashes.push({ portal: r.u16(), age: r.u8() / 1000 })
   const shots: SharedSnapshot["shots"] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
     const id = r.u32()
     const t = r.f64()
-    const fromX = r.i16() / 100
-    const fromY = r.i16() / 100
-    const toX = r.i16() / 100
-    const toY = r.i16() / 100
+    const fromX = r.i32() / 100
+    const fromY = r.i32() / 100
+    const toX = r.i32() / 100
+    const toY = r.i32() / 100
     const aim = unpackAngle(r.u16())
     const hit = r.u16()
     const flags = r.u8()
@@ -350,7 +370,7 @@ export function decodeShared(bytes: Uint8Array, townSeed: number): SharedSnapsho
       shooter: r.u8(),
     })
   }
-  return { tick, time, hour, revision, survivors, zombies, doors, windows, planks, searched, bashes, shots }
+  return { tick, time, hour, revision, survivors, zombies, doors, windows, planks, pings, lures, bashes, shots }
 }
 
 const round = (_k: string, v: unknown) =>
@@ -359,12 +379,13 @@ const round = (_k: string, v: unknown) =>
 /** Survivor fields in wire order (both ends run the same shared code: the build handshake guarantees it). */
 const PERSONAL_KEYS = (Object.keys(createSurvivor(0, 0)) as (keyof Survivor)[]).filter((k) => k !== "vx" && k !== "vy")
 
-/** The private part for one player: what to reconcile against, and the inventory when it changed. */
-export function encodePersonal(ack: number, survivor: Survivor, inventoryJson: string | null): Uint8Array {
+/** The private part for one player: what to reconcile against, the ledger delta they can see, and notices. */
+export function encodePersonal(ack: number, survivor: Survivor, ledger: LedgerDelta | null, notices: readonly Notice[] = []): Uint8Array {
   const w = new ByteWriter(1024)
   w.u32(ack < 0 ? 0xffffffff : ack)
   w.str(JSON.stringify(PERSONAL_KEYS.map((k) => survivor[k]), round))
-  w.str(inventoryJson ?? "")
+  w.str(ledger ? JSON.stringify(ledger) : "")
+  w.str(notices.length ? JSON.stringify(notices) : "")
   return w.finish()
 }
 
@@ -377,8 +398,14 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     const v = values[i]
     survivor[k] = v === 1e9 ? Infinity : v === -1e9 ? -Infinity : v
   })
-  const inv = r.str()
-  return { ack: raw === 0xffffffff ? -1 : raw, survivor: survivor as Partial<Survivor>, inventory: inv ? (JSON.parse(inv) as InventoryState) : null }
+  const ledger = r.str()
+  const notices = r.str()
+  return {
+    ack: raw === 0xffffffff ? -1 : raw,
+    survivor: survivor as Partial<Survivor>,
+    ledger: ledger ? (JSON.parse(ledger) as LedgerDelta) : null,
+    notices: notices ? (JSON.parse(notices) as Notice[]) : [],
+  }
 }
 
 export const encodeSnapshot = frame

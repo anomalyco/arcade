@@ -1,6 +1,7 @@
 import type { LabControl, LabSettings } from "../lab-panel"
 
-export type MixCategory = "engine" | "tyre" | "impact" | "ambience" | "spell" | "ui"
+/** Mix buses. `weapon`, `foley` and `voice` carry the shared sound library's guns, movement/handling and creatures. */
+export type MixCategory = "engine" | "tyre" | "impact" | "ambience" | "spell" | "ui" | "weapon" | "foley" | "voice"
 
 export type MaterialTag =
   | "metal"
@@ -33,6 +34,8 @@ export type ListenerState = {
   rightZ?: number
   /** Minimum vertical ear clearance above the ground plane in metres. Defaults to 16. */
   earHeight?: number
+  /** Lateral distance in metres for near-full stereo pan. Defaults to 38 (a street seen from a car camera). */
+  panScale?: number
 }
 
 export type SourcePose = {

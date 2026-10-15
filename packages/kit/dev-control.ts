@@ -2402,6 +2402,12 @@ class PageControlRuntime {
     return out
   }
 
+  /** Runs one of this page's commands from a same-origin embedder (the Lab Overworld's page stations). */
+  async invokeLocal(command: string, args?: Record<string, unknown>) {
+    const out = await this.invokeCommandDirect(this.activeAdapter(), command, args)
+    return out.ok && out.result instanceof Promise ? { ...out, result: await out.result.catch(() => null) } : out
+  }
+
   async goToTourStep(stepNumber: number): Promise<void> {
     const tour = this.studioTour
     if (!tour || stepNumber < 1 || stepNumber > tour.steps.length) return
@@ -3486,6 +3492,8 @@ class PageControlRuntime {
 
   private connect() {
     if (!this.routerConfig) return
+    // A page embedded in a Lab station is driven through its embedder, not as a separate CLI target.
+    try { if (window.frameElement?.closest("[data-station-page]")) return } catch { /* cross-origin parent */ }
     const proto = location.protocol === "https:" ? "wss:" : "ws:"
     const wsUrl = `${proto}//${location.host}${this.routerConfig.controlPath}?token=${encodeURIComponent(this.routerConfig.pageToken)}&pageId=${encodeURIComponent(this.pageId)}`
     try {

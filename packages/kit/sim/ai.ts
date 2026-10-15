@@ -520,6 +520,14 @@ export class SpatialHash {
     this.next = new Int32Array(initialCapacity).fill(-1)
   }
 
+  private wrapX(cx: number): number {
+    return cx >= 0 && cx < this.cols ? cx : ((cx % this.cols) + this.cols) % this.cols
+  }
+
+  private wrapY(cy: number): number {
+    return cy >= 0 && cy < this.rows ? cy : ((cy % this.rows) + this.rows) % this.rows
+  }
+
   rebuild(agents: readonly Pick<AIAgent, "x" | "y" | "state">[]): void {
     this.head.fill(-1)
     if (agents.length > this.next.length) {
@@ -531,8 +539,8 @@ export class SpatialHash {
         this.next[i] = -1
         continue
       }
-      const cx = clamp(Math.floor(a.x / this.cellSize), 0, this.cols - 1)
-      const cy = clamp(Math.floor(a.y / this.cellSize), 0, this.rows - 1)
+      const cx = this.wrapX(Math.floor(a.x / this.cellSize))
+      const cy = this.wrapY(Math.floor(a.y / this.cellSize))
       const cell = cy * this.cols + cx
       this.next[i] = this.head[cell]!
       this.head[cell] = i
@@ -541,13 +549,15 @@ export class SpatialHash {
 
   query(x: number, y: number, radius: number, out: number[]): number[] {
     out.length = 0
-    const cx0 = clamp(Math.floor((x - radius) / this.cellSize), 0, this.cols - 1)
-    const cx1 = clamp(Math.floor((x + radius) / this.cellSize), 0, this.cols - 1)
-    const cy0 = clamp(Math.floor((y - radius) / this.cellSize), 0, this.rows - 1)
-    const cy1 = clamp(Math.floor((y + radius) / this.cellSize), 0, this.rows - 1)
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        for (let idx = this.head[cy * this.cols + cx]!; idx !== -1; idx = this.next[idx]!) {
+    const rawCx0 = Math.floor((x - radius) / this.cellSize)
+    const rawCx1 = Math.floor((x + radius) / this.cellSize)
+    const rawCy0 = Math.floor((y - radius) / this.cellSize)
+    const rawCy1 = Math.floor((y + radius) / this.cellSize)
+    for (let cy = rawCy0; cy <= rawCy1; cy++) {
+      const wy = this.wrapY(cy)
+      for (let cx = rawCx0; cx <= rawCx1; cx++) {
+        const wx = this.wrapX(cx)
+        for (let idx = this.head[wy * this.cols + wx]!; idx !== -1; idx = this.next[idx]!) {
           out.push(idx)
         }
       }
@@ -570,6 +580,8 @@ export class GridNav {
   readonly w: number
   readonly h: number
   readonly grid: Uint8Array
+  /** Optional per-chunk 64×64 walkability tiles keyed by `"cx,cy"` for unbounded streaming worlds. */
+  readonly chunkTiles = new Map<string, Uint8Array>()
   private readonly g: Float32Array
   private readonly came: Int32Array
   private readonly seen: Uint32Array
@@ -629,6 +641,18 @@ export class GridNav {
     }
   }
 
+  private cellCodeAtGrid(gx: number, gy: number): number {
+    if (this.chunkTiles.size > 0) {
+      const cx = gx >> 6
+      const cy = gy >> 6
+      const tile = this.chunkTiles.get(`${cx},${cy}`)
+      if (!tile) return CELL_BLOCKED
+      return tile[((gy & 63) << 6) | (gx & 63)]!
+    }
+    if (gx < 0 || gy < 0 || gx >= this.w || gy >= this.h) return CELL_BLOCKED
+    return this.grid[gy * this.w + gx]!
+  }
+
   private idx(p: Vec): number {
     const cx = clamp(Math.floor(p.x / this.cell), 0, this.w - 1)
     const cy = clamp(Math.floor(p.y / this.cell), 0, this.h - 1)
@@ -640,10 +664,39 @@ export class GridNav {
   }
 
   walkable(p: Vec): boolean {
+    if (this.chunkTiles.size > 0) {
+      return this.cellCodeAtGrid(Math.floor(p.x / this.cell), Math.floor(p.y / this.cell)) !== CELL_BLOCKED
+    }
     return this.grid[this.idx(p)] !== CELL_BLOCKED
   }
 
   nearest(p: Vec): Vec {
+    if (this.chunkTiles.size > 0) {
+      const gx0 = Math.floor(p.x / this.cell)
+      const gy0 = Math.floor(p.y / this.cell)
+      if (this.cellCodeAtGrid(gx0, gy0) !== CELL_BLOCKED) return p
+      let bestX = p.x
+      let bestY = p.y
+      let bd = Infinity
+      for (let ring = 1; ring < 64; ring++) {
+        if (bd < Infinity && (ring - 1) * this.cell > Math.sqrt(bd)) break
+        for (let y = gy0 - ring; y <= gy0 + ring; y++) {
+          const edge = y === gy0 - ring || y === gy0 + ring
+          for (let x = gx0 - ring; x <= gx0 + ring; x += edge ? 1 : ring * 2) {
+            if (this.cellCodeAtGrid(x, y) === CELL_BLOCKED) continue
+            const cx = (x + 0.5) * this.cell
+            const cy = (y + 0.5) * this.cell
+            const d = (cx - p.x) ** 2 + (cy - p.y) ** 2
+            if (d < bd) {
+              bd = d
+              bestX = cx
+              bestY = cy
+            }
+          }
+        }
+      }
+      return { x: bestX, y: bestY }
+    }
     const i = this.idx(p)
     if (this.grid[i] !== CELL_BLOCKED) return p
     const cx = i % this.w
@@ -675,6 +728,15 @@ export class GridNav {
   straightFree(a: Vec, b: Vec): boolean {
     const d = Math.hypot(b.x - a.x, b.y - a.y)
     const n = Math.max(1, Math.ceil(d / (this.cell * 0.4)))
+    if (this.chunkTiles.size > 0) {
+      for (let k = 1; k <= n; k++) {
+        const t = k / n
+        const wx = a.x + (b.x - a.x) * t
+        const wy = a.y + (b.y - a.y) * t
+        if (this.cellCodeAtGrid(Math.floor(wx / this.cell), Math.floor(wy / this.cell)) !== CELL_FREE) return false
+      }
+      return true
+    }
     for (let k = 1; k <= n; k++) {
       const t = k / n
       const code = this.grid[this.idx({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })]
@@ -684,6 +746,119 @@ export class GridNav {
   }
 
   path(from: Vec, to: Vec, maxSteps = 2800): Vec[] | null {
+    if (this.chunkTiles.size > 0) {
+      const nearFrom = this.nearest(from)
+      const nearTo = this.nearest(to)
+      const startGx = Math.floor(nearFrom.x / this.cell)
+      const startGy = Math.floor(nearFrom.y / this.cell)
+      let goalGx = Math.floor(nearTo.x / this.cell)
+      let goalGy = Math.floor(nearTo.y / this.cell)
+      if (startGx === goalGx && startGy === goalGy) return [to]
+
+      const { g, came, seen, w, h: rows, heap } = this
+      const halfW = w >> 1
+      const halfH = rows >> 1
+      const baseGx = startGx - halfW
+      const baseGy = startGy - halfH
+      goalGx = clamp(goalGx, baseGx + 1, baseGx + w - 2)
+      goalGy = clamp(goalGy, baseGy + 1, baseGy + rows - 2)
+      const start = halfH * w + halfW
+      const goal = (goalGy - baseGy) * w + (goalGx - baseGx)
+      if (start === goal) return [to]
+
+      if (this.stamp > 0xfffffff0) {
+        this.stamp = 0
+        this.seen.fill(0)
+      }
+      const open = (this.stamp += 2)
+      const shut = open + 1
+      heap.clear()
+      const gx = goal % w
+      const gy = Math.floor(goal / w)
+      const heuristic = (i: number) => {
+        const dx = Math.abs((i % w) - gx)
+        const dy = Math.abs(Math.floor(i / w) - gy)
+        return Math.max(dx, dy) + 0.414 * Math.min(dx, dy)
+      }
+      g[start] = 0
+      came[start] = -1
+      seen[start] = open
+      heap.push(start, heuristic(start))
+      let found = false
+      let expanded = 0
+      let bestFallback = start
+      let bestFallbackH = heuristic(start)
+
+      while (heap.size && expanded++ < maxSteps) {
+        const cur = heap.pop()
+        if (cur === goal) {
+          found = true
+          break
+        }
+        if (seen[cur] === shut) continue
+        seen[cur] = shut
+        const ch = heuristic(cur)
+        if (ch < bestFallbackH) {
+          bestFallbackH = ch
+          bestFallback = cur
+        }
+        const cx = cur % w
+        const cy = Math.floor(cur / w)
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const nx = cx + dx
+            const ny = cy + dy
+            if (nx < 0 || ny < 0 || nx >= w || ny >= rows) continue
+            const ni = ny * w + nx
+            if (seen[ni] === shut) continue
+            const code = this.cellCodeAtGrid(baseGx + nx, baseGy + ny)
+            if (code === CELL_BLOCKED) continue
+            if (
+              dx &&
+              dy &&
+              (this.cellCodeAtGrid(baseGx + nx, baseGy + cy) === CELL_BLOCKED ||
+                this.cellCodeAtGrid(baseGx + cx, baseGy + ny) === CELL_BLOCKED)
+            )
+              continue
+            const stepCost =
+              (dx && dy ? 1.414 : 1) +
+              (code === CELL_CLOSED_DOOR ? 5.5 : code === CELL_OPEN_WINDOW ? 2.4 : code === CELL_BARRICADED ? 11.0 : 0)
+            const ng = g[cur]! + stepCost
+            if (seen[ni] !== open || ng < g[ni]!) {
+              seen[ni] = open
+              g[ni] = ng
+              came[ni] = cur
+              heap.push(ni, ng + heuristic(ni))
+            }
+          }
+        }
+      }
+
+      const endCell = found ? goal : bestFallback !== start ? bestFallback : -1
+      if (endCell === -1) return null
+      const cells: Vec[] = []
+      for (let c = endCell; c !== start && c !== -1; c = came[c]!) {
+        const lx = c % w
+        const ly = Math.floor(c / w)
+        cells.push({ x: (baseGx + lx + 0.5) * this.cell, y: (baseGy + ly + 0.5) * this.cell })
+      }
+      cells.reverse()
+      if (found && this.walkable(to)) {
+        cells[cells.length - 1] = { x: to.x, y: to.y }
+      }
+      const out: Vec[] = []
+      let anchor = from
+      for (let i = 0; i < cells.length; i++) {
+        const next = cells[i + 1]
+        const wp = cells[i]!
+        const curCode = this.cellCodeAtGrid(Math.floor(wp.x / this.cell), Math.floor(wp.y / this.cell))
+        if (next && curCode === CELL_FREE && this.straightFree(anchor, next)) continue
+        out.push(wp)
+        anchor = wp
+      }
+      return out
+    }
     const start = this.idx(this.nearest(from))
     const goal = this.idx(this.nearest(to))
     if (start === goal) return [to]
@@ -835,6 +1010,8 @@ export type AIWorldContext = {
   tick: number
   dt: number
   worldSize: number
+  /** Optional explicit world bounds [minX, minY, maxX, maxY] for streaming worlds. */
+  worldBounds?: Rect
   /** 1.0 during day, up to config.nightMultiplier at night. */
   nightFactor: number
   solids: readonly Rect[]
@@ -856,15 +1033,19 @@ export type AIStepResult = {
 
 const neighborScratch: number[] = []
 
-function pickWanderPoint(agent: AIAgent, nav: GridNav, worldSize: number, tick: number): void {
+function pickWanderPoint(agent: AIAgent, nav: GridNav, worldSize: number, tick: number, worldBounds?: Rect): void {
   const rng = new Rng((agent.seed ^ Math.imul(tick + 1, 0x27d4eb2d)) >>> 0)
+  const minX = worldBounds ? worldBounds[0] + 2 : 2
+  const minY = worldBounds ? worldBounds[1] + 2 : 2
+  const maxX = worldBounds ? worldBounds[2] - 2 : worldSize - 2
+  const maxY = worldBounds ? worldBounds[3] - 2 : worldSize - 2
   for (let attempt = 0; attempt < 6; attempt++) {
     const anchorX = attempt < 3 ? (agent.x * 0.65 + agent.homeX * 0.35) : agent.x
     const anchorY = attempt < 3 ? (agent.y * 0.65 + agent.homeY * 0.35) : agent.y
     const ang = rng.range(-Math.PI, Math.PI)
     const dist = rng.range(4.0, 11.5)
-    const wx = clamp(anchorX + Math.cos(ang) * dist, 2, worldSize - 2)
-    const wy = clamp(anchorY + Math.sin(ang) * dist, 2, worldSize - 2)
+    const wx = clamp(anchorX + Math.cos(ang) * dist, minX, maxX)
+    const wy = clamp(anchorY + Math.sin(ang) * dist, minY, maxY)
     if (nav.walkable({ x: wx, y: wy })) {
       agent.wanderX = wx
       agent.wanderY = wy
@@ -946,7 +1127,11 @@ function focusScore(a: AIAgent, target: PerceptionTarget, sight: SightEvaluation
  * Uses spatial hashing and staggered perception/repath updates to stay well under 1 ms for 50–100 agents.
  */
 export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResult {
-  const { dt, time, tick, worldSize, nightFactor, solids, walls, closedDoors, sightBlockers, portals, nav, spatial, noiseBus, config, targets } = ctx
+  const { dt, time, tick, worldSize, worldBounds, nightFactor, solids, walls, closedDoors, sightBlockers, portals, nav, spatial, noiseBus, config, targets } = ctx
+  const minX = worldBounds ? worldBounds[0] + 0.5 : 0.5
+  const minY = worldBounds ? worldBounds[1] + 0.5 : 0.5
+  const maxX = worldBounds ? worldBounds[2] - 0.5 : worldSize - 0.5
+  const maxY = worldBounds ? worldBounds[3] - 0.5 : worldSize - 0.5
   const bashes: PortalBashEvent[] = []
   const attacks: AgentAttackEvent[] = []
 
@@ -1019,8 +1204,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       a.staggerVx *= damp
       a.staggerVy *= damp
       pushOut(a, 0.28, solids)
-      a.x = clamp(a.x, 0.5, worldSize - 0.5)
-      a.y = clamp(a.y, 0.5, worldSize - 0.5)
+      a.x = clamp(a.x, minX, maxX)
+      a.y = clamp(a.y, minY, maxY)
       a.vx = dt > 0 ? (a.x - prevX) / dt : 0
       a.vy = dt > 0 ? (a.y - prevY) / dt : 0
       if (a.timer <= 0) {
@@ -1244,7 +1429,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         a.stateTime = 0
         a.awareness = 0
         a.targetKind = "none"
-        pickWanderPoint(a, nav, worldSize, tick)
+        pickWanderPoint(a, nav, worldSize, tick, worldBounds)
       }
     }
 
@@ -1256,7 +1441,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     if (a.state === "wander") {
       a.timer -= dt
       if (a.timer <= 0 || Math.hypot(a.wanderX - a.x, a.wanderY - a.y) < 0.95) {
-        pickWanderPoint(a, nav, worldSize, tick)
+        pickWanderPoint(a, nav, worldSize, tick, worldBounds)
         a.timer = 3.2 + ((a.id * 17 + tick) % 5)
       }
       const dx = a.wanderX - a.x
@@ -1459,13 +1644,13 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       pushOut(a, 0.28, solids)
     }
 
-    a.x = clamp(a.x, 0.5, worldSize - 0.5)
-    a.y = clamp(a.y, 0.5, worldSize - 0.5)
+    a.x = clamp(a.x, minX, maxX)
+    a.y = clamp(a.y, minY, maxY)
 
     // Redirect wander waypoint if agent got stuck against an obstacle
     const actualMoved = Math.hypot(a.x - prevX, a.y - prevY)
     if (a.state === "wander" && desiredSpeed > 0.3 && actualMoved < desiredSpeed * dt * 0.15) {
-      pickWanderPoint(a, nav, worldSize, tick + 7)
+      pickWanderPoint(a, nav, worldSize, tick + 7, worldBounds)
     }
 
     a.vx = dt > 0 ? (a.x - prevX) / dt : 0

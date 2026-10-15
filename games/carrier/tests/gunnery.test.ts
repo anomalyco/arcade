@@ -60,7 +60,7 @@ const CIWS = WEAPON_MOUNTS.findIndex((m) => m.kind === "ciws")
 const SAM = WEAPON_MOUNTS.findIndex((m) => m.kind === "sam")
 const GUN = WEAPON_MOUNTS.findIndex((m) => m.kind === "gun")
 
-describe("gun seats (SHIP OPERATIONS)", () => {
+describe("gun seats (DEPLOY)", () => {
   /** p1 helms ship 1 with pilots p2, p3 on deck. */
   const crew = () => {
     const c = makeCrew(5)

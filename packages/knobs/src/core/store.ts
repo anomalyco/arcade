@@ -1,0 +1,939 @@
+import { formatCode, type CodeFormat } from "./code.js"
+import { mutateValues } from "./mutate.js"
+import { randomValues } from "./random.js"
+import { RESHAPE, type Reshape } from "./internal.js"
+import type { TokenPreset } from "./theme.js"
+import {
+  equal,
+  normalize,
+  normalizeField,
+  same,
+  type Field,
+  type Schema,
+  type State,
+  type ValueField,
+  type Values,
+  valueKeys,
+} from "./schema.js"
+import { browserStorage, storageKey, type StoragePort } from "./storage.js"
+import { createVariants, type Variants } from "./variants.js"
+
+declare const __KNOBS_DEV__: boolean
+export type ThemeMode = "dark" | "light" | "auto"
+export type DensityMode = "compact" | "default" | "comfortable"
+export type RendererMode = "gpu" | "dom" | "auto"
+export type ChangeSource =
+  | "local"
+  | "remote"
+  | "reset"
+  | "preset"
+  | "variant"
+  | "undo"
+  | "redo"
+  | "randomize"
+  | "mutate"
+  | "compare"
+export interface ChangeMeta {
+  readonly source: ChangeSource
+  readonly coalesce?: boolean
+  readonly key?: string
+  readonly group?: string
+}
+export interface ControlAction<V = State> {
+  readonly id?: string
+  readonly label: string
+  readonly group?: string
+  readonly shortcut?: string
+  run(values: V, controls: Controls<any>): void | string | Promise<void | string>
+}
+/** One of a group's numbered presets; keys it leaves out sit at their defaults (see `groupPresets`). */
+export interface GroupPreset<V = State> {
+  readonly name: string
+  readonly values: Partial<V>
+}
+/**
+ * How a page card shows its group presets: `names` as segments ("Native · Tight · Airy"), `menu`
+ * as a compact drop-down showing the selected one's name, `numbers` as 1, 2, 3…; `auto` (the
+ * default) shows names while they fit beside the title, else the menu.
+ */
+export type GroupPresetDisplay = "auto" | "names" | "numbers" | "menu"
+/** Display labels, kept apart from the ids that identify groups, sections and presets. */
+export interface LabelOptions {
+  /** By group id: what its header shows (verbatim). Ids stay identity everywhere else. */
+  readonly groupLabels?: Readonly<Record<string, string>>
+  /** By section id: what its heading shows. */
+  readonly sectionLabels?: Readonly<Record<string, string>>
+  /** By preset id: what the preset strip shows, e.g. `{ default: "Native" }`. */
+  readonly presetLabels?: Readonly<Record<string, string>>
+  /** Shorthand for `presetLabels.default`. */
+  readonly defaultLabel?: string
+  /** How a page card shows its group presets (see `GroupPresetDisplay`). */
+  readonly groupPresetDisplay?: GroupPresetDisplay
+}
+/** Panel commands with a key binding; see `MountPanelOptions.keys`. */
+export type PanelCommand =
+  | "random"
+  | "mutate"
+  | "reset"
+  | "resetAll"
+  | "compare"
+  | "hint"
+  | "undo"
+  | "redo"
+  | "copy"
+  | "save"
+  | "lock"
+  | "presets"
+  | "group"
+  | "first"
+  | "help"
+  | "menu"
+  | "leave"
+/**
+ * Remaps (a single character, or a key name such as `"F2"`) or turns off (`false`) a panel's key
+ * bindings. Unlisted commands keep their default key. `true` keeps the default.
+ */
+export type PanelKeys = { readonly [C in PanelCommand]?: string | boolean } & {
+  /** `false` drops the j/k and h/l aliases: only the arrows move and adjust; the letters reach the page. */
+  readonly vim?: boolean
+  /**
+   * `false` stops digits, `.`, `-` and Enter from opening a slider's inline number editor (they
+   * reach the page); clicking the readout still edits.
+   */
+  readonly edit?: boolean
+  /** What ⇧ multiplies an arrow's step by; 10 by default. */
+  readonly bigStep?: number
+  /** `false` stops ↑/↓ at the first and last rows instead of wrapping around. */
+  readonly wrap?: boolean
+}
+export interface MountPanelOptions extends LabelOptions {
+  readonly title?: string | false
+  /**
+   * Key bindings. An inline panel only ever hears keys while focus is inside it; pass this to remap
+   * or turn off commands so they don't shadow the host's own keys, e.g.
+   * `{ random: false, mutate: false, compare: false, hint: false, undo: false }` or `{ hint: "f" }`.
+   * The `?` popover and hint badges list only what's enabled.
+   */
+  readonly keys?: PanelKeys
+  /**
+   * `false` hides what says a value differs from its default: modified dots and readout marks,
+   * group reset icons and the header's Reset. For panels whose values belong to someone else
+   * (a prototype's settings), where "default" means nothing. The store's `marks` by default.
+   */
+  readonly marks?: boolean
+  /** Token values to style the panel with, e.g. `problemsPreset` (see `TokenPreset`). */
+  readonly preset?: TokenPreset
+  /** `false` drops the header (title and buttons) for a host that draws its own. */
+  readonly header?: boolean
+  /**
+   * Light haptic ticks on phones (a stepped slider crossing a stop, the default's magnet, a
+   * choice changing mid-pan, a switch flipping); on by default, `false` turns them off.
+   * Reduced motion turns them off too.
+   */
+  readonly haptics?: boolean
+  /** Called once the panel is mounted, with a handle to focus it (a host's "Tune" key). */
+  readonly onReady?: (panel: PanelHandle) => void
+  /** What Copy (and ⇧C) puts on the clipboard; `controls.code()` by default. */
+  readonly copy?: () => string
+  readonly theme?: ThemeMode
+  readonly density?: DensityMode
+  readonly renderer?: RendererMode
+  readonly variants?: boolean
+  readonly history?: boolean
+  readonly footer?: boolean
+  readonly actions?: readonly ControlAction<any>[]
+  readonly onClose?: () => void
+}
+export interface SyncOptions {
+  /** Keys missing from `values` return to their defaults. */
+  readonly replace?: boolean
+  /**
+   * A different item arrived: panels place the values without springing or rolling, and undo
+   * history starts over (it belonged to the previous item).
+   */
+  readonly land?: boolean
+}
+/** A mounted panel: what `mount` hands `onReady`. */
+export interface PanelHandle {
+  readonly element: HTMLElement
+  focus(): void
+  dispose(): void
+}
+/**
+ * The panel module a shipped store mounts with: `() => import("knobs/panel")`. Structural, so the
+ * core never imports the panel itself.
+ */
+export interface PanelModule {
+  mountPanel(
+    controls: Controls<any>,
+    container: HTMLElement,
+    options?: MountPanelOptions,
+  ): PanelHandle
+  attach(controls: Controls<any>, element: HTMLElement): () => void
+}
+export interface ControlsOptions<S extends Schema> extends LabelOptions {
+  enabled?: boolean | (() => boolean)
+  /**
+   * Ships this store as product UI: it stays live in production builds (where stores are
+   * otherwise locked to their defaults) and mounts panels from the module this loads, e.g.
+   * `ship: () => import("knobs/panel")`. `enabled` defaults to true. Stores without it stay
+   * dev-only and ship constants.
+   */
+  ship?: () => Promise<PanelModule>
+  /**
+   * How long (ms) a key changed here outranks incoming values for it (see `sync`), so an echo of
+   * an older value still in flight can't pull it back. 0 by default; remote controls use 600.
+   */
+  echo?: number
+  storage?: StoragePort | null
+  presets?: Readonly<Record<string, Partial<Values<S>>>>
+  /**
+   * Numbered presets per group, shown as 1, 2, 3… on the group's card in a page. A group's
+   * presets cover every key any of them names; keys a preset leaves out are at their defaults,
+   * so `{ name: "Today", values: {} }` is the shipped look.
+   */
+  groupPresets?: Readonly<Record<string, readonly GroupPreset<Values<S>>[]>>
+  actions?: readonly ControlAction<Values<S>>[]
+  theme?: ThemeMode
+  density?: DensityMode
+  renderer?: RendererMode
+  /** Default key bindings for this store's panels (see `MountPanelOptions.keys`). */
+  keys?: PanelKeys
+  /** `false`: its panels show no modified marks or resets (see `MountPanelOptions.marks`). */
+  marks?: boolean
+  onChange?: (patch: Partial<Values<S>>, values: Values<S>, meta: ChangeMeta) => void
+  onReset?: (target: { key?: keyof S & string; group?: string }) => void
+  /** An action row was pressed (after its own `run`). */
+  onAction?: (key: keyof S & string) => void
+  /** A group's numbered preset was applied (after its values are set). */
+  onPreset?: (target: { group: string; index: number; name: string }) => void
+}
+export interface Controls<S extends Schema = Schema> {
+  readonly id: string
+  readonly schema: S
+  readonly locked: Values<S>
+  readonly enabled: boolean
+  readonly storage: StoragePort | null
+  readonly presets: Readonly<Record<string, Values<S>>>
+  readonly variants: Variants<Values<S>>
+  readonly actions: readonly ControlAction<Values<S>>[]
+  readonly theme: ThemeMode
+  readonly density: DensityMode
+  readonly renderer: RendererMode
+  readonly keys: PanelKeys | undefined
+  readonly marks: boolean
+  /** How page cards show group presets (`groupPresetDisplay`, `auto` by default). */
+  readonly groupPresetDisplay: GroupPresetDisplay
+  /** A group's display label (`groupLabels`, else its fields' `groupLabel`), if it has one. */
+  groupLabel(group: string): string | undefined
+  /** A section's display label (`sectionLabels`, else its fields' `sectionLabel`), if it has one. */
+  sectionLabel(section: string): string | undefined
+  /** A preset's display label (`presetLabels`, `defaultLabel`), else its id. */
+  presetLabel(id: string): string
+  readonly error: string | null
+  get(): Values<S>
+  getServerSnapshot(): Values<S>
+  /** Apply a change. `coalesce` folds it into the previous history entry (used while dragging). */
+  set(
+    patch: Partial<Values<S>>,
+    options?: { coalesce?: boolean; source?: ChangeSource; key?: string; group?: string },
+  ): void
+  /**
+   * Apply external state (props, a server, a peer) without recording undo history or emitting a
+   * local change. A key that is held (in hand, or changed here within `echo` ms) keeps its value;
+   * the newest incoming value for it lands when the hold ends.
+   */
+  sync(values: Partial<Values<S>>, options?: SyncOptions): void
+  /**
+   * Marks a key as in hand (a drag, an inline edit) or lets it go. While held, `sync` doesn't
+   * touch it; letting go applies the newest value that arrived meanwhile. Panels call this.
+   */
+  hold(key: string, held?: boolean): void
+  /** Whether incoming values for `key` are held back right now (see `sync`). */
+  isHeld(key: string): boolean
+  /** Presses an action row: its `run`, then `onAction(key)`. */
+  action(key: keyof S & string): void
+  /** True while the change being notified landed (`sync(…, { land: true })`): place, don't animate. */
+  readonly landing: boolean
+  undo(): void
+  redo(): void
+  readonly canUndo: boolean
+  readonly canRedo: boolean
+  subscribe(cb: () => void): () => void
+  /** Back to the defaults: every field, or only `keys`. Locks don't apply. */
+  reset(keys?: readonly (keyof S & string)[]): void
+  resetKey(key: keyof S & string): void
+  resetGroup(group: string): void
+  isModified(key?: keyof S & string): boolean
+  modified(): Partial<Values<S>>
+  /** Random values for every unlocked field, or the unlocked ones among `keys`. One undo step. */
+  randomize(keys?: readonly (keyof S & string)[]): void
+  /** Small changes around the current values instead of a re-roll; skips locked fields. */
+  mutate(keys?: readonly (keyof S & string)[]): void
+  /** Keeps fields out of Random and Mutate (or lets them back in). Saved with the values. */
+  lock(keys: (keyof S & string) | readonly (keyof S & string)[], locked?: boolean): void
+  isLocked(key: keyof S & string): boolean
+  /**
+   * While held, `get()` shows the values from before the last change (the previous undo entry);
+   * releasing restores the current ones. Nothing is recorded or stored; `onChange` reports
+   * `source: "compare"` both ways.
+   */
+  compare(hold: boolean): void
+  readonly comparing: boolean
+  preset(id: string): void
+  matchingPreset(): string
+  /** Each group's numbered presets, complete over the keys they cover. */
+  readonly groupPresets: Readonly<Record<string, readonly GroupPreset<Values<S>>[]>>
+  /**
+   * Applies a group's preset (0-based), one undo step; `coalesce` folds it into the previous
+   * one (a pan across a card's presets).
+   */
+  groupPreset(group: string, index: number, options?: { coalesce?: boolean }): void
+  /** The group preset the current values match, or -1. */
+  matchingGroupPreset(group: string): number
+  code(format?: CodeFormat, values?: Values<S>): string
+  attach(element: HTMLElement): () => void
+  mount(container: HTMLElement, options?: MountPanelOptions): () => void
+}
+/** Whether two fields draw and behave the same (a reshape keeps such a key's value). */
+export function sameField(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
+  const ka = Object.keys(a).filter((k) => k !== "run")
+  const kb = Object.keys(b).filter((k) => k !== "run")
+  if (ka.length !== kb.length) return false
+  return ka.every((k) => {
+    const x = (a as Record<string, unknown>)[k]
+    const y = (b as Record<string, unknown>)[k]
+    return Array.isArray(x) && Array.isArray(y)
+      ? x.length === y.length && x.every((v, i) => same(v, y[i]))
+      : same(x, y) || (typeof x === "object" && sameField(x, y))
+  })
+}
+export function defineControls<const S extends Schema>(
+  id: string,
+  input: S,
+  options: ControlsOptions<S> = {},
+): Controls<S> {
+  if (!id.trim()) throw new Error("Controls need a stable, nonempty id.")
+  let schema = Object.freeze({ ...input }) as S
+  let locked = normalize(schema, {})
+  const actions = Object.freeze([...(options.actions ?? [])])
+  const theme: ThemeMode = options.theme ?? "dark"
+  const density: DensityMode = options.density ?? "default"
+  const renderer: RendererMode = options.renderer ?? "auto"
+  // Development builds, or a store shipped as product UI (`ship`), which stays live in production.
+  const enabled = () =>
+    (typeof __KNOBS_DEV__ === "undefined" || __KNOBS_DEV__ || Boolean(options.ship)) &&
+    (typeof options.enabled === "function"
+      ? options.enabled()
+      : (options.enabled ??
+        (Boolean(options.ship) ||
+          (typeof location !== "undefined" &&
+            ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)))))
+  const storage = () => (options.storage === undefined ? browserStorage() : options.storage)
+  const listeners = new Set<() => void>()
+  const notify = () => {
+    for (const cb of [...listeners]) cb()
+  }
+  let current = locked
+  let read = false
+  let error: string | null = null
+  let locks = new Set<string>()
+  /** The earlier values shown while compare is held. */
+  let comparing: Values<S> | null = null
+  let landing = false
+  const echo = Math.max(0, options.echo ?? 0)
+  /** Keys in hand, and when each key last changed here (for the echo window). */
+  const grabbed = new Set<string>()
+  const changedAt = new Map<string, number>()
+  /** The newest incoming value for each held key, applied when the hold ends. */
+  const pending = new Map<string, unknown>()
+  let echoTimer: ReturnType<typeof setTimeout> | undefined
+  const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
+  const isHeld = (key: string) =>
+    grabbed.has(key) || (echo > 0 && now() - (changedAt.get(key) ?? -Infinity) < echo)
+  const past: Values<S>[] = []
+  const future: Values<S>[] = []
+  const HISTORY = 100
+  const stateKey = storageKey(id, "state")
+  const buildPresets = () =>
+    Object.freeze(
+      Object.fromEntries([
+        ["default", locked],
+        ...Object.entries(options.presets ?? {}).map(([id, patch]) => {
+          if (id === "default" || id === "custom") throw new Error(`Reserved preset id: ${id}`)
+          return [id, normalize(schema, { ...locked, ...patch })]
+        }),
+      ]),
+    ) as Readonly<Record<string, Values<S>>>
+  let presets = buildPresets()
+  const buildGroupPresets = () =>
+    Object.freeze(
+      Object.fromEntries(
+        Object.entries(options.groupPresets ?? {}).map(([group, list]) => {
+          const named = list.flatMap((p) =>
+            Object.keys(p.values).filter((k) => Object.hasOwn(schema, k)),
+          )
+          const covered = new Set(
+            (named.length
+              ? named
+              : Object.keys(schema).filter((k) => schema[k]!.group === group)
+            ).filter((k) => schema[k]!.kind !== "action"),
+          )
+          return [
+            group,
+            Object.freeze(
+              list.map((p) =>
+                Object.freeze({
+                  name: p.name,
+                  values: Object.freeze(
+                    Object.fromEntries(
+                      [...covered].map((k) => [
+                        k,
+                        normalizeField(
+                          schema[k] as ValueField,
+                          (p.values as Record<string, unknown>)[k] ?? locked[k],
+                        ),
+                      ]),
+                    ),
+                  ) as Partial<Values<S>>,
+                }),
+              ),
+            ),
+          ]
+        }),
+      ),
+    ) as Readonly<Record<string, readonly GroupPreset<Values<S>>[]>>
+  let groupPresets = buildGroupPresets()
+  /** Labels the fields give their groups and sections (the first one wins), per schema. */
+  let labelsOf: { schema: S; group: Map<string, string>; section: Map<string, string> } | undefined
+  const fieldLabels = () => {
+    if (labelsOf?.schema === schema) return labelsOf
+    const group = new Map<string, string>()
+    const section = new Map<string, string>()
+    for (const f of Object.values(schema) as Field[]) {
+      if (f.group !== undefined && f.groupLabel !== undefined && !group.has(f.group))
+        group.set(f.group, f.groupLabel)
+      if (f.section !== undefined && f.sectionLabel !== undefined && !section.has(f.section))
+        section.set(f.section, f.sectionLabel)
+    }
+    labelsOf = { schema, group, section }
+    return labelsOf
+  }
+  /** The committed values, read from storage on first use. */
+  function load() {
+    if (!read) {
+      read = true
+      try {
+        const raw = storage()?.getItem(stateKey)
+        if (raw) {
+          const data = JSON.parse(raw)
+          if (data?.version === 1) {
+            current = normalize(schema, data.values)
+            if (Array.isArray(data.locks))
+              locks = new Set(
+                data.locks.filter(
+                  (k: unknown) => typeof k === "string" && Object.hasOwn(schema, k),
+                ),
+              )
+          }
+        }
+      } catch (cause) {
+        error = String(cause)
+      }
+    }
+    return current
+  }
+  function get() {
+    if (!enabled()) return locked
+    return comparing ?? load()
+  }
+  function persist() {
+    try {
+      storage()?.setItem(
+        stateKey,
+        JSON.stringify({
+          version: 1,
+          values: current,
+          ...(locks.size ? { locks: [...locks] } : {}),
+        }),
+      )
+      error = null
+    } catch (cause) {
+      error = String(cause)
+    }
+  }
+  function commit(next: Values<S>) {
+    current = next
+    persist()
+    notify()
+  }
+  const fieldKeys = () => valueKeys(schema)
+  const valueField = (k: string) => {
+    const field = Object.hasOwn(schema, k) ? schema[k] : undefined
+    return field && field.kind !== "action" ? field : undefined
+  }
+  function changes(from: Values<S>, to: Values<S>) {
+    const diff: Record<string, unknown> = {}
+    for (const k of fieldKeys()) if (!same(from[k], to[k])) diff[k] = to[k]
+    return diff as Partial<Values<S>>
+  }
+  /** Lets go of a held compare, so any real change starts from the current values. */
+  function release() {
+    if (!comparing) return
+    const shown = comparing
+    comparing = null
+    options.onChange?.(changes(shown, current), current, { source: "compare" })
+    notify()
+  }
+  const unlocked = (keys?: readonly string[]) => {
+    load()
+    return (keys ?? fieldKeys()).filter((k) => valueField(k) && !locks.has(k))
+  }
+  function applyPatch(base: Values<S>, previous: Values<S>, patch: Partial<Values<S>>) {
+    const out: Record<string, unknown> = { ...base }
+    const diff: Record<string, unknown> = {}
+    let changed = false
+    if (base === previous) {
+      for (const k of Object.keys(patch)) {
+        const field = valueField(k)
+        if (!field) continue
+        const raw = (patch as Record<string, unknown>)[k]
+        const val = raw === undefined ? previous[k] : normalizeField(field, raw)
+        if (!same(previous[k], val)) {
+          out[k] = val
+          diff[k] = val
+          changed = true
+        }
+      }
+      return changed ? { next: Object.freeze(out) as Values<S>, diff } : null
+    }
+    for (const k of Object.keys(patch)) {
+      const field = valueField(k)
+      if (!field) continue
+      const raw = (patch as Record<string, unknown>)[k]
+      const val = raw === undefined ? base[k] : normalizeField(field, raw)
+      out[k] = same(previous[k], val) ? previous[k] : val
+    }
+    for (const k of fieldKeys()) {
+      if (!same(previous[k], out[k])) {
+        diff[k] = out[k]
+        changed = true
+      } else {
+        out[k] = previous[k]
+      }
+    }
+    return changed ? { next: Object.freeze(out) as Values<S>, diff } : null
+  }
+  const markChanged = (diff: Record<string, unknown>) => {
+    if (echo > 0) {
+      const at = now()
+      for (const k of Object.keys(diff)) changedAt.set(k, at)
+      scheduleEcho()
+    }
+    for (const k of Object.keys(diff)) pending.delete(k)
+  }
+  function set(
+    patch: Partial<Values<S>>,
+    setOpts?: { coalesce?: boolean; source?: ChangeSource; key?: string; group?: string },
+  ) {
+    if (!enabled()) return
+    release()
+    const previous = load()
+    const applied = applyPatch(previous, previous, patch)
+    if (!applied) return
+    const { next, diff } = applied
+    if (!setOpts?.coalesce || past.length === 0) {
+      past.push(previous)
+      if (past.length > HISTORY) past.shift()
+    }
+    future.length = 0
+    markChanged(diff)
+    commit(next)
+    options.onChange?.(diff as Partial<Values<S>>, next, {
+      source: setOpts?.source ?? "local",
+      ...(setOpts?.coalesce ? { coalesce: true } : {}),
+      ...(setOpts?.key ? { key: setOpts.key } : {}),
+      ...(setOpts?.group ? { group: setOpts.group } : {}),
+    })
+  }
+  /** Applies incoming values as they are (no holds), flagging a landing for the notify. */
+  function place(values: Record<string, unknown>, replace: boolean, land: boolean) {
+    const previous = load()
+    const base = replace ? locked : previous
+    const applied = applyPatch(base, previous, values as Partial<Values<S>>)
+    if (!applied) return
+    landing = land
+    try {
+      commit(applied.next)
+      options.onChange?.(applied.diff as Partial<Values<S>>, applied.next, { source: "remote" })
+    } finally {
+      landing = false
+    }
+  }
+  /** Splits incoming values into what lands now and what waits for its key's hold to end. */
+  function incoming(values: Record<string, unknown>, replace: boolean) {
+    const current = load() as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const k of replace ? fieldKeys() : Object.keys(values)) {
+      if (!valueField(k)) continue
+      const target = Object.hasOwn(values, k) ? values[k] : locked[k]
+      if (isHeld(k)) {
+        pending.set(k, target)
+        out[k] = current[k]
+      } else {
+        pending.delete(k)
+        out[k] = target
+      }
+    }
+    if (pending.size) scheduleEcho()
+    return out
+  }
+  function sync(values: Partial<Values<S>>, syncOpts?: SyncOptions) {
+    if (!enabled()) return
+    release()
+    const land = Boolean(syncOpts?.land)
+    if (land) settle()
+    const before = current
+    place(incoming(values as Record<string, unknown>, Boolean(syncOpts?.replace)), false, land)
+    if (land && current === before) announce(true)
+  }
+  /** A different item arrived: history and echo windows belonged to the last one. */
+  function settle() {
+    past.length = 0
+    future.length = 0
+    changedAt.clear()
+    for (const k of [...pending.keys()]) if (!grabbed.has(k)) pending.delete(k)
+    scheduleEcho()
+  }
+  function announce(land: boolean) {
+    landing = land
+    try {
+      notify()
+    } finally {
+      landing = false
+    }
+  }
+  /** Lands the newest incoming value of every key whose hold has ended. */
+  function flush() {
+    const ready: Record<string, unknown> = {}
+    for (const [k, v] of pending)
+      if (!isHeld(k)) {
+        ready[k] = v
+        pending.delete(k)
+      }
+    if (Object.keys(ready).length) place(ready, false, false)
+    scheduleEcho()
+  }
+  function scheduleEcho() {
+    clearTimeout(echoTimer)
+    echoTimer = undefined
+    if (echo <= 0 || pending.size === 0) return
+    let soonest = Infinity
+    const t = now()
+    for (const k of pending.keys()) {
+      if (grabbed.has(k)) continue
+      soonest = Math.min(soonest, (changedAt.get(k) ?? -Infinity) + echo - t)
+    }
+    if (soonest === Infinity) return
+    echoTimer = setTimeout(flush, Math.max(0, soonest) + 1)
+  }
+  /** See `RemoteControls.update`. */
+  const reshape: Reshape = (next, values, reshapeOpts) => {
+    if (!enabled()) return
+    release()
+    const before = schema
+    const changed =
+      Object.keys(before).length !== Object.keys(next).length ||
+      Object.keys(next).some((k) => !sameField(before[k], next[k]))
+    const land = Boolean(reshapeOpts?.land)
+    if (changed) {
+      const previous = load() as Record<string, unknown>
+      schema = Object.freeze({ ...next }) as S
+      locked = normalize(schema, {})
+      presets = buildPresets()
+      groupPresets = buildGroupPresets()
+      for (const k of [...locks]) if (!valueField(k)) locks.delete(k)
+      for (const k of [...pending.keys()]) if (!valueField(k)) pending.delete(k)
+      // Keys that persist keep their value for now (the incoming one follows, held or not);
+      // new keys start at their defaults.
+      const kept: Record<string, unknown> = {}
+      for (const k of fieldKeys()) kept[k] = Object.hasOwn(previous, k) ? previous[k] : locked[k]
+      current = normalize(schema, kept)
+    }
+    if (land) settle()
+    else if (changed) {
+      past.length = 0
+      future.length = 0
+    }
+    const target = incoming(values as Record<string, unknown>, true)
+    const before2 = current
+    place(target, false, land)
+    // A new shape with no value changes still has to reach the panels.
+    if (current === before2 && (changed || land)) announce(land)
+  }
+  const controls: Controls<S> & { [RESHAPE]: Reshape } = {
+    id,
+    get schema() {
+      return schema
+    },
+    get locked() {
+      return locked
+    },
+    get presets() {
+      return presets
+    },
+    actions,
+    theme,
+    density,
+    renderer,
+    keys: options.keys,
+    marks: options.marks !== false,
+    groupPresetDisplay: options.groupPresetDisplay ?? "auto",
+    groupLabel: (group) => options.groupLabels?.[group] ?? fieldLabels().group.get(group),
+    sectionLabel: (section) =>
+      options.sectionLabels?.[section] ?? fieldLabels().section.get(section),
+    presetLabel: (presetId) =>
+      options.presetLabels?.[presetId] ??
+      (presetId === "default" ? options.defaultLabel : undefined) ??
+      presetId,
+    get,
+    set,
+    sync,
+    get enabled() {
+      return enabled()
+    },
+    get storage() {
+      return storage()
+    },
+    get error() {
+      return error
+    },
+    get canUndo() {
+      return past.length > 0
+    },
+    get canRedo() {
+      return future.length > 0
+    },
+    get comparing() {
+      return comparing !== null
+    },
+    get landing() {
+      return landing
+    },
+    [RESHAPE]: reshape,
+    hold(key, on = true) {
+      if (on) {
+        grabbed.add(key)
+        return
+      }
+      if (!grabbed.delete(key)) return
+      // A drag that changed the key keeps it for the echo window; one that didn't lets go now.
+      flush()
+    },
+    isHeld,
+    action(key) {
+      const field = schema[key]
+      if (!field || field.kind !== "action") throw new Error(`Unknown action: ${key}`)
+      field.run?.()
+      options.onAction?.(key)
+    },
+    undo() {
+      release()
+      const previous = past.pop()
+      if (!previous) return
+      const before = load()
+      const diff = changes(before, previous)
+      future.push(before)
+      markChanged(diff as Record<string, unknown>)
+      commit(previous)
+      options.onChange?.(diff, previous, { source: "undo" })
+    },
+    redo() {
+      release()
+      const next = future.pop()
+      if (!next) return
+      const before = load()
+      const diff = changes(before, next)
+      past.push(before)
+      markChanged(diff as Record<string, unknown>)
+      commit(next)
+      options.onChange?.(diff, next, { source: "redo" })
+    },
+    getServerSnapshot: () => locked,
+    subscribe(cb) {
+      listeners.add(cb)
+      return () => {
+        listeners.delete(cb)
+      }
+    },
+    reset(keys) {
+      if (!enabled()) return
+      if (!keys) {
+        set(locked, { source: "reset" })
+        options.onReset?.({})
+        return
+      }
+      const patch: Record<string, unknown> = {}
+      for (const k of keys) if (valueField(k)) patch[k] = locked[k]
+      set(patch as Partial<Values<S>>, { source: "reset" })
+      for (const key of Object.keys(patch)) options.onReset?.({ key })
+    },
+    resetKey(key) {
+      if (!enabled()) return
+      if (!valueField(key)) throw new Error(`Unknown control key: ${key}`)
+      set({ [key]: locked[key] } as Partial<Values<S>>, { source: "reset", key })
+      options.onReset?.({ key })
+    },
+    resetGroup(group) {
+      if (!enabled()) return
+      const patch: Record<string, unknown> = {}
+      for (const [k, field] of Object.entries(schema)) {
+        if (field.group === group && field.kind !== "action") patch[k] = locked[k]
+      }
+      set(patch as Partial<Values<S>>, { source: "reset", group })
+      options.onReset?.({ group })
+    },
+    isModified(key) {
+      const cur = get()
+      if (key !== undefined) return !same(cur[key], locked[key])
+      return !equal(cur, locked)
+    },
+    modified() {
+      const cur = get()
+      const out: Record<string, unknown> = {}
+      for (const k of fieldKeys()) {
+        if (!same(cur[k], locked[k])) out[k] = cur[k]
+      }
+      return Object.freeze(out) as Partial<Values<S>>
+    },
+    randomize(keys) {
+      if (!enabled()) return
+      const pool = unlocked(keys)
+      if (pool.length === 0) return
+      const all = randomValues(schema) as Record<string, unknown>
+      const patch = Object.fromEntries(pool.map((k) => [k, all[k]]))
+      set(patch as Partial<Values<S>>, { source: "randomize" })
+    },
+    mutate(keys) {
+      if (!enabled()) return
+      release()
+      const pool = unlocked(keys)
+      if (pool.length === 0) return
+      set(mutateValues(schema, load(), pool) as Partial<Values<S>>, { source: "mutate" })
+    },
+    lock(keys, on = true) {
+      if (!enabled()) return
+      load()
+      let changed = false
+      for (const key of typeof keys === "string" ? [keys] : keys) {
+        if (!valueField(key)) throw new Error(`Unknown control key: ${key}`)
+        if (locks.has(key) === on) continue
+        if (on) locks.add(key)
+        else locks.delete(key)
+        changed = true
+      }
+      if (!changed) return
+      persist()
+      notify()
+    },
+    isLocked(key) {
+      if (!enabled()) return false
+      load()
+      return locks.has(key)
+    },
+    compare(hold) {
+      if (!enabled()) return
+      if (!hold) return release()
+      const before = past.at(-1)
+      const now = load()
+      if (comparing || !before || equal(before, now)) return
+      comparing = before
+      options.onChange?.(changes(now, before), before, { source: "compare" })
+      notify()
+    },
+    preset(id) {
+      if (!Object.hasOwn(presets, id)) throw new Error(`Unknown preset: ${id}`)
+      set(presets[id], { source: "preset" })
+    },
+    matchingPreset: () => Object.keys(presets).find((id) => equal(get(), presets[id])) ?? "custom",
+    get groupPresets() {
+      return groupPresets
+    },
+    groupPreset(group, index, presetOptions) {
+      const preset = groupPresets[group]?.[index]
+      if (!preset) throw new Error(`Unknown preset ${index + 1} for group ${group}`)
+      if (!enabled()) return
+      set(preset.values, { source: "preset", group, coalesce: presetOptions?.coalesce })
+      options.onPreset?.({ group, index, name: preset.name })
+    },
+    matchingGroupPreset(group) {
+      const cur = get() as Record<string, unknown>
+      return (groupPresets[group] ?? []).findIndex((p) =>
+        Object.entries(p.values).every(([k, v]) => same(cur[k], v)),
+      )
+    },
+    code: (format, values) => formatCode(values ?? get(), format),
+    variants: createVariants(
+      () => schema,
+      id,
+      storageKey(id, "variants"),
+      storage,
+      get,
+      (v) => set(v, { source: "variant" }),
+      notify,
+      enabled,
+    ),
+    attach(element) {
+      // A shipped store loads the host's panel module; a dev build its own lazy chunk. A
+      // production build of an unshipped store has neither, so no panel code is reachable.
+      const load = options.ship
+        ? () => options.ship!().then((m) => m.attach)
+        : typeof __KNOBS_DEV__ === "undefined" || __KNOBS_DEV__
+          ? () => import("../panel/attach.js").then((m) => m.attach)
+          : undefined
+      if (!load || !enabled()) return () => {}
+      let disposed = false
+      let detach: (() => void) | undefined
+      void load()
+        .then((attach) => {
+          if (!disposed && enabled()) detach = attach(controls, element)
+        })
+        .catch((cause) => {
+          error = String(cause)
+          notify()
+        })
+      return () => {
+        disposed = true
+        detach?.()
+      }
+    },
+    mount(container, mountOptions) {
+      const load = options.ship
+        ? () => options.ship!().then((m) => m.mountPanel)
+        : typeof __KNOBS_DEV__ === "undefined" || __KNOBS_DEV__
+          ? () => import("../panel/panel.js").then((m) => m.mountPanel)
+          : undefined
+      if (!load || !enabled()) return () => {}
+      let disposed = false
+      let panel: PanelHandle | undefined
+      void load()
+        .then((mountPanel) => {
+          if (!disposed && enabled()) {
+            panel = mountPanel(controls, container, mountOptions)
+            mountOptions?.onReady?.(panel)
+          }
+        })
+        .catch((cause) => {
+          error = String(cause)
+          notify()
+        })
+      return () => {
+        disposed = true
+        panel?.dispose()
+      }
+    },
+  }
+  return Object.freeze(controls)
+}

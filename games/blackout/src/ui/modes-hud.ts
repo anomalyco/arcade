@@ -1,5 +1,5 @@
 import "./modes.css"
-import { keyLabel } from "@arcade/kit/client/controls"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { MODES, type ModeView, SND, TEAM_NAMES } from "../../shared/sim/modes"
 import type { Snapshot } from "../../shared/sim/view"
 import type { Camera } from "../render/camera"
@@ -115,7 +115,8 @@ export class ModeHud {
       i.style.background = bar.color
     }
     const usable = g.alive && me && canUse(s, team, g.myId, me.x, me.y)
-    el.mhint!.innerHTML = usable && !bar ? `HOLD <kbd>${esc(keyLabel("KeyE"))}</kbd> TO ${b?.state === "planted" ? "DEFUSE" : "PLANT"}` : g.alive && b?.carrier === g.myId && !bar ? `YOU HAVE THE BOMB · PLANT AT A OR B` : ""
+    const myHold = b && b.actor === g.myId ? b.progress : 0
+    el.mhint!.innerHTML = usable && (!bar || myHold > 0) ? keyPromptHtml("KeyE", b?.state === "planted" ? "DEFUSE" : "PLANT", { hold: true, progress: myHold }) : g.alive && b?.carrier === g.myId && !bar ? `YOU HAVE THE BOMB · PLANT AT A OR B` : ""
     if (g.alive && carries(m, g.myId)) el.mhint!.innerHTML = m.flags?.[team]?.state === "home" ? "YOU HAVE THE FLAG · TAKE IT TO YOUR BASE" : "YOU HAVE THE FLAG · YOUR FLAG MUST BE HOME TO SCORE"
 
     const spec = s.phase === "play" && s.you?.respawnIn === -1 && !g.alive

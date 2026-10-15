@@ -2,17 +2,19 @@ import { mat4 } from "wgpu-matrix"
 import { lab } from "@arcade/kit/lab/main"
 import type { SectionFactory } from "@arcade/kit/lab/types"
 import type { SpawnFactory } from "@arcade/kit/lab/spawn-types"
-import { ALL_GAMES, LAB_GAMES, loadPlayground, resolveGames } from "./games/registry"
+import { ALL_GAMES, LAB_GAMES, loadPlayground, resolveGames, type LabGameModule } from "./games/registry"
+import { startStations } from "./station-host"
 import { SceneAudio } from "./sound/scene-audio"
 import { audioSection, bindMuteKey, sceneView, withSound } from "./sound/lab-sound"
 import { mountSpeaker } from "./sound/speaker"
 import "./style.css"
 
-const { choice, games } = resolveGames(location.search, location.hash)
 const params = new URLSearchParams(location.search)
 const bench = params.has("bench")
+const resolved = resolveGames(location.search, location.hash)
+const { choice, games } = resolved
 const entry = LAB_GAMES.find(game => game.id === choice)
-if (entry?.defaultSection && !location.hash && !params.has("section") && !bench) {
+if (entry?.defaultSection && !location.hash && !params.has("section") && !params.has("station") && !bench) {
   params.set("section", entry.defaultSection)
   history.replaceState(null, "", `${location.pathname}?${params}`)
 }
@@ -69,6 +71,25 @@ async function start() {
     },
   })
   mode = () => api.workbench.getMode()
+  // A station whose section belongs to a game that isn't loaded fetches that game's adapters when it opens.
+  const loaded = new Map<string, Promise<boolean>>(modules.map(({ game }) => [game.id, Promise.resolve(true)]))
+  const ensureGame = (id: string) => {
+    let pending = loaded.get(id)
+    if (!pending) {
+      const game = LAB_GAMES.find(g => g.id === id)
+      pending = game
+        ? game.load().then(({ default: module }: { default: LabGameModule }) => {
+          api.addSections(module.sections)
+          if (module.audio) sound.add(module.audio())
+          return true
+        })
+        : Promise.resolve(false)
+      loaded.set(id, pending)
+      pending.catch(() => loaded.delete(id))
+    }
+    return pending
+  }
+  if (!bench) await startStations(api, ensureGame)
   let last = 0
   const tick = (now: number) => {
     const dt = last ? Math.min(0.1, (now - last) / 1000) : 0

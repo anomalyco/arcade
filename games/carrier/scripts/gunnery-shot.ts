@@ -410,7 +410,7 @@ async function mp(): Promise<void> {
   const b = await open(`room=${room}`, "", "carrier.flight")
   let gb = await guntil(b, (m) => m.online === "online" && m.role !== "none", 20_000)
   check(ga.team !== gb.team, `opposite teams: A ${gfmt(ga)} | B ${gfmt(gb)}`)
-  // A mans the port CIWS from SHIP OPERATIONS.
+  // A mans the port CIWS from DEPLOY.
   await a.keyboard.press("KeyE")
   await a.waitForTimeout(300)
   await shot(a, "mp/00-a-ops-menu", false)

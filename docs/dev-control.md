@@ -46,6 +46,10 @@ bun run arcade transport pause                         # transport.toggle / tran
 bun run arcade possess getaway:muscle                  # mode.play: enter Play mode on character
 bun run arcade release                                 # mode.play: exit Play mode back to Edit mode and release input
 bun run arcade note "Noir A/B Wipe" --body "Left: current · Right: noir" --target setting:compare
+bun run arcade station looks                           # Open a station in the Lab tab (navigates to /arcade/lab/?station=looks if needed)
+bun run arcade station list                            # Station ids, titles and board features from games/lab/src/stations/
+bun run arcade run station.variant '{"id":"noir"}'     # Pick a variant in the open station (station.close goes back to the plain Lab)
+bun run arcade run station.layout '{"edit":true}'      # Read, replace (layout), reset or edit the open station's widget layout
 bun run arcade tour .arcade-tours/look-review.json     # Open ONE browser tab with a top Studio Tab Strip of mini-tabs
 bun run arcade tour .arcade-tours/overnight.json --multi-tab # Legacy mode: open one separate browser tab per step
 bun run arcade run <command-id> '{"key":"value"}'      # Invoke any command ID from 'arcade cmd list'
@@ -96,6 +100,13 @@ To call Kit's attention to a specific feature in an open tab or walk him through
     --target character:active
   bun run arcade note --clear
   ```
+
+- **Lab stations (`arcade station <id>`)**:
+  For demos Kit comes back to (effects, looks, vegetation, characters, each game's Lab scene), add or update a station
+  file in `games/lab/src/stations/` instead of writing a tour; see [lab.md](lab.md#stations). A station opens in place
+  in the Lab with its widgets around the viewport: status, knobs cards for the controls that matter, variants, A/B and
+  the grid, live numbers, measurements, recent commits, notes and the voice note, which lands on the board. Use tours
+  for one-off walkthroughs that mix pages, images and stations.
 
 - **Single-tab Studio Tours (`arcade tour`)**:
   Opens **one** browser tab by default (`singleTab: true`; pass `--multi-tab` for the legacy one-browser-tab-per-step behavior, or `--no-open` to stage without opening a tab) and renders a persistent, dark, collapsible **Studio Tab Strip** (`[data-arcade-studio-strip]`) across the top of every Arcade page (Hub, Lab, Catalogue, Characters, and games).
