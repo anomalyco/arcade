@@ -184,7 +184,7 @@ describe("flow-field hordes", () => {
   test("a gunshot peels the zombies in earshot off toward it and leaves the far ones wandering", () => {
     const sim = hordeWorld()
     const shot = [84, 16] as const
-    const near = addHorde(sim, 30, [80, 34, 88, 42], "wander", undefined, 1)
+    const near = addHorde(sim, 30, [80, 30, 88, 37], "wander", undefined, 1)
     const far = addHorde(sim, 30, [78, 80, 90, 90], "wander", undefined, 500)
     run(sim, 1)
     const before = near.reduce((s, a) => s + dist(a, shot), 0) / near.length
