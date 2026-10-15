@@ -249,6 +249,7 @@ export class Renderer {
   private velocityMSAA: GPUTexture | null = null
   private velocityView!: GPUTextureView
   private velocityMSAAView!: GPUTextureView
+  private velocityAttachment: GPURenderPassColorAttachment | null = null
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
   private sharedBlur: MotionBlur | null = null
@@ -332,7 +333,14 @@ export class Renderer {
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
-    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: true })
+    this.targets = new SceneTargets(d, {
+      hdrFormat: HDR,
+      depthFormat: DEPTH,
+      samples: SAMPLES,
+      depthTextureBinding: true,
+      clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 },
+      depthClearValue: DEPTH_CFG.clearValue,
+    })
     this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: HDR, upTexelSource: "target" })
 
     const S = GPUShaderStage
@@ -369,6 +377,9 @@ export class Renderer {
       frameLayout: sceneLayout,
       color: HDR,
       depth: DEPTH,
+      depthMode: DEPTH_CFG.mode,
+      depthCompare: DEPTH_CFG.compare,
+      depthClearValue: DEPTH_CFG.clearValue,
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
@@ -839,6 +850,7 @@ export class Renderer {
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
     this.velocity = this.velocityMSAA = null
+    this.velocityAttachment = null
     this.smokeRenderer.resize(w, h, this.targets.depthView)
     this.bloomPyramid.resize({
       hdr: this.targets.hdr,
@@ -952,6 +964,13 @@ export class Renderer {
     this.velocityMSAA = d.createTexture({ size, format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.velocityView = this.velocity.createView()
     this.velocityMSAAView = this.velocityMSAA.createView()
+    this.velocityAttachment = {
+      view: this.velocityMSAAView,
+      resolveTarget: this.velocityView,
+      clearValue: { r: 0, g: 0, b: 1000, a: 1 },
+      loadOp: "clear",
+      storeOp: "discard",
+    }
     this.motionComposite = d.createBindGroup({ layout: this.motionPostLayout, entries: [
       { binding: 0, resource: this.targets.hdrView }, { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: this.bloomPyramid.downParams[0]! } },
@@ -1298,11 +1317,13 @@ export class Renderer {
     }
 
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
-    const pass = enc.beginRenderPass({
-      timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
-      colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
-    })
+    const pass = enc.beginRenderPass(
+      this.targets.configureMainPass({
+        storeDepth: hasSmoke || runSharedBlur,
+        timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
+        extraColorAttachment: motion ? this.velocityAttachment : null,
+      }),
+    )
     pass.setBindGroup(0, this.sceneGroup)
     this.passes.drawSlot("sky", pass)
     if (this.level?.count) {

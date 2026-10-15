@@ -158,6 +158,9 @@ export class Renderer {
       depthFormat: DEPTH_CFG.format,
       samples: SAMPLES,
       depthTextureBinding: true,
+      clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 },
+      depthClearValue: DEPTH_CFG.clearValue,
+      hasStencil: DEPTH_CFG.hasStencil,
     })
     this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: HDR, upTexelSource: "source" })
 
@@ -475,18 +478,7 @@ export class Renderer {
       timestampWrites: this.measure ? this.timer!.start : undefined,
     })
 
-    const pass = enc.beginRenderPass({
-      colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.02, g: 0.025, b: 0.04, a: 1 }, loadOp: "clear", storeOp: "discard" }],
-      depthStencilAttachment: {
-        view: this.targets.depthView,
-        depthClearValue: DEPTH_CFG.clearValue,
-        depthLoadOp: "clear",
-        depthStoreOp: blurOn || hasFxVolumes ? "store" : "discard",
-        stencilClearValue: 0,
-        stencilLoadOp: "clear",
-        stencilStoreOp: "discard",
-      },
-    })
+    const pass = enc.beginRenderPass(this.targets.configureMainPass({ storeDepth: blurOn || hasFxVolumes }))
     pass.setBindGroup(0, this.mainGroup)
     this.passes.drawSlot("sky", pass)
     pass.setStencilReference(1)
