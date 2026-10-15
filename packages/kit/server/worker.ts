@@ -1,11 +1,17 @@
 import { labUrl } from "../lab-url"
+import { roomLocationHint, type RoomLocationHint } from "../net/room-core"
+
+export { roomLocationHint, type RoomLocationHint }
 
 /** The Lobby's RPC surface the router calls. */
 export type LobbyApi = { quick(): unknown; create(): unknown; stats(): unknown }
 
 /** Structural, so any game's `DurableObjectNamespace<Room>` fits. */
 export type GameEnv = {
-  ROOM: { idFromName(name: string): DurableObjectId; get(id: DurableObjectId): { fetch(req: Request): Promise<Response> } }
+  ROOM: {
+    idFromName(name: string): DurableObjectId
+    get(id: DurableObjectId, options?: { locationHint?: DurableObjectLocationHint }): { fetch(req: Request): Promise<Response> }
+  }
   ASSETS?: Fetcher
 }
 
@@ -40,7 +46,9 @@ export function gameWorker<Env extends GameEnv>(options: GameWorkerOptions<Env>)
         const code = ws[1]!
         const headers = new Headers(req.headers)
         headers.set("x-room", code)
-        return env.ROOM.get(env.ROOM.idFromName(code)).fetch(new Request(req, { headers }))
+        const locationHint = roomLocationHint(req as { cf?: { continent?: string; country?: string; regionCode?: string } })
+        const stub = locationHint ? env.ROOM.get(env.ROOM.idFromName(code), { locationHint }) : env.ROOM.get(env.ROOM.idFromName(code))
+        return stub.fetch(new Request(req, { headers }))
       }
       if (env.ASSETS) return env.ASSETS.fetch(req)
       return new Response("not found", { status: 404 })

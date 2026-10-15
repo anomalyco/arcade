@@ -27,6 +27,19 @@ export class Predictor<C> {
   }
 
   /**
+   * Up to `max` unacknowledged commands immediately preceding the latest recorded command, in sequence order.
+   * Bundling these with an upstream intent packet fills gaps if an earlier frame was dropped or coalesced.
+   */
+  prevCommands(max = 2): C[] {
+    const end = this.pending.length - 1
+    if (end <= 0 || max <= 0) return []
+    const start = Math.max(0, end - max)
+    const out: C[] = []
+    for (let i = start; i < end; i++) out.push(this.pending[i]!.cmd)
+    return out
+  }
+
+  /**
    * Applies the server's acknowledgement: `restore` resets local state to the snapshot (which already includes
    * every command up to `ack`), then `replay` re-applies the rest in order. Returns how many were replayed.
    */

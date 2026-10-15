@@ -14,6 +14,40 @@
 import { DEFAULT_JITTER, JitterBuffer, type InputOps, type JitterConfig } from "./jitter-buffer"
 import { Seats } from "./seats"
 
+export type RoomLocationHint = "wnam" | "enam" | "weur" | "eeur" | "apac" | "oc" | "sam" | "afr" | "me"
+
+const WEST_US_CA = new Set(["CA", "OR", "WA", "NV", "AZ", "UT", "ID", "MT", "WY", "AK", "HI", "BC", "AB", "YT"])
+const EAST_EU = new Set(["PL", "CZ", "SK", "HU", "RO", "BG", "UA", "EE", "LV", "LT", "FI", "GR", "HR", "RS", "SI"])
+const MIDDLE_EAST = new Set(["AE", "SA", "IL", "QA", "KW", "BH", "OM", "JO", "TR"])
+
+/**
+ * Maps Cloudflare edge request metadata (`req.cf`) to the nearest Durable Object `locationHint` so a newly created
+ * room spawns in the creator's region instead of across an ocean.
+ */
+export function roomLocationHint(req: { cf?: { continent?: string; country?: string; regionCode?: string } } | null | undefined): RoomLocationHint | undefined {
+  const cf = req?.cf
+  if (!cf) return undefined
+  const country = cf.country?.toUpperCase()
+  const region = cf.regionCode?.toUpperCase()
+  if (country && MIDDLE_EAST.has(country)) return "me"
+  switch (cf.continent?.toUpperCase()) {
+    case "NA":
+      return (country === "US" || country === "CA") && region && WEST_US_CA.has(region) ? "wnam" : "enam"
+    case "EU":
+      return country && EAST_EU.has(country) ? "eeur" : "weur"
+    case "AS":
+      return "apac"
+    case "OC":
+      return "oc"
+    case "SA":
+      return "sam"
+    case "AF":
+      return "afr"
+    default:
+      return undefined
+  }
+}
+
 /** One client socket. */
 export type Conn = { send(data: string): void; close(code?: number, reason?: string): void }
 
@@ -38,7 +72,7 @@ export type RoomClientFrame<I> =
   | { type: "ping"; t: number }
   /** `build` is the client's BUILD; a mismatched client is told to reload. `token` reclaims a held seat. */
   | { type: "hello"; token?: string; build?: string }
-  | { type: "intent"; seq: number; i: I }
+  | { type: "intent"; seq: number; i: I; prev?: readonly I[] }
 
 export type RoomCoreOptions<I> = {
   code: string
@@ -169,7 +203,11 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
     const seat = state.id ? this.seats.byId(state.id) : undefined
     if (!seat) return
     if (msg.type === "intent") {
-      const { seq, i } = msg as { seq: number; i: I }
+      const { seq, i, prev } = msg as { seq: number; i: I; prev?: readonly I[] }
+      if (prev?.length) {
+        const base = seq - prev.length
+        for (let k = 0; k < prev.length; k++) if (base + k > 0) seat.data.jitter.push(base + k, prev[k]!, this.ticks)
+      }
       if (this.activity(i, seat.data.activity)) seat.data.activity.at = this.clock()
       seat.data.jitter.push(seq, i, this.ticks)
       return

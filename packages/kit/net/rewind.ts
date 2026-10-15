@@ -36,11 +36,11 @@ export class RewindHistory<Id extends string | number = number> {
     readonly maxRewindSeconds = 0.2,
   ) {}
 
-  record(
+  record<E extends { id: Id; x: number; y: number }>(
     tick: number,
     time: number,
-    entities: readonly { id: Id; x: number; y: number }[],
-    include?: (e: { id: Id; x: number; y: number }) => boolean,
+    entities: readonly E[],
+    include?: (e: E) => boolean,
   ): void {
     const needed = entities.length
     let frame: Frame<Id>
@@ -115,13 +115,15 @@ export class RewindHistory<Id extends string | number = number> {
   }
 
   /**
-   * Temporarily rewinds `entities` in-place to `targetTime`, runs `fn()`, and restores their current authoritative
-   * positions (preserving any knockback delta applied to an entity during `fn()`).
+   * Temporarily rewinds `entities` in-place to `targetTime` (skipping `skipId` so an attacker stays at their
+   * current tick position), runs `fn()`, and restores their current authoritative positions (preserving any knockback
+   * delta applied to an entity during `fn()`).
    */
   withRewoundPositions<E extends { id: Id; x: number; y: number }, R>(
     entities: readonly E[],
     targetTime: number,
     fn: () => R,
+    skipId?: Id,
   ): R {
     const poses = this.sampleAtTime(targetTime)
     if (!poses) return fn()
@@ -133,7 +135,7 @@ export class RewindHistory<Id extends string | number = number> {
       const e = entities[i]!
       savedX[i] = e.x
       savedY[i] = e.y
-      const p = poses.get(e.id)
+      const p = skipId !== undefined && e.id === skipId ? undefined : poses.get(e.id)
       if (p) {
         e.x = p.x
         e.y = p.y
