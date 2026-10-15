@@ -438,8 +438,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: relative;
 }
 
-.lab-menu,
-.lab-outliner-menu {
+.lab-menu {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
@@ -756,133 +755,26 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   flex: none;
 }
 
-.lab-outliner-menu {
-  left: 8px;
-  right: auto;
-  top: 30px;
-}
-
-.lab-tree {
+/* The Outliner's tree (knobs/ui) fills the column under its search. */
+.lab-outliner-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding-bottom: 8px;
-  outline: none;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line2) transparent;
-}
-
-.lab-trow {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--row);
-  padding: 0 4px 0 calc(6px + var(--depth, 0) * 14px);
-  white-space: nowrap;
-  position: relative;
-  color: var(--tx);
+  flex-direction: column;
 }
-
-.lab-trow:hover {
-  background: #d8dbe00a;
-}
-
-.lab-tgroup {
-  color: var(--tx2);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.lab-tgroup .lab-tname {
+.lab-outliner-body > .knobs-tree {
   flex: 1;
+  min-height: 0;
 }
-
-.lab-tgroup .lab-tcount {
-  padding-right: 6px;
-}
-
-.lab-tchev {
-  width: 12px;
-  flex: none;
-  color: var(--tx3);
-  text-align: center;
-  font-size: 11px;
-}
-
-.lab-tname {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lab-tx {
-  font: 10px/1 var(--mono);
+.lab-outliner-body .knobs-tree-row[data-off~="locked"] .knobs-tree-text {
   color: var(--tx3);
 }
 
-.lab-tobj[aria-selected="true"],
-.lab-tfold[aria-selected="true"] {
-  background: var(--acc-a);
-}
-
-.lab-tfold[data-partial="true"] {
-  background: color-mix(in srgb, var(--acc) 8%, transparent);
-}
-
-.lab-tobj[aria-selected="true"] .lab-ticon,
-.lab-tfold[aria-selected="true"] .lab-ticon {
-  color: color-mix(in srgb, var(--acc) 60%, var(--tx));
-}
-
-.lab-tree:focus-visible .lab-trow[data-active="true"],
-.lab-tree:focus .lab-trow[data-active="true"] {
-  box-shadow: inset 0 0 0 1px var(--acc);
-}
-
-.lab-tree:focus .lab-tobj[aria-selected="true"][data-active="true"] {
-  background: var(--acc-b);
-}
-
-.lab-tobj[aria-selected="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--acc);
-}
-
-.lab-tobj[data-locked="true"] .lab-tname {
-  color: var(--tx2);
-}
-
-.lab-tcol {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 18px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--tx3);
-  opacity: 0;
-  padding: 0;
-}
-
-.lab-trow:hover .lab-tcol,
-.lab-tcol[aria-pressed="true"] {
-  opacity: 1;
-}
-
-.lab-tcol[aria-pressed="true"] {
-  color: var(--tx2);
-}
-
-.lab-tcol:hover {
-  background: var(--hover);
-  color: var(--tx);
+/* The type filter, in a knobs popover. */
+.lab-outliner-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
 }
 
 .lab-tree-empty {

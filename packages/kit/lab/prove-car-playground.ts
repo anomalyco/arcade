@@ -282,7 +282,7 @@ try {
     assert.equal(duringLightingState.items.props.length, 6, "Props persisted while editing Lighting")
 
     // Select the Car from the Outliner (scene objects live there, not in the Library)
-    await page.locator('.lab-tobj[data-object-id="character:active"]').click()
+    await page.locator('.lab-outliner [data-object-id="character:active"]').click()
     await step(2)
     const backToCarState = await page.evaluate(() => ({
       section: (window as any).lab.settings.section,
