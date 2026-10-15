@@ -41,6 +41,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Releases and game plans
 
+- [agent-state.md](agent-state.md): live deploy/branch policy (`deploys: on|off`, `allowed_base`, `retired_branches`),
+  proof defaults, preview worktree rules, and hot-file contention rules enforced by `scripts/agent-ops.ts` and `pr-guard.yml`.
 - [integration.md](integration.md): how to assemble and verify a release integration branch, and the past release
   PRs. Read before merging several feature branches together.
 - [zomboid-slice.md](zomboid-slice.md): the plan for Outbreak's co-op survival game.

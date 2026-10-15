@@ -1,6 +1,6 @@
 # blackout
 
-- After every meaningful change, run `bun run check` then `bun run deploy` so the latest build is live at https://anoma.ly/arcade/blackout/.
+- Run `bun run check` before pushing; pushing to `main` deploys https://anoma.ly/arcade/blackout/ (follow `../../docs/agent-state.md` for deploy and branch rules).
 - WebGPU only runs in secure contexts: test via the deployed URL, the opentunnel dev URL or `localhost`, never a bare LAN hostname.
 - `TUNNEL=1 bun run dev` runs Wrangler (rooms, :8788) and Vite (:5191); opentunnel route `blackout` exposes it at https://blackout.lwoyjcaeyxv6.opentunnel.xyz.
 - The game is a plain top-down shooter: everyone sees everyone, three guns (rifle, shotgun, sniper), health with regen, respawns, a new procedural office floor every match. No progression, no bots online (only the dev `?practice` mode has bots; `?practice&mode=dom` picks a mode).
