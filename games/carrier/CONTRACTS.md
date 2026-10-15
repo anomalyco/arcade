@@ -735,7 +735,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Anything else is the HULL side.
 - Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
   and all of them stay lit below 60% health.
-- Repair: after 40 s without damage, 1.5 hp/s and the bridge 1% per second, back to full (like jet repair).
+- Repair: after 20 s without damage, 3 hp/s (a bomb hit back in ~1 min, near-sunk to full in ~5.5 min) and the bridge 1% per second, back to full (like jet repair).
 - Settle (`settleOf`, `settled`): up to 3.2 m lower and 5° of list toward the side that took the hits, growing with
   damage. It's an offset on the pose that is drawn and hit-tested, never inside the buoyancy physics. `game.ts` settles
   every drawn hull and the room settles the poses its combat world hits, so health alone decides it everywhere.
