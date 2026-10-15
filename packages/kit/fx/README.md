@@ -19,10 +19,10 @@ The pool holds 2,048 particles and reports dropped births. The renderer draws li
 sparks/water and six-faced debris in one instanced draw. Fire and sparks emit light into the HDR image; games
 supply actual scene lights separately. Soft billboards fade analytically against Y=0.
 
-Create `ParticleRenderer(device, depthFormat, samples)`, fill its persistent `uniforms`, call `upload(pool)`, then
-`draw(hdrPass)`. The HDR format is `rgba16float`; depth defaults to `depth24plus`, with four samples.
-Uniform float offsets are 0–15 view-projection, 16–18 eye, 19 debug mode, 20–22 ambient RGB, 23 light count,
-24 onward lights. Each light is eight floats: XYZ/radius, RGB/power. The shader caps the loop at eight.
+Create `ParticleRenderer(device, depthFormat, samples)`, call `setFrame({ vp, eye, ambient, lights, lightCount, debug })`,
+call `upload(pool)`, then `draw(hdrPass)`. The HDR format is `rgba16float`; depth defaults to `depth24plus`, with four samples.
+`ParticleFrameStruct` (`wgslStruct` in `particle-renderer.ts`) defines the 88-float uniform layout (`vp`, `eye`, `debug`,
+`ambient`, `lightCount`, and up to eight 8-float `lights` as `[x, y, z, radius, r, g, b, power]`).
 
 The clutter worktree's current `Fx` particles carry the same position, velocity, colour, size/growth, gravity,
 drag and life concepts. Its game-specific collision and damage rules can remain there while it writes this
@@ -65,15 +65,8 @@ evaluated from continuous age, with no lower-rate simulation tick or cached cell
 refill advances with elapsed time. Frame/substep replay is tested at 30 Hz, 60 Hz and one equivalent large step.
 
 Create `VolumeRenderer(device)`. On resize, call `resize(width,height,readableDepthView)` with the game's stored
-four-sample depth attachment. For a depth-stencil texture, use a depth-only view. Fill the persistent `uniforms`:
-
-| Float offset | Value |
-| --- | --- |
-| 0–15 | Inverse view-projection |
-| 16–18 | Camera XYZ |
-| 22 | Light count, at most eight |
-| 24–26 | Ambient RGB |
-| 60 onward | Eight-float lights, as above |
+four-sample depth attachment. For a depth-stencil texture, use a depth-only view. Update frame uniforms with
+`setFrame({ inverse, eye, ambient, lights, lightCount, volumes, debug })` (backed by `VolumeFrameStruct` in `volume-shader.ts`):
 
 `render(encoder,hdrView,volumes)` uploads the field, integrates 24 density samples per pixel into an RGBA16F
 target capped at 480×320, then composites with depth-aware four-tap upsampling. Empty systems skip both passes.
@@ -124,11 +117,16 @@ through `Game.cosmeticSplatter`; a detachment producer can pass its world-space 
 velocity without importing game rules into the effect. An animation-side caller is still pending.
 
 The fixed 120 Hz solver sweeps points against actual static triangles. It stores at most 256 droplets and 256
-deposits, with a default recycling budget of 192 each. Every deposit clips to at most 12 coplanar receiver triangles.
-Grazing impacts stretch along the projected velocity; absorbent surfaces spread less and fade sooner. Glass
-blocks without receiving. The renderer uses one non-additive, depth-tested HDR draw and a preallocated instance
-buffer. Its optional motion-MRT pipeline preserves the velocity attachment. Rebuild the system when static
-receivers change; moving actors and vehicles are not receivers. The current tint is unlit and has no specular lobe.
+deposits, with a default recycling budget of 192 each (`224` for `zombieBlood`). Every deposit clips to at most 12
+coplanar or gently sloped receiver triangles (exact coplanar triangles take priority over underlying sloped terrain).
+Grazing impacts stretch along the projected velocity into asymmetric ballistic fans with seed-varied radial fingers,
+satellite droplets, and vertical gravity wall drips; absorbent surfaces spread less and fade sooner. Glass blocks
+without receiving. The renderer uses one non-additive, depth-tested HDR draw, preserves destination HDR alpha so
+Look/Noir flashlight selective-colour masks remain intact, shades deposits with Beer–Lambert optical depth (coagulated
+dark venous core to saturated arterial rim that darkens with age) and a raised meniscus normal catching wet specular
+glints from the flashlight and nearby lamps, and supports `blood`, `zombieBlood`, `survivorBlood`, `ink`, `slime`,
+`oil` and `potion` presets. Its optional motion-MRT pipeline preserves the velocity attachment. Rebuild the system
+when static receivers change; moving actors and vehicles are not receivers.
 
 `games/blackout/scripts/prove-splatter.ts` records matched captures and paired whole-frame GPU samples against
 the current blood. See `perf/lab-splatter.md` for reproduction, measured costs and limits.

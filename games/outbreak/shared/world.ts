@@ -854,18 +854,19 @@ export function selectActiveWindowCenter(
   prevCenter?: ChunkCoord,
   edgeMargin = 10.0,
 ): ChunkCoord {
+  const inOrigin = x >= edgeMargin && x <= MACRO_SIZE - edgeMargin && y >= edgeMargin && y <= MACRO_SIZE - edgeMargin
   if (!prevCenter) {
-    if (x >= edgeMargin && x <= MACRO_SIZE - edgeMargin && y >= edgeMargin && y <= MACRO_SIZE - edgeMargin) {
-      return { cx: 1, cy: 1 }
-    }
-    return worldToChunk(x, y)
+    return inOrigin ? { cx: 1, cy: 1 } : worldToChunk(x, y)
   }
   const winMinX = (prevCenter.cx - 1) * CHUNK + edgeMargin
   const winMaxX = (prevCenter.cx + 2) * CHUNK - edgeMargin
   const winMinY = (prevCenter.cy - 1) * CHUNK + edgeMargin
   const winMaxY = (prevCenter.cy + 2) * CHUNK - edgeMargin
-  const cx = x < winMinX || x > winMaxX ? Math.floor(x / CHUNK) : prevCenter.cx
-  const cy = y < winMinY || y > winMaxY ? Math.floor(y / CHUNK) : prevCenter.cy
+  const outX = x < winMinX || x > winMaxX
+  const outY = y < winMinY || y > winMaxY
+  if ((outX || outY) && inOrigin) return { cx: 1, cy: 1 }
+  const cx = outX ? Math.floor(x / CHUNK) : prevCenter.cx
+  const cy = outY ? Math.floor(y / CHUNK) : prevCenter.cy
   return { cx, cy }
 }
 
@@ -879,8 +880,11 @@ export class StreamingWorld {
   readonly activeChunks = new Map<string, WorldChunk>()
   readonly deltas = new Map<string, ChunkDelta>()
   readonly navTiles = new Map<string, Uint8Array<ArrayBuffer>>()
+  private readonly navTilePool: Uint8Array<ArrayBuffer>[] = []
+  private readonly navTileDigests = new Map<string, number>()
   private readonly centers = new Map<string, ChunkCoord>()
   private readonly chunkCache = new Map<string, WorldChunk>()
+  private readonly maxTemplateCache = 36
   /** Increments whenever the active chunk set changes. */
   windowRevision = 0
 
@@ -917,26 +921,75 @@ export class StreamingWorld {
   getOrGenerateChunk(cx: number, cy: number): WorldChunk {
     const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${cx},${cy}`
     let base = this.chunkCache.get(cacheKey)
-    if (!base) {
+    if (base) {
+      this.chunkCache.delete(cacheKey)
+      this.chunkCache.set(cacheKey, base)
+    } else {
       base = generateWorldChunk(this.seed, this.houseSeed, cx, cy, this.mode)
-      if (this.chunkCache.size >= 96) {
+      if (this.chunkCache.size >= this.maxTemplateCache) {
         this.chunkCache.delete(this.chunkCache.keys().next().value!)
       }
       this.chunkCache.set(cacheKey, base)
     }
-    // Clone mutable arrays so delta mutations don't pollute the immutable template cache
+    // Share immutable structural arrays; only clone mutable door/window/container records
     return {
       ...base,
-      buildings: base.buildings.map((b) => ({ ...b })),
-      barriers: base.barriers.map((b) => ({ ...b, rect: [...b.rect] as Rect })),
-      doors: base.doors.map((d) => ({ ...d, rect: [...d.rect] as Rect })),
-      windows: base.windows.map((w) => ({ ...w, rect: [...w.rect] as Rect })),
-      props: base.props.map((p) => ({ ...p })),
-      lamps: base.lamps.map((l) => ({ ...l })),
-      vehicles: base.vehicles.map((v) => [...v] as Rect),
-      containers: base.containers.map((c) => ({ ...c, rect: [...c.rect] as Rect })),
-      zombieSpawns: base.zombieSpawns.map((z) => ({ ...z })),
+      doors: base.doors.map((d) => ({ ...d })),
+      windows: base.windows.map((w) => ({ ...w })),
+      containers: base.containers.map((c) => ({ ...c })),
     }
+  }
+
+  private getBaseChunk(cx: number, cy: number): WorldChunk {
+    const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${cx},${cy}`
+    let base = this.chunkCache.get(cacheKey)
+    if (!base) {
+      base = generateWorldChunk(this.seed, this.houseSeed, cx, cy, this.mode)
+      if (this.chunkCache.size >= this.maxTemplateCache) {
+        this.chunkCache.delete(this.chunkCache.keys().next().value!)
+      }
+      this.chunkCache.set(cacheKey, base)
+    }
+    return base
+  }
+
+  private computeChunkPortalDigest(
+    ch: WorldChunk,
+    portalStates: ReadonlyMap<string, { barricadePlanks: number }>,
+  ): number {
+    let h = 2166136261 >>> 0
+    for (let i = 0; i < ch.doors.length; i++) {
+      const d = ch.doors[i]!
+      const p = portalStates.get(d.id)?.barricadePlanks ?? 0
+      h = Math.imul(h ^ ((d.open ? 1 : 0) | ((d.locked ? 1 : 0) << 1) | (p << 2)), 16777619) >>> 0
+    }
+    for (let i = 0; i < ch.windows.length; i++) {
+      const w = ch.windows[i]!
+      const p = portalStates.get(w.id)?.barricadePlanks ?? 0
+      h = Math.imul(h ^ ((w.open ? 1 : 0) | ((w.openable ? 1 : 0) << 1) | (p << 2)), 16777619) >>> 0
+    }
+    return h >>> 0
+  }
+
+  private updateChunkNavTile(
+    ch: WorldChunk,
+    portalStates: ReadonlyMap<string, { barricadePlanks: number }>,
+  ): void {
+    const digest = this.computeChunkPortalDigest(ch, portalStates)
+    const existing = this.navTiles.get(ch.key)
+    if (existing && this.navTileDigests.get(ch.key) === digest) return
+    const out = existing ?? this.navTilePool.pop() ?? new Uint8Array(64 * 64)
+    this.navTiles.set(
+      ch.key,
+      buildChunkNavTile(ch, (id) => portalStates.get(id)?.barricadePlanks ?? 0, 0.28, out),
+    )
+    this.navTileDigests.set(ch.key, digest)
+  }
+
+  private clearNavTiles(): void {
+    for (const tile of this.navTiles.values()) this.navTilePool.push(tile)
+    this.navTiles.clear()
+    this.navTileDigests.clear()
   }
 
   ensureDelta(cx: number, cy: number): ChunkDelta {
@@ -966,16 +1019,81 @@ export class StreamingWorld {
     containers: readonly LootContainer[],
     portalStates: ReadonlyMap<string, { integrity: number; barricadePlanks: number; barricadeHp: number }>,
     agents: readonly AIAgent[],
-  ): ChunkDelta {
-    const delta = this.ensureDelta(chunk.cx, chunk.cy)
-    delta.visited = true
+  ): ChunkDelta | undefined {
+    const base = this.getBaseChunk(chunk.cx, chunk.cy)
+    const existingDelta = this.deltas.get(chunk.key)
+    let modified = existingDelta !== undefined
 
-    for (const cd of chunk.doors) {
+    for (let i = 0; i < chunk.doors.length; i++) {
+      const cd = chunk.doors[i]!
+      const bd = base.doors[i] ?? cd
       const liveDoor = town.doors.find((d) => d.id === cd.id) ?? cd
       const pst = portalStates.get(cd.id)
       const planks = pst?.barricadePlanks ?? 0
       const integrity = pst?.integrity ?? 100
-      if (liveDoor.open || liveDoor.locked !== undefined || planks > 0 || integrity < 100) {
+      if (liveDoor.open !== bd.open || liveDoor.locked !== bd.locked || planks > 0 || integrity < 100) {
+        modified = true
+        break
+      }
+    }
+
+    if (!modified) {
+      for (let i = 0; i < chunk.windows.length; i++) {
+        const cw = chunk.windows[i]!
+        const bw = base.windows[i] ?? cw
+        const liveWin = town.windows.find((w) => w.id === cw.id) ?? cw
+        const pst = portalStates.get(cw.id)
+        const planks = pst?.barricadePlanks ?? 0
+        if (liveWin.open !== bw.open || liveWin.openable !== bw.openable || planks > 0) {
+          modified = true
+          break
+        }
+      }
+    }
+
+    if (!modified) {
+      for (let i = 0; i < chunk.containers.length; i++) {
+        const cc = chunk.containers[i]!
+        const liveC = containers.find((c) => c.id === cc.id) ?? cc
+        if (liveC.searched) {
+          modified = true
+          break
+        }
+      }
+    }
+
+    const [x0, y0, x1, y1] = chunk.bounds
+    if (!modified) {
+      for (let i = 0; i < agents.length; i++) {
+        const a = agents[i]!
+        const inBounds = a.x >= x0 && a.x < x1 && a.y >= y0 && a.y < y1
+        const spawnSpec = chunk.zombieSpawns.find((s) => s.id === a.id)
+        if (!inBounds && !spawnSpec) continue
+        if (
+          !spawnSpec ||
+          a.state === "dead" ||
+          a.hp < a.maxHp ||
+          a.detachedLimbs.length > 0
+        ) {
+          modified = true
+          break
+        }
+      }
+    }
+
+    if (!modified) return undefined
+
+    const delta = this.ensureDelta(chunk.cx, chunk.cy)
+    delta.visited = true
+
+    for (let i = 0; i < chunk.doors.length; i++) {
+      const cd = chunk.doors[i]!
+      const bd = base.doors[i] ?? cd
+      const liveDoor = town.doors.find((d) => d.id === cd.id) ?? cd
+      const pst = portalStates.get(cd.id)
+      const planks = pst?.barricadePlanks ?? 0
+      const integrity = pst?.integrity ?? 100
+      if (liveDoor.open !== bd.open || liveDoor.locked !== bd.locked || planks > 0 || integrity < 100) {
         delta.doors[cd.id] = {
           open: liveDoor.open,
           ...(liveDoor.locked !== undefined ? { locked: liveDoor.locked } : {}),
@@ -987,11 +1105,13 @@ export class StreamingWorld {
       }
     }
 
-    for (const cw of chunk.windows) {
+    for (let i = 0; i < chunk.windows.length; i++) {
+      const cw = chunk.windows[i]!
+      const bw = base.windows[i] ?? cw
       const liveWin = town.windows.find((w) => w.id === cw.id) ?? cw
       const pst = portalStates.get(cw.id)
       const planks = pst?.barricadePlanks ?? 0
-      if (liveWin.open || planks > 0) {
+      if (liveWin.open !== bw.open || liveWin.openable !== bw.openable || planks > 0) {
         delta.windows[cw.id] = {
           open: liveWin.open,
           openable: liveWin.openable,
@@ -1002,16 +1122,17 @@ export class StreamingWorld {
       }
     }
 
-    for (const cc of chunk.containers) {
+    for (let i = 0; i < chunk.containers.length; i++) {
+      const cc = chunk.containers[i]!
       const liveC = containers.find((c) => c.id === cc.id) ?? cc
       if (liveC.searched) {
         delta.searched[cc.id] = true
       }
     }
 
-    const [x0, y0, x1, y1] = chunk.bounds
     let livingCount = 0
-    for (const a of agents) {
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i]!
       const inBounds = a.x >= x0 && a.x < x1 && a.y >= y0 && a.y < y1
       const isSpawnedHere = chunk.zombieSpawns.some((s) => s.id === a.id)
       if (!inBounds && !isSpawnedHere) continue
@@ -1024,7 +1145,7 @@ export class StreamingWorld {
         aim: Number(a.aim.toFixed(3)),
         state: a.state,
         hp: a.hp,
-        detachedLimbs: [...a.detachedLimbs],
+        detachedLimbs: a.detachedLimbs.length > 0 ? [...a.detachedLimbs] : [],
       }
     }
     delta.aggregateZombies = livingCount
@@ -1066,6 +1187,27 @@ export class StreamingWorld {
     for (const c of chunk.containers) {
       if (delta?.searched[c.id]) c.searched = true
     }
+  }
+
+  getSurvivorWindowCenter(id: string, x: number, y: number): ChunkCoord {
+    return this.centers.get(id) ?? selectActiveWindowCenter(x, y)
+  }
+
+  /** Fast zero-allocation check whether any survivor has crossed their active 3×3 chunk window hysteresis boundary. */
+  wouldWindowsChange(survivors: readonly { id: string; x: number; y: number }[]): boolean {
+    if (this.mode === "classic") {
+      const outsideClassic = survivors.some((s) => s.x < 4 || s.x > SIZE - 4 || s.y < 4 || s.y > SIZE - 4)
+      if (!outsideClassic && this.isOriginNineOnly()) return false
+    }
+    if (survivors.length === 0) return !this.isOriginNineOnly()
+    if (survivors.length !== this.centers.size) return true
+    for (const s of survivors) {
+      const prev = this.centers.get(s.id)
+      if (!prev) return true
+      const next = selectActiveWindowCenter(s.x, s.y, prev)
+      if (next.cx !== prev.cx || next.cy !== prev.cy) return true
+    }
+    return false
   }
 
   /**
@@ -1137,13 +1279,22 @@ export class StreamingWorld {
             agents.splice(i, 1)
           }
         }
-        this.activeChunks.delete(key)
+        // Clean up unmodified portalStates for unloaded chunks so the map stays bounded
+        const hasDelta = this.deltas.has(key)
+        if (!hasDelta) {
+          for (const d of chunk.doors) portalStates.delete(d.id)
+          for (const w of chunk.windows) portalStates.delete(w.id)
+        }
+        const navTile = this.navTiles.get(key)
+        if (navTile) this.navTilePool.push(navTile)
         this.navTiles.delete(key)
+        this.navTileDigests.delete(key)
+        this.activeChunks.delete(key)
         unloaded.push(key)
       }
     }
 
-    // Also snapshot deltas on currently active chunks before rebuilding town arrays
+    // Also snapshot deltas on currently active chunks if modified
     for (const chunk of this.activeChunks.values()) {
       this.captureChunkDelta(chunk, town, containers, portalStates, agents)
     }
@@ -1166,7 +1317,7 @@ export class StreamingWorld {
             const agent = spawnAgent(sz.id, sz.seed, sz.x, sz.y, sz.aim)
             agent.state = sz.state
             agent.hp = sz.hp
-            agent.detachedLimbs = [...sz.detachedLimbs]
+            agent.detachedLimbs = sz.detachedLimbs.length > 0 ? [...sz.detachedLimbs] : []
             agents.push(agent)
           }
         } else if (!isClassicOriginChunk) {
@@ -1175,9 +1326,6 @@ export class StreamingWorld {
             if (survivors.some((s) => Math.hypot(s.x - sp.x, s.y - sp.y) < 6.0)) continue
             agents.push(spawnAgent(sp.id, sp.seed, sp.x, sp.y, sp.aim))
           }
-          const d = this.ensureDelta(cx, cy)
-          d.visited = true
-          d.aggregateZombies = ch.zombieSpawns.length
         }
       }
     }
@@ -1263,7 +1411,7 @@ export class StreamingWorld {
       })
       containers.length = 0
       containers.push(...freshContainers)
-      this.navTiles.clear()
+      this.clearNavTiles()
       return
     }
 
@@ -1343,10 +1491,7 @@ export class StreamingWorld {
         }
       }
 
-      this.navTiles.set(
-        ch.key,
-        buildChunkNavTile(ch, (id) => portalStates.get(id)?.barricadePlanks ?? 0),
-      )
+      this.updateChunkNavTile(ch, portalStates)
     }
 
     town.chunks = chunks
@@ -1365,13 +1510,13 @@ export class StreamingWorld {
     containers.push(...nextContainers)
   }
 
-  /** Rebuilds the `64×64` nav tiles for all active chunks after a door/window/barricade topology change. */
+  /** Rebuilds the `64×64` nav tiles for active chunks whose door/window/barricade state changed. */
   rebuildActiveNavTiles(
     town: Town,
     portalStates: ReadonlyMap<string, { barricadePlanks: number }>,
   ): void {
     if (this.isOriginNineOnly()) {
-      this.navTiles.clear()
+      this.clearNavTiles()
       return
     }
     const doorMap = new Map(town.doors.map((d) => [d.id, d]))
@@ -1391,10 +1536,7 @@ export class StreamingWorld {
           w.openable = live.openable
         }
       }
-      this.navTiles.set(
-        ch.key,
-        buildChunkNavTile(ch, (id) => portalStates.get(id)?.barricadePlanks ?? 0, 0.28, this.navTiles.get(ch.key)),
-      )
+      this.updateChunkNavTile(ch, portalStates)
     }
   }
 }

@@ -1,4 +1,40 @@
+import { wgslStruct } from "../gpu/wgsl"
 import { PARTICLE_CAPACITY, Particles } from "./particles"
+
+/**
+ * Typed WGSL layout for `ParticleRenderer` frame uniforms (88 floats / 352 bytes).
+ * Preserves the exact binary layout of `[vp(16), eye(3), debug(1), ambient(3), lightCount(1), lights(64)]`.
+ */
+export const ParticleFrameStruct = wgslStruct("Frame", {
+  vp: "mat4x4f",
+  eye: "vec3f",
+  debug: "f32",
+  ambient: "vec3f",
+  lightCount: "f32",
+  lights: "array<vec4f, 16>",
+})
+
+export type ParticleLightInput = {
+  x: number
+  y: number
+  z: number
+  radius: number
+  r: number
+  g: number
+  b: number
+  power: number
+}
+
+export type ParticleFrameInput = {
+  vp?: ArrayLike<number>
+  eye?: ArrayLike<number>
+  debug?: number
+  ambient?: ArrayLike<number>
+  lights?: readonly ParticleLightInput[] | Float32Array
+  lightCount?: number
+  lightStride?: number
+  minLightPower?: number
+}
 
 export const blackbodyFireWgsl = /* wgsl */ `
 fn blackbodyFire(T: f32) -> vec3f {
@@ -11,7 +47,7 @@ fn blackbodyFire(T: f32) -> vec3f {
 
 export function makeParticleShader(bindGroupIndex = 0): string {
   return /* wgsl */ `
-struct Frame { vp: mat4x4f, eye: vec4f, ambient: vec4f, lights: array<vec4f,16> }
+${ParticleFrameStruct.wgsl}
 @group(${bindGroupIndex}) @binding(0) var<uniform> F: Frame;
 struct In { @location(0) pos: vec4f, @location(1) color: vec4f, @location(2) velocity: vec4f, @location(3) misc: vec4f }
 struct Out {
@@ -40,7 +76,7 @@ fn fbm3(p: vec2f) -> f32 {
 ${blackbodyFireWgsl}
 @vertex fn vs(@builtin(vertex_index) i:u32,s:In)->Out {
   let corners=array<vec2f,6>(vec2f(-1,-1),vec2f(1,-1),vec2f(1,1),vec2f(-1,-1),vec2f(1,1),vec2f(-1,1));
-  let c=corners[i%6];let toward=normalize(F.eye.xyz-s.pos.xyz);
+  let c=corners[i%6];let toward=normalize(F.eye-s.pos.xyz);
   var right=normalize(cross(vec3f(0,1,0),toward));var up=cross(toward,right);var size=vec2f(s.pos.w);
   let kind=s.velocity.w;
   if(kind==1.0||kind==3.0){
@@ -73,8 +109,8 @@ ${blackbodyFireWgsl}
     let ny=normal.y*c2-normal.z*s2;let nz=normal.y*s2+normal.z*c2;
     normal=vec3f(normal.x*c1-nz*s1,ny,normal.x*s1+nz*c1);
   } else if(i>=6){world=s.pos.xyz;}
-  var light=F.ambient.rgb;
-  for(var l=0;l<min(8,i32(F.ambient.w));l++){
+  var light=F.ambient;
+  for(var l=0;l<min(8,i32(F.lightCount));l++){
     let pos=F.lights[l*2];let color=F.lights[l*2+1];let delta=pos.xyz-s.pos.xyz;let d=length(delta);
     if(d<pos.w){light+=color.rgb*color.w*pow(1.0-d/pos.w,2.0)*(0.35+0.65*max(0.0,dot(normal,delta/max(d,0.01))));}
   }
@@ -88,13 +124,13 @@ ${blackbodyFireWgsl}
   } else if(kind==4.0){
     light=vec3f(2.2);
   }
-  if(F.eye.w==3.0){light=vec3f(dot(light,vec3f(0.333)));}
+  if(F.debug==3.0){light=vec3f(dot(light,vec3f(0.333)));}
   var o:Out;
   let clipWorld=select(world,world+toward*(s.pos.w*1.35*max(0.0,1.0-0.30*dot(c,c))),kind==7.0);
   o.position=F.vp*vec4f(clipWorld,1);o.uv=c;
   o.color=vec4f(select(s.color.rgb*light,light,kind==7.0),s.color.a);
   o.world=world;o.kind=kind;o.misc=s.misc;
-  if(F.eye.w==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
+  if(F.debug==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
   return o;
 }
 @fragment fn fs(o:Out)->@location(0) vec4f {
@@ -133,9 +169,9 @@ ${blackbodyFireWgsl}
     let blackbody=blackbodyFire(T);
     let incand=smoothstep(0.16,0.36,T);
     let rgb=mix(sootRgb,blackbody,incand);
-    if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
-    if(F.eye.w==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
-    if(F.eye.w==3.0){return vec4f(extLight*puffUp*alpha,alpha);}
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
+    if(F.debug==3.0){return vec4f(extLight*puffUp*alpha,alpha);}
     return vec4f(rgb*alpha,alpha);
   }
   if(o.kind==5.0){
@@ -148,8 +184,8 @@ ${blackbodyFireWgsl}
     if(alpha<0.003){discard;}
     let flashBoost=max(0.0,1.0-o.misc.y*2.6);
     let dustRgb=o.color.rgb+vec3f(1.75,0.82,0.32)*flashBoost*exp(-pow((r-waveR)/0.08,2.0));
-    if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
-    if(F.eye.w==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
     return vec4f(dustRgb*alpha,alpha);
   }
   if(o.kind==6.0){
@@ -165,14 +201,14 @@ ${blackbodyFireWgsl}
     if(alpha<0.003){discard;}
     let fresh=max(0.0,1.0-o.misc.y*7.0)*smoothstep(0.66,0.88,n)*innerChar;
     let scorchRgb=o.color.rgb*mix(0.32,1.0,sootApron)+vec3f(2.2,0.52,0.06)*fresh;
-    if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
-    if(F.eye.w==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
     return vec4f(scorchRgb*alpha,alpha);
   }
   if(o.kind!=2.0){alpha*=exp(-dot(o.uv,o.uv)*3.0)*(1.0-smoothstep(0.65,1.0,length(o.uv)));}
   if(o.kind==0.0){alpha*=smoothstep(-0.02,0.25,o.world.y);}
-  if(F.eye.w==2.0){return vec4f(0.12,0.025,0.008,0.06);}
-  if(F.eye.w==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
+  if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+  if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
   return vec4f(o.color.rgb*alpha,alpha);
 }
 `
@@ -188,9 +224,15 @@ export type ParticleRendererOptions = {
   extraBindGroupLayouts?: readonly GPUBindGroupLayout[]
 }
 
+const EYE_OFFSET = ParticleFrameStruct.offsetOf("eye")
+const DEBUG_OFFSET = ParticleFrameStruct.offsetOf("debug")
+const AMBIENT_OFFSET = ParticleFrameStruct.offsetOf("ambient")
+const LIGHT_COUNT_OFFSET = ParticleFrameStruct.offsetOf("lightCount")
+const LIGHTS_OFFSET = ParticleFrameStruct.offsetOf("lights")
+
 /** One instanced HDR draw. Non-debris extra vertices degenerate; debris gets six genuinely lit faces. */
 export class ParticleRenderer {
-  readonly uniforms = new Float32Array(88)
+  readonly uniforms = ParticleFrameStruct.createBuffer()
   private readonly buffer: GPUBuffer
   private readonly instances: GPUBuffer
   private readonly group: GPUBindGroup
@@ -276,6 +318,61 @@ export class ParticleRenderer {
     this.pipeline = this.makePipe(false, false)
     this.heat = this.makePipe(true, false)
   }
+
+  /** Updates frame uniforms using named fields instead of raw float offsets. */
+  setFrame(input: ParticleFrameInput): void {
+    const u = this.uniforms
+    if (input.vp) {
+      for (let i = 0; i < 16; i++) u[i] = input.vp[i] ?? 0
+    }
+    if (input.eye) {
+      u[EYE_OFFSET] = input.eye[0] ?? 0
+      u[EYE_OFFSET + 1] = input.eye[1] ?? 0
+      u[EYE_OFFSET + 2] = input.eye[2] ?? 0
+    }
+    if (input.debug !== undefined) {
+      u[DEBUG_OFFSET] = input.debug
+    }
+    if (input.ambient) {
+      u[AMBIENT_OFFSET] = input.ambient[0] ?? 0
+      u[AMBIENT_OFFSET + 1] = input.ambient[1] ?? 0
+      u[AMBIENT_OFFSET + 2] = input.ambient[2] ?? 0
+    }
+    if (input.lights !== undefined) {
+      u.fill(0, LIGHTS_OFFSET)
+      let written = 0
+      if (input.lights instanceof Float32Array) {
+        const stride = input.lightStride ?? 8
+        const total = input.lightCount ?? Math.floor(input.lights.length / stride)
+        const minPower = input.minLightPower ?? 0.001
+        for (let i = 0; i < total && written < 8; i++) {
+          const k = i * stride
+          if (input.lights[k + 7]! <= minPower) continue
+          for (let j = 0; j < 8; j++) u[LIGHTS_OFFSET + written * 8 + j] = input.lights[k + j]!
+          written++
+        }
+      } else {
+        const total = Math.min(8, input.lightCount ?? input.lights.length)
+        for (let i = 0; i < total; i++) {
+          const l = input.lights[i]!
+          const o = LIGHTS_OFFSET + written * 8
+          u[o] = l.x
+          u[o + 1] = l.y
+          u[o + 2] = l.z
+          u[o + 3] = l.radius
+          u[o + 4] = l.r
+          u[o + 5] = l.g
+          u[o + 6] = l.b
+          u[o + 7] = l.power
+          written++
+        }
+      }
+      u[LIGHT_COUNT_OFFSET] = input.minLightPower === -Infinity && input.lightCount !== undefined ? input.lightCount : written
+    } else if (input.lightCount !== undefined) {
+      u[LIGHT_COUNT_OFFSET] = input.lightCount
+    }
+  }
+
   upload(p: Particles) {
     p.prepare()
     this.count = p.count
@@ -285,7 +382,7 @@ export class ParticleRenderer {
   draw(pass: GPURenderPassEncoder, motion = false) {
     if (!this.count) return
     if (motion && !this.motionPipeline) this.motionPipeline = this.makePipe(false, true)
-    pass.setPipeline(this.uniforms[19] === 2 ? this.heat : motion ? this.motionPipeline! : this.pipeline)
+    pass.setPipeline(this.uniforms[DEBUG_OFFSET] === 2 ? this.heat : motion ? this.motionPipeline! : this.pipeline)
     pass.setBindGroup(this.bindGroupIndex, this.group)
     pass.setVertexBuffer(0, this.instances)
     pass.draw(36, this.count)

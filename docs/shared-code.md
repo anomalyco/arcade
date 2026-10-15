@@ -339,14 +339,31 @@ In rough order of value against risk:
    `@arcade/kit/fx/{particles,particle-renderer,explosion}`, `@arcade/kit/sim/{matchmaking,rng}`,
    `@arcade/kit/client/{controls,key-cap}`, `@arcade/kit/lab-panel`, and `@arcade/kit/dev-control`. Wings
    (`games/wings/src/render/world/rain.ts`) retains its Three.js TSL node-material rain/spray in its independent project.
-8. **Remaining candidates:**
+8. **Shared Game Feel toolkit & Wet Ballistic Blood (`@arcade/kit/feel`, `packages/kit/fx/splatter*.ts`).**
+   `GameFeel` maps semantic events (`shot`, `shove`, `hit-confirmed`, `kill`, `hit-taken`, `explosion`, `barricade-bash`, `land`)
+   through per-game presets (`outbreak`, `blackout`, `getaway`, `subtle`, `off`) to Squirrel Eiserloh's `trauma²` 2-octave
+   smooth-noise shake, 240 Hz critically-damped directional recoil/lunge kick, zoom & roll punch, sim-safe presentation
+   hit-stop (`visualDt`), periphery-weighted directional/radial impulse shutter blur, dark crimson damage vignette, and
+   chromatic nudge. All amounts live in the shared `LabPanel` (`Feel` group) with a global intensity slider, an
+   accessibility `feelReduceMotion` setting, and automatic `prefers-reduced-motion: reduce` support. `Splatter` and
+   `SplatterRenderer` add `zombieBlood` and `survivorBlood` presets, 3-tier exit-wound/floor-fan/wall-arc trajectories,
+   two-pass coplanar-first terrain receiver projection, Beer–Lambert optical depth (coagulated venous core to arterial
+   rim), raised meniscus wet specular glints, vertical wall gravity drips, and Noir selective-colour preservation
+   (`alpha: { srcFactor: "zero", dstFactor: "one" }`). Adopted in Outbreak and Blackout; follow-up candidates are migrating
+   Getaway's `Scene.shake`/`hitStop` and Carrier's `TurretCam`/`FlightCam`/`ChaseCam`/`BoatCam` `trauma²` loops to
+   `GameFeel` adapters.
+9. **Remaining candidates:**
    - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
      handshake, and seat bookkeeping.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
      vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
    - **Session & snapshot interpolation:** `@arcade/kit/net` now has the shared pieces (Outbreak co-op is the first
-     consumer): `jitter-buffer` (Wings's adaptive playout buffer, with one-shot edges carried forward instead of dropped),
-     `seats` (public id vs private reconnect token), `bytes` (binary writer/reader and shared-prefix `frame`),
-     `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
+     consumer): `jitter-buffer` (Wings's adaptive playout buffer, with one-shot edges carried forward instead of dropped
+     and small packet-loss gaps bridged by stand-ins), `seats` (public id vs private reconnect token), `bytes` (binary
+     writer/reader with LEB128/ZigZag varints, 8/12/16-bit angle packers, nibble pairs, bitsets and shared-prefix `frame`),
+     `interest` (`inInterestBubble`, `PriorityAccumulator`, `AckHistory` for delta compression against `ackSnapTick`, and
+     `BandwidthPacer` for adaptive snapshot stride), `rewind` (`RewindHistory` for server-side lag-compensated hitscan
+     rewind), `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
      (`Predictor` replay on ack, `Smoother` correction offset). Blackout's `queue.splice` input trim, its exponential
-     avatar chase and Getaway/Blackout's public-id reconnect are the next adopters ([outbreak-coop.md](outbreak-coop.md)).
+     avatar chase (`SnapshotBuffer` + `RewindHistory` for 20-tick sniper/rifle hitscan rewind) and Getaway/Blackout's
+     public-id reconnect are the next adopters ([outbreak-coop.md](outbreak-coop.md)).

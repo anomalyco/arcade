@@ -1,11 +1,44 @@
 import { GRID, SmokeVolumes, VOLUMES } from "./volume"
-import { volumeShader } from "./volume-shader"
+import { VolumeFrameStruct, volumeShader } from "./volume-shader"
+
+export { VolumeFrameStruct }
+
+export type VolumeFrameInput = {
+  inverse?: ArrayLike<number>
+  eye?: ArrayLike<number>
+  ambient?: ArrayLike<number>
+  lights?: Float32Array
+  lightCount?: number
+  lightStride?: number
+  minLightPower?: number
+  volumes?: SmokeVolumes
+  debug?: number
+}
+
+const EYE_OFFSET = VolumeFrameStruct.offsetOf("eye")
+const TIME_OFFSET = VolumeFrameStruct.offsetOf("time")
+const SCREEN_SIZE_OFFSET = VolumeFrameStruct.offsetOf("screenSize")
+const LIGHT_COUNT_OFFSET = VolumeFrameStruct.offsetOf("lightCount")
+const DEBUG_OFFSET = VolumeFrameStruct.offsetOf("debug")
+const AMBIENT_OFFSET = VolumeFrameStruct.offsetOf("ambient")
+const COLOR_SHIFT_OFFSET = VolumeFrameStruct.offsetOf("colorShift")
+const BOXES_OFFSET = VolumeFrameStruct.offsetOf("boxes")
+const LIGHTS_OFFSET = VolumeFrameStruct.offsetOf("lights")
+const HEIGHT_OFFSET = VolumeFrameStruct.offsetOf("height")
+const BILLOW_SCALE_OFFSET = VolumeFrameStruct.offsetOf("billowScale")
+const EXTINCTION_OFFSET = VolumeFrameStruct.offsetOf("extinction")
+const LIGHTING_OFFSET = VolumeFrameStruct.offsetOf("lighting")
+const RISE_OFFSET = VolumeFrameStruct.offsetOf("rise")
+const WIND_OFFSET = VolumeFrameStruct.offsetOf("wind")
+const TURBULENCE_OFFSET = VolumeFrameStruct.offsetOf("turbulence")
+const CORE_GLOW_OFFSET = VolumeFrameStruct.offsetOf("coreGlow")
+const ADVECTION_OFFSET = VolumeFrameStruct.offsetOf("advection")
 
 /** Caller supplies its inverse view-projection, camera, HDR target and readable 4x MSAA depth.
  * The renderer caps at 480x320 pixels, 24 steps, four volumes and eight lights.
  * Light input is eight floats per light: xyz/radius, rgb/intensity. */
 export class VolumeRenderer {
-  readonly uniforms = new Float32Array(136)
+  readonly uniforms = VolumeFrameStruct.createBuffer()
   private readonly buffer: GPUBuffer
   private readonly field: GPUTexture
   private readonly noise: GPUTexture
@@ -83,16 +116,67 @@ export class VolumeRenderer {
       {binding:5,resource:this.repeat},{binding:6,resource:this.jitter.createView()},{binding:7,resource:cloud},
     ]})
     this.marchGroup=group(this.dummy.createView());this.compositeGroup=group(this.lowView)
-    this.uniforms[20]=width;this.uniforms[21]=height
+    this.uniforms[SCREEN_SIZE_OFFSET]=width;this.uniforms[SCREEN_SIZE_OFFSET + 1]=height
     this.pass={label:"smoke low resolution",colorAttachments:[{view:this.lowView,clearValue:{r:0,g:0,b:0,a:0},loadOp:"clear",storeOp:"store"}]}
   }
+
+  /** Updates frame uniforms using named fields instead of raw float offsets. */
+  setFrame(input: VolumeFrameInput): void {
+    const u = this.uniforms
+    if (input.inverse) {
+      for (let i = 0; i < 16; i++) u[i] = input.inverse[i] ?? 0
+    }
+    if (input.eye) {
+      u[EYE_OFFSET] = input.eye[0] ?? 0
+      u[EYE_OFFSET + 1] = input.eye[1] ?? 0
+      u[EYE_OFFSET + 2] = input.eye[2] ?? 0
+    }
+    if (input.ambient) {
+      u[AMBIENT_OFFSET] = input.ambient[0] ?? 0
+      u[AMBIENT_OFFSET + 1] = input.ambient[1] ?? 0
+      u[AMBIENT_OFFSET + 2] = input.ambient[2] ?? 0
+    }
+    if (input.debug !== undefined) {
+      this.debug = input.debug
+    }
+    if (input.lights !== undefined) {
+      const stride = input.lightStride ?? 8
+      const total = input.lightCount ?? Math.floor(input.lights.length / stride)
+      const minPower = input.minLightPower ?? -Infinity
+      const vols = input.volumes
+      let written = 0
+      for (let i = 0; i < total && written < 8; i++) {
+        const k = i * stride
+        if (input.lights[k + 7]! <= minPower) continue
+        if (vols) {
+          let nearby = false
+          for (let s = 0; s < 4; s++) {
+            if (
+              vols.bounds[s * 8 + 7]! > 0 &&
+              Math.hypot(input.lights[k]! - vols.bounds[s * 8 + 4]!, input.lights[k + 2]! - vols.bounds[s * 8 + 5]!) <
+                input.lights[k + 3]! + 5
+            ) {
+              nearby = true
+            }
+          }
+          if (!nearby) continue
+        }
+        for (let j = 0; j < 8; j++) u[LIGHTS_OFFSET + written * 8 + j] = input.lights[k + j]!
+        written++
+      }
+      u[LIGHT_COUNT_OFFSET] = minPower === -Infinity && !vols && input.lightCount !== undefined ? input.lightCount : written
+    } else if (input.lightCount !== undefined) {
+      u[LIGHT_COUNT_OFFSET] = input.lightCount
+    }
+  }
+
   upload(volumes:SmokeVolumes) {
-    this.uniforms[19]=volumes.time;this.uniforms[23]=this.debug;this.uniforms[27]=volumes.colorShift
-    this.uniforms.set(volumes.bounds,28)
+    this.uniforms[TIME_OFFSET]=volumes.time;this.uniforms[DEBUG_OFFSET]=this.debug;this.uniforms[COLOR_SHIFT_OFFSET]=volumes.colorShift
+    this.uniforms.set(volumes.bounds,BOXES_OFFSET)
     const s=volumes.settings
-    this.uniforms[124]=s.height;this.uniforms[125]=s.billowScale;this.uniforms[126]=s.extinction;this.uniforms[127]=s.lighting
-    this.uniforms[128]=s.rise;this.uniforms[129]=s.wind;this.uniforms[130]=s.turbulence;this.uniforms[131]=volumes.coreGlow
-    this.uniforms.set(volumes.advection,132)
+    this.uniforms[HEIGHT_OFFSET]=s.height;this.uniforms[BILLOW_SCALE_OFFSET]=s.billowScale;this.uniforms[EXTINCTION_OFFSET]=s.extinction;this.uniforms[LIGHTING_OFFSET]=s.lighting
+    this.uniforms[RISE_OFFSET]=s.rise;this.uniforms[WIND_OFFSET]=s.wind;this.uniforms[TURBULENCE_OFFSET]=s.turbulence;this.uniforms[CORE_GLOW_OFFSET]=volumes.coreGlow
+    this.uniforms.set(volumes.advection,ADVECTION_OFFSET)
     this.device.queue.writeBuffer(this.buffer,0,this.uniforms)
     this.device.queue.writeTexture(this.destination,volumes.field,this.uploadLayout,this.extent)
   }

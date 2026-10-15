@@ -600,12 +600,13 @@ export class OutbreakProgression {
       candidates: (town, actor) => {
         if (actor.peekingWindowId) return []
         const out: RawInteractCandidate[] = []
-        const walls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
         const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        let walls: Rect[] | null = null
         for (const c of this.containers) {
-          if (distToRect(actor.x, actor.y, c.rect) > 1.45 || c.buildingId !== here) continue
+          if (c.buildingId !== here || distToRect(actor.x, actor.y, c.rect) > 1.45) continue
           const nx = Math.max(c.rect[0], Math.min(c.rect[2], actor.x))
           const ny = Math.max(c.rect[1], Math.min(c.rect[3], actor.y))
+          walls ??= town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
           if (!clearLine(actor.x, actor.y, nx, ny, walls)) continue
           const st = this.ledger.store(c.id)
           if (!st) continue

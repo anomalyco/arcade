@@ -168,9 +168,9 @@ fn contactOcclusion(p: vec2f) -> f32 {
     let grassMod = clamp(texGrass / vec3f(0.045, 0.085, 0.022), vec3f(0.68), vec3f(1.36));
     if (kind == 0 || kind == 6) {
       var r = defaultMaterialRecipe(4);
-      r.u2.x = clamp(0.42 + U.extra.y * 0.45, 0.0, 1.0);
-      r.u2.z = clamp(U.extra.x * 0.52, 0.0, 1.0);
-      r.u2.w = clamp(0.35 + U.extra.x * 0.45, 0.0, 1.0);
+      r.colorVariation = clamp(0.42 + U.extra.y * 0.45, 0.0, 1.0);
+      r.wear = clamp(U.extra.x * 0.52, 0.0, 1.0);
+      r.macroVariation = clamp(0.35 + U.extra.x * 0.45, 0.0, 1.0);
       let s = evalGrassSoil(p, albedo, kind == 6, r);
       albedo = s.albedo * mix(vec3f(1.0), grassMod, 0.55);
       gloss = s.gloss;
