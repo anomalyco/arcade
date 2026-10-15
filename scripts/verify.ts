@@ -2,8 +2,8 @@
 //
 //   bun run verify              affected checks only, in parallel, with incremental typecheck caches
 //   bun run verify --all        every workspace target, same fast path
-//   bun run verify:release      clean `git archive` export of HEAD, frozen install, every workspace target's exact
-//                               `check`, smoke and `wrangler deploy --dry-run`, cold caches (what CI and deploy run)
+//   bun run verify:release      clean `git archive` export of HEAD, frozen install, then every workspace target's
+//                               check commands with cold caches (only the test worker count changes), smoke and `wrangler deploy --dry-run`
 //
 // Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --list (print the plan only).
 //
@@ -11,8 +11,10 @@
 // merge-base with --base, staged, unstaged or untracked) matches its workflow's pull_request paths. So packages/**
 // and root changes check everything, a games/outbreak change checks Outbreak and the Lab, and docs check nothing.
 //
-// The fast path runs the same commands as each target's `check` script, split into parallel steps, with
-// `tsc --incremental` build info under node_modules/.cache/arcade-verify. Smoke uses Metal on macOS (scripts/smoke.mjs).
+// Both modes split each target's `check` script into its commands and run them in parallel (test suites one at a
+// time: each already uses every core). The fast path adds `tsc --incremental` build info under
+// node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
+// Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { availableParallelism, tmpdir } from "node:os"
@@ -27,6 +29,7 @@ const smoke = !flag("--no-smoke")
 const base = option("--base", "origin/main")
 const jobs = Number(option("--jobs", String(Math.max(3, Math.floor(availableParallelism() / 2)))))
 const repo = resolve(import.meta.dir, "..")
+const testWorkers = Math.max(2, Math.floor(availableParallelism() / 2))
 
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects", wings: "games/wings" }
@@ -76,7 +79,7 @@ function expand(scripts: Record<string, string>, script: string): string[] {
 
 const cacheDir = join(repo, "node_modules/.cache/arcade-verify")
 
-function fastSteps(target: Target, root: string, dedupeKit: boolean): Step[] {
+function targetSteps(target: Target, root: string, { incremental, dedupeKit }: { incremental: boolean; dedupeKit: boolean }): Step[] {
   const steps: Step[] = []
   for (const dir of target.dirs) {
     const cwd = join(root, dir)
@@ -99,36 +102,23 @@ function fastSteps(target: Target, root: string, dedupeKit: boolean): Step[] {
       let kind = "other"
       if (/^tsc\b/.test(cmd)) {
         kind = "typecheck"
-        const project = cmd.match(/-p\s+(\S+)/)?.[1] ?? "tsconfig.json"
-        const info = join(cacheDir, `${relative(repo, cwd).replaceAll("/", "-")}-${basename(project, ".json")}.tsbuildinfo`)
-        cmd = `${cmd} --incremental --tsBuildInfoFile ${info}`
+        if (incremental) {
+          const project = cmd.match(/-p\s+(\S+)/)?.[1] ?? "tsconfig.json"
+          const info = join(cacheDir, `${relative(root, cwd).replaceAll("/", "-")}-${basename(project, ".json")}.tsbuildinfo`)
+          cmd = `${cmd} --incremental --tsBuildInfoFile ${info}`
+        }
       } else if (/^bun test\b/.test(cmd)) {
         kind = "test"
         // Getaway and Blackout also run packages/kit's suite; when the packages target is in the plan it runs once there.
         if (dedupeKit) cmd = cmd.replace(/\s+\.\.\/\.\.\/packages\/kit\b/, "")
-      }
-      else if (/^vite build\b/.test(cmd)) kind = "build"
+        // bun's default is one worker per core; on the shared Studio that oversubscribes and trips 5 s test timeouts.
+        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`)
+      } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)
       steps.push({ id, cwd, cmd, deps: kind === "other" && build ? [...prep, build] : [...prep], kind })
       if (kind === "build") build = id
     }
     if (target.game && build) addGameTail(steps, target.game, cwd, build)
-  }
-  return steps
-}
-
-function releaseSteps(target: Target, root: string): Step[] {
-  const steps: Step[] = []
-  for (const dir of target.dirs) {
-    const cwd = join(root, dir)
-    const tag = (s: string) => `${target.name}${target.dirs.length > 1 ? `/${basename(dir)}` : ""}:${s}`
-    const deps: string[] = []
-    if (target.independent) {
-      steps.push({ id: tag("install"), cwd, cmd: "bun install --frozen-lockfile", deps: [], kind: "install" })
-      deps.push(tag("install"))
-    }
-    steps.push({ id: tag("check"), cwd, cmd: "bun run check", deps, kind: "check" })
-    if (target.game) addGameTail(steps, target.game, cwd, tag("check"))
   }
   return steps
 }
@@ -150,7 +140,7 @@ async function run(steps: Step[], root: string): Promise<Result[]> {
   const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`, FORCE_COLOR: "0" }
   const start = performance.now()
   // Start the long poles first: test suites, then typechecks.
-  const weight = (s: Step) => ({ test: 0, typecheck: 1, check: 1 })[s.kind] ?? 2
+  const weight = (s: Step) => ({ test: 0, typecheck: 1 })[s.kind] ?? 2
   const ready = () =>
     [...pending.values()].filter((s) => s.deps.every((d) => results.get(d)?.ok)).sort((a, b) => weight(a) - weight(b))
   const blocked = () => [...pending.values()].filter((s) => s.deps.some((d) => results.has(d) && !results.get(d)!.ok))
@@ -161,6 +151,9 @@ async function run(steps: Step[], root: string): Promise<Result[]> {
     }
     for (const s of ready()) {
       if (running.size >= jobs) break
+      // Each suite already uses every core (bun test --parallel), and some tests carry wall-clock budgets and
+      // timeouts that fail under oversubscription: run suites one at a time.
+      if (s.kind === "test" && [...active.values()].includes("test")) continue
       pending.delete(s.id)
       active.set(s.id, s.kind)
       const t = performance.now()
@@ -227,7 +220,7 @@ if (release) {
 }
 
 const withPackages = selected.some((t) => t.name === "packages")
-const steps = selected.flatMap((t) => (release ? releaseSteps(t, root) : fastSteps(t, root, withPackages)))
+const steps = selected.flatMap((t) => targetSteps(t, root, { incremental: !release, dedupeKit: !release && withPackages }))
 if (flag("--list")) {
   for (const s of steps) console.log(`${s.id.padEnd(28)} ${relative(root, s.cwd).padEnd(16)} ${s.cmd}${s.deps.length ? `   (after ${s.deps.join(", ")})` : ""}`)
   process.exit(0)
