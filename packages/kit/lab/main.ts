@@ -96,6 +96,7 @@ export async function lab(options:LabOptions) {
       <aside class="lab-outliner" aria-label="Outliner">
         <nav class="lab-stations" data-station-list aria-label="Stations" hidden></nav>
         <div class="lab-station-slot" data-station-slot="left" hidden></div>
+        <div class="lab-card lab-outliner-card">
         <div class="lab-outliner-tree" data-outliner-mount></div>
         <div class="lab-world" aria-label="World">
           <div class="lab-panel-head lab-world-head"><span class="lab-panel-title">World</span></div>
@@ -109,6 +110,7 @@ export async function lab(options:LabOptions) {
             <button type="button" class="lab-btn" data-action="lock-env" aria-label="Lock environment seed" aria-pressed="false" data-tip="Lock the room seed">Lock Env</button>
           </div>
         </div>
+        </div>
       </aside>
       <main class="lab-viewport" data-lab-viewport>
         <canvas tabindex="0" aria-label="Lab scene"></canvas>
@@ -120,6 +122,7 @@ export async function lab(options:LabOptions) {
       <section class="lab-library" aria-label="Library" data-library-mount></section>
       <aside class="lab-inspector" aria-label="Details">
         <div class="lab-station-slot" data-station-slot="right" hidden></div>
+        <div class="lab-card lab-details">
         <div class="lab-panel-head"><span class="lab-panel-title">Details</span><span class="lab-fill"></span><span class="lab-inspector-sub">Effects</span></div>
         <div class="lab-details-head">
           <span class="lab-details-icon" data-details-icon aria-hidden="true">✺</span>
@@ -130,6 +133,7 @@ export async function lab(options:LabOptions) {
           <button type="button" class="lab-chip" data-action="details-all" aria-pressed="false" data-tip="Show section settings unrelated to the selection" hidden>All</button>
         </div>
         <div class="lab-inspector-body" data-inspector-mount></div>
+        </div>
       </aside>
       <footer class="lab-bottombar" aria-label="Status and shortcuts">
         <span class="lab-focus-pill" data-focus-pill>Edit · Canvas</span>

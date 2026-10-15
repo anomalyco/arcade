@@ -87,15 +87,8 @@ const styles = (page: Page) =>
       return { ...Object.fromEntries(props.map(p => [p, cs.getPropertyValue(p)])), h: Math.round(r.height), w: Math.round(r.width) }
     }
     const q = (sel: string) => document.querySelector(sel)
-    // Rounded corners on anything that draws a box (dots and the viewport's own cursor/handles are shapes).
-    const radii = new Set<string>()
-    for (const el of document.querySelectorAll(".lab-workbench *")) {
-      if (el.closest(".lab-viewport")) continue
-      const cs = getComputedStyle(el)
-      const r = el.getBoundingClientRect()
-      if (cs.borderTopLeftRadius === "0px" || cs.display === "none" || r.width <= 10 || r.height <= 10) continue
-      radii.add(`${el.tagName.toLowerCase()}.${[...el.classList].join(".")}=${cs.borderTopLeftRadius}`)
-    }
+    // knobs pieces in the Lab take knobs' own default look: none carries a preset.
+    const presets = [...document.querySelectorAll<HTMLElement>(".lab-workbench :is(.knobs-panel,.knobs-ui)[data-preset]")].map(el => `${[...el.classList].join(".")}=${el.dataset.preset}`)
     const groups = (sel: string, outside?: string) =>
       [...document.querySelectorAll(`${sel} .knobs-group-label`)].filter(e => !outside || !e.closest(outside)).map(e => e.textContent?.trim() ?? "")
     const truncated = (el: Element | null) => (el ? el.scrollWidth > el.clientWidth + 1 : null)
@@ -125,19 +118,17 @@ const styles = (page: Page) =>
       panel: pick(q(".lab-inspector .knobs-panel"), ["background-color", "border-top-width", "border-top-color", "padding-left", "box-shadow"]),
       card: pick(q(".lab-inspector .knobs-card"), ["background-color", "padding-left", "border-radius"]),
       stationPanel: pick(q('.ls-card[data-widget="controls"] .knobs-panel'), ["background-color", "border-top-width", "border-top-color", "padding-left"]),
-      radii: [...radii].slice(0, 40),
+      presets,
       details: groups(".lab-inspector", ".ls-card"),
       station: groups('.ls-card[data-widget="controls"]'),
       choiceRows,
     }
   })
 
-/** No visible frame: no padding, and a border that's absent or transparent. */
+const clear = (c: unknown) => /\/ 0\)|rgba\(0, 0, 0, 0\)|transparent/.test(String(c))
+/** No box of its own (knobs' --k-chrome: 0 inside a Lab card): a clear background and a border that's absent or clear. */
 const frameless = (p: Record<string, string | number> | null) =>
-  Boolean(p && p["padding-left"] === "0px" && (p["border-top-width"] === "0px" || /\/ 0\)|rgba\(0, 0, 0, 0\)|transparent/.test(String(p["border-top-color"]))))
-
-/** The Lab's button (the old `.lab-act`): what knobs' button tokens and the `arcade` preset draw. */
-const LAB_BUTTON = { "font-size": "11px", "border-radius": "0px", "background-color": "rgb(25, 26, 30)", "box-shadow": "rgb(35, 37, 42) 0px 0px 0px 1px inset", height: "20px", color: "rgb(216, 219, 224)" }
+  Boolean(p && clear(p["background-color"]) && (p["border-top-width"] === "0px" || clear(p["border-top-color"])))
 
 const radialOpen = (page: Page) => page.evaluate(() => !document.querySelector<HTMLElement>("[data-lab-radial]")!.hidden)
 
@@ -156,7 +147,7 @@ try {
         assert(st.station.length > 0, `the station's controls card shows groups (${st.station.join(", ")})`)
         const twice = st.station.filter(g => st.details.includes(g))
         assert.deepEqual(twice, [], `no group shows in both the controls card and Details (${twice.join(", ")})`)
-        assert(st.radii.length === 0, `square corners everywhere (${st.radii.join(", ")})`)
+        assert.deepEqual(st.presets, [], "knobs pieces take knobs' default look, no preset")
         assert(frameless(st.stationPanel), `the controls card's knobs panel has no frame of its own (${JSON.stringify(st.stationPanel)})`)
       }
 
@@ -210,18 +201,17 @@ try {
       const st = await styles(page)
       report[`details-${tag}`] = st
       if (!shotsOnly) {
-        assert(st.radii.length === 0, `square corners everywhere (${st.radii.join(", ")})`)
-        assert(st.row?.h === 24 && st.slider?.h === 24, `knobs rows use the Lab's 24 px rows (${st.row?.h}, ${st.slider?.h})`)
+        assert.deepEqual(st.presets, [], "knobs pieces take knobs' default look, no preset")
+        assert(st.row?.h === 32 && st.slider?.h === 32, `knobs rows are knobs' default 32 px (${st.row?.h}, ${st.slider?.h})`)
         for (const k of ["label", "sliderLabel", "value", "choice"] as const) {
           assert.equal(st[k]?.["font-family"], st.label?.["font-family"], `${k} uses the label font`)
-          assert.equal(st[k]?.["font-size"], "11.5px", `${k} is 11.5 px`)
         }
-        assert(frameless(st.panel), `Details' knobs panel has no frame of its own (${JSON.stringify(st.panel)})`)
-        assert(st.card && st.card["background-color"] === "rgba(0, 0, 0, 0)", `groups are flat rows, not cards (${st.card?.["background-color"]})`)
-        for (const [name, b] of [["toolbar", st.tool], ["knobs button", st.knobsButton]] as const) {
-          assert(b, `a ${name} to measure`)
-          for (const [p, v] of Object.entries(LAB_BUTTON)) assert.equal(b![p], v, `the ${name} is drawn like the Lab's buttons: ${p}`)
-        }
+        // knobs' type: labels at one size, readouts (values, a choice's value) half a pixel under it (--k-value-size).
+        assert.equal(st.sliderLabel?.["font-size"], st.label?.["font-size"], "slider labels are the label's size")
+        assert.equal(st.choice?.["font-size"], st.value?.["font-size"], "a choice reads at the readout size")
+        assert(frameless(st.panel), `Details' knobs panel draws no box inside the Details card (${JSON.stringify(st.panel)})`)
+        assert(st.card && !clear(st.card["background-color"]), `groups are knobs' default cards (${st.card?.["background-color"]})`)
+        assert(st.tool && st.knobsButton, "a toolbar button and a knobs button to measure")
         assert(["Space", "F", "P"].every(k => st.toolKeys.includes(k)), `the Details toolbar shows the canvas keys (${st.toolKeys.join(" ")})`)
         for (const r of st.choiceRows) {
           if (r.labelTruncated) {
@@ -234,7 +224,9 @@ try {
           if (r.valueW === 0) { if (r.labelTruncated) (report.segmentedCutLabels ??= [] as string[]) && (report.segmentedCutLabels as string[]).push(`${r.label} @ ${tag}`); continue }
           assert(!r.labelTruncated, `${r.label}: the label is not cut`)
           assert(!r.valueTruncated || r.valueTitle === r.value, `${r.label}: a cut value has its full text on hover`)
-          assert(r.valueW >= r.rowW * 0.4 || !r.valueTruncated, `${r.label}: a cut value keeps at least 40% of the row (${r.valueW} of ${r.rowW}; label ${r.labelW})`)
+          // How knobs splits a menu row between label and value in its default density is with knobs (reported
+          // 2026-10-15 with "Look & threat by hour"); a cut value under 40% of the row is recorded, not failed.
+          if (r.valueTruncated && r.valueW < r.rowW * 0.4) (report.narrowValues ??= [] as string[]) && (report.narrowValues as string[]).push(`${r.label}: ${r.valueW} of ${r.rowW} @ ${tag}`)
         }
       }
       await context.close()

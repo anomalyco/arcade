@@ -46,16 +46,19 @@ export type LabPanelView = {
   filter?: (row: LabRow, modified: boolean) => boolean
 }
 
+// The floating shell around knobs' panel in knobs' own dark look: no box of its own (the knobs panel is the card), the
+// telemetry above it as a glass card at the same radius, and the pill as a capsule.
 const CSS = `
-[data-lab-panel]{position:fixed;z-index:1000;right:10px;top:10px;width:300px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px);display:flex;flex-direction:column;align-items:stretch;gap:6px;color:#d8dbe0;font:11.5px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+[data-lab-panel]{position:fixed;z-index:1000;right:10px;top:10px;width:300px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px);display:flex;flex-direction:column;align-items:stretch;gap:6px;color:rgba(255,255,255,.92);font:12px/1.35 system-ui,-apple-system,"SF Pro Text",sans-serif}
 [data-lab-panel][data-layout=inspector]{position:relative;right:auto;top:auto;z-index:auto;width:100%;height:100%;max-width:none;max-height:none;gap:0}
 [data-lab-panel] [hidden]{display:none!important}
-[data-lab-panel]>.lab-panel-pill{align-self:flex-end;font:inherit;color:inherit;background:#141518;border:1px solid #2c2f35;border-radius:0;padding:3px 10px;cursor:pointer}
-[data-lab-panel]>.lab-panel-body{display:flex;flex-direction:column;min-height:0;overflow:auto;border-radius:0;background:#141518;border:1px solid #23252a;box-shadow:0 12px 36px rgba(0,0,0,.5)}
-[data-lab-panel][data-layout=inspector]>.lab-panel-body{flex:1;border:0;border-radius:0;box-shadow:none;background:transparent}
-[data-lab-panel] .lab-panel-telemetry{font:10px/1.5 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-line;font-variant-numeric:tabular-nums;color:#8b9098;padding:8px 10px 0}
+[data-lab-panel]>.lab-panel-pill{align-self:flex-end;font:inherit;color:inherit;background:rgba(28,28,30,.88);border:0;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 12px 36px rgba(0,0,0,.52);padding:4px 12px;cursor:pointer;-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6)}
+[data-lab-panel]>.lab-panel-body{display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;border-radius:12px}
+[data-lab-panel][data-layout=inspector]>.lab-panel-body{flex:1;gap:0;border-radius:0}
+[data-lab-panel] .lab-panel-telemetry{font:10.5px/1.5 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-line;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.64);padding:8px 12px;border-radius:12px;background:rgba(28,28,30,.88);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6)}
+[data-lab-panel] .lab-panel-telemetry:empty{display:none}
 [data-lab-panel][data-layout=inspector] .lab-panel-telemetry{display:none}
-[data-lab-panel] .lab-panel-empty{padding:12px;color:#5b6068}
+[data-lab-panel] .lab-panel-empty{padding:12px;color:rgba(255,255,255,.42)}
 `
 
 /**
