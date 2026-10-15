@@ -159,6 +159,27 @@ describe("weapons over the network", () => {
     expect(b.last("hp")!.w).toBe("missile")
   })
 
+  test("a gunner's SAM seeker warns the jet exactly like a missile seeker, and stops when the gunner leaves", () => {
+    const { core, a, b, say, join } = dogfight()
+    // A crewmate of A mans a SAM launcher and locks B.
+    const c = join("cy")
+    say(c, { type: "board", ship: playerOf(core.crew!, a.id)!.ship })
+    say(c, { type: "op", op: "sam-port" })
+    expect(playerOf(core.crew!, c.id)!.role).toBe("gunner")
+    say(c, { type: "seek", on: b.id, locked: false })
+    expect(b.last("seek")).toEqual({ type: "seek", by: c.id, s: 1 })
+    say(c, { type: "seek", on: b.id, locked: true })
+    expect(b.last("seek")).toEqual({ type: "seek", by: c.id, s: 2 })
+    // A friendly jet is never warned.
+    say(c, { type: "seek", on: a.id, locked: true })
+    expect(b.last("seek")).toEqual({ type: "seek", by: c.id, s: 0 })
+    expect(a.all("seek").length).toBe(0)
+    // Locked again, then the gunner drops: the warning clears.
+    say(c, { type: "seek", on: b.id, locked: true })
+    core.close(c)
+    expect(b.last("seek")).toEqual({ type: "seek", by: c.id, s: 0 })
+  })
+
   test("B's flares decoy the missile", () => {
     const { core, a, b, say, run, seaT, pos } = dogfight()
     say(a, { type: "fire", m: [0, seaT(), 0, 999, -10, 0, 0, -140, b.id, 0] })
