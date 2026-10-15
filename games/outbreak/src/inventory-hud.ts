@@ -99,7 +99,7 @@ export class InventoryHud {
     const belt = ledger.store(`${actorId}/belt`)
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${this.packOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${p.meleeDurability}|${this.packOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     if (key === this.lastBar) return
     this.lastBar = key
 
@@ -116,13 +116,14 @@ export class InventoryHud {
       this.els.hotbar.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
         const s = hotbar.slots[i]
         const sel = i === hotbar.selected
-        const on = (s?.item === "flashlight" && p.flashlightOn) || (s?.item === "pistol" && sel)
+        const on = (s?.item === "flashlight" && p.flashlightOn) || (sel && Boolean(s))
         let label = "—"
         if (s) {
           const def = ledger.items.get(s.item)
           label = esc(def?.shortLabel ?? s.item)
           if (s.item === "flashlight") label += ` (${esc(keyLabel("KeyF"))})`
           else if (s.item === "pistol") label += ` ${s.charge ?? 0}/${ledger.count(actorId, "ammo")}`
+          else if (s.charge !== undefined && def?.charge && !def.charge.ammo) label += ` ${s.charge}/${def.charge.max}`
           else if (s.count > 1) label += ` ×${s.count}`
         }
         return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!s}"><kbd>${i + 1}</kbd><b>${label}</b></div>`

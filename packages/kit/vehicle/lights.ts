@@ -35,6 +35,9 @@ export function lampMounts(v: Vehicle): LampMounts {
   const half = v.width / 2
   switch (v.id) {
     case "muscle": return { frontX: half - 0.32, frontY: 0.5, rearX: half - 0.33, rearY: 0.66 }
+    case "sedan": return { frontX: half - 0.34, frontY: 0.54, rearX: half - 0.34, rearY: 0.56 }
+    case "pickup": return { frontX: half - 0.36, frontY: 0.68, rearX: half - 0.36, rearY: 0.72 }
+    case "jeep": return { frontX: half - 0.33, frontY: 0.74, rearX: half - 0.24, rearY: 0.76 }
     case "cruiser": return { frontX: half - 0.37, frontY: 0.56, rearX: half - 0.35, rearY: 0.65 }
     case "interceptor": return { frontX: half - 0.38, frontY: 0.5, rearX: half - 0.37, rearY: 0.64 }
     case "compact": return { frontX: half - 0.31, frontY: 0.52, rearX: half - 0.23, rearY: 0.8 }

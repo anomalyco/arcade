@@ -1259,6 +1259,7 @@ export class WorldClientStreamer {
   private dirX = 1
   private dirY = 0
   private outerRingDirty = false
+  private fastLookahead = false
   private lastViewRect: readonly [number, number, number, number] | undefined = undefined
   private readonly renderedChunkKeys = new Set<string>()
   private readonly chunkFadeStart = new Map<string, number>()
@@ -1417,6 +1418,7 @@ export class WorldClientStreamer {
     this.dirX = 1
     this.dirY = 0
     this.outerRingDirty = false
+    this.fastLookahead = false
     this.renderedChunkKeys.clear()
     this.chunkFadeStart.clear()
     this.chunkFadeAlpha = 0
@@ -1495,6 +1497,7 @@ export class WorldClientStreamer {
     this.lastPlayerY = playerY
 
     const speed = Math.max(vSpeed, Math.min(25, frameDist * 60))
+    this.fastLookahead = vSpeed > 6.0
     const lookahead = 4 + Math.min(2, Math.ceil(Math.max(0, speed - 3.5) / 6.0))
 
     const cCx = this.center.cx
@@ -1584,11 +1587,13 @@ export class WorldClientStreamer {
     this.pumpWorkers()
     if (this.bakeQueue.length === 0) return 0
     // When background Web Workers are active, only fall back to main-thread compilation for urgent immediate-ring chunks
+    // (expanded to priority <= 10 at vehicle speeds so the next 3×3 window's leading edge is always ready before transition).
     const urgentOnly = this.workers.length > 0
+    const maxUrgentPriority = this.fastLookahead ? 10 : 6
     const start = performance.now()
     let compiledCount = 0
     while (this.bakeQueue.length > 0 && performance.now() - start < budgetMs && compiledCount < maxChunks) {
-      if (urgentOnly && this.bakeQueue[0]!.priority > 6) break
+      if (urgentOnly && this.bakeQueue[0]!.priority > maxUrgentPriority) break
       const item = this.bakeQueue.shift()!
       const k = this.cacheKey(item.seed, item.houseSeed, item.terrain, item.foliageDensity, item.mode, item.cx, item.cy)
       if (this.cache.has(k) || this.inflightKeys.has(k)) continue

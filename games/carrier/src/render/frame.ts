@@ -1,17 +1,31 @@
+import { wgslStruct } from "@arcade/kit/gpu/wgsl"
+
+export const CarrierFrameStruct = wgslStruct("Frame", {
+  viewProj: "mat4x4f",
+  eye: "vec4f",
+  sunDir: "vec4f",
+  sunColor: "vec4f",
+  zenith: "vec4f",
+  horizon: "vec4f",
+  viewport: "vec4f",
+  forward: "vec4f",
+  extra: "vec4f",
+})
+
 /** Frame uniform: 48 floats (192 bytes), bind group 0 binding 0 in every scene pass. See CONTRACTS.md. */
-export const FRAME_FLOATS = 48
+export const FRAME_FLOATS = CarrierFrameStruct.floatCount
 
 /** Float offsets of each field in the packed Frame. */
 export const FRAME = {
-  viewProj: 0,
-  eye: 16,
-  sunDir: 20,
-  sunColor: 24,
-  zenith: 28,
-  horizon: 32,
-  viewport: 36,
-  forward: 40,
-  extra: 44,
+  viewProj: CarrierFrameStruct.offsetOf("viewProj"),
+  eye: CarrierFrameStruct.offsetOf("eye"),
+  sunDir: CarrierFrameStruct.offsetOf("sunDir"),
+  sunColor: CarrierFrameStruct.offsetOf("sunColor"),
+  zenith: CarrierFrameStruct.offsetOf("zenith"),
+  horizon: CarrierFrameStruct.offsetOf("horizon"),
+  viewport: CarrierFrameStruct.offsetOf("viewport"),
+  forward: CarrierFrameStruct.offsetOf("forward"),
+  extra: CarrierFrameStruct.offsetOf("extra"),
 } as const
 
 /**
@@ -20,19 +34,7 @@ export const FRAME = {
  */
 export const TIME_WRAP = 3600
 
-export const FRAME_WGSL = /* wgsl */ `
-struct Frame {
-  viewProj: mat4x4f,
-  eye: vec4f,      // camera position xyz, w = sea time in seconds (wrapped)
-  sunDir: vec4f,   // unit vector toward the sun, w = sun intensity
-  sunColor: vec4f, // rgb, w = ambient strength
-  zenith: vec4f,   // sky colour overhead
-  horizon: vec4f,  // sky colour at the horizon, w = fog density (per metre)
-  viewport: vec4f, // w, h, 1/w, 1/h in pixels
-  forward: vec4f,  // camera forward xyz
-  extra: vec4f,    // day-night: night, warm twilight, practical lights, moon as key light (all 0 by day)
-}
-`
+export const FRAME_WGSL = `\n${CarrierFrameStruct.wgsl}\n`
 
 /** The Frame struct plus its binding as `F`, for passes that use the shared atmosphere helpers. */
 export const FRAME_BINDING_WGSL = /* wgsl */ `${FRAME_WGSL}

@@ -1,6 +1,6 @@
 import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { AIState } from "../../shared/ai"
-import type { CombatShotEvent } from "../../shared/combat"
+import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
 import type { FeedbackActor } from "../hud/actor-feedback"
 import { impactDelay, shotImpacts } from "./impacts"
@@ -24,6 +24,7 @@ export type SoundWorld = {
   town: Town
   zombies: readonly SoundZombie[]
   shots: readonly CombatShotEvent[]
+  meleeSwings?: readonly CombatMeleeEvent[]
   portals: ReadonlyMap<string, { barricadePlanks: number; lastBashTime: number }>
   survivors: readonly { id: string; survivor: SoundActor }[]
   /** Items, drops, benches, pings and lures (absent in tests that only need combat and doors). */
@@ -61,6 +62,9 @@ type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadEl
 export class SoundDirector {
   private started = false
   private shots = new Set<number>()
+  private meleeSwings = new Set<number>()
+  private meleeHits = new Set<string>()
+  private meleeBreaks = new Set<number>()
   private zombies = new Map<number, AIState>()
   private groanedAt = new Map<number, number>()
   private alertedAt = new Map<number, number>()
@@ -84,6 +88,9 @@ export class SoundDirector {
   reset(): void {
     this.started = false
     this.shots.clear()
+    this.meleeSwings.clear()
+    this.meleeHits.clear()
+    this.meleeBreaks.clear()
     this.zombies.clear()
     this.deaths.clear()
     this.actors.clear()
@@ -122,6 +129,47 @@ export class SoundDirector {
     }
     if (this.shots.size > 256) this.shots = new Set(world.shots.map((s) => s.id))
 
+    // Melee swings: whoosh on active swing start, material-matched impact on each struck zombie, and break sound on shatter.
+    if (world.meleeSwings) {
+      for (const m of world.meleeSwings) {
+        const w = MELEE_WEAPONS[m.weapon] ?? MELEE_WEAPONS.crowbar
+        if (!this.meleeSwings.has(m.id)) {
+          this.meleeSwings.add(m.id)
+          const isHeavy = m.heavy || w.weaponClass === "two-heavy"
+          emit({
+            id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
+            x: m.x,
+            y: m.y,
+            source: m.attackerId,
+          })
+        }
+        for (const h of m.hits) {
+          const hitKey = `${m.id}:${h.zombieId}`
+          if (this.meleeHits.has(hitKey)) continue
+          this.meleeHits.add(hitKey)
+          emit({
+            id: `melee.hit.${w.material}`,
+            x: h.x,
+            y: h.y,
+            delay: 0.015,
+            gain: m.heavy ? 1.15 : 1,
+            source: m.attackerId,
+          })
+          if (h.killed && !this.deaths.has(h.zombieId)) {
+            this.deaths.add(h.zombieId)
+            emit({ id: "zombie.death", x: h.x, y: h.y, delay: 0.08, source: "zombie" })
+          }
+        }
+        if (m.weaponBroke && !this.meleeBreaks.has(m.id)) {
+          this.meleeBreaks.add(m.id)
+          emit({ id: "melee.break", x: m.x, y: m.y, delay: 0.04, source: m.attackerId })
+        }
+      }
+      if (this.meleeSwings.size > 256) this.meleeSwings = new Set(world.meleeSwings.map((m) => m.id))
+      if (this.meleeHits.size > 512) this.meleeHits.clear()
+      if (this.meleeBreaks.size > 128) this.meleeBreaks.clear()
+    }
+
     // Zombie states: snarl on noticing someone, death without a shot (shoves, co-op kills), crowd-spaced idle groans.
     const seen = new Set<number>()
     const candidates: SoundZombie[] = []
@@ -145,7 +193,7 @@ export class SoundDirector {
           emit({ id: "zombie.alert", x: z.x, y: z.y, source: "zombie" })
         }
       }
-      if (z.state !== "stagger" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
+      if (z.state !== "stagger" && z.state !== "knockdown" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
     }
     for (const id of this.zombies.keys()) if (!seen.has(id)) { this.zombies.delete(id); this.groanedAt.delete(id) }
     if (candidates.length && t >= this.nextGroan) {

@@ -517,8 +517,8 @@ function measureLocomotionModes(legacyBefore: boolean) {
       const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
       const curPlanted: [boolean, boolean] = [fts[0]!.planted, fts[1]!.planted]
       const toes: [V3, V3] = [
-        at(s.bones["left.foot"]!, 0.19, -RIG.ankle, 0),
-        at(s.bones["right.foot"]!, 0.19, -RIG.ankle, 0),
+        s.bones["left.toe"] ? [...s.bones["left.toe"]!.p] : at(s.bones["left.foot"]!, RIG.foot, -RIG.ankle, 0),
+        s.bones["right.toe"] ? [...s.bones["right.toe"]!.p] : at(s.bones["right.foot"]!, RIG.foot, -RIG.ankle, 0),
       ]
       if (n >= warmup) {
         for (const i of [0, 1] as const) {

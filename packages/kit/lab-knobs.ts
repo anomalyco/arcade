@@ -3,36 +3,114 @@ import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import type { LabControl, LabNavigation, LabRow, LabSettings } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededPatch, toKnobs } from "./lab-tuning"
 
-/** The Lab's dark chrome as knobs tokens: dense rows, the Lab's greys and its one blue accent. */
+/** The Lab chrome's palette (`packages/kit/lab/style.css`), for knobs rules tokens don't reach. */
+const LAB = {
+  panel: "#141518",
+  panel2: "#191a1e",
+  field: "#0e0f11",
+  hover: "#1e2024",
+  line: "#23252a",
+  line2: "#2c2f35",
+  tx: "#d8dbe0",
+  tx2: "#8b9098",
+  tx3: "#5b6068",
+  acc: "#4d8dff",
+  sans: '-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif',
+}
+
+/** The Details action button (`.lab-act`): 20 px, square, a 1 px inset line, 11 px text. */
+const ACT = `height:20px;min-height:20px;padding:0 6px;border:0;border-radius:0;background:${LAB.panel2}!important;box-shadow:inset 0 0 0 1px ${LAB.line};color:${LAB.tx};font:400 11px/20px ${LAB.sans};letter-spacing:0;text-transform:none`
+const ACT_HOVER = `background:${LAB.hover}!important;box-shadow:inset 0 0 0 1px ${LAB.line2};color:${LAB.tx}`
+
+/**
+ * The Lab's chrome as knobs tokens: square corners, the Lab's 24 px rows and 11.5 px text, flat rows split by hairlines
+ * instead of cards, the Details buttons and fields, and one font for labels and values. An inline panel (Details, a
+ * station card) sheds its own frame for the host's column; a game's floating overlay sits in LabPanel's square frame.
+ */
 export const arcadePreset: TokenPreset = {
   name: "arcade",
   dark: {
-    bg: "#141518",
+    bg: LAB.panel,
     surface: "rgba(216,219,224,.045)",
     "surface-hi": "rgba(216,219,224,.09)",
-    line: "#23252a",
-    "line-hi": "#2c2f35",
-    text: "#d8dbe0",
-    label: "#8b9098",
-    dim: "#5b6068",
-    accent: "#4d8dff",
-    modified: "#4d8dff",
+    line: LAB.line,
+    "line-hi": LAB.line2,
+    text: LAB.tx,
+    label: LAB.tx2,
+    dim: LAB.tx3,
+    accent: LAB.acc,
+    modified: LAB.acc,
     page: "#0c0d0f",
-    font: '-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif',
-    mono: 'ui-monospace,"SF Mono",Menlo,monospace',
+    "seg-bg": LAB.field,
+    "seg-active": LAB.hover,
+    "toggle-track": LAB.line2,
+    "toggle-thumb": LAB.tx,
+    rim: "transparent",
+    font: LAB.sans,
+    mono: 'ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace',
     "font-size": "11.5px",
-    row: "26px",
-    pad: "8px",
+    "label-weight": 400,
+    row: "24px",
+    pad: "0px",
     inset: "8px",
-    gap: "3px",
-    radius: "6px",
-    "panel-radius": "8px",
+    gap: "2px",
+    radius: "0px",
+    "panel-radius": "0px",
     glass: 0,
-    glow: 0.25,
+    glow: 0,
+    chrome: 0,
+    "hover-in": 0,
+    "hover-out": 80,
     "readout-mark": 1,
-    "value-font": "var(--k-mono)",
+    "value-font": "var(--k-font)",
+    "group-size": "10px",
+    "group-color": LAB.tx2,
+    "group-tracking": ".05em",
+    "group-divider": LAB.line,
+    "group-divider-gap": "6px",
   },
-  css: `&{--k-width:100%}&[data-lab-floating]{--k-width:300px}`,
+  css: [
+    // Sizes: 20 px fields and buttons in 24 px rows, one text size for labels, values, fields and menus.
+    `&{--k-width:100%;--k-control-h:20px;--k-action-h:20px;--k-icon-btn:20px;--k-text-control:var(--k-font-size);--k-text-meta:11px;--k-row-hover:${LAB.hover};--k-section-gap:6px;--k-group-gap:10px}`,
+    `&.knobs-inline{border-width:0}`,
+    // Flat rows: no card behind a group, hairlines between rows, square everything (knobs hard-codes some pills).
+    `& .knobs-card{background:transparent;border-radius:0;margin-bottom:0;box-shadow:inset 0 1px 0 ${LAB.line},inset 0 -1px 0 ${LAB.line}}`,
+    `& .knobs-card>*{border-radius:0}`,
+    `& :is(header button,.knobs-group-head button,.knobs-group-die,.knobs-toggle,.knobs-toggle i,.knobs-seg,.knobs-seg-pill,.knobs-seg button,.knobs-select,.knobs-presets,.knobs-presets-pill,.knobs-preset-chip,.knobs-popover,.knobs-popover kbd,.knobs-track,.knobs-fill,.knobs-handle){border-radius:0}`,
+    `& .knobs-group-head{margin:var(--k-group-gap) 0 0;min-height:22px;padding:0 var(--k-inset)}`,
+    `& .knobs-group-head:first-child,& .knobs-presets+div>.knobs-group-head:first-child{margin-top:4px}`,
+    // Labels and values: one font, tabular figures, values in the Lab's text colour.
+    `& :is(.knobs-label,.knobs-row>span:first-child){font-size:var(--k-font-size);font-weight:400;color:${LAB.tx2}}`,
+    `& :is(.knobs-value,.knobs-digits,.knobs-select,.knobs-seg button){font-family:var(--k-font);font-size:var(--k-font-size);font-weight:400;font-variant-numeric:tabular-nums}`,
+    // Fields like the Lab's selects: a dark well with a 1 px line.
+    `& :is(.knobs-select,.knobs-seg){background:${LAB.field};box-shadow:inset 0 0 0 1px ${LAB.line};color:${LAB.tx}}`,
+    `& .knobs-select:is(:hover,:focus-visible,[aria-expanded="true"]){background:${LAB.field};box-shadow:inset 0 0 0 1px ${LAB.line2}}`,
+    `& .knobs-select:focus-visible{outline:1px solid ${LAB.acc};outline-offset:-1px}`,
+    // Long choices: one label column per group, as wide as its longest choice label (the adapter measures it) up to
+    // 48% of the row, and the field takes the rest; a focused field spreads over the label to show its whole value, and
+    // both show in full as tooltips.
+    `& .knobs-row:has(>.knobs-select){position:relative}`,
+    `& .knobs-row:has(>.knobs-select)>span:first-child{flex:0 0 var(--lab-choice-label,auto);max-width:48%}`,
+    `& .knobs-row>.knobs-select{flex:1 1 0;max-width:none;justify-content:space-between;padding:0 4px 0 6px}`,
+    `& .knobs-row>.knobs-select:focus-visible{position:absolute;left:var(--k-inset);right:var(--k-inset);z-index:3}`,
+    `& .knobs-row-full>.knobs-select{position:static}`,
+    // Buttons like the Details actions (Trigger, Frame, Move, Play).
+    `& :is(.knobs-action,.knobs-custom-actions button,.knobs-transfer button,.knobs-preset-chip){${ACT}}`,
+    `& :is(.knobs-action,.knobs-custom-actions button,.knobs-transfer button,.knobs-preset-chip):is(:hover:not([disabled]),:focus-visible){${ACT_HOVER}}`,
+    `& :is(.knobs-action,.knobs-custom-actions button,.knobs-transfer button,.knobs-preset-chip):focus-visible{outline:1px solid ${LAB.acc};outline-offset:0}`,
+    `& .knobs-preset-chip[aria-checked="true"]{background:color-mix(in srgb,${LAB.acc} 18%,${LAB.panel2})!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,${LAB.acc} 32%,transparent);font-weight:400}`,
+    `& .knobs-action-row{display:flex;align-items:center;padding:0 var(--k-inset)}`,
+    `& .knobs-action{width:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
+    `& .knobs-action:active:not([disabled]){opacity:1;transform:none}`,
+    `& .knobs-custom-actions{display:flex;flex-wrap:wrap;gap:4px;margin:6px var(--k-inset) 8px}`,
+    `& .knobs-custom-actions button:active:not([disabled]){transform:none}`,
+    // The variants strip as a row of buttons, not a tray.
+    `& .knobs-presets{background:transparent;padding:0 var(--k-inset);margin:0 0 6px;gap:4px}`,
+    `& .knobs-presets-track{gap:4px}`,
+    `& .knobs-presets-pill{display:none}`,
+    `& .knobs-popover{margin:0 var(--k-inset) 6px;background:${LAB.panel2};border-color:${LAB.line}}`,
+    `& header{padding:2px var(--k-inset) 4px}`,
+  ].join(""),
 }
 
 /** What a view needs from its LabPanel: the settings, one transaction per gesture, the tuning seed and history. */
@@ -103,6 +181,7 @@ export class LabKnobsView {
   private idle = 0
   private label = ""
   private disposed = false
+  private aligning = 0
 
   constructor(private host: LabKnobsHost, container: HTMLElement, private options: LabKnobsViewOptions) {
     this.element.className = "lab-knobs"
@@ -152,7 +231,15 @@ export class LabKnobsView {
       actions: options.actions?.map(a => ({ label: a.label, run: () => { this.host.begin(a.label); a.run(); this.host.end(); this.host.edited(this) } })),
     })
     if (options.floating) this.panel.element.dataset.labFloating = ""
+    const titleChoice = (event: Event) => {
+      const select = (event.target as Element | null)?.closest?.<HTMLElement>(".knobs-select")
+      const chosen = select?.querySelector(".knobs-select-value")?.textContent ?? ""
+      if (select && select.title !== chosen) select.title = chosen
+    }
+    this.element.addEventListener("pointerover", titleChoice)
+    this.element.addEventListener("focusin", titleChoice)
     this.decorate()
+    this.alignChoices()
   }
 
   /** Pushes outside changes to knobs: a new shape when rows came, went or changed visibility, else changed values. */
@@ -193,10 +280,16 @@ export class LabKnobsView {
 
   get keys(): string[] { return [...this.rows.keys()] }
 
+  /** Whether this view shows a row when it is visible (its own filter, not the control's `visible`). */
+  includes(row: LabRow): boolean {
+    return !this.options.include || this.options.include(row)
+  }
+
   dispose() {
     if (this.disposed) return
     this.settle()
     this.disposed = true
+    cancelAnimationFrame(this.aligning)
     this.panel.dispose()
     this.element.remove()
   }
@@ -231,8 +324,31 @@ export class LabKnobsView {
       if (value !== undefined) this.shown[key] = value
     }
     this.store.update(descriptors, this.shown, { land })
-    if (this.panel) this.decorate()
+    if (this.panel) {
+      this.decorate()
+      this.alignChoices()
+    }
     return true
+  }
+
+  /** Sizes each group's choice label column to its longest choice label, once per new set of rows. */
+  private alignChoices() {
+    if (this.aligning) return
+    this.aligning = requestAnimationFrame(() => {
+      this.aligning = 0
+      if (this.disposed) return
+      const range = document.createRange()
+      for (const card of this.panel.element.querySelectorAll<HTMLElement>(".knobs-card")) {
+        let width = 0
+        for (const label of card.querySelectorAll<HTMLElement>(":scope>.knobs-row:has(>.knobs-select)>span:first-child")) {
+          range.selectNodeContents(label)
+          width = Math.max(width, range.getBoundingClientRect().width)
+        }
+        // Room for knobs' modified dot after the text.
+        const value = width ? `${Math.ceil(width) + 10}px` : ""
+        if (card.style.getPropertyValue("--lab-choice-label") !== value) card.style.setProperty("--lab-choice-label", value)
+      }
+    })
   }
 
   private onSet(key: string, value: Value | null, meta: ChangeMeta) {
@@ -350,6 +466,9 @@ export class LabKnobsView {
       if (!el) continue
       const off = row.control.enabled?.(nav.settings) === false
       if (el.hasAttribute("data-lab-disabled") !== off) el.toggleAttribute("data-lab-disabled", off)
+      // Long labels and choices truncate in a narrow column: the whole text shows on hover.
+      const name = el.querySelector<HTMLElement>(":scope > span:first-child, .knobs-label")
+      if (name && !isSpawnTime(row.control) && name.title !== row.control.label) name.title = row.control.label
       if (isSpawnTime(row.control) && !el.hasAttribute("data-lab-spawn")) {
         el.setAttribute("data-lab-spawn", "")
         el.title = `${row.control.label}: a spawn-time value. Retrigger (Space) to see the change.`
@@ -396,7 +515,7 @@ export function ensureLabKnobsStyles() {
 [data-lab-disabled]:is(.knobs-row,.knobs-slider){opacity:.38;pointer-events:none}
 .knobs-row[data-lab-spawn]>span:first-child::after,.knobs-slider[data-lab-spawn] .knobs-label::after{content:"";display:inline-block;width:5px;height:5px;margin-left:5px;border-radius:50%;background:#d9a03c;vertical-align:middle}
 :is(.knobs-row,.knobs-slider):has(>.lab-knobs-pin){position:relative}
-.lab-knobs-pin{position:absolute;left:-2px;top:50%;width:12px;height:16px;margin-top:-8px;padding:0;border:0;border-radius:3px;background:none;color:#5b6068;cursor:pointer;opacity:0;font:10px/16px system-ui;z-index:2}
+.lab-knobs-pin{position:absolute;left:-2px;top:50%;width:12px;height:16px;margin-top:-8px;padding:0;border:0;border-radius:0;background:none;color:#5b6068;cursor:pointer;opacity:0;font:10px/16px system-ui;z-index:2}
 .lab-knobs-pin::before{content:"•"}
 :is(.knobs-row,.knobs-slider):hover>.lab-knobs-pin,.lab-knobs-pin[aria-pressed="true"]{opacity:1}
 .lab-knobs-pin[aria-pressed="true"]{color:#4d8dff}
