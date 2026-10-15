@@ -84,6 +84,10 @@ export class Renderer {
     this.post = new Post(d, HDR, format, (code, label) => this.module(code, label))
   }
 
+  setBloomLevels(levels: number): void {
+    this.post.bloomLevels = levels
+  }
+
   /** Compiles a shader module and reports any compile errors with their line. */
   module(code: string, label: string): GPUShaderModule {
     return compileShaderModuleWithLog(this.device, code, label)

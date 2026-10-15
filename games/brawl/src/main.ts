@@ -2,10 +2,12 @@ import "./style.css"
 import "@fontsource/barlow-condensed/600.css"
 import "@fontsource/barlow-condensed/800.css"
 import { Input } from "@arcade/kit/client/input"
+import { GameQuality } from "@arcade/kit/client/quality"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { applyLookPreset, createLookControls, createLookSettings } from "@arcade/kit/gpu/look"
 import { Renderer } from "@arcade/kit/gpu/renderer"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { type LabControl, LabPanel, type LabSettings } from "@arcade/kit/lab-panel"
 import { ROSTER } from "../shared/characters"
 import { DEFAULT_FEEL, FEEL, GAME } from "../shared/config"
@@ -16,8 +18,8 @@ import { LocalSession, NetSession, REJOIN_KEY, type Session } from "./session"
 import { Sound } from "./sound"
 import { Hud } from "./ui/hud"
 import { Menus } from "./ui/menus"
+import { BRAWL_QUALITY } from "./quality"
 
-const MAX_DPR = 1.5
 const NAME_KEY = `${GAME.id}.name`
 const PICK_KEY = `${GAME.id}.pick`
 
@@ -31,8 +33,18 @@ async function main() {
     menuEl.innerHTML = `<div class="landing"><div class="logo">${GAME.title}</div><div class="notice">${g}</div></div>`
     return
   }
+  const perf = new GpuPerf(g.device)
   const renderer = new Renderer(g.device, g.context, g.format)
   const params = new URLSearchParams(location.search)
+  // Resolution and bloom follow the quality tier (Auto by default; View → Quality in the Lab).
+  const quality = new GameQuality({
+    game: GAME.id,
+    tiers: BRAWL_QUALITY,
+    params,
+    gpuMs: () => perf.gpuMs ?? renderer.lastGpuMs,
+    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
+  }).expose()
+  renderer.setBloomLevels(quality.profile.bloomLevels)
   const themeParam = params.get("theme") as ArenaThemeId | null
   let activeTheme: ArenaThemeId = themeParam && themeParam in ARENA_THEMES ? themeParam : DEFAULT_ARENA_THEME
   const lookSettings = ARENA_THEMES[activeTheme].look()
@@ -91,6 +103,7 @@ async function main() {
     input.release()
     Object.assign(FEEL, labSettings)
   }, { open: false, presets: false })
+  quality.addTo(labPanel)
   attachLabPanelControl(labPanel)
 
   const begin = (s: Session) => {
@@ -181,10 +194,7 @@ async function main() {
   }
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, MAX_DPR)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     document.documentElement.style.setProperty("--hud", String(Math.max(0.6, Math.min(1, innerWidth / 1500, innerHeight / 950))))
   }
   resize()
@@ -196,6 +206,9 @@ async function main() {
     last = now
     const w = innerWidth
     const h = innerHeight
+    quality.frame(now)
+    perf.enabled = quality.wantsGpuTiming
+    if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
     if (game && session) {
       input.enabled = game.snap?.phase === "play" && !!session.myId
       game.update(dt, input, w, h)

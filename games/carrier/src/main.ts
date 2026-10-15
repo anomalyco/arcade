@@ -38,22 +38,24 @@ import { OpsMenu } from "./ui/ops-menu"
 import { TeamMenu } from "./ui/team-menu"
 import { Chat } from "./ui/chat"
 import { registerGameCommands } from "@arcade/kit/dev-control"
+import { GameQuality } from "@arcade/kit/client/quality"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { CARRIER_QUALITY } from "./quality"
 
-const MAX_DPR = 1.5
 /** The quiet sea behind the load screen (offline, until a room is chosen). */
 const MENU_SEED = 7
 
-async function gpu(canvas: HTMLCanvasElement): Promise<Renderer | string> {
+async function gpu(canvas: HTMLCanvasElement): Promise<{ renderer: Renderer; perf: GpuPerf } | string> {
   if (!navigator.gpu) return "Carrier needs WebGPU. Use a recent Chrome, Edge or Safari over https or localhost."
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
   if (!adapter) return "No WebGPU adapter is available on this device."
-  const device = await adapter.requestDevice()
+  const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has("timestamp-query") ? ["timestamp-query"] : [] })
   device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
   const context = canvas.getContext("webgpu")
   if (!context) return "WebGPU could not start on this canvas."
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
-  return new Renderer(device, context, format)
+  return { renderer: new Renderer(device, context, format), perf: new GpuPerf(device) }
 }
 
 /** A full-screen message over everything else (the menus included): no WebGPU, or the GPU gave out. */
@@ -66,8 +68,9 @@ function showNotice(hudEl: HTMLElement, message: string): void {
 async function main() {
   const canvas = document.getElementById("view") as HTMLCanvasElement
   const hudEl = document.getElementById("hud")!
-  const renderer = await gpu(canvas)
-  if (typeof renderer === "string") return showNotice(hudEl, renderer)
+  const graphics = await gpu(canvas)
+  if (typeof graphics === "string") return showNotice(hudEl, graphics)
+  const { renderer, perf } = graphics
   // A lost device (driver reset, GPU process crash) ends the session: stop the frame loop and say so.
   let lost = false
   void renderer.context.device.lost.then((info) => {
@@ -79,6 +82,15 @@ async function main() {
     showNotice(hudEl, "The GPU stopped responding. Reload to try again.")
   })
   const params = new URLSearchParams(location.search)
+  // Resolution and bloom follow the quality tier (Auto by default; the dev menu's VIEW tab sets the saved choice).
+  const quality = new GameQuality({
+    game: "carrier",
+    tiers: CARRIER_QUALITY,
+    params,
+    gpuMs: () => perf.gpuMs,
+    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
+  }).expose()
+  renderer.setBloomLevels(quality.profile.bloomLevels)
   const tParam = params.get("t")
   const frozen = tParam !== null && Number.isFinite(Number(tParam)) ? Number(tParam) : null
   // `?seed` plays offline and `?room=` joins straight away; otherwise the menu picks a room over an offline sea.
@@ -184,6 +196,7 @@ async function main() {
     game,
     audio: flight.audio,
     net: () => net,
+    quality,
     bots: {
       me: () => {
         const f = flight.flight
@@ -339,10 +352,7 @@ async function main() {
   if (!start) menu()
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, MAX_DPR)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     document.documentElement.style.setProperty("--hud", String(Math.max(0.6, Math.min(1, innerWidth / 1500, innerHeight / 950))))
   }
   resize()
@@ -353,6 +363,9 @@ async function main() {
     if (lost) return
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
+    quality.frame(now)
+    perf.enabled = quality.wantsGpuTiming
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     const t = dev ? dev.time(frozen ?? net.seaTime(), dt) : (frozen ?? net.seaTime())
     const menus = menuOpen || teams.open || ops.open || chat.open || !!dev?.visible
     if (!menus) input.resume()

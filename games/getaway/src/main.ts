@@ -18,6 +18,8 @@ import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
 import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
+import { GameQuality } from "@arcade/kit/client/quality"
+import { GETAWAY_QUALITY, type GetawayQuality } from "./quality"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { WorldView, SimEvent } from "../shared/sim/world"
@@ -99,6 +101,12 @@ async function main() {
     controls.release()
     controls.forward({ type: "mux-release" })
   }, scene, sound)
+  // Resolution, motion blur and smoke volumes follow the quality tier (Auto by default; View → Quality in the Lab).
+  const applyTier = (tier: GetawayQuality) => Object.assign(renderer.tier, { motionBlur: tier.motionBlur, volumes: tier.volumes })
+  const quality = new GameQuality({ game: "getaway", tiers: GETAWAY_QUALITY, params: q, gpuMs: () => telemetry.gpuMs, onChange: applyTier })
+    .addTo(debug)
+    .expose()
+  applyTier(quality.profile)
   let explosionLoopTimer = 0
   registerGameCommands(commands => {
     commands.registerAll([
@@ -189,10 +197,7 @@ async function main() {
   })
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, 2)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
   }
   resize()
   addEventListener("resize", resize)
@@ -323,6 +328,8 @@ async function main() {
     const frameMs = last === null ? 0 : Math.max(0, now - last)
     const dt = Math.min(0.1, frameMs / 1000)
     last = now
+    quality.frame(now)
+    resize()
     const input = controls.read(mux ? 0 : dt)
     const view = mux && muxView ? muxView : session.update(dt, input)
     const { mine, focus } = focusOf(view, session.myId)
@@ -350,7 +357,7 @@ async function main() {
     }
     if (scene.punch > 0 && !mux) { cam.land(scene.punch); scene.punch = 0 }
     if (!held) scene.draw(view, cam, canvas.width, canvas.height, dt, focus)
-    telemetry.enabled = debug.visible || mux
+    telemetry.enabled = debug.visible || mux || quality.wantsGpuTiming
     const report = debug.update(now, frameMs, { gpuMs: telemetry.gpuMs, gpuKind: telemetry.gpuKind, draws: telemetry.draws, verts: telemetry.verts, chunks: renderer.stats.chunksDrawn, lights: scene.lightCount })
     if (parent !== window) {
       const pose = mine ? { x: mine.x, z: mine.z, vx: mine.vx, vz: mine.vz, h: mine.h, yaw: mine.yaw ?? 0, speed: mine.speed } : {}
