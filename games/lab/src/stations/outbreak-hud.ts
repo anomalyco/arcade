@@ -3,7 +3,7 @@ import { defineStation } from "./define"
 
 const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean) => ({ command: "scene.set-param", args: { key, value } })
-// hud.demo puts a sample on the survivor: an action in progress, a loot pop, a noise, half-spent stamina and a hit.
+// hud.demo puts a sample on the survivor: an action in progress, loot pops, half-spent stamina and a hit.
 const style = (value: number) => [set("hudStyle", value), set("calloutPlacement", -1), set("vitalsPlacement", -1), set("avoidAim", true), { command: "hud.demo" }]
 
 // The same five directions as the board's D-13 prototype; each is one Lab "HUD style" (Backquote › HUD in the page).
