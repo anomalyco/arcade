@@ -46,10 +46,32 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   `Search details` filters by label/key/group. Spawn-time values (units ending `· retrigger`) show an amber dot.
   Defaults are the section's settings captured when the workbench starts, before fixtures or edits.
 - **Library drawer** (bottom, `Ctrl+Space`) holds everything you can add: Effects (Starting Fixtures first), Objects,
-  Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with collections, search and tiles. Click arms a placement ghost
-  for props/lights (or runs the fixture/effect); dragging a tile into the viewport places props, lights and characters
-  at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer bar with
-  category buttons and `Search library` stays visible when closed. Open state persists in `localStorage`.
+  Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with
+  collections, search and items. Items show as compact tiles (a 56×36 preview or a line icon for the item's kind, the
+  full name on up to two lines, the tag only when the group heading doesn't already say it) or as a dense list (the
+  two buttons right of `Search library`; the choice persists in `arcade.lab.library-view`). Click arms a placement
+  ghost for props/lights (or runs the fixture/effect); dragging an item into the viewport places props, lights and
+  characters at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer
+  bar with category tabs and `Search library` stays visible when closed. Open state persists in `localStorage`.
+- **Previews** (`packages/kit/lab/library-thumbs.ts`): the first time a scene-level item runs (fixtures, effects,
+  presets, looks, materials; not single props, lights, characters or sounds), its frame 0.9 s later becomes the
+  item's preview. `Render previews` under the collections renders every missing one in the current view offline: the
+  live loop pauses, each item runs from the same starting scene for 40 fixed ticks through the production renderer,
+  and the scene, camera and active item are restored. Previews are 112×72 WebP in `arcade.lab.library-thumbs.v1`
+  (240 at most, oldest dropped first); `library.previews clear=true` forgets them.
+- **Resizable panels** (`packages/kit/lab/panels.ts`): drag the edge between the viewport and the Outliner, Details,
+  Library or station dock, or under a station's left/right widget slot. A handle shows an accent line on hover;
+  double-click resets that panel, and its button (or dragging well past the minimum) collapses the Outliner, Details
+  or dock to a 22 px bar with its name (click the bar to expand) and closes the Library. A focused handle takes
+  `←`/`→` (or `↑`/`↓`) for 16 px, `⇧` for 64 px, `Home`/`End` for the minimum and maximum, `Enter` to collapse and
+  `Esc` back to the canvas. The viewport always keeps 360×180 px. Sizes and collapsed state persist per layout in
+  `arcade.lab.panels.v1`: the plain workbench, and each station by id, so a station's dock height comes back when it
+  reopens. `⋯` → `Reset panel sizes` resets the current layout.
+- **Viewport resolution** (`packages/kit/lab/viewport-size.ts`, `⋯` menu): `Auto` renders at the display's pixel
+  ratio up to 1.5× (the games' `MAX_DPR`), `Device pixels` up to 2×, `1×` at CSS pixels. A ResizeObserver tracks the
+  viewport box, so the render loop no longer reads layout every frame; a panel change marks the size stale and the
+  next frame measures it once, because Chrome delivered ResizeObserver callbacks 7–8 frames late while dragging. The
+  canvas is resized right before it is drawn, so a resize never presents an empty canvas.
 - **⌘K** searches scene objects (select and frame), Library items, registry commands (those without required
   arguments) and every section's setting names (switch section if needed, clear Details filters, scroll, focus and
   flash the field). Prefixes: `@` scene, `#` settings, `+` library, `>` commands. `/` also opens it.
@@ -68,12 +90,16 @@ text-field ownership and the CLI. Every layout action is a registry command:
 | `outliner.focus` | | Focus the Outliner (`⇧Tab`) |
 | `library.toggle` | `open?`, `category?`, `query?` | Toggle/open the drawer (`Ctrl+Space`) |
 | `library.place` | `id`, `at?` (`x,z`), `yaw?` | Place a Library item at a ground point, or arm/run it |
+| `library.view` | `view?` (`tiles`/`list`), `group?`, `focus?` | Switch the item view or collection; `focus` moves keyboard focus to the items |
+| `library.previews` | `ids?`, `clear?` | Render missing previews for the current view (or `ids`), or forget them |
+| `layout.panels` | `panel?`, `size?`, `collapsed?`, `reset?` | Resize, collapse or reset `left`, `right`, `drawer`, `dock`, `leftSlot`, `rightSlot`; returns sizes |
 | `palette.open` | `query?` | Open ⌘K search |
 | `watch.pin` / `watch.unpin` | `key`, `section?`, `pinned?` / `all?` | Manage Watch pins |
 | `details.filter` | `modified?`, `query?`, `all?` | Details filters; returns the visible keys |
 | `details.reveal` | `key`, `section?` | Jump to a setting |
 
-`arcade state` includes `layout` (`library`, `locked`, `details`, `watch`).
+`arcade state` includes `layout` (`library` with `view`, `focused`, `cursor` and the preview count, `panels`,
+`locked`, `details`, `watch`).
 
 ### Registering sections with the layout
 
@@ -131,8 +157,9 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
 - `Stage` (`packages/kit/lab/stage.ts`) adds spherical camera state (`camYaw`, `camPitch`, `camDist`) around `focus`
   with `frameTarget(x, y, z, dist)`, `resetCamera()`, `orbit(dyaw, dpitch)`, `pan(dx, dz)`, `zoomBy(factor)`, and
   raycasting helpers `screenRay(u, v)` and `pickGround(u, v, groundFn)`.
-- Canvas dimensions are read from the center viewport host (`viewportHost.clientWidth` × `clientHeight`) after sidebars,
-  preventing aspect-ratio stretching when sidebars are open or toggled with `Backquote`.
+- Canvas dimensions follow the center viewport host's box (tracked by `viewport-size.ts`, scaled by the Viewport
+  resolution setting) after sidebars, preventing aspect-ratio stretching when panels resize, collapse or are toggled
+  with `Backquote`.
 - `LabSection` (`packages/kit/lab/types.ts`) adds optional workbench hooks:
   `retrigger?()`, `reroll?()`, `frameTarget?()`, `objects?()`, `selectedObjectId?`, `selectObject?(id)`,
   `moveObject?(id, x, z, yaw)`, `deleteObject?(id)`, `duplicateObject?(id)` and `groundHeight?(x, z)`.
@@ -171,6 +198,14 @@ Priority order:
 1. **Text editing / modal dialog** (⌘K search, `Search scene`, `Search library`, `Search details`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
    printable keys, `Space`, arrows and clipboard shortcuts; `Escape` closes the active editor or clears search.
    `⌘K` (toggle search) and `Ctrl+Space` (Library drawer, physical Space key) work from anywhere, including Play.
+   A focused Library (anything below its bar except `Search library`) owns arrows, `Enter`, `Space`, `Home`/`End`,
+   `PageUp`/`PageDown`, `Backspace`, `Escape` and every printable key: arrows move between items by row and column
+   (group headings break rows; `↑`/`↓` keep the column), `Enter`/`Space` apply the focused item and keep focus on it,
+   letters and digits type into `Search library` (so `M`, `N`, `P` and number keys don't fire there), `Esc` returns
+   to the canvas. Category tabs take `←`/`→`, collections `↑`/`↓` (`→` or `Enter` into the items), and `↓` from
+   `Search library` enters the items. `Tab`/`⇧Tab` moves between the tabs, search, view buttons, collections,
+   `Render previews` and the items; each keeps one tab stop. A focused item shows its whole name on a card over its
+   neighbours.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
    the Edit canvas shortcuts below.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
@@ -225,9 +260,24 @@ Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
 hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
+hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 ```
 
 `prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
-the pre-knobs panel DOM and was deleted; there is no layout regression proof until the Lab scenes redesign settles.
+the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.
 `games/getaway/scripts/prove-lab-effects.ts` and `prove-lab-spawn.ts` still read that DOM and need knobs selectors.
+
+`hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts` proves the panels
+and Library at 1440×900 (DPR 1) and 1728×1117 (DPR 2): previews render for every Foliage item; dragging the Outliner,
+Details and Library handles resizes them by the drag, the canvas backing size matches the viewport on every frame
+(no lag) and screenshots taken mid-drag are never blank; sizes survive a reload; double-click resets; Details
+collapses to a bar and stays collapsed across a reload; handle arrow keys resize; a station's dock height is kept
+separately from the workbench's; at DPR 2 the canvas is 1.5× (Auto) or 2× (Device pixels) its CSS box; and a
+keyboard-only sequence (`Ctrl+Space`, `↓`, `→`, `↓`, `Enter` applies Maple; typing `pi`, `↓`, `Space` applies Pine;
+`⇧Tab`, `↓`, `→`; `M` filters instead of muting; `Esc` to the canvas; Play keys never reach the Library) does what it
+says. `--shots-only` captures screenshots and idle cost on any branch for a before/after pair. Idle cost with the
+Library open, from CDP `Performance.getMetrics` (`--only idle`, three 6 s windows at 1440×900): layouts per second
+fell from 124.5–124.7 to 72.2–73.7 because the per-frame `clientWidth` reads are gone, layout time stayed at 7–9 ms
+per second, style recalcs stayed at 62 per second, and `requestAnimationFrame` callbacks stayed at 122–124 per second.
+A single 3 s window at 1728×1117 (DPR 2) gave 124 layouts per second before and 71 after. Captures are in `2026-10-14-lab-panels/` relative to the local artifact root.

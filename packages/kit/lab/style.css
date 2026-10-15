@@ -64,6 +64,7 @@ kbd {
     "left drawer right"
     "bottom bottom bottom";
   gap: 1px;
+  position: relative;
   width: 100vw;
   height: 100dvh;
   background: var(--line);
@@ -166,7 +167,6 @@ kbd {
 .lab-search:focus-within,
 .lab-chip:focus-visible,
 .lab-act:focus-visible,
-.lab-tile:focus-visible,
 .lab-drawer-cat:focus-visible,
 .lab-drawer-group:focus-visible,
 .lab-search-btn:focus-visible {
@@ -475,6 +475,263 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-menu-check {
   width: 12px;
   color: var(--acc);
+}
+
+.lab-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
+.lab-menu-label {
+  padding: 3px 8px 2px;
+  color: var(--tx3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Resizable panels (panels.ts). Column, drawer and dock handles are absolutely positioned on their panel's grid
+   area; slot handles sit in the column's flex flow under their slot. */
+.lab-splitter {
+  position: absolute;
+  z-index: 40;
+  touch-action: none;
+  outline: 0;
+}
+
+.lab-splitter[data-axis="x"] {
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+}
+
+.lab-splitter[data-axis="y"] {
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: row-resize;
+}
+
+.lab-splitter[data-splitter="left"] {
+  grid-area: left;
+  left: auto;
+  right: -4px;
+}
+
+.lab-splitter[data-splitter="right"] {
+  grid-area: right;
+  left: -4px;
+}
+
+.lab-splitter[data-splitter="drawer"] {
+  grid-area: drawer;
+  top: -4px;
+}
+
+.lab-splitter[data-splitter="dock"] {
+  grid-area: dock;
+  top: -4px;
+}
+
+.lab-splitter[data-splitter="leftSlot"],
+.lab-splitter[data-splitter="rightSlot"] {
+  position: relative;
+  flex: none;
+  margin: -4px 0 -3px;
+  z-index: 3;
+}
+
+.lab-splitter::after {
+  content: "";
+  position: absolute;
+  background: var(--acc);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+
+.lab-splitter[data-axis="x"]::after {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+}
+
+.lab-splitter[data-axis="y"]::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+}
+
+.lab-splitter:hover::after,
+.lab-splitter:focus-visible::after,
+.lab-splitter[data-active="true"]::after {
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+
+.lab-splitter:focus-visible::after,
+.lab-splitter[data-active="true"]::after {
+  transition-delay: 0s;
+}
+
+.lab-splitter-btn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--panel2);
+  box-shadow: 0 0 0 1px var(--line2);
+  color: var(--tx2);
+  font: 600 10px/1 var(--sans);
+  opacity: 0;
+  transition: opacity 0.12s;
+  cursor: default;
+}
+
+.lab-splitter[data-axis="x"] .lab-splitter-btn {
+  top: calc(50% - 14px);
+  left: -4px;
+  width: 15px;
+  height: 28px;
+}
+
+.lab-splitter[data-axis="y"] .lab-splitter-btn {
+  left: calc(50% - 14px);
+  top: -4px;
+  width: 28px;
+  height: 15px;
+}
+
+.lab-splitter:hover .lab-splitter-btn,
+.lab-splitter:focus-visible .lab-splitter-btn {
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+
+.lab-splitter-btn:hover {
+  background: var(--hover);
+  color: var(--tx);
+}
+
+.lab-splitter[data-splitter="left"] .lab-splitter-btn::before { content: "‹"; }
+.lab-splitter[data-splitter="left"][data-collapsed="true"] .lab-splitter-btn::before { content: "›"; }
+.lab-splitter[data-splitter="right"] .lab-splitter-btn::before { content: "›"; }
+.lab-splitter[data-splitter="right"][data-collapsed="true"] .lab-splitter-btn::before { content: "‹"; }
+.lab-splitter[data-splitter="drawer"] .lab-splitter-btn::before,
+.lab-splitter[data-splitter="dock"] .lab-splitter-btn::before { content: "⌄"; transform: translateY(-2px); }
+.lab-splitter[data-splitter="drawer"][data-collapsed="true"] .lab-splitter-btn::before,
+.lab-splitter[data-splitter="dock"][data-collapsed="true"] .lab-splitter-btn::before { content: "⌃"; transform: translateY(2px); }
+
+.lab-workbench[data-resizing] {
+  user-select: none;
+}
+
+.lab-workbench[data-resizing="x"],
+.lab-workbench[data-resizing="x"] * {
+  cursor: col-resize !important;
+}
+
+.lab-workbench[data-resizing="y"],
+.lab-workbench[data-resizing="y"] * {
+  cursor: row-resize !important;
+}
+
+.lab-workbench[data-resizing] iframe,
+.lab-workbench[data-resizing] canvas {
+  pointer-events: none;
+}
+
+/* A collapsed side column or dock shrinks to a bar with its name; clicking the bar expands it. */
+.lab-rail {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: var(--panel);
+  color: var(--tx2);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.lab-rail:hover {
+  background: var(--hover);
+  color: var(--tx);
+}
+
+.lab-rail span {
+  display: block;
+  padding: 10px 0;
+  writing-mode: vertical-rl;
+}
+
+.lab-rail[data-rail="left"] {
+  grid-area: left;
+}
+
+.lab-rail[data-rail="left"] span {
+  transform: rotate(180deg);
+}
+
+.lab-rail[data-rail="right"] {
+  grid-area: right;
+}
+
+.lab-rail[data-rail="dock"] {
+  grid-area: dock;
+  text-align: left;
+}
+
+.lab-rail[data-rail="dock"] span {
+  writing-mode: horizontal-tb;
+  padding: 0 10px;
+}
+
+.lab-workbench[data-collapsed-left="true"] {
+  --lw: 22px !important;
+}
+
+.lab-workbench[data-collapsed-right="true"] {
+  --rw: 22px !important;
+}
+
+.lab-workbench[data-collapsed-left="true"] > .lab-outliner,
+.lab-workbench[data-collapsed-right="true"] > .lab-inspector {
+  visibility: hidden;
+  overflow: hidden;
+}
+
+.lab-workbench[data-collapsed-left="true"] > .lab-rail[data-rail="left"],
+.lab-workbench[data-collapsed-right="true"] > .lab-rail[data-rail="right"] {
+  display: flex;
+  justify-content: center;
+}
+
+.lab-workbench[data-collapsed-dock="true"] > .lab-station-dock:not([hidden]) {
+  height: 22px !important;
+  max-height: 22px !important;
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.lab-workbench[data-collapsed-dock="true"] > .lab-station-dock:not([hidden]) ~ .lab-rail[data-rail="dock"] {
+  display: flex;
+  align-items: center;
+}
+
+.lab-workbench[data-closed="true"] > .lab-splitter,
+.lab-workbench[data-closed="true"] > .lab-rail {
+  display: none !important;
 }
 
 /* Outliner */
@@ -967,17 +1224,38 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: none;
 }
 
-.lab-drawer-body {
-  height: clamp(150px, 26vh, 236px);
+.lab-drawer-views {
+  display: flex;
+  gap: 1px;
+  flex: none;
+}
+
+.lab-drawer-views .lab-icon-btn {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr);
+  place-items: center;
+  color: var(--tx3);
+}
+
+.lab-drawer-body {
+  /* Resizable from the handle on the drawer's top edge (panels.ts writes --drawer-h). */
+  height: var(--drawer-h, clamp(112px, 16vh, 168px));
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
   border-top: 1px solid var(--line);
   min-height: 0;
 }
 
-.lab-drawer-groups {
+.lab-drawer-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--line);
-  padding: 4px 0;
+}
+
+.lab-drawer-groups {
+  flex: 1;
+  min-height: 0;
+  padding: 3px 0;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -987,13 +1265,13 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: var(--row);
-  padding: 0 10px 0 12px;
+  height: 22px;
+  padding: 0 8px 0 10px;
   border: 0;
   background: none;
   color: var(--tx2);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   text-align: left;
 }
 
@@ -1002,6 +1280,11 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lab-drawer-group .lab-tcount {
+  color: var(--tx3);
+  font-size: 10px;
 }
 
 .lab-drawer-group:hover {
@@ -1014,43 +1297,73 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   color: var(--tx);
 }
 
+.lab-drawer-previews {
+  flex: none;
+  margin: 4px 6px 6px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: #d8dbe00a;
+  color: var(--tx2);
+  font: inherit;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lab-drawer-previews:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--tx);
+}
+
+.lab-drawer-previews:disabled {
+  color: var(--tx3);
+}
+
 .lab-drawer-grid {
-  padding: 6px 8px 10px;
+  padding: 4px 6px 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
   grid-auto-rows: min-content;
-  gap: 6px;
+  gap: 4px;
   align-content: start;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--line2) transparent;
 }
 
+.lab-drawer-grid[data-view="list"] {
+  grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+  gap: 0 6px;
+}
+
 .lab-drawer-heading {
   grid-column: 1 / -1;
   align-self: end;
-  height: auto;
-  padding: 6px 2px 0;
+  padding: 5px 2px 1px;
   color: var(--tx3);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .lab-drawer-grid .lab-drawer-heading:first-child {
-  padding-top: 0;
+  padding-top: 1px;
 }
 
 .lab-tile {
   position: relative;
-  height: 64px;
+  height: 40px;
   display: grid;
-  grid-template-rows: 38px auto;
-  gap: 4px;
-  padding: 0 0 6px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 2px 6px 2px 2px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--panel2);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx);
@@ -1069,39 +1382,119 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   background: color-mix(in srgb, var(--acc) 10%, var(--panel2));
 }
 
+.lab-tile[data-cursor] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 70%, transparent);
+}
+
+.lab-tile:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+  z-index: 2;
+}
+
 .lab-tile[data-placeable="true"] {
   cursor: grab;
 }
 
 .lab-tile-art {
+  width: 56px;
+  height: 36px;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  border-radius: 3px;
   background: var(--fieldbg);
-  border-radius: 4px 4px 0 0;
-  color: var(--tx3);
-  font-size: 15px;
+  color: var(--tx2);
 }
 
-.lab-tile-name {
-  padding: 0 7px;
-  font-size: 11.5px;
-  white-space: nowrap;
+.lab-tile-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lab-tile-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 11.5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .lab-tile-tag {
-  position: absolute;
-  top: 4px;
-  right: 5px;
-  font-size: 9px;
+  margin-left: 5px;
   color: var(--tx3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  max-width: 70%;
-  overflow: hidden;
+  font-size: 10px;
+}
+
+/* A focused item always shows its whole name, on a card over its neighbours. */
+.lab-tile:focus-visible .lab-tile-text {
+  position: absolute;
+  z-index: 1;
+  left: 63px;
+  right: -2px;
+  top: 2px;
+  padding: 2px 6px 4px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  column-gap: 5px;
+  min-height: 36px;
+  background: inherit;
+  border-radius: 0 5px 5px 0;
+}
+
+.lab-tile:focus-visible .lab-tile-tag {
+  margin-left: 0;
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile {
+  height: 24px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  padding: 0 6px 0 4px;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile:hover {
+  background: #d8dbe00a;
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile[aria-selected="true"] {
+  background: var(--acc-a);
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile-art {
+  width: 16px;
+  height: 16px;
+  background: none;
+  color: var(--tx3);
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile-text {
+  display: block;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.lab-drawer-grid[data-view="list"] .lab-tile:focus-visible .lab-tile-text {
+  left: 26px;
+  top: 0;
+  min-height: 24px;
+  line-height: 24px;
+  padding: 0 8px 0 0;
+  white-space: normal;
+  width: max-content;
+  max-width: 320px;
+  right: auto;
+  background: var(--panel2);
+  box-shadow: 0 0 0 1px var(--line2);
 }
 
 .lab-drag-ghost {
