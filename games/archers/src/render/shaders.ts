@@ -52,7 +52,7 @@ fn fbm(p: vec2f) -> f32 {
 fn sunGlow(uv: vec2f) -> f32 {
   let asp = F.screen.x * F.screen.w;
   let d = length((uv - F.sun.xy) * vec2f(asp, 1.0));
-  return F.sun.w * (0.14 * exp(-d * d / (F.sun.z * F.sun.z)) + 0.07 * exp(-d / (F.sun.z * 3.5)));
+  return F.sun.w * (0.3 * exp(-d * d / (F.sun.z * F.sun.z)) + 0.06 * exp(-d / (F.sun.z * 2.5)));
 }
 
 /** The fog backdrop at a screen uv (0..1, y down): a pale core behind the tower, darker corners, drifting mist. */
@@ -159,7 +159,7 @@ fn stoneTex(w: vec3f, n: vec3f) -> f32 {
   let id = hash21(vec2f(floor(bx), row));
   let grain = fbm(uv * 5.0 + id * 7.0);
   let big = vnoise(w.xy * 0.35 + w.z * 0.2);
-  return mix(0.72, 1.0, mortar) * (0.8 + 0.3 * id) * (0.6 + 0.7 * grain) * (0.65 + 0.6 * big);
+  return mix(0.82, 1.0, mortar) * (0.8 + 0.3 * id) * (0.6 + 0.7 * grain) * (0.65 + 0.6 * big);
 }
 
 @fragment fn fs(o: VOut, @builtin(front_facing) front: bool) -> FOut {
@@ -193,7 +193,7 @@ fn stoneTex(w: vec3f, n: vec3f) -> f32 {
     keep = 1.0;
   } else if (mat == 3) {
     let lit = pointLights(w, n, 0.6);
-    col = vec3f(0.0035, 0.0035, 0.004) * o.color * (1.0 + skyTop * skyL * 6.0) + lit * 0.05 * o.color;
+    col = vec3f(0.0035, 0.0035, 0.004) * o.color * (1.0 + skyTop * skyL * 6.0) + lit * 0.02 * o.color;
     keep = clamp(dot(lit, vec3f(0.333)) * 0.4, 0.0, 0.5);
   } else if (mat == 4) {
     col = o.tint.rgb * (o.aux + o.fx.x);
@@ -390,11 +390,15 @@ fn clean(c: vec4f) -> vec4f {
   var rim = vec3f(0.0);
   if (c0.a > 0.2) {
     let r = 1.15 * F.screen.y / 720.0;
-    var edge = 0.0;
+    var m: array<f32, 8>;
     for (var i = 0; i < 8; i++) {
       let ang = f32(i) * 0.7853982;
-      let s = textureSampleLevel(srcTex, samp, uv + vec2f(cos(ang), sin(ang)) * px * r, 0.0);
-      edge = max(edge, c0.a - s.a);
+      m[i] = textureSampleLevel(srcTex, samp, uv + vec2f(cos(ang), sin(ang)) * px * r, 0.0).a;
+    }
+    // Only edges with body behind them light up: hair-thin strands (vines, strings) would otherwise glow whole.
+    var edge = 0.0;
+    for (var i = 0; i < 8; i++) {
+      edge = max(edge, (c0.a - m[i]) * m[(i + 4) % 8]);
     }
     rim = sky(uv) * edge * F.misc.x * 1.6;
   }
@@ -406,6 +410,8 @@ fn clean(c: vec4f) -> vec4f {
   let gray = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   c = mix(c, vec3f(gray), F.misc.w * (1.0 - keep));
   let v = length((uv - 0.5) * vec2f(1.0, 0.8));
+  // A deep frame of shadow: the corners fall to near black like the painted concept.
+  c *= mix(1.0, 0.45, smoothstep(0.38, 0.85, v));
   c = mix(c, vec3f(0.5, 0.06, 0.04), F.misc.z * smoothstep(0.3, 0.9, v));
   return vec4f(pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2)), 1.0);
 }

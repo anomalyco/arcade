@@ -363,8 +363,9 @@ export class Game {
       viewProj: vp,
       eye: this.cam.eye,
       time: this.now,
-      sun: [sun.x / w, sun.y / h, 0.16, 1.0],
-      fog: [0.022, 2.4, 0.55, 0.045],
+      // The glow sits in the fog just below the bell window, where the concept's light pools.
+      sun: [sun.x / w - 0.02, sun.y / h + 0.13, 0.22, 1.0],
+      fog: [0.016, 2.4, 0.55, 0.045],
       skyBrightness: 1,
       rim: 0.6,
       shafts: 1,
@@ -650,8 +651,7 @@ export class Game {
       [A.w * 0.5, A.h * 0.55, -9, A.w * 0.9, 5.5, 0.55],
       [A.w * 0.3, A.h * 0.25, -4, A.w * 0.6, 3.2, 0.5],
       [A.w * 0.75, A.h * 0.7, -3, A.w * 0.5, 2.6, 0.4],
-      [A.w * 0.5, 1.2, 1.2, A.w * 0.9, 2.2, 0.45],
-      [A.w * 0.5, A.h * 0.45, 2.2, A.w * 0.8, 3.5, 0.18],
+      [A.w * 0.5, 1.5, -0.6, A.w * 0.9, 2.4, 0.5],
     ]
     for (const [i, [x, y, z, hw, hh, a]] of sheets.entries()) {
       this.mist.push(x + Math.sin(t * 0.05 + i) * 1.5, y, z, hw, hh, 0, Q.mist, [1.05, 1.05, 1.08], a, 0, i * 0.37 + 0.1)
