@@ -80,6 +80,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | — | Yes | — | Yes | — |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — |
 | `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | — |
+| `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | — | — | Yes | — |
 | `lab/*` & `compare` | Lab workbench, sections, adapters, A/B compare, variation grid, and stations | Yes | Yes | Yes | — | Yes | — |
 | `dev-control`, `lab-commands` & `dev-hub` | `LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub | Yes | Yes | Yes | Yes | Yes | — |
 
