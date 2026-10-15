@@ -6,9 +6,9 @@ import { kindOf } from "./kinds"
 /** The collection each station's scenes go into. Stations not listed go to "Stations". */
 export const STATION_AREAS: readonly { id: string; title: string; stations: readonly string[] }[] = [
   { id: "effects", title: "Effects", stations: ["explosions", "smoke-fire", "blackout", "getaway"] },
-  { id: "look-and-light", title: "Look and light", stations: ["weather", "vegetation", "looks", "lighting", "materials"] },
+  { id: "look-and-light", title: "Look and light", stations: ["weather", "vegetation", "looks", "styles", "lighting", "materials"] },
   { id: "characters", title: "Characters and feel", stations: ["characters", "survivor-aim", "game-feel"] },
-  { id: "outbreak", title: "Outbreak", stations: ["outbreak", "outbreak-hud", "outbreak-progression"] },
+  { id: "outbreak", title: "Outbreak", stations: ["outbreak", "outbreak-flashlight", "first-night", "outbreak-hud", "outbreak-progression"] },
   { id: "audio", title: "Audio", stations: ["audio"] },
   { id: "carrier", title: "Carrier", stations: ["carrier"] },
 ]

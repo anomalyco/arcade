@@ -70,11 +70,21 @@ export const LAB_KINDS: readonly LabKind[] = [
     panels: [...tuning, "choices"],
     choices: [choice("direction", "Art direction", "subject", "vignette", directions)],
   },
+  {
+    id: "style",
+    label: "Style",
+    subject: "One rendering style on the same Outbreak room combat sim",
+    host: { kind: "section", section: "styles" },
+    panels: [...tuning, "choices"],
+    choices: [choice("style", "Style", "subject", "style")],
+  },
   { id: "walk-cycle", label: "Walk cycle", subject: "A character's walk, run and poses on the shared rig", host: { kind: "page", url: "/arcade/blackout/characters.html" }, panels: [...page, "timeline"], play: "Walk" },
   { id: "aim", label: "Aim", subject: "The survivor's aim, fire and reload", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "feel", label: "Game feel", subject: "Hit, shot and shove feedback", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "hud", label: "HUD", subject: "The HUD through a night moment", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "progression", label: "Progression", subject: "Inventory, research and the workbench", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
+  { id: "pacing", label: "Pacing", subject: "Outbreak's first night: waves, threat and quiet", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "flashlight", label: "Flashlight", subject: "The survivor's flashlight beam in the game", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
 ]
 
@@ -86,6 +96,8 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-hud": "hud",
   "outbreak-progression": "progression",
   carrier: "ship",
+  "first-night": "pacing",
+  "outbreak-flashlight": "flashlight",
 }
 
 /** The kind that runs a host, and which of its choice slots each command prefix fills. */

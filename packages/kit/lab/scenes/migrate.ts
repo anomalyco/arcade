@@ -21,6 +21,7 @@ export const CHOICE_COMMANDS: readonly { prefix: string; preset: string; arg: st
   { prefix: "weather", preset: "weather.preset", arg: "preset", set: "weather.set" },
   { prefix: "look", preset: "look.preset", arg: "preset", set: "look.set" },
   { prefix: "vignette", preset: "vignette.preset", arg: "direction" },
+  { prefix: "style", preset: "style.preset", arg: "style" },
 ]
 /** The Lab's global lighting rig, with its values as `scene.set-param` keys. */
 export const CURRENT_LIGHTING = "lighting:current"

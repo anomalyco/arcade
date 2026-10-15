@@ -19,7 +19,7 @@ const key = (c: StationCommand) => JSON.stringify([c.command, c.args ?? {}])
 describe("lab kinds", () => {
   test("every kind checks, and every Lab section has exactly one kind", () => {
     expect(checkKinds(LAB_KINDS)).toEqual([])
-    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette"]
+    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles"]
     for (const section of sections) expect({ section, kinds: LAB_KINDS.filter(k => k.host.kind === "section" && k.host.section === section).length }).toEqual({ section, kinds: 1 })
   })
   test("no kind is a catch-all: only the vehicle lab has an add-picker", () => {
@@ -61,7 +61,7 @@ describe("stations as labs", () => {
   test("the migrated scenes load into a store as repo scenes without problems", () => {
     const store = createSceneStore({ storage: memorySceneStorage(), repo: { scenes, collections }, now: () => new Date(NOW) })
     expect(store.problems).toEqual([])
-    expect(store.collections().find(c => c.collection.id === "look-and-light")?.scenes.map(e => e.scene.id)).toEqual(["weather", "vegetation", "looks", "lighting", "materials"])
+    expect(store.collections().find(c => c.collection.id === "look-and-light")?.scenes.map(e => e.scene.id)).toEqual(["weather", "vegetation", "looks", "styles", "lighting", "materials"])
     expect(store.sweep()).toEqual({ archived: [], deleted: [] })
   })
 })
