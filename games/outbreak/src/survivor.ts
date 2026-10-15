@@ -167,6 +167,8 @@ export class Survivor {
   private leanY = spring()
   private data = new Float32Array(15 * 12)
   readonly batches: Batch[] = []
+  /** Each foot contact (plan x, y and body speed in m/s): footstep sounds land on the rig's own gait. */
+  onFootfall?: (x: number, y: number, speed: number) => void
 
   /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
   constructor(
@@ -470,6 +472,7 @@ export class Survivor {
           f.planted = true
           f.prevU = 0
           f.p[1] = support(f.p[0], f.p[2])
+          this.onFootfall?.(f.p[0], f.p[2], speed)
         }
       })
       // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).

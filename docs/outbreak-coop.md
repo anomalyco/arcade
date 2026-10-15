@@ -71,6 +71,14 @@ under heavy load from other agents): room tick mean 0.12 ms (p50 0.09, p95 0.23,
 zombies, `coop-smoke.ts` against `wrangler dev` measured 18–23 KB/s down per client. Over a 3 + 0–8 tick jittery
 loopback the jitter buffer made stand-ins and every one of five shots still landed (`tests/coop.test.ts`).
 
+## Sound
+
+Co-op adds nothing to the wire for sound. The client's `CoopSim`, filled from snapshots, drives the same
+`SoundDirector` as offline play ([sfx-library.md](sfx-library.md#outbreak)): shots with their shooter, doors, windows,
+planks, bashes and zombie states are heard where they happen, and remote survivors' replicated flashlight, reload,
+health and exhaustion become sounds at their positions; their footsteps come from their rigs' foot contacts. Like the
+rest of the shared world, a remote shot or door is heard one snapshot late.
+
 ## Known gaps
 
 - Doors, loot, barricades and shots take a round trip (no prediction or local muzzle flash yet); hitscan has no lag

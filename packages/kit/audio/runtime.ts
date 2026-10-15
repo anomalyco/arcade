@@ -22,7 +22,7 @@ import type {
   WeightedSampleRef,
 } from "./types"
 
-const CATEGORIES: readonly MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui"]
+export const MIX_CATEGORIES: readonly MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui", "weapon", "foley", "voice"]
 const SOUND_SPEED = 260
 
 /**
@@ -61,6 +61,34 @@ export function createBoxOcclusionQuery(boxes: readonly OccluderBox[]): Visibili
     }
     return hits === 1 ? 0.75 : 0
   }
+}
+
+/** A small furnished room: dense early reflections, fast bright-to-dark decay. */
+function buildRoomImpulse(ctx: BaseAudioContext, seconds = 0.5): AudioBuffer {
+  const n = Math.max(256, Math.floor(ctx.sampleRate * seconds))
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate)
+  let seed = 7654321
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff - 0.5
+  }
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c)
+    for (let i = 0; i < n; i++) {
+      const t = i / ctx.sampleRate
+      d[i] = rnd() * Math.exp(-t * (6.9 / seconds)) * (t < 0.003 ? t / 0.003 : 1)
+    }
+    for (const [tap, g] of [[0.007 + c * 0.002, 0.7], [0.013 - c * 0.001, 0.5], [0.021 + c * 0.003, 0.35], [0.029, 0.25]] as const) {
+      const k = Math.floor(tap * ctx.sampleRate)
+      for (let i = 0; i < 48 && k + i < n; i++) d[k + i]! += rnd() * g * (1 - i / 48)
+    }
+    let lp = 0
+    for (let i = 0; i < n; i++) {
+      lp += (d[i]! - lp) * (0.85 - 0.6 * (i / n))
+      d[i] = lp
+    }
+  }
+  return buf
 }
 
 function buildStreetImpulse(ctx: BaseAudioContext, seconds = 1.65): AudioBuffer {
@@ -121,6 +149,8 @@ export type AudioRuntimeOptions = {
   seed?: number
   maxVoices?: number
   reverbSeconds?: number
+  /** Adds a short room reverb beside the street one; `setSpace` crossfades between them (indoors vs outdoors). */
+  roomReverbSeconds?: number
   reverbWet?: number
   storageKey?: string
   visibilityQuery?: VisibilityQuery
@@ -139,6 +169,8 @@ export class AudioRuntime {
   master!: GainNode
   verb!: GainNode
   verbOut!: GainNode
+  /** Room reverb return, when `roomReverbSeconds` is set. */
+  roomOut: GainNode | null = null
   duckNode!: GainNode
   dazeNode!: BiquadFilterNode
   analyser: AnalyserNode | null = null
@@ -163,6 +195,8 @@ export class AudioRuntime {
   private droppedVoices = 0
   private stolenVoices = 0
   private reverbSeconds: number
+  private roomReverbSeconds: number | undefined
+  private space = 0
   private reverbWetValue: number
   private duckCurrent = 1
   private dazeCurrentHz = 20000
@@ -188,6 +222,7 @@ export class AudioRuntime {
     this.rng = mulberry32(this.seed)
     this.maxVoices = options.maxVoices ?? 24
     this.reverbSeconds = options.reverbSeconds ?? 1.65
+    this.roomReverbSeconds = options.roomReverbSeconds
     this.reverbWetValue = options.reverbWet ?? 0.5
     this.storageKey = options.storageKey
     this.visibilityQuery = options.visibilityQuery
@@ -380,7 +415,7 @@ export class AudioRuntime {
     }
 
     const buses = {} as Record<MixCategory, GainNode>
-    for (const category of CATEGORIES) {
+    for (const category of MIX_CATEGORIES) {
       const g = ctx.createGain()
       g.gain.value = 1
       // UI bypasses duck and daze so interface feedback and player hit stingers stay crisp.
@@ -399,6 +434,16 @@ export class AudioRuntime {
     this.verb.connect(conv)
     conv.connect(this.verbOut)
     this.verbOut.connect(this.duckNode)
+    if (this.roomReverbSeconds) {
+      const room = ctx.createConvolver()
+      room.buffer = buildRoomImpulse(ctx, this.roomReverbSeconds)
+      this.roomOut = ctx.createGain()
+      this.roomOut.gain.value = 0
+      this.verb.connect(room)
+      room.connect(this.roomOut)
+      this.roomOut.connect(this.duckNode)
+      this.applySpace(0)
+    }
   }
 
   onMute(fn: (muted: boolean) => void): () => void {
@@ -443,9 +488,23 @@ export class AudioRuntime {
 
   setReverbWet(wet: number, tau = 0.06): void {
     this.reverbWetValue = clamp(wet, 0, 1.2)
-    if (this.ctx && this.verbOut) {
+    if (this.roomOut) this.applySpace(tau)
+    else if (this.ctx && this.verbOut) {
       smoothParam(this.verbOut.gain, this.reverbWetValue, this.now, tau)
     }
+  }
+
+  /** 0 = outdoors (street reverb), 1 = indoors (room reverb). Needs `roomReverbSeconds`. */
+  setSpace(indoor: number, tau = 0.25): void {
+    this.space = clamp(indoor, 0, 1)
+    this.applySpace(tau)
+  }
+
+  private applySpace(tau: number): void {
+    if (!this.ctx || !this.verbOut || !this.roomOut) return
+    // Equal-power crossfade so the total reverb energy holds through a doorway.
+    smoothParam(this.verbOut.gain, this.reverbWetValue * Math.cos((this.space * Math.PI) / 2), this.now, tau)
+    smoothParam(this.roomOut.gain, this.reverbWetValue * Math.sin((this.space * Math.PI) / 2), this.now, tau)
   }
 
   setBusGain(category: MixCategory, level: number, tau = 0.05): void {
@@ -516,7 +575,7 @@ export class AudioRuntime {
 
     const rx = this.listener.rightX ?? 1
     const rz = this.listener.rightZ ?? 0
-    const pan = clamp(((dx * rx + dz * rz) / 38) * 0.85, -0.9, 0.9)
+    const pan = clamp(((dx * rx + dz * rz) / (this.listener.panScale ?? 38)) * 0.85, -0.9, 0.9)
 
     let cutoffHz = Math.max(700, 16500 * Math.exp(-flatDist / 70))
     let wet = Math.min(0.55, 0.08 + flatDist / 200)
@@ -689,8 +748,13 @@ export class AudioRuntime {
         this.droppedVoices++
         return null
       }
-      const allActive = [...this.voices.values()].sort((a, b) => a.startTime - b.startTime)
-      const victim = allActive[0]
+      // Beds and other loops are never the victim of an unrelated one-shot: steal the oldest finite voice.
+      const finite = [...this.voices.values()].filter(v => Number.isFinite(v.endTime)).sort((a, b) => a.startTime - b.startTime)
+      const victim = finite[0]
+      if (!victim && !cue.loop) {
+        this.droppedVoices++
+        return null
+      }
       if (victim) {
         victim.stop(0.02)
         this.voices.delete(victim.id)
@@ -905,6 +969,11 @@ export class AudioRuntime {
     src.buffer = buf
     const isLoop = layer.loop ?? cueLoop
     src.loop = isLoop
+    const loopEnd = isLoop ? this.sampleBank.manifest.get(picked.id)?.loopEnd : undefined
+    if (loopEnd) {
+      src.loopStart = this.sampleBank.manifest.get(picked.id)?.loopStart ?? 0
+      src.loopEnd = loopEnd
+    }
     const baseRate = (layer.rate ?? 1) * picked.rate
     const playbackRate = clamp(baseRate * pitchScale, 0.25, 4.0)
     src.playbackRate.setValueAtTime(playbackRate, startTime)
@@ -1016,6 +1085,9 @@ export class AudioRuntime {
       ambience: 0,
       spell: 0,
       ui: 0,
+      weapon: 0,
+      foley: 0,
+      voice: 0,
     }
     for (const v of this.voices.values()) {
       if (v.active) categoryVoices[v.category]++
