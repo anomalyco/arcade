@@ -246,6 +246,19 @@ export class OutbreakHud {
     return text
   }
 
+  /**
+   * Shows a sample for judging placement (Lab station, `arcade run hud.demo`): an action in progress, a loot pop and a
+   * noise on the local survivor, and half-spent stamina that refills live.
+   */
+  demo(player: Survivor): ReturnType<OutbreakHud["inspect"]> {
+    player.stamina = Math.min(player.stamina, 0.45)
+    player.regenCooldown = Math.max(player.regenCooldown, 1.5)
+    this.callout(LOCAL_ACTOR, "Reloading", "progress", { key: "reload", progress: 0.55, duration: 8 })
+    this.callout(LOCAL_ACTOR, "+6 9mm", "result", { duration: 8 })
+    this.callout(LOCAL_ACTOR, "Noise 18 m", "noise", { key: "noise", duration: 8 })
+    return this.inspect()
+  }
+
   /** Automation view: each actor's chosen sides and visible rings. */
   inspect(): Record<string, { callouts: Side | null; rings: Side | null; meters: { id: string; state: string; fill: number; alpha: number }[] }> {
     const out: ReturnType<OutbreakHud["inspect"]> = {}

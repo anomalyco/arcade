@@ -767,6 +767,15 @@ async function main() {
         },
       },
       {
+        id: "hud.demo",
+        label: "Show Character HUD Sample",
+        shortLabel: "HUD Sample",
+        category: "Scene",
+        undoable: false,
+        enabled: () => true,
+        run: () => hud.demo(session.view.player),
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
