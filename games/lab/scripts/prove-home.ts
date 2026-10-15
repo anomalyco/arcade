@@ -66,6 +66,11 @@ try {
   check(s.focusInHome, "Home has keyboard focus")
   await p.screenshot({ path: resolve(out, "home.png") })
 
+  await p.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await p.keyboard.press("Meta+k")
+  const k = await p.evaluate(() => ({ search: document.activeElement?.classList.contains("lh-search-input") ?? false, palette: Boolean(document.querySelector(".knobs-palette-item")) }))
+  check(k.search && !k.palette, `⌘K on Home is its search, not the palette behind it (${JSON.stringify(k)})`)
+  await p.keyboard.press("Escape")
   await p.keyboard.press("/")
   await p.keyboard.type("rain")
   s = await state(p)
@@ -81,7 +86,7 @@ try {
   check(s.crumb.replace(/\s+/g, " ").includes("Labs›Look and light›Weather") || s.crumb.includes("Look and light"), `the top bar says where you are (${s.crumb})`)
   await p.screenshot({ path: resolve(out, "lab.png") })
 
-  await p.locator("[data-lab-viewport] canvas").click({ position: { x: 600, y: 300 } })
+  await p.locator('canvas[aria-label="Lab scene"]').click({ position: { x: 600, y: 300 } })
   await p.keyboard.press("2")
   await p.waitForTimeout(500)
   s = await state(p)
