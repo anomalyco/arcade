@@ -199,23 +199,47 @@ export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
 export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 140
 
+export type OutbreakLightingUniformSettings =
+  | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
+      flashlightIntensity: number
+      flashlightRange: number
+      flashlightCone: number
+      flashlightWarmth: number
+      fogStyle?: number
+      fogEdgeSoftness?: number
+      fogMemoryDim?: number
+      fogUnknownGrain?: number
+      fogMemorySaturation?: number
+      fogMemoryWarmth?: number
+      fogPenumbra?: number
+      fogPenumbraGrowth?: number
+      fogRevealTime?: number
+      fogFadeTime?: number
+    })
+  | {
+      lighting: OutbreakLightingSettings
+      flashlight: Partial<FlashlightBeamSettings> & {
+        flashlightIntensity: number
+        flashlightRange: number
+        flashlightCone: number
+        flashlightWarmth: number
+      }
+      fog?: {
+        fogStyle?: number
+        fogEdgeSoftness?: number
+        fogMemoryDim?: number
+        fogUnknownGrain?: number
+        fogMemorySaturation?: number
+        fogMemoryWarmth?: number
+        fogPenumbra?: number
+        fogPenumbraGrowth?: number
+        fogRevealTime?: number
+        fogFadeTime?: number
+      }
+    }
+
 export type OutbreakLightingFrameState = {
-  settings: OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
-    flashlightIntensity: number
-    flashlightRange: number
-    flashlightCone: number
-    flashlightWarmth: number
-    fogStyle?: number
-    fogEdgeSoftness?: number
-    fogMemoryDim?: number
-    fogUnknownGrain?: number
-    fogMemorySaturation?: number
-    fogMemoryWarmth?: number
-    fogPenumbra?: number
-    fogPenumbraGrowth?: number
-    fogRevealTime?: number
-    fogFadeTime?: number
-  }
+  settings: OutbreakLightingUniformSettings
   playerX: number
   playerY: number
   playerH: number
@@ -266,7 +290,8 @@ export function packOutbreakLightingUniforms(
   flashColor: readonly [number, number, number],
   out: Float32Array<ArrayBuffer> = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS),
 ): Float32Array<ArrayBuffer> {
-  const { settings: s } = state
+  const raw = state.settings
+  const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog } : raw
   const dirX = Math.cos(state.playerAim)
   const dirY = Math.sin(state.playerAim)
   const handX = state.playerX + dirX * 0.24

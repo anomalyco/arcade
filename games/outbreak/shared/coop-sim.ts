@@ -20,7 +20,7 @@ import {
 import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
 import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
-import type { Command, SessionTuning, Survivor } from "./session"
+import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
 import { StreamingWorld, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
@@ -151,6 +151,7 @@ export class CoopSim {
    * movement, vault/peek state, climbing); nothing shared changes and no noise is emitted.
    */
   stepSurvivor(slot: SurvivorSlot, command: Command, dt: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING, predict = false): void {
+    const resolved = resolveSessionTuning(tuning)
     const p = slot.survivor
     const town = this.town
     if (!p.vault) p.aim = command.aim
@@ -163,7 +164,7 @@ export class CoopSim {
     const x = p.x
     const y = p.y
     if (stepInteractionState(town, p, dt)) {
-      stepStamina(p, false, false, dt, tuning)
+      stepStamina(p, false, false, dt, resolved.stamina)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
         if (clampClassic) {
@@ -175,7 +176,7 @@ export class CoopSim {
       const rawLen = Math.hypot(command.mx, command.my)
       const moving = rawLen > 1e-4
       const length = Math.max(1, rawLen)
-      const speed = stepStamina(p, moving, Boolean(command.sprint), dt, tuning)
+      const speed = stepStamina(p, moving, Boolean(command.sprint), dt, resolved.stamina)
       const steps = Math.max(1, Math.ceil(dt * 60))
       for (let i = 0; i < steps; i++) {
         p.x += ((command.mx / length) * speed * dt) / steps
@@ -200,13 +201,13 @@ export class CoopSim {
       if (!predict && outcome.topologyChanged) this.topologyChanged()
     }
 
-    if (!predict) this.applyActions(slot, command, dt, tuning)
+    if (!predict) this.applyActions(slot, command, dt, resolved.infiniteAmmo)
 
     p.vx = dt > 0 ? (p.x - x) / dt : 0
     p.vy = dt > 0 ? (p.y - y) / dt : 0
   }
 
-  private applyActions(slot: SurvivorSlot, command: Command, dt: number, tuning: SessionTuning): void {
+  private applyActions(slot: SurvivorSlot, command: Command, dt: number, infiniteAmmo: boolean): void {
     const p = slot.survivor
     const town = this.town
     const progression = this.progression
@@ -266,7 +267,7 @@ export class CoopSim {
     if (command.melee) shove()
     if (command.fire) {
       if (use === "fire") {
-        if (tuning.infiniteAmmo) ammo.fill()
+        if (infiniteAmmo) ammo.fill()
         if (this.combat.firePistol(p, this.ai, blockers, this.time, ammo)) progression.ledger.cancel(slot.id)
       } else if (use === "shove") shove()
       else verbs.fire = true
@@ -301,10 +302,11 @@ export class CoopSim {
 
   /** Advances everything shared once per tick: clock, channels, flashlights, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
+    const resolved = resolveSessionTuning(tuning)
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
     this.syncWorldChunks()
-    const flashlightTuning = { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning }
+    const flashlightTuning = resolved.flashlight
 
     for (const slot of this.slots) {
       this.combat.step(slot.survivor, dt, this.time, this.progression.pistol(slot.id))
@@ -314,17 +316,18 @@ export class CoopSim {
       this.topologyChanged()
     }
 
-    const config = this.ai.config
-    if (tuning.sightRange !== undefined) config.sightRange = tuning.sightRange
-    if (tuning.sightCone !== undefined) config.sightCone = tuning.sightCone
-    if (tuning.hearingScale !== undefined) config.hearingScale = tuning.hearingScale
-    if (tuning.aiWalkSpeed !== undefined) config.walkSpeed = tuning.aiWalkSpeed
-    else if (tuning.walkSpeed !== undefined && tuning.walkSpeed < 2.3) config.walkSpeed = tuning.walkSpeed
-    if (tuning.chaseSpeed !== undefined) config.chaseSpeed = tuning.chaseSpeed
-    if (tuning.aggression !== undefined) config.aggression = tuning.aggression
-    if (tuning.nightMultiplier !== undefined) config.nightMultiplier = tuning.nightMultiplier
-    if (tuning.directorPacing !== undefined) config.directorPacing = tuning.directorPacing
-    if (tuning.aiDebugOverlay !== undefined) config.aiDebugOverlay = tuning.aiDebugOverlay
+    if (resolved.ai) {
+      const config = this.ai.config
+      if (resolved.ai.sightRange !== undefined) config.sightRange = resolved.ai.sightRange
+      if (resolved.ai.sightCone !== undefined) config.sightCone = resolved.ai.sightCone
+      if (resolved.ai.hearingScale !== undefined) config.hearingScale = resolved.ai.hearingScale
+      if (resolved.ai.walkSpeed !== undefined) config.walkSpeed = resolved.ai.walkSpeed
+      if (resolved.ai.chaseSpeed !== undefined) config.chaseSpeed = resolved.ai.chaseSpeed
+      if (resolved.ai.aggression !== undefined) config.aggression = resolved.ai.aggression
+      if (resolved.ai.nightMultiplier !== undefined) config.nightMultiplier = resolved.ai.nightMultiplier
+      if (resolved.ai.directorPacing !== undefined) config.directorPacing = resolved.ai.directorPacing
+      if (resolved.ai.aiDebugOverlay !== undefined) config.aiDebugOverlay = resolved.ai.aiDebugOverlay
+    }
 
     const survivors = this.slots.map((s) => ({ ...s.survivor, id: s.id }))
     const aiStep = this.ai.stepSurvivors(this.town, survivors, this.hour, this.time, dt, flashlightTuning)

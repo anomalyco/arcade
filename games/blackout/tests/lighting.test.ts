@@ -4,6 +4,7 @@ import { MAX_LIGHTS } from "../shared/config"
 import { LIGHT_FLOATS, LightCuller } from "../src/render/lighting"
 import { buildProp, deskMonitorLights } from "../src/render/models"
 import { FLOATS_PER_VERT, MAT, Mesh } from "../src/render/mesh"
+import { blackoutSubsystems, juiceSettings, migrateBlackoutPreset } from "../src/ui/debug-overlay"
 
 test("every monitor light matches an emissive screen in the generated desk geometry", () => {
   const map = getMap("office", 1)
@@ -94,5 +95,28 @@ test("live chair shadows and monitor intensity do not leak into the shadowless s
     expect(culler.lights[i * LIGHT_FLOATS + 7]).toBeCloseTo(0.7)
     expect(culler.lights[i * LIGHT_FLOATS + 13]).toBe(0)
     expect(culler.lights[i * LIGHT_FLOATS + 11]).toBe(1)
+  }
+})
+
+test("juiceSettings exposes subsystem views and migrateBlackoutPreset migrates v1 flat payloads", () => {
+  const juice = juiceSettings(true)
+  const subs = blackoutSubsystems(juice)
+  expect(subs.effects.monitorIntensity).toBe(1)
+  subs.effects.monitorIntensity = 1.5
+  expect(juice.monitorIntensity).toBe(1.5)
+  subs.look.lookShadows = true
+  expect(juice.lookShadows).toBe(true)
+
+  const res = migrateBlackoutPreset({
+    version: 1,
+    settings: { monitorIntensity: 1.4, lookShadows: true, beamLength: 18, wizardPitch: 1.05 },
+  })
+  expect(res.ok).toBe(true)
+  if (res.ok) {
+    expect(res.migratedFrom).toBe(1)
+    expect(res.preset.subsystems.effects?.monitorIntensity).toBe(1.4)
+    expect(res.preset.subsystems.look?.lookShadows).toBe(true)
+    expect(res.preset.subsystems.vehicleLights?.beamLength).toBe(18)
+    expect(res.preset.subsystems.spells?.wizardPitch).toBe(1.05)
   }
 })
