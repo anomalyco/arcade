@@ -37,7 +37,9 @@ opening each migrated lab, and each of its variants, runs the same commands the 
 
 1. **Model, kinds and storage**: this spike.
 2. **Focused labs on today's sections**: a lab opens by selecting its kind's section and running `openCommands`, then
-   restoring extras, camera and seeds, and the shell draws only the kind's patterns. Station files are generated into
+   restoring extras, camera and seeds, and the shell draws only the kind's patterns. The panes are `knobs/ui` `split`s
+   and the labs list (collections → labs, drag to move between collections) is a `tree`, on top of the lab-panels move
+   of today's columns and Outliner onto them. Station files are generated into
    `games/lab/scenes/`; the Library drawer, station list, World footer and Game picker give way to the chosen layout;
    the keyboard model in the design lands.
 3. **Backdrop choices**: kinds declare backdrop choices backed by real commands (street, light, walker), and a backdrop
