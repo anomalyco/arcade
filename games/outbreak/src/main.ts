@@ -515,6 +515,7 @@ async function main() {
     progressionHost,
     vehicleHost,
     weatherController,
+    harness: () => harness,
     resetPeek: () => {
       peekBlend = 0
       lastPeek = null

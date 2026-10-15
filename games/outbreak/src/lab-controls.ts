@@ -356,6 +356,24 @@ export function handleOutbreakSettingChanged(
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
   }
+  if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
+    Object.assign(session.ai.config, settings.ai)
+    if (progressionHost.offline() && session.view.time < 5) {
+      session.ai.resetOpeningPopulation(
+        session.view.town,
+        session.sim.slots.map((s) => s.survivor),
+      )
+    }
+  }
+  if (key === "startHour") {
+    settings.dayCycle.hour = wrapHour(settings.ai.startHour)
+    session.view.hour = settings.dayCycle.hour
+    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
+      host.setLastDayNightHour(session.view.hour)
+      applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+      lab.refresh()
+    }
+  }
   if (key === "hour") {
     session.view.hour = wrapHour(settings.dayCycle.hour)
     if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
