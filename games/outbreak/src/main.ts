@@ -1,17 +1,9 @@
-import { Camera } from "@arcade/kit/client/camera"
+import { Camera, HitStop, attenuateShake, cameraShakeControls } from "@arcade/kit/client/camera"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
-import {
-  DEFAULT_FEEL_SETTINGS,
-  GameFeel,
-  applyFeelPreset,
-  feelControls,
-  randomizeFeelSettings,
-  type FeelEventKind,
-  type FeelEventPayload,
-} from "@arcade/kit/feel"
+import { MotionBlurBurst, motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import {
   LOOK_PRESETS,
@@ -255,7 +247,51 @@ async function main() {
   input.onWheel = (delta) => {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
-  const cam = new Camera()
+  const cam = new Camera(settings.view)
+  const hitStop = new HitStop()
+  const motionBurst = new MotionBlurBurst()
+  let shotParity = 0
+  const triggerShot = (aim: number, power = 1) => {
+    shotParity ^= 1
+    cam.add(0.32 * power, aim + Math.PI, 2.2 * power)
+    cam.punch(0.28 * power, (shotParity ? 1 : -1) * 0.008 * power)
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir: aim, directional: 0.006 * power, radial: 0.003 * power, boost: 0.45 * power }, settings.motion.burst)
+    }
+  }
+  const triggerShove = (aim: number, hits = 1) => {
+    const k = hits > 0 ? 1 + Math.min(2, hits - 1) * 0.3 : 0.45
+    cam.add((hits > 0 ? 0.3 : 0.14) * k, aim, (hits > 0 ? 2.4 : 1.0) * k)
+    cam.punch(hits > 0 ? -0.22 : -0.08, 0.009 * k)
+    if (hits > 0) {
+      hitStop.trigger(0.028, 0.08, !cam.isReducedMotion())
+      if (!cam.isReducedMotion()) {
+        motionBurst.add({ dir: aim, directional: 0.005 * k, radial: 0.004 * k, boost: 0.35 * k }, settings.motion.burst)
+      }
+    }
+  }
+  const triggerHitTaken = (atkDx: number, atkDz: number, damage = 25) => {
+    const scale = Math.max(0.35, Math.min(1.6, damage / 20))
+    const dir = Math.atan2(atkDz, atkDx)
+    cam.add(0.52 * scale, dir, 3.2 * scale)
+    cam.punch(0.38 * scale, 0.016 * scale)
+    cam.addFlash(0.65 * scale)
+    hitStop.trigger(0.026, 0.08, !cam.isReducedMotion())
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir, directional: 0.007 * scale, radial: 0.008 * scale, boost: 0.6 * scale }, settings.motion.burst)
+    }
+  }
+  const triggerBlast = (x: number, z: number, listenerX: number, listenerZ: number, radius = 24, power = 1) => {
+    const dist = Math.hypot(x - listenerX, z - listenerZ)
+    const att = attenuateShake(dist, radius) * power
+    if (att <= 0) return
+    const dir = dist > 1e-3 ? Math.atan2(listenerZ - z, listenerX - x) : 0
+    cam.add(0.62 * att, dir, 3.4 * att)
+    cam.punch(0.45 * att, 0.018 * att)
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir, directional: 0.005 * att, radial: 0.009 * att, boost: 0.65 * att }, settings.motion.burst)
+    }
+  }
   const audio = new OutbreakAudio(settings.audio, {
     baseUrl: new URL("./audio-assets/", document.baseURI).href,
     storage: (() => { try { return localStorage } catch { return null } })(),
@@ -269,7 +305,6 @@ async function main() {
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
-  const feel = new GameFeel(settings.feel)
   let prevHealth = session.view.player.health
   let prevShoveAnim = session.view.player.shoveAnim
   let wasVaulting = Boolean(session.view.player.vault)
@@ -384,42 +419,43 @@ async function main() {
     {
       key: "bloodStyle",
       label: "Blood splatter",
-      group: "Feel",
+      group: "Combat",
       options: [
         { label: "Wet ballistic + Noir", value: 1 },
         { label: "Legacy flat", value: 2 },
         { label: "Off", value: 0 },
       ],
     },
-    ...feelControls,
+    ...cameraShakeControls,
+    ...motionBlurControls,
     {
       key: "triggerFeelShot",
-      label: "Trigger shot feel",
-      group: "Feel",
+      label: "Trigger shot impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("shot", { power: 1, dir: p.aim })
+        triggerShot(p.aim, 1)
       },
     },
     {
       key: "triggerFeelShove",
-      label: "Trigger shove feel",
-      group: "Feel",
+      label: "Trigger shove impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("shove", { power: 1, dir: p.aim, hits: 1 })
+        triggerShove(p.aim, 1)
       },
     },
     {
       key: "triggerFeelHitTaken",
-      label: "Trigger hit-taken feel",
-      group: "Feel",
+      label: "Trigger hit-taken impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("hit-taken", { damage: 25, dir: p.aim + Math.PI })
+        triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), 25)
         combatFx.emitSurvivorHit(
           p.x,
           p.y,
@@ -433,28 +469,19 @@ async function main() {
     },
     {
       key: "triggerFeelExplosion",
-      label: "Trigger explosion feel",
-      group: "Feel",
+      label: "Trigger blast impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("explosion", {
-          x: p.x + Math.cos(p.aim) * 4.5,
-          z: p.y + Math.sin(p.aim) * 4.5,
-          listenerX: p.x,
-          listenerZ: p.y,
-          power: 1,
-        })
-      },
-    },
-    {
-      key: "randomizeFeelTuning",
-      label: "Randomize feel",
-      group: "Feel",
-      type: "action",
-      run: () => {
-        randomizeFeelSettings(settings.feel, settings.feel.feelTuningSeed)
-        lab.refresh()
+        triggerBlast(
+          p.x + Math.cos(p.aim) * 4.5,
+          p.y + Math.sin(p.aim) * 4.5,
+          p.x,
+          p.y,
+          24,
+          1,
+        )
       },
     },
     {
@@ -768,10 +795,6 @@ async function main() {
       key === "clutterSeed"
     )
       syncTextures()
-    if (key === "feelPreset") {
-      applyFeelPreset(settings.feel, String(value ?? settings.feel.feelPreset))
-      lab.refresh()
-    }
     if (key === "lookPreset") {
       const pid = resolveLookPresetId(value ?? settings.dayCycle.lookPreset) ?? "current"
       settings.dayCycle.lookPreset = pid
@@ -977,46 +1000,39 @@ async function main() {
         },
       },
       {
-        id: "feel.trigger",
-        label: "Trigger Game Feel Event",
-        shortLabel: "Feel",
+        id: "camera.impulse",
+        label: "Trigger Camera & Motion Impulse",
+        shortLabel: "Impulse",
         category: "Scene",
         undoable: false,
         args: {
           kind: {
             type: "string",
             required: true,
-            description: "Feel event kind (shot, shove, hit-confirmed, kill, hit-taken, explosion, barricade-bash, land)",
+            description: "Impulse kind (shot, shove, hit-taken, explosion)",
           },
           power: { type: "number", description: "Multiplier (default: 1)" },
           damage: { type: "number", description: "Damage amount for hit-taken" },
-          distance: { type: "number", description: "Distance in metres for explosion / barricade-bash" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
           const p = session.view.player
-          const kind = String(args?.kind ?? "shot") as FeelEventKind
+          const kind = String(args?.kind ?? "shot")
           const power = typeof args?.power === "number" ? args.power : 1
           const damage = typeof args?.damage === "number" ? args.damage : 25
-          const distance = typeof args?.distance === "number" ? args.distance : undefined
-          feel.emit(kind, {
-            power,
-            dir: p.aim,
-            damage,
-            distance,
-            hits: kind === "shove" ? 1 : undefined,
-            lethal: kind === "kill",
-            broke: kind === "barricade-bash",
-          })
+          if (kind === "shove") triggerShove(p.aim, 1)
+          else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
+          else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
+          else triggerShot(p.aim, power)
           draw(1 / 60)
           await device.queue.onSubmittedWorkDone()
           return {
             kind,
-            trauma: feel.trauma,
-            damageFlash: feel.damageFlash,
-            hitStopRemaining: feel.hitStopRemaining,
-            offset: { ...feel.offset },
-            post: [...feel.post],
+            trauma: cam.trauma,
+            damageFlash: cam.damageFlash,
+            hitStopRemaining: hitStop.remaining,
+            offset: { ...cam.offset },
+            burst: { dx: motionBurst.dx, dy: motionBurst.dy, radial: motionBurst.radial, shutterBoost: motionBurst.shutterBoost },
           }
         },
       },
@@ -1223,7 +1239,9 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
-    feel.reset()
+    cam.resetShake()
+    hitStop.reset()
+    motionBurst.reset()
     prevHealth = session.view.player.health
     prevShoveAnim = session.view.player.shoveAnim
     wasVaulting = Boolean(session.view.player.vault)
@@ -1313,7 +1331,7 @@ async function main() {
     }
     const playerGroundY = supportHeight(town, p.x, p.y)
 
-    // Detect presentation-only game-feel events (never mutates shared simulation or co-op state)
+    // Detect presentation-only combat impulses (never mutates shared simulation or co-op state)
     if (p.shoveAnim > prevShoveAnim + 0.05) {
       let shovedHits = 0
       for (const z of zombies) {
@@ -1321,9 +1339,9 @@ async function main() {
           shovedHits++
         }
       }
-      feel.emit("shove", { power: 1, dir: p.aim, hits: shovedHits })
-      if (shovedHits > 0 && settings.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.bloodStyle === 2
+      triggerShove(p.aim, shovedHits)
+      if (shovedHits > 0 && settings.combat.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.combat.bloodStyle === 2
         combatFx.emitShoveHit(p.x, p.y, p.aim, playerGroundY, shovedHits, Math.floor(time * 1000) + 17)
       }
     }
@@ -1343,9 +1361,9 @@ async function main() {
           atkDz = (p.y - z.y) / d
         }
       }
-      feel.emit("hit-taken", { damage, dx: atkDx, dz: atkDz })
-      if (settings.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.bloodStyle === 2
+      triggerHitTaken(atkDx, atkDz, damage)
+      if (settings.combat.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.combat.bloodStyle === 2
         combatFx.emitSurvivorHit(p.x, p.y, atkDx, atkDz, playerGroundY, damage, Math.floor(time * 1000) + 31)
       }
     }
@@ -1353,7 +1371,8 @@ async function main() {
 
     const nowVaulting = Boolean(p.vault)
     if (wasVaulting && !nowVaulting) {
-      feel.emit("land", { power: 0.75, dir: p.aim })
+      cam.add(0.14, p.aim, 0.7)
+      cam.punch(0.1, 0)
     }
     wasVaulting = nowVaulting
 
@@ -1367,14 +1386,11 @@ async function main() {
         const cx = (d.rect[0] + d.rect[2]) * 0.5
         const cz = (d.rect[1] + d.rect[3]) * 0.5
         const broke = st.barricadePlanks < prevPlanks || (d.open && !wasOpen)
-        feel.emit("barricade-bash", {
-          x: cx,
-          z: cz,
-          listenerX: p.x,
-          listenerZ: p.y,
-          broke,
-          power: broke ? 1.25 : 0.85,
-        })
+        const dist = Math.hypot(cx - p.x, cz - p.y)
+        const att = attenuateShake(dist, 16)
+        if (att > 0) {
+          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
+        }
       }
       prevPortalBashTime.set(d.id, st.lastBashTime)
       prevPortalPlanks.set(d.id, st.barricadePlanks)
@@ -1389,20 +1405,17 @@ async function main() {
         const cx = (win.rect[0] + win.rect[2]) * 0.5
         const cz = (win.rect[1] + win.rect[3]) * 0.5
         const broke = st.barricadePlanks < prevPlanks
-        feel.emit("barricade-bash", {
-          x: cx,
-          z: cz,
-          listenerX: p.x,
-          listenerZ: p.y,
-          broke,
-          power: broke ? 1.25 : 0.85,
-        })
+        const dist = Math.hypot(cx - p.x, cz - p.y)
+        const att = attenuateShake(dist, 16)
+        if (att > 0) {
+          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
+        }
       }
       prevPortalBashTime.set(win.id, st.lastBashTime)
       prevPortalPlanks.set(win.id, st.barricadePlanks)
     }
 
-    combatFx.legacyMode = settings.bloodStyle === 2
+    combatFx.legacyMode = settings.combat.bloodStyle === 2
     let addCount = combatFx.processShots(
       shots,
       time,
@@ -1416,24 +1429,25 @@ async function main() {
         const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
         const isLocalShot = distFromMe < 1.8
         if (isLocalShot) {
-          feel.emit("shot", { power: 1, dir: shot.aim })
+          triggerShot(shot.aim, 1)
           if (shot.hitZombieId !== null) {
-            feel.emit(shot.killed ? "kill" : "hit-confirmed", {
-              power: shot.detachBone ? 1.25 : 1.0,
-              dir: shot.aim,
-              lethal: shot.killed,
-            })
+            const pwr = shot.detachBone ? 1.25 : 1.0
+            cam.add((shot.killed ? 0.22 : 0.12) * pwr, shot.aim, (shot.killed ? 0.85 : 0.45) * pwr)
+            if (shot.killed) {
+              cam.punch(-0.18 * pwr, 0)
+              hitStop.trigger(0.022 * pwr, 0.08, !cam.isReducedMotion())
+            }
           }
         } else if (distFromMe < 16) {
           // Co-op peer shot nearby: subtle distance-attenuated local presentation only
-          const peerAtt = Math.max(0, 1 - distFromMe / 16) * 0.35
-          feel.emit("shot", { power: peerAtt, dir: shot.aim })
+          const peerAtt = attenuateShake(distFromMe, 16) * 0.35
+          triggerShot(shot.aim, peerAtt)
         }
       },
     )
 
-    const feelOffset = feel.step(dt)
-    const vdt = feel.visualDt(dt)
+    const vdt = hitStop.step(dt, !cam.isReducedMotion())
+    motionBurst.step(dt, settings.motion.burstDecay)
     if (peek) {
       lastPeek = peek
       peekBlend = Math.min(1, peekBlend + dt * 6.5)
@@ -1455,7 +1469,6 @@ async function main() {
     const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
     cam.follow(camX, camY, 0, 0, dt, false)
-    cam.applyFeel(feelOffset)
     cam.update(w / h)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
@@ -1812,8 +1825,8 @@ async function main() {
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter =
-      settings.feel.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
-    render.splatterLegacy = settings.feel.bloodStyle === 2
+      settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    render.splatterLegacy = settings.combat.bloodStyle === 2
     render.weather = weatherOut.prepareInput
     render.batches = [
       ...groundWearBatches,
@@ -1831,8 +1844,15 @@ async function main() {
     render.occluderCount = frameLightOccluders
     render.lampCount = town.lamps.length
     render.view = view
-    render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, feel.damageFlash), settings.lighting.exposure]
-    render.feel = feel.post
+    render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, cam.damageFlash), settings.lighting.exposure]
+    render.motionBlur = {
+      settings: {
+        ...settings.motion,
+        enabled: Boolean(settings.motion.enabled) && !cam.isReducedMotion(),
+      },
+      burst: motionBurst,
+      dt,
+    }
     render.look = lookSettings
     render.lookCompare = lookCompare
     renderer.render(render)
@@ -2018,15 +2038,21 @@ async function main() {
         settings: toSharedWeatherSettings(settings.weather),
         state: { ...weatherController.sim.state },
       },
-      feel: {
-        preset: settings.feelPreset,
-        intensity: settings.feelIntensity,
-        reduceMotion: feel.reducedMotion,
-        trauma: feel.trauma,
-        damageFlash: feel.damageFlash,
-        hitStopRemaining: feel.hitStopRemaining,
-        offset: { ...feel.offset },
-        post: [...feel.post],
+      camera: {
+        shakeScale: settings.view.shakeScale,
+        kickScale: settings.view.kickScale,
+        damageFlashScale: settings.view.damageFlashScale,
+        reduceMotion: cam.isReducedMotion(),
+        trauma: cam.trauma,
+        damageFlash: cam.damageFlash,
+        hitStopRemaining: hitStop.remaining,
+        offset: { ...cam.offset },
+        burst: {
+          dx: motionBurst.dx,
+          dy: motionBurst.dy,
+          radial: motionBurst.radial,
+          shutterBoost: motionBurst.shutterBoost,
+        },
       },
       world: {
         mode: resolveWorldMode(settings.world.worldMode),
@@ -2047,14 +2073,25 @@ async function main() {
       },
       }
     },
-    emitFeel(kind: FeelEventKind, payload?: FeelEventPayload) {
-      feel.emit(kind, payload)
+    triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
+      const p = session.view.player
+      const power = opts?.power ?? 1
+      const damage = opts?.damage ?? 25
+      if (kind === "shove") triggerShove(p.aim, 1)
+      else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
+      else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
+      else triggerShot(p.aim, power)
       return {
-        trauma: feel.trauma,
-        damageFlash: feel.damageFlash,
-        hitStopRemaining: feel.hitStopRemaining,
-        offset: { ...feel.offset },
-        post: [...feel.post],
+        trauma: cam.trauma,
+        damageFlash: cam.damageFlash,
+        hitStopRemaining: hitStop.remaining,
+        offset: { ...cam.offset },
+        burst: {
+          dx: motionBurst.dx,
+          dy: motionBurst.dy,
+          radial: motionBurst.radial,
+          shutterBoost: motionBurst.shutterBoost,
+        },
       }
     },
     fog: (x: number, y: number) => vision.state(x, y),
