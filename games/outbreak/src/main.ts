@@ -25,7 +25,7 @@ import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { BenchLean, DiscoveryProps, type DiscoveryHost } from "./discovery/index"
+import { BenchLean, DiscoveryProps, PageGlance, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, SIZE } from "../shared/map"
@@ -321,6 +321,7 @@ async function main() {
   const combatFx = new OutbreakCombatFX(renderer)
   const discoveryProps = new DiscoveryProps(renderer)
   const benchLean = new BenchLean()
+  const pageGlance = new PageGlance()
   const seatTint = (seat: number) => {
     const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
     return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
@@ -358,7 +359,7 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
-  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps }
+  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps, glance: pageGlance }
   const vehicleHost: VehicleLabHost = {
     sim: () => session.sim,
     view: () => session.view,
@@ -896,6 +897,7 @@ async function main() {
       ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
       : 0
     const lean = benchLean.step(session.view, settings.discovery, dt)
+    pageGlance.update(session.view, settings.discovery, dt)
     cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
     const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null

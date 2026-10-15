@@ -164,6 +164,16 @@ export class DiscoveryProps {
       }
     }
 
+    // Pages left in buildings lie flat on their shelf or counter until someone reads them.
+    for (const site of progression.pages) {
+      if (Math.abs(site.x - p.x) > CONTAINER_RANGE || Math.abs(site.y - p.y) > CONTAINER_RANGE) continue
+      if (progression.ledger.count(site.id, "page") <= 0) continue
+      const model = this.bench.foundModel(site.style, site.recipe)
+      if (model === undefined) continue
+      this.shown.set(site.id, [`${site.style}:${site.recipe}`])
+      this.push(this.itemData, model, MAX_ITEMS, site.x, support(site.x, site.y) + site.z + 0.004, site.y, site.yaw, 0, 0, settings.discoveryPageScale)
+    }
+
     // A thrown noisemaker rattles where it landed.
     const lure = this.items.model("noisemaker")
     if (lure !== undefined) {

@@ -278,6 +278,7 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "install",
   "place",
   "tinker",
+  "read",
 ]
 const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
 

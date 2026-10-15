@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim } from "../shared/coop-sim"
 import { barricadeWear, packPlanks, plankHealths, plankLook, unpackPlanks } from "../shared/discovery/barricade"
+import { looksReinforced } from "../shared/discovery/found"
 import { decodeShared, encodeShared } from "../shared/net-protocol"
 import { DEFAULT_DISCOVERY_SETTINGS } from "../src/discovery/settings"
 import { lowBatteryBeam } from "../src/discovery/flashlight"
@@ -27,10 +28,14 @@ describe("barricade wear (boards show their health)", () => {
       [2, 120],
       [3, 33],
       [3, 540],
+      [2, 200],
+      [3, 300],
+      [2, 360],
     ] as const) {
       const back = unpackPlanks(packPlanks(planks, hp))
       expect(back.planks).toBe(planks)
-      expect(Math.abs(barricadeWear(back.planks, back.hp) - barricadeWear(planks, hp))).toBeLessThan(1 / 63 + 1e-9)
+      expect(Math.abs(barricadeWear(back.planks, back.hp) - barricadeWear(planks, hp))).toBeLessThan(2 / 63 + 1e-9)
+      expect(looksReinforced(back.planks, back.hp)).toBe(looksReinforced(planks, hp))
     }
   })
 

@@ -1,6 +1,7 @@
 // Headless Metal proof for D-19 "Discovered, Not Told": state read from the world instead of labels. Stills of the
 // low-battery beam against a full one, barricade boards at three wears, searched containers left open with what is
-// inside, drops lying on the floor, and the belt hidden until the pack is held open.
+// inside, drops lying on the floor, the dock dimmed until the pack is held open, the workbench
+// and corkboard, and found pages.
 // Run from games/outbreak: hivemind run --kind browser -- bun scripts/discovery-proof.ts
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -219,6 +220,53 @@ try {
     console.log("craft text", JSON.stringify(craft))
     assert(!/Bandage|Noisemaker|Spiked|Battery|Heals|Field craft/i.test(craft), `field craft has no words: ${craft}`)
     await snap(page, "field-craft", "Hold Q: what each learned recipe makes and what it takes, drawn in pencil; no names")
+  }
+
+  if (want("found")) {
+    const state = () => run(page, `return h.state().discovery`)
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("page")`)
+    await steps(page, 90)
+    const before = await state()
+    console.log("page", before.pages, before.shown, JSON.stringify(await page.evaluate(() => document.querySelector("#prompt")?.textContent ?? "")))
+    assert.equal(before.pages.find((p: any) => p.buildingId === "hardware").unread, 1)
+    assert.deepEqual(before.shown["page:hardware"], ["flyer:reinforced"])
+    await snap(page, "page-flyer", "A printed flyer lies on a hardware-store shelf; walking up to it, the camera leans in")
+    await steps(page, 1, { interact: true })
+    await steps(page, 20)
+    const read = await state()
+    console.log("read", read.glance, read.bench["bench:ash"])
+    assert.equal(read.glance, "flyer:reinforced")
+    assert.equal(await run(page, `return h.session().view.progression.learned("reinforced")`), true)
+    await snap(page, "page-glance", "E reads it: the flyer is held up for two seconds (scrap + scrap → reinforced boards), no words; the shelf is bare")
+    await steps(page, 150)
+    assert.equal((await state()).glance, null)
+
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("page-read")`)
+    await steps(page, 30)
+    await snap(page, "page-chart", "The pharmacy's page is a chart: each material boxed, what they make circled, a red cross in the corner")
+
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("found-pages")`)
+    await steps(page, 90)
+    const board = (await state()).bench["bench:ash"]
+    console.log("found pages", board)
+    assert.deepEqual([...board.found].sort(), ["chart:bandage", "flyer:reinforced", "photo:lure"])
+    await snap(page, "found-pages", "The corkboard days in: a pencil sketch made at the bench beside a flyer, a chart and a photo found in town, each on its finder's pin")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("held-out")`)
+    // Let the camera settle with a long study time, then look for real.
+    await run(page, `h.setLab("studyTime", 6)`)
+    await steps(page, 90)
+    const held = await state()
+    console.log("held out", held.reinforced, held.barricades["hardware-south-east"])
+    assert(held.reinforced.includes("hardware-south-east"), "the held-out window shows its straps")
+    await snap(page, "held-out", "A held-out window (streamed warehouses start with one; staged here on the hardware store): boarded from inside, steel straps bolted across the boards")
+    await run(page, `h.setLab("studyTime", 1.5)`)
+    await steps(page, 110)
+    assert.equal(await run(page, `return h.session().view.progression.learned("reinforced")`), true, "standing and looking teaches it")
   }
 
   assert.deepEqual(errors, [])

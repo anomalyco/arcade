@@ -80,13 +80,21 @@ export function nextPair(current: number, have: (item: ItemId) => number): numbe
   return -1
 }
 
-/** Who first made a recipe at a bench: the pin store's owner, and their seat (stored +1 so seat 0 is a count). */
-export type Pin = { recipe: string; actor: string | null; seat: number | null; at: { x: number; y: number } | null }
+/** What pinned a recipe up: a sketch from making it (or studying one), or a page found in a building. */
+export const PIN_SOURCES = ["sketch", "flyer", "chart", "photo"] as const
+export type PinSource = (typeof PIN_SOURCES)[number]
+
+/**
+ * Who first learned a recipe: the pin store's owner and their seat (stored +1 so seat 0 is a count), and whether
+ * the pin is their sketch or a page they found (`counts.found`, an index into `PIN_SOURCES`).
+ */
+export type Pin = { recipe: string; actor: string | null; seat: number | null; at: { x: number; y: number } | null; source: PinSource }
 
 export function readPin(store: { owner?: string; counts: Record<string, number>; at?: { x: number; y: number } } | undefined, recipe: string): Pin | null {
   if (!store) return null
   const seat = store.counts.seat
-  return { recipe, actor: store.owner ?? null, seat: seat ? seat - 1 : null, at: store.at ? { ...store.at } : null }
+  const source = PIN_SOURCES[store.counts.found ?? 0] ?? "sketch"
+  return { recipe, actor: store.owner ?? null, seat: seat ? seat - 1 : null, at: store.at ? { ...store.at } : null, source }
 }
 
 /** Index of the pair on a mat holding exactly two materials, or -1. */
