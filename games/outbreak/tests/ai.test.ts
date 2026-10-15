@@ -1,13 +1,26 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
-import { BARRICADE_DURATION, PISTOL_RELOAD_TIME, SEARCH_DURATION } from "../shared/combat"
-import { ITEM_CATALOG } from "../shared/inventory"
+import { PISTOL_RELOAD_TIME } from "../shared/combat"
+import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import { Vision } from "../shared/vision"
 import { ZombieCrowdRenderer, agentZombieProfile } from "../src/zombies"
 import { zombieTuning } from "../src/zombie-profile"
+
+/** Sets the survivor's loaded rounds and belt supplies through the ledger (the survivor fields are a projection). */
+function stock(session: LocalSession, loaded: number, belt: Record<string, number>): void {
+  const { ledger } = session.sim.progression
+  const id = session.slot.id
+  ledger.apply({ kind: "setCharge", actor: id, item: "pistol", charge: loaded })
+  for (const [item, n] of Object.entries(belt)) {
+    const have = ledger.count(`${id}/belt`, item)
+    if (have > 0) ledger.apply({ kind: "drain", store: `${id}/belt`, item, count: have })
+    if (n > 0) ledger.apply({ kind: "grant", actor: id, item, count: n })
+  }
+  session.sim.progression.project(session.slot)
+}
 
 describe("Outbreak AI & survival combat integration", () => {
   test("spawns deterministic wandering zombies and emits noise on door/window/sprint actions", () => {
@@ -65,21 +78,20 @@ describe("Outbreak AI & survival combat integration", () => {
     expect(chaseProfile.footDrag).toBeLessThan(wanderProfile.footDrag)
   })
 
-  test("pistol firing consumes ammo, syncs with inventory ITEM_CATALOG, emits loud gunshot noise, staggers/kills zombie, and reloads with R", () => {
-    expect(ITEM_CATALOG.pistol.shortLabel).toBe("9MM")
-    expect(ITEM_CATALOG.ammo.stackable).toBe(true)
-
+  test("pistol firing spends ledger rounds, emits loud gunshot noise, staggers/kills zombie, and reloads from the belt with R", () => {
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
     const p = session.view.player
-    Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0, magAmmo: 2, reserveAmmo: 6 })
+    Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0 })
+    stock(session, 2, { ammo: 6 })
     const target = session.ai.spawnZombie(session.view.town, 34, 44, "wander", Math.PI)
     const distant = session.ai.spawnZombie(session.view.town, 54, 44, "wander", Math.PI)
 
-    // Shot 1: hits and staggers target, populates pistol & ammo in hotbar inventory, emits gunshot noise
+    // Shot 1: hits and staggers target, emits gunshot noise; ammo stays on the belt, not in a hotbar slot
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0)
     expect(p.magAmmo).toBe(1)
-    expect(session.view.inventory.slots.some((s) => s?.kind === "pistol")).toBe(true)
-    expect(session.view.inventory.slots.find((s) => s?.kind === "ammo")?.count).toBe(6)
+    expect(session.view.inventory.slots[1]?.kind).toBe("pistol")
+    expect(session.view.inventory.slots.some((s) => s?.kind === "ammo")).toBe(false)
+    expect(session.sim.progression.ledger.count(`${session.slot.id}/belt`, "ammo")).toBe(6)
     expect(target.hp).toBeLessThan(100)
     expect(target.state).toBe("stagger")
     expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 30)).toBe(true)
@@ -112,21 +124,26 @@ describe("Outbreak AI & survival combat integration", () => {
   test("scavenging house containers yields ammo/planks and melee shove pushes zombies back", () => {
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
     const p = session.view.player
-    const container = session.view.containers.find((c) => c.ammo > 0 || c.planks > 0)!
+    const { ledger } = session.sim.progression
+    const container = session.view.containers.find((c) => c.kind === "dresser" && ledger.count(c.id, "ammo") > 0)!
     expect(container).toBeDefined()
 
     // Stand right beside the container inside the room
-    Object.assign(p, { x: container.x, y: container.y + 0.75, vx: 0, vy: 0, aim: -Math.PI / 2, reserveAmmo: 0, planks: 0 })
+    Object.assign(p, { x: container.x, y: container.y + 0.75, vx: 0, vy: 0, aim: -Math.PI / 2 })
+    stock(session, 6, { ammo: 0, plank: 0 })
     session.rebuildCollision()
 
     session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
     expect(p.channel?.kind).toBe("search")
-    const searchSteps = Math.ceil((SEARCH_DURATION + 0.05) / TICK_DT)
+    const searchSteps = Math.ceil((DEFAULT_PROGRESSION_TUNING.searchQuietTime + 0.05) / TICK_DT)
     for (let i = 0; i < searchSteps; i++) {
       session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: false }, 0)
     }
-    expect(container.searched).toBe(true)
-    expect(p.reserveAmmo + p.planks).toBeGreaterThan(0)
+    expect(ledger.store(container.id)!.revealed).toBe(true)
+    expect(p.reserveAmmo).toBe(0)
+    // Searching shows what is inside; a second E takes it.
+    session.update(TICK_DT, { mx: 0, my: 0, aim: -Math.PI / 2, interact: true }, 0)
+    expect(p.reserveAmmo).toBeGreaterThan(0)
 
     // Melee shove knocks a close zombie back into stagger
     Object.assign(p, { x: 44, y: 44, aim: 0 })
@@ -142,12 +159,13 @@ describe("Outbreak AI & survival combat integration", () => {
     const frontDoor = session.view.town.doors.find((d) => d.id === "ash-front")!
 
     // Stand inside Ash front door and build 1 plank barricade
-    Object.assign(p, { x: 27.7, y: 34.4, vx: 0, vy: 0, aim: Math.PI / 2, planks: 2 })
+    Object.assign(p, { x: 27.7, y: 34.4, vx: 0, vy: 0, aim: Math.PI / 2 })
+    stock(session, 6, { plank: 2 })
     session.rebuildCollision()
     session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false, barricade: true }, 0)
     expect(p.channel?.kind).toBe("barricade")
 
-    const buildSteps = Math.ceil((BARRICADE_DURATION + 0.05) / TICK_DT)
+    const buildSteps = Math.ceil((DEFAULT_PROGRESSION_TUNING.barricadeTime + 0.05) / TICK_DT)
     for (let i = 0; i < buildSteps; i++) {
       session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false }, 0)
     }

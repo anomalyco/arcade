@@ -28,7 +28,46 @@ export default defineStation({
   },
   defaultVariant: "noir",
   variants: [
-    ...directions.map(([id, label]) => ({ id, label, setup: [{ command: "vignette.preset", args: { direction: id } }] })),
+    ...directions.map(([id, label]) => ({
+      id,
+      label,
+      setup: [
+        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
+        { command: "vignette.preset", args: { direction: id } },
+      ],
+    })),
+    {
+      id: "day",
+      label: "Day (13:00)",
+      setup: [
+        { command: "vignette.preset", args: { direction: "noir" } },
+        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
+        { command: "scene.set-param", args: { key: "hour", value: 13 } },
+      ],
+    },
+    {
+      id: "dusk-cycle",
+      label: "Dusk (17:00)",
+      setup: [
+        { command: "vignette.preset", args: { direction: "noir" } },
+        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
+        { command: "scene.set-param", args: { key: "hour", value: 17 } },
+      ],
+    },
+    {
+      id: "timelapse",
+      label: "Day → Night Time-Lapse",
+      setup: [
+        { command: "vignette.preset", args: { direction: "noir" } },
+        { command: "scene.set-param", args: { key: "hour", value: 12.5 } },
+        { command: "scene.set-param", args: { key: "timeScale", value: 480 } },
+      ],
+    },
+    {
+      id: "fog-grid",
+      label: "Fog of War (3×1 Grid)",
+      setup: [{ command: "grid.open", args: { preset: "fog" } }],
+    },
     { id: "close-up", label: "Street close-up", setup: [{ command: "vignette.camera", args: { preset: "street" } }] },
   ],
   board: { feature: "AR-12" },

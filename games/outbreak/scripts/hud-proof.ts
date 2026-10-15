@@ -148,7 +148,7 @@ try {
 
   const container = await page.evaluate(() => {
     const st = (window as any).__arcadeHarness.state()
-    const c = st.containers.find((x: any) => x.ammo > 0 && x.planks > 0) ?? st.containers.find((x: any) => x.ammo > 0)
+    const c = st.containers.find((x: any) => x.kind === "dresser")
     return { x: c.x, y: c.y, label: c.label }
   })
   const PLACES = {
@@ -217,7 +217,7 @@ try {
 
   // 4. Reload ring around the magazine count, low battery and health after a hit.
   await stage(page, { x: 30, y: 41, aim: -Math.PI / 4, zoom: 34, hour: 21, look: "noir" })
-  await mutate(page, { magAmmo: 2 })
+  await page.evaluate(() => (window as any).__arcadeHarness.stock(2, { ammo: 12 }))
   await step(page, 1, { reload: true })
   await step(page, 34)
   st = await snap(page, "reload-ring", "Reloading: ring around the magazine count")
@@ -255,7 +255,8 @@ try {
       h.spawnZombie(30.6, 40.6, "chase", -Math.PI / 2)
       h.spawnZombie(26.2, 40.9, "chase", -Math.PI / 2)
     })
-    await mutate(page, { magAmmo: 1, stamina: 0.04 })
+    await page.evaluate(() => (window as any).__arcadeHarness.stock(1, { ammo: 12 }))
+    await mutate(page, { stamina: 0.04 })
     await step(page, 1, { reload: true })
     await step(page, 10, { sprint: true, mx: 0.001 })
     await mutate(page, { x: 27.7, y: 37.4, vx: 0, vy: 0 })

@@ -16,7 +16,7 @@ describe("lab mix", () => {
     expect(mix).toEqual({ ...DEFAULT_MIX, volume: 1, effects: 0 })
   })
   test("groups drive their buses", () => {
-    expect(busLevels({ ...DEFAULT_MIX, vehicles: 0.2, effects: 0.3, ambience: 0.4, ui: 0.5 })).toEqual({ engine: 0.2, tyre: 0.2, impact: 0.3, spell: 0.3, ambience: 0.4, ui: 0.5 })
+    expect(busLevels({ ...DEFAULT_MIX, vehicles: 0.2, effects: 0.3, ambience: 0.4, ui: 0.5 })).toEqual({ engine: 0.2, tyre: 0.2, impact: 0.3, spell: 0.3, weapon: 0.3, foley: 0.3, voice: 0.3, ambience: 0.4, ui: 0.5 })
   })
 })
 

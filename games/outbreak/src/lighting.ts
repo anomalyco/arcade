@@ -1032,13 +1032,19 @@ fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional:
   let contact = exp(-dot(rel, rel) / 0.035);
   let away = feet - lamp.xz;
   let dh = length(away);
-  let reach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
-  let dir = away / max(dh, 1e-3);
+  let sunAmt = clamp(F.monitorBounds.w, 0.0, 1.0);
+  let lampDir = away / max(dh, 1e-3);
+  let sunHoriz = -F.monitorBounds.xz;
+  let sunDir = sunHoriz / max(length(sunHoriz), 1e-3);
+  let dir = normalize(mix(lampDir, sunDir, sunAmt));
+  let lampReach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
+  let sunReach = clamp(actorH * length(sunHoriz) / max(F.monitorBounds.y, 0.22), 0.55, 2.85);
+  let reach = mix(lampReach, sunReach, sunAmt);
   let t = clamp(dot(rel, dir) / reach, 0.0, 1.0);
   let dist = length(rel - dir * (t * reach));
   let radius = 0.17 + 0.22 * t;
-  let lampNear = (1.0 - smoothstep(8.0, 16.0, dh)) * directional;
-  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * lampNear;
+  let casterStrength = mix(1.0 - smoothstep(8.0, 16.0, dh), 0.72, sunAmt) * directional;
+  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * casterStrength;
   return max(shadow * 0.72, contact * 0.48);
 }
 

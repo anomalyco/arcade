@@ -155,6 +155,7 @@ export class OutbreakHud {
         pursuing,
         lowBattery,
         reloadKey: keyLabel("KeyR"),
+        notices: view.notices.splice(0),
       })
     }
     const slot = view.inventory.selectedSlot

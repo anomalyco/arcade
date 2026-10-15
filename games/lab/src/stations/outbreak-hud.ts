@@ -20,7 +20,7 @@ export default defineStation({
   title: "Outbreak HUD",
   summary:
     "The live game with the character HUD. Variants are the five HUD styles from the board decision: callouts, stamina, reload, health and battery placed on the survivor or at the edge.",
-  order: 105,
+  order: 112,
   prop: "figure",
   color: 0xe0b45a,
   status: "review",

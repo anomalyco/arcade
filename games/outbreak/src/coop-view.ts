@@ -10,7 +10,7 @@ import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
-import { Survivor } from "./survivor"
+import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings = Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
   practicalWarmth: number
@@ -29,6 +29,8 @@ function actorVisibility(vision: Vision, x: number, y: number): number {
 export class CoopView {
   readonly hud: CoopHud
   private avatars = new Map<number, Survivor>()
+  /** Remote survivors' foot contacts, for positional footsteps. */
+  onFootfall?: (x: number, y: number, speed: number) => void
   /**
    * Extra survivors in an offline session, drawn exactly like remote ones. Only automation adds them (the HUD proof
    * stages a teammate this way); normal offline play has none.
@@ -108,7 +110,7 @@ export class CoopView {
   }
 
   /** Bodies of remote survivors you can see. */
-  bodies(dt: number, time: number, town: Town, vision: Vision): Batch[] {
+  bodies(dt: number, time: number, town: Town, vision: Vision, aimTuning?: Partial<SurvivorAimTuning>): Batch[] {
     const others = this.others
     if (!others.length && !this.avatars.size) return []
     const out: Batch[] = []
@@ -118,12 +120,13 @@ export class CoopView {
       let avatar = this.avatars.get(slot.index)
       if (!avatar) {
         avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[slot.index % SURVIVOR_COLOURS.length]!)
+        avatar.onFootfall = (x, y, speed) => this.onFootfall?.(x, y, speed)
         this.avatars.set(slot.index, avatar)
       }
       const p = slot.survivor
       const lift = remoteLift.get(slot) ?? 0
       // Keep animating out of sight so the gait is continuous when they step into view.
-      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58)
+      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58, aimTuning)
       if (actorVisibility(vision, p.x, p.y) > 0.05) out.push(...batches)
     }
     for (const index of this.avatars.keys()) if (!live.has(index)) this.avatars.delete(index)

@@ -655,10 +655,167 @@ export function createLookSettings(preset: LookPresetId = "current"): LookSettin
   return { ...LOOK_PRESETS[preset].defaults }
 }
 
+const blendedPalettes = new WeakMap<LookSettings, LookPalette>()
+
+export function getLookPalette(settings: LookSettings): LookPalette {
+  return blendedPalettes.get(settings) ?? (LOOK_PRESETS[settings.preset] ?? LOOK_PRESETS.current).palette
+}
+
 export function applyLookPreset(target: LookSettings, preset: LookPresetId): LookSettings {
   const def = LOOK_PRESETS[preset] ?? LOOK_PRESETS.current
+  blendedPalettes.delete(target)
   Object.assign(target, def.defaults)
   return target
+}
+
+const LOOK_BLEND_KEYS: readonly LookNumericKey[] = [
+  "exposure",
+  "contrast",
+  "toe",
+  "shoulder",
+  "blackCrush",
+  "saturation",
+  "temperature",
+  "splitTone",
+  "shadowTintR",
+  "shadowTintG",
+  "shadowTintB",
+  "highlightTintR",
+  "highlightTintG",
+  "highlightTintB",
+  "paletteMix",
+  "selectiveColor",
+  "foliageShift",
+  "ambientFill",
+  "shadowColorR",
+  "shadowColorG",
+  "shadowColorB",
+  "practicalWarmth",
+  "practicalIntensity",
+  "moonIntensity",
+  "rimStrength",
+  "contactShade",
+  "surfaceWetness",
+  "fogDensity",
+  "fogHeightFalloff",
+  "fogColorR",
+  "fogColorG",
+  "fogColorB",
+  "shaftStrength",
+  "shaftSlats",
+  "bloom",
+  "halation",
+  "vignette",
+  "grain",
+  "chromatic",
+  "diffuseWrap",
+  "bandSoftness",
+  "painterlySmooth",
+  "outlineStrength",
+  "outlineWidth",
+]
+
+function lerpRgb(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  t: number,
+): [number, number, number] {
+  const u = 1 - t
+  return [a[0] * u + b[0] * t, a[1] * u + b[1] * t, a[2] * u + b[2] * t]
+}
+
+export function blendLookPalettes(a: LookPalette, b: LookPalette, t: number): LookPalette {
+  const k = Math.max(0, Math.min(1, t))
+  return {
+    sky: lerpRgb(a.sky, b.sky, k),
+    practical: lerpRgb(a.practical, b.practical, k),
+    wall: lerpRgb(a.wall, b.wall, k),
+    wood: lerpRgb(a.wood, b.wood, k),
+    stone: lerpRgb(a.stone, b.stone, k),
+    asphalt: lerpRgb(a.asphalt, b.asphalt, k),
+    foliage: lerpRgb(a.foliage, b.foliage, k),
+    ink: lerpRgb(a.ink, b.ink, k),
+  }
+}
+
+/**
+ * Smoothly blends all continuous LookSettings parameters and surface palettes between `a` and `b`
+ * without discrete pops.
+ */
+export function blendLookSettings(
+  a: LookSettings,
+  b: LookSettings,
+  t: number,
+  out: LookSettings = { ...b },
+): LookSettings {
+  const k = Math.max(0, Math.min(1, t))
+  const u = 1 - k
+  for (let i = 0; i < LOOK_BLEND_KEYS.length; i++) {
+    const key = LOOK_BLEND_KEYS[i]!
+    out[key] = a[key] * u + b[key] * k
+  }
+  out.tonemap = k < 0.5 ? a.tonemap : b.tonemap
+  out.diffuseBands = Math.round(a.diffuseBands * u + b.diffuseBands * k)
+  out.grainSeed = b.grainSeed
+  out.grainAnimated = k < 0.5 ? a.grainAnimated : b.grainAnimated
+  out.preset = k < 0.5 ? a.preset : b.preset
+  const palA = getLookPalette(a)
+  const palB = getLookPalette(b)
+  blendedPalettes.set(out, blendLookPalettes(palA, palB, k))
+  return out
+}
+
+/**
+ * C-infinity 3-anchor LookSettings blend across `darkness` in [0, 1]:
+ * - darkness = 0.0 -> 100% `day`
+ * - darkness = 0.5 -> 100% `dusk`
+ * - darkness = 1.0 -> 100% `night`
+ * Uses non-negative convex weights (wDay + wDusk + wNight === 1) so it never overshoots or pops.
+ */
+export function blendLookSettings3(
+  day: LookSettings,
+  dusk: LookSettings,
+  night: LookSettings,
+  darkness: number,
+  out: LookSettings = { ...night },
+): LookSettings {
+  const d = Math.max(0, Math.min(1, darkness))
+  const wDusk = 4 * d * (1 - d)
+  const rem = 1 - wDusk
+  const wDay = (1 - d) * rem
+  const wNight = d * rem
+  for (let i = 0; i < LOOK_BLEND_KEYS.length; i++) {
+    const key = LOOK_BLEND_KEYS[i]!
+    out[key] = day[key] * wDay + dusk[key] * wDusk + night[key] * wNight
+  }
+  out.tonemap = night.tonemap
+  out.diffuseBands = 0
+  out.grainSeed = night.grainSeed
+  out.grainAnimated = true
+  out.preset = night.preset
+  const pDay = getLookPalette(day)
+  const pDusk = getLookPalette(dusk)
+  const pNight = getLookPalette(night)
+  const blendRgb3 = (
+    c0: readonly [number, number, number],
+    c1: readonly [number, number, number],
+    c2: readonly [number, number, number],
+  ): [number, number, number] => [
+    c0[0] * wDay + c1[0] * wDusk + c2[0] * wNight,
+    c0[1] * wDay + c1[1] * wDusk + c2[1] * wNight,
+    c0[2] * wDay + c1[2] * wDusk + c2[2] * wNight,
+  ]
+  blendedPalettes.set(out, {
+    sky: blendRgb3(pDay.sky, pDusk.sky, pNight.sky),
+    practical: blendRgb3(pDay.practical, pDusk.practical, pNight.practical),
+    wall: blendRgb3(pDay.wall, pDusk.wall, pNight.wall),
+    wood: blendRgb3(pDay.wood, pDusk.wood, pNight.wood),
+    stone: blendRgb3(pDay.stone, pDusk.stone, pNight.stone),
+    asphalt: blendRgb3(pDay.asphalt, pDusk.asphalt, pNight.asphalt),
+    foliage: blendRgb3(pDay.foliage, pDusk.foliage, pNight.foliage),
+    ink: blendRgb3(pDay.ink, pDusk.ink, pNight.ink),
+  })
+  return out
 }
 
 /**
@@ -971,7 +1128,7 @@ export function packLookUniforms(
   extra?: { compareMode?: LookCompareMode; wipeSplit?: number; forceActive?: boolean },
 ): Float32Array {
   const presetDef = LOOK_PRESETS[settings.preset] ?? LOOK_PRESETS.current
-  const pal = presetDef.palette
+  const pal = getLookPalette(settings)
   const active = extra?.forceActive ? 1 : isIdentityLook(settings) ? 0 : 1
 
   // u0

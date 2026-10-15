@@ -23,8 +23,7 @@ import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliage
 import { aiControls, DEFAULT_AI_CONFIG, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightColor, flashlightControls } from "../shared/flashlight"
-import { HOTBAR_SIZE } from "../shared/inventory"
-import { holdProgress, vaultLift, type PeekInfo } from "../shared/interact"
+import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { DEFAULT_STAMINA_TUNING, staminaControls } from "../shared/stamina"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, propShape, SIZE } from "../shared/map"
@@ -41,6 +40,7 @@ import {
   collectFogSoundSprites,
   fogOfWarControls,
 } from "./fog-of-war"
+import { applyOutbreakDayNight } from "./day-night"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -56,8 +56,11 @@ import {
   streetLampHead,
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
-import { Survivor } from "./survivor"
+import { Survivor, survivorAimControls, survivorAimTuning } from "./survivor"
 import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
+import { audioControls, DEFAULT_AUDIO_SETTINGS, OutbreakAudio, pursuers, soundWorld } from "./audio"
+import { InventoryHud } from "./inventory-hud"
+import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
   DEFAULT_OUTBREAK_WEATHER,
@@ -86,6 +89,7 @@ const peaceful = params.has("peaceful")
 const settings = {
   hour: 18,
   timeScale: 120,
+  dayNightLook: 1,
   cone: 110,
   awareness: 2.5,
   range: 27,
@@ -117,7 +121,9 @@ const settings = {
   ...DEFAULT_GROUND_SETTINGS,
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
+  ...survivorAimTuning,
   ...DEFAULT_HUD_SETTINGS,
+  ...DEFAULT_AUDIO_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -162,9 +168,20 @@ async function main() {
   const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
   const batteryEl = document.querySelector<HTMLElement>("#battery")
   const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
-  const hotbarEl = document.querySelector<HTMLElement>("#hotbar")
   const hud = new OutbreakHud(document.body, settings)
   hud.avoid(promptEl)
+  const inventoryHud = new InventoryHud(
+    {
+      prompt: promptEl,
+      hotbar: document.querySelector<HTMLElement>("#hotbar"),
+      belt: document.querySelector<HTMLElement>("#belt"),
+      pack: document.querySelector<HTMLElement>("#pack"),
+      craft: document.querySelector<HTMLElement>("#craft"),
+      markers: document.querySelector<HTMLElement>("#markers"),
+    },
+    (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
+    () => session.sim.slots.map((s) => s.survivor),
+  )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -202,19 +219,54 @@ async function main() {
   let pendingHotbarDelta = 0
   let pendingFlashlightToggle = false
   let pendingBarricade = false
+  let pendingVerbs: Partial<Command> = {}
+  // KeyG and KeyQ are tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
+  const holds = new Map<string, { at: number; fired: boolean }>()
   input.onKey = (code) => {
-    const slot = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].indexOf(code)
-    if (slot >= 0) {
-      if (slot === 0 && session.view.inventory.selectedSlot === 0) pendingFlashlightToggle = true
-      pendingHotbarSlot = slot
+    const digit = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"].indexOf(code)
+    if (digit >= 0) {
+      const meant = inventoryHud.digit(digit, session.view)
+      if (meant.hotbarSlot !== undefined) {
+        if (meant.hotbarSlot === 0 && session.view.inventory.selectedSlot === 0) pendingFlashlightToggle = true
+        pendingHotbarSlot = meant.hotbarSlot
+      } else if (meant.pick) pendingVerbs.pick = meant.pick
     }
     if (code === "KeyB") pendingBarricade = true
+    if (code === "Tab") inventoryHud.togglePack()
+    if (code === "Escape") inventoryHud.close()
+    if (code === "KeyG" || code === "KeyQ") holds.set(code, { at: performance.now(), fired: false })
+  }
+  const pollHolds = (now: number) => {
+    for (const [code, h] of holds) {
+      const down = input.held(code)
+      if (down && !h.fired && now - h.at >= HOLD_DURATION * 1000) {
+        h.fired = true
+        if (code === "KeyG") pendingVerbs.bundle = true
+        else if (!inventoryHud.craftOpen) inventoryHud.toggleCraft()
+      } else if (!down) {
+        if (!h.fired) {
+          if (code === "KeyG") pendingVerbs.drop = true
+          else if (inventoryHud.craftOpen) inventoryHud.close()
+          else pendingVerbs.ping = true
+        }
+        holds.delete(code)
+      }
+    }
   }
   input.onWheel = (delta) => {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
+  const audio = new OutbreakAudio(settings, {
+    baseUrl: new URL("./audio-assets/", document.baseURI).href,
+    storage: (() => { try { return localStorage } catch { return null } })(),
+    automated: navigator.webdriver,
+  })
+  audio.arm()
+  const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
+  coop.onFootfall = footfall
   let avatar = new Survivor(renderer)
+  avatar.onFootfall = footfall
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
@@ -232,6 +284,7 @@ async function main() {
   }
   const controls: LabControl[] = [
     ...aiControls,
+    ...audioControls,
     {
       key: "spawnZombieHere",
       label: "Spawn zombie ahead",
@@ -308,6 +361,7 @@ async function main() {
       ],
     },
     ...zombieControls,
+    ...survivorAimControls,
     ...hudControls,
     {
       key: "diagnostic",
@@ -319,6 +373,15 @@ async function main() {
     },
     { key: "hour", label: "Time", group: "Day cycle", min: 0, max: 24, step: 0.05 },
     { key: "timeScale", label: "Time scale", group: "Day cycle", min: 0, max: 600, step: 10 },
+    {
+      key: "dayNightLook",
+      label: "Look & threat by hour",
+      group: "Day cycle",
+      options: [
+        { label: "Dynamic (Day → Dusk → Noir)", value: 1 },
+        { label: "Fixed preset", value: 0 },
+      ],
+    },
     {
       key: "infiniteAmmo",
       label: "Infinite ammo",
@@ -460,6 +523,9 @@ async function main() {
     const reloadEdge = input.takeReload()
     const meleeEdge = input.takeMelee()
     const barricadeEdge = pendingBarricade
+    pollHolds(wallNow)
+    const verbs = pendingVerbs
+    pendingVerbs = {}
     pendingHotbarSlot = undefined
     pendingHotbarDelta = 0
     pendingBarricade = false
@@ -481,6 +547,7 @@ async function main() {
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
+          ...(idx === 0 ? verbs : {}),
           ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
           ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
         },
@@ -549,7 +616,25 @@ async function main() {
         session.ai.config.zombieCount = settings.zombieCount
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
-      if (key === "hour") session.view.hour = wrapHour(settings.hour)
+      if (key === "hour") {
+        session.view.hour = wrapHour(settings.hour)
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+          lab.refresh()
+        }
+      }
+      if (key === "dayNightLook") {
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        } else {
+          const pid = resolveLookPresetId(settings.lookPreset) ?? "noir"
+          applyLookPreset(lookSettings, pid)
+          Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        }
+        lab.refresh()
+      }
       if (
         key === "houseSeed" ||
         key === "terrain" ||
@@ -582,6 +667,10 @@ async function main() {
         const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
         applyLookPreset(lookSettings, pid)
         Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        if (settings.dayNightLook === 1 && pid === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        }
         lab.refresh()
       }
       if (key === "weatherPreset") {
@@ -777,6 +866,57 @@ async function main() {
         run: () => hud.demo(session.view.player),
       },
       {
+        id: "survivor.aim-demo",
+        label: "Preview Survivor Pistol Stance",
+        shortLabel: "Aim Demo",
+        category: "Scene",
+        undoable: false,
+        args: {
+          mode: {
+            type: "string",
+            description: "Stance mode (aim-fire, low-ready, reload, before)",
+          },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const mode = String(args?.mode ?? "aim-fire")
+          const p = session.view.player
+          p.equippedItem = "pistol"
+          p.magAmmo = p.magCapacity
+          p.reserveAmmo = 16
+          avatar.legacyUnarmedPistol = mode === "before"
+          if (mode === "low-ready") {
+            p.fireCooldown = 0
+            p.recoil = 0
+            p.reloadRemaining = 0
+            avatar.holdRemaining = 0
+            avatar.aimWeight = 0
+            for (let i = 0; i < 24; i++) draw(1 / 60)
+          } else if (mode === "reload") {
+            p.magAmmo = 2
+            p.reloadRemaining = 0.68
+            avatar.holdRemaining = settings.aimHoldTime
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          } else {
+            p.reloadRemaining = 0
+            session.update(
+              1 / 60,
+              { mx: 0, my: 0, aim: p.aim, interact: false, fire: true },
+              0,
+              settings,
+            )
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          }
+          await device.queue.onSubmittedWorkDone()
+          return {
+            mode,
+            aimWeight: avatar.aimWeight,
+            holdRemaining: avatar.holdRemaining,
+            legacyBefore: avatar.legacyUnarmedPistol,
+          }
+        },
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
@@ -885,6 +1025,7 @@ async function main() {
   }
   reset()
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+  let lastNotice: { text: string; until: number } | null = null
   const formatStatus = () => {
     const { player: p, hour, time, prompt, zombies } = session.view
     const primaryKey = keyLabel("KeyE")
@@ -906,52 +1047,14 @@ async function main() {
     const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
-    const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : ""
+    const notice = session.view.notices.splice(0).at(-1)
+    if (notice) lastNotice = { text: notice.text, until: time + 3 }
+    const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : lastNotice && time < lastNotice.until ? ` · ${lastNotice.text}` : ""
     const weatherText =
       settings.weatherEnabled && settings.weatherPreset !== "clear"
         ? ` · ${WEATHER_PRESETS[settings.weatherPreset]?.label ?? settings.weatherPreset}`
         : ""
     return `${clockText(hour)}${weatherText}${weaponText}${plankText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
-  }
-  const syncWorldPrompt = (w: number, h: number) => {
-    if (!promptEl) return
-    const { player: p, town, prompt } = session.view
-    if (!prompt) {
-      promptEl.hidden = true
-      return
-    }
-    const isPeeking = Boolean(session.view.peek)
-    const anchorHeight = (isPeeking ? 0.15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
-    const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
-    if (!proj.ok) {
-      promptEl.hidden = true
-      return
-    }
-    const primaryHtml = keyPromptHtml("KeyE", prompt.primary.label)
-    const secondaryHtml = prompt.secondary
-      ? `<span class="sep">·</span>${keyPromptHtml("KeyE", prompt.secondary.label, { hold: true, progress: holdProgress(p) })}`
-      : ""
-    promptEl.innerHTML = `${primaryHtml}${secondaryHtml}`
-    promptEl.hidden = false
-    promptEl.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
-  }
-  let lastHotbarKey = ""
-  const syncHotbar = () => {
-    if (!hotbarEl) return
-    const { inventory, player: p } = session.view
-    const fKey = keyLabel("KeyF")
-    const key = `${inventory.selectedSlot}|${p.flashlightOn}|${fKey}|${inventory.slots.map((s) => (s ? `${s.id}:${s.shortLabel}:${s.active ? 1 : 0}:${s.count ?? ""}` : "")).join(",")}`
-    if (key === lastHotbarKey) return
-    lastHotbarKey = key
-    hotbarEl.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
-      const item = inventory.slots[i]
-      const sel = i === inventory.selectedSlot
-      const on = (item?.kind === "flashlight" && p.flashlightOn) || (item?.kind === "pistol" && p.equippedItem === "pistol")
-      const label = item
-        ? `${esc(item.shortLabel)}${item.kind === "flashlight" ? ` (${esc(fKey)})` : item.count && item.count > 1 ? ` ×${item.count}` : ""}`
-        : "—"
-      return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!item}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
-    }).join("")
   }
   const syncStatus = () => {
     if (hud.logMode) status.textContent = formatStatus()
@@ -965,23 +1068,27 @@ async function main() {
     }
   }
   onKeyLayoutChange(() => {
-    lastHotbarKey = ""
     syncStatus()
-    syncWorldPrompt(innerWidth, innerHeight)
-    syncHotbar()
+    inventoryHud.sync(session.view, cam, innerWidth, innerHeight)
   })
   await renderer.texturesReady
   syncTextures()
+  let lastDayNightHour = -1
   function draw(dt: number) {
     if (settings.textures === 2) syncTextures()
     coop.net?.sync(dt)
     if (coop.localPalette !== avatarPalette) {
       avatarPalette = coop.localPalette
       avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      avatar.onFootfall = footfall
       updateProfile()
     }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
+    if (settings.dayNightLook === 1 && settings.lookPreset === "noir" && Math.abs(hour - lastDayNightHour) > 1e-4) {
+      lastDayNightHour = hour
+      applyOutbreakDayNight(hour, lookSettings, settings)
+    }
     if (peek) {
       lastPeek = peek
       peekBlend = Math.min(1, peekBlend + dt * 6.5)
@@ -1096,8 +1203,8 @@ async function main() {
     count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift)
-    const coopBatches = coop.bodies(dt, time, town, vision)
+    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift, settings)
+    const coopBatches = coop.bodies(dt, time, town, vision, settings)
     const zombieBatches = zombieCrowd.draw(
       zombies,
       dt,
@@ -1344,10 +1451,10 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
+    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
-    syncWorldPrompt(w, h)
-    syncHotbar()
+    inventoryHud.sync(session.view, cam, w, h)
     const meterNow = performance.now()
     const elapsed = (meterNow - meterAt) / 1000
     if (elapsed > 0.25) {
@@ -1457,11 +1564,39 @@ async function main() {
   const harness = {
     ready: true,
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
-    human: () => ({ profile: avatar.profile, bones: avatar.bones }),
-    state: () => ({
-      ...session.view,
-      peekBlend,
-      flashlight: {
+    human: () => ({
+      profile: avatar.profile,
+      bones: avatar.bones,
+      gun: avatar.gun,
+      mag: avatar.mag,
+      aimWeight: avatar.aimWeight,
+      holdRemaining: avatar.holdRemaining,
+    }),
+    setLegacyPistol: (legacy: boolean) => {
+      avatar.legacyUnarmedPistol = legacy
+      avatar.reset()
+    },
+    setZoomRaw: (zoom: number) => {
+      settings.zoom = zoom
+      cam.dist = zoom
+    },
+    state: () => {
+      const dc = dayCycle(session.view.hour)
+      return {
+        ...session.view,
+        peekBlend,
+        threat: dc.threat,
+        darkness: dc.darkness,
+        dayCycle: {
+          hour: session.view.hour,
+          phase: dc.phase,
+          darkness: dc.darkness,
+          threat: dc.threat,
+          sun: dc.sun,
+          twilight: dc.twilight,
+          lamps: dc.lamps,
+        },
+        flashlight: {
         on: session.view.player.flashlightOn,
         battery: session.view.player.battery,
         depleted: session.view.player.batteryDepleted,
@@ -1492,11 +1627,13 @@ async function main() {
         settings: toSharedWeatherSettings(settings),
         state: { ...weatherController.sim.state },
       },
-    }),
+      }
+    },
     fog: (x: number, y: number) => vision.state(x, y),
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
+    audio: () => audio.telemetry(),
     hudState: () => hud.inspect(),
     reset,
     freeze: (value = true) => {
@@ -1532,7 +1669,25 @@ async function main() {
         session.ai.config.zombieCount = Number(settings.zombieCount)
         session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
       }
-      if (key === "hour" && typeof value === "number") session.view.hour = wrapHour(value)
+      if (key === "hour" && typeof value === "number") {
+        session.view.hour = wrapHour(value)
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+          lab.refresh()
+        }
+      }
+      if (key === "dayNightLook") {
+        if (settings.dayNightLook === 1 && settings.lookPreset === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        } else {
+          const pid = resolveLookPresetId(settings.lookPreset) ?? "noir"
+          applyLookPreset(lookSettings, pid)
+          Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        }
+        lab.refresh()
+      }
       if (
         key === "houseSeed" ||
         key === "terrain" ||
@@ -1565,6 +1720,10 @@ async function main() {
         const pid = resolveLookPresetId(value) ?? "current"
         applyLookPreset(lookSettings, pid)
         Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+        if (settings.dayNightLook === 1 && pid === "noir") {
+          lastDayNightHour = session.view.hour
+          applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+        }
         lab.refresh()
       }
       if (key === "weatherPreset") {
@@ -1594,12 +1753,17 @@ async function main() {
       settings.lookPreset = pid
       applyLookPreset(lookSettings, pid)
       Object.assign(settings, OUTBREAK_LOOK_LIGHTING_PRESETS[pid])
+      if (settings.dayNightLook === 1 && pid === "noir") {
+        lastDayNightHour = session.view.hour
+        applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+      }
       lab.refresh()
       return { ...lookSettings }
     },
     setLook(patch: Partial<LookSettings>) {
       Object.assign(lookSettings, patch)
       if (patch.preset) settings.lookPreset = patch.preset
+      lastDayNightHour = session.view.hour
       lab.refresh()
       return { ...lookSettings }
     },
@@ -1629,6 +1793,23 @@ async function main() {
       avatar.reset()
       cam.snap(x, y)
       cam.dist = settings.zoom
+    },
+    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
+    stock(loaded?: number, belt: Record<string, number> = {}) {
+      const { progression, actorId } = session.view
+      const ledger = progression.ledger
+      if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
+      for (const [item, n] of Object.entries(belt)) {
+        const have = ledger.count(`${actorId}/belt`, item)
+        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
+        if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
+      }
+      const slot = session.sim.slot(actorId)
+      if (slot) progression.project(slot)
+    },
+    /** Gives the local survivor an item, routed to belt, hand or pack. */
+    give(item: string, count = 1) {
+      return session.view.progression.ledger.apply({ kind: "grant", actor: session.view.actorId, item, count }).ok
     },
     spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
       const z = session.ai.spawnZombie(session.view.town, x, y, state, aim)
