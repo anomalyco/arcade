@@ -391,8 +391,8 @@ export class Stage {
     }else{
       this.camera(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)
     }
-    this.volume.uniforms.set(this.inverse);this.volume.uniforms.set(this.eye,16)
-    this.particles.uniforms.set(this.viewProj);this.particles.uniforms.set(this.eye,16)
+    this.volume.setFrame({ inverse: this.inverse, eye: this.eye })
+    this.particles.setFrame({ vp: this.viewProj, eye: this.eye })
     this.tyreFrame.set(this.viewProj);this.tyreFrame.set(this.eye,16);this.tyreFrame[20]=this.width;this.tyreFrame[21]=this.height
   }
   private uploadLighting(debug:number){
@@ -416,10 +416,11 @@ export class Stage {
         if(l){this.lightData.set([l.x,l.y,l.z,l.radius,l.r,l.g,l.b,l.power,l.dx??0,l.dy??-1,l.dz??0,l.cone??-2],o)}
       }
       if(i<count&&this.lightData[o+7]>0)this.lightCount++
-      for(let j=0;j<8;j++){this.volume.uniforms[60+i*8+j]=this.lightData[o+j]!;this.particles.uniforms[24+i*8+j]=this.lightData[o+j]!}
     }
-    this.volume.uniforms[22]=count;this.volume.uniforms[24]=0.08;this.volume.uniforms[25]=0.10;this.volume.uniforms[26]=0.15
-    this.particles.uniforms[20]=0.25;this.particles.uniforms[21]=0.30;this.particles.uniforms[22]=0.42;this.particles.uniforms[23]=count
+    this.volume.setFrame({ ambient: [0.08, 0.10, 0.15], lights: this.lightData, lightCount: 8, lightStride: 12, minLightPower: -Infinity })
+    this.volume.setFrame({ lightCount: count })
+    this.particles.setFrame({ ambient: [0.25, 0.30, 0.42], lights: this.lightData, lightCount: 8, lightStride: 12, minLightPower: -Infinity })
+    this.particles.setFrame({ lightCount: count })
     this.tyreFrame[22]=count;for(let i=0;i<4;i++)this.tyreFrame[24+i]=f[40+i]!
     this.device.queue.writeBuffer(this.buffer,0,f);this.device.queue.writeBuffer(this.tyreLights,0,this.lightData)
   }
@@ -486,7 +487,7 @@ export class Stage {
       }
     }
     this.meshes.upload(this.frame)
-    this.particles.uniforms[19]=debug;this.volume.debug=debug
+    this.particles.setFrame({ debug });this.volume.setFrame({ debug })
     this.transientRenderer.uniforms.set(this.particles.uniforms);this.transientRenderer.upload(this.transients)
     this.particles.upload(particles);trail.prepare();this.tyre.upload(trail,true)
     this.tyreFrame[19]=volumes.time;this.device.queue.writeBuffer(this.tyreBuffer,0,this.tyreFrame)

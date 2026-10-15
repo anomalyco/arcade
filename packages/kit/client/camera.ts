@@ -27,12 +27,18 @@ export class Camera {
   private rollA = 0
   private rv = 0
   private t = 0
+  /** Optional presentation offset from `@arcade/kit/feel` (`GameFeel.offset`). */
+  feelOffset: { x: number; y?: number; z: number; zoom: number; roll: number } | null = null
   eye: [number, number, number] = [0, 0, 0]
   viewProj = mat4.identity()
 
   snap(x: number, z: number): void {
     this.x = x
     this.z = z
+  }
+
+  applyFeel(offset: { x: number; y?: number; z: number; zoom: number; roll: number } | null): void {
+    this.feelOffset = offset
   }
 
   bump(amount: number): void {
@@ -103,14 +109,17 @@ export class Camera {
   }
 
   update(aspect: number): Float32Array {
+    const fo = this.feelOffset
     const s = (this.traumaSquared ? this.shake * this.shake : this.shake) + this.impactShake * this.impactShake
-    const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx
-    const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz
-    const target = [this.x + jx, 0, this.z + jz]
-    const dist = this.dist + this.zoom
+    const jx = s * (Math.sin(this.t * 71) + Math.sin(this.t * 43) * 0.5) * 0.12 + this.kx + (fo?.x ?? 0)
+    const jy = fo?.y ?? 0
+    const jz = s * (Math.cos(this.t * 59) + Math.cos(this.t * 37) * 0.5) * 0.12 + this.kz + (fo?.z ?? 0)
+    const target = [this.x + jx, jy, this.z + jz]
+    const dist = this.dist + this.zoom + (fo?.zoom ?? 0)
     const h = Math.cos(this.pitch) * dist
     this.eye = [target[0]!, Math.sin(this.pitch) * dist, target[2]! + h]
-    const view = mat4.lookAt(this.eye, target, [Math.sin(this.rollA), Math.cos(this.rollA), 0])
+    const roll = this.rollA + (fo?.roll ?? 0)
+    const view = mat4.lookAt(this.eye, target, [Math.sin(roll), Math.cos(roll), 0])
     const proj = mat4.perspective(this.fov, aspect, 2, 400)
     this.viewProj = mat4.multiply(proj, view)
     return this.viewProj as Float32Array

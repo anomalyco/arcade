@@ -212,10 +212,10 @@ struct VOut {
   } else if (useAfter) {
     let r = M.recipes[recipeId];
     // Convert perceptual sRGB base sliders to linear light (matching production makeSceneShader's pow(v.color, 2.2)).
-    let linearBase = pow(max(r.u0.xyz, vec3f(0.02)), vec3f(2.2));
+    let linearBase = pow(max(recipeBaseColor(r), vec3f(0.02)), vec3f(2.2));
     sample = evalRecipeById(recipeId, evalWorld, n, linearBase, r);
   } else {
-    let def = defaultMaterialRecipe(recipeId).u0.xyz;
+    let def = recipeBaseColor(defaultMaterialRecipe(recipeId));
     let linearDef = pow(max(def, vec3f(0.02)), vec3f(2.2));
     sample = evalLegacyMaterial(recipeId, evalWorld, n, linearDef);
   }

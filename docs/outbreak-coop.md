@@ -34,11 +34,18 @@ Game-agnostic pieces, so Blackout and Getaway can adopt them later (their own be
 - `jitter-buffer.ts`: Wings's adaptive playout buffer (`room-engine.ts`), generalised. Exactly one input per tick;
   a dry tick repeats the last movement without its one-shot edges; when two inputs are consumed in a tick, or a late
   input arrives after its stand-in, its one-shot edges are merged forward instead of dropped (the Blackout/Getaway
-  `splice` bug). Wings itself is an independent project and keeps its copy.
+  `splice` bug). Small sequence gaps (`≤ 6` ticks) from upstream packet drops keep the stream primed so stand-ins
+  bridge the gap without stalling movement. Wings itself is an independent project and keeps its copy.
 - `seats.ts`: join, leave, reconnect. Each seat has a public `id` (seen by everyone) and a private `token` (only the
   owner sees it, used to reclaim the seat within the grace window).
-- `bytes.ts`: a small little-endian `ByteWriter`/`ByteReader`, and `frame(personal, shared)` which prefixes a
-  per-recipient header to a shared payload encoded once per snapshot.
+- `bytes.ts`: a small little-endian `ByteWriter`/`ByteReader` (with unsigned/ZigZag LEB128 varints `uvar`/`ivar`,
+  8/12/16-bit angle packers, signed 4-bit nibble pairs and bitsets), and `frame(personal, shared)` which prefixes a
+  per-recipient header to a shared payload.
+- `interest.ts`: per-recipient spatial interest bubble (`inInterestBubble`), priority cadence scheduling
+  (`selectInterestStride`, `isScheduledOnSnapshot`, `PriorityAccumulator`), acked-snapshot ring buffer (`AckHistory`),
+  and adaptive snapshot rate pacing (`BandwidthPacer`).
+- `rewind.ts`: `RewindHistory`, a zero-allocation server-side position ring buffer that interpolates past entity
+  poses and temporarily rewinds hitscan targets to the shooter's rendered `viewTime` (clamped to `maxRewindSeconds`).
 - `interpolate.ts`: `SnapshotBuffer`, a time-stamped buffer that renders remote entities between the two snapshots
   bracketing `now − delay`.
 - `prediction.ts`: `Predictor`, pending commands keyed by sequence, replay on ack, and a decaying visual error offset
@@ -53,23 +60,48 @@ change the offline session.
 
 ## Wire format
 
-- Up: JSON `{t:"in", s, c:[[mx, my, aim, flags, slot?, delta?, action?], …]}`, two 60 Hz commands per message.
+- Up: compact base64-framed binary batch `"I" + btoa(encodeClientIn(s, c, ackSnap, viewTick))` (with JSON `{t:"in", …}`
+  still accepted), carrying two 60 Hz commands per message (repeating identical consecutive commands in 1 bit and
+  re-sending the previous batch when it held a one-shot edge), the last snapshot tick received (`ackSnap`), and the
+  client's interpolated `viewTick` for server hitscan rewind.
 - Down, text: `welcome` (public id, private token, seat index, room options), `roster`, `pong`, `error`, `reload`.
-- Down, binary snapshot at 20 Hz: `frame(personal, shared)`. `shared` (encoded once): tick, clock, survivors
-  (position cm, packed aim, flags, light, health, recoil, vault lift), zombies (15 bytes each: id, state, position,
-  aim, hp, hit flash, state time, stagger, clamber), door/window bit fields, barricade planks, pings and noisemakers,
-  recent bashes and shots with shooter seat. `personal`: ack, the survivor's fields as a positional JSON array, the
-  ledger stores this player can see (shared ones and their own) that changed since the revision they last received
-  (everything on join or reconnect), and that player's notices ("Inventory full", recipes learned). Velocities are
-  derived from the two interpolated snapshots.
+- Down, binary snapshot at 20 Hz (adapted by `BandwidthPacer`): `frame(personal, shared)`.
+  - `shared` (cached per `(viewerBubble, baseTick)` so survivors in the same chunk bubble with the same acked tick
+    encode once): header (`tick`, `time`, `hour`, `revision`, `sectionFlags`, optional `baseTick`), all 1–4 survivors
+    (12 B each: `i32` cm position, 12-bit aim + 4-bit flags, 7-bit light + exhausted bit, health, optional recoil/lift),
+    interest-culled zombies inside the recipient's `128 × 128 m` bubble (`±64 m` around their `3 × 3` chunk window)
+    delta-compressed against `baseSnap.zombies` via a changed-entity bitfield, 1-byte nibble (`±7 cm`) or 2-byte `i8`
+    (`±127 cm`) position deltas, 8-bit aim and optional state/HP/FX sub-flags (with non-urgent mid/far/idle zombies
+    throttled to 10 Hz / 5 Hz), door/window bitfields + sparse non-zero barricade planks (omitted completely when
+    `revision` is unchanged since `baseTick`), and new shots/bashes/pings/lures since `baseTick`.
+  - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
+    and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 
 ## Measured
 
-`scripts/coop-bench.ts` (in-process room, 4 NetSession clients over a 50 ms loopback, 60 zombies, 60 s, M2 Max
-under heavy load from other agents): room tick mean 0.12 ms (p50 0.09, p95 0.23, p99 0.58 ms) at 60 Hz, about
-7 ms of CPU per second; snapshots about 1.7 KB, **33.7 KB/s down and 2.8 KB/s up per client**. With the default 28
-zombies, `coop-smoke.ts` against `wrangler dev` measured 18–23 KB/s down per client. Over a 3 + 0–8 tick jittery
-loopback the jitter buffer made stand-ins and every one of five shots still landed (`tests/coop.test.ts`).
+`scripts/coop-bench.ts --matrix=1 --seconds=10` (`perf/outbreak-net-perf.json`, 14 scenarios across 1/2/4 survivors,
+60 / 300 / 1000 zombies, together vs spread 1 km apart in streaming chunks, and clean 50 ms vs lossy 80 ± 30 ms at 2%
+packet drop):
+
+| Scenario | Down KB/s (Before → After) | Up KB/s (Before → After) | Snap Bytes (Before → After) | Zombies B (Before → After) | Server Tick p95 ms (Before → After) | Client Decode p95 ms (Before → After) | Max Correction m (Before → After) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `1p · 60z · together · clean` | `31.41 → 5.64` (`-82.0%`) | `2.71 → 1.43` | `1,608 → 300` | `1,322 → 186` | `2.75 → 0.45` | `0.83 → 0.08` | `0.0002 → 0.0000` |
+| `2p · 60z · together · clean` | `31.96 → 6.06` (`-81.0%`) | `2.73 → 1.43` | `1,636 → 325` | `1,322 → 194` | `1.47 → 0.51` | `0.31 → 0.06` | `0.0002 → 0.0000` |
+| `4p · 60z · together · clean` | `33.06 → 6.90` (`-79.1%`) | `2.75 → 1.43` | `1,692 → 366` | `1,322 → 203` | `3.04 → 0.41` | `0.23 → 0.03` | `0.0002 → 0.0000` |
+| `4p · 60z · spread 1km · clean` | `35.28 → 3.92` (`-88.9%`) | `2.75 → 1.43` | `1,805 → 211` | `1,322 → 48` | `2.54 → 0.52` | `0.31 → 0.03` | `0.0007 → 0.0001` |
+| `4p · 60z · together · lossy (80±30ms, 2%)` | `33.06 → 7.16` (`-78.3%`) | `2.75 → 1.43` | `1,691 → 404` | `1,322 → 213` | `0.94 → 0.43` | `0.13 → 0.02` | `0.0934 → 0.0013` |
+| `1p · 300z · together · clean` | `134.55 → 17.56` (`-86.9%`) | `2.71 → 1.43` | `6,889 → 966` | `6,602 → 851` | `1.30 → 1.28` | `0.09 → 0.08` | `0.0002 → 0.0000` |
+| `2p · 300z · together · clean` | `135.09 → 18.25` (`-86.5%`) | `2.73 → 1.43` | `6,916 → 1,016` | `6,602 → 886` | `2.24 → 1.30` | `0.17 → 0.06` | `0.0002 → 0.0000` |
+| `4p · 300z · together · clean` | `136.18 → 19.44` (`-85.7%`) | `2.75 → 1.43` | `6,972 → 1,085` | `6,602 → 921` | `2.57 → 1.55` | `0.15 → 0.04` | `0.0002 → 0.0000` |
+| **`4p · 300z · spread 1km · clean` (Target)** | **`138.41 → 6.81` (`-95.1%`)** | **`2.75 → 1.43`** | **`7,085 → 372`** | **`6,602 → 207`** | **`14.18 → 1.05`** | **`0.52 → 0.03`** | **`0.0007 → 0.0001`** |
+| **`4p · 300z · spread 1km · lossy (80±30ms, 2%)`** | **`138.38 → 6.98` (`-95.0%`)** | **`2.75 → 1.43`** | **`7,084 → 384`** | **`6,602 → 214`** | **`15.95 → 1.64`** | **`0.59 → 0.06`** | **`0.1121 → 0.0010`** |
+| `1p · 1000z · together · clean` | `435.32 → 28.23` (`-93.5%`) | `2.71 → 1.43` | `22,289 → 3,075` | `22,002 → 2,936` | `9.64 → 3.26` | `0.19 → 0.12` | `0.0002 → 0.0000` |
+| `4p · 1000z · together · clean` | `436.96 → 30.63` (`-93.0%`) | `2.75 → 1.43` | `22,372 → 3,340` | `22,002 → 3,152` | `16.52 → 3.21` | `0.21 → 0.11` | `0.0002 → 0.0000` |
+| `4p · 1000z · spread 1km · clean` | `439.19 → 15.16` (`-96.5%`) | `2.75 → 1.43` | `22,485 → 847` | `22,002 → 681` | `8.79 → 4.30` | `0.24 → 0.10` | `0.0007 → 0.0001` |
+| `4p · 1000z · spread 1km · lossy (80±30ms, 2%)` | `439.15 → 15.65` (`-96.4%`) | `2.75 → 1.43` | `22,484 → 877` | `22,002 → 706` | `8.51 → 3.43` | `0.24 → 0.06` | `0.1121 → 0.0013` |
+
+With the default 28 zombies, a 4-client headless run of `coop-smoke.ts --players=4` against `wrangler dev` measured
+**4.14–4.21 KB/s down and 1.95 KB/s up per client** (down from 18–23 KB/s).
 
 ## Sound
 
@@ -81,20 +113,28 @@ rest of the shared world, a remote shot or door is heard one snapshot late.
 
 ## Known gaps
 
-- Doors, loot, barricades and shots take a round trip (no prediction or local muzzle flash yet); hitscan has no lag
-  compensation (the room hits zombies where they are now).
+- Doors, loot, barricades and shots take a round trip (no client-side muzzle flash prediction yet); server hitscan
+  evaluates against zombie positions rewound to the shooter's `viewTick` (`@arcade/kit/net/rewind`, clamped to 250 ms).
 - Remote survivors show body, flashlight, name tag, and the character HUD (callouts and health, reload and exhaustion
   rings, see [outbreak-hud.md](outbreak-hud.md)) built from replicated flags, but not their pistol. Reload progress
   is timed on the viewer's side because the snapshot carries only a reloading flag.
 - No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. A survivor
   whose seat expires leaves what they carried on the floor. No lobby or
   quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
-- All zombies are sent to everyone every snapshot (no interest management or deltas); fine at 60, not at 300.
+- Blackout and Getaway still carry their own room loops; `@arcade/kit/net/{jitter-buffer,seats,interpolate,rewind,interest}`
+  are ready for Blackout to replace its exponential remote avatar chase (`SnapshotBuffer`) and add 20-tick server
+  hitscan rewind (`RewindHistory`), and for both games to replace `queue.splice` input trimming and public-id reconnect.
 
 ## Proof
 
-- `games/outbreak/tests/coop-sim.test.ts`: 2–4 survivors, zombies split targets, shared doors and loot, private ammo.
-- `packages/kit/net/*.test.ts`: jitter buffer edges, seats/tokens, interpolation, prediction reconciliation.
-- `games/outbreak/scripts/coop-smoke.ts`: two protocol clients against `wrangler dev` (or production): join, move,
-  open a door, shoot, and check that both clients agree. Also reports bytes per client per second.
-- `games/outbreak/scripts/coop-bench.ts`: server CPU per tick and snapshot bytes at 4 survivors and 60 zombies.
+- `games/outbreak/tests/coop.test.ts`: 2–4 survivors, zombies split targets, shared doors and loot, private ammo,
+  binary encode/decode round-trips, 1 km per-recipient interest filtering, and delta compression against ack under 5%
+  packet loss.
+- `packages/kit/net.test.ts`: jitter buffer edges & gap resilience, seats/tokens, varints/angles/nibbles/bitsets,
+  interest bubbles & priority accumulation, `AckHistory`, `BandwidthPacer`, `RewindHistory`, interpolation, and
+  prediction reconciliation.
+- `games/outbreak/scripts/coop-smoke.ts`: 2–4 headless protocol clients against `wrangler dev` (or production): join,
+  move, open a door, shoot, and check that all clients agree. Reports bytes per client per second.
+- `games/outbreak/scripts/coop-bench.ts`: server CPU per tick, field-by-field snapshot bytes, client decode cost,
+  latency and correction magnitudes across 1/2/4 survivors, 60/300/1000 zombies, together vs spread 1 km apart, and
+  simulated packet loss/jitter.

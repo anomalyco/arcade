@@ -154,33 +154,33 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   let rawKind = i32(round(o.matKind));
 
   let screenUvX = o.pos.x / max(1.0, F.options.y);
-  let compareMode = i32(round(L.u12.w));
-  let wipeSplit = L.u13.w;
+  let compareMode = i32(round(L.compareMode));
+  let wipeSplit = L.wipeSplit;
   let useLook = select(compareMode == 1, screenUvX >= wipeSplit, compareMode == 2);
 
   // Extract active vs identity look surface parameters
-  let paletteMix = select(0.0, L.u3.w, useLook);
-  let foliageShift = select(0.0, L.u11.z, useLook);
-  let ambientFill = select(1.0, L.u4.x, useLook);
-  let shadowCol = select(vec3f(1.0), L.u4.yzw, useLook);
-  let practicalWarmth = select(0.0, L.u5.x, useLook);
-  let practicalInt = select(1.0, L.u5.y, useLook);
-  let moonInt = select(1.0, L.u5.z, useLook);
-  let rimStrength = select(0.0, L.u5.w, useLook);
-  let contactStr = select(0.0, L.u6.x, useLook);
-  let wetness = select(0.0, L.u6.y, useLook);
-  let slats = select(0.35, L.u8.x, useLook);
-  let wrap = select(0.12, L.u10.x + 0.12, useLook);
-  let bands = select(0.0, L.u10.y, useLook);
-  let bandSoft = select(0.18, L.u10.z, useLook);
-  let painterly = select(0.0, L.u10.w, useLook);
+  let paletteMix = select(0.0, L.paletteMix, useLook);
+  let foliageShift = select(0.0, L.foliageShift, useLook);
+  let ambientFill = select(1.0, L.ambientFill, useLook);
+  let shadowCol = select(vec3f(1.0), vec3f(L.shadowColorR, L.shadowColorG, L.shadowColorB), useLook);
+  let practicalWarmth = select(0.0, L.practicalWarmth, useLook);
+  let practicalInt = select(1.0, L.practicalIntensity, useLook);
+  let moonInt = select(1.0, L.moonIntensity, useLook);
+  let rimStrength = select(0.0, L.rimStrength, useLook);
+  let contactStr = select(0.0, L.contactShade, useLook);
+  let wetness = select(0.0, L.surfaceWetness, useLook);
+  let slats = select(0.35, L.shaftSlats, useLook);
+  let wrap = select(0.12, L.diffuseWrap + 0.12, useLook);
+  let bands = select(0.0, L.diffuseBands, useLook);
+  let bandSoft = select(0.18, L.bandSoftness, useLook);
+  let painterly = select(0.0, L.painterlySmooth, useLook);
 
   // Suppress high-frequency procedural noise when painterly brush smoothing is active
   surfaceFootprint = max(surfaceFootprint, painterly * 0.085);
 
   // Emissive window glass (15) and practical lamp bulbs (14)
   if (rawKind == 15) {
-    let skyCol = mix(vec3f(0.55, 0.72, 1.05), L.u4.yzw * vec3f(0.75, 0.88, 1.15), select(0.0, 0.65, useLook));
+    let skyCol = mix(vec3f(0.55, 0.72, 1.05), vec3f(L.shadowColorR, L.shadowColorG, L.shadowColorB) * vec3f(0.75, 0.88, 1.15), select(0.0, 0.65, useLook));
     let slatMod = 1.0 - slats * 0.55 * (0.5 + 0.5 * cos((o.world.y - 1.05) * 42.0));
     return vec4f(skyCol * (1.85 * moonInt * slatMod), 1.0);
   }
@@ -198,10 +198,10 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   var baseLinear = pow(max(o.color, vec3f(0.015)), vec3f(2.2));
   if (paletteMix > 0.001) {
     var targetPal = o.color;
-    if (rawKind == 0) { targetPal = L.u13.xyz; }
-    else if (rawKind == 1) { targetPal = L.u14.xyz; }
-    else if (rawKind == 2) { targetPal = L.u12.xyz; }
-    else if (rawKind == 4 || rawKind == 5) { targetPal = L.u15.xyz; }
+    if (rawKind == 0) { targetPal = L.paletteWood; }
+    else if (rawKind == 1) { targetPal = L.paletteStone; }
+    else if (rawKind == 2) { targetPal = L.paletteWall; }
+    else if (rawKind == 4 || rawKind == 5) { targetPal = L.paletteFoliage; }
     let targetLinear = pow(max(targetPal, vec3f(0.015)), vec3f(2.2));
     baseLinear = mix(baseLinear, targetLinear, paletteMix);
   }
@@ -241,7 +241,7 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   }
 
   // 1. Ambient / sky hemisphere fill + shadow colour tint
-  let isNoirRoom = useLook && i32(round(L.u14.w)) == 1;
+  let isNoirRoom = useLook && i32(round(L.presetIndex)) == 1;
   let hemi = 0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
   let baseAmb = vec3f(0.032, 0.044, 0.072) * ambientFill * select(1.0, 0.35, isNoirRoom) * shadowCol;
   var diff = baseAmb * hemi * sample.cavity;
@@ -264,7 +264,7 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
 
   // 2b. Character flashlight cone cutting across the steps & cobblestone walk in Noir / Rim mode
   var torchMask = 0.0;
-  if (rimStrength > 0.5 || L.u15.w > 0.01) {
+  if (rimStrength > 0.5 || L.selectiveColor > 0.01) {
     let torchPos = vec3f(-0.22, 1.18, 0.22);
     let torchAim = normalize(vec3f(0.28, -0.34, 0.90));
     let toTorch = torchPos - o.world;
@@ -333,7 +333,7 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   let ndv = clamp(dot(n, V), 0.0, 1.0);
   let rimWeight = select(1.0, 1.65, rawKind == 13 || rawKind == 11 || rawKind == 12);
   let rim = pow(1.0 - ndv, 2.8) * (0.35 + 0.65 * clamp(dot(n, moonDir) * 0.5 + 0.5, 0.0, 1.0));
-  let rimCol = mix(vec3f(0.56, 0.72, 0.98) * shadowCol, vec3f(1.0, 0.78, 0.52), clamp(L.u1.w * 0.5 + 0.25, 0.0, 1.0));
+  let rimCol = mix(vec3f(0.56, 0.72, 0.98) * shadowCol, vec3f(1.0, 0.78, 0.52), clamp(L.temperature * 0.5 + 0.25, 0.0, 1.0));
   let rimAdd = rimCol * rim * rimStrength * rimWeight * 0.26;
 
   // 5. Contact shading in corners, step risers & under objects
@@ -527,10 +527,10 @@ fn evaluateRoomAtmosphere(
   }
   let shaftLift = (1.0 - exp(-shaftSum * 1.45)) * shaftStrength;
   let warmCol = lookPracticalColor(vec3f(1.0, 0.62, 0.26), practicalWarmth);
-  let shaftCol = mix(vec3f(0.68, 0.82, 1.08), vec3f(1.08, 0.84, 0.52), clamp(L.u1.w * 0.5 + 0.25, 0.0, 1.0));
+  let shaftCol = mix(vec3f(0.68, 0.82, 1.08), vec3f(1.08, 0.84, 0.52), clamp(L.temperature * 0.5 + 0.25, 0.0, 1.0));
   // Volumetric flashlight cone air haze in front of character when rim/flashlight is active
   var torchAir = 0.0;
-  if (L.u5.w > 0.5) {
+  if (L.rimStrength > 0.5) {
     let torchPos = vec3f(-0.22, 1.18, 0.22);
     let torchAim = normalize(vec3f(0.28, -0.34, 0.90));
     for (var ti = 0; ti < 8; ti++) {
@@ -547,8 +547,8 @@ fn evaluateRoomAtmosphere(
     }
   }
   // Convert perceptual fogColor sliders to linear light so fog never washes dark Noir scenes grey
-  let linearFogCol = pow(max(fogCol, vec3f(0.0)), vec3f(2.2)) * clamp(L.u4.x * 0.65, 0.04, 1.2);
-  let inScatter = linearFogCol * (1.0 - trans) + shaftCol * (shaftLift * 0.36) + warmCol * (warmAir * (0.18 + fogDensity * 0.45)) + vec3f(0.75, 0.88, 1.08) * torchAir * clamp(L.u5.w - 0.5, 0.0, 1.5);
+  let linearFogCol = pow(max(fogCol, vec3f(0.0)), vec3f(2.2)) * clamp(L.ambientFill * 0.65, 0.04, 1.2);
+  let inScatter = linearFogCol * (1.0 - trans) + shaftCol * (shaftLift * 0.36) + warmCol * (warmAir * (0.18 + fogDensity * 0.45)) + vec3f(0.75, 0.88, 1.08) * torchAir * clamp(L.rimStrength - 0.5, 0.0, 1.5);
   return vec4f(inScatter, trans);
 }
 
@@ -562,8 +562,8 @@ fn evaluateRoomAtmosphere(
     return vec4f(textureSampleLevel(tScene, sLinear, uv, 0.0).rgb, 1.0);
   }
 
-  let compareMode = i32(round(L.u12.w));
-  let wipeSplit = L.u13.w;
+  let compareMode = i32(round(L.compareMode));
+  let wipeSplit = L.wipeSplit;
   let useLook = select(compareMode == 1, uv.x >= wipeSplit, compareMode == 2);
 
   let hit = readMeshHit(uv);
@@ -582,15 +582,15 @@ fn evaluateRoomAtmosphere(
 
   // 1. Chromatic softness / aberration toward frame borders
   let fromC = uv - 0.5;
-  let caOffset = fromC * dot(fromC, fromC) * (L.u9.w * 0.018);
-  let painterly = L.u10.w;
+  let caOffset = fromC * dot(fromC, fromC) * (L.chromatic * 0.018);
+  let painterly = L.painterlySmooth;
 
   let centerSamp = textureSampleLevel(tScene, sLinear, uv, 0.0);
   let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
   var sceneCol: vec3f;
   if (painterly > 0.01) {
     sceneCol = kuwaharaSmooth(uv, texel, painterly);
-  } else if (L.u9.w > 0.001) {
+  } else if (L.chromatic > 0.001) {
     sceneCol = vec3f(
       textureSampleLevel(tScene, sLinear, clamp(uv + caOffset, vec2f(0.001), vec2f(0.999)), 0.0).r,
       centerSamp.g,
@@ -601,8 +601,8 @@ fn evaluateRoomAtmosphere(
   }
 
   // 2. Depth / normal ink outlines from true rendered mesh geometry (Painterly & Ink)
-  let outlineStr = L.u11.x;
-  let outlineWidth = L.u11.y;
+  let outlineStr = L.outlineStrength;
+  let outlineWidth = L.outlineWidth;
   var inkFactor = 0.0;
   if (outlineStr > 0.001) {
     let stepUv = texel * outlineWidth;
@@ -621,12 +621,12 @@ fn evaluateRoomAtmosphere(
   let atmos = evaluateRoomAtmosphere(
     F.eye.xyz,
     hit,
-    L.u6.z,
-    L.u6.w,
-    L.u7.xyz,
-    L.u7.w,
-    L.u8.x,
-    L.u5.x
+    L.fogDensity,
+    L.fogHeightFalloff,
+    vec3f(L.fogColorR, L.fogColorG, L.fogColorB),
+    L.shaftStrength,
+    L.shaftSlats,
+    L.practicalWarmth
   );
   var hdr = sceneCol * atmos.w + atmos.xyz;
 

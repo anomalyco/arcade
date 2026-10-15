@@ -91,36 +91,103 @@ export class Mesh {
 
   /** Quad from four corners, counter-clockwise seen from the normal side. */
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], col: Rgb, mat: Mat = MAT.lit, aux = 0): void {
-    for (const p of [a, b, c, a, c, d]) this.vert(p, n, col, mat, aux)
+    const nx = n[0]!, ny = n[1]!, nz = n[2]!
+    const cr = col[0], cg = col[1], cb = col[2]
+    this.v.push(
+      a[0]!, a[1]!, a[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      b[0]!, b[1]!, b[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      c[0]!, c[1]!, c[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      a[0]!, a[1]!, a[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      c[0]!, c[1]!, c[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      d[0]!, d[1]!, d[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+    )
   }
 
   /** Quad with its normal from the winding of a, b, c. */
   quadAuto(a: number[], b: number[], c: number[], d: number[], col: Rgb, mat: Mat = MAT.lit, aux = 0): void {
-    const u = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]
-    const w = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!]
-    const n = [u[1]! * w[2]! - u[2]! * w[1]!, u[2]! * w[0]! - u[0]! * w[2]!, u[0]! * w[1]! - u[1]! * w[0]!]
-    const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1
-    this.quad(a, b, c, d, [n[0]! / l, n[1]! / l, n[2]! / l], col, mat, aux)
+    const ux = b[0]! - a[0]!, uy = b[1]! - a[1]!, uz = b[2]! - a[2]!
+    const wx = c[0]! - a[0]!, wy = c[1]! - a[1]!, wz = c[2]! - a[2]!
+    const rx = uy * wz - uz * wy, ry = uz * wx - ux * wz, rz = ux * wy - uy * wx
+    const invL = 1 / (Math.hypot(rx, ry, rz) || 1)
+    const nx = rx * invL, ny = ry * invL, nz = rz * invL
+    const cr = col[0], cg = col[1], cb = col[2]
+    this.v.push(
+      a[0]!, a[1]!, a[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      b[0]!, b[1]!, b[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      c[0]!, c[1]!, c[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      a[0]!, a[1]!, a[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      c[0]!, c[1]!, c[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      d[0]!, d[1]!, d[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+    )
   }
 
   /** Triangle with a normal from its winding. */
   facet(a: number[], b: number[], c: number[], col: Rgb, mat: Mat = MAT.lit, aux = 0): void {
-    const u = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]
-    const w = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!]
-    const n = [u[1]! * w[2]! - u[2]! * w[1]!, u[2]! * w[0]! - u[0]! * w[2]!, u[0]! * w[1]! - u[1]! * w[0]!]
-    const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1
-    for (const p of [a, b, c]) this.vert(p, [n[0]! / l, n[1]! / l, n[2]! / l], col, mat, aux)
+    const ux = b[0]! - a[0]!, uy = b[1]! - a[1]!, uz = b[2]! - a[2]!
+    const wx = c[0]! - a[0]!, wy = c[1]! - a[1]!, wz = c[2]! - a[2]!
+    const rx = uy * wz - uz * wy, ry = uz * wx - ux * wz, rz = ux * wy - uy * wx
+    const invL = 1 / (Math.hypot(rx, ry, rz) || 1)
+    const nx = rx * invL, ny = ry * invL, nz = rz * invL
+    const cr = col[0], cg = col[1], cb = col[2]
+    this.v.push(
+      a[0]!, a[1]!, a[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      b[0]!, b[1]!, b[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+      c[0]!, c[1]!, c[2]!, nx, ny, nz, cr, cg, cb, mat, aux,
+    )
   }
 
   /** Axis-aligned box. `top` overrides the colour of the upper face. */
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, col: Rgb, mat: Mat = MAT.lit, aux = 0, top?: Rgb, bottom = false, topMat: Mat = mat): void {
     const t = top ?? col
-    this.quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], t, topMat, aux)
-    this.quad([x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0], [-1, 0, 0], col, mat, aux)
-    this.quad([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [1, 0, 0], col, mat, aux)
-    this.quad([x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1], [0, 0, 1], col, mat, aux)
-    this.quad([x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0], [0, 0, -1], col, mat, aux)
-    if (bottom) this.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], col, mat, aux)
+    const tr = t[0], tg = t[1], tb = t[2]
+    const cr = col[0], cg = col[1], cb = col[2]
+    this.v.push(
+      // Top (+Y)
+      x0, y1, z1, 0, 1, 0, tr, tg, tb, topMat, aux,
+      x1, y1, z1, 0, 1, 0, tr, tg, tb, topMat, aux,
+      x1, y1, z0, 0, 1, 0, tr, tg, tb, topMat, aux,
+      x0, y1, z1, 0, 1, 0, tr, tg, tb, topMat, aux,
+      x1, y1, z0, 0, 1, 0, tr, tg, tb, topMat, aux,
+      x0, y1, z0, 0, 1, 0, tr, tg, tb, topMat, aux,
+      // Left (-X)
+      x0, y0, z1, -1, 0, 0, cr, cg, cb, mat, aux,
+      x0, y1, z1, -1, 0, 0, cr, cg, cb, mat, aux,
+      x0, y1, z0, -1, 0, 0, cr, cg, cb, mat, aux,
+      x0, y0, z1, -1, 0, 0, cr, cg, cb, mat, aux,
+      x0, y1, z0, -1, 0, 0, cr, cg, cb, mat, aux,
+      x0, y0, z0, -1, 0, 0, cr, cg, cb, mat, aux,
+      // Right (+X)
+      x1, y0, z0, 1, 0, 0, cr, cg, cb, mat, aux,
+      x1, y1, z0, 1, 0, 0, cr, cg, cb, mat, aux,
+      x1, y1, z1, 1, 0, 0, cr, cg, cb, mat, aux,
+      x1, y0, z0, 1, 0, 0, cr, cg, cb, mat, aux,
+      x1, y1, z1, 1, 0, 0, cr, cg, cb, mat, aux,
+      x1, y0, z1, 1, 0, 0, cr, cg, cb, mat, aux,
+      // Front (+Z)
+      x1, y0, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      x1, y1, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      x0, y1, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      x1, y0, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      x0, y1, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      x0, y0, z1, 0, 0, 1, cr, cg, cb, mat, aux,
+      // Back (-Z)
+      x0, y0, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+      x0, y1, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+      x1, y1, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+      x0, y0, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+      x1, y1, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+      x1, y0, z0, 0, 0, -1, cr, cg, cb, mat, aux,
+    )
+    if (bottom) {
+      this.v.push(
+        x0, y0, z0, 0, -1, 0, cr, cg, cb, mat, aux,
+        x1, y0, z0, 0, -1, 0, cr, cg, cb, mat, aux,
+        x1, y0, z1, 0, -1, 0, cr, cg, cb, mat, aux,
+        x0, y0, z0, 0, -1, 0, cr, cg, cb, mat, aux,
+        x1, y0, z1, 0, -1, 0, cr, cg, cb, mat, aux,
+        x0, y0, z1, 0, -1, 0, cr, cg, cb, mat, aux,
+      )
+    }
   }
 
   /**

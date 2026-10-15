@@ -1,3 +1,4 @@
+import { DEFAULT_FEEL_SETTINGS, type FeelSettings } from "@arcade/kit/feel"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
@@ -66,6 +67,10 @@ export type OutbreakCombatSettings = {
   infiniteAmmo: number
 }
 
+export type OutbreakFeelSettings = FeelSettings & {
+  bloodStyle: number
+}
+
 export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...DEFAULT_FLASHLIGHT_BEAM,
@@ -118,6 +123,11 @@ export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
 }
 
+export const DEFAULT_OUTBREAK_FEEL: OutbreakFeelSettings = {
+  ...DEFAULT_FEEL_SETTINGS,
+  bloodStyle: 1,
+}
+
 export type OutbreakSubsystemMap = {
   lighting: OutbreakLightingSettings
   fog: FogOfWarSettings
@@ -137,6 +147,7 @@ export type OutbreakSubsystemMap = {
   dayCycle: OutbreakDayCycleSettings
   view: OutbreakViewSettings
   combat: OutbreakCombatSettings
+  feel: OutbreakFeelSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -144,7 +155,7 @@ export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
 /**
  * Outbreak settings namespaced by subsystem.
  * Non-enumerable forwarding accessors keep flat property reads/writes working during transitions while `Object.keys(settings)`
- * stays strictly the 18 subsystem namespaces (`lighting`, `fog`, `ai`, `stamina`, `flashlight`, `ground`, `weather`, `zombies`, ...).
+ * stays strictly the subsystem namespaces (`lighting`, `fog`, `ai`, `stamina`, `flashlight`, `ground`, `weather`, `zombies`, ...).
  */
 export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakLightingSettings &
@@ -164,7 +175,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakMaterialSettings &
   OutbreakDayCycleSettings &
   OutbreakViewSettings &
-  OutbreakCombatSettings
+  OutbreakCombatSettings &
+  OutbreakFeelSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -185,6 +197,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "dayCycle",
   "view",
   "combat",
+  "feel",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -210,6 +223,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     dayCycle: { ...DEFAULT_OUTBREAK_DAY_CYCLE },
     view: { ...DEFAULT_OUTBREAK_VIEW },
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
+    feel: { ...DEFAULT_OUTBREAK_FEEL },
   }
 }
 
