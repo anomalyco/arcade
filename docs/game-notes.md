@@ -148,7 +148,7 @@ proven animation techniques to animation.md, not here.
   generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
   also Turkmen gul, kilim, Art Deco, braided oval, 70s shag) by `packages/kit/textures/rug-worker.ts` at 1024 px with
   mips and pile height in alpha. `RugPool` keeps 8 layers plus one interior-tile mask layer (≈50 MB) in the renderer's
-  detail array (bindings 15/16), uploads at most one finished bake per frame (≤1 ms measured, Air) and reuses the least
+  detail array (bindings 15/16), uploads at most one finished bake per frame (0.6–2.2 ms measured on the Air) and reuses the least
   recently needed layer. A rug quad's vertex colour holds `(u, v, axis)` and its aux holds `streamSlot × 4 + index`, so
   the shader looks the layer up in a 9×4 directory in the OL uniform; no per-rug material or draw call. Measured:
   bakes 0.15–1 s each in the Worker (up to 5 s on a busy Air), pool settled 0.8–1.6 s after teleporting into a house,
