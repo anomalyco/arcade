@@ -36,6 +36,7 @@ import {
 } from "./combat"
 import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
+import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
@@ -222,13 +223,14 @@ export function decodeClient(raw: unknown): ClientMsg | null {
     const a = typeof o.a === "number" && Number.isSafeInteger(o.a) && o.a > 0 ? o.a : undefined
     return { t: "ping", c: o.c, ...(a ? { a } : {}) }
   }
-  return null
+  return outbreakSharedFeatures.decodeClientMessage(o)
 }
 
 export function decodeServerText(raw: string): ServerMsg | null {
   try {
-    const m = JSON.parse(raw) as ServerMsg
-    return m && typeof m === "object" && typeof m.t === "string" ? m : null
+    const m = JSON.parse(raw) as Record<string, unknown>
+    if (!m || typeof m !== "object" || typeof m.t !== "string") return null
+    return outbreakSharedFeatures.decodeServerMessage(m) ?? (m as ServerMsg)
   } catch {
     return null
   }
@@ -1073,6 +1075,25 @@ export function encodeShared(
       : emittedVehicles.length !== baseVehicles.length ||
         emittedVehicles.some((v, i) => !sameVehicleState(v, baseVehicles[i]!))
 
+  const registeredSections = outbreakSharedFeatures.netSections().map(({ feature, codec }) => {
+    const collected = codec.collect({
+      sim,
+      tick,
+      isDelta,
+      baseSnap,
+      viewerCenter,
+      interest,
+      bubbleCx,
+      bubbleCy,
+      state: sim.getFeatureState(feature.id),
+    })
+    return { codec, collected }
+  })
+  let extraSectionBits = 0
+  for (const { codec, collected } of registeredSections) {
+    if (collected.shouldWrite) extraSectionBits |= codec.bit
+  }
+
   const sectionFlags =
     (hasPortals ? SEC_PORTALS : 0) |
     (pings.length > 0 ? SEC_PINGS : 0) |
@@ -1081,13 +1102,14 @@ export function encodeShared(
     (newShots.length > 0 ? SEC_SHOTS : 0) |
     (isDelta ? SEC_DELTA : 0) |
     (hasVehicles ? SEC_VEHICLES : 0) |
-    (newMelee.length > 0 ? SEC_MELEE : 0)
+    (newMelee.length > 0 ? SEC_MELEE : 0) |
+    extraSectionBits
 
   const hourQuant = Math.round((((sim.hour % 24) + 24) % 24) * 2000) & 0xffff
   const timeF32 = Math.fround(sim.time)
 
   if (options?.outSnapshot) {
-    options.outSnapshot.snap = {
+    const snapOut: SharedSnapshot = {
       tick,
       time: timeF32,
       hour: hourQuant / 2000,
@@ -1104,6 +1126,12 @@ export function encodeShared(
       shots: allShots,
       ...(allMelee.length > 0 ? { meleeSwings: allMelee } : {}),
     }
+    for (const { codec, collected } of registeredSections) {
+      if (collected.snapshotValue !== undefined) {
+        ;(snapOut as Record<string, unknown>)[codec.key] = collected.snapshotValue
+      }
+    }
+    options.outSnapshot.snap = snapOut
   }
 
   // Write Header
@@ -1344,6 +1372,16 @@ export function encodeShared(
     w.u8(emittedVehicles.length)
     for (const v of emittedVehicles) writeVehicleState(w, v)
   }
+  for (const { codec, collected } of registeredSections) {
+    if (collected.shouldWrite && sectionFlags & codec.bit) {
+      codec.encode(w, collected.writePayload ?? collected.snapshotValue, {
+        sim,
+        tick,
+        isDelta,
+        baseSnap,
+      })
+    }
+  }
 
   return w.finish()
 }
@@ -1449,6 +1487,7 @@ export function decodeShared(
               prev.stateTime,
               prev.timer,
               prev.clamber,
+              prev.limbMask ?? 0,
             )
           : prev
         continue
@@ -1687,6 +1726,18 @@ export function decodeShared(
     bashes,
     shots,
     ...(meleeSwings.length > 0 ? { meleeSwings } : {}),
+  }
+  for (const { codec } of outbreakSharedFeatures.netSections()) {
+    if (sectionFlags & codec.bit) {
+      ;(snap as Record<string, unknown>)[codec.key] = codec.decode(r, {
+        tick,
+        time,
+        isDelta,
+        baseSnap,
+      })
+    } else if (isDelta && baseSnap && codec.key in baseSnap) {
+      ;(snap as Record<string, unknown>)[codec.key] = (baseSnap as Record<string, unknown>)[codec.key]
+    }
   }
   history?.record(tick, snap)
   return snap

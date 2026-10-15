@@ -21,9 +21,11 @@ import type { OutbreakAudio } from "./audio"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
+import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
 import { stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
 import {
@@ -65,6 +67,7 @@ export interface OutbreakHarnessHost {
   readonly weatherController: OutbreakWeatherController
   readonly worldStreamer: WorldClientStreamer
   readonly hud: OutbreakHud
+  readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly audio: OutbreakAudio
   readonly vehicleAudio: OutbreakVehicleAudio
@@ -266,6 +269,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           grabbingZombies: v.grabbingZombies,
           bangCount: v.bangCount,
         })),
+        ...outbreakClientFeatures.collectHarnessState(host),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -691,6 +695,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       return harness.state()
     },
   }
+  Object.assign(harness, outbreakClientFeatures.collectHarnessMethods(host, harness))
   return harness
 }
 

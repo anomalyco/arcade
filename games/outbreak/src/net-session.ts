@@ -29,6 +29,7 @@ import {
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
 import { createVehicleFromSpawn, seatPos, VEHICLES, type OutbreakVehicleSubsystem } from "../shared/vehicles"
 import { chunkKey, worldToChunk } from "../shared/world"
+import { outbreakClientFeatures } from "./feature-registry"
 
 /** Seat colours, by seat index: torso, trousers. Also used for name tags. */
 export const SURVIVOR_COLOURS: readonly { torso: number; legs: number; css: string }[] = [
@@ -186,6 +187,7 @@ export class NetSession implements Session {
     this.placeZombies(a, b, t, span)
     this.placeSurvivors(a, b, t, span)
     this.placeVehicles(a, b, t, span)
+    outbreakClientFeatures.syncNetFrame(this, a, b, t, span)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
     const melee = this.sim.combat.meleeSwings
@@ -334,6 +336,7 @@ export class NetSession implements Session {
             lv.seats[p.seatIndex ?? 0] = this.local.id
           }
         }
+        outbreakClientFeatures.reconcileNetLocal(this, personal, shared)
       },
       (cmd) => this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true),
     )
@@ -428,6 +431,9 @@ export class NetSession implements Session {
     }
     if (s.vehicles) {
       this.syncSnapshotVehicles(s.vehicles)
+    }
+    if (outbreakClientFeatures.applyNetWorld(this, s)) {
+      topology = true
     }
     if (topology) {
       sim.revision++
