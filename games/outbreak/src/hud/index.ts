@@ -194,15 +194,18 @@ export class OutbreakHud {
   }
 
   /**
-   * Shows a sample for judging placement (Lab station, `arcade run hud.demo`): an action in progress, a loot pop and a
-   * noise on the local survivor, and half-spent stamina that refills live.
+   * Shows a sample for judging placement (Lab station, `arcade run hud.demo`): an action in progress and a loot pop on
+   * the local survivor (plus a noise tag when Noise callouts is on), half-spent stamina that refills live, and a light
+   * hit so health shows too.
    */
   demo(player: Survivor) {
     player.stamina = Math.min(player.stamina, 0.45)
     player.regenCooldown = Math.max(player.regenCooldown, 1.5)
+    player.health = Math.min(player.health, Math.max(40, player.health - 18))
     this.callout(LOCAL_ACTOR, "Reloading", "progress", { key: "reload", progress: 0.55, duration: 8 })
     this.callout(LOCAL_ACTOR, "+6 9mm", "result", { duration: 8 })
     this.callout(LOCAL_ACTOR, "Noise 18 m", "noise", { key: "noise", duration: 8 })
+    this.callout(LOCAL_ACTOR, "+1 plank", "result", { duration: 8 })
     return this.inspect()
   }
 

@@ -11,6 +11,7 @@ import type { Gunnery } from "../gunnery/gunnery"
 import { TurretPass } from "../render/turret-pass"
 import type { Sea } from "../../shared/sea"
 import type { VehicleKind } from "../../shared/vehicles"
+import { collideHulls, hullSolid, makeContact } from "../../shared/ship-collide"
 import { KNOT, SHIP, type Ship, type ShipPose, copyShip, extrapolatePose, headingTo, lerpShip, makeShip, shipStep } from "../../shared/ship"
 import type { Input } from "../input"
 import type { Net } from "../net"
@@ -137,6 +138,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
   const cur = makeShip(0, 0, 0)
   const prev = makeShip(0, 0, 0)
   const draw = makeShip(0, 0, 0)
+  const bumpOut = makeContact()
   /** My ship as drawn this frame (predicted or remote), for the cameras and the HUD. */
   const mine = makeShip(0, 0, 0)
   let hasMine = false
@@ -322,8 +324,23 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       }
       now += SHIP.tick
       remotes.step(sea, now, SHIP.tick)
+      // Our hull stops against the others where the room's does (the room moves them and decides the damage).
+      if (predicted >= 0) for (const [id, r] of remotes.ships) if (hullSolid(net.hulls.get(id), now)) collideHulls(cur, r.ship, bumpOut, true)
     }
     simT = now
+    // The room's collisions: a shake on both hulls and one hull-slam sound (ship-audio.ts plays a new `slams`).
+    if (net.bumps?.length) {
+      for (const m of net.bumps.splice(0)) {
+        let sound = m.k >= 0.05
+        for (const id of [m.a, m.b]) {
+          const s = id === predicted ? cur : remotes.ships.get(id)?.ship
+          if (!s) continue
+          s.slam = Math.max(s.slam, m.k)
+          if (sound) s.slams++
+          sound = false
+        }
+      }
+    }
     const k = Math.max(0, Math.min(1, (goal - now) / SHIP.tick))
     if (predicted >= 0) {
       const tuple = net.ships.get(predicted)

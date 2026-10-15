@@ -25,10 +25,13 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
   if (hooks.postLightMaterial) {
     // Fast-path for games with postLightMaterial (Outbreak): keep register pressure identical to makeSceneShader
     // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
+    const surfBody = (hooks.surface ?? "")
+      .replace("if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }", "")
+      .replace("if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }", "")
     const base = makeSceneShader({
       ...hooks,
       declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
-      surface: `${hooks.surface ?? ""}
+      surface: `${surfBody}
   let lookCompare = i32(round(LK.compareMode));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;
   let lookFlashIrradiance = select(0.0, clamp(outbreakFlashMask, 0.0, 1.0), lookUseAfter);

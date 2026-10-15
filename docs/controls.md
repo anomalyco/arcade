@@ -85,7 +85,7 @@ installs itself on first use.
 | Horn / Engine Toggle | `H` | `KeyH` | `H` | `D` | Horn in Blackout vehicles; engine stealth toggle in Getaway |
 | Slot / Preset Select | `1`–`9`, `0`, Wheel | `Digit1`–`Digit9`, `Digit0`, Wheel | `1`–`9`, `0` | `1`–`9`, `0` | Guns/equipment/spells/votes in Blackout; weapons/helm detents in Carrier |
 | Scoreboard / Roster | `Tab` | `Tab` (`KeyT` pins in Blackout) | `Tab` | `Tab` | Hold `Tab` (or tap to pin in Carrier; `KeyT` toggles in Blackout) |
-| Chat | `Enter` / `T` | `Enter`, `NumpadEnter`, `KeyT` | `Enter` | `Enter` | Room chat in Getaway |
+| Chat | `Enter` / `T` | `Enter`, `NumpadEnter`, `KeyT` (Carrier: `KeyT` all, `KeyY` crew) | `Enter` | `Enter` | Room chat in Getaway and Carrier |
 | Map | `M` | `KeyG` (Carrier: `KeyM` is mute) | `G` | `I` | Hold for the full map, tap to pin (Carrier) |
 | Mute Audio | `M` | `KeyM` | `M` | `M` | Global audio mute in Getaway, Blackout, Carrier, Outbreak; Lab mute in Edit mode |
 | Pause / Release / Close | `Esc` | `Escape` | `Esc` | `Esc` | Releases Pointer Lock, closes menus/chat/Lab, exits Lab Play mode |

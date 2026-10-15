@@ -48,6 +48,8 @@ export const DEFAULT_HUD_SETTINGS = {
   ringStyle: RING_RING,
   /** Show health on the character after a hit and while low. */
   healthOnCharacter: true,
+  /** Show ")) Noise 32 m" callouts for loud actions. Off by default. */
+  noiseCallouts: false,
   /** Ring diameter in CSS pixels. */
   vitalSize: 20,
   /** Screen gap between the survivor's body and the nearest ring, in CSS pixels. */
@@ -121,6 +123,7 @@ export const hudControls: LabControl[] = [
     ],
   },
   { key: "healthOnCharacter", label: "Health on character", group: "HUD" },
+  { key: "noiseCallouts", label: "Noise callouts", group: "HUD" },
   { key: "vitalSize", label: "Ring size", group: "HUD", min: 12, max: 36, step: 1, unit: "px" },
   { key: "vitalOffset", label: "Ring gap", group: "HUD", min: 0, max: 40, step: 1, unit: "px" },
   { key: "staminaLow", label: "Stamina low at", group: "HUD", min: 0.1, max: 0.6, step: 0.05, unit: "" },
