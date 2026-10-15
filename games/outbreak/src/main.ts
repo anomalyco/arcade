@@ -18,6 +18,7 @@ import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/ki
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
+import { raycast } from "@arcade/kit/sim/geom"
 import { aiControls, DEFAULT_AI_CONFIG, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightColor, flashlightControls } from "../shared/flashlight"
@@ -43,7 +44,9 @@ import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGround
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
 import {
+  DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
+  flashlightBeamControls,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   OUTBREAK_LOOK_LIGHTING_PRESETS,
   outbreakLightingControls,
@@ -106,6 +109,7 @@ const settings = {
   aiWalkSpeed: DEFAULT_AI_CONFIG.walkSpeed,
   ...DEFAULT_STAMINA_TUNING,
   ...DEFAULT_FLASHLIGHT_TUNING,
+  ...DEFAULT_FLASHLIGHT_BEAM,
   ...DEFAULT_GROUND_SETTINGS,
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
@@ -266,6 +270,7 @@ async function main() {
       },
     },
     ...flashlightControls,
+    ...flashlightBeamControls,
     ...staminaControls,
     ...groundControls,
     {
@@ -301,7 +306,7 @@ async function main() {
       key: "diagnostic",
       label: "Contribution",
       group: "Diagnostics",
-      options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory"].map(
+      options: ["Beauty", "Albedo", "Direct", "Ambient + sky", "Specular", "Bloom", "Before memory", "Colour mask", "Visibility field"].map(
         (label, value) => ({ label, value }),
       ),
     },
@@ -393,6 +398,9 @@ async function main() {
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
+  const flashlightBounce: [number, number] = [0, 0]
+  let lastSightX = -1e3
+  let lastSightY = -1e3
   const alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
   const addSprites = new Float32Array(256 * SPRITE_FLOATS)
   const render: FrameInput = {
@@ -855,6 +863,8 @@ async function main() {
     combinedFog.reset()
     combinedFog.update(vision, scenery, true)
     renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
+    renderer.clearVisibilityField()
+    lastSightX = lastSightY = -1e3
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.zoom
     pendingDrawDt = 0
@@ -1055,21 +1065,27 @@ async function main() {
     let count = 1
     let flashlightSlot = -1
     const playerGroundY = supportHeight(town, p.x, p.y)
+    let flashlightHeight = 1.34 + playerGroundY
+    let flashlightAirLimit = 0
+    let flashlightBounceHeight = playerGroundY + 0.3
     const flashRgb = flashlightColor(settings.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
-      const inBld = town.buildings.some(
-        (b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1,
-      )
       const fx = p.x + Math.cos(p.aim) * 0.25
       const fy = p.y + Math.sin(p.aim) * 0.25
       const fh = 1.34 + playerGroundY
       const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-      const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.35
-      const power = p.flashlightOutput * settings.flashlightIntensity * directScale
-      const effFlashRange = Math.min(settings.flashlightRange, inBld ? 5.2 : 6.4)
+      // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
+      const power = p.flashlightOutput * settings.flashlightIntensity
       flashlightSlot = count
+      flashlightHeight = fh
+      const wall = raycast(fx, fy, Math.cos(p.aim), Math.sin(p.aim), blockers, settings.flashlightRange)
+      const hit = Math.min(wall, settings.beamPoolDistance)
+      flashlightBounce[0] = fx + Math.cos(p.aim) * Math.max(0.3, hit - 0.15)
+      flashlightBounce[1] = fy + Math.sin(p.aim) * Math.max(0.3, hit - 0.15)
+      flashlightAirLimit = wall
+      flashlightBounceHeight = playerGroundY + (wall < settings.beamPoolDistance ? 0.9 : 0.3)
       lights.set(
-        [fx, fh, fy, effFlashRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, frameLightOccluders, 0.06, -1],
+        [fx, fh, fy, settings.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -1192,6 +1208,11 @@ async function main() {
         playerAim: p.aim,
         flashlightOutput: p.flashlightOutput,
         flashlightSlot,
+        flashlightHeight,
+        flashlightBounce,
+        flashlightAirLimit,
+        flashlightBounceHeight,
+        frameDt: Math.hypot(sightX - lastSightX, sightY - lastSightY) > 2.5 ? 0 : dt,
         inInteriorView,
         streetHead: nearestStreetHead(camX, camY),
         zombies: nearestZombies(zombies, p.x, p.y),
@@ -1201,6 +1222,8 @@ async function main() {
       lightingUniforms,
     )
     renderer.setCustomUniforms(lightingUniforms)
+    lastSightX = sightX
+    lastSightY = sightY
     frame.set(cam.viewProj, 0)
     frame.set([...cam.eye, time], 16)
     const texCfgBits =

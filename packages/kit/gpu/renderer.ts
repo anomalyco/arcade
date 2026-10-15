@@ -65,6 +65,14 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
 }
 
 /** One instanced draw: a registered model and its packed instances. */
+/**
+ * Optional game compute pass run after the polar shadow pass: `code` reads the frame (0), lights (1), polar map (2) and
+ * custom uniforms (13), keeps per-texel state in a read-write buffer of `size * size` vec2f (14) and writes a
+ * `size * size` rgba8unorm texture (15) that scene shaders sample at binding 14. It runs `dispatch * dispatch`
+ * invocations in 8x8 workgroups; the shader picks which texels they cover.
+ */
+export type VisibilityFieldShader = { code: string; size: number; dispatch: number }
+
 export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
@@ -127,6 +135,8 @@ export class Renderer {
   private floorTex: GPUTexture
   private moonTex: GPUTexture
   private visibilityTex: GPUTexture
+  private fieldTex: GPUTexture
+  private field: { pipe: GPUComputePipeline; group: GPUBindGroup; state: GPUBuffer; dispatch: number } | null = null
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private materialTex: GPUTexture
@@ -192,7 +202,7 @@ export class Renderer {
     private device: GPUDevice,
     private context: GPUCanvasContext,
     private readonly format: GPUTextureFormat,
-    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string },
+    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string; visField?: VisibilityFieldShader },
   ) {
     const d = device
     this.notifyPacer = installFramePacer(
@@ -216,6 +226,7 @@ export class Renderer {
     this.moonTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.visibilityTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.fieldTex = d.createTexture({ size: [shaders?.visField?.size ?? 1, shaders?.visField?.size ?? 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     const fallbackMaterials = createFallbackMaterialTextureArray(d)
     this.materialTex = fallbackMaterials.texture
@@ -255,6 +266,7 @@ export class Renderer {
         { binding: 11, visibility: S.FRAGMENT, sampler: {} },
         { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 13, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 14, visibility: S.FRAGMENT, texture: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -292,6 +304,39 @@ export class Renderer {
       layout: d.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: this.module(polarShader, "polar"), entryPoint: "main" },
     })
+    if (shaders?.visField) {
+      const vf = shaders.visField
+      const fieldLayout = d.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: S.COMPUTE, buffer: { type: "uniform" } },
+          { binding: 1, visibility: S.COMPUTE, buffer: { type: "read-only-storage" } },
+          { binding: 2, visibility: S.COMPUTE, buffer: { type: "read-only-storage" } },
+          { binding: 13, visibility: S.COMPUTE, buffer: { type: "uniform" } },
+          { binding: 14, visibility: S.COMPUTE, buffer: { type: "storage" } },
+          { binding: 15, visibility: S.COMPUTE, storageTexture: { access: "write-only", format: "rgba8unorm" } },
+        ],
+      })
+      const state = d.createBuffer({ size: vf.size * vf.size * 8, usage: U.STORAGE | U.COPY_DST })
+      this.field = {
+        pipe: d.createComputePipeline({
+          layout: d.createPipelineLayout({ bindGroupLayouts: [fieldLayout] }),
+          compute: { module: this.module(vf.code, "visibility field"), entryPoint: "main" },
+        }),
+        group: d.createBindGroup({
+          layout: fieldLayout,
+          entries: [
+            { binding: 0, resource: { buffer: this.frameBuf } },
+            { binding: 1, resource: { buffer: this.lightBuf } },
+            { binding: 2, resource: { buffer: this.polarBuf } },
+            { binding: 13, resource: { buffer: this.customBuf } },
+            { binding: 14, resource: { buffer: state } },
+            { binding: 15, resource: this.fieldTex.createView() },
+          ],
+        }),
+        state,
+        dispatch: vf.dispatch,
+      }
+    }
 
     const meshLayout: GPUVertexBufferLayout = {
       arrayStride: VERT_BYTES,
@@ -427,8 +472,17 @@ export class Renderer {
         { binding: 11, resource: this.materialSampler },
         { binding: 12, resource: { buffer: this.surfaceTexBuf } },
         { binding: 13, resource: { buffer: this.customBuf } },
+        { binding: 14, resource: this.fieldTex.createView() },
       ],
     })
+  }
+
+  /** Forgets everything the visibility field remembers (new level or session). */
+  clearVisibilityField(): void {
+    if (!this.field) return
+    const enc = this.device.createCommandEncoder()
+    enc.clearBuffer(this.field.state)
+    this.device.queue.submit([enc.finish()])
   }
 
   setCustomUniforms(data: Float32Array<ArrayBuffer>): void {
@@ -831,6 +885,11 @@ export class Renderer {
       cp.setPipeline(this.polarPipe)
       cp.setBindGroup(0, this.computeGroup)
       cp.dispatchWorkgroups(Math.ceil((Math.min(f.shadowLightCount, SLOTS) * POLAR_RAYS) / 64))
+      if (this.field) {
+        cp.setPipeline(this.field.pipe)
+        cp.setBindGroup(0, this.field.group)
+        cp.dispatchWorkgroups(Math.ceil(this.field.dispatch / 8), Math.ceil(this.field.dispatch / 8))
+      }
       cp.end()
     }
 

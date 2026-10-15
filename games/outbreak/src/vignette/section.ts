@@ -192,7 +192,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     fogStyle: 1,
     fogEdgeSoftness: 0.78,
     fogMemoryDim: 0.42,
-    fogUnknownGrain: 0.48,
+    fogUnknownGrain: 0,
     playing: true,
   }
 
@@ -507,7 +507,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
       group: "Direction & View",
       type: "select",
       options: [
-        { value: 1, label: "Noir Memory + Echo (Default)" },
+        { value: 1, label: "Soft memory (Default)" },
         { value: 2, label: "Stark Cone + Pulse" },
         { value: 0, label: "Soft Shroud (Classic)" },
       ],

@@ -418,20 +418,20 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
     tiles: [
       {
         id: "noir-memory-echo",
-        label: "1 · Noir Memory + Echo (Default)",
-        settings: { directionPreset: 3, fogStyle: 1, fogEdgeSoftness: 0.78, fogMemoryDim: 0.42, fogUnknownGrain: 0.48 },
-        subtitle: "5-tap feathered LOS · 42% cold-ash memory · sound ripples",
+        label: "1 · Soft memory (Default)",
+        settings: { directionPreset: 3, fogStyle: 1, fogEdgeSoftness: 0.78, fogMemoryDim: 0.42, fogUnknownGrain: 0 },
+        subtitle: "Feathered LOS · dim desaturated memory",
       },
       {
         id: "stark-cone-pulse",
-        label: "2 · Stark Cone + Pulse",
-        settings: { directionPreset: 3, fogStyle: 2, fogEdgeSoftness: 0.42, fogMemoryDim: 0.22, fogUnknownGrain: 0.75 },
-        subtitle: "Darkwood spotlight cone · 22% deep shroud · Odradek pulse",
+        label: "2 · Stark cone",
+        settings: { directionPreset: 3, fogStyle: 2, fogEdgeSoftness: 0.42, fogMemoryDim: 0.22, fogUnknownGrain: 0 },
+        subtitle: "Darkwood spotlight cone · 22% deep shroud",
       },
       {
         id: "soft-shroud-classic",
-        label: "3 · Soft Shroud (Classic)",
-        settings: { directionPreset: 3, fogStyle: 0, fogEdgeSoftness: 1.15, fogMemoryDim: 0.68, fogUnknownGrain: 0.15 },
+        label: "3 · Light shroud",
+        settings: { directionPreset: 3, fogStyle: 0, fogEdgeSoftness: 1.15, fogMemoryDim: 0.68, fogUnknownGrain: 0 },
         subtitle: "Gentle peripheral dim (68%) · soft transitions",
       },
     ],
