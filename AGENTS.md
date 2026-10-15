@@ -12,8 +12,14 @@ game's own `AGENTS.md`.
   Wrangler, TypeScript and Playwright versions aligned across workspace games.
 - `landing/`, `redirects/` and `games/wings/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
-- Verify workspace changes from a clean `git archive` export: root frozen install and package checks, each game's
-  `bun run check`, then `bunx --no-install wrangler deploy --dry-run` inside each game. Dry-runs do not deploy.
+- While iterating, run `hivemind run --kind browser -- bun run verify`: it checks only the targets whose CI workflow
+  paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,
+  then smoke and `wrangler deploy --dry-run`. A one-game change takes ~5 s; `--all` ~17 s; docs-only checks nothing.
+- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release` (~30 s): a clean
+  `git archive` export of HEAD, root frozen install, then every workspace target's check commands, smoke and dry-run
+  with cold caches. Commit first; it ignores uncommitted changes. Dry-runs do not deploy. The per-game
+  `bun run check` and `bun run check:packages` still work and are what CI runs.
+- Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
 
 ## Routing and deploy
 

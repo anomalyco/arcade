@@ -15,14 +15,11 @@ below and in this file's git history.
    carry stale files that hide breakage, and mini sync doesn't delete removed files.
 
    ```sh
-   git archive HEAD | tar -x -C /path/to/empty/export
-   cd /path/to/empty/export
-   bun install --frozen-lockfile
-   bun run check:packages
-   for game in getaway blackout outbreak carrier lab; do
-     (cd "games/$game" && bun run check && bunx --no-install wrangler deploy --dry-run)
-   done
+   hivemind run --kind browser --worker studio -- bun run verify:release
    ```
+
+   That is the export, frozen install, `check:packages`, every game's check, smoke and dry-run, in parallel (~30 s
+   against ~145 s serially). `scripts/verify.ts` documents exactly what it runs.
 
 5. Run the Metal browser proofs for anything visual that the merge touched, and repeat the Outbreak frame-time bench
    (`games/outbreak/scripts/bench-outbreak.ts`) when renderer or Outbreak code changed. Record before and after.
