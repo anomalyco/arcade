@@ -72,7 +72,7 @@ installs itself on first use.
 | Interact / Primary Action | `E` | `KeyE` (`KeyF` alias in Blackout) | `E` | `.` | Primary contextual verb (Peek closed window, Climb open window, Vault fence, Open/Close door, Enter/Exit vehicle, Ship Ops) |
 | Secondary Object Action | `Hold E` | `KeyE` (`0.38 s` hold) | hold cap `E` | hold cap `.` | Shown simultaneously alongside `E` in Outbreak (`Hold E` Open/Close window, `Hold E` Lock door) |
 | Flashlight / Flares | `F` | `KeyF` | `F` | `U` | Flashlight toggle in Outbreak; flares / carrier land in Carrier flight |
-| Gadget / Rudder (Context) | `Q` | `KeyQ` | `Q` | `'` | Ping in Outbreak; free in Blackout; cop gadget in Getaway; left yaw rudder in Carrier flight |
+| Gadget / Rudder (Context) | `Q` | `KeyQ` | `Q` | `'` | Ping (tap) and field craft (hold) in Outbreak; free in Blackout; cop gadget in Getaway; left yaw rudder in Carrier flight |
 | Sprint / Boost / Afterburner | `Shift` | `ShiftLeft`, `ShiftRight` | `Shift` | `Shift` | Stamina sprint in Outbreak; run in Blackout; nitro/boost in Getaway & Carrier |
 | Crouch / Seat / Camera | `Ctrl` / `C` | `ControlLeft`, `KeyC` | `Ctrl` / `C` | `Ctrl` / `J` | `KeyC` cycles vehicle seat in Blackout and toggles camera in Carrier |
 | Reload | `R` | `KeyR` | `R` | `P` | Firearm reload in Blackout and Outbreak (Outbreak draws rounds from the belt) |
@@ -94,7 +94,7 @@ installs itself on first use.
 
 | Surface | Move / Steer | Sprint / Boost | Handbrake / Jump | Interact / Use | Fire / Aim / Look | Reload / Equip / Melee / Swap | Camera / Seat / Horn | UI / Scoreboard / Chat / Audio / Lab | Audit fixes applied |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | `Space` contextual vault (fences & open windows) | `KeyE` primary (`Peek` closed window, `Climb` open window, `Vault` fence, `Open/Close` door, `Search` / `Take all` on containers, `Pick up` drops, `Unlock` / `Pry` keyed doors); `Shift`+`KeyE` smashes a container open (fast, loud); `Hold KeyE` secondary (`Open/Close` window, `Lock` door) shown simultaneously | Cursor aim; `Mouse0` uses the held item (fire, swing, heal, throw) | `KeyR` reload (swaps a spare battery with the flashlight in hand); `KeyV` shove; `KeyB` barricade; `KeyF` flashlight; `Digit1`–`Digit5` & Wheel hotbar, or take item *n* while a container strip is open and swap pack slot *n* in while the pack is open; `KeyG` drop held item, hold `KeyG` leave an ammo and plank bundle; `KeyQ` ping; `Tab` pack | Lab zoom | `Backquote` Lab, `Escape` closes the pack | Belt supplies are never in the hotbar; digits follow the open strip; QWERTY key-cap prompts with the hold ring on `Hold E` |
+| **Outbreak** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` (stamina sprint) | `Space` contextual vault (fences & open windows) | `KeyE` primary (`Peek` closed window, `Climb` open window, `Vault` fence, `Open/Close` door, `Search` / `Take all` on containers, `Pick up` drops, `Unlock` / `Pry` keyed doors, `Deposit supplies` at the workbench, `Store held item` at the stash); `Shift`+`KeyE` smashes a container open (fast, loud); `Hold KeyE` secondary (`Open/Close` window, `Lock` door, `Deposit supplies` at the stash) shown simultaneously | Cursor aim; `Mouse0` uses the held item (fire, swing, heal, throw) | `KeyR` reload (swaps a spare battery with the flashlight in hand); `KeyV` shove; `KeyB` barricade; `KeyF` flashlight; `Digit1`–`Digit5` & Wheel hotbar, or take item *n* while a container or stash strip is open, research or craft row *n* at the workbench, craft *n* in the field-craft strip, and swap pack slot *n* in while the pack is open; `KeyG` drop held item, hold `KeyG` leave an ammo and plank bundle; `KeyQ` ping, hold `KeyQ` opens the field-craft strip (digits craft); `Tab` pack | Lab zoom | `Backquote` Lab, `Escape` closes the pack | Belt supplies are never in the hotbar; digits follow the open strip; QWERTY key-cap prompts with the hold ring on `Hold E` |
 | **Blackout (On Foot)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) enter vehicle, hold to plant/defuse bomb | `Mouse0` fire, Cursor aim, `Mouse2` look ahead, Wheel zoom | `KeyR` reload, `KeyG`/`Mouse1` equip, `KeyV` melee, `Digit1`–`Digit3` gun, `Digit4`–`Digit5` equip | — | `Tab` scores, `KeyT` pin scores/teams, `Digit1`–`Digit4` end vote, `KeyM` mute, `KeyB` sandbox bots, `Backquote` Lab | Unified bomb plant/defuse (`interactHeld`) and vehicle enter/exit on `KeyE` (`KeyF` alias); removed logical `e.key` matching (`r`/`g`/`v`/`f`/`t`/`m`/`b`); QWERTY key caps, hold ring on plant/defuse |
 | **Blackout (Driving)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | — | `ShiftLeft` / `ShiftRight` handbrake | `KeyE` (`KeyF` alias) exit vehicle | Passengers shoot (`Mouse0`) and look (`Mouse2`) | — | `KeyC` cycle seat, `KeyH` horn | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Seat and enter prompts drawn with `keyCapHtml("KeyE")` / `KeyC` / `KeyH` / `ShiftLeft` |
 | **Blackout (Wizards)** | `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | `ShiftLeft` / `ShiftRight` | — | `KeyE` (`KeyF` alias) | `Mouse0` cast spell at cursor, `Mouse2` look ahead | `Digit1`/`Digit2` or Wheel select spell, `KeyV` staff bonk | — | `Tab` scores, `KeyT` teams, `KeyM` mute, `Backquote` Lab | Removed `spellMode` `KeyE` movement workaround now that `KeyD` and `KeyE` are bound by physical `e.code` |
@@ -127,14 +127,16 @@ Arcade Lab workbench standard:
   - Clicking `⊞ Grid` in the top Compare bar (or running `arcade grid [preset]`) splits the single WebGPU canvas into 2–9 synchronized variant tiles sharing one camera, simulation clock, and seed.
   - Clicking a tile or pressing `1`–`9` focuses that tile full-size; pressing `Esc` or `G` returns to the multi-tile grid (or closes the grid when already in multi-tile view).
 
-## Lab Overworld
+## Lab stations
 
-- **Map**: `Digit1`–`Digit9`, `Digit0` travel to stations 1–10; arrows move the highlight between plots; `Enter`
-  opens it; click a plot, label or strip chip to travel; `⌘K` lists "Station: …" commands. Digits and arrows are
-  taken in the capture phase on the map so they don't open Library categories or orbit the camera.
-- **Station**: `Digit1`–`Digit9` pick variants (the variation grid keeps them while it's open); `[`/`]` previous or
-  next station; `Esc` back to the map once the workbench has nothing left to cancel; Backquote shows the workbench,
-  and `Esc` hides it again. In an embedded page (Characters, Carrier) the same keys are forwarded from the page.
+- **Stations**: `Digit1`–`Digit9`, `Digit0` open stations 1–10 from the Edit canvas (outside text fields, Play, the
+  variation grid and the radial, which keep their own number keys; with focus in the Library drawer digits still pick
+  Library categories). `Shift` + `Digit1`–`Digit9` pick the open station's variants. Click a chip in the Outliner's
+  station list or use `⌘K` ("Station: …"); ✕ in the list header closes the station. In an embedded page (Characters,
+  Carrier) the same keys are forwarded from the page.
+- **Knobs panels** (Details, station controls cards, game overlays): keys work only while focus is inside a panel and
+  are knobs' own (`?` lists them): arrows move and adjust, `r` / `⌥R` random / mutate, `g` the focused group, `⇧L`
+  lock, hold `\` compare, `⌫` reset a row, `⇧C` copy, `⇧S` save a variant, `u`/`z` undo, `Esc` hands focus back.
 - **Voice note** (dev only): logical `N` starts and finishes (mnemonic, so Dvorak users press the key labelled N);
   hold `Shift` and move to draw; `⌘Z` undoes the last mark; `Esc` cancels; `Enter` sends from the review card.
 

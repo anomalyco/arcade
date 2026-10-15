@@ -13,8 +13,9 @@ Action feedback appears under the survivor (`src/hud/`): reload, search and barr
 pops float out, and warnings, damage and loud noises get their own colours. Stamina, reload, health and battery are
 small rings beside the survivor that appear only while they matter. Both move to the other side when you aim into
 them, and co-op teammates get the same at a smaller size. The hotbar sits at the bottom centre and a one-line time
-and ammo summary sits top left. The Lab's HUD group switches callout placement (below, above, beside) and ring
-placement (beside, under the feet, bars at the edge), and can switch back to the old bottom-left status log.
+and ammo summary sits top left. The Lab's HUD group picks one of five HUD styles (Today,
+Below Feet, Hades Style, Zomboid Style, Diegetic), can override callout and ring placement, and can switch back to
+the old bottom-left status log.
 Research, defaults and measurements: [docs/outbreak-hud.md](../../docs/outbreak-hud.md).
 
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
@@ -62,7 +63,8 @@ sh games/outbreak/scripts/check-workspace.sh
 hivemind run --fetch captures/outbreak-m1 -- bun games/outbreak/scripts/prove.ts
 python3 games/outbreak/scripts/sheet.py
 (cd games/outbreak && bun scripts/hud-proof.ts)   # HUD stills and per-frame cost in captures/outbreak-hud
-python3 games/outbreak/scripts/hud-sheet.py       # placement and stamina sheets from those stills
+python3 games/outbreak/scripts/hud-sheet.py       # placement, stamina and style sheets from those stills
+(cd games/outbreak && bun scripts/hud-moment.ts)  # frames + timeline for the board's HUD prototype
 ```
 
 The Metal proof uses the built production bundle and six real screenshots. It checks blocked/revealed/explored

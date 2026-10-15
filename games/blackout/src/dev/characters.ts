@@ -569,14 +569,13 @@ async function main() {
       open: !params.has("nolab"),
       presets: false,
       capture: "focus",
+      pill: false,
       onToggle: visible => {
         labToggleBtn.setAttribute("aria-pressed", String(visible))
         notifyDevControl()
       },
     },
   )
-  const innerPill = labPanel.host.shadowRoot?.querySelector<HTMLElement>(".pill")
-  if (innerPill) innerPill.style.display = "none"
   labToggleBtn.setAttribute("aria-pressed", String(labPanel.visible))
 
   function applyPresetToActor(actor: StageActor, preset: HumanPreset) {
@@ -1304,7 +1303,7 @@ async function main() {
       }
     }
     if (typing) return
-    if (labPanel.visible && document.activeElement === labPanel.host) return
+    if (labPanel.visible && labPanel.hasFocus()) return
     if (!possessing && document.activeElement === canvas && applyArrowCameraKey(orbitState, event)) {
       event.preventDefault()
       notifyDevControl()

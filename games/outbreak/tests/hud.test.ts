@@ -5,7 +5,9 @@ import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
 import { ActorFeedback, lootCallout } from "../src/hud/actor-feedback"
 import { CalloutModel, FADE_OUT, type CalloutKind } from "../src/hud/callouts"
-import { alignFor, chooseSide, SideBlend } from "../src/hud/placement"
+import { alignFor, chooseSide, SideBlend, VITALS_BARS, VITALS_BESIDE, VITALS_EDGE, VITALS_FEET, VITALS_GROUND, VITALS_ICONS } from "../src/hud/placement"
+import { DEFAULT_HUD_SETTINGS } from "../src/hud/settings"
+import { resolveStyle, STYLE_BELOW, STYLE_DIEGETIC, STYLE_HADES, STYLE_TODAY, STYLE_ZOMBOID } from "../src/hud/styles"
 import { RemoteAdapter } from "../src/hud/remote"
 import { ActorVitals, type VitalsInput } from "../src/hud/vitals"
 
@@ -327,5 +329,19 @@ describe("remote survivors", () => {
     expect(vitals.stamina).toBeNull()
     expect(vitals.magAmmo).toBeNull()
     expect(vitals.battery).toBeNull()
+  })
+})
+
+describe("HUD styles", () => {
+  test("a style supplies placements unless the Lab overrides them; Today never swaps sides", () => {
+    const base = { calloutPlacement: -1, vitalsPlacement: -1, avoidAim: true }
+    expect(resolveStyle({ ...base, hudStyle: STYLE_TODAY })).toMatchObject({ callouts: "up", vitals: VITALS_EDGE, avoid: false })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW })).toMatchObject({ callouts: "down", vitals: VITALS_BESIDE, avoid: true })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_HADES })).toMatchObject({ vitals: VITALS_BARS, chrome: "quiet" })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID })).toMatchObject({ callouts: "up", look: "halo", actionBar: true, vitals: VITALS_ICONS, avoid: false })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_DIEGETIC })).toMatchObject({ vitals: VITALS_GROUND, chrome: "none", quiet: true })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID, calloutPlacement: 0, vitalsPlacement: VITALS_FEET })).toMatchObject({ callouts: "down", vitals: VITALS_FEET })
+    expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW, avoidAim: false }).avoid).toBe(false)
+    expect(DEFAULT_HUD_SETTINGS.hudStyle).toBe(STYLE_BELOW)
   })
 })

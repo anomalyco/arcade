@@ -54,11 +54,36 @@ the dark the world can't be relied on to light a diegetic meter, so labels carry
   callouts default to Important only (progress, warnings, damage).
 - Reduced motion turns off drift, slides and the exhausted flash.
 
+## HUD styles
+
+Lab › HUD › HUD style switches between five directions, the same options as the team board's AR-24 decision
+(D-13). Callout placement and Stamina & status default to "Style default"; setting either overrides the style's
+choice. The game default is Below Feet (`DEFAULT_HUD_SETTINGS.hudStyle` in `src/hud/settings.ts`), so adopting a
+different option is that one value.
+
+| Style | Callouts | Stamina, reload, health, battery | Screen edge |
+| --- | --- | --- | --- |
+| Today | above the head, never swap sides | bars over the hotbar | summary and hotbar |
+| Below Feet | below the feet, swap away from the aim | rings beside the body | summary and hotbar |
+| Hades Style | below the bars | thin bars under the feet | no summary, dimmed hotbar |
+| Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and hotbar |
+| Diegetic | outlined text below the feet, info callouts dropped | stamina and health as a ground ring open behind the body; reload and battery as rings | hotbar only for 2.2 s after a slot change |
+
+Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that draws rings.
+
+The structure is `OutbreakHud` (projection, `ActorFeedback`, teammates) feeding `CharacterHud` (`src/hud/character.ts`),
+which only needs each actor's screen box and meter inputs. The board prototype uses that split:
+`scripts/hud-moment.ts` records a 10 s scripted moment (search a shelf, walk, reload, a zombie hit, sprint to
+exhaustion) as headless frames with the HUD hidden, plus a timeline of the survivor's box, state and every callout
+the game emitted. The prototype plays the frames as a muted loop and replays the timeline through `CharacterHud`
+bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the game's HUD code, not a mockup.
+
 ## Measured
 
-`hud-proof.ts` on headless Metal at 1280 × 800, 2× DPR: 37 stills (placements × Noir/70s × street/interior, stamina
-full/sprinting/low/exhausted in the same grid, reload, battery and health, a teammate, and a crowded moment with three
-zombies and a hurt teammate), sheets from `hud-sheet.py`. `hud.update` with three callouts, three rings and a teammate
+`hud-proof.ts` on headless Metal at 1280 × 800, 2× DPR: 47 stills (placements × Noir/70s × street/interior, stamina
+full/sprinting/low/exhausted in the same grid, every HUD style in both looks, reload, battery and health, a teammate,
+and a crowded moment with three zombies and a hurt teammate), sheets from `hud-sheet.py`. Each style still asserts
+the DOM it should produce (ring, bar or ground meters, status icons, halo look, chrome). `hud.update` with three callouts, three rings and a teammate
 live: mean 0.06 ms, p95 0.2 ms, max 0.3 ms per frame (timer resolution 0.1 ms). Seven alternating 3 s pairs against
 the old log with edge bars: style and layout −0.003 ms per frame (spread −0.016 to +0.006), script +0.021 ms (spread
 −0.043 to +0.101); both are inside their spread, so the cost difference is not measurable.
