@@ -61,13 +61,13 @@ Lab › HUD › HUD style switches between five directions, the same options as 
 choice. The game default is Diegetic, Kit's pick on D-13 (`DEFAULT_HUD_SETTINGS.hudStyle` in
 `src/hud/settings.ts`); switching to another option is that one value.
 
-| Style | Callouts | Stamina, reload, health, battery | Screen edge |
+| Style | Callouts | Stamina, reload, health, battery | Screen edge (the dock dims when idle in every style) |
 | --- | --- | --- | --- |
-| Today | above the head, never swap sides | bars over the hotbar | summary and hotbar |
-| Below Feet | below the feet, swap away from the aim | rings beside the body | summary and hotbar |
-| Hades Style | below the bars | thin bars under the feet | no summary, dimmed hotbar |
-| Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and hotbar |
-| Diegetic (default) | outlined text below the feet, info callouts dropped | stamina (left) and health (right) as arcs of a ground ring in front of the feet; reload and battery as rings | hotbar only for 2.2 s after a slot change |
+| Today | above the head, never swap sides | bars over the hotbar | summary and dock |
+| Below Feet | below the feet, swap away from the aim | rings beside the body | summary and dock |
+| Hades Style | below the bars | thin bars under the feet | dock only |
+| Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and dock |
+| Diegetic (default) | outlined text below the feet, info callouts dropped | stamina (left) and health (right) as arcs of a ground ring in front of the feet; reload and battery as rings | dock only |
 
 The map ([outbreak-map.md](outbreak-map.md)) adds nothing to the screen by default. Its optional helpers are a
 compass ring on the ground around the survivor, in the same place as the Diegetic ground meters, and a corner minimap
@@ -92,6 +92,30 @@ bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the ga
 The `outbreak-hud` Lab station (`arcade station outbreak-hud`, `games/lab/src/stations/outbreak-hud.ts`) runs the live
 game with one variant per style; each variant sets the style and runs `hud.demo`, which puts a sample on the survivor.
 `games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle` proves every variant.
+
+## Bottom dock
+
+The belt of supplies, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
+`dock.css`). It never hides, in any style. Kit found it odd that Tab made the pack disappear, because Diegetic hid
+the whole bar unless a slot had just changed. The dock now settles to 50 % opacity after 3 s without a change and
+brightens on any change to the belt, hands or pack, while the pack or field craft is open, and while the cursor is
+over it (Lab › HUD motion › Idle dock opacity, Dim dock after). It brightens on the snappy spring and dims on the
+slow one.
+
+Tab grows the pack out of its chip at the end of the belt as one shape (the chip → panel morph from knobs'
+`morph.ts`): the shape rises clear of the belt on the default spring, widens on the morph spring (0.42 s, bounce
+0.16), and the cells fade in once it has room. Closing folds it back into the chip (0.38 s, bounce 0.08). Pressing
+Tab again mid-flight starts from wherever the shape is. Every element in the dock is keyed and updated in place, so
+counts roll on digit reels, a newly found supply slides in while its neighbours move aside (FLIP), and a gain
+lifts the chip with a brief warm wash. Hand slots have a fixed width, so an item arriving never moves its
+neighbours. The dock's left edge is snapped to whole device pixels after layout changes, which keeps its text crisp
+at DPR 1, 1.5 and 2.
+
+`scripts/hud-motion-proof.ts` pauses every animation a transition starts and steps it frame by frame (1/60 s),
+recording each tracked element's box and effective opacity; it flags a jump (more than 10 px and more than a third
+of the element's travel in one frame) or a pop (opacity changing by more than 0.34 in a frame, or appearing or
+vanishing while visible), and writes the frames as a muted MP4. Tab open, Tab close, a quick double Tab, a pickup,
+dimming and brightening all pass with no jumps or pops.
 
 ## Diegetic ground ring
 

@@ -36,8 +36,9 @@ fn unproject(ndc: vec2f, z: f32) -> vec3f {
 fn falloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
   let x2 = d2 / (r * r);
-  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
   let soft = max(OL.u13.z, 0.1);
+  if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
   return win * win / (1.0 + d2 / (soft * soft));
 }
 

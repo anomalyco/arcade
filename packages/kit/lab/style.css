@@ -1,23 +1,35 @@
 /* Lab workbench · Outliner + Details + Library drawer.
    Dense dark chrome: 12 px text, 24 px rows, tabular numbers, one accent. */
 :root {
-  --acc: #4d8dff;
+  /* knobs' default dark look (packages/knobs/src/panel/styles.ts), so the Lab's own chrome sits with its knobs pieces:
+     a near-black page, cards a gap apart with rounded corners and a hairline ring, white text at three strengths and a
+     white accent. Change these to follow knobs, not the other way round. */
+  --acc: #fff;
   --lab-accent: #4d8dff;
-  --bg: #0c0d0f;
-  --panel: #141518;
-  --panel2: #191a1e;
-  --fieldbg: #0e0f11;
-  --hover: #1e2024;
-  --line: #23252a;
-  --line2: #2c2f35;
-  --tx: #d8dbe0;
-  --tx2: #8b9098;
-  --tx3: #5b6068;
-  --acc-a: color-mix(in srgb, var(--acc) 18%, transparent);
-  --acc-b: color-mix(in srgb, var(--acc) 32%, transparent);
-  --row: 24px;
+  --page: #101012;
+  --bg: var(--page);
+  --panel: #1c1c1e;
+  --panel2: #262628;
+  --fieldbg: rgba(0, 0, 0, 0.26);
+  --hover: rgba(255, 255, 255, 0.055);
+  --surface: rgba(255, 255, 255, 0.055);
+  --line: rgba(255, 255, 255, 0.1);
+  --line2: rgba(255, 255, 255, 0.18);
+  --rim: rgba(255, 255, 255, 0.09);
+  --tx: rgba(255, 255, 255, 0.92);
+  --tx2: rgba(255, 255, 255, 0.64);
+  --tx3: rgba(255, 255, 255, 0.42);
+  --acc-a: color-mix(in srgb, var(--acc) 10%, transparent);
+  --acc-b: color-mix(in srgb, var(--acc) 16%, transparent);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --pane-radius: 12px;
+  --gap: 6px;
+  --ring: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--rim);
+  --shadow: 0 12px 36px rgba(0, 0, 0, 0.52), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --row: 26px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --sans: system-ui, -apple-system, "SF Pro Text", sans-serif;
   color-scheme: dark;
 }
 
@@ -47,13 +59,14 @@ kbd {
   font: 500 10px/1 var(--mono);
   color: var(--tx3);
   padding: 2px 4px;
-  border-radius: 0;
-  background: #d8dbe00f;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .lab-workbench {
   --lw: 232px;
-  --rw: 292px;
+  /* Details is a little wider than the Outliner: knobs' default rows carry 12 px labels and a value beside them. */
+  --rw: 316px;
   display: grid;
   grid-template-columns: var(--lw) minmax(0, 1fr) var(--rw);
   grid-template-rows: 34px minmax(0, 1fr) auto auto 22px;
@@ -63,24 +76,25 @@ kbd {
     "left dock right"
     "left drawer right"
     "bottom bottom bottom";
-  gap: 1px;
+  gap: var(--gap);
+  padding: 0 var(--gap);
   position: relative;
   width: 100vw;
   height: 100dvh;
-  background: var(--line);
+  background: var(--page);
 }
 
 @media (min-width: 1600px) {
   .lab-workbench {
     --lw: 264px;
-    --rw: 340px;
+    --rw: 360px;
   }
 }
 
 @media (max-width: 1180px) {
   .lab-workbench {
     --lw: 208px;
-    --rw: 268px;
+    --rw: 284px;
   }
 }
 
@@ -88,6 +102,35 @@ kbd {
   grid-template-rows: 0 minmax(0, 1fr) 0 0 0;
   grid-template-columns: 0 minmax(0, 1fr) 0;
   gap: 0;
+  padding: 0;
+}
+
+.lab-workbench[data-closed="true"] > .lab-viewport {
+  border-radius: 0;
+}
+
+/* Cards: each pane is a rounded card on the page, a gap from the next, with knobs' hairline ring. */
+.lab-card,
+.lab-viewport,
+.lab-library,
+.lab-station-slot:is([data-slot="left"], [data-slot="right"]) {
+  border-radius: var(--pane-radius);
+  background: var(--panel);
+  box-shadow: var(--ring);
+}
+
+/* A knobs panel set into one of these cards drops its own card (knobs' --k-chrome: 0, for embedding). */
+.lab-card .knobs-panel.knobs-inline,
+.lab-station-slot .knobs-panel.knobs-inline {
+  --k-chrome: 0;
+}
+
+.lab-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .lab-workbench[data-closed="true"] > .lab-topbar,
@@ -112,7 +155,7 @@ kbd {
   color: var(--tx2);
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 0 6px;
   height: 22px;
   line-height: 22px;
@@ -186,7 +229,7 @@ button.lab-icon-btn:not(.lab-btn) {
   width: 22px;
   height: 20px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--tx3);
   padding: 0;
@@ -202,7 +245,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: inline-flex;
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 1px;
   gap: 1px;
 }
@@ -211,7 +254,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   line-height: 20px;
   padding: 0 7px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 .lab-mode-seg .lab-btn[aria-pressed="true"] {
@@ -245,7 +288,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx3);
@@ -277,7 +320,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   padding: 0 7px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx2);
@@ -311,8 +354,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 4px 0 10px;
-  border-bottom: 1px solid var(--line);
+  padding: 0 6px 0 12px;
   flex: none;
 }
 
@@ -348,8 +390,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 8px;
-  background: var(--panel);
+  padding: 0 2px;
   min-width: 0;
   z-index: 20;
 }
@@ -416,7 +457,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   padding: 0 4px 0 8px;
   margin: 0 4px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--fieldbg);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx3);
@@ -445,7 +486,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   z-index: 100;
   min-width: 190px;
   padding: 4px 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--panel);
   box-shadow: 0 0 0 1px var(--line2), 0 16px 40px rgb(0 0 0 / 50%);
   display: flex;
@@ -453,6 +494,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 }
 
 .lab-menu-item {
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   gap: 7px;
@@ -516,53 +558,69 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-splitter[data-splitter="left"] {
   grid-area: left;
   left: auto;
-  right: -4px;
+  right: calc(-0.5 * var(--gap) - 3.5px);
 }
 
 .lab-splitter[data-splitter="right"] {
   grid-area: right;
-  left: -4px;
+  left: calc(-0.5 * var(--gap) - 3.5px);
 }
 
 .lab-splitter[data-splitter="drawer"] {
   grid-area: drawer;
-  top: -4px;
+  top: calc(-0.5 * var(--gap) - 3.5px);
 }
 
 .lab-splitter[data-splitter="dock"] {
   grid-area: dock;
-  top: -4px;
+  top: calc(-0.5 * var(--gap) - 3.5px);
 }
 
 .lab-splitter[data-splitter="leftSlot"],
 .lab-splitter[data-splitter="rightSlot"] {
   position: relative;
   flex: none;
-  margin: -4px 0 -3px;
+  /* In a column with a gap on either side: the handle's 7 px sit inside the one gap between the cards. */
+  margin: calc(-0.5 * var(--gap) - 3.5px) 0;
   z-index: 3;
 }
 
+/* knobs' grip: a small capsule in the gap that shows on hover, and lengthens and takes the accent while dragged. */
 .lab-splitter::after {
   content: "";
   position: absolute;
-  background: var(--acc);
+  border-radius: 2px;
+  background: var(--line2);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity 0.16s, background 0.16s, scale 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   pointer-events: none;
 }
 
 .lab-splitter[data-axis="x"]::after {
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 1px;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 28px;
+  margin: -14px 0 0 -2px;
 }
 
 .lab-splitter[data-axis="y"]::after {
-  left: 0;
-  right: 0;
-  top: 3px;
-  height: 1px;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 4px;
+  margin: -2px 0 0 -14px;
+}
+
+.lab-splitter:focus-visible::after,
+.lab-splitter[data-active="true"]::after {
+  background: var(--acc);
+  scale: 1 1.45;
+}
+
+.lab-splitter[data-axis="y"]:focus-visible::after,
+.lab-splitter[data-axis="y"][data-active="true"]::after {
+  scale: 1.45 1;
 }
 
 .lab-splitter:hover::after,
@@ -583,7 +641,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--panel2);
   box-shadow: 0 0 0 1px var(--line2);
   color: var(--tx2);
@@ -737,8 +795,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   grid-area: left;
   display: flex;
   flex-direction: column;
+  gap: var(--gap);
   min-height: 0;
-  background: var(--panel);
   z-index: 15;
 }
 
@@ -863,7 +921,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   align-items: center;
   gap: 6px;
   background: rgb(12 13 15 / 78%);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 3px 8px;
   font: 10.5px/1.3 var(--mono);
   color: var(--tx);
@@ -875,8 +933,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: #23252af0;
-  border-radius: 0;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border-radius: var(--radius-sm);
   padding: 4px 9px;
   font-size: 11px;
   color: #eef0f3;
@@ -895,7 +953,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   right: 8px;
   top: 8px;
   width: 320px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgb(20 21 24 / 92%);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
   pointer-events: auto;
@@ -908,7 +966,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   left: 8px;
   bottom: 8px;
   width: 268px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgb(20 21 24 / 92%);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 24px rgb(0 0 0 / 40%);
   pointer-events: auto;
@@ -928,7 +986,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   width: 18px;
   height: 18px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--tx3);
   font-size: 13px;
@@ -972,7 +1030,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 22px;
   padding: 0 6px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--tx);
   font: inherit;
@@ -1014,7 +1072,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 22px;
   padding: 0 6px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--tx2);
   font: inherit;
@@ -1132,7 +1190,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 }
 
 .lab-drawer-group:hover {
-  background: #d8dbe00a;
+  background: var(--hover);
   color: var(--tx);
 }
 
@@ -1147,8 +1205,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   padding: 0 6px;
   border: 0;
-  border-radius: 0;
-  background: #d8dbe00a;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
   color: var(--tx2);
   font: inherit;
   font-size: 10.5px;
@@ -1207,7 +1265,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 7px;
   padding: 2px 6px 2px 2px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--panel2);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--tx);
@@ -1246,7 +1304,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--fieldbg);
   color: var(--tx2);
 }
@@ -1289,7 +1347,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   column-gap: 5px;
   min-height: 36px;
   background: inherit;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 .lab-tile:focus-visible .lab-tile-tag {
@@ -1301,13 +1359,13 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   grid-template-columns: 16px minmax(0, 1fr);
   gap: 6px;
   padding: 0 6px 0 4px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: none;
   box-shadow: none;
 }
 
 .lab-drawer-grid[data-view="list"] .lab-tile:hover {
-  background: #d8dbe00a;
+  background: var(--hover);
 }
 
 .lab-drawer-grid[data-view="list"] .lab-tile[aria-selected="true"] {
@@ -1347,7 +1405,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   top: 0;
   z-index: 3000;
   padding: 3px 8px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: var(--panel2);
   box-shadow: 0 0 0 1px var(--line2), 0 8px 20px rgb(0 0 0 / 50%);
   color: var(--tx);
@@ -1365,8 +1423,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   grid-area: right;
   display: flex;
   flex-direction: column;
+  gap: var(--gap);
   min-height: 0;
-  background: var(--panel);
   z-index: 15;
 }
 
@@ -1445,8 +1503,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 8px;
-  background: var(--panel);
+  padding: 0 4px;
   z-index: 20;
   min-width: 0;
   font-size: 10.5px;
@@ -1503,7 +1560,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   max-width: calc(100vw - 32px);
   background: var(--panel);
   border: 1px solid var(--line2);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 10px;
   box-shadow: 0 16px 40px #00000099;
   display: flex;
@@ -1517,7 +1574,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   background: var(--fieldbg);
   color: var(--tx);
   border: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   padding: 8px;
   font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
@@ -1738,7 +1795,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   max-width: 260px;
   padding: 4px 8px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgb(17 18 21 / 92%);
   box-shadow: 0 0 0 1px rgb(255 255 255 / 8%), 0 6px 16px rgb(0 0 0 / 40%);
   font: 500 11px/1.25 var(--sans);
@@ -1765,7 +1822,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   color: var(--tx2);
   background: rgb(255 255 255 / 6%);
   padding: 2px 4px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 /* Marquee Box Selection Overlay */
@@ -1773,7 +1830,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   border: 1.5px dashed var(--acc);
   background: var(--acc)24;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   pointer-events: none;
   z-index: 45;
   display: flex;
@@ -1888,7 +1945,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   padding: 3px 6px;
   background: #11171ef2;
   border: 1px solid #2d3b48;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   box-shadow: 0 4px 12px #00000099;
   pointer-events: auto;
 }
@@ -1904,7 +1961,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-gizmo-input {
   width: 46px;
   padding: 1px 3px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: 1px solid #2b3844;
   background: #0d1217;
   color: #e2edf5;
@@ -1982,7 +2039,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   left: 14px;
   top: -8px;
   padding: 1px 5px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: #10161de8;
   border: 1px solid #2b3946;
   color: #d6e6f2;
@@ -2011,7 +2068,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   position: absolute;
   top: 38px;
   padding: 3px 8px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: #0f151cf0;
   border: 1px solid #2f4050;
   color: #dce9f5;
@@ -2095,7 +2152,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 6px;
   height: 22px;
   padding: 0 8px 0 6px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(11, 14, 18, 0.88);
   backdrop-filter: blur(6px);
@@ -2118,7 +2175,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   min-width: 15px;
   height: 15px;
   padding: 0 3px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgba(77, 141, 255, 0.24);
   color: #8cc0ff;
   font: 700 10px/1 var(--mono);
@@ -2134,7 +2191,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   bottom: 7px;
   max-width: calc(100% - 14px);
   padding: 2px 7px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgba(10, 13, 17, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #9fb0bd;
@@ -2163,7 +2220,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   gap: 8px;
   height: 26px;
   padding: 0 8px 0 10px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgba(12, 15, 20, 0.92);
   border: 1px solid #2c333d;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
@@ -2189,7 +2246,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 .lab-grid-focus-badge {
   font: 700 10px/1 var(--mono);
   padding: 3px 6px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: rgba(77, 141, 255, 0.22);
   color: #8cc0ff;
 }
@@ -2205,7 +2262,7 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   height: 20px;
   min-width: 20px;
   padding: 0 6px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   border: 1px solid #2b313a;
   background: #171a20;
   color: var(--tx2);

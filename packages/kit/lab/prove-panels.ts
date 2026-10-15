@@ -68,7 +68,8 @@ async function openLab(sizes: Sizes, context?: BrowserContext) {
       }
     } as unknown as typeof AudioContext
   })
-  await page.goto(`${base}/arcade/lab/`)
+  // The Lab opens on Home; these checks are about the plain workbench behind it.
+  await page.goto(`${base}/arcade/lab/?section=effects`)
   await page.waitForFunction(() => Boolean((window as any).labWorkbench), undefined, { timeout: 120000 })
   await page.waitForTimeout(800)
   return { context: ctx, page }

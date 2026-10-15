@@ -1,4 +1,4 @@
-import { arcadePreset } from "@arcade/kit/lab-knobs"
+import { LAB_LOOK } from "@arcade/kit/lab-knobs"
 import { popover, split, toast, tree, type Split, type Tree } from "@arcade/knobs/ui"
 import { ask, tip } from "@arcade/kit/lab/overlays"
 import { matches, type Catalog, type HomeCollection, type HomeLab } from "./catalog"
@@ -6,7 +6,7 @@ import "./home.css"
 
 type Row = { id: string; label: string; children?: Row[]; lab?: HomeLab; count?: number }
 
-const look = { preset: arcadePreset, theme: "dark" as const }
+const look = LAB_LOOK
 const FOLDED_KEY = "arcade.lab.home.folded"
 const ARCHIVED = "collection:archived"
 

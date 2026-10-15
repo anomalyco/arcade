@@ -19,6 +19,8 @@ export interface QualityProfile {
   readonly weatherParticleScale: number
   /** Maximum dynamic non-shadowed practical lights per frame. */
   readonly maxUnshadowedLamps: number
+  /** Maximum interior wall-sconce lights per frame (each a pair of fixtures: small unshadowed pools in the house the camera is inside). */
+  readonly maxSconceLights: number
   /** Whether ambient ground dust/leaf motion particles update and draw. */
   readonly ambientMotion: boolean
   /** Multiplier for secondary exterior clutter density (0..1). */
@@ -34,6 +36,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     bloomLevels: 5,
     weatherParticleScale: 1.0,
     maxUnshadowedLamps: 16,
+    maxSconceLights: 3,
     ambientMotion: true,
     clutterScale: 1.0,
   },
@@ -45,6 +48,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     bloomLevels: 5,
     weatherParticleScale: 0.75,
     maxUnshadowedLamps: 12,
+    maxSconceLights: 2,
     ambientMotion: true,
     clutterScale: 1.0,
   },
@@ -56,6 +60,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     bloomLevels: 3,
     weatherParticleScale: 0.4,
     maxUnshadowedLamps: 6,
+    maxSconceLights: 0,
     ambientMotion: false,
     clutterScale: 0.5,
   },

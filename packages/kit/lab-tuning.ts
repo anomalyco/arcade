@@ -1,5 +1,6 @@
 import type { ControlDescriptor, Value } from "@arcade/knobs"
-import { inferControlUnit, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
+import { inferControlUnit, isRampControl, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
+import { parseCurve, parseGradient, type CurvePoint, type GradientStop } from "./ramps"
 
 /**
  * LabControl rows as knobs descriptors, and the values between the two. LabControl and the settings object stay the
@@ -36,9 +37,14 @@ export const isSeed = (control: LabControl): boolean => "min" in control && /see
 export const isHeading = (control: LabControl): boolean =>
   "min" in control && /^(°|deg)$/.test(displayUnit(control)) && control.max - control.min === 360
 
-/** The knobs value for a LabControl's current setting. */
+const LINEAR: readonly CurvePoint[] = [{ x: 0, y: 0 }, { x: 1, y: 1 }]
+const BLACK_TO_WHITE: readonly GradientStop[] = [{ at: 0, color: "#000000" }, { at: 1, color: "#ffffff" }]
+
+/** The knobs value for a LabControl's current setting. Ramps go from their JSON text to knobs' stops or points. */
 export function toKnobs(control: LabControl, value: LabValue | undefined): Value | undefined {
   if (control.type === "action") return undefined
+  if (control.type === "curve") return parseCurve(value, LINEAR, { range: control.range }) as Value
+  if (control.type === "gradient") return parseGradient(value, BLACK_TO_WHITE) as Value
   if ("min" in control) {
     const n = Number(value)
     return Number.isFinite(n) ? n : rangeOf(control).min
@@ -50,6 +56,7 @@ export function toKnobs(control: LabControl, value: LabValue | undefined): Value
 /** The LabControl setting for a knobs value: choices map back to their typed option, switches to on/off. */
 export function fromKnobs(control: LabControl, value: Value): LabValue | undefined {
   if (control.type === "action") return undefined
+  if (isRampControl(control)) return Array.isArray(value) && value.length >= 2 ? JSON.stringify(value) : undefined
   if ("min" in control) return typeof value === "number" && Number.isFinite(value) ? value : undefined
   if ("options" in control) return control.options.find(o => String(o.value) === String(value))?.value
   return value ? control.on ?? true : control.off ?? false
@@ -80,6 +87,14 @@ export function describe(row: LabRow & { control: LabControl }, defaults: Readon
   }
   if (c.type === "action") return { ...base, kind: "action" }
   const initial = c.key in defaults ? defaults[c.key] : settings[c.key]
+  if (c.type === "curve") {
+    const range = c.range ?? [0, 1]
+    const unit = displayUnit(c)
+    return { ...base, kind: "curve", random: false, default: toKnobs(c, initial)!, range, ...(c.interp ? { interp: c.interp } : {}), ...(c.presets ? { presets: c.presets } : {}), ...(unit ? { unit } : {}) }
+  }
+  if (c.type === "gradient") {
+    return { ...base, kind: "gradient", random: false, default: toKnobs(c, initial)!, ...(c.space ? { space: c.space } : {}), ...(c.presets ? { presets: c.presets } : {}) }
+  }
   if (upper && "min" in c && "min" in upper) {
     const lo = rangeOf(c), hi = rangeOf(upper)
     const unit = displayUnit(c)

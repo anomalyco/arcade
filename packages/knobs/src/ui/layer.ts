@@ -2,14 +2,13 @@
 // brings a layer in and out (scale, blur and a nudge from where it came from, interruptible both
 // ways), a stack so Esc and outside clicks reach the topmost layer only, and focus helpers.
 import { Spring } from "../core/spring.js"
-import { applyLook, frameLoop, reducedMotion, type UiLook } from "./look.js"
+import { applyLook, frameLoop, lookDefaults, reducedMotion, type UiLook } from "./look.js"
 
-let defaults: UiLook = {}
 /** The look every overlay takes unless given its own (a preset and theme, as panels take). */
 export function overlayLook(look: UiLook) {
-  defaults = look
+  lookDefaults.current = look
 }
-export const lookOf = (look?: UiLook): UiLook => ({ ...defaults, ...look })
+export const lookOf = (look?: UiLook): UiLook => ({ ...lookDefaults.current, ...look })
 
 const roots = new WeakMap<Document, HTMLElement>()
 /** The document's overlay layer: fixed, above everything, passing the pointer through. */
@@ -27,8 +26,8 @@ export function layerRoot(doc: Document): HTMLElement {
 export function layerElement(doc: Document, cls: string, look?: UiLook) {
   const el = doc.createElement("div")
   el.className = cls
-  applyLook(el, lookOf(look))
   layerRoot(doc).append(el)
+  applyLook(el, lookOf(look))
   return el
 }
 

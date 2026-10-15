@@ -2332,7 +2332,11 @@ export function createWorkbench(opts: WorkbenchOptions) {
         ? c.options.find(o => o.value === v)?.label ?? String(v)
         : "min" in c
           ? formatLabValue(v, c.step, unit)
-          : v === (c.on ?? true)
+          : c.type === "curve"
+            ? "Curve"
+            : c.type === "gradient"
+              ? "Gradient"
+              : v === (c.on ?? true)
             ? "On"
             : "Off"
     const d = defaultsBySection.get(sec.id)?.[pin.key]

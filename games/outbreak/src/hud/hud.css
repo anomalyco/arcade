@@ -125,25 +125,15 @@
 .status-icon[data-meter="health"][data-state="ok"] { color: #e8b3a6 }
 .status-icon[data-meter="stamina"][data-state="ok"] { color: #d3dcc2 }
 
-/* Callout mode: actions are reported on the survivor, so the corner HUD shrinks to a hotbar and a summary. */
-body[data-hud="callouts"] #hud { left: 0; right: 0; bottom: 12px; align-items: center; gap: 5px }
+/* Callout mode: actions are reported on the survivor, so the corner HUD shrinks to the dock (dock.css) and a summary. */
+body[data-hud="callouts"] #hud { left: 0; right: 0; bottom: var(--hud-5); align-items: center; gap: var(--hud-3) }
 body[data-hud="callouts"] #meters { gap: 4px }
 body[data-hud="callouts"] #stamina, body[data-hud="callouts"] #battery { width: 72px; height: 3px }
-body[data-hud="callouts"] #hotbar { gap: 2px }
-body[data-hud="callouts"] #hotbar .slot { min-width: 0; height: 20px; padding: 0 6px; gap: 4px; border-color: transparent; background: #0f1515a0; font-size: 10px }
-body[data-hud="callouts"] #hotbar .slot[data-selected="true"] { border-color: #d6d4c666; background: #182121d8 }
-body[data-hud="callouts"] #hotbar .slot[data-empty="true"] b { display: none }
 body[data-hud="callouts"] #status {
-  position: fixed; left: 12px; top: 10px; padding: 3px 7px; border: 0; border-radius: 4px; background: #0b1011a0;
-  color: #b9b7aa; font-size: 10.5px; opacity: .85
+  position: fixed; left: 12px; top: 10px; padding: 3px 7px; border: 0; border-radius: var(--hud-r-cell); background: var(--hud-chip);
+  color: var(--hud-ink-2); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); font-variant-numeric: tabular-nums
 }
 /* Rings on the survivor replace the stamina and battery bars. */
 body[data-vitals="character"] #meters { display: none }
-/* Screen chrome per style: quiet hides the summary and dims the hotbar; none shows the hotbar briefly after a change. */
+/* Screen chrome per style: quiet and none hide the summary. The dock always shows and dims itself when idle. */
 body[data-hud="callouts"][data-chrome="quiet"] #status, body[data-hud="callouts"][data-chrome="none"] #status { display: none }
-body[data-hud="callouts"][data-chrome="quiet"] :is(#hands, #belt) { opacity: .45; transition: opacity .3s ease }
-body[data-hud="callouts"][data-chrome="none"] :is(#hands, #belt) { opacity: 0; transition: opacity .4s ease }
-body[data-hud="callouts"][data-chrome][data-hotbar="awake"] :is(#hands, #belt) { opacity: 1; transition-duration: .12s }
-/* Diegetic: supply counts are read off the belt only while the inventory is held open (Tab pack, hold Q). */
-body[data-hud="callouts"][data-chrome="none"][data-hotbar] #belt:not([data-open="true"]) { opacity: 0 }
-body[data-hud="callouts"][data-chrome="none"] #belt[data-open="true"], body[data-hud="callouts"][data-chrome="none"] #hands:has(#pack[data-open="true"]) { opacity: 1; transition-duration: .12s }

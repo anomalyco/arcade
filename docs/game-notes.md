@@ -155,6 +155,18 @@ proven animation techniques to animation.md, not here.
   paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
   rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
   reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Light a pair of wall sconces with one unshadowed half-space light, clipped in the shader.** Outbreak's sconces
+  (`games/outbreak/src/interiors/sconces.ts`) are recorded per painting pair while the decor is emitted (in the chunk
+  Worker for streamed houses, `collectSconces` for the origin block) and lit only in the house the camera is inside,
+  nearest first, up to `QualityProfile.maxSconceLights` (3 pairs high, 2 balanced, 0 low). `cone.w = 1.25` marks them;
+  the `lightMask` hook cuts each just behind its wall (so the room behind stays dark without a shadow pass), above the
+  wall tops, and to its room along the wall (perpendicular walls found when the decor is laid out), and the attenuation
+  hook sums two bulbs `extra.w` either side with a near-field core, ×3 on the wall they hang on to undo
+  `wallDirectScale`, which made a single wall light invisible. All bulbs read one reserved `lampPower` slot
+  (`SCONCE_LAMP_SLOT`) so they switch with the light. Measured on the mini, paired at
+  3456×1894: one light per pair costs +0.42 ms (high, MAD 0.19) in a lit room and +0.21 ms on the interior bench,
+  +0.16/+0.10 ms balanced, 0 low; one light per bulb had cost twice that. Also found: the origin houses' north-east
+  wing roof never opened (`level.ts` `strictlyInsideHouse` left the wing out of the "outside" chunks).
 - **Streamed house roofs are `customCutaway: "outside"` chunks.** Since the TBDR pass (d86d5df) custom-cutaway chunks
   only use the discard pipeline while peeking, so streamed roofs marked `true` never opened when the survivor stood
   inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
@@ -648,6 +660,17 @@ proven animation techniques to animation.md, not here.
   street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
   paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
+- **Curves for falloffs: a default that is the formula, a table only once reshaped.** Outbreak's flashlight range
+  window (`(1 − x⁴)²`, surface pool and volumetric beam alike), practical lamps' pool edge (`(1 − x²)²`) and the unseen
+  effect's strength by depth (0.38 → 1) are Lab curves (`games/outbreak/src/light-ramps.ts`). Each default is its
+  formula sampled at nine points; while a curve still reads as its default a per-table flag in the lighting uniforms
+  stays 0 and the shader runs the formula, otherwise it reads a 16-sample table (three tables and four flags after the
+  unseen block; the custom uniform buffer grew to 1280 bytes). Day-night sky fill, moon fill and street air haze take
+  curves over darkness the same way on the CPU (`day-night.ts`). `scripts/hour-capture.ts` against main: 1–15 pixels
+  per frame differ by 1 level, the same as a scene and its own repeat in one run, so defaults are unchanged. Paired
+  GPU cost of all three tables on vs off (`scripts/ab-gpu.ts`, 10 rounds, 3456×1894, Dark shroud on) is +0.002 ms
+  street / −0.020 ms interior (MADs 0.06/0.11). The look's `ambientFill` and `fogDensity` change nothing in Outbreak's
+  frame even at their maximum, so they got no curves.
 
 ## Art direction
 
@@ -1084,6 +1107,42 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Give historical proof fixtures separate Vite caches.** Getaway's `scripts/prove-look.ts` serves an archived
   baseline with its own `cacheDir`; sharing the dependency cache caused `504 Outdated Optimize Dep` failures.
   The isolated fixture completed the 180-frame before/after capture. This is a tooling fix, not a measured game-speed win.
+
+## Crowds
+
+- **Share one flow field per goal once a crowd is big.** Outbreak's zombies each ran their own capped A*
+  (`MAX_REPATHS_PER_TICK = 4`), so at 500–1,000 most hunters waited for a repath and 3.3–3.5% stood still each
+  second. `packages/kit/sim/flow-field.ts` builds an integer cost field per goal quantum (Dial's bucket queue,
+  10/14 per step, door/window/barricade penalties, 112-cell window, ~0.43 ms per build) and every agent heading
+  there steers to the farthest downhill cell it can walk straight to. Fields are keyed by the nav grid's revision
+  and a per-tick goal budget counts goals asked for, cached or not, so a restored sim replays bit for bit. Survivors
+  get an anchor that only moves after 1.5 m, plus a short trail of old anchors where last-known positions cluster.
+  Stuck share fell to 0.6–0.8%; at 400 zombies a crowd crossing the hardware store reached the far side in 45 s
+  instead of 90 s, and a door funnel had 0 wall crossings instead of 24. Below 64 zombies the game still uses A*
+  and is bit-identical to before, so the survivor-bot curves don't move. Bench: `scripts/horde-bench.ts`.
+- **A horde off screen is a point, not 800 agents.** `games/outbreak/shared/hordes/` keeps an abstract horde as a
+  position, a goal and a head count in JSON feature state. It hears loud noises from radius × 2.5 (× the AI hearing
+  scale), through walls, because a building attenuates sound so much that a horde behind one would never react.
+  It materializes 64 members a tick once its centre is 8 m inside the active window and within 46 m of a survivor,
+  and folds back once every member is 64 m from every survivor and none is fighting. The 18 m gap and an 8 s
+  cool-down stop flicker at window edges. Members carry `hordeId`, take ids from 60416–65535 (above every chunk's
+  range, inside the wire's u16), and are skipped by chunk deltas, chunk unloads, the director's chaser cap and its
+  near-15 m hold.
+- **Walk far goals in legs.** A field only covers 56 m around its goal, so an 800-strong horde sent 75 m down the
+  street fell back to per-agent A* and crawled. Sending members to a point 30 m along the way (never indoors, or
+  the horde files through a front door to cut a corner) and moving it on as they catch up keeps every member on a
+  shared field: the horde walked 60 m in 48 s at a steady 1.25 m/s with 4 field builds.
+- **A gunshot alone lures a crowd for about 4 s.** Zombie awareness decays, so a shot turns heads but only carries
+  them a few metres. Horde directives re-send idle members toward the horde's goal every 0.5 s until half of them
+  are there.
+- **Measured (fleet Mac mini, Metal):** one live roaming horde closing on a walking survivor costs a sim tick of
+  0.51 / 1.61 ms (p50 / p95) at 500 and 0.86 / 2.27 ms at 1,000, and replays bit for bit from a mid-run snapshot.
+  Rendered at 1728×947 @2× (high tier): GPU 5.09 ms empty, 5.23 ms with 500, 6.98 ms with 1,000. In co-op with four
+  players and a live horde, each player receives 24 KB/s at 500 and 41 KB/s at 1,000 (4 KB/s without a horde);
+  the room tick is 2.3 / 3.3 ms (p50 / p95) at 500. Proof: `scripts/horde-proof.ts`, `scripts/coop-bench.ts --horde=`.
+- **To watch a horde, move the view with the camera.** Fog of war and actor visibility follow the survivor, so a
+  camera on a horde 40 m away showed ghosts. The Lab's "Camera follows horde" also moves vision to the horde's centre
+  (360°, 40 m).
 
 ## Multiplayer
 

@@ -225,6 +225,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/knobs",
   },
   {
+    area: "`ramps` & `ramp-table`",
+    description: "Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads",
+    match: (s) => s === "@arcade/kit/ramps" || s === "@arcade/kit/ramp-table",
+  },
+  {
     area: "`lab/*` & `compare`",
     description: "Lab workbench, sections, adapters, A/B compare, variation grid, and stations",
     match: (s) =>

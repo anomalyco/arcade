@@ -169,6 +169,16 @@ it, and an open game overlay keeps every key from the game.
 - Use `LabControl` ranges, typed select options, toggles and actions. Supply concise labels, named groups, numeric
   `min`/`max`/`step` and explicit `unit`. Use `unit: ""` for seeds or unitless values and `"×"` for multipliers.
   Inferred units can be wrong: shard size scaling is not metres, and radians must not be labelled degrees.
+- Where a setting stands in for a ramp (a colour or value over life, distance or the hour), use a `type: "gradient"` or
+  `type: "curve"` row (knobs' ramp editors) instead of several numbers. The setting holds the stops or points as JSON
+  text in knobs' normalized form; build it with `gradientText`/`curveText` and read it with `parseGradient`/
+  `parseCurve` from `@arcade/kit/ramps`. Sample once per change, not per frame or particle: bake a table
+  (`curveTable`, `gradientTable`) and read it with `sampleTable` (`@arcade/kit/ramp-table`, no knobs import). Make the
+  default the formula it replaces, sampled, and keep running the exact formula while the curve still reads as its
+  default (`sameCurve`), so adding a curve changes no pixel until someone edits it. Ramps stay out of Random.
+  Shipped: Effects' tint, size and opacity over life (`packages/kit/lab/effects.ts`, `fx/particles.ts` `lifeRamp`),
+  Outbreak's sky fill, moon fill and street air haze by darkness (`day-night.ts`) and its beam, lamp and unseen falloffs
+  (`light-ramps.ts`).
 - Start from approved defaults before binding; Reset restores the panel's captured defaults. Keep defaults within
   safe ranges. Use `visible` for irrelevant controls, `enabled` for dependency gates and `folded` for advanced groups.
 - Route edits through the shared write path (`LabNavigation.set` and control `change` callbacks). Pointer, keyboard,

@@ -1,5 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
+import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -74,6 +74,7 @@ import { OutbreakWeatherController } from "./weather"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
+import { hordeWatchPoint, renderFlowOverlay } from "./hordes/index"
 import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
 import { zombieProfile } from "./zombie-profile"
 import {
@@ -207,6 +208,7 @@ async function main() {
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
     () => settings.discovery,
+    settings.hud,
   )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
@@ -251,6 +253,7 @@ async function main() {
   const worldStreamer = new WorldClientStreamer()
   let currentWindowOrigin: [number, number] = [0, 0]
   let currentIsStreamWindow = false
+  let originSconces: Float32Array[] = []
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -677,6 +680,7 @@ async function main() {
     worldStreamer.windowOrigin = [0, 0]
     worldStreamer.lastWindowKey = ""
     const data = buildLevel(session.view.town)
+    originSconces = [collectSconces(session.view.town)]
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
     combatFx.setLevel(data)
@@ -887,8 +891,9 @@ async function main() {
     pageGlance.update(session.view, settings.discovery, dt)
     cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
-    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0) + lean.dx
-    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0) + lean.dy
+    const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
+    const camX = watch ? watch.x : drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0) + lean.dx
+    const camY = watch ? watch.y : drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0) + lean.dy
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
@@ -970,14 +975,15 @@ async function main() {
     const flashVisionActive =
       (drivingHeadlights || p.flashlightOutput > 0.01) &&
       (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
+    // Horde watch (Lab): the view travels with the horde, so it is what the camera shows that gets seen.
     const visChanged = vision.update(
-      p.x,
-      p.y,
+      watch ? watch.x : p.x,
+      watch ? watch.y : p.y,
       effectiveVisionAim,
       blockers,
-      effectiveVisionSettings,
-      peek,
-      flashVisionActive
+      watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : effectiveVisionSettings,
+      watch ? null : peek,
+      flashVisionActive && !watch
         ? {
             active: true,
             range: drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range,
@@ -1234,6 +1240,20 @@ async function main() {
       const dstOff = count++ * LIGHT_FLOATS
       for (let f = 0; f < LIGHT_FLOATS; f++) lights[dstOff + f] = unshadowedLampBuf[srcOff + f]!
     }
+    const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
+    lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
+    interiors.sconces.setSources(currentIsStreamWindow ? worldStreamer.windowSconces : originSconces)
+    count = interiors.sconces.write(
+      lights,
+      count,
+      MAX_LIGHTS,
+      inInteriorView ? (interiors.settings.sconceLights >= 0 ? interiors.settings.sconceLights : qProfile.maxSconceLights) : 0,
+      cutX,
+      cutY,
+      sconceLevel,
+      settings.lighting.practicalWarmth,
+      interiors.settings,
+    )
     const vehOut = vehicleRenderer.collect(
       vdt,
       time,
@@ -1441,6 +1461,10 @@ async function main() {
       alphaSprites,
       vehAlphaStart,
     )
+    const flowCentre = settings.hordes.hordeWatch ? (hordeWatchPoint(session.sim) ?? p) : p
+    const flowAlphaCount = settings.hordes.hordeFlowOverlay
+      ? renderFlowOverlay(session.sim, flowCentre.x, flowCentre.y, (x, z) => supportHeight(town, x, z), alphaSprites, debugAlphaCount)
+      : debugAlphaCount
     const effectiveFogSettings =
       unseenEval.active && unseenEval.hideZombies
         ? {
@@ -1457,7 +1481,7 @@ async function main() {
       (x, z) => supportHeight(town, x, z),
       effectiveFogSettings,
       alphaSprites,
-      debugAlphaCount,
+      flowAlphaCount,
     )
     const tightView = cam.groundRect(0.8)
     const groundWearBatches = groundWear.collectBatches(town, tightView, settings.ground)
@@ -1516,7 +1540,7 @@ async function main() {
           ),
         }
       : null
-    render.lampCount = town.lamps.length
+    render.lampCount = SCONCE_LAMP_SLOT + 1
     render.view = view
     render.grade[0] = time
     render.grade[1] = settings.view.diagnostic

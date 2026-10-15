@@ -17,6 +17,7 @@ import {
 } from "./melee/index"
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures } from "./feature-registry"
+import "./hordes/index"
 import { openingClockActive } from "./pacing"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {

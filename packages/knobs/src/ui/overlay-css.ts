@@ -12,8 +12,8 @@ export const overlayCss = `
 .knobs-layers .knobs-layer *{box-sizing:border-box}
 /* A floating surface: frosted, a hairline rim, a soft shadow. */
 .knobs-layers>:is(.knobs-popover-layer,.knobs-palette,.knobs-confirm){background:color-mix(in srgb,var(--ku-bg) 88%,transparent);
-  -webkit-backdrop-filter:blur(28px) saturate(1.7);backdrop-filter:blur(28px) saturate(1.7);border-radius:calc(var(--ku-radius) + 3px);
-  box-shadow:0 0 0 .5px var(--ku-line-hi),0 12px 40px rgba(0,0,0,.36),0 2px 8px rgba(0,0,0,.18)}
+  -webkit-backdrop-filter:blur(28px) saturate(1.7);backdrop-filter:blur(28px) saturate(1.7);border-radius:var(--ku-panel-radius);
+  box-shadow:0 0 0 .5px var(--ku-line-hi),inset 0 1px 0 var(--ku-rim),0 12px 40px rgba(0,0,0,.36),0 2px 8px rgba(0,0,0,.18)}
 .knobs-layers>.knobs-popover-layer{min-width:120px;max-width:min(420px,calc(100vw - 16px));padding:6px}
 .knobs-popover-layer .knobs-popover-text{padding:4px 6px;color:var(--ku-label)}
 
@@ -33,7 +33,7 @@ export const overlayCss = `
 .knobs-palette .knobs-palette-input{flex:1;min-width:0;height:100%;font-size:calc(var(--ku-font-size) + 3px);color:var(--ku-text);caret-color:var(--ku-accent)}
 .knobs-palette .knobs-palette-input::placeholder{color:var(--ku-dim)}
 .knobs-palette .knobs-palette-list{position:relative;flex:1;min-height:0;overflow:auto;padding:6px;scrollbar-width:thin;overscroll-behavior:contain}
-.knobs-palette .knobs-palette-hl{position:absolute;left:6px;right:6px;top:0;border-radius:min(var(--ku-radius),7px);background:var(--ku-wash-hi);opacity:0;pointer-events:none;
+.knobs-palette .knobs-palette-hl{position:absolute;left:6px;right:6px;top:0;border-radius:max(0px,calc(var(--ku-panel-radius) - 6px));background:var(--ku-wash-hi);opacity:0;pointer-events:none;
   transition:transform var(--ku-ease-ms) var(--ku-ease),height var(--ku-ease-ms) var(--ku-ease),opacity .12s}
 .knobs-palette .knobs-palette-section{padding:10px 10px 4px;color:var(--ku-dim);font-size:calc(var(--ku-font-size) - 1px);font-weight:var(--ku-label-weight);user-select:none}
 .knobs-palette .knobs-palette-section:first-of-type{padding-top:4px}

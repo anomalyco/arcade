@@ -1,5 +1,6 @@
 import type { Wall } from "./volume"
 import { emitTrailBirth, TrailBirth } from "./projectile-trail"
+import { sampleTable } from "../ramp-table"
 
 export const PARTICLE_CAPACITY = 2048
 export const PARTICLE_STRIDE = 28
@@ -13,6 +14,34 @@ export type ParticleSpec = {
   trail?: number
   /** Secondary pop scale in metres (0: none): a small fireball burst where the particle expires. */
   pop?: number
+  /** A life ramp from `lifeRamp` (0 or absent: none), fixed at spawn. */
+  ramp?: number
+}
+/**
+ * Colour, size and opacity over a particle's life, as tables over 0…1 of its life (see `ramps.ts`): a linear-light
+ * RGB tint, a size multiplier and an opacity multiplier, each on top of the kind's own growth and fade. A null table
+ * leaves that part alone.
+ */
+export type LifeRamp = { readonly tint: Float32Array | null; readonly size: Float32Array | null; readonly opacity: Float32Array | null }
+const RAMP_SLOTS = 255
+const ramps: (LifeRamp | undefined)[] = []
+const rampKeys = new Map<string, number>()
+const rampSlotKeys: string[] = []
+let rampCursor = 0
+/**
+ * The id a spec's `ramp` takes for the ramp named `key`, built on first use. Ids are recycled oldest first after
+ * 255 distinct ramps, which only matters to a particle that outlives that many edits.
+ */
+export function lifeRamp(key: string, build: () => LifeRamp): number {
+  const known = rampKeys.get(key)
+  if (known !== undefined) return known
+  const id = rampCursor++ % RAMP_SLOTS + 1
+  const previous = rampSlotKeys[id]
+  if (previous !== undefined) rampKeys.delete(previous)
+  ramps[id] = build()
+  rampSlotKeys[id] = key
+  rampKeys.set(key, id)
+  return id
 }
 const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7}
 
@@ -42,7 +71,7 @@ export class Particles {
     p[i+12]=spec.r;p[i+13]=spec.g;p[i+14]=spec.b;p[i+15]=spec.alpha
     p[i+16]=kinds[spec.kind];p[i+17]=spec.bounce;p[i+18]=seed
     p[i+19]=spec.temperature??0;p[i+20]=spec.turbulence??0;p[i+21]=spec.ease??1
-    p[i+22]=spec.trail??0;p[i+23]=0;p[i+24]=spec.pop??0;p[i+25]=0
+    p[i+22]=spec.trail??0;p[i+23]=0;p[i+24]=spec.pop??0;p[i+25]=0;p[i+26]=spec.ramp??0
     return true
   }
   update(dt:number,walls:readonly Wall[]=[],ground:(x:number,z:number)=>number=flatGround) {
@@ -117,9 +146,17 @@ export class Particles {
     for(let n=0;n<this.count;n++) {
       const i=n*PARTICLE_STRIDE,k=n*16,age=p[i+7],life=p[i+8],t=age/life,kind=p[i+16],ease=p[i+21]||1
       const growthCurve=ease!==1?(1-Math.pow(Math.max(0,1-t),ease))*life:age
-      o[k]=p[i];o[k+1]=p[i+1];o[k+2]=p[i+2];o[k+3]=Math.max(0.01,p[i+3]+p[i+9]*growthCurve)
       const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):Math.min(1,(1-t)*4)
-      o[k+4]=p[i+12];o[k+5]=p[i+13];o[k+6]=p[i+14];o[k+7]=p[i+15]*fade
+      const ramp=p[i+26]?ramps[p[i+26]]:undefined
+      if(ramp){
+        const tint=ramp.tint,size=ramp.size?sampleTable(ramp.size,t):1,opacity=ramp.opacity?sampleTable(ramp.opacity,t):1
+        o[k]=p[i];o[k+1]=p[i+1];o[k+2]=p[i+2];o[k+3]=Math.max(0.01,(p[i+3]+p[i+9]*growthCurve)*size)
+        o[k+4]=tint?p[i+12]*sampleTable(tint,t,3,0):p[i+12];o[k+5]=tint?p[i+13]*sampleTable(tint,t,3,1):p[i+13]
+        o[k+6]=tint?p[i+14]*sampleTable(tint,t,3,2):p[i+14];o[k+7]=p[i+15]*fade*opacity
+      }else{
+        o[k]=p[i];o[k+1]=p[i+1];o[k+2]=p[i+2];o[k+3]=Math.max(0.01,p[i+3]+p[i+9]*growthCurve)
+        o[k+4]=p[i+12];o[k+5]=p[i+13];o[k+6]=p[i+14];o[k+7]=p[i+15]*fade
+      }
       o[k+8]=p[i+4];o[k+9]=p[i+5];o[k+10]=p[i+6];o[k+11]=kind
       o[k+12]=p[i+18]+(kind===5||kind===6?0:age*2);o[k+13]=t;o[k+14]=p[i+19];o[k+15]=p[i+20]
     }

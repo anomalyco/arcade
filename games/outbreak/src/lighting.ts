@@ -5,6 +5,7 @@ import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
+import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
 export const STREET_LAMP_POSTS = [
@@ -34,6 +35,8 @@ export type OutbreakLightingSettings = {
   vignetteDarkness: number
   streetAirHaze: number
   actorLampShadow: number
+  /** Practical lamps' pool edge over plan distance / radius, as curve text (see `light-ramps.ts`). */
+  lampFalloffCurve: string
 }
 
 export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
@@ -53,6 +56,7 @@ export const DEFAULT_OUTBREAK_LIGHTING: OutbreakLightingSettings = {
   vignetteDarkness: 0.34,
   streetAirHaze: 1,
   actorLampShadow: 1,
+  lampFalloffCurve: DEFAULT_LIGHT_CURVES.lampFalloffCurve,
 }
 
 /** Preset lighting profiles so switching `@arcade/kit/look` presets in the Lab dials in the base lighting primitives too. */
@@ -132,6 +136,7 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "roomPower", label: "Interior lamp power", group: "Lighting", min: 0, max: 1.5, step: 0.02, unit: "×" },
   { key: "streetPower", label: "Streetlamp power", group: "Lighting", min: 0, max: 1.5, step: 0.02, unit: "×" },
   { key: "lightFalloff", label: "Light pool tightness", group: "Lighting", min: 0.5, max: 2.5, step: 0.05, unit: "×" },
+  { key: "lampFalloffCurve", label: LIGHT_CURVES.lampFalloffCurve.label, group: "Lighting", type: "curve", unit: "" },
   { key: "flashlightHaze", label: "Flashlight cone haze", group: "Lighting", min: 0, max: 2.0, step: 0.05, unit: "×" },
   { key: "wetSpecular", label: "Wet specular sheen", group: "Lighting", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "rimStrength", label: "Moonlight rim", group: "Lighting", min: 0, max: 2.0, step: 0.05, unit: "×" },
@@ -163,6 +168,8 @@ export type FlashlightBeamSettings = {
   beamDust: number
   beamGlare: number
   beamQuality: number
+  /** How the beam fades out toward its range (x = distance / range), as curve text (see `light-ramps.ts`). */
+  beamFalloffCurve: string
 }
 
 /** Volumetric beam quality tiers: resolution divisor and march samples (0 = no pass, closed-form air glow instead). */
@@ -190,6 +197,7 @@ export const DEFAULT_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
   beamDust: 0.5,
   beamGlare: 1.2,
   beamQuality: 2,
+  beamFalloffCurve: DEFAULT_LIGHT_CURVES.beamFalloffCurve,
 }
 
 export const flashlightBeamControls: LabControl[] = [
@@ -201,6 +209,7 @@ export const flashlightBeamControls: LabControl[] = [
   { key: "beamCookie", label: "Reflector rings", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "" },
   { key: "beamPoolDistance", label: "Pool centre distance (tilt)", group: "Flashlight", min: 2, max: 30, step: 0.25, unit: "m" },
   { key: "beamNearSoftening", label: "Near-lens softening", group: "Flashlight", min: 0.5, max: 6, step: 0.1, unit: "m" },
+  { key: "beamFalloffCurve", label: LIGHT_CURVES.beamFalloffCurve.label, group: "Flashlight", type: "curve", unit: "" },
   { key: "beamAirScatter", label: "Air scatter", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "beamBounce", label: "Bounce light", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "beamColorKnee", label: "Colour knee (irradiance)", group: "Flashlight", min: 0.02, max: 1, step: 0.01, unit: "" },
@@ -229,7 +238,9 @@ export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
 /** Rugs and themed interiors (see `interiors/wgsl.ts`) start after the beam block. */
 export const OUTBREAK_INTERIOR_UNIFORM_OFFSET = 164
 export const OUTBREAK_UNSEEN_UNIFORM_OFFSET = OUTBREAK_INTERIOR_UNIFORM_OFFSET + INTERIOR_UNIFORM_FLOATS
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_UNSEEN_UNIFORM_OFFSET + 8
+/** Reshaped falloff curves (see `light-ramps.ts`): flags, then a 16-sample table each. */
+export const OUTBREAK_RAMP_UNIFORM_OFFSET = OUTBREAK_UNSEEN_UNIFORM_OFFSET + 8
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT_RAMP_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -495,6 +506,15 @@ export function packOutbreakLightingUniforms(
     },
     out,
     OUTBREAK_UNSEEN_UNIFORM_OFFSET,
+  )
+  packLightRamps(
+    {
+      beamFalloffCurve: (fl as Partial<FlashlightBeamSettings>).beamFalloffCurve,
+      lampFalloffCurve: (l as Partial<OutbreakLightingSettings>).lampFalloffCurve,
+      unseenDepthCurve: (un as Partial<UnseenSettings> | undefined)?.unseenDepthCurve,
+    },
+    out,
+    OUTBREAK_RAMP_UNIFORM_OFFSET,
   )
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
@@ -1068,9 +1088,10 @@ struct OutbreakLightingUniforms {
   invViewProj: mat4x4f,
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
   u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
-  unseen: UnseenUniforms,
+  unseen: UnseenUniforms,${lightRampFieldsWgsl}
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
+${lightRampWgsl}
 `
 
 export const outbreakLightingDeclarationsWgsl = /* wgsl */ `
@@ -1303,8 +1324,9 @@ fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
 fn flashFalloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
   let x2 = d2 / (r * r);
-  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
   let soft = max(OL.u13.z, 0.1);
+  if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
   return win * win / (1.0 + d2 / (soft * soft));
 }
 
