@@ -87,7 +87,8 @@ export class JitterBuffer<T> {
   /** Accepts input `seq` arriving at server tick `tick`. Out-of-order or duplicate sequences are ignored. */
   push(seq: number, input: T, tick: number): void {
     if (!Number.isSafeInteger(seq) || seq < 0 || seq <= this.seq) return
-    this.streak = seq === this.seq + 1 ? this.streak + 1 : 0
+    const gap = seq - this.seq
+    this.streak = gap === 1 ? this.streak + 1 : gap <= 6 && this.streak >= this.config.streamMin ? this.streak : 0
     this.seq = seq
     this.lastArrival = tick
     if (seq <= this.ack) {

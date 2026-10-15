@@ -85,6 +85,22 @@ export class ByteWriter {
     return this.u16(b.length).bytes(b)
   }
 
+  /** Unsigned LEB128 varint (1 byte for 0..127, 2 bytes for 128..16383). */
+  uvar(v: number): this {
+    let n = v >>> 0
+    while (n >= 0x80) {
+      this.u8((n & 0x7f) | 0x80)
+      n >>>= 7
+    }
+    return this.u8(n)
+  }
+
+  /** ZigZag-encoded signed varint (1 byte for -64..63, 2 bytes for -8192..8191). */
+  ivar(v: number): this {
+    const n = Math.round(v) | 0
+    return this.uvar(((n << 1) ^ (n >> 31)) >>> 0)
+  }
+
   /** Copy of the written bytes. */
   finish(): Uint8Array {
     return this.buf.slice(0, this.length)
@@ -155,6 +171,22 @@ export class ByteReader {
   str(): string {
     return decoder.decode(this.bytes(this.u16()))
   }
+
+  uvar(): number {
+    let out = 0
+    let shift = 0
+    for (;;) {
+      const b = this.u8()
+      out |= (b & 0x7f) << shift
+      if ((b & 0x80) === 0) return out >>> 0
+      shift += 7
+    }
+  }
+
+  ivar(): number {
+    const u = this.uvar()
+    return (u >>> 1) ^ -(u & 1)
+  }
 }
 
 /**
@@ -178,3 +210,33 @@ export function unframe(data: Uint8Array): { personal: Uint8Array; shared: Uint8
 /** Angle in radians to/from a u16 turn fraction (0.0055° steps). */
 export const packAngle = (a: number) => Math.round((((a / (Math.PI * 2)) % 1) + 1) % 1 * 65536) & 0xffff
 export const unpackAngle = (v: number) => (v / 65536) * Math.PI * 2
+
+/** Angle in radians to/from a 12-bit turn fraction (0..4095, 0.088° steps). */
+export const packAngle12 = (a: number) => Math.round((((a / (Math.PI * 2)) % 1) + 1) % 1 * 4096) & 0x0fff
+export const unpackAngle12 = (v: number) => ((v & 0x0fff) / 4096) * Math.PI * 2
+
+/** Angle in radians to/from an 8-bit turn fraction (0..255, 1.406° steps). */
+export const packAngle8 = (a: number) => Math.round((((a / (Math.PI * 2)) % 1) + 1) % 1 * 256) & 0xff
+export const unpackAngle8 = (v: number) => ((v & 0xff) / 256) * Math.PI * 2
+
+/** Packs two signed 4-bit integers in [-8, 7] into one byte. */
+export const packNibblePair = (dx: number, dy: number) => ((Math.round(dx) + 8) & 0x0f) | (((Math.round(dy) + 8) & 0x0f) << 4)
+export const unpackNibblePair = (b: number): [number, number] => [(b & 0x0f) - 8, ((b >>> 4) & 0x0f) - 8]
+
+/** Writes `bits` as packed bytes without a length prefix (caller knows `bits.length`). */
+export function writeBitset(w: ByteWriter, bits: readonly boolean[]): void {
+  for (let i = 0; i < bits.length; i += 8) {
+    let b = 0
+    for (let k = 0; k < 8 && i + k < bits.length; k++) if (bits[i + k]) b |= 1 << k
+    w.u8(b)
+  }
+}
+
+export function readBitset(r: ByteReader, count: number): boolean[] {
+  const out = new Array<boolean>(count)
+  for (let i = 0; i < count; i += 8) {
+    const b = r.u8()
+    for (let k = 0; k < 8 && i + k < count; k++) out[i + k] = Boolean(b & (1 << k))
+  }
+  return out
+}

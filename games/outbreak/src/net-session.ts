@@ -1,3 +1,5 @@
+import { ByteWriter } from "@arcade/kit/net/bytes"
+import { AckHistory } from "@arcade/kit/net/interest"
 import { lerp, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
 import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { createAIAgent, type AIAgent, type OutbreakAISubsystem } from "../shared/ai"
@@ -9,9 +11,12 @@ import { CoopSim, type SurvivorSlot } from "../shared/coop-sim"
 import type { InteractionRegistry } from "../shared/interact"
 import {
   applyZombieState,
+  commandOps,
   decodeServerText,
   decodeSnapshot,
+  encodeClientInText,
   packCommand,
+  unpackCommand,
   type ClientMsg,
   type CommandTuple,
   type RemoteSurvivor,
@@ -59,6 +64,7 @@ export class NetSession implements Session {
   readonly predictor = new Predictor<Command>()
   readonly smoother = new Smoother(14, 2.5)
   readonly snapshots: SnapshotBuffer<SharedSnapshot>
+  readonly snapHistory = new AckHistory<SharedSnapshot>(32)
   roster: RosterEntry[] = []
   id = ""
   index = 0
@@ -69,11 +75,16 @@ export class NetSession implements Session {
   snapshotCount = 0
   bytesOut = 0
   lastAck = -1
+  lastServerTick = 0
   replayed = 0
   private ws: WebSocket | null = null
   private outbox: CommandTuple[] = []
   private outboxSeq = 0
+  private prevSent: CommandTuple[] = []
+  private prevSentSeq = 0
+  private outWriter = new ByteWriter(64)
   private agents = new Map<number, AIAgent>()
+  private lastAppliedRevision = -1
   private retries = 0
   private closed = false
   private welcomed = false
@@ -117,20 +128,34 @@ export class NetSession implements Session {
     return this.roster.find((r) => r.index === index)?.name ?? `Survivor ${index + 1}`
   }
 
-  /** One fixed 60 Hz tick of local input: predicted at once, sent in small batches. */
+  /** One fixed 60 Hz tick of local input: quantized identically to the wire, predicted at once, sent in batches. */
   update(_dt: number, command: Command): void {
     if (!this.welcomed) return
-    const seq = this.predictor.record(command)
+    const tuple = packCommand(command)
+    const quantCmd = unpackCommand(tuple)
+    const seq = this.predictor.record(quantCmd)
     if (!this.outbox.length) this.outboxSeq = seq
-    this.outbox.push(packCommand(command))
-    this.sim.stepSurvivor(this.local, command, TICK_DT, COOP_TUNING, true)
+    this.outbox.push(tuple)
+    this.sim.stepSurvivor(this.local, quantCmd, TICK_DT, COOP_TUNING, true)
     this.sim.refreshPrompt(this.local)
     if (this.outbox.length >= 2) this.flush()
   }
 
   flush(): void {
     if (!this.outbox.length) return
-    this.send({ t: "in", s: this.outboxSeq, c: this.outbox })
+    // Re-send the previous batch when it contained a one-shot edge so a dropped packet never loses an action
+    const includePrev =
+      this.prevSent.length > 0 &&
+      this.prevSentSeq + this.prevSent.length === this.outboxSeq &&
+      this.prevSentSeq + this.prevSent.length - 1 > this.lastAck &&
+      this.prevSent.some((t) => commandOps.hasEdges(unpackCommand(t)))
+    const startSeq = includePrev ? this.prevSentSeq : this.outboxSeq
+    const batch = includePrev ? [...this.prevSent, ...this.outbox] : this.outbox
+    const renderSec = this.snapshots.size > 0 ? Math.max(0, this.snapshots.renderTime(this.now())) : 0
+    const viewTick = renderSec > 0 ? Math.round(renderSec / TICK_DT) : 0
+    this.sendRaw(encodeClientInText(startSeq, batch, this.lastServerTick, viewTick, this.outWriter))
+    this.prevSent = this.outbox.slice(-2)
+    this.prevSentSeq = this.outboxSeq + this.outbox.length - this.prevSent.length
     this.outbox = []
   }
 
@@ -167,6 +192,12 @@ export class NetSession implements Session {
     this.ws.send(data)
   }
 
+  private sendRaw(data: string): void {
+    if (this.ws?.readyState !== 1) return
+    this.bytesOut += data.length
+    this.ws.send(data)
+  }
+
   private open(): void {
     const Impl = this.options.WebSocket ?? WebSocket
     const ws = new Impl(this.options.url)
@@ -196,7 +227,12 @@ export class NetSession implements Session {
       this.status = "Connection lost. Reconnecting…"
       setTimeout(() => !this.closed && this.open(), Math.min(4000, 300 * 2 ** this.retries++))
     }
-    if (!this.pingTimer) this.pingTimer = setInterval(() => this.send({ t: "ping", c: this.now() }), 2000)
+    if (!this.pingTimer) {
+      this.pingTimer = setInterval(
+        () => this.send({ t: "ping", c: this.now(), ...(this.lastServerTick > 0 ? { a: this.lastServerTick } : {}) }),
+        2000,
+      )
+    }
   }
 
   private receive(msg: ServerMsg): void {
@@ -219,6 +255,10 @@ export class NetSession implements Session {
         this.index = msg.index
         this.predictor.reset()
         this.outbox = []
+        this.prevSent = []
+        this.lastServerTick = 0
+        this.lastAppliedRevision = -1
+        this.snapHistory.clear()
         this.snapshots.clear()
         this.welcomed = true
         this.status = null
@@ -243,7 +283,8 @@ export class NetSession implements Session {
 
   private receiveSnapshot(bytes: Uint8Array): void {
     if (!this.welcomed) return
-    const { personal, shared } = decodeSnapshot(bytes, this.sim.town.seed)
+    const { personal, shared } = decodeSnapshot(bytes, this.sim.town.seed, this.snapHistory)
+    if (shared.tick > this.lastServerTick) this.lastServerTick = shared.tick
     this.snapshotCount++
     this.applyWorld(shared)
     const p = this.local.survivor
@@ -266,9 +307,7 @@ export class NetSession implements Session {
   private applyWorld(s: SharedSnapshot): void {
     const sim = this.sim
     // Sync survivor slots from snapshot first so active chunk windows match the server's union of survivor windows
-    const present = new Set<number>()
     for (const r of s.survivors) {
-      present.add(r.index)
       if (r.index === this.local.index) continue
       const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
       let slot = sim.slots.find((sl) => sl.index === r.index)
@@ -277,51 +316,69 @@ export class NetSession implements Session {
       slot.survivor.y = r.y
     }
     const meSnap = s.survivors.find((r) => r.index === this.local.index)
+    let chunksChanged = false
     if (meSnap) {
-      // Temporarily align local slot for chunk window calculation
       const savedX = this.local.survivor.x
       const savedY = this.local.survivor.y
       this.local.survivor.x = meSnap.x
       this.local.survivor.y = meSnap.y
-      sim.syncWorldChunks()
+      chunksChanged = sim.syncWorldChunks()
       this.local.survivor.x = savedX
       this.local.survivor.y = savedY
     } else {
-      sim.syncWorldChunks()
+      chunksChanged = sim.syncWorldChunks()
     }
     const town = sim.town
     let topology = false
-    town.doors.forEach((d, i) => {
-      const n = s.doors[i]
-      if (!n) return
-      if (d.open !== n.open) topology = true
-      d.open = n.open
-      if (n.locked) d.locked = true
-      else if (d.locked !== undefined) d.locked = false
-    })
-    town.windows.forEach((w, i) => {
-      const n = s.windows[i]
-      if (!n) return
-      if (w.open !== n.open) topology = true
-      w.open = n.open
-      w.openable = n.openable
-    })
-    const portals = [...town.doors.map((d) => d.id), ...town.windows.map((w) => w.id)]
-    portals.forEach((id, i) => {
-      const st = sim.ai.portalStates.get(id)
-      if (!st) return
-      const planks = s.planks[i] ?? 0
-      if (st.barricadePlanks !== planks) topology = true
-      st.barricadePlanks = planks
-      st.barricadeHp = planks * 100
-    })
-    for (const bash of s.bashes) {
-      const st = sim.ai.portalStates.get(portals[bash.portal] ?? "")
-      if (st) st.lastBashTime = s.time - bash.age
+    if (chunksChanged || s.revision !== this.lastAppliedRevision) {
+      this.lastAppliedRevision = s.revision
+      town.doors.forEach((d, i) => {
+        const n = s.doors[i]
+        if (!n) return
+        if (d.open !== n.open) topology = true
+        d.open = n.open
+        if (n.locked) d.locked = true
+        else if (d.locked !== undefined) d.locked = false
+      })
+      town.windows.forEach((w, i) => {
+        const n = s.windows[i]
+        if (!n) return
+        if (w.open !== n.open) topology = true
+        w.open = n.open
+        w.openable = n.openable
+      })
+      const portals = [...town.doors.map((d) => d.id), ...town.windows.map((w) => w.id)]
+      portals.forEach((id, i) => {
+        const st = sim.ai.portalStates.get(id)
+        if (!st) return
+        const planks = s.planks[i] ?? 0
+        if (st.barricadePlanks !== planks) topology = true
+        st.barricadePlanks = planks
+        st.barricadeHp = planks * 100
+      })
+    }
+    if (s.bashes.length) {
+      const portals = [...town.doors.map((d) => d.id), ...town.windows.map((w) => w.id)]
+      for (const bash of s.bashes) {
+        const st = sim.ai.portalStates.get(portals[bash.portal] ?? "")
+        if (st) st.lastBashTime = s.time - bash.age
+      }
     }
     const progression = sim.progression
-    progression.pings.splice(0, progression.pings.length, ...s.pings.map((p) => ({ id: p.id, by: p.by, x: p.x, y: p.y, label: p.label, until: s.time + p.left })))
-    progression.lures.splice(0, progression.lures.length, ...s.lures.map((l) => ({ id: l.id, x: l.x, y: l.y, until: s.time + l.left, next: Infinity })))
+    if (progression.pings.length || s.pings.length) {
+      progression.pings.splice(
+        0,
+        progression.pings.length,
+        ...s.pings.map((p) => ({ id: p.id, by: p.by, x: p.x, y: p.y, label: p.label, until: s.time + p.left })),
+      )
+    }
+    if (progression.lures.length || s.lures.length) {
+      progression.lures.splice(
+        0,
+        progression.lures.length,
+        ...s.lures.map((l) => ({ id: l.id, x: l.x, y: l.y, until: s.time + l.left, next: Infinity })),
+      )
+    }
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
     if (topology) {

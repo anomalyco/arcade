@@ -1,8 +1,32 @@
 import { describe, expect, test } from "bun:test"
-import { ByteReader, ByteWriter, frame, packAngle, unframe, unpackAngle } from "./net/bytes"
+import {
+  ByteReader,
+  ByteWriter,
+  frame,
+  packAngle,
+  packAngle12,
+  packAngle8,
+  packNibblePair,
+  readBitset,
+  unframe,
+  unpackAngle,
+  unpackAngle12,
+  unpackAngle8,
+  unpackNibblePair,
+  writeBitset,
+} from "./net/bytes"
+import {
+  AckHistory,
+  BandwidthPacer,
+  inInterestBubble,
+  isScheduledOnSnapshot,
+  PriorityAccumulator,
+  selectInterestStride,
+} from "./net/interest"
 import { lerpAngle, SnapshotBuffer } from "./net/interpolate"
 import { DEFAULT_JITTER, JitterBuffer, type InputOps } from "./net/jitter-buffer"
 import { Predictor, Smoother } from "./net/prediction"
+import { RewindHistory } from "./net/rewind"
 import { Seats } from "./net/seats"
 
 type In = { mx: number; fire: boolean; n: number }
@@ -120,6 +144,78 @@ describe("bytes", () => {
     const r = new ByteReader(s)
     expect([r.u8(), r.u16(), r.i16(), r.u32(), r.f32(), r.str()]).toEqual([7, 65535, -1234, 4_000_000_000, 1.5, "héllo"])
     expect(Math.abs(unpackAngle(packAngle(-Math.PI / 2)) - Math.PI * 1.5)).toBeLessThan(1e-3)
+  })
+
+  test("round-trips varints, signed varints, 8/12-bit angles, nibble pairs and bitsets", () => {
+    const w = new ByteWriter(16)
+    const uvals = [0, 1, 127, 128, 255, 16383, 16384, 1_000_000]
+    const ivals = [0, -1, 1, -64, 63, -65, 64, -8192, 8191, -123456, 123456]
+    for (const v of uvals) w.uvar(v)
+    for (const v of ivals) w.ivar(v)
+    w.u8(packNibblePair(-8, 7)).u8(packNibblePair(0, -3))
+    const bits = [true, false, true, true, false, false, true, false, true, false, true]
+    writeBitset(w, bits)
+    const r = new ByteReader(w.finish())
+    expect(uvals.map(() => r.uvar())).toEqual(uvals)
+    expect(ivals.map(() => r.ivar())).toEqual(ivals)
+    expect(unpackNibblePair(r.u8())).toEqual([-8, 7])
+    expect(unpackNibblePair(r.u8())).toEqual([0, -3])
+    expect(readBitset(r, bits.length)).toEqual(bits)
+    expect(Math.abs(unpackAngle8(packAngle8(1.23)) - 1.23)).toBeLessThan(0.03)
+    expect(Math.abs(unpackAngle12(packAngle12(1.23)) - 1.23)).toBeLessThan(0.002)
+  })
+})
+
+describe("Interest & Rewind", () => {
+  test("interest bubble, priority accumulator, AckHistory and BandwidthPacer", () => {
+    expect(inInterestBubble(50, 50, 48, 48, 64)).toBe(true)
+    expect(inInterestBubble(200, 50, 48, 48, 64)).toBe(false)
+    expect(selectInterestStride(10, true, true)).toBe(1)
+    expect(selectInterestStride(10, false, false)).toBe(1)
+    expect(selectInterestStride(10, false, true)).toBe(2)
+    expect(selectInterestStride(50, false, true)).toBe(4)
+    expect([0, 1, 2, 3].filter((s) => isScheduledOnSnapshot(s, 5, 4)).length).toBe(1)
+
+    const acc = new PriorityAccumulator<number>()
+    let sent = 0
+    for (let i = 0; i < 8; i++) if (acc.step(1, 50, false, true)) sent++
+    expect(sent).toBe(2)
+    expect(acc.step(1, 50, true, true)).toBe(true)
+
+    const hist = new AckHistory<string>(4)
+    for (let t = 1; t <= 6; t++) hist.record(t * 3, `s${t}`)
+    expect(hist.get(3)).toBeUndefined()
+    expect(hist.get(9)).toBe("s3")
+    expect(hist.latest()).toEqual({ tick: 18, state: "s6" })
+
+    const pacer = new BandwidthPacer(3, 9, 1000)
+    pacer.record(100, 0.1)
+    pacer.record(100, 0.35)
+    expect(pacer.stride()).toBe(3)
+    pacer.record(2000, 0.6)
+    expect(pacer.stride()).toBeGreaterThan(3)
+  })
+
+  test("RewindHistory interpolates past poses and preserves knockback displacement", () => {
+    const rw = new RewindHistory<number>(8, 0.2)
+    const entities = [{ id: 1, x: 10, y: 20 }]
+    rw.record(1, 1.0, entities)
+    entities[0]!.x = 12
+    rw.record(2, 1.1, entities)
+    entities[0]!.x = 14
+    rw.record(3, 1.2, entities)
+
+    const sampled = rw.sampleAtTime(1.05)!
+    expect(sampled.get(1)!.x).toBeCloseTo(11, 4)
+
+    let seenX = 0
+    rw.withRewoundPositions(entities, 1.05, () => {
+      seenX = entities[0]!.x
+      // Apply a +0.5 m knockback during hitscan evaluation
+      entities[0]!.x += 0.5
+    })
+    expect(seenX).toBeCloseTo(11, 4)
+    expect(entities[0]!.x).toBeCloseTo(14.5, 4)
   })
 })
 

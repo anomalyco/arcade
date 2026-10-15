@@ -585,7 +585,7 @@ export class OutbreakAISubsystem {
     }
 
     if (topologyChanged) {
-      this.rebuildTopology(town)
+      this.rebuildTopology(town, this.nav.chunkTiles.size > 0 ? new Map(this.nav.chunkTiles) : undefined)
     }
 
     const damage = survivors.map(() => 0)

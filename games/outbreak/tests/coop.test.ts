@@ -1,10 +1,25 @@
 import { describe, expect, test } from "bun:test"
+import { AckHistory } from "@arcade/kit/net/interest"
 import { CoopRoomCore, type Conn } from "../server/room-core"
+import { createAIAgent } from "../shared/ai"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
-import { CoopSim } from "../shared/coop-sim"
-import { decodeServerText, decodeSnapshot, packCommand, type ServerMsg } from "../shared/net-protocol"
+import { CoopSim, createSurvivor } from "../shared/coop-sim"
+import {
+  decodeClient,
+  decodePersonal,
+  decodeServerText,
+  decodeShared,
+  decodeSnapshot,
+  encodeClientIn,
+  encodePersonal,
+  encodeShared,
+  inspectSnapshotBreakdown,
+  packCommand,
+  type ServerMsg,
+  type SharedSnapshot,
+} from "../shared/net-protocol"
 import type { Command } from "../shared/session"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { NetSession } from "../src/net-session"
@@ -320,4 +335,228 @@ test("over a jittery link, stand-ins never lose a shot and the survivor still co
   expect(server.magAmmo + server.reserveAmmo).toBe(12 - 5)
   expect(Math.hypot(session.view.player.x - server.x, session.view.player.y - server.y)).toBeLessThan(0.01)
   session.close()
+})
+
+describe("Wire protocol encode/decode, interest management & delta against ack under packet loss", () => {
+  test("round-trips binary client inputs, personal survivor states and delta shared snapshots", () => {
+    const cmds: Command[] = [
+      { mx: 0.75, my: -0.5, aim: 1.25, interact: true, sprint: true, fire: true },
+      {
+        mx: 0,
+        my: 1,
+        aim: -2.1,
+        interact: false,
+        hotbarSlot: 2,
+        hotbarDelta: -1,
+        interactAction: "search",
+        pick: { mode: "craft", index: 1 },
+      },
+    ]
+    const tuples = cmds.map(packCommand)
+    const binIn = encodeClientIn(42, tuples, 120, 114)
+    const decodedIn = decodeClient(binIn)!
+    expect(decodedIn.t).toBe("in")
+    if (decodedIn.t === "in") {
+      expect(decodedIn.s).toBe(42)
+      expect(decodedIn.a).toBe(120)
+      expect(decodedIn.v).toBe(114)
+      expect(decodedIn.c).toHaveLength(2)
+      expect(decodedIn.c[0]![0]).toBeCloseTo(0.75, 3)
+      expect(decodedIn.c[1]![4]).toBe(2)
+      expect(decodedIn.c[1]![5]).toBe(-1)
+      expect(decodedIn.c[1]![6]).toBeGreaterThan(0)
+      expect(decodedIn.c[1]![7]).toBeGreaterThan(0)
+    }
+
+    const surv = createSurvivor(18.5, 42.25)
+    surv.stamina = 64.5
+    surv.battery = 0.82
+    surv.fireCooldown = 0.22
+    surv.reloadRemaining = 0.75
+    surv.recoil = 0.4
+    surv.noise = 8.5
+    surv.peekingWindowId = "ash-south-west"
+    surv.lootMessage = "Searched drawer"
+    surv.lootMessageUntil = 12.5
+    const persBytes = encodePersonal(77, surv, null, [{ text: "+4 9mm", kind: "result" }])
+    const persDecoded = decodePersonal(persBytes)
+    expect(persDecoded.ack).toBe(77)
+    expect(persDecoded.survivor.x).toBeCloseTo(18.5, 4)
+    expect(persDecoded.survivor.y).toBeCloseTo(42.25, 4)
+    expect(persDecoded.survivor.stamina).toBeCloseTo(64.5, 3)
+    expect(persDecoded.survivor.fireCooldown).toBeCloseTo(0.22, 3)
+    expect(persDecoded.survivor.reloadRemaining).toBeCloseTo(0.75, 3)
+    expect(persDecoded.survivor.recoil).toBeCloseTo(0.4, 3)
+    expect(persDecoded.survivor.peekingWindowId).toBe("ash-south-west")
+    expect(persDecoded.survivor.lootMessage).toBe("Searched drawer")
+    expect(persDecoded.notices).toEqual([{ text: "+4 9mm", kind: "result" }])
+
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 12 })
+    const slot = sim.addSurvivor("p0", 0)
+    const serverHist = new AckHistory<SharedSnapshot>(16)
+    const clientHist = new AckHistory<SharedSnapshot>(16)
+    const shooters = new Map<number, number>()
+
+    const out1: { snap?: SharedSnapshot } = {}
+    const snap1Bytes = encodeShared(sim, 3, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      snapIndex: 1,
+      outSnapshot: out1,
+    })
+    serverHist.record(3, out1.snap!)
+    const dec1 = decodeShared(snap1Bytes, 7, clientHist)
+    expect(dec1.zombies).toEqual(out1.snap!.zombies)
+
+    for (let i = 0; i < 3; i++) {
+      sim.stepSurvivor(slot, { mx: 1, my: 0, aim: 0.5, interact: false, fire: i === 0 }, TICK_DT)
+      sim.stepWorld(TICK_DT, 120)
+    }
+    const out2: { snap?: SharedSnapshot } = {}
+    const snap2Bytes = encodeShared(sim, 6, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      baseSnap: serverHist.get(3),
+      snapIndex: 2,
+      outSnapshot: out2,
+    })
+    expect(snap2Bytes.byteLength).toBeLessThan(snap1Bytes.byteLength)
+    const bd = inspectSnapshotBreakdown(
+      new Uint8Array([4, 0, 0, 0, 1, 2, 3, 4, ...snap2Bytes]),
+      clientHist,
+    )
+    expect(bd.portalsBytes).toBe(0)
+    const dec2 = decodeShared(snap2Bytes, 7, clientHist)
+    expect(dec2.zombies).toEqual(out2.snap!.zombies)
+    expect(dec2.doors).toEqual(out2.snap!.doors)
+
+    // Verify two clients with different acked baseSnap ticks (e.g. 3 vs 6) reconstruct identical zombies at tick 9
+    for (let i = 0; i < 3; i++) {
+      sim.stepSurvivor(slot, { mx: 0, my: 1, aim: 1.0, interact: false }, TICK_DT)
+      sim.stepWorld(TICK_DT, 120)
+    }
+    serverHist.record(6, out2.snap!)
+    const clientHistLag = new AckHistory<SharedSnapshot>(16)
+    clientHistLag.record(3, dec1)
+    const out3A: { snap?: SharedSnapshot } = {}
+    const snap3From6 = encodeShared(sim, 9, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      baseSnap: serverHist.get(6),
+      prevBubbleSnap: out2.snap,
+      snapIndex: 3,
+      outSnapshot: out3A,
+    })
+    const snap3From3 = encodeShared(sim, 9, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      baseSnap: serverHist.get(3),
+      prevBubbleSnap: out2.snap,
+      snapIndex: 3,
+    })
+    const dec3From6 = decodeShared(snap3From6, 7, clientHist)
+    const dec3From3 = decodeShared(snap3From3, 7, clientHistLag)
+    expect(dec3From3.zombies).toEqual(dec3From6.zombies)
+  })
+
+  test("per-recipient interest filter sends only zombies inside each survivor's 1 km-separated bubble", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("spread", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 2, 0)
+    const sock = net.socketClass()
+    const a = new NetSession({ url: "loop", room: "spread", name: "A", now: () => net.now, WebSocket: sock })
+    const b = new NetSession({ url: "loop", room: "spread", name: "B", now: () => net.now, WebSocket: sock })
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    const slotA = core.sim.slot(a.id)!
+    const slotB = core.sim.slot(b.id)!
+    slotA.survivor.x = 27.7
+    slotA.survivor.y = 41.0
+    slotB.survivor.x = 987.7
+    slotB.survivor.y = 41.0
+    a.local.survivor.x = 27.7
+    a.local.survivor.y = 41.0
+    b.local.survivor.x = 987.7
+    b.local.survivor.y = 41.0
+    core.sim.syncWorldChunks()
+    core.sim.ai.agents.length = 0
+    for (let i = 0; i < 20; i++) {
+      core.sim.ai.agents.push(createAIAgent(i + 1, 7, 30 + (i % 5) * 3, 40 + Math.floor(i / 5) * 3, 0))
+    }
+    for (let i = 0; i < 20; i++) {
+      core.sim.ai.agents.push(createAIAgent(101 + i, 7, 990 + (i % 5) * 3, 40 + Math.floor(i / 5) * 3, 0))
+    }
+    for (let i = 0; i < 18; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, idle())
+      b.update(TICK_DT, idle())
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+    }
+    const zA = a.snapshots.latest!.zombies
+    const zB = b.snapshots.latest!.zombies
+    expect(zA.length).toBe(20)
+    expect(zB.length).toBe(20)
+    expect(zA.every((z) => z.id <= 20)).toBe(true)
+    expect(zB.every((z) => z.id >= 101)).toBe(true)
+    a.close()
+    b.close()
+  })
+
+  test("delta compression against acked snapshot stays in sync under 5% packet loss and jitter", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("lossy", { ...DEFAULT_COOP_ROOM, zombieCount: 40 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 4, 3, 0.05)
+    const sock = net.socketClass()
+    const clients = [
+      new NetSession({ url: "loop", room: "lossy", name: "P1", now: () => net.now, WebSocket: sock }),
+      new NetSession({ url: "loop", room: "lossy", name: "P2", now: () => net.now, WebSocket: sock }),
+    ]
+    net.lossRate = 0
+    for (let i = 0; i < 15; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    net.lossRate = 0.05
+    const firstHalfCorr: number[] = []
+    const secondHalfCorr: number[] = []
+    for (let i = 0; i < 360; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      clients.forEach((c, k) => {
+        const beforeX = c.local.survivor.x
+        const beforeY = c.local.survivor.y
+        c.update(TICK_DT, {
+          mx: i < 300 ? Math.cos(i / 35 + k) : 0,
+          my: i < 300 ? Math.sin(i / 45 + k) : 0,
+          aim: i / 25,
+          interact: i === 60 && k === 0,
+          sprint: i % 120 < 30,
+          fire: i % 70 === 20 + k * 15,
+        })
+        c.sync(TICK_DT)
+        const jump = Math.hypot(c.local.survivor.x - beforeX, c.local.survivor.y - beforeY)
+        if (i < 180) firstHalfCorr.push(jump)
+        else secondHalfCorr.push(jump)
+      })
+    }
+    // Let link settle with 0% loss and verify exact convergence
+    net.lossRate = 0
+    for (let i = 0; i < 30; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      for (const c of clients) {
+        c.update(TICK_DT, idle(1.0))
+        c.sync(TICK_DT)
+      }
+    }
+    for (const c of clients) {
+      const srv = core.sim.slot(c.id)!.survivor
+      expect(Math.hypot(c.view.player.x - srv.x, c.view.player.y - srv.y)).toBeLessThan(0.01)
+      expect(c.snapshots.latest!.zombies.length).toBe(core.sim.ai.agents.length)
+      c.close()
+    }
+    const mean1 = firstHalfCorr.reduce((a, b) => a + b, 0) / firstHalfCorr.length
+    const mean2 = secondHalfCorr.reduce((a, b) => a + b, 0) / secondHalfCorr.length
+    expect(mean2).toBeLessThanOrEqual(mean1 + 0.02)
+  })
 })

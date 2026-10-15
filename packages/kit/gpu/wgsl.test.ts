@@ -10,11 +10,12 @@ import {
   packFoliageUniforms,
 } from "./foliage"
 import { LOOK_PRESETS, LookUniformsStruct, createLookSettings, lookStructWgsl, packLookUniforms } from "./look"
-import { makeLookPostShader, makeLookSceneShader } from "./look-shaders"
+import { makeLookPostShader, makeLookSceneShader, resolveLookVariant } from "./look-shaders"
 import {
   MATERIAL_RECIPES,
   MaterialRecipeStruct,
   SurfaceTexUniformsStruct,
+  buildSurfaceMaterialDeclarationsWgsl,
   packMaterialParams,
   packSurfaceTexUniforms,
   surfaceMaterialCoreWgsl,
@@ -156,5 +157,34 @@ describe("wgslStruct & resolveWgsl", () => {
     expect(Array.from(pr.uniforms.subarray(0, 16))).toEqual(vp)
     expect(Array.from(pr.uniforms.subarray(16, 24))).toEqual([10, 20, 30, 3, 0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 1])
     expect(Array.from(pr.uniforms.subarray(24, 32))).toEqual([1, 2, 3, 8, 0.8999999761581421, 0.5, 0.10000000149011612, 2.5])
+  })
+
+  test("specializes Look scene & post variants and surface material slots without .replace()", () => {
+    expect(resolveLookVariant(createLookSettings("noir"))).toBe("noir")
+    expect(resolveLookVariant(createLookSettings("painterly"))).toBe("painterly")
+    expect(resolveLookVariant(createLookSettings("sodium_70s"))).toBe("generic")
+    expect(resolveLookVariant(createLookSettings("noir"), { mode: 2 })).toBe("generic")
+
+    const noirScene = makeLookSceneShader({}, "noir")
+    const painterlyScene = makeLookSceneShader({}, "painterly")
+    const genericScene = makeLookSceneShader({}, "generic")
+
+    expect(noirScene).toContain("moonRimDir")
+    expect(noirScene).not.toContain("gouacheAlbedo")
+    expect(painterlyScene).toContain("gouacheAlbedo")
+    expect(painterlyScene).not.toContain("isLitRoomBulb")
+    expect(genericScene).toContain("moonRimDir")
+    expect(genericScene).toContain("gouacheAlbedo")
+
+    const noirPost = makeLookPostShader(undefined, "noir")
+    const painterlyPost = makeLookPostShader(undefined, "painterly")
+    expect(noirPost).not.toContain("fn kuwaharaPost")
+    expect(painterlyPost).toContain("fn kuwaharaPost")
+
+    const customMat = buildSurfaceMaterialDeclarationsWgsl({
+      asphaltConcrete: "fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample { return SurfaceSample(baseTint, vec2f(0.0), r.roughness, 1.0); }",
+    })
+    expect(customMat).toContain("struct MaterialRecipe")
+    expect(customMat).toContain("return SurfaceSample(baseTint, vec2f(0.0), r.roughness, 1.0);")
   })
 })

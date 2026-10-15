@@ -1,4 +1,4 @@
-import { surfaceMaterial, surfaceMaterialDeclarations } from "@arcade/kit/gpu/surface-materials"
+import { buildSurfaceMaterialDeclarationsWgsl, surfaceMaterial } from "@arcade/kit/gpu/surface-materials"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
@@ -80,9 +80,8 @@ export function packGroundCfgBits(settings: Pick<GroundSettings, "wearAmount" | 
   return (1 << 18) | (w & 63) | ((d & 63) << 6) | ((p & 63) << 12)
 }
 
-export const outbreakSurfaceMaterialDeclarationsWgsl = surfaceMaterialDeclarations.replace(
-  /fn evalAsphaltConcrete\([\s\S]*?return SurfaceSample\(col, roughnessToGloss\(localRough, 0\.045\), localRough, cavity\);\n\}/,
-  /* wgsl */ `fn unpackGroundParams() -> vec3f {
+export const outbreakSurfaceMaterialDeclarationsWgsl = buildSurfaceMaterialDeclarationsWgsl({
+  asphaltConcrete: /* wgsl */ `fn unpackGroundParams() -> vec3f {
   let raw = u32(max(0.0, F.map.w));
   if ((raw & (1u << 18u)) == 0u) {
     return vec3f(1.0, 1.0, 1.0);
@@ -205,7 +204,7 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
 }`,
-)
+})
 
 export const outbreakSurfaceMaterialWgsl = surfaceMaterial
 
