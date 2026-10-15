@@ -6074,6 +6074,15 @@ export function createWorkbench(opts: WorkbenchOptions) {
     get speed() {
       return simSpeed
     },
+    /** Whether the multi-tile variation grid is open (it owns 1–9, G and Esc). */
+    get variationGridOpen() {
+      return variationGrid !== null
+    },
+    /** A section the host loaded after start-up (a game's adapters fetched on demand). */
+    addSection(section: LabSection) {
+      if (!defaultsBySection.has(section.id)) defaultsBySection.set(section.id, { ...section.settings } as LabSettings)
+      section.registerCommands?.(commands)
+    },
     onTick(dt: number) {
       stage.stepCamera(dt)
       const sec = activeSection()
