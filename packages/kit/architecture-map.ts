@@ -245,6 +245,9 @@ function walkTsFiles(dir: string): string[] {
     if (stat.isDirectory()) {
       out.push(...walkTsFiles(full))
     } else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) {
+      if (full.endsWith("/games/blackout/src/lab.ts") || full.endsWith("/games/getaway/src/lab.ts") || full.endsWith("/games/outbreak/src/lab.ts")) {
+        continue
+      }
       out.push(full)
     }
   }
