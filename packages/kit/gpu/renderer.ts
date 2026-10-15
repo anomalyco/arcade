@@ -34,6 +34,8 @@ const DEPTH: GPUTextureFormat = "depth24plus"
 export { LIGHT_FLOATS }
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
+/** Size of the game's custom uniform block at binding 13. */
+export const CUSTOM_UNIFORM_BYTES = 1024
 const MAX_SPRITES = 8192
 const BLOOM_LEVELS = 5
 const SLOTS = MAX_LIGHTS
@@ -236,7 +238,7 @@ export class Renderer {
     packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
     this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: U.UNIFORM | U.COPY_DST })
-    this.customBuf = d.createBuffer({ size: 512, usage: U.UNIFORM | U.COPY_DST })
+    this.customBuf = d.createBuffer({ size: CUSTOM_UNIFORM_BYTES, usage: U.UNIFORM | U.COPY_DST })
     this.inst = { buf: d.createBuffer({ size: 4096 * INST_FLOATS * 4, usage: U.VERTEX | U.COPY_DST }), count: 0, cap: 4096 }
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -486,7 +488,7 @@ export class Renderer {
   }
 
   setCustomUniforms(data: Float32Array<ArrayBuffer>): void {
-    this.device.queue.writeBuffer(this.customBuf, 0, data.buffer, data.byteOffset, Math.min(512, data.byteLength))
+    this.device.queue.writeBuffer(this.customBuf, 0, data.buffer, data.byteOffset, Math.min(CUSTOM_UNIFORM_BYTES, data.byteLength))
   }
 
   private upload(data: ArrayBuffer, prev: Buf | null): Buf {
@@ -518,18 +520,28 @@ export class Renderer {
     this.glassChunks = glsChunks
     this.glass = this.upload(glsBuf, this.glass)
     const f = level.floor
-    this.floorTex.destroy()
-    this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    let rebound = false
+    if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
+      this.floorTex.destroy()
+      this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
     const moon = directionalMask(f)
-    this.moonTex.destroy()
-    this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    if (this.moonTex.width !== moon.w || this.moonTex.height !== moon.h) {
+      this.moonTex.destroy()
+      this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.moonTex }, moon.data, { bytesPerRow: moon.w }, [moon.w, moon.h])
     const b = level.bounce
-    this.bounceTex.destroy()
-    this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    if (this.bounceTex.width !== b.w || this.bounceTex.height !== b.h) {
+      this.bounceTex.destroy()
+      this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.bounceTex }, b.data, { bytesPerRow: b.w * 4 }, [b.w, b.h])
-    this.makeSceneGroup()
+    if (rebound) this.makeSceneGroup()
   }
 
   addModel(mesh: Mesh): number {

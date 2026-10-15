@@ -78,13 +78,15 @@ export const WEAPONS = {
     reload: 10,
     /** Minimum time between two launches (s). */
     interval: 0.7,
-    /** Seeker: lock cone half-angle off the boresight (rad), lock range and minimum range (m), seconds to lock. */
-    cone: 17 * DEG,
+    /** Seeker: lock cone half-angle off the boresight (rad), lock range and minimum range (m), seconds to lock. The
+     *  lock only builds while the target stays inside this tight cone (outside it the timer bleeds off at `bleed`×). */
+    cone: 6 * DEG,
     range: 2500,
     minRange: 120,
     lockTime: 1.4,
-    /** Once tracking, the seeker keeps the target within cone · keep and range · keepRange. */
-    keep: 1.3,
+    bleed: 2,
+    /** The seeker keeps tracking its target within cone · keep and range · keepRange (a completed lock holds there). */
+    keep: 3,
     keepRange: 1.1,
     /** Flight: speed gained per second while the motor burns, top speed, burn time, drag after burnout (1/m). */
     accel: 230,
@@ -368,7 +370,8 @@ const ob = { angle: 0, dist: 0 }
 
 /**
  * One seeker step while the missile is selected: keeps tracking the current target while it stays in the (wider)
- * keep cone, else picks the enemy nearest the boresight inside the lock cone, and locks after `lockTime` seconds on it.
+ * keep cone, else picks the enemy nearest the boresight inside the lock cone. The lock builds over `lockTime` seconds
+ * only while the target sits inside the tight lock cone (it bleeds off outside it); once locked it holds in the keep cone.
  * `blind(id)` is true for jets that just flared (they break the lock and cannot be picked). Returns true when the
  * lock state changed (a new target, locked, or lost), so the caller can tell the room.
  */
@@ -377,12 +380,16 @@ export function lockStep(lock: Lock, dt: number, s: Shooter, targets: Iterable<T
   const before = lock.target
   const was = lock.locked
   let keep: Target | null = null
+  let keepIn = false
   let best: Target | null = null
   let bestAngle = Infinity
   for (const t of targets) {
     if (!t.alive || t.team === s.team || t.surface || blind(t.id)) continue
     if (!offBore(s, t, ob)) continue
-    if (t.id === lock.target && ob.angle <= m.cone * m.keep && ob.dist <= m.range * m.keepRange && ob.dist >= m.minRange * 0.5) keep = t
+    if (t.id === lock.target && ob.angle <= m.cone * m.keep && ob.dist <= m.range * m.keepRange && ob.dist >= m.minRange * 0.5) {
+      keep = t
+      keepIn = ob.angle <= m.cone
+    }
     if (ob.angle <= m.cone && ob.dist <= m.range && ob.dist >= m.minRange && ob.angle < bestAngle) {
       best = t
       bestAngle = ob.angle
@@ -399,8 +406,10 @@ export function lockStep(lock: Lock, dt: number, s: Shooter, targets: Iterable<T
       lock.time = 0
       lock.locked = false
     }
-    lock.time += dt
-    if (lock.time >= m.lockTime) lock.locked = true
+    if (!lock.locked) {
+      lock.time = keep && !keepIn ? Math.max(0, lock.time - m.bleed * dt) : lock.time + dt
+      if (lock.time >= m.lockTime) lock.locked = true
+    }
   }
   return lock.target !== before || lock.locked !== was
 }

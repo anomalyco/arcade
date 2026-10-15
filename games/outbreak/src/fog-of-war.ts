@@ -442,7 +442,7 @@ export function collectFogSoundSprites(
   return alphaCount
 }
 
-/** Visibility field: 768² texels over the 96 m map (12.5 cm), updated in a 512² window around the eye. */
+/** Visibility field: 768² texels over the 96 m map window (12.5 cm), updated in a 512² window around the eye. */
 export const VIS_FIELD_SIZE = 768
 export const VIS_FIELD_DISPATCH = 512
 
@@ -508,11 +508,11 @@ fn softSight(p: vec2f) -> f32 {
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let origin = vec2i(floor(lights[0].pos.xz / FIELD_CELL)) - vec2i(FIELD_HALF);
+  let origin = vec2i(floor((lights[0].pos.xz - OL.win.xy) / FIELD_CELL)) - vec2i(FIELD_HALF);
   let tx = origin + vec2i(gid.xy);
   if (any(tx < vec2i(0)) || any(tx >= vec2i(FIELD_SIZE))) { return; }
   let idx = u32(tx.y * FIELD_SIZE + tx.x);
-  let goal = softSight((vec2f(tx) + 0.5) * FIELD_CELL);
+  let goal = softSight((vec2f(tx) + 0.5) * FIELD_CELL + OL.win.xy);
   var s = fieldState[idx];
   s.x = mix(s.x, goal, select(OL.u15.w, OL.u15.z, goal > s.x));
   s.y = max(s.y, s.x);
@@ -525,7 +525,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 export const outbreakFogOfWarDeclarationsWgsl = /* wgsl */ `
 /** Live sight (x) and soft fine-grained memory (y) from the visibility field, gated to the current sight range. */
 fn fieldSight(world: vec3f, n: vec3f) -> vec2f {
-  let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09) * F.map.xy, 0.0).rg;
+  let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy, 0.0).rg;
   let dEye = length(world.xz - lights[0].pos.xz);
   let gate = 1.0 - smoothstep(lights[0].pos.w - 0.6, lights[0].pos.w + 0.4, dEye);
   return vec2f(fv.x * gate, fv.y);
@@ -551,7 +551,7 @@ fn applyOutbreakFogOfWar(
   if (visible >= 0.996 && mat != 2) {
     return colIn;
   }
-  let explored = max(textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24) * F.map.xy, 0.0).r, sight.y);
+  let explored = max(textureSampleLevel(exploredTex, floorSamp, (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy, 0.0).r, sight.y);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
   let memDim = clamp(

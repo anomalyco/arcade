@@ -279,6 +279,9 @@ export type LootSite = {
   x: number
   y: number
   buildingId: string | null
+  searched?: boolean
+  ammo?: number
+  planks?: number
 }
 
 export type BenchSite = {
@@ -467,6 +470,31 @@ export class OutbreakProgression {
       if (!st || st.revealed) continue
       st.slots = Array.from({ length: st.size }, (_, i) => (spec.initial as readonly (Stack | null)[])[i] ?? null).map((x) => (x ? { ...x } : null))
       st.rev = ++this.ledger.rev
+    }
+  }
+
+  /** Ensures ledger stores exist for any newly streamed chunk containers and syncs their `searched` flag. */
+  ensureContainerStores(): void {
+    for (const c of this.containers) {
+      let st = this.ledger.store(c.id)
+      if (!st) {
+        const initial: Stack[] = []
+        if ((c.ammo ?? 0) > 0) initial.push({ item: "ammo", count: c.ammo! })
+        if ((c.planks ?? 0) > 0) initial.push({ item: "plank", count: c.planks! })
+        st = this.ledger.createStore({
+          id: c.id,
+          mode: "slots",
+          scope: "shared",
+          size: CONTAINER_SLOTS,
+          revealed: Boolean(c.searched),
+          at: { x: c.x, y: c.y },
+          initial,
+        })
+      } else if (c.searched && !st.revealed) {
+        st.revealed = true
+      } else if (st.revealed) {
+        c.searched = true
+      }
     }
   }
 

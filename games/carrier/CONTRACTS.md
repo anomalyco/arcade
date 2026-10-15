@@ -382,8 +382,8 @@ weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is 
 Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captures: `scripts/daynight-shot.ts`.
 
 - Time of day is a pure function of (room seed, sea time, room override), like the weather. A day is `DAY_CYCLE`
-  (300 s = 5 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~175 s of day (07:00-17:00), ~31 s
-  of golden hour, sunset and dusk, ~62 s of night, ~31 s of dawn. Rooms start at 09:00-11:00 (seeded).
+  (600 s = 10 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~350 s of day (07:00-17:00), ~62 s
+  of golden hour, sunset and dusk, ~125 s of night, ~62 s of dawn. Rooms start at 09:00-11:00 (seeded).
   - `timelinePhase(seed, t)`: phase in days. `hourOfPhase` and `phaseOfHour` convert between phase and clock hour.
   - `skyAt(seed, phase)`: hour, sun and moon directions, the moon's lit fraction, the star rotation.
   - The sun's path is stylised for the views players get: it rises in the north at 06:00, stands 60° up at a bearing
@@ -492,7 +492,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Gun: 50 rps, 1,050 m/s muzzle speed plus the jet's velocity, gravity, 0.32° dispersion hashed from (owner, round),
     a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
     of fire and cools to 0.3 before it fires again.
-  - AIM-9: a 17° lock cone, 2.5 km range, locks in 1.4 s, keep cone ×1.3. Rails rearm one missile every 10 s. Pure PN
+  - AIM-9: a tight 6° lock cone (the lock builds only while the target stays in it, bleeding off outside), 2.5 km range, locks in 1.4 s, then holds within the keep cone (×3, 18°). Rails rearm one missile every 10 s. Pure PN
     (N 3.4) at up to 35 g with a 0.12 s autopilot lag and a 42° gimbal: Battlefield-style, a locked missile out-turns
     any jet, so flares are the escape (a break turn alone does not beat it). 12 m proximity fuse at closest approach,
     74 damage at the centre to 42 at the edge. Firing without a lock is a dumbfire.

@@ -191,11 +191,13 @@ export const flashlightBeamControls: LabControl[] = [
 
 /**
  * 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at
- * `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, then the Noir flashlight and visibility-field block (28) at `OUTBREAK_NOIR_UNIFORM_OFFSET`.
+ * `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, the streaming window (36) at `OUTBREAK_WINDOW_UNIFORM_OFFSET`, then the Noir flashlight and
+ * visibility-field block (28) at `OUTBREAK_NOIR_UNIFORM_OFFSET`.
  */
 export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
-export const OUTBREAK_NOIR_UNIFORM_OFFSET = 76
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 104
+export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
+export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 140
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
@@ -241,6 +243,9 @@ export type OutbreakLightingFrameState = {
     rippleIntensity: number
     snowAmount: number
   }
+  windowOrigin?: readonly [number, number]
+  isStreamWindow?: boolean
+  windowBuildings?: readonly Building[]
 }
 
 /**
@@ -361,6 +366,30 @@ export function packOutbreakLightingUniforms(
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
   out[N + 26] = 0
   out[N + 27] = 0
+  // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  const winOx = state.windowOrigin?.[0] ?? 0
+  const winOz = state.windowOrigin?.[1] ?? 0
+  const blds = state.windowBuildings ?? []
+  const bldCount = Math.min(8, blds.length)
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET] = winOx
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 1] = winOz
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 2] = state.isStreamWindow ? 1 : 0
+  out[OUTBREAK_WINDOW_UNIFORM_OFFSET + 3] = bldCount
+  for (let i = 0; i < 8; i++) {
+    const base = OUTBREAK_WINDOW_UNIFORM_OFFSET + 4 + i * 4
+    const b = blds[i]
+    if (b) {
+      out[base] = b.rect[0]
+      out[base + 1] = b.rect[1]
+      out[base + 2] = b.rect[2]
+      out[base + 3] = b.rect[3]
+    } else {
+      out[base] = -99999
+      out[base + 1] = -99999
+      out[base + 2] = -99998
+      out[base + 3] = -99998
+    }
+  }
   return out
 }
 
@@ -856,6 +885,8 @@ struct OutbreakLightingUniforms {
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
   veg: FoliageWindConfig,
   vegActors: FoliageActors,
+  win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
+  bldRects: array<vec4f, 8>,
   u11: vec4f, // flashLensHeight, flashCosOuter, flashInnerShare, flashCore
   u12: vec4f, // flashCoreShare, flashSpill, flashSpillShare, flashCookie
   u13: vec4f, // flashAxisY, flashAxisPlan, flashNearSoftening, flashColorKnee

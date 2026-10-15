@@ -57,7 +57,7 @@ describe("clock", () => {
     expect(share(17, 19.5)).toBeCloseTo(2.5 / 24, 1)
     expect(share(19.5, 4.5)).toBeCloseTo(5 / 24, 1)
     expect(share(4.5, 7)).toBeCloseTo(2.5 / 24, 1)
-    expect(DAY_CYCLE).toBe(300)
+    expect(DAY_CYCLE).toBe(600)
   })
 
   test("rooms start in the morning, seeded", () => {

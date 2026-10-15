@@ -137,7 +137,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; lightAccumulate?: string; wallDirectScale?: string }
+export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; lightAccumulate?: string; wallDirectScale?: string; mapUv?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -439,13 +439,15 @@ fn spill(world: vec3f) -> vec3f {
 
 /** Baked floor data: r = ambient occlusion from walls and furniture, g = moonlight through the windows. */
 fn floorData(p: vec2f) -> vec2f {
-  return vec2f(textureSampleLevel(floorTex, floorSamp, p * F.map.xy, 0.0).r,
-    textureSampleLevel(moonTex, floorSamp, p * F.map.xy, 0.0).r);
+  let uv = ${hooks.mapUv ?? "p * F.map.xy"};
+  return vec2f(textureSampleLevel(floorTex, floorSamp, uv, 0.0).r,
+    textureSampleLevel(moonTex, floorSamp, uv, 0.0).r);
 }
 
 /** Baked indirect light at a plan point, nudged off walls along the normal. */
 fn bounceAt(p: vec2f) -> vec3f {
-  let b = textureSampleLevel(bounceTex, floorSamp, p * F.map.xy, 0.0);
+  let uv = ${hooks.mapUv ?? "p * F.map.xy"};
+  let b = textureSampleLevel(bounceTex, floorSamp, uv, 0.0);
   // Texels inside walls are black; renormalise by coverage so wall faces don't sample darkness.
   let c = b.rgb / max(b.a, 0.25);
   return c * c * 2.0;
