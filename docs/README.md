@@ -24,8 +24,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
 - [controls.md](controls.md): cross-game key bindings and HUD prompts. Read before changing input or prompts.
-- [architecture.md](architecture.md): the plan for consolidating shared subsystems across games. Read before a
-  cross-game refactor.
+- [architecture.md](architecture.md): the current engine map (layers, `@arcade/kit` and `@arcade/knobs` areas,
+  generated per-game shared-module adoption table, core patterns, and staged roadmap). Read before a cross-game
+  refactor.
 
 ## Lab and showing Kit
 
