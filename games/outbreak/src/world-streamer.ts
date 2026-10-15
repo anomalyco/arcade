@@ -370,6 +370,36 @@ const isResidential = (b: Building) => {
   return a === "house" || a === "ranch" || a === "cottage" || a === "cabin"
 }
 
+/** Buildings and trees of recently generated neighbour chunks, by seed, coordinate and mode. */
+const neighbourChunks = new Map<string, { buildings: Building[]; trees: Prop[] }>()
+const NEIGHBOUR_CACHE = 64
+
+/**
+ * The eight surrounding chunks' buildings and trees. Residential chunks share neighbours, so each neighbour is
+ * generated once while it stays among the last `NEIGHBOUR_CACHE` used (generation is a pure function of its key).
+ */
+function neighbourhood(chunk: WorldChunk, town: Town, mode: WorldMode): { buildings: Building[]; trees: Prop[] } {
+  const buildings: Building[] = [], trees: Prop[] = []
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue
+      const cx = chunk.cx + dx, cy = chunk.cy + dy
+      const key = `${town.seed}:${town.houseSeed}:${cx}:${cy}:${mode}`
+      let n = neighbourChunks.get(key)
+      if (n) neighbourChunks.delete(key)
+      else {
+        const c = generateWorldChunk(town.seed, town.houseSeed, cx, cy, mode)
+        n = { buildings: c.buildings, trees: c.props.filter((p) => p.kind === "tree") }
+        if (neighbourChunks.size >= NEIGHBOUR_CACHE) neighbourChunks.delete(neighbourChunks.keys().next().value!)
+      }
+      neighbourChunks.set(key, n)
+      buildings.push(...n.buildings)
+      trees.push(...n.trees)
+    }
+  }
+  return { buildings, trees }
+}
+
 /**
  * The origin lots' landscaping on a streamed lot, by the same rules (`architecture.ts`, `yard.ts`): L-plan bungalows
  * get the porch, shutters and shed; every house gets foundation shrubs, framing trees and the driveway hedge; every
@@ -393,16 +423,10 @@ function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town,
     if (b.kind === "house") houseFrontage(mainScratch, b, id, town, { windows, decay })
     // Framing plants may reach into neighbouring chunks (the authored lots spill 5 m past the driveway), so they
     // keep clear of every building and tree within a chunk, not just this lot's.
-    const others: Building[] = []
+    const near = neighbourhood(chunk, town, mode)
+    const others: Building[] = [...near.buildings]
     const trees = chunk.props.filter((p) => p.kind === "tree")
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue
-        const n = generateWorldChunk(town.seed, town.houseSeed, chunk.cx + dx, chunk.cy + dy, mode)
-        others.push(...n.buildings)
-        for (const p of n.props) if (p.kind === "tree") trees.push(p)
-      }
-    }
+    trees.push(...near.trees)
     for (const o of chunk.buildings) if (o !== b) others.push(o)
     const clear = (r: Rect, px: number, pz: number, m: number) => px < r[0] - m || px > r[2] + m || pz < r[1] - m || pz > r[3] + m
     housePlanting(mainScratch, b, id, town, {
