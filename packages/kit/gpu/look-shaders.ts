@@ -1,5 +1,6 @@
-import { lookStructWgsl } from "./look"
-import { makeSceneShader, postCommonWgsl, type SceneHooks } from "./shaders"
+import { lookGradeSnippet, lookMathSnippet, type LookCompareMode, type LookSettings } from "./look"
+import { makeSceneShader, postCommonSnippet, type SceneHooks } from "./shaders"
+import { resolveWgsl, wgslSlot, wgslSnippet } from "./wgsl"
 
 export type PostFinishOptions = {
   chromatic: number
@@ -16,49 +17,86 @@ export type PostFinishOptions = {
   highlightTint?: readonly [number, number, number]
 }
 
+export type LookVariantMode = "noir" | "painterly" | "generic"
+export const lookVariantSlot = wgslSlot<LookVariantMode>("lookVariant", "generic")
+
+export function resolveLookVariant(
+  look: LookSettings | null | undefined,
+  compare?: { mode?: LookCompareMode },
+): LookVariantMode {
+  if (!look || compare?.mode === 2) return "generic"
+  if (look.preset === "noir" && (look.painterlySmooth ?? 0) <= 0.01 && (look.diffuseBands ?? 0) < 1.5) {
+    return "noir"
+  }
+  if (look.preset === "painterly") {
+    return "painterly"
+  }
+  return "generic"
+}
+
 /**
  * Opt-in Look-enabled scene shader generator.
  * Binds `LookUniforms` at `@group(0) @binding(7)` (unused when motion blur is off).
  * Default `makeSceneShader` remains untouched for bit-exact identity under "Current".
  */
-export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
+export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariantMode = "generic"): string => {
+  const includeNoir = variant === "noir" || variant === "generic"
+  const includePainterly = variant === "painterly" || variant === "generic"
+
   if (hooks.postLightMaterial) {
     // Fast-path for games with postLightMaterial (Outbreak): keep register pressure identical to makeSceneShader
     // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
-    const surfBody = (hooks.surface ?? "")
-      .replace("if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }", "")
-      .replace("if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }", "")
-    const base = makeSceneShader({
+    const declSnippet = wgslSnippet(
+      `lookFastSceneDecl_${variant}`,
+      () => `${hooks.declarations ?? ""}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
+      [lookGradeSnippet],
+    )
+    const surfBody = hooks.lookSurface ?? hooks.surface ?? ""
+    const presetBranches = [
+      includeNoir
+        ? `if (presetIdx == 1) {
+      if (mat == 9) { col *= 0.14; }
+      let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
+      let topCatch = max(0.22, dot(n, moonRimDir));
+      let surfBoost = select(select(0.48, 0.24, interior(o.world.xz)), 1.38, mat == 21 || mat == 22);
+      col += o.color * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
+    }`
+        : "",
+      includePainterly
+        ? `${includeNoir ? "else " : ""}if (presetIdx == 2 || LK.painterlySmooth > 0.35) {
+      let dab = noise2(o.world.xz * 3.8 + vec2f(o.world.y * 1.8, 3.7)) - 0.5;
+      let tint = select(vec3f(0.88, 0.94, 1.18), vec3f(1.22, 0.96, 0.68), interior(o.world.xz) && o.world.y < 2.8);
+      col = mix(col, col * tint * (1.0 + dab * 0.22), clamp(LK.painterlySmooth * 0.65, 0.0, 0.85));
+    }`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+
+    return makeSceneShader({
       ...hooks,
-      declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
+      declarations: resolveWgsl(declSnippet, [[lookVariantSlot, variant]]),
       surface: `${surfBody}
   let lookCompare = i32(round(LK.compareMode));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;
   let lookFlashIrradiance = select(0.0, clamp(outbreakFlashMask, 0.0, 1.0), lookUseAfter);
   if (lookUseAfter) {
     let presetIdx = i32(round(LK.presetIndex));
-    if (presetIdx == 1) {
-      if (mat == 9) { col *= 0.14; }
-      let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
-      let topCatch = max(0.22, dot(n, moonRimDir));
-      let surfBoost = select(select(0.48, 0.24, interior(o.world.xz)), 1.38, mat == 21 || mat == 22);
-      col += o.color * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
-    } else if (presetIdx == 2 || LK.painterlySmooth > 0.35) {
-      let dab = noise2(o.world.xz * 3.8 + vec2f(o.world.y * 1.8, 3.7)) - 0.5;
-      let tint = select(vec3f(0.88, 0.94, 1.18), vec3f(1.22, 0.96, 0.68), interior(o.world.xz) && o.world.y < 2.8);
-      col = mix(col, col * tint * (1.0 + dab * 0.22), clamp(LK.painterlySmooth * 0.65, 0.0, 0.85));
-    }
+    ${presetBranches}
   }
 `,
-    })
-    return base.replace(
-      "return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);",
-      `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
+      fragmentReturn: `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
   let outAlpha = select(a, 1.0 - lookFlashIrradiance, a >= 0.999);
   return vec4f(outRgb, outAlpha);`,
-    )
+    })
   }
 
+  const declSnippet = wgslSnippet(
+    `lookSceneDecl_${variant}`,
+    () =>
+      `${hooks.declarations ?? ""}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\nvar<private> lookFlashIrradiance: f32;\n`,
+    [lookMathSnippet],
+  )
   const postMat = `    if (lookUseAfter) {
       let wet = LK.surfaceWetness;
       if (wet > 0.001 && n.y > 0.7 && (mat == 1 || mat == 20)) {
@@ -69,75 +107,9 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       }
       lookAlbedo = albedo;
     }\n`
-  const base = makeSceneShader({
-    ...hooks,
-    declarations: `${hooks.declarations ?? ""}\n${lookStructWgsl}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\nvar<private> lookFlashIrradiance: f32;\n`,
-    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.compareMode));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;\n  lookAlbedo = o.color;\n  lookFlashIrradiance = 0.0;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.painterlySmooth * 0.012); }\n`,
-    material: `${hooks.material ?? ""}\n    ${postMat}`,
-    surface: `${hooks.surface ?? ""}\n  if (lookUseAfter) {
-    if (u32(F.screen.z) > 1u && lights[1].cone.w > 0.5 && lights[1].extra.w < -0.5 && lights[1].color.w > 0.001) {
-      let fOrig = lights[1].pos.xz;
-      let fDir = lights[1].cone.xy;
-      let rel = o.world.xz - fOrig;
-      let d0 = length(rel);
-      let along = dot(rel, fDir);
-      let perp = abs(rel.x * (-fDir.y) + rel.y * fDir.x);
-      let maxR = max(8.0, lights[1].pos.w * 1.15);
-      if (along > 0.0 && d0 < maxR) {
-        let halfW = 0.20 + along * 0.34;
-        let beamMask = exp(-(perp * perp) / (halfW * halfW * 0.72)) * smoothstep(halfW * 1.5, halfW * 0.28, perp);
-        let aF = (atan2(rel.y, rel.x) + TAU) % TAU;
-        let rayF = u32(i32(floor(aF / TAU * f32(RAYS))) + i32(RAYS)) % RAYS;
-        let hitF = polar[(RAYS + rayF) * 2u].x;
-        let vis0 = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, d0);
-        let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.25);
-        lookFlashIrradiance = max(lookFlashIrradiance, clamp(beamMask * fade0 * vis0 * 2.8, 0.0, 1.0));
-      }
-    }
-    // Rim / silhouette light on characters, trees, props & wall edges
-    let ndv = clamp(dot(n, V), 0.0, 1.0);
-    let rimW = select(0.75, 1.85, mat == 12 || mat == 22 || mat == 0);
-    let contourTerm = select(0.0, pow(clamp(length(n.xz), 0.0, 1.0), 1.45) * smoothstep(0.20, 1.62, o.world.y) * 1.15, mat == 12);
-    let rim = max(pow(1.0 - ndv, 2.4), contourTerm) * LK.rimStrength * rimW;
-    let shadowCol = vec3f(LK.shadowColorR, LK.shadowColorG, LK.shadowColorB);
-    let rimTint = mix(vec3f(0.68, 0.80, 1.0) * shadowCol, vec3f(1.0, 0.80, 0.52), clamp(LK.temperature * 0.5 + 0.25, 0.0, 1.0));
-    col += rimTint * rim * 0.075;
 
-    // Extra contact / cavity shading
-    if (LK.contactShade > 0.001 && mat != 2 && mat != 3 && mat != 11) {
-      let fOcc = floorData(o.world.xz).r * (1.0 - smoothstep(0.0, 1.1, o.world.y));
-      col *= 1.0 - clamp(fOcc * LK.contactShade * 0.62, 0.0, 0.78);
-    }
-
-    // Closed-form 3D settled height fog & localized east-window moonlight shaft
-    let fogDens = LK.fogDensity;
-    let shaftStr = LK.shaftStrength;
-    if (fogDens > 0.001 || shaftStr > 0.001) {
-      let hFall = max(0.35, LK.fogHeightFalloff);
-      let rayVec = o.world - F.cam.xyz;
-      let rayDist = max(length(rayVec), 0.001);
-      let kVert = (rayVec.y / rayDist) / hFall;
-      let dPlanFocus = length(o.world.xz - F.eye.xy);
-      let s0 = min(rayDist, max(0.0, rayDist - max(0.0, dPlanFocus - 12.0) * 1.25));
-      let vertInt = select(
-        (rayDist - s0) * exp(-0.5 * (F.cam.y + o.world.y) / hFall),
-        exp(-F.cam.y / hFall) * (exp(-s0 * kVert) - exp(-rayDist * kVert)) / kVert,
-        abs(kVert) > 1e-3
-      );
-      let fogTau = clamp(fogDens * 0.016 * max(0.0, vertInt), 0.0, 2.5);
-      let trans = exp(-fogTau);
-      let fogCol = pow(max(vec3f(LK.fogColorR, LK.fogColorG, LK.fogColorB), vec3f(0.002)), vec3f(2.2)) * clamp(LK.ambientFill * 0.45, 0.02, 1.0);
-      var shaftAdd = vec3f(0.0);
-      if (shaftStr > 0.001 && o.world.x > 30.5 && o.world.x < 34.8 && o.world.z > 24.5 && o.world.z < 33.5 && o.world.y < 2.2) {
-        let eastDist = max(0.0, 34.3 - o.world.x);
-        let winZ1 = exp(-pow((o.world.z - 26.8) / 0.95, 2.0));
-        let winZ2 = exp(-pow((o.world.z - 30.8) / 0.95, 2.0));
-        let winBeam = (winZ1 + winZ2) * exp(-eastDist * 0.65) * (1.0 - smoothstep(1.2, 2.2, o.world.y));
-        let shaftCol = mix(vec3f(0.55, 0.76, 1.12), vec3f(1.05, 0.78, 0.45), clamp(LK.temperature * 0.5 + 0.25, 0.0, 1.0));
-        shaftAdd = shaftCol * winBeam * shaftStr * 0.042;
-      }
-      col = col * trans + fogCol * (1.0 - trans) + shaftAdd;
-    }
+  const noirBlock = includeNoir
+    ? `
     // Cold steel-blue moonlight rim and room wall-wash halos in Noir mode
     if (i32(round(LK.presetIndex)) == 1) {
       if (mat == 9) {
@@ -159,8 +131,11 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
       let isRoofOrTree = mat == 21 || mat == 22;
       let surfBoost = select(select(0.42, 0.18, interior(o.world.xz)), 1.35, isRoofOrTree);
       col += lookAlbedo * vec3f(0.048, 0.068, 0.102) * topCatch * surfBoost * LK.moonIntensity;
-    }
+    }`
+    : ""
 
+  const painterlyBlock = includePainterly
+    ? `
     // Painterly gouache twilight choreography (only evaluated when preset == 2 or painterlySmooth > 0.35)
     if (i32(round(LK.presetIndex)) == 2 || (LK.painterlySmooth > 0.35 && LK.diffuseBands >= 2.0)) {
       let warp = vec2f(noise2(o.world.xz * 2.8 + 1.3) - 0.5, noise2(o.world.xz * 2.8 + 7.9) - 0.5) * 0.35;
@@ -237,33 +212,96 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
         let paintedInt = col * 0.38 + intAlbedo * roomLight + vec3f(0.032, 0.018, 0.006) * warmPool * ao;
         col = mix(col, paintedInt, clamp(LK.painterlySmooth, 0.0, 1.0));
       }
-    }
-  }\n`,
-  })
+    }`
+    : ""
 
-  return base
-    .replace(
-      "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);",
-      `let useLookLight = LK.activeFlag > 0.5;
+  return makeSceneShader({
+    ...hooks,
+    declarations: resolveWgsl(declSnippet, [[lookVariantSlot, variant]]),
+    fragmentStart: `${hooks.fragmentStart ?? ""}\n  let lookScreenX = o.pos.x / max(1.0, F.screen.x);\n  let lookCompare = i32(round(LK.compareMode));\n  lookUseAfter = select(lookCompare == 1, lookScreenX >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;\n  lookAlbedo = o.color;\n  lookFlashIrradiance = 0.0;\n  if (lookUseAfter) { surfaceFootprint = max(surfaceFootprint, LK.painterlySmooth * 0.012); }\n`,
+    material: `${hooks.material ?? ""}\n    ${postMat}`,
+    diffuseTerm: includePainterly
+      ? `let useLookLight = LK.activeFlag > 0.5;
     let effWrap = select(wrap, wrap + LK.diffuseWrap, useLookLight);
     let effBands = select(0.0, LK.diffuseBands, useLookLight);
     let effSoft = select(0.18, LK.bandSoftness, useLookLight);
-    let diffuse = lookQuantizeDiffuse(ndl, effWrap, effBands, effSoft);`,
-    )
-    .replace(
-      "col = albedo * (amb + direct + moon)",
-      `if (lookUseAfter) {
+    let diffuse = lookQuantizeDiffuse(ndl, effWrap, effBands, effSoft);`
+      : `let effWrap = select(wrap, wrap + LK.diffuseWrap, LK.activeFlag > 0.5);
+    let diffuse = max((ndl + effWrap) / (1.0 + max(effWrap, 0.0)), 0.0);`,
+    combineLighting: `if (lookUseAfter) {
       amb *= LK.ambientFill * vec3f(LK.shadowColorR, LK.shadowColorG, LK.shadowColorB);
     }
     let effMoon = select(moon, moon * LK.moonIntensity, lookUseAfter);
     col = albedo * (amb + direct + effMoon)`,
-    )
-    .replace(
-      "return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);",
-      `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
+    fragmentReturn: `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
   let outAlpha = select(a, 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0), a >= 0.999 && lookUseAfter);
   return vec4f(outRgb, outAlpha);`,
-    )
+    surface: `${hooks.surface ?? ""}\n  if (lookUseAfter) {
+    if (u32(F.screen.z) > 1u && lights[1].cone.w > 0.5 && lights[1].extra.w < -0.5 && lights[1].color.w > 0.001) {
+      let fOrig = lights[1].pos.xz;
+      let fDir = lights[1].cone.xy;
+      let rel = o.world.xz - fOrig;
+      let d0 = length(rel);
+      let along = dot(rel, fDir);
+      let perp = abs(rel.x * (-fDir.y) + rel.y * fDir.x);
+      let maxR = max(8.0, lights[1].pos.w * 1.15);
+      if (along > 0.0 && d0 < maxR) {
+        let halfW = 0.20 + along * 0.34;
+        let beamMask = exp(-(perp * perp) / (halfW * halfW * 0.72)) * smoothstep(halfW * 1.5, halfW * 0.28, perp);
+        let aF = (atan2(rel.y, rel.x) + TAU) % TAU;
+        let rayF = u32(i32(floor(aF / TAU * f32(RAYS))) + i32(RAYS)) % RAYS;
+        let hitF = polar[(RAYS + rayF) * 2u].x;
+        let vis0 = 1.0 - smoothstep(hitF - 0.05, hitF + 0.20, d0);
+        let fade0 = pow(max(0.0, 1.0 - d0 / maxR), 1.25);
+        lookFlashIrradiance = max(lookFlashIrradiance, clamp(beamMask * fade0 * vis0 * 2.8, 0.0, 1.0));
+      }
+    }
+    // Rim / silhouette light on characters, trees, props & wall edges
+    let ndv = clamp(dot(n, V), 0.0, 1.0);
+    let rimW = select(0.75, 1.85, mat == 12 || mat == 22 || mat == 0);
+    let contourTerm = select(0.0, pow(clamp(length(n.xz), 0.0, 1.0), 1.45) * smoothstep(0.20, 1.62, o.world.y) * 1.15, mat == 12);
+    let rim = max(pow(1.0 - ndv, 2.4), contourTerm) * LK.rimStrength * rimW;
+    let shadowCol = vec3f(LK.shadowColorR, LK.shadowColorG, LK.shadowColorB);
+    let rimTint = mix(vec3f(0.68, 0.80, 1.0) * shadowCol, vec3f(1.0, 0.80, 0.52), clamp(LK.temperature * 0.5 + 0.25, 0.0, 1.0));
+    col += rimTint * rim * 0.075;
+
+    // Extra contact / cavity shading
+    if (LK.contactShade > 0.001 && mat != 2 && mat != 3 && mat != 11) {
+      let fOcc = floorData(o.world.xz).r * (1.0 - smoothstep(0.0, 1.1, o.world.y));
+      col *= 1.0 - clamp(fOcc * LK.contactShade * 0.62, 0.0, 0.78);
+    }
+
+    // Closed-form 3D settled height fog & localized east-window moonlight shaft
+    let fogDens = LK.fogDensity;
+    let shaftStr = LK.shaftStrength;
+    if (fogDens > 0.001 || shaftStr > 0.001) {
+      let hFall = max(0.35, LK.fogHeightFalloff);
+      let rayVec = o.world - F.cam.xyz;
+      let rayDist = max(length(rayVec), 0.001);
+      let kVert = (rayVec.y / rayDist) / hFall;
+      let dPlanFocus = length(o.world.xz - F.eye.xy);
+      let s0 = min(rayDist, max(0.0, rayDist - max(0.0, dPlanFocus - 12.0) * 1.25));
+      let vertInt = select(
+        (rayDist - s0) * exp(-0.5 * (F.cam.y + o.world.y) / hFall),
+        exp(-F.cam.y / hFall) * (exp(-s0 * kVert) - exp(-rayDist * kVert)) / kVert,
+        abs(kVert) > 1e-3
+      );
+      let fogTau = clamp(fogDens * 0.016 * max(0.0, vertInt), 0.0, 2.5);
+      let trans = exp(-fogTau);
+      let fogCol = pow(max(vec3f(LK.fogColorR, LK.fogColorG, LK.fogColorB), vec3f(0.002)), vec3f(2.2)) * clamp(LK.ambientFill * 0.45, 0.02, 1.0);
+      var shaftAdd = vec3f(0.0);
+      if (shaftStr > 0.001 && o.world.x > 30.5 && o.world.x < 34.8 && o.world.z > 24.5 && o.world.z < 33.5 && o.world.y < 2.2) {
+        let eastDist = max(0.0, 34.3 - o.world.x);
+        let winZ1 = exp(-pow((o.world.z - 26.8) / 0.95, 2.0));
+        let winZ2 = exp(-pow((o.world.z - 30.8) / 0.95, 2.0));
+        let winBeam = (winZ1 + winZ2) * exp(-eastDist * 0.65) * (1.0 - smoothstep(1.2, 2.2, o.world.y));
+        let shaftCol = mix(vec3f(0.55, 0.76, 1.12), vec3f(1.05, 0.78, 0.45), clamp(LK.temperature * 0.5 + 0.25, 0.0, 1.0));
+        shaftAdd = shaftCol * winBeam * shaftStr * 0.042;
+      }
+      col = col * trans + fogCol * (1.0 - trans) + shaftAdd;
+    }${noirBlock}${painterlyBlock}
+  }\n`,
+  })
 }
 
 /**
@@ -271,8 +309,12 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}): string => {
  * Binds `GradeAndLook` (8-float header + 64-float `LookUniforms`) at `@group(0) @binding(4)`.
  * Default `postShader` remains untouched for bit-exact identity under "Current".
  */
-export const makeLookPostShader = (finish?: PostFinishOptions): string => /* wgsl */ `
-${lookStructWgsl}
+export const makeLookPostShader = (finish?: PostFinishOptions, variant: LookVariantMode = "generic"): string => {
+  const postRoot = wgslSnippet(
+    `lookPost_${variant}`,
+    (ctx) => {
+      const includeKuwahara = ctx.get(lookVariantSlot) === "painterly" || ctx.get(lookVariantSlot) === "generic"
+      return /* wgsl */ `
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: vec4f;
@@ -284,9 +326,24 @@ struct GradeAndLook {
   L: LookUniforms,
 }
 @group(0) @binding(4) var<uniform> GL: GradeAndLook;
-${postCommonWgsl}
 
-fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f {
+fn feelImpulseGather(uv: vec2f, fromC: vec2f, feel: vec4f, center: vec4f) -> vec4f {
+  if (all(abs(feel.xyz) <= vec3f(0.00018))) { return center; }
+  let r = length(fromC);
+  let edgeW = smoothstep(0.06, 0.36, r);
+  let v = feel.xy * (0.45 + 0.55 * edgeW) + fromC * (feel.z * 1.45 * edgeW);
+  if (dot(v, v) <= 1e-8) { return center; }
+  let s0 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
+  let s1 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
+  let s2 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
+  let s3 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
+  let rgb = center.rgb * 0.32 + (s1.rgb + s2.rgb) * 0.22 + (s0.rgb + s3.rgb) * 0.12;
+  return vec4f(rgb, min(center.a, (center.a + s1.a + s2.a) * 0.3333));
+}
+
+${
+  includeKuwahara
+    ? `fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f {
   let r1 = texel * (0.9 + strength * 0.7);
   let r2 = texel * (1.6 + strength * 1.1);
   let lw = vec3f(0.2126, 0.7152, 0.0722);
@@ -309,6 +366,8 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
     wSum += w;
   }
   return mix(center, paintedSum / max(wSum, 1e-5), clamp(strength, 0.0, 1.0));
+}`
+    : ""
 }
 
 @fragment fn composite(o: VO) -> @location(0) vec4f {
@@ -374,14 +433,19 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
   }
 
   // Active Look composite
-  let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));
+  let feel = GL.pad;
+  let centerSamp = feelImpulseGather(uv, fromC, feel, clean(textureSampleLevel(src, samp, uv, 0.0)));
   let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
-  let caAmt = baseCA + L.chromatic * 0.016;
+  let caAmt = baseCA + L.chromatic * 0.016 + feel.w * 0.022;
   let ca = fromC * dot(fromC, fromC) * caAmt;
   var hdr: vec3f;
-  if (L.painterlySmooth > 0.01) {
+  ${
+    includeKuwahara
+      ? `if (L.painterlySmooth > 0.01) {
     hdr = kuwaharaPost(uv, texel, L.painterlySmooth, centerSamp.rgb);
-  } else if (caAmt > 0.003) {
+  } else `
+      : ""
+  }if (caAmt > 0.003) {
     hdr = vec3f(
       clean(textureSampleLevel(src, samp, clamp(uv + ca, vec2f(0.001), vec2f(0.999)), 0.0)).r,
       centerSamp.g,
@@ -418,7 +482,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
     flashMask,
   );
   let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
+  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   if (compareMode == 2) {
     let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
@@ -524,7 +588,7 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
   }
   let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
+  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
   let ign = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));
@@ -532,3 +596,9 @@ fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f 
   return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `
+    },
+    [lookGradeSnippet, postCommonSnippet],
+  )
+
+  return resolveWgsl(postRoot, [[lookVariantSlot, variant]])
+}

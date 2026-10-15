@@ -10,7 +10,7 @@ import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { installFramePacer } from "../gpu-perf"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
-import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
+import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
 import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
@@ -22,7 +22,18 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "./look"
-import { FRAME_FLOATS, makeLookPostShader, makeLookSceneShader, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
+import {
+  FRAME_FLOATS,
+  makeLookPostShader,
+  makeLookSceneShader,
+  polarShader,
+  postShader,
+  resolveLookVariant,
+  sceneShader,
+  spriteShader,
+  common,
+  type LookVariantMode,
+} from "./shaders"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
@@ -103,6 +114,7 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 
 export type FrameInput = {
   splatter?:Splatter
+  splatterLegacy?:boolean
   fxParticles?: Particles
   weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
@@ -131,6 +143,8 @@ export type FrameInput = {
   volume?: { downscale: number; rect?: readonly [number, number, number, number] } | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
+  /** Optional game-feel post-processing burst: [blurX, blurY, radialBlur, chromaticBoost] */
+  feel?: readonly [number, number, number, number]
   /** Optional opt-in rendering style ("Look"). When omitted or "Current" identity, baseline pipelines run unchanged. */
   look?: LookSettings | null
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
@@ -195,7 +209,7 @@ export class Renderer {
   private pipes: Record<string, GPURenderPipeline> = {}
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
-  private lookPipes: Record<string, GPURenderPipeline> | null = null
+  private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
   private activeLook: LookSettings | null = null
   private activeLookCompare: { mode?: LookCompareMode; wipeSplit?: number } = {}
   private lookSceneData = new Float32Array(LOOK_UNIFORM_FLOATS)
@@ -242,7 +256,17 @@ export class Renderer {
     private device: GPUDevice,
     private context: GPUCanvasContext,
     private readonly format: GPUTextureFormat,
-    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string; visField?: VisibilityFieldShader; volume?: VolumeLightShader },
+    private shaders?: {
+      scene: string
+      sprite: string
+      post?: string
+      lookScene?: string
+      lookPost?: string
+      lookSceneVariant?: (variant: LookVariantMode) => string
+      lookPostVariant?: (variant: LookVariantMode) => string
+      visField?: VisibilityFieldShader
+      volume?: VolumeLightShader
+    },
   ) {
     const d = device
     this.notifyPacer = installFramePacer(
@@ -879,8 +903,13 @@ export class Renderer {
     return this.activeLook ? { ...this.activeLook } : null
   }
 
-  private ensureLookPipes(): Record<string, GPURenderPipeline> {
-    if (this.lookPipes) return this.lookPipes
+  get compiledLookVariants(): LookVariantMode[] {
+    return [...this.lookPipesByVariant.keys()]
+  }
+
+  private ensureLookPipes(variant: LookVariantMode = "generic"): Record<string, GPURenderPipeline> {
+    const cached = this.lookPipesByVariant.get(variant)
+    if (cached) return cached
     const d = this.device
     const meshLayout: GPUVertexBufferLayout = {
       arrayStride: VERT_BYTES,
@@ -902,7 +931,10 @@ export class Renderer {
     }
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
-    const lookSceneMod = this.module(this.shaders?.lookScene ?? makeLookSceneShader(), "scene look")
+    const sceneCode =
+      this.shaders?.lookSceneVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookScene ? this.shaders.lookScene : makeLookSceneShader(undefined, variant))
+    const lookSceneMod = this.module(sceneCode, `scene look (${variant})`)
     const pipe = (vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, fs = "fs") =>
       d.createRenderPipeline({
         layout,
@@ -912,9 +944,12 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES },
       })
-    const lookPostMod = this.module(this.shaders?.lookPost ?? makeLookPostShader(), "post look")
+    const postCode =
+      this.shaders?.lookPostVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookPost ? this.shaders.lookPost : makeLookPostShader(undefined, variant))
+    const lookPostMod = this.module(postCode, `post look (${variant})`)
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    this.lookPipes = {
+    const pipes = {
       level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
       levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
       glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
@@ -933,7 +968,8 @@ export class Renderer {
         primitive: { topology: "triangle-list" },
       }),
     }
-    return this.lookPipes
+    this.lookPipesByVariant.set(variant, pipes)
+    return pipes
   }
 
   render(f: FrameInput): void {
@@ -975,10 +1011,51 @@ export class Renderer {
   private draw(f: FrameInput, targetView?: GPUTextureView): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
-    if(f.splatter){
-      this.splatterRenderer??=new SplatterRenderer(d)
-      for(let i=0;i<3;i++)this.splatterEye[i]=f.frame[16+i]!
-      this.splatterRenderer.prepare(f.splatter,f.frame,this.splatterEye,motion)
+    const effectiveLook = f.look !== undefined ? f.look : this.activeLook
+    const effectiveCompare = f.lookCompare ?? this.activeLookCompare
+    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    if (f.splatter) {
+      this.splatterRenderer ??= new SplatterRenderer(d)
+      for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
+      const noirMode = Boolean(useLookPipes && effectiveLook && (effectiveLook.preset === "noir" || effectiveLook.selectiveColor > 0.5))
+      let flashlight: SplatterLightingInput["flashlight"] = null
+      let pointLight: SplatterLightingInput["pointLight"] = null
+      let bestPointPower = 0
+      for (let i = 0; i < f.lightCount; i++) {
+        const k = i * LIGHT_FLOATS
+        const power = f.lights[k + 7]!
+        if (power <= 0.001) continue
+        if (!flashlight && f.lights[k + 11]! > 0.5 && f.lights[k + 15]! < -0.5) {
+          flashlight = {
+            x: f.lights[k]!,
+            y: f.lights[k + 1]!,
+            z: f.lights[k + 2]!,
+            range: f.lights[k + 3]!,
+            color: [f.lights[k + 4]!, f.lights[k + 5]!, f.lights[k + 6]!] as const,
+            power,
+            dirX: f.lights[k + 8]!,
+            dirZ: f.lights[k + 9]!,
+            cosHalf: f.lights[k + 10]!,
+          }
+        } else if (power > bestPointPower) {
+          bestPointPower = power
+          pointLight = {
+            x: f.lights[k]!,
+            y: f.lights[k + 1]!,
+            z: f.lights[k + 2]!,
+            radius: f.lights[k + 3]!,
+            color: [f.lights[k + 4]!, f.lights[k + 5]!, f.lights[k + 6]!] as const,
+            power,
+          }
+        }
+      }
+      this.splatterRenderer.prepare(f.splatter, f.frame, this.splatterEye, motion, {
+        ambient: [Math.max(0.14, f.frame[28]!), Math.max(0.15, f.frame[29]!), Math.max(0.18, f.frame[30]!)],
+        noirMode,
+        legacy: f.splatterLegacy,
+        flashlight,
+        pointLight,
+      })
     }
     if (f.fxParticles && f.fxParticles.count > 0) {
       this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
@@ -998,13 +1075,15 @@ export class Renderer {
       this.weatherRenderer.prepare(f.weather)
     }
     if (motion) this.prepareMotion()
-    const effectiveLook = f.look !== undefined ? f.look : this.activeLook
-    const effectiveCompare = f.lookCompare ?? this.activeLookCompare
-    const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2)
+    const lookVariant: LookVariantMode = useLookPipes
+      ? this.shaders && !this.shaders.lookSceneVariant
+        ? "generic"
+        : resolveLookVariant(effectiveLook, effectiveCompare)
+      : "generic"
     const scenePipes = motion
       ? this.motionPipes
       : useLookPipes
-        ? this.ensureLookPipes()
+        ? this.ensureLookPipes(lookVariant)
         : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512)
           ? this.pipes
           : this.baselinePipes
@@ -1030,14 +1109,22 @@ export class Renderer {
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
-    this.gradeData[4] = f.frame[45]! & 1
+    const feel = f.feel
     if (useLookPipes && effectiveLook) {
+      this.gradeData[4] = feel ? feel[0]! : 0
+      this.gradeData[5] = feel ? feel[1]! : 0
+      this.gradeData[6] = feel ? feel[2]! : 0
+      this.gradeData[7] = feel ? feel[3]! : 0
       packLookUniforms(effectiveLook, this.gradeData, 8, {
         compareMode: effectiveCompare.mode ?? 1,
         wipeSplit: effectiveCompare.wipeSplit ?? 0.5,
       })
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     } else {
+      this.gradeData[4] = (f.frame[45]! & 1) + (feel ? Math.min(0.48, Math.max(0, feel[3]!)) : 0)
+      this.gradeData[5] = feel ? feel[0]! : 0
+      this.gradeData[6] = feel ? feel[1]! : 0
+      this.gradeData[7] = feel ? feel[2]! : 0
       d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
     }
 
@@ -1214,7 +1301,14 @@ export class Renderer {
     }
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    const hasFeelBurst =
+      Boolean(f.feel) &&
+      (Math.abs(f.feel![0]!) > 0.00018 ||
+        Math.abs(f.feel![1]!) > 0.00018 ||
+        f.feel![2]! > 0.00018 ||
+        f.feel![3]! > 0.002)
     const useFastLookPost =
+      !hasFeelBurst &&
       useLookPipes &&
       effectiveLook &&
       (effectiveCompare.mode ?? 1) === 1 &&
@@ -1225,7 +1319,9 @@ export class Renderer {
       motion
         ? this.motionPipes.composite!
         : useLookPipes
-          ? (useFastLookPost ? this.ensureLookPipes().compositeFast! : this.ensureLookPipes().composite!)
+          ? (useFastLookPost
+              ? this.ensureLookPipes(lookVariant).compositeFast!
+              : this.ensureLookPipes(lookVariant).composite!)
           : f.frame[45]! & 1
             ? this.pipes.composite!
             : this.baselinePipes.composite!,

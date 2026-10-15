@@ -1,12 +1,15 @@
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
+import { applyFeelPreset, createFeelSettings, feelControls } from "@arcade/kit/feel"
 import { animationControls, animationLab } from "../game/anim-settings"
 import { motionSettings } from "../render/motion"
 import { bloodSplatterSettings } from "../game/splatter"
 import { LIGHT_DEFAULTS, type LightSettings } from "@arcade/kit/vehicle/lights"
 import { lightControls } from "@arcade/kit/vehicle/lab"
 import { SPELL_CONTROLS, spellDefaults, type SpellConfig } from "../../shared/sim/spell-config"
+
+export const blackoutFeelSettings = createFeelSettings("blackout")
 
 export const JUICE_LABELS = {
   volumes: "Volume Smoke",
@@ -158,6 +161,21 @@ export class DebugOverlay extends LabPanel {
     ])
     const keyLabels = keyLabelSetting()
     this.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
+    this.addControls(
+      blackoutFeelSettings as unknown as Record<string, string | number | boolean>,
+      feelControls.map(c =>
+        c.key === "feelPreset"
+          ? {
+              ...c,
+              folded: true,
+              change: () => {
+                applyFeelPreset(blackoutFeelSettings, blackoutFeelSettings.feelPreset)
+                this.refresh()
+              },
+            }
+          : { ...c, folded: true },
+      ),
+    )
   }
   sample(now: number, elapsed: number, gpu: Pick<Perf, "gpuMs" | "gpuKind" | "draws" | "verts">, chunks: number, lights: number): Perf | null {
     return this.sampler.update(now, elapsed, { ...gpu, chunks, lights }, this.header)

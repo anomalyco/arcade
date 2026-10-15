@@ -49,15 +49,35 @@ export function outbreakSplatterSurfaces(level: LevelData): SplatterSurfaces {
   return surfaces
 }
 
+const LEGACY_BLOOD_PRESET = {
+  amount: 32,
+  impulse: 5.5,
+  spread: 0.65,
+  sizeMin: 0.025,
+  sizeMax: 0.115,
+  drag: 0.7,
+  gravity: 9.8,
+  r: 0.12,
+  g: 0.002,
+  b: 0.006,
+  opacity: 0.94,
+  decalSize: 4,
+  persistence: 22,
+  pooling: 0.45,
+  budget: 192,
+} as const
+
 export class OutbreakCombatFX {
   private readonly pistolModel: number
   private readonly plankModel: number
   private readonly pistolData = new Float32Array(INST_FLOATS)
   private readonly plankData = new Float32Array(64 * INST_FLOATS)
   private readonly seenShots = new Set<number>()
+  private syntheticEventId = 100_000
   private levelData: LevelData | null = null
   splatter: Splatter | null = null
   hasEmitted = false
+  legacyMode = false
   private lastFlash: { x: number; y: number; z: number; until: number } | null = null
 
   constructor(renderer: Pick<Renderer, "addModel">) {
@@ -224,6 +244,7 @@ export class OutbreakCombatFX {
     support: (x: number, z: number) => number,
     addSprites: Float32Array,
     startAddCount: number,
+    onNewShot?: (shot: CombatShotEvent) => void,
   ): number {
     let addCount = startAddCount
     const maxAdd = Math.floor(addSprites.length / SPRITE_FLOATS)
@@ -272,6 +293,7 @@ export class OutbreakCombatFX {
 
       if (this.seenShots.has(s.id)) continue
       this.seenShots.add(s.id)
+      onNewShot?.(s)
       const fy = support(s.fromX, s.fromY) + 1.36
       this.lastFlash = { x: s.fromX, y: fy, z: s.fromY, until: time + 0.08 }
 
@@ -281,51 +303,175 @@ export class OutbreakCombatFX {
         const z = ai.agents.find((a) => a.id === s.hitZombieId)
         const dx = Math.cos(s.aim)
         const dz = Math.sin(s.aim)
-        const hitY = support(s.toX, s.toY) + (s.detachBone === "head" ? 1.52 : 1.15)
+        const groundY = support(s.toX, s.toY)
 
-        if (z && s.detachBone) {
-          const detached = zombieCrowd.detachAgentLimb(z, s.detachBone, dt, [dx, 0.25, dz])
-          const rootPiece = detached[0]
-          if (rootPiece) {
-            const [vx, vy, vz] = pointVelocity(rootPiece, rootPiece.frame.p)
-            const impact: SplatterImpact = {
-              id: s.id,
-              limbId: limbIds[rootPiece.bone],
-              seed: s.seed,
-              x: rootPiece.frame.p[0],
-              y: rootPiece.frame.p[1],
-              z: rootPiece.frame.p[2],
-              dx,
-              dy: 0.12,
-              dz,
-              vx,
-              vy,
-              vz,
-              amount: s.killed ? 1.35 : 1.0,
+        if (this.legacyMode) {
+          const legacyHitY = groundY + (s.detachBone === "head" ? 1.52 : 1.15)
+          if (z && s.detachBone) {
+            const detached = zombieCrowd.detachAgentLimb(z, s.detachBone, dt, [dx, 0.25, dz])
+            const rootPiece = detached[0]
+            if (rootPiece) {
+              const [vx, vy, vz] = pointVelocity(rootPiece, rootPiece.frame.p)
+              this.splatter.emit(
+                {
+                  id: s.id,
+                  limbId: limbIds[rootPiece.bone],
+                  seed: s.seed,
+                  x: rootPiece.frame.p[0],
+                  y: rootPiece.frame.p[1],
+                  z: rootPiece.frame.p[2],
+                  dx,
+                  dy: 0.12,
+                  dz,
+                  vx,
+                  vy,
+                  vz,
+                  amount: s.killed ? 1.35 : 1.0,
+                },
+                LEGACY_BLOOD_PRESET,
+              )
+              continue
             }
-            this.splatter.emit(impact, splatterPresets.blood)
-            continue
           }
+          this.splatter.emit(
+            {
+              id: s.id,
+              seed: s.seed,
+              x: s.toX,
+              y: legacyHitY,
+              z: s.toY,
+              dx,
+              dy: 0.08,
+              dz,
+              amount: s.killed ? 1.25 : 0.85,
+            },
+            LEGACY_BLOOD_PRESET,
+          )
+          continue
         }
 
+        const hitY = groundY + (s.detachBone === "head" ? 1.32 : 1.08)
+
+        // Primary exit-wound ballistic spray fanning along the bullet vector onto floor and walls behind the zombie
         this.splatter.emit(
           {
             id: s.id,
+            limbId: 0,
             seed: s.seed,
             x: s.toX,
             y: hitY,
             z: s.toY,
             dx,
-            dy: 0.08,
+            dy: 0.04,
             dz,
-            amount: s.killed ? 1.25 : 0.85,
+            vx: dx * 1.45,
+            vy: 0.15,
+            vz: dz * 1.45,
+            amount: s.killed ? 1.05 : 0.72,
           },
-          splatterPresets.blood,
+          splatterPresets.zombieBlood,
         )
+
+        // Immediate impact spatter & pool directly under the hit/collapsing zombie
+        const zx = z ? z.x : s.toX
+        const zz = z ? z.y : s.toY
+        const zGround = support(zx, zz)
+        this.splatter.emit(
+          {
+            id: s.id,
+            limbId: 99,
+            seed: (s.seed ^ 0x9e3779b9) >>> 0,
+            x: zx,
+            y: zGround + 0.18,
+            z: zz,
+            dx: dx * 0.18,
+            dy: -0.98,
+            dz: dz * 0.18,
+            amount: s.killed ? 0.48 : 0.28,
+          },
+          {
+            ...splatterPresets.zombieBlood,
+            impulse: s.killed ? 1.5 : 1.1,
+            spread: 0.65,
+            decalSize: s.killed ? 4.4 : 3.4,
+            pooling: s.killed ? 0.78 : 0.52,
+          },
+        )
+
+        if (z && s.detachBone) {
+          const detached = zombieCrowd.detachAgentLimb(z, s.detachBone, dt, [dx, 0.25, dz])
+          const rootPiece = detached[0]
+          if (rootPiece) {
+            const [rvx, rvy, rvz] = pointVelocity(rootPiece, rootPiece.frame.p)
+            const clampVel = (v: number, lim: number) => Math.max(-lim, Math.min(lim, Number.isFinite(v) ? v : 0))
+            const impact: SplatterImpact = {
+              id: s.id,
+              limbId: limbIds[rootPiece.bone],
+              seed: (s.seed ^ 0x517cc1b7) >>> 0,
+              x: rootPiece.frame.p[0],
+              y: Math.min(groundY + 1.25, rootPiece.frame.p[1]),
+              z: rootPiece.frame.p[2],
+              dx,
+              dy: -0.22,
+              dz,
+              vx: clampVel(rvx, 4.5),
+              vy: clampVel(rvy, 2.5) - 0.8,
+              vz: clampVel(rvz, 4.5),
+              amount: s.killed ? 0.65 : 0.45,
+            }
+            this.splatter.emit(impact, splatterPresets.zombieBlood)
+          }
+        }
       }
     }
 
     return addCount
+  }
+
+  /** Emits a close-range dark venous splatter when a shove connects with zombies. */
+  emitShoveHit(x: number, z: number, aim: number, groundY: number, hits = 1, seed = 101): void {
+    if (!this.levelData || hits <= 0) return
+    this.splatter ??= new Splatter(outbreakSplatterSurfaces(this.levelData))
+    this.hasEmitted = true
+    const dx = Math.cos(aim)
+    const dz = Math.sin(aim)
+    const id = ++this.syntheticEventId
+    this.splatter.emit(
+      {
+        id,
+        seed: (seed ^ id) >>> 0,
+        x: x + dx * 0.75,
+        y: groundY + 0.88,
+        z: z + dz * 0.75,
+        dx,
+        dy: -0.35,
+        dz,
+        amount: Math.min(1.2, 0.55 + hits * 0.25),
+      },
+      splatterPresets.zombieBlood,
+    )
+  }
+
+  /** Emits brighter oxygenated arterial blood when the survivor takes a hit from a zombie. */
+  emitSurvivorHit(x: number, z: number, dirX: number, dirZ: number, groundY: number, damage = 20, seed = 202): void {
+    if (!this.levelData) return
+    this.splatter ??= new Splatter(outbreakSplatterSurfaces(this.levelData))
+    this.hasEmitted = true
+    const id = ++this.syntheticEventId
+    this.splatter.emit(
+      {
+        id,
+        seed: (seed ^ id) >>> 0,
+        x,
+        y: groundY + 0.92,
+        z,
+        dx: dirX,
+        dy: -0.32,
+        dz: dirZ,
+        amount: Math.max(0.6, Math.min(1.4, damage / 22)),
+      },
+      splatterPresets.survivorBlood,
+    )
   }
 
   private getRecentShots(_ai: OutbreakAISubsystem, _player: SurvivorCombatState): CombatShotEvent[] {

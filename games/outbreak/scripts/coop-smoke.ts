@@ -13,13 +13,17 @@ import { NetSession } from "../src/net-session"
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=").slice(1).join("=")
 const base = new URL(arg("url") ?? "http://127.0.0.1:8797/arcade/outbreak/")
 const room = arg("room") ?? `t${randomRoomCode(undefined, Math.random, 5)}`
+const playerCount = Math.max(2, Math.min(4, Number(arg("players") ?? 4)))
 const wsUrl = `${base.protocol === "https:" ? "wss" : "ws"}://${base.host}${base.pathname.replace(/\/?$/, "/")}ws/${room}`
 const memory = new Map<string, string>()
 const store = (p: string) => ({ getItem: (k: string) => memory.get(p + k) ?? null, setItem: (k: string, v: string) => void memory.set(p + k, v) })
 
-const a = new NetSession({ url: wsUrl, room, name: "Smoke A", storage: store("a") })
-const b = new NetSession({ url: wsUrl, room, name: "Smoke B", storage: store("b") })
-const clients = [a, b]
+const clients = Array.from(
+  { length: playerCount },
+  (_, i) => new NetSession({ url: wsUrl, room, name: `Smoke ${String.fromCharCode(65 + i)}`, storage: store(`p${i}`) }),
+)
+const a = clients[0]!
+const b = clients[1]!
 const commands = new Map<NetSession, () => Command>(clients.map((c) => [c, () => ({ mx: 0, my: 0, aim: -Math.PI / 2, interact: false })]))
 
 // Fixed 60 Hz command stream per client, like the game's FrameClock.
@@ -45,10 +49,10 @@ async function until(what: string, test: () => boolean, ms = 8000): Promise<void
 
 const report: Record<string, unknown> = { url: wsUrl, room }
 try {
-  await until("both welcomed", () => a.connected && b.connected)
-  await until("roster of two", () => a.roster.length === 2 && b.roster.length === 2)
-  await until("each sees the other", () => a.remotes.length === 1 && b.remotes.length === 1)
-  report.seats = [a.index, b.index]
+  await until("all welcomed", () => clients.every((c) => c.connected))
+  await until(`roster of ${playerCount}`, () => clients.every((c) => c.roster.length === playerCount))
+  await until("each sees the others", () => clients.every((c) => c.remotes.length === playerCount - 1))
+  report.seats = clients.map((c) => c.index)
 
   // A walks to the front door of Ash House and opens it.
   const target = { x: 27.7, y: 36.4 }
@@ -68,7 +72,7 @@ try {
   })
   const doorOpen = (c: NetSession) => c.sim.town.doors.find((d) => d.id === "ash-front")!.open
   const opened = performance.now()
-  await until("door open for both", () => doorOpen(a) && doorOpen(b))
+  await until("door open for all", () => clients.every((c) => doorOpen(c)))
   report.doorSeenMs = Math.round(performance.now() - opened)
 
   // A turns and fires once.
@@ -79,22 +83,30 @@ try {
     fired = true
     return { mx: 0, my: 0, aim: Math.PI / 2, interact: false, fire }
   })
-  await until("shot seen by both", () => a.view.player.magAmmo === ammo - 1 && b.view.shots.length > 0 && a.view.shots.length > 0)
-  assert.equal(b.view.shots.at(-1)!.id, a.view.shots.at(-1)!.id)
+  await until("shot seen by all", () => a.view.player.magAmmo === ammo - 1 && clients.every((c) => c.view.shots.length > 0))
+  for (const c of clients.slice(1)) assert.equal(c.view.shots.at(-1)!.id, a.view.shots.at(-1)!.id)
   commands.set(a, () => ({ mx: 0, my: 0, aim: Math.PI / 2, interact: false }))
 
-  // Agreement: B's view of A matches A's own (both settled), and both have the same zombies at the same tick.
+  // Agreement: B's view of A matches A's own (both settled), and all clients have the same zombies at the same tick.
   await sleep(600)
   const aSelf = a.view.player
-  const aOnB = b.remotes[0]!.survivor
+  const aOnB = b.remotes.find((r) => r.index === a.index)!.survivor
   report.positionDisagreementM = +Math.hypot(aSelf.x - aOnB.x, aSelf.y - aOnB.y).toFixed(4)
   assert.ok((report.positionDisagreementM as number) < 0.05, "B sees A where A is")
-  await until("same latest tick", () => a.snapshots.latest?.tick === b.snapshots.latest?.tick, 3000)
+  await until(
+    "same latest tick",
+    () => {
+      const t = a.snapshots.latest?.tick
+      return t !== undefined && clients.every((c) => c.snapshots.latest?.tick === t)
+    },
+    3000,
+  )
   const za = a.snapshots.latest!.zombies
-  const zb = b.snapshots.latest!.zombies
-  assert.deepEqual(za, zb, "both clients received the same zombies")
+  for (const c of clients.slice(1)) {
+    assert.deepEqual(c.snapshots.latest!.zombies, za, "all clients received the same zombies")
+    assert.deepEqual(c.snapshots.latest!.doors, a.snapshots.latest!.doors)
+  }
   report.zombies = za.length
-  assert.deepEqual(a.snapshots.latest!.doors, b.snapshots.latest!.doors)
 
   // Bandwidth over a 5 s window of normal play (A walks back, B idles).
   const before = clients.map((c) => [c.bytesIn, c.bytesOut, c.snapshotCount])

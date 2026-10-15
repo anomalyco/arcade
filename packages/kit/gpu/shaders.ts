@@ -1,6 +1,7 @@
 import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "./limits"
 import type { PostFinishOptions } from "./look-shaders"
 import { motionGather, motionOutput } from "./motion"
+import { wgslSnippet } from "./wgsl"
 import { vehicleSprites } from "@arcade/kit/vehicle/sprites"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
@@ -137,7 +138,33 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; lightAccumulate?: string; wallDirectScale?: string; mapUv?: string }
+export type SceneHooks = {
+  declarations?: string
+  vertex?: string
+  surface?: string
+  lookSurface?: string
+  directional?: string
+  ao?: string
+  bounce?: string
+  material?: string
+  postLightMaterial?: string
+  cutaway?: string
+  solidCutaway?: string
+  fragmentStart?: string
+  smoothShadows?: boolean
+  diagnostics?: string
+  ambient?: string
+  lightLeak?: string
+  lightMask?: string
+  shadowTaps?: 5 | 9
+  lightAttenuation?: string
+  lightAccumulate?: string
+  wallDirectScale?: string
+  mapUv?: string
+  diffuseTerm?: string
+  combineLighting?: string
+  fragmentReturn?: string
+}
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -391,7 +418,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     }
     if (att <= 0.0005) { continue; }
     let ndl = dot(n, ldir);
-    let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);
+    ${hooks.diffuseTerm ?? "let diffuse = max((ndl + wrap) / (1.0 + wrap), 0.0);"}
     // Tops of furniture and partitions sit inside their own footprint: test the point nudged toward the light.
     var sp = plan;
     if (n.y > 0.5 && world.y > 0.15) { sp = world.xz - dv / max(dPlan, 1e-4) * min(0.12, dPlan); }
@@ -683,7 +710,7 @@ fn shadeScene(o: VOut) -> vec4f {
     // Moonlight through the windows, on the floor and low surfaces.
     ${looks ? "var" : "let"} moon = ${hooks.directional ?? "vec3f(0.62, 0.78, 1.25) * fd.g * F.ambient.w * low * max(n.y, 0.2)"};
     ${looks ? "if (look(2u)) { moon *= 0.68; }" : ""}
-    col = albedo * (amb + direct + moon) + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
+    ${hooks.combineLighting ?? "col = albedo * (amb + direct + moon)"} + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
     ${hooks.diagnostics ? `let contribution = i32(${hooks.diagnostics});
     if (contribution == 1) { return vec4f(albedo, 1.0); }
     if (contribution == 2) { return vec4f(albedo * direct, 1.0); }
@@ -714,7 +741,7 @@ fn shadeScene(o: VOut) -> vec4f {
   }` : ""}
   ${hooks.surface ?? ""}
   let a = alpha * o.extra.z;
-  return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);
+  ${hooks.fragmentReturn ?? "return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);"}
 }
 
 @fragment fn fs(o: VOut) -> ${motion ? "MotionOut" : "@location(0) vec4f"} {
@@ -858,7 +885,7 @@ ${motion ? motionGather : ""}
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: vec4f;
 @group(0) @binding(3) var bloomTex: texture_2d<f32>;
-${looks ? `struct Grade { frame: vec4f, look: vec4f }
+${looks || finish ? `struct Grade { frame: vec4f, look: vec4f }
 @group(0) @binding(4) var<uniform> grade: Grade;` : "@group(0) @binding(4) var<uniform> G: vec4f;"}
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
@@ -926,16 +953,26 @@ fn hash(p: vec2f) -> f32 {
 
 // G: time, desaturate, flash, exposure
 @fragment fn composite(o: VO) -> @location(0) vec4f {
-  ${looks ? "let G = grade.frame; let enhanced = grade.look.x > 0.5;" : ""}
+  ${looks ? "let G = grade.frame; let enhanced = grade.look.x > 0.5;" : finish ? "let G = grade.frame; let feel = grade.look;" : ""}
   let uv = o.uv;
   let fromC = uv - 0.5;
   // A touch of chromatic fringing toward the corners.
-  let ca = fromC * dot(fromC, fromC) * ${finish ? finish.chromatic.toFixed(4) : looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
+  let ca = fromC * dot(fromC, fromC) * ${finish ? `(${finish.chromatic.toFixed(4)} + fract(feel.x) * 0.024)` : looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
   var hdr = vec3f(
     clean(textureSample(src, samp, uv + ca)).r,
     clean(textureSample(src, samp, uv)).g,
     clean(textureSample(src, samp, uv - ca)).b,
   );
+  ${finish ? `if (any(abs(feel.yzw) > vec3f(0.00018))) {
+    let rFeel = length(fromC);
+    let edgeW = smoothstep(0.06, 0.36, rFeel);
+    let vFeel = feel.yz * (0.45 + 0.55 * edgeW) + fromC * (feel.w * 1.45 * edgeW);
+    let s0 = clean(textureSampleLevel(src, samp, clamp(uv - vFeel * 0.85, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s1 = clean(textureSampleLevel(src, samp, clamp(uv - vFeel * 0.38, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s2 = clean(textureSampleLevel(src, samp, clamp(uv + vFeel * 0.38, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s3 = clean(textureSampleLevel(src, samp, clamp(uv + vFeel * 0.85, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    hdr = hdr * 0.32 + (s1 + s2) * 0.22 + (s0 + s3) * 0.12;
+  }` : ""}
   ${motion ? "hdr += motionColour(uv) - clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;" : ""}
   let bloom = textureSample(bloomTex, samp, uv).rgb;
   ${finish?.diagnostics ? `if (G.y > 0.5) {
@@ -1005,4 +1042,13 @@ fn hash(p: vec2f) -> f32 {
 }
 `
 
-export { makeLookPostShader, makeLookSceneShader, type PostFinishOptions } from "./look-shaders"
+export const postCommonSnippet = wgslSnippet("postCommon", postCommonWgsl)
+
+export {
+  lookVariantSlot,
+  makeLookPostShader,
+  makeLookSceneShader,
+  resolveLookVariant,
+  type LookVariantMode,
+  type PostFinishOptions,
+} from "./look-shaders"

@@ -43,8 +43,12 @@ const GRID_CELL = 2
 export class RectGrid {
   readonly x0: number
   readonly y0: number
+  readonly cell: number
   readonly nx: number
   readonly ny: number
+  private readonly rawNx: number
+  private readonly rawNy: number
+  private readonly hashed: boolean
   private readonly boundsRect: Rect
   private start: Int32Array
   private items: Int32Array
@@ -64,13 +68,27 @@ export class RectGrid {
     }
     this.x0 = x0 - 1
     this.y0 = y0 - 1
-    this.nx = Math.max(1, Math.ceil((x1 + 1 - this.x0) / GRID_CELL))
-    this.ny = Math.max(1, Math.ceil((y1 + 1 - this.y0) / GRID_CELL))
-    this.boundsRect = [this.x0, this.y0, this.x0 + this.nx * GRID_CELL, this.y0 + this.ny * GRID_CELL]
-    const counts = new Int32Array(this.nx * this.ny + 1)
+    const spanX = Math.max(1, x1 + 1 - this.x0)
+    const spanY = Math.max(1, y1 + 1 - this.y0)
+    this.rawNx = Math.max(1, Math.ceil(spanX / GRID_CELL))
+    this.rawNy = Math.max(1, Math.ceil(spanY / GRID_CELL))
+    this.boundsRect = [this.x0, this.y0, this.x0 + this.rawNx * GRID_CELL, this.y0 + this.rawNy * GRID_CELL]
+    // For wide streaming worlds (>256 m span), use a 4096-bucket spatial hash at 2 m cell resolution so
+    // cell queries remain ultra-local (1-3 rects) without allocating a multi-megabyte dense grid.
+    this.hashed = this.rawNx * this.rawNy > 16384
+    this.cell = GRID_CELL
+    this.nx = this.hashed ? 64 : this.rawNx
+    this.ny = this.hashed ? 64 : this.rawNy
+    const numBuckets = this.nx * this.ny
+    const counts = new Int32Array(numBuckets + 1)
     const span = (r: Rect, f: (c: number) => void) => {
       const [a, b, c, d] = this.cells(r[0] - 1e-6, r[1] - 1e-6, r[2] + 1e-6, r[3] + 1e-6)
-      for (let y = b; y <= d; y++) for (let x = a; x <= c; x++) f(y * this.nx + x)
+      for (let y = b; y <= d; y++) {
+        for (let x = a; x <= c; x++) {
+          const bucket = this.hashed ? ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) & 4095) : y * this.nx + x
+          f(bucket)
+        }
+      }
     }
     for (const r of rects) span(r, (c) => counts[c + 1]!++)
     for (let i = 1; i < counts.length; i++) counts[i]! += counts[i - 1]!
@@ -83,7 +101,7 @@ export class RectGrid {
   /** Clamped cell bounds [cx0, cy0, cx1, cy1] covering a box. */
   cells(x0: number, y0: number, x1: number, y1: number): [number, number, number, number] {
     const c = (v: number, n: number) => Math.max(0, Math.min(n - 1, Math.floor(v / GRID_CELL)))
-    return [c(x0 - this.x0, this.nx), c(y0 - this.y0, this.ny), c(x1 - this.x0, this.nx), c(y1 - this.y0, this.ny)]
+    return [c(x0 - this.x0, this.rawNx), c(y0 - this.y0, this.rawNy), c(x1 - this.x0, this.rawNx), c(y1 - this.y0, this.rawNy)]
   }
 
   /** Indices of rects that may touch the box, ascending, written into `out`. */
@@ -93,7 +111,7 @@ export class RectGrid {
     const [a, b, c, d] = this.cells(x0, y0, x1, y1)
     for (let y = b; y <= d; y++)
       for (let x = a; x <= c; x++) {
-        const k = y * this.nx + x
+        const k = this.hashed ? ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) & 4095) : y * this.nx + x
         for (let j = this.start[k]!; j < this.start[k + 1]!; j++) {
           const i = this.items[j]!
           if (this.stamp[i] === g) continue
@@ -107,23 +125,24 @@ export class RectGrid {
 
   /** Nearest hit along a ray within maxT, walking the grid cells the ray crosses. Matches a linear raycast. */
   raycast(ox: number, oy: number, dx: number, dy: number, maxT: number): number {
+    const cell = GRID_CELL
     const enter = rayRect(ox, oy, dx, dy, this.boundsRect, maxT)
     if (enter === Infinity) return Infinity
     const g = this.next()
     const px = ox + dx * enter - this.x0
     const py = oy + dy * enter - this.y0
-    let cx = Math.max(0, Math.min(this.nx - 1, Math.floor(px / GRID_CELL)))
-    let cy = Math.max(0, Math.min(this.ny - 1, Math.floor(py / GRID_CELL)))
+    let cx = Math.max(0, Math.min(this.rawNx - 1, Math.floor(px / cell)))
+    let cy = Math.max(0, Math.min(this.rawNy - 1, Math.floor(py / cell)))
     const sx = dx > 0 ? 1 : -1
     const sy = dy > 0 ? 1 : -1
-    const ddx = Math.abs(dx) < 1e-12 ? Infinity : GRID_CELL / Math.abs(dx)
-    const ddy = Math.abs(dy) < 1e-12 ? Infinity : GRID_CELL / Math.abs(dy)
-    let tx = ddx === Infinity ? Infinity : enter + ((dx > 0 ? (cx + 1) * GRID_CELL - px : px - cx * GRID_CELL) / Math.abs(dx))
-    let ty = ddy === Infinity ? Infinity : enter + ((dy > 0 ? (cy + 1) * GRID_CELL - py : py - cy * GRID_CELL) / Math.abs(dy))
+    const ddx = Math.abs(dx) < 1e-12 ? Infinity : cell / Math.abs(dx)
+    const ddy = Math.abs(dy) < 1e-12 ? Infinity : cell / Math.abs(dy)
+    let tx = ddx === Infinity ? Infinity : enter + ((dx > 0 ? (cx + 1) * cell - px : px - cx * cell) / Math.abs(dx))
+    let ty = ddy === Infinity ? Infinity : enter + ((dy > 0 ? (cy + 1) * cell - py : py - cy * cell) / Math.abs(dy))
     let best = maxT
     let hit = false
     for (;;) {
-      const k = cy * this.nx + cx
+      const k = this.hashed ? ((Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663)) & 4095) : cy * this.nx + cx
       for (let j = this.start[k]!; j < this.start[k + 1]!; j++) {
         const i = this.items[j]!
         if (this.stamp[i] === g) continue
@@ -143,7 +162,7 @@ export class RectGrid {
         cy += sy
         ty += ddy
       }
-      if (cx < 0 || cy < 0 || cx >= this.nx || cy >= this.ny) break
+      if (cx < 0 || cy < 0 || cx >= this.rawNx || cy >= this.rawNy) break
     }
     return hit ? best : Infinity
   }

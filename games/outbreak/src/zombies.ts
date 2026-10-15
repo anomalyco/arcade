@@ -309,7 +309,7 @@ export function buildZombiePartMeshes(): Mesh[] {
   // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
   torso.box(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, collar, MAT.actor)
   torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
-  torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+  torso.box(-0.148, 0.16, -0.1, -0.11, 0.34, 0.1, hex(0x4a2a28), MAT.actor)
 
   const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.024)
   head.box(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, hair, MAT.actor)
@@ -493,7 +493,17 @@ export class ZombieCrowdRenderer {
     if (s === undefined) return []
     const bOff = s * BONE_STRIDE
     const bones = readBonePose(this.currBones, bOff)
-    const prev = readBonePose(this.prevBones, bOff)
+    const rawPrev = readBonePose(this.prevBones, bOff)
+    const prevValid =
+      rawPrev.pelvis &&
+      bones.pelvis &&
+      (rawPrev.pelvis.p[0] !== 0 || rawPrev.pelvis.p[1] !== 0 || rawPrev.pelvis.p[2] !== 0) &&
+      Math.hypot(
+        bones.pelvis.p[0] - rawPrev.pelvis.p[0],
+        bones.pelvis.p[1] - rawPrev.pelvis.p[1],
+        bones.pelvis.p[2] - rawPrev.pelvis.p[2],
+      ) < 2.2
+    const prev = prevValid ? rawPrev : bones
     const hidden = this.maskToHiddenSet(this.hiddenMask[s]!)
     const pieces = detach(bones, prev, Math.max(1 / 120, dt), root, hidden)
     this.hiddenMask[s] = this.hiddenMask[s]! | BONE_SUBTREE_MASK[root]
@@ -833,6 +843,7 @@ export class ZombieCrowdRenderer {
 
       if (a.state === "dead") {
         this.seenAt[s] = -1e9
+        if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
         const col = Math.min(1, this.collapse[s]! + dt * 4.2)
         this.collapse[s] = col
         const c = smoother(col)

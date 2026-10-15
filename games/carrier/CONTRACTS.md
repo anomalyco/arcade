@@ -362,6 +362,28 @@ pitch is the eye's elevation seen from the focus, 8-85), `?weather=clear|light|m
 the start, for scripted captures: the room's physics keep the room's weather), `?lab=weather` (debug menu open on the
 weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is untouched).
 
+## Bots (dev only: `shared/bots.ts`, `server/bots.ts`, `src/dev/{bots-tab,local-room}.ts`, `tests/bots.test.ts`)
+
+- Bots are crew players without a socket, run by the room (dev rooms only, `RoomCore.dev`). A bot's `role` is a ship
+  operation id (`hornet`, `f35`, `boat`, a gun op, `helm`): it joins the chosen carrier (`joinCrew`, `joinShip`) and
+  runs that op through `opError`/`runOp` like a player, so caps, recharges, sides and capacity apply (`rules` off lets
+  a bot take an extra slot, trimmed when it goes; an air start doesn't hold the catapult). Named `BOT·VIPER` etc.
+- Each room step `RoomBots.step` flies jets on `planeStep` (air start or the real catapult), steers boats through the
+  room's own boat sim, aims turrets with `slewTurret`, fires `Bullets`/`TurretRounds`/`BoatRounds`, AIM-9s, bombs
+  (`bombImpact` decides the release), SAMs, shells and flares, and hands it all to `RoomCore.handle` as the messages a
+  client sends (`plane`, `gun`, `hits`, `shiphits`, `fire`, `flare`, `seek`, `boat`, `bhits`, `aim`, `gfire`, `thits`,
+  `intercept`, `helm`, `op`, `recover`): the same validation, damage, kill credit and relays as a player's. Invulnerable
+  bots drop damage events (`RoomBots.absorb`); infinite ammo refills stores and budgets.
+- Behaviors (`BotSettings`, ranges in `BOT_RANGES`): jets straight / orbit / eight / evasive (jinks, breaks, flares on a
+  seeker or missile) / dogfight (lead pursuit, gun, AIM-9) / bomber (F-35C bomb runs, Hornet strafing); boats idle /
+  patrol / attack; gunners hold / engage; helms stop / cruise / circle / chase. Skill, aggression, accuracy, weapons,
+  flares, ammo, invulnerable, respawn, target player, target ship.
+- Wire: client `{ type: "bot", cmd }` (`BotCmd`: spawn, set, kill, remove, clear; `botCmdOf` validates and clamps);
+  server `bots` (`BotInfo[]`, ~2 Hz while any exist) and `welcome.dev`.
+- BOTS tab: scenarios (1v1 dogfight · 2 km, bomber run on my carrier, swarm of 4, carrier battle, target practice ×3,
+  boat attack ×2, remove all), a spawner and behavior on the shared Lab panel, the live list (LOAD, APPLY, SHOOT DOWN,
+  REMOVE, per group APPLY/REMOVE). Real-GPU check: `scripts/bots-shot.ts` (captures in `captures/bots/`).
+
 ## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{debug-menu,weather-lab}.ts`)
 
 - Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded
@@ -517,7 +539,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   (ZONE MOVING IN 20S). A round's first zone sits within 1 km of the middle (about 3 minutes' sail from every spawn);
   later ones hop 1.3-2.8 km.
 - A carrier whose hull centre is inside a zone alone captures it in 10 s (someone else's drains to neutral first);
-  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone. No clock: first to
+  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone, and must stay: a held zone left empty drains to neutral in 10 s. No clock: first to
   1,200 points wins the round; the result shows 15 s, then scores reset and a new round starts. Nothing in the
   objective touches ships, crew or aircraft: relocations, round ends and new rules never move or respawn anything.
 - Authority: the room's `Objective` steps with the ships and sends `obj` (`packObjective`, a flat number array) at
@@ -713,7 +735,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Anything else is the HULL side.
 - Fires: each bomb, missile or crash hit leaves a fire at its ship-local point (at most 8). A fire burns for 45 s,
   and all of them stay lit below 60% health.
-- Repair: after 40 s without damage, 1.5 hp/s and the bridge 1% per second, back to full (like jet repair).
+- Repair: after 20 s without damage, 3 hp/s (a bomb hit back in ~1 min, near-sunk to full in ~5.5 min) and the bridge 1% per second, back to full (like jet repair).
 - Settle (`settleOf`, `settled`): up to 3.2 m lower and 5° of list toward the side that took the hits, growing with
   damage. It's an offset on the pose that is drawn and hit-tested, never inside the buoyancy physics. `game.ts` settles
   every drawn hull and the room settles the poses its combat world hits, so health alone decides it everywhere.

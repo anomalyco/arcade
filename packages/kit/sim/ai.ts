@@ -314,18 +314,26 @@ export function attenuateNoise(
   const ux = dx / distance
   const uy = dy / distance
   const maxT = distance - 0.04
+  const segMinX = Math.min(ox, lx) - 0.05
+  const segMaxX = Math.max(ox, lx) + 0.05
+  const segMinY = Math.min(oy, ly) - 0.05
+  const segMaxY = Math.max(oy, ly) + 0.05
   let wallHits = 0
   let doorHits = 0
 
   for (let i = 0; i < walls.length; i++) {
-    const t = rayRect(ox, oy, ux, uy, walls[i]!, maxT)
+    const r = walls[i]!
+    if (r[2] < segMinX || r[0] > segMaxX || r[3] < segMinY || r[1] > segMaxY) continue
+    const t = rayRect(ox, oy, ux, uy, r, maxT)
     if (t > 0.02 && t < maxT) {
       wallHits++
       if (wallHits >= 4) break
     }
   }
   for (let i = 0; i < closedDoors.length; i++) {
-    const t = rayRect(ox, oy, ux, uy, closedDoors[i]!, maxT)
+    const r = closedDoors[i]!
+    if (r[2] < segMinX || r[0] > segMaxX || r[3] < segMinY || r[1] > segMaxY) continue
+    const t = rayRect(ox, oy, ux, uy, r, maxT)
     if (t > 0.02 && t < maxT) {
       doorHits++
       if (doorHits >= 3) break
@@ -385,8 +393,30 @@ export function evaluateSight(
     lightFactor = Math.max(lightFactor, config.flashlightBoost * 0.85)
   }
   const effectiveSightRange = config.sightRange * agent.perceptionScale * lightFactor
+  const fl = target.flashlight
+  const flActive = Boolean(fl?.on && (fl.output ?? 1) > 0.01)
+  const flOutput = flActive ? (fl!.output ?? 1) : 0
+  const maxPoolDist = flActive ? config.sightRange * agent.perceptionScale * config.flashlightBoost * flOutput : 0
+  const maxPossibleDist = Math.max(
+    effectiveSightRange,
+    config.proximityRange * agent.perceptionScale,
+    flActive ? fl!.range * 1.25 + maxPoolDist : 0,
+  )
+  if (dist > maxPossibleDist) {
+    return {
+      seesTarget: false,
+      sensesLight: false,
+      sensesProximity: false,
+      visualGain: 0,
+      stimX: 0,
+      stimY: 0,
+      kind: "none",
+      effectiveSightRange,
+    }
+  }
+
   const hasDirectLos =
-    dist <= Math.max(effectiveSightRange, config.proximityRange * agent.perceptionScale, target.flashlight?.on ? target.flashlight.range * 1.25 : 0) &&
+    dist <= Math.max(effectiveSightRange, config.proximityRange * agent.perceptionScale, flActive ? fl!.range * 1.25 : 0) &&
     clearLine(agent.x, agent.y, target.x, target.y, sightBlockers)
 
   const focusHalf = (config.sightCone * Math.PI) / 360
@@ -419,19 +449,20 @@ export function evaluateSight(
   // 2. Flashlight beam sensing:
   // (a) Beam shining directly onto the zombie (via authoritative awarenessAt or geometric cone),
   // or (b) zombie seeing the flashlight's lit ground pool.
-  const fl = target.flashlight
-  if (fl?.on && (fl.output ?? 1) > 0.01) {
-    const flOutput = fl.output ?? 1
+  if (flActive && fl) {
     const fromFlX = agent.x - fl.x
     const fromFlY = agent.y - fl.y
     const flDist = Math.hypot(fromFlX, fromFlY)
     const flAngleToAgent = Math.abs(angleDiff(Math.atan2(fromFlY, fromFlX), fl.aim))
-    const directAwareness = fl.awarenessAt
-      ? fl.awarenessAt(agent.x, agent.y)
-      : flDist <= fl.range &&
-          flAngleToAgent <= fl.halfAngle + 0.14 &&
-          clearLine(fl.x, fl.y, agent.x, agent.y, sightBlockers)
-        ? flOutput * (1 - 0.45 * (flDist / Math.max(1, fl.range)))
+    const directAwareness =
+      flDist <= fl.range * 1.25
+        ? fl.awarenessAt
+          ? fl.awarenessAt(agent.x, agent.y)
+          : flDist <= fl.range &&
+              flAngleToAgent <= fl.halfAngle + 0.14 &&
+              clearLine(fl.x, fl.y, agent.x, agent.y, sightBlockers)
+            ? flOutput * (1 - 0.45 * (flDist / Math.max(1, fl.range)))
+            : 0
         : 0
     if (directAwareness > 0.01) {
       // Beam hits the zombie directly!
@@ -449,26 +480,30 @@ export function evaluateSight(
     }
 
     // Check if the zombie can see a point illuminated by the beam ahead of the player
-    const fdx = Math.cos(fl.aim)
-    const fdy = Math.sin(fl.aim)
-    const beamHit = Math.min(fl.range, raycast(fl.x, fl.y, fdx, fdy, sightBlockers, fl.range))
-    for (const frac of [0.5, 0.85]) {
-      const bx = fl.x + fdx * (beamHit * frac)
-      const by = fl.y + fdy * (beamHit * frac)
-      const bDist = Math.hypot(bx - agent.x, by - agent.y)
-      const bAngle = Math.abs(angleDiff(Math.atan2(by - agent.y, bx - agent.x), agent.aim))
-      const maxPoolDist = config.sightRange * agent.perceptionScale * config.flashlightBoost * flOutput
-      if (bDist <= maxPoolDist && bAngle <= periphHalf && clearLine(agent.x, agent.y, bx, by, sightBlockers)) {
-        const poolGain = 1.45 * config.flashlightBoost * flOutput * (1 - 0.6 * (bDist / Math.max(1, maxPoolDist)))
-        return {
-          seesTarget: false,
-          sensesLight: true,
-          sensesProximity: false,
-          visualGain: poolGain,
-          stimX: bx,
-          stimY: by,
-          kind: "light",
-          effectiveSightRange,
+    if (flDist <= fl.range + maxPoolDist) {
+      const fdx = Math.cos(fl.aim)
+      const fdy = Math.sin(fl.aim)
+      const cached = (fl as FlashlightState & { _beamHit?: number })._beamHit
+      const beamHit = cached !== undefined ? cached : Math.min(fl.range, raycast(fl.x, fl.y, fdx, fdy, sightBlockers, fl.range))
+      ;(fl as FlashlightState & { _beamHit?: number })._beamHit = beamHit
+      for (const frac of [0.5, 0.85]) {
+        const bx = fl.x + fdx * (beamHit * frac)
+        const by = fl.y + fdy * (beamHit * frac)
+        const bDist = Math.hypot(bx - agent.x, by - agent.y)
+        if (bDist > maxPoolDist) continue
+        const bAngle = Math.abs(angleDiff(Math.atan2(by - agent.y, bx - agent.x), agent.aim))
+        if (bAngle <= periphHalf && clearLine(agent.x, agent.y, bx, by, sightBlockers)) {
+          const poolGain = 1.45 * config.flashlightBoost * flOutput * (1 - 0.6 * (bDist / Math.max(1, maxPoolDist)))
+          return {
+            seesTarget: false,
+            sensesLight: true,
+            sensesProximity: false,
+            visualGain: poolGain,
+            stimX: bx,
+            stimY: by,
+            kind: "light",
+            effectiveSightRange,
+          }
         }
       }
     }
@@ -509,23 +544,22 @@ export class SpatialHash {
   readonly cellSize: number
   readonly cols: number
   readonly rows: number
+  private readonly mask: number
   private readonly head: Int32Array
   private next: Int32Array
 
-  constructor(width: number, height: number, cellSize = 4, initialCapacity = 128) {
+  constructor(_width: number, _height: number, cellSize = 4, initialCapacity = 128) {
     this.cellSize = cellSize
-    this.cols = Math.max(1, Math.ceil(width / cellSize))
-    this.rows = Math.max(1, Math.ceil(height / cellSize))
-    this.head = new Int32Array(this.cols * this.rows).fill(-1)
+    // Use 4096 hash buckets so wide streaming worlds (e.g. survivors 960 m apart) never alias modulo 96 m
+    this.cols = 64
+    this.rows = 64
+    this.mask = 4095
+    this.head = new Int32Array(4096).fill(-1)
     this.next = new Int32Array(initialCapacity).fill(-1)
   }
 
-  private wrapX(cx: number): number {
-    return cx >= 0 && cx < this.cols ? cx : ((cx % this.cols) + this.cols) % this.cols
-  }
-
-  private wrapY(cy: number): number {
-    return cy >= 0 && cy < this.rows ? cy : ((cy % this.rows) + this.rows) % this.rows
+  private bucket(cx: number, cy: number): number {
+    return (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663)) & this.mask
   }
 
   rebuild(agents: readonly Pick<AIAgent, "x" | "y" | "state">[]): void {
@@ -539,9 +573,9 @@ export class SpatialHash {
         this.next[i] = -1
         continue
       }
-      const cx = this.wrapX(Math.floor(a.x / this.cellSize))
-      const cy = this.wrapY(Math.floor(a.y / this.cellSize))
-      const cell = cy * this.cols + cx
+      const cx = Math.floor(a.x / this.cellSize)
+      const cy = Math.floor(a.y / this.cellSize)
+      const cell = this.bucket(cx, cy)
       this.next[i] = this.head[cell]!
       this.head[cell] = i
     }
@@ -554,10 +588,8 @@ export class SpatialHash {
     const rawCy0 = Math.floor((y - radius) / this.cellSize)
     const rawCy1 = Math.floor((y + radius) / this.cellSize)
     for (let cy = rawCy0; cy <= rawCy1; cy++) {
-      const wy = this.wrapY(cy)
       for (let cx = rawCx0; cx <= rawCx1; cx++) {
-        const wx = this.wrapX(cx)
-        for (let idx = this.head[wy * this.cols + wx]!; idx !== -1; idx = this.next[idx]!) {
+        for (let idx = this.head[this.bucket(cx, cy)]!; idx !== -1; idx = this.next[idx]!) {
           out.push(idx)
         }
       }
@@ -582,8 +614,9 @@ export class GridNav {
   readonly grid: Uint8Array
   /** Optional per-chunk 64×64 walkability tiles keyed by `"cx,cy"` for unbounded streaming worlds. */
   readonly chunkTiles = new Map<string, Uint8Array>()
-  private lastTileCx = 0x7fffffff
-  private lastTileCy = 0x7fffffff
+  private readonly intChunkTiles = new Map<number, Uint8Array>()
+  private intTilesSyncedSize = -1
+  private lastTileKey = 0x7fffffff
   private lastTile: Uint8Array | undefined
   private readonly g: Float32Array
   private readonly came: Int32Array
@@ -644,15 +677,35 @@ export class GridNav {
     }
   }
 
+  private syncIntChunkTiles(): void {
+    this.intChunkTiles.clear()
+    for (const [k, tile] of this.chunkTiles) {
+      const comma = k.indexOf(",")
+      const cx = Number(k.slice(0, comma)) | 0
+      const cy = Number(k.slice(comma + 1)) | 0
+      this.intChunkTiles.set(((cx & 0xffff) << 16) | (cy & 0xffff), tile)
+    }
+    this.intTilesSyncedSize = this.chunkTiles.size
+    this.lastTileKey = 0x7fffffff
+    this.lastTile = undefined
+  }
+
+  invalidateChunkTileCache(): void {
+    this.intTilesSyncedSize = -1
+    this.lastTileKey = 0x7fffffff
+    this.lastTile = undefined
+  }
+
   private cellCodeAtGrid(gx: number, gy: number): number {
     if (this.chunkTiles.size > 0) {
+      if (this.intTilesSyncedSize !== this.chunkTiles.size) this.syncIntChunkTiles()
       const cx = gx >> 6
       const cy = gy >> 6
-      let tile = this.lastTile
-      if (cx !== this.lastTileCx || cy !== this.lastTileCy) {
-        this.lastTileCx = cx
-        this.lastTileCy = cy
-        tile = this.chunkTiles.get(`${cx},${cy}`)
+      const key = ((cx & 0xffff) << 16) | (cy & 0xffff)
+      let tile = key === this.lastTileKey ? this.lastTile : undefined
+      if (tile === undefined && key !== this.lastTileKey) {
+        tile = this.intChunkTiles.get(key)
+        this.lastTileKey = key
         this.lastTile = tile
       }
       if (!tile) return CELL_BLOCKED
@@ -663,9 +716,7 @@ export class GridNav {
   }
 
   invalidateTileCache(): void {
-    this.lastTileCx = 0x7fffffff
-    this.lastTileCy = 0x7fffffff
-    this.lastTile = undefined
+    this.invalidateChunkTileCache()
   }
 
   private idx(p: Vec): number {
@@ -868,7 +919,7 @@ export class GridNav {
         const next = cells[i + 1]
         const wp = cells[i]!
         const curCode = this.cellCodeAtGrid(Math.floor(wp.x / this.cell), Math.floor(wp.y / this.cell))
-        if (next && curCode === CELL_FREE && this.straightFree(anchor, next)) continue
+        if (next && out.length < 4 && i < 16 && curCode === CELL_FREE && this.straightFree(anchor, next)) continue
         out.push(wp)
         anchor = wp
       }
@@ -956,7 +1007,7 @@ export class GridNav {
     for (let i = 0; i < cells.length; i++) {
       const next = cells[i + 1]
       const curCode = grid[this.idx(cells[i]!)]
-      if (next && curCode === CELL_FREE && this.straightFree(anchor, next)) continue
+      if (next && (maxSteps >= 2000 || (out.length < 4 && i < 16)) && curCode === CELL_FREE && this.straightFree(anchor, next)) continue
       out.push(cells[i]!)
       anchor = cells[i]!
     }
@@ -1080,25 +1131,25 @@ function findBlockingPortal(
 ): NavPortal | undefined {
   let best: NavPortal | undefined
   let bestDist = 1.08
+  const ax = agent.x
+  const ay = agent.y
   for (let i = 0; i < portals.length; i++) {
     const p = portals[i]!
-    const d = distToRect(agent.x, agent.y, p.rect)
+    const r = p.rect
+    if (ax < r[0] - 1.1 || ax > r[2] + 1.1 || ay < r[1] - 1.1 || ay > r[3] + 1.1) continue
+    const barricaded = (p.barricadePlanks ?? 0) > 0
+    if (p.kind === "door" ? p.open && !barricaded : !p.open && !barricaded) continue
+    const d = distToRect(ax, ay, r)
     if (d > bestDist) continue
-    const cx = (p.rect[0] + p.rect[2]) * 0.5
-    const cy = (p.rect[1] + p.rect[3]) * 0.5
-    const toPortalX = cx - agent.x
-    const toPortalY = cy - agent.y
+    const cx = (r[0] + r[2]) * 0.5
+    const cy = (r[1] + r[3]) * 0.5
+    const toPortalX = cx - ax
+    const toPortalY = cy - ay
     const toLen = Math.hypot(toPortalX, toPortalY) || 1
     const dot = (toPortalX / toLen) * moveDirX + (toPortalY / toLen) * moveDirY
     if (dot < 0.15 && d > 0.55) continue
-    const barricaded = (p.barricadePlanks ?? 0) > 0
-    if (p.kind === "door" && (!p.open || barricaded)) {
-      bestDist = d
-      best = p
-    } else if (p.kind === "window" && (p.open || barricaded)) {
-      bestDist = d
-      best = p
-    }
+    bestDist = d
+    best = p
   }
   return best
 }
@@ -1172,8 +1223,10 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     }
   }
 
-  const MAX_REPATHS_PER_TICK = 4
+  const MAX_REPATHS_PER_TICK = agents.length >= 250 ? 2 : 4
+  const maxPathSteps = agents.length >= 250 ? 900 : 2800
   let repathsThisTick = 0
+  const largeCrowd = agents.length > 64
 
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
@@ -1182,6 +1235,25 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       a.vy = 0
       a.hitFlash = Math.max(0, a.hitFlash - dt * 4)
       continue
+    }
+
+    // In large crowds (>64), distant idle wanderers (>36 m from all survivors) step movement/collision at 20-30 Hz
+    if (largeCrowd && a.state === "wander" && a.awareness === 0 && a.hitFlash === 0) {
+      let minD2 = Infinity
+      for (let k = 0; k < targets.length; k++) {
+        const t = targets[k]!
+        const dx = t.x - a.x
+        const dy = t.y - a.y
+        const d2 = dx * dx + dy * dy
+        if (d2 < minD2) minD2 = d2
+      }
+      if (minD2 > 36 * 36 && ((a.id + tick) & 1) !== 0) {
+        a.stateTime += dt
+        a.timer -= dt
+        a.x = clamp(a.x + a.vx * dt, minX, maxX)
+        a.y = clamp(a.y + a.vy * dt, minY, maxY)
+        continue
+      }
     }
 
     a.stateTime += dt
@@ -1501,8 +1573,15 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         const effGoalX = goalX + Math.cos(toGoalAngle + Math.PI / 2) * fanOffset
         const effGoalY = goalY + Math.sin(toGoalAngle + Math.PI / 2) * fanOffset
 
-        const canWalkStraight = a.seesTarget && nav.straightFree(a, { x: effGoalX, y: effGoalY })
+        const shouldCheckStraight =
+          a.seesTarget && (!largeCrowd || a.path.length === 0 || ((a.id + tick) & 3) === 0)
+        const canWalkStraight =
+          shouldCheckStraight &&
+          (largeCrowd && a.path.length === 0 && time < a.repathAt
+            ? true
+            : nav.straightFree(a, { x: effGoalX, y: effGoalY }))
         if (canWalkStraight) {
+          if (largeCrowd && time >= a.repathAt) a.repathAt = time + 0.2
           a.path.length = 0
           const ed = Math.hypot(effGoalX - a.x, effGoalY - a.y) || 1
           moveDirX = (effGoalX - a.x) / ed
@@ -1510,7 +1589,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         } else {
           if ((time >= a.repathAt || a.path.length === 0) && repathsThisTick < MAX_REPATHS_PER_TICK) {
             repathsThisTick++
-            a.path = nav.path(a, { x: goalX, y: goalY }) ?? [{ x: goalX, y: goalY }]
+            a.path = nav.path(a, { x: goalX, y: goalY }, maxPathSteps) ?? [{ x: goalX, y: goalY }]
             a.repathAt = time + (a.state === "chase" ? 0.42 : 0.75) + (a.id % 5) * 0.07
           }
           while (a.path.length > 0 && Math.hypot(a.path[0]!.x - a.x, a.path[0]!.y - a.y) < 0.48) {
@@ -1572,7 +1651,12 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     }
 
     // Apply local Boids flocking (non-clumping personal space separation + loose street pack cohesion)
-    const neighbors = spatial.query(a.x, a.y, 4.8, neighborScratch)
+    const isWander = a.state === "wander"
+    const sepRadius = isWander ? 1.65 : 1.28
+    const queryRadius = isWander ? 4.8 : sepRadius
+    const maxR2 = queryRadius * queryRadius
+    const sepR2 = sepRadius * sepRadius
+    const neighbors = spatial.query(a.x, a.y, queryRadius, neighborScratch)
     let sepX = 0
     let sepY = 0
     let cohX = 0
@@ -1580,7 +1664,6 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     let alignX = 0
     let alignY = 0
     let flockCount = 0
-    const sepRadius = a.state === "wander" ? 1.65 : 1.28
 
     for (let k = 0; k < neighbors.length; k++) {
       const j = neighbors[k]!
@@ -1589,18 +1672,18 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const dx = a.x - b.x
       const dy = a.y - b.y
       const d2 = dx * dx + dy * dy
+      if (d2 >= maxR2) continue
       if (d2 < 1e-6) {
         sepX += (a.id > b.id ? 1 : -1) * 0.7
         continue
       }
-      const d = Math.sqrt(d2)
-      if (d < sepRadius) {
+      if (d2 < sepR2) {
+        const d = Math.sqrt(d2)
         const u = (sepRadius - d) / sepRadius
-        const push = (u * u * 1.85 + u * 0.55)
+        const push = u * u * 1.85 + u * 0.55
         sepX += (dx / d) * push
         sepY += (dy / d) * push
-      }
-      if (a.state === "wander" && b.state === "wander" && d >= 1.8 && d < 4.8) {
+      } else if (isWander && b.state === "wander" && d2 >= 1.8 * 1.8) {
         cohX += b.x
         cohY += b.y
         alignX += Math.cos(b.aim)

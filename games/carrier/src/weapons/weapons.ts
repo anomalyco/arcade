@@ -149,6 +149,9 @@ export class Weapons {
   private shipFx: ShipFx
   private hitIn = 0
   private lockers = new Map<number, boolean>()
+  /** The host's view of the ship guns (src/gunnery): SAMs homing on us and whether a player is a gunner, so a SAM
+   *  lock and a SAM in flight warn exactly like a missile's. */
+  sams: { inbound(id: number, x: number, y: number, z: number): number; gunner(id: number): boolean } | null = null
   private boomed: string[] = []
   private wrecks: Wreck[] = []
   private acc = 0
@@ -623,7 +626,7 @@ export class Weapons {
     this.targets.length = 0
     for (const j of this.jetList) this.targets.push(j)
     for (const b of this.boats) this.targets.push(b)
-    for (const [id] of this.lockers) if (!this.jets.has(id)) this.lockers.delete(id)
+    for (const [id] of this.lockers) if (!this.jets.has(id) && !this.sams?.gunner(id)) this.lockers.delete(id)
     if (this.net) {
       this.hitIn -= dt
       if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size)) {
@@ -710,7 +713,8 @@ export class Weapons {
     // Warnings, seeker tone and the HUD.
     let warn: 0 | 1 | 2 = 0
     if (this.flying && this.own.alive) {
-      if (this.world.inbound(this.id, this.own.x, this.own.y, this.own.z) < INBOUND) warn = 2
+      const o = this.own
+      if (Math.min(this.world.inbound(this.id, o.x, o.y, o.z), this.sams?.inbound(this.id, o.x, o.y, o.z) ?? Infinity) < INBOUND) warn = 2
       else if (this.lockers.size) warn = 1
     }
     const weapon = weaponOf(l)
