@@ -1,0 +1,207 @@
+{
+  "wasmBytes": 51001,
+  "zombies_500": {
+    "1_current_aos_objects": {
+      "aiCollisionMedianUs": 34.4,
+      "snapshotEncodeMedianUs": 8.3,
+      "renderPackMedianUs": 51.3,
+      "totalMedianUs": 93.8,
+      "totalP95Us": 355,
+      "totalMaxUs": 707.9,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 234,
+      "loc": 95
+    },
+    "2_miniplex_archetype_buckets_aos": {
+      "aiCollisionMedianUs": 16.9,
+      "snapshotEncodeMedianUs": 2.2,
+      "renderPackMedianUs": 53.8,
+      "totalMedianUs": 72.6,
+      "totalP95Us": 201.5,
+      "totalMaxUs": 266.5,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 176,
+      "loc": 75
+    },
+    "3_koota_trait_store": {
+      "aiCollisionMedianUs": 16.3,
+      "snapshotEncodeMedianUs": 1.9,
+      "renderPackMedianUs": 48.7,
+      "totalMedianUs": 67.1,
+      "totalP95Us": 103.9,
+      "totalMaxUs": 165,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 47,
+      "loc": 85
+    },
+    "4_becsy_flyweight_cursor_soa": {
+      "aiCollisionMedianUs": 12.6,
+      "snapshotEncodeMedianUs": 1.8,
+      "renderPackMedianUs": 48.9,
+      "totalMedianUs": 63.4,
+      "totalP95Us": 228.5,
+      "totalMaxUs": 246.8,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 20,
+      "loc": 112
+    },
+    "5_bitecs_sparse_set_soa": {
+      "aiCollisionMedianUs": 11.8,
+      "snapshotEncodeMedianUs": 2.1,
+      "renderPackMedianUs": 48.7,
+      "totalMedianUs": 62.9,
+      "totalP95Us": 79.8,
+      "totalMaxUs": 242.6,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 19,
+      "loc": 88
+    },
+    "6_hand_rolled_dense_domain_soa": {
+      "aiCollisionMedianUs": 14.7,
+      "snapshotEncodeMedianUs": 2.7,
+      "renderPackMedianUs": 47.6,
+      "totalMedianUs": 65,
+      "totalP95Us": 82.7,
+      "totalMaxUs": 215,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 17,
+      "loc": 78
+    },
+    "7_bevy_archetype_ecs_rust_wasm_simd": {
+      "aiCollisionMedianUs": 8.7,
+      "snapshotEncodeMedianUs": 4.9,
+      "renderPackMedianUs": 16.8,
+      "totalMedianUs": 30.6,
+      "totalP95Us": 89.8,
+      "totalMaxUs": 187,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 16,
+      "loc": 140
+    },
+    "8_hand_soa_plus_gpu_vertex_gait": {
+      "aiCollisionMedianUs": 19.5,
+      "snapshotEncodeMedianUs": 2,
+      "renderPackMedianUs": 3.5,
+      "totalMedianUs": 25,
+      "totalP95Us": 30.5,
+      "totalMaxUs": 45,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 17,
+      "loc": 58
+    },
+    "speedupsVsCurrentAos": {
+      "handRolledSoaMedianX": 1.44,
+      "handSoaGpuGaitMedianX": 3.75,
+      "bitEcsMedianX": 1.49,
+      "becsyMedianX": 1.48,
+      "kootaMedianX": 1.4,
+      "miniplexMedianX": 1.29,
+      "bevyRustWasmMedianX": 3.07,
+      "bevyRustWasmVsHandSoaX": 2.12,
+      "handSoaVsBitEcsX": 0.97,
+      "handSoaVsBecsyX": 0.98
+    }
+  },
+  "zombies_2000": {
+    "1_current_aos_objects": {
+      "aiCollisionMedianUs": 101.6,
+      "snapshotEncodeMedianUs": 32.4,
+      "renderPackMedianUs": 137.8,
+      "totalMedianUs": 272,
+      "totalP95Us": 664.8,
+      "totalMaxUs": 701.8,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 938,
+      "loc": 95
+    },
+    "2_miniplex_archetype_buckets_aos": {
+      "aiCollisionMedianUs": 71.4,
+      "snapshotEncodeMedianUs": 6.5,
+      "renderPackMedianUs": 96.4,
+      "totalMedianUs": 175,
+      "totalP95Us": 185.3,
+      "totalMaxUs": 390.6,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 703,
+      "loc": 75
+    },
+    "3_koota_trait_store": {
+      "aiCollisionMedianUs": 53.5,
+      "snapshotEncodeMedianUs": 3.4,
+      "renderPackMedianUs": 92.2,
+      "totalMedianUs": 151.5,
+      "totalP95Us": 172.8,
+      "totalMaxUs": 273.1,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 188,
+      "loc": 85
+    },
+    "4_becsy_flyweight_cursor_soa": {
+      "aiCollisionMedianUs": 62.8,
+      "snapshotEncodeMedianUs": 8,
+      "renderPackMedianUs": 97.8,
+      "totalMedianUs": 169.5,
+      "totalP95Us": 325.2,
+      "totalMaxUs": 532,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 78,
+      "loc": 112
+    },
+    "5_bitecs_sparse_set_soa": {
+      "aiCollisionMedianUs": 65.1,
+      "snapshotEncodeMedianUs": 11,
+      "renderPackMedianUs": 96.6,
+      "totalMedianUs": 176.1,
+      "totalP95Us": 466.4,
+      "totalMaxUs": 2184.8,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 74,
+      "loc": 88
+    },
+    "6_hand_rolled_dense_domain_soa": {
+      "aiCollisionMedianUs": 63,
+      "snapshotEncodeMedianUs": 9.1,
+      "renderPackMedianUs": 93.7,
+      "totalMedianUs": 194.7,
+      "totalP95Us": 466.2,
+      "totalMaxUs": 5437.7,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 66,
+      "loc": 78
+    },
+    "7_bevy_archetype_ecs_rust_wasm_simd": {
+      "aiCollisionMedianUs": 47.4,
+      "snapshotEncodeMedianUs": 10.5,
+      "renderPackMedianUs": 71,
+      "totalMedianUs": 127.4,
+      "totalP95Us": 365.7,
+      "totalMaxUs": 5186.2,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 63,
+      "loc": 140
+    },
+    "8_hand_soa_plus_gpu_vertex_gait": {
+      "aiCollisionMedianUs": 63.5,
+      "snapshotEncodeMedianUs": 18.3,
+      "renderPackMedianUs": 18.7,
+      "totalMedianUs": 103.8,
+      "totalP95Us": 559,
+      "totalMaxUs": 4023.8,
+      "heapDeltaKBPer120Frames": 0,
+      "memoryKB": 66,
+      "loc": 58
+    },
+    "speedupsVsCurrentAos": {
+      "handRolledSoaMedianX": 1.4,
+      "handSoaGpuGaitMedianX": 2.62,
+      "bitEcsMedianX": 1.54,
+      "becsyMedianX": 1.6,
+      "kootaMedianX": 1.8,
+      "miniplexMedianX": 1.55,
+      "bevyRustWasmMedianX": 2.14,
+      "bevyRustWasmVsHandSoaX": 1.53,
+      "handSoaVsBitEcsX": 0.9,
+      "handSoaVsBecsyX": 0.87
+    }
+  }
+}

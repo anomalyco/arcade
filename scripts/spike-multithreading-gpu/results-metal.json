@@ -1,0 +1,34 @@
+{
+  "adapterInfo": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+  },
+  "multithreading768KBPayload": {
+    "crossOriginIsolated": true,
+    "workerStructuredCloneRoundTripMedianMs": 0.165,
+    "workerStructuredCloneRoundTripP95Ms": 1.345,
+    "workerTransferablePingPongRoundTripMedianMs": 0.015,
+    "workerTransferablePingPongRoundTripP95Ms": 0.025,
+    "sharedArrayBufferWorkerRoundTripMedianUs": 5,
+    "sharedArrayBufferWorkerRoundTripP95Us": 10,
+    "transferableSpeedupOverCloneX": 11
+  },
+  "gpuDrivenDrawIndirectVsDirectInstanced": {
+    "zombies_500_4000insts": {
+      "unculledDirectDrawGpuMedianMs": 0.3023,
+      "computeCulledDrawIndirectGpuMedianMs": 0.2787,
+      "deltaMs": -0.0236
+    },
+    "zombies_2000_16000insts": {
+      "unculledDirectDrawGpuMedianMs": 0.7437,
+      "computeCulledDrawIndirectGpuMedianMs": 0.5073,
+      "deltaMs": -0.2364
+    },
+    "zombies_10000_80000insts": {
+      "unculledDirectDrawGpuMedianMs": 2.6018,
+      "computeCulledDrawIndirectGpuMedianMs": 1.044,
+      "deltaMs": -1.5577
+    }
+  }
+}
