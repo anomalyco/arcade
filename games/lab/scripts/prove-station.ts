@@ -48,7 +48,10 @@ try {
     }
     for (let i = 0; i < 4; i++) await page.evaluate(async () => { (window as any).lab.advance(1 / 30); await (window as any).lab.render() })
     // Sections that bake off the main thread report busy until their results land.
-    await page.waitForFunction(() => !(window as any).lab.busy?.(), undefined, { timeout: 30000 })
+    await page.waitForFunction(() => !(window as any).lab.busy?.(), undefined, { timeout: 30000 }).catch(async (e) => {
+      const telemetry = await page.evaluate(() => { const l = (window as any).lab; return l.sections.find((x: any) => x.id === l.settings.section)?.telemetry?.() ?? "" })
+      throw new Error(`${label}: section still busy after 30 s (${telemetry}; ${errors.slice(0, 3).join(" | ")}): ${e}`)
+    })
     for (let i = 0; i < 2; i++) await page.evaluate(async () => { (window as any).lab.advance(1 / 30); await (window as any).lab.render() })
   }
   await run(demo.setup, "demo")

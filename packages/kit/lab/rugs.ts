@@ -12,7 +12,7 @@ import type { LabContext, LabSection } from "./types"
  */
 
 const STYLE_PALETTE: Record<RugStyle, RugPaletteId> = { persian: "madder", turkmen: "tekke", kilim: "kilim", deco: "deco", braided: "braid", shag: "shag70s" }
-const GALLERY_SPACING = 2.7
+const GALLERY_SPACING = [2.7, 3.6] as const
 const VERT_FLOATS = 6
 
 const rugShader = frameShader + /* wgsl */ `
@@ -111,14 +111,14 @@ export function createRugsSection(context: LabContext): LabSection {
     stains: Number(settings.stains),
   })
 
-  /** One rug, or every style side by side with the shared parameters and each style's own dye palette. */
+  /** One rug, or every style in a 3×2 grid with the shared parameters and each style's own dye palette. */
   const slots = (): RugSlot[] => {
     const spec = baseSpec()
     if (settings.view !== "gallery") return [{ spec, x: 0, z: 0 }]
     return RUG_STYLES.map((style, i) => ({
       spec: { ...spec, style, palette: STYLE_PALETTE[style], width: 2, length: style === "braided" ? 2.6 : 3, fringe: style !== "braided" && style !== "shag" },
-      x: (i - (RUG_STYLES.length - 1) / 2) * GALLERY_SPACING,
-      z: 0,
+      x: ((i % 3) - 1) * GALLERY_SPACING[0],
+      z: (Math.floor(i / 3) - 0.5) * GALLERY_SPACING[1],
     }))
   }
 
@@ -129,6 +129,8 @@ export function createRugsSection(context: LabContext): LabSection {
   let view: GPUTextureView | null = null
   let group: GPUBindGroup | null = null
   const layerKeys: string[] = []
+  /** Spec key each layer should show; a layer is ready when `layerKeys` matches. */
+  const wanted: string[] = []
   const uniforms = new Float32Array(8)
   const uniformBuf = device.createBuffer({ size: uniforms.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
   const frameBuf = device.createBuffer({ size: 1024, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
@@ -181,7 +183,9 @@ export function createRugsSection(context: LabContext): LabSection {
       { binding: 2, resource: view },
       { binding: 3, resource: sampler },
     ] })
+    // A new texture holds nothing: forget what was uploaded and what was asked for, so every layer is re-requested.
     layerKeys.length = 0
+    wanted.length = 0
   }
 
   const quad = (out: number[], x0: number, z0: number, x1: number, z1: number, y: number, layer: number) => {
@@ -208,7 +212,6 @@ export function createRugsSection(context: LabContext): LabSection {
   let worker: Worker | null = null
   let nextId = 1
   const inflight = new Map<number, { layer: number; key: string; size: number }>()
-  const wanted: string[] = []
   const stats = { bakes: 0, lastMs: 0, maxMs: 0, pending: 0 }
 
   const upload = (layer: number, size: number, mips: ArrayBuffer[]) => {
@@ -313,7 +316,7 @@ export function createRugsSection(context: LabContext): LabSection {
     { key: "ambient", label: "Ambient", group: viewGroup, type: "range", min: 0, max: 1, step: 0.02, unit: "" },
   ]
 
-  const target = () => settings.view === "gallery" ? { x: 0, y: 0, z: 0.4, dist: 15 } : { x: 0, y: 0, z: 0.3, dist: Math.max(4.5, Number(settings.length) * 1.7) }
+  const target = () => settings.view === "gallery" ? { x: 0, y: 0, z: 0.2, dist: 11.5 } : { x: 0, y: 0, z: 0.3, dist: Math.max(4.5, Number(settings.length) * 1.7) }
   const frame = () => { const t = target(); stage.frameTarget(t.x, t.y, t.z, t.dist) }
 
   return {
