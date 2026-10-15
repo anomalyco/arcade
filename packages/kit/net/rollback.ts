@@ -152,22 +152,15 @@ export class RollbackClient<S, F, E> {
 /**
  * The room half: what each seat runs on each tick. A seat's input for tick `t` applies at `t` when it arrives in
  * time; a late one applies on the next tick the room runs (a press is delayed, never lost). With nothing new the seat
- * holds its last input, which is also what every client predicts for it. Each arrival is measured: `slack` is how
- * many ticks early inputs arrive at the `quantile` over the last `window` ticks, the number the client's `TickPacer`
- * steers by. Not the minimum: over TCP one lost segment holds everything behind it for 200 ms, and chasing those would
- * keep every input a dozen ticks early (and every prediction that much further ahead) for a few late ones.
+ * holds its last input, which is also what every client predicts for it. Every arrival is measured, in ticks early
+ * (negative: late); `drain` hands the new measurements to send back, one per input, for the client's `TickPacer`.
  */
 export class InputRelay<K> {
-  private seats = new Map<K, { held: number; queue: [number, number][]; samples: [number, number][] }>()
-
-  constructor(
-    readonly window = 120,
-    readonly quantile = 0.2,
-  ) {}
+  private seats = new Map<K, { held: number; queue: [number, number][]; fresh: number[] }>()
 
   private seat(key: K) {
     let s = this.seats.get(key)
-    if (!s) this.seats.set(key, (s = { held: 0, queue: [], samples: [] }))
+    if (!s) this.seats.set(key, (s = { held: 0, queue: [], fresh: [] }))
     return s
   }
 
@@ -175,8 +168,7 @@ export class InputRelay<K> {
   receive(key: K, tick: number, buttons: number, ran: number): void {
     if (!Number.isInteger(tick)) return
     const s = this.seat(key)
-    s.samples.push([ran, tick - (ran + 1)])
-    while (s.samples.length && s.samples[0]![0] < ran - this.window) s.samples.shift()
+    if (s.fresh.length < 64) s.fresh.push(tick - (ran + 1))
     const at = Math.max(tick, ran + 1)
     const q = s.queue
     let i = q.length
@@ -194,15 +186,13 @@ export class InputRelay<K> {
     return s.held
   }
 
-  /** Ticks early at the quantile over the window as of tick `ran` (negative: late), or null with no recent arrivals. */
-  slack(key: K, ran: number): number | null {
+  /** Ticks early of each input that arrived since the last call (negative: late). */
+  drain(key: K): number[] {
     const s = this.seats.get(key)
-    if (!s) return null
-    const v: number[] = []
-    for (const [at, early] of s.samples) if (at >= ran - this.window) v.push(early)
-    if (!v.length) return null
-    v.sort((a, b) => a - b)
-    return v[Math.floor((v.length - 1) * this.quantile)]!
+    if (!s?.fresh.length) return []
+    const out = s.fresh
+    s.fresh = []
+    return out
   }
 
   /** The seat dropped or left: it holds nothing from the next tick. */
@@ -210,7 +200,7 @@ export class InputRelay<K> {
     const s = this.seat(key)
     s.held = 0
     s.queue = []
-    s.samples = []
+    s.fresh = []
   }
 
   delete(key: K): void {
@@ -219,9 +209,12 @@ export class InputRelay<K> {
 }
 
 export type PacerOptions = {
-  /** Ticks early an input should reach the room, at the room's quantile (default 1). */
+  /** Ticks early an input should reach the room... (default 1) */
   target?: number
-  /** Lead change per tick of slack error, per report (default 0.01; reports come every tick). */
+  /** ...for all but this share of inputs (default 0.1). Not all: over TCP one lost segment holds 200 ms of inputs,
+   *  and chasing those would keep every input a dozen ticks early, and every prediction that much further ahead. */
+  quantile?: number
+  /** How far one measurement moves the lead, in ticks (default 0.3). */
   gain?: number
   /** Most the local step runs fast to catch up with its target (default 0.08: 1.08x). Slowing goes down to 0.5x: a
    *  room whose clock runs slow has to be followed, and holding back is less visible than racing ahead. */
@@ -235,18 +228,21 @@ export type PacerOptions = {
 /**
  * The client's head tick: where the room's tick is now, estimated from the frames it sends (the least delayed in the
  * last half second; this follows a room whose clock runs slow or stalls), plus a lead. The lead is learned from the
- * room's report of how early this client's inputs arrive (`slack`, at the room's quantile): too late and it grows,
- * too early and it shrinks, so it settles at the uplink delay plus `target`. The head slews toward that so steps stay
+ * room's measurement of each input's arrival: one that lands less than `target` ticks early pushes it out, one in good
+ * time pulls it in, weighted so it settles where `quantile` of inputs land short (a running quantile estimate). The head slews toward that so steps stay
  * even (catching up at most `maxSlew` faster, holding back down to half speed), jumping forward only when far behind.
  */
 export class TickPacer {
   private head = 0
   private last = Number.NaN
+  /** Times the head jumped forward (for proofs). */
+  snaps = 0
   private rate = 1
   private lead = 0
   /** Recent frames as [local ms, room tick minus local ticks]. */
   private offsets: [number, number][] = []
   private readonly target: number
+  private readonly quantile: number
   private readonly gain: number
   private readonly maxSlew: number
   private readonly snap: number
@@ -257,7 +253,8 @@ export class TickPacer {
     opts: PacerOptions = {},
   ) {
     this.target = opts.target ?? 1
-    this.gain = opts.gain ?? 0.01
+    this.quantile = opts.quantile ?? 0.1
+    this.gain = opts.gain ?? 0.3
     this.maxSlew = opts.maxSlew ?? 0.08
     this.snap = opts.snap ?? 8
     this.window = opts.window ?? 500
@@ -286,9 +283,10 @@ export class TickPacer {
     return best + now / this.tickMs
   }
 
-  /** The room's latest measure of how many ticks early this client's inputs arrive. */
+  /** One input of this client's arrived at the room `ticks` early (negative: late). */
   slack(ticks: number): void {
-    this.lead = Math.max(0, Math.min(60, this.lead + (this.target - ticks) * this.gain))
+    const short = ticks < this.target
+    this.lead = Math.max(0, Math.min(60, this.lead + this.gain * (short ? 1 - this.quantile : -this.quantile)))
   }
 
   /** The head tick (whole ticks to have simulated). */
@@ -321,6 +319,7 @@ export class TickPacer {
     this.last = now
     const err = this.room(now) + this.lead - this.head
     if (err > this.snap) {
+      this.snaps++
       this.head += err
       this.rate = 1
     } else {

@@ -27,7 +27,7 @@ export class OnlineSession {
   rtt = 0
   desyncs = 0
   /** For proofs: frames run, the last slack the room reported, and how far the head ran past the confirmed tick. */
-  readonly stats = { frames: 0, slack: [] as number[], ahead: [] as number[], arrivals: [] as number[] }
+  readonly stats = { frames: 0, slack: [] as number[], ahead: [] as number[], arrivals: [] as number[], lead: [] as number[], room: [] as number[], speed: [] as number[] }
   fatal: string | null = null
   private helloAt = 0
   private held = -1
@@ -97,9 +97,9 @@ export class OnlineSession {
         const ev = this.rb.confirm(m.t, frame)
         if (ev === "gap") return this.resync()
         this.pending.push(...ev)
-        if (m.a !== null) {
-          this.pacer.slack(m.a)
-          if (this.stats.slack.length < 20_000) this.stats.slack.push(m.a)
+        for (const v of m.a ?? []) {
+          this.pacer.slack(v)
+          if (this.stats.slack.length < 20_000) this.stats.slack.push(v)
         }
         if (m.h !== undefined && this.rb.tick === m.t && hashWorld(this.rb.confirmed) !== m.h) {
           this.desyncs++
@@ -143,7 +143,12 @@ export class OnlineSession {
     }
     out.push(...this.rb.advance(until, after))
     this.stats.frames++
-    if (this.stats.ahead.length < 20_000) this.stats.ahead.push(this.rb.headTick - this.rb.tick)
+    if (this.stats.ahead.length < 20_000) {
+      this.stats.ahead.push(this.rb.headTick - this.rb.tick)
+      this.stats.lead.push(this.pacer.ahead)
+      this.stats.room.push(this.pacer.room(now) - this.rb.tick)
+      this.stats.speed.push(this.pacer.speed)
+    }
     return out
   }
 

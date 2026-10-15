@@ -5,6 +5,7 @@
  * both tabs as muted videos. Run `vite build` first.
  *
  *   bun scripts/online-proof.ts --seconds 30 --out captures/online [--delay 40 --jitter 15]
+ *   bun scripts/online-proof.ts --url https://anoma.ly/arcade/archers/   (the live room server, real network, no proxy)
  */
 import { mkdirSync, readdirSync, unlinkSync } from "node:fs"
 import { resolve } from "node:path"
@@ -22,16 +23,18 @@ const { values: o } = parseArgs({
     room: { type: "string", default: "prf1" },
     width: { type: "string", default: "960" },
     height: { type: "string", default: "540" },
+    url: { type: "string" },
   },
 })
 const out = resolve(o.out!)
 mkdirSync(out, { recursive: true })
 const DELAY = Number(o.delay), JITTER = Number(o.jitter)
 
+const local = !o.url
 const wport = 8800 + Math.floor(Math.random() * 100)
-const wrangler = Bun.spawn(["bunx", "wrangler", "dev", "--port", String(wport), "--ip", "127.0.0.1", "--log-level", "warn"], { stdout: "pipe", stderr: "pipe" })
+const wrangler = local ? Bun.spawn(["bunx", "wrangler", "dev", "--port", String(wport), "--ip", "127.0.0.1", "--log-level", "warn"], { stdout: "pipe", stderr: "pipe" }) : null
 const upstream = `127.0.0.1:${wport}`
-for (let i = 0; ; i++) {
+for (let i = 0; local; i++) {
   try {
     if ((await fetch(`http://${upstream}/arcade/archers/api/health`)).ok) break
   } catch {}
@@ -134,12 +137,13 @@ for (let k = 0; k < 2; k++) {
   pages.push(page)
   errors.push(errs)
 }
-await Promise.all(pages.map((p) => p.goto(`http://127.0.0.1:${proxy.port}/arcade/archers/?room=${o.room}`, { waitUntil: "load" })))
+const base = o.url ?? `http://127.0.0.1:${proxy.port}/arcade/archers/`
+await Promise.all(pages.map((p) => p.goto(`${base}?room=${o.room}`, { waitUntil: "load" })))
 for (const page of pages) await page.waitForFunction(() => (globalThis as { archers?: { online?: { ready: boolean } } }).archers?.online?.ready, null, { timeout: 30_000 })
 await Promise.all(pages.map((p, k) => play(p, Number(o.seconds) * 1000, 17 + k * 101)))
 
 type Probe = {
-  online: { slot: number; desyncs: number; rtt: number; rb: { tick: number; headTick: number }; pacer: { speed: number }; stats: { frames: number; slack: number[]; ahead: number[]; arrivals: number[] } }
+  online: { slot: number; desyncs: number; rtt: number; rb: { tick: number; headTick: number }; pacer: { speed: number; snaps: number }; stats: { frames: number; slack: number[]; ahead: number[]; arrivals: number[]; lead: number[]; room: number[]; speed: number[] } }
   world: { s: { tick: number; round: number; archers: { name: string; bot: boolean; wins: number; kills: number }[] } }
   counts: Record<string, number>
 }
@@ -152,6 +156,11 @@ for (const [k, page] of pages.entries()) {
       fps: Math.round(n.stats.frames / (performance.now() / 1000)),
       "slack p10/p50": `${q(n.stats.slack, 0.1)}/${q(n.stats.slack, 0.5)}`,
       "ahead p50/p95": `${q(n.stats.ahead, 0.5)}/${q(n.stats.ahead, 0.95)}`,
+      "lead p10/50/90": [0.1, 0.5, 0.9].map((p) => q(n.stats.lead, p)?.toFixed(1)).join("/"),
+      "room-confirmed p10/50/90": [0.1, 0.5, 0.9].map((p) => q(n.stats.room, p)?.toFixed(1)).join("/"),
+      snaps: n.pacer.snaps,
+      "room Hz by page clock": ((n.stats.arrivals.length - 1) / ((n.stats.arrivals.at(-1)! - n.stats.arrivals[0]!) / 1000)).toFixed(1),
+      "speed p10/50/90": [0.1, 0.5, 0.9].map((p) => q(n.stats.speed, p)?.toFixed(2)).join("/"),
       "frame gaps ms p50/p95/max": ((g) => `${q(g, 0.5)?.toFixed(1)}/${q(g, 0.95)?.toFixed(1)}/${Math.max(...g).toFixed(0)}`)(n.stats.arrivals.slice(1).map((t, i) => t - n.stats.arrivals[i]!)), slot: n.slot, desyncs: n.desyncs, rtt: Math.round(n.rtt), confirmed: n.rb.tick, head: n.rb.headTick, speed: n.pacer.speed, round: g.world.s.round, archers: g.world.s.archers.map((a) => `${a.name}${a.bot ? "(bot)" : ""} w${a.wins} k${a.kills}`), counts: g.counts }
   })
   console.log(`tab ${k + 1}`, JSON.stringify(st))
@@ -161,6 +170,6 @@ const videos0 = await Promise.all(pages.map((p) => p.video()?.path()))
 for (const page of pages) await page.context().close()
 await browser.close()
 proxy.stop(true)
-wrangler.kill()
+wrangler?.kill()
 console.log(`videos (tab 1, tab 2):\n${videos0.join("\n")}`)
 process.exit(0)

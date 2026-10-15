@@ -105,10 +105,10 @@ export class RoomCore extends SharedRoomCore<ClientMsg, number, RosterRow, never
     return { t: this.world.s.tick, i: f.i, ...(f.c ? { c: f.c } : {}), ...(this.hash !== undefined ? { h: this.hash } : {}) }
   }
   protected snapshot(id: string, ents?: Ents): ServerMsg {
+    if (!ents || this.full.delete(id)) return { type: "state", t: this.world.s.tick, s: this.world.s, i: this.frame.i }
     const slot = this.slots.get(id)
-    const a = slot === undefined ? null : this.relay.slack(slot, this.world.s.tick)
-    if (!ents || this.full.delete(id)) return { type: "state", t: this.world.s.tick, s: this.world.s, i: this.frame.i, a }
-    return { type: "f", ...ents, a }
+    const a = slot === undefined ? [] : this.relay.drain(slot)
+    return a.length ? { type: "f", ...ents, a } : { type: "f", ...ents }
   }
 }
 

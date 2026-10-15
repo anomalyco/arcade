@@ -114,7 +114,7 @@ function run(link: LinkProfile, seconds: number, clients = 2, seed = 3) {
             send(c, { type: "resync" })
             continue
           }
-          if (m.a !== null) c.pacer.slack(m.a)
+          for (const v of m.a ?? []) c.pacer.slack(v)
           if (m.h !== undefined) {
             stats.hashChecks++
             if (hashWorld(c.rb.confirmed) !== m.h) stats.mismatches++
