@@ -207,7 +207,7 @@ fn hash1(n: f32) -> f32 { return fract(sin(n * 12.9898 + 78.233) * 43758.5453); 
   if (F.flashCone.w > 0.001 && F.flashPos.w > 0.1) {
     let toFrag = o.world - F.flashPos.xyz;
     let dPlan = length(toFrag.xz);
-    let maxBeamR = max(F.flashPos.w * 1.85, 11.2);
+    let maxBeamR = clamp(F.flashPos.w * 0.65, 9.2, 12.0);
     if (dPlan < maxBeamR) {
       let dir2 = toFrag.xz / max(dPlan, 0.001);
       let cosA = dot(dir2, F.flashCone.xy);
