@@ -50,7 +50,7 @@ import {
   type PacingSurvivorView,
   type PacingTelemetry,
   type PacingTuning,
-} from "./pacing/index"
+} from "./pacing"
 
 export type AIConfig = KitAIConfig & PacingTuning
 

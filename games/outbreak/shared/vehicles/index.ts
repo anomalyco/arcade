@@ -10,7 +10,7 @@ import { inInterestBubble } from "@arcade/kit/net/interest"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 import { toggleFlashlight } from "../flashlight"
 import { sightRects } from "../map"
-import type { VehicleState } from "../net-protocol"
+import type { VehicleState } from "../net-types"
 import { stepStamina } from "../stamina"
 import {
   boxOf,

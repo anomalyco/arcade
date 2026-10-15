@@ -4,6 +4,7 @@ import { hash3, Rng } from "@arcade/kit/sim/rng"
 import { lootSites, type LootSite } from "./progression/loot"
 import { DEFAULT_PROGRESSION_TUNING } from "./progression/tuning"
 import { closetSpot } from "./discovery/closet-spot"
+import type { SavedVehicleState } from "./vehicles/types"
 import {
   CHUNK,
   EXTERIOR_VEHICLE_COLLIDERS,
@@ -108,7 +109,7 @@ export type ChunkDelta = {
   searched: Record<string, boolean>
   zombies: Record<number, SavedZombieState>
   /** Saved drivable vehicles currently parked/left in this chunk. */
-  vehicles?: Record<number, import("./vehicles").SavedVehicleState>
+  vehicles?: Record<number, SavedVehicleState>
   /** Native vehicle spawn IDs that were driven out of this chunk. */
   removedVehicles?: Record<number, boolean>
   /** Aggregate living zombie count while the chunk is unloaded (simulation LOD). */

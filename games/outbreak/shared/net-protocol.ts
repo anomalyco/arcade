@@ -33,46 +33,51 @@ import {
   type CombatMeleeHit,
   type CombatShotEvent,
   type MeleeWeaponId,
-} from "./melee/index"
+} from "./combat"
 import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./types"
-import type { Command, Survivor } from "./session"
+import type { Command, Survivor } from "./sim-types"
 import { packPlanks, unpackPlanks } from "./discovery/barricade"
-import { type VehicleKind } from "./vehicles/index"
+import type { VehicleKind } from "./vehicles/types"
 import type { ChunkCoord } from "./world"
+import type {
+  RosterEntry,
+  ClientMsg,
+  ServerMsg,
+  CommandTuple,
+  RemoteSurvivor,
+  ZombieState,
+  VehicleState,
+  SharedSnapshot,
+  PersonalSnapshot,
+  SnapshotEncodeOptions,
+  SnapshotFieldBreakdown,
+} from "./net-types"
+
+export type {
+  RosterEntry,
+  ClientMsg,
+  ServerMsg,
+  CommandTuple,
+  RemoteSurvivor,
+  ZombieState,
+  VehicleState,
+  SharedSnapshot,
+  PersonalSnapshot,
+  SnapshotEncodeOptions,
+  SnapshotFieldBreakdown,
+} from "./net-types"
 
 /** Co-op wire protocol. Text frames are JSON control messages; binary frames are snapshots and compact inputs. */
 export const SNAPSHOT_EVERY = 3
 export const MAX_NAME = 16
 export const ROOM_CODE = /^[a-z0-9]{4,8}$/
 
-export type RosterEntry = { id: string; index: number; name: string; connected: boolean }
 
-export type ClientMsg =
-  | { t: "hello"; name: string; token?: string; build: string }
-  /** Commands `s`, `s+1`, … for consecutive 60 Hz ticks, plus optional `a` (last acked snapshot tick) and `v` (view tick). */
-  | { t: "in"; s: number; c: CommandTuple[]; a?: number; v?: number }
-  | { t: "ping"; c: number; a?: number }
 
-export type ServerMsg =
-  | {
-      t: "welcome"
-      id: string
-      token: string
-      index: number
-      room: string
-      seed: number
-      houseSeed: number
-      terrain: number
-      zombieCount: number
-    }
-  | { t: "roster"; players: RosterEntry[] }
-  | { t: "error"; message: string }
-  | { t: "reload" }
-  | { t: "pong"; c: number }
 
 const CLIENT_IN_MAGIC = 0x49 // 'I'
 
@@ -239,8 +244,6 @@ export function decodeServerText(raw: string): ServerMsg | null {
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** [mx, my, aim, flags, hotbarSlot (−1 none), hotbarDelta, interactAction code, pick code (mode·8 + index + 1)] */
-export type CommandTuple = [number, number, number, number, number?, number?, number?, number?]
 
 const FLAG = {
   interact: 1,
@@ -376,115 +379,12 @@ const BONES: readonly CombatShotEvent["detachBone"][] = [null, ...DETACHABLE_BON
 const MELEE_BONES: readonly CombatMeleeHit["detachBone"][] = [null, ...DETACHABLE_BONES]
 const MELEE_PHASES: readonly MeleeSwingPhase[] = ["idle", "windup", "active", "recovery"]
 
-export type RemoteSurvivor = {
-  index: number
-  x: number
-  y: number
-  aim: number
-  flashlightOn: boolean
-  sprinting: boolean
-  pistol: boolean
-  reloading: boolean
-  exhausted: boolean
-  /** Rides the health byte's top bit (health never passes 100). */
-  crouching?: boolean
-  flashlightOutput: number
-  health: number
-  recoil: number
-  lift: number
-  meleeWeapon?: MeleeWeaponId | null
-  meleePhase?: MeleeSwingPhase
-  meleeCombo?: 1 | 2 | 3
-  meleeProgress?: number
-}
 
-export type ZombieState = {
-  id: number
-  seed: number
-  x: number
-  y: number
-  aim: number
-  state: AIState
-  hp: number
-  hitFlash: number
-  stateTime: number
-  timer: number
-  clamber: number
-  limbMask?: number
-}
 
-export type VehicleState = {
-  id: number
-  kind: VehicleKind
-  x: number
-  y: number
-  h: number
-  vx: number
-  vy: number
-  w: number
-  hp: number
-  fuel: number
-  hasBattery: boolean
-  hasKeys: boolean
-  headlights: boolean
-  engineOn: boolean
-  horn: boolean
-  wreck: boolean
-  handbrake: boolean
-  throttle: number
-  steer: number
-  /** Survivor seat index (0..3) per vehicle seat, or -1 when empty. */
-  seats: number[]
-}
 
-export type SharedSnapshot = {
-  tick: number
-  time: number
-  hour: number
-  revision: number
-  survivors: RemoteSurvivor[]
-  zombies: ZombieState[]
-  vehicles?: VehicleState[]
-  doors: { open: boolean; locked: boolean }[]
-  windows: { open: boolean; openable: boolean }[]
-  planks: number[]
-  /** Barricade hit points per portal, quantised to six bits of wear (see `shared/discovery/barricade.ts`). */
-  plankHp: number[]
-  pings: { id: number; by: number; x: number; y: number; label: string; left: number }[]
-  lures: { id: number; x: number; y: number; left: number }[]
-  /** Recent bashes, with the barricade's packed planks and wear after the hit so boards bow on every client. */
-  bashes: { portal: number; age: number; planks: number }[]
-  shots: (CombatShotEvent & { shooter: number })[]
-  meleeSwings?: CombatMeleeEvent[]
-}
 
-/** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */
-export type PersonalSnapshot = { ack: number; survivor: Partial<Survivor>; ledger: LedgerDelta | null; notices: Notice[] }
 
-export type SnapshotEncodeOptions = {
-  /** Recipient's active 3×3 chunk window center (when supplied, culls entities outside the bubble). */
-  viewerCenter?: ChunkCoord
-  /** Last snapshot acknowledged by this recipient (enables delta compression against acked state). */
-  baseSnap?: SharedSnapshot
-  /** Canonical snapshot emitted for this bubble on the previous snapshot tick, so throttling is independent of `baseSnap`. */
-  prevBubbleSnap?: SharedSnapshot
-  /** Monotonic snapshot counter (0, 1, 2, …) for priority-accumulator cadence scheduling. */
-  snapIndex?: number
-  /** Interest bubble and stride configuration. */
-  interest?: InterestConfig
-  /** Optional output holder receiving the reconstructed `SharedSnapshot` emitted for this recipient/bubble. */
-  outSnapshot?: { snap?: SharedSnapshot }
-}
 
-export type SnapshotFieldBreakdown = {
-  total: number
-  personalBytes: number
-  headerBytes: number
-  survivorsBytes: number
-  zombiesBytes: number
-  portalsBytes: number
-  eventsBytes: number
-}
 
 const cm = (v: number) => Math.round(v * 100)
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))

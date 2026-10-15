@@ -10,7 +10,6 @@ import {
   type Tx,
 } from "@arcade/kit/sim/ledger"
 import { Rng } from "@arcade/kit/sim/rng"
-import type { OutbreakAISubsystem } from "../ai"
 import { isMeleeWeapon, MELEE_WEAPONS, type MeleeDurabilityHandle, type MeleeWeaponId } from "../combat"
 import { dayCycle } from "../day-cycle"
 import { FieldVerbs } from "../discovery/field-verbs"
@@ -137,11 +136,6 @@ export class OutbreakProgression implements ProgressionHost {
     this.ensureMatStores()
     this.knowledge.ensurePageStores()
     this.verbs.ensureVerbStores()
-  }
-
-  /** See `FoundKnowledge.boardHeldOut` (kept here until `CoopSim` reaches discovery through the registry). */
-  boardHeldOut(town: Town, ai: OutbreakAISubsystem): boolean {
-    return this.knowledge.boardHeldOut(town, ai)
   }
 
   slotOf(actor: object): ProgressionSlot | undefined {

@@ -1,13 +1,12 @@
 import type { ByteReader, ByteWriter } from "@arcade/kit/net/bytes"
 import type { InterestConfig } from "@arcade/kit/net/interest"
-import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import type { InteractionRegistry } from "./interact"
-import type { ClientMsg, ServerMsg, SharedSnapshot } from "./net-protocol"
-import type { Command, ResolvedSessionTuning, Survivor } from "./session"
+import type { ClientMsg, ServerMsg, SharedSnapshot } from "./net-types"
+import type { Command, OutbreakSim, ResolvedSessionTuning, Survivor, SurvivorSlot } from "./sim-types"
 import type { ChunkCoord } from "./world"
 
 export interface OutbreakSimStepSurvivorContext<TState = unknown> {
-  readonly sim: CoopSim
+  readonly sim: OutbreakSim
   readonly slot: SurvivorSlot
   readonly command: Command
   readonly dt: number
@@ -19,7 +18,7 @@ export interface OutbreakSimStepSurvivorContext<TState = unknown> {
 }
 
 export interface OutbreakSimStepWorldContext<TState = unknown> {
-  readonly sim: CoopSim
+  readonly sim: OutbreakSim
   readonly dt: number
   readonly timeScale: number
   readonly resolved: ResolvedSessionTuning
@@ -27,7 +26,7 @@ export interface OutbreakSimStepWorldContext<TState = unknown> {
 }
 
 export interface OutbreakNetSectionCollectContext<TState = unknown> {
-  readonly sim: CoopSim
+  readonly sim: OutbreakSim
   readonly tick: number
   readonly isDelta: boolean
   readonly baseSnap?: SharedSnapshot
@@ -39,7 +38,7 @@ export interface OutbreakNetSectionCollectContext<TState = unknown> {
 }
 
 export interface OutbreakNetSectionEncodeContext {
-  readonly sim: CoopSim
+  readonly sim: OutbreakSim
   readonly tick: number
   readonly isDelta: boolean
   readonly baseSnap?: SharedSnapshot
@@ -90,39 +89,39 @@ export interface OutbreakSharedFeature<
     readonly legacyNamespaces?: readonly string[]
   }
   /** Allocates pure per-simulation state owned by this feature (never stored at module scope). */
-  createState?(sim: CoopSim): TState
-  /** Deterministically clones per-simulation state when forking a `CoopSim` (e.g. headless bot rollouts). */
-  cloneState?(state: TState, targetSim: CoopSim, sourceSim: CoopSim): TState
+  createState?(sim: OutbreakSim): TState
+  /** Deterministically clones per-simulation state when forking a simulation (e.g. headless bot rollouts). */
+  cloneState?(state: TState, targetSim: OutbreakSim, sourceSim: OutbreakSim): TState
   /** Registers world interaction handlers (doors, windows, containers, vehicles, workbenches) on `sim.registry`. */
-  registerInteractions?(sim: CoopSim, registry: InteractionRegistry, state: TState): void
+  registerInteractions?(sim: OutbreakSim, registry: InteractionRegistry, state: TState): void
   /** Runs when active streaming chunk windows shift (`syncWorldChunks` / `rebuildSolids` / `rebuildCollision`). */
-  onChunkSync?(sim: CoopSim, state: TState): void
+  onChunkSync?(sim: OutbreakSim, state: TState): void
   /** Runs when door/window/barricade/chunk topology changes. */
-  onTopologyChanged?(sim: CoopSim, state: TState): void
+  onTopologyChanged?(sim: OutbreakSim, state: TState): void
   /**
    * Optional movement override for `stepSurvivor` (e.g. seated/driving in a vehicle).
    * Returning `true` signals that the feature handled the survivor's movement and action step for this tick.
    */
   stepSurvivorMovement?(ctx: OutbreakSimStepSurvivorContext<TState>): boolean
   /** Pushes a walking/vaulting survivor out of feature-owned dynamic colliders (e.g. vehicles). */
-  pushOutSurvivor?(sim: CoopSim, survivor: Survivor, radius: number, state: TState): void
-  /** Runs authoritative survivor actions during `CoopSim.applyActions`. */
+  pushOutSurvivor?(sim: OutbreakSim, survivor: Survivor, radius: number, state: TState): void
+  /** Runs authoritative survivor actions during `OutbreakSim.applyActions`. */
   stepSurvivorActions?(
     ctx: OutbreakSimStepSurvivorContext<TState>,
   ): { handled?: boolean; topologyChanged?: boolean } | void
-  /** Advances shared world state for this feature once per simulation tick (`CoopSim.stepWorld`). */
+  /** Advances shared world state for this feature once per simulation tick (`OutbreakSim.stepWorld`). */
   stepWorld?(ctx: OutbreakSimStepWorldContext<TState>): { topologyChanged?: boolean } | void
   /** Transforms the survivor perception proxy passed to `ai.stepSurvivors` (e.g. vehicle headlights and engine noise). */
   transformAISurvivor?(
-    sim: CoopSim,
+    sim: OutbreakSim,
     slot: SurvivorSlot,
     survivorView: Survivor & { id: string },
     state: TState,
   ): Survivor & { id: string }
   /** Scales or filters incoming crowd damage on a survivor slot (e.g. vehicle seat armor). */
-  modifySurvivorDamage?(sim: CoopSim, slot: SurvivorSlot, damage: number, state: TState): number
+  modifySurvivorDamage?(sim: OutbreakSim, slot: SurvivorSlot, damage: number, state: TState): number
   /** Customizes `refreshPrompt` for a survivor slot; returning `true` skips default door/window/container prompt selection. */
-  refreshPrompt?(sim: CoopSim, slot: SurvivorSlot, state: TState): boolean
+  refreshPrompt?(sim: OutbreakSim, slot: SurvivorSlot, state: TState): boolean
   /** Optional binary snapshot section codec for `shared/net-protocol.ts`. */
   readonly netSection?: OutbreakNetSectionCodec<TState, TSection, TWritePayload>
   /** Optional JSON control message decoders for custom client-to-server messages. */
@@ -140,7 +139,7 @@ function compareFeatures(a: { id: string; order?: number }, b: { id: string; ord
 
 /**
  * Deterministic registry for shared Outbreak simulation and wire-protocol features.
- * Keeps all mutable simulation state per-`CoopSim` instance so simulations remain pure and forkable.
+ * Keeps all mutable simulation state per simulation so simulations remain pure and forkable.
  */
 export class OutbreakSharedFeatureRegistry {
   private readonly byId = new Map<string, OutbreakSharedFeature<any, any, any, any>>()
@@ -175,7 +174,7 @@ export class OutbreakSharedFeatureRegistry {
   }
 
   /** Allocates a fresh per-simulation state map for every registered feature with `createState`. */
-  createSimStates(sim: CoopSim): Map<string, unknown> {
+  createSimStates(sim: OutbreakSim): Map<string, unknown> {
     const states = new Map<string, unknown>()
     for (const feature of this.list()) {
       if (feature.createState) {
@@ -186,7 +185,7 @@ export class OutbreakSharedFeatureRegistry {
   }
 
   /** Deterministically clones per-simulation feature states into `targetSim` when forking a simulation. */
-  cloneSimStates(sourceStates: ReadonlyMap<string, unknown>, targetSim: CoopSim, sourceSim: CoopSim): Map<string, unknown> {
+  cloneSimStates(sourceStates: ReadonlyMap<string, unknown>, targetSim: OutbreakSim, sourceSim: OutbreakSim): Map<string, unknown> {
     const next = new Map<string, unknown>()
     for (const feature of this.list()) {
       if (!sourceStates.has(feature.id)) continue

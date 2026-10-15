@@ -26,8 +26,9 @@ import { CHUNK, EXTERIOR_VEHICLE_COLLIDERS, propShape, SIZE, type Building, type
 import type { OutbreakProgression } from "./progression/progression"
 import type { ProgressionSlot } from "./progression/types"
 import { chunkKey, districtAtBlock, MACRO_CHUNKS, worldToChunk, type StreamingWorld, type WorldMode } from "./world"
+import type { SavedVehicleState, VehicleKind } from "./vehicles/types"
 
-export type VehicleKind = "sedan" | "cruiser" | "pickup" | "van"
+export type { SavedVehicleState, VehicleKind } from "./vehicles/types"
 
 export type VehicleSeat = {
   /** Forward offset from vehicle center (metres, +f is forward along heading). */
@@ -224,24 +225,6 @@ export type VehicleSpawnSpec = {
   hasBattery: boolean
   hasKeys: boolean
   headlights: boolean
-}
-
-export type SavedVehicleState = {
-  id: number
-  kind: VehicleKind
-  originChunkKey: string
-  spawnX: number
-  spawnY: number
-  spawnH: number
-  x: number
-  y: number
-  h: number
-  hp: number
-  fuel: number
-  hasBattery: boolean
-  hasKeys: boolean
-  headlights: boolean
-  wreck: boolean
 }
 
 export type OutbreakVehicle = RigidXY & {
