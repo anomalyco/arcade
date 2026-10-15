@@ -22,11 +22,11 @@ In code a lab is a `LabScene`, because "lab" already names the whole app.
 | `packages/kit/lab/scenes/kinds.ts` | `LabKind` (subject, host, patterns, choices, add-picker, play verb), `checkKinds`, and `checkAgainstKind`, which rejects choices, parts and extras the lab's kind doesn't have |
 | `packages/kit/lab/scenes/store.ts` | `createSceneStore`: repo labs merged with this browser's labs and edits, the lifecycle (create, duplicate, keep, archive, restore, delete, revert an edited repo lab, move), collections (create, archive with their labs) and the sweep (drafts untouched for 7 days are archived; local archived labs are deleted 30 days later). Storage is a port with memory and `localStorage` adapters. |
 | `packages/kit/lab/scenes/migrate.ts` | `liftCommands` (setup commands → choices, values and leftover commands, only when their order allows), `choiceCommands` and `openCommands` (the inverse, what opening a lab will run), and migrations from station files, `LabPresetSchema` v1 exports and tour steps |
-| `games/lab/src/scenes/kinds.ts` | The 20 kinds: one per Lab section and one per page station |
+| `games/lab/src/scenes/kinds.ts` | The 23 kinds: one per Lab section and one per page station |
 | `games/lab/src/scenes/from-stations.ts` | The area collection for each station, and `migrateStations` |
 | `games/lab/scripts/stations-to-scenes.ts` | Writes the would-be `games/lab/scenes/**` files and migration notes to `captures/scenes-preview` |
 
-The 17 station files migrate to 18 kept labs in 6 collections, and each one passes its kind's check. Two Explosions
+The 20 station files migrate to 21 kept labs in 6 collections, and each one passes its kind's check. Two Explosions
 variants switched to the Splatter section, so they became a Splatter lab (a variant can't change what a lab runs);
 Outbreak's "Fog of War" variant only opened a grid, so it became the lab's grid; Vegetation's setup stays as commands
 because `foliage.preset` sets plants, lighting and look in one call. `games/lab/tests/scenes.test.ts` checks that
