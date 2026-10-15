@@ -103,7 +103,7 @@ try {
 
   // Reload in progress.
   await stage(page, { x: 30, y: 41, aim: -Math.PI / 2, zoom: 42, hour: 18 })
-  await mutate(page, { magAmmo: 2 })
+  await page.evaluate(() => (window as any).__arcadeHarness.stock(2, { ammo: 12 }))
   await step(page, 1, { reload: true })
   await step(page, 32)
   await snap(page, "reload", "Reload in progress: ring fills over 1.15 s")
@@ -113,7 +113,7 @@ try {
   // Search and loot pops.
   const container = await page.evaluate(() => {
     const st = (window as any).__arcadeHarness.state()
-    const c = st.containers.find((x: any) => x.ammo > 0 && x.planks > 0) ?? st.containers.find((x: any) => x.ammo > 0)
+    const c = st.containers.find((x: any) => x.kind === "dresser")
     return { x: c.x, y: c.y, label: c.label }
   })
   await stage(page, { x: container.x, y: container.y + 0.75, aim: -Math.PI / 2 })
@@ -125,7 +125,7 @@ try {
 
   // Empty gun: warning plus the noise the shot made.
   await stage(page, { x: 30, y: 41, aim: -Math.PI / 2, zoom: 42, hour: 18 })
-  await mutate(page, { magAmmo: 1, reserveAmmo: 0 })
+  await page.evaluate(() => (window as any).__arcadeHarness.stock(1, { ammo: 0 }))
   await step(page, 1, { fire: true })
   await step(page, 20)
   await step(page, 1, { fire: true })

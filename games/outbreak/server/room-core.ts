@@ -28,7 +28,8 @@ const MSG_BURST = 240
 
 export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
 
-type SeatData = { slot: SurvivorSlot; jitter: JitterBuffer<Command>; inventory: string }
+/** `ledgerRev`: the progression ledger revision this seat's client has; 0 sends everything it can see. */
+type SeatData = { slot: SurvivorSlot; jitter: JitterBuffer<Command>; ledgerRev: number }
 type ConnState = { seatId: string | null; tokens: number; at: number; bytes: number }
 
 /** One co-op room's world and seats, independent of the transport so tests and benchmarks can drive it. */
@@ -112,7 +113,7 @@ export class CoopRoomCore {
     const joined = this.seats.join(name, msg.token, (index, id) => ({
       slot: this.sim.addSurvivor(id, index),
       jitter: new JitterBuffer(commandOps),
-      inventory: "",
+      ledgerRev: 0,
     }))
     if (!joined.ok) {
       this.send(conn, { t: "error", message: `Room ${this.code} is full (${MAX_SURVIVORS} survivors).` })
@@ -122,7 +123,7 @@ export class CoopRoomCore {
     const seat = joined.seat
     // A reconnect starts a fresh command stream (the client's sequence numbers restart at 0).
     if (joined.resumed) seat.data.jitter = new JitterBuffer(commandOps)
-    seat.data.inventory = ""
+    seat.data.ledgerRev = 0
     for (const [other, s] of this.conns) {
       if (other !== conn && s.seatId === seat.id) {
         s.seatId = null
@@ -166,7 +167,7 @@ export class CoopRoomCore {
   /** One 60 Hz tick. The world pauses while nobody is connected. */
   step(): void {
     const expired = this.seats.expire()
-    for (const seat of expired) this.sim.removeSurvivor(seat.id)
+    for (const seat of expired) this.sim.removeSurvivor(seat.id, true)
     if (expired.length) this.sendRoster()
     if (!this.seats.connectedCount) return
     this.tick++
@@ -192,17 +193,18 @@ export class CoopRoomCore {
     if (this.tick % SNAPSHOT_EVERY === 0) this.snapshot()
   }
 
-  /** Encodes the shared part once, then prefixes each player's ack, private survivor state and inventory. */
+  /** Encodes the shared part once, then prefixes each player's ack, private survivor state, ledger delta and notices. */
   snapshot(to?: Conn[]): void {
     const shared = encodeShared(this.sim, this.tick, this.shooters, this.writer)
     for (const [conn, s] of this.conns) {
       if (to && !to.includes(conn)) continue
       const seat = s.seatId ? this.seats.byId(s.seatId) : undefined
       if (!seat) continue
-      const inventory = JSON.stringify(seat.data.slot.inventory)
-      const changed = inventory !== seat.data.inventory
-      seat.data.inventory = inventory
-      this.send(conn, frame(encodePersonal(seat.data.jitter.ack, seat.data.slot.survivor, changed ? inventory : null), shared))
+      const slot = seat.data.slot
+      const delta = this.sim.progression.ledger.diff(seat.data.ledgerRev, { visibleTo: seat.id })
+      if (delta) seat.data.ledgerRev = delta.toRev
+      const notices = slot.notices.splice(0)
+      this.send(conn, frame(encodePersonal(seat.data.jitter.ack, slot.survivor, delta, notices), shared))
     }
   }
 }

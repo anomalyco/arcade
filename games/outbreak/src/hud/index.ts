@@ -125,6 +125,7 @@ export class OutbreakHud {
       pursuing,
       lowBattery,
       reloadKey: keyLabel("KeyR"),
+      notices: view.notices.splice(0),
     })
     this.layer.render(dt, (id) => this.anchor(id))
   }
