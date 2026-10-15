@@ -5,10 +5,11 @@ import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, ty
 import { aiControls } from "../shared/ai"
 import { wrapHour } from "../shared/day-cycle"
 import { flashlightControls } from "../shared/flashlight"
-import type { LocalSession } from "../shared/session"
+import { LocalSession } from "../shared/session"
 import { staminaControls } from "../shared/stamina"
 import { supportHeight } from "../shared/terrain"
 import { audioControls } from "./audio"
+import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight } from "./day-night"
 import { outbreakClientFeatures } from "./feature-registry"
@@ -39,18 +40,27 @@ export interface OutbreakLabControlHost {
   readonly weatherController: OutbreakWeatherController
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
+  readonly botsLab: BotsLabController
   readonly hud: OutbreakHud
   readonly map: OutbreakMap
   readonly updateProfile: () => void
   readonly regenerate: () => void
+  readonly reset: (nextSeed?: number) => void
   readonly syncTextures: () => void
   readonly setLastDayNightHour: (hour: number) => void
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx } = host
+  const { settings, feelTracker, combatFx, botsLab } = host
   const raw: LabControl[] = [
     ...aiControls,
+    ...botsLab.controls(
+      () => {
+        const s = host.session()
+        return s instanceof LocalSession ? s : null
+      },
+      (s) => host.reset(s),
+    ),
     ...audioControls,
     {
       key: "spawnZombieHere",
