@@ -118,6 +118,8 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
     tuning.directorPacing !== undefined ||
     tuning.aiDebugOverlay !== undefined ||
     tuning.startHour !== undefined ||
+    tuning.openingClock !== undefined ||
+    tuning.openingCalm !== undefined ||
     tuning.safeRadius !== undefined ||
     tuning.initialDensity !== undefined ||
     tuning.rampTime !== undefined ||
@@ -137,6 +139,8 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
           directorPacing: tuning.directorPacing,
           aiDebugOverlay: tuning.aiDebugOverlay,
           startHour: tuning.startHour,
+          openingClock: tuning.openingClock,
+          openingCalm: tuning.openingCalm,
           safeRadius: tuning.safeRadius,
           initialDensity: tuning.initialDensity,
           rampTime: tuning.rampTime,

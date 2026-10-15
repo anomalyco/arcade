@@ -1,5 +1,6 @@
 import {
   hasValue,
+  isReadout,
   same,
   type Choice,
   type Field,
@@ -19,10 +20,12 @@ import type {
   MountPanelOptions,
   PanelCommand,
   PanelKeys,
+  SectionFolded,
 } from "../core/store.js"
 import {
   getGpuOverlayManager,
   resolveRendererMode,
+  stackingAncestor,
   type GpuGroupBinding,
   type GpuPanelBinding,
   type GpuRowBinding,
@@ -35,6 +38,7 @@ import {
   type EditorRow,
   type SubTrack,
 } from "./editors.js"
+import { curveRow, gradientRow } from "./ramps.js"
 import {
   angleRow,
   keybindRow,
@@ -45,35 +49,48 @@ import {
   type ToolbarRow,
 } from "./inspector.js"
 import { createSearch, markLabel, matchSpan, type SearchBar } from "./search.js"
+import { READOUT, type ReadoutPort } from "../core/readout.js"
+import { readoutRow, type ReadoutRow } from "./readout-row.js"
+import { toast } from "../ui/toast.js"
 import { createTabStrip, type TabSpec } from "./tabs.js"
 import { createChoice, type ChoiceControl } from "./choice.js"
+import { trackHas } from "./has.js"
 import { createHintController, type HintTarget } from "./hints.js"
 import { createHeaderDie, GROUP_DIE, type HeaderDie } from "./die.js"
 import { iconSvg, type IconName } from "./icons.js"
+import { batchMeasures } from "./measure.js"
 import { Edges } from "./motion.js"
 import { morphFromChip, type PanelMorph } from "./morph.js"
 import { openMenu, type Menu } from "./menu.js"
 import {
+  caretIcon,
   cardTitle,
   createCustomCard,
   createPageLayout,
   matchesFilter,
+  type CustomCardFold,
+  type FoldSummaryInfo,
   type MountPageOptions,
   type Page,
   type PageCardOptions,
+  type PageFoldOptions,
+  type PageFoldSource,
+  type PageGroupInfo,
   type PageHighlight,
   type PageLayout,
+  type PageSectionInfo,
 } from "./page.js"
+import { foldMemory, type FoldMemory } from "./folds.js"
 import { positionPanel } from "./position.js"
 import { reveal } from "./reveal.js"
 import { createPresetStrip, type PresetStrip } from "./presets.js"
-import { placeSegPill } from "./seg.js"
+import { placeSegPill, primeSegPill } from "./seg.js"
 import { smearPill } from "./smear.js"
 import { tapTick, tick } from "./haptics.js"
 import { createSlider, type Slider, stepValue } from "./slider.js"
 import { readSession, writeSession } from "./session.js"
 import { DEFAULT_PREFS, type KeyPrefs, keyLabel, resolveKeys, setKeyPrefs } from "./prefs.js"
-import { injectPreset, injectStyles } from "./styles.js"
+import { DELAYED, injectPreset, injectStyles } from "./styles.js"
 
 export interface Panel {
   element: HTMLElement
@@ -148,6 +165,7 @@ function buildPanel<S extends Schema>(
       ? "knobs-panel knobs-inline"
       : "knobs-panel"
   root.dataset.controls = controls.id
+  const untrackHas = trackHas(root)
   root.dataset.theme = options.theme ?? controls.theme
   root.dataset.density = options.density ?? controls.density
   if (options.preset) {
@@ -170,6 +188,11 @@ function buildPanel<S extends Schema>(
   // Messages glide in, linger, then fold away so the panel returns to its resting height.
   let statusTimer: ReturnType<typeof setTimeout> | undefined
   const say = (message: string, linger = 3200) => {
+    // A page says it in a toast, as the workspace's overlays do.
+    if (page) {
+      toast(message, { within: root, linger, ...(linger > 3200 ? { tone: "error" as const } : {}) })
+      return
+    }
     clearTimeout(statusTimer)
     status.textContent = message
     reveal(status, true)
@@ -267,6 +290,7 @@ function buildPanel<S extends Schema>(
     ...((page
       ? [
           ["Tab / ⇧Tab", "Next / previous group"],
+          ["⌥↑ / ⌥↓", "Previous / next section"],
           ["1–9", "Group preset"],
           ...(page.filter !== false ? [["/", "Filter rows"]] : []),
         ]
@@ -452,6 +476,24 @@ function buildPanel<S extends Schema>(
   // A page gives each group its own card (a tile) in its section's columns.
   let layout: PageLayout | undefined
   let layoutTick = 0
+  /** What folded or opened something since `onSections` listeners last heard (a user's wins). */
+  let foldSource: PageFoldSource | null = null
+  /** Set while a click or key of the user's folds or opens something. */
+  let userFolding = false
+  const noteFold = (source: PageFoldSource) => {
+    if (foldSource !== "user") foldSource = source
+  }
+  /** Runs `act` as the user's own fold. */
+  const byUser = (act: () => void) => {
+    userFolding = true
+    try {
+      act()
+    } finally {
+      userFolding = false
+    }
+  }
+  /** Set once the page is built: its motion settling then tells `onSections` listeners. */
+  let built = false
   const tiles = new Map<string, HTMLElement>()
   const gpuTiles: HTMLElement[] = []
   if (page) {
@@ -460,8 +502,12 @@ function buildPanel<S extends Schema>(
       order: page.sections ?? [],
       columnWidth: page.columnWidth ?? 300,
       sectionLabel: (name) => sectionTitle(name),
+      sectionDescription: (name) =>
+        options.sectionDescriptions?.[name] ?? controls.sectionDescription(name),
+      sectionFold: (name) => sectionStart(name),
       onLayout: () => {
         layoutTick++
+        syncNav()
         // Rows follow the page: down each column, then on to the next.
         rows.sort((a, b) =>
           a.row.compareDocumentPosition(b.row) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
@@ -472,6 +518,9 @@ function buildPanel<S extends Schema>(
       wake: () => {
         layoutTick++
         wakeGpu()
+        // Cards that finished folding away take their section with them; ones arriving bring it
+        // back.
+        if (built) announceSections()
       },
     })
   }
@@ -485,6 +534,8 @@ function buildPanel<S extends Schema>(
       tile.dataset.group = group
       tile.setAttribute("aria-label", groupTitle(group, section))
       tile.append(groupHead(group, section))
+      const desc = groupDescs.get(group)
+      if (desc) tile.append(desc)
     }
     const inner = el("div")
     inner.className = "knobs-card"
@@ -492,6 +543,7 @@ function buildPanel<S extends Schema>(
     if (group !== undefined && folds.has(group)) {
       tile.dataset.foldable = ""
       inner.hidden = folds.get(group)!
+      tile.toggleAttribute("data-folded", folds.get(group)!)
     }
     cards.push(inner)
     gpuTiles.push(tile)
@@ -515,6 +567,25 @@ function buildPanel<S extends Schema>(
   /** A section's heading: its label, else its id. */
   const sectionTitle = (section: string) =>
     options.sectionLabels?.[section] ?? controls.sectionLabel(section) ?? section
+  /** The muted line under a page card's title, if it has one. */
+  const groupDescription = (group: string) =>
+    options.groupDescriptions?.[group] ?? controls.groupDescription(group)
+  const sectionDescription = (section: string) =>
+    options.sectionDescriptions?.[section] ?? controls.sectionDescription(section)
+  /** Each page card's description line (hidden while it has none). */
+  const groupDescs = new Map<string, HTMLElement>()
+  /** Each foldable page card's summary, shown in its header while it's folded. */
+  const groupSummaries = new Map<string, HTMLElement>()
+  const describeGroup = (group: string) => {
+    const node = groupDescs.get(group)
+    if (!node) return
+    const text = groupDescription(group) ?? ""
+    if (node.textContent !== text) {
+      node.textContent = text
+      node.title = text
+    }
+    if (node.hidden !== !text) node.hidden = !text
+  }
   /**
    * A group's title: its label, verbatim; else on a page its id without the section's name
    * repeated in front ("Transcript · Arrivals" under Transcript reads "Arrivals").
@@ -528,19 +599,55 @@ function buildPanel<S extends Schema>(
 
   /** Each foldable group's state: folded or open. */
   const folds = new Map<string, boolean>()
+  const foldMotions = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
+  /**
+   * What a highlight's `expand` opened (sections, groups, custom cards), to fold again when the
+   * highlight moves on; whatever the user works in meanwhile is dropped from here (it's theirs).
+   */
+  const auto = {
+    sections: new Set<string>(),
+    groups: new Set<string>(),
+    cards: new Set<CustomCardFold>(),
+  }
   /** Nodes folding open or shut right now (the GPU follows their reveal). */
   const shifting = new Set<HTMLElement>()
-  /** How a group starts: `groupFolded`, else its first field that says; undefined: it doesn't fold. */
+  /**
+   * How a group starts: `groupFolded` (the mount's, then the store's), else its first field that
+   * says; undefined: it doesn't fold.
+   */
   const foldDefault = (group: string): boolean | undefined => {
-    const given = options.groupFolded?.[group]
+    const given = options.groupFolded?.[group] ?? controls.groupFolded?.[group]
     if (given !== undefined) return given
     for (const f of Object.values(controls.schema as Record<string, Field>))
       if (f.group === group && f.folded !== undefined) return f.folded
     return undefined
   }
-  /** Folds or opens a foldable group's card (toggles without `next`). */
-  function fold(group: string, next = !folds.get(group), animate = true) {
+  /**
+   * How a page's section starts: what the user last chose, else `sectionFolded` (the mount's,
+   * then the store's), else its first field that says; undefined: it doesn't fold.
+   */
+  const sectionStart = (section: string): boolean | undefined => {
+    const pick = (v: SectionFolded | undefined) =>
+      v === undefined ? undefined : typeof v === "boolean" ? v : v[section]
+    let given = pick(page?.sectionFolded) ?? pick(controls.sectionFolded)
+    if (given === undefined)
+      for (const f of Object.values(controls.schema as Record<string, Field>))
+        if (f.section === section && f.sectionFolded !== undefined) {
+          given = f.sectionFolded
+          break
+        }
+    if (given === undefined) return undefined
+    return foldsKept?.get("sections", section) ?? given
+  }
+  /**
+   * Folds or opens a foldable group's card (toggles without `next`). `remember: false` leaves
+   * what's remembered alone (a highlight opened or closed it).
+   */
+  function fold(group: string, next = !folds.get(group), animate = true, remember = true) {
     if (!folds.has(group)) return
+    if (page && folds.get(group) !== next) noteFold(userFolding ? "user" : "code")
+    if (remember) auto.groups.delete(group)
+    if (folds.get(group) === next && page) return
     folds.set(group, next)
     const block = blocks.find((b) => b.group === group && !b.leaving)
     const card = page ? tiles.get(group) : block?.card
@@ -555,7 +662,21 @@ function buildPanel<S extends Schema>(
     // A page's tile folds to its header; the cards below in its column follow.
     if (page) foldTile(card, next && !filterEl.value.trim(), animate)
     else applyVisibility(animate ? "reveal" : "instant")
-    if (remember)
+    if (page) {
+      const tile = card.parentElement!
+      tile.toggleAttribute("data-folded", next)
+      // The header's controls and its summary trade places with a fade (see styles).
+      if (animate) {
+        tile.setAttribute("data-fold-motion", "")
+        clearTimeout(foldMotions.get(tile))
+        foldMotions.set(
+          tile,
+          setTimeout(() => tile.removeAttribute("data-fold-motion"), 400),
+        )
+      }
+      if (remember) foldsKept?.set("groups", group, next)
+      refreshFolds()
+    } else if (sessionKept)
       writeSession(controls.id, { groups: { ...readSession(controls.id).groups, [group]: next } })
     positioned?.constrain()
     wakeGpu()
@@ -566,17 +687,7 @@ function buildPanel<S extends Schema>(
     if (animate || shifting.has(card)) shift(card, !shut, 0)
     else card.hidden = shut
   }
-  /** A fold's chevron: it points right while folded and down while open (see .knobs-caret). */
-  function caretSvg() {
-    const caret = doc.createElementNS("http://www.w3.org/2000/svg", "svg")
-    caret.setAttribute("class", "knobs-caret")
-    caret.setAttribute("viewBox", "0 0 10 10")
-    caret.setAttribute("aria-hidden", "true")
-    const chevron = doc.createElementNS("http://www.w3.org/2000/svg", "path")
-    chevron.setAttribute("d", "M3.75 2.25 6.5 5 3.75 7.75")
-    caret.append(chevron)
-    return caret
-  }
+  const caretSvg = () => caretIcon(doc)
   function groupHead(groupName: string, section?: string) {
     const title = groupTitle(groupName, section)
     const gHead = el("div")
@@ -609,7 +720,11 @@ function buildPanel<S extends Schema>(
     gRandom.dataset.hint = `${title} random`
     gRandom.querySelector(".knobs-icon")?.replaceWith(gDie.node)
     gRandom.onclick = (event) => run(() => rerollGroup(groupName, event.altKey))
-    if (!bound("random") && !bound("mutate")) gRandom.hidden = true
+    // A group of readouts alone has nothing to roll.
+    const rollable = (Object.values(controls.schema) as Field[]).some(
+      (f) => f.group === groupName && hasValue(f),
+    )
+    if ((!bound("random") && !bound("mutate")) || !rollable) gRandom.hidden = true
     groupDice.set(groupName, { button: gRandom, die: gDie })
     // On a page, the group's presets sit in its header: their names as segments while they fit
     // beside the title, else a compact menu (or numbered chips, whose hovered name shows where
@@ -712,19 +827,39 @@ function buildPanel<S extends Schema>(
     // A panel's group folds when it says how it starts (`folded`, `groupFolded`).
     const foldAt = foldDefault(groupName)
     let caret: SVGSVGElement | undefined
+    // On a page, a folded card's header trades its controls for a summary of the card.
+    let ctl: HTMLElement | undefined
+    let summary: HTMLElement | undefined
+    if (page) {
+      ctl = el("span")
+      ctl.className = "knobs-group-ctl"
+      ctl.append(...gRight.childNodes)
+      gRight.append(ctl)
+      const desc = el("div")
+      desc.className = "knobs-group-desc"
+      groupDescs.set(groupName, desc)
+      describeGroup(groupName)
+    }
     if (foldAt !== undefined) {
+      if (page) {
+        summary = el("span")
+        summary.className = "knobs-group-summary"
+        gRight.append(summary)
+        groupSummaries.set(groupName, summary)
+      }
       caret = caretSvg()
       gRight.append(caret)
       gHead.dataset.foldable = ""
       gHead.tabIndex = -1
       gHead.setAttribute("role", "button")
       gHead.setAttribute("aria-label", title)
-      const folded = session.groups?.[groupName] ?? foldAt
+      const folded =
+        (page ? foldsKept?.get("groups", groupName) : session.groups?.[groupName]) ?? foldAt
       folds.set(groupName, folded)
       gHead.setAttribute("aria-expanded", String(!folded))
       gHead.addEventListener("click", (event) => {
         if ((event.target as Element).closest("button")) return
-        fold(groupName)
+        byUser(() => fold(groupName))
       })
     }
     if (page) {
@@ -741,6 +876,9 @@ function buildPanel<S extends Schema>(
       die: { button: gRandom, die: gDie },
       ...(caret ? { fold: caret } : {}),
       ...(page ? { title: true, peek: gPeek } : {}),
+      ...(ctl ? { controls: ctl } : {}),
+      ...(summary ? { summary } : {}),
+      ...(groupDescs.get(groupName) ? { desc: groupDescs.get(groupName)! } : {}),
       ...(ui
         ? {
             presets: {
@@ -798,12 +936,28 @@ function buildPanel<S extends Schema>(
   // A reload (Vite's included) brings back open editors, folded groups and the focused stop,
   // per tab, unless the host keeps focus to itself (`session: false`).
   const remember = options.session ?? controls.storage !== null
+  const sessionKept = remember
   const session = remember ? readSession(controls.id) : {}
+  /**
+   * A page's section and group folds: in `foldStorage` when given (folds only, whatever the store
+   * keeps), else in the store's storage unless it persists nothing.
+   */
+  const foldPort =
+    page?.foldStorage !== undefined
+      ? page.foldStorage
+      : controls.persist === "none"
+        ? null
+        : controls.storage
+  const foldsKept: FoldMemory | null =
+    page && foldPort ? foldMemory(controls.id, () => foldPort) : null
 
   // Every slider's track (knob rows and the parts of compound rows), for arrows and typed digits.
   const tracks = new Map<HTMLElement, SubTrack>()
   /** Toolbar rows by key, for their shortcuts. */
   const toolbars = new Map<string, ToolbarRow>()
+  /** Readout rows by key, told when the store pushes to them. */
+  const readouts = new Map<string, ReadoutRow>()
+  const readoutPort = (controls as unknown as { [READOUT]?: ReadoutPort })[READOUT]
   interface Row {
     /** The row's identity: its key, or `spring:<id>` for a flat spring's pair of keys. */
     id: string
@@ -901,7 +1055,13 @@ function buildPanel<S extends Schema>(
     const f = spec.field
     const where = `${spec.group ?? ""}\u0000${page ? (spec.section ?? "") : ""}`
     if (spec.parts) return `pair\u0000${spec.keys.join("\u0000")}\u0000${where}`
-    if (f.kind === "knob" || f.kind === "toggle" || f.kind === "action" || f.kind === "toolbar")
+    if (
+      f.kind === "knob" ||
+      f.kind === "toggle" ||
+      f.kind === "action" ||
+      f.kind === "toolbar" ||
+      isReadout(f)
+    )
       return `${f.kind}\u0000${where}`
     if (f.kind === "vec") return `vec\u0000${f.axes}\u0000${f.link ? 1 : 0}\u0000${where}`
     if (f.kind === "range" || f.kind === "angle" || f.kind === "seed" || f.kind === "keybind")
@@ -1041,6 +1201,39 @@ function buildPanel<S extends Schema>(
         dispose: () => toolbars.delete(key),
       }
     }
+    if (isReadout(field)) {
+      const state = readoutPort?.state(key)
+      if (!state) throw new Error(`No readout state for ${key}.`)
+      const r = readoutRow({
+        doc,
+        key,
+        display,
+        field,
+        state,
+        wave,
+        wake: () => wakeGpu(),
+        gpu: () => root.dataset.gpuActive === "true",
+      })
+      readouts.set(key, r)
+      return {
+        ...base,
+        row: r.row,
+        labelEl: r.labelEl,
+        input: r.input,
+        editor: r,
+        gpu: [...r.gpu],
+        value: () => undefined,
+        set: () => {},
+        retune(next) {
+          this.field = next.field
+          this.display = next.field.label ?? key
+          r.swap(next.field as typeof field, this.display)
+        },
+        dispose: () => {
+          if (readouts.get(key) === r) readouts.delete(key)
+        },
+      }
+    }
     if (field.kind !== "choice" && field.kind !== "toggle") {
       const keys = spec.keys
       const context = {
@@ -1088,15 +1281,19 @@ function buildPanel<S extends Schema>(
               ? pointRow({ ...context, field })
               : field.kind === "easing"
                 ? easingRow({ ...context, field })
-                : field.kind === "vec"
-                  ? vecRow(live as typeof live & { field: typeof field })
-                  : field.kind === "range"
-                    ? rangeRow(live as typeof live & { field: typeof field })
-                    : field.kind === "angle"
-                      ? angleRow(live as typeof live & { field: typeof field })
-                      : field.kind === "seed"
-                        ? seedRow(live as typeof live & { field: typeof field })
-                        : keybindRow(live as typeof live & { field: typeof field })
+                : field.kind === "gradient"
+                  ? gradientRow({ ...context, field })
+                  : field.kind === "curve"
+                    ? curveRow({ ...context, field })
+                    : field.kind === "vec"
+                      ? vecRow(live as typeof live & { field: typeof field })
+                      : field.kind === "range"
+                        ? rangeRow(live as typeof live & { field: typeof field })
+                        : field.kind === "angle"
+                          ? angleRow(live as typeof live & { field: typeof field })
+                          : field.kind === "seed"
+                            ? seedRow(live as typeof live & { field: typeof field })
+                            : keybindRow(live as typeof live & { field: typeof field })
       if (field.shortcut) editor.input.setAttribute("aria-keyshortcuts", field.shortcut)
       editor.labelEl.ondblclick = resetRow
       for (const t of editor.tracks) tracks.set(t.slider.track, t)
@@ -1289,6 +1486,8 @@ function buildPanel<S extends Schema>(
         delete node.dataset.presence
         after?.()
         wakeGpu()
+        // A card the store dropped has folded away (or one is back): its section goes with it.
+        if (page && built) announceSections()
       },
       delay,
     )
@@ -1383,15 +1582,29 @@ function buildPanel<S extends Schema>(
         else done()
       }
       // A card whose rows all left folds away with them; one that gets rows again opens.
+      // The page lays them out: a section left with no cards goes (its heading too) and the
+      // columns re-balance, gliding; one that gets cards back returns in its place.
       const occupied = new Set(next.map((r) => tileFor(r.group, r.section)))
+      const toggled: [HTMLElement, boolean][] = []
       for (const inner of tiles.values()) {
         const tile = inner.parentElement!
         const empty = !occupied.has(inner)
-        if (empty === (tile.hidden || tile.dataset.presence === "out")) continue
-        if (animate) motion.push({ node: tile, show: !empty })
-        else tile.hidden = empty
+        // A card still folding away counts as gone: getting rows back brings it back.
+        const gone = tile.hidden || tile.dataset.leaving !== undefined
+        if (empty !== gone) toggled.push([tile, empty])
       }
-      layout?.pack(true)
+      // A descriptor swap may bring other descriptions and labels.
+      for (const group of groupDescs.keys()) describeGroup(group)
+      layout?.relabel()
+      if (toggled.length && layout)
+        layout.change(
+          () => {
+            for (const [tile, empty] of toggled) tile.hidden = empty
+          },
+          [],
+          !animate,
+        )
+      else layout?.pack(true)
     } else {
       // Runs of rows sharing a group make blocks; a run reuses its group's block if there is one.
       const runs: { group: string | undefined; rows: Row[] }[] = []
@@ -1491,6 +1704,7 @@ function buildPanel<S extends Schema>(
       motion.forEach((m, i) => present(m.node, m.show, i * stagger, m.after))
     }
     applyVisibility(animate ? "reveal" : "instant")
+    if (page) refreshFolds()
     if (focused && root.contains(focused) && doc.activeElement !== focused && focused.isConnected)
       focused.focus({ preventScroll: true })
     // Focus on a row that left goes to the nearest row that's still here, not the page.
@@ -2004,6 +2218,7 @@ function buildPanel<S extends Schema>(
       })
     })
   }
+  const isMixed = (r: Row) => r.keys.some((k) => controls.isMixed(k as keyof S & string))
   function update() {
     if (!controls.enabled) {
       close?.()
@@ -2017,33 +2232,67 @@ function buildPanel<S extends Schema>(
     }
     const values = controls.get() as Record<string, unknown>
     const before = shown as Record<string, unknown>
-    const locked = controls.locked as Record<string, unknown>
     // A row with nothing shown yet (it just arrived) places its value without motion.
     const fresh = (r: Row) => r.row.dataset.shown === undefined
-    const isMixed = (r: Row) => r.keys.some((k) => controls.isMixed(k as keyof S & string))
     const changed = (r: Row) =>
       fresh(r) || Boolean(r.mixed) !== isMixed(r) || r.keys.some((k) => !same(values[k], before[k]))
     let changedCount = 0
     if (initialized && !landing) for (const r of rows) if (!fresh(r) && changed(r)) changedCount++
     const stagger = initialized ? cascade(changedCount) : 0
+    const moving = initialized ? rows.filter(changed) : rows
+    // The preset strip first: its chip's weight moves the chips, so it reads after its own writes
+    // and before the rows dirty everything else.
+    presetStrip.update()
+    // Reads before writes: every row about to move reads its tokens, and every segmented pill its
+    // options, before any row writes (see measure.ts).
+    batchMeasures(() => {
+      for (const row of moving) {
+        row.slider?.prime()
+        row.editor?.prime?.()
+        if (row.choice) primeSegPill(row.choice.seg, row.choice.buttons)
+      }
+      for (const chips of groupChips.values()) primeSegPill(chips.seg, chips.buttons)
+      showValues(values, moving, stagger, landing)
+    })
+    if (moving.length || !initialized) refreshFolds()
+    shown = values as Values<S>
+    initialized = true
+
+    wakeGpu()
+  }
+  /** Sets a row's turn on what it times (see `DELAYED`), each only when it differs. */
+  function delayRow(row: HTMLElement, wait: string) {
+    for (const el of row.querySelectorAll<HTMLElement>(DELAYED)) {
+      if (el.style.getPropertyValue("--k-delay") === wait) continue
+      if (wait) el.style.setProperty("--k-delay", wait)
+      else el.style.removeProperty("--k-delay")
+    }
+  }
+  function showValues(
+    values: Record<string, unknown>,
+    moving: readonly Row[],
+    stagger: number,
+    landing: boolean,
+  ) {
+    const locked = controls.locked as Record<string, unknown>
+    const fresh = (r: Row) => r.row.dataset.shown === undefined
     const now = performance.now()
     let turn = 0
-    for (const row of rows) {
-      if (initialized && !changed(row)) continue
+    for (const row of moving) {
       const instant = !initialized || landing || fresh(row)
       row.row.dataset.shown = ""
       const value = row.value(values)
       let delay = 0
       if (!instant) {
-        const moving = row.wave.at <= now && now < row.wave.until
-        delay = moving ? 0 : turn * stagger
+        const inMotion = row.wave.at <= now && now < row.wave.until
+        delay = inMotion ? 0 : turn * stagger
         turn++
         row.wave.at = now + delay
         row.wave.until = row.wave.at + 280
-        row.row.style.setProperty("--k-delay", `${delay}ms`)
+        delayRow(row.row, `${delay}ms`)
       } else {
         row.wave.at = row.wave.until = 0
-        row.row.style.removeProperty("--k-delay")
+        delayRow(row.row, "")
       }
       const modified = marks && bound("reset") && row.keys.some((k) => !same(values[k], locked[k]))
       if (row.row.classList.contains("knobs-modified") !== modified)
@@ -2064,7 +2313,7 @@ function buildPanel<S extends Schema>(
         row.input.setAttribute("aria-checked", mixed ? "mixed" : String(Boolean(value)))
     }
     for (const row of rows) applyState(row)
-    if (!initialized || changedCount > 0 || landing || turn > 0 || rows.some(fresh)) {
+    if (!initialized || moving.length > 0 || landing || turn > 0 || rows.some(fresh)) {
       let anyMod = false
       for (const [groupName, gReset] of groupResetButtons) {
         const groupMod = rows.some(
@@ -2103,7 +2352,6 @@ function buildPanel<S extends Schema>(
     if (redoButton.disabled !== !controls.canRedo) redoButton.disabled = !controls.canRedo
     if (controls.error && status.textContent !== controls.error) say(controls.error, 8000)
     for (const [group, c] of groupChips) c.show(String(controls.matchingGroupPreset(group)))
-    presetStrip.update()
     if (search) {
       const counts = new Map<string, number>()
       for (const [chip, test] of chipTests)
@@ -2112,10 +2360,6 @@ function buildPanel<S extends Schema>(
       // A chip's rows change with the values ("Modified" loses a row that's reset).
       if (search.active().size && initialized) applyVisibility("reveal")
     }
-    shown = values as Values<S>
-    initialized = true
-
-    wakeGpu()
   }
 
   const visible = (node: HTMLElement) =>
@@ -2139,6 +2383,9 @@ function buildPanel<S extends Schema>(
       targets.push({ key: label, display: label, el: node, labelEl, activate })
     }
     tabStrip.buttons.forEach((b) => add(b, b.textContent ?? "", () => b.click()))
+    nav?.buttons.forEach((b) =>
+      add(b, b.firstChild?.textContent ?? "", () => jumpTo(b.dataset.tab!, true)),
+    )
     for (const r of rows) {
       const bar = toolbars.get(r.id)
       if (bar && r.editor === bar)
@@ -2151,6 +2398,15 @@ function buildPanel<S extends Schema>(
       else add(r.row, r.display, () => r.input.focus(), r.labelEl)
     }
     for (const sh of subheads.values()) add(sh.el, sh.name, () => sh.el.focus())
+    if (layout)
+      for (const s of layout.sectionList())
+        if (s.label?.hasAttribute("data-foldable"))
+          add(
+            s.label,
+            sectionTitle(s.name),
+            () => s.label!.focus(),
+            s.label.firstElementChild as HTMLElement,
+          )
     presetStrip.getEntries().forEach((entry, i) => {
       const chip = presetStrip.getButtons()[i]
       if (chip)
@@ -2198,7 +2454,9 @@ function buildPanel<S extends Schema>(
     const nodes: HTMLElement[] = []
     for (const r of rows) nodes.push(...(r.editor?.stops() ?? [r.input]))
     nodes.push(
-      ...body.querySelectorAll<HTMLElement>("[data-knobs-stop],.knobs-tile>[data-foldable]"),
+      ...body.querySelectorAll<HTMLElement>(
+        "[data-knobs-stop],.knobs-tile>[data-foldable],.knobs-section-head[data-foldable]",
+      ),
     )
     return nodes
       .filter(visible)
@@ -2262,11 +2520,17 @@ function buildPanel<S extends Schema>(
   // `/` filters a page's rows live: a group (or section) that matches keeps all its rows, cards
   // with nothing left fold away, and the columns re-balance.
   let filterReturn: HTMLElement | null = null
+  /** The query the filter last applied, so starting, changing or clearing it can be told apart. */
+  let filtered = ""
   function applyFilter() {
     if (!layout) return
     const query = filterEl.value.trim()
+    if (query !== filtered) noteFold(query ? "search" : "restore")
+    filtered = query
     root.toggleAttribute("data-filtering", Boolean(query))
     layout.change(() => {
+      // Folded sections open while the filter runs, so their matches show.
+      layout!.openFolds(Boolean(query))
       for (const r of rows) {
         const show =
           !query ||
@@ -2276,8 +2540,10 @@ function buildPanel<S extends Schema>(
             r.key,
             r.group,
             r.group && groupTitle(r.group, r.section),
+            r.group && groupDescription(r.group),
             r.section,
             r.section && sectionTitle(r.section),
+            r.section && sectionDescription(r.section),
           )
         if (r.row.hidden === show) r.row.hidden = !show
       }
@@ -2302,11 +2568,307 @@ function buildPanel<S extends Schema>(
             query,
             tile.dataset.card,
             tile.querySelector(".knobs-group-label")?.textContent ?? undefined,
+            tile.querySelector(":scope > .knobs-group-desc")?.textContent ?? undefined,
           )
         if (tile.hidden !== hide) tile.hidden = hide
       }
     }, [...rows.map((r) => r.row), ...[...tiles.values()].filter((c) => !shifting.has(c))])
   }
+  // ——— A page's folds: summaries, sections and the jump strip ———
+  const putSummary = (node: HTMLElement, content: string | Node | null) => {
+    if (content === null || typeof content === "string") {
+      const text = content ?? ""
+      if (node.childElementCount || node.textContent !== text) node.textContent = text
+    } else if (node.childNodes.length !== 1 || node.firstChild !== content)
+      node.replaceChildren(content)
+    const title = node.textContent ?? ""
+    if (node.title !== title) node.title = title
+  }
+  const changedRows = (pick: (r: Row) => boolean) =>
+    rows.filter((r) => pick(r) && r.keys.some((k) => controls.isModified(k as keyof S & string)))
+      .length
+  const groupInfo = (group: string): FoldSummaryInfo => {
+    const presets = controls.groupPresets[group] ?? []
+    return {
+      preset: presets.length
+        ? (presets[controls.matchingGroupPreset(group)]?.name ?? "Custom")
+        : null,
+      changed: changedRows((r) => r.group === group),
+      keys: groupKeys(group),
+    }
+  }
+  const sectionInfo = (section: string): FoldSummaryInfo => ({
+    preset: null,
+    changed: changedRows((r) => r.section === section),
+    keys: rows.filter((r) => r.section === section).flatMap((r) => r.keys),
+  })
+  const changedText = (n: number) => (n && marks ? `${n} changed` : "")
+  /** Brings folded cards' and sections' summaries, and the jump strip's counts, up to date. */
+  function refreshFolds() {
+    if (!layout || !page) return
+    for (const [group, node] of groupSummaries) {
+      if (!folds.get(group)) continue
+      const info = groupInfo(group)
+      putSummary(
+        node,
+        page.groupSummary
+          ? page.groupSummary(group, info)
+          : [info.preset, changedText(info.changed)].filter(Boolean).join(" · ") || null,
+      )
+    }
+    for (const s of layout.sectionList()) {
+      const node = s.label?.querySelector<HTMLElement>(":scope > .knobs-section-summary")
+      if (!node || !s.folded) continue
+      const info = sectionInfo(s.name)
+      const n = s.tiles.filter((t) => !t.hidden).length
+      putSummary(
+        node,
+        page.sectionSummary
+          ? page.sectionSummary(s.name, info)
+          : [changedText(info.changed), `${n} ${n === 1 ? "card" : "cards"}`]
+              .filter(Boolean)
+              .join(" · "),
+      )
+    }
+    if (nav)
+      for (const b of nav.buttons) {
+        const n = changedRows((r) => r.section === b.dataset.tab)
+        nav.count(b.dataset.tab!, marks && n ? String(n) : "", n ? `${n} changed` : "")
+      }
+    announceSections()
+    trackSection()
+  }
+  /**
+   * Folds a page's section to its heading or opens it. `remember: false` leaves what's
+   * remembered alone (a highlight opened or closed it).
+   */
+  function foldSection(
+    section: string,
+    next: boolean,
+    how: { readonly remember?: boolean; readonly animate?: boolean } = {},
+  ) {
+    if (!layout) return
+    if (sectionState(section) !== next) noteFold(userFolding ? "user" : "code")
+    const keep = how.remember ?? true
+    if (keep) auto.sections.delete(section)
+    layout.foldSection(section, next, how.animate ?? true)
+    if (keep) foldsKept?.set("sections", section, next)
+    refreshFolds()
+    wakeGpu()
+  }
+  /** Work inside an opened section or card makes it the user's: a highlight won't fold it again. */
+  const claim = (event: Event) => {
+    if (!layout || !(event.target instanceof Element)) return
+    const tile = event.target.closest<HTMLElement>(".knobs-tile")
+    const head = event.target.closest<HTMLElement>(".knobs-section-head")
+    const section = tile ? layout.sectionOf(tile) : head?.dataset.section
+    if (section !== undefined) auto.sections.delete(section)
+    if (!tile) return
+    if (tile.dataset.group !== undefined) auto.groups.delete(tile.dataset.group)
+    for (const card of auto.cards) if (card.tile === tile) auto.cards.delete(card)
+  }
+  /** Custom cards' folds, for a highlight's `expand`. */
+  const customFolds = new Set<CustomCardFold>()
+
+  // The jump strip: a chip per section in the header, the one in view marked as the page scrolls.
+  const nav = page?.nav ? createTabStrip(doc, (id) => byUser(() => jumpTo(id))) : undefined
+  if (nav) {
+    nav.element.classList.add("knobs-nav")
+    nav.element.setAttribute("aria-label", "Sections")
+    header.append(nav.element)
+    root.dataset.nav = ""
+  }
+  /** Set by a jump until the user scrolls: the section it went to stays marked. */
+  let navForced: string | undefined
+  let navFrame = 0
+  // What a navigation of the host's own reads: `page.sections()`, `page.activeSection()`.
+  const sectionListeners = new Set<
+    (sections: readonly PageSectionInfo[], source: PageFoldSource | null) => void
+  >()
+  const activeListeners = new Set<(section: string | undefined) => void>()
+  let lastSections = ""
+  let sectionsQueued = false
+  /** The section last found in view, while something tracks it (the strip or a listener). */
+  let activeSectionId: string | undefined
+  /** A section's own fold, apart from a running filter's opening. */
+  const sectionState = (section: string) =>
+    layout?.sectionList().find((s) => s.name === section)?.folded ??
+    layout?.isFolded(section) ??
+    false
+  function describeSections(): PageSectionInfo[] {
+    if (!layout) return []
+    return layout
+      .sectionList()
+      .filter((s) => s.label)
+      .map((s) => {
+        const groups: PageGroupInfo[] = []
+        for (const tile of s.tiles) {
+          const id = tile.dataset.group
+          if (id === undefined || tile.hidden || !tiles.has(id)) continue
+          const info = groupInfo(id)
+          groups.push({
+            id,
+            label: groupTitle(id, s.name),
+            folded: folds.get(id) ?? false,
+            changed: info.changed,
+            preset: info.preset,
+          })
+        }
+        const description = sectionDescription(s.name)
+        return {
+          id: s.name,
+          label: sectionTitle(s.name),
+          ...(description ? { description } : {}),
+          folded: s.folded,
+          changed: sectionInfo(s.name).changed,
+          groups,
+        }
+      })
+  }
+  /** Tells `onSections` listeners, once per microtask, when what they'd read has changed. */
+  function announceSections() {
+    if (!sectionListeners.size || sectionsQueued) return
+    sectionsQueued = true
+    queueMicrotask(() => {
+      sectionsQueued = false
+      const list = describeSections()
+      const key = JSON.stringify(list)
+      const source = foldSource
+      foldSource = null
+      if (key === lastSections) return
+      lastSections = key
+      for (const listener of [...sectionListeners]) listener(list, source)
+    })
+  }
+  function syncNav() {
+    if (!layout) return
+    if (!nav) {
+      // Sections that came, went or moved: listeners of the page's own hear of it.
+      announceSections()
+      trackSection()
+      return
+    }
+    const list = layout
+      .sectionList()
+      .filter((s) => s.label)
+      .map((s) => ({ id: s.name, label: sectionTitle(s.name) }))
+    const keep = list.some((t) => t.id === nav.active) ? nav.active : list[0]?.id
+    nav.set(list, nav.active === keep ? undefined : keep)
+    refreshFolds()
+    trackSection()
+  }
+  /**
+   * The section in view: the one showing the most of itself between the header and the bottom
+   * of the window (the first, in reading order, of equals). Columns can set sections side by side,
+   * so it's what most of the view is, not what's at the top.
+   */
+  const sectionInView = () => {
+    if (!layout || !win) return undefined
+    const top = header.getBoundingClientRect().bottom
+    const bottom = win.innerHeight
+    let best: string | undefined
+    let most = -1
+    for (const s of layout.sectionList()) {
+      if (!s.label) continue
+      let area = 0
+      for (const node of [s.label, ...s.tiles]) {
+        if (node.hidden || node.hasAttribute("data-away")) continue
+        const r = node.getBoundingClientRect()
+        area += Math.max(0, Math.min(bottom, r.bottom) - Math.max(top, r.top)) * r.width
+      }
+      if (area > most + 0.5) {
+        most = area
+        best = s.name
+      }
+    }
+    return best
+  }
+  function trackSection() {
+    if ((!nav && !activeListeners.size) || !win || navFrame) return
+    navFrame = win.requestAnimationFrame(() => {
+      navFrame = 0
+      const id = navForced ?? sectionInView()
+      if (id !== activeSectionId) {
+        activeSectionId = id
+        for (const listener of [...activeListeners]) listener(id)
+      }
+      if (id === undefined || !nav) return
+      if (id !== nav.active) {
+        nav.select(id, true)
+        wakeGpu()
+      }
+      // On a narrow page the strip scrolls sideways: the marked chip stays in it.
+      const on = nav.buttons.find((b) => b.dataset.tab === id)
+      const strip = nav.element
+      if (on && strip.scrollWidth > strip.clientWidth + 1) {
+        const left = on.offsetLeft - 16
+        const right = on.offsetLeft + on.offsetWidth + 16 - strip.clientWidth
+        const goal =
+          strip.scrollLeft > left ? left : strip.scrollLeft < right ? right : strip.scrollLeft
+        if (Math.abs(goal - strip.scrollLeft) > 1)
+          strip.scrollTo({ left: Math.max(0, goal), behavior: reducedMotion() ? "auto" : "smooth" })
+      }
+    })
+  }
+  /** Set while a jump moves focus, which then mustn't scroll the page on its own. */
+  let jumping = false
+  /** Glides the page so `node` sits just under the header, following it while it settles. */
+  function glideTo(node: HTMLElement, tries = 0, since = performance.now()) {
+    if (!win || !layout || !node.isConnected || touchedAt > since) return
+    const headBottom = header.getBoundingClientRect().bottom
+    const goal = Math.max(
+      0,
+      Math.min(
+        layout.settled(node).top + win.scrollY - headBottom - 12,
+        doc.documentElement.scrollHeight - win.innerHeight,
+      ),
+    )
+    if (Math.abs(goal - win.scrollY) < 1) return
+    scrollGoal = goal
+    win.scrollTo({ top: goal, behavior: reducedMotion() ? "auto" : "smooth" })
+    if (tries < 3)
+      win.addEventListener("scrollend", () => glideTo(node, tries + 1, since), { once: true })
+  }
+  /** Glides to a section (opening it if it's folded); `focus` takes focus there too. */
+  function jumpTo(section: string, focus = false) {
+    if (!layout) return
+    const s = layout.sectionList().find((x) => x.name === section)
+    if (!s?.label) return
+    if (layout.isFolded(section)) foldSection(section, false)
+    navForced = section
+    if (nav && nav.active !== section) nav.select(section, true)
+    if (focus) {
+      const head = s.label.hasAttribute("data-foldable") ? s.label : undefined
+      const target = head ?? pageStops().find((n) => s.tiles.some((t) => t.contains(n)))
+      jumping = true
+      target?.focus({ preventScroll: true })
+      jumping = false
+    }
+    glideTo(s.label)
+    wakeGpu()
+  }
+  /** ⌥↑ / ⌥↓: the section before or after the one focused (or in view). */
+  function stepSection(direction: -1 | 1) {
+    if (!layout) return
+    const list = layout.sectionList().filter((s) => s.label)
+    if (!list.length) return
+    const active = doc.activeElement as HTMLElement | null
+    const tile = active?.closest<HTMLElement>(".knobs-tile")
+    const current =
+      (tile && layout.sectionOf(tile)) ??
+      active?.closest<HTMLElement>(".knobs-section-head")?.dataset.section ??
+      nav?.active ??
+      sectionInView()
+    const at = list.findIndex((s) => s.name === current)
+    const next =
+      at < 0
+        ? direction > 0
+          ? 0
+          : list.length - 1
+        : Math.max(0, Math.min(list.length - 1, at + direction))
+    jumpTo(list[next]!.name, true)
+  }
+
   function openFilter() {
     if (!(doc.activeElement === filterEl)) filterReturn = doc.activeElement as HTMLElement | null
     filterEl.dataset.open = ""
@@ -2421,6 +2983,12 @@ function buildPanel<S extends Schema>(
     if (event.altKey) {
       // ⌥R and ⌥G mutate (by code: ⌥ changes the character on macOS).
       if (typing || hintCtrl.isActive) return
+      // ⌥↑ / ⌥↓ go to the section before or after.
+      if (layout && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault()
+        byUser(() => stepSection(event.key === "ArrowUp" ? -1 : 1))
+        return
+      }
       // ⌥1–9 show a tab.
       const digit = /^Digit([1-9])$/.exec(event.code)
       if (digit && tabStrip.tabs.length > 1) {
@@ -2480,10 +3048,14 @@ function buildPanel<S extends Schema>(
     if (event.key === "Tab" && page && !typing) {
       // Tab and ⇧Tab go from group to group.
       event.preventDefault()
-      const cardsNow = [...body.querySelectorAll<HTMLElement>(".knobs-tile")].filter(visible)
+      const cardsNow = [
+        ...body.querySelectorAll<HTMLElement>(".knobs-tile,.knobs-section-head[data-folded]"),
+      ].filter(visible)
       const nodes = pageStops()
       const step = event.shiftKey ? -1 : 1
-      let at = cardsNow.indexOf(target.closest<HTMLElement>(".knobs-tile")!)
+      let at = cardsNow.indexOf(
+        target.closest<HTMLElement>(".knobs-tile,.knobs-section-head[data-folded]")!,
+      )
       // From the header, Tab lands on what's on screen first (the highlighted cards).
       const lit = cardsNow.findIndex((c) => c.classList.contains("knobs-highlighted"))
       if (at < 0 && step > 0 && lit >= 0) at = lit - 1
@@ -2527,6 +3099,18 @@ function buildPanel<S extends Schema>(
         return
       }
     }
+    if (target.hasAttribute("data-foldable") && target.dataset.section !== undefined && layout) {
+      // A section's heading folds its cards as a group's header does.
+      const section = target.dataset.section
+      const toggle = key === "Enter" || key === " "
+      const shut = key === "ArrowLeft" || (prefs.vim && key === "h")
+      const open = key === "ArrowRight" || (prefs.vim && key === "l")
+      if (toggle || shut || open) {
+        event.preventDefault()
+        byUser(() => foldSection(section, toggle ? !layout!.isFolded(section) : shut))
+        return
+      }
+    }
     if (target.hasAttribute("data-foldable") && target.dataset.group !== undefined) {
       // Enter or Space toggles a group's card; ← folds it and → opens it.
       const group = target.dataset.group
@@ -2535,7 +3119,7 @@ function buildPanel<S extends Schema>(
       const open = key === "ArrowRight" || (prefs.vim && key === "l")
       if (toggle || shut || open) {
         event.preventDefault()
-        fold(group, toggle ? !folds.get(group) : shut)
+        byUser(() => fold(group, toggle ? !folds.get(group) : shut))
         return
       }
     }
@@ -2779,12 +3363,31 @@ function buildPanel<S extends Schema>(
   // Keys take over from the pointer: until it moves again, the row it rests on shows no hover wash
   // (see keyboardQuietsHover in styles.ts), so the only wash is the keyboard's focus.
   let pointerAt = ""
+  const quieted: Element[] = []
+  const quiet = (from: Element | null) => {
+    // Up to the first one already quiet: its ancestors are too.
+    for (let at = from; at && root.contains(at); at = at === root ? null : at.parentElement) {
+      if (at.hasAttribute("data-k-quiet")) break
+      at.setAttribute("data-k-quiet", "")
+      quieted.push(at)
+    }
+  }
   const keyboardOn = (on: boolean) => {
     if ("keyboard" in root.dataset === on) return
-    if (on) root.dataset.keyboard = ""
-    else delete root.dataset.keyboard
+    if (on) {
+      root.dataset.keyboard = ""
+      quiet(root)
+      for (const el of root.querySelectorAll(":hover")) quiet(el)
+    } else {
+      delete root.dataset.keyboard
+      for (const el of quieted.splice(0)) el.removeAttribute("data-k-quiet")
+    }
     wakeGpu()
   }
+  // Scrolling under the still pointer moves the hover; what it reaches stays quiet too.
+  root.addEventListener("pointerover", (event) => {
+    if ("keyboard" in root.dataset) quiet(event.target as Element)
+  })
   root.addEventListener(
     "keydown",
     (event) => {
@@ -2920,7 +3523,10 @@ function buildPanel<S extends Schema>(
   // When the user last scrolled, pressed a key or touched the page (a highlight's reveal waits).
   let touchedAt = -Infinity
   let pointersDown = 0
-  const touched = () => (touchedAt = performance.now())
+  const touched = () => {
+    touchedAt = performance.now()
+    navForced = undefined
+  }
   const onPointerDown = () => {
     pointersDown++
     touched()
@@ -2934,6 +3540,7 @@ function buildPanel<S extends Schema>(
     if (header.hasAttribute("data-scrolled") !== scrolled)
       header.toggleAttribute("data-scrolled", scrolled)
     if (hintCtrl.isActive && Math.abs(win.scrollY - hintScrollY) > 24) hintCtrl.stop()
+    trackSection()
   }
   const onScrollEnd = () => (scrollGoal = undefined)
   const bringIntoView = (top: HTMLElement, bottom: HTMLElement) => {
@@ -2971,7 +3578,7 @@ function buildPanel<S extends Schema>(
     for (const type of ["pointerup", "pointercancel"]) doc.addEventListener(type, onPointerUp, true)
     root.addEventListener("focusin", (event) => {
       const t = event.target as HTMLElement
-      if (header.contains(t) || popover.contains(t) || !body.contains(t)) return
+      if (jumping || header.contains(t) || popover.contains(t) || !body.contains(t)) return
       const item =
         t.closest<HTMLElement>(".knobs-card > *") ??
         t.closest<HTMLElement>("[data-knobs-stop]") ??
@@ -2991,6 +3598,17 @@ function buildPanel<S extends Schema>(
     for (const tile of body.querySelectorAll<HTMLElement>(".knobs-tile")) tileSizes.observe(tile)
     // The floating shortcuts sit just under the header, however tall it is.
     headSize.observe(header)
+    // A section's heading folds it; work inside what a highlight opened makes it the user's.
+    body.addEventListener("click", (event) => {
+      const head = (event.target as Element).closest<HTMLElement>(
+        ".knobs-section-head[data-foldable]",
+      )
+      if (!head || !layout || (event.target as Element).closest("button,a,input")) return
+      const section = head.dataset.section!
+      byUser(() => foldSection(section, !layout!.isFolded(section)))
+    })
+    body.addEventListener("pointerdown", claim, true)
+    body.addEventListener("keydown", claim, true)
     layout?.pack(true)
   }
   // Rows in hand (a drag, an inline edit) hold their key against incoming values until let go.
@@ -3045,6 +3663,12 @@ function buildPanel<S extends Schema>(
   })
   layoutRows(false)
   const unsubscribe = controls.subscribe(update)
+  const unlisten = readoutPort?.listen((key) => readouts.get(key)?.notify())
+  // Readout canvases stay blank while the GPU overlay draws them, and repaint when it lets go.
+  const gpuObserver = new MutationObserver(() => {
+    for (const r of readouts.values()) r.view.refresh()
+  })
+  gpuObserver.observe(root, { attributes: true, attributeFilter: ["data-gpu-active"] })
   update()
   syncRows()
   positioned =
@@ -3101,14 +3725,26 @@ function buildPanel<S extends Schema>(
             moving: () => layout!.moving,
             frame: (now: number) => layout!.frame(now),
             emphasis: (node: HTMLElement) => layout!.emphasis(node),
+            ...(nav ? { nav } : {}),
           },
         }
       : {}),
   }
   let unregisterGpu: (() => void) | undefined
   const requestedMode = options.renderer ?? controls.renderer ?? "auto"
+  // Inside an ancestor that makes a stacking context, an inline panel's DOM overlays (search,
+  // inline editors) would stack under the page-level canvas: such a panel draws with the DOM
+  // renderer, which looks the same.
+  let trapped: HTMLElement | null | undefined
   const syncRendererMode = () => {
-    const mode = resolveRendererMode(requestedMode, doc)
+    let mode = resolveRendererMode(requestedMode, doc)
+    if (mode === "gpu" && inline) {
+      trapped ??= stackingAncestor(root)
+      if (trapped) {
+        mode = "dom"
+        root.dataset.gpuTrapped = ""
+      }
+    }
     if (mode === "gpu") {
       if (!unregisterGpu) {
         const manager = getGpuOverlayManager(doc)
@@ -3215,7 +3851,9 @@ function buildPanel<S extends Schema>(
       modeObserver.disconnect()
       unregisterGpu?.()
       unsubscribe()
+      unlisten?.()
       rowsObserver.disconnect()
+      gpuObserver.disconnect()
       doc.defaultView?.cancelAnimationFrame(landTimer)
       for (const k of inHand) controls.hold(k, false)
       inHand.clear()
@@ -3227,11 +3865,13 @@ function buildPanel<S extends Schema>(
       doc.defaultView?.removeEventListener("blur", endCompare)
       controls.compare(false)
       morph?.dispose()
+      untrackHas()
       root.remove()
     },
   }
   if (!layout) return panel
   const pageLayout = layout
+  built = true
   const pageApi: Page = Object.assign(panel, {
     card(cardOptions: PageCardOptions) {
       const section = cardOptions.section ?? ""
@@ -3241,34 +3881,153 @@ function buildPanel<S extends Schema>(
         title: (title) =>
           options.groupLabels?.[title] ??
           (section ? cardTitle(title, [section, sectionTitle(section)]) : title),
-        ...(remember
-          ? {
-              folded: {
-                get: (title: string) => readSession(controls.id).folded?.[title],
-                set: (title: string, folded: boolean) =>
-                  writeSession(controls.id, {
-                    folded: { ...readSession(controls.id).folded, [title]: folded },
-                  }),
-              },
-            }
-          : {}),
+        folded: {
+          // Custom cards keep their folds per tab, with the rest of the session.
+          get: (title: string) => (remember ? readSession(controls.id).folded?.[title] : undefined),
+          set: (title: string, folded: boolean) => {
+            if (remember)
+              writeSession(controls.id, {
+                folded: { ...readSession(controls.id).folded, [title]: folded },
+              })
+            for (const c of auto.cards) if (c.tile.dataset.card === title) auto.cards.delete(c)
+          },
+        },
+        register: (fold) => customFolds.add(fold),
         remove: (tile) => {
           tileSizes.unobserve(tile)
+          for (const c of customFolds) if (c.tile === tile) customFolds.delete(c)
           pageLayout.remove(tile)
           pageLayout.pack(true)
+          refreshFolds()
         },
       })
       pageLayout.add(card.element, cardOptions.section ?? "")
       tileSizes.observe(card.element)
       if (filterEl.value) applyFilter()
       else pageLayout.pack(true)
+      refreshFolds()
       return card
     },
-    highlight(target: PageHighlight | null, highlightOptions?: { readonly reveal?: boolean }) {
+    highlight(
+      target: PageHighlight | null,
+      highlightOptions?: { readonly reveal?: boolean; readonly expand?: boolean },
+    ) {
+      const groups = new Set(target?.groups ?? [])
+      const named = new Set(target?.sections ?? [])
+      const tileLit = (tile: HTMLElement) =>
+        groups.has(tile.dataset.group ?? tile.dataset.card ?? "\u0000") ||
+        named.has(pageLayout.sectionOf(tile) ?? "\u0000")
+      const sectionLit = (name: string) =>
+        named.has(name) ||
+        Boolean(
+          pageLayout
+            .sectionList()
+            .find((s) => s.name === name)
+            ?.tiles.some(tileLit),
+        )
+      // The context moved on: what the last highlight opened folds again, unless it's theirs.
+      for (const name of [...auto.sections])
+        if (!sectionLit(name)) {
+          auto.sections.delete(name)
+          foldSection(name, true, { remember: false })
+        }
+      for (const group of [...auto.groups]) {
+        const tile = tiles.get(group)?.parentElement
+        if (tile && tileLit(tile)) continue
+        auto.groups.delete(group)
+        fold(group, true, true, false)
+      }
+      for (const card of [...auto.cards])
+        if (!tileLit(card.tile)) {
+          auto.cards.delete(card)
+          card.fold(true, false)
+        }
       pageLayout.highlight(target)
+      if (target && highlightOptions?.expand) {
+        for (const s of pageLayout.sectionList())
+          if (s.folded && pageLayout.isFoldable(s.name) && sectionLit(s.name)) {
+            foldSection(s.name, false, { remember: false })
+            auto.sections.add(s.name)
+          }
+        for (const [group, shut] of folds) {
+          const tile = tiles.get(group)?.parentElement
+          if (!shut || !tile || !tileLit(tile)) continue
+          fold(group, false, true, false)
+          auto.groups.add(group)
+        }
+        for (const card of customFolds)
+          if (card.collapsible && card.folded && tileLit(card.tile)) {
+            card.fold(false, false)
+            auto.cards.add(card)
+          }
+      }
       if (target && highlightOptions?.reveal) revealHighlight()
     },
+    fold(group: string, folded?: boolean, foldOptions?: PageFoldOptions) {
+      const next = folded ?? !folds.get(group)
+      fold(group, next, true, foldOptions?.remember ?? true)
+      const tile = tiles.get(group)?.parentElement
+      if (foldOptions?.reveal && tile) glideTo(tile)
+    },
+    foldSection(section: string, folded?: boolean, foldOptions?: PageFoldOptions) {
+      const next = folded ?? !sectionState(section)
+      foldSection(section, next, { remember: foldOptions?.remember ?? true })
+      const head = pageLayout.sectionList().find((s) => s.name === section)?.label
+      if (foldOptions?.reveal && head) glideTo(head)
+    },
+    sectionFolded(section: string) {
+      return sectionState(section)
+    },
+    reveal(
+      target: { readonly section: string } | { readonly group: string },
+      revealOptions?: { readonly remember?: boolean },
+    ) {
+      revealTarget(target, revealOptions?.remember ?? false)
+    },
+    sections: () => describeSections(),
+    activeSection() {
+      return navForced ?? sectionInView()
+    },
+    onSections(
+      listener: (sections: readonly PageSectionInfo[], source: PageFoldSource | null) => void,
+    ) {
+      sectionListeners.add(listener)
+      // The first call says what's there now; later ones, what changed.
+      queueMicrotask(() => {
+        if (!sectionListeners.has(listener)) return
+        const list = describeSections()
+        if (sectionListeners.size === 1) lastSections = JSON.stringify(list)
+        listener(list, null)
+      })
+      return () => void sectionListeners.delete(listener)
+    },
+    onActiveSection(listener: (section: string | undefined) => void) {
+      if (!activeListeners.size && !nav) activeSectionId = undefined
+      activeListeners.add(listener)
+      trackSection()
+      return () => void activeListeners.delete(listener)
+    },
   })
+  /** Opens a section (or a group and its section) and glides it into view. */
+  function revealTarget(
+    target: { readonly section: string } | { readonly group: string },
+    remember: boolean,
+  ) {
+    const tile = ("group" in target && tiles.get(target.group)?.parentElement) || undefined
+    const section = "section" in target ? target.section : tile && pageLayout.sectionOf(tile)
+    if (section !== undefined && pageLayout.isFoldable(section) && pageLayout.isFolded(section))
+      foldSection(section, false, { remember })
+    if ("group" in target && folds.get(target.group)) fold(target.group, false, true, remember)
+    const node =
+      tile ?? pageLayout.sectionList().find((s) => s.name === section)?.label ?? undefined
+    if (!node) return
+    if (section !== undefined) {
+      navForced = section
+      trackSection()
+    }
+    glideTo(node)
+    wakeGpu()
+  }
   /** Glides the first highlighted card (or heading) into view, unless the user is busy here. */
   function revealHighlight(again?: HTMLElement, tries = 0) {
     if (!win) return
@@ -3277,7 +4036,7 @@ function buildPanel<S extends Schema>(
     const first = again ?? pageLayout.highlighted()[0]
     if (!first?.isConnected) return
     const headBottom = header.getBoundingClientRect().bottom
-    const r = first.getBoundingClientRect()
+    const r = pageLayout.settled(first)
     const margin = 12
     // Already in view (its top showing with room below it): leave the page where it is. After a
     // glide, only a target that moved meanwhile (content above it settling) is followed.

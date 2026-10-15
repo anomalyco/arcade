@@ -1,6 +1,7 @@
 import { colorHex, oklchToRgb, parseColor } from "./color.js"
 import type { Bezier } from "./easing.js"
-import { RESHAPE, type Reshape } from "./internal.js"
+import type { CurveInterp, CurvePoint, GradientSpace, GradientStop } from "./ramp.js"
+import { RESET_KEYS, RESHAPE, type Reshape, type ResetKeys } from "./internal.js"
 import {
   action,
   angle,
@@ -13,6 +14,8 @@ import {
   vec3,
   type Vec3,
   color,
+  curve,
+  gradient,
   easing,
   flatSpring,
   knob,
@@ -22,6 +25,15 @@ import {
   toggle,
   type Field,
   type FieldMeta,
+  graph,
+  type GraphSeries,
+  type GraphThreshold,
+  isReadout,
+  log,
+  meter,
+  sparkline,
+  table,
+  watch,
   type Knob,
   type Point,
   type Schema,
@@ -44,6 +56,7 @@ import {
   type PersistMode,
   type PanelModule,
   type RendererMode,
+  type SectionFolded,
   type SyncOptions,
   type ThemeMode,
 } from "./store.js"
@@ -88,11 +101,38 @@ export interface ToolbarDescriptor extends DescriptorMeta {
   readonly default?: undefined
   readonly bind?: undefined
 }
+/**
+ * A readout row (`watch`, `sparkline`, `graph`, `meter`, `table`, `log`): it shows what
+ * `controls.watch(key, value)` pushes and holds no value. Options as their field constructors take.
+ */
+export interface ReadoutDescriptor extends DescriptorMeta {
+  readonly kind: "watch" | "sparkline" | "graph" | "meter" | "table" | "log"
+  readonly unit?: string
+  readonly decimals?: number
+  readonly hz?: number
+  readonly min?: number
+  readonly max?: number
+  readonly history?: number
+  readonly height?: number
+  readonly color?: string
+  readonly series?: readonly (GraphSeries | string)[]
+  readonly thresholds?: readonly (GraphThreshold | number)[]
+  readonly segments?: number
+  readonly warn?: number
+  readonly critical?: number
+  readonly columns?: readonly string[]
+  readonly lines?: number
+  readonly get?: () => unknown
+  readonly format?: (value: number) => string
+  readonly default?: undefined
+  readonly bind?: undefined
+}
 export type ControlDescriptor =
   | ValueDescriptor
   | SpringBindingDescriptor
   | ActionDescriptor
   | ToolbarDescriptor
+  | ReadoutDescriptor
 export interface ValueDescriptor extends DescriptorMeta {
   readonly bind?: undefined
   readonly kind:
@@ -111,10 +151,12 @@ export interface ValueDescriptor extends DescriptorMeta {
     | "angle"
     | "seed"
     | "keybind"
+    | "gradient"
+    | "curve"
   /**
    * Springs take `{ duration, bounce }`, colours a CSS string, points and vec2 `{ x, y }`, vec3
    * `{ x, y, z }`, easings `[x1, y1, x2, y2]`, ranges `[low, high]`, keybinds a combination
-   * string (`"Meta+K"`).
+   * string (`"Meta+K"`), gradients `[{ at, color }]` and curves `[{ x, y }]`.
    */
   readonly default: Value
   readonly min?: number
@@ -134,6 +176,16 @@ export interface ValueDescriptor extends DescriptorMeta {
   readonly linked?: boolean
   /** Angles: carry past the ends a whole turn (on for a full turn by default). */
   readonly wrap?: boolean
+  /** Gradients: blend in `oklab` (default) or `srgb`. */
+  readonly space?: GradientSpace
+  /** Curves: the y range, `[0, 1]` by default (`min` and `max` work too). */
+  readonly range?: readonly [number, number]
+  /** Curves: `smooth` (monotone cubic, default), `linear` or `step`. */
+  readonly interp?: CurveInterp
+  /** Curves: `false` hides the built-in shape chips. */
+  readonly shapes?: boolean
+  /** Gradients and curves: named ramps or shapes offered as chips. */
+  readonly presets?: Readonly<Record<string, readonly GradientStop[] | readonly CurvePoint[]>>
 }
 
 export interface RemoteControlsOptions {
@@ -160,6 +212,12 @@ export interface RemoteControlsOptions {
   readonly defaultLabel?: string
   /** How a page card shows its group presets (see `ControlsOptions.groupPresetDisplay`). */
   readonly groupPresetDisplay?: GroupPresetDisplay
+  /** One muted line under a group's card title or a section's heading on a page, by id. */
+  readonly groupDescriptions?: Readonly<Record<string, string>>
+  readonly sectionDescriptions?: Readonly<Record<string, string>>
+  /** How groups and a page's sections start, folded or open (see `ControlsOptions.groupFolded`). */
+  readonly groupFolded?: Readonly<Record<string, boolean>>
+  readonly sectionFolded?: SectionFolded
   readonly actions?: readonly ControlAction<State>[]
   readonly storage?: StoragePort | null
   /** What `storage` keeps (see `ControlsOptions.persist`). */
@@ -178,6 +236,17 @@ export interface RemoteControlsOptions {
   /** `false`: its panels show no modified marks or resets (see `MountPanelOptions.marks`). */
   readonly marks?: boolean
   readonly onSet?: (key: string, value: Value | null, meta: ChangeMeta) => void
+  /**
+   * A change of several keys at once (a preset, Random, Mutate, resetting a selection, undoing or
+   * redoing any of them), in one call instead of an `onSet` per key. The entries are what `onSet`
+   * would have received, `null` again meaning back to the default. A change of one key still goes
+   * to `onSet`, or here as a single entry when there's no `onSet`. Resetting everything or a
+   * group stays `onReset`'s, as with `onSet`.
+   */
+  readonly onSetBatch?: (
+    changes: Array<{ key: string; value: Value | null }>,
+    meta: ChangeMeta,
+  ) => void
   /** A key, a group, or (`{}`) everything was reset. */
   readonly onReset?: (target: { key?: string; group?: string }) => void
   /** An action row was pressed. */
@@ -210,12 +279,26 @@ export interface RemoteControls extends Controls<Schema> {
   swift(group?: string): string
 }
 
+const readoutDescriptor = (d: ControlDescriptor): d is ReadoutDescriptor => isReadout(d)
+/** A readout descriptor's field: the options it gives, undefined ones left out. */
+function readoutField(d: ReadoutDescriptor): Field {
+  const { key: _key, kind, default: _d, bind: _b, ...rest } = d
+  const opts = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+  if (kind === "watch") return watch(opts)
+  if (kind === "sparkline") return sparkline(opts)
+  if (kind === "graph") return graph(opts)
+  if (kind === "meter") return meter(opts)
+  if (kind === "table") return table(opts)
+  return log(opts)
+}
+
 const optionId = (o: string | ChoiceOption) =>
   typeof o === "string" ? o : String(o.id ?? o.value ?? o.label ?? "")
 
 export function descriptorToField(d: ControlDescriptor): Field {
   const meta = pickMeta(d)
   if (d.kind === "action") return action(d.label, meta)
+  if (readoutDescriptor(d)) return readoutField(d)
   if (d.kind === "toolbar")
     return toolbar(
       d.items.map(({ key, ...item }) => ({ ...item, id: key })),
@@ -301,6 +384,35 @@ export function descriptorToField(d: ControlDescriptor): Field {
       ...meta,
     })
   if (d.kind === "keybind") return keybind(typeof d.default === "string" ? d.default : "", meta)
+  if (d.kind === "gradient") {
+    const fallback = [
+      { at: 0, color: "#000000" },
+      { at: 1, color: "#ffffff" },
+    ]
+    const stops = Array.isArray(d.default) ? (d.default as GradientStop[]) : fallback
+    const opts = {
+      ...(d.space ? { space: d.space } : {}),
+      ...(d.presets ? { presets: d.presets as Record<string, GradientStop[]> } : {}),
+      ...meta,
+    }
+    try {
+      return gradient(stops, opts)
+    } catch {
+      return gradient(fallback, opts)
+    }
+  }
+  if (d.kind === "curve") {
+    const range = d.range ?? [d.min ?? 0, d.max ?? 1]
+    const opts = {
+      range,
+      ...(d.interp ? { interp: d.interp } : {}),
+      ...(d.shapes !== undefined ? { shapes: d.shapes } : {}),
+      ...(d.presets ? { presets: d.presets as Record<string, CurvePoint[]> } : {}),
+      ...meta,
+    }
+    const points = Array.isArray(d.default) ? (d.default as CurvePoint[]) : []
+    return points.length >= 2 ? curve(points, opts) : curve("linear", opts)
+  }
   return toggle(Boolean(d.default), meta)
 }
 
@@ -367,6 +479,15 @@ const swiftLiteral = (d: ValueDescriptor, v: Value): string => {
     return `${decimal(a)}...${decimal(b)}`
   }
   if (d.kind === "keybind") return JSON.stringify(v)
+  if (d.kind === "gradient") {
+    const stops = (Array.isArray(v) ? (v as readonly GradientStop[]) : []).map((s) => {
+      const [r, g, b] = oklchToRgb(parseColor(s.color) ?? { l: 0, c: 0, h: 0 }).map(decimal)
+      return `.init(color: Color(red: ${r}, green: ${g}, blue: ${b}), location: ${decimal(s.at)})`
+    })
+    return `Gradient(stops: [${stops.join(", ")}])`
+  }
+  if (d.kind === "curve")
+    return `[${(Array.isArray(v) ? (v as readonly CurvePoint[]) : []).map((p) => `CGPoint(x: ${decimal(p.x)}, y: ${decimal(p.y)})`).join(", ")}]`
   if (d.kind === "seed") return String(Math.round(v as number))
   if (typeof v === "boolean") return String(v)
   if (typeof v === "string") return `.${v}`
@@ -383,6 +504,8 @@ const swiftTypes = {
   range: "ClosedRange<Double>",
   seed: "Int",
   keybind: "String",
+  gradient: "Gradient",
+  curve: "[CGPoint]",
 } as const
 
 export function formatSwift(
@@ -395,6 +518,7 @@ export function formatSwift(
   const lines: string[] = []
   for (const d of descriptors as readonly ValueDescriptor[]) {
     if ((d.kind as string) === "action" || (d.kind as string) === "toolbar" || d.bind) continue
+    if (readoutDescriptor(d)) continue
     const changed = d.key in values && !same(values[d.key], d.default)
     if (!changed || done.has(d.key) || (group && d.group !== group)) continue
     const base = d.key.replace(/\.(duration|bounce)$/, "")
@@ -468,6 +592,27 @@ export function createRemoteControls(
   let frozenDescriptors = Object.freeze([...descriptors])
   let given = descriptors
   const nullDefaults = options.nullDefaults !== false
+  type Change = { key: string; value: Value | null }
+  const send = (changes: Change[], meta: ChangeMeta) => {
+    if (changes.length === 0) return
+    if (options.onSetBatch && (changes.length > 1 || !options.onSet))
+      return options.onSetBatch(changes, meta)
+    for (const { key, value } of changes) options.onSet?.(key, value, meta)
+  }
+  const onReset = (target: { key?: string; group?: string }) => {
+    if (target.key && nullDefaults)
+      send([{ key: target.key, value: null }], { source: "reset", key: target.key })
+    options.onReset?.(target)
+  }
+  // Resetting several keys: with `onSetBatch`, their nulls go in one batch after an `onReset` each.
+  const resetKeys: ResetKeys = (keys) => {
+    if (!options.onSetBatch || !nullDefaults) return keys.forEach((key) => onReset({ key }))
+    for (const key of keys) options.onReset?.({ key })
+    send(
+      keys.map((key) => ({ key, value: null })),
+      { source: "reset" },
+    )
+  }
   const controls = defineControls(id, fromDescriptors(frozenDescriptors), {
     enabled: options.enabled ?? true,
     ship: options.ship,
@@ -491,21 +636,22 @@ export function createRemoteControls(
     presetLabels: options.presetLabels,
     defaultLabel: options.defaultLabel,
     groupPresetDisplay: options.groupPresetDisplay,
+    groupDescriptions: options.groupDescriptions,
+    sectionDescriptions: options.sectionDescriptions,
+    groupFolded: options.groupFolded,
+    sectionFolded: options.sectionFolded,
     onChange(patch, _values, meta) {
       if (meta.source === "remote" || meta.source === "reset") return
       if (meta.source === "preset" && meta.group !== undefined && options.onPreset) return
+      const changes: Change[] = []
       for (const [key, val] of Object.entries(patch)) {
         if (val === undefined) continue
-        const next = nullDefaults && same(val, controls.locked[key]) ? null : val
-        options.onSet?.(key, next, meta)
+        changes.push({ key, value: nullDefaults && same(val, controls.locked[key]) ? null : val })
       }
+      send(changes, meta)
     },
-    onReset(target) {
-      if (target.key && nullDefaults) {
-        options.onSet?.(target.key, null, { source: "reset", key: target.key })
-      }
-      options.onReset?.(target)
-    },
+    onReset,
+    ...{ [RESET_KEYS]: resetKeys },
     onAction: (key) => options.onAction?.(key),
   })
   if (options.values) {

@@ -387,7 +387,10 @@ export class LabKnobsView {
       this.roll.mode = meta.source === "mutate" ? "mutate" : "random"
       this.roll.keys.push(key)
     }
-    if (meta.source !== "compare") this.host.begin(this.labelFor(row, meta))
+    // Compare (hold `\`) previews and puts back knobs' last entry: it applies, but no undo step may hold it, so a
+    // gesture still settling closes first instead of taking the preview into its after-state.
+    if (meta.source === "compare") this.settle()
+    else this.host.begin(this.labelFor(row, meta))
     for (const [control, next] of writes) this.host.navigation.set(control, next)
     this.host.edited(this)
     if (meta.source === "compare") return
