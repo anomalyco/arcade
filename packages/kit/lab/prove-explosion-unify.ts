@@ -566,9 +566,10 @@ try {
           await page.bringToFront()
           row[v] = await page.evaluate(async mode => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 16 * DEG, dist: 125 })
             ;(globalThis as any).__clearCarrierFx()
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
             if (mode === "worst") {
@@ -637,10 +638,10 @@ try {
       worstCase4xSimultaneous: await runCarrierBench("worst"),
     }
 
-    // Record 270 video frames (9.0s @ 30fps = 540 sim steps @ 60Hz):
-    // Beat 1 (frames 1..90, 0..3s): Missile hit on carrier ship deck
-    // Beat 2 (frames 91..180, 3..6s): Missile airburst over sea
-    // Beat 3 (frames 181..270, 6..9s): Boat explosion on water
+    // Record 315 video frames (10.5s @ 30fps = 630 sim steps @ 60Hz):
+    // Beat 1 (frames 1..135, 0..4.5s): Missile hit on carrier ship deck (long enough for the fragment trails to land)
+    // Beat 2 (frames 136..225, 4.5..7.5s): Missile airburst over sea
+    // Beat 3 (frames 226..315, 7.5..10.5s): Boat explosion on water
     const caDir = join(framesRoot, "carrier")
     mkdirSync(caDir, { recursive: true })
     const shotCarrierFrame = async (page: Page, filepath: string) => {
@@ -700,35 +701,38 @@ try {
     }
 
     if (process.env.SKIP_VIDEO_FRAMES !== "1") for (const [variant, page] of Object.entries(pages) as ["before" | "after", Page][]) {
-      for (let vf = 1; vf <= 270; vf++) {
+      for (let vf = 1; vf <= 315; vf++) {
         if (vf === 1) {
           // Beat 1: Ship deck hit
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
             ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 16 * DEG, dist: 125 })
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
           })
-        } else if (vf === 91) {
+        } else if (vf === 136) {
           // Beat 2: Missile airburst
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
             ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z - 220, yaw: 0, pitch: 15, dist: 95 })
+            c.camera.set({ x: s.x, z: s.z - 220, yaw: 180 * DEG, pitch: 15 * DEG, dist: 95 })
             c.flight.weapons.fx.explosion(s.x, 22, s.z - 220, 0, 0, 0, 1.2, false)
           })
-        } else if (vf === 181) {
+        } else if (vf === 226) {
           // Beat 3: Boat explosion on water
           await page.evaluate(() => {
             const c = (globalThis as any).carrier
+            const DEG = Math.PI / 180
             const s = c.game.state.ship
             ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x + 180, z: s.z - 120, yaw: 20, pitch: 16, dist: 75 })
+            c.camera.set({ x: s.x + 180, z: s.z - 120, yaw: 20 * DEG, pitch: 16 * DEG, dist: 75 })
             c.flight.weapons.fx.explosion(s.x + 180, 2.2, s.z - 120, 0, 2, 0, 1.15, true)
           })
         }

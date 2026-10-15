@@ -84,7 +84,7 @@ export class Particles {
         // where they come to rest. The head throws one short hot spark per step while it is still burning.
         const t=p[i+7]/p[i+8],strength=Math.pow(1-t,1.25)
         const dx=p[i]-ox,dy=p[i+1]-oy,dz=p[i+2]-oz,moved=Math.hypot(dx,dy,dz)
-        const spacing=trail*(0.42+0.9*(1-strength))
+        const spacing=trail*(0.32+0.6*(1-strength))
         let carry=p[i+23]+moved+dt*trail*0.9*strength
         while(carry>=spacing&&queued<BIRTH_CAPACITY){
           carry-=spacing
@@ -105,6 +105,8 @@ export class Particles {
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296}
     for(let n=0;n<queued;n++){
       const o=n*BIRTH_STRIDE
+      // Trail puffs are the first thing to give up when the pool runs short; splashes and pops still land.
+      if(births[o]===TrailBirth.puff&&this.count>PARTICLE_CAPACITY-160)continue
       emitTrailBirth(this,births[o]!,births[o+1]!,births[o+2]!,births[o+3]!,births[o+4]!,births[o+5]!,births[o+6]!,births[o+7]!,births[o+8]!,random)
     }
   }

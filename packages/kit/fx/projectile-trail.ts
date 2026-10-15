@@ -62,16 +62,16 @@ export function emitTrailBirth(
     const shade = 0.06 + 0.2 * (1 - strength)
     set(
       "soft",
-      (1.5 + random() * 1.1) * (0.55 + 0.45 * strength),
-      0.34 * scale * (0.55 + 0.45 * strength),
-      0.5 * scale,
+      (2.2 + random() * 1.4) * (0.5 + 0.5 * strength),
+      0.5 * scale * (0.45 + 0.55 * strength),
+      0.75 * scale,
       -0.8,
       0.55,
       0,
       shade * 1.03,
       shade,
       shade * 0.95,
-      0.62 * (0.35 + 0.65 * strength),
+      0.5 * (0.3 + 0.7 * strength),
     )
     pool.spawn(
       spec,
@@ -139,7 +139,7 @@ export function spawnWaterSplash(pool: Particles, x: number, y: number, z: numbe
     const a = random() * 6.283
     const r = random() * 2.2 * size
     const out = (0.6 + random() * 2.4) * size
-    set("water", 1.6 + random() * 1.3 * Math.sqrt(height), (0.2 + random() * 0.22) * size, 0, 9.81, 0.35, 0, 0.84, 0.9, 0.95, 0.82)
+    set("water", 1.6 + random() * 1.3 * Math.sqrt(height), (0.24 + random() * 0.24) * size, 0, 9.81, 0.35, 0, 0.84, 0.9, 0.95, 0.9)
     pool.spawn(spec, x + Math.cos(a) * r, y + 0.2, z + Math.sin(a) * r, Math.cos(a) * out, (14 + random() * 16) * Math.sqrt(size) * height, Math.sin(a) * out, random() * 6.283)
   }
   const crown = options.crown ?? 14
@@ -149,11 +149,11 @@ export function spawnWaterSplash(pool: Particles, x: number, y: number, z: numbe
     set("water", 1.1 + random() * 0.8, (0.16 + random() * 0.14) * size, 0, 9.81, 0.45, 0, 0.86, 0.91, 0.96, 0.78)
     pool.spawn(spec, x + Math.cos(a) * 2 * size, y + 0.2, z + Math.sin(a) * 2 * size, Math.cos(a) * out, (7 + random() * 9) * Math.sqrt(size) * Math.min(1.4, height), Math.sin(a) * out, random() * 6.283)
   }
-  const mist = options.mist ?? 8
+  const mist = options.mist ?? 6
   for (let i = 0; i < mist; i++) {
     const a = random() * 6.283
     const life = 2.2 + random() * 1.4
-    set("soft", life, (1.1 + random() * 0.8) * size, (1.8 + random()) * size / life, 5.5, 0.9, 0, 0.9, 0.93, 0.96, 0.5)
+    set("soft", life, (2.2 + random() * 1.2) * size, (3.2 + random()) * size / life, 5.5, 0.9, 0, 0.9, 0.93, 0.96, 0.16)
     pool.spawn(spec, x + Math.cos(a) * size, y + 0.6 * size, z + Math.sin(a) * size, pool.windX + Math.cos(a) * size, (6 + random() * 12) * Math.sqrt(size) * height, pool.windZ + Math.sin(a) * size, random() * 6.283)
   }
   const surge = options.surge ?? 0
