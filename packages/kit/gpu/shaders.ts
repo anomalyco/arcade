@@ -143,6 +143,8 @@ export type SceneHooks = {
   vertex?: string
   surface?: string
   lookSurface?: string
+  /** WGSL expression for the surface base colour the look's moon rim reads (default `o.color`). */
+  lookBaseColor?: string
   directional?: string
   ao?: string
   bounce?: string

@@ -1,4 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
+import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -40,6 +41,7 @@ import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   packOutbreakLightingUniforms,
   resolveLampLight,
   STREET_LAMP_POSTS,
@@ -168,6 +170,7 @@ async function main() {
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
+  const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params)
@@ -539,6 +542,11 @@ async function main() {
   lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
+  )
+  lab.addControls(
+    interiors.settings as unknown as Record<string, string | number | boolean>,
+    interiorControls(() => { interiors.apply("interiorTheme"); level() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
+    { ...DEFAULT_INTERIOR_SETTINGS },
   )
   let vertices = 0
   function level() {
@@ -1121,6 +1129,9 @@ async function main() {
     )
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
+    const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
+    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y)
+    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, interiorBuildings, town.houseSeed)
     renderer.setCustomUniforms(lightingUniforms)
     lastSightX = sightX
     lastSightY = sightY
@@ -1438,6 +1449,8 @@ async function main() {
       frames++
     },
     draw: (dt) => draw(dt),
+    interiors,
+    rebuildLevel: () => level(),
   })
   Object.assign(window, { __arcadeHarness: Object.assign(harness, { map }) })
   scheduleFrame()

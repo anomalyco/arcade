@@ -41,6 +41,7 @@ import {
   toSharedWeatherSettings,
   type OutbreakWeatherController,
 } from "./weather"
+import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
 export interface OutbreakHarnessHost {
@@ -77,6 +78,9 @@ export interface OutbreakHarnessHost {
   readonly setLastDayNightHour: (hour: number) => void
   readonly incrementFrames: () => void
   readonly draw: (dt: number) => void
+  /** Rugs and themed interiors, and the level rebuild a structural interior change needs. */
+  readonly interiors: InteriorPresenter
+  readonly rebuildLevel: () => void
 }
 
 export function createOutbreakHarness(host: OutbreakHarnessHost) {
@@ -190,7 +194,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           viewRect: cam.groundRect(5.5),
           windowBuildings: (winState.isStream ? worldStreamer.windowBuildings : session.view.town.buildings)
             .filter((b) => b.id !== "")
-            .map((b) => ({ id: b.id, rect: b.rect, archetype: b.archetype ?? b.kind })),
+            .map((b) => ({ id: b.id, kind: b.kind, archetype: b.archetype ?? b.kind, rect: b.rect })),
           activeChunks: [...session.sim.worldStream.activeChunks.keys()],
           cachedRenderChunks: worldStreamer.cachedChunkCount,
           pendingBakes: worldStreamer.pendingBakeCount,
@@ -244,7 +248,15 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     hudState: () => hud.inspect(),
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
+    /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
+    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings } }),
+    setInterior(key: string, value: number) {
+      if (!(key in host.interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
+      ;(host.interiors.settings as Record<string, number>)[key] = value
+      if (host.interiors.apply(key) === "structural") host.rebuildLevel()
+    },
     setLab(rawKey: string, value: number | boolean | string) {
+      if (rawKey in host.interiors.settings) return harness.setInterior(rawKey, Number(value))
       const routed = resolveOutbreakSettingTarget(String(rawKey))
       const control = controls.find(
         (c) =>
@@ -349,8 +361,11 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
     },
-    /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally swings. */
-    stageMelee(weapon: MeleeWeaponId = "crowbar", swing: "none" | "light" | "heavy" | "combo" = "light") {
+    /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally stages combat states. */
+    stageMelee(
+      weapon: MeleeWeaponId = "crowbar",
+      swing: "none" | "light" | "heavy" | "combo" | "knockdown" | "finisher" | "crawler" | "limp" = "light",
+    ) {
       const session = host.session()
       const { progression, actorId } = session.view
       const ledger = progression.ledger
@@ -401,6 +416,58 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         for (let i = 0; i < 16; i++) {
           session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: i === 9 }, 0, settings)
         }
+      } else if (swing === "knockdown") {
+        z1.x = 44 + 1.05
+        z1.y = 44
+        z1.state = "knockdown"
+        z1.timer = 2.2
+        z1.hp = 42
+        z2.x = 44 + 2.2
+        z2.y = 44.55
+        z2.state = "knockdown"
+        z2.timer = 1.9
+        z2.hp = 50
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+      } else if (swing === "finisher") {
+        z1.x = 44 + 0.95
+        z1.y = 44
+        z1.state = "knockdown"
+        z1.timer = 2.1
+        z1.hp = 38
+        z2.x = 44 + 2.4
+        z2.y = 44.6
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 4; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
+      } else if (swing === "crawler") {
+        z1.x = 44 + 1.55
+        z1.y = 43.82
+        z1.detachedLimbs = ["right.thigh"]
+        z1.state = "crawler"
+        z1.hp = 48
+        z2.x = 44 + 2.1
+        z2.y = 44.38
+        z2.detachedLimbs = ["left.thigh", "right.thigh"]
+        z2.state = "crawler"
+        z2.hp = 36
+        for (let i = 0; i < 12; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
+      } else if (swing === "limp") {
+        z1.x = 44 + 1.85
+        z1.y = 43.82
+        z1.limping = true
+        z1.detachedLimbs = ["left.upperArm"]
+        z1.hp = 54
+        z2.x = 44 + 2.35
+        z2.y = 44.38
+        z2.limping = true
+        z2.detachedLimbs = ["right.foreArm"]
+        z2.hp = 62
+        for (let i = 0; i < 15; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
       } else {
         session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
       }
@@ -417,7 +484,16 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         heavy: p.meleeHeavy,
         charge: p.meleeCharge,
         stamina: p.stamina,
-        zombies: session.view.zombies.map((z) => ({ id: z.id, hp: z.hp, state: z.state, detached: z.detachedLimbs })),
+        zombies: session.view.zombies.map((z) => ({
+          id: z.id,
+          hp: z.hp,
+          state: z.state,
+          limping: Boolean(z.limping),
+          toughness: z.toughness,
+          hitReaction: z.hitReaction,
+          deathVariant: z.deathVariant,
+          detached: z.detachedLimbs,
+        })),
       }
     },
     /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */

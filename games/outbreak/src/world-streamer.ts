@@ -1,3 +1,5 @@
+import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
+import { interiorSettings, interiorSignature } from "./interiors/plan"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -107,6 +109,8 @@ export type CompiledRoofChunk = {
   data: ArrayBuffer
   box: readonly [number, number, number, number]
   cutBox: readonly number[]
+  /** Index into the chunk's `buildings` (roofless buildings have no chunk, so this is not the array index). */
+  buildingIndex: number
   lastGlobalId: number
 }
 
@@ -726,6 +730,8 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
+    emitBuildingRugs(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown)
   }
 
   // 5. Walls, windows & fences
@@ -1138,12 +1144,14 @@ export function compileSingleWorldChunk(
     const rm = roofScratchPool[localId]!
     if (!rm.count) continue
     const isOriginHouse = b.id === "ash" || b.id === "elm"
-    const southPad = isOriginHouse ? 1.7 : 0.25
+    const southPad = isOriginHouse ? 1.7 : 0.1
+    // "outside" chunks are skipped while the survivor stands inside this box, so it hugs the walls (no porch margin).
     const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 7.5, b.rect[3] + southPad] as const
     roofChunks.push({
       data: stampOutbreakVertexTone(rm.pack()),
       box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + southPad] as const,
       cutBox: bounds,
+      buildingIndex: localId,
       lastGlobalId: localId,
     })
   }
@@ -1176,8 +1184,16 @@ function packChunkMeshesForWindow(
   isFading = false,
 ): { opaque: LevelChunk[]; glass: LevelChunk[] } {
   const slot = (((compiled.cy % 5) + 5) % 5) * 5 + (((compiled.cx % 5) + 5) % 5)
-  const streamKey = `${compiled.key}:${compiled.hash}`
   const rChunks = compiled.roofChunks
+  const globalIds =
+    rChunks && rChunks.length > 0 && compiled.buildings.length > 0
+      ? rChunks.map((rc) => {
+          const id = compiled.buildings[rc.buildingIndex]?.id
+          const s = id ? windowBuildings.findIndex((b) => b.id === id) : -1
+          return s >= 0 ? Math.min(15, s) : 15
+        })
+      : []
+  const streamKey = globalIds.length > 0 ? `${compiled.key}:${compiled.hash}:${globalIds.join(",")}` : `${compiled.key}:${compiled.hash}`
   const outOpaque: LevelChunk[] = []
   for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
     const c = compiled.staticOpaqueChunks[i]!
@@ -1193,9 +1209,7 @@ function packChunkMeshesForWindow(
   }
   for (let localId = 0; localId < rChunks.length; localId++) {
     const rc = rChunks[localId]!
-    const bldId = compiled.buildings[localId]?.id
-    const slotIdx = bldId ? windowBuildings.findIndex((b) => b.id === bldId) : -1
-    const globalId = slotIdx >= 0 ? Math.min(15, slotIdx) : Math.min(7, localId)
+    const globalId = globalIds[localId]!
     if (rc.lastGlobalId !== globalId) {
       rc.lastGlobalId = globalId
       const halfId = HALF_INT[globalId]!
@@ -1209,6 +1223,7 @@ function packChunkMeshesForWindow(
       data: rc.data,
       box: rc.box,
       cutBox: rc.cutBox,
+      // Skipped whole while inside (keeps fsSolid/HSR for the roof elsewhere); the peek bubble still uses roofCut.
       customCutaway: "outside",
       streamSlot: slot,
       streamKey,
@@ -1385,6 +1400,7 @@ export class WorldClientStreamer {
           cy: item.cy,
           houseDecay: archSettings.houseDecay,
           weathering: archSettings.weathering,
+          interior: { ...interiorSettings },
         })
         break
       }
@@ -1433,7 +1449,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${interiorSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -1661,7 +1677,7 @@ export class WorldClientStreamer {
     this.chunkFadeAlpha = maxFadeProgress
 
     const { rx, ry } = WorldClientStreamer.computeRenderRadius(viewRect)
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${this.center.cx},${this.center.cy}:${rx},${ry}`
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
     const centerMoved = winKey !== this.lastWindowKey
 
     if (!centerMoved && !this.outerRingDirty) {

@@ -1,7 +1,7 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
 import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
-import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
+import { createSurvivorCombatState, findFinisherTarget, OutbreakCombatSubsystem } from "./combat"
 import { advanceHour } from "./day-cycle"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
@@ -343,14 +343,40 @@ export class CoopSim {
       if (battery) verbs.reload = true
       else if (this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
     }
+    const tryFinisher = () => {
+      const runFinisher = () => {
+        const finTarget = findFinisherTarget(p, this.ai.agents, blockers)
+        if (!finTarget) return null
+        return this.combat.executeFinisher(
+          p,
+          finTarget,
+          this.ai,
+          progression.melee(slot.id),
+          this.time,
+          resolved.melee,
+          slot.id,
+          slot.index,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      }
+      const ev =
+        viewTime !== undefined && viewTime < this.time
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runFinisher)
+          : runFinisher()
+      if (ev) progression.ledger.cancel(slot.id)
+      return Boolean(ev)
+    }
     const shove = () => {
+      if (tryFinisher()) return
       const ready = p.shoveCooldown <= 0
       this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id), slot.id)
       if (ready) progression.ledger.cancel(slot.id)
     }
     if (command.melee) shove()
     if (command.fire) {
-      if (use === "fire") {
+      if ((use === "melee" || use === "shove" || use === "fire") && tryFinisher()) {
+        // Contextual finisher on downed or crawling zombie handled
+      } else if (use === "fire") {
         if (infiniteAmmo) ammo.fill()
         const fired =
           viewTime !== undefined && viewTime < this.time
@@ -502,6 +528,11 @@ export class CoopSim {
         const v = this.vehicles.vehicleOf(slot.survivor)
         const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
         slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
+        if (aiStep.ankleGrabbed[i] && !v) {
+          slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)
+          slot.survivor.vx *= 0.45
+          slot.survivor.vy *= 0.45
+        }
       }
     })
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")

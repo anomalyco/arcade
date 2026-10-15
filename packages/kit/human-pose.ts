@@ -117,6 +117,16 @@ export function poseUnarmedArms(torso: Frame, left: V3, right: V3): Pick<HumanBo
   return { ua: [L.ua, R.ua], fa: [L.fa, R.fa] }
 }
 
+const KNEE_OUT = 0.12
+/**
+ * Knee pole in pelvis space whose heading follows the boot (`footYaw`, world), so the knee tracks over the toes when
+ * the feet turn from the hips. `up` lifts it above the hip→ankle chord; a small outward bias keeps the knees apart.
+ */
+export function kneePole(pelvis: Frame, footYaw: number, side: number, up = 0.28, out = 1): V3 {
+  const toward = footYaw - Math.atan2(pelvis.x[2], pelvis.x[0])
+  return dirIn(pelvis, Math.cos(toward), up, Math.sin(toward) + side * KNEE_OUT * out)
+}
+
 /** Contact owns the rendered boot and ball-of-foot toe joint; relaxed swing ankles and toes clear the floor and recover before touchdown. */
 export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody, "th" | "sh" | "ft" | "toe">> {
   const th: Frame[] = [], sh: Frame[] = [], ft: Frame[] = [], toe: Frame[] = [], m = a.motion
@@ -128,10 +138,13 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
     const side = i === 0 ? -1 : 1, f = a.feet[i]!
     const hip = at(pelvis, 0, 0, side * RIG.hipW)
     const contact = f.planted ? plantedFoot(a, i) : null
-    const u = m.swings[i]!
+    // A reversal restarts the swing path at u = 0.25 (redirectFrom = the u it left); the pose phase carries on from
+    // there to 1 so the heel kick and tuck do not jump.
+    const from = m.redirectFrom?.[i] ?? 0
+    const u = from > 0 && m.swings[i]! >= 0.25 ? from + (1 - from) * (m.swings[i]! - 0.25) / 0.75 : m.swings[i]!
     // Up-biased pole in pelvis space (+0.28 y) counteracts forward crouch-run pelvis pitch so the
-    // pole vector stays above the hip->ankle swing chord and never bows the knee outward.
-    const pole = dirIn(pelvis, 1, 0.28, side * 0.25)
+    // pole vector stays above the hip->ankle swing chord and follows the boot's heading.
+    const pole = kneePole(pelvis, f.yaw, side)
     if (contact) {
       const [knee, ank] = ik(hip, contact.p, RIG.thigh, RIG.shin, pole)
       th.push(limb(hip, knee, pole, pelvis.x)); sh.push(limb(knee, ank, pole, pelvis.x))
@@ -182,7 +195,7 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const chord = sub(ankle, hip)
       const cx = dot(chord, pelvis.x)
       const backKick = run * kickBell * clamp(-cx / 0.35, 0, 1) * dragKeep
-      const swingPole = dirIn(pelvis, 1, 0.28 - 0.65 * backKick, side * (0.25 - 0.17 * run * kickBell * dragKeep))
+      const swingPole = kneePole(pelvis, f.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * run * kickBell * dragKeep)
       const [knee0, ank0] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
       const sh0 = limb(knee0, ank0, swingPole, pelvis.x)
       const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20))

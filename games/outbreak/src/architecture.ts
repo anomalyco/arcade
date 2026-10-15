@@ -3,6 +3,7 @@ import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
+import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
 
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
 type Point = [number,number,number]
@@ -126,6 +127,9 @@ export const plantFootprints:{x:number;z:number;radius:number;tree:boolean;groun
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
   const trim=rgb(0xc8c4b8),roof=rgb(0x4e4b46),eaveTrim=rgb(0x524e47),gutterMetal=rgb(0x625d54),gutterDark=rgb(0x1c1a17)
+  // Baked procedural rugs and the building's seeded interior theme (wainscoting, portraits, clock, fireplace).
+  emitBuildingRugs(m,b,town)
+  emitInteriorDecor(m,b,town)
   if(b.kind!=="house"){
     const sc=rgb(0x3a403d),parapet=rgb(0x4a504c)
     m.box(x+.36,2.8,z+.36,r-.36,2.94,e-.36,sc,MAT.roof,id)
@@ -409,27 +413,6 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
       [r+2.80,e+14.80,1.46,.96],
     ] as const : []),
   ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
-  // Patterned Persian/Oriental area rugs in the living room and bedroom, plus a woven kitchen runner (muted antique tones).
-  {
-    const rx0=x+1.55,rz0=e-4.35,rx1=x+4.42,rz1=e-.85,rmx=(rx0+rx1)/2,rmz=(rz0+rz1)/2
-    m.box(rx0,.132,rz0,rx1,.138,rz1,rgb(0x5a4c3b))
-    m.box(rx0+.10,.1385,rz0+.10,rx1-.10,.141,rz1-.10,rgb(0x222c2e))
-    m.box(rx0+.20,.1415,rz0+.20,rx1-.20,.144,rz1-.20,rgb(0x5c3224))
-    m.box(rx0+.31,.1445,rz0+.31,rx1-.31,.147,rz1-.31,rgb(0x2d3833))
-    m.box(rmx-.50,.1475,rmz-.74,rmx+.50,.150,rmz+.74,rgb(0x643626))
-    m.box(rmx-.32,.1505,rmz-.48,rmx+.32,.152,rmz+.48,rgb(0x766044))
-    m.box(rmx-.14,.1525,rmz-.22,rmx+.14,.154,rmz+.22,rgb(0x222c2e))
-  }
-  // Bedroom burgundy Persian rug placed beside the bed in the open bedroom floor
-  {
-    const bx0=x+4.92,bz0=z+1.35,bx1=x+6.82,bz1=z+4.25,bmx=(bx0+bx1)/2,bmz=(bz0+bz1)/2
-    m.box(bx0,.132,bz0,bx1,.138,bz1,rgb(0x5c4d3b))
-    m.box(bx0+.09,.1385,bz0+.09,bx1-.09,.141,bz1-.09,rgb(0x1d232b))
-    m.box(bx0+.18,.1415,bz0+.18,bx1-.18,.145,bz1-.18,rgb(0x52231b))
-    m.box(bmx-.40,.1455,bmz-.65,bmx+.40,.148,bmz+.65,rgb(0x683c28))
-    m.box(bmx-.22,.1485,bmz-.36,bmx+.22,.151,bmz+.36,rgb(0x7a6344))
-    m.box(bmx-.09,.1515,bmz-.16,bmx+.09,.153,bmz+.16,rgb(0x2e1611))
-  }
   // Living room east media console, flatscreen TV, partition stub, and flanking potted houseplants
   m.box(x+4.86,.13,e-3.62,x+5.06,2.78,e-1.38,rgb(b.color),MAT.wall,20,rgb(0x4a4338))
   m.box(x+4.89,2.78,e-3.59,x+5.03,2.80,e-1.41,rgb(0x28231d),MAT.lit)
