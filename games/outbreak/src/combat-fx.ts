@@ -6,7 +6,13 @@ import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/k
 import { attachment, limbIds, pointVelocity, type BonePose } from "@arcade/kit/human-pose"
 import type { V3 } from "@arcade/kit/rig"
 import type { OutbreakAISubsystem } from "../shared/ai"
-import type { CombatShotEvent, SurvivorCombatState } from "../shared/combat"
+import {
+  MELEE_WEAPONS,
+  type CombatMeleeEvent,
+  type CombatMeleeHit,
+  type CombatShotEvent,
+  type SurvivorCombatState,
+} from "../shared/combat"
 import type { Town } from "../shared/map"
 import { hex } from "./level"
 import type { ZombieCrowdRenderer } from "./zombies"
@@ -73,6 +79,8 @@ export class OutbreakCombatFX {
   private readonly pistolData = new Float32Array(INST_FLOATS)
   private readonly plankData = new Float32Array(64 * INST_FLOATS)
   private readonly seenShots = new Set<number>()
+  private readonly seenMeleeSwings = new Set<number>()
+  private readonly seenMeleeHits = new Set<string>()
   private syntheticEventId = 100_000
   private levelData: LevelData | null = null
   splatter: Splatter | null = null
@@ -103,6 +111,8 @@ export class OutbreakCombatFX {
 
   reset(): void {
     this.seenShots.clear()
+    this.seenMeleeSwings.clear()
+    this.seenMeleeHits.clear()
     this.splatter?.reset()
     this.hasEmitted = false
     this.lastFlash = null
@@ -423,6 +433,237 @@ export class OutbreakCombatFX {
           }
         }
       }
+    }
+
+    return addCount
+  }
+
+  /**
+   * Processes authoritative melee swing and hit events:
+   * - Emits swing arc slash sprites (`pushAdd`) during the active window.
+   * - Emits weapon-specific blood splatter (arterial slash fan for blades, concussive radial burst for blunt,
+   *   puncture pool for spiked board) and detaches limbs (`head`, arms) on heavy/sharp hits.
+   */
+  processMeleeSwings(
+    meleeSwings: readonly CombatMeleeEvent[],
+    time: number,
+    dt: number,
+    ai: OutbreakAISubsystem,
+    zombieCrowd: ZombieCrowdRenderer,
+    support: (x: number, z: number) => number,
+    addSprites: Float32Array,
+    startAddCount: number,
+    onNewSwing?: (swing: CombatMeleeEvent) => void,
+    onNewHit?: (swing: CombatMeleeEvent, hit: CombatMeleeHit) => void,
+  ): number {
+    let addCount = startAddCount
+    const maxAdd = Math.floor(addSprites.length / SPRITE_FLOATS)
+    const pushAdd = (
+      x: number,
+      y: number,
+      z: number,
+      size: number,
+      r: number,
+      g: number,
+      b: number,
+      a: number,
+      kind: number,
+      rot: number,
+      stretch: number,
+      extra: number,
+    ) => {
+      if (addCount >= maxAdd) return
+      const o = addCount++ * SPRITE_FLOATS
+      addSprites[o] = x
+      addSprites[o + 1] = y
+      addSprites[o + 2] = z
+      addSprites[o + 3] = size
+      addSprites[o + 4] = r
+      addSprites[o + 5] = g
+      addSprites[o + 6] = b
+      addSprites[o + 7] = a
+      addSprites[o + 8] = kind
+      addSprites[o + 9] = rot
+      addSprites[o + 10] = stretch
+      addSprites[o + 11] = extra
+    }
+
+    for (const m of meleeSwings) {
+      const def = MELEE_WEAPONS[m.weapon] ?? MELEE_WEAPONS.crowbar
+      const age = time - m.time
+      if (age >= 0 && age <= 0.14) {
+        const u = Math.min(1, age / 0.14)
+        const fade = Math.sin(u * Math.PI)
+        const sweepDir = m.combo === 2 ? 1 : -1
+        const ang = m.aim - sweepDir * m.arc * 0.42 + sweepDir * m.arc * 0.84 * u
+        const rDist = Math.max(0.65, m.reach * 0.62)
+        const sx = m.x + Math.cos(ang) * rDist
+        const sz = m.y + Math.sin(ang) * rDist
+        const sy = support(sx, sz) + 1.16
+        const [cr, cg, cb] =
+          def.material === "blade"
+            ? [0.82, 0.92, 1.0]
+            : def.material === "wood"
+              ? [0.95, 0.76, 0.48]
+              : [0.76, 0.82, 0.9]
+        const boost = m.heavy ? 1.35 : m.combo === 3 ? 1.2 : 1.0
+        pushAdd(
+          sx,
+          sy,
+          sz,
+          0.42 * boost,
+          cr,
+          cg,
+          cb,
+          fade * 0.62 * boost,
+          4,
+          ang + Math.PI * 0.5,
+          0.16,
+          0,
+        )
+      }
+
+      if (!this.seenMeleeSwings.has(m.id)) {
+        this.seenMeleeSwings.add(m.id)
+        onNewSwing?.(m)
+      }
+
+      for (const h of m.hits) {
+        const hitKey = `${m.id}:${h.zombieId}`
+        if (this.seenMeleeHits.has(hitKey)) continue
+        this.seenMeleeHits.add(hitKey)
+        onNewHit?.(m, h)
+
+        if (!this.levelData) continue
+        this.splatter ??= new Splatter(outbreakSplatterSurfaces(this.levelData))
+        this.hasEmitted = true
+        const z = ai.agents.find((a) => a.id === h.zombieId)
+        const groundY = support(h.x, h.y)
+        const hitY = groundY + (h.headshot || h.detachBone === "head" ? 1.34 : 1.05)
+
+        // Direction of blood spray: blades fan along the slash tangent + forward; blunt blasts radially away
+        const sweepSign = m.combo === 2 ? 1 : -1
+        const slashAngle =
+          def.material === "blade"
+            ? m.aim + sweepSign * 0.48
+            : m.aim + sweepSign * 0.18
+        const dx = Math.cos(slashAngle)
+        const dz = Math.sin(slashAngle)
+
+        const basePreset = this.legacyMode ? LEGACY_BLOOD_PRESET : splatterPresets.zombieBlood
+        const weaponPreset =
+          def.material === "blade"
+            ? {
+                ...basePreset,
+                impulse: (m.heavy ? 6.8 : 5.6) * (h.headshot ? 1.2 : 1),
+                spread: 0.42,
+                sizeMin: 0.02,
+                sizeMax: 0.11,
+                decalSize: h.killed ? 4.4 : 3.5,
+                pooling: h.killed ? 0.82 : 0.55,
+              }
+            : m.weapon === "spiked-board"
+              ? {
+                  ...basePreset,
+                  impulse: m.heavy ? 5.8 : 4.8,
+                  spread: 0.68,
+                  sizeMin: 0.03,
+                  sizeMax: 0.13,
+                  decalSize: h.killed ? 4.6 : 3.8,
+                  pooling: h.killed ? 0.85 : 0.65,
+                }
+              : {
+                  // Blunt (bat, crowbar, pipe, hammer): concussive wide burst + dark pool
+                  ...basePreset,
+                  impulse: m.heavy ? 5.2 : 4.2,
+                  spread: 0.82,
+                  sizeMin: 0.028,
+                  sizeMax: 0.135,
+                  decalSize: h.killed ? 4.2 : 3.3,
+                  pooling: h.killed ? 0.72 : 0.48,
+                }
+
+        const amountScale =
+          (h.killed ? 1.15 : 0.75) *
+          (m.heavy ? 1.3 : m.combo === 3 ? 1.15 : 1.0) *
+          (h.headshot ? 1.2 : 1.0) *
+          (def.material === "blade" ? 1.18 : 1.0)
+
+        this.splatter.emit(
+          {
+            id: m.id * 16 + (h.zombieId & 15),
+            limbId: 0,
+            seed: h.seed,
+            x: h.x,
+            y: hitY,
+            z: h.y,
+            dx,
+            dy: def.material === "blade" ? 0.08 : -0.06,
+            dz,
+            vx: dx * (m.heavy ? 1.8 : 1.3),
+            vy: 0.18,
+            vz: dz * (m.heavy ? 1.8 : 1.3),
+            amount: amountScale,
+          },
+          weaponPreset,
+        )
+
+        // Immediate pool directly under the struck zombie
+        this.splatter.emit(
+          {
+            id: m.id * 16 + (h.zombieId & 15),
+            limbId: 99,
+            seed: (h.seed ^ 0x9e3779b9) >>> 0,
+            x: h.x,
+            y: groundY + 0.18,
+            z: h.y,
+            dx: dx * 0.22,
+            dy: -0.96,
+            dz: dz * 0.22,
+            amount: (h.killed ? 0.52 : 0.3) * (m.heavy ? 1.25 : 1.0),
+          },
+          weaponPreset,
+        )
+
+        if (z && h.detachBone) {
+          const detached = zombieCrowd.detachAgentLimb(z, h.detachBone as never, dt, [
+            dx * (m.heavy ? 1.35 : 1.0),
+            0.32,
+            dz * (m.heavy ? 1.35 : 1.0),
+          ])
+          const rootPiece = detached[0]
+          if (rootPiece) {
+            const [rvx, rvy, rvz] = pointVelocity(rootPiece, rootPiece.frame.p)
+            const clampVel = (v: number, lim: number) => Math.max(-lim, Math.min(lim, Number.isFinite(v) ? v : 0))
+            this.splatter.emit(
+              {
+                id: m.id * 16 + (h.zombieId & 15),
+                limbId: limbIds[rootPiece.bone],
+                seed: (h.seed ^ 0x517cc1b7) >>> 0,
+                x: rootPiece.frame.p[0],
+                y: Math.min(groundY + 1.3, rootPiece.frame.p[1]),
+                z: rootPiece.frame.p[2],
+                dx,
+                dy: -0.18,
+                dz,
+                vx: clampVel(rvx, 4.8),
+                vy: clampVel(rvy, 2.8) - 0.6,
+                vz: clampVel(rvz, 4.8),
+                amount: h.killed ? 0.78 : 0.55,
+              },
+              weaponPreset,
+            )
+          }
+        }
+      }
+    }
+
+    if (this.seenMeleeSwings.size > 256) {
+      this.seenMeleeSwings.clear()
+      for (const m of meleeSwings) this.seenMeleeSwings.add(m.id)
+    }
+    if (this.seenMeleeHits.size > 512) {
+      this.seenMeleeHits.clear()
     }
 
     return addCount

@@ -9,6 +9,7 @@ export type AIState =
   | "bash"
   | "search"
   | "stagger"
+  | "knockdown"
   | "dead"
 
 export type NoiseKind =
@@ -173,6 +174,8 @@ export type AIAgent = {
   detachedLimbs: string[]
   /** Id of the perception target this agent is attending to when several survivors are present. */
   focusId: string
+  /** Id of the survivor who last damaged or killed this agent (for co-op attribution). */
+  lastHitBy?: string
 }
 
 export type PortalBashEvent = {
@@ -1282,12 +1285,35 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       continue
     }
 
-    // Handle stagger state (from bullet hits or melee shove)
+    // Handle stagger state (from bullet hits, melee shove, or light melee swings)
     if (a.state === "stagger") {
       a.timer -= dt
       a.x += a.staggerVx * dt
       a.y += a.staggerVy * dt
       const damp = Math.exp(-dt * 9)
+      a.staggerVx *= damp
+      a.staggerVy *= damp
+      pushOut(a, 0.28, solids)
+      a.x = clamp(a.x, minX, maxX)
+      a.y = clamp(a.y, minY, maxY)
+      a.vx = dt > 0 ? (a.x - prevX) / dt : 0
+      a.vy = dt > 0 ? (a.y - prevY) / dt : 0
+      if (a.timer <= 0) {
+        a.state = a.awareness >= 0.55 ? "chase" : "investigate"
+        a.stateTime = 0
+        a.repathAt = 0
+      }
+      continue
+    }
+
+    // Handle knockdown state (from heavy melee swings, bats, spiked boards, or combo finishers)
+    if (a.state === "knockdown") {
+      a.timer -= dt
+      if (a.stateTime < 0.42) {
+        a.x += a.staggerVx * dt
+        a.y += a.staggerVy * dt
+      }
+      const damp = Math.exp(-dt * 8)
       a.staggerVx *= damp
       a.staggerVy *= damp
       pushOut(a, 0.28, solids)

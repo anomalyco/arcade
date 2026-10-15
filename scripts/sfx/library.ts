@@ -202,6 +202,7 @@ const SINGLE = new Set([
   "gun.pistol.shot", "gun.dry-fire", "flashlight.click", "zombie.hit", "body.hurt", "door.bash",
   // A magazine seating (scrape, click) and glass (crack, falling shards) are several onsets by nature.
   "gun.pistol.mag-release", "item.drop",
+  "melee.swing.light", "melee.swing.heavy", "melee.hit.wood", "melee.hit.metal", "melee.hit.blade",
   ...["wood", "plaster", "concrete", "metal"].map(s => `impact.bullet.${s}`),
 ])
 

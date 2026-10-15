@@ -123,6 +123,7 @@ export class InventoryHud {
           label = esc(def?.shortLabel ?? s.item)
           if (s.item === "flashlight") label += ` (${esc(keyLabel("KeyF"))})`
           else if (s.item === "pistol") label += ` ${s.charge ?? 0}/${ledger.count(actorId, "ammo")}`
+          else if (s.charge !== undefined && def?.charge && !def.charge.ammo) label += ` ${s.charge}/${def.charge.max}`
           else if (s.count > 1) label += ` ×${s.count}`
         }
         return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!s}"><kbd>${i + 1}</kbd><b>${label}</b></div>`

@@ -24,6 +24,13 @@ import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { aiControls, type AIState } from "../shared/ai"
+import {
+  isMeleeWeapon,
+  MELEE_WEAPON_IDS,
+  MELEE_WEAPONS,
+  meleeControls,
+  type MeleeWeaponId,
+} from "../shared/combat"
 import { LocalSession, type Command } from "../shared/session"
 import { flashlightColor, flashlightControls } from "../shared/flashlight"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
@@ -273,6 +280,48 @@ async function main() {
       }
     }
   }
+  const triggerMeleeSwing = (aim: number, weapon: MeleeWeaponId, heavy: boolean, combo: 1 | 2 | 3) => {
+    const def = MELEE_WEAPONS[weapon] ?? MELEE_WEAPONS.crowbar
+    const wgt = def.weaponClass === "two-heavy" ? 1.25 : def.weaponClass === "one-blade" ? 0.85 : 1.0
+    const pwr = wgt * (heavy ? 1.45 : combo === 3 ? 1.2 : 0.85)
+    const rollSign = combo === 2 ? -1 : 1
+    cam.add(0.08 * pwr, aim, 0.85 * pwr)
+    cam.punch(-0.06 * pwr, rollSign * 0.005 * pwr)
+    if (!cam.isReducedMotion()) {
+      motionBurst.add(
+        { dir: aim + rollSign * 0.5, directional: 0.0038 * pwr, radial: 0.0015 * pwr, boost: 0.25 * pwr },
+        settings.motion.burst,
+      )
+    }
+  }
+  const triggerMeleeHit = (
+    aim: number,
+    weapon: MeleeWeaponId,
+    killed: boolean,
+    headshot: boolean,
+    heavy: boolean,
+    combo: 1 | 2 | 3,
+    detached: boolean,
+  ) => {
+    const def = MELEE_WEAPONS[weapon] ?? MELEE_WEAPONS.crowbar
+    const wgt = def.weaponClass === "two-heavy" ? 1.3 : def.weaponClass === "one-blade" ? 0.95 : 1.1
+    const pwr =
+      wgt *
+      (heavy ? 1.35 : combo === 3 ? 1.2 : 1.0) *
+      (headshot ? 1.2 : 1.0) *
+      (killed || detached ? 1.2 : 1.0)
+    const rollSign = combo === 2 ? -1 : 1
+    cam.add((killed ? 0.26 : 0.16) * pwr, aim, (killed ? 2.1 : 1.35) * pwr)
+    cam.punch(-0.22 * pwr, rollSign * 0.011 * pwr)
+    const stopDur = Math.min(0.085, (heavy ? 0.044 : killed ? 0.036 : 0.026) * pwr)
+    hitStop.trigger(stopDur, 0.08, !cam.isReducedMotion())
+    if (!cam.isReducedMotion()) {
+      motionBurst.add(
+        { dir: aim, directional: 0.006 * pwr, radial: 0.005 * pwr, boost: 0.45 * pwr },
+        settings.motion.burst,
+      )
+    }
+  }
   const triggerHitTaken = (atkDx: number, atkDz: number, damage = 25) => {
     const scale = Math.max(0.35, Math.min(1.6, damage / 20))
     const dir = Math.atan2(atkDz, atkDx)
@@ -388,6 +437,41 @@ async function main() {
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
+    ...meleeControls,
+    {
+      key: "meleeCycleWeapon",
+      label: "Cycle melee weapon",
+      group: "Melee",
+      type: "action",
+      run: () => {
+        if (coop.net) return
+        const { progression, actorId } = session.view
+        const cur = progression.heldMeleeWeapon(actorId)
+        const nextIdx = cur ? (MELEE_WEAPON_IDS.indexOf(cur) + 1) % MELEE_WEAPON_IDS.length : 0
+        const nextWpn = MELEE_WEAPON_IDS[nextIdx]!
+        const hb = progression.ledger.store(`${actorId}/hotbar`)
+        if (hb) {
+          hb.slots[2] = { item: nextWpn, count: 1, charge: MELEE_WEAPONS[nextWpn].durability }
+          hb.selected = 2
+          hb.rev = ++progression.ledger.rev
+          const slot = session.sim.slot(actorId)
+          if (slot) progression.project(slot)
+        }
+      },
+    },
+    {
+      key: "meleeStageArena",
+      label: "Stage melee target ahead",
+      group: "Melee",
+      type: "action",
+      run: () => {
+        if (coop.net) return
+        const p = session.view.player
+        const wpn = session.view.progression.heldMeleeWeapon(session.view.actorId) ?? "crowbar"
+        harness.stageMelee(wpn, "none")
+        void p
+      },
+    },
     ...progressionLabControls(progressionHost),
     ...groundControls,
     {
@@ -686,6 +770,7 @@ async function main() {
           jump: step.jump,
           interactHeld: step.interactHeld,
           fire: idx === 0 ? fireEdge : false,
+          fireHeld: input.firing,
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
@@ -1058,6 +1143,33 @@ async function main() {
         },
       },
       {
+        id: "melee.stage",
+        label: "Equip Melee Weapon & Stage Arena",
+        shortLabel: "Melee Stage",
+        category: "Scene",
+        undoable: false,
+        args: {
+          weapon: {
+            type: "string",
+            description: `Melee weapon ID (${MELEE_WEAPON_IDS.join(", ")})`,
+          },
+          swing: {
+            type: "string",
+            description: "Optional swing action (none, light, heavy, combo)",
+          },
+        },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const rawWpn = String(args?.weapon ?? "crowbar")
+          const weapon: MeleeWeaponId = isMeleeWeapon(rawWpn) ? rawWpn : "crowbar"
+          const swing = String(args?.swing ?? "light") as "none" | "light" | "heavy" | "combo"
+          const res = harness.stageMelee(weapon, swing)
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return res
+        },
+      },
+      {
         id: "hud.demo",
         label: "Show Character HUD Sample",
         shortLabel: "HUD Sample",
@@ -1287,9 +1399,11 @@ async function main() {
     const weaponText =
       p.reloadRemaining > 0
         ? ` · Reloading…`
-        : p.equippedItem === "pistol"
-          ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
-          : ""
+        : p.meleeWeapon
+          ? ` · ${MELEE_WEAPONS[p.meleeWeapon].label} ${p.meleeDurability}/${p.meleeMaxDurability}`
+          : p.equippedItem === "pistol"
+            ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
+            : ""
     const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
     const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
     const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
@@ -1329,7 +1443,7 @@ async function main() {
       avatar.onFootfall = footfall
       updateProfile()
     }
-    const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
+    const { player: p, town, hour, time, peek, zombies, noises, shots, meleeSwings } = session.view
     settings.dayCycle.hour = Math.round(hour * 20) / 20
     if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir" && Math.abs(hour - lastDayNightHour) > 1e-4) {
       lastDayNightHour = hour
@@ -1448,6 +1562,39 @@ async function main() {
           // Co-op peer shot nearby: subtle distance-attenuated local presentation only
           const peerAtt = attenuateShake(distFromMe, 16) * 0.35
           triggerShot(shot.aim, peerAtt)
+        }
+      },
+    )
+    addCount = combatFx.processMeleeSwings(
+      meleeSwings,
+      time,
+      dt,
+      session.ai,
+      zombieCrowd,
+      (x, z) => supportHeight(town, x, z),
+      addSprites,
+      addCount,
+      (swing) => {
+        const distFromMe = Math.hypot(swing.x - p.x, swing.y - p.y)
+        if (distFromMe < 1.8) {
+          triggerMeleeSwing(swing.aim, swing.weapon, swing.heavy, swing.combo)
+        }
+      },
+      (swing, hit) => {
+        const distFromMe = Math.hypot(swing.x - p.x, swing.y - p.y)
+        if (distFromMe < 1.8) {
+          triggerMeleeHit(
+            swing.aim,
+            swing.weapon,
+            hit.killed,
+            hit.headshot,
+            swing.heavy,
+            swing.combo,
+            Boolean(hit.detachBone),
+          )
+        } else if (distFromMe < 12) {
+          const att = attenuateShake(distFromMe, 12) * 0.35
+          cam.add(0.14 * att, swing.aim, 0.75 * att)
         }
       },
     )
@@ -2041,6 +2188,8 @@ async function main() {
       bones: avatar.bones,
       gun: avatar.gun,
       mag: avatar.mag,
+      melee: avatar.meleeWeaponFrame,
+      meleeTip: avatar.meleeTip,
       aimWeight: avatar.aimWeight,
       holdRemaining: avatar.holdRemaining,
     }),
@@ -2262,6 +2411,64 @@ async function main() {
     /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
+    },
+    /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally swings. */
+    stageMelee(weapon: MeleeWeaponId = "crowbar", swing: "none" | "light" | "heavy" | "combo" = "light") {
+      const { progression, actorId } = session.view
+      const ledger = progression.ledger
+      const def = MELEE_WEAPONS[weapon] ?? MELEE_WEAPONS.crowbar
+      const hb = ledger.store(`${actorId}/hotbar`)
+      if (hb) {
+        hb.slots[2] = { item: def.id, count: 1, charge: def.durability }
+        hb.selected = 2
+        hb.rev = ++ledger.rev
+      }
+      const slot = session.sim.slot(actorId)
+      if (slot) progression.project(slot)
+
+      harness.pose(44, 44, 0)
+      session.ai.agents.length = 0
+      const z1 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.6, def.reach * 0.78), 43.85, "chase", Math.PI)
+      const z2 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.75, def.reach * 0.85), 44.32, "chase", Math.PI)
+      z1.targetX = z2.targetX = 44
+      z1.targetY = z2.targetY = 44
+
+      if (swing === "light") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 6; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
+      } else if (swing === "heavy") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true, fireHeld: true }, 0, settings)
+        for (let i = 0; i < 24; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: true }, 0, settings)
+        }
+        for (let i = 0; i < 5; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: false }, 0, settings)
+        }
+      } else if (swing === "combo") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 16; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: i === 9 }, 0, settings)
+        }
+      } else {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+      }
+
+      const p = session.view.player
+      return {
+        weapon: p.meleeWeapon,
+        label: def.label,
+        weaponClass: def.weaponClass,
+        durability: p.meleeDurability,
+        maxDurability: p.meleeMaxDurability,
+        phase: p.meleePhase,
+        combo: p.meleeCombo,
+        heavy: p.meleeHeavy,
+        charge: p.meleeCharge,
+        stamina: p.stamina,
+        zombies: session.view.zombies.map((z) => ({ id: z.id, hp: z.hp, state: z.state, detached: z.detachedLimbs })),
+      }
     },
     /** Gives the local survivor an item, routed to belt, hand or pack. */
     give(item: string, count = 1) {

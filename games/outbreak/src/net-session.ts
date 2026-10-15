@@ -173,6 +173,8 @@ export class NetSession implements Session {
     this.placeSurvivors(a, b, t, span)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
+    const melee = this.sim.combat.meleeSwings
+    for (let i = melee.length - 1; i >= 0; i--) if (this.sim.time - melee[i]!.time > 0.6) melee.splice(i, 1)
   }
 
   close(): void {
@@ -381,6 +383,10 @@ export class NetSession implements Session {
     }
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
+    if (s.meleeSwings?.length) {
+      const swings = sim.combat.meleeSwings
+      for (const m of s.meleeSwings) if (!swings.some((x) => x.id === m.id)) swings.push(m)
+    }
     if (topology) {
       sim.revision++
       sim.rebuildSolids()
@@ -441,7 +447,12 @@ function writeRemote(slot: SurvivorSlot, a: RemoteSurvivor, b: RemoteSurvivor, t
   p.flashlightOutput = lerp(a.flashlightOutput, b.flashlightOutput, t)
   p.sprinting = b.sprinting
   p.exhausted = b.exhausted
-  p.equippedItem = b.pistol ? "pistol" : "hands"
+  p.meleeWeapon = b.meleeWeapon ?? null
+  p.equippedItem = b.meleeWeapon ? b.meleeWeapon : b.pistol ? "pistol" : "hands"
+  p.meleePhase = b.meleePhase ?? "idle"
+  p.meleeCombo = b.meleeCombo ?? 1
+  p.meleePhaseDuration = b.meleePhase && b.meleePhase !== "idle" ? 0.14 : 0
+  p.meleePhaseTime = b.meleePhase && b.meleePhase !== "idle" ? (b.meleeProgress ?? 0.5) * 0.14 : 0
   p.reloadRemaining = b.reloading ? 0.5 : 0
   p.health = b.health
   p.recoil = lerp(a.recoil, b.recoil, t)
