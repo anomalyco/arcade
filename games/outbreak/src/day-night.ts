@@ -200,31 +200,17 @@ function weights(d: number) {
  * untouched curve changes nothing.
  */
 export const DAY_NIGHT_CURVES = {
-  skyFillCurve: {
-    label: "Sky fill by darkness",
-    unit: "×",
-    range: [0, 1.5] as const,
-    anchors: [OUTBREAK_DAY_LIGHTING.skyFill, OUTBREAK_DUSK_LIGHTING.skyFill, OUTBREAK_NIGHT_LIGHTING.skyFill] as const,
-  },
-  ambientFillCurve: {
-    label: "Ambient fill by darkness",
-    unit: "×",
-    range: [0, 2.2] as const,
-    anchors: [OUTBREAK_DAY_LOOK.ambientFill, OUTBREAK_DUSK_LOOK.ambientFill, OUTBREAK_NIGHT_LOOK.ambientFill] as const,
-  },
-  fogDensityCurve: {
-    label: "Fog density by darkness",
-    unit: "",
-    range: [0, 1.2] as const,
-    anchors: [OUTBREAK_DAY_LOOK.fogDensity, OUTBREAK_DUSK_LOOK.fogDensity, OUTBREAK_NIGHT_LOOK.fogDensity] as const,
-  },
-}
+  skyFillCurve: { label: "Sky fill by darkness", unit: "×", range: [0, 1.5] as const, field: "skyFill" },
+  moonFillCurve: { label: "Moon fill by darkness", unit: "×", range: [0, 2] as const, field: "moonFill" },
+  streetAirHazeCurve: { label: "Street air haze by darkness", unit: "×", range: [0, 2] as const, field: "streetAirHaze" },
+} satisfies Record<string, { label: string; unit: string; range: readonly [number, number]; field: keyof DayNightLightingCurve }>
 export type DayNightCurveKey = keyof typeof DAY_NIGHT_CURVES
 export type DayNightCurveSettings = Record<DayNightCurveKey, string>
 export const DAY_NIGHT_CURVE_KEYS = Object.keys(DAY_NIGHT_CURVES) as DayNightCurveKey[]
 
 const defaultPoints = (key: DayNightCurveKey): CurvePoint[] => {
-  const [day, dusk, night] = DAY_NIGHT_CURVES[key].anchors
+  const { field } = DAY_NIGHT_CURVES[key]
+  const [day, dusk, night] = [OUTBREAK_DAY_LIGHTING[field], OUTBREAK_DUSK_LIGHTING[field], OUTBREAK_NIGHT_LIGHTING[field]]
   return Array.from({ length: 9 }, (_, i) => {
     const { wDay, wDusk, wNight } = weights(i / 8)
     return { x: i / 8, y: day * wDay + dusk * wDusk + night * wNight }
@@ -288,15 +274,16 @@ export function evaluateOutbreakDayNight(
   const { wDay, wDusk, wNight } = weights(d)
 
   blendLookSettings3(OUTBREAK_DAY_LOOK, OUTBREAK_DUSK_LOOK, OUTBREAK_NIGHT_LOOK, d, outLook)
-  if (curves.ambientFillCurve) outLook.ambientFill = sampleCurve(curves.ambientFillCurve, d)
-  if (curves.fogDensityCurve) outLook.fogDensity = sampleCurve(curves.fogDensityCurve, d)
 
   const lighting = {} as DayNightLightingCurve
   for (let i = 0; i < LIGHTING_KEYS.length; i++) {
     const k = LIGHTING_KEYS[i]!
     lighting[k] = OUTBREAK_DAY_LIGHTING[k] * wDay + OUTBREAK_DUSK_LIGHTING[k] * wDusk + OUTBREAK_NIGHT_LIGHTING[k] * wNight
   }
-  if (curves.skyFillCurve) lighting.skyFill = sampleCurve(curves.skyFillCurve, d)
+  for (const key of DAY_NIGHT_CURVE_KEYS) {
+    const points = curves[key]
+    if (points) lighting[DAY_NIGHT_CURVES[key].field] = sampleCurve(points, d)
+  }
 
   const fog = {} as DayNightFogCurve
   for (let i = 0; i < FOG_KEYS.length; i++) {

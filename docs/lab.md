@@ -177,7 +177,7 @@ it, and an open game overlay keeps every key from the game.
   default the formula it replaces, sampled, and keep running the exact formula while the curve still reads as its
   default (`sameCurve`), so adding a curve changes no pixel until someone edits it. Ramps stay out of Random.
   Shipped: Effects' tint, size and opacity over life (`packages/kit/lab/effects.ts`, `fx/particles.ts` `lifeRamp`),
-  Outbreak's sky fill, ambient and fog by darkness (`day-night.ts`) and its beam, lamp and unseen falloffs
+  Outbreak's sky fill, moon fill and street air haze by darkness (`day-night.ts`) and its beam, lamp and unseen falloffs
   (`light-ramps.ts`).
 - Start from approved defaults before binding; Reset restores the panel's captured defaults. Keep defaults within
   safe ranges. Use `visible` for irrelevant controls, `enabled` for dependency gates and `folded` for advanced groups.

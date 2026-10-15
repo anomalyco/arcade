@@ -155,28 +155,27 @@ describe("Day-night curves", () => {
   test("the default curves trace the blend they stand in for", () => {
     for (const key of DAY_NIGHT_CURVE_KEYS) {
       const points = JSON.parse(DEFAULT_DAY_NIGHT_CURVES[key]) as { x: number; y: number }[]
-      const [day, dusk, night] = DAY_NIGHT_CURVES[key].anchors
-      expect(points[0]!.y).toBeCloseTo(day, 4)
-      expect(points[4]!.y).toBeCloseTo(dusk, 4)
-      expect(points[8]!.y).toBeCloseTo(night, 4)
+      const { field } = DAY_NIGHT_CURVES[key]
+      expect(points[0]!.y).toBeCloseTo(evaluateOutbreakDayNight(12).lighting[field], 4)
       for (const hour of hours) {
         const d = Math.max(0, Math.min(1, dayCycle(hour).darkness))
         const exact = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK })
-        const value = key === "skyFillCurve" ? exact.lighting.skyFill : key === "ambientFillCurve" ? exact.look.ambientFill : exact.look.fogDensity
+        const value = exact.lighting[DAY_NIGHT_CURVES[key].field]
         expect(Math.abs(sampleCurve(points, d) - value)).toBeLessThan(0.02)
       }
     }
   })
   test("a reshaped curve drives its value by darkness and leaves the rest of the blend alone", () => {
-    const flat = curveText([{ x: 0, y: 0.25 }, { x: 1, y: 0.25 }], { range: DAY_NIGHT_CURVES.fogDensityCurve.range })
-    const settings = { lighting: {}, fog: {}, vision: {}, dayCycle: { ...DEFAULT_DAY_NIGHT_CURVES, fogDensityCurve: flat } }
+    const flat = curveText([{ x: 0, y: 0.25 }, { x: 1, y: 0.25 }], { range: DAY_NIGHT_CURVES.streetAirHazeCurve.range })
+    const settings = { lighting: {}, fog: {}, vision: {}, dayCycle: { ...DEFAULT_DAY_NIGHT_CURVES, streetAirHazeCurve: flat } }
     for (const hour of [3, 12, 19.5]) {
       const look = { ...OUTBREAK_NIGHT_LOOK }
       const out = applyOutbreakDayNight(hour, look, settings)
       const plain = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK })
-      expect(out.look.fogDensity).toBeCloseTo(0.25, 4)
-      expect(out.look.ambientFill).toBe(plain.look.ambientFill)
+      expect(out.lighting.streetAirHaze).toBeCloseTo(0.25, 4)
+      expect(out.look).toEqual(plain.look)
       expect(out.lighting.skyFill).toBe(plain.lighting.skyFill)
+      expect(out.lighting.moonFill).toBe(plain.lighting.moonFill)
     }
   })
 })
