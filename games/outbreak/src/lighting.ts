@@ -123,6 +123,7 @@ export const OUTBREAK_LOOK_LIGHTING_PRESETS: Readonly<Record<LookPresetId, Parti
     rimStrength: 0.80,
     vignetteDarkness: 0.32,
   },
+  party_pop: { ...DEFAULT_OUTBREAK_LIGHTING },
 }
 
 export const outbreakLightingControls: LabControl[] = [
