@@ -88,6 +88,11 @@ export class Dock {
     this.awakeUntil = now + this.settings.dockDimAfter
   }
 
+  /** Lets the dock dim now (Lab station's idle variant). */
+  sleep(): void {
+    this.awakeUntil = -Infinity
+  }
+
   /** The cursor position in CSS pixels; the dock brightens while the cursor is over it. */
   pointer(x: number, y: number): void {
     const r = this.rect
@@ -128,10 +133,9 @@ export class Dock {
     }
     this.els.hud.style.setProperty("--hud-idle", String(this.settings.dockIdleOpacity))
     // Keep the centred dock's edges on whole device pixels so its text is crisp at rest.
-    const snap = `${innerWidth}|${devicePixelRatio}|${this.els.dock.offsetWidth}`
+    const snap = `${innerWidth}|${innerHeight}|${devicePixelRatio}|${this.els.dock.offsetWidth}|${this.els.hud.offsetHeight}`
     if (snap !== this.snapKey) {
-      this.snapKey = snap
-      snapToPixels(this.els.dock)
+      if (snapToPixels(this.els.dock)) this.snapKey = snap
       this.rect = this.els.dock.getBoundingClientRect()
     }
     this.first = false

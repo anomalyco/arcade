@@ -45,6 +45,7 @@ export class InventoryHud {
   /** How many finishers the player has performed this session; the small bare key cap fades out after 2. */
   finisherCount = 0
   private wasFinishing = false
+  private craftShown = false
   private readonly markers = new Map<string, { el: HTMLElement; html: string; w: number; h: number; leaving: boolean }>()
 
   constructor(
@@ -242,8 +243,21 @@ export class InventoryHud {
     const el = this.els.craft
     if (!el) return
     if (!this.craftOpen) {
-      el.hidden = true
+      if (this.craftShown) {
+        // Folds down into the dock it rose from.
+        this.craftShown = false
+        void hudMotion.exit(el, "snappy", { y: 6 }).then(() => {
+          if (!this.craftShown) el.hidden = true
+        })
+      }
       return
+    }
+    if (!this.craftShown) {
+      this.craftShown = true
+      el.hidden = false
+      for (const a of el.getAnimations()) a.cancel()
+      el.style.transformOrigin = "50% 100%"
+      hudMotion.enter(el, "smooth", { y: 6 })
     }
     const progression = view.progression
     const ledger = progression.ledger

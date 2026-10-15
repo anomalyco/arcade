@@ -4,9 +4,9 @@
 .callout { position: absolute; left: 0; top: 0 }
 .callout-body {
   position: absolute; left: 0; top: 0;
-  display: inline-flex; align-items: center; gap: .42em; padding: .2em .58em .22em;
-  border: 1px solid #ffffff24; border-radius: .38em; background: #0a0e0fd9; color: #e4e1d2;
-  font: 600 var(--callout-size)/1.25 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .01em;
+  display: inline-flex; align-items: center; gap: .42em; padding: round(.2em, 1px) round(.58em, 1px);
+  border: 1px solid var(--hud-line); border-radius: var(--hud-r-chip); background: var(--hud-surface); color: var(--hud-ink);
+  font: 600 var(--callout-size)/round(1.3em, 1px) var(--hud-font); letter-spacing: .01em; -webkit-font-smoothing: antialiased;
   white-space: nowrap; text-shadow: 0 1px 0 #000; box-shadow: 0 2px 8px #00000066;
   font-variant-numeric: tabular-nums
 }
@@ -62,7 +62,7 @@
 /* Halo look (Zomboid Style, Diegetic): text with a hard dark outline drawn under the fill, no plate and no blurred
    shadow, so it reads over Noir's darks and lights without going soft. */
 .callouts[data-look="halo"] .callout-body {
-  background: none; border-color: transparent; box-shadow: none; padding: .05em .2em;
+  background: none; border-color: transparent; box-shadow: none; padding: 1px round(.2em, 1px);
   font-weight: 700; letter-spacing: .02em;
   -webkit-text-stroke: .24em #050708e6; paint-order: stroke fill; text-shadow: 0 1px 0 #000
 }

@@ -16,6 +16,7 @@ import "./tokens.css"
 import "./hud.css"
 import "./dock.css"
 import "./prompt.css"
+import "./vehicle-hud.css"
 
 export { ActorFeedback } from "./actor-feedback"
 export { CalloutLayer, CalloutModel, type CalloutKind, type CalloutOptions } from "./callouts"

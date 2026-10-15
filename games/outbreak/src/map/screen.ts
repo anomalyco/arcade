@@ -1,4 +1,5 @@
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
+import { hudMotion } from "../hud/motion"
 import { CHUNK } from "../../shared/map"
 import { MACRO_SIZE } from "../../shared/world"
 import { drawBadge, type Ctx2D } from "./icons"
@@ -170,8 +171,16 @@ export class MapScreen {
   }
 
   open(x: number, y: number, zoom: number, backdrop: number): void {
+    const reopening = !this.root.hidden
     this.isOpen = true
     this.root.hidden = false
+    this.root.style.pointerEvents = ""
+    // The sheet settles in from slightly small and soft; reopening mid-close reverses from where it is.
+    const from = reopening ? Number(getComputedStyle(this.root).opacity) : 0
+    for (const a of this.root.getAnimations()) a.cancel()
+    for (const a of this.sheet.getAnimations()) a.cancel()
+    hudMotion.animate(this.root, [{ opacity: from }, { opacity: 1 }], "smooth")
+    hudMotion.animate(this.sheet, [{ transform: "scale(0.98)", filter: "blur(3px)" }, { transform: "none", filter: "blur(0px)" }], "smooth")
     this.root.style.setProperty("--map-backdrop", String(backdrop))
     this.view.x = x
     this.view.y = y
@@ -182,9 +191,21 @@ export class MapScreen {
   }
 
   close(): void {
+    if (!this.isOpen) return
     this.isOpen = false
-    this.root.hidden = true
     this.drag = null
+    // Input passes through to the game while the sheet fades.
+    this.root.style.pointerEvents = "none"
+    const a = hudMotion.animate(this.root, [{ opacity: Number(getComputedStyle(this.root).opacity) }, { opacity: 0 }], "snappy", { fill: "forwards" })
+    hudMotion.animate(this.sheet, [{ transform: "none", filter: "blur(0px)" }, { transform: "scale(0.98)", filter: "blur(3px)" }], "snappy", { fill: "forwards" })
+    const done = () => {
+      if (this.isOpen) return
+      this.root.hidden = true
+      for (const x of this.root.getAnimations()) x.cancel()
+      for (const x of this.sheet.getAnimations()) x.cancel()
+    }
+    if (a) void a.finished.then(done, () => undefined)
+    else done()
   }
 
   centreOn(x: number, y: number): void {

@@ -19,9 +19,10 @@ import "./hordes/index"
 import "./melee/index"
 import type { NetSession } from "./net-session"
 import { type ProgressionLabHost } from "./progression-lab"
+import type { InventoryHud } from "./inventory-hud"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
-import { type VehicleLabHost } from "./vehicles/index"
+import { stageVehicleScene, type VehicleLabHost } from "./vehicles/index"
 import type { OutbreakWeatherController } from "./weather"
 
 export interface OutbreakGameCommandsHost {
@@ -36,6 +37,7 @@ export interface OutbreakGameCommandsHost {
   readonly settings: OutbreakSettings
   readonly feelTracker: OutbreakFeelTracker
   readonly hud: OutbreakHud
+  readonly inventoryHud?: InventoryHud
   readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly lab: LabPanel
@@ -277,6 +279,36 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
         undoable: false,
         enabled: () => true,
         run: () => hud.demo(host.session().view.player),
+      },
+      {
+        id: "hud.state",
+        label: "Show HUD State",
+        shortLabel: "HUD State",
+        category: "Scene",
+        undoable: false,
+        args: { state: { type: "string", description: "idle (dim dock), awake, pack (Tab open), craft (hold Q open) or vehicle" } },
+        enabled: () => Boolean(host.inventoryHud),
+        run: (_ctx, args) => {
+          const inv = host.inventoryHud!
+          const view = host.session().view
+          const state = String(args?.state ?? "awake")
+          inv.close()
+          const grant = (item: string, count: number) => view.progression.ledger.apply({ kind: "grant", actor: view.actorId, item, count })
+          if (state !== "idle") for (const [item, n] of [["scrap", 2], ["plank", 2], ["ammo", 6], ["noisemaker", 1]] as const) grant(item, n)
+          if (state === "pack") {
+            grant("toolbox", 1)
+            inv.togglePack()
+          }
+          if (state === "craft") {
+            view.progression.ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:bandage", store: "team/known" })
+            grant("chem", 2)
+            inv.toggleCraft()
+          }
+          if (state === "idle") inv.dock?.sleep()
+          else inv.dock?.wake()
+          if (state === "vehicle") stageVehicleScene(host.vehicleHost, "night-headlights")
+          return { state, packOpen: inv.packOpen, craftOpen: inv.craftOpen, dockIdle: inv.dock?.idle ?? null }
+        },
       },
       {
         id: "survivor.aim-demo",

@@ -170,7 +170,8 @@ export class PromptView {
     const size = { w: face.offsetWidth, h: face.offsetHeight }
     const from = this.size
     this.size = size
-    const left = (w: number) => -Math.round(w / 2)
+    const dpr = this.ratio()
+    const left = (w: number) => -Math.round((w / 2) * dpr) / dpr
     const cur = animate && old ? this.current() : null
     for (const a of box.getAnimations()) if (a.id === "size") a.cancel()
     box.style.width = `${size.w}px`

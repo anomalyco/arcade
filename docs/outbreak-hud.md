@@ -93,6 +93,50 @@ The `outbreak-hud` Lab station (`arcade station outbreak-hud`, `games/lab/src/st
 game with one variant per style; each variant sets the style and runs `hud.demo`, which puts a sample on the survivor.
 `games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle` proves every variant.
 
+## Design system (AR-24, October 2026)
+
+Kit asked for clearer HUDs that move smoothly between states. An audit of every surface at DPR 2
+(`scripts/hud-polish-proof.ts`, stills in `captures/hud-polish/before`) found:
+
+- Hierarchy: every surface used the same 10.5–12 px monospace in one grey, so labels, values and key names had equal
+  weight; the hotbar mixed `(F)` text with key caps.
+- Noir contrast: panels were teal-black (`#0f1515`) and accents a green-yellow, against a warm, desaturated scene.
+- Padding and alignment: pills, slots and pack cells had three heights (20, 22, 24 px) and four radii; centred labels
+  landed on half pixels.
+- Words: strips repeated the container name, a destination tag per item and a "1–3 Take one" hint; the car prompt
+  read "Drive Sedan (0/4 · 85% fuel)"; the seated panel had a title, seat count, speed, fuel percent, a 10-segment bar
+  and six hints.
+- Duplicate caps: tap and hold on the same key drew two E caps side by side.
+- Motion: everything was rebuilt with `innerHTML` or toggled with `hidden`, so states swapped in one frame.
+
+The system the HUD now uses (`src/hud/tokens.css`, `src/hud/motion.ts`):
+
+| Token | Values |
+| --- | --- |
+| Spacing | 2, 4, 6, 8, 12, 16, 24 px (`--hud-1` … `--hud-7`) |
+| Type | system sans, tabular figures; 10/12, 11/14, 12/16, 13/18 px (size/line height, whole pixels) |
+| Corners | cell 4 px inside a 10 px panel (panel radius = cell radius + padding), chips 6 px |
+| Colour | surface `rgb(13 12 11 / .82)`, ink `#ede7d9` (15:1), ink-2 `#b6ae9f` (8:1), ink-3 `#847d71` (4.5:1); warm `#f1c46a` only for what is lit, on or full; caution `#e8a34c`, danger `#e5674b` |
+| Key cap | the shared cap themed warm (`--akc-*`); whole-pixel lift and label size |
+| Hold ring | one ringed cap when tap and hold share a key, whole-pixel ring padding |
+| Panel | surface fill, 1 px inner hairline, soft shadow (`.hud-panel`) |
+
+Motion tokens are Kit's spring palette sampled into CSS `linear()` easings with knobs' solver and written as
+`--m-<name>` and `--m-<name>-ms` on `<html>`:
+
+| Change | Spring (duration / bounce) |
+| --- | --- |
+| Enter | default .3 / 0, from scale .96, blur 3 px, opacity 0 |
+| Exit | snappy .25 / 0, to scale .96, blur 3 px |
+| State change, content crossfade, panel width | default .3 / 0 |
+| Value roll, layout slide, panel height, prompt glide | calm .4 / 0 |
+| Panel or sheet | smooth .45 / 0 |
+| Chip to panel (pack) | morph .42 / .16 open, .38 / .08 close |
+| Dim / brighten | slow .85 / 0 down, snappy .25 / 0 up |
+
+Reduced motion (the system setting or Lab › HUD motion › Reduced motion) drops every transform and blur and keeps a
+180 ms linear fade. Lab › HUD motion › Motion speed scales every duration.
+
 ## Bottom dock
 
 The belt of supplies, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
@@ -115,8 +159,13 @@ at DPR 1, 1.5 and 2.
 recording each tracked element's box and effective opacity; it flags a jump (more than 10 px and more than a third
 of the element's travel in one frame) or a pop (opacity changing by more than 0.34 in a frame, or appearing or
 vanishing while visible), and writes the frames as a muted MP4. Tab open, Tab close, a quick double Tab, a pickup,
-dimming and brightening, a prompt appearing, changing (Open to Close), leaving, and a strip losing an item all pass with
-no jumps or pops.
+dimming and brightening, a prompt appearing, changing (Open to Close), leaving, a strip losing an item, field craft
+opening and closing, the map opening and closing, getting into a car and learning a key hint (16 transitions) all pass
+with no jumps or pops, with and without reduced motion. `hud-polish-proof.ts` also checks that every line of text in
+each surface sits on a whole device-pixel row at DPR 1, 1.5 and 2.
+
+The `outbreak-hud` Lab station has variants for each HUD state as well as each style: Dock idle, Dock after a pickup,
+Pack open, Field craft and Driving, each staged by the `hud.state` command.
 
 ## World prompt
 
@@ -133,6 +182,21 @@ battery, Unlock, Refuel, No battery, No keys or Empty tank instead of "Drive Sed
 
 Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
 softening instead of being reused by index.
+
+## Seated HUD
+
+Driving has no status panel (`src/hud/vehicle-hud.ts`). A small dashboard gauge sits left of the key hints: the
+needle shows fuel between E and F on the calm spring and turns red at 15 %, and a thin arc under it empties and reddens
+as the body takes damage. Speed is left to the motion, the skids and the engine. The hints are key caps (WASD Drive,
+Space Brake, H Horn, F Lights, C Seat, E Exit; a passenger gets LMB Shoot, R Reload, C Seat, E Exit) and each one fades
+and collapses the first time its key is pressed, remembered per browser, while the others slide into the gap. A
+blocking state shows as one word under the gauge (No battery, No keys, Empty tank). The whole group rises in on
+getting in and fades out on getting out.
+
+## Map sheet and field craft
+
+The map sheet settles in from scale .98 with a 3 px blur on the smooth spring and fades out on the snappy one,
+letting clicks through while it fades. Field craft (hold Q) rises out of the dock and folds back into it.
 
 ## Diegetic ground ring
 

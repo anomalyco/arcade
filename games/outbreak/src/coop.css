@@ -1,4 +1,4 @@
-#coop { position: fixed; left: 14px; top: 12px; z-index: 20; display: flex; flex-direction: column; gap: 5px; color: #d6d4c6; font: 11.5px ui-monospace, monospace }
+#coop { position: fixed; left: 14px; top: 12px; z-index: 20; display: flex; flex-direction: column; gap: 5px; color: var(--hud-ink-2); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font) }
 #coop button, #coop a { pointer-events: auto; padding: 4px 9px; border: 1px solid #ffffff2e; border-radius: 4px; background: #0f1515d8; color: #e8e6d8; font: inherit; text-decoration: none; cursor: pointer }
 #coop button:hover, #coop a:hover { border-color: #d6d4c680; background: #182121e8 }
 #coop .head { display: flex; align-items: center; gap: 7px }
@@ -8,6 +8,6 @@
 #coop li[data-connected="false"] { opacity: .5 }
 #coop li i { width: 8px; height: 8px; border-radius: 50%; display: inline-block }
 #coop .note { opacity: .7; min-height: 1em }
-.coop-tag { position: fixed; left: 0; top: 0; z-index: 9; pointer-events: none; padding: 1px 6px; border-radius: 3px; border-bottom: 2px solid var(--seat); background: #0b1011c8; color: #ecebe0; font: 10.5px ui-monospace, monospace; white-space: nowrap }
+.coop-tag { position: fixed; left: 0; top: 0; z-index: 9; pointer-events: none; padding: 1px 6px; border-radius: var(--hud-r-cell); box-shadow: inset 0 -2px 0 var(--seat), inset 0 0 0 1px var(--hud-line); background: var(--hud-chip); color: var(--hud-ink); font: 600 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); white-space: nowrap }
 .coop-tag[hidden] { display: none }
 #coop[hidden] { display: none }
