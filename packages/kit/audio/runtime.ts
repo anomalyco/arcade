@@ -184,6 +184,8 @@ export class AudioRuntime {
   volume = 1
   maxVoices: number
   visibilityQuery?: VisibilityQuery
+  /** Optional real-time audio quantum callback (~5.33 ms at 48 kHz) for high-precision frame pacing. */
+  onTick: (() => void) | null = null
 
   private seed: number
   private rng: () => number
@@ -205,6 +207,8 @@ export class AudioRuntime {
   private domEvents = new AbortController()
   private disposed = false
   private interruptListeners = new Set<(dispose: boolean) => void>()
+  private pacerNode: ScriptProcessorNode | null = null
+  private loadPromise: Promise<number> | null = null
 
   listener: ListenerState = {
     x: 0,
@@ -305,7 +309,7 @@ export class AudioRuntime {
       try {
         const ctx = new AudioContext({ latencyHint: "interactive" })
         this.attachContext(ctx)
-        await this.sampleBank.loadAll(ctx)
+        this.loadPromise = this.sampleBank.loadAll(ctx)
       } catch {
         return false
       }
@@ -318,6 +322,11 @@ export class AudioRuntime {
       } catch {
         return false
       }
+    }
+    if (this.loadPromise) {
+      try {
+        await this.loadPromise
+      } catch {}
     }
     return ctx.state === "running"
   }
@@ -443,6 +452,27 @@ export class AudioRuntime {
       room.connect(this.roomOut)
       this.roomOut.connect(this.duckNode)
       this.applySpace(0)
+    }
+    if (this.pacerNode) {
+      try {
+        this.pacerNode.disconnect()
+      } catch {}
+      this.pacerNode.onaudioprocess = null
+      this.pacerNode = null
+    }
+    if (
+      typeof AudioContext !== "undefined" &&
+      ctx instanceof AudioContext &&
+      typeof ctx.createScriptProcessor === "function"
+    ) {
+      try {
+        const pacer = ctx.createScriptProcessor(256, 0, 1)
+        pacer.onaudioprocess = () => {
+          this.onTick?.()
+        }
+        pacer.connect(ctx.destination)
+        this.pacerNode = pacer
+      } catch {}
     }
   }
 
@@ -1125,6 +1155,13 @@ export class AudioRuntime {
     for (const fn of [...this.interruptListeners]) fn(true)
     this.interruptListeners.clear()
     this.stopAllVoices(0.01)
+    if (this.pacerNode) {
+      try {
+        this.pacerNode.disconnect()
+      } catch {}
+      this.pacerNode.onaudioprocess = null
+      this.pacerNode = null
+    }
     this.domEvents.abort()
     this.muteListeners.length = 0
     if (this.ctx && "close" in this.ctx && !this.isOffline) {
