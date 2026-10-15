@@ -9,6 +9,9 @@ export const FENCE_VAULT_NOISE = 10.0
 export const HOLD_DURATION = 0.38
 export const PEEK_CONE = 165
 export const PEEK_AWARENESS = 4.2
+/** A door's peephole: a fish-eye, narrower than a window and with less to it. */
+export const PEEPHOLE_CONE = 120
+export const PEEPHOLE_AWARENESS = 2.6
 
 export type InteractableKind = "door" | "window" | "fence" | (string & {})
 export type InteractActionId =
@@ -30,6 +33,9 @@ export type InteractActionId =
   | "locked"
   | "barricade"
   | "enter"
+  | "hide"
+  | "disarm"
+  | "arm"
 /** `modifier: "shift"` marks an alternative taken with Shift+E (smash a container instead of searching it). */
 export type InteractAction = { id: InteractActionId; label: string; hold?: boolean; modifier?: "shift" }
 
@@ -200,6 +206,9 @@ function doorActions(door: Door, actor?: InteractActorState, keys?: DoorKeys): {
   return { primary, secondary, actions: [primary, secondary] }
 }
 
+/** Outside doors (not a store's back room or a bedroom) have a peephole: Shift+E looks through it while shut. */
+const hasPeephole = (door: Door) => !door.open && !door.id.endsWith("-room")
+
 function windowActions(
   win: WindowOpening,
   actor: InteractActorState,
@@ -286,22 +295,38 @@ export function createDoorHandler(keys?: DoorKeys): InteractionHandler {
     for (const door of town.doors) {
       if (distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) continue
       const { primary, secondary, actions } = doorActions(door, actor, keys)
+      const peeking = actor.peekingWindowId === door.id
+      const alt: InteractAction | undefined = hasPeephole(door) ? { id: "peek", label: peeking ? "Stop peeking" : "Peek", modifier: "shift" } : undefined
       out.push({
         kind: "door",
         id: door.id,
         rect: door.rect,
         worldX: (door.rect[0] + door.rect[2]) / 2,
         worldY: (door.rect[1] + door.rect[3]) / 2,
-        primary,
-        secondary,
-        actions,
+        // While peeking, E (or Shift+E) only stops.
+        primary: peeking ? alt! : primary,
+        secondary: peeking ? undefined : secondary,
+        alt: peeking ? undefined : alt,
+        actions: peeking ? [alt!] : alt ? [...actions, alt] : actions,
       })
     }
     return out
   },
   execute(town, actor, targetId, action) {
     const door = town.doors.find((d) => d.id === targetId)
-    if (!door || distToRect(actor.x, actor.y, door.rect) > INTERACT_RANGE) return { handled: false }
+    const dist = door ? distToRect(actor.x, actor.y, door.rect) : Infinity
+    if (!door || dist > INTERACT_RANGE) return { handled: false }
+    if (action === "peek") {
+      if (actor.peekingWindowId === door.id) actor.peekingWindowId = null
+      else if (hasPeephole(door)) {
+        actor.peekingWindowId = door.id
+        actor.peekOriginX = actor.x
+        actor.peekOriginY = actor.y
+        actor.peekOriginDist = dist
+        actor.sprinting = false
+      } else return { handled: false }
+      return { handled: true, kind: "door", targetId: door.id, action: "peek", topologyChanged: false }
+    }
     if (door.keyed && door.locked) {
       if (!keys || (action !== "unlock" && action !== "pry")) return { handled: false, kind: "door", targetId: door.id, action }
       const res = keys.open(actor, door, action)
@@ -505,7 +530,7 @@ export function selectInteractTarget(
   for (const handler of registry.all()) {
     for (const raw of handler.candidates(town, actor)) {
       const { dist, facing, score } = candidateScore(actor, raw.rect)
-      const peekBoost = raw.kind === "window" && actor.peekingWindowId === raw.id ? 10 : 0
+      const peekBoost = (raw.kind === "window" || raw.kind === "door") && actor.peekingWindowId === raw.id ? 10 : 0
       scored.push({
         ...raw,
         dist,
@@ -659,7 +684,7 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
   }
 
   if (actor.peekingWindowId) {
-    const win = town.windows.find((w) => w.id === actor.peekingWindowId)
+    const win = town.windows.find((w) => w.id === actor.peekingWindowId) ?? town.doors.find((d) => d.id === actor.peekingWindowId && !d.open)
     if (!win) {
       actor.peekingWindowId = null
     } else {
@@ -681,10 +706,12 @@ export function stepInteractionState(town: Town, actor: InteractActorState, dt: 
 /** Computes the eye origin, localised cutaway bubble center, and camera lean for the currently peeked window. */
 export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y" | "peekingWindowId">): PeekInfo | null {
   if (!actor.peekingWindowId) return null
-  const win = town.windows.find((w) => w.id === actor.peekingWindowId)
+  const win = town.windows.find((w) => w.id === actor.peekingWindowId) ?? doorPeephole(town, actor.peekingWindowId)
   if (!win) return null
   const building = town.buildings[win.buildingIndex]
   if (!building) return null
+  const cone = "peephole" in win ? PEEPHOLE_CONE : PEEK_CONE
+  const awareness = "peephole" in win ? PEEPHOLE_AWARENESS : PEEK_AWARENESS
   const [bx0, bz0, bx1, bz1] = building.rect
   const [x0, y0, x1, y1] = win.rect
   const horizontal = x1 - x0 > y1 - y0
@@ -708,8 +735,8 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       cutX,
       cutY,
       aim: dir < 0 ? -Math.PI / 2 : Math.PI / 2,
-      cone: PEEK_CONE,
-      awareness: PEEK_AWARENESS,
+      cone,
+      awareness,
       camOffsetX: 0,
       camOffsetY: dir * 1.45,
     }
@@ -731,12 +758,30 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       cutX,
       cutY,
       aim: dir < 0 ? Math.PI : 0,
-      cone: PEEK_CONE,
-      awareness: PEEK_AWARENESS,
+      cone,
+      awareness,
       camOffsetX: dir * 1.45,
       camOffsetY: 0,
     }
   }
+}
+
+/** A shut door seen as a window to peek through: its building is the one whose wall it sits in. */
+function doorPeephole(town: Town, id: string): { id: string; rect: Rect; buildingId: string; buildingIndex: number; peephole: true } | null {
+  const door = town.doors.find((d) => d.id === id)
+  if (!door || door.open) return null
+  const cx = (door.rect[0] + door.rect[2]) / 2
+  const cy = (door.rect[1] + door.rect[3]) / 2
+  let best = -1
+  let bestD = 0.5
+  town.buildings.forEach((b, i) => {
+    const d = distToRect(cx, cy, b.rect)
+    if (d <= bestD) {
+      bestD = d
+      best = i
+    }
+  })
+  return best < 0 ? null : { id: door.id, rect: door.rect, buildingId: town.buildings[best]!.id, buildingIndex: best, peephole: true }
 }
 
 /** Vertical vault hop over a window sill or fence (metres) for presentation. */

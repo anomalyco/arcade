@@ -338,7 +338,7 @@ export class SoundDirector {
       }
     }
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
-    this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out)
+    this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out, world.time)
 
     this.started = true
     return out

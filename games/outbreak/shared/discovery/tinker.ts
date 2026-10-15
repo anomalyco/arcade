@@ -10,7 +10,8 @@ import type { ItemDef, ItemId } from "@arcade/kit/sim/ledger"
 /** What goes on the mat, in the order E cycles through pairs. */
 export const TINKER_MATERIALS = ["plank", "scrap", "chem", "battery"] as const
 
-export type TinkerRecipe = { id: string; tinker: readonly [ItemId, ItemId]; tier: number; produces?: ItemId }
+/** `tinker` is absent for what is only learned by taking one apart (the can tripwire). */
+export type TinkerRecipe = { id: string; tinker?: readonly [ItemId, ItemId]; tier: number; produces?: ItemId }
 
 /** "plank+scrap": an unordered pair, sorted by material order so both orders agree. */
 export function pairKey(a: ItemId, b: ItemId): string {
@@ -49,7 +50,7 @@ export type TinkerOutcome =
 export function judgeMat(recipes: readonly TinkerRecipe[], mat: readonly ItemId[], tier: number, known: (recipe: string) => boolean): TinkerOutcome | null {
   if (mat.length !== MAT_SLOTS || !mat.every((m) => (TINKER_MATERIALS as readonly string[]).includes(m))) return null
   const pair = pairKey(mat[0]!, mat[1]!)
-  const recipe = recipes.find((r) => pairKey(r.tinker[0], r.tinker[1]) === pair)
+  const recipe = recipes.find((r) => r.tinker && pairKey(r.tinker[0], r.tinker[1]) === pair)
   if (!recipe) return { kind: "clatter", pair, record: true }
   if (recipe.tier > tier) return { kind: "almost", recipe: recipe.id, pair }
   // A lesson with nothing to hold (reinforcing boards) is learned once; trying it again makes nothing.
@@ -59,9 +60,10 @@ export function judgeMat(recipes: readonly TinkerRecipe[], mat: readonly ItemId[
 
 /** Catalog entries for the corkboard's ideas and crossed-out tries. */
 export function tinkerKnowledgeItems(recipes: readonly TinkerRecipe[]): ItemDef[] {
-  const made = new Set(recipes.map((r) => pairKey(r.tinker[0], r.tinker[1])))
+  const tinkered = recipes.filter((r) => r.tinker)
+  const made = new Set(tinkered.map((r) => pairKey(r.tinker![0], r.tinker![1])))
   return [
-    ...recipes.map((r): ItemDef => ({ id: ideaToken(r.id), label: `Idea: ${r.id}`, tag: "knowledge" })),
+    ...tinkered.map((r): ItemDef => ({ id: ideaToken(r.id), label: `Idea: ${r.id}`, tag: "knowledge" })),
     ...ALL_PAIRS.map(([a, b]) => pairKey(a, b))
       .filter((p) => !made.has(p))
       .map((p): ItemDef => ({ id: triedToken(p), label: `Tried ${p}`, tag: "knowledge" })),

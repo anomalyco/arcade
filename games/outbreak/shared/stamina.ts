@@ -61,8 +61,9 @@ export function stepStamina(
   wantsSprint: boolean,
   dt: number,
   tuning: StaminaTuning = DEFAULT_STAMINA_TUNING,
+  crouch?: { speed: number; noise: number },
 ): number {
-  const canSprint = moving && wantsSprint && !state.exhausted && state.stamina > 0
+  const canSprint = moving && wantsSprint && !crouch && !state.exhausted && state.stamina > 0
   if (canSprint) {
     state.sprinting = true
     state.stamina = Math.max(0, state.stamina - tuning.staminaDrain * dt)
@@ -88,9 +89,11 @@ export function stepStamina(
   const baseNoise = state.sprinting
     ? SPRINT_NOISE * (tuning.sprintSpeed / DEFAULT_STAMINA_TUNING.sprintSpeed)
     : moving
-      ? WALK_NOISE * (tuning.walkSpeed / DEFAULT_STAMINA_TUNING.walkSpeed)
-      : IDLE_NOISE
+      ? crouch
+        ? crouch.noise
+        : WALK_NOISE * (tuning.walkSpeed / DEFAULT_STAMINA_TUNING.walkSpeed)
+      : Math.min(IDLE_NOISE, crouch?.noise ?? IDLE_NOISE)
   state.noise = Math.max(baseNoise, state.noise - NOISE_DECAY * dt)
 
-  return state.sprinting ? tuning.sprintSpeed : tuning.walkSpeed
+  return state.sprinting ? tuning.sprintSpeed : tuning.walkSpeed * (crouch?.speed ?? 1)
 }

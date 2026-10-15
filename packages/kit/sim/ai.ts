@@ -99,6 +99,11 @@ export type PerceptionTarget = {
   /** Continuous acoustic radius around the target (e.g. from stamina.ts player.noise). */
   continuousNoiseRadius: number
   flashlight?: FlashlightState | null
+  /**
+   * How much of the target there is to see, 0..1 (default 1): scales sight and close-range sensing. A crouching
+   * survivor is a smaller shape; one hidden in a closet is not there to see at all.
+   */
+  visibility?: number
 }
 
 export type NavPortal = {
@@ -466,14 +471,15 @@ export function evaluateSight(
   if (target.flashlight?.on) {
     lightFactor = Math.max(lightFactor, config.flashlightBoost * 0.85)
   }
-  const effectiveSightRange = config.sightRange * agent.perceptionScale * lightFactor
+  const visibility = clamp(target.visibility ?? 1, 0, 1)
+  const effectiveSightRange = config.sightRange * agent.perceptionScale * lightFactor * visibility
   const fl = target.flashlight
   const flActive = Boolean(fl?.on && (fl.output ?? 1) > 0.01)
   const flOutput = flActive ? (fl!.output ?? 1) : 0
   const maxPoolDist = flActive ? config.sightRange * agent.perceptionScale * config.flashlightBoost * flOutput : 0
   const maxPossibleDist = Math.max(
     effectiveSightRange,
-    config.proximityRange * agent.perceptionScale,
+    config.proximityRange * agent.perceptionScale * visibility,
     flActive ? fl!.range * 1.25 + maxPoolDist : 0,
   )
   if (dist > maxPossibleDist) {
@@ -490,7 +496,7 @@ export function evaluateSight(
   }
 
   const hasDirectLos =
-    dist <= Math.max(effectiveSightRange, config.proximityRange * agent.perceptionScale, flActive ? fl!.range * 1.25 : 0) &&
+    dist <= Math.max(effectiveSightRange, config.proximityRange * agent.perceptionScale * visibility, flActive ? fl!.range * 1.25 : 0) &&
     clearLine(agent.x, agent.y, target.x, target.y, sightBlockers)
 
   const focusHalf = (config.sightCone * Math.PI) / 360
@@ -584,7 +590,7 @@ export function evaluateSight(
   }
 
   // 3. Close-range proximity / smell (must have unobstructed line of sight, never through a wall)
-  const proxRange = config.proximityRange * agent.perceptionScale
+  const proxRange = config.proximityRange * agent.perceptionScale * visibility
   if (hasDirectLos && dist <= proxRange) {
     const proxGain = (1.1 + 1.8 * (1 - dist / Math.max(0.2, proxRange)))
     return {

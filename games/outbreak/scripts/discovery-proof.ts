@@ -1,7 +1,7 @@
 // Headless Metal proof for D-19 "Discovered, Not Told": state read from the world instead of labels. Stills of the
 // low-battery beam against a full one, barricade boards at three wears, searched containers left open with what is
 // inside, drops lying on the floor, the dock dimmed until the pack is held open, the workbench
-// and corkboard, and found pages.
+// and corkboard, found pages, and the slice-4 verbs (crouch, tripwires, closet, peephole, bottle, car alarm, repair).
 // Run from games/outbreak: hivemind run --kind browser -- bun scripts/discovery-proof.ts
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
@@ -267,6 +267,91 @@ try {
     await run(page, `h.setLab("studyTime", 1.5)`)
     await steps(page, 110)
     assert.equal(await run(page, `return h.session().view.progression.learned("reinforced")`), true, "standing and looking teaches it")
+  }
+
+  if (want("verbs")) {
+    const verbs = () => run(page, `return h.state().discovery.verbs`)
+    const learned = (r: string) => run(page, `return h.session().view.progression.learned("${r}")`)
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("crouch")`)
+    await steps(page, 30)
+    assert.deepEqual((await verbs()).lines, ["pharmacy-front"])
+    // Snap mid-step, just over the line on the pharmacy's step.
+    for (let i = 0; i < 80 && (await run(page, `return h.session().view.player.y`)) > 68.5; i++) await steps(page, 4, { my: -1, crouch: true })
+    const low = await verbs()
+    console.log("crouch", low, await run(page, `const p = h.session().view.player; return [p.x, p.y, p.noise]`))
+    assert.equal(low.crouching, true)
+    await snap(page, "crouch", "Ctrl held: the survivor drops into a crouch, slower and quieter, and steps over the cans strung across the pharmacy's step")
+    await steps(page, 90, { my: -1, crouch: true })
+    assert.deepEqual((await verbs()).lines, ["pharmacy-front"], "crouching steps over the line")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("crouch")`)
+    await steps(page, 75, { my: -1 })
+    const sprung = await verbs()
+    console.log("sprung", sprung)
+    assert.deepEqual(sprung.sprung, ["pharmacy-front"])
+    await snap(page, "tripwire-sprung", "Walking through upright springs them: the cans clatter across the step and every zombie in earshot hears it")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("tripwire")`)
+    await steps(page, 60)
+    console.log("tripwire prompt", JSON.stringify(await page.evaluate(() => document.querySelector("#prompt")?.textContent ?? "")))
+    await snap(page, "tripwire", "Cans strung across the pharmacy's front step at shin height, there to be seen by anyone who looks; E works them loose")
+    await steps(page, 1, { interact: true })
+    await steps(page, 130)
+    assert.equal(await learned("tripwire"), true, "disarming teaches the tripwire")
+    assert.deepEqual((await verbs()).lines, [])
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("closet")`)
+    await steps(page, 40)
+    assert.equal((await verbs()).hidden, true)
+    await snap(page, "closet", "Hidden in the bedroom closet at night: the room through the louvres, the survivor out of sight; E steps out")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("peephole")`)
+    await steps(page, 50)
+    const peek = await run(page, `return h.session().view.peek`)
+    console.log("peek", peek)
+    assert.equal(peek?.windowId, "ash-front")
+    await snap(page, "peephole", "Shift+E at the shut front door: the view leans out through the peephole onto the porch and street")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("bottle")`)
+    await steps(page, 20)
+    await snap(page, "bottle-held", "Bottles in hand on the street, a car down the road")
+    await steps(page, 1, { fire: true })
+    await steps(page, 20)
+    for (let i = 0; i < 40 && !(await verbs()).flashing.length; i++) await steps(page, 2)
+    const thrown = await verbs()
+    console.log("bottle", thrown)
+    assert.equal(thrown.glass, 1)
+    assert.equal(thrown.flashing.length + (await run(page, `return h.session().view.progression.ledger.store("car:55.4,41.4")?.counts.alarm ?? 0`)) > 0, true, "the bottle sets the alarm off")
+    await snap(page, "bottle", "One thrown: it breaks beside the car, glass on the road, and the car's alarm goes off (indicators flashing)")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("car-alarm")`)
+    for (let i = 0; i < 40 && !(await verbs()).flashing.length; i++) await steps(page, 2)
+    const alarm = await verbs()
+    console.log("alarm", alarm)
+    assert.equal(alarm.smashed.length, 1)
+    assert.equal(alarm.flashing.length, 1)
+    await snap(page, "car-alarm", "A car with its window put in and its alarm wailing: indicators flashing, glass on the road")
+
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("repair")`)
+    await steps(page, 40)
+    const hp = () => run(page, `return h.session().ai.portalStates.get("ash-south-west").barricadeHp`)
+    const worn = await hp()
+    await snap(page, "repair-before", `A worn barricade (${Math.round(worn)} of 200), a crowbar in hand`)
+    await steps(page, 1, { barricade: true })
+    await steps(page, 120)
+    const fixed = await hp()
+    console.log("repair", worn, "→", fixed)
+    assert.equal(fixed, 200)
+    await snap(page, "repair-after", "B with the crowbar re-nails the boards to full instead of adding one: flush again")
   }
 
   assert.deepEqual(errors, [])

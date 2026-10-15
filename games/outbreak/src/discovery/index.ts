@@ -1,9 +1,11 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
 import { PIN_FOUND, type PageSite } from "../../shared/discovery/found"
 import { ideaToken, matStoreId, pinStoreId, triedToken } from "../../shared/discovery/tinker"
+import { carStoreId, ds, hideStoreId, tripStoreId } from "../../shared/discovery/verbs"
 import type { SessionView } from "../../shared/session"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { ProgressionLabHost } from "../progression/index"
+import type { ClosetView } from "./closet"
 import type { PageGlance } from "./glance"
 import type { DiscoveryProps } from "./props"
 import { DEFAULT_DISCOVERY_SETTINGS, discoveryControls } from "./settings"
@@ -12,9 +14,10 @@ export { DEFAULT_DISCOVERY_SETTINGS, discoveryControls, type DiscoverySettings }
 export { DiscoveryProps } from "./props"
 export { BenchLean } from "./lean"
 export { PageGlance } from "./glance"
+export { ClosetView } from "./closet"
 
 /** What the Discovery Lab scenes need: the progression host (view, pose, clock, inventory HUD) and the world props. */
-export type DiscoveryHost = ProgressionLabHost & { props: DiscoveryProps; glance: PageGlance }
+export type DiscoveryHost = ProgressionLabHost & { props: DiscoveryProps; glance: PageGlance; closet?: ClosetView }
 
 /** Staged scenes for the `outbreak-discovery` Lab station and proofs. */
 export const DISCOVERY_SCENES = [
@@ -29,6 +32,13 @@ export const DISCOVERY_SCENES = [
   "page-read",
   "found-pages",
   "held-out",
+  "crouch",
+  "closet",
+  "peephole",
+  "tripwire",
+  "bottle",
+  "car-alarm",
+  "repair",
 ] as const
 export type DiscoveryScene = (typeof DISCOVERY_SCENES)[number]
 
@@ -85,13 +95,114 @@ function unread(view: SessionView, building: string): PageSite {
   return site
 }
 
+/** Puts `item` in the survivor's hand, granting `count` first. */
+function inHand(view: SessionView, item: string, count = 1): void {
+  const ledger = view.progression.ledger
+  if (ledger.count(view.actorId, item) < count) ledger.apply({ kind: "grant", actor: view.actorId, item, count: count - ledger.count(view.actorId, item) })
+  const slot = view.progression.hotbar(view.actorId)?.slots.findIndex((s) => s?.item === item) ?? -1
+  if (slot >= 0) ledger.apply({ kind: "select", actor: view.actorId, slot })
+}
+
+/** Sets a door open or shut, as staging does before posing. */
+function setDoor(view: SessionView, id: string, open: boolean): void {
+  const door = view.town.doors.find((d) => d.id === id)
+  if (door) door.open = open
+}
+
+/** The alarm car nearest the crossroads, out on the street, and a spot `back` metres west of it. */
+function alarmCar(view: SessionView, back: number) {
+  const near = (c: { x: number; y: number }) => Math.hypot(c.x - 44, c.y - 44)
+  const car = view.progression.cars.filter((c) => c.alarm).sort((a, b) => near(a) - near(b))[0]!
+  return { car, x: car.rect[0] - back, y: car.y }
+}
+
 export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: OutbreakAISubsystem): void {
   const view = host.view()
   host.hud.close()
   host.glance.hide()
   const ash = view.town.buildings.find((b) => b.id === "ash")!
   const ledger = view.progression.ledger
+  // Out of any closet a previous scene left the survivor in.
+  const hidden = view.progression.hiddenIn(view.actorId)
+  if (hidden) ledger.deleteStore(hideStoreId(hidden.id))
   switch (scene) {
+    case "crouch": {
+      // Outside the pharmacy in the afternoon with the door open and cans strung across the step: hold Ctrl to step over them.
+      host.setHour(16)
+      setDoor(view, "pharmacy-front", true)
+      const trip = ledger.store(tripStoreId("pharmacy-front"))
+      if (trip) {
+        trip.counts.armed = 1
+        trip.counts.down = 0
+        trip.rev = ++ledger.rev
+      }
+      host.pose(58.7, 70.2, -Math.PI / 2)
+      return
+    }
+    case "tripwire": {
+      // On the pharmacy's step, facing the cans someone strung across its front door: E works them loose quietly.
+      host.setHour(14)
+      view.player.flashlightOn = false
+      setDoor(view, "pharmacy-front", false)
+      const trip = ledger.store(tripStoreId("pharmacy-front"))
+      if (trip) {
+        trip.counts.armed = 1
+        trip.counts.down = 0
+        trip.rev = ++ledger.rev
+      }
+      host.pose(58.2, 69.5, -Math.PI / 2 + 0.4)
+      return
+    }
+    case "closet": {
+      // Hidden in Ash's bedroom closet at dusk, seeing the room through the louvres. E steps back out.
+      host.setHour(18)
+      const closet = view.progression.closets.find((c) => c.id.startsWith("closet:") && c.x > ash.rect[0] && c.x < ash.rect[2] && c.y < ash.rect[3])!
+      host.pose(closet.out.x, closet.out.y, -Math.PI / 2)
+      ledger.createStore({ id: hideStoreId(closet.id), mode: "counters", scope: "shared", owner: view.actorId, at: { x: closet.x, y: closet.y }, initial: { in: 1 } })
+      Object.assign(view.player, { x: closet.x, y: closet.y, flashlightOn: false })
+      return
+    }
+    case "peephole": {
+      // Looking out through Ash's front door at the porch, the door still shut. E stops.
+      host.setHour(15)
+      view.player.flashlightOn = false
+      setDoor(view, "ash-front", false)
+      const door = view.town.doors.find((d) => d.id === "ash-front")!
+      host.pose(27.7, door.rect[1] - 0.7, Math.PI / 2)
+      Object.assign(view.player, { peekingWindowId: door.id, peekOriginX: 27.7, peekOriginY: door.rect[1] - 0.7, peekOriginDist: 0.7 })
+      return
+    }
+    case "bottle": {
+      // Dusk on the street with bottles in hand and a car down the road: throw one beside it.
+      host.setHour(18.5)
+      inHand(view, "bottle", 3)
+      const { car, x, y } = alarmCar(view, 7)
+      host.pose(x, y, Math.atan2(car.y - y, car.x - x))
+      return
+    }
+    case "car-alarm": {
+      // A car with its window in, the alarm wailing and its indicators flashing, glass on the road beside it.
+      host.setHour(21)
+      const { car } = alarmCar(view, 0)
+      const id = carStoreId(car.key)
+      if (ledger.store(id)) ledger.deleteStore(id)
+      ledger.createStore({ id, mode: "counters", scope: "shared", at: { x: car.x, y: car.y }, initial: { smashed: 1, alarm: 1, start: ds(view.time), until: ds(view.time + 3600) } })
+      ledger.createStore({ id: `glass:lab-${Math.round(view.time * 10)}`, mode: "counters", scope: "shared", at: { x: car.x + 1.2, y: car.rect[3] + 0.6 }, initial: { t: ds(view.time) } })
+      const x = car.x - 1.6
+      const y = car.rect[3] + 3
+      host.pose(x, y, Math.atan2(car.y - y, car.x - x))
+      return
+    }
+    case "repair": {
+      // Ash's south-west window boarded twice and worn to under half: with the crowbar in hand, B re-nails it.
+      host.setHour(14)
+      view.player.flashlightOn = false
+      const win = view.town.windows.find((w) => w.id === "ash-south-west")!
+      boardUp(view, ai, win.id, 2, 0.45)
+      inHand(view, "crowbar")
+      host.pose((win.rect[0] + win.rect[2]) / 2 + 0.9, win.rect[1] - 1.9, Math.PI / 2 + 0.4)
+      return
+    }
     case "bench-tinker": {
       // Daylight, a handful of materials, and plank + scrap already laid on the mat: hold E to try them.
       const bench = atBench(host, 15, [["plank", 1], ["scrap", 3], ["chem", 2], ["battery", 1]])
@@ -263,6 +374,7 @@ export const outbreakDiscoveryFeature = registerOutbreakClientFeature({
       glance: host.discoveryHost.glance.showing,
       pages: host.session().view.progression.pages.map((p) => ({ ...p, unread: host.session().view.progression.ledger.count(p.id, "page") })),
       practice: { ...host.session().view.progression.mastery },
+      verbs: { ...host.discoveryHost.props.verbs.shown, hidden: host.discoveryHost.closet?.hidden ?? false, crouching: Boolean(host.session().view.player.crouching) },
     },
   }),
 })

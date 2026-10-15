@@ -60,6 +60,10 @@ export const PISTOL_HOLD = { fwd: 0.375, up: 1.35, side: 0.045 } as const
 export const PISTOL_LOW_READY = { fwd: 0.28, up: 1.13, side: 0.165 } as const
 const REST_SHOULDER_Y = HIP + RIG.waist + RIG.shoulderY
 const BLADE_PISTOL = 0.235
+/** The crouch (Ctrl): how far the hips drop (m), how far the pelvis tips and how far the chest leans over the knees (rad). */
+const STEALTH_DROP = 0.3
+const STEALTH_PELVIS = 0.28
+const STEALTH_CHEST = 0.34
 
 /** Lab-tunable parameters for the survivor's pistol ready, aim, recoil and upper-body twist. */
 export const survivorAimTuning = {
@@ -107,6 +111,7 @@ export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
       | "stompAnim"
       | "sprinting"
       | "channel"
+      | "crouching"
     >
   > & {
     /** Optional deterministic override to hold raised aim without firing a shot. */
@@ -289,6 +294,8 @@ export class Survivor {
   private chest = spring()
   private head = spring()
   private reachDrop = spring()
+  /** 0 standing, 1 crouched low (Ctrl, D-19 verbs): knees bent, hips down, chest over the knees. */
+  private stealth = spring()
   private twist = spring()
   private arms = [spring(), spring()] as const
   private hands = [spring(), spring()] as const
@@ -755,7 +762,9 @@ export class Survivor {
     const runBlend = curGait.run
     const shambleMod = isZombie && profile ? shambleTorsoModulation(this.phase, gait, profile, 0) : null
     const crouchT = clamp(((profile?.crouchDepth ?? 0) - 0.082) / 0.015, 0, 1) * runBlend
-    const crouchDrop = crouchT * 0.055
+    stepSpring(this.stealth, 260, 1, dt, p.crouching ? 1 : 0)
+    const stealthT = clamp(this.stealth.x, 0, 1)
+    const crouchDrop = crouchT * 0.055 + stealthT * STEALTH_DROP
     const footSupport =
       (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
     const curSupportY = support(p.x, p.y) * 0.65 + footSupport * 0.35
@@ -774,8 +783,8 @@ export class Survivor {
       Math.cos(this.phase * Math.PI * 2) * (0.07 + 0.03 * (profile?.hipDrop ?? 0)) * moving +
         (shambleMod?.pelvisRollAdd ?? 0),
     )
-    if (crouchT > 0 || shambleMod) {
-      pelvis = pitch(pelvis, -0.22 * crouchT - 0.35 * (shambleMod?.torsoPitchAdd ?? 0))
+    if (crouchT > 0 || shambleMod || stealthT > 0) {
+      pelvis = pitch(pelvis, -0.22 * crouchT - STEALTH_PELVIS * stealthT - 0.35 * (shambleMod?.torsoPitchAdd ?? 0))
     }
 
     const ca = Math.cos(p.aim)
@@ -855,6 +864,7 @@ export class Survivor {
       finisherPitch +
       posturePitch +
       0.24 * crouchT +
+      STEALTH_CHEST * stealthT +
       reloadHunch -
       this.torsoKick.x
     const sideRoll = sideLean * 0.75 + (shambleMod?.torsoRollAdd ?? 0) + (meleeMod?.rollAdd ?? 0)
@@ -891,7 +901,7 @@ export class Survivor {
       const steadyYaw =
         this.yaw + blade + clamp(angleDiff(p.aim + blade, this.yaw + blade), -twistLimit, twistLimit) + this.recYaw.x * 0.35
       const steadyTb = steadyYaw - p.aim
-      const steadyFwd = 0.05 + lean + posturePitch + 0.24 * crouchT + reloadHunch - this.torsoKick.x
+      const steadyFwd = 0.05 + lean + posturePitch + 0.24 * crouchT + STEALTH_CHEST * stealthT + reloadHunch - this.torsoKick.x
       let steadyTorso = yawFrame(at(steadyPelvis, 0, RIG.waist, 0), steadyYaw)
       steadyTorso = pitch(steadyTorso, -(steadyFwd * Math.cos(steadyTb) + sideRoll * Math.sin(steadyTb)))
       steadyTorso = roll(steadyTorso, sideRoll * Math.cos(steadyTb) - steadyFwd * Math.sin(steadyTb) * 0.85)

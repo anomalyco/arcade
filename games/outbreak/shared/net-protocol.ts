@@ -279,7 +279,12 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "place",
   "tinker",
   "read",
+  "hide",
+  "disarm",
+  "arm",
 ]
+/** The action byte's top bit: crouching (every flag bit is taken). */
+const CROUCH_BIT = 0x80
 const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
 
 const q3 = (v: number) => Math.round(v * 1000) / 1000
@@ -288,7 +293,7 @@ export function packCommand(c: Command): CommandTuple {
   let flags = 0
   for (const k of Object.keys(FLAG) as (keyof typeof FLAG)[]) if (c[k]) flags |= FLAG[k]
   const t: CommandTuple = [q3(c.mx), q3(c.my), unpackAngle(packAngle(c.aim)), flags]
-  const action = c.interactAction ? Math.max(0, ACTIONS.indexOf(c.interactAction)) : 0
+  const action = (c.interactAction ? Math.max(0, ACTIONS.indexOf(c.interactAction)) : 0) | (c.crouch ? CROUCH_BIT : 0)
   const pick = c.pick ? PICKS.indexOf(c.pick.mode) * 8 + c.pick.index + 1 : 0
   if (c.hotbarSlot !== undefined || c.hotbarDelta || action || pick) t.push(c.hotbarSlot ?? -1, c.hotbarDelta ?? 0, action)
   if (pick) t.push(pick)
@@ -308,8 +313,10 @@ export function unpackCommand(t: unknown): Command {
   if (slot >= 0 && a.length > 4) c.hotbarSlot = slot
   const delta = num(a[5], -9, 9) | 0
   if (delta) c.hotbarDelta = delta
-  const action = ACTIONS[num(a[6], 0, ACTIONS.length - 1) | 0]
+  const actionByte = num(a[6], 0, 255) | 0
+  const action = ACTIONS[Math.min(actionByte & ~CROUCH_BIT, ACTIONS.length - 1)]
   if (action) c.interactAction = action
+  if (actionByte & CROUCH_BIT) c.crouch = true
   const pick = num(a[7], 0, PICKS.length * 8) | 0
   if (pick > 0) c.pick = { mode: PICKS[Math.floor((pick - 1) / 8)]!, index: (pick - 1) % 8 }
   return c
@@ -379,6 +386,8 @@ export type RemoteSurvivor = {
   pistol: boolean
   reloading: boolean
   exhausted: boolean
+  /** Rides the health byte's top bit (health never passes 100). */
+  crouching?: boolean
   flashlightOutput: number
   health: number
   recoil: number
@@ -757,7 +766,7 @@ export function encodeShared(
     const p = slot.survivor
     const liftRaw = p.vault ? Math.sin(Math.min(1, p.vault.elapsed / Math.max(0.01, p.vault.duration)) * Math.PI) : 0
     const flByte = Math.round(clamp(p.flashlightOutput, 0, 1) * 127)
-    const healthByte = Math.round(clamp(p.health, 0, 255))
+    const healthByte = Math.round(clamp(p.health, 0, 127))
     const recoilByte = Math.round(clamp(p.recoil, 0, 1) * 255)
     const liftByte = Math.round(clamp(liftRaw, 0, 1) * 255)
     const meleeProgress =
@@ -774,6 +783,7 @@ export function encodeShared(
       pistol: p.equippedItem === "pistol",
       reloading: p.reloadRemaining > 0,
       exhausted: p.exhausted,
+      ...(p.crouching ? { crouching: true } : {}),
       flashlightOutput: flByte / 127,
       health: healthByte,
       recoil: recoilByte / 255,
@@ -973,7 +983,7 @@ export function encodeShared(
     const flags4 = (s.flashlightOn ? 1 : 0) | (s.sprinting ? 2 : 0) | (s.pistol ? 4 : 0) | (s.reloading ? 8 : 0)
     w.u16(packAngle12(s.aim) | (flags4 << 12))
     w.u8(Math.round(s.flashlightOutput * 127) | (s.exhausted ? 128 : 0))
-    w.u8(s.health)
+    w.u8((s.health & 0x7f) | (s.crouching ? 0x80 : 0))
     if (hasExtra) {
       if (phaseIdx > 0) {
         const comboBits = ((s.meleeCombo ?? 1) - 1) & 3
@@ -1189,7 +1199,8 @@ export function decodeShared(
     const aim = unpackAngle12(aimAndFlags & 0x0fff)
     const flags4 = aimAndFlags >>> 12
     const flAndExh = r.u8()
-    const health = r.u8()
+    const healthByte = r.u8()
+    const health = healthByte & 0x7f
     const extra0 = hasExtra ? r.u8() : 0
     const lift = hasExtra ? r.u8() / 255 : 0
     const recoil = hasExtra && !hasMeleePhase ? extra0 / 255 : 0
@@ -1207,6 +1218,7 @@ export function decodeShared(
       pistol: Boolean(flags4 & 4),
       reloading: Boolean(flags4 & 8),
       exhausted: Boolean(flAndExh & 128),
+      ...(healthByte & 0x80 ? { crouching: true } : {}),
       flashlightOutput: (flAndExh & 0x7f) / 127,
       health,
       recoil,
@@ -1496,7 +1508,8 @@ export function encodePersonal(
     (survivor.exhausted ? 2 : 0) |
     (survivor.flashlightOn ? 4 : 0) |
     (survivor.batteryDepleted ? 8 : 0) |
-    (survivor.equippedItem === "pistol" ? 16 : 0)
+    (survivor.equippedItem === "pistol" ? 16 : 0) |
+    (survivor.crouching ? 32 : 0)
   w.u8(boolFlags)
   w.u8(Math.round(clamp(survivor.health, 0, 255)))
   w.u8(Math.round(clamp(survivor.magAmmo, 0, 255)))
@@ -1638,6 +1651,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     flashlightOn: Boolean(boolFlags & 4),
     batteryDepleted: Boolean(boolFlags & 8),
     equippedItem: boolFlags & 16 ? "pistol" : "hands",
+    crouching: Boolean(boolFlags & 32),
     meleeWeapon: null,
     meleeDurability: 0,
     meleeMaxDurability: 0,

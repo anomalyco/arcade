@@ -466,6 +466,7 @@ function writeRemote(slot: SurvivorSlot, a: RemoteSurvivor, b: RemoteSurvivor, t
   p.flashlightOn = b.flashlightOn
   p.flashlightOutput = lerp(a.flashlightOutput, b.flashlightOutput, t)
   p.sprinting = b.sprinting
+  p.crouching = Boolean(b.crouching)
   p.exhausted = b.exhausted
   p.meleeWeapon = b.meleeWeapon ?? null
   p.equippedItem = b.meleeWeapon ? b.meleeWeapon : b.pistol ? "pistol" : "hands"

@@ -181,6 +181,8 @@ export type Command = {
   ping?: boolean
   /** C tap: cycle vehicle seat. */
   seat?: boolean
+  /** Ctrl held: crouch. */
+  crouch?: boolean
   /** H hold: vehicle horn. */
   horn?: boolean
   /** A digit while a strip is open (container, stash, bench, field craft or pack). */
@@ -197,6 +199,8 @@ export type Survivor = {
   maxHealth: number
   vehicleId?: number | null
   seatIndex?: number
+  /** Ctrl held: slower, quieter, a smaller shape to the dead, and able to step over a tripwire. */
+  crouching?: boolean
 } & StaminaState &
   FlashlightState &
   InteractActorState &

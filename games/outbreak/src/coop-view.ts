@@ -91,6 +91,9 @@ export class CoopView {
     return s && (s.x || s.y) ? { ...p, x: p.x + s.x, y: p.y + s.y } : p
   }
 
+  /** Whether a survivor is out of sight in a closet (D-19 verbs): their body is not drawn. */
+  hidden: (id: string) => boolean = () => false
+
   /** Other survivors: the room's remote seats, or offline companions. */
   get others(): readonly SurvivorSlot[] {
     return this.net ? this.net.remotes : this.companions()
@@ -163,7 +166,7 @@ export class CoopView {
         (x, z) => supportHeight(town, x, z) + lift * 0.58 - sink,
         aimTuning,
       )
-      if (actorVisibility(vision, p.x, p.y) > 0.05) out.push(...batches)
+      if (actorVisibility(vision, p.x, p.y) > 0.05 && !this.hidden(slot.id)) out.push(...batches)
     }
     for (const index of this.avatars.keys()) if (!live.has(index)) this.avatars.delete(index)
     return out

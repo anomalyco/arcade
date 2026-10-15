@@ -66,6 +66,19 @@ describe("AI perception", () => {
     expect(withFlashlight.seesTarget || withFlashlight.sensesLight).toBe(true)
   })
 
+  test("a smaller shape is seen from less far, and one that is not there at all is never seen or sensed", () => {
+    const agent = createAIAgent(1, 7, 10, 10, 0)
+    agent.perceptionScale = 1
+    const standing: PerceptionTarget = { id: "player", x: 21, y: 10, vx: 0, vy: 0, lightLevel: 1, continuousNoiseRadius: 1.2 }
+    const full = evaluateSight(agent, standing, [], DEFAULT_AI_CONFIG)
+    const crouched = evaluateSight(agent, { ...standing, visibility: 0.55 }, [], DEFAULT_AI_CONFIG)
+    expect(full.seesTarget).toBe(true)
+    expect(crouched.effectiveSightRange).toBeCloseTo(full.effectiveSightRange * 0.55, 5)
+    expect(crouched.seesTarget).toBe(false)
+    const hidden = evaluateSight(agent, { ...standing, x: 10.8, visibility: 0 }, [], DEFAULT_AI_CONFIG)
+    expect(hidden.seesTarget || hidden.sensesProximity).toBe(false)
+  })
+
   test("proximity senses behind the zombie only when not separated by a wall", () => {
     const agent = createAIAgent(1, 7, 10, 10, 0) // facing +X
     agent.perceptionScale = 1

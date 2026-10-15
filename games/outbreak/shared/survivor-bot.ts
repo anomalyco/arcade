@@ -1195,11 +1195,12 @@ export class SurvivorBot {
     const tier = world.progression.tier(benchId)
     const mat = matStoreId(benchId)
     for (const r of RECIPES) {
-      if (world.progression.learned(r.id) || r.tier > tier) continue
-      const ok = Object.entries(pairCost(r.tinker)).every(
+      if (!r.tinker || world.progression.learned(r.id) || r.tier > tier) continue
+      const pair = r.tinker
+      const ok = Object.entries(pairCost(pair)).every(
         ([item, needed]) => world.progression.ledger.count(`${this.actorId}/belt`, item) + world.progression.ledger.count(mat, item) >= needed,
       )
-      if (ok) return { pairIndex: pairIndex(r.tinker), label: r.label }
+      if (ok) return { pairIndex: pairIndex(pair), label: r.label }
     }
     return null
   }

@@ -41,6 +41,23 @@ import {
 } from "./discovery/tinker"
 import { HELD_OUT_PLANKS, heldOutWindow, looksReinforced, pageSite, practiceFactor, PIN_FOUND, type PageSite } from "./discovery/found"
 import {
+  carSites,
+  carStoreId,
+  closetSites,
+  crossing,
+  ds,
+  hideStoreId,
+  nearestPortal,
+  portalCentre,
+  portals,
+  trappedDoors,
+  tripLine,
+  tripStoreId,
+  type CarSite,
+  type ClosetSite,
+  type Portal,
+} from "./discovery/verbs"
+import {
   INTERACT_RANGE,
   type InteractAction,
   type InteractActorState,
@@ -99,6 +116,8 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "medkit", label: "First Aid Kit", shortLabel: "MED", tag: "tool", slot: 3, stack: 3 },
   { id: "bandage", label: "Bandage", shortLabel: "BANDAGE", tag: "tool", slot: 3, stack: 3 },
   { id: "noisemaker", label: "Noisemaker", shortLabel: "LURE", tag: "tool", slot: 4, stack: 3 },
+  { id: "bottle", label: "Bottle", shortLabel: "BOTTLE", tag: "tool", slot: 4, stack: 3 },
+  { id: "cans", label: "Can Tripwire", shortLabel: "CANS", tag: "tool", slot: 4, stack: 2 },
 
   { id: "ammo", label: "9mm Ammo", shortLabel: "9mm", tag: "ammo", maxCount: 24 },
   { id: "plank", label: "Wood Plank", shortLabel: "Planks", tag: "resource", maxCount: 6, discovers: ["seen:plank"] },
@@ -119,6 +138,7 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "learned:spiked-board", label: "Spiked Board", tag: "knowledge" },
   { id: "learned:reinforced", label: "Reinforced Barricade", tag: "knowledge" },
   { id: "learned:battery", label: "Flashlight Battery", tag: "knowledge" },
+  { id: "learned:tripwire", label: "Can Tripwire", tag: "knowledge" },
 ]
 
 /** Belt order, as shown in the HUD. */
@@ -140,8 +160,8 @@ export type Recipe = {
   note: string
   /** Bench tier it assembles at (2 needs the toolbox installed). */
   tier: 1 | 2
-  /** The two materials that make it on the bench mat. */
-  tinker: readonly [ItemId, ItemId]
+  /** The two materials that make it on the bench mat; none for what can only be learned by taking one apart. */
+  tinker?: readonly [ItemId, ItemId]
   /** Field-craft cost once learned. */
   craft?: Readonly<Record<ItemId, number>>
 }
@@ -152,6 +172,7 @@ export const RECIPES: readonly Recipe[] = [
   { id: "spiked-board", label: "Spiked Board", produces: "spiked-board", note: "Wider, harder shoves", tier: 1, tinker: ["plank", "scrap"], craft: { plank: 1, scrap: 2 } },
   { id: "reinforced", label: "Reinforced Barricade", note: "Each board takes a scrap and holds 80% longer", tier: 2, tinker: ["scrap", "scrap"] },
   { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight", tier: 2, tinker: ["scrap", "chem"], craft: { scrap: 1, chem: 1 } },
+  { id: "tripwire", label: "Can Tripwire", produces: "cans", note: "Strung across a doorway, it rattles when something walks through. Learned by disarming one", tier: 1, craft: { scrap: 2 } },
 ]
 
 /** The ledger catalog: items plus the corkboard's ideas and crossed-out tries. */
@@ -187,6 +208,30 @@ export type ProgressionTuning = {
   watchShare: number
   /** Seconds of looking closely at a reinforced barricade to see how it was done. */
   studyTime: number
+  /** Walking speed while crouched, as a share of walking. */
+  crouchSpeed: number
+  /** How far a crouched survivor's footsteps carry. */
+  crouchNoise: number
+  /** How much of a crouched survivor the dead can see, as a share of a standing one. */
+  crouchVisibility: number
+  /** Seconds to re-nail a damaged barricade with a crowbar. */
+  repairTime: number
+  /** How far re-nailing carries. */
+  repairNoise: number
+  /** How far a bottle can be thrown. */
+  bottleRange: number
+  /** How far a bottle breaking carries. */
+  bottleNoise: number
+  /** Seconds to string a can tripwire across a doorway. */
+  tripSetTime: number
+  /** Seconds to take a can tripwire down without it rattling. */
+  tripDisarmTime: number
+  /** How far a sprung tripwire's rattle carries. */
+  tripNoise: number
+  /** How far a car alarm carries. */
+  alarmNoise: number
+  /** Seconds a car alarm wails before its battery gives out. */
+  alarmTime: number
   /** Multiplies every field-craft cost (rounded, at least 1). */
   costScale: number
   pryTime: number
@@ -218,6 +263,18 @@ export const progressionControls = [
   { key: "watchRange", label: "Learn by watching within", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
   { key: "watchShare", label: "Practice from watching", group: "Progression", min: 0, max: 1, step: 0.05, unit: "×" },
   { key: "studyTime", label: "Study a reinforced barricade", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
+  { key: "crouchSpeed", label: "Crouched speed", group: "Verbs", min: 0.2, max: 1, step: 0.05, unit: "×" },
+  { key: "crouchNoise", label: "Crouched footsteps", group: "Verbs", min: 0, max: 6, step: 0.1, unit: "m" },
+  { key: "crouchVisibility", label: "Crouched visibility", group: "Verbs", min: 0.1, max: 1, step: 0.05, unit: "×" },
+  { key: "repairTime", label: "Re-nail time", group: "Verbs", min: 0.2, max: 5, step: 0.1, unit: "s" },
+  { key: "repairNoise", label: "Re-nail noise", group: "Verbs", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "bottleRange", label: "Bottle throw", group: "Verbs", min: 2, max: 20, step: 0.5, unit: "m" },
+  { key: "bottleNoise", label: "Bottle breaking", group: "Verbs", min: 0, max: 30, step: 0.5, unit: "m" },
+  { key: "tripSetTime", label: "String a tripwire", group: "Verbs", min: 0.2, max: 5, step: 0.1, unit: "s" },
+  { key: "tripDisarmTime", label: "Disarm a tripwire", group: "Verbs", min: 0.2, max: 5, step: 0.1, unit: "s" },
+  { key: "tripNoise", label: "Tripwire rattle", group: "Verbs", min: 0, max: 30, step: 0.5, unit: "m" },
+  { key: "alarmNoise", label: "Car alarm", group: "Verbs", min: 0, max: 50, step: 1, unit: "m" },
+  { key: "alarmTime", label: "Car alarm length", group: "Verbs", min: 2, max: 60, step: 1, unit: "s" },
   { key: "costScale", label: "Field-craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
@@ -248,6 +305,18 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   watchRange: 8,
   watchShare: 0.5,
   studyTime: 1.5,
+  crouchSpeed: 0.5,
+  crouchNoise: 1.2,
+  crouchVisibility: 0.55,
+  repairTime: 1.6,
+  repairNoise: 6,
+  bottleRange: 12,
+  bottleNoise: 15,
+  tripSetTime: 1.2,
+  tripDisarmTime: 1.8,
+  tripNoise: 13,
+  alarmNoise: 30,
+  alarmTime: 20,
   costScale: 1,
   pryTime: 1.2,
   pryNoise: 12,
@@ -275,6 +344,11 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "heal:medkit", label: "Patching up", duration: t.healTime, consume: { medkit: 1 } },
     { id: "heal:bandage", label: "Bandaging", duration: t.healTime * 0.66, consume: { bandage: 1 } },
     { id: "throw:lure", label: "Throw", consume: { noisemaker: 1 } },
+    { id: "throw:bottle", label: "Throw", consume: { bottle: 1 } },
+    { id: "set:tripwire", label: "Stringing cans", duration: t.tripSetTime, consume: { cans: 1 } },
+    { id: "disarm:tripwire", label: "Disarming", duration: t.tripDisarmTime },
+    { id: "arm:tripwire", label: "Stringing cans", duration: t.tripSetTime },
+    { id: "repair", label: "Re-nailing", duration: t.repairTime, noise: t.repairNoise, requires: { crowbar: 1 } },
     { id: "swap:battery", label: "Fresh battery", consume: { battery: 1 } },
     { id: "unlock", label: "Unlocking", consume: { key: 1 } },
     { id: "pry", label: "Prying the door", duration: t.pryTime, noise: t.pryNoise, requires: { crowbar: 1 } },
@@ -284,8 +358,10 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
   const tinker = { label: "Tinkering", duration: t.researchTime, station: "mat", lightMin: t.researchLight } as const
   rules.push({ id: "tinker:clatter", ...tinker })
   for (const r of RECIPES) {
-    rules.push({ id: `tinker:${r.id}`, ...tinker, consume: pairCost(r.tinker), produce: { [`learned:${r.id}`]: 1 }, produceTo: "team/known" })
-    rules.push({ id: `tinker:idea:${r.id}`, ...tinker, produce: { [ideaToken(r.id)]: 1 }, produceTo: "team/known" })
+    if (r.tinker) {
+      rules.push({ id: `tinker:${r.id}`, ...tinker, consume: pairCost(r.tinker), produce: { [`learned:${r.id}`]: 1 }, produceTo: "team/known" })
+      rules.push({ id: `tinker:idea:${r.id}`, ...tinker, produce: { [ideaToken(r.id)]: 1 }, produceTo: "team/known" })
+    }
     if (r.produces && r.craft) {
       rules.push({
         id: `craft:${r.id}`,
@@ -504,6 +580,8 @@ const CONTAINER_LABELS: Partial<Record<Prop["kind"], string>> = {
   fridge: "Fridge",
 }
 const CONTAINER_SLOTS = 4
+/** Chance a container holds an empty bottle or two to throw (D-19 verbs). */
+const BOTTLE_CHANCE: Partial<Record<Prop["kind"], number>> = { counter: 0.45, fridge: 0.35, shelf: 0.12 }
 
 export type LootSite = {
   /** Ledger store id, `loot:<prop index>`. */
@@ -536,6 +614,7 @@ export function buildingAt(town: Town, x: number, y: number): Building | undefin
 export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootSite[]; stores: StoreSpec[] } {
   const rng = new Rng((town.seed ^ 0x5c3e19a7) >>> 0)
   const meleeRng = new Rng((town.seed ^ 0x3b9a71d3) >>> 0)
+  const bottleRng = new Rng((town.seed ^ 0x6b0771e5) >>> 0)
   const sites: LootSite[] = []
   const stores: StoreSpec[] = []
   const backRoomShelves = new Map<string, number[]>()
@@ -554,6 +633,9 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
       const n = (roll.min ?? 1) + r.int((roll.max ?? roll.min ?? 1) - (roll.min ?? 1) + 1)
       if (hit && contents.length < CONTAINER_SLOTS) contents.push({ item: roll.item, count: n })
     }
+    // Empty bottles on their own roll, so every other container keeps the contents it always had.
+    const bottles = BOTTLE_CHANCE[p.kind] ?? 0
+    if (bottleRng.next() < bottles * tuning.lootRate && contents.length < CONTAINER_SLOTS) contents.push({ item: "bottle", count: 1 + bottleRng.int(2) })
     const id = `loot:${i}`
     sites.push({ id, propIndex: i, kind: p.kind, label: CONTAINER_LABELS[p.kind] ?? p.kind, rect: shape.rect, x: p.x, y: p.y, buildingId: building?.id ?? null })
     stores.push({ id, mode: "slots", scope: "shared", size: CONTAINER_SLOTS, revealed: false, at: { x: p.x, y: p.y }, initial: contents })
@@ -617,6 +699,9 @@ export type ProgressionActor = InteractActorState & {
   health: number
   maxHealth: number
   sprinting: boolean
+  crouching?: boolean
+  vx?: number
+  vy?: number
   flashlightOn: boolean
   flashlightOutput: number
   battery: number
@@ -644,11 +729,23 @@ export type WorldContext = { town: Town; ai: OutbreakAISubsystem; time: number; 
 export type Study = { portal: string; t: number; x: number; y: number }
 
 /** Selected-item behaviour on the primary button. */
-export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw"
+export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw" | "set"
 
 const CHANNEL_SLACK = 0.65
 const DROP_RANGE = 1.6
 const PAGE_RANGE = 1.4
+/** How far smashing a car window carries. */
+const CAR_GLASS_NOISE = 9
+/** How near a car a bottle must break to jolt it (and its alarm). */
+const CAR_JOLT_RANGE = 2.5
+/** How near a car a gunshot must be to set its alarm off. */
+const CAR_SHOT_RANGE = 4
+/** Seconds between a car alarm's wails. */
+const ALARM_BEAT = 1.2
+/** How near a tripwire's line, either side, a footfall must land to catch it. */
+const TRIP_STRIDE = 0.25
+/** Seconds broken glass lies before it is swept from the world. */
+const GLASS_SECONDS = 90
 /** How square on, in radians, a survivor must face a reinforced barricade to study it. */
 const STUDY_CONE = 0.6
 /** Movement, in metres per second, under which a survivor counts as standing still to study. */
@@ -766,6 +863,7 @@ export class OutbreakProgression {
     // Nothing is announced: a new material, a lesson or a better bench shows on the bench and its corkboard (D-19).
     this.ensureMatStores()
     this.ensurePageStores()
+    this.ensureVerbStores()
   }
 
   /** The mat on each bench: two slots for materials, and what they make. Created for snapshots that predate it. */
@@ -814,6 +912,7 @@ export class OutbreakProgression {
   /** Ensures ledger stores exist for any newly streamed chunk containers and syncs their `searched` flag. */
   ensureContainerStores(): void {
     this.ensurePageStores()
+    this.ensureVerbStores()
     for (const c of this.containers) {
       let st = this.ledger.store(c.id)
       if (!st) {
@@ -881,7 +980,8 @@ export class OutbreakProgression {
     const item = this.selected(id)?.item
     if (isMeleeWeapon(item)) return "melee"
     if (item === "medkit" || item === "bandage") return "heal"
-    if (item === "noisemaker") return "throw"
+    if (item === "noisemaker" || item === "bottle") return "throw"
+    if (item === "cans") return "set"
     return this.ledger.count(`${id}/hotbar`, "pistol") > 0 ? "fire" : "shove"
   }
 
@@ -996,7 +1096,16 @@ export class OutbreakProgression {
 
   /** Containers, ground drops, workbenches and stashes as interaction targets. */
   handlers(): InteractionHandler[] {
-    return [this.containerHandler(), this.dropHandler(), this.benchHandler(), this.stashHandler(), this.pageHandler()]
+    return [
+      this.containerHandler(),
+      this.dropHandler(),
+      this.benchHandler(),
+      this.stashHandler(),
+      this.pageHandler(),
+      this.closetHandler(),
+      this.tripwireHandler(),
+      this.carHandler(),
+    ]
   }
 
   private containerHandler(): InteractionHandler {
@@ -1213,6 +1322,314 @@ export class OutbreakProgression {
     return res.ok
   }
 
+  // ── Verbs: closets, tripwires, cars (D-19 slice 4) ────────────────────────────────────────────────────────
+
+  /** Closets in the world (refreshed with the stores as buildings stream in). */
+  readonly closets: ClosetSite[] = []
+  /** Abandoned cars along the streets, about half with a working alarm. */
+  readonly cars: CarSite[] = []
+
+  /** The closet a survivor is hiding in, if any. */
+  hiddenIn(actor: string): ClosetSite | null {
+    for (const c of this.closets) {
+      const st = this.ledger.store(hideStoreId(c.id))
+      if (st && st.owner === actor && (st.counts.in ?? 0) > 0) return c
+    }
+    return null
+  }
+
+  /** E at a closet: squeeze in, the doors pulled to; E again to step back out. The flashlight goes off inside. */
+  private closetHandler(): InteractionHandler {
+    return {
+      kind: "closet",
+      candidates: (town, actor) => {
+        if (actor.peekingWindowId) return []
+        const slot = this.actorOf.get(actor)
+        const inside = slot ? this.hiddenIn(slot.id) : null
+        const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        const out: RawInteractCandidate[] = []
+        for (const c of this.closets) {
+          if (inside ? inside.id !== c.id : distToRect(actor.x, actor.y, c.rect) > 1.2 || buildingAt(town, c.x, c.y)?.id !== here) continue
+          if (!inside && this.ledger.store(hideStoreId(c.id))) continue
+          const primary: InteractAction = { id: "hide", label: inside ? "Leave" : "Hide" }
+          out.push({ kind: "closet", id: c.id, label: "Closet", rect: c.rect, worldX: c.x, worldY: c.y, primary, actions: [primary], priority: inside ? 10 : 0 })
+        }
+        return out
+      },
+      execute: (_town, actor, targetId, action) => {
+        const slot = this.actorOf.get(actor)
+        const c = this.closets.find((x) => x.id === targetId)
+        if (!slot || !c || action !== "hide") return { handled: false }
+        return { handled: this.toggleHide(slot, c), kind: "closet", targetId, action }
+      },
+    }
+  }
+
+  /** Steps a hidden survivor back out of their closet. */
+  leaveHiding(slot: ProgressionSlot): boolean {
+    const c = this.hiddenIn(slot.id)
+    return c ? this.toggleHide(slot, c) : false
+  }
+
+  private toggleHide(slot: ProgressionSlot, c: ClosetSite): boolean {
+    const p = slot.survivor
+    const id = hideStoreId(c.id)
+    const st = this.ledger.store(id)
+    if (st) {
+      if (st.owner !== slot.id) return false
+      this.ledger.deleteStore(id)
+      p.x = c.out.x
+      p.y = c.out.y
+      return true
+    }
+    if (distToRect(p.x, p.y, c.rect) > INTERACT_RANGE) return false
+    this.ledger.cancel(slot.id)
+    this.ledger.createStore({ id, mode: "counters", scope: "shared", owner: slot.id, at: { x: c.x, y: c.y }, initial: { in: 1 } })
+    p.x = c.x
+    p.y = c.y
+    p.flashlightOn = false
+    return true
+  }
+
+  /**
+   * Cans strung across a doorway, a stride from it (see `tripLine`). Armed: E takes them down without a rattle (and anyone who
+   * does learns how they work). Sprung: E picks the cans up, holding E strings them back.
+   */
+  private tripwireHandler(): InteractionHandler {
+    return {
+      kind: "tripwire",
+      candidates: (town, actor) => {
+        if (actor.peekingWindowId) return []
+        const out: RawInteractCandidate[] = []
+        for (const p of portals(town)) {
+          const st = this.ledger.store(tripStoreId(p.id))
+          if (!st || st.counts.down) continue
+          const line = tripLine(town, p)
+          if (distToRect(actor.x, actor.y, line.rect) > 1.1) continue
+          const armed = (st.counts.armed ?? 0) > 0
+          const primary: InteractAction = { id: "disarm", label: armed ? "Disarm" : "Take" }
+          const secondary: InteractAction | undefined = armed ? undefined : { id: "arm", label: "Re-string", hold: true }
+          // The prompt floats a little further from the opening, so it never sits on top of the wire it is about.
+          const c = portalCentre(p)
+          const off = Math.hypot(line.x - c.x, line.y - c.y) || 1
+          out.push({
+            kind: "tripwire",
+            id: p.id,
+            label: "Cans",
+            rect: line.rect,
+            worldX: line.x + ((line.x - c.x) / off) * 0.8,
+            worldY: line.y + ((line.y - c.y) / off) * 0.8,
+            primary,
+            secondary,
+            actions: secondary ? [primary, secondary] : [primary],
+            deferPrimary: Boolean(secondary),
+          })
+        }
+        return out
+      },
+      execute: (town, actor, targetId, action) => {
+        const slot = this.actorOf.get(actor)
+        const p = portals(town).find((x) => x.id === targetId)
+        const st = this.ledger.store(tripStoreId(targetId))
+        if (!slot || !p || !st || st.counts.down) return { handled: false }
+        const line = tripLine(town, p)
+        if (action !== "disarm" && action !== "arm") return { handled: false }
+        const armed = (st.counts.armed ?? 0) > 0
+        // Taking sprung cans is instant; working an armed line loose, or stringing it again, takes a moment.
+        if (action === "disarm" && !armed) {
+          this.takeDownTripwire(slot, p, { x: line.x, y: line.y })
+          return { handled: true, kind: "tripwire", targetId, action }
+        }
+        if (action === "arm" && armed) return { handled: false }
+        const rule = action === "arm" ? "arm:tripwire" : "disarm:tripwire"
+        const res = this.ledger.start({ kind: "run", actor: slot.id, rule, ref: p.id }, this.envFor(slot), { x: line.x, y: line.y })
+        this.feedback(slot, res.events)
+        return { handled: res.ok, kind: "tripwire", targetId, action }
+      },
+    }
+  }
+
+  private takeDownTripwire(slot: ProgressionSlot, p: Portal, at: { x: number; y: number }): void {
+    const st = this.ledger.store(tripStoreId(p.id))
+    if (!st) return
+    st.counts.armed = 0
+    st.counts.down = 1
+    st.rev = ++this.ledger.rev
+    this.ledger.apply({ kind: "grant", actor: slot.id, item: "cans", count: 1 })
+    this.learnRecipe(slot, "tripwire", at, 0)
+    this.project(slot)
+  }
+
+  /** Strings cans across `p` (a new line, or one that was sprung or taken down). */
+  private armTripwire(p: Portal, owner: string | undefined): void {
+    const id = tripStoreId(p.id)
+    const st = this.ledger.store(id)
+    if (st) {
+      st.counts.armed = 1
+      st.counts.down = 0
+      st.rev = ++this.ledger.rev
+      return
+    }
+    const c = { x: (p.rect[0] + p.rect[2]) / 2, y: (p.rect[1] + p.rect[3]) / 2 }
+    this.ledger.createStore({ id, mode: "counters", scope: "shared", owner, at: c, initial: { armed: 1, down: 0 } })
+  }
+
+  /** Holding the cans, the primary button strings them across the nearest doorway or window. */
+  private setTripwire(slot: ProgressionSlot, world: WorldContext): void {
+    const p = slot.survivor
+    const portal = nearestPortal(world.town, p.x, p.y, INTERACT_RANGE)
+    if (!portal) return
+    const st = this.ledger.store(tripStoreId(portal.id))
+    if (st && !st.counts.down) return
+    const line = tripLine(world.town, portal)
+    const res = this.ledger.start({ kind: "run", actor: slot.id, rule: "set:tripwire", ref: portal.id }, this.envFor(slot, world), { x: line.x, y: line.y })
+    this.feedback(slot, res.events)
+  }
+
+  /** E at an abandoned car: put a window in. Some still have an alarm, and it wails until its battery dies. */
+  private carHandler(): InteractionHandler {
+    return {
+      kind: "car",
+      candidates: (_town, actor) => {
+        if (actor.peekingWindowId) return []
+        const out: RawInteractCandidate[] = []
+        for (const car of this.cars) {
+          if (distToRect(actor.x, actor.y, car.rect) > 1.1) continue
+          if (this.ledger.store(carStoreId(car.key))?.counts.smashed) continue
+          const primary: InteractAction = { id: "smash", label: "Smash" }
+          out.push({ kind: "car", id: car.key, label: "Car", rect: car.rect, worldX: car.x, worldY: car.y, primary, actions: [primary] })
+        }
+        return out
+      },
+      execute: (_town, actor, targetId, action) => {
+        const car = this.cars.find((c) => c.key === targetId)
+        if (!car || action !== "smash" || distToRect(actor.x, actor.y, car.rect) > INTERACT_RANGE) return { handled: false }
+        if (this.ledger.store(carStoreId(car.key))?.counts.smashed) return { handled: false }
+        this.smashCar(car, this.world?.time ?? 0, true)
+        return { handled: true, kind: "car", targetId, action, noise: CAR_GLASS_NOISE, noiseKind: "glass" }
+      },
+    }
+  }
+
+  /** Breaks a car's window (`smash`) or just jolts it; an alarm car starts wailing if it never has. */
+  private smashCar(car: CarSite, time: number, smash: boolean): void {
+    const id = carStoreId(car.key)
+    let st = this.ledger.store(id)
+    if (!st) st = this.ledger.createStore({ id, mode: "counters", scope: "shared", at: { x: car.x, y: car.y }, initial: { smashed: 0, alarm: 0 } })
+    if (smash) st.counts.smashed = 1
+    if (car.alarm && !st.counts.alarm) {
+      st.counts.alarm = 1
+      st.counts.start = ds(time)
+      st.counts.until = ds(time + this.tuning.alarmTime)
+    }
+    st.rev = ++this.ledger.rev
+  }
+
+  /** Whether a car's alarm is wailing at `time`. */
+  alarmRinging(car: CarSite, time: number): boolean {
+    const st = this.ledger.store(carStoreId(car.key))
+    return Boolean(st?.counts.alarm) && ds(time) < (st!.counts.until ?? 0)
+  }
+
+  /** Throws the bottle in hand: it breaks where it lands, loud, and can set off a car alarm next to it. */
+  private throwBottle(slot: ProgressionSlot, world: WorldContext): void {
+    const p = slot.survivor
+    const res = this.ledger.apply({ kind: "run", actor: slot.id, rule: "throw:bottle" })
+    if (!res.ok) return
+    const dx = Math.cos(p.aim)
+    const dy = Math.sin(p.aim)
+    const range = this.tuning.bottleRange
+    const reach = Math.max(0.6, Math.min(range, raycast(p.x, p.y, dx, dy, sightRects(world.town), range)) - 0.3)
+    const x = Number((p.x + dx * reach).toFixed(2))
+    const y = Number((p.y + dy * reach).toFixed(2))
+    world.ai.emitNoise(x, y, this.tuning.bottleNoise, "glass", world.time, slot.id, 1.6)
+    this.ledger.createStore({ id: `glass:${this.nextId++}`, mode: "counters", scope: "shared", at: { x, y }, initial: { t: ds(world.time) } })
+    for (const car of this.cars) if (distToRect(x, y, car.rect) < CAR_JOLT_RANGE) this.smashCar(car, world.time, false)
+    this.project(slot)
+  }
+
+  /** The tripwire stores and closet and car lists for whatever is in the world now. */
+  ensureVerbStores(): void {
+    this.closets.length = 0
+    this.closets.push(...closetSites(this.town))
+    this.cars.length = 0
+    this.cars.push(...carSites(this.town))
+    for (const id of trappedDoors(this.town)) {
+      const door = this.town.doors.find((d) => d.id === id)!
+      if (!this.ledger.store(tripStoreId(id))) this.armTripwire(door, undefined)
+    }
+  }
+
+  /**
+   * Once per tick: tripwires rattle when the dead or an upright survivor walks through (crouch to step over), car
+   * alarms wail on a beat until their battery dies (and a gunshot beside one sets it off), and broken glass is swept.
+   */
+  private stepVerbs(dt: number, world: WorldContext): void {
+    for (const p of portals(world.town)) {
+      const st = this.ledger.store(tripStoreId(p.id))
+      if (!st || !st.counts.armed) continue
+      const line = tripLine(world.town, p)
+      let sprung = false
+      for (const z of world.ai.agents) {
+        if (z.state !== "dead" && crossing(line, z.x, z.y, TRIP_STRIDE)) sprung = true
+      }
+      for (const s of world.slots) {
+        const q = s.survivor
+        const walking = Math.hypot(q.vx ?? 0, q.vy ?? 0) > 0.3
+        if (q.health > 0 && walking && !q.crouching && !this.hiddenIn(s.id) && crossing(line, q.x, q.y, TRIP_STRIDE)) sprung = true
+      }
+      if (!sprung) continue
+      st.counts.armed = 0
+      st.rev = ++this.ledger.rev
+      world.ai.emitNoise(line.x, line.y, this.tuning.tripNoise, "cans", world.time, "tripwire", 1.3)
+    }
+    for (const car of this.cars) {
+      if (!car.alarm) continue
+      const st = this.ledger.store(carStoreId(car.key))
+      if (!st?.counts.alarm) {
+        const shot = world.ai.noiseBus.events.some((e) => e.kind === "gunshot" && e.time > world.time - 0.5 && distToRect(e.x, e.y, car.rect) < CAR_SHOT_RANGE)
+        if (shot) this.smashCar(car, world.time, false)
+        continue
+      }
+      const start = (st.counts.start ?? 0) / 10
+      if (ds(world.time) >= (st.counts.until ?? 0)) continue
+      const beat = Math.floor((world.time - start) / ALARM_BEAT)
+      const prev = Math.floor((world.time - dt - start) / ALARM_BEAT)
+      if (world.time - dt < start || beat !== prev) world.ai.emitNoise(car.x, car.y, this.tuning.alarmNoise, "alarm", world.time, "alarm", 2)
+    }
+    for (const st of [...this.ledger.stores.values()]) {
+      if (st.id.startsWith("glass:") && ds(world.time) - (st.counts.t ?? 0) > GLASS_SECONDS * 10) this.ledger.deleteStore(st.id)
+    }
+  }
+
+  /** Holding a crowbar, B re-nails a damaged barricade within reach; practice makes it faster and quieter. */
+  private startRepair(slot: ProgressionSlot, world: WorldContext): number | null {
+    const p = slot.survivor
+    let best: { id: string; x: number; y: number } | null = null
+    let bestD = INTERACT_RANGE
+    for (const o of portals(world.town)) {
+      const st = world.ai.portalStates.get(o.id)
+      if (!st || st.barricadePlanks <= 0 || st.barricadeHp >= st.barricadePlanks * 100 - 1) continue
+      const d = distToRect(p.x, p.y, o.rect)
+      if (d <= bestD) {
+        bestD = d
+        best = { id: o.id, x: (o.rect[0] + o.rect[2]) / 2, y: (o.rect[1] + o.rect[3]) / 2 }
+      }
+    }
+    if (!best) return null
+    const res = this.ledger.start({ kind: "run", actor: slot.id, rule: "repair", ref: best.id }, this.envFor(slot, world), best)
+    this.feedback(slot, res.events)
+    if (!res.ok) return 0
+    const practice = this.practice(slot.id, "repair")
+    const noise = res.noise * practiceFactor(practice, this.tuning.practiceNoiseFloor)
+    const ch = this.ledger.channel(slot.id)
+    if (ch) {
+      ch.duration *= practiceFactor(practice, this.tuning.practiceTimeFloor)
+      ch.noise = noise
+    }
+    return noise
+  }
+
   private stashHandler(): InteractionHandler {
     return {
       kind: "stash",
@@ -1307,7 +1724,10 @@ export class OutbreakProgression {
     if (cmd.fire) {
       const use = this.heldUse(slot.id)
       if (use === "heal") this.startHeal(slot)
-      else if (use === "throw") this.throwLure(slot, world)
+      else if (use === "throw") {
+        if (this.selected(slot.id)?.item === "bottle") this.throwBottle(slot, world)
+        else this.throwLure(slot, world)
+      } else if (use === "set") this.setTripwire(slot, world)
     }
     if (cmd.drop) this.dropHeld(slot)
     if (cmd.bundle) this.dropBundle(slot)
@@ -1420,6 +1840,10 @@ export class OutbreakProgression {
 
   private startBarricade(slot: ProgressionSlot, world: WorldContext): number {
     const p = slot.survivor
+    if (this.selected(slot.id)?.item === "crowbar") {
+      const repaired = this.startRepair(slot, world)
+      if (repaired !== null) return repaired
+    }
     const best = this.barricadeTarget(p, world)
     if (!best) return 0
     if (world.ai.getBarricadePlanks(best.id) >= 3) {
@@ -1502,7 +1926,7 @@ export class OutbreakProgression {
     if (!res.ok) return
     const dx = Math.cos(p.aim)
     const dy = Math.sin(p.aim)
-    const reach = Math.max(0.6, raycast(p.x, p.y, dx, dy, sightRects(world.town), LURE_RANGE) - 0.35)
+    const reach = Math.max(0.6, Math.min(LURE_RANGE, raycast(p.x, p.y, dx, dy, sightRects(world.town), LURE_RANGE)) - 0.35)
     this.lures.push({ id: this.nextId++, x: p.x + dx * reach, y: p.y + dy * reach, until: world.time + 1 + this.tuning.lureSeconds, next: world.time + 1 })
     this.notify(slot, "Noisemaker thrown", "result", "lure")
   }
@@ -1635,6 +2059,7 @@ export class OutbreakProgression {
       topologyChanged = true
     }
     this.stepStudy(dt, world)
+    this.stepVerbs(dt, world)
     for (const slot of world.slots) this.project(slot)
     return { topologyChanged }
   }
@@ -1798,6 +2223,23 @@ export class OutbreakProgression {
       if (recipe) this.notify(slot, `Crafted ${recipe.label}`, "result", "craft")
     }
     if (ev.rule.startsWith("tinker:") && ev.station) this.tinkered(slot, ev.rule, ev.station, ev.ref ?? "", world)
+    if (ev.rule === "repair" && ev.ref) {
+      const st = world.ai.portalStates.get(ev.ref)
+      if (st && st.barricadePlanks > 0) st.barricadeHp = Math.max(st.barricadeHp, st.barricadePlanks * 100)
+      this.practise(slot.id, "repair", 1)
+      for (const other of this.watchers(slot, world)) this.practise(other.id, "repair", this.tuning.watchShare)
+    }
+    if ((ev.rule === "set:tripwire" || ev.rule === "arm:tripwire") && ev.ref) {
+      const portal = portals(world.town).find((x) => x.id === ev.ref)
+      if (portal) this.armTripwire(portal, slot.id)
+    }
+    if (ev.rule === "disarm:tripwire" && ev.ref) {
+      const portal = portals(world.town).find((x) => x.id === ev.ref)
+      if (portal) {
+        const line = tripLine(world.town, portal)
+        this.takeDownTripwire(slot, portal, { x: line.x, y: line.y })
+      }
+    }
     return false
   }
 

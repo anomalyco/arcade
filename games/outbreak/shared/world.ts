@@ -2,6 +2,7 @@ import type { AIAgent, AIState } from "@arcade/kit/sim/ai"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { hash3, Rng } from "@arcade/kit/sim/rng"
 import { DEFAULT_PROGRESSION_TUNING, lootSites, type LootSite } from "./progression"
+import { closetSpot } from "./discovery/closet-spot"
 import {
   CHUNK,
   EXTERIOR_VEHICLE_COLLIDERS,
@@ -441,6 +442,7 @@ export function generateWorldChunk(
   const doors: Door[] = []
   const windows: WindowOpening[] = []
   const props: Prop[] = []
+  const closets: { x: number; y: number }[] = []
   const lamps: Lamp[] = []
   const vehicles: Rect[] = []
 
@@ -602,6 +604,8 @@ export function generateWorldChunk(
       const northX = useLPlan ? x + 3.85 : x + 2.2
       addProp(northX, y + 2.0, "bed")
       addProp(Math.min(r - 1.8, northX + 3.4), y + 0.95, "dresser")
+      const closet = closetSpot(y, { x: Number(northX.toFixed(2)) }, { x: Number(Math.min(r - 1.8, northX + 3.4).toFixed(2)) })
+      if (closet) closets.push(closet)
       addProp(northX - 1.1, y + 1.1, "nightstand")
       addProp(x + 1.35, split + 0.85, "shelf")
       addProp(x + 1.2, b - 2.2, "sofa")
@@ -691,6 +695,9 @@ export function generateWorldChunk(
     if (vehicles.some((v) => distToRect(tx, tz, v) < 2.2)) continue
     props.push({ x: Number(tx.toFixed(2)), y: Number(tz.toFixed(2)), kind: "tree", variant: Number(rng.next().toFixed(4)) })
   }
+
+  // Bedroom closets (D-19 verbs) go after every seeded prop, so the props and loot ids before them are unchanged.
+  for (const c of closets) props.push({ ...c, kind: "closet", variant: 0.5 })
 
   // 5. Build deterministic loot containers for this chunk with chunk-prefixed IDs
   const searchableKinds = new Set<Prop["kind"]>(["dresser", "shelf", "nightstand", "counter", "fridge"])

@@ -25,7 +25,7 @@ import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { BenchLean, DiscoveryProps, PageGlance, type DiscoveryHost } from "./discovery/index"
+import { BenchLean, ClosetView, DiscoveryProps, PageGlance, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, SIZE } from "../shared/map"
@@ -258,6 +258,11 @@ async function main() {
   let originSconces: Float32Array[] = []
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
+  // Ctrl is crouch: keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
+  window.addEventListener("keydown", (e) => {
+    const t = e.target as HTMLElement | null
+    if (e.ctrlKey && !e.metaKey && /^(Key[A-Z]|Digit\d|Space)$/.test(e.code) && !t?.closest?.("input, textarea, select, [contenteditable]")) e.preventDefault()
+  })
   input.mouse.y = innerHeight / 2 - 150
   let pendingHotbarSlot: number | undefined
   let pendingHotbarDelta = 0
@@ -313,6 +318,7 @@ async function main() {
   audio.arm()
   const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
   coop.onFootfall = footfall
+  coop.hidden = (id) => Boolean(session.view.progression.hiddenIn(id))
   let avatar = new Survivor(renderer)
   avatar.onFootfall = footfall
   let avatarPalette: object | null = null
@@ -322,6 +328,7 @@ async function main() {
   const discoveryProps = new DiscoveryProps(renderer)
   const benchLean = new BenchLean()
   const pageGlance = new PageGlance()
+  const closetView = new ClosetView()
   const seatTint = (seat: number) => {
     const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
     return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
@@ -359,7 +366,7 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
-  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps, glance: pageGlance }
+  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps, glance: pageGlance, closet: closetView }
   const vehicleHost: VehicleLabHost = {
     sim: () => session.sim,
     view: () => session.view,
@@ -545,6 +552,7 @@ async function main() {
     const meleeEdge = input.takeMelee()
     const seatEdge = input.takeSeat()
     const hornHeld = input.held("KeyH")
+    const crouchHeld = input.enabled && (input.held("ControlLeft") || input.held("ControlRight"))
     const spaceHeld = Boolean(session.view.player.vehicleId) && input.held("Space")
     const barricadeEdge = pendingBarricade
     pollHolds(wallNow)
@@ -572,6 +580,7 @@ async function main() {
         barricade: idx === 0 ? barricadeEdge : false,
         ...(idx === 0 && seatEdge ? { seat: true } : {}),
         ...(hornHeld ? { horn: true } : {}),
+        ...(crouchHeld ? { crouch: true } : {}),
         ...(idx === 0 ? verbs : {}),
         ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
         ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
@@ -899,6 +908,7 @@ async function main() {
       : 0
     const lean = benchLean.step(session.view, settings.discovery, dt)
     pageGlance.update(session.view, settings.discovery, dt)
+    closetView.update(session.view, dt)
     cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
     const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
@@ -1524,7 +1534,7 @@ async function main() {
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
-    for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
+    if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
     for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
     for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
     const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z), {
