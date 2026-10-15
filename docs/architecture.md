@@ -61,18 +61,18 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — |
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — |
 | `net/*` | Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | — | Yes | — | — | — |
-| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | — | — |
+| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — |
-| `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | — | — |
-| `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | — | — |
-| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | — | — |
+| `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — |
+| `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — |
+| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | — |
 | `gpu-perf` & `fx/frame-timer` | Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — |
 | `fx/{explosion,fire-water,splatter*}` | Multi-stage explosions, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
-| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | — | — |
+| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | — |
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | — | — | Yes | — |
 | `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — |
 | `client/{input,camera}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — |

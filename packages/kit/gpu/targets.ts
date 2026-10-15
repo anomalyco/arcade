@@ -407,12 +407,14 @@ export function uploadAlphaWeightedMipChain(
   alphaBoost = 1.1,
 ): void {
   let w = img.width
-  let level = new Uint8Array(img.data.buffer.slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength))
+  let level: Uint8Array<ArrayBuffer> = new Uint8Array(
+    (img.data.buffer as ArrayBuffer).slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength),
+  )
   for (let mip = 0; w >= 1; mip++) {
     device.queue.writeTexture({ texture, mipLevel: mip }, level, { bytesPerRow: w * 4 }, [w, w])
     if (w === 1) break
     const n = w >> 1
-    const next = new Uint8Array(n * n * 4)
+    const next: Uint8Array<ArrayBuffer> = new Uint8Array(n * n * 4)
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
         let r = 0
