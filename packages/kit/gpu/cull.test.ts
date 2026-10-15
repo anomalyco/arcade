@@ -6,7 +6,9 @@ import {
   drawContiguousChunks,
   drawContiguousChunksByMode,
   extractFrustumPlanes,
+  isShadowCasterVisible,
 } from "./cull"
+import { PassList, depthConfigForMode, type ScenePass } from "./pass-graph"
 import { GrowableInstanceBuffer, uploadSplitSprites } from "./targets"
 
 describe("gpu/cull & gpu/targets", () => {
@@ -139,5 +141,82 @@ describe("gpu/cull & gpu/targets", () => {
       { dstOffset: 0, dataOffset: 0, size: 10 * 48 },
       { dstOffset: 50 * 48, dataOffset: 0, size: 5 * 48 },
     ])
+  })
+
+  test("isShadowCasterVisible culls flat ground and keeps off-screen casters whose shadow sweeps into view", () => {
+    const proj = mat4.ortho(-20, 20, -20, 20, 1, 200)
+    const view = mat4.lookAt([0, 0, 0], [0, 0, -10], [0, 1, 0])
+    const vp = mat4.multiply(proj, view)
+    const camPlanes = new Float32Array(24)
+    extractFrustumPlanes(vp, 0, camPlanes)
+
+    const shadowProj = mat4.ortho(-100, 100, -100, 100, 1, 200)
+    const shadowVp = mat4.multiply(shadowProj, view)
+    const shadowPlanes = new Float32Array(24)
+    extractFrustumPlanes(shadowVp, 0, shadowPlanes)
+
+    // Flat ground chunk (maxY <= 0.05) never casts shadows
+    expect(isShadowCasterVisible(shadowPlanes, camPlanes, -5, 0, -20, 5, 0.02, -10)).toBe(false)
+    // Tall building just to the left of camera frustum (-30..-22) whose +X/+Z shadow sweep reaches x = -22 + 20 * 0.92 = -3.6
+    expect(isShadowCasterVisible(shadowPlanes, camPlanes, -30, 0, -20, -22, 20, -10)).toBe(true)
+    // Building far to the left (-80..-70) whose swept shadow still misses the camera frustum
+    expect(isShadowCasterVisible(shadowPlanes, camPlanes, -80, 0, -20, -70, 10, -10)).toBe(false)
+  })
+
+  test("PassList orders prepare and slot draws across sky -> opaque -> alpha and depthConfigForMode maps depth conventions", () => {
+    const log: string[] = []
+    const makePass = (id: string): ScenePass => ({
+      prepare: () => log.push(`prep:${id}`),
+      draw: () => log.push(`draw:${id}`),
+    })
+    const list = new PassList()
+    const sky = makePass("sky")
+    const opaque1 = makePass("opaque1")
+    const opaque2 = makePass("opaque2")
+    const alpha = makePass("alpha")
+    list.add("opaque", opaque1)
+    list.add("sky", sky)
+    list.add("alpha", alpha)
+    list.add("opaque", opaque2)
+    expect(list.count()).toBe(4)
+
+    list.prepareAll({} as GPUCommandEncoder)
+    list.drawSlot("sky", {} as GPURenderPassEncoder)
+    list.drawSlot("opaque", {} as GPURenderPassEncoder)
+    list.drawSlot("alpha", {} as GPURenderPassEncoder)
+    expect(log).toEqual([
+      "prep:sky",
+      "prep:opaque1",
+      "prep:opaque2",
+      "prep:alpha",
+      "draw:sky",
+      "draw:opaque1",
+      "draw:opaque2",
+      "draw:alpha",
+    ])
+    expect(list.remove(opaque1)).toBe(true)
+    expect(list.count("opaque")).toBe(1)
+
+    expect(depthConfigForMode("standard")).toEqual({
+      mode: "standard",
+      format: "depth24plus",
+      clearValue: 1,
+      compare: "less-equal",
+      hasStencil: false,
+    })
+    expect(depthConfigForMode("stencil")).toEqual({
+      mode: "stencil",
+      format: "depth24plus-stencil8",
+      clearValue: 1,
+      compare: "less",
+      hasStencil: true,
+    })
+    expect(depthConfigForMode("reversed-z")).toEqual({
+      mode: "reversed-z",
+      format: "depth32float",
+      clearValue: 0,
+      compare: "greater-equal",
+      hasStencil: false,
+    })
   })
 })
