@@ -1,0 +1,41 @@
+name: pr-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches:
+      - "release-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - name: Fetch origin/main agent-state
+        run: git fetch origin main --depth=1
+      - name: Enforce PR base and retired branches
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            bun scripts/agent-ops.ts state --base "${{ github.base_ref }}" --head "${{ github.head_ref }}"
+          else
+            bun scripts/agent-ops.ts state --from-ref origin/main --base "${{ github.base_ref }}" --head "${{ github.head_ref }}"
+          fi
+      - name: Block and delete recreated retired release branches
+        if: github.event_name == 'push'
+        run: |
+          if ! bun scripts/agent-ops.ts state --from-ref origin/main --head "${{ github.ref_name }}"; then
+            echo "Deleting recreated retired branch ${{ github.ref_name }} from origin..."
+            git push origin --delete "${{ github.ref_name }}" || true
+            exit 1
+          fi
