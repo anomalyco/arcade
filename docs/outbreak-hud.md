@@ -83,6 +83,10 @@ what it reveals, fire the pistol dry, reload, a zombie hit, sprint to exhaustion
 the game emitted. The prototype plays the frames as a muted loop and replays the timeline through `CharacterHud`
 bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the game's HUD code, not a mockup.
 
+The `outbreak-hud` Lab station (`arcade station outbreak-hud`, `games/lab/src/stations/outbreak-hud.ts`) runs the live
+game with one variant per style; each variant sets the style and runs `hud.demo`, which puts a sample on the survivor.
+`games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle` proves every variant.
+
 ## Measured
 
 `hud-proof.ts` on headless Metal at 1280 × 800, 2× DPR: 47 stills (placements × Noir/70s × street/interior, stamina
