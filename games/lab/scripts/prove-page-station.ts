@@ -84,7 +84,10 @@ try {
       const f = document.querySelector<HTMLIFrameElement>("[data-station-page] iframe")!
       const rt = (f.contentWindow as any).__arcadeDevControl
       const values: Record<string, unknown> = {}
-      for (const key of reads) values[key] = (await rt.invokeLocal("lab.get", { key })).result
+      for (const key of reads) {
+        const r = await rt.invokeLocal("lab.get", { path: key })
+        values[key] = r.result?.value ?? r.value?.value ?? r.error ?? null
+      }
       const toast = document.querySelector<HTMLElement>(".ls-toast")
       return {
         body: { ...f.contentDocument!.body.dataset } as Record<string, string>,
