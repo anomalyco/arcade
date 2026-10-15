@@ -8,7 +8,7 @@ import { buildSpikeStrip } from "../render/spike"
 import { buildCityMesh, type LampLight } from "../render/city-mesh"
 import { MAT, Mesh } from "../render/mesh"
 import { FRAME_FLOATS, INST_FLOATS, type InstanceBatch, type Renderer, SPRITE_FLOATS } from "../render/renderer"
-import { MAX_LIGHTS } from "../render/shaders"
+import { GetawayFrameStruct, MAX_LIGHTS } from "../render/shaders"
 import type { Camera } from "./camera"
 import { Fx } from "./fx"
 import { juice } from "../ui/debug-overlay"
@@ -309,37 +309,36 @@ export class Scene {
       this.shake = Math.max(this.shake, this.clutter.shake)
     }
     const f = this.frame
-    f.set(vp, 0)
     // Shadow camera: orthographic from the moon, centered on the camera focus.
     const lightEye = [cam.fx + MOON[0] * 300, MOON[1] * 300, cam.fz + MOON[2] * 300]
-    f.set(lightMatrix(lightEye, [cam.fx, 0, cam.fz]), 16)
-    let o = 32
-    const put = (a: number, b: number, c: number, d: number) => {
-      f[o++] = a
-      f[o++] = b
-      f[o++] = c
-      f[o++] = d
-    }
-    put(cam.eye[0], cam.eye[1], cam.eye[2], t)
     const fp = focus ? [focus.x, 1, focus.z] : [cam.fx, 1, cam.fz]
-    put(fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0)
-    put(w, h, 0, t)
-    put(MOON[0], MOON[1], MOON[2], 0.36)
     const heli = view.heli
+    let spotPos: readonly [number, number, number, number] = [0, 0, 0, 0]
+    let spotDir: readonly [number, number, number, number] = [0, -1, 0, 1]
     if (heli.active) {
       const ox = heli.x + Math.sin(heli.h) * 1.7
       const oz = heli.z + Math.cos(heli.h) * 1.7
       const dir = normalizeV([heli.sx - ox, -heli.y - 0.4, heli.sz - oz])
-      put(ox, heli.y + 0.4, oz, 1)
       const reach = Math.hypot(heli.sx - ox, heli.y, heli.sz - oz)
-      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.003)
-    } else {
-      put(0, 0, 0, 0)
-      put(0, -1, 0, 1)
+      spotPos = [ox, heli.y + 0.4, oz, 1]
+      spotDir = [dir[0], dir[1], dir[2], Math.cos(Math.atan(SPOT_GROUND_RADIUS / reach)) - 0.003]
     }
-    put(0.035, 0.045, 0.085, 0.0035)
     const clip = vec4.transformMat4([fp[0]!, fp[1]!, fp[2]!, 1], vp)
-    put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
+    GetawayFrameStruct.pack(
+      {
+        viewProj: vp,
+        lightViewProj: lightMatrix(lightEye, [cam.fx, 0, cam.fz]),
+        cam: [cam.eye[0], cam.eye[1], cam.eye[2], t],
+        focus: [fp[0]!, fp[1]!, fp[2]!, focus ? 0.24 : 0],
+        screen: [w, h, 0, t],
+        moonDir: [MOON[0], MOON[1], MOON[2], 0.36],
+        spotPos,
+        spotDir,
+        fog: [0.035, 0.045, 0.085, 0.0035],
+        focusClip: [clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0],
+      },
+      f,
+    )
 
     // Lights: cars first (they matter most), then the street lamps nearest to the camera focus.
     const L = this.lights
@@ -613,7 +612,7 @@ export class Scene {
       const { l, d } = near[i]!
       if (d < 120 * 120) light(l.x, l.y, l.z, l.small ? 6 : 10.5, 1, 0.48, 0.15, l.small ? 5 : 18)
     }
-    f[32 + 8 + 2] = n
+    f[GetawayFrameStruct.offsetOf("screen") + 2] = n
     this.lightCount = n
 
     const fxc = this.fx.emit(alpha, ai, add, di, MAX_SPRITES_PER_LIST, this.emissions.visible)

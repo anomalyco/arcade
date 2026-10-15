@@ -61,6 +61,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — |
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — |
 | `net/*` | Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | — | Yes | — | — | — |
+| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | — | — | — |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — |
 | `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | — | — |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | — | — |

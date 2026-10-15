@@ -23,6 +23,7 @@ export interface ArchitectureMapRow {
 }
 
 const RENDERER_TRANSITIVE_SPECS = [
+  "@arcade/kit/gpu/wgsl",
   "@arcade/kit/gpu/motion",
   "@arcade/kit/gpu/motion-blur",
   "@arcade/kit/gpu/look-shaders",
@@ -76,6 +77,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     area: "`net/*`",
     description: "Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother`",
     match: (s) => s.startsWith("@arcade/kit/net/"),
+  },
+  {
+    area: "`gpu/wgsl`",
+    description: "Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition",
+    match: (s) => s === "@arcade/kit/gpu/wgsl",
   },
   {
     area: "`gpu/mesh`",

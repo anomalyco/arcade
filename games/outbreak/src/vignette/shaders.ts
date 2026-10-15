@@ -7,7 +7,7 @@ import {
   spriteShader,
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
-import { surfaceMaterialCoreWgsl } from "@arcade/kit/gpu/surface-materials"
+import { SurfaceTexUniformsStruct, surfaceMaterialCoreWgsl } from "@arcade/kit/gpu/surface-materials"
 import { BUILDING_RECTS } from "../../shared/map"
 import { outbreakPostFinish } from "../shaders"
 
@@ -35,20 +35,14 @@ export const vignetteSceneHooks: SceneHooks = {
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 ${surfaceMaterialCoreWgsl}
 ${foliageWindDeclarationsWgsl}
-
-struct SurfaceTexUniforms {
-  global: vec4f,
-  styles: vec4f,
-  recipeTex: array<vec4f, 6>,
-  recipeExtra: array<vec4f, 3>,
-}
+${SurfaceTexUniformsStruct.wgsl}
 
 @group(0) @binding(12) var<uniform> surfaceTexUniforms: SurfaceTexUniforms;
 
 fn surfaceTexEnabledAt(worldX: f32) -> bool {
-  let mode = surfaceTexUniforms.global.x;
+  let mode = surfaceTexUniforms.enabled;
   if (mode > 1.5) {
-    return worldX >= surfaceTexUniforms.styles.w;
+    return worldX >= surfaceTexUniforms.splitX;
   }
   return mode > 0.5;
 }
@@ -102,36 +96,36 @@ fn scaleBaseTint(vertexLinear: vec3f, recipeRgb: vec3f, defaultRgb: vec3f) -> ve
 }
 
 fn evalClapboardSiding(world: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let lapH = (0.18 * (r.u1.y / 1.56)) / scale;
-  let boardLen = (2.2 / scale) * (1.0 + (r.u1.z - 0.38) * 0.3);
+  let scale = max(0.25, r.scale);
+  let lapH = (0.18 * (r.elementRatio / 1.56)) / scale;
+  let boardLen = (2.2 / scale) * (1.0 + (r.irregularity - 0.38) * 0.3);
   let row = floor(world.y / lapH);
   let plank = floor((world.x + world.z + row * 0.43) / max(0.4, boardLen));
   var col = baseTint;
-  col *= 0.95 + (hash2(vec2f(row, plank)) - 0.5) * 0.18 * r.u2.x;
-  col *= mix(1.0 - clamp(r.u2.y * 6.5, 0.08, 0.55), 1.0, seam(world.y / lapH, max(0.008, r.u2.y * 0.55), 1.0 / lapH));
-  col *= 0.97 + grain(vec2f(world.x + world.z, world.y * 3.5), 11.0 * max(0.25, r.u1.w)) * 0.16;
-  let splash = (1.0 - smoothstep(0.13, 0.58, world.y)) * r.u2.z * 0.28;
-  let macroPatch = (surfaceNoise(vec2f(world.x + world.z, world.y) * 0.55) - 0.5) * r.u2.w * 0.16;
+  col *= 0.95 + (hash2(vec2f(row, plank)) - 0.5) * 0.18 * r.colorVariation;
+  col *= mix(1.0 - clamp(r.jointWidth * 6.5, 0.08, 0.55), 1.0, seam(world.y / lapH, max(0.008, r.jointWidth * 0.55), 1.0 / lapH));
+  col *= 0.97 + grain(vec2f(world.x + world.z, world.y * 3.5), 11.0 * max(0.25, r.grainScale)) * 0.16;
+  let splash = (1.0 - smoothstep(0.13, 0.58, world.y)) * r.wear * 0.28;
+  let macroPatch = (surfaceNoise(vec2f(world.x + world.z, world.y) * 0.55) - 0.5) * r.macroVariation * 0.16;
   col *= clamp(1.0 - splash + macroPatch, 0.45, 1.25);
-  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.03), r.u0.w, 1.0 - splash);
+  return SurfaceSample(col, roughnessToGloss(r.roughness, 0.03), r.roughness, 1.0 - splash);
 }
 
 fn evalRoofShingles(world: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
+  let scale = max(0.25, r.scale);
   let courseZ = 0.24 / scale;
-  let tabX = (0.36 * (r.u1.y / 1.56)) / scale;
-  let warp = (surfaceNoise(world.xz * 1.6) - 0.5) * 0.18 * max(0.0, r.u1.z - 0.42);
+  let tabX = (0.36 * (r.elementRatio / 1.56)) / scale;
+  let warp = (surfaceNoise(world.xz * 1.6) - 0.5) * 0.18 * max(0.0, r.irregularity - 0.42);
   let row = floor((world.z + warp) / courseZ);
   let q = vec2f((world.x + warp * 0.5) / tabX + fract(row * 0.5), (world.z + warp) / courseZ);
   let tabHash = hash2(floor(q)) - 0.5;
-  var col = baseTint * (0.97 + tabHash * 0.55 * r.u2.x * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * (1.0 / courseZ))));
-  let jw = max(0.006, r.u2.y * 0.52);
+  var col = baseTint * (0.97 + tabHash * 0.55 * r.colorVariation * (1.0 - smoothstep(0.12, 0.5, surfaceFootprint * (1.0 / courseZ))));
+  let jw = max(0.006, r.jointWidth * 0.52);
   col *= mix(0.52, 1.0, seam(q.x, jw, 1.0 / tabX) * seam(q.y, jw * 1.8, 1.0 / courseZ));
-  col *= 1.0 + grain(world.xz, 18.0 * max(0.25, r.u1.w)) * 0.15;
-  let moss = smoothstep(0.58 - r.u2.z * 0.15, 0.80, surfaceNoise(world.xz * 0.65 + vec2f(3.1, 1.7))) * r.u2.w;
+  col *= 1.0 + grain(world.xz, 18.0 * max(0.25, r.grainScale)) * 0.15;
+  let moss = smoothstep(0.58 - r.wear * 0.15, 0.80, surfaceNoise(world.xz * 0.65 + vec2f(3.1, 1.7))) * r.macroVariation;
   col = mix(col, vec3f(0.18, 0.25, 0.14), moss * 0.38);
-  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.04), r.u0.w, 1.0);
+  return SurfaceSample(col, roughnessToGloss(r.roughness, 0.04), r.roughness, 1.0);
 }
 
 fn houseRect(id: i32) -> vec4f {
@@ -187,12 +181,12 @@ fn eyeVisible(p: vec2f) -> f32 {
       let p = o.world.xz;
       if (kind == 0) {
         let r = pickRecipe(4, 5, activeVignette);
-        let tinted = select(albedo, scaleBaseTint(albedo, r.u0.xyz, vec3f(0.34, 0.39, 0.26)), activeVignette);
+        let tinted = select(albedo, scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.34, 0.39, 0.26)), activeVignette);
         let s = evalGrassSoil(p, tinted, false, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(8, p, 0.58 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(8, p, 0.58 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.1918, 0.1757, 0.0541), 0.88);
           let normAtten = (1.0 - smoothstep(0.08, 0.48, surfaceFootprint)) * 0.28;
           let tilt = (tex.a - 0.91) * 3.2;
@@ -200,12 +194,12 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       } else if (kind == 1) {
         let r = pickRecipe(3, 3, activeVignette);
-        let tinted = select(albedo, scaleBaseTint(albedo, r.u0.xyz, vec3f(0.24, 0.26, 0.28)), activeVignette);
+        let tinted = select(albedo, scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.24, 0.26, 0.28)), activeVignette);
         let s = evalAsphaltConcrete(p, tinted, false, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(7, p, 0.55 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(7, p, 0.55 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.0931, 0.0927, 0.0950), 0.92);
         }
         if (activeVignette && Vig.params1.w > 0.02) {
@@ -215,12 +209,12 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       } else if (kind == 2) {
         let r = pickRecipe(3, 4, activeVignette);
-        let tinted = select(albedo, scaleBaseTint(albedo, r.u0.xyz, vec3f(0.60, 0.61, 0.64)), activeVignette);
+        let tinted = select(albedo, scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.60, 0.61, 0.64)), activeVignette);
         let s = evalAsphaltConcrete(p, tinted, true, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(6, p, 0.58 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(6, p, 0.58 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.4007, 0.3581, 0.3189), 0.85);
         }
         if (activeVignette && Vig.params1.w > 0.02) {
@@ -239,12 +233,12 @@ fn eyeVisible(p: vec2f) -> f32 {
         gloss = vec2f(0.0);
       } else if (kind == 4) {
         let r = pickRecipe(0, 0, activeVignette);
-        let tinted = select(albedo, scaleBaseTint(albedo, r.u0.xyz, vec3f(0.55, 0.43, 0.31)), activeVignette);
+        let tinted = select(albedo, scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.55, 0.43, 0.31)), activeVignette);
         let s = evalWoodPlanks(p, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(0, p, 0.65 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(0, p, 0.65 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.4035, 0.1731, 0.0646), 0.82);
         }
       } else if (kind == 6) {
@@ -293,12 +287,12 @@ fn eyeVisible(p: vec2f) -> f32 {
         }
       } else if (activeVignette) {
         let r = Vig.recipes[6];
-        let tinted = scaleBaseTint(albedo, r.u0.xyz, vec3f(0.70, 0.68, 0.62));
+        let tinted = scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.70, 0.68, 0.62));
         let s = evalClapboardSiding(o.world, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(3, wallUv, 0.72 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(3, wallUv, 0.72 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.6159, 0.5723, 0.5086), 0.80);
         }
       } else {
@@ -312,24 +306,24 @@ fn eyeVisible(p: vec2f) -> f32 {
     }
     if (mat == 4 && interior(o.world.xz + n.xz * 0.3)) {
       let r = pickRecipe(2, 2, activeVignette);
-      let baseWall = select(vec3f(0.44, 0.38, 0.31), scaleBaseTint(vec3f(0.44, 0.38, 0.31), r.u0.xyz, vec3f(0.44, 0.40, 0.33)), activeVignette);
+      let baseWall = select(vec3f(0.44, 0.38, 0.31), scaleBaseTint(vec3f(0.44, 0.38, 0.31), recipeBaseColor(r), vec3f(0.44, 0.40, 0.33)), activeVignette);
       let s = evalPlasterWall(o.world, n, baseWall, r);
       albedo = s.albedo;
       gloss = s.gloss;
       if (texOn) {
-        let tex = sampleMaterialFast(2, wallUv, 0.78 * max(0.25, r.u1.x));
+        let tex = sampleMaterialFast(2, wallUv, 0.78 * max(0.25, r.scale));
         albedo = modulateFast(albedo, tex, vec3f(0.7567, 0.6302, 0.4162), 0.72);
       }
     }
     if (mat == 21) {
       if (activeVignette) {
         let r = Vig.recipes[7];
-        let tinted = scaleBaseTint(albedo, r.u0.xyz, vec3f(0.24, 0.28, 0.35));
+        let tinted = scaleBaseTint(albedo, recipeBaseColor(r), vec3f(0.24, 0.28, 0.35));
         let s = evalRoofShingles(o.world, tinted, r);
         albedo = s.albedo;
         gloss = s.gloss;
         if (texOn) {
-          let tex = sampleMaterialFast(4, o.world.xz, 0.68 * max(0.25, r.u1.x));
+          let tex = sampleMaterialFast(4, o.world.xz, 0.68 * max(0.25, r.scale));
           albedo = modulateFast(albedo, tex, vec3f(0.1056, 0.1172, 0.1297), 0.88);
         }
       } else {

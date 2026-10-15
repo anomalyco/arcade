@@ -857,24 +857,15 @@ export class Renderer {
     }
     if (f.fxParticles && f.fxParticles.count > 0) {
       this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
-      const u = this.particleRenderer.uniforms
-      u.set(f.frame.subarray(0, 16), 0)
-      u[16] = f.frame[16]!
-      u[17] = f.frame[17]!
-      u[18] = f.frame[18]!
-      u[19] = 0
-      u[20] = Math.max(0.18, f.frame[28]!)
-      u[21] = Math.max(0.2, f.frame[29]!)
-      u[22] = Math.max(0.24, f.frame[30]!)
-      let pLights = 0
-      u.fill(0, 24)
-      for (let i = 0; i < f.lightCount && pLights < 8; i++) {
-        const k = i * LIGHT_FLOATS
-        if (f.lights[k + 7]! <= 0.001) continue
-        for (let j = 0; j < 8; j++) u[24 + pLights * 8 + j] = f.lights[k + j]!
-        pLights++
-      }
-      u[23] = pLights
+      this.particleRenderer.setFrame({
+        vp: f.frame,
+        eye: [f.frame[16]!, f.frame[17]!, f.frame[18]!],
+        debug: 0,
+        ambient: [Math.max(0.18, f.frame[28]!), Math.max(0.2, f.frame[29]!), Math.max(0.24, f.frame[30]!)],
+        lights: f.lights,
+        lightCount: f.lightCount,
+        lightStride: LIGHT_FLOATS,
+      })
       this.particleRenderer.upload(f.fxParticles)
     }
     if (f.weather) {
@@ -1065,23 +1056,18 @@ export class Renderer {
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {
-      const u = this.smokeRenderer.uniforms
-      for(let i=0;i<16;i++) this.smokeMatrix[i]=f.frame[i]!
-      mat4.inverse(this.smokeMatrix,this.smokeInverse);u.set(this.smokeInverse)
-      u[16]=f.frame[16]!;u[17]=f.frame[17]!;u[18]=f.frame[18]!
-      u[24]=0.09;u[25]=0.105;u[26]=0.14
-      // Select the first eight relevant culled lights without allocating or sorting per frame.
-      let count=0
-      for(let i=0;i<f.lightCount&&count<8;i++) {
-        const k=i*LIGHT_FLOATS
-        let nearby=false
-        for(let s=0;s<4;s++) if(f.smoke.bounds[s*8+7]!>0 && Math.hypot(f.lights[k]!-f.smoke.bounds[s*8+4]!,f.lights[k+2]!-f.smoke.bounds[s*8+5]!)<f.lights[k+3]!+5) nearby=true
-        if(!nearby)continue
-        for(let j=0;j<8;j++)u[60+count*8+j]=f.lights[k+j]!
-        count++
-      }
-      u[22]=count
-      this.smokeRenderer.render(enc,this.hdrView,f.smoke)
+      for (let i = 0; i < 16; i++) this.smokeMatrix[i] = f.frame[i]!
+      mat4.inverse(this.smokeMatrix, this.smokeInverse)
+      this.smokeRenderer.setFrame({
+        inverse: this.smokeInverse,
+        eye: [f.frame[16]!, f.frame[17]!, f.frame[18]!],
+        ambient: [0.09, 0.105, 0.14],
+        lights: f.lights,
+        lightCount: f.lightCount,
+        lightStride: LIGHT_FLOATS,
+        volumes: f.smoke,
+      })
+      this.smokeRenderer.render(enc, this.hdrView, f.smoke)
     }
 
     const g = this.postGroups!
