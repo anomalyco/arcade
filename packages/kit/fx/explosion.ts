@@ -20,6 +20,8 @@ export const explosionDefaults = {
   debrisCount: 22,
   flashIntensity: 6.5,
   shockRing: 1.0,
+  fragmentCount: 0,
+  secondaryPops: 0,
   scorch: true,
 }
 
@@ -39,11 +41,13 @@ export const explosionRanges: Record<
   smokeRise: [0.1, 1.6, 0.05, "m/s", "Explosion Smoke", "Rise speed"],
   smokeSpreadSpeed: [0.3, 2.5, 0.05, "× · retrigger", "Explosion Smoke", "Spread speed"],
   smokeTurbulence: [0.1, 1.4, 0.05, "×", "Explosion Smoke", "Turbulence"],
-  smokeLinger: [0.8, 6.0, 0.1, "s · retrigger", "Explosion Smoke", "Smoke linger"],
+  smokeLinger: [0.8, 8.0, 0.1, "s · retrigger", "Explosion Smoke", "Smoke linger"],
   sparkCount: [0, 140, 1, "· retrigger", "Blast & Debris", "Sparks count"],
   debrisCount: [0, 60, 1, "· retrigger", "Blast & Debris", "Debris count"],
   flashIntensity: [0, 12, 0.2, "×", "Blast & Debris", "Flash intensity"],
   shockRing: [0, 2.0, 0.05, "× · retrigger", "Blast & Debris", "Shockwave ring"],
+  fragmentCount: [0, 24, 1, "· retrigger", "Blast & Debris", "Trailing fragments"],
+  secondaryPops: [0, 6, 1, "· retrigger", "Blast & Debris", "Secondary pops"],
 }
 
 export const EXPLOSION_PRESET_IDS = ["grenade", "propane", "car", "barrel", "missile", "ship", "pop"] as const
@@ -109,6 +113,8 @@ export const EXPLOSION_PRESETS: Readonly<
       debrisCount: 20,
       flashIntensity: 7.6,
       shockRing: 1.15,
+      fragmentCount: 2,
+      secondaryPops: 0,
       scorch: true,
     }),
   },
@@ -130,6 +136,8 @@ export const EXPLOSION_PRESETS: Readonly<
       debrisCount: 36,
       flashIntensity: 9.2,
       shockRing: 1.35,
+      fragmentCount: 4,
+      secondaryPops: 1,
       scorch: true,
     }),
   },
@@ -151,6 +159,8 @@ export const EXPLOSION_PRESETS: Readonly<
       debrisCount: 26,
       flashIntensity: 7.8,
       shockRing: 1.2,
+      fragmentCount: 3,
+      secondaryPops: 1,
       scorch: true,
     }),
   },
@@ -172,6 +182,8 @@ export const EXPLOSION_PRESETS: Readonly<
       debrisCount: 28,
       flashIntensity: 8.0,
       shockRing: 1.25,
+      fragmentCount: 6,
+      secondaryPops: 0,
       scorch: false,
     }),
   },
@@ -180,19 +192,21 @@ export const EXPLOSION_PRESETS: Readonly<
     label: "Ship / hull hit",
     settings: explosionSettings({
       fireballSize: 1.95,
-      fireballDuration: 0.88,
+      fireballDuration: 1.0,
       fireballTemp: 1.42,
       smokeAmount: 1.75,
       smokeDarkness: 0.92,
       smokeColorShift: 0.7,
-      smokeRise: 1.28,
+      smokeRise: 1.4,
       smokeSpreadSpeed: 1.18,
       smokeTurbulence: 1.12,
-      smokeLinger: 5.2,
+      smokeLinger: 7.0,
       sparkCount: 96,
       debrisCount: 40,
       flashIntensity: 10.0,
       shockRing: 1.45,
+      fragmentCount: 12,
+      secondaryPops: 3,
       scorch: true,
     }),
   },
@@ -253,6 +267,7 @@ export function resolveExplosionSettings(
   if (typeof merged.debris === "number" && Number.isFinite(merged.debris)) {
     base.debrisCount = Math.round(base.debrisCount * merged.debris)
     base.sparkCount = Math.round(base.sparkCount * merged.debris)
+    base.fragmentCount = Math.round(base.fragmentCount * merged.debris)
   }
   if (typeof merged.flash === "number" && Number.isFinite(merged.flash)) base.flashIntensity *= merged.flash
   if (typeof merged.shockwave === "number" && Number.isFinite(merged.shockwave)) base.shockRing *= merged.shockwave
@@ -269,7 +284,7 @@ export function applyExplosionSmokeLive(
   volume.coreGlow = settings.fireballTemp * Math.min(1.6, Math.max(0.2, settings.smokeAmount))
   volume.settings.rise = settings.smokeRise
   volume.settings.turbulence = Math.min(1, settings.smokeTurbulence)
-  volume.settings.height = Math.max(3.1, Math.min(5.2, 3.35 + settings.fireballSize * 0.58 + settings.smokeRise * 0.65))
+  volume.settings.height = Math.max(3.1, Math.min(6.2, 3.35 + settings.fireballSize * 0.58 + settings.smokeRise * 0.65))
   volume.settings.extinction = Math.max(0.8, Math.min(4.8, 2.55 * Math.max(0.25, settings.smokeAmount) * densityScale))
 }
 
@@ -332,9 +347,13 @@ const reusableSpec: ParticleSpec = {
   ease: 2.8,
 }
 
+const fragmentSpec: ParticleSpec = { ...reusableSpec, kind: "debris", trail: 0, pop: 0 }
+
 /** Spawns a multi-phase explosion: ground scorch, supersonic shock/dust ring,
  * temperature-driven blackbody fireball billows that crust into dark soot,
- * buoyant volumetric smoke plume, ballistic sparks, and 3D lit debris chunks.
+ * buoyant volumetric smoke plume, ballistic sparks, 3D lit debris chunks, and for
+ * the bigger hits burning fragments that arc out on their own smoke trails and
+ * delayed secondary pops (`fx/projectile-trail.ts`).
  */
 export function spawnExplosion(
   particles: Particles,
@@ -645,6 +664,81 @@ export function spawnExplosion(
       bvx + Math.cos(a) * speed,
       bvy + vy,
       bvz + Math.sin(a) * speed,
+      random() * 6.283,
+    )
+  }
+
+  // 6. Burning fragments thrown out on ballistic arcs, each laying its own thinning smoke trail with a hot spark at
+  //    its head; over water (`Particles.water`) they splash in. Count, size and life vary per fragment.
+  const fragments = Math.max(0, Math.round(settings.fragmentCount * lod.countScale))
+  const trailScale = 0.3 * fbSize
+  for (let i = 0; i < fragments; i++) {
+    const a = sampleAngle(((i + random() * 0.8) / Math.max(1, fragments)) * Math.PI * 2)
+    const elevation = airburst ? (random() - 0.35) * 1.5 : 0.42 + random() * 0.78
+    const speed = (5.5 + random() * 7.5) * velScale
+    const horizontal = Math.cos(elevation) * speed
+    const shade = 0.06 + random() * 0.1
+    Object.assign(fragmentSpec, {
+      kind: "debris",
+      life: (1.7 + random() * 1.8) * lod.lifeScale,
+      size: (0.05 + random() * 0.08) * velScale * Math.max(1, effScale * 0.55),
+      growth: 0,
+      gravity: 14.2,
+      drag: 0.22,
+      bounce: 0.3,
+      r: shade + 0.02,
+      g: shade * 0.94,
+      b: shade * 0.88,
+      alpha: 1,
+      temperature: 0,
+      turbulence: 1,
+      ease: 1,
+      trail: trailScale * (0.65 + random() * 0.7),
+      pop: 0,
+    })
+    particles.spawn(
+      fragmentSpec,
+      x + Math.cos(a) * 0.2 * fbSize,
+      y + (airburst ? 0 : 0.35 * fbSize),
+      z + Math.sin(a) * 0.2 * fbSize,
+      bvx + Math.cos(a) * horizontal,
+      bvy + Math.sin(elevation) * speed,
+      bvz + Math.sin(a) * horizontal,
+      random() * 6.283,
+    )
+  }
+
+  // 7. Secondary pops: fuel and ammunition cooking off a beat later around the blast.
+  const pops = lod.tier === 2 ? Math.min(1, settings.secondaryPops) : Math.round(settings.secondaryPops)
+  for (let i = 0; i < pops; i++) {
+    const a = random() * Math.PI * 2
+    const out = (0.9 + random() * 1.6) * fbSize
+    Object.assign(fragmentSpec, {
+      kind: "soft",
+      life: 0.32 + i * 0.34 + random() * 0.18,
+      size: 0.01,
+      growth: 0,
+      gravity: 2,
+      drag: 2.2,
+      bounce: 0,
+      r: 0,
+      g: 0,
+      b: 0,
+      alpha: 0,
+      temperature: 0,
+      turbulence: 0,
+      ease: 1,
+      trail: 0,
+      pop: 0.42 * fbSize,
+    })
+    particles.spawn(
+      fragmentSpec,
+      x + Math.cos(a) * 0.3 * fbSize,
+      y + (airburst ? 0 : 0.5 * fbSize),
+      z + Math.sin(a) * 0.3 * fbSize,
+      bvx + Math.cos(a) * out,
+      bvy + (airburst ? (random() - 0.5) * 2 : 0.8 + random() * 1.8) * fbSize,
+      bvz + Math.sin(a) * out,
       random() * 6.283,
     )
   }
