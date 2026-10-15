@@ -10,6 +10,7 @@ export type Conn = { send(data: string): void; close(code?: number, reason?: str
 
 type Player = {
   id: string
+  token: string
   name: string
   picks: Picks
   conn: Conn | null
@@ -48,6 +49,11 @@ const sameInput = (a: Input, b: Input) =>
 
 function newId() {
   return Math.random().toString(36).slice(2, 10).padEnd(8, "0")
+}
+
+function newToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 }
 
 /**
@@ -123,7 +129,7 @@ export class RoomCore {
 
   private hello(conn: Conn, msg: Extract<ClientMsg, { type: "hello" }>) {
     if (this.byConn.has(conn)) return
-    let p = msg.id ? this.players.get(msg.id) : undefined
+    let p = msg.token ? [...this.players.values()].find((x) => x.token === msg.token) : undefined
     if (p && p.conn) p = undefined
     if (p) {
       // Resume: the client starts a fresh input stream, so forget the old acks.
@@ -140,13 +146,13 @@ export class RoomCore {
       // First person into an empty room gets a fresh game instead of a stale round.
       if (this.players.size === 0) this.world = null
       const id = msg.id && !this.players.has(msg.id) ? msg.id : newId()
-      p = { id, name: msg.name, picks: msg.picks, conn, jitter: newJitter(), input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
+      p = { id, token: newToken(), name: msg.name, picks: msg.picks, conn, jitter: newJitter(), input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
       this.players.set(id, p)
       this.syncParticipants()
       this.system(p.name, "joined")
     }
     this.byConn.set(conn, p)
-    this.send(conn, { type: "welcome", id: p.id, room: this.code, seed: this.seed, tick: this.tick })
+    this.send(conn, { type: "welcome", id: p.id, token: p.token, room: this.code, seed: this.seed, tick: this.tick })
     this.broadcastRoster()
     this.sendSnapshot(p)
   }

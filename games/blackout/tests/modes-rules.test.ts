@@ -80,6 +80,22 @@ describe("melee", () => {
     const m = decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { melee: true } }))
     expect(m?.type === "intent" && m.i.melee).toBe(true)
   })
+
+  test("a swing lands where the attacker saw the target after wind-up (lag compensation)", () => {
+    for (const lagged of [false, true]) {
+      const w = modeWorld("gun", ["a", "b"])
+      place(w, "a", 15, 10)
+      const b = place(w, "b", 15.2, 10)
+      run(w, DT, (id) => (id === "b" ? { mx: 1, sprint: true } : {}))
+      const viewAtPress = w.time
+      run(w, 4 * DT, (id) => (id === "b" ? { mx: 1, sprint: true } : {}))
+      run(w, DT, (id) =>
+        id === "a" ? { aim: east, melee: true, ...(lagged ? { view: viewAtPress } : {}) } : { mx: 1, sprint: true },
+      )
+      run(w, MELEE.windup + DT, (id) => (id === "b" ? { mx: 1, sprint: true } : {}))
+      expect(b.alive).toBe(!lagged)
+    }
+  })
 })
 
 describe("infected", () => {

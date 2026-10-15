@@ -1,5 +1,6 @@
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import { RewindHistory } from "@arcade/kit/net/rewind"
+import { hash2, seedOf } from "@arcade/kit/sim/rng"
 import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, TICK_HZ, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapChoice, type MapDef, type MapKind, getMap } from "../maps"
@@ -39,7 +40,14 @@ export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: fa
  */
 export const REWIND_SECONDS = 0.3
 /** Soldiers on foot are rewound for hits; riders move with their vehicle, which isn't. */
-const rewindable = (p: Player): boolean => p.alive && !p.veh
+export const rewindable = (p: Player): boolean => p.alive && !p.veh
+
+/** Deterministic bullet spread for human input `seq` and pellet `k`, shared by client tracer prediction and server hitscan. */
+export function bulletSpread(id: string, seq: number, gun: (typeof GUNS)[Gun], k: number, fallbackUnit?: () => number): number {
+  const pSeed = seq > 0 && id ? seedOf(id) : 0
+  const unit = pSeed ? hash2(pSeed, (seq << 4) + k) * 2 - 1 : (fallbackUnit ? fallbackUnit() : 0)
+  return gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + unit * 0.02 : unit * gun.spread
+}
 
 /** Presses that happen once: a fresh trigger pull, reload, equipment, melee, getting in or out, changing seat, a spell. */
 const hasEdges = (i: Intent): boolean => !!(i.firePressed || i.reload || i.equip || i.melee || i.enter || i.seat || i.cast)
@@ -50,8 +58,9 @@ export const INTENT_OPS: InputOps<Intent> = {
     if (!hasEdges(a)) return b
     const m: Intent = { ...b, reload: a.reload || b.reload, equip: a.equip || b.equip }
     // A tap released by the next tick still fires.
-    if (a.firePressed) Object.assign(m, { fire: true, firePressed: true }, m.view === undefined && a.view !== undefined ? { view: a.view } : {})
+    if (a.firePressed) Object.assign(m, { fire: true, firePressed: true })
     if (a.melee) m.melee = true
+    if ((a.firePressed || a.melee) && m.view === undefined && a.view !== undefined) m.view = a.view
     if (a.enter) m.enter = true
     if (a.seat) m.seat = true
     if (a.cast && !b.cast) m.cast = a.cast
@@ -118,6 +127,7 @@ export type Player = {
   kit: Kit
   /** A melee swing lands at this time (0 for none); the next can start at meleeReadyAt. */
   swingAt: number
+  swingView?: number
   meleeReadyAt: number
   /** The vehicle you're in (0 for none) and your seat in it; seat 0 drives (shared/sim/vehicle-rules.ts). */
   veh: number
@@ -420,7 +430,7 @@ export class World {
       if (kit.gun && kit.reload && ((intent.reload && p.mag < kit.mag) || (intent.fire && p.mag === 0))) this.reload(p)
       if (intent.equip && p.equipLeft > 0) this.useEquip(p, intent)
       // Bare hands swing while the trigger is held; anyone with a melee kit swings with V.
-      if ((intent.melee || (!kit.gun && intent.fire)) && canSwing(p, this.time)) startSwing(this, p)
+      if ((intent.melee || (!kit.gun && intent.fire)) && canSwing(p, this.time)) startSwing(this, p, intent.view)
       stepSwing(this, p)
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
@@ -549,7 +559,7 @@ export class World {
   private pellets(p: Player): void {
     const gun = GUNS[p.gun]
     for (let k = 0; k < gun.pellets; k++) {
-      const spread = gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + this.rng.range(-0.02, 0.02) : this.rng.range(-gun.spread, gun.spread)
+      const spread = bulletSpread(p.human ? p.id : "", p.ack, gun, k, () => this.rng.range(-1, 1))
       this.bullet(p, p.aim + spread)
       if (!p.alive) return
     }

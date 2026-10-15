@@ -34,6 +34,7 @@ export class NetSession implements Session {
   private last: WorldView | null = null
   private ready: { resolve: (s: Session) => void; reject: (e: Error) => void } | null = null
   private id = ""
+  private token = ""
   private chats: ChatMsg[] = []
 
   /** Resolves once the room has welcomed us and sent the first snapshot. `priv` makes a brand-new room private. */
@@ -77,7 +78,7 @@ export class NetSession implements Session {
     const ws = new WebSocket(socketUrl(this.room, this.priv))
     this.ws = ws
     ws.onopen = () => {
-      this.send({ type: "hello", name: this.name, picks: this.picks, id: this.id || undefined })
+      this.send({ type: "hello", name: this.name, picks: this.picks, ...(this.token ? { token: this.token } : {}) })
       this.ping()
     }
     ws.onmessage = (e) => {
@@ -100,6 +101,7 @@ export class NetSession implements Session {
     switch (msg.type) {
       case "welcome":
         this.id = msg.id
+        if (msg.token) this.token = msg.token
         this.retry = 0
         if (!this.client) this.client = new NetClient(generateCity(msg.seed), msg.id, (m) => this.send(m))
         else {

@@ -1,6 +1,6 @@
 import { clearLine } from "../geom"
 import { angleDiff } from "../geom"
-import type { Player, World } from "./world"
+import { type Player, type World, rewindable } from "./world"
 
 /**
  * Melee: a swipe that lands `windup` seconds after the press and kills the nearest enemy within `range` metres
@@ -13,8 +13,9 @@ export const MELEE = { windup: 0.15, cooldown: 0.6, range: 1.5, arc: 1.05 }
 export const canSwing = (p: Player, now: number): boolean => p.alive && p.kit.melee && p.swingAt === 0 && now >= p.meleeReadyAt
 
 /** Starts a swing: it lands after the wind-up. */
-export function startSwing(w: World, p: Player): void {
+export function startSwing(w: World, p: Player, view?: number): void {
   p.swingAt = w.time + MELEE.windup
+  p.swingView = view !== undefined && p.human ? view + MELEE.windup : undefined
   p.meleeReadyAt = w.time + MELEE.cooldown
   w.events.push({ k: "swing", by: p.id })
 }
@@ -39,7 +40,12 @@ export function swingTarget(w: World, p: Player): Player | null {
 export function stepSwing(w: World, p: Player): void {
   if (p.swingAt === 0 || w.time < p.swingAt) return
   p.swingAt = 0
+  const view = p.swingView
+  p.swingView = undefined
   if (w.spells) w.spells.bonk(w, p)
-  const q = swingTarget(w, p)
+  const q =
+    view !== undefined
+      ? w.rewind.withRewoundPositions([...w.players.values()].filter(rewindable), view, () => swingTarget(w, p), p.id)
+      : swingTarget(w, p)
   if (q) w.damage(q, w.spells ? p.kit.damage : q.health + 1000, p, "melee", p.x, p.y)
 }

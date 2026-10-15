@@ -56,6 +56,7 @@ function join(net: Net, name: string, lat = 3) {
   const pipe = net.pipe(lat)
   pipe.sendUp({ type: "hello", name, picks: { robber: "muscle", cop: "cruiser" } })
   let client: NetClient | null = null
+  let token = ""
   const predicted = new Map<number, Body>()
   const server = new Map<number, Body>()
   return {
@@ -63,13 +64,18 @@ function join(net: Net, name: string, lat = 3) {
     get client() {
       return client
     },
+    get token() {
+      return token
+    },
     predicted,
     server,
     /** Receives due frames and runs one client frame of exactly one tick. */
     frame(input: Input) {
       for (const m of pipe.take()) {
-        if (m.type === "welcome") client = new NetClient(net.core.world!.city, m.id, (msg) => pipe.sendUp(msg))
-        else if (client) {
+        if (m.type === "welcome") {
+          token = m.token ?? ""
+          client = new NetClient(net.core.world!.city, m.id, (msg) => pipe.sendUp(msg))
+        } else if (client) {
           client.receive(m)
           if (m.type === "snapshot" && m.you) server.set(m.ack, m.you)
         }
@@ -355,22 +361,32 @@ describe("room", () => {
     expect(a.client!.seq - (last as Extract<ServerMsg, { type: "snapshot" }>).ack).toBeLessThanOrEqual(7)
   })
 
-  test("a reconnect within the grace period resumes the same seat and car", () => {
+  test("a reconnect within the grace period resumes the same seat and car using its secret token", () => {
     const net = new Net()
     const { a, b } = pair(net)
     settle(net, a, b)
     const id = a.client!.myId
+    const token = a.token
+    expect(token.length).toBeGreaterThanOrEqual(16)
     const round = net.core.world!.round
     net.core.close(a.pipe.conn)
     for (let i = 0; i < 30; i++) net.tick()
     expect(net.core.world!.carOf(id)!.human).toBe(true)
+    // An impostor who only knows the public id from the roster cannot hijack the dropped seat.
+    const impostor = net.pipe()
+    impostor.sendUp({ type: "hello", name: "Eve", picks: { robber: "muscle", cop: "cruiser" }, id })
+    for (let i = 0; i < 5; i++) net.tick()
+    net.t += 3
+    const impWelcome = impostor.take().find((m) => m.type === "welcome")
+    expect(impWelcome && impWelcome.type === "welcome" && impWelcome.id).not.toBe(id)
+    net.core.close(impostor.conn)
+    // Reconnecting with the private token resumes the original seat and car.
     const p = net.pipe()
-    p.sendUp({ type: "hello", name: "Ada", picks: { robber: "muscle", cop: "cruiser" }, id })
+    p.sendUp({ type: "hello", name: "Ada", picks: { robber: "muscle", cop: "cruiser" }, token })
     for (let i = 0; i < 5; i++) net.tick()
     net.t += 3
     const welcome = p.take().find((m) => m.type === "welcome")
     expect(welcome && welcome.type === "welcome" && welcome.id).toBe(id)
-    expect(net.core.humans()).toBe(2)
     expect(net.core.world!.round).toBe(round)
     expect(net.core.world!.robberId).toBe(id)
   })

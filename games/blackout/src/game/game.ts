@@ -4,7 +4,7 @@ import { type MapDef, getMap } from "../../shared/maps"
 import { type Obstacles, obstaclesOf } from "../../shared/sim/gear"
 import { type Body, stepBody } from "../../shared/sim/move"
 import type { RosterRow, Snapshot } from "../../shared/sim/view"
-import type { Intent, SimEvent } from "../../shared/sim/world"
+import { type Intent, type SimEvent, bulletSpread } from "../../shared/sim/world"
 import type { Sound } from "../audio/sound"
 import type { Camera } from "../render/camera"
 import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
@@ -766,8 +766,8 @@ export class Game {
       const seat = live && input.takeSeat() && !!this.riding
       const driving = this.riding?.seat === 0
       const horn = live && driving && input.held("KeyH")
-      // While firing, tell the room what time we're drawing everyone else at so it can rewind them for the hit.
-      const view = fire && this.remote.size > 0 ? Math.round(Math.max(0, this.remote.renderTime(this.now)) * 1000) / 1000 : undefined
+      // While firing or swinging melee, tell the room what time we're drawing everyone else at so it can rewind them for the hit.
+      const view = (fire || melee) && this.remote.size > 0 ? Math.round(Math.max(0, this.remote.renderTime(this.now)) * 1000) / 1000 : undefined
       const i: Intent = { mx: mv.mx, my: mv.my, aim: this.aim, fire, ...(firePressed ? { firePressed: true } : {}), ...(view !== undefined ? { view } : {}), reload, sprint: live && input.sprinting, equip, tx: this.ground.x, ty: this.ground.y, use, melee, ...(enter ? { enter } : {}), ...(seat ? { seat } : {}), ...(horn ? { horn } : {}) }
       const click = input.takeCast()
       if (live && this.snap?.spells && click) {
@@ -778,7 +778,8 @@ export class Game {
       if (use && this.body && canUse(this.snap, teamOf(this.snap, this.roster, this.myId), this.myId, this.body.x, this.body.y)) Object.assign(i, { mx: 0, my: 0, sprint: false, fire: false })
       // Carrying a flag you walk, as on the server.
       if (this.snap && carries(this.snap.mode, this.myId)) Object.assign(i, slowCarrier(i))
-      this.session.send({ type: "intent", seq: this.predictor.record(i) + 1, i })
+      const seq = this.predictor.record(i) + 1
+      this.session.send({ type: "intent", seq, i })
       if (!live || !this.body) {
         this.triggerHeld = fire
         continue
@@ -797,7 +798,7 @@ export class Game {
         continue
       }
       if (equip && this.equipLeft > 0) this.localEquip()
-      this.localGun(i.fire, reload, sprint, melee && !this.riding, firePressed)
+      this.localGun(i.fire, reload, sprint, melee && !this.riding, firePressed, seq)
     }
     if (this.body) this.drawn.update(this.body, this.acc / DT, dt)
     this.bracket = sampleRemote(this.remote, this.now)
@@ -820,7 +821,7 @@ export class Game {
   }
 
   /** Mirrors the server's trigger and melee rules (from the kit) so your own shots and swings go on the frame you click. */
-  private localGun(fire: boolean, reload: boolean, sprint: boolean, melee: boolean, firePressed: boolean): void {
+  private localGun(fire: boolean, reload: boolean, sprint: boolean, melee: boolean, firePressed: boolean, seq: number): void {
     const t = this.now
     const kit = this.kit
     if ((melee || (!kit.gun && fire)) && kit.melee && t >= this.swingReady) {
@@ -860,7 +861,7 @@ export class Game {
     shoot(me, t)
     const muzzle = this.muzzle(me)
     for (let k = 0; k < gun.pellets; k++) {
-      const spread = gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + (Math.random() - 0.5) * 0.04 : (Math.random() * 2 - 1) * gun.spread
+      const spread = bulletSpread(this.myId, seq, gun, k)
       const a = this.aim + spread
       const dx = Math.cos(a)
       const dy = Math.sin(a)

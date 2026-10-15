@@ -7,7 +7,7 @@ import { Rng } from "../shared/rng"
 import { type Grenade, PROP_TOP, launch, obstaclesOf, stepGrenade } from "../shared/sim/gear"
 import { buildSnapshot } from "../shared/sim/view"
 import { decodeClient, encodeClient } from "../shared/protocol"
-import { INTENT_OPS, NO_INTENT, REWIND_SECONDS, World } from "../shared/sim/world"
+import { INTENT_OPS, NO_INTENT, REWIND_SECONDS, World, bulletSpread } from "../shared/sim/world"
 import { place, run, world } from "./helpers"
 
 const east = 0
@@ -105,11 +105,15 @@ describe("shooting", () => {
     expect(shoot(0.6, true).hit).toBe(false)
   })
 
-  test("view times survive the wire and merges", () => {
+  test("view times survive the wire and merges, and bulletSpread is deterministic per player and seq", () => {
     const m = decodeClient(encodeClient({ type: "intent", seq: 1, i: { ...NO_INTENT, fire: true, firePressed: true, view: 12.345 } }))
     expect(m?.type === "intent" && m.i.view).toBe(12.345)
     const merged = INTENT_OPS.merge({ ...NO_INTENT, fire: true, firePressed: true, view: 3 }, { ...NO_INTENT })
     expect(merged.view).toBe(3)
+    const mergedMelee = INTENT_OPS.merge({ ...NO_INTENT, melee: true, view: 4.5 }, { ...NO_INTENT })
+    expect(mergedMelee.view).toBe(4.5)
+    expect(bulletSpread("a", 1, GUNS.rifle, 0)).toBe(bulletSpread("a", 1, GUNS.rifle, 0))
+    expect(bulletSpread("a", 1, GUNS.rifle, 0)).not.toBe(bulletSpread("a", 2, GUNS.rifle, 0))
   })
 })
 
