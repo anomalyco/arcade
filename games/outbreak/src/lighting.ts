@@ -138,7 +138,9 @@ export const outbreakLightingControls: LabControl[] = [
   { key: "actorLampShadow", label: "Actor lamp shadow & boot AO", group: "Atmosphere", min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 44
+/** 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`. */
+export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 76
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & {
@@ -739,6 +741,8 @@ struct OutbreakLightingUniforms {
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, reserved
+  veg: FoliageWindConfig,
+  vegActors: FoliageActors,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 var<private> outbreakFlashMask: f32;

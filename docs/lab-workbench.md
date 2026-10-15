@@ -64,7 +64,7 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   `Search details` filters by label/key/group. Spawn-time values (units ending `· retrigger`) show an amber dot.
   Defaults are the section's settings captured when the workbench starts, before fixtures or edits.
 - **Library drawer** (bottom, `Ctrl+Space`) holds everything you can add: Effects (Starting Fixtures first), Objects,
-  Lighting, Audio, Materials, Foliage and Looks, with collections, search and tiles. Click arms a placement ghost
+  Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with collections, search and tiles. Click arms a placement ghost
   for props/lights (or runs the fixture/effect); dragging a tile into the viewport places props, lights and characters
   at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer bar with
   category buttons and `Search library` stays visible when closed. Open state persists in `localStorage`.

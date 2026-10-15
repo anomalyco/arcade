@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import {
-  FOLIAGE_PRESETS,
-  FOLIAGE_PRESET_IDS,
+  BUSH_PRESET_IDS,
+  FOLIAGE_KINDS,
+  FOLIAGE_PARAM_SPECS,
+  GRASS_PRESET_IDS,
+  TREE_PRESET_IDS,
+  applyFoliagePreset,
+  buildFoliageBush,
   buildFoliageTree,
   buildLegacyFoliageTree,
   cloneFoliageParams,
+  packFoliageActors,
   emitGrassTuft,
   exportFoliagePreset,
   importFoliagePreset,
@@ -16,11 +22,49 @@ import { FLOATS_PER_VERT, MAT, Mesh } from "./gpu/mesh"
 import { Rng } from "./sim/rng"
 
 describe("foliage recipes, generators, and preset validation", () => {
-  test("every preset default passes validation", () => {
-    for (const id of FOLIAGE_PRESET_IDS) {
-      const res = validateFoliageParams(FOLIAGE_PRESETS[id].defaults)
-      expect(res.ok).toBe(true)
+  test("every tree, bush and grass preset combination passes validation", () => {
+    for (const t of TREE_PRESET_IDS) for (const b of BUSH_PRESET_IDS) for (const g of GRASS_PRESET_IDS) {
+      expect(validateFoliageParams(cloneFoliageParams(t, b, g)).ok).toBe(true)
     }
+  })
+
+  test("each look's preset and randomize only touch that look's parameters", () => {
+    for (const kind of FOLIAGE_KINDS) {
+      const base = cloneFoliageParams("oak", "overgrown", "overgrown")
+      const presetId = kind === "tree" ? "pine" : kind === "bush" ? "hedge" : "weeds"
+      const viaPreset = applyFoliagePreset(kind, presetId, { ...base })
+      const viaRandom = randomizeFoliageParams(base, 9, kind)
+      for (const s of FOLIAGE_PARAM_SPECS) {
+        if (s.kind === kind) continue
+        expect(viaPreset[s.key]).toBe(base[s.key])
+        expect(viaRandom[s.key]).toBe(base[s.key])
+      }
+    }
+  })
+
+  test("clipped hedges stay inside their height and spread; bushes encode aux = 3 + flex", () => {
+    const params = cloneFoliageParams("oak", "hedge", "lawn")
+    const m = new Mesh()
+    buildFoliageBush(m, 0, 0, 1.0, 0.6, 5, 0, params)
+    let bushVerts = 0
+    let maxY = 0
+    for (let i = 0; i < m.v.length; i += FLOATS_PER_VERT) {
+      const aux = m.v[i + 10]!
+      if (m.v[i + 9] === MAT.foliage && aux > 2.5) {
+        bushVerts++
+        maxY = Math.max(maxY, m.v[i + 1]!)
+        expect(aux).toBeLessThanOrEqual(4.01)
+      }
+    }
+    expect(bushVerts).toBeGreaterThan(200)
+    expect(maxY).toBeLessThan(1.0 * params.bushHeight + 0.06)
+  })
+
+  test("actor packing caps at eight and writes the count header", () => {
+    const out = packFoliageActors(Array.from({ length: 11 }, (_, i) => ({ x: i, z: -i })))
+    expect(out[0]).toBe(8)
+    expect(out[4]).toBe(0)
+    expect(out[5 + 7 * 2]).toBe(-7)
   })
 
   test("seeded parameter randomize is deterministic and constrained to plausible botanical ratios", () => {
@@ -44,9 +88,10 @@ describe("foliage recipes, generators, and preset validation", () => {
       seed: 12,
       tuningSeed: 77,
       cameraMode: "close",
-      compare: 1,
-      lightingPreset: "outbreak_dusk",
-      params: cloneFoliageParams("maple"),
+      tool: "bush",
+      lighting: "night",
+      look: "noir",
+      params: cloneFoliageParams("maple", "hydrangea", "weeds"),
     })
     const imported = importFoliagePreset(JSON.stringify(exported))
     expect(imported.ok).toBe(true)
@@ -54,6 +99,21 @@ describe("foliage recipes, generators, and preset validation", () => {
       expect(imported.value.seed).toBe(12)
       expect(imported.value.tuningSeed).toBe(77)
       expect(imported.value.params.treePreset).toBe("maple")
+      expect(imported.value.params.bushPreset).toBe("hydrangea")
+      expect(imported.value.tool).toBe("bush")
+    }
+
+    // Version 1 payloads (single tree preset, no bush/grass keys) migrate; old "hydrangea" becomes the bush preset.
+    const v1 = { ...cloneFoliageParams("pine") } as Record<string, unknown>
+    for (const s of FOLIAGE_PARAM_SPECS) if (s.kind === "bush" || s.key === "weedRosettes" || s.key.startsWith("trample")) delete v1[s.key]
+    delete v1.bushPreset
+    delete v1.grassPreset
+    v1.treePreset = "hydrangea"
+    const migrated = importFoliagePreset(JSON.stringify({ version: 1, seed: 3, tuningSeed: 4, cameraMode: "game", compare: 1, stageMode: "lot", params: v1 }))
+    expect(migrated.ok).toBe(true)
+    if (migrated.ok) {
+      expect(migrated.value.params.bushPreset).toBe("hydrangea")
+      expect(migrated.value.tool).toBe("lot")
     }
 
     expect(importFoliagePreset('{"version": 99}').ok).toBe(false)

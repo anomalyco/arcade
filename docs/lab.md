@@ -149,6 +149,26 @@ surface response, tested under common lights and at gameplay distance. A complet
 When adding one, connect the actual material shader, expose its tunables and retain production defaults; do not create
 a calibration-only shader and call it the game's material.
 
+### Vegetation
+
+The Vegetation section (`packages/kit/lab/foliage.ts`, deep link `#foliage`) tunes the production
+`packages/kit/gpu/foliage.ts` generators that Outbreak builds its town with. Its Tool picker chooses a test room:
+
+- **Tree**: three trees of the current recipe on a lawn by a street. Presets: Oak, Maple, Pine, Birch.
+- **Bush**: a house front with lit windows, foundation planting, a free-standing shrub and a hedge line. Presets:
+  Clipped hedge, Overgrown shrub, Hydrangea.
+- **Grass**: lawn, mulch edge, path and verge. Presets: Lawn, Overgrown lawn, Weeds / dead grass.
+- **Outbreak lot**: all three looks together around a bungalow.
+
+Each look has its own preset, parameters, Randomize (seeded by the Randomize seed, never the structure seed) and
+Reset; changing one look never touches the others. Structural parameters rebuild the room from the structure seed;
+wind, translucency and actor bending are live uniforms. Lighting is Night (2100K streetlamp, moon, the lead walker's
+flashlight), Dusk or Day. The Look picker applies the shared `lookGradeColor` post grade only; the games' scene-side
+look terms (palette, practical warmth) are not reproduced here. Walkers (a survivor and a zombie stand-in) loop
+through the room and bend grass and bushes with the same `foliageTrample` code Outbreak uses for the player and
+zombies. `foliage.set`, `foliage.randomize` and `foliage.preset` (preset JSON version 2; version 1 migrates) drive it
+from `arcade`/bench, and `bun packages/kit/lab/prove-foliage.ts` captures every preset.
+
 Gameplay rules and replicated simulation remain authoritative. Camera, cosmetic effects and presentation clutter stay
 local; Lab tuning must not silently add wire fields or change authoritative movement, damage or collision rules.
 Test an intentional gameplay-physics change in the actual simulation separately from cosmetic clutter experiments.
