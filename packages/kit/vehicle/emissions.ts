@@ -5,9 +5,13 @@ import { SmokeTrail, type SmokeSource } from "./smoke-trail"
 export const vehicleEffects = { coldExhaust: false }
 import { vehicleEffectSettings as settings } from "./effect-settings"
 
-type Wheel = SmokeSource & { heat: number; marking: boolean; slip: number }
+type Wheel = SmokeSource & { heat: number; marking: boolean; slip: number; markY: number; along: number; burn: number }
+/** What a tyre touches: 0 nothing that marks, 1 road, 2 dirt or grass, 3 wet road. */
+export const TYRE_SURFACE = { none: 0, road: 1, dirt: 2, wet: 3 } as const
+/** One tyre's ground contact this frame, in world metres (Y up). */
+export type WheelContact = { x: number; y: number; z: number; slip: number; slipSpeed: number; surface: number }
 export class EmissionState {
-  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0, marking: false, slip: 0 }))
+  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0, marking: false, slip: 0, markY: 0, along: 0, burn: 0 }))
   spin = 0
   boosting = false
   brake = 0
@@ -88,9 +92,9 @@ export class VehicleEmissions<Terrain = null> {
     this.wispCount = n
   }
 
+  /** Getaway's proxy path: slip derived from the view's drift and the controls, then pops and exhaust. */
   car(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, smokeEnabled = true, popsEnabled = true) {
     const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
-    const throttle = c.engineOff ? 0 : input?.throttle ?? (c.boosting ? 1 : 0)
     const spin = launchSlip(c, spec, s, input, dt)
     const slip = Math.max(tyreSlip(c, input), spin), mask = drivenMask(spec)
     const burnout = !!input && input.throttle > 0.8 && input.brake > 0.5 && c.speed < 3
@@ -116,6 +120,46 @@ export class VehicleEmissions<Terrain = null> {
       if (enabled && strength > 0.008) s.emittingWheels++
       s.intensity = Math.max(s.intensity, strength)
     }
+    this.exhaust(c, spec, s, input, dt, height, popsEnabled)
+  }
+
+  /**
+   * Per-wheel contact path for games that know (or estimate, see `kinematicContacts`) each tyre's slip.
+   * `surface` codes: 0 none, 1 road (rubber smoke, black marks), 2 dirt/grass (dust, brown ruts), 3 wet (faint marks, no smoke).
+   * `slipSpeed` is how fast rubber slides over the ground (m/s); it drives heat and smoke density.
+   */
+  contacts(c: CarView, s: EmissionState, wheels: readonly WheelContact[], dt: number, smokeEnabled = true) {
+    s.intensity = 0; s.emittingWheels = 0
+    for (let w = 0; w < wheels.length && w < s.wheels.length; w++) {
+      const contact = wheels[w]!, wheel = s.wheels[w]!, surface = contact.surface
+      const slip = surface > 0 ? clamp(contact.slip) : 0
+      wheel.slip = slip
+      const hot = slip > 0.05
+      wheel.heat += ((hot ? 1 : 0) - wheel.heat) * (1 - Math.exp(-dt * (hot ? contact.slipSpeed > 12 ? 6 : 2 : 1.3)))
+      const strength = slip * clamp(contact.slipSpeed / 18) * (0.05 + 0.95 * wheel.heat)
+      const marking = smokeEnabled && slip > 0.08 && this.skids !== null
+      const stepped = Math.hypot(contact.x - wheel.smokeX, contact.z - wheel.smokeZ)
+      if (dt > 0 && marking && wheel.marking) this.skids!.skidSegment(wheel.smokeX, wheel.smokeZ, contact.x, contact.z, 0.25 + 0.75 * slip, wheel.markY, surface - 1, contact.y, wheel.along)
+      // A tyre spinning in place (burnout) scrubs a short patch along the car every quarter second.
+      wheel.burn = marking && stepped < 0.02 && contact.slipSpeed > 10 ? wheel.burn + dt : 0
+      if (wheel.burn >= 0.25) {
+        wheel.burn = 0
+        const fx = Math.sin(c.h) * 0.2, fz = Math.cos(c.h) * 0.2
+        this.skids!.skidSegment(contact.x - fx, contact.z - fz, contact.x + fx, contact.z + fz, slip, contact.y, surface - 1, contact.y, wheel.along)
+      }
+      wheel.along = marking && wheel.marking && stepped < 8 ? wheel.along + stepped : 0
+      wheel.marking = marking; wheel.markY = contact.y
+      const puff = smokeEnabled && surface !== TYRE_SURFACE.wet ? strength * (surface === TYRE_SURFACE.dirt ? 0.8 : 1) : 0
+      this.trail.follow(wheel, contact.x, contact.z, c.vx, c.vz, dt, puff, contact.y, surface === TYRE_SURFACE.dirt)
+      if (puff > 0.008) s.emittingWheels++
+      s.intensity = Math.max(s.intensity, puff)
+    }
+  }
+
+  /** Backfire pops, boost flames and cold-weather exhaust from the tailpipes. */
+  exhaust(c: CarView, spec: Vehicle, s: EmissionState, input: Input | null, dt: number, height: number, popsEnabled = true) {
+    const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
+    const throttle = c.engineOff ? 0 : input?.throttle ?? (c.boosting ? 1 : 0)
     s.cooldown = Math.max(0, s.cooldown - dt); s.pop = Math.max(0, s.pop - dt)
     s.load += (clamp(throttle) - s.load) * (1 - Math.exp(-dt * 2))
     const gear = Math.floor(Math.max(0, c.speed - 4) / 12)

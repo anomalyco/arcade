@@ -769,7 +769,7 @@ class GpuOverlayManager {
     })
     mo.observe(panel.root, {
       attributes: true,
-      attributeFilter: ["data-theme", "data-density", "style"],
+      attributeFilter: ["data-theme", "data-density", "data-preset", "style"],
     })
     // Token changes glide as CSS transitions on the panel; while any runs, every frame reads the
     // in-between tokens and fresh rects, then the loop can sleep again.
@@ -3446,10 +3446,12 @@ class GpuOverlayManager {
       )
       if (!pageB) drawn.push(card)
       const glass = tokens.glass * (1 - this.ease(panel.root, "solid", covers ? 1 : 0, 18))
-      if (!pageB) this.placeBackdrop(panel, card, outerClip, cardRadius, glass, tokens.glassTone)
+      // An inline panel without chrome sheds its backdrop with its card.
+      const chrome = panel.inline ? tokens.chrome : 1
+      if (!pageB)
+        this.placeBackdrop(panel, card, outerClip, cardRadius, glass * chrome, tokens.glassTone)
       // At the chip end the card wears the chip's look: opaque, with its 0 4px 16px shadow.
       const shadow = tokens.isLight ? 0.16 : 0.48
-      const chrome = panel.inline ? tokens.chrome : 1
       if (!pageB && chrome > 0.005)
         this.pushPrim({
           x: card.left,

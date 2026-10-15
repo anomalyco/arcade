@@ -1,5 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
+import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -15,6 +15,7 @@ import {
   resolveQualityMode,
 } from "@arcade/kit/quality"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
+import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
@@ -24,7 +25,7 @@ import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { DiscoveryProps, type DiscoveryHost } from "./discovery/index"
+import { BenchLean, DiscoveryProps, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, SIZE } from "../shared/map"
@@ -68,12 +69,14 @@ import { type VehicleLabHost } from "./vehicle-lab"
 import { BotsLabController } from "./bots-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { OutbreakVehicleRenderer } from "./vehicles"
+import { applyVehicleStunt } from "./vehicle-lab"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import { OutbreakWeatherController } from "./weather"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
+import { hordeWatchPoint, renderFlowOverlay } from "./hordes/index"
 import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
 import { zombieProfile } from "./zombie-profile"
 import {
@@ -206,8 +209,8 @@ async function main() {
       markers: document.querySelector<HTMLElement>("#markers"),
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
-    () => session.sim.slots.map((s) => s.survivor),
     () => settings.discovery,
+    settings.hud,
   )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
@@ -252,6 +255,7 @@ async function main() {
   const worldStreamer = new WorldClientStreamer()
   let currentWindowOrigin: [number, number] = [0, 0]
   let currentIsStreamWindow = false
+  let originSconces: Float32Array[] = []
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -316,6 +320,11 @@ async function main() {
   zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
   const discoveryProps = new DiscoveryProps(renderer)
+  const benchLean = new BenchLean()
+  const seatTint = (seat: number) => {
+    const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
+    return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
+  }
   const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player)
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
@@ -566,10 +575,10 @@ async function main() {
         ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
         ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
       }
-      const effectiveCommand =
-        session instanceof LocalSession
-          ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand)
-          : rawCommand
+      const effectiveCommand = applyVehicleStunt(
+        step.dt,
+        session instanceof LocalSession ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand) : rawCommand,
+      )
       session.update(
         step.dt,
         effectiveCommand,
@@ -655,6 +664,11 @@ async function main() {
   const keyLabels = keyLabelSetting("HUD")
   lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
   lab.addControls(
+    vehicleRenderer.drivingFx.settings as unknown as Record<string, string | number | boolean>,
+    drivingFxControls().map(c => ({ ...c, folded: true })),
+    { ...DRIVING_FX_DEFAULTS },
+  )
+  lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
   )
@@ -674,6 +688,7 @@ async function main() {
     worldStreamer.windowOrigin = [0, 0]
     worldStreamer.lastWindowKey = ""
     const data = buildLevel(session.view.town)
+    originSconces = [collectSconces(session.view.town)]
     vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
     renderer.setLevel(data)
     combatFx.setLevel(data)
@@ -880,10 +895,12 @@ async function main() {
     const speedPullback = localVehicle
       ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
       : 0
-    cam.zoomOffset = settings.view.zoom - 24 + speedPullback
+    const lean = benchLean.step(session.view, settings.discovery, dt)
+    cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
-    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
-    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
+    const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
+    const camX = watch ? watch.x : drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0) + lean.dx
+    const camY = watch ? watch.y : drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0) + lean.dy
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
@@ -966,14 +983,15 @@ async function main() {
     const flashVisionActive =
       (drivingHeadlights || p.flashlightOutput > 0.01) &&
       (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
+    // Horde watch (Lab): the view travels with the horde, so it is what the camera shows that gets seen.
     const visChanged = vision.update(
-      p.x,
-      p.y,
+      watch ? watch.x : p.x,
+      watch ? watch.y : p.y,
       effectiveVisionAim,
       blockers,
-      effectiveVisionSettings,
-      peek,
-      flashVisionActive
+      watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : effectiveVisionSettings,
+      watch ? null : peek,
+      flashVisionActive && !watch
         ? {
             active: true,
             range: drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range,
@@ -1230,6 +1248,20 @@ async function main() {
       const dstOff = count++ * LIGHT_FLOATS
       for (let f = 0; f < LIGHT_FLOATS; f++) lights[dstOff + f] = unshadowedLampBuf[srcOff + f]!
     }
+    const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
+    lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
+    interiors.sconces.setSources(currentIsStreamWindow ? worldStreamer.windowSconces : originSconces)
+    count = interiors.sconces.write(
+      lights,
+      count,
+      MAX_LIGHTS,
+      inInteriorView ? (interiors.settings.sconceLights >= 0 ? interiors.settings.sconceLights : qProfile.maxSconceLights) : 0,
+      cutX,
+      cutY,
+      sconceLevel,
+      settings.lighting.practicalWarmth,
+      interiors.settings,
+    )
     const vehOut = vehicleRenderer.collect(
       vdt,
       time,
@@ -1437,6 +1469,10 @@ async function main() {
       alphaSprites,
       vehAlphaStart,
     )
+    const flowCentre = settings.hordes.hordeWatch ? (hordeWatchPoint(session.sim) ?? p) : p
+    const flowAlphaCount = settings.hordes.hordeFlowOverlay
+      ? renderFlowOverlay(session.sim, flowCentre.x, flowCentre.y, (x, z) => supportHeight(town, x, z), alphaSprites, debugAlphaCount)
+      : debugAlphaCount
     const effectiveFogSettings =
       unseenEval.active && unseenEval.hideZombies
         ? {
@@ -1453,7 +1489,7 @@ async function main() {
       (x, z) => supportHeight(town, x, z),
       effectiveFogSettings,
       alphaSprites,
-      debugAlphaCount,
+      flowAlphaCount,
     )
     const tightView = cam.groundRect(0.8)
     const groundWearBatches = groundWear.collectBatches(town, tightView, settings.ground)
@@ -1475,6 +1511,9 @@ async function main() {
     render.splatter =
       settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.splatterLegacy = settings.combat.bloodStyle === 2
+    render.skids = vehicleRenderer.drivingFx.marks
+    render.skidsVisible = Boolean(settings.vehicle.vehicleSmoke) && vehicleRenderer.drivingFx.settings.skidMarks
+    vehicleRenderer.wetness = weatherOut.state.wetness
     render.weather = weatherOut.prepareInput
     const rBatches = render.batches
     rBatches.length = 0
@@ -1485,7 +1524,11 @@ async function main() {
     for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
     for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
     for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
-    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z))
+    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z), {
+      survivors: session.sim.slots.map((s) => s.survivor),
+      seatColour: seatTint,
+      dt,
+    })
     for (let i = 0; i < discoveryBatches.length; i++) rBatches.push(discoveryBatches[i]!)
     for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)
     rBatches.push(doorBatch)
@@ -1508,7 +1551,7 @@ async function main() {
           ),
         }
       : null
-    render.lampCount = town.lamps.length
+    render.lampCount = SCONCE_LAMP_SLOT + 1
     render.view = view
     render.grade[0] = time
     render.grade[1] = settings.view.diagnostic
@@ -1551,7 +1594,7 @@ async function main() {
       if (batteryEl.style.opacity !== opacity) batteryEl.style.opacity = opacity
     }
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
-    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
+    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) => vehicleRenderer.tyreAudio(id))
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
@@ -1767,6 +1810,7 @@ async function main() {
     progressionHost,
     discoveryHost,
     vehicleHost,
+    vehicleRenderer,
     botsLab,
     qualityController,
     promptEl,

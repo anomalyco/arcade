@@ -11,7 +11,10 @@ import type { BodyBox } from "./placement"
 import { RemoteAdapter, type HudRemote } from "./remote"
 import { TEAMMATE_ALL, TEAMMATE_OFF, type HudSettings } from "./settings"
 import { GROUND_SEGMENTS, localVitals } from "./vitals"
+import { hudMotion } from "./motion"
+import "./tokens.css"
 import "./hud.css"
+import "./dock.css"
 
 export { ActorFeedback } from "./actor-feedback"
 export { CalloutLayer, CalloutModel, type CalloutKind, type CalloutOptions } from "./callouts"
@@ -49,7 +52,6 @@ export class OutbreakHud {
   private w = 1
   private h = 1
   private lastSummary = ""
-  private prevSlot = -1
   private avoidEl: HTMLElement | null = null
 
   constructor(
@@ -57,6 +59,7 @@ export class OutbreakHud {
     private readonly settings: HudSettings,
   ) {
     this.core = new CharacterHud(parent, settings)
+    this.applyMotion()
     this.feedback = new ActorFeedback((text, kind, options) => this.core.callout(LOCAL_ACTOR, text, kind, options))
   }
 
@@ -100,8 +103,15 @@ export class OutbreakHud {
     this.remoteViews.clear()
   }
 
+  private applyMotion(): void {
+    hudMotion.speed = this.settings.hudMotionSpeed
+    hudMotion.forceReduced = this.settings.hudReducedMotion
+    if (typeof document !== "undefined") hudMotion.install(document.documentElement)
+  }
+
   applySettings(): void {
     const wasLog = this.core.logMode
+    this.applyMotion()
     this.core.applySettings()
     if (wasLog !== this.core.logMode) {
       this.lastSummary = ""
@@ -158,10 +168,6 @@ export class OutbreakHud {
         notices: view.notices.splice(0),
       })
     }
-    const slot = view.inventory.selectedSlot
-    if (this.prevSlot >= 0 && slot !== this.prevSlot) this.core.wakeHotbar()
-    this.prevSlot = slot
-
     const feet = this.anchors.get(LOCAL_ACTOR)!()
     const vitals = localVitals(p)
     if (this.core.style.worldState) {

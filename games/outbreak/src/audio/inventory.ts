@@ -1,6 +1,7 @@
 import type { CraftKind, PickupClass } from "@arcade/kit/audio"
 import type { StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../../shared/day-cycle"
+import { matStoreId, TINKER_MATERIALS } from "../../shared/discovery/tinker"
 import { RECIPES } from "../../shared/progression"
 import type { SoundActor, SoundEvent } from "./director"
 
@@ -52,9 +53,21 @@ function channelSound(kind: string, label: string): { loop: string; done: string
     return { loop: `craft.${craft}.loop`, done: `craft.${craft}.done` }
   }
   if (kind === "research") return { loop: "bench.research.loop", done: "bench.research.done" }
+  // How a try ends depends on the mat afterwards (`tinkerDone`).
+  if (kind === "tinker") return { loop: "bench.research.loop", done: TINKER_DONE }
   if (kind === "heal") return { loop: "craft.medical.loop", done: "craft.medical.done" }
   if (kind === "pry") return { loop: "door.pry.loop", done: null }
   return null
+}
+
+const TINKER_DONE = "tinker"
+
+/** A finished try: what it made lies on the mat (the research chime), or the materials clatter back down. */
+function tinkerDone(progression: SoundProgression | undefined, x: number, y: number): string {
+  const bench = progression?.benches.find((b) => Math.hypot(b.bench.x - x, b.bench.y - y) < 0.5)
+  const mat = bench ? progression?.ledger.stores.get(matStoreId(bench.id)) : undefined
+  const made = mat?.slots.some((s) => s && !(TINKER_MATERIALS as readonly string[]).includes(s.item))
+  return made ? "bench.research.done" : "item.drop"
 }
 
 /** A finished channel had run this much of its duration when last seen (snapshots and frames skip its last tick). */
@@ -108,7 +121,8 @@ export class InventorySounds {
       let finished = false
       if (prev?.channel && (!channel || channel.loop !== prev.channel.loop)) {
         if (prev.channel.done && prev.channel.progress >= FINISHED) {
-          emit({ id: prev.channel.done, x: prev.channel.x, y: prev.channel.y, source: id })
+          const done = prev.channel.done === TINKER_DONE ? tinkerDone(progression, prev.channel.x, prev.channel.y) : prev.channel.done
+          emit({ id: done, x: prev.channel.x, y: prev.channel.y, source: id })
           finished = true
         }
       }

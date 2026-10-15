@@ -360,6 +360,18 @@ async function encode(spec: SfxSpec, channels: Float32Array[], file: string, tri
   await $`ffmpeg -v error -y -f f32le -ar ${SR} -ac ${channels.length} -i ${tmp} -c:a libopus -b:a ${bitrate} -application audio -frame_duration 10 ${file}`.quiet()
 }
 
+/** A reused loop's audible region: the codec's padding at either end (more than 45 dB under peak) stays outside it. */
+function audibleLoop(channels: Float32Array[]) {
+  let peak = 0
+  for (const ch of channels) for (const x of ch) peak = Math.max(peak, Math.abs(x))
+  const floor = peak * 10 ** (-45 / 20), n = channels[0]!.length
+  const loud = (i: number) => channels.some(ch => Math.abs(ch[i]!) > floor)
+  let a = 0, b = n - 1
+  while (a < b && !loud(a)) a++
+  while (b > a && !loud(b)) b--
+  return { loopStart: round(a / SR, 6), loopEnd: round((b + 1) / SR, 6) }
+}
+
 async function build() {
   mkdirSync(outDir, { recursive: true })
   const files: Record<string, LibraryFile[]> = {}
@@ -369,9 +381,10 @@ async function build() {
     if (spec.reuse) {
       for (const reuse of spec.reuse) {
         const path = join(root, reuse.path)
-        const stats = analyzeSfx(await decode(path))
+        const pcm = await decode(path)
+        const stats = analyzeSfx(pcm)
         const loudness = loudnessOf(spec, stats)
-        list.push({ file: reuse.path.split("/").pop()!, path: reuse.path, source: reuse.license.startsWith("ElevenLabs") ? "elevenlabs-sound-v2" : "project", license: reuse.license, provenance: reuse.provenance, durationSeconds: round(stats.durationSeconds, 3), loudness: round(loudness, 1), peakDb: round(stats.peakDb, 1), gain: round(10 ** ((spec.target - loudness) / 20), 3), bytes: statSync(path).size })
+        list.push({ file: reuse.path.split("/").pop()!, path: reuse.path, source: reuse.license.startsWith("ElevenLabs") ? "elevenlabs-sound-v2" : "project", license: reuse.license, provenance: reuse.provenance, durationSeconds: round(stats.durationSeconds, 3), loudness: round(loudness, 1), peakDb: round(stats.peakDb, 1), gain: round(10 ** ((spec.target - loudness) / 20), 3), bytes: statSync(path).size, ...(spec.loop ? audibleLoop(pcm) : {}) })
       }
     } else if (spec.generate) {
       const curatedPath = join(work, "curated", `${spec.id}.json`)

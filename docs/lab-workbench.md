@@ -27,8 +27,9 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
 └ status: focus pill · telemetry · hints ─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Outliner** (left) lists only what is in the scene (`allSceneObjects()`), grouped Characters, Vehicles, Props,
-  Emitters, Lights and Fixtures (specimens) with counts and collapse. Repeated kinds fold into one row (`Cone ×5`,
+- **Outliner** (left, `packages/kit/lab/outliner.ts`, a knobs/ui `tree`) lists only what is in the scene
+  (`allSceneObjects()`), grouped Characters, Vehicles, Props, Emitters, Lights and Fixtures (specimens) with counts and
+  collapse. Repeated kinds fold into one row (`Cone ×5`,
   expandable; clicking the fold selects every member). Type filter menu, `Search scene` field and a per-row lock
   (locked objects are skipped by viewport picking and the marquee). Selection syncs both ways: click replaces,
   `⌘`/`Ctrl`-click toggles, `Shift`-click selects a range; viewport clicks, Shift-clicks and marquees highlight and
@@ -174,15 +175,18 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
 - Knobs draws each group under a heading with a die (Random, `⌥` Mutate) and a reset icon that shows while the group
   differs from its defaults; the header has Random, Reset, Copy, Undo, Redo and `?`. Groups marked `folded` fold in
   place and open from their heading (or when `reveal(key)` lands in them).
-- Every LabPanel wears the `arcade` preset (`arcadePreset` in `packages/kit/lab-knobs.ts`): knobs' `labPreset`
-  (square, `--k-frame: flat`, the Lab's palette, title and font weights) with 24 px rows, the UI font and one 11.5 px
-  size for labels and values, 20 px fields (`--k-control-h`, `--k-value-size`) and the Lab's 20 px square buttons
-  through knobs' `--k-button-*` tokens (toolbars, All on/All off, the variants menu). Inline panels have no frame of
-  their own and use the DOM renderer. knobs gives long choices a tooltip with the whole value, keeps labels' words up
-  to half the row, and opens lists of more than eight options with a search field (type to filter). The preset's
-  `css` holds only what no token reaches yet: action rows and preset chips drawn as the Lab's buttons, and toolbar
-  labels at full strength.
-  Change the look through tokens first, never in `packages/knobs`; gaps go to Kit's knobs session (`knobs-requests.md`).
+- The Lab and the games' Backquote panels use knobs' own default look (`LAB_LOOK` in `packages/kit/lab-knobs.ts`: no
+  preset, default density, `theme: "dark"`), for panels and every knobs/ui piece (trees, splits, popovers, readouts,
+  the palette, toasts). Inline panels use the DOM renderer, and one set into a Lab card drops its own card through
+  knobs' `--k-chrome: 0` (`.lab-card`, station slots). knobs gives long choices a tooltip with the whole value and
+  opens lists of more than eight options with a search field (type to filter).
+- The Lab's own chrome follows knobs' look, not the other way round: `:root` in `packages/kit/lab/style.css` carries
+  knobs' default dark values (page `#101012`, cards `#1c1c1e`, white hairlines and text, a white accent, 6/8/12 px
+  radii, a 6 px gap), and each pane (Outliner, viewport, Details, station slots and dock, Library) is a rounded card a
+  gap from the next, with knobs' capsule grips on the resize handles. The floating Backquote shell (`lab-panel.ts`) has
+  no box of its own: knobs' panel is the card, the telemetry a glass card above it.
+  Don't restyle knobs from Arcade: no presets, no CSS over `.knobs-*`, never edits in `packages/knobs`. Anything
+  missing or wrong goes to Kit's knobs session (`knobs-requests.md`) with a capture.
 - Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
   highlighting; `setView({ order, filter })` orders groups and filters rows; `reveal(key)` focuses, scrolls and flashes
   a row; `resetControl(key)`; `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin (a dot at
@@ -248,7 +252,8 @@ Priority order:
    `Render previews` and the items; each keeps one tab stop. A focused item shows its whole name on a card over its
    neighbours.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
-   the Edit canvas shortcuts below.
+   the Edit canvas shortcuts below. Letters never jump to rows (knobs' type-ahead is off here): they stay the
+   workbench's shortcuts, and `Search scene` finds things by name.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
    - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
    - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.

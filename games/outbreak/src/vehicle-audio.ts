@@ -1,4 +1,5 @@
-import type { CueRecipe } from "@arcade/kit/audio"
+import { sfxEntry, type CueRecipe, type VoiceHandle } from "@arcade/kit/audio"
+import { TYRE_SURFACE } from "@arcade/kit/vehicle/emissions"
 import { NitroGate } from "@arcade/kit/vehicle/audio/nitro"
 import { DriverVoice } from "@arcade/kit/vehicle/audio/synth"
 import type { VehicleView as KitVehicleView } from "@arcade/kit/vehicle/types"
@@ -231,6 +232,20 @@ type VehicleSnapMemory = {
   lastSputterAt: number
 }
 
+/** One car's tyres this frame, from the same per-wheel slip that lays its marks and smoke. */
+export type TyreAudio = { slip: number; slipSpeed: number; surface: number }
+
+/**
+ * Screech loudness 0–1 and playback rate from slip: rubber on a dry road squeals, a wet road hisses lower,
+ * dirt only scrubs (no squeal). `slipSpeed` lets a burnout scream at a standstill.
+ */
+export function tyreScreech(t: TyreAudio): { level: number; rate: number } {
+  const move = Math.min(1, t.slipSpeed / 6)
+  const k = Math.max(0, Math.min(1, (t.slip - 0.12) / 0.55)) * move
+  const surface = t.surface === TYRE_SURFACE.road ? 1 : t.surface === TYRE_SURFACE.wet ? 0.45 : 0
+  return { level: k * surface, rate: (t.surface === TYRE_SURFACE.wet ? 0.82 : 0.94) + 0.12 * k }
+}
+
 const rollOff = (d: number) => 1 / (1 + d * d * 0.012)
 const panOf = (dx: number) => Math.max(-0.85, Math.min(0.85, dx / 12))
 
@@ -246,7 +261,13 @@ export class OutbreakVehicleAudio {
   private memory = new Map<number, VehicleSnapMemory>()
   private hornCooldown = new Map<number, number>()
   private started = false
+  private readonly screeches = new Map<number, { voice: VoiceHandle | null; level: number; chirpAt: number }>()
   readonly counts = {
+    /** Local car's screech level this frame (0–1), its peak, frames above 0.05 and chirps, computed muted too. */
+    screech: 0,
+    screechPeak: 0,
+    screechFrames: 0,
+    chirps: 0,
     activeEngines: 0,
     rpm: 0,
     gear: 0,
@@ -326,7 +347,9 @@ export class OutbreakVehicleAudio {
     vehicles: readonly OutbreakVehicle[],
     listener: { x: number; y: number },
     localVehicleId: number | null | undefined,
+    tyres?: (id: number) => TyreAudio | undefined,
   ): void {
+    if (tyres) this.tyres(vehicles, listener, localVehicleId, tyres, time)
     const seen = new Set<number>()
     for (const v of vehicles) {
       seen.add(v.id)
@@ -430,7 +453,8 @@ export class OutbreakVehicleAudio {
         x: v.x,
         z: v.y,
         speed: spd,
-        drift: slip,
+        // With tyre data the sampled screech carries the squeal; the synth keeps engine, gears and launch chirps.
+        drift: tyres ? 0 : slip,
         engineOff: false,
       })
       slot.driver.update(
@@ -439,7 +463,7 @@ export class OutbreakVehicleAudio {
           throttle: braking ? 0 : Math.abs(v.drive.throttle),
           brake: braking ? 1 : 0,
           steer: v.drive.steer,
-          handbrake: v.drive.handbrake,
+          handbrake: tyres ? false : v.drive.handbrake,
           boost: false,
         },
         Math.min(0.1, Math.max(0.001, dt)),
@@ -460,6 +484,57 @@ export class OutbreakVehicleAudio {
     }
   }
 
+  /** Sampled screech per nearby car (library `vehicle.tyre.screech`), plus a chirp when a slide breaks loose. */
+  private tyres(
+    vehicles: readonly OutbreakVehicle[],
+    listener: { x: number; y: number },
+    localVehicleId: number | null | undefined,
+    tyres: (id: number) => TyreAudio | undefined,
+    time: number,
+  ): void {
+    const live = this.audio.live
+    const rt = this.audio.runtime
+    const loop = sfxEntry("vehicle.tyre.screech")
+    const seen = new Set<number>()
+    this.counts.screech = 0
+    for (const v of vehicles) {
+      const t = tyres(v.id)
+      if (!t) continue
+      const near = v.id === localVehicleId || Math.hypot(v.x - listener.x, v.y - listener.y) < loop.range.max
+      if (!near) continue
+      seen.add(v.id)
+      const { level, rate } = tyreScreech(t)
+      let s = this.screeches.get(v.id)
+      if (!s) this.screeches.set(v.id, (s = { voice: null, level: 0, chirpAt: -Infinity }))
+      // A chirp as a hard slide breaks loose at speed, never more than once every 1.2 s.
+      const chirp = level > 0.45 && s.level <= 0.45 && speedOf(v) > 6 && time - s.chirpAt > 1.2
+      if (chirp) s.chirpAt = time
+      s.level = level
+      if (v.id === localVehicleId) {
+        this.counts.screech = level
+        this.counts.screechPeak = Math.max(this.counts.screechPeak, level)
+        if (level > 0.05) this.counts.screechFrames++
+        if (chirp) this.counts.chirps++
+      }
+      if (!live) continue
+      if (chirp) this.playCue("vehicle.tyre.chirp", v.x, v.y, 0.8 + 0.4 * level, sfxEntry("vehicle.tyre.chirp").range.max)
+      const pose = { x: v.x, z: v.y, refDistance: loop.range.ref, maxDistance: loop.range.max, rolloff: 1.35 }
+      if (level > 0.03) {
+        if (!s.voice?.active) s.voice = rt.playCue("vehicle.tyre.screech", { position: pose, gain: level, ownerKey: `screech:${v.id}` })
+        const mix = rt.spatialize(pose)
+        s.voice?.setParams({ gain: loop.gain * level * mix.gain, rate, pan: mix.pan, cutoffHz: mix.cutoffHz }, 0.05)
+      } else if (s.voice?.active) {
+        s.voice.setParams({ gain: 0 }, 0.08)
+      }
+    }
+    for (const [id, s] of this.screeches) {
+      if (seen.has(id) && live) continue
+      s.voice?.stop(0.12)
+      if (!seen.has(id)) this.screeches.delete(id)
+      else s.voice = null
+    }
+  }
+
   pop(vehicleId: number): void {
     if (!this.audio.live) return
     const slot = this.voices.find((s) => s.id === vehicleId)
@@ -467,6 +542,10 @@ export class OutbreakVehicleAudio {
   }
 
   silence(): void {
+    for (const s of this.screeches.values()) {
+      s.voice?.stop(0.04)
+      s.voice = null
+    }
     if (!this.ctx) return
     const t = this.audio.runtime.now
     for (const slot of this.voices) {

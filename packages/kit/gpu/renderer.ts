@@ -18,6 +18,8 @@ import {
 } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
+import type { SkidMarks } from "@arcade/kit/fx/skids"
+import { SkidRenderer } from "@arcade/kit/fx/skid-renderer"
 import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
@@ -66,7 +68,7 @@ export { LIGHT_FLOATS }
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 /** Size of the game's custom uniform block at binding 13. */
-export const CUSTOM_UNIFORM_BYTES = 1024
+export const CUSTOM_UNIFORM_BYTES = 1280
 const MAX_SPRITES = 8192
 const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS
@@ -134,6 +136,9 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 
 export type FrameInput = {
   splatter?:Splatter
+  /** Persistent tyre marks (`@arcade/kit/fx/skids`), multiplied onto the lit ground after opaque geometry. */
+  skids?: SkidMarks
+  skidsVisible?: boolean
   splatterLegacy?:boolean
   fxParticles?: Particles
   weather?: WeatherPrepareInput | null
@@ -184,6 +189,7 @@ export type FrameInput = {
  */
 export class Renderer {
   private splatterRenderer?:SplatterRenderer
+  private skidRenderer?: SkidRenderer
   private particleRenderer?:ParticleRenderer
   private weatherRenderer?:WeatherRenderer
   private readonly splatterEye=new Float32Array(3)
@@ -310,6 +316,8 @@ export class Renderer {
       lookPostVariant?: (variant: LookVariantMode) => string
       visField?: VisibilityFieldShader
       volume?: VolumeLightShader
+      /** Unlit tyre smoke and dust colour (WGSL vec3f over the scene Frame), e.g. from `F.ambient` under Noir. */
+      tyreSmoke?: { base?: string; dust?: string }
     },
   ) {
     const d = device
@@ -403,7 +411,8 @@ export class Renderer {
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
-      "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus")
+      "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
+      shaders?.tyreSmoke?.base, shaders?.tyreSmoke?.dust)
     this.postLayout = d.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: S.FRAGMENT, texture: {} },
@@ -1184,6 +1193,10 @@ export class Renderer {
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
     const hasPostParams = Boolean(f.postParams && f.postParams[0] > 0.5)
     const useLookPipes = !motion && Boolean(effectiveLook) && (!isIdentityLook(effectiveLook) || effectiveCompare.mode === 2 || hasPostParams)
+    if (f.skids) {
+      this.skidRenderer ??= new SkidRenderer(d, f.skids.capacity, { depthFormat: DEPTH, depthCompare: DEPTH_CFG.compare, samples: SAMPLES, color: HDR })
+      this.skidRenderer.prepare(f.skids, f.frame, f.skidsVisible ?? true)
+    }
     if (f.splatter) {
       this.splatterRenderer ??= new SplatterRenderer(d)
       for (let i = 0; i < 3; i++) this.splatterEye[i] = f.frame[16 + i]!
@@ -1433,6 +1446,7 @@ export class Renderer {
         pass.draw(m.count, r.count, 0, r.first)
       }
       if (!alpha) {
+        if (f.skids) this.skidRenderer!.draw(pass, motion)
         this.passes.drawSlot("opaque", pass)
         pass.setBindGroup(0, this.sceneGroup)
       }

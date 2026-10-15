@@ -1,6 +1,6 @@
 import { createRemoteControls, type RemoteControls } from "@arcade/knobs"
 import { mountPanel } from "@arcade/knobs/panel"
-import { arcadePreset } from "../lab-knobs"
+import { LAB_LOOK } from "../lab-knobs"
 
 const STORAGE_KEY = "arcade.lab.perf.v1"
 /** One 60 Hz frame. */
@@ -48,14 +48,12 @@ export function createPerfReadout(host: HTMLElement) {
         { key: "cpu", ...meter("CPU") },
         { key: "gpu", ...meter("GPU") },
       ],
-      { storage: null, persist: "none", theme: "dark", density: "compact" },
+      { storage: null, persist: "none", theme: "dark" },
     )
     mountPanel(store, el, {
       title: false,
       header: false,
-      preset: arcadePreset,
-      theme: "dark",
-      density: "compact",
+      ...LAB_LOOK,
       renderer: "dom",
       variants: false,
       haptics: false,

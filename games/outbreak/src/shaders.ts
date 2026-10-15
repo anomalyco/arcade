@@ -43,10 +43,24 @@ export const outbreakSceneHooks: SceneHooks = {
     if (L.cone.w > 1.5) {
       att = flashAttenuation(ldir, d3, power);
       if (att <= 0.02) { continue; }
+    } else if (L.cone.w > 1.125) {
+      // Sconce pair (one light, bulbs extra.w either side along the wall): a tight wash on their own wall (walls take
+      // direct light at about a third of floors, so give that back) and a soft pool on the floor below. Only surfaces
+      // behind the bulbs (the wall they hang on) get the wash, so cabinets standing out from the wall don't flare.
+      if (OL.rampOn.y > 0.5) { win = outbreakRamp(1u, sqrt(dPlan2) / r); }
+      let onWall = abs(n.y) < 0.5 && dot(dv, L.cone.xy) < 0.0;
+      let side = abs(L.cone.yx) * L.extra.w;
+      let e1 = dot(dv - side, dv - side) + dy * dy;
+      let e2 = dot(dv + side, dv + side) + dy * dy;
+      var bulbs = 0.5 / (0.15 + e1 * 0.7) + 0.5 / (0.15 + e2 * 0.7);
+      if (onWall) { bulbs += 0.225 / (0.02 + e1 * 5.0) + 0.225 / (0.02 + e2 * 5.0); }
+      att = power * win * (0.04 + bulbs) * select(1.0, 3.0, onWall);
+      if (att <= 0.0035) { continue; }
     } else {
       let dn = max(d3, 0.85);
       let tight = max(0.5, OL.u0.w);
-      if (L.cone.w > 0.5 && L.pos.w < 4.5 && L.extra.w > -0.5) {
+      if (OL.rampOn.y > 0.5) { win = outbreakRamp(1u, sqrt(dPlan2) / r); }
+      if (L.cone.w > 0.5 && L.cone.w < 1.125 && L.pos.w < 4.5 && L.extra.w > -0.5) {
         att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
       } else {
         att = power * win * (0.025 + 2.25 / (1.0 + dn * dn * 0.62 * tight));
@@ -63,7 +77,11 @@ export const outbreakSceneHooks: SceneHooks = {
   diagnostics: "F.map.z",
   smoothShadows: true,
   shadowTaps: 5,
-  lightMask: "if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }",
+  // Sconces (cone.w 1.25, interiors/sconces.ts): cut just behind their wall, above the wall tops, and to their room along the wall.
+  lightMask: `if (L.cone.w > 1.125 && L.cone.w < 1.5) {
+      let along = dot(dv, abs(L.cone.yx));
+      if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
+    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
   material: " ",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
@@ -123,6 +141,7 @@ fn interior(p:vec2f) -> bool {
       if (slotLPlan(i)) {
         if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22) { return true; }
         if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72) { return true; }
+        if (p.x > b.x + 9.72 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
       } else if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
     }
     return false;
@@ -134,18 +153,21 @@ fn interior(p:vec2f) -> bool {
   );
   let south = p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22;
   let north = p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72;
-  return select(all(p > b.xy) && all(p < b.zw), south || north, p.x < 45.0);
+  let wing = p.x > b.x + 9.72 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72;
+  return select(all(p > b.xy) && all(p < b.zw), south || north || wing, p.x < 45.0);
 }
 fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
   if (F.eye.z <= 1.0001) {
     if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
     if (houseIsL) {
-      let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6);
+      // The L-shaped bungalow: south block, north-west hall and north-east wing (map.ts buildingFootprint).
+      let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6) || (F.eye.x > b.x + 9.4 && F.eye.y > b.y + 1.4);
       if (!eyeIn) { return false; }
       let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
       let north = p.x > b.x + 2.25 && p.x < b.x + 9.25 && p.z > b.y + 0.35 && p.z < b.y + 5.85;
-      return south || north;
+      let wing = p.x > b.x + 9.25 && p.x < b.z - 0.35 && p.z > b.y + 1.85 && p.z < b.y + 5.85;
+      return south || north || wing;
     }
     return p.x>b.x+0.35&&p.x<b.z-0.35&&p.z>b.y+0.35&&p.z<b.w+1.65;
   }
@@ -337,4 +359,6 @@ export const shaders = {
   lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
   volume: flashlightVolumeShader,
+  // Tyre smoke and dust take the sky ambient, so at night they stay dim until headlights or the flashlight hit them.
+  tyreSmoke: { base: "(F.ambient.rgb * 2.6 + vec3f(0.035))", dust: "((F.ambient.rgb * 2.6 + vec3f(0.035)) * vec3f(1.0, 0.84, 0.64))" },
 }

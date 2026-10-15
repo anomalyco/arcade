@@ -1,6 +1,14 @@
 import { Spring, springMotion } from "../core/spring.js"
 import { storageKey, browserStorage, type StoragePort } from "../core/storage.js"
-import { applyLook, frameLoop, ICONS, notifyLayout, reducedMotion, type UiLook } from "./look.js"
+import {
+  applyLook,
+  frameLoop,
+  ICONS,
+  notifyLayout,
+  reducedMotion,
+  syncFrame,
+  type UiLook,
+} from "./look.js"
 import { tooltip } from "./tooltip.js"
 import {
   collapsibleSide,
@@ -125,6 +133,9 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
   root.className = "knobs-split"
   root.dataset.direction = direction
   applyLook(root, options)
+  // Inside another split's pane, that pane is only a slot: this split's panes are the cards.
+  const host = container.closest<HTMLElement>(".knobs-pane")
+  host?.setAttribute("data-nested", "")
 
   interface View {
     spec: PaneOptions
@@ -267,14 +278,21 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
     return row ? r.width : r.height
   }
   const total = () => along(root)
-  const headerSize = (v: View) => (v.head ? v.head.getBoundingClientRect().height : 0)
+  // A card sits half a gap inside its slot (--ku-pane-m; 0 in the flat frame).
+  let paneM = 0
+  const marginOf = (v: View) => (v.el.hasAttribute("data-nested") ? 0 : paneM)
+  const headerSize = (v: View) =>
+    v.head ? v.head.getBoundingClientRect().height + marginOf(v) * 2 : 0
   let railPx = 0
   const readRail = () => {
+    syncFrame(root)
     const probe = doc.createElement("div")
     probe.style.cssText =
-      "position:absolute;visibility:hidden;width:var(--ku-rail);height:var(--ku-rail)"
+      "position:absolute;visibility:hidden;width:var(--ku-rail);height:var(--ku-pane-m)"
     root.append(probe)
-    railPx = probe.getBoundingClientRect().width || 26
+    const r = probe.getBoundingClientRect()
+    paneM = r.height
+    railPx = (r.width || 26) + paneM * 2
     probe.remove()
   }
   readRail()
@@ -307,6 +325,7 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
       v.el.setAttribute("aria-hidden", String(isCollapsed && !moving))
       const r = rail(spec.id)
       const open = Math.max(v.open, r + 1)
+      const m = marginOf(v)
       // Mid-collapse (or collapsed), the content keeps its open size and slides out by the
       // divider, clipped, while the rail fades in at the edge; nothing inside reflows.
       if (moving || isCollapsed) {
@@ -321,7 +340,7 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
             : edge === "start"
               ? "bottom"
               : "top"
-          v.clip.style.cssText = `${row ? "width" : "height"}:${visible}px;${side}:0;${
+          v.clip.style.cssText = `${row ? "width" : "height"}:${Math.max(0, visible - m * 2)}px;${side}:0;${
             row
               ? side === "right"
                 ? "left:auto"
@@ -330,7 +349,7 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
                 ? "top:auto"
                 : "bottom:auto"
           }`
-          v.inner.style.cssText = `${row ? "width" : "height"}:${open}px;${side}:0;${
+          v.inner.style.cssText = `${row ? "width" : "height"}:${open - m * 2}px;${side}:0;${
             row
               ? side === "right"
                 ? "left:auto"
@@ -342,7 +361,7 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
           v.rail.style.opacity = String(Math.max(0, (p - 0.35) / 0.65))
         } else {
           v.clip.style.cssText = ""
-          v.inner.style.cssText = `height:${open}px;bottom:auto`
+          v.inner.style.cssText = `height:${open - m * 2}px;bottom:auto`
         }
       } else {
         v.clip.style.cssText = ""
@@ -560,15 +579,18 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
     render(first)
   }
 
-  const ro = new ResizeObserver(() => {
+  const relayout = () => {
     // A split made before it's in the page (a Solid component) reads its tokens once it is.
     readRail()
     if (springs.size) return loop.wake()
     const shown = target()
     render(shown)
     rememberOpen(shown)
-  })
+  }
+  const ro = new ResizeObserver(relayout)
   ro.observe(root)
+  // restyle() changed the look: the rail and the cards' inset come from the tokens.
+  root.addEventListener("knobs-restyle", relayout)
 
   const paneApi = (id: string): SplitPane => {
     const v = views.get(id)
@@ -619,6 +641,8 @@ export function split(container: HTMLElement, options: SplitOptions): Split {
     dispose() {
       loop.stop()
       ro.disconnect()
+      root.removeEventListener("knobs-restyle", relayout)
+      host?.removeAttribute("data-nested")
       root.remove()
     },
   }

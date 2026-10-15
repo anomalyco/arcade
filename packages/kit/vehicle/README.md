@@ -1,6 +1,6 @@
 # Vehicle presentation
 
-Getaway and Blackout use these modules for suspension, wheel contacts, lamps, tyre emissions and procedural sound. The package reads interpolated views and never writes a game's simulation state.
+Getaway, Blackout and Outbreak use these modules for suspension, wheel contacts, lamps, tyre emissions and procedural sound. The package reads interpolated views and never writes a game's simulation state.
 
 Import the source subpaths through the workspace package, for example `@arcade/kit/vehicle/chassis` or
 `@arcade/kit/vehicle/audio/synth`. Install dependencies once at the repository root with `bun install --frozen-lockfile`.
@@ -13,9 +13,25 @@ Import the source subpaths through the workspace package, for example `@arcade/k
 - `bodyPoint` transforms attachments with the same roll/pitch/yaw order as the body. Pass the complete rendered height, including ground and springs.
 - `drawLamps` writes through `SpriteSink` and `LightSink`. Pass the camera eye and ground-height callback so glows follow the body while pools stay on the ground. `LightSettings` and `lightControls` expose the shipped values in the shared Lab.
 - `VehicleEmissions` consumes one persistent `EmissionState` per vehicle. Its terrain callback returns whether the tyre can emit on the current surface. Assign a `SkidSink`, call `update` once per frame, then `car` once per vehicle. The same per-wheel slip drives heat, smoke and skids. Its `pops` counter lets the game schedule the corresponding audio event.
+- `VehicleEmissions.contacts(view, state, wheels, dt)` is the game-agnostic per-wheel path: each `WheelContact` gives
+  where a tyre touches (world XYZ), its slip 0–1, how fast rubber slides (`slipSpeed`, m/s) and the surface
+  (`TYRE_SURFACE`: none, road, dirt, wet). Road lays black marks and rubber smoke, dirt brown ruts and dust, wet faint
+  marks and no smoke; a tyre spinning in place scrubs a patch. `exhaust()` does pops, flames and cold exhaust. `car()`
+  is Getaway's proxy path (slip from drift and controls) and calls the same exhaust.
+- `slip.ts`: `kinematicContacts` estimates per-wheel slip for a rigid-body simulation without tyre telemetry: each
+  tyre's velocity (v + ω × r) across its rolling direction, handbrake rear lock, hard-stop lock above a speed (0 for
+  ABS) and burnouts. Pass `null` steer to roll the fronts along the no-slip path. Settings: `SlipSettings`.
+- `driving-fx.ts`: the shared Lab group (`drivingFxControls`, group "Driving FX") and `DrivingFx`, which keeps a
+  `SkidMarks` buffer and the slip rules in step with its settings. Outbreak binds the whole group; Getaway binds
+  mark life and width to its sprite skids.
 - `DriverVoice` takes an `AudioBus` with a context, scheduling clock, dry output and reverb send. The game owns unlock, mute, attenuation and voice selection. `Gearbox`, `EngineVoice`, `Transients` and `NitroGate` are also available separately. The context may be an `OfflineAudioContext`.
 
 Getaway's adapters remain at its existing import paths. They supply the city kerb/ramp profile and lawn mask. Blackout's `src/game/vehicle-presentation.ts` converts its +X-forward meshes, heading convention and kilograms. It converts the full rotation basis before submitting instances, so combined banking and pitch keep lamps on the body. Blackout's collision terrain is flat; its decorative kerbs do not introduce new driveable heights.
+
+Outbreak's `src/vehicles.ts` feeds `kinematicContacts` from the replicated body (position, velocity, yaw rate and
+drive inputs), so every co-op client lays the same marks and smoke without new wire fields; its surface map mirrors
+`supportHeight`, and the weather's wetness switches paved ground to wet. Its screech plays the library's
+`vehicle.tyre.screech`/`vehicle.tyre.chirp` (Getaway's recordings) from the same slip.
 
 Each game keeps its own vehicle meshes, material palette, gameplay physics, sirens, damage smoke and wrecks. Blackout retains its horn, door, starter and crash recordings. Its audio adapter limits detailed vehicle voices to four and applies distance filtering outside the shared voice.
 

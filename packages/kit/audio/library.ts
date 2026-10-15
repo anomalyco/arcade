@@ -11,7 +11,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
  */
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
-  | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator"
+  | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "vehicle"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -459,6 +459,18 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `Ominous low ambient drone for a horror game: deep slow rumbling tone, hollow wind, faint distant moans echoing across empty streets. ${NO_SPEECH}`, duration: 24, candidates: 2, loop: true, influence: 0.4 },
   },
 
+
+  // Tyres, reusing Getaway's recordings in place; driven by per-wheel slip (`@arcade/kit/vehicle/slip`)
+  {
+    id: "vehicle.tyre.screech", label: "Tyre screech", group: "vehicle", bus: "tyre", variants: 1, loop: true, target: -24, gain: 0.8, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 4, max: 60 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [1, 8],
+    reuse: [{ path: "games/getaway/public/sfx/tire_screech_loop.mp3", license: "Proprietary project asset (Getaway public/sfx)", provenance: "Getaway's tyre screech loop" }],
+  },
+  {
+    id: "vehicle.tyre.chirp", label: "Tyre chirp", group: "vehicle", bus: "tyre", variants: 1, target: -22, gain: 0.7, pitchJitter: 0.05, gainJitter: 0.1,
+    cooldown: 1.2, range: { ref: 4, max: 50 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.1, 1],
+    reuse: [{ path: "games/getaway/public/sfx/skid_short.mp3", license: "Proprietary project asset (Getaway public/sfx)", provenance: "Getaway's short skid" }],
+  },
 
   // Interface, reusing existing project files in place
   {

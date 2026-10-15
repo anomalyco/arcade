@@ -138,6 +138,8 @@ export type CompiledWorldChunk = {
   floorTile: Uint8Array<ArrayBuffer> // 128 × 128 × 2 (RG8)
   moonTile: Uint8Array<ArrayBuffer> // 256 × 256 (R8)
   bounceTile: Uint8Array<ArrayBuffer> // 64 × 64 × 4 (RGBA8)
+  /** Wall-sconce lights, `SCONCE_FLOATS` each (see interiors/sconces.ts). */
+  sconces: Float32Array<ArrayBuffer>
   compileMs: number
 }
 
@@ -786,6 +788,11 @@ function compileOriginChunk(chunk: WorldChunk, seed: number, houseSeed: number, 
   blit(level.floor.data, level.floor.w, floorTile, 128, 2)
   blit(level.floor.moon!.data, level.floor.moon!.w, moonTile, 256, 1)
   blit(level.bounce.data, level.bounce.w, bounceTile, 64, 4)
+  // The origin build's sconces (collectSconces) for the buildings this chunk owns.
+  const sconces: number[] = []
+  mainScratch.v.length = 0
+  for (const b of chunk.buildings) emitInteriorDecor(mainScratch, town.buildings.find((t) => t.id === b.id) ?? b, town, undefined, sconces)
+  mainScratch.v.length = 0
   return {
     key: chunk.key,
     cx: chunk.cx,
@@ -799,6 +806,7 @@ function compileOriginChunk(chunk: WorldChunk, seed: number, houseSeed: number, 
     floorTile,
     moonTile,
     bounceTile,
+    sconces: new Float32Array(sconces),
     compileMs: performance.now() - t0,
   }
 }
@@ -849,6 +857,7 @@ export function compileSingleWorldChunk(
   }
 
   const footprints = chunk.buildings.map(buildingFootprint)
+  const sconces: number[] = []
   const isClassicOriginChunk =
     chunk.cx >= 0 &&
     chunk.cx < 3 &&
@@ -983,7 +992,7 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
     emitBuildingRugs(mainScratch, b, chunkTown)
-    emitInteriorDecor(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown, undefined, sconces)
     emitStreamedLot(b, id, chunk, chunkTown, mode, x0, z0, x1, z1)
   }
   // Root-collar tufts around the chunk's trees and rosettes along an east-west street's verges, as at the origin.
@@ -1467,6 +1476,7 @@ export function compileSingleWorldChunk(
     floorTile,
     moonTile,
     bounceTile,
+    sconces: new Float32Array(sconces),
     compileMs: performance.now() - t0,
   }
 }
@@ -1597,6 +1607,8 @@ export class WorldClientStreamer {
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
   windowBuildings: Building[] = []
+  /** Sconce lists of the chunks in the current window. */
+  windowSconces: Float32Array[] = []
   private readonly buildingSlots: (Building | null)[] = [null, null, null, null, null, null, null, null]
   lastWindowKey = ""
   bakeStepsCompleted = 0
@@ -1744,6 +1756,7 @@ export class WorldClientStreamer {
     this.center = { cx: 1, cy: 1 }
     this.windowOrigin = [0, 0]
     this.windowBuildings = []
+    this.windowSconces = []
     this.buildingSlots.fill(null)
     this.lastWindowKey = ""
     this.lastPlayerX = NaN
@@ -2081,8 +2094,10 @@ export class WorldClientStreamer {
     if (nextOuterRingDirty) this.outerRingDirty = true
 
     this.renderedChunkKeys.clear()
+    this.windowSconces = []
     for (let i = 0; i < allRenderedChunks.length; i++) {
       this.renderedChunkKeys.add(allRenderedChunks[i]!.key)
+      if (allRenderedChunks[i]!.sconces?.length) this.windowSconces.push(allRenderedChunks[i]!.sconces)
     }
 
     // Select the 8 buildings closest to (playerX, playerY) so the building the survivor is inside (dist = 0)

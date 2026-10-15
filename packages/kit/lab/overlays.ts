@@ -1,5 +1,5 @@
 import { confirm, overlayLook, toast, tooltips, type ConfirmOptions } from "@arcade/knobs/ui"
-import { arcadePreset } from "../lab-knobs"
+import { LAB_LOOK } from "../lab-knobs"
 
 let ready = false
 
@@ -7,7 +7,7 @@ let ready = false
 export function setupLabOverlays() {
   if (ready) return
   ready = true
-  overlayLook({ preset: arcadePreset, theme: "dark" })
+  overlayLook(LAB_LOOK)
   tooltips(document)
 }
 

@@ -20,7 +20,9 @@ export class SmokeTrail {
     this.windX = Math.cos(angle) * 0.45; this.windZ = Math.sin(angle) * 0.45
   }
 
-  follow(source: SmokeSource, x: number, z: number, vx: number, vz: number, dt: number, strength: number) {
+  /** `y` is the ground height under the tyre; `dust` draws churned earth instead of rubber smoke. */
+  follow(source: SmokeSource, x: number, z: number, vx: number, vz: number, dt: number, strength: number, y = 0, dust = false) {
+    const h = 0.3 + y, s = dust ? -strength : strength
     const dx = x - source.smokeX, dz = z - source.smokeZ, distance = Math.hypot(dx, dz)
     const active = strength > 0.008
     if (active) {
@@ -28,17 +30,18 @@ export class SmokeTrail {
         const spacing = Math.max(.01,settings.spacing)
         for (let at = spacing - source.smokeDistance; at <= distance; at += spacing) {
           const t = at / distance, px = source.smokeX + dx * t, pz = source.smokeZ + dz * t
-          this.spawn(px, 0.3, pz, vx, vz, (1 - t) * dt, strength)
+          this.spawn(px, h, pz, vx, vz, (1 - t) * dt, s)
         }
         source.smokeDistance = (source.smokeDistance + distance) % spacing
         // A stationary burnout still emits. Only top up the distance-based rate, never double it.
         source.idle += Math.max(0, dt * settings.idleRate - distance / spacing)
-        while (source.idle >= 1) { source.idle--; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
-      } else { source.smokeDistance = source.idle = 0; this.spawn(x, 0.3, z, vx, vz, 0, strength) }
+        while (source.idle >= 1) { source.idle--; this.spawn(x, h, z, vx, vz, 0, s) }
+      } else { source.smokeDistance = source.idle = 0; this.spawn(x, h, z, vx, vz, 0, s) }
     } else source.smokeDistance = source.idle = 0
     source.smokeX = x; source.smokeZ = z; source.smokeActive = active
   }
 
+  /** Negative `strength` marks a dust puff (same density, earth colour). */
   spawn(x: number, y: number, z: number, vx: number, vz: number, age = 0, strength = 1) {
     if (this.count === SMOKE_CAPACITY) return
     const i = this.count++ * SMOKE_STRIDE
@@ -89,9 +92,9 @@ export class SmokeTrail {
     for (let n = 0; n < this.count; n++) {
       const i = n * SMOKE_STRIDE, age = p[i + 3]!, t = age / p[i + 7]!
       const radius = settings.radius + age * settings.growth
-      const density = p[i + 6]! * Math.pow(1 - t, 1.1) / (1 + age * 0.45)
+      const s = p[i + 6]!, density = Math.abs(s) * Math.pow(1 - t, 1.1) / (1 + age * 0.45)
       out[i] = p[i]!; out[i + 1] = p[i + 1]!; out[i + 2] = p[i + 2]!; out[i + 3] = radius
-      out[i + 4] = density
+      out[i + 4] = density; out[i + 5] = s < 0 ? 1 : 0
     }
   }
 }

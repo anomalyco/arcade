@@ -1,13 +1,12 @@
-import { arcadePreset } from "@arcade/kit/lab-knobs"
-import { confirm, overlayLook, popover, split, toast, tooltip, tree, type Split, type Tree } from "@arcade/knobs/ui"
+import { LAB_LOOK } from "@arcade/kit/lab-knobs"
+import { popover, split, toast, tree, type Split, type Tree } from "@arcade/knobs/ui"
+import { ask, tip } from "@arcade/kit/lab/overlays"
 import { matches, type Catalog, type HomeCollection, type HomeLab } from "./catalog"
 import "./home.css"
 
 type Row = { id: string; label: string; children?: Row[]; lab?: HomeLab; count?: number }
 
-const look = { preset: arcadePreset, theme: "dark" as const }
-// Popovers, confirms and toasts take the Lab's square look too.
-overlayLook(look)
+const look = LAB_LOOK
 const FOLDED_KEY = "arcade.lab.home.folded"
 const ARCHIVED = "collection:archived"
 
@@ -54,12 +53,12 @@ export function createHome(options: HomeOptions) {
   const add = el("button", "lh-new", top, "＋ New lab")
   add.type = "button"
   add.addEventListener("click", () => newLab())
-  tooltip(add, { text: "Start a lab of one kind", shortcut: "+" })
+  tip(add, "Start a lab of one kind", "+")
   const back = el("button", "lh-back", top)
   back.type = "button"
   back.hidden = true
   back.addEventListener("click", () => leave())
-  tooltip(back, { text: "Back to the open lab", shortcut: "Escape" })
+  tip(back, "Back to the open lab", "Escape")
 
   const searchRow = el("label", "lh-search", frame)
   searchRow.innerHTML = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.3 10.3 13.6 13.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`
@@ -178,7 +177,7 @@ export function createHome(options: HomeOptions) {
     for (const a of actions(lab)) {
       const b = about.querySelector<HTMLButtonElement>(`[data-act="${a.id}"]`)!
       b.addEventListener("click", () => void a.run())
-      if (a.key) tooltip(b, { text: a.label, shortcut: a.key })
+      if (a.key) tip(b, a.label, a.key)
     }
   }
 
@@ -235,7 +234,7 @@ export function createHome(options: HomeOptions) {
   }
   async function remove(lab: HomeLab) {
     if (options.current()?.ref === lab.ref) return void toast("That lab is open. Open another one first.", { tone: "error" })
-    const ok = await confirm({ title: `Delete “${lab.title}”?`, body: "It was made in this browser, so it can't come back.", confirm: "Delete", destructive: true })
+    const ok = await ask({ title: `Delete “${lab.title}”?`, body: "It was made in this browser, so it can't come back.", confirm: "Delete", destructive: true })
     if (!ok) return outline.focus(lab.ref)
     const next = neighbour(lab.ref)
     catalog.remove(lab.ref)
@@ -343,7 +342,16 @@ export function createHome(options: HomeOptions) {
   })
   // Keys aimed at something behind Home (after a click on its backdrop) come back to it.
   window.addEventListener("keydown", e => {
-    if (root.hidden || root.contains(e.target as Node) || e.metaKey || e.ctrlKey) return
+    if (root.hidden || root.contains(e.target as Node)) return
+    // ⌘K is Home's search while Home shows, never the workbench palette behind it.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      search.focus()
+      search.select()
+      return
+    }
+    if (e.metaKey || e.ctrlKey) return
     e.stopImmediatePropagation()
     outline.focus()
   }, true)
