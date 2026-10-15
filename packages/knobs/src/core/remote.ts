@@ -8,10 +8,12 @@ import {
   easing,
   flatSpring,
   knob,
+  pickMeta,
   point,
   spring,
   toggle,
   type Field,
+  type FieldMeta,
   type Knob,
   type Point,
   type Schema,
@@ -29,7 +31,9 @@ import {
   type Controls,
   type DensityMode,
   type GroupPresetDisplay,
+  type HostHistory,
   type PanelKeys,
+  type PersistMode,
   type PanelModule,
   type RendererMode,
   type SyncOptions,
@@ -42,17 +46,8 @@ export interface ChoiceOption {
   readonly value?: string
   readonly label?: string
 }
-interface DescriptorMeta {
+interface DescriptorMeta extends FieldMeta {
   readonly key: string
-  readonly label?: string
-  readonly group?: string
-  /** What the group's header shows, when not the `group` id (see `FieldMeta.groupLabel`). */
-  readonly groupLabel?: string
-  /** The page region the descriptor's group sits in (see `mountPage`). */
-  readonly section?: string
-  /** What the section's heading shows, when not the `section` id. */
-  readonly sectionLabel?: string
-  readonly shortcut?: string
 }
 /**
  * Two flat number keys drawn as one spring card (a curve and two sliders). Values stay flat:
@@ -126,6 +121,14 @@ export interface RemoteControlsOptions {
   readonly groupPresetDisplay?: GroupPresetDisplay
   readonly actions?: readonly ControlAction<State>[]
   readonly storage?: StoragePort | null
+  /** What `storage` keeps (see `ControlsOptions.persist`). */
+  readonly persist?: PersistMode
+  /** What Random and Mutate draw from (see `ControlsOptions.random`). */
+  readonly random?: () => number
+  /** Whether Random and Mutate may change a key (see `ControlsOptions.tunable`). */
+  readonly tunable?: (key: string, values: State) => boolean
+  /** An undo stack the host owns (see `HostHistory`). */
+  readonly history?: HostHistory
   readonly theme?: ThemeMode
   readonly density?: DensityMode
   readonly renderer?: RendererMode
@@ -155,12 +158,13 @@ export interface RemoteControls extends Controls<Schema> {
    *
    * Undo history starts over when the descriptors change shape or `land` is set: it belonged to
    * the previous set. `land: true` (a different item arrived) also places every value at once,
-   * without springing or rolling.
+   * without springing or rolling. `mixed` names the keys whose values differ across a
+   * multi-selection (see `SyncOptions.mixed`).
    */
   update(
     descriptors: readonly ControlDescriptor[],
     values?: State,
-    options?: { land?: boolean },
+    options?: { land?: boolean; mixed?: readonly string[] },
   ): void
   swift(group?: string): string
 }
@@ -169,14 +173,7 @@ const optionId = (o: string | ChoiceOption) =>
   typeof o === "string" ? o : String(o.id ?? o.value ?? o.label ?? "")
 
 export function descriptorToField(d: ControlDescriptor): Field {
-  const meta = {
-    ...(d.label !== undefined ? { label: d.label } : {}),
-    ...(d.group !== undefined ? { group: d.group } : {}),
-    ...(d.groupLabel !== undefined ? { groupLabel: d.groupLabel } : {}),
-    ...(d.section !== undefined ? { section: d.section } : {}),
-    ...(d.sectionLabel !== undefined ? { sectionLabel: d.sectionLabel } : {}),
-    ...(d.shortcut !== undefined ? { shortcut: d.shortcut } : {}),
-  }
+  const meta = pickMeta(d)
   if (d.kind === "action") return action(d.label, meta)
   if (d.bind) return flatSpring({}, { ...meta, id: d.key }).duration
   if (d.kind === "knob" || d.kind === "number") {
@@ -249,14 +246,7 @@ export function fromDescriptors(descriptors: readonly ControlDescriptor[]): Sche
     }
     const pair = flatSpring(
       { duration: half("duration"), bounce: half("bounce") },
-      {
-        id: d.key,
-        ...(d.label !== undefined ? { label: d.label } : {}),
-        ...(d.group !== undefined ? { group: d.group } : {}),
-        ...(d.groupLabel !== undefined ? { groupLabel: d.groupLabel } : {}),
-        ...(d.section !== undefined ? { section: d.section } : {}),
-        ...(d.sectionLabel !== undefined ? { sectionLabel: d.sectionLabel } : {}),
-      },
+      { id: d.key, ...pickMeta(d, ["shortcut"]) },
     )
     entries.push([d.bind.duration, pair.duration], [d.bind.bounce, pair.bounce])
   }
@@ -341,6 +331,10 @@ export function formatSwift(
 }
 
 /** How long a local change outranks the peer's state for that key. */
+/**
+ * The longest echo hold; a key is released early once the remote reports its new value. Raise it
+ * (`echo`) for peers that acknowledge slowly: a stale echo and a clamped value look alike.
+ */
 const ECHO_MS = 600
 
 /** Copies `source`'s properties, getters as getters, then `extra`'s. */
@@ -369,6 +363,10 @@ export function createRemoteControls(
     ship: options.ship,
     echo: options.echo ?? ECHO_MS,
     storage: options.storage ?? null,
+    persist: options.persist,
+    random: options.random,
+    tunable: options.tunable,
+    history: options.history,
     presets: options.presets,
     groupPresets: options.groupPresets,
     onPreset: options.onPreset,
@@ -408,10 +406,14 @@ export function createRemoteControls(
     get descriptors() {
       return frozenDescriptors
     },
-    update(next: readonly ControlDescriptor[], values: State = {}, opts?: { land?: boolean }) {
+    update(
+      next: readonly ControlDescriptor[],
+      values: State = {},
+      opts?: { land?: boolean; mixed?: readonly string[] },
+    ) {
       // The same array: only the values can have changed.
       if (next === given || next === frozenDescriptors)
-        return controls.sync(values, { replace: true, land: opts?.land })
+        return controls.sync(values, { replace: true, land: opts?.land, mixed: opts?.mixed })
       given = next
       frozenDescriptors = Object.freeze([...next])
       reshape(fromDescriptors(frozenDescriptors), values, opts)

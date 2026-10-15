@@ -653,6 +653,16 @@ export function createWorkbench(opts: WorkbenchOptions) {
     drawGridOverlayToCanvas(target, variationGrid, focusedGridTile)
   }
 
+  // Who follows whether Undo and Redo can run (knobs' header buttons); told only when that changes.
+  const historyListeners = new Set<() => void>()
+  let historyShown = ""
+  function notifyHistory() {
+    const now = `${undoStack.length > 0}${redoStack.length > 0}`
+    if (now === historyShown) return
+    historyShown = now
+    for (const listener of historyListeners) listener()
+  }
+
   function recordHistory(label: string, before: FullSnapshot) {
     const after = captureSnapshot()
     if (JSON.stringify(before) === JSON.stringify(after)) return
@@ -668,6 +678,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     redoStack.push(entry)
     restoreSnapshot(entry.before)
     showToast(`Undid ${entry.label}`)
+    notifyHistory()
     return true
   }
 
@@ -677,6 +688,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     undoStack.push(entry)
     restoreSnapshot(entry.after)
     showToast(`Redid ${entry.label}`)
+    notifyHistory()
     return true
   }
 
@@ -1608,6 +1620,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     syncCompareWipeOverlay()
     syncVariationGridOverlay()
 
+    notifyHistory()
     undoBtn.disabled = undoStack.length === 0
     undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
     redoBtn.disabled = redoStack.length === 0
@@ -3509,6 +3522,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         undoStack.push({ label, before: beforeSnap, after: afterSnap })
         if (undoStack.length > 50) undoStack.shift()
         redoStack.length = 0
+        notifyHistory()
       }
       const sec = activeSection()
       const isPaused = "playing" in sec.settings && !sec.settings.playing
@@ -3593,6 +3607,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
     captureSnapshot,
     undo,
     redo,
+    canUndo: () => undoStack.length > 0,
+    canRedo: () => redoStack.length > 0,
+    /** Calls `listener` when whether Undo or Redo can run changes; returns an unsubscribe. */
+    onHistoryChange(listener: () => void) {
+      historyListeners.add(listener)
+      return () => { historyListeners.delete(listener) }
+    },
     applyPresetJson,
     exportPresetJson: () => JSON.stringify(buildPresetPayload(), null, 2),
     exportGameRecipe: buildCurrentGameRecipe,
