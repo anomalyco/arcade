@@ -31,6 +31,32 @@ never those fields (tests and scripts use `harness.stock(loaded, belt)` and `har
   expires leaves its whole kit on the floor.
 - `Q` pings the target (or a zombie in the aim cone) for 6 s; noisemakers call the dead for 8 s where they land.
 
+## Safehouse workbench
+
+Each house archetype places a workbench on the back bedroom's east wall and the squad's stash by its west wall
+(`makeTown`); `benchSites` finds them, so a new house archetype only has to place the two props. Both read one shared
+store, `bench:<house>`.
+
+- **Discover.** The first time anyone picks up scrap, chem, planks or batteries, everyone hears which recipes it feeds,
+  and the bench lists every recipe whose materials the squad has seen.
+- **Deposit.** `E` at the bench (or hold `E` at the stash) moves belt materials and pack parts into it; ammo and
+  keys stay on you. Installing the hardware toolbox makes it tier 2, and the car battery wires up a generator.
+- **Research.** A digit at the bench researches a recipe (2.5 s) using the bench's stock first, then yours. It needs
+  light of 0.35: daylight indoors gives 0.9, the room lamp at night 0.2, each flashlight at the bench 0.2, the
+  generator 0.8. At night one survivor with a flashlight on can research; with it off it is too dark. The generator
+  also hums (18 m) every 3 s at night. What one survivor learns, the squad knows.
+- **Craft.** Hold `Q` anywhere for the field-craft strip and press a digit (2 s, cancelled by sprinting). At a bench
+  the same rows craft from its stock too.
+- **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back. Installed parts stay.
+
+| Recipe | Research (tier) | Craft | Does |
+| --- | --- | --- | --- |
+| Bandage | 2 chem (1) | 1 chem | Heals 25 in about a second |
+| Noisemaker | 2 scrap, 1 battery (1) | 1 scrap, 1 battery | A thrown lure that calls the dead for 8 s |
+| Spiked board | 1 plank, 2 scrap (1) | 1 plank, 2 scrap | Melee: +30 damage, 1.6× stagger, longer reach |
+| Reinforced barricade | 2 planks, 3 scrap (2) | none | Each board also takes a scrap and holds 180 instead of 100 |
+| Flashlight battery | 2 scrap, 1 chem (2) | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
+
 ## Rules and channels
 
 Timed actions (search, barricade, heal, pry, research, craft) are ledger channels. The sim cancels a channel when the
@@ -52,4 +78,7 @@ take is one transaction on the room, so two survivors grabbing the last item in 
 - `games/outbreak/tests/progression.test.ts`: every call site (routing, both search speeds, take one/all and full,
   cancel by walking away, medkit, crowbar, noisemaker, keyed doors, drops, pings, battery swap, barricade, loot tables,
   the command tuple).
-- `games/outbreak/scripts/inventory-proof.ts`: headless Metal stills of the strip, HUD, hand-offs and keyed door.
+- `games/outbreak/tests/coop.test.ts`: same-tick take race, two seats researching the same recipe (learned once,
+  paid once), a bundle hand-off, an expired seat's kit on the floor, all through encoded snapshots and a mirror.
+- `games/outbreak/scripts/inventory-proof.ts`: headless Metal stills of the strip, HUD, hand-offs, keyed door, the
+  bench panel, research in progress and the field-craft strip.

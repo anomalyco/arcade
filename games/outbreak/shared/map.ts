@@ -102,6 +102,9 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
       prop(r-.8,b-2,"counter");prop(r-.8,b-4,"fridge")
       prop(r-.8,b-.65,"stove")
       prop(r-3.2,b-2.8,"table");prop(r-3.2,b-1.8,"chair");prop(r-3.2,b-3.7,"chair")
+      // Safehouse corner in the back bedroom: a workbench on the east wall and the squad's stash by the west wall.
+      // Fixed variants keep the seeded furniture after them unchanged.
+      town.props.push({ x: x + 8.9, y: y + 2.3, kind: "workbench", variant: .5 }, { x: x + 2.55, y: y + 4.6, kind: "stash", variant: .5 })
     } else {
       for (let px = x + 2; px < r - 1; px += 3) { prop(px, y + 2, "shelf"); prop(px, b - 4, "shelf") }
     }
