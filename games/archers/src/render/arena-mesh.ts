@@ -139,6 +139,34 @@ function arcade(mesh: Mesh, r: Rng, x0: number, x1: number, base: number, h: num
   }
 }
 
+/**
+ * One tier of an aqueduct: piers `span` apart from `x0`, round arches springing at `spring`, solid up to `top`. Bays
+ * in `broken` lose their top: a ragged stub instead. Returns each opening's centre x.
+ */
+function aqueductTier(mesh: Mesh, r: Rng, x0: number, bays: number, span: number, pier: number, base: number, spring: number, top: number, z: number, color: Rgb, mat: number, broken: ReadonlySet<number> = new Set()): number[] {
+  const centres: number[] = []
+  const rw = (span - pier) / 2
+  for (let i = 0; i <= bays; i++) {
+    const x = x0 + i * span
+    const gone = broken.has(i) || broken.has(i - 1)
+    rect(mesh, x - pier / 2, base, x + pier / 2, gone ? spring + r.next() * (top - spring) * 0.6 : top, z, color, mat)
+    if (i === bays) break
+    const cx = x + span / 2
+    centres.push(cx)
+    if (broken.has(i)) {
+      // Only the haunches of the arch are left.
+      for (const s of [-1, 1]) tri(mesh, [cx + s * rw, spring, z], [cx + s * (rw - rw * 0.35), spring + rw * 0.55, z], [cx + s * rw, spring + rw * (0.7 + r.next() * 0.3), z], color, mat)
+      continue
+    }
+    const steps = 12
+    for (let k = 0; k < steps; k++) {
+      const a0 = Math.PI * (k / steps), a1 = Math.PI * ((k + 1) / steps)
+      mesh.quad([cx + Math.cos(a1) * rw, spring + Math.sin(a1) * rw, z], [cx + Math.cos(a0) * rw, spring + Math.sin(a0) * rw, z], [cx + Math.cos(a0) * rw, top, z], [cx + Math.cos(a1) * rw, top, z], [0, 0, 1], color, m(mat))
+    }
+  }
+  return centres
+}
+
 /** Hanging ivy strands: thin tapering quads with a jagged end. */
 function vines(mesh: Mesh, r: Rng, x0: number, x1: number, y: number, z: number, density: number, maxLen: number, color: Rgb, mat: number): void {
   for (let x = x0; x < x1; x += 0.12 + r.next() * 0.35 / density) {
@@ -226,6 +254,81 @@ export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, n
     arcade(mesh, r, 26, 46, -6, 13, -15, FAR, M.far)
     vines(mesh, r, -14, 6, 7, -14.9, 0.5, 4, FAR, M.far)
     vines(mesh, r, 26, 46, 7, -14.9, 0.5, 4, FAR, M.far)
+  } else if (a.backdrop === "aqueduct") {
+    // Aqueduct: ravine cliffs with pines on both sides, a far aqueduct across the gorge, and a great two-tier one
+    // nearer whose middle arch frames the light.
+    for (const side of [-1, 1]) {
+      const xs: number[] = [], tops: number[] = []
+      for (let i = 0; i <= 40; i++) {
+        const d = 10 + i * 2.2
+        xs.push(cx + side * d)
+        tops.push(-4 + Math.min(30, d * 0.9) + Math.sin(d * 0.6) * 2 + r.next() * 2.5)
+      }
+      if (side < 0) {
+        xs.reverse()
+        tops.reverse()
+      }
+      ridge(mesh, xs, tops, -45, -78, FAR, M.far)
+      for (let i = 0; i < 26; i++) {
+        const d = 14 + r.next() * 70
+        pine(mesh, r, cx + side * d, -4 + Math.min(30, d * 0.9) - 1.5, 6 + r.next() * 8, -76 + r.next() * 3, FAR, M.far)
+      }
+    }
+    aqueductTier(mesh, r, cx - 39, 13, 6, 1.4, -40, 2, 8, -66, FAR, M.far, new Set([4, 5]))
+    aqueductTier(mesh, r, cx - 39, 26, 3, 0.8, 8, 9.3, 11.5, -66, FAR, M.far, new Set([8, 9, 10, 11]))
+    // The great aqueduct: tall lower arches from the floor of the gorge, a row of small ones above, broken at the right.
+    aqueductTier(mesh, r, cx - 45, 10, 10, 2.2, -40, 9, 14.5, -32, FAR, M.far)
+    aqueductTier(mesh, r, cx - 45, 20, 5, 1.2, 14.5, 17.2, 21.5, -32, FAR, M.far, new Set([13, 14, 15]))
+    // Rubble heaped in the gorge below the middle arch, so the light sits above the deck, not under it.
+    const heapX: number[] = [], heapY: number[] = []
+    for (let x = cx - 26; x <= cx + 26; x += 1.3) {
+      heapX.push(x)
+      heapY.push(3.5 - Math.abs(x - cx) * 0.12 + Math.sin(x * 0.9) * 0.6 + r.next() * 1.2)
+    }
+    ridge(mesh, heapX, heapY, -30, -27, FAR, M.far)
+    sun = [cx, 11.5, -32]
+    // Nearer: woods on the slopes and two broken piers of a lost span, hung with ivy.
+    for (let i = 0; i < 22; i++) {
+      const side = i % 2 ? 1 : -1
+      const x = cx + side * (12 + r.next() * 26)
+      if (r.next() < 0.65) pine(mesh, r, x, -8 + r.next() * 4, 10 + r.next() * 9, -20 - r.next() * 5, FAR, M.far)
+      else broadleaf(mesh, r, x, -6 + r.next() * 2, 7 + r.next() * 5, -19 - r.next() * 5, FAR, M.far)
+    }
+    for (const [x, h] of [[cx - 17, 15], [cx + 19, 9]] as const) {
+      rect(mesh, x - 1.8, -12, x + 1.8, h, -15, FAR, M.far)
+      const xs: number[] = [], tops: number[] = []
+      for (let k = 0; k <= 6; k++) {
+        xs.push(x - 2.1 + (4.2 * k) / 6)
+        tops.push(h + 0.3 + r.next() * 1.4)
+      }
+      ridge(mesh, xs, tops, h - 0.5, -15, FAR, M.far)
+      vines(mesh, r, x - 1.8, x + 1.8, h, -14.9, 0.6, 5, FAR, M.far)
+    }
+    for (let i = 0; i < 14; i++) broadleaf(mesh, r, cx + (r.next() - 0.5) * 50, -9 + r.next() * 3, 6 + r.next() * 5, -11 - r.next() * 3, FAR, M.far)
+    // The gorge's near walls: dark cliff faces flanking the arena, stepping down toward the middle, so the edges of
+    // the frame are heavy like the concept's.
+    for (const side of [-1, 1]) {
+      const xs: number[] = [], tops: number[] = []
+      for (let i = 0; i <= 26; i++) {
+        const d = cx + 0.4 + i * 0.7
+        xs.push(cx + side * d)
+        const u = Math.min(1, (d - cx - 0.4) / 5)
+        tops.push(1 + Math.sqrt(u) * (H + 8) + (r.next() - 0.5) * 2.2)
+      }
+      if (side < 0) {
+        xs.reverse()
+        tops.reverse()
+      }
+      ridge(mesh, xs, tops, -14, -3, INK, M.stone)
+      vines(mesh, r, cx + side * (cx + 0.4) - 1, cx + side * (cx + 0.4) + 1, H - 1, -2.9, 0.7, 4, INK, M.foliage)
+    }
+    // Rocks and scree in the bottom of the gorge, under the deck.
+    const xs: number[] = [], tops: number[] = []
+    for (let x = -24; x <= W + 24; x += 0.9) {
+      xs.push(x)
+      tops.push(-0.9 + Math.sin(x * 0.35) * 0.9 + Math.sin(x * 1.3 + 2) * 0.4 + r.next() * 0.9)
+    }
+    ridge(mesh, xs, tops, -14, -3.5, INK, M.stone)
   } else {
     // Cloister: a courtyard of colonnades receding into fog, a rose window as the light.
     const xs: number[] = [], tops: number[] = []

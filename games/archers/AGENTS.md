@@ -29,7 +29,7 @@
 - URL params: `?room=code` joins a room (bots hold the other slots), `?online` quick-joins (P in couch play does the
   same); the first arrival may add `&arena=cloister` and `&private=1`. Automation only: `?watch` (four bots),
   `&seed=N`, `&arena=cloister`, `&focus=a0&span=4` (close-up camera on one archer). `window.archers` is the client
-  Game (`.online` is the session). Keys 1/2 switch arena locally.
+  Game (`.online` is the session). Keys 1/2/3 switch arena locally (Bell Tower, Cloister, Aqueduct).
 - Lab: `playground.html` (`src/dev/playground.ts`) is the Lab's `archers` station (`games/lab/src/stations/archers.ts`):
   `#round/<arena>` four bots, `#practice/<arena>/<bots>` you against bots, `#items/<item>` the power-up gallery
   (`src/dev/gallery.ts`: a scripted shooter and target on the real World through `Game.script`). The Moves knobs are

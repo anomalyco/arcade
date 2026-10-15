@@ -19,7 +19,7 @@ const roomCode = (v: string | null) => (v && /^[a-z0-9]{4,8}$/i.test(v) ? v.toLo
 
 /**
  * Local couch play. `?watch` is four bots (captures use it); otherwise one keyboard player against bots, with
- * gamepads joining on A and a second keyboard player on Enter (the keyboard splits in two). `?arena=cloister` and
+ * gamepads joining on A and a second keyboard player on Enter (the keyboard splits in two). `?arena=cloister|aqueduct` and
  * `?seed=` pick the arena and the match seed.
  *
  * Online: `?room=code` takes a seat in that room (bots hold the others), `?online` quick-joins an open room or opens
@@ -108,6 +108,7 @@ async function main() {
       }
       if (controls.pressed("Digit1")) game.setArena("belltower")
       if (controls.pressed("Digit2")) game.setArena("cloister")
+      if (controls.pressed("Digit3")) game.setArena("aqueduct")
       if (controls.pressed("KeyP")) location.search = "?online"
     }
     game.update(realDt)
