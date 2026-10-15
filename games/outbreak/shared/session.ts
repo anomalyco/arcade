@@ -8,6 +8,7 @@ import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning
 import type { Town } from "./map"
 import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
+import type { StreamingWorld, WorldMode } from "./world"
 
 export type SessionTuning = StaminaTuning & Partial<FlashlightTuning> & Partial<AIConfig> & {
   aiWalkSpeed?: number
@@ -139,11 +140,22 @@ export class LocalSession implements Session {
   readonly sim: CoopSim
   readonly slot: SurvivorSlot
   readonly view: SessionView
-  constructor(seed: number, houseSeed = seed, terrain = 0.22, aiConfig?: Partial<AIConfig>, progression?: Partial<ProgressionTuning>) {
-    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig, progression)
+  constructor(
+    seed: number,
+    houseSeed = seed,
+    terrain = 0.22,
+    aiConfig?: Partial<AIConfig>,
+    progressionTuningOrWorldMode?: Partial<ProgressionTuning> | WorldMode,
+    worldMode: WorldMode = "streaming",
+  ) {
+    this.sim = new CoopSim(seed, houseSeed, terrain, aiConfig, progressionTuningOrWorldMode, worldMode)
     const slot = this.sim.addSurvivor("player", 0)
     this.slot = slot
     this.view = slotView(this.sim, () => slot)
+  }
+
+  get world(): StreamingWorld {
+    return this.sim.worldStream
   }
 
   get ai(): OutbreakAISubsystem {

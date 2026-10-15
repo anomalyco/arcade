@@ -44,6 +44,8 @@ import { applyOutbreakDayNight } from "./day-night"
 import { DEFAULT_GROUND_SETTINGS, GroundWearRenderer, groundControls, packGroundCfgBits, randomizeGroundSettings } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
+import { WorldClientStreamer } from "./world-streamer"
+import { districtAtChunk, worldToChunk, type WorldMode } from "../shared/world"
 import {
   DEFAULT_OUTBREAK_LIGHTING,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
@@ -96,6 +98,7 @@ const settings = {
   range: 27,
   shroud: 0.32,
   zoom: 46,
+  worldMode: params.get("world") === "classic" ? 0 : params.get("world") === "procedural" ? 2 : 1,
   houseSeed: 7,
   terrain: 0.22,
   foliageDensity: 1,
@@ -130,11 +133,17 @@ const settings = {
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
 
+const resolveWorldMode = (v: number): WorldMode => (v === 0 ? "classic" : v === 2 ? "procedural" : "streaming")
+
 const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
-function nearestStreetHead(x: number, y: number): readonly [number, number, number] {
+function nearestStreetHead(x: number, y: number, isStream = false): readonly [number, number, number] {
+  const bx = isStream ? Math.floor(x / SIZE) * SIZE : 0
+  const bz = isStream ? Math.floor(y / SIZE) * SIZE : 0
   let best = streetHeads[0]!
-  for (const head of streetHeads) if (Math.hypot(head[0] - x, head[2] - y) < Math.hypot(best[0] - x, best[2] - y)) best = head
-  return best
+  for (const head of streetHeads) {
+    if (Math.hypot(bx + head[0] - x, bz + head[2] - y) < Math.hypot(bx + best[0] - x, bz + best[2] - y)) best = head
+  }
+  return isStream ? [bx + best[0], best[1], bz + best[2]] : best
 }
 
 const zombieSlots: [number, number, number, number] = [-999, -999, -999, -999]
@@ -205,7 +214,9 @@ async function main() {
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params)
-  const makeSession = (s: number) => coop.net ?? new LocalSession(s, settings.houseSeed, settings.terrain, settings, settings)
+  const makeSession = (s: number) =>
+    coop.net ??
+    new LocalSession(s, settings.houseSeed, settings.terrain, settings, settings, resolveWorldMode(settings.worldMode))
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
     const s = session
@@ -214,6 +225,9 @@ async function main() {
   let vision = new Vision()
   let scenery = new SceneryMemory()
   const combinedFog = new CombinedFogMemory()
+  const worldStreamer = new WorldClientStreamer()
+  let currentWindowOrigin: [number, number] = [0, 0]
+  let currentIsStreamWindow = false
   const input = new Input(canvas, ["KeyE"])
   input.enabled = true
   input.mouse.y = innerHeight / 2 - 150
@@ -412,6 +426,16 @@ async function main() {
     { key: "lookPreset", label: "Style preset", group: "Look", options: LOOK_PRESET_IDS.map(id => ({ label: LOOK_PRESETS[id].label, value: id })) },
     ...outbreakLightingControls,
     { key: "zoom", label: "Camera distance", group: "View", min: 24, max: 65, step: 1 },
+    {
+      key: "worldMode",
+      label: "World mode",
+      group: "Generation",
+      options: [
+        { label: "Streaming infinite", value: 1 },
+        { label: "Procedural districts", value: 2 },
+        { label: "Classic 96m block", value: 0 },
+      ],
+    },
     { key: "houseSeed", label: "House seed", group: "Generation", min: 1, max: 32, step: 1 },
     { key: "terrain", label: "Terrain relief", group: "Generation", min: 0, max: 0.4, step: 0.02 },
     { key: "foliageDensity", label: "Foliage density", group: "Generation", min: 0.5, max: 1.5, step: 0.05 },
@@ -466,13 +490,13 @@ async function main() {
     }
   }
   const doorModel = renderer.addModel(doorMesh)
-  const doorData = new Float32Array(8 * 12)
+  const doorData = new Float32Array(64 * 12)
   const doorBatch: Batch = { model: doorModel, data: doorData, count: 0 }
   const sashMesh = new Mesh()
   sashMesh.box(-1.0, 1.48, -0.06, 1.0, 2.12, 0.06, hex(0xa8a99c), MAT.wall)
   sashMesh.box(-0.92, 1.54, -0.02, 0.92, 2.06, 0.02, hex(0x809c9e), MAT.glass)
   const sashModel = renderer.addModel(sashMesh)
-  const sashData = new Float32Array(12 * 12)
+  const sashData = new Float32Array(64 * 12)
   const sashBatch: Batch = { model: sashModel, data: sashData, count: 0 }
   let peekBlend = 0
   let lastPeek: PeekInfo | null = null
@@ -650,6 +674,7 @@ async function main() {
         lab.refresh()
       }
       if (
+        key === "worldMode" ||
         key === "houseSeed" ||
         key === "terrain" ||
         key === "foliageDensity" ||
@@ -997,29 +1022,60 @@ async function main() {
     archSettings.clutterDensity = settings.clutterDensity
     archSettings.weathering = settings.weathering
     archSettings.clutterSeed = settings.clutterSeed
-    const data = buildLevel(session.view.town)
-    vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
-    renderer.setLevel(data)
-    combatFx.setLevel(data)
+    const mode = resolveWorldMode(settings.worldMode)
+    session.sim.worldStream.mode = mode
+    const p = session.view.player
+    const inOriginBox = p.x >= 12 && p.x <= 84 && p.y >= 12 && p.y <= 84
+    if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
+      currentWindowOrigin = [0, 0]
+      currentIsStreamWindow = false
+      worldStreamer.center = { cx: 1, cy: 1 }
+      worldStreamer.windowOrigin = [0, 0]
+      worldStreamer.lastWindowKey = ""
+      const data = buildLevel(session.view.town)
+      vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+      renderer.setLevel(data)
+      combatFx.setLevel(data)
+      return
+    }
+    worldStreamer.lastWindowKey = ""
+    const streamed = worldStreamer.updateWindow(p.x, p.y, session.view.town, mode)
+    currentWindowOrigin = streamed.origin
+    currentIsStreamWindow = true
+    if (streamed.level) {
+      vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+      renderer.setLevel(streamed.level)
+      combatFx.setLevel(streamed.level)
+    }
   }
   function regenerate() {
     // A co-op room's neighbourhood is fixed by the room: only presentation settings rebuild the level.
     if (coop.net) return level()
     const previous = session.view
-    session = new LocalSession(previous.town.seed, settings.houseSeed, settings.terrain, settings, settings)
+    session = new LocalSession(
+      previous.town.seed,
+      settings.houseSeed,
+      settings.terrain,
+      settings,
+      settings,
+      resolveWorldMode(settings.worldMode),
+    )
     Object.assign(session.view.player, previous.player)
     session.view.hour = previous.hour
     session.view.time = previous.time
     session.view.revision = previous.revision + 1
     session.view.town.doors.forEach((d, i) => {
-      const prev = previous.town.doors[i]!
+      const prev = previous.town.doors[i]
+      if (!prev) return
       d.open = prev.open
       if (prev.locked !== undefined) d.locked = prev.locked
       else delete d.locked
     })
     session.view.town.windows.forEach((w, i) => {
-      w.open = previous.town.windows[i]!.open
-      w.openable = previous.town.windows[i]!.openable
+      const prev = previous.town.windows[i]
+      if (!prev) return
+      w.open = prev.open
+      w.openable = prev.openable
     })
     session.rebuildCollision()
     revision = -1
@@ -1033,6 +1089,9 @@ async function main() {
     if (session !== coop.net) session.close()
     session = makeSession(nextSeed)
     vision = new Vision()
+    worldStreamer.reset()
+    currentWindowOrigin = [0, 0]
+    currentIsStreamWindow = false
     revision = -1
     peekBlend = 0
     lastPeek = null
@@ -1140,22 +1199,77 @@ async function main() {
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
     cam.follow(camX, camY, 0, 0, dt, false)
     cam.update(w / h)
+    const mode = resolveWorldMode(settings.worldMode)
+    session.sim.worldStream.mode = mode
+    if (mode !== "classic") {
+      const nearBorder = p.x < 18 || p.x > 78 || p.y < 18 || p.y > 78 || currentIsStreamWindow || mode === "procedural"
+      if (nearBorder) {
+        const inOriginBox = p.x >= 12 && p.x <= 84 && p.y >= 12 && p.y <= 84
+        if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
+          // Pre-warm upcoming border chunks incrementally (1 chunk per frame) while still inside origin block
+          worldStreamer.prewarmAround(
+            p.x,
+            p.y,
+            town.seed,
+            town.houseSeed,
+            town.terrain,
+            town.foliageDensity ?? 1,
+            mode,
+          )
+          worldStreamer.stepBakeQueue(1.8)
+          if (currentIsStreamWindow) {
+            currentWindowOrigin = [0, 0]
+            currentIsStreamWindow = false
+            worldStreamer.center = { cx: 1, cy: 1 }
+            worldStreamer.windowOrigin = [0, 0]
+            worldStreamer.lastWindowKey = ""
+            const data = buildLevel(town)
+            vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+            renderer.setLevel(data)
+            combatFx.setLevel(data)
+            vision.setWindowOrigin(0, 0)
+            scenery.setWindowOrigin(0, 0, town)
+            combinedFog.markDirty()
+          }
+        } else {
+          const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
+          currentWindowOrigin = streamed.origin
+          currentIsStreamWindow = true
+          if (streamed.changed && streamed.level) {
+            vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+            renderer.setLevel(streamed.level)
+            combatFx.setLevel(streamed.level)
+            vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
+            scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
+            combinedFog.markDirty()
+          }
+        }
+      }
+    }
     if (revision !== session.view.revision) {
       revision = session.view.revision
       blockers = sightRects(town)
       occluders.fill(0)
-      blockers.forEach((r, i) => occluders.set([...r, 2.8, 0, 0, 0], i * OCC_FLOATS))
-      lightOccluders = blockers.length
-      for (const b of town.barriers)
-        if (b.kind === "window") occluders.set([...b.rect, 0.85, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
-      for (const p of town.props) {
-        if (p.kind === "coffee" || p.kind === "table" || p.kind === "chair" || p.kind === "nightstand") continue
-        const s = propShape(p)
+      const maxOcc = MAX_OCCLUDERS - 4
+      let occIdx = 0
+      for (let i = 0; i < blockers.length && occIdx < maxOcc; i++) {
+        occluders.set([...blockers[i]!, 2.8, 0, 0, 0], occIdx++ * OCC_FLOATS)
+      }
+      lightOccluders = occIdx
+      for (const b of town.barriers) {
+        if (b.kind === "window" && lightOccluders < maxOcc) {
+          occluders.set([...b.rect, 0.85, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
+        }
+      }
+      for (const pr of town.props) {
+        if (pr.kind === "coffee" || pr.kind === "table" || pr.kind === "chair" || pr.kind === "nightstand") continue
+        if (lightOccluders >= maxOcc) break
+        const s = propShape(pr)
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    vision.update(p.x, p.y, p.aim, blockers, settings, peek)
-    if (scenery.update(town, vision)) {
+    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings, peek)
+    if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
       renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
@@ -1349,9 +1463,12 @@ async function main() {
         flashlightOutput: p.flashlightOutput,
         flashlightSlot,
         inInteriorView,
-        streetHead: nearestStreetHead(camX, camY),
+        streetHead: nearestStreetHead(camX, camY, currentIsStreamWindow),
         zombies: nearestZombies(zombies, p.x, p.y),
         weather: activeWeather,
+        windowOrigin: currentWindowOrigin,
+        isStreamWindow: currentIsStreamWindow,
+        windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings,
       },
       flashRgb,
       lightingUniforms,
@@ -1386,16 +1503,18 @@ async function main() {
     frame.set([...day.direction, day.sun], 36)
     frame.set([1 / SIZE, 1 / SIZE, settings.diagnostic, packGroundCfgBits(settings)], 40)
     frame.set([sightAim, Math.cos((sightCone * Math.PI) / 360), sightAwareness, settings.shroud], 44)
-    town.doors.forEach((door, i) =>
+    let doorCount = 0
+    for (let i = 0; i < town.doors.length && doorCount < 64; i++) {
+      const door = town.doors[i]!
       doorData.set(
         [door.rect[0], 0, (door.rect[1] + door.rect[3]) / 2, door.open ? -Math.PI / 2 : 0, 1, 1, 1, 1, 0, 0, 1, 0],
-        i * 12,
-      ),
-    )
-    doorBatch.count = town.doors.length
+        doorCount++ * 12,
+      )
+    }
+    doorBatch.count = doorCount
     let openWindows = 0
     for (const win of town.windows) {
-      if (!win.open) continue
+      if (!win.open || openWindows >= 64) continue
       const [wx0, wy0, wx1, wy1] = win.rect
       const horizontal = wx1 - wx0 > wy1 - wy0
       const yaw = horizontal ? 0 : Math.PI / 2
@@ -1656,6 +1775,23 @@ async function main() {
         settings: toSharedWeatherSettings(settings),
         state: { ...weatherController.sim.state },
       },
+      world: {
+        mode: resolveWorldMode(settings.worldMode),
+        chunk: worldToChunk(session.view.player.x, session.view.player.y),
+        district: districtAtChunk(
+          session.view.town.seed,
+          Math.floor(session.view.player.x / 32),
+          Math.floor(session.view.player.y / 32),
+        ),
+        windowOrigin: currentWindowOrigin,
+        isStreamWindow: currentIsStreamWindow,
+        activeChunks: [...session.sim.worldStream.activeChunks.keys()],
+        cachedRenderChunks: worldStreamer.cachedChunkCount,
+        pendingBakes: worldStreamer.pendingBakeCount,
+        bakeStepsCompleted: worldStreamer.bakeStepsCompleted,
+        lastBakeMs: worldStreamer.lastBakeMs,
+        deltasCount: session.sim.worldStream.deltas.size,
+      },
       }
     },
     fog: (x: number, y: number) => vision.state(x, y),
@@ -1718,6 +1854,7 @@ async function main() {
         lab.refresh()
       }
       if (
+        key === "worldMode" ||
         key === "houseSeed" ||
         key === "terrain" ||
         key === "foliageDensity" ||

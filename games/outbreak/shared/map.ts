@@ -7,10 +7,35 @@ export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: nu
 /** `keyed` doors start locked and open only with a key or a crowbar. */
 export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean; keyed?: boolean }
 export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean }
-export type Building = { id: string; kind: "house" | "hardware" | "pharmacy"; rect: Rect; color: number }
+export type Building = {
+  id: string
+  kind: "house" | "hardware" | "pharmacy"
+  archetype?: string
+  district?: string
+  rect: Rect
+  color: number
+  footprint?: readonly Rect[]
+  chunkKey?: string
+}
 export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
-export type Town = { seed: number; houseSeed: number; terrain: number; foliageDensity: number; chunks: Rect[]; buildings: Building[]; barriers: Barrier[]; doors: Door[]; windows: WindowOpening[]; props: Prop[]; lamps: Lamp[] }
+export type Town = {
+  seed: number
+  houseSeed: number
+  terrain: number
+  foliageDensity: number
+  chunks: Rect[]
+  buildings: Building[]
+  barriers: Barrier[]
+  doors: Door[]
+  windows: WindowOpening[]
+  props: Prop[]
+  lamps: Lamp[]
+  vehicles?: Rect[]
+  worldBounds?: Rect
+  windowOrigin?: readonly [number, number]
+  activeChunkKeys?: string[]
+}
 
 /** One footprint source for geometry, collision, roof cutaways and room memory. */
 export const BUILDING_RECTS = [[22,24,37,35.5],[21,54,36,65.5],[53,23,73,38],[53,54,72,68]] as const
@@ -26,6 +51,7 @@ export const EXTERIOR_VEHICLE_COLLIDERS: readonly Rect[] = [
 export const frontageEnd = (b: Building) => b.kind === "house" ? b.rect[3] + 2.5 : b.rect[3]
 /** Authoritative union-of-rects floor footprint: houses have an L-shaped plan (stepped-in north bedroom block + stepped north-east wing + full-width south block). */
 export function buildingFootprint(b: Building): readonly Rect[] {
+  if (b.footprint) return b.footprint
   const [x, z, r, e] = b.rect
   return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5], [x + 9.5, z + 1.5, r, z + 5.5]] : [b.rect]
 }
@@ -138,7 +164,7 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
 
 /** Windows/fences remain movement blockers but never eye-height sight blockers. */
 export const sightRects = (town: Town): Rect[] => [...town.barriers.filter(b => b.kind === "wall").map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
-export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...EXTERIOR_VEHICLE_COLLIDERS]
+export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...(town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS)]
 
 export function nearbyDoor(town: Town, x: number, y: number): Door | undefined {
   return town.doors.filter(d => distToRect(x, y, d.rect) <= 1.8).sort((a, b) => distToRect(x, y, a.rect) - distToRect(x, y, b.rect))[0]

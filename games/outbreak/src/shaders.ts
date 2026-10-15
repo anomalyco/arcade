@@ -22,6 +22,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
+  mapUv: "(p - OL.win.xy) * F.map.xy",
   bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
@@ -60,11 +61,23 @@ ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
+  if (OL.win.z > 0.5) {
+    return OL.bldRects[clamp(id, 0, 7)];
+  }
   switch id {
     ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
   }
 }
 fn interior(p:vec2f) -> bool {
+  if (OL.win.z > 0.5) {
+    let nBld = i32(OL.win.w);
+    for (var i = 0; i < 8; i++) {
+      if (i >= nBld) { break; }
+      let b = OL.bldRects[i];
+      if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
+    }
+    return false;
+  }
   let b = select(
     select(vec4f(53.22, 54.22, 71.78, 67.78), vec4f(53.22, 23.22, 72.78, 37.78), p.y < 45.0),
     select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 45.0),
@@ -78,7 +91,7 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
   if (F.eye.z <= 1.0001) {
     if (F.eye.x < b.x - 0.1 || F.eye.x > b.z + 0.1 || F.eye.y < b.y - 0.1 || F.eye.y > b.w + 0.1) { return false; }
-    if (id < 2) {
+    if (OL.win.z < 0.5 && id < 2) {
       let eyeIn = F.eye.y > b.y + 5.4 || (F.eye.x > b.x + 1.9 && F.eye.x < b.x + 9.6);
       if (!eyeIn) { return false; }
       let south = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 5.65 && p.z < b.w + 1.65;
@@ -102,7 +115,8 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
-        for(var i=0;i<4;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
+        let nCut = select(4, i32(OL.win.w), OL.win.z > 0.5);
+        for(var i=0;i<nCut;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
       }
       if (F.eye.z > 1.0001 && o.world.y > 0.88 && (mat == 4 || mat == 9 || mat == 2 || mat == 6)) {
         let alpha = clamp(F.eye.z - 1.0, 0.0, 1.0);
@@ -148,7 +162,8 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
     if (!inRoom) {
       if (mat != 12) {
         let vigDark = clamp(OL.u2.w, 0.0, 1.2);
-        let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.052, 0.064));
+        let centerRef = select(vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5)), F.eye.xy, OL.win.z > 0.5);
+        let dCenter = length((o.world.xz - centerRef) * vec2f(0.052, 0.064));
         let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.42, 0.46, 1.0), vigDark);
         let extCutDim = select(1.0, select(0.68, 0.92, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
         col *= periphShade * extCutDim;

@@ -464,18 +464,28 @@ export class Renderer {
     this.glassChunks = glsChunks
     this.glass = this.upload(glsBuf, this.glass)
     const f = level.floor
-    this.floorTex.destroy()
-    this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    let rebound = false
+    if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
+      this.floorTex.destroy()
+      this.floorTex = this.device.createTexture({ size: [f.w, f.h], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.floorTex }, f.data, { bytesPerRow: f.w * 2 }, [f.w, f.h])
     const moon = directionalMask(f)
-    this.moonTex.destroy()
-    this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    if (this.moonTex.width !== moon.w || this.moonTex.height !== moon.h) {
+      this.moonTex.destroy()
+      this.moonTex = this.device.createTexture({ size: [moon.w, moon.h], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.moonTex }, moon.data, { bytesPerRow: moon.w }, [moon.w, moon.h])
     const b = level.bounce
-    this.bounceTex.destroy()
-    this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    if (this.bounceTex.width !== b.w || this.bounceTex.height !== b.h) {
+      this.bounceTex.destroy()
+      this.bounceTex = this.device.createTexture({ size: [b.w, b.h], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      rebound = true
+    }
     this.device.queue.writeTexture({ texture: this.bounceTex }, b.data, { bytesPerRow: b.w * 4 }, [b.w, b.h])
-    this.makeSceneGroup()
+    if (rebound) this.makeSceneGroup()
   }
 
   addModel(mesh: Mesh): number {

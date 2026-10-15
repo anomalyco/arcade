@@ -50,7 +50,8 @@ export type ClutterPlacement = {
  * a primary walk lane, doorway, or window climb path.
  */
 export function isExteriorWalkPathBlocked(town: Town, x: number, z: number, radius = 0.35): boolean {
-  if (x < 2.5 || x > SIZE - 2.5 || z < 2.5 || z > SIZE - 2.5) return true
+  const wb = town.worldBounds ?? [0, 0, SIZE, SIZE]
+  if (x < wb[0] + 2.5 || x > wb[2] - 2.5 || z < wb[1] + 2.5 || z > wb[3] - 2.5) return true
   for (const b of town.buildings) {
     if (inBuildingFootprint(b, x, z)) return true
     // Keep building wall interior & immediate wall thickness clear
@@ -285,7 +286,7 @@ export class ExteriorClutterRenderer {
   }
 
   private ensureScattered(town: Town, clutterSeed: number): void {
-    const key = `${town.seed}:${town.houseSeed}:${town.terrain}:${clutterSeed}`
+    const key = `${town.seed}:${town.houseSeed}:${town.terrain}:${clutterSeed}:${town.activeChunkKeys?.join("|") ?? "classic"}`
     if (this.cachedKey === key) return
     this.cachedKey = key
 

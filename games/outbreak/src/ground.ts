@@ -94,7 +94,8 @@ export const outbreakSurfaceMaterialDeclarationsWgsl = surfaceMaterialDeclaratio
   );
 }
 
-fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
+fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
+  let p = select(pIn, pIn - floor(pIn / 96.0) * 96.0, OL.win.z > 0.5);
   let gParams = unpackGroundParams();
   let wear = gParams.x;
   let dirtAmt = gParams.y;
@@ -373,15 +374,17 @@ export class GroundWearRenderer {
   }
 
   private ensureBuilt(town: Town, seedOverride: number): void {
-    const key = `${town.seed}:${town.terrain}:${seedOverride}`
+    const ox = Math.floor((town.windowOrigin?.[0] ?? 0) / SIZE) * SIZE
+    const oz = Math.floor((town.windowOrigin?.[1] ?? 0) / SIZE) * SIZE
+    const key = `${town.seed}:${town.terrain}:${seedOverride}:${ox}:${oz}`
     if (this.cachedKey === key) return
     this.cachedKey = key
     const rng = new Rng((town.seed ^ (seedOverride * 0x45d9f3b) ^ 0x4f91c27b) >>> 0)
 
     this.streetLamps = STREET_LAMP_POSTS.map((post) => ({
-      x: post.x,
+      x: ox + post.x,
       y: 0.08,
-      z: post.z,
+      z: oz + post.z,
       yaw: post.yaw,
       r: 1,
       g: 1,
@@ -398,9 +401,9 @@ export class GroundWearRenderer {
       [44.20, 29.60],
       [56.80, 43.75],
     ].map(([x, z], i) => ({
-      x: x!,
+      x: ox + x!,
       y: 0.014,
-      z: z!,
+      z: oz + z!,
       yaw: i * 0.62,
       r: 1,
       g: 1,
@@ -419,9 +422,9 @@ export class GroundWearRenderer {
       [48.10, 31.00, Math.PI / 2],
       [39.88, 63.00, -Math.PI / 2],
     ].map(([x, z, yaw]) => ({
-      x: x!,
+      x: ox + x!,
       y: 0.014,
-      z: z!,
+      z: oz + z!,
       yaw: yaw!,
       r: 1,
       g: 1,
@@ -443,9 +446,9 @@ export class GroundWearRenderer {
       [16.20, 42.90, 0.96],
       [64.50, 45.10, 1.02],
     ].map(([x, z, sc], i) => ({
-      x: x!,
+      x: ox + x!,
       y: 0.014,
-      z: z!,
+      z: oz + z!,
       yaw: i * 1.17 + rng.next() * 0.5,
       r: 1,
       g: 1,
@@ -459,11 +462,11 @@ export class GroundWearRenderer {
     this.paints = []
     for (let v = 6; v < SIZE - 6; v += 5.0) {
       if (v > 36.0 && v < 51.0) continue
-      if (v < 38.0) {
+      if (v < 38.0 || ox !== 0 || oz !== 0) {
         this.paints.push({
-          x: v + 1.1,
+          x: ox + v + 1.1,
           y: 0.015,
-          z: 43.96,
+          z: oz + 43.96,
           yaw: (rng.next() - 0.5) * 0.02,
           r: 1,
           g: 1,
@@ -475,9 +478,9 @@ export class GroundWearRenderer {
         })
       }
       this.paints.push({
-        x: 43.96,
+        x: ox + 43.96,
         y: 0.015,
-        z: v + 1.1,
+        z: oz + v + 1.1,
         yaw: Math.PI / 2 + (rng.next() - 0.5) * 0.02,
         r: 1,
         g: 1,

@@ -43,6 +43,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [zomboid-slice.md](zomboid-slice.md): the plan for Outbreak's co-op survival game.
 - [outbreak-coop.md](outbreak-coop.md): how Outbreak's 2–4 player co-op works (rooms, prediction, snapshots) and
   what it measured. Read before changing `shared/coop-sim.ts`, the room or `@arcade/kit/net`.
+- [outbreak-world.md](outbreak-world.md): how Outbreak's procedural world generation, chunk streaming, districts,
+  POIs, incremental bakes and chunk deltas work.
 - [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, belt, pack, containers, drops)
   and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
   items, loot, crafting or `shared/progression.ts`.
