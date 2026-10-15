@@ -40,6 +40,7 @@ import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
+import { packPlanks, unpackPlanks } from "./discovery/barricade"
 import { type VehicleKind } from "./vehicles/index"
 import type { ChunkCoord } from "./world"
 
@@ -434,9 +435,12 @@ export type SharedSnapshot = {
   doors: { open: boolean; locked: boolean }[]
   windows: { open: boolean; openable: boolean }[]
   planks: number[]
+  /** Barricade hit points per portal, quantised to six bits of wear (see `shared/discovery/barricade.ts`). */
+  plankHp: number[]
   pings: { id: number; by: number; x: number; y: number; label: string; left: number }[]
   lures: { id: number; x: number; y: number; left: number }[]
-  bashes: { portal: number; age: number }[]
+  /** Recent bashes, with the barricade's packed planks and wear after the hit so boards bow on every client. */
+  bashes: { portal: number; age: number; planks: number }[]
   shots: (CombatShotEvent & { shooter: number })[]
   meleeSwings?: CombatMeleeEvent[]
 }
@@ -835,6 +839,7 @@ export function encodeShared(
   const doors = hasPortals ? town.doors.map((d) => ({ open: d.open, locked: Boolean(d.locked) })) : baseSnap.doors
   const windows = hasPortals ? town.windows.map((x) => ({ open: x.open, openable: x.openable })) : baseSnap.windows
   const planks = hasPortals ? portals.map((id) => sim.ai.getBarricadePlanks(id)) : baseSnap.planks
+  const plankHp = hasPortals ? portals.map((id) => sim.ai.portalStates.get(id)?.barricadeHp ?? 0) : baseSnap.plankHp
 
   const progression = sim.progression
   const pings = progression.pings.map((p) => ({
@@ -851,10 +856,11 @@ export function encodeShared(
     y: cm(l.y) / 100,
     left: Math.round(clamp(l.until - sim.time, 0, 25.5) * 10) / 10,
   }))
-  const bashes: { portal: number; age: number }[] = []
+  const bashes: { portal: number; age: number; planks: number }[] = []
   portals.forEach((id, i) => {
-    const age = sim.time - (sim.ai.portalStates.get(id)?.lastBashTime ?? -Infinity)
-    if (age >= 0 && age < 0.2) bashes.push({ portal: i, age: Math.round(age * 1000) / 1000 })
+    const st = sim.ai.portalStates.get(id)
+    const age = sim.time - (st?.lastBashTime ?? -Infinity)
+    if (age >= 0 && age < 0.2) bashes.push({ portal: i, age: Math.round(age * 1000) / 1000, planks: packPlanks(st?.barricadePlanks ?? 0, st?.barricadeHp ?? 0) })
   })
 
   const maxBaseShotId = isDelta ? baseSnap.shots.reduce((m, s) => Math.max(m, s.id), 0) : 0
@@ -928,6 +934,7 @@ export function encodeShared(
       doors,
       windows,
       planks,
+      plankHp,
       pings,
       lures,
       bashes,
@@ -1097,7 +1104,7 @@ export function encodeShared(
     for (const p of planks) if (p > 0) nonZero++
     w.uvar(nonZero)
     for (let i = 0; i < planks.length; i++) {
-      if (planks[i]! > 0) w.uvar(i).u8(planks[i]!)
+      if (planks[i]! > 0) w.uvar(i).u8(packPlanks(planks[i]!, plankHp[i] ?? 0))
     }
   }
 
@@ -1116,7 +1123,7 @@ export function encodeShared(
   }
   if (sectionFlags & SEC_BASHES) {
     w.u8(bashes.length)
-    for (const b of bashes) w.uvar(b.portal).u8(Math.round(b.age * 1000))
+    for (const b of bashes) w.uvar(b.portal).u8(Math.round(b.age * 1000)).u8(b.planks)
   }
   if (sectionFlags & SEC_SHOTS) {
     w.u8(newShots.length)
@@ -1316,6 +1323,7 @@ export function decodeShared(
   let doors: { open: boolean; locked: boolean }[]
   let windows: { open: boolean; openable: boolean }[]
   let planks: number[]
+  let plankHp: number[]
   if (sectionFlags & SEC_PORTALS) {
     const doorBits = readBits(r)
     const windowBits = readBits(r)
@@ -1330,15 +1338,20 @@ export function decodeShared(
     const totalPortals = r.uvar()
     const nonZero = r.uvar()
     planks = new Array<number>(totalPortals).fill(0)
+    plankHp = new Array<number>(totalPortals).fill(0)
     for (let i = 0; i < nonZero; i++) {
       const idx = r.uvar()
-      const val = r.u8()
-      if (idx < totalPortals) planks[idx] = val
+      const val = unpackPlanks(r.u8())
+      if (idx < totalPortals) {
+        planks[idx] = val.planks
+        plankHp[idx] = val.hp
+      }
     }
   } else {
     doors = baseSnap?.doors ?? []
     windows = baseSnap?.windows ?? []
     planks = baseSnap?.planks ?? []
+    plankHp = baseSnap?.plankHp ?? []
   }
 
   const pings: SharedSnapshot["pings"] = []
@@ -1356,7 +1369,7 @@ export function decodeShared(
   const bashes: SharedSnapshot["bashes"] = []
   if (sectionFlags & SEC_BASHES) {
     for (let n = r.u8(), i = 0; i < n; i++) {
-      bashes.push({ portal: r.uvar(), age: r.u8() / 1000 })
+      bashes.push({ portal: r.uvar(), age: r.u8() / 1000, planks: r.u8() })
     }
   }
   const newShots: SharedSnapshot["shots"] = []
@@ -1403,6 +1416,7 @@ export function decodeShared(
     doors,
     windows,
     planks,
+    plankHp,
     pings,
     lures,
     bashes,

@@ -3,6 +3,7 @@ import { equal, type Schema, type Values } from "../core/schema.js"
 import type { Controls } from "../core/store.js"
 import { Edges, Spring } from "./motion.js"
 import { tick } from "./haptics.js"
+import { measure } from "./measure.js"
 import { smearPill } from "./smear.js"
 import { livePill, panOptions } from "./swipe.js"
 
@@ -176,11 +177,25 @@ export function createPresetStrip<S extends Schema>(
       pill.style.scale = "0.92"
       return
     }
+    measure(
+      () => ({
+        left: btn.offsetLeft,
+        width: btn.offsetWidth,
+        top: btn.offsetTop,
+        height: btn.offsetHeight,
+        trackWidth: track.clientWidth,
+      }),
+      (box) => placePill(box, snap),
+    )
+  }
+  function placePill(
+    box: { left: number; width: number; top: number; height: number; trackWidth: number },
+    snap: boolean,
+  ) {
     // The pill is placed by its edges so each can move on its own curve: the edge facing the
     // move leads and the other trails, stretching the pill toward its destination.
-    const left = btn.offsetLeft
-    const right = left + Math.max(20, btn.offsetWidth)
-    const top = btn.offsetTop
+    const { left, top } = box
+    const right = left + Math.max(20, box.width)
     const first = snap || !initializedPill
     if (first) {
       pillEdges.snap(left, right)
@@ -196,9 +211,9 @@ export function createPresetStrip<S extends Schema>(
       }
     }
     pill.style.left = `${left}px`
-    pill.style.right = `${track.clientWidth - right}px`
+    pill.style.right = `${box.trackWidth - right}px`
     pill.style.top = `${top}px`
-    pill.style.height = `${btn.offsetHeight}px`
+    pill.style.height = `${box.height}px`
     pill.style.opacity = "1"
     pill.style.scale = ""
     if (first) doc.defaultView?.requestAnimationFrame(() => (pill.style.transition = ""))
@@ -284,8 +299,8 @@ export function createPresetStrip<S extends Schema>(
           b.setAttribute("aria-label", entry.label)
           b.onclick = (e) => {
             e.preventDefault()
-            if (idx !== activeState.activeIndex) selectAt(idx)
             focusQuietly()
+            if (idx !== activeState.activeIndex) selectAt(idx)
           }
           return b
         })
@@ -300,6 +315,7 @@ export function createPresetStrip<S extends Schema>(
   }
 
   // Pointer selections keep keyboard focus in the strip without drawing a keyboard focus ring.
+  // Called before selecting: focusing reads style, which a preset's writes would leave dirty.
   function focusQuietly() {
     root.focus({ preventScroll: true, focusVisible: false } as FocusOptions)
   }
@@ -367,12 +383,12 @@ export function createPresetStrip<S extends Schema>(
     scrubbing = true
     scrubCommitted = false
     track.setPointerCapture(event.pointerId)
+    focusQuietly()
     const idx = chipIndexAt(event.clientX, event.clientY)
     if (idx >= 0 && idx !== activeState.activeIndex) {
       selectAt(idx)
       scrubCommitted = true
     }
-    focusQuietly()
   }
   track.onpointermove = (event) => {
     if (!scrubbing) return

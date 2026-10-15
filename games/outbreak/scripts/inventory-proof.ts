@@ -112,6 +112,13 @@ try {
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 120_000 })
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
+  // This proof covers the text strips and markers; D-19 shows contents as props by default (scripts/discovery-proof.ts).
+  await page.evaluate(() => {
+    const h = (window as any).__arcadeHarness
+    h.setLab("discoveryOpenContainers", false)
+    h.setLab("discoveryGroundProps", false)
+    h.setLab("discoveryFadeWords", false)
+  })
   assert.match(adapter.architecture, /metal/)
 
   // A bedroom dresser: unsearched prompt with both speeds, the search, then the strip of what is inside.

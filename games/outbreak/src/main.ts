@@ -23,9 +23,11 @@ import { FOLIAGE_MAX_ACTORS, FOLIAGE_WIND_FLOATS, foliageSettings, packFoliageAc
 import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
+import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
+import { DiscoveryProps, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
-import { sightRects, propShape, SIZE } from "../shared/map"
+import { sightRects, SIZE } from "../shared/map"
 import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
@@ -58,6 +60,7 @@ import { Survivor } from "./survivor"
 import { OutbreakHud } from "./hud"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
+import { packLightOccluders, windowStateKey } from "./light-occluders"
 import { MAP_KEY, OutbreakMap } from "./map"
 import { gameMapFrame } from "./map/game"
 import { type ProgressionLabHost } from "./progression-lab"
@@ -204,6 +207,7 @@ async function main() {
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
     () => session.sim.slots.map((s) => s.survivor),
+    () => settings.discovery,
   )
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
@@ -268,6 +272,7 @@ async function main() {
       } else if (meant.pick) pendingVerbs.pick = meant.pick
     }
     if (code === "KeyB") pendingBarricade = true
+    if (code === "KeyE") inventoryHud.noteUse(session.view.prompt)
     if (code === "Tab") inventoryHud.togglePack()
     if (code === "Escape") inventoryHud.close()
     if (code === MAP_KEY) map.toggle()
@@ -310,6 +315,7 @@ async function main() {
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
+  const discoveryProps = new DiscoveryProps(renderer)
   const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player)
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
@@ -343,6 +349,7 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
+  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps }
   const vehicleHost: VehicleLabHost = {
     sim: () => session.sim,
     view: () => session.view,
@@ -363,6 +370,7 @@ async function main() {
     combatFx,
     weatherController,
     progressionHost,
+    discoveryHost,
     vehicleHost,
     botsLab,
     hud,
@@ -395,6 +403,7 @@ async function main() {
   const doorModel = renderer.addModel(doorMesh)
   const doorData = new Float32Array(64 * 12)
   const doorBatch: Batch = { model: doorModel, data: doorData, count: 0 }
+  const beamLookScratch: BeamLook = { low: 0, cone: 0, range: 0, warmth: 0, color: [1, 1, 1] }
   const sashMesh = new Mesh()
   sashMesh.box(-1.0, 1.48, -0.06, 1.0, 2.12, 0.06, hex(0xa8a99c), MAT.wall)
   sashMesh.box(-0.92, 1.54, -0.02, 0.92, 2.06, 0.02, hex(0x809c9e), MAT.glass)
@@ -489,6 +498,9 @@ async function main() {
   let blockers = sightRects(session.view.town)
   let revision = -1
   let lightOccluders = 0
+  let lightWindowKey = 0
+  // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
+  let lightWalls: readonly (readonly [number, number, number, number])[] = blockers
   let frozen = params.has("bench")
   let frames = 0
   let meterAt = performance.now()
@@ -629,6 +641,7 @@ async function main() {
     coop,
     lab,
     progressionHost,
+    discoveryHost,
     vehicleHost,
     weatherController,
     harness: () => harness,
@@ -920,31 +933,19 @@ async function main() {
         }
       }
     }
-    if (revision !== session.view.revision) {
+    const windowKey = windowStateKey(town)
+    if (revision !== session.view.revision || windowKey !== lightWindowKey) {
       revision = session.view.revision
+      lightWindowKey = windowKey
       blockers = sightRects(town)
-      occluders.fill(0)
-      const maxOcc = MAX_OCCLUDERS - 4
-      let occIdx = 0
-      for (let i = 0; i < blockers.length && occIdx < maxOcc; i++) {
-        occluders.set([...blockers[i]!, 2.8, 0, 0, 0], occIdx++ * OCC_FLOATS)
-      }
-      lightOccluders = occIdx
-      for (const b of town.barriers) {
-        if (b.kind === "window" && lightOccluders < maxOcc) {
-          occluders.set([...b.rect, 0.85, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
-        }
-      }
-      for (const pr of town.props) {
-        if (pr.kind === "coffee" || pr.kind === "table" || pr.kind === "chair" || pr.kind === "nightstand") continue
-        if (lightOccluders >= maxOcc) break
-        const s = propShape(pr)
-        if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
-      }
+      const packed = packLightOccluders(town, blockers, occluders, MAX_OCCLUDERS - 4)
+      lightOccluders = packed.count
+      lightWalls = packed.walls
     }
     const drivingHeadlights =
       Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
     const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const lowBeam = lowBatteryBeam(settings.flashlight, p.battery, p.batteryDepleted, settings.discovery, beamLookScratch)
     const effectiveVisionSettings = drivingHeadlights
       ? {
           ...settings.vision,
@@ -965,8 +966,8 @@ async function main() {
       flashVisionActive
         ? {
             active: true,
-            range: drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange,
-            cone: drivingHeadlights ? 68 : settings.flashlight.flashlightCone,
+            range: drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range,
+            cone: drivingHeadlights ? 68 : lowBeam.cone,
             aim: effectiveVisionAim,
           }
         : null,
@@ -1055,9 +1056,9 @@ async function main() {
     let beamReach = 0
     let flashlightPitch: number | undefined
     let flashlightBounceHeight = playerGroundY + 0.3
-    const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
+    const flashRgb = drivingHeadlights ? flashlightColor(settings.flashlight.flashlightWarmth) : lowBeam.color
     const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
-    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
+    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range
     const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
     const beamIntensity = drivingHeadlights
       ? settings.vehicle.headlightPower * 0.85
@@ -1073,13 +1074,13 @@ async function main() {
               yaw: beamAim,
               pitch: -0.18,
             }
-          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, lightWalls)
       const fx = beam.x
       const fy = beam.y
       const fh = beam.h
       const dx = Math.cos(beam.yaw)
       const dy = Math.sin(beam.yaw)
-      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
+      const cosHalf = Math.cos(((drivingHeadlights ? 68 : lowBeam.cone) * Math.PI) / 360)
       // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
       const power = beamOutput * beamIntensity
       flashlightSlot = count
@@ -1088,7 +1089,7 @@ async function main() {
       flashlightOrigin[1] = fy
       flashlightYaw = beam.yaw
       flashlightPitch = beam.pitch
-      const wall = raycast(fx, fy, dx, dy, blockers, beamRange)
+      const wall = raycast(fx, fy, dx, dy, lightWalls, beamRange)
       const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
       const hit = Math.min(wall, reach, beamRange)
       flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
@@ -1117,7 +1118,7 @@ async function main() {
         -1,
       )
     }
-    count = coop.flashlights(lights, count, town, settings, lightOccluders, blockers)
+    count = coop.flashlights(lights, count, town, settings, lightOccluders, lightWalls)
 
     const zombieBatches = zombieCrowd.draw(
       zombies,
@@ -1130,6 +1131,7 @@ async function main() {
         fogGhostDuration: settings.fog.fogGhostDuration,
         hideUnseenZombies: unseenEval.hideZombies,
         unseenMode: unseenEval.mode,
+        unseenMemory: unseenEval.layers.memory,
       },
       Boolean(settings.ai.aiDebugOverlay),
       time,
@@ -1273,6 +1275,13 @@ async function main() {
       fieldWindowX = currentWindowOrigin[0]
       fieldWindowY = currentWindowOrigin[1]
     }
+    // The lighting pack reads the tuned beam; a dying battery narrows and shortens it for this frame only.
+    const tunedCone = settings.flashlight.flashlightCone
+    const tunedRange = settings.flashlight.flashlightRange
+    if (!drivingHeadlights) {
+      settings.flashlight.flashlightCone = lowBeam.cone
+      settings.flashlight.flashlightRange = lowBeam.range
+    }
     packOutbreakLightingUniforms(
       {
         settings,
@@ -1306,6 +1315,8 @@ async function main() {
       flashRgb,
       lightingUniforms,
     )
+    settings.flashlight.flashlightCone = tunedCone
+    settings.flashlight.flashlightRange = tunedRange
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
@@ -1417,7 +1428,7 @@ async function main() {
       vehAlphaStart,
     )
     const effectiveFogSettings =
-      unseenEval.mode > 0 && unseenEval.hideZombies
+      unseenEval.active && unseenEval.hideZombies
         ? {
             ...settings.fog,
             fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
@@ -1464,6 +1475,8 @@ async function main() {
     for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
     for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
     for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
+    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z))
+    for (let i = 0; i < discoveryBatches.length; i++) rBatches.push(discoveryBatches[i]!)
     for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)
     rBatches.push(doorBatch)
     if (openWindows) rBatches.push(sashBatch)
@@ -1479,7 +1492,7 @@ async function main() {
             [flashlightOrigin[0], flashlightHeight, flashlightOrigin[1]],
             flashlightYaw,
             flashlightPitch ?? 0,
-            (settings.flashlight.flashlightCone * Math.PI) / 360,
+            ((drivingHeadlights ? settings.flashlight.flashlightCone : lowBeam.cone) * Math.PI) / 360,
             beamReach,
             playerGroundY,
           ),
@@ -1742,6 +1755,7 @@ async function main() {
     audio,
     vehicleAudio,
     progressionHost,
+    discoveryHost,
     vehicleHost,
     botsLab,
     qualityController,

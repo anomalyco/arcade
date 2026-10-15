@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_AI_CONFIG } from "../shared/ai"
+import { DEFAULT_AI_CONFIG, LEGACY_AI_CONFIG } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { COOP_TUNING } from "../shared/coop-config"
 import { LocalSession, resolveSessionTuning } from "../shared/session"
@@ -58,6 +58,34 @@ describe("Outbreak subsystem-namespaced settings & migration", () => {
     const coopResolved = resolveSessionTuning(COOP_TUNING)
     expect(coopResolved.stamina).toEqual(DEFAULT_STAMINA_TUNING)
     expect(coopResolved.ai).toBeUndefined()
+  })
+
+  test("ships the D-22 Balanced Curve and still loads presets saved with the pre-D-22 difficulty", () => {
+    const settings = createOutbreakSettings()
+    expect(settings.ai.zombieCount).toBe(16)
+    expect(settings.ai.maxActiveNearPlayer).toBe(3)
+    expect(settings.progression.lootRate).toBe(1.05)
+
+    // A v2 preset exported before D-22 carries every knob explicitly, so it restores the old difficulty.
+    const before = createOutbreakSettings()
+    Object.assign(before.ai, LEGACY_AI_CONFIG)
+    before.progression.lootRate = 1
+    const legacyPreset = JSON.parse(JSON.stringify(exportOutbreakPreset(before)))
+    const restored = createOutbreakSettings()
+    expect(applyOutbreakPreset(restored, legacyPreset).ok).toBe(true)
+    for (const key of ["zombieCount", "initialDensity", "rampTime", "safeRadius", "sightRange", "hearingScale", "noiseSensitivity", "chaseSpeed", "aggression", "nightMultiplier", "maxActiveNearPlayer"] as const) {
+      expect(restored.ai[key]).toBe(LEGACY_AI_CONFIG[key])
+    }
+    expect(restored.progression.lootRate).toBe(1)
+
+    // A v1 flat preset with the old values loads the same way.
+    const v1 = createOutbreakSettings()
+    const res = applyOutbreakPreset(v1, { version: 1, settings: { zombieCount: 28, initialDensity: 0.25, maxActiveNearPlayer: 4, lootRate: 1 } })
+    expect(res.ok).toBe(true)
+    expect(v1.ai.zombieCount).toBe(28)
+    expect(v1.ai.initialDensity).toBe(0.25)
+    expect(v1.ai.maxActiveNearPlayer).toBe(4)
+    expect(v1.progression.lootRate).toBe(1)
   })
 
   test("migrates v1 flat presets, unversioned dictionaries, and v2 namespaced presets", () => {

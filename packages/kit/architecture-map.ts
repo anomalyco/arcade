@@ -67,6 +67,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/sim/ai",
   },
   {
+    area: "`sim/flow-field`",
+    description: "Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles",
+    match: (s) => s === "@arcade/kit/sim/flow-field",
+  },
+  {
     area: "`sim/ledger`",
     description: "Deterministic item store, containers, and crafting rule engine",
     match: (s) => s === "@arcade/kit/sim/ledger",

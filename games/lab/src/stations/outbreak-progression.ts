@@ -6,7 +6,7 @@ const stage = (scene: string): StationCommand[] => [{ command: "scene.set-param"
 
 const variants: StationVariant[] = [
   { id: "search", label: "Unsearched dresser", note: "E searches quietly (1.2 s), Shift+E smashes it open (0.35 s, loud).", setup: stage("search") },
-  { id: "strip", label: "Container strip", note: "What is inside and where each item goes. E takes all, digits take one.", setup: stage("strip") },
+  { id: "strip", label: "Container strip", note: "Searched: the dresser stays open with what is inside (Discovery group: turn off Opened containers show contents for the old list). E takes all.", setup: stage("strip") },
   { id: "bench", label: "Workbench, day", note: "Press E to deposit the materials and toolbox (tier 2), then a digit to research.", setup: stage("bench") },
   { id: "dark-bench", label: "Workbench, night", note: "Too dark with the flashlight off. Press F and try again.", setup: stage("dark-bench") },
   { id: "generator", label: "Generator wired", note: "The car battery lights the bench at night and hums at 18 m.", setup: stage("generator") },
@@ -14,8 +14,8 @@ const variants: StationVariant[] = [
   { id: "handoff", label: "Hand-offs", note: "A dropped medkit, a supply bundle, a ping and a noisemaker.", setup: stage("handoff") },
   {
     id: "first-night",
-    label: "First night opening (16:30)",
-    note: "20 m safe radius around spawn & Ash House, sparse wandering shamblers (25% initial density), late-afternoon daylight at the workbench, and a Pacing group in the Lab.",
+    label: "First night opening (17:30 dusk)",
+    note: "20 m safe radius around spawn & Ash House, sparse wandering shamblers (25% initial density), the last daylight plus the flashlight at the workbench, and a Pacing group in the Lab.",
     url: "/arcade/outbreak/?seed=7",
     setup: [{ command: "pacing.stage", args: { scene: "opening-calm" } }],
   },

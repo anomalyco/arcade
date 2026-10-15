@@ -83,7 +83,9 @@ controls card for the section's first two groups with real tuning sliders right,
 voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
-adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
+adding a file, plus one line for its collection in `STATION_AREAS` (`games/lab/src/scenes/from-stations.ts`) and, unless
+an existing kind fits, a lab kind in `games/lab/src/scenes/kinds.ts` (`PAGE_STATIONS` maps page stations to theirs);
+`bun test games/lab/tests` says which is missing. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
 back to. The type is `LabStation` in `packages/kit/lab/stations/types.ts` (older files import it from
 `@arcade/kit/lab/overworld/types`, which still works):
 
@@ -150,7 +152,9 @@ one transaction per gesture; `packages/kit/lab-tuning.ts` holds the pure mapping
 every panel its header (Random, Reset, Copy and, in games, Undo/Redo), per-group dice and resets, `⇧L` to lock a row
 out of Random, hold `\` to see the values from before the last change, `⇧S` saved variants (kept in the browser per
 section or page), the row menu and `?` for the rest. In the Lab, `u`/`z` in a panel use the workbench's undo, the same
-history as `⌘Z`. A panel only works while focus is inside it, and an open game overlay keeps every key from the game.
+history as `⌘Z`. Compare's preview and its release apply to the settings but are never undo steps: holding `\` first
+closes a gesture still settling, so that gesture stays one step of its own. A panel only works while focus is inside
+it, and an open game overlay keeps every key from the game.
 
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`
