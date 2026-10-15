@@ -560,14 +560,7 @@ export class CoopSim {
       if (resolved.ai.chaseSpeed !== undefined) config.chaseSpeed = resolved.ai.chaseSpeed
       if (resolved.ai.aggression !== undefined) config.aggression = resolved.ai.aggression
       if (resolved.ai.nightMultiplier !== undefined) config.nightMultiplier = resolved.ai.nightMultiplier
-      if (resolved.ai.directorPacing !== undefined) config.directorPacing = resolved.ai.directorPacing
       if (resolved.ai.aiDebugOverlay !== undefined) config.aiDebugOverlay = resolved.ai.aiDebugOverlay
-      if (resolved.ai.startHour !== undefined) config.startHour = resolved.ai.startHour
-      if (resolved.ai.safeRadius !== undefined) config.safeRadius = resolved.ai.safeRadius
-      if (resolved.ai.initialDensity !== undefined) config.initialDensity = resolved.ai.initialDensity
-      if (resolved.ai.rampTime !== undefined) config.rampTime = resolved.ai.rampTime
-      if (resolved.ai.noiseSensitivity !== undefined) config.noiseSensitivity = resolved.ai.noiseSensitivity
-      if (resolved.ai.maxActiveNearPlayer !== undefined) config.maxActiveNearPlayer = resolved.ai.maxActiveNearPlayer
     }
 
     const survivors = this.slots.map((s) => {

@@ -20,6 +20,7 @@ import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
 import type { OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
 import type { NetSession } from "./net-session"
+import "./pacing"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
@@ -48,7 +49,7 @@ export interface OutbreakLabControlHost {
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
   const { settings, feelTracker, combatFx, progressionHost, vehicleHost } = host
-  return [
+  const raw: LabControl[] = [
     ...aiControls,
     ...audioControls,
     {
@@ -364,6 +365,14 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
   ]
+  const seen = new Set<string>()
+  const out: LabControl[] = []
+  for (const c of raw) {
+    if (seen.has(c.key)) continue
+    seen.add(c.key)
+    out.push(c)
+  }
+  return out
 }
 
 export function handleOutbreakSettingChanged(
@@ -383,24 +392,6 @@ export function handleOutbreakSettingChanged(
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
-  }
-  if (key === "safeRadius" || key === "initialDensity" || key === "directorPacing") {
-    Object.assign(session.ai.config, settings.ai)
-    if (progressionHost.offline() && session.view.time < 5) {
-      session.ai.resetOpeningPopulation(
-        session.view.town,
-        session.sim.slots.map((s) => s.survivor),
-      )
-    }
-  }
-  if (key === "startHour") {
-    settings.dayCycle.hour = wrapHour(settings.ai.startHour)
-    session.view.hour = settings.dayCycle.hour
-    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
-      host.setLastDayNightHour(session.view.hour)
-      applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-      lab.refresh()
-    }
   }
   if (key === "hour") {
     session.view.hour = wrapHour(settings.dayCycle.hour)
