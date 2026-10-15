@@ -73,7 +73,7 @@ export type SkillTargetBand = {
 
 /**
  * Plain target survival curve defined prior to tuning:
- * - Novice survives the first evening (16:00–18:00) and dies during Night 1–2.
+ * - Novice survives the first evening (17:30–18:00) and dies during Night 1–2.
  * - Casual usually survives Night 1 and falls during Day 2 / Night 2.
  * - Skilled reaches Night 3–4.
  * - Expert rarely dies early and pushes deep into Night 3–4.

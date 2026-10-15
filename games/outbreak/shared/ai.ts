@@ -38,6 +38,7 @@ import {
   isSpawnBehindPlayer,
   isSpawnInView,
   OutbreakPacingDirector,
+  openingThreat,
   pacingControls,
   spawnLegacyTownZombies,
   spawnPacedTownZombies,
@@ -70,6 +71,7 @@ export {
   isTorsoCrawler,
   NoiseBus,
   OutbreakPacingDirector,
+  openingThreat,
   pacingControls,
   spawnLegacyTownZombies,
   spawnPacedTownZombies,
@@ -520,7 +522,7 @@ export class OutbreakAISubsystem {
     this.tick++
     const day = dayCycle(hour)
     this.darkness = day.darkness
-    this.threat = day.threat
+    this.threat = openingThreat(day.threat, time, this.config)
     // Peaceful during the day (0.68× calmer perception/speed), rising through dusk to full nocturnal threat at night
     const nightFactor = 0.68 + this.threat * (0.32 + (this.config.nightMultiplier - 1))
     const threatConfig: AIConfig = {

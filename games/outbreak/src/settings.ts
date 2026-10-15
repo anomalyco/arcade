@@ -302,7 +302,7 @@ const KEY_ROUTING: Readonly<Record<string, KeyTarget>> = (() => {
     }
   }
   map.aiWalkSpeed = { subsystem: "ai", field: "walkSpeed", sample: DEFAULTS_TEMPLATE.ai.walkSpeed }
-  for (const field of ["startHour", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
+  for (const field of ["startHour", "openingClock", "openingCalm", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
     map[`pacing.${field}`] = { subsystem: "ai", field, sample: DEFAULTS_TEMPLATE.ai[field] }
   }
   for (const field of Object.keys(DEFAULT_PACING_TARGETS) as (keyof PacingTargetConfig)[]) {

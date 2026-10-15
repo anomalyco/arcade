@@ -17,6 +17,8 @@ export const outbreakPacingSharedFeature = registerOutbreakSharedFeature<undefin
     if (!src) return
     if (src.directorPacing !== undefined) config.directorPacing = src.directorPacing
     if (src.startHour !== undefined) config.startHour = src.startHour
+    if (src.openingClock !== undefined) config.openingClock = src.openingClock
+    if (src.openingCalm !== undefined) config.openingCalm = src.openingCalm
     if (src.safeRadius !== undefined) config.safeRadius = src.safeRadius
     if (src.initialDensity !== undefined) config.initialDensity = src.initialDensity
     if (src.rampTime !== undefined) config.rampTime = src.rampTime

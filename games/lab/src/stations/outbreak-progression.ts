@@ -14,8 +14,8 @@ const variants: StationVariant[] = [
   { id: "handoff", label: "Hand-offs", note: "A dropped medkit, a supply bundle, a ping and a noisemaker.", setup: stage("handoff") },
   {
     id: "first-night",
-    label: "First night opening (16:30)",
-    note: "20 m safe radius around spawn & Ash House, sparse wandering shamblers (25% initial density), late-afternoon daylight at the workbench, and a Pacing group in the Lab.",
+    label: "First night opening (17:30 dusk)",
+    note: "20 m safe radius around spawn & Ash House, sparse wandering shamblers (25% initial density), the last daylight plus the flashlight at the workbench, and a Pacing group in the Lab.",
     url: "/arcade/outbreak/?seed=7",
     setup: [{ command: "pacing.stage", args: { scene: "opening-calm" } }],
   },
