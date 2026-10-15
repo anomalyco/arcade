@@ -1,6 +1,6 @@
 import { defineStation } from "./define"
 
-/** Opens the Audio section on one shared-library sound. Selecting a variant never plays it: Audition does. */
+/** Opens the Audio section on one shared-library sound and renders it offline. Nothing plays until Audition. */
 const sound = (id: string, label: string, note: string, librarySound: string) => ({
   id,
   label,
@@ -9,6 +9,8 @@ const sound = (id: string, label: string, note: string, librarySound: string) =>
     { command: "scene.set-param", args: { key: "source", value: "library" } },
     { command: "scene.set-param", args: { key: "librarySound", value: librarySound } },
     { command: "scene.set-param", args: { key: "libraryVariant", value: 0 } },
+    // Render offline (silent) so the waveform and spectrogram show the sound before anyone auditions it.
+    { command: "scene.set-param", args: { key: "retrigger", value: true } },
   ],
 })
 
@@ -26,6 +28,7 @@ export default defineStation({
     setup: [
       { command: "scene.set-param", args: { key: "source", value: "library" } },
       { command: "scene.set-param", args: { key: "librarySound", value: "zombie.groan.idle" } },
+      { command: "scene.set-param", args: { key: "retrigger", value: true } },
     ],
   },
   variants: [
