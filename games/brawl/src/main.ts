@@ -9,6 +9,7 @@ import { ROSTER } from "../shared/characters"
 import { GAME } from "../shared/config"
 import { cleanName } from "../shared/protocol"
 import { Game } from "./game/game"
+import { ARENA_THEMES, type ArenaThemeId, DEFAULT_ARENA_THEME } from "./render/arena-mesh"
 import { LocalSession, NetSession, REJOIN_KEY, type Session } from "./session"
 import { Sound } from "./sound"
 import { Hud } from "./ui/hud"
@@ -29,8 +30,10 @@ async function main() {
     return
   }
   const renderer = new Renderer(g.device, g.context, g.format)
-  renderer.setLook(createLookSettings("party_pop"))
+  renderer.setLook(createLookSettings("night_ring"))
   const params = new URLSearchParams(location.search)
+  const themeParam = params.get("theme") as ArenaThemeId | null
+  const activeTheme: ArenaThemeId = themeParam && themeParam in ARENA_THEMES ? themeParam : DEFAULT_ARENA_THEME
   const seed = Number(params.get("seed")) || undefined
   const roomParam = (params.get("room") ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || null
   const sound = new Sound()
@@ -44,7 +47,7 @@ async function main() {
     session?.close()
     input.release()
     session = s
-    game = new Game(renderer, s, sound)
+    game = new Game(renderer, s, sound, activeTheme)
     ;(globalThis as { brawl?: Game }).brawl = game
     const zoom = Number(params.get("zoom"))
     if (zoom) game.zoom = zoom

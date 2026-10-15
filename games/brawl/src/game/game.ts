@@ -18,7 +18,7 @@ import type { Intent, SimEvent } from "../../shared/world"
 import type { Session } from "../session"
 import type { Sound } from "../sound"
 import { abilityMeshes } from "../render/ability-meshes"
-import { PIT_Y, arenaLevel, propMeshes } from "../render/arena-mesh"
+import { ARENA_THEMES, type ArenaThemeId, DEFAULT_ARENA_THEME, PIT_Y, arenaLevel, propMeshes } from "../render/arena-mesh"
 import { FrameParts, SPRITE } from "../render/frame-parts"
 import { FighterDraw, type FighterModels, carryReach, castReach, drawFighter, registerFighters } from "./fighters"
 import { Fx } from "./fx"
@@ -27,16 +27,6 @@ type Rgb = readonly [number, number, number]
 
 /** Player slot colours: the ring under each fighter, their HUD card and their accent bands. */
 export const SLOT_COLORS: Rgb[] = [[1, 0.25, 0.45], [0.2, 0.62, 1], [1, 0.82, 0.15], [0.3, 0.86, 0.38], [0.72, 0.4, 1], [1, 0.55, 0.15], [0.2, 0.9, 0.85], [0.95, 0.95, 0.95]]
-
-/** Plan sky colour and the key/fill lights of the party stage. */
-const AMBIENT: [number, number, number, number] = [0.3, 0.27, 0.34, 0]
-const STAGE_LIGHTS: SceneLight[] = [
-  { x: CENTER.x, y: CENTER.y + 1, h: 14, r: 30, color: [1, 0.95, 0.88], power: 0.62, size: 1.2 },
-  { x: STAGE[0] + 3, y: STAGE[1] + 2, h: 6, r: 12, color: [1, 0.4, 0.72], power: 0.32, size: 0.5, unshadowed: true },
-  { x: STAGE[2] - 3, y: STAGE[1] + 2, h: 6, r: 12, color: [0.35, 0.8, 1], power: 0.32, size: 0.5, unshadowed: true },
-  { x: STAGE[0] + 3, y: STAGE[3] - 2, h: 6, r: 12, color: [1, 0.8, 0.3], power: 0.3, size: 0.5, unshadowed: true },
-  { x: STAGE[2] - 3, y: STAGE[3] - 2, h: 6, r: 12, color: [0.65, 0.45, 1], power: 0.3, size: 0.5, unshadowed: true },
-]
 
 type Body = { x: number; y: number; vx: number; vy: number }
 type Shown = FighterView & { draw: FighterDraw }
@@ -79,6 +69,7 @@ export class Game {
   cursor = { ...CENTER }
   /** Fixed camera distance (automation close-ups), or null to frame the fighters. */
   zoom: number | null = null
+  theme: ArenaThemeId = DEFAULT_ARENA_THEME
   aim = 0
   /** Damage flash on the screen edge, from your own hits. */
   private hurt = 0
@@ -87,15 +78,22 @@ export class Game {
   private fallingProps: { kind: string; x: number; y: number; h: number; vx: number; vy: number; z: number; vz: number; t0: number }[] = []
   private lastProps = new Map<number, [number, string, number, number, number, number]>()
 
-  constructor(readonly renderer: Renderer, readonly session: Session, readonly sound: Sound) {
+  constructor(readonly renderer: Renderer, readonly session: Session, readonly sound: Sound, theme: ArenaThemeId = DEFAULT_ARENA_THEME) {
     this.cam = new Camera()
     this.cam.snap(CENTER.x, CENTER.y)
-    renderer.setLevel(arenaLevel())
+    this.setTheme(theme)
     this.lights.setBoxes(BLOCKS)
     const add = (m: Mesh) => renderer.addModel(m)
     this.fighterModels = registerFighters(add)
     for (const [k, m] of Object.entries(propMeshes())) this.propModels[k] = add(m)
     for (const [k, m] of Object.entries(abilityMeshes())) this.abModels[k] = add(m)
+  }
+
+  setTheme(theme: ArenaThemeId): void {
+    const t = ARENA_THEMES[theme] ? theme : DEFAULT_ARENA_THEME
+    this.theme = t
+    this.renderer.setLevel(arenaLevel(7, t))
+    this.renderer.setLook(ARENA_THEMES[t].look())
   }
 
   get myId(): string {
@@ -514,7 +512,24 @@ export class Game {
       fp.sprite(true, this.cursor.x, 0.04, this.cursor.y, 0.25, c[0], c[1], c[2], 0.8, SPRITE.ring, t, 0.2)
     }
 
-    const sceneLights: SceneLight[] = [...STAGE_LIGHTS]
+    const palette = ARENA_THEMES[this.theme] ?? ARENA_THEMES.spotlit_ring
+    const sceneLights: SceneLight[] = [...palette.lights]
+    if (palette.fighterRimPower > 0) {
+      for (const s of this.shown) {
+        if (!has(s, F.alive) || has(s, F.falling)) continue
+        const col = this.colorOf(s.i)
+        sceneLights.push({
+          x: s.x,
+          y: s.y - 0.3,
+          h: 2.0,
+          r: 3.4,
+          color: [0.35 + col[0] * 0.65, 0.35 + col[1] * 0.65, 0.35 + col[2] * 0.65],
+          power: palette.fighterRimPower * (s.i === this.myId ? 1.25 : 1),
+          size: 0.4,
+          unshadowed: true,
+        })
+      }
+    }
     this.fx.lights(t, sceneLights)
     for (const z of snap?.ab.z ?? []) if (z[1] === "fire") sceneLights.push({ x: z[3], y: z[4], h: 1, r: 5, color: [1, 0.5, 0.2], power: 1.5, size: 0.4 })
     this.lights.update(sceneLights, casters, moving)
@@ -525,9 +540,9 @@ export class Game {
       width: this.renderer.width,
       height: this.renderer.height,
       lightCount: this.lights.lightCount,
-      ambient: AMBIENT,
+      ambient: palette.ambient,
       mapSize: STAGE_SIZE,
-      ao: 0,
+      ao: palette.ao,
     })
     this.hurt *= Math.exp(-dt * 4)
     const L = this.lights
