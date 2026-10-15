@@ -6,7 +6,7 @@ import { MAX_ARROWS } from "../../shared/config"
 import { type Archer, type ArrowKind, HH } from "../../shared/world"
 
 /** Rig metres to tiles: archers are drawn a little taller than their 1.2-tile hit box so they read at arena scale. */
-export const RIG_SCALE = 0.8
+export const RIG_SCALE = 0.88
 const S = RIG_SCALE
 
 export type ArcherModels = {

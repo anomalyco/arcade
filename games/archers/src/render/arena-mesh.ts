@@ -79,9 +79,9 @@ function broadleaf(mesh: Mesh, r: Rng, x: number, y: number, h: number, z: numbe
 
 /** The bell tower silhouette with its arched window, bell and broken crown. Returns the window's centre. */
 function tower(mesh: Mesh, r: Rng, cx: number, base: number, z: number, color: Rgb, mat: number): [number, number, number] {
-  const w = 9, h = 30
+  const w = 6.4, h = 30
   const top = base + h
-  const winY0 = top - 10, winY1 = top - 3.6, winW = 2.6
+  const winY0 = top - 8.5, winY1 = top - 3.4, winW = 1.85
   // Body below the window, the two sides of the window, and the lintel above.
   rect(mesh, cx - w / 2, base, cx + w / 2, winY0, z, color, mat)
   rect(mesh, cx - w / 2, winY0, cx - winW, top, z, color, mat)
@@ -95,11 +95,11 @@ function tower(mesh: Mesh, r: Rng, cx: number, base: number, z: number, color: R
     mesh.quad([p1[0]!, p1[1]!, z], [p0[0]!, p0[1]!, z], [p0[0]!, top, z], [p1[0]!, top, z], [0, 0, 1], color, m(mat))
   }
   // The bell and its yoke.
-  rect(mesh, cx - 2.6, winY1 + 0.6, cx + 2.6, winY1 + 1.0, z + 0.1, color, mat)
-  const bellTop = winY1 + 0.6, bellH = 3.2
+  rect(mesh, cx - 1.9, winY1 + 0.5, cx + 1.9, winY1 + 0.8, z + 0.1, color, mat)
+  const bellTop = winY1 + 0.5, bellH = 2.4
   for (let i = 0; i < 8; i++) {
     const u0 = i / 8, u1 = (i + 1) / 8
-    const wd = (u: number) => 0.55 + 1.05 * Math.pow(1 - u, 1.6) + (u < 0.12 ? 0.25 * (1 - u / 0.12) : 0)
+    const wd = (u: number) => 0.4 + 0.8 * Math.pow(1 - u, 1.6) + (u < 0.12 ? 0.2 * (1 - u / 0.12) : 0)
     const y0 = bellTop - bellH * (1 - u0), y1 = bellTop - bellH * (1 - u1)
     mesh.quad([cx - wd(1 - u0), y0, z + 0.1], [cx + wd(1 - u0), y0, z + 0.1], [cx + wd(1 - u1), y1, z + 0.1], [cx - wd(1 - u1), y1, z + 0.1], [0, 0, 1], color, m(mat))
   }
@@ -160,6 +160,23 @@ function vines(mesh: Mesh, r: Rng, x0: number, x1: number, y: number, z: number,
   }
 }
 
+/** A clump of pointed leaves fanning up (or down) from a base point. */
+function leafClump(mesh: Mesh, r: Rng, x: number, y: number, size: number, z: number, color: Rgb, mat: number, down = false): void {
+  const n = 9 + r.int(8)
+  for (let i = 0; i < n; i++) {
+    const a = (down ? -Math.PI / 2 : Math.PI / 2) + (r.next() - 0.5) * 2.6
+    const len = size * (0.45 + r.next() * 0.55)
+    const w = len * (0.16 + r.next() * 0.1)
+    const bx = x + (r.next() - 0.5) * size * 0.5, by = y + (r.next() - 0.5) * size * 0.2
+    const tx = bx + Math.cos(a) * len, ty = by + Math.sin(a) * len
+    const mx = bx + Math.cos(a) * len * 0.45, my = by + Math.sin(a) * len * 0.45
+    const px = -Math.sin(a) * w, py = Math.cos(a) * w
+    const zz = z + (r.next() - 0.5) * 0.3
+    tri(mesh, [bx, by, zz], [mx + px, my + py, zz], [tx, ty, zz], color, mat)
+    tri(mesh, [bx, by, zz], [tx, ty, zz], [mx - px, my - py, zz], color, mat)
+  }
+}
+
 /** Grass and moss tufts along a top edge. */
 function tufts(mesh: Mesh, r: Rng, x0: number, x1: number, y: number, z0: number, z1: number, color: Rgb, mat: number): void {
   for (let x = x0; x < x1; x += 0.08 + r.next() * 0.16) {
@@ -196,7 +213,7 @@ export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, n
     for (let i = 0; i < 60; i++) pine(mesh, r, -70 + r.next() * 172, -2 + r.next() * 5, 9 + r.next() * 12, -62 - r.next() * 16, FAR, M.far)
     tower(mesh, r, cx + 22, -9, -58, FAR, M.far)
     // The bell tower, its window the light everything is backlit by.
-    sun = tower(mesh, r, cx + 0.5, -5.3, -30, FAR, M.far)
+    sun = tower(mesh, r, cx + 0.5, -6, -24, FAR, M.far)
     // A darker band of woods behind the arena floor, and ruined arcades.
     for (let i = 0; i < 26; i++) {
       const side = i % 2 ? 1 : -1
@@ -255,16 +272,17 @@ export function buildArenaScene(a: Arena): { mesh: Mesh; sun: [number, number, n
       py = ny
     }
   }
-  // Foreground: black leaves in the bottom corners, out in front of the plane.
-  for (const [x0, x1] of [[-6, 3.5], [W - 3.5, W + 6]] as const) {
-    for (let i = 0; i < 40; i++) {
-      const x = x0 + r.next() * (x1 - x0)
-      const y = -1.5 + Math.pow(r.next(), 2) * 2.6
-      const s = 0.35 + r.next() * 0.6
-      const ang = r.next() * Math.PI * 2
-      const z = 2.5 + r.next() * 2
-      tri(mesh, [x, y, z], [x + Math.cos(ang) * s, y + Math.sin(ang) * s, z], [x + Math.cos(ang + 0.5) * s * 0.8, y + Math.sin(ang + 0.5) * s * 0.8, z], INK, M.foliage)
-    }
+  // Foreground: black leafy undergrowth along the bottom edge (thickest in the corners) and ivy hanging into the top
+  // corners, in front of the plane so it frames the arena like the concept's shadowed border.
+  for (let x = -6; x < W + 6; x += 0.5 + r.next() * 0.8) {
+    const edge = Math.min(Math.abs(x - 0), Math.abs(x - W)) / (W / 2)
+    const k = 1 - Math.min(1, edge * 1.6)
+    if (r.next() > 0.35 + 0.65 * k) continue
+    leafClump(mesh, r, x, -1.3 + r.next() * 0.6 + k * 1.2, 0.7 + r.next() * 0.9 + k * 0.8, 1.6 + r.next() * 1.8, INK, M.foliage)
+  }
+  for (const [x0, x1] of [[-5, 4], [W - 4, W + 5]] as const) {
+    vines(mesh, r, x0, x1, H + 1.2, 1.9, 0.9, 3.2, INK, M.foliage)
+    for (let i = 0; i < 7; i++) leafClump(mesh, r, x0 + r.next() * (x1 - x0), H + 0.6 + r.next() * 0.8, 0.8 + r.next() * 0.7, 2 + r.next(), INK, M.foliage, true)
   }
   return { mesh, sun }
 }
@@ -285,26 +303,39 @@ function blocks(mesh: Mesh, a: Arena, r: Rng, ox: number, oy: number): void {
       if (down) mesh.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], STONE, m(M.stone))
       if (left) mesh.quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], STONE, m(M.stone))
       if (right) mesh.quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0], STONE, m(M.stone))
-      // Crumbly rims: small stones sitting proud of the edges.
+      // Crumbly rims: stones sitting proud of the edges, so no edge reads as a ruler-straight tile line.
       if (up) {
         for (let k = 0; k < 3; k++) {
-          if (r.next() < 0.45) continue
-          const sx = x0 + r.next() * 0.85, sw = 0.08 + r.next() * 0.2, sh = 0.04 + r.next() * 0.1
+          if (r.next() < 0.35) continue
+          const sx = x0 + r.next() * 0.85, sw = 0.1 + r.next() * 0.25, sh = 0.04 + r.next() * 0.14
           mesh.box(sx, y1 - 0.02, z1 - 0.3 - r.next() * 0.5, sx + sw, y1 + sh, z1 + 0.04, c, m(M.stone), 0, STONE_TOP)
         }
         tufts(mesh, r, x0, x1, y1, z1 - 0.05, z1 + 0.02, MOSS, M.foliage)
+        if (r.next() < 0.4) leafClump(mesh, r, x0 + r.next(), y1 - 0.05, 0.22 + r.next() * 0.3, z1 + 0.05, MOSS, M.foliage)
       }
       if (down) {
-        if (r.next() < 0.7) vines(mesh, r, x0 + 0.05, x1 - 0.05, y0, z1 + 0.02, 0.55, 1.6, MOSS, M.foliage)
-        if (r.next() < 0.4) {
+        // Ivy curtains: most undersides carry a fringe, some a long drape.
+        if (r.next() < 0.85) vines(mesh, r, x0 + 0.02, x1 - 0.02, y0 + 0.02, z1 + 0.02, 0.8, r.next() < 0.25 ? 2.6 : 1.2, MOSS, M.foliage)
+        if (r.next() < 0.3) leafClump(mesh, r, x0 + r.next(), y0 + 0.05, 0.25 + r.next() * 0.3, z1 + 0.06, MOSS, M.foliage, true)
+        if (r.next() < 0.5) {
           const sx = x0 + r.next() * 0.7
-          mesh.box(sx, y0 - 0.12 - r.next() * 0.15, z1 - 0.4, sx + 0.15 + r.next() * 0.2, y0 + 0.02, z1 + 0.03, c, m(M.stone))
+          mesh.box(sx, y0 - 0.12 - r.next() * 0.2, z1 - 0.4, sx + 0.15 + r.next() * 0.25, y0 + 0.02, z1 + 0.03, c, m(M.stone))
         }
       }
-      if ((left || right) && r.next() < 0.5) {
-        const sx = left ? x0 - 0.08 : x1 - 0.06
-        const sy = y0 + r.next() * 0.8
-        mesh.box(sx, sy, z1 - 0.5, sx + 0.14, sy + 0.12 + r.next() * 0.15, z1 + 0.03, c, m(M.stone))
+      if (left || right) {
+        for (let k = 0; k < 2; k++) {
+          if (r.next() < 0.4) continue
+          const out = 0.06 + r.next() * 0.16
+          const sx = left ? x0 - out : x1 - 0.04
+          const sy = y0 + r.next() * 0.8
+          mesh.box(sx, sy, z1 - 0.5, sx + out + 0.04, sy + 0.12 + r.next() * 0.2, z1 + 0.03, c, m(M.stone))
+        }
+        if (r.next() < 0.25) vines(mesh, r, left ? x0 - 0.05 : x1 - 0.1, left ? x0 + 0.1 : x1 + 0.05, y1, z1 + 0.04, 0.9, 1.4, MOSS, M.foliage)
+      }
+      // Exposed corners crumble: a broken chunk standing off the corner.
+      if (up && (left || right) && r.next() < 0.6) {
+        const sx = left ? x0 - 0.12 : x1 - 0.25
+        mesh.box(sx, y1 - 0.35, z1 - 0.6, sx + 0.37, y1 + 0.08 + r.next() * 0.1, z1 + 0.05, c, m(M.stone), 0, STONE_TOP)
       }
     }
   }
