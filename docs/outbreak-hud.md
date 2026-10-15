@@ -246,6 +246,11 @@ the old log with edge bars: style and layout −0.003 ms per frame (spread −0.
 
 ## Known gaps
 
+- At DPR 1.5 the seated HUD's key-cap labels sit half a device pixel off their row (the cap height is em-based);
+  DPR 1 and 2 are on the grid.
+- Retargeting a CSS or Web Animation mid-flight keeps position but not velocity; the pack morph and prompt glide
+  reverse smoothly but without carrying speed.
+
 - When the survivor aims down while an interaction prompt is above, callouts go above and are pushed past the prompt,
   which can put them 60 px from the head. A lateral fallback would be closer.
 - In a tight crowd a teammate's name tag can touch the local survivor's rings; there is no cross-actor layout.
