@@ -8,6 +8,12 @@
 - `shared/build.gen.ts` (gitignored) hashes `shared/`; `bun run check/build/dev` regenerate it. Co-op clients with another hash reload.
 - Every adjustable presentation value goes in the shared Lab panel. URL parameters are for session routing and automation only.
 - Proof: `bun scripts/prove.ts` from this directory, using headless Metal Chromium; no visible window or audio.
+- Refactors that must not change behaviour prove it three ways, base vs branch: `bun scripts/parity.ts --out before.json`
+  then `--against before.json` (SimState hashes from `CoopSim` and pure `stepSim`, snapshot wire bytes and survivor-bot
+  batch results for fixed seeds), the Outbreak tests, and `bun scripts/parity-capture.ts --label <name>` on one worker
+  (`hivemind run --kind browser --worker studio --fetch captures/parity`) then `--compare <dirA> <dirB>`.
+- `bun scripts/check-cycles.ts` (part of `bun run check`) fails on import cycles between Outbreak modules, type imports
+  included. While cycles are being removed it runs with a `--max` budget of modules in cycles; only ever lower it.
 - Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`). `SoundDirector` turns `CoopSim`
   state changes into sounds; add a sound there by diffing state, not by adding wire fields or sim events. Never play
   sound audibly in proofs: `bun scripts/prove-audio.ts` (via `hivemind run --kind browser`) uses `--mute-audio`.
