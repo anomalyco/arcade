@@ -86,7 +86,13 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
     tuning.aggression !== undefined ||
     tuning.nightMultiplier !== undefined ||
     tuning.directorPacing !== undefined ||
-    tuning.aiDebugOverlay !== undefined
+    tuning.aiDebugOverlay !== undefined ||
+    tuning.startHour !== undefined ||
+    tuning.safeRadius !== undefined ||
+    tuning.initialDensity !== undefined ||
+    tuning.rampTime !== undefined ||
+    tuning.noiseSensitivity !== undefined ||
+    tuning.maxActiveNearPlayer !== undefined
   return {
     stamina: { ...DEFAULT_STAMINA_TUNING, ...tuning },
     flashlight: { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning },
@@ -100,6 +106,12 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
           nightMultiplier: tuning.nightMultiplier,
           directorPacing: tuning.directorPacing,
           aiDebugOverlay: tuning.aiDebugOverlay,
+          startHour: tuning.startHour,
+          safeRadius: tuning.safeRadius,
+          initialDensity: tuning.initialDensity,
+          rampTime: tuning.rampTime,
+          noiseSensitivity: tuning.noiseSensitivity,
+          maxActiveNearPlayer: tuning.maxActiveNearPlayer,
         }
       : undefined,
     melee: { ...DEFAULT_MELEE_TUNING, ...tuning },

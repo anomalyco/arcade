@@ -18,6 +18,8 @@ import { LabInput } from "./input"
 import { createSpawn } from "./spawn"
 import type { SpawnFactory } from "./spawn-types"
 import { createWorkbench } from "./workbench"
+import { RESOLUTIONS, trackViewportSize, type ViewportResolution } from "./viewport-size"
+import { PANELS_CHANGE_EVENT } from "./panels"
 import { hubCommands, hubPath } from "../dev-hub-model"
 
 export type { LabContext, LabEvent, LabSection, LabWorldObject, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
@@ -81,6 +83,11 @@ export async function lab(options:LabOptions) {
             <div class="lab-menu" data-more-menu role="menu" hidden>
               <button type="button" class="lab-menu-item" role="menuitem" data-action="export" aria-label="Export preset">Export preset JSON</button>
               <button type="button" class="lab-menu-item" role="menuitem" data-action="import" aria-label="Import preset">Import preset JSON</button>
+              <div class="lab-menu-sep" role="separator"></div>
+              <div class="lab-menu-label">Viewport resolution</div>
+              ${RESOLUTIONS.map(r=>`<button type="button" class="lab-menu-item" role="menuitemradio" data-resolution="${r.id}" aria-checked="false"><span class="lab-menu-check" aria-hidden="true"></span>${r.label}</button>`).join("")}
+              <div class="lab-menu-sep" role="separator"></div>
+              <button type="button" class="lab-menu-item" role="menuitem" data-action="panels-reset" aria-label="Reset panel sizes">Reset panel sizes</button>
             </div>
           </div>
         </div>
@@ -152,6 +159,19 @@ export async function lab(options:LabOptions) {
   const viewportHost=document.querySelector<HTMLElement>("[data-lab-viewport]")!
   const inspectorMount=document.querySelector<HTMLElement>("[data-inspector-mount]")!
   const canvas=viewportHost.querySelector("canvas")!
+  // Canvas size comes from a ResizeObserver, so dragging a panel resizes the canvas without the render loop reading layout.
+  const viewportSize=trackViewportSize(viewportHost)
+  workbenchRoot.addEventListener(PANELS_CHANGE_EVENT,()=>viewportSize.invalidate())
+  const resolutionItems=[...workbenchRoot.querySelectorAll<HTMLButtonElement>("[data-resolution]")]
+  const syncResolutionMenu=()=>{
+    for(const item of resolutionItems){
+      const on=item.dataset.resolution===viewportSize.resolution
+      item.setAttribute("aria-checked",String(on))
+      item.querySelector(".lab-menu-check")!.textContent=on?"✓":""
+    }
+  }
+  for(const item of resolutionItems)item.addEventListener("click",()=>{viewportSize.setResolution(item.dataset.resolution as ViewportResolution);syncResolutionMenu();void render()})
+  syncResolutionMenu()
   const sectionSelect=workbenchRoot.querySelector<HTMLSelectElement>('[data-control="section"]')!
   const debugSelect=workbenchRoot.querySelector<HTMLSelectElement>('[data-control="debug"]')!
   options.toolbar?.(workbenchRoot.querySelector<HTMLElement>("[data-topbar-extra]")!)
@@ -294,8 +314,8 @@ export async function lab(options:LabOptions) {
     workbench?.setTelemetry(text)
   }
   const render=async(measure=false)=>{
-    const width=Math.max(1,Math.round(viewportHost.clientWidth||innerWidth))
-    const height=Math.max(1,Math.round(viewportHost.clientHeight||innerHeight))
+    const {width,height}=viewportSize.get()
+    // Resized here, right before drawing, so the cleared canvas is never presented empty.
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}
     if(workbench?.isVariationGridMultiView()){
       const ms=await workbench.renderVariationGrid(width,height,settings.debug)
@@ -356,6 +376,7 @@ export async function lab(options:LabOptions) {
       active.update?.(s)
       workbench?.advanceVariationGridSim(s)
     },
+    suspend:value=>{suspended=value},
     spawn,
     looks,
     effects,
@@ -414,6 +435,8 @@ export async function lab(options:LabOptions) {
     addSections,
     viewport:viewportHost,
     canvas,
+    /** Backing size of the viewport canvas and its resolution setting. */
+    viewportSize,
     /** The Details panel: knobs over the active section's settings; `panel.mountView` adds cards for station widgets. */
     panel,
     /** Called after every section change, with the new section's id. */

@@ -37,7 +37,8 @@ Reset and Copy; the whole-effect Copy and Workbench Export include every setting
 
 ## Metal captures compare the actual Workbench
 
-Run `bun packages/kit/lab/prove-smoke.ts` through hivemind after a frozen root install. It serves the four original
+`packages/kit/lab/prove-smoke.ts` (deleted once the Lab moved to knobs; it is in git history) ran through hivemind
+after a frozen root install. It served the four original
 source modules from `git show <baseline>:<path>` through a Vite fixture and then the fixed modules, without changing
 either checkout. On workers without Git metadata, copy those same four files under `.smoke-baseline/{fx,lab}/`
 before syncing. `--perf-only` skips temporal capture. Fixtures bind loopback and audio is muted.

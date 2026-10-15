@@ -1,6 +1,6 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
-import { createAIAgent, OutbreakAISubsystem, type AIConfig } from "./ai"
+import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
 import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
 import { advanceHour } from "./day-cycle"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
@@ -76,7 +76,7 @@ export class CoopSim {
   readonly progression: OutbreakProgression
   readonly rewind = new RewindHistory<number>(24, 0.25)
   readonly slots: SurvivorSlot[] = []
-  hour = 18
+  hour = DEFAULT_PACING_TUNING.startHour
   time = 0
   revision = 0
   private solids: Rect[]
@@ -99,6 +99,7 @@ export class CoopSim {
     this.worldStream = new StreamingWorld(seed, houseSeed, terrain, effWorldMode)
     const [sx, sy] = SPAWN_POINTS[0]!
     this.ai = new OutbreakAISubsystem(this.town, sx, sy, aiConfig)
+    this.hour = this.ai.config.startHour
     this.combat = new OutbreakCombatSubsystem()
     this.progression = new OutbreakProgression(this.town, progTuning)
     this.progression.bindSquad(() => this.slots)
@@ -336,9 +337,18 @@ export class CoopSim {
 
   /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
   syncWorldChunks(): boolean {
-    const survivors = this.slots.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y }))
+    const survivors = this.slots.map((s) => ({
+      id: s.id,
+      x: s.survivor.x,
+      y: s.survivor.y,
+      aim: s.survivor.aim,
+      flashlightOn: s.survivor.flashlightOn,
+      flashlightOutput: s.survivor.flashlightOutput,
+    }))
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
+    const blockers = sightRects(this.town)
+    const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75) : 6.0
     const res = this.worldStream.updateActiveWindows(
       survivors,
       this.town,
@@ -346,6 +356,14 @@ export class CoopSim {
       this.ai.portalStates,
       this.ai.agents,
       (id, seed, x, y, aim) => createAIAgent(id, seed, x, y, aim),
+      1,
+      (x, y) =>
+        canSpawnZombieAt(x, y, this.town, this.ai.nav, survivors, blockers, {
+          safeRadius,
+          forbidInView: this.ai.config.directorPacing > 0,
+          forbidBehind: this.ai.config.directorPacing > 0,
+          behindDist: 16,
+        }),
     )
     if (res.changed) {
       this.progression.ensureContainerStores()
@@ -383,6 +401,12 @@ export class CoopSim {
       if (resolved.ai.nightMultiplier !== undefined) config.nightMultiplier = resolved.ai.nightMultiplier
       if (resolved.ai.directorPacing !== undefined) config.directorPacing = resolved.ai.directorPacing
       if (resolved.ai.aiDebugOverlay !== undefined) config.aiDebugOverlay = resolved.ai.aiDebugOverlay
+      if (resolved.ai.startHour !== undefined) config.startHour = resolved.ai.startHour
+      if (resolved.ai.safeRadius !== undefined) config.safeRadius = resolved.ai.safeRadius
+      if (resolved.ai.initialDensity !== undefined) config.initialDensity = resolved.ai.initialDensity
+      if (resolved.ai.rampTime !== undefined) config.rampTime = resolved.ai.rampTime
+      if (resolved.ai.noiseSensitivity !== undefined) config.noiseSensitivity = resolved.ai.noiseSensitivity
+      if (resolved.ai.maxActiveNearPlayer !== undefined) config.maxActiveNearPlayer = resolved.ai.maxActiveNearPlayer
     }
 
     const survivors = this.slots.map((s) => ({ ...s.survivor, id: s.id }))
