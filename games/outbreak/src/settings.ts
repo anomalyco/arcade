@@ -3,6 +3,7 @@ import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/mot
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
+import { parseCurve } from "@arcade/kit/ramps"
 import type { QualityMode } from "@arcade/kit/quality"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
 import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
@@ -15,6 +16,8 @@ import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import { DEFAULT_HORDE_TUNING, type HordeTuning } from "../shared/hordes/index"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
+import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
+import { LIGHT_CURVE_KEYS } from "./light-ramps"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
@@ -61,7 +64,7 @@ export type OutbreakMaterialSettings = {
   texRoughness: number
 }
 
-export type OutbreakDayCycleSettings = {
+export type OutbreakDayCycleSettings = DayNightCurveSettings & {
   hour: number
   timeScale: number
   dayNightLook: number
@@ -136,6 +139,7 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
   timeScale: 120,
   dayNightLook: 1,
   lookPreset: "noir",
+  ...DEFAULT_DAY_NIGHT_CURVES,
 }
 
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
@@ -442,7 +446,19 @@ export function exportOutbreakPreset(settings: OutbreakSubsystemMap): OutbreakPr
   }
 }
 
-function validateAndCoerceValue(sample: unknown, value: unknown): { ok: true; value: LabValue } | { ok: false; error: string } {
+/** Curve settings' y ranges by field: their values are curves (JSON text, or points from a knobs Copy), not free text. */
+const CURVE_FIELDS: Readonly<Record<string, readonly [number, number]>> = Object.fromEntries([
+  ...Object.entries(DAY_NIGHT_CURVES).map(([field, c]) => [field, c.range]),
+  ...LIGHT_CURVE_KEYS.map(field => [field, [0, 1] as const]),
+])
+
+function validateAndCoerceValue(sample: unknown, value: unknown, field?: string): { ok: true; value: LabValue } | { ok: false; error: string } {
+  const curveRange = field !== undefined ? CURVE_FIELDS[field] : undefined
+  if (curveRange) {
+    const points = parseCurve(value, [], { range: curveRange })
+    if (points.length >= 2) return { ok: true, value: JSON.stringify(points) }
+    return { ok: false, error: `Expected a curve ([{ "x": 0, "y": 1 }, …]), got ${String(value)}.` }
+  }
   if (typeof sample === "number") {
     if (typeof value === "number" && Number.isFinite(value)) return { ok: true, value }
     if (typeof value === "boolean") return { ok: true, value: value ? 1 : 0 }
@@ -458,6 +474,17 @@ function validateAndCoerceValue(sample: unknown, value: unknown): { ok: true; va
     return { ok: false, error: `Expected non-empty string, got ${String(value)}.` }
   }
   return { ok: false, error: "Unsupported setting type." }
+}
+
+/**
+ * A preset that sets the day cycle but has no day-night curves predates them: its curves are the defaults, so it loads
+ * looking as it did when saved instead of keeping whatever curves are on screen.
+ */
+function withDayNightCurves(out: OutbreakPresetSubsystems): OutbreakPresetSubsystems {
+  const bag = out.dayCycle as Record<string, LabValue> | undefined
+  if (!bag) return out
+  for (const [field, text] of Object.entries(DEFAULT_DAY_NIGHT_CURVES)) if (!(field in bag)) bag[field] = text
+  return out
 }
 
 /**
@@ -517,7 +544,7 @@ export function migrateOutbreakPreset(
         for (const [field, rawVal] of Object.entries(subVal as Record<string, unknown>)) {
           const resolvedField = sub === "ai" && field === "aiWalkSpeed" ? "walkSpeed" : field
           if (!(resolvedField in defaultsBag)) continue
-          const checked = validateAndCoerceValue(defaultsBag[resolvedField], rawVal)
+          const checked = validateAndCoerceValue(defaultsBag[resolvedField], rawVal, resolvedField)
           if (!checked.ok) {
             return { ok: false, error: `Invalid value for ${sub}.${resolvedField}: ${checked.error}` }
           }
@@ -526,7 +553,7 @@ export function migrateOutbreakPreset(
       } else {
         const target = resolveOutbreakSettingTarget(subKey)
         if (!target) continue
-        const checked = validateAndCoerceValue(target.sample, subVal)
+        const checked = validateAndCoerceValue(target.sample, subVal, target.field)
         if (!checked.ok) {
           return { ok: false, error: `Invalid value for ${subKey}: ${checked.error}` }
         }
@@ -535,7 +562,7 @@ export function migrateOutbreakPreset(
     }
     return {
       ok: true,
-      preset: { version: OUTBREAK_PRESET_VERSION, subsystems: out },
+      preset: { version: OUTBREAK_PRESET_VERSION, subsystems: withDayNightCurves(out) },
       migratedFrom: 2,
     }
   }
@@ -564,7 +591,7 @@ export function migrateOutbreakPreset(
       for (const [field, val] of Object.entries(rawVal as Record<string, unknown>)) {
         const resolvedField = sub === "ai" && field === "aiWalkSpeed" ? "walkSpeed" : field
         if (!(resolvedField in defaultsBag)) continue
-        const checked = validateAndCoerceValue(defaultsBag[resolvedField], val)
+        const checked = validateAndCoerceValue(defaultsBag[resolvedField], val, resolvedField)
         if (!checked.ok) {
           return { ok: false, error: `Invalid value for ${sub}.${resolvedField}: ${checked.error}` }
         }
@@ -574,7 +601,7 @@ export function migrateOutbreakPreset(
     }
     const target = resolveOutbreakSettingTarget(rawKey)
     if (!target) continue
-    const checked = validateAndCoerceValue(target.sample, rawVal)
+    const checked = validateAndCoerceValue(target.sample, rawVal, target.field)
     if (!checked.ok) {
       return { ok: false, error: `Invalid value for ${rawKey}: ${checked.error}` }
     }
@@ -583,7 +610,7 @@ export function migrateOutbreakPreset(
 
   return {
     ok: true,
-    preset: { version: OUTBREAK_PRESET_VERSION, subsystems: out },
+    preset: { version: OUTBREAK_PRESET_VERSION, subsystems: withDayNightCurves(out) },
     migratedFrom: 1,
   }
 }
@@ -654,7 +681,8 @@ export function migrateOutbreakUrlParams(
       if (rawVal === "1" || rawVal === "true") setField(routed.subsystem, routed.field, true)
       else if (rawVal === "0" || rawVal === "false") setField(routed.subsystem, routed.field, false)
     } else if (typeof routed.sample === "string" && rawVal.trim()) {
-      setField(routed.subsystem, routed.field, rawVal.trim())
+      const checked = validateAndCoerceValue(routed.sample, rawVal.trim(), routed.field)
+      if (checked.ok) setField(routed.subsystem, routed.field, checked.value)
     }
   }
 

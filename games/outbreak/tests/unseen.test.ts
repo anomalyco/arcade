@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { CUSTOM_UNIFORM_BYTES } from "@arcade/kit/gpu/renderer"
+import { LIGHT_RAMP_FLOATS } from "../src/light-ramps"
 import { Vision } from "../shared/vision"
 import {
   DEFAULT_OUTBREAK_LIGHTING,
@@ -24,7 +26,7 @@ import {
 } from "../src/unseen"
 
 describe("outbreak unseen visibility & post-process", () => {
-  test("defaults to Off (mode 0) and exposes all 12 Lab controls in the Unseen group", () => {
+  test("defaults to Off (mode 0) and exposes all 13 Lab controls in the Unseen group", () => {
     expect(DEFAULT_UNSEEN_SETTINGS.unseenMode).toBe(0)
     expect(DEFAULT_UNSEEN_SETTINGS.hideUnseenZombies).toBe(true)
     expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
@@ -40,6 +42,7 @@ describe("outbreak unseen visibility & post-process", () => {
       "unseenNoise",
       "unseenNightScale",
       "unseenEdgeSoftness",
+      "unseenDepthCurve",
       "unseenUpdateRate",
       "hideUnseenZombies",
     ])
@@ -113,7 +116,9 @@ describe("outbreak unseen visibility & post-process", () => {
     expect(unseenUniformsStruct.floatCount).toBe(8)
     expect(unseenUniformsStruct.byteSize).toBe(32)
     expect(OUTBREAK_UNSEEN_UNIFORM_OFFSET).toBe(212)
-    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(220)
+    // The falloff curves' flags and tables follow the unseen block (see light-ramps.ts).
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(220 + LIGHT_RAMP_FLOATS)
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS * 4).toBeLessThanOrEqual(CUSTOM_UNIFORM_BYTES)
 
     const settings = createOutbreakSettings()
     settings.unseen.unseenMode = 1

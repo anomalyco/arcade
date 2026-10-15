@@ -2,7 +2,7 @@ import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type Hos
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import { labPreset, type TokenPreset } from "@arcade/knobs/themes"
 import { commandsFrom, type Command, type CommandsFromOptions } from "@arcade/knobs/ui"
-import type { LabControl, LabNavigation, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
+import { isRampControl, type LabControl, type LabNavigation, type LabRow, type LabSettings, type LabTab, type LabValue } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
 /** The Lab's button (20 px, square, a hairline inset) for what knobs' button tokens don't reach. */
@@ -89,7 +89,8 @@ export type LabKnobsViewOptions = {
 /** A row knobs draws; `upper` is the second key of a low–high pair (both stay their own settings). */
 type Row = LabRow & { control: LabControl; upper?: LabControl }
 
-const same = (a: Value | undefined, b: Value | undefined) => a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]))
+const same = (a: Value | undefined, b: Value | undefined) =>
+  a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i] || (typeof v === "object" && JSON.stringify(v) === JSON.stringify(b[i]))))
 
 /** Saved variants live in the browser (knobs keeps only those: `persist: "variants"`), with legacy keys renamed. */
 function variantStorage(id: string | undefined, rows: () => readonly LabRow[]): StoragePort | null {
@@ -401,7 +402,7 @@ export class LabKnobsView {
     this.host.edited(this)
     if (meta.source === "compare") return
     // A drag ends on release; keys and discrete changes settle once they stop arriving.
-    if (!this.held.size) this.schedule(meta.source === "local" && "min" in row.control ? 350 : 0)
+    if (!this.held.size) this.schedule(meta.source === "local" && ("min" in row.control || isRampControl(row.control)) ? 350 : 0)
   }
 
   /** knobs skips disabled rows and then reports the rest key by key: they join one transaction. */

@@ -2,6 +2,7 @@ import {
   LabNavigation,
   formatLabValue,
   inferControlUnit,
+  isSwitchControl,
   resolveControlField,
   type LabControl,
   type LabRow,
@@ -13,7 +14,7 @@ import type { HostHistory } from "@arcade/knobs"
 import type { Command, CommandsFromOptions } from "@arcade/knobs/ui"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
-export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
+export { formatLabValue, inferControlUnit, isRampControl, resolveControlField } from "./lab-navigation"
 export type { LabControl, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
 export type LabOptions = {
@@ -313,7 +314,7 @@ export class LabPanel implements LabKnobsHost {
   private ensureMain(): LabKnobsView | null {
     if (this.main) return this.main
     if (!this.navigation.rows.some(row => row.control)) return null
-    const switches = this.navigation.rows.filter(row => row.control && row.control.type !== "action" && !("min" in row.control) && !("options" in row.control))
+    const switches = this.navigation.rows.flatMap(row => row.control && isSwitchControl(row.control) ? [row.control] : [])
     this.main = new LabKnobsView(this, this.body, {
       id: `${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
@@ -323,8 +324,8 @@ export class LabPanel implements LabKnobsHost {
       search: true,
       tabs: this.tabs,
       actions: this.allowPresets && switches.length ? [
-        { label: "All on", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.on ?? true) } },
-        { label: "All off", run: () => { for (const { control: c } of switches) if (c && c.type !== "action" && !("min" in c) && !("options" in c)) this.navigation.set(c, c.off ?? false) } },
+        { label: "All on", run: () => { for (const c of switches) this.navigation.set(c, c.on ?? true) } },
+        { label: "All off", run: () => { for (const c of switches) this.navigation.set(c, c.off ?? false) } },
       ] : undefined,
     })
     this.views.add(this.main)

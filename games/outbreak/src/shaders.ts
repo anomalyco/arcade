@@ -47,6 +47,7 @@ export const outbreakSceneHooks: SceneHooks = {
       // Sconce pair (one light, bulbs extra.w either side along the wall): a tight wash on their own wall (walls take
       // direct light at about a third of floors, so give that back) and a soft pool on the floor below. Only surfaces
       // behind the bulbs (the wall they hang on) get the wash, so cabinets standing out from the wall don't flare.
+      if (OL.rampOn.y > 0.5) { win = outbreakRamp(1u, sqrt(dPlan2) / r); }
       let onWall = abs(n.y) < 0.5 && dot(dv, L.cone.xy) < 0.0;
       let side = abs(L.cone.yx) * L.extra.w;
       let e1 = dot(dv - side, dv - side) + dy * dy;
@@ -58,6 +59,7 @@ export const outbreakSceneHooks: SceneHooks = {
     } else {
       let dn = max(d3, 0.85);
       let tight = max(0.5, OL.u0.w);
+      if (OL.rampOn.y > 0.5) { win = outbreakRamp(1u, sqrt(dPlan2) / r); }
       if (L.cone.w > 0.5 && L.cone.w < 1.125 && L.pos.w < 4.5 && L.extra.w > -0.5) {
         att = power * win * evalWindowAreaAttenuation(dv, dn, tight);
       } else {

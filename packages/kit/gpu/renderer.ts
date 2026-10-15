@@ -66,7 +66,7 @@ export { LIGHT_FLOATS }
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 /** Size of the game's custom uniform block at binding 13. */
-export const CUSTOM_UNIFORM_BYTES = 1024
+export const CUSTOM_UNIFORM_BYTES = 1280
 const MAX_SPRITES = 8192
 const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS

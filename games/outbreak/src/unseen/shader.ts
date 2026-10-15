@@ -101,7 +101,8 @@ fn applyOutbreakUnseenScene(
     return baseFowCol;
   }
   let unseenRaw = clamp(1.0 - visible, 0.0, 1.0);
-  let distScale = mix(0.38, 1.0, clamp(edgeDepth, 0.0, 1.0));
+  var distScale = mix(0.38, 1.0, clamp(edgeDepth, 0.0, 1.0));
+  if (OL.rampOn.z > 0.5) { distScale = outbreakRamp(2u, edgeDepth); }
   let wUnseen = clamp(unseenRaw * distScale, 0.0, 1.0);
   outbreakUnseenAlpha = wUnseen * 4.0;
   return baseFowCol;
@@ -123,7 +124,8 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
     return colIn;
   }
   let unseenRaw = clamp(1.0 - sight.x, 0.0, 1.0);
-  let distScale = mix(0.38, 1.0, clamp(sight.z, 0.0, 1.0));
+  var distScale = mix(0.38, 1.0, clamp(sight.z, 0.0, 1.0));
+  if (OL.rampOn.z > 0.5) { distScale = outbreakRamp(2u, sight.z); }
   let wUnseen = clamp(unseenRaw * distScale, 0.0, 1.0);
   outbreakUnseenAlpha = wUnseen * 4.0;
   let luma = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));

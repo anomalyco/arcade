@@ -18,7 +18,7 @@ import { supportHeight } from "../shared/terrain"
 import { audioControls } from "./audio"
 import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
-import { applyOutbreakDayNight } from "./day-night"
+import { applyOutbreakDayNight, DAY_NIGHT_CURVE_KEYS, DAY_NIGHT_CURVES } from "./day-night"
 import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
@@ -287,6 +287,16 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
         { label: "Fixed preset", value: 0 },
       ],
     },
+    ...DAY_NIGHT_CURVE_KEYS.map((key): LabControl => ({
+      key,
+      label: DAY_NIGHT_CURVES[key].label,
+      group: "Day cycle",
+      subsection: "Curves (day → dusk → night)",
+      type: "curve",
+      range: DAY_NIGHT_CURVES[key].range,
+      unit: DAY_NIGHT_CURVES[key].unit,
+      enabled: (s) => s.dayNightLook === 1,
+    })),
     {
       key: "infiniteAmmo",
       label: "Infinite ammo",
@@ -375,6 +385,10 @@ export function handleOutbreakSettingChanged(
       applyOutbreakDayNight(session.view.hour, lookSettings, settings)
       lab.refresh()
     }
+  }
+  if (key in DAY_NIGHT_CURVES && settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
+    applyOutbreakDayNight(session.view.hour, lookSettings, settings)
+    lab.refresh()
   }
   if (key === "dayNightLook") {
     if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir") {
