@@ -874,6 +874,15 @@ export function selectActiveWindowCenter(
   return { cx, cy }
 }
 
+export type StreamingWorldSnapshot = {
+  mode: WorldMode
+  windowRevision: number
+  hasNavTiles?: boolean
+  activeChunkKeys: string[]
+  centers: [string, ChunkCoord][]
+  deltas: [string, ChunkDelta][]
+}
+
 /**
  * Authoritative & client-side chunk streaming state manager.
  * Keeps active chunks loaded around all survivors, persists modified-chunk deltas (`doors`, `windows`,
@@ -891,6 +900,75 @@ export class StreamingWorld {
   private readonly maxTemplateCache = 36
   /** Increments whenever the active chunk set changes. */
   windowRevision = 0
+
+  snapshot(): StreamingWorldSnapshot {
+    const cloneDelta = (d: ChunkDelta): ChunkDelta => ({
+      key: d.key,
+      cx: d.cx,
+      cy: d.cy,
+      doors: Object.fromEntries(Object.entries(d.doors).map(([k, v]) => [k, { ...v }])),
+      windows: Object.fromEntries(Object.entries(d.windows).map(([k, v]) => [k, { ...v }])),
+      searched: { ...d.searched },
+      zombies: Object.fromEntries(
+        Object.entries(d.zombies).map(([k, z]) => [Number(k), { ...z, detachedLimbs: [...z.detachedLimbs] }]),
+      ),
+      ...(d.vehicles
+        ? {
+            vehicles: Object.fromEntries(
+              Object.entries(d.vehicles).map(([k, v]) => [Number(k), { ...v }]),
+            ),
+          }
+        : {}),
+      ...(d.removedVehicles ? { removedVehicles: { ...d.removedVehicles } } : {}),
+      aggregateZombies: d.aggregateZombies,
+      visited: d.visited,
+    })
+    return {
+      mode: this.mode,
+      windowRevision: this.windowRevision,
+      hasNavTiles: this.navTiles.size > 0,
+      activeChunkKeys: [...this.activeChunks.keys()],
+      centers: [...this.centers.entries()].map(([k, v]) => [k, { cx: v.cx, cy: v.cy }]),
+      deltas: [...this.deltas.entries()].map(([k, v]) => [k, cloneDelta(v)]),
+    }
+  }
+
+  restore(snap: StreamingWorldSnapshot): void {
+    this.mode = snap.mode
+    this.windowRevision = snap.windowRevision
+    this.centers.clear()
+    for (const [k, v] of snap.centers) this.centers.set(k, { cx: v.cx, cy: v.cy })
+    this.deltas.clear()
+    for (const [k, d] of snap.deltas) {
+      this.deltas.set(k, {
+        key: d.key,
+        cx: d.cx,
+        cy: d.cy,
+        doors: Object.fromEntries(Object.entries(d.doors).map(([dk, dv]) => [dk, { ...dv }])),
+        windows: Object.fromEntries(Object.entries(d.windows).map(([wk, wv]) => [wk, { ...wv }])),
+        searched: { ...d.searched },
+        zombies: Object.fromEntries(
+          Object.entries(d.zombies).map(([zk, z]) => [Number(zk), { ...z, detachedLimbs: [...z.detachedLimbs] }]),
+        ),
+        ...(d.vehicles
+          ? {
+              vehicles: Object.fromEntries(
+                Object.entries(d.vehicles).map(([vk, v]) => [Number(vk), { ...v }]),
+              ),
+            }
+          : {}),
+        ...(d.removedVehicles ? { removedVehicles: { ...d.removedVehicles } } : {}),
+        aggregateZombies: d.aggregateZombies,
+        visited: d.visited,
+      })
+    }
+    this.activeChunks.clear()
+    for (const key of snap.activeChunkKeys) {
+      const { cx, cy } = parseChunkKey(key)
+      this.activeChunks.set(key, this.getOrGenerateChunk(cx, cy))
+    }
+    this.clearNavTiles()
+  }
 
   constructor(
     readonly seed: number,

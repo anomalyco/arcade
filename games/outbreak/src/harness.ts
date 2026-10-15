@@ -270,8 +270,16 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       const s = host.session()
       return s instanceof LocalSession ? botsLab.getSnapshots(s) : []
     },
-    loadBotReplay: (log: Parameters<typeof botsLab.loadReplay>[0]) =>
-      botsLab.loadReplay(log, (s) => host.reset(s)),
+    loadBotReplay: (log: Parameters<typeof botsLab.loadReplay>[0], seekSeconds = 0) =>
+      botsLab.loadReplay(log, (s) => host.reset(s), seekSeconds),
+    seekBotToSeconds: (targetSeconds: number) => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.seekToSeconds(s, targetSeconds) : null
+    },
+    forkBotRollouts: (options?: Parameters<typeof botsLab.forkRolloutsFromSession>[1]) => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.forkRolloutsFromSession(s, options) : null
+    },
     audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset: host.reset,

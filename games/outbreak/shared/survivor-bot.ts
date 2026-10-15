@@ -391,6 +391,47 @@ type ThreatMemoryEntry = {
   hpEstimate: number
 }
 
+export type BotStateSnapshot = {
+  actorId: string
+  slotIndex: number
+  rngState: number
+  preset: BotSkillPresetId
+  skill: BotSkillConfig
+  threatMemory: [number, ThreatMemoryEntry][]
+  heardNoiseIds: number[]
+  recentSounds: PerceivedSound[]
+  knownContainers: [string, DiscoveredContainer][]
+  knownBenches: [string, BenchSite][]
+  knownBuildings: string[]
+  exploredWaypoints: string[]
+  smoothedAim: number
+  aimInitialized: boolean
+  currentIntent: BotIntentKind
+  currentReason: string
+  intentLockedUntil: number
+  goalX: number
+  goalY: number
+  goalLabel: string
+  currentPath: Vec[]
+  repathAt: number
+  stepCounter: number
+  kiteLoopIndex: number
+  lastPosX: number
+  lastPosY: number
+  stuckTime: number
+  unstuckUntil: number
+  unstuckAngle: number
+  activeTargetContainerId: string | null
+  lastInteractTickTime: number
+  lastPingTime: number
+  lastBundleTime: number
+  holdInteractUntil: number
+  utilityScores: BotUtilityScore[]
+  perceivedThreats: PerceivedThreat[]
+  lastCommand: Command
+  initializedMemory: boolean
+}
+
 /**
  * Human-like Outbreak survivor bot that perceives the world strictly through player line-of-sight (`Vision`),
  * camera bounds, illumination/flashlight cones, and attenuated audio, and acts exclusively by returning a
@@ -465,6 +506,126 @@ export class SurvivorBot {
   setSkill(preset: BotSkillPresetId, overrides?: Partial<BotSkillConfig>): void {
     this.preset = preset
     this.skill = { ...BOT_SKILL_PRESETS[preset], ...overrides }
+  }
+
+  toSnapshot(): BotStateSnapshot {
+    return {
+      actorId: this.actorId,
+      slotIndex: this.slotIndex,
+      rngState: this.rng.getState(),
+      preset: this.preset,
+      skill: { ...this.skill },
+      threatMemory: [...this.threatMemory.entries()].map(([id, m]) => [id, { ...m }]),
+      heardNoiseIds: [...this.heardNoiseIds],
+      recentSounds: this.recentSounds.map((s) => ({ ...s })),
+      knownContainers: [...this.knownContainers.entries()].map(([id, c]) => [
+        id,
+        { ...c, rect: [...c.rect] as Rect },
+      ]),
+      knownBenches: [...this.knownBenches.entries()].map(([id, b]) => [
+        id,
+        {
+          ...b,
+          bench: { ...b.bench, rect: [...b.bench.rect] as Rect },
+          stash: { ...b.stash, rect: [...b.stash.rect] as Rect },
+        },
+      ]),
+      knownBuildings: [...this.knownBuildings],
+      exploredWaypoints: [...this.exploredWaypoints],
+      smoothedAim: this.smoothedAim,
+      aimInitialized: this.aimInitialized,
+      currentIntent: this.currentIntent,
+      currentReason: this.currentReason,
+      intentLockedUntil: this.intentLockedUntil,
+      goalX: this.goalX,
+      goalY: this.goalY,
+      goalLabel: this.goalLabel,
+      currentPath: this.currentPath.map((pt) => ({ x: pt.x, y: pt.y })),
+      repathAt: this.repathAt,
+      stepCounter: this.stepCounter,
+      kiteLoopIndex: this.kiteLoopIndex,
+      lastPosX: this.lastPosX,
+      lastPosY: this.lastPosY,
+      stuckTime: this.stuckTime,
+      unstuckUntil: this.unstuckUntil,
+      unstuckAngle: this.unstuckAngle,
+      activeTargetContainerId: this.activeTargetContainerId,
+      lastInteractTickTime: this.lastInteractTickTime,
+      lastPingTime: this.lastPingTime,
+      lastBundleTime: this.lastBundleTime,
+      holdInteractUntil: this.holdInteractUntil,
+      utilityScores: this.utilityScores.map((u) => ({ ...u })),
+      perceivedThreats: this.perceivedThreats.map((t) => ({ ...t })),
+      lastCommand: { ...this.lastCommand },
+      initializedMemory: this.initializedMemory,
+    }
+  }
+
+  restoreSnapshot(snap: BotStateSnapshot): void {
+    this.rng.setState(snap.rngState)
+    this.preset = snap.preset
+    this.skill = { ...snap.skill }
+    this.threatMemory.clear()
+    for (const [id, m] of snap.threatMemory) {
+      this.threatMemory.set(id, { ...m, lastSeenAt: m.lastSeenAt ?? -1e9 })
+    }
+    this.heardNoiseIds.clear()
+    for (const id of snap.heardNoiseIds) this.heardNoiseIds.add(id)
+    this.recentSounds.length = 0
+    for (const s of snap.recentSounds) this.recentSounds.push({ ...s })
+    this.knownContainers.clear()
+    for (const [id, c] of snap.knownContainers) {
+      this.knownContainers.set(id, { ...c, rect: [...c.rect] as Rect })
+    }
+    this.knownBenches.clear()
+    for (const [id, b] of snap.knownBenches) {
+      this.knownBenches.set(id, {
+        ...b,
+        bench: { ...b.bench, rect: [...b.bench.rect] as Rect },
+        stash: { ...b.stash, rect: [...b.stash.rect] as Rect },
+      })
+    }
+    this.knownBuildings.clear()
+    for (const id of snap.knownBuildings) this.knownBuildings.add(id)
+    this.exploredWaypoints.clear()
+    for (const w of snap.exploredWaypoints) this.exploredWaypoints.add(w)
+    this.smoothedAim = snap.smoothedAim
+    this.aimInitialized = snap.aimInitialized
+    this.currentIntent = snap.currentIntent
+    this.currentReason = snap.currentReason
+    this.intentLockedUntil = snap.intentLockedUntil
+    this.goalX = snap.goalX
+    this.goalY = snap.goalY
+    this.goalLabel = snap.goalLabel
+    this.currentPath = snap.currentPath.map((pt) => ({ x: pt.x, y: pt.y }))
+    this.repathAt = snap.repathAt
+    this.stepCounter = snap.stepCounter
+    this.kiteLoopIndex = snap.kiteLoopIndex
+    this.lastPosX = snap.lastPosX
+    this.lastPosY = snap.lastPosY
+    this.stuckTime = snap.stuckTime
+    this.unstuckUntil = snap.unstuckUntil
+    this.unstuckAngle = snap.unstuckAngle
+    this.activeTargetContainerId = snap.activeTargetContainerId
+    this.lastInteractTickTime = snap.lastInteractTickTime
+    this.lastPingTime = snap.lastPingTime
+    this.lastBundleTime = snap.lastBundleTime
+    this.holdInteractUntil = snap.holdInteractUntil
+    this.utilityScores = snap.utilityScores.map((u) => ({ ...u }))
+    this.perceivedThreats = snap.perceivedThreats.map((t) => ({ ...t }))
+    this.lastCommand = { ...snap.lastCommand }
+    this.initializedMemory = snap.initializedMemory
+    this.lastTopologyKey = ""
+  }
+
+  static fromSnapshot(snap: BotStateSnapshot): SurvivorBot {
+    const bot = new SurvivorBot(snap.actorId, snap.slotIndex, 1, snap.preset, snap.skill)
+    bot.restoreSnapshot(snap)
+    return bot
+  }
+
+  clone(): SurvivorBot {
+    return SurvivorBot.fromSnapshot(this.toSnapshot())
   }
 
   /** Produces the next fixed-tick player `Command` without mutating simulation state. */
@@ -862,7 +1023,7 @@ export class SurvivorBot {
             vx: z.vx,
             vy: z.vy,
             firstDetectedAt: prev ? prev.firstDetectedAt : now,
-            lastSeenAt: prev ? prev.lastSeenAt : -Infinity,
+            lastSeenAt: prev ? prev.lastSeenAt : -1e9,
             lastUpdatedAt: now,
             source: "sound",
             state: z.state,
@@ -930,9 +1091,18 @@ export class SurvivorBot {
 
     const geomKey = `${town.barriers.length}:${town.props.length}:${town.doors.length}`
     if (geomKey === this.navGeometryKey) return
+    const wasEmpty = this.navGeometryKey === ""
     this.navGeometryKey = geomKey
 
+    // Build localNav from door-invariant static solids + door portals so it is identical at t=0 and after snapshot restore
+    const savedDoorOpen = town.doors.map((d) => d.open)
+    const savedWinOpen = town.windows.map((w) => w.open)
+    for (const d of town.doors) d.open = false
+    for (const w of town.windows) w.open = false
     const solids = solidRects(town)
+    for (let i = 0; i < town.doors.length; i++) town.doors[i]!.open = savedDoorOpen[i]!
+    for (let i = 0; i < town.windows.length; i++) town.windows[i]!.open = savedWinOpen[i]!
+
     const portals: NavPortal[] = town.doors.map((d): NavPortal => ({
       id: d.id,
       kind: "door",
@@ -942,7 +1112,7 @@ export class SurvivorBot {
       barricadePlanks: 0,
     }))
     this.localNav.rebuild(solids, portals, 0.22)
-    this.repathAt = 0
+    if (!wasEmpty) this.repathAt = 0
   }
 
   private hasMeleeWeaponInHotbar(world: BotWorldView): { slotIndex: number; item: string } | null {

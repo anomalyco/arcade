@@ -239,6 +239,11 @@ export type AgentAttackEvent = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
+export type NoiseBusSnapshot = {
+  nextId: number
+  events: NoiseEvent[]
+}
+
 /**
  * Deterministic bounded acoustic event bus.
  * Coalesces rapid continuous footsteps per source while keeping discrete impulses distinct.
@@ -255,6 +260,21 @@ export class NoiseBus {
   reset(): void {
     this.events.length = 0
     this.nextId = 1
+  }
+
+  snapshot(): NoiseBusSnapshot {
+    return {
+      nextId: this.nextId,
+      events: this.events.map((e) => ({ ...e })),
+    }
+  }
+
+  restore(snap: NoiseBusSnapshot): void {
+    this.nextId = snap.nextId
+    this.events.length = 0
+    for (const e of snap.events) {
+      this.events.push({ ...e })
+    }
   }
 
   emit(input: {
@@ -1129,6 +1149,8 @@ export type AIWorldContext = {
   worldSize: number
   /** Optional explicit world bounds [minX, minY, maxX, maxY] for streaming worlds. */
   worldBounds?: Rect
+  /** Optional simulation PRNG state mix for forked rollouts. */
+  rngSeedMix?: number
   /** 1.0 during day, up to config.nightMultiplier at night. */
   nightFactor: number
   solids: readonly Rect[]
@@ -1150,8 +1172,15 @@ export type AIStepResult = {
 
 const neighborScratch: number[] = []
 
-function pickWanderPoint(agent: AIAgent, nav: GridNav, worldSize: number, tick: number, worldBounds?: Rect): void {
-  const rng = new Rng((agent.seed ^ Math.imul(tick + 1, 0x27d4eb2d)) >>> 0)
+function pickWanderPoint(
+  agent: AIAgent,
+  nav: GridNav,
+  worldSize: number,
+  tick: number,
+  worldBounds?: Rect,
+  rngSeedMix = 0,
+): void {
+  const rng = new Rng((agent.seed ^ Math.imul(tick + 1, 0x27d4eb2d) ^ (rngSeedMix >>> 0)) >>> 0)
   const minX = worldBounds ? worldBounds[0] + 2 : 2
   const minY = worldBounds ? worldBounds[1] + 2 : 2
   const maxX = worldBounds ? worldBounds[2] - 2 : worldSize - 2
@@ -1244,7 +1273,7 @@ function focusScore(a: AIAgent, target: PerceptionTarget, sight: SightEvaluation
  * Uses spatial hashing and staggered perception/repath updates to stay well under 1 ms for 50–100 agents.
  */
 export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResult {
-  const { dt, time, tick, worldSize, worldBounds, nightFactor, solids, walls, closedDoors, sightBlockers, portals, nav, spatial, noiseBus, config, targets } = ctx
+  const { dt, time, tick, worldSize, worldBounds, rngSeedMix = 0, nightFactor, solids, walls, closedDoors, sightBlockers, portals, nav, spatial, noiseBus, config, targets } = ctx
   const minX = worldBounds ? worldBounds[0] + 0.5 : 0.5
   const minY = worldBounds ? worldBounds[1] + 0.5 : 0.5
   const maxX = worldBounds ? worldBounds[2] - 0.5 : worldSize - 0.5
@@ -1610,7 +1639,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         a.stateTime = 0
         a.awareness = 0
         a.targetKind = "none"
-        pickWanderPoint(a, nav, worldSize, tick, worldBounds)
+        pickWanderPoint(a, nav, worldSize, tick, worldBounds, rngSeedMix)
       }
     }
 
@@ -1622,7 +1651,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     if (a.state === "wander") {
       a.timer -= dt
       if (a.timer <= 0 || Math.hypot(a.wanderX - a.x, a.wanderY - a.y) < 0.95) {
-        pickWanderPoint(a, nav, worldSize, tick, worldBounds)
+        pickWanderPoint(a, nav, worldSize, tick, worldBounds, rngSeedMix)
         a.timer = 3.2 + ((a.id * 17 + tick) % 5)
       }
       const dx = a.wanderX - a.x

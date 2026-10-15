@@ -503,6 +503,23 @@ export function spawnPacedTownZombies(
   return agents
 }
 
+export type PacingDirectorSnapshot = {
+  spawnOrigins: [string, { x: number; y: number }][]
+  prevPositions: [string, { x: number; y: number }][]
+  maxDistanceExplored: number
+  cumulativeDistanceWalked: number
+  noiseHeat: number
+  totalNoiseImpulse: number
+  lastNoiseId: number
+  firstEncounterStage: FirstEncounterStage
+  firstContactTime: number | null
+  reinforceCooldown: number
+  waveCooldown: number
+  inViewSpawns: number
+  behindSpawns: number
+  telemetry: PacingTelemetry
+}
+
 /**
  * Authoritative Opening & Night Pacing Director.
  * Drives the transition from a quiet late-afternoon safehouse opening to a first 1–3 zombie encounter at dusk,
@@ -559,6 +576,44 @@ export class OutbreakPacingDirector {
     this.waveCooldown = 18.0
     this.inViewSpawns = 0
     this.behindSpawns = 0
+  }
+
+  snapshot(): PacingDirectorSnapshot {
+    return {
+      spawnOrigins: [...this.spawnOrigins.entries()].map(([k, v]) => [k, { x: v.x, y: v.y }]),
+      prevPositions: [...this.prevPositions.entries()].map(([k, v]) => [k, { x: v.x, y: v.y }]),
+      maxDistanceExplored: this.maxDistanceExplored,
+      cumulativeDistanceWalked: this.cumulativeDistanceWalked,
+      noiseHeat: this.noiseHeat,
+      totalNoiseImpulse: this.totalNoiseImpulse,
+      lastNoiseId: this.lastNoiseId,
+      firstEncounterStage: this.firstEncounterStage,
+      firstContactTime: this.firstContactTime,
+      reinforceCooldown: this.reinforceCooldown,
+      waveCooldown: this.waveCooldown,
+      inViewSpawns: this.inViewSpawns,
+      behindSpawns: this.behindSpawns,
+      telemetry: { ...this.telemetry },
+    }
+  }
+
+  restore(snap: PacingDirectorSnapshot): void {
+    this.spawnOrigins.clear()
+    for (const [k, v] of snap.spawnOrigins) this.spawnOrigins.set(k, { x: v.x, y: v.y })
+    this.prevPositions.clear()
+    for (const [k, v] of snap.prevPositions) this.prevPositions.set(k, { x: v.x, y: v.y })
+    this.maxDistanceExplored = snap.maxDistanceExplored
+    this.cumulativeDistanceWalked = snap.cumulativeDistanceWalked
+    this.noiseHeat = snap.noiseHeat
+    this.totalNoiseImpulse = snap.totalNoiseImpulse
+    this.lastNoiseId = snap.lastNoiseId
+    this.firstEncounterStage = snap.firstEncounterStage
+    this.firstContactTime = snap.firstContactTime
+    this.reinforceCooldown = snap.reinforceCooldown
+    this.waveCooldown = snap.waveCooldown
+    this.inViewSpawns = snap.inViewSpawns
+    this.behindSpawns = snap.behindSpawns
+    this.telemetry = { ...snap.telemetry }
   }
 
   /** Computes the current pacing curve state from elapsed time, exploration, noise, threat, and survivor count. */
@@ -664,6 +719,7 @@ export class OutbreakPacingDirector {
     tick: number,
     allocAgentId: () => number,
     manualSpawnOnly: boolean,
+    rngSeedMix = 0,
   ): void {
     const pCount = Math.max(1, survivors.length)
     for (let i = 0; i < survivors.length; i++) {
@@ -846,7 +902,7 @@ export class OutbreakPacingDirector {
     ) {
       this.reinforceCooldown = Math.max(3.5, (11.5 - 6.0 * this.telemetry.ramp) / this.telemetry.coopScale)
       const batch = Math.min(2, this.telemetry.desiredPopulation - livingCount)
-      const rng = new Rng((town.seed ^ Math.imul(tick + 101, 0x85ebca6b)) >>> 0)
+      const rng = new Rng((town.seed ^ Math.imul(tick + 101, 0x85ebca6b) ^ (rngSeedMix >>> 0)) >>> 0)
       const dynamicSafeRadius = Math.max(16, config.safeRadius * (1 - 0.25 * this.telemetry.ramp))
 
       for (let b = 0; b < batch; b++) {
@@ -861,7 +917,7 @@ export class OutbreakPacingDirector {
         )
         if (!pt) break
         const id = allocAgentId()
-        const agent = createAIAgent(id, town.seed + id * 13, pt.x, pt.y, pt.aim)
+        const agent = createAIAgent(id, (town.seed + id * 13 + (rngSeedMix >>> 0)) >>> 0, pt.x, pt.y, pt.aim)
         agent.timer = rng.range(3.5, 7.5)
         agents.push(agent)
         livingCount++
@@ -878,7 +934,8 @@ export class OutbreakPacingDirector {
       const rate = (0.75 + 0.55 * this.telemetry.threat) * (isHordeCondition ? 1.35 : 0.85)
       this.waveCooldown -= dt * rate
       if (this.waveCooldown <= 0) {
-        this.waveCooldown = isHordeCondition ? 13 + (tick % 6) : 20 + (tick % 8)
+        const waveJitter = rngSeedMix ? ((rngSeedMix ^ tick) >>> 0) % 5 : tick % (isHordeCondition ? 6 : 8)
+        this.waveCooldown = (isHordeCondition ? 13 : 20) + waveJitter
         const maxWaveSize = isHordeCondition
           ? Math.min(
               this.telemetry.effectiveMaxActive,
