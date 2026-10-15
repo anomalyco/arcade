@@ -56,7 +56,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | `sim/rng` | Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`) | Yes | Yes | Yes | Yes | Yes | — |
 | `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | — | — |
-| `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | — | — | — | — |
+| `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — |
 | `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — |
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — |
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — |
@@ -72,7 +72,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — |
 | `fx/{explosion,fire-water,splatter*}` | Multi-stage explosions, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
 | `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | — | — |
-| `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | — | — | Yes | — |
+| `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — |
 | `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — |
 | `client/{input,camera}` & `orbit-gestures` | Top-down `Input` and `Camera`, plus 3D viewport orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — |
 | `feel/*` | `GameFeel` trauma² shake, directional recoil kick, hit-stop, impulse blur, and reduced-motion | — | Yes | Yes | — | — | — |

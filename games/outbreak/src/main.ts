@@ -72,6 +72,9 @@ import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
 import { audioControls, OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
 import { applyProgressionSetting, PROGRESSION_SCENES, progressionLabControls, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { stageVehicleScene, VEHICLE_SCENES, vehicleLabControls, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
+import { OutbreakVehicleAudio } from "./vehicle-audio"
+import { OutbreakVehicleRenderer } from "./vehicles"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import {
@@ -280,6 +283,16 @@ async function main() {
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
+  const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
+  const vehicleAudio = new OutbreakVehicleAudio(audio)
+  const processedVehicleHits = new Set<string>()
+  vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
+  vehicleRenderer.onCrash = (_v, impact) => {
+    feel.emit("barricade-bash", { power: Math.min(1.5, impact / 6), broke: impact > 8 })
+  }
+  vehicleRenderer.onBang = () => {
+    feel.emit("barricade-bash", { power: 0.85, broke: false })
+  }
   const updateProfile = () => {
     avatar.profile =
       settings.zombies.humanProfile === 1
@@ -296,6 +309,16 @@ async function main() {
       session.view.hour = wrapHour(hour)
     },
     hud: inventoryHud,
+    offline: () => !coop.net,
+  }
+  const vehicleHost: VehicleLabHost = {
+    sim: () => session.sim,
+    view: () => session.view,
+    pose: (x, y, aim) => harness.pose(x, y, aim),
+    setHour: (hour) => {
+      settings.dayCycle.hour = hour
+      session.view.hour = wrapHour(hour)
+    },
     offline: () => !coop.net,
   }
   const controls: LabControl[] = [
@@ -349,6 +372,7 @@ async function main() {
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
+    ...vehicleLabControls(vehicleHost),
     ...progressionLabControls(progressionHost),
     ...groundControls,
     {
@@ -631,6 +655,9 @@ async function main() {
     const fireEdge = input.takeFirePress()
     const reloadEdge = input.takeReload()
     const meleeEdge = input.takeMelee()
+    const seatEdge = input.takeSeat()
+    const hornHeld = input.held("KeyH")
+    const spaceHeld = Boolean(session.view.player.vehicleId) && input.held("Space")
     const barricadeEdge = pendingBarricade
     pollHolds(wallNow)
     const verbs = pendingVerbs
@@ -646,7 +673,7 @@ async function main() {
         {
           mx: step.mx,
           my: step.my,
-          sprint: step.sprint,
+          sprint: step.sprint || spaceHeld,
           aim: Math.atan2(target.y - p.y, target.x - p.x),
           interact: step.interact,
           flashlight: step.flashlight,
@@ -656,6 +683,8 @@ async function main() {
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
+          ...(idx === 0 && seatEdge ? { seat: true } : {}),
+          ...(hornHeld ? { horn: true } : {}),
           ...(idx === 0 ? verbs : {}),
           ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
           ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
@@ -894,6 +923,7 @@ async function main() {
           const x = Number(args?.x ?? session.view.player.x)
           const y = Number(args?.y ?? session.view.player.y)
           const aim = typeof args?.aim === "number" ? args.aim : session.view.player.aim
+          session.sim.vehicles.leaveSeat(session.view.actorId, session.view.player)
           Object.assign(session.view.player, {
             x,
             y,
@@ -1033,6 +1063,23 @@ async function main() {
           if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
           stageProgression(progressionHost, scene)
           return { scene }
+        },
+      },
+      {
+        id: "vehicle.stage",
+        label: "Stage an Outbreak Vehicle Scene",
+        shortLabel: "Vehicle Scene",
+        category: "Scene",
+        undoable: false,
+        args: { scene: { type: "string", description: `Scene (${VEHICLE_SCENES.join(", ")})` } },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const scene = String(args?.scene ?? "night-headlights") as VehicleScene
+          if (!VEHICLE_SCENES.includes(scene)) throw new Error(`Unknown vehicle scene ${scene}`)
+          stageVehicleScene(vehicleHost, scene)
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return { scene, vehicles: session.view.vehicles.length }
         },
       },
       {
@@ -1209,6 +1256,7 @@ async function main() {
     zombieCrowd.reset()
     combatFx.reset()
     ambientMotion.reset()
+    vehicleRenderer.reset()
   }
   function reset(nextSeed = seed) {
     if (session !== coop.net) session.close()
@@ -1223,6 +1271,8 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    vehicleRenderer.reset()
+    processedVehicleHits.clear()
     feel.reset()
     prevHealth = session.view.player.health
     prevShoveAnim = session.view.player.shoveAnim
@@ -1403,6 +1453,32 @@ async function main() {
     }
 
     combatFx.legacyMode = settings.bloodStyle === 2
+    // Emit blood splatter and game feel for vehicle zombie impacts
+    for (const hit of session.sim.vehicles.recentHits) {
+      const hitKey = `${hit.vehicleId}:${hit.zombieId}:${hit.time.toFixed(3)}`
+      if (processedVehicleHits.has(hitKey)) continue
+      processedVehicleHits.add(hitKey)
+      if (processedVehicleHits.size > 128) {
+        processedVehicleHits.delete(processedVehicleHits.keys().next().value!)
+      }
+      if (settings.bloodStyle !== 0) {
+        combatFx.emitShoveHit(
+          hit.x,
+          hit.y,
+          Math.atan2(hit.dirY, hit.dirX),
+          supportHeight(town, hit.x, hit.y),
+          hit.killed ? 3 : 1,
+          Math.floor(hit.time * 1000) + hit.zombieId,
+        )
+      }
+      if (hit.vehicleId === p.vehicleId) {
+        feel.emit(hit.killed ? "kill" : "hit-confirmed", {
+          power: Math.min(1.4, 0.65 + hit.speed * 0.08),
+          dir: Math.atan2(hit.dirY, hit.dirX),
+          lethal: hit.killed,
+        })
+      }
+    }
     let addCount = combatFx.processShots(
       shots,
       time,
@@ -1450,11 +1526,18 @@ async function main() {
       canvas.height = Math.round(h * dpr)
       renderer.resize(canvas.width, canvas.height)
     }
-    cam.zoomOffset = settings.view.zoom - 24
+    const localVehicle = session.sim.vehicles.vehicleOf(p)
+    const vehSpeed = localVehicle ? Math.hypot(localVehicle.vx, localVehicle.vy) : 0
+    const speedPullback = localVehicle
+      ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
+      : 0
+    cam.zoomOffset = settings.view.zoom - 24 + speedPullback
     const drawn = coop.pose(p)
     const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
-    cam.follow(camX, camY, 0, 0, dt, false)
+    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
+    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
+    cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.applyFeel(feelOffset)
     cam.update(w / h)
     const mode = resolveWorldMode(settings.world.worldMode)
@@ -1471,10 +1554,11 @@ async function main() {
           town.terrain,
           town.foliageDensity ?? 1,
           mode,
+          vehSpeed,
         )
         worldStreamer.stepBakeQueue(1.8)
       } else {
-        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
+        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode, vehSpeed)
         currentWindowOrigin = streamed.origin
         currentIsStreamWindow = true
         if (streamed.changed && streamed.level) {
@@ -1509,7 +1593,17 @@ async function main() {
         if (s) occluders.set([...s.rect, s.height, 0, 0, 0], lightOccluders++ * OCC_FLOATS)
       }
     }
-    const visChanged = vision.update(p.x, p.y, p.aim, blockers, settings.vision, peek)
+    const drivingHeadlights =
+      Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
+    const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const effectiveVisionSettings = drivingHeadlights
+      ? {
+          ...settings.vision,
+          range: Math.max(settings.vision.range, settings.vehicle.headlightRange + 4),
+          cone: Math.max(settings.vision.cone, 130),
+        }
+      : settings.vision
+    const visChanged = vision.update(p.x, p.y, effectiveVisionAim, blockers, effectiveVisionSettings, peek)
     if (scenery.update(town, vision) || visChanged) {
       combinedFog.markDirty()
       combinedFog.update(vision, scenery, true)
@@ -1538,18 +1632,18 @@ async function main() {
     lights.fill(0)
     const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
     const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
-    const sightAim = peek ? peek.aim : p.aim
+    const sightAim = peek ? peek.aim : effectiveVisionAim
     const sightCone = activePeek
-      ? settings.vision.cone + (Math.max(settings.vision.cone, activePeek.cone) - settings.vision.cone) * peekBlend
-      : settings.vision.cone
+      ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
+      : effectiveVisionSettings.cone
     const sightAwareness = activePeek
-      ? settings.vision.awareness + (Math.max(settings.vision.awareness, activePeek.awareness) - settings.vision.awareness) * peekBlend
-      : settings.vision.awareness
+      ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
+      : effectiveVisionSettings.awareness
     lights.set([
       sightX,
       1.65 + supportHeight(town, p.x, p.y),
       sightY,
-      settings.vision.range,
+      effectiveVisionSettings.range,
       0,
       0,
       0,
@@ -1569,30 +1663,46 @@ async function main() {
     let flashlightAirLimit = 0
     let flashlightBounceHeight = playerGroundY + 0.3
     const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
-    if (p.flashlightOutput > 0.001 && settings.flashlight.flashlightIntensity > 0.001) {
-      const fx = p.x + Math.cos(p.aim) * 0.25
-      const fy = p.y + Math.sin(p.aim) * 0.25
-      const fh = 1.34 + playerGroundY
-      const cosHalf = Math.cos((settings.flashlight.flashlightCone * Math.PI) / 360)
+    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
+    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
+    const beamIntensity = drivingHeadlights
+      ? settings.vehicle.headlightPower * 0.85
+      : settings.flashlight.flashlightIntensity
+    if (beamOutput > 0.001 && beamIntensity > 0.001) {
+      const fwdOff = drivingHeadlights && localVehicle ? localVehicle.spec.length * 0.48 : 0.25
+      const baseX = drivingHeadlights && localVehicle ? localVehicle.x : p.x
+      const baseY = drivingHeadlights && localVehicle ? localVehicle.y : p.y
+      const fx = baseX + Math.cos(beamAim) * fwdOff
+      const fy = baseY + Math.sin(beamAim) * fwdOff
+      const fh = (drivingHeadlights ? 0.72 : 1.34) + playerGroundY
+      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
       // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
-      const power = p.flashlightOutput * settings.flashlight.flashlightIntensity
+      const power = beamOutput * beamIntensity
       flashlightSlot = count
       flashlightHeight = fh
-      const wall = raycast(fx, fy, Math.cos(p.aim), Math.sin(p.aim), blockers, settings.flashlight.flashlightRange)
+      const wall = raycast(fx, fy, Math.cos(beamAim), Math.sin(beamAim), blockers, beamRange)
       const hit = Math.min(wall, settings.flashlight.beamPoolDistance)
-      flashlightBounce[0] = fx + Math.cos(p.aim) * Math.max(0.3, hit - 0.15)
-      flashlightBounce[1] = fy + Math.sin(p.aim) * Math.max(0.3, hit - 0.15)
+      flashlightBounce[0] = fx + Math.cos(beamAim) * Math.max(0.3, hit - 0.15)
+      flashlightBounce[1] = fy + Math.sin(beamAim) * Math.max(0.3, hit - 0.15)
       flashlightAirLimit = wall
       flashlightBounceHeight = playerGroundY + (wall < settings.flashlight.beamPoolDistance ? 0.9 : 0.3)
       lights.set(
-        [fx, fh, fy, settings.flashlight.flashlightRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
+        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(beamAim), Math.sin(beamAim), cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
     count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift, settings.survivor)
+    const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
+    const survivorBatches = avatar.draw(
+      localVehicle ? { ...drawn, vx: 0, vy: 0 } : drawn,
+      vdt,
+      time,
+      (x, z) => supportHeight(town, x, z) + lift - riderSink,
+      settings.survivor,
+    )
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     const zombieBatches = zombieCrowd.draw(
       zombies,
@@ -1659,11 +1769,33 @@ async function main() {
         unshadowedLamps.push(packed)
       }
     }
-    const shadowLightCount = count
+    let shadowLightCount = count
     for (const packed of unshadowedLamps) {
       if (count >= MAX_LIGHTS) break
       lights.set(packed, count++ * LIGHT_FLOATS)
     }
+    const vehOut = vehicleRenderer.collect(
+      vdt,
+      time,
+      town,
+      session.view.vehicles,
+      p.vehicleId,
+      view,
+      cam.eye,
+      lights,
+      count,
+      shadowLightCount,
+      frameLightOccluders,
+      alphaSprites,
+      0,
+      addSprites,
+      addCount,
+      settings.vehicle,
+    )
+    count = vehOut.lights.lightCount
+    shadowLightCount = vehOut.lights.shadowLightCount
+    addCount = vehOut.lights.addCount
+    const vehAlphaStart = vehOut.lights.alphaCount
     const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
     const weatherOut = weatherController.stepAndPrepare({
       dt,
@@ -1702,8 +1834,8 @@ async function main() {
         playerX: p.x,
         playerY: p.y,
         playerH: playerGroundY,
-        playerAim: p.aim,
-        flashlightOutput: p.flashlightOutput,
+        playerAim: beamAim,
+        flashlightOutput: beamOutput,
         flashlightSlot,
         flashlightHeight,
         flashlightBounce,
@@ -1783,7 +1915,7 @@ async function main() {
       w,
       h,
       alphaSprites,
-      0,
+      vehAlphaStart,
     )
     const fogSoundAlphaCount = collectFogSoundSprites(
       zombies,
@@ -1818,6 +1950,7 @@ async function main() {
     render.batches = [
       ...groundWearBatches,
       ...clutterBatches,
+      ...vehOut.batches,
       ...motionOut.batches,
       ...survivorBatches,
       ...coopBatches,
@@ -1853,6 +1986,8 @@ async function main() {
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
+    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
+    vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     inventoryHud.sync(session.view, cam, w, h)
@@ -2045,6 +2180,32 @@ async function main() {
         lastBakeMs: worldStreamer.lastBakeMs,
         deltasCount: session.sim.worldStream.deltas.size,
       },
+      vehicles: session.view.vehicles.map((v) => ({
+        id: v.id,
+        kind: v.kind,
+        label: v.spec.label,
+        x: v.x,
+        y: v.y,
+        h: v.h,
+        vx: v.vx,
+        vy: v.vy,
+        speed: Math.hypot(v.vx, v.vy),
+        hp: v.hp,
+        maxHp: v.maxHp,
+        fuel: v.fuel,
+        maxFuel: v.maxFuel,
+        hasBattery: v.hasBattery,
+        hasKeys: v.hasKeys,
+        headlights: v.headlights,
+        engineOn: v.engineOn,
+        horn: v.horn,
+        wreck: v.wreck,
+        seats: [...v.seats],
+        zombieHits: v.zombieHits,
+        zombieKills: v.zombieKills,
+        grabbingZombies: v.grabbingZombies,
+        bangCount: v.bangCount,
+      })),
       }
     },
     emitFeel(kind: FeelEventKind, payload?: FeelEventPayload) {
@@ -2061,7 +2222,7 @@ async function main() {
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
-    audio: () => audio.telemetry(),
+    audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset,
     freeze: (value = true) => {
@@ -2137,6 +2298,7 @@ async function main() {
     },
     getLook: () => ({ ...lookSettings }),
     pose(x: number, y: number, aim: number) {
+      session.sim.vehicles.leaveSeat(session.view.actorId, session.view.player)
       Object.assign(session.view.player, {
         x,
         y,
@@ -2174,6 +2336,10 @@ async function main() {
     /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
+    },
+    /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
+    stageVehicle(scene: VehicleScene) {
+      stageVehicleScene(vehicleHost, scene)
     },
     /** Gives the local survivor an item, routed to belt, hand or pack. */
     give(item: string, count = 1) {

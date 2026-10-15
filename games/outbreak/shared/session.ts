@@ -8,12 +8,14 @@ import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning
 import type { Town } from "./map"
 import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
+import { DEFAULT_VEHICLE_TUNING, type OutbreakVehicle, type OutbreakVehicleSubsystem, type VehicleTuning } from "./vehicles"
 import type { StreamingWorld, WorldMode } from "./world"
 
 export type NamespacedSessionTuning = {
   stamina?: Partial<StaminaTuning>
   flashlight?: Partial<FlashlightTuning>
   ai?: Partial<AIConfig>
+  vehicle?: Partial<VehicleTuning>
   combat?: {
     /** Dev cheat: keeps the pistol magazine full. 1 = on. */
     infiniteAmmo?: number
@@ -22,7 +24,8 @@ export type NamespacedSessionTuning = {
 
 export type LegacyFlatSessionTuning = Partial<StaminaTuning> &
   Partial<FlashlightTuning> &
-  Partial<AIConfig> & {
+  Partial<AIConfig> &
+  Partial<VehicleTuning> & {
     /** Dev cheat: keeps the pistol magazine full. 1 = on. */
     infiniteAmmo?: number
   }
@@ -33,11 +36,12 @@ export type ResolvedSessionTuning = {
   stamina: StaminaTuning
   flashlight: FlashlightTuning
   ai: Partial<AIConfig> | undefined
+  vehicle: VehicleTuning
   infiniteAmmo: boolean
 }
 
 function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedSessionTuning {
-  return "stamina" in tuning || "flashlight" in tuning || "ai" in tuning || "combat" in tuning
+  return "stamina" in tuning || "flashlight" in tuning || "ai" in tuning || "vehicle" in tuning || "combat" in tuning
 }
 
 export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTuning {
@@ -46,6 +50,7 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
       stamina: DEFAULT_STAMINA_TUNING,
       flashlight: DEFAULT_FLASHLIGHT_TUNING,
       ai: undefined,
+      vehicle: DEFAULT_VEHICLE_TUNING,
       infiniteAmmo: false,
     }
   }
@@ -54,6 +59,7 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
       stamina: tuning.stamina ? { ...DEFAULT_STAMINA_TUNING, ...tuning.stamina } : DEFAULT_STAMINA_TUNING,
       flashlight: tuning.flashlight ? { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning.flashlight } : DEFAULT_FLASHLIGHT_TUNING,
       ai: tuning.ai,
+      vehicle: tuning.vehicle ? { ...DEFAULT_VEHICLE_TUNING, ...tuning.vehicle } : DEFAULT_VEHICLE_TUNING,
       infiniteAmmo: Boolean(tuning.combat?.infiniteAmmo),
     }
   }
@@ -81,6 +87,7 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
           aiDebugOverlay: tuning.aiDebugOverlay,
         }
       : undefined,
+    vehicle: { ...DEFAULT_VEHICLE_TUNING, ...tuning },
     infiniteAmmo: Boolean(tuning.infiniteAmmo),
   }
 }
@@ -107,6 +114,10 @@ export type Command = {
   bundle?: boolean
   /** Q tap: mark what you are looking at for the squad. */
   ping?: boolean
+  /** C tap: cycle vehicle seat. */
+  seat?: boolean
+  /** H hold: vehicle horn. */
+  horn?: boolean
   /** A digit while a strip is open (container, stash, bench, field craft or pack). */
   pick?: { mode: PickMode; index: number }
 }
@@ -119,6 +130,8 @@ export type Survivor = {
   aim: number
   health: number
   maxHealth: number
+  vehicleId?: number | null
+  seatIndex?: number
 } & StaminaState &
   FlashlightState &
   InteractActorState &
@@ -134,6 +147,7 @@ export type SessionView = {
   /** Feedback for the local survivor since the presentation last drained it. */
   notices: Notice[]
   zombies: AIAgent[]
+  vehicles: OutbreakVehicle[]
   noises: NoiseEvent[]
   shots: CombatShotEvent[]
   containers: LootSite[]
@@ -171,6 +185,9 @@ export function slotView(sim: CoopSim, slot: () => SurvivorSlot): SessionView {
     },
     get zombies() {
       return sim.ai.agents
+    },
+    get vehicles() {
+      return sim.vehicles.list
     },
     get noises() {
       return sim.ai.noiseBus.events
@@ -233,6 +250,10 @@ export class LocalSession implements Session {
 
   get combat(): OutbreakCombatSubsystem {
     return this.sim.combat
+  }
+
+  get vehicles(): OutbreakVehicleSubsystem {
+    return this.sim.vehicles
   }
 
   get registry(): InteractionRegistry {

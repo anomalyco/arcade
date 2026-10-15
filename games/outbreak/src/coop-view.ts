@@ -132,8 +132,15 @@ export class CoopView {
       }
       const p = slot.survivor
       const lift = remoteLift.get(slot) ?? 0
+      const sink = p.vehicleId ? 0.48 : 0
       // Keep animating out of sight so the gait is continuous when they step into view.
-      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58, aimTuning)
+      const batches = avatar.draw(
+        p.vehicleId ? { ...p, vx: 0, vy: 0 } : p,
+        dt,
+        time,
+        (x, z) => supportHeight(town, x, z) + lift * 0.58 - sink,
+        aimTuning,
+      )
       if (actorVisibility(vision, p.x, p.y) > 0.05) out.push(...batches)
     }
     for (const index of this.avatars.keys()) if (!live.has(index)) this.avatars.delete(index)
@@ -189,8 +196,33 @@ export class CoopView {
       snapshots: net.snapshotCount,
       ack: net.lastAck,
       pending: net.predictor.unacked.length,
-      local: { x: net.view.player.x, y: net.view.player.y, magAmmo: net.view.player.magAmmo, health: net.view.player.health },
-      remotes: net.remotes.map((s) => ({ index: s.index, x: s.survivor.x, y: s.survivor.y, flashlightOn: s.survivor.flashlightOn })),
+      local: {
+        x: net.view.player.x,
+        y: net.view.player.y,
+        magAmmo: net.view.player.magAmmo,
+        health: net.view.player.health,
+        vehicleId: net.view.player.vehicleId ?? null,
+        seatIndex: net.view.player.seatIndex ?? 0,
+      },
+      remotes: net.remotes.map((s) => ({
+        index: s.index,
+        x: s.survivor.x,
+        y: s.survivor.y,
+        flashlightOn: s.survivor.flashlightOn,
+        vehicleId: s.survivor.vehicleId ?? null,
+        seatIndex: s.survivor.seatIndex ?? 0,
+      })),
+      vehicles: net.view.vehicles.map((v) => ({
+        id: v.id,
+        kind: v.kind,
+        x: v.x,
+        y: v.y,
+        h: v.h,
+        hp: v.hp,
+        fuel: v.fuel,
+        engineOn: v.engineOn,
+        seats: [...v.seats],
+      })),
       doors: net.sim.town.doors.map((d) => ({ id: d.id, open: d.open })),
       zombies: net.view.zombies.length,
       shots: net.view.shots.map((s) => s.id),

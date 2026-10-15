@@ -6,6 +6,7 @@ import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
+import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
@@ -148,6 +149,7 @@ export type OutbreakSubsystemMap = {
   view: OutbreakViewSettings
   combat: OutbreakCombatSettings
   feel: OutbreakFeelSettings
+  vehicle: VehicleTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -176,7 +178,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakDayCycleSettings &
   OutbreakViewSettings &
   OutbreakCombatSettings &
-  OutbreakFeelSettings
+  OutbreakFeelSettings &
+  VehicleTuning
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -198,6 +201,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "view",
   "combat",
   "feel",
+  "vehicle",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -224,6 +228,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     view: { ...DEFAULT_OUTBREAK_VIEW },
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
     feel: { ...DEFAULT_OUTBREAK_FEEL },
+    vehicle: { ...DEFAULT_VEHICLE_TUNING },
   }
 }
 
