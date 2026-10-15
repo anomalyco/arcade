@@ -53,8 +53,9 @@ export interface LabKnobsHost {
 }
 
 export type LabKnobsViewOptions = {
-  /** Identity for knobs' saved variants (browser storage); omit for no saved variants. */
+  /** The view's identity (knobs' store id). */
   id: string
+  /** Where saved variants are kept in the browser (it becomes the store id); omit for no saved variants. */
   variantsId?: string
   title?: string | false
   /** Which rows this view shows, on top of each control's own `visible`. All of them by default. */
@@ -103,7 +104,8 @@ export class LabKnobsView {
     this.element.className = "lab-knobs"
     container.append(this.element)
     const self = this
-    const remote = createRemoteControls(`lab:${options.id}`, [], {
+    const storeId = `lab:${options.variantsId ?? options.id}`
+    const remote = createRemoteControls(storeId, [], {
       enabled: true,
       // The settings object is local: there are no late echoes to hold back, so outside changes (undo) land at once.
       echo: 0,
@@ -131,7 +133,7 @@ export class LabKnobsView {
     this.store = Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(remote), ...Object.getOwnPropertyDescriptors(own) })) as RemoteControls
     this.refreshShape(true)
     // knobs brings back the last focused row after a reload; the Lab's canvas keeps focus instead.
-    try { sessionStorage.removeItem(`knobs:${encodeURIComponent(`lab:${options.id}`)}:session:v1`) } catch { /* no session storage */ }
+    try { sessionStorage.removeItem(`knobs:${encodeURIComponent(storeId)}:session:v1`) } catch { /* no session storage */ }
     this.panel = mountPanel(this.store, this.element, {
       title: options.title ?? false,
       preset: arcadePreset,
@@ -317,7 +319,7 @@ export class LabKnobsView {
 
   private schedule(ms: number) {
     clearTimeout(this.idle)
-    this.idle = window.setTimeout(() => this.settle(), ms) || -1
+    this.idle = window.setTimeout(() => this.settle(), ms)
   }
 
   private settle() {

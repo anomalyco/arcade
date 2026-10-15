@@ -86,7 +86,6 @@ export class LabPanel implements LabKnobsHost {
   private leaving = false
   private detachControl?: () => void
   private view: LabPanelView = {}
-  private generation = 0
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const change = typeof options === "function" ? options : undefined
@@ -250,7 +249,6 @@ export class LabPanel implements LabKnobsHost {
     for (const key of Object.keys(this.navigation.defaults)) delete this.navigation.defaults[key]
     this.main?.dispose()
     this.main = null
-    this.generation++
   }
 
   /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
@@ -280,10 +278,8 @@ export class LabPanel implements LabKnobsHost {
     if (this.main) return this.main
     if (!this.navigation.rows.some(row => row.control)) return null
     const switches = this.navigation.rows.filter(row => row.control && row.control.type !== "action" && !("min" in row.control) && !("options" in row.control))
-    const generation = this.generation
-    const id = `${this.layoutMode}-${this.variantsId() ?? "panel"}-${generation}`
     this.main = new LabKnobsView(this, this.body, {
-      id,
+      id: `${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
       floating: this.layoutMode === "floating",
       include: row => !this.navigation.filter || this.navigation.filter(row),
