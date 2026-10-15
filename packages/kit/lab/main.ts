@@ -1,4 +1,5 @@
 import { LabPanel, type LabSettings } from "../lab-panel"
+import { isTunable } from "../lab-tuning"
 import { Particles } from "../fx/particles"
 import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
@@ -84,6 +85,8 @@ export async function lab(options:LabOptions) {
         </div>
       </header>
       <aside class="lab-outliner" aria-label="Outliner">
+        <nav class="lab-stations" data-station-list aria-label="Stations" hidden></nav>
+        <div class="lab-station-slot" data-station-slot="left" hidden></div>
         <div class="lab-outliner-tree" data-outliner-mount></div>
         <div class="lab-world" aria-label="World">
           <div class="lab-panel-head lab-world-head"><span class="lab-panel-title">World</span></div>
@@ -105,8 +108,10 @@ export async function lab(options:LabOptions) {
           <div class="lab-hud-toast" data-hud-toast hidden role="status" aria-live="polite"></div>
         </div>
       </main>
+      <section class="lab-station-slot lab-station-dock" data-station-slot="dock" aria-label="Station dock" hidden></section>
       <section class="lab-library" aria-label="Library" data-library-mount></section>
       <aside class="lab-inspector" aria-label="Details">
+        <div class="lab-station-slot" data-station-slot="right" hidden></div>
         <div class="lab-panel-head"><span class="lab-panel-title">Details</span><span class="lab-fill"></span><span class="lab-inspector-sub">Effects</span></div>
         <div class="lab-details-head">
           <span class="lab-details-icon" data-details-icon aria-hidden="true">✺</span>
@@ -219,6 +224,7 @@ export async function lab(options:LabOptions) {
     spawn.spawnItems("one",{x:-13,y:0,z:-7,yaw:0})
     spawn.section.selectObject?.("character:active")
   }
+  const sectionListeners=new Set<(id:string)=>void>()
   function select(id:string) {
     const next=sections.find(s=>s.id===id)
     if(!next)throw new Error(`Unknown Lab section: ${id}`)
@@ -241,6 +247,7 @@ export async function lab(options:LabOptions) {
     if(!keepPlayground||id==="effects")active.enter?.()
     else if(id==="spawn")spawn?.section.enter?.()
     workbench?.onSectionChanged()
+    for(const listener of sectionListeners)listener(id)
   }
   panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(),{
     open:true,
@@ -248,6 +255,8 @@ export async function lab(options:LabOptions) {
     shortcut:true,
     capture:"focus",
     layout:"inspector",
+    variants:()=>`arcade-lab-${settings.section}`,
+    history:{undo:()=>workbench?.undo(),redo:()=>workbench?.redo()},
     onTransaction:(label,before)=>workbench?.onPanelTransaction(label,before as LabSettings),
     onFocusChange:focused=>workbench?.onPanelFocusChange(focused),
     onPin:(control,group)=>workbench?.togglePin(control,group),
@@ -399,6 +408,28 @@ export async function lab(options:LabOptions) {
     addSections,
     viewport:viewportHost,
     canvas,
+    /** The Details panel: knobs over the active section's settings; `panel.mountView` adds cards for station widgets. */
+    panel,
+    /** Called after every section change, with the new section's id. */
+    onSection:(listener:(id:string)=>void)=>{sectionListeners.add(listener);return()=>sectionListeners.delete(listener)},
+    /** A section's Details groups in order, with how many tuning sliders each has (seeds and pickers aside). */
+    groups:(id:string)=>{
+      const section=sections.find(s=>s.id===id)
+      const out=new Map<string,number>()
+      for(const c of section?.controls??[]){
+        const g=c.group??"Controls"
+        out.set(g,(out.get(g)??0)+(section&&isTunable(c,section.settings)&&"min" in c?1:0))
+      }
+      return [...out].map(([name,tunable])=>({name,tunable}))
+    },
+    /** Where stations put their list and widgets. */
+    slots:{
+      root:workbenchRoot,
+      list:workbenchRoot.querySelector<HTMLElement>("[data-station-list]")!,
+      left:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="left"]')!,
+      right:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="right"]')!,
+      dock:workbenchRoot.querySelector<HTMLElement>('[data-station-slot="dock"]')!,
+    },
     /** The workbench chrome (Backquote): top bar, Outliner, Library, Details and status bar. */
     chrome:{visible:()=>panel!.visible,set:(visible:boolean)=>{if(panel!.visible!==visible)panel!.toggle()}},
     /** Stops simulating and drawing while something else owns the viewport (an embedded page). */
@@ -422,6 +453,8 @@ export async function lab(options:LabOptions) {
       invoke:(id:string,args?:Record<string,unknown>)=>workbench!.invoke(id,args),
       radial:workbench!.radial,
       getSelectedIds:()=>workbench!.getSelectedIds(),
+      onDigit:(handler:(n:number,shift:boolean)=>boolean)=>workbench!.onDigit(handler),
+      libraryOpen:()=>workbench!.library.open,
       setBoxSelectMode:(enabled:boolean)=>workbench!.setBoxSelectMode(enabled),
       transform:workbench!.transform,
       compare:workbench!.compare,

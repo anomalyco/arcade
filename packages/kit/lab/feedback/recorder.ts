@@ -1,6 +1,6 @@
 // Voice notes with marks, like Scrawl: N starts the mic, hold Shift and move to draw, N again to review and send.
 // Dev only: the Lab loads this module when the dev router is present, and the dev server posts the bundle to the board.
-import type { OverworldController } from "../overworld/overworld"
+import type { StationEvent, StationSnapshot } from "../stations/types"
 import "./style.css"
 
 const SCALE = 10000
@@ -38,11 +38,18 @@ export type FeedbackPayload = {
 
 export type FeedbackResult = { ok?: boolean; error?: string; dir?: string; board?: { feature?: string; decision?: string; url?: string; error?: string; sent?: boolean } }
 
+/** The open station, as the recorder sees it: what's showing, its changes, and a place to say things. */
+export type StationFeed = {
+  snapshot(): StationSnapshot
+  on(listener: (e: StationEvent) => void): () => void
+  say(text: string, error?: boolean): void
+}
+
 type RecorderOptions = {
   viewport: HTMLElement
   canvas: HTMLCanvasElement
   capture(target: HTMLCanvasElement): Promise<void>
-  overworld: OverworldController
+  stations: StationFeed
   state(): Record<string, unknown>
   submit(payload: FeedbackPayload): Promise<FeedbackResult>
   isBusy(): boolean
@@ -86,7 +93,7 @@ function drawStrokes(ctx: CanvasRenderingContext2D, strokes: readonly FeedbackSt
 }
 
 export function createFeedbackRecorder(opts: RecorderOptions) {
-  const { viewport, overworld } = opts
+  const { viewport, stations } = opts
   let session: {
     start: number
     startedAt: string
@@ -100,7 +107,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
     log: FeedbackEvent[]
     keyframes: FeedbackKeyframe[]
     startState: FeedbackPayload["stateLog"]["start"]
-    station: ReturnType<OverworldController["snapshot"]>["station"]
+    station: StationSnapshot["station"]
     variant: string | null
     off: () => void
     timer: number
@@ -122,7 +129,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
 
   const rect = () => viewport.getBoundingClientRect()
   const now = () => (session ? Math.round(performance.now() - session.start) : 0)
-  const option = () => session?.variant ?? overworld.snapshot().variant?.id ?? "current"
+  const option = () => session?.variant ?? stations.snapshot().variant?.id ?? "current"
 
   function sizeInk() {
     const r = rect(), dpr = Math.min(2, devicePixelRatio || 1)
@@ -200,12 +207,12 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
   // ── start / stop ─────────────────────────────────────────────────────────────────────────────────────────────
   async function start() {
     if (session || reviewing) return
-    if (opts.isBusy()) { overworld.say("Stop Play mode before recording a note.", true); return }
+    if (opts.isBusy()) { stations.say("Stop Play mode before recording a note.", true); return }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     } catch (error) {
-      overworld.say(`No microphone: ${error instanceof Error ? error.message : String(error)}`, true)
+      stations.say(`No microphone: ${error instanceof Error ? error.message : String(error)}`, true)
       return
     }
     const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(t => MediaRecorder.isTypeSupported(t)) ?? ""
@@ -213,11 +220,11 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
     const chunks: Blob[] = []
     recorder.addEventListener("dataavailable", e => { if (e.data.size) chunks.push(e.data) })
     recorder.start(1000)
-    const snap = overworld.snapshot()
+    const snap = stations.snapshot()
     const startState = {
       url: location.href,
       option: snap.variant?.id ?? null,
-      settings: Object.fromEntries(Object.entries({ station: snap.station?.id ?? "overworld", section: snap.section ?? "overworld", view: snap.view }).map(([k, v]) => [k, String(v)])),
+      settings: Object.fromEntries(Object.entries({ station: snap.station?.id ?? "lab", section: snap.section ?? "lab", view: snap.view }).map(([k, v]) => [k, String(v)])),
     }
     session = {
       start: performance.now(),
@@ -236,10 +243,10 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
       timer: 0,
     }
     const s = session
-    s.off = overworld.on(e => {
+    s.off = stations.on(e => {
       if (!session) return
       if (e.kind === "variant") { s.variant = e.variant; s.log.push({ t: now(), kind: "option", option: e.variant }); scheduleFrame(e.variant, 700) }
-      else { s.log.push({ t: now(), kind: "setting", key: "station", value: e.station ?? "overworld" }); if (e.station) { s.station = overworld.snapshot().station; s.variant = null } scheduleFrame(e.station ?? "overworld", 900) }
+      else { s.log.push({ t: now(), kind: "setting", key: "station", value: e.station ?? "lab" }); s.station = stations.snapshot().station; s.variant = null; scheduleFrame(e.station ?? "lab", 900) }
     })
     startSpeech(s)
     viewport.dataset.recording = "true"
@@ -284,7 +291,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
 
   function renderPill() {
     if (!session) return
-    const station = session.station?.title ?? "Overworld"
+    const station = session.station?.title ?? "Lab"
     const variant = session.station?.variants?.find(v => v.id === session!.variant)?.label
     pill.innerHTML = `<i></i><b>${clock(now())}</b><span>${html(station)}${variant ? ` · ${html(variant)}` : ""}</span><span class="fb-dim"><kbd>⇧</kbd> draw · <kbd>⌘Z</kbd> undo · <kbd>N</kbd> finish · <kbd>Esc</kbd> cancel</span>`
   }
@@ -307,7 +314,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
     if (!session) return
     try { session.recorder.stop() } catch { /* stopped */ }
     teardown()
-    overworld.say("Voice note discarded")
+    stations.say("Voice note discarded")
   }
 
   async function stop() {
@@ -336,7 +343,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
       transcript: s.transcript,
       strokes: s.strokes,
       stateLog: { start: s.startState, log: s.log },
-      state: { overworld: { ...overworld.snapshot(), station: s.station?.id ?? null }, ...opts.state() },
+      state: { station: { ...stations.snapshot(), station: s.station?.id ?? null }, ...opts.state() },
       keyframes: s.keyframes,
       contactSheet: sheet,
       note: "",
@@ -358,7 +365,7 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
     c.fillStyle = "#0c0d0f"; c.fillRect(0, 0, out.width, out.height)
     c.fillStyle = "#d8dbe0"; c.font = "600 16px -apple-system, system-ui, sans-serif"
     const variantLabel = s.station?.variants?.find(v => v.id === s.variant)?.label
-    c.fillText(`${s.station?.title ?? "Overworld"}${variantLabel ? ` · ${variantLabel}` : ""} · ${clock(durationMs)} · ${s.strokes.length} mark${s.strokes.length === 1 ? "" : "s"}`, pad, 28)
+    c.fillText(`${s.station?.title ?? "Lab"}${variantLabel ? ` · ${variantLabel}` : ""} · ${clock(durationMs)} · ${s.strokes.length} mark${s.strokes.length === 1 ? "" : "s"}`, pad, 28)
     c.fillStyle = "#8b9098"; c.font = "12px ui-monospace, Menlo, monospace"
     c.textAlign = "right"; c.fillText(new Date(s.startedAt).toLocaleString(), out.width - pad, 28); c.textAlign = "left"
     frames.forEach((f, i) => {
@@ -377,19 +384,19 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
     reviewing = true
     const back = document.createElement("div")
     back.className = "fb-review"
-    back.dataset.owReview = ""
+    back.dataset.fbReview = ""
     const said = payload.transcript.map(t => t.text).join(" ")
     const marks = payload.strokes.length
     back.innerHTML = `
       <div class="fb-card" role="dialog" aria-label="Voice note">
-        <header><b>Voice note</b><span>${html(payload.station?.title ?? "Overworld")}${payload.variant ? ` · ${html(payload.station?.variants.find(v => v.id === payload.variant)?.label ?? payload.variant)}` : ""} · ${clock(payload.durationMs)} · ${marks} mark${marks === 1 ? "" : "s"}</span></header>
+        <header><b>Voice note</b><span>${html(payload.station?.title ?? "Lab")}${payload.variant ? ` · ${html(payload.station?.variants.find(v => v.id === payload.variant)?.label ?? payload.variant)}` : ""} · ${clock(payload.durationMs)} · ${marks} mark${marks === 1 ? "" : "s"}</span></header>
         <img alt="Contact sheet" src="data:image/png;base64,${payload.contactSheet}">
         <p class="fb-said">${said ? `“${html(said)}”` : payload.audio ? "The board transcribes the recording with Whisper after it's sent." : "No audio was captured."}</p>
         <textarea placeholder="Add a typed note (optional)" rows="2"></textarea>
         <footer>
-          <button type="button" class="ow-btn fb-send" data-action="send">Send to ${html(payload.station?.board?.feature ?? "AR-21")} <kbd>⏎</kbd></button>
-          <button type="button" class="ow-btn" data-action="save">Save only</button>
-          <button type="button" class="ow-btn" data-action="discard">Discard <kbd>Esc</kbd></button>
+          <button type="button" class="fb-btn fb-send" data-action="send">Send to ${html(payload.station?.board?.feature ?? "AR-21")} <kbd>⏎</kbd></button>
+          <button type="button" class="fb-btn" data-action="save">Save only</button>
+          <button type="button" class="fb-btn" data-action="discard">Discard <kbd>Esc</kbd></button>
         </footer>
         <p class="fb-status" hidden></p>
       </div>`
@@ -411,19 +418,19 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
       }
       close()
       const where = result.dir ? result.dir.replace(/^.*\/lab-feedback\//, "lab-feedback/") : ""
-      if (send && result.board?.decision) overworld.say(`Sent to ${result.board.feature} · ${result.board.decision}${where ? ` · saved ${where}` : ""}`)
-      else if (send && result.board?.error) overworld.say(`Saved ${where}, but the board said: ${result.board.error}`, true)
-      else overworld.say(`Saved ${where}`)
+      if (send && result.board?.decision) stations.say(`Sent to ${result.board.feature} · ${result.board.decision}${where ? ` · saved ${where}` : ""}`)
+      else if (send && result.board?.error) stations.say(`Saved ${where}, but the board said: ${result.board.error}`, true)
+      else stations.say(`Saved ${where}`)
     }
     const keys = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); close(); overworld.say("Voice note discarded") }
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); close(); stations.say("Voice note discarded") }
       else if (e.key === "Enter" && (e.target !== note || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopImmediatePropagation(); void submit(true) }
       else if (e.target !== note) e.stopImmediatePropagation()
     }
     window.addEventListener("keydown", keys, true)
     back.querySelector('[data-action="send"]')!.addEventListener("click", () => void submit(true))
     back.querySelector('[data-action="save"]')!.addEventListener("click", () => void submit(false))
-    back.querySelector('[data-action="discard"]')!.addEventListener("click", () => { close(); overworld.say("Voice note discarded") })
+    back.querySelector('[data-action="discard"]')!.addEventListener("click", () => { close(); stations.say("Voice note discarded") })
     back.querySelector<HTMLButtonElement>('[data-action="send"]')!.focus()
   }
 
