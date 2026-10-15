@@ -23,7 +23,8 @@ import {
   type MaterialRecipeParams,
 } from "@arcade/kit/gpu/surface-materials"
 import type { LabWorldObject, SectionFactory } from "@arcade/kit/lab/types"
-import { clockText, dayCycle, wrapHour } from "../../shared/day-cycle"
+import { advanceHour, clockText, dayCycle, wrapHour } from "../../shared/day-cycle"
+import { evaluateOutbreakDayNight } from "../day-night"
 import {
   DEFAULT_FLASHLIGHT_TUNING,
   createFlashlightState,
@@ -172,6 +173,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
       fogEdgeSoftness: number
       fogMemoryDim: number
       fogUnknownGrain: number
+      timeScale: number
+      dayNightLook: number
       playing: boolean
     } = {
     directionPreset: 3,
@@ -193,6 +196,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
     fogEdgeSoftness: 0.78,
     fogMemoryDim: 0.42,
     fogUnknownGrain: 0,
+    timeScale: 0,
+    dayNightLook: 1,
     playing: true,
   }
 
@@ -517,7 +522,36 @@ export const outbreakVignetteSection: SectionFactory = context => {
     { key: "fogUnknownGrain", label: "Unknown area grain", group: "Direction & View", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "" },
 
     // --- Time, Sky & Shadows ---
-    { key: "hour", label: "Time of day", group: "Sky & Shadows", type: "range", min: 0, max: 24, step: 0.1, unit: "h" },
+    {
+      key: "hour",
+      label: "Time of day",
+      group: "Sky & Shadows",
+      type: "range",
+      min: 0,
+      max: 24,
+      step: 0.1,
+      unit: "h",
+      change: () => {
+        syncVignetteDayNight(s.hour)
+        context.sync()
+      },
+    },
+    { key: "timeScale", label: "Time scale", group: "Sky & Shadows", type: "range", min: 0, max: 600, step: 10, unit: "×" },
+    {
+      key: "dayNightLook",
+      label: "Look & threat by hour",
+      group: "Sky & Shadows",
+      type: "select",
+      options: [
+        { value: 1, label: "Dynamic (Day → Dusk → Noir)" },
+        { value: 0, label: "Fixed preset" },
+      ],
+      change: () => {
+        if (s.dayNightLook === 1) syncVignetteDayNight(s.hour)
+        else applyDirectionPreset(s.directionPreset)
+        context.sync()
+      },
+    },
     { key: "exposure", label: "Exposure", group: "Sky & Shadows", type: "range", min: 0.4, max: 2.2, step: 0.05, unit: "×" },
     { key: "ambientFill", label: "Sheltered ambient", group: "Sky & Shadows", type: "range", min: 0, max: 2.0, step: 0.05, unit: "×" },
     { key: "skyFill", label: "Sky fill", group: "Sky & Shadows", type: "range", min: 0, max: 2.0, step: 0.05, unit: "×" },
@@ -709,8 +743,26 @@ export const outbreakVignetteSection: SectionFactory = context => {
     ),
   ]
 
+  let lastVignetteDayNightHour = s.hour
+  function syncVignetteDayNight(hour: number) {
+    lastVignetteDayNightHour = hour
+    if (s.directionPreset !== 3 || s.dayNightLook !== 1) return
+    const evalOut = evaluateOutbreakDayNight(hour, lookSettings)
+    for (const lSpec of LOOK_PARAM_SPECS) {
+      ;(s as LabSettings)[lSpec.key] = lookSettings[lSpec.key]
+    }
+    s.exposure = evalOut.lighting.exposure
+    s.skyFill = evalOut.lighting.skyFill
+    s.moonStrength = evalOut.lighting.moonFill
+    s.fogEdgeSoftness = evalOut.fog.fogEdgeSoftness
+    s.fogMemoryDim = evalOut.fog.fogMemoryDim
+  }
+
   function renderVignetteToStage(width: number, height: number, outputView: GPUTextureView): number | null {
     const r = ensureRenderer()
+    if (s.directionPreset === 3 && s.dayNightLook === 1 && Math.abs(s.hour - lastVignetteDayNightHour) > 1e-4) {
+      syncVignetteDayNight(s.hour)
+    }
     r.resize(width, height)
     r.setSurfaceTexUniforms({ enabled: s.compareMode === 1 ? 0 : 1, globalScale: 1.0, globalContrast: 1.15, globalRoughness: 0.0 })
     packVignetteUniformBuffer()
@@ -1048,6 +1100,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     update(dt) {
       if (s.playing) {
         simTime += dt
+        if (s.timeScale > 0) {
+          s.hour = Math.round(advanceHour(s.hour, dt, s.timeScale) * 20) / 20
+          syncVignetteDayNight(s.hour)
+        }
         flashlightState.flashlightOn = s.flashlightOn
         // Keep battery topped up in static vignette inspection while exercising stepFlashlight
         if (flashlightState.battery < 0.65) flashlightState.battery = 1

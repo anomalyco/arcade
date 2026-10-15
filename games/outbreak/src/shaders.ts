@@ -22,7 +22,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
-  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0) * OL.u1.z)",
+  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `let dn = max(d3, 0.85);
     let tight = max(0.5, OL.u0.w);
@@ -55,16 +55,16 @@ export const outbreakSceneHooks: SceneHooks = {
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
-    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig());
+    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, OL.veg, OL.vegActors);
     o.world = fw[0];
     o.normal = fw[1];
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
 @group(0) @binding(14) var visField: texture_2d<f32>;
+${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
-${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
     ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
@@ -120,7 +120,7 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
   solidCutaway: "",
   surface: /* wgsl */ `
   outbreakFlashMask = 0.0;
-  let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
+  let nightLamps = clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0);
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
     let outsideView = !interior(F.eye.xy);
@@ -171,14 +171,29 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
       // Compress near-field window/porch point-light hotspots on foundation shrub crowns so leaves stay rich olive-gold instead of bleaching white
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(0.10)) * 3.2);
       // Subsurface leaf translucency & grazing rim shifted toward muted autumn olive-ochre
-      let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
+      let tipWeight = foliageTipWeight(o.aux);
+      let transK = foliageTranslucency(o.aux, OL.veg) / 0.3;
       let keyDir = normalize(F.monitorBounds.xyz);
       let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
       let backNormal = max(0.0, dot(-n, keyDir));
-      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight;
+      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight * transK;
+      // Flashlight transmission: leaves and blades inside the beam glow warm olive (thin-lamina scatter, any facing).
+      if (OL.u4.z > 0.001) {
+        let fRel = o.world.xz - OL.u3.xy;
+        let fAlong = dot(fRel, OL.u3.zw);
+        let fAcross = abs(dot(fRel, vec2f(-OL.u3.w, OL.u3.z)));
+        let fCone = 0.12 + max(0.0, fAlong) * max(0.12, OL.u4.x);
+        let fRange = max(2.8, OL.u4.y);
+        let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * pow(clamp(1.0 - fAlong / fRange, 0.0, 1.0), 1.3) * (1.0 - smoothstep(1.4, 2.4, o.world.y));
+        let facing = max(0.0, dot(-n.xz, OL.u3.zw)) * 0.5 + 0.5;
+        col += o.color * OL.u5.rgb * vec3f(1.05, 1.3, 0.5) * inBeam * facing * OL.u4.z * (0.10 + 0.22 * tipWeight) * transK;
+      }
       let chloroTint = mix(vec3f(0.20, 0.24, 0.10), vec3f(0.42, 0.36, 0.18), sqrt(tipWeight));
       let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.20 * tipWeight * F.ambient.w;
       col += o.color * (chloroTint * transLobe + vec3f(0.40, 0.36, 0.22) * fresnelRim);
+      // Moonlit crown tops: upward-facing outer leaves keep a cool sheen at night so canopies read as rounded masses.
+      let crownSheen = pow(max(n.y, 0.0), 2.0) * (0.35 + 0.65 * tipWeight) * smoothstep(0.5, 1.6, o.world.y);
+      col += o.color * vec3f(0.50, 0.62, 0.90) * OL.u0.y * 0.32 * crownSheen * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * 0.38);
       if (o.world.y < 0.48) {

@@ -189,7 +189,13 @@ export const flashlightBeamControls: LabControl[] = [
   { key: "practicalColor", label: "Practical lights restore colour", group: "Flashlight", min: 0, max: 2, step: 0.05, unit: "×" },
 ]
 
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 72
+/**
+ * 44 lighting floats, then the shared foliage wind config (12) and foliage actors (20) at
+ * `OUTBREAK_FOLIAGE_UNIFORM_OFFSET`, then the Noir flashlight and visibility-field block (28) at `OUTBREAK_NOIR_UNIFORM_OFFSET`.
+ */
+export const OUTBREAK_FOLIAGE_UNIFORM_OFFSET = 44
+export const OUTBREAK_NOIR_UNIFORM_OFFSET = 76
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 104
 
 export type OutbreakLightingFrameState = {
   settings: OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
@@ -317,43 +323,44 @@ export function packOutbreakLightingUniforms(
   out[41] = s.fogEdgeSoftness ?? 0.78
   out[42] = s.fogMemoryDim ?? 0.42
   out[43] = s.fogMemorySaturation ?? 0.2
+  const N = OUTBREAK_NOIR_UNIFORM_OFFSET
   // u11: lens height, cos(outer half-angle), inner share, core strength
-  out[44] = lensH
-  out[45] = Math.cos(halfRad)
-  out[46] = beam.beamInner
-  out[47] = beam.beamCore
+  out[N + 0] = lensH
+  out[N + 1] = Math.cos(halfRad)
+  out[N + 2] = beam.beamInner
+  out[N + 3] = beam.beamCore
   // u12: core width share, spill level, spill width share, reflector rings
-  out[48] = beam.beamCoreWidth
-  out[49] = beam.beamSpill
-  out[50] = beam.beamSpillWidth
-  out[51] = beam.beamCookie
+  out[N + 4] = beam.beamCoreWidth
+  out[N + 5] = beam.beamSpill
+  out[N + 6] = beam.beamSpillWidth
+  out[N + 7] = beam.beamCookie
   // u13: axis y, axis plan scale, near-lens softening, colour knee
-  out[52] = -Math.sin(tilt)
-  out[53] = Math.cos(tilt)
-  out[54] = beam.beamNearSoftening
-  out[55] = beam.beamColorKnee
+  out[N + 8] = -Math.sin(tilt)
+  out[N + 9] = Math.cos(tilt)
+  out[N + 10] = beam.beamNearSoftening
+  out[N + 11] = beam.beamColorKnee
   // u14: bounce point, bounce power, air scatter
   const bounce = state.flashlightBounce ?? [handX + dirX * beam.beamPoolDistance, handY + dirY * beam.beamPoolDistance]
-  out[56] = bounce[0]
-  out[57] = bounce[1]
-  out[58] = state.flashlightOutput * s.flashlightIntensity * beam.beamBounce
-  out[59] = beam.beamAirScatter
+  out[N + 12] = bounce[0]
+  out[N + 13] = bounce[1]
+  out[N + 14] = state.flashlightOutput * s.flashlightIntensity * beam.beamBounce
+  out[N + 15] = beam.beamAirScatter
   // u15: penumbra base, penumbra growth per metre, reveal and fade blend factors for this frame
   const dt = state.frameDt ?? 1 / 60
-  out[60] = s.fogPenumbra ?? 0.22
-  out[61] = s.fogPenumbraGrowth ?? 0.05
-  out[62] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogRevealTime ?? 0.07))
-  out[63] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogFadeTime ?? 0.25))
+  out[N + 16] = s.fogPenumbra ?? 0.22
+  out[N + 17] = s.fogPenumbraGrowth ?? 0.05
+  out[N + 18] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogRevealTime ?? 0.07))
+  out[N + 19] = dt <= 0 ? 1 : 1 - Math.exp(-dt / Math.max(0.005, s.fogFadeTime ?? 0.25))
   // u16: memory warmth, practical-light colour weight, cos of the spill cutoff, air glow limit
-  out[64] = s.fogMemoryWarmth ?? 0.6
-  out[65] = beam.practicalColor
-  out[66] = Math.cos(Math.min(Math.PI * 0.95, halfRad * beam.beamSpillWidth * 1.7))
-  out[67] = state.flashlightAirLimit ?? s.flashlightRange
+  out[N + 20] = s.fogMemoryWarmth ?? 0.6
+  out[N + 21] = beam.practicalColor
+  out[N + 22] = Math.cos(Math.min(Math.PI * 0.95, halfRad * beam.beamSpillWidth * 1.7))
+  out[N + 23] = state.flashlightAirLimit ?? s.flashlightRange
   // u17: bounce height (a ground pool sits low, a wall hotspot at chest height)
-  out[68] = state.flashlightBounceHeight ?? state.playerH + 0.3
-  out[69] = 1 / Math.max(1e-3, halfRad)
-  out[70] = 0
-  out[71] = 0
+  out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
+  out[N + 25] = 1 / Math.max(1e-3, halfRad)
+  out[N + 26] = 0
+  out[N + 27] = 0
   return out
 }
 
@@ -847,6 +854,8 @@ struct OutbreakLightingUniforms {
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
+  veg: FoliageWindConfig,
+  vegActors: FoliageActors,
   u11: vec4f, // flashLensHeight, flashCosOuter, flashInnerShare, flashCore
   u12: vec4f, // flashCoreShare, flashSpill, flashSpillShare, flashCookie
   u13: vec4f, // flashAxisY, flashAxisPlan, flashNearSoftening, flashColorKnee
@@ -1166,13 +1175,19 @@ fn actorShadowTerm(g: vec2f, feet: vec2f, lamp: vec3f, actorH: f32, directional:
   let contact = exp(-dot(rel, rel) / 0.035);
   let away = feet - lamp.xz;
   let dh = length(away);
-  let reach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
-  let dir = away / max(dh, 1e-3);
+  let sunAmt = clamp(F.monitorBounds.w, 0.0, 1.0);
+  let lampDir = away / max(dh, 1e-3);
+  let sunHoriz = -F.monitorBounds.xz;
+  let sunDir = sunHoriz / max(length(sunHoriz), 1e-3);
+  let dir = normalize(mix(lampDir, sunDir, sunAmt));
+  let lampReach = clamp(actorH * dh / max(lamp.y - actorH, 0.5), 0.6, 2.6);
+  let sunReach = clamp(actorH * length(sunHoriz) / max(F.monitorBounds.y, 0.22), 0.55, 2.85);
+  let reach = mix(lampReach, sunReach, sunAmt);
   let t = clamp(dot(rel, dir) / reach, 0.0, 1.0);
   let dist = length(rel - dir * (t * reach));
   let radius = 0.17 + 0.22 * t;
-  let lampNear = (1.0 - smoothstep(8.0, 16.0, dh)) * directional;
-  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * lampNear;
+  let casterStrength = mix(1.0 - smoothstep(8.0, 16.0, dh), 0.72, sunAmt) * directional;
+  let shadow = (1.0 - smoothstep(radius * 0.55, radius * 1.25, dist)) * (1.0 - 0.55 * t) * step(-0.25, dot(rel, dir)) * casterStrength;
   return max(shadow * 0.72, contact * 0.48);
 }
 

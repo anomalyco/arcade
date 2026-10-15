@@ -9,10 +9,11 @@ import {
   type AudioAnalysisStats,
   type ReplayScenarioResult,
 } from "./offline"
-import { AudioRuntime, createBoxOcclusionQuery } from "./runtime"
+import { AudioRuntime, createBoxOcclusionQuery, MIX_CATEGORIES } from "./runtime"
 import { clamp } from "./synth"
 import { getOfflineAudioContextConstructor } from "./browser-context"
-import type { AudioLabSection, MaterialTag, MixCategory, SurfaceTag } from "./types"
+import { SFX_BY_ID, SFX_LIBRARY, sfxCues, sfxManifest } from "./library"
+import type { AudioLabSection, CueRecipe, MaterialTag, MixCategory, SurfaceTag } from "./types"
 
 export type AudioLabSettings = {
   source: string
@@ -40,6 +41,10 @@ export type AudioLabSettings = {
   occluded: boolean
   muted: boolean
   voiceBudget: number
+  /** Shared library browser: the sound id, the variant (0 = seeded round-robin) and the listening distance. */
+  librarySound: string
+  libraryVariant: number
+  libraryDistance: number
 }
 
 export type AudioLabContextLike = {
@@ -76,7 +81,32 @@ const SOURCE_OPTIONS = [
   { value: "ui_confirm", label: "UI Confirm" },
   { value: "emitter_vehicle", label: "Vehicle Emitter" },
   { value: "emitter_spell", label: "Spell Emitter" },
+  { value: "library", label: "Sound library" },
 ] as const
+
+/** Every library id, labelled by group so the select reads as a catalogue. */
+const LIBRARY_OPTIONS = SFX_LIBRARY.map(entry => ({ value: entry.id, label: `${entry.group} · ${entry.label} (${entry.files.length})` }))
+const LIBRARY_CUES = sfxCues(SFX_LIBRARY)
+
+/** The library cue for `id`, narrowed to one variant when `variant` is 1..n. */
+export function libraryCue(id: string, variant = 0): CueRecipe | null {
+  const cue = LIBRARY_CUES.find(c => c.id === id)
+  if (!cue || variant <= 0) return cue ?? null
+  const layer = cue.layers[0]!
+  if (layer.kind !== "sample" || variant > layer.samples.length) return cue
+  return { ...cue, id: `${cue.id}:v${variant}`, cooldownSeconds: 0, layers: [{ ...layer, samples: [layer.samples[variant - 1]!] }] }
+}
+
+/** One line per variant: file, source, licence and measured loudness. */
+export function libraryInfo(id: string): string[] {
+  const entry = SFX_BY_ID.get(id)
+  if (!entry) return []
+  return [
+    `${entry.id} · ${entry.bus} bus · target ${entry.target} LUFS · ±${Math.round(entry.pitchJitter * 100)}% pitch · ${entry.usedBy.join(", ")}`,
+    `Licence ${[...new Set(entry.files.map(f => f.license))].join("; ")}`,
+    ...entry.files.map((f, i) => `${i + 1}. ${f.file} · ${f.durationSeconds.toFixed(2)} s · ${f.loudness} LUFS · ${(f.bytes / 1024).toFixed(0)} KB`),
+  ]
+}
 
 const REPLAY_OPTIONS = [
   { value: "manual", label: "Manual" },
@@ -131,6 +161,9 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     occluded: false,
     muted: false,
     voiceBudget: 24,
+    librarySound: "zombie.groan.idle",
+    libraryVariant: 0,
+    libraryDistance: 0,
   }
 
   const boxQuery = createBoxOcclusionQuery(WALL_BOX)
@@ -143,6 +176,11 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     autoBindDom: false,
   })
   runtime.setListener({ x: 0, z: 0, rightX: 1, rightZ: 0, earHeight: 16 })
+  // The shared sound library, auditioned through the same runtime (its files are under audio-assets/sfx/).
+  runtime.registerManifest(sfxManifest(SFX_LIBRARY), options.baseUrl)
+  runtime.registerCues(LIBRARY_CUES)
+  const library = () => libraryCue(settings.librarySound, settings.libraryVariant)
+  const libraryPose = () => settings.libraryDistance > 0 ? { x: settings.pan * settings.libraryDistance, z: settings.libraryDistance, refDistance: 1, maxDistance: 120 } : undefined
 
   const vehicleEmitter = new VehicleAudioEmitter(runtime, { id: "lab-vehicle", vehicleClass: "muscle" })
   const spellEmitter = new SpellAudioEmitter(runtime, { id: "lab-spell" })
@@ -239,6 +277,10 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       }
       offRuntime.scheduleTime = 1.25
       s.stop(true)
+    } else if (settings.source === "library") {
+      offRuntime.scheduleTime = 0.05
+      const cue = library()
+      if (cue) offRuntime.playCue(cue, { position: libraryPose(), wet: settings.reverbWet })
     } else {
       offRuntime.scheduleTime = 0.05
       offRuntime.playCue(settings.source, {
@@ -268,7 +310,9 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     runtime.setSeed(settings.seed)
     const pose = currentSourcePose()
     if (auditionActive && runtime.ctx && runtime.ctx.state === "running" && !settings.muted) {
-      if (settings.source !== "emitter_vehicle" && settings.source !== "emitter_spell") {
+      const cue = settings.source === "library" ? library() : null
+      if (cue) runtime.playCue(cue, { position: libraryPose(), wet: settings.reverbWet })
+      else if (settings.source !== "emitter_vehicle" && settings.source !== "emitter_spell" && settings.source !== "library") {
         runtime.playCue(settings.source, {
           intensity: settings.impactForce,
           force: Math.max(0.25, settings.impactForce),
@@ -396,6 +440,41 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
         await renderAbComparison()
         button.textContent = "A/B Ready"
       },
+    },
+
+    // Group: Library (the shared sound library; explicit Audition only)
+    {
+      key: "librarySound",
+      label: "Sound",
+      group: "Library",
+      type: "select",
+      options: LIBRARY_OPTIONS,
+      visible: s => s.source === "library",
+      change: () => { settings.libraryVariant = 0; lastStats = null },
+    },
+    {
+      key: "libraryVariant",
+      label: "Variant (0 = round-robin)",
+      group: "Library",
+      type: "range",
+      min: 0,
+      max: 6,
+      step: 1,
+      unit: "",
+      visible: s => s.source === "library",
+      change: () => lastStats = null,
+    },
+    {
+      key: "libraryDistance",
+      label: "Distance",
+      group: "Library",
+      type: "range",
+      min: 0,
+      max: 40,
+      step: 1,
+      unit: "m",
+      visible: s => s.source === "library",
+      change: () => lastStats = null,
     },
 
     // Group: World
@@ -682,7 +761,8 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     const peakStr = lastStats ? `${lastStats.peakDb.toFixed(1)} dBFS` : "—"
     const lufsStr = lastStats ? `${lastStats.approxLufs.toFixed(1)} LUFS` : "—"
     const centStr = lastStats ? `${Math.round(lastStats.spectralCentroidHz)} Hz` : "—"
-    return `Voices ${t.activeVoices}/${t.maxVoices} · Peak ${peakStr} · ${lufsStr} · Centroid ${centStr}`
+    const lib = settings.source === "library" ? `${settings.librarySound} ${settings.libraryVariant ? `#${settings.libraryVariant}` : "round-robin"} · ` : ""
+    return `${lib}Voices ${t.activeVoices}/${t.maxVoices} · Peak ${peakStr} · ${lufsStr} · Centroid ${centStr}`
   }
 
   const drawVisualizer = (canvas: HTMLCanvasElement) => {
@@ -787,6 +867,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
       `Drivetrain  Gear ${vehicleEmitter.gearbox.gear + 1} · ${Math.round(settings.rpm > 0 ? settings.rpm : vehicleEmitter.gearbox.rpm)} RPM`,
       `Nitro Gate  Ignitions ${vehicleEmitter.nitroState.ignitions} · Voices ${vehicleEmitter.nitroState.voices}`,
     ]
+    if (settings.source === "library") lines.splice(2, lines.length - 2, ...libraryInfo(settings.librarySound).map((line, i) => (i ? `  ${line}` : `Library     ${line}`)))
     if (lastStats) {
       lines.push(
         `Peak / est. ${lastStats.peakDb.toFixed(2)} dBFS / ${lastStats.approxLufs.toFixed(2)} LUFS`,
@@ -812,7 +893,7 @@ export function createAudioLabController(context?: AudioLabContextLike, options:
     ctx2d.fillStyle = "#8fa3b0"
     ctx2d.fillText("CATEGORY BUSES", rx, ry)
     ry += 14
-    const cats: MixCategory[] = ["engine", "tyre", "impact", "ambience", "spell", "ui"]
+    const cats: readonly MixCategory[] = MIX_CATEGORIES
     for (const cat of cats) {
       const count = tel.categoryVoices[cat]
       const activeEmitter =

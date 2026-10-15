@@ -2,11 +2,11 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
-import { house, plant, archSettings } from "./architecture"
+import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
-import { emitCurvedGrassBlade, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
+import { emitCurvedGrassBlade, emitGrassClump, emitGrassTuft, emitWeedMat, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 
 export const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) => m.quad([x, h, b], [r, h, b], [r, h, z], [x, h, z], [0, 1, 0], hex(color), MAT.ground, kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2)
@@ -66,6 +66,25 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.bevelBox(x-.28,.14,z-.28,x+.28,.66,z+.28,.02,wood,hex(0x6e4e30),MAT.timber,MAT.timber)
     m.box(x-.23,.36,z+.28,x+.23,.60,z+.30,hex(0x785636),MAT.timber)
     m.box(x-.055,.48,z+.30,x+.055,.51,z+.33,hex(0xa89060))
+  } else if(kind==="workbench") {
+    // Safehouse workbench against the wall: plank top on trestle legs, a pegboard with tools, a vise and a parts tray.
+    const {rect:[a,c,r,e]}=propShape(p)!
+    m.bevelBox(a,.86,c,r,.95,e,.02,hex(0x6a4a2c),hex(0x7c5834),MAT.timber,MAT.timber)
+    for(const dz of [c+.1,e-.16])for(const dx of [a+.06,r-.12])m.box(dx,.13,dz,dx+.06,.86,dz+.06,legs,MAT.timber)
+    m.box(a+.08,.34,c+.12,r-.08,.38,e-.12,hex(0x4e3620),MAT.timber)
+    m.box(r-.06,.95,c+.05,r,1.75,e-.05,hex(0x5a4a36),MAT.timber)
+    for(const [dz,h] of [[.32,.32],[.62,.22],[.98,.28],[1.25,.18]] as const)m.box(r-.1,1.32-h/2,c+dz-.025,r-.06,1.32+h/2,c+dz+.025,hex(0x8a8c88),MAT.shiny)
+    m.box(a+.12,.95,c+.18,a+.32,1.06,c+.38,hex(0x50585a),MAT.shiny)
+    m.yawBox(a+.36,e-.42,.24,.16,.95,1.0,.08,hex(0x7e6a4a),MAT.timber)
+    m.prism(a+.3,e-.78,.07,.06,.95,1.07,8,hex(0xb07a3a),MAT.lit)
+  } else if(kind==="stash") {
+    // The squad's stash: a dented steel footlocker under stacked supply crates.
+    const {rect:[a,c,r,e]}=propShape(p)!
+    m.bevelBox(a,.13,c,r,.62,e,.03,hex(0x4a5248),hex(0x566050),MAT.shiny,MAT.shiny)
+    m.box(a-.01,.5,c+.08,r+.01,.53,e-.08,hex(0x3a4038),MAT.shiny)
+    m.box(r,.36,(c+e)/2-.08,r+.03,.44,(c+e)/2+.08,hex(0xa89060))
+    m.yawBox((a+r)/2,(c+e)/2-.12,.25,.3,.62,.98,.06,hex(0x6e5636),MAT.timber,0,hex(0x7c6240))
+    m.yawBox((a+r)/2+.02,(c+e)/2+.04,.2,.22,.98,1.25,-.1,hex(0x8a7a5c),MAT.lit)
   } else if(kind==="stove") {
     m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x584028),MAT.timber)
     m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x685e50))
@@ -138,6 +157,7 @@ export function buildLevel(town: Town): LevelData {
 }
 
 function compileLevel(town: Town): LevelData {
+  plantFootprints.length = 0
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   const footprints = town.buildings.map(buildingFootprint)
@@ -164,6 +184,7 @@ function compileLevel(town: Town): LevelData {
   })
   for (const t of tufts) {
     const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+    if (t.weed) { emitGrassClump(m, t, y, grassRng); continue }
     emitGrassTuft(m, t.x, y, t.z, {
       bladeCount: 2,
       radius: t.radius * 1.15,
@@ -199,6 +220,7 @@ function compileLevel(town: Town): LevelData {
       })
       for (const t of patchClumps) {
         const y = supportHeight(town, t.x, t.z), m = at(t.x, t.z)
+        if (t.weed) { emitGrassClump(m, t, y, grassRng); continue }
         emitGrassTuft(m, t.x, y, t.z, {
           bladeCount: 3,
           radius: t.radius * 0.96,
@@ -622,6 +644,20 @@ function compileLevel(town: Town): LevelData {
     }
   }
   for (const rect of furnitureContacts) stampRect(rect, 5, .85, 1.3)
+  // Contact shade under house trees and shrubs, stamped locally (crown shade for trees, a tight dark pool for bushes).
+  for (const f of plantFootprints) {
+    if (f.ground > 0.3) continue
+    const reach = f.tree ? f.radius * 1.1 : f.radius * 1.5
+    const fall = f.tree ? f.radius * f.radius * 0.55 : f.radius * f.radius * 0.8
+    const x0 = Math.max(0, Math.floor((f.x - reach) / scale)), x1 = Math.min(resolution - 1, Math.ceil((f.x + reach) / scale))
+    const z0 = Math.max(0, Math.floor((f.z - reach) / scale)), z1 = Math.min(resolution - 1, Math.ceil((f.z + reach) / scale))
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const d2 = ((x + .5) * scale - f.x) ** 2 + ((z + .5) * scale - f.z) ** 2
+      const c = Math.max(Math.exp(-d2 / fall) * (f.tree ? 0.42 : 0.6), f.tree ? Math.exp(-d2 / 1.2) * 0.6 : 0)
+      const i = (z * resolution + x) * 2
+      data[i] = Math.max(data[i]!, Math.round(c * 255))
+    }
+  }
   // Stamp inward moonlight shafts only within each window's local 3m interior footprint (1000x faster than full-grid scan).
   for (const w of windows) {
     const [wx0, wz0, wx1, wz1] = w.rect

@@ -7,7 +7,7 @@ import { writeBuildId } from "../../scripts/build-id"
 writeBuildId(new URL(".", import.meta.url).pathname)
 
 export default defineConfig({
-  plugins: [audioAssets(), textureAssets()],
+  plugins: [audioAssets({ sfx: ["game:outbreak"] }), textureAssets()],
   base: "./",
   build: {
     target: "esnext",

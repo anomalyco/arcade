@@ -1,10 +1,11 @@
 /**
- * Cross-game physical keyboard control standard (`KeyboardEvent.code`) and layout-aware prompt labels.
+ * Cross-game physical keyboard control standard (`KeyboardEvent.code`) and prompt labels.
  *
  * All gameplay actions bind to physical key positions (`e.code`) so the left-hand WASD + E/R/F/C/V/G/Shift/Space
  * cluster sits in the same physical place on QWERTY, Dvorak, Colemak, and AZERTY without cross-layout collisions.
- * On-screen HUD prompts resolve through `navigator.keyboard.getLayoutMap()` where available (and live unshifted key
- * events), falling back to the physical code label.
+ * On-screen prompts name the QWERTY key at that position on every layout (`KeyE` -> "E"), as most PC games do.
+ * Players can opt into their own layout's characters ("Key labels: My keyboard layout"), which resolves through
+ * `navigator.keyboard.getLayoutMap()` and live unshifted key events.
  */
 
 export type StandardAction =
@@ -69,21 +70,28 @@ type NavigatorWithKeyboard = Navigator & {
   }
 }
 
-const CODE_FALLBACK_LABELS: Readonly<Record<string, string>> = {
-  ShiftLeft: "SHIFT",
-  ShiftRight: "SHIFT",
-  ControlLeft: "CTRL",
-  ControlRight: "CTRL",
-  AltLeft: "ALT",
-  AltRight: "ALT",
-  MetaLeft: "CMD",
-  MetaRight: "CMD",
-  Space: "SPACE",
-  Tab: "TAB",
-  Escape: "ESC",
-  Enter: "ENTER",
-  NumpadEnter: "ENTER",
-  Backquote: "~",
+const QWERTY_LABELS: Readonly<Record<string, string>> = {
+  ShiftLeft: "Shift",
+  ShiftRight: "Shift",
+  ControlLeft: "Ctrl",
+  ControlRight: "Ctrl",
+  AltLeft: "Alt",
+  AltRight: "Alt",
+  MetaLeft: "Cmd",
+  MetaRight: "Cmd",
+  Space: "Space",
+  Tab: "Tab",
+  Escape: "Esc",
+  Enter: "Enter",
+  NumpadEnter: "Enter",
+  Backspace: "Backspace",
+  CapsLock: "Caps",
+  Backquote: "`",
+  Backslash: "\\",
+  Mouse0: "LMB",
+  Mouse1: "MMB",
+  Mouse2: "RMB",
+  Wheel: "Wheel",
   ArrowUp: "↑",
   ArrowDown: "↓",
   ArrowLeft: "←",
@@ -99,10 +107,79 @@ const CODE_FALLBACK_LABELS: Readonly<Record<string, string>> = {
   Equal: "=",
 }
 
+/** `"qwerty"` names the QWERTY key at each physical position; `"layout"` shows the player's own layout characters. */
+export type KeyLabelMode = "qwerty" | "layout"
+export const KEY_LABEL_STORAGE_KEY = "arcade.keyLabels"
+export const KEY_LABEL_OPTIONS: readonly { value: KeyLabelMode; label: string }[] = [
+  { value: "qwerty", label: "QWERTY" },
+  { value: "layout", label: "My keyboard layout" },
+]
+
 const resolvedLabels = new Map<string, string>()
 const listeners = new Set<() => void>()
 let layoutMapInitialized = false
 let hasAuthoritativeLayoutMap = false
+let labelMode: KeyLabelMode | null = null
+
+function storedKeyLabelMode(): KeyLabelMode {
+  try {
+    return globalThis.localStorage?.getItem(KEY_LABEL_STORAGE_KEY) === "layout" ? "layout" : "qwerty"
+  } catch {
+    return "qwerty"
+  }
+}
+
+/** The active prompt label mode. Defaults to QWERTY; the opt-in is stored per browser for every arcade game. */
+export function keyLabelMode(): KeyLabelMode {
+  labelMode ??= storedKeyLabelMode()
+  return labelMode
+}
+
+/** Switches prompt labels between QWERTY names and the player's layout. Bindings never change. */
+export function setKeyLabelMode(mode: KeyLabelMode, persist = true): void {
+  const next: KeyLabelMode = mode === "layout" ? "layout" : "qwerty"
+  if (persist) {
+    try {
+      globalThis.localStorage?.setItem(KEY_LABEL_STORAGE_KEY, next)
+    } catch {
+      // Private browsing or blocked storage keeps the choice for this page only.
+    }
+  }
+  if (keyLabelMode() === next) return
+  labelMode = next
+  if (next === "layout") ensureLayoutMapInitialized()
+  notifyListeners()
+}
+
+/**
+ * Lab/settings binding for the shared "Key labels" choice:
+ *   const k = keyLabelSetting(); panel.addControls(k.settings, [k.control], k.defaults)
+ */
+export function keyLabelSetting(group = "Controls"): {
+  settings: { keyLabels: KeyLabelMode }
+  defaults: { keyLabels: KeyLabelMode }
+  control: {
+    key: "keyLabels"
+    label: string
+    group: string
+    type: "select"
+    options: readonly { value: KeyLabelMode; label: string }[]
+    change: (value: boolean | number | string) => void
+  }
+} {
+  return {
+    settings: { keyLabels: keyLabelMode() },
+    defaults: { keyLabels: "qwerty" },
+    control: {
+      key: "keyLabels",
+      label: "Key labels",
+      group,
+      type: "select",
+      options: KEY_LABEL_OPTIONS,
+      change: (value) => setKeyLabelMode(value === "layout" ? "layout" : "qwerty"),
+    },
+  }
+}
 
 function notifyListeners(): void {
   for (const fn of listeners) fn()
@@ -115,9 +192,9 @@ function normalizeGlyph(raw: string | undefined): string | null {
   return trimmed.length === 1 ? trimmed.toUpperCase() : trimmed.toUpperCase()
 }
 
-/** Fallback label derived purely from a physical `KeyboardEvent.code`. */
-export function fallbackCodeLabel(code: string): string {
-  if (code in CODE_FALLBACK_LABELS) return CODE_FALLBACK_LABELS[code]!
+/** The QWERTY name of a physical `KeyboardEvent.code` (`KeyE` -> "E", `Backquote` -> "`", `ShiftLeft` -> "Shift"). */
+export function qwertyKeyLabel(code: string): string {
+  if (code in QWERTY_LABELS) return QWERTY_LABELS[code]!
   if (code.startsWith("Key") && code.length === 4) return code.slice(3).toUpperCase()
   if (code.startsWith("Digit") && code.length === 6) return code.slice(5)
   if (code.startsWith("Numpad") && code.length === 7) return code.slice(6)
@@ -153,7 +230,7 @@ export async function refreshKeyLayout(): Promise<void> {
       }
     }
     hasAuthoritativeLayoutMap = resolvedLabels.size > 0
-    if (changed) notifyListeners()
+    if (changed && keyLabelMode() === "layout") notifyListeners()
   } catch {
     // Fallback labels remain active when permission or secure-context restrictions block getLayoutMap().
   }
@@ -188,14 +265,16 @@ export function observeKeyLayout(e: {
   const glyph = normalizeGlyph(e.key)
   if (glyph && resolvedLabels.get(e.code) !== glyph) {
     resolvedLabels.set(e.code, glyph)
-    notifyListeners()
+    if (keyLabelMode() === "layout") notifyListeners()
   }
 }
 
-/** Override or clear the layout map for deterministic unit and browser tests. */
+/** Override or clear the layout map (and optionally the label mode) for deterministic unit and browser tests. */
 export function setKeyLayoutMapForTest(
   entries: ReadonlyMap<string, string> | Readonly<Record<string, string>> | null,
+  mode?: KeyLabelMode,
 ): void {
+  if (mode) labelMode = mode
   resolvedLabels.clear()
   hasAuthoritativeLayoutMap = false
   if (entries) {
@@ -209,23 +288,24 @@ export function setKeyLayoutMapForTest(
   notifyListeners()
 }
 
-/** Subscribe to layout label changes (e.g. when `navigator.keyboard.getLayoutMap()` resolves). */
+/** Subscribe to prompt label changes: the label mode switching, or the layout map resolving in layout mode. */
 export function onKeyLayoutChange(listener: () => void): () => void {
-  ensureLayoutMapInitialized()
+  if (keyLabelMode() === "layout") ensureLayoutMapInitialized()
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
 
 /**
- * Returns the display label for a physical `KeyboardEvent.code` in the user's current keyboard layout,
- * falling back to the standard physical code letter (`KeyE` -> `"E"`, or `"."` on Dvorak).
+ * Returns the prompt label for a physical `KeyboardEvent.code`: its QWERTY name (`KeyE` -> "E" on every layout), or
+ * the player's own layout character when they opted into "My keyboard layout" (`KeyE` -> "." on Dvorak).
  */
 export function keyLabel(code: string): string {
+  if (keyLabelMode() === "qwerty") return qwertyKeyLabel(code)
   ensureLayoutMapInitialized()
-  return resolvedLabels.get(code) ?? fallbackCodeLabel(code)
+  return resolvedLabels.get(code) ?? qwertyKeyLabel(code)
 }
 
-/** Returns the 4-key movement cluster label for the user's layout (`"WASD"` on QWERTY, `",AOE"` on Dvorak). */
+/** Returns the 4-key movement cluster label (`"WASD"`; `",AOE"` on Dvorak only in layout mode). */
 export function moveClusterLabel(): string {
   return `${keyLabel("KeyW")}${keyLabel("KeyA")}${keyLabel("KeyS")}${keyLabel("KeyD")}`
 }

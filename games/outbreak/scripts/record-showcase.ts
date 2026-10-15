@@ -296,7 +296,7 @@ try {
         const frontDoor = h.state().town.doors.find((d: any) => d.id === "ash-front")
         if (frontDoor) frontDoor.open = true
         h.pose(27.7, 41.2, 0)
-        Object.assign(h.state().player, { magAmmo: 4, reserveAmmo: 4 })
+        h.stock(4, { ammo: 4 })
         h.setZombieState("wander")
         h.spawnZombie(32.5, 41.2, "chase", Math.PI)
         h.spawnZombie(33.8, 42.1, "chase", Math.PI)
@@ -344,7 +344,7 @@ try {
         h.setLab("zoom", 30)
         h.setLab("aiDebugOverlay", false)
         h.pose(24.5, 36.15, -Math.PI / 2)
-        Object.assign(h.state().player, { planks: 3 })
+        h.stock(undefined, { plank: 3 })
         h.setZombieState("wander")
         await h.step(1 / 60, { barricade: true })
       })

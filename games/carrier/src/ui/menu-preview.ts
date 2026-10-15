@@ -1,7 +1,7 @@
 // Menu previews with fake data, over the real offline sea (menu.html loads main.ts too).
 //   menu.html?seed=7&show=menu     the load screen (fake lobby: never leaves)
 //   menu.html?seed=7&show=teams    the Tab menu, pinned open, a busy room seen by a captain (?as=N: another player)
-//   menu.html?seed=7&show=ops      SHIP OPERATIONS, pinned open: one Hornet up, one recharging
+//   menu.html?seed=7&show=ops      DEPLOY, pinned open: one Hornet up, one recharging
 import { TEAMS, createShip, joinCrew, leaveCrew, makeCrew, playerOf, recover, runOp, shipOf } from "../../shared/crew"
 import { shipOps } from "../../shared/ops"
 import { setLock } from "../../shared/squad"

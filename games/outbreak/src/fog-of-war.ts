@@ -1,4 +1,5 @@
 import { SPRITE_FLOATS, type VisibilityFieldShader } from "@arcade/kit/gpu/renderer"
+import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { common } from "@arcade/kit/gpu/shaders"
 import type { BoneId, BonePose } from "@arcade/kit/human-pose"
 import type { LabControl } from "@arcade/kit/lab-panel"
@@ -457,6 +458,7 @@ export const visibilityFieldShader: VisibilityFieldShader = {
   dispatch: VIS_FIELD_DISPATCH,
   code: /* wgsl */ `
 ${common}
+${foliageWindDeclarationsWgsl}
 ${outbreakLightingStructWgsl}
 @group(0) @binding(14) var<storage, read_write> fieldState: array<vec2f>;
 @group(0) @binding(15) var fieldOut: texture_storage_2d<rgba8unorm, write>;

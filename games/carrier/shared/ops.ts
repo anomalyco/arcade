@@ -1,4 +1,4 @@
-// Ship operations: what a member of a ship can do aboard it, as data. The SHIP OPERATIONS menu (src/ui/ops-menu.ts)
+// Ship operations: what a member of a ship can do aboard it, as data. The DEPLOY menu (src/ui/ops-menu.ts)
 // lists them and is the only way to take the helm or launch; the room validates every request with `opError` and runs
 // it with shared/crew.ts `runOp`. Pure; imports only types, so shared/crew.ts can build ships from the catalogue.
 //

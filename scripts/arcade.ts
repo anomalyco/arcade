@@ -290,7 +290,7 @@ Mutating commands (show unobtrusive page indicator, respect live user input, rec
   arcade transport play|pause|step [n]|speed <mult>|retrigger [--seed <n>]
   arcade possess [id|name]                     Possess character / enter Play mode (mode.play)
   arcade release                               Exit Play mode & release held input (mode.play)
-  arcade station <id> | station list           Jump the Lab tab to an Overworld station (opens /arcade/lab/?overworld if needed)
+  arcade station <id> | station list           Open a station in the Lab tab (navigates to /arcade/lab/?station=<id> if needed)
   arcade grid [preset] [--json '[...]']        Open multi-tile Variation Grid (looks, explosions, smoke, materials, foliage, lighting)
   arcade grid focus <1..9|0> | grid close      Focus a Variation Grid tile full-size or close the grid
   arcade note "<title>" [--body <text>] [--step <k/n>] [--accent <color>] [--target <target>] [--clear]
@@ -776,8 +776,8 @@ async function main() {
         res = await invokeRemote(target, flags, "station.open", { id })
       } catch (err) {
         if (!(err instanceof CliError) || err.code !== "unknown_command") throw err
-        // The active page isn't the Overworld: navigate it there; the page opens the station on load.
-        res = await invokeRemote(target, flags, "nav.open", { target: `/arcade/lab/?overworld&station=${encodeURIComponent(id)}` })
+        // The active page isn't the Lab: navigate it there; the Lab opens the station on load.
+        res = await invokeRemote(target, flags, "nav.open", { target: `/arcade/lab/?station=${encodeURIComponent(id)}` })
       }
       if (flags.json) console.log(JSON.stringify(res, null, 2))
       else console.log(`Station ${id} on ${res.page.id} (${res.page.url})`)

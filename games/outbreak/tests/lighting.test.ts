@@ -8,6 +8,7 @@ import {
   DEFAULT_OUTBREAK_LIGHTING,
   flashlightBeamControls,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_NOIR_UNIFORM_OFFSET,
   outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
@@ -56,18 +57,19 @@ describe("Outbreak lighting module & Lab controls", () => {
       streetHead: [36.86, 6.18, 47.49] as const,
       zombies: [-999, -999, -999, -999] as const,
     }
+    const N = OUTBREAK_NOIR_UNIFORM_OFFSET
     const buf = packOutbreakLightingUniforms({ ...base, frameDt: 1 / 60 }, flashlightColor(0.92))
     // Range is no longer clamped to a few metres indoors; the window in the shader ends it smoothly.
     expect(buf[17]).toBe(19)
-    expect(buf[45]).toBeCloseTo(Math.cos((28 * Math.PI) / 180), 5)
+    expect(buf[N + 1]).toBeCloseTo(Math.cos((28 * Math.PI) / 180), 5)
     // Axis points down so it meets the ground at the pool distance.
-    const tilt = Math.atan2(buf[52]! * -1, buf[53]!)
+    const tilt = Math.atan2(buf[N + 8]! * -1, buf[N + 9]!)
     expect(Math.tan(tilt) * DEFAULT_FLASHLIGHT_BEAM.beamPoolDistance).toBeCloseTo(1.34, 4)
-    expect(buf[62]).toBeGreaterThan(0)
-    expect(buf[62]).toBeLessThan(1)
+    expect(buf[N + 18]).toBeGreaterThan(0)
+    expect(buf[N + 18]).toBeLessThan(1)
     const snapped = packOutbreakLightingUniforms({ ...base, frameDt: 0 }, flashlightColor(0.92))
-    expect(snapped[62]).toBe(1)
-    expect(snapped[63]).toBe(1)
+    expect(snapped[N + 18]).toBe(1)
+    expect(snapped[N + 19]).toBe(1)
   })
 
   test("selective practicals keep NW bedside lamp shadow-casting while tightening porch, window, and accent lamps", () => {

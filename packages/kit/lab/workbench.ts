@@ -22,22 +22,24 @@ import {
   type VariationTileConfig,
 } from "./variation-grid"
 import {
+  BUSH_PRESET_IDS,
   FOLIAGE_CROWN_SHAPES,
   FOLIAGE_PARAM_SPECS,
-  FOLIAGE_PRESETS,
-  FOLIAGE_PRESET_IDS,
+  GRASS_PRESET_IDS,
+  TREE_PRESET_IDS,
+  applyFoliagePreset,
   exportFoliagePreset,
+  foliagePresetIdsFor,
   foliageSettings,
   foliageTextureUrls,
   importFoliagePreset,
-  isFoliagePresetId,
   randomizeFoliageParams,
-  resetFoliageParams,
   setFoliageTextureUrls,
-  type FoliageCameraMode,
-  type FoliageCompareMode,
+  type FoliageKind,
+  type FoliageLabTool,
+  type FoliageLighting,
 } from "../gpu/foliage"
-import { FOLIAGE_LIGHTING_PRESETS } from "./foliage"
+import { FOLIAGE_LIGHTINGS, FOLIAGE_LOOKS } from "./foliage"
 import { lightingDefaults } from "./lighting"
 import type { LookLabController } from "./looks"
 import { applyLookPreset, LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup, type LookSettings } from "../gpu/look"
@@ -189,6 +191,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let hoveredGridTile: number | null = null
   let variationGridCostMs: number | null = null
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" | "outliner" = "canvas"
+  /** Number keys go here first (stations); the Library categories get them otherwise. */
+  let digitHandler: ((n: number, shift: boolean) => boolean) | null = null
   let toastTimer = 0
 
   const undoStack: HistoryEntry[] = []
@@ -2541,12 +2545,17 @@ export function createWorkbench(opts: WorkbenchOptions) {
       args: {
         key: { type: "string", description: "Foliage parameter key (or pass parameter keys directly)" },
         value: { type: "value", description: "Parameter value when using { key, value }" },
-        treePreset: { type: "string", enum: FOLIAGE_PRESET_IDS, description: "Species preset" },
+        tool: { type: "string", enum: ["tree", "bush", "grass", "lot"], description: "Vegetation tool / test room" },
+        treePreset: { type: "string", enum: TREE_PRESET_IDS, description: "Tree preset" },
+        bushPreset: { type: "string", enum: BUSH_PRESET_IDS, description: "Bush preset" },
+        grassPreset: { type: "string", enum: GRASS_PRESET_IDS, description: "Grass preset" },
         crownShape: { type: "string", enum: FOLIAGE_CROWN_SHAPES.map(s => s.value), description: "Crown silhouette shape" },
-        stageMode: { type: "string", enum: ["lot", "swatch"], description: "Stage environment ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)" },
         cameraMode: { type: "string", enum: ["close", "game"], description: "Camera view mode" },
-        lightingPreset: { type: "string", enum: Object.keys(FOLIAGE_LIGHTING_PRESETS), description: "Stage lighting preset" },
-        compare: { type: "number", min: 0, max: 2, description: "Comparison mode (0=Before, 1=After, 2=Split)" },
+        lighting: { type: "string", enum: Object.keys(FOLIAGE_LIGHTINGS), description: "Test-room lighting (night, dusk, day)" },
+        look: { type: "string", enum: FOLIAGE_LOOKS, description: "Look post grade" },
+        walker: { type: "boolean", description: "Walkers trampling the vegetation" },
+        flashlight: { type: "boolean", description: "Lead walker carries a flashlight at night" },
+        seed: { type: "number", min: 1, max: 999, description: "Structure seed (rebuilds the room)" },
         tuningSeed: { type: "number", min: 1, max: 9999, description: "Parameter randomize seed" },
         ...Object.fromEntries(
           FOLIAGE_PARAM_SPECS.map(s => [
@@ -2600,7 +2609,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       category: "Inspector",
       undoable: true,
       args: {
-        scope: { type: "string", enum: ["all", "tree", "grass"], description: "Scope to randomize ('all', 'tree', or 'grass')" },
+        scope: { type: "string", enum: ["all", "tree", "bush", "grass"], description: "Look to randomize ('tree', 'bush', 'grass' or 'all')" },
         tuningSeed: { type: "number", min: 1, max: 9999, description: "Optional deterministic tuning seed" },
       },
       enabled: () => mode !== "play",
@@ -2609,7 +2618,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const foliageSec = sections.find(s => s.id === "foliage")
         if (!foliageSec) throw new Error("Foliage section is not available on this page.")
         if (globalSettings.section !== "foliage") selectSection("foliage")
-        const scope = args?.scope === "tree" || args?.scope === "grass" ? args.scope : "all"
+        const scope = args?.scope === "tree" || args?.scope === "bush" || args?.scope === "grass" ? args.scope : "all"
         const tSeed =
           typeof args?.tuningSeed === "number" && Number.isFinite(args.tuningSeed)
             ? Math.max(1, Math.min(9999, Math.round(args.tuningSeed)))
@@ -2632,57 +2641,46 @@ export function createWorkbench(opts: WorkbenchOptions) {
     },
     {
       id: "foliage.preset",
-      label: "Load, Reset, or Export Foliage Preset",
-      shortLabel: "Foliage Preset",
+      label: "Load, Reset, or Export Vegetation Preset",
+      shortLabel: "Vegetation Preset",
       category: "Preset",
       undoable: true,
       args: {
+        kind: { type: "string", enum: ["tree", "bush", "grass"], description: "Which look the preset applies to (default: the active tool)" },
         preset: {
           type: "string",
-          enum: [...FOLIAGE_PRESET_IDS, "reset"],
-          description: "Named tree/foliage preset ('oak', 'maple', 'birch', 'pine', 'hydrangea') or 'reset'",
+          enum: [...TREE_PRESET_IDS, ...BUSH_PRESET_IDS, ...GRASS_PRESET_IDS, "reset"],
+          description: "Tree (oak, maple, pine, birch), bush (hedge, overgrown, hydrangea) or grass (lawn, overgrown, weeds) preset, or 'reset'",
         },
-        lighting: {
-          type: "string",
-          enum: Object.keys(FOLIAGE_LIGHTING_PRESETS),
-          description: "Optional Outbreak lighting preset ('outbreak_dusk', 'outbreak_day', 'outbreak_night', 'cold_moon')",
-        },
-        stageMode: {
-          type: "string",
-          enum: ["lot", "swatch"],
-          description: "Optional stage mode ('lot' = Outbreak house lot, 'swatch' = Hero tree pad)",
-        },
-        cameraMode: {
-          type: "string",
-          enum: ["close", "game"],
-          description: "Optional camera mode ('close' or 'game')",
-        },
-        compare: {
-          type: "number",
-          min: 0,
-          max: 2,
-          description: "Optional comparison mode (0=Before, 1=After, 2=Split)",
-        },
-        json: { type: "string", description: "Optional FoliagePresetV1 JSON payload to import" },
+        tool: { type: "string", enum: ["tree", "bush", "grass", "lot"], description: "Optional test room / tool" },
+        lighting: { type: "string", enum: Object.keys(FOLIAGE_LIGHTINGS), description: "Optional lighting (night, dusk, day)" },
+        look: { type: "string", enum: FOLIAGE_LOOKS, description: "Optional look post grade" },
+        cameraMode: { type: "string", enum: ["close", "game"], description: "Optional camera mode" },
+        json: { type: "string", description: "Optional FoliagePresetV2 (or V1) JSON payload to import" },
       },
       enabled: () => mode !== "play",
       disabledReason: () => "Unavailable in Play mode (character is possessed). Run 'arcade release' first.",
       run: (_ctx, args) => {
         const foliageSec = sections.find(s => s.id === "foliage")
-        if (!foliageSec) throw new Error("Foliage section is not available on this page.")
+        if (!foliageSec) throw new Error("Vegetation section is not available on this page.")
         if (globalSettings.section !== "foliage") selectSection("foliage")
+        const setControl = (key: string, value: LabValue) => {
+          const c = foliageSec.controls.find(ctrl => ctrl.key === key)
+          if (c) panel.navigation.set(c, value)
+          else foliageSec.settings[key] = value
+        }
 
         if (typeof args?.json === "string" && args.json.trim()) {
           const imported = importFoliagePreset(args.json)
           if (!imported.ok) throw new Error(imported.error)
           const val = imported.value
+          Object.assign(foliageSettings, val.params)
           foliageSec.settings.seed = val.seed
           foliageSec.settings.tuningSeed = val.tuningSeed
-          foliageSec.settings.cameraMode = val.cameraMode
-          foliageSec.settings.compare = val.compare
-          foliageSec.settings.lightingPreset = val.lightingPreset
-          Object.assign(foliageSettings, val.params)
-          foliageSec.enter?.()
+          setControl("tool", val.tool)
+          setControl("lighting", val.lighting)
+          setControl("look", val.look)
+          setControl("cameraMode", val.cameraMode)
           foliageSec.retrigger?.()
           panel.sync()
           syncChrome()
@@ -2690,32 +2688,23 @@ export function createWorkbench(opts: WorkbenchOptions) {
           return { action: "imported", preset: val }
         }
 
+        if (typeof args?.tool === "string") setControl("tool", args.tool)
+        const tool = String(foliageSec.settings.tool) as FoliageLabTool
         if (typeof args?.preset === "string" && args.preset.trim()) {
           const p = args.preset.trim().toLowerCase()
+          const explicit = args?.kind === "tree" || args?.kind === "bush" || args?.kind === "grass" ? (args.kind as FoliageKind) : null
+          const kinds: FoliageKind[] = explicit ? [explicit] : tool === "lot" ? ["tree", "bush", "grass"] : [tool]
           if (p === "reset") {
-            resetFoliageParams(foliageSettings.treePreset, foliageSettings)
-          } else if (isFoliagePresetId(p)) {
-            resetFoliageParams(p, foliageSettings)
+            for (const k of kinds) applyFoliagePreset(k, k === "tree" ? foliageSettings.treePreset : k === "bush" ? foliageSettings.bushPreset : foliageSettings.grassPreset)
           } else {
-            throw new Error(`Unknown foliage preset "${args.preset}". Valid: ${FOLIAGE_PRESET_IDS.join(", ")}, reset.`)
+            const kind = kinds.find(k => foliagePresetIdsFor(k).includes(p)) ?? (["tree", "bush", "grass"] as const).find(k => foliagePresetIdsFor(k).includes(p))
+            if (!kind) throw new Error(`Unknown vegetation preset "${args.preset}".`)
+            applyFoliagePreset(kind, p)
           }
         }
-        if (typeof args?.lighting === "string" && args.lighting in FOLIAGE_LIGHTING_PRESETS) {
-          foliageSec.settings.lightingPreset = args.lighting
-          const lp = FOLIAGE_LIGHTING_PRESETS[args.lighting]
-          if (lp && Object.keys(lp.values).length > 0) Object.assign(stage.lighting, lp.values)
-        }
-        if (args?.stageMode === "lot" || args?.stageMode === "swatch") {
-          const stgCtrl = foliageSec.controls.find(c => c.key === "stageMode")
-          if (stgCtrl) panel.navigation.set(stgCtrl, args.stageMode)
-        }
-        if (args?.cameraMode === "close" || args?.cameraMode === "game") {
-          const camCtrl = foliageSec.controls.find(c => c.key === "cameraMode")
-          if (camCtrl) panel.navigation.set(camCtrl, args.cameraMode)
-        }
-        if (args?.compare === 0 || args?.compare === 1 || args?.compare === 2) {
-          foliageSec.settings.compare = args.compare
-        }
+        if (typeof args?.lighting === "string") setControl("lighting", args.lighting)
+        if (typeof args?.look === "string") setControl("look", args.look)
+        if (typeof args?.cameraMode === "string") setControl("cameraMode", args.cameraMode)
         foliageSec.retrigger?.()
         panel.sync()
         syncChrome()
@@ -2724,14 +2713,14 @@ export function createWorkbench(opts: WorkbenchOptions) {
         const exported = exportFoliagePreset({
           seed: Number(foliageSec.settings.seed) || 7,
           tuningSeed: Number(foliageSec.settings.tuningSeed) || 41,
-          stageMode: foliageSec.settings.stageMode === "swatch" ? "swatch" : "lot",
-          cameraMode: (foliageSec.settings.cameraMode === "game" ? "game" : "close") as FoliageCameraMode,
-          compare: (Number(foliageSec.settings.compare) === 0 ? 0 : Number(foliageSec.settings.compare) === 2 ? 2 : 1) as FoliageCompareMode,
-          lightingPreset: String(foliageSec.settings.lightingPreset || "outbreak_dusk"),
+          tool: String(foliageSec.settings.tool) as FoliageLabTool,
+          lighting: String(foliageSec.settings.lighting) as FoliageLighting,
+          look: String(foliageSec.settings.look),
+          cameraMode: foliageSec.settings.cameraMode === "close" ? "close" : "game",
           params: foliageSettings,
         })
         return {
-          preset: foliageSettings.treePreset,
+          presets: { tree: foliageSettings.treePreset, bush: foliageSettings.bushPreset, grass: foliageSettings.grassPreset },
           exported,
           json: JSON.stringify(exported, null, 2),
         }
@@ -3854,42 +3843,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
         sectionId: "materials",
         isActive: () => globalSettings.section === "materials",
         run: () => selectSection("materials"),
-      })
-    }
-
-    const foliageSec = sections.find(s => s.id === "foliage")
-    if (foliageSec) {
-      for (const id of FOLIAGE_PRESET_IDS) {
-        const def = FOLIAGE_PRESETS[id]
-        const catId = `foliage-preset:${id}`
-        entries.push({
-          id: catId,
-          label: def.label,
-          group: "Foliage & Trees (Outbreak)",
-          category: "objects",
-          collection: "shared",
-          tag: "Foliage",
-          sectionId: "foliage",
-          isActive: () => globalSettings.section === "foliage" && foliageSec.settings.treePreset === id,
-          run: () => {
-            activeCatalogId = catId
-            if (globalSettings.section !== "foliage") selectSection("foliage")
-            const c = foliageSec.controls.find(ctrl => ctrl.key === "treePreset")
-            if (c) panel.navigation.set(c, id)
-            frameActiveTarget()
-          },
-        })
-      }
-      entries.push({
-        id: "section:foliage",
-        label: "Foliage Workbench Stage",
-        group: "Calibration & Solvers",
-        category: "objects",
-        collection: "shared",
-        tag: "Foliage",
-        sectionId: "foliage",
-        isActive: () => globalSettings.section === "foliage",
-        run: () => selectSection("foliage"),
       })
     }
 
@@ -5785,7 +5738,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
 
     // If focus is inside the Inspector (LabPanel), let LabPanel's own capture handler own the remaining keys
-    if (document.activeElement === panel.host) return
+    if (panel.hasFocus()) return
 
     // Active Placement Ghost or Move Ghost modal controls
     const ghost = spawn?.getGhost()
@@ -6061,6 +6014,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
         event.preventDefault()
         commands.execute("object.duplicate")
       }
+    } else if (/^Digit[0-9]$/.test(event.code) && !event.repeat && !variationGrid && focusZone !== "library" && digitHandler?.(Number(event.code.slice(5)), event.shiftKey)) {
+      event.preventDefault()
     } else if (/^[1-7]$/.test(event.key) && !event.repeat) {
       event.preventDefault()
       libraryDrawer.setCategory(LIBRARY_CATEGORIES[Number(event.key) - 1]!.id, true)
@@ -6077,6 +6032,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     /** Whether the multi-tile variation grid is open (it owns 1–9, G and Esc). */
     get variationGridOpen() {
       return variationGrid !== null
+    },
+    /** Number keys outside text fields, Play, the grid and the radial: return true to take them (stations do). */
+    onDigit(handler: (n: number, shift: boolean) => boolean) {
+      digitHandler = handler
     },
     /** A section the host loaded after start-up (a game's adapters fetched on demand). */
     addSection(section: LabSection) {

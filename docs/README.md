@@ -13,6 +13,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
   posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
 - [audio-design.md](audio-design.md): the shared audio engine and Audio Lab. Read before changing game sound.
+- [sfx-library.md](sfx-library.md): the shared sound library (semantic ids, variants, licences, loudness targets),
+  its offline generation and curation pipeline, and Outbreak's positional sound. Read before adding or replacing a
+  sound; [sfx-inventory.md](sfx-inventory.md) measures every sound file in the repository.
 
 ## Shared code and conventions
 
@@ -40,6 +43,10 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [zomboid-slice.md](zomboid-slice.md): the plan for Outbreak's co-op survival game.
 - [outbreak-coop.md](outbreak-coop.md): how Outbreak's 2–4 player co-op works (rooms, prediction, snapshots) and
   what it measured. Read before changing `shared/coop-sim.ts`, the room or `@arcade/kit/net`.
+- [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, belt, pack, containers, drops)
+  and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
+  items, loot, crafting or `shared/progression.ts`.
+- [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
 - [outbreak-look.md](outbreak-look.md), [outbreak-look-v2.md](outbreak-look-v2.md): Outbreak's look studies.
 - [outbreak-zombie-profile.md](outbreak-zombie-profile.md): Outbreak's zombie art controls on the shared rig.
 
