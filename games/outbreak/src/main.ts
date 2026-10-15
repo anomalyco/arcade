@@ -664,6 +664,8 @@ async function main() {
     { ...DEFAULT_INTERIOR_SETTINGS },
   )
   let vertices = 0
+  /** Automation only: pin the origin build or the streamed window regardless of the camera (switch comparisons). */
+  let forcedLevel: "origin" | "streamed" | undefined
   /** Draws the origin block with the authored origin build; its window origin matches the streamed (1,1) window. */
   function showOriginBuild() {
     currentWindowOrigin = [0, 0]
@@ -894,9 +896,10 @@ async function main() {
       const moveVx = localVehicle ? localVehicle.vx : p.vx
       const moveVy = localVehicle ? localVehicle.vy : p.vy
       const originBuild =
+        forcedLevel !== "streamed" &&
         mode !== "procedural" &&
         session.sim.worldStream.isOriginNineOnly() &&
-        useOriginBuild(!currentIsStreamWindow, drawn.x, drawn.y, view, settings.view.zoom)
+        (forcedLevel === "origin" || useOriginBuild(!currentIsStreamWindow, drawn.x, drawn.y, view, settings.view.zoom))
       if (originBuild && currentIsStreamWindow && worldStreamer.center.cx === 1 && worldStreamer.center.cy === 1) {
         // Back inside the origin block: return to the authored build (same window origin, so fog and vision carry over).
         showOriginBuild()
@@ -1801,6 +1804,9 @@ async function main() {
     draw: (dt) => draw(dt),
     interiors,
     rebuildLevel: () => level(),
+    forceLevel: (level?: "origin" | "streamed") => {
+      forcedLevel = level
+    },
   })
   Object.assign(window, { __arcadeHarness: harness })
   scheduleFrame()

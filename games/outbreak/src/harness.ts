@@ -90,6 +90,7 @@ export interface OutbreakHarnessHost {
   /** Rugs and themed interiors, and the level rebuild a structural interior change needs. */
   readonly interiors: InteriorPresenter
   readonly rebuildLevel: () => void
+  readonly forceLevel: (level?: "origin" | "streamed") => void
 }
 
 export function createOutbreakHarness(host: OutbreakHarnessHost) {
@@ -176,6 +177,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     },
     /** Level chunks the renderer holds and drew last frame (regression guard for vanishing streamed geometry). */
     levelDraw: () => ({ chunks: renderer.levelChunkCount, drawn: renderer.drawnChunks, draws: renderer.drawnChunkDraws }),
+    /** Pin the origin build or the streamed window regardless of the camera (undefined: automatic), to compare them at one pose. */
+    forceLevel: (level?: "origin" | "streamed") => host.forceLevel(level),
     quality: () => qualityController.state(devicePixelRatio),
     setQuality: (mode: QualityMode) => {
       const resolved = resolveQualityMode(mode)

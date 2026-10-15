@@ -30,6 +30,8 @@ export type InteriorWgslRefs = {
   flashXZ: string
   /** True when the hand-built origin houses (and their tiled kitchens) are on screen. */
   classicLayout: string
+  /** Whether building `i` (i32) of a streamed window is a hand-built origin house with a tiled kitchen. */
+  authoredKitchen: (i: string) => string
 }
 
 export const outbreakInteriorRefs: InteriorWgslRefs = {
@@ -40,6 +42,7 @@ export const outbreakInteriorRefs: InteriorWgslRefs = {
   buildingRect: i => `OL.bldRects[clamp(${i}, 0, 7)]`,
   flashXZ: "OL.u3.xy",
   classicLayout: "OL.win.z < 0.5",
+  authoredKitchen: i => `((u32(OL.u17.w) >> u32(8 + clamp(${i}, 0, 7))) & 1u) == 1u`,
 }
 
 export function interiorDeclarationsWgsl(r: InteriorWgslRefs): string {
@@ -188,9 +191,10 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
           if (mat == 4) {
             if (interior(o.world.xz + n.xz * 0.3)) { albedo = themedWall(albedo, o.world.x + o.world.z, o.world.y, th, variant); }
           } else {
-            ${classicKitchen ? `let kb = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0);
+            ${classicKitchen ? `let classic = ${r.classicLayout};
+            let kb = select(${r.buildingRect("bi")}, select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0), classic);
             let pk = o.world.xz;
-            let inKitchen = (${r.classicLayout}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
+            let inKitchen = (classic || ${r.authoredKitchen("bi")}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
             if (!inKitchen) { albedo = themedFloor(albedo, o.world.xz, th, variant); }
           }
         }

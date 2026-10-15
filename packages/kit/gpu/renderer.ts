@@ -713,6 +713,7 @@ export class Renderer {
 
   private levelStaging = new Uint8Array(0)
   private glassStaging = new Uint8Array(0)
+  private streamSlotBytes = 768 * 1024
   private readonly streamSlotKeys: string[] = Array.from({ length: 25 }, () => "")
   private readonly streamSlotChunks: Chunk[][] = Array.from({ length: 25 }, () => [])
 
@@ -733,12 +734,24 @@ export class Renderer {
   setLevel(level: LevelData): void {
     this.previousFrame = null
     const STREAM_SLOT_COUNT = 25
-    const STREAM_SLOT_BYTES = 768 * 1024
     const isStreamedSlots =
       level.chunks.length > 0 &&
       level.chunks.every((c) => c.streamSlot !== undefined && c.streamKey !== undefined)
 
     if (isStreamedSlots) {
+      // Slots grow (never shrink) to the largest chunk seen, in 768 KB steps (a whole number of vertices), so a dense
+      // chunk never forces the whole-level fallback below. Growing re-uploads every slot once.
+      const slotBytes = new Array<number>(STREAM_SLOT_COUNT).fill(0)
+      for (let i = 0; i < level.chunks.length; i++) {
+        const c = level.chunks[i]!
+        slotBytes[c.streamSlot!] += c.byteLength ?? c.data.byteLength
+      }
+      const needed = Math.ceil(Math.max(...slotBytes) / (768 * 1024)) * 768 * 1024
+      if (needed > this.streamSlotBytes) {
+        this.streamSlotBytes = needed
+        this.streamSlotKeys.fill("")
+      }
+      const STREAM_SLOT_BYTES = this.streamSlotBytes
       const totalCap = STREAM_SLOT_COUNT * STREAM_SLOT_BYTES
       if (!this.level || this.level.cap < totalCap) {
         this.level?.buf.destroy()

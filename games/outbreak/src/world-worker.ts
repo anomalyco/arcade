@@ -17,6 +17,8 @@ export type WorldWorkerRequest =
       cy: number
       houseDecay: number
       weathering: number
+      clutterDensity: number
+      clutterSeed: number
       interior?: typeof interiorSettings
     }
   | {
@@ -40,6 +42,8 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
   }
   archSettings.houseDecay = req.houseDecay
   archSettings.weathering = req.weathering
+  archSettings.clutterDensity = req.clutterDensity
+  archSettings.clutterSeed = req.clutterSeed
   if (req.interior) Object.assign(interiorSettings, req.interior)
   const worldChunk = generateWorldChunk(req.seed, req.houseSeed, req.cx, req.cy, req.mode)
   const compiled = compileSingleWorldChunk(
@@ -48,6 +52,7 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
     req.houseSeed,
     req.terrain,
     req.foliageDensity,
+    req.mode,
   )
   const transfer: Transferable[] = [
     compiled.floorTile.buffer,

@@ -123,6 +123,255 @@ export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:numbe
 /** Ground footprints of every plant() since the level build cleared it; the floor map bakes their contact shade. */
 export const plantFootprints:{x:number;z:number;radius:number;tree:boolean;ground:number}[]=[]
 
+export type HouseFrontageOptions = {
+  /** Decorative parked sedan in the driveway (the origin lots; streamed lots get a real vehicle instead). */
+  sedan?: boolean
+  /** Bedroom doorway architrave inside the house (the origin plan). */
+  interiorTrim?: boolean
+  /** South façade window spans; default the origin bungalow's. */
+  windows?: readonly (readonly [number, number])[]
+  decay?: HouseDecayState
+}
+
+export type HousePlantingOptions = {
+  /** Plants a bush or tree; default plant(). Streamed chunks place cached templates instead. */
+  plant?: (m: Mesh, x: number, z: number, h: number, radius: number, seed: number, ground: number) => void
+  /** Whether a framing plant (driveway hedge, yard and woodland trees) may stand here; default everywhere. */
+  keep?: (x: number, z: number, h: number, radius: number) => boolean
+  /** Left edge of the 1.4 m front door; default x + 5. */
+  doorX?: number
+  /** South façade window spans; foundation bushes in front of them stay under the 0.85 m sill. */
+  windows?: readonly (readonly [number, number])[]
+  /** Bush seed; default houseSeed + id * 71. */
+  seed?: number
+  /** The corner trees across the street from origin house 0. */
+  streetTrees?: boolean
+}
+
+/**
+ * The street face of the L-plan bungalow: garden shed, porch canopy and columns, steps, mailbox, door casing, mat
+ * and porch clutter, corner boards, louvered shutters, foundation vents, decay repairs and the utility meter.
+ */
+export function houseFrontage(m:Mesh,b:Building,id:number,town:Town,opts:HouseFrontageOptions={}) {
+  const [x,z,r,e]=b.rect,trim=rgb(0xc8c4b8),roof=rgb(0x4e4b46)
+  const cx=x+5.7
+  if(opts.sedan)parkedSedan(m,x-1.68,e-1.35,.035)
+  gardenShed(m,x-2.85,z+.55,x-1.15,z+2.25,.035)
+  // Gabled porch canopy with valley flashing, shingle slopes, shadowed soffit, and weathered putty bargeboard rake trim.
+  m.quadAuto([cx-1.56,2.48,e-.08],[cx,3.06,e-.08],[cx,3.06,e-.26],[cx-1.56,2.48,e-.26],rgb(0x2e2b27),MAT.roof,id)
+  m.quadAuto([cx,3.06,e-.08],[cx+1.56,2.48,e-.08],[cx+1.56,2.48,e-.26],[cx,3.06,e-.26],rgb(0x2e2b27),MAT.roof,id)
+  m.quadAuto([cx-1.56,2.48,e+1.28],[cx,3.04,e+1.28],[cx,3.04,e-.12],[cx-1.56,2.48,e-.12],roof,MAT.roof,id)
+  m.quadAuto([cx,3.04,e+1.28],[cx+1.56,2.48,e+1.28],[cx+1.56,2.48,e-.12],[cx,3.04,e-.12],roof,MAT.roof,id)
+  m.box(cx-.06,3.01,e-.12,cx+.06,3.08,e+1.30,rgb(0x5c5850),MAT.roof,id,rgb(0x767168))
+  m.facet([cx-1.46,2.48,e+1.18],[cx,2.98,e+1.18],[cx+1.46,2.48,e+1.18],rgb(0x362f26),MAT.roof,id)
+  m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],rgb(0x888173),MAT.roof,id)
+  m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],rgb(0x888173),MAT.roof,id)
+  m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,rgb(0x726b5e),MAT.roof,id)
+  // Craftsman porch columns with brick/stone plinth pedestals, recessed shaft panels, capital collars & side balustrades.
+  for(const [side, px] of [[-1, cx-1.24], [1, cx+1.24]] as const){
+    m.box(px-.16,.025,e+.98,px+.16,.44,e+1.30,rgb(0x523226),MAT.brick)
+    m.box(px-.18,.44,e+.96,px+.18,.50,e+1.32,rgb(0x645e53),MAT.lit)
+    m.box(px-.11,.50,e+1.03,px+.11,2.40,e+1.25,rgb(0x867e6e),MAT.lit)
+    m.box(px-.07,.58,e+1.251,px+.07,2.28,e+1.265,rgb(0x645d50),MAT.lit)
+    m.box(px-.14,2.34,e+1.00,px+.14,2.42,e+1.28,rgb(0x746d5f),MAT.roof,id)
+    // Side porch balustrade (west & east edges, z = e+.06 .. e+1.02)
+    m.box(px-.05,.76,e+.04,px+.05,.82,e+1.03,rgb(0x6c6558),MAT.lit,0,rgb(0x7c7466))
+    m.box(px-.04,.24,e+.04,px+.04,.29,e+1.03,rgb(0x585247),MAT.lit)
+    for(let bz=e+.14;bz<=e+.96;bz+=.16){
+      m.box(px-.022,.29,bz-.02,px+.022,.76,bz+.02,rgb(0x645e52),MAT.lit)
+    }
+    // Short front return balustrade wing framing the central 1.56m step opening
+    const rx0 = side < 0 ? px + .11 : cx + .78
+    const rx1 = side < 0 ? cx - .78 : px - .11
+    m.box(rx0,.76,e+1.10,rx1,.82,e+1.18,rgb(0x6c6558),MAT.lit,0,rgb(0x7c7466))
+    m.box(rx0,.24,e+1.11,rx1,.29,e+1.17,rgb(0x585247),MAT.lit)
+    for(const bx of [rx0+.08,(rx0+rx1)/2,rx1-.08]){
+      m.box(bx-.02,.29,e+1.12,bx+.02,.76,e+1.16,rgb(0x645e52),MAT.lit)
+    }
+    // Brick & stone step cheek wall flanking the front steps
+    const cx0 = side < 0 ? px - .14 : cx + .74
+    const cx1 = side < 0 ? cx - .74 : px + .14
+    m.box(cx0,.025,e+1.28,cx1,.30,e+1.64,rgb(0x4c2e23),MAT.brick)
+    m.box(cx0-.02,.30,e+1.26,cx1+.02,.35,e+1.66,rgb(0x5c564c),MAT.lit)
+  }
+  // Porch deck perimeter brick skirt + two-tier step risers & bullnose shadow lines leading to front walkway.
+  m.box(x+4.46,.02,e+.02,cx-1.36,.132,e+1.28,rgb(0x4a2c22),MAT.brick)
+  m.box(cx+1.36,.02,e+.02,x+7.04,.132,e+1.28,rgb(0x4a2c22),MAT.brick)
+  m.box(cx-.74,.08,e+1.26,cx+.74,.131,e+1.32,rgb(0x22201c),MAT.lit)
+  m.box(cx-.74,.04,e+1.44,cx+.74,.131,e+1.49,rgb(0x1e1c18),MAT.lit)
+  m.box(cx-.74,.015,e+1.60,cx+.74,.131,e+1.65,rgb(0x24221e),MAT.lit)
+  // Cast-iron wall mailbox with brass slot & sticking-out rolled flyer, plus house number plaque beside the door.
+  m.box(cx+1.00,1.18,e+.01,cx+1.22,1.44,e+.11,rgb(0x24282e),MAT.lit,0,rgb(0x323840))
+  m.box(cx+1.03,1.36,e+.11,cx+1.19,1.385,e+.125,rgb(0xa88a4e),MAT.shiny)
+  m.box(cx+1.04,1.43,e+.03,cx+1.17,1.49,e+.09,rgb(0xb8ae98),MAT.lit)
+  // House number plaque ("247" / "251") on left pilaster
+  m.box(cx-.92,1.42,e+.01,cx-.74,1.54,e+.04,rgb(0x1f2226),MAT.lit)
+  for(let d=0;d<3;d++)m.box(cx-.89+d*.05,1.45,e+.041,cx-.86+d*.05,1.51,e+.05,rgb(0xb89654),MAT.shiny)
+  // Door casing, recessed jambs, moulded pediment lintel, interior bedroom doorway architrave & rubber-bordered coir mat.
+  for(const px of [x+4.89,x+6.41]){
+    m.box(px,.13,e-.25,px+.10,2.38,e+.08,rgb(0x787062),MAT.lit)
+    m.box(px+.02,.13,e-.02,px+.08,2.34,e+.095,rgb(0x5c554a),MAT.lit)
+    if(opts.interiorTrim)m.box(px,.13,z+5.46,px+.10,2.36,z+5.74,rgb(0x787060),MAT.lit)
+  }
+  m.box(x+4.86,2.30,e-.25,x+6.54,2.42,e+.09,rgb(0x787062),MAT.lit)
+  m.box(x+4.84,2.41,e-.24,x+6.56,2.47,e+.12,rgb(0x5e584c),MAT.lit)
+  if(opts.interiorTrim)m.box(x+4.86,2.28,z+5.46,x+6.54,2.40,z+5.74,rgb(0x787060),MAT.lit)
+  m.box(x+5,.13,e-.28,x+6.4,.152,e+.18,rgb(0x524c40),MAT.lit)
+  // Rubber-bordered coir welcome mat with scraper ribs
+  m.box(cx-.54,.131,e+.18,cx+.54,.148,e+.74,rgb(0x1c1a17),MAT.lit)
+  m.box(cx-.48,.134,e+.23,cx+.48,.154,e+.69,rgb(0x463320),MAT.timber)
+  for(let rz=e+.28;rz<=e+.64;rz+=.09)m.box(cx-.44,.154,rz,cx+.44,.158,rz+.03,rgb(0x322416),MAT.timber)
+  // Porch clutter: slatted wood crate, storage chest on left porch, terracotta planter, muddy boots, leaning broom & parcel box
+  m.bevelBox(x+4.46,.13,e+.16,cx-.82,.78,e+.86,.025,rgb(0x4e3a26),rgb(0x624a32),MAT.timber,MAT.timber)
+  m.yawBox(cx-1.02,e+.98,.36,.30,.13,.38,.18,rgb(0x58422c),MAT.timber,0,rgb(0x6a5036))
+  m.prism(cx-.92,e+.52,.14,.11,.78,1.02,7,rgb(0x683a24),MAT.lit)
+  m.box(cx-.68,.13,e+.22,cx-.58,.28,e+.34,rgb(0x22201c),MAT.lit)
+  m.box(cx-.67,.13,e+.30,cx-.59,.19,e+.42,rgb(0x2a2722),MAT.lit)
+  m.yawBox(cx+.96,e+.34,.36,.28,.13,.36,-.22,rgb(0x5e4830),MAT.timber,0,rgb(0x72583c))
+  m.yawBox(cx+1.02,e+.76,.32,.26,.13,.48,.14,rgb(0x4c3a26),MAT.timber,0,rgb(0x5e4830))
+  // Leaning porch broom against right wall beside door
+  m.quadAuto([cx+.82,.13,e+.18],[cx+.85,.13,e+.18],[cx+.76,1.28,e+.03],[cx+.73,1.28,e+.03],rgb(0x5c462e),MAT.timber)
+  m.box(cx+.76,.13,e+.14,cx+.90,.32,e+.23,rgb(0x6e5a38),MAT.timber)
+  for(const px of [x+.08,r-.14]){
+    m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
+    m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
+  }
+  for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,rgb(0x787368),MAT.lit)
+  // Louvered exterior window shutters, crawlspace foundation vents, utility meter & decay-driven repairs/barricades
+  const decay = opts.decay ?? resolveHouseDecay(town, id)
+  const shutterCol = rgb(0x202a27), slatCol = rgb(0x161d1b)
+  for (const [winIdx, [wx0, wx1]] of (opts.windows ?? [[x + 1.5, x + 3.5], [r - 4.0, r - 1.5]]).entries()) {
+    for (const [sideIdx, sx] of [[-1, wx0 - .36], [1, wx1 + .04]] as const) {
+      const crooked = decay >= 2 && winIdx === 0 && sideIdx === 1
+      const dy = crooked ? -.05 : 0
+      m.box(sx, .82 + dy, e + .008, sx + .32, 2.18 + dy, e + .048, shutterCol, MAT.lit)
+      for (let sy = .92 + dy; sy <= 2.08 + dy; sy += .14) {
+        m.box(sx + .04, sy, e + .049, sx + .28, sy + .05, e + .062, slatCol, MAT.lit)
+      }
+    }
+    // Cast-iron foundation crawlspace vent grate below each front window
+    const vmx = (wx0 + wx1) / 2
+    m.box(vmx - .22, .11, e + .025, vmx + .22, .27, e + .048, rgb(0x171a1e), MAT.lit)
+    // Weathered water-stain drip streaks below window sill corners
+    if (archSettings.weathering > 0.2) {
+      for (const cxW of [wx0 + .06, wx1 - .06]) {
+        m.box(cxW - .05, .36, e + .003, cxW + .05, .74, e + .012, rgb(0x46423a), MAT.lit)
+      }
+    }
+    // Exterior barricade planks across windows when house decay is Barricaded (4) or on right window in Ransacked/Abandoned
+    if (decay === 4 || (decay === 2 && winIdx === 0)) {
+      m.quadAuto([wx0 - .12, 1.02, e + .07], [wx1 + .12, 1.24, e + .07], [wx1 + .12, 1.40, e + .07], [wx0 - .12, 1.18, e + .07], rgb(0x5e462e), MAT.timber)
+      m.quadAuto([wx0 - .10, 1.78, e + .075], [wx1 + .10, 1.56, e + .075], [wx1 + .10, 1.72, e + .075], [wx0 - .10, 1.94, e + .075], rgb(0x523c26), MAT.timber)
+    }
+  }
+  // Mismatched siding repair patch & utility meter + conduit pipe on side wall
+  if (decay >= 2) {
+    m.box(x + 3.62, .48, e + .004, x + 4.46, .96, e + .018, rgb(0x5e5648), MAT.timber)
+    m.box(r - 1.38, .42, e + .004, r - .42, .82, e + .018, rgb(0x565044), MAT.timber)
+  }
+  m.box(x - .08, 1.15, z + 6.8, x + .01, 1.52, z + 7.12, rgb(0x3a4046), MAT.lit)
+  m.box(x - .04, .35, z + 6.93, x + .01, 2.68, z + 6.99, rgb(0x4a5058), MAT.lit)
+}
+
+/** Foundation shrubs around a house façade, anchored to its west corner, front door and east corner. */
+const FOUNDATION_BUSHES: readonly (readonly ["x" | "door" | "r", number, number, number, number])[] = [
+  // Left corner bush cluster wrapping around the corner by the driveway sedan
+  ["x", -.24, -.35, 1.24, .82],
+  ["x", .28, .56, 1.18, .80],
+  ["x", .88, .96, .68, .56],
+  // Irregular low-to-mid bushes under the left window (below 0.85m sill) + taller bush flanking the left porch column
+  ["x", 1.52, .46, .72, .58],
+  ["x", 2.28, .78, .54, .48],
+  ["x", 2.95, .44, .66, .54],
+  ["door", -1.88, .58, 1.08, .72],
+  // Taller bush flanking the right porch column + irregular overgrown shrubs under the right window
+  ["door", 1.78, .56, 1.12, .74],
+  ["r", -6.52, .52, .94, .66],
+  ["r", -5.72, .84, .58, .50],
+  ["r", -4.95, .44, .68, .56],
+  ["r", -4.08, .78, .56, .48],
+  ["r", -3.35, .48, .74, .58],
+  // Front-right corner hydrangea thicket
+  ["r", -1.08, .62, 1.16, .84],
+  ["r", -.22, 1.02, .76, .62],
+]
+
+/**
+ * Overgrown, irregular foundation hedge & bramble thicket: organic soil discs (no straight rectangular bed) and
+ * multi-height sprawling shrubs keeping window sills & porch columns clear while spilling wild weeds onto the lawn,
+ * then the framing woodland, driveway hedge and street trees. Bushes are anchored to the west corner, the front door
+ * and the east corner, so on a narrower façade those that would block the door are dropped and those in front of a
+ * window stay under its sill. `keep` vetoes framing plants that would leave the lot.
+ */
+export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePlantingOptions={}) {
+  const [x,z,r,e]=b.rect
+  const doorX=opts.doorX ?? x+5, cx=doorX+.7
+  const put=opts.plant ?? plant
+  const keep=opts.keep ?? (() => true)
+  const rng=new Rng(opts.seed ?? town.houseSeed+id*71)
+  const kept:[number,number,number][]=[]
+  let hydrangea=false
+  for(const [anchor,dx,dz,h0,pr] of FOUNDATION_BUSHES){
+    const px=(anchor==="x"?x:anchor==="r"?r:cx)+dx, pz=e+dz
+    const seed=Math.floor(rng.next()*1e6)
+    if(anchor!=="door"&&Math.abs(px-cx)<1.5)continue
+    if(px<x-.5||px>r+.5||kept.some(([qx,qz,qr])=>Math.hypot(px-qx,pz-qz)<(pr+qr)*.45))continue
+    const underSill=opts.windows?.some(([w0,w1])=>px>w0-.1&&px<w1+.1)
+    const ph=underSill?Math.min(h0,.78):h0
+    kept.push([px,pz,pr])
+    if(anchor==="r"&&dx===-1.08)hydrangea=true
+    const gy=supportHeight(town,px,pz)
+    m.prism(px,pz,pr*1.05,pr*.95,gy+.006,gy+.018,7,rgb(0x14180f),MAT.ground,5)
+    put(m,px,pz,ph,pr,seed,gy)
+  }
+  // Subtle, short, matted olive-ochre weed & turf tufts along the front margin of the foundation bushes
+  for(let wx=x-.1;wx<=r+.1;wx+=.58+rng.next()*.42){
+    if(wx>doorX-.85&&wx<doorX+2.15)continue
+    const wz=e+.72+rng.next()*.68
+    const gy=supportHeight(town,wx,wz)
+    emitGrassTuft(m,wx,gy,wz,{
+      bladeCount:3,
+      radius:.16+rng.next()*.08,
+      height:.11+rng.next()*.09,
+      width:foliageSettings.bladeWidth*.88,
+      curvature:Math.min(1,foliageSettings.bladeCurvature*1.15),
+      leanAngle:Math.PI*.5+(rng.next()-.5)*1.4,
+      rootColor:rgb(0x1c1e12),
+      tipColor:rgb(rng.pick([0x3e3c24,0x484226,0x343820])),
+      rng,
+    })
+  }
+  // Delicate creamy-white blossom flecks on the front-right corner bush
+  if(hydrangea)emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,(opts.seed ?? town.houseSeed)+31)
+  // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
+  for(const [px,pz,ph,pr] of [
+    // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies
+    [x-3.58,e+2.05,1.48,.96],
+    [x-3.52,e+.55,1.42,.90],
+    [x-3.55,e-.95,1.38,.86],
+    [x-3.65,e-2.65,1.34,.82],
+    [x-3.60,z+3.20,1.38,.86],
+    [x-5.45,e+.60,6.80,3.10],
+    [x-5.15,e-3.60,7.20,3.25],
+    [x-4.80,z+3.20,6.60,2.95],
+    // Right yard street tree & corner bush (keeping the north-south sidewalk x=38..40 open under the sodium streetlamp)
+    [r+.52,e-2.40,5.80,2.35],
+    [r+.52,e+.42,1.44,.92],
+    [r+.48,e+1.65,1.38,.88],
+    [r+1.82,e+3.05,1.52,1.04],
+    [r-.45,e+1.95,.98,.68],
+    // South-side street corner framing trees across the road (leaving south sidewalk & verge open)
+    ...(opts.streetTrees ? [
+      [x-5.40,e+14.50,6.80,3.05],
+      [x-3.50,e+14.80,1.48,.98],
+      [r+4.40,e+14.60,6.80,3.05],
+      [r+2.80,e+14.80,1.46,.96],
+    ] as const : []),
+  ]){
+    if(keep(px!,pz!,ph!,pr!))put(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
+  }
+}
+
 /** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {
   const [x,z,r,e]=b.rect,mid=(z+e)/2,ridge=4.35+(town.houseSeed%3)*.12
@@ -224,195 +473,9 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     for (const sy of [.65, 1.45, 2.25]) m.box(dx - .05, sy, e - .025, dx + .05, sy + .04, e + .07, rgb(0x36332e), MAT.lit)
     m.box(dx - .04, .08, e + .02, dx + .04, .18, e + .26 + (side < 0 ? .04 : 0), gutterMetal, MAT.lit)
   }
-  const cx=x+5.7
-  parkedSedan(m,x-1.68,e-1.35,.035)
-  gardenShed(m,x-2.85,z+.55,x-1.15,z+2.25,.035)
-  // Gabled porch canopy with valley flashing, shingle slopes, shadowed soffit, and weathered putty bargeboard rake trim.
-  m.quadAuto([cx-1.56,2.48,e-.08],[cx,3.06,e-.08],[cx,3.06,e-.26],[cx-1.56,2.48,e-.26],rgb(0x2e2b27),MAT.roof,id)
-  m.quadAuto([cx,3.06,e-.08],[cx+1.56,2.48,e-.08],[cx+1.56,2.48,e-.26],[cx,3.06,e-.26],rgb(0x2e2b27),MAT.roof,id)
-  m.quadAuto([cx-1.56,2.48,e+1.28],[cx,3.04,e+1.28],[cx,3.04,e-.12],[cx-1.56,2.48,e-.12],roof,MAT.roof,id)
-  m.quadAuto([cx,3.04,e+1.28],[cx+1.56,2.48,e+1.28],[cx+1.56,2.48,e-.12],[cx,3.04,e-.12],roof,MAT.roof,id)
-  m.box(cx-.06,3.01,e-.12,cx+.06,3.08,e+1.30,rgb(0x5c5850),MAT.roof,id,rgb(0x767168))
-  m.facet([cx-1.46,2.48,e+1.18],[cx,2.98,e+1.18],[cx+1.46,2.48,e+1.18],rgb(0x362f26),MAT.roof,id)
-  m.quadAuto([cx-1.58,2.44,e+1.30],[cx,3.01,e+1.30],[cx,3.08,e+1.26],[cx-1.58,2.51,e+1.26],rgb(0x888173),MAT.roof,id)
-  m.quadAuto([cx,3.01,e+1.30],[cx+1.58,2.44,e+1.30],[cx+1.58,2.51,e+1.26],[cx,3.08,e+1.26],rgb(0x888173),MAT.roof,id)
-  m.box(cx-1.52,2.40,e+1.08,cx+1.52,2.48,e+1.24,rgb(0x726b5e),MAT.roof,id)
-  // Craftsman porch columns with brick/stone plinth pedestals, recessed shaft panels, capital collars & side balustrades.
-  for(const [side, px] of [[-1, cx-1.24], [1, cx+1.24]] as const){
-    m.box(px-.16,.025,e+.98,px+.16,.44,e+1.30,rgb(0x523226),MAT.brick)
-    m.box(px-.18,.44,e+.96,px+.18,.50,e+1.32,rgb(0x645e53),MAT.lit)
-    m.box(px-.11,.50,e+1.03,px+.11,2.40,e+1.25,rgb(0x867e6e),MAT.lit)
-    m.box(px-.07,.58,e+1.251,px+.07,2.28,e+1.265,rgb(0x645d50),MAT.lit)
-    m.box(px-.14,2.34,e+1.00,px+.14,2.42,e+1.28,rgb(0x746d5f),MAT.roof,id)
-    // Side porch balustrade (west & east edges, z = e+.06 .. e+1.02)
-    m.box(px-.05,.76,e+.04,px+.05,.82,e+1.03,rgb(0x6c6558),MAT.lit,0,rgb(0x7c7466))
-    m.box(px-.04,.24,e+.04,px+.04,.29,e+1.03,rgb(0x585247),MAT.lit)
-    for(let bz=e+.14;bz<=e+.96;bz+=.16){
-      m.box(px-.022,.29,bz-.02,px+.022,.76,bz+.02,rgb(0x645e52),MAT.lit)
-    }
-    // Short front return balustrade wing framing the central 1.56m step opening
-    const rx0 = side < 0 ? px + .11 : cx + .78
-    const rx1 = side < 0 ? cx - .78 : px - .11
-    m.box(rx0,.76,e+1.10,rx1,.82,e+1.18,rgb(0x6c6558),MAT.lit,0,rgb(0x7c7466))
-    m.box(rx0,.24,e+1.11,rx1,.29,e+1.17,rgb(0x585247),MAT.lit)
-    for(const bx of [rx0+.08,(rx0+rx1)/2,rx1-.08]){
-      m.box(bx-.02,.29,e+1.12,bx+.02,.76,e+1.16,rgb(0x645e52),MAT.lit)
-    }
-    // Brick & stone step cheek wall flanking the front steps
-    const cx0 = side < 0 ? px - .14 : cx + .74
-    const cx1 = side < 0 ? cx - .74 : px + .14
-    m.box(cx0,.025,e+1.28,cx1,.30,e+1.64,rgb(0x4c2e23),MAT.brick)
-    m.box(cx0-.02,.30,e+1.26,cx1+.02,.35,e+1.66,rgb(0x5c564c),MAT.lit)
-  }
-  // Porch deck perimeter brick skirt + two-tier step risers & bullnose shadow lines leading to front walkway.
-  m.box(x+4.46,.02,e+.02,cx-1.36,.132,e+1.28,rgb(0x4a2c22),MAT.brick)
-  m.box(cx+1.36,.02,e+.02,x+7.04,.132,e+1.28,rgb(0x4a2c22),MAT.brick)
-  m.box(cx-.74,.08,e+1.26,cx+.74,.131,e+1.32,rgb(0x22201c),MAT.lit)
-  m.box(cx-.74,.04,e+1.44,cx+.74,.131,e+1.49,rgb(0x1e1c18),MAT.lit)
-  m.box(cx-.74,.015,e+1.60,cx+.74,.131,e+1.65,rgb(0x24221e),MAT.lit)
-  // Cast-iron wall mailbox with brass slot & sticking-out rolled flyer, plus house number plaque beside the door.
-  m.box(cx+1.00,1.18,e+.01,cx+1.22,1.44,e+.11,rgb(0x24282e),MAT.lit,0,rgb(0x323840))
-  m.box(cx+1.03,1.36,e+.11,cx+1.19,1.385,e+.125,rgb(0xa88a4e),MAT.shiny)
-  m.box(cx+1.04,1.43,e+.03,cx+1.17,1.49,e+.09,rgb(0xb8ae98),MAT.lit)
-  // House number plaque ("247" / "251") on left pilaster
-  m.box(cx-.92,1.42,e+.01,cx-.74,1.54,e+.04,rgb(0x1f2226),MAT.lit)
-  for(let d=0;d<3;d++)m.box(cx-.89+d*.05,1.45,e+.041,cx-.86+d*.05,1.51,e+.05,rgb(0xb89654),MAT.shiny)
-  // Door casing, recessed jambs, moulded pediment lintel, interior bedroom doorway architrave & rubber-bordered coir mat.
-  for(const px of [x+4.89,x+6.41]){
-    m.box(px,.13,e-.25,px+.10,2.38,e+.08,rgb(0x787062),MAT.lit)
-    m.box(px+.02,.13,e-.02,px+.08,2.34,e+.095,rgb(0x5c554a),MAT.lit)
-    m.box(px,.13,z+5.46,px+.10,2.36,z+5.74,rgb(0x787060),MAT.lit)
-  }
-  m.box(x+4.86,2.30,e-.25,x+6.54,2.42,e+.09,rgb(0x787062),MAT.lit)
-  m.box(x+4.84,2.41,e-.24,x+6.56,2.47,e+.12,rgb(0x5e584c),MAT.lit)
-  m.box(x+4.86,2.28,z+5.46,x+6.54,2.40,z+5.74,rgb(0x787060),MAT.lit)
-  m.box(x+5,.13,e-.28,x+6.4,.152,e+.18,rgb(0x524c40),MAT.lit)
-  // Rubber-bordered coir welcome mat with scraper ribs
-  m.box(cx-.54,.131,e+.18,cx+.54,.148,e+.74,rgb(0x1c1a17),MAT.lit)
-  m.box(cx-.48,.134,e+.23,cx+.48,.154,e+.69,rgb(0x463320),MAT.timber)
-  for(let rz=e+.28;rz<=e+.64;rz+=.09)m.box(cx-.44,.154,rz,cx+.44,.158,rz+.03,rgb(0x322416),MAT.timber)
-  // Porch clutter: slatted wood crate, storage chest on left porch, terracotta planter, muddy boots, leaning broom & parcel box
-  m.bevelBox(x+4.46,.13,e+.16,cx-.82,.78,e+.86,.025,rgb(0x4e3a26),rgb(0x624a32),MAT.timber,MAT.timber)
-  m.yawBox(cx-1.02,e+.98,.36,.30,.13,.38,.18,rgb(0x58422c),MAT.timber,0,rgb(0x6a5036))
-  m.prism(cx-.92,e+.52,.14,.11,.78,1.02,7,rgb(0x683a24),MAT.lit)
-  m.box(cx-.68,.13,e+.22,cx-.58,.28,e+.34,rgb(0x22201c),MAT.lit)
-  m.box(cx-.67,.13,e+.30,cx-.59,.19,e+.42,rgb(0x2a2722),MAT.lit)
-  m.yawBox(cx+.96,e+.34,.36,.28,.13,.36,-.22,rgb(0x5e4830),MAT.timber,0,rgb(0x72583c))
-  m.yawBox(cx+1.02,e+.76,.32,.26,.13,.48,.14,rgb(0x4c3a26),MAT.timber,0,rgb(0x5e4830))
-  // Leaning porch broom against right wall beside door
-  m.quadAuto([cx+.82,.13,e+.18],[cx+.85,.13,e+.18],[cx+.76,1.28,e+.03],[cx+.73,1.28,e+.03],rgb(0x5c462e),MAT.timber)
-  m.box(cx+.76,.13,e+.14,cx+.90,.32,e+.23,rgb(0x6e5a38),MAT.timber)
-  // Overgrown, irregular foundation hedge & bramble thicket: organic soil discs (no straight rectangular bed)
-  // and multi-height sprawling shrubs keeping window sills & porch columns clear while spilling wild weeds onto the lawn.
-  const rng=new Rng(town.houseSeed+id*71)
-  for(const [px,pz,ph,pr] of [
-    // Left corner bush cluster wrapping around the corner by the driveway sedan
-    [x-.24,e-.35,1.24,.82],
-    [x+.28,e+.56,1.18,.80],
-    [x+.88,e+.96,.68,.56],
-    // Irregular low-to-mid bushes under the left window (below 0.85m sill) + taller bush flanking the left porch column
-    [x+1.52,e+.46,.72,.58],
-    [x+2.28,e+.78,.54,.48],
-    [x+2.95,e+.44,.66,.54],
-    [x+3.82,e+.58,1.08,.72],
-    // Taller bush flanking the right porch column + irregular overgrown shrubs under the right window
-    [x+7.48,e+.56,1.12,.74],
-    [x+8.48,e+.52,.94,.66],
-    [x+9.28,e+.84,.58,.50],
-    [x+10.05,e+.44,.68,.56],
-    [x+10.92,e+.78,.56,.48],
-    [x+11.65,e+.48,.74,.58],
-    // Front-right corner hydrangea thicket
-    [r-1.08,e+.62,1.16,.84],
-    [r-.22,e+1.02,.76,.62],
-  ]){
-    const gy=supportHeight(town,px!,pz!)
-    m.prism(px!,pz!,pr!*1.05,pr!*.95,gy+.006,gy+.018,7,rgb(0x14180f),MAT.ground,5)
-    plant(m,px!,pz!,ph!,pr!,Math.floor(rng.next()*1e6),gy)
-  }
-  // Subtle, short, matted olive-ochre weed & turf tufts along the front margin of the foundation bushes
-  for(let wx=x-.1;wx<=r+.1;wx+=.58+rng.next()*.42){
-    if(wx>x+4.15&&wx<x+7.15)continue
-    const wz=e+.72+rng.next()*.68
-    const gy=supportHeight(town,wx,wz)
-    emitGrassTuft(m,wx,gy,wz,{
-      bladeCount:3,
-      radius:.16+rng.next()*.08,
-      height:.11+rng.next()*.09,
-      width:foliageSettings.bladeWidth*.88,
-      curvature:Math.min(1,foliageSettings.bladeCurvature*1.15),
-      leanAngle:Math.PI*.5+(rng.next()-.5)*1.4,
-      rootColor:rgb(0x1c1e12),
-      tipColor:rgb(rng.pick([0x3e3c24,0x484226,0x343820])),
-      rng,
-    })
-  }
-  // Delicate creamy-white blossom flecks on the front-right corner bush
-  emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,town.houseSeed+31)
-  for(const px of [x+.08,r-.14]){
-    m.box(px,.12,e+.1,px+.07,2.77,e+.17,trim,MAT.timber)
-    m.box(px,.1,e+.15,px+.07,.17,e+.5,trim,MAT.timber)
-  }
-  for(const px of [x,r-.10])m.box(px,.28,e-.015,px+.10,2.68,e+.025,rgb(0x787368),MAT.lit)
-  // Louvered exterior window shutters, crawlspace foundation vents, utility meter & decay-driven repairs/barricades
+  houseFrontage(m,b,id,town,{sedan:true,interiorTrim:true})
+  housePlanting(m,b,id,town,{streetTrees:id===0})
   const decay = resolveHouseDecay(town, id)
-  const shutterCol = rgb(0x202a27), slatCol = rgb(0x161d1b)
-  for (const [winIdx, [wx0, wx1]] of [[0, [x + 1.5, x + 3.5]], [1, [r - 4.0, r - 1.5]]] as const) {
-    for (const [sideIdx, sx] of [[-1, wx0 - .36], [1, wx1 + .04]] as const) {
-      const crooked = decay >= 2 && winIdx === 0 && sideIdx === 1
-      const dy = crooked ? -.05 : 0
-      m.box(sx, .82 + dy, e + .008, sx + .32, 2.18 + dy, e + .048, shutterCol, MAT.lit)
-      for (let sy = .92 + dy; sy <= 2.08 + dy; sy += .14) {
-        m.box(sx + .04, sy, e + .049, sx + .28, sy + .05, e + .062, slatCol, MAT.lit)
-      }
-    }
-    // Cast-iron foundation crawlspace vent grate below each front window
-    const vmx = (wx0 + wx1) / 2
-    m.box(vmx - .22, .11, e + .025, vmx + .22, .27, e + .048, rgb(0x171a1e), MAT.lit)
-    // Weathered water-stain drip streaks below window sill corners
-    if (archSettings.weathering > 0.2) {
-      for (const cxW of [wx0 + .06, wx1 - .06]) {
-        m.box(cxW - .05, .36, e + .003, cxW + .05, .74, e + .012, rgb(0x46423a), MAT.lit)
-      }
-    }
-    // Exterior barricade planks across windows when house decay is Barricaded (4) or on right window in Ransacked/Abandoned
-    if (decay === 4 || (decay === 2 && winIdx === 0)) {
-      m.quadAuto([wx0 - .12, 1.02, e + .07], [wx1 + .12, 1.24, e + .07], [wx1 + .12, 1.40, e + .07], [wx0 - .12, 1.18, e + .07], rgb(0x5e462e), MAT.timber)
-      m.quadAuto([wx0 - .10, 1.78, e + .075], [wx1 + .10, 1.56, e + .075], [wx1 + .10, 1.72, e + .075], [wx0 - .10, 1.94, e + .075], rgb(0x523c26), MAT.timber)
-    }
-  }
-  // Mismatched siding repair patch & utility meter + conduit pipe on side wall
-  if (decay >= 2) {
-    m.box(x + 3.62, .48, e + .004, x + 4.46, .96, e + .018, rgb(0x5e5648), MAT.timber)
-    m.box(r - 1.38, .42, e + .004, r - .42, .82, e + .018, rgb(0x565044), MAT.timber)
-  }
-  m.box(x - .08, 1.15, z + 6.8, x + .01, 1.52, z + 7.12, rgb(0x3a4046), MAT.lit)
-  m.box(x - .04, .35, z + 6.93, x + .01, 2.68, z + 6.99, rgb(0x4a5058), MAT.lit)
-  // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
-  for(const [px,pz,ph,pr] of [
-    // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies
-    [x-3.58,e+2.05,1.48,.96],
-    [x-3.52,e+.55,1.42,.90],
-    [x-3.55,e-.95,1.38,.86],
-    [x-3.65,e-2.65,1.34,.82],
-    [x-3.60,z+3.20,1.38,.86],
-    [x-5.45,e+.60,6.80,3.10],
-    [x-5.15,e-3.60,7.20,3.25],
-    [x-4.80,z+3.20,6.60,2.95],
-    // Right yard street tree & corner bush (keeping the north-south sidewalk x=38..40 open under the sodium streetlamp)
-    [r+.52,e-2.40,5.80,2.35],
-    [r+.52,e+.42,1.44,.92],
-    [r+.48,e+1.65,1.38,.88],
-    [r+1.82,e+3.05,1.52,1.04],
-    [r-.45,e+1.95,.98,.68],
-    // South-side street corner framing trees across the road (leaving south sidewalk & verge open)
-    ...(id===0 ? [
-      [x-5.40,e+14.50,6.80,3.05],
-      [x-3.50,e+14.80,1.48,.98],
-      [r+4.40,e+14.60,6.80,3.05],
-      [r+2.80,e+14.80,1.46,.96],
-    ] as const : []),
-  ])plant(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   // Living room east media console, flatscreen TV, partition stub, and flanking potted houseplants
   m.box(x+4.86,.13,e-3.62,x+5.06,2.78,e-1.38,rgb(b.color),MAT.wall,20,rgb(0x4a4338))
   m.box(x+4.89,2.78,e-3.59,x+5.03,2.80,e-1.41,rgb(0x28231d),MAT.lit)

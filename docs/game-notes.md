@@ -167,6 +167,24 @@ proven animation techniques to animation.md, not here.
   1728 px window swap the yards for the bare copy for the rest of the run (drawn level chunks 48 → 22). Now
   `useOriginBuild` leaves only when the camera footprint passes the edge and comes back once it is 3 m inside it.
   `games/outbreak/scripts/foliage-house-proof.ts` walks in and out of houses (solo and `--coop`) and checks this.
+- **The streamed origin chunks are now cut from the origin build, so the switch is invisible.** `compileOriginChunk`
+  (`src/world-streamer.ts`) slices `buildLevel`'s tagged chunks (`OriginChunk.origin`: source mesh, role, building)
+  and floor/moon/bounce maps per 32 m chunk instead of re-emitting a simplified copy. The shader needed matching
+  rules too: streamed-window slots carry an L-plan bit and an authored-kitchen bit (`OL.u17.w`,
+  `windowBuildingBits`) so roof cuts, `interior()` and the tiled kitchen follow the bungalow's wings, not its rect;
+  origin roof parts keep their own cutaway mode (`true` or `"outside"`) and only roof vertices get the slot id.
+  `games/outbreak/scripts/origin-switch-proof.ts` draws both at seven poses (porches, crossroads, stores, the west
+  edge, inside Ash): 21–64% of pixels changed before, ≤ 0.14% beauty and ≤ 0.004% albedo after (the rest is street
+  lamps beyond the block edge, which only the streamed window has). Renderer stream slots grow in 768 KB steps
+  (a 256 KB step is not a whole number of 24-byte vertices and scrambles every slot after the first).
+- **Streamed lots are dressed by the origin's rules.** `houseFrontage` and `housePlanting` (`src/architecture.ts`)
+  and `src/yard.ts` (lawn patches, walkway and driveway tufts, gravel, tree collars, street verges) are what
+  `house()` and `compileLevel` call, and `emitStreamedLot` calls them per streamed lot, seeded per chunk. Shrubs are
+  anchored to the west corner, door and east corner, so narrower façades drop door-blocking ones and keep the rest
+  under window sills; framing plants keep clear of neighbouring chunks' buildings and trees. Plants are copied from
+  templates per (height, radius, 4 seed buckets) rather than built (`plant()` costs ~0.1 ms each, ~3 ms a lot), so a
+  dressed bungalow chunk compiles in ~5 ms instead of ~3 ms. Opaque buffers above 768 KB come from per-size pools: pooling them in the 768 KB
+  tile pool ratcheted the retained heap by 7 MB over three round-trip walks.
 
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
   `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
