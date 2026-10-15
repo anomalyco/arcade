@@ -101,6 +101,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "progression", label: "Progression", subject: "Inventory, research and the workbench", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "pacing", label: "Pacing", subject: "Outbreak's first night: waves, threat and quiet", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "flashlight", label: "Flashlight", subject: "The survivor's flashlight beam in the game", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "outbreak-vehicle", label: "Outbreak vehicle", subject: "Outbreak's cars: finding keys and a battery, headlights, running down the horde", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Drive" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
 ]
 
@@ -114,6 +115,7 @@ const PAGE_STATIONS: Record<string, string> = {
   carrier: "ship",
   "first-night": "pacing",
   "outbreak-flashlight": "flashlight",
+  "outbreak-vehicles": "outbreak-vehicle",
 }
 
 /** The kind that runs a host, and which of its choice slots each command prefix fills. */
