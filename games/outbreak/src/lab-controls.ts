@@ -20,6 +20,7 @@ import type { NetSession } from "./net-session"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
+import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
 import {
   applyOutbreakWeatherPreset,
   outbreakWeatherControls,
@@ -37,6 +38,7 @@ export interface OutbreakLabControlHost {
   readonly combatFx: OutbreakCombatFX
   readonly weatherController: OutbreakWeatherController
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly hud: OutbreakHud
   readonly updateProfile: () => void
   readonly regenerate: () => void
@@ -45,7 +47,7 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost } = host
+  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost } = host
   return [
     ...aiControls,
     ...audioControls,
@@ -101,6 +103,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightBeamControls,
     ...staminaControls,
     ...progressionLabControls(progressionHost),
+    ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
       key: "randomizeGroundTuning",
