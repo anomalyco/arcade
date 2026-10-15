@@ -33,7 +33,7 @@ import type { WeaponHud, WeaponHudView } from "./hud"
 import type { WeaponInput } from "./input"
 import { type FxShip, ShipFx } from "./ship-fx"
 import type { Hull } from "../../shared/fleet"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 
 /** What the weapons tell the room (online). Offline there is none: the local world has the authority. */
 export type WeaponsNet = {
@@ -435,7 +435,7 @@ export class Weapons {
   private fleetHulls: ReadonlyMap<number, Hull> | null = null
 
   /** A carrier started sinking: a kill feed line, the killer's confirmation, and its big first explosion. */
-  sunk(ship: number, name: string, team: number, by: number, color = TEAMS[team]?.color ?? "#f4f7fb"): void {
+  sunk(ship: number, name: string, team: number, by: number, color = teamCss(team)): void {
     const killer = by >= 0 ? this.who(by) : null
     this.hud.feed(killer, { name, color }, by === this.id, "SUNK", "SUNK")
     const s = this.fleetShips.find((x) => x.id === ship)

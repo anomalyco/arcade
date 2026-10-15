@@ -122,7 +122,8 @@ describe("gun seats (DEPLOY)", () => {
     leaveCrew(c, 2, 1)
     expect(gunnerAt(c, shipOf(c, 1)!, CIWS)).toBeNull()
     scuttle(c, 1, 2)
-    expect(playerOf(c, 3)).toMatchObject({ ship: 2, role: "pilot", mount: -1 })
+    // Aboard the replacement (ship 5, same team) as a pilot on deck.
+    expect(playerOf(c, 3)).toMatchObject({ ship: 5, team: 0, role: "pilot", mount: -1 })
   })
 })
 
@@ -698,7 +699,8 @@ describe("the room", () => {
     const { core, join, say, run, seaT } = room()
     const a = join("ada")
     join("bo")
-    const c = join("cy") // team 0
+    const c = join("cy")
+    say(c, { type: "board", ship: 1 }) // ada's carrier: a friend
     say(a, { type: "op", op: "ciws-port" })
     say(c, { type: "op", op: "hornet" })
     run(100)
@@ -710,6 +712,25 @@ describe("the room", () => {
     say(a, { type: "thits", on: c.id, n: 50 })
     run(100, fly)
     expect(core.hp(c.id)).toBe(100)
+  })
+
+  test("every other carrier is an enemy: a third carrier's jet takes the CIWS hits", () => {
+    const { core, join, say, run, seaT } = room()
+    const a = join("ada")
+    join("bo")
+    const c = join("cy") // a third carrier
+    expect(playerOf(core.crew!, c.id)!.team).toBe(2)
+    say(a, { type: "op", op: "ciws-port" })
+    say(c, { type: "op", op: "hornet" })
+    run(100)
+    const ship = core.hullPoseList.find((s) => s.id === 1)!
+    const at = shipToWorld(ship, 500, 300, 600)
+    const fly = () => say(c, { type: "plane", p: [seaT(), 1, at[0], at[1], at[2], 0, 1, 0, 0, 0, 0, -1, 0.77, 0, 0, 0, 0] })
+    run(100, fly)
+    say(a, { type: "aim", a: packAim(0.7, 0.4, true) })
+    say(a, { type: "thits", on: c.id, n: 50 })
+    run(100, fly)
+    expect(core.hp(c.id)).toBeLessThan(100)
   })
 
   test("a 5-inch shell is relayed to everyone and bursts for everyone", () => {

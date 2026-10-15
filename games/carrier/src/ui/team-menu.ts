@@ -1,6 +1,6 @@
 import "./team-menu.css"
 import { gunOp } from "../../shared/ops"
-import { CAPACITY, CREW, type Crew, type CrewError, type CrewPlayer, type CrewShip, TEAMS, createShipError, crewCount, joinShipError, playerOf, teamCount, teamShips } from "../../shared/crew"
+import { CAPACITY, CREW, type Crew, type CrewError, type CrewPlayer, type CrewShip, createShipError, crewCount, freeTeam, joinShipError, playerOf, teamCss } from "../../shared/crew"
 import { kickLeft, members } from "../../shared/squad"
 import { inviteUrl } from "./lobby"
 
@@ -8,10 +8,10 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /** What the Tab menu asks the room for; the answer is a new crew (shared/crew.ts and shared/squad.ts rules). */
 export type TeamActions = {
-  /** Move to ship `ship` (another team's ship switches my team). */
+  /** Move to ship `ship` (its side becomes mine). */
   join(ship: number): void
-  /** Commission a new ship on `team`, with me as its captain. */
-  create(team: number): void
+  /** Commission a new ship on the team that has none, with me as its captain. */
+  create(): void
   /** Captain: hand the captaincy to `player`. */
   promote(player: number): void
   /** Captain: move `player` off my ship. */
@@ -29,19 +29,19 @@ const TAP_MS = 220
 /** A kick or promote needs a second click within this long. */
 const CONFIRM_MS = 3000
 
-/** Disabled JOIN / CREATE SHIP buttons say why instead of a tooltip. */
+/** Disabled JOIN buttons say why instead of a tooltip. */
 const WHY: Partial<Record<CrewError, string>> = {
   "ship-full": "FULL",
   locked: "LOCKED",
-  unbalanced: "UNEVEN",
-  "fleet-full": "FLEET FULL",
 }
 
 /**
  * The Tab menu: who is where, and moving between ships. Hold Tab to see it, tap Tab (or PIN) to keep it open, Esc to
- * close; main.ts frees the mouse while it is open. Both teams side by side, each ship a card with its captain (★), its helm and its
- * pilots (airborne, on deck, down). The only actions: JOIN a ship (another team's switches you), CREATE SHIP, and on
- * your own ship, if you are its captain, LOCK, and per member CAPTAIN (promote) and KICK, each needing a second click.
+ * close; main.ts frees the mouse while it is open. Every carrier for itself: a card per carrier in its own colour, with
+ * its crew count, hull, captain (★), helm and pilots (airborne, on deck, down), and an empty berth where a sunk one's
+ * replacement is not out yet. The only actions: JOIN a ship (its side becomes yours), CREATE SHIP in an empty berth,
+ * and on your own ship, if you are its captain, LOCK, and per member CAPTAIN (promote) and KICK, each needing a second
+ * click.
  */
 export class TeamMenu {
   private el: HTMLElement
@@ -108,7 +108,7 @@ export class TeamMenu {
         case "join":
           return this.a.join(n("ship"))
         case "create":
-          return this.a.create(n("team"))
+          return this.a.create()
         case "lock":
           return this.a.lock(t.dataset.on !== "1")
         case "kick":
@@ -180,9 +180,9 @@ export class TeamMenu {
     setTimeout(() => this.render(), 1600)
   }
 
-  /** Whole seconds left on each ship's sinking and my kick bans (part of the render key, so countdowns tick). */
+  /** Whole seconds left on my kick bans (part of the render key, so countdowns tick). */
   private clocks(c: Crew): string {
-    return c.ships.map((s) => `${s.emptySince === null ? -1 : Math.ceil((s.emptySince + CREW.emptyMs - this.now) / 1000)}:${kickLeft(s, this.me, this.now)}`).join()
+    return c.ships.map((s) => kickLeft(s, this.me, this.now)).join()
   }
 
   private render(): void {
@@ -200,23 +200,20 @@ export class TeamMenu {
       ? `<span class="tm-room">ROOM <b>${esc(this.room.toUpperCase())}</b><button data-tm="copy">${copied ? "COPIED" : "COPY INVITE"}</button></span>`
       : `<span class="tm-room">OFFLINE</span>`
     this.el.innerHTML = `<div class="tm-panel">
-      <div class="tm-head"><span class="tm-logo">CARRIER</span>${room}<button class="tm-pin ${this.pinned ? "on" : ""}" data-tm="pin">${this.pinned ? "PINNED" : "PIN"}</button></div>
-      <div class="tm-teams">${c ? TEAMS.map((_, t) => this.team(c, t)).join("") : `<div class="tm-wait">JOINING…</div>`}</div>
+      <div class="tm-head"><span class="tm-logo">CARRIER</span><span class="tm-mode">FREE FOR ALL</span>${room}<button class="tm-pin ${this.pinned ? "on" : ""}" data-tm="pin">${this.pinned ? "PINNED" : "PIN"}</button></div>
+      <div class="tm-ships">${c ? this.berths(c) : `<div class="tm-wait">JOINING…</div>`}</div>
     </div>`
   }
 
-  private team(c: Crew, t: number): string {
-    const info = TEAMS[t]!
-    const ships = teamShips(c, t).sort((a, b) => a.slot - b.slot)
-    const mine = playerOf(c, this.me)?.team === t
-    const why = createShipError(c, this.me, t)
-    const n = teamCount(c, t)
-    const create = `<button class="tm-new" data-tm="create" data-team="${t}" ${why ? "disabled" : ""}>${why ? (WHY[why] ?? "CREATE SHIP") : "+ CREATE SHIP"}</button>`
-    return `<section class="tm-team ${mine ? "mine" : ""}" style="--tc:${info.color}">
-      <div class="tm-th"><b>${esc(info.name)}</b><span>${n} PLAYER${n === 1 ? "" : "S"}</span><span>${ships.length}/${CREW.shipsPerTeam} SHIPS</span></div>
-      ${ships.map((s) => this.ship(c, s)).join("") || `<div class="tm-empty">NO SHIPS AT SEA</div>`}
-      ${create}
-    </section>`
+  /** One card per team in team order: its carrier, or an empty berth (sunk, the replacement refitting). */
+  private berths(c: Crew): string {
+    const free = freeTeam(c)
+    return Array.from({ length: CREW.ships }, (_, t) => {
+      const s = c.ships.find((x) => x.team === t)
+      if (s) return this.ship(c, s)
+      const create = t === free && !createShipError(c, this.me) ? `<button class="tm-new" data-tm="create">+ CREATE SHIP</button>` : ""
+      return `<div class="tm-ship tm-berth" style="--tc:${teamCss(t)}"><div class="tm-sh"><i class="tm-swatch"></i><b>NO CARRIER</b><span class="tm-warn">REFITTING</span>${create}</div></div>`
+    }).join("")
   }
 
   private ship(c: Crew, s: CrewShip): string {
@@ -231,19 +228,16 @@ export class TeamMenu {
       const label = why === "kicked" ? `KICKED ${kicked}S` : why && why !== "same-ship" ? (WHY[why] ?? "JOIN") : "JOIN"
       act = `<button class="tm-join" data-tm="join" data-ship="${s.id}" ${why ? "disabled" : ""}>${label}</button>`
     }
-    // The room keeps each team's two ships afloat empty; only a surplus one sinks once adrift too long.
-    const surplus = teamShips(c, s.team).length > CREW.shipsPerTeam
-    const left = s.emptySince === null || !surplus ? -1 : Math.max(0, Math.ceil((s.emptySince + CREW.emptyMs - this.now) / 1000))
     const hull = this.hull?.(s.id) ?? null
-    const note = hull?.sinking ? `<span class="tm-warn">SINKING</span>` : left >= 0 ? `<span class="tm-warn">ADRIFT · SINKS ${left}S</span>` : s.emptySince !== null ? `<span class="tm-warn">ADRIFT</span>` : ""
+    const note = hull?.sinking ? `<span class="tm-warn">SINKING</span>` : s.emptySince !== null ? `<span class="tm-warn">ADRIFT</span>` : ""
     const pct = hull ? Math.max(0, Math.min(1, hull.hp)) : 1
     const bar = hull ? `<div class="tm-hull ${pct < 0.25 ? "low" : pct < 0.5 ? "mid" : ""}"><i style="width:${(pct * 100).toFixed(0)}%"></i></div>` : ""
     const lock = s.locked && !captain ? `<i class="tm-padlock" aria-label="locked"></i>` : ""
     const crew = members(c, s)
       .map((id) => this.member(c, s, playerOf(c, id)!, captain))
       .join("")
-    return `<div class="tm-ship ${mine ? "mine" : ""} ${s.locked ? "locked" : ""}">
-      <div class="tm-sh"><b>${esc(s.name)}</b>${lock}<span class="tm-n">${crewCount(s)}/${CAPACITY}</span>${note}${act}</div>
+    return `<div class="tm-ship ${mine ? "mine" : ""} ${s.locked ? "locked" : ""}" style="--tc:${teamCss(s.team)}">
+      <div class="tm-sh"><i class="tm-swatch"></i><b>${esc(s.name)}</b>${lock}<span class="tm-n">${crewCount(s)}/${CAPACITY}</span>${note}${act}</div>
       ${bar}
       ${crew ? `<ol class="tm-crew">${crew}</ol>` : ""}
     </div>`

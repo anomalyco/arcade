@@ -15,7 +15,6 @@ import {
   shipOf,
   spawnAt,
   takeHelm,
-  teamShips,
   tickCrew,
 } from "../shared/crew"
 import { fleetSpawn } from "../shared/spawn"
@@ -209,13 +208,11 @@ export class RoomCore {
       case "board":
         return this.apply(conn, joinShip(crew, id, msg.ship, now, msg.as))
       case "newship":
-        return this.apply(conn, createShip(crew, id, msg.team, now))
+        return this.apply(conn, createShip(crew, id, now))
       case "recover": {
         // A boat's sortie ends only in the room (brought alongside, or sunk).
         if (playerBoat(crew, id)) return
-        // Landing on another friendly ship only counts if its deck is open (the client checks too).
-        const on = msg.ship !== undefined && deckOpen(this.fleet.hulls.get(msg.ship), this.seaTime(now)) ? msg.ship : -1
-        return this.apply(conn, recover(crew, id, msg.how, now, on))
+        return this.apply(conn, recover(crew, id, msg.how, now))
       }
       case "promote":
       case "kick":
@@ -608,7 +605,7 @@ export class RoomCore {
     }
   }
 
-  /** A jet reported crashed at (x, y, z): into a ship of the other team, that ship takes a crash's damage. */
+  /** A jet reported crashed at (x, y, z): into another carrier, that ship takes a crash's damage. */
   private crashIntoShip(id: number, team: number, x: number, y: number, z: number, t: number): void {
     for (const g of this.hullList) {
       if (Math.abs(x - g.x) > 240 || Math.abs(z - g.z) > 240) continue
@@ -918,10 +915,7 @@ export class RoomCore {
     const crew = this.crew!
     const s = shipOf(crew, id)
     if (!s || !this.world) return
-    const friend = teamShips(crew, s.team)
-      .filter((o) => o.id !== id && this.sims.has(o.id))
-      .sort((a, b) => a.slot - b.slot)[0]
-    const at = this.arch ? fleetSpawn(this.arch, s.team, s.slot) : spawnAt(s.team, s.slot, this.heading, friend && this.sims.get(friend.id)!.ship)
+    const at = this.arch ? fleetSpawn(this.arch, s.team) : spawnAt(s.team, this.heading)
     const t = (this.clock() - this.world.epoch) / 1000
     this.sims.set(id, { ship: makeShip(at.x, at.z, at.heading, t), controls: { throttle: 0, rudder: 0 } })
     this.fleet.add(id, s.team)

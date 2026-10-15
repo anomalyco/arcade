@@ -1,4 +1,4 @@
-import { type Crew, type RecoverHow, TEAMS, playerOf } from "../../shared/crew"
+import { type Crew, type RecoverHow, teamCss, playerOf } from "../../shared/crew"
 import type { Archipelago } from "../../shared/islands"
 import { PLANE, makePlane, planeSpeed } from "../../shared/plane"
 import { PLANE_MODE, type PlaneTuple } from "../../shared/protocol"
@@ -49,8 +49,8 @@ export type FlightStart = {
   vehicle?: VehicleKind
   /** The pilot's carrier as drawn this frame. */
   deck: () => Ship | null
-  /** The flight ended; `ship`: the friendly carrier it landed on, when not its own. */
-  recover: (how: RecoverHow, ship?: number) => void
+  /** The flight ended. */
+  recover: (how: RecoverHow) => void
   /** Every carrier as simulated here, to crash into. */
   ships?: () => readonly Ship[]
 }
@@ -153,7 +153,7 @@ export class FlightModule {
     }
     this.weapons.resolve = (id) => {
       const p = this.crew && playerOf(this.crew, id)
-      return p ? { name: p.name, color: TEAMS[p.team]?.color ?? "#f4f7fb" } : null
+      return p ? { name: p.name, color: teamCss(p.team) } : null
     }
     // Falling bombs wear the F-35C's own store mesh (the only type that carries them).
     this.weapons.drawBomb = (x, y, z, vx, vy, vz) => {
@@ -199,11 +199,7 @@ export class FlightModule {
     f.vehicle = ctx.vehicle ?? playerVehicle(this.crew, this.net.id)
     if (this.models) f.eyeModel = this.models[f.vehicle].eye
     f.onRespawn = () => this.recover("crashed")
-    // Landed on another friendly carrier: the room moves the pilot aboard it if it has room.
-    f.onLanded = () => {
-      const on = f.landingShip?.id
-      this.recover("landed", on !== undefined && on !== this.ctx?.ship ? on : undefined)
-    }
+    f.onLanded = () => this.recover("landed")
     this.unplaced = !ship
     if (ship) f.toDeck(ship)
     else {
@@ -213,8 +209,8 @@ export class FlightModule {
     f.requestLaunch()
     f.cam.reset()
     const me = this.crew && playerOf(this.crew, this.net.id)
-    this.weapons.setPilot(this.net.id, me?.team ?? 0, me?.name ?? "YOU", TEAMS[me?.team ?? 0]?.color ?? "#f4f7fb")
-    this.hud.homeColor = TEAMS[me?.team ?? 0]?.color ?? "#f4f7fb"
+    this.weapons.setPilot(this.net.id, me?.team ?? 0, me?.name ?? "YOU", teamCss(me?.team ?? 0))
+    this.hud.homeColor = teamCss(me?.team ?? 0)
     this.weapons.sortie(f.vehicle)
   }
 
@@ -227,10 +223,10 @@ export class FlightModule {
     this.wasArmed = false
   }
 
-  private recover(how: RecoverHow, ship?: number): void {
+  private recover(how: RecoverHow): void {
     if (!this.ctx || this.recovering) return
     this.recovering = true
-    this.ctx.recover(how, ship)
+    this.ctx.recover(how)
   }
 
   /** Steps the jet to sea time t and drives the camera. False until the jet exists. */
@@ -420,7 +416,7 @@ export class FlightModule {
       const m = pass ? pass.modelMatrix(pose, this.matrix) : undefined
       const p = v.crew && playerOf(v.crew, id)
       const live = last[1] === PLANE_MODE.flying || last[1] === PLANE_MODE.landing
-      const jet = w.jet(id, p?.team ?? 0, pose, last[9], last[10], last[11], live, p?.name ?? `#${id}`, TEAMS[p?.team ?? 0]?.color ?? "#f4f7fb", kind, m)
+      const jet = w.jet(id, p?.team ?? 0, pose, last[9], last[10], last[11], live, p?.name ?? `#${id}`, teamCss(p?.team ?? 0), kind, m)
       pose.stores = jet.rack.bombs
       this.audio.remote(id, pose, last)
       if (pass && fx && m) {

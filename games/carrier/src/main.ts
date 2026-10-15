@@ -1,7 +1,7 @@
 import "./style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { makeArchipelago, type Archipelago } from "../shared/islands"
-import { TEAMS, playerOf, shipOf } from "../shared/crew"
+import { teamCss, playerOf, shipOf } from "../shared/crew"
 import { playerBoat, shipOps } from "../shared/ops"
 import { FLEET } from "../shared/fleet"
 import { PLANE_MODE } from "../shared/protocol"
@@ -186,10 +186,10 @@ async function main() {
   const forced = params.get("weather")
   if (forced && (WEATHER_KINDS as readonly string[]).includes(forced)) lab.force(forced as WeatherKind, 0)
 
-  // Tab: players and ships, switching ships and teams, captain powers. E: DEPLOY (take the helm, launch).
+  // Tab: players and ships (every carrier its own side), switching ships, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
     join: (ship) => net.board(ship),
-    create: (team) => net.newShip(team),
+    create: () => net.newShip(),
     promote: (player) => net.promote(player),
     kick: (player) => net.kick(player),
     lock: (locked) => net.lock(locked),
@@ -362,8 +362,8 @@ async function main() {
     // in the jets' kill feed.
     gunnery.setNet(net.state === "offline" ? null : gunneryNet)
     if (me) gunnery.setPlayer(net.id, me.team)
-    if (me?.role === "gunner" && flight.weapons.id !== net.id) flight.weapons.setPilot(net.id, me.team, me.name, TEAMS[me.team]?.color ?? "#f4f7fb")
-    ops.update(crew && myShip ? shipOps(crew, net.id, serverNow) : null, crew && myShip ? { ship: myShip.name, color: TEAMS[myShip.team]?.color ?? "", name: (id) => playerOf(crew, id)?.name ?? "?" } : null)
+    if (me?.role === "gunner" && flight.weapons.id !== net.id) flight.weapons.setPilot(net.id, me.team, me.name, teamCss(me.team))
+    ops.update(crew && myShip ? shipOps(crew, net.id, serverNow) : null, crew && myShip ? { ship: myShip.name, color: teamCss(myShip.team), name: (id) => playerOf(crew, id)?.name ?? "?" } : null)
     if (!game.update(dt, t, canvas.width / canvas.height)) {
       const free = !game.paused
       if (free) camera.orbit(input.dragX, input.dragY)

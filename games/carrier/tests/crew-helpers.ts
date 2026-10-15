@@ -1,8 +1,8 @@
-// Test helpers for crews: lay players out on chosen ships without going through the joining and balance rules.
+// Test helpers for crews: lay players out on chosen ships without going through the joining rules.
 import { type Crew, type Role, crewCount, playerOf, shipOf } from "../shared/crew"
 
 /**
- * Moves player `id` aboard ship `shipId` as `role` directly (tests only: no balance, room or lock checks), keeping the
+ * Moves player `id` aboard ship `shipId` as `role` directly (tests only: no room or lock checks), keeping the
  * crew's invariants: helm/pilot lists, captaincy (the first aboard an empty ship captains it), empty marks.
  */
 export function place(c: Crew, id: number, shipId: number, role: Role = "pilot", now = 0): void {

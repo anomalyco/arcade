@@ -14,7 +14,7 @@ import { VEHICLES, type VehicleKind } from "../../shared/vehicles"
 import { makeSea, seaHeight, type Sea } from "../../shared/sea"
 import { bakeSeabed } from "../../shared/seabed"
 import { SHIP, type Ship, copyShip, headingTo, lerpShip, makeShip, shipStep } from "../../shared/ship"
-import { TEAMS } from "../../shared/crew"
+import { teamCss } from "../../shared/crew"
 import { WeaponAudio } from "../audio/weapon-audio"
 import { FlightView } from "../flight/camera"
 import { Flight } from "../flight/flight"
@@ -124,7 +124,7 @@ async function main() {
   const world = { sea, arch, ships: [ship] }
 
   const weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), winput, null, world)
-  weapons.setPilot(1, 0, "YOU", TEAMS[0]!.color)
+  weapons.setPilot(1, 0, "YOU", teamCss(0))
   weapons.sortie(vehicle)
   // Falling bombs wear the F-35C's own store mesh.
   weapons.drawBomb = (x, y, z, vx, vy, vz) => {
@@ -208,7 +208,7 @@ async function main() {
   const matrix = new Float32Array(16)
   const accent = teamColor(0)
   const enemy = teamColor(1)
-  const enemyCss = TEAMS[1]!.color
+  const enemyCss = teamCss(1)
   let wasFlying = false
   let last = performance.now()
   let simT = ship.t

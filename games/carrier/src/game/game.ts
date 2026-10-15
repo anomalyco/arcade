@@ -1,4 +1,4 @@
-import { type Crew, type CrewPlayer, type RecoverHow, TEAMS, playerOf, shipOf, spawnAt } from "../../shared/crew"
+import { type Crew, type CrewPlayer, type RecoverHow, teamCss, playerOf, shipOf, spawnAt } from "../../shared/crew"
 import { fleetSpawn } from "../../shared/spawn"
 import type { Archipelago } from "../../shared/islands"
 import { hullLimits, settled } from "../../shared/fleet"
@@ -46,7 +46,6 @@ const REFUSED: Record<string, string> = {
   "ship-full": "THAT SHIP IS FULL",
   "deck-fire": "DECK ON FIRE",
   sinking: "SHIP IS SINKING",
-  unbalanced: "TEAMS WOULD BE UNEVEN",
 }
 
 /** A hull as drawn this frame: the ship's state settled by its damage, its crew ship id and team. */
@@ -62,7 +61,7 @@ export type Role = "helm" | "pilot" | "gunner" | "none"
  * flight ends (landed, or crashed: a crash, shot down or lost off the map); there is no manual way out of a flight.
  */
 export type FlightSeam = {
-  start(ctx: { ship: number; slot: number; vehicle?: VehicleKind; deck: () => Ship | null; recover: (how: RecoverHow, ship?: number) => void; ships?: () => readonly Ship[] }): void
+  start(ctx: { ship: number; slot: number; vehicle?: VehicleKind; deck: () => Ship | null; recover: (how: RecoverHow) => void; ships?: () => readonly Ship[] }): void
   /** Drives the camera; return false to let the game show the carrier instead. `paused`: a menu has the mouse. */
   update(dt: number, t: number, aspect: number, paused?: boolean): boolean
   stop(): void
@@ -185,7 +184,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
       Object.assign(cur, makeShip(p.x, p.z, p.heading, t), { u: p.u, v: p.v, r: p.r, order: p.order, rudder: p.rudder, power: tuple[10] })
     } else {
       const s = shipOf(crew, id)!
-      const at = arch ? fleetSpawn(arch, s.team, s.slot) : spawnAt(s.team, s.slot, heading0)
+      const at = arch ? fleetSpawn(arch, s.team) : spawnAt(s.team, heading0)
       Object.assign(cur, makeShip(at.x, at.z, at.heading, t))
     }
     cur.t = t
@@ -240,7 +239,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
     // A new sortie is a fresh jet. A ship change with the same sortie is a jet rescued from a sunk carrier: it flies on.
     const fresh = sortie >= 0 && sortie !== lastSortie
     if (lastSortie >= 0 && (sortie < 0 || fresh)) flight?.stop()
-    if (fresh && me) flight?.start({ ship: me.ship, slot: me.plane, vehicle: playerVehicle(net.crew, me.id), deck: () => (hasMine ? mine : null), recover: (how, ship) => net.recover(how, ship), ships: () => drawnList })
+    if (fresh && me) flight?.start({ ship: me.ship, slot: me.plane, vehicle: playerVehicle(net.crew, me.id), deck: () => (hasMine ? mine : null), recover: (how) => net.recover(how), ships: () => drawnList })
     if (role !== lastRole || me?.ship !== lastShip) {
       // Helm ↔ jet: ease the view across instead of cutting.
       if ((role === "pilot") !== (lastRole === "pilot") && lastRole !== "none") blend.begin(camera, role === "pilot" ? 1.3 : 1.1)
@@ -374,7 +373,6 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
     turrets.upload()
     wake.upload()
 
-    const team = crew && me ? TEAMS[me.team] : undefined
     const ship = crew && me ? shipOf(crew, me.ship) : undefined
     const refused = net.refused && performance.now() - net.refused.at < FLASH_MS ? (REFUSED[net.refused.error] ?? `CAN'T: ${net.refused.error.replace(/-/g, " ")}`) : ""
     hud.seat(
@@ -384,7 +382,7 @@ export function createGame({ renderer, camera, input, hud, net: firstNet, params
             ship: ship.name,
             state: role === "pilot" && me.plane < 0 ? "ON DECK" : role === "gunner" ? (gunOp(me.mount)?.label ?? "") : lastBoatSortie >= 0 ? "BOAT" : "",
             captain: ship.captain === me.id,
-            color: team?.color ?? "",
+            color: me ? teamCss(me.team) : "",
             flash: refused,
           }
         : null,

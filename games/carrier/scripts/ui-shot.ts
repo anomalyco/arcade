@@ -1,13 +1,14 @@
-// UI checks and captures on a real GPU: the Tab menu (players, teams, captains) and DEPLOY. Runs ON hailmary
+// UI checks and captures on a real GPU: the Tab menu (players, carriers, captains) and DEPLOY. Runs ON hailmary
 // (Mac Studio): Chrome with WebGPU on Metal loads the live dev server; DOM menus are captured over a readback of the
 // game's own frame, as in scripts/mp-shot.ts.
 //
 //   ssh hailmary 'cd /tmp/carrier-ui && ~/.bun/bin/bun ui-shot.ts --out=/tmp/carrier-ui/out'
 //
 // Steps: the menu previews (menu.html); then five players in one fresh room. Ship operations: two pilots launch
-// (cap 2), the helm waits; one jet goes down, its slot recharges with a countdown, then the helm launches. Squads: a
-// third ship, the Tab view with two teams; the captain locks (another player can't join), kicks a member (who lands on
-// another ship of the team), a team switch by JOIN, the captain leaves (captaincy passes on).
+// (cap 2), the helm waits; one jet goes down, its slot recharges with a countdown, then the helm launches. Squads: an
+// empty carrier taken over by JOIN, the Tab view of every carrier; the captain locks (another player can't join), kicks
+// a member (who lands on the least crewed other carrier), a JOIN to a rival carrier, the captain leaves (captaincy
+// passes on).
 import { chromium, type Page } from "playwright-core"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
@@ -272,13 +273,19 @@ if (!only.includes("ops") && !only.includes("squads")) {
   process.exit(failures ? 1 : 0)
 }
 
-// 2. Five players in a fresh room: ada (team 0 helm, captain), bo and di (team 0 pilots), cy (team 1 helm), ed.
+// 2. Five players in a fresh room, each joiner on a carrier of their own until bo and di board ada's (pilots on deck)
+// and ed boards cy's: ada (helm, captain), bo and di; cy (helm), ed.
 console.log(`room ${room}`)
 const ada = await joinRoom("ada")
 const bo = await joinRoom("bo")
 const cy = await joinRoom("cy")
 const di = await joinRoom("di")
 const ed = await joinRoom("ed")
+const boardShip = (page: Page, ship: number) => page.evaluate((id) => (globalThis as unknown as G).carrier.net.board(id), ship)
+await boardShip(bo, (await me(ada)).ship)
+await boardShip(di, (await me(ada)).ship)
+await boardShip(ed, (await me(cy)).ship)
+await until(ed, async () => (await me(ed)).ship === (await me(cy)).ship && (await me(di)).ship === (await me(ada)).ship)
 const A = await me(ada)
 const B = await me(bo)
 const D = await me(di)
@@ -366,11 +373,12 @@ await ada.waitForTimeout(300)
 await ada.keyboard.press("Digit1")
 check(await until(ada, async () => (await me(ada)).role === "helm"), "TAKE HELM from the menu")
 
-// Squads. bo commissions a third ship on team 0 (and captains it).
-await tab(bo, `[data-tm="create"][data-team="${A.team}"]`)
-check(await until(bo, async () => { const m = await me(bo); return m.ship !== A.ship && m.role === "helm" }), "CREATE SHIP: bo helms a new ship")
+// Squads. bo takes over an empty carrier from the Tab menu (and captains it): a rival of ada's now.
+const empty = await bo.evaluate(() => (globalThis as unknown as G).carrier.net.crew!.ships.find((s) => s.helm === null && s.captain === null)!.id)
+await tab(bo, `[data-tm="join"][data-ship="${empty}"]`)
+check(await until(bo, async () => { const m = await me(bo); return m.ship === empty && m.role === "helm" }), "JOIN an empty carrier: bo helms it")
 const B2 = await me(bo)
-check((await shipOf(bo, B2.ship)).captain === B2.id, "the creator captains it")
+check((await shipOf(bo, B2.ship)).captain === B2.id && B2.team !== A.team, "the first aboard captains it, on its own side")
 await pinTeams(bo, false)
 await ada.waitForTimeout(800)
 await pinTeams(ada, true)
@@ -388,23 +396,23 @@ await bo.evaluate((id) => (globalThis as unknown as G).carrier.net.board(id), A.
 await bo.waitForTimeout(600)
 check((await me(bo)).ship === B2.ship, "the room refuses a join to a locked ship")
 await pinTeams(bo, false)
-// ada kicks di (two clicks): di lands on bo's ship, and can't come back for a while.
+// ada kicks di (two clicks): di lands on the least crewed other carrier, and can't come back for a while.
 await tab(ada, `[data-tm="kick"][data-id="${D.id}"]`)
 await ada.waitForTimeout(300)
 await shot(ada, "tab-kick-confirm")
 await ada.locator(`[data-tm="kick"][data-id="${D.id}"]`).dispatchEvent("pointerdown", { button: 0 })
-check(await until(di, async () => (await me(di)).ship === B2.ship), "kicked: di is moved to another team-0 ship")
+check(await until(di, async () => { const m = await me(di); return m.ship !== A.ship && m.team !== A.team }), "kicked: di is moved to another carrier, a rival now")
 await pinTeams(di, true)
 await di.waitForTimeout(500)
 const kicked = (await di.locator(`[data-tm="join"][data-ship="${A.ship}"]`).textContent()) ?? ""
 check(/KICKED \d+S/.test(kicked), `di's JOIN on the old ship reads ${kicked}`)
 await shot(di, "tab-kicked")
-// Team switch by JOIN: di joins cy's ship on the other team.
+// JOIN: di joins cy's carrier and takes its side.
 const C = await me(cy)
 await tab(di, `[data-tm="join"][data-ship="${C.ship}"]`)
-check(await until(di, async () => { const m = await me(di); return m.ship === C.ship && m.team === C.team }), "JOIN on the other team switches di's team")
+check(await until(di, async () => { const m = await me(di); return m.ship === C.ship && m.team === C.team }), "JOIN cy's carrier: di is on cy's side")
 await di.waitForTimeout(500)
-await shot(di, "tab-switched-team")
+await shot(di, "tab-switched-ship")
 await pinTeams(di, false)
 // The captain leaves: the longest-serving member takes over (ed boarded cy's ship before di).
 const E = await me(ed)
