@@ -492,7 +492,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Gun: 50 rps, 1,050 m/s muzzle speed plus the jet's velocity, gravity, 0.32° dispersion hashed from (owner, round),
     a tracer every 3rd round, about 1.4 km range. 2 damage per round within a 6.5 m hit sphere. Overheats after 3.2 s
     of fire and cools to 0.3 before it fires again.
-  - AIM-9: a 17° lock cone, 2.5 km range, locks in 1.4 s, keep cone ×1.3. Rails rearm one missile every 10 s. Pure PN
+  - AIM-9: a tight 6° lock cone (the lock builds only while the target stays in it, bleeding off outside), 2.5 km range, locks in 1.4 s, then holds within the keep cone (×3, 18°). Rails rearm one missile every 10 s. Pure PN
     (N 3.4) at up to 35 g with a 0.12 s autopilot lag and a 42° gimbal: Battlefield-style, a locked missile out-turns
     any jet, so flares are the escape (a break turn alone does not beat it). 12 m proximity fuse at closest approach,
     74 damage at the centre to 42 at the edge. Firing without a lock is a dumbfire.
