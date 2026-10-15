@@ -315,16 +315,18 @@ export class TickPacer {
 
   /** Advances to local time `now`; returns the head tick. */
   update(now: number): number {
-    const dt = Number.isNaN(this.last) ? 0 : Math.max(0, now - this.last)
+    const step = Number.isNaN(this.last) ? 0 : Math.max(0, now - this.last) / this.tickMs
     this.last = now
-    const err = this.room(now) + this.lead - this.head
+    // Compare with where the head would be at `now` at 1x, not where it was last frame: otherwise every frame looks a
+    // frame behind and the head settles that far ahead (2–3 ticks at 25 fps).
+    const err = this.room(now) + this.lead - (this.head + step)
     if (err > this.snap) {
       this.snaps++
-      this.head += err
+      this.head += step + err
       this.rate = 1
     } else {
       this.rate = 1 + Math.max(-0.5, Math.min(this.maxSlew, err * 0.05))
-      this.head += (dt / this.tickMs) * this.rate
+      this.head += step * this.rate
     }
     return this.tick
   }
