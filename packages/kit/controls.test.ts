@@ -2,34 +2,70 @@ import { afterEach, describe, expect, test } from "bun:test"
 import {
   KeyStateTracker,
   STANDARD_BINDINGS,
-  fallbackCodeLabel,
+  KEY_LABEL_STORAGE_KEY,
   isEditableEventTarget,
   isMetaKey,
   isNavigationKey,
   keyLabel,
+  keyLabelMode,
+  keyLabelSetting,
   matchesAction,
   moveClusterLabel,
   observeKeyLayout,
   onKeyLayoutChange,
+  qwertyKeyLabel,
   refreshKeyLayout,
+  setKeyLabelMode,
   setKeyLayoutMapForTest,
 } from "./client/controls"
+import { keyCapHtml, keyPromptHtml } from "./client/key-cap"
 import { Input } from "./client/input"
 import { LabInput } from "./lab/input"
 
 afterEach(() => {
-  setKeyLayoutMapForTest(null)
+  setKeyLayoutMapForTest(null, "qwerty")
 })
 
-describe("controls standard and layout-aware prompt labels", () => {
-  test("fallbackCodeLabel and default QWERTY labels", () => {
-    expect(fallbackCodeLabel("KeyE")).toBe("E")
-    expect(fallbackCodeLabel("KeyW")).toBe("W")
-    expect(fallbackCodeLabel("ShiftLeft")).toBe("SHIFT")
-    expect(fallbackCodeLabel("Space")).toBe("SPACE")
-    expect(fallbackCodeLabel("Tab")).toBe("TAB")
-    expect(fallbackCodeLabel("Escape")).toBe("ESC")
-    expect(fallbackCodeLabel("Digit3")).toBe("3")
+const DVORAK = new Map<string, string>([
+  ["KeyW", ","],
+  ["KeyA", "a"],
+  ["KeyS", "o"],
+  ["KeyD", "e"],
+  ["KeyE", "."],
+  ["KeyF", "u"],
+  ["KeyR", "p"],
+  ["KeyQ", "'"],
+])
+
+async function withLayoutMap(map: Map<string, string>, run: () => Promise<void>): Promise<void> {
+  const prevNav = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { keyboard: { getLayoutMap: async () => map } },
+  })
+  try {
+    await run()
+  } finally {
+    if (prevNav) Object.defineProperty(globalThis, "navigator", prevNav)
+    else Reflect.deleteProperty(globalThis, "navigator")
+  }
+}
+
+describe("controls standard and QWERTY prompt labels", () => {
+  test("qwertyKeyLabel and default QWERTY labels", () => {
+    expect(keyLabelMode()).toBe("qwerty")
+    expect(qwertyKeyLabel("KeyE")).toBe("E")
+    expect(qwertyKeyLabel("KeyR")).toBe("R")
+    expect(qwertyKeyLabel("KeyW")).toBe("W")
+    expect(qwertyKeyLabel("Backquote")).toBe("`")
+    expect(qwertyKeyLabel("ShiftLeft")).toBe("Shift")
+    expect(qwertyKeyLabel("ShiftRight")).toBe("Shift")
+    expect(qwertyKeyLabel("Space")).toBe("Space")
+    expect(qwertyKeyLabel("Tab")).toBe("Tab")
+    expect(qwertyKeyLabel("Escape")).toBe("Esc")
+    expect(qwertyKeyLabel("Digit3")).toBe("3")
+    expect(qwertyKeyLabel("Mouse0")).toBe("LMB")
+    expect(qwertyKeyLabel("Mouse2")).toBe("RMB")
     expect(keyLabel("KeyE")).toBe("E")
     expect(moveClusterLabel()).toBe("WASD")
     expect(matchesAction("KeyE", "interact")).toBe(true)
@@ -38,54 +74,109 @@ describe("controls standard and layout-aware prompt labels", () => {
     expect(STANDARD_BINDINGS.interact[0]).toBe("KeyE")
   })
 
-  test("navigator.keyboard.getLayoutMap() resolves Dvorak labels for physical WASD and E", async () => {
-    const prevNav = Object.getOwnPropertyDescriptor(globalThis, "navigator")
-    const dvorak = new Map<string, string>([
-      ["KeyW", ","],
-      ["KeyA", "a"],
-      ["KeyS", "o"],
-      ["KeyD", "e"],
-      ["KeyE", "."],
-      ["KeyF", "u"],
-      ["KeyR", "p"],
-      ["KeyQ", "'"],
-    ])
-    Object.defineProperty(globalThis, "navigator", {
-      configurable: true,
-      value: {
-        keyboard: {
-          getLayoutMap: async () => dvorak,
-        },
-      },
+  test("Dvorak keeps QWERTY labels by default, even after the layout map and key events arrive", async () => {
+    await withLayoutMap(DVORAK, async () => {
+      let notified = 0
+      const unsub = onKeyLayoutChange(() => notified++)
+      try {
+        await refreshKeyLayout()
+        observeKeyLayout({ code: "KeyE", key: "." })
+        observeKeyLayout({ code: "KeyR", key: "p" })
+        expect(notified).toBe(0)
+        expect(keyLabel("KeyE")).toBe("E")
+        expect(keyLabel("KeyR")).toBe("R")
+        expect(keyLabel("KeyF")).toBe("F")
+        expect(keyLabel("KeyQ")).toBe("Q")
+        expect(keyLabel("Backquote")).toBe("`")
+        expect(keyLabel("ShiftLeft")).toBe("Shift")
+        expect(moveClusterLabel()).toBe("WASD")
+      } finally {
+        unsub()
+      }
     })
-    let notified = 0
-    const unsub = onKeyLayoutChange(() => {
-      notified++
-    })
-    try {
-      await refreshKeyLayout()
-      expect(notified).toBeGreaterThan(0)
-      expect(keyLabel("KeyE")).toBe(".")
-      expect(keyLabel("KeyF")).toBe("U")
-      expect(keyLabel("KeyR")).toBe("P")
-      expect(keyLabel("KeyQ")).toBe("'")
-      expect(moveClusterLabel()).toBe(",AOE")
-    } finally {
-      unsub()
-      if (prevNav) Object.defineProperty(globalThis, "navigator", prevNav)
-      else Reflect.deleteProperty(globalThis, "navigator")
-    }
   })
 
-  test("observeKeyLayout learns unshifted layout characters from key events", () => {
+  test("the opt-in layout mode resolves Dvorak labels through getLayoutMap() and notifies listeners", async () => {
+    await withLayoutMap(DVORAK, async () => {
+      let notified = 0
+      const unsub = onKeyLayoutChange(() => notified++)
+      try {
+        setKeyLabelMode("layout", false)
+        await refreshKeyLayout()
+        expect(notified).toBeGreaterThan(0)
+        expect(keyLabel("KeyE")).toBe(".")
+        expect(keyLabel("KeyF")).toBe("U")
+        expect(keyLabel("KeyR")).toBe("P")
+        expect(keyLabel("KeyQ")).toBe("'")
+        expect(keyLabel("ShiftLeft")).toBe("Shift")
+        expect(moveClusterLabel()).toBe(",AOE")
+        const before = notified
+        setKeyLabelMode("qwerty", false)
+        expect(notified).toBe(before + 1)
+        expect(keyLabel("KeyE")).toBe("E")
+        expect(moveClusterLabel()).toBe("WASD")
+      } finally {
+        unsub()
+      }
+    })
+  })
+
+  test("observeKeyLayout learns unshifted layout characters for layout mode only", () => {
     observeKeyLayout({ code: "KeyE", key: "." })
     observeKeyLayout({ code: "KeyW", key: "," })
     observeKeyLayout({ code: "KeyS", key: "o" })
     observeKeyLayout({ code: "KeyD", key: "e" })
     // Shifted or modified keys must not overwrite the base layout label.
     observeKeyLayout({ code: "KeyW", key: "<", shiftKey: true })
+    expect(keyLabel("KeyE")).toBe("E")
+    expect(moveClusterLabel()).toBe("WASD")
+    setKeyLabelMode("layout", false)
     expect(keyLabel("KeyE")).toBe(".")
     expect(moveClusterLabel()).toBe(",AOE")
+  })
+
+  test("the Key labels setting persists the opt-in and defaults to QWERTY", () => {
+    const store = new Map<string, string>()
+    const prev = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) },
+    })
+    try {
+      const { settings, control } = keyLabelSetting()
+      expect(settings.keyLabels).toBe("qwerty")
+      expect(control.options.map((o) => o.label)).toEqual(["QWERTY", "My keyboard layout"])
+      control.change("layout")
+      expect(store.get(KEY_LABEL_STORAGE_KEY)).toBe("layout")
+      expect(keyLabelMode()).toBe("layout")
+      control.change("qwerty")
+      expect(store.get(KEY_LABEL_STORAGE_KEY)).toBe("qwerty")
+      expect(keyLabelMode()).toBe("qwerty")
+    } finally {
+      if (prev) Object.defineProperty(globalThis, "localStorage", prev)
+      else Reflect.deleteProperty(globalThis, "localStorage")
+    }
+  })
+
+  test("key caps render QWERTY labels, wide caps, mouse icons and the hold ring", () => {
+    setKeyLayoutMapForTest(DVORAK, "qwerty")
+    expect(keyCapHtml("KeyE")).toContain(">E<")
+    expect(keyCapHtml("KeyR")).toContain(">R<")
+    expect(keyCapHtml("Space")).toContain("akc-space")
+    expect(keyCapHtml("ShiftLeft")).toContain("akc-wide")
+    expect(keyCapHtml("ShiftLeft")).toContain(">Shift<")
+    expect(keyCapHtml("Mouse0")).toContain('aria-label="Left mouse button"')
+    expect(keyCapHtml("Mouse2")).toContain("akc-mouse")
+    const hold = keyCapHtml("KeyE", { hold: true, progress: 0.42 })
+    expect(hold).toContain("akc-hold")
+    expect(hold).toContain("--akc-p:0.420")
+    expect(hold).toContain('data-down="true"')
+    expect(hold).toContain('aria-label="Hold E"')
+    expect(keyCapHtml("KeyE", { hold: true })).not.toContain("data-down")
+    expect(keyCapHtml("KeyE", { hold: true, progress: 3 })).toContain("--akc-p:1.000")
+    expect(keyPromptHtml("KeyE", "<Open>")).toContain("&#60;Open&#62;")
+    setKeyLabelMode("layout", false)
+    expect(keyCapHtml("KeyE")).toContain(">.<")
   })
 
   test("Input binds by physical KeyboardEvent.code on Dvorak without KeyD/KeyE collision", () => {
@@ -126,7 +217,7 @@ describe("controls standard and layout-aware prompt labels", () => {
       expect(input.interactHeld).toBe(true)
       expect(input.takeEnter()).toBe(true)
       expect(input.takeEnter()).toBe(false)
-      expect(keyLabel("KeyE")).toBe(".")
+      expect(keyLabel("KeyE")).toBe("E")
       dispatch("keyup", "KeyE", ".")
       expect(input.interactHeld).toBe(false)
 
@@ -201,7 +292,7 @@ describe("controls standard and layout-aware prompt labels", () => {
       dispatch("keydown", "KeyW", ",")
       expect(focusedCanvas).toBe(true)
       expect(labInput.up).toBe(true)
-      expect(moveClusterLabel()).toBe(",ASD")
+      expect(moveClusterLabel()).toBe("WASD")
 
       // 2. Dvorak S (KeyS, "o"), A (KeyA, "a"), D (KeyD, "e"), Space, ShiftLeft
       dispatch("keydown", "KeyS", "o")
@@ -214,6 +305,8 @@ describe("controls standard and layout-aware prompt labels", () => {
       expect(labInput.right).toBe(true)
       expect(labInput.space).toBe(true)
       expect(labInput.shift).toBe(true)
+      expect(moveClusterLabel()).toBe("WASD")
+      setKeyLabelMode("layout", false)
       expect(moveClusterLabel()).toBe(",AOE")
 
       // 3. F8 Eject releases held keys immediately
@@ -226,7 +319,7 @@ describe("controls standard and layout-aware prompt labels", () => {
       expect(labInput.shift).toBe(false)
 
       // 4. QWERTY WASD codes
-      setKeyLayoutMapForTest(null)
+      setKeyLayoutMapForTest(null, "qwerty")
       dispatch("keydown", "KeyW", "w")
       dispatch("keydown", "KeyD", "d")
       expect(labInput.up).toBe(true)

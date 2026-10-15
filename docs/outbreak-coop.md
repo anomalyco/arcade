@@ -71,8 +71,9 @@ loopback the jitter buffer made stand-ins and every one of five shots still land
 
 - Doors, loot, barricades and shots take a round trip (no prediction or local muzzle flash yet); hitscan has no lag
   compensation (the room hits zombies where they are now).
-- Remote survivors show body, flashlight and name tag, not their pistol, reload or action callouts; the shared
-  world-anchored callout component can be reused for them once it lands.
+- Remote survivors show body, flashlight, name tag, and the character HUD (callouts and health, reload and exhaustion
+  rings, see [outbreak-hud.md](outbreak-hud.md)) built from replicated flags, but not their pistol. Reload progress
+  is timed on the viewer's side because the snapshot carries only a reloading flag.
 - No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. No lobby or
   quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
 - All zombies are sent to everyone every snapshot (no interest management or deltas); fine at 60, not at 300.

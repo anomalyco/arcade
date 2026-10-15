@@ -164,13 +164,14 @@ export class OutbreakAudio {
   }
 
   /**
-   * Day birds fade into night insects with the sun; the threat drone rises with darkness and with zombies on you.
+   * Day birds fade into night insects with the sun; the threat drone follows the day cycle's threat and zombies on you.
    * Indoors the beds drop and lose their top end, as if heard through the walls.
    */
   private ambience(frame: AudioFrame): void {
     const day = dayCycle(frame.hour)
     const dark = 1 - day.sun
-    const threat = Math.min(1, dark * 0.45 + Math.min(1, frame.pursuing / 3) * 0.55)
+    // The day cycle's threat curve (the one the AI and the look follow), raised further by zombies on you.
+    const threat = Math.min(1, day.threat * 0.45 + Math.min(1, frame.pursuing / 3) * 0.55)
     const muffle = 1 - this.indoor * 0.55
     const wanted: Record<Bed, number> = {
       "ambience.day.suburb": day.sun * muffle,

@@ -1,14 +1,20 @@
 import { MAT, Mesh, type Rgb } from "./mesh"
 import { Rng } from "../sim/rng"
 
-export type FoliagePresetId = "oak" | "maple" | "birch" | "pine" | "hydrangea"
+/** The three vegetation looks the Lab tunes separately; each has its own presets, parameters and Randomize. */
+export type FoliageKind = "tree" | "bush" | "grass"
+export type TreePresetId = "oak" | "maple" | "pine" | "birch"
+export type BushPresetId = "hedge" | "overgrown" | "hydrangea"
+export type GrassPresetId = "lawn" | "overgrown" | "weeds"
+/** @deprecated Tree presets only; use `TreePresetId`. */
+export type FoliagePresetId = TreePresetId
 export type FoliageCrownShape = "dome" | "layered" | "columnar" | "conical" | "spreading"
 export type FoliageCameraMode = "close" | "game"
 export type FoliageStageMode = "lot" | "swatch"
 export type FoliageCompareMode = 0 | 1 | 2
 
 export type FoliageNumericKey =
-  // Tree (19 numeric parameters)
+  // Tree
   | "treeHeight"
   | "crownRadius"
   | "branchCount"
@@ -28,7 +34,22 @@ export type FoliageNumericKey =
   | "treeWindStrength"
   | "treeWindFreq"
   | "treeWindGust"
-  // Grass (15 numeric parameters)
+  // Bush
+  | "bushHeight"
+  | "bushSpread"
+  | "bushLobes"
+  | "bushTrim"
+  | "bushLeafSize"
+  | "bushDensity"
+  | "bushColorR"
+  | "bushColorG"
+  | "bushColorB"
+  | "bushColorVariation"
+  | "bushFlowers"
+  | "bushAO"
+  | "bushTranslucency"
+  | "bushWind"
+  // Grass
   | "grassDensity"
   | "bladeHeight"
   | "bladeWidth"
@@ -42,305 +63,377 @@ export type FoliageNumericKey =
   | "tipColorB"
   | "grassVariation"
   | "dryPatches"
+  | "weedRosettes"
   | "grassWind"
   | "distanceFade"
+  | "trampleRadius"
+  | "trampleStrength"
 
 export type FoliageParams = Record<FoliageNumericKey, number> & {
-  treePreset: FoliagePresetId
+  treePreset: TreePresetId
+  bushPreset: BushPresetId
+  grassPreset: GrassPresetId
   crownShape: FoliageCrownShape
 }
 
+export type FoliageParamGroup =
+  | "Tree Structure"
+  | "Tree Canopy & Shading"
+  | "Tree Wind"
+  | "Bush Shape"
+  | "Bush Leaves & Colour"
+  | "Bush Light & Wind"
+  | "Grass Blades"
+  | "Grass Colour"
+  | "Grass Wind & Interaction"
+
 export type FoliageParamSpec = {
   key: FoliageNumericKey
+  kind: FoliageKind
   label: string
-  group: "Tree Structure" | "Tree Canopy & Shading" | "Tree Wind" | "Grass Blades" | "Grass Colour & Wind"
+  group: FoliageParamGroup
   min: number
   max: number
   step: number
   unit: "" | "m" | "°" | "×" | "Hz"
   /**
    * Update boundary per docs/lab.md:
-   * - "structural": rebuilds tree/grass meshes deterministically from `seed`.
-   * - "uniform": updates shader uniform live without rebuilding meshes.
+   * - "structural": rebuilds tree/bush/grass meshes deterministically from the structure seed.
+   * - "uniform": updates shader uniforms live without rebuilding meshes.
    */
   boundary: "structural" | "uniform"
 }
 
+const spec = (
+  kind: FoliageKind,
+  group: FoliageParamGroup,
+  key: FoliageNumericKey,
+  label: string,
+  min: number,
+  max: number,
+  step: number,
+  unit: FoliageParamSpec["unit"],
+  boundary: FoliageParamSpec["boundary"] = "structural",
+): FoliageParamSpec => ({ key, kind, label, group, min, max, step, unit, boundary })
+
 export const FOLIAGE_PARAM_SPECS: readonly FoliageParamSpec[] = [
-  // Tree Structure
-  { key: "treeHeight", label: "Height", group: "Tree Structure", min: 1.2, max: 7.5, step: 0.1, unit: "m", boundary: "structural" },
-  { key: "crownRadius", label: "Crown radius", group: "Tree Structure", min: 0.7, max: 3.8, step: 0.05, unit: "m", boundary: "structural" },
-  { key: "branchCount", label: "Branch count", group: "Tree Structure", min: 3, max: 10, step: 1, unit: "", boundary: "structural" },
-  { key: "branchAngle", label: "Branch angle", group: "Tree Structure", min: 18, max: 78, step: 1, unit: "°", boundary: "structural" },
-  { key: "clumpCount", label: "Clump count", group: "Tree Structure", min: 1, max: 5, step: 1, unit: "", boundary: "structural" },
-  { key: "clumpSize", label: "Clump size", group: "Tree Structure", min: 0.35, max: 1.65, step: 0.05, unit: "m", boundary: "structural" },
-  { key: "leafCardSize", label: "Leaf card size", group: "Tree Structure", min: 0.12, max: 0.75, step: 0.02, unit: "m", boundary: "structural" },
-  { key: "porosity", label: "Crown porosity", group: "Tree Structure", min: 0.0, max: 0.85, step: 0.05, unit: "", boundary: "structural" },
-  // Tree Canopy & Shading
-  { key: "treeColorR", label: "Base red", group: "Tree Canopy & Shading", min: 0.08, max: 0.85, step: 0.01, unit: "", boundary: "structural" },
-  { key: "treeColorG", label: "Base green", group: "Tree Canopy & Shading", min: 0.12, max: 0.85, step: 0.01, unit: "", boundary: "structural" },
-  { key: "treeColorB", label: "Base blue", group: "Tree Canopy & Shading", min: 0.05, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
-  { key: "treeColorVariation", label: "Colour variation", group: "Tree Canopy & Shading", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "autumnMix", label: "Autumn mix", group: "Tree Canopy & Shading", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "translucency", label: "Translucency", group: "Tree Canopy & Shading", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "canopyAO", label: "Canopy AO", group: "Tree Canopy & Shading", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "normalSoftness", label: "Normal softness", group: "Tree Canopy & Shading", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  // Tree Wind
-  { key: "treeWindStrength", label: "Wind strength", group: "Tree Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "treeWindFreq", label: "Wind frequency", group: "Tree Wind", min: 0.2, max: 3.0, step: 0.05, unit: "Hz", boundary: "uniform" },
-  { key: "treeWindGust", label: "Wind gust", group: "Tree Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  // Grass Blades
-  { key: "grassDensity", label: "Grass density", group: "Grass Blades", min: 0.25, max: 2.5, step: 0.05, unit: "×", boundary: "structural" },
-  { key: "bladeHeight", label: "Blade height", group: "Grass Blades", min: 0.06, max: 0.55, step: 0.01, unit: "m", boundary: "structural" },
-  { key: "bladeWidth", label: "Blade width", group: "Grass Blades", min: 0.015, max: 0.12, step: 0.005, unit: "m", boundary: "structural" },
-  { key: "bladeCurvature", label: "Blade curvature", group: "Grass Blades", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "grassClumping", label: "Clumping", group: "Grass Blades", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  // Grass Colour & Wind
-  { key: "rootColorR", label: "Root red", group: "Grass Colour & Wind", min: 0.04, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
-  { key: "rootColorG", label: "Root green", group: "Grass Colour & Wind", min: 0.06, max: 0.70, step: 0.01, unit: "", boundary: "structural" },
-  { key: "rootColorB", label: "Root blue", group: "Grass Colour & Wind", min: 0.03, max: 0.50, step: 0.01, unit: "", boundary: "structural" },
-  { key: "tipColorR", label: "Tip red", group: "Grass Colour & Wind", min: 0.12, max: 0.90, step: 0.01, unit: "", boundary: "structural" },
-  { key: "tipColorG", label: "Tip green", group: "Grass Colour & Wind", min: 0.18, max: 0.92, step: 0.01, unit: "", boundary: "structural" },
-  { key: "tipColorB", label: "Tip blue", group: "Grass Colour & Wind", min: 0.06, max: 0.65, step: 0.01, unit: "", boundary: "structural" },
-  { key: "grassVariation", label: "Colour variation", group: "Grass Colour & Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "dryPatches", label: "Dry patches", group: "Grass Colour & Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "structural" },
-  { key: "grassWind", label: "Grass wind", group: "Grass Colour & Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
-  { key: "distanceFade", label: "Distance fade", group: "Grass Colour & Wind", min: 0.0, max: 1.0, step: 0.02, unit: "", boundary: "uniform" },
+  spec("tree", "Tree Structure", "treeHeight", "Height", 1.2, 7.5, 0.1, "m"),
+  spec("tree", "Tree Structure", "crownRadius", "Crown radius", 0.7, 3.8, 0.05, "m"),
+  spec("tree", "Tree Structure", "branchCount", "Branch count", 3, 10, 1, ""),
+  spec("tree", "Tree Structure", "branchAngle", "Branch angle", 18, 78, 1, "°"),
+  spec("tree", "Tree Structure", "clumpCount", "Clumps per branch", 1, 5, 1, ""),
+  spec("tree", "Tree Structure", "clumpSize", "Clump size", 0.35, 1.65, 0.05, "m"),
+  spec("tree", "Tree Structure", "leafCardSize", "Leaf cluster size", 0.12, 0.75, 0.02, "m"),
+  spec("tree", "Tree Structure", "porosity", "Crown porosity", 0.0, 0.85, 0.05, ""),
+  spec("tree", "Tree Canopy & Shading", "treeColorR", "Leaf red", 0.08, 0.85, 0.01, ""),
+  spec("tree", "Tree Canopy & Shading", "treeColorG", "Leaf green", 0.12, 0.85, 0.01, ""),
+  spec("tree", "Tree Canopy & Shading", "treeColorB", "Leaf blue", 0.05, 0.65, 0.01, ""),
+  spec("tree", "Tree Canopy & Shading", "treeColorVariation", "Colour variation", 0.0, 1.0, 0.02, ""),
+  spec("tree", "Tree Canopy & Shading", "autumnMix", "Autumn mix", 0.0, 1.0, 0.02, ""),
+  spec("tree", "Tree Canopy & Shading", "translucency", "Translucency", 0.0, 1.0, 0.02, "", "uniform"),
+  spec("tree", "Tree Canopy & Shading", "canopyAO", "Interior AO", 0.0, 1.0, 0.02, ""),
+  spec("tree", "Tree Canopy & Shading", "normalSoftness", "Soft dome normals", 0.0, 1.0, 0.02, ""),
+  spec("tree", "Tree Wind", "treeWindStrength", "Sway strength", 0.0, 1.0, 0.02, "", "uniform"),
+  spec("tree", "Tree Wind", "treeWindFreq", "Sway frequency", 0.2, 3.0, 0.05, "Hz", "uniform"),
+  spec("tree", "Tree Wind", "treeWindGust", "Gustiness", 0.0, 1.0, 0.02, "", "uniform"),
+
+  spec("bush", "Bush Shape", "bushHeight", "Height scale", 0.6, 1.6, 0.05, "×"),
+  spec("bush", "Bush Shape", "bushSpread", "Spread scale", 0.6, 1.6, 0.05, "×"),
+  spec("bush", "Bush Shape", "bushLobes", "Mound lobes", 3, 9, 1, ""),
+  spec("bush", "Bush Shape", "bushTrim", "Clipped (0 wild, 1 hedge)", 0.0, 1.0, 0.02, ""),
+  spec("bush", "Bush Leaves & Colour", "bushLeafSize", "Leaf cluster size", 0.06, 0.36, 0.01, "m"),
+  spec("bush", "Bush Leaves & Colour", "bushDensity", "Leaf density", 0.5, 1.8, 0.05, "×"),
+  spec("bush", "Bush Leaves & Colour", "bushColorR", "Leaf red", 0.08, 0.85, 0.01, ""),
+  spec("bush", "Bush Leaves & Colour", "bushColorG", "Leaf green", 0.12, 0.85, 0.01, ""),
+  spec("bush", "Bush Leaves & Colour", "bushColorB", "Leaf blue", 0.05, 0.65, 0.01, ""),
+  spec("bush", "Bush Leaves & Colour", "bushColorVariation", "Colour variation", 0.0, 1.0, 0.02, ""),
+  spec("bush", "Bush Leaves & Colour", "bushFlowers", "Blossoms", 0.0, 1.0, 0.02, ""),
+  spec("bush", "Bush Light & Wind", "bushAO", "Interior AO", 0.0, 1.0, 0.02, ""),
+  spec("bush", "Bush Light & Wind", "bushTranslucency", "Translucency", 0.0, 1.0, 0.02, "", "uniform"),
+  spec("bush", "Bush Light & Wind", "bushWind", "Wind rustle", 0.0, 1.0, 0.02, "", "uniform"),
+
+  spec("grass", "Grass Blades", "grassDensity", "Density", 0.25, 2.5, 0.05, "×"),
+  spec("grass", "Grass Blades", "bladeHeight", "Blade height", 0.06, 0.55, 0.01, "m"),
+  spec("grass", "Grass Blades", "bladeWidth", "Blade width", 0.015, 0.12, 0.005, "m"),
+  spec("grass", "Grass Blades", "bladeCurvature", "Blade curvature", 0.0, 1.0, 0.02, ""),
+  spec("grass", "Grass Blades", "grassClumping", "Clumping", 0.0, 1.0, 0.02, ""),
+  spec("grass", "Grass Colour", "rootColorR", "Root red", 0.04, 0.65, 0.01, ""),
+  spec("grass", "Grass Colour", "rootColorG", "Root green", 0.06, 0.70, 0.01, ""),
+  spec("grass", "Grass Colour", "rootColorB", "Root blue", 0.03, 0.50, 0.01, ""),
+  spec("grass", "Grass Colour", "tipColorR", "Tip red", 0.12, 0.90, 0.01, ""),
+  spec("grass", "Grass Colour", "tipColorG", "Tip green", 0.18, 0.92, 0.01, ""),
+  spec("grass", "Grass Colour", "tipColorB", "Tip blue", 0.06, 0.65, 0.01, ""),
+  spec("grass", "Grass Colour", "grassVariation", "Colour variation", 0.0, 1.0, 0.02, ""),
+  spec("grass", "Grass Colour", "dryPatches", "Dry patches", 0.0, 1.0, 0.02, ""),
+  spec("grass", "Grass Colour", "weedRosettes", "Weed rosettes", 0.0, 1.0, 0.02, ""),
+  spec("grass", "Grass Wind & Interaction", "grassWind", "Wind", 0.0, 1.0, 0.02, "", "uniform"),
+  spec("grass", "Grass Wind & Interaction", "distanceFade", "Distance wind fade", 0.0, 1.0, 0.02, "", "uniform"),
+  spec("grass", "Grass Wind & Interaction", "trampleRadius", "Actor bend radius", 0.3, 2.0, 0.05, "m", "uniform"),
+  spec("grass", "Grass Wind & Interaction", "trampleStrength", "Actor bend strength", 0.0, 1.0, 0.02, "", "uniform"),
 ] as const
 
-export type FoliagePresetDef = {
-  id: FoliagePresetId
-  label: string
-  summary: string
-  defaults: Readonly<FoliageParams>
+export const FOLIAGE_KINDS: readonly FoliageKind[] = ["tree", "bush", "grass"]
+export const FOLIAGE_KIND_LABELS: Readonly<Record<FoliageKind, string>> = { tree: "Tree", bush: "Bush", grass: "Grass" }
+
+export function foliageSpecsFor(kind: FoliageKind): readonly FoliageParamSpec[] {
+  return FOLIAGE_PARAM_SPECS.filter(s => s.kind === kind)
 }
 
-const COMMON_GRASS_DEFAULTS = {
-  grassDensity: 1.0,
-  bladeHeight: 0.20,
-  bladeWidth: 0.042,
-  bladeCurvature: 0.72,
-  grassClumping: 0.82,
-  rootColorR: 0.16,
-  rootColorG: 0.19,
-  rootColorB: 0.12,
-  tipColorR: 0.29,
-  tipColorG: 0.33,
-  tipColorB: 0.20,
-  grassVariation: 0.68,
-  dryPatches: 0.36,
-  grassWind: 0.44,
-  distanceFade: 0.55,
-} as const
+type KindKeys<K extends FoliageKind> = K extends "tree"
+  ? "treeHeight" | "crownRadius" | "branchCount" | "branchAngle" | "clumpCount" | "clumpSize" | "leafCardSize" | "porosity"
+    | "treeColorR" | "treeColorG" | "treeColorB" | "treeColorVariation" | "autumnMix" | "translucency" | "canopyAO"
+    | "normalSoftness" | "treeWindStrength" | "treeWindFreq" | "treeWindGust"
+  : K extends "bush"
+    ? "bushHeight" | "bushSpread" | "bushLobes" | "bushTrim" | "bushLeafSize" | "bushDensity" | "bushColorR" | "bushColorG"
+      | "bushColorB" | "bushColorVariation" | "bushFlowers" | "bushAO" | "bushTranslucency" | "bushWind"
+    : "grassDensity" | "bladeHeight" | "bladeWidth" | "bladeCurvature" | "grassClumping" | "rootColorR" | "rootColorG"
+      | "rootColorB" | "tipColorR" | "tipColorG" | "tipColorB" | "grassVariation" | "dryPatches" | "weedRosettes"
+      | "grassWind" | "distanceFade" | "trampleRadius" | "trampleStrength"
 
-export const FOLIAGE_PRESETS: Readonly<Record<FoliagePresetId, FoliagePresetDef>> = {
+export type FoliagePresetDef<K extends FoliageKind, Id extends string> = {
+  id: Id
+  kind: K
+  label: string
+  summary: string
+  values: Readonly<Record<KindKeys<K>, number>> & (K extends "tree" ? { crownShape: FoliageCrownShape } : unknown)
+}
+
+export const TREE_PRESETS: Readonly<Record<TreePresetId, FoliagePresetDef<"tree", TreePresetId>>> = {
   oak: {
     id: "oak",
-    label: "Street Oak (Broadleaf)",
-    summary: "Spreading broadleaf dome with 3-shell sub-crown leaf bouquets, spherized normals, deep interior AO, and clumped meadow grass.",
-    defaults: {
-      treePreset: "oak",
-      crownShape: "dome",
-      treeHeight: 5.2,
-      crownRadius: 2.35,
-      branchCount: 6,
-      branchAngle: 44,
-      clumpCount: 2,
-      clumpSize: 0.95,
-      leafCardSize: 0.28,
-      porosity: 0.35,
-      treeColorR: 0.27,
-      treeColorG: 0.31,
-      treeColorB: 0.19,
-      treeColorVariation: 0.66,
-      autumnMix: 0.42,
-      translucency: 0.28,
-      canopyAO: 0.64,
-      normalSoftness: 0.90,
-      treeWindStrength: 0.24,
-      treeWindFreq: 0.80,
-      treeWindGust: 0.40,
-      ...COMMON_GRASS_DEFAULTS,
+    kind: "tree",
+    label: "Oak",
+    summary: "Broad street oak: wide dome of overlapping bough mounds, dark interior and lit outer lobes.",
+    values: {
+      crownShape: "dome", treeHeight: 5.2, crownRadius: 2.35, branchCount: 6, branchAngle: 44, clumpCount: 2, clumpSize: 0.95,
+      leafCardSize: 0.28, porosity: 0.35, treeColorR: 0.27, treeColorG: 0.31, treeColorB: 0.19, treeColorVariation: 0.66,
+      autumnMix: 0.42, translucency: 0.28, canopyAO: 0.64, normalSoftness: 0.9, treeWindStrength: 0.24, treeWindFreq: 0.8,
+      treeWindGust: 0.4,
     },
   },
   maple: {
     id: "maple",
-    label: "Autumn Maple (Layered)",
-    summary: "Tiered horizontal bough shelves with warm amber-ochre peripheral leaf bouquets and golden-straw lawn patches.",
-    defaults: {
-      treePreset: "maple",
-      crownShape: "layered",
-      treeHeight: 4.9,
-      crownRadius: 2.45,
-      branchCount: 7,
-      branchAngle: 52,
-      clumpCount: 3,
-      clumpSize: 0.86,
-      leafCardSize: 0.26,
-      porosity: 0.45,
-      treeColorR: 0.46,
-      treeColorG: 0.43,
-      treeColorB: 0.19,
-      treeColorVariation: 0.68,
-      autumnMix: 0.66,
-      translucency: 0.58,
-      canopyAO: 0.64,
-      normalSoftness: 0.86,
-      treeWindStrength: 0.34,
-      treeWindFreq: 0.90,
-      treeWindGust: 0.50,
-      ...COMMON_GRASS_DEFAULTS,
-      dryPatches: 0.44,
-    },
-  },
-  birch: {
-    id: "birch",
-    label: "Silver Birch (Airy)",
-    summary: "Slender upright white-barked crown with high porosity, fine fluttering leaf sprigs, and tall feathery grass.",
-    defaults: {
-      treePreset: "birch",
-      crownShape: "columnar",
-      treeHeight: 5.8,
-      crownRadius: 1.75,
-      branchCount: 6,
-      branchAngle: 32,
-      clumpCount: 2,
-      clumpSize: 0.74,
-      leafCardSize: 0.22,
-      porosity: 0.55,
-      treeColorR: 0.36,
-      treeColorG: 0.48,
-      treeColorB: 0.21,
-      treeColorVariation: 0.52,
-      autumnMix: 0.36,
-      translucency: 0.64,
-      canopyAO: 0.58,
-      normalSoftness: 0.84,
-      treeWindStrength: 0.42,
-      treeWindFreq: 1.15,
-      treeWindGust: 0.55,
-      ...COMMON_GRASS_DEFAULTS,
-      bladeHeight: 0.34,
-      bladeCurvature: 0.72,
+    kind: "tree",
+    label: "Maple",
+    summary: "Layered bough shelves with a warm amber-ochre autumn mix and strong leaf translucency.",
+    values: {
+      crownShape: "layered", treeHeight: 4.9, crownRadius: 2.45, branchCount: 7, branchAngle: 52, clumpCount: 3, clumpSize: 0.86,
+      leafCardSize: 0.26, porosity: 0.45, treeColorR: 0.46, treeColorG: 0.43, treeColorB: 0.19, treeColorVariation: 0.68,
+      autumnMix: 0.66, translucency: 0.58, canopyAO: 0.64, normalSoftness: 0.86, treeWindStrength: 0.34, treeWindFreq: 0.9,
+      treeWindGust: 0.5,
     },
   },
   pine: {
     id: "pine",
-    label: "Conifer Pine (Spire)",
-    summary: "Conical evergreen tiers with downward-swept boughs, dense needle sprays, and shaded understory turf.",
-    defaults: {
-      treePreset: "pine",
-      crownShape: "conical",
-      treeHeight: 6.2,
-      crownRadius: 2.0,
-      branchCount: 8,
-      branchAngle: 62,
-      clumpCount: 2,
-      clumpSize: 0.82,
-      leafCardSize: 0.24,
-      porosity: 0.25,
-      treeColorR: 0.20,
-      treeColorG: 0.34,
-      treeColorB: 0.16,
-      treeColorVariation: 0.40,
-      autumnMix: 0.08,
-      translucency: 0.36,
-      canopyAO: 0.76,
-      normalSoftness: 0.82,
-      treeWindStrength: 0.22,
-      treeWindFreq: 0.75,
-      treeWindGust: 0.40,
-      ...COMMON_GRASS_DEFAULTS,
-      rootColorR: 0.10,
-      rootColorG: 0.17,
-      rootColorB: 0.07,
+    kind: "tree",
+    label: "Pine",
+    summary: "Conical evergreen tiers with downswept boughs, dense dark needles and little translucency.",
+    values: {
+      crownShape: "conical", treeHeight: 6.2, crownRadius: 2.0, branchCount: 8, branchAngle: 62, clumpCount: 2, clumpSize: 0.82,
+      leafCardSize: 0.24, porosity: 0.25, treeColorR: 0.2, treeColorG: 0.34, treeColorB: 0.16, treeColorVariation: 0.4,
+      autumnMix: 0.08, translucency: 0.36, canopyAO: 0.76, normalSoftness: 0.82, treeWindStrength: 0.22, treeWindFreq: 0.75,
+      treeWindGust: 0.4,
     },
   },
-  hydrangea: {
-    id: "hydrangea",
-    label: "Garden Hydrangea (Shrub)",
-    summary: "Compact multi-stemmed foundation shrub with lush peripheral leaf sprigs and creamy-white panicle blooms.",
-    defaults: {
-      treePreset: "hydrangea",
-      crownShape: "spreading",
-      treeHeight: 1.65,
-      crownRadius: 1.25,
-      branchCount: 5,
-      branchAngle: 56,
-      clumpCount: 2,
-      clumpSize: 0.58,
-      leafCardSize: 0.20,
-      porosity: 0.20,
-      treeColorR: 0.29,
-      treeColorG: 0.42,
-      treeColorB: 0.18,
-      treeColorVariation: 0.48,
-      autumnMix: 0.12,
-      translucency: 0.50,
-      canopyAO: 0.68,
-      normalSoftness: 0.88,
-      treeWindStrength: 0.24,
-      treeWindFreq: 0.95,
-      treeWindGust: 0.38,
-      ...COMMON_GRASS_DEFAULTS,
+  birch: {
+    id: "birch",
+    kind: "tree",
+    label: "Birch",
+    summary: "Slender white-barked columnar crown with high porosity and fluttering small leaf clusters.",
+    values: {
+      crownShape: "columnar", treeHeight: 5.8, crownRadius: 1.75, branchCount: 6, branchAngle: 32, clumpCount: 2, clumpSize: 0.74,
+      leafCardSize: 0.22, porosity: 0.55, treeColorR: 0.36, treeColorG: 0.48, treeColorB: 0.21, treeColorVariation: 0.52,
+      autumnMix: 0.36, translucency: 0.64, canopyAO: 0.58, normalSoftness: 0.84, treeWindStrength: 0.42, treeWindFreq: 1.15,
+      treeWindGust: 0.55,
     },
   },
 }
 
-export const FOLIAGE_PRESET_IDS = Object.keys(FOLIAGE_PRESETS) as readonly FoliagePresetId[]
+export const BUSH_PRESETS: Readonly<Record<BushPresetId, FoliagePresetDef<"bush", BushPresetId>>> = {
+  hedge: {
+    id: "hedge",
+    kind: "bush",
+    label: "Clipped hedge",
+    summary: "Tight boxwood/privet: flat clipped top, straight sides, small dense leaves, no blossoms.",
+    values: {
+      bushHeight: 1.0, bushSpread: 1.0, bushLobes: 6, bushTrim: 0.86, bushLeafSize: 0.1, bushDensity: 1.5, bushColorR: 0.22,
+      bushColorG: 0.32, bushColorB: 0.14, bushColorVariation: 0.24, bushFlowers: 0, bushAO: 0.72, bushTranslucency: 0.3,
+      bushWind: 0.12,
+    },
+  },
+  overgrown: {
+    id: "overgrown",
+    kind: "bush",
+    label: "Overgrown shrub",
+    summary: "Unpruned foundation shrub: ragged multi-lobe mound, mixed olive tones, loose leaves spilling out.",
+    values: {
+      bushHeight: 1.0, bushSpread: 1.0, bushLobes: 6, bushTrim: 0.12, bushLeafSize: 0.18, bushDensity: 1.1, bushColorR: 0.27,
+      bushColorG: 0.32, bushColorB: 0.18, bushColorVariation: 0.62, bushFlowers: 0.06, bushAO: 0.66, bushTranslucency: 0.5,
+      bushWind: 0.3,
+    },
+  },
+  hydrangea: {
+    id: "hydrangea",
+    kind: "bush",
+    label: "Hydrangea",
+    summary: "Rounded flowering shrub: broad leaves and creamy blossom heads across the crown.",
+    values: {
+      bushHeight: 1.0, bushSpread: 1.05, bushLobes: 5, bushTrim: 0.32, bushLeafSize: 0.2, bushDensity: 1.0, bushColorR: 0.29,
+      bushColorG: 0.42, bushColorB: 0.18, bushColorVariation: 0.46, bushFlowers: 0.8, bushAO: 0.68, bushTranslucency: 0.5,
+      bushWind: 0.24,
+    },
+  },
+}
+
+export const GRASS_PRESETS: Readonly<Record<GrassPresetId, FoliagePresetDef<"grass", GrassPresetId>>> = {
+  lawn: {
+    id: "lawn",
+    kind: "grass",
+    label: "Lawn",
+    summary: "Kept lawn: short even blades, low clumping, uniform green and few weeds.",
+    values: {
+      grassDensity: 1.0, bladeHeight: 0.12, bladeWidth: 0.035, bladeCurvature: 0.55, grassClumping: 0.45, rootColorR: 0.15,
+      rootColorG: 0.21, rootColorB: 0.1, tipColorR: 0.3, tipColorG: 0.4, tipColorB: 0.18, grassVariation: 0.34,
+      dryPatches: 0.12, weedRosettes: 0.04, grassWind: 0.32, distanceFade: 0.55, trampleRadius: 0.9, trampleStrength: 0.7,
+    },
+  },
+  overgrown: {
+    id: "overgrown",
+    kind: "grass",
+    label: "Overgrown lawn",
+    summary: "Unmown suburban lawn: taller clumped tufts, mixed olive-ochre tones and dry patches.",
+    values: {
+      grassDensity: 1.0, bladeHeight: 0.2, bladeWidth: 0.042, bladeCurvature: 0.72, grassClumping: 0.82, rootColorR: 0.16,
+      rootColorG: 0.19, rootColorB: 0.12, tipColorR: 0.29, tipColorG: 0.33, tipColorB: 0.2, grassVariation: 0.68,
+      dryPatches: 0.36, weedRosettes: 0.22, grassWind: 0.44, distanceFade: 0.55, trampleRadius: 1.1, trampleStrength: 0.85,
+    },
+  },
+  weeds: {
+    id: "weeds",
+    kind: "grass",
+    label: "Weeds / dead grass",
+    summary: "Neglected verge: sparse straw-coloured tussocks, broadleaf weed rosettes and bare soil.",
+    values: {
+      grassDensity: 0.8, bladeHeight: 0.26, bladeWidth: 0.05, bladeCurvature: 0.86, grassClumping: 0.9, rootColorR: 0.2,
+      rootColorG: 0.18, rootColorB: 0.1, tipColorR: 0.5, tipColorG: 0.44, tipColorB: 0.23, grassVariation: 0.8,
+      dryPatches: 0.86, weedRosettes: 0.72, grassWind: 0.5, distanceFade: 0.5, trampleRadius: 1.0, trampleStrength: 0.8,
+    },
+  },
+}
+
+/** Tree presets, kept under the historical name used by recipes and variation grids. */
+export const FOLIAGE_PRESETS = TREE_PRESETS
+export const TREE_PRESET_IDS = Object.keys(TREE_PRESETS) as readonly TreePresetId[]
+export const BUSH_PRESET_IDS = Object.keys(BUSH_PRESETS) as readonly BushPresetId[]
+export const GRASS_PRESET_IDS = Object.keys(GRASS_PRESETS) as readonly GrassPresetId[]
+export const FOLIAGE_PRESET_IDS = TREE_PRESET_IDS
+
 export const FOLIAGE_CROWN_SHAPES: readonly { value: FoliageCrownShape; label: string }[] = [
   { value: "dome", label: "Broadleaf dome" },
   { value: "layered", label: "Layered bough tiers" },
   { value: "columnar", label: "Airy columnar" },
   { value: "conical", label: "Conical spire" },
-  { value: "spreading", label: "Spreading shrub" },
+  { value: "spreading", label: "Spreading" },
 ]
 
-export function isFoliagePresetId(value: unknown): value is FoliagePresetId {
-  return typeof value === "string" && value in FOLIAGE_PRESETS
+export function isTreePresetId(value: unknown): value is TreePresetId {
+  return typeof value === "string" && value in TREE_PRESETS
 }
-
+export const isFoliagePresetId = isTreePresetId
+export function isBushPresetId(value: unknown): value is BushPresetId {
+  return typeof value === "string" && value in BUSH_PRESETS
+}
+export function isGrassPresetId(value: unknown): value is GrassPresetId {
+  return typeof value === "string" && value in GRASS_PRESETS
+}
 export function isFoliageCrownShape(value: unknown): value is FoliageCrownShape {
   return typeof value === "string" && FOLIAGE_CROWN_SHAPES.some(s => s.value === value)
 }
 
-export function cloneFoliageParams(presetId: FoliagePresetId = "oak"): FoliageParams {
-  return { ...FOLIAGE_PRESETS[presetId].defaults }
+export function foliagePresetIdsFor(kind: FoliageKind): readonly string[] {
+  return kind === "tree" ? TREE_PRESET_IDS : kind === "bush" ? BUSH_PRESET_IDS : GRASS_PRESET_IDS
 }
 
-/** Shared production foliage settings consumed by Outbreak level build and Lab Foliage workbench. */
-export const foliageSettings: FoliageParams = cloneFoliageParams("oak")
+export function foliagePresetFor(kind: FoliageKind, id: string): { id: string; label: string; summary: string; values: Readonly<Record<string, number | string>> } | null {
+  const table: Readonly<Record<string, { id: string; label: string; summary: string; values: object }>> =
+    kind === "tree" ? TREE_PRESETS : kind === "bush" ? BUSH_PRESETS : GRASS_PRESETS
+  const def = table[id]
+  return def ? (def as { id: string; label: string; summary: string; values: Readonly<Record<string, number | string>> }) : null
+}
 
-export function resetFoliageParams(presetId: FoliagePresetId = "oak", target: FoliageParams = foliageSettings): FoliageParams {
-  Object.assign(target, FOLIAGE_PRESETS[presetId].defaults)
+/** Applies one look's preset (only that kind's parameters change). */
+export function applyFoliagePreset(kind: FoliageKind, id: string, target: FoliageParams = foliageSettings): FoliageParams {
+  const def = foliagePresetFor(kind, id)
+  if (!def) throw new Error(`Unknown ${kind} preset "${id}". Valid: ${foliagePresetIdsFor(kind).join(", ")}.`)
+  Object.assign(target, def.values)
+  if (kind === "tree") target.treePreset = id as TreePresetId
+  else if (kind === "bush") target.bushPreset = id as BushPresetId
+  else target.grassPreset = id as GrassPresetId
   return target
 }
 
-function snapToStep(value: number, spec: FoliageParamSpec): number {
-  const clamped = Math.max(spec.min, Math.min(spec.max, value))
-  const steps = Math.round((clamped - spec.min) / spec.step)
-  return Number(Math.min(spec.max, Math.max(spec.min, spec.min + steps * spec.step)).toPrecision(12))
+export function cloneFoliageParams(
+  tree: TreePresetId = "oak",
+  bush: BushPresetId = "overgrown",
+  grass: GrassPresetId = "overgrown",
+): FoliageParams {
+  return {
+    treePreset: tree,
+    bushPreset: bush,
+    grassPreset: grass,
+    ...TREE_PRESETS[tree].values,
+    ...BUSH_PRESETS[bush].values,
+    ...GRASS_PRESETS[grass].values,
+  } as FoliageParams
 }
 
+/** Shared production vegetation settings consumed by Outbreak's level build and the Lab Vegetation section. */
+export const foliageSettings: FoliageParams = cloneFoliageParams()
+
+/** Resets the tree look to a tree preset (bushes and grass are untouched). */
+export function resetFoliageParams(presetId: TreePresetId = "oak", target: FoliageParams = foliageSettings): FoliageParams {
+  return applyFoliagePreset("tree", presetId, target)
+}
+
+function snapToStep(value: number, s: FoliageParamSpec): number {
+  const clamped = Math.max(s.min, Math.min(s.max, value))
+  const steps = Math.round((clamped - s.min) / s.step)
+  return Number(Math.min(s.max, Math.max(s.min, s.min + steps * s.step)).toPrecision(12))
+}
+
+/**
+ * Validates a complete parameter set. Version-1 payloads predate bushes, grass presets and actor bending;
+ * pass `fillMissing` to take those keys from the production defaults instead of rejecting them.
+ */
 export function validateFoliageParams(
   input: unknown,
+  options: { fillMissing?: boolean } = {},
 ): { ok: true; value: FoliageParams } | { ok: false; error: string } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, error: "Foliage parameters must be an object." }
   }
   const raw = input as Record<string, unknown>
-  const preset: FoliagePresetId = isFoliagePresetId(raw.treePreset) ? raw.treePreset : "oak"
-  const shape: FoliageCrownShape = isFoliageCrownShape(raw.crownShape) ? raw.crownShape : FOLIAGE_PRESETS[preset].defaults.crownShape
-  const out = { treePreset: preset, crownShape: shape } as FoliageParams
-  for (const spec of FOLIAGE_PARAM_SPECS) {
-    const v = raw[spec.key]
+  const defaults = cloneFoliageParams()
+  const legacyHydrangea = raw.treePreset === "hydrangea"
+  const tree: TreePresetId = isTreePresetId(raw.treePreset) ? raw.treePreset : "oak"
+  const bush: BushPresetId = isBushPresetId(raw.bushPreset) ? raw.bushPreset : legacyHydrangea ? "hydrangea" : defaults.bushPreset
+  const grass: GrassPresetId = isGrassPresetId(raw.grassPreset) ? raw.grassPreset : defaults.grassPreset
+  const shape: FoliageCrownShape = isFoliageCrownShape(raw.crownShape) ? raw.crownShape : TREE_PRESETS[tree].values.crownShape
+  const out = { treePreset: tree, bushPreset: bush, grassPreset: grass, crownShape: shape } as FoliageParams
+  const fill = cloneFoliageParams(tree, bush, grass)
+  for (const s of FOLIAGE_PARAM_SPECS) {
+    const v = raw[s.key]
+    if (v === undefined && options.fillMissing) {
+      out[s.key] = fill[s.key]
+      continue
+    }
     if (typeof v !== "number" || !Number.isFinite(v)) {
-      return { ok: false, error: `Invalid or non-finite foliage parameter "${spec.key}".` }
+      return { ok: false, error: `Invalid or non-finite foliage parameter "${s.key}".` }
     }
-    if (v < spec.min - 1e-6 || v > spec.max + 1e-6) {
-      return { ok: false, error: `Parameter "${spec.key}" (${v}) is outside [${spec.min}, ${spec.max}].` }
+    if (v < s.min - 1e-6 || v > s.max + 1e-6) {
+      return { ok: false, error: `Parameter "${s.key}" (${v}) is outside [${s.min}, ${s.max}].` }
     }
-    out[spec.key] = snapToStep(v, spec)
+    out[s.key] = snapToStep(v, s)
   }
   return { ok: true, value: out }
 }
@@ -350,41 +443,35 @@ function snapKey(key: FoliageNumericKey, value: number): number {
   return snapToStep(value, specMap.get(key)!)
 }
 
+export type FoliageRandomizeScope = "all" | FoliageKind
+
 /**
- * Deterministic, botanically constrained parameter randomization using an isolated `tuningSeed`.
- * Leaves structural `seed` unchanged and constrains height/crown/leaf ratios and chlorophyll palettes
- * to plausible combinations.
+ * Deterministic, botanically constrained parameter randomization from an isolated tuning seed.
+ * Leaves the structure seed and the other looks unchanged; colours stay chlorophyll- or straw-dominant.
  */
 export function randomizeFoliageParams(
   base: Readonly<FoliageParams>,
   tuningSeed: number,
-  scope: "all" | "tree" | "grass" = "all",
+  scope: FoliageRandomizeScope = "all",
 ): FoliageParams {
   const rng = new Rng((Math.trunc(tuningSeed) || 1) ^ 0x85ebca6b)
   const out: FoliageParams = { ...base }
 
   if (scope === "all" || scope === "tree") {
-    const presetDefaults = FOLIAGE_PRESETS[base.treePreset]?.defaults ?? FOLIAGE_PRESETS.oak.defaults
-    const isShrub = base.treePreset === "hydrangea" || base.crownShape === "spreading"
+    const presetValues = TREE_PRESETS[base.treePreset]?.values ?? TREE_PRESETS.oak.values
     const isSlender = base.crownShape === "columnar" || base.crownShape === "conical"
-
-    const hLo = isShrub ? 1.3 : 3.8
-    const hHi = isShrub ? 2.4 : 6.8
-    out.treeHeight = snapKey("treeHeight", hLo + rng.next() * (hHi - hLo))
-
-    const aspect = isShrub ? 0.62 + rng.next() * 0.26 : isSlender ? 0.28 + rng.next() * 0.14 : 0.38 + rng.next() * 0.18
+    out.treeHeight = snapKey("treeHeight", 3.8 + rng.next() * 3.0)
+    const aspect = isSlender ? 0.28 + rng.next() * 0.14 : 0.38 + rng.next() * 0.18
     out.crownRadius = snapKey("crownRadius", out.treeHeight * aspect)
-    out.branchCount = snapKey("branchCount", isShrub ? 4 + Math.floor(rng.next() * 3) : 5 + Math.floor(rng.next() * 4))
+    out.branchCount = snapKey("branchCount", 5 + Math.floor(rng.next() * 4))
     out.branchAngle = snapKey("branchAngle", isSlender ? 26 + rng.next() * 28 : 34 + rng.next() * 28)
     out.clumpCount = snapKey("clumpCount", 1 + Math.floor(rng.next() * 3))
     out.clumpSize = snapKey("clumpSize", out.crownRadius * (0.34 + rng.next() * 0.16))
     out.leafCardSize = snapKey("leafCardSize", out.clumpSize * (0.24 + rng.next() * 0.12))
     out.porosity = snapKey("porosity", 0.15 + rng.next() * 0.45)
-
-    // Keep chlorophyll green dominant (G >= R*0.85, B <= G*0.65) so trees never turn neon magenta/cyan.
-    const g = Math.max(0.28, Math.min(0.56, presetDefaults.treeColorG + (rng.next() - 0.5) * 0.16))
-    const r = Math.max(0.18, Math.min(g * 1.06, presetDefaults.treeColorR + (rng.next() - 0.5) * 0.16))
-    const b = Math.max(0.12, Math.min(g * 0.62, presetDefaults.treeColorB + (rng.next() - 0.5) * 0.10))
+    const g = Math.max(0.28, Math.min(0.56, presetValues.treeColorG + (rng.next() - 0.5) * 0.16))
+    const r = Math.max(0.18, Math.min(g * 1.06, presetValues.treeColorR + (rng.next() - 0.5) * 0.16))
+    const b = Math.max(0.12, Math.min(g * 0.62, presetValues.treeColorB + (rng.next() - 0.5) * 0.1))
     out.treeColorR = snapKey("treeColorR", r)
     out.treeColorG = snapKey("treeColorG", g)
     out.treeColorB = snapKey("treeColorB", b)
@@ -398,64 +485,87 @@ export function randomizeFoliageParams(
     out.treeWindGust = snapKey("treeWindGust", 0.24 + rng.next() * 0.54)
   }
 
+  if (scope === "all" || scope === "bush") {
+    out.bushHeight = snapKey("bushHeight", 0.8 + rng.next() * 0.5)
+    out.bushSpread = snapKey("bushSpread", 0.8 + rng.next() * 0.5)
+    out.bushLobes = snapKey("bushLobes", 4 + Math.floor(rng.next() * 5))
+    out.bushTrim = snapKey("bushTrim", rng.next() < 0.3 ? 0.65 + rng.next() * 0.3 : rng.next() * 0.45)
+    out.bushLeafSize = snapKey("bushLeafSize", 0.09 + rng.next() * 0.16)
+    out.bushDensity = snapKey("bushDensity", 0.8 + rng.next() * 0.8)
+    const g = 0.26 + rng.next() * 0.2
+    out.bushColorG = snapKey("bushColorG", g)
+    out.bushColorR = snapKey("bushColorR", g * (0.66 + rng.next() * 0.3))
+    out.bushColorB = snapKey("bushColorB", g * (0.4 + rng.next() * 0.18))
+    out.bushColorVariation = snapKey("bushColorVariation", 0.2 + rng.next() * 0.55)
+    out.bushFlowers = snapKey("bushFlowers", rng.next() < 0.35 ? 0.3 + rng.next() * 0.6 : rng.next() * 0.12)
+    out.bushAO = snapKey("bushAO", 0.5 + rng.next() * 0.35)
+    out.bushTranslucency = snapKey("bushTranslucency", 0.25 + rng.next() * 0.5)
+    out.bushWind = snapKey("bushWind", 0.08 + rng.next() * 0.4)
+  }
+
   if (scope === "all" || scope === "grass") {
     out.grassDensity = snapKey("grassDensity", 0.75 + rng.next() * 0.95)
-    out.bladeHeight = snapKey("bladeHeight", 0.18 + rng.next() * 0.22)
-    out.bladeWidth = snapKey("bladeWidth", 0.035 + rng.next() * 0.045)
-    out.bladeCurvature = snapKey("bladeCurvature", 0.40 + rng.next() * 0.48)
-    out.grassClumping = snapKey("grassClumping", 0.55 + rng.next() * 0.40)
-
-    const rootG = 0.14 + rng.next() * 0.11
-    const rootR = rootG * (0.58 + rng.next() * 0.20)
-    const rootB = rootG * (0.36 + rng.next() * 0.14)
-    out.rootColorR = snapKey("rootColorR", rootR)
+    out.bladeHeight = snapKey("bladeHeight", 0.1 + rng.next() * 0.26)
+    out.bladeWidth = snapKey("bladeWidth", 0.03 + rng.next() * 0.03)
+    out.bladeCurvature = snapKey("bladeCurvature", 0.4 + rng.next() * 0.5)
+    out.grassClumping = snapKey("grassClumping", 0.4 + rng.next() * 0.55)
+    const dry = rng.next()
+    const rootG = 0.14 + rng.next() * 0.09
     out.rootColorG = snapKey("rootColorG", rootG)
-    out.rootColorB = snapKey("rootColorB", rootB)
-
-    const tipG = Math.min(0.72, rootG * (2.15 + rng.next() * 0.65))
-    const tipR = Math.min(0.66, tipG * (0.72 + rng.next() * 0.24))
-    const tipB = Math.min(0.40, tipG * (0.36 + rng.next() * 0.16))
-    out.tipColorR = snapKey("tipColorR", tipR)
+    out.rootColorR = snapKey("rootColorR", rootG * (0.62 + dry * 0.5))
+    out.rootColorB = snapKey("rootColorB", rootG * (0.4 + rng.next() * 0.14))
+    const tipG = Math.min(0.6, rootG * (1.8 + rng.next() * 0.6))
     out.tipColorG = snapKey("tipColorG", tipG)
-    out.tipColorB = snapKey("tipColorB", tipB)
-    out.grassVariation = snapKey("grassVariation", 0.40 + rng.next() * 0.44)
-    out.dryPatches = snapKey("dryPatches", 0.12 + rng.next() * 0.48)
+    out.tipColorR = snapKey("tipColorR", Math.min(0.66, tipG * (0.72 + dry * 0.42)))
+    out.tipColorB = snapKey("tipColorB", Math.min(0.4, tipG * (0.4 + rng.next() * 0.14)))
+    out.grassVariation = snapKey("grassVariation", 0.3 + rng.next() * 0.5)
+    out.dryPatches = snapKey("dryPatches", dry * 0.85)
+    out.weedRosettes = snapKey("weedRosettes", rng.next() * 0.6)
     out.grassWind = snapKey("grassWind", 0.24 + rng.next() * 0.48)
     out.distanceFade = snapKey("distanceFade", 0.36 + rng.next() * 0.44)
+    out.trampleRadius = snapKey("trampleRadius", 0.7 + rng.next() * 0.6)
+    out.trampleStrength = snapKey("trampleStrength", 0.55 + rng.next() * 0.4)
   }
 
   return out
 }
 
-export type FoliagePresetV1 = {
-  version: 1
+export type FoliageLabTool = FoliageKind | "lot"
+export type FoliageLighting = "night" | "dusk" | "day"
+
+/** Version 2: separate tree, bush and grass presets plus Lab view state. Version 1 imports are migrated. */
+export type FoliagePresetV2 = {
+  version: 2
   seed: number
   tuningSeed: number
+  tool: FoliageLabTool
+  lighting: FoliageLighting
+  look: string
   cameraMode: FoliageCameraMode
-  stageMode?: FoliageStageMode
-  compare: FoliageCompareMode
-  lightingPreset: string
   params: FoliageParams
 }
 
-export function exportFoliagePreset(input: Omit<FoliagePresetV1, "version">): FoliagePresetV1 {
+const LAB_TOOLS: readonly FoliageLabTool[] = ["tree", "bush", "grass", "lot"]
+const LIGHTINGS: readonly FoliageLighting[] = ["night", "dusk", "day"]
+
+export function exportFoliagePreset(input: Omit<FoliagePresetV2, "version">): FoliagePresetV2 {
   const checked = validateFoliageParams(input.params)
   if (!checked.ok) throw new Error(checked.error)
   return {
-    version: 1,
+    version: 2,
     seed: Math.max(1, Math.min(999, Math.trunc(input.seed) || 7)),
     tuningSeed: Math.max(1, Math.min(9999, Math.trunc(input.tuningSeed) || 41)),
-    cameraMode: input.cameraMode === "game" ? "game" : "close",
-    stageMode: input.stageMode === "swatch" ? "swatch" : "lot",
-    compare: input.compare === 0 ? 0 : input.compare === 2 ? 2 : 1,
-    lightingPreset: input.lightingPreset || "outbreak_dusk",
+    tool: LAB_TOOLS.includes(input.tool) ? input.tool : "tree",
+    lighting: LIGHTINGS.includes(input.lighting) ? input.lighting : "night",
+    look: typeof input.look === "string" && input.look ? input.look : "current",
+    cameraMode: input.cameraMode === "close" ? "close" : "game",
     params: checked.value,
   }
 }
 
 export function importFoliagePreset(
   rawJson: string,
-): { ok: true; value: FoliagePresetV1 } | { ok: false; error: string } {
+): { ok: true; value: FoliagePresetV2 } | { ok: false; error: string } {
   let parsed: unknown
   try {
     parsed = JSON.parse(rawJson)
@@ -466,8 +576,8 @@ export function importFoliagePreset(
     return { ok: false, error: "Foliage preset must be a JSON object." }
   }
   const obj = parsed as Record<string, unknown>
-  if (obj.version !== 1) {
-    return { ok: false, error: `Unsupported foliage preset version: ${String(obj.version)} (expected 1).` }
+  if (obj.version !== 1 && obj.version !== 2) {
+    return { ok: false, error: `Unsupported foliage preset version: ${String(obj.version)} (expected 1 or 2).` }
   }
   if (typeof obj.seed !== "number" || !Number.isFinite(obj.seed) || obj.seed < 1 || obj.seed > 999) {
     return { ok: false, error: "Invalid seed (expected 1..999)." }
@@ -478,21 +588,22 @@ export function importFoliagePreset(
   if (obj.cameraMode !== "close" && obj.cameraMode !== "game") {
     return { ok: false, error: `Invalid cameraMode: "${String(obj.cameraMode)}".` }
   }
-  if (obj.compare !== 0 && obj.compare !== 1 && obj.compare !== 2) {
-    return { ok: false, error: `Invalid compare mode: "${String(obj.compare)}".` }
-  }
-  const paramsRes = validateFoliageParams(obj.params)
+  const v1 = obj.version === 1
+  if (!v1 && !LAB_TOOLS.includes(obj.tool as FoliageLabTool)) return { ok: false, error: `Invalid tool: "${String(obj.tool)}".` }
+  if (!v1 && !LIGHTINGS.includes(obj.lighting as FoliageLighting)) return { ok: false, error: `Invalid lighting: "${String(obj.lighting)}".` }
+  if (!v1 && typeof obj.look !== "string") return { ok: false, error: "Invalid look (expected a look preset id)." }
+  const paramsRes = validateFoliageParams(obj.params, { fillMissing: v1 })
   if (!paramsRes.ok) return paramsRes
   return {
     ok: true,
     value: {
-      version: 1,
+      version: 2,
       seed: Math.trunc(obj.seed),
       tuningSeed: Math.trunc(obj.tuningSeed),
+      tool: v1 ? (obj.stageMode === "lot" ? "lot" : "tree") : (obj.tool as FoliageLabTool),
+      lighting: v1 ? (obj.lightingPreset === "outbreak_day" ? "day" : obj.lightingPreset === "outbreak_dusk" ? "dusk" : "night") : (obj.lighting as FoliageLighting),
+      look: v1 ? "current" : (obj.look as string),
       cameraMode: obj.cameraMode,
-      stageMode: obj.stageMode === "swatch" ? "swatch" : "lot",
-      compare: obj.compare,
-      lightingPreset: typeof obj.lightingPreset === "string" ? obj.lightingPreset : "outbreak_dusk",
       params: paramsRes.value,
     },
   }
@@ -671,6 +782,7 @@ function emitLeafSprig(
   tipCol: Rgb,
   flexWeight: number,
   leafletCount = 3,
+  auxOffset = 0,
 ): void {
   const yawBase = Math.atan2(outDir[2], outDir[0])
   const domeNormalAt = (pt: Point): Point => {
@@ -731,13 +843,14 @@ function emitLeafSprig(
     const midCol = mixRgb(baseCol, tipCol, 0.58)
     const tipFlex = Math.min(1.45, flexWeight * 1.12)
 
-    m.vert(pBase, nBase, baseCol, MAT.foliage, flexWeight * 0.78)
-    m.vert(pMidL, nMidL, midCol, MAT.foliage, flexWeight * 0.95)
-    m.vert(pTip, nTip, tipCol, MAT.foliage, tipFlex)
+    const tipAux = auxOffset + Math.min(1, tipFlex)
+    m.vert(pBase, nBase, baseCol, MAT.foliage, auxOffset + flexWeight * 0.78)
+    m.vert(pMidL, nMidL, midCol, MAT.foliage, auxOffset + flexWeight * 0.95)
+    m.vert(pTip, nTip, tipCol, MAT.foliage, tipAux)
 
-    m.vert(pBase, nBase, baseCol, MAT.foliage, flexWeight * 0.78)
-    m.vert(pTip, nTip, tipCol, MAT.foliage, tipFlex)
-    m.vert(pMidR, nMidR, midCol, MAT.foliage, flexWeight * 0.95)
+    m.vert(pBase, nBase, baseCol, MAT.foliage, auxOffset + flexWeight * 0.78)
+    m.vert(pTip, nTip, tipCol, MAT.foliage, tipAux)
+    m.vert(pMidR, nMidR, midCol, MAT.foliage, auxOffset + flexWeight * 0.95)
   }
 }
 
@@ -769,6 +882,8 @@ function emitBrushyLeafCard(
   midCol: Rgb,
   sunlitCol: Rgb,
   boughRadius: number,
+  tips = 5,
+  auxOffset = 0,
 ): void {
   const upBias = normalize3(outDir[0] * 0.78, Math.max(0.22, outDir[1] * 0.76 + 0.28), outDir[2] * 0.78)
   const yaw = rng.next() * Math.PI * 2
@@ -786,14 +901,18 @@ function emitBrushyLeafCard(
   const cup = cardRadius * 0.34
   const center: Point = [px + upBias[0] * cup, py + upBias[1] * cup, pz + upBias[2] * cup]
 
-  // 5-sided cupped spherical cap (5 tris = 15 verts) forming a smooth overlapping 3D lobe puff
-  const sides = 5
+  // Scalloped rosette: alternating leaf tips (flared out, lifted) and clefts (tucked in, dropped) around a raised
+  // centre, so even the opaque no-discard pipeline shows a serrated multi-leaf outline instead of a flat polygon plate.
+  const ringCount = tips * 2
   const ring: Point[] = []
-  for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.22
-    const lobeReach = 0.94 + 0.22 * Math.sin(a * 2 + px * 1.7) + (rng.next() - 0.5) * 0.14
-    const r = cardRadius * lobeReach
-    const droop = cardRadius * 0.18
+  const isTip: boolean[] = []
+  const phase = rng.next() * Math.PI * 2
+  for (let i = 0; i < ringCount; i++) {
+    const tip = i % 2 === 0
+    const a = phase + (i / ringCount) * Math.PI * 2 + (rng.next() - 0.5) * (tip ? 0.3 : 0.16)
+    const reach = tip ? 1.0 + (rng.next() - 0.3) * 0.26 : 0.5 + rng.next() * 0.12
+    const r = cardRadius * reach
+    const droop = cardRadius * (tip ? 0.12 : 0.26)
     const ca = Math.cos(a) * r
     const sa = Math.sin(a) * r
     ring.push([
@@ -801,6 +920,7 @@ function emitBrushyLeafCard(
       py + uAxis[1] * ca + vAxis[1] * sa - upBias[1] * droop - droop * 0.25,
       pz + uAxis[2] * ca + vAxis[2] * sa - upBias[2] * droop,
     ])
+    isTip.push(tip)
   }
 
   const soft = Math.min(0.98, Math.max(0.92, normalSoftness * 0.95 + 0.04))
@@ -831,21 +951,80 @@ function emitBrushyLeafCard(
   }
 
   const cCol = colorAt(center)
-  const ringCols = ring.map(colorAt)
-  const auxCenter = 0.85
-  const auxRim = 0.35
+  const ringCols = ring.map((pt, i) => scaleRgb(colorAt(pt), isTip[i] ? 1.1 : 0.8))
+  const auxCenter = auxOffset + 0.55
+  const auxTip = auxOffset + 1.0
+  const auxCleft = auxOffset + 0.4
 
-  for (let i = 0; i < sides; i++) {
+  for (let i = 0; i < ringCount; i++) {
+    const j = (i + 1) % ringCount
     const p0 = ring[i]!
-    const p1 = ring[(i + 1) % sides]!
+    const p1 = ring[j]!
     const fnRaw = faceNormal(center, p0, p1)
     const fn: Point = fnRaw[1] < 0 ? [-fnRaw[0], -fnRaw[1], -fnRaw[2]] : fnRaw
     const nC = blendNormal(fn, domeNormalAt(center), soft)
     const n0 = blendNormal(fn, domeNormalAt(p0), soft)
     const n1 = blendNormal(fn, domeNormalAt(p1), soft)
     m.vert(center, nC, cCol, MAT.foliage, auxCenter)
-    m.vert(p0, n0, ringCols[i]!, MAT.foliage, auxRim)
-    m.vert(p1, n1, ringCols[(i + 1) % sides]!, MAT.foliage, auxRim)
+    m.vert(p0, n0, ringCols[i]!, MAT.foliage, isTip[i] ? auxTip : auxCleft)
+    m.vert(p1, n1, ringCols[j]!, MAT.foliage, isTip[j] ? auxTip : auxCleft)
+  }
+}
+
+/**
+ * Closed lumpy leaf mound: an apex fan plus rings of jittered ellipsoid points with soft ellipsoid normals.
+ * It gives each bough or bush lobe an opaque mass (no see-through gaps from above) for ~72 vertices; the
+ * scalloped rosettes placed on its surface provide the leafy silhouette and lit tips.
+ */
+function emitLeafMound(
+  m: Mesh,
+  cx: number,
+  cy: number,
+  cz: number,
+  rx: number,
+  ry: number,
+  deepCol: Rgb,
+  midCol: Rgb,
+  rng: Rng,
+  auxOffset: number,
+  flex: number,
+  segs = 6,
+): void {
+  const polar = [0.0, 0.78, 1.72]
+  const rings: { p: Point; n: Point; t: number }[][] = []
+  const phase = rng.next() * Math.PI * 2
+  for (let k = 0; k < polar.length; k++) {
+    const th = polar[k]!
+    const ring: { p: Point; n: Point; t: number }[] = []
+    const count = k === 0 ? 1 : segs
+    for (let i = 0; i < count; i++) {
+      const a = phase + ((i + (k % 2) * 0.5) / segs) * Math.PI * 2
+      const lump = k === 0 ? 1 : 0.86 + rng.next() * 0.26
+      const sx = Math.sin(th) * Math.cos(a), sz = Math.sin(th) * Math.sin(a), sy = Math.cos(th)
+      const p: Point = [cx + sx * rx * lump, cy + sy * ry * (k === 0 ? 0.94 + rng.next() * 0.1 : lump), cz + sz * rx * lump]
+      const n = normalize3(sx / rx, sy / ry + 0.35 / ry, sz / rx)
+      ring.push({ p, n, t: clamp01((p[1] - (cy - ry)) / (2 * ry)) })
+    }
+    rings.push(ring)
+  }
+  const col = (t: number, p: Point): Rgb => {
+    const w = noise2(p[0] * 2.1 + p[1], p[2] * 2.1 - p[1])
+    return mixRgb(deepCol, midCol, clamp01(t * 1.25 + (w - 0.5) * 0.3))
+  }
+  const vert = (v: { p: Point; n: Point; t: number }) =>
+    m.vert(v.p, v.n, col(v.t, v.p), MAT.foliage, auxOffset + clamp01(flex * (0.35 + 0.65 * v.t)))
+  const apex = rings[0]![0]!
+  for (let i = 0; i < segs; i++) {
+    const a = rings[1]![i]!, b = rings[1]![(i + 1) % segs]!
+    vert(apex), vert(a), vert(b)
+  }
+  for (let k = 1; k < rings.length - 1; k++) {
+    for (let i = 0; i < segs; i++) {
+      const a0 = rings[k]![i]!, a1 = rings[k]![(i + 1) % segs]!
+      const b0 = rings[k + 1]![i]!, b1 = rings[k + 1]![(i + 1) % segs]!
+      vert(a0), vert(b0), vert(b1)
+      vert(a0), vert(b1), vert(a1)
+    }
   }
 }
 
@@ -870,6 +1049,11 @@ function emitBoughCluster(
   canopyAO: number,
   normalSoftness: number,
   flexBase: number,
+  tips = 5,
+  auxOffset = 0,
+  sprigs = 0,
+  mound = false,
+  moundSegs = 6,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
   // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.58 sRGB = 0.30 linear (deep uncrushed 70s olive-walnut shadow)
@@ -877,16 +1061,18 @@ function emitBoughCluster(
   const midShade = Math.max(0.76, 0.94 - canopyAO * 0.20)
   const deepCol = scaleRgb(base, coreDark)
   const midCol = scaleRgb(base, midShade)
-  const sunlitCol = scaleRgb(base, 1.18)
+  const sunlitCol = scaleRgb(base, 1.24)
 
-  const totalCards = Math.max(6, Math.round(sprigDensity))
+  if (mound) emitLeafMound(m, cx, cy, cz, rx * 0.9, ry * 0.92, deepCol, midCol, rng, auxOffset, flexBase, moundSegs)
+  const totalCards = Math.max(mound ? 2 : 3, Math.round(sprigDensity))
   for (let s = 0; s < totalCards; s++) {
-    const tierFrac = s / totalCards
+    // With a mound for mass, rosettes go only on the mid/outer shells where they break the silhouette.
+    const tierFrac = mound ? 0.34 + (s / totalCards) * 0.66 : s / totalCards
     const isCore = tierFrac < 0.34
     const isMid = tierFrac >= 0.34 && tierFrac < 0.74
 
     const a = s * 2.39996 + (rng.next() - 0.5) * 0.28
-    const rNorm = Math.sqrt((s + 0.25) / totalCards)
+    const rNorm = mound ? 0.35 + 0.65 * Math.sqrt((s + 0.5) / totalCards) : Math.sqrt((s + 0.25) / totalCards)
     const rShell = isCore
       ? 0.06 + 0.36 * rNorm
       : isMid
@@ -926,10 +1112,32 @@ function emitBoughCluster(
       midCol,
       sunlitCol,
       rx,
+      tips,
+      auxOffset,
     )
   }
-  void flexBase
-  void emitLeafSprig
+  // Pointed leaf sprigs splaying past the outer shell break the cluster silhouette and catch grazing rim light.
+  for (let s = 0; s < sprigs; s++) {
+    const a = rng.next() * Math.PI * 2
+    const up = 0.15 + rng.next() * 0.55
+    const dir = normalize3(Math.cos(a), up, Math.sin(a))
+    const root: Point = [cx + dir[0] * rx * 0.86, cy + dir[1] * ry * 0.7, cz + dir[2] * rx * 0.86]
+    emitLeafSprig(
+      m,
+      root,
+      dir,
+      leafCardScale * (0.62 + rng.next() * 0.22),
+      domePivot,
+      crownCenter,
+      normalSoftness,
+      rng,
+      midCol,
+      scaleRgb(sunlitCol, 1.06),
+      Math.min(1, flexBase + 0.2),
+      3,
+      auxOffset,
+    )
+  }
 }
 
 /**
@@ -946,8 +1154,12 @@ export function buildFoliageTree(
   params: Readonly<FoliageParams> = foliageSettings,
   shapeOverride?: FoliageCrownShape,
 ): void {
-  const rng = new Rng(seed)
   const isTree = h > 2.1
+  if (!isTree && shapeOverride === undefined) {
+    buildFoliageBush(m, x, z, h, radius, seed, ground, params)
+    return
+  }
+  const rng = new Rng(seed)
   const naturalHabit: FoliageCrownShape = (["dome", "layered", "spreading", "dome"] as const)[Math.abs(seed) & 3]!
   const shape: FoliageCrownShape =
     shapeOverride ?? (isTree ? (params.crownShape === "dome" ? naturalHabit : params.crownShape) : "spreading")
@@ -1043,7 +1255,8 @@ export function buildFoliageTree(
     ? params.leafCardSize * Math.max(0.55, Math.min(1.55, radiusRatio))
     : Math.max(0.11, radius * 0.24)
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer town trees
-  const sprigsPerClump = isTree ? (isHeroTree ? 8 : 5) : 5
+  const sprigsPerClump = isHeroTree ? 3 : 2
+  const edgeSprigs = isHeroTree ? 1 : 0
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * (isTree ? 0.42 : 0.58)
@@ -1141,6 +1354,11 @@ export function buildFoliageTree(
         params.canopyAO,
         params.normalSoftness,
         flexBase,
+        5,
+        0,
+        inGap ? 0 : edgeSprigs,
+        true,
+        isHeroTree ? 6 : 5,
       )
     }
   }
@@ -1164,11 +1382,11 @@ export function buildFoliageTree(
     params.canopyAO,
     params.normalSoftness,
     0.95,
+    5,
+    0,
+    edgeSprigs,
+    true,
   )
-
-  if (params.treePreset === "hydrangea") {
-    emitHydrangeaPanicles(m, x, ground, z, h, radius, seed)
-  }
 
   // Root-flare curved grass & sprawling bramble/weed shoots around the base
   const coverCount = isTree ? 4 : 3
@@ -1191,6 +1409,159 @@ export function buildFoliageTree(
   }
 }
 
+/** Bush vertices carry `aux = 3 + flex` so shaders can give bushes their own wind, translucency and actor bending. */
+export const FOLIAGE_BUSH_AUX = 3
+
+/**
+ * Production shrub/hedge generator. `bushTrim` morphs a ragged multi-lobe mound (0) into a clipped hedge (1) by
+ * flattening the top and straightening the sides of the emitted leaf clusters; the lowest 30 cm get contact AO.
+ */
+export function buildFoliageBush(
+  m: Mesh,
+  x: number,
+  z: number,
+  h: number,
+  radius: number,
+  seed: number,
+  ground: number,
+  params: Readonly<FoliageParams> = foliageSettings,
+): void {
+  const rng = new Rng(seed ^ 0x2b5e)
+  const from = m.v.length
+  const trim = clamp01(params.bushTrim)
+  const wild = 1 - trim
+  const H = Math.max(0.2, h * params.bushHeight)
+  const R = Math.max(0.15, radius * params.bushSpread)
+  // Small shrubs get fewer lobes so a yard of foundation planting stays near the old vertex budget.
+  const lobes = Math.max(3, Math.round(params.bushLobes * Math.min(1, Math.max(0.6, R / 0.75))))
+  const varAmt = params.bushColorVariation
+  const tone = ((((Math.abs(seed) * 2654435761) >>> 0) % 100) / 100 - 0.5) * varAmt
+  const base: Rgb = [
+    clamp01(params.bushColorR * (1 + tone * 0.28)),
+    clamp01(params.bushColorG * (1 + tone * 0.12)),
+    clamp01(params.bushColorB * (1 - tone * 0.2)),
+  ]
+  const tones: Rgb[] = [
+    base,
+    [clamp01(base[0] * (1 + 0.2 * varAmt)), clamp01(base[1] * (1 + 0.08 * varAmt)), clamp01(base[2] * (1 - 0.14 * varAmt))],
+    [clamp01(base[0] * (1 - 0.12 * varAmt)), clamp01(base[1] * (1 - 0.1 * varAmt)), clamp01(base[2] * (1 + 0.04 * varAmt))],
+  ]
+  const centre: Point = [x, ground + H * 0.5, z]
+  const tips = trim > 0.6 ? 4 : 5
+  const cards = Math.max(2, Math.round(2.0 * params.bushDensity))
+  const sprigs = Math.round(wild * 1.6)
+  const leaf = params.bushLeafSize
+
+  for (let i = 0; i < lobes; i++) {
+    const a = (i / lobes) * Math.PI * 2 + (rng.next() - 0.5) * 0.9 * wild
+    const ring = R * (0.46 + rng.next() * 0.16 * wild)
+    const lobeH = H * (0.62 + (rng.next() - 0.45) * 0.42 * wild)
+    const rx = R * (0.46 + rng.next() * 0.16 * wild)
+    const ry = Math.min(rx * 0.9, lobeH * 0.55)
+    const cy = ground + Math.max(ry * 0.8, lobeH - ry * 0.7)
+    const flex = 0.3 + 0.6 * clamp01((cy - ground) / Math.max(0.5, H))
+    emitBoughCluster(
+      m,
+      x + Math.cos(a) * ring,
+      cy,
+      z + Math.sin(a) * ring,
+      rx,
+      ry,
+      centre,
+      rng,
+      tones[i % tones.length]!,
+      cards,
+      leaf,
+      params.bushAO,
+      0.9,
+      flex,
+      tips,
+      FOLIAGE_BUSH_AUX,
+      sprigs,
+      true,
+      5,
+    )
+  }
+  const topR = R * (0.56 + 0.1 * wild)
+  emitBoughCluster(
+    m,
+    x,
+    ground + H - topR * 0.42,
+    z,
+    topR,
+    Math.min(topR * 0.72, H * 0.42),
+    centre,
+    rng,
+    tones[seed % tones.length]!,
+    cards + 1,
+    leaf,
+    params.bushAO,
+    0.9,
+    0.95,
+    tips,
+    FOLIAGE_BUSH_AUX,
+    sprigs,
+    true,
+  )
+
+  // Clip toward a rounded box (flat top, straight sides) by `trim`, bend normals to match, and darken the skirt.
+  const top = ground + H
+  for (let i = from; i < m.v.length; i += 11) {
+    const px = m.v[i]!, py = m.v[i + 1]!, pz = m.v[i + 2]!
+    const dx = px - x, dz = pz - z
+    const d = Math.hypot(dx, dz)
+    if (trim > 0.01) {
+      const capY = Math.min(py, top - 0.02 * rng.next())
+      m.v[i + 1] = py + (capY - py) * trim
+      const maxR = R * 1.02
+      if (d > maxR) {
+        const k = 1 + (maxR / d - 1) * trim
+        m.v[i] = x + dx * k
+        m.v[i + 2] = z + dz * k
+      }
+      const nearTop = clamp01((m.v[i + 1]! - (top - 0.18)) / 0.18)
+      const side = clamp01((d - R * 0.7) / (R * 0.3))
+      const bx = (dx / Math.max(d, 1e-4)) * side * (1 - nearTop)
+      const bz = (dz / Math.max(d, 1e-4)) * side * (1 - nearTop)
+      const n = normalize3(
+        m.v[i + 3]! + (bx - m.v[i + 3]!) * trim * 0.7,
+        m.v[i + 4]! + (nearTop - m.v[i + 4]!) * trim * 0.7,
+        m.v[i + 5]! + (bz - m.v[i + 5]!) * trim * 0.7,
+      )
+      m.v[i + 3] = n[0]
+      m.v[i + 4] = n[1]
+      m.v[i + 5] = n[2]
+    }
+    const skirt = 0.5 + 0.5 * clamp01((m.v[i + 1]! - ground) / 0.3)
+    m.v[i + 6] = m.v[i + 6]! * skirt
+    m.v[i + 7] = m.v[i + 7]! * skirt
+    m.v[i + 8] = m.v[i + 8]! * skirt
+  }
+
+  const blossoms = Math.round(18 * params.bushFlowers)
+  if (blossoms >= 2) {
+    emitHydrangeaPanicles(m, x, ground, z, H, R, seed, blossoms, FOLIAGE_BUSH_AUX)
+  }
+
+  if (wild > 0.4) {
+    for (let c = 0; c < 3; c++) {
+      const a = c * 2.1 + rng.next() * 0.8
+      const dd = R * (0.8 + rng.next() * 0.3)
+      emitGrassTuft(m, x + Math.cos(a) * dd, ground, z + Math.sin(a) * dd, {
+        bladeCount: 3,
+        radius: 0.16 + rng.next() * 0.1,
+        height: 0.22 + rng.next() * 0.16,
+        width: params.bladeWidth * 1.1,
+        curvature: Math.min(1, params.bladeCurvature * 1.15),
+        leanAngle: a,
+        rootColor: [params.rootColorR * 0.85, params.rootColorG * 0.85, params.rootColorB * 0.85],
+        tipColor: [params.tipColorR, params.tipColorG, params.tipColorB * 0.9],
+        rng,
+      })
+    }
+  }
+}
+
 /**
  * Emits delicate creamy-white / pale-celadon / warm-ivory hydrangea blossom flecks
  * nestled organically across the outer foliage of a corner bush.
@@ -1203,6 +1574,8 @@ export function emitHydrangeaPanicles(
   h: number,
   radius: number,
   seed: number,
+  count = 16,
+  auxOffset = 0,
 ): void {
   const rng = new Rng(seed ^ 0x6f1a)
   const palette: readonly Rgb[] = [
@@ -1211,22 +1584,22 @@ export function emitHydrangeaPanicles(
     [0.88, 0.87, 0.78],
     [0.68, 0.75, 0.64],
   ]
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < count; i++) {
     const a = i * 2.39996 + (rng.next() - 0.5) * 0.36
-    const rFrac = 0.22 + Math.sqrt((i + 0.4) / 16) * 0.74
+    const rFrac = 0.22 + Math.sqrt((i + 0.4) / count) * 0.74
     const dist = radius * rFrac
     const bx = x + Math.cos(a) * dist
     const bz = z + Math.sin(a) * dist * 0.92
     const domeY = Math.sqrt(Math.max(0.12, 1 - rFrac * rFrac * 0.72))
     const by = ground + h * (0.28 + domeY * 0.52) + (rng.next() - 0.5) * 0.08
-    const mainR = 0.038 + rng.next() * 0.020
+    const mainR = 0.045 + rng.next() * 0.025
     const col = palette[i % palette.length]!
     const rimCol = scaleRgb(col, 0.78)
-    m.prism(bx, bz, mainR, mainR * 0.68, by, by + mainR * 0.95, 5, col, MAT.foliage, 0.45)
+    m.prism(bx, bz, mainR, mainR * 0.68, by, by + mainR * 0.95, 5, col, MAT.foliage, auxOffset + 0.45)
     const sa = a + 1.2 + rng.next() * 0.9
     const sx = bx + Math.cos(sa) * mainR * 0.75
     const sz = bz + Math.sin(sa) * mainR * 0.75
-    m.prism(sx, sz, mainR * 0.64, mainR * 0.46, by - 0.01, by + mainR * 0.76, 5, rimCol, MAT.foliage, 0.42)
+    m.prism(sx, sz, mainR * 0.64, mainR * 0.46, by - 0.01, by + mainR * 0.76, 5, rimCol, MAT.foliage, auxOffset + 0.42)
   }
 }
 
@@ -1442,7 +1815,7 @@ export function emitGrassTuft(
     const bh = height * (0.82 + rng.next() * 0.42) * (1.12 - (radialD / Math.max(0.05, radius)) * 0.26)
     const bw = width * (0.88 + rng.next() * 0.30)
     const bCurve = clamp01(curvature * (0.85 + rng.next() * 0.32))
-    const shade = 0.88 + rng.next() * 0.26
+    const shade = 0.95 + rng.next() * 0.1
     emitCurvedGrassBlade(
       m,
       bx,
@@ -1458,6 +1831,7 @@ export function emitGrassTuft(
   }
 }
 
+/** Broadleaf weed rosette (dandelion/plantain): six lanceolate leaves radiating from a low crown, tips lifted. */
 export function emitWeedMat(
   m: Mesh,
   x: number,
@@ -1468,25 +1842,27 @@ export function emitWeedMat(
   rng: Rng,
   baseCol: Rgb = [0.16, 0.25, 0.11],
 ): void {
-  const center: Point = [x, y + height, z]
-  const sides = 5
-  const ring: Point[] = []
+  const leaves = 6
   const rot = rng.next() * Math.PI * 2
-  for (let i = 0; i < sides; i++) {
-    const a = rot + (i / sides) * Math.PI * 2 + (rng.next() - 0.5) * 0.36
-    const r = radius * (i % 2 === 0 ? 1.15 + rng.next() * 0.25 : 0.72 + rng.next() * 0.22)
-    ring.push([x + Math.cos(a) * r, y + 0.008, z + Math.sin(a) * r])
-  }
-  const cCol = scaleRgb(baseCol, 0.92 + rng.next() * 0.16)
-  const rCol = scaleRgb(baseCol, 0.54 + rng.next() * 0.12)
-  for (let i = 0; i < sides; i++) {
-    const p0 = ring[i]!
-    const p1 = ring[(i + 1) % sides]!
-    const n0 = normalize3(p0[0] - x, radius * 1.45, p0[2] - z)
-    const n1 = normalize3(p1[0] - x, radius * 1.45, p1[2] - z)
-    m.vert(center, [0, 1, 0], cCol, MAT.foliage, 0.55)
-    m.vert(p0, n0, rCol, MAT.foliage, 0.15)
-    m.vert(p1, n1, rCol, MAT.foliage, 0.15)
+  const heart: Point = [x, y + height * 0.35, z]
+  const heartCol = scaleRgb(baseCol, 0.6)
+  for (let i = 0; i < leaves; i++) {
+    const a = rot + (i / leaves) * Math.PI * 2 + (rng.next() - 0.5) * 0.4
+    const len = radius * (0.8 + rng.next() * 0.45)
+    const wid = len * 0.24
+    const dx = Math.cos(a), dz = Math.sin(a)
+    const mid: Point = [x + dx * len * 0.5, y + height * 0.55, z + dz * len * 0.5]
+    const tip: Point = [x + dx * len, y + height * (0.4 + rng.next() * 0.5), z + dz * len]
+    const l: Point = [mid[0] - dz * wid, mid[1] - height * 0.15, mid[2] + dx * wid]
+    const r: Point = [mid[0] + dz * wid, mid[1] - height * 0.15, mid[2] - dx * wid]
+    const n = normalize3(dx * 0.25, 1, dz * 0.25)
+    const leafCol = scaleRgb(baseCol, 0.9 + rng.next() * 0.2)
+    m.vert(heart, n, heartCol, MAT.foliage, -0.08)
+    m.vert(l, n, leafCol, MAT.foliage, -0.3)
+    m.vert(tip, n, scaleRgb(leafCol, 1.1), MAT.foliage, -0.55)
+    m.vert(heart, n, heartCol, MAT.foliage, -0.08)
+    m.vert(tip, n, scaleRgb(leafCol, 1.1), MAT.foliage, -0.55)
+    m.vert(r, n, leafCol, MAT.foliage, -0.3)
   }
 }
 
@@ -1501,6 +1877,28 @@ export type GrassClumpSample = {
   blades: number
   rootColor: Rgb
   tipColor: Rgb
+  /** Broadleaf weed rosette instead of a blade tuft (`weedRosettes`). */
+  weed?: boolean
+}
+
+/** Emits one scattered clump: a curved-blade tuft, or a flat broadleaf weed rosette when `c.weed` is set. */
+export function emitGrassClump(m: Mesh, c: GrassClumpSample, y: number, rng: Rng, scale = 1): void {
+  if (c.weed) {
+    const leaf = mixRgb(c.rootColor, c.tipColor, 0.4)
+    emitWeedMat(m, c.x, y, c.z, c.radius * 1.15 * scale, 0.035 + c.height * 0.12, rng, [leaf[0] * 0.85, leaf[1] * 1.1, leaf[2] * 0.75])
+    return
+  }
+  emitGrassTuft(m, c.x, y, c.z, {
+    bladeCount: c.blades,
+    radius: c.radius * scale,
+    height: c.height * scale,
+    width: c.width * scale,
+    curvature: c.curvature,
+    leanAngle: c.leanAngle,
+    rootColor: c.rootColor,
+    tipColor: c.tipColor,
+    rng,
+  })
 }
 
 /**
@@ -1567,6 +1965,7 @@ export function scatterGrassClumps(options: {
     )
 
     const count = Math.max(2, Math.round(tuftsPerCluster * (0.65 + rng.next() * 0.7)))
+    const weedSlot = rng.next() < params.weedRosettes * 0.6 ? Math.floor(rng.next() * count) : -1
     for (let i = 0; i < count; i++) {
       const angle = i * 2.39996 + rng.next() * 0.55
       const radialFrac = Math.sqrt((i + 0.2) / count)
@@ -1576,7 +1975,7 @@ export function scatterGrassClumps(options: {
       if (tx < x0 || tx > x1 || tz < z0 || tz > z1 || avoid?.(tx, tz)) continue
 
       const moundScale = (1.22 - radialFrac * 0.36 * params.grassClumping) * overgrownScale
-      const shade = 0.86 + rng.next() * 0.28
+      const shade = 0.93 + rng.next() * 0.14
       const randomLean = (rng.next() - 0.5) * Math.PI * 2
       const leanAngle = clumpLean * params.grassClumping + randomLean * (1 - params.grassClumping)
 
@@ -1591,6 +1990,7 @@ export function scatterGrassClumps(options: {
         blades: 3 + (i % 2),
         rootColor: scaleRgb(clusterRoot, shade),
         tipColor: scaleRgb(clusterTip, shade),
+        weed: i === weedSlot,
       })
     }
   }
@@ -1672,10 +2072,16 @@ export function emitGrassFurShells(
   }
 }
 
-/** Pack live uniform-boundary foliage parameters into 2 vec4f (8 floats). */
+/** Floats in `FoliageWindConfig` (3 vec4f). */
+export const FOLIAGE_WIND_FLOATS = 12
+/** Floats in `FoliageActors` (count header + 8 packed xz positions). */
+export const FOLIAGE_ACTOR_FLOATS = 20
+export const FOLIAGE_MAX_ACTORS = 8
+
+/** Pack live uniform-boundary foliage parameters into `FoliageWindConfig` (3 vec4f). */
 export function packFoliageUniforms(
   params: Readonly<FoliageParams>,
-  out: Float32Array = new Float32Array(8),
+  out: Float32Array = new Float32Array(FOLIAGE_WIND_FLOATS),
   offset = 0,
 ): Float32Array {
   out[offset + 0] = params.treeWindStrength
@@ -1686,41 +2092,136 @@ export function packFoliageUniforms(
   out[offset + 5] = params.distanceFade
   out[offset + 6] = params.canopyAO
   out[offset + 7] = params.normalSoftness
+  out[offset + 8] = params.bushWind
+  out[offset + 9] = params.bushTranslucency
+  out[offset + 10] = params.trampleRadius
+  out[offset + 11] = params.trampleStrength
   return out
 }
 
 /**
- * Shared WGSL vertex displacement and fragment shading functions for `MAT.foliage` (22).
- * Used by both Outbreak's production scene shader and the Lab Foliage workbench.
+ * Pack up to eight actor ground positions (player, nearest zombies, Lab walkers) into `FoliageActors`.
+ * Grass blades and bush leaves within `trampleRadius` bend away from them in the vertex shader. Presentation only.
+ */
+export function packFoliageActors(
+  actors: readonly { x: number; z: number }[],
+  out: Float32Array = new Float32Array(FOLIAGE_ACTOR_FLOATS),
+  offset = 0,
+): Float32Array {
+  const n = Math.min(FOLIAGE_MAX_ACTORS, actors.length)
+  out.fill(0, offset, offset + FOLIAGE_ACTOR_FLOATS)
+  out[offset] = n
+  for (let i = 0; i < n; i++) {
+    out[offset + 4 + i * 2] = actors[i]!.x
+    out[offset + 5 + i * 2] = actors[i]!.z
+  }
+  return out
+}
+
+/** The focus actor plus the nearest others within `radius` metres, capped at `FOLIAGE_MAX_ACTORS`. */
+export function nearestFoliageActors(
+  x: number,
+  z: number,
+  others: readonly { x: number; z: number }[],
+  radius = 24,
+): { x: number; z: number }[] {
+  const near = others
+    .map(o => ({ o, d: (o.x - x) ** 2 + (o.z - z) ** 2 }))
+    .filter(e => e.d < radius * radius)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, FOLIAGE_MAX_ACTORS - 1)
+    .map(e => e.o)
+  return [{ x, z }, ...near]
+}
+
+/**
+ * Shared WGSL vertex displacement for `MAT.foliage` (22), used by Outbreak's scene shader and the Lab.
+ * Declare these structs before any uniform struct that embeds them.
  */
 export const foliageWindDeclarationsWgsl = /* wgsl */ `
 struct FoliageWindConfig {
-  // x: treeWindStrength, y: treeWindFreq, z: treeWindGust, w: translucency
+  // x: treeWindStrength, y: treeWindFreq, z: treeWindGust, w: tree translucency
   u0: vec4f,
   // x: grassWind, y: distanceFade, z: canopyAO, w: normalSoftness
   u1: vec4f,
+  // x: bushWind, y: bush translucency, z: trampleRadius (m), w: trampleStrength
+  u2: vec4f,
+}
+
+struct FoliageActors {
+  // x: actor count (0..8)
+  head: vec4f,
+  // two actor ground positions (x, z) per vec4f
+  p: array<vec4f, 4>,
 }
 
 fn defaultFoliageWindConfig() -> FoliageWindConfig {
   return FoliageWindConfig(
     vec4f(0.24, 0.80, 0.42, 0.30),
-    vec4f(0.45, 0.55, 0.72, 0.88)
+    vec4f(0.45, 0.55, 0.72, 0.88),
+    vec4f(0.30, 0.50, 1.10, 0.85)
   );
+}
+
+fn noFoliageActors() -> FoliageActors {
+  return FoliageActors(vec4f(0.0), array<vec4f, 4>(vec4f(0.0), vec4f(0.0), vec4f(0.0), vec4f(0.0)));
+}
+
+/** Bush vertices carry aux = 3 + flex; tree canopies 0 < aux <= 1.45; grass blades aux < 0. */
+fn foliageIsBush(aux: f32) -> bool { return aux > 2.5; }
+
+/** Leaf-tip / blade-tip weight in 0..1 for translucency, rim and bending. */
+fn foliageTipWeight(aux: f32) -> f32 {
+  return select(clamp(abs(aux), 0.0, 1.0), clamp(aux - 3.0, 0.0, 1.0), aux > 2.5);
+}
+
+fn foliageTranslucency(aux: f32, cfg: FoliageWindConfig) -> f32 {
+  return select(cfg.u0.w, cfg.u2.y, aux > 2.5);
+}
+
+/** Horizontal push away from nearby actors: (1 - d/R)^2 falloff, scaled by weight. */
+fn foliageTrample(pos: vec3f, weight: f32, cfg: FoliageWindConfig, actors: FoliageActors) -> vec2f {
+  let count = i32(actors.head.x);
+  if (count <= 0 || weight <= 0.0 || cfg.u2.w <= 0.0) { return vec2f(0.0); }
+  let R = max(0.05, cfg.u2.z);
+  var ap = actors.p;
+  var push = vec2f(0.0);
+  for (var i = 0; i < 8; i++) {
+    if (i >= count) { break; }
+    let v = ap[i / 2];
+    let a = select(v.xy, v.zw, (i & 1) == 1);
+    let d = pos.xz - a;
+    let dist = length(d);
+    if (dist < R) {
+      let f = 1.0 - dist / R;
+      push += d / max(dist, 0.001) * f * f;
+    }
+  }
+  return push * R * 0.5 * cfg.u2.w * weight;
 }
 
 /**
  * Hierarchical vertex displacement for MAT.foliage (mat == 22):
- * - aux > 0.02: Tree/shrub canopy vertex with flexibility weight aux. Combines global bough sway
- *   with 3D spatial leaf-card flutter (Botanics applyTreeWind + Lamplight §3.2).
- * - aux < -0.02: Curved grass blade vertex with normalized root-to-tip coordinate bladeT = -aux.
- *   Applies Above the Grassland's 3-wave directional wind field with arc-length height preservation
- *   and top-down distance visibility compensation.
+ * - 0 < aux <= 1.45: tree canopy; global bough sway plus leaf flutter weighted by height and aux.
+ * - aux > 2.5: bush; lighter rustle and parting around actors, weight aux - 3.
+ * - aux < -0.02: grass blade (bladeT = -aux) or fur shell (aux < -1.5); travelling 3-wave wind, actor trampling.
  */
-fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: vec3f, cfg: FoliageWindConfig) -> array<vec3f, 2> {
+fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: vec3f, cfg: FoliageWindConfig, actors: FoliageActors) -> array<vec3f, 2> {
   var p = pos;
   var n = normal;
-  if (aux > 0.0) {
-    // Height-based bough flexibility + peripheral leaflet tip weight (aux) for organic two-stage sway
+  if (aux > 2.5) {
+    let flex = clamp(aux - 3.0, 0.0, 1.0);
+    let phase = pos.x * 0.9 + pos.z * 0.7 + pos.y * 1.3;
+    let s = cfg.u2.x * 0.05 * flex;
+    let gust = 1.0 + 0.5 * sin(time * 0.7 + pos.x * 0.2 + pos.z * 0.15);
+    let dx = (sin(time * 2.6 + phase) + 0.4 * sin(time * 5.3 + phase * 1.7)) * s * gust;
+    let dz = (cos(time * 2.2 + phase * 0.8) + 0.4 * sin(time * 4.7 - phase * 1.3)) * s * 0.8 * gust;
+    let push = foliageTrample(pos, flex * 0.75, cfg, actors);
+    p.x += dx + push.x;
+    p.z += dz + push.y;
+    p.y -= length(push) * 0.35;
+    n = normalize(n + vec3f(dx + push.x, 0.0, dz + push.y) * 2.0);
+  } else if (aux > 0.0) {
     let flex = clamp((pos.y - 0.35) * 0.26, 0.06, 1.25) * (0.65 + 0.35 * clamp(aux, 0.0, 1.2));
     let freq = max(0.1, cfg.u0.y);
     let strength = cfg.u0.x * 0.12 * flex;
@@ -1755,12 +2256,13 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let scaleAmt = select(0.13, 0.085, isShell);
     let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * scaleAmt * bendWeight * fade;
     let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * (scaleAmt * 0.7) * bendWeight * fade;
-    let wx = windDir.x * along + crossDir.x * across;
-    let wz = windDir.y * along + crossDir.y * across;
+    let push = foliageTrample(pos, bladeT, cfg, actors);
+    let wx = windDir.x * along + crossDir.x * across + push.x;
+    let wz = windDir.y * along + crossDir.y * across + push.y;
     p.x += wx;
     p.z += wz;
     if (!isShell) {
-      p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT;
+      p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT + length(push) * 0.45 * bladeT;
     }
     n = normalize(n + vec3f(wx * 3.6, 0.0, wz * 3.6));
   }
