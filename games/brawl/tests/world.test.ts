@@ -54,13 +54,13 @@ describe("brawl world", () => {
     w.step()
     run(w, 3.2)
     b.invulnUntil = 0
-    b.x = 16
+    b.x = 14
     b.y = 3
-    w.hit(b, { damage: 10, knock: 10 }, a, 16, 5, 1)
+    w.hit(b, { damage: 10, knock: 10 }, a, 14, 5, 1)
     const slow = Math.hypot(b.vx, b.vy)
     b.damage = 150
     b.vx = b.vy = 0
-    w.hit(b, { damage: 10, knock: 10 }, a, 16, 5, 1)
+    w.hit(b, { damage: 10, knock: 10 }, a, 14, 5, 1)
     expect(Math.hypot(b.vx, b.vy)).toBeGreaterThan(slow * 2)
     run(w, 1.5)
     expect(b.stocks).toBe(STOCKS - 1)

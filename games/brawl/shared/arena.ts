@@ -3,8 +3,9 @@ import type { PropKindDef } from "@arcade/kit/sim/props"
 import type { Rng } from "@arcade/kit/sim/rng"
 
 /** The stage: a raised square ring with ropes, a few pillars and low cover, and props to shove around. */
-export const STAGE: Rect = [2, 2, 30, 22]
-export const STAGE_SIZE = [32, 24] as const
+export const STAGE: Rect = [2, 2, 26, 19]
+export const STAGE_SIZE = [28, 21] as const
+export const CENTER = { x: (STAGE[0] + STAGE[2]) / 2, y: (STAGE[1] + STAGE[3]) / 2 }
 export const ROPE_HEIGHT = 0.55
 
 /** Ropes around the edge: walking fighters stop at them, launched ones fly over. */
@@ -17,12 +18,12 @@ export const ROPES: Rect[] = [
 
 /** Solid at any height: pillars and the low cover walls (height for shadows and drawing). */
 export const BLOCKS: { rect: Rect; h: number }[] = [
-  { rect: [8.4, 7.4, 9.6, 8.6], h: 2.2 },
-  { rect: [22.4, 7.4, 23.6, 8.6], h: 2.2 },
-  { rect: [8.4, 15.4, 9.6, 16.6], h: 2.2 },
-  { rect: [22.4, 15.4, 23.6, 16.6], h: 2.2 },
-  { rect: [14, 5.6, 18, 6.2], h: 0.9 },
-  { rect: [14, 17.8, 18, 18.4], h: 0.9 },
+  { rect: [7.4, 6.5, 8.6, 7.7], h: 2.2 },
+  { rect: [19.4, 6.5, 20.6, 7.7], h: 2.2 },
+  { rect: [7.4, 13.3, 8.6, 14.5], h: 2.2 },
+  { rect: [19.4, 13.3, 20.6, 14.5], h: 2.2 },
+  { rect: [12.3, 5, 15.7, 5.6], h: 0.9 },
+  { rect: [12.3, 15.4, 15.7, 16], h: 0.9 },
 ]
 export const SOLIDS: Rect[] = BLOCKS.map((b) => b.rect)
 
@@ -34,27 +35,27 @@ export const PROP_KINDS: Record<string, PropKindDef> = {
 }
 
 export const SPAWNS = [
-  { x: 6, y: 5.5 }, { x: 26, y: 18.5 }, { x: 26, y: 5.5 }, { x: 6, y: 18.5 },
-  { x: 16, y: 4 }, { x: 16, y: 20 }, { x: 4.5, y: 12 }, { x: 27.5, y: 12 },
+  { x: 5.4, y: 5 }, { x: 22.6, y: 16 }, { x: 22.6, y: 5 }, { x: 5.4, y: 16 },
+  { x: 14, y: 3.7 }, { x: 14, y: 17.3 }, { x: 4.1, y: 10.5 }, { x: 23.9, y: 10.5 },
 ]
 
 /** Where props start each round, jittered by the round's seed. */
 export function propLayout(rng: Rng): { kind: string; x: number; y: number; h: number }[] {
   const j = () => (rng.next() - 0.5) * 0.6
   return [
-    { kind: "car", x: 16 + j(), y: 12 + j(), h: 0.15 + j() * 0.3 },
-    { kind: "crate", x: 11 + j(), y: 10 + j(), h: j() },
-    { kind: "crate", x: 11.9 + j(), y: 10.4 + j(), h: j() },
-    { kind: "crate", x: 21 + j(), y: 14 + j(), h: j() },
-    { kind: "crate", x: 20.1 + j(), y: 13.6 + j(), h: j() },
-    { kind: "crate", x: 5 + j(), y: 9 + j(), h: j() },
-    { kind: "crate", x: 27 + j(), y: 15 + j(), h: j() },
-    { kind: "barrel", x: 12 + j(), y: 15 + j(), h: 0 },
-    { kind: "barrel", x: 20 + j(), y: 9 + j(), h: 0 },
-    { kind: "barrel", x: 4 + j(), y: 15.5 + j(), h: 0 },
-    { kind: "barrel", x: 28 + j(), y: 8.5 + j(), h: 0 },
-    { kind: "cart", x: 7 + j(), y: 12 + j(), h: 1.4 + j() },
-    { kind: "cart", x: 25 + j(), y: 12 + j(), h: -1.6 + j() },
+    { kind: "car", x: 14 + j(), y: 10.5 + j(), h: 0.15 + j() * 0.3 },
+    { kind: "crate", x: 9.7 + j(), y: 8.8 + j(), h: j() },
+    { kind: "crate", x: 10.6 + j(), y: 9.2 + j(), h: j() },
+    { kind: "crate", x: 18.3 + j(), y: 12.2 + j(), h: j() },
+    { kind: "crate", x: 17.4 + j(), y: 11.8 + j(), h: j() },
+    { kind: "crate", x: 4.6 + j(), y: 8 + j(), h: j() },
+    { kind: "crate", x: 23.4 + j(), y: 13.1 + j(), h: j() },
+    { kind: "barrel", x: 10.6 + j(), y: 13.1 + j(), h: 0 },
+    { kind: "barrel", x: 17.4 + j(), y: 8 + j(), h: 0 },
+    { kind: "barrel", x: 3.7 + j(), y: 13.5 + j(), h: 0 },
+    { kind: "barrel", x: 24.3 + j(), y: 7.5 + j(), h: 0 },
+    { kind: "cart", x: 6.3 + j(), y: 10.5 + j(), h: 1.4 + j() },
+    { kind: "cart", x: 21.7 + j(), y: 10.5 + j(), h: -1.6 + j() },
   ]
 }
 

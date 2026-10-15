@@ -41,6 +41,14 @@ export function resolveLookVariant(
  * Binds `LookUniforms` at `@group(0) @binding(7)` (unused when motion blur is off).
  * Default `makeSceneShader` remains untouched for bit-exact identity under "Current".
  */
+/**
+ * The presets read `interior(p)` (Outbreak's buildings) and `surfaceFootprint` (its surface materials); scenes without
+ * them get an interior that is always outside and a footprint of zero.
+ */
+const interiorFallback = (declarations = "") =>
+  (/fn\s+interior\s*\(/.test(declarations) ? "" : "\nfn interior(p: vec2f) -> bool { return false; }\n") +
+  (/var<private>\s+surfaceFootprint\b/.test(declarations) ? "" : "\nvar<private> surfaceFootprint: f32;\n")
+
 export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariantMode = "generic"): string => {
   const includeNoir = variant === "noir" || variant === "generic"
   const includePainterly = variant === "painterly" || variant === "generic"
@@ -50,7 +58,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
     // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
     const declSnippet = wgslSnippet(
       `lookFastSceneDecl_${variant}`,
-      () => `${hooks.declarations ?? ""}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
+      () => `${hooks.declarations ?? ""}${interiorFallback(hooks.declarations)}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
       [lookGradeSnippet],
     )
     const surfBody = hooks.lookSurface ?? hooks.surface ?? ""
@@ -95,7 +103,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
   const declSnippet = wgslSnippet(
     `lookSceneDecl_${variant}`,
     () =>
-      `${hooks.declarations ?? ""}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\nvar<private> lookFlashIrradiance: f32;\n`,
+      `${hooks.declarations ?? ""}${interiorFallback(hooks.declarations)}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\nvar<private> lookUseAfter: bool;\nvar<private> lookAlbedo: vec3f;\nvar<private> lookFlashIrradiance: f32;\n`,
     [lookMathSnippet],
   )
   const postMat = `    if (lookUseAfter) {

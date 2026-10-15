@@ -17,6 +17,7 @@ import { Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
 import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { openGpu } from "@arcade/kit/gpu/boot"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { Rng } from "../shared/rng"
 import { SpellHud } from "./ui/spell-hud"
@@ -27,16 +28,10 @@ const GUN_KEY = "blackout.gun"
 const EQUIP_KEY = "blackout.equip"
 
 async function gpu(canvas: HTMLCanvasElement): Promise<{ renderer: Renderer; telemetry: GpuPerf } | string> {
-  if (!navigator.gpu) return "BLACKOUT needs WebGPU. Use a recent Chrome, Edge or Safari over https or localhost."
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
-  if (!adapter) return "No WebGPU adapter is available on this device."
-  const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has("timestamp-query") ? ["timestamp-query"] : [] })
-  device.addEventListener("uncapturederror", (e) => console.error(`[gpu] ${e.error.message}`))
-  const context = canvas.getContext("webgpu")!
-  const format = navigator.gpu.getPreferredCanvasFormat()
-  context.configure({ device, format, alphaMode: "opaque" })
-  const telemetry = new GpuPerf(device)
-  return { renderer: new Renderer(device, context, format), telemetry }
+  const g = await openGpu(canvas, "BLACKOUT")
+  if (typeof g === "string") return g
+  const telemetry = new GpuPerf(g.device)
+  return { renderer: new Renderer(g.device, g.context, g.format), telemetry }
 }
 
 async function main() {

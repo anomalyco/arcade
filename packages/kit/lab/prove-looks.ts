@@ -137,6 +137,7 @@ try {
     cinematic_dusk: [],
     sodium_70s: [],
     cozy_golden_hour: [],
+    party_pop: [],
   }
   for (let round = -1; round < 7; round++) {
     const order = round % 2 === 0 ? [...LOOK_PRESET_IDS] : [...LOOK_PRESET_IDS].reverse()
@@ -286,6 +287,7 @@ try {
     cinematic_dusk: [],
     sodium_70s: [],
     cozy_golden_hour: [],
+    party_pop: [],
   }
   for (let round = -1; round < 7; round++) {
     const order = round % 2 === 0 ? [...LOOK_PRESET_IDS] : [...LOOK_PRESET_IDS].reverse()

@@ -2,7 +2,7 @@ import type { AbilityDef } from "@arcade/kit/sim/abilities"
 
 /**
  * One fighter: its stats and its four abilities (left mouse, Q, E, Space). Adding a character is one data file here
- * plus a look in `src/looks/`; register both in `index.ts` and `src/looks/index.ts`.
+ * plus a look in `src/looks/roster.ts`; register it in `index.ts`.
  */
 export type CharacterDef = {
   id: string

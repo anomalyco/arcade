@@ -4,7 +4,7 @@ import { stepBody } from "@arcade/kit/sim/move"
 import { type PropEvent, Props } from "@arcade/kit/sim/props"
 import { Rng } from "@arcade/kit/sim/rng"
 import { BotBrain } from "./bots"
-import { PROP_KINDS, ROPES, SOLIDS, SPAWNS, STAGE, onStage, propLayout } from "./arena"
+import { CENTER, PROP_KINDS, ROPES, SOLIDS, SPAWNS, STAGE, onStage, propLayout } from "./arena"
 import { CHARACTERS, ROSTER, characterOf, type CharacterDef } from "./characters"
 import {
   ACCEL, BOT_FILL, COUNTDOWN_SECONDS, CREDIT_SECONDS, DT, FALL_SECONDS, INVULN_SECONDS, KNOCK_GROWTH, LAUNCH_FRICTION,
@@ -162,7 +162,10 @@ export class World implements AbilityHost<Fighter> {
       const id = `bot${++this.botCount}`
       const brain = new BotBrain(this.rng.int(2 ** 31))
       const f = this.newFighter(id, BOT_NAMES[(this.botCount - 1) % BOT_NAMES.length]!, brain)
-      f.pick = f.char = this.rng.pick(ROSTER).id
+      // Bots pick someone nobody else has, while there's anyone left.
+      const taken = new Set([...this.players.values()].map((p) => p.pick))
+      const free = ROSTER.filter((c) => !taken.has(c.id))
+      f.pick = f.char = this.rng.pick(free.length ? free : ROSTER).id
       f.ready = true
       this.players.set(id, f)
       this.order.push(id)
@@ -240,7 +243,7 @@ export class World implements AbilityHost<Fighter> {
     f.x = x
     f.y = y
     f.vx = f.vy = 0
-    f.aim = Math.atan2(12 - y, 16 - x)
+    f.aim = Math.atan2(CENTER.y - y, CENTER.x - x)
     f.alive = true
     f.damage = 0
     f.fallAt = 0

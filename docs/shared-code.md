@@ -1,6 +1,6 @@
 # Shared code
 
-Code the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`) and `lab` carry their own copy of, and what to
+Code the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`, `brawl`) and `lab` carry their own copy of, and what to
 extract. Extract something only when it is the same idea across multiple games and has a current consumer in each. Game
 rules, maps, meshes and the look stay in the games. For the full engine layer map and the generated per-game adoption
 table across Getaway, Blackout, Outbreak, Carrier, Lab and Wings, see [architecture.md](architecture.md).
@@ -24,14 +24,14 @@ Shared package tests (including `packages/kit/architecture-map.test.ts`, which c
 ## Install, check and ship
 
 Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
-`games/blackout`, `games/outbreak`, `games/carrier`, `games/lab` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
+`games/blackout`, `games/outbreak`, `games/carrier`, `games/lab`, `games/brawl` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
 Wings, landing and redirects retain their independent installs, lockfiles and workflows.
 
 Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
 Wrangler, TypeScript and Playwright versions aligned in the game manifests. Root scripts declare their own tooling
 dependencies in the root manifest and use normal package imports rather than reaching into a game's `node_modules`.
 
-All workspace game workflows (`getaway.yml`, `blackout.yml`, `outbreak.yml`, `carrier.yml`, `lab.yml`) install at the root, then check and smoke-load the game's production bundle. Their paths include
+All workspace game workflows (`getaway.yml`, `blackout.yml`, `outbreak.yml`, `carrier.yml`, `lab.yml`, `brawl.yml`) install at the root, then check and smoke-load the game's production bundle. Their paths include
 `packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check all consumers.
 Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck, and Blackout and Outbreak watch
 `games/getaway/public/sfx/**` for the shared audio asset route. A separate
@@ -359,8 +359,14 @@ In rough order of value against risk:
      `@arcade/kit/server/{room-object,lobby-object,worker}` (the Room Durable Object's socket accept, bounded catch-up
      tick loop and throttled Lobby reports with a heartbeat; the storage-backed Lobby; the `/arcade/<game>` Worker
      router) and `@arcade/kit/net/room-socket` (the client socket with seat reclaim, backoff and version reload).
-     Blackout's `server/room.ts` keeps only its World hooks and room options. Getaway, Outbreak and Carrier still own
+       Blackout's `server/room.ts` keeps only its World hooks and room options. Getaway, Outbreak and Carrier still own
      theirs.
+   - **Brawl's engine pieces (completed):** `@arcade/kit/sim/abilities` (data-driven, server-authoritative abilities:
+     wind-ups, cooldowns, channels and recovery; melee, projectiles and lobs, bursts, zones, seeking swarms, dashes with
+     trails, grabs and throws, blinks, decoys, swaps and status effects; a compact `abilityView` for snapshots), `sim/props` (shoveable circle/box props with knockback and wall bounces), `sim/boids` (seeded
+     flocks), `gpu/boot` (`openGpu`, shared with Blackout), `gpu/scene-frame` (`SceneLights` + `packSceneFrame` for a
+     small fixed light rig) and `avatar/anim` `reach` (torso-space hand targets for cast poses). Brawl is the first
+     consumer of abilities/props/boids; Blackout's grenades and Outbreak's pushable bins are candidates for props.
    - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
      vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
    - **Session & snapshot interpolation:** `@arcade/kit/net` now has the shared pieces (Outbreak co-op is the first
