@@ -100,8 +100,8 @@ for i in range(n):
     d = ImageDraw.Draw(out)
     d.line([(640, 0), (640, 640)], fill=(55, 68, 84), width=2)
     d.rectangle((0, 0, 1280, 34), fill=(14, 18, 24))
-    d.text((14, 9), "BEFORE · legs 26° to travel, frantic side shuffle", fill=(255, 120, 136), font=f)
-    d.text((654, 9), "AFTER · hips turn to travel, clean crossover, chest on aim", fill=(108, 242, 158), font=f)
+    d.text((14, 9), "BEFORE (main) · knees bowed 22° off the boots, no crossover", fill=(255, 120, 136), font=f)
+    d.text((654, 9), "AFTER · knees over boots, crossover steps, chest on aim", fill=(108, 242, 158), font=f)
     out.save(os.path.join(out_dir, f"{i:04d}.png"))
 `
 const py = spawnSync("python3", ["-c", stitch, framesDir("before"), framesDir("after"), pairsDir, String(count)], { stdio: "inherit" })
