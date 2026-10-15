@@ -24,7 +24,7 @@ import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { DiscoveryProps, type DiscoveryHost } from "./discovery/index"
+import { BenchLean, DiscoveryProps, type DiscoveryHost } from "./discovery/index"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, SIZE } from "../shared/map"
@@ -206,7 +206,6 @@ async function main() {
       markers: document.querySelector<HTMLElement>("#markers"),
     },
     (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
-    () => session.sim.slots.map((s) => s.survivor),
     () => settings.discovery,
   )
   if (!navigator.gpu) {
@@ -316,6 +315,11 @@ async function main() {
   zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
   const discoveryProps = new DiscoveryProps(renderer)
+  const benchLean = new BenchLean()
+  const seatTint = (seat: number) => {
+    const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
+    return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
+  }
   const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player)
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
@@ -878,10 +882,11 @@ async function main() {
     const speedPullback = localVehicle
       ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
       : 0
-    cam.zoomOffset = settings.view.zoom - 24 + speedPullback
+    const lean = benchLean.step(session.view, settings.discovery, dt)
+    cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
-    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
-    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
+    const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0) + lean.dx
+    const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0) + lean.dy
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
@@ -1482,7 +1487,11 @@ async function main() {
     for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
     for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
     for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
-    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z))
+    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z), {
+      survivors: session.sim.slots.map((s) => s.survivor),
+      seatColour: seatTint,
+      dt,
+    })
     for (let i = 0; i < discoveryBatches.length; i++) rBatches.push(discoveryBatches[i]!)
     for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)
     rBatches.push(doorBatch)

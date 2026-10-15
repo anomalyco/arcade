@@ -1,4 +1,5 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
+import { ideaToken, matStoreId, pinStoreId, triedToken } from "../../shared/discovery/tinker"
 import type { SessionView } from "../../shared/session"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { ProgressionLabHost } from "../progression/index"
@@ -7,12 +8,13 @@ import { DEFAULT_DISCOVERY_SETTINGS, discoveryControls } from "./settings"
 
 export { DEFAULT_DISCOVERY_SETTINGS, discoveryControls, type DiscoverySettings } from "./settings"
 export { DiscoveryProps } from "./props"
+export { BenchLean } from "./lean"
 
 /** What the Discovery Lab scenes need: the progression host (view, pose, clock, inventory HUD) and the world props. */
 export type DiscoveryHost = ProgressionLabHost & { props: DiscoveryProps }
 
 /** Staged scenes for the `outbreak-discovery` Lab station and proofs. */
-export const DISCOVERY_SCENES = ["low-flashlight", "weakened-barricade", "open-containers", "drops"] as const
+export const DISCOVERY_SCENES = ["low-flashlight", "weakened-barricade", "open-containers", "drops", "bench-tinker", "corkboard", "dark-bench"] as const
 export type DiscoveryScene = (typeof DISCOVERY_SCENES)[number]
 
 function stock(view: SessionView, id: string, items: readonly (readonly [string, number])[]): void {
@@ -36,11 +38,60 @@ export function boardUp(view: SessionView, ai: OutbreakAISubsystem, id: string, 
   ai.rebuildTopology(view.town)
 }
 
+/** Gives the survivor `items` and stands them at the Ash workbench, facing it. */
+function atBench(host: DiscoveryHost, hour: number, items: readonly (readonly [string, number])[]): string {
+  const view = host.view()
+  const ledger = view.progression.ledger
+  const bench = view.progression.benches.find((b) => b.id === "bench:ash")!
+  host.setHour(hour)
+  for (const [item, count] of items) ledger.apply({ kind: "grant", actor: view.actorId, item, count })
+  host.pose(bench.bench.x - 0.85, bench.bench.y + 0.25, 0)
+  return bench.id
+}
+
+/** Pins `recipe` to the corkboard as if the survivor in `seat` had made it. Lab staging only. */
+function pin(view: SessionView, recipe: string, seat: number): void {
+  const ledger = view.progression.ledger
+  const bench = view.progression.benches.find((b) => b.id === "bench:ash")!
+  if (!view.progression.learned(recipe)) ledger.apply({ kind: "grant", actor: view.actorId, item: `learned:${recipe}`, store: "team/known" })
+  if (ledger.store(pinStoreId(recipe))) ledger.deleteStore(pinStoreId(recipe))
+  ledger.createStore({ id: pinStoreId(recipe), mode: "counters", scope: "shared", owner: `seat${seat}`, at: { x: bench.bench.x, y: bench.bench.y }, initial: { seat: seat + 1 } })
+}
+
 export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: OutbreakAISubsystem): void {
   const view = host.view()
   host.hud.close()
   const ash = view.town.buildings.find((b) => b.id === "ash")!
+  const ledger = view.progression.ledger
   switch (scene) {
+    case "bench-tinker": {
+      // Daylight, a handful of materials, and plank + scrap already laid on the mat: hold E to try them.
+      const bench = atBench(host, 15, [["plank", 1], ["scrap", 3], ["chem", 2], ["battery", 1]])
+      view.player.flashlightOn = false
+      ledger.apply({ kind: "deposit", actor: view.actorId, to: matStoreId(bench), items: { plank: 1, scrap: 1 } })
+      return
+    }
+    case "corkboard": {
+      // A few days in: three sketches by three players, an idea waiting on the toolbox, two crossed-out tries, and
+      // a fresh spiked board on the mat.
+      const bench = atBench(host, 15, [["scrap", 2], ["chem", 1]])
+      view.player.flashlightOn = false
+      pin(view, "bandage", 0)
+      pin(view, "spiked-board", 1)
+      pin(view, "lure", 2)
+      for (const token of [ideaToken("battery"), triedToken("plank+plank"), triedToken("plank+chem")]) {
+        if (!ledger.count("team/known", token)) ledger.apply({ kind: "grant", actor: view.actorId, item: token, store: "team/known" })
+      }
+      if (!view.progression.mat(bench).length) ledger.apply({ kind: "grant", actor: view.actorId, item: "spiked-board", store: matStoreId(bench) })
+      return
+    }
+    case "dark-bench": {
+      // Night with the flashlight off: too dark to try the pair on the mat until a beam is on it.
+      const bench = atBench(host, 23, [["chem", 2]])
+      view.player.flashlightOn = false
+      ledger.apply({ kind: "deposit", actor: view.actorId, to: matStoreId(bench), items: { chem: 2 } })
+      return
+    }
     case "low-flashlight": {
       host.setHour(23)
       const p = view.player
@@ -141,6 +192,7 @@ export const outbreakDiscoveryFeature = registerOutbreakClientFeature({
     discovery: {
       shown: Object.fromEntries(host.discoveryHost.props.shown),
       barricades: Object.fromEntries(host.discoveryHost.props.barricades.looks),
+      bench: Object.fromEntries(host.discoveryHost.props.bench.shown),
     },
   }),
 })

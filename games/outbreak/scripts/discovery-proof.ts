@@ -149,6 +149,74 @@ try {
     await snap(page, "belt-open", "Holding the pack open (Tab) shows the belt's counts")
   }
 
+  if (want("bench")) {
+    const hold = async () => {
+      await steps(page, 1, { interact: true, interactHeld: true })
+      await steps(page, 26, { interactHeld: true })
+      await steps(page, 170)
+    }
+    const benchState = () => run(page, `return h.state().discovery.bench["bench:ash"]`)
+    const promptText = () => page.evaluate(() => document.querySelector("#prompt")?.textContent ?? "")
+
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("bench-tinker")`)
+    await steps(page, 90)
+    const laid = await benchState()
+    console.log("laid", laid, JSON.stringify(await promptText()))
+    assert.deepEqual([...laid.mat].sort(), ["plank", "scrap"])
+    assert(!/Research|Bandage|Spiked|Recipe|Tier/i.test(await promptText()), "no recipe words at the bench")
+    await snap(page, "bench-pair", "At the bench the camera leans in: plank and scrap laid on the felt mat, an empty corkboard behind. Hold E to try them")
+
+    await hold()
+    const made = await benchState()
+    console.log("made", made)
+    assert.deepEqual(made.mat, ["spiked-board"])
+    assert.deepEqual(made.sketches, ["spiked-board"])
+    await snap(page, "bench-assembled", "They make a spiked board: it lies on the mat, and a pencil sketch (plank + scrap → spiked board) is pinned in the player's colour")
+
+    await steps(page, 1, { interact: true })
+    await run(page, `const v = h.session().view; v.progression.ledger.apply({ kind: "deposit", actor: v.actorId, to: "mat:ash", items: { scrap: 1, chem: 1 } }); v.progression.ledger.apply({ kind: "grant", actor: v.actorId, item: "plank", count: 2 })`)
+    await steps(page, 2)
+    await hold()
+    const tier2 = await benchState()
+    console.log("idea", tier2)
+    assert.deepEqual(tier2.ideas, ["battery"])
+    await run(page, `const v = h.session().view; v.progression.ledger.apply({ kind: "take", actor: v.actorId, from: "mat:ash" }); v.progression.ledger.apply({ kind: "deposit", actor: v.actorId, to: "mat:ash", items: { plank: 2 } })`)
+    await steps(page, 2)
+    await hold()
+    const tried = await benchState()
+    console.log("tried", tried)
+    assert.deepEqual(tried.tried, ["plank+plank"])
+    await snap(page, "bench-tried", "Scrap + chem needs the toolbox: a faint idea with a red toolbox goes up. Plank + plank clatters and a crossed-out scrap is pinned at the foot")
+
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("corkboard")`)
+    await steps(page, 90)
+    console.log("corkboard", await benchState())
+    await snap(page, "corkboard", "Days in: three sketches pinned in three players' colours, an idea waiting on the toolbox, two crossed-out tries")
+
+    await reset(page, 26)
+    await run(page, `h.stageDiscovery("dark-bench")`)
+    await steps(page, 60)
+    await hold()
+    const notices = await run(page, `return h.session().view.progression.learned("bandage")`)
+    assert.equal(notices, false, "too dark to try at night without a light")
+    await snap(page, "bench-dark", "Night, flashlight off: the mat is barely visible and the try is refused")
+    await run(page, `h.session().view.player.flashlightOn = true`)
+    await steps(page, 20, { flashlight: false })
+    await hold()
+    assert.equal(await run(page, `return h.session().view.progression.learned("bandage")`), true)
+    await snap(page, "bench-dark-lit", "The flashlight on the mat is light enough: chem + chem makes a bandage")
+
+    await reset(page, 26)
+    await run(page, `h.stageProgression("field-craft")`)
+    await steps(page, 6)
+    const craft = await page.evaluate(() => document.querySelector("#craft")?.textContent ?? "")
+    console.log("craft text", JSON.stringify(craft))
+    assert(!/Bandage|Noisemaker|Spiked|Battery|Heals|Field craft/i.test(craft), `field craft has no words: ${craft}`)
+    await snap(page, "field-craft", "Hold Q: what each learned recipe makes and what it takes, drawn in pencil; no names")
+  }
+
   assert.deepEqual(errors, [])
   writeFileSync(resolve(out, "index.json"), JSON.stringify({ adapter, shots }, null, 2))
 } finally {
