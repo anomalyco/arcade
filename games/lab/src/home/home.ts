@@ -1,12 +1,15 @@
 import { arcadePreset } from "@arcade/kit/lab-knobs"
-import { split, tooltip, tree, type Split, type Tree } from "@arcade/knobs/ui"
+import { confirm, overlayLook, popover, split, toast, tooltip, tree, type Split, type Tree } from "@arcade/knobs/ui"
 import { matches, type Catalog, type HomeCollection, type HomeLab } from "./catalog"
 import "./home.css"
 
 type Row = { id: string; label: string; children?: Row[]; lab?: HomeLab; count?: number }
 
 const look = { preset: arcadePreset, theme: "dark" as const }
+// Popovers, confirms and toasts take the Lab's square look too.
+overlayLook(look)
 const FOLDED_KEY = "arcade.lab.home.folded"
+const ARCHIVED = "collection:archived"
 
 const html = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
 const hex = (n: number | undefined) => (n === undefined ? "var(--tx3)" : `#${n.toString(16).padStart(6, "0")}`)
@@ -48,6 +51,10 @@ export function createHome(options: HomeOptions) {
   hub.href = options.hubHref
   el("b", "lh-brand", top, "Lab")
   const count = el("span", "lh-count", top)
+  const add = el("button", "lh-new", top, "＋ New lab")
+  add.type = "button"
+  add.addEventListener("click", () => newLab())
+  tooltip(add, { text: "Start a lab of one kind", shortcut: "+" })
   const back = el("button", "lh-back", top)
   back.type = "button"
   back.hidden = true
@@ -75,9 +82,11 @@ export function createHome(options: HomeOptions) {
   })
   const about = el("div", "lh-about", panes.pane("about").body)
   const foot = el("footer", "lh-foot", frame)
-  foot.innerHTML = "<span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>←</kbd><kbd>→</kbd> Fold</span><span><kbd>↵</kbd> Open</span><span><kbd>/</kbd> Search</span><span data-back-hint><kbd>Esc</kbd> Back to the lab</span>"
+  foot.innerHTML = "<span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>←</kbd><kbd>→</kbd> Fold</span><span><kbd>↵</kbd> Open</span><span><kbd>/</kbd> Search</span><span><kbd>+</kbd> New</span><span><kbd>⌘D</kbd> Duplicate</span><span><kbd>⌫</kbd> Archive</span><span data-back-hint><kbd>Esc</kbd> Back to the lab</span>"
 
   const folded = new Set<string>(read())
+  // Archived starts folded every time; opening it lasts for this page.
+  const unfolded = new Set<string>()
   function read(): string[] {
     try { return JSON.parse(storage?.getItem(FOLDED_KEY) ?? "[]") as string[] } catch { return [] }
   }
@@ -107,6 +116,7 @@ export function createHome(options: HomeOptions) {
       else outline.expand(id, !outline.isExpanded(id))
     },
     onToggle: (id, open) => {
+      if (id === ARCHIVED) { if (open) unfolded.add(id); else unfolded.delete(id) }
       if (open) folded.delete(id)
       else folded.add(id)
       try { storage?.setItem(FOLDED_KEY, JSON.stringify([...folded])) } catch { /* private mode */ }
@@ -115,11 +125,14 @@ export function createHome(options: HomeOptions) {
 
   function load() {
     collections = catalog.collections()
-    byId = new Map(collections.flatMap(c => c.labs.map(l => [l.ref, l] as const)))
+    const archived = catalog.archived()
+    const labs = collections.reduce((n, c) => n + c.labs.length, 0)
+    byId = new Map([...collections.flatMap(c => c.labs), ...archived].map(l => [l.ref, l] as const))
     rows = collections.map(c => ({ id: `collection:${c.id}`, label: c.title, count: c.labs.length, children: c.labs.map(l => ({ id: l.ref, label: l.title, lab: l })) }))
+    // Archived labs wait at the bottom, folded, until they are restored or deleted.
+    if (archived.length) rows.push({ id: ARCHIVED, label: "Archived", count: archived.length, children: archived.map(l => ({ id: l.ref, label: l.title, lab: l })) })
     outline.update(rows)
-    for (const c of rows) outline.expand(c.id, !folded.has(c.id))
-    const labs = byId.size
+    for (const c of rows) outline.expand(c.id, c.id === ARCHIVED ? !folded.has(c.id) && unfolded.has(ARCHIVED) : !folded.has(c.id))
     count.textContent = `${labs} lab${labs === 1 ? "" : "s"} · ${collections.length} collection${collections.length === 1 ? "" : "s"}`
     applyFilter()
   }
@@ -157,8 +170,103 @@ export function createHome(options: HomeOptions) {
       </div>
       ${lab.summary ? `<p class="lh-summary">${html(lab.summary)}</p>` : ""}
       ${variants ? `<h3>Variants</h3><ol class="lh-variants">${variants}${more}</ol>` : ""}
-      <button type="button" class="lh-open" data-open>Open<kbd>↵</kbd></button>`
+      <div class="lh-actions">
+        <button type="button" class="lh-open" data-open>Open<kbd>↵</kbd></button>
+        ${actions(lab).map(a => `<button type="button" class="lh-act" data-act="${a.id}"${a.danger ? " data-danger" : ""}>${a.label}</button>`).join("")}
+      </div>`
     about.querySelector<HTMLButtonElement>("[data-open]")!.addEventListener("click", () => void go(lab))
+    for (const a of actions(lab)) {
+      const b = about.querySelector<HTMLButtonElement>(`[data-act="${a.id}"]`)!
+      b.addEventListener("click", () => void a.run())
+      if (a.key) tooltip(b, { text: a.label, shortcut: a.key })
+    }
+  }
+
+  // ── what you can do with a lab ─────────────────────────────────────────────────────────────────────────────────
+  type Action = { id: string; label: string; key: string; danger?: boolean; run(): void | Promise<void> }
+  function actions(lab: HomeLab): Action[] {
+    const list: Action[] = []
+    if (lab.status === "archived") {
+      list.push({ id: "restore", label: "Restore", key: "", run: () => restore(lab) })
+    } else {
+      if (lab.status === "draft") list.push({ id: "keep", label: "Keep", key: "Mod+S", run: () => keep(lab) })
+      list.push({ id: "duplicate", label: "Duplicate", key: "Mod+D", run: () => duplicate(lab) })
+      list.push({ id: "archive", label: "Archive", key: "Backspace", run: () => archive(lab) })
+    }
+    if (catalog.deletable(lab.ref)) list.push({ id: "delete", label: "Delete", key: "Shift+Backspace", danger: true, run: () => remove(lab) })
+    return list
+  }
+  const act = (lab: HomeLab, id: string) => actions(lab).find(a => a.id === id)?.run()
+
+  function reselect(ref: string | undefined) {
+    load()
+    const target = ref && byId.has(ref) ? ref : firstVisibleLab()?.ref
+    if (!target) return describe(null)
+    outline.reveal(target)
+    outline.select([target], target)
+    describe(byId.get(target) ?? null)
+    outline.focus(target)
+  }
+  /** The row to land on when this one goes away: the next lab in the list, else the one before. */
+  function neighbour(ref: string) {
+    const labs = shownLabs().filter(l => l.status !== "archived")
+    const i = labs.findIndex(l => l.ref === ref)
+    return (labs[i + 1] ?? labs[i - 1])?.ref
+  }
+  function keep(lab: HomeLab) {
+    reselect(catalog.keep(lab.ref).ref)
+    toast(`Kept ${lab.title}`)
+  }
+  function duplicate(lab: HomeLab) {
+    const copy = catalog.duplicate(lab.ref)
+    reselect(copy.ref)
+    toast(`Made ${copy.title}, a draft`)
+  }
+  function archive(lab: HomeLab) {
+    if (options.current()?.ref === lab.ref) return void toast("That lab is open. Open another one first.", { tone: "error" })
+    const next = neighbour(lab.ref)
+    catalog.archive(lab.ref)
+    reselect(next)
+    toast(`Archived ${lab.title}`, { action: { label: "Undo", run: () => reselect(catalog.restore(lab.ref).ref) } })
+  }
+  function restore(lab: HomeLab) {
+    reselect(catalog.restore(lab.ref).ref)
+    toast(`Restored ${lab.title}`)
+  }
+  async function remove(lab: HomeLab) {
+    if (options.current()?.ref === lab.ref) return void toast("That lab is open. Open another one first.", { tone: "error" })
+    const ok = await confirm({ title: `Delete “${lab.title}”?`, body: "It was made in this browser, so it can't come back.", confirm: "Delete", destructive: true })
+    if (!ok) return outline.focus(lab.ref)
+    const next = neighbour(lab.ref)
+    catalog.remove(lab.ref)
+    reselect(next)
+    toast(`Deleted ${lab.title}`)
+  }
+
+  function newLab() {
+    const menu = el("div", "lh-kinds")
+    menu.setAttribute("role", "menu")
+    for (const kind of catalog.kinds) {
+      const item = el("button", "lh-kind", menu)
+      item.type = "button"
+      item.setAttribute("role", "menuitem")
+      item.innerHTML = `<b>${html(kind.label)}</b><span>${html(kind.subject)}</span>`
+      item.addEventListener("click", () => {
+        void handle.close()
+        const lab = catalog.create(kind.id)
+        reselect(lab.ref)
+        void go(lab)
+      })
+    }
+    menu.addEventListener("keydown", e => {
+      const items = [...menu.querySelectorAll<HTMLButtonElement>("button")]
+      const i = items.indexOf(document.activeElement as HTMLButtonElement)
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus()
+      }
+    })
+    const handle = popover(add, menu, { placement: "bottom-end", role: "menu", label: "New lab", focus: "first" })
   }
 
   async function go(lab: HomeLab) {
@@ -216,8 +324,19 @@ export function createHome(options: HomeOptions) {
     } else if (!inSearch && e.key === "ArrowUp" && visible()[0] === outline.active) {
       take()
       search.focus()
+    } else if (!inSearch && !mod && e.key === "+") {
+      take()
+      newLab()
+    } else if (!inSearch && selected()) {
+      const lab = selected()!
+      const key = e.key.toLowerCase()
+      if (mod && key === "d") { take(); void act(lab, "duplicate") }
+      else if (mod && key === "s") { take(); void act(lab, "keep") }
+      else if ((e.key === "Backspace" || e.key === "Delete") && e.shiftKey) { take(); void act(lab, "delete") }
+      else if ((e.key === "Backspace" || e.key === "Delete") && !mod) { take(); void act(lab, "archive") }
     }
   }, true)
+  const selected = () => (outline.active ? byId.get(outline.active) : undefined)
   // Nothing behind Home sees a key while it shows; browser shortcuts still work.
   root.addEventListener("keydown", e => {
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation()

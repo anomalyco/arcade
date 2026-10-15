@@ -247,9 +247,6 @@
   display: flex;
   flex-direction: column;
   min-width: 220px;
-  padding: 4px 0;
-  background: var(--panel2);
-  border: 1px solid var(--line2);
   font: 12px var(--sans);
 }
 .lab-crumb-menu button {
@@ -283,4 +280,90 @@
 [data-lab-focused] .lab-library,
 [data-lab-focused] .lab-world {
   display: none !important;
+}
+
+.lh-new {
+  margin-left: auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-new + .lh-back {
+  margin-left: 0;
+}
+.lh-new:hover,
+.lh-new:focus-visible {
+  border-color: var(--acc);
+  color: var(--tx);
+  outline: none;
+}
+
+.lh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+}
+.lh-actions .lh-open {
+  margin-top: 0;
+  margin-right: 6px;
+}
+.lh-act {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  cursor: pointer;
+}
+.lh-act:hover,
+.lh-act:focus-visible {
+  border-color: var(--line2);
+  color: var(--tx);
+  outline: none;
+}
+.lh-act[data-danger]:hover,
+.lh-act[data-danger]:focus-visible {
+  border-color: color-mix(in srgb, #ff5a5a 60%, transparent);
+  color: #ff8a8a;
+}
+
+.lh-kinds {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: min(520px, 70vh);
+  overflow: auto;
+  font: 12px var(--sans);
+}
+.lh-kind {
+  display: grid;
+  gap: 1px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lh-kind b {
+  font-weight: 500;
+}
+.lh-kind span {
+  color: var(--tx3);
+  font-size: 11px;
+}
+.lh-kind:hover,
+.lh-kind:focus-visible {
+  background: var(--hover);
+  outline: none;
 }

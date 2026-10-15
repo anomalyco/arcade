@@ -48,3 +48,38 @@ describe("the lab catalog", () => {
     expect(matches(weather, "weather carrier")).toBe(false)
   })
 })
+
+describe("labs come and go", () => {
+  test("new, duplicate, keep, archive, restore and delete", () => {
+    const catalog = createCatalog(stations, memorySceneStorage())
+    const rug = catalog.create("rug")
+    expect(rug).toMatchObject({ ref: "drafts/rug-lab", status: "draft", kind: { id: "rug" } })
+    expect(rug.station().demo).toMatchObject({ kind: "section", section: "rugs" })
+    const copy = catalog.duplicate("look-and-light/weather")
+    expect(copy).toMatchObject({ ref: "look-and-light/weather-copy", status: "draft" })
+    expect(copy.variants.map(v => v.id)).toEqual(catalog.find("look-and-light/weather")!.variants.map(v => v.id))
+    expect(catalog.keep(copy.ref).status).toBe("kept")
+    catalog.archive(copy.ref)
+    expect(catalog.all().some(l => l.ref === copy.ref)).toBe(false)
+    expect(catalog.archived().map(l => l.ref)).toEqual([copy.ref])
+    expect(catalog.restore(copy.ref).status).toBe("kept")
+    catalog.remove(copy.ref)
+    expect(catalog.find(copy.ref)).toBeUndefined()
+  })
+
+  test("a station's lab archives and restores in this browser, but isn't deleted here", () => {
+    const catalog = createCatalog(stations, memorySceneStorage())
+    catalog.archive("look-and-light/weather")
+    expect(catalog.archived()[0]).toMatchObject({ ref: "look-and-light/weather", source: "edited" })
+    expect(catalog.deletable("look-and-light/weather")).toBe(false)
+    expect(() => catalog.remove("look-and-light/weather")).toThrow("station file")
+    expect(catalog.restore("look-and-light/weather").source).toBe("repo")
+  })
+
+  test("only section kinds can start a new lab", () => {
+    const catalog = createCatalog(stations, memorySceneStorage())
+    expect(catalog.kinds.map(k => k.id)).toContain("rug")
+    expect(catalog.kinds.map(k => k.id)).not.toContain("hud")
+    expect(() => catalog.create("hud")).toThrow()
+  })
+})
