@@ -29,7 +29,11 @@ export type PacingTuning = {
   maxActiveNearPlayer: number
 }
 
-export const DEFAULT_PACING_TUNING: PacingTuning = {
+/**
+ * Opening pacing with the difficulty knobs as they were before D-22 (Balanced Curve); the D-18 opening clock is shared.
+ * Saved presets that carry these values keep them.
+ */
+export const LEGACY_PACING_TUNING: PacingTuning = {
   startHour: 17.5,
   openingClock: 0.25,
   openingCalm: 50,
@@ -38,6 +42,16 @@ export const DEFAULT_PACING_TUNING: PacingTuning = {
   rampTime: 360,
   noiseSensitivity: 1.0,
   maxActiveNearPlayer: 4,
+}
+
+/** D-22 Balanced Curve, tuned by the survivor-bot CMA-ES search (games/outbreak/scripts/run-bot-tuning.ts). */
+export const DEFAULT_PACING_TUNING: PacingTuning = {
+  ...LEGACY_PACING_TUNING,
+  safeRadius: 17,
+  initialDensity: 0.1,
+  rampTime: 405,
+  noiseSensitivity: 1.05,
+  maxActiveNearPlayer: 3,
 }
 
 /**

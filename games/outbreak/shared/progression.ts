@@ -190,7 +190,8 @@ export const progressionControls = [
 ] as const satisfies readonly { key: keyof ProgressionTuning; label: string; group: string; min: number; max: number; step: number; unit: string }[]
 
 export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
-  lootRate: 1,
+  // D-22 Balanced Curve (was 1 before D-22).
+  lootRate: 1.05,
   searchQuietTime: 1.2,
   searchQuietNoise: 3.5,
   searchSmashTime: 0.35,

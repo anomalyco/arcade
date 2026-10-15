@@ -37,6 +37,7 @@ import {
   isInsideSafeZone,
   isSpawnBehindPlayer,
   isSpawnInView,
+  LEGACY_PACING_TUNING,
   OutbreakPacingDirector,
   openingThreat,
   pacingControls,
@@ -52,9 +53,22 @@ import {
 
 export type AIConfig = KitAIConfig & PacingTuning
 
+/** Outbreak's zombie AI before D-22 (Balanced Curve). Saved presets that carry these values keep them. */
+export const LEGACY_AI_CONFIG: AIConfig = {
+  ...KIT_DEFAULT_AI_CONFIG,
+  ...LEGACY_PACING_TUNING,
+}
+
+/** D-22 Balanced Curve, tuned by the survivor-bot CMA-ES search (games/outbreak/scripts/run-bot-tuning.ts). */
 export const DEFAULT_AI_CONFIG: AIConfig = {
   ...KIT_DEFAULT_AI_CONFIG,
   ...DEFAULT_PACING_TUNING,
+  zombieCount: 16,
+  sightRange: 15,
+  hearingScale: 0.75,
+  chaseSpeed: 2.85,
+  aggression: 1.15,
+  nightMultiplier: 1.4,
 }
 
 export {
