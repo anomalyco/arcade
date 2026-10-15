@@ -340,6 +340,8 @@ export class ZombieCrowdRenderer {
   private readonly scratchTorsoFrame: Frame = { p: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
   readonly debris: DetachedDebrisPiece[] = []
   readonly batches: Batch[] = []
+  /** Each foot contact of an animated zombie (plan x, y, body speed m/s, how much that foot drags, shamble variant). */
+  onFootfall?: (agentId: number, x: number, y: number, speed: number, drag: number, variant: string) => void
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
 
@@ -1157,6 +1159,7 @@ export class ZombieCrowdRenderer {
           this.footPy[fi] = support(tx, tz) + clamberLift
           this.footPz[fi] = tz
           this.footYaw[fi] = syaw
+          this.onFootfall?.(a.id, tx, tz, speed, dragAmt, profile.zombieVariant)
         }
       }
 
