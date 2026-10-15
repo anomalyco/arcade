@@ -5,13 +5,13 @@ import { SmokeTrail, type SmokeSource } from "./smoke-trail"
 export const vehicleEffects = { coldExhaust: false }
 import { vehicleEffectSettings as settings } from "./effect-settings"
 
-type Wheel = SmokeSource & { heat: number; marking: boolean; slip: number; markY: number; along: number }
+type Wheel = SmokeSource & { heat: number; marking: boolean; slip: number; markY: number; along: number; burn: number }
 /** What a tyre touches: 0 nothing that marks, 1 road, 2 dirt or grass, 3 wet road. */
 export const TYRE_SURFACE = { none: 0, road: 1, dirt: 2, wet: 3 } as const
 /** One tyre's ground contact this frame, in world metres (Y up). */
 export type WheelContact = { x: number; y: number; z: number; slip: number; slipSpeed: number; surface: number }
 export class EmissionState {
-  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0, marking: false, slip: 0, markY: 0, along: 0 }))
+  readonly wheels: Wheel[] = Array.from({ length: 4 }, () => ({ smokeDistance: 0, smokeX: 0, smokeZ: 0, smokeActive: false, idle: 0, heat: 0, marking: false, slip: 0, markY: 0, along: 0, burn: 0 }))
   spin = 0
   boosting = false
   brake = 0
@@ -140,6 +140,13 @@ export class VehicleEmissions<Terrain = null> {
       const marking = smokeEnabled && slip > 0.08 && this.skids !== null
       const stepped = Math.hypot(contact.x - wheel.smokeX, contact.z - wheel.smokeZ)
       if (dt > 0 && marking && wheel.marking) this.skids!.skidSegment(wheel.smokeX, wheel.smokeZ, contact.x, contact.z, 0.25 + 0.75 * slip, wheel.markY, surface - 1, contact.y, wheel.along)
+      // A tyre spinning in place (burnout) scrubs a short patch along the car every quarter second.
+      wheel.burn = marking && stepped < 0.02 && contact.slipSpeed > 10 ? wheel.burn + dt : 0
+      if (wheel.burn >= 0.25) {
+        wheel.burn = 0
+        const fx = Math.sin(c.h) * 0.2, fz = Math.cos(c.h) * 0.2
+        this.skids!.skidSegment(contact.x - fx, contact.z - fz, contact.x + fx, contact.z + fz, slip, contact.y, surface - 1, contact.y, wheel.along)
+      }
       wheel.along = marking && wheel.marking && stepped < 8 ? wheel.along + stepped : 0
       wheel.marking = marking; wheel.markY = contact.y
       const puff = smokeEnabled && surface !== TYRE_SURFACE.wet ? strength * (surface === TYRE_SURFACE.dirt ? 0.8 : 1) : 0

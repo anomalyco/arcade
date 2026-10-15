@@ -15,6 +15,7 @@ import {
   resolveQualityMode,
 } from "@arcade/kit/quality"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
+import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
@@ -68,6 +69,7 @@ import { type VehicleLabHost } from "./vehicle-lab"
 import { BotsLabController } from "./bots-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { OutbreakVehicleRenderer } from "./vehicles"
+import { applyVehicleStunt } from "./vehicle-lab"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import { OutbreakWeatherController } from "./weather"
@@ -566,10 +568,10 @@ async function main() {
         ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
         ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
       }
-      const effectiveCommand =
-        session instanceof LocalSession
-          ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand)
-          : rawCommand
+      const effectiveCommand = applyVehicleStunt(
+        step.dt,
+        session instanceof LocalSession ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand) : rawCommand,
+      )
       session.update(
         step.dt,
         effectiveCommand,
@@ -654,6 +656,11 @@ async function main() {
 
   const keyLabels = keyLabelSetting("HUD")
   lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
+  lab.addControls(
+    vehicleRenderer.drivingFx.settings as unknown as Record<string, string | number | boolean>,
+    drivingFxControls().map(c => ({ ...c, folded: true })),
+    { ...DRIVING_FX_DEFAULTS },
+  )
   lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
@@ -1465,6 +1472,9 @@ async function main() {
     render.splatter =
       settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
     render.splatterLegacy = settings.combat.bloodStyle === 2
+    render.skids = vehicleRenderer.drivingFx.marks
+    render.skidsVisible = Boolean(settings.vehicle.vehicleSmoke) && vehicleRenderer.drivingFx.settings.skidMarks
+    vehicleRenderer.wetness = weatherOut.state.wetness
     render.weather = weatherOut.prepareInput
     const rBatches = render.batches
     rBatches.length = 0
@@ -1541,7 +1551,7 @@ async function main() {
       if (batteryEl.style.opacity !== opacity) batteryEl.style.opacity = opacity
     }
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
-    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
+    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) => vehicleRenderer.tyreAudio(id))
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
@@ -1757,6 +1767,7 @@ async function main() {
     progressionHost,
     discoveryHost,
     vehicleHost,
+    vehicleRenderer,
     botsLab,
     qualityController,
     promptEl,

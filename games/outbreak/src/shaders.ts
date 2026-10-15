@@ -327,4 +327,6 @@ export const shaders = {
   lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
   volume: flashlightVolumeShader,
+  // Tyre smoke and dust take the sky ambient, so at night they stay dim until headlights or the flashlight hit them.
+  tyreSmoke: { base: "(F.ambient.rgb * 2.6 + vec3f(0.035))", dust: "((F.ambient.rgb * 2.6 + vec3f(0.035)) * vec3f(1.0, 0.84, 0.64))" },
 }

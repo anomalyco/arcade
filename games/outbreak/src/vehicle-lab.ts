@@ -10,9 +10,43 @@ export const VEHICLE_SCENES = [
   "need-keys",
   "horde-runover",
   "police-cruiser",
+  "drift-night",
+  "burnout-night",
 ] as const
 
 export type VehicleScene = (typeof VEHICLE_SCENES)[number]
+
+/** A scripted drive the staged scene plays once through the normal command path, then hands back to the player. */
+type StuntStep = { until: number; mx: number; my: number; sprint?: boolean }
+const STUNTS: Partial<Record<VehicleScene, StuntStep[]>> = {
+  // Full throttle, then a handbrake turn that swings the tail round so the headlights end up on the marks.
+  "drift-night": [
+    { until: 0.3, mx: 0, my: -1 },
+    { until: 1.35, mx: 1, my: -1, sprint: true },
+    { until: 2.0, mx: 0, my: 0 },
+    { until: 2.75, mx: 1, my: -1 },
+    { until: 3.3, mx: 0, my: 1 },
+  ],
+  // Throttle against the handbrake on the spot, then let go and launch away from the smoke.
+  "burnout-night": [
+    { until: 2.6, mx: 0, my: -1, sprint: true },
+    { until: 3.4, mx: 0, my: -1 },
+    { until: 4.2, mx: 0, my: 1 },
+  ],
+}
+let stunt: { steps: StuntStep[]; t: number } | null = null
+
+/** Overrides the drive axes while a staged stunt plays; returns the command unchanged otherwise. */
+export function applyVehicleStunt<C extends { mx: number; my: number; sprint?: boolean }>(dt: number, cmd: C): C {
+  if (!stunt) return cmd
+  const step = stunt.steps.find((s) => stunt!.t < s.until)
+  stunt.t += dt
+  if (!step) {
+    stunt = null
+    return cmd
+  }
+  return { ...cmd, mx: step.mx, my: step.my, sprint: step.sprint ?? false }
+}
 
 export type VehicleLabHost = {
   sim: () => CoopSim
@@ -34,6 +68,8 @@ export function stageVehicleScene(host: VehicleLabHost, scene: VehicleScene): vo
   const view = host.view()
   const slot = sim.slot(view.actorId)
   if (slot) sim.vehicles.leaveSeat(slot.id, slot.survivor)
+  const script = STUNTS[scene]
+  stunt = script ? { steps: script, t: 0 } : null
 
   // Clear nearby zombies around the staged spot first
   const clearNear = (cx: number, cy: number, r = 18) => {
@@ -89,6 +125,19 @@ export function stageVehicleScene(host: VehicleLabHost, scene: VehicleScene): vo
       const v = sim.vehicles.byId(3) ?? sim.vehicles.spawnVehicle("cruiser", 40.0, 44.0, 0)
       Object.assign(v, { x: 40.0, y: 44.0, h: 0, vx: 0, vy: 0, w: 0, fuel: 100, hasBattery: true, hasKeys: true, headlights: true, wreck: false, hp: v.maxHp })
       if (slot) sim.vehicles.enter(slot, v, sim.progression, sim.ai, sim.time)
+      return
+    }
+    case "drift-night":
+    case "burnout-night": {
+      const drift = scene === "drift-night"
+      host.setHour(23.0)
+      clearNear(70, 44, 30)
+      const x = drift ? 56 : 66
+      const v = sim.vehicles.byId(1) ?? sim.vehicles.spawnVehicle("sedan", x, 43, 0)
+      Object.assign(v, { x, y: 43, h: 0, vx: 0, vy: 0, w: 0, fuel: 90, hasBattery: true, hasKeys: true, headlights: true, wreck: false, hp: v.maxHp })
+      if (slot) sim.vehicles.enter(slot, v, sim.progression, sim.ai, sim.time)
+      // Already rolling, so the stunt starts at speed (a moving car can't be boarded).
+      if (drift) v.vx = 14
       return
     }
     case "horde-runover": {

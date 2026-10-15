@@ -16,7 +16,7 @@ export type SlipSettings = {
   /** Slip of the driven wheels in a burnout (full throttle against the brake near a standstill). */
   burnout: number
 }
-export const SLIP_DEFAULTS: SlipSettings = { slideThreshold: 1.6, slideRange: 4, brakeLock: 0.55, brakeLockSpeed: 7, handbrake: 0.85, burnout: 1 }
+export const SLIP_DEFAULTS: SlipSettings = { slideThreshold: 3, slideRange: 5, brakeLock: 0.55, brakeLockSpeed: 7, handbrake: 0.85, burnout: 1 }
 
 const clamp = (x: number) => Math.max(0, Math.min(1, x))
 
@@ -31,17 +31,20 @@ export function wheelOffsets(spec: VehicleSpec, w: number) {
 
 /**
  * Per-wheel contacts from body velocity and yaw rate: each tyre's own velocity (v + ω × r) split along and across
- * its rolling direction (fronts turned by `steerAngle`, radians toward +yaw), plus handbrake, brake-lock and burnout
- * rules. View conventions: heading 0 faces +Z, forward (sin h, cos h), `yawRate` = dh/dt. Writes `out` in place.
+ * its rolling direction (fronts turned by `steerAngle`, radians toward +yaw; null steers them along the no-slip
+ * bicycle-model path, for simulations without a front-tyre model), plus handbrake, brake-lock and burnout rules. View conventions: heading 0 faces +Z, forward (sin h, cos h), `yawRate` = dh/dt. Writes `out` in place.
  */
 export function kinematicContacts(
-  out: WheelContact[], c: VehicleView, spec: VehicleSpec, yawRate: number, steerAngle: number, input: Controls,
+  out: WheelContact[], c: VehicleView, spec: VehicleSpec, yawRate: number, steerAngle: number | null, input: Controls,
   ground: GroundHeight, surface: (x: number, z: number) => number, settings: SlipSettings = SLIP_DEFAULTS,
 ): WheelContact[] {
   const fx = Math.sin(c.h), fz = Math.cos(c.h), rx = fz, rz = -fx
   const mask = drivenMask(spec)
   const burnout = !c.engineOff && input.throttle > 0.8 && (input.brake > 0.5 || input.handbrake) && c.speed < 3
-  const cs = Math.cos(steerAngle), sn = Math.sin(steerAngle)
+  const base = wheelOffsets(spec, 0).z - wheelOffsets(spec, 2).z
+  const forward = Math.abs(c.vx * fx + c.vz * fz)
+  const steer = steerAngle ?? Math.atan2(yawRate * base, Math.max(3, forward))
+  const cs = Math.cos(steer), sn = Math.sin(steer)
   for (let w = 0; w < 4; w++) {
     const o = wheelOffsets(spec, w), front = w < 2
     const x = c.x + fx * o.z + rx * o.x, z = c.z + fz * o.z + rz * o.x
