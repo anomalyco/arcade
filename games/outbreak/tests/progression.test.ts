@@ -138,6 +138,7 @@ describe("inventory baseline", () => {
     z.hp = 20
     step({ hotbarSlot: 2 })
     step({ fire: true })
+    step({}, 6)
     expect(z.state).toBe("dead")
   })
 

@@ -7,7 +7,7 @@ import { CalloutLayer, type CalloutKind, type CalloutOptions, type ScreenPoint }
 import { chooseSide, SideBlend, VITALS_BESIDE, VITALS_EDGE, VITALS_FEET, VITALS_BARS, VITALS_GROUND, VITALS_ICONS, type BodyBox, type Side } from "./placement"
 import { HUD_MODE_LOG, RING_ARC, RING_WHEEL, type HudSettings } from "./settings"
 import { onCharacter, resolveStyle, type ResolvedStyle } from "./styles"
-import { ActorVitals, StatusIcons, VitalsLayer, type MeterId, type VitalsInput, type VitalsTuning } from "./vitals"
+import { ActorVitals, groundFront, StatusIcons, VitalsLayer, type MeterId, type VitalsInput, type VitalsTuning } from "./vitals"
 
 export const LOCAL_ACTOR = "local"
 
@@ -50,6 +50,8 @@ export class CharacterHud {
     parent: HTMLElement,
     readonly settings: HudSettings,
     private readonly body: HTMLElement = document.body,
+    /** Device pixels per CSS pixel of the HUD layer; positions snap to it. The board prototype passes DPR × its zoom. */
+    private readonly pixelRatio: () => number = () => (typeof devicePixelRatio === "number" ? devicePixelRatio : 1),
   ) {
     this.layer = new CalloutLayer(parent, { durationScale: settings.calloutDuration, maxVisible: settings.calloutMax })
     this.vitals = new VitalsLayer(parent, settings.vitalSize)
@@ -82,6 +84,7 @@ export class CharacterHud {
       this.body.dataset.chrome = st.chrome
       this.layer.root.dataset.look = st.look
       this.layer.root.dataset.action = st.actionBar ? "bar" : "label"
+      this.layer.invalidate()
       this.vitals.root.dataset.ring = s.ringStyle === RING_WHEEL ? "wheel" : s.ringStyle === RING_ARC ? "arc" : "ring"
     }
   }
@@ -121,6 +124,9 @@ export class CharacterHud {
    */
   frame(dt: number, now: number, actors: readonly HudActorFrame[], avoid: DOMRect | null, tuning: VitalsTuning): void {
     this.dt = dt
+    const ratio = this.pixelRatio()
+    this.layer.view.pixelRatio = ratio
+    this.vitals.pixelRatio = ratio
     this.now = now
     this.avoidRect = avoid
     const reduced = this.layer.reducedMotion
@@ -151,11 +157,13 @@ export class CharacterHud {
         const at = st.vitalsSide.step(box, ringSide, gap, dt, reduced)
         const al = st.vitalsSide.align
         const row = { x: at.x, y: at.y, ax: al.ax, ay: al.ay, reverse: ringSide === "left", scale }
-        const ground =
-          vitalsMode === VITALS_GROUND && box.footW
-            ? { x: box.footX!, y: box.footY!, w: box.footW * (local ? 1 : 0.85), h: box.footH! * (local ? 1 : 0.85) }
-            : undefined
+        const ground = vitalsMode === VITALS_GROUND && box.ground ? { points: box.ground, scale } : undefined
         this.vitals.draw(a.id, st.vitals, { row, ground }, reduced, hidden)
+        if (ground) {
+          // Callouts below the feet start under the front of the ring while the ring shows.
+          const shown = Math.max(st.vitals.meter("stamina").alpha, hidden?.has("health") ? 0 : st.vitals.meter("health").alpha)
+          below = shown * Math.max(0, groundFront(ground.points) + 3 - box.bottom)
+        }
       } else if (vitalsMode === VITALS_BARS) {
         const y = box.bottom + this.settings.vitalOffset
         this.vitals.draw(a.id, st.vitals, { bars: { x: box.x, y, scale } }, reduced, hidden)
@@ -170,7 +178,7 @@ export class CharacterHud {
       let gap = this.settings.calloutOffset + (side === "up" && !local ? NAME_TAG_PX : 0)
       // Start the stack past whatever meters share its side.
       if (drawn && st.vitals.presence > 0.001) {
-        if (side === "down" && below > 0) gap += below + this.settings.vitalOffset
+        if (side === "down" && below > 0) gap += below + (vitalsMode === VITALS_BARS ? this.settings.vitalOffset : 0)
         else if (ringSide && side === ringSide) {
           const along = side === "up" || side === "down" ? this.vitals.rowSize(scale) : this.vitals.rowWidth(st.vitals, scale)
           gap += along + this.settings.vitalOffset

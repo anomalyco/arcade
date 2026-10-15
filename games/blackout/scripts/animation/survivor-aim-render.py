@@ -130,6 +130,8 @@ def draw_skeleton_2d(
                 continue
             p0 = pts.get(seg["from"])
             p1 = pts.get(seg["to"])
+            if not p1 and seg["to"] in ("ballL", "ballR"):
+                p1 = pts.get("toeL" if seg["to"] == "ballL" else "toeR")
             if not p0 or not p1:
                 continue
             a = norm_to_px(p0, cw, ch, ground_y)

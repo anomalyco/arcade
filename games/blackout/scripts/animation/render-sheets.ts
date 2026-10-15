@@ -141,6 +141,7 @@ try {
             th: [cloneFrame(b.th[0]), cloneFrame(b.th[1])],
             sh: [cloneFrame(b.sh[0]), cloneFrame(b.sh[1])],
             ft: [cloneFrame(b.ft[0]), cloneFrame(b.ft[1])],
+            toe: b.toe ? [cloneFrame(b.toe[0]), cloneFrame(b.toe[1])] : undefined,
             gun: null,
             pump: null,
             mag: null,
@@ -177,8 +178,8 @@ try {
             }
             prevPlantedL = a.feet[0].planted
 
-            const toeL = rigMod.at(b.ft[0], 0.19, -rigMod.RIG.ankle, 0)
-            const toeR = rigMod.at(b.ft[1], 0.19, -rigMod.RIG.ankle, 0)
+            const toeL = b.toe ? rigMod.at(b.toe[0], rigMod.RIG.toe, -rigMod.RIG.ankle, 0) : rigMod.at(b.ft[0], 0.19, -rigMod.RIG.ankle, 0)
+            const toeR = b.toe ? rigMod.at(b.toe[1], rigMod.RIG.toe, -rigMod.RIG.ankle, 0) : rigMod.at(b.ft[1], 0.19, -rigMod.RIG.ankle, 0)
             history.push({
               frame: n,
               t,
@@ -249,6 +250,7 @@ try {
               th: [shiftFrame(b.th[0], ox, oz), shiftFrame(b.th[1], ox, oz)],
               sh: [shiftFrame(b.sh[0], ox, oz), shiftFrame(b.sh[1], ox, oz)],
               ft: [shiftFrame(b.ft[0], ox, oz), shiftFrame(b.ft[1], ox, oz)],
+              toe: b.toe ? [shiftFrame(b.toe[0], ox, oz), shiftFrame(b.toe[1], ox, oz)] : undefined,
               gun: null,
               pump: null,
               mag: null,

@@ -105,6 +105,10 @@ export type ChunkDelta = {
   windows: Record<string, WindowDelta>
   searched: Record<string, boolean>
   zombies: Record<number, SavedZombieState>
+  /** Saved drivable vehicles currently parked/left in this chunk. */
+  vehicles?: Record<number, import("./vehicles").SavedVehicleState>
+  /** Native vehicle spawn IDs that were driven out of this chunk. */
+  removedVehicles?: Record<number, boolean>
   /** Aggregate living zombie count while the chunk is unloaded (simulation LOD). */
   aggregateZombies: number
   visited: boolean
@@ -1222,6 +1226,7 @@ export class StreamingWorld {
     agents: AIAgent[],
     spawnAgent: (id: number, seed: number, x: number, y: number, aim: number) => AIAgent,
     radiusChunks = 1,
+    canSpawn?: (x: number, y: number) => boolean,
   ): { changed: boolean; loaded: WorldChunk[]; unloaded: string[] } {
     if (this.mode === "classic") {
       // Check if any survivor walked outside [4..92]; if not, stay in fixed classic mode
@@ -1324,6 +1329,7 @@ export class StreamingWorld {
           for (const sp of ch.zombieSpawns) {
             if (agents.some((a) => a.id === sp.id)) continue
             if (survivors.some((s) => Math.hypot(s.x - sp.x, s.y - sp.y) < 6.0)) continue
+            if (canSpawn && !canSpawn(sp.x, sp.y)) continue
             agents.push(spawnAgent(sp.id, sp.seed, sp.x, sp.y, sp.aim))
           }
         }

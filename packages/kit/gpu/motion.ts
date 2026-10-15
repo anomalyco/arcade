@@ -1,6 +1,15 @@
 import { motionGatherWGSL } from "@arcade/kit/gpu/motion-blur"
-export { MotionKeys, MotionHistory, type MotionKey } from "@arcade/kit/gpu/motion-blur"
-export const motionSettings = { strength: 1, shutter: 1 }
+export {
+  MotionBlur,
+  MotionBlurBurst,
+  MotionHistory,
+  MotionKeys,
+  motionBlurControls,
+  motionBlurDefaults,
+  type MotionBlurSettings,
+  type MotionKey,
+} from "@arcade/kit/gpu/motion-blur"
+export const motionSettings = { strength: 1, shutter: 1, burst: 1, burstDecay: 14 }
 
 /** One depth-aware gather, used by the existing composite only when motion blur is enabled. */
 export const motionGather = /* wgsl */ `

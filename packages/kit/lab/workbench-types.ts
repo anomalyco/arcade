@@ -78,6 +78,8 @@ export type WorkbenchOptions = {
   selectSection: (id: string) => void
   renderNow: () => Promise<unknown>
   advanceSim: (dt: number) => void
+  /** Pauses the live simulate-and-draw loop while the workbench drives frames itself (Library previews). */
+  suspend?: (suspended: boolean) => void
   spawn?: ReturnType<typeof createSpawn>
   looks?: LookLabController
   effects?: ReturnType<typeof createEffects>

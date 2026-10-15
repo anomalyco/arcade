@@ -437,7 +437,8 @@ export function createFeedbackRecorder(opts: RecorderOptions) {
   // ── keys while recording ─────────────────────────────────────────────────────────────────────────────────────
   const typing = (e: KeyboardEvent) => {
     const t = e.composedPath()[0]
-    return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLElement && t.isContentEditable)
+    // Lists with type-to-filter (the Library) own printable keys like a text field.
+    return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLElement && (t.isContentEditable || Boolean(t.closest("[data-typeahead]"))))
   }
   window.addEventListener("keydown", e => {
     if (e.key === "Shift") { shift = true; if (session && !reviewing) { ink.style.pointerEvents = "auto"; beginStroke() } return }

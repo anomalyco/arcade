@@ -1,5 +1,12 @@
 import type { AIAgent, AIConfig, NoiseEvent, OutbreakAISubsystem } from "./ai"
-import type { CombatShotEvent, OutbreakCombatSubsystem, SurvivorCombatState } from "./combat"
+import {
+  DEFAULT_MELEE_TUNING,
+  type CombatMeleeEvent,
+  type CombatShotEvent,
+  type MeleeTuning,
+  type OutbreakCombatSubsystem,
+  type SurvivorCombatState,
+} from "./combat"
 import { CoopSim, type SurvivorSlot } from "./coop-sim"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightState, type FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
@@ -8,13 +15,16 @@ import type { LootSite, Notice, OutbreakProgression, PickMode, ProgressionTuning
 import type { Town } from "./map"
 import type { StaminaState, StaminaTuning } from "./stamina"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
+import { DEFAULT_VEHICLE_TUNING, type OutbreakVehicle, type OutbreakVehicleSubsystem, type VehicleTuning } from "./vehicles"
 import type { StreamingWorld, WorldMode } from "./world"
 
 export type NamespacedSessionTuning = {
   stamina?: Partial<StaminaTuning>
   flashlight?: Partial<FlashlightTuning>
   ai?: Partial<AIConfig>
-  combat?: {
+  melee?: Partial<MeleeTuning>
+  vehicle?: Partial<VehicleTuning>
+  combat?: Partial<MeleeTuning> & {
     /** Dev cheat: keeps the pistol magazine full. 1 = on. */
     infiniteAmmo?: number
   }
@@ -22,7 +32,9 @@ export type NamespacedSessionTuning = {
 
 export type LegacyFlatSessionTuning = Partial<StaminaTuning> &
   Partial<FlashlightTuning> &
-  Partial<AIConfig> & {
+  Partial<AIConfig> &
+  Partial<MeleeTuning> &
+  Partial<VehicleTuning> & {
     /** Dev cheat: keeps the pistol magazine full. 1 = on. */
     infiniteAmmo?: number
   }
@@ -33,11 +45,20 @@ export type ResolvedSessionTuning = {
   stamina: StaminaTuning
   flashlight: FlashlightTuning
   ai: Partial<AIConfig> | undefined
+  melee: MeleeTuning
+  vehicle: VehicleTuning
   infiniteAmmo: boolean
 }
 
 function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedSessionTuning {
-  return "stamina" in tuning || "flashlight" in tuning || "ai" in tuning || "combat" in tuning
+  return (
+    "stamina" in tuning ||
+    "flashlight" in tuning ||
+    "ai" in tuning ||
+    "vehicle" in tuning ||
+    "combat" in tuning ||
+    "melee" in tuning
+  )
 }
 
 export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTuning {
@@ -46,14 +67,27 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
       stamina: DEFAULT_STAMINA_TUNING,
       flashlight: DEFAULT_FLASHLIGHT_TUNING,
       ai: undefined,
+      melee: DEFAULT_MELEE_TUNING,
+      vehicle: DEFAULT_VEHICLE_TUNING,
       infiniteAmmo: false,
     }
   }
   if (isNamespacedSessionTuning(tuning)) {
+    const meleeOut = { ...DEFAULT_MELEE_TUNING }
+    for (const src of [tuning.combat, tuning.melee]) {
+      if (!src) continue
+      for (const k of Object.keys(DEFAULT_MELEE_TUNING) as (keyof MeleeTuning)[]) {
+        if (typeof src[k] === "number" && Number.isFinite(src[k])) {
+          meleeOut[k] = src[k]!
+        }
+      }
+    }
     return {
       stamina: tuning.stamina ? { ...DEFAULT_STAMINA_TUNING, ...tuning.stamina } : DEFAULT_STAMINA_TUNING,
       flashlight: tuning.flashlight ? { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning.flashlight } : DEFAULT_FLASHLIGHT_TUNING,
       ai: tuning.ai,
+      melee: meleeOut,
+      vehicle: tuning.vehicle ? { ...DEFAULT_VEHICLE_TUNING, ...tuning.vehicle } : DEFAULT_VEHICLE_TUNING,
       infiniteAmmo: Boolean(tuning.combat?.infiniteAmmo),
     }
   }
@@ -65,7 +99,13 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
     tuning.aggression !== undefined ||
     tuning.nightMultiplier !== undefined ||
     tuning.directorPacing !== undefined ||
-    tuning.aiDebugOverlay !== undefined
+    tuning.aiDebugOverlay !== undefined ||
+    tuning.startHour !== undefined ||
+    tuning.safeRadius !== undefined ||
+    tuning.initialDensity !== undefined ||
+    tuning.rampTime !== undefined ||
+    tuning.noiseSensitivity !== undefined ||
+    tuning.maxActiveNearPlayer !== undefined
   return {
     stamina: { ...DEFAULT_STAMINA_TUNING, ...tuning },
     flashlight: { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning },
@@ -79,8 +119,16 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
           nightMultiplier: tuning.nightMultiplier,
           directorPacing: tuning.directorPacing,
           aiDebugOverlay: tuning.aiDebugOverlay,
+          startHour: tuning.startHour,
+          safeRadius: tuning.safeRadius,
+          initialDensity: tuning.initialDensity,
+          rampTime: tuning.rampTime,
+          noiseSensitivity: tuning.noiseSensitivity,
+          maxActiveNearPlayer: tuning.maxActiveNearPlayer,
         }
       : undefined,
+    melee: { ...DEFAULT_MELEE_TUNING, ...tuning },
+    vehicle: { ...DEFAULT_VEHICLE_TUNING, ...tuning },
     infiniteAmmo: Boolean(tuning.infiniteAmmo),
   }
 }
@@ -97,6 +145,8 @@ export type Command = {
   hotbarSlot?: number
   hotbarDelta?: number
   fire?: boolean
+  /** True while the primary attack button (Mouse0) is held down (charges heavy melee swings). */
+  fireHeld?: boolean
   reload?: boolean
   melee?: boolean
   barricade?: boolean
@@ -107,6 +157,10 @@ export type Command = {
   bundle?: boolean
   /** Q tap: mark what you are looking at for the squad. */
   ping?: boolean
+  /** C tap: cycle vehicle seat. */
+  seat?: boolean
+  /** H hold: vehicle horn. */
+  horn?: boolean
   /** A digit while a strip is open (container, stash, bench, field craft or pack). */
   pick?: { mode: PickMode; index: number }
 }
@@ -119,6 +173,8 @@ export type Survivor = {
   aim: number
   health: number
   maxHealth: number
+  vehicleId?: number | null
+  seatIndex?: number
 } & StaminaState &
   FlashlightState &
   InteractActorState &
@@ -134,8 +190,10 @@ export type SessionView = {
   /** Feedback for the local survivor since the presentation last drained it. */
   notices: Notice[]
   zombies: AIAgent[]
+  vehicles: OutbreakVehicle[]
   noises: NoiseEvent[]
   shots: CombatShotEvent[]
+  meleeSwings: CombatMeleeEvent[]
   containers: LootSite[]
   hour: number
   time: number
@@ -172,10 +230,14 @@ export function slotView(sim: CoopSim, slot: () => SurvivorSlot): SessionView {
     get zombies() {
       return sim.ai.agents
     },
+    get vehicles() {
+      return sim.vehicles.list
+    },
     get noises() {
       return sim.ai.noiseBus.events
     },
     shots: sim.combat.shots,
+    meleeSwings: sim.combat.meleeSwings,
     containers: sim.progression.containers,
     get hour() {
       return sim.hour
@@ -233,6 +295,10 @@ export class LocalSession implements Session {
 
   get combat(): OutbreakCombatSubsystem {
     return this.sim.combat
+  }
+
+  get vehicles(): OutbreakVehicleSubsystem {
+    return this.sim.vehicles
   }
 
   get registry(): InteractionRegistry {

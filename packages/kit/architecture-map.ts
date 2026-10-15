@@ -24,6 +24,9 @@ export interface ArchitectureMapRow {
 
 const RENDERER_TRANSITIVE_SPECS = [
   "@arcade/kit/gpu/wgsl",
+  "@arcade/kit/gpu/cull",
+  "@arcade/kit/gpu/targets",
+  "@arcade/kit/gpu/pass-graph",
   "@arcade/kit/gpu/motion",
   "@arcade/kit/gpu/motion-blur",
   "@arcade/kit/gpu/look-shaders",
@@ -89,6 +92,14 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/mesh",
   },
   {
+    area: "`gpu/{cull,targets,pass-graph}`",
+    description: "Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom",
+    match: (s) =>
+      s === "@arcade/kit/gpu/cull" ||
+      s === "@arcade/kit/gpu/targets" ||
+      s === "@arcade/kit/gpu/pass-graph",
+  },
+  {
     area: "`gpu/{renderer,shaders,level,limits}`",
     description: "Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom",
     match: (s) =>
@@ -147,10 +158,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/fx/tyre-renderer",
   },
   {
-    area: "`fx/{explosion,fire-water,splatter*}`",
-    description: "Multi-stage explosions, fire/water jets, and surface blood decals",
+    area: "`fx/{explosion,projectile-trail,fire-water,splatter*}`",
+    description: "Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals",
     match: (s) =>
       s === "@arcade/kit/fx/explosion" ||
+      s === "@arcade/kit/fx/projectile-trail" ||
       s === "@arcade/kit/fx/fire-water" ||
       s === "@arcade/kit/fx/fire-water-shader" ||
       s === "@arcade/kit/fx/splatter" ||
@@ -181,16 +193,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`client/{input,camera}` & `orbit-gestures`",
-    description: "Top-down `Input` and `Camera`, plus 3D viewport orbit/pan/zoom gestures",
+    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||
       s === "@arcade/kit/orbit-gestures",
-  },
-  {
-    area: "`feel/*`",
-    description: "`GameFeel` trauma² shake, directional recoil kick, hit-stop, impulse blur, and reduced-motion",
-    match: (s) => s === "@arcade/kit/feel" || s.startsWith("@arcade/kit/feel/"),
   },
   {
     area: "`audio/*`",

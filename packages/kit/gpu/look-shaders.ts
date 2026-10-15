@@ -327,20 +327,6 @@ struct GradeAndLook {
 }
 @group(0) @binding(4) var<uniform> GL: GradeAndLook;
 
-fn feelImpulseGather(uv: vec2f, fromC: vec2f, feel: vec4f, center: vec4f) -> vec4f {
-  if (all(abs(feel.xyz) <= vec3f(0.00018))) { return center; }
-  let r = length(fromC);
-  let edgeW = smoothstep(0.06, 0.36, r);
-  let v = feel.xy * (0.45 + 0.55 * edgeW) + fromC * (feel.z * 1.45 * edgeW);
-  if (dot(v, v) <= 1e-8) { return center; }
-  let s0 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s1 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s2 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s3 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
-  let rgb = center.rgb * 0.32 + (s1.rgb + s2.rgb) * 0.22 + (s0.rgb + s3.rgb) * 0.12;
-  return vec4f(rgb, min(center.a, (center.a + s1.a + s2.a) * 0.3333));
-}
-
 ${
   includeKuwahara
     ? `fn kuwaharaPost(uv: vec2f, texel: vec2f, strength: f32, center: vec3f) -> vec3f {
@@ -433,10 +419,9 @@ ${
   }
 
   // Active Look composite
-  let feel = GL.pad;
-  let centerSamp = feelImpulseGather(uv, fromC, feel, clean(textureSampleLevel(src, samp, uv, 0.0)));
+  let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));
   let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
-  let caAmt = baseCA + L.chromatic * 0.016 + feel.w * 0.022;
+  let caAmt = baseCA + L.chromatic * 0.016;
   let ca = fromC * dot(fromC, fromC) * caAmt;
   var hdr: vec3f;
   ${
@@ -482,7 +467,7 @@ ${
     flashMask,
   );
   let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
+  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   if (compareMode == 2) {
     let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
@@ -588,7 +573,7 @@ ${
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
   }
   let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
+  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
   let ign = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));

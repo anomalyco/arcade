@@ -430,8 +430,10 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
         const t = e.composedPath()[0]
         if (e.metaKey || e.ctrlKey || e.altKey || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
         const n = /^Digit[0-9]$/.test(e.code) ? Number(e.code.slice(5)) : null
+        // A page lists the physical keys it binds itself (`<html data-page-keys="KeyN">`); those stay with the page.
+        const owned = frame.contentDocument?.documentElement.dataset.pageKeys?.split(" ").includes(e.code)
         if (n !== null && digit(n, e.shiftKey)) e.preventDefault()
-        else if (e.key.toLowerCase() === "n" && !e.repeat && opts.dev?.toggleNote) { e.preventDefault(); opts.dev.toggleNote() }
+        else if (e.key.toLowerCase() === "n" && !owned && !e.repeat && opts.dev?.toggleNote) { e.preventDefault(); opts.dev.toggleNote() }
         else if (e.key === "Escape" && opts.dev?.noteActive?.()) window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape" }))
       }, { capture: true })
     })

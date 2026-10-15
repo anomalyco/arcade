@@ -1,12 +1,12 @@
 import {
   createAIAgent,
-  DEFAULT_AI_CONFIG,
+  DEFAULT_AI_CONFIG as KIT_DEFAULT_AI_CONFIG,
   GridNav,
   NoiseBus,
   SpatialHash,
   stepAICrowd,
   type AIAgent,
-  type AIConfig,
+  type AIConfig as KitAIConfig,
   type AIState,
   type FlashlightState,
   type NavPortal,
@@ -14,8 +14,7 @@ import {
   type NoiseKind,
   type PerceptionTarget,
 } from "@arcade/kit/sim/ai"
-import { distToRect, type Rect } from "@arcade/kit/sim/geom"
-import { Rng } from "@arcade/kit/sim/rng"
+import { type Rect } from "@arcade/kit/sim/geom"
 import { dayCycle } from "./day-cycle"
 import {
   DEFAULT_FLASHLIGHT_TUNING,
@@ -24,17 +23,60 @@ import {
   type FlashlightTuning,
 } from "./flashlight"
 import { EXTERIOR_VEHICLE_COLLIDERS, propShape, sightRects, SIZE, solidRects, type Town } from "./map"
+import {
+  canSpawnZombieAt,
+  coopChaserScale,
+  coopPopulationScale,
+  DEFAULT_PACING_TUNING,
+  initialSpawnCount,
+  isInsideSafeZone,
+  isSpawnBehindPlayer,
+  isSpawnInView,
+  OutbreakPacingDirector,
+  pacingControls,
+  spawnLegacyTownZombies,
+  spawnPacedTownZombies,
+  STARTING_SAFEHOUSE_RECT,
+  STARTING_SAFEHOUSE_YARD_RECT,
+  type FirstEncounterStage,
+  type PacingSurvivorView,
+  type PacingTelemetry,
+  type PacingTuning,
+} from "./pacing"
+
+export type AIConfig = KitAIConfig & PacingTuning
+
+export const DEFAULT_AI_CONFIG: AIConfig = {
+  ...KIT_DEFAULT_AI_CONFIG,
+  ...DEFAULT_PACING_TUNING,
+}
 
 export {
+  canSpawnZombieAt,
+  coopChaserScale,
+  coopPopulationScale,
   createAIAgent,
-  DEFAULT_AI_CONFIG,
+  DEFAULT_PACING_TUNING,
+  initialSpawnCount,
+  isInsideSafeZone,
+  isSpawnBehindPlayer,
+  isSpawnInView,
   NoiseBus,
+  OutbreakPacingDirector,
+  pacingControls,
+  spawnLegacyTownZombies,
+  spawnPacedTownZombies,
+  STARTING_SAFEHOUSE_RECT,
+  STARTING_SAFEHOUSE_YARD_RECT,
   type AIAgent,
-  type AIConfig,
   type AIState,
+  type FirstEncounterStage,
   type FlashlightState,
   type NoiseEvent,
   type NoiseKind,
+  type PacingSurvivorView,
+  type PacingTelemetry,
+  type PacingTuning,
 }
 
 export const aiControls = [
@@ -66,6 +108,7 @@ export const aiControls = [
       { label: "Active", value: 1 },
     ],
   },
+  ...pacingControls,
 ] as const
 
 export type PortalState = {
@@ -107,86 +150,7 @@ export function spawnTownZombies(
   avoidY: number,
   minClearance = 3.5,
 ): AIAgent[] {
-  const rng = new Rng((town.seed ^ 0x7a4f9b13) >>> 0)
-  const agents: AIAgent[] = []
-  if (count <= 0) return agents
-
-  // Curated street, front-lawn, and interior anchor zones so LOS, flashlight beam, and fog-of-war are immediately inhabited
-  const anchors: [number, number][] = [
-    [30.0, 37.3],
-    [26.8, 38.6],
-    [32.9, 38.6],
-    [27.9, 27.0],
-    [29.6, 29.9],
-    [35.2, 43.2],
-    [21.2, 43.5],
-    [31.5, 46.5],
-    [46.5, 35.5],
-    [47.5, 49.5],
-    [52.0, 43.8],
-    [43.8, 56.0],
-    [28.5, 49.5],
-    [60.0, 43.5],
-    [29.5, 19.5],
-    [44.0, 21.0],
-    [63.0, 50.0],
-    [44.0, 68.0],
-    [16.0, 44.0],
-    [75.0, 44.0],
-  ]
-
-  let nextId = 1
-  for (let aIdx = 0; aIdx < anchors.length && agents.length < count; aIdx++) {
-    const [ax, ay] = anchors[aIdx]!
-    const isHeroAnchor = aIdx < 5
-    const groupSize = isHeroAnchor ? 1 : aIdx < 9 ? 2 + (aIdx % 2) : 2 + rng.int(3)
-    for (let m = 0; m < groupSize && agents.length < count; m++) {
-      const offsetAngle = rng.range(-Math.PI, Math.PI)
-      const offsetDist = isHeroAnchor ? 0 : m === 0 ? rng.range(0, 1.2) : rng.range(1.2, 3.8)
-      const candidate = nav.nearest({
-        x: Math.max(3, Math.min(SIZE - 3, ax + Math.cos(offsetAngle) * offsetDist)),
-        y: Math.max(3, Math.min(SIZE - 3, ay + Math.sin(offsetAngle) * offsetDist)),
-      })
-      if (!isHeroAnchor && Math.hypot(candidate.x - avoidX, candidate.y - avoidY) < minClearance) continue
-      // Allow curated interior anchors (aIdx 3 & 4) inside Ash House; keep random street clusters outside closed houses
-      const allowInterior = aIdx === 3 || aIdx === 4
-      const insideHouse =
-        !allowInterior &&
-        town.buildings.some(
-          (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
-        )
-      if (insideHouse) continue
-      const awayAim = isHeroAnchor
-        ? Math.PI / 2 + (aIdx === 1 ? 0.35 : aIdx === 2 ? -0.4 : aIdx === 4 ? 2.4 : 0.1)
-        : Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
-      agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, awayAim))
-    }
-  }
-
-  let attempts = 0
-  while (agents.length < count && attempts++ < count * 12) {
-    const onStreet = rng.next() < 0.68
-    const rawX = onStreet
-      ? rng.next() < 0.5
-        ? rng.range(38.2, 49.8)
-        : rng.range(8, SIZE - 8)
-      : rng.range(6, SIZE - 6)
-    const rawY = onStreet
-      ? rawX >= 38 && rawX <= 50
-        ? rng.range(8, SIZE - 8)
-        : rng.range(38.2, 49.8)
-      : rng.range(6, SIZE - 6)
-    const candidate = nav.nearest({ x: rawX, y: rawY })
-    if (Math.hypot(candidate.x - avoidX, candidate.y - avoidY) < minClearance) continue
-    const insideHouse = town.buildings.some(
-      (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
-    )
-    if (insideHouse) continue
-    const awayAim = Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
-    agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, awayAim))
-  }
-
-  return agents
+  return spawnLegacyTownZombies(town, nav, count, avoidX, avoidY, minClearance)
 }
 
 /** What the crowd perceives of a survivor. `id` defaults to "player" (the single-player target id). */
@@ -200,25 +164,12 @@ export type AISurvivor = {
   noise: number
 } & SurvivorFlashlightState
 
-function nearestSurvivor(survivors: readonly AISurvivor[], x: number, y: number): AISurvivor | undefined {
-  if (survivors.length <= 1) return survivors[0]
-  let best: AISurvivor | undefined
-  let bestD = Infinity
-  for (const s of survivors) {
-    const d = Math.hypot(s.x - x, s.y - y)
-    if (d < bestD) {
-      bestD = d
-      best = s
-    }
-  }
-  return best
-}
-
 export class OutbreakAISubsystem {
   readonly nav = new GridNav(SIZE, SIZE, 0.5)
   readonly spatial = new SpatialHash(SIZE, SIZE, 4)
   readonly noiseBus = new NoiseBus(64)
   readonly portalStates = new Map<string, PortalState>()
+  readonly pacing = new OutbreakPacingDirector()
   agents: AIAgent[] = []
   config: AIConfig = { ...DEFAULT_AI_CONFIG }
   tick = 0
@@ -226,12 +177,12 @@ export class OutbreakAISubsystem {
   threat = 1
   darkness = 1
   private nextAgentId = 1
+  private manualSpawnOnly = false
   private walls: Rect[] = []
   private closedDoors: Rect[] = []
   private sightBlockers: Rect[] = []
   private solids: Rect[] = []
   private portals: NavPortal[] = []
-  private directorWaveCooldown = 18
   private lastTopologyDigest = -1
   private lastBarriersRef: unknown = null
   private lastDoorsRef: unknown = null
@@ -239,10 +190,30 @@ export class OutbreakAISubsystem {
 
   constructor(town: Town, initialPlayerX = 27.7, initialPlayerY = 41, config: Partial<AIConfig> = {}) {
     Object.assign(this.config, config)
+    this.manualSpawnOnly = this.config.zombieCount === 0
     this.initPortals(town)
     this.rebuildTopology(town)
-    this.agents = spawnTownZombies(town, this.nav, this.config.zombieCount, initialPlayerX, initialPlayerY)
+    this.agents = spawnPacedTownZombies(town, this.nav, this.sightBlockers, this.config, [
+      { x: initialPlayerX, y: initialPlayerY, aim: -Math.PI / 2, flashlightOn: true, flashlightOutput: 1 },
+    ])
     this.nextAgentId = this.agents.reduce((m, a) => Math.max(m, a.id), 0) + 1
+    this.pacing.telemetry = this.pacing.evaluateCurve(
+      this.config,
+      this.config.startHour,
+      0,
+      1,
+      this.agents.length,
+    )
+  }
+
+  /** Re-applies opening pacing placement for the given survivor positions (used when safeRadius/initialDensity change in Lab). */
+  resetOpeningPopulation(town: Town, survivors: readonly PacingSurvivorView[]): void {
+    this.manualSpawnOnly = this.config.zombieCount === 0
+    this.pacing.reset()
+    this.rebuildTopology(town, this.nav.chunkTiles.size > 0 ? new Map(this.nav.chunkTiles) : undefined)
+    this.agents = spawnPacedTownZombies(town, this.nav, this.sightBlockers, this.config, survivors)
+    this.nextAgentId = this.agents.reduce((m, a) => Math.max(m, a.id), 0) + 1
+    this.pacing.stepAfterCrowd(this.nav, this.agents, survivors, this.config, 0, this.manualSpawnOnly)
   }
 
   private initPortals(town: Town): void {
@@ -369,6 +340,7 @@ export class OutbreakAISubsystem {
 
   syncPopulation(town: Town, avoidX: number, avoidY: number): void {
     const desired = Math.max(0, Math.min(100, Math.round(this.config.zombieCount)))
+    this.manualSpawnOnly = desired === 0
     const living = this.agents.filter((a) => a.state !== "dead")
     if (living.length === desired) return
     if (living.length > desired) {
@@ -381,7 +353,14 @@ export class OutbreakAISubsystem {
       }
       return
     }
-    const extra = spawnTownZombies(town, this.nav, desired - living.length + 8, avoidX, avoidY, 7.0)
+    const extra = spawnLegacyTownZombies(
+      town,
+      this.nav,
+      desired - living.length + 8,
+      avoidX,
+      avoidY,
+      Math.max(7.0, this.config.directorPacing > 0 ? this.config.safeRadius * 0.5 : 3.5),
+    )
     for (const a of extra) {
       if (this.agents.filter((z) => z.state !== "dead").length >= desired) break
       a.id = this.nextAgentId++
@@ -510,33 +489,22 @@ export class OutbreakAISubsystem {
       }
     })
 
-    // Optional AI Director pacing: at night or after quiet stretches, gently drift 1-2 distant idle roamers toward active street corridors
-    if (this.config.directorPacing > 0) {
-      this.directorWaveCooldown -= dt * nightFactor
-      if (this.directorWaveCooldown <= 0) {
-        this.directorWaveCooldown = 14 + (this.tick % 9)
-        let nudged = 0
-        for (let i = 0; i < this.agents.length && nudged < 2; i++) {
-          const a = this.agents[i]!
-          if (a.state !== "wander") continue
-          const player = nearestSurvivor(survivors, a.x, a.y)
-          if (!player) break
-          const d = Math.hypot(a.x - player.x, a.y - player.y)
-          if (d > 22 && d < 52) {
-            const ang = Math.atan2(player.y - a.y, player.x - a.x) + ((i % 2 === 0 ? 1 : -1) * 0.35)
-            const stepDist = Math.min(14, d - 16)
-            const dest = this.nav.nearest({
-              x: a.x + Math.cos(ang) * stepDist,
-              y: a.y + Math.sin(ang) * stepDist,
-            })
-            a.wanderX = dest.x
-            a.wanderY = dest.y
-            a.timer = 6.5
-            nudged++
-          }
-        }
-      }
-    }
+    // Opening & Night Pacing Director: exploration/noise ramp, first 1–3 zombie encounter, backstage trickle spawns & waves
+    this.pacing.stepBeforeCrowd(
+      town,
+      this.nav,
+      this.agents,
+      survivors,
+      this.sightBlockers,
+      this.noiseBus,
+      this.config,
+      hour,
+      time,
+      dt,
+      this.tick,
+      () => this.nextAgentId++,
+      this.manualSpawnOnly,
+    )
 
     const res = stepAICrowd(this.agents, {
       time,
@@ -556,6 +524,15 @@ export class OutbreakAISubsystem {
       config: threatConfig,
       targets,
     })
+
+    this.pacing.stepAfterCrowd(
+      this.nav,
+      this.agents,
+      survivors,
+      this.config,
+      time,
+      this.manualSpawnOnly,
+    )
 
     let topologyChanged = false
     for (const bash of res.bashes) {

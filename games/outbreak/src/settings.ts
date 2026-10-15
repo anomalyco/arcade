@@ -1,17 +1,21 @@
-import { DEFAULT_FEEL_SETTINGS, type FeelSettings } from "@arcade/kit/feel"
+import { cameraShakeDefaults, type CameraShakeSettings } from "@arcade/kit/client/camera"
+import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
 import type { QualityMode } from "@arcade/kit/quality"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
+import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
+import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
   DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
@@ -59,17 +63,14 @@ export type OutbreakDayCycleSettings = {
   lookPreset: LookPresetId
 }
 
-export type OutbreakViewSettings = {
+export type OutbreakViewSettings = CameraShakeSettings & {
   zoom: number
   diagnostic: number
   quality: QualityMode
 }
 
-export type OutbreakCombatSettings = {
+export type OutbreakCombatSettings = MeleeTuning & {
   infiniteAmmo: number
-}
-
-export type OutbreakFeelSettings = FeelSettings & {
   bloodStyle: number
 }
 
@@ -110,7 +111,7 @@ export const DEFAULT_OUTBREAK_MATERIALS: OutbreakMaterialSettings = {
 }
 
 export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
-  hour: 18,
+  hour: DEFAULT_AI_CONFIG.startHour,
   timeScale: 120,
   dayNightLook: 1,
   lookPreset: "noir",
@@ -120,15 +121,18 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   zoom: 46,
   diagnostic: 0,
   quality: "auto",
+  ...cameraShakeDefaults(),
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
+  bloodStyle: 1,
+  ...DEFAULT_MELEE_TUNING,
 }
 
-export const DEFAULT_OUTBREAK_FEEL: OutbreakFeelSettings = {
-  ...DEFAULT_FEEL_SETTINGS,
-  bloodStyle: 1,
+export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
+  ...motionBlurDefaults(),
+  strength: 0,
 }
 
 export type OutbreakSubsystemMap = {
@@ -142,6 +146,7 @@ export type OutbreakSubsystemMap = {
   zombies: OutbreakZombieSettings
   survivor: SurvivorAimTuning
   hud: HudSettings
+  map: MapSettings
   audio: AudioSettings
   progression: ProgressionTuning
   world: OutbreakWorldSettings
@@ -150,7 +155,8 @@ export type OutbreakSubsystemMap = {
   dayCycle: OutbreakDayCycleSettings
   view: OutbreakViewSettings
   combat: OutbreakCombatSettings
-  feel: OutbreakFeelSettings
+  motion: MotionBlurSettings
+  vehicle: VehicleTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -171,6 +177,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakZombieSettings &
   SurvivorAimTuning &
   HudSettings &
+  MapSettings &
   AudioSettings &
   ProgressionTuning &
   OutbreakWorldSettings &
@@ -179,7 +186,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakDayCycleSettings &
   OutbreakViewSettings &
   OutbreakCombatSettings &
-  OutbreakFeelSettings
+  MotionBlurSettings &
+  VehicleTuning
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -192,6 +200,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "zombies",
   "survivor",
   "hud",
+  "map",
   "audio",
   "progression",
   "world",
@@ -200,7 +209,8 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "dayCycle",
   "view",
   "combat",
-  "feel",
+  "motion",
+  "vehicle",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -218,6 +228,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     zombies: { ...DEFAULT_OUTBREAK_ZOMBIES },
     survivor: { ...survivorAimTuning },
     hud: { ...DEFAULT_HUD_SETTINGS },
+    map: { ...DEFAULT_MAP_SETTINGS },
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
     world: { ...DEFAULT_OUTBREAK_WORLD },
@@ -226,7 +237,8 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     dayCycle: { ...DEFAULT_OUTBREAK_DAY_CYCLE },
     view: { ...DEFAULT_OUTBREAK_VIEW },
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
-    feel: { ...DEFAULT_OUTBREAK_FEEL },
+    motion: { ...DEFAULT_OUTBREAK_MOTION },
+    vehicle: { ...DEFAULT_VEHICLE_TUNING },
   }
 }
 
@@ -246,6 +258,9 @@ const KEY_ROUTING: Readonly<Record<string, KeyTarget>> = (() => {
     }
   }
   map.aiWalkSpeed = { subsystem: "ai", field: "walkSpeed", sample: DEFAULTS_TEMPLATE.ai.walkSpeed }
+  for (const field of ["startHour", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
+    map[`pacing.${field}`] = { subsystem: "ai", field, sample: DEFAULTS_TEMPLATE.ai[field] }
+  }
   return map
 })()
 
@@ -550,7 +565,12 @@ export function migrateOutbreakUrlParams(
     if (!routed) continue
     if (typeof routed.sample === "number") {
       const n = Number(rawVal)
-      if (Number.isFinite(n)) setField(routed.subsystem, routed.field, n)
+      if (Number.isFinite(n)) {
+        setField(routed.subsystem, routed.field, n)
+        if (routed.field === "startHour" && !params.has("hour") && !params.has("dayCycle.hour")) {
+          setField("dayCycle", "hour", n)
+        }
+      }
     } else if (typeof routed.sample === "boolean") {
       if (rawVal === "1" || rawVal === "true") setField(routed.subsystem, routed.field, true)
       else if (rawVal === "0" || rawVal === "false") setField(routed.subsystem, routed.field, false)

@@ -5,6 +5,8 @@ const muscle: Character = { cylinders: 8, idle: 780, redline: 6200, ratios: [3.2
 const van: Character = { cylinders: 6, idle: 680, redline: 4600, ratios: [3.5, 2.15, 1.45, 1], final: 3.6, exhaust: 480, intake: 950, uneven: 0.2 }
 export const characters: Record<string, Character> = {
   muscle,
+  sedan: { ...muscle, cylinders: 6, idle: 740, redline: 5800, final: 3.55, exhaust: 620, intake: 1350, uneven: 0.16 },
+  pickup: { ...muscle, cylinders: 8, idle: 700, redline: 5200, final: 4.1, exhaust: 540, intake: 1150, uneven: 0.26 },
   jeep: { ...muscle, cylinders: 6, redline: 5400, final: 4.6, exhaust: 620, uneven: 0.22 },
   scooter: { cylinders: 1, idle: 1600, redline: 9000, ratios: [3.2, 2.3, 1.7, 1.25], final: 5.5, exhaust: 1700, intake: 2800, uneven: 0.12 },
   compact: { cylinders: 4, idle: 950, redline: 7200, ratios: [3.6, 2.25, 1.6, 1.2, 0.94], final: 4.3, exhaust: 1100, intake: 2100, uneven: 0.07 },

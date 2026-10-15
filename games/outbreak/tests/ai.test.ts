@@ -26,10 +26,13 @@ describe("Outbreak AI & survival combat integration", () => {
   test("spawns deterministic wandering zombies and emits noise on door/window/sprint actions", () => {
     const a = new LocalSession(7)
     const b = new LocalSession(7)
-    expect(a.view.zombies.length).toBeGreaterThan(20)
+    expect(a.view.zombies.length).toBeGreaterThanOrEqual(6)
+    expect(a.view.zombies.length).toBeLessThanOrEqual(10)
     expect(a.view.zombies.map((z) => ({ id: z.id, x: z.x, y: z.y, state: z.state }))).toEqual(
       b.view.zombies.map((z) => ({ id: z.id, x: z.x, y: z.y, state: z.state })),
     )
+    const full = new LocalSession(7, 7, 0.22, { initialDensity: 1, safeRadius: 3.5 })
+    expect(full.view.zombies.length).toBeGreaterThan(20)
 
     // Sprint to emit sprint noise on the bus and attract nearby zombies
     const p = a.view.player
@@ -205,7 +208,7 @@ describe("Outbreak AI & survival combat integration", () => {
       zombieTuning,
       true,
     )
-    expect(batches.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
+    expect(batches.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000])
 
     const first = session.view.zombies[0]!
     const stateBefore = crowd.getAgentBones(first.id)
@@ -226,6 +229,6 @@ describe("Outbreak AI & survival combat integration", () => {
       true,
     )
     // 500 zombies minus 1 detached upperArm/foreArm + 1 debris piece each = 1000
-    expect(batchesAfter.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000])
+    expect(batchesAfter.map((b) => b.count)).toEqual([500, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000])
   })
 })
