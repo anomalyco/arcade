@@ -12,7 +12,7 @@
 // and root changes check everything, a games/outbreak change checks Outbreak and the Lab, and docs check nothing.
 //
 // Both modes split each target's `check` script into its commands and run them in parallel. Test suites run one at
-// a time with half the cores and a 20 s per-test timeout, so a loaded Studio doesn't fail them. The fast path adds `tsc --incremental` build info under
+// a time, game suites with `bun test --parallel` over half the cores, all with a 20 s per-test timeout. The fast path adds `tsc --incremental` build info under
 // node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
 // Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
@@ -111,9 +111,11 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
         kind = "test"
         // Getaway and Blackout also run packages/kit's suite; when the packages target is in the plan it runs once there.
         if (dedupeKit) cmd = cmd.replace(/\s+\.\.\/\.\.\/packages\/kit\b/, "")
-        // bun's default is one worker per core, which oversubscribes the shared Studio. Several simulation tests take
-        // 1.5-2.5 s idle, so the 5 s default timeout (a hang guard) fails them under load; CI keeps the default.
-        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`)
+        // Game suites run in parallel worker processes here (carrier 19 s -> 8 s) but not in CI, where 4 vCPUs push
+        // the AI tick budget and carrier's 3 s simulation tests past their limits. Half the cores, because one worker
+        // per core oversubscribes the shared Studio, and a 20 s per-test timeout (bun's 5 s default is a hang guard
+        // that slow simulation tests hit under load).
+        if (target.game && !/--parallel\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, `bun test --parallel=${testWorkers}`)
         if (!/--timeout\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --timeout=20000")
       } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)

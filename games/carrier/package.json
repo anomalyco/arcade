@@ -7,11 +7,11 @@
     "dev:client": "vite --host 0.0.0.0 --port 5197 --strictPort",
     "dev:server": "wrangler dev --port 8797",
     "build": "bun scripts/build-id.ts && vite build",
-    "test": "bun scripts/build-id.ts && bun test --parallel --timeout=20000",
+    "test": "bun scripts/build-id.ts && bun test",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.scripts.json",
     "build:id": "bun scripts/build-id.ts",
-    "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun test --parallel --timeout=20000 && vite build",
+    "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun test && vite build",
     "shot": "bun scripts/shot.ts",
     "deploy": "bun scripts/deploy.ts"
   },
