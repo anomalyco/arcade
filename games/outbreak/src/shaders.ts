@@ -1,6 +1,16 @@
-import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
+import {
+  makeLookPostShader,
+  makeLookSceneShader,
+  makeSceneShader,
+  spriteShader,
+  postShader,
+  type LookVariantMode,
+  type PostFinishOptions,
+  type SceneHooks,
+} from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
@@ -132,7 +142,12 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
     `,
   // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
   solidCutaway: "",
-  surface: /* wgsl */ `
+  surface: buildOutbreakSurfaceWgsl(true),
+  lookSurface: buildOutbreakSurfaceWgsl(false),
+}
+
+function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string {
+  return /* wgsl */ `
   outbreakFlashMask = 0.0;
   let nightLamps = clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0);
   if (mat == 6) {
@@ -217,7 +232,7 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
       }
     }
     col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);
-    if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }
+    ${includeLampAirAndActorShadow ? "if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }" : ""}
     // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
@@ -248,12 +263,12 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
     outbreakFlashMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2) * outbreakSeen;
   }
   if (mat == 6) { outbreakFlashMask = 0.55; }
-  if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }
+  ${includeLampAirAndActorShadow ? "if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }" : ""}
   if (i32(round(F.map.z)) == 8) {
     let fieldDiag = fieldSight(o.world, n);
     col = vec3f(fieldDiag.x, fieldDiag.y * 0.35, select(0.0, 0.25, mat == 12));
   }
-`,
+`
 }
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */
@@ -263,5 +278,8 @@ export const shaders = {
   scene: makeSceneShader(outbreakSceneHooks),
   lookScene: makeLookSceneShader(outbreakSceneHooks),
   lookPost: makeLookPostShader(outbreakPostFinish),
+  lookSceneVariant: (variant: LookVariantMode) => makeLookSceneShader(outbreakSceneHooks, variant),
+  lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
+  volume: flashlightVolumeShader,
 }

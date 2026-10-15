@@ -118,6 +118,11 @@ export class Survivor {
   bones: BonePose = {}
   gun: Frame | null = null
   mag: Frame | null = null
+  /**
+   * Where the flashlight sits this frame and the way it points: the pistol's light under the barrel when a pistol is
+   * drawn (it follows low-ready, raised aim, recoil and reload), otherwise the right hand pointing along the aim.
+   */
+  readonly light: { p: V3; d: V3; mounted: boolean } = { p: [0, 1.3, 0], d: [1, 0, 0], mounted: false }
   aimWeight = 0
   holdRemaining = 0
   recBack = spring()
@@ -792,6 +797,15 @@ export class Survivor {
     }
 
     this.prevSupportY = curSupportY
+    if (this.gun) {
+      this.light.p = at(this.gun, 0.15, -0.025, 0)
+      this.light.d = [this.gun.x[0], this.gun.x[1], this.gun.x[2]]
+      this.light.mounted = true
+    } else {
+      this.light.p = at(arms.fa[1]!, 0, -RIG.fore - 0.04, 0)
+      this.light.d = [Math.cos(p.aim), 0, Math.sin(p.aim)]
+      this.light.mounted = false
+    }
     this.bones = { pelvis, torso, head }
     ;(this.bones as BonePose & { gun?: Frame | null }).gun = this.gun
     this.batches.length = 0

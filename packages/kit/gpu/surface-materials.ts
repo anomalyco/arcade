@@ -1,6 +1,6 @@
 import { Rng } from "../sim/rng"
 import { DEFAULT_TEXTURE_MANIFEST, TEXTURE_LAYER, type TextureAssetId } from "../textures/manifest"
-import { wgslStruct } from "./wgsl"
+import { resolveWgsl, wgslSlot, wgslSnippet, wgslStruct } from "./wgsl"
 
 export type MaterialRecipeId =
   | "wood_planks"
@@ -765,19 +765,79 @@ function defaultRecipeStructWgsl(id: MaterialRecipeId): string {
     .join(", ")})`
 }
 
-/**
- * Shared WGSL procedural + projected-texture material functions used by both the production scene shader (Outbreak)
- * and the interactive Lab Materials workbench.
- * Filter widths (`surfaceFootprint`, `surfaceGradX`, `surfaceGradY`) must be initialized in uniform control flow
- * before calling these functions.
- */
-export const surfaceMaterialCoreWgsl = /* wgsl */ `
+export const defaultEvalAsphaltConcreteWgsl = /* wgsl */ `/** Recipe 3: Asphalt road & concrete sidewalk slabs with projected aggregate/concrete textures, tar seams, and worn joints. */
+fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
+  let scale = max(0.25, r.scale);
+  let slabSize = max(0.4, r.elementRatio) / scale;
+  let irreg = r.irregularity;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let jWidth = r.jointWidth;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
+
+  var col = baseTint;
+  var localRough = r.roughness;
+  var cavity = 1.0;
+
+  if (isConcrete) {
+    let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
+    let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
+    let q = p / slabSize + warp;
+    let cell = floor(q);
+    let fq = fract(q);
+    let hSlab = hash2(cell * 1.73 + 0.9) - 0.5;
+    let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
+    col *= (0.94 + hSlab * 0.18 * colVar) * vec3f(1.0 + hWarm * 0.06 * colVar, 1.0 + hWarm * 0.02 * colVar, 1.0 - hWarm * 0.07 * colVar);
+
+    let sx = seam(q.x, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    let sy = seam(q.y, max(0.003, jWidth * 0.16), 1.0 / slabSize);
+    var joint = sx * sy;
+    if (isCurb) {
+      joint = seam(q.x * 0.75, 0.006, 0.75 / slabSize);
+      col *= vec3f(0.84, 0.86, 0.90);
+    }
+    let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
+    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
+    let grit = grain(p, 10.5 * gScale) * 0.16;
+    let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
+    col *= 0.95 + grit + macroTone - edgeDirt;
+    col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
+    cavity = joint;
+  } else {
+    let coarseAgg = grain(p, 7.2 * gScale) * 0.24;
+    let patchField = surfaceNoise(p * 0.42 * scale + vec2f(3.1, 6.7));
+    let tarPatch = smoothstep(0.58 - wear * 0.15, 0.68 - wear * 0.10, patchField) * wear;
+    let crackField = abs(surfaceNoise(p * 0.78 * scale + vec2f(patchField * 0.45)) - 0.5);
+    let crackAa = max(surfaceFootprint * 0.78 * scale, 0.006);
+    let crack = (1.0 - smoothstep(0.006, 0.016 + crackAa, crackField)) * step(0.45, patchField) * wear;
+    let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
+    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
+    let leafCell = floor(p * 9.0);
+    let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
+    let leafMask = step(0.946, leafHash) * (1.0 - smoothstep(0.0, 1.65, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.0));
+
+    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
+    col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
+    col = mix(col, col * 0.50, crack * 0.68);
+    col = mix(col, select(vec3f(0.34, 0.21, 0.08), vec3f(0.46, 0.30, 0.12), fract(leafHash * 17.3) > 0.5), leafMask * 0.78);
+    localRough = clamp(localRough - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
+    cavity = (1.0 - crack * 0.4) * gutterShade;
+  }
+
+  return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
+}`
+
+export const asphaltConcreteSlot = wgslSlot<string>("asphaltConcrete", defaultEvalAsphaltConcreteWgsl)
+
+export const surfaceMaterialCoreSnippet = wgslSnippet(
+  "surfaceMaterialCore",
+  (ctx) => /* wgsl */ `
 var<private> surfaceFootprint: f32;
 var<private> surfaceTime: f32;
 var<private> surfaceNormalShift: vec3f;
 var<private> surfaceAlpha: f32;
-
-${MaterialRecipeStruct.wgsl}
 
 fn recipeBaseColor(r: MaterialRecipe) -> vec3f {
   return vec3f(r.baseR, r.baseG, r.baseB);
@@ -1073,69 +1133,7 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
   return SurfaceSample(col, roughnessToGloss(localRough, 0.03), localRough, 1.0 - baseWear);
 }
 
-/** Recipe 3: Asphalt road & concrete sidewalk slabs with projected aggregate/concrete textures, tar seams, and worn joints. */
-fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.scale);
-  let slabSize = max(0.4, r.elementRatio) / scale;
-  let irreg = r.irregularity;
-  let gScale = max(0.25, r.grainScale);
-  let colVar = r.colorVariation;
-  let jWidth = r.jointWidth;
-  let wear = r.wear;
-  let macroVar = r.macroVariation;
-
-  var col = baseTint;
-  var localRough = r.roughness;
-  var cavity = 1.0;
-
-  if (isConcrete) {
-    let isCurb = (p.y >= 39.78 && p.y <= 40.02) || (p.y >= 47.98 && p.y <= 48.22) || (p.x >= 39.78 && p.x <= 40.02) || (p.x >= 47.98 && p.x <= 48.22);
-    let warp = (surfaceNoise(p * 1.4 + 2.3) - 0.5) * 0.035 * irreg;
-    let q = p / slabSize + warp;
-    let cell = floor(q);
-    let fq = fract(q);
-    let hSlab = hash2(cell * 1.73 + 0.9) - 0.5;
-    let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
-    col *= (0.94 + hSlab * 0.18 * colVar) * vec3f(1.0 + hWarm * 0.06 * colVar, 1.0 + hWarm * 0.02 * colVar, 1.0 - hWarm * 0.07 * colVar);
-
-    let sx = seam(q.x, max(0.003, jWidth * 0.16), 1.0 / slabSize);
-    let sy = seam(q.y, max(0.003, jWidth * 0.16), 1.0 / slabSize);
-    var joint = sx * sy;
-    if (isCurb) {
-      joint = seam(q.x * 0.75, 0.006, 0.75 / slabSize);
-      col *= vec3f(0.84, 0.86, 0.90);
-    }
-    let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-    let edgeDirt = (1.0 - smoothstep(0.0, 0.09 + wear * 0.08, edgeDist)) * wear * 0.18;
-    let grit = grain(p, 10.5 * gScale) * 0.16;
-    let macroTone = (warp / max(0.001, 0.035 * irreg)) * 0.18 * macroVar;
-    col *= 0.95 + grit + macroTone - edgeDirt;
-    col = mix(col * vec3f(0.38, 0.37, 0.32), col, joint);
-    cavity = joint;
-  } else {
-    let coarseAgg = grain(p, 7.2 * gScale) * 0.24;
-    let patchField = surfaceNoise(p * 0.42 * scale + vec2f(3.1, 6.7));
-    let tarPatch = smoothstep(0.58 - wear * 0.15, 0.68 - wear * 0.10, patchField) * wear;
-    let crackField = abs(surfaceNoise(p * 0.78 * scale + vec2f(patchField * 0.45)) - 0.5);
-    let crackAa = max(surfaceFootprint * 0.78 * scale, 0.006);
-    let crack = (1.0 - smoothstep(0.006, 0.016 + crackAa, crackField)) * step(0.45, patchField) * wear;
-    let macroTone = (surfaceNoise(p * 0.20 + vec2f(8.3, 1.4)) - 0.5) * 0.24 * macroVar;
-    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
-    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.38, gutterDist)) * 0.36;
-    let leafCell = floor(p * 9.0);
-    let leafHash = hash2(leafCell + vec2f(4.7, 9.1));
-    let leafMask = step(0.946, leafHash) * (1.0 - smoothstep(0.0, 1.65, gutterDist)) * (1.0 - smoothstep(0.18, 0.55, surfaceFootprint * 9.0));
-
-    col *= (0.96 + coarseAgg + macroTone + (patchField - 0.5) * 0.12 * colVar) * gutterShade;
-    col = mix(col, col * vec3f(0.76, 0.78, 0.82), tarPatch * 0.55);
-    col = mix(col, col * 0.50, crack * 0.68);
-    col = mix(col, select(vec3f(0.34, 0.21, 0.08), vec3f(0.46, 0.30, 0.12), fract(leafHash * 17.3) > 0.5), leafMask * 0.78);
-    localRough = clamp(localRough - tarPatch * 0.08 + crack * 0.08, 0.05, 1.0);
-    cavity = (1.0 - crack * 0.4) * gutterShade;
-  }
-
-  return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
-}
+${ctx.get(asphaltConcreteSlot)}
 
 fn evalMulchBed(p: vec2f, baseTint: vec3f, scale: f32, gScale: f32) -> SurfaceSample {
   let barkG = surfaceNoiseGrad(vec2f(p.x * 4.2, p.y * 6.5) * gScale);
@@ -1299,7 +1297,24 @@ fn evalKitchenTile(p: vec2f, baseTint: vec3f) -> SurfaceSample {
   col = mix(col * vec3f(0.24, 0.20, 0.16), col * (1.0 - edgeWear - max(0.0, grime)), joint);
   return SurfaceSample(col, vec2f(26.0, 0.07 * joint), 0.76, joint);
 }
-`
+`,
+  [MaterialRecipeStruct],
+)
+
+export function buildSurfaceMaterialDeclarationsWgsl(overrides?: { asphaltConcrete?: string }): string {
+  return resolveWgsl(
+    surfaceMaterialCoreSnippet,
+    overrides?.asphaltConcrete ? [[asphaltConcreteSlot, overrides.asphaltConcrete]] : [],
+  )
+}
+
+/**
+ * Shared WGSL procedural + projected-texture material functions used by both the production scene shader (Outbreak)
+ * and the interactive Lab Materials workbench.
+ * Filter widths (`surfaceFootprint`, `surfaceGradX`, `surfaceGradY`) must be initialized in uniform control flow
+ * before calling these functions.
+ */
+export const surfaceMaterialCoreWgsl = buildSurfaceMaterialDeclarationsWgsl()
 
 /** Opt-in matte outdoor & architectural finishes. Games assign materials/palettes; existing shaders stay identical. */
 export const surfaceMaterialDeclarations = surfaceMaterialCoreWgsl

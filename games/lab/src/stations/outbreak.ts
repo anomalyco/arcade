@@ -77,5 +77,6 @@ export default defineStation({
   links: [
     { label: "Play Outbreak", href: "/arcade/outbreak/?peaceful=1&seed=7" },
     { label: "Inventory and workbench", href: "/arcade/lab/?overworld&station=outbreak-progression" },
+    { label: "Flashlight beam off / on (live game)", href: "/arcade/lab/?overworld&station=outbreak-flashlight" },
   ],
 })
