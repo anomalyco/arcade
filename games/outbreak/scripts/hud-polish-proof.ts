@@ -4,7 +4,7 @@
 // Run from games/outbreak: hivemind run --kind browser -- bun scripts/hud-polish-proof.ts
 // Env: HUD_OUT (folder), HUD_DPR (comma list, default 2), HUD_ONLY (comma list of surface names).
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium, type Page } from "playwright-core"
 import { createServer } from "vite"
@@ -106,6 +106,9 @@ async function faceOpening(page: Page, kind: "door" | "window", keyed = false) {
 
 async function snap(page: Page, name: string, dpr: number, caption: string, selector: string | null, pad = 16) {
   await settle(page)
+  // One more drawn frame after motion settles, as the live game would draw (HUD pixel snapping runs per frame).
+  await page.evaluate(() => (window as any).__arcadeHarness.step())
+  await page.waitForTimeout(50)
   const file = resolve(out, `${name}@${dpr}x.png`)
   await page.screenshot({ path: file })
   const shot: Shot = { name, dpr, caption, file }
@@ -133,9 +136,9 @@ async function snap(page: Page, name: string, dpr: number, caption: string, sele
         let total = 0
         for (const r of roots) {
           const b = r.getBoundingClientRect()
-          if (b.width === 0) continue
+          if (b.width === 0 || !r.textContent?.trim()) continue
           total++
-          if (!on(b.left) || !on(b.top)) bad.push(`surface ${r.id || r.className}: ${(b.left * dpr).toFixed(2)},${(b.top * dpr).toFixed(2)}`)
+          if (!on(b.left) || !on(b.top)) bad.push(`surface ${r.id || String(r.className)}: ${(b.left * dpr).toFixed(2)},${(b.top * dpr).toFixed(2)}`)
           const walker = document.createTreeWalker(r, NodeFilter.SHOW_TEXT)
           const seen = new Set<Element>()
           for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -192,23 +195,23 @@ try {
       await stage(page, { x: 44, y: 44, aim: 0 })
       await sim(page, kit)
       await step(page, 2)
-      await snap(page, "dock-active", dpr, "Belt and hand slots right after a change", "#hud")
+      await snap(page, "dock-active", dpr, "Belt and hand slots right after a change", "#dock")
       await page.waitForTimeout(4200)
       await step(page, 1)
-      await snap(page, "dock-idle", dpr, "Belt and hand slots after a few idle seconds", "#hud")
+      await snap(page, "dock-idle", dpr, "Belt and hand slots after a few idle seconds", "#dock")
       await sim(page, `hud.togglePack()`)
       await step(page, 2)
-      await snap(page, "pack-open", dpr, "Tab: the pack open", "#hud")
+      await snap(page, "pack-open", dpr, "Tab: the pack open", "#dock, #pack-sheet")
       await sim(page, `hud.close()`)
       await step(page, 2)
-      await snap(page, "pack-closed", dpr, "Tab again: the pack closed", "#hud")
+      await snap(page, "pack-closed", dpr, "Tab again: the pack closed", "#dock")
     }
 
     if (want("craft")) {
       await stage(page, { x: 44, y: 44, aim: 0, hour: 22 })
       await sim(page, `${kit}; ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:bandage", store: "team/known" }); ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:lure", store: "team/known" }); if (!hud.craftOpen) hud.toggleCraft()`)
       await step(page, 2)
-      await snap(page, "field-craft", dpr, "Hold Q: field craft", "#hud")
+      await snap(page, "field-craft", dpr, "Hold Q: field craft", "#craft")
     }
 
     if (want("door") && (await faceOpening(page, "door"))) await snap(page, "prompt-door", dpr, "Door prompt: tap E and hold E", "#prompt", 24)
@@ -232,7 +235,7 @@ try {
       await snap(page, "prompt-search", dpr, "Unsearched container: E search, Shift+E smash", "#prompt", 24)
       await step(page, 1, { interact: true })
       await step(page, 30)
-      await snap(page, "searching", dpr, "Search in progress", ".callouts, #prompt", 40)
+      await snap(page, "searching", dpr, "Search in progress", ".callout-body, #prompt", 40)
       await step(page, 60)
       await snap(page, "prompt-strip", dpr, "Searched: the strip of contents", "#prompt", 24)
     }
@@ -256,13 +259,13 @@ try {
         h.hud.demo(h.session().view.player)
       })
       await step(page, 6, { sprint: true, mx: 1 })
-      await snap(page, "callouts-ring", dpr, "Callouts below the feet and the ground ring", ".callouts .callout, .ground-ring, .vital", 60)
+      await snap(page, "callouts-ring", dpr, "Callouts below the feet and the ground ring", ".callout-body, .ground-ring path, .vital", 40)
     }
 
     if (want("markers")) {
       await sim(page, `h.freeze(true); h.reset(7); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); h.stageProgression("handoff")`)
       await step(page, 24)
-      await snap(page, "markers", dpr, "Drop, ping and noisemaker markers", "#markers", 40)
+      await snap(page, "markers", dpr, "Drop, ping and noisemaker markers", "#markers .marker", 40)
     }
 
     if (want("teammate")) {
@@ -295,7 +298,8 @@ try {
         h.stageVehicle("night-headlights")
         for (let i = 0; i < 8; i++) await h.step(1 / 60, { mx: 0, my: 0 })
       })
-      await snap(page, "vehicle", dpr, "Driving: the vehicle HUD", "#vehicle-hud, #hud", 16)
+      await snap(page, "vehicle", dpr, "Driving: the vehicle HUD", "#vehicle-hud, #dock", 16)
+      if (process.env.HUD_DEBUG) console.log(await page.evaluate(() => { const e = document.querySelector<HTMLElement>("#vehicle-hud")!; const p = e.offsetParent as HTMLElement; return { tr: e.style.translate, ol: e.offsetLeft, ot: e.offsetTop, p: p?.id, pr: p?.getBoundingClientRect().toJSON(), r: e.getBoundingClientRect().toJSON(), anims: e.getAnimations().length } }))
       await page.evaluate(async () => {
         const h = (window as any).__arcadeHarness
         h.stageVehicle("driveway")
@@ -307,7 +311,11 @@ try {
     assert.deepEqual(errors, [], `page errors at ${dpr}x`)
     await browser.close()
   }
-  writeFileSync(resolve(out, "index.json"), JSON.stringify({ shots }, null, 2))
+  // Merge with earlier runs into the same folder, so a partial run (HUD_ONLY) keeps the other surfaces' stills.
+  const index = resolve(out, "index.json")
+  const prior: Shot[] = existsSync(index) ? (JSON.parse(readFileSync(index, "utf8")).shots ?? []) : []
+  const merged = [...prior.filter((p) => !shots.some((s) => s.name === p.name && s.dpr === p.dpr)), ...shots]
+  writeFileSync(index, JSON.stringify({ shots: merged }, null, 2))
   for (const s of shots) if (s.offGrid) console.log(`${s.name}@${s.dpr}x: ${s.offGrid.total - s.offGrid.bad.length}/${s.offGrid.total} text boxes on the device-pixel grid${s.offGrid.bad.length ? `\n  ${s.offGrid.bad.slice(0, 4).join("\n  ")}` : ""}`)
   console.log(`hud-polish proof: ${shots.length} stills in ${out}`)
 } finally {

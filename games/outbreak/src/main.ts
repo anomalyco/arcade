@@ -647,6 +647,7 @@ async function main() {
     settings,
     feelTracker,
     hud,
+    inventoryHud,
     map,
     coop,
     lab,

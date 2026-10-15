@@ -11,17 +11,6 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #battery[data-low="true"] #battery-fill { background: #e09a48 }
 #stamina[data-exhausted="true"] #stamina-fill, #battery[data-depleted="true"] #battery-fill { background: #d96b43 }
 #status { padding: 8px 11px; border: 1px solid #ffffff1c; border-radius: 5px; background: #121919bc; font-variant-numeric: tabular-nums }
-#vehicle-hud { pointer-events: none; display: flex; flex-direction: column; gap: 5px; padding: 7px 12px; border: 1px solid #ffffff29; border-radius: 7px; background: #0f1515eb; color: #ece9dc; font-size: 11px; box-shadow: 0 6px 18px #00000080 }
-#vehicle-hud[hidden] { display: none !important }
-#vehicle-hud .vh-top { display: flex; align-items: center; gap: 14px; font-size: 10.5px; letter-spacing: .08em; color: #a9ad9f; font-variant-numeric: tabular-nums }
-#vehicle-hud .vh-top b { color: #f0d584; font-weight: 600; letter-spacing: .12em }
-#vehicle-hud .vh-top .low, #vehicle-hud .vh-warn { color: #e0894a; font-weight: 600 }
-#vehicle-hud .vh-bar { display: flex; gap: 4px }
-#vehicle-hud .vh-bar i { flex: 1; min-width: 22px; height: 6px; border-radius: 2px; border: 1px solid #ffffff30; background: #0b1011 }
-#vehicle-hud .vh-bar i.on { background: #c5cfb8 }
-#vehicle-hud .vh-bar.low i.on { background: #d96b43 }
-#vehicle-hud .vh-keys { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #c9c7b9 }
-#vehicle-hud .vh-keys .sep { opacity: .45 }
 /* A page held up after reading it (Discovery): flyer, chart or photo; drawings only. */
 #glance { position: fixed; left: 76%; top: 42%; z-index: 12; pointer-events: none; width: 200px; height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 14px; box-sizing: border-box; border-radius: 2px; box-shadow: 0 14px 40px #000000a0; transform: translate(-50%, -50%) rotate(-1.5deg) }
 #glance[hidden] { display: none }

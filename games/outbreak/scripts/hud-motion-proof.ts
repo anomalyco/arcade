@@ -303,6 +303,36 @@ try {
     await trace(page, "prompt-take", "Taking the first aid kit: the strip resizes around what is left", async () => (await step(page, 1, { pick: { mode: "take", index: 1 } }), await step(page, 2)), [...promptSel, "#prompt .item"], "#prompt", 600)
   }
 
+  if (want("craft")) {
+    await stage(page, { x: 44, y: 44, aim: 0, hour: 22 })
+    await sim(page, `${kit}; ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:bandage", store: "team/known" })`)
+    await step(page, 2)
+    await page.waitForTimeout(800)
+    await trace(page, "craft-open", "Hold Q: field craft rises out of the dock", async () => (await sim(page, `hud.toggleCraft()`), await step(page, 1)), ["#craft", ...dockSel], "#craft, #dock", 600)
+    await trace(page, "craft-close", "Release: field craft folds back down", async () => (await sim(page, `hud.close()`), await step(page, 1)), ["#craft", ...dockSel], "#craft, #dock", 400)
+  }
+
+  if (want("map")) {
+    await stage(page, { x: 44, y: 44, aim: 0 })
+    await trace(page, "map-open", "N: the map sheet settles in", async () => (await sim(page, `h.map.toggle()`), await step(page, 1)), [".obmap", ".obmap-sheet"], ".obmap-sheet", 600)
+    await trace(page, "map-close", "N again: the sheet fades out", async () => (await sim(page, `h.map.toggle()`), await step(page, 1)), [".obmap", ".obmap-sheet"], ".obmap-sheet", 400)
+  }
+
+  if (want("vehicle")) {
+    await page.evaluate(async () => {
+      const h = (window as any).__arcadeHarness
+      h.freeze(true)
+      h.reset(7)
+      h.setLab("timeScale", 0)
+      h.inventoryHud.close()
+      h.stageVehicle("driveway")
+      for (let i = 0; i < 4; i++) await h.step(1 / 60, { mx: 0, my: 0 })
+    })
+    await page.waitForTimeout(800)
+    await trace(page, "vehicle-enter", "Getting in: the prompt leaves and the gauge and key hints rise in", async () => (await step(page, 1, { interact: true }), await step(page, 3)), ["#vehicle-hud", "#vehicle-hud .vh-hint", "#prompt"], "#vehicle-hud, #dock", 600)
+    await trace(page, "vehicle-learn", "Pressing H once: the Horn hint fades and the others close the gap", async () => (await page.keyboard.down("KeyH"), await page.keyboard.up("KeyH"), await step(page, 1)), ["#vehicle-hud .vh-hint"], "#vehicle-hud", 600)
+  }
+
   assert.deepEqual(errors, [])
   writeFileSync(resolve(out, "index.json"), JSON.stringify({ dpr, reduced, results: results.map(({ samples: _s, ...r }) => r) }, null, 2))
   writeFileSync(resolve(out, "samples.json"), JSON.stringify(results.map((r) => ({ name: r.name, samples: r.samples }))))

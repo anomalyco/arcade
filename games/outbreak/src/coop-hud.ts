@@ -104,9 +104,22 @@ export class CoopHud {
         document.body.append(el)
         this.tags.set(t.index, el)
       }
-      if (el.textContent !== t.name) el.textContent = t.name
+      if (el.textContent !== t.name) {
+        el.textContent = t.name
+        el.dataset.w = ""
+      }
       el.hidden = !t.visible
-      if (t.visible) el.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px) translate(-50%, -100%)`
+      if (t.visible) {
+        // Placed by its top-left corner on whole device pixels, so the name stays crisp.
+        if (!el.dataset.w) {
+          el.dataset.w = String(el.offsetWidth)
+          el.dataset.h = String(el.offsetHeight)
+        }
+        const r = typeof devicePixelRatio === "number" ? devicePixelRatio : 1
+        const x = Math.round((t.x - Number(el.dataset.w) / 2) * r) / r
+        const y = Math.round((t.y - Number(el.dataset.h)) * r) / r
+        el.style.transform = `translate(${x}px, ${y}px)`
+      }
     }
     for (const [index, el] of this.tags) {
       if (seen.has(index)) continue

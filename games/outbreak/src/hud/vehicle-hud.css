@@ -1,0 +1,20 @@
+/* Seated HUD (vehicle-hud.ts): a dashboard gauge and fading key-cap hints above the dock; no panel. */
+#vehicle-hud { pointer-events: none; display: flex; align-items: flex-start; gap: var(--hud-5); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); color: var(--hud-ink); --akc-size: 18px }
+#vehicle-hud[hidden] { display: none !important }
+#vehicle-hud .vh-gauge { position: relative; width: 64px; height: 40px; flex: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .7)) }
+#vehicle-hud svg { width: 64px; height: 40px; overflow: visible }
+#vehicle-hud svg path { fill: none; stroke-linecap: round }
+#vehicle-hud .vh-track { stroke: rgb(13 12 11 / .8); stroke-width: 5 }
+#vehicle-hud .vh-body { stroke: var(--hud-ink-3); stroke-width: 2; stroke-dasharray: 1 1; transition: stroke-dashoffset var(--m-calm-ms, .4s) var(--m-calm, ease), stroke var(--m-default-ms, .3s) var(--m-default, ease) }
+#vehicle-hud .vh-gauge[data-damaged="true"] .vh-body { stroke: var(--hud-danger) }
+#vehicle-hud .vh-ticks line { stroke: var(--hud-ink-2); stroke-width: 1.5; stroke-linecap: round }
+#vehicle-hud svg text { fill: var(--hud-ink-2); font: 600 8px var(--hud-font); text-anchor: middle }
+#vehicle-hud .vh-needle { transform-origin: 32px 34px; transform-box: view-box; transition: transform var(--m-calm-ms, .4s) var(--m-calm, ease) }
+#vehicle-hud .vh-needle line { stroke: var(--hud-warm); stroke-width: 2; stroke-linecap: round }
+#vehicle-hud .vh-needle circle { fill: var(--hud-warm) }
+#vehicle-hud .vh-gauge[data-low="true"] .vh-needle line, #vehicle-hud .vh-gauge[data-low="true"] .vh-needle circle { stroke: var(--hud-danger); fill: var(--hud-danger) }
+#vehicle-hud .vh-warn { position: absolute; left: 50%; top: 100%; translate: -50% 2px; padding: 0 var(--hud-2); border-radius: var(--hud-r-cell); background: var(--hud-chip); color: var(--hud-caution); font-size: var(--hud-xs); font-weight: 600; white-space: nowrap }
+#vehicle-hud .vh-keys { display: flex; align-items: center; height: 18px; margin-top: 12px }
+#vehicle-hud .vh-hint { padding-inline: 6px; overflow: hidden; white-space: nowrap; max-width: 200px; text-shadow: 0 1px 0 #000 }
+#vehicle-hud .vh-hint[data-learned="true"] { max-width: 0; padding-inline: 0; opacity: 0 }
+#vehicle-hud .akc { font-size: 12px }

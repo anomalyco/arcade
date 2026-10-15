@@ -1,5 +1,3 @@
-import { moveClusterLabel } from "@arcade/kit/client/controls"
-import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/gpu/limits"
 import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import { angleDiff } from "@arcade/kit/sim/geom"
@@ -24,6 +22,7 @@ import {
   type VehicleKind,
   type VehicleTuning,
 } from "../shared/vehicles"
+import { VehicleHud } from "./hud/vehicle-hud"
 import { createVehicleModels, LAMPS, WHEELS } from "./vehicle-mesh"
 
 type Rgb3 = [number, number, number]
@@ -141,8 +140,7 @@ export class OutbreakVehicleRenderer {
   private readonly kitAlpha = new Float32Array(2048 * 12)
   private readonly kitAdd = new Float32Array(2048 * 12)
   private readonly rotScratch = { yaw: 0, roll: 0, pitch: 0 }
-  private hudEl: HTMLElement | null = null
-  private lastHudHtml = ""
+  private hud: VehicleHud | null = null
   onPop?: (v: OutbreakVehicle) => void
   onCrash?: (v: OutbreakVehicle, impact: number) => void
   onBang?: (v: OutbreakVehicle) => void
@@ -184,7 +182,7 @@ export class OutbreakVehicleRenderer {
       const hudRoot = document.querySelector<HTMLElement>("#hud") ?? parent
       hudRoot. prepend(el)
     }
-    this.hudEl = el
+    this.hud = new VehicleHud(el)
   }
 
   reset(): void {
@@ -193,10 +191,7 @@ export class OutbreakVehicleRenderer {
     this.drivingFx.marks.clear()
     this.fx.add.length = 0
     this.emissions.reset()
-    if (this.hudEl) {
-      this.hudEl.hidden = true
-      this.lastHudHtml = ""
-    }
+    this.hud?.update(null)
   }
 
   private pushPart(
@@ -617,41 +612,14 @@ export class OutbreakVehicleRenderer {
     return { skids: m.count, skidsWritten: m.written, skidsAlive: m.alive(), smoke: this.emissions.trail.count, sparks: this.fx.add.length, emittingWheels: emitting, slip: wheels }
   }
 
-  /** Updates the DOM vehicle status & key-cap prompt bar when the local survivor is seated in a vehicle. */
+  /** The seated HUD: a dashboard gauge and key-cap hints (src/hud/vehicle-hud.ts). */
   syncHud(v: OutbreakVehicle | undefined, seatIndex = 0): void {
-    const el = this.hudEl
-    if (!el) return
+    if (!this.hud) return
     if (!v || v.wreck) {
-      if (!el.hidden) {
-        el.hidden = true
-        this.lastHudHtml = ""
-      }
+      this.hud.update(null)
       return
     }
-    const isDriver = seatIndex === 0
-    const usedSeats = v.seats.filter(Boolean).length
-    const totalSeats = v.seats.length
-    const hpFrac = Math.max(0, Math.min(1, v.hp / v.maxHp))
-    const fuelPct = Math.round(Math.max(0, Math.min(100, (v.fuel / v.maxFuel) * 100)))
-    const speedKmh = Math.round(Math.hypot(v.vx, v.vy) * 3.6)
-
-    let stateBadge = ""
-    if (!v.hasBattery) stateBadge = `<span class="vh-warn">NO BATTERY</span>`
-    else if (!v.hasKeys) stateBadge = `<span class="vh-warn">NO KEYS</span>`
-    else if (v.fuel <= 0) stateBadge = `<span class="vh-warn">OUT OF FUEL</span>`
-    else if (v.grabbingZombies > 0) stateBadge = `<span class="vh-warn">${v.grabbingZombies} GRABBING</span>`
-
-    const segs = Array.from({ length: 10 }, (_, i) => `<i class="${i < Math.ceil(hpFrac * 10) ? "on" : ""}"></i>`).join("")
-    const moveKeys = moveClusterLabel()
-    const keysHtml = isDriver
-      ? `<span class="akp"><kbd class="akc">${moveKeys}</kbd><span class="akp-label">Drive</span></span><span class="sep">·</span>${keyPromptHtml("Space", "Handbrake")}<span class="sep">·</span>${keyPromptHtml("KeyH", "Horn")}<span class="sep">·</span>${keyPromptHtml("KeyF", v.headlights ? "Lights on" : "Lights off")}<span class="sep">·</span>${keyPromptHtml("KeyC", "Seat")}<span class="sep">·</span>${keyPromptHtml("KeyE", "Exit")}`
-      : `${keyPromptHtml("Mouse0", "Shoot")}<span class="sep">·</span>${keyPromptHtml("KeyR", "Reload")}<span class="sep">·</span>${keyPromptHtml("KeyF", "Flashlight")}<span class="sep">·</span>${keyPromptHtml("KeyC", "Seat")}<span class="sep">·</span>${keyPromptHtml("KeyE", "Exit")}`
-
-    const html = `<div class="vh-top"><b>${v.spec.label.toUpperCase()}</b><span>${isDriver ? "DRIVER" : `PASSENGER · SEAT ${seatIndex + 1}`} (${usedSeats}/${totalSeats})</span><span>${speedKmh} km/h</span><span class="${fuelPct <= 15 ? "low" : ""}">FUEL ${fuelPct}%</span>${stateBadge}</div><div class="vh-bar${hpFrac < 0.35 ? " low" : ""}">${segs}</div><div class="vh-keys">${keysHtml}</div>`
-    if (html !== this.lastHudHtml) {
-      el.innerHTML = html
-      this.lastHudHtml = html
-    }
-    el.hidden = false
+    const warning = !v.hasBattery ? "No battery" : !v.hasKeys ? "No keys" : v.fuel <= 0 ? "Empty tank" : null
+    this.hud.update({ driver: seatIndex === 0, fuel: v.fuel / v.maxFuel, body: v.hp / v.maxHp, headlights: v.headlights, warning })
   }
 }

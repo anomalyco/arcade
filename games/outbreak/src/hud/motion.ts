@@ -119,13 +119,20 @@ export function flip(els: Iterable<HTMLElement>, motion: HudMotion = hudMotion, 
   }
 }
 
-/** Snaps `el`'s left/top edges to whole device pixels with a `translate` nudge, so text at rest stays crisp. */
-export function snapToPixels(el: HTMLElement, ratio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1): void {
-  el.style.translate = ""
+/**
+ * Snaps `el`'s left/top edges to whole device pixels with a `translate` nudge, so text at rest stays crisp. Returns
+ * false (and changes nothing) while an animation is moving `el`, so callers retry once it has settled.
+ */
+export function snapToPixels(el: HTMLElement, ratio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1): boolean {
+  if (el.getAnimations().some((a) => a.playState === "running")) return false
+  const [tx = 0, ty = 0] = (el.style.translate || "0 0").split(" ").map((v) => parseFloat(v) || 0)
   const r = el.getBoundingClientRect()
-  const dx = Math.round(r.left * ratio) / ratio - r.left
-  const dy = Math.round(r.top * ratio) / ratio - r.top
-  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) el.style.translate = `${dx.toFixed(3)}px ${dy.toFixed(3)}px`
+  const left = r.left - tx
+  const top = r.top - ty
+  const dx = Math.round(left * ratio) / ratio - left
+  const dy = Math.round(top * ratio) / ratio - top
+  el.style.translate = Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01 ? `${dx.toFixed(3)}px ${dy.toFixed(3)}px` : ""
+  return true
 }
 
 /**
