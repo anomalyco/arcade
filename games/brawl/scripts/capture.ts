@@ -69,8 +69,8 @@ else {
   }
 }
 const state = await page.evaluate(() => {
-  const g = (globalThis as { brawl?: { snap: { phase: string; f: { i: string; c: string; d: number; s: number }[] } | null } }).brawl
-  return g?.snap ? { phase: g.snap.phase, fighters: g.snap.f.map((f) => `${f.i}:${f.c} ${f.d}% x${f.s}`) } : null
+  const g = (globalThis as { brawl?: { snap: { phase: string; f: { i: string; c: string; d: number; s: number }[] } | null; sound: { played: Record<string, number> } } }).brawl
+  return g?.snap ? { phase: g.snap.phase, fighters: g.snap.f.map((f) => `${f.i}:${f.c} ${f.d}% x${f.s}`), played: g.sound.played } : null
 })
 console.log(JSON.stringify(state))
 await context.close()
