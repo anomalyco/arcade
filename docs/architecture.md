@@ -61,17 +61,18 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — |
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — |
 | `net/*` | Binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | — | — | Yes | — | — | — |
-| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | — | — | — |
+| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — |
-| `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | — | — |
-| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | — | — |
+| `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — |
+| `gpu/{renderer,shaders,level,limits}` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — |
+| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | — |
-| `gpu-perf` & `fx/frame-timer` | Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry | Yes | Yes | Yes | — | Yes | — |
+| `gpu-perf` & `fx/frame-timer` | Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | — |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — |
 | `fx/{explosion,fire-water,splatter*}` | Multi-stage explosions, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — |
-| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | — | — |
+| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | — |
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | — | — | Yes | — |
 | `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — |
 | `client/{input,camera}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — |
@@ -86,9 +87,54 @@ The table below shows which shared modules each game and the Lab import. `script
 <!-- WORKSTREAM A: RENDERING SECTION START -->
 ## 4. Rendering
 
-Workstream A (`engine-render`) owns shader modularization, uniform packing, and renderer convergence across `@arcade/kit/gpu/*`, `@arcade/kit/fx/*`, Getaway, Blackout, Outbreak, and Carrier.
+Workstream A (`engine-render`) unifies shader composition, typed uniform packing, and shared WebGPU pass primitives across `@arcade/kit/gpu/*`, `@arcade/kit/fx/*`, Getaway, Blackout, Outbreak, and Carrier.
 
-Today, Blackout, Outbreak, and the Lab share `@arcade/kit/gpu/{mesh,renderer,shaders,look-shaders,level,limits}` (24-byte packed vertices, polar shadow compute, cutaway chunk routing, 4× MSAA HDR scene pass, and 5-level bloom/post chain). Getaway uses `@arcade/kit/gpu/{motion-blur,sprite-motion}` and `@arcade/kit/fx/*` over its own orthographic-shadow city renderer (`games/getaway/src/render/renderer.ts`). Carrier uses `@arcade/kit/gpu/mesh` and `@arcade/kit/fx/{particles,particle-renderer,explosion}` over its reversed-Z ocean and flight renderer (`games/carrier/src/render/`). See [rendering-techniques.md](rendering-techniques.md) and [game-notes.md](game-notes.md) for measured GPU pass costs.
+```mermaid
+flowchart LR
+  WGSL["@arcade/kit/gpu/wgsl\nwgslStruct · wgslSlot · wgslSnippet"] --> Shaders["Scene & Post Shaders\nshaders.ts · look-shaders.ts · surface-materials.ts"]
+  WGSL --> Uniforms["Typed Uniform Packers\nLookUniforms · SurfaceTex · Foliage · Particle · Volume · Getaway · Carrier"]
+  Cull["@arcade/kit/gpu/cull\nextractFrustumPlanes · aabbInFrustum · drawContiguousChunks*"] --> KitRenderer["@arcade/kit/gpu/renderer\n(Blackout · Outbreak · Lab)"]
+  Cull --> GetawayRenderer["games/getaway/src/render/renderer.ts"]
+  Cull --> CarrierRenderer["games/carrier/src/render/renderer.ts"]
+  Targets["@arcade/kit/gpu/targets\nSceneTargets · BloomPyramid · GrowableInstanceBuffer · uploadSplitSprites"] --> KitRenderer
+  Targets --> GetawayRenderer
+  Targets --> CarrierRenderer
+```
+
+### 4.1 Typed WGSL structs (`@arcade/kit/gpu/wgsl`)
+
+All shared and game uniform blocks are defined once with `wgslStruct(name, fields)`:
+
+- **Automatic WGSL std140/storage alignment**: Computes exact byte/float offsets (`vec3f` 16-byte alignment, `mat4x4f` 64-byte alignment, `array<vec4f, N>` stride, `@align(16)` on scalar-only uniform structs, and `@size(...)` tail padding so WGSL struct value constructors preserve exact field arity with zero synthetic `_pad_tail` fields).
+- **Single-source WGSL + CPU packing**: Generates `.wgsl`, `.floatCount`, `.byteSize`, `.offsetOf(field)`, and `.pack(values, out, floatOffset)` across `LookUniformsStruct` (64 floats, replacing 27 `u0..u15` vector swizzles with named WGSL fields), `MaterialRecipeStruct`, `SurfaceTexUniformsStruct`, `FoliageWindConfigStruct`, `FoliageActorsStruct`, `ParticleFrameStruct` (`ParticleRenderer.setFrame`), `VolumeFrameStruct` (`VolumeRenderer.setFrame`), `GetawayFrameStruct`, `GetawayLightStruct`, `GetawayShadowFrameStruct`, `CarrierFrameStruct`, and `CarrierGradeStruct`.
+
+### 4.2 Explicit shader composition & per-variant Look specialization
+
+Shader assembly uses `wgslSnippet`, `wgslSlot`, `resolveWgsl`, and structured `SceneHooks` (`diffuseTerm`, `combineLighting`, `fragmentReturn`, `lookSurface`) with **zero `.replace()` or regex string mutations** on generated WGSL:
+
+- **Surface material slot specialization (`asphaltConcreteSlot`)**: `buildSurfaceMaterialDeclarationsWgsl({ asphaltConcrete })` overrides the asphalt/concrete procedural evaluator via `wgslSlot` instead of regex-stripping `fn asphaltConcrete` in Outbreak's `ground.ts`.
+- **Lazy per-variant Look pipelines (`lookVariantSlot`, `Renderer.ensureLookPipes`)**: Instead of compiling every style branch into one mega-shader, `look-shaders.ts` specializes `"noir"`, `"painterly"`, and `"generic"` variants on demand:
+  - `"noir"` (`119,426 B` scene / `20,023 B` post, `1.6 ms` compile, 7 pipelines) strips `kuwaharaPost` and the Painterly gouache surface branch.
+  - `"painterly"` (`119,404 B` scene / `21,364 B` post, `4.9 ms` compile, 7 pipelines) strips the Noir selective-colour branch.
+  - `"generic"` (`119,782 B` scene / `21,364 B` post, `2.1 ms` compile, 7 pipelines) serves split-wipe comparisons and custom hybrid looks.
+
+### 4.3 Converged GPU targets, bloom pyramid, and chunk culling (`@arcade/kit/gpu/{cull,targets}`)
+
+All four WebGPU games share `@arcade/kit/gpu/cull` and `@arcade/kit/gpu/targets`:
+
+| Primitive | Module | Responsibility | Adopted by |
+| :--- | :--- | :--- | :--- |
+| `extractFrustumPlanes`, `aabbInFrustum`, `boxIntersectsRect2D` | `@arcade/kit/gpu/cull` | Extracts 6 WebGPU `[0..1]` clip planes from a `mat4x4f` and tests 3D AABBs or 2D plan bounds | Getaway, Blackout, Outbreak, Carrier, Lab |
+| `drawContiguousChunks`, `drawContiguousChunksByMode` | `@arcade/kit/gpu/cull` | Culls chunks and coalesces adjacent visible vertex ranges (`first + count === next.first`) into single `pass.draw` calls | Getaway, Blackout, Outbreak, Carrier, Lab |
+| `SceneTargets` | `@arcade/kit/gpu/targets` | Owns the 4× MSAA colour, 4× MSAA depth, and resolved `rgba16float` HDR target lifecycle on `resize(w, h)` | Getaway, Blackout, Outbreak, Carrier, Lab |
+| `BloomPyramid` | `@arcade/kit/gpu/targets` | Owns the 5-level HDR Jimenez 13-tap downsample / 3×3 tent upsample mip chain, texel-size uniform buffers, bind groups, and pass encoding | Getaway, Blackout, Outbreak, Carrier, Lab |
+| `GrowableInstanceBuffer`, `uploadSplitSprites` | `@arcade/kit/gpu/targets` | 1.5× capacity growth, contiguous-slice single-`writeBuffer` coalescing, and split alpha/additive sprite buffer uploads | Getaway, Blackout, Outbreak, Lab |
+
+### 4.4 Renderer boundaries across games
+
+- **Blackout, Outbreak, and Lab** share `@arcade/kit/gpu/renderer` directly (polar 1D ray-cast shadow compute pass, optional temporal visibility field, `fsSolid` vs `levelCut` cutaway routing, 4× MSAA HDR pass, volumetric smoke/particles/splatter/weather, and `BloomPyramid` + `Look` composite).
+- **Getaway** (`games/getaway/src/render/renderer.ts`) shares `@arcade/kit/gpu/{wgsl,cull,targets,motion-blur,sprite-motion}` and `@arcade/kit/fx/*` while retaining its `2048²` orthographic directional moon shadow pass and stencil-masked occluded-car silhouette pass (`depthCompare: "greater"`, `stencil != 1`).
+- **Carrier** (`games/carrier/src/render/{renderer,post,frame}.ts`) shares `@arcade/kit/gpu/{wgsl,mesh,cull,targets}`, `@arcade/kit/gpu-perf`, and `@arcade/kit/fx/{particles,particle-renderer,explosion}` while retaining its reversed-Z (`depth32float`, `clearValue: 0`, `greater-equal`) `ScenePass` slot architecture (`sky → opaque → alpha`) required for its 40 km ocean horizon. See [rendering-techniques.md](rendering-techniques.md) and [game-notes.md](game-notes.md) for measured GPU pass costs.
 <!-- WORKSTREAM A: RENDERING SECTION END -->
 
 ## 5. Core engine patterns
