@@ -539,7 +539,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   (ZONE MOVING IN 20S). A round's first zone sits within 1 km of the middle (about 3 minutes' sail from every spawn);
   later ones hop 1.3-2.8 km.
 - A carrier whose hull centre is inside a zone alone captures it in 10 s (someone else's drains to neutral first);
-  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone. No clock: first to
+  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone, and must stay: a held zone left empty drains to neutral in 10 s. No clock: first to
   1,200 points wins the round; the result shows 15 s, then scores reset and a new round starts. Nothing in the
   objective touches ships, crew or aircraft: relocations, round ends and new rules never move or respawn anything.
 - Authority: the room's `Objective` steps with the ships and sends `obj` (`packObjective`, a flat number array) at

@@ -14,8 +14,8 @@
 //   only active carriers capture, contest or score.
 // - Capture: a carrier whose hull centre is inside a zone with no other carrier inside fills it for its side over
 //   `capture` seconds; a zone held by someone else drains to neutral first. Two or more carriers inside: contested,
-//   progress frozen. A zone nobody is in falls back to its holder (or to neutral) slowly. A zone stays its holder's
-//   after they leave, but only scores while they are inside it alone: `rate` points per second per zone.
+//   progress frozen. A held zone nobody is in drains back to neutral over `capture` seconds: its holder has to stay
+//   in it to keep it. It scores while its holder is inside it alone: `rate` points per second per zone.
 // - No clock: a round ends only when a side reaches `target` points (first to it wins), shows the result for
 //   `intermission` seconds, then a new round starts with the scores reset.
 //
@@ -337,9 +337,16 @@ export class Objective {
       const n = bits(present)
       if (n >= 2) continue
       if (n === 0) {
-        // Left alone: a held zone refills to its holder, a half-captured one empties.
-        if (z.holder >= 0) z.progress = Math.min(1, z.progress + fill * 0.5)
-        else if (z.cap >= 0) {
+        // Left empty: a held zone drains back to neutral over `capture` seconds (its holder has to stay in it), a
+        // half-captured one empties at half that rate.
+        if (z.holder >= 0) {
+          z.progress = Math.max(0, z.progress - fill)
+          if (z.progress === 0) {
+            ev.push({ k: "neutral", zone: z.id, team: z.holder })
+            z.holder = -1
+            z.cap = -1
+          }
+        } else if (z.cap >= 0) {
           z.progress = Math.max(0, z.progress - fill * 0.5)
           if (z.progress === 0) z.cap = -1
         }
