@@ -9,8 +9,13 @@ import {
   OUTBREAK_DUSK_LOOK,
   OUTBREAK_NIGHT_LOOK,
   applyOutbreakDayNight,
+  DAY_NIGHT_CURVE_KEYS,
+  DAY_NIGHT_CURVES,
+  DEFAULT_DAY_NIGHT_CURVES,
+  dayNightCurveOverrides,
   evaluateOutbreakDayNight,
 } from "../src/day-night"
+import { curveText, sampleCurve } from "@arcade/kit/ramps"
 
 describe("Outbreak Day -> Dusk -> Noir Night look & threat cycle", () => {
   test("blendLookSettings and blendLookSettings3 hit exact anchors and pack interpolated palettes", () => {
@@ -131,5 +136,47 @@ describe("Outbreak Day -> Dusk -> Noir Night look & threat cycle", () => {
     expect(aiDay.threat).toBe(0)
     expect(aiNight.threat).toBe(1)
     expect(zNight.awareness).toBeGreaterThan(zDay.awareness)
+  })
+})
+
+describe("Day-night curves", () => {
+  const hours = Array.from({ length: 97 }, (_, i) => i / 4)
+  test("untouched curves give exactly the Day/Dusk/Night blend at every hour", () => {
+    for (const hour of hours) {
+      const plain = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK })
+      const curved = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK }, dayNightCurveOverrides({ ...DEFAULT_DAY_NIGHT_CURVES }))
+      expect(curved.look).toEqual(plain.look)
+      expect(curved.lighting).toEqual(plain.lighting)
+    }
+    // A default that went through knobs (rounded points, reordered keys) still reads as the default.
+    const roundTrip = Object.fromEntries(DAY_NIGHT_CURVE_KEYS.map(k => [k, JSON.stringify(JSON.parse(DEFAULT_DAY_NIGHT_CURVES[k]).map((p: { x: number; y: number }) => ({ y: p.y, x: p.x })))]))
+    expect(dayNightCurveOverrides(roundTrip)).toEqual({})
+  })
+  test("the default curves trace the blend they stand in for", () => {
+    for (const key of DAY_NIGHT_CURVE_KEYS) {
+      const points = JSON.parse(DEFAULT_DAY_NIGHT_CURVES[key]) as { x: number; y: number }[]
+      const [day, dusk, night] = DAY_NIGHT_CURVES[key].anchors
+      expect(points[0]!.y).toBeCloseTo(day, 4)
+      expect(points[4]!.y).toBeCloseTo(dusk, 4)
+      expect(points[8]!.y).toBeCloseTo(night, 4)
+      for (const hour of hours) {
+        const d = Math.max(0, Math.min(1, dayCycle(hour).darkness))
+        const exact = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK })
+        const value = key === "skyFillCurve" ? exact.lighting.skyFill : key === "ambientFillCurve" ? exact.look.ambientFill : exact.look.fogDensity
+        expect(Math.abs(sampleCurve(points, d) - value)).toBeLessThan(0.02)
+      }
+    }
+  })
+  test("a reshaped curve drives its value by darkness and leaves the rest of the blend alone", () => {
+    const flat = curveText([{ x: 0, y: 0.25 }, { x: 1, y: 0.25 }], { range: DAY_NIGHT_CURVES.fogDensityCurve.range })
+    const settings = { lighting: {}, fog: {}, vision: {}, dayCycle: { ...DEFAULT_DAY_NIGHT_CURVES, fogDensityCurve: flat } }
+    for (const hour of [3, 12, 19.5]) {
+      const look = { ...OUTBREAK_NIGHT_LOOK }
+      const out = applyOutbreakDayNight(hour, look, settings)
+      const plain = evaluateOutbreakDayNight(hour, { ...OUTBREAK_NIGHT_LOOK })
+      expect(out.look.fogDensity).toBeCloseTo(0.25, 4)
+      expect(out.look.ambientFill).toBe(plain.look.ambientFill)
+      expect(out.lighting.skyFill).toBe(plain.lighting.skyFill)
+    }
   })
 })

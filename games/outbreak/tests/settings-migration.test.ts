@@ -18,6 +18,8 @@ import {
   OUTBREAK_SUBSYSTEM_KEYS,
   setOutbreakSetting,
 } from "../src/settings"
+import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES } from "../src/day-night"
+import { curveText } from "@arcade/kit/ramps"
 
 describe("Outbreak subsystem-namespaced settings & migration", () => {
   test("namespaces settings into 18 typed subsystems without walkSpeed collisions", () => {
@@ -133,6 +135,35 @@ describe("Outbreak subsystem-namespaced settings & migration", () => {
     const badType = applyOutbreakPreset(settings, { version: 1, settings: { exposure: "not-a-number" } })
     expect(badType.ok).toBe(false)
     expect(settings.lighting.exposure).toBe(1.24)
+  })
+
+  test("day-night curves: old presets load with default curves, knobs Copies and URLs give curve text", () => {
+    const settings = createOutbreakSettings()
+    expect(settings.dayCycle.fogDensityCurve).toBe(DEFAULT_DAY_NIGHT_CURVES.fogDensityCurve)
+    const edited = curveText([{ x: 0, y: 0.1 }, { x: 1, y: 0.5 }], { range: DAY_NIGHT_CURVES.fogDensityCurve.range })
+    settings.dayCycle.fogDensityCurve = edited
+
+    // A preset saved before the curves existed sets the day cycle without them: it gets the defaults back.
+    const old = applyOutbreakPreset(settings, { version: 2, subsystems: { dayCycle: { hour: 18, timeScale: 60, dayNightLook: 1, lookPreset: "noir" } } })
+    expect(old.ok).toBe(true)
+    expect(settings.dayCycle.fogDensityCurve).toBe(DEFAULT_DAY_NIGHT_CURVES.fogDensityCurve)
+    // One that doesn't touch the day cycle leaves the curves alone.
+    settings.dayCycle.fogDensityCurve = edited
+    expect(applyOutbreakPreset(settings, { version: 2, subsystems: { lighting: { exposure: 1.1 } } }).ok).toBe(true)
+    expect(settings.dayCycle.fogDensityCurve).toBe(edited)
+
+    // A knobs Copy carries points, not text; both forms land as normalized curve text.
+    const copy = migrateOutbreakPreset({ "dayCycle.fogDensityCurve": [{ x: 0, y: 0.1 }, { x: 1, y: 0.5 }], skyFillCurve: edited })
+    expect(copy.ok).toBe(true)
+    if (!copy.ok) return
+    expect(copy.preset.subsystems.dayCycle?.fogDensityCurve).toBe(edited)
+    expect(copy.preset.subsystems.dayCycle?.skyFillCurve).toBe(curveText(JSON.parse(edited), { range: DAY_NIGHT_CURVES.skyFillCurve.range }))
+    expect(migrateOutbreakPreset({ "dayCycle.fogDensityCurve": "fog" }).ok).toBe(false)
+    expect(exportOutbreakPreset(settings).subsystems.dayCycle?.fogDensityCurve).toBe(edited)
+
+    const fromUrl = createOutbreakSettings(new URLSearchParams(`dayCycle.fogDensityCurve=${encodeURIComponent(edited)}&ambientFillCurve=nope`))
+    expect(fromUrl.dayCycle.fogDensityCurve).toBe(edited)
+    expect(fromUrl.dayCycle.ambientFillCurve).toBe(DEFAULT_DAY_NIGHT_CURVES.ambientFillCurve)
   })
 
   test("migrates URL parameters and localStorage variants/presets", () => {

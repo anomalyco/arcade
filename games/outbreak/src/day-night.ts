@@ -3,6 +3,7 @@ import {
   blendLookSettings3,
   type LookSettings,
 } from "@arcade/kit/look"
+import { curveText, parseCurve, sameCurve, sampleCurve, type CurvePoint } from "@arcade/kit/ramps"
 import { dayCycle, type DayCyclePhase } from "../shared/day-cycle"
 import type { FogOfWarSettings } from "./fog-of-war"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS, type OutbreakLightingSettings } from "./lighting"
@@ -186,6 +187,80 @@ const FOG_KEYS: readonly (keyof DayNightFogCurve)[] = [
   "shroud",
 ]
 
+/** The cycle's convex Day/Dusk/Night weights at clamped darkness `d` (the same blend `blendLookSettings3` uses). */
+function weights(d: number) {
+  const wDusk = 4 * d * (1 - d)
+  const rem = 1 - wDusk
+  return { wDay: (1 - d) * rem, wDusk, wNight: d * rem }
+}
+
+/**
+ * Values the Lab can reshape as curves over darkness (x: 0 day, 0.5 dusk, 1 night). Each default is the Day/Dusk/Night
+ * blend sampled at nine points, and while a curve still reads as its default the cycle uses the exact blend, so an
+ * untouched curve changes nothing.
+ */
+export const DAY_NIGHT_CURVES = {
+  skyFillCurve: {
+    label: "Sky fill by darkness",
+    unit: "×",
+    range: [0, 1.5] as const,
+    anchors: [OUTBREAK_DAY_LIGHTING.skyFill, OUTBREAK_DUSK_LIGHTING.skyFill, OUTBREAK_NIGHT_LIGHTING.skyFill] as const,
+  },
+  ambientFillCurve: {
+    label: "Ambient fill by darkness",
+    unit: "×",
+    range: [0, 2.2] as const,
+    anchors: [OUTBREAK_DAY_LOOK.ambientFill, OUTBREAK_DUSK_LOOK.ambientFill, OUTBREAK_NIGHT_LOOK.ambientFill] as const,
+  },
+  fogDensityCurve: {
+    label: "Fog density by darkness",
+    unit: "",
+    range: [0, 1.2] as const,
+    anchors: [OUTBREAK_DAY_LOOK.fogDensity, OUTBREAK_DUSK_LOOK.fogDensity, OUTBREAK_NIGHT_LOOK.fogDensity] as const,
+  },
+}
+export type DayNightCurveKey = keyof typeof DAY_NIGHT_CURVES
+export type DayNightCurveSettings = Record<DayNightCurveKey, string>
+export const DAY_NIGHT_CURVE_KEYS = Object.keys(DAY_NIGHT_CURVES) as DayNightCurveKey[]
+
+const defaultPoints = (key: DayNightCurveKey): CurvePoint[] => {
+  const [day, dusk, night] = DAY_NIGHT_CURVES[key].anchors
+  return Array.from({ length: 9 }, (_, i) => {
+    const { wDay, wDusk, wNight } = weights(i / 8)
+    return { x: i / 8, y: day * wDay + dusk * wDusk + night * wNight }
+  })
+}
+
+export const DEFAULT_DAY_NIGHT_CURVES: Readonly<DayNightCurveSettings> = Object.fromEntries(
+  DAY_NIGHT_CURVE_KEYS.map(key => [key, curveText(defaultPoints(key), { range: DAY_NIGHT_CURVES[key].range })]),
+) as DayNightCurveSettings
+
+const DEFAULT_POINTS = Object.fromEntries(
+  DAY_NIGHT_CURVE_KEYS.map(key => [key, parseCurve(DEFAULT_DAY_NIGHT_CURVES[key], [], { range: DAY_NIGHT_CURVES[key].range })]),
+) as Record<DayNightCurveKey, readonly CurvePoint[]>
+
+/** Reshaped curves by key, only those that differ from their default. */
+export type DayNightCurveOverrides = Partial<Record<DayNightCurveKey, readonly CurvePoint[]>>
+const overrideCache = new Map<DayNightCurveKey, { text: unknown; points: readonly CurvePoint[] | null }>()
+
+/** The curves in `settings` (JSON text) that differ from their default, parsed once per change. */
+export function dayNightCurveOverrides(settings: Partial<Record<DayNightCurveKey, unknown>> | undefined): DayNightCurveOverrides {
+  const out: DayNightCurveOverrides = {}
+  if (!settings) return out
+  for (const key of DAY_NIGHT_CURVE_KEYS) {
+    const text = settings[key]
+    if (text === undefined || text === DEFAULT_DAY_NIGHT_CURVES[key]) continue
+    let cached = overrideCache.get(key)
+    if (!cached || cached.text !== text) {
+      const points = parseCurve(text, DEFAULT_POINTS[key], { range: DAY_NIGHT_CURVES[key].range })
+      cached = { text, points: sameCurve(points, DEFAULT_POINTS[key]) ? null : points }
+      overrideCache.set(key, cached)
+    }
+    if (cached.points) out[key] = cached.points
+  }
+  return out
+}
+
 export type OutbreakDayNightEvaluation = {
   hour: number
   phase: DayCyclePhase
@@ -206,21 +281,22 @@ export type OutbreakDayNightEvaluation = {
 export function evaluateOutbreakDayNight(
   hour: number,
   outLook: LookSettings = { ...OUTBREAK_NIGHT_LOOK },
+  curves: DayNightCurveOverrides = {},
 ): OutbreakDayNightEvaluation {
   const day = dayCycle(hour)
   const d = Math.max(0, Math.min(1, day.darkness))
-  const wDusk = 4 * d * (1 - d)
-  const rem = 1 - wDusk
-  const wDay = (1 - d) * rem
-  const wNight = d * rem
+  const { wDay, wDusk, wNight } = weights(d)
 
   blendLookSettings3(OUTBREAK_DAY_LOOK, OUTBREAK_DUSK_LOOK, OUTBREAK_NIGHT_LOOK, d, outLook)
+  if (curves.ambientFillCurve) outLook.ambientFill = sampleCurve(curves.ambientFillCurve, d)
+  if (curves.fogDensityCurve) outLook.fogDensity = sampleCurve(curves.fogDensityCurve, d)
 
   const lighting = {} as DayNightLightingCurve
   for (let i = 0; i < LIGHTING_KEYS.length; i++) {
     const k = LIGHTING_KEYS[i]!
     lighting[k] = OUTBREAK_DAY_LIGHTING[k] * wDay + OUTBREAK_DUSK_LIGHTING[k] * wDusk + OUTBREAK_NIGHT_LIGHTING[k] * wNight
   }
+  if (curves.skyFillCurve) lighting.skyFill = sampleCurve(curves.skyFillCurve, d)
 
   const fog = {} as DayNightFogCurve
   for (let i = 0; i < FOG_KEYS.length; i++) {
@@ -244,7 +320,7 @@ export function evaluateOutbreakDayNight(
 
 /**
  * Applies the continuous Day -> Dusk -> Noir Night look, lighting, and fog-of-war parameters in-place
- * while preserving user-selected `fogStyle`.
+ * while preserving user-selected `fogStyle`. Curves reshaped in `settings.dayCycle` replace their blend.
  */
 export function applyOutbreakDayNight(
   hour: number,
@@ -253,9 +329,10 @@ export function applyOutbreakDayNight(
     lighting?: Partial<OutbreakLightingSettings>
     fog?: Partial<FogOfWarSettings>
     vision?: { shroud?: number }
+    dayCycle?: Partial<Record<DayNightCurveKey, unknown>>
   } & Record<string, any>,
 ): OutbreakDayNightEvaluation {
-  const evalOut = evaluateOutbreakDayNight(hour, lookSettings)
+  const evalOut = evaluateOutbreakDayNight(hour, lookSettings, dayNightCurveOverrides(settings.dayCycle))
   const lightingTarget =
     settings.lighting && typeof settings.lighting === "object" ? (settings.lighting as Record<string, any>) : settings
   const fogTarget =

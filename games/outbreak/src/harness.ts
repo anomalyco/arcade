@@ -23,6 +23,7 @@ import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
+import { isCurveValue } from "@arcade/kit/ramps"
 import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
@@ -311,7 +312,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         if (
           "min" in control
             ? typeof value !== "number" || !Number.isFinite(value) || value < control.min || value > control.max
-            : "options" in control && !control.options.some((o) => o.value === value)
+            : control.type === "curve"
+              ? !isCurveValue(value)
+              : "options" in control && !control.options.some((o) => o.value === value)
         ) {
           throw new Error(`Invalid lab value: ${String(rawKey)}`)
         }

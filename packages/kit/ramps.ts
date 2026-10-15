@@ -9,6 +9,7 @@ import {
   type GradientStop,
 } from "@arcade/knobs"
 export { sampleTable } from "./ramp-table"
+export { sampleCurve, sampleGradient }
 
 /**
  * Gradient and curve settings. A LabSettings value is a primitive, so a ramp is kept as JSON text (`[{ x, y }]` or
