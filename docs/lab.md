@@ -102,7 +102,10 @@ such as the Characters page, over the viewport; their variants set `url` and run
 through its dev-control runtime. `bun test games/lab/tests` validates every station file and
 `bun games/lab/scripts/prove-stations.ts --serve` proves the whole path headlessly. For one page-demo station,
 `bun games/lab/scripts/prove-page-station.ts <id> --serve --read key,key` starts the dev router in the same job, picks
-each variant through `station.variant` and records the page's Lab settings, body data attributes and a frame.
+each variant through `station.variant` and records the page's Lab settings, body data attributes and a frame. For one
+section-demo station, `bun games/lab/scripts/prove-station.ts <id>` runs the demo and every variant against the
+production build. It waits while the section's optional `busy()` is true, so a section that bakes in a Worker (Rugs)
+is captured after its results land.
 
 ### Voice notes
 
