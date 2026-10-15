@@ -2,8 +2,8 @@
 // impacts into damage. Pure and DOM-free: the room resolves every pair after each fixed ship step (server/core.ts),
 // and the helm's client resolves its own predicted hull against the remotes it draws so it stops where the room does.
 //
-// Shape: the waterline plan of the hull (`carrierHalfBeam`, the same outline boats bounce off), a convex polygon of
-// 16 vertices in ship-local (f toward the bow, s to starboard), as in shared/ship.ts. Contact is found with the
+// Shape: the flight deck's plan (it overhangs the waterline hull boats bounce off), a convex polygon in ship-local
+// (f toward the bow, s to starboard), as in shared/ship.ts. Contact is found with the
 // separating axis test (the least-overlap edge normal of either hull) and clipped to at most two points on the
 // reference edge, so a bow driven into a side, two bows meeting and two sides scraping all give a steady contact.
 //
@@ -19,7 +19,8 @@
 // shared out so the hull doing the ramming takes less than the one it rams. A pair that just hurt each other takes
 // only the excess of a harder blow for `cooldown` s, so grinding along a side doesn't drain health every step.
 
-import { type BoatObstacle, carrierHalfBeam } from "./boat"
+import type { BoatObstacle } from "./boat"
+import { BOW_NOTCH, BOW_Z, DECK_X0, DECK_X1, STERN_Z } from "./carrier-spec"
 import { SHIP, type Ship } from "./ship"
 
 export const COLLIDE = {
@@ -57,14 +58,19 @@ export const COLLIDE = {
   fullBump: 12,
 } as const
 
-/** The hull's waterline plan (f, s), convex, going round the outline. */
-export const HULL_PLAN: readonly (readonly [f: number, s: number])[] = (() => {
-  const fs = [165, 160, 153, 143, 128, 104, -150, -165]
-  const out: [number, number][] = []
-  for (const f of fs) out.push([f, carrierHalfBeam(f)])
-  for (let i = fs.length - 1; i >= 0; i--) out.push([fs[i]!, -carrierHalfBeam(fs[i]!)])
-  return out
-})()
+/**
+ * The plan that collides (f, s), convex, going round the outline: the flight deck (330 m × 76 m, bow corners notched),
+ * which overhangs the waterline hull (`carrierHalfBeam`) everywhere, so two carriers meet deck edge to deck edge as
+ * they are drawn instead of driving their decks into each other.
+ */
+export const HULL_PLAN: readonly (readonly [f: number, s: number])[] = [
+  [BOW_Z, DECK_X1 - BOW_NOTCH],
+  [BOW_Z - BOW_NOTCH, DECK_X1],
+  [STERN_Z, DECK_X1],
+  [STERN_Z, DECK_X0],
+  [BOW_Z - BOW_NOTCH, DECK_X0],
+  [BOW_Z, DECK_X0 + BOW_NOTCH],
+]
 const N = HULL_PLAN.length
 /** Outward edge normals (ship-local), edge i from vertex i to i + 1. */
 const PLAN_NORMALS: readonly (readonly [number, number])[] = HULL_PLAN.map((p, i) => {
@@ -77,7 +83,7 @@ const PLAN_NORMALS: readonly (readonly [number, number])[] = HULL_PLAN.map((p, i
   return nf * p[0] + ns * p[1] < 0 ? [-nf, -ns] : [nf, ns]
 })
 /** Beyond this centre distance two hulls can't touch (m). */
-const REACH = 2 * Math.hypot(165, 25.6) + 1
+const REACH = 2 * Math.hypot(BOW_Z, DECK_X1) + 1
 const INV_I = 1 / (SHIP.gyration * SHIP.gyration * COLLIDE.yawMass)
 
 /** World velocity change of a hull (heading sin/cos) per unit impulse along (dx, dz), and that change along it: into out. */
@@ -107,7 +113,7 @@ export type Contact = {
   shareB: number
   /** Deepest overlap (m). */
   depth: number
-  /** The contact point in each hull's frame. */
+  /** The middle of the contact in each hull's frame. */
   ax: number
   az: number
   bx: number
@@ -183,15 +189,29 @@ const BIAS = [0, 0]
 
 /**
  * The contact manifold of the placed polygons: reference hull `ref` (its edge `e` gives the normal), incident hull
- * `inc` with its deepest vertex `v`. Fills CX/CZ/CD and returns the point count (1..2).
+ * `inc` with its deepest vertex `v`. Fills CX/CZ/CD and returns the point count (0..2).
  */
 function manifold(ref: Poly, e: number, inc: Poly, v: number): number {
   const nx = ref.nx[e]!
   const nz = ref.nz[e]!
-  // Incident edge: of the two meeting at the deepest vertex, the one facing the reference edge more. (Picking the
-  // most opposed edge of the whole hull can land on a far-off edge: many of the hull's edges are nearly parallel.)
-  const before = (v + N - 1) % N
-  const ie = inc.nx[before]! * nx + inc.nz[before]! * nz < inc.nx[v]! * nx + inc.nz[v]! * nz ? before : v
+  // Incident edge: the one facing the reference edge most among the edges meeting at the deepest vertices (within
+  // half a metre: a side lying flat along it has a deep vertex at each end). The most opposed edge of the whole hull
+  // can be a far-off one.
+  const rx0 = ref.x[e]!
+  const rz0 = ref.z[e]!
+  const deep = (inc.x[v]! - rx0) * nx + (inc.z[v]! - rz0) * nz + 0.5
+  let ie = v
+  let low = Infinity
+  for (let j = 0; j < N; j++) {
+    if ((inc.x[j]! - rx0) * nx + (inc.z[j]! - rz0) * nz > deep) continue
+    for (const k of [(j + N - 1) % N, j]) {
+      const d = inc.nx[k]! * nx + inc.nz[k]! * nz
+      if (d < low) {
+        low = d
+        ie = k
+      }
+    }
+  }
   let x1 = inc.x[ie]!
   let z1 = inc.z[ie]!
   let x2 = inc.x[(ie + 1) % N]!
@@ -249,6 +269,8 @@ function deepestOnly(ref: Poly, e: number, inc: Poly, v: number): number {
   const nx = ref.nx[e]!
   const nz = ref.nz[e]!
   const sep = (inc.x[v]! - ref.x[e]!) * nx + (inc.z[v]! - ref.z[e]!) * nz
+  // Only just touching: nothing to resolve yet (and a tie could name a far vertex).
+  if (sep > -0.01) return 0
   CX[0] = inc.x[v]! - nx * sep * 0.5
   CZ[0] = inc.z[v]! - nz * sep * 0.5
   CD[0] = Math.max(0, -sep)
@@ -278,6 +300,7 @@ export function collideHulls(a: HullBody, b: HullBody, out: Contact = makeContac
   const ref = flip ? b : a
   const inc = flip ? a : b
   const n = flip ? manifold(PB, eb, PA, vb) : manifold(PA, ea, PB, va)
+  if (n === 0) return null
   const pr = flip ? PB : PA
   const e = flip ? eb : ea
   const nx = pr.nx[e]!
@@ -386,8 +409,9 @@ export function collideHulls(a: HullBody, b: HullBody, out: Contact = makeContac
   }
 
   // Report in a/b order; the normal points from a toward b.
-  const px = CX[deepest]!
-  const pz = CZ[deepest]!
+  // The middle of the contact (a bow flat against a side touches at both corners).
+  const px = n === 2 ? (CX[0]! + CX[1]!) / 2 : CX[0]!
+  const pz = n === 2 ? (CZ[0]! + CZ[1]!) / 2 : CZ[0]!
   const sgn = flip ? -1 : 1
   out.closing = closing
   const shareRef = closing > 1e-6 ? Math.max(0, Math.min(1, refIn / closing)) : 0

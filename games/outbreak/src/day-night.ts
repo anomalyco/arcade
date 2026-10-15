@@ -249,16 +249,26 @@ export function evaluateOutbreakDayNight(
 export function applyOutbreakDayNight(
   hour: number,
   lookSettings: LookSettings,
-  settings: Record<string, any>,
+  settings: {
+    lighting?: Partial<OutbreakLightingSettings>
+    fog?: Partial<FogOfWarSettings>
+    vision?: { shroud?: number }
+  } & Record<string, any>,
 ): OutbreakDayNightEvaluation {
   const evalOut = evaluateOutbreakDayNight(hour, lookSettings)
+  const lightingTarget =
+    settings.lighting && typeof settings.lighting === "object" ? (settings.lighting as Record<string, any>) : settings
+  const fogTarget =
+    settings.fog && typeof settings.fog === "object" ? (settings.fog as Record<string, any>) : settings
+  const visionTarget =
+    settings.vision && typeof settings.vision === "object" ? (settings.vision as Record<string, any>) : settings
   for (let i = 0; i < LIGHTING_KEYS.length; i++) {
     const k = LIGHTING_KEYS[i]!
-    settings[k] = evalOut.lighting[k]
+    lightingTarget[k] = evalOut.lighting[k]
   }
-  for (let i = 0; i < FOG_KEYS.length; i++) {
-    const k = FOG_KEYS[i]!
-    settings[k] = evalOut.fog[k]
-  }
+  fogTarget.fogEdgeSoftness = evalOut.fog.fogEdgeSoftness
+  fogTarget.fogMemoryDim = evalOut.fog.fogMemoryDim
+  fogTarget.fogGhostDuration = evalOut.fog.fogGhostDuration
+  visionTarget.shroud = evalOut.fog.shroud
   return evalOut
 }

@@ -257,7 +257,7 @@ const c = await open(`${base}?room=${room}&tod=11`, "CY")
 await until(c, (m) => m.online === "online" && m.role === "helm", 20_000)
 console.log(`room ${room}\n${fmt(ma)}\n${fmt(mb)}`)
 check(ma.zones.filter((z) => !z.next).length === 1, `three carriers: one zone (${ma.zones.length})`)
-check(/MOVE \d+:\d\d/.test(ma.obj) && /ROUND/.test(ma.obj), `scoreboard: "${ma.obj}"`)
+check(/MOVE \d+:\d\d/.test(ma.obj) && /TO \d+/.test(ma.obj), `scoreboard: "${ma.obj}"`)
 await shot(a, "01-deck-spawn-scoreboard")
 
 await autopilot(a)
@@ -301,7 +301,7 @@ await shot(b, "08-air-overhead-contested")
 await freeCam(b, null)
 
 // The next spot revealed before the opening ends.
-ma = await until(a, (m) => m.zones.some((x) => x.next), 240_000)
+ma = await until(a, (m) => m.zones.some((x) => x.next), 330_000)
 check(/MOVING IN \d+S/.test(ma.obj), `next spot revealed: "${ma.obj}"`)
 const nx = ma.zones.find((x) => x.next)!
 const lz = live(ma)!

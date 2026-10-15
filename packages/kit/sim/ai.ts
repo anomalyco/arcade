@@ -582,6 +582,9 @@ export class GridNav {
   readonly grid: Uint8Array
   /** Optional per-chunk 64×64 walkability tiles keyed by `"cx,cy"` for unbounded streaming worlds. */
   readonly chunkTiles = new Map<string, Uint8Array>()
+  private lastTileCx = 0x7fffffff
+  private lastTileCy = 0x7fffffff
+  private lastTile: Uint8Array | undefined
   private readonly g: Float32Array
   private readonly came: Int32Array
   private readonly seen: Uint32Array
@@ -645,12 +648,24 @@ export class GridNav {
     if (this.chunkTiles.size > 0) {
       const cx = gx >> 6
       const cy = gy >> 6
-      const tile = this.chunkTiles.get(`${cx},${cy}`)
+      let tile = this.lastTile
+      if (cx !== this.lastTileCx || cy !== this.lastTileCy) {
+        this.lastTileCx = cx
+        this.lastTileCy = cy
+        tile = this.chunkTiles.get(`${cx},${cy}`)
+        this.lastTile = tile
+      }
       if (!tile) return CELL_BLOCKED
       return tile[((gy & 63) << 6) | (gx & 63)]!
     }
     if (gx < 0 || gy < 0 || gx >= this.w || gy >= this.h) return CELL_BLOCKED
     return this.grid[gy * this.w + gx]!
+  }
+
+  invalidateTileCache(): void {
+    this.lastTileCx = 0x7fffffff
+    this.lastTileCy = 0x7fffffff
+    this.lastTile = undefined
   }
 
   private idx(p: Vec): number {

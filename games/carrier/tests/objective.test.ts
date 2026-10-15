@@ -16,7 +16,6 @@ import {
   rulesOf,
   spawnPoints,
   unpackObjective,
-  zoneCentre,
   zoneCount,
 } from "../shared/objective"
 import { type ServerMsg, decodeClient, decodeServer, encode } from "../shared/protocol"
@@ -37,12 +36,13 @@ function run(o: Objective, from: number, to: number, ships: ObjectiveShip[] | ((
 
 /** A carrier sitting on zone `i`'s centre at time t. */
 const onZone = (o: Objective, i: number, team: number, t: number): ObjectiveShip => {
-  const c = zoneCentre(o.state.zones[i]!, t)
-  return { team, x: c[0], z: c[1], active: true }
+  void t
+  const z = o.state.zones[i]!
+  return { team, x: z.x, z: z.z, active: true }
 }
 
 describe("zone placement", () => {
-  test("open water along the whole drift path, clear of every spawn, deterministic", () => {
+  test("open water, clear of every spawn, deterministic", () => {
     for (const seed of SEEDS) {
       const arch = makeArchipelago(seed)
       const spawns = spawnPoints(arch)
@@ -52,8 +52,8 @@ describe("zone placement", () => {
         const t0 = cycle * OBJECTIVE_DEFAULTS.cycle
         const zones = cycle === 0 ? prev : placeZones(arch, spawns, 0, cycle, cycle % 2 ? 1 : 2, prev, t0, OBJECTIVE_DEFAULTS)
         for (const z of zones) {
-          for (const f of [0, 0.5, 1]) {
-            const c = zoneCentre(z, t0 + f * OBJECTIVE_DEFAULTS.cycle)
+          {
+            const c = [z.x, z.z] as const
             expect(Math.hypot(c[0], c[1])).toBeLessThanOrEqual(ZONE_AREA.reach + 1)
             for (const s of spawns) expect(Math.hypot(c[0] - s.x, c[1] - s.z) - z.r).toBeGreaterThanOrEqual(ZONE_AREA.spawnGap)
             // A carrier fits anywhere in the inner 70%: deep water across it.
@@ -65,8 +65,7 @@ describe("zone placement", () => {
         }
         if (zones.length === 2) expect(Math.hypot(zones[0]!.x - zones[1]!.x, zones[0]!.z - zones[1]!.z)).toBeGreaterThan(zones[0]!.r * 2 + ZONE_AREA.gap - 1)
         if (cycle > 0) {
-          const before = zoneCentre(prev[0]!, t0)
-          const hop = Math.hypot(before[0] - zones[0]!.x, before[1] - zones[0]!.z)
+          const hop = Math.hypot(prev[0]!.x - zones[0]!.x, prev[0]!.z - zones[0]!.z)
           expect(hop).toBeGreaterThanOrEqual(ZONE_AREA.hop)
           expect(hop).toBeLessThanOrEqual(ZONE_AREA.maxHop)
         }
@@ -85,19 +84,6 @@ describe("zone placement", () => {
       expect(Math.max(...d) - Math.min(...d)).toBeLessThan(2 * ZONE_AREA.firstReach + 600)
     }
   })
-
-  test("zones drift and turn, still before they go live", () => {
-    const z = { x: 100, z: 200, heading: 0, speed: 3, turn: 0.01, t0: 50 }
-    expect(zoneCentre(z, 0)).toEqual([100, 200])
-    const a = zoneCentre(z, 51)
-    expect(a[1]).toBeLessThan(200)
-    // Moves at its speed along an arc: chord ≤ path length, and the heading has turned.
-    const b = zoneCentre(z, 150)
-    const chord = Math.hypot(b[0] - 100, b[1] - 200)
-    expect(chord).toBeLessThan(300)
-    expect(chord).toBeGreaterThan(250)
-    expect(b[0]).toBeGreaterThan(100)
-  })
 })
 
 describe("zone count", () => {
@@ -113,14 +99,14 @@ describe("zone count", () => {
     const far = (team: number): ObjectiveShip => ({ team, x: 9000, z: 9000 + team * 500, active: true })
     const four = [0, 1, 2, 3].map(far)
     const R = OBJECTIVE_DEFAULTS
-    run(o, 0, R.opening - R.warning + 0.05, four)
+    run(o, 0, R.cycle - R.warning + 0.05, four)
     expect(o.state.next).toHaveLength(2)
-    run(o, R.opening - R.warning + 0.15, R.opening + 0.05, four)
+    run(o, R.cycle - R.warning + 0.15, R.cycle + 0.05, four)
     expect(o.state.zones).toHaveLength(2)
     // Back to three active (one empty, so inactive): the next reveal has one.
     const three = [far(0), far(1), far(2), { ...far(3), active: false }]
-    const reveal = R.opening + R.cycle - R.warning
-    run(o, R.opening + 0.15, reveal + 0.05, three)
+    const reveal = R.cycle * 2 - R.warning
+    run(o, R.cycle + 0.15, reveal + 0.05, three)
     expect(o.state.next).toHaveLength(1)
   })
 })
@@ -187,13 +173,16 @@ describe("capture and score", () => {
 describe("relocation and rounds", () => {
   const R = OBJECTIVE_DEFAULTS
 
-  test("next spots appear `warning` s ahead, then the zones move (neutral again): the opening, then every cycle", () => {
+  test("zones stay put for the cycle; next spots appear `warning` s ahead, then the zones move (neutral again)", () => {
     const o = new Objective(arch7, 100)
     const first = o.state.zones[0]!
-    const move = 100 + R.opening
+    const move = 100 + R.cycle
+    expect(R.cycle).toBe(300)
     expect(o.state.moveAt).toBe(move)
     run(o, 100, move - R.warning - 0.2, [])
     expect(o.state.next).toHaveLength(0)
+    // Static the whole time.
+    expect(o.state.zones[0]).toMatchObject({ x: first.x, z: first.z })
     const ev = run(o, move - R.warning - 0.1, move - R.warning + 0.1, [])
     expect(ev).toContainEqual({ k: "reveal", count: 1 })
     const next = o.state.next[0]!
@@ -221,12 +210,12 @@ describe("relocation and rounds", () => {
     expect(o.state.cycle).toBe(0)
   })
 
-  test("the time limit ends a round: highest score wins, a tie is a draw", () => {
-    const rules: ObjectiveRules = rulesOf(packRules({ ...R, roundTime: 120 }))
-    const o = new Objective(arch7, 0, rules)
-    run(o, 0, 121, [])
-    expect(o.state.end).toBeGreaterThan(0)
-    expect(o.state.winner).toBe(-1)
+  test("no clock: a round without points runs on through relocations until someone reaches the target", () => {
+    const o = new Objective(arch7, 0)
+    run(o, 0, R.cycle * 8, [])
+    expect(o.state.end).toBe(-1)
+    expect(o.state.cycle).toBe(8)
+    expect(Object.keys(rulesOf(packRules(R)))).not.toContain("roundTime")
   })
 
   test("rules from the wire are clamped", () => {
@@ -241,7 +230,7 @@ describe("relocation and rounds", () => {
 describe("wire", () => {
   test("packObjective round-trips through unpackObjective", () => {
     const o = new Objective(arch7, 0)
-    run(o, 0, OBJECTIVE_DEFAULTS.opening - 5, (t) => [onZone(o, 0, 1, t)])
+    run(o, 0, OBJECTIVE_DEFAULTS.cycle - 5, (t) => [onZone(o, 0, 1, t)])
     const v = unpackObjective(JSON.parse(JSON.stringify(packObjective(o.state))))!
     expect(v).not.toBeNull()
     expect(v.zones).toHaveLength(1)
@@ -250,7 +239,7 @@ describe("wire", () => {
     expect(v.scores[1]).toBeCloseTo(o.state.scores[1]!, 0)
     expect(v.moveAt).toBe(o.state.moveAt)
     expect(v.rules.target).toBe(OBJECTIVE_DEFAULTS.target)
-    expect(zoneCentre(v.zones[0]!, 100)[0]).toBeCloseTo(zoneCentre(o.state.zones[0]!, 100)[0], 0)
+    expect(v.zones[0]!.x).toBeCloseTo(o.state.zones[0]!.x, 0)
     expect(unpackObjective([1, 2, 3])).toBeNull()
     expect(unpackObjective("x")).toBeNull()
   })
@@ -309,7 +298,7 @@ describe("room", () => {
     const me = playerOf(core.crew!, a.last("welcome")!.id)!
     const ship = core.ships.get(me.ship)!
     const st = core.objectiveState!
-    const c = zoneCentre(st.zones[0]!, st.cycleAt)
+    const c = [st.zones[0]!.x, st.zones[0]!.z] as const
     ship.x = c[0]
     ship.z = c[1]
     const before = b.all("obj").length
@@ -328,7 +317,7 @@ describe("room", () => {
     const a = join("ada")
     const empty = core.crew!.ships.find((s) => s.helm === null && s.pilots.length === 0)!
     const st = core.objectiveState!
-    const c = zoneCentre(st.zones[0]!, st.cycleAt)
+    const c = [st.zones[0]!.x, st.zones[0]!.z] as const
     const ship = core.ships.get(empty.id)!
     ship.x = c[0]
     ship.z = c[1]
@@ -344,5 +333,54 @@ describe("room", () => {
     d.step(100)
     expect(d.core.objectiveState!.zones[0]!.r).toBe(900)
     expect(unpackObjective(x.last("obj")!.o)!.zones[0]!.r).toBe(900)
+  })
+  test("ships, crew and aircraft never reset: through captures, a relocation, a round end and restart, and new rules", () => {
+    const d = room(true)
+    const a = d.join("ada")
+    d.join("bo")
+    const rules = { ...OBJECTIVE_DEFAULTS, cycle: 45, warning: 5, capture: 2, rate: 10, target: 300, intermission: 5 }
+    d.core.message(a, encode({ type: "objective", r: packRules(rules) }))
+    d.step(100)
+    const crew = d.core.crew!
+    const me = playerOf(crew, a.last("welcome")!.id)!
+    // Every carrier under way, A's parked on the zone.
+    for (const s of crew.ships) {
+      const sim = (d.core as unknown as { sims: Map<number, { controls: { throttle: number; rudder: number } }> }).sims.get(s.id)!
+      sim.controls = { throttle: 0.6, rudder: 0.3 }
+    }
+    const z0 = d.core.objectiveState!.zones[0]!
+    const mine = d.core.ships.get(me.ship)!
+    mine.x = z0.x
+    mine.z = z0.z
+    const crewBefore = JSON.stringify(crew.ships.map((s) => [s.id, s.team, s.helm, s.pilots, s.aircraft]))
+    const ids = [...d.core.ships.keys()].join()
+    let last = new Map([...d.core.ships].map(([id, s]) => [id, [s.x, s.z]]))
+    let worst = 0
+    const watch = (ms: number) => {
+      for (let left = ms; left > 0; left -= 50) {
+        d.step(50)
+        for (const [id, s] of d.core.ships) {
+          const p = last.get(id)!
+          worst = Math.max(worst, Math.hypot(s.x - p[0]!, s.z - p[1]!))
+        }
+        last = new Map([...d.core.ships].map(([id, s]) => [id, [s.x, s.z]]))
+      }
+    }
+    const round0 = d.core.objectiveState!.round
+    // Hold the zone (the sim moves the ship; keep putting it back is a teleport, so let it sail out and in naturally).
+    watch(50_000)
+    const st = d.core.objectiveState!
+    expect(st.cycle + (st.round > round0 ? 1 : 0)).toBeGreaterThan(0)
+    // Force a round end and the restart after it.
+    st.scores[me.team] = rules.target
+    watch(rules.intermission * 1000 + 1500)
+    expect(d.core.objectiveState!.round).toBeGreaterThan(round0)
+    // A dev rules message restarts the round too.
+    d.core.message(a, encode({ type: "objective", r: packRules(rules) }))
+    watch(1000)
+    // Top speed at 60% throttle is ~14 m/s: never more than a step's travel between ticks.
+    expect(worst).toBeLessThan(2)
+    expect([...d.core.ships.keys()].join()).toBe(ids)
+    expect(JSON.stringify(d.core.crew!.ships.map((s) => [s.id, s.team, s.helm, s.pilots, s.aircraft]))).toBe(crewBefore)
   })
 })

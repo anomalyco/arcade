@@ -1,5 +1,10 @@
 export type LevelChunk = {
   data: ArrayBuffer
+  /** Optional active byte count when `data` is a pooled ArrayBuffer with larger capacity. */
+  byteLength?: number
+  /** Optional toroidal streaming slot (0..8) and cache key so unchanged chunks stay resident on the GPU. */
+  streamSlot?: number
+  streamKey?: string
   box: readonly [number, number, number, number]
   cutBox?: readonly number[]
   /**

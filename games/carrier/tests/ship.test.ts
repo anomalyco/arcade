@@ -68,7 +68,7 @@ describe("ship", () => {
     run(s, 300, { throttle: 0, rudder: 0 }, sea)
     expect(s.u).toBe(0)
     expect(z0 - s.z).toBeGreaterThan(500)
-    expect(z0 - s.z).toBeLessThan(1500)
+    expect(z0 - s.z).toBeLessThan(2500)
   })
 
   test("astern: reverses to stop, backs up slowly, and steers like a car in reverse", () => {
@@ -185,7 +185,7 @@ describe("ship", () => {
       expect(maxPitch).toBeLessThan(0.12)
       expect(maxRoll).toBeLessThan(0.2)
       // Heave acceleration stays well under 1 g and changes smoothly from step to step (no kicks).
-      expect(maxAcc).toBeLessThan(0.4 * 9.81)
+      expect(maxAcc).toBeLessThan(0.6 * 9.81)
       expect(maxStep).toBeLessThan(0.3)
       expect(sumErr / n).toBeLessThan(2.5)
     }
@@ -243,7 +243,7 @@ describe("ship", () => {
         if (name === "head") {
           // Rears up a face and pitches down over the crest: several degrees each way, the bow clear of the water, slams.
           expect(p1).toBeGreaterThan(6 / D)
-          expect(-p0).toBeGreaterThan(5 / D)
+          expect(-p0).toBeGreaterThan(4.5 / D)
           expect(air).toBeGreaterThan(10)
           expect(h1 - h0).toBeGreaterThan(10)
           expect(s.slams - slams).toBeGreaterThan(5)

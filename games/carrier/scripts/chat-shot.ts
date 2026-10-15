@@ -71,7 +71,7 @@ const st = (p: Page): Promise<M> =>
       ship: me?.ship ?? -1,
       role: c.game.state.role,
       order: me ? (c.net.ships.get(me.ship)?.[8] ?? Number.NaN) : Number.NaN,
-      feed: [...document.querySelectorAll("#ct .ln")].map((e) => (e as HTMLElement).textContent).join(" | "),
+      feed: [...document.querySelectorAll("#ct .achat-line")].map((e) => (e as HTMLElement).textContent).join(" | "),
       open: c.chat.open,
       ops: c.ops.open,
       teams: c.teams.open,
@@ -91,7 +91,7 @@ async function until(p: Page, ok: (m: M) => boolean, ms = 15_000): Promise<M> {
 }
 
 /** The current frame under the DOM, then a page screenshot (as scripts/ffa-shot.ts). */
-async function shot(page: Page, name: string): Promise<void> {
+async function shot(page: Page, name: string, clip?: { x: number; y: number; width: number; height: number }): Promise<void> {
   const url = await page.evaluate(async () => {
     const c = (globalThis as unknown as { carrier: { renderer: { context: { device: GPUDevice } } } }).carrier
     const device = c.renderer.context.device
@@ -151,7 +151,7 @@ async function shot(page: Page, name: string): Promise<void> {
     canvas.after(img)
     return new Promise((r) => (img.complete ? r(null) : (img.onload = () => r(null))))
   }, url)
-  await page.screenshot({ path: join(out, `${name}.png`) })
+  await page.screenshot({ path: join(out, `${name}.png`), clip })
   await page.evaluate(() => {
     document.getElementById("shot-bg")?.remove()
     document.getElementById("view")!.style.visibility = ""
@@ -221,7 +221,7 @@ await a.waitForTimeout(400)
 const typed = await st(a)
 const leaked = await a.evaluate(() => (globalThis as unknown as { leaked: string[] }).leaked)
 const value = await a.evaluate(() => (document.querySelector("#ct input") as HTMLInputElement).value)
-const channel = await a.evaluate(() => (document.querySelector("#ct .ch") as HTMLElement).textContent)
+const channel = await a.evaluate(() => (document.querySelector("#ct .achat-channel") as HTMLElement).textContent)
 const debugOpen = await a.evaluate(() => !!(globalThis as unknown as { carrier: { debugMenu?: { visible: boolean } } }).carrier.debugMenu?.visible)
 console.log(`typed: value "${value}", channel ${channel}, leaked [${leaked.join(",")}], order ${before.order} -> ${typed.order}`)
 check(leaked.length === 0, "no keydown reached a window handler while typing")
@@ -238,17 +238,75 @@ check((await st(a)).feed.includes("wwwsemg") === false, "a cancelled line is nev
 
 // The feed fades after ~10 s and comes back while the input is open.
 await a.waitForTimeout(10_500)
-const faded = await a.evaluate(() => [...document.querySelectorAll("#ct .ln")].map((e) => getComputedStyle(e).opacity))
+const faded = await a.evaluate(() => [...document.querySelectorAll("#ct .achat-line")].map((e) => getComputedStyle(e).opacity))
 check(faded.every((o) => Number(o) < 0.05), `lines faded (${faded.join(",")})`)
 await shot(a, "04-faded")
 await a.keyboard.press("t")
 await a.waitForTimeout(200)
-const back = await a.evaluate(() => [...document.querySelectorAll("#ct .ln")].map((e) => getComputedStyle(e).opacity))
+const back = await a.evaluate(() => [...document.querySelectorAll("#ct .achat-line")].map((e) => getComputedStyle(e).opacity))
 check(back.every((o) => Number(o) > 0.5), `opening the input shows them again (${back.join(",")})`)
 await shot(a, "05-open-shows-history")
 await a.keyboard.press("Enter")
 const empty = await until(a, (m) => !m.open, 2000)
 check(!empty.open, "empty Enter closes")
+
+// Side by side with Getaway's chat (the look this copies): two deployed Getaway pages in a fresh private room trade
+// lines, then the chat corners of both games go next to each other in one capture.
+await a.keyboard.press("y")
+await until(a, (m) => m.open, 2000)
+await a.keyboard.type("on my way to the zone")
+await a.waitForTimeout(300)
+await shot(a, "06-carrier-open")
+const carrierBox = await a.evaluate(() => {
+  const r = document.getElementById("ct")!.getBoundingClientRect()
+  const z = Number(getComputedStyle(document.documentElement).getPropertyValue("--hud")) || 1
+  return { x: 0, y: 40, width: Math.ceil((r.right * z) + 30), height: Math.ceil(r.bottom * z + 20 - 40) }
+})
+await shot(a, "carrier-crop", carrierBox)
+await a.keyboard.press("Escape")
+
+const gwBase = opt("getaway", "https://anoma.ly/arcade/getaway/")
+const g1 = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 })
+await g1.goto(gwBase, { waitUntil: "load" })
+await g1.locator(".lb-name").fill("Dax")
+await g1.locator('[data-act="create"]').click()
+await g1.waitForSelector(".h-chat", { timeout: 30_000, state: "attached" })
+const code = new URL(g1.url()).searchParams.get("r")!
+const g2 = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 })
+await g2.goto(`${gwBase}?r=${code}`, { waitUntil: "load" })
+await g2.locator(".lb-name").fill("Officer")
+await g2.locator('[data-act="join"]').click()
+await g2.waitForSelector(".h-chat", { timeout: 30_000, state: "attached" })
+const gsay = async (p: Page, text: string) => {
+  await p.bringToFront()
+  await p.keyboard.press("Enter")
+  await p.waitForTimeout(150)
+  await p.keyboard.type(text)
+  await p.keyboard.press("Enter")
+  await p.waitForTimeout(700)
+}
+await gsay(g1, "hello from the getaway car")
+await gsay(g2, "cops here, ahoy!")
+await gsay(g1, "meet at the bank")
+await g1.bringToFront()
+await g1.keyboard.press("Enter")
+await g1.keyboard.type("on my way to the zone")
+await g1.waitForTimeout(300)
+await g1.screenshot({ path: join(out, "07-getaway-open.png") })
+const gwBox = await g1.evaluate(() => {
+  const r = document.querySelector(".h-chat")!.getBoundingClientRect()
+  return { x: 0, y: Math.max(0, Math.floor(r.top - 20)), width: Math.ceil(r.right + 30), height: Math.ceil(r.height + 40) }
+})
+await g1.screenshot({ path: join(out, "getaway-crop.png"), clip: gwBox })
+const gwLines = await g1.evaluate(() => [...document.querySelectorAll(".h-chat .c-line, .h-chat .achat-line")].map((e) => e.textContent).join(" | "))
+check(/hello from the getaway car/.test(gwLines), `Getaway chat lines (${gwLines})`)
+const { readFileSync } = await import("node:fs")
+const b64 = (f: string) => `data:image/png;base64,${readFileSync(join(out, f)).toString("base64")}`
+const sheet = await browser.newPage({ viewport: { width: 1200, height: 600 }, deviceScaleFactor: 1 })
+await sheet.setContent(`<body style="margin:0;background:#111;color:#ddd;font:14px sans-serif;display:flex;gap:24px;padding:20px;align-items:flex-start">
+<figure style="margin:0"><figcaption style="margin-bottom:8px">GETAWAY (deployed)</figcaption><img src="${b64("getaway-crop.png")}"></figure>
+<figure style="margin:0"><figcaption style="margin-bottom:8px">CARRIER (new)</figcaption><img src="${b64("carrier-crop.png")}"></figure></body>`)
+await sheet.screenshot({ path: join(out, "08-side-by-side.png"), fullPage: true })
 
 if (logs.length) console.log(logs.slice(0, 20).join("\n"))
 console.log(failures ? `${failures} FAILED` : "all ok")

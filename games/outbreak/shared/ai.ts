@@ -43,7 +43,17 @@ export const aiControls = [
   { key: "sightRange", label: "Sight range", group: "AI", min: 6, max: 36, step: 1, unit: "m" },
   { key: "sightCone", label: "Sight cone", group: "AI", min: 45, max: 180, step: 5, unit: "deg" },
   { key: "hearingScale", label: "Hearing scale", group: "AI", min: 0, max: 2.5, step: 0.1, unit: "×" },
-  { key: "aiWalkSpeed", label: "Wander speed", group: "AI", min: 0.4, max: 2.2, step: 0.05, unit: "m/s" },
+  {
+    key: "ai.walkSpeed",
+    field: "walkSpeed",
+    legacyKeys: ["aiWalkSpeed"],
+    label: "Wander speed",
+    group: "AI",
+    min: 0.4,
+    max: 2.2,
+    step: 0.05,
+    unit: "m/s",
+  },
   { key: "chaseSpeed", label: "Chase speed", group: "AI", min: 1.2, max: 4.8, step: 0.05, unit: "m/s" },
   { key: "aggression", label: "Aggression", group: "AI", min: 0.3, max: 2.5, step: 0.1, unit: "×" },
   { key: "nightMultiplier", label: "Night boost", group: "AI", min: 1.0, max: 2.2, step: 0.05, unit: "×" },
@@ -222,6 +232,10 @@ export class OutbreakAISubsystem {
   private solids: Rect[] = []
   private portals: NavPortal[] = []
   private directorWaveCooldown = 18
+  private lastTopologyDigest = -1
+  private lastBarriersRef: unknown = null
+  private lastDoorsRef: unknown = null
+  private lastPropsRef: unknown = null
 
   constructor(town: Town, initialPlayerX = 27.7, initialPlayerY = 41, config: Partial<AIConfig> = {}) {
     Object.assign(this.config, config)
@@ -254,8 +268,44 @@ export class OutbreakAISubsystem {
     }
   }
 
+  private computeTopologyDigest(town: Town, chunkTiles?: ReadonlyMap<string, Uint8Array>): number {
+    let h = 2166136261 >>> 0
+    h = Math.imul(h ^ town.barriers.length, 16777619) >>> 0
+    h = Math.imul(h ^ town.props.length, 16777619) >>> 0
+    h = Math.imul(h ^ (town.vehicles?.length ?? 0), 16777619) >>> 0
+    h = Math.imul(h ^ (chunkTiles?.size ?? 0), 16777619) >>> 0
+    for (let i = 0; i < town.doors.length; i++) {
+      const d = town.doors[i]!
+      const st = this.portalStates.get(d.id)
+      const mask = (d.open ? 1 : 0) | (d.locked ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5)
+      h = Math.imul(h ^ mask, 16777619) >>> 0
+    }
+    for (let i = 0; i < town.windows.length; i++) {
+      const w = town.windows[i]!
+      const st = this.portalStates.get(w.id)
+      const mask = (w.open ? 1 : 0) | (w.openable ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5)
+      h = Math.imul(h ^ mask, 16777619) >>> 0
+    }
+    return h >>> 0
+  }
+
   rebuildTopology(town: Town, chunkTiles?: ReadonlyMap<string, Uint8Array>): void {
     this.ensurePortals(town)
+    const digest = this.computeTopologyDigest(town, chunkTiles)
+    if (
+      digest === this.lastTopologyDigest &&
+      this.lastBarriersRef === town.barriers &&
+      this.lastDoorsRef === town.doors &&
+      this.lastPropsRef === town.props &&
+      (!chunkTiles || chunkTiles.size === this.nav.chunkTiles.size)
+    ) {
+      return
+    }
+    this.lastTopologyDigest = digest
+    this.lastBarriersRef = town.barriers
+    this.lastDoorsRef = town.doors
+    this.lastPropsRef = town.props
+
     this.walls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
     this.closedDoors = town.doors
       .filter((d) => !d.open || (this.portalStates.get(d.id)?.barricadePlanks ?? 0) > 0)
@@ -301,9 +351,11 @@ export class OutbreakAISubsystem {
     if (chunkTiles && chunkTiles.size > 0) {
       this.nav.chunkTiles.clear()
       for (const [k, tile] of chunkTiles) this.nav.chunkTiles.set(k, tile)
+      this.nav.invalidateTileCache()
       return
     }
     this.nav.chunkTiles.clear()
+    this.nav.invalidateTileCache()
     const navObstacleRects = [
       ...town.barriers.map((b) => b.rect),
       ...town.props.flatMap((p) => {

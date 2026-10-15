@@ -28,8 +28,8 @@ export function outbreakSplatterSurfaces(level: LevelData): SplatterSurfaces {
   for (const chunks of [level.chunks, level.glass]) {
     for (const chunk of chunks) {
       if (chunk.customCutaway) continue
-      const p = new DataView(chunk.data)
-      for (let i = 0; i < chunk.data.byteLength; i += 72) {
+      const p = new DataView(chunk.data, 0, chunk.byteLength ?? chunk.data.byteLength)
+      for (let i = 0; i < p.byteLength; i += 72) {
         const mat = Math.round(half(p.getUint16(i + 20, true)))
         const floor = Math.round(half(p.getUint16(i + 22, true)))
         if (mat === 21 || mat === 18 || mat === 22) continue // Skip roofs and foliage tufts

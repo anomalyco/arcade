@@ -226,23 +226,47 @@ export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
 export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 164
 
+export type OutbreakLightingUniformSettings =
+  | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
+      flashlightIntensity: number
+      flashlightRange: number
+      flashlightCone: number
+      flashlightWarmth: number
+      fogStyle?: number
+      fogEdgeSoftness?: number
+      fogMemoryDim?: number
+      fogUnknownGrain?: number
+      fogMemorySaturation?: number
+      fogMemoryWarmth?: number
+      fogPenumbra?: number
+      fogPenumbraGrowth?: number
+      fogRevealTime?: number
+      fogFadeTime?: number
+    })
+  | {
+      lighting: OutbreakLightingSettings
+      flashlight: Partial<FlashlightBeamSettings> & {
+        flashlightIntensity: number
+        flashlightRange: number
+        flashlightCone: number
+        flashlightWarmth: number
+      }
+      fog?: {
+        fogStyle?: number
+        fogEdgeSoftness?: number
+        fogMemoryDim?: number
+        fogUnknownGrain?: number
+        fogMemorySaturation?: number
+        fogMemoryWarmth?: number
+        fogPenumbra?: number
+        fogPenumbraGrowth?: number
+        fogRevealTime?: number
+        fogFadeTime?: number
+      }
+    }
+
 export type OutbreakLightingFrameState = {
-  settings: OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
-    flashlightIntensity: number
-    flashlightRange: number
-    flashlightCone: number
-    flashlightWarmth: number
-    fogStyle?: number
-    fogEdgeSoftness?: number
-    fogMemoryDim?: number
-    fogUnknownGrain?: number
-    fogMemorySaturation?: number
-    fogMemoryWarmth?: number
-    fogPenumbra?: number
-    fogPenumbraGrowth?: number
-    fogRevealTime?: number
-    fogFadeTime?: number
-  }
+  settings: OutbreakLightingUniformSettings
   playerX: number
   playerY: number
   playerH: number
@@ -304,7 +328,8 @@ export function packOutbreakLightingUniforms(
   flashColor: readonly [number, number, number],
   out: Float32Array<ArrayBuffer> = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS),
 ): Float32Array<ArrayBuffer> {
-  const { settings: s } = state
+  const raw = state.settings
+  const s = "flashlight" in raw ? { ...raw.lighting, ...raw.flashlight, ...raw.fog } : raw
   const dirX = Math.cos(state.playerAim)
   const dirY = Math.sin(state.playerAim)
   const handX = state.flashlightOrigin?.[0] ?? state.playerX + dirX * 0.24
@@ -1050,8 +1075,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     var wetPuddle = 0.0;
     if (OL.u8.y > 0.01) {
       if (world.y < 0.35 && n.y > 0.75) {
-        let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u8.y * (0.45 + 0.85 * q.x * q.y);
+        // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
+        let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+        wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
         col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
       }
     }

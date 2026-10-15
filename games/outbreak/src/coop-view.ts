@@ -13,10 +13,17 @@ import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
 import { beamPose } from "./flashlight-beam"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
-type LightSettings = Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
-  practicalWarmth: number
-  beamPoolDistance: number
-}
+type LightSettings =
+  | (Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
+      practicalWarmth: number
+      beamPoolDistance: number
+    })
+  | {
+      flashlight: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
+        beamPoolDistance: number
+      }
+      lighting: { practicalWarmth: number }
+    }
 
 /** Visibility of an actor to the local survivor: the fog/vision module's soft actor test when present. */
 function actorVisibility(vision: Vision, x: number, y: number): number {
@@ -108,19 +115,21 @@ export class CoopView {
   ): number {
     const others = this.others
     if (!others.length) return count
-    const rgb = flashlightColor(settings.flashlightWarmth)
-    const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
-    const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
+    const flash = "flashlight" in settings ? settings.flashlight : settings
+    const practicalWarmth = "lighting" in settings ? settings.lighting.practicalWarmth : settings.practicalWarmth
+    const rgb = flashlightColor(flash.flashlightWarmth)
+    const cosHalf = Math.cos((flash.flashlightCone * Math.PI) / 360)
+    const directScale = practicalWarmth > 0.6 ? 0.28 : 1.0
     for (const slot of others) {
       const p = slot.survivor
       if (count >= MAX_LIGHTS - 2 || p.flashlightOutput <= 0.001 || !p.flashlightOn) continue
       const inside = town.buildings.some((b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1)
-      const power = p.flashlightOutput * settings.flashlightIntensity * directScale
-      const range = Math.min(settings.flashlightRange, inside ? 5.2 : 6.4)
+      const power = p.flashlightOutput * flash.flashlightIntensity * directScale
+      const range = Math.min(flash.flashlightRange, inside ? 5.2 : 6.4)
       const ground = supportHeight(town, p.x, p.y)
       const avatar = this.avatars.get(slot.index)
       const rig = avatar?.light ?? { p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const, d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const, mounted: false }
-      const beam = beamPose(rig, p.x, p.y, p.aim, ground, settings.beamPoolDistance, blockers)
+      const beam = beamPose(rig, p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
       lights.set(
         [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), cosHalf, 1, 0, occluders, 0.06, -1],
         count++ * LIGHT_FLOATS,

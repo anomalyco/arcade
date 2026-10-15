@@ -71,8 +71,9 @@ fn evalWeatherPuddleRipple(xz: vec2f, time: f32, rippleStrength: f32, footprint:
 }
 
 /**
- * Stretched wet-floor / puddle mirror reflection of a practical light or flashlight cone.
- * Produces the signature noir elongated sodium/amber/flashlight reflection streak on wet asphalt.
+ * Stretched wet-floor / puddle reflection streak of a practical light or flashlight cone.
+ * Anchors on the light's ground pool rather than the geometric mirror point (which in steep
+ * top-down cameras lands behind the road), and stretches asymmetrically toward the camera eye.
  */
 fn evalWeatherWetMirrorStreak(
   world: vec3f,
@@ -87,13 +88,13 @@ fn evalWeatherWetMirrorStreak(
   let hl = max(0.25, lightPos.y - world.y);
   let he = max(0.35, eye.y - world.y);
   let k = hl / (hl + he);
-  let pm = lightPos.xz + (eye.xz - lightPos.xz) * k + normalXZ * (1.8 * hl);
-  let toEye = normalize(eye.xz - pm + vec2f(1e-4));
+  let toEye = normalize(eye.xz - lightPos.xz + vec2f(1e-4));
+  let pm = lightPos.xz + (eye.xz - lightPos.xz) * (0.18 * k) + normalXZ * (1.35 * hl);
   let q = world.xz - pm;
   let along = dot(q, toEye);
   let across = dot(q, vec2f(-toEye.y, toEye.x));
   let wAcross = max(0.18, roughWidth);
-  let wAlong = max(0.85, roughWidth * 5.8);
+  let wAlong = select(max(0.55, roughWidth * 2.4), max(1.10, roughWidth * 6.4), along >= 0.0);
   let r2 = (across * across) / (wAcross * wAcross) + (along * along) / (wAlong * wAlong);
   if (r2 > 9.0) { return vec3f(0.0); }
   return lightColor * (lightPower * exp(-r2) * vis);
