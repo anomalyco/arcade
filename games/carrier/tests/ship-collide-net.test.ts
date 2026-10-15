@@ -52,7 +52,7 @@ function ram(speed: number) {
   // Far from the islands' ring: B lies still heading north, A comes from the east at `speed`.
   Object.assign(sb, { x: 7000, z: 0, heading: 0, u: 0, v: 0, r: 0, power: 0 })
   const throttle = speed / SHIP.topSpeed
-  Object.assign(sa, { x: 7000 + 165 + 25.6 + speed * 1.5, z: 0, heading: -Math.PI / 2, u: speed, v: 0, r: 0, power: throttle })
+  Object.assign(sa, { x: 7000 + 165 + 38 + speed * 1.5, z: 0, heading: -Math.PI / 2, u: speed, v: 0, r: 0, power: throttle })
   core.message(a, encode({ type: "helm", o: throttle, r: 0 }))
   core.message(b, encode({ type: "helm", o: 0, r: 0 }))
   return { core, a, b, idA, idB, sa, sb, run }
@@ -78,7 +78,7 @@ describe("carrier collisions in the room", () => {
     expect(ha.by).toBe(w.b.id)
     expect(hb.fires.length).toBe(1)
     // Pushed apart: A's bow is outside B's side, B was shoved west.
-    expect(w.sa.x - w.sb.x).toBeGreaterThan(165 + 25.6 - 1.5)
+    expect(w.sa.x - w.sb.x).toBeGreaterThan(165 + 38 - 1.5)
     expect(w.sb.x).toBeLessThan(7000)
     // Clients see it as a hull change.
     expect(w.b.all("hulls").length).toBeGreaterThan(0)
@@ -89,7 +89,7 @@ describe("carrier collisions in the room", () => {
     w.run(20000)
     expect(w.core.hull(w.idB)!.hp).toBe(FLEET.hp)
     expect(w.core.hull(w.idA)!.hp).toBe(FLEET.hp)
-    expect(w.sa.x - w.sb.x).toBeLessThan(165 + 25.6 + 1)
+    expect(w.sa.x - w.sb.x).toBeLessThan(165 + 38 + 1)
   })
 
   test("ramming a crippled ship sinks it, credited to the rammer's helm", () => {

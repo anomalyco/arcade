@@ -46,7 +46,10 @@ async function open(url: string, name: string): Promise<Page> {
     const Fake = function (this: unknown, url: string | URL, protocols?: string | string[]) {
       const p = Array.isArray(protocols) ? protocols : protocols ? [protocols] : []
       if (p.some((x) => x.startsWith("vite"))) return Object.assign(new EventTarget(), { readyState: 0, send() {}, close() {} })
-      return new Real(url, protocols)
+      const ws = new Real(url, protocols)
+      const at = performance.now()
+      ws.addEventListener("close", (e) => ((globalThis as { __closes?: string[] }).__closes ??= []).push(`${Math.round((performance.now() - at) / 100) / 10}s code ${e.code} ${e.reason}`))
+      return ws
     } as unknown as typeof WebSocket
     Object.assign(Fake, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, prototype: Real.prototype })
     globalThis.WebSocket = Fake
@@ -218,7 +221,7 @@ if (only.includes("panel") || only.includes("duel")) {
       ws.close()
       return got.filter((g) => !g.includes('"crew"')).slice(0, 6).join("\n")
     }, room))
-    console.log("diag", await js(a, `return JSON.stringify({ state: n.state, room: n.room, phase: f.phase, crashed: f.plane.crashed, y: Math.round(f.plane.y), planes: [...n.planes.keys()], bots: n.bots, hp: c.flight.weapons.world.hp(n.id) })`))
+    console.log("diag", await js(a, `return JSON.stringify({ closes: globalThis.__closes ?? [], state: n.state, room: n.room, phase: f.phase, crashed: f.plane.crashed, y: Math.round(f.plane.y), planes: [...n.planes.keys()], bots: n.bots, hp: c.flight.weapons.world.hp(n.id) })`))
     const look = (from: "me" | "bot", back = 60, up = 14) =>
       js(
         a,

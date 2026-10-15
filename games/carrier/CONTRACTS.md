@@ -702,6 +702,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
     25 m.
   - Enemy jet crashing into the ship: 50.
+  - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 650; the hull that
+    brought the speed takes up to 40% less. A 15 m/s T-bone: ~300 to the rammed side, ~180 to the rammer.
   - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
 - Zones (`hullZone`, ship-local):
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`
@@ -751,6 +753,24 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - `ShipHit.amount` / `ShipDamageKind` carry the shell type into `Fleet.hit`.
 - Real-GPU check: `scripts/ships-shot.ts`. Three pages on three carriers: A's F-35C bombs B's carrier (direct hit, near
   miss), C's Hornet strafes it and fires dumbfires, A's bombs finish it, B moves to its replacement. Captures go to `captures/ships/damage/`.
+
+## Carrier collisions (`shared/ship-collide.ts`, hook in `server/core.ts` `collideShips`, `src/game/game.ts`)
+
+- Carriers don't pass through each other. The colliding shape is the flight deck's plan (330 × 76 m, notched bow
+  corners; it overhangs the waterline hull boats bounce off), a convex polygon: separating-axis contact, at most two
+  clipped points. Sequential impulses with equal masses, heavier sideways (×2) and in yaw (×1.5) for the water moving
+  with the hull: closing speed cancelled, bounced by `SHIP.bounce` above 1 m/s (none below: resting contact), sliding
+  resisted up to 0.3 of the normal impulse (a glancing blow slides and yaws), off-centre points yaw. The leftover overlap
+  is pushed out 25% per step past 5 cm (≤ 0.5 m). Deterministic; no jitter resting under power; < 2 m overlap at top
+  speed from any heading. Sinking hulls stay solid for their first 10 s.
+- The room steps every ship one fixed tick at a time and resolves every pair after each (`ShipCollider.step`, id order).
+  A bump faster than 0.8 m/s is broadcast (`bump { a, b, k }`, k 0..1 at 12 m/s); damage goes through `Fleet.hit`
+  (`w: "ram"`, credited to the other ship's helm, else its captain; a ram of 20+ leaves a fire at the contact). Each
+  pair then takes only the excess of a harder blow for 1.5 s, so grinding doesn't drain health.
+- The helm's client resolves its predicted hull against the remotes it draws (`collideHulls(.., onlyA)`), so it stops
+  where the room's does; `net.bumps` set `slam` on both hulls (chase shake) and one `slams` count (the `hull-slam`
+  sound, ship-audio.ts) when k ≥ 0.05. The red hit flash comes from the hull's health as for any hit.
+- Real-GPU check: `scripts/collide-shot.ts` (two helms, a 14 m/s T-bone and a pushing grind; `captures/collide/`).
 
 ## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 

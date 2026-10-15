@@ -1031,6 +1031,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   shared fixed-step sim; the helm's client predicts its own ship and eases it onto the room's pose (dead-reckoned to its
   own time, 1.5 s lag, snap past 60 m). With orders arriving one trip late, the predicted and room ships stayed 0.6 m
   apart after 6 s of throttle and rudder on hailmary (`games/carrier/src/game/game.ts`, `scripts/mp-shot.ts`).
+- **Vehicle-vs-vehicle contact: lockstep steps, convex SAT, anisotropic impulses.** Carrier's room steps every ship
+  one fixed tick at a time and resolves each touching pair after it (deck-plan polygons, separating-axis contact with
+  two clipped points, sequential impulses with sway/yaw added mass, restitution only above 1 m/s, 25%-per-step overlap
+  push). Pick the incident edge among the edges at the deepest vertices, not the most opposed edge of the whole
+  polygon: with many near-parallel hull edges the latter clipped to nothing and let hulls sink 2.8 m into each other.
+  Resting under full power holds the gap within 1 cm; top-speed crossings from 11 headings × 5 offsets stay under 2 m
+  overlap; the helm's client resolves only its own hull against drawn remotes so it stops where the room's does
+  (`games/carrier/shared/ship-collide.ts`, `tests/ship-collide*.test.ts`, `scripts/collide-shot.ts`).
 - **Hybrid combat authority for fast jets.** Carrier lets each shooter decide its own cannon hits, against the jets
   as it draws them, 120 ms behind. The room only checks they are plausible: alive enemies, a round budget refilled at
   the gun's rate, and range between the relayed jets. Missiles, bombs and flares are events (pose, velocity, target,
