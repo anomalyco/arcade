@@ -137,7 +137,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 4 wall (cut away near you), 5 tape, 6 glass, 7 city, 8 accent (takes the instance tint), 9 wall cap, 10 shiny,
  * 11 light haze (aux = map light id).
  */
-export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; wallDirectScale?: string; mapUv?: string }
+export type SceneHooks = { declarations?: string; vertex?: string; surface?: string; directional?: string; ao?: string; bounce?: string; material?: string; postLightMaterial?: string; cutaway?: string; solidCutaway?: string; fragmentStart?: string; smoothShadows?: boolean; diagnostics?: string; ambient?: string; lightLeak?: string; lightMask?: string; shadowTaps?: 5 | 9; lightAttenuation?: string; lightAccumulate?: string; wallDirectScale?: string; mapUv?: string }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
 ${motion ? motionOutput : ""}
@@ -383,7 +383,8 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     // Surfaces right next to a fixture (wall tops, desks under a panel) never get hotter than the floor below it.
     ${hooks.lightAttenuation ?? `let dn = max(d3, max(hl, 1.25));
     var att = power * win * (0.1 + 2.6 / (1.0 + dn * dn * 0.3));`}
-    if (L.cone.w > 0.5 && dPlan > 0.001) {
+    // cone.w 2 marks a spotlight whose cone the game's lightAttenuation hook already shaped.
+    if (L.cone.w > 0.5 && L.cone.w < 1.5 && dPlan > 0.001) {
       let c = dot(dv / dPlan, L.cone.xy);
       let t = clamp((c - L.cone.z) / 0.25, 0.0, 1.0);
       att *= t * t * (3.0 - 2.0 * t);
@@ -397,6 +398,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     var vis = 1.0;
     if (L.extra.y > 0.5) { vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y); }
     out.diff += L.color.rgb * att * (diffuse * vis + ${hooks.lightLeak ?? "0.035"});
+    ${hooks.lightAccumulate ?? ""}
     if (shin > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.004;

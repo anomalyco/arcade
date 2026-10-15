@@ -47,7 +47,7 @@ try {
         window.addEventListener("keyup",e=>{if(e.code==="ArrowRight"&&stats.active)stats.inputs.push({kind:"up",wall:performance.now(),x:s.view.player.x,y:s.view.player.y,time:s.view.time})},true)
         h.freeze(false);await new Promise(resolve=>setTimeout(resolve,500));h.freeze();await r.device.queue.onSubmittedWorkDone()
       },scene)
-      await page.locator("canvas").click()
+      await page.locator("#game").click()
       await page.evaluate(()=>{const w=window as any;w.__pacing.active=true;w.__arcadeHarness.freeze(false)})
       await page.keyboard.down("ArrowRight")
       // This is the measured held-input interval, not a readiness/CI sleep-poll.
