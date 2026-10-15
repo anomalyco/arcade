@@ -1246,6 +1246,25 @@ Candidates from the code audits; measure and playtest before moving any into the
   the trim depth); `DEFAULT_JITTER` lost 0 at 300–333 ms; `ROOM_JITTER` lost 0 at 133 ms p50 (Brawl p95 233 ms,
   Blackout 133 ms). Clean 20 ms: 0 lost and unchanged latency in all three (`scripts/bench-input-drops.ts`,
   `perf/input-drops-{before,after}.json`).
+- **Draw remote players on a cubic through each snapshot's velocity, coast through stalls, and glide out the
+  resume.** Blackout (`src/game/remote.ts`) samples `@arcade/kit/net/interpolate`'s `SnapshotBuffer` 100 ms behind
+  and, instead of lerping, follows a Hermite curve through both snapshots with their velocities as tangents (a velocity
+  more than 2 m/s off the chord, like a soldier pushing into a wall, falls back to the chord so the curve can't bulge),
+  so direction carries through each 15 Hz snapshot. A stalled stream (a TCP retransmit) coasts on the last velocity
+  for up to 250 ms instead of freezing, and `Glide` turns the jump when it resumes into a 10/s decaying offset. Over
+  120 s × 3 seeds at 120 fps (`games/blackout/scripts/bench-remote.ts`, `perf/blackout-remote-{120,60}fps.json`),
+  against the exponential chase it replaced: soldiers' velocity jumps (> 1 m/s between frames) fell from 1,494 to
+  166 per minute on a clean 30 ms link and from 1,511 to 217 at 80 ± 30 ms with 2% loss, jerk RMS 38,263 → 11,669
+  and 42,676 → 16,154 m/s³; a jeep on a figure-eight 209 → 15 and 729 → 181 jumps per minute. The cost is 100 ms more
+  delay: soldiers are drawn 0.46 m behind their server position on average instead of 0.27 m (clean). In practice
+  mode in headless Chromium (`scripts/prove-remote.ts`), frames where a bot's drawn speed jumped > 1.5 m/s fell from
+  58% to 1.4% on the vehicle lot and 48% to 13% downtown.
+- **Pack entity lists as positional arrays behind the decoder.** Blackout's `shared/wire.ts` sends players, vehicles,
+  frags, claymores and `you` as arrays with flag bits and decodes them back to the same `Snapshot` in
+  `decodeServer`, so nothing past the socket changed. Downtown, 8 soldiers and 5 vehicles: 1,994 → 1,069 B per
+  snapshot (−46%); office 1,478 → 807 B. Positions and velocities keep 3 decimals so your own prediction's
+  corrections are unchanged (identical in the bench); 2 decimals saved another ~35 B downtown but, in a 20 s trial,
+  raised the mean correction from 1.0 to 4.8 mm.
 - **Per-bubble interest culling, priority cadence, and bit-packed delta compression against `ackSnapTick`.**
   `packages/kit/net/{interest,rewind,bytes}.ts`, `games/outbreak/shared/net-protocol.ts` and `server/room-core.ts` scope
   each recipient's zombie updates to their `128 × 128 m` (`±64 m`) chunk bubble, throttle non-urgent mid/far/idle

@@ -1,0 +1,111 @@
+{
+  "seconds": 120,
+  "seeds": 3,
+  "fps": 120,
+  "tickHz": 30,
+  "snapshotHz": 15,
+  "clean 30 ± 5 ms": {
+    "soldiers": {
+      "before": {
+        "jerkRms": 38262.667,
+        "jerkP99": 127504.333,
+        "velocityJumpsPerMin": 1494.3,
+        "lagMeanM": 0.265,
+        "lagP95M": 0.484
+      },
+      "after": {
+        "jerkRms": 11669.333,
+        "jerkP99": 59712.333,
+        "velocityJumpsPerMin": 166.2,
+        "lagMeanM": 0.462,
+        "lagP95M": 0.84
+      }
+    },
+    "vehicles": {
+      "before": {
+        "jerkRms": 5987,
+        "jerkP99": 26931,
+        "velocityJumpsPerMin": 208.7,
+        "lagMeanM": 1.127,
+        "lagP95M": 1.615
+      },
+      "after": {
+        "jerkRms": 3461,
+        "jerkP99": 9904.333,
+        "velocityJumpsPerMin": 14.833,
+        "lagMeanM": 1.474,
+        "lagP95M": 2.119
+      }
+    },
+    "local": {
+      "before": {
+        "meanMm": 2.687,
+        "p99Mm": 74.467
+      },
+      "after": {
+        "meanMm": 2.687,
+        "p99Mm": 74.467
+      }
+    },
+    "downtownBytes": {
+      "before": 1994,
+      "after": 1068.667
+    }
+  },
+  "lossy 80 ± 30 ms, 2%": {
+    "soldiers": {
+      "before": {
+        "jerkRms": 42675.667,
+        "jerkP99": 147362,
+        "velocityJumpsPerMin": 1511.3,
+        "lagMeanM": 0.504,
+        "lagP95M": 1.153
+      },
+      "after": {
+        "jerkRms": 16154.333,
+        "jerkP99": 67070.667,
+        "velocityJumpsPerMin": 216.8,
+        "lagMeanM": 0.589,
+        "lagP95M": 1.084
+      }
+    },
+    "vehicles": {
+      "before": {
+        "jerkRms": 33610.333,
+        "jerkP99": 138744.333,
+        "velocityJumpsPerMin": 729.333,
+        "lagMeanM": 1.683,
+        "lagP95M": 2.538
+      },
+      "after": {
+        "jerkRms": 10159.667,
+        "jerkP99": 32751.333,
+        "velocityJumpsPerMin": 181.067,
+        "lagMeanM": 1.832,
+        "lagP95M": 2.665
+      }
+    },
+    "local": {
+      "before": {
+        "meanMm": 14.577,
+        "p99Mm": 327.5
+      },
+      "after": {
+        "meanMm": 14.577,
+        "p99Mm": 327.5
+      }
+    },
+    "downtownBytes": {
+      "before": 1974,
+      "after": 1059
+    }
+  },
+  "officeBytes": {
+    "before": 1478,
+    "after": 807
+  },
+  "downtownBytes": {
+    "before": 1994,
+    "after": 1068.667
+  }
+}

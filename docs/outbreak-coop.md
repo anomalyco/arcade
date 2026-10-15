@@ -122,9 +122,9 @@ rest of the shared world, a remote shot or door is heard one snapshot late.
   whose seat expires leaves what they carried on the floor. No lobby or
   quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
 - Blackout and Brawl share `@arcade/kit/net/room-core`, which now uses the same `seats` tokens, `jitter-buffer` and
-  per-socket rate limit as this room; Getaway still carries its own room loop. `@arcade/kit/net/{interpolate,rewind,interest}`
-  are ready for Blackout to replace its exponential remote avatar chase (`SnapshotBuffer`) and add 20-tick server
-  hitscan rewind (`RewindHistory`).
+  per-socket rate limit as this room; Getaway still carries its own room loop. Blackout draws remote soldiers and vehicles through
+  `SnapshotBuffer` and predicts with `Predictor`; `@arcade/kit/net/{rewind,interest}` are ready for it to add 20-tick
+  server hitscan rewind (`RewindHistory`).
 
 ## Proof
 

@@ -380,6 +380,6 @@ In rough order of value against risk:
      `BandwidthPacer` for adaptive snapshot stride), `rewind` (`RewindHistory` for server-side lag-compensated hitscan
      rewind), `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
      (`Predictor` replay on ack, `Smoother` correction offset). `RoomCore` (Blackout, Brawl) uses `seats` and
-     `jitter-buffer`; Blackout's exponential avatar chase (`SnapshotBuffer` + `RewindHistory` for 20-tick
-     sniper/rifle hitscan rewind) and Getaway's `queue` trim and public-id reconnect are the next adopters
-     ([outbreak-coop.md](outbreak-coop.md)).
+     `jitter-buffer`; Blackout draws remote soldiers and vehicles through `interpolate` and predicts with `prediction`.
+     `RewindHistory` for 20-tick sniper/rifle hitscan rewind in Blackout, and Getaway's `queue` trim and public-id
+     reconnect, are the next adopters ([outbreak-coop.md](outbreak-coop.md)).
