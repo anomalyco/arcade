@@ -73,7 +73,7 @@ export class SpellFx {
       animate(a,dt,t,sk.x,sk.y,sk.vx,sk.vy,sk.aim)
       const rise=Math.min(1,(t-sk.born)/s.config.skeletonRise), low=-(1-rise)*1.45-(sk.crawl?0.7:0)
       pose((model,x,y,z,yaw,_tint,pitch,roll,_flash,alpha) => {
-        if(sk.crawl && [this.bones.thigh,this.bones.shin,this.bones.foot].includes(model)) return
+        if(sk.crawl && [this.bones.thigh,this.bones.shin,this.bones.foot,this.bones.toe].includes(model)) return
         push(model,x,y+low,z,yaw,1,pitch,roll,alpha)
       },a,[1,1,1],this.bones)
       if(rise<1) {

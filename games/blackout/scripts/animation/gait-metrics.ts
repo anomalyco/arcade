@@ -364,8 +364,9 @@ function measureOutbreakSurvivor(name: string, speed: number): CycleSummary {
     const ankR: [number, number, number] = [...ftR.p]
     const handL = at(faL, 0, -RIG.fore, 0)
     const handR = at(faR, 0, -RIG.fore, 0)
-    const plantedL = ankL[1] <= RIG.ankle + 1e-4
-    const plantedR = ankR[1] <= RIG.ankle + 1e-4
+    const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
+    const plantedL = fts[0]!.planted
+    const plantedR = fts[1]!.planted
 
     if (n >= warmupFrames) {
       const relT = (n - warmupFrames) * dt

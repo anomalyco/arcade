@@ -65,6 +65,7 @@ function sampleBlackoutCycle(
     b.th = legs.th
     b.sh = legs.sh
     b.ft = legs.ft
+    if (legs.toe) b.toe = legs.toe
     if (unarmed) {
       const [hL, hR] = hooks.unarmedHandsFn(a, b.torso, t * 2)
       const arms = hooks.poseUnarmedArmsFn(b.torso, hL, hR)
@@ -104,7 +105,8 @@ function sampleOutbreakCycle(name: string, mode: "walk" | "run", speed: number, 
     x += speed * dt
     s.draw({ x, y, vx: speed, vy: 0, aim: 0 }, dt, t, () => 0)
     const joints = extractBonePoseJoints(s.bones)
-    const plantedL = joints.ankleL[1] <= 0.085 + 1e-4
+    const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
+    const plantedL = fts[0]!.planted
     if (n >= warmupFrames && !prevPlantedL && plantedL) {
       touchdownsL.push(n)
     }
@@ -174,17 +176,18 @@ function measure20StepVariation(speed: number, hooks: PoseHooks): StepVariationS
     const b = a.body!
     const legs = hooks.poseLegsFn(a as any, b.pelvis)
     b.th = legs.th; b.sh = legs.sh; b.ft = legs.ft
+    if (legs.toe) b.toe = legs.toe
     const [hL, hR] = hooks.unarmedHandsFn(a, b.torso, t * 2)
     const arms = hooks.poseUnarmedArmsFn(b.torso, hL, hR)
     b.ua = arms.ua; b.fa = arms.fa; b.gun = null
 
     const toes: [[number, number, number], [number, number, number]] = [
-      at(b.ft[0], 0.19, -RIG.ankle, 0),
-      at(b.ft[1], 0.19, -RIG.ankle, 0),
+      b.toe?.[0] ? [...b.toe[0].p] : at(b.ft[0], RIG.foot, -RIG.ankle, 0),
+      b.toe?.[1] ? [...b.toe[1].p] : at(b.ft[1], RIG.foot, -RIG.ankle, 0),
     ]
     if (n >= warmup) {
       for (const i of [0, 1] as const) {
-        if (prevPlanted[i] && a.feet[i].planted && prevToes) {
+        if (prevPlanted[i] && a.feet[i].planted && prevToes && toes[i][1] <= 1e-5 && prevToes[i][1] <= 1e-5) {
           const slip = Math.hypot(
             toes[i][0] - prevToes[i][0],
             toes[i][1] - prevToes[i][1],
@@ -373,6 +376,7 @@ const baselineDir = values.baseline ? resolve(values.baseline) : null
 // With --baseline <checkout>, also sample that checkout's arm and Outbreak code as the "before" pass.
 if (baselineDir) {
   if (!existsSync(join(baselineDir, "packages/kit/human-pose.ts"))) throw new Error(`${baselineDir} is not an arcade checkout`)
+  const baseAnim = (await import(join(baselineDir, "games/blackout/src/game/anim.ts"))) as typeof import("../../src/game/anim")
   const basePose = (await import(join(baselineDir, "packages/kit/human-pose.ts"))) as typeof import("@arcade/kit/human-pose")
   const baseSurvivor = (await import(join(baselineDir, "games/outbreak/src/survivor.ts"))) as typeof import("../../../outbreak/src/survivor")
   runPass(
@@ -380,14 +384,13 @@ if (baselineDir) {
     outDir,
     refs,
     {
-      animateFn: animate,
-      newAvatarFn: newAvatar,
-      poseLegsFn: basePose.poseLegs,
+      animateFn: baseAnim.animate,
+      newAvatarFn: baseAnim.newAvatar,
+      poseLegsFn: basePose.poseLegs as unknown as typeof poseLegs,
       unarmedHandsFn: basePose.unarmedHands,
       poseUnarmedArmsFn: basePose.poseUnarmedArms,
       OutbreakSurvivorCls: baseSurvivor.Survivor,
-      stepVariationDefault: 0,
-      legacyUnarmedPelvis: true,
+      stepVariationDefault: humanProfiles.soldier.stepVariation,
     },
     noRender,
   )

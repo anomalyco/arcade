@@ -1,7 +1,10 @@
 /**
  * Shared scene-pass plugin contract (`ScenePass`, `PassList`), depth-buffer convention
- * descriptors (`DepthMode`), and WGSL module compilation diagnostics across Arcade renderers.
+ * descriptors (`DepthMode`), directional shadow-map pass (`DirectionalShadowPass`),
+ * stencil silhouette face states, and WGSL module compilation diagnostics across Arcade renderers.
  */
+
+import { drawContiguousChunks, isShadowCasterVisible, type ContiguousChunkRange } from "./cull"
 
 export type PassSlot = "sky" | "opaque" | "alpha"
 
@@ -136,4 +139,160 @@ export function compileShaderModuleWithLog(device: GPUDevice, code: string, labe
     () => undefined,
   )
   return m
+}
+
+/** Stencil face state for opaque actors/vehicles that mark their visible pixels with the stencil reference value. */
+export const STENCIL_OCCLUDER_FACE: GPUStencilFaceState = {
+  compare: "always",
+  passOp: "replace",
+}
+
+/** Stencil face state for occluded ghost silhouettes (`depthCompare: "greater"`, `stencil != ref`). */
+export const STENCIL_GHOST_FACE: GPUStencilFaceState = {
+  compare: "not-equal",
+  passOp: "keep",
+}
+
+export interface ShadowChunkAabb extends ContiguousChunkRange {
+  readonly minX: number
+  readonly minY: number
+  readonly minZ: number
+  readonly maxX: number
+  readonly maxY: number
+  readonly maxZ: number
+}
+
+export interface ShadowModelEntry {
+  readonly vbuf: GPUBuffer
+  readonly count: number
+  readonly castsShadow?: boolean
+}
+
+export interface ShadowInstanceRange {
+  readonly model: number
+  readonly first: number
+  readonly count: number
+  readonly noShadow?: boolean
+}
+
+/**
+ * Reusable orthographic directional sun/moon shadow-map pass (`depth32float`, default `2048²`)
+ * with shadow-sweep frustum culling (`isShadowCasterVisible`) and contiguous chunk draw merging.
+ */
+export class DirectionalShadowPass {
+  readonly size: number
+  readonly texture: GPUTexture
+  readonly view: GPUTextureView
+  readonly sampler: GPUSampler
+  readonly layout: GPUBindGroupLayout
+  readonly group: GPUBindGroup
+  readonly staticPipeline: GPURenderPipeline
+  readonly instPipeline: GPURenderPipeline
+
+  constructor(opts: {
+    device: GPUDevice
+    frameBuf: GPUBuffer
+    shadowShaderCode: string
+    meshPosLayout: GPUVertexBufferLayout
+    instLayout: GPUVertexBufferLayout
+    size?: number
+    depthBias?: number
+    depthBiasSlopeScale?: number
+    label?: string
+  }) {
+    const d = opts.device
+    this.size = opts.size ?? 2048
+    this.texture = d.createTexture({
+      size: [this.size, this.size],
+      format: "depth32float",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    })
+    this.view = this.texture.createView()
+    this.sampler = d.createSampler({ compare: "less", magFilter: "linear", minFilter: "linear" })
+    this.layout = d.createBindGroupLayout({
+      entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
+    })
+    this.group = d.createBindGroup({
+      layout: this.layout,
+      entries: [{ binding: 0, resource: { buffer: opts.frameBuf } }],
+    })
+    const shadowMod = compileShaderModuleWithLog(d, opts.shadowShaderCode, opts.label ?? "directional-shadow")
+    const pipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.layout] })
+    const makePipe = (vs: string, buffers: GPUVertexBufferLayout[]) =>
+      d.createRenderPipeline({
+        layout: pipeLayout,
+        vertex: { module: shadowMod, entryPoint: vs, buffers },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+        depthStencil: {
+          format: "depth32float",
+          depthWriteEnabled: true,
+          depthCompare: "less",
+          depthBias: opts.depthBias ?? 1,
+          depthBiasSlopeScale: opts.depthBiasSlopeScale ?? 1.2,
+        },
+      })
+    this.staticPipeline = makePipe("vsStatic", [opts.meshPosLayout])
+    this.instPipeline = makePipe("vsInst", [opts.meshPosLayout, opts.instLayout])
+  }
+
+  encode<C extends ShadowChunkAabb>(
+    enc: GPUCommandEncoder,
+    opts: {
+      staticMesh?: { vbuf: GPUBuffer; chunks: readonly C[] } | null
+      shadowPlanes: Float32Array
+      camPlanes: Float32Array
+      instBuf: GPUBuffer
+      models: readonly ShadowModelEntry[]
+      ranges: readonly ShadowInstanceRange[]
+      timestampWrites?: GPURenderPassTimestampWrites
+      sweepSlope?: number
+      minHeight?: number
+    },
+  ): { vertsDrawn: number; chunksDrawn: number } {
+    const sp = enc.beginRenderPass({
+      timestampWrites: opts.timestampWrites,
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.view,
+        depthClearValue: 1,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
+    })
+    sp.setBindGroup(0, this.group)
+    let vertsDrawn = 0
+    let chunksDrawn = 0
+    if (opts.staticMesh) {
+      sp.setPipeline(this.staticPipeline)
+      sp.setVertexBuffer(0, opts.staticMesh.vbuf)
+      const stats = drawContiguousChunks(sp, opts.staticMesh.chunks, (c) =>
+        isShadowCasterVisible(
+          opts.shadowPlanes,
+          opts.camPlanes,
+          c.minX,
+          c.minY,
+          c.minZ,
+          c.maxX,
+          c.maxY,
+          c.maxZ,
+          opts.sweepSlope,
+          opts.minHeight,
+        ),
+      )
+      vertsDrawn = stats.vertsDrawn
+      chunksDrawn = stats.chunksDrawn
+    }
+    sp.setPipeline(this.instPipeline)
+    sp.setVertexBuffer(1, opts.instBuf)
+    for (let i = 0; i < opts.ranges.length; i++) {
+      const r = opts.ranges[i]!
+      if (r.noShadow) continue
+      const m = opts.models[r.model]!
+      if (m.castsShadow === false) continue
+      sp.setVertexBuffer(0, m.vbuf)
+      sp.draw(m.count, r.count, 0, r.first)
+    }
+    sp.end()
+    return { vertsDrawn, chunksDrawn }
+  }
 }

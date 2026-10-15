@@ -99,9 +99,14 @@ export function zombieModels(): PersonModels {
   p.shin = shin
 
   const foot = new ZombiePart()
-  foot.box(-0.072, -0.07, -0.06, 0.175, 0.018, 0.06, SHOE)
-  foot.box(-0.076, -0.085, -0.064, 0.185, -0.065, 0.064, SOLE)
+  foot.box(-0.072, -0.07, -0.06, 0.125, 0.018, 0.06, SHOE)
+  foot.box(-0.076, -0.085, -0.064, 0.128, -0.065, 0.064, SOLE)
   p.foot = foot
+
+  const toe = new ZombiePart()
+  toe.box(-0.008, 0.015, -0.058, 0.055, 0.078, 0.058, SHOE)
+  toe.box(-0.006, 0, -0.062, 0.062, 0.02, 0.062, SOLE)
+  p.toe = toe
 
   return p
 }
@@ -147,6 +152,13 @@ export function outbreakPersonModels(zombie = false): PersonModels {
   }
   p.thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
   p.shin = box(0.13, -0.41, 0.43, 0.14, trousers)
-  p.foot = box(0.21, -0.075, 0.09, 0.14, boot)
+  const foot = new ZombiePart()
+  foot.box(-0.075, -0.075, -0.068, 0.125, 0.015, 0.068, boot)
+  foot.box(-0.078, -0.085, -0.07, 0.128, -0.065, 0.07, SOLE)
+  p.foot = foot
+  const toe = new ZombiePart()
+  toe.box(-0.008, 0.015, -0.065, 0.06, 0.082, 0.065, boot)
+  toe.box(-0.006, 0, -0.068, 0.065, 0.02, 0.068, SOLE)
+  p.toe = toe
   return p
 }

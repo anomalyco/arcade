@@ -24,15 +24,15 @@ means the walk and run reference clips that `common.ts` downloads on first use.
 
 | File | What it owns |
 | --- | --- |
-| `packages/kit/human-locomotion.ts` | `gaitAt` (stride, duty, run blend), `locomotion` (stride clock, step release, swing, pelvis springs, arm springs), `plantedFoot` (toe lock and roll), `pelvisPoint` |
-| `packages/kit/human-pose.ts` | `poseLegs` (leg IK, swing ankle), `unarmedHands` (FK arm angles), `poseUnarmedArms` (arm IK pole), `poseArms` (armed hands) |
+| `packages/kit/human-locomotion.ts` | `gaitAt` (stride, duty, run blend), `locomotion` (stride clock, step release, swing, pelvis springs, arm springs), `stanceFootRoll`, `plantedFoot` (ball lock and heel-to-toe roll), `plantedToe`, `pelvisPoint` |
+| `packages/kit/human-pose.ts` | `poseLegs` (leg IK, swing ankle and toe bend), `unarmedHands` (FK arm angles), `poseUnarmedArms` (arm IK pole), `poseArms` (armed hands) |
 | `packages/kit/human-profile.ts` | `humanProfiles` presets and their Lab controls (`zombieVariant`) |
 | `packages/kit/shamble-crouch.ts` | `buildShambleReferenceCycle`, `buildCrouchRunReferenceCycle`, `extractAsymmetricBvhCycle`, `shambleHandsFK`, `shambleTorsoModulation`, zombie variants (`limper`, `dragger`, `reacher`, `lunger`) |
-| `packages/kit/rig.ts` | `RIG` link lengths, `ik`, frames and springs |
+| `packages/kit/rig.ts` | `RIG` link lengths (`thigh`, `shin`, `ankle`, `foot`, `toe`, `heel`), `ik`, frames and springs |
 | `games/blackout/src/game/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips |
-| `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks |
+| `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks and split boot/toe meshes |
 
-The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`. Hip height is about 0.86 m.
+The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`, and the foot splits at the ball (MTP joint) into `RIG.foot = 0.125 m` (ankle to ball) and `RIG.toe = 0.065 m` (ball to toe tip, `0.19 m` total forward reach, `RIG.heel = 0.06 m`). Hip height is about 0.86 m.
 
 ## Gait timing
 
@@ -50,15 +50,18 @@ beat every few steps; it shows as a subharmonic in the pelvis curve, not as a vi
 
 | Mode | Speed | Cadence | Step length | Duty factor | Double support | Flight |
 | --- | --- | --- | --- | --- | --- | --- |
-| Walk | 1.4 m/s | 145 steps/min | 0.58 m | 0.54 | 12% of the cycle | 0 |
+| Walk | 1.4 m/s | 127 steps/min | 0.665 m | 0.54 | 8% of the cycle | 0 |
 | Run | 4.2 m/s | 238 steps/min | 1.06 m | 0.32 | 0 | 36% |
 | Sprint | 6.3 m/s | 285 steps/min | 1.33 m | 0.24 | 0 | 52% |
 
-The old notes quoted about 207 steps/min at 1.4 m/s (and 157 before the `run-realism` stride and COM-phase update);
-145 steps/min (`0.58 m` steps, `1.16 m` stride) is the longest walk stride a rigid `0.83 m` two-bone leg at
-`pelvis.y = 0.819 m` can reach (`maxChord = 0.816 m < 0.829 m`) with zero shin-to-boot separation. Human walking at
-1.3–1.4 m/s is closer to 110–115 steps/min (the mocap walk clip takes 109 at `1.30 m/s`), which requires a deeper
-compass-gait pelvis drop or 3-DOF hip tilt.
+Before the ball-of-foot (MTP) toe joint, a rigid `0.19 m` boot could not bend at the forefoot, so `145 steps/min`
+(`0.580 m` steps, `1.16 m` stride) was the longest walk stride a `0.83 m` two-bone leg at `pelvis.y = 0.819 m` could
+reach (`maxChord = 0.816 m < 0.829 m`) without separating the shin from the ankle. Splitting the boot at the ball
+(`RIG.foot = 0.125 m`, `RIG.toe = 0.065 m`) lets the trailing ankle lift up and forward by `L_foot (1 - cos φ)` (`+3.5 cm`
+vertical, `+1.5 cm` horizontal at `φ = −0.46 rad`) while the toe stays planted flat on the floor. That extends effective
+terminal-stance leg reach and lengthens 1.4 m/s walking steps from `0.580 m` (`144.6 steps/min`) to **`0.665 m`**
+(**`126.6 steps/min`**, Outbreak `127.2 steps/min`, vs. `112.5 steps/min` in mocap) without dropping the pelvis (`pelvis.y = 0.819 m`)
+and with `0.00 mm` shin-to-ankle separation. Touchdown jerk in the walk also dropped from `51` to **`33 m/s³`** (`contactFootSpeedMax = 0.032 m/s`).
 
 **Run with flight; do not crouch to reach.** A running foot releases its support once the other foot's swing
 is 32% complete (48% when strafing), which gives the flight fractions above. Swings last 0.08 to 0.385 s.
@@ -95,21 +98,33 @@ amplified 1.6× (`swayScale`, `twistScale`) because the games are seen from abov
 
 ## Foot contact
 
-**Lock the rendered toe in world space, not just the IK target.** `plantedFoot` pins a point 0.19 m ahead of the
-ankle (`lockToe`), and the boot pivots around it. A clamped IK endpoint can move the mesh while the stored lock
-reports zero slip, so measure the rendered toe. Planted toe slip is below 1e-12 m in every gait test.
+**Lock the ball of the foot in world space, and keep the planted toe flat on the floor.** `lockToe` pins the ball of
+the foot `RIG.foot = 0.125 m` ahead of the ankle (`a.motion.toes[i]`), and `plantedFoot` pivots the rear foot around
+that ball during terminal stance while `plantedToe` (`left.toe` / `right.toe`, `RIG.toe = 0.065 m`) stays flat on the
+floor (`toeRelPitch = −footPitch`, reaching `+32.7°` dorsiflexion in walk and `+44.2°` in run). A clamped IK endpoint
+can move the mesh while the stored lock reports zero slip, so measure both the rendered ball (`at(ft, RIG.foot, -RIG.ankle, 0)`)
+and the rendered toe tip (`at(toe, RIG.toe, -RIG.ankle, 0)`). Planted ball and toe slip are `0.0 mm` (`< 1e-12 m`) across
+walk, run, sprint, crouch-run and zombie shamble.
 
 **Touch down at zero speed.** Horizontal swing motion uses `smoother(u)`, which has zero velocity at both ends, and
 the lift is `1.72 sin²(πu)(1 − u)`: it rises early (peak at about 42% of the swing) and settles cubically.
-Contact foot speed fell from 0.63 to 0.03 m/s in the run. Walk lift peaks near 8 cm and run lift near 20 cm.
+Contact foot speed fell from 0.63 to 0.03 m/s in the run (`0.010 m/s` mean / `0.032 m/s` max in the walk). Walk lift
+peaks near 12 cm and run lift near 39 cm.
 
-**Roll heel to toe.** In late swing the toe lifts up to 0.20 rad and settles flat by touchdown; in terminal
-stance the heel rises onto the locked toe by up to 0.26 rad (`plantedFoot`, from 62% of stance). At liftoff the
-toe pivot fades out over the first 25% of swing (`poseLegs`), so liftoff and touchdown are continuous.
-
-**Let the swing ankle relax.** Between 22% and about 80% of the swing the foot follows the shin with a 0.12 rad
-toe drop, then recovers ground alignment before contact. A foot held flat while the shin is near horizontal
-looks rigid.
+**Roll heel-strike → foot-flat → heel-rise → toe-off.** `stanceFootRoll` (`packages/kit/human-locomotion.ts`) splits
+stance into two pitches so early-stance heel rocker never displaces the ankle horizontally:
+- **Heel strike → foot flat (`stanceFrac < 0.24` walk, `< 0.16` run):** `heelStrikePitch` holds `+0.17 rad` (`+10°`)
+  dorsiflexion at touchdown and settles smoothly to `0` as weight loads onto the foot, with a slight `+0.06 rad` toe
+  dorsiflexion lift.
+- **Mid-stance (`foot flat`):** both `ft` (`heel → ball`) and `toe` (`ball → tip`) lie flat on the floor (`0 rad`).
+- **Heel rise → toe-off (`stanceFrac > 0.50` walk, `> 0.36` run):** `heelRisePitch` pitches the rear foot nose-down up
+  to `−0.46 rad` (walk) or `−0.62 rad` (run/sprint) around the locked ball (`lockToe`), lifting the heel `3.5–5.5 cm`
+  while `plantedToe` counter-rotates (`toeRelPitch = −heelRisePitch`) so the toe box stays flat on the ground.
+- **Swing push-off and toe clearance (`poseLegs`):** at liftoff (`u < 0.25`), the ball pivot and push-off plantarflexion
+  fade out smoothly while the toe flexes down (`−0.20 rad`), then lifts slightly (`+0.12..+0.18 rad` dorsiflexion) in
+  mid-to-late swing so the `6.5 cm` toe tip clears the floor before settling into heel strike. In zombie shamble
+  (`footDrag > 0.2`), the dragged foot's toe flexes upward as it scrapes along the ground so the toe tip never digs
+  underground.
 
 **Turn feet in place.** A planted boot stays within 0.96 rad of the leg heading and pivots at its toe when it
 exceeds that. Idle feet replant when their home error passes 0.24 m.
@@ -152,11 +167,12 @@ thigh high in front (`+62°`), then whip the lower leg down to a zero-velocity t
 **Measure and drive swing ankle pitch relative to the shin.** `poseLegs` computes unwrapped sagittal shin pitch from
 `sh0.y` (`-atan2(shinFwd, sh0.y[1])`, avoiding `±90°` folding when the shin tilts past horizontal during heel kick-up)
 and applies plantarflexion (`−0.20..−0.35 rad`) during push-off and early swing followed by dorsiflexed recovery in
-late swing. Together with a 2.6 cm taller unarmed walking pelvis (`walkDrop = −0.012`), leg angle RMSE against mocap
-dropped from **12.2° to 9.2°** in the walk (knee `15.5° → 10.4°`, ankle `16.1° → 11.9°`, hip `5.3°`), from
-**24.5° to 16.9°** in the run (knee `33.9° → 25.0°`, ankle `24.5° → 14.8°`, hip `15.0° → 11.0°`, foot-lift RMSE
-`16.5 → 6.9 cm`), from **29.3° to 22.7°** in the sprint, and in Outbreak from **19.3° to 12.4°** (walk) and **31.8° to
-15.2°** (run, knee `27.4° → 11.6°`, ankle `52.4° → 18.5°`).
+late swing. Combined with the ball-of-foot (MTP) toe joint (`RIG.foot = 0.125 m`, `RIG.toe = 0.065 m`), `stanceFootRoll`
+heel-to-toe roll, and `0.665 m` walking steps (`126.6 steps/min`), leg angle RMSE against mocap dropped to **`8.07°`**
+in the walk (hip `6.15° → 4.48°`, knee `12.69° → 10.94°`, ankle `14.33° → 8.78°`), **`12.96°`** in the run (hip `12.2° → 11.09°`,
+knee `20.9° → 18.32°`, ankle `14.1° → 9.48°`), **`18.76°`** in the sprint (ankle `19.48° → 13.96°`), and in Outbreak to
+**`10.72°`** in the walk (hip `8.44° → 6.66°`, ankle `15.49° → 8.93°`) and **`13.15°`** in the run (hip `10.89° → 9.76°`,
+knee `17.90° → 15.95°`, ankle `16.72° → 13.72°`).
 
 **Sample per-step variation once at liftoff with same-foot high-pass blue noise.** `stepVariation` (`0..1`, default
 `0.35` on soldier, `0.30` on wizard, `0.65` on zombie, exposed in the shared Lab) samples deterministic seeded offsets
@@ -371,15 +387,17 @@ comparison. Presentation settings never touch simulation or network state.
 
 ## Known gaps
 
-- **Run late-swing knee extension still leads mocap by ~10°.** Walk leg RMSE is now 11.1° (hip 6.2°, knee 12.7°,
-  ankle 14.3°; Outbreak walk 12.9° with ankle 11.0°) and run leg RMSE is 15.8° (hip 12.2°, knee 20.9°, ankle 14.1°;
-  Outbreak run 15.2° with knee 18.6°, ankle 14.1°); the remaining run knee error comes from late swing (`7/8`), where
-  tapering the heel-tuck before `u = 0.92` for zero-speed contact extends the shin slightly earlier than the mocap runner.
-- **Walk cadence is 145 steps/min vs. ~110 in mocap:** with a rigid `0.83 m` two-bone leg and `pelvis.y = 0.819 m`,
-  Pythagoras bounds horizontal foot reach to `±0.386 m` (`0.58 m` steps, `145 steps/min` at `1.4 m/s`) before the
-  ankle would separate from the shin. Reaching `110 steps/min` (`0.76 m` steps) would require lowering the walking
-  pelvis below `0.78 m`.
-- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`146` / `240` steps/min)** and lock swing
+- **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,
+  ankle 8.78°; Outbreak walk **10.72°** with ankle 8.93°) and run leg RMSE is **12.96°** (hip 11.09°, knee 18.32°,
+  ankle 9.48°; Outbreak run **13.15°** with knee 15.95°, ankle 13.72°); the remaining run knee error comes from late
+  swing (`7/8`), where tapering the heel-tuck before `u = 0.92` for zero-speed contact extends the shin slightly earlier
+  than the mocap runner.
+- **Walk cadence is 126.6 steps/min vs. 112.5 in mocap:** the ball-of-foot (MTP) toe joint and terminal-stance heel rise
+  lengthened 1.4 m/s walking steps from `0.580 m` (`144.6 steps/min`) to `0.665 m` (`126.6 steps/min`) at `pelvis.y = 0.819 m`
+  with zero shin-to-ankle separation. Reaching `112.5 steps/min` (`0.75 m` steps at `1.4 m/s`, vs. mocap's `1.30 m/s`)
+  would require either a deeper double-support pelvis dip (`< 0.79 m`) or 3-DOF pelvic list/obliquity that lowers the
+  trailing hip joint independently of the stance hip.
+- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`127` / `239` steps/min)** and lock swing
   targets at `u >= 0.75`, but still step their own terrain-support contact loop (`Survivor.draw`, `src/zombies.ts`)
   rather than calling `locomotion` directly.
 - **The shared contact solver assumes a flat floor at Y = 0.** Outbreak adds terrain support itself.
