@@ -293,9 +293,10 @@ In rough order of value against risk:
    `level-mesh.ts`, and `lighting.ts`.
 3. **Seeded RNG and hashing (completed in `@arcade/kit/sim/rng`).** One module exports `mulberry32`, `Rng` (with
    `.seed()`), `seedOf`, `hash2`, and `hash3` across all games and the audio runtime.
-4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input}`).** Physical
-   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, and
-   layout-aware `keyLabel` / `moveClusterLabel` prompts are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
+4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input,key-cap}`).** Physical
+   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, QWERTY
+   `keyLabel` / `moveClusterLabel` prompts with the opt-in `keyLabelSetting`, and the `keyCapHtml` / `keyPromptHtml`
+   key caps (tap, hold ring, wide, mouse) are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
 5. **Dev supervisors, build hashes, and rolling perf telemetry (completed in `scripts/{build-id,game-dev}.ts` & `@arcade/kit/gpu-perf`).**
    `writeBuildId` and `runGameDev` unify per-game build-ID and dev supervisors; `PerfSampler` unifies rolling p50/p95/FPS
    telemetry formatting across `DebugOverlay` panels.
