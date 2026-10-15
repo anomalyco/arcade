@@ -133,7 +133,8 @@ Arcade Lab workbench standard:
 - **Home** (the Lab's first page; [lab.md](lab.md#home-and-labs)): Home owns every key while it shows. `/` or `⌘K`
   search, `↑`/`↓` move (`↑` from the first row goes to the search), `←`/`→` fold, typing a letter jumps to a label,
   `↵` or a double-click opens a lab, `Esc` goes back to the open lab (from the search, `Esc` clears it first, then
-  returns to the list).
+  returns to the list). On a lab in the list: `+` new lab, `⌘D` duplicate, `⌘S` keep a draft, `⌫` archive, `⇧⌫`
+  delete (labs made in this browser, after a confirm).
 - **In a lab**: logical `H` shows Home (mnemonic, like `N` and `P`); `Alt+[` / `Alt+]` (physical `BracketLeft` /
   `BracketRight`) step to the previous or next lab in the collection, unless a studio tour is running, which keeps them
   for its tabs. Both work from the canvas and the chrome, not while typing, in Play or with focus in Details.

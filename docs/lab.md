@@ -41,6 +41,13 @@ Home covers the workbench, which stops drawing until a lab opens. In a lab the t
 (`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
 work. `arcade run lab.list`, `lab.open {"id": "look-and-light/weather"}` and `lab.home` do the same from the CLI.
 
+Labs come and go from Home. `+` (or ＋ New lab) starts a draft lab of any section kind in Drafts and opens it; `⌘D`
+makes a draft copy beside the selected lab; `⌘S` keeps a draft; `⌫` archives a lab (Undo in the toast) and archived
+labs wait, folded, at the bottom of the list with Restore; `⇧⌫` deletes a lab made in this browser after a confirm.
+Station labs can be archived (this browser hides them; Restore brings them back) but not deleted: delete the station
+file. Drafts nobody touched for 7 days are archived, and labs archived here are deleted 30 days later, each time the
+Lab starts (`createSceneStore().sweep()`). Labs made here live in `localStorage` (`arcade.lab.scenes.v1`).
+
 Labs come from station files for now (`games/lab/src/home/catalog.ts`): each station becomes a kept lab in an area
 collection (`STATION_AREAS` in `games/lab/src/scenes/from-stations.ts`), merged with this browser's own labs
 (`createSceneStore`). A lab a station became unchanged opens that station; one the migration split off (Explosions'
