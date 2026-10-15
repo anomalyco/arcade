@@ -77,19 +77,23 @@ Kit chose the Diegetic HUD, so nothing map-related is on screen by default. Lab 
 
 ## Measured
 
-`map-proof.ts` on headless Metal at 1280 × 800, DPR 2, seed 7, peaceful: a scripted 1 km sprinting loop east along
-the start street through the commercial, civic and industrial blocks, north, west and back (12,082 fixed steps).
+`map-proof.ts` on headless Metal (Studio) at 1280 × 800, DPR 2, seed 7, peaceful: a scripted 1 km sprinting loop
+east along the start street through the commercial, civic and industrial blocks, north, west and back (12,082 fixed
+steps). Timer resolution is 0.1 ms.
 
-- Explored 65 chunks, 37 known POIs and 41 known buildings; the map holds 65 KB of cells and 32 MB of tiles.
-- Map update with the sheet closed (observe, sightings, prewarm): p50 0.0 ms, p95 0.6 ms, max 1.1 ms (timer
-  resolution 0.1 ms). Prewarm built every tile the sheet opened on, each under 1 ms.
-- Opening the sheet built no tiles; its first base draw took 4.7 ms. With the sheet open the map's update was p50
-  0.3 ms, p95 1.3 ms (the base redraw after a pan or zoom is the high end).
-- Walking with the sheet open against closed, four alternating pairs over the same street: step time p50 within
-  0.5 ms either way (38.4 against 38.4, 38.7 against 38.2, 38.8 against 39.3; the first pair 42.1 open against 46.4
-  closed). Real-time frame pacing on Studio, closed against open: p50 66.7 ms both (headless frame intervals are
-  coarse and shared with other jobs, so this only shows there is no step change).
-- Real time: with the sheet open the simulation advanced 0.9 s in 0.9 s, and holding W moved the survivor 3 m.
+- Explored 65 chunks, 39 known POIs and 41 known buildings; the map holds 65 KB of cells and 32 MB of tiles.
+- Map update with the sheet closed (observe, sightings, prewarm): p50 0.0 ms, p95 0.3 ms, max 2.1 ms.
+- Opening the sheet: prewarm had built all but 10 of the tiles it needed, which took 2.2 ms in total (each under
+  1.2 ms). The first base draw took 11 ms, most of it the first upload of each cached tile; later base redraws
+  after a pan or zoom are cheaper. With the sheet open the map's update was p50 0.4 ms, p95 0.7 ms, max 13.8 ms.
+- Walking the same street with the sheet open against closed, four alternating pairs: game step p50 15.1 against
+  14.1, 14.6 against 20.7, 18.9 against 14.4 and 14.6 against 13.6 ms. The differences go both ways and are within
+  the run-to-run spread of a shared headless worker; the map's own update in those runs was p95 0.5 to 2.1 ms open
+  and 0.1 to 0.7 ms closed.
+- Real time (no `bench`): with the sheet open the simulation advanced 0.9 s in 0.9 s, and holding W moved the
+  survivor 3 m.
+- Input: a pinch zooms about the cursor (the world point under it stays within 0.01 m), a two-finger swipe up and
+  left moves the sheet up and left with the fingers, a click places a mark and a second click on it clears it.
 
 Captures: `captures/outbreak-map/` (survey, close-up, overview, noir, horde, co-op, compass ring, minimap, real time).
 

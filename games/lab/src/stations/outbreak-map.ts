@@ -28,8 +28,8 @@ export default defineStation({
   defaultVariant: "survey",
   variants: variants.map((v) => ({ ...v, url: page })),
   metrics: [
-    { label: "Map update with the sheet closed, p95 over a 1 km walk", value: "0.6 ms", source: "games/outbreak/scripts/map-proof.ts" },
-    { label: "Opening the sheet (tiles prebuilt while walking)", value: "0 tile builds, 4.7 ms first draw", source: "games/outbreak/scripts/map-proof.ts" },
+    { label: "Map update with the sheet closed, p95 over a 1 km walk", value: "0.3 ms", source: "games/outbreak/scripts/map-proof.ts" },
+    { label: "Opening the sheet after the walk", value: "10 of 65 tiles left to build (2.2 ms), 11 ms first draw", source: "games/outbreak/scripts/map-proof.ts" },
     { label: "Memory per explored chunk", value: "1 KB cells + tiles in a 96 MB LRU", source: "docs/outbreak-map.md" },
   ],
   paths: ["games/outbreak/src/map", "games/outbreak/scripts/map-proof.ts", "docs/outbreak-map.md"],
