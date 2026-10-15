@@ -193,7 +193,7 @@ describe("inventory baseline", () => {
     step({ hotbarSlot: 3 })
     step({ drop: true })
     expect(ledger.count("player", "medkit")).toBe(1)
-    const drop = [...ledger.stores.values()].find((s) => s.id.startsWith("drop:"))!
+    const drop = [...ledger.stores.values()].find((s) => s.id.startsWith("drop:") && !s.id.startsWith("drop:v:"))!
     expect(drop.slots[0]).toEqual({ item: "medkit", count: 1 })
     step({ bundle: true })
     expect(ledger.count("player/belt", "ammo")).toBe(0)

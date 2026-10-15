@@ -322,12 +322,14 @@ try {
     await run(page, `h.stageDiscovery("bottle")`)
     await steps(page, 20)
     await snap(page, "bottle-held", "Bottles in hand on the street, a car down the road")
+    // Vignettes leave glass of their own nearby; count the bottle's.
+    const glassBefore = (await verbs()).glass
     await steps(page, 1, { fire: true })
     await steps(page, 20)
     for (let i = 0; i < 40 && !(await verbs()).flashing.length; i++) await steps(page, 2)
     const thrown = await verbs()
     console.log("bottle", thrown)
-    assert.equal(thrown.glass, 1)
+    assert.equal(thrown.glass, glassBefore + 1)
     assert.equal(thrown.flashing.length + (await run(page, `return h.session().view.progression.ledger.store("car:55.4,41.4")?.counts.alarm ?? 0`)) > 0, true, "the bottle sets the alarm off")
     await snap(page, "bottle", "One thrown: it breaks beside the car, glass on the road, and the car's alarm goes off (indicators flashing)")
 
@@ -352,6 +354,36 @@ try {
     console.log("repair", worn, "→", fixed)
     assert.equal(fixed, 200)
     await snap(page, "repair-after", "B with the crowbar re-nails the boards to full instead of adding one: flush again")
+  }
+
+  if (want("vignettes")) {
+    const drawn = () => run(page, `return h.state().discovery.vignettes`)
+    const staged: [string, string, string][] = [
+      ["broken-in", "vignette:broken-in:ash", "A house broken into through its side window: glass on the floor, a survivor down with a snapped bat (it left a scrap), the zombie that came through"],
+      ["hid", "vignette:hid:elm", "The dead in front of a bedroom closet, spent casings at its door, a battery left behind: somebody hid in there and lived"],
+      ["lured", "vignette:lured:pharmacy", "Bottles broken in a line away from the pharmacy door, the dead bunched at the last one, one bottle left unthrown"],
+      ["spent-alarm", "vignette:alarm-car:55.4,41.4", "A car that wailed until its battery died, its window in and the dead it called piled round it"],
+    ]
+    for (const [scene, id, caption] of staged) {
+      await reset(page, 24)
+      await run(page, `h.stageDiscovery("${scene}")`)
+      await steps(page, 40)
+      const v = await drawn()
+      console.log(scene, v)
+      assert(v.scenes.includes(id), `${id} is drawn`)
+      assert(v.bodies >= 2, "with its bodies")
+      await snap(page, `vignette-${scene}`, caption)
+    }
+
+    // Walking over the broken-in glass upright crunches it.
+    await reset(page, 24)
+    await run(page, `h.stageDiscovery("broken-in")`)
+    const glass = await run(page, `return h.session().view.progression.ledger.store("glass:v:broken-in:ash:0").at`)
+    await run(page, `h.pose(${glass.x - 1.6}, ${glass.y}, 0)`)
+    await steps(page, 50, { mx: 1 })
+    const crunched = await run(page, `return h.session().view.progression.ledger.store("glass:v:broken-in:ash:0").counts.steps ?? 0`)
+    console.log("crunched", crunched)
+    assert(crunched > 0, "glass underfoot crunches")
   }
 
   assert.deepEqual(errors, [])

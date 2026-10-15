@@ -2,6 +2,7 @@ import type { OutbreakAISubsystem } from "../../shared/ai"
 import { PIN_FOUND, type PageSite } from "../../shared/discovery/found"
 import { ideaToken, matStoreId, pinStoreId, triedToken } from "../../shared/discovery/tinker"
 import { carStoreId, ds, hideStoreId, tripStoreId } from "../../shared/discovery/verbs"
+import { vignetteDropId, vignetteScene, type VignetteKind, type VignetteScene } from "../../shared/discovery/vignettes"
 import type { SessionView } from "../../shared/session"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { ProgressionLabHost } from "../progression/index"
@@ -39,6 +40,10 @@ export const DISCOVERY_SCENES = [
   "bottle",
   "car-alarm",
   "repair",
+  "broken-in",
+  "hid",
+  "lured",
+  "spent-alarm",
 ] as const
 export type DiscoveryScene = (typeof DISCOVERY_SCENES)[number]
 
@@ -114,6 +119,16 @@ function alarmCar(view: SessionView, back: number) {
   const near = (c: { x: number; y: number }) => Math.hypot(c.x - 44, c.y - 44)
   const car = view.progression.cars.filter((c) => c.alarm).sort((a, b) => near(a) - near(b))[0]!
   return { car, x: car.rect[0] - back, y: car.y }
+}
+
+/** Seeds a vignette afresh (its battery or bottle back, its car's alarm spent) and returns where it lies. */
+function vignette(view: SessionView, kind: VignetteKind, target: string): VignetteScene {
+  const ledger = view.progression.ledger
+  const scene = vignetteScene(view.town, kind, target)
+  if (!scene) throw new Error(`No room for a ${kind} vignette at ${target}`)
+  for (const id of [vignetteDropId(kind, target), ...(scene.car ? [carStoreId(scene.car)] : [])]) if (ledger.store(id)) ledger.deleteStore(id)
+  view.progression.seedVignette(kind, target)
+  return scene
 }
 
 export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: OutbreakAISubsystem): void {
@@ -201,6 +216,39 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       boardUp(view, ai, win.id, 2, 0.45)
       inHand(view, "crowbar")
       host.pose((win.rect[0] + win.rect[2]) / 2 + 0.9, win.rect[1] - 1.9, Math.PI / 2 + 0.4)
+      return
+    }
+    case "broken-in": {
+      // Someone's house broken into through its side window: glass on the floor, a survivor down with a snapped bat.
+      host.setHour(15)
+      view.player.flashlightOn = true
+      const scene = vignette(view, "broken-in", "ash")
+      host.pose(scene.x - 2.4, scene.y + 1.6, Math.atan2(-1.6, 2.4))
+      return
+    }
+    case "hid": {
+      // Someone held out in this bedroom closet: the dead in front of it, the casings at its door, a battery left.
+      host.setHour(15)
+      view.player.flashlightOn = true
+      const scene = vignette(view, "hid", "elm")
+      host.pose(scene.x + 1.8, scene.y + 1.6, Math.atan2(-1.6, -1.8))
+      return
+    }
+    case "lured": {
+      // Bottles broken in a line away from the pharmacy door, and the dead bunched at the last one.
+      host.setHour(16)
+      view.player.flashlightOn = false
+      const scene = vignette(view, "lured", "pharmacy")
+      host.pose(scene.x + 3, scene.y + 1.5, Math.atan2(-1.5, -3))
+      return
+    }
+    case "spent-alarm": {
+      // A car that wailed until its battery died, the dead it called piled round it.
+      host.setHour(15)
+      view.player.flashlightOn = false
+      const { car } = alarmCar(view, 0)
+      const scene = vignette(view, "alarm-car", car.key)
+      host.pose(scene.x - 2.5, car.rect[3] + 2.6, Math.atan2(car.y - car.rect[3] - 2.6, 2.5))
       return
     }
     case "bench-tinker": {
@@ -375,6 +423,7 @@ export const outbreakDiscoveryFeature = registerOutbreakClientFeature({
       pages: host.session().view.progression.pages.map((p) => ({ ...p, unread: host.session().view.progression.ledger.count(p.id, "page") })),
       practice: { ...host.session().view.progression.mastery },
       verbs: { ...host.discoveryHost.props.verbs.shown, hidden: host.discoveryHost.closet?.hidden ?? false, crouching: Boolean(host.session().view.player.crouching) },
+      vignettes: { ...host.discoveryHost.props.vignettes.shown, scenes: [...host.discoveryHost.props.vignettes.shown.scenes] },
     },
   }),
 })
