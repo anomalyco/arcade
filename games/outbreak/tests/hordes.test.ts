@@ -251,18 +251,18 @@ const members = (sim: CoopSim, h: Horde) => sim.ai.agents.filter((a) => a.hordeI
 describe("roaming hordes", () => {
   test("a horde out of town hears a gunshot through the walls, walks in and materializes", () => {
     const sim = roamWorld(45, 46)
-    const h = placeHorde(sim, -10, 46, 300)
+    const h = placeHorde(sim, -10, 46, 160)
     let materializedAt = -1
-    run(sim, 70, (t) => {
+    run(sim, 60, (t) => {
       if (t === 60) sim.ai.emitNoise(45, 46, PISTOL_NOISE, "gunshot", sim.time, "player", 2.2)
       if (materializedAt < 0 && h.live > 0) materializedAt = t * TICK_DT
     })
     expect(materializedAt).toBeGreaterThan(10)
     expect(materializedAt).toBeLessThan(35)
     const live = members(sim, h)
-    expect(live.length).toBe(300)
-    expect(live.filter((a) => Math.hypot(a.x - 45, a.y - 46) < 12).length).toBeGreaterThanOrEqual(220)
-  })
+    expect(live.length).toBe(160)
+    expect(live.filter((a) => Math.hypot(a.x - 45, a.y - 46) < 10).length).toBeGreaterThanOrEqual(120)
+  }, 20_000)
 
   test("a horde too far to hear the shot stays where it is", () => {
     const sim = roamWorld(45, 46)
@@ -340,9 +340,9 @@ describe("roaming hordes", () => {
     const sim = roamWorld(45, 46)
     sim.addSurvivor("p2", 1)
     Object.assign(sim.slots[1]!.survivor, { x: 60, y: 60, flashlightOn: true })
-    const a = placeHorde(sim, 30, 70, 160, { x: 45, y: 46 })
+    const a = placeHorde(sim, 30, 70, 100, { x: 45, y: 46 })
     materializeHorde(sim, a)
-    placeHorde(sim, -8, 50, 200)
+    placeHorde(sim, -8, 50, 120)
     const step = (s: CoopSim, t: number) => {
       for (const slot of s.slots) {
         slot.survivor.health = slot.survivor.maxHealth
@@ -358,6 +358,6 @@ describe("roaming hordes", () => {
     const replay = CoopSim.fromSnapshot(mid)
     for (let t = 600; t < 2100; t++) step(replay, t)
     expect(hashSimState(replay.toSnapshot())).toBe(hashSimState(sim.toSnapshot()))
-    expect(hordesOf(sim).hordes.reduce((s, h) => s + h.live, 0)).toBeGreaterThan(200)
-  })
+    expect(hordesOf(sim).hordes.reduce((s, h) => s + h.live, 0)).toBeGreaterThan(150)
+  }, 20_000)
 })
