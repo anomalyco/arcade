@@ -11,6 +11,8 @@
   likenesses.
 - `shared/world.ts` is the authoritative, deterministic rules (server and practice share it); `shared/view.ts`
   packs snapshots. `src/game/game.ts` interpolates, predicts, turns events into fx and sound and builds the frame.
+- `INTENT_OPS` (`shared/world.ts`) says which `Intent` field is a one-shot press (`cast`) for the room's jitter buffer
+  (`@arcade/kit/net/room-core`); a new press field must go there too.
 - Look: kit `party_pop` preset (`packages/kit/gpu/look.ts`). Portraits in `public/portraits/` are crops of
   `concept/jpg/05-roster-lineup.jpg`.
 - `bun run dev` runs Wrangler (:8790) and Vite (:5195). `bun run check` before pushing; pushing to `main` deploys

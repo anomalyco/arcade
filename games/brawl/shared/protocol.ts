@@ -6,7 +6,8 @@ import type { Intent, SimEvent } from "./world"
 
 export type ClientMsg =
   /** `build` is the client's BUILD (shared/build.gen.ts); a mismatched client reloads. */
-  | { type: "hello"; name: string; id?: string; build?: string; pick?: string }
+  /** `token` is the private seat token from an earlier welcome, to reclaim the seat after a drop. */
+  | { type: "hello"; name: string; token?: string; build?: string; pick?: string }
   | { type: "intent"; seq: number; i: Intent }
   | { type: "pick"; char: string }
   | { type: "ready"; ready: boolean }
@@ -47,9 +48,9 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   }
   switch (o.type) {
     case "hello": {
-      const id = typeof o.id === "string" && /^[a-z0-9]{6,16}$/.test(o.id) ? o.id : undefined
+      const token = typeof o.token === "string" && /^[a-f0-9]{32}$/.test(o.token) ? o.token : undefined
       const build = typeof o.build === "string" && /^[a-f0-9]{1,32}$/.test(o.build) ? o.build : undefined
-      return { type: "hello", name: cleanName(o.name), id, build, pick: characterOf(o.pick)?.id }
+      return { type: "hello", name: cleanName(o.name), token, build, pick: characterOf(o.pick)?.id }
     }
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null

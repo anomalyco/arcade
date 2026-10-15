@@ -354,11 +354,14 @@ In rough order of value against risk:
      and Blackout; follow-up candidates are migrating Getaway's `Scene.shake`/`hitStop` and Carrier's camera `trauma²`
      loops onto `@arcade/kit/client/camera` helpers.
 9. **Remaining candidates:**
-   - **Room plumbing (Blackout and Brawl):** `@arcade/kit/net/room-core` (`RoomCore`: build handshake, seats held 15 s
-     for a reconnect, idle kick with a countdown, fixed-tick broadcast of events, roster changes and snapshots),
+   - **Room plumbing (Blackout and Brawl):** `@arcade/kit/net/room-core` (`RoomCore`: build handshake, `Seats` held 15 s
+     for a reconnect with the private token from `welcome` (a public id never reclaims a seat), a `JitterBuffer` per
+     seat feeding the World one intent per tick with the game's `InputOps` edges carried forward, a per-socket token
+     bucket (120 messages/s, burst 240), idle kick with a countdown, fixed-tick broadcast of events, roster changes and
+     snapshots),
      `@arcade/kit/server/{room-object,lobby-object,worker}` (the Room Durable Object's socket accept, bounded catch-up
      tick loop and throttled Lobby reports with a heartbeat; the storage-backed Lobby; the `/arcade/<game>` Worker
-     router) and `@arcade/kit/net/room-socket` (the client socket with seat reclaim, backoff and version reload).
+     router) and `@arcade/kit/net/room-socket` (the client socket with token seat reclaim, backoff and version reload).
        Blackout's `server/room.ts` keeps only its World hooks and room options. Getaway, Outbreak and Carrier still own
      theirs.
    - **Brawl's engine pieces (completed):** `@arcade/kit/sim/abilities` (data-driven, server-authoritative abilities:
@@ -376,6 +379,7 @@ In rough order of value against risk:
      `interest` (`inInterestBubble`, `PriorityAccumulator`, `AckHistory` for delta compression against `ackSnapTick`, and
      `BandwidthPacer` for adaptive snapshot stride), `rewind` (`RewindHistory` for server-side lag-compensated hitscan
      rewind), `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
-     (`Predictor` replay on ack, `Smoother` correction offset). Blackout's `queue.splice` input trim, its exponential
-     avatar chase (`SnapshotBuffer` + `RewindHistory` for 20-tick sniper/rifle hitscan rewind) and Getaway/Blackout's
-     public-id reconnect are the next adopters ([outbreak-coop.md](outbreak-coop.md)).
+     (`Predictor` replay on ack, `Smoother` correction offset). `RoomCore` (Blackout, Brawl) uses `seats` and
+     `jitter-buffer`; Blackout's exponential avatar chase (`SnapshotBuffer` + `RewindHistory` for 20-tick
+     sniper/rifle hitscan rewind) and Getaway's `queue` trim and public-id reconnect are the next adopters
+     ([outbreak-coop.md](outbreak-coop.md)).

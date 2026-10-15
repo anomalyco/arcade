@@ -5,18 +5,18 @@ import { BUILD } from "../shared/build.gen"
 import { GAME, MAX_PLAYERS, SNAPSHOT_HZ, TICK_HZ } from "../shared/config"
 import { type ClientMsg, type ServerMsg, decodeClient, encodeServer } from "../shared/protocol"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf, snapshotEntities } from "../shared/view"
-import { type Intent, type SimEvent, World } from "../shared/world"
+import { INTENT_OPS, type Intent, type SimEvent, World } from "../shared/world"
 import { type Env, lobbyOf } from "./env"
 import type { RoomReport } from "./lobby"
 
 type Ents = ReturnType<typeof snapshotEntities>
 
-/** One room's match. Seats, reconnects, the idle kick and broadcasting come from `@arcade/kit/net/room-core`. */
+/** One room's match. Seats, reconnects, input jitter, rate limits, the idle kick and broadcasting come from `@arcade/kit/net/room-core`. */
 export class RoomCore extends SharedRoomCore<ClientMsg, Intent, RosterRow, SimEvent, Ents, Snapshot> {
   readonly world: World
 
   constructor(code: string, clock: () => number = Date.now) {
-    super({ code, build: BUILD, title: GAME.title, maxPlayers: MAX_PLAYERS, snapEvery: Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ)), clock })
+    super({ code, build: BUILD, title: GAME.title, maxPlayers: MAX_PLAYERS, snapEvery: Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ)), inputs: INTENT_OPS, clock })
     this.world = new World(seedOf(code))
   }
 
@@ -25,9 +25,6 @@ export class RoomCore extends SharedRoomCore<ClientMsg, Intent, RosterRow, SimEv
   }
   protected encode(msg: ServerMsg) {
     return encodeServer(msg)
-  }
-  protected humanCount() {
-    return this.world.humans.length
   }
   protected hasPlayer(id: string) {
     return this.world.players.has(id)

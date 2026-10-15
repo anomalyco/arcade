@@ -10,6 +10,9 @@
 - The simulation in `shared/` runs on the Durable Object and in the browser (practice mode, prediction); keep it free of DOM and Worker APIs.
 - Target look: `concept/look-1-office.png`. Screenshots: apollo's Chrome via browser-control (call `page.bringToFront()` first or rAF is throttled to 1 fps), or `bun scripts/shot.ts` (local headless SwiftShader).
 - Room host (`shared/sim/host.ts`, ♛ on the scoreboard): picks teams in team modes, and in any mode restarts the match (`hostRestart` → `World.restart`: reset or switch mode, new floor by default, 3 s cooldown, a `host` event for the banner) from the HOST panel in the Tab/T scoreboard (two clicks to confirm).
+- Input edges: `INTENT_OPS` (`shared/sim/world.ts`) lists which `Intent` fields are one-shot presses. The room's jitter
+  buffer (`@arcade/kit/net/room-core`) merges them forward and strips them from dry-tick stand-ins; a new press field
+  must go there, or a stall can repeat or lose it.
 - Idle kick (`server/room.ts` RoomCore): 90 s with no input while alive in play gets you kicked (end screen and time dead don't count), with a 15 s `idle` countdown shown in the HUD status line.
 - Vehicles (jeep, van, scooter): only on maps that list `MapDef.vehicles` spawns (never office floors). Physics and
   collisions in `shared/sim/vehicle.ts` + `vehicle-collide.ts` (ported from getaway), rules in `vehicle-rules.ts` (F/E

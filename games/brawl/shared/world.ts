@@ -1,3 +1,4 @@
+import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import { Abilities, type AbilityActor, type AbilityEvent, type AbilityHost, type HitDef, abilityState, movement, shieldScale } from "@arcade/kit/sim/abilities"
 import { type Rect, pushOut } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
@@ -16,6 +17,13 @@ export type Phase = "select" | "play" | "results"
 /** One tick of input: move, aim (radians) and the floor point under the cursor, and the slot pressed this tick (-1 none). */
 export type Intent = { mx: number; my: number; aim: number; tx: number; ty: number; cast: number }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, tx: 0, ty: 0, cast: -1 }
+
+/** The cast is the one-shot edge (with the floor point it was aimed at); movement and aim are held. */
+export const INTENT_OPS: InputOps<Intent> = {
+  merge: (a, b) => (b.cast >= 0 || a.cast < 0 ? b : { ...b, cast: a.cast, tx: a.tx, ty: a.ty }),
+  standIn: (last) => (last.cast < 0 ? last : { ...last, cast: -1 }),
+  hasEdges: (i) => i.cast >= 0,
+}
 
 export interface Brain {
   think(world: World, f: Fighter): Intent
@@ -185,13 +193,16 @@ export class World implements AbilityHost<Fighter> {
     if (f && this.phase === "select" && f.pick) f.ready = ready
   }
 
+  /** Queues one tick of input (the room's jitter buffer hands over one per tick; a reconnect may restart `seq`). */
   push(id: string, seq: number, intent: Intent): void {
     const f = this.players.get(id)
     if (!f || !f.human) return
-    const last = f.queue.length ? f.queue[f.queue.length - 1]!.seq : f.ack
-    if (seq <= last) return
     f.queue.push({ seq, intent })
-    if (f.queue.length > 8) f.queue.splice(0, f.queue.length - 3)
+    // Never drop a press: an overflowing queue folds its oldest input into the next one.
+    if (f.queue.length > 8) {
+      const a = f.queue.shift()!
+      f.queue[0] = { seq: f.queue[0]!.seq, intent: INTENT_OPS.merge(a.intent, f.queue[0]!.intent) }
+    }
   }
 
   takeEvents(): SimEvent[] {

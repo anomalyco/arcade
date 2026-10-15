@@ -6,8 +6,8 @@ export type RoomSocketOptions<Hello> = {
   room: string
   /** Socket query parameters only the room's first arrival can set (private, mode, map...). */
   query?: Record<string, string | null | undefined>
-  /** The hello frame for this connection, with the seat id to reclaim. */
-  hello: (id: string | undefined) => Hello
+  /** The hello frame for this connection, with the private seat token to reclaim (from an earlier welcome). */
+  hello: (token: string | undefined) => Hello
   /** Any frame the socket doesn't handle itself (snapshots, roster, events). */
   receive: (msg: { type: string }) => void
   /** The room refused or ended the session; show the message. */
@@ -28,9 +28,9 @@ function socketUrl(room: string, query: Record<string, string | null | undefined
 }
 
 /**
- * The client half of `@arcade/kit/net/room-core`: one room's socket. Reconnects with the same seat id (kept per room
- * in sessionStorage) with backoff, handles welcome, errors, the version reload and the idle countdown, and hands
- * everything else to the game.
+ * The client half of `@arcade/kit/net/room-core`: one room's socket. Reconnects with backoff, presenting the seat's
+ * private token (kept per room in sessionStorage) to get the same seat back; handles welcome, errors, the version
+ * reload and the idle countdown, and hands everything else to the game.
  */
 export class RoomSocket<Hello> {
   private ws: WebSocket | null = null
@@ -38,15 +38,18 @@ export class RoomSocket<Hello> {
   idleIn = 0
   private retries = 0
   private closed = false
+  /** Your public seat id: the last one this tab held in the room until the welcome confirms it. */
   id: string
+  private token: string
 
   constructor(private readonly o: RoomSocketOptions<Hello>) {
-    this.id = sessionStorage.getItem(this.idKey) ?? ""
+    this.id = sessionStorage.getItem(this.key("id")) ?? ""
+    this.token = sessionStorage.getItem(this.key("token")) ?? ""
     this.open()
   }
 
-  private get idKey() {
-    return `${this.o.game}.id.${this.o.room}`
+  private key(what: "id" | "token") {
+    return `${this.o.game}.${what}.${this.o.room}`
   }
 
   send(msg: unknown): void {
@@ -68,7 +71,7 @@ export class RoomSocket<Hello> {
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0
-      ws.send(this.o.encode(this.o.hello(this.id || undefined)))
+      ws.send(this.o.encode(this.o.hello(this.token || undefined)))
     }
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return
@@ -88,7 +91,9 @@ export class RoomSocket<Hello> {
     switch (m.type) {
       case "welcome":
         this.id = m.id
-        sessionStorage.setItem(this.idKey, m.id)
+        this.token = m.token
+        sessionStorage.setItem(this.key("id"), m.id)
+        sessionStorage.setItem(this.key("token"), m.token)
         this.problem = null
         return
       case "error":

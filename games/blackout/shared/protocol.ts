@@ -1,4 +1,5 @@
 import { LOWER_CODE_CHARS, cleanPlayerName, randomRoomCode } from "@arcade/kit/sim/matchmaking"
+import type { RoomFrame } from "@arcade/kit/net/room-core"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "./config"
 import { type MapChoice, mapChoiceOf } from "./maps"
 import { type ModeId, modeOf } from "./sim/modes"
@@ -9,7 +10,8 @@ import { spellConfig, type SpellConfig, type CastIntent } from "./sim/spell-conf
 export type ClientMsg =
   | { type: "spells"; config: SpellConfig }
   /** `build` is the client's BUILD (shared/build.gen.ts); the server tells a mismatched client to reload. */
-  | { type: "hello"; name: string; id?: string; gun: Gun; equip: Equip; build?: string }
+  /** `token` is the private seat token from an earlier welcome, to reclaim the seat after a drop. */
+  | { type: "hello"; name: string; token?: string; gun: Gun; equip: Equip; build?: string }
   | { type: "intent"; seq: number; i: Intent }
   | { type: "gun"; gun: Gun }
   | { type: "equip"; equip: Equip }
@@ -24,17 +26,7 @@ export type ClientMsg =
   | { type: "host"; action: "maps"; maps: MapChoice }
   | { type: "ping"; t: number }
 
-export type ServerMsg =
-  | { type: "welcome"; id: string; room: string }
-  | Snapshot
-  | { type: "roster"; players: RosterRow[] }
-  | { type: "ev"; events: SimEvent[] }
-  | { type: "error"; message: string }
-  /** The server runs different shared code than this client: reload the page. */
-  | { type: "reload" }
-  /** Seconds until you're kicked for idling, during the warning; 0 clears it. */
-  | { type: "idle"; seconds: number }
-  | { type: "pong"; t: number }
+export type ServerMsg = RoomFrame<RosterRow, SimEvent> | Snapshot
 
 export const NAME_MAX = 14
 
@@ -74,9 +66,9 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   }
   switch (o.type) {
     case "hello": {
-      const id = typeof o.id === "string" && /^[a-z0-9]{6,16}$/.test(o.id) ? o.id : undefined
+      const token = typeof o.token === "string" && /^[a-f0-9]{32}$/.test(o.token) ? o.token : undefined
       const build = typeof o.build === "string" && /^[a-f0-9]{1,32}$/.test(o.build) ? o.build : undefined
-      return { type: "hello", name: cleanName(o.name), id, gun: gunOf(o.gun), equip: equipOf(o.equip), build }
+      return { type: "hello", name: cleanName(o.name), token, gun: gunOf(o.gun), equip: equipOf(o.equip), build }
     }
     case "intent": {
       const i = o.i && typeof o.i === "object" ? (o.i as Record<string, unknown>) : null
