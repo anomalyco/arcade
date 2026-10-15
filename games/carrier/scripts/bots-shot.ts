@@ -207,6 +207,18 @@ if (only.includes("panel") || only.includes("duel")) {
     await press(a, "1v1 dogfight")
     await closeMenu(a)
     check(await until(a, "n.bots.length === 1 && [...n.planes.keys()].includes(n.bots[0].id)", 8000), `a dogfighter is up and relayed (${await js(a, "return n.bots.map(b => b.name + ' ' + b.state).join()")})`)
+    console.log("raw", await a.evaluate(async (r) => {
+      const { BUILD } = await import(/* @vite-ignore */ `${location.origin}/shared/build.gen.ts`)
+      ;(globalThis as any).__build = BUILD
+      const ws = new WebSocket(`${location.origin.replace("http", "ws")}/ws?room=${r}`)
+      const got: string[] = []
+      ws.onopen = () => ws.send(JSON.stringify({ type: "hello", build: (globalThis as any).__build ?? "x", name: "diag" }))
+      ws.onmessage = (e) => got.push(String(e.data).slice(0, 600))
+      await new Promise((res) => setTimeout(res, 1500))
+      ws.close()
+      return got.filter((g) => !g.includes('"crew"')).slice(0, 6).join("\n")
+    }, room))
+    console.log("diag", await js(a, `return JSON.stringify({ state: n.state, room: n.room, phase: f.phase, crashed: f.plane.crashed, y: Math.round(f.plane.y), planes: [...n.planes.keys()], bots: n.bots, hp: c.flight.weapons.world.hp(n.id) })`))
     const look = (from: "me" | "bot", back = 60, up = 14) =>
       js(
         a,
@@ -241,9 +253,11 @@ if (only.includes("panel") || only.includes("duel")) {
     check(hit, "the dogfighter's rounds or missile hit ADA")
     // ADA's client reports rounds on it through the room's hits check (range, budget, alive enemies).
     const botId = await js<number>(a, "return n.bots[0]?.id ?? -1")
+    // Hold its fire (the panel's set command) so ADA lives to return it.
+    await js(a, `n.sendBot({ c: "set", ids: [${botId}], s: { weapons: false } })`)
     let down = false
-    for (let i = 0; i < 40 && !down; i++) {
-      await js(a, `const t = n.planes.get(${botId}); const p = f.plane; if (t && Math.hypot(t[2] - p.x, t[3] - p.y, t[4] - p.z) < 1500) n.sendHits(${botId}, 30)`)
+    for (let i = 0; i < 160 && !down; i++) {
+      await js(a, `const t = n.planes.get(${botId}); const p = f.plane; if (t && Math.hypot(t[2] - p.x, t[3] - p.y, t[4] - p.z) < 1600) n.sendHits(${botId}, 30)`)
       await a.waitForTimeout(250)
       down = await js<boolean>(a, `return n.planes.get(${botId})?.[1] === 2`)
     }

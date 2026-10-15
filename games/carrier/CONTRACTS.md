@@ -509,6 +509,27 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   tab; read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
   in `captures/radar/`.
 
+## Capture zones (`shared/objective.ts`, `server/core.ts`, `src/objective/**`)
+
+- The game's objective. Zones are 650 m circles of open water (clear of islands, 1.4 km+ from every spawn); fewer
+  than 4 active carriers (crewed, not sinking) → one zone, 4 → two, decided at each reveal. A zone stays put for
+  5 minutes (`cycle` 300 s); 30 s before it moves the next spot shows as a dashed ghost ring and the HUD counts down
+  (ZONE MOVING IN 20S). A round's first zone sits within 1 km of the middle (about 3 minutes' sail from every spawn);
+  later ones hop 1.3-2.8 km.
+- A carrier whose hull centre is inside a zone alone captures it in 10 s (someone else's drains to neutral first);
+  two or more inside: contested, frozen. The holder scores 2 points/s per zone while inside alone. No clock: first to
+  1,200 points wins the round; the result shows 15 s, then scores reset and a new round starts. Nothing in the
+  objective touches ships, crew or aircraft: relocations, round ends and new rules never move or respawn anything.
+- Authority: the room's `Objective` steps with the ships and sends `obj` (`packObjective`, a flat number array) at
+  ~4 Hz while a zone is being taken or held, at once on a capture, reveal, relocation or round end, 1 Hz otherwise,
+  and to joiners. Offline the client runs its own on the local ship. Dev rooms take `objective` (rules, clamped;
+  the round restarts) from the debug menu's ZONES tab (rules + look, APPLY TO ROOM).
+- Client: `Zones` (`src/objective/zones.ts`) draws `ZonePass` (a glowing boundary on the displaced sea with the
+  capture arc and turning dash marks, a faint tint, a low light curtain on the boundary; no centre beam) and the
+  top-centre `ObjectiveHud` (zone pips, scores in carrier colours with bars to the target, MOVE countdown, a capture
+  meter, one event line, the WINS banner). `objectiveZones()` gives other HUD pieces (the radar) the zones.
+- Real-GPU check: `scripts/zones-shot.ts` (dev room; captures in `captures/zones/`).
+
 ## Weapons (`shared/{weapons,combat}.ts`, `src/weapons/**`, `src/render/weapon-fx.ts`, `src/audio/weapon-audio.ts`)
 
 - Loadouts are per aircraft (`LOADOUTS` in `shared/weapons.ts`), keyed by `VehicleKind`. The F/A-18E (`hornet`) has

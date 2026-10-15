@@ -1,6 +1,6 @@
 import { type Crew, playerOf, shipOf } from "../../shared/crew"
 import type { Archipelago } from "../../shared/islands"
-import { OBJECTIVE_DEFAULTS, Objective, type ObjectiveRules, type ObjectiveView, packRules, zoneCentre } from "../../shared/objective"
+import { OBJECTIVE_DEFAULTS, Objective, type ObjectiveRules, type ObjectiveView, packRules } from "../../shared/objective"
 import type { Sea } from "../../shared/sea"
 import type { Ship } from "../../shared/ship"
 import type { Renderer } from "../render/renderer"
@@ -73,7 +73,6 @@ export class Zones {
   private local: Objective | null = null
   private localSeed = -1
   private draws: ZoneDraw[] = []
-  private c: [number, number] = [0, 0]
 
   constructor(renderer: Renderer, hudRoot: HTMLElement) {
     this.pass = new ZonePass(renderer)
@@ -117,16 +116,15 @@ export class Zones {
         [view.next, true],
       ] as const) {
         for (const z of list) {
-          const c = zoneCentre(z, t, this.c)
           const contested = bitCount(z.present) >= 2
-          out.push({ id: z.id, label: ZONE_LABELS[z.id] ?? "?", x: c[0], z: c[1], r: z.r, holder: next ? -1 : z.holder, cap: next ? -1 : z.cap, progress: next ? 0 : z.progress, contested: !next && contested, next })
+          out.push({ id: z.id, label: ZONE_LABELS[z.id] ?? "?", x: z.x, z: z.z, r: z.r, holder: next ? -1 : z.holder, cap: next ? -1 : z.cap, progress: next ? 0 : z.progress, contested: !next && contested, next })
           const held = !next && z.holder >= 0
           // The boundary's arc is the progress of whoever it belongs to (a capturer's fill, or what is left of the
           // holder's while someone drains it); the rest of the boundary turns neutral.
           const arc = !next && z.cap >= 0
           draws.push({
-            x: c[0],
-            z: c[1],
+            x: z.x,
+            z: z.z,
             r: z.r,
             color: held ? teamColor(z.holder) : NEUTRAL,
             capColor: arc ? teamColor(z.cap) : NEUTRAL,
