@@ -491,12 +491,12 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `A single arrow loosed from a recurve bow: a sharp deep bowstring twang and a fast arrow whoosh flying away, close and dry. One shot only. ${NO_SPEECH}`, duration: 0.6, candidates: 5, influence: 0.55 },
   },
   {
-    id: "arrow.thunk", label: "Arrow thunk (stone)", group: "bow", bus: "impact", variants: 4, target: -19, gain: 0.85, pitchJitter: 0.08, gainJitter: 0.1,
+    id: "arrow.thunk", label: "Arrow thunk (stone)", group: "bow", bus: "impact", variants: 4, target: -22.5, gain: 1.2, pitchJitter: 0.08, gainJitter: 0.1,
     maxVoices: 5, range: { ref: 3, max: 30 }, wet: 0.1, usedBy: ARCHERS, durationRange: [0.1, 0.7],
     generate: { prompt: `A single arrow striking and sticking into old mossy stone masonry: a hard punchy thunk with the wooden shaft quivering briefly and a few grains of grit, close and dry. One impact only. ${NO_SPEECH}`, duration: 0.6, candidates: 6, influence: 0.6 },
   },
   {
-    id: "arrow.hit", label: "Arrow hits body", group: "bow", bus: "impact", variants: 3, target: -18, gain: 0.9, pitchJitter: 0.06, gainJitter: 0.1,
+    id: "arrow.hit", label: "Arrow hits body", group: "bow", bus: "impact", variants: 3, target: -20.5, gain: 1.2, pitchJitter: 0.06, gainJitter: 0.1,
     maxVoices: 3, range: { ref: 3, max: 30 }, wet: 0.1, usedBy: ARCHERS, durationRange: [0.12, 0.8],
     generate: { prompt: `A single arrow hitting a person wearing a heavy cloth cloak: a deep muffled thud with a sharp cloth snap and a short grunt-free body impact, close and dry. One impact only. No speech, no voice, no music.`, duration: 0.6, candidates: 4, influence: 0.55 },
   },
@@ -536,7 +536,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `A magical beam of light fired from a bow: a bright crackling energy zap that sizzles and rings briefly as it ricochets, close. ${NO_SPEECH}`, duration: 0.9, candidates: 4, influence: 0.5 },
   },
   {
-    id: "bramble.grow", label: "Bramble grows", group: "bow", bus: "foley", variants: 2, target: -22, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
+    id: "bramble.grow", label: "Bramble grows", group: "bow", bus: "foley", variants: 2, target: -24.5, gain: 1.05, pitchJitter: 0.06, gainJitter: 0.1,
     maxVoices: 2, range: { ref: 3, max: 26 }, wet: 0.08, usedBy: ARCHERS, durationRange: [0.3, 1.4],
     generate: { prompt: `Thorny vines bursting out of stone and growing in an instant: fast creaking, cracking and rustling wood and leaves, close and dry. ${NO_SPEECH}`, duration: 1, candidates: 4, influence: 0.5 },
   },
