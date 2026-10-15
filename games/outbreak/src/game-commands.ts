@@ -4,6 +4,7 @@ import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabPanel } from "@arcade/kit/lab-panel"
 import type { AIState } from "../shared/ai"
+import { isMeleeWeapon, MELEE_WEAPON_IDS, type MeleeWeaponId } from "../shared/combat"
 import { sightRects } from "../shared/map"
 import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
@@ -278,6 +279,33 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
           stageProgression(progressionHost, scene)
           return { scene }
+        },
+      },
+      {
+        id: "melee.stage",
+        label: "Equip Melee Weapon & Stage Arena",
+        shortLabel: "Melee Stage",
+        category: "Scene",
+        undoable: false,
+        args: {
+          weapon: {
+            type: "string",
+            description: `Melee weapon ID (${MELEE_WEAPON_IDS.join(", ")})`,
+          },
+          swing: {
+            type: "string",
+            description: "Optional swing action (none, light, heavy, combo)",
+          },
+        },
+        enabled: () => !coop.net,
+        run: async (_ctx, args) => {
+          const rawWpn = String(args?.weapon ?? "crowbar")
+          const weapon: MeleeWeaponId = isMeleeWeapon(rawWpn) ? rawWpn : "crowbar"
+          const swing = String(args?.swing ?? "light") as "none" | "light" | "heavy" | "combo"
+          const res = host.harness().stageMelee(weapon, swing)
+          host.draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return res
         },
       },
       {

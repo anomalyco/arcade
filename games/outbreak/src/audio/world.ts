@@ -8,6 +8,7 @@ export function soundWorld(sim: CoopSim): SoundWorld {
     town: sim.town,
     zombies: sim.ai.agents,
     shots: sim.combat.shots,
+    meleeSwings: sim.combat.meleeSwings,
     portals: sim.ai.portalStates,
     survivors: sim.slots,
     progression: sim.progression,
