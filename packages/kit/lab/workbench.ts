@@ -637,6 +637,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
         syncVariationGridOverlay()
         return variationGridCostMs
       } finally {
+        if (variationGrid && focusedGridTile !== null && focusedGridTile >= 1 && focusedGridTile <= variationGrid.tiles.length) {
+          applyTileSettingsToSection(activeSection(), variationGrid.tiles[focusedGridTile - 1]!)
+        }
         activeGridRender = null
       }
     })()

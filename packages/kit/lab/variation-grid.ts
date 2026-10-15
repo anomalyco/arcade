@@ -487,6 +487,69 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
       },
     ],
   },
+  styles: {
+    id: "styles",
+    title: "Styles · 9 Rendering Directions on 1 Outbreak Sim",
+    section: "styles",
+    cols: 3,
+    rows: 3,
+    tiles: [
+      {
+        id: "tiny-pixel",
+        label: "Tiny Pixel",
+        settings: { style: "tiny-pixel" },
+        subtitle: "96p nearest · 16-col palette · Bayer dither · 1px outline",
+      },
+      {
+        id: "one-bit",
+        label: "Game Boy 1-Bit",
+        settings: { style: "one-bit" },
+        subtitle: "112p DMG-01 4-shade / 1-bit Obra Dinn ordered dither",
+      },
+      {
+        id: "comic-cel",
+        label: "Comic Book Cel",
+        settings: { style: "comic-cel" },
+        subtitle: "3-step toon ramp · India ink · halftone · hit starburst",
+      },
+      {
+        id: "papercraft",
+        label: "Papercraft Low-Poly",
+        settings: { style: "papercraft" },
+        subtitle: "Flat facets · white fold ridges · cut-paper drop shadow",
+      },
+      {
+        id: "ink-hatch",
+        label: "Ink Sketch Hatch",
+        settings: { style: "ink-hatch" },
+        subtitle: "Ivory sketchbook · 3-tier cross-hatch · crimson shot ink",
+      },
+      {
+        id: "watercolour",
+        label: "Watercolour Wash",
+        settings: { style: "watercolour" },
+        subtitle: "Kuwahara pigment wash · wet-edge rings · cotton tooth",
+      },
+      {
+        id: "tactical-breach",
+        label: "Tactical Breach",
+        settings: { style: "tactical-breach" },
+        subtitle: "1m tactical grid · cyan/amber unit tiles · shot telegraph",
+      },
+      {
+        id: "hotline-neon",
+        label: "Hotline Neon",
+        settings: { style: "hotline-neon" },
+        subtitle: "Synthwave magenta/cyan · neon grid · laser tracer · CRT",
+      },
+      {
+        id: "ascii-terminal",
+        label: "ASCII Terminal",
+        settings: { style: "ascii-terminal" },
+        subtitle: "GPU 5×7 glyph cells (@ survivor, Z zombies, -* shot)",
+      },
+    ],
+  },
 }
 
 const PRESET_ALIASES: Record<string, string> = {
@@ -503,9 +566,13 @@ const PRESET_ALIASES: Record<string, string> = {
   "outbreak-fog": "fog",
   rain: "weather",
   "weather-6": "weather",
+  style: "styles",
+  "style-playground": "styles",
+  "styles-9": "styles",
 }
 
 export function defaultGridPresetForSection(sectionId: string, effectName?: string): string {
+  if (sectionId === "styles") return "styles"
   if (sectionId === "weather") return "weather"
   if (sectionId === "looks") return "looks"
   if (sectionId === "outbreak-vignette") return "fog"
