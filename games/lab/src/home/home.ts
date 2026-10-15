@@ -126,12 +126,18 @@ export function createHome(options: HomeOptions) {
 
   function applyFilter() {
     outline.filter(query ? (row: Row) => (row.lab ? matches(row.lab, query) : false) : null)
-    const first = firstVisibleLab()
-    if (query && first && !visible().includes(outline.active ?? "")) outline.select([first.ref], first.ref)
+    const shown = shownLabs()
+    const active = outline.active
+    if (query && shown[0] && !shown.some(l => l.ref === active)) {
+      outline.select([shown[0].ref], shown[0].ref)
+      describe(shown[0])
+    }
   }
 
   const visible = () => outline.rows()
-  const firstVisibleLab = () => visible().map(id => byId.get(id)).find(Boolean)
+  /** Labs the search keeps, in list order (the outliner's rows still hold leaving rows while they fold away). */
+  const shownLabs = () => [...byId.values()].filter(l => !query || matches(l, query))
+  const firstVisibleLab = () => shownLabs()[0]
 
   function describe(lab: HomeLab | null) {
     if (!lab) {
@@ -257,7 +263,7 @@ export function createHome(options: HomeOptions) {
     get open() { return !root.hidden },
     onChange(listener: (open: boolean) => void) { listeners.add(listener); return () => listeners.delete(listener) },
     /** Labs on show (after the search filter), top to bottom. */
-    visibleLabs: () => visible().filter(id => byId.has(id)),
+    visibleLabs: () => shownLabs().map(l => l.ref),
     search(text: string) { search.value = text; query = text.trim(); applyFilter() },
   }
 }

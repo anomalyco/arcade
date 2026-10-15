@@ -70,6 +70,7 @@ try {
   await p.keyboard.type("rain")
   s = await state(p)
   check(s.visible.includes("look-and-light/weather") && s.visible.length < 6, `search narrows the list (${s.visible.join(", ")})`)
+  await p.waitForTimeout(700)
   await p.screenshot({ path: resolve(out, "home-search.png") })
   await p.keyboard.press("Enter")
   await p.waitForFunction(() => !(window as unknown as { labs: { home: { open: boolean } } }).labs.home.open, undefined, { timeout: 30000 })
