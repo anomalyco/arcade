@@ -1,6 +1,7 @@
 import type { LabControl, LabSettings } from "../lab-panel"
 import {
   AdaptiveQualityController,
+  describeQualityState,
   loadSavedQualityMode,
   resolveQualityMode,
   saveQualityMode,
@@ -111,9 +112,7 @@ export class GameQuality<P extends QualityScaling> {
 
   /** A one-line readout for Lab telemetry: `Quality Auto → High · 2.00× · GPU 6.1 ms`. */
   describe(devicePixelRatio = globalThis.devicePixelRatio ?? 1): string {
-    const s = this.state(devicePixelRatio)
-    const mode = s.mode === "auto" ? `Auto → ${s.profile.label}` : s.profile.label
-    return `Quality ${mode} · ${s.pixelRatio.toFixed(2)}×${s.gpuMs ? ` · GPU ${s.gpuMs.toFixed(1)} ms` : ""}`
+    return describeQualityState(this.state(devicePixelRatio))
   }
 
   /** The Lab row (key `quality`); bind it to `settings` (or use `addTo`). */

@@ -98,6 +98,13 @@ describe("@arcade/kit/quality", () => {
     expect(ctrl.state(2.0).resolutionScale).toBe(0.9)
     expect(ctrl.state(2.0).pixelRatio).toBe(1.8)
 
+    // The window straddling the drop still holds slow frames: no change, and not yet comfortable.
+    for (let i = 0; i < 12; i++) {
+      now += 50
+      ctrl.recordFrame(16.6, 5.0, now)
+    }
+    expect(ctrl.state(2.0).resolutionScale).toBe(0.9)
+
     // 2 comfortable windows are not enough to step up (recoverWindows = 3)
     for (let w = 0; w < 2; w++) {
       for (let i = 0; i < 12; i++) {
@@ -113,6 +120,94 @@ describe("@arcade/kit/quality", () => {
       ctrl.recordFrame(16.6, 5.0, now)
     }
     expect(ctrl.state(2.0).resolutionScale).toBe(0.95)
+  })
+
+  /** Frames through a 60 Hz, one-frame-in-flight pipeline: CPU + GPU past a tick misses it. GPU scales with pixels. */
+  function play(ctrl: AdaptiveQualityController, seconds: number, cpuMs: number, gpuAt2x: number, start = 0) {
+    const tick = 1000 / 60
+    let now = start
+    let frames = 0
+    let missed = 0
+    let n = 0
+    while (now < start + seconds * 1000) {
+      const share = (ctrl.effectivePixelRatio(2) / 2) ** 2
+      const gpu = gpuAt2x * (0.17 + 0.83 * share) * (1 + (((n++ * 7919) % 25) - 12) / 100)
+      const interval = Math.max(1, Math.ceil((cpuMs + gpu) / tick - 1e-6)) * tick
+      now += interval
+      frames++
+      if (interval > tick + 0.5) missed++
+      ctrl.recordFrame(interval, gpu, now)
+    }
+    return { now, missed: missed / frames }
+  }
+
+  test("a GPU 2.5× slower than the Studio at full Retina: Auto sheds pixels when CPU + GPU miss the tick", () => {
+    // 13.5 ms GPU (under the old 0.85 budget gate) plus 3.5 ms of serial CPU: most frames miss 60 fps.
+    const ctrl = new AdaptiveQualityController({ mode: "auto" })
+    const settle = play(ctrl, 10, 3.5, 13.5)
+    const after = play(ctrl, 10, 3.5, 13.5, settle.now)
+    expect(ctrl.state(2).pixelRatio).toBeLessThan(2)
+    expect(after.missed).toBeLessThan(0.08)
+  })
+
+  test("GPU time alone with no headroom steps down even before frames miss", () => {
+    const ctrl = new AdaptiveQualityController({ mode: "auto", warmupFrames: 0, startupSamples: 4 })
+    const { now } = play(ctrl, 0.1, 0.5, 8)
+    expect(ctrl.state(2).pixelRatio).toBe(2)
+    play(ctrl, 3, 0.5, 15.5, now)
+    expect(ctrl.state(2).resolutionScale).toBeLessThan(1)
+  })
+
+  test("CPU-bound slow frames and main-thread hitches drop a tier (not resolution), after a few windows", () => {
+    const ctrl = new AdaptiveQualityController({ mode: "auto", warmupFrames: 0, startupSamples: 4, cpuWindows: 3 })
+    let now = 0
+    for (let i = 0; i < 4; i++) ctrl.recordFrame(16.7, 4, (now += 16.7))
+    expect(ctrl.getActiveTier()).toBe("high")
+    // One adaptation window (1 s) of frames.
+    const window = (frame: (i: number) => number) => {
+      const end = now + 1000
+      for (let i = 0; now < end; i++) {
+        const ms = frame(i)
+        ctrl.recordFrame(ms, 4, (now += ms))
+      }
+    }
+    window(() => 33.4)
+    window(() => 33.4)
+    expect(ctrl.getActiveTier()).toBe("high")
+    window(() => 33.4)
+    window(() => 33.4)
+    expect(ctrl.getActiveTier()).toBe("balanced")
+    expect(ctrl.state(2).pixelRatio).toBe(1.5)
+
+    // Streaming or HUD hitches: a 60 ms main-thread stall four times a second, GPU idle.
+    const hitchy = new AdaptiveQualityController({ mode: "auto", warmupFrames: 0, startupSamples: 4, cpuWindows: 3 })
+    now = 0
+    for (let i = 0; i < 4; i++) hitchy.recordFrame(16.7, 4, (now += 16.7))
+    for (let w = 0; w < 5; w++) for (let i = 0; i < 60; i++) {
+      const ms = i % 15 === 0 ? 60 : 16.7
+      hitchy.recordFrame(ms, 4, (now += ms))
+    }
+    expect(hitchy.getActiveTier()).toBe("balanced")
+  })
+
+  test("a step up that is undone soon after doubles the wait before the next", () => {
+    const ctrl = new AdaptiveQualityController({ mode: "auto", warmupFrames: 0, startupSamples: 4 })
+    let now = 0
+    const window = (frameMs: number, gpu: number) => {
+      for (let i = 0; i < 61; i++) ctrl.recordFrame(frameMs, gpu, (now += frameMs))
+    }
+    for (let i = 0; i < 4; i++) ctrl.recordFrame(16.7, 4, (now += 16.7))
+    window(16.7, 16) // 0.9 budget: down to 0.9
+    expect(ctrl.getResolutionScale()).toBe(0.9)
+    let changes = 0
+    let scale = ctrl.getResolutionScale()
+    // A load that fits at 0.9 but not at 0.95: each step up is undone, and the steps up get rarer.
+    for (let w = 0; w < 40; w++) {
+      window(16.7, ctrl.getResolutionScale() > 0.9 ? 16 : 8)
+      if (ctrl.getResolutionScale() !== scale) changes++, (scale = ctrl.getResolutionScale())
+    }
+    // Without backoff a 3-window recovery would bounce ~20 times in 40 windows.
+    expect(changes).toBeLessThan(9)
   })
 
   test("manual tier override locks exact profile and ignores runtime adaptation", () => {
