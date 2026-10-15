@@ -40,9 +40,9 @@ try {
   await page.addInitScript(() => {
     window.AudioContext = class { constructor() { throw new Error("Live audio is disabled in this capture") } } as any
   })
-  await page.goto(`http://127.0.0.1:${addr.port}/?bench`)
-  await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 60000 })
-  await page.getByRole("combobox", { name: "Effect", exact: true }).selectOption("sparks")
+  await page.goto(`http://127.0.0.1:${addr.port}/arcade/lab/?section=effects&bench`)
+  await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 120000 })
+  await page.waitForTimeout(1500)
   // Readout panels add canvases inside the viewport; the scene is the viewport's own canvas.
   const canvas = page.locator(".lab-viewport > canvas").first()
   for (const effect of EFFECTS) {
