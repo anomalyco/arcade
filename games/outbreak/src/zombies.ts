@@ -40,9 +40,9 @@ export type DetachedDebrisPiece = {
   life: number
 }
 
-const PART_COUNT = 8
+const PART_COUNT = 9
 export const MAX_INSTANCES_PER_PART = 2048
-const BONE_COUNT = 13
+const BONE_COUNT = 15
 const BONE_STRIDE = BONE_COUNT * 12
 const INITIAL_AGENT_CAPACITY = 512
 
@@ -60,24 +60,28 @@ const BONE_TO_PART: Record<BoneId, number> = {
   "right.shin": 6,
   "left.foot": 7,
   "right.foot": 7,
+  "left.toe": 8,
+  "right.toe": 8,
 }
 
-const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7]
+const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8]
 
 const BONE_SUBTREE_MASK: Record<BoneId, number> = {
-  pelvis: 0x1fff,
+  pelvis: 0x7fff,
   torso: 0b0000001111110,
   head: 1 << 2,
   "left.upperArm": (1 << 3) | (1 << 5),
   "right.upperArm": (1 << 4) | (1 << 6),
   "left.foreArm": 1 << 5,
   "right.foreArm": 1 << 6,
-  "left.thigh": (1 << 7) | (1 << 9) | (1 << 11),
-  "right.thigh": (1 << 8) | (1 << 10) | (1 << 12),
-  "left.shin": (1 << 9) | (1 << 11),
-  "right.shin": (1 << 10) | (1 << 12),
-  "left.foot": 1 << 11,
-  "right.foot": 1 << 12,
+  "left.thigh": (1 << 7) | (1 << 9) | (1 << 11) | (1 << 13),
+  "right.thigh": (1 << 8) | (1 << 10) | (1 << 12) | (1 << 14),
+  "left.shin": (1 << 9) | (1 << 11) | (1 << 13),
+  "right.shin": (1 << 10) | (1 << 12) | (1 << 14),
+  "left.foot": (1 << 11) | (1 << 13),
+  "right.foot": (1 << 12) | (1 << 14),
+  "left.toe": 1 << 13,
+  "right.toe": 1 << 14,
 }
 
 function frameAngles(f: Frame): [number, number, number] {
@@ -323,9 +327,15 @@ export function buildZombiePartMeshes(): Mesh[] {
 
   const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
   const shin = box(0.135, -0.41, 0.43, 0.14, trousers)
-  const foot = box(0.21, -0.075, 0.09, 0.14, boot)
+  const sole = hex(0x161210)
+  const foot = new Mesh()
+  foot.box(-0.075, -0.075, -0.068, 0.125, 0.015, 0.068, boot, MAT.actor)
+  foot.box(-0.078, -0.085, -0.07, 0.128, -0.065, 0.07, sole, MAT.actor)
+  const toe = new Mesh()
+  toe.box(-0.008, 0.015, -0.065, 0.06, 0.082, 0.065, boot, MAT.actor)
+  toe.box(-0.006, 0, -0.068, 0.065, 0.02, 0.068, sole, MAT.actor)
 
-  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot, toe]
 }
 
 export class ZombieCrowdRenderer {
@@ -920,13 +930,22 @@ export class ZombieCrowdRenderer {
           const thighIdx = 7 + i
           const shinIdx = 9 + i
           const footIdx = 11 + i
+          const toeIdx = 13 + i
+          const footOff = bOff + footIdx * 12
+          const toeOff = bOff + toeIdx * 12
           writeLimbFrame(bBuf, bOff + thighIdx * 12, hipX, hipY, hipZWorld, kx, ky, kz, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
           writeLimbFrame(bBuf, bOff + shinIdx * 12, kx, ky, kz, ex, ey, ez, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
-          writeYawFrame(bBuf, bOff + footIdx * 12, ex, ey, ez, syaw)
-          pitchInPlace(bBuf, bOff + footIdx * 12, -1.2 * c)
+          writeYawFrame(bBuf, footOff, ex, ey, ez, syaw)
+          pitchInPlace(bBuf, footOff, -1.2 * c)
+          const bx = ex + bBuf[footOff + 3]! * RIG.foot - bBuf[footOff + 6]! * RIG.ankle
+          const by = ey + bBuf[footOff + 4]! * RIG.foot - bBuf[footOff + 7]! * RIG.ankle
+          const bz = ez + bBuf[footOff + 5]! * RIG.foot - bBuf[footOff + 8]! * RIG.ankle
+          writeYawFrame(bBuf, toeOff, bx, by, bz, syaw)
+          pitchInPlace(bBuf, toeOff, -1.2 * c)
           this.emitBone(bOff, thighIdx, 5, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, shinIdx, 6, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, footIdx, 7, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+          this.emitBone(bOff, toeIdx, 8, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
 
           const shZ = side * RIG.shoulderW
           const shX = tx + tyAxisX * RIG.shoulderY + tzAxisX * shZ
@@ -1336,6 +1355,7 @@ export class ZombieCrowdRenderer {
         const thighIdx = 7 + i
         const shinIdx = 9 + i
         const footIdx = 11 + i
+        const toeIdx = 13 + i
         writeLimbFrame(bBuf, bOff + thighIdx * 12, hipX, hipY, hipZWorld, kx, ky, kz, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
         writeLimbFrame(bBuf, bOff + shinIdx * 12, kx, ky, kz, ex, ey, ez, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
 
@@ -1345,33 +1365,49 @@ export class ZombieCrowdRenderer {
         const prevU = this.footPrevU[fi]!
         const stancePitch = isDrag
           ? -0.22 * smooth((stanceFrac - 0.58) / 0.42) * dragAmt * shambleGait
-          : -0.20 * smooth((stanceFrac - 0.62) / 0.38) * shambleGait
+          : -0.24 * smooth((stanceFrac - 0.58) / 0.42) * shambleGait
         const swingPitch = isDrag
           ? -0.24 * Math.sin(Math.PI * (1 - prevU * 0.65)) * dragAmt
           : (-0.18 * Math.sin(Math.PI * clamp(prevU / 0.55, 0, 1)) +
               0.14 * Math.sin(Math.PI * clamp((prevU - 0.5) / 0.5, 0, 1))) *
             shambleGait
         const fyaw = this.footYaw[fi]!
+        const fc = Math.cos(fyaw)
+        const fs = Math.sin(fyaw)
         const footOff = bOff + footIdx * 12
+        const toeOff = bOff + toeIdx * 12
         if (planted) {
-          const fc = Math.cos(fyaw)
-          const fs = Math.sin(fyaw)
+          const ballX = this.footPx[fi]! + fc * RIG.foot
+          const ballY = this.footPy[fi]!
+          const ballZ = this.footPz[fi]! + fs * RIG.foot
           writeYawFrame(bBuf, footOff, 0, 0, 0, fyaw)
           pitchInPlace(bBuf, footOff, stancePitch)
-          const offX = bBuf[footOff + 3]! * 0.19 - bBuf[footOff + 6]! * RIG.ankle
-          const offY = bBuf[footOff + 4]! * 0.19 - bBuf[footOff + 7]! * RIG.ankle
-          const offZ = bBuf[footOff + 5]! * 0.19 - bBuf[footOff + 8]! * RIG.ankle
-          bBuf[footOff] = this.footPx[fi]! + fc * 0.19 - offX
-          bBuf[footOff + 1] = this.footPy[fi]! - offY
-          bBuf[footOff + 2] = this.footPz[fi]! + fs * 0.19 - offZ
+          const offX = bBuf[footOff + 3]! * RIG.foot - bBuf[footOff + 6]! * RIG.ankle
+          const offY = bBuf[footOff + 4]! * RIG.foot - bBuf[footOff + 7]! * RIG.ankle
+          const offZ = bBuf[footOff + 5]! * RIG.foot - bBuf[footOff + 8]! * RIG.ankle
+          bBuf[footOff] = ballX - offX
+          bBuf[footOff + 1] = ballY - offY
+          bBuf[footOff + 2] = ballZ - offZ
+          // Planted toe stays locked on the ball at ground level while the heel rises (dorsiflexing relative to the foot)
+          writeYawFrame(bBuf, toeOff, ballX, ballY, ballZ, fyaw)
         } else {
           writeYawFrame(bBuf, footOff, ex, ey, ez, fyaw)
           pitchInPlace(bBuf, footOff, swingPitch)
+          const bx = ex + bBuf[footOff + 3]! * RIG.foot - bBuf[footOff + 6]! * RIG.ankle
+          const by = ey + bBuf[footOff + 4]! * RIG.foot - bBuf[footOff + 7]! * RIG.ankle
+          const bz = ez + bBuf[footOff + 5]! * RIG.foot - bBuf[footOff + 8]! * RIG.ankle
+          // Dragged foot scrapes flat along the toe; swinging lead foot dorsiflexes toe for clearance
+          const toeWorldPitch = isDrag
+            ? swingPitch * (1 - 0.85 * dragAmt)
+            : swingPitch + 0.18 * Math.sin(Math.PI * prevU) * shambleGait
+          writeYawFrame(bBuf, toeOff, bx, Math.max(this.footPy[fi]!, by), bz, fyaw)
+          pitchInPlace(bBuf, toeOff, toeWorldPitch)
         }
 
         this.emitBone(bOff, thighIdx, 5, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, shinIdx, 6, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, footIdx, 7, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+        this.emitBone(bOff, toeIdx, 8, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
 
         const uaIdx = 3 + i
         const faIdx = 5 + i

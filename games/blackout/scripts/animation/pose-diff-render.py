@@ -134,6 +134,8 @@ def draw_skeleton_2d(
                 continue
             p0 = pts.get(seg["from"])
             p1 = pts.get(seg["to"])
+            if not p1 and seg["to"] in ("ballL", "ballR"):
+                p1 = pts.get("toeL" if seg["to"] == "ballL" else "toeR")
             if not p0 or not p1:
                 continue
             a = norm_to_px(p0, cw, ch, ground_y)
@@ -686,8 +688,8 @@ if TAG == "after" and before_data:
         sub = (
             f"Mean Leg Angle RMSE: {br['meanLegAngleRmse']:.1f}° -> {ar['meanLegAngleRmse']:.1f}° "
             f"(Knee {br['kneeFlex']:.1f}°->{ar['kneeFlex']:.1f}°, Ankle {br['anklePitch']:.1f}°->{ar['anklePitch']:.1f}°, Hip {br['hipFlex']:.1f}°->{ar['hipFlex']:.1f}°)  |  "
-            f"Peak Foot Lift: {bk['footLiftMaxCm']:.1f}cm -> {ak['footLiftMaxCm']:.1f}cm (Mocap {rk['footLiftMaxCm']:.1f}cm)  |  "
-            f"Peak Knee Flex: {bk['kneeFlexMaxDeg']:.1f}° -> {ak['kneeFlexMaxDeg']:.1f}° (Mocap {rk['kneeFlexMaxDeg']:.1f}°)"
+            f"Toe Dorsi Peak: {bk.get('toePitchMaxDeg', 0.0):.1f}° -> {ak.get('toePitchMaxDeg', 0.0):.1f}°  |  "
+            f"Peak Foot Lift: {bk['footLiftMaxCm']:.1f}cm -> {ak['footLiftMaxCm']:.1f}cm (Mocap {rk['footLiftMaxCm']:.1f}cm)"
         )
         draw.text((20, 34), sub, fill=(175, 190, 210, 255), font=FONT_SMALL)
 
@@ -719,12 +721,13 @@ if TAG == "after" and before_data:
         draw_curve(draw, box1, us, [s["angles"]["hipFlexR"] for s in a_s], h_min, h_max, COL_RIGHT, width=2)
         draw_curve(draw, box1, us, [s["angles"]["hipFlexL"] for s in a_s], h_min, h_max, COL_LEFT, width=3)
 
-        # 3. Ankle Dorsi/Plantar Flexion
+        # 3. Ankle Dorsi/Plantar Flexion & Toe Joint Dorsiflexion
         box2 = (x_cols[0], y_rows[1], x_cols[0] + pw, y_rows[1] + ph)
         a_min, a_max = (-35, 35) if is_walk else (-40, 48)
-        draw_plot_panel(draw, box2, "3. Ankle Dorsi(+) / Plantar(-) Flexion Rel. to Shin [deg]", a_min, a_max, [("Before L", COL_BEFORE), ("After L", COL_LEFT), ("Mocap L", COL_MOCAP)])
+        draw_plot_panel(draw, box2, "3. Ankle & Ball-of-Foot Toe Flexion [deg] (Heel-to-Toe Roll)", a_min, a_max, [("Before Ank", COL_BEFORE), ("After Ank", COL_LEFT), ("After Toe", COL_WEAPON), ("Mocap Ank", COL_MOCAP)])
         draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in b_s], a_min, a_max, COL_BEFORE, width=2, dashed=True)
         draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in r_s], a_min, a_max, COL_MOCAP, width=2, dashed=True)
+        draw_curve(draw, box2, us, [s["angles"].get("toePitchL", 0.0) for s in a_s], a_min, a_max, COL_WEAPON, width=2)
         draw_curve(draw, box2, us, [s["angles"]["anklePitchL"] for s in a_s], a_min, a_max, COL_LEFT, width=3)
 
         # 4. Foot Swing Lift Trajectory

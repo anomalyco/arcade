@@ -44,6 +44,7 @@ export type PartModels = {
   thigh: number
   shin: number
   foot: number
+  toe?: number
   pump: number
   gun: Record<Gun, number>
   mag: Record<Gun, number>
@@ -865,6 +866,7 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const th2: Frame[] = legs?.th ?? []
   const sh2: Frame[] = legs?.sh ?? []
   const ft2: Frame[] = legs?.ft ?? []
+  const toe2: Frame[] | undefined = legs?.toe
   for (let i = 0; !enhanced && i < 2; i++) {
     const s = i === 0 ? -1 : 1
     const hip = at(pelvis, 0, 0, s * RIG.hipW)
@@ -882,8 +884,9 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   if (magState === "gun") mag = moved(gunF, at(gunF, pts.mag[0], pts.mag[1], pts.mag[2]))
   else if (magState === "hand") mag = moved(gunF, at(fa[0], 0, -RIG.fore - 0.02, 0))
   const pump = g === "shotgun" ? moved(gunF, at(gunF, pts.fore - pumpBack, 0.005, 0)) : null
-  if (a.bare || useUnarmedSwing || enhanced && profile.handPose !== "weapon") return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: null, pump: null, mag: null }
-  return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], gun: gunF, pump, mag }
+  const toeProp = toe2 ? { toe: [toe2[0]!, toe2[1]!] as [Frame, Frame] } : {}
+  if (a.bare || useUnarmedSwing || enhanced && profile.handPose !== "weapon") return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], ...toeProp, gun: null, pump: null, mag: null }
+  return { pelvis, torso, head, ua, fa, th: [th2[0]!, th2[1]!], sh: [sh2[0]!, sh2[1]!], ft: [ft2[0]!, ft2[1]!], ...toeProp, gun: gunF, pump, mag }
 }
 
 /** The team colour (sRGB-ish palette) as a linear glow, so accents stay saturated through tone mapping. */
@@ -904,6 +907,10 @@ export function emitBody(push: PushPart, b: Body, gun: Gun, rgb: Rgb3, models: P
     if (boneVisible(`${side}.thigh`, hidden)) emit(push, models.thigh, b.th[i]!, color, flash, alpha)
     if (boneVisible(`${side}.shin`, hidden)) emit(push, models.shin, b.sh[i]!, color, flash, alpha)
     if (boneVisible(`${side}.foot`, hidden)) emit(push, models.foot, b.ft[i]!, color, flash, alpha)
+    if (models.toe !== undefined && boneVisible(`${side}.toe`, hidden)) {
+      const tf = b.toe?.[i] ?? moved(b.ft[i]!, at(b.ft[i]!, RIG.foot, -RIG.ankle, 0))
+      emit(push, models.toe, tf, color, flash, alpha)
+    }
   }
   if (boneVisible("right.foreArm", hidden)) {
     if (b.gun) emit(push, models.gun[gun], b.gun, color, 0, alpha)

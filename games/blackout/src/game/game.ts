@@ -337,6 +337,7 @@ export class Game {
       thigh: reg(p.thigh),
       shin: reg(p.shin),
       foot: reg(p.foot),
+      toe: reg(p.toe),
       pump: reg(p.pump),
       gun: regGuns(p.gun),
       mag: regGuns(p.mag),
