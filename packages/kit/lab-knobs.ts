@@ -1,25 +1,41 @@
 import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type HostHistory, type PanelKeys, type RemoteControls, type StoragePort, type Value } from "@arcade/knobs"
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import { labPreset, type TokenPreset } from "@arcade/knobs/themes"
-import type { LabControl, LabNavigation, LabRow, LabSettings } from "./lab-navigation"
+import type { LabControl, LabNavigation, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
-/** The Details action button (`.lab-act` in `packages/kit/lab/style.css`), which knobs has no tokens for. */
+/** The Lab's button (20 px, square, a hairline inset) for what knobs' button tokens don't reach. */
 const ACT = 'height:20px;min-height:20px;padding:0 6px;border:0;border-radius:0;background:#191a1e!important;box-shadow:inset 0 0 0 1px #23252a;color:#d8dbe0;font:400 11px/20px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;letter-spacing:0;text-transform:none'
 const ACT_HOVER = "background:#1e2024!important;box-shadow:inset 0 0 0 1px #2c2f35;color:#d8dbe0"
-const BUTTONS = ":is(.knobs-action,.knobs-custom-actions button,.knobs-transfer button,.knobs-preset-chip)"
+const BUTTONS = ":is(.knobs-action,.knobs-preset-chip)"
 
 /**
- * knobs' `labPreset` (square, flat, the Lab's palette) with the Lab's 24 px rows and its UI font for values as well as
- * labels. The `css` is what knobs has no token for yet: the panel fills its column, 20 px fields and one text size in
- * 24 px rows, and buttons drawn like the Details actions.
+ * knobs' `labPreset` (square, flat, the Lab's palette) with the Lab's 24 px rows, its UI font and one text size for
+ * labels and values, 20 px fields, and buttons (toolbars, panel actions, the variants menu) drawn like the Details
+ * actions through knobs' button tokens. The `css` is what no token reaches yet: action rows and preset chips as buttons,
+ * and toolbar labels at full strength.
  */
 export const arcadePreset: TokenPreset = {
   ...labPreset,
   name: "arcade",
-  dark: { ...labPreset.dark, row: "24px", "value-font": "var(--k-font)" },
+  dark: {
+    ...labPreset.dark,
+    row: "24px",
+    width: "100%",
+    "value-font": "var(--k-font)",
+    "value-size": "var(--k-font-size)",
+    "text-control": "var(--k-font-size)",
+    "control-h": "20px",
+    "action-h": "20px",
+    "button-h": "20px",
+    "button-radius": "0px",
+    "button-font-size": "11px",
+    "button-bg": "#191a1e",
+    "button-line": "#23252a",
+    "button-hover-bg": "#1e2024",
+    "button-hover-line": "#2c2f35",
+  },
   css: [
-    `&{--k-width:100%;--k-control-h:20px;--k-action-h:20px;--k-text-control:var(--k-font-size)}`,
     `& ${BUTTONS}{${ACT}}`,
     `& ${BUTTONS}:is(:hover:not([disabled]),:focus-visible){${ACT_HOVER}}`,
     `& ${BUTTONS}:focus-visible{outline:1px solid #4d8dff;outline-offset:0}`,
@@ -29,6 +45,7 @@ export const arcadePreset: TokenPreset = {
     `& .knobs-custom-actions{display:flex;flex-wrap:wrap;gap:4px;margin:6px var(--k-inset) 8px}`,
     `& .knobs-presets{background:transparent;padding:0 var(--k-inset);gap:4px}`,
     `& .knobs-presets-pill{display:none}`,
+    `& .knobs-tool{color:var(--k-text)}`,
   ].join(""),
 }
 
@@ -62,9 +79,16 @@ export type LabKnobsViewOptions = {
   keys?: PanelKeys
   /** Panel-level buttons under the cards (for example All on / All off). */
   actions?: readonly { label: string; run: () => void }[]
+  /** A search field under the header, with a Modified chip (`/` focuses it while focus is in the panel). */
+  search?: boolean
+  /** Tabs over the groups (the Details inspector); groups no tab names show on every tab. */
+  tabs?: readonly LabTab[]
 }
 
-type Row = LabRow & { control: LabControl }
+/** A row knobs draws; `upper` is the second key of a low–high pair (both stay their own settings). */
+type Row = LabRow & { control: LabControl; upper?: LabControl }
+
+const same = (a: Value | undefined, b: Value | undefined) => a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]))
 
 /** Saved variants live in the browser (knobs keeps only those: `persist: "variants"`), with legacy keys renamed. */
 function variantStorage(id: string | undefined, rows: () => readonly LabRow[]): StoragePort | null {
@@ -96,6 +120,8 @@ export class LabKnobsView {
   private held = new Set<string>()
   private idle = 0
   private pins = new Map<string, HTMLButtonElement>()
+  /** A pair's upper key → the knobs key its row goes by (the lower one). */
+  private aliases = new Map<string, string>()
   /** The roll in progress: its generator, the seed it draws from and the keys it changed. */
   private roll: { draw: () => number; seed: number; mode: "random" | "mutate"; keys: string[] } | null = null
   private disposed = false
@@ -112,7 +138,10 @@ export class LabKnobsView {
       persist: "variants",
       // Random and Mutate draw from the Lab's recorded tuning seed and leave switches, seeds and pickers alone.
       random: () => this.draw(),
-      tunable: key => { const row = this.rows.get(key); return Boolean(row && isTunable(row.control, host.navigation.settings)) },
+      tunable: key => {
+        const row = this.rows.get(key)
+        return Boolean(row && isTunable(row.control, host.navigation.settings) && (!row.upper || isTunable(row.upper, host.navigation.settings)))
+      },
       ...(host.history ? { history: host.history } : {}),
       theme: "dark",
       density: "compact",
@@ -120,15 +149,9 @@ export class LabKnobsView {
       onReset: target => this.onReset(target),
       onAction: key => void this.onAction(key),
     })
-    // Two things knobs can't hand over yet: a drag's start and end (one undo entry per gesture), and a group's die
-    // when the group has its own seeded "Randomize <group>" action (it may reseed its effect on purpose).
+    // knobs can't hand over a drag's start and end yet: the Lab closes one undo entry per gesture when it ends.
     const self = this
     const own = {
-      randomize(keys?: readonly string[]) {
-        const custom = self.groupRandomize(keys)
-        if (custom) void self.onAction(custom)
-        else remote.randomize(keys)
-      },
       hold(key: string, on = true) {
         remote.hold(key, on)
         if (on) self.held.add(key)
@@ -150,6 +173,15 @@ export class LabKnobsView {
       keys: { leave: "Escape", ...options.keys },
       copy: () => this.copyText(),
       rowAccessory: key => this.accessory(key),
+      // A group with its own seeded "Randomize <group>" action rolls through it (it may reseed its effect on purpose).
+      groupRandom: group => {
+        const action = this.groupAction(group)
+        if (action) void this.onAction(action)
+        return Boolean(action)
+      },
+      ...(options.search ? { search: { placeholder: "Search details" } } : {}),
+      ...(options.tabs?.length ? { tabs: options.tabs.map(t => t.label) } : {}),
+      subsectionFolded: { Advanced: true },
       actions: options.actions?.map(a => ({ label: a.label, run: () => { this.host.begin(a.label); a.run(); this.host.end(); this.host.edited(this) } })),
     })
   }
@@ -161,9 +193,8 @@ export class LabKnobsView {
     const nav = this.host.navigation
     let patch: Record<string, Value> | null = null
     for (const [key, row] of this.rows) {
-      if (row.control.type === "action") continue
-      const value = toKnobs(row.control, nav.settings[key])
-      if (value === undefined || value === this.shown[key]) continue
+      const value = this.value(row, nav.settings)
+      if (value === undefined || same(value, this.shown[key])) continue
       ;(patch ??= {})[key] = value
       this.shown[key] = value
     }
@@ -174,9 +205,10 @@ export class LabKnobsView {
     this.refreshPins()
   }
 
-  /** The row element for a setting, if this view shows it. */
+  /** The row element for a setting, if this view shows it (a pair's upper key finds the pair's row). */
   rowElement(key: string): HTMLElement | null {
-    return this.panel.element.querySelector<HTMLElement>(`.knobs-row[data-field="${CSS.escape(key)}"]`)
+    const field = this.aliases.get(key) ?? key
+    return this.panel.element.querySelector<HTMLElement>(`.knobs-row[data-field="${CSS.escape(field)}"]`)
   }
 
   /** Focuses a setting's control (or the first row) inside the panel. */
@@ -187,9 +219,43 @@ export class LabKnobsView {
     else this.panel.focus()
   }
 
-  /** Opens a folded group, so a revealed row can be seen. */
-  unfold(group: string) {
-    this.panel.fold(group, false)
+  /** Brings a setting's row on screen: its tab, its folded group, and past a search that hides it. */
+  show(key: string) {
+    const row = this.rows.get(this.aliases.get(key) ?? key)
+    if (!row) return
+    const tab = this.tabOf(row.group)
+    if (tab && this.panel.tab() !== tab.label) this.panel.tab(tab.label)
+    this.panel.fold(row.group, false)
+    const element = this.rowElement(key)
+    if (element && !element.getClientRects().length && this.search().query + (this.search().modified ? "m" : "")) this.setSearch({ query: "", modified: false })
+  }
+
+  /** The search field's text and whether its Modified chip is on (empty when the view has no search). */
+  search(): { query: string; modified: boolean } {
+    const input = this.panel.element.querySelector<HTMLInputElement>(".knobs-search input")
+    const chip = this.panel.element.querySelector<HTMLElement>('.knobs-search-chip[data-chip="modified"]')
+    return { query: input?.value ?? "", modified: chip?.getAttribute("aria-pressed") === "true" }
+  }
+
+  /** Sets the search field and the Modified chip, as typing and clicking would. */
+  setSearch(next: { query?: string; modified?: boolean }) {
+    const input = this.panel.element.querySelector<HTMLInputElement>(".knobs-search input")
+    const chip = this.panel.element.querySelector<HTMLButtonElement>('.knobs-search-chip[data-chip="modified"]')
+    if (input && next.query !== undefined && input.value !== next.query) {
+      input.value = next.query
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    if (chip && next.modified !== undefined && (chip.getAttribute("aria-pressed") === "true") !== next.modified) chip.click()
+  }
+
+  /** The keys whose rows are on screen now (after tabs, folds and the search). */
+  shownKeys(): string[] {
+    return [...this.rows.keys()].filter(key => this.rowElement(key)?.getClientRects().length)
+  }
+
+  /** The tab showing now, when the view has tabs. */
+  get tab(): string | undefined {
+    return this.options.tabs?.length ? this.panel.tab() : undefined
   }
 
   /** Whether a knobs gesture (a drag, a key held on a slider, an inline number edit) is in progress. */
@@ -226,25 +292,51 @@ export class LabKnobsView {
     return [...this.rows.values()].filter(r => r.control.mixed?.(settings)).map(r => r.control.key)
   }
 
+  /** The tab a group sits on, and how its heading reads there. */
+  private tabOf(group: string): { label: string; groupLabel?: string } | undefined {
+    for (const tab of this.options.tabs ?? [])
+      for (const g of tab.groups) {
+        if (g === group) return { label: tab.label }
+        if (typeof g !== "string" && g[0] === group) return { label: tab.label, groupLabel: g[1] }
+      }
+    return undefined
+  }
+
+  /** The knobs value of a row: its setting, or `[low, high]` for a pair. */
+  private value(row: Row, settings: Readonly<LabSettings>): Value | undefined {
+    if (row.control.type === "action") return undefined
+    const low = toKnobs(row.control, settings[row.control.key])
+    if (!row.upper) return low
+    const high = toKnobs(row.upper, settings[row.upper.key])
+    return low === undefined || high === undefined ? undefined : [low as number, high as number]
+  }
+
   /** Rebuilds the descriptors when the row set changed; returns true if it did (values were placed too). */
   private refreshShape(land: boolean): boolean {
     const nav = this.host.navigation
     const rows = this.visibleRows()
     const descriptors: ControlDescriptor[] = []
     const kept = new Map<string, Row>()
+    const aliases = new Map<string, string>()
+    const uppers = new Set(rows.flatMap(r => (r.control.pair ? [r.control.pair.key] : [])))
     for (const row of rows) {
-      const d = describe(row, nav.defaults, nav.settings)
+      if (uppers.has(row.control.key)) continue
+      const upper = row.control.pair ? nav.rows.find(r => r.control?.key === row.control.pair!.key)?.control : undefined
+      const tab = this.tabOf(row.group)
+      const d = describe(row, nav.defaults, nav.settings, { tab: tab?.label, groupLabel: tab?.groupLabel, pair: upper })
       if (!d || kept.has(d.key)) continue
       descriptors.push(d)
-      kept.set(d.key, row)
+      kept.set(d.key, upper ? { ...row, upper } : row)
+      if (upper) aliases.set(upper.key, d.key)
     }
     const shape = JSON.stringify(descriptors)
     if (shape === this.shape) return false
     this.shape = shape
     this.rows = kept
+    this.aliases = aliases
     this.shown = {}
     for (const [key, row] of kept) {
-      const value = toKnobs(row.control, nav.settings[key])
+      const value = this.value(row, nav.settings)
       if (value !== undefined) this.shown[key] = value
     }
     const mixed = this.mixedKeys()
@@ -271,27 +363,32 @@ export class LabKnobsView {
     return this.roll.draw()
   }
 
-  /** A group die's keys, when the group has its own "Randomize <group>" action: that action's key. */
-  private groupRandomize(keys?: readonly string[]): string | undefined {
-    if (!keys?.length) return undefined
-    const groups = new Set(keys.map(k => this.rows.get(k)?.group))
-    if (groups.size !== 1) return undefined
-    const [group] = groups
+  /** A group's own "Randomize <group>" action, if it has one: that action's key. */
+  private groupAction(group: string): string | undefined {
     return [...this.rows.values()].find(r => r.group === group && r.control.type === "action" && r.control.label === `Randomize ${group}`)?.control.key
   }
 
   private onSet(key: string, value: Value | null, meta: ChangeMeta) {
     const row = this.rows.get(key)
     if (!row || value === null) return
-    const next = fromKnobs(row.control, value)
-    if (next === undefined) return
+    const writes: [LabControl, LabValue][] = []
+    if (row.upper) {
+      if (!Array.isArray(value)) return
+      const low = fromKnobs(row.control, value[0] as number), high = fromKnobs(row.upper, value[1] as number)
+      if (low === undefined || high === undefined) return
+      writes.push([row.control, low], [row.upper, high])
+    } else {
+      const next = fromKnobs(row.control, value)
+      if (next === undefined) return
+      writes.push([row.control, next])
+    }
     this.shown[key] = value
     if ((meta.source === "randomize" || meta.source === "mutate") && this.roll) {
       this.roll.mode = meta.source === "mutate" ? "mutate" : "random"
       this.roll.keys.push(key)
     }
     if (meta.source !== "compare") this.host.begin(this.labelFor(row, meta))
-    this.host.navigation.set(row.control, next)
+    for (const [control, next] of writes) this.host.navigation.set(control, next)
     this.host.edited(this)
     if (meta.source === "compare") return
     // A drag ends on release; keys and discrete changes settle once they stop arriving.
@@ -303,11 +400,10 @@ export class LabKnobsView {
     const nav = this.host.navigation
     const rows = [...this.rows.values()].filter(r => r.control.type !== "action" && (target.key ? r.control.key === target.key : target.group ? r.group === target.group : true))
     if (!rows.length) return
-    this.host.begin(`Reset ${target.key ? rows[0]!.control.label : target.group ?? "all"}`)
+    this.host.begin(`Reset ${target.key ? (rows[0]!.upper ? rows[0]!.control.pair!.label : rows[0]!.control.label) : target.group ?? "all"}`)
     for (const r of rows) {
-      if (!(r.control.key in nav.defaults)) continue
-      nav.set(r.control, nav.defaults[r.control.key]!)
-      const v = toKnobs(r.control, nav.defaults[r.control.key])
+      for (const c of r.upper ? [r.control, r.upper] : [r.control]) if (c.key in nav.defaults) nav.set(c, nav.defaults[c.key]!)
+      const v = this.value(r, nav.defaults)
       if (v !== undefined) this.shown[r.control.key] = v
     }
     this.host.edited(this)
@@ -333,7 +429,7 @@ export class LabKnobsView {
     if (meta.source === "randomize" || meta.source === "mutate") return `${meta.source === "randomize" ? "Randomize" : "Mutate"} ${meta.group ?? "all"}`
     if (meta.source === "undo" || meta.source === "redo") return meta.source === "undo" ? "Undo" : "Redo"
     if (meta.source === "preset" || meta.source === "variant") return "Preset"
-    return row.control.label
+    return row.upper ? row.control.pair!.label : row.control.label
   }
 
   private schedule(ms: number) {
@@ -351,7 +447,10 @@ export class LabKnobsView {
   private copyText() {
     const nav = this.host.navigation
     const out: Record<string, unknown> = {}
-    for (const [key, row] of this.rows) if (row.control.type !== "action") out[key] = nav.settings[key]
+    for (const [key, row] of this.rows) if (row.control.type !== "action") {
+      out[key] = nav.settings[key]
+      if (row.upper) out[row.upper.key] = nav.settings[row.upper.key]
+    }
     const last = this.host.tuning.last
     if (last && last.keys.some(k => k in out) && !("tuningSeed" in out)) out.tuningSeed = last.seed
     return JSON.stringify(out, null, 2)
@@ -399,6 +498,76 @@ export class LabKnobsView {
       if (!button.isConnected) { this.pins.delete(key); continue }
       const pressed = String(pin.has(key))
       if (button.getAttribute("aria-pressed") !== pressed) button.setAttribute("aria-pressed", pressed)
+    }
+  }
+}
+
+/** One button of a LabToolbar: a command, its label, knobs icon and key, and why it is unavailable when it is. */
+export type LabToolbarItem = { id: string; label: string; icon?: string; shortcut?: string; disabled?: boolean; title?: string }
+
+const TOOLBAR_KEYS: PanelKeys = {
+  random: false, mutate: false, reset: false, resetAll: false, compare: false, hint: false, undo: false, redo: false,
+  copy: false, save: false, lock: false, presets: false, group: false, first: false, help: false, menu: false,
+}
+
+/**
+ * A row of buttons with shortcut chips (knobs' toolbar, in the `arcade` preset), for commands the host owns: the
+ * Details actions. It is its own small panel, so a chip's key presses the button only while focus is on the toolbar;
+ * elsewhere the host's own bindings (the canvas keys) answer, and knobs' keys in the settings panel stay knobs'.
+ */
+export class LabToolbar {
+  readonly element = document.createElement("div")
+  private store: RemoteControls
+  private panel: Panel
+  private shape = ""
+  private titles = new Map<string, string>()
+
+  constructor(container: HTMLElement, private label: string, press: (id: string) => void) {
+    this.element.className = "lab-knobs lab-toolbar"
+    container.append(this.element)
+    this.store = createRemoteControls(`lab-toolbar:${label}`, [], { enabled: true, storage: null, persist: "none", onAction: id => press(id) })
+    this.panel = mountPanel(this.store, this.element, {
+      title: false,
+      header: false,
+      preset: arcadePreset,
+      theme: "dark",
+      density: "compact",
+      renderer: "dom",
+      variants: false,
+      session: false,
+      haptics: false,
+      marks: false,
+      keys: TOOLBAR_KEYS,
+    })
+  }
+
+  /** Shows these buttons; only a change in the buttons themselves rebuilds the row. */
+  set(items: readonly LabToolbarItem[]) {
+    this.titles = new Map(items.map(i => [i.id, i.title ?? i.label]))
+    const tools = items.map(i => ({ key: i.id, label: i.label, ...(i.icon ? { icon: i.icon } : {}), ...(i.shortcut ? { shortcut: i.shortcut } : {}), ...(i.disabled ? { disabled: true } : {}) }))
+    const shape = JSON.stringify(tools)
+    if (shape !== this.shape) {
+      this.shape = shape
+      this.store.update(tools.length ? [{ key: "tools", label: this.label, kind: "toolbar", items: tools }] : [], {})
+    }
+    requestAnimationFrame(() => this.applyTitles())
+    this.applyTitles()
+  }
+
+  /** The buttons, by command id. */
+  button(id: string): HTMLButtonElement | null {
+    return this.element.querySelector<HTMLButtonElement>(`.knobs-tool[data-item="${CSS.escape(id)}"]`)
+  }
+
+  dispose() {
+    this.panel.dispose()
+    this.element.remove()
+  }
+
+  private applyTitles() {
+    for (const [id, title] of this.titles) {
+      const b = this.button(id)
+      if (b && b.title !== title) b.title = title
     }
   }
 }

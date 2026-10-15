@@ -526,7 +526,8 @@ fn shadeShape(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   }
 
   let local = in.screenPx - in.rect.xy;
-  let size = max(in.rect.zw, vec2f(1.0));
+  // Sub-pixel shapes keep their size: a 0.5px hairline covers one device pixel, as in the DOM.
+  let size = max(in.rect.zw, vec2f(0.01));
   let kind = i32(p.look.w + 0.5);
 
   var out = vec4f(0.0);

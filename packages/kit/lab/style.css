@@ -166,7 +166,6 @@ kbd {
 .lab-select:focus-visible,
 .lab-search:focus-within,
 .lab-chip:focus-visible,
-.lab-act:focus-visible,
 .lab-drawer-cat:focus-visible,
 .lab-drawer-group:focus-visible,
 .lab-search-btn:focus-visible {
@@ -1573,39 +1572,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
 }
 
 .lab-details-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 8px 6px;
+  padding: 0 0 2px;
   flex: none;
-}
-
-.lab-act {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 0;
-  background: var(--panel2);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--tx);
-  font: inherit;
-  font-size: 11px;
-}
-
-.lab-act:hover:not(:disabled) {
-  background: var(--hover);
-  box-shadow: inset 0 0 0 1px var(--line2);
-}
-
-.lab-act:disabled {
-  opacity: 0.4;
-}
-
-.lab-act kbd {
-  padding: 1px 3px;
 }
 
 .lab-details-tools {
@@ -1616,8 +1584,8 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   border-bottom: 1px solid var(--line);
 }
 
-.lab-details-tools .lab-search {
-  flex: 1;
+.lab-details-tools:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 .lab-inspector-body {

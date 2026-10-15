@@ -8,6 +8,7 @@ import {
   normalize,
   normalizeField,
   same,
+  hasValue,
   type Field,
   type Schema,
   type State,
@@ -144,6 +145,28 @@ export interface MountPanelOptions extends LabelOptions {
   readonly session?: boolean
   /** Groups folded (`true`) or open (`false`) at first, over their fields' `folded`. */
   readonly groupFolded?: Readonly<Record<string, boolean>>
+  /** Sub-headings (fields' `subsection`) that start folded (`true`), by name. */
+  readonly subsectionFolded?: Readonly<Record<string, boolean>>
+  /**
+   * The tab strip's order and labels: tab ids, or `{ id, label }`. Tabs the fields name that
+   * aren't listed follow in the order they first appear.
+   */
+  readonly tabs?: readonly (string | { readonly id: string; readonly label?: string })[]
+  /** The tab shown first; otherwise the one last shown for these controls, else the first. */
+  readonly tab?: string
+  /** Called when the shown tab changes (by a click, a key or `panel.tab()`). */
+  readonly onTab?: (tab: string) => void
+  /**
+   * A search field under the header that filters rows by label, key or group as you type, with
+   * filter chips (`"modified"`, with its count, by default). `/` focuses it.
+   */
+  readonly search?: boolean | SearchOptions
+  /**
+   * A group's Random (its die, `g`, ⌥ for Mutate) asks the host first: returning `true` means the
+   * host rolled the group itself (its own seeded "Randomize <group>"), and the panel only tumbles
+   * the die.
+   */
+  readonly groupRandom?: (group: string, mode: "random" | "mutate") => boolean | void
   /**
    * A node for a row's accessory slot, just after its label (a pin, a marker), or null. Called
    * with the row's key when the row is built; `panel.updateAccessories()` asks again. The node
@@ -168,6 +191,19 @@ export interface MountPanelOptions extends LabelOptions {
   readonly footer?: boolean
   readonly actions?: readonly ControlAction<any>[]
   readonly onClose?: () => void
+}
+/** A search field's filter chip: it narrows the rows to those `test` accepts. */
+export interface SearchChip {
+  readonly id: string
+  readonly label: string
+  /** Shows how many rows it would keep beside its label. */
+  readonly count?: boolean
+  test(key: string, controls: Controls<any>): boolean
+}
+export interface SearchOptions {
+  readonly placeholder?: string
+  /** `"modified"` (rows off their defaults) or chips of your own; `["modified"]` by default. */
+  readonly chips?: readonly ("modified" | SearchChip)[]
 }
 /**
  * An undo stack the host owns (an editor's ⌘Z that covers more than these values). The panel's
@@ -266,8 +302,8 @@ export interface ControlsOptions<S extends Schema> extends LabelOptions {
   marks?: boolean
   onChange?: (patch: Partial<Values<S>>, values: Values<S>, meta: ChangeMeta) => void
   onReset?: (target: { key?: keyof S & string; group?: string }) => void
-  /** An action row was pressed (after its own `run`). */
-  onAction?: (key: keyof S & string) => void
+  /** An action row was pressed (after its own `run`), or a toolbar button (with its item's id). */
+  onAction?: (key: string) => void
   /** A group's numbered preset was applied (after its values are set). */
   onPreset?: (target: { group: string; index: number; name: string }) => void
 }
@@ -316,8 +352,11 @@ export interface Controls<S extends Schema = Schema> {
   hold(key: string, held?: boolean): void
   /** Whether incoming values for `key` are held back right now (see `sync`). */
   isHeld(key: string): boolean
-  /** Presses an action row: its `run`, then `onAction(key)`. */
-  action(key: keyof S & string): void
+  /**
+   * Presses an action row: its `run`, then `onAction(key)`. For a toolbar, `item` names the
+   * button (its id, else its label) and `onAction` gets the item's id.
+   */
+  action(key: keyof S & string, item?: string): void
   /** True while the change being notified landed (`sync(…, { land: true })`): place, don't animate. */
   readonly landing: boolean
   undo(): void
@@ -394,7 +433,7 @@ export function sameField(a: unknown, b: unknown): boolean {
     // Predicates (`disabled`, `readOnly`) are new closures on every rebuild; they don't reshape.
     if (typeof x === "function" && typeof y === "function") return true
     return Array.isArray(x) && Array.isArray(y)
-      ? x.length === y.length && x.every((v, i) => same(v, y[i]))
+      ? x.length === y.length && x.every((v, i) => same(v, y[i]) || sameField(v, y[i]))
       : same(x, y) || (typeof x === "object" && sameField(x, y))
   })
 }
@@ -478,7 +517,7 @@ export function defineControls<const S extends Schema>(
             (named.length
               ? named
               : Object.keys(schema).filter((k) => schema[k]!.group === group)
-            ).filter((k) => schema[k]!.kind !== "action"),
+            ).filter((k) => hasValue(schema[k]!)),
           )
           return [
             group,
@@ -571,7 +610,7 @@ export function defineControls<const S extends Schema>(
   const fieldKeys = () => valueKeys(schema)
   const valueField = (k: string) => {
     const field = Object.hasOwn(schema, k) ? schema[k] : undefined
-    return field && field.kind !== "action" ? field : undefined
+    return field && hasValue(field) ? field : undefined
   }
   function changes(from: Values<S>, to: Values<S>) {
     const diff: Record<string, unknown> = {}
@@ -905,8 +944,16 @@ export function defineControls<const S extends Schema>(
       flush()
     },
     isHeld,
-    action(key) {
+    action(key, item) {
       const field = schema[key]
+      if (field?.kind === "toolbar") {
+        const found = field.items.find((i) => (i.id ?? i.label) === item)
+        if (!found) throw new Error(`Unknown toolbar item: ${key} ${item}`)
+        if (found.disabled) return
+        found.run?.()
+        options.onAction?.(found.id ?? found.label)
+        return
+      }
       if (!field || field.kind !== "action") throw new Error(`Unknown action: ${key}`)
       field.run?.()
       options.onAction?.(key)
@@ -974,7 +1021,7 @@ export function defineControls<const S extends Schema>(
     resetGroup(group) {
       if (!enabled()) return
       const keys = Object.keys(schema).filter(
-        (k) => schema[k]!.group === group && schema[k]!.kind !== "action",
+        (k) => schema[k]!.group === group && hasValue(schema[k]!),
       )
       const open = keys.filter((k) => !blocked(k))
       if (open.length < keys.length) return controls.reset(open as (keyof S & string)[])

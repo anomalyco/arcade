@@ -33,8 +33,29 @@ describe("LabControl as knobs", () => {
     const rows = [row({ ...range, group: "A" }), row({ ...range, key: "b", group: "B" }), row({ ...range, key: "c", group: "C" })]
     expect(orderRows(rows, ["C"]).map(r => r.group)).toEqual(["C", "A", "B"])
   })
+  test("a group's sub-headings keep their rows together, after the rows without one", () => {
+    const rows = [row({ ...range, key: "a" }), row({ ...range, key: "b", subsection: "Advanced" }), row({ ...range, key: "c" }), row({ ...range, key: "d", subsection: "Advanced" })]
+    expect(orderRows(rows, []).map(r => r.control.key)).toEqual(["a", "c", "b", "d"])
+  })
+  test("seeds draw as seed rows, full-turn headings as dials, a pair as one range", () => {
+    expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ kind: "seed", default: 7, min: 1, max: 999 })
+    const yaw: LabControl = { key: "yaw", label: "Yaw", group: "Spot", min: -180, max: 180, step: 1 }
+    expect(describeRow(row(yaw), {}, { yaw: 30 })).toMatchObject({ kind: "angle", min: -180, max: 180 })
+    expect(describeRow(row({ ...yaw, key: "pitch", label: "Pitch", min: 5, max: 85 }), {}, { pitch: 30 })).toMatchObject({ kind: "number" })
+    const low: LabControl = { key: "lo", label: "Small", group: "Drops", min: 0.01, max: 0.1, step: 0.005, pair: { key: "hi", label: "Drop size" } }
+    const high: LabControl = { key: "hi", label: "Large", group: "Drops", min: 0.03, max: 0.2, step: 0.005 }
+    expect(describeRow(row(low), {}, { lo: 0.02, hi: 0.08 }, { pair: high })).toMatchObject({ kind: "range", label: "Drop size", default: [0.02, 0.08], min: 0.01, max: 0.2 })
+  })
+  test("tabs and sub-headings reach the descriptor", () => {
+    expect(describeRow(row({ ...range, subsection: "Advanced" }), {}, { size: 1 }, { tab: "Trees", groupLabel: "Structure" })).toMatchObject({ tab: "Trees", groupLabel: "Structure", subsection: "Advanced" })
+  })
+  test("a pair saved as two numbers migrates to one range value", () => {
+    const low: LabControl = { key: "lo", label: "Small", group: "Drops", min: 0, max: 1, pair: { key: "hi", label: "Drop size" } }
+    const raw = JSON.stringify({ variants: [{ name: "a", values: { lo: 0.2, hi: 0.6 } }] })
+    expect(JSON.parse(migrateKnobsVariantJson(raw, [row(low)])).variants[0].values).toEqual({ lo: [0.2, 0.6] })
+  })
   test("seeds stay out of Random, gated rows are disabled now, folded groups say so", () => {
-    expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ random: false })
+    expect(describeRow(row(seed), {}, { seed: 7 })).toMatchObject({ random: false, kind: "seed" })
     expect(describeRow(row({ ...range, enabled: s => s.beam === 1 }), {}, { size: 1, beam: 0 })).toMatchObject({ disabled: true })
     expect(describeRow(row({ ...range, enabled: s => s.beam === 1 }), {}, { size: 1, beam: 1 })).not.toHaveProperty("disabled")
     expect(describeRow(row({ ...range, folded: true }), {}, { size: 1 })).toMatchObject({ folded: true })

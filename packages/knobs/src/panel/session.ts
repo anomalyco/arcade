@@ -9,6 +9,10 @@ export interface PanelSession {
   readonly folded?: Readonly<Record<string, boolean>>
   /** A panel's foldable groups, by id: whether each is folded. */
   readonly groups?: Readonly<Record<string, boolean>>
+  /** A panel's sub-headings, by group and name: whether each is folded. */
+  readonly subsections?: Readonly<Record<string, boolean>>
+  /** The tab a panel showed. */
+  readonly tab?: string
 }
 
 const tab = (): Storage | null => {

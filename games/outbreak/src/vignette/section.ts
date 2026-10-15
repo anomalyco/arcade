@@ -1056,6 +1056,12 @@ export const outbreakVignetteSection: SectionFactory = context => {
     label: "Outbreak vignette",
     settings: s,
     controls,
+    tabs: [
+      { label: "Scene", groups: ["Direction & View", "Sky & Shadows", "Lot & Clutter", "Controls"] },
+      { label: "Lights", groups: ["Flashlight", "Practical Lights"] },
+      { label: "Materials", groups: [["Surface Materials", "Surface"], ["Material Pattern", "Pattern"], ["Material Weathering", "Weathering"]] },
+      { label: "Look", groups: ["Tone & Curve", "Split-Tone & Palette", "Lighting & Silhouette", "Atmosphere & Shafts", "Lens & Film", "Painterly & Ink"] },
+    ],
     get selectedObjectId() {
       return selectedObjectId
     },
