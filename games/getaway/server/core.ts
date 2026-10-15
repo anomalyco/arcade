@@ -200,8 +200,11 @@ export class RoomCore {
       if (got.length) {
         p.input = got.length === 1 ? got[0]! : INPUT_OPS.merge(got[0]!, got[1]!)
         p.starve = 0
-      } else if (++p.starve > STARVE_TICKS) p.input = NO_INPUT
-      world.setInput(p.id, p.input)
+        world.setInput(p.id, p.input)
+      } else {
+        if (++p.starve > STARVE_TICKS) p.input = NO_INPUT
+        world.setInput(p.id, NO_INPUT)
+      }
     }
     world.step(DT)
     const events = world.drainEvents()

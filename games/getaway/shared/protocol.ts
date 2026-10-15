@@ -3,6 +3,7 @@ import { seedOf as rawSeedOf } from "@arcade/kit/sim/rng"
 import { VEHICLE_BY_ID, VEHICLES, type Role } from "./config"
 import type { Body, Input } from "./sim/vehicle"
 import type { SimEvent, WorldView } from "./sim/world"
+import { type PackedSnapshot, packSnapshot, unpackSnapshot } from "./wire"
 
 export type Picks = Record<Role, string>
 
@@ -36,21 +37,20 @@ export type ServerMsg =
   | { type: "error"; code: "full" | "bad" | "idle"; message: string }
 
 /**
- * Rounds every number to 3 decimals to keep snapshots small. The authoritative body and the phase clock stay exact
- * so the client's replay crosses phase boundaries on the same tick as the server.
+ * Packs snapshots into positional arrays (`./wire.ts`) with view floats rounded to 3 decimals, while the authoritative
+ * body (`you`) and `phaseT` stay exact so client replay crosses phase boundaries on the same tick as the server.
  */
 export function encodeServer(msg: ServerMsg): string {
-  const exact = msg.type === "snapshot" ? msg.you : null
-  return JSON.stringify(msg, function (this: unknown, k: string, v: unknown) {
-    if (typeof v === "number" && this !== exact && k !== "phaseT") return Number.isInteger(v) ? v : Math.round(v * 1000) / 1000
-    return v
-  })
+  if (msg.type === "snapshot") return JSON.stringify(packSnapshot(msg))
+  return JSON.stringify(msg, (_k: string, v: unknown) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v))
 }
 
 export function decodeServer(raw: string): ServerMsg | null {
   try {
-    const m = JSON.parse(raw) as ServerMsg
-    return m && typeof m.type === "string" ? m : null
+    const m = JSON.parse(raw) as ServerMsg | PackedSnapshot
+    if (!m || typeof m.type !== "string") return null
+    if (m.type === "snapshot" && "k" in m) return unpackSnapshot(m)
+    return m as ServerMsg
   } catch {
     return null
   }

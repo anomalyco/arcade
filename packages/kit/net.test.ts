@@ -325,6 +325,27 @@ describe("SnapshotBuffer", () => {
     const jumped = g.step(0.5, 0, 6, 0, 0.016)
     expect(jumped.x).toBeLessThan(0.2)
   })
+
+  test("time-stretches clock offset and adaptive delay shifts within ±2% of frame dt", () => {
+    const buf = new SnapshotBuffer<number>(0.1, 32, 0.25, { min: 0.08, max: 0.1 })
+    const dt = 1 / 120
+    let local = 1.0
+    buf.push(0, 0, local)
+    let prev = buf.renderTime(local)
+    for (let f = 1; f <= 240; f++) {
+      local += dt
+      if (f % 8 === 0) {
+        const srv = (f / 8) * (1 / 15)
+        const spike = f === 80 ? 0.045 : f === 160 ? -0.012 : (f % 24) * 0.001
+        buf.push(srv, f, 1.0 + srv + spike)
+      }
+      const rt = buf.renderTime(local)
+      const step = rt - prev
+      expect(step).toBeGreaterThanOrEqual(dt * 0.979)
+      expect(step).toBeLessThanOrEqual(dt * 1.021)
+      prev = rt
+    }
+  })
 })
 
 describe("Predictor & ClockSync & LocationHint", () => {
