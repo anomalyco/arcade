@@ -399,7 +399,8 @@ function persianDesign(ctx: Ctx, kx: number, ky: number, nx: number, ny: number,
   const { spec, rnd } = ctx
   const pal = spec.palette
   const ivoryField = pal === "tabriz"
-  const borderBg = ivoryField ? ROLE.border : rnd() < 0.55 ? ROLE.border : ROLE.medal
+  const borderPick = rnd()
+  const borderBg: number = ivoryField ? ROLE.border : borderPick < 0.45 ? ROLE.border : borderPick < 0.75 ? ROLE.medal : ROLE.ivory
   const guardBg = rnd() < 0.5 ? ROLE.ivory : ROLE.gold
   const lineRole = rnd() < 0.5 ? ROLE.dark : ROLE.gold
   const bands = makeBands(ctx, borderBg, guardBg, lineRole, rnd() < 0.3 ? 3 : 2)
@@ -505,7 +506,7 @@ function persianDesign(ctx: Ctx, kx: number, ky: number, nx: number, ny: number,
         continue
       }
       const Fw = ctx.Wh - out.inner, Fh = ctx.Hh - out.inner
-      let role = ivoryField ? ROLE.ground : ROLE.ground
+      let role: number = ROLE.ground
       let group: number = G.ground
       let done = false
       if (mSize > 0) {
