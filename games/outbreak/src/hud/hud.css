@@ -144,3 +144,6 @@ body[data-hud="callouts"][data-chrome="quiet"] #status, body[data-hud="callouts"
 body[data-hud="callouts"][data-chrome="quiet"] :is(#hands, #belt) { opacity: .45; transition: opacity .3s ease }
 body[data-hud="callouts"][data-chrome="none"] :is(#hands, #belt) { opacity: 0; transition: opacity .4s ease }
 body[data-hud="callouts"][data-chrome][data-hotbar="awake"] :is(#hands, #belt) { opacity: 1; transition-duration: .12s }
+/* Diegetic: supply counts are read off the belt only while the inventory is held open (Tab pack, hold Q). */
+body[data-hud="callouts"][data-chrome="none"][data-hotbar] #belt:not([data-open="true"]) { opacity: 0 }
+body[data-hud="callouts"][data-chrome="none"] #belt[data-open="true"], body[data-hud="callouts"][data-chrome="none"] #hands:has(#pack[data-open="true"]) { opacity: 1; transition-duration: .12s }

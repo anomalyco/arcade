@@ -13,6 +13,8 @@ export type WidgetContext = {
   section: string | null
   missing: string | null
   panel: LabPanel
+  /** For page demos: resolves to the embedded page's LabPanel once loaded. */
+  pagePanel?: () => Promise<LabPanel | null>
   variant(): StationVariant | null
   chooseVariant(variant: StationVariant): void
   invoke(command: string, args?: Record<string, unknown>): { ok: true } | { ok: false; error: string }
@@ -24,6 +26,8 @@ export type WidgetContext = {
   storage: Storage | null
   /** The A/B wipe is waiting for a variant to be B. */
   abPending: { get(): boolean; set(on: boolean): void }
+  /** The key chip before a variant's number: "⇧" while number keys open stations, "" once they pick variants. */
+  variantKey?: string
 }
 
 export type WidgetInstance = {
@@ -90,8 +94,45 @@ const renderers: Record<StationWidgetKind, Renderer> = {
   controls(body, w, ctx) {
     const groups = new Set(w.groups ?? [])
     const keys = new Set(w.keys ?? [])
-    if (!ctx.section || (!groups.size && !keys.size)) {
-      body.innerHTML = `<p class="ls-dim">${ctx.section ? "Pick Details groups for this card (✎ then Configure)." : "This station has no Lab section to tune."}</p>`
+    if (!groups.size && !keys.size) {
+      body.innerHTML = `<p class="ls-dim">${ctx.section || ctx.pagePanel ? "Pick Details groups for this card (✎ then Configure)." : "This station has no Lab section to tune."}</p>`
+      return {}
+    }
+    if (!ctx.section && ctx.pagePanel) {
+      body.innerHTML = `<p class="ls-dim">Loading page controls…</p>`
+      let disposed = false
+      let mounted: ReturnType<LabPanel["mountView"]> | null = null
+      void ctx.pagePanel().then(panel => {
+        if (disposed) return
+        if (!panel) {
+          body.innerHTML = `<p class="ls-dim">This station has no Lab controls to tune.</p>`
+          return
+        }
+        body.replaceChildren()
+        mounted = panel.mountView(body, {
+          id: `station-${ctx.station.id}-${w.id}`,
+          include: row => groups.has(row.group) || Boolean(row.control && keys.has(row.control.key)),
+          order: () => [...groups],
+          claim: true,
+        })
+        if (!mounted.keys.length) {
+          const note = document.createElement("p")
+          note.className = "ls-dim"
+          note.textContent = `No settings match ${[...groups, ...keys].join(", ")} in this page.`
+          body.append(note)
+        }
+      })
+      return {
+        tick: () => mounted?.sync(),
+        refresh: () => mounted?.sync(),
+        dispose: () => {
+          disposed = true
+          mounted?.dispose()
+        },
+      }
+    }
+    if (!ctx.section) {
+      body.innerHTML = `<p class="ls-dim">This station has no Lab section to tune.</p>`
       return {}
     }
     const view = ctx.panel.mountView(body, {
@@ -116,7 +157,7 @@ const renderers: Record<StationWidgetKind, Renderer> = {
     const list = document.createElement("div")
     list.className = "ls-variants"
     const chips = variants.map((v, i) => {
-      const chip = button(`${i < 9 ? `<kbd>⇧${i + 1}</kbd>` : ""}<span>${html(v.label)}</span>`, () => ctx.chooseVariant(v), "ls-chip")
+      const chip = button(`${i < 9 ? `<kbd>${ctx.variantKey ?? "⇧"}${i + 1}</kbd>` : ""}<span>${html(v.label)}</span>`, () => ctx.chooseVariant(v), "ls-chip")
       chip.dataset.variant = v.id
       if (v.note) chip.title = v.note
       list.append(chip)

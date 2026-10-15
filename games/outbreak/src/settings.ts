@@ -17,6 +17,7 @@ import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
   DEFAULT_FLASHLIGHT_BEAM,
@@ -26,7 +27,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
-import { DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
+import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
@@ -186,6 +187,7 @@ export type OutbreakSubsystemMap = {
   map: MapSettings
   audio: AudioSettings
   progression: ProgressionTuning
+  discovery: DiscoverySettings
   world: OutbreakWorldSettings
   vision: OutbreakVisionSettings
   materials: OutbreakMaterialSettings
@@ -219,6 +221,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   MapSettings &
   AudioSettings &
   ProgressionTuning &
+  DiscoverySettings &
   OutbreakWorldSettings &
   OutbreakVisionSettings &
   OutbreakMaterialSettings &
@@ -244,6 +247,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "map",
   "audio",
   "progression",
+  "discovery",
   "world",
   "vision",
   "materials",
@@ -274,6 +278,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     map: { ...DEFAULT_MAP_SETTINGS },
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
+    discovery: { ...DEFAULT_DISCOVERY_SETTINGS },
     world: { ...DEFAULT_OUTBREAK_WORLD },
     vision: { ...DEFAULT_OUTBREAK_VISION },
     materials: { ...DEFAULT_OUTBREAK_MATERIALS },
@@ -343,6 +348,18 @@ export function createOutbreakSettings(params?: URLSearchParams): OutbreakSettin
   const settings = attachCompatibilityForwarders(subsystems)
   if (params) {
     migrateOutbreakUrlParams(params, settings)
+    const u = settings.unseen
+    if (
+      u.unseenMode >= 1 &&
+      u.unseenMode <= 8 &&
+      u.unseenGlitch === 0 &&
+      u.unseenWarp === 0 &&
+      u.unseenShroud === 0 &&
+      u.unseenMemory === 0 &&
+      u.unseenNoise === 0
+    ) {
+      applyUnseenModePreset(u, u.unseenMode)
+    }
   }
   return settings
 }

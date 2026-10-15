@@ -28,18 +28,36 @@ Selecting a fixture intentionally changes scene state. Selecting a tool/effect s
 lighting and authored placement unless the user explicitly changes or resets them. Current lighting survives section
 changes, but environments are section-owned and fixtures can replace them. There is no cross-reload saved-preset library.
 
+## Home and labs
+
+The Lab opens on **Home**: every lab, grouped by collection, in a knobs/ui outliner (`tree`) with the selected lab
+described beside it (`split`). `/` or `⌘K` searches (every word must match the title, kind, collection or summary),
+`↑`/`↓` move, `←`/`→` fold a collection, `↵` or a double-click opens, and `Esc` goes back to the lab you came from.
+Home covers the workbench, which stops drawing until a lab opens. In a lab the top bar shows `Labs › collection › lab`;
+`H` (or Labs) comes back to Home, the lab's name lists the others in its collection, and `⌥[` `⌥]` step through them.
+`1`–`9` pick the open lab's variants, and `⇧` with a number shows what you see now beside that variant as an A/B wipe
+(section labs; a page lab just switches). A lab shows only its own panels: the Library drawer and the World footer
+(the global section, environment and seed pickers) are hidden and `Ctrl+Space` does nothing while one is open
+(`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
+work. `arcade run lab.list`, `lab.open {"id": "look-and-light/weather"}` and `lab.home` do the same from the CLI.
+
+Labs come from station files for now (`games/lab/src/home/catalog.ts`): each station becomes a kept lab in an area
+collection (`STATION_AREAS` in `games/lab/src/scenes/from-stations.ts`), merged with this browser's own labs
+(`createSceneStore`). A lab a station became unchanged opens that station; one the migration split off (Explosions'
+splatter variants) opens a station built from the lab (`stationFromScene`). Every station needs a lab kind in
+`games/lab/src/scenes/kinds.ts`; one without starts as a plain `section` or `page` lab and logs a warning, and
+`games/lab/tests/scenes.test.ts` fails until it has one. The model and the plan are in [lab-scenes.md](lab-scenes.md).
+`bun games/lab/scripts/prove-home.ts` proves Home in a headless browser and writes stills to `captures/lab-home`.
+
 ## Stations
 
-A station is a saved workspace for one demo, inside the normal Lab. The station list sits at the top of the Outliner;
-number keys `1`–`9` and `0` (outside text fields, Play, the grid and the radial), a click on a list chip, `⌘K`
-("Station: …") or `arcade station <id>` open one in place. Its section and setup commands run, then its widgets fill
-three slots around the viewport: the Outliner column (`left`), the top of the Details column (`right`) and a dock under
-the viewport (`dock`, which takes the Library drawer's place until you open the Library again). `⇧1`–`⇧9` pick the
-open station's variants. ✕ in the list header (or `station.close`) goes back to the plain workbench, and choosing
-another section by hand does too. The slots and the dock resize from their edges like the other panels, and each
+A station is a saved workspace for one demo. Opening its lab runs its section and setup commands, then its widgets
+fill three slots around the viewport: the Outliner column (`left`), the top of the Details column (`right`) and a dock
+under the viewport (`dock`, which takes the Library drawer's place until you open the Library again). Choosing another
+section by hand leaves the lab. The slots and the dock resize from their edges like the other panels, and each
 station keeps its own sizes ([lab-workbench.md](lab-workbench.md#layout-outliner--details--library-drawer)). A station whose section belongs to a game that isn't loaded loads that game's
-adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`). `?station=<id>` opens one on
-load.
+adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`). `arcade station <id>` still
+opens one directly.
 
 Widgets (`packages/kit/lab/stations/widgets.ts`):
 
@@ -65,7 +83,9 @@ controls card for the section's first two groups with real tuning sliders right,
 voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
-adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
+adding a file, plus one line for its collection in `STATION_AREAS` (`games/lab/src/scenes/from-stations.ts`) and, unless
+an existing kind fits, a lab kind in `games/lab/src/scenes/kinds.ts` (`PAGE_STATIONS` maps page stations to theirs);
+`bun test games/lab/tests` says which is missing. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
 back to. The type is `LabStation` in `packages/kit/lab/stations/types.ts` (older files import it from
 `@arcade/kit/lab/overworld/types`, which still works):
 

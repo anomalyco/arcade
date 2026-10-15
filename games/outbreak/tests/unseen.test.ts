@@ -9,25 +9,35 @@ import {
 import { createOutbreakSettings, resolveOutbreakSettingTarget } from "../src/settings"
 import { shaders } from "../src/shaders"
 import {
+  applyUnseenModePreset,
   DEFAULT_UNSEEN_SETTINGS,
   evaluateUnseenFrame,
   outbreakUnseenFieldWgsl,
   outbreakUnseenPostWgsl,
   outbreakUnseenSceneWgsl,
+  syncUnseenSettingChange,
   UNSEEN_MODE_OPTIONS,
+  UNSEEN_PRESETS,
+  unpackUnseenPostParams,
   unseenControls,
   unseenUniformsStruct,
 } from "../src/unseen"
 
 describe("outbreak unseen visibility & post-process", () => {
-  test("defaults to Off (mode 0) and exposes all 6 Lab controls in the Unseen group", () => {
+  test("defaults to Off (mode 0) and exposes all 12 Lab controls in the Unseen group", () => {
     expect(DEFAULT_UNSEEN_SETTINGS.unseenMode).toBe(0)
     expect(DEFAULT_UNSEEN_SETTINGS.hideUnseenZombies).toBe(true)
-    expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 3, 4, 5])
+    expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(unseenControls.every((c) => c.group === "Unseen")).toBe(true)
     expect(unseenControls.map((c) => c.key)).toEqual([
       "unseenMode",
       "unseenStrength",
+      "unseenGlitch",
+      "unseenGlitchEdge",
+      "unseenWarp",
+      "unseenShroud",
+      "unseenMemory",
+      "unseenNoise",
       "unseenNightScale",
       "unseenEdgeSoftness",
       "unseenUpdateRate",
@@ -45,19 +55,58 @@ describe("outbreak unseen visibility & post-process", () => {
   test("scales effective strength with darkness (stronger at night, subtle by day) and low-HP panic", () => {
     const offEval = evaluateUnseenFrame({ unseenMode: 0, unseenStrength: 1.2 }, 1.0, 100, 100)
     expect(offEval.mode).toBe(0)
+    expect(offEval.active).toBe(false)
     expect(offEval.effectiveStrength).toBe(0)
-    expect(offEval.postParams).toEqual([0, 0, 10])
+    expect(offEval.postParams).toEqual([0, 0, 0])
 
     const nightEval = evaluateUnseenFrame({ unseenMode: 1, unseenStrength: 1.0, unseenNightScale: 0.75 }, 1.0, 100, 100)
     const dayEval = evaluateUnseenFrame({ unseenMode: 1, unseenStrength: 1.0, unseenNightScale: 0.75 }, 0.0, 100, 100)
     expect(nightEval.nightFactor).toBe(1.0)
     expect(nightEval.effectiveStrength).toBe(1.0)
+    expect(nightEval.layers.glitch).toBe(1.0)
     expect(dayEval.nightFactor).toBeCloseTo(0.46, 2)
     expect(dayEval.effectiveStrength).toBeLessThan(nightEval.effectiveStrength * 0.5)
 
     const panicEval = evaluateUnseenFrame({ unseenMode: 2, unseenStrength: 1.0, unseenNightScale: 0.75 }, 1.0, 20, 100)
     expect(panicEval.panicBoost).toBeGreaterThan(0.25)
     expect(panicEval.effectiveStrength).toBeGreaterThan(nightEval.effectiveStrength)
+    expect(panicEval.layers.warp).toBeCloseTo(panicEval.effectiveStrength, 3)
+  })
+
+  test("combines multiple layers, syncs preset sliders with custom edits, and round-trips postParams", () => {
+    const s = { ...DEFAULT_UNSEEN_SETTINGS }
+    s.unseenMode = 8 as typeof s.unseenMode
+    syncUnseenSettingChange(s, "unseenMode")
+    expect(s.unseenGlitch).toBe(UNSEEN_PRESETS[8].glitch)
+    expect(s.unseenGlitchEdge).toBe(UNSEEN_PRESETS[8].glitchEdge)
+    expect(s.unseenShroud).toBe(UNSEEN_PRESETS[8].shroud)
+    expect(s.unseenNoise).toBe(UNSEEN_PRESETS[8].noise)
+
+    const comboEval = evaluateUnseenFrame(s, 1.0, 100, 100)
+    expect(comboEval.active).toBe(true)
+    const unpacked = unpackUnseenPostParams(comboEval.postParams)
+    expect(unpacked.layers.glitch).toBeCloseTo(1.0, 2)
+    expect(unpacked.layers.glitchEdge).toBeCloseTo(0.85, 2)
+    expect(unpacked.layers.shroud).toBeCloseTo(0.85, 2)
+    expect(unpacked.layers.noise).toBeCloseTo(0.35, 2)
+    expect(unpacked.updateRate).toBe(10)
+
+    // Adjusting an individual layer slider promotes unseenMode to 9 ("Custom layers")
+    s.unseenWarp = 0.55
+    syncUnseenSettingChange(s, "unseenWarp")
+    expect(s.unseenMode as number).toBe(9)
+    const customEval = evaluateUnseenFrame(s, 1.0, 100, 100)
+    const customUnpacked = unpackUnseenPostParams(customEval.postParams)
+    expect(customUnpacked.layers.warp).toBeCloseTo(0.55, 2)
+    expect(customUnpacked.layers.glitch).toBeCloseTo(1.0, 2)
+
+    // Returning to Off zeroes the layer sliders
+    applyUnseenModePreset(s, 0)
+    expect(s.unseenGlitch).toBe(0)
+    expect(s.unseenWarp).toBe(0)
+    expect(s.unseenShroud).toBe(0)
+    expect(s.unseenMemory).toBe(0)
+    expect(s.unseenNoise).toBe(0)
   })
 
   test("packs UnseenUniforms (8 floats / 32 bytes) into OutbreakLightingUniforms after interior uniforms", () => {

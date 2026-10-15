@@ -19,6 +19,7 @@ import {
   type ZombieDeathVariant,
   type ZombieHitReaction,
 } from "@arcade/kit/sim/ai"
+import { FlowFieldCache } from "@arcade/kit/sim/flow-field"
 import { type Rect } from "@arcade/kit/sim/geom"
 import { dayCycle } from "./day-cycle"
 import {
@@ -202,10 +203,14 @@ export type OutbreakAISnapshot = {
   portalStates: [string, PortalState][]
   noiseBus: import("@arcade/kit/sim/ai").NoiseBusSnapshot
   pacing: import("./pacing").PacingDirectorSnapshot
+  /** Where each survivor's shared flow field is anchored (the fields themselves are rebuilt on demand). */
+  flowAnchors?: import("@arcade/kit/sim/flow-field").FlowAnchor[]
 }
 
 export class OutbreakAISubsystem {
   readonly nav = new GridNav(SIZE, SIZE, 0.5)
+  /** Shared per-goal flow fields over `nav` (derived from it, so never snapshotted). */
+  readonly flow = new FlowFieldCache(this.nav)
   readonly spatial = new SpatialHash(SIZE, SIZE, 4)
   readonly noiseBus = new NoiseBus(64)
   readonly portalStates = new Map<string, PortalState>()
@@ -486,6 +491,7 @@ export class OutbreakAISubsystem {
       portalStates: [...this.portalStates.entries()].map(([k, v]) => [k, { ...v }]),
       noiseBus: this.noiseBus.snapshot(),
       pacing: this.pacing.snapshot(),
+      ...(this.flow.anchors.length > 0 ? { flowAnchors: this.flow.anchors.map((a) => ({ ...a })) } : {}),
     }
   }
 
@@ -508,6 +514,7 @@ export class OutbreakAISubsystem {
     }
     this.noiseBus.restore(snap.noiseBus)
     this.pacing.restore(snap.pacing)
+    this.flow.anchors = (snap.flowAnchors ?? []).map((a) => ({ ...a }))
     this.lastTopologyDigest = -1
     this.rebuildTopology(town, chunkTiles)
   }
@@ -613,6 +620,7 @@ export class OutbreakAISubsystem {
       noiseBus: this.noiseBus,
       config: threatConfig,
       targets,
+      flow: this.flow,
     })
 
     this.pacing.stepAfterCrowd(

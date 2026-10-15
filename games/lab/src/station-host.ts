@@ -50,6 +50,8 @@ export async function startStations(api: LabApi, ensureGame: (game: string) => P
     },
     stations: stationList(),
     dev,
+    // Home lists labs and owns `?lab=`; the workspace only opens what it is given.
+    list: false,
   })
   if (import.meta.env.DEV && router && dev) {
     // The recorder is dev-only and loads after the Lab is up.
@@ -74,9 +76,6 @@ export async function startStations(api: LabApi, ensureGame: (game: string) => P
     dev.toggleNote = () => recorder.toggle()
     dev.noteActive = () => recorder.active()
   }
-  const params = new URLSearchParams(location.search)
-  const station = params.get("station")
-  if (station) await stations.open(station)
   // Handles for proofs and the dev console: the stations, the Details panel (knobs over the settings) and the workbench.
   Object.assign(window, { stations, labPanel: api.panel, labWorkbench: api.workbench, labViewport: api.viewportSize })
   return stations
