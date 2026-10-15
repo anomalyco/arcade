@@ -73,6 +73,7 @@ export class Game {
   private brazier: number
   private wing: number
   private sunPoint: V3 = [16, 22, -42]
+  private glow: [number, number] = [-0.02, 0.13]
   private parts = new Map<number, number[]>()
   private dynamic = new Mesh()
   private add = new Quads()
@@ -127,6 +128,7 @@ export class Game {
     const scene = buildArenaScene(this.arena)
     this.renderer.setStatic(scene.mesh)
     this.sunPoint = scene.sun
+    this.glow = scene.glow
     this.views.clear()
     this.prev.clear()
   }
@@ -473,7 +475,7 @@ export class Game {
       eye: this.cam.eye,
       time: this.now,
       // The glow sits in the fog just below the bell window, where the concept's light pools.
-      sun: [sun.x / w - 0.02, sun.y / h + 0.13, 0.22, 1.0],
+      sun: [sun.x / w + this.glow[0], sun.y / h + this.glow[1], 0.22, 1.0],
       fog: [0.016, 2.4, 0.55, 0.045],
       skyBrightness: 1,
       rim: 0.6,
