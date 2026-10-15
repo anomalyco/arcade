@@ -12,11 +12,12 @@ import type { AIState } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
 import { sightRects } from "../shared/map"
-import type { Command, LocalSession } from "../shared/session"
+import { LocalSession, type Command } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
 import { districtAtChunk, worldToChunk } from "../shared/world"
 import type { OutbreakAudio } from "./audio"
+import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
@@ -69,6 +70,7 @@ export interface OutbreakHarnessHost {
   readonly vehicleAudio: OutbreakVehicleAudio
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
+  readonly botsLab: BotsLabController
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void
@@ -104,6 +106,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     coop,
     audio,
     vehicleAudio,
+    botsLab,
     promptEl,
   } = host
 
@@ -249,6 +252,12 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         progress: c.progress,
       })),
     coop: () => coop.inspect(),
+    bots: () => {
+      const s = host.session()
+      return s instanceof LocalSession ? botsLab.getSnapshots(s) : []
+    },
+    loadBotReplay: (log: Parameters<typeof botsLab.loadReplay>[0]) =>
+      botsLab.loadReplay(log, (s) => host.reset(s)),
     audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset: host.reset,
@@ -388,9 +397,14 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         await Promise.resolve()
         await device.queue.onSubmittedWorkDone()
       }
+      const rawCmd: Command = { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }
+      const effCmd =
+        session instanceof LocalSession && !command
+          ? botsLab.stepBeforeSessionUpdate(dt, session, rawCmd)
+          : rawCmd
       session.update(
         dt,
-        { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command },
+        effCmd,
         settings.dayCycle.timeScale,
         settings,
       )

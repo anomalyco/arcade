@@ -56,6 +56,7 @@ import { MAP_KEY, OutbreakMap } from "./map"
 import { gameMapFrame } from "./map/game"
 import { type ProgressionLabHost } from "./progression-lab"
 import { type VehicleLabHost } from "./vehicle-lab"
+import { BotsLabController } from "./bots-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { OutbreakVehicleRenderer } from "./vehicles"
 import { SURVIVOR_COLOURS } from "./net-session"
@@ -300,6 +301,7 @@ async function main() {
     },
     offline: () => !coop.net,
   }
+  const botsLab = new BotsLabController(settings)
   const labControlHost: OutbreakLabControlHost = {
     session: () => session,
     settings,
@@ -310,10 +312,12 @@ async function main() {
     weatherController,
     progressionHost,
     vehicleHost,
+    botsLab,
     hud,
     map,
     updateProfile,
     regenerate: () => regenerate(),
+    reset: (s) => reset(s),
     syncTextures: () => syncTextures(),
     setLastDayNightHour: (hour) => {
       lastDayNightHour = hour
@@ -425,28 +429,33 @@ async function main() {
     let stepped = 0
     for (const [idx, step] of substeps.entries()) {
       const p = session.view.player
+      const rawCommand: Command = {
+        mx: step.mx,
+        my: step.my,
+        sprint: step.sprint || spaceHeld,
+        aim: Math.atan2(target.y - p.y, target.x - p.x),
+        interact: step.interact,
+        flashlight: step.flashlight,
+        jump: step.jump,
+        interactHeld: step.interactHeld,
+        fire: idx === 0 ? fireEdge : false,
+        fireHeld: input.firing,
+        reload: idx === 0 ? reloadEdge : false,
+        melee: idx === 0 ? meleeEdge : false,
+        barricade: idx === 0 ? barricadeEdge : false,
+        ...(idx === 0 && seatEdge ? { seat: true } : {}),
+        ...(hornHeld ? { horn: true } : {}),
+        ...(idx === 0 ? verbs : {}),
+        ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
+        ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
+      }
+      const effectiveCommand =
+        session instanceof LocalSession
+          ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand)
+          : rawCommand
       session.update(
         step.dt,
-        {
-          mx: step.mx,
-          my: step.my,
-          sprint: step.sprint || spaceHeld,
-          aim: Math.atan2(target.y - p.y, target.x - p.x),
-          interact: step.interact,
-          flashlight: step.flashlight,
-          jump: step.jump,
-          interactHeld: step.interactHeld,
-          fire: idx === 0 ? fireEdge : false,
-          fireHeld: input.firing,
-          reload: idx === 0 ? reloadEdge : false,
-          melee: idx === 0 ? meleeEdge : false,
-          barricade: idx === 0 ? barricadeEdge : false,
-          ...(idx === 0 && seatEdge ? { seat: true } : {}),
-          ...(hornHeld ? { horn: true } : {}),
-          ...(idx === 0 ? verbs : {}),
-          ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
-          ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
-        },
+        effectiveCommand,
         settings.dayCycle.timeScale,
         settings,
       )
@@ -1324,6 +1333,9 @@ async function main() {
     coop.overlay(cam, w, h, town, vision)
     map.update(gameMapFrame({ session, coop, vision, cam, w, h, ground: playerGroundY, visionChanged: visChanged, windowChanged: windowMoved }))
     inventoryHud.sync(session.view, cam, w, h)
+    if (session instanceof LocalSession) {
+      botsLab.renderOverlay(session, cam, (x, z) => supportHeight(town, x, z), w, h)
+    }
     const meterNow = performance.now()
     const elapsed = (meterNow - meterAt) / 1000
     if (elapsed > 0.25) {
@@ -1435,6 +1447,7 @@ async function main() {
     vehicleAudio,
     progressionHost,
     vehicleHost,
+    botsLab,
     promptEl,
     getPeekBlend: () => peekBlend,
     resetPeek: () => {
