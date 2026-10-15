@@ -47,8 +47,11 @@ function buildBlockyPartMeshes(isZombie: boolean): Mesh[] {
   const foreArm = box(0.15, -0.28, 0.30, 0.15, skin)
   const thigh = box(0.20, -0.42, 0.46, 0.20, legsCol)
   const shin = box(0.17, -0.41, 0.43, 0.17, legsCol)
-  const foot = box(0.24, -0.08, 0.10, 0.17, bootCol)
-  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
+  const foot = new Mesh()
+  foot.bevelBox(-0.06, -0.08, -0.085, 0.125, 0.02, 0.085, 0.02, bootCol, bootCol, MAT.actor)
+  const toe = new Mesh()
+  toe.bevelBox(-0.01, -0.08, -0.085, 0.068, 0.0, 0.085, 0.018, bootCol, bootCol, MAT.actor)
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot, toe]
 }
 
 function buildCapsulePartMeshes(isZombie: boolean): Mesh[] {
@@ -68,8 +71,11 @@ function buildCapsulePartMeshes(isZombie: boolean): Mesh[] {
   const foreArm = cyl(0.072, -0.28, 0.02, skin, 8)
   const thigh = cyl(0.095, -0.42, 0.04, legsCol, 8)
   const shin = cyl(0.08, -0.41, 0.02, legsCol, 8)
-  const foot = cyl(0.10, -0.075, 0.02, hex(0x241f1c), 8)
-  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
+  const foot = new Mesh()
+  foot.prism(0.035, 0, 0.085, 0.08, -0.075, 0.02, 8, hex(0x241f1c), MAT.actor)
+  const toe = new Mesh()
+  toe.prism(0.03, 0, 0.072, 0.065, -0.075, -0.005, 8, hex(0x241f1c), MAT.actor)
+  return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot, toe]
 }
 
 function buildPawnMesh(isZombie: boolean): Mesh {
@@ -86,7 +92,7 @@ function buildPawnMesh(isZombie: boolean): Mesh {
   return m
 }
 
-const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7]
+const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8]
 
 export class StyleMinimalPeople {
   readonly survivor: Survivor

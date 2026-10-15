@@ -101,6 +101,26 @@ const IMPACT: Record<ImpactSurface, { label: string; prompt: string; target: num
   glass: { label: "glass", target: -19, range: [0.2, 1.4], duration: 1.1, prompt: `A single bullet punching through a window pane: a sharp glass crack and a small spray of shards tinkling down. One impact only. ${NO_SPEECH}` },
 }
 
+/** Melee impact material classes. */
+export type MeleeHitMaterial = "wood" | "metal" | "blade"
+const MELEE_HIT: Record<MeleeHitMaterial, { label: string; prompt: string; maxRange: number }> = {
+  wood: {
+    label: "Wooden club hits flesh",
+    maxRange: 24,
+    prompt: `A single heavy wooden baseball bat hitting flesh and bone: a solid hardwood crack with a wet meaty body thud, close and dry. One impact only. ${NO_SPEECH}`,
+  },
+  metal: {
+    label: "Metal tool hits flesh",
+    maxRange: 26,
+    prompt: `A single heavy steel crowbar or iron pipe striking flesh and bone: a dull metallic ring and crunch with a heavy wet body thud, close and dry. One impact only. ${NO_SPEECH}`,
+  },
+  blade: {
+    label: "Blade slashes flesh",
+    maxRange: 22,
+    prompt: `A single sharp machete or axe cleaving into flesh: a fast wet slicing hack and deep meaty chop, close and dry. One impact only. ${NO_SPEECH}`,
+  },
+}
+
 /** Item classes a pickup sounds like. Ammo and generic items predate this table. */
 export type PickupClass = "tool" | "medical" | "part" | "key" | "battery" | "scrap" | "plank"
 const PICKUP: Record<PickupClass, { label: string; prompt: string; target: number; duration: number }> = {
@@ -188,6 +208,26 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "melee.shove", label: "Shove", group: "melee", bus: "foley", variants: 3, target: -20, gain: 0.85, pitchJitter: 0.06, gainJitter: 0.1,
     maxVoices: 2, range: { ref: 2, max: 14 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.2, 0.9],
     generate: { prompt: `A hard two-handed shove against a person's chest: quick jacket rustle and whoosh, then a dull heavy body thud. ${NO_SPEECH}`, duration: 0.8, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "melee.swing.light", label: "Melee swing (light)", group: "melee", bus: "weapon", variants: 3, target: -22, gain: 0.85, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 3, range: { ref: 2, max: 14 }, wet: 0.06, usedBy: OUTBREAK, durationRange: [0.12, 0.7],
+    generate: { prompt: `A single fast melee weapon swing cutting through the air: a sharp crisp whoosh and jacket sleeve snap, close and dry. One swing only. ${NO_SPEECH}`, duration: 0.6, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "melee.swing.heavy", label: "Melee swing (heavy)", group: "melee", bus: "weapon", variants: 3, target: -20, gain: 0.9, pitchJitter: 0.05, gainJitter: 0.1,
+    maxVoices: 3, range: { ref: 2, max: 16 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.18, 0.9],
+    generate: { prompt: `A single heavy two-handed baseball bat or axe swung hard through the air: a deep forceful low whoosh with a fabric rustle, close and dry. One swing only. ${NO_SPEECH}`, duration: 0.8, candidates: 7, influence: 0.55 },
+  },
+  ...(Object.keys(MELEE_HIT) as MeleeHitMaterial[]).map((mat): SfxSpec => ({
+    id: `melee.hit.${mat}`, label: MELEE_HIT[mat].label, group: "melee", bus: "impact", variants: 3, target: -18, gain: 0.95,
+    pitchJitter: 0.06, gainJitter: 0.1, maxVoices: 3, range: { ref: 2.5, max: MELEE_HIT[mat].maxRange }, wet: 0.12, usedBy: OUTBREAK, durationRange: [0.1, 0.95],
+    generate: { prompt: MELEE_HIT[mat].prompt, duration: 0.8, candidates: 5, influence: 0.55 },
+  })),
+  {
+    id: "melee.break", label: "Melee weapon breaks", group: "melee", bus: "impact", variants: 2, target: -18, gain: 0.95, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 2.5, max: 22 }, wet: 0.14, usedBy: OUTBREAK, durationRange: [0.25, 1.3],
+    generate: { prompt: `A worn wooden and metal melee weapon snapping and breaking apart on impact: a sharp splintering wood crack and broken metal pieces clattering to the floor, close and dry. ${NO_SPEECH}`, duration: 1.1, candidates: 4, influence: 0.55 },
   },
 
   // Footsteps, sliced from recordings of steady walking and running

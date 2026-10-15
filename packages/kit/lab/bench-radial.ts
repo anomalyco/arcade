@@ -130,9 +130,9 @@ const metrics = async () => {
   return { task: get("TaskDuration"), script: get("ScriptDuration"), layout: get("LayoutDuration"), style: get("RecalcStyleDuration") }
 }
 const adapter = await page.evaluate(() => (window as any).lab.adapter.architecture)
-await page.getByRole("button", { name: "Category Effects", exact: true }).click()
+await page.locator(`.lab-drawer-cat[data-cat="effects"]`).click()
 await page.locator('[data-catalog-id="fixture:car-cones"]').click()
-await page.locator("canvas").focus()
+await page.locator(".lab-viewport > canvas").focus()
 await page.keyboard.press("Escape")
 // Centre the cone row so object taps land on the canvas, clear of the viewport HUD.
 await page.evaluate(async () => {
@@ -258,7 +258,7 @@ async function measureRun(record: boolean) {
   await waitSample(++n)
   await closeMenu()
   // Keyboard menu key (M is mute).
-  await page.locator("canvas").focus()
+  await page.locator(".lab-viewport > canvas").focus()
   await page.evaluate(() => (window as any).__expect("open-key", ["keydown"], `!document.querySelector("[data-lab-radial]").hidden`))
   await page.keyboard.press("ContextMenu")
   await waitSample(++n)

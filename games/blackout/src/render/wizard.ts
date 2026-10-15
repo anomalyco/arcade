@@ -110,6 +110,12 @@ export function wizardModels(): PersonModels {
   p.thigh.prism(0, 0, 0.065, 0.075, -0.43, 0.04, 6, DARK, MAT.actor)
   p.shin = new Mesh()
   p.shin.prism(0, 0, 0.07, 0.06, -0.41, 0.02, 6, LEATHER, MAT.actor)
+  p.foot = new Mesh()
+  p.foot.box(-0.072, -0.07, -0.06, 0.125, 0.018, 0.06, LEATHER, MAT.actor)
+  p.foot.box(-0.076, -0.085, -0.064, 0.128, -0.065, 0.064, DARK, MAT.actor)
+  p.toe = new Mesh()
+  p.toe.box(-0.008, 0.015, -0.058, 0.058, 0.08, 0.058, LEATHER, MAT.actor)
+  p.toe.box(-0.006, 0, -0.062, 0.065, 0.02, 0.062, DARK, MAT.actor)
   p.pump = new Mesh()
   p.mag = { rifle: new Mesh(), shotgun: new Mesh(), sniper: new Mesh() }
   p.gun = { rifle: wizardWeapon("rifle"), shotgun: wizardWeapon("shotgun"), sniper: wizardWeapon("sniper") }

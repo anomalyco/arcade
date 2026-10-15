@@ -14,6 +14,13 @@ import {
 } from "@arcade/kit/sim/ledger"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { OutbreakAISubsystem } from "./ai"
+import {
+  isMeleeWeapon,
+  MELEE_WEAPON_IDS,
+  MELEE_WEAPONS,
+  type MeleeDurabilityHandle,
+  type MeleeWeaponId,
+} from "./combat"
 import { dayCycle } from "./day-cycle"
 import {
   INTERACT_RANGE,
@@ -45,8 +52,31 @@ export const PACK_SIZE = 4
 export const ITEMS: readonly ItemDef[] = [
   { id: "flashlight", label: "Flashlight", shortLabel: "LIGHT", tag: "light", slot: 0 },
   { id: "pistol", label: "9mm Pistol", shortLabel: "9MM", tag: "gun", slot: 1, charge: { max: 8, initial: 6, ammo: "ammo" } },
-  { id: "crowbar", label: "Crowbar", shortLabel: "PRY", tag: "tool", slot: 2, activeOnly: true, mods: { shoveDamage: { add: 15 }, shoveStagger: { mul: 1.35 }, shoveRange: { add: 0.25 } } },
-  { id: "spiked-board", label: "Spiked Board", shortLabel: "SPIKE", tag: "tool", slot: 2, activeOnly: true, mods: { shoveDamage: { add: 30 }, shoveStagger: { mul: 1.6 }, shoveRange: { add: 0.35 } } },
+  ...MELEE_WEAPON_IDS.map((id): ItemDef => {
+    const w = MELEE_WEAPONS[id]
+    return {
+      id: w.id,
+      label: w.label,
+      shortLabel: w.shortLabel,
+      tag: "tool",
+      slot: 2,
+      activeOnly: true,
+      charge: { max: w.durability, initial: w.durability },
+      mods: {
+        meleeDamage: { add: w.damage },
+        meleeReach: { add: w.reach },
+        meleeArc: { add: w.arc },
+        meleeSpeed: { add: w.speed },
+        meleeStamina: { add: w.stamina },
+        meleeKnockback: { add: w.knockback },
+        meleeDurability: { add: w.durability },
+        meleeNoise: { add: w.noise },
+        shoveDamage: { add: 5 },
+        shoveStagger: { mul: w.knockback },
+        shoveRange: { add: Number((w.reach - 1.75).toFixed(2)) },
+      },
+    }
+  }),
   { id: "medkit", label: "First Aid Kit", shortLabel: "MED", tag: "tool", slot: 3, stack: 3 },
   { id: "bandage", label: "Bandage", shortLabel: "BANDAGE", tag: "tool", slot: 3, stack: 3 },
   { id: "noisemaker", label: "Noisemaker", shortLabel: "LURE", tag: "tool", slot: 4, stack: 3 },
@@ -240,17 +270,183 @@ type Roll = { item: ItemId; chance: number; min?: number; max?: number }
 /** Loot by building archetype and furniture kind. Unknown archetypes fall back to `house`. */
 export const LOOT_TABLES: Readonly<Record<string, Partial<Record<Prop["kind"], readonly Roll[]>>>> = {
   house: {
-    dresser: [{ item: "ammo", chance: 0.7, min: 3, max: 7 }, { item: "medkit", chance: 0.25 }, { item: "key", chance: 0.22 }, { item: "chem", chance: 0.3 }],
-    nightstand: [{ item: "ammo", chance: 0.5, min: 2, max: 5 }, { item: "noisemaker", chance: 0.3 }, { item: "battery", chance: 0.3 }, { item: "key", chance: 0.15 }],
-    shelf: [{ item: "plank", chance: 0.5, min: 1, max: 2 }, { item: "scrap", chance: 0.4, min: 1, max: 2 }, { item: "crowbar", chance: 0.1 }],
-    counter: [{ item: "chem", chance: 0.55, min: 1, max: 2 }, { item: "scrap", chance: 0.35, min: 1, max: 2 }, { item: "ammo", chance: 0.3, min: 2, max: 4 }],
-    fridge: [{ item: "chem", chance: 0.35 }, { item: "ammo", chance: 0.25, min: 2, max: 4 }],
+    dresser: [
+      { item: "ammo", chance: 0.7, min: 3, max: 7 },
+      { item: "medkit", chance: 0.25 },
+      { item: "key", chance: 0.22 },
+      { item: "chem", chance: 0.3 },
+      { item: "bat", chance: 0.14 },
+    ],
+    nightstand: [
+      { item: "ammo", chance: 0.5, min: 2, max: 5 },
+      { item: "noisemaker", chance: 0.3 },
+      { item: "battery", chance: 0.3 },
+      { item: "key", chance: 0.15 },
+      { item: "knife", chance: 0.14 },
+    ],
+    shelf: [
+      { item: "plank", chance: 0.5, min: 1, max: 2 },
+      { item: "scrap", chance: 0.4, min: 1, max: 2 },
+      { item: "crowbar", chance: 0.12 },
+      { item: "hammer", chance: 0.18 },
+      { item: "pipe", chance: 0.16 },
+      { item: "bat", chance: 0.14 },
+    ],
+    counter: [
+      { item: "chem", chance: 0.55, min: 1, max: 2 },
+      { item: "scrap", chance: 0.35, min: 1, max: 2 },
+      { item: "ammo", chance: 0.3, min: 2, max: 4 },
+      { item: "knife", chance: 0.36 },
+    ],
+    fridge: [
+      { item: "chem", chance: 0.35 },
+      { item: "ammo", chance: 0.25, min: 2, max: 4 },
+    ],
   },
   hardware: {
-    shelf: [{ item: "plank", chance: 0.8, min: 1, max: 3 }, { item: "scrap", chance: 0.7, min: 2, max: 4 }, { item: "battery", chance: 0.35 }, { item: "crowbar", chance: 0.2 }, { item: "ammo", chance: 0.35, min: 2, max: 5 }],
+    shelf: [
+      { item: "plank", chance: 0.8, min: 1, max: 3 },
+      { item: "scrap", chance: 0.7, min: 2, max: 4 },
+      { item: "battery", chance: 0.35 },
+      { item: "crowbar", chance: 0.22 },
+      { item: "hammer", chance: 0.26 },
+      { item: "pipe", chance: 0.22 },
+      { item: "axe", chance: 0.18 },
+      { item: "machete", chance: 0.15 },
+      { item: "fire-axe", chance: 0.1 },
+      { item: "ammo", chance: 0.35, min: 2, max: 5 },
+    ],
+    counter: [
+      { item: "scrap", chance: 0.65, min: 1, max: 3 },
+      { item: "hammer", chance: 0.3 },
+      { item: "crowbar", chance: 0.2 },
+      { item: "battery", chance: 0.3 },
+    ],
   },
   pharmacy: {
-    shelf: [{ item: "chem", chance: 0.8, min: 1, max: 3 }, { item: "medkit", chance: 0.45 }, { item: "battery", chance: 0.25 }, { item: "ammo", chance: 0.4, min: 3, max: 6 }],
+    shelf: [
+      { item: "chem", chance: 0.8, min: 1, max: 3 },
+      { item: "medkit", chance: 0.45 },
+      { item: "battery", chance: 0.25 },
+      { item: "ammo", chance: 0.4, min: 3, max: 6 },
+      { item: "knife", chance: 0.12 },
+    ],
+  },
+  police: {
+    shelf: [
+      { item: "ammo", chance: 0.85, min: 5, max: 10 },
+      { item: "bat", chance: 0.28 },
+      { item: "crowbar", chance: 0.24 },
+      { item: "machete", chance: 0.22 },
+      { item: "fire-axe", chance: 0.18 },
+      { item: "key", chance: 0.3 },
+    ],
+    dresser: [
+      { item: "ammo", chance: 0.75, min: 4, max: 8 },
+      { item: "bat", chance: 0.26 },
+      { item: "machete", chance: 0.22 },
+      { item: "medkit", chance: 0.3 },
+    ],
+    counter: [
+      { item: "ammo", chance: 0.65, min: 3, max: 7 },
+      { item: "key", chance: 0.35 },
+      { item: "bat", chance: 0.22 },
+      { item: "battery", chance: 0.3 },
+    ],
+  },
+  garage: {
+    shelf: [
+      { item: "scrap", chance: 0.75, min: 2, max: 4 },
+      { item: "pipe", chance: 0.34 },
+      { item: "crowbar", chance: 0.28 },
+      { item: "hammer", chance: 0.3 },
+      { item: "axe", chance: 0.18 },
+      { item: "fire-axe", chance: 0.12 },
+    ],
+    counter: [
+      { item: "scrap", chance: 0.6, min: 1, max: 3 },
+      { item: "pipe", chance: 0.28 },
+      { item: "hammer", chance: 0.25 },
+    ],
+  },
+  warehouse: {
+    shelf: [
+      { item: "plank", chance: 0.75, min: 2, max: 4 },
+      { item: "scrap", chance: 0.7, min: 2, max: 4 },
+      { item: "pipe", chance: 0.32 },
+      { item: "crowbar", chance: 0.28 },
+      { item: "hammer", chance: 0.26 },
+      { item: "axe", chance: 0.2 },
+      { item: "fire-axe", chance: 0.14 },
+    ],
+    counter: [
+      { item: "scrap", chance: 0.6, min: 1, max: 3 },
+      { item: "pipe", chance: 0.28 },
+      { item: "crowbar", chance: 0.22 },
+    ],
+  },
+  gas_station: {
+    shelf: [
+      { item: "scrap", chance: 0.65, min: 1, max: 3 },
+      { item: "pipe", chance: 0.3 },
+      { item: "crowbar", chance: 0.26 },
+      { item: "hammer", chance: 0.24 },
+      { item: "battery", chance: 0.35 },
+    ],
+    counter: [
+      { item: "battery", chance: 0.4 },
+      { item: "bat", chance: 0.22 },
+      { item: "knife", chance: 0.2 },
+    ],
+    fridge: [{ item: "chem", chance: 0.4 }],
+  },
+  diner: {
+    counter: [
+      { item: "knife", chance: 0.48 },
+      { item: "machete", chance: 0.18 },
+      { item: "chem", chance: 0.5, min: 1, max: 2 },
+      { item: "scrap", chance: 0.3, min: 1, max: 2 },
+    ],
+    shelf: [
+      { item: "knife", chance: 0.35 },
+      { item: "pipe", chance: 0.2 },
+      { item: "chem", chance: 0.45, min: 1, max: 2 },
+    ],
+    fridge: [{ item: "chem", chance: 0.45, min: 1, max: 2 }],
+  },
+  grocery: {
+    counter: [
+      { item: "knife", chance: 0.42 },
+      { item: "machete", chance: 0.16 },
+      { item: "chem", chance: 0.55, min: 1, max: 2 },
+    ],
+    shelf: [
+      { item: "chem", chance: 0.6, min: 1, max: 3 },
+      { item: "knife", chance: 0.28 },
+      { item: "bat", chance: 0.16 },
+      { item: "battery", chance: 0.3 },
+    ],
+    fridge: [{ item: "chem", chance: 0.45, min: 1, max: 2 }],
+  },
+  cabin: {
+    shelf: [
+      { item: "plank", chance: 0.65, min: 1, max: 3 },
+      { item: "axe", chance: 0.38 },
+      { item: "fire-axe", chance: 0.18 },
+      { item: "machete", chance: 0.24 },
+      { item: "scrap", chance: 0.45, min: 1, max: 2 },
+    ],
+    dresser: [
+      { item: "ammo", chance: 0.6, min: 3, max: 6 },
+      { item: "knife", chance: 0.26 },
+      { item: "axe", chance: 0.2 },
+      { item: "medkit", chance: 0.25 },
+    ],
+    counter: [
+      { item: "knife", chance: 0.38 },
+      { item: "chem", chance: 0.4 },
+      { item: "scrap", chance: 0.35 },
+    ],
   },
 }
 
@@ -299,6 +495,7 @@ export function buildingAt(town: Town, x: number, y: number): Building | undefin
 /** Containers from the town's furniture, stocked by archetype from the town seed. Deterministic. */
 export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootSite[]; stores: StoreSpec[] } {
   const rng = new Rng((town.seed ^ 0x5c3e19a7) >>> 0)
+  const meleeRng = new Rng((town.seed ^ 0x3b9a71d3) >>> 0)
   const sites: LootSite[] = []
   const stores: StoreSpec[] = []
   const backRoomShelves = new Map<string, number[]>()
@@ -307,11 +504,14 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
     const shape = propShape(p)
     if (!shape) return
     const building = buildingAt(town, p.x, p.y)
-    const table = LOOT_TABLES[building?.kind ?? "house"] ?? LOOT_TABLES.house!
+    const tableKey = building?.archetype ?? building?.kind ?? "house"
+    const table = LOOT_TABLES[tableKey] ?? LOOT_TABLES[building?.kind ?? "house"] ?? LOOT_TABLES.house!
     const contents: Stack[] = []
     for (const roll of table[p.kind] ?? []) {
-      const hit = rng.next() < roll.chance * tuning.lootRate
-      const n = (roll.min ?? 1) + rng.int((roll.max ?? roll.min ?? 1) - (roll.min ?? 1) + 1)
+      const useMeleeRng = isMeleeWeapon(roll.item) && roll.item !== "crowbar"
+      const r = useMeleeRng ? meleeRng : rng
+      const hit = r.next() < roll.chance * tuning.lootRate
+      const n = (roll.min ?? 1) + r.int((roll.max ?? roll.min ?? 1) - (roll.min ?? 1) + 1)
       if (hit && contents.length < CONTAINER_SLOTS) contents.push({ item: roll.item, count: n })
     }
     const id = `loot:${i}`
@@ -381,7 +581,10 @@ export type ProgressionActor = InteractActorState & {
   flashlightOutput: number
   battery: number
   batteryDepleted: boolean
-  equippedItem: "pistol" | "hands"
+  equippedItem: "pistol" | "hands" | MeleeWeaponId
+  meleeWeapon?: MeleeWeaponId | null
+  meleeDurability?: number
+  meleeMaxDurability?: number
   magAmmo: number
   magCapacity: number
   reserveAmmo: number
@@ -398,7 +601,7 @@ export type ProgressionSlot = { id: string; index: number; survivor: Progression
 export type WorldContext = { town: Town; ai: OutbreakAISubsystem; time: number; hour: number; slots: readonly ProgressionSlot[] }
 
 /** Selected-item behaviour on the primary button. */
-export type HeldUse = "fire" | "shove" | "heal" | "throw"
+export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw"
 
 const CHANNEL_SLACK = 0.65
 const DROP_RANGE = 1.6
@@ -481,6 +684,18 @@ export class OutbreakProgression {
         const initial: Stack[] = []
         if ((c.ammo ?? 0) > 0) initial.push({ item: "ammo", count: c.ammo! })
         if ((c.planks ?? 0) > 0) initial.push({ item: "plank", count: c.planks! })
+        const bld = c.buildingId ? this.town.buildings.find((b) => b.id === c.buildingId) : buildingAt(this.town, c.x, c.y)
+        const tableKey = bld?.archetype ?? bld?.kind ?? "house"
+        const table = LOOT_TABLES[tableKey] ?? LOOT_TABLES[bld?.kind ?? "house"] ?? LOOT_TABLES.house!
+        const cRng = new Rng((this.town.seed ^ Math.imul(c.propIndex + 31, 0x9e3779b9)) >>> 0)
+        for (const roll of table[c.kind] ?? []) {
+          if (initial.length >= CONTAINER_SLOTS) break
+          if (initial.some((s) => s.item === roll.item)) continue
+          if (cRng.next() < roll.chance * this.tuning.lootRate) {
+            const n = (roll.min ?? 1) + cRng.int((roll.max ?? roll.min ?? 1) - (roll.min ?? 1) + 1)
+            initial.push({ item: roll.item, count: n })
+          }
+        }
         st = this.ledger.createStore({
           id: c.id,
           mode: "slots",
@@ -530,10 +745,50 @@ export class OutbreakProgression {
   /** What the primary button does with the selected item. */
   heldUse(id: string): HeldUse {
     const item = this.selected(id)?.item
-    if (item === "crowbar" || item === "spiked-board") return "shove"
+    if (isMeleeWeapon(item)) return "melee"
     if (item === "medkit" || item === "bandage") return "heal"
     if (item === "noisemaker") return "throw"
     return this.ledger.count(`${id}/hotbar`, "pistol") > 0 ? "fire" : "shove"
+  }
+
+  /** Returns the currently selected melee weapon id, or null when holding pistol/flashlight/consumable/hands. */
+  heldMeleeWeapon(id: string): MeleeWeaponId | null {
+    const item = this.selected(id)?.item
+    return isMeleeWeapon(item) ? item : null
+  }
+
+  /** Handle to inspect and spend durability on the currently held melee weapon in the ledger. */
+  melee(id: string): MeleeDurabilityHandle | null {
+    const l = this.ledger
+    const sel = this.selected(id)
+    if (!sel || !isMeleeWeapon(sel.item)) return null
+    const weaponId = sel.item
+    const def = MELEE_WEAPONS[weaponId]
+    return {
+      weapon: weaponId,
+      get durability() {
+        const cur = l.activeItem(id)
+        return cur?.item === weaponId ? (cur.charge ?? def.durability) : 0
+      },
+      maxDurability: def.durability,
+      spend: (amount: number) => {
+        const stack = l.activeItem(id)
+        if (!stack || stack.item !== weaponId) return { remaining: 0, broke: false, low: false }
+        const before = stack.charge ?? def.durability
+        const lowThresh = Math.max(3, Math.ceil(def.durability * 0.2))
+        const next = Math.max(0, before - amount)
+        if (next <= 0) {
+          const hb = l.store(`${id}/hotbar`)
+          if (hb) {
+            hb.slots[hb.selected] = null
+            hb.rev = ++l.rev
+          }
+          return { remaining: 0, broke: true, low: false }
+        }
+        l.apply({ kind: "setCharge", actor: id, item: weaponId, charge: next })
+        return { remaining: next, broke: false, low: before > lowThresh && next <= lowThresh }
+      },
+    }
   }
 
   /** Contents of the store behind an interaction target, in pick order (digit 1 = index 0). */
@@ -841,6 +1096,7 @@ export class OutbreakProgression {
     if (res.ok) {
       const gained = this.diffCarried(before, this.carried(slot.id))
       if (gained) this.notify(slot, gained, "result", `take:${storeId}`)
+      this.project(slot)
     }
     this.feedback(slot, res.events)
     return res.ok
@@ -877,6 +1133,7 @@ export class OutbreakProgression {
       const hotbar = this.hotbar(slot.id)!
       const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: pick.index }, b: { store: hotbar.id, slot: hotbar.selected } })
       if (!res.ok) this.notify(slot, res.reason === "full" ? "That goes in the pack, not your hands" : "Empty pack slot", "info", "pack")
+      else this.project(slot)
       return
     }
     if (pick.mode === "craft") {
@@ -1092,7 +1349,18 @@ export class OutbreakProgression {
     p.magCapacity = pistol.capacity || 8
     p.reserveAmmo = pistol.reserve
     p.planks = this.ledger.count(`${slot.id}/belt`, "plank")
-    p.equippedItem = this.heldUse(slot.id) === "fire" && this.selected(slot.id)?.item !== "flashlight" ? "pistol" : this.selected(slot.id)?.item === "flashlight" && pistol.capacity ? "pistol" : "hands"
+    const sel = this.selected(slot.id)
+    const wpn = sel && isMeleeWeapon(sel.item) ? sel.item : null
+    p.meleeWeapon = wpn
+    p.meleeDurability = wpn ? (sel!.charge ?? MELEE_WEAPONS[wpn].durability) : 0
+    p.meleeMaxDurability = wpn ? MELEE_WEAPONS[wpn].durability : 0
+    p.equippedItem = wpn
+      ? wpn
+      : this.heldUse(slot.id) === "fire" && sel?.item !== "flashlight"
+        ? "pistol"
+        : sel?.item === "flashlight" && pistol.capacity
+          ? "pistol"
+          : "hands"
     const ch = this.ledger.channel(slot.id)
     if (!ch) p.channel = null
     else {

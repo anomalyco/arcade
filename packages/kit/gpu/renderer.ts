@@ -249,6 +249,7 @@ export class Renderer {
   private velocityMSAA: GPUTexture | null = null
   private velocityView!: GPUTextureView
   private velocityMSAAView!: GPUTextureView
+  private velocityAttachment: GPURenderPassColorAttachment | null = null
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
   private sharedBlur: MotionBlur | null = null
@@ -332,7 +333,14 @@ export class Renderer {
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
-    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: true })
+    this.targets = new SceneTargets(d, {
+      hdrFormat: HDR,
+      depthFormat: DEPTH,
+      samples: SAMPLES,
+      depthTextureBinding: true,
+      clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 },
+      depthClearValue: DEPTH_CFG.clearValue,
+    })
     this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: HDR, upTexelSource: "target" })
 
     const S = GPUShaderStage
@@ -369,6 +377,9 @@ export class Renderer {
       frameLayout: sceneLayout,
       color: HDR,
       depth: DEPTH,
+      depthMode: DEPTH_CFG.mode,
+      depthCompare: DEPTH_CFG.compare,
+      depthClearValue: DEPTH_CFG.clearValue,
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
@@ -522,7 +533,6 @@ export class Renderer {
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
     const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
-    const baselineScene = shaders ? scene : this.module(sceneShader(false), "scene baseline")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
@@ -538,41 +548,33 @@ export class Renderer {
     this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", shaders ? "fsSolid" : "fs")
     this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", shaders ? "fsSolid" : "fs")
     this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
-    // Keep the all-off shader's arithmetic identical, including compiler rounding.
-    this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-    this.baselinePipes.levelCut = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-    this.baselinePipes.glass = pipe(baselineScene, "vsStatic", [meshLayout], premul, false, "none", "fs")
-    this.baselinePipes.inst = pipe(baselineScene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
-    this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
+    if (shaders) {
+      this.baselinePipes.level = this.pipes.level
+      this.baselinePipes.levelCut = this.pipes.levelCut
+      this.baselinePipes.glass = this.pipes.glass
+      this.baselinePipes.inst = this.pipes.inst
+      this.baselinePipes.instAlpha = this.pipes.instAlpha
+    } else {
+      // Keep the all-off shader's arithmetic identical, including compiler rounding.
+      const baselineScene = this.module(sceneShader(false), "scene baseline")
+      this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
+      this.baselinePipes.levelCut = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
+      this.baselinePipes.glass = pipe(baselineScene, "vsStatic", [meshLayout], premul, false, "none", "fs")
+      this.baselinePipes.inst = pipe(baselineScene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
+      this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
+    }
     this.pipes.spriteAlpha = pipe(sprite, "vs", [spriteLayout], premul, false, "none")
     this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false, "none")
-    const moving = this.module(sceneShader(true, true), "scene motion")
-    const movingSprite = this.module(spriteShader(true), "sprite motion")
-    const oldLayout: GPUVertexBufferLayout = { ...instLayout, attributes: [...instLayout.attributes].map(a => ({ ...a, shaderLocation: a.shaderLocation + 3 })) }
-    const oldSprite: GPUVertexBufferLayout = { arrayStride: SPRITE_FLOATS * 4, stepMode: "instance", attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }] }
-    this.motionPipes.level = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid", true)
-    this.motionPipes.levelCut = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fs", true)
-    this.motionPipes.glass = pipe(moving, "vsStatic", [meshLayout], premul, false, "none", "fs", true)
-    this.motionPipes.inst = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], undefined, true, "none", "fs", true)
-    this.motionPipes.instAlpha = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], premul, false, "none", "fs", true)
-    this.motionPipes.spriteAlpha = pipe(movingSprite, "vs", [spriteLayout, oldSprite], premul, false, "none", "fs", true)
-    this.motionPipes.spriteAdd = pipe(movingSprite, "vs", [spriteLayout, oldSprite], additive, false, "none", "fs", true)
 
     const post = this.module(shaders?.post ?? postShader(), "post")
-    const baselinePost = this.module(shaders?.post ?? postShader(false), "post baseline")
+    const baselinePost = shaders?.post ? post : this.module(postShader(false), "post baseline")
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
     const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState, baseline = false) =>
       d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: baseline ? baselinePost : post, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
     this.pipes.down = postPipe("down", HDR)
     this.pipes.up = postPipe("up", HDR, additive)
     this.pipes.composite = postPipe("composite", format)
-    this.baselinePipes.composite = postPipe("composite", format, undefined, true)
-    const motionPost = this.module(postShader(true, true), "post motion")
-    this.motionPipes.composite = d.createRenderPipeline({
-      layout: d.createPipelineLayout({ bindGroupLayouts: [this.motionPostLayout] }),
-      vertex: { module: motionPost, entryPoint: "vs" },
-      fragment: { module: motionPost, entryPoint: "composite", targets: [{ format }] },
-    })
+    this.baselinePipes.composite = shaders?.post ? this.pipes.composite : postPipe("composite", format, undefined, true)
     this.texturesReady = this.initMaterialTextures()
   }
 
@@ -848,6 +850,7 @@ export class Renderer {
     this.velocity?.destroy()
     this.velocityMSAA?.destroy()
     this.velocity = this.velocityMSAA = null
+    this.velocityAttachment = null
     this.smokeRenderer.resize(w, h, this.targets.depthView)
     this.bloomPyramid.resize({
       hdr: this.targets.hdr,
@@ -867,13 +870,107 @@ export class Renderer {
     this.device.queue.writeTexture({ texture: this.visibilityTex }, data, { bytesPerRow: w }, [w, h])
   }
 
+  private ensureMotionPipes(): void {
+    if (this.motionPipes.level) return
+    const d = this.device
+    const meshLayout: GPUVertexBufferLayout = {
+      arrayStride: VERT_BYTES,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x3" },
+        { shaderLocation: 1, offset: 12, format: "snorm8x4" },
+        { shaderLocation: 2, offset: 16, format: "unorm8x4" },
+        { shaderLocation: 3, offset: 20, format: "float16x2" },
+      ],
+    }
+    const instLayout: GPUVertexBufferLayout = {
+      arrayStride: INST_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [
+        { shaderLocation: 5, offset: 0, format: "float32x4" },
+        { shaderLocation: 6, offset: 16, format: "float32x4" },
+        { shaderLocation: 7, offset: 32, format: "float32x4" },
+      ],
+    }
+    const spriteLayout: GPUVertexBufferLayout = {
+      arrayStride: SPRITE_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x4" },
+        { shaderLocation: 1, offset: 16, format: "float32x4" },
+        { shaderLocation: 2, offset: 32, format: "float32x4" },
+      ],
+    }
+    const premul: GPUBlendState = {
+      color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+      alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+    }
+    const additive: GPUBlendState = {
+      color: { srcFactor: "one", dstFactor: "one" },
+      alpha: { srcFactor: "one", dstFactor: "one" },
+    }
+    const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
+    const pipe = (
+      module: GPUShaderModule,
+      vs: string,
+      buffers: GPUVertexBufferLayout[],
+      blend?: GPUBlendState,
+      depthWrite = true,
+      cullMode: GPUCullMode = "back",
+      fs = "fs",
+    ) =>
+      d.createRenderPipeline({
+        layout,
+        vertex: { module, entryPoint: vs, buffers },
+        fragment: {
+          module,
+          entryPoint: fs,
+          targets: [{ format: HDR, blend }, { format: HDR, blend: blend ? premul : undefined }],
+        },
+        primitive: { topology: "triangle-list", cullMode },
+        depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
+        multisample: { count: SAMPLES },
+      })
+    const moving = this.module(sceneShader(true, true), "scene motion")
+    const movingSprite = this.module(spriteShader(true), "sprite motion")
+    const oldLayout: GPUVertexBufferLayout = {
+      ...instLayout,
+      attributes: [...instLayout.attributes].map((a) => ({ ...a, shaderLocation: a.shaderLocation + 3 })),
+    }
+    const oldSprite: GPUVertexBufferLayout = {
+      arrayStride: SPRITE_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }],
+    }
+    this.motionPipes.level = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
+    this.motionPipes.levelCut = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fs")
+    this.motionPipes.glass = pipe(moving, "vsStatic", [meshLayout], premul, false, "none", "fs")
+    this.motionPipes.inst = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], undefined, true, "none", "fs")
+    this.motionPipes.instAlpha = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], premul, false, "none", "fs")
+    this.motionPipes.spriteAlpha = pipe(movingSprite, "vs", [spriteLayout, oldSprite], premul, false, "none", "fs")
+    this.motionPipes.spriteAdd = pipe(movingSprite, "vs", [spriteLayout, oldSprite], additive, false, "none", "fs")
+    const motionPost = this.module(postShader(true, true), "post motion")
+    this.motionPipes.composite = d.createRenderPipeline({
+      layout: d.createPipelineLayout({ bindGroupLayouts: [this.motionPostLayout] }),
+      vertex: { module: motionPost, entryPoint: "vs" },
+      fragment: { module: motionPost, entryPoint: "composite", targets: [{ format: this.format }] },
+    })
+  }
+
   private prepareMotion(): void {
+    this.ensureMotionPipes()
     if (this.velocity) return
     const d = this.device, size = [this.width, this.height]
     this.velocity = d.createTexture({ size, format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
     this.velocityMSAA = d.createTexture({ size, format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.velocityView = this.velocity.createView()
     this.velocityMSAAView = this.velocityMSAA.createView()
+    this.velocityAttachment = {
+      view: this.velocityMSAAView,
+      resolveTarget: this.velocityView,
+      clearValue: { r: 0, g: 0, b: 1000, a: 1 },
+      loadOp: "clear",
+      storeOp: "discard",
+    }
     this.motionComposite = d.createBindGroup({ layout: this.motionPostLayout, entries: [
       { binding: 0, resource: this.targets.hdrView }, { binding: 1, resource: this.sampler },
       { binding: 2, resource: { buffer: this.bloomPyramid.downParams[0]! } },
@@ -1220,11 +1317,13 @@ export class Renderer {
     }
 
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
-    const pass = enc.beginRenderPass({
-      timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
-      colorAttachments: [{ view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: { r: 0.004, g: 0.006, b: 0.014, a: 1 }, loadOp: "clear", storeOp: "discard" }, ...(motion ? [{ view: this.velocityMSAAView, resolveTarget: this.velocityView, clearValue: { r: 0, g: 0, b: 1000, a: 1 }, loadOp: "clear" as const, storeOp: "discard" as const }] : [])],
-      depthStencilAttachment: { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: hasSmoke || runSharedBlur ? "store" : "discard" },
-    })
+    const pass = enc.beginRenderPass(
+      this.targets.configureMainPass({
+        storeDepth: hasSmoke || runSharedBlur,
+        timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
+        extraColorAttachment: motion ? this.velocityAttachment : null,
+      }),
+    )
     pass.setBindGroup(0, this.sceneGroup)
     this.passes.drawSlot("sky", pass)
     if (this.level?.count) {
