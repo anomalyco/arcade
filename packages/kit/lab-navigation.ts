@@ -15,6 +15,8 @@ export type LabControl = {
   visible?: (settings: Readonly<LabSettings>) => boolean
   change?: (value: LabValue) => void
   enabled?: (settings: Readonly<LabSettings>) => boolean
+  /** True while the value differs across a multi-selection: the row reads "—" until edited, and the edit sets them all. */
+  mixed?: (settings: Readonly<LabSettings>) => boolean
 } & (
   | { type?: "range"; min: number; max: number; step?: number }
   | { type?: "select"; options: readonly { value: number | string; label: string }[] }

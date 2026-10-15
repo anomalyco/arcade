@@ -103,6 +103,11 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
     return valid
   }
 
+  /** Whether the selected lights disagree on a value (Details shows "—" and an edit sets them all). */
+  function selectedLightsDiffer(read:(l:(typeof dropped)[number])=>number){
+    const lights=dropped.filter(l=>selectedIds.includes(l.id))
+    return lights.length>1&&lights.some(l=>read(l)!==read(lights[0]!))
+  }
   function syncSelectedFields(){
     const sel=selectedObjects()
     if(!sel.length){selectedId=null;section.selectedObjectId=undefined;section.selectedObjectIds=[];return}
@@ -518,10 +523,10 @@ export function createSpawn(context:LabContext,adapters:SpawnAdapters){
       for(const o of sel)moveObjectSilent(o.id,o.x,o.z,(o.yaw??0)+dyaw)
       syncSelectedFields();context.sync()
     }},
-    {key:"selectedPower",label:"Light power",group:"Light",derived:true,type:"range",min:0.2,max:10,step:0.2,visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+    {key:"selectedPower",label:"Light power",group:"Light",derived:true,type:"range",min:0.2,max:10,step:0.2,visible:()=>selectedIds.some(id=>id.startsWith("light:")),mixed:()=>selectedLightsDiffer(l=>l.light.power),change:v=>{
       for(const d of dropped)if(selectedIds.includes(d.id))d.light.power=Number(v)
     }},
-    {key:"selectedRadius",label:"Light radius",group:"Light",derived:true,type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>selectedIds.some(id=>id.startsWith("light:")),change:v=>{
+    {key:"selectedRadius",label:"Light radius",group:"Light",derived:true,type:"range",min:2,max:28,step:0.5,unit:"m",visible:()=>selectedIds.some(id=>id.startsWith("light:")),mixed:()=>selectedLightsDiffer(l=>l.light.radius),change:v=>{
       for(const d of dropped)if(selectedIds.includes(d.id))d.light.radius=Number(v)
     }},
     {key:"duplicateSelected",label:"Duplicate selected",group:"Transform",type:"action",visible:()=>selectedIds.some(id=>id!=="character:active"),run:()=>{

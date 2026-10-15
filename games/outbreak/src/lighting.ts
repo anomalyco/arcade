@@ -3,6 +3,7 @@ import { VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
+import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
 export const STREET_LAMP_POSTS = [
@@ -224,7 +225,9 @@ export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
 export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
 /** Volumetric beam block: inverse view-projection (16) then two vec4f. */
 export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 164
+/** Rugs and themed interiors (see `interiors/wgsl.ts`) start after the beam block. */
+export const OUTBREAK_INTERIOR_UNIFORM_OFFSET = 164
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_INTERIOR_UNIFORM_OFFSET + INTERIOR_UNIFORM_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
@@ -308,6 +311,7 @@ export type OutbreakLightingFrameState = {
   windowOrigin?: readonly [number, number]
   isStreamWindow?: boolean
   windowBuildings?: readonly Building[]
+  chunkFadeAlpha?: number
 }
 
 /**
@@ -432,7 +436,7 @@ export function packOutbreakLightingUniforms(
   // u17: bounce height (a ground pool sits low, a wall hotspot at chest height)
   out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
-  out[N + 26] = 0
+  out[N + 26] = state.chunkFadeAlpha ?? 0
   out[N + 27] = 0
   // Volumetric beam: inverse view-projection, then density, dust, glare, samples; air boost, indoors, ground, reserved
   const B = OUTBREAK_BEAM_UNIFORM_OFFSET
@@ -975,7 +979,7 @@ struct OutbreakLightingUniforms {
   u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
   invViewProj: mat4x4f,
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
-  u19: vec4f, // weatherAir, indoors, groundY, beamReach
+  u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 `

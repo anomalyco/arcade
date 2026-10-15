@@ -10,6 +10,7 @@ import { createFoliage } from "./foliage"
 import { createLighting } from "./lighting"
 import { createLooksSection } from "./looks"
 import { createMaterials } from "./materials"
+import { createRugsSection } from "./rugs"
 import { createPhysics } from "./physics"
 import { createWeatherSection } from "./weather"
 import type { LabContext, LabEvent, LabSection, MaterialAdapter, PhysicsAdapter, SectionFactory } from "./types"
@@ -211,7 +212,7 @@ export async function lab(options:LabOptions) {
   }
   spawn=options.spawn?createSpawn(context,options.spawn(context)):undefined
   const effects=createEffects(context),looks=createLooksSection(context),weather=createWeatherSection(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
-  const sections=[effects.section,weather.section,createLighting(context),looks.section,createMaterials(context,options.materials??[]),createFoliage(context),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
+  const sections=[effects.section,weather.section,createLighting(context),looks.section,createMaterials(context,options.materials??[]),createRugsSection(context),createFoliage(context),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
   const ids=new Set<string>()
   for(const section of sections){if(ids.has(section.id))throw new Error(`Duplicate Lab section: ${section.id}`);ids.add(section.id)}
   for(const s of sections)sectionSelect.add(new Option(s.label,s.id))
@@ -272,6 +273,8 @@ export async function lab(options:LabOptions) {
     workbench?.onSectionChanged()
     for(const listener of sectionListeners)listener(id)
   }
+  // knobs' Undo and Redo follow the workbench's stack, which exists only once the workbench does.
+  const historyListeners=new Set<()=>void>()
   panel=new LabPanel(settings,[],new URLSearchParams(),()=>input.release(),{
     open:true,
     presets:false,
@@ -279,7 +282,13 @@ export async function lab(options:LabOptions) {
     capture:"focus",
     layout:"inspector",
     variants:()=>`arcade-lab-${settings.section}`,
-    history:{undo:()=>workbench?.undo(),redo:()=>workbench?.redo()},
+    history:{
+      undo:()=>workbench?.undo(),
+      redo:()=>workbench?.redo(),
+      canUndo:()=>Boolean(workbench?.canUndo()),
+      canRedo:()=>Boolean(workbench?.canRedo()),
+      subscribe:listener=>{historyListeners.add(listener);return()=>{historyListeners.delete(listener)}},
+    },
     onTransaction:(label,before)=>workbench?.onPanelTransaction(label,before as LabSettings),
     onFocusChange:focused=>workbench?.onPanelFocusChange(focused),
     onPin:(control,group)=>workbench?.togglePin(control,group),
@@ -381,6 +390,7 @@ export async function lab(options:LabOptions) {
     looks,
     effects,
   })
+  workbench.onHistoryChange(()=>{for(const listener of historyListeners)listener()})
 
   select("effects")
   const resolveDeepSection=()=>{
@@ -430,6 +440,8 @@ export async function lab(options:LabOptions) {
     select,
     render,
     advance,
+    /** True while the active section is still loading asynchronous results (Worker bakes); captures wait on it. */
+    busy:()=>Boolean(active?.busy?.()),
     attachPhysics:physics.attach,
     /** Sections a host loads after start-up; ids already present are skipped. */
     addSections,

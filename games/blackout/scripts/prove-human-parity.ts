@@ -16,7 +16,10 @@ const EXPECTED_HASHES = {
   // toe-joints pass: ball-of-foot (MTP) toe joint (RIG.foot = 0.125 m, RIG.toe = 0.065 m) on HumanBody.toe,
   // heel-strike -> foot-flat -> heel-rise -> toe-off roll in stance, toe dorsiflexion in push-off, swing toe
   // clearance, and lengthened walking stride reach (cadence 145 -> 127 steps/min at 1.4 m/s without lowering the pelvis).
-  new: "4500970e7c43082a069f90b5fe917f06a409b2ae168b0c1352f866b69859753c",
+  // Then -> cc9073ae1c60ea1d918adf4d411f88b948a0ae092fcdaf725e7a12f82d51caec for the strafe pass: this run circles
+  // while aiming, so the soldier now turns its hips toward travel, side-steps without crossing or crosses over at run
+  // speed, flips to backpedal without a hip jump, and tracks its knees over its boots.
+  new: "cc9073ae1c60ea1d918adf4d411f88b948a0ae092fcdaf725e7a12f82d51caec",
 } as const
 
 type Api = {

@@ -59,7 +59,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
       let topCatch = max(0.22, dot(n, moonRimDir));
       let surfBoost = select(select(0.48, 0.24, interior(o.world.xz)), 1.38, mat == 21 || mat == 22);
-      col += o.color * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
+      col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
     }`
         : "",
       includePainterly

@@ -72,7 +72,7 @@ const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 const SLOTS = MAX_LIGHTS
 
 type Buf = { buf: GPUBuffer; count: number; cap: number }
-type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" }
+type Chunk = { first: number; count: number; box: readonly [number, number, number, number]; cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" | "fade" }
 
 /** Conservative screen bounds of cuttable geometry. The cutaway is screen-space, not a fixed world-space box. */
 function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, custom = false): boolean {
@@ -220,6 +220,9 @@ export class Renderer {
   private materialTex: GPUTexture
   private materialTexView: GPUTextureView
   private materialSampler: GPUSampler
+  /** Game-owned texture array at binding 15 (Outbreak's baked rugs); a 1×1 placeholder until a game sets one. */
+  private detailView: GPUTextureView
+  private detailSampler: GPUSampler
   private surfaceTexBuf: GPUBuffer
   private surfaceTexData = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS)
   private surfaceTexInput: SurfaceTexUniformInput = { enabled: 1 }
@@ -325,6 +328,9 @@ export class Renderer {
     this.materialTex = fallbackMaterials.texture
     this.materialTexView = fallbackMaterials.view
     this.materialSampler = createMaterialSampler(d)
+    const detail = d.createTexture({ size: [1, 1, 1], format: "rgba8unorm-srgb", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.detailView = detail.createView({ dimension: "2d-array" })
+    this.detailSampler = d.createSampler({ label: "detail-anisotropic", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 16 })
     this.surfaceTexBuf = d.createBuffer({ size: SURFACE_TEX_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     packSurfaceTexUniforms({ ...this.surfaceTexInput, enabled: 0 }, this.surfaceTexData)
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
@@ -369,6 +375,8 @@ export class Renderer {
         { binding: 12, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 13, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 14, visibility: S.FRAGMENT, texture: {} },
+        { binding: 15, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
+        { binding: 16, visibility: S.FRAGMENT, sampler: {} },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -632,8 +640,16 @@ export class Renderer {
         { binding: 12, resource: { buffer: this.surfaceTexBuf } },
         { binding: 13, resource: { buffer: this.customBuf } },
         { binding: 14, resource: this.fieldTex.createView() },
+        { binding: 15, resource: this.detailView },
+        { binding: 16, resource: this.detailSampler },
       ],
     })
+  }
+
+  /** Binds a game's texture array at `@binding(15)` (sampled with the anisotropic clamp sampler at 16). */
+  setDetailTextureArray(view: GPUTextureView): void {
+    this.detailView = view
+    this.makeSceneGroup()
   }
 
   private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
@@ -685,8 +701,8 @@ export class Renderer {
 
   private levelStaging = new Uint8Array(0)
   private glassStaging = new Uint8Array(0)
-  private readonly streamSlotKeys: string[] = ["", "", "", "", "", "", "", "", ""]
-  private readonly streamSlotChunks: Chunk[][] = [[], [], [], [], [], [], [], [], []]
+  private readonly streamSlotKeys: string[] = Array.from({ length: 25 }, () => "")
+  private readonly streamSlotChunks: Chunk[][] = Array.from({ length: 25 }, () => [])
 
   private upload(data: ArrayBuffer, prev: Buf | null, byteLength = data.byteLength): Buf {
     const needed = Math.max(64, byteLength)
@@ -704,13 +720,14 @@ export class Renderer {
   /** Static level: opaque chunks (each culled against the view), translucent glass and haze chunks, and the baked floor map. */
   setLevel(level: LevelData): void {
     this.previousFrame = null
+    const STREAM_SLOT_COUNT = 25
     const STREAM_SLOT_BYTES = 768 * 1024
     const isStreamedSlots =
       level.chunks.length > 0 &&
       level.chunks.every((c) => c.streamSlot !== undefined && c.streamKey !== undefined)
 
     if (isStreamedSlots) {
-      const totalCap = 9 * STREAM_SLOT_BYTES
+      const totalCap = STREAM_SLOT_COUNT * STREAM_SLOT_BYTES
       if (!this.level || this.level.cap < totalCap) {
         this.level?.buf.destroy()
         this.level = {
@@ -720,16 +737,23 @@ export class Renderer {
         }
         this.streamSlotKeys.fill("")
       }
-      const bySlot: LevelData["chunks"][] = [[], [], [], [], [], [], [], [], []]
+      const bySlot: LevelData["chunks"][] = Array.from({ length: STREAM_SLOT_COUNT }, () => [])
       for (let i = 0; i < level.chunks.length; i++) {
         const c = level.chunks[i]!
         bySlot[c.streamSlot!]!.push(c)
       }
       let slotOverflow = false
-      for (let s = 0; s < 9; s++) {
+      for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
         const list = bySlot[s]!
-        const key = list[0]?.streamKey ?? "empty"
-        if (key === this.streamSlotKeys[s]) continue
+        if (list.length === 0) continue
+        const key = list[0]!.streamKey!
+        if (key === this.streamSlotKeys[s]) {
+          const sc = this.streamSlotChunks[s]!
+          for (let i = 0; i < sc.length && i < list.length; i++) {
+            sc[i]!.customCutaway = list[i]!.customCutaway
+          }
+          continue
+        }
         let slotBytes = 0
         for (let i = 0; i < list.length; i++) slotBytes += list[i]!.byteLength ?? list[i]!.data.byteLength
         if (slotBytes > STREAM_SLOT_BYTES) {
@@ -759,7 +783,8 @@ export class Renderer {
       }
       if (!slotOverflow) {
         const mergedChunks: Chunk[] = []
-        for (let s = 0; s < 9; s++) {
+        for (let s = 0; s < STREAM_SLOT_COUNT; s++) {
+          if (bySlot[s]!.length === 0) continue
           const sc = this.streamSlotChunks[s]!
           for (let i = 0; i < sc.length; i++) mergedChunks.push(sc[i]!)
         }
@@ -781,6 +806,9 @@ export class Renderer {
     this.glassChunks = glsChunks
     this.glass = this.upload(glsBuf, this.glass, glsBytes)
     const f = level.floor
+    if (level.geometryOnly && this.floorTex.width === f.w && this.floorTex.height === f.h) {
+      return
+    }
     let rebound = false
     if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
       this.floorTex.destroy()
@@ -1334,10 +1362,11 @@ export class Renderer {
         this.chunks,
         (c) => {
           if (!boxIntersectsRect2D(c.box, f.view)) return null
-          const insideCustom = c.customCutaway ? intersectsCutaway(c.cutBox, f.frame, true) : false
+          const isFade = c.customCutaway === "fade"
+          const insideCustom = c.customCutaway && !isFade ? intersectsCutaway(c.cutBox, f.frame, true) : false
           const peeking = f.frame[26]! > 1.001
           if (c.customCutaway === "outside" && insideCustom && !peeking) return null
-          return c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
+          return isFade ? true : c.customCutaway ? insideCustom && peeking : intersectsCutaway(c.cutBox, f.frame)
         },
         (cut) => pass.setPipeline(cut ? scenePipes.levelCut! : scenePipes.level!),
         false,

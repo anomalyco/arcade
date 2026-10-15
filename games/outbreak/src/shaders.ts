@@ -14,6 +14,7 @@ import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
+import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0.001,
@@ -56,6 +57,7 @@ export const outbreakSceneHooks: SceneHooks = {
   lightMask: "if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }",
   material: " ",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
+    ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
     let inRoom = interior(o.world.xz + n.xz * 0.28);
     let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
       * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
@@ -63,7 +65,7 @@ export const outbreakSceneHooks: SceneHooks = {
     albedo *= vTone;
     outbreakAlbedo = albedo;
     outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
-  fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
+  fragmentStart: `surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w; ${interiorFragmentStartWgsl}`,
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
     let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, OL.veg, OL.vegActors);
@@ -78,6 +80,17 @@ ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   if (OL.win.z > 0.5) {
+    if (id >= 0 && id <= 7) {
+      let b0 = OL.bldRects[id];
+      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { return b0; }
+    }
+    let nBld = i32(OL.win.w);
+    for (var i = 0; i < 8; i++) {
+      if (i >= nBld) { break; }
+      let bi = OL.bldRects[i];
+      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { return bi; }
+    }
+    if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
     return OL.bldRects[clamp(id, 0, 7)];
   }
   switch id {
@@ -126,10 +139,12 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   if (fade >= 0.995) { return true; }
   return bayer4x4(frag) < fade;
 }
-${outbreakFogOfWarDeclarationsWgsl}`,
+${outbreakFogOfWarDeclarationsWgsl}
+${interiorDeclarationsWgsl(outbreakInteriorRefs)}`,
   directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
-      if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
+      if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
+      if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
         let nCut = select(4, i32(OL.win.w), OL.win.z > 0.5);
         for(var i=0;i<nCut;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
@@ -144,6 +159,7 @@ ${outbreakFogOfWarDeclarationsWgsl}`,
   solidCutaway: "",
   surface: buildOutbreakSurfaceWgsl(true),
   lookSurface: buildOutbreakSurfaceWgsl(false),
+  lookBaseColor: "select(o.color, outbreakAlbedo, mat == 25)",
 }
 
 function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string {
@@ -231,7 +247,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         col *= mix(0.56, 1.06, smoothstep(0.26, 0.76, lawnPatch));
       }
     }
-    col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, o.color, inRoom, mat), nightLamps);
+    // Rugs carry uv, not colour, in the vertex colour: use the material albedo as their base.
+    let surfBase = select(o.color, outbreakAlbedo, mat == 25);
+    col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, surfBase, inRoom, mat), nightLamps);
     ${includeLampAirAndActorShadow ? "if (mat != 12) { col *= evalActorGroundShadow(o.world, n, inRoom); }" : ""}
     // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
@@ -241,7 +259,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let flashIrr = outbreakFlashMask;
     outbreakSeen = 1.0;
     if (mat != 12) {
-      col = applyOutbreakFogOfWar(col, o.world, n, o.color, inRoom, mat, w);
+      col = applyOutbreakFogOfWar(col, o.world, n, surfBase, inRoom, mat, w);
     } else {
       // Actors in LOS: Limbo/Noir top-down contour rim + anatomical form shading so zombies stay clearly readable even in dark areas
       let isLiveActor = o.extra.z >= 0.92;

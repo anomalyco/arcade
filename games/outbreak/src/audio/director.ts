@@ -50,7 +50,7 @@ export const DIRECTOR_TUNING = {
 /** Reload parts are scheduled up to this far ahead of the frame that reaches them (s). */
 const RELOAD_LOOKAHEAD = 1 / 50
 const QUIET: ReadonlySet<AIState> = new Set(["wander", "investigate", "search"])
-const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase"])
+const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase", "crawler"])
 const center = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, y: (r[1]! + r[3]!) / 2 })
 
 type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number }
@@ -152,9 +152,19 @@ export class SoundDirector {
             x: h.x,
             y: h.y,
             delay: 0.015,
-            gain: m.heavy ? 1.15 : 1,
+            gain: h.finisher ? 1.3 : m.heavy ? 1.15 : 1,
             source: m.attackerId,
           })
+          if (h.finisher) {
+            emit({
+              id: "melee.shove",
+              x: h.x,
+              y: h.y,
+              delay: 0.03,
+              gain: 1.15,
+              source: m.attackerId,
+            })
+          }
           if (h.killed && !this.deaths.has(h.zombieId)) {
             this.deaths.add(h.zombieId)
             emit({ id: "zombie.death", x: h.x, y: h.y, delay: 0.08, source: "zombie" })
@@ -186,6 +196,9 @@ export class SoundDirector {
       }
       this.deaths.delete(z.id)
       if (!near(z.x, z.y)) continue
+      if (prev !== undefined && prev !== "knockdown" && z.state === "knockdown") {
+        emit({ id: "body.vault", x: z.x, y: z.y, delay: 0.14, gain: 0.85, source: "zombie" })
+      }
       if (prev !== undefined && QUIET.has(prev) && LOUD.has(z.state)) {
         if (t - (this.alertedAt.get(z.id) ?? -Infinity) >= this.tuning.alertPerZombie && t - this.lastAlert >= this.tuning.alertGap) {
           this.alertedAt.set(z.id, t)

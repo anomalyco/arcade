@@ -8,6 +8,7 @@ import {
   type LabSettings,
   type LabValue,
 } from "./lab-navigation"
+import type { HostHistory } from "@arcade/knobs"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
 export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
@@ -26,8 +27,8 @@ export type LabOptions = {
   pill?: boolean
   /** Saved variants are kept per this id (by default per page and section); `false` turns them off. */
   variants?: string | false | (() => string | false)
-  /** The host's undo and redo (the Lab workbench). Without them knobs keeps its own history. */
-  history?: { undo(): void; redo(): void }
+  /** The host's undo stack (the Lab workbench); knobs' Undo and Redo follow it. Without it knobs keeps its own history. */
+  history?: HostHistory
   onTransaction?: (label: string, before: LabSettings, after: LabSettings) => void
   onToggle?: (visible: boolean) => void
   onFocusChange?: (focused: boolean, activeRow?: LabRow) => void
@@ -65,7 +66,7 @@ export class LabPanel implements LabKnobsHost {
   readonly header = document.createElement("header")
   readonly navigation: LabNavigation
   readonly tuning: LabKnobsHost["tuning"] = { seed: 1, last: null }
-  readonly history?: { undo(): void; redo(): void }
+  readonly history?: HostHistory
   readonly pin?: LabKnobsHost["pin"]
   private body = document.createElement("div")
   private pill = document.createElement("button")
@@ -313,7 +314,6 @@ export class LabPanel implements LabKnobsHost {
     this.main = new LabKnobsView(this, this.body, {
       id: `${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
-      floating: this.layoutMode === "floating",
       include: row => (!this.navigation.filter || this.navigation.filter(row)) && !this.claimed(row),
       order: () => this.view.order ?? [],
       keys: this.keys(),
@@ -374,6 +374,7 @@ export class LabPanel implements LabKnobsHost {
     if (!this.visible) this.toggle()
     this.navigation.jump(row)
     this.sync()
+    for (const v of this.views) v.unfold(row.group)
     const view = this.viewFor(key)
     const element = view?.rowElement(key)
     if (!view || !element) return false

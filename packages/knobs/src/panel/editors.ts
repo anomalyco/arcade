@@ -422,7 +422,7 @@ export function springRow(c: RowContext<SpringField>): EditorRow {
     slider.element.classList.add("knobs-sub")
     if (!c.parts) slider.track.setAttribute("aria-label", `${c.display} ${part}`)
     slider.element.ondblclick = (event) => {
-      if (!(event.target as HTMLElement).closest(".knobs-value,.knobs-number"))
+      if (!(event.target as HTMLElement).closest(".knobs-value,.knobs-number,.knobs-accessory"))
         set(slider.field.value)
     }
     tracksEl.append(slider.element)
