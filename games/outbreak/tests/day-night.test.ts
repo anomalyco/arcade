@@ -97,8 +97,9 @@ describe("Outbreak Day -> Dusk -> Noir Night look & threat cycle", () => {
 
   test("dayCycle threat drives zombie AI nocturnal perception and aggression", () => {
     const town = makeTown(7, 7, 0.22)
-    const aiDay = new OutbreakAISubsystem(town, 27.7, 41, { zombieCount: 0, nightMultiplier: 1.5 })
-    const aiNight = new OutbreakAISubsystem(town, 27.7, 41, { zombieCount: 0, nightMultiplier: 1.5 })
+    // openingCalm 0: this compares hours alone, without the first-night opening easing the threat in
+    const aiDay = new OutbreakAISubsystem(town, 27.7, 41, { zombieCount: 0, nightMultiplier: 1.5, openingCalm: 0 })
+    const aiNight = new OutbreakAISubsystem(town, 27.7, 41, { zombieCount: 0, nightMultiplier: 1.5, openingCalm: 0 })
 
     const zDay = aiDay.spawnZombie(town, 33.5, 41, "wander", 0)
     const zNight = aiNight.spawnZombie(town, 33.5, 41, "wander", 0)

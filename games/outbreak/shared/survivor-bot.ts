@@ -357,6 +357,8 @@ export type BotWorldView = {
   readonly town: Town
   readonly time: number
   readonly hour: number
+  /** Nocturnal threat the crowd acts on: the hour's threat, eased in during the opening calm. */
+  readonly threat: number
   readonly slots: readonly SurvivorSlot[]
   readonly zombies: readonly AIAgent[]
   readonly noises: readonly NoiseEvent[]
@@ -369,6 +371,7 @@ export function createBotWorldView(sim: CoopSim): BotWorldView {
     town: sim.town,
     time: sim.time,
     hour: sim.hour,
+    threat: sim.ai.threat,
     slots: sim.slots,
     zombies: sim.ai.agents,
     noises: sim.ai.noiseBus.events,
@@ -1442,7 +1445,8 @@ export class SurvivorBot {
     const p = slot.survivor
     const now = world.time
     const day = dayCycle(world.hour)
-    const isNightOrLateDusk = day.darkness > 0.58 || world.hour >= 18.2 || world.hour < 6.2
+    // Night behaviour follows the threat the crowd acts on, so a dusk start still opens with a calm looting window
+    const isNightOrLateDusk = world.threat > 0.5 && (day.darkness > 0.58 || world.hour >= 18.2 || world.hour < 6.2)
     const hereBuilding = insideBuildingAt(world.town, p.x, p.y)
     const nearestThreat = threats[0]
     const nearestDist = nearestThreat ? nearestThreat.distance : Infinity
@@ -1582,7 +1586,7 @@ export class SurvivorBot {
     // 8. BARRICADE: inside a house with planks when dusk/night or threats outside
     if (planks > 0 && hereBuilding && nearestDist > 2.3) {
       const portal = this.findBarricadeCandidate(world, p.x, p.y, hereBuilding.id)
-      if (portal && (isNightOrLateDusk || world.hour >= 17.2 || threats.length > 0)) {
+      if (portal && (isNightOrLateDusk || (world.hour >= 17.2 && world.threat > 0.35) || threats.length > 0)) {
         candidates.push({
           intent: "barricade",
           score: (isNightOrLateDusk ? 68 : 54) + noise(),
@@ -1598,10 +1602,10 @@ export class SurvivorBot {
     if (isNightOrLateDusk && chaserCount === 0 && nearestDist > 11) {
       const safe = this.pickBestSafehousePoint(world, p.x, p.y)
       const distToSafe = Math.hypot(safe.x - p.x, safe.y - p.y)
-      if (distToSafe > 6.5 && (day.threat > 0.72 || p.health < 75 || planks >= 2)) {
+      if (distToSafe > 6.5 && (world.threat > 0.72 || p.health < 75 || planks >= 2)) {
         candidates.push({
           intent: "retreat-safehouse",
-          score: 58 + day.threat * 10 + noise(),
+          score: 58 + world.threat * 10 + noise(),
           reason: `Retreating to ${safe.label} for night defense`,
           targetX: safe.x,
           targetY: safe.y,
