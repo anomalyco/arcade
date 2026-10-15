@@ -1,6 +1,6 @@
 import type { LabControl } from "../lab-panel"
 import { Rng } from "../sim/rng"
-import { wgslStruct } from "./wgsl"
+import { resolveWgsl, wgslSnippet, wgslStruct } from "./wgsl"
 
 export type LookPresetId =
   | "current"
@@ -1255,13 +1255,9 @@ export function packLookUniforms(
   )
 }
 
-/**
- * Shared WGSL struct and shading/post functions for `LookSettings`.
- * Used by both the Lab "Looks" debug room and Outbreak's opt-in look hook.
- */
-export const lookStructWgsl = /* wgsl */ `
-${LookUniformsStruct.wgsl}
-
+export const lookMathSnippet = wgslSnippet(
+  "lookMath",
+  /* wgsl */ `
 fn lookQuantizeDiffuse(ndlRaw: f32, wrap: f32, bands: f32, softness: f32) -> f32 {
   let wrapped = clamp((ndlRaw + wrap) / (1.0 + max(wrap, 0.0)), 0.0, 1.0);
   if (bands < 1.5) {
@@ -1283,7 +1279,13 @@ fn lookPracticalColor(baseCol: vec3f, warmth: f32) -> vec3f {
   }
   return mix(baseCol, coolTarget * length(baseCol) * 0.65, clamp(-warmth, 0.0, 1.0));
 }
+`,
+  [LookUniformsStruct],
+)
 
+export const lookGradeSnippet = wgslSnippet(
+  "lookGrade",
+  /* wgsl */ `
 fn lookTonemapACES(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0));
 }
@@ -1464,4 +1466,12 @@ fn lookGradeColor(
 
   return clamp(c, vec3f(0.0), vec3f(1.0));
 }
-`
+`,
+  [lookMathSnippet],
+)
+
+/**
+ * Shared WGSL struct and shading/post functions for `LookSettings`.
+ * Used by both the Lab "Looks" debug room and Outbreak's opt-in look hook.
+ */
+export const lookStructWgsl = resolveWgsl(lookGradeSnippet)

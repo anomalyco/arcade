@@ -479,7 +479,7 @@ function gridOf(rects: readonly Rect[]): RectGrid | null {
   if (rects.length < 16) return null
   let g = gridCache.get(rects)
   if (!g) {
-    g = new RectGrid(rects, 8)
+    g = new RectGrid(rects)
     gridCache.set(rects, g)
   }
   return g

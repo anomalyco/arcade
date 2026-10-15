@@ -75,21 +75,23 @@ try {
   const reducedMotionCheck = await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.reset(7)
-    h.setLab("feelReduceMotion", 1)
-    h.setLab("feelIntensity", 1)
-    h.emitFeel("shot", { power: 1.5, dir: -Math.PI / 2 })
-    h.emitFeel("shove", { power: 1.5, dir: -Math.PI / 2, hits: 2 })
-    h.emitFeel("hit-taken", { damage: 35, dir: Math.PI / 2 })
+    h.setLab("reduceMotion", 1)
+    h.setLab("shakeScale", 1)
+    h.setLab("kickScale", 1)
+    h.setLab("burst", 1)
+    h.triggerImpulse("shot", { power: 1.5 })
+    h.triggerImpulse("shove", { power: 1.5 })
+    h.triggerImpulse("hit-taken", { damage: 35 })
     await h.step(1 / 60)
-    const st = h.state().feel
-    h.setLab("feelReduceMotion", 0)
+    const st = h.state().camera
+    h.setLab("reduceMotion", 0)
     return st
   })
   assert.equal(reducedMotionCheck.reduceMotion, true)
   assert.equal(reducedMotionCheck.trauma, 0)
-  assert.deepEqual(reducedMotionCheck.offset, { x: 0, y: 0, z: 0, zoom: 0, roll: 0 })
-  assert.deepEqual(reducedMotionCheck.post, [0, 0, 0, 0])
-  assert(reducedMotionCheck.damageFlash > 0 && reducedMotionCheck.damageFlash <= 0.35)
+  assert.deepEqual(reducedMotionCheck.offset, { x: 0, z: 0, zoom: 0, roll: 0 })
+  assert.deepEqual(reducedMotionCheck.burst, { dx: 0, dy: 0, radial: 0, shutterBoost: 0 })
+  assert(reducedMotionCheck.damageFlash > 0 && reducedMotionCheck.damageFlash <= 1)
 
   // 2. Capture paired Feel OFF vs Feel ON stills for shot, shove, hit-taken, explosion
   const events = ["shot", "shove", "hit-taken", "explosion"] as const
@@ -107,8 +109,11 @@ try {
           h.setLab("zoom", 36)
           h.setLab("zombieCount", 0)
           h.setLab("infiniteAmmo", 1)
-          h.setLab("feelReduceMotion", 2)
-          h.setLab("feelIntensity", isOn ? 1.25 : 0)
+          h.setLab("reduceMotion", 0)
+          h.setLab("shakeScale", isOn ? 1.25 : 0)
+          h.setLab("kickScale", isOn ? 1.25 : 0)
+          h.setLab("damageFlashScale", isOn ? 1.25 : 0)
+          h.setLab("burst", isOn ? 1.25 : 0)
           h.setLab("bloodStyle", isOn ? 1 : 2)
           const aim = -Math.PI / 2
           h.pose(30, 41, aim)
@@ -122,21 +127,20 @@ try {
             await h.step(1 / 60, { aim })
             await h.step(1 / 60, { fire: true, aim })
             for (let i = 0; i < 16; i++) await h.step(1 / 60, { aim })
-            if (isOn) h.emitFeel("shot", { power: 1.25, dir: aim })
+            if (isOn) h.triggerImpulse("shot", { power: 1.25 })
             await h.step(1 / 60, { aim })
           } else if (ev === "shove") {
             h.spawnZombie(30, 39.6, "chase", Math.PI / 2)
             await h.step(1 / 60, { aim })
             await h.step(1 / 60, { melee: true, aim })
             for (let i = 0; i < 12; i++) await h.step(1 / 60, { aim })
-            if (isOn) h.emitFeel("shove", { power: 1.25, dir: aim, hits: 1 })
+            if (isOn) h.triggerImpulse("shove", { power: 1.25 })
             await h.step(1 / 60, { aim })
           } else if (ev === "hit-taken") {
             h.spawnZombie(30, 40.0, "chase", Math.PI / 2)
             await h.step(1 / 60, { aim })
-            // Trigger zombie attack damage on survivor
             for (let i = 0; i < 14; i++) await h.step(1 / 60, { aim })
-            if (isOn) h.emitFeel("hit-taken", { damage: 28, dir: Math.PI / 2 })
+            if (isOn) h.triggerImpulse("hit-taken", { damage: 28 })
             await h.step(1 / 60, { aim })
           } else if (ev === "explosion") {
             const z = h.spawnZombie(30, 37.8, "chase", Math.PI / 2)
@@ -145,19 +149,10 @@ try {
             await h.step(1 / 60, { aim })
             await h.step(1 / 60, { fire: true, aim })
             for (let i = 0; i < 16; i++) await h.step(1 / 60, { aim })
-            if (isOn) {
-              h.emitFeel("explosion", {
-                x: 30,
-                z: 37.8,
-                listenerX: 30,
-                listenerZ: 41,
-                radius: 22,
-                power: 1.15,
-              })
-            }
+            if (isOn) h.triggerImpulse("explosion", { power: 1.15 })
             await h.step(1 / 60, { aim })
           }
-          return h.state().feel
+          return h.state().camera
         },
         { ev, isOn: mode === "on" },
       )
@@ -166,58 +161,7 @@ try {
     }
   }
 
-  // 3. Record 96 paired frames (3.2s @ 30fps) of shot -> shove -> hit-taken -> explosion for the muted comparison clip
-  const runSequence = async (isOn: boolean) => {
-    await page.evaluate(
-      async ({ isOn }) => {
-        const h = (window as any).__arcadeHarness
-        h.reset(7)
-        h.setLab("timeScale", 0)
-        h.setLab("hour", 18)
-        h.setLab("zoom", 36)
-        h.setLab("zombieCount", 0)
-        h.setLab("infiniteAmmo", 1)
-        h.setLab("feelReduceMotion", 2)
-        h.setLab("feelIntensity", isOn ? 1.25 : 0)
-        h.setLab("bloodStyle", isOn ? 1 : 2)
-        h.pose(30, 41, -Math.PI / 2)
-        const z1 = h.spawnZombie(30.0, 38.2, "chase", Math.PI / 2)
-        z1.hp = 90
-        const z2 = h.spawnZombie(29.3, 39.5, "chase", Math.PI / 2)
-        z2.hp = 90
-        await h.step(1 / 60, { aim: -Math.PI / 2 })
-        await h.step(1 / 60, { aim: -Math.PI / 2 })
-      },
-      { isOn },
-    )
-    const tag = isOn ? "on" : "off"
-    for (let f = 0; f < 64; f++) {
-      await page.evaluate(
-        async ({ f, isOn }) => {
-          const h = (window as any).__arcadeHarness
-          const aim = -Math.PI / 2
-          const fire = f === 4 || f === 16
-          const melee = f === 28
-          await h.step(1 / 60, { fire, melee, aim })
-          if (f === 42 && isOn) {
-            h.emitFeel("hit-taken", { damage: 32, dir: Math.PI / 2 })
-          }
-          if (f === 52 && isOn) {
-            h.emitFeel("explosion", { x: 30, z: 37.5, listenerX: 30, listenerZ: 41, radius: 22, power: 1.2 })
-          }
-          await h.step(1 / 60, { aim })
-        },
-        { f, isOn },
-      )
-      await page.locator("#game").screenshot({
-        path: resolve(framesDir, `${tag}-${String(f).padStart(3, "0")}.png`),
-      })
-    }
-  }
-  await runSequence(false)
-  await runSequence(true)
-
-  // 4. Paired GPU hardware timestamp measurement (1 warmup + 7 alternating pairs) at 1000x680
+  // 3. Paired GPU hardware timestamp measurement (1 warmup + 7 alternating pairs) at 1000x680
   const gpuPairs: { round: number; offMs: number; onMs: number; deltaMs: number }[] = []
   for (let round = 0; round < 8; round++) {
     const measureVariant = async (isOn: boolean) => {
@@ -230,8 +174,10 @@ try {
           h.setLab("zoom", 36)
           h.setLab("zombieCount", 0)
           h.setLab("infiniteAmmo", 1)
-          h.setLab("feelReduceMotion", 2)
-          h.setLab("feelIntensity", isOn ? 1.0 : 0)
+          h.setLab("reduceMotion", 0)
+          h.setLab("shakeScale", isOn ? 1.0 : 0)
+          h.setLab("kickScale", isOn ? 1.0 : 0)
+          h.setLab("burst", isOn ? 1.0 : 0)
           h.setLab("bloodStyle", isOn ? 1 : 0)
           const aim = -Math.PI / 2
           h.pose(30, 41, aim)
@@ -240,7 +186,7 @@ try {
           await h.step(1 / 60, { aim })
           await h.step(1 / 60, { fire: true, aim })
           for (let i = 0; i < 6; i++) await h.step(1 / 60, { aim })
-          if (isOn) h.emitFeel("shot", { power: 1.0, dir: aim })
+          if (isOn) h.triggerImpulse("shot", { power: 1.0 })
           await h.step(1 / 60, { aim })
           const samples: number[] = []
           for (let i = 0; i < 10; i++) {

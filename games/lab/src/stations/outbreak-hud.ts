@@ -9,10 +9,10 @@ const style = (value: number) => [set("hudStyle", value), set("calloutPlacement"
 // The same five directions as the board's D-13 prototype; each is one Lab "HUD style" (Backquote › HUD in the page).
 const variants: StationVariant[] = [
   { id: "today", boardOption: "1", label: "Today", note: "Callouts above the head, stamina and battery as bars over the hotbar.", setup: style(0) },
-  { id: "below", boardOption: "2", label: "Below Feet", note: "Default. Callouts under the survivor, rings beside them. Hold Shift to sprint.", setup: style(1) },
+  { id: "below", boardOption: "2", label: "Below Feet", note: "Callouts under the survivor, rings beside them.", setup: style(1) },
   { id: "hades", boardOption: "3", label: "Hades Style", note: "Thin bars under the feet, no summary, dimmed hotbar.", setup: style(2) },
   { id: "zomboid", boardOption: "4", label: "Zomboid Style", note: "Outlined text and an action bar over the head, status icons top right.", setup: style(3) },
-  { id: "diegetic", boardOption: "5", label: "Diegetic", note: "Stamina and health as a ground ring; the hotbar shows only after a slot change.", setup: style(4) },
+  { id: "diegetic", boardOption: "5", label: "Diegetic", note: "Default (Kit's pick). Stamina left and health right on a ring on the ground; hold Shift to sprint.", setup: style(4) },
 ]
 
 export default defineStation({
@@ -24,9 +24,9 @@ export default defineStation({
   prop: "figure",
   color: 0xe0b45a,
   status: "review",
-  statusNote: "D-13 waiting on Kit",
+  statusNote: "D-13 chosen: Diegetic",
   demo: { kind: "page", url: page },
-  defaultVariant: "below",
+  defaultVariant: "diegetic",
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-24", decision: "D-13" },
   metrics: [

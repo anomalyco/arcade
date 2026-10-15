@@ -1,17 +1,9 @@
-import { Camera } from "@arcade/kit/client/camera"
+import { Camera, HitStop, attenuateShake, cameraShakeControls } from "@arcade/kit/client/camera"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
-import {
-  DEFAULT_FEEL_SETTINGS,
-  GameFeel,
-  applyFeelPreset,
-  feelControls,
-  randomizeFeelSettings,
-  type FeelEventKind,
-  type FeelEventPayload,
-} from "@arcade/kit/feel"
+import { MotionBlurBurst, motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import {
   LOOK_PRESETS,
@@ -29,6 +21,7 @@ import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
+import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_WIND_FLOATS, foliageSettings, nearestFoliageActors, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
 import { aiControls, type AIState } from "../shared/ai"
 import { LocalSession, type Command } from "../shared/session"
@@ -56,6 +49,7 @@ import { archSettings } from "./architecture"
 import { WorldClientStreamer } from "./world-streamer"
 import { districtAtChunk, worldToChunk } from "../shared/world"
 import {
+  BEAM_QUALITY_TIERS,
   flashlightBeamControls,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
@@ -87,6 +81,7 @@ import {
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
+import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
 import { zombieControls, zombieProfile } from "./zombie-profile"
 import {
   applyOutbreakPreset,
@@ -258,7 +253,51 @@ async function main() {
   input.onWheel = (delta) => {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
-  const cam = new Camera()
+  const cam = new Camera(settings.view)
+  const hitStop = new HitStop()
+  const motionBurst = new MotionBlurBurst()
+  let shotParity = 0
+  const triggerShot = (aim: number, power = 1) => {
+    shotParity ^= 1
+    cam.add(0.32 * power, aim + Math.PI, 2.2 * power)
+    cam.punch(0.28 * power, (shotParity ? 1 : -1) * 0.008 * power)
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir: aim, directional: 0.006 * power, radial: 0.003 * power, boost: 0.45 * power }, settings.motion.burst)
+    }
+  }
+  const triggerShove = (aim: number, hits = 1) => {
+    const k = hits > 0 ? 1 + Math.min(2, hits - 1) * 0.3 : 0.45
+    cam.add((hits > 0 ? 0.3 : 0.14) * k, aim, (hits > 0 ? 2.4 : 1.0) * k)
+    cam.punch(hits > 0 ? -0.22 : -0.08, 0.009 * k)
+    if (hits > 0) {
+      hitStop.trigger(0.028, 0.08, !cam.isReducedMotion())
+      if (!cam.isReducedMotion()) {
+        motionBurst.add({ dir: aim, directional: 0.005 * k, radial: 0.004 * k, boost: 0.35 * k }, settings.motion.burst)
+      }
+    }
+  }
+  const triggerHitTaken = (atkDx: number, atkDz: number, damage = 25) => {
+    const scale = Math.max(0.35, Math.min(1.6, damage / 20))
+    const dir = Math.atan2(atkDz, atkDx)
+    cam.add(0.52 * scale, dir, 3.2 * scale)
+    cam.punch(0.38 * scale, 0.016 * scale)
+    cam.addFlash(0.65 * scale)
+    hitStop.trigger(0.026, 0.08, !cam.isReducedMotion())
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir, directional: 0.007 * scale, radial: 0.008 * scale, boost: 0.6 * scale }, settings.motion.burst)
+    }
+  }
+  const triggerBlast = (x: number, z: number, listenerX: number, listenerZ: number, radius = 24, power = 1) => {
+    const dist = Math.hypot(x - listenerX, z - listenerZ)
+    const att = attenuateShake(dist, radius) * power
+    if (att <= 0) return
+    const dir = dist > 1e-3 ? Math.atan2(listenerZ - z, listenerX - x) : 0
+    cam.add(0.62 * att, dir, 3.4 * att)
+    cam.punch(0.45 * att, 0.018 * att)
+    if (!cam.isReducedMotion()) {
+      motionBurst.add({ dir, directional: 0.005 * att, radial: 0.009 * att, boost: 0.65 * att }, settings.motion.burst)
+    }
+  }
   const audio = new OutbreakAudio(settings.audio, {
     baseUrl: new URL("./audio-assets/", document.baseURI).href,
     storage: (() => { try { return localStorage } catch { return null } })(),
@@ -271,8 +310,8 @@ async function main() {
   avatar.onFootfall = footfall
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
+  zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
-  const feel = new GameFeel(settings.feel)
   let prevHealth = session.view.player.health
   let prevShoveAnim = session.view.player.shoveAnim
   let wasVaulting = Boolean(session.view.player.vault)
@@ -288,10 +327,10 @@ async function main() {
   const processedVehicleHits = new Set<string>()
   vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
   vehicleRenderer.onCrash = (_v, impact) => {
-    feel.emit("barricade-bash", { power: Math.min(1.5, impact / 6), broke: impact > 8 })
+    cam.impact(impact)
   }
   vehicleRenderer.onBang = () => {
-    feel.emit("barricade-bash", { power: 0.85, broke: false })
+    cam.bump(0.32)
   }
   const updateProfile = () => {
     avatar.profile =
@@ -408,42 +447,43 @@ async function main() {
     {
       key: "bloodStyle",
       label: "Blood splatter",
-      group: "Feel",
+      group: "Combat",
       options: [
         { label: "Wet ballistic + Noir", value: 1 },
         { label: "Legacy flat", value: 2 },
         { label: "Off", value: 0 },
       ],
     },
-    ...feelControls,
+    ...cameraShakeControls,
+    ...motionBlurControls,
     {
       key: "triggerFeelShot",
-      label: "Trigger shot feel",
-      group: "Feel",
+      label: "Trigger shot impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("shot", { power: 1, dir: p.aim })
+        triggerShot(p.aim, 1)
       },
     },
     {
       key: "triggerFeelShove",
-      label: "Trigger shove feel",
-      group: "Feel",
+      label: "Trigger shove impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("shove", { power: 1, dir: p.aim, hits: 1 })
+        triggerShove(p.aim, 1)
       },
     },
     {
       key: "triggerFeelHitTaken",
-      label: "Trigger hit-taken feel",
-      group: "Feel",
+      label: "Trigger hit-taken impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("hit-taken", { damage: 25, dir: p.aim + Math.PI })
+        triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), 25)
         combatFx.emitSurvivorHit(
           p.x,
           p.y,
@@ -457,28 +497,19 @@ async function main() {
     },
     {
       key: "triggerFeelExplosion",
-      label: "Trigger explosion feel",
-      group: "Feel",
+      label: "Trigger blast impulse",
+      group: "Camera",
       type: "action",
       run: () => {
         const p = session.view.player
-        feel.emit("explosion", {
-          x: p.x + Math.cos(p.aim) * 4.5,
-          z: p.y + Math.sin(p.aim) * 4.5,
-          listenerX: p.x,
-          listenerZ: p.y,
-          power: 1,
-        })
-      },
-    },
-    {
-      key: "randomizeFeelTuning",
-      label: "Randomize feel",
-      group: "Feel",
-      type: "action",
-      run: () => {
-        randomizeFeelSettings(settings.feel, settings.feel.feelTuningSeed)
-        lab.refresh()
+        triggerBlast(
+          p.x + Math.cos(p.aim) * 4.5,
+          p.y + Math.sin(p.aim) * 4.5,
+          p.x,
+          p.y,
+          24,
+          1,
+        )
       },
     },
     {
@@ -597,6 +628,8 @@ async function main() {
   const lampPower = new Float32Array(MAX_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const flashlightBounce: [number, number] = [0, 0]
+  const flashlightOrigin: [number, number] = [0, 0]
+  const invViewProj = new Float32Array(16)
   let lastSightX = -1e3
   let lastSightY = -1e3
   let fieldWindowX = 0
@@ -797,10 +830,6 @@ async function main() {
       key === "clutterSeed"
     )
       syncTextures()
-    if (key === "feelPreset") {
-      applyFeelPreset(settings.feel, String(value ?? settings.feel.feelPreset))
-      lab.refresh()
-    }
     if (key === "lookPreset") {
       const pid = resolveLookPresetId(value ?? settings.dayCycle.lookPreset) ?? "current"
       settings.dayCycle.lookPreset = pid
@@ -917,6 +946,7 @@ async function main() {
           aim: { type: "number", description: "Aim angle in radians" },
           flashlight: { type: "boolean", description: "Flashlight on/off" },
           clearZombiesRadius: { type: "number", description: "Clear nearby zombies within radius" },
+          openDoor: { type: "boolean", description: "Open nearby interior doors" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
@@ -1007,46 +1037,39 @@ async function main() {
         },
       },
       {
-        id: "feel.trigger",
-        label: "Trigger Game Feel Event",
-        shortLabel: "Feel",
+        id: "camera.impulse",
+        label: "Trigger Camera & Motion Impulse",
+        shortLabel: "Impulse",
         category: "Scene",
         undoable: false,
         args: {
           kind: {
             type: "string",
             required: true,
-            description: "Feel event kind (shot, shove, hit-confirmed, kill, hit-taken, explosion, barricade-bash, land)",
+            description: "Impulse kind (shot, shove, hit-taken, explosion)",
           },
           power: { type: "number", description: "Multiplier (default: 1)" },
           damage: { type: "number", description: "Damage amount for hit-taken" },
-          distance: { type: "number", description: "Distance in metres for explosion / barricade-bash" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
           const p = session.view.player
-          const kind = String(args?.kind ?? "shot") as FeelEventKind
+          const kind = String(args?.kind ?? "shot")
           const power = typeof args?.power === "number" ? args.power : 1
           const damage = typeof args?.damage === "number" ? args.damage : 25
-          const distance = typeof args?.distance === "number" ? args.distance : undefined
-          feel.emit(kind, {
-            power,
-            dir: p.aim,
-            damage,
-            distance,
-            hits: kind === "shove" ? 1 : undefined,
-            lethal: kind === "kill",
-            broke: kind === "barricade-bash",
-          })
+          if (kind === "shove") triggerShove(p.aim, 1)
+          else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
+          else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
+          else triggerShot(p.aim, power)
           draw(1 / 60)
           await device.queue.onSubmittedWorkDone()
           return {
             kind,
-            trauma: feel.trauma,
-            damageFlash: feel.damageFlash,
-            hitStopRemaining: feel.hitStopRemaining,
-            offset: { ...feel.offset },
-            post: [...feel.post],
+            trauma: cam.trauma,
+            damageFlash: cam.damageFlash,
+            hitStopRemaining: hitStop.remaining,
+            offset: { ...cam.offset },
+            burst: { dx: motionBurst.dx, dy: motionBurst.dy, radial: motionBurst.radial, shutterBoost: motionBurst.shutterBoost },
           }
         },
       },
@@ -1273,7 +1296,9 @@ async function main() {
     combatFx.reset()
     vehicleRenderer.reset()
     processedVehicleHits.clear()
-    feel.reset()
+    cam.resetShake()
+    hitStop.reset()
+    motionBurst.reset()
     prevHealth = session.view.player.health
     prevShoveAnim = session.view.player.shoveAnim
     wasVaulting = Boolean(session.view.player.vault)
@@ -1363,7 +1388,7 @@ async function main() {
     }
     const playerGroundY = supportHeight(town, p.x, p.y)
 
-    // Detect presentation-only game-feel events (never mutates shared simulation or co-op state)
+    // Detect presentation-only combat impulses (never mutates shared simulation or co-op state)
     if (p.shoveAnim > prevShoveAnim + 0.05) {
       let shovedHits = 0
       for (const z of zombies) {
@@ -1371,9 +1396,9 @@ async function main() {
           shovedHits++
         }
       }
-      feel.emit("shove", { power: 1, dir: p.aim, hits: shovedHits })
-      if (shovedHits > 0 && settings.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.bloodStyle === 2
+      triggerShove(p.aim, shovedHits)
+      if (shovedHits > 0 && settings.combat.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.combat.bloodStyle === 2
         combatFx.emitShoveHit(p.x, p.y, p.aim, playerGroundY, shovedHits, Math.floor(time * 1000) + 17)
       }
     }
@@ -1393,9 +1418,9 @@ async function main() {
           atkDz = (p.y - z.y) / d
         }
       }
-      feel.emit("hit-taken", { damage, dx: atkDx, dz: atkDz })
-      if (settings.bloodStyle !== 0) {
-        combatFx.legacyMode = settings.bloodStyle === 2
+      triggerHitTaken(atkDx, atkDz, damage)
+      if (settings.combat.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.combat.bloodStyle === 2
         combatFx.emitSurvivorHit(p.x, p.y, atkDx, atkDz, playerGroundY, damage, Math.floor(time * 1000) + 31)
       }
     }
@@ -1403,7 +1428,8 @@ async function main() {
 
     const nowVaulting = Boolean(p.vault)
     if (wasVaulting && !nowVaulting) {
-      feel.emit("land", { power: 0.75, dir: p.aim })
+      cam.add(0.14, p.aim, 0.7)
+      cam.punch(0.1, 0)
     }
     wasVaulting = nowVaulting
 
@@ -1417,14 +1443,11 @@ async function main() {
         const cx = (d.rect[0] + d.rect[2]) * 0.5
         const cz = (d.rect[1] + d.rect[3]) * 0.5
         const broke = st.barricadePlanks < prevPlanks || (d.open && !wasOpen)
-        feel.emit("barricade-bash", {
-          x: cx,
-          z: cz,
-          listenerX: p.x,
-          listenerZ: p.y,
-          broke,
-          power: broke ? 1.25 : 0.85,
-        })
+        const dist = Math.hypot(cx - p.x, cz - p.y)
+        const att = attenuateShake(dist, 16)
+        if (att > 0) {
+          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
+        }
       }
       prevPortalBashTime.set(d.id, st.lastBashTime)
       prevPortalPlanks.set(d.id, st.barricadePlanks)
@@ -1439,21 +1462,18 @@ async function main() {
         const cx = (win.rect[0] + win.rect[2]) * 0.5
         const cz = (win.rect[1] + win.rect[3]) * 0.5
         const broke = st.barricadePlanks < prevPlanks
-        feel.emit("barricade-bash", {
-          x: cx,
-          z: cz,
-          listenerX: p.x,
-          listenerZ: p.y,
-          broke,
-          power: broke ? 1.25 : 0.85,
-        })
+        const dist = Math.hypot(cx - p.x, cz - p.y)
+        const att = attenuateShake(dist, 16)
+        if (att > 0) {
+          cam.add((broke ? 0.34 : 0.18) * att, Math.atan2(p.y - cz, p.x - cx), (broke ? 1.5 : 0.7) * att)
+        }
       }
       prevPortalBashTime.set(win.id, st.lastBashTime)
       prevPortalPlanks.set(win.id, st.barricadePlanks)
     }
 
-    combatFx.legacyMode = settings.bloodStyle === 2
-    // Emit blood splatter and game feel for vehicle zombie impacts
+    combatFx.legacyMode = settings.combat.bloodStyle === 2
+    // Emit blood splatter and camera impulse for vehicle zombie impacts
     for (const hit of session.sim.vehicles.recentHits) {
       const hitKey = `${hit.vehicleId}:${hit.zombieId}:${hit.time.toFixed(3)}`
       if (processedVehicleHits.has(hitKey)) continue
@@ -1461,7 +1481,7 @@ async function main() {
       if (processedVehicleHits.size > 128) {
         processedVehicleHits.delete(processedVehicleHits.keys().next().value!)
       }
-      if (settings.bloodStyle !== 0) {
+      if (settings.combat.bloodStyle !== 0) {
         combatFx.emitShoveHit(
           hit.x,
           hit.y,
@@ -1472,11 +1492,12 @@ async function main() {
         )
       }
       if (hit.vehicleId === p.vehicleId) {
-        feel.emit(hit.killed ? "kill" : "hit-confirmed", {
-          power: Math.min(1.4, 0.65 + hit.speed * 0.08),
-          dir: Math.atan2(hit.dirY, hit.dirX),
-          lethal: hit.killed,
-        })
+        const pwr = Math.min(1.4, 0.65 + hit.speed * 0.08)
+        const dir = Math.atan2(hit.dirY, hit.dirX)
+        cam.add((hit.killed ? 0.24 : 0.14) * pwr, dir, (hit.killed ? 0.9 : 0.5) * pwr)
+        if (hit.killed) {
+          cam.punch(-0.16 * pwr, 0)
+        }
       }
     }
     let addCount = combatFx.processShots(
@@ -1492,24 +1513,25 @@ async function main() {
         const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
         const isLocalShot = distFromMe < 1.8
         if (isLocalShot) {
-          feel.emit("shot", { power: 1, dir: shot.aim })
+          triggerShot(shot.aim, 1)
           if (shot.hitZombieId !== null) {
-            feel.emit(shot.killed ? "kill" : "hit-confirmed", {
-              power: shot.detachBone ? 1.25 : 1.0,
-              dir: shot.aim,
-              lethal: shot.killed,
-            })
+            const pwr = shot.detachBone ? 1.25 : 1.0
+            cam.add((shot.killed ? 0.22 : 0.12) * pwr, shot.aim, (shot.killed ? 0.85 : 0.45) * pwr)
+            if (shot.killed) {
+              cam.punch(-0.18 * pwr, 0)
+              hitStop.trigger(0.022 * pwr, 0.08, !cam.isReducedMotion())
+            }
           }
         } else if (distFromMe < 16) {
           // Co-op peer shot nearby: subtle distance-attenuated local presentation only
-          const peerAtt = Math.max(0, 1 - distFromMe / 16) * 0.35
-          feel.emit("shot", { power: peerAtt, dir: shot.aim })
+          const peerAtt = attenuateShake(distFromMe, 16) * 0.35
+          triggerShot(shot.aim, peerAtt)
         }
       },
     )
 
-    const feelOffset = feel.step(dt)
-    const vdt = feel.visualDt(dt)
+    const vdt = hitStop.step(dt, !cam.isReducedMotion())
+    motionBurst.step(dt, settings.motion.burstDecay)
     if (peek) {
       lastPeek = peek
       peekBlend = Math.min(1, peekBlend + dt * 6.5)
@@ -1538,7 +1560,6 @@ async function main() {
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
-    cam.applyFeel(feelOffset)
     cam.update(w / h)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
@@ -1609,7 +1630,17 @@ async function main() {
       combinedFog.update(vision, scenery, true)
       renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
     }
-    const frameLightOccluders = lightOccluders
+    // The flashlight also sees actors as round casters, so zombies and other survivors cut its pool and its shaft.
+    let frameLightOccluders = lightOccluders
+    if (p.flashlightOutput > 0.001) {
+      const casters = (x: number, y: number) => {
+        if (frameLightOccluders >= MAX_OCCLUDERS - 4 || frameLightOccluders - lightOccluders >= 16) return
+        if (Math.hypot(x - p.x, y - p.y) > settings.flashlight.flashlightRange) return
+        occluders.set([x, y, 0.27, 0, 1.72, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
+      }
+      for (const z of zombies) if (z.state !== "dead") casters(z.x, z.y)
+      for (const o of coop.otherPositions()) casters(o[0], o[1])
+    }
     const view = cam.groundRect(5.5)
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -1659,41 +1690,7 @@ async function main() {
     ])
     let count = 1
     let flashlightSlot = -1
-    let flashlightHeight = 1.34 + playerGroundY
-    let flashlightAirLimit = 0
-    let flashlightBounceHeight = playerGroundY + 0.3
-    const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
-    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
-    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
-    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
-    const beamIntensity = drivingHeadlights
-      ? settings.vehicle.headlightPower * 0.85
-      : settings.flashlight.flashlightIntensity
-    if (beamOutput > 0.001 && beamIntensity > 0.001) {
-      const fwdOff = drivingHeadlights && localVehicle ? localVehicle.spec.length * 0.48 : 0.25
-      const baseX = drivingHeadlights && localVehicle ? localVehicle.x : p.x
-      const baseY = drivingHeadlights && localVehicle ? localVehicle.y : p.y
-      const fx = baseX + Math.cos(beamAim) * fwdOff
-      const fy = baseY + Math.sin(beamAim) * fwdOff
-      const fh = (drivingHeadlights ? 0.72 : 1.34) + playerGroundY
-      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
-      // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
-      const power = beamOutput * beamIntensity
-      flashlightSlot = count
-      flashlightHeight = fh
-      const wall = raycast(fx, fy, Math.cos(beamAim), Math.sin(beamAim), blockers, beamRange)
-      const hit = Math.min(wall, settings.flashlight.beamPoolDistance)
-      flashlightBounce[0] = fx + Math.cos(beamAim) * Math.max(0.3, hit - 0.15)
-      flashlightBounce[1] = fy + Math.sin(beamAim) * Math.max(0.3, hit - 0.15)
-      flashlightAirLimit = wall
-      flashlightBounceHeight = playerGroundY + (wall < settings.flashlight.beamPoolDistance ? 0.9 : 0.3)
-      lights.set(
-        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, Math.cos(beamAim), Math.sin(beamAim), cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
-        count++ * LIGHT_FLOATS,
-      )
-    }
-    count = coop.flashlights(lights, count, town, settings, lightOccluders)
-
+    // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
     const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
     const survivorBatches = avatar.draw(
@@ -1704,6 +1701,60 @@ async function main() {
       settings.survivor,
     )
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
+    let flashlightHeight = 1.34 + playerGroundY
+    let flashlightAirLimit = 0
+    let flashlightYaw = p.aim
+    let beamReach = 0
+    let flashlightPitch: number | undefined
+    let flashlightBounceHeight = playerGroundY + 0.3
+    const flashRgb = flashlightColor(settings.flashlight.flashlightWarmth)
+    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : settings.flashlight.flashlightRange
+    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
+    const beamIntensity = drivingHeadlights
+      ? settings.vehicle.headlightPower * 0.85
+      : settings.flashlight.flashlightIntensity
+    if (beamOutput > 0.001 && beamIntensity > 0.001) {
+      // Lens and direction from the posed rig on foot, or the vehicle front fascia when driving with headlights on.
+      const beam =
+        drivingHeadlights && localVehicle
+          ? {
+              x: localVehicle.x + Math.cos(beamAim) * (localVehicle.spec.length * 0.48),
+              y: localVehicle.y + Math.sin(beamAim) * (localVehicle.spec.length * 0.48),
+              h: 0.72 + playerGroundY,
+              yaw: beamAim,
+              pitch: -0.18,
+            }
+          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, blockers)
+      const fx = beam.x
+      const fy = beam.y
+      const fh = beam.h
+      const dx = Math.cos(beam.yaw)
+      const dy = Math.sin(beam.yaw)
+      const cosHalf = Math.cos(((drivingHeadlights ? 68 : settings.flashlight.flashlightCone) * Math.PI) / 360)
+      // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
+      const power = beamOutput * beamIntensity
+      flashlightSlot = count
+      flashlightHeight = fh
+      flashlightOrigin[0] = fx
+      flashlightOrigin[1] = fy
+      flashlightYaw = beam.yaw
+      flashlightPitch = beam.pitch
+      const wall = raycast(fx, fy, dx, dy, blockers, beamRange)
+      const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
+      const hit = Math.min(wall, reach, beamRange)
+      flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
+      flashlightBounce[1] = fy + dy * Math.max(0.3, hit - 0.15)
+      flashlightAirLimit = wall
+      beamReach = Math.min(beamRange, wall + 1.5, 13)
+      flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
+      lights.set(
+        [fx, fh, fy, beamRange, flashRgb[0], flashRgb[1], flashRgb[2], power, dx, dy, cosHalf, 2, 0, frameLightOccluders, 0.06, -1],
+        count++ * LIGHT_FLOATS,
+      )
+    }
+    count = coop.flashlights(lights, count, town, settings, lightOccluders, blockers)
+
     const zombieBatches = zombieCrowd.draw(
       zombies,
       vdt,
@@ -1841,6 +1892,12 @@ async function main() {
         flashlightBounce,
         flashlightAirLimit,
         flashlightBounceHeight,
+        flashlightOrigin: flashlightSlot >= 0 ? flashlightOrigin : undefined,
+        flashlightYaw,
+        flashlightPitch,
+        invViewProj: mat4.inverse(cam.viewProj, invViewProj),
+        beamReach,
+        weatherAir: settings.weather.weatherEnabled ? beamWeatherAir({ intensity: settings.weather.weatherIntensity, mist: settings.weather.weatherMist }) : 0,
         frameDt: fieldSnap || Math.hypot(sightX - lastSightX, sightY - lastSightY) > 2.5 ? 0 : dt,
         inInteriorView,
         streetHead: nearestStreetHead(camX, camY, currentIsStreamWindow),
@@ -1944,8 +2001,8 @@ async function main() {
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
     render.splatter =
-      settings.feel.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
-    render.splatterLegacy = settings.feel.bloodStyle === 2
+      settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    render.splatterLegacy = settings.combat.bloodStyle === 2
     render.weather = weatherOut.prepareInput
     render.batches = [
       ...groundWearBatches,
@@ -1962,10 +2019,32 @@ async function main() {
     render.lightCount = count
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
+    const beamTier = BEAM_QUALITY_TIERS[Math.round(settings.flashlight.beamQuality)] ?? BEAM_QUALITY_TIERS[2]
+    render.volume = flashlightSlot >= 0 && beamTier.downscale && (settings.flashlight.beamVisibility > 0.001 || settings.flashlight.beamGlare > 0.001)
+      ? {
+          downscale: beamTier.downscale,
+          rect: beamScreenRect(
+            (x, y, z) => cam.project(x, y, z, 1, 1),
+            [flashlightOrigin[0], flashlightHeight, flashlightOrigin[1]],
+            flashlightYaw,
+            flashlightPitch ?? 0,
+            (settings.flashlight.flashlightCone * Math.PI) / 360,
+            beamReach,
+            playerGroundY,
+          ),
+        }
+      : null
     render.lampCount = town.lamps.length
     render.view = view
-    render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, feel.damageFlash), settings.lighting.exposure]
-    render.feel = feel.post
+    render.grade = [time, settings.view.diagnostic, Math.max(lightningFlash * 0.35, cam.damageFlash), settings.lighting.exposure]
+    render.motionBlur = {
+      settings: {
+        ...settings.motion,
+        enabled: Boolean(settings.motion.enabled) && !cam.isReducedMotion(),
+      },
+      burst: motionBurst,
+      dt,
+    }
     render.look = lookSettings
     render.lookCompare = lookCompare
     renderer.render(render)
@@ -1985,7 +2064,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlight.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
-    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
+    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
     vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId)
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     syncStatus()
@@ -2153,15 +2232,21 @@ async function main() {
         settings: toSharedWeatherSettings(settings.weather),
         state: { ...weatherController.sim.state },
       },
-      feel: {
-        preset: settings.feelPreset,
-        intensity: settings.feelIntensity,
-        reduceMotion: feel.reducedMotion,
-        trauma: feel.trauma,
-        damageFlash: feel.damageFlash,
-        hitStopRemaining: feel.hitStopRemaining,
-        offset: { ...feel.offset },
-        post: [...feel.post],
+      camera: {
+        shakeScale: settings.view.shakeScale,
+        kickScale: settings.view.kickScale,
+        damageFlashScale: settings.view.damageFlashScale,
+        reduceMotion: cam.isReducedMotion(),
+        trauma: cam.trauma,
+        damageFlash: cam.damageFlash,
+        hitStopRemaining: hitStop.remaining,
+        offset: { ...cam.offset },
+        burst: {
+          dx: motionBurst.dx,
+          dy: motionBurst.dy,
+          radial: motionBurst.radial,
+          shutterBoost: motionBurst.shutterBoost,
+        },
       },
       world: {
         mode: resolveWorldMode(settings.world.worldMode),
@@ -2208,14 +2293,25 @@ async function main() {
       })),
       }
     },
-    emitFeel(kind: FeelEventKind, payload?: FeelEventPayload) {
-      feel.emit(kind, payload)
+    triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
+      const p = session.view.player
+      const power = opts?.power ?? 1
+      const damage = opts?.damage ?? 25
+      if (kind === "shove") triggerShove(p.aim, 1)
+      else if (kind === "hit-taken") triggerHitTaken(-Math.cos(p.aim), -Math.sin(p.aim), damage)
+      else if (kind === "explosion") triggerBlast(p.x + Math.cos(p.aim) * 4.5, p.y + Math.sin(p.aim) * 4.5, p.x, p.y, 24, power)
+      else triggerShot(p.aim, power)
       return {
-        trauma: feel.trauma,
-        damageFlash: feel.damageFlash,
-        hitStopRemaining: feel.hitStopRemaining,
-        offset: { ...feel.offset },
-        post: [...feel.post],
+        trauma: cam.trauma,
+        damageFlash: cam.damageFlash,
+        hitStopRemaining: hitStop.remaining,
+        offset: { ...cam.offset },
+        burst: {
+          dx: motionBurst.dx,
+          dy: motionBurst.dy,
+          radial: motionBurst.radial,
+          shutterBoost: motionBurst.shutterBoost,
+        },
       }
     },
     fog: (x: number, y: number) => vision.state(x, y),

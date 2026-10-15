@@ -114,6 +114,10 @@ looks rigid.
 **Turn feet in place.** A planted boot stays within 0.96 rad of the leg heading and pivots at its toe when it
 exceeds that. Idle feet replant when their home error passes 0.24 m.
 
+**Sounds land on touchdown.** `Survivor.onFootfall` and `ZombieCrowdRenderer.onFootfall` fire on the frame a foot
+plants (the zombie hook also passes that foot's drag and the shamble variant), and Outbreak's footsteps play there
+([sfx-library.md](sfx-library.md#outbreak)). A change to when feet plant moves the sounds with them.
+
 ## Foot placement and legs
 
 **Place the landing ahead of the hip by half a stance.** `computeTarget` predicts the footprint from the
