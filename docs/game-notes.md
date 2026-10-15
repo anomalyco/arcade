@@ -1250,6 +1250,14 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Pick the opening hour for the look, then pace with the clock and perception.** Outbreak's first-night pacing
+  started at 16:00 for workbench daylight, which made the first frame the undeveloped day grade (mean luminance 29 → 65,
+  saturation ×3 against the 18:00 Noir start; renderer PRs #69–#84 were pixel-identical at equal hours). It now starts
+  at 17:30 (`shared/pacing.ts`): `openingClock` 0.25× slows the clock until the first 18:00, so nightfall still lands
+  60 s in, and `openingCalm` eases zombie perception and director threat in over 50 s, the curve the 16:00 start gave.
+  `bun scripts/prove-first-night.ts`: first contact 43.85 → 42.05 s solo and 44.32 → 43.75 s in 4p co-op, peak chasers
+  4 and 11 unchanged; the bench now needs the flashlight (0.46 against 0.35). `scripts/hour-capture.ts` diffs two
+  builds at fixed hours.
 - **Report actions above the actor, not in a corner.** Outbreak's `src/hud/` shows every player action as a short
   DOM callout stacked over the survivor's head: progress rings for reload, search and barricade, item pops that float
   up (`+5 9mm`), amber warnings (`Out of ammo`), red damage, and dashed noise tags for actions heard 9 m or more away.

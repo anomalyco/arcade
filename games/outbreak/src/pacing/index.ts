@@ -18,6 +18,9 @@ export const PACING_SCENES = [
 
 export type PacingScene = (typeof PACING_SCENES)[number]
 
+/** Clock when the solo route reaches the Ash workbench (about 35 s in at the default opening clock). */
+const WORKBENCH_HOUR = 17.8
+
 export function stagePacingScene(host: OutbreakHarnessHost, harness: OutbreakHarness, scene: string) {
   const { settings, lookSettings, lab, hud, progressionHost } = host
   const session = host.session()
@@ -41,17 +44,17 @@ export function stagePacingScene(host: OutbreakHarnessHost, harness: OutbreakHar
     settings.ai.directorPacing = 1
     settings.ai.safeRadius = 20
     settings.ai.initialDensity = 0.25
-    settings.ai.startHour = 16.0
-    settings.dayCycle.hour = 16.8
-    session.view.hour = 16.8
+    settings.ai.startHour = DEFAULT_PACING_TUNING.startHour
+    settings.dayCycle.hour = WORKBENCH_HOUR
+    session.view.hour = WORKBENCH_HOUR
     Object.assign(session.ai.config, settings.ai)
     session.ai.resetOpeningPopulation(
       session.view.town,
       session.sim.slots.map((s) => s.survivor),
     )
     stageProgression(progressionHost, "bench")
-    settings.dayCycle.hour = 16.8
-    session.view.hour = 16.8
+    settings.dayCycle.hour = WORKBENCH_HOUR
+    session.view.hour = WORKBENCH_HOUR
   } else if (scene === "first-contact") {
     settings.ai.directorPacing = 1
     settings.ai.safeRadius = 20
@@ -97,9 +100,9 @@ export function stagePacingScene(host: OutbreakHarnessHost, harness: OutbreakHar
     settings.ai.directorPacing = 1
     settings.ai.safeRadius = 20
     settings.ai.initialDensity = 0.25
-    settings.ai.startHour = 16.0
-    settings.dayCycle.hour = 16.0
-    session.view.hour = 16.0
+    settings.ai.startHour = DEFAULT_PACING_TUNING.startHour
+    settings.dayCycle.hour = DEFAULT_PACING_TUNING.startHour
+    session.view.hour = DEFAULT_PACING_TUNING.startHour
     Object.assign(session.ai.config, settings.ai)
     session.ai.resetOpeningPopulation(
       session.view.town,
