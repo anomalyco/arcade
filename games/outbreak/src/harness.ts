@@ -334,8 +334,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         slot.survivor.meleeHeavy = false
         slot.survivor.meleeComboQueued = false
         slot.survivor.meleeComboUntil = 0
-        slot.stamina.stamina = 1
-        slot.stamina.exhausted = false
         slot.survivor.stamina = 1
         slot.survivor.exhausted = false
         progression.project(slot)

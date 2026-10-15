@@ -173,7 +173,6 @@ async function main() {
       settings.ai,
       settings.progression,
       resolveWorldMode(settings.world.worldMode),
-      settings.combat,
     )
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
@@ -401,7 +400,7 @@ async function main() {
           jump: step.jump,
           interactHeld: step.interactHeld,
           fire: idx === 0 ? fireEdge : false,
-          fireHeld: input.fireHeld,
+          fireHeld: input.firing,
           reload: idx === 0 ? reloadEdge : false,
           melee: idx === 0 ? meleeEdge : false,
           barricade: idx === 0 ? barricadeEdge : false,
@@ -547,7 +546,6 @@ async function main() {
       settings.ai,
       settings.progression,
       resolveWorldMode(settings.world.worldMode),
-      settings.combat,
     )
     Object.assign(session.view.player, previous.player)
     session.view.hour = previous.hour

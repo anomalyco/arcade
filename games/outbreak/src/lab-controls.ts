@@ -396,9 +396,6 @@ export function handleOutbreakSettingChanged(
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
   applyProgressionSetting(progressionHost, key, settings.progression)
-  if (routed?.subsystem === "combat") {
-    Object.assign(session.sim.combatTuning, settings.combat)
-  }
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)
