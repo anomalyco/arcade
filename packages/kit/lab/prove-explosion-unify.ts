@@ -13,6 +13,8 @@ mkdirSync(framesRoot, { recursive: true })
 
 // Before = what review R-1 showed (release-6 head before explosion-r1); 457167a is the pre-unification commit.
 const baseline = process.env.EXPLOSION_BASELINE ?? "a035957"
+// Only the pre-unification baseline lacks the shared trigger hooks; any later baseline is driven like the current tree.
+const legacy = (variant: "before" | "after") => (variant === "before" && baseline === "457167a" ? "before" : "after")
 const steps = new Set((process.env.EXPLOSION_STEPS ?? "lab,getaway,blackout,carrier").split(","))
 const baselineFiles = [
   "packages/kit/fx/explosion.ts",
@@ -269,7 +271,7 @@ try {
                 cpuPeakMs: Number(max(cpus).toFixed(4)),
               }
             },
-            { variant: v, mode },
+            { variant: legacy(v), mode },
           )
         }
         if (pair > 0) {
@@ -332,7 +334,7 @@ try {
         } else {
           scene.clutter.trigger("propane", px, pz)
         }
-      }, variant)
+      }, legacy(variant))
       const canvas = page.locator("#view")
       for (let vf = 1; vf <= 240; vf++) {
         if (vf === 121) {
@@ -362,7 +364,7 @@ try {
             } else {
               scene.clutter.explodeCar(px, pz, 0, 0, { x: s0.pose.x, z: s0.pose.z })
             }
-          }, variant)
+          }, legacy(variant))
         }
         await page.evaluate(async () => {
           const b = (window as any).__getawayBench
@@ -500,7 +502,7 @@ try {
             } else {
               f.game.explode({ k: "explode", id: -1, by: "viewer", x: cx, y: cy, kind: "frag", aim: 0 }, "car")
             }
-          }, variant)
+          }, legacy(variant))
         }
         await page.evaluate(async () => {
           const f = (window as any).fxProof
