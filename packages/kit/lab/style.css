@@ -2350,23 +2350,6 @@ button.lab-icon-btn[aria-pressed="true"]:not(.lab-btn) {
   box-shadow: 0 2px 8px #000000aa;
 }
 
-.lab-hud-toast {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  pointer-events: auto;
-}
-
-.lab-toast-btn {
-  padding: 1px 6px;
-  font-size: 9.5px;
-  border-radius: 0;
-  background: #213744;
-  border: 1px solid var(--acc)99;
-  color: #ffffff;
-  cursor: pointer;
-}
-
 /* Variation Grid Overlay (2..9 synchronized tiles inside 1 canvas) */
 .lab-grid-overlay {
   position: absolute;

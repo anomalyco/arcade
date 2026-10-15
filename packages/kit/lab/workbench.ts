@@ -48,6 +48,7 @@ import { captureThumb, createThumbCache, thumbStats } from "./library-thumbs"
 import { createPanels, PANEL_IDS, PANELS_CHANGE_EVENT, type PanelId, type Panels } from "./panels"
 import { createOutliner, OUTLINER_GROUPS, outlinerGroupOf } from "./outliner"
 import { createPalette, type PaletteItem } from "./palette"
+import { notify, setupLabOverlays, tip } from "./overlays"
 import { createWatchList, loadWatchPins, saveWatchPins, watchPinId, type WatchPin } from "./watch"
 import {
   applyArrowCameraKey,
@@ -83,6 +84,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   const { root, canvas, panel, context, sections, globalSettings, selectSection, renderNow, advanceSim, spawn, looks, effects } = opts
   const { stage, input } = context
   const isBench = new URLSearchParams(location.search).has("bench")
+  setupLabOverlays()
 
   let mode: "edit" | "play" = "edit"
   let ejected = false
@@ -111,7 +113,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" | "outliner" = "canvas"
   /** Number keys go here first (stations); the Library categories get them otherwise. */
   let digitHandler: ((n: number, shift: boolean) => boolean) | null = null
-  let toastTimer = 0
 
   const undoStack: HistoryEntry[] = []
   const redoStack: HistoryEntry[] = []
@@ -133,7 +134,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   boxModeBtn.dataset.action = "mode-box"
   boxModeBtn.setAttribute("aria-label", "Box select mode")
   boxModeBtn.setAttribute("aria-pressed", "false")
-  boxModeBtn.title = "Force Marquee Box Select mode (LMB drag on empty already box-selects when objects exist)"
+  tip(boxModeBtn, "Box select: every drag draws a marquee (a drag on empty ground already does when there are objects)")
   boxModeBtn.textContent = "Box"
   editModeBtn.parentElement?.append(boxModeBtn)
 
@@ -143,7 +144,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   scrollModeBtn.dataset.action = "toggle-trackpad-scroll"
   scrollModeBtn.setAttribute("aria-label", "Trackpad two-finger scroll mode")
   scrollModeBtn.setAttribute("aria-pressed", String(getTwoFingerScrollMode() === "pan"))
-  scrollModeBtn.title = "Two-finger trackpad scroll action: Orbit (default) or Pan (Shift+2F always pans, Pinch/Wheel zooms)"
+  tip(scrollModeBtn, "Two-finger trackpad scroll: Orbit or Pan (⇧ two-finger always pans; pinch or wheel zooms)")
   scrollModeBtn.textContent = getTwoFingerScrollMode() === "pan" ? "2F: Pan" : "2F: Orbit"
   editModeBtn.parentElement?.append(scrollModeBtn)
 
@@ -176,26 +177,26 @@ export function createWorkbench(opts: WorkbenchOptions) {
   pinABtn.type = "button"
   pinABtn.className = "lab-btn"
   pinABtn.dataset.action = "compare-pin-a"
-  pinABtn.title = "Pin Baseline Slot A (B)"
+  tip(pinABtn, "Pin the baseline as slot A", "B")
   pinABtn.textContent = "A"
   const flipBtn = document.createElement("button")
   flipBtn.type = "button"
   flipBtn.className = "lab-btn"
   flipBtn.dataset.action = "compare-flip"
-  flipBtn.title = "Flip Slot A / Slot B (V)"
+  tip(flipBtn, "Flip between slot A and slot B", "V")
   flipBtn.textContent = "V"
   const wipeBtn = document.createElement("button")
   wipeBtn.type = "button"
   wipeBtn.className = "lab-btn"
   wipeBtn.dataset.action = "compare-wipe"
-  wipeBtn.title = "Toggle Split-Screen A/B Wipe (⇧V)"
+  tip(wipeBtn, "Split-screen A/B wipe", "Shift+V")
   wipeBtn.textContent = "Wipe"
   const gridBtn = document.createElement("button")
   gridBtn.type = "button"
   gridBtn.className = "lab-btn"
   gridBtn.dataset.action = "compare-grid"
   gridBtn.setAttribute("aria-pressed", "false")
-  gridBtn.title = "Toggle Multi-Tile Variation Grid (1–9 focus tile, Esc/G back)"
+  tip(gridBtn, "Variation grid (1–9 focus a tile; Esc or G go back)")
   gridBtn.textContent = "⊞ Grid"
   compareGroup.append(pinABtn, flipBtn, wipeBtn, gridBtn)
   const compareDivider = document.createElement("div")
@@ -208,7 +209,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   recipeBtn.setAttribute("role", "menuitem")
   recipeBtn.dataset.action = "copy-recipe"
   recipeBtn.setAttribute("aria-label", "Copy recipe for game")
-  recipeBtn.title = "Copy typed settings recipe for game source (no URL params)"
+  tip(recipeBtn, "Copy the typed settings recipe for the game's source (no URL parameters)")
   recipeBtn.textContent = "Copy recipe for game"
   exportBtn.before(recipeBtn)
   void topbarRight
@@ -255,7 +256,6 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
   // Viewport HUD elements
   const hudBadge = viewportEl.querySelector<HTMLElement>("[data-hud-badge]")!
-  const hudToast = viewportEl.querySelector<HTMLElement>("[data-hud-toast]")!
 
   // Inspector header elements
   const inspectorTitle = inspectorEl.querySelector<HTMLElement>(".lab-inspector-title")!
@@ -285,29 +285,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
   }
 
   function showToast(message: string, isError = false, action?: { label: string; run: () => void }) {
-    hudToast.replaceChildren()
-    const span = document.createElement("span")
-    span.textContent = message
-    hudToast.append(span)
-    if (action) {
-      const btn = document.createElement("button")
-      btn.type = "button"
-      btn.className = "lab-toast-btn"
-      btn.dataset.action = "toast-action"
-      btn.textContent = action.label
-      btn.onclick = () => {
-        hudToast.hidden = true
-        action.run()
-      }
-      hudToast.append(btn)
-    }
-    hudToast.dataset.error = String(isError)
-    hudToast.hidden = false
-    if (toastTimer) window.clearTimeout(toastTimer)
-    toastTimer = window.setTimeout(() => {
-      hudToast.hidden = true
-    }, action ? 5000 : 2800)
+    notify(message, isError, action)
   }
+
 
   function captureSnapshot(): FullSnapshot {
     const secMap: Record<string, Record<string, LabValue>> = {}
@@ -1412,7 +1392,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     const sec = activeSection()
     const playing = "playing" in sec.settings ? Boolean(sec.settings.playing) : true
     playPauseBtn.textContent = playing ? "❚❚" : "▶"
-    playPauseBtn.title = playing ? "Pause (K)" : "Play (K)"
+    tip(playPauseBtn, playing ? "Pause" : "Play", "K")
     playPauseBtn.setAttribute("aria-pressed", String(playing))
     const hasLoop = "loop" in sec.settings
     loopBtn.disabled = !hasLoop
@@ -1601,10 +1581,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
     playModeBtn.setAttribute("aria-pressed", String(mode === "play"))
     playModeBtn.dataset.playActive = String(mode === "play")
     playModeBtn.textContent = mode === "play" ? "■ Stop" : "▶ Play"
-    playModeBtn.title =
-      mode === "play"
-        ? "Stop Play mode and restore pre-Play checkpoint (Esc · F8 eject)"
-        : "Enter Play mode and possess character (P · Alt+P · F8 eject)"
+    if (mode === "play") tip(playModeBtn, "Stop Play mode and restore the pre-Play checkpoint (F8 ejects)", "Escape")
+    else tip(playModeBtn, "Enter Play mode and possess a character (F8 ejects, Esc stops)", "P")
     boxModeBtn.setAttribute("aria-pressed", String(mode === "edit" && boxSelectMode))
     const twoFingerMode = getTwoFingerScrollMode()
     scrollModeBtn.setAttribute("aria-pressed", String(twoFingerMode === "pan"))
@@ -1620,9 +1598,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
 
     notifyHistory()
     undoBtn.disabled = undoStack.length === 0
-    undoBtn.title = undoStack.length ? `Undo ${undoStack.at(-1)!.label} (⌘Z)` : "Undo (⌘Z)"
+    tip(undoBtn, undoStack.length ? `Undo ${undoStack.at(-1)!.label}` : "Undo", "Mod+Z")
     redoBtn.disabled = redoStack.length === 0
-    redoBtn.title = redoStack.length ? `Redo ${redoStack.at(-1)!.label} (⇧⌘Z)` : "Redo (⇧⌘Z)"
+    tip(redoBtn, redoStack.length ? `Redo ${redoStack.at(-1)!.label}` : "Redo", "Shift+Mod+Z")
 
     const objs = allSceneObjects()
     const selList = currentSelectedObjects()
