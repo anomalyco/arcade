@@ -1,4 +1,5 @@
 import { popover } from "@arcade/knobs/ui"
+import { tip } from "@arcade/kit/lab/overlays"
 import type { lab } from "@arcade/kit/lab/main"
 import type { StationsController } from "@arcade/kit/lab/stations/workspace"
 import type { LabStation } from "@arcade/kit/lab/stations/types"
@@ -73,23 +74,23 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
 
   function renderCrumb() {
     crumb.replaceChildren()
-    const button = (text: string, role: string, title: string, run: (b: HTMLButtonElement) => void) => {
+    const button = (text: string, role: string, hint: string, shortcut: string | undefined, run: (b: HTMLButtonElement) => void) => {
       const b = document.createElement("button")
       b.type = "button"
       b.dataset.crumb = role
       b.textContent = text
-      b.title = title
+      tip(b, hint, shortcut)
       b.addEventListener("click", () => run(b))
       crumb.append(b)
       return b
     }
     const sep = () => crumb.append(Object.assign(document.createElement("span"), { textContent: "›", ariaHidden: "true" }))
-    button("Labs", "home", "All labs (H)", () => home.show())
+    button("Labs", "home", "All labs", "H", () => home.show())
     if (!current) return
     sep()
-    button(current.collection.title, "collection", "All labs (H)", () => home.show())
+    button(current.collection.title, "collection", "All labs", "H", () => home.show())
     sep()
-    button(current.title, "lab", "Other labs in this collection (⌥[ ⌥])", b => siblings(b))
+    button(current.title, "lab", "Other labs in this collection (⌥[ ⌥])", undefined, b => siblings(b))
   }
 
   function siblings(anchor: HTMLElement) {

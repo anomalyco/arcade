@@ -1,3 +1,4 @@
+import { tip } from "@arcade/kit/lab/overlays"
 import type { SceneAudio } from "./scene-audio"
 
 const ICON = (muted: boolean) => `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2.5 6h2.2L8 3.2v9.6L4.7 10H2.5z" fill="currentColor"/>${muted
@@ -16,9 +17,9 @@ export function mountSpeaker(slot: HTMLElement, sound: SceneAudio) {
     button.innerHTML = ICON(mix.muted)
     button.setAttribute("aria-pressed", String(mix.muted))
     button.setAttribute("aria-label", mix.muted ? "Unmute sound" : "Mute sound")
-    button.title = `${mix.muted ? "Unmute" : "Mute"} (M) · sound starts after your first click or key`
+    tip(button, `${mix.muted ? "Unmute" : "Mute"} · sound starts after your first click or key`, "M")
     slider.value = String(Math.round(mix.volume * 100))
-    slider.title = `Master volume ${slider.value}%`
+    tip(slider, `Master volume ${slider.value}%`)
     root.dataset.muted = String(mix.muted)
   })
   slot.append(root)

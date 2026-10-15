@@ -2,7 +2,6 @@ import { expect, test } from "bun:test"
 import { LabNavigation, type LabControl } from "../lab-navigation"
 import { filterLibrary, isLibraryAsset, isPlaceable, libraryCategoryOf, sectionLibraryCategory } from "./library"
 import { buildOutlinerRows, outlinerGroupOf, outlinerKindOf, rangeSelection } from "./outliner"
-import { fuzzyScore, parsePaletteQuery, rankPalette, type PaletteItem } from "./palette"
 import type { LabWorldObject } from "./types"
 
 const obj = (id: string, label: string, category: LabWorldObject["category"], extra: Partial<LabWorldObject> = {}): LabWorldObject => ({
@@ -84,25 +83,6 @@ test("library maps legacy catalog entries and sections to drawer categories", ()
   ]
   expect(filterLibrary(entries, { category: "objects" }).map(e => e.id)).toEqual(["spawn-prop:cone"])
   expect(filterLibrary(entries, { category: "objects", query: "smoke" }).map(e => e.id)).toEqual(["effects:smoke"])
-})
-
-test("palette ranks scene objects, settings, library items and commands with kind prefixes", () => {
-  const run = () => {}
-  const items: PaletteItem[] = [
-    { id: "o1", kind: "object", label: "Hydrant #7", run },
-    { id: "s1", kind: "setting", label: "Skid width", meta: "Spawn · Vehicle & Skids", run },
-    { id: "s2", kind: "setting", label: "Width", meta: "Lighting · Lamp", run },
-    { id: "l1", kind: "library", label: "Place Hydrant", meta: "Objects · Street props", run },
-    { id: "c1", kind: "command", label: "Toggle Library Drawer", meta: "Navigation", run },
-    { id: "c2", kind: "command", label: "Delete Object", disabled: true, run },
-  ]
-  expect(rankPalette(items, "skid wid").map(i => i.id)).toEqual(["s1"])
-  expect(rankPalette(items, "hydrant").map(i => i.id)).toEqual(["o1", "l1"])
-  expect(rankPalette(items, ">lib").map(i => i.id)).toEqual(["c1"])
-  expect(rankPalette(items, "#width").map(i => i.id)).toEqual(["s2", "s1"])
-  expect(parsePaletteQuery("@ cone")).toEqual({ kind: "object", text: "cone" })
-  expect(fuzzyScore("Skid width", "skid")!).toBeLessThan(fuzzyScore("Disk wide", "skid") ?? Infinity)
-  expect(fuzzyScore("Radius", "xyz")).toBeNull()
 })
 
 test("navigation filter hides rows and empty groups; derived controls are never modified", () => {

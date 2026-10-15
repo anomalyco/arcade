@@ -1,3 +1,7 @@
+import { createRemoteControls, type ControlDescriptor } from "@arcade/knobs"
+import { mountPanel } from "@arcade/knobs/panel"
+import { arcadePreset } from "../lab-knobs"
+
 export type WatchPin = {
   sectionId: string
   key: string
@@ -30,16 +34,29 @@ export function watchPinId(pin: Pick<WatchPin, "sectionId" | "key">) {
   return `${pin.sectionId}:${pin.key}`
 }
 
+/** A pinned setting now: its raw value, the text Details shows for it, and whether it differs from its default. */
+export type WatchReading = {
+  value: number | string
+  text: string
+  modified: boolean
+  sectionLabel: string
+  /** Formats a number the way Details does (numeric settings only). */
+  format?: (value: number) => string
+}
+
 export type WatchDeps = {
-  /** Formatted current value plus whether it differs from its default. */
-  read(pin: WatchPin): { text: string; modified: boolean; sectionLabel: string } | null
+  read(pin: WatchPin): WatchReading | null
   reveal(pin: WatchPin): void
   unpin(pin: WatchPin): void
 }
 
 export type WatchList = ReturnType<typeof createWatchList>
 
-/** Small on-viewport list of pinned settings with live values. */
+/**
+ * Pinned settings over the viewport, as knobs readouts: a numeric setting is a sparkline of the values it has had, any
+ * other a watch of its text. Values are pushed only when they change (`refresh`), so an idle list costs nothing per
+ * frame and its rows sleep. A row's label jumps to the setting in Details; its × unpins it.
+ */
 export function createWatchList(host: HTMLElement, deps: WatchDeps) {
   const el = document.createElement("div")
   el.className = "lab-watch"
@@ -47,50 +64,88 @@ export function createWatchList(host: HTMLElement, deps: WatchDeps) {
   el.setAttribute("aria-label", "Watch")
   el.hidden = true
   host.append(el)
+  const store = createRemoteControls("lab-watch", [], { storage: null, persist: "none", theme: "dark", density: "compact" })
   let pins: WatchPin[] = []
-  let signature = ""
+  let shape = ""
+  let marks = ""
+  const pushed = new Map<string, number | string>()
+  const modified = new Set<string>()
+  const removers = new Map<string, HTMLButtonElement>()
 
+  const accessory = (key: string) => {
+    const pin = pins.find(p => watchPinId(p) === key)
+    if (!pin) return null
+    let node = removers.get(key)
+    if (!node) {
+      node = document.createElement("button")
+      node.type = "button"
+      node.className = "lab-watch-x"
+      node.setAttribute("aria-label", `Unpin ${pin.label}`)
+      node.textContent = "×"
+      node.onclick = () => deps.unpin(pin)
+      removers.set(key, node)
+    }
+    node.dataset.modified = String(modified.has(key))
+    return node
+  }
+  const panel = mountPanel(store, el, {
+    title: false,
+    header: false,
+    preset: arcadePreset,
+    theme: "dark",
+    density: "compact",
+    renderer: "dom",
+    variants: false,
+    haptics: false,
+    session: false,
+    rowAccessory: accessory,
+  })
+  // A row's label jumps to its setting in Details.
+  el.addEventListener("click", event => {
+    const target = event.target as HTMLElement
+    if (target.closest(".knobs-accessory")) return
+    const row = target.closest<HTMLElement>(".knobs-row[data-field]")
+    const pin = row && pins.find(p => watchPinId(p) === row.dataset.field)
+    if (pin) deps.reveal(pin)
+  })
+
+  /** Pushes each pin's value when it changed; rebuilds the rows only when the pins (or their kinds) changed. */
   function render(next: readonly WatchPin[]) {
     pins = [...next]
-    const values = pins.map(p => deps.read(p))
-    const sig = JSON.stringify([pins.map(watchPinId), values])
-    if (sig === signature) return
-    signature = sig
-    el.hidden = pins.length === 0
-    el.replaceChildren()
-    if (!pins.length) return
-    const head = document.createElement("div")
-    head.className = "lab-watch-head"
-    head.innerHTML = `<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M6 2h4l-.6 4.2 2.4 2.3v1H4.2v-1l2.4-2.3z" fill="currentColor"/><path d="M8 9.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Watch</span><span class="lab-tcount">${pins.length}</span>`
-    el.append(head)
-    pins.forEach((pin, i) => {
-      const v = values[i]
-      const row = document.createElement("div")
-      row.className = "lab-watch-row"
-      row.dataset.watchKey = watchPinId(pin)
-      row.dataset.modified = String(Boolean(v?.modified))
-      row.dataset.stale = String(!v)
-      const name = document.createElement("button")
-      name.type = "button"
-      name.className = "lab-watch-name"
-      name.title = `Jump to ${pin.label} in Details`
-      const src = document.createElement("span")
-      src.className = "lab-watch-src"
-      src.textContent = `${v?.sectionLabel ?? pin.sectionId} · `
-      name.append(src, pin.label)
-      name.onclick = () => deps.reveal(pin)
-      const value = document.createElement("span")
-      value.className = "lab-watch-value"
-      value.textContent = v?.text ?? "—"
-      const remove = document.createElement("button")
-      remove.type = "button"
-      remove.className = "lab-watch-x"
-      remove.setAttribute("aria-label", `Unpin ${pin.label}`)
-      remove.textContent = "×"
-      remove.onclick = () => deps.unpin(pin)
-      row.append(name, value, remove)
-      el.append(row)
+    const readings = pins.map(p => deps.read(p))
+    // The section only shows when the pins come from more than one.
+    const several = new Set(pins.map(p => p.sectionId)).size > 1
+    const descriptors: ControlDescriptor[] = pins.map((pin, i) => {
+      const r = readings[i]
+      const key = watchPinId(pin)
+      const label = several ? `${r?.sectionLabel ?? pin.sectionId} · ${pin.label}` : pin.label
+      return typeof r?.value === "number"
+        ? { kind: "sparkline", key, label, group: "watch", groupLabel: "Watch", history: 48, ...(r.format ? { format: r.format } : {}) }
+        : { kind: "watch", key, label, group: "watch", groupLabel: "Watch" }
     })
+    const nextShape = JSON.stringify(descriptors)
+    if (nextShape !== shape) {
+      shape = nextShape
+      pushed.clear()
+      for (const key of [...removers.keys()]) if (!pins.some(p => watchPinId(p) === key)) removers.delete(key)
+      store.update(descriptors, {})
+      el.hidden = pins.length === 0
+    }
+    modified.clear()
+    pins.forEach((pin, i) => {
+      const key = watchPinId(pin)
+      const r = readings[i]
+      if (r?.modified) modified.add(key)
+      const value = r ? (typeof r.value === "number" ? r.value : r.text) : "—"
+      if (pushed.get(key) === value) return
+      pushed.set(key, value)
+      store.watch(key, value)
+    })
+    const nextMarks = [...modified].join("|")
+    if (nextMarks !== marks) {
+      marks = nextMarks
+      panel.updateAccessories()
+    }
   }
 
   return {

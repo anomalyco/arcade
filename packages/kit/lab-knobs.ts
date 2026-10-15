@@ -1,6 +1,7 @@
 import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type HostHistory, type PanelKeys, type RemoteControls, type StoragePort, type Value } from "@arcade/knobs"
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import { labPreset, type TokenPreset } from "@arcade/knobs/themes"
+import { commandsFrom, type Command, type CommandsFromOptions } from "@arcade/knobs/ui"
 import type { LabControl, LabNavigation, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
@@ -265,6 +266,11 @@ export class LabKnobsView {
   }
 
   get keys(): string[] { return [...this.rows.keys()] }
+
+  /** The view's actions, presets and fields as ⌘K commands (knobs' `commandsFrom`). */
+  commands(options: CommandsFromOptions = {}): Command[] {
+    return this.disposed ? [] : commandsFrom(this.store, options)
+  }
 
   /** Whether this view shows a row when it is visible (its own filter, not the control's `visible`). */
   includes(row: LabRow): boolean {
