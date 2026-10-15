@@ -486,6 +486,7 @@ async function main() {
     lab,
     progressionHost,
     weatherController,
+    harness: () => harness,
     resetPeek: () => {
       peekBlend = 0
       lastPeek = null

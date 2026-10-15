@@ -39,8 +39,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Releases and game plans
 
-- [integration.md](integration.md): how the release integration branch was assembled and verified. Read before
-  merging several feature branches together.
+- [integration.md](integration.md): how to assemble and verify a release integration branch, and the past release
+  PRs. Read before merging several feature branches together.
 - [zomboid-slice.md](zomboid-slice.md): the plan for Outbreak's co-op survival game.
 - [outbreak-coop.md](outbreak-coop.md): how Outbreak's 2–4 player co-op works (rooms, prediction, snapshots) and
   what it measured. Read before changing `shared/coop-sim.ts`, the room or `@arcade/kit/net`.

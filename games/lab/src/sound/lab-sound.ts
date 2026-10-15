@@ -77,6 +77,8 @@ export function sceneView(lab: LabView): SceneView {
 const editable = (target: EventTarget | null) => {
   const element = target instanceof HTMLElement ? target : null
   if (!element) return false
+  // Lists with type-to-filter (the Library) own printable keys like a text field.
+  if (element.closest("[data-typeahead]")) return true
   if (element.isContentEditable || element.tagName === "TEXTAREA" || element.tagName === "SELECT") return true
   return element.tagName === "INPUT" && (element as HTMLInputElement).type !== "range" && (element as HTMLInputElement).type !== "checkbox"
 }

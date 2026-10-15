@@ -10,26 +10,6 @@ with `LabPanel` in `layout: "inspector"` and `capture: "focus"`. Both draw with 
 `packages/kit/lab-knobs.ts` ([lab.md](lab.md#bind-controls-to-typed-production-settings)); stations add widget slots
 around the viewport ([lab.md](lab.md#stations)).
 
-## Pain points in the previous Lab UI
-
-Before captures, relative to the local artifact root: `2026-10-13-lab-ux-before.png`,
-`2026-10-13-lab-workbench/before-default.png`, and
-`2026-10-13-lab-workbench/before-blackout-effects.png`.
-
-1. **Floating 285 px overlay over a full-window grid:** A single narrow `<section>` in the top-right corner covered the
-   right side of the scene and scrolled through every control in one column.
-2. **Duplicate `▾ Controls` headings:** `main.ts` registered global `Section`/`Debug view` controls without a group
-   name and then appended the active section's ungrouped controls, creating two separate `▾ Controls` headers stacked
-   together; clicking `Randomize` on the first randomized the `Section` and `Debug view` selects.
-3. **Overloaded `Section` dropdown:** One flat select mixed `Effects`, `Lighting`, `Materials`, `Physics`, `Spawn`,
-   `Blackout effects`, `Getaway effects`, `Fire and water`, `Splatter` and `Audio`.
-4. **All 20 parameter groups rendered at once:** Selecting `Blackout effects` mounted all 19 effect parameter groups
-   (80+ controls) simultaneously regardless of the chosen effect.
-5. **Unreadable default scale and fixed camera:** Effects opened at a 31.8 m camera distance (`eye = focus + [0,22,23]`)
-   with no orbit, pan, zoom or target framing (`F`).
-6. **Implicit gameplay input in `Spawn`:** Clicking the canvas immediately drove the vehicle or soldier, so Dvorak `e`
-   and `Space` competed with editing controls.
-
 ## Layout: Outliner + Details + Library drawer
 
 Board decision D-4 (AR-13) picked concept 1 from `2026-10-14-lab-layout/` (Unreal/Unity style), plus ⌘K universal
@@ -66,10 +46,32 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   `Search details` filters by label/key/group. Spawn-time values (units ending `· retrigger`) show an amber dot.
   Defaults are the section's settings captured when the workbench starts, before fixtures or edits.
 - **Library drawer** (bottom, `Ctrl+Space`) holds everything you can add: Effects (Starting Fixtures first), Objects,
-  Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with collections, search and tiles. Click arms a placement ghost
-  for props/lights (or runs the fixture/effect); dragging a tile into the viewport places props, lights and characters
-  at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer bar with
-  category buttons and `Search library` stays visible when closed. Open state persists in `localStorage`.
+  Lighting, Audio, Materials, Foliage (the Vegetation section's Tree/Bush/Grass tools and presets) and Looks, with
+  collections, search and items. Items show as compact tiles (a 56×36 preview or a line icon for the item's kind, the
+  full name on up to two lines, the tag only when the group heading doesn't already say it) or as a dense list (the
+  two buttons right of `Search library`; the choice persists in `arcade.lab.library-view`). Click arms a placement
+  ghost for props/lights (or runs the fixture/effect); dragging an item into the viewport places props, lights and
+  characters at the ground point under the cursor (with a live ghost) and moves an effect's emitter there. The drawer
+  bar with category tabs and `Search library` stays visible when closed. Open state persists in `localStorage`.
+- **Previews** (`packages/kit/lab/library-thumbs.ts`): the first time a scene-level item runs (fixtures, effects,
+  presets, looks, materials; not single props, lights, characters or sounds), its frame 0.9 s later becomes the
+  item's preview. `Render previews` under the collections renders every missing one in the current view offline: the
+  live loop pauses, each item runs from the same starting scene for 40 fixed ticks through the production renderer,
+  and the scene, camera and active item are restored. Previews are 112×72 WebP in `arcade.lab.library-thumbs.v1`
+  (240 at most, oldest dropped first); `library.previews clear=true` forgets them.
+- **Resizable panels** (`packages/kit/lab/panels.ts`): drag the edge between the viewport and the Outliner, Details,
+  Library or station dock, or under a station's left/right widget slot. A handle shows an accent line on hover;
+  double-click resets that panel, and its button (or dragging well past the minimum) collapses the Outliner, Details
+  or dock to a 22 px bar with its name (click the bar to expand) and closes the Library. A focused handle takes
+  `←`/`→` (or `↑`/`↓`) for 16 px, `⇧` for 64 px, `Home`/`End` for the minimum and maximum, `Enter` to collapse and
+  `Esc` back to the canvas. The viewport always keeps 360×180 px. Sizes and collapsed state persist per layout in
+  `arcade.lab.panels.v1`: the plain workbench, and each station by id, so a station's dock height comes back when it
+  reopens. `⋯` → `Reset panel sizes` resets the current layout.
+- **Viewport resolution** (`packages/kit/lab/viewport-size.ts`, `⋯` menu): `Auto` renders at the display's pixel
+  ratio up to 1.5× (the games' `MAX_DPR`), `Device pixels` up to 2×, `1×` at CSS pixels. A ResizeObserver tracks the
+  viewport box, so the render loop no longer reads layout every frame; a panel change marks the size stale and the
+  next frame measures it once, because Chrome delivered ResizeObserver callbacks 7–8 frames late while dragging. The
+  canvas is resized right before it is drawn, so a resize never presents an empty canvas.
 - **⌘K** searches scene objects (select and frame), Library items, registry commands (those without required
   arguments) and every section's setting names (switch section if needed, clear Details filters, scroll, focus and
   flash the field). Prefixes: `@` scene, `#` settings, `+` library, `>` commands. `/` also opens it.
@@ -88,12 +90,16 @@ text-field ownership and the CLI. Every layout action is a registry command:
 | `outliner.focus` | | Focus the Outliner (`⇧Tab`) |
 | `library.toggle` | `open?`, `category?`, `query?` | Toggle/open the drawer (`Ctrl+Space`) |
 | `library.place` | `id`, `at?` (`x,z`), `yaw?` | Place a Library item at a ground point, or arm/run it |
+| `library.view` | `view?` (`tiles`/`list`), `group?`, `focus?` | Switch the item view or collection; `focus` moves keyboard focus to the items |
+| `library.previews` | `ids?`, `clear?` | Render missing previews for the current view (or `ids`), or forget them |
+| `layout.panels` | `panel?`, `size?`, `collapsed?`, `reset?` | Resize, collapse or reset `left`, `right`, `drawer`, `dock`, `leftSlot`, `rightSlot`; returns sizes |
 | `palette.open` | `query?` | Open ⌘K search |
 | `watch.pin` / `watch.unpin` | `key`, `section?`, `pinned?` / `all?` | Manage Watch pins |
 | `details.filter` | `modified?`, `query?`, `all?` | Details filters; returns the visible keys |
 | `details.reveal` | `key`, `section?` | Jump to a setting |
 
-`arcade state` includes `layout` (`library`, `locked`, `details`, `watch`).
+`arcade state` includes `layout` (`library` with `view`, `focused`, `cursor` and the preview count, `panels`,
+`locked`, `details`, `watch`).
 
 ### Registering sections with the layout
 
@@ -151,8 +157,9 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
 - `Stage` (`packages/kit/lab/stage.ts`) adds spherical camera state (`camYaw`, `camPitch`, `camDist`) around `focus`
   with `frameTarget(x, y, z, dist)`, `resetCamera()`, `orbit(dyaw, dpitch)`, `pan(dx, dz)`, `zoomBy(factor)`, and
   raycasting helpers `screenRay(u, v)` and `pickGround(u, v, groundFn)`.
-- Canvas dimensions are read from the center viewport host (`viewportHost.clientWidth` × `clientHeight`) after sidebars,
-  preventing aspect-ratio stretching when sidebars are open or toggled with `Backquote`.
+- Canvas dimensions follow the center viewport host's box (tracked by `viewport-size.ts`, scaled by the Viewport
+  resolution setting) after sidebars, preventing aspect-ratio stretching when panels resize, collapse or are toggled
+  with `Backquote`.
 - `LabSection` (`packages/kit/lab/types.ts`) adds optional workbench hooks:
   `retrigger?()`, `reroll?()`, `frameTarget?()`, `objects?()`, `selectedObjectId?`, `selectObject?(id)`,
   `moveObject?(id, x, z, yaw)`, `deleteObject?(id)`, `duplicateObject?(id)` and `groundHeight?(x, z)`.
@@ -170,21 +177,6 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
     `games/getaway/src/render/shaders.ts` so consecutive skid ribbon segments (`kind = 4`, up to 1,600 segments) join
     end-to-end along curves and diagonals, and adds car contact shadow (`kind = 9`, `shape = 5`) and forward headlight
     fan support (`shape = 6`).
-  - **Lamp pose & fixture sphere fix:** Restricts `stage-shader.ts`'s `0.12 m` debug light-core sphere raytracing to the
-    `Lighting` calibration stage (`F.options.w < 2.0`), eliminating the floating orange/red spheres on the car hood and
-    rear bumper. Builds Lab cars with `buildCar(spec, undefined, 4)` (`Soft pool` bevelled 3D headlamp/taillamp lenses
-    without duplicate `lights = 0` polygons) and computes both front spot `headlights` (preserving the twin rounded
-    headlight arcs), rear `tailLights`, and lens bloom halos from `lampMounts(spec)` + `bodyPoint(car, pose, ...)` using
-    full chassis `height`, `roll` and `pitch` (with vertical aim pitch clamped to `[-0.42, -0.18]` so brake dive brings
-    the twin arcs closer without throttle squat flinging them to the horizon).
-  - **Front fender & side seam fix (`car-mesh.ts`):** Previously `hullStations` added the full longitudinal `archR`
-    (`0.47 m`) vertically to `wheelR` (`0.37 m`), pushing `k.b` (`0.84 m`) above the belt crease `k.s` (`0.74–0.80 m`)
-    and folding the side/shoulder bands upside-down over the front wheel arch; `muscle` also had its front width/height
-    kink at `z = zf - 0.8 = 1.45` right on top of the front axle (`1.48`), a door `seam` extending to `y = 0.90` above
-    the `0.83` belt crease into empty air, and a lower rocker strip floating `3.4 cm` outside the lower chamfer. Keeping
-    arch lift below `k.s - 0.05`, moving the full-width fender station ahead of the arch (`zf - 0.32`), and keeping
-    `seam` and rocker trim flush within the vertical side wall eliminates the fender fold, silhouette spike and brake-dive
-    tire poke-through while preserving exact vertex counts for `splitChassis`.
   - Exposes `Vehicle & Skids` in the car inspector (`Skid marks`, `Skid width` `0.04–0.45 m`, `Skid life` `1–30 s`,
     `Tyre smoke`, `Clear skids`, `Reset scene`) with exact value entry.
 - **Persistent Playground and switchable environments (`packages/kit/lab/yard.ts`, `spawn.ts`, `main.ts`, `workbench.ts`):**
@@ -206,6 +198,14 @@ Priority order:
 1. **Text editing / modal dialog** (⌘K search, `Search scene`, `Search library`, `Search details`, `Search controls`, `Exact <control>`, Gizmo numeric `X`/`Z`/`°` inputs, Preset/Recipe JSON modal): owns
    printable keys, `Space`, arrows and clipboard shortcuts; `Escape` closes the active editor or clears search.
    `⌘K` (toggle search) and `Ctrl+Space` (Library drawer, physical Space key) work from anywhere, including Play.
+   A focused Library (anything below its bar except `Search library`) owns arrows, `Enter`, `Space`, `Home`/`End`,
+   `PageUp`/`PageDown`, `Backspace`, `Escape` and every printable key: arrows move between items by row and column
+   (group headings break rows; `↑`/`↓` keep the column), `Enter`/`Space` apply the focused item and keep focus on it,
+   letters and digits type into `Search library` (so `M`, `N`, `P` and number keys don't fire there), `Esc` returns
+   to the canvas. Category tabs take `←`/`→`, collections `↑`/`↓` (`→` or `Enter` into the items), and `↓` from
+   `Search library` enters the items. `Tab`/`⇧Tab` moves between the tabs, search, view buttons, collections,
+   `Render previews` and the items; each keeps one tab stop. A focused item shows its whole name on a card over its
+   neighbours.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
    the Edit canvas shortcuts below.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
@@ -259,51 +259,25 @@ audio builds the same node graph and automation as the games' own paths.
 Run the headless Metal browser proofs through `hivemind`:
 
 ```sh
-hivemind run --fetch captures/lab-workbench -- bun packages/kit/lab/prove-workbench.ts
+hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
+hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
-hivemind run -- bun games/getaway/scripts/prove-lab-effects.ts
-hivemind run -- bun games/getaway/scripts/prove-lab-spawn.ts
 ```
 
-`prove-workbench.ts` step 12 runs the layout at 1920×1080 and 1280×800 on both hosts: Outliner grouping, counts
-and the `Cone ×5` fold; nothing selected → Environment first; fold multi-select (Transform + Items, no Vehicle &
-Skids); vehicle selection groups; Shift-range; viewport click revealed in the Outliner; `⇧Tab`/arrow/`Esc` keyboard
-flow; lock skips picking; modified highlight, `Modified` filter, per-field reset with one undo entry; Watch pins with
-live values; ⌘K object, setting and command results; `Ctrl+Space`; dragging a Library tile to place a prop;
-`library.place` and `outliner.select kind=cone`. Captures `layout-*-{1920,1280}.png` and the earlier set are in
-`2026-10-14-lab-layout-impl/` relative to the local artifact root.
+`prove-stations.ts` covers the knobs panels and stations. The older workbench layout proof (`prove-workbench.ts`) read
+the pre-knobs panel DOM and was deleted; `prove-panels.ts` (below) covers the resizable panels, the Library and its keyboard navigation.
+`games/getaway/scripts/prove-lab-effects.ts` and `prove-lab-spawn.ts` still read that DOM and need knobs selectors.
 
-Source-branch before/after screenshots and proof JSON live under `2026-10-13-lab-workbench/`, `2026-10-13-lab-car-playground/`, and `2026-10-13-lab-interaction/`, relative to the local artifact root:
-
-- `after-radial-menu.png` — 8-sector fixed-compass Radial Marking Menu opened over the scene with disabled-in-place slots and shortcut badges.
-- `after-marquee-multiselect.png` — `Alt+Drag` marquee box selection across multiple props with live count badge and multi-select Inspector.
-- `after-transform-gizmo.png` — in-viewport Move (`✥`) and Rotate (`↻`) handles with inline `X` / `Z` / `°` numeric entry.
-- `after-compare-ab-wipe.png` — frozen-frame `f35` split-screen A/B wipe comparing `Slot A (Baseline)` vs. `Slot B (Candidate)` with parameter delta readout.
-- `before-car-skids-1280x800.png` and `after-car-skids-1280x800.png` — matched 1280×800 workbench pair on the identical
-  keyboard launch + drift + handbrake trajectory (`0/1600` vs `188/1600` connected rear-wheel skid segments).
-- `before-canvas-native-1280x800.png` and `after-canvas-native-1280x800.png` — full-bleed native game scale canvas pair.
-- `after-shared-playground-effects.png` and `after-select-car-inspector.png` — switching `Effects` (`Grenade smoke`),
-  `Lighting` and `Objects` (`Getaway · Muscle`) in the same persistent Playground while retaining the car, 6 props and
-  `73/1600` skid segments.
-- `after-street-environment-skids.png` — switching `Env` to `Getaway · Street`, relocating to a validated street spawn,
-  and painting `86/1600` skid segments across the crosswalk.
-- `closeup-before-front-fender.png` and `closeup-before-rear.png` — pre-fix close-ups showing the floating orange/red
-  light-core spheres, front fender wheel-arch Z-fold, protruding door seam and floating rocker strip.
-- `closeup-front-fender.png`, `closeup-rear-lamps.png`, `closeup-throttle-squat.png`, `closeup-brake-dive.png` and
-  `closeup-kerb-roll.png` — post-fix close-ups showing clean fender geometry, bevelled 3D lenses, preserved twin
-  headlight arcs, and `bodyPoint`-locked lamps through throttle squat (`pitch = -0.0707 rad`, `headY = 0.6818 m`),
-  brake dive (`pitch = +0.0899 rad`, `headY = 0.2880 m`) and kerb roll (`roll = -0.0805 rad`).
-- `car-playground-proof.json` — verified counts, budgets and `lampPoseProof` across both `getaway` and `blackout` hosts.
-- `before-default.png` and `before-blackout-effects.png` — prior floating panel with duplicate `Controls` headers and
-  all 20 effect groups exposed.
-- `after-default-1280x800.png` — workbench layout at 1280×800 with the Outliner, framed smoke room, Details, the
-  Library drawer and the top-bar transport.
-- `after-glass-default.png`, `after-glass-shard-size.png`, `after-glass-rerolled.png` — keyboard-selected `Glass shards`
-  in the meeting room (`▾ Emitter`, `▾ Glass shards`, `▾ Environment` only), framed at the glass pane, shard size
-  adjusted to a `2.2×` scale factor, and room seed rerolled with the effect locked. Integration labels the new
-  glass/paper size controls as multipliers rather than metres.
-- `after-spawn-play.png` and `after-spawn-edit.png` — `Car into cones` fixture driven in `Play` mode (`10.92 m/s`),
-  exited with `Esc` (`throttle: 0`), and inspected in `Edit` mode without stuck input.
-- `after-audio-silent.png` — Audio Lab selected and rendered offline with `0` live `AudioContext` attempts.
-- `after-flame-hydrant-1920x1080.png` — responsive 1920×1080 layout on the `Flame & hydrant` fixture.
-- `workbench-proof.json` — machine-verified assertions across both `getaway` and `blackout` Lab hosts on Apple Metal.
+`hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts` proves the panels
+and Library at 1440×900 (DPR 1) and 1728×1117 (DPR 2): previews render for every Foliage item; dragging the Outliner,
+Details and Library handles resizes them by the drag, the canvas backing size matches the viewport on every frame
+(no lag) and screenshots taken mid-drag are never blank; sizes survive a reload; double-click resets; Details
+collapses to a bar and stays collapsed across a reload; handle arrow keys resize; a station's dock height is kept
+separately from the workbench's; at DPR 2 the canvas is 1.5× (Auto) or 2× (Device pixels) its CSS box; and a
+keyboard-only sequence (`Ctrl+Space`, `↓`, `→`, `↓`, `Enter` applies Maple; typing `pi`, `↓`, `Space` applies Pine;
+`⇧Tab`, `↓`, `→`; `M` filters instead of muting; `Esc` to the canvas; Play keys never reach the Library) does what it
+says. `--shots-only` captures screenshots and idle cost on any branch for a before/after pair. Idle cost with the
+Library open, from CDP `Performance.getMetrics` (`--only idle`, three 6 s windows at 1440×900): layouts per second
+fell from 124.5–124.7 to 72.2–73.7 because the per-frame `clientWidth` reads are gone, layout time stayed at 7–9 ms
+per second, style recalcs stayed at 62 per second, and `requestAnimationFrame` callbacks stayed at 122–124 per second.
+A single 3 s window at 1728×1117 (DPR 2) gave 124 layouts per second before and 71 after. Captures are in `2026-10-14-lab-panels/` relative to the local artifact root.
