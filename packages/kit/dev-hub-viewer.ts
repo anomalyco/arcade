@@ -165,7 +165,7 @@ export async function catalogueViewer(options: DevHubOptions) {
       target instanceof HTMLTextAreaElement ||
       target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable) ||
-      document.activeElement === panel.host
+      panel.hasFocus()
     ) {
       return
     }

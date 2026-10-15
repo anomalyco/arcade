@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
-import { validateStations, type LabStation } from "@arcade/kit/lab/overworld/types"
+import { validateStations, type LabStation } from "@arcade/kit/lab/stations/types"
 import { LAB_GAMES } from "../src/games/registry"
 
 const dir = join(import.meta.dir, "../src/stations")
@@ -10,7 +10,7 @@ const stations: LabStation[] = await Promise.all(files.map(async f => (await imp
 // The Lab's own sections (packages/kit/lab/main.ts) plus the Audio section games/lab adds.
 const SHARED = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio"]
 
-describe("Lab Overworld stations", () => {
+describe("Lab stations", () => {
   test("every station file validates", () => {
     expect(validateStations(stations)).toEqual([])
     expect(stations.length).toBeGreaterThanOrEqual(13)

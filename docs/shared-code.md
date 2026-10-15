@@ -40,7 +40,8 @@ checks, all affected game checks, and `bunx --no-install wrangler deploy --dry-r
 
 ## Lab panel
 
-`packages/kit/lab-panel.ts` is the one debug panel for every game: switches, sliders, presets, Copy, perf readout. New tunables go there, not into URL parameters. When a game needs a new kind of control, add it to the shared panel.
+`packages/kit/lab-panel.ts` is the one debug panel for every game: switches, sliders, presets, Copy, perf readout. It
+draws with knobs (`packages/knobs`, vendored from Kit's knobs repo) through `packages/kit/lab-knobs.ts`. New tunables go there, not into URL parameters. When a game needs a new kind of control, add it to the shared panel.
 
 ## Candidates
 

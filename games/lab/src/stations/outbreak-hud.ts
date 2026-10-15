@@ -4,22 +4,22 @@ import { defineStation } from "./define"
 const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const sample = { command: "hud.demo" }
 const set = (key: string, value: number | boolean) => ({ command: "scene.set-param", args: { key, value } })
-const defaults = [set("calloutPlacement", 0), set("vitalsPlacement", 0), set("avoidAim", true)]
+const style = (value: number) => [set("hudStyle", value), set("calloutPlacement", -1), set("vitalsPlacement", -1), set("avoidAim", true), sample]
 
+// The same five directions as the board's D-13 prototype; each is one Lab "HUD style".
 const variants: StationVariant[] = [
-  { id: "below", label: "Callouts below", note: "Default. Hold Shift to sprint and watch the stamina ring.", setup: [...defaults, sample] },
-  { id: "above", label: "Callouts above", note: "The previous placement.", setup: [...defaults, set("calloutPlacement", 1), sample] },
-  { id: "beside", label: "Callouts beside", setup: [...defaults, set("calloutPlacement", 2), sample] },
-  { id: "feet", label: "Rings under feet", setup: [...defaults, set("vitalsPlacement", 1), sample] },
-  { id: "edge", label: "Bars at screen edge", note: "Stamina and battery as the old bottom bars.", setup: [...defaults, set("vitalsPlacement", 2), sample] },
-  { id: "pinned", label: "Below, no aim avoidance", note: "Callouts stay below even when you aim down.", setup: [...defaults, set("avoidAim", false), sample] },
+  { id: "today", boardOption: "1", label: "Today", note: "Callouts above the head, bars over the hotbar.", setup: style(0) },
+  { id: "below", boardOption: "2", label: "Below Feet", note: "Default. Hold Shift to sprint and watch the stamina ring.", setup: style(1) },
+  { id: "hades", boardOption: "3", label: "Hades Style", note: "Thin bars under the feet, quiet screen edges.", setup: style(2) },
+  { id: "zomboid", boardOption: "4", label: "Zomboid Style", note: "Action bar over the head, status icons top-right.", setup: style(3) },
+  { id: "diegetic", boardOption: "5", label: "Diegetic", note: "Stamina and health on the ground, hotbar only on change.", setup: style(4) },
 ]
 
 export default defineStation({
   id: "outbreak-hud",
   title: "Outbreak HUD",
   summary:
-    "The live game with the character HUD: action callouts under the survivor and stamina, reload, health and battery rings beside them. Variants switch placement.",
+    "The live game with the character HUD. Variants are the five HUD styles from the board decision: callouts, stamina, reload, health and battery placed on the survivor or at the edge.",
   order: 112,
   prop: "figure",
   color: 0xe0b45a,
@@ -27,6 +27,7 @@ export default defineStation({
   demo: { kind: "page", url: page },
   defaultVariant: "below",
   variants: variants.map((v) => ({ ...v, url: page })),
+  board: { feature: "AR-24", decision: "D-13" },
   metrics: [
     { label: "hud.update p95, 3 callouts + rings + teammate", value: "0.2 ms", source: "captures/outbreak-hud/summary.json (hud-proof.ts)" },
   ],

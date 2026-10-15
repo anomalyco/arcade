@@ -191,6 +191,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
   let hoveredGridTile: number | null = null
   let variationGridCostMs: number | null = null
   let focusZone: "canvas" | "library" | "inspector" | "palette" | "modal" | "outliner" = "canvas"
+  /** Number keys go here first (stations); the Library categories get them otherwise. */
+  let digitHandler: ((n: number, shift: boolean) => boolean) | null = null
   let toastTimer = 0
 
   const undoStack: HistoryEntry[] = []
@@ -5736,7 +5738,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
 
     // If focus is inside the Inspector (LabPanel), let LabPanel's own capture handler own the remaining keys
-    if (document.activeElement === panel.host) return
+    if (panel.hasFocus()) return
 
     // Active Placement Ghost or Move Ghost modal controls
     const ghost = spawn?.getGhost()
@@ -6012,6 +6014,8 @@ export function createWorkbench(opts: WorkbenchOptions) {
         event.preventDefault()
         commands.execute("object.duplicate")
       }
+    } else if (/^Digit[0-9]$/.test(event.code) && !event.repeat && !variationGrid && focusZone !== "library" && digitHandler?.(Number(event.code.slice(5)), event.shiftKey)) {
+      event.preventDefault()
     } else if (/^[1-7]$/.test(event.key) && !event.repeat) {
       event.preventDefault()
       libraryDrawer.setCategory(LIBRARY_CATEGORIES[Number(event.key) - 1]!.id, true)
@@ -6028,6 +6032,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
     /** Whether the multi-tile variation grid is open (it owns 1–9, G and Esc). */
     get variationGridOpen() {
       return variationGrid !== null
+    },
+    /** Number keys outside text fields, Play, the grid and the radial: return true to take them (stations do). */
+    onDigit(handler: (n: number, shift: boolean) => boolean) {
+      digitHandler = handler
     },
     /** A section the host loaded after start-up (a game's adapters fetched on demand). */
     addSection(section: LabSection) {
