@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
-import { BARRICADE_DURATION, PISTOL_RELOAD_TIME, SEARCH_DURATION } from "../shared/combat"
+import { PISTOL_RELOAD_TIME } from "../shared/combat"
+import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
 import { ActorFeedback, lootCallout } from "../src/hud/actor-feedback"
 import { CalloutModel, FADE_OUT, type CalloutKind } from "../src/hud/callouts"
@@ -94,6 +95,7 @@ describe("actor feedback from simulation state", () => {
         noiseSource: "player",
         lowBattery: 0.25,
         reloadKey: "P",
+        notices: session.view.notices.splice(0),
       })
     const step = (cmd: Partial<Command> = {}, n = 1) => {
       for (let i = 0; i < n; i++) {
@@ -101,50 +103,68 @@ describe("actor feedback from simulation state", () => {
         observe()
       }
     }
+    /** Sets loaded rounds and belt counts through the ledger. */
+    const stock = (loaded: number, belt: Record<string, number> = {}) => {
+      const { ledger } = session.sim.progression
+      ledger.apply({ kind: "setCharge", actor: "player", item: "pistol", charge: loaded })
+      for (const [item, n] of Object.entries(belt)) {
+        const have = ledger.count("player/belt", item)
+        if (have) ledger.apply({ kind: "drain", store: "player/belt", item, count: have })
+        if (n) ledger.apply({ kind: "grant", actor: "player", item, count: n })
+      }
+      session.sim.progression.project(session.slot)
+    }
     observe()
-    return { session, seen, step, texts: () => seen.map((s) => s.text) }
+    return { session, seen, step, stock, texts: () => seen.map((s) => s.text) }
   }
 
   test("reload shows progress then the loaded count", () => {
-    const { session, seen, step } = setup()
-    session.view.player.magAmmo = 2
+    const { seen, step, stock } = setup()
+    stock(2, { ammo: 12 })
     step({ reload: true })
     expect(seen.at(-1)).toEqual({ text: "Reloading", kind: "progress" })
     step({}, Math.ceil(PISTOL_RELOAD_TIME / TICK_DT) + 1)
     expect(seen.at(-1)).toEqual({ text: "Reloaded 8/8", kind: "result" })
   })
 
-  test("search shows progress and item pops", () => {
+  test("search shows progress and what was found; taking it pops the pickup", () => {
     const { session, seen, step, texts } = setup()
     const p = session.view.player
-    const c = session.view.containers.find((x) => x.ammo > 0 && x.planks > 0) ?? session.view.containers.find((x) => x.ammo > 0)!
+    const { ledger } = session.sim.progression
+    const c = session.view.containers.find((x) => x.kind === "dresser")!
+    const st = ledger.store(c.id)!
+    st.slots.fill(null)
+    st.slots[0] = { item: "ammo", count: 5 }
+    st.slots[1] = { item: "plank", count: 2 }
     Object.assign(p, { x: c.x, y: c.y + 0.75, aim: -Math.PI / 2 })
     session.rebuildCollision()
     step({ interact: true, aim: -Math.PI / 2 })
     expect(seen.at(-1)!.kind).toBe("progress")
     expect(seen.at(-1)!.text).toMatch(/^Searching /)
-    step({ aim: -Math.PI / 2 }, Math.ceil(SEARCH_DURATION / TICK_DT) + 2)
-    expect(texts()).toContain(`+${c.ammo} 9mm`)
-    if (c.planks) expect(texts()).toContain(`+${c.planks} plank${c.planks > 1 ? "s" : ""}`)
+    step({ aim: -Math.PI / 2 }, Math.ceil(DEFAULT_PROGRESSION_TUNING.searchQuietTime / TICK_DT) + 2)
+    expect(texts()).toContain("Found 5 9mm, 2 Planks")
+    expect(texts()).not.toContain("Stopped")
+    step({ interact: true, aim: -Math.PI / 2 })
+    expect(texts()).toContain("+5 9mm, +2 Planks")
   })
 
   test("barricade shows progress then the plank count, and warns with no planks", () => {
-    const { session, seen, step, texts } = setup()
+    const { session, seen, step, stock, texts } = setup()
     const p = session.view.player
     Object.assign(p, { x: 27.7, y: 36.2, aim: -Math.PI / 2 })
     session.rebuildCollision()
     step({ barricade: true })
     expect(seen).toContainEqual({ text: "Boarding up door", kind: "progress" })
     expect(seen).toContainEqual({ text: "Noise 10 m", kind: "noise" })
-    step({}, Math.ceil(BARRICADE_DURATION / TICK_DT) + 2)
+    step({}, Math.ceil(DEFAULT_PROGRESSION_TUNING.barricadeTime / TICK_DT) + 2)
     expect(texts()).toContain("Boarded 1/3")
-    p.planks = 0
+    stock(6, { plank: 0 })
     step({ barricade: true })
     expect(seen.at(-1)).toEqual({ text: "No planks", kind: "warning" })
   })
 
   test("doors, flashlight, slots, empty magazine and damage each report", () => {
-    const { session, step, texts, seen } = setup()
+    const { session, step, stock, texts, seen } = setup()
     const p = session.view.player
     Object.assign(p, { x: 27.7, y: 36.2, aim: -Math.PI / 2 })
     session.rebuildCollision()
@@ -154,14 +174,15 @@ describe("actor feedback from simulation state", () => {
     step({ flashlight: true })
     expect(texts()).toContain("Flashlight off")
 
-    p.magAmmo = 1
-    p.reserveAmmo = 0
+    stock(1, { ammo: 0 })
     step({ fire: true, aim: Math.PI / 2 })
     expect(seen.find((s) => s.text === "Out of ammo")?.kind).toBe("warning")
     expect(texts()).toContain("Noise 32 m")
 
+    step({ hotbarSlot: 2 })
+    expect(texts()).toContain("Slot 3 empty")
     step({ hotbarSlot: 1 })
-    expect(texts().some((t) => t === "9mm Pistol" || t === "Slot 2 empty")).toBe(true)
+    expect(texts()).toContain("9mm Pistol")
 
     p.health -= 12
     step()

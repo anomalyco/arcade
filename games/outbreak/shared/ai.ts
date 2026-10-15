@@ -363,11 +363,12 @@ export class OutbreakAISubsystem {
     return this.noiseBus.emit({ x, y, radius, kind, time, sourceId, loudness })
   }
 
-  addBarricadePlank(portalId: string): boolean {
+  /** Adds one plank holding `hp` (100 plain, more when reinforced). */
+  addBarricadePlank(portalId: string, hp = 100): boolean {
     const st = this.portalStates.get(portalId)
     if (!st || st.barricadePlanks >= 3) return false
+    st.barricadeHp = (st.barricadePlanks > 0 ? st.barricadeHp : 0) + hp
     st.barricadePlanks++
-    st.barricadeHp = st.barricadePlanks * 100
     return true
   }
 
@@ -489,8 +490,9 @@ export class OutbreakAISubsystem {
       if (!st) continue
       st.lastBashTime = time
       if (st.barricadePlanks > 0) {
+        const perPlank = st.barricadeHp / st.barricadePlanks
         st.barricadeHp = Math.max(0, st.barricadeHp - bash.damage)
-        const nextPlanks = Math.ceil(st.barricadeHp / 100)
+        const nextPlanks = Math.max(0, Math.min(st.barricadePlanks, Math.ceil(st.barricadeHp / perPlank - 1e-9)))
         if (nextPlanks !== st.barricadePlanks) {
           st.barricadePlanks = nextPlanks
           topologyChanged = true
