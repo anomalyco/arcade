@@ -16,13 +16,13 @@ const axles = splitChassis(buildCar(spec)).wheels
 
 describe("presentation chassis", () => {
   test("a spinning banked wheel keeps its axle fixed", () => {
-    const out = { yaw: 0, roll: 0, pitch: 0 }, axes = []
+    const out = { yaw: 0, roll: 0, pitch: 0 }, axes: number[][] = []
     for (let spin = 0; spin < 7; spin += 0.1) {
       wheelRotation(out, 0.7, -0.3, 0.15, 0.4, spin)
       const x = Math.cos(out.roll), y = Math.sin(out.roll) * Math.cos(out.pitch), z = Math.sin(out.roll) * Math.sin(out.pitch)
       axes.push([x * Math.cos(out.yaw) + z * Math.sin(out.yaw), y, -x * Math.sin(out.yaw) + z * Math.cos(out.yaw)])
     }
-    for (const axis of axes) axis.forEach((v, i) => expect(v).toBeCloseTo(axes[0][i], 8))
+    for (const axis of axes) axis.forEach((v, i) => expect(v).toBeCloseTo(axes[0]![i]!, 8))
   })
   test("spring settles with modest overshoot and is invariant to dt partition", () => {
     const s = { x: 0, v: 0 }

@@ -1,5 +1,4 @@
 {
-  "files": ["scripts/prove-smoke-realistic.ts", "scripts/prove-fx-playwright.ts", "scripts/prove-fx-integration.ts", "scripts/prove-motion-blur.ts", "scripts/prove-lab-spawn.ts", "scripts/prove-lab-effects.ts", "scripts/prove-effects-defaults.ts", "scripts/prove-fire-water.ts"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
@@ -13,5 +12,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/dev.ts", "scripts/compare.ts", "scripts/sim-smoke.ts", "../../scripts/dev.ts", "../../scripts/dev-control-server.ts", "../../scripts/arcade.ts", "../../scripts/prove-dev-control.ts"]
+  "include": ["scripts/**/*.ts", "tests", "../../scripts/**/*.ts"]
 }

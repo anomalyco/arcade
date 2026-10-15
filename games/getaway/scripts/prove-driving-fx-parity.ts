@@ -56,7 +56,7 @@ try {
       await page.waitForFunction(() => (window as any).__getawayBench)
       await page.evaluate(async (study) => {
         const b = (window as any).__getawayBench; await b.ready
-        const { motionBlur } = await import(/* @vite-ignore */ "/src/render/motion.ts"); motionBlur.enabled = false
+        const { motionBlur } = await import(/* @vite-ignore */ String("/src/render/motion.ts")); motionBlur.enabled = false
         b.emissionStudy(study); b.distance(38); b.reset(true)
       }, study)
       const frames: number[] = []

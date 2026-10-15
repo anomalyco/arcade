@@ -35,7 +35,7 @@ try {
         let peak = 0
         for (let i = 0; i < 75; i++) { const r = await b.step(i, 1 / 60, true); peak = Math.max(peak, r.smoke.connected) }
         const scene = w.__integration.scene
-        return { adapter: b.adapterInfo, peakSmoke: peak, lights: { ...scene.lightSettings }, motion: await import("/src/render/motion.ts").then((m: any) => m.motionBlur) }
+        return { adapter: b.adapterInfo, peakSmoke: peak, lights: { ...scene.lightSettings }, motion: await import(/* @vite-ignore */ String("/src/render/motion.ts")).then((m: any) => m.motionBlur) }
       })
       assert.match(result.adapter.architecture, /metal/i)
       assert(result.peakSmoke > 0)
@@ -47,8 +47,8 @@ try {
       const tunnel = await page.evaluate(async () => {
         const w = window as any, b = w.__getawayBench
         b.emissionStudy(null); b.reset()
-        const { TUNNEL } = await import("/shared/sim/tunnel.ts")
-        const { newBody } = await import("/shared/sim/vehicle.ts")
+        const { TUNNEL } = await import(/* @vite-ignore */ String("/shared/sim/tunnel.ts"))
+        const { newBody } = await import(/* @vite-ignore */ String("/shared/sim/vehicle.ts"))
         const local = w.__integration.session(), body = local.world.robber().body
         Object.assign(body, newBody(TUNNEL.east - 5, TUNNEL.z + 1, Math.PI / 2), { vx: 30 })
         local.prev = local.curr = local.world.view(local.myId)

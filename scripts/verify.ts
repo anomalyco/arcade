@@ -5,7 +5,13 @@
 //   bun run verify:release      clean `git archive` export of HEAD, frozen install, then every workspace target's
 //                               check commands with cold caches, smoke and `wrangler deploy --dry-run`
 //
-// Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --list (print the plan only).
+// Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --list (print the plan only),
+//          --changed <file> (newline-separated changed paths instead of asking git),
+//          --export <dir|tar> (release: verify this pre-made `git archive` export instead of making one).
+//
+// Without a git checkout (hivemind workers sync files but not `.git`), affected mode checks every workspace target
+// unless --changed says what changed, and release mode copies the synced tree, minus ignored build output, as its
+// clean export. Independent projects then join only through --changed.
 //
 // "Affected" comes from the CI workflows themselves: a target runs when a changed file (committed since the
 // merge-base with --base, staged, unstaged or untracked) matches its workflow's pull_request paths. So packages/**
@@ -16,7 +22,7 @@
 // node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
 // Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs"
 import { availableParallelism, tmpdir } from "node:os"
 import { basename, join, relative, resolve } from "node:path"
 
@@ -27,6 +33,8 @@ const release = flag("--release")
 const all = flag("--all") || release
 const smoke = !flag("--no-smoke")
 const base = option("--base", "origin/main")
+const changedList = argv.includes("--changed") ? option("--changed", "") : undefined
+const exportArg = argv.includes("--export") ? resolve(option("--export", "")) : undefined
 const jobs = Number(option("--jobs", String(Math.max(3, Math.floor(availableParallelism() / 2)))))
 const repo = resolve(import.meta.dir, "..")
 const testWorkers = Math.max(2, Math.floor(availableParallelism() / 2))
@@ -54,7 +62,20 @@ async function workflowTargets(): Promise<{ target: Target; paths: string[] }[]>
   return out
 }
 
-async function changedFiles(): Promise<string[]> {
+/** True when `repo` is the top of a usable git checkout (a synced worktree's `.git` file may point nowhere). */
+async function hasGit(): Promise<boolean> {
+  const top = await $`git rev-parse --show-toplevel`.cwd(repo).quiet().nothrow()
+  return top.exitCode === 0 && realpathSync(top.stdout.toString().trim()) === realpathSync(repo)
+}
+const git = await hasGit()
+
+/** Changed paths from --changed, else from git; undefined when neither can say. */
+async function changedFiles(): Promise<string[] | undefined> {
+  if (changedList !== undefined) {
+    const text = await Bun.file(resolve(changedList)).text()
+    return [...new Set(text.split("\n").map((l) => l.trim()).filter(Boolean))]
+  }
+  if (!git) return undefined
   const mergeBase = (await $`git merge-base HEAD ${base}`.cwd(repo).quiet().nothrow()).stdout.toString().trim()
   if (!mergeBase) throw new Error(`No merge-base with ${base}; fetch it or pass --base <ref>`)
   const lists = await Promise.all([
@@ -198,28 +219,51 @@ if (all) {
   if (release) {
     // Independent projects (own lockfiles) join a release run only when they changed.
     const changed = await changedFiles()
+    if (!changed) console.log("verify:release: no git checkout and no --changed list; independent projects are skipped")
     for (const { target, paths } of targets) {
-      if (target.independent && changed.some((f) => paths.some((p) => new Bun.Glob(p).match(f)))) selected.push(target)
+      if (target.independent && changed?.some((f) => paths.some((p) => new Bun.Glob(p).match(f)))) selected.push(target)
     }
   }
 } else {
   const changed = await changedFiles()
-  selected = targets.filter(({ paths }) => changed.some((f) => paths.some((p) => new Bun.Glob(p).match(f)))).map((t) => t.target)
-  console.log(`verify: ${changed.length} changed file(s) vs ${base} -> ${selected.map((t) => t.name).join(", ") || "nothing to check"}`)
+  if (changed) {
+    selected = targets.filter(({ paths }) => changed.some((f) => paths.some((p) => new Bun.Glob(p).match(f)))).map((t) => t.target)
+    const from = changedList !== undefined ? changedList : `vs ${base}`
+    console.log(`verify: ${changed.length} changed file(s) ${from} -> ${selected.map((t) => t.name).join(", ") || "nothing to check"}`)
+  } else {
+    selected = targets.map((t) => t.target).filter((t) => !t.independent)
+    console.log(`verify: no git checkout here (pass --changed <file> to narrow); checking every workspace target`)
+  }
 }
+
+// Ignored output a git-less copy leaves behind, mirroring the .gitignore files.
+const COPY_EXCLUDES = [".git", "node_modules", "dist", ".wrangler", "*.tsbuildinfo", ".DS_Store", ".env*", "captures", ".scratch", "shots", "proof-output", "build.gen.ts", ".arcade-control.json"]
 
 let root = repo
 let exportDir: string | undefined
 if (release) {
-  const dirty = (await $`git status --porcelain --untracked-files=no`.cwd(repo).quiet().text()).trim()
-  if (dirty) console.log("verify:release: uncommitted changes are NOT verified (exporting HEAD)")
-  exportDir = mkdtempSync(join(tmpdir(), "arcade-verify-"))
-  root = exportDir
   let t = performance.now()
-  await $`git archive HEAD | tar -x -C ${exportDir}`.cwd(repo).quiet()
-  console.log(`  export ${((performance.now() - t) / 1000).toFixed(2)}s -> ${exportDir}`)
+  if (exportArg && statSync(exportArg).isDirectory()) {
+    root = exportArg
+    console.log(`  export: using ${exportArg}`)
+  } else {
+    exportDir = mkdtempSync(join(tmpdir(), "arcade-verify-"))
+    root = exportDir
+    if (exportArg) {
+      await $`tar -x -f ${exportArg} -C ${exportDir}`.quiet()
+      console.log(`  export: unpacked ${exportArg}`)
+    } else if (git) {
+      const dirty = (await $`git status --porcelain --untracked-files=no`.cwd(repo).quiet().text()).trim()
+      if (dirty) console.log("verify:release: uncommitted changes are NOT verified (exporting HEAD)")
+      await $`git archive HEAD | tar -x -C ${exportDir}`.cwd(repo).quiet()
+    } else {
+      console.log("verify:release: no git checkout; copying this tree (including uncommitted files) minus ignored output")
+      await $`rsync -a ${COPY_EXCLUDES.map((e) => `--exclude=${e}`)} ${repo + "/"} ${exportDir + "/"}`.quiet()
+    }
+  }
+  console.log(`  export ${((performance.now() - t) / 1000).toFixed(2)}s -> ${root}`)
   t = performance.now()
-  await $`bun install --frozen-lockfile`.cwd(exportDir).quiet()
+  await $`bun install --frozen-lockfile`.cwd(root).quiet()
   console.log(`  frozen install ${((performance.now() - t) / 1000).toFixed(2)}s`)
 }
 

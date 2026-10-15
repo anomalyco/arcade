@@ -14,5 +14,5 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "shared", "scripts"]
+  "include": ["src", "shared", "scripts", "tests", "../../packages/kit/server/workers-shim.d.ts"]
 }
