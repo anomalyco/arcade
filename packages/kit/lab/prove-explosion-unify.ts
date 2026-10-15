@@ -569,7 +569,7 @@ try {
             const DEG = Math.PI / 180
             const s = c.game.state.ship
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 16 * DEG, dist: 125 })
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
             ;(globalThis as any).__clearCarrierFx()
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
             if (mode === "worst") {
@@ -710,7 +710,7 @@ try {
             const s = c.game.state.ship
             ;(globalThis as any).__clearCarrierFx()
             c.game.state.free = true
-            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 16 * DEG, dist: 125 })
+            c.camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
             c.flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false)
           })
         } else if (vf === 136) {

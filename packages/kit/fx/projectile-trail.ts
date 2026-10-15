@@ -59,19 +59,19 @@ export function emitTrailBirth(
 ): void {
   if (type === TrailBirth.puff) {
     // Soot from burning debris: dark and dense while hot, thinner, paler and smaller as the fragment cools.
-    const shade = 0.06 + 0.2 * (1 - strength)
+    const shade = 0.035 + 0.13 * (1 - strength)
     set(
       "soft",
       (2.2 + random() * 1.4) * (0.5 + 0.5 * strength),
       0.5 * scale * (0.45 + 0.55 * strength),
-      0.75 * scale,
+      0.5 * scale,
       -0.8,
       0.55,
       0,
-      shade * 1.03,
+      shade * 0.94,
+      shade * 0.97,
       shade,
-      shade * 0.95,
-      0.5 * (0.3 + 0.7 * strength),
+      0.8 * (0.3 + 0.7 * strength),
     )
     pool.spawn(
       spec,
@@ -86,7 +86,7 @@ export function emitTrailBirth(
     return
   }
   if (type === TrailBirth.head) {
-    set("spark", 0.09 + random() * 0.1, 0.075 * scale * (0.5 + 0.5 * strength), -0.02 * scale, 0, 3, 0, 1, 0.72, 0.3, 1, 0.3 + 1.1 * strength)
+    set("spark", 0.12 + random() * 0.14, 0.16 * scale * (0.45 + 0.55 * strength), -0.3 * scale, 0, 3, 0, 1, 0.72, 0.3, 1, 0.35 + 1.15 * strength)
     pool.spawn(spec, x, y, z, vx * 0.12, vy * 0.12, vz * 0.12, random() * 6.283)
     return
   }

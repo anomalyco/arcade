@@ -293,7 +293,7 @@ async function main() {
               camera.set({ x: s.x + 85, z: s.z - 60, yaw: 25 * DEG, pitch: 16 * DEG, dist: 75 })
               flight.weapons.fx.explosion(s.x + 85, 2.2, s.z - 60, 0, 2, 0, 1.15, true, "car")
             } else {
-              camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 16 * DEG, dist: 125 })
+              camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
               flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false, "ship")
             }
           }

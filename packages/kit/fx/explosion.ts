@@ -205,7 +205,7 @@ export const EXPLOSION_PRESETS: Readonly<
       debrisCount: 40,
       flashIntensity: 10.0,
       shockRing: 1.45,
-      fragmentCount: 12,
+      fragmentCount: 16,
       secondaryPops: 3,
       scorch: true,
     }),
@@ -674,17 +674,17 @@ export function spawnExplosion(
   const trailScale = 0.3 * fbSize
   for (let i = 0; i < fragments; i++) {
     const a = sampleAngle(((i + random() * 0.8) / Math.max(1, fragments)) * Math.PI * 2)
-    const elevation = airburst ? (random() - 0.35) * 1.5 : 0.42 + random() * 0.78
-    const speed = (5.5 + random() * 7.5) * velScale
+    const elevation = airburst ? (random() - 0.4) * 1.4 : 0.22 + random() * 0.66
+    const speed = (7 + random() * 9) * velScale
     const horizontal = Math.cos(elevation) * speed
     const shade = 0.06 + random() * 0.1
     Object.assign(fragmentSpec, {
       kind: "debris",
-      life: (1.7 + random() * 1.8) * lod.lifeScale,
+      life: (2.0 + random() * 2.2) * lod.lifeScale,
       size: (0.05 + random() * 0.08) * velScale * Math.max(1, effScale * 0.55),
       growth: 0,
       gravity: 14.2,
-      drag: 0.22,
+      drag: 0.12,
       bounce: 0.3,
       r: shade + 0.02,
       g: shade * 0.94,
