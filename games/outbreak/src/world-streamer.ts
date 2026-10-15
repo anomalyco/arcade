@@ -128,6 +128,8 @@ export type CompiledWorldChunk = {
   floorTile: Uint8Array<ArrayBuffer> // 128 × 128 × 2 (RG8)
   moonTile: Uint8Array<ArrayBuffer> // 256 × 256 (R8)
   bounceTile: Uint8Array<ArrayBuffer> // 64 × 64 × 4 (RGBA8)
+  /** Wall-sconce lights, `SCONCE_FLOATS` each (see interiors/sconces.ts). */
+  sconces: Float32Array<ArrayBuffer>
   compileMs: number
 }
 
@@ -598,6 +600,7 @@ export function compileSingleWorldChunk(
   }
 
   const footprints = chunk.buildings.map(buildingFootprint)
+  const sconces: number[] = []
   const isClassicOriginChunk =
     chunk.cx >= 0 &&
     chunk.cx < 3 &&
@@ -732,7 +735,7 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
     emitBuildingRugs(mainScratch, b, chunkTown)
-    emitInteriorDecor(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown, undefined, sconces)
   }
 
   // 5. Walls, windows & fences
@@ -1172,6 +1175,7 @@ export function compileSingleWorldChunk(
     floorTile,
     moonTile,
     bounceTile,
+    sconces: new Float32Array(sconces),
     compileMs: performance.now() - t0,
   }
 }
@@ -1302,6 +1306,8 @@ export class WorldClientStreamer {
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
   windowBuildings: Building[] = []
+  /** Sconce lists of the chunks in the current window. */
+  windowSconces: Float32Array[] = []
   private readonly buildingSlots: (Building | null)[] = [null, null, null, null, null, null, null, null]
   lastWindowKey = ""
   bakeStepsCompleted = 0
@@ -1447,6 +1453,7 @@ export class WorldClientStreamer {
     this.center = { cx: 1, cy: 1 }
     this.windowOrigin = [0, 0]
     this.windowBuildings = []
+    this.windowSconces = []
     this.buildingSlots.fill(null)
     this.lastWindowKey = ""
     this.lastPlayerX = NaN
@@ -1784,8 +1791,10 @@ export class WorldClientStreamer {
     if (nextOuterRingDirty) this.outerRingDirty = true
 
     this.renderedChunkKeys.clear()
+    this.windowSconces = []
     for (let i = 0; i < allRenderedChunks.length; i++) {
       this.renderedChunkKeys.add(allRenderedChunks[i]!.key)
+      if (allRenderedChunks[i]!.sconces?.length) this.windowSconces.push(allRenderedChunks[i]!.sconces)
     }
 
     // Select the 8 buildings closest to (playerX, playerY) so the building the survivor is inside (dist = 0)

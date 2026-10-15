@@ -4,12 +4,14 @@
 //
 // Usage:
 //   bun scripts/coop-bench.ts [--zombies=60] [--players=4] [--seconds=60] [--spread=0|1] [--loss=0] [--latencyMs=50] [--jitterMs=16]
+//   bun scripts/coop-bench.ts --horde=500 [--players=4]   a live horde of 500 closing on the squad (survivors kept alive)
 //   bun scripts/coop-bench.ts --matrix=1 [--seconds=10]
 import { CoopRoomCore } from "../server/room-core"
 import { createAIAgent } from "../shared/ai"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { addHorde, materializeHorde } from "../shared/hordes/index"
 import { inspectSnapshotBreakdown } from "../shared/net-protocol"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "../tests/loopback"
@@ -32,6 +34,8 @@ export type ScenarioConfig = {
   latencyTicks: number
   jitterTicks: number
   seconds: number
+  /** Members of a live horde staged 22 m from the squad and sent at it. */
+  horde?: number
 }
 
 const pct = (sorted: number[], p: number): number =>
@@ -159,6 +163,12 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
     }
   }
 
+  if (cfg.horde) {
+    const lead = core.sim.slots[0]!.survivor
+    const h = addHorde(core.sim, lead.x + 22, lead.y, cfg.horde, { x: lead.x, y: lead.y })
+    materializeHorde(core.sim, h)
+  }
+
   net.lossRate = savedLoss
   measuring = true
 
@@ -176,6 +186,7 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
     virtualMs = net.now * 1000
     net.tick++
     net.deliver()
+    if (cfg.horde) for (const slot of core.sim.slots) slot.survivor.health = slot.survivor.maxHealth
     const t0 = performance.now()
     const before = core.tick
     core.step()
@@ -217,7 +228,7 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
   for (const c of clients) c.close()
 
   return {
-    label: `${cfg.players}p · ${cfg.zombies}z · ${cfg.spread ? "spread 1km" : "together"} · ${
+    label: `${cfg.players}p · ${cfg.horde ? `horde ${cfg.horde} + ` : ""}${cfg.zombies}z · ${cfg.spread ? "spread 1km" : "together"} · ${
       cfg.lossRate > 0 ? `lossy (80±30ms, ${Math.round(cfg.lossRate * 100)}%)` : "clean (50ms)"
     }`,
     players: cfg.players,
@@ -301,9 +312,10 @@ if (import.meta.main) {
     const jitterMs = arg("jitterMs", 16)
     const latencyTicks = Math.max(1, Math.round((latencyMs - jitterMs / 2) / (TICK_DT * 1000)))
     const jitterTicks = Math.max(0, Math.round(jitterMs / (TICK_DT * 1000)))
+    const horde = arg("horde", 0)
     console.log(
       JSON.stringify(
-        runCoopBenchScenario({ players, zombies, spread, lossRate, latencyTicks, jitterTicks, seconds }),
+        runCoopBenchScenario({ players, zombies, spread, lossRate, latencyTicks, jitterTicks, seconds, horde }),
         null,
         2,
       ),

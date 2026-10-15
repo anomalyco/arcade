@@ -2,7 +2,7 @@ import { mat4, vec4 } from "wgpu-matrix"
 import { Camera } from "@arcade/kit/client/camera"
 import type { LabCommandRegistry } from "@arcade/kit/lab-commands"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/gpu/limits"
 import { MAT, Mesh, VERT_BYTES, hex } from "@arcade/kit/gpu/mesh"
 import { Renderer, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
@@ -38,7 +38,7 @@ import { propShape, sightRects, SIZE } from "../../shared/map"
 import { SceneryMemory } from "../../shared/scenery-memory"
 import { supportHeight } from "../../shared/terrain"
 import { FOG_SIZE, Vision } from "../../shared/vision"
-import { InteriorPresenter } from "../interiors"
+import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
 import { INTERIOR_UNIFORM_FLOATS } from "../interiors/wgsl"
 import { Survivor } from "../survivor"
 import {
@@ -211,7 +211,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
   const frame = new Float32Array(FRAME_FLOATS)
   const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
-  const lampPower = new Float32Array(MAX_LIGHTS)
+  const lampPower = new Float32Array(MAX_MAP_LIGHTS)
   const empty = new Float32Array(0)
   /** Material recipes and params (120 floats), then the interior block (rugs and themes). */
   const VIGNETTE_INTERIOR_OFFSET = 120
@@ -800,6 +800,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
     const groundY = supportHeight(town, player.x, player.y)
 
     // Populate lights: slot 0 is eye visibility
+    lampPower[SCONCE_LAMP_SLOT] = Math.max(0.18, day.lamps) * 0.45
     lights.fill(0)
     lights.set([player.x, 1.65 + groundY, player.y, 27, 0, 0, 0, 0, 0, 0, 0, 0, 0, blockers.length, 0.01, -1], 0)
     let count = 1
@@ -989,7 +990,7 @@ export const outbreakVignetteSection: SectionFactory = context => {
       occluders,
       occluderCount: lightOccluders,
       lampPower,
-      lampCount: town.lamps.length,
+      lampCount: SCONCE_LAMP_SLOT + 1,
       view,
       batches,
       alphaSprites: empty,

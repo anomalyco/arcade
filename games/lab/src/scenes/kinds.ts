@@ -109,6 +109,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "interiors", label: "Interiors", subject: "Rugs and furnishing in Outbreak's house interiors", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "discovery", label: "Discovery", subject: "What the survivor learns by looking, not by being told", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "bots", label: "Bots", subject: "Survivor bots and the difficulty tuner", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "hordes", label: "Hordes", subject: "Outbreak's roaming hordes and the flow fields they follow", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
 ]
 
@@ -129,6 +130,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "rugs-interiors": "interiors",
   "survivor-bots": "bots",
   "outbreak-discovery": "discovery",
+  "outbreak-hordes": "hordes",
 }
 
 /** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */

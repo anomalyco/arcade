@@ -41,7 +41,7 @@ export type DetachedDebrisPiece = {
 }
 
 const PART_COUNT = 9
-export const MAX_INSTANCES_PER_PART = 2048
+export const MAX_INSTANCES_PER_PART = 4096
 const BONE_COUNT = 15
 const BONE_STRIDE = BONE_COUNT * 12
 const INITIAL_AGENT_CAPACITY = 512
