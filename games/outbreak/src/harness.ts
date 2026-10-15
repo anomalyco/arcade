@@ -39,7 +39,7 @@ import {
 import type { Survivor } from "./survivor"
 import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
-import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
+import { type VehicleLabHost } from "./vehicles/index"
 import type { OutbreakWeatherController } from "./weather"
 import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
@@ -104,7 +104,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     coop,
     audio,
     vehicleAudio,
-    vehicleHost,
     promptEl,
   } = host
 
@@ -230,32 +229,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           lastBakeMs: worldStreamer.lastBakeMs,
           deltasCount: session.sim.worldStream.deltas.size,
         },
-        vehicles: session.view.vehicles.map((v) => ({
-          id: v.id,
-          kind: v.kind,
-          label: v.spec.label,
-          x: v.x,
-          y: v.y,
-          h: v.h,
-          vx: v.vx,
-          vy: v.vy,
-          speed: Math.hypot(v.vx, v.vy),
-          hp: v.hp,
-          maxHp: v.maxHp,
-          fuel: v.fuel,
-          maxFuel: v.maxFuel,
-          hasBattery: v.hasBattery,
-          hasKeys: v.hasKeys,
-          headlights: v.headlights,
-          engineOn: v.engineOn,
-          horn: v.horn,
-          wreck: v.wreck,
-          seats: [...v.seats],
-          zombieHits: v.zombieHits,
-          zombieKills: v.zombieKills,
-          grabbingZombies: v.grabbingZombies,
-          bangCount: v.bangCount,
-        })),
         ...outbreakClientFeatures.collectHarnessState(host),
       }
     },
@@ -498,10 +471,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           detached: z.detachedLimbs,
         })),
       }
-    },
-    /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
-    stageVehicle(scene: VehicleScene) {
-      stageVehicleScene(vehicleHost, scene)
     },
     spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
       const session = host.session()
