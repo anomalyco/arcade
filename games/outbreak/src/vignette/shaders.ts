@@ -5,6 +5,7 @@ import {
   makeSceneShader,
   postShader,
   spriteShader,
+  type LookVariantMode,
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
 import { SurfaceTexUniformsStruct, surfaceMaterialCoreWgsl } from "@arcade/kit/gpu/surface-materials"
@@ -713,5 +714,7 @@ export const vignetteShaders = {
   scene: makeSceneShader(vignetteSceneHooks),
   lookScene: makeLookSceneShader(vignetteSceneHooks),
   lookPost: makeLookPostShader(outbreakPostFinish),
+  lookSceneVariant: (variant: LookVariantMode) => makeLookSceneShader(vignetteSceneHooks, variant),
+  lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
 }
 

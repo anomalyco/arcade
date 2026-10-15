@@ -6,6 +6,7 @@ import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
 import type { GameAudio } from "../audio/game-audio"
 import type { LightSettings, LightStyle } from "../render/car-lights"
+import { motionBlurControls, motionBlurDefaults } from "@arcade/kit/gpu/motion-blur"
 import { motionBlur } from "../render/motion"
 import { lightControls } from "@arcade/kit/vehicle/lab"
 
@@ -104,11 +105,7 @@ export class DebugOverlay extends LabPanel {
       })
       this.addControls(audioBag, [{ key: "proceduralAudio", label: "Procedural audio", group: "Audio" }], { proceduralAudio: sound.procedural })
     }
-    this.addControls(motionBlur, [
-      {key:"enabled",label:"Motion blur",group:"Motion"},
-      {key:"strength",label:"Strength",group:"Motion",min:0,max:2,step:.05},
-      {key:"shutter",label:"Shutter",group:"Motion",min:0,max:1,step:.05},
-    ])
+    this.addControls(motionBlur, [...motionBlurControls], motionBlurDefaults())
     const keyLabels = keyLabelSetting()
     this.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
   }

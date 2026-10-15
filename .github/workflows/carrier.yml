@@ -66,4 +66,5 @@ jobs:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
         working-directory: .
-      - run: bun run deploy
+      # Every deploy restarts the rooms (games in progress reset): skip it when the build is identical to what is live.
+      - run: bun scripts/deploy.ts --if-changed

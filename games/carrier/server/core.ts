@@ -412,7 +412,8 @@ export class RoomCore {
         return
       }
       case "seek": {
-        const f = this.combat.fighters.get(id)
+        // A pilot's missile seeker or a gunner's SAM seeker: the sender's side from the crew, so both warn alike.
+        const f = playerOf(crew, id)
         const g = msg.on >= 0 ? this.combat.fighters.get(msg.on) : undefined
         // Only an enemy's seeker is relayed, and only to that jet; switching targets clears the old one.
         const prev = this.seeking.get(id) ?? -1
@@ -1157,6 +1158,8 @@ export class RoomCore {
     this.captainAt.delete(id)
     this.chatLimit.forget(id)
     this.stats.delete(id)
+    const seek = this.seeking.get(id)
+    if (seek !== undefined) this.sendTo(seek, encode({ type: "seek", by: id, s: 0 }))
     this.seeking.delete(id)
     this.combat.remove(id)
   }

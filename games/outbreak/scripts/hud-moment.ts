@@ -85,7 +85,10 @@ async function frame(page: Page, command: Record<string, unknown> = {}) {
       const emits = w.__emits.splice(0)
       return {
         time: st.time,
-        box: h.hud.localBox(),
+        box: (() => {
+          const b = h.hud.localBox()
+          return b ? { ...b, ground: b.ground?.map((v: number) => Math.round(v * 10) / 10) } : null
+        })(),
         player: {
           health: p.health,
           maxHealth: p.maxHealth,
@@ -121,7 +124,9 @@ async function frame(page: Page, command: Record<string, unknown> = {}) {
 const seconds = (s: number) => Math.round(s * FPS)
 
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
+  // Frames at 2× so the prototype's stage stays sharp when the board shows it larger than 1280 wide.
+  const dpr = Number(process.argv.find((a) => a.startsWith("--dpr="))?.slice(6) ?? 2)
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: dpr })
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
