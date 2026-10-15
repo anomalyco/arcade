@@ -5,7 +5,7 @@ The shared sound library (semantic ids, variants, generation and curation) and O
 
 This is an additive library and Lab candidate. It does not replace either game's approved audio path.
 The original branch report below describes implementation and source-branch checks; integrated verification is
-recorded separately in `docs/integration.md`.
+in the release 1 PR (#13).
 
 ## Integration boundary
 
