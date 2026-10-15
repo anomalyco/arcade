@@ -269,7 +269,7 @@ describe("bottles and car alarms", () => {
     expect(glass[0]!.x).toBeLessThanOrEqual(44 + T.bottleRange)
     expect(glass[0]!.radius).toBe(T.bottleNoise)
     expect(ledger.count("ann", "bottle")).toBe(1)
-    expect([...ledger.stores.keys()].filter((id) => id.startsWith("glass:"))).toHaveLength(1)
+    expect([...ledger.stores.keys()].filter((id) => id.startsWith("glass:") && !id.startsWith("glass:v:"))).toHaveLength(1)
   })
 
   test("half the abandoned cars have alarms; E puts a window in, and an alarm car wails on a beat until its battery dies", () => {

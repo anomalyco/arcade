@@ -96,8 +96,8 @@ export class InventorySounds {
   private drops = new Set<string>()
   private pings = new Set<number>()
   private lures = new Set<number>()
-  /** D-19 verbs: glass already heard, each tripwire's last armed state, cars already smashed. */
-  private glass = new Set<string>()
+  /** D-19 verbs: glass already heard (and how many steps on it), each tripwire's last armed state, cars already smashed. */
+  private glass = new Map<string, number>()
   private trips = new Map<string, number>()
   private smashed = new Set<string>()
   private started = false
@@ -188,7 +188,7 @@ export class InventorySounds {
         dropCount++
         if (this.drops.has(sid)) continue
         newDrop = true
-        if (st.at) emit({ id: "item.drop", x: st.at.x, y: st.at.y, source: "drop" })
+        if (st.at && !sid.startsWith("drop:v:")) emit({ id: "item.drop", x: st.at.x, y: st.at.y, source: "drop" })
       }
       if (newDrop || dropCount !== this.drops.size) this.drops = new Set([...stores.keys()].filter((k) => k.startsWith("drop:")))
       let newPing = false
@@ -209,15 +209,19 @@ export class InventorySounds {
     const at = st.at
     if (!at) return
     if (sid.startsWith("glass:")) {
-      if (!this.glass.has(sid)) emit({ id: "glass.break", x: at.x, y: at.y, source: "bottle" })
-      this.glass.add(sid)
+      // Glass a vignette left is already broken; a foot on any glass crunches it.
+      const steps = st.counts.steps ?? 0
+      const heard = this.glass.get(sid)
+      if (heard === undefined && !st.counts.keep) emit({ id: "glass.break", x: at.x, y: at.y, source: "bottle" })
+      if (heard !== undefined && steps > heard) emit({ id: "glass.break", x: at.x, y: at.y, source: "glass-step", gain: 0.35 })
+      this.glass.set(sid, steps)
     } else if (sid.startsWith("trip:")) {
       const armed = st.counts.armed ?? 0
       if (this.trips.get(sid) === 1 && !armed && !st.counts.down) emit({ id: "lure.land", x: at.x, y: at.y, source: "tripwire", gain: 1.2 })
       this.trips.set(sid, armed)
     } else {
       if (st.counts.smashed && !this.smashed.has(sid)) {
-        emit({ id: "glass.break", x: at.x, y: at.y, source: "car" })
+        if (!st.counts.old) emit({ id: "glass.break", x: at.x, y: at.y, source: "car" })
         this.smashed.add(sid)
       }
       if (st.counts.alarm && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "lure.loop", x: at.x, y: at.y })

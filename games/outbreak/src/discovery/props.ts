@@ -9,6 +9,7 @@ import { BarricadeBoards } from "./barricades"
 import { isLongItem, registerItemModels, type ItemModels } from "./items"
 import type { DiscoverySettings } from "./settings"
 import { VerbProps } from "./verbs"
+import { VignetteProps } from "./vignettes"
 import { WorkbenchProps } from "./workbench"
 
 const MAX_ITEMS = 256
@@ -81,6 +82,8 @@ export class DiscoveryProps {
   readonly bench: WorkbenchProps
   /** Tripwires, broken glass and car alarms (D-19 verbs). */
   readonly verbs: VerbProps
+  /** Bodies, casings and broken panes the environmental vignettes leave (D-19 slice 5). */
+  readonly vignettes: VignetteProps
   private readonly items: ItemModels
   private readonly fixtureModels: Record<Fixture["model"], number>
   private readonly itemData = new Map<number, { data: Float32Array<ArrayBuffer>; count: number }>()
@@ -94,6 +97,7 @@ export class DiscoveryProps {
     this.items = registerItemModels(renderer)
     this.bench = new WorkbenchProps(renderer, this.items)
     this.verbs = new VerbProps(renderer)
+    this.vignettes = new VignetteProps(renderer)
     const wood = hex(0x6e4e30)
     const drawer = new Mesh()
     drawer.box(-0.45, -0.14, 0.01, 0.45, -0.12, 0.34, hex(0x4a3420), MAT.timber)
@@ -130,6 +134,7 @@ export class DiscoveryProps {
     for (const b of this.barricades.collect(view.town, ai, support)) out.push(b)
     for (const b of this.bench.collect(view.progression, view.player, squad.survivors, squad.seatColour, settings.discoveryClatterTime, squad.dt, support)) out.push(b)
     for (const b of this.verbs.collect(view, time, support)) out.push(b)
+    for (const b of this.vignettes.collect(view, support)) out.push(b)
     for (const v of this.itemData.values()) v.count = 0
     for (const v of this.fixtureData.values()) v.count = 0
     this.shown.clear()

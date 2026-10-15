@@ -57,6 +57,7 @@ import {
   type ClosetSite,
   type Portal,
 } from "./discovery/verbs"
+import { chooseVignettes, vignetteDropId, vignetteGlassId, vignetteScene, vignetteStoreId, type VignetteKind } from "./discovery/vignettes"
 import {
   INTERACT_RANGE,
   type InteractAction,
@@ -232,6 +233,8 @@ export type ProgressionTuning = {
   alarmNoise: number
   /** Seconds a car alarm wails before its battery gives out. */
   alarmTime: number
+  /** How far stepping on broken glass upright carries (crouch to step softly). */
+  glassStepNoise: number
   /** Multiplies every field-craft cost (rounded, at least 1). */
   costScale: number
   pryTime: number
@@ -275,6 +278,7 @@ export const progressionControls = [
   { key: "tripNoise", label: "Tripwire rattle", group: "Verbs", min: 0, max: 30, step: 0.5, unit: "m" },
   { key: "alarmNoise", label: "Car alarm", group: "Verbs", min: 0, max: 50, step: 1, unit: "m" },
   { key: "alarmTime", label: "Car alarm length", group: "Verbs", min: 2, max: 60, step: 1, unit: "s" },
+  { key: "glassStepNoise", label: "Glass underfoot", group: "Verbs", min: 0, max: 20, step: 0.5, unit: "m" },
   { key: "costScale", label: "Field-craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
@@ -317,6 +321,7 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   tripNoise: 13,
   alarmNoise: 30,
   alarmTime: 20,
+  glassStepNoise: 9.5,
   costScale: 1,
   pryTime: 1.2,
   pryNoise: 12,
@@ -746,6 +751,8 @@ const ALARM_BEAT = 1.2
 const TRIP_STRIDE = 0.25
 /** Seconds broken glass lies before it is swept from the world. */
 const GLASS_SECONDS = 90
+/** How close to a patch of broken glass a foot has to land to crunch it. */
+const GLASS_STEP = 0.4
 /** How square on, in radians, a survivor must face a reinforced barricade to study it. */
 const STUDY_CONE = 0.6
 /** Movement, in metres per second, under which a survivor counts as standing still to study. */
@@ -1558,6 +1565,32 @@ export class OutbreakProgression {
       const door = this.town.doors.find((d) => d.id === id)!
       if (!this.ledger.store(tripStoreId(id))) this.armTripwire(door, undefined)
     }
+    for (const v of chooseVignettes(this.town)) if (!this.ledger.store(vignetteStoreId(v.kind, v.target))) this.seedVignette(v.kind, v.target)
+  }
+
+  /**
+   * Leaves a vignette's real traces once (D-19 slice 5): glass that never gets swept, the thing left behind as a ground
+   * drop, a car's spent alarm. The marker store keeps it from being seeded again when its chunk streams back.
+   */
+  seedVignette(kind: VignetteKind, target: string): boolean {
+    const scene = vignetteScene(this.town, kind, target)
+    if (!scene) return false
+    const id = vignetteStoreId(kind, target)
+    if (this.ledger.store(id)) this.ledger.deleteStore(id)
+    this.ledger.createStore({ id, mode: "counters", scope: "shared", at: { x: scene.x, y: scene.y }, initial: { on: 1 } })
+    scene.glass.forEach((g, i) => {
+      const gid = vignetteGlassId(kind, target, i)
+      if (!this.ledger.store(gid)) this.ledger.createStore({ id: gid, mode: "counters", scope: "shared", at: g, initial: { keep: 1, t: 1 + i * 3 } })
+    })
+    const drop = scene.drop
+    const did = vignetteDropId(kind, target)
+    if (drop && !this.ledger.store(did)) this.ledger.createStore({ id: did, mode: "slots", scope: "shared", size: 1, at: { x: drop.x, y: drop.y }, initial: [{ item: drop.item, count: drop.count }] })
+    if (scene.car) {
+      const cid = carStoreId(scene.car)
+      const car = this.cars.find((c) => c.key === scene.car)
+      if (car && !this.ledger.store(cid)) this.ledger.createStore({ id: cid, mode: "counters", scope: "shared", at: { x: car.x, y: car.y }, initial: { smashed: 1, alarm: 1, until: 1, old: 1 } })
+    }
+    return true
   }
 
   /**
@@ -1597,8 +1630,23 @@ export class OutbreakProgression {
       const prev = Math.floor((world.time - dt - start) / ALARM_BEAT)
       if (world.time - dt < start || beat !== prev) world.ai.emitNoise(car.x, car.y, this.tuning.alarmNoise, "alarm", world.time, "alarm", 2)
     }
+    // Glass: a survivor stepping onto it upright crunches it (crouch to step softly); a bottle's is swept after a while.
+    const moving = world.slots.filter((s) => {
+      const q = s.survivor
+      return q.health > 0 && !q.crouching && Math.hypot(q.vx ?? 0, q.vy ?? 0) > 0.3 && !this.hiddenIn(s.id)
+    })
     for (const st of [...this.ledger.stores.values()]) {
-      if (st.id.startsWith("glass:") && ds(world.time) - (st.counts.t ?? 0) > GLASS_SECONDS * 10) this.ledger.deleteStore(st.id)
+      if (!st.id.startsWith("glass:") || !st.at) continue
+      for (const s of moving) {
+        const q = s.survivor
+        const now = Math.hypot(q.x - st.at.x, q.y - st.at.y)
+        const before = Math.hypot(q.x - (q.vx ?? 0) * dt - st.at.x, q.y - (q.vy ?? 0) * dt - st.at.y)
+        if (now > GLASS_STEP || before <= GLASS_STEP) continue
+        st.counts.steps = (st.counts.steps ?? 0) + 1
+        st.rev = ++this.ledger.rev
+        world.ai.emitNoise(st.at.x, st.at.y, this.tuning.glassStepNoise, "glass", world.time, s.id, 1.1)
+      }
+      if (!st.counts.keep && ds(world.time) - (st.counts.t ?? 0) > GLASS_SECONDS * 10) this.ledger.deleteStore(st.id)
     }
   }
 

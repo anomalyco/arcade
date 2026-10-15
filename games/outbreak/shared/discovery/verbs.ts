@@ -11,7 +11,7 @@ import { EXTERIOR_VEHICLE_COLLIDERS, propShape, type Door, type Prop, type Town,
  * | `hide:<closet>` | `in: 1`, owner = who | someone is inside that closet |
  * | `trip:<portal>` | `armed: 1` or `0` | cans strung across a door or window; 0 once sprung |
  * | `car:<key>` | `smashed`, `alarm`, `start`, `until` (deciseconds) | a car's window broken; an alarm that wailed |
- * | `glass:<n>` | `t` (deciseconds) | broken glass where a bottle landed |
+ * | `glass:<n>` | `t` (deciseconds), `steps`, `keep` | broken glass where a bottle landed (swept after a while), or a vignette's (`keep`, never swept); `steps` counts feet that crunched it |
  */
 
 export const hideStoreId = (closet: string) => `hide:${closet}`

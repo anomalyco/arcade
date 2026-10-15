@@ -22,6 +22,7 @@ import {
 } from "../shared/net-protocol"
 import type { Command } from "../shared/session"
 import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin } from "../shared/discovery/tinker"
+import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/discovery/vignettes"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
@@ -242,6 +243,27 @@ describe("CoopRoomCore", () => {
     }
   })
 
+  test("a vignette reaches every client, and the battery one survivor picks up from it is gone for everyone", () => {
+    const core = new CoopRoomCore("test", options, Date.now, "test")
+    const a = client(core, "Ann")
+    const b = client(core, "Bob")
+    run(core, [a, b], 3)
+    const drop = vignetteDropId("hid", "elm")
+    for (const c of [a, b]) {
+      expect(c.ledger.store(vignetteStoreId("hid", "elm"))).toBeDefined()
+      expect(c.ledger.store(vignetteGlassId("broken-in", "ash", 0))?.counts.keep).toBe(1)
+      expect(c.ledger.count(drop, "battery")).toBe(1)
+    }
+    const at = core.sim.progression.ledger.store(drop)!.at!
+    Object.assign(core.sim.slot(b.id)!.survivor, { x: at.x, y: at.y + 0.5, aim: -Math.PI / 2 })
+    core.sim.rebuildSolids()
+    run(core, [a, b], 2, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    run(core, [b], 1, () => ({ ...idle(-Math.PI / 2), interact: true }))
+    run(core, [a, b], 3, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    for (const c of [a, b]) expect(c.ledger.count(drop, "battery")).toBe(0)
+    expect(core.sim.progression.ledger.count(b.id, "battery")).toBe(1)
+  })
+
   test("cans one survivor takes down are down for everyone, the lesson is pinned as theirs, and a crouch shows remotely", () => {
     const core = new CoopRoomCore("test", options, Date.now, "test")
     const a = client(core, "Ann")
@@ -278,7 +300,7 @@ describe("CoopRoomCore", () => {
     Object.assign(bob.survivor, { x: 44.6, y: 44 })
     run(core, [a, b], 1, (c) => (c === a ? { ...idle(0), bundle: true } : idle()))
     run(core, [a, b], 3)
-    const drop = [...ledger.stores.keys()].find((k) => k.startsWith("drop:"))!
+    const drop = [...ledger.stores.keys()].find((k) => k.startsWith("drop:") && !k.startsWith("drop:v:"))!
     expect(ledger.count(drop, "ammo")).toBe(6)
     expect(ledger.count(drop, "plank")).toBe(2)
     expect(b.ledger.count(drop, "ammo")).toBe(6)

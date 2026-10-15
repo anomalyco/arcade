@@ -189,3 +189,48 @@ variants. The harness reports `discovery.verbs` {lines, sprung, glass, smashed, 
 - `scripts/discovery-proof.ts verbs`: stills of the crouch over a line, sprung cans, an armed line with its prompt,
   the closet's slats, the peephole view, a bottle in hand and thrown, a car with its window in and indicators
   flashing, and a barricade before and after a re-nail.
+
+## Slice 5: environmental vignettes
+
+Small scenes of what happened to the people before you, seeded per home, shop and abandoned car so a few turn up in
+every district. Each teaches one rule without a word. Geometry: `shared/discovery/vignettes.ts` (`chooseVignettes`,
+`vignetteScene`, pure functions of the town); drawing: `src/discovery/vignettes.ts` (`VignetteProps`).
+
+| Kind | Where (chance) | What you see | What it teaches |
+| --- | --- | --- | --- |
+| `broken-in` | a home: house, ranch, cottage, cabin (30%) | a side window put in, glass sprayed across the floor, a survivor down with a snapped bat, the zombie that came through; the bat left a scrap | glass is loud, bats break |
+| `hid` | a home with a bedroom closet (25%) | the dead in front of the closet, spent casings at its door, a battery left a step away | closets save you |
+| `lured` | a shop: hardware, pharmacy, grocery, diner, gas station (40%) | bottles broken in a line away from the front door, the dead bunched at the last one, one bottle left unthrown | a bottle pulls them away |
+| `alarm-car` | an abandoned car with an alarm (50%) | its window in, its battery long dead, the dead it called piled round it | an alarm calls every zombie in earshot; other cars still have theirs |
+
+The roll is fixed per target (`hash(seed, id)`), so every room and every client gets the same scenes, whatever order
+chunks stream in. The classic town (seed 7) has Ash broken into, a closet hidden in at Elm, and bottles thrown from the
+pharmacy door.
+
+**State**: ledger stores, seeded once by `OutbreakProgression.seedVignette` when the target is first in the world
+(from `ensureVerbStores`): a marker `vignette:<kind>:<target>` so it is never seeded again, glass stores
+`glass:v:<kind>:<target>:<i>` with `keep` (never swept), a real ground drop `drop:v:<kind>:<target>` and, for a car,
+its store with the alarm spent (`until` in the past, `old` so no sound plays when it streams in). A battery taken stays
+taken through a snapshot and when its chunk streams back. Bodies, blood, casings, the bat and the broken pane cost the
+simulation nothing: the client draws them from the same geometry for every marker near the survivor.
+
+**Placement**: bodies, bats and drops settle on the nearest spot clear of walls, every door (open or shut), furniture
+and wrecks, inside the home or outside every building, and outside the ~2.4 m of floor a wall to the south hides from
+the camera (`WALL_SHADOW`). A broken-in window is an east or west one for the same reason. A drop is kept clear of the
+door and closet prompts beside it.
+
+**Glass underfoot** (new): a survivor walking upright onto any broken glass (within 0.4 m) crunches it, a 9.5 m noise
+(`glassStepNoise`, Verbs group) and a quiet break sound; crouched, hidden or standing still, nothing. Stateless: a step
+is a foot that was outside the patch a tick ago. The store's `steps` count tells clients to play the crunch.
+
+Lab: Discovery › Stage: broken in, hid, lured, spent alarm; the station's matching variants. The harness reports
+`discovery.vignettes` {scenes, bodies}.
+
+### Proof
+
+- `tests/vignettes.test.ts`: the classic town's three scenes, the same in two rooms, with their drops and kept glass;
+  streamed homes get a few, and every body, glass patch and drop lies clear of walls, doors and furniture; glass
+  crunches upright and not crouched; a vignette's glass is never swept and a bottle's is; a taken battery stays taken
+  through a snapshot and a re-seed; a spent alarm car stays quiet.
+- `tests/coop.test.ts`: a vignette reaches every client, and the battery one survivor picks up is gone for everyone.
+- `scripts/discovery-proof.ts vignettes`: stills of each scene, and a step onto the broken-in glass that crunches.
