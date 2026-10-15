@@ -1604,6 +1604,18 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Audio
 
+- **Never start a cue on its synthesized stand-in while the real file is loading (AR-40).** `SampleBank.getBuffer`
+  synthesizes a fallback for any sample not yet decoded, and Outbreak starts its three ambience beds on the player's
+  first key press, while `loadAll` has only begun. Each bed's stand-in is a constant 2 s sweep from 180 to 90 Hz with
+  60% noise at about -14 dBFS RMS, 16 dB over the -30 LUFS beds, and a looping voice keeps that buffer after the real
+  file arrives. Three of them were the "really loud alarm at the start". Headless proof with every audio file held
+  3 s (`games/outbreak/scripts/audio-start-browser.ts --slow-net 3000`, `--mute-audio`, graph unmuted): on main all
+  three beds start at 0.5 s with 0 files decoded; now `AudioRuntime.playCue` returns null while a sample it needs
+  `isPending` (counted as `pendingSkips`), beds and holds retry each frame and start on the real files, `loadAll`
+  fetches loops first, and a looped stand-in (left for files that fail) is 14 dB quieter. Separately, an alarm-car
+  vignette's spent alarm (`old`) rang for the first 0.1 s on seeds whose origin block has one (seed 1);
+  `tests/audio.test.ts` now walks five seeds 40 s from spawn with no alarm hold or noise.
+
 - **Render Web Audio offline to check a mix without ears.** Carrier's `scripts/audio-demo.ts` drives the real mixer and
   jet audio on an `OfflineAudioContext`, stepping the scripted scene every 1024 frames with `ctx.suspend(t).then(...)`
   and `resume()`; `scripts/audio-render.ts` runs it in headless Chrome on hailmary (a 15 s scene renders in about

@@ -178,7 +178,7 @@ clipped applause take and one dull sizzle.
   outdoors (`setSpace`, eased through doorways), footsteps on the rig's own foot contacts (`Survivor.onFootfall`, also
   for remote survivors) on wood, concrete or grass, and beds: birds with the sun, insects with darkness, a threat drone
   following the day cycle's threat curve and zombies chasing within 25 m. Indoors the beds drop and lose their top end.
-- Silent until the first pointer or key press. `M` mutes; mute and master volume persist (`outbreak.audio.v1`).
+- Silent until the first pointer or key press. `M` mutes (persisted in `outbreak.audio.v1`); the player volumes (Master, Effects, Ambience, Zombie voices) are `@arcade/kit/audio` volume settings saved per game (`arcade.volume.outbreak.v1`). A cue whose sample is still loading is skipped rather than played as its synthesized stand-in.
   Automated browsers start muted. The Lab panel's **Audio** group sets master, weapons, movement, zombies, ambience and
   UI levels, wall occlusion, reverb and the voice cap (24). Loops are never stolen by one-shots.
 

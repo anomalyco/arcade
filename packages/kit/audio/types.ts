@@ -249,6 +249,8 @@ export type AudioTelemetry = {
   maxVoices: number
   categoryVoices: Record<MixCategory, number>
   droppedVoices: number
+  /** Cues skipped because a sample they need was still loading (so no synthesized stand-in played). */
+  pendingSkips: number
   stolenVoices: number
   reverbWet: number
   duckGain: number

@@ -224,7 +224,8 @@ export class InventorySounds {
         if (!st.counts.old) emit({ id: "glass.break", x: at.x, y: at.y, source: "car" })
         this.smashed.add(sid)
       }
-      if (st.counts.alarm && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "lure.loop", x: at.x, y: at.y })
+      // A vignette's car (`old`) rang out long ago; only an alarm someone set off wails.
+      if (st.counts.alarm && !st.counts.old && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "lure.loop", x: at.x, y: at.y })
     }
   }
 }

@@ -195,6 +195,8 @@ export class AudioRuntime {
   private voices = new Map<number, InternalVoice>()
   private nextVoiceId = 1
   private droppedVoices = 0
+  /** Cues skipped because a sample they need was still loading. */
+  private pendingSkips = 0
   private stolenVoices = 0
   private reverbSeconds: number
   private roomReverbSeconds: number | undefined
@@ -724,6 +726,11 @@ export class AudioRuntime {
     if (this.disposed || this.muted || !this.ctx) return null
     const cue = typeof cueOrId === "string" ? (this.cues.get(cueOrId) ?? CUE_BY_ID.get(cueOrId)) : cueOrId
     if (!cue) return null
+    // Silence beats a synthesized stand-in while the real files load: callers retry (beds and holds every frame).
+    if (this.waitingForSamples(cue)) {
+      this.pendingSkips++
+      return null
+    }
 
     const t = options.time ?? this.now
     this.pruneVoices(t)
@@ -979,6 +986,14 @@ export class AudioRuntime {
     return 1
   }
 
+  private waitingForSamples(cue: CueRecipe): boolean {
+    for (const layer of cue.layers) {
+      if (layer.kind !== "sample") continue
+      for (const s of layer.samples) if (this.sampleBank.isPending(typeof s === "string" ? s : s.id)) return true
+    }
+    return false
+  }
+
   private scheduleSampleLayer(
     ctx: BaseAudioContext,
     destination: AudioNode,
@@ -1141,6 +1156,7 @@ export class AudioRuntime {
       maxVoices: this.maxVoices,
       categoryVoices,
       droppedVoices: this.droppedVoices,
+      pendingSkips: this.pendingSkips,
       stolenVoices: this.stolenVoices,
       reverbWet: this.reverbWetValue,
       duckGain: this.duckCurrent,
