@@ -1,0 +1,24 @@
+/*
+ * Room chat look, Getaway's (first used there, shared with Carrier). Markup:
+ *   .achat[.open] > .achat-log > .achat-line[.old|.system] > .achat-name + text, then the input: an <input> with
+ *   .achat-input, or a wrapper .achat-input holding a .achat-channel tag and an <input class="achat-field">.
+ * Games place `.achat` themselves, colour a line with `--achat-accent` (bar and name), add `.old` to fade a line out
+ * and `.open` on `.achat` to show every line while typing.
+ */
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+
+.achat { --achat-font: "Barlow Condensed", "Arial Narrow", sans-serif; display: flex; flex-direction: column; gap: 6px; }
+.achat-log { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.achat-line { max-width: 100%; padding: 4px 9px; background: rgba(4, 6, 10, 0.78); border-left: 2px solid var(--achat-accent, rgba(255, 255, 255, 0.25)); font: 500 16px/1.25 var(--achat-font); letter-spacing: 0.04em; text-transform: none; color: #fff; text-shadow: none; overflow-wrap: anywhere; transition: opacity 0.8s; animation: achat-in 0.25s ease-out; }
+@keyframes achat-in { from { opacity: 0; transform: translateX(-8px); } }
+.achat-line.old { opacity: 0; }
+.achat.open .achat-line { opacity: 1; transition: none; }
+.achat-name { font-weight: 600; margin-right: 6px; color: var(--achat-accent, inherit); }
+.achat-line.system { color: rgba(255, 255, 255, 0.6); background: rgba(4, 6, 10, 0.55); font-size: 13px; }
+.achat-line.system .achat-name { font-weight: 500; margin-right: 0; }
+.achat-input { width: 100%; height: 28px; padding: 0 10px; pointer-events: auto; background: rgba(5, 7, 11, 0.6); border: 1px solid rgba(255, 255, 255, 0.18); outline: none; color: #eef1f6; font: 500 14px/1 var(--achat-font); letter-spacing: 0.04em; text-transform: none; text-shadow: none; }
+.achat-input:focus, .achat-input:focus-within { border-color: rgba(255, 255, 255, 0.4); }
+.achat-input::placeholder, .achat-field::placeholder { color: rgba(238, 241, 246, 0.32); }
+.achat-channel { margin-right: 8px; font-weight: 600; letter-spacing: 0.08em; color: var(--achat-accent, rgba(238, 241, 246, 0.55)); white-space: nowrap; }
+.achat-field { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; }

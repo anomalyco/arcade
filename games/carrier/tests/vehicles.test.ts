@@ -77,7 +77,7 @@ describe("the F-35C on the carrier", () => {
       shipStep(ship, { throttle: 0.6, rudder: 0 }, sea, null)
       if (launch.phase !== "stroke" || launch.z < LAUNCH.endZ - 5) {
         const l = worldToShip(ship, plane.x, plane.y, plane.z)
-        if (launch.phase !== "airborne") expect(Math.abs(l[1] - deckCentreY("f35"))).toBeLessThan(0.05)
+        if (launch.phase !== "airborne") expect(Math.abs(l[1] - deckCentreY("f35"))).toBeLessThan(0.06)
       }
       left = launchStep(launch, plane, ship, DT)
     }

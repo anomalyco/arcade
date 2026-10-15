@@ -1018,8 +1018,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, baseColo
     var wetPuddle = 0.0;
     if (OL.u8.y > 0.01) {
       if (world.y < 0.35 && n.y > 0.75) {
-        let q = abs(fract(world.xz * vec2f(0.14, 0.11) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-        wetPuddle = OL.u8.y * (0.45 + 0.85 * q.x * q.y);
+        // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
+        let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
+        wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
         col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
       }
     }

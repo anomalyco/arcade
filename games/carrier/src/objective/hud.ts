@@ -50,7 +50,7 @@ const LABELS = ["A", "B", "C", "D"]
 
 /**
  * The objective's HUD, top centre: the zones (letter pips: holder colour, capture ring, flashing when contested), every
- * side's score in its colour with a bar to the target, the time to the next relocation and the round clock; under it
+ * side's score in its colour with a bar to the target, the time to the next relocation and the points that win; under it
  * your own ship's capture meter while it is in a zone, and one short event line. The round's result shows as a banner.
  */
 export class ObjectiveHud {
@@ -111,10 +111,9 @@ export class ObjectiveHud {
       .join("")
     const soon = v.next.length > 0
     const move = ended ? "" : `<span class="move${soon ? " soon" : ""}">${soon ? "MOVING" : "MOVE"} ${clock(v.moveAt - t)}</span>`
-    const round = ended ? "" : `<span class="round">ROUND ${clock(v.start + v.rules.roundTime - t)}</span>`
     const meLine = ended ? "" : this.meLine(v, myTeam)
     const ev = this.eventLine(t, v)
-    const html = `<div class="bar">${pips ? `<span class="zones">${pips}</span>` : ""}<span class="scores">${scores}</span><span class="time">${move}${round}</span></div>${meLine}${ev}`
+    const html = `<div class="bar">${pips ? `<span class="zones">${pips}</span>` : ""}<span class="scores">${scores}</span><span class="time">${move}<span class="round">TO ${v.rules.target}</span></span></div>${meLine}${ev}`
     if (html !== this.last) {
       this.last = html
       this.el.innerHTML = html

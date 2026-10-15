@@ -17,14 +17,10 @@ const range = (key: keyof ObjectiveRules, label: string, step: number, unit: str
 const RULE_CONTROLS: LabControl[] = [
   range("radius", "Zone radius", 10, "m"),
   range("cycle", "Relocate every", 5, "s"),
-  range("opening", "First zones last", 5, "s"),
   range("warning", "Next spot shown", 1, "s"),
-  range("drift", "Drift speed", 0.5, "m/s"),
-  range("turn", "Drift turn", 0.05, "°/s"),
   range("capture", "Capture time", 0.5, "s"),
   range("rate", "Points while holding", 0.5, "/s"),
   range("target", "Points to win", 10, ""),
-  range("roundTime", "Round time limit", 30, "s"),
   range("intermission", "Result shown", 1, "s"),
   range("twoZonesAt", "Two zones from (ships)", 1, ""),
 ]

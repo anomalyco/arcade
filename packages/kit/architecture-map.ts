@@ -166,10 +166,12 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s.startsWith("@arcade/kit/vehicle/"),
   },
   {
-    area: "`client/{controls,key-cap}`",
-    description: "Physical `KeyboardEvent.code` bindings, QWERTY labels, and key-cap UI",
+    area: "`client/{controls,key-cap,chat.css}`",
+    description: "Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling",
     match: (s) =>
-      s === "@arcade/kit/client/controls" || s === "@arcade/kit/client/key-cap",
+      s === "@arcade/kit/client/controls" ||
+      s === "@arcade/kit/client/key-cap" ||
+      s === "@arcade/kit/client/chat.css",
   },
   {
     area: "`client/{input,camera}` & `orbit-gestures`",

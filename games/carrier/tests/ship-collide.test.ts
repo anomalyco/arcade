@@ -45,17 +45,17 @@ function run(a: Ship, b: Ship, seconds: number, ta: number, tb: number, each?: (
 const at = (ms: number) => ms / SHIP.topSpeed
 
 describe("ship collisions", () => {
-  test("the hull plan is the waterline outline, convex and closed", () => {
-    // Two hulls side by side 51.2 m apart (twice the 25.6 m half-beam) just touch; 52 m apart they don't.
+  test("the plan is the flight deck's outline (76 m × 330 m), convex and closed", () => {
+    // Two hulls side by side 76 m apart (the deck's width) just touch; 77 m apart they don't.
     const a = makeShip(0, 0, 0)
-    expect(collideHulls(copyShip(a, makeShip(0, 0, 0)), makeShip(52, 0, 0))).toBeNull()
-    expect(depth(a, makeShip(51, 0, 0))).toBeCloseTo(0.2, 1)
+    expect(collideHulls(copyShip(a, makeShip(0, 0, 0)), makeShip(77, 0, 0))).toBeNull()
+    expect(depth(a, makeShip(75.8, 0, 0))).toBeCloseTo(0.2, 1)
     // Bow to bow: 330 m apart touch, 331 m don't.
     expect(collideHulls(makeShip(0, 0, 0), makeShip(0, -331, Math.PI))).toBeNull()
     expect(depth(makeShip(0, 0, 0), makeShip(0, -329.5, Math.PI))).toBeCloseTo(0.5, 1)
     // A hull lying across just ahead of the bow.
-    expect(collideHulls(makeShip(0, 0, 0), makeShip(0, -165 - 25.6 - 0.5, Math.PI / 2))).toBeNull()
-    expect(depth(makeShip(0, 0, 0), makeShip(0, -165 - 25.6 + 0.5, Math.PI / 2))).toBeCloseTo(0.5, 1)
+    expect(collideHulls(makeShip(0, 0, 0), makeShip(0, -165 - 38 - 0.5, Math.PI / 2))).toBeNull()
+    expect(depth(makeShip(0, 0, 0), makeShip(0, -165 - 38 + 0.5, Math.PI / 2))).toBeCloseTo(0.5, 1)
   })
 
   test("head-on: they stop each other, bounce back a little, both take the same heavy damage", () => {
@@ -110,7 +110,7 @@ describe("ship collisions", () => {
     const b = makeShip(0, 0, 0)
     // 8° toward B, coming up from astern on B's starboard side.
     const ang = (-8 * Math.PI) / 180
-    const a = moving(80, 300, ang, at(15))
+    const a = moving(110, 300, ang, at(15))
     const u0 = a.u
     let minH = 0
     const r = run(a, b, 30, at(15), 0, (x) => {
@@ -128,7 +128,7 @@ describe("ship collisions", () => {
 
   test("resting contact: a ship pushing into another under power sits still, no jitter, no repeated damage", () => {
     const b = makeShip(0, 0, 0)
-    const a = moving(191, 0, -Math.PI / 2, at(1))
+    const a = moving(203.5, 0, -Math.PI / 2, at(1))
     const xs: number[] = []
     const hs: number[] = []
     const r = run(a, b, 40, 1, 0, (x) => {
@@ -148,15 +148,15 @@ describe("ship collisions", () => {
     expect(late.length).toBeLessThanOrEqual(1)
     // Full power shoves the other ship along: both move west together.
     expect(b.x).toBeLessThan(-20)
-    expect(a.x - b.x).toBeCloseTo(165 + 25.6, 0)
+    expect(a.x - b.x).toBeCloseTo(165 + 38, 0)
   })
 
   test("two hulls placed overlapping push apart and come to rest without oscillating", () => {
     const a = makeShip(0, 0, 0)
-    const b = makeShip(50, 0, 0)
+    const b = makeShip(74, 0, 0)
     const gaps: number[] = []
     run(a, b, 20, 0, 0, (x) => gaps.push(x.b.x - x.a.x))
-    expect(gaps.at(-1)!).toBeGreaterThan(51)
+    expect(gaps.at(-1)!).toBeGreaterThan(75.9)
     for (let i = 1; i < gaps.length; i++) expect(gaps[i]!).toBeGreaterThanOrEqual(gaps[i - 1]! - 1e-9)
   })
 
@@ -174,13 +174,13 @@ describe("ship collisions", () => {
   test("cooldown: grinding at speed doesn't drain health every step; a harder blow adds only its excess", () => {
     const col = new ShipCollider()
     const a = makeShip(0, 0, 0)
-    const b = makeShip(51, 0, 0)
+    const b = makeShip(75.8, 0, 0)
     let dealt = 0
     let t = 0
     const hit = (speed: number) => {
       // Keep them touching, B driving into A's side at `speed`.
       Object.assign(a, makeShip(0, 0, 0, t))
-      Object.assign(b, makeShip(51, 0, 0, t))
+      Object.assign(b, makeShip(75.8, 0, 0, t))
       b.v = -speed
       for (const x of col.step([{ id: 1, ship: a, solid: true }, { id: 2, ship: b, solid: true }], t)) dealt += x.damageA
       t += SHIP.tick
@@ -240,7 +240,7 @@ describe("ship collisions", () => {
     const a = moving(0, 0, -Math.PI / 2, at(10))
     const b = makeShip(-180, 0, 0)
     const before = { ...b }
-    a.x = -180 + 25.6 + 165 - 0.5
+    a.x = -180 + 38 + 165 - 0.5
     const c = collideHulls(a, b, undefined, true)
     expect(c).not.toBeNull()
     expect(b).toEqual(before)
