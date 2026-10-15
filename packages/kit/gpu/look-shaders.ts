@@ -15,6 +15,8 @@ export type PostFinishOptions = {
   shadowLiftColor?: readonly [number, number, number]
   shadowTint?: readonly [number, number, number]
   highlightTint?: readonly [number, number, number]
+  customDeclarations?: string
+  customPostHook?: string
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"
@@ -58,7 +60,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       if (mat == 9) { col *= 0.14; }
       let topCatch = max(0.22, dot(n, vec3f(-0.3504, 0.8210, -0.4505)));
       let surfBoost = select(0.38, 1.38, mat == 21 || mat == 22);
-      col += o.color * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
+      col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
     }`
         : "",
       includePainterly
@@ -78,7 +80,7 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       surface: `${surfBody}
   let lookCompare = i32(round(LK.compareMode));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;
-  let lookFlashIrradiance = select(0.0, clamp(outbreakFlashMask, 0.0, 1.0), lookUseAfter);
+  let lookFlashIrradiance = select(clamp(outbreakFlashMask, -6.0, 0.0), clamp(outbreakFlashMask, -6.0, 1.0), lookUseAfter);
   if (lookUseAfter) {
     let presetIdx = i32(round(LK.presetIndex));
     ${presetBranches}
@@ -325,20 +327,7 @@ struct GradeAndLook {
   L: LookUniforms,
 }
 @group(0) @binding(4) var<uniform> GL: GradeAndLook;
-
-fn feelImpulseGather(uv: vec2f, fromC: vec2f, feel: vec4f, center: vec4f) -> vec4f {
-  if (all(abs(feel.xyz) <= vec3f(0.00018))) { return center; }
-  let r = length(fromC);
-  let edgeW = smoothstep(0.06, 0.36, r);
-  let v = feel.xy * (0.45 + 0.55 * edgeW) + fromC * (feel.z * 1.45 * edgeW);
-  if (dot(v, v) <= 1e-8) { return center; }
-  let s0 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s1 = clean(textureSampleLevel(src, samp, clamp(uv - v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s2 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.38, vec2f(0.002), vec2f(0.998)), 0.0));
-  let s3 = clean(textureSampleLevel(src, samp, clamp(uv + v * 0.85, vec2f(0.002), vec2f(0.998)), 0.0));
-  let rgb = center.rgb * 0.32 + (s1.rgb + s2.rgb) * 0.22 + (s0.rgb + s3.rgb) * 0.12;
-  return vec4f(rgb, min(center.a, (center.a + s1.a + s2.a) * 0.3333));
-}
+${finish?.customDeclarations ?? ""}
 
 ${
   includeKuwahara
@@ -416,6 +405,7 @@ ${
     c *= mix(${finish?.shadowTint ? `vec3f(${finish.shadowTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(0.93, 0.97, 1.06)"}, ${finish?.highlightTint ? `vec3f(${finish.highlightTint.map(v => v.toFixed(4)).join(", ")})` : "vec3f(1.04, 1.0, 0.95)"}, smoothstep(0.2, 0.8, l));
     let v = length(fromC * vec2f(1.0, 0.8));
     c *= mix(1.0, baseVig, smoothstep(0.32, 0.85, v));
+    ${finish?.customPostHook ? `let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));\n    ${finish.customPostHook}` : ""}
     c = mix(c, vec3f(0.55, 0.05, 0.06), G.z * smoothstep(0.25, 0.85, v));
     c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
     let px = o.pos.xy;
@@ -432,10 +422,9 @@ ${
   }
 
   // Active Look composite
-  let feel = GL.pad;
-  let centerSamp = feelImpulseGather(uv, fromC, feel, clean(textureSampleLevel(src, samp, uv, 0.0)));
+  let centerSamp = clean(textureSampleLevel(src, samp, uv, 0.0));
   let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
-  let caAmt = baseCA + L.chromatic * 0.016 + feel.w * 0.022;
+  let caAmt = baseCA + L.chromatic * 0.016;
   let ca = fromC * dot(fromC, fromC) * caAmt;
   var hdr: vec3f;
   ${
@@ -480,8 +469,9 @@ ${
     baseHuePres,
     flashMask,
   );
+  ${finish?.customPostHook ?? ""}
   let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, v));
+  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
   c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
   if (compareMode == 2) {
     let line = 1.0 - smoothstep(texel.x * 1.2, texel.x * 2.8, abs(uv.x - wipeSplit));
@@ -587,7 +577,8 @@ ${
     let amp = (0.026 + 0.008 * clamp(L.shaftStrength, 0.0, 1.0)) * grainStrength * (0.25 + 0.75 * midMask);
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
   }
-  c = mix(c, vec3f(0.14, 0.008, 0.012), G.z * smoothstep(0.38, 0.92, vDist));
+  ${finish?.customPostHook ?? ""}
+  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, vDist));
   let s1 = sqrt(clamp(c, vec3f(0.0), vec3f(1.0)));
   c = mix(s1, sqrt(s1), 0.182);
   // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.

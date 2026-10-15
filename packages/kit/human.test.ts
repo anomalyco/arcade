@@ -25,8 +25,10 @@ test("shared zombie gait locks toes, bounds uneven timing and drags only the swi
     for (let i = 0; i < 2; i++) {
       if (n > 0 && before[i] && a.feet[i]!.planted) {
         expect(a.motion.toes[i]).toEqual(toes[i])
-        const toe = at(legs.ft[i]!, 0.19, -RIG.ankle, 0)
-        toe.forEach((v, j) => expect(v).toBeCloseTo(toes[i]![j]!, 12))
+        const ball = legs.toe[i]!.p
+        ball.forEach((v, j) => expect(v).toBeCloseTo(toes[i]![j]!, 12))
+        const toeTip = at(legs.toe[i]!, RIG.toe, 0, 0)
+        expect(toeTip[1]).toBeCloseTo(0, 12)
         contacts++
       }
       expect(a.motion.durations[i]!).toBeGreaterThanOrEqual(0.077)
@@ -87,7 +89,8 @@ test("detachment copies exact frames and seeds translational and angular velocit
 test("cosmetic limb IDs remain stable and offset emitters inherit rotational motion", () => {
   expect(limbIds).toEqual({ pelvis: 0, torso: 1, head: 2, "left.upperArm": 3, "right.upperArm": 4,
     "left.foreArm": 5, "right.foreArm": 6, "left.thigh": 7, "right.thigh": 8,
-    "left.shin": 9, "right.shin": 10, "left.foot": 11, "right.foot": 12 })
+    "left.shin": 9, "right.shin": 10, "left.foot": 11, "right.foot": 12,
+    "left.toe": 13, "right.toe": 14 })
   const frame = yawFrame([10, 2, 4], 0)
   const part = { frame, linear: [1, 0, 0] as V3, angular: [0, 0, 2] as V3 }
   expect(pointVelocity(part, frame.p)).toEqual([1, 0, 0])
@@ -369,6 +372,14 @@ test("pose-diff normalization, FK angle synthesis and unarmed walk/run arm kinem
   expect(rk.hipFlexMaxDeg).toBeGreaterThan(50)
   expect(wk.kneeFlexMaxDeg).toBeGreaterThan(64)
   expect(wk.kneeFlexMaxDeg).toBeLessThan(76)
+  // Toe (ball-of-foot) joint dorsiflexion during push-off (> 20 deg in walk, > 24 deg in run) and lengthened walk stride
+  expect(RIG.foot + RIG.toe).toBeCloseTo(0.19, 10)
+  expect(wk.toePitchMaxDeg).toBeGreaterThan(20)
+  expect(rk.toePitchMaxDeg).toBeGreaterThan(24)
+  expect(walkRes.cyc.cadenceStepsPerMin).toBeGreaterThan(115)
+  expect(walkRes.cyc.cadenceStepsPerMin).toBeLessThan(132)
+  expect(walkRes.comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(15.5)
+  expect(runRes.comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(27.0)
 })
 
 test("seeded per-step variation, crowd personality desync, start/stop weight shift and secondary lag preserve zero toe slip", () => {
@@ -394,7 +405,7 @@ test("seeded per-step variation, crowd personality desync, start/stop weight shi
     locomotion(a, dt, distStep, n === 0, profile)
     const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
     const legs = poseLegs(a, pelvis)
-    const toes: [V3, V3] = [at(legs.ft[0], 0.19, -RIG.ankle, 0), at(legs.ft[1], 0.19, -RIG.ankle, 0)]
+    const toes: [V3, V3] = [legs.toe[0].p, legs.toe[1].p]
 
     if (n === 0) {
       // Start anticipation triggers lateral weight-shift velocity and crouch dip
@@ -540,5 +551,84 @@ test("zombie shamble and crouch-run reference cycles, FK shamble arms, variants 
   const comp = compareCycles(crouchCyc, crouchRef)
   expect(comp.angleRmseDeg.overallAngleRmse).toBeLessThan(8.5)
   expect(comp.angleRmseDeg.meanArmAngleRmse).toBeLessThan(7.5)
-  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.0)
+  // 10.7° before the knee pole followed the boot; knees over toes (stance knee-vs-foot 21° → 7°) costs 0.5° here.
+  expect(comp.angleRmseDeg.meanLegAngleRmse).toBeLessThan(11.5)
+})
+
+/** Drives `locomotion` at constant velocity `rel` rad from a fixed aim; returns per-frame samples after warm-up. */
+function strafeRun(speed: number, rel: number, frames = 540, warm = 180, aim = (_n: number) => 0) {
+  const a = actor(), dt = 1 / 60
+  a.vx = a.svx = 0; a.vy = a.svy = 0
+  const out: { legYaw: number; aim: number; feet: { p: V3; yaw: number; planted: boolean }[]; pelvis: ReturnType<typeof yawFrame>; legs: ReturnType<typeof poseLegs> }[] = []
+  let touchdowns = 0
+  for (let n = 0; n < frames; n++) {
+    a.aim = aim(n)
+    const dir = a.aim + rel
+    a.vx = a.svx = speed * Math.cos(dir); a.vy = a.svy = speed * Math.sin(dir)
+    a.x += a.vx * dt; a.y += a.vy * dt
+    const before = a.feet.map(f => f.planted)
+    locomotion(a, dt, speed * dt, n === 0)
+    if (n >= warm) {
+      touchdowns += a.feet.filter((f, i) => f.planted && !before[i]).length
+      const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+      out.push({ legYaw: a.legYaw, aim: a.aim, feet: a.feet.map(f => ({ p: [...f.p] as V3, yaw: f.yaw, planted: f.planted })), pelvis, legs: poseLegs(a, pelvis) })
+    }
+  }
+  return { out, cadence: touchdowns / ((frames - warm) * dt) * 60 }
+}
+const wrapAngle = (d: number) => Math.atan2(Math.sin(d), Math.cos(d))
+
+test("slow side-steps open and close without the feet ever passing", () => {
+  for (const rel of [Math.PI / 2, -Math.PI / 2]) {
+    const { out } = strafeRun(0.8, rel)
+    for (const s of out) {
+      const r = [-Math.sin(s.legYaw), Math.cos(s.legYaw)]
+      const lat = (s.feet[1]!.p[0] - s.feet[0]!.p[0]) * r[0]! + (s.feet[1]!.p[2] - s.feet[0]!.p[2]) * r[1]!
+      expect(lat).toBeGreaterThan(0.15)
+      // Hips stay nearly square to the aim: a side-step, not a turned walk.
+      expect(Math.abs(wrapAngle(s.legYaw - s.aim))).toBeLessThan(0.55)
+    }
+  }
+})
+
+test("run-speed strafes turn the hips toward travel and cross over at the forward cadence without boots touching", () => {
+  const forward = strafeRun(4.2, 0).cadence
+  for (const rel of [Math.PI / 2, -Math.PI / 2]) {
+    const { out, cadence } = strafeRun(4.2, rel)
+    expect(Math.abs(cadence / forward - 1)).toBeLessThan(0.05)
+    const turned = out.reduce((s, f) => s + wrapAngle(f.legYaw - f.aim), 0) / out.length
+    expect(turned * Math.sign(rel)).toBeGreaterThan(0.75)
+    for (const s of out) {
+      if (Math.max(s.feet[0]!.p[1], s.feet[1]!.p[1]) > 0.04) continue
+      const [l, r] = s.feet
+      expect(Math.hypot(l!.p[0] - r!.p[0], l!.p[2] - r!.p[2])).toBeGreaterThan(0.15)
+    }
+  }
+})
+
+test("sweeping travel round the aim keeps the hips continuous through the backpedal flip", () => {
+  for (const speed of [1.4, 4.2]) {
+    const { out } = strafeRun(speed, 0, 60 * 26, 120, n => -2 * Math.PI * Math.max(0, n - 120) / (60 * 24))
+    for (let k = 1; k < out.length; k++) {
+      // Aim turns 0.0044 rad per frame; the legs never jump more than a few times that.
+      expect(Math.abs(wrapAngle(out[k]!.legYaw - out[k - 1]!.legYaw))).toBeLessThan(0.05)
+    }
+  }
+})
+
+test("stance knees track over the boots when strafing feet turn from the hips", () => {
+  for (const [speed, rel] of [[1.4, 0], [1.4, Math.PI / 2], [4.2, Math.PI / 2], [4.2, Math.PI]] as const) {
+    const { out } = strafeRun(speed, rel)
+    let n = 0, err = 0
+    for (const s of out) for (let i = 0; i < 2; i++) {
+      if (!s.feet[i]!.planted) continue
+      const hip = s.legs.th[i]!.p, knee = s.legs.sh[i]!.p, ankle = s.legs.ft[i]!.p
+      const ax = ankle[0] - hip[0], ay = ankle[1] - hip[1], az = ankle[2] - hip[2]
+      const u = ((knee[0] - hip[0]) * ax + (knee[1] - hip[1]) * ay + (knee[2] - hip[2]) * az) / (ax * ax + ay * ay + az * az)
+      const ox = knee[0] - hip[0] - ax * u, oz = knee[2] - hip[2] - az * u
+      if (Math.hypot(ox, oz) < 0.03) continue
+      err += Math.abs(wrapAngle(Math.atan2(oz, ox) - s.feet[i]!.yaw)); n++
+    }
+    expect(err / Math.max(1, n)).toBeLessThan(0.2)
+  }
 })

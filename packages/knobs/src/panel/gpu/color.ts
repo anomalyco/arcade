@@ -184,6 +184,17 @@ export interface PanelThemeTokens {
   readonly fontFamily: string
   readonly monoFamily: string
   readonly isLight: boolean
+  /** Body and readout weight (--k-font-weight) and titles' and headings' (--k-title-weight). */
+  readonly fontWeight: number
+  readonly titleWeight: number
+  /** Round things' radius (--k-round): fully round unless --k-radius is 0, or a px value. */
+  readonly round: number
+  /** `flat`: groups draw no card surfaces and rows square off (--k-frame). */
+  readonly flat: boolean
+  /** A switch's thumb when off, and colour strips' rings (--k-thumb). */
+  readonly thumb: Rgba
+  /** How strongly small drop shadows show under thumbs and pills (--k-lift). */
+  readonly lift: number
 }
 
 /** A token as the panel shows it now: the gliding alias (see styles.ts), else the public value. */
@@ -282,6 +293,12 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
   const radiusMd = Math.max(0, radius - trayPad)
   const radiusSm = Math.max(0, radius - trayPad * 2)
   const fontSize = parseFloat(style.fontSize) || numProp(style, "font-size", 12)
+  const roundRaw = style.getPropertyValue("--k-round").trim()
+  const round = /^-?[\d.]+(px)?$/.test(roundRaw)
+    ? Math.max(0, parseFloat(roundRaw))
+    : radius > 0
+      ? 1e4
+      : 0
 
   const tokens: PanelThemeTokens = {
     bg,
@@ -364,6 +381,12 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     fontFamily,
     monoFamily,
     isLight,
+    fontWeight: numProp(style, "font-weight", 400),
+    titleWeight: numProp(style, "title-weight", 600),
+    round,
+    flat: style.getPropertyValue("--k-frame").trim() === "flat",
+    thumb: colorProp(style, "thumb", [1, 1, 1, 1]),
+    lift: Math.max(0, numProp(style, "lift", 1)),
   }
   if (version >= 0) tokenCache.set(panel, { version, tokens })
   return tokens

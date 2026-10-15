@@ -10,7 +10,7 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
 
 1. Open the Lab at `/arcade/lab/` (one app for every game; the top-bar Game picker loads one game's adapters or
    all of them). Choose an effect or fixture in the Library drawer
-   (`Ctrl+Space`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
+   (`Ctrl+Space`, then type to filter or use the arrow keys and `Enter`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
    viewport; Details shows its settings first. `⌘K` finds objects, Library items, commands and setting names, and
    the pin on a Details row adds it to the Watch list. Backquote toggles the workbench chrome; games use the same
    panel as a floating overlay.
@@ -36,7 +36,8 @@ number keys `1`–`9` and `0` (outside text fields, Play, the grid and the radia
 three slots around the viewport: the Outliner column (`left`), the top of the Details column (`right`) and a dock under
 the viewport (`dock`, which takes the Library drawer's place until you open the Library again). `⇧1`–`⇧9` pick the
 open station's variants. ✕ in the list header (or `station.close`) goes back to the plain workbench, and choosing
-another section by hand does too. A station whose section belongs to a game that isn't loaded loads that game's
+another section by hand does too. The slots and the dock resize from their edges like the other panels, and each
+station keeps its own sizes ([lab-workbench.md](lab-workbench.md#layout-outliner--details--library-drawer)). A station whose section belongs to a game that isn't loaded loads that game's
 adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`). `?station=<id>` opens one on
 load.
 
@@ -61,7 +62,7 @@ browser (`arcade.lab.station-layouts.v1`) as you make them; Reset goes back to t
 gives the `layout` block to paste into the file. `arcade run station.layout` reads, replaces (`layout`), resets or
 opens the editor from the CLI. Without a `layout` the station gets the default: status and measurements left, a
 controls card for the section's first two groups with real tuning sliders right, and variants, compare, live numbers,
-voice and notes in the dock.
+voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
 adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
@@ -101,7 +102,10 @@ such as the Characters page, over the viewport; their variants set `url` and run
 through its dev-control runtime. `bun test games/lab/tests` validates every station file and
 `bun games/lab/scripts/prove-stations.ts --serve` proves the whole path headlessly. For one page-demo station,
 `bun games/lab/scripts/prove-page-station.ts <id> --serve --read key,key` starts the dev router in the same job, picks
-each variant through `station.variant` and records the page's Lab settings, body data attributes and a frame.
+each variant through `station.variant` and records the page's Lab settings, body data attributes and a frame. For one
+section-demo station, `bun games/lab/scripts/prove-station.ts <id>` runs the demo and every variant against the
+production build. It waits while the section's optional `busy()` is true, so a section that bakes in a Worker (Rugs)
+is captured after its results land.
 
 ### Voice notes
 
@@ -122,7 +126,8 @@ token stays in the dev server; production builds don't include the recorder.
 Every control panel is drawn by knobs ([Kit's library](https://github.com/kitlangton/knobs), vendored as
 `packages/knobs`): the Lab's Details column, station `controls` cards and each game's Backquote overlay. `LabControl`
 and the settings objects stay the source of truth. `packages/kit/lab-knobs.ts` turns rows into knobs fields (ranges with
-units and steps, choices, switches, action buttons, groups as cards) and sends edits back through `LabNavigation.set`,
+units and steps, choices, switches, action buttons, groups as flat rows under a heading, in the Lab chrome's `arcade`
+preset) and sends edits back through `LabNavigation.set`,
 one transaction per gesture; `packages/kit/lab-tuning.ts` holds the pure mapping and the seeded Random. Knobs gives
 every panel its header (Random, Reset, Copy and, in games, Undo/Redo), per-group dice and resets, `⇧L` to lock a row
 out of Random, hold `\` to see the values from before the last change, `⇧S` saved variants (kept in the browser per
@@ -159,11 +164,16 @@ New parameter Randomize paths must use a recorded deterministic tuning seed, res
 room and effect seeds unchanged. Randomize explores recipes; Retrigger repeats an effect; Reroll regenerates a room.
 Locks protect comparison state, not explicit parameter edits. Include the resulting settings and required seeds in Copy.
 
-The knobs dice (the header's for every row, a card's for its group, `⌥` to mutate instead) draw from the panel's
-recorded tuning seed (`LabPanel.tuning.seed`; each roll records the seed it used in `tuning.last` and moves to the
-next). They land ranges on their step lattice, skip switches, locked and dependency-disabled rows, and never touch the
-effect, environment and room pickers, the key-label layout or any seed. Copy adds `tuningSeed` when a roll produced the
-values, and voice notes save the tuning state. A group with its own `Randomize <group>` action keeps using it.
+The knobs dice (the header's for every row, a card's for its group, `⌥` to mutate instead) are knobs' own Random and
+Mutate, drawing from the panel's recorded tuning seed (knobs' `random` option over `seededRandom(LabPanel.tuning.seed)`;
+each roll records the seed it used in `tuning.last` and moves to the next). knobs draws only for the keys a roll
+changes, in row order, so a recorded seed replays the roll. Its `tunable` option and `random: false` on seeds keep
+switches, locked and dependency-disabled rows, the effect, environment and room pickers, the key-label layout and every
+seed out. Copy adds `tuningSeed` when a roll produced the values, and voice notes save the tuning state. A group with
+its own `Randomize <group>` action keeps using it. Tuning seeds recorded before the switch to knobs' draws (Arcade's
+`seededPatch`, until October 2026) give different values now; none were recorded (every saved voice note has
+`tuning.last: null`). Section seeds such as Looks', Weather's or Effects' `tuningSeed` drive their own randomizers and
+are unchanged.
 
 Current limitations:
 
@@ -226,7 +236,9 @@ Test an intentional gameplay-physics change in the actual simulation separately 
 ## Preserve input and audio ownership
 
 Text editors, search, `<select>` dropdowns and preset dialogs own printable keys, arrows, Space and clipboard/text-undo
-shortcuts. They must not trigger canvas actions. Placement/move ghosts precede Inspector navigation; focused Inspector
+shortcuts. They must not trigger canvas actions. A list with type-to-filter (the Library) owns printable keys the same
+way: mark its host `data-typeahead` so capture-phase letter shortcuts (`M` mute, `N` voice note) skip it, and stop
+propagation for the keys it handles. Placement/move ghosts precede Inspector navigation; focused Inspector
 precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open
 capture.
 
@@ -250,7 +262,9 @@ and `packages/kit/lab/viewport-input.ts`):
   is active) and orbits elsewhere (Catalogue, Characters, or Lab sections without selectable objects; `Shift+drag` pans
   when not adding to an existing selection).
 - **Context / Radial**: unmoved `RMB` tap or `Ctrl+click` (`<= 8 px` threshold) or the `ContextMenu` key opens the
-  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab ring
+  contextual 8-sector radial menu in Lab or the action menu in Catalogue and Characters. The Lab opens it only on the
+  viewport itself (the canvas or the gizmo, never a panel or button over or beside it; the key only while the canvas
+  has focus), and a press or focus anywhere outside the viewport closes it. The Lab ring
   (`packages/kit/lab/radial.ts`) draws 8 equal wedges with an icon and short label each; the wedge under the pointer's
   bearing from the centre is highlighted (not the label under the pointer), a press anywhere on the disc selects by
   direction, the hub names the target, and the caption below shows the full label and shortcut or the disabled reason.

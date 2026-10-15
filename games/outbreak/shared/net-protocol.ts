@@ -24,12 +24,22 @@ import {
 } from "@arcade/kit/net/interest"
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import type { LedgerDelta } from "@arcade/kit/sim/ledger"
-import type { AIAgent, AIState } from "./ai"
-import type { CombatShotEvent } from "./combat"
+import { zombieTraitsFromSeed, type AIAgent, type AIState } from "./ai"
+import {
+  DETACHABLE_BONES,
+  MELEE_WEAPON_IDS,
+  MELEE_WEAPONS,
+  type CombatMeleeEvent,
+  type CombatMeleeHit,
+  type CombatShotEvent,
+  type MeleeWeaponId,
+} from "./combat"
+import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
+import { VEHICLE_KINDS, type VehicleKind } from "./vehicles"
 import type { ChunkCoord } from "./world"
 
 /** Co-op wire protocol. Text frames are JSON control messages; binary frames are snapshots and compact inputs. */
@@ -101,7 +111,7 @@ export function encodeClientIn(
           packAngle(next[2] ?? 0) === aim &&
           ((next[3] ?? 0) & FLAG_MAX) === flags,
       )
-    w.i16(mx).i16(my).u16(aim).u16(flags | (hasExtra ? 0x8000 : 0) | (repeatNext ? 0x4000 : 0))
+    w.i16(mx).i16(repeatNext ? my + (my >= 0 ? 10000 : -10000) : my).u16(aim).u16(flags | (hasExtra ? 0x8000 : 0))
     if (hasExtra) {
       w.u8(((t[4] ?? -1) + 1) & 0xff)
       w.u8(((t[5] ?? 0) + 128) & 0xff)
@@ -141,7 +151,9 @@ function decodeBinaryIn(bytes: Uint8Array): ClientMsg | null {
     while (c.length < count) {
       if (r.remaining < 8) return null
       const mx = r.i16() / 1000
-      const my = r.i16() / 1000
+      const rawMy = r.i16()
+      const repeatNext = Math.abs(rawMy) > 5000
+      const my = (repeatNext ? rawMy - (rawMy >= 0 ? 10000 : -10000) : rawMy) / 1000
       const aim = unpackAngle(r.u16())
       const rawFlags = r.u16()
       const flags = rawFlags & FLAG_MAX
@@ -158,7 +170,7 @@ function decodeBinaryIn(bytes: Uint8Array): ClientMsg | null {
         tuple = [mx, my, aim, flags]
       }
       c.push(tuple)
-      if ((rawFlags & 0x4000) && c.length < count) {
+      if (repeatNext && c.length < count) {
         c.push([...tuple] as CommandTuple)
       }
     }
@@ -240,8 +252,11 @@ const FLAG = {
   drop: 512,
   bundle: 1024,
   ping: 2048,
+  seat: 4096,
+  horn: 8192,
+  fireHeld: 16384,
 } as const
-const FLAG_MAX = 4095
+const FLAG_MAX = 32767
 const ACTIONS: readonly (InteractActionId | undefined)[] = [
   undefined,
   "toggle",
@@ -256,6 +271,7 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "store",
   "unlock",
   "pry",
+  "enter",
 ]
 const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
 
@@ -292,7 +308,7 @@ export function unpackCommand(t: unknown): Command {
   return c
 }
 
-const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade", "drop", "bundle", "ping"] as const
+const EDGE_KEYS = ["interact", "flashlight", "jump", "fire", "reload", "melee", "barricade", "drop", "bundle", "ping", "seat"] as const
 
 /** Jitter-buffer semantics: movement is held, presses are one-shot edges. */
 export const commandOps: InputOps<Command> = {
@@ -306,7 +322,16 @@ export const commandOps: InputOps<Command> = {
     return out
   },
   standIn(last) {
-    return { mx: last.mx, my: last.my, aim: last.aim, sprint: last.sprint, interactHeld: last.interactHeld, interact: false }
+    return {
+      mx: last.mx,
+      my: last.my,
+      aim: last.aim,
+      sprint: last.sprint,
+      interactHeld: last.interactHeld,
+      fireHeld: last.fireHeld,
+      ...(last.horn ? { horn: true } : {}),
+      interact: false,
+    }
   },
   hasEdges(c) {
     return (
@@ -321,8 +346,21 @@ export const commandOps: InputOps<Command> = {
 
 // ── Snapshots ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-const STATES: readonly AIState[] = ["wander", "investigate", "alert", "chase", "bash", "search", "stagger", "dead"]
-const BONES: readonly CombatShotEvent["detachBone"][] = [null, "head", "left.upperArm", "right.upperArm", "right.foreArm"]
+const STATES: readonly AIState[] = [
+  "wander",
+  "investigate",
+  "alert",
+  "chase",
+  "bash",
+  "search",
+  "stagger",
+  "dead",
+  "knockdown",
+  "crawler",
+]
+const BONES: readonly CombatShotEvent["detachBone"][] = [null, ...DETACHABLE_BONES]
+const MELEE_BONES: readonly CombatMeleeHit["detachBone"][] = [null, ...DETACHABLE_BONES]
+const MELEE_PHASES: readonly MeleeSwingPhase[] = ["idle", "windup", "active", "recovery"]
 
 export type RemoteSurvivor = {
   index: number
@@ -338,6 +376,10 @@ export type RemoteSurvivor = {
   health: number
   recoil: number
   lift: number
+  meleeWeapon?: MeleeWeaponId | null
+  meleePhase?: MeleeSwingPhase
+  meleeCombo?: 1 | 2 | 3
+  meleeProgress?: number
 }
 
 export type ZombieState = {
@@ -352,6 +394,31 @@ export type ZombieState = {
   stateTime: number
   timer: number
   clamber: number
+  limbMask?: number
+}
+
+export type VehicleState = {
+  id: number
+  kind: VehicleKind
+  x: number
+  y: number
+  h: number
+  vx: number
+  vy: number
+  w: number
+  hp: number
+  fuel: number
+  hasBattery: boolean
+  hasKeys: boolean
+  headlights: boolean
+  engineOn: boolean
+  horn: boolean
+  wreck: boolean
+  handbrake: boolean
+  throttle: number
+  steer: number
+  /** Survivor seat index (0..3) per vehicle seat, or -1 when empty. */
+  seats: number[]
 }
 
 export type SharedSnapshot = {
@@ -361,6 +428,7 @@ export type SharedSnapshot = {
   revision: number
   survivors: RemoteSurvivor[]
   zombies: ZombieState[]
+  vehicles?: VehicleState[]
   doors: { open: boolean; locked: boolean }[]
   windows: { open: boolean; openable: boolean }[]
   planks: number[]
@@ -368,6 +436,7 @@ export type SharedSnapshot = {
   lures: { id: number; x: number; y: number; left: number }[]
   bashes: { portal: number; age: number }[]
   shots: (CombatShotEvent & { shooter: number })[]
+  meleeSwings?: CombatMeleeEvent[]
 }
 
 /** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */
@@ -417,10 +486,141 @@ const SEC_LURES = 4
 const SEC_BASHES = 8
 const SEC_SHOTS = 16
 const SEC_DELTA = 32
+const SEC_VEHICLES = 64
+const SEC_MELEE = 128
 const V2_MAGIC_BIT = 0x80000000
 
+const timerCapFor = (state: AIState) => (state === "knockdown" ? 2.8 : 0.85)
+
+function sameVehicleState(a: VehicleState, b: VehicleState): boolean {
+  return (
+    a.id === b.id &&
+    a.kind === b.kind &&
+    cm(a.x) === cm(b.x) &&
+    cm(a.y) === cm(b.y) &&
+    packAngle(a.h) === packAngle(b.h) &&
+    Math.round(a.vx * 100) === Math.round(b.vx * 100) &&
+    Math.round(a.vy * 100) === Math.round(b.vy * 100) &&
+    Math.round(a.w * 100) === Math.round(b.w * 100) &&
+    a.hp === b.hp &&
+    a.fuel === b.fuel &&
+    a.hasBattery === b.hasBattery &&
+    a.hasKeys === b.hasKeys &&
+    a.headlights === b.headlights &&
+    a.engineOn === b.engineOn &&
+    a.horn === b.horn &&
+    a.wreck === b.wreck &&
+    a.handbrake === b.handbrake &&
+    Math.round(a.throttle * 7) === Math.round(b.throttle * 7) &&
+    Math.round(a.steer * 7) === Math.round(b.steer * 7) &&
+    a.seats.length === b.seats.length &&
+    a.seats.every((s, i) => s === b.seats[i])
+  )
+}
+
+function writeVehicleState(w: ByteWriter, v: VehicleState): void {
+  const kindIdx = Math.max(0, VEHICLE_KINDS.indexOf(v.kind))
+  const vFlags =
+    (v.hasBattery ? 1 : 0) |
+    (v.hasKeys ? 2 : 0) |
+    (v.headlights ? 4 : 0) |
+    (v.engineOn ? 8 : 0) |
+    (v.horn ? 16 : 0) |
+    (v.wreck ? 32 : 0) |
+    (v.handbrake ? 64 : 0)
+  const vxI = Math.round(clamp(v.vx, -320, 320) * 100)
+  const vyI = Math.round(clamp(v.vy, -320, 320) * 100)
+  const wI = Math.round(clamp(v.w, -30, 30) * 100)
+  const thrQ = Math.round(clamp(v.throttle, -1, 1) * 7)
+  const strQ = Math.round(clamp(v.steer, -1, 1) * 7)
+  const moving = vxI !== 0 || vyI !== 0 || wI !== 0 || thrQ !== 0 || strQ !== 0
+  const occupied = v.seats.some((s) => s >= 0)
+  w.u16(v.id)
+  w.u8((kindIdx & 7) | (moving ? 8 : 0) | (occupied ? 16 : 0))
+  w.u8(vFlags)
+  w.i32(cm(v.x)).i32(cm(v.y)).u16(packAngle(v.h))
+  w.u16(Math.round(clamp(v.hp, 0, 65535))).u8(Math.round(clamp(v.fuel, 0, 255)))
+  if (moving) {
+    w.i16(vxI).i16(vyI).i16(wI)
+    w.u8(packNibblePair(thrQ, strQ))
+  }
+  if (occupied) {
+    let packedSeats = 0
+    for (let i = 0; i < 4; i++) {
+      const s = v.seats[i] ?? -1
+      const nib = s >= 0 && s <= 7 ? s : 0x0f
+      packedSeats |= nib << (i * 4)
+    }
+    w.u16(packedSeats)
+  }
+}
+
+function readVehicleState(r: ByteReader): VehicleState {
+  const id = r.u16()
+  const hdr = r.u8()
+  const kind = VEHICLE_KINDS[hdr & 7] ?? "sedan"
+  const moving = Boolean(hdr & 8)
+  const occupied = Boolean(hdr & 16)
+  const vFlags = r.u8()
+  const x = r.i32() / 100
+  const y = r.i32() / 100
+  const h = unpackAngle(r.u16())
+  const hp = r.u16()
+  const fuel = r.u8()
+  let vx = 0
+  let vy = 0
+  let w = 0
+  let throttle = 0
+  let steer = 0
+  if (moving) {
+    vx = r.i16() / 100
+    vy = r.i16() / 100
+    w = r.i16() / 100
+    const [thrQ, strQ] = unpackNibblePair(r.u8())
+    throttle = thrQ / 7
+    steer = strQ / 7
+  }
+  const seats = [-1, -1, -1, -1]
+  if (occupied) {
+    const packedSeats = r.u16()
+    for (let i = 0; i < 4; i++) {
+      const nib = (packedSeats >>> (i * 4)) & 0x0f
+      seats[i] = nib === 0x0f ? -1 : nib
+    }
+  }
+  return {
+    id,
+    kind,
+    x,
+    y,
+    h,
+    vx,
+    vy,
+    w,
+    hp,
+    fuel,
+    hasBattery: Boolean(vFlags & 1),
+    hasKeys: Boolean(vFlags & 2),
+    headlights: Boolean(vFlags & 4),
+    engineOn: Boolean(vFlags & 8),
+    horn: Boolean(vFlags & 16),
+    wreck: Boolean(vFlags & 32),
+    handbrake: Boolean(vFlags & 64),
+    throttle,
+    steer,
+    seats,
+  }
+}
 function defaultZombieSeed(id: number, townSeed: number): number {
   return (townSeed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0
+}
+
+function packLimbMask(a: Pick<AIAgent, "detachedLimbs" | "limping">): number {
+  let mask = a.limping ? 128 : 0
+  for (let i = 0; i < DETACHABLE_BONES.length; i++) {
+    if (a.detachedLimbs.includes(DETACHABLE_BONES[i]!)) mask |= 1 << i
+  }
+  return mask
 }
 
 function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
@@ -430,10 +630,15 @@ function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
   const hp = Math.round(clamp(a.hp, 0, 255))
   const hitFlash = Math.round(clamp(a.hitFlash, 0, 1) * 255) / 255
   const stateTime = a.state === "bash" ? Math.min(255, Math.round(a.stateTime * 20)) / 20 : 0
-  const timer = a.state === "stagger" ? (Math.round(clamp(a.timer / 0.75, 0, 1) * 255) / 255) * 0.75 : 0
+  const tCap = timerCapFor(a.state)
+  const timer =
+    a.state === "stagger" || a.state === "knockdown"
+      ? (Math.round(clamp(a.timer / tCap, 0, 1) * 255) / 255) * tCap
+      : 0
   const clamber = a.clamberWindowId
     ? Math.max(1, Math.round(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * 255)) / 255
     : 0
+  const limbMask = packLimbMask(a)
   return {
     id: a.id,
     seed: (a.seed ?? townSeed) >>> 0,
@@ -446,6 +651,7 @@ function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
     stateTime,
     timer,
     clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
   }
 }
 
@@ -457,10 +663,13 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
   const hfByte = Math.round(clamp(z.hitFlash, 0, 1) * 255)
   const clByte = Math.round(clamp(z.clamber, 0, 1) * 255)
   const stByte = Math.min(255, Math.round(z.stateTime * 20))
-  const tmByte = Math.round(clamp(z.timer / 0.75, 0, 1) * 255)
-  const hasOpt = hpByte !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2
+  const tCap = timerCapFor(z.state)
+  const tmByte = Math.round(clamp(z.timer / tCap, 0, 1) * 255)
+  const limbByte = (z.limbMask ?? 0) & 0xff
+  const hasOpt =
+    hpByte !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2 || limbByte > 0
   w.u16(z.id)
-  w.u8(stateIdx | (seedMode << 3) | (hasOpt ? 32 : 0))
+  w.u8((stateIdx & 7) | (seedMode << 3) | (hasOpt ? 32 : 0) | (stateIdx & 8 ? 64 : 0))
   w.i32(cm(z.x)).i32(cm(z.y)).u8(packAngle8(z.aim))
   if (hasOpt) {
     const opt =
@@ -469,7 +678,8 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
       (clByte > 0 ? 4 : 0) |
       (stByte > 0 ? 8 : 0) |
       (tmByte > 0 ? 16 : 0) |
-      (seedMode === 2 ? 32 : 0)
+      (seedMode === 2 ? 32 : 0) |
+      (limbByte > 0 ? 64 : 0)
     w.u8(opt)
     if (opt & 1) w.u8(hpByte)
     if (opt & 2) w.u8(hfByte)
@@ -477,13 +687,15 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
     if (opt & 8) w.u8(stByte)
     if (opt & 16) w.u8(tmByte)
     if (opt & 32) w.u32(z.seed)
+    if (opt & 64) w.u8(limbByte)
   }
 }
 
-function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
+function readFullZombie(r: ByteReader, townSeed: number, out?: ZombieState): ZombieState {
   const id = r.u16()
   const hdr = r.u8()
-  const state = STATES[hdr & 7] ?? "wander"
+  const stateIdx = (hdr & 7) | ((hdr & 64) >>> 3)
+  const state = STATES[stateIdx] ?? "wander"
   const seedMode = (hdr >>> 3) & 3
   const hasOpt = Boolean(hdr & 32)
   const x = r.i32() / 100
@@ -494,6 +706,8 @@ function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
   let clamber = 0
   let stateTime = 0
   let timer = 0
+  let limbMask = 0
+  const tCap = timerCapFor(state)
   let seed = seedMode === 0 ? defaultZombieSeed(id, townSeed) : (townSeed >>> 0)
   if (hasOpt) {
     const opt = r.u8()
@@ -501,10 +715,133 @@ function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
     if (opt & 2) hitFlash = r.u8() / 255
     if (opt & 4) clamber = r.u8() / 255
     if (opt & 8) stateTime = r.u8() / 20
-    if (opt & 16) timer = (r.u8() / 255) * 0.75
+    if (opt & 16) timer = (r.u8() / 255) * tCap
     if (opt & 32) seed = r.u32()
+    if (opt & 64) limbMask = r.u8()
   }
-  return { id, seed, x, y, aim, state, hp, hitFlash, stateTime, timer, clamber }
+  if (out) {
+    out.id = id
+    out.seed = seed
+    out.x = x
+    out.y = y
+    out.aim = aim
+    out.state = state
+    out.hp = hp
+    out.hitFlash = hitFlash
+    out.stateTime = stateTime
+    out.timer = timer
+    out.clamber = clamber
+    if (limbMask > 0) out.limbMask = limbMask
+    else delete out.limbMask
+    return out
+  }
+  return {
+    id,
+    seed,
+    x,
+    y,
+    aim,
+    state,
+    hp,
+    hitFlash,
+    stateTime,
+    timer,
+    clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
+  }
+}
+
+const DECODE_POOL_PAGES = 72
+type DecodeZombiePage = {
+  pool: ZombieState[]
+  list: ZombieState[]
+}
+type DecodeZombiePool = {
+  cursor: number
+  pages: DecodeZombiePage[]
+}
+const decodeZombiePools = new WeakMap<AckHistory<SharedSnapshot>, DecodeZombiePool>()
+const decodeRemovedSet = new Set<number>()
+const decodeRetainedScratch: ZombieState[] = []
+const encodeThrottleZombieMap = new Map<number, ZombieState>()
+const encodeSlotIndexById = new Map<string, number>()
+const encodeRemovedIndices: number[] = []
+const encodeRetainedPrev: ZombieState[] = []
+const encodeRetainedCur: ZombieState[] = []
+const encodeAddedZombies: ZombieState[] = []
+const encodeChangedBits: boolean[] = []
+
+function acquireDecodePage(history?: AckHistory<SharedSnapshot>): DecodeZombiePage | null {
+  if (!history) return null
+  let pool = decodeZombiePools.get(history)
+  if (!pool) {
+    pool = {
+      cursor: 0,
+      pages: Array.from({ length: DECODE_POOL_PAGES }, () => ({ pool: [], list: [] })),
+    }
+    decodeZombiePools.set(history, pool)
+  }
+  const page = pool.pages[pool.cursor % DECODE_POOL_PAGES]!
+  pool.cursor = (pool.cursor + 1) >>> 0
+  page.list.length = 0
+  return page
+}
+
+function acquirePooledZombie(page: DecodeZombiePage | null, index: number): ZombieState | undefined {
+  if (!page) return undefined
+  let z = page.pool[index]
+  if (!z) {
+    z = { id: 0, seed: 0, x: 0, y: 0, aim: 0, state: "wander", hp: 100, hitFlash: 0, stateTime: 0, timer: 0, clamber: 0 }
+    page.pool[index] = z
+  }
+  return z
+}
+
+function writeZombieFields(
+  dst: ZombieState | undefined,
+  id: number,
+  seed: number,
+  x: number,
+  y: number,
+  aim: number,
+  state: AIState,
+  hp: number,
+  hitFlash: number,
+  stateTime: number,
+  timer: number,
+  clamber: number,
+  limbMask = 0,
+): ZombieState {
+  if (dst) {
+    dst.id = id
+    dst.seed = seed
+    dst.x = x
+    dst.y = y
+    dst.aim = aim
+    dst.state = state
+    dst.hp = hp
+    dst.hitFlash = hitFlash
+    dst.stateTime = stateTime
+    dst.timer = timer
+    dst.clamber = clamber
+    if (limbMask > 0) dst.limbMask = limbMask
+    else delete dst.limbMask
+    return dst
+  }
+  return {
+    id,
+    seed,
+    x,
+    y,
+    aim,
+    state,
+    hp,
+    hitFlash,
+    stateTime,
+    timer,
+    clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
+  }
 }
 
 /**
@@ -536,6 +873,10 @@ export function encodeShared(
     const healthByte = Math.round(clamp(p.health, 0, 255))
     const recoilByte = Math.round(clamp(p.recoil, 0, 1) * 255)
     const liftByte = Math.round(clamp(liftRaw, 0, 1) * 255)
+    const meleeProgress =
+      p.meleePhase && p.meleePhase !== "idle" && p.meleePhaseDuration > 0
+        ? Math.round(clamp(p.meleePhaseTime / p.meleePhaseDuration, 0, 1) * 63) / 63
+        : 0
     survivors.push({
       index: slot.index,
       x: cm(p.x) / 100,
@@ -550,6 +891,10 @@ export function encodeShared(
       health: healthByte,
       recoil: recoilByte / 255,
       lift: liftByte / 255,
+      ...(p.meleeWeapon ? { meleeWeapon: p.meleeWeapon } : {}),
+      ...(p.meleePhase && p.meleePhase !== "idle"
+        ? { meleePhase: p.meleePhase, meleeCombo: p.meleeCombo, meleeProgress }
+        : {}),
     })
   }
 
@@ -557,12 +902,20 @@ export function encodeShared(
   // Use `prevBubbleSnap` (when provided) for cadence holdback so the target `emittedZombies` at `tick` is identical
   // for every client in the bubble even when two clients have acknowledged different `baseSnap` ticks over the WAN.
   const throttleBase = options?.prevBubbleSnap ?? (isDelta ? baseSnap : undefined)
-  const throttleZombieMap = throttleBase ? new Map(throttleBase.zombies.map((z) => [z.id, z])) : null
+  let throttleZombieMap: Map<number, ZombieState> | null = null
+  if (throttleBase) {
+    encodeThrottleZombieMap.clear()
+    for (let i = 0; i < throttleBase.zombies.length; i++) {
+      const z = throttleBase.zombies[i]!
+      encodeThrottleZombieMap.set(z.id, z)
+    }
+    throttleZombieMap = encodeThrottleZombieMap
+  }
   const emittedZombies: ZombieState[] = []
   for (const a of sim.ai.agents) {
     if (viewerCenter && !inInterestBubble(a.x, a.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent)) continue
+    const prev = throttleZombieMap?.get(a.id)
     const q = quantizeZombie(a, sim.town.seed)
-    const prev = throttleZombieMap?.get(q.id)
     if (prev && (isDelta || options?.prevBubbleSnap)) {
       const urgent =
         q.state !== prev.state ||
@@ -572,6 +925,7 @@ export function encodeShared(
         q.state === "chase" ||
         q.state === "alert" ||
         q.state === "stagger" ||
+        q.state === "knockdown" ||
         q.state === "bash"
       if (!urgent) {
         let minDist = Infinity
@@ -652,13 +1006,82 @@ export function encodeShared(
     ? [...baseSnap.shots.filter((s) => sim.time - s.time <= 0.6), ...newShots]
     : newShots
 
+  const maxBaseMeleeId = isDelta ? (baseSnap.meleeSwings ?? []).reduce((m, s) => Math.max(m, s.id), 0) : 0
+  const newMelee: CombatMeleeEvent[] = []
+  for (const m of sim.combat.meleeSwings) {
+    if (isDelta && m.id <= maxBaseMeleeId) continue
+    const ageMs = clamp(Math.round((sim.time - m.time) * 1000), 0, 65535)
+    newMelee.push({
+      ...m,
+      time: Number((sim.time - ageMs / 1000).toFixed(4)),
+      x: cm(m.x) / 100,
+      y: cm(m.y) / 100,
+      aim: unpackAngle(packAngle(m.aim)),
+      arc: Math.round(m.arc * 100) / 100,
+      reach: Math.round(m.reach * 100) / 100,
+      charge: Math.round(m.charge * 100) / 100,
+      hits: m.hits.map((h) => ({
+        ...h,
+        x: cm(h.x) / 100,
+        y: cm(h.y) / 100,
+      })),
+    })
+  }
+  const allMelee = isDelta
+    ? [...(baseSnap.meleeSwings ?? []).filter((m) => sim.time - m.time <= 0.6), ...newMelee]
+    : newMelee
+
+  // 4. Vehicles in the recipient's interest bubble
+  const slotIndexById = encodeSlotIndexById
+  slotIndexById.clear()
+  for (let i = 0; i < sim.slots.length; i++) {
+    const s = sim.slots[i]!
+    slotIndexById.set(s.id, s.index)
+  }
+  const emittedVehicles: VehicleState[] = []
+  for (const v of sim.vehicles.list) {
+    if (viewerCenter && !inInterestBubble(v.x, v.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent + 16)) continue
+    const thrQ = Math.round(clamp(v.drive.throttle, -1, 1) * 7)
+    const strQ = Math.round(clamp(v.drive.steer, -1, 1) * 7)
+    emittedVehicles.push({
+      id: v.id,
+      kind: v.kind,
+      x: cm(v.x) / 100,
+      y: cm(v.y) / 100,
+      h: unpackAngle(packAngle(v.h)),
+      vx: Math.round(clamp(v.vx, -320, 320) * 100) / 100,
+      vy: Math.round(clamp(v.vy, -320, 320) * 100) / 100,
+      w: Math.round(clamp(v.w, -30, 30) * 100) / 100,
+      hp: Math.round(clamp(v.hp, 0, 65535)),
+      fuel: Math.round(clamp(v.fuel, 0, 255)),
+      hasBattery: v.hasBattery,
+      hasKeys: v.hasKeys,
+      headlights: v.headlights,
+      engineOn: v.engineOn,
+      horn: v.horn,
+      wreck: v.wreck,
+      handbrake: v.drive.handbrake,
+      throttle: thrQ / 7,
+      steer: strQ / 7,
+      seats: v.seats.map((sid) => (sid ? (slotIndexById.get(sid) ?? -1) : -1)),
+    })
+  }
+  const baseVehicles = baseSnap?.vehicles ?? []
+  const hasVehicles =
+    !isDelta
+      ? emittedVehicles.length > 0
+      : emittedVehicles.length !== baseVehicles.length ||
+        emittedVehicles.some((v, i) => !sameVehicleState(v, baseVehicles[i]!))
+
   const sectionFlags =
     (hasPortals ? SEC_PORTALS : 0) |
     (pings.length > 0 ? SEC_PINGS : 0) |
     (lures.length > 0 ? SEC_LURES : 0) |
     (bashes.length > 0 ? SEC_BASHES : 0) |
     (newShots.length > 0 ? SEC_SHOTS : 0) |
-    (isDelta ? SEC_DELTA : 0)
+    (isDelta ? SEC_DELTA : 0) |
+    (hasVehicles ? SEC_VEHICLES : 0) |
+    (newMelee.length > 0 ? SEC_MELEE : 0)
 
   const hourQuant = Math.round((((sim.hour % 24) + 24) % 24) * 2000) & 0xffff
   const timeF32 = Math.fround(sim.time)
@@ -671,6 +1094,7 @@ export function encodeShared(
       revision: sim.revision & 0xffff,
       survivors,
       zombies: emittedZombies,
+      vehicles: emittedVehicles,
       doors,
       windows,
       planks,
@@ -678,6 +1102,7 @@ export function encodeShared(
       lures,
       bashes,
       shots: allShots,
+      ...(allMelee.length > 0 ? { meleeSwings: allMelee } : {}),
     }
   }
 
@@ -694,14 +1119,24 @@ export function encodeShared(
   for (const s of survivors) {
     const recoilByte = Math.round(s.recoil * 255)
     const liftByte = Math.round(s.lift * 255)
-    const hasExtra = recoilByte > 0 || liftByte > 0
-    w.u8((s.index & 0x7f) | (hasExtra ? 128 : 0))
+    const wpnIdx = s.meleeWeapon ? MELEE_WEAPON_IDS.indexOf(s.meleeWeapon) + 1 : 0
+    const phaseIdx = s.meleePhase ? Math.max(0, MELEE_PHASES.indexOf(s.meleePhase)) : 0
+    const hasExtra = recoilByte > 0 || liftByte > 0 || phaseIdx > 0
+    w.u8((s.index & 0x03) | ((wpnIdx & 0x0f) << 2) | (phaseIdx > 0 ? 64 : 0) | (hasExtra ? 128 : 0))
     w.i32(cm(s.x)).i32(cm(s.y))
     const flags4 = (s.flashlightOn ? 1 : 0) | (s.sprinting ? 2 : 0) | (s.pistol ? 4 : 0) | (s.reloading ? 8 : 0)
     w.u16(packAngle12(s.aim) | (flags4 << 12))
     w.u8(Math.round(s.flashlightOutput * 127) | (s.exhausted ? 128 : 0))
     w.u8(s.health)
-    if (hasExtra) w.u8(recoilByte).u8(liftByte)
+    if (hasExtra) {
+      if (phaseIdx > 0) {
+        const comboBits = ((s.meleeCombo ?? 1) - 1) & 3
+        const progBits = Math.round(clamp(s.meleeProgress ?? 0, 0, 1) * 15) & 15
+        w.u8((phaseIdx & 3) | (comboBits << 2) | (progBits << 4)).u8(liftByte)
+      } else {
+        w.u8(recoilByte).u8(liftByte)
+      }
+    }
   }
 
   // Write Zombies (Full or Delta against baseSnap.zombies)
@@ -710,16 +1145,22 @@ export function encodeShared(
     for (const z of emittedZombies) writeFullZombie(w, z, sim.town.seed)
   } else {
     const baseZ = baseSnap.zombies
-    const removedIndices: number[] = []
-    const retainedPairs: { prev: ZombieState; cur: ZombieState }[] = []
-    const addedZombies: ZombieState[] = []
+    const removedIndices = encodeRemovedIndices
+    const retainedPrev = encodeRetainedPrev
+    const retainedCur = encodeRetainedCur
+    const addedZombies = encodeAddedZombies
+    removedIndices.length = 0
+    retainedPrev.length = 0
+    retainedCur.length = 0
+    addedZombies.length = 0
     let bi = 0
     let ei = 0
     while (bi < baseZ.length && ei < emittedZombies.length) {
       const bz = baseZ[bi]!
       const ez = emittedZombies[ei]!
       if (bz.id === ez.id) {
-        retainedPairs.push({ prev: bz, cur: ez })
+        retainedPrev.push(bz)
+        retainedCur.push(ez)
         bi++
         ei++
       } else if (bz.id < ez.id) {
@@ -733,12 +1174,16 @@ export function encodeShared(
     while (ei < emittedZombies.length) addedZombies.push(emittedZombies[ei++]!)
 
     w.uvar(removedIndices.length)
-    for (const idx of removedIndices) w.uvar(idx)
+    for (let i = 0; i < removedIndices.length; i++) w.uvar(removedIndices[i]!)
 
-    const changedBits = retainedPairs.map(({ prev, cur }) => {
+    const changedBits = encodeChangedBits
+    changedBits.length = retainedPrev.length
+    for (let i = 0; i < retainedPrev.length; i++) {
+      const prev = retainedPrev[i]!
+      const cur = retainedCur[i]!
       const dx = cm(cur.x) - cm(prev.x)
       const dy = cm(cur.y) - cm(prev.y)
-      return (
+      changedBits[i] =
         dx !== 0 ||
         dy !== 0 ||
         packAngle8(cur.aim) !== packAngle8(prev.aim) ||
@@ -747,14 +1192,15 @@ export function encodeShared(
         cur.hitFlash !== prev.hitFlash ||
         cur.clamber !== prev.clamber ||
         cur.stateTime !== prev.stateTime ||
-        cur.timer !== prev.timer
-      )
-    })
+        cur.timer !== prev.timer ||
+        (cur.limbMask ?? 0) !== (prev.limbMask ?? 0)
+    }
     writeBitset(w, changedBits)
 
-    for (let i = 0; i < retainedPairs.length; i++) {
+    for (let i = 0; i < retainedPrev.length; i++) {
       if (!changedBits[i]) continue
-      const { prev, cur } = retainedPairs[i]!
+      const prev = retainedPrev[i]!
+      const cur = retainedCur[i]!
       const dx = cm(cur.x) - cm(prev.x)
       const dy = cm(cur.y) - cm(prev.y)
       const posMode =
@@ -772,7 +1218,8 @@ export function encodeShared(
         cur.hitFlash !== prev.hitFlash ||
         cur.clamber !== prev.clamber ||
         cur.stateTime !== prev.stateTime ||
-        cur.timer !== prev.timer
+        cur.timer !== prev.timer ||
+        (cur.limbMask ?? 0) !== (prev.limbMask ?? 0)
       const hdr =
         posMode |
         (aimChanged ? 4 : 0) |
@@ -791,17 +1238,19 @@ export function encodeShared(
           (cur.hitFlash !== prev.hitFlash ? 1 : 0) |
           (cur.clamber !== prev.clamber ? 2 : 0) |
           (cur.stateTime !== prev.stateTime ? 4 : 0) |
-          (cur.timer !== prev.timer ? 8 : 0)
+          (cur.timer !== prev.timer ? 8 : 0) |
+          ((cur.limbMask ?? 0) !== (prev.limbMask ?? 0) ? 16 : 0)
         w.u8(fxFlags)
         if (fxFlags & 1) w.u8(Math.round(cur.hitFlash * 255))
         if (fxFlags & 2) w.u8(Math.round(cur.clamber * 255))
         if (fxFlags & 4) w.u8(Math.min(255, Math.round(cur.stateTime * 20)))
-        if (fxFlags & 8) w.u8(Math.round((cur.timer / 0.75) * 255))
+        if (fxFlags & 8) w.u8(Math.round((cur.timer / timerCapFor(cur.state)) * 255))
+        if (fxFlags & 16) w.u8((cur.limbMask ?? 0) & 0xff)
       }
     }
 
     w.uvar(addedZombies.length)
-    for (const z of addedZombies) writeFullZombie(w, z, sim.town.seed)
+    for (let i = 0; i < addedZombies.length; i++) writeFullZombie(w, addedZombies[i]!, sim.town.seed)
   }
 
   // Write Portals (only when hasPortals is set)
@@ -851,6 +1300,50 @@ export function encodeShared(
       w.u32(s.seed)
     }
   }
+  if (sectionFlags & SEC_MELEE) {
+    w.u8(newMelee.length)
+    for (const m of newMelee) {
+      const ageMs = clamp(Math.round((timeF32 - m.time) * 1000), 0, 65535)
+      const wpnIdx = Math.max(0, MELEE_WEAPON_IDS.indexOf(m.weapon))
+      const flags =
+        ((m.combo - 1) & 3) |
+        (m.heavy ? 4 : 0) |
+        (m.weaponBroke ? 8 : 0) |
+        (m.durabilityLow ? 16 : 0) |
+        (m.doorBroke ? 32 : 0) |
+        (m.hitDoorId ? 64 : 0) |
+        (m.finisher ? 128 : 0)
+      w.uvar(m.id)
+      w.u16(ageMs)
+      w.u8(((m.attackerIndex & 0x0f) << 4) | (wpnIdx & 0x0f))
+      w.u8(flags)
+      w.i32(cm(m.x)).i32(cm(m.y)).u16(packAngle(m.aim))
+      w.u8(Math.round(clamp(m.arc, 0, 2.55) * 100))
+      w.u8(Math.round(clamp(m.reach, 0, 2.55) * 100))
+      w.u8(Math.round(clamp(m.charge, 0, 1) * 100))
+      if (m.hitDoorId) w.str(m.hitDoorId)
+      w.u32(m.seed)
+      w.u8(m.hits.length)
+      for (const h of m.hits) {
+        w.uvar(h.zombieId)
+        w.i32(cm(h.x)).i32(cm(h.y))
+        w.u8(Math.round(clamp(h.damage, 0, 255)))
+        const hFlags =
+          (h.killed ? 1 : 0) |
+          (h.knockdown ? 2 : 0) |
+          (h.headshot ? 4 : 0) |
+          (Math.max(0, MELEE_BONES.indexOf(h.detachBone)) << 3) |
+          (h.finisher ? 64 : 0) |
+          (h.crawler ? 128 : 0)
+        w.u8(hFlags)
+        w.u32(h.seed)
+      }
+    }
+  }
+  if (sectionFlags & SEC_VEHICLES) {
+    w.u8(emittedVehicles.length)
+    for (const v of emittedVehicles) writeVehicleState(w, v)
+  }
 
   return w.finish()
 }
@@ -874,7 +1367,9 @@ export function decodeShared(
   const survivors: RemoteSurvivor[] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
     const idxByte = r.u8()
-    const index = idxByte & 0x7f
+    const index = idxByte & 0x03
+    const wpnIdx = (idxByte >>> 2) & 0x0f
+    const hasMeleePhase = Boolean(idxByte & 64)
     const hasExtra = Boolean(idxByte & 128)
     const x = r.i32() / 100
     const y = r.i32() / 100
@@ -883,8 +1378,13 @@ export function decodeShared(
     const flags4 = aimAndFlags >>> 12
     const flAndExh = r.u8()
     const health = r.u8()
-    const recoil = hasExtra ? r.u8() / 255 : 0
+    const extra0 = hasExtra ? r.u8() : 0
     const lift = hasExtra ? r.u8() / 255 : 0
+    const recoil = hasExtra && !hasMeleePhase ? extra0 / 255 : 0
+    const meleeWeapon = wpnIdx > 0 ? (MELEE_WEAPON_IDS[wpnIdx - 1] ?? null) : undefined
+    const meleePhase = hasMeleePhase ? (MELEE_PHASES[extra0 & 3] ?? "idle") : undefined
+    const meleeCombo = hasMeleePhase ? ((((extra0 >>> 2) & 3) + 1) as 1 | 2 | 3) : undefined
+    const meleeProgress = hasMeleePhase ? Math.round((((extra0 >>> 4) & 15) / 15) * 63) / 63 : undefined
     survivors.push({
       index,
       x,
@@ -899,26 +1399,58 @@ export function decodeShared(
       health,
       recoil,
       lift,
+      ...(meleeWeapon ? { meleeWeapon } : {}),
+      ...(meleePhase && meleePhase !== "idle" ? { meleePhase, meleeCombo, meleeProgress } : {}),
     })
   }
 
-  let zombies: ZombieState[] = []
+  const page = acquireDecodePage(history)
+  let zombies: ZombieState[]
   if (!isDelta) {
-    for (let n = r.uvar(), i = 0; i < n; i++) {
-      zombies.push(readFullZombie(r, townSeed))
+    const n = r.uvar()
+    zombies = page ? page.list : new Array<ZombieState>(n)
+    zombies.length = n
+    for (let i = 0; i < n; i++) {
+      zombies[i] = readFullZombie(r, townSeed, acquirePooledZombie(page, i))
     }
   } else {
     const baseZ = baseSnap?.zombies ?? []
     const removedCount = r.uvar()
-    const removedSet = new Set<number>()
-    for (let i = 0; i < removedCount; i++) removedSet.add(r.uvar())
-    const retained = baseZ.filter((_, i) => !removedSet.has(i))
+    let retained: readonly ZombieState[]
+    if (removedCount === 0) {
+      retained = baseZ
+    } else {
+      decodeRemovedSet.clear()
+      for (let i = 0; i < removedCount; i++) decodeRemovedSet.add(r.uvar())
+      decodeRetainedScratch.length = 0
+      for (let i = 0; i < baseZ.length; i++) {
+        if (!decodeRemovedSet.has(i)) decodeRetainedScratch.push(baseZ[i]!)
+      }
+      retained = decodeRetainedScratch
+    }
     const changedBits = readBitset(r, retained.length)
-    const updatedRetained: ZombieState[] = new Array(retained.length)
+    zombies = page ? page.list : new Array<ZombieState>(retained.length)
+    zombies.length = retained.length
+    let poolIdx = 0
     for (let i = 0; i < retained.length; i++) {
       const prev = retained[i]!
       if (!changedBits[i]) {
-        updatedRetained[i] = prev
+        zombies[i] = page
+          ? writeZombieFields(
+              acquirePooledZombie(page, poolIdx++),
+              prev.id,
+              prev.seed,
+              prev.x,
+              prev.y,
+              prev.aim,
+              prev.state,
+              prev.hp,
+              prev.hitFlash,
+              prev.stateTime,
+              prev.timer,
+              prev.clamber,
+            )
+          : prev
         continue
       }
       const hdr = r.u8()
@@ -945,19 +1477,38 @@ export function decodeShared(
       let clamber = prev.clamber
       let stateTime = prev.stateTime
       let timer = prev.timer
+      let limbMask = prev.limbMask ?? 0
       if (hdr & 32) {
         const fxFlags = r.u8()
         if (fxFlags & 1) hitFlash = r.u8() / 255
         if (fxFlags & 2) clamber = r.u8() / 255
         if (fxFlags & 4) stateTime = r.u8() / 20
-        if (fxFlags & 8) timer = (r.u8() / 255) * 0.75
+        if (fxFlags & 8) timer = (r.u8() / 255) * timerCapFor(state)
+        if (fxFlags & 16) limbMask = r.u8()
       }
-      updatedRetained[i] = { id: prev.id, seed: prev.seed, x, y, aim, state, hp, hitFlash, stateTime, timer, clamber }
+      zombies[i] = writeZombieFields(
+        acquirePooledZombie(page, poolIdx++),
+        prev.id,
+        prev.seed,
+        x,
+        y,
+        aim,
+        state,
+        hp,
+        hitFlash,
+        stateTime,
+        timer,
+        clamber,
+        limbMask,
+      )
     }
     const addedCount = r.uvar()
-    const added: ZombieState[] = []
-    for (let i = 0; i < addedCount; i++) added.push(readFullZombie(r, townSeed))
-    zombies = added.length ? [...updatedRetained, ...added].sort((a, b) => a.id - b.id) : updatedRetained
+    if (addedCount > 0) {
+      for (let i = 0; i < addedCount; i++) {
+        zombies.push(readFullZombie(r, townSeed, acquirePooledZombie(page, poolIdx++)))
+      }
+      zombies.sort((a, b) => a.id - b.id)
+    }
   }
 
   let doors: { open: boolean; locked: boolean }[]
@@ -1039,6 +1590,87 @@ export function decodeShared(
     ? [...baseSnap.shots.filter((s) => time - s.time <= 0.6), ...newShots]
     : newShots
 
+  const newMelee: CombatMeleeEvent[] = []
+  if (sectionFlags & SEC_MELEE) {
+    for (let n = r.u8(), i = 0; i < n; i++) {
+      const id = r.uvar()
+      const ageMs = r.u16()
+      const attAndWpn = r.u8()
+      const attackerIndex = (attAndWpn >>> 4) & 0x0f
+      const weapon = MELEE_WEAPON_IDS[attAndWpn & 0x0f] ?? "crowbar"
+      const flags = r.u8()
+      const combo = (((flags & 3) + 1) as 1 | 2 | 3)
+      const heavy = Boolean(flags & 4)
+      const weaponBroke = Boolean(flags & 8)
+      const durabilityLow = Boolean(flags & 16)
+      const doorBroke = Boolean(flags & 32)
+      const hasDoor = Boolean(flags & 64)
+      const x = r.i32() / 100
+      const y = r.i32() / 100
+      const aim = unpackAngle(r.u16())
+      const arc = r.u8() / 100
+      const reach = r.u8() / 100
+      const charge = r.u8() / 100
+      const hitDoorId = hasDoor ? r.str() : null
+      const seed = r.u32()
+      const hitCount = r.u8()
+      const hits: CombatMeleeHit[] = []
+      for (let k = 0; k < hitCount; k++) {
+        const zombieId = r.uvar()
+        const hx = r.i32() / 100
+        const hy = r.i32() / 100
+        const damage = r.u8()
+        const hFlags = r.u8()
+        const hSeed = r.u32()
+        hits.push({
+          zombieId,
+          x: hx,
+          y: hy,
+          damage,
+          killed: Boolean(hFlags & 1),
+          knockdown: Boolean(hFlags & 2),
+          headshot: Boolean(hFlags & 4),
+          ...(hFlags & 64 ? { finisher: true } : {}),
+          ...(hFlags & 128 ? { crawler: true } : {}),
+          detachBone: MELEE_BONES[(hFlags >>> 3) & 7] ?? null,
+          seed: hSeed,
+        })
+      }
+      newMelee.push({
+        id,
+        time: Number((time - ageMs / 1000).toFixed(4)),
+        attackerId: `seat:${attackerIndex}`,
+        attackerIndex,
+        weapon,
+        x,
+        y,
+        aim,
+        arc,
+        reach,
+        combo,
+        heavy,
+        ...(flags & 128 ? { finisher: true } : {}),
+        charge,
+        hits,
+        hitDoorId,
+        doorBroke,
+        weaponBroke,
+        durabilityLow,
+        seed,
+      })
+    }
+  }
+  const meleeSwings = isDelta && baseSnap
+    ? [...(baseSnap.meleeSwings ?? []).filter((m) => time - m.time <= 0.6), ...newMelee]
+    : newMelee
+
+  let vehicles: VehicleState[]
+  if (sectionFlags & SEC_VEHICLES) {
+    vehicles = []
+    for (let n = r.u8(), i = 0; i < n; i++) vehicles.push(readVehicleState(r))
+  } else {
+    vehicles = baseSnap?.vehicles ?? []
+  }
   const snap: SharedSnapshot = {
     tick,
     time,
@@ -1046,6 +1678,7 @@ export function decodeShared(
     revision,
     survivors,
     zombies,
+    vehicles,
     doors,
     windows,
     planks,
@@ -1053,6 +1686,7 @@ export function decodeShared(
     lures,
     bashes,
     shots,
+    ...(meleeSwings.length > 0 ? { meleeSwings } : {}),
   }
   history?.record(tick, snap)
   return snap
@@ -1071,6 +1705,8 @@ const P_LOOT_MSG = 32
 const P_CAPS = 64
 const P_LEDGER = 128
 const P_NOTICES = 256
+const P_VEHICLE = 512
+const P_MELEE = 1024
 
 /** The private part for one player: packed binary survivor state, ledger delta, and notices. */
 export function encodePersonal(
@@ -1111,7 +1747,8 @@ export function encodePersonal(
     survivor.reloadRemaining > 0 ||
     survivor.shoveCooldown > 0 ||
     survivor.recoil > 0 ||
-    survivor.shoveAnim > 0
+    survivor.shoveAnim > 0 ||
+    (survivor.stompAnim ?? 0) > 0
   const hasPeek = Boolean(survivor.peekingWindowId)
   const hasHold = Boolean(survivor.holdTargetId || survivor.holdElapsed > 0 || survivor.holdTriggered || survivor.holdPendingPrimary)
   const hasVault = Boolean(survivor.vault)
@@ -1120,6 +1757,11 @@ export function encodePersonal(
   const hasCaps = (survivor.maxHealth ?? 100) !== 100 || (survivor.magCapacity ?? 8) !== 8
   const hasLedger = Boolean(ledger)
   const hasNotices = notices.length > 0
+  const hasVehicle = Boolean(survivor.vehicleId)
+  const hasMelee =
+    Boolean(survivor.meleeWeapon) ||
+    (survivor.meleePhase !== undefined && survivor.meleePhase !== "idle") ||
+    (survivor.meleeSwingId ?? 0) > 0
 
   const mask =
     (hasTimers ? P_TIMERS : 0) |
@@ -1130,7 +1772,9 @@ export function encodePersonal(
     (hasLootMsg ? P_LOOT_MSG : 0) |
     (hasCaps ? P_CAPS : 0) |
     (hasLedger ? P_LEDGER : 0) |
-    (hasNotices ? P_NOTICES : 0)
+    (hasNotices ? P_NOTICES : 0) |
+    (hasVehicle ? P_VEHICLE : 0) |
+    (hasMelee ? P_MELEE : 0)
   w.u16(mask)
 
   if (hasTimers) {
@@ -1141,7 +1785,8 @@ export function encodePersonal(
       (survivor.reloadRemaining > 0 ? 8 : 0) |
       (survivor.shoveCooldown > 0 ? 16 : 0) |
       (survivor.recoil > 0 ? 32 : 0) |
-      (survivor.shoveAnim > 0 ? 64 : 0)
+      (survivor.shoveAnim > 0 ? 64 : 0) |
+      ((survivor.stompAnim ?? 0) > 0 ? 128 : 0)
     w.u8(tmMask)
     if (tmMask & 1) w.f32(survivor.regenCooldown)
     if (tmMask & 2) w.f32(survivor.batteryCooldown)
@@ -1150,6 +1795,7 @@ export function encodePersonal(
     if (tmMask & 16) w.f32(survivor.shoveCooldown)
     if (tmMask & 32) w.f32(survivor.recoil)
     if (tmMask & 64) w.f32(survivor.shoveAnim)
+    if (tmMask & 128) w.f32(survivor.stompAnim ?? 0)
   }
   if (hasPeek) {
     w.str(survivor.peekingWindowId ?? "")
@@ -1171,6 +1817,25 @@ export function encodePersonal(
   }
   if (hasLedger) w.str(JSON.stringify(ledger))
   if (hasNotices) w.str(JSON.stringify(notices))
+  if (hasVehicle) w.u16(survivor.vehicleId ?? 0).u8(survivor.seatIndex ?? 0)
+  if (hasMelee) {
+    const wpnIdx = survivor.meleeWeapon ? MELEE_WEAPON_IDS.indexOf(survivor.meleeWeapon) + 1 : 0
+    const phaseIdx = Math.max(0, MELEE_PHASES.indexOf(survivor.meleePhase ?? "idle"))
+    w.u8(wpnIdx)
+    w.u8(Math.round(clamp(survivor.meleeDurability ?? 0, 0, 255)))
+    w.u8(Math.round(clamp(survivor.meleeMaxDurability ?? 0, 0, 255)))
+    w.u8(
+      (phaseIdx & 3) |
+        ((((survivor.meleeCombo ?? 1) - 1) & 3) << 2) |
+        (survivor.meleeHeavy ? 16 : 0) |
+        (survivor.meleeComboQueued ? 32 : 0) |
+        (survivor.meleeFinisher ? 64 : 0),
+    )
+    w.f32(survivor.meleePhaseTime ?? 0)
+    w.f32(survivor.meleePhaseDuration ?? 0)
+    w.f32(survivor.meleeCharge ?? 0)
+    w.uvar((survivor.meleeSwingId ?? 0) >>> 0)
+  }
   return w.finish()
 }
 
@@ -1210,6 +1875,19 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     flashlightOn: Boolean(boolFlags & 4),
     batteryDepleted: Boolean(boolFlags & 8),
     equippedItem: boolFlags & 16 ? "pistol" : "hands",
+    meleeWeapon: null,
+    meleeDurability: 0,
+    meleeMaxDurability: 0,
+    meleePhase: "idle",
+    meleePhaseTime: 0,
+    meleePhaseDuration: 0,
+    meleeCombo: 1,
+    meleeCharge: 0,
+    meleeHeavy: false,
+    meleeFinisher: false,
+    meleeComboQueued: false,
+    meleeComboUntil: -Infinity,
+    meleeSwingId: 0,
     health,
     maxHealth: 100,
     magAmmo,
@@ -1223,6 +1901,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     shoveCooldown: 0,
     recoil: 0,
     shoveAnim: 0,
+    stompAnim: 0,
     peekingWindowId: null,
     peekOriginX: 0,
     peekOriginY: 0,
@@ -1235,6 +1914,8 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     channel: null,
     lootMessage: null,
     lootMessageUntil: -Infinity,
+    vehicleId: null,
+    seatIndex: 0,
   }
 
   if (mask & P_TIMERS) {
@@ -1246,6 +1927,7 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
     if (tmMask & 16) survivor.shoveCooldown = r.f32()
     if (tmMask & 32) survivor.recoil = r.f32()
     if (tmMask & 64) survivor.shoveAnim = r.f32()
+    if (tmMask & 128) survivor.stompAnim = r.f32()
   }
   if (mask & P_PEEK) {
     const pw = r.str()
@@ -1274,6 +1956,29 @@ export function decodePersonal(bytes: Uint8Array): PersonalSnapshot {
   }
   const ledger = mask & P_LEDGER ? (JSON.parse(r.str()) as LedgerDelta) : null
   const notices = mask & P_NOTICES ? (JSON.parse(r.str()) as Notice[]) : []
+  if (mask & P_VEHICLE) {
+    const vid = r.u16()
+    survivor.vehicleId = vid > 0 ? vid : null
+    survivor.seatIndex = r.u8()
+  }
+  if (mask & P_MELEE) {
+    const wpnIdx = r.u8()
+    const wpn = wpnIdx > 0 ? (MELEE_WEAPON_IDS[wpnIdx - 1] ?? null) : null
+    survivor.meleeWeapon = wpn
+    if (wpn) survivor.equippedItem = wpn
+    survivor.meleeDurability = r.u8()
+    survivor.meleeMaxDurability = r.u8()
+    const mFlags = r.u8()
+    survivor.meleePhase = MELEE_PHASES[mFlags & 3] ?? "idle"
+    survivor.meleeCombo = (((mFlags >>> 2) & 3) + 1) as 1 | 2 | 3
+    survivor.meleeHeavy = Boolean(mFlags & 16)
+    survivor.meleeComboQueued = Boolean(mFlags & 32)
+    survivor.meleeFinisher = Boolean(mFlags & 64)
+    survivor.meleePhaseTime = r.f32()
+    survivor.meleePhaseDuration = r.f32()
+    survivor.meleeCharge = r.f32()
+    survivor.meleeSwingId = r.uvar()
+  }
 
   return {
     ack: raw === 0xffffffff ? -1 : raw,
@@ -1362,6 +2067,7 @@ export function inspectSnapshotBreakdown(
         if (fx & 2) r.u8()
         if (fx & 4) r.u8()
         if (fx & 8) r.u8()
+        if (fx & 16) r.u8()
       }
     }
     const addedCount = r.uvar()
@@ -1404,4 +2110,19 @@ export function applyZombieState(a: AIAgent, z: ZombieState): void {
   a.clamberWindowId = z.clamber > 0 ? "net" : null
   a.clamberElapsed = z.clamber
   a.clamberDuration = 1
+  if (z.seed !== undefined && a.seed !== z.seed) {
+    a.seed = z.seed
+    const traits = zombieTraitsFromSeed(z.seed)
+    a.toughness = traits.toughness
+    a.hitReaction = traits.hitReaction
+    a.deathVariant = traits.deathVariant
+  }
+  const mask = z.limbMask ?? 0
+  a.limping = Boolean(mask & 128)
+  for (let i = 0; i < DETACHABLE_BONES.length; i++) {
+    if (mask & (1 << i)) {
+      const bone = DETACHABLE_BONES[i]!
+      if (!a.detachedLimbs.includes(bone)) a.detachedLimbs.push(bone)
+    }
+  }
 }

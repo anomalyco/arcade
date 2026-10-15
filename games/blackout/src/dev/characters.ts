@@ -112,7 +112,7 @@ class EmptyStageSession implements Session {
   }
 }
 
-export type ActorAction = "idle" | "walk" | "run"
+export type ActorAction = "idle" | "walk" | "run" | "strafe" | "sweep"
 export type ActorId = "soldier" | "wizard" | "zombie" | "survivor" | "outbreak-zombie"
 
 export type DetachedPiece = PartMotion & {
@@ -136,12 +136,15 @@ export type StageActor = {
   unarmedSwing: boolean
   action: ActorAction
   actionTime: number
+  /** Strafe loops: travel speed (m/s). */
+  strafeSpeed: number
   avatar: Avatar
   hiddenBones: Set<BoneId>
   previousBones: BonePose | undefined
   pieces: DetachedPiece[]
   noPop: boolean
   detachCount: number
+  rigidBoot?: boolean
 }
 
 const LIMB_CHOICES: { value: BoneId; label: string }[] = [
@@ -156,6 +159,8 @@ const LIMB_CHOICES: { value: BoneId; label: string }[] = [
   { value: "left.shin", label: "Left shin" },
   { value: "right.foot", label: "Right foot" },
   { value: "left.foot", label: "Left foot" },
+  { value: "right.toe", label: "Right toe" },
+  { value: "left.toe", label: "Left toe" },
 ]
 
 function buildSelectionRing(): Mesh {
@@ -245,6 +250,8 @@ async function main() {
           <span class="dock-sep"></span>
           <button type="button" data-action="walk" aria-pressed="true">Walk loop</button>
           <button type="button" data-action="run" aria-pressed="false">Run loop</button>
+          <button type="button" data-action="strafe" aria-pressed="false" title="Circle the start point, aiming at its centre">Strafe</button>
+          <button type="button" data-action="sweep" aria-pressed="false" title="Circle while the aim turns: travel-vs-aim sweeps 0–360°">Strafe sweep</button>
           <button type="button" data-action="stop" aria-pressed="false">Stop</button>
           <span class="dock-sep"></span>
           <select aria-label="Limb" data-control="limb"></select>
@@ -299,6 +306,8 @@ async function main() {
   const profileSelect = document.querySelector<HTMLSelectElement>('[data-control="actor-profile"]')!
   const walkBtn = document.querySelector<HTMLButtonElement>('[data-action="walk"]')!
   const runBtn = document.querySelector<HTMLButtonElement>('[data-action="run"]')!
+  const strafeBtn = document.querySelector<HTMLButtonElement>('[data-action="strafe"]')!
+  const sweepBtn = document.querySelector<HTMLButtonElement>('[data-action="sweep"]')!
   const stopBtn = document.querySelector<HTMLButtonElement>('[data-action="stop"]')!
   const detachBtn = document.querySelector<HTMLButtonElement>('[data-action="detach"]')!
   const resetBtn = document.querySelector<HTMLButtonElement>('[data-action="reset"]')!
@@ -378,6 +387,7 @@ async function main() {
       unarmedSwing,
       action: "walk",
       actionTime: 0,
+      strafeSpeed: 3.4,
       avatar,
       hiddenBones: new Set<BoneId>(),
       previousBones: undefined,
@@ -590,6 +600,8 @@ async function main() {
     profileSelect.value = selected.preset
     walkBtn.setAttribute("aria-pressed", String(!possessing && selected.action === "walk"))
     runBtn.setAttribute("aria-pressed", String(!possessing && selected.action === "run"))
+    strafeBtn.setAttribute("aria-pressed", String(!possessing && selected.action === "strafe"))
+    sweepBtn.setAttribute("aria-pressed", String(!possessing && selected.action === "sweep"))
     stopBtn.setAttribute("aria-pressed", String(!possessing && selected.action === "idle"))
     possessBtn.setAttribute("aria-pressed", String(possessing))
     possessBtn.innerHTML = possessing ? `Exit Possess <kbd>Esc</kbd>` : `Possess <kbd>P</kbd>`
@@ -842,6 +854,25 @@ async function main() {
       },
     },
     {
+      id: "action.strafe",
+      aliases: ["strafe", "character.strafe"],
+      label: "Start Strafe Loop",
+      shortLabel: "Strafe loop",
+      category: "Object",
+      args: {
+        mode: { type: "string", enum: ["circle", "sweep"], description: "circle: circle the start point aiming at its centre; sweep: aim turns once per lap so travel-vs-aim sweeps 0-360°" },
+        speed: { type: "number", description: "Travel speed in m/s (default 3.4)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const speed = Number(ctx?.args?.speed ?? 3.4)
+        selected.strafeSpeed = Number.isFinite(speed) ? Math.max(0.5, Math.min(6.3, speed)) : 3.4
+        selected.actionTime = 0
+        setAction(String(ctx?.args?.mode ?? "circle") === "sweep" ? "sweep" : "strafe")
+        return { actorId: selected.id, action: selected.action, speed: selected.strafeSpeed }
+      },
+    },
+    {
       id: "action.set",
       aliases: ["character.action"],
       label: "Set Character Locomotion Action",
@@ -855,6 +886,23 @@ async function main() {
         const raw = String(ctx?.args?.action ?? "walk").toLowerCase()
         setAction(raw === "stop" || raw === "idle" ? "idle" : raw === "run" ? "run" : "walk")
         return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "character.toe-joint",
+      aliases: ["rig.toe-joint"],
+      label: "Toggle Ball-of-Foot Toe Joint",
+      shortLabel: "Toe joint",
+      category: "Object",
+      args: {
+        enabled: { type: "boolean", description: "Enable ball-of-foot MTP toe bend (false for legacy rigid boot)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        const enabled = ctx?.args?.enabled !== false
+        selected.rigidBoot = !enabled
+        selected.profile.strideScale = enabled ? humanProfiles[selected.preset].strideScale : humanProfiles[selected.preset].strideScale * 0.87
+        return { actorId: selected.id, toeJoint: enabled }
       },
     },
     {
@@ -1251,6 +1299,12 @@ async function main() {
   runBtn.addEventListener("click", () => {
     void commands.invoke("action.run", {}, { source: "ui" })
   })
+  strafeBtn.addEventListener("click", () => {
+    void commands.invoke("action.strafe", { mode: "circle" }, { source: "ui" })
+  })
+  sweepBtn.addEventListener("click", () => {
+    void commands.invoke("action.strafe", { mode: "sweep" }, { source: "ui" })
+  })
   stopBtn.addEventListener("click", () => {
     void commands.invoke("action.stop", {}, { source: "ui" })
   })
@@ -1393,6 +1447,23 @@ async function main() {
         aim = Math.atan2(vy, vx)
       }
       if (input.takeMelee()) swing(a, a.t)
+    } else if ((actor.action === "strafe" || actor.action === "sweep") && actor === selected) {
+      // Circle the start point anticlockwise. "strafe" aims at the centre (travel 90° from aim); "sweep" turns the aim
+      // once per 14 s so travel-vs-aim passes through forward, side, backpedal and the other side.
+      actor.actionTime += dt * simSpeed
+      const r = 2.4, speed = actor.strafeSpeed * simSpeed
+      const th = Math.PI + actor.actionTime * actor.strafeSpeed / r
+      const cx = actor.homeX + r, cy = actor.homeY
+      nextX = cx + Math.cos(th) * r
+      nextY = cy + Math.sin(th) * r
+      vx = -Math.sin(th) * speed
+      vy = Math.cos(th) * speed
+      const travel = th + Math.PI / 2
+      aim = actor.action === "strafe" ? th + Math.PI : travel + actor.actionTime * Math.PI * 2 / 14
+      if (followSelected) {
+        orbitState.focusX = cx
+        orbitState.focusZ = cy
+      }
     } else if (actor.action === "walk" || actor.action === "run") {
       actor.actionTime += dt * simSpeed
       const baseSpeed = actor.action === "run" ? SPEED : actor.preset === "zombie" ? 1.15 : 1.45
@@ -1431,6 +1502,12 @@ async function main() {
     a.profile = actor.profile
     a.unarmed = actor.unarmedSwing && actor.profile.handPose === "weapon"
     animate(a, dt, a.t + dt, nextX, nextY, vx, vy, aim, actor.wizardCast)
+    if (actor.rigidBoot && a.body?.toe) {
+      a.body.toe = [
+        moved(a.body.ft[0], at(a.body.ft[0], 0.125, 0, 0)),
+        moved(a.body.ft[1], at(a.body.ft[1], 0.125, 0, 0)),
+      ]
+    }
   }
 
   function stepSimulation(dt: number) {

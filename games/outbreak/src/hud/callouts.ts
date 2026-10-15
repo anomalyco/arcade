@@ -200,6 +200,13 @@ export type CalloutView = {
   /** CSS pixel font size. */
   size: number
   reducedMotion: boolean
+  /** Device pixels per CSS pixel; positions snap to it so glyphs land on whole device pixels. Default devicePixelRatio. */
+  pixelRatio?: number
+}
+
+/** Rounds a CSS-pixel coordinate to the nearest device pixel. */
+export function snapToDevice(v: number, ratio: number): number {
+  return Math.round(v * ratio) / ratio
 }
 
 type Node = {
@@ -209,9 +216,12 @@ type Node = {
   kind: string
   label: string
   transform: string
-  align: string
   opacity: string
   progress: string
+  font: string
+  /** Measured label size in CSS pixels; 0 until measured, reset when the text or size changes. */
+  w: number
+  h: number
 }
 
 /** Pooled DOM renderer for a `CalloutModel`. Only visible callouts touch the DOM; an idle layer writes nothing. */
@@ -258,8 +268,12 @@ export class CalloutLayer {
     const items = this.model.items
     if (!items.length && !this.nodes.size) return
     const rowBase = this.view.size * 1.95
+    const ratio = this.view.pixelRatio ?? (typeof devicePixelRatio === "number" ? devicePixelRatio : 1)
     const anchors = new Map<string, ScreenPoint | null>()
     const seen = new Set<number>()
+    const live: [Callout, Node, ScreenPoint][] = []
+    // Pass 1, writes: content, kind and font size. Text is never scaled with a transform; a smaller actor gets a
+    // smaller font, so glyphs are rasterised at their final size.
     for (const c of items) {
       let a = anchors.get(c.actorId)
       if (a === undefined) {
@@ -277,10 +291,12 @@ export class CalloutLayer {
       if (node.kind !== c.kind) {
         node.kind = c.kind
         node.el.dataset.kind = c.kind
+        node.w = 0
       }
       const label = c.keyCap ? `${c.text}\u0000${c.keyCap.code}` : c.text
       if (node.label !== label) {
         node.label = label
+        node.w = 0
         const cap = c.keyCap
         const at = cap ? c.text.indexOf(cap.label) : -1
         if (cap && at >= 0) {
@@ -288,17 +304,32 @@ export class CalloutLayer {
         } else node.text.textContent = c.text
       }
       const scale = a.scale ?? 1
+      const font = scale === 1 ? "" : `${Math.round(this.view.size * scale * 2) / 2}px`
+      if (node.font !== font) {
+        node.font = font
+        node.w = 0
+        if (font) node.body.style.setProperty("--callout-size", font)
+        else node.body.style.removeProperty("--callout-size")
+      }
+      live.push([c, node, a])
+    }
+    // Pass 2, reads: measure only labels whose text or size changed, all in one layout.
+    for (const [, node] of live) {
+      if (node.w) continue
+      node.w = node.body.offsetWidth
+      node.h = node.body.offsetHeight
+    }
+    // Pass 3, writes: the label's top-left corner, snapped to a device pixel.
+    for (const [c, node, a] of live) {
+      const scale = a.scale ?? 1
       const sy = a.sy ?? -1
-      const y = Math.round(a.y + sy * (c.y + this.model.drift(c, reduced)) * Math.round(rowBase * scale))
-      const transform = scale === 1 ? `translate(${Math.round(a.x)}px,${y}px)` : `translate(${Math.round(a.x)}px,${y}px) scale(${scale.toFixed(2)})`
+      const y = a.y + sy * (c.y + this.model.drift(c, reduced)) * Math.round(rowBase * scale)
+      const left = snapToDevice(a.x + (a.ax ?? -0.5) * node.w, ratio)
+      const top = snapToDevice(y + (a.ay ?? -1) * node.h, ratio)
+      const transform = `translate(${left}px,${top}px)`
       if (node.transform !== transform) {
         node.transform = transform
         node.el.style.transform = transform
-      }
-      const align = `translate(${Math.round((a.ax ?? -0.5) * 100)}%,${Math.round((a.ay ?? -1) * 100)}%)`
-      if (node.align !== align) {
-        node.align = align
-        node.body.style.transform = align
       }
       const opacity = this.model.alpha(c).toFixed(2)
       if (node.opacity !== opacity) {
@@ -319,7 +350,6 @@ export class CalloutLayer {
       node.el.remove()
       node.label = ""
       node.transform = ""
-      node.align = ""
       node.opacity = ""
       node.progress = ""
       this.pool.push(node)
@@ -328,8 +358,14 @@ export class CalloutLayer {
 
   /** Sets the font size; layout scales with it. */
   setSize(px: number): void {
+    if (this.view.size !== px) this.invalidate()
     this.view.size = px
     this.root.style.setProperty("--callout-size", `${px}px`)
+  }
+
+  /** Re-measures every label on the next render (after a look or font change). */
+  invalidate(): void {
+    for (const node of this.nodes.values()) node.w = 0
   }
 
   private createNode(): Node {
@@ -342,7 +378,7 @@ export class CalloutLayer {
     const text = document.createElement("span")
     inner.append(ring, text)
     el.append(inner)
-    return { el, body: inner, text, kind: "", label: "", transform: "", align: "", opacity: "", progress: "" }
+    return { el, body: inner, text, kind: "", label: "", transform: "", opacity: "", progress: "", font: "", w: 0, h: 0 }
   }
 }
 

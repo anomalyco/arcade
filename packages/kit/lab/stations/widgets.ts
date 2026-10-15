@@ -98,6 +98,8 @@ const renderers: Record<StationWidgetKind, Renderer> = {
       id: `station-${ctx.station.id}-${w.id}`,
       include: row => groups.has(row.group) || Boolean(row.control && keys.has(row.control.key)),
       order: () => [...groups],
+      // Details leaves these rows out while the card shows them, so each setting appears once.
+      claim: true,
     })
     if (!view.keys.length) {
       const note = document.createElement("p")

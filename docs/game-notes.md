@@ -143,6 +143,24 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Bake detailed textures off the main thread into a small texture-array pool, nearest rooms first, and carry their UV
+  in the vertex colour.** Outbreak's rugs (`packages/kit/textures/rug.ts`, `games/outbreak/src/interiors/`) are
+  generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
+  also Turkmen gul, kilim, Art Deco, braided oval, 70s shag) by `packages/kit/textures/rug-worker.ts` at 1024 px with
+  mips and pile height in alpha. `RugPool` keeps 8 layers plus one interior-tile mask layer (≈50 MB) in the renderer's
+  detail array (bindings 15/16), uploads at most one finished bake per frame (0.6–2.2 ms measured on the Air) and reuses the least
+  recently needed layer. A rug quad's vertex colour holds `(u, v, axis)` and its aux holds `streamSlot × 4 + index`, so
+  the shader looks the layer up in a 9×4 directory in the OL uniform; no per-rug material or draw call. Measured:
+  bakes 0.15–1 s each in the Worker (up to 5 s on a busy Air), pool settled 0.8–1.6 s after teleporting into a house,
+  paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
+  rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
+  reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Streamed house roofs are `customCutaway: "outside"` chunks.** Since the TBDR pass (d86d5df) custom-cutaway chunks
+  only use the discard pipeline while peeking, so streamed roofs marked `true` never opened when the survivor stood
+  inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
+  caps, and each roof's aux is looked up by building id in the window slots (slots are reused, roofless buildings
+  have no chunk). `games/outbreak/scripts/interiors-proof.ts` captures procedural houses of each theme to keep this honest.
+
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
   `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
   share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
@@ -200,9 +218,22 @@ proven animation techniques to animation.md, not here.
   - **Carrier (`960×720`)**: single deck strike **0.351→0.377 ms** mean (**0.400→0.450 ms** peak, delta `+0.039 ms`, MAD `0.051`);
     4× simultaneous ship+airburst+boat worst-case **0.687→0.602 ms** mean (**0.725→0.725 ms** peak, delta `-0.085 ms`, MAD `0.059`).
   All single and worst-case scenarios remain well within the 16.67 ms (60 Hz) frame budget; non-exploding frames add zero draws or passes.
+  R-1 follow-up (`explosion-r1`): big hits now throw **burning fragments that lay their own smoke trails** instead of
+  straight smoke beams. `ParticleSpec.trail` (metres) marks a particle as a projectile; `Particles.update` lays thinning,
+  wind-drifting puffs by distance travelled (capped at ~40 puffs/s per fragment, widened to match), a short hot spark at
+  the head, a splash when it crosses `Particles.water`, and `ParticleSpec.pop` fires a delayed fireball burst where a
+  particle expires (`packages/kit/fx/projectile-trail.ts`). Presets gain `fragmentCount`/`secondaryPops` (ship 16/3,
+  missile 6/0, car 4/1, barrel 3/1, propane 2/0, grenade and pop none); the ship hit also lingers 7 s with a taller
+  column. Carrier's faceted white spray balls (the "ice shards" in R-1's boat and bench frames) are replaced by
+  `spawnWaterSplash`: velocity-stretched droplets, a crown and soft mist. Peak pool use: ship 1,129 of 2,048 at Lab scale.
+  On Mac Studio/Metal against the R-1 head (`perf/explosion-unify.json`, seven alternating pairs, whole frame), paired
+  GPU mean deltas stay within noise: Getaway single `-0.014 ms` (MAD `0.257`), 4x `-0.024 ms`; Blackout single
+  `+0.005 ms`, 5-grenade `+0.149 ms` (MAD `0.371`, peak 7.92 ms vs 7.51 ms; grenades throw no fragments); Carrier single
+  `-0.002 ms` (0.43 ms mean), 4x `-0.013 ms`. The Carrier proof camera now passes radians to `Camera.set` (it was
+  clamped to top-down) and clears every effect pool between beats.
 
-- **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate impulse motion blur to active bursts (`@arcade/kit/feel`, `packages/kit/fx/splatter*.ts`).**
-  Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and routing `@arcade/kit/feel` impulse shutter blur to `lookPipes.composite` only while `hasFeelBurst` is non-zero (`compositeFast` remains register-identical at rest) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and add **`+0.023 ms`** whole-frame GPU median (`MAD 0.003 ms`) during active shot blur + splatter at `1000×680` on M5 Max Metal (`captures/game-feel/feel-proof.json`).
+- **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate shared `MotionBlur` impulse bursts to active frames (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `packages/kit/fx/splatter*.ts`).**
+  Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and running `@arcade/kit/gpu/motion-blur` (`MotionBlur` + `MotionBlurBurst`) before bloom/composite only when continuous shutter blur or an impulse burst is active (`0.000 ms` steady-state overhead when inactive; `compositeFast` runs on every Noir frame) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and keep steady-state `3456×1894` GPU time within noise (`+0.007 ms` street / `-0.016 ms` interior).
 
 - **Keep game-owned roof discard out of the opaque entry point, cull off-screen lamps, and pace fixed ticks.**
   Outbreak used its roof hook in `fsSolid`, mixed floors with screen-cuttable walls, routed exterior tree canopies into
@@ -325,7 +356,7 @@ proven animation techniques to animation.md, not here.
   fail upper-subsample depth tests. Seated car greenhouse/scoop bases (`games/getaway/src/render/car-mesh.ts`) remove
   shallow mesh self-intersection stair-steps. Nine alternating Metal pairs at 1280×800 (`740×722` viewport) on M5 Max
   measured whole-GPU deltas of +0.2215 ms room (MAD 0.0221) and +0.0252 ms yard (MAD 0.0908, inside noise), with zero
-  pixel change across 30 stationary frames (`perf/lab-shadow-edges.json`, `packages/kit/lab/prove-shadow-edges.ts`).
+  pixel change across 30 stationary frames (`perf/lab-shadow-edges.json`).
 - **Bounded smoke can fill rooms through doors.** `packages/kit/fx/volume.ts` computes corner-safe weighted arrival
   distances through 48² wall-clipped fields. Blackout grenade and wreck plumes use four bounded slots; Volume Smoke
   restores legacy sprites for comparison. The shader combines a height envelope, moving noise, self-extinction and
@@ -418,6 +449,26 @@ proven animation techniques to animation.md, not here.
   is `+0.2 ms` street / `+0.5 ms` interior with realtime ratio ≥ 0.994. A first version that marched the air glow (6
   samples with polar taps) and traced its own shadows in the surface hook cost `+2.2 ms` even with every feature
   switched off at runtime: register pressure, not work. Compile-out bisection found it; runtime toggles could not.
+- **Encode per-pixel unseen LOS weight into negative `lookFlashIrradiance` (`hdr.a > 1.0`) and run the 5 Unseen fog-of-war modes in `compositeFast` with at most one displaced HDR tap.**
+  In `games/outbreak/src/unseen/` (`settings.ts`, `shader.ts`, using `@arcade/kit/gpu/wgsl`), Outbreak's opt-in `Unseen` visibility treatment (`unseenMode = 0` off by default) combines the local survivor's 512-ray polar blocker field, wide facing/aim cone, close 360° awareness circle, and active flashlight cone (`evalUnseenFlashCone` in `visibilityFieldShader` and `FlashlightSightInput` in `shared/vision.ts`), plus an edge-depth ramp in `visField.b` (`evalUnseenEdgeDepth`). Keeping the 4× MSAA scene pass branch-free on `uMode` (`applyOutbreakUnseenScene` only sets `outbreakUnseenAlpha = wUnseen * 4.0`, packed into `targets.hdr.a = 1.0 + outbreakUnseenAlpha` via negative `lookFlashIrradiance` while `0..1` stays reserved for selective-colour flashlight retention) avoids VGPR inflation in the MSAA scene shader and requires zero extra bind-group entries or render targets. In `compositeFast` (`makeLookPostShader` / `postShader`), `applyOutbreakUnseenPost` reads `unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.5)` and `GL.pad.yzw` (`[mode, effectiveStrength, updateRate]`, scaled automatically with `dayCycle(hour).darkness` and low-health panic) to drive five modes in one shader: (1) **Acid Knife glitch** (Powerhoof-inspired low-Hz stepped horizontal scanline and macro-block UV displacement, red/cyan chromatic edge split derived from `gLuma - cLuma` using a single displaced `src` tap, and a cold slate-indigo wash), (2) **Warp wobble** (two-octave domain-warped refraction outside the cone with 1 displaced tap), (3) **Dark shroud** (classic soft-edge desaturated darkness with 0 extra taps), (4) **Stale memory** (faded archival snapshot of explored rooms with static paper grain and last-seen zombie ghosts), and (5) **Noise film** (stepped 16mm silver-nitrate grain and 4×4 Bayer dither thickening away from sight). At full Retina `3456×1894` on Apple M5 Max Metal (`games/outbreak/scripts/prove-unseen.ts`), paired GPU pass deltas measure **`+0.198 ms`** (Acid Knife glitch), **`+0.176 ms`** (Warp wobble), **`+0.163 ms`** (Dark shroud), **`+0.232 ms`** (Stale memory), and **`+0.057 ms`** (Noise film) — all well below the `< 1.0 ms` target — while the CPU 512-ray visibility mask + flashlight cone + unseen evaluation measures **`0.090 ms`** (`< 0.5 ms` target).
+- **Give a top-down flashlight a visible shaft with a separate reduced-resolution march, and hang it on the rig.**
+  From Outbreak's steep camera a flashlight that only lights surfaces reads as a pool starting at the feet. The light
+  now rides the survivor rig every frame (`Survivor.light`: under the pistol barrel when drawn, following low-ready,
+  raised aim, recoil and reload; otherwise the right hand), at hand height, with the barrel's pitch clamped to the
+  pool-distance tilt so low-ready still throws the beam ahead (`beamPose` in `games/outbreak/src/flashlight-beam.ts`);
+  the polar shadow pass uses the same origin, remote co-op survivors too. Zombies and other survivors are appended to
+  the flashlight's occluder range as round casters, so they cut both the pool and the shaft. The shaft is a kit
+  `VolumeLightShader` pass after the scene: per pixel of a 1/2- (Medium) or 1/4-resolution target, the view ray is
+  clipped analytically to a slightly widened cone, the beam range and the ground, then 8 samples (static per-pixel
+  offset) take the beam's angular profile, softened inverse-square falloff, the polar visibility at the sample's own
+  height, slow two-octave dust and a mild forward phase; rain, mist and interiors thicken it, and a small glare sits
+  on the lens. A kit composite adds it to the resolved HDR target and multiplies the selective-colour alpha, so the
+  warm shaft keeps its colour in Noir. Both passes are scissored to a CPU screen rect around the shaft (lens plus cone
+  corners out to `min(range, first wall + 1.5 m, 13 m)`, matched by a fade in the shader). Measured with the pass
+  amplified ×5 on one page at 3456×1894: `0.06 ms` street / `0.04 ms` interior aimed north, `0.13 / 0.23 ms` aimed
+  across the screen; High (14 samples) `0.10 / 0.09 ms`. Lab: Flashlight › Volumetric beam, Dust, Lens glare,
+  Volumetric quality (Off/Low/Medium/High). Proof: `NOIR_SCENES=beam bun scripts/noir-proof.ts`,
+  `bun scripts/beam-sweep.ts`.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -1050,6 +1101,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   snap to the room's burst. On hailmary, two pages in one room produced: a gun kill, a missile flared by the target,
   a missile hit, a kill feed and K/D tallies on both pages (`games/carrier/shared/combat.ts`, `server/core.ts`,
   `scripts/weapons-shot.ts --only=mp`). Bandwidth and room CPU are unmeasured.
+- **Keep a room ticking until its last socket closes, not its last player.** Carrier's Room stopped its interval when
+  the core had no joined players; over a slow link (tunnels, a reverse SSH forward) the first tick came before the first
+  `hello`, so a new room froze until another socket arrived (~20 s of stuck ships and bots on hailmary). Counting open
+  sockets in `games/carrier/server/room.ts` fixed it; `scripts/bots-shot.ts` then passed every step.
+- **Run dev bots in the room as socketless players.** Carrier's bots (`games/carrier/server/bots.ts`) join a carrier
+  and run its operations under the crew rules, fly the shared models and hand their output to the room's own message
+  handler, so damage, budgets and relays are a player's. The duel, a bomber hitting a carrier and attack boats were
+  checked on hailmary in a dev room; `tests/bots.test.ts` checks a production-mode room refuses dev messages.
 - **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
   `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
 
@@ -1092,6 +1151,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   `0.000 m` drift. See `docs/outbreak-world.md`.
 
 ## Input
+
+- **Exploration maps: per-chunk memory, tiles built on demand.** Outbreak's map (`games/outbreak/src/map/`) keeps
+  1 m explored cells per 32 m chunk (1 KB each) plus a compact copy of each explored chunk's layout, and draws them
+  through a tile pyramid (16 to 1/16 px per metre, halving) where a tile exists only if something in it was explored
+  and is rebuilt only when stale and on screen, within 3 ms a frame. Prebuilding the opening view's stale tiles while
+  the map is closed (0.6 ms every 120 ms) left 10 of 65 tiles to build on the first open after a 1 km walk (2.2 ms);
+  the first draw took 11 ms and the map's per-frame cost with the sheet closed was p95 0.3 ms. Labels and badges are drawn in screen space at
+  device resolution, never scaled from a tile, so they stay sharp at DPR 2. `docs/outbreak-map.md`.
 
 - **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn
   adapters and stage with one canvas. The first headless Metal proof on both hosts registered 25 assets,
@@ -1269,9 +1336,17 @@ Candidates from the code audits; measure and playtest before moving any into the
   with body roll reaching 0.144 rad and pitch 0.148 rad. No page or console errors occurred. The startup centre-crop red
   mean stayed within 46.54–47.21 (46.64–47.22 with `off=trauma`, which is now ignored because trauma is baked in).
 
-- **Hit-stop is presentation only.** Freeze or slow what is drawn, never the simulation clock, so prediction and the
-  server stay in step.
-- **Scale shake with trauma squared** so small hits stay subtle and big ones land hard.
+- **Hit-stop is presentation only.** Freeze or slow what is drawn (`HitStop.step(dt)` in `@arcade/kit/client/camera`),
+  never the simulation clock, so prediction and the server stay in step.
+- **Scale shake with trauma squared, and keep feel primitives composable.** `Camera.add(trauma, dir?, kick?)` in
+  `packages/kit/client/camera.ts` drives `trauma²` 2-octave smooth 1D gradient noise on `(x, z, roll)` plus critically
+  damped directional recoil/lunge kicks, `MotionBlurBurst` in `packages/kit/gpu/motion-blur.ts` feeds short directional
+  and radial velocity impulses into the shared 8-tap depth-aware `MotionBlur` gather pass (`0.000 ms` steady-state GPU
+  overhead when inactive; `+0.007 ms` street / `-0.016 ms` interior paired `ab-gpu.ts` at `3456×1894`), and `G.z`
+  (`render.grade[2]`) drives the crimson edge damage flash in the existing post composite. In `SplatterRenderer`
+  (`packages/kit/fx/splatter-renderer.ts`), keeping `alpha: { srcFactor: "zero", dstFactor: "one" }` preserves
+  `hdrView.a` (`1.0 - lookFlashIrradiance`) so Outbreak's Noir post shader retains deep arterial crimson inside the
+  flashlight beam while desaturating blood outside the beam (`36.16×` beam-to-shadow red chroma ratio, up from `7.38×`).
 - **Blackout playtest verdicts.** Kit rejected gunshot/sprint sound rings and found shot-triggered lamp flicker too
   strobey. Both switches now default off, including the Recommended preset in
   `games/blackout/src/ui/debug-overlay.ts`; monitor lights, paper, glass, monitor sparks, casings and trauma remain on.

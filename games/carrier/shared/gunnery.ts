@@ -936,6 +936,13 @@ export class GunneryWorld {
     return true
   }
 
+  /** Distance (m) from (x, y, z) to the nearest live SAM homing on jet `id`, or Infinity (the jet's MISSILE warning). */
+  inbound(id: number, x: number, y: number, z: number): number {
+    let best = Infinity
+    for (const p of this.projectiles) if (p.alive && p.kind === "sam" && p.target === id) best = Math.min(best, Math.hypot(p.x - x, p.y - y, p.z - z))
+    return best
+  }
+
   /** The live SAM or shell (owner, seq), if any. */
   find(owner: number, seq: number): GunProjectile | null {
     for (const p of this.projectiles) if (p.alive && p.owner === owner && p.seq === seq) return p

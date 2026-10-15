@@ -1,19 +1,38 @@
 import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { AIState } from "../../shared/ai"
-import type { CombatShotEvent } from "../../shared/combat"
+import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
 import type { FeedbackActor } from "../hud/actor-feedback"
+import { impactDelay, shotImpacts } from "./impacts"
+import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
+import { RELOAD_STARTS, reloadElapsed } from "./reload"
 
-/** One sound to play: a library id at a plan position (x, y), optionally later or quieter. */
-export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; source: string }
+/** One sound to play: a library id at a plan position (x, y), optionally later, quieter or pitch-shifted. */
+export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; rate?: number; source: string }
 
 /** The survivor fields the director diffs: `FeedbackActor` (the HUD's action feedback contract) plus position. */
 export type SoundActor = Pick<
   FeedbackActor,
-  "health" | "equippedItem" | "magAmmo" | "reserveAmmo" | "planks" | "reloadRemaining" | "shoveAnim" | "channel" | "lootMessage" | "lootMessageUntil" | "flashlightOn" | "exhausted" | "vault"
+  | "health"
+  | "equippedItem"
+  | "meleeWeapon"
+  | "meleeDurability"
+  | "meleeMaxDurability"
+  | "magAmmo"
+  | "reserveAmmo"
+  | "planks"
+  | "reloadRemaining"
+  | "shoveAnim"
+  | "channel"
+  | "lootMessage"
+  | "lootMessageUntil"
+  | "flashlightOn"
+  | "battery"
+  | "exhausted"
+  | "vault"
 > & { x: number; y: number }
 
-export type SoundZombie = { id: number; x: number; y: number; state: AIState }
+export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number }
 
 /** What the director reads each frame. `CoopSim` provides all of it offline and in co-op (from snapshots). */
 export type SoundWorld = {
@@ -21,8 +40,12 @@ export type SoundWorld = {
   town: Town
   zombies: readonly SoundZombie[]
   shots: readonly CombatShotEvent[]
+  meleeSwings?: readonly CombatMeleeEvent[]
   portals: ReadonlyMap<string, { barricadePlanks: number; lastBashTime: number }>
   survivors: readonly { id: string; survivor: SoundActor }[]
+  /** Items, drops, benches, pings and lures (absent in tests that only need combat and doors). */
+  progression?: SoundProgression
+  hour?: number
 }
 
 export const DIRECTOR_TUNING = {
@@ -40,11 +63,13 @@ export const DIRECTOR_TUNING = {
   attackReach: 1.8,
 }
 
+/** Reload parts are scheduled up to this far ahead of the frame that reaches them (s). */
+const RELOAD_LOOKAHEAD = 1 / 50
 const QUIET: ReadonlySet<AIState> = new Set(["wander", "investigate", "search"])
-const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase"])
+const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase", "crawler"])
 const center = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, y: (r[1]! + r[3]!) / 2 })
 
-type ActorMemory = SoundActor & { lootKey: number }
+type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number }
 
 /**
  * Turns world-state changes into sounds. It only reads state (like the HUD's `ActorFeedback`), so the simulation and
@@ -53,6 +78,9 @@ type ActorMemory = SoundActor & { lootKey: number }
 export class SoundDirector {
   private started = false
   private shots = new Set<number>()
+  private meleeSwings = new Set<number>()
+  private meleeHits = new Set<string>()
+  private meleeBreaks = new Set<number>()
   private zombies = new Map<number, AIState>()
   private groanedAt = new Map<number, number>()
   private alertedAt = new Map<number, number>()
@@ -63,6 +91,7 @@ export class SoundDirector {
   private planks = new Map<string, number>()
   private bashes = new Map<string, number>()
   private actors = new Map<string, ActorMemory>()
+  private readonly inventory = new InventorySounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private readonly rng: () => number
@@ -75,9 +104,18 @@ export class SoundDirector {
   reset(): void {
     this.started = false
     this.shots.clear()
+    this.meleeSwings.clear()
+    this.meleeHits.clear()
+    this.meleeBreaks.clear()
     this.zombies.clear()
     this.deaths.clear()
     this.actors.clear()
+    this.inventory.reset()
+  }
+
+  /** Sounds held for as long as something lasts, as of the last `observe`: crafts, research, noisemakers, generators. */
+  get holds(): readonly SoundHold[] {
+    return this.inventory.holds
   }
 
   observe(world: SoundWorld, listener: { x: number; y: number }): SoundEvent[] {
@@ -86,7 +124,8 @@ export class SoundDirector {
     const t = world.time
     const near = (x: number, y: number) => Math.hypot(x - listener.x, y - listener.y) <= this.tuning.hearing
 
-    // Shots: the report at the muzzle, a casing a beat later, and the hit, or the kill, at the target.
+    // Shots: the report at the muzzle, a casing a beat later, and the hit, or the kill, at the target; a miss strikes
+    // whatever stopped it (and rings off any pane, board, fence or car it went through), as the round arrives.
     for (const shot of world.shots) {
       if (this.shots.has(shot.id)) continue
       this.shots.add(shot.id)
@@ -98,9 +137,88 @@ export class SoundDirector {
           this.deaths.add(shot.hitZombieId)
           emit({ id: "zombie.death", x: shot.toX, y: shot.toY, delay: 0.1, source: "shot" })
         }
+      } else if (this.started) {
+        for (const hit of shotImpacts(world.town, shot, (id) => world.portals.get(id)?.barricadePlanks ?? 0)) {
+          emit({ id: `impact.bullet.${hit.surface}`, x: hit.x, y: hit.y, delay: impactDelay(hit.t), gain: hit.through ? 0.8 : 1, source: "shot" })
+        }
       }
     }
     if (this.shots.size > 256) this.shots = new Set(world.shots.map((s) => s.id))
+
+    // Melee swings: whoosh on active swing start, material-matched impact on each struck zombie, and break sound on shatter.
+    if (world.meleeSwings) {
+      for (const m of world.meleeSwings) {
+        const w = MELEE_WEAPONS[m.weapon] ?? MELEE_WEAPONS.crowbar
+        const attacker = world.survivors.find((s) => s.id === m.attackerId)?.survivor
+        const maxDur = attacker?.meleeMaxDurability ?? w.durability
+        const curDur = attacker?.meleeDurability
+        const wear = m.weaponBroke
+          ? 1
+          : curDur !== undefined && maxDur > 0
+            ? Math.max(0, Math.min(1, 1 - curDur / maxDur))
+            : m.durabilityLow
+              ? 0.75
+              : 0
+        const hitRate = wear > 0.08 ? Number((1 - wear * 0.22).toFixed(3)) : undefined
+        if (!this.meleeSwings.has(m.id)) {
+          this.meleeSwings.add(m.id)
+          const isHeavy = m.heavy || w.weaponClass === "two-heavy"
+          emit({
+            id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
+            x: m.x,
+            y: m.y,
+            ...(hitRate ? { rate: Number((1 - wear * 0.1).toFixed(3)) } : {}),
+            source: m.attackerId,
+          })
+        }
+        for (const h of m.hits) {
+          const hitKey = `${m.id}:${h.zombieId}`
+          if (this.meleeHits.has(hitKey)) continue
+          this.meleeHits.add(hitKey)
+          emit({
+            id: `melee.hit.${w.material}`,
+            x: h.x,
+            y: h.y,
+            delay: 0.015,
+            gain: h.finisher ? 1.3 : m.heavy ? 1.15 : 1,
+            ...(hitRate ? { rate: hitRate } : {}),
+            source: m.attackerId,
+          })
+          if (!m.weaponBroke && (m.durabilityLow || wear >= 0.65)) {
+            emit({
+              id: "melee.break",
+              x: h.x,
+              y: h.y,
+              delay: 0.032,
+              gain: 0.42,
+              rate: 1.28,
+              source: m.attackerId,
+            })
+          }
+          if (h.finisher) {
+            emit({
+              id: "melee.shove",
+              x: h.x,
+              y: h.y,
+              delay: 0.03,
+              gain: 1.15,
+              source: m.attackerId,
+            })
+          }
+          if (h.killed && !this.deaths.has(h.zombieId)) {
+            this.deaths.add(h.zombieId)
+            emit({ id: "zombie.death", x: h.x, y: h.y, delay: 0.08, source: "zombie" })
+          }
+        }
+        if (m.weaponBroke && !this.meleeBreaks.has(m.id)) {
+          this.meleeBreaks.add(m.id)
+          emit({ id: "melee.break", x: m.x, y: m.y, delay: 0.04, source: m.attackerId })
+        }
+      }
+      if (this.meleeSwings.size > 256) this.meleeSwings = new Set(world.meleeSwings.map((m) => m.id))
+      if (this.meleeHits.size > 512) this.meleeHits.clear()
+      if (this.meleeBreaks.size > 128) this.meleeBreaks.clear()
+    }
 
     // Zombie states: snarl on noticing someone, death without a shot (shoves, co-op kills), crowd-spaced idle groans.
     const seen = new Set<number>()
@@ -118,6 +236,9 @@ export class SoundDirector {
       }
       this.deaths.delete(z.id)
       if (!near(z.x, z.y)) continue
+      if (prev !== undefined && prev !== "knockdown" && z.state === "knockdown") {
+        emit({ id: "body.vault", x: z.x, y: z.y, delay: 0.14, gain: 0.85, source: "zombie" })
+      }
       if (prev !== undefined && QUIET.has(prev) && LOUD.has(z.state)) {
         if (t - (this.alertedAt.get(z.id) ?? -Infinity) >= this.tuning.alertPerZombie && t - this.lastAlert >= this.tuning.alertGap) {
           this.alertedAt.set(z.id, t)
@@ -125,7 +246,7 @@ export class SoundDirector {
           emit({ id: "zombie.alert", x: z.x, y: z.y, source: "zombie" })
         }
       }
-      if (z.state !== "stagger" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
+      if (z.state !== "stagger" && z.state !== "knockdown" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
     }
     for (const id of this.zombies.keys()) if (!seen.has(id)) { this.zombies.delete(id); this.groanedAt.delete(id) }
     if (candidates.length && t >= this.nextGroan) {
@@ -169,19 +290,33 @@ export class SoundDirector {
     for (const { id, survivor: a } of world.survivors) {
       present.add(id)
       const p = this.actors.get(id)
-      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil })
+      // The reload in parts, each when the reload pose reaches it (looking one frame ahead to land on time).
+      let reloadStart = p?.reloadStart ?? t
+      let elapsed = -1
+      if (a.reloadRemaining > 0) {
+        if (!p || p.reloadRemaining <= 0) reloadStart = t
+        elapsed = reloadElapsed(a.reloadRemaining, p?.reloadRemaining ?? 0, reloadStart, t)
+      }
+      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil, reloadStart, reloadElapsed: elapsed })
       if (!p) continue
       const at = { x: a.x, y: a.y, source: id }
-      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0) {
-        if (a.magAmmo === 0 && a.equippedItem === "pistol") emit({ id: "gun.dry-fire", ...at })
-        emit({ id: "gun.pistol.reload", ...at, delay: 0.05 })
+      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0 && a.magAmmo === 0 && a.equippedItem === "pistol") emit({ id: "gun.dry-fire", ...at })
+      if (elapsed >= 0) {
+        const ahead = elapsed + RELOAD_LOOKAHEAD
+        for (const part of RELOAD_STARTS) {
+          if (part.start <= ahead && part.start > p.reloadElapsed + RELOAD_LOOKAHEAD) emit({ id: part.id, ...at, delay: Math.max(0, part.start - elapsed) })
+        }
       }
       if (a.lootMessageUntil !== p.lootKey && a.lootMessage) {
         if (a.lootMessage.startsWith("Out of 9mm")) emit({ id: "gun.dry-fire", ...at })
         else if (a.lootMessage.startsWith("Blocked by barricade")) emit({ id: "door.locked", ...at })
       }
-      if (a.reserveAmmo > p.reserveAmmo) emit({ id: "pickup.ammo", ...at })
-      else if (a.planks > p.planks) emit({ id: "pickup.item", ...at })
+      // Pickups by item class come from the ledger (`InventorySounds`); survivors whose stores this peer cannot see
+      // (other seats on a co-op client) fall back to their replicated ammo and planks.
+      if (!world.progression?.ledger.stores.has(`${id}/belt`)) {
+        if (a.reserveAmmo > p.reserveAmmo) emit({ id: "pickup.ammo", ...at })
+        else if (a.planks > p.planks) emit({ id: "pickup.plank", ...at })
+      }
       if (a.channel?.kind === "search" && (!p.channel || p.channel.targetId !== a.channel.targetId)) emit({ id: "search.rummage", ...at })
       if (a.shoveAnim > p.shoveAnim + 1e-4) emit({ id: "melee.shove", ...at })
       if (a.flashlightOn !== p.flashlightOn) emit({ id: "flashlight.click", ...at })
@@ -203,6 +338,7 @@ export class SoundDirector {
       }
     }
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
+    this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out)
 
     this.started = true
     return out

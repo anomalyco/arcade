@@ -3,7 +3,17 @@ import type { SoundWorld } from "./director"
 
 /** The director's view of a `CoopSim`: the offline session's and the co-op client's (filled from snapshots) alike. */
 export function soundWorld(sim: CoopSim): SoundWorld {
-  return { time: sim.time, town: sim.town, zombies: sim.ai.agents, shots: sim.combat.shots, portals: sim.ai.portalStates, survivors: sim.slots }
+  return {
+    time: sim.time,
+    town: sim.town,
+    zombies: sim.ai.agents,
+    shots: sim.combat.shots,
+    meleeSwings: sim.combat.meleeSwings,
+    portals: sim.ai.portalStates,
+    survivors: sim.slots,
+    progression: sim.progression,
+    hour: sim.hour,
+  }
 }
 
 /** Zombies alert, chasing or bashing within `radius` metres: the threat the ambience rises with. */

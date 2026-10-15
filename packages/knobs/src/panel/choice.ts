@@ -14,6 +14,8 @@ export type ChoiceDisplay = "auto" | "menu" | "segmented"
 
 /** More options than this always drop down a menu (unless `display: "segmented"`). */
 export const COMPACT_CHOICES = 4
+/** A menu of more options than this opens with a search field. */
+export const SEARCH_CHOICES = 8
 /** The least room (px) either side of a segment's label before the row turns into a menu. */
 const MIN_PAD = 6
 /** Finger travel (px) per option when panning over the menu button. */
@@ -28,8 +30,11 @@ export interface ChoiceControl {
   /** Whichever of the two is showing: the row's ↑↓ stop. */
   focusTarget(): HTMLElement
   isMenu(): boolean
-  /** Shows `value` (the pill under its segment and the menu's label). */
-  show(value: string, instant?: boolean): void
+  /**
+   * Shows `value` (the pill under its segment and the menu's label); `mixed` shows none of them
+   * (no pill, "—"), for a multi-selection whose items differ.
+   */
+  show(value: string, instant?: boolean, mixed?: boolean): void
   /** New labels for the same options. */
   relabel(items: readonly ChoiceItem[]): void
   /** Steps one option (←/→), stopping at the ends unless `wrap`. */
@@ -127,6 +132,7 @@ export function createChoice(
         returnTo: menu,
         active: items.findIndex((i) => i.value === current),
         minWidth: r.width,
+        search: !o.numbered && items.length > SEARCH_CHOICES,
         onClose: () => {
           open = undefined
           menu.setAttribute("aria-expanded", "false")
@@ -252,11 +258,13 @@ export function createChoice(
     menuValue,
     focusTarget: () => (asMenu ? menu : seg),
     isMenu: () => asMenu,
-    show(value, instant = false) {
-      placeSegPill(seg, buttons, value, instant)
-      const text = labelOf(value)
+    show(value, instant = false, mixed = false) {
+      placeSegPill(seg, buttons, mixed ? "\u0000mixed" : value, instant)
+      const text = mixed ? "—" : labelOf(value)
       if (menuValue.textContent !== text) menuValue.textContent = text
-      menu.toggleAttribute("data-none", !items.some((i) => i.value === value))
+      // The whole label on hover, where the button's room truncates it.
+      if (menu.title !== text) menu.title = text
+      menu.toggleAttribute("data-none", !mixed && !items.some((i) => i.value === value))
     },
     relabel(next) {
       items = next

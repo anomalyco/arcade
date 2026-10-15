@@ -31,7 +31,7 @@ test("terrain zombie adapter preserves authoritative inputs and finite elevated 
     p.x += Math.min(dt, .05); p.aim = Math.sin(n / 50) * .3; time += dt
     const input = JSON.stringify(p)
     const batches = avatar.draw(p, dt, time, (x, z) => .5 + x * .02 + z * .01)
-    expect(batches).toHaveLength(13)
+    expect(batches).toHaveLength(15)
     expect(batches.every(b => [...b.data].every(Number.isFinite))).toBe(true)
     expect(avatar.bones.pelvis!.p[1]).toBeGreaterThan(.8)
     expect(avatar.bones["right.foreArm"]!.p[1]).toBeGreaterThan(1)
@@ -112,8 +112,8 @@ test("zombie crowd shamble matches key-pose reference within 7.5 deg RMSE, locks
     const st = zr.getAgentBones(1)!
     const j = extractBonePoseJoints(st.bones)
     const [pL, pR] = st.planted!
-    const toeL = at(st.bones["left.foot"]!, 0.19, -RIG.ankle, 0)
-    const toeR = at(st.bones["right.foot"]!, 0.19, -RIG.ankle, 0)
+    const toeL = st.bones["left.toe"]!.p
+    const toeR = st.bones["right.toe"]!.p
     if (n >= 180) {
       if (prevPlantedL && pL) maxToeSlip = Math.max(maxToeSlip, Math.hypot(toeL[0] - prevToeL[0]!, toeL[1] - prevToeL[1]!, toeL[2] - prevToeL[2]!))
       if (prevPlantedR && pR) maxToeSlip = Math.max(maxToeSlip, Math.hypot(toeR[0] - prevToeR[0]!, toeR[1] - prevToeR[1]!, toeR[2] - prevToeR[2]!))

@@ -27,16 +27,22 @@ const deadline = setTimeout(() => {
   console.error(`${game}: smoke exceeded 45 seconds`)
   process.exit(1)
 }, 45_000)
+// CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster (Outbreak's smoke
+// drops from ~11 s to ~2 s) and must actually start: there the "needs WebGPU" fallback counts as a failure.
+// SMOKE_GPU=swiftshader reproduces CI on a Mac.
+const metal = (process.env.SMOKE_GPU ?? (process.platform === "darwin" ? "metal" : "swiftshader")) === "metal"
 try {
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
-    args: [
-      "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-      // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
-      "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio",
-      ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
-    ],
+    args: metal
+      ? ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"]
+      : [
+          "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+          // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
+          "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio",
+          ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
+        ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   const errors = []
@@ -72,7 +78,9 @@ try {
   // Let initialization promises and the first presentation frames report errors.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.deepEqual(errors, [], `${game}: browser errors`)
-  console.log(`${game}: production smoke passed (${await ready.jsonValue()})`)
+  const outcome = await ready.jsonValue()
+  if (metal) assert.match(outcome, /ready/, `${game}: WebGPU did not start on Metal (${outcome})`)
+  console.log(`${game}: production smoke passed (${outcome}${metal ? ", Metal" : ""})`)
 } finally {
   await browser?.close()
   server.stop(true)

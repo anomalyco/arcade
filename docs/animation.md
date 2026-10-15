@@ -24,15 +24,15 @@ means the walk and run reference clips that `common.ts` downloads on first use.
 
 | File | What it owns |
 | --- | --- |
-| `packages/kit/human-locomotion.ts` | `gaitAt` (stride, duty, run blend), `locomotion` (stride clock, step release, swing, pelvis springs, arm springs), `plantedFoot` (toe lock and roll), `pelvisPoint` |
-| `packages/kit/human-pose.ts` | `poseLegs` (leg IK, swing ankle), `unarmedHands` (FK arm angles), `poseUnarmedArms` (arm IK pole), `poseArms` (armed hands) |
+| `packages/kit/human-locomotion.ts` | `gaitAt` (stride, duty, run blend), `locomotion` (stride clock, step release, swing, pelvis springs, arm springs), `stanceFootRoll`, `plantedFoot` (ball lock and heel-to-toe roll), `plantedToe`, `pelvisPoint` |
+| `packages/kit/human-pose.ts` | `poseLegs` (leg IK, swing ankle and toe bend), `unarmedHands` (FK arm angles), `poseUnarmedArms` (arm IK pole), `poseArms` (armed hands) |
 | `packages/kit/human-profile.ts` | `humanProfiles` presets and their Lab controls (`zombieVariant`) |
 | `packages/kit/shamble-crouch.ts` | `buildShambleReferenceCycle`, `buildCrouchRunReferenceCycle`, `extractAsymmetricBvhCycle`, `shambleHandsFK`, `shambleTorsoModulation`, zombie variants (`limper`, `dragger`, `reacher`, `lunger`) |
-| `packages/kit/rig.ts` | `RIG` link lengths, `ik`, frames and springs |
+| `packages/kit/rig.ts` | `RIG` link lengths (`thigh`, `shin`, `ankle`, `foot`, `toe`, `heel`), `ik`, frames and springs |
 | `games/blackout/src/game/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips |
-| `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks |
+| `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks and split boot/toe meshes |
 
-The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`. Hip height is about 0.86 m.
+The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`, and the foot splits at the ball (MTP joint) into `RIG.foot = 0.125 m` (ankle to ball) and `RIG.toe = 0.065 m` (ball to toe tip, `0.19 m` total forward reach, `RIG.heel = 0.06 m`). Hip height is about 0.86 m.
 
 ## Gait timing
 
@@ -50,18 +50,21 @@ beat every few steps; it shows as a subharmonic in the pelvis curve, not as a vi
 
 | Mode | Speed | Cadence | Step length | Duty factor | Double support | Flight |
 | --- | --- | --- | --- | --- | --- | --- |
-| Walk | 1.4 m/s | 145 steps/min | 0.58 m | 0.54 | 12% of the cycle | 0 |
+| Walk | 1.4 m/s | 127 steps/min | 0.665 m | 0.54 | 8% of the cycle | 0 |
 | Run | 4.2 m/s | 238 steps/min | 1.06 m | 0.32 | 0 | 36% |
 | Sprint | 6.3 m/s | 285 steps/min | 1.33 m | 0.24 | 0 | 52% |
 
-The old notes quoted about 207 steps/min at 1.4 m/s (and 157 before the `run-realism` stride and COM-phase update);
-145 steps/min (`0.58 m` steps, `1.16 m` stride) is the longest walk stride a rigid `0.83 m` two-bone leg at
-`pelvis.y = 0.819 m` can reach (`maxChord = 0.816 m < 0.829 m`) with zero shin-to-boot separation. Human walking at
-1.3–1.4 m/s is closer to 110–115 steps/min (the mocap walk clip takes 109 at `1.30 m/s`), which requires a deeper
-compass-gait pelvis drop or 3-DOF hip tilt.
+Before the ball-of-foot (MTP) toe joint, a rigid `0.19 m` boot could not bend at the forefoot, so `145 steps/min`
+(`0.580 m` steps, `1.16 m` stride) was the longest walk stride a `0.83 m` two-bone leg at `pelvis.y = 0.819 m` could
+reach (`maxChord = 0.816 m < 0.829 m`) without separating the shin from the ankle. Splitting the boot at the ball
+(`RIG.foot = 0.125 m`, `RIG.toe = 0.065 m`) lets the trailing ankle lift up and forward by `L_foot (1 - cos φ)` (`+3.5 cm`
+vertical, `+1.5 cm` horizontal at `φ = −0.46 rad`) while the toe stays planted flat on the floor. That extends effective
+terminal-stance leg reach and lengthens 1.4 m/s walking steps from `0.580 m` (`144.6 steps/min`) to **`0.665 m`**
+(**`126.6 steps/min`**, Outbreak `127.2 steps/min`, vs. `112.5 steps/min` in mocap) without dropping the pelvis (`pelvis.y = 0.819 m`)
+and with `0.00 mm` shin-to-ankle separation. Touchdown jerk in the walk also dropped from `51` to **`33 m/s³`** (`contactFootSpeedMax = 0.032 m/s`).
 
 **Run with flight; do not crouch to reach.** A running foot releases its support once the other foot's swing
-is 32% complete (48% when strafing), which gives the flight fractions above. Swings last 0.08 to 0.385 s.
+is 32% complete (up to 48% on side-steps), which gives the flight fractions above. Swings last 0.08 to 0.385 s.
 Crouching the hips to reach a distant lock looked worse and still overstretched the leg.
 
 ## Body bob
@@ -86,7 +89,8 @@ amplitude that grows with `run`.
 subharmonic ratio fell from 0.92 to 0.03 once the stride clock was shared.
 
 **Keep the pelvis between the feet and near the aim.** The pelvis yaw springs toward the circular midpoint of
-the two foot headings and never leaves 1.05 rad of the aim; the leg heading obeys the same limit.
+the two foot headings and never leaves 1.05 rad of the aim; the leg heading obeys the speed-dependent strafe limit
+in [Strafing](#strafing).
 
 Side-to-side, the pelvis shifts toward the stance foot (`m.sway`), drops on the swing side by `hipDrop`
 (0.095 rad for the soldier), banks into turns from lateral acceleration (up to 0.18 rad), and twists with the
@@ -95,24 +99,40 @@ amplified 1.6× (`swayScale`, `twistScale`) because the games are seen from abov
 
 ## Foot contact
 
-**Lock the rendered toe in world space, not just the IK target.** `plantedFoot` pins a point 0.19 m ahead of the
-ankle (`lockToe`), and the boot pivots around it. A clamped IK endpoint can move the mesh while the stored lock
-reports zero slip, so measure the rendered toe. Planted toe slip is below 1e-12 m in every gait test.
+**Lock the ball of the foot in world space, and keep the planted toe flat on the floor.** `lockToe` pins the ball of
+the foot `RIG.foot = 0.125 m` ahead of the ankle (`a.motion.toes[i]`), and `plantedFoot` pivots the rear foot around
+that ball during terminal stance while `plantedToe` (`left.toe` / `right.toe`, `RIG.toe = 0.065 m`) stays flat on the
+floor (`toeRelPitch = −footPitch`, reaching `+32.7°` dorsiflexion in walk and `+44.2°` in run). A clamped IK endpoint
+can move the mesh while the stored lock reports zero slip, so measure both the rendered ball (`at(ft, RIG.foot, -RIG.ankle, 0)`)
+and the rendered toe tip (`at(toe, RIG.toe, -RIG.ankle, 0)`). Planted ball and toe slip are `0.0 mm` (`< 1e-12 m`) across
+walk, run, sprint, crouch-run and zombie shamble.
 
 **Touch down at zero speed.** Horizontal swing motion uses `smoother(u)`, which has zero velocity at both ends, and
 the lift is `1.72 sin²(πu)(1 − u)`: it rises early (peak at about 42% of the swing) and settles cubically.
-Contact foot speed fell from 0.63 to 0.03 m/s in the run. Walk lift peaks near 8 cm and run lift near 20 cm.
+Contact foot speed fell from 0.63 to 0.03 m/s in the run (`0.010 m/s` mean / `0.032 m/s` max in the walk). Walk lift
+peaks near 12 cm and run lift near 39 cm.
 
-**Roll heel to toe.** In late swing the toe lifts up to 0.20 rad and settles flat by touchdown; in terminal
-stance the heel rises onto the locked toe by up to 0.26 rad (`plantedFoot`, from 62% of stance). At liftoff the
-toe pivot fades out over the first 25% of swing (`poseLegs`), so liftoff and touchdown are continuous.
-
-**Let the swing ankle relax.** Between 22% and about 80% of the swing the foot follows the shin with a 0.12 rad
-toe drop, then recovers ground alignment before contact. A foot held flat while the shin is near horizontal
-looks rigid.
+**Roll heel-strike → foot-flat → heel-rise → toe-off.** `stanceFootRoll` (`packages/kit/human-locomotion.ts`) splits
+stance into two pitches so early-stance heel rocker never displaces the ankle horizontally:
+- **Heel strike → foot flat (`stanceFrac < 0.24` walk, `< 0.16` run):** `heelStrikePitch` holds `+0.17 rad` (`+10°`)
+  dorsiflexion at touchdown and settles smoothly to `0` as weight loads onto the foot, with a slight `+0.06 rad` toe
+  dorsiflexion lift.
+- **Mid-stance (`foot flat`):** both `ft` (`heel → ball`) and `toe` (`ball → tip`) lie flat on the floor (`0 rad`).
+- **Heel rise → toe-off (`stanceFrac > 0.50` walk, `> 0.36` run):** `heelRisePitch` pitches the rear foot nose-down up
+  to `−0.46 rad` (walk) or `−0.62 rad` (run/sprint) around the locked ball (`lockToe`), lifting the heel `3.5–5.5 cm`
+  while `plantedToe` counter-rotates (`toeRelPitch = −heelRisePitch`) so the toe box stays flat on the ground.
+- **Swing push-off and toe clearance (`poseLegs`):** at liftoff (`u < 0.25`), the ball pivot and push-off plantarflexion
+  fade out smoothly while the toe flexes down (`−0.20 rad`), then lifts slightly (`+0.12..+0.18 rad` dorsiflexion) in
+  mid-to-late swing so the `6.5 cm` toe tip clears the floor before settling into heel strike. In zombie shamble
+  (`footDrag > 0.2`), the dragged foot's toe flexes upward as it scrapes along the ground so the toe tip never digs
+  underground.
 
 **Turn feet in place.** A planted boot stays within 0.96 rad of the leg heading and pivots at its toe when it
 exceeds that. Idle feet replant when their home error passes 0.24 m.
+
+**Sounds land on touchdown.** `Survivor.onFootfall` and `ZombieCrowdRenderer.onFootfall` fire on the frame a foot
+plants (the zombie hook also passes that foot's drag and the shamble variant), and Outbreak's footsteps play there
+([sfx-library.md](sfx-library.md#outbreak)). A change to when feet plant moves the sounds with them.
 
 ## Foot placement and legs
 
@@ -131,8 +151,14 @@ target.
 stretched the hip-to-ankle distance to 1.46 m on a 0.83 m leg; the IK clamped the shin and the boot visibly
 separated from it by 53 cm. That is the main cause of "legs kick out".
 
-**Keep the knee pole orthogonal to the swing chord.** The stance knee pole is `dirIn(pelvis, 1, 0.28, ±0.25)` in
-pelvis space. During running swing heel kick-up (`cx < 0`, when the ankle kicks up behind the hip), the chord points
+**Point the knee over the boot.** `kneePole(pelvis, footYaw, side)` in `human-pose.ts` aims the knee pole along
+the boot's heading with a small outward bias (`KNEE_OUT = 0.12`), so the knee tracks over the toes when the feet
+turn away from the hips. The old pole was fixed in pelvis space (`dirIn(pelvis, 1, 0.28, ±0.25)`), which bowed the
+knees 14° to 24° off the boots (21° in crouch-run, 23° to 24° in Outbreak, 4° to 7° in mocap); now the worst case
+across all strafe angles is 7.5° to 9°. The price is crouch-run leg RMSE 10.7° → 11.2° and +0.1° to +0.3° leg RMSE
+in the forward walk and run pose-diffs.
+
+**Keep the knee pole orthogonal to the swing chord.** During running swing heel kick-up (`cx < 0`, when the ankle kicks up behind the hip), the chord points
 backward and downward at `~−135°`, which is nearly anti-parallel to `(1, +0.28)`. `poseLegs` tilts the swing pole
 downward (`0.28 − 0.65 × backKick`) and narrows its lateral offset so the pole stays orthogonal to the backward
 hip-to-ankle chord and never bows the knee sideways.
@@ -148,11 +174,12 @@ thigh high in front (`+62°`), then whip the lower leg down to a zero-velocity t
 **Measure and drive swing ankle pitch relative to the shin.** `poseLegs` computes unwrapped sagittal shin pitch from
 `sh0.y` (`-atan2(shinFwd, sh0.y[1])`, avoiding `±90°` folding when the shin tilts past horizontal during heel kick-up)
 and applies plantarflexion (`−0.20..−0.35 rad`) during push-off and early swing followed by dorsiflexed recovery in
-late swing. Together with a 2.6 cm taller unarmed walking pelvis (`walkDrop = −0.012`), leg angle RMSE against mocap
-dropped from **12.2° to 9.2°** in the walk (knee `15.5° → 10.4°`, ankle `16.1° → 11.9°`, hip `5.3°`), from
-**24.5° to 16.9°** in the run (knee `33.9° → 25.0°`, ankle `24.5° → 14.8°`, hip `15.0° → 11.0°`, foot-lift RMSE
-`16.5 → 6.9 cm`), from **29.3° to 22.7°** in the sprint, and in Outbreak from **19.3° to 12.4°** (walk) and **31.8° to
-15.2°** (run, knee `27.4° → 11.6°`, ankle `52.4° → 18.5°`).
+late swing. Combined with the ball-of-foot (MTP) toe joint (`RIG.foot = 0.125 m`, `RIG.toe = 0.065 m`), `stanceFootRoll`
+heel-to-toe roll, and `0.665 m` walking steps (`126.6 steps/min`), leg angle RMSE against mocap dropped to **`8.07°`**
+in the walk (hip `6.15° → 4.48°`, knee `12.69° → 10.94°`, ankle `14.33° → 8.78°`), **`12.96°`** in the run (hip `12.2° → 11.09°`,
+knee `20.9° → 18.32°`, ankle `14.1° → 9.48°`), **`18.76°`** in the sprint (ankle `19.48° → 13.96°`), and in Outbreak to
+**`10.72°`** in the walk (hip `8.44° → 6.66°`, ankle `15.49° → 8.93°`) and **`13.15°`** in the run (hip `10.89° → 9.76°`,
+knee `17.90° → 15.95°`, ankle `16.72° → 13.72°`).
 
 **Sample per-step variation once at liftoff with same-foot high-pass blue noise.** `stepVariation` (`0..1`, default
 `0.35` on soldier, `0.30` on wizard, `0.65` on zombie, exposed in the shared Lab) samples deterministic seeded offsets
@@ -244,10 +271,13 @@ head. Keep the head on the neck: pinning its position separately opened a visibl
 **Keep one clock through speed changes.** Walk, run and sprint share the stride clock, so a speed ramp never
 jumps phase. The Characters page's Walk loop ↔ Run loop toggle transitions in place.
 
-**Inertialize discrete flips.** Switching between forward and backpedal changes the leg heading's goal. The jump
-goes into `m.yawOffset`, which decays at `transitionHz` (6 Hz), so heading and its velocity stay continuous
-(Bollo, GDC 2018). The flip uses hysteresis: forward to back above 2.05 rad of aim error, back to forward below
-1.72.
+**Make the backpedal flip continuous, then inertialize what is left.** Switching between forward and backpedal
+changes the leg heading's goal. `strafeLegGoal` tapers both goals to zero around the switch (forward from 1.8 rad
+of aim error, backpedal within 0.45 rad of its limit), so at the flip both legs already face the aim and the goal
+barely moves. Any residue goes into `m.yawOffset`, which decays at `transitionHz` (6 Hz), so heading and its
+velocity stay continuous (Bollo, GDC 2018). The flip uses hysteresis: forward to back above `BACK_ENTER = 2.35` rad
+of aim error, back to forward below `BACK_EXIT = 2.1`. Outbreak's survivor used to flip instantly: its pelvis turned
+at 1116°/s in an aim sweep; with the shared goal it peaks at 169°/s walking and 236°/s running.
 
 **Anticipate starts.** On leaving rest the pelvis dips (`a.dip.v −= 0.14`), the body leans into the acceleration,
 and the first step comes from the foot on the side of any sideways motion (the left foot when moving straight). The
@@ -258,20 +288,63 @@ targets keep updating until 96% of the swing, and the feet plant ahead. A hard s
 steps.
 
 **Redirect late swings on reversal.** A foot between 60% and 95% of its swing when the travel direction reverses
-restarts at 25% toward a new target once, so it never plants behind the reversal.
+restarts at 25% toward a new target once, so it never plants behind the reversal. The restart rewrites `f.lift`
+so the foot continues from where it is; restarting from the old lift point jumped it a quarter of the way to the
+new target in one frame.
 
 ## Strafing
 
-**Step out with the leading foot, then bring the other beside it.** On a strafe start or reversal the outside
-foot steps first. The leading foot reaches 6% further and the following foot 32% shorter, so the inside foot steps
-up beside the leading one instead of crossing it (Overgrowth's `HandleFootStance`). The leading boot opens toward
-travel by up to 0.6 rad and the follower by 0.12 rad.
+Strafing means travelling one way while the chest faces the aim. Measure it with
+`games/blackout/scripts/animation/strafe.ts`, which sweeps travel 0° to 180° from aim at slow (0.8), walk (1.4),
+jog and run (4.2 m/s) for the survivor, soldier and Outbreak's aimed survivor, plus aim sweeps and a circle strafe,
+and compares them with mocap and authored references. Game strafes are fast (Blackout moves at 4.2 m/s, Outbreak at
+3.4), so the run regime matters most.
 
-**Separate feet in aim space, with a smooth weight.** Feet keep at least 0.20 m apart sideways in aim space,
-weighted by `smooth((strafe − 0.05) / 0.20)`. A binary `strafe > 0.2` gate teleported a foot 0.56 m in one frame
-when it switched. Aim space stays stable while the pelvis turns during reversals.
+**Turn the hips toward travel with speed; keep the chest on aim.** `strafeHipLimit` lets the leg heading turn
+`sideStepTurn` (0.3 rad) from the aim at a stroll, rising to `strafeHipTurn` (0.95 rad) by 2 m/s. The old fixed
+26° limit at a 90° strafe pointed the legs almost across the travel line, and the trailing leg could not keep up: a
+run strafe took 369 steps/min against 239 running forward, with double catch steps. Now the hips sit 55° from aim
+in a run strafe, the cadence matches forward running (239), steps run along travel (direction error 1.9° → 0.2°)
+and the chest stays within 1° of aim.
 
-Strafe swings are 14% shorter. Backpedal strides are 15% shorter with 12% longer swings.
+**Side-step slowly, never cross.** Below `crossoverSpeed` (2.6 m/s) a sideways step widens the stance in the leg
+frame to `(strafeGap + stepLength × |sin φ|) / 2`, so the follower closes to `strafeGap` (0.20 m) from the lead
+and never passes it (`strafeFootOffset`; φ is travel relative to the legs, folded to ±90°). Side-step strides are
+up to 45% shorter (`gaitAt(…, sideStep)`) so the open stance stays within reach. The lead boot opens toward travel by
+`0.35 |φ|`, the follower by `0.08 |φ|` (`strafeFootOpen`). Mocap and the authored side-step agree: no crossing,
+feet within 20 to 30 cm of each other at the closest.
+
+**Cross over at a run.** Above about 1.9 m/s `cross` ramps in: each foot lands 10 cm off its side of the travel
+line, so the trailing leg passes in front of the other, as in the authored crossover run. The boots split the
+difference between hips and travel (`0.6 φ`). A crossover needs a travel line ahead of or behind the hips, so it
+fades back to a side-step as travel nears 90° from the legs (`smooth(|cos|/0.7)`); otherwise the fold at ±90°,
+where φ changes sign, swapped the feet across the line.
+
+**Separate on the target, never per frame.** `strafeSeparate` pushes a landing target apart by `strafeGap` across
+the legs for a side-step or 18 cm across the travel line for a crossover. Separating the moving foot every frame
+fought the swing interpolation and made the feet jitter.
+
+**Give both feet the same reach.** The old rule (lead foot 6% further, follower 32% shorter, after Overgrowth's
+`HandleFootStance`) starved the follower at speed and was the main cause of the catch steps. With the hips turned
+toward travel both feet step symmetrically.
+
+**Backpedal blends in.** `backness` (0 to 1, from how far travel points behind the legs) shortens strides by up to
+15%, lengthens swings by up to 12% and swaps heel strike for a small toe-down landing. The mocap backpedal lands
+toe-first, about 30° toe-down, and rolls the heel down within 0.13 s; foot roll itself lives in `plantedFoot`.
+
+Measured on main with the toe joints (before) and this pass (after):
+
+| Case | Before | After | Reference |
+| --- | --- | --- | --- |
+| Run 90° cadence | 369 steps/min | 239 | 238 (authored crossover), 239 forward |
+| Walk 90° cadence | 221 | 215 | 240 (authored side-step at 0.8 m/s), 127 forward |
+| Walk 90° closest boot gap | 21 cm | 26 cm | 20 to 28 cm |
+| Knee vs boot, worst angle (survivor / Outbreak run) | 22° / 24° | 8° / 8° | 4° to 7° (mocap) |
+| Aim sweep, max pelvis turn (Blackout run / Outbreak walk) | 284 / 1116 °/s | 242 / 169 °/s | |
+| Circle strafe, r = 3 m (walk / jog), step direction error | 23° / 32° | 6° / 12° | |
+| Circle strafe (jog), cadence | 360 steps/min | 235 | 222 forward |
+
+Planted slip stays at 0 and survivor-aim muzzle error at 0° in every case.
 
 ## Profiles
 
@@ -287,6 +360,9 @@ Presets live in `humanProfiles`. Spread one to tune an actor; never mutate the p
 `timingBias` shifts one foot's phase and swing length; `footDrag` shortens and flattens the crippled foot's
 swing, slows cadence (`157 -> 118 steps/min` at `0.95 m/s`, matching tired/injured mocap at `100-110 steps/min`),
 and adds a limp to the pelvis. Tests bound both and keep the toe locks exact (`0.000 mm` slip).
+
+Every profile shares the strafe values `sideStepTurn 0.3`, `strafeHipTurn 0.95`, `crossoverSpeed 2.6` and
+`strafeGap 0.2` (Lab → Animation; Outbreak's aimed survivor has the same keys in its Survivor strafe group).
 
 ### Zombie shamble
 
@@ -346,6 +422,16 @@ bob, with 1:1 root displacement and `dAim` feed-forward into `gunPos` and `weapo
   pitches the head down `16.0°`, reaches the left hand to the belt pouch (`1.68 cm` from `hipL`), carries a visible
   magazine box into the grip well (`3.22 cm`), racks the slide, and returns to the two-handed grip (also driven for
   co-op remote survivors from snapshot `reloading` and `recoil` state).
+- **Top-down melee swings, downward finishers, and zombie knockdown/crawler/death states (`packages/kit/human-melee.ts`,
+  `games/outbreak/src/survivor.ts`, `games/outbreak/src/zombies.ts`)**: `meleeTorsoModulation` and `poseMeleeArms` drive
+  `windup` → `active` → `recovery` across `one-blunt` (`crowbar`, `pipe`, `hammer`), `one-blade` (`knife`, `machete`),
+  and `two-heavy` (`bat`, `spiked-board`, `axe`, `fire-axe`) weapons while standing or walking (`crowbar` tip sweep
+  `210.5°` 1L / `197.2°` 2L / `287.1°` 3H, torso twist `56.6°–101.5°`, `0.500 m` arm chord, `0.0e+0` planted toe slip).
+  Contextual finishers on downed or crawling zombies either pitch the torso (`+0.38 rad`) and weapon (`-0.58 rad`) into
+  a downward strike or lift and slam the right boot (`stompAnim`). Zombies pose deterministically across three stagger
+  reactions (flinch back, spin-twist, knee-buckle), four death variants (fall forward, fall backward, spin crumple,
+  collapse to knees), floor knockdown with recovery struggle, prone leg-severed `crawler` hauling (one-leg and
+  torso-only via `BONE_SUBTREE_MASK`), and `limping` hip dip (`6.8 cm`).
 
 ## Determinism and performance
 
@@ -367,17 +453,37 @@ comparison. Presentation settings never touch simulation or network state.
 
 ## Known gaps
 
-- **Run late-swing knee extension still leads mocap by ~10°.** Walk leg RMSE is now 11.1° (hip 6.2°, knee 12.7°,
-  ankle 14.3°; Outbreak walk 12.9° with ankle 11.0°) and run leg RMSE is 15.8° (hip 12.2°, knee 20.9°, ankle 14.1°;
-  Outbreak run 15.2° with knee 18.6°, ankle 14.1°); the remaining run knee error comes from late swing (`7/8`), where
-  tapering the heel-tuck before `u = 0.92` for zero-speed contact extends the shin slightly earlier than the mocap runner.
-- **Walk cadence is 145 steps/min vs. ~110 in mocap:** with a rigid `0.83 m` two-bone leg and `pelvis.y = 0.819 m`,
-  Pythagoras bounds horizontal foot reach to `±0.386 m` (`0.58 m` steps, `145 steps/min` at `1.4 m/s`) before the
-  ankle would separate from the shin. Reaching `110 steps/min` (`0.76 m` steps) would require lowering the walking
-  pelvis below `0.78 m`.
-- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`146` / `240` steps/min)** and lock swing
+- **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,
+  ankle 8.78°; Outbreak walk **10.72°** with ankle 8.93°) and run leg RMSE is **12.96°** (hip 11.09°, knee 18.32°,
+  ankle 9.48°; Outbreak run **13.15°** with knee 15.95°, ankle 13.72°); the remaining run knee error comes from late
+  swing (`7/8`), where tapering the heel-tuck before `u = 0.92` for zero-speed contact extends the shin slightly earlier
+  than the mocap runner.
+- **Walk cadence is 126.6 steps/min vs. 112.5 in mocap:** the ball-of-foot (MTP) toe joint and terminal-stance heel rise
+  lengthened 1.4 m/s walking steps from `0.580 m` (`144.6 steps/min`) to `0.665 m` (`126.6 steps/min`) at `pelvis.y = 0.819 m`
+  with zero shin-to-ankle separation. Reaching `112.5 steps/min` (`0.75 m` steps at `1.4 m/s`, vs. mocap's `1.30 m/s`)
+  would require either a deeper double-support pelvis dip (`< 0.79 m`) or 3-DOF pelvic list/obliquity that lowers the
+  trailing hip joint independently of the stance hip.
+- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`127` / `239` steps/min)** and lock swing
   targets at `u >= 0.75`, but still step their own terrain-support contact loop (`Survivor.draw`, `src/zombies.ts`)
   rather than calling `locomotion` directly.
+- **Strafe gaps.** Hips stay fairly square (20° to 24° from aim) in the 120° to 135° back-diagonal band, where the
+  crossover fades into the backpedal; side-steps at 1.4 m/s take 215 steps/min (forward walk 127), because a step
+  that cannot cross is short; Outbreak's aimed run at 90° turns its planted boots 17° from the pelvis (mocap 10° to
+  13°). The Bandai Namco set has no true side-step or run-strafe clip (its walk-left/right are forward walks with the
+  hips toward travel), so the side-step and crossover references are authored.
+- **Procedural melee upper-body posing (`packages/kit/human-melee.ts`, `melee-poses.ts`).** Outbreak's 9 melee weapons
+  map onto three upper-body classes (`one-blunt`, `one-blade`, `two-heavy`) that layer pelvis/chest yaw coil-and-whip
+  plus two-bone IK arm arcs over the standing or moving lower body without slipping planted feet (`0.0 m` toe slip at
+  `0–4.2 m/s`, `maxRightShoulderChordM = 0.500 m <= 0.53 m` chain limit):
+  - `one-blunt` (`crowbar`, `pipe`, `hammer`): Combo 1 forehand sweeps `+120.0° → -90.5°` (`210.5°` arc, `1.236 m` tip
+    reach, `56.6°` chest twist), Combo 2 backhand reverses `-97.2° → +100.0°` (`197.2°` arc), and Combo 3 / charged
+    heavy steps through `+176.2° → -111.0°` (`287.1°` arc, `101.5°` chest twist) with the off-hand counterbalancing.
+  - `one-blade` (`knife`, `machete`): diagonal slashes sweep `+116.8° → -86.7°` (`203.5°` arc, `0.942 m` knife / `1.195 m`
+    machete reach, `49.5°` chest twist) and reverse `-91.9° → +97.2°` (`189.1°` arc) on Combo 2.
+  - `two-heavy` (`bat`, `spiked-board`, `axe`, `fire-axe`): both wrists stay coupled to the handle (`10.7–11.4 cm`
+    mean wrist gap) across a wide horizontal cleave (`+134.3° → -100.2°`, `234.6°` arc, `69.2°` chest twist) and a
+    deep over-the-shoulder charged heavy (`+193.7° → -127.9°`, `321.6°` arc, `1.289–1.385 m` tip reach, `123.3°` chest
+    twist).
 - **The shared contact solver assumes a flat floor at Y = 0.** Outbreak adds terrain support itself.
 - **Continuous playback has not been reviewed** for most passes; evidence is sampled sheets and metrics.
   Headless Chrome cannot hold 60 fps, so recorded video stutters even when the motion is smooth.

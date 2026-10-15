@@ -212,7 +212,8 @@ fn sampleSliderAt(p: Prim, local: vec2f, size: vec2f) -> vec4f {
     let hh = max(6.0, size.y - 12.0);
     // motion.y: how far inside the fill's edge the handle sits (--k-handle-inset).
     let hp = local - vec2f(fillX - hw * 0.5 - p.motion.y, (size.y - hh) * 0.5);
-    let hDist = roundedBox(hp, vec2f(hw, hh), hw * 0.5);
+    // look.y: 1 rounds the handle's ends, 0 squares them (--k-round).
+    let hDist = roundedBox(hp, vec2f(hw, hh), select(0.0, hw * 0.5, p.look.y > 0.5));
     let hCov = covSd(hDist);
     let hAlpha = p.color2.a * handleScale * fade;
     if (hCov > 0.0) {
@@ -320,7 +321,8 @@ fn shadePill(p: Prim, local: vec2f, size: vec2f, fragPos: vec2f) -> vec4f {
 
 // kind 4: Toggle switch track + spring-driven thumb with velocity elongation
 fn shadeToggle(p: Prim, local: vec2f, size: vec2f) -> vec4f {
-  let r = size.y * 0.5;
+  // look.x: the corner radius (--k-round), a capsule at most; look.y: the thumb shadow (--k-lift).
+  let r = min(p.look.x, size.y * 0.5);
   let trackDist = roundedBox(local, size, r);
   var out = vec4f(0.0);
 
@@ -347,11 +349,12 @@ fn shadeToggle(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   let thumbX = p.extra.z;
   let thumbW = max(baseD, p.extra.w - p.extra.z);
   let tp = local - vec2f(thumbX, pad);
-  let tDist = roundedBox(tp, vec2f(thumbW, baseD), baseD * 0.5);
+  let tr = min(p.look.x, baseD * 0.5);
+  let tDist = roundedBox(tp, vec2f(thumbW, baseD), tr);
 
   // Subtle thumb drop shadow
-  let shDist = roundedBox(tp - vec2f(0.0, 1.0), vec2f(thumbW, baseD), baseD * 0.5);
-  let shA = smoothstep(2.0, -0.5, shDist) * 0.25 * trackCov;
+  let shDist = roundedBox(tp - vec2f(0.0, 1.0), vec2f(thumbW, baseD), tr);
+  let shA = smoothstep(2.0, -0.5, shDist) * 0.25 * p.look.y * trackCov;
   out = over(out, vec4f(0.0, 0.0, 0.0, shA));
 
   let tCov = covSd(tDist) * trackCov;

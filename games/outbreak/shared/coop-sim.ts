@@ -1,7 +1,7 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
-import { createAIAgent, OutbreakAISubsystem, type AIConfig } from "./ai"
-import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
+import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
+import { createSurvivorCombatState, findFinisherTarget, OutbreakCombatSubsystem } from "./combat"
 import { advanceHour } from "./day-cycle"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
@@ -22,6 +22,7 @@ import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
 import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
+import { boxOf, OutbreakVehicleSubsystem, pushOutBox, vehicleSolidRects } from "./vehicles"
 import { StreamingWorld, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
@@ -54,6 +55,8 @@ export function createSurvivor(x: number, y: number): Survivor {
     aim: -Math.PI / 2,
     health: 100,
     maxHealth: 100,
+    vehicleId: null,
+    seatIndex: 0,
     ...createStaminaState(),
     ...createFlashlightState(true),
     ...createInteractActorState(),
@@ -72,14 +75,16 @@ export class CoopSim {
   readonly worldStream: StreamingWorld
   readonly ai: OutbreakAISubsystem
   readonly combat: OutbreakCombatSubsystem
+  readonly vehicles: OutbreakVehicleSubsystem
   readonly registry: InteractionRegistry
   readonly progression: OutbreakProgression
   readonly rewind = new RewindHistory<number>(24, 0.25)
   readonly slots: SurvivorSlot[] = []
-  hour = 18
+  hour = DEFAULT_PACING_TUNING.startHour
   time = 0
   revision = 0
   private solids: Rect[]
+  private vehicleSolids: Rect[]
 
   constructor(
     seed: number,
@@ -99,6 +104,7 @@ export class CoopSim {
     this.worldStream = new StreamingWorld(seed, houseSeed, terrain, effWorldMode)
     const [sx, sy] = SPAWN_POINTS[0]!
     this.ai = new OutbreakAISubsystem(this.town, sx, sy, aiConfig)
+    this.hour = this.ai.config.startHour
     this.combat = new OutbreakCombatSubsystem()
     this.progression = new OutbreakProgression(this.town, progTuning)
     this.progression.bindSquad(() => this.slots)
@@ -108,13 +114,16 @@ export class CoopSim {
       this.progression.ensureContainerStores()
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
+    this.vehicles = new OutbreakVehicleSubsystem(this.worldStream, this.town)
     this.registry = new InteractionRegistry([
       createDoorHandler({ access: (actor) => progression.doorAccess(actor), open: (actor, door, how) => progression.openKeyed(actor, door, how) }),
       windowInteractionHandler,
       fenceInteractionHandler,
+      this.vehicles.handler(progression, this.ai, () => this.time),
       ...progression.handlers(),
     ])
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
   }
 
   /** What progression needs to know about the world this tick. */
@@ -132,6 +141,7 @@ export class CoopSim {
     if (index > 0) pushOut(survivor, 0.3, this.solids)
     const slot: SurvivorSlot = { id, index, survivor, prompt: undefined, peek: null, notices: [] }
     this.progression.addActor(slot)
+    this.vehicles.bindActor(slot)
     slot.prompt = selectInteractTarget(this.town, survivor, this.registry)
     this.slots.push(slot)
     this.slots.sort((a, b) => a.index - b.index)
@@ -143,6 +153,7 @@ export class CoopSim {
     const i = this.slots.findIndex((s) => s.id === id)
     if (i < 0) return
     const p = this.slots[i]!.survivor
+    this.vehicles.leaveSeat(id, p)
     this.slots.splice(i, 1)
     this.progression.removeActor(id, dropItems ? { x: p.x, y: p.y } : undefined)
   }
@@ -161,21 +172,77 @@ export class CoopSim {
     viewTime?: number,
   ): void {
     const resolved = resolveSessionTuning(tuning)
+    Object.assign(this.vehicles.tuning, resolved.vehicle)
     const p = slot.survivor
     const town = this.town
     if (!p.vault) p.aim = command.aim
 
-    if (!predict && command.hotbarSlot !== undefined) this.progression.select(slot, command.hotbarSlot)
-    if (!predict && command.hotbarDelta) this.progression.select(slot, undefined, command.hotbarDelta)
+    const clampClassic = this.worldStream.mode === "classic"
+    if (p.vehicleId) {
+      const wasPassenger = (p.seatIndex ?? 0) > 0
+      const handled = this.vehicles.stepSeatedSurvivor(
+        slot,
+        command,
+        dt,
+        this.vehicleSolids,
+        this.progression,
+        this.ai,
+        this.time,
+        predict,
+      )
+      if (handled) {
+        stepStamina(p, false, false, dt, resolved.stamina)
+        if (p.vehicleId && wasPassenger && (p.seatIndex ?? 0) > 0) {
+          if (!predict && command.hotbarSlot !== undefined) {
+            this.progression.select(slot, command.hotbarSlot)
+            this.progression.project(slot)
+          }
+          if (!predict && command.hotbarDelta) {
+            this.progression.select(slot, undefined, command.hotbarDelta)
+            this.progression.project(slot)
+          }
+          if (command.flashlight) toggleFlashlight(p)
+          if (!predict) {
+            const ammo = this.progression.pistol(slot.id)
+            const use = this.progression.heldUse(slot.id)
+            const blockers = sightRects(town)
+            if (command.reload) this.combat.startReload(p, this.ai, this.time, ammo)
+            if (command.fire && use === "fire") {
+              if (resolved.infiniteAmmo) ammo.fill()
+              if (viewTime !== undefined && viewTime < this.time) {
+                this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
+                  this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+                )
+              } else {
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+              }
+            }
+          }
+        }
+        if (predict && !clampClassic) {
+          this.syncWorldChunks()
+        }
+        return
+      }
+    }
+
+    if (!predict && command.hotbarSlot !== undefined) {
+      this.progression.select(slot, command.hotbarSlot)
+      this.progression.project(slot)
+    }
+    if (!predict && command.hotbarDelta) {
+      this.progression.select(slot, undefined, command.hotbarDelta)
+      this.progression.project(slot)
+    }
     if (command.flashlight) toggleFlashlight(p)
 
-    const clampClassic = this.worldStream.mode === "classic"
     const x = p.x
     const y = p.y
     if (stepInteractionState(town, p, dt)) {
       stepStamina(p, false, false, dt, resolved.stamina)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
+        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -191,6 +258,7 @@ export class CoopSim {
         p.x += ((command.mx / length) * speed * dt) / steps
         p.y += ((command.my / length) * speed * dt) / steps
         pushOut(p, 0.3, this.solids)
+        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         if (clampClassic) {
           p.x = Math.max(0.4, Math.min(SIZE - 0.4, p.x))
           p.y = Math.max(0.4, Math.min(SIZE - 0.4, p.y))
@@ -210,13 +278,20 @@ export class CoopSim {
       if (!predict && outcome.topologyChanged) this.topologyChanged()
     }
 
-    if (!predict) this.applyActions(slot, command, dt, resolved.infiniteAmmo, viewTime)
+    if (!predict) this.applyActions(slot, command, dt, resolved, viewTime)
 
     p.vx = dt > 0 ? (p.x - x) / dt : 0
     p.vy = dt > 0 ? (p.y - y) / dt : 0
   }
 
-  private applyActions(slot: SurvivorSlot, command: Command, dt: number, infiniteAmmo: boolean, viewTime?: number): void {
+  private applyActions(
+    slot: SurvivorSlot,
+    command: Command,
+    dt: number,
+    resolved: ReturnType<typeof resolveSessionTuning>,
+    viewTime?: number,
+  ): void {
+    const infiniteAmmo = resolved.infiniteAmmo
     const p = slot.survivor
     const town = this.town
     const progression = this.progression
@@ -266,26 +341,79 @@ export class CoopSim {
       // R swaps a spare battery into the flashlight when it is in hand and low; otherwise it reloads the pistol.
       const battery = held === "flashlight" && (p.battery < 0.95 || p.batteryDepleted) && progression.ledger.count(slot.id, "battery") > 0
       if (battery) verbs.reload = true
-      else if (this.combat.startReload(p, this.ai, this.time, ammo)) progression.ledger.cancel(slot.id)
+      else if (this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
+    }
+    const tryFinisher = () => {
+      const runFinisher = () => {
+        const finTarget = findFinisherTarget(p, this.ai.agents, blockers)
+        if (!finTarget) return null
+        return this.combat.executeFinisher(
+          p,
+          finTarget,
+          this.ai,
+          progression.melee(slot.id),
+          this.time,
+          resolved.melee,
+          slot.id,
+          slot.index,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      }
+      const ev =
+        viewTime !== undefined && viewTime < this.time
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runFinisher)
+          : runFinisher()
+      if (ev) progression.ledger.cancel(slot.id)
+      return Boolean(ev)
     }
     const shove = () => {
+      if (tryFinisher()) return
       const ready = p.shoveCooldown <= 0
-      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id))
+      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id), slot.id)
       if (ready) progression.ledger.cancel(slot.id)
     }
     if (command.melee) shove()
     if (command.fire) {
-      if (use === "fire") {
+      if ((use === "melee" || use === "shove" || use === "fire") && tryFinisher()) {
+        // Contextual finisher on downed or crawling zombie handled
+      } else if (use === "fire") {
         if (infiniteAmmo) ammo.fill()
         const fired =
           viewTime !== undefined && viewTime < this.time
             ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
-                this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id),
               )
-            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id)
         if (fired) progression.ledger.cancel(slot.id)
+      } else if (use === "melee") {
+        const wpn = progression.heldMeleeWeapon(slot.id)
+        if (wpn && this.combat.startMeleeSwing(p, wpn, this.time, resolved.melee)) {
+          progression.ledger.cancel(slot.id)
+        }
       } else if (use === "shove") shove()
       else verbs.fire = true
+    }
+    if (p.meleePhase !== "idle" || p.meleeWeapon) {
+      const runSwing = () =>
+        this.combat.stepMelee(
+          p,
+          dt,
+          this.time,
+          Boolean(command.fireHeld),
+          this.ai,
+          blockers,
+          progression.melee(slot.id),
+          resolved.melee,
+          slot.id,
+          slot.index,
+          town,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      const meleeRes =
+        viewTime !== undefined && viewTime < this.time && p.meleePhase !== "idle"
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runSwing)
+          : runSwing()
+      if (meleeRes.topologyChanged) this.topologyChanged()
     }
     const made = progression.act(slot, verbs, world, target)
     if (made.noise > 0) {
@@ -296,9 +424,18 @@ export class CoopSim {
 
   /** Streams active chunks around all connected survivors and updates collision/navigation when windows shift. */
   syncWorldChunks(): boolean {
-    const survivors = this.slots.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y }))
+    const survivors = this.slots.map((s) => ({
+      id: s.id,
+      x: s.survivor.x,
+      y: s.survivor.y,
+      aim: s.survivor.aim,
+      flashlightOn: s.survivor.flashlightOn,
+      flashlightOutput: s.survivor.flashlightOutput,
+    }))
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
+    const blockers = sightRects(this.town)
+    const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75) : 6.0
     const res = this.worldStream.updateActiveWindows(
       survivors,
       this.town,
@@ -306,19 +443,30 @@ export class CoopSim {
       this.ai.portalStates,
       this.ai.agents,
       (id, seed, x, y, aim) => createAIAgent(id, seed, x, y, aim),
+      1,
+      (x, y) =>
+        canSpawnZombieAt(x, y, this.town, this.ai.nav, survivors, blockers, {
+          safeRadius,
+          forbidInView: this.ai.config.directorPacing > 0,
+          forbidBehind: this.ai.config.directorPacing > 0,
+          behindDist: 16,
+        }),
     )
     if (res.changed) {
       this.progression.ensureContainerStores()
+      this.vehicles.syncChunks(this.worldStream, this.town)
       this.revision++
       this.solids = solidRects(this.town)
+      this.vehicleSolids = vehicleSolidRects(this.town)
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     return res.changed
   }
 
-  /** Advances everything shared once per tick: clock, channels, flashlights, the crowd and its attacks, prompts. */
+  /** Advances everything shared once per tick: clock, channels, flashlights, vehicles, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     const resolved = resolveSessionTuning(tuning)
+    Object.assign(this.vehicles.tuning, resolved.vehicle)
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
     this.syncWorldChunks()
@@ -332,6 +480,8 @@ export class CoopSim {
       this.topologyChanged()
     }
 
+    this.vehicles.stepWorld(dt, this.time, this.town, this.vehicleSolids, this.slots, this.ai, this.progression)
+
     if (resolved.ai) {
       const config = this.ai.config
       if (resolved.ai.sightRange !== undefined) config.sightRange = resolved.ai.sightRange
@@ -343,22 +493,58 @@ export class CoopSim {
       if (resolved.ai.nightMultiplier !== undefined) config.nightMultiplier = resolved.ai.nightMultiplier
       if (resolved.ai.directorPacing !== undefined) config.directorPacing = resolved.ai.directorPacing
       if (resolved.ai.aiDebugOverlay !== undefined) config.aiDebugOverlay = resolved.ai.aiDebugOverlay
+      if (resolved.ai.startHour !== undefined) config.startHour = resolved.ai.startHour
+      if (resolved.ai.safeRadius !== undefined) config.safeRadius = resolved.ai.safeRadius
+      if (resolved.ai.initialDensity !== undefined) config.initialDensity = resolved.ai.initialDensity
+      if (resolved.ai.rampTime !== undefined) config.rampTime = resolved.ai.rampTime
+      if (resolved.ai.noiseSensitivity !== undefined) config.noiseSensitivity = resolved.ai.noiseSensitivity
+      if (resolved.ai.maxActiveNearPlayer !== undefined) config.maxActiveNearPlayer = resolved.ai.maxActiveNearPlayer
     }
 
-    const survivors = this.slots.map((s) => ({ ...s.survivor, id: s.id }))
+    const survivors = this.slots.map((s) => {
+      const p = s.survivor
+      const v = this.vehicles.vehicleOf(p)
+      if (v && (p.seatIndex ?? 0) === 0) {
+        const hlOn = v.headlights && v.hasBattery && !v.wreck
+        return {
+          ...p,
+          id: s.id,
+          aim: hlOn ? v.h : p.aim,
+          flashlightOn: hlOn || p.flashlightOn,
+          flashlightOutput: hlOn ? 1 : p.flashlightOutput,
+          lightSignature: hlOn ? this.vehicles.tuning.headlightRange : p.lightSignature,
+          noise: v.engineOn ? Math.max(p.noise, this.vehicles.tuning.engineNoise * 0.45) : p.noise,
+        }
+      }
+      return { ...p, id: s.id }
+    })
     const aiStep = this.ai.stepSurvivors(this.town, survivors, this.hour, this.time, dt, flashlightTuning)
     if (aiStep.topologyChanged) {
       this.topologyChanged()
     }
     this.slots.forEach((slot, i) => {
       const damage = aiStep.damage[i]!
-      if (damage > 0) slot.survivor.health = Math.max(0, slot.survivor.health - damage)
+      if (damage > 0) {
+        const v = this.vehicles.vehicleOf(slot.survivor)
+        const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
+        slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
+        if (aiStep.ankleGrabbed[i] && !v) {
+          slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)
+          slot.survivor.vx *= 0.45
+          slot.survivor.vy *= 0.45
+        }
+      }
     })
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   refreshPrompt(slot: SurvivorSlot): void {
+    if (slot.survivor.vehicleId) {
+      slot.peek = null
+      slot.prompt = undefined
+      return
+    }
     slot.peek = peekInfoFor(this.town, slot.survivor)
     slot.prompt = selectInteractTarget(this.town, slot.survivor, this.registry)
   }
@@ -366,14 +552,18 @@ export class CoopSim {
   /** Re-derives survivor collision after doors or barricades changed (clients call this after a snapshot). */
   rebuildSolids(): void {
     this.syncWorldChunks()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   /** Collision, crowd navigation and prompts after an external edit (Lab, harness pose). */
   rebuildCollision(): void {
     this.syncWorldChunks()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
@@ -382,11 +572,13 @@ export class CoopSim {
   private topologyChanged(): void {
     this.revision++
     this.progression.ensureContainerStores()
+    this.vehicles.syncChunks(this.worldStream, this.town)
     for (const chunk of this.worldStream.activeChunks.values()) {
       this.worldStream.captureChunkDelta(chunk, this.town, this.progression.containers, this.ai.portalStates, this.ai.agents)
     }
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
+    this.vehicleSolids = vehicleSolidRects(this.town)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
   }
 }

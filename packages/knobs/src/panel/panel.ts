@@ -12,6 +12,7 @@ import type {
   ControlAction,
   Controls,
   GroupPresetDisplay,
+  HeaderButton,
   MountPanelOptions,
   PanelCommand,
   PanelKeys,
@@ -68,6 +69,10 @@ export interface Panel {
   dismiss(): void
   /** Reverses a collapse still in flight; false once there's none to reverse. */
   reopen(): boolean
+  /** Asks `rowAccessory` again for every row, e.g. after a pin changed elsewhere. */
+  updateAccessories(): void
+  /** Folds (`true`) or opens a foldable group's card; toggles without `folded`. */
+  fold(group: string, folded?: boolean): void
   dispose(): void
 }
 let layer = 2147480001
@@ -206,6 +211,10 @@ function buildPanel<S extends Schema>(
     keys[command].some((k) => k.length === 1 && event.code === `Key${k.toUpperCase()}`)
 
   const header = el("header")
+  const headerOptions = typeof options.header === "object" ? options.header : undefined
+  /** Whether a header button shows (`header.buttons`); its key works either way. */
+  const shows = (button: HeaderButton) =>
+    !headerOptions?.buttons || headerOptions.buttons.includes(button)
   const headerButtons: { button: HTMLButtonElement; icon: IconName }[] = []
   const headActions = el("div")
   headActions.className = "knobs-head-actions"
@@ -301,8 +310,8 @@ function buildPanel<S extends Schema>(
   // Random re-rolls, Mutate (⌥) nudges; both skip locked fields and roll `roller` only when
   // something can change. A selection narrows `r` and ⌥R to its rows.
   const reroll = (keys: readonly string[] | undefined, nudge: boolean, roller: HeaderDie = die) => {
-    const pool = (keys ?? rows.flatMap((r) => r.keys)).filter(
-      (k) => !controls.isLocked(k as keyof S & string),
+    const pool = (keys ?? rows.flatMap((r) => r.keys)).filter((k) =>
+      controls.canRoll(k as keyof S & string),
     ) as (keyof S & string)[]
     if (pool.length === 0) return
     roller.roll(nudge)
@@ -314,29 +323,34 @@ function buildPanel<S extends Schema>(
     "aria-keyshortcuts",
     [...keys.random, ...keys.mutate.map((k) => `Alt+${k}`)].join(" "),
   )
-  if (!bound("random") && !bound("mutate")) randomButton.hidden = true
+  if ((!bound("random") && !bound("mutate")) || !shows("random")) randomButton.hidden = true
   randomButton.onclick = (event) => run(() => reroll(undefined, event.altKey))
   randomButton.querySelector(".knobs-icon")?.replaceWith(die.node)
   const resetBtn = command("reset", "Reset", ariaKeys(keys.resetAll), controls.reset)
-  if (!bound("resetAll") || !marks) resetBtn.hidden = true
+  if (!bound("resetAll") || !marks || !shows("reset")) resetBtn.hidden = true
   const copyButton = command("copy", "Copy", ariaKeys(keys.copy), copyValues)
-  if (!bound("copy")) copyButton.hidden = true
+  if (!bound("copy") || !shows("copy")) copyButton.hidden = true
   const undoButton = iconButton("undo", "Undo", ariaKeys(keys.undo), controls.undo)
   const redoButton = iconButton("redo", "Redo", ariaKeys(keys.redo), controls.redo)
   if (showHistory && (bound("undo") || bound("redo"))) {
     place(undoButton, "undo").classList.add("knobs-head-split")
     place(redoButton, "redo")
-    if (!bound("undo")) undoButton.hidden = true
-    if (!bound("redo")) redoButton.hidden = true
+    if (!bound("undo") || !shows("undo")) undoButton.hidden = true
+    if (!bound("redo") || !shows("redo")) redoButton.hidden = true
   }
   if (showFooter && bound("help")) {
     helpButton = headButton("help", "Keyboard shortcuts", "?", () => togglePopover())
     helpButton.setAttribute("aria-expanded", "false")
     helpButton.classList.add("knobs-head-split")
+    if (!shows("help")) helpButton.hidden = true
   }
   const dismiss = close ? headButton("close", `Close ${controls.id}`, "", close) : undefined
   if (dismiss && !showFooter) dismiss.classList.add("knobs-head-split")
-  const titleEl = el("strong", titleText ? readableTitle(titleText) : "")
+  if (dismiss && !shows("close")) dismiss.hidden = true
+  const titleEl = el(
+    "strong",
+    titleText && headerOptions?.title !== false ? readableTitle(titleText) : "",
+  )
   const presetLabel = (id: string) =>
     options.presetLabels?.[id] ??
     (id === "default" ? options.defaultLabel : undefined) ??
@@ -461,6 +475,44 @@ function buildPanel<S extends Schema>(
   const presetDisplay: GroupPresetDisplay =
     options.groupPresetDisplay ?? controls.groupPresetDisplay
 
+  /** Each foldable group's state: folded or open. */
+  const folds = new Map<string, boolean>()
+  /** Cards folding open or shut right now (the GPU follows their reveal). */
+  const folding = new Set<HTMLElement>()
+  /** How a group starts: `groupFolded`, else its first field that says; undefined: it doesn't fold. */
+  const foldDefault = (group: string): boolean | undefined => {
+    const given = options.groupFolded?.[group]
+    if (given !== undefined) return given
+    for (const f of Object.values(controls.schema as Record<string, Field>))
+      if (f.group === group && f.folded !== undefined) return f.folded
+    return undefined
+  }
+  /** Folds or opens a foldable group's card (toggles without `next`). */
+  function fold(group: string, next = !folds.get(group), animate = true) {
+    if (!folds.has(group)) return
+    folds.set(group, next)
+    const block = blocks.find((b) => b.group === group && !b.leaving)
+    if (!block) return
+    block.head?.setAttribute("aria-expanded", String(!next))
+    const card = block.card
+    // Focus inside a card folding away stays with the group, on its header.
+    if (next && card.contains(doc.activeElement))
+      block.head?.focus({ preventScroll: true, focusVisible: false } as FocusOptions)
+    if (animate) {
+      folding.add(card)
+      card.dataset.presence = next ? "out" : "in"
+      reveal(card, !next, () => {
+        if (folds.get(group) !== next) return
+        folding.delete(card)
+        delete card.dataset.presence
+        wakeGpu()
+      })
+    } else card.hidden = next
+    if (remember)
+      writeSession(controls.id, { groups: { ...readSession(controls.id).groups, [group]: next } })
+    positioned?.constrain()
+    wakeGpu()
+  }
   function groupHead(groupName: string, section?: string) {
     const title = groupTitle(groupName, section)
     const gHead = el("div")
@@ -593,6 +645,30 @@ function buildPanel<S extends Schema>(
     }
     if (ui) groupChips.set(groupName, ui)
     gRight.append(gReset, gRandom)
+    // A panel's group folds when it says how it starts (`folded`, `groupFolded`).
+    const foldAt = page ? undefined : foldDefault(groupName)
+    let caret: SVGSVGElement | undefined
+    if (foldAt !== undefined) {
+      caret = doc.createElementNS("http://www.w3.org/2000/svg", "svg")
+      caret.setAttribute("class", "knobs-caret")
+      caret.setAttribute("viewBox", "0 0 10 10")
+      caret.setAttribute("aria-hidden", "true")
+      const chevron = doc.createElementNS("http://www.w3.org/2000/svg", "path")
+      chevron.setAttribute("d", "M3.75 2.25 6.5 5 3.75 7.75")
+      caret.append(chevron)
+      gRight.append(caret)
+      gHead.dataset.foldable = ""
+      gHead.tabIndex = -1
+      gHead.setAttribute("role", "button")
+      gHead.setAttribute("aria-label", title)
+      const folded = session.groups?.[groupName] ?? foldAt
+      folds.set(groupName, folded)
+      gHead.setAttribute("aria-expanded", String(!folded))
+      gHead.addEventListener("click", (event) => {
+        if ((event.target as Element).closest("button")) return
+        fold(groupName)
+      })
+    }
     if (page) {
       const gTitle = el("span")
       gTitle.className = "knobs-group-title"
@@ -605,6 +681,7 @@ function buildPanel<S extends Schema>(
       buttons: gBtns,
       reset: gReset,
       die: { button: gRandom, die: gDie },
+      ...(caret ? { fold: caret } : {}),
       ...(page ? { title: true, peek: gPeek } : {}),
       ...(ui
         ? {
@@ -660,8 +737,9 @@ function buildPanel<S extends Schema>(
     peek(group, preset.name, 1100)
   }
 
-  // A reload (Vite's included) brings back open editors and the focused stop, per tab.
-  const remember = controls.storage !== null
+  // A reload (Vite's included) brings back open editors, folded groups and the focused stop,
+  // per tab, unless the host keeps focus to itself (`session: false`).
+  const remember = options.session ?? controls.storage !== null
   const session = remember ? readSession(controls.id) : {}
 
   // Every slider's track (knob rows and the parts of compound rows), for arrows and typed digits.
@@ -697,6 +775,10 @@ function buildPanel<S extends Schema>(
     retune(spec: RowSpec): void
     /** Set while it plays its exit, before it leaves the DOM. */
     leaving?: boolean
+    /** The row accessory's slot (`rowAccessory`). */
+    accessory?: HTMLElement
+    /** Shown as mixed ("—") at the last update. */
+    mixed?: boolean
   }
   interface RowSpec {
     id: string
@@ -805,7 +887,8 @@ function buildPanel<S extends Schema>(
       slider.element.dataset.field = key
       if (field.shortcut) slider.track.setAttribute("aria-keyshortcuts", field.shortcut)
       slider.element.ondblclick = (event) => {
-        if ((event.target as HTMLElement).closest(".knobs-value,.knobs-number")) return
+        if ((event.target as HTMLElement).closest(".knobs-value,.knobs-number,.knobs-accessory"))
+          return
         resetRow()
       }
       const track: SubTrack = {
@@ -1024,6 +1107,58 @@ function buildPanel<S extends Schema>(
     }
   }
 
+  /** Every field row carries `knobs-row` (and `data-field`), and the accessory slot if asked. */
+  function decorate(row: Row) {
+    row.row.classList.add("knobs-row")
+    row.row.dataset.field ??= row.keys[0] ?? row.id
+    if (!options.rowAccessory) return
+    const slot = el("span")
+    slot.className = "knobs-accessory"
+    row.accessory = slot
+    if (row.slider) row.slider.slot(slot)
+    else if (row.field.kind === "spring" && row.editor?.tracks[0])
+      row.editor.tracks[0].slider.slot(slot)
+    else if (row.field.kind === "action") row.row.append(slot)
+    else row.labelEl.after(slot)
+    fillAccessory(row)
+  }
+  function fillAccessory(row: Row) {
+    if (!row.accessory || !options.rowAccessory) return
+    const node = options.rowAccessory(row.keys[0] ?? row.id)
+    const slot = row.accessory
+    if (node ? slot.childNodes.length === 1 && slot.firstChild === node : !slot.firstChild) return
+    slot.replaceChildren(...(node ? [node] : []))
+  }
+  /** A field's `disabled` or `readOnly`, static or from the values (for rows without keys). */
+  const fieldFlag = (field: Field, name: "disabled" | "readOnly") => {
+    const v = field[name]
+    return typeof v === "function" ? Boolean(v(controls.get())) : Boolean(v)
+  }
+  /** Disabled and read-only marks, and their ARIA, from the store. */
+  function applyState(row: Row) {
+    const keys = row.keys as (keyof S & string)[]
+    const disabled = keys.length
+      ? keys.some((k) => controls.isDisabled(k))
+      : fieldFlag(row.field, "disabled")
+    const readOnly =
+      !disabled &&
+      (keys.length ? keys.some((k) => controls.isReadOnly(k)) : fieldFlag(row.field, "readOnly"))
+    if (
+      row.row.hasAttribute("data-disabled") === disabled &&
+      row.row.hasAttribute("data-readonly") === readOnly
+    )
+      return
+    row.row.toggleAttribute("data-disabled", disabled)
+    row.row.toggleAttribute("data-readonly", readOnly)
+    const inputs = row.choice ? [row.choice.seg, row.choice.menu] : [row.input]
+    for (const input of inputs) {
+      if (disabled) input.setAttribute("aria-disabled", "true")
+      else input.removeAttribute("aria-disabled")
+      if (readOnly) input.setAttribute("aria-readonly", "true")
+      else input.removeAttribute("aria-readonly")
+    }
+  }
+
   let rows: Row[] = []
   /** Rows playing their exit; still drawn, no longer reachable. */
   const leavingRows = new Set<Row>()
@@ -1109,6 +1244,7 @@ function buildPanel<S extends Schema>(
         continue
       }
       const row = buildRow(spec)
+      decorate(row)
       gpuRows.push(...row.gpu)
       entering.add(row)
       next.push(row)
@@ -1133,6 +1269,15 @@ function buildPanel<S extends Schema>(
         if (animate) motion.push({ node: r.row, show: false, after: done })
         else done()
       }
+      // A card whose rows all left folds away with them; one that gets rows again opens.
+      const occupied = new Set(next.map((r) => tileFor(r.group, r.section)))
+      for (const inner of tiles.values()) {
+        const tile = inner.parentElement!
+        const empty = !occupied.has(inner)
+        if (empty === (tile.hidden || tile.dataset.presence === "out")) continue
+        if (animate) motion.push({ node: tile, show: !empty })
+        else tile.hidden = empty
+      }
       layout?.pack(true)
     } else {
       // Runs of rows sharing a group make blocks; a run reuses its group's block if there is one.
@@ -1149,9 +1294,12 @@ function buildPanel<S extends Schema>(
         const block = at >= 0 ? free.splice(at, 1)[0]! : newBlock(run.group)
         if (at < 0) {
           blocks.push(block)
+          // A group that starts folded arrives as its header alone.
+          const shut = block.group !== undefined && folds.get(block.group) === true
+          if (shut) block.card.hidden = true
           if (animate) {
             if (block.head) motion.push({ node: block.head, show: true })
-            motion.push({ node: block.card, show: true })
+            if (!shut) motion.push({ node: block.card, show: true })
           }
         }
         chosen.push(block)
@@ -1491,7 +1639,9 @@ function buildPanel<S extends Schema>(
     const locked = controls.locked as Record<string, unknown>
     // A row with nothing shown yet (it just arrived) places its value without motion.
     const fresh = (r: Row) => r.row.dataset.shown === undefined
-    const changed = (r: Row) => fresh(r) || r.keys.some((k) => !same(values[k], before[k]))
+    const isMixed = (r: Row) => r.keys.some((k) => controls.isMixed(k as keyof S & string))
+    const changed = (r: Row) =>
+      fresh(r) || Boolean(r.mixed) !== isMixed(r) || r.keys.some((k) => !same(values[k], before[k]))
     let changedCount = 0
     if (initialized && !landing) for (const r of rows) if (!fresh(r) && changed(r)) changedCount++
     const stagger = initialized ? cascade(changedCount) : 0
@@ -1517,12 +1667,22 @@ function buildPanel<S extends Schema>(
       const modified = marks && bound("reset") && row.keys.some((k) => !same(values[k], locked[k]))
       if (row.row.classList.contains("knobs-modified") !== modified)
         row.row.classList.toggle("knobs-modified", modified)
-      if (row.slider) row.slider.update(Number(value), delay, instant)
-      else if (row.choice) row.choice.show(String(value), instant)
-      else if (row.editor) row.editor.update(value as Value, delay, instant)
-      else if (row.field.kind === "toggle")
-        row.input.setAttribute("aria-checked", String(Boolean(value)))
+      const mixed = isMixed(row)
+      row.mixed = mixed
+      if (row.row.classList.contains("knobs-mixed") !== mixed)
+        row.row.classList.toggle("knobs-mixed", mixed)
+      if (row.slider) {
+        row.slider.update(Number(value), delay, instant)
+        if (mixed) row.slider.track.setAttribute("aria-valuetext", "Mixed")
+      } else if (row.choice) row.choice.show(String(value), instant, mixed)
+      else if (row.editor) {
+        row.editor.update(value as Value, delay, instant)
+        if (mixed)
+          for (const read of row.row.querySelectorAll(".knobs-x-read")) read.textContent = "—"
+      } else if (row.field.kind === "toggle")
+        row.input.setAttribute("aria-checked", mixed ? "mixed" : String(Boolean(value)))
     }
+    for (const row of rows) applyState(row)
     if (!initialized || changedCount > 0 || landing || turn > 0 || rows.some(fresh)) {
       let anyMod = false
       for (const [groupName, gReset] of groupResetButtons) {
@@ -1544,14 +1704,14 @@ function buildPanel<S extends Schema>(
     for (const row of rows) {
       if (!row.keys.length) continue
       const locked = row.keys.every((k) => controls.isLocked(k as keyof S & string))
-      if (!locked) unlocked++
+      if (row.keys.some((k) => controls.canRoll(k as keyof S & string))) unlocked++
       if (row.row.classList.contains("knobs-locked") === locked) continue
       lockIcon(row.labelEl, initialized).dataset.on = String(locked)
       row.row.classList.toggle("knobs-locked", locked)
     }
     if (randomButton.disabled !== (unlocked === 0)) randomButton.disabled = unlocked === 0
     for (const [group, { button }] of groupDice) {
-      const off = groupKeys(group).every((k) => controls.isLocked(k as keyof S & string))
+      const off = !groupKeys(group).some((k) => controls.canRoll(k as keyof S & string))
       if (button.disabled !== off) button.disabled = off
     }
     if (root.hasAttribute("data-comparing") !== controls.comparing)
@@ -1655,8 +1815,20 @@ function buildPanel<S extends Schema>(
         list.push({ contains: (n) => stop.contains(n), focus: (o) => stop.focus(o) })
       return list
     }
-    for (const r of rows)
-      for (const stop of r.editor?.stops() ?? [r.input])
+    // Rows keep their editor's own stop order; a foldable group's header is a stop of its own,
+    // placed among them by document order, and rows in a folded card aren't stops.
+    const runs: { at: HTMLElement; stops: HTMLElement[] }[] = rows.map((r) => ({
+      at: r.row,
+      stops: r.editor?.stops() ?? [r.input],
+    }))
+    for (const b of blocks)
+      if (b.head?.hasAttribute("data-foldable") && !b.leaving)
+        runs.push({ at: b.head, stops: [b.head] })
+    runs.sort((a, b) =>
+      a.at.compareDocumentPosition(b.at) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    )
+    for (const run of runs)
+      for (const stop of run.stops.filter((s) => !s.closest('[hidden],[data-presence="out"]')))
         list.push({ contains: (n) => stop.contains(n), focus: (o) => stop.focus(o) })
     const bar = actionBarButtons()
     if (bar.length)
@@ -1701,7 +1873,10 @@ function buildPanel<S extends Schema>(
         }
         for (const inner of tiles.values()) {
           const tile = inner.parentElement!
-          const empty = ![...inner.children].some((c) => !(c as HTMLElement).hidden)
+          // Rows folding away (a reshape dropped them) don't count.
+          const empty = ![...inner.children].some(
+            (c) => !(c as HTMLElement).hidden && (c as HTMLElement).dataset.presence !== "out",
+          )
           if (tile.hidden !== empty) tile.hidden = empty
         }
         for (const tile of body.querySelectorAll<HTMLElement>(".knobs-live")) {
@@ -1863,6 +2038,18 @@ function buildPanel<S extends Schema>(
     }
     if (typing) return
     const key = event.key
+    if (target.hasAttribute("data-foldable") && target.dataset.group !== undefined) {
+      // Enter or Space toggles a group's card; ← folds it and → opens it.
+      const group = target.dataset.group
+      const toggle = key === "Enter" || key === " "
+      const shut = key === "ArrowLeft" || (prefs.vim && key === "h")
+      const open = key === "ArrowRight" || (prefs.vim && key === "l")
+      if (toggle || shut || open) {
+        event.preventDefault()
+        fold(group, toggle ? !folds.get(group) : shut)
+        return
+      }
+    }
     if (bound("menu") && (key === "ContextMenu" || (key === "F10" && event.shiftKey))) {
       event.preventDefault()
       event.stopPropagation()
@@ -2033,6 +2220,62 @@ function buildPanel<S extends Schema>(
       slider.number.value = event.key
     }
   }
+
+  // Disabled and read-only rows take no edits: pointer presses, clicks, wheel pans and edit keys
+  // stop at the panel (a press still focuses the row, to read it). Navigation, commands that
+  // skip them on their own (Random, Reset) and the row's accessory work as ever.
+  const blockedAt = (node: EventTarget | null) => {
+    const at = node instanceof Element ? node : null
+    if (!at || at.closest(".knobs-accessory")) return false
+    const row = at.closest<HTMLElement>("[data-disabled],[data-readonly]")
+    return Boolean(row && root.contains(row))
+  }
+  root.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!blockedAt(event.target) || event.shiftKey || event.metaKey) return
+      event.preventDefault()
+      event.stopPropagation()
+      const at = rowAt(event.target as Node)
+      rows[at]?.input.focus({ preventScroll: true, focusVisible: false } as FocusOptions)
+    },
+    true,
+  )
+  for (const type of ["click", "dblclick"])
+    root.addEventListener(
+      type,
+      (event) => {
+        if (!blockedAt(event.target)) return
+        event.preventDefault()
+        event.stopPropagation()
+      },
+      true,
+    )
+  root.addEventListener(
+    "wheel",
+    (event) => {
+      if (blockedAt(event.target)) event.stopPropagation()
+    },
+    { capture: true, passive: true },
+  )
+  root.addEventListener(
+    "keydown",
+    (event) => {
+      if (!blockedAt(event.target) || event.metaKey || event.ctrlKey || event.isComposing) return
+      const k = event.key
+      const edit =
+        ["ArrowLeft", "ArrowRight", "Enter", " ", "Home", "End", "PageUp", "PageDown"].includes(
+          k,
+        ) ||
+        (prefs.vim && (k === "h" || k === "l")) ||
+        (!event.altKey && /^[0-9.\-]$/.test(k)) ||
+        pressed("reset", event)
+      if (!edit) return
+      event.preventDefault()
+      event.stopPropagation()
+    },
+    true,
+  )
 
   // Keys take over from the pointer: until it moves again, the row it rests on shows no hover wash
   // (see keyboardQuietsHover in styles.ts), so the only wash is the keyboard's focus.
@@ -2275,13 +2518,21 @@ function buildPanel<S extends Schema>(
   root.addEventListener("focusout", (event) => {
     if ((event.target as HTMLElement).classList?.contains("knobs-number")) setTimeout(letGo)
   })
-  // --k-row-gap above 0 draws each row as its own bar (see .knobs-panel[data-rows]).
+  // --k-row-gap above 0 draws each row as its own bar (see .knobs-panel[data-rows]), and
+  // --k-frame: flat draws groups as plain sections (see .knobs-panel[data-frame]).
   const syncRows = () => {
-    const gap = parseFloat(getComputedStyle(root).getPropertyValue("--k-row-gap")) || 0
+    const cs = getComputedStyle(root)
+    const gap = parseFloat(cs.getPropertyValue("--k-row-gap")) || 0
     const want = gap > 0 ? "separate" : undefined
     if (root.dataset.rows !== want) {
       if (want) root.dataset.rows = want
       else delete root.dataset.rows
+    }
+    const frame = cs.getPropertyValue("--k-frame").trim() === "flat" ? "flat" : undefined
+    if (root.dataset.frame !== frame) {
+      if (frame) root.dataset.frame = frame
+      else delete root.dataset.frame
+      wakeGpu()
     }
   }
   const rowsObserver = new MutationObserver(syncRows)
@@ -2295,7 +2546,9 @@ function buildPanel<S extends Schema>(
   syncRows()
   positioned =
     !inline && options.anchor
-      ? positionPanel(root, header, options.anchor, controls.id, () => controls.storage)
+      ? positionPanel(root, header, options.anchor, controls.id, () =>
+          controls.persist === "all" ? controls.storage : null,
+        )
       : undefined
   const restoreFocus = () => {
     const at = session.focus
@@ -2333,7 +2586,7 @@ function buildPanel<S extends Schema>(
     actionButtons: gpuActionButtons,
     isPopoverOpen: () => !popover.hidden,
     morph: morph?.frame,
-    presence: () => presenceRuns > 0,
+    presence: () => presenceRuns > 0 || folding.size > 0,
     landing: () => "landing" in root.dataset,
     ...(layout
       ? {
@@ -2415,6 +2668,12 @@ function buildPanel<S extends Schema>(
           () => panel.dispose(),
           () => panel.dispose(),
         )
+    },
+    updateAccessories() {
+      for (const r of rows) fillAccessory(r)
+    },
+    fold(group, folded) {
+      fold(group, folded ?? !folds.get(group))
     },
     reopen() {
       if (!morph?.closing || !root.isConnected) return false

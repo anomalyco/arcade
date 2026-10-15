@@ -9,7 +9,41 @@ export type AIState =
   | "bash"
   | "search"
   | "stagger"
+  | "knockdown"
+  | "crawler"
   | "dead"
+
+export type ZombieHitReaction = 0 | 1 | 2
+export type ZombieDeathVariant = 0 | 1 | 2 | 3
+
+export function zombieTraitsFromSeed(seed: number): {
+  toughness: number
+  hitReaction: ZombieHitReaction
+  deathVariant: ZombieDeathVariant
+} {
+  const h = Math.imul((seed ^ 0x9e3779b9) >>> 0, 0x85ebca6b) >>> 0
+  const toughSteps = [0.82, 0.9, 1.0, 1.0, 1.12, 1.24] as const
+  return {
+    toughness: toughSteps[h % toughSteps.length]!,
+    hitReaction: ((h >>> 4) % 3) as ZombieHitReaction,
+    deathVariant: ((h >>> 8) & 3) as ZombieDeathVariant,
+  }
+}
+
+export function hasSeveredLeg(a: Pick<AIAgent, "detachedLimbs">): boolean {
+  return (
+    a.detachedLimbs.includes("left.thigh") ||
+    a.detachedLimbs.includes("right.thigh") ||
+    a.detachedLimbs.includes("left.shin") ||
+    a.detachedLimbs.includes("right.shin")
+  )
+}
+
+export function isTorsoCrawler(a: Pick<AIAgent, "detachedLimbs">): boolean {
+  const leftGone = a.detachedLimbs.includes("left.thigh") || a.detachedLimbs.includes("left.shin")
+  const rightGone = a.detachedLimbs.includes("right.thigh") || a.detachedLimbs.includes("right.shin")
+  return leftGone && rightGone
+}
 
 export type NoiseKind =
   | "footstep"
@@ -157,6 +191,14 @@ export type AIAgent = {
   /** Combat & health state. */
   hp: number
   maxHp: number
+  /** Deterministic per-zombie damage resistance multiplier (0.82..1.24). */
+  toughness: number
+  /** Deterministic hit-reaction style (0 = flinch back, 1 = spin-twist, 2 = knee-buckle). */
+  hitReaction: ZombieHitReaction
+  /** Deterministic death collapse style (0 = fall forward, 1 = fall backward, 2 = spin collapse, 3 = collapse to knees). */
+  deathVariant: ZombieDeathVariant
+  /** True when a leg has been crippled (gunshot or heavy blunt blow) without severing the leg. */
+  limping?: boolean
   hitFlash: number
   staggerVx: number
   staggerVy: number
@@ -173,6 +215,8 @@ export type AIAgent = {
   detachedLimbs: string[]
   /** Id of the perception target this agent is attending to when several survivors are present. */
   focusId: string
+  /** Id of the survivor who last damaged or killed this agent (for co-op attribution). */
+  lastHitBy?: string
 }
 
 export type PortalBashEvent = {
@@ -190,6 +234,7 @@ export type AgentAttackEvent = {
   x: number
   y: number
   damage: number
+  ankleGrab?: boolean
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -1021,9 +1066,11 @@ export function createAIAgent(id: number, seed: number, x: number, y: number, ai
   const initialAim = aim ?? rng.range(-Math.PI, Math.PI)
   const wAngle = initialAim + rng.range(-0.9, 0.9)
   const wDist = rng.range(3.5, 9.0)
+  const agentSeed = (seed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0
+  const traits = zombieTraitsFromSeed(agentSeed)
   return {
     id,
-    seed: (seed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0,
+    seed: agentSeed,
     x,
     y,
     vx: 0,
@@ -1054,6 +1101,10 @@ export function createAIAgent(id: number, seed: number, x: number, y: number, ai
     reach: rng.range(0.55, 0.95),
     hp: 100,
     maxHp: 100,
+    toughness: traits.toughness,
+    hitReaction: traits.hitReaction,
+    deathVariant: traits.deathVariant,
+    limping: false,
     hitFlash: 0,
     staggerVx: 0,
     staggerVy: 0,
@@ -1231,6 +1282,20 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
     if (a.state === "dead") {
+      a.stateTime += dt
+      if (a.stateTime < 0.35 && (Math.abs(a.staggerVx) > 0.05 || Math.abs(a.staggerVy) > 0.05)) {
+        a.x += a.staggerVx * dt
+        a.y += a.staggerVy * dt
+        const damp = Math.exp(-dt * 8)
+        a.staggerVx *= damp
+        a.staggerVy *= damp
+        pushOut(a, 0.28, solids)
+        a.x = clamp(a.x, minX, maxX)
+        a.y = clamp(a.y, minY, maxY)
+      } else {
+        a.staggerVx = 0
+        a.staggerVy = 0
+      }
       a.vx = 0
       a.vy = 0
       a.hitFlash = Math.max(0, a.hitFlash - dt * 4)
@@ -1282,7 +1347,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       continue
     }
 
-    // Handle stagger state (from bullet hits or melee shove)
+    // Handle stagger state (from bullet hits, melee shove, or light melee swings)
     if (a.state === "stagger") {
       a.timer -= dt
       a.x += a.staggerVx * dt
@@ -1296,17 +1361,46 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       a.vx = dt > 0 ? (a.x - prevX) / dt : 0
       a.vy = dt > 0 ? (a.y - prevY) / dt : 0
       if (a.timer <= 0) {
-        a.state = a.awareness >= 0.55 ? "chase" : "investigate"
+        a.state = hasSeveredLeg(a) ? "crawler" : a.awareness >= 0.55 ? "chase" : "investigate"
         a.stateTime = 0
         a.repathAt = 0
       }
       continue
     }
 
+    // Handle knockdown state (from heavy melee swings, bats, spiked boards, gunshots, or combo finishers)
+    if (a.state === "knockdown") {
+      a.timer -= dt
+      if (a.stateTime < 0.42) {
+        a.x += a.staggerVx * dt
+        a.y += a.staggerVy * dt
+      }
+      const damp = Math.exp(-dt * 8)
+      a.staggerVx *= damp
+      a.staggerVy *= damp
+      pushOut(a, 0.28, solids)
+      a.x = clamp(a.x, minX, maxX)
+      a.y = clamp(a.y, minY, maxY)
+      a.vx = dt > 0 ? (a.x - prevX) / dt : 0
+      a.vy = dt > 0 ? (a.y - prevY) / dt : 0
+      if (a.timer <= 0) {
+        a.state = hasSeveredLeg(a) ? "crawler" : a.awareness >= 0.55 ? "chase" : "investigate"
+        a.stateTime = 0
+        a.repathAt = 0
+      }
+      continue
+    }
+
+    if (hasSeveredLeg(a) && a.state !== "crawler" && a.state !== "bash") {
+      a.state = "crawler"
+      a.stateTime = 0
+    }
+
     // Staggered perception cadence: engaged zombies check every 2 ticks, idle wanderers every 4 ticks
-    const scheduledTick = (a.id + tick) % (a.state === "chase" || a.state === "alert" ? 2 : 4) === 0
+    const isEngaged = a.state === "chase" || a.state === "alert" || a.state === "crawler"
+    const scheduledTick = (a.id + tick) % (isEngaged ? 2 : 4) === 0
     const shouldSense = scheduledTick || tick === 0
-    const senseDt = dt * (scheduledTick ? (a.state === "chase" || a.state === "alert" ? 2 : 4) : 1)
+    const senseDt = dt * (scheduledTick ? (isEngaged ? 2 : 4) : 1)
 
     if (shouldSense && targets.length > 0) {
       const effectivePerceptionAgent = {
@@ -1451,12 +1545,12 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         a.stateTime = 0
         a.repathAt = 0
       }
-    } else if (a.state === "chase") {
+    } else if (a.state === "chase" || a.state === "crawler") {
       const focus = focusOf(a, targets)
       if (a.seesTarget && focus) {
         a.targetX = focus.x
         a.targetY = focus.y
-      } else if (Math.hypot(a.targetX - a.x, a.targetY - a.y) < 0.95 || a.stateTime > 8.0) {
+      } else if (a.state === "chase" && (Math.hypot(a.targetX - a.x, a.targetY - a.y) < 0.95 || a.stateTime > 8.0)) {
         if (!a.seesTarget) {
           a.state = "search"
           a.stateTime = 0
@@ -1473,7 +1567,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         distToRect(a.x, a.y, portal.rect) <= 1.25
       if (!stillBlocking) {
         a.activePortalId = null
-        a.state = a.awareness >= 0.5 ? "chase" : "investigate"
+        a.state = hasSeveredLeg(a) ? "crawler" : a.awareness >= 0.5 ? "chase" : "investigate"
         a.stateTime = 0
         a.repathAt = 0
       } else {
@@ -1542,31 +1636,37 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         const lurchPulse = 0.76 + 0.38 * Math.pow(Math.sin(lurchPhase * Math.PI), 2)
         desiredSpeed = config.walkSpeed * a.speedScale * lurchPulse * (0.92 + 0.08 * nightFactor)
       }
-    } else if (a.state === "investigate" || a.state === "chase") {
+    } else if (a.state === "investigate" || a.state === "chase" || a.state === "crawler") {
       const goalX = a.targetX
       const goalY = a.targetY
       const distToGoal = Math.hypot(goalX - a.x, goalY - a.y)
+      const isCrawler = a.state === "crawler"
+      const leftArmGone = a.detachedLimbs.includes("left.upperArm") || a.detachedLimbs.includes("left.foreArm")
+      const rightArmGone = a.detachedLimbs.includes("right.upperArm") || a.detachedLimbs.includes("right.foreArm")
+      const armFactor = leftArmGone && rightArmGone ? 0.52 : leftArmGone || rightArmGone ? 0.78 : 1.0
 
-      // Check close-range attack against survivor when chasing
+      // Check close-range attack against survivor when chasing or crawling (ankle-grab)
       const focus = focusOf(a, targets)
-      if (a.state === "chase" && a.seesTarget && focus && distToGoal <= 0.92) {
+      const attackRange = isCrawler ? 0.88 : 0.92
+      if ((a.state === "chase" || isCrawler) && a.seesTarget && focus && distToGoal <= attackRange) {
         const want = Math.atan2(focus.y - a.y, focus.x - a.x)
         a.aim += clamp(angleDiff(want, a.aim), -dt * 10, dt * 10)
         if (a.attackCooldown <= 0) {
-          a.attackCooldown = 1.05 / Math.max(0.5, a.aggression * config.aggression)
+          a.attackCooldown = (isCrawler ? 1.25 : 1.05) / Math.max(0.5, a.aggression * config.aggression)
           attacks.push({
             agentId: a.id,
             targetId: focus.id,
             x: a.x,
             y: a.y,
-            damage: 20 * config.aggression,
+            damage: Math.round((isCrawler ? 12 : 20) * config.aggression * armFactor),
+            ...(isCrawler ? { ankleGrab: true } : {}),
           })
         }
-        desiredSpeed = config.walkSpeed * 0.25
+        desiredSpeed = config.walkSpeed * (isCrawler ? 0.12 : 0.25)
       } else {
         // Fan out chasing packs slightly so zombies form a crescent instead of single-file stacking
         const fanOffset =
-          a.state === "chase" && distToGoal > 2.2
+          (a.state === "chase" || isCrawler) && distToGoal > 2.2
             ? (((a.id % 5) - 2) * 0.38) * clamp((distToGoal - 1.5) / 6, 0, 1)
             : 0
         const toGoalAngle = Math.atan2(goalY - a.y, goalX - a.x)
@@ -1590,7 +1690,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           if ((time >= a.repathAt || a.path.length === 0) && repathsThisTick < MAX_REPATHS_PER_TICK) {
             repathsThisTick++
             a.path = nav.path(a, { x: goalX, y: goalY }, maxPathSteps) ?? [{ x: goalX, y: goalY }]
-            a.repathAt = time + (a.state === "chase" ? 0.42 : 0.75) + (a.id % 5) * 0.07
+            a.repathAt = time + (a.state === "chase" || isCrawler ? 0.42 : 0.75) + (a.id % 5) * 0.07
           }
           while (a.path.length > 0 && Math.hypot(a.path[0]!.x - a.x, a.path[0]!.y - a.y) < 0.48) {
             a.path.shift()
@@ -1603,14 +1703,21 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           moveDirY = wdy / wd
         }
 
-        const baseSpeed = a.state === "chase" ? config.chaseSpeed : config.walkSpeed * 1.35
-        desiredSpeed = baseSpeed * a.speedScale * (0.92 + 0.08 * nightFactor)
+        if (isCrawler) {
+          const torsoOnly = isTorsoCrawler(a)
+          const crawlPulse = 0.68 + 0.42 * Math.pow(Math.sin(time * 3.1 + a.id * 0.9), 2)
+          const crawlBase = config.walkSpeed * (torsoOnly ? 0.34 : 0.48) * armFactor
+          desiredSpeed = crawlBase * a.speedScale * crawlPulse * (0.92 + 0.08 * nightFactor)
+        } else {
+          const baseSpeed = a.state === "chase" ? config.chaseSpeed : config.walkSpeed * 1.35
+          desiredSpeed = baseSpeed * a.speedScale * (0.92 + 0.08 * nightFactor)
+        }
 
         // Check if a closed door, barricaded opening, or open window is right in front of the agent
         const portal = findBlockingPortal(a, moveDirX, moveDirY, portals)
         if (portal) {
           const barricaded = (portal.barricadePlanks ?? 0) > 0
-          if (portal.kind === "window" && portal.open && !barricaded) {
+          if (!isCrawler && portal.kind === "window" && portal.open && !barricaded) {
             const dest = computeWindowClamberDest(portal, a.x, a.y)
             a.clamberWindowId = portal.id
             a.clamberFromX = a.x
@@ -1620,7 +1727,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
             a.clamberElapsed = 0
             a.clamberDuration = 0.52 / Math.max(0.7, a.speedScale)
             desiredSpeed = 0
-          } else if ((portal.kind === "door" && (!portal.open || barricaded)) || (portal.kind === "window" && barricaded)) {
+          } else if ((portal.kind === "door" && (!portal.open || barricaded)) || (!isCrawler && portal.kind === "window" && barricaded)) {
             a.state = "bash"
             a.stateTime = 0
             a.activePortalId = portal.id
@@ -1648,6 +1755,12 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         moveDirY = (sy - a.y) / d
         desiredSpeed = config.walkSpeed * a.speedScale * 0.85
       }
+    }
+
+    if (a.limping && a.state !== "crawler") {
+      const limpPhase = (time * 1.45 + a.id * 0.5) % 1
+      const limpHitch = 0.52 + 0.22 * Math.sin(limpPhase * Math.PI)
+      desiredSpeed *= limpHitch
     }
 
     // Apply local Boids flocking (non-clumping personal space separation + loose street pack cohesion)

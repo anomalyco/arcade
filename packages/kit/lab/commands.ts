@@ -114,9 +114,11 @@ export type LabSceneState = {
     redoDepth: number
   }
   commands: LabCommandDescriptor[]
-  /** Workbench layout state (Outliner locks, Library drawer, Details filters, Watch pins). */
+  /** Workbench layout state (Outliner locks, Library drawer, panel sizes, Details filters, Watch pins). */
   layout?: {
-    library: { open: boolean; category: string; query: string }
+    library: { open: boolean; category: string; query: string; view?: string; focused?: boolean; cursor?: string | null; previews?: number; readback?: Record<string, number> }
+    /** Panel sizes for the current layout (`workbench` or a station id): stored, collapsed and as rendered. */
+    panels?: { layout: string; sizes: Record<string, number>; collapsed: Record<string, boolean>; rendered: Record<string, number> }
     locked: string[]
     details: { query: string; modifiedOnly: boolean; showAll: boolean; modified: string[] }
     watch: { section: string; key: string; label: string; value: string | null }[]

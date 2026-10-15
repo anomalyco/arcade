@@ -816,6 +816,10 @@ export class ExplosionFx {
     this.stepPuffs(dt)
     this.stepSparks(dt)
     this.stepStreaks(dt)
+    // Trailing fragments drift with the weather's wind and splash in at sea level.
+    this.fxParticles.windX = this.windX
+    this.fxParticles.windZ = this.windZ
+    this.fxParticles.water = 0
     this.fxParticles.update(dt, [], () => -1e9)
   }
 

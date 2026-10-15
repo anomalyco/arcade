@@ -130,6 +130,15 @@ async function main() {
     hits: (on, n) => net.sendTurretHits(on, n),
     shipHits: (ship, n) => net.sendTurretShipHits(ship, n),
     intercept: (i) => net.sendIntercept(i),
+    lock: (on, locked) => net.sendSeek(on, locked),
+  }
+  // SAM locks and SAMs in flight warn a pilot like missiles do (src/weapons/weapons.ts).
+  flight.weapons.sams = {
+    inbound: (id, x, y, z) => gunnery.world.inbound(id, x, y, z),
+    gunner: (id) => {
+      const c = net.crew
+      return !!c && playerOf(c, id)?.role === "gunner"
+    },
   }
   // Offline the local gunnery world decides: its damage lands in the jets' local world.
   gunnery.onEvent = (e) => {
@@ -263,7 +272,7 @@ async function main() {
         undoable: false,
         args: {
           preset: { type: "string", description: "Explosion scenario (ship, missile, boat)" },
-          repeat: { type: "boolean", description: "Repeat explosion every 2.4s" },
+          repeat: { type: "boolean", description: "Repeat explosion every 2.4s (4.5s for the ship hit)" },
         },
         enabled: () => true,
         run: (_ctx, args) => {
@@ -272,24 +281,25 @@ async function main() {
             carrierBlastTimer = 0
           }
           const preset = String(args?.preset ?? "ship")
+          const DEG = Math.PI / 180
           const fire = () => {
             const s = game.state.ship
             if (!s) return
             game.state.free = true
             if (preset === "missile") {
-              camera.set({ x: s.x, z: s.z - 220, yaw: 0, pitch: 15, dist: 95 })
+              camera.set({ x: s.x, z: s.z - 220, yaw: 180 * DEG, pitch: 15 * DEG, dist: 95 })
               flight.weapons.fx.explosion(s.x, 22, s.z - 220, 0, 0, 0, 1.2, false, "missile")
             } else if (preset === "boat") {
-              camera.set({ x: s.x + 85, z: s.z - 60, yaw: 25, pitch: 16, dist: 75 })
+              camera.set({ x: s.x + 85, z: s.z - 60, yaw: 25 * DEG, pitch: 16 * DEG, dist: 75 })
               flight.weapons.fx.explosion(s.x + 85, 2.2, s.z - 60, 0, 2, 0, 1.15, true, "car")
             } else {
-              camera.set({ x: s.x, z: s.z, yaw: 35, pitch: 18, dist: 145 })
+              camera.set({ x: s.x, z: s.z + 15, yaw: 35 * DEG, pitch: 42 * DEG, dist: 160 })
               flight.weapons.fx.explosion(s.x, s.heave + 28, s.z + 15, 0, 0, 0, 1.8, false, "ship")
             }
           }
           fire()
           if (args?.repeat !== false) {
-            carrierBlastTimer = window.setInterval(fire, 2400)
+            carrierBlastTimer = window.setInterval(fire, preset === "missile" || preset === "boat" ? 2400 : 4500)
           }
           return { triggered: preset, repeat: args?.repeat !== false }
         },

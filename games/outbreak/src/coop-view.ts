@@ -10,14 +10,18 @@ import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
+import { beamPose } from "./flashlight-beam"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings =
   | (Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
       practicalWarmth: number
+      beamPoolDistance: number
     })
   | {
-      flashlight: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth">
+      flashlight: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
+        beamPoolDistance: number
+      }
       lighting: { practicalWarmth: number }
     }
 
@@ -92,8 +96,23 @@ export class CoopView {
     return this.net ? this.net.remotes : this.companions()
   }
 
-  /** Packs remote flashlights after the local one. Returns the new light count. */
-  flashlights(lights: Float32Array, count: number, town: Town, settings: LightSettings, occluders: number): number {
+  /** Plan positions of the other survivors (round casters for the local flashlight). */
+  otherPositions(): [number, number][] {
+    return this.others.map((slot) => [slot.survivor.x, slot.survivor.y])
+  }
+
+  /**
+   * Packs remote flashlights after the local one, from each remote body's posed pistol or hand (call after `bodies`).
+   * Returns the new light count.
+   */
+  flashlights(
+    lights: Float32Array,
+    count: number,
+    town: Town,
+    settings: LightSettings,
+    occluders: number,
+    blockers: readonly (readonly [number, number, number, number])[],
+  ): number {
     const others = this.others
     if (!others.length) return count
     const flash = "flashlight" in settings ? settings.flashlight : settings
@@ -108,8 +127,11 @@ export class CoopView {
       const power = p.flashlightOutput * flash.flashlightIntensity * directScale
       const range = Math.min(flash.flashlightRange, inside ? 5.2 : 6.4)
       const ground = supportHeight(town, p.x, p.y)
+      const avatar = this.avatars.get(slot.index)
+      const rig = avatar?.light ?? { p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const, d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const, mounted: false }
+      const beam = beamPose(rig, p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
       lights.set(
-        [p.x + Math.cos(p.aim) * 0.25, 1.18 + ground, p.y + Math.sin(p.aim) * 0.25, range, rgb[0], rgb[1], rgb[2], power, Math.cos(p.aim), Math.sin(p.aim), cosHalf, 1, 0, occluders, 0.06, -1],
+        [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), cosHalf, 1, 0, occluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
@@ -132,8 +154,15 @@ export class CoopView {
       }
       const p = slot.survivor
       const lift = remoteLift.get(slot) ?? 0
+      const sink = p.vehicleId ? 0.48 : 0
       // Keep animating out of sight so the gait is continuous when they step into view.
-      const batches = avatar.draw(p, dt, time, (x, z) => supportHeight(town, x, z) + lift * 0.58, aimTuning)
+      const batches = avatar.draw(
+        p.vehicleId ? { ...p, vx: 0, vy: 0 } : p,
+        dt,
+        time,
+        (x, z) => supportHeight(town, x, z) + lift * 0.58 - sink,
+        aimTuning,
+      )
       if (actorVisibility(vision, p.x, p.y) > 0.05) out.push(...batches)
     }
     for (const index of this.avatars.keys()) if (!live.has(index)) this.avatars.delete(index)
@@ -189,8 +218,33 @@ export class CoopView {
       snapshots: net.snapshotCount,
       ack: net.lastAck,
       pending: net.predictor.unacked.length,
-      local: { x: net.view.player.x, y: net.view.player.y, magAmmo: net.view.player.magAmmo, health: net.view.player.health },
-      remotes: net.remotes.map((s) => ({ index: s.index, x: s.survivor.x, y: s.survivor.y, flashlightOn: s.survivor.flashlightOn })),
+      local: {
+        x: net.view.player.x,
+        y: net.view.player.y,
+        magAmmo: net.view.player.magAmmo,
+        health: net.view.player.health,
+        vehicleId: net.view.player.vehicleId ?? null,
+        seatIndex: net.view.player.seatIndex ?? 0,
+      },
+      remotes: net.remotes.map((s) => ({
+        index: s.index,
+        x: s.survivor.x,
+        y: s.survivor.y,
+        flashlightOn: s.survivor.flashlightOn,
+        vehicleId: s.survivor.vehicleId ?? null,
+        seatIndex: s.survivor.seatIndex ?? 0,
+      })),
+      vehicles: net.view.vehicles.map((v) => ({
+        id: v.id,
+        kind: v.kind,
+        x: v.x,
+        y: v.y,
+        h: v.h,
+        hp: v.hp,
+        fuel: v.fuel,
+        engineOn: v.engineOn,
+        seats: [...v.seats],
+      })),
       doors: net.sim.town.doors.map((d) => ({ id: d.id, open: d.open })),
       zombies: net.view.zombies.length,
       shots: net.view.shots.map((s) => s.id),
