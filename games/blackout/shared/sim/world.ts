@@ -1,4 +1,6 @@
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
+import { RewindHistory } from "@arcade/kit/net/rewind"
+import { hash2, seedOf } from "@arcade/kit/sim/rng"
 import { CLAYMORE, DT, END_SECONDS, EQUIP_LOCK, type Equip, FRAG, GUNS, GUN_IDS, type Gun, HEALTH, HIT_RADIUS, REGEN_DELAY, REGEN_RATE, RESPAWN_SECONDS, SPRINT_TO_FIRE, type Weapon } from "../config"
 import { type Rect, angleDiff, clearLine, raycast } from "../geom"
 import { type MapChoice, type MapDef, type MapKind, getMap } from "../maps"
@@ -28,8 +30,15 @@ export type Phase = "play" | "end"
  * kit has one; bare-handed, the trigger swings too. `enter` is a press of F that gets in or out of a vehicle; driving,
  * (mx, my) are the throttle and steering and `sprint` the handbrake; `horn` holds H.
  */
-export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean; cast?: CastIntent }
+export type Intent = { mx: number; my: number; aim: number; fire: boolean; firePressed?: boolean; reload: boolean; sprint: boolean; equip: boolean; tx: number; ty: number; use: boolean; melee?: boolean; enter?: boolean; seat?: boolean; horn?: boolean; cast?: CastIntent; view?: number }
 export const NO_INTENT: Intent = { mx: 0, my: 0, aim: 0, fire: false, reload: false, sprint: false, equip: false, tx: 0, ty: 0, use: false }
+
+/** Deterministic bullet spread for human input `seq` and pellet `k`, shared by client tracer prediction and server hitscan. */
+export function bulletSpread(id: string, seq: number, gun: (typeof GUNS)[Gun], k: number, fallbackUnit?: () => number): number {
+  const pSeed = seq > 0 && id ? seedOf(id) : 0
+  const unit = pSeed ? hash2(pSeed, (seq << 4) + k) * 2 - 1 : (fallbackUnit ? fallbackUnit() : 0)
+  return gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + unit * 0.02 : unit * gun.spread
+}
 
 /** Presses that happen once: a fresh trigger pull, reload, equipment, melee, getting in or out, changing seat, a spell. */
 const hasEdges = (i: Intent): boolean => !!(i.firePressed || i.reload || i.equip || i.melee || i.enter || i.seat || i.cast)
@@ -45,6 +54,7 @@ export const INTENT_OPS: InputOps<Intent> = {
     if (a.enter) m.enter = true
     if (a.seat) m.seat = true
     if (a.cast && !b.cast) m.cast = a.cast
+    if (a.view !== undefined && m.view === undefined) m.view = a.view
     return m
   },
   standIn(last) {
@@ -108,6 +118,7 @@ export type Player = {
   kit: Kit
   /** A melee swing lands at this time (0 for none); the next can start at meleeReadyAt. */
   swingAt: number
+  swingView?: number
   meleeReadyAt: number
   /** The vehicle you're in (0 for none) and your seat in it; seat 0 drives (shared/sim/vehicle-rules.ts). */
   veh: number
@@ -169,6 +180,8 @@ export class World {
   claymores: Claymore[] = []
   /** Drivable vehicles, from the map's spawns (shared/sim/vehicle-rules.ts). */
   vehicles: Vehicle[] = []
+  /** 24-tick (800 ms) position history for lag-compensated hitscan and melee (capped at 350 ms rewind). */
+  readonly rewind = new RewindHistory<string>(24, 0.35)
   private gearId = 0
   private botCount = 0
   /** Players to top the room up to with bots. 0 online; local practice and tests set it. */
@@ -408,18 +421,19 @@ export class World {
       if (kit.gun && kit.reload && ((intent.reload && p.mag < kit.mag) || (intent.fire && p.mag === 0))) this.reload(p)
       if (intent.equip && p.equipLeft > 0) this.useEquip(p, intent)
       // Bare hands swing while the trigger is held; anyone with a melee kit swings with V.
-      if ((intent.melee || (!kit.gun && intent.fire)) && canSwing(p, this.time)) startSwing(this, p)
+      if ((intent.melee || (!kit.gun && intent.fire)) && canSwing(p, this.time)) startSwing(this, p, intent.view)
       stepSwing(this, p)
       // A press during the sprint-to-fire delay is held over until the gun is up.
       const ready = this.time >= p.readyAt
       const pressed = !!kit.gun && intent.fire && ready && (kit.auto || intent.firePressed || !p.triggerHeld)
-      if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p)
+      if (pressed && p.reloadUntil === 0 && p.swingAt === 0 && p.mag > 0 && this.time >= p.cooldownUntil) this.fire(p, intent.view)
       if (ready || !intent.fire) p.triggerHeld = intent.fire
       if (kit.regen && p.health < HEALTH && this.time - p.hurtAt >= REGEN_DELAY) p.health = Math.min(HEALTH, p.health + REGEN_RATE * DT)
     }
     if (this.phase === "play") stepVehicles(this)
     if (this.phase === "play") this.stepGear()
     if (this.phase === "play") this.mode.step(this)
+    if (this.phase === "play") this.rewind.record(this.tick, this.time, [...this.players.values()], (p) => p.alive)
   }
 
   /** Throws the frag toward the cursor, or plants the claymore just ahead facing the aim. */
@@ -521,15 +535,19 @@ export class World {
     this.events.push({ k: "reload", by: p.id })
   }
 
-  private fire(p: Player): void {
+  private fire(p: Player, view?: number): void {
     const gun = GUNS[p.gun]
     p.cooldownUntil = this.time + p.kit.cooldown
     p.mag--
-    for (let k = 0; k < gun.pellets; k++) {
-      const spread = gun.pellets > 1 ? ((k + 0.5) / gun.pellets - 0.5) * 2 * gun.spread + this.rng.range(-0.02, 0.02) : this.rng.range(-gun.spread, gun.spread)
-      this.bullet(p, p.aim + spread)
-      if (!p.alive) return
+    const shoot = () => {
+      for (let k = 0; k < gun.pellets; k++) {
+        const spread = bulletSpread(p.human ? p.id : "", p.ack, gun, k, () => this.rng.range(-1, 1))
+        this.bullet(p, p.aim + spread)
+        if (!p.alive) return
+      }
     }
+    if (view !== undefined) this.rewind.withRewoundPositions([...this.players.values()], view, shoot, p.id)
+    else shoot()
   }
 
   /** One hitscan bullet: stops at the first wall or player. */

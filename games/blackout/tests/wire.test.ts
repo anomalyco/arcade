@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { SnapshotBuffer } from "@arcade/kit/net/interpolate"
-import { decodeServer, encodeServer } from "../shared/protocol"
+import { decodeClient, decodeServer, encodeServer } from "../shared/protocol"
 import { type Snapshot, buildSnapshot } from "../shared/sim/view"
-import { World } from "../shared/sim/world"
+import { NO_INTENT, World, bulletSpread } from "../shared/sim/world"
+import { GUNS } from "../shared/config"
 import { pushSnapshot, sampleRemote, soldierAt, vehicleAt } from "../src/game/remote"
 
 function busyWorld(): World {
@@ -88,5 +89,34 @@ describe("Blackout remote interpolation", () => {
     pushSnapshot(buf, snap(1, 3), 10.05)
     expect(buf.size).toBe(1)
     expect(buf.latest!.t).toBe(1)
+  })
+
+  test("lag-compensated hitscan (intent.view) hits a moving soldier at their rendered position", () => {
+    const w = new World(99, null, "ffa", "office")
+    w.blockers = []
+    w.solids = []
+    const a = w.addHuman("a", "Alice", "sniper")
+    const b = w.addHuman("b", "Bob", "rifle")
+    a.x = 5
+    a.y = 5
+    b.x = 12
+    b.y = 5
+    w.time = 1
+    w.tick = 30
+    w.rewind.record(w.tick, w.time, [...w.players.values()], (p) => p.alive)
+    // Bob sprints +Y by 1.2 m over the next 4 ticks (well outside HIT_RADIUS = 0.38 m of y = 5)
+    for (let i = 0; i < 4; i++) {
+      b.y += 0.3
+      w.time += 1 / 30
+      w.tick++
+      w.rewind.record(w.tick, w.time, [...w.players.values()], (p) => p.alive)
+    }
+    const decoded = decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { ...NO_INTENT, aim: 0, fire: true, firePressed: true, view: 1 }, prev: [{ ...NO_INTENT, aim: 0 }] }))
+    expect(decoded?.type).toBe("intent")
+    w.push("a", 1, { ...NO_INTENT, aim: 0, fire: true, firePressed: true, view: 1 })
+    w.step()
+    expect(b.health).toBeLessThan(100)
+    expect(bulletSpread("a", 1, GUNS.rifle, 0)).toBe(bulletSpread("a", 1, GUNS.rifle, 0))
+    expect(bulletSpread("a", 1, GUNS.rifle, 0)).not.toBe(bulletSpread("a", 2, GUNS.rifle, 0))
   })
 })
