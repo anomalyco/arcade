@@ -65,8 +65,10 @@ game's own `AGENTS.md`.
 ## Controls
 
 - Read [docs/controls.md](docs/controls.md) before changing key bindings or HUD input prompts. Bind gameplay actions
-  by physical `KeyboardEvent.code` (`KeyE` interact, `KeyW`/`KeyA`/`KeyS`/`KeyD` move, `ShiftLeft` sprint) and
-  render prompts with the user's layout label via `@arcade/kit/client/controls`.
+  by physical `KeyboardEvent.code` (`KeyE` interact, `KeyW`/`KeyA`/`KeyS`/`KeyD` move, `ShiftLeft` sprint). Prompts
+  always show the QWERTY name of that physical key, even on Dvorak (`KeyE` → `E`), via `keyLabel` from
+  `@arcade/kit/client/controls`; draw them with the key caps in `@arcade/kit/client/key-cap`, using the hold variant
+  instead of the word "Hold". The player's own layout labels are only an opt-in **Key labels** setting.
 
 ## Lab and showing Kit
 

@@ -152,7 +152,7 @@ export class LabNavigation {
   }
   randomize(group = this.active?.group) {
     for (const { control: c, group: name } of this.rows) {
-      if (!c || name !== group || c.key === "effect" || c.key === "environment" || c.key === "room") continue
+      if (!c || name !== group || c.key === "effect" || c.key === "environment" || c.key === "room" || c.key === "keyLabels") continue
       if ("min" in c) {
         const step = c.step ?? .01
         const steps = Math.floor((c.max - c.min) / step + 1e-9)

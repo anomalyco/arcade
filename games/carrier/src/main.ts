@@ -10,6 +10,7 @@ import { bakeSeabed } from "../shared/seabed"
 import { WEATHER_KINDS, type WeatherKind } from "../shared/weather"
 import { WeatherAudio } from "./audio/weather-audio"
 import { DebugMenu } from "./dev/debug-menu"
+import { controlsTab } from "./dev/controls-tab"
 import { MixerLab } from "./audio/mixer-lab"
 import { mixer } from "./audio/mixer"
 import { SoundsLab } from "./audio/sounds-lab"
@@ -180,6 +181,7 @@ async function main() {
   debugMenu.addTab(new MixerLab(flight.audio).tab)
   // SOUNDS: the audition board (every sound slot's candidate takes; pick by ear). ?sounds=1 opens it.
   debugMenu.addTab(new SoundsLab().tab)
+  debugMenu.addTab(controlsTab)
   if (params.has("sounds")) debugMenu.open("sounds")
   const forced = params.get("weather")
   if (forced && (WEATHER_KINDS as readonly string[]).includes(forced)) lab.force(forced as WeatherKind, 0)

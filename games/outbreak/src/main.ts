@@ -1,5 +1,6 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
+import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
@@ -794,6 +795,8 @@ async function main() {
     ])
   })
 
+  const keyLabels = keyLabelSetting("HUD")
+  lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
   lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
@@ -904,14 +907,11 @@ async function main() {
       promptEl.hidden = true
       return
     }
-    const primaryKey = esc(keyLabel("KeyE"))
-    const primaryHtml = `<span><kbd>${primaryKey}</kbd>${esc(prompt.primary.label)}</span>`
+    const primaryHtml = keyPromptHtml("KeyE", prompt.primary.label)
     const secondaryHtml = prompt.secondary
-      ? `<span class="sep">·</span><span><kbd>Hold ${primaryKey}</kbd>${esc(prompt.secondary.label)}</span>`
+      ? `<span class="sep">·</span>${keyPromptHtml("KeyE", prompt.secondary.label, { hold: true, progress: holdProgress(p) })}`
       : ""
-    const hold = holdProgress(p)
-    const holdHtml = hold > 0 ? `<i class="hold" style="width:${(hold * 100).toFixed(1)}%"></i>` : ""
-    promptEl.innerHTML = `${primaryHtml}${secondaryHtml}${holdHtml}`
+    promptEl.innerHTML = `${primaryHtml}${secondaryHtml}`
     promptEl.hidden = false
     promptEl.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
   }
