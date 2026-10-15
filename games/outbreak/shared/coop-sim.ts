@@ -17,6 +17,7 @@ import {
 } from "./melee/index"
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures } from "./feature-registry"
+import { openingClockActive } from "./pacing"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
   createDoorHandler,
@@ -108,6 +109,8 @@ export type SimState = {
   rolloutSeedMix: number
   time: number
   hour: number
+  /** Game hours the clock has advanced since the start (absent in older snapshots). */
+  elapsedHours?: number
   revision: number
   town: {
     doors: Door[]
@@ -168,6 +171,8 @@ export class CoopSim {
   readonly slots: SurvivorSlot[] = []
   readonly featureStates: Map<string, unknown>
   hour = DEFAULT_PACING_TUNING.startHour
+  /** Game hours the clock has advanced since the start; the opening clock and night counts read it. */
+  elapsedHours = 0
   time = 0
   revision = 0
   solids: Rect[]
@@ -569,7 +574,12 @@ export class CoopSim {
     this.rng.next()
     this.ai.rngSeedMix = this.rolloutSeedMix ? ((this.rng.getState() ^ this.rolloutSeedMix) >>> 0) : 0
     this.time += dt
-    this.hour = advanceHour(this.hour, dt, timeScale)
+    const pacing = this.ai.config
+    const rate = openingClockActive(pacing.directorPacing, this.hour, this.elapsedHours)
+      ? timeScale * pacing.openingClock
+      : timeScale
+    this.hour = advanceHour(this.hour, dt, rate)
+    this.elapsedHours += (dt * rate) / 3600
     this.syncWorldChunks()
     const flashlightTuning = resolved.flashlight
 
@@ -697,6 +707,7 @@ export class CoopSim {
       rolloutSeedMix: this.rolloutSeedMix,
       time: this.time,
       hour: this.hour,
+      elapsedHours: this.elapsedHours,
       revision: this.revision,
       town: {
         doors: this.town.doors.map((d) => ({ ...d, rect: [...d.rect] as Rect })),
@@ -723,6 +734,7 @@ export class CoopSim {
     this.rolloutSeedMix = state.rolloutSeedMix ?? 0
     this.time = state.time
     this.hour = state.hour
+    this.elapsedHours = state.elapsedHours ?? 0
     this.revision = state.revision
 
     this.worldStream.restore(state.worldStream)
