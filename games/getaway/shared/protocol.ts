@@ -7,8 +7,8 @@ import type { SimEvent, WorldView } from "./sim/world"
 export type Picks = Record<Role, string>
 
 export type ClientMsg =
-  /** `id` resumes an earlier identity after a reconnect (keeps your car and score). */
-  | { type: "hello"; name: string; picks: Picks; id?: string }
+  /** `token` resumes an earlier seat after a reconnect (keeps your car and score). */
+  | { type: "hello"; name: string; picks: Picks; token?: string; id?: string }
   | { type: "input"; seq: number; input: Input }
   | { type: "ping"; t: number }
   | { type: "chat"; text: string }
@@ -21,7 +21,7 @@ export type ChatMsg = { type: "chat"; from: string; name: string; role: Role | "
 export const CHAT_MAX = 140
 
 export type ServerMsg =
-  | { type: "welcome"; id: string; room: string; seed: number; tick: number }
+  | { type: "welcome"; id: string; token?: string; room: string; seed: number; tick: number }
   /**
    * `ack` is the last input seq the server applied for you; `you` is your car's authoritative body after that input.
    * `you` includes exact y/vy, airborne, landing and tunnel-crossing state for deterministic replay; the view carries
@@ -110,8 +110,9 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   }
   switch (o.type) {
     case "hello": {
+      const token = typeof o.token === "string" && /^[a-z0-9]{12,40}$/i.test(o.token) ? o.token : undefined
       const id = typeof o.id === "string" && /^[a-z0-9]{4,16}$/.test(o.id) ? o.id : undefined
-      return { type: "hello", name: cleanName(o.name), picks: decodePicks(o.picks), id }
+      return { type: "hello", name: cleanName(o.name), picks: decodePicks(o.picks), ...(token ? { token } : {}), ...(id ? { id } : {}) }
     }
     case "input": {
       const input = decodeInput(o.input)

@@ -307,7 +307,14 @@ export class NetClient {
       b = s
       if (s.tick >= target) break
     }
-    let view = a === b ? b.view : lerpView(a.view, b.view, Math.max(0, Math.min(1, (target - a.tick) / (b.tick - a.tick))))
+    const spanTicks = b.tick - a.tick
+    const over = Math.min(0.25, Math.max(0, (target - b.tick) * DT))
+    let view =
+      spanTicks <= 0
+        ? over > 0
+          ? lerpView(b.view, b.view, 1, 0, over)
+          : b.view
+        : lerpView(a.view, b.view, Math.max(0, Math.min(1, (target - a.tick) / spanTicks)), spanTicks * DT, over)
     if (view.round !== latest.view.round) view = latest.view
     return this.merge(view, latest.view)
   }
