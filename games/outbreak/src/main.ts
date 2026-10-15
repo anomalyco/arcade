@@ -58,6 +58,7 @@ import {
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor, survivorAimControls, survivorAimTuning } from "./survivor"
 import { DEFAULT_HUD_SETTINGS, hudControls, OutbreakHud } from "./hud"
+import { audioControls, DEFAULT_AUDIO_SETTINGS, OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
@@ -122,6 +123,7 @@ const settings = {
   ...zombieTuning,
   ...survivorAimTuning,
   ...DEFAULT_HUD_SETTINGS,
+  ...DEFAULT_AUDIO_SETTINGS,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -255,7 +257,16 @@ async function main() {
     if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
   }
   const cam = new Camera()
+  const audio = new OutbreakAudio(settings, {
+    baseUrl: new URL("./audio-assets/", document.baseURI).href,
+    storage: (() => { try { return localStorage } catch { return null } })(),
+    automated: navigator.webdriver,
+  })
+  audio.arm()
+  const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
+  coop.onFootfall = footfall
   let avatar = new Survivor(renderer)
+  avatar.onFootfall = footfall
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
@@ -273,6 +284,7 @@ async function main() {
   }
   const controls: LabControl[] = [
     ...aiControls,
+    ...audioControls,
     {
       key: "spawnZombieHere",
       label: "Spawn zombie ahead",
@@ -854,6 +866,57 @@ async function main() {
         run: () => hud.demo(session.view.player),
       },
       {
+        id: "survivor.aim-demo",
+        label: "Preview Survivor Pistol Stance",
+        shortLabel: "Aim Demo",
+        category: "Scene",
+        undoable: false,
+        args: {
+          mode: {
+            type: "string",
+            description: "Stance mode (aim-fire, low-ready, reload, before)",
+          },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const mode = String(args?.mode ?? "aim-fire")
+          const p = session.view.player
+          p.equippedItem = "pistol"
+          p.magAmmo = p.magCapacity
+          p.reserveAmmo = 16
+          avatar.legacyUnarmedPistol = mode === "before"
+          if (mode === "low-ready") {
+            p.fireCooldown = 0
+            p.recoil = 0
+            p.reloadRemaining = 0
+            avatar.holdRemaining = 0
+            avatar.aimWeight = 0
+            for (let i = 0; i < 24; i++) draw(1 / 60)
+          } else if (mode === "reload") {
+            p.magAmmo = 2
+            p.reloadRemaining = 0.68
+            avatar.holdRemaining = settings.aimHoldTime
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          } else {
+            p.reloadRemaining = 0
+            session.update(
+              1 / 60,
+              { mx: 0, my: 0, aim: p.aim, interact: false, fire: true },
+              0,
+              settings,
+            )
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          }
+          await device.queue.onSubmittedWorkDone()
+          return {
+            mode,
+            aimWeight: avatar.aimWeight,
+            holdRemaining: avatar.holdRemaining,
+            legacyBefore: avatar.legacyUnarmedPistol,
+          }
+        },
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
@@ -1017,6 +1080,7 @@ async function main() {
     if (coop.localPalette !== avatarPalette) {
       avatarPalette = coop.localPalette
       avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      avatar.onFootfall = footfall
       updateProfile()
     }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
@@ -1387,6 +1451,7 @@ async function main() {
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
     hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
+    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y) })
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     inventoryHud.sync(session.view, cam, w, h)
@@ -1568,6 +1633,7 @@ async function main() {
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
+    audio: () => audio.telemetry(),
     hudState: () => hud.inspect(),
     reset,
     freeze: (value = true) => {

@@ -3,7 +3,7 @@ import type { MixCategory } from "@arcade/kit/audio"
 /** Listener-facing mix groups and the runtime buses each one drives. */
 export const MIX_GROUPS = {
   vehicles: { label: "Vehicles", buses: ["engine", "tyre"] },
-  effects: { label: "Effects", buses: ["impact", "spell"] },
+  effects: { label: "Effects", buses: ["impact", "spell", "weapon", "foley", "voice"] },
   ambience: { label: "Ambience", buses: ["ambience"] },
   ui: { label: "UI", buses: ["ui"] },
 } as const satisfies Record<string, { label: string; buses: readonly MixCategory[] }>
@@ -33,7 +33,7 @@ export const saveMix = (mix: MixState) => JSON.stringify(mix)
 
 /** Bus gain for every runtime category under this mix. */
 export function busLevels(mix: MixState): Record<MixCategory, number> {
-  const levels = { engine: 1, tyre: 1, impact: 1, ambience: 1, spell: 1, ui: 1 } satisfies Record<MixCategory, number>
+  const levels = { engine: 1, tyre: 1, impact: 1, ambience: 1, spell: 1, ui: 1, weapon: 1, foley: 1, voice: 1 } satisfies Record<MixCategory, number>
   for (const group of MIX_GROUP_IDS) for (const bus of MIX_GROUPS[group].buses) levels[bus] = mix[group]
   return levels
 }
