@@ -2,6 +2,7 @@ import type { Camera } from "@arcade/kit/client/camera"
 import { keyLabel } from "@arcade/kit/client/controls"
 import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
+import { findFinisherTarget } from "../shared/combat"
 import { holdProgress, type InteractTarget } from "../shared/interact"
 import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
@@ -149,8 +150,27 @@ export class InventoryHud {
     if (!el) return
     const { player: p, town, prompt } = view
     if (!prompt) {
-      el.hidden = true
-      this.lastStrip = ""
+      const finTarget = !p.vault && !p.vehicleId ? findFinisherTarget(p, view.zombies) : null
+      if (!finTarget) {
+        el.hidden = true
+        this.lastStrip = ""
+        return
+      }
+      const anchorHeight = 0.85 + supportHeight(town, finTarget.x, finTarget.y)
+      const proj = cam.project(finTarget.x, anchorHeight, finTarget.y, w, h)
+      if (!proj.ok) {
+        el.hidden = true
+        return
+      }
+      const finLabel = p.meleeWeapon ? "Finish off" : "Stomp"
+      const html = `${keyPromptHtml("Mouse0", finLabel)}<span class="sep">·</span>${keyPromptHtml("KeyV", finLabel)}`
+      if (html !== this.lastStrip) {
+        el.innerHTML = html
+        this.lastStrip = html
+      }
+      el.dataset.strip = "false"
+      el.hidden = false
+      el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, -100%)`
       return
     }
     const isPeeking = Boolean(view.peek)

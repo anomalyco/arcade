@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { CoopRoomCore, type Conn } from "../server/room-core"
+import { createAIAgent, hasSeveredLeg, isTorsoCrawler, zombieTraitsFromSeed } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import {
+  findFinisherTarget,
   MELEE_WEAPON_IDS,
   MELEE_WEAPONS,
   type MeleeWeaponId,
 } from "../shared/combat"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
-import { decodeServerText, decodeSnapshot, packCommand, type ServerMsg } from "../shared/net-protocol"
+import { applyZombieState, decodeServerText, decodeSnapshot, packCommand, type ServerMsg } from "../shared/net-protocol"
 import { LOOT_TABLES, OutbreakProgression } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
 import { SoundDirector } from "../src/audio/director"
@@ -349,6 +351,120 @@ describe("Co-op melee attribution & friendly-fire off", () => {
     expect(bobMeleeEvents.length).toBeGreaterThan(0)
     expect(bobMeleeEvents[0]!.attackerIndex).toBe(slotA.index)
     expect(bobMeleeEvents[0]!.weapon).toBe("axe")
+  })
+
+  test("downed zombies stay down ~2s before recovering and can be finished off with Mouse0 or V without spending pistol rounds", () => {
+    const { session, p, equip, stand, step } = createSession()
+    stand(40, 44, 0)
+
+    // 1. Knockdown recovery after timer expires
+    const zRecover = session.ai.spawnZombie(session.view.town, 43, 44, "knockdown", Math.PI)
+    zRecover.awareness = 1
+    zRecover.timer = 0.25
+    step({}, 20)
+    expect(zRecover.state).toBe("chase")
+
+    // 2. Contextual boot stomp finisher while holding pistol (does NOT spend pistol ammo)
+    session.ai.agents.length = 0
+    const zDowned = session.ai.spawnZombie(session.view.town, 40.95, 44, "knockdown", Math.PI)
+    zDowned.hp = 60
+    zDowned.timer = 2.2
+    const magBefore = p.magAmmo
+    expect(findFinisherTarget(p, session.ai.agents)).toBe(zDowned)
+
+    step({ fire: true }, 1)
+    expect(zDowned.state).toBe("dead")
+    expect(zDowned.hp).toBe(0)
+    expect(zDowned.detachedLimbs).toContain("head")
+    expect(p.magAmmo).toBe(magBefore)
+    expect(p.stompAnim).toBeGreaterThan(0)
+
+    // 3. Contextual downward strike finisher while holding crowbar
+    step({}, 35)
+    equip("crowbar")
+    const zDowned2 = session.ai.spawnZombie(session.view.town, 41.0, 44, "knockdown", Math.PI)
+    zDowned2.hp = 75
+    zDowned2.timer = 2.2
+    step({ fire: true }, 1)
+    expect(zDowned2.state).toBe("dead")
+    expect(p.meleeFinisher).toBe(true)
+    expect(session.combat.meleeSwings.at(-1)?.finisher).toBe(true)
+  })
+
+  test("leg-loss crawlers and torso-only crawlers crawl slowly, grab ankles, and replicate over co-op snapshots", () => {
+    const core = new CoopRoomCore("crawler", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, Date.now, "test")
+    const snaps: ReturnType<typeof decodeSnapshot>[] = []
+    let annId = ""
+    const conn: Conn = {
+      send(d) {
+        if (typeof d === "string") {
+          const m = decodeServerText(d) as ServerMsg
+          if (m.t === "welcome") annId = m.id
+        } else {
+          snaps.push(decodeSnapshot(d, 7))
+        }
+      },
+      close() {},
+    }
+    core.open(conn)
+    core.message(conn, JSON.stringify({ t: "hello", name: "Ann", build: "test" }))
+    const slotA = core.sim.slot(annId)!
+    Object.assign(slotA.survivor, { x: 40, y: 44, aim: 0 })
+
+    const zCrawler = core.sim.ai.spawnZombie(core.sim.town, 40.78, 44, "crawler", Math.PI)
+    zCrawler.detachedLimbs.push("right.thigh")
+    zCrawler.limping = true
+    zCrawler.awareness = 1
+    zCrawler.seesTarget = true
+    zCrawler.targetX = 40
+    zCrawler.targetY = 44
+    zCrawler.focusId = annId
+    expect(hasSeveredLeg(zCrawler)).toBe(true)
+    expect(isTorsoCrawler(zCrawler)).toBe(false)
+
+    const hpBefore = slotA.survivor.health
+    const stamBefore = slotA.survivor.stamina
+    for (let i = 0; i < 6; i++) {
+      core.message(conn, JSON.stringify({ t: "in", s: i, c: [packCommand({ mx: 0, my: 0, aim: 0, interact: false })] }))
+      core.step()
+    }
+    // Crawler ankle-grab deals damage and drains stamina
+    expect(slotA.survivor.health).toBeLessThan(hpBefore)
+    expect(slotA.survivor.stamina).toBeLessThan(stamBefore)
+
+    // Second leg severed -> torso-only crawler
+    zCrawler.detachedLimbs.push("left.thigh")
+    expect(isTorsoCrawler(zCrawler)).toBe(true)
+    for (let i = 6; i < 9; i++) {
+      core.message(conn, JSON.stringify({ t: "in", s: i, c: [packCommand({ mx: 0, my: 0, aim: 0, interact: false })] }))
+      core.step()
+    }
+
+    // Decoded snapshot replicates crawler state, limping flag, and detached limbs onto client agent
+    const lastZ = snaps.at(-1)?.shared.zombies.find((z) => z.id === zCrawler.id)!
+    expect(lastZ).toBeDefined()
+    expect(lastZ.state).toBe("crawler")
+    const clientAgent = createAIAgent(lastZ.id, lastZ.seed, lastZ.x, lastZ.y, lastZ.aim)
+    applyZombieState(clientAgent, lastZ)
+    expect(clientAgent.state).toBe("crawler")
+    expect(clientAgent.limping).toBe(true)
+    expect(clientAgent.detachedLimbs).toContain("right.thigh")
+    expect(clientAgent.detachedLimbs).toContain("left.thigh")
+  })
+
+  test("deterministic per-zombie toughness, hitReaction (0..2), and deathVariant (0..3) span all variants", () => {
+    const reactions = new Set<number>()
+    const deaths = new Set<number>()
+    const toughs = new Set<number>()
+    for (let i = 1; i <= 48; i++) {
+      const traits = zombieTraitsFromSeed((7 ^ Math.imul(i + 17, 0x85ebca6b)) >>> 0)
+      reactions.add(traits.hitReaction)
+      deaths.add(traits.deathVariant)
+      toughs.add(traits.toughness)
+    }
+    expect(reactions.size).toBe(3)
+    expect(deaths.size).toBe(4)
+    expect(toughs.size).toBeGreaterThanOrEqual(4)
   })
 })
 

@@ -97,10 +97,12 @@ export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
       | "meleeCombo"
       | "meleeCharge"
       | "meleeHeavy"
+      | "meleeFinisher"
       | "fireCooldown"
       | "reloadRemaining"
       | "recoil"
       | "shoveAnim"
+      | "stompAnim"
       | "sprinting"
       | "channel"
     >
@@ -793,11 +795,19 @@ export class Survivor {
         : 0
     const reloadHunch = reloadLook * 0.22
     const posturePitch = 0.14 * runBlend * (profile?.runPosture ?? 0.18) * (1 - 0.35 * aimW)
+    const stompRaw = p.stompAnim ?? 0
+    const stompProg = stompRaw > 0 ? 1 - clamp(stompRaw / 0.38, 0, 1) : 0
+    const stompWindup = stompRaw > 0 && stompProg < 0.44 ? Math.sin((stompProg / 0.44) * (Math.PI * 0.5)) : 0
+    const stompSlam = stompRaw > 0 && stompProg >= 0.44 ? Math.sin(((stompProg - 0.44) / 0.56) * Math.PI) : 0
+    const finisherPulse =
+      p.meleeFinisher && meleePhase !== "idle" ? Math.sin(meleeProgress * Math.PI) : 0
+    const finisherPitch = finisherPulse * 0.38 + stompSlam * 0.3 - stompWindup * 0.14
     const fwdPitch =
       0.05 +
       lean +
       (shambleMod?.torsoPitchAdd ?? 0) +
       (meleeMod?.pitchAdd ?? 0) +
+      finisherPitch +
       posturePitch +
       0.24 * crouchT +
       reloadHunch -
@@ -983,8 +993,13 @@ export class Survivor {
       } else {
         arms = { ua: posed.ua, fa: posed.fa }
       }
-      this.meleeWeaponFrame = posed.weapon
-      this.meleeTip = posed.tip
+      if (finisherPulse > 0.01) {
+        this.meleeWeaponFrame = pitch(posed.weapon, -0.58 * finisherPulse)
+        this.meleeTip = at(this.meleeWeaponFrame, meleeDef.length, 0, 0)
+      } else {
+        this.meleeWeaponFrame = posed.weapon
+        this.meleeTip = posed.tip
+      }
     } else {
       this.gun = null
       this.mag = null
@@ -1070,7 +1085,24 @@ export class Survivor {
       let shin: Frame
       let boot: Frame
       let toeFrame: Frame
-      if (foot.planted) {
+      if (i === 1 && stompRaw > 0) {
+        const ac = Math.cos(p.aim)
+        const as = Math.sin(p.aim)
+        const stompFwd = 0.24 * stompWindup + 0.38 * (1 - stompWindup)
+        const stompLift = 0.34 * stompWindup + 0.04 * stompSlam * (1 - clamp((stompProg - 0.44) / 0.28, 0, 1))
+        const ankWorld: V3 = [
+          p.x + ac * stompFwd - as * 0.11,
+          curSupportY + RIG.ankle + stompLift,
+          p.y + as * stompFwd + ac * 0.11,
+        ]
+        const pole = dirIn(pelvis, 1, 0.45, 0.22)
+        const [knee, end] = ik(hip, ankWorld, RIG.thigh, RIG.shin, pole)
+        thigh = limb(hip, knee, pole, pelvis.x)
+        shin = limb(knee, end, pole, pelvis.x)
+        const bootPitch = 0.22 * stompWindup - 0.32 * stompSlam
+        boot = pitch(yawFrame(end, p.aim), bootPitch)
+        toeFrame = pitch(yawFrame(at(boot, RIG.foot, -RIG.ankle, 0), p.aim), bootPitch * 0.5)
+      } else if (foot.planted) {
         const ballWorld: V3 = [foot.p[0] + fc * RIG.foot, foot.p[1], foot.p[2] + fs * RIG.foot]
         const f0 = pitch(yawFrame([0, 0, 0], foot.yaw), stancePitch)
         const riseFrame = pitch(yawFrame([0, 0, 0], foot.yaw), groundSlope + heelRisePitch)

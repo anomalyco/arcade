@@ -268,9 +268,21 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out
   const speed = Math.hypot(agent.vx, agent.vy)
   const speedNorm = clamp(speed / 3.0, 0, 1)
 
-  const lurch = clamp(baseTuning.zombieLurch * (0.75 + 0.35 * agent.lurch) + 0.16 * stateBoost, 0, 1)
-  const asymmetry = clamp(baseTuning.zombieAsymmetry * (0.7 + 0.4 * agent.asymmetry), 0, 1)
-  const drag = clamp(baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost), 0, 1)
+  const lurch = clamp(
+    baseTuning.zombieLurch * (0.75 + 0.35 * agent.lurch) + 0.16 * stateBoost + (agent.limping ? 0.22 : 0),
+    0,
+    1,
+  )
+  const asymmetry = clamp(
+    baseTuning.zombieAsymmetry * (0.7 + 0.4 * agent.asymmetry) + (agent.limping ? 0.28 : 0),
+    0,
+    1,
+  )
+  const drag = clamp(
+    agent.limping ? Math.max(0.88, baseTuning.zombieDrag * agent.drag) : baseTuning.zombieDrag * agent.drag * (1 - 0.38 * stateBoost),
+    0,
+    0.96,
+  )
   const reach = clamp(baseTuning.zombieReach * (0.65 + 0.35 * agent.reach) + 0.28 * stateBoost + 0.1 * speedNorm, 0, 1)
 
   const profile = zombieProfile(
@@ -856,33 +868,79 @@ export class ZombieCrowdRenderer {
       if (a.state === "dead" || a.state === "knockdown") {
         if (a.state === "dead") this.seenAt[s] = -1e9
         if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
-        const col =
-          a.state === "dead"
-            ? Math.min(1, this.collapse[s]! + dt * 4.2)
-            : a.timer > 0.42
-              ? Math.min(0.88, this.collapse[s]! + dt * 5.4)
-              : Math.max(0.12, this.collapse[s]! - dt * 2.4)
+        const isDead = a.state === "dead"
+        const col = isDead
+          ? Math.min(1, this.collapse[s]! + dt * 4.2)
+          : a.timer > 0.55
+            ? Math.min(0.9, this.collapse[s]! + dt * 5.4)
+            : Math.max(0.18, this.collapse[s]! - dt * 2.1)
         this.collapse[s] = col
         const c = smoother(col)
         const groundY = support(a.x, a.y)
-        const pelvisY = groundY + (HIP * (1 - c) + 0.14 * c)
-        const syaw = this.yaw[s]!
+        const deathVar = isDead ? (a.deathVariant ?? (((a.seed >>> 8) & 3) as 0 | 1 | 2 | 3)) : 0
+        const sideSign = a.id % 2 === 0 ? 1 : -1
+        const syaw =
+          isDead && deathVar === 2
+            ? this.yaw[s]! + c * sideSign * 2.05
+            : this.yaw[s]!
+
+        let pelvisY = groundY + (HIP * (1 - c) + 0.14 * c)
+        let pelvisPitch = -1.42 * c
+        let pelvisRoll = this.collapseDir[s]! * c
+        let torsoPitch = -1.48 * c
+        let torsoRoll = 0
+        let headPitch = -1.35 * c
+
+        if (!isDead) {
+          // Knockdown: knocked onto back or side, struggling to push up as timer expires
+          const struggle = a.timer < 0.85 ? Math.sin((0.85 - a.timer) * 9.0) * 0.18 : 0
+          pelvisY = groundY + (HIP * (1 - c) + 0.15 * c)
+          pelvisPitch = 1.28 * c
+          pelvisRoll = sideSign * 0.42 * c
+          torsoPitch = (1.18 - struggle) * c
+          torsoRoll = sideSign * 0.35 * c
+          headPitch = (0.72 - struggle * 1.2) * c
+        } else if (deathVar === 1) {
+          // Variant 1: fall backward onto spine
+          pelvisPitch = 1.38 * c
+          pelvisRoll = this.collapseDir[s]! * 0.65 * c
+          torsoPitch = 1.44 * c
+          headPitch = 1.18 * c
+        } else if (deathVar === 2) {
+          // Variant 2: spin and crumple onto side
+          pelvisPitch = -1.28 * c
+          pelvisRoll = sideSign * 0.82 * c
+          torsoPitch = -1.34 * c
+          torsoRoll = sideSign * 0.62 * c
+          headPitch = -1.15 * c
+        } else if (deathVar === 3) {
+          // Variant 3: collapse to knees first, then slump forward
+          const kneeStage = clamp(col / 0.55, 0, 1)
+          const slumpStage = clamp((col - 0.45) / 0.55, 0, 1)
+          const kSmooth = smoother(kneeStage)
+          const sSmooth = smoother(slumpStage)
+          pelvisY = groundY + HIP * (1 - kSmooth) + 0.36 * kSmooth * (1 - sSmooth) + 0.16 * sSmooth
+          pelvisPitch = -0.35 * kSmooth - 1.05 * sSmooth
+          torsoPitch = -0.28 * kSmooth - 1.22 * sSmooth
+          headPitch = -0.45 * kSmooth - 0.9 * sSmooth
+        }
 
         writeYawFrame(bBuf, pelvisOff, a.x, pelvisY, a.y, syaw)
-        pitchInPlace(bBuf, pelvisOff, -1.42 * c)
-        rollInPlace(bBuf, pelvisOff, this.collapseDir[s]! * c)
+        pitchInPlace(bBuf, pelvisOff, pelvisPitch)
+        rollInPlace(bBuf, pelvisOff, pelvisRoll)
 
         const tx = bBuf[pelvisOff]! + bBuf[pelvisOff + 6]! * RIG.waist
         const ty = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
         const tz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
         writeYawFrame(bBuf, torsoOff, tx, ty, tz, syaw)
-        pitchInPlace(bBuf, torsoOff, -1.48 * c)
+        pitchInPlace(bBuf, torsoOff, torsoPitch)
+        if (torsoRoll !== 0) rollInPlace(bBuf, torsoOff, torsoRoll)
 
         const hx = bBuf[torsoOff]! + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
         const hy = bBuf[torsoOff + 1]! + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
         const hz = bBuf[torsoOff + 2]! + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
         writeYawFrame(bBuf, headOff, hx, hy, hz, syaw)
-        pitchInPlace(bBuf, headOff, -1.35 * c)
+        pitchInPlace(bBuf, headOff, headPitch)
 
         this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
@@ -906,6 +964,9 @@ export class ZombieCrowdRenderer {
         const tzAxisY = bBuf[torsoOff + 10]!
         const tzAxisZ = bBuf[torsoOff + 11]!
 
+        const legFwd = !isDead || deathVar === 1 ? 0.58 : deathVar === 3 ? -0.36 : -0.65
+        const armFwd = !isDead ? -0.28 : deathVar === 1 ? -0.32 : 0.45
+
         for (let i = 0; i < 2; i++) {
           const side = i ? 1 : -1
           const hipZ = side * RIG.hipW
@@ -919,9 +980,9 @@ export class ZombieCrowdRenderer {
             hipX,
             hipY,
             hipZWorld,
-            a.x - cosY * 0.65,
+            a.x + cosY * legFwd - sinY * side * 0.18,
             groundY + 0.09,
-            a.y - sinY * 0.65 + side * 0.16,
+            a.y + sinY * legFwd + cosY * side * 0.18,
             RIG.thigh,
             RIG.shin,
             poleX,
@@ -943,12 +1004,12 @@ export class ZombieCrowdRenderer {
           writeLimbFrame(bBuf, bOff + thighIdx * 12, hipX, hipY, hipZWorld, kx, ky, kz, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
           writeLimbFrame(bBuf, bOff + shinIdx * 12, kx, ky, kz, ex, ey, ez, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
           writeYawFrame(bBuf, footOff, ex, ey, ez, syaw)
-          pitchInPlace(bBuf, footOff, -1.2 * c)
+          pitchInPlace(bBuf, footOff, (!isDead || deathVar === 1 ? 0.95 : -1.2) * c)
           const bx = ex + bBuf[footOff + 3]! * RIG.foot - bBuf[footOff + 6]! * RIG.ankle
           const by = ey + bBuf[footOff + 4]! * RIG.foot - bBuf[footOff + 7]! * RIG.ankle
           const bz = ez + bBuf[footOff + 5]! * RIG.foot - bBuf[footOff + 8]! * RIG.ankle
           writeYawFrame(bBuf, toeOff, bx, by, bz, syaw)
-          pitchInPlace(bBuf, toeOff, -1.2 * c)
+          pitchInPlace(bBuf, toeOff, (!isDead || deathVar === 1 ? 0.95 : -1.2) * c)
           this.emitBone(bOff, thighIdx, 5, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, shinIdx, 6, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, footIdx, 7, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
@@ -965,9 +1026,153 @@ export class ZombieCrowdRenderer {
             shX,
             shY,
             shZWorld,
-            a.x + cosY * 0.45,
+            a.x + cosY * armFwd - sinY * side * 0.32,
             groundY + 0.08,
-            a.y + sinY * 0.45 + side * 0.25,
+            a.y + sinY * armFwd + cosY * side * 0.32,
+            RIG.upper,
+            RIG.fore,
+            aPoleX,
+            aPoleY,
+            aPoleZ,
+          )
+          const elx = ikScratch[0]!
+          const ely = ikScratch[1]!
+          const elz = ikScratch[2]!
+          const wrx = ikScratch[3]!
+          const wry = ikScratch[4]!
+          const wrz = ikScratch[5]!
+          const uaIdx = 3 + i
+          const faIdx = 5 + i
+          writeLimbFrame(bBuf, bOff + uaIdx * 12, shX, shY, shZWorld, elx, ely, elz, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
+          writeLimbFrame(bBuf, bOff + faIdx * 12, elx, ely, elz, wrx, wry, wrz, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
+          this.emitBone(bOff, uaIdx, 3, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+          this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+        }
+        continue
+      }
+
+      if (a.state === "crawler") {
+        if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
+        const syaw = this.yaw[s]! + angleDiff(a.aim, this.yaw[s]!) * yawStepCap
+        this.yaw[s] = syaw
+        const speed = Math.hypot(a.vx, a.vy)
+        const crawlRate = speed > 0.06 ? Math.max(0.55, speed * 1.45) : 0.28
+        const prevPhase = this.phase[s]!
+        const curPhase = (prevPhase + crawlRate * dt) % 1
+        this.phase[s] = curPhase
+        const crawlAngle = curPhase * Math.PI * 2
+        const cosY = Math.cos(syaw)
+        const sinY = Math.sin(syaw)
+        const groundY = support(a.x, a.y)
+        const pelvisY = groundY + 0.19 + 0.025 * Math.abs(Math.sin(crawlAngle))
+
+        writeYawFrame(bBuf, pelvisOff, a.x, pelvisY, a.y, syaw + 0.14 * Math.sin(crawlAngle))
+        pitchInPlace(bBuf, pelvisOff, -1.28)
+        rollInPlace(bBuf, pelvisOff, 0.16 * Math.cos(crawlAngle))
+
+        const tx = bBuf[pelvisOff]! + bBuf[pelvisOff + 6]! * RIG.waist
+        const ty = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
+        const tz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
+        writeYawFrame(bBuf, torsoOff, tx, ty, tz, syaw - 0.16 * Math.sin(crawlAngle))
+        pitchInPlace(bBuf, torsoOff, -1.22 + 0.08 * Math.sin(crawlAngle * 2))
+        rollInPlace(bBuf, torsoOff, 0.22 * Math.sin(crawlAngle))
+
+        const hx = bBuf[torsoOff]! + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
+        const hy = bBuf[torsoOff + 1]! + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
+        const hz = bBuf[torsoOff + 2]! + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
+        writeYawFrame(bBuf, headOff, hx, hy, hz, a.aim)
+        pitchInPlace(bBuf, headOff, -0.38 + 0.08 * Math.cos(crawlAngle))
+
+        this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+        this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+        this.emitBone(bOff, 2, 2, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+
+        if (speed > 0.08 && ((prevPhase < 0.5 && curPhase >= 0.5) || curPhase < prevPhase)) {
+          this.onFootfall?.(a.id, a.x, a.y, speed, 0.92, "crawler")
+        }
+
+        const pxAxisX = bBuf[pelvisOff + 3]!
+        const pxAxisY = bBuf[pelvisOff + 4]!
+        const pxAxisZ = bBuf[pelvisOff + 5]!
+        const pzAxisX = bBuf[pelvisOff + 9]!
+        const pzAxisY = bBuf[pelvisOff + 10]!
+        const pzAxisZ = bBuf[pelvisOff + 11]!
+        const txAxisX = bBuf[torsoOff + 3]!
+        const txAxisY = bBuf[torsoOff + 4]!
+        const txAxisZ = bBuf[torsoOff + 5]!
+        const tyAxisX = bBuf[torsoOff + 6]!
+        const tyAxisY = bBuf[torsoOff + 7]!
+        const tyAxisZ = bBuf[torsoOff + 8]!
+        const tzAxisX = bBuf[torsoOff + 9]!
+        const tzAxisY = bBuf[torsoOff + 10]!
+        const tzAxisZ = bBuf[torsoOff + 11]!
+
+        for (let i = 0; i < 2; i++) {
+          const side = i ? 1 : -1
+          const hipZ = side * RIG.hipW
+          const hipX = bBuf[pelvisOff]! + pzAxisX * hipZ
+          const hipY = bBuf[pelvisOff + 1]! + pzAxisY * hipZ
+          const hipZWorld = bBuf[pelvisOff + 2]! + pzAxisZ * hipZ
+          const trail = 0.58 + 0.1 * Math.sin(crawlAngle + i * Math.PI)
+          const poleX = pxAxisX + pzAxisX * (side * 0.35)
+          const poleY = pxAxisY + pzAxisY * (side * 0.35)
+          const poleZ = pxAxisZ + pzAxisZ * (side * 0.35)
+          solveIkToScratch(
+            hipX,
+            hipY,
+            hipZWorld,
+            a.x - cosY * trail - sinY * side * 0.16,
+            groundY + 0.08,
+            a.y - sinY * trail + cosY * side * 0.16,
+            RIG.thigh,
+            RIG.shin,
+            poleX,
+            poleY,
+            poleZ,
+          )
+          const kx = ikScratch[0]!
+          const ky = ikScratch[1]!
+          const kz = ikScratch[2]!
+          const ex = ikScratch[3]!
+          const ey = ikScratch[4]!
+          const ez = ikScratch[5]!
+          const thighIdx = 7 + i
+          const shinIdx = 9 + i
+          const footIdx = 11 + i
+          const toeIdx = 13 + i
+          const footOff = bOff + footIdx * 12
+          const toeOff = bOff + toeIdx * 12
+          writeLimbFrame(bBuf, bOff + thighIdx * 12, hipX, hipY, hipZWorld, kx, ky, kz, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
+          writeLimbFrame(bBuf, bOff + shinIdx * 12, kx, ky, kz, ex, ey, ez, poleX, poleY, poleZ, pxAxisX, pxAxisY, pxAxisZ)
+          writeYawFrame(bBuf, footOff, ex, ey, ez, syaw)
+          pitchInPlace(bBuf, footOff, -1.25)
+          const bx = ex + bBuf[footOff + 3]! * RIG.foot - bBuf[footOff + 6]! * RIG.ankle
+          const by = ey + bBuf[footOff + 4]! * RIG.foot - bBuf[footOff + 7]! * RIG.ankle
+          const bz = ez + bBuf[footOff + 5]! * RIG.foot - bBuf[footOff + 8]! * RIG.ankle
+          writeYawFrame(bBuf, toeOff, bx, by, bz, syaw)
+          pitchInPlace(bBuf, toeOff, -1.25)
+          this.emitBone(bOff, thighIdx, 5, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+          this.emitBone(bOff, shinIdx, 6, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+          this.emitBone(bOff, footIdx, 7, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+          this.emitBone(bOff, toeIdx, 8, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+
+          const shZ = side * RIG.shoulderW
+          const shX = tx + tyAxisX * RIG.shoulderY + tzAxisX * shZ
+          const shY = ty + tyAxisY * RIG.shoulderY + tzAxisY * shZ
+          const shZWorld = tz + tyAxisZ * RIG.shoulderY + tzAxisZ * shZ
+          const armAngle = crawlAngle + (i === 0 ? 0 : Math.PI)
+          const reachFwd = 0.42 + 0.22 * Math.sin(armAngle)
+          const handLift = Math.max(0, -Math.cos(armAngle)) * 0.1
+          const aPoleX = -tyAxisX + tzAxisX * (side * 0.85)
+          const aPoleY = -tyAxisY + tzAxisY * (side * 0.85)
+          const aPoleZ = -tyAxisZ + tzAxisZ * (side * 0.85)
+          solveIkToScratch(
+            shX,
+            shY,
+            shZWorld,
+            tx + cosY * reachFwd - sinY * side * 0.22,
+            groundY + 0.06 + handLift,
+            tz + sinY * reachFwd + cosY * side * 0.22,
             RIG.upper,
             RIG.fore,
             aPoleX,
@@ -1195,12 +1400,20 @@ export class ZombieCrowdRenderer {
       const supportY = (support(a.x, a.y) + clamberLift) * 0.65 + footSupport * 0.35
       const shambleGait = smooth((speed - 0.12) / 0.35)
       const shambleMod = shambleTorsoModulation(curPhase, shambleGait, profile, actorSeed)
+      const limpDip = a.limping ? 0.068 * Math.max(0, Math.sin(curPhase * Math.PI * 2)) : 0
+      const limpRoll = a.limping ? (dragFoot === 0 ? -1 : 1) * 0.16 * Math.sin(curPhase * Math.PI * 2) : 0
+      const staggerU = a.state === "stagger" ? clamp(a.timer / 0.35, 0, 1) : 0
+      const hitReaction = a.hitReaction ?? (((a.seed >>> 4) % 3) as 0 | 1 | 2)
+      const staggerDrop =
+        staggerU > 0 ? (hitReaction === 2 ? 0.16 : hitReaction === 1 ? 0.04 : 0.025) * staggerU : 0
       const baseHeight =
         supportY +
         HIP -
         0.012 * moving +
         shambleMod.pelvisBobAdd -
-        0.016 * shambleGait * Math.sin(curPhase * Math.PI * 4 - 0.35)
+        0.016 * shambleGait * Math.sin(curPhase * Math.PI * 4 - 0.35) -
+        limpDip -
+        staggerDrop
       const d0 = Math.min(0.72, Math.hypot(this.footPx[f0]! - a.x, this.footPz[f0]! - a.y))
       const reach0 = Math.sqrt(Math.max(0, 0.822 * 0.822 - d0 * d0)) + RIG.ankle + this.footPy[f0]!
       const d1 = Math.min(0.72, Math.hypot(this.footPx[f1]! - a.x, this.footPz[f1]! - a.y))
@@ -1232,7 +1445,7 @@ export class ZombieCrowdRenderer {
 
       const height = baseHeight - rdx
       writeYawFrame(bBuf, pelvisOff, a.x, height, a.y, syaw + twx)
-      rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd)
+      rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd + limpRoll)
       pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
       const lean = lxx * Math.cos(a.aim) + lyx * Math.sin(a.aim)
 
@@ -1262,24 +1475,30 @@ export class ZombieCrowdRenderer {
 
       const bashPulse =
         a.state === "bash" ? Math.pow(Math.max(0, Math.sin((a.stateTime * Math.PI * 2) / 0.9)), 3) * 0.34 : 0
+      const sideSign = a.id % 2 ? 1 : -1
       const staggerRecoil =
-        a.state === "stagger" ? -0.36 * clamp(a.timer / 0.3, 0, 1) : -0.18 * a.hitFlash
+        staggerU > 0
+          ? (hitReaction === 2 ? 0.32 : hitReaction === 1 ? -0.24 : -0.44) * staggerU
+          : -0.18 * a.hitFlash
       const staggerCant =
-        a.state === "stagger" ? (a.id % 2 ? 1 : -1) * 0.22 * clamp(a.timer / 0.3, 0, 1) : 0
+        staggerU > 0
+          ? sideSign * (hitReaction === 1 ? 0.34 : hitReaction === 2 ? 0.26 : 0.18) * staggerU
+          : 0
+      const staggerYaw = staggerU > 0 && hitReaction === 1 ? sideSign * 0.58 * staggerU : 0
 
       const torsoPx = bBuf[pelvisOff]! + bBuf[pelvisOff + 6]! * RIG.waist
       const torsoPy = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
-      writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx)
+      writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw)
       pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil)
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
-      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant)
+      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75)
 
       const headPx = torsoPx + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
-      writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng)
+      writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8)
       pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6)
       rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5)
 

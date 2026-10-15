@@ -294,14 +294,22 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           },
           swing: {
             type: "string",
-            description: "Optional swing action (none, light, heavy, combo)",
+            description: "Optional swing/state action (none, light, heavy, combo, knockdown, finisher, crawler, limp)",
           },
         },
         enabled: () => !coop.net,
         run: async (_ctx, args) => {
           const rawWpn = String(args?.weapon ?? "crowbar")
           const weapon: MeleeWeaponId = isMeleeWeapon(rawWpn) ? rawWpn : "crowbar"
-          const swing = String(args?.swing ?? "light") as "none" | "light" | "heavy" | "combo"
+          const swing = String(args?.swing ?? "light") as
+            | "none"
+            | "light"
+            | "heavy"
+            | "combo"
+            | "knockdown"
+            | "finisher"
+            | "crawler"
+            | "limp"
           const res = host.harness().stageMelee(weapon, swing)
           host.draw(1 / 60)
           await device.queue.onSubmittedWorkDone()

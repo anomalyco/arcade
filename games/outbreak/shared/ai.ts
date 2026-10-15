@@ -2,9 +2,12 @@ import {
   createAIAgent,
   DEFAULT_AI_CONFIG as KIT_DEFAULT_AI_CONFIG,
   GridNav,
+  hasSeveredLeg,
+  isTorsoCrawler,
   NoiseBus,
   SpatialHash,
   stepAICrowd,
+  zombieTraitsFromSeed,
   type AIAgent,
   type AIConfig as KitAIConfig,
   type AIState,
@@ -13,6 +16,8 @@ import {
   type NoiseEvent,
   type NoiseKind,
   type PerceptionTarget,
+  type ZombieDeathVariant,
+  type ZombieHitReaction,
 } from "@arcade/kit/sim/ai"
 import { type Rect } from "@arcade/kit/sim/geom"
 import { dayCycle } from "./day-cycle"
@@ -57,10 +62,12 @@ export {
   coopPopulationScale,
   createAIAgent,
   DEFAULT_PACING_TUNING,
+  hasSeveredLeg,
   initialSpawnCount,
   isInsideSafeZone,
   isSpawnBehindPlayer,
   isSpawnInView,
+  isTorsoCrawler,
   NoiseBus,
   OutbreakPacingDirector,
   pacingControls,
@@ -68,6 +75,7 @@ export {
   spawnPacedTownZombies,
   STARTING_SAFEHOUSE_RECT,
   STARTING_SAFEHOUSE_YARD_RECT,
+  zombieTraitsFromSeed,
   type AIAgent,
   type AIState,
   type FirstEncounterStage,
@@ -77,6 +85,8 @@ export {
   type PacingSurvivorView,
   type PacingTelemetry,
   type PacingTuning,
+  type ZombieDeathVariant,
+  type ZombieHitReaction,
 }
 
 export const aiControls = [
@@ -447,7 +457,7 @@ export class OutbreakAISubsystem {
     time: number,
     dt: number,
     flashlightTuning: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone"> = DEFAULT_FLASHLIGHT_TUNING,
-  ): { topologyChanged: boolean; damage: number[] } {
+  ): { topologyChanged: boolean; damage: number[]; ankleGrabbed: boolean[] } {
     this.tick++
     const day = dayCycle(hour)
     this.darkness = day.darkness
@@ -566,14 +576,16 @@ export class OutbreakAISubsystem {
     }
 
     const damage = survivors.map(() => 0)
+    const ankleGrabbed = survivors.map(() => false)
     for (const atk of res.attacks) {
       const i = survivors.length === 1 ? 0 : targets.findIndex((t) => t.id === atk.targetId)
       const player = survivors[i]
       if (player && Math.hypot(atk.x - player.x, atk.y - player.y) <= 1.25) {
         damage[i]! += atk.damage
+        if (atk.ankleGrab) ankleGrabbed[i] = true
       }
     }
 
-    return { topologyChanged, damage }
+    return { topologyChanged, damage, ankleGrabbed }
   }
 }
