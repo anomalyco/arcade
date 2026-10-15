@@ -1094,6 +1094,14 @@ export class SurvivorBot {
     const wasEmpty = this.navGeometryKey === ""
     this.navGeometryKey = geomKey
 
+    const cacheKey = `${town.seed}:${town.houseSeed}:${geomKey}`
+    const cachedGrid = SurvivorBot.localNavGridCache.get(cacheKey)
+    if (cachedGrid) {
+      this.localNav.grid.set(cachedGrid)
+      if (!wasEmpty) this.repathAt = 0
+      return
+    }
+
     // Build localNav from door-invariant static solids + door portals so it is identical at t=0 and after snapshot restore
     const savedDoorOpen = town.doors.map((d) => d.open)
     const savedWinOpen = town.windows.map((w) => w.open)
@@ -1112,8 +1120,15 @@ export class SurvivorBot {
       barricadePlanks: 0,
     }))
     this.localNav.rebuild(solids, portals, 0.22)
+    if (SurvivorBot.localNavGridCache.size >= 16) {
+      const oldest = SurvivorBot.localNavGridCache.keys().next().value
+      if (oldest !== undefined) SurvivorBot.localNavGridCache.delete(oldest)
+    }
+    SurvivorBot.localNavGridCache.set(cacheKey, new Uint8Array(this.localNav.grid))
     if (!wasEmpty) this.repathAt = 0
   }
+
+  private static readonly localNavGridCache = new Map<string, Uint8Array>()
 
   private hasMeleeWeaponInHotbar(world: BotWorldView): { slotIndex: number; item: string } | null {
     const hotbar = world.progression.hotbar(this.actorId)

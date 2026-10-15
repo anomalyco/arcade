@@ -238,6 +238,18 @@ export function trimLoopPadding(ctx: BaseAudioContext, buf: AudioBuffer): AudioB
   while (a < b && Math.abs(d[a]!) < 1e-5) a++
   while (b > a && Math.abs(d[b - 1]!) < 1e-5) b--
   if (b - a < 64) return buf
+  if (a === 0 && b === d.length) {
+    const fade = Math.min(64, Math.floor(b / 4))
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const ch = buf.getChannelData(c)
+      for (let i = 0; i < fade; i++) {
+        const w = i / fade
+        ch[i]! *= w
+        ch[b - 1 - i]! *= w
+      }
+    }
+    return buf
+  }
   const out = ctx.createBuffer(buf.numberOfChannels, b - a, buf.sampleRate)
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const slice = new Float32Array(buf.getChannelData(c).subarray(a, b))
@@ -341,6 +353,7 @@ export class SampleBank {
   private baseUrl = defaultSfxBaseUrl()
   private fallbackSeeded = false
   private fallbackSampleRate = 48000
+  loadingInFlight = false
 
   constructor(entries: readonly SampleAssetMeta[] = DEFAULT_SAMPLE_MANIFEST, baseUrl = defaultSfxBaseUrl()) {
     this.registerManifest(entries, baseUrl)
@@ -377,44 +390,49 @@ export class SampleBank {
 
   /** Fetches and decodes manifest URLs against `ctx`, falling back cleanly to synthesized stems if a URL is unreachable. */
   async loadAll(ctx: BaseAudioContext, fetchImpl: typeof fetch | undefined = typeof fetch !== "undefined" ? fetch : undefined): Promise<number> {
-    const entries = [...this.manifest.entries()]
-    const concurrency = Math.min(12, Math.max(1, entries.length))
-    let cursor = 0
-    const workers: Promise<void>[] = []
-    for (let w = 0; w < concurrency; w++) {
-      workers.push(
-        (async () => {
-          while (cursor < entries.length) {
-            const [id, meta] = entries[cursor++]!
-            if (this.decodedAssets.has(id)) continue
-            if (fetchImpl) {
-              let rawPromise = this.rawBytes.get(id)
-              if (!rawPromise) {
-                const url = meta.url.startsWith("http") || meta.url.startsWith("/") ? meta.url : `${this.baseUrl}${meta.url}`
-                rawPromise = fetchImpl(url)
-                  .then(r => (r.ok ? r.arrayBuffer() : null))
-                  .catch(() => null)
-                this.rawBytes.set(id, rawPromise)
+    this.loadingInFlight = true
+    try {
+      const entries = [...this.manifest.entries()]
+      const concurrency = Math.min(12, Math.max(1, entries.length))
+      let cursor = 0
+      const workers: Promise<void>[] = []
+      for (let w = 0; w < concurrency; w++) {
+        workers.push(
+          (async () => {
+            while (cursor < entries.length) {
+              const [id, meta] = entries[cursor++]!
+              if (this.decodedAssets.has(id)) continue
+              if (fetchImpl) {
+                let rawPromise = this.rawBytes.get(id)
+                if (!rawPromise) {
+                  const url = meta.url.startsWith("http") || meta.url.startsWith("/") ? meta.url : `${this.baseUrl}${meta.url}`
+                  rawPromise = fetchImpl(url)
+                    .then(r => (r.ok ? r.arrayBuffer() : null))
+                    .catch(() => null)
+                  this.rawBytes.set(id, rawPromise)
+                }
+                const bytes = await rawPromise
+                if (bytes && bytes.byteLength > 0) {
+                  try {
+                    const decoded = await ctx.decodeAudioData(bytes.slice(0))
+                    const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
+                    this.setDecoded(id, trimmed, true)
+                    this.decodedAssets.add(id)
+                    this.cacheForContext(ctx).set(id, trimmed)
+                    continue
+                  } catch {}
+                }
               }
-              const bytes = await rawPromise
-              if (bytes && bytes.byteLength > 0) {
-                try {
-                  const decoded = await ctx.decodeAudioData(bytes.slice(0))
-                  const trimmed = meta.loop || meta.trimSilence ? trimLoopPadding(ctx, decoded) : decoded
-                  this.setDecoded(id, trimmed, true)
-                  this.decodedAssets.add(id)
-                  this.cacheForContext(ctx).set(id, trimmed)
-                  continue
-                } catch {}
-              }
+              this.fallbackSeeded = true
             }
-            this.fallbackSeeded = true
-          }
-        })(),
-      )
+          })(),
+        )
+      }
+      await Promise.all(workers)
+      return this.loadedCount
+    } finally {
+      this.loadingInFlight = false
     }
-    await Promise.all(workers)
-    return this.loadedCount
   }
 
   get loadedCount(): number {

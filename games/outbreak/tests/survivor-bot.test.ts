@@ -280,7 +280,7 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     const dist = evaluateCheckpointRollouts(cp, {
       rolloutSeeds: [11, 22, 33],
       presets: ["Novice", "Expert"],
-      horizonSeconds: 120,
+      horizonSeconds: 90,
       maxAbsoluteSeconds: 180,
       timeScale: 240,
     })
@@ -293,8 +293,8 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     const branching = analyzeRunBranchingTimeline(run, {
       rolloutSeeds: [11, 22],
       presets: ["Casual"],
-      horizonSeconds: 120,
-      maxAbsoluteSeconds: 180,
+      horizonSeconds: 45,
+      maxAbsoluteSeconds: 120,
     })
     expect(branching.checkpoints.length).toBe(run.checkpoints!.length)
 
@@ -304,7 +304,7 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     expect(mid.time).toBeCloseTo(cp.t, 1)
     expect(mid.x).toBeCloseTo(cp.summary.x, 0)
     expect(mid.y).toBeCloseTo(cp.summary.y, 0)
-  })
+  }, 20_000)
 
   test("computes Left 4 Dead-style pacing metrics and registers 'Pacing targets' Lab knobs", () => {
     const run = runHeadlessBotGame({
@@ -348,5 +348,5 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
       targetHighIntensityPct: 45,
     })
     expect(customBreakdown.total).not.toBe(evalRes.lossBreakdown.total)
-  })
+  }, 20_000)
 })

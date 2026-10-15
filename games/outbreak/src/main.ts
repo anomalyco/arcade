@@ -1309,7 +1309,8 @@ async function main() {
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
-    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y)
+    const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
+    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
     interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, interiorBuildings, town.houseSeed)
     renderer.setCustomUniforms(lightingUniforms)
     lastSightX = sightX
@@ -1579,7 +1580,8 @@ async function main() {
       requestAnimationFrame(rafLoop)
     }
     if (!channelPending) {
-      const rem = msUntilNextDraw(performance.now())
+      const now = performance.now()
+      const rem = msUntilNextDraw(now)
       if (renderer.inflight === 0 && rem <= 0.35) {
         if (pacerTimer) {
           clearTimeout(pacerTimer)
@@ -1587,7 +1589,10 @@ async function main() {
         }
         channelPending = true
         paceChannel.port2.postMessage(null)
-      } else if (renderer.inflight === 0 && rem <= 3.6) {
+      } else if (
+        renderer.inflight === 0 &&
+        (rem <= 3.6 || now < gpuPacerUntil || audio.runtime.sampleBank.loadingInFlight)
+      ) {
         if (pacerTimer) {
           clearTimeout(pacerTimer)
           pacerTimer = 0
@@ -1636,7 +1641,18 @@ async function main() {
     stepGpuPacer()
   }
   window.addEventListener("pointerdown", () => kickGpuPacer(150), true)
-  window.addEventListener("keydown", () => kickGpuPacer(150), true)
+  window.addEventListener("keydown", () => {
+    if (!frozen && !document.hidden) {
+      const now = performance.now()
+      if (clock.primeIdleMove(now, liveMove())) {
+        lastDrawAt = -Infinity
+        if (canDrawNow(now)) {
+          tick(now)
+        }
+      }
+    }
+    kickGpuPacer(150)
+  })
   window.addEventListener("keyup", () => kickGpuPacer(150), true)
   audio.runtime.onTick = () => {
     if (!frozen && !document.hidden) {
@@ -1674,6 +1690,10 @@ async function main() {
     if (frozen || document.hidden) {
       clock.pause(wallNow)
     } else {
+      const mv = liveMove()
+      if (mv.mx !== 0 || mv.my !== 0) {
+        gpuPacerUntil = Math.max(gpuPacerUntil, wallNow + 100)
+      }
       stepSimulation(wallNow)
       if (pendingDrawDt > 0 && renderer.inflight === 0) {
         const dt = pendingDrawDt
@@ -1688,7 +1708,13 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
-      else scheduleFrame()
+      else {
+        if (pacerTimer) {
+          clearTimeout(pacerTimer)
+          pacerTimer = 0
+        }
+        scheduleFrame()
+      }
     }
   }
   draw(TICK_DT)

@@ -63,12 +63,18 @@ function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedS
   )
 }
 
+let cachedDefaultFeatureList: readonly unknown[] | null = null
+let cachedDefaultResolved: ResolvedSessionTuning | null = null
+
 export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTuning {
-  const features = outbreakSharedFeatures.resolveTuningNamespaces(
-    tuning as Record<string, unknown> | undefined,
-  )
-  if (!tuning) {
-    return {
+  const list = outbreakSharedFeatures.list()
+  if (!tuning || tuning === DEFAULT_STAMINA_TUNING) {
+    if (cachedDefaultResolved && cachedDefaultFeatureList === list) {
+      return cachedDefaultResolved
+    }
+    const features = outbreakSharedFeatures.resolveTuningNamespaces(undefined)
+    cachedDefaultFeatureList = list
+    cachedDefaultResolved = {
       stamina: DEFAULT_STAMINA_TUNING,
       flashlight: DEFAULT_FLASHLIGHT_TUNING,
       ai: undefined,
@@ -77,7 +83,11 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
       infiniteAmmo: false,
       features,
     }
+    return cachedDefaultResolved
   }
+  const features = outbreakSharedFeatures.resolveTuningNamespaces(
+    tuning as Record<string, unknown> | undefined,
+  )
   if (isNamespacedSessionTuning(tuning)) {
     const meleeOut = { ...DEFAULT_MELEE_TUNING }
     for (const src of [tuning.combat, tuning.melee]) {
