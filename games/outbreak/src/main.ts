@@ -1010,7 +1010,7 @@ async function main() {
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     const p = session.view.player
-    const inOriginBox = p.x >= 12 && p.x <= 84 && p.y >= 12 && p.y <= 84
+    const inOriginBox = p.x >= 10 && p.x <= 86 && p.y >= 10 && p.y <= 86
     if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
       currentWindowOrigin = [0, 0]
       currentIsStreamWindow = false
@@ -1028,7 +1028,7 @@ async function main() {
     currentWindowOrigin = streamed.origin
     currentIsStreamWindow = true
     if (streamed.level) {
-      vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
+      vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + (c.byteLength ?? c.data.byteLength) / 24, 0)
       renderer.setLevel(streamed.level)
       combatFx.setLevel(streamed.level)
     }
@@ -1189,47 +1189,30 @@ async function main() {
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     if (mode !== "classic") {
-      const nearBorder = p.x < 18 || p.x > 78 || p.y < 18 || p.y > 78 || currentIsStreamWindow || mode === "procedural"
-      if (nearBorder) {
-        const inOriginBox = p.x >= 12 && p.x <= 84 && p.y >= 12 && p.y <= 84
-        if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
-          // Pre-warm upcoming border chunks incrementally (1 chunk per frame) while still inside origin block
-          worldStreamer.prewarmAround(
-            p.x,
-            p.y,
-            town.seed,
-            town.houseSeed,
-            town.terrain,
-            town.foliageDensity ?? 1,
-            mode,
-          )
-          worldStreamer.stepBakeQueue(1.8)
-          if (currentIsStreamWindow) {
-            currentWindowOrigin = [0, 0]
-            currentIsStreamWindow = false
-            worldStreamer.center = { cx: 1, cy: 1 }
-            worldStreamer.windowOrigin = [0, 0]
-            worldStreamer.lastWindowKey = ""
-            const data = buildLevel(town)
-            vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
-            renderer.setLevel(data)
-            combatFx.setLevel(data)
-            vision.setWindowOrigin(0, 0)
-            scenery.setWindowOrigin(0, 0, town)
-            combinedFog.markDirty()
-          }
-        } else {
-          const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
-          currentWindowOrigin = streamed.origin
-          currentIsStreamWindow = true
-          if (streamed.changed && streamed.level) {
-            vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
-            renderer.setLevel(streamed.level)
-            combatFx.setLevel(streamed.level)
-            vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
-            scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
-            combinedFog.markDirty()
-          }
+      const inOriginBox = p.x >= 10 && p.x <= 86 && p.y >= 10 && p.y <= 86
+      if (mode !== "procedural" && !currentIsStreamWindow && inOriginBox && session.sim.worldStream.isOriginNineOnly()) {
+        // Pre-warm upcoming border chunks incrementally while inside the origin block
+        worldStreamer.prewarmAround(
+          p.x,
+          p.y,
+          town.seed,
+          town.houseSeed,
+          town.terrain,
+          town.foliageDensity ?? 1,
+          mode,
+        )
+        worldStreamer.stepBakeQueue(1.8)
+      } else {
+        const streamed = worldStreamer.updateWindow(p.x, p.y, town, mode)
+        currentWindowOrigin = streamed.origin
+        currentIsStreamWindow = true
+        if (streamed.changed && streamed.level) {
+          vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + (c.byteLength ?? c.data.byteLength) / 24, 0)
+          renderer.setLevel(streamed.level)
+          combatFx.setLevel(streamed.level)
+          vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
+          scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
+          combinedFog.markDirty()
         }
       }
     }
@@ -1762,7 +1745,7 @@ async function main() {
         intensity: settings.flashlight.flashlightIntensity,
         color: flashlightColor(settings.flashlight.flashlightWarmth),
       },
-      explored: vision.explored.filter((v) => v > 0).length,
+      explored: vision.exploredCount,
       vertices,
       splatter: combatFx.splatter?.inspect() ?? null,
       ground: { ...settings.ground },

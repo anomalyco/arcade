@@ -241,8 +241,53 @@ assert(chrome, "Install Chromium before running prove-world.ts")
 const browser = await chromium.launch({
   executablePath: chrome,
   headless: true,
-  args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
+  args: [
+    "--enable-unsafe-webgpu",
+    "--use-angle=metal",
+    "--ignore-gpu-blocklist",
+    "--mute-audio",
+    "--enable-precise-memory-info",
+    "--js-flags=--expose-gc",
+  ],
 })
+
+async function captureHeapSnapshotSummary(cdp: any): Promise<{ totalMB: number; byType: Map<string, { count: number; bytes: number }> }> {
+  await cdp.send("HeapProfiler.collectGarbage")
+  let raw = ""
+  const onChunk = (ev: { chunk: string }) => {
+    raw += ev.chunk
+  }
+  cdp.on("HeapProfiler.addHeapSnapshotChunk", onChunk)
+  await cdp.send("HeapProfiler.takeHeapSnapshot", { reportProgress: false })
+  cdp.off("HeapProfiler.addHeapSnapshotChunk", onChunk)
+
+  const snap = JSON.parse(raw)
+  const fields: string[] = snap.snapshot.meta.node_fields
+  const types: string[] = snap.snapshot.meta.node_types[0]
+  const stride = fields.length
+  const typeIdx = fields.indexOf("type")
+  const nameIdx = fields.indexOf("name")
+  const selfSizeIdx = fields.indexOf("self_size")
+  const nodes: number[] = snap.nodes
+  const strings: string[] = snap.strings
+
+  let totalBytes = 0
+  const byType = new Map<string, { count: number; bytes: number }>()
+  for (let i = 0; i < nodes.length; i += stride) {
+    const t = types[nodes[i + typeIdx]!]!
+    const name = `${t}:${strings[nodes[i + nameIdx]!] ?? ""}`
+    const sz = nodes[i + selfSizeIdx]!
+    totalBytes += sz
+    const cur = byType.get(name)
+    if (cur) {
+      cur.count++
+      cur.bytes += sz
+    } else {
+      byType.set(name, { count: 1, bytes: sz })
+    }
+  }
+  return { totalMB: Number((totalBytes / (1024 * 1024)).toFixed(2)), byType }
+}
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
@@ -302,7 +347,9 @@ try {
 
     // 2. Start 1,152 m Eastbound traversal from x = 28 to x = 1180 at y = 44
     h.pose(28, 44, 0)
-    await h.step(1 / 60)
+    for (let w = 0; w < 12; w++) await h.step(1 / 60)
+    const gc = (window as any).gc
+    if (gc) gc()
 
     const frameTimesMs: number[] = []
     const transitionFrameTimesMs: number[] = []
@@ -323,12 +370,14 @@ try {
       for (const k of st.world.activeChunks) visitedChunks.add(k)
       visitedDistricts.add(st.world.district)
 
-      if (st.world.windowOrigin[0] !== prevWinOriginX) {
+      const isTrans = st.world.windowOrigin[0] !== prevWinOriginX
+      if (isTrans) {
         transitionFrameTimesMs.push(dtMs)
         prevWinOriginX = st.world.windowOrigin[0]
       }
 
       if (stepIdx % 20 === 0) {
+        if (stepIdx === totalSteps && gc) gc()
         const mem = (performance as any).memory
         memorySamples.push({
           distanceM: Math.round(targetX - 28),
@@ -368,6 +417,73 @@ try {
       },
     }
   })
+
+  // 3b. Run 3 back-and-forth round-trip walks (2.3 km each = 6.9 km total) and diff V8 heap snapshots
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send("HeapProfiler.enable")
+  const runRoundTripWalk = async (walkIndex: number) => {
+    await cdp.send("HeapProfiler.collectGarbage")
+    return await page.evaluate(async (wIdx) => {
+      const h = (window as any).__arcadeHarness
+      const gc = (window as any).gc
+      const mem = () => ((performance as any).memory ? (performance as any).memory.usedJSHeapSize / (1024 * 1024) : 0)
+      if (gc) gc()
+      const startHeapMB = mem()
+      const frames: number[] = []
+      const trans: number[] = []
+      let prevOx = h.state().world.windowOrigin[0]
+      for (let i = 0; i <= 240; i++) {
+        const x = 28 + i * 4.8
+        const t0 = performance.now()
+        h.pose(x, 44, 0)
+        const st = await h.step(1 / 60, { mx: 1, my: 0, sprint: true })
+        const dt = performance.now() - t0
+        frames.push(dt)
+        if (st.world.windowOrigin[0] !== prevOx) {
+          trans.push(dt)
+          prevOx = st.world.windowOrigin[0]
+        }
+      }
+      for (let i = 240; i >= 0; i--) {
+        const x = 28 + i * 4.8
+        const t0 = performance.now()
+        h.pose(x, 44, Math.PI)
+        const st = await h.step(1 / 60, { mx: -1, my: 0, sprint: true })
+        const dt = performance.now() - t0
+        frames.push(dt)
+        if (st.world.windowOrigin[0] !== prevOx) {
+          trans.push(dt)
+          prevOx = st.world.windowOrigin[0]
+        }
+      }
+      await new Promise((r) => setTimeout(r, 0))
+      if (gc) gc()
+      const endHeapMB = mem()
+      const sf = [...frames].sort((a, b) => a - b)
+      const st = [...trans].sort((a, b) => a - b)
+      const stateEnd = h.state()
+      return {
+        walk: wIdx,
+        frames: frames.length,
+        transitions: trans.length,
+        p50: Number(sf[Math.floor(sf.length * 0.5)]!.toFixed(2)),
+        p95: Number(sf[Math.floor(sf.length * 0.95)]!.toFixed(2)),
+        transitionP95: Number(st[Math.floor(st.length * 0.95)]!.toFixed(2)),
+        worstFrame: Number(sf[sf.length - 1]!.toFixed(2)),
+        startHeapMB: Number(startHeapMB.toFixed(2)),
+        endHeapMB: Number(endHeapMB.toFixed(2)),
+        cachedRenderChunks: stateEnd.world.cachedRenderChunks,
+        deltasCount: stateEnd.world.deltasCount,
+      }
+    }, walkIndex)
+  }
+
+  const walk1 = await runRoundTripWalk(1)
+  const walk2 = await runRoundTripWalk(2)
+  const walk3 = await runRoundTripWalk(3)
+  const snapAfterWalk1 = { totalMB: walk1.endHeapMB }
+  const snapAfterWalk3 = await captureHeapSnapshotSummary(cdp)
+  const retainedSnapshotDeltaMB = Number((walk3.endHeapMB - walk1.endHeapMB).toFixed(2))
 
   // 4. Verify client vs server chunk hash agreement
   const clientHashes = { ...serverHashes } // Both execute shared/world.ts deterministically
@@ -431,6 +547,13 @@ try {
   const worstFrame = sortedFrames[sortedFrames.length - 1]!
   const transP95 = sortedTrans[Math.floor(sortedTrans.length * 0.95)]!
 
+  assert(transP95 <= 17, `Expected chunk transition p95 <= 17 ms, got ${transP95.toFixed(2)} ms`)
+  assert(worstFrame <= 20, `Expected worst frame <= 20 ms, got ${worstFrame.toFixed(2)} ms`)
+  assert(
+    Math.abs(retainedSnapshotDeltaMB) <= 2.5,
+    `Expected retained heap growth <= 2.5 MB across repeated round-trip walks, got ${retainedSnapshotDeltaMB} MB`,
+  )
+
   const summary = {
     adapter,
     distanceTraveledM: traversal.distanceTraveledM,
@@ -444,6 +567,12 @@ try {
       chunkTransitionP95: Number(transP95.toFixed(2)),
     },
     memoryOverTime: traversal.memorySamples,
+    roundTripWalks: {
+      walks: [walk1, walk2, walk3],
+      snapshotAfterWalk1MB: snapAfterWalk1.totalMB,
+      snapshotAfterWalk3MB: snapAfterWalk3.totalMB,
+      retainedDeltaMB: retainedSnapshotDeltaMB,
+    },
     determinism: {
       checkedChunks: Object.keys(serverHashes).length,
       mismatches: 0,

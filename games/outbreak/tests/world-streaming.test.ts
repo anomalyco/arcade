@@ -14,6 +14,7 @@ import {
   type DistrictKind,
 } from "../shared/world"
 import { NetSession } from "../src/net-session"
+import { WorldClientStreamer, compileSingleWorldChunk, ensurePropTemplates, recycleCompiledChunk } from "../src/world-streamer"
 import { Loopback } from "./loopback"
 
 describe("Procedural world generation & chunk streaming", () => {
@@ -281,5 +282,35 @@ describe("Procedural world generation & chunk streaming", () => {
       classic.update(TICK_DT, { mx: 1, my: 0, aim: 0, interact: false, sprint: true }, 0)
     }
     expect(classic.view.player.x).toBeLessThanOrEqual(SIZE - 0.4)
+  })
+
+  test("WorldClientStreamer directional pre-warming, buffer pooling, and sparse ChunkDeltas prevent churn", () => {
+    ensurePropTemplates()
+    const wc = generateWorldChunk(7, 7, 4, 1, "streaming")
+    const c1 = compileSingleWorldChunk(wc, 7, 7, 0.22, 1)
+    const bufRef = c1.staticOpaqueChunks[0]!.data
+    const floorRef = c1.floorTile
+    expect(c1.staticOpaqueChunks[0]!.byteLength).toBeGreaterThan(0)
+    expect(c1.staticOpaqueChunks[0]!.byteLength).toBeLessThanOrEqual(bufRef.byteLength)
+
+    // Recycling returns tile and vertex ArrayBuffers to the pool for reuse on the next compilation
+    recycleCompiledChunk(c1)
+    const c2 = compileSingleWorldChunk(wc, 7, 7, 0.22, 1)
+    expect(c2.floorTile).toBe(floorRef)
+    expect(c2.staticOpaqueChunks[0]!.data).toBe(bufRef)
+    recycleCompiledChunk(c2)
+
+    // Walking across unmodified chunks keeps deltas sparse (0 bytes for unmodified chunks)
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
+    const streamer = new WorldClientStreamer()
+    for (let step = 0; step <= 60; step++) {
+      const x = 28 + step * 4.8
+      session.view.player.x = x
+      session.view.player.y = 44
+      session.rebuildCollision()
+      streamer.updateWindow(x, 44, session.view.town, "streaming")
+    }
+    expect(session.world.deltas.size).toBe(0)
+    expect(streamer.cachedChunkCount).toBeLessThanOrEqual(24)
   })
 })

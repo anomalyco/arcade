@@ -491,34 +491,103 @@ export class Renderer {
     this.device.queue.writeBuffer(this.customBuf, 0, data.buffer, data.byteOffset, Math.min(CUSTOM_UNIFORM_BYTES, data.byteLength))
   }
 
-  private upload(data: ArrayBuffer, prev: Buf | null): Buf {
-    prev?.buf.destroy()
-    const buf = this.device.createBuffer({ size: Math.max(64, data.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
-    if (data.byteLength) this.device.queue.writeBuffer(buf, 0, data)
-    return { buf, count: data.byteLength / VERT_BYTES, cap: data.byteLength }
+  private levelStaging = new Uint8Array(0)
+  private glassStaging = new Uint8Array(0)
+  private readonly streamSlotKeys: string[] = ["", "", "", "", "", "", "", "", ""]
+  private readonly streamSlotChunks: Chunk[][] = [[], [], [], [], [], [], [], [], []]
+
+  private upload(data: ArrayBuffer, prev: Buf | null, byteLength = data.byteLength): Buf {
+    const needed = Math.max(64, byteLength)
+    let buf = prev?.buf
+    let cap = prev?.cap ?? 0
+    if (!buf || cap < needed) {
+      buf?.destroy()
+      cap = prev ? Math.max(needed, Math.ceil((needed * 1.25) / 65536) * 65536) : needed
+      buf = this.device.createBuffer({ size: cap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    }
+    if (byteLength > 0) this.device.queue.writeBuffer(buf, 0, data, 0, byteLength)
+    return { buf, count: byteLength / VERT_BYTES, cap }
   }
 
   /** Static level: opaque chunks (each culled against the view), translucent glass and haze chunks, and the baked floor map. */
   setLevel(level: LevelData): void {
     this.previousFrame = null
-    const packChunks = (list: LevelData["chunks"]): [ArrayBuffer, Chunk[]] => {
-      const total = list.reduce((s, c) => s + c.data.byteLength, 0)
-      const all = new Uint8Array(total)
-      const out: Chunk[] = []
-      let off = 0
-      for (const c of list) {
-        all.set(new Uint8Array(c.data), off)
-        out.push({ first: off / VERT_BYTES, count: c.data.byteLength / VERT_BYTES, box: c.box, cutBox: c.cutBox, customCutaway: c.customCutaway })
-        off += c.data.byteLength
+    const STREAM_SLOT_BYTES = 768 * 1024
+    const isStreamedSlots =
+      level.chunks.length > 0 &&
+      level.chunks.every((c) => c.streamSlot !== undefined && c.streamKey !== undefined)
+
+    if (isStreamedSlots) {
+      const totalCap = 9 * STREAM_SLOT_BYTES
+      if (!this.level || this.level.cap < totalCap) {
+        this.level?.buf.destroy()
+        this.level = {
+          buf: this.device.createBuffer({ size: totalCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }),
+          count: totalCap / VERT_BYTES,
+          cap: totalCap,
+        }
+        this.streamSlotKeys.fill("")
       }
-      return [all.buffer, out]
+      const bySlot: LevelData["chunks"][] = [[], [], [], [], [], [], [], [], []]
+      for (let i = 0; i < level.chunks.length; i++) {
+        const c = level.chunks[i]!
+        bySlot[c.streamSlot!]!.push(c)
+      }
+      let slotOverflow = false
+      for (let s = 0; s < 9; s++) {
+        const list = bySlot[s]!
+        const key = list[0]?.streamKey ?? "empty"
+        if (key === this.streamSlotKeys[s]) continue
+        let slotBytes = 0
+        for (let i = 0; i < list.length; i++) slotBytes += list[i]!.byteLength ?? list[i]!.data.byteLength
+        if (slotBytes > STREAM_SLOT_BYTES) {
+          slotOverflow = true
+          break
+        }
+        const slotBase = s * STREAM_SLOT_BYTES
+        const slotOut: Chunk[] = []
+        let off = 0
+        for (let i = 0; i < list.length; i++) {
+          const c = list[i]!
+          const len = c.byteLength ?? c.data.byteLength
+          if (len > 0) {
+            this.device.queue.writeBuffer(this.level.buf, slotBase + off, c.data, 0, len)
+          }
+          slotOut.push({
+            first: (slotBase + off) / VERT_BYTES,
+            count: len / VERT_BYTES,
+            box: c.box,
+            cutBox: c.cutBox,
+            customCutaway: c.customCutaway,
+          })
+          off += len
+        }
+        this.streamSlotKeys[s] = key
+        this.streamSlotChunks[s] = slotOut
+      }
+      if (!slotOverflow) {
+        const mergedChunks: Chunk[] = []
+        for (let s = 0; s < 9; s++) {
+          const sc = this.streamSlotChunks[s]!
+          for (let i = 0; i < sc.length; i++) mergedChunks.push(sc[i]!)
+        }
+        this.chunks = mergedChunks
+        this.level.count = totalCap / VERT_BYTES
+      } else {
+        this.streamSlotKeys.fill("")
+        const [lvlBuf, lvlBytes, lvlChunks] = this.packChunks(level.chunks, false)
+        this.chunks = lvlChunks
+        this.level = this.upload(lvlBuf, this.level, lvlBytes)
+      }
+    } else {
+      this.streamSlotKeys.fill("")
+      const [lvlBuf, lvlBytes, lvlChunks] = this.packChunks(level.chunks, false)
+      this.chunks = lvlChunks
+      this.level = this.upload(lvlBuf, this.level, lvlBytes)
     }
-    const [lvlBuf, lvlChunks] = packChunks(level.chunks)
-    this.chunks = lvlChunks
-    this.level = this.upload(lvlBuf, this.level)
-    const [glsBuf, glsChunks] = packChunks(level.glass)
+    const [glsBuf, glsBytes, glsChunks] = this.packChunks(level.glass, true)
     this.glassChunks = glsChunks
-    this.glass = this.upload(glsBuf, this.glass)
+    this.glass = this.upload(glsBuf, this.glass, glsBytes)
     const f = level.floor
     let rebound = false
     if (this.floorTex.width !== f.w || this.floorTex.height !== f.h) {
@@ -542,6 +611,30 @@ export class Renderer {
     }
     this.device.queue.writeTexture({ texture: this.bounceTex }, b.data, { bytesPerRow: b.w * 4 }, [b.w, b.h])
     if (rebound) this.makeSceneGroup()
+  }
+
+  private packChunks(list: LevelData["chunks"], isGlass: boolean): [ArrayBuffer, number, Chunk[]] {
+    let total = 0
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i]!
+      total += c.byteLength ?? c.data.byteLength
+    }
+    let staging = isGlass ? this.glassStaging : this.levelStaging
+    if (staging.byteLength < total) {
+      staging = new Uint8Array(Math.ceil((total * 1.25) / 65536) * 65536)
+      if (isGlass) this.glassStaging = staging
+      else this.levelStaging = staging
+    }
+    const out: Chunk[] = []
+    let off = 0
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i]!
+      const len = c.byteLength ?? c.data.byteLength
+      staging.set(new Uint8Array(c.data, 0, len), off)
+      out.push({ first: off / VERT_BYTES, count: len / VERT_BYTES, box: c.box, cutBox: c.cutBox, customCutaway: c.customCutaway })
+      off += len
+    }
+    return [staging.buffer, total, out]
   }
 
   addModel(mesh: Mesh): number {
