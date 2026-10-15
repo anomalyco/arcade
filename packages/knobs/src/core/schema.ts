@@ -1,6 +1,17 @@
 import { fitColor, formatColor, parseColor, type Oklch } from "./color.js"
 import { EASING_Y, namedEasing, type Bezier, type EasingName } from "./easing.js"
 import { normalizeCombo } from "./keys.js"
+import type { LogEntry, TableRows } from "./readout.js"
+import {
+  CURVE_SHAPES,
+  inRange,
+  normalizePoints,
+  normalizeStops,
+  type CurveInterp,
+  type CurvePoint,
+  type GradientSpace,
+  type GradientStop,
+} from "./ramp.js"
 import type { SpringValue } from "./spring.js"
 
 export interface FieldMeta {
@@ -15,6 +26,10 @@ export interface FieldMeta {
   readonly section?: string
   /** What the section's heading shows (the first field that gives one wins); `section` by default. */
   readonly sectionLabel?: string
+  /** One muted line under the group's card title on a page (the first field that gives one wins). */
+  readonly groupDescription?: string
+  /** One muted line under the section's heading on a page (the first field that gives one wins). */
+  readonly sectionDescription?: string
   readonly shortcut?: string
   /** `false` keeps the field out of Random and Mutate, as a lock does, but by declaration. */
   readonly random?: boolean
@@ -28,10 +43,16 @@ export interface FieldMeta {
   readonly readOnly?: boolean | ((values: State) => boolean)
   /**
    * The group's card starts folded (the first field of a group that says wins), and its header
-   * folds and opens it. `mountPanel` only; a page's cards don't fold yet. `groupFolded` on the
-   * mount overrides it.
+   * folds and opens it, in a panel or a page. `groupFolded` (on the mount, then the store)
+   * overrides it, and on a page what the user last chose wins over both.
    */
   readonly folded?: boolean
+  /**
+   * On a page, the field's section starts folded to its heading (the first field of a section
+   * that says wins), and the heading folds and opens it. `sectionFolded` (on the mount, then the
+   * store) overrides it, and what the user last chose wins over both.
+   */
+  readonly sectionFolded?: boolean
   /**
    * The panel tab the field sits on (`mountPanel` draws a tab strip once any field names one).
    * Fields without a tab show on every tab.
@@ -50,11 +71,14 @@ export const META_KEYS = [
   "groupLabel",
   "section",
   "sectionLabel",
+  "groupDescription",
+  "sectionDescription",
   "shortcut",
   "random",
   "disabled",
   "readOnly",
   "folded",
+  "sectionFolded",
   "tab",
   "subsection",
 ] as const satisfies readonly (keyof FieldMeta)[]
@@ -123,6 +147,27 @@ export interface PointField extends FieldMeta {
 export interface EasingField extends FieldMeta {
   readonly kind: "easing"
   readonly value: Bezier
+}
+/** Colour over a 0…1 parameter (over life, over the day): stops sorted by position. */
+export interface GradientField extends FieldMeta {
+  readonly kind: "gradient"
+  readonly value: readonly GradientStop[]
+  /** How the stops blend: `oklab` (perceptual, the default) or `srgb` (as CSS does). */
+  readonly space: GradientSpace
+  /** Named ramps offered as chips in the editor. */
+  readonly presets?: Readonly<Record<string, readonly GradientStop[]>>
+}
+/** A number over 0…1 (a falloff, a response): points sorted by x, the ends pinned at 0 and 1. */
+export interface CurveField extends FieldMeta {
+  readonly kind: "curve"
+  readonly value: readonly CurvePoint[]
+  /** The y range, 0…1 by default. */
+  readonly range: readonly [number, number]
+  readonly interp: CurveInterp
+  /** Named shapes offered as chips (y in `range`), after the built-in ones unless `shapes: false`. */
+  readonly presets?: Readonly<Record<string, readonly CurvePoint[]>>
+  /** The built-in shapes (linear, ease-out, inverse², smoothstep, bell) as chips; on by default. */
+  readonly shapes: boolean
 }
 /** A button row. It holds no value: pressing it calls `run` and the store's `onAction(key)`. */
 export interface ActionField extends FieldMeta {
@@ -212,10 +257,102 @@ export type ValueField =
   | AngleField
   | SeedField
   | KeybindField
-export type Field = ValueField | ActionField | ToolbarField
-/** Whether a field holds a value (actions and toolbars don't). */
+  | GradientField
+  | CurveField
+/** A readout's own: polled while its row shows, instead of pushed with `controls.watch`. */
+interface ReadoutMeta extends FieldMeta {
+  /** Read each frame while the row is on screen (pushing with `controls.watch` is the other way). */
+  readonly get?: () => unknown
+  readonly unit?: string
+  /** Digits after the point; by default fewer as the number grows (2 under 10, 1 under 100). */
+  readonly decimals?: number
+  /** Text for a value, in place of the number and unit. */
+  readonly format?: (value: number) => string
+  /** How often the text may change, per second (4 by default): readable, never a blur. */
+  readonly hz?: number
+}
+/** A live number or text, with an optional unit; holds nothing in the store's values. */
+export interface WatchField extends ReadoutMeta {
+  readonly kind: "watch"
+}
+/** A watch with a small history graph in its row, auto-scaled. */
+export interface SparklineField extends ReadoutMeta {
+  readonly kind: "sparkline"
+  /** Samples kept (60 by default). */
+  readonly history: number
+  /** A fixed floor or ceiling for the scale; it fits the samples otherwise. */
+  readonly min?: number
+  readonly max?: number
+  /** The line's colour (any CSS colour), the accent by default. */
+  readonly color?: string
+}
+export interface GraphSeries {
+  readonly id: string
+  readonly label?: string
+  /** Any CSS colour; the accent, then a palette, by default. */
+  readonly color?: string
+  /** Fills the area under the line. */
+  readonly area?: boolean
+}
+export interface GraphThreshold {
+  readonly value: number
+  readonly label?: string
+  readonly color?: string
+}
+/** A taller row: a multi-series line or area graph with thresholds and a hover crosshair. */
+export interface GraphField extends ReadoutMeta {
+  readonly kind: "graph"
+  readonly series: readonly GraphSeries[]
+  /** Samples kept per series (120 by default). */
+  readonly history: number
+  /** The plot's height in px (64 by default). */
+  readonly height: number
+  /** A fixed range; each bound left out fits the samples (with thresholds kept in view). */
+  readonly min?: number
+  readonly max?: number
+  readonly thresholds: readonly GraphThreshold[]
+}
+/** A bar for a value out of a maximum; `null` makes it indeterminate. */
+export interface MeterField extends ReadoutMeta {
+  readonly kind: "meter"
+  readonly min: number
+  readonly max: number
+  /** Splits the bar into this many cells. */
+  readonly segments?: number
+  /** From this value on, the bar turns the warning colour (`--k-warn`). */
+  readonly warn?: number
+  /** From this value on, the critical colour (`--k-critical`). */
+  readonly critical?: number
+}
+/** A compact table of 2–4 columns: rows of cells, or a key-value record. */
+export interface TableField extends ReadoutMeta {
+  readonly kind: "table"
+  /** Column headings; the first sits under the row's label. */
+  readonly columns?: readonly string[]
+}
+/** A scrolling log with levels, a filter, follow-tail and copy. */
+export interface LogField extends ReadoutMeta {
+  readonly kind: "log"
+  /** Lines shown (8 by default). */
+  readonly lines: number
+  /** Entries kept (1000 by default). */
+  readonly max: number
+}
+export type ReadoutField =
+  | WatchField
+  | SparklineField
+  | GraphField
+  | MeterField
+  | TableField
+  | LogField
+export type Field = ValueField | ActionField | ToolbarField | ReadoutField
+const READOUT_KINDS = new Set(["watch", "sparkline", "graph", "meter", "table", "log"])
+/** Whether a field is a readout (it shows pushed values and holds none). */
+export const isReadout = (field: { readonly kind: string }): field is ReadoutField =>
+  READOUT_KINDS.has(field.kind)
+/** Whether a field holds a value (actions, toolbars and readouts don't). */
 export const hasValue = (field: Field): field is ValueField =>
-  field.kind !== "action" && field.kind !== "toolbar"
+  field.kind !== "action" && field.kind !== "toolbar" && !READOUT_KINDS.has(field.kind)
 export type Schema = Readonly<Record<string, Field>>
 export type FieldValue<F extends Field> = F extends Knob
   ? number
@@ -241,7 +378,30 @@ export type FieldValue<F extends Field> = F extends Knob
                       ? number
                       : F extends KeybindField
                         ? string
-                        : never
+                        : F extends GradientField
+                          ? readonly GradientStop[]
+                          : F extends CurveField
+                            ? readonly CurvePoint[]
+                            : never
+/** The keys of a schema's readouts (what `controls.watch` takes). */
+export type ReadoutKeys<S extends Schema> = {
+  [K in keyof S]: [S[K] & ReadoutField] extends [never] ? never : K
+}[keyof S] &
+  string
+/** What a readout takes from `controls.watch` (`null` clears it). */
+export type ReadoutInput<F> = F extends WatchField
+  ? number | string | null
+  : F extends SparklineField
+    ? number | readonly number[] | null
+    : F extends GraphField
+      ? number | Readonly<Record<string, number>> | null
+      : F extends MeterField
+        ? number | null
+        : F extends TableField
+          ? TableRows | null
+          : F extends LogField
+            ? string | LogEntry | readonly (string | LogEntry)[] | null
+            : never
 /** Action keys map to `never`: they hold no value and are absent at runtime. */
 export type Values<S extends Schema> = {
   readonly [K in keyof S]: FieldValue<S[K]>
@@ -255,6 +415,8 @@ export type Value =
   | Vec3
   | Bezier
   | readonly [number, number]
+  | readonly GradientStop[]
+  | readonly CurvePoint[]
 export type State = Readonly<Record<string, Value>>
 
 /** Ranges for spring fields: duration in seconds, and SwiftUI's bounce (below 0 is overdamped). */
@@ -528,6 +690,85 @@ export function keybind(value = "", meta?: FieldMeta): KeybindField {
   const field: KeybindField = { kind: "keybind", value: normalizeCombo(value) }
   return withMeta(field, { random: false, ...meta })
 }
+/**
+ * Colour over a 0…1 parameter: `gradient([{ at: 0, color: "#fff4d6" }, { at: 1, color: "#20242c" }])`.
+ * Colours take what `color` takes and are kept as `oklch()` strings. `space` blends in `oklab`
+ * (default) or `srgb`; `presets` are named ramps offered as chips. Sample it with `sampleGradient`.
+ */
+export function gradient(
+  stops: readonly {
+    readonly at: number
+    readonly color: string | { l: number; c: number; h: number }
+  }[],
+  options: FieldMeta & {
+    readonly space?: GradientSpace
+    readonly presets?: Readonly<Record<string, readonly { at: number; color: string }[]>>
+  } = {},
+): GradientField {
+  const value = normalizeStops(stops)
+  if (!value) throw new Error("A gradient needs at least two stops with a position and a colour.")
+  const presets = options.presets
+    ? Object.freeze(
+        Object.fromEntries(
+          Object.entries(options.presets).flatMap(([name, p]) => {
+            const s = normalizeStops(p)
+            return s ? [[name, s]] : []
+          }),
+        ),
+      )
+    : undefined
+  return withMeta(
+    {
+      kind: "gradient" as const,
+      value,
+      space: options.space ?? "oklab",
+      ...(presets && Object.keys(presets).length ? { presets } : {}),
+    },
+    options,
+  )
+}
+/**
+ * A number over 0…1: `curve([{ x: 0, y: 1 }, { x: 1, y: 0 }], { range: [0, 1], interp: "smooth" })`.
+ * The ends are pinned at x 0 and 1. `smooth` is a monotone cubic (no overshoot); `linear` and
+ * `step` join the points as they say. Sample it with `sampleCurve`.
+ */
+export function curve(
+  points: readonly CurvePoint[] | keyof typeof CURVE_SHAPES,
+  options: FieldMeta & {
+    readonly range?: readonly [number, number]
+    readonly interp?: CurveInterp
+    readonly presets?: Readonly<Record<string, readonly CurvePoint[]>>
+    readonly shapes?: boolean
+  } = {},
+): CurveField {
+  const range = options.range ?? [0, 1]
+  if (!(Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[1] > range[0]))
+    throw new Error("A curve's range needs finite bounds, max above min.")
+  const given = typeof points === "string" ? inRange(CURVE_SHAPES[points], range) : points
+  const value = normalizePoints(given, range)
+  if (!value) throw new Error("A curve needs at least two points.")
+  const presets = options.presets
+    ? Object.freeze(
+        Object.fromEntries(
+          Object.entries(options.presets).flatMap(([name, p]) => {
+            const s = normalizePoints(p, range)
+            return s ? [[name, s]] : []
+          }),
+        ),
+      )
+    : undefined
+  return withMeta(
+    {
+      kind: "curve" as const,
+      value,
+      range: Object.freeze([range[0], range[1]]) as unknown as readonly [number, number],
+      interp: options.interp ?? "smooth",
+      shapes: options.shapes ?? true,
+      ...(presets && Object.keys(presets).length ? { presets } : {}),
+    },
+    options,
+  )
+}
 /** A wrapping row of buttons with icons and shortcut chips; holds no value. */
 export function toolbar(items: readonly ToolbarItem[], meta?: FieldMeta): ToolbarField {
   if (!items.length) throw new Error("A toolbar needs at least one item.")
@@ -538,6 +779,127 @@ export function toolbar(items: readonly ToolbarItem[], meta?: FieldMeta): Toolba
     },
     meta,
   )
+}
+
+type ReadoutOptions = Omit<ReadoutMeta, "shortcut" | "random" | "readOnly">
+const readoutMeta = (o: ReadoutOptions) => {
+  if (o.decimals !== undefined && !(Number.isInteger(o.decimals) && o.decimals >= 0))
+    throw new Error("A readout's decimals must be a whole number.")
+  if (o.hz !== undefined && !(o.hz > 0)) throw new Error("A readout's hz must be above 0.")
+  return {
+    ...pickMeta(o),
+    ...(o.get ? { get: o.get } : {}),
+    ...(o.unit !== undefined ? { unit: o.unit } : {}),
+    ...(o.decimals !== undefined ? { decimals: o.decimals } : {}),
+    ...(o.format ? { format: o.format } : {}),
+    ...(o.hz !== undefined ? { hz: o.hz } : {}),
+  }
+}
+const whole = (n: number | undefined, fallback: number, what: string) => {
+  const v = n ?? fallback
+  if (!(Number.isInteger(v) && v > 0)) throw new Error(`${what} must be a whole number above 0.`)
+  return v
+}
+/** A live value: `watch({ label: "FPS", decimals: 0 })`, then `controls.watch("fps", 59.9)`. */
+export function watch(options: ReadoutOptions = {}): WatchField {
+  return Object.freeze({ kind: "watch" as const, ...readoutMeta(options) })
+}
+/** A watch with a small history graph: `sparkline({ label: "Frame", unit: "ms", min: 0 })`. */
+export function sparkline(
+  options: ReadoutOptions & {
+    history?: number
+    min?: number
+    max?: number
+    color?: string
+  } = {},
+): SparklineField {
+  return Object.freeze({
+    kind: "sparkline" as const,
+    ...readoutMeta(options),
+    history: whole(options.history, 60, "A sparkline's history"),
+    ...(options.min !== undefined ? { min: options.min } : {}),
+    ...(options.max !== undefined ? { max: options.max } : {}),
+    ...(options.color ? { color: options.color } : {}),
+  })
+}
+/**
+ * A multi-series graph: `graph({ series: [{ id: "cpu" }, { id: "gpu" }], unit: "ms",
+ * thresholds: [{ value: 16.7, label: "60 fps" }] })`; push `{ cpu, gpu }` each frame.
+ */
+export function graph(
+  options: ReadoutOptions & {
+    series?: readonly (GraphSeries | string)[]
+    history?: number
+    height?: number
+    min?: number
+    max?: number
+    thresholds?: readonly (GraphThreshold | number)[]
+  } = {},
+): GraphField {
+  const series = (options.series ?? [{ id: "value" }]).map((s) =>
+    Object.freeze(typeof s === "string" ? { id: s } : { ...s }),
+  )
+  if (!series.length || new Set(series.map((s) => s.id)).size !== series.length)
+    throw new Error("A graph needs series with distinct ids.")
+  return Object.freeze({
+    kind: "graph" as const,
+    ...readoutMeta(options),
+    series: Object.freeze(series),
+    history: whole(options.history, 120, "A graph's history"),
+    height: whole(options.height, 64, "A graph's height"),
+    ...(options.min !== undefined ? { min: options.min } : {}),
+    ...(options.max !== undefined ? { max: options.max } : {}),
+    thresholds: Object.freeze(
+      (options.thresholds ?? []).map((t) =>
+        Object.freeze(typeof t === "number" ? { value: t } : t),
+      ),
+    ),
+  })
+}
+/** A bar: `meter({ label: "Memory", max: 512, unit: "MB", warn: 384, critical: 480 })`. */
+export function meter(
+  options: ReadoutOptions & {
+    min?: number
+    max?: number
+    segments?: number
+    warn?: number
+    critical?: number
+  } = {},
+): MeterField {
+  const min = options.min ?? 0
+  const max = options.max ?? 1
+  if (!(Number.isFinite(min) && Number.isFinite(max) && max > min))
+    throw new Error("A meter needs finite bounds, max above min.")
+  return Object.freeze({
+    kind: "meter" as const,
+    ...readoutMeta(options),
+    min,
+    max,
+    ...(options.segments !== undefined
+      ? { segments: whole(options.segments, 1, "A meter's segments") }
+      : {}),
+    ...(options.warn !== undefined ? { warn: options.warn } : {}),
+    ...(options.critical !== undefined ? { critical: options.critical } : {}),
+  })
+}
+/** A small table: `table({ label: "Passes", columns: ["Pass", "ms", "Draws"] })`. */
+export function table(options: ReadoutOptions & { columns?: readonly string[] } = {}): TableField {
+  if (options.columns && (options.columns.length < 1 || options.columns.length > 6))
+    throw new Error("A table takes 1–6 columns.")
+  return Object.freeze({
+    kind: "table" as const,
+    ...readoutMeta(options),
+    ...(options.columns ? { columns: Object.freeze([...options.columns]) } : {}),
+  })
+}
+/** A log: `log({ label: "Events", lines: 8 })`, then `controls.watch("events", { level, text })`. */
+export function log(options: ReadoutOptions & { lines?: number; max?: number } = {}): LogField {
+  return Object.freeze({
+    kind: "log" as const,
+    ...readoutMeta(options),
+    lines: whole(options.lines, 8, "A log's lines"),
+    max: whole(options.max, 1000, "A log's max"),
+  })
 }
 
 /** Clamped and, on a whole-number field, whole: values are kept as given otherwise (see knob). */
@@ -635,6 +997,10 @@ export function normalizeField(field: ValueField, input: unknown): Value {
         : field.value
     case "keybind":
       return typeof input === "string" ? normalizeCombo(input) : field.value
+    case "gradient":
+      return normalizeStops(input) ?? field.value
+    case "curve":
+      return normalizePoints(input, field.range) ?? field.value
   }
 }
 export function normalize<S extends Schema>(schema: S, input: unknown): Values<S> {
@@ -650,14 +1016,15 @@ export function normalize<S extends Schema>(schema: S, input: unknown): Values<S
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
-/** Value equality: springs, points and curves compare by their numbers. */
+/** Value equality: springs, points, beziers, gradients and curves compare by their numbers. */
 export function same(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
   const ka = Object.keys(a)
   return (
     ka.length === Object.keys(b).length &&
-    ka.every((k) => (a as Record<string, unknown>)[k] === (b as Record<string, unknown>)[k])
+    ka.every((k) => same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
   )
 }
 export function equal(a: State, b: State): boolean {

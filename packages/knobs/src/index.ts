@@ -14,8 +14,17 @@ export {
   angle,
   seed,
   keybind,
+  gradient,
+  curve,
   toolbar,
+  watch,
+  sparkline,
+  graph,
+  meter,
+  table,
+  log,
   hasValue,
+  isReadout,
   wrapAngle,
   SPRING,
   type FieldMeta,
@@ -35,8 +44,21 @@ export {
   type AngleField,
   type SeedField,
   type KeybindField,
+  type GradientField,
+  type CurveField,
   type ToolbarField,
   type ToolbarItem,
+  type WatchField,
+  type SparklineField,
+  type GraphField,
+  type GraphSeries,
+  type GraphThreshold,
+  type MeterField,
+  type TableField,
+  type LogField,
+  type ReadoutField,
+  type ReadoutKeys,
+  type ReadoutInput,
   type Point,
   type Field,
   type Schema,
@@ -46,6 +68,18 @@ export {
 } from "./core/schema.js"
 export { springCss, springMotion, type SpringValue } from "./core/spring.js"
 export { colorHex, parseColor, type Oklch } from "./core/color.js"
+export {
+  sampleGradient,
+  sampleCurve,
+  gradientCss,
+  CURVE_SHAPES,
+  type GradientStop,
+  type GradientSpace,
+  type CurvePoint,
+  type CurveInterp,
+  type SampleGradientOptions,
+  type SampleCurveOptions,
+} from "./core/ramp.js"
 export { bezierCss, bezierPoint, EASINGS, type Bezier, type EasingName } from "./core/easing.js"
 export {
   defineControls,
@@ -71,6 +105,7 @@ export {
   type SearchOptions,
   type SyncOptions,
   type RendererMode,
+  type SectionFolded,
   type ThemeMode,
 } from "./core/store.js"
 export {
@@ -86,10 +121,12 @@ export {
   type ControlDescriptor,
   type SpringBindingDescriptor,
   type ToolbarDescriptor,
+  type ReadoutDescriptor,
   type ValueDescriptor,
   type RemoteControls,
   type RemoteControlsOptions,
 } from "./core/remote.js"
+export type { LogEntry, LogLevel, TableRows, WatchValue } from "./core/readout.js"
 export { memoryStorage, urlFlag, type StoragePort } from "./core/storage.js"
 export type { TokenPreset } from "./core/theme.js"
 export { formatCode, type CodeFormat } from "./core/code.js"

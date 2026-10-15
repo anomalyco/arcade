@@ -6,5 +6,6 @@ Refresh it with `bun packages/knobs/scripts/sync.ts`, which copies a committed t
 Arcade-side changes knobs needs go to Kit's knobs session as requests; Arcade works around them in
 `packages/kit/lab-knobs.ts`.
 
-Imports: `@arcade/knobs` (stores and fields), `@arcade/knobs/panel` (`mountPanel`, `mountPage`) and
-`@arcade/knobs/themes`.
+Imports: `@arcade/knobs` (stores and fields), `@arcade/knobs/panel` (`mountPanel`, `mountPage`),
+`@arcade/knobs/themes` and `@arcade/knobs/ui` (`split`, `tree` and the overlays). knobs/ui's React and Solid wrappers
+stay behind with the other adapters.
