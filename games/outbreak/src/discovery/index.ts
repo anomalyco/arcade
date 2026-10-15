@@ -51,13 +51,14 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       return
     }
     case "weakened-barricade": {
-      host.setHour(17)
+      host.setHour(13)
+      view.player.flashlightOn = false
       const win = view.town.windows.find((w) => w.id === "ash-south-west")!
       const door = view.town.doors.find((d) => d.id === "ash-front")!
       boardUp(view, ai, win.id, 3, 0.5)
       boardUp(view, ai, door.id, 2, 1)
       // From inside, where the defenders watch the boards give.
-      host.pose((win.rect[0] + win.rect[2]) / 2 + 1.2, win.rect[1] - 2.2, Math.PI / 2 + 0.3)
+      host.pose((win.rect[0] + win.rect[2]) / 2 + 0.9, win.rect[1] - 2.6, Math.PI / 2 + 0.35)
       return
     }
     case "open-containers": {
@@ -73,7 +74,7 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       for (const c of mine) stock(view, c.id, fill[c.kind] ?? [])
       const dresser = mine.find((c) => c.kind === "dresser") ?? mine[0]!
       // Beside it rather than in front, so the survivor does not hide the open drawer from the camera.
-      host.pose(dresser.x + 1.7, dresser.y + 1.0, Math.atan2(-1.0, -1.7))
+      host.pose(dresser.x + 0.85, dresser.y + 0.95, Math.atan2(-0.95, -1.2))
       return
     }
     case "drops": {

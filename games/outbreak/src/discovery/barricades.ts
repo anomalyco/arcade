@@ -10,7 +10,7 @@ const MAX_PLANKS = 96
 const HALF = 0.78
 const NAIL = 0.66
 /** How far a bowed board's middle is pushed into the room, in metres. */
-const BOW_DEPTH = 0.09
+const BOW_DEPTH = 0.16
 /** How far a hanging board has swung down from its remaining nail, in radians. */
 const HANG_ANGLE = 1.05
 const HEIGHTS = [0, 0.34, -0.32]
@@ -88,7 +88,7 @@ export class BarricadeBoards {
             const pz = cz + side * uz * HALF
             const dx = -side * ux * Math.cos(a) + nx * Math.sin(a)
             const dz = -side * uz * Math.cos(a) + nz * Math.sin(a)
-            put(this.halfData, halves++, px, y, pz, Math.atan2(dz, dx), -0.04 - 0.03 * k)
+            put(this.halfData, halves++, px, y, pz, Math.atan2(dz, dx), -0.1 - 0.03 * k)
           }
         } else if (look === "hanging" && full < MAX_PLANKS) {
           // Swung down from the nail that held; which end gave way is fixed per board.
