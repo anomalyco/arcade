@@ -19,6 +19,14 @@ export const DEFAULT_DISCOVERY_SETTINGS = {
   discoveryFadeWords: true,
   /** Uses of a kind of prompt (doors, windows, containers…) before its words fade. */
   discoveryFadeUses: 3,
+  /** At a workbench the camera leans in, so the mat and the corkboard's sketches can be read. */
+  discoveryBenchFocus: true,
+  /** Camera distance while leaning in at a workbench. */
+  discoveryBenchZoom: 7.5,
+  /** How far towards the bench the camera centre moves while leaning in (0 stays on the survivor). */
+  discoveryBenchCentre: 0.8,
+  /** Seconds the mat's materials shake and settle after a try that came to nothing. */
+  discoveryClatterTime: 0.55,
 }
 
 export type DiscoverySettings = typeof DEFAULT_DISCOVERY_SETTINGS
@@ -33,4 +41,8 @@ export const discoveryControls: LabControl[] = [
   { key: "discoveryPropScale", label: "Item prop size", group: "Discovery", min: 0.5, max: 2, step: 0.05, unit: "×" },
   { key: "discoveryFadeWords", label: "Prompt words fade with use", group: "Discovery" },
   { key: "discoveryFadeUses", label: "Uses before words fade", group: "Discovery", min: 1, max: 10, step: 1, unit: "" },
+  { key: "discoveryBenchFocus", label: "Camera leans in at the bench", group: "Discovery" },
+  { key: "discoveryBenchZoom", label: "Bench camera distance", group: "Discovery", min: 6, max: 30, step: 0.5, unit: "m" },
+  { key: "discoveryBenchCentre", label: "Bench camera centring", group: "Discovery", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "discoveryClatterTime", label: "Failed try shake", group: "Discovery", min: 0, max: 1.5, step: 0.05, unit: "s" },
 ]

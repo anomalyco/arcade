@@ -24,6 +24,22 @@ import {
 } from "./combat"
 import { dayCycle } from "./day-cycle"
 import {
+  ALL_PAIRS,
+  benchOfMat,
+  judgeMat,
+  MAT_SLOTS,
+  matStoreId,
+  nextPair,
+  pairCost,
+  pairIndex,
+  pinStoreId,
+  ideaToken,
+  tinkerKnowledgeItems,
+  TINKER_MATERIALS,
+  triedToken,
+  type TinkerOutcome,
+} from "./discovery/tinker"
+import {
   INTERACT_RANGE,
   type InteractAction,
   type InteractActorState,
@@ -38,8 +54,9 @@ import { propShape, sightRects, type Building, type Door, type Prop, type Town }
  * Each survivor has a 5-slot hotbar (hand tools, weapons, consumables), a belt of counted supplies (ammo, planks,
  * scrap, chem, batteries, keys) that reloads, barricades and crafting draw on, and a 4-slot pack (parts, spare tools).
  * Furniture containers are stores you search (quiet or smash) and then see into; ground drops are stores too. Each
- * house has a workbench and a stash sharing one store: depositing parts raises the bench tier, and researching a
- * recipe there in good light teaches it to the whole squad, who can then craft it anywhere.
+ * house has a workbench and a stash sharing one store: installing parts raises the bench tier, and two materials
+ * tried together on the bench mat in good light can make something, which teaches it to the whole squad, who can
+ * then craft it anywhere (`shared/discovery/tinker.ts`).
  *
  * The sim calls `act` for a survivor's command, `step` once per tick, and reads `notices` for feedback. Everything
  * here is deterministic and shared by the room, the offline session and the client mirror (which only applies deltas).
@@ -118,26 +135,26 @@ export type Recipe = {
   label: string
   /** What crafting it makes; passive recipes change an action instead. */
   produces?: ItemId
-  /** One line for the bench panel. */
+  /** What it does, for docs and the Lab; players learn it by using the thing. */
   note: string
-  /** Bench tier needed to research it (2 needs the toolbox installed). */
+  /** Bench tier it assembles at (2 needs the toolbox installed). */
   tier: 1 | 2
-  research: Readonly<Record<ItemId, number>>
+  /** The two materials that make it on the bench mat. */
+  tinker: readonly [ItemId, ItemId]
+  /** Field-craft cost once learned. */
   craft?: Readonly<Record<ItemId, number>>
 }
 
 export const RECIPES: readonly Recipe[] = [
-  { id: "bandage", label: "Bandage", produces: "bandage", note: "Heals 25 in a second", tier: 1, research: { chem: 2 }, craft: { chem: 1 } },
-  { id: "lure", label: "Noisemaker", produces: "noisemaker", note: "Throw it; the dead go to the noise", tier: 1, research: { scrap: 2, battery: 1 }, craft: { scrap: 1, battery: 1 } },
-  { id: "spiked-board", label: "Spiked Board", produces: "spiked-board", note: "Wider, harder shoves", tier: 1, research: { plank: 1, scrap: 2 }, craft: { plank: 1, scrap: 2 } },
-  { id: "reinforced", label: "Reinforced Barricade", note: "Each board takes a scrap and holds 80% longer", tier: 2, research: { plank: 2, scrap: 3 } },
-  { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight", tier: 2, research: { scrap: 2, chem: 1 }, craft: { scrap: 1, chem: 1 } },
+  { id: "bandage", label: "Bandage", produces: "bandage", note: "Heals 25 in a second", tier: 1, tinker: ["chem", "chem"], craft: { chem: 1 } },
+  { id: "lure", label: "Noisemaker", produces: "noisemaker", note: "Throw it; the dead go to the noise", tier: 1, tinker: ["scrap", "battery"], craft: { scrap: 1, battery: 1 } },
+  { id: "spiked-board", label: "Spiked Board", produces: "spiked-board", note: "Wider, harder shoves", tier: 1, tinker: ["plank", "scrap"], craft: { plank: 1, scrap: 2 } },
+  { id: "reinforced", label: "Reinforced Barricade", note: "Each board takes a scrap and holds 80% longer", tier: 2, tinker: ["scrap", "scrap"] },
+  { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight", tier: 2, tinker: ["scrap", "chem"], craft: { scrap: 1, chem: 1 } },
 ]
 
-/** Recipes a material feeds, for the "new material" notice. */
-export function recipesUsing(material: ItemId): Recipe[] {
-  return RECIPES.filter((r) => material in r.research || (r.craft && material in r.craft))
-}
+/** The ledger catalog: items plus the corkboard's ideas and crossed-out tries. */
+export const CATALOG: readonly ItemDef[] = [...ITEMS, ...tinkerKnowledgeItems(RECIPES)]
 
 export type ProgressionTuning = {
   /** Multiplies every loot roll's chance. */
@@ -153,10 +170,13 @@ export type ProgressionTuning = {
   medkitHeal: number
   bandageHeal: number
   craftTime: number
+  /** How long trying two materials together on the bench mat takes (the key predates tinkering). */
   researchTime: number
-  /** Light needed at the bench to research (daylight, the generator or flashlights). */
+  /** Light needed at the bench to tinker (daylight, the generator or flashlights). */
   researchLight: number
-  /** Multiplies every recipe's research and craft cost (rounded, at least 1). */
+  /** How far a failed try clatters. */
+  clatterNoise: number
+  /** Multiplies every field-craft cost (rounded, at least 1). */
   costScale: number
   pryTime: number
   pryNoise: number
@@ -179,9 +199,10 @@ export const progressionControls = [
   { key: "medkitHeal", label: "Medkit heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
   { key: "bandageHeal", label: "Bandage heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
   { key: "craftTime", label: "Field craft time", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
-  { key: "researchTime", label: "Research time", group: "Progression", min: 0.2, max: 10, step: 0.1, unit: "s" },
-  { key: "researchLight", label: "Light needed to research", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
-  { key: "costScale", label: "Recipe cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
+  { key: "researchTime", label: "Tinker time", group: "Progression", min: 0.2, max: 10, step: 0.1, unit: "s" },
+  { key: "researchLight", label: "Light needed to tinker", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
+  { key: "clatterNoise", label: "Failed tinker clatter", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "costScale", label: "Field-craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
   { key: "lureNoise", label: "Noisemaker radius", group: "Progression", min: 5, max: 60, step: 1, unit: "m" },
@@ -205,6 +226,7 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   craftTime: 2,
   researchTime: 2.5,
   researchLight: 0.35,
+  clatterNoise: 6,
   costScale: 1,
   pryTime: 1.2,
   pryNoise: 12,
@@ -236,21 +258,13 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "unlock", label: "Unlocking", consume: { key: 1 } },
     { id: "pry", label: "Prying the door", duration: t.pryTime, noise: t.pryNoise, requires: { crowbar: 1 } },
   ]
+  // Tinkering at the bench mat. The game picks the rule from what is on the mat (`judgeMat`), so a rule's cost is
+  // always exactly the mat's two materials; the label never gives the outcome away.
+  const tinker = { label: "Tinkering", duration: t.researchTime, station: "mat", lightMin: t.researchLight } as const
+  rules.push({ id: "tinker:clatter", ...tinker })
   for (const r of RECIPES) {
-    const seen = Object.fromEntries(Object.keys(r.research).map((m) => [`seen:${m}`, 1]))
-    rules.push({
-      id: `research:${r.id}`,
-      label: `Researching ${r.label}`,
-      duration: t.researchTime,
-      station: "bench",
-      lightMin: t.researchLight,
-      ...(r.tier >= 2 ? { installed: { toolbox: 1 } } : {}),
-      requires: seen,
-      forbids: { [`learned:${r.id}`]: 1 },
-      consume: scaleCost(r.research, t.costScale),
-      produce: { [`learned:${r.id}`]: 1 },
-      produceTo: "team/known",
-    })
+    rules.push({ id: `tinker:${r.id}`, ...tinker, consume: pairCost(r.tinker), produce: { [`learned:${r.id}`]: 1 }, produceTo: "team/known" })
+    rules.push({ id: `tinker:idea:${r.id}`, ...tinker, produce: { [ideaToken(r.id)]: 1 }, produceTo: "team/known" })
     if (r.produces && r.craft) {
       rules.push({
         id: `craft:${r.id}`,
@@ -264,6 +278,9 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
   }
   return rules
 }
+
+const tinkerRule = (o: TinkerOutcome) =>
+  o.kind === "assemble" ? `tinker:${o.recipe}` : o.kind === "almost" ? `tinker:idea:${o.recipe}` : "tinker:clatter"
 
 // ── World sites ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -634,6 +651,8 @@ export class OutbreakProgression {
   tuning: ProgressionTuning
   private nextId = 1
   private generatorAt = new Map<string, number>()
+  /** The world as of the last command or tick, for interactions that need light (tinkering). */
+  private world: WorldContext | undefined
   private actorOf = new WeakMap<object, ProgressionSlot>()
 
   snapshot(): OutbreakProgressionSnapshot {
@@ -666,6 +685,7 @@ export class OutbreakProgression {
       if (st?.revealed) c.searched = true
     }
     this.ensureContainerStores()
+    this.ensureMatStores()
     for (const slot of slots) {
       this.actorOf.set(slot.survivor, slot)
       this.project(slot)
@@ -681,7 +701,7 @@ export class OutbreakProgression {
     this.containers = loot.sites
     this.benches = benchSites(town)
     this.ledger = new Ledger({
-      items: ITEMS,
+      items: CATALOG,
       actorStores: ACTOR_STORES,
       stores: [
         ...loot.stores,
@@ -690,16 +710,18 @@ export class OutbreakProgression {
       rules: progressionRules(this.tuning),
       knowledgeStore: "team/known",
     })
-    // Lessons reach the whole squad however the item arrived (a take, a craft, a test's grant). A new material is
-    // not announced: what it makes is for the squad to find out (D-19, Discovered, Not Told).
-    this.ledger.on((ev) => {
-      if (ev.kind !== "unlocked" || this.quiet || ev.source === "discover") return
-      this.notifyAll(`Squad learned ${ev.label}. Hold Q to craft it anywhere`, "result", ev.item)
-    })
+    // Nothing is announced: a new material, a lesson or a better bench shows on the bench and its corkboard (D-19).
+    this.ensureMatStores()
   }
 
-  /** Set while granting a starting kit, so spawning does not announce planks as a discovery. */
-  private quiet = false
+  /** The mat on each bench: two slots for materials, and what they make. Created for snapshots that predate it. */
+  private ensureMatStores(): void {
+    for (const b of this.benches) {
+      const id = matStoreId(b.id)
+      if (this.ledger.store(id)) continue
+      this.ledger.createStore({ id, mode: "slots", scope: "shared", size: MAT_SLOTS, accepts: ["resource", "tool"], at: { x: b.bench.x, y: b.bench.y } })
+    }
+  }
 
   /** Applies Lab tuning: recipe costs and times change at once; a new loot rate restocks unsearched containers. */
   setTuning(tuning: object): void {
@@ -762,13 +784,11 @@ export class OutbreakProgression {
     this.actorOf.set(slot.survivor, slot)
     if (this.ledger.store(`${slot.id}/hotbar`)) return
     this.ledger.addActor(slot.id)
-    this.quiet = true
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "flashlight" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "pistol" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "ammo", count: 6 })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank", count: 2 })
     this.ledger.apply({ kind: "select", actor: slot.id, slot: 1 })
-    this.quiet = false
     this.project(slot)
   }
 
@@ -869,9 +889,25 @@ export class OutbreakProgression {
     return RECIPES.filter((r) => r.produces && this.learned(r.id))
   }
 
-  /** Bench rows in panel order: every recipe whose materials the squad has seen. */
-  benchRows(): Recipe[] {
-    return RECIPES.filter((r) => Object.keys(r.research).every((m) => this.seen(m)))
+  /** What lies on a bench's mat, slot by slot (materials, or what they made). */
+  mat(benchId: string): Stack[] {
+    return this.contents(matStoreId(benchId))
+  }
+
+  /** What holding E at this bench would do with what is on its mat now (null until it holds two materials). */
+  judge(benchId: string): TinkerOutcome | null {
+    return judgeMat(RECIPES, this.mat(benchId).map((s) => s.item), this.tier(benchId), (r) => this.learned(r))
+  }
+
+  /** The corkboard: every recipe the squad has, ideas waiting on a better bench, and pairs that came to nothing. */
+  corkboard(): { learned: string[]; ideas: string[]; tried: string[] } {
+    const known = this.ledger.store("team/known")
+    const has = (token: string) => (known?.counts[token] ?? 0) > 0
+    return {
+      learned: RECIPES.filter((r) => this.learned(r.id)).map((r) => r.id),
+      ideas: RECIPES.filter((r) => !this.learned(r.id) && has(ideaToken(r.id))).map((r) => r.id),
+      tried: ALL_PAIRS.map(([a, b]) => `${a}+${b}`).filter((p) => has(triedToken(p))),
+    }
   }
 
   /** Light at a bench: daylight indoors, the room lamp at night, the generator, and flashlights of survivors at it. */
@@ -974,26 +1010,105 @@ export class OutbreakProgression {
     }
   }
 
+  /**
+   * The workbench: carrying a part, E installs it. Otherwise E lays two materials on the mat, a pair at a time (each
+   * tap swaps in the next pair you can make up), and holding E tries them together. Whatever they make waits on the
+   * mat for a tap to take it.
+   */
   private benchHandler(): InteractionHandler {
     return {
       kind: "bench",
       candidates: (town, actor) => {
         if (actor.peekingWindowId) return []
         const here = buildingAt(town, actor.x, actor.y)?.id ?? null
+        const slot = this.actorOf.get(actor)
         const out: RawInteractCandidate[] = []
         for (const b of this.benches) {
           if (b.buildingId !== here || distToRect(actor.x, actor.y, b.bench.rect) > 1.45) continue
-          const primary: InteractAction = { id: "deposit", label: "Deposit supplies" }
-          out.push({ kind: "bench", id: b.id, label: `Workbench · tier ${this.tier(b.id)}`, rect: b.bench.rect, worldX: b.bench.x, worldY: b.bench.y, primary, actions: [primary] })
+          const mat = this.mat(b.id)
+          let primary: InteractAction | null = null
+          let secondary: InteractAction | undefined
+          if (slot && this.partsOn(slot.id).length) primary = { id: "install", label: "Install" }
+          else if (mat.some((s) => !this.isMaterial(s.item))) primary = { id: "take", label: "Take" }
+          else if (slot && this.cyclePair(slot.id, b.id) !== this.matPair(b.id)) primary = { id: "place", label: mat.length ? "Swap" : "Lay out" }
+          else if (mat.length) primary = { id: "take", label: "Take back" }
+          if (this.judge(b.id)) secondary = { id: "tinker", label: "Tinker", hold: true }
+          if (!primary && secondary) primary = { id: "take", label: "Take back" }
+          if (!primary) continue
+          out.push({
+            kind: "bench",
+            id: b.id,
+            label: "Workbench",
+            rect: b.bench.rect,
+            worldX: b.bench.x,
+            worldY: b.bench.y,
+            primary,
+            secondary,
+            actions: secondary ? [primary, secondary] : [primary],
+            // A held E tinkers; the tap waits for the release so a hold never swaps the pair first.
+            deferPrimary: Boolean(secondary),
+          })
         }
         return out
       },
       execute: (_town, actor, targetId, action) => {
         const slot = this.actorOf.get(actor)
-        if (!slot || action !== "deposit" || !this.ledger.store(targetId)) return { handled: false }
-        return { handled: this.deposit(slot, targetId), kind: "bench", targetId, action }
+        if (!slot || !this.ledger.store(targetId)) return { handled: false }
+        if (action === "install") return { handled: this.install(slot, targetId), kind: "bench", targetId, action }
+        if (action === "take") return { handled: this.take(slot, matStoreId(targetId)), kind: "bench", targetId, action }
+        if (action === "place") return { handled: this.setMat(slot, targetId, this.cyclePair(slot.id, targetId)), kind: "bench", targetId, action }
+        if (action === "tinker") return { handled: this.startTinker(slot, targetId), kind: "bench", targetId, action }
+        return { handled: false }
       },
     }
+  }
+
+  private isMaterial(item: ItemId): boolean {
+    return (TINKER_MATERIALS as readonly string[]).includes(item)
+  }
+
+  /** Bench parts (toolbox, car battery) the survivor carries. */
+  private partsOn(actor: string): ItemId[] {
+    return this.contents(`${actor}/pack`)
+      .filter((s) => this.ledger.items.get(s.item)?.tag === "part")
+      .map((s) => s.item)
+  }
+
+  /** The pair on a bench's mat as an index into `ALL_PAIRS`, or -1 when it holds anything else. */
+  private matPair(benchId: string): number {
+    const mat = this.mat(benchId)
+    return mat.length === 0 ? -1 : pairIndex(mat.map((s) => s.item))
+  }
+
+  /** The pair a tap of E would lay out next: the following one the survivor can make up with what is on the mat. */
+  private cyclePair(actor: string, benchId: string): number {
+    const mat = matStoreId(benchId)
+    return nextPair(this.matPair(benchId), (item) => this.ledger.count(`${actor}/belt`, item) + this.ledger.count(mat, item))
+  }
+
+  /** Puts what is on the mat back on the survivor, then lays out pair `index` (or leaves the mat empty for -1). */
+  private setMat(slot: ProgressionSlot, benchId: string, index: number): boolean {
+    const mat = matStoreId(benchId)
+    if (this.contents(mat).length) {
+      const back = this.ledger.apply({ kind: "take", actor: slot.id, from: mat })
+      if (!back.ok || this.contents(mat).length) {
+        this.feedback(slot, back.events)
+        return false
+      }
+    }
+    const pair = ALL_PAIRS[index]
+    if (!pair) return true
+    const res = this.ledger.apply({ kind: "deposit", actor: slot.id, to: mat, items: pairCost(pair) })
+    return res.ok
+  }
+
+  private startTinker(slot: ProgressionSlot, benchId: string): boolean {
+    const outcome = this.judge(benchId)
+    if (!outcome) return false
+    const site = this.benches.find((b) => b.id === benchId)!
+    const res = this.ledger.start({ kind: "run", actor: slot.id, rule: tinkerRule(outcome), station: matStoreId(benchId), ref: outcome.pair }, this.envFor(slot), { x: site.bench.x, y: site.bench.y })
+    this.feedback(slot, res.events)
+    return res.ok
   }
 
   private stashHandler(): InteractionHandler {
@@ -1074,6 +1189,7 @@ export class OutbreakProgression {
 
   /** The survivor's progression verbs for one command. Returns noise the caller should emit, if any. */
   act(slot: ProgressionSlot, cmd: ProgressionCommand, world: WorldContext, target: { kind: string; id: string } | undefined): { noise: number; noiseKind: string } {
+    this.world = world
     const p = slot.survivor
     let noise = 0
     let noiseKind = "door"
@@ -1148,7 +1264,6 @@ export class OutbreakProgression {
   }
 
   private deposit(slot: ProgressionSlot, benchId: string): boolean {
-    const tierBefore = this.tier(benchId)
     const before = this.carried(slot.id)
     const res = this.ledger.apply({ kind: "deposit", actor: slot.id, to: benchId })
     if (!res.ok) {
@@ -1157,9 +1272,16 @@ export class OutbreakProgression {
     }
     const moved = this.diffCarried(this.carried(slot.id), before)
     this.notify(slot, moved ? `Deposited ${moved}` : "Deposited", "result", "deposit")
-    const tier = this.tier(benchId)
-    if (tier > tierBefore) this.notifyAll(tier === 2 ? "Workbench tier 2: the toolbox is installed" : `Workbench tier ${tier}: the generator is wired up`, "result")
     return true
+  }
+
+  /** Sets the parts the survivor carries on the bench. The toolbox on the bench top and the wired generator say the rest. */
+  private install(slot: ProgressionSlot, benchId: string): boolean {
+    const parts = this.partsOn(slot.id)
+    if (!parts.length) return false
+    const res = this.ledger.apply({ kind: "deposit", actor: slot.id, to: benchId, items: Object.fromEntries(parts.map((p) => [p, 1])) })
+    this.feedback(slot, res.events)
+    return res.ok
   }
 
   private pick(slot: ProgressionSlot, pick: NonNullable<ProgressionCommand["pick"]>, world: WorldContext, target: { kind: string; id: string } | undefined): void {
@@ -1189,19 +1311,9 @@ export class OutbreakProgression {
       this.feedback(slot, res.events)
       return
     }
-    // Bench row: research a recipe, or craft one already learned using the bench's stock.
-    if (target?.kind !== "bench") return
-    const benchId = target.id
-    const recipe = this.benchRows()[pick.index]
-    if (!recipe) return
-    const rule = this.learned(recipe.id) ? `craft:${recipe.id}` : `research:${recipe.id}`
-    if (rule.startsWith("craft:") && !recipe.produces) {
-      this.notify(slot, `${recipe.label} is already learned`, "info")
-      return
-    }
-    const site = this.benches.find((b) => b.id === benchId)!
-    const res = this.ledger.start({ kind: "run", actor: slot.id, rule, station: benchId }, this.envFor(slot, world), { x: site.bench.x, y: site.bench.y })
-    this.feedback(slot, res.events)
+    // At a bench, lay out one particular pair (`ALL_PAIRS` index; -1 clears the mat). Bots use this; players tap E.
+    if (target?.kind !== "bench" || pick.index >= ALL_PAIRS.length) return
+    this.setMat(slot, target.id, pick.index)
   }
 
   private startBarricade(slot: ProgressionSlot, world: WorldContext): number {
@@ -1341,6 +1453,7 @@ export class OutbreakProgression {
 
   /** Once per tick: channels (cancelled by walking off or sprinting), lures, the generator hum, and projections. */
   step(dt: number, world: WorldContext): { topologyChanged: boolean } {
+    this.world = world
     let topologyChanged = false
     for (const slot of world.slots) {
       const ch = this.ledger.channel(slot.id)
@@ -1417,11 +1530,17 @@ export class OutbreakProgression {
 
   // ── Effects and feedback ──────────────────────────────────────────────────────────────────────────────────
 
-  private envFor(slot: ProgressionSlot, world: WorldContext | undefined): LedgerEnv {
+  private envFor(slot: ProgressionSlot, world: WorldContext | undefined = this.world): LedgerEnv {
     return {
       light: world ? this.lightFor(slot, world) : 1,
       check: (tx) => {
-        if (!world || tx.kind !== "run") return null
+        if (tx.kind !== "run") return null
+        // The mat is shared: if someone changed it mid-try, the try comes to nothing.
+        if (tx.rule.startsWith("tinker:") && tx.station) {
+          const outcome = this.judge(benchOfMat(tx.station))
+          if (!outcome || tinkerRule(outcome) !== tx.rule) return "mat changed"
+        }
+        if (!world) return null
         if (tx.rule.startsWith("barricade") && tx.ref && world.ai.getBarricadePlanks(tx.ref) >= 3) return "fully boarded"
         if (tx.rule.startsWith("heal:") && slot.survivor.health >= slot.survivor.maxHealth) return "not hurt"
         if (tx.rule === "pry") {
@@ -1435,7 +1554,7 @@ export class OutbreakProgression {
 
   private lightFor(slot: ProgressionSlot, world: WorldContext): number {
     const ch = this.ledger.channel(slot.id)
-    const station = ch?.tx.kind === "run" ? ch.tx.station : undefined
+     const station = ch?.tx.kind === "run" && ch.tx.station ? (ch.tx.station.startsWith("mat:") ? benchOfMat(ch.tx.station) : ch.tx.station) : undefined
     const bench = station ?? this.benches.find((b) => Math.hypot(slot.survivor.x - b.bench.x, slot.survivor.y - b.bench.y) < 3)?.id
     return bench ? this.benchLight(bench, world.hour, world.slots.map((s) => s.survivor)) : dayCycle(world.hour).sun
   }
@@ -1474,7 +1593,33 @@ export class OutbreakProgression {
       const recipe = RECIPES.find((r) => `craft:${r.id}` === ev.rule)
       if (recipe) this.notify(slot, `Crafted ${recipe.label}`, "result", "craft")
     }
+    if (ev.rule.startsWith("tinker:") && ev.station) this.tinkered(slot, ev.rule, ev.station, ev.ref ?? "", world)
     return false
+  }
+
+  /**
+   * A finished try at the mat. Assembling puts the thing on the mat and, the first time, pins the sketch with the
+   * maker's seat; a pair that needs the toolbox pins a faint idea (the rule did that); anything else clatters, and the
+   * first time a pair fails a crossed-out scrap goes up so nobody tries it twice. No words either way.
+   */
+  private tinkered(slot: ProgressionSlot, rule: string, mat: string, pair: string, world: WorldContext): void {
+    const site = this.benches.find((b) => b.id === benchOfMat(mat))
+    const at = site ? { x: site.bench.x, y: site.bench.y } : { x: slot.survivor.x, y: slot.survivor.y }
+    if (rule === "tinker:clatter") {
+      world.ai.emitNoise(at.x, at.y, this.tuning.clatterNoise, "clatter", world.time, slot.id)
+      const token = triedToken(pair)
+      if (this.ledger.items.has(token) && this.ledger.count("team/known", token) === 0) {
+        this.ledger.apply({ kind: "grant", actor: slot.id, item: token, store: "team/known" })
+      }
+      return
+    }
+    if (rule.startsWith("tinker:idea:")) return
+    const recipe = RECIPES.find((r) => rule === `tinker:${r.id}`)
+    if (!recipe) return
+    if (recipe.produces) this.ledger.apply({ kind: "grant", actor: slot.id, item: recipe.produces, store: mat })
+    if (!this.ledger.store(pinStoreId(recipe.id))) {
+      this.ledger.createStore({ id: pinStoreId(recipe.id), mode: "counters", scope: "shared", owner: slot.id, at, initial: { seat: slot.index + 1 } })
+    }
   }
 
   /** Turns ledger events into notices: discoveries, lessons, rejections and search results. */
@@ -1494,7 +1639,7 @@ export class OutbreakProgression {
       case "full":
         return ev.store?.startsWith("bench:") ? "The stash is full" : "Inventory full"
       case "low_light":
-        return "Too dark to work. Shine a flashlight or run the generator"
+        return "Too dark"
       case "missing_item":
         return ev.item ? `Need ${this.ledger.label(ev.item).toLowerCase()}` : "Missing materials"
       case "missing_requirement":

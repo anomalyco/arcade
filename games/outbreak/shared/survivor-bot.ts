@@ -5,6 +5,7 @@ import { samplePointLightLevel } from "./ai"
 import { PISTOL_MAG_SIZE, PISTOL_RANGE, SHOVE_RANGE } from "./combat"
 import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
+import { matStoreId, pairCost, pairIndex, TINKER_MATERIALS } from "./discovery/tinker"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightAwarenessAt } from "./flashlight"
 import { INTERACT_RANGE, type InteractTarget } from "./interact"
 import { inBuildingFootprint, propShape, sightRects, SIZE, solidRects, type Building, type Town } from "./map"
@@ -1189,20 +1190,16 @@ export class SurvivorBot {
     return null
   }
 
-  private canResearchAnyAtBench(world: BotWorldView, benchId: string): { recipeIndex: number; label: string } | null {
-    const rows = world.progression.benchRows()
+  /** A recipe the squad lacks that this bot can lay out on the bench mat and assemble (bots know the pairs). */
+  private canResearchAnyAtBench(world: BotWorldView, benchId: string): { pairIndex: number; label: string } | null {
     const tier = world.progression.tier(benchId)
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]!
-      if (world.progression.learned(r.id)) continue
-      if (r.tier > tier) continue
-      const ok = Object.entries(r.research).every(([mat, needed]) => {
-        const have =
-          world.progression.ledger.count(`${this.actorId}/belt`, mat) +
-          world.progression.ledger.count(benchId, mat)
-        return have >= needed
-      })
-      if (ok) return { recipeIndex: i, label: r.label }
+    const mat = matStoreId(benchId)
+    for (const r of RECIPES) {
+      if (world.progression.learned(r.id) || r.tier > tier) continue
+      const ok = Object.entries(pairCost(r.tinker)).every(
+        ([item, needed]) => world.progression.ledger.count(`${this.actorId}/belt`, item) + world.progression.ledger.count(mat, item) >= needed,
+      )
+      if (ok) return { pairIndex: pairIndex(r.tinker), label: r.label }
     }
     return null
   }
@@ -1543,7 +1540,7 @@ export class SurvivorBot {
       })
     }
 
-    // 6. WORKBENCH & RESEARCH: has parts in pack or researchable recipe at known bench
+    // 6. WORKBENCH: has parts in pack, or a recipe it can lay out on the mat and assemble at a known bench
     const benchSite = this.knownBenches.get("bench:ash") ?? [...this.knownBenches.values()][0]
     if (benchSite && chaserCount === 0 && nearestDist > 9.0) {
       const researchable = this.canResearchAnyAtBench(world, benchSite.id)
@@ -1559,7 +1556,7 @@ export class SurvivorBot {
           intent: "workbench",
           score: 64 + (hasPart ? 12 : 0) + (researchable ? 10 : 0) - d * 0.4 + noise(),
           reason: researchable
-            ? `Researching ${researchable.label} at Workbench`
+            ? `Tinkering ${researchable.label} at Workbench`
             : `Installing upgrade part at Workbench`,
           targetX: benchSite.bench.x,
           targetY: benchSite.bench.y,
@@ -1982,12 +1979,20 @@ export class SurvivorBot {
             cmd.interact = true
             return cmd
           }
+          // Whatever the mat made waits there: take it.
+          const onMat = world.progression.mat(benchId)
+          if (onMat.some((s) => !(TINKER_MATERIALS as readonly string[]).includes(s.item))) {
+            cmd.interact = true
+            return cmd
+          }
           const job = this.canResearchAnyAtBench(world, benchId)
           if (job) {
             if (!p.flashlightOn && !p.batteryDepleted) {
               cmd.flashlight = true
             }
-            cmd.pick = { mode: "bench", index: job.recipeIndex }
+            // Lay out the pair, then hold E to try it.
+            if (pairIndex(onMat.map((s) => s.item)) !== job.pairIndex) cmd.pick = { mode: "bench", index: job.pairIndex }
+            else cmd.interactHeld = true
             return cmd
           }
         }
