@@ -29,7 +29,18 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "./look"
-import { FRAME_FLOATS, makeLookPostShader, makeLookSceneShader, polarShader, postShader, sceneShader, spriteShader, common } from "./shaders"
+import {
+  FRAME_FLOATS,
+  makeLookPostShader,
+  makeLookSceneShader,
+  polarShader,
+  postShader,
+  resolveLookVariant,
+  sceneShader,
+  spriteShader,
+  common,
+  type LookVariantMode,
+} from "./shaders"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
@@ -171,7 +182,7 @@ export class Renderer {
   private pipes: Record<string, GPURenderPipeline> = {}
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
-  private lookPipes: Record<string, GPURenderPipeline> | null = null
+  private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
   private activeLook: LookSettings | null = null
   private activeLookCompare: { mode?: LookCompareMode; wipeSplit?: number } = {}
   private lookSceneData = new Float32Array(LOOK_UNIFORM_FLOATS)
@@ -226,7 +237,16 @@ export class Renderer {
     private device: GPUDevice,
     private context: GPUCanvasContext,
     private readonly format: GPUTextureFormat,
-    private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string; visField?: VisibilityFieldShader },
+    private shaders?: {
+      scene: string
+      sprite: string
+      post?: string
+      lookScene?: string
+      lookPost?: string
+      lookSceneVariant?: (variant: LookVariantMode) => string
+      lookPostVariant?: (variant: LookVariantMode) => string
+      visField?: VisibilityFieldShader
+    },
   ) {
     const d = device
     this.notifyPacer = installFramePacer(
@@ -778,8 +798,13 @@ export class Renderer {
     return this.activeLook ? { ...this.activeLook } : null
   }
 
-  private ensureLookPipes(): Record<string, GPURenderPipeline> {
-    if (this.lookPipes) return this.lookPipes
+  get compiledLookVariants(): LookVariantMode[] {
+    return [...this.lookPipesByVariant.keys()]
+  }
+
+  private ensureLookPipes(variant: LookVariantMode = "generic"): Record<string, GPURenderPipeline> {
+    const cached = this.lookPipesByVariant.get(variant)
+    if (cached) return cached
     const d = this.device
     const meshLayout: GPUVertexBufferLayout = {
       arrayStride: VERT_BYTES,
@@ -801,7 +826,10 @@ export class Renderer {
     }
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
-    const lookSceneMod = this.module(this.shaders?.lookScene ?? makeLookSceneShader(), "scene look")
+    const sceneCode =
+      this.shaders?.lookSceneVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookScene ? this.shaders.lookScene : makeLookSceneShader(undefined, variant))
+    const lookSceneMod = this.module(sceneCode, `scene look (${variant})`)
     const pipe = (vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, fs = "fs") =>
       d.createRenderPipeline({
         layout,
@@ -811,9 +839,12 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES },
       })
-    const lookPostMod = this.module(this.shaders?.lookPost ?? makeLookPostShader(), "post look")
+    const postCode =
+      this.shaders?.lookPostVariant?.(variant) ??
+      (variant === "generic" && this.shaders?.lookPost ? this.shaders.lookPost : makeLookPostShader(undefined, variant))
+    const lookPostMod = this.module(postCode, `post look (${variant})`)
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    this.lookPipes = {
+    const pipes = {
       level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
       levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
       glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
@@ -832,7 +863,8 @@ export class Renderer {
         primitive: { topology: "triangle-list" },
       }),
     }
-    return this.lookPipes
+    this.lookPipesByVariant.set(variant, pipes)
+    return pipes
   }
 
   render(f: FrameInput): void {
@@ -938,10 +970,15 @@ export class Renderer {
       this.weatherRenderer.prepare(f.weather)
     }
     if (motion) this.prepareMotion()
+    const lookVariant: LookVariantMode = useLookPipes
+      ? this.shaders && !this.shaders.lookSceneVariant
+        ? "generic"
+        : resolveLookVariant(effectiveLook, effectiveCompare)
+      : "generic"
     const scenePipes = motion
       ? this.motionPipes
       : useLookPipes
-        ? this.ensureLookPipes()
+        ? this.ensureLookPipes(lookVariant)
         : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512)
           ? this.pipes
           : this.baselinePipes
@@ -1239,7 +1276,9 @@ export class Renderer {
       motion
         ? this.motionPipes.composite!
         : useLookPipes
-          ? (useFastLookPost ? this.ensureLookPipes().compositeFast! : this.ensureLookPipes().composite!)
+          ? (useFastLookPost
+              ? this.ensureLookPipes(lookVariant).compositeFast!
+              : this.ensureLookPipes(lookVariant).composite!)
           : f.frame[45]! & 1
             ? this.pipes.composite!
             : this.baselinePipes.composite!,

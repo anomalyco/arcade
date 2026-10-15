@@ -57,6 +57,7 @@ export class CoopRoomCore {
   private shooters = new Map<number, number>()
   private writer = new ByteWriter(4096)
   private personalWriter = new ByteWriter(256)
+  private lastBubbleSnaps = new Map<string, SharedSnapshot>()
   private rosterKey = ""
 
   constructor(
@@ -241,6 +242,7 @@ export class CoopRoomCore {
   snapshot(to?: Conn[]): void {
     this.snapIndex++
     const sharedCache = new Map<string, { bytes: Uint8Array; snap: SharedSnapshot }>()
+    const nextBubbleSnaps = new Map<string, SharedSnapshot>()
     for (const [conn, s] of this.conns) {
       if (to && !to.includes(conn)) continue
       const seat = s.seatId ? this.seats.byId(s.seatId) : undefined
@@ -263,6 +265,7 @@ export class CoopRoomCore {
         const bytes = encodeShared(this.sim, this.tick, this.shooters, this.writer, {
           viewerCenter,
           baseSnap,
+          prevBubbleSnap: this.lastBubbleSnaps.get(bubbleKey),
           snapIndex: this.snapIndex,
           outSnapshot: outHolder,
         })
@@ -272,6 +275,7 @@ export class CoopRoomCore {
       }
       if (this.tick > 0 && cached.snap) {
         data.history.record(this.tick, cached.snap)
+        nextBubbleSnaps.set(bubbleKey, cached.snap)
       }
 
       const delta = this.sim.progression.ledger.diff(data.ledgerRev, { visibleTo: seat.id })
@@ -282,5 +286,6 @@ export class CoopRoomCore {
       data.pacer.record(packet.byteLength, this.sim.time)
       this.send(conn, packet)
     }
+    for (const [k, snap] of nextBubbleSnaps) this.lastBubbleSnaps.set(k, snap)
   }
 }

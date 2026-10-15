@@ -222,6 +222,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     description: "`LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub",
     match: (s) =>
       s === "@arcade/kit/dev-control" ||
+      s.startsWith("@arcade/kit/dev-control/") ||
       s === "@arcade/kit/lab-commands" ||
       s === "@arcade/kit/dev-hub" ||
       s === "@arcade/kit/dev-hub.css" ||
@@ -239,6 +240,9 @@ function walkTsFiles(dir: string): string[] {
     if (stat.isDirectory()) {
       out.push(...walkTsFiles(full))
     } else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) {
+      if (full.endsWith("/games/blackout/src/lab.ts") || full.endsWith("/games/getaway/src/lab.ts") || full.endsWith("/games/outbreak/src/lab.ts")) {
+        continue
+      }
       out.push(full)
     }
   }

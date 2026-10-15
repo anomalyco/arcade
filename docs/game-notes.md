@@ -1050,6 +1050,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   snap to the room's burst. On hailmary, two pages in one room produced: a gun kill, a missile flared by the target,
   a missile hit, a kill feed and K/D tallies on both pages (`games/carrier/shared/combat.ts`, `server/core.ts`,
   `scripts/weapons-shot.ts --only=mp`). Bandwidth and room CPU are unmeasured.
+- **Keep a room ticking until its last socket closes, not its last player.** Carrier's Room stopped its interval when
+  the core had no joined players; over a slow link (tunnels, a reverse SSH forward) the first tick came before the first
+  `hello`, so a new room froze until another socket arrived (~20 s of stuck ships and bots on hailmary). Counting open
+  sockets in `games/carrier/server/room.ts` fixed it; `scripts/bots-shot.ts` then passed every step.
+- **Run dev bots in the room as socketless players.** Carrier's bots (`games/carrier/server/bots.ts`) join a carrier
+  and run its operations under the crew rules, fly the shared models and hand their output to the room's own message
+  handler, so damage, budgets and relays are a player's. The duel, a bomber hitting a carrier and attack boats were
+  checked on hailmary in a dev room; `tests/bots.test.ts` checks a production-mode room refuses dev messages.
 - **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
   `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
 

@@ -50,8 +50,8 @@ export const FLEET = {
   fireLife: 45,
   /** Fires stay lit below this share of health. */
   burning: 0.6,
-  repairDelay: 40,
-  repair: 1.5,
+  repairDelay: 20,
+  repair: 3,
   islandRepair: 0.01,
   /** Deepest settle (m) and list (rad) just before sinking. */
   settle: 3.2,
