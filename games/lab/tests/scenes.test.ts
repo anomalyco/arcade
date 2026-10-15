@@ -41,10 +41,14 @@ describe("stations as labs", () => {
     expect(scenes.every(s => s.status === "kept")).toBe(true)
     const placed = new Set(scenes.map(s => s.id))
     for (const st of stations) expect(placed.has(st.id)).toBe(true)
-    for (const st of stations) expect(STATION_AREAS.some(a => a.stations.includes(st.id))).toBe(true)
+    // A new station file needs a line in STATION_AREAS (games/lab/src/scenes/from-stations.ts): the collection Home lists it in.
+    const withoutArea = stations.filter(st => !STATION_AREAS.some(a => a.stations.includes(st.id))).map(st => `${st.id}: add it to STATION_AREAS`)
+    expect(withoutArea).toEqual([])
   })
   test("every migrated lab fits its kind", () => {
-    for (const s of scenes) expect({ id: s.id, kind: s.kind, problems: checkAgainstKind(s, LAB_KINDS) }).toEqual({ id: s.id, kind: s.kind, problems: [] })
+    // A new station file needs a lab kind (games/lab/src/scenes/kinds.ts: LAB_KINDS, and PAGE_STATIONS for a page station).
+    const misfits = scenes.flatMap(s => checkAgainstKind(s, LAB_KINDS).map(p => `${s.id}: ${p}${s.kind === "page" || s.kind === "section" ? " (give it a kind in kinds.ts)" : ""}`))
+    expect(misfits).toEqual([])
     expect(Object.fromEntries(scenes.map(s => [s.id, s.kind]))).toMatchObject({ weather: "weather", looks: "look", outbreak: "scene-look", "explosions-splatter": "splatter", characters: "walk-cycle", "outbreak-hud": "hud" })
   })
   test("opening a migrated scene runs the same commands the station ran, for the scene and each variant", () => {

@@ -80,7 +80,9 @@ controls card for the section's first two groups with real tuning sliders right,
 voice and notes in the dock. Groups shown in a controls card are left out of Details, so each setting appears once.
 
 Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
-adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
+adding a file, plus one line for its collection in `STATION_AREAS` (`games/lab/src/scenes/from-stations.ts`) and, unless
+an existing kind fits, a lab kind in `games/lab/src/scenes/kinds.ts` (`PAGE_STATIONS` maps page stations to theirs);
+`bun test games/lab/tests` says which is missing. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
 back to. The type is `LabStation` in `packages/kit/lab/stations/types.ts` (older files import it from
 `@arcade/kit/lab/overworld/types`, which still works):
 
