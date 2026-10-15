@@ -1,3 +1,4 @@
+import "@arcade/kit/client/chat.css"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import { CHAT, type ChatChannel, type ChatLine } from "../../shared/chat"
 import { type Crew, playerOf, teamCss } from "../../shared/crew"
@@ -8,27 +9,14 @@ export const CHAT_FADE_MS = 10_000
 /** Lines kept in the feed. */
 const KEEP = 8
 
+/** Getaway's chat look (@arcade/kit/client/chat.css); carrier only places it and adds the channel tag. */
 const CSS = `
-#ct { position: fixed; left: 22px; top: 58px; z-index: 12; width: min(460px, 42vw); display: grid; gap: 4px; pointer-events: none;
-  font-weight: 300; font-size: 13px; letter-spacing: 0.06em; zoom: var(--hud, 1); }
+#ct { position: fixed; left: 22px; top: 58px; z-index: 12; width: min(380px, 40vw); pointer-events: none; zoom: var(--hud, 1); }
 body.mn-open #ct { display: none; }
-#ct .log { display: grid; gap: 4px; justify-items: start; }
-#ct .ln { max-width: 100%; padding: 3px 9px; overflow-wrap: anywhere; background: rgba(6, 16, 30, 0.5); transition: opacity 0.6s;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 10px rgba(0, 0, 0, 0.35); }
-#ct .ln.old { opacity: 0; }
-#ct.open .ln.old { opacity: 0.85; transition: none; }
-#ct .ln b { font-weight: 300; text-transform: uppercase; letter-spacing: 0.16em; color: var(--team, var(--ink)); margin-right: 0.7em; }
-#ct .ln i { font-style: normal; letter-spacing: 0.2em; opacity: 0.7; margin-right: 0.6em; }
-#ct .ln.sys { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; opacity: 0.8; background: none; padding: 1px 9px; }
-#ct .ln.sys.old { opacity: 0; }
-#ct.open .ln.sys.old { opacity: 0.7; }
-#ct .ln.note { color: #ffd34a; }
-#ct .bar { display: flex; align-items: center; gap: 0.7em; padding: 4px 9px; background: rgba(6, 16, 30, 0.72);
-  box-shadow: 0 0 0 1px rgba(244, 247, 251, 0.12) inset; pointer-events: auto; }
-#ct .bar[hidden] { display: none; }
-#ct .ch { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--team, var(--ink)); white-space: nowrap; }
-#ct input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 2px 0; background: none; color: var(--ink); font: inherit; letter-spacing: inherit;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); caret-color: var(--ink); }
+#ct .achat-input { display: flex; align-items: center; }
+#ct .achat-input[hidden] { display: none; }
+#ct .achat-tag { margin-right: 6px; font-size: 13px; letter-spacing: 0.08em; color: var(--achat-accent); opacity: 0.8; }
+#ct .achat-line.note { color: #ffd34a; }
 `
 
 /**
@@ -67,17 +55,20 @@ export class Chat {
     }
     this.el = document.createElement("div")
     this.el.id = "ct"
+    this.el.className = "achat"
     this.log = document.createElement("div")
-    this.log.className = "log"
+    this.log.className = "achat-log"
     this.bar = document.createElement("label")
-    this.bar.className = "bar"
+    this.bar.className = "achat-input"
     this.bar.hidden = true
     this.ch = document.createElement("span")
-    this.ch.className = "ch"
+    this.ch.className = "achat-channel"
     this.input = document.createElement("input")
     this.input.maxLength = CHAT.max * 2
     this.input.autocomplete = "off"
     this.input.spellcheck = false
+    this.input.className = "achat-field"
+    this.input.placeholder = "Say something…"
     this.input.setAttribute("aria-label", "Chat message")
     this.bar.append(this.ch, this.input)
     this.el.append(this.log, this.bar)
@@ -136,7 +127,7 @@ export class Chat {
   private setChannel(channel: ChatChannel): void {
     this.channel = channel
     this.ch.textContent = channel === "crew" ? "CREW" : "ALL"
-    this.ch.style.setProperty("--team", channel === "crew" ? teamCss(this.team < 0 ? undefined : this.team) : "")
+    this.bar.style.setProperty("--achat-accent", channel === "crew" ? teamCss(this.team < 0 ? undefined : this.team) : "")
   }
 
   /** Per frame: new lines from the room, join/leave lines from the crew, my team's colour for the CREW label. */
@@ -151,21 +142,23 @@ export class Chat {
   }
 
   private line(l: ChatLine): void {
-    const el = this.add("ln")
+    const el = this.add("achat-line")
+    el.style.setProperty("--achat-accent", teamCss(l.team))
     if (l.channel === "crew") {
-      const tag = document.createElement("i")
+      const tag = document.createElement("span")
+      tag.className = "achat-tag"
       tag.textContent = "[CREW]"
       el.append(tag)
     }
-    const name = document.createElement("b")
+    const name = document.createElement("span")
+    name.className = "achat-name"
     name.textContent = l.name
-    name.style.setProperty("--team", teamCss(l.team))
     el.append(name, document.createTextNode(l.text))
   }
 
   /** A quiet line (joins, leaves, refusals). */
   private note(text: string, cls = "note"): void {
-    this.add(`ln sys ${cls}`).textContent = text
+    this.add(`achat-line system ${cls}`).textContent = text
   }
 
   private add(cls: string): HTMLElement {
