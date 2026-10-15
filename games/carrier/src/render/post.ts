@@ -1,3 +1,6 @@
+import { BloomPyramid, DEFAULT_BLOOM_LEVELS } from "@arcade/kit/gpu/targets"
+import { wgslStruct } from "@arcade/kit/gpu/wgsl"
+
 /** Composite controls, written to the GPU once per frame. */
 export type Grade = {
   /** Linear multiplier before the tonemap. */
@@ -19,11 +22,16 @@ export type Grade = {
 /** Sunny, clean grade: filmic tonemap, gentle saturation, a slight vignette and very fine grain. */
 export const DEFAULT_GRADE: Grade = { exposure: 1.0, bloom: 0.16, threshold: 1.4, saturation: 1.2, vignette: 0.2, grain: 0.008, warmth: 0.35 }
 
-export const BLOOM_LEVELS = 5
+export const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
+
+export const CarrierGradeStruct = wgslStruct("Grade", {
+  a: "vec4f",
+  b: "vec4f",
+})
 
 /** G: exposure, bloom, threshold, saturation | vignette, grain, time, warmth */
 const POST_WGSL = /* wgsl */ `
-struct Grade { a: vec4f, b: vec4f }
+${CarrierGradeStruct.wgsl}
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: vec4f; // texel size xy, z = first level
@@ -133,18 +141,11 @@ export class Post {
   private layout: GPUBindGroupLayout
   private sampler: GPUSampler
   private gradeBuf: GPUBuffer
-  private gradeData = new Float32Array(8)
-  private params: GPUBuffer[] = []
+  private gradeData = new Float32Array(CarrierGradeStruct.floatCount)
+  private bloomPyramid: BloomPyramid
   private down: GPURenderPipeline
   private up: GPURenderPipeline
   private composite: GPURenderPipeline
-  private bloom: GPUTexture[] = []
-  private bloomViews: GPUTextureView[] = []
-  private downGroups: GPUBindGroup[] = []
-  private upGroups: GPUBindGroup[] = []
-  private compositeGroup: GPUBindGroup | null = null
-  private downPass: GPURenderPassDescriptor[] = []
-  private upPass: GPURenderPassDescriptor[] = []
   private finalAttachment: GPURenderPassColorAttachment | null = null
   private finalPass: GPURenderPassDescriptor | null = null
 
@@ -167,7 +168,7 @@ export class Post {
     })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
-    for (let i = 0; i < BLOOM_LEVELS; i++) this.params.push(d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }))
+    this.bloomPyramid = new BloomPyramid(d, { levels: BLOOM_LEVELS, format: hdr, upTexelSource: "target" })
     const m = module(POST_WGSL, "post")
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.layout] })
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
@@ -179,79 +180,34 @@ export class Post {
   }
 
   /** Rebuilds the bloom chain for a new HDR target. */
-  resize(hdr: GPUTexture, hdrView: GPUTextureView, hdrFormat: GPUTextureFormat): void {
-    const d = this.device
-    for (const b of this.bloom) b.destroy()
-    this.bloom = []
-    this.bloomViews = []
-    const w = hdr.width
-    const h = hdr.height
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const s = 2 ** (i + 1)
-      const tex = d.createTexture({ size: [Math.max(1, Math.floor(w / s)), Math.max(1, Math.floor(h / s))], format: hdrFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-      this.bloom.push(tex)
-      this.bloomViews.push(tex.createView())
-    }
-    const group = (srcView: GPUTextureView, params: GPUBuffer, extra: GPUTextureView = srcView) =>
-      d.createBindGroup({
-        layout: this.layout,
-        entries: [
-          { binding: 0, resource: srcView },
-          { binding: 1, resource: this.sampler },
-          { binding: 2, resource: { buffer: params } },
-          { binding: 3, resource: extra },
-          { binding: 4, resource: { buffer: this.gradeBuf } },
-        ],
-      })
-    this.downGroups = []
-    this.downPass = []
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const src = i === 0 ? hdr : this.bloom[i - 1]!
-      this.downGroups.push(group(i === 0 ? hdrView : this.bloomViews[i - 1]!, this.params[i]!))
-      d.queue.writeBuffer(this.params[i]!, 0, new Float32Array([1 / src.width, 1 / src.height, i === 0 ? 1 : 0, 0]))
-      this.downPass.push({ colorAttachments: [{ view: this.bloomViews[i]!, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    }
-    this.upGroups = []
-    this.upPass = []
-    for (let i = BLOOM_LEVELS - 1; i > 0; i--) {
-      this.upGroups.push(group(this.bloomViews[i]!, this.params[i]!))
-      this.upPass.push({ colorAttachments: [{ view: this.bloomViews[i - 1]!, loadOp: "load", storeOp: "store" }] })
-    }
-    this.compositeGroup = group(hdrView, this.params[0]!, this.bloomViews[0]!)
+  resize(hdr: GPUTexture, hdrView: GPUTextureView, _hdrFormat: GPUTextureFormat): void {
+    this.bloomPyramid.resize({
+      hdr,
+      hdrView,
+      layout: this.layout,
+      sampler: this.sampler,
+      gradeBuffer: this.gradeBuf,
+    })
   }
 
   /** Writes the grade and encodes bloom plus the composite into `target`. */
   encode(enc: GPUCommandEncoder, target: GPUTextureView, g: Grade, time: number): void {
-    const gd = this.gradeData
-    gd[0] = g.exposure
-    gd[1] = g.bloom
-    gd[2] = g.threshold
-    gd[3] = g.saturation
-    gd[4] = g.vignette
-    gd[5] = g.grain
-    gd[6] = time
-    gd[7] = g.warmth
-    this.device.queue.writeBuffer(this.gradeBuf, 0, gd)
-    for (let i = 0; i < BLOOM_LEVELS; i++) {
-      const p = enc.beginRenderPass(this.downPass[i]!)
-      p.setPipeline(this.down)
-      p.setBindGroup(0, this.downGroups[i]!)
-      p.draw(3)
-      p.end()
-    }
-    for (let k = 0; k < BLOOM_LEVELS - 1; k++) {
-      const p = enc.beginRenderPass(this.upPass[k]!)
-      p.setPipeline(this.up)
-      p.setBindGroup(0, this.upGroups[k]!)
-      p.draw(3)
-      p.end()
-    }
+    CarrierGradeStruct.pack(
+      {
+        a: [g.exposure, g.bloom, g.threshold, g.saturation],
+        b: [g.vignette, g.grain, time, g.warmth],
+      },
+      this.gradeData,
+      0,
+    )
+    this.device.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
+    this.bloomPyramid.encode(enc, this.down, this.up)
     if (!this.finalAttachment) this.finalAttachment = { view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }
     this.finalAttachment.view = target
     this.finalPass ??= { colorAttachments: [this.finalAttachment] }
     const fp = enc.beginRenderPass(this.finalPass)
     fp.setPipeline(this.composite)
-    fp.setBindGroup(0, this.compositeGroup!)
+    fp.setBindGroup(0, this.bloomPyramid.compositeGroup)
     fp.draw(3)
     fp.end()
   }

@@ -125,11 +125,22 @@ describe("capture and score", () => {
     expect(ev2).toContainEqual({ k: "captured", zone: 0, team: 2 })
     expect(o.state.zones[0]!.holder).toBe(2)
     expect(o.state.scores[2]).toBeCloseTo(R.rate * 10, 0)
-    // Leaving: still theirs, but no more points.
+    // Leaving: no more points, and the zone drains; back in time, it refills and stays theirs.
     const s = o.state.scores[2]!
-    run(o, R.capture + 10.1, R.capture + 20, [{ team: 2, x: 9000, z: 9000, active: true }])
+    const away = [{ team: 2, x: 9000, z: 9000, active: true }]
+    run(o, R.capture + 10.1, R.capture + 10 + R.capture / 2, away)
     expect(o.state.zones[0]!.holder).toBe(2)
+    expect(o.state.zones[0]!.progress).toBeLessThan(0.6)
     expect(o.state.scores[2]).toBe(s)
+    const t1 = R.capture + 10 + R.capture / 2 + 0.1
+    run(o, t1, t1 + R.capture, (t) => [onZone(o, 0, 2, t)])
+    expect(o.state.zones[0]!.holder).toBe(2)
+    expect(o.state.zones[0]!.progress).toBe(1)
+    // Gone for the capture time: lost, neutral again.
+    const t2 = t1 + R.capture + 0.1
+    const lost = run(o, t2, t2 + R.capture + 0.5, away)
+    expect(lost).toContainEqual({ k: "neutral", zone: 0, team: 2 })
+    expect(o.state.zones[0]!.holder).toBe(-1)
   })
 
   test("contested: two carriers inside freeze the progress and nobody scores", () => {

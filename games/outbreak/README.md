@@ -9,12 +9,12 @@ secondary action shown simultaneously in the floating object prompt (open/close 
 `Space` vaults fences or climbs through open windows. On-screen prompts adapt to the user's keyboard layout
 (`navigator.keyboard.getLayoutMap()`). Backquote opens the shared Lab.
 
-Action feedback appears under the survivor (`src/hud/`): reload, search and barricade show a progress ring, loot
-pops float out, and warnings and damage get their own colours (noise tags such as "Noise 32 m" are an off-by-default
-Lab option). Stamina, reload, health and battery are
-small rings beside the survivor that appear only while they matter. Both move to the other side when you aim into
-them, and co-op teammates get the same at a smaller size. The hotbar sits at the bottom centre and a one-line time
-and ammo summary sits top left. The Lab's HUD group picks one of five HUD styles (Today,
+Action feedback appears under the survivor (`src/hud/`) as outlined text: reload, search and barricade show progress,
+loot pops float out, and warnings and damage get their own colours (noise tags such as "Noise 32 m" are an
+off-by-default Lab option). The default HUD style is Diegetic, Kit's pick on the board (D-13): stamina and health are
+two arcs of a ring on the ground in front of the survivor's feet (stamina left, health right), shown only while they
+matter; reload and battery are small rings beside the body; the hotbar shows only for a moment after a slot change.
+Co-op teammates get the same at a smaller size. The Lab's HUD group switches between the five HUD styles (Today,
 Below Feet, Hades Style, Zomboid Style, Diegetic), can override callout and ring placement, and can switch back to
 the old bottom-left status log.
 Research, defaults and measurements: [docs/outbreak-hud.md](../../docs/outbreak-hud.md).

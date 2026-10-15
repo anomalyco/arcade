@@ -3,34 +3,27 @@ import { FRAME, FRAME_FLOATS } from "./frame"
 import { LIT_WGSL, createLitPipelines, splitFoliage, type LitPipelines } from "./lit"
 import { VERT_BYTES } from "./mesh"
 import { Post, type Grade } from "./post"
-import { installFramePacer } from "../../../../packages/kit/gpu-perf"
+import { boxIntersectsRect2D, drawContiguousChunks } from "@arcade/kit/gpu/cull"
+import {
+  PassList,
+  compileShaderModuleWithLog,
+  depthConfigForMode,
+  type PassContext,
+  type PassSlot,
+  type ScenePass,
+} from "@arcade/kit/gpu/pass-graph"
+import { SceneTargets } from "@arcade/kit/gpu/targets"
+import { installFramePacer } from "@arcade/kit/gpu-perf"
 
 export type { Grade } from "./post"
+export type { PassContext, ScenePass }
+export type Slot = PassSlot
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
-const DEPTH: GPUTextureFormat = "depth32float"
+const DEPTH_CFG = depthConfigForMode("reversed-z")
+const DEPTH: GPUTextureFormat = DEPTH_CFG.format
 
-export type PassContext = {
-  device: GPUDevice
-  /** Group 0: the Frame uniform, visible to vertex + fragment. */
-  frameLayout: GPUBindGroupLayout
-  /** "rgba16float" HDR target. */
-  color: GPUTextureFormat
-  /** "depth32float", REVERSED Z: clear 0, depthCompare "greater-equal" (far plane ~40 km). */
-  depth: GPUTextureFormat
-  /** 4 (MSAA). */
-  samples: number
-}
-
-export interface ScenePass {
-  /** Called inside the main HDR render pass with group 0 (Frame) already bound. Set your own pipeline and group 1+. */
-  draw(pass: GPURenderPassEncoder): void
-  /** Optional: encode work (compute, offscreen passes) before the main HDR pass begins. */
-  prepare?(enc: GPUCommandEncoder): void
-}
-
-export type Slot = "sky" | "opaque" | "alpha"
 export type StaticChunk = { data: ArrayBuffer; box: [x0: number, z0: number, x1: number, z1: number] }
 
 type Range = { first: number; count: number; box: readonly [number, number, number, number] }
@@ -51,13 +44,11 @@ export class Renderer {
   private frameGroup: GPUBindGroup
   private lit: LitPipelines
   private post: Post
-  private passes: Record<Slot, ScenePass[]> = { sky: [], opaque: [], alpha: [] }
+  private passes = new PassList()
   private solid: Stream | null = null
   private foliage: Stream | null = null
   private view: [number, number, number, number] = [0, 0, 0, 0]
-  private msaa: GPUTexture | null = null
-  private depthTex: GPUTexture | null = null
-  private hdr: GPUTexture | null = null
+  private targets: SceneTargets
   private clear: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 }
   private colorAttachment: GPURenderPassColorAttachment | null = null
   private depthAttachment: GPURenderPassDepthStencilAttachment | null = null
@@ -77,23 +68,19 @@ export class Renderer {
     })
     this.frameGroup = d.createBindGroup({ layout: frameLayout, entries: [{ binding: 0, resource: { buffer: this.frameBuf } }] })
     this.context = { device: d, frameLayout, color: HDR, depth: DEPTH, samples: SAMPLES }
+    this.targets = new SceneTargets(d, { hdrFormat: HDR, depthFormat: DEPTH, samples: SAMPLES, depthTextureBinding: false })
     this.lit = createLitPipelines(this.context, this.module(LIT_WGSL, "lit"))
     this.post = new Post(d, HDR, format, (code, label) => this.module(code, label))
   }
 
   /** Compiles a shader module and reports any compile errors with their line. */
   module(code: string, label: string): GPUShaderModule {
-    const m = this.device.createShaderModule({ code, label })
-    // Rejects only once the device is gone, which `device.lost` already reports.
-    m.getCompilationInfo().then((info) => {
-      for (const msg of info.messages) if (msg.type === "error") console.error(`[wgsl ${label}:${msg.lineNum}:${msg.linePos}] ${msg.message}`)
-    }, () => undefined)
-    return m
+    return compileShaderModuleWithLog(this.device, code, label)
   }
 
   /** Drawn in slot order sky → opaque → alpha, each slot in insertion order. The static world opens the opaque slot. */
   addPass(slot: Slot, pass: ScenePass): void {
-    this.passes[slot].push(pass)
+    this.passes.add(slot, pass)
   }
 
   /** Replaces the static world. Each chunk is packed `Mesh` data with its plan bounds. */
@@ -125,21 +112,13 @@ export class Renderer {
   }
 
   resize(w: number, h: number): void {
-    if (w === this.width && h === this.height) return
+    if (!this.targets.resize(w, h)) return
     this.width = w
     this.height = h
-    this.msaa?.destroy()
-    this.depthTex?.destroy()
-    this.hdr?.destroy()
-    const d = this.device
-    this.msaa = d.createTexture({ label: "msaa", size: [w, h], format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
-    this.depthTex = d.createTexture({ label: "depth", size: [w, h], format: DEPTH, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
-    this.hdr = d.createTexture({ label: "hdr", size: [w, h], format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-    const hdrView = this.hdr.createView()
-    this.colorAttachment = { view: this.msaa.createView(), resolveTarget: hdrView, clearValue: this.clear, loadOp: "clear", storeOp: "discard" }
-    this.depthAttachment = { view: this.depthTex.createView(), depthClearValue: 0, depthLoadOp: "clear", depthStoreOp: "discard" }
+    this.colorAttachment = { view: this.targets.msaaView, resolveTarget: this.targets.hdrView, clearValue: this.clear, loadOp: "clear", storeOp: "discard" }
+    this.depthAttachment = { view: this.targets.depthView, depthClearValue: DEPTH_CFG.clearValue, depthLoadOp: "clear", depthStoreOp: "discard" }
     this.mainPass = { colorAttachments: [this.colorAttachment], depthStencilAttachment: this.depthAttachment }
-    this.post.resize(this.hdr, hdrView, HDR)
+    this.post.resize(this.targets.hdr, this.targets.hdrView, HDR)
   }
 
   private pendingFrame: Float32Array | null = null
@@ -196,15 +175,15 @@ export class Renderer {
     frustumGroundRect(frame, STATIC_Y0, STATIC_Y1, this.view)
 
     const enc = d.createCommandEncoder()
-    for (const slot of SLOTS) for (const p of this.passes[slot]) p.prepare?.(enc)
+    this.passes.prepareAll(enc)
     const pass = enc.beginRenderPass(this.mainPass!)
     pass.setBindGroup(0, this.frameGroup)
-    for (const p of this.passes.sky) p.draw(pass)
+    this.passes.drawSlot("sky", pass)
     this.drawnChunks = 0
     if (this.solid) this.drawStatic(pass, this.solid, this.lit.solid)
     if (this.foliage) this.drawStatic(pass, this.foliage, this.lit.foliage)
-    for (const p of this.passes.opaque) p.draw(pass)
-    for (const p of this.passes.alpha) p.draw(pass)
+    this.passes.drawSlot("opaque", pass)
+    this.passes.drawSlot("alpha", pass)
     pass.end()
     this.post.encode(enc, this.canvas.getCurrentTexture().createView(), grade, frame[FRAME.eye + 3]!)
     d.queue.submit([enc.finish()])
@@ -212,24 +191,9 @@ export class Renderer {
 
   /** Culls chunks against the view rect and merges runs of visible, adjacent chunks into single draws. */
   private drawStatic(pass: GPURenderPassEncoder, s: Stream, pipe: GPURenderPipeline): void {
-    const [vx0, vz0, vx1, vz1] = this.view
     pass.setPipeline(pipe)
     pass.setVertexBuffer(0, s.buf)
-    let first = 0
-    let count = 0
-    for (const r of s.ranges) {
-      const b = r.box
-      if (b[0] > vx1 || b[2] < vx0 || b[1] > vz1 || b[3] < vz0) continue
-      this.drawnChunks++
-      if (count && r.first === first + count) count += r.count
-      else {
-        if (count) pass.draw(count, 1, first)
-        first = r.first
-        count = r.count
-      }
-    }
-    if (count) pass.draw(count, 1, first)
+    const stats = drawContiguousChunks(pass, s.ranges, (r) => boxIntersectsRect2D(r.box, this.view))
+    this.drawnChunks += stats.chunksDrawn
   }
 }
-
-const SLOTS: readonly Slot[] = ["sky", "opaque", "alpha"]

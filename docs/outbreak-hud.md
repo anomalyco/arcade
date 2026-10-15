@@ -58,8 +58,8 @@ the dark the world can't be relied on to light a diegetic meter, so labels carry
 
 Lab › HUD › HUD style switches between five directions, the same options as the team board's AR-24 decision
 (D-13). Callout placement and Stamina & status default to "Style default"; setting either overrides the style's
-choice. The game default is Below Feet (`DEFAULT_HUD_SETTINGS.hudStyle` in `src/hud/settings.ts`), so adopting a
-different option is that one value.
+choice. The game default is Diegetic, Kit's pick on D-13 (`DEFAULT_HUD_SETTINGS.hudStyle` in
+`src/hud/settings.ts`); switching to another option is that one value.
 
 | Style | Callouts | Stamina, reload, health, battery | Screen edge |
 | --- | --- | --- | --- |
@@ -67,7 +67,7 @@ different option is that one value.
 | Below Feet | below the feet, swap away from the aim | rings beside the body | summary and hotbar |
 | Hades Style | below the bars | thin bars under the feet | no summary, dimmed hotbar |
 | Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and hotbar |
-| Diegetic | outlined text below the feet, info callouts dropped | stamina and health as a ground ring open behind the body; reload and battery as rings | hotbar only for 2.2 s after a slot change |
+| Diegetic (default) | outlined text below the feet, info callouts dropped | stamina (left) and health (right) as arcs of a ground ring in front of the feet; reload and battery as rings | hotbar only for 2.2 s after a slot change |
 
 The map ([outbreak-map.md](outbreak-map.md)) adds nothing to the screen by default. Its optional helpers are a
 compass ring on the ground around the survivor, in the same place as the Diegetic ground meters, and a corner minimap
@@ -92,6 +92,42 @@ bundled from `scripts/hud-prototype-entry.ts`, so what the board shows is the ga
 The `outbreak-hud` Lab station (`arcade station outbreak-hud`, `games/lab/src/stations/outbreak-hud.ts`) runs the live
 game with one variant per style; each variant sets the style and runs `hud.demo`, which puts a sample on the survivor.
 `games/lab/scripts/prove-page-station.ts outbreak-hud --serve --read hudStyle` proves every variant.
+
+## Diegetic ground ring
+
+Stamina and health are two arcs of one ring on the ground around the feet (`groundArc` in `src/hud/vitals.ts`). The
+ring is a 0.62 m circle projected to the screen point by point (48 points, `OutbreakHud.body`), so the ellipse has the
+camera's real perspective, and it is drawn as SVG paths with constant screen-pixel strokes: a dark casing for contrast
+on lit ground, the empty track, and the fill as a dash of the arc's length. Each arc runs from a small gap at the
+front round to just past the side (0.44π of plan angle); the back half is left open, because that is where the legs
+and shadow are and a DOM overlay can't go behind them. Stamina fills the left arc and health the right, both from the
+front. Colour gives the range (pale, amber, red), and a spent arc's track turns red so exhaustion reads even at zero.
+Callouts below the feet start under the front of the ring while it shows. An earlier version drew two concentric
+CSS ellipses with conic gradients: their strokes thinned on the short axis, the angles stretched, and both crossed the
+legs, which is what Kit's voice note on D-13 pointed at.
+
+## Text sharpness
+
+Kit found HUD text blurry in the D-13 prototype. Causes found and fixed:
+
+- The halo look (Zomboid, Diegetic) used four blurred text shadows, which made glyphs soft and smeared into the R key
+  cap. It is now a hard dark outline drawn under the fill (`-webkit-text-stroke` with `paint-order: stroke fill`) and
+  a 1 px drop; key caps inside callouts reset both.
+- Labels were placed with `translate(-50%, -100%)` of their own size, so their corners landed on half pixels, and
+  teammates were shrunk with `scale(0.8)`. Callouts are now measured once when their text or size changes and
+  positioned by their top-left corner on whole device pixels (`snapToDevice`, ratio from `devicePixelRatio`);
+  teammates get a smaller font size instead of a transform. Rings are sized with width and their own `--vital-size`
+  instead of `scale()`, and snapped the same way.
+- `will-change: transform, opacity` promoted every label and ring to its own compositor layer; removed.
+- The prototype stage scaled the 1280-wide frame with a CSS transform over a 1280 × 800 video. It now uses CSS
+  `zoom` (text laid out at the final size, snapping at DPR × zoom) over a 2560 × 1600 recording.
+
+`scripts/hud-sharpness.ts` stages callouts and meters at a fractional position (with a teammate) and captures each at
+DPR 1 and 2; `scripts/hud-sharpness.py` scores edge acutance (the strongest 8 % of per-pixel luminance steps over the
+crop's luminance range, higher is sharper) and writes a zoomed before/after sheet. Boxed callouts (Below Feet) at DPR 1
+went from 0.963 to 1.020 against 1.077 for the static status text, and at DPR 2 stayed level (0.784 to 0.779; the
+status text is 0.765). The halo change doesn't score cleanly because the outline itself changes the edges, so its
+evidence is the zoomed sheet. In the prototype at 2000 × 1250, DPR 2, the stage scene went from 0.132 to 0.176.
 
 ## Measured
 

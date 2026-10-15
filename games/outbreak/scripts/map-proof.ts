@@ -23,7 +23,9 @@ const server = await createServer({
       enforce: "pre",
       transform(code, id) {
         if (id !== resolve(root, "src/main.ts")) return
-        return code.replace("const harness = {", "const harness = { session: () => session, cam,")
+        const hooked = code.replace("Object.assign(harness, { map })", "Object.assign(harness, { map, session: () => session, cam })")
+        if (hooked === code) throw new Error("map-proof hook did not match src/main.ts")
+        return hooked
       },
     },
   ],
