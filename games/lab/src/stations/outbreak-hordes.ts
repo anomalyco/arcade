@@ -78,7 +78,7 @@ export default defineStation({
   paths: [
     "packages/kit/sim/flow-field.ts",
     "games/outbreak/shared/hordes/index.ts",
-    "games/outbreak/src/hordes/index.ts",
+    "games/outbreak/src/hordes",
     "games/outbreak/scripts/horde-proof.ts",
   ],
   branches: ["flow-hordes*"],

@@ -1,10 +1,9 @@
 // Fails when Outbreak's own modules (shared/, src/, server/) import each other in a cycle, type imports included.
-// Features import the types seam (shared/types.ts) and register with the feature registries instead of importing
-// coop-sim or main.ts, so a cycle means a feature reached back into a composition root.
+// Features import the types seams (shared/types.ts, sim-types.ts, net-types.ts) and register with the feature
+// registries instead of importing coop-sim or main.ts, and the central client modules take the client registry as a
+// parameter rather than importing it, so a cycle means something reached back into a composition root.
 //
-//   bun scripts/check-cycles.ts            list cycles and exit 1 if any
-//   bun scripts/check-cycles.ts --max <n>  ratchet while cycles are being removed: fail only when more than n modules
-//                                          sit in cycles (lower n as they go; drop the flag at zero)
+//   bun scripts/check-cycles.ts   list cycles and exit 1 if any
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 
@@ -100,22 +99,17 @@ function loop(component: string[]): string[] {
   return component
 }
 
-const argv = process.argv.slice(2)
-const max = argv.includes("--max") ? Number(argv[argv.indexOf("--max") + 1]) : 0
-const inCycles = cycles.reduce((n, c) => n + c.length, 0)
 const name = (file: string) => relative(root, file)
 if (cycles.length === 0) {
   console.log(`check-cycles: no import cycles across ${files.length} Outbreak modules`)
-} else if (inCycles <= max) {
-  console.log(`check-cycles: ${cycles.length} cycle(s), ${inCycles} modules in cycles (budget ${max}; lower it as cycles go)`)
 } else {
   for (const component of cycles) {
     console.error(`cycle (${component.length} modules): ${loop(component).map(name).join(" → ")}`)
     if (component.length > 2) console.error(`  members: ${component.map(name).sort().join(", ")}`)
   }
   console.error(
-    `check-cycles: ${cycles.length} import cycle(s), ${inCycles} modules in cycles (budget ${max}). Features import ` +
-      `types from shared/types.ts and register with the feature registries; they never import coop-sim or main.ts.`,
+    `check-cycles: ${cycles.length} import cycle(s). Features import the types seams and register with the feature ` +
+      `registries; they never import coop-sim, main.ts or a feature's index.ts.`,
   )
 }
-process.exit(inCycles <= max ? 0 : 1)
+process.exit(cycles.length === 0 ? 0 : 1)

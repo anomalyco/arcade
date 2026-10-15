@@ -24,6 +24,7 @@ import type { Command } from "../shared/session"
 import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin } from "../shared/discovery/tinker"
 import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/discovery/vignettes"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
 
@@ -356,7 +357,7 @@ describe("NetSession prediction", () => {
     const net = new Loopback(core, 4)
     const memory = new Map<string, string>()
     const storage = { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, v: string) => void memory.set(k, v) }
-    const session = new NetSession({ url: "loop", room: "test", name: "Ann", storage, now: () => net.now, WebSocket: net.socketClass() })
+    const session = new NetSession({ features, url: "loop", room: "test", name: "Ann", storage, now: () => net.now, WebSocket: net.socketClass() })
     let corrections = 0
     let maxCorrection = 0
     for (let i = 0; i < 400; i++) {
@@ -388,7 +389,7 @@ test("over a jittery link, stand-ins never lose a shot and the survivor still co
   let virtualMs = 0
   const core = new CoopRoomCore("test", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
   const net = new Loopback(core, 3, 8)
-  const session = new NetSession({ url: "loop", room: "test", name: "Ann", now: () => net.now, WebSocket: net.socketClass() })
+  const session = new NetSession({ features, url: "loop", room: "test", name: "Ann", now: () => net.now, WebSocket: net.socketClass() })
   let shots = 0
   for (let i = 0; i < 600; i++) {
     virtualMs = net.now * 1000
@@ -530,8 +531,8 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
     const core = new CoopRoomCore("spread", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
     const net = new Loopback(core, 2, 0)
     const sock = net.socketClass()
-    const a = new NetSession({ url: "loop", room: "spread", name: "A", now: () => net.now, WebSocket: sock })
-    const b = new NetSession({ url: "loop", room: "spread", name: "B", now: () => net.now, WebSocket: sock })
+    const a = new NetSession({ features, url: "loop", room: "spread", name: "A", now: () => net.now, WebSocket: sock })
+    const b = new NetSession({ features, url: "loop", room: "spread", name: "B", now: () => net.now, WebSocket: sock })
     for (let i = 0; i < 12; i++) {
       virtualMs = net.now * 1000
       net.step()
@@ -578,8 +579,8 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
     const net = new Loopback(core, 4, 3, 0.05)
     const sock = net.socketClass()
     const clients = [
-      new NetSession({ url: "loop", room: "lossy", name: "P1", now: () => net.now, WebSocket: sock }),
-      new NetSession({ url: "loop", room: "lossy", name: "P2", now: () => net.now, WebSocket: sock }),
+      new NetSession({ features, url: "loop", room: "lossy", name: "P1", now: () => net.now, WebSocket: sock }),
+      new NetSession({ features, url: "loop", room: "lossy", name: "P2", now: () => net.now, WebSocket: sock }),
     ]
     net.lossRate = 0
     for (let i = 0; i < 15; i++) {

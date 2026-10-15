@@ -199,7 +199,7 @@ proven animation techniques to animation.md, not here.
   tile pool ratcheted the retained heap by 7 MB over three round-trip walks.
 
 - **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
-  `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
+  `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather/`
   share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
   unified Lab (`/arcade/lab/?section=weather`) and Outbreak (`Renderer.draw` via `FrameInput.weather`).
   - In top-down / three-quarter views (`zoom = 34–46 m`, `pitch = 1.1 rad`), the camera eye sits `30–40 m` above and

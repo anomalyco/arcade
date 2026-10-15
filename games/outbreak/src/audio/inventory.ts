@@ -3,7 +3,7 @@ import type { StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../../shared/day-cycle"
 import { matStoreId, TINKER_MATERIALS } from "../../shared/discovery/tinker"
 import { RECIPES } from "../../shared/progression"
-import type { SoundActor, SoundEvent } from "./director"
+import type { SoundActor, SoundEvent } from "./types"
 
 /** A sound held for as long as something lasts (a craft, a noisemaker, the generator), at a plan position. */
 export type SoundHold = { key: string; id: string; x: number; y: number }

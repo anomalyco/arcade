@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { makeTown } from "../shared/map"
 import { DEFAULT_OUTBREAK_LIGHTING, packOutbreakLightingUniforms } from "../src/lighting"
+import { OutbreakWeatherController } from "../src/weather/controller"
 import {
   DEFAULT_OUTBREAK_WEATHER,
-  OutbreakWeatherController,
   applyOutbreakWeatherPreset,
   randomizeOutbreakWeather,
   toSharedWeatherSettings,
-} from "../src/weather"
+} from "../src/weather/settings"
 
 describe("Outbreak weather integration", () => {
   test("defaults to Clear (off by default) with zero uniform or draw overhead", () => {

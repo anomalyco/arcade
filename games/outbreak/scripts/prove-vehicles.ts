@@ -6,6 +6,7 @@ import { CoopRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "../tests/loopback"
 
@@ -221,6 +222,7 @@ try {
   const room = new CoopRoomCore("proofveh", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
   const loopback = new Loopback(room, 2)
   const netDriver = new NetSession({
+    features,
     url: "loop",
     room: "proofveh",
     name: "Driver",
@@ -228,6 +230,7 @@ try {
     WebSocket: loopback.socketClass(),
   })
   const netPassenger = new NetSession({
+    features,
     url: "loop",
     room: "proofveh",
     name: "Passenger",

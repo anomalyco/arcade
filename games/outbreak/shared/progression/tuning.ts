@@ -70,7 +70,7 @@ export type ProgressionTuning = {
   generatorNoise: number
 }
 
-/** Lab controls for every progression tunable (bound to the shared LabPanel by `src/progression-lab.ts`). */
+/** Lab controls for every progression tunable (bound to the shared LabPanel by `src/progression/lab.ts`). */
 export const progressionControls = [
   { key: "lootRate", label: "Loot rate", group: "Progression", min: 0, max: 2.5, step: 0.05, unit: "×" },
   { key: "searchQuietTime", label: "Quiet search time", group: "Progression", min: 0.2, max: 4, step: 0.05, unit: "s" },

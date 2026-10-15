@@ -32,7 +32,7 @@ import {
 } from "./lighting"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
-import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather"
+import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather/settings"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
 export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings

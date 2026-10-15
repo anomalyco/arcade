@@ -13,6 +13,7 @@ import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { addHorde, materializeHorde } from "../shared/hordes/index"
 import { inspectSnapshotBreakdown } from "../shared/net-protocol"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "../tests/loopback"
 
@@ -111,6 +112,7 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
     { length: cfg.players },
     (_, i) =>
       new NetSession({
+        features,
         url: "loop",
         room: "bench",
         name: `Bench ${i + 1}`,

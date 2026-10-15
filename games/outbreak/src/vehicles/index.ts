@@ -4,7 +4,6 @@ import { supportHeight } from "../../shared/terrain"
 import {
   createVehicleFromSpawn,
   DEFAULT_VEHICLE_TUNING,
-  outbreakVehiclesSharedFeature,
   seatPos,
   VEHICLES,
 } from "../../shared/vehicles/index"
@@ -12,23 +11,7 @@ import { chunkKey, worldToChunk } from "../../shared/world"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { OutbreakFeelTracker } from "../feel-events"
 import type { NetSession } from "../net-session"
-import {
-  stageVehicleScene,
-  VEHICLE_SCENES,
-  vehicleLabControls,
-  type VehicleLabHost,
-  type VehicleScene,
-} from "../vehicle-lab"
-
-export {
-  outbreakVehiclesSharedFeature,
-  stageVehicleScene,
-  VEHICLE_SCENES,
-  vehicleLabControls,
-  type VehicleLabHost,
-  type VehicleScene,
-}
-export * from "../vehicles"
+import { stageVehicleScene, VEHICLE_SCENES, vehicleLabControls, type VehicleScene } from "../vehicle-lab"
 
 const processedVehicleHitsByTracker = new WeakMap<OutbreakFeelTracker, Set<string>>()
 const netVehicleTablesBySession = new WeakMap<

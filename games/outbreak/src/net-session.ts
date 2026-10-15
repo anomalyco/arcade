@@ -19,6 +19,7 @@ import {
   unpackCommand,
   type ClientMsg,
   type CommandTuple,
+  type PersonalSnapshot,
   type RemoteSurvivor,
   type RosterEntry,
   type ServerMsg,
@@ -29,10 +30,6 @@ import {
 import { slotView, type Command, type Session, type SessionView } from "../shared/session"
 import type { OutbreakVehicleSubsystem } from "../shared/vehicles"
 import { NOMINAL_PLANK_HP, unpackPlanks } from "../shared/discovery/barricade"
-import { outbreakClientFeatures } from "./feature-registry"
-import "./melee/index"
-import "./progression"
-import "./vehicles/index"
 
 /** Seat colours, by seat index: torso, trousers. Also used for name tags. */
 export const SURVIVOR_COLOURS: readonly { torso: number; legs: number; css: string }[] = [
@@ -55,6 +52,16 @@ export type NetSessionOptions = {
   WebSocket?: typeof WebSocket
   /** The server runs different shared code; the page should reload into the same room. */
   onReload?: () => void
+  /** Feature snapshot hooks: the client feature registry (`src/features.ts`). */
+  features: NetSessionFeatures
+}
+
+/** Per-feature reconciliation and interpolation the session runs on each snapshot and frame. */
+export interface NetSessionFeatures {
+  /** Applies discrete feature state from a snapshot; true when nav or solid topology changed. */
+  applyNetWorld(net: NetSession, shared: SharedSnapshot): boolean
+  reconcileNetLocal(net: NetSession, personal: PersonalSnapshot, shared: SharedSnapshot): void
+  syncNetFrame(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void
 }
 
 const TOKEN_KEY = "outbreak.coop.token."
@@ -187,7 +194,7 @@ export class NetSession implements Session {
     this.sim.hour = Math.abs(b.hour - a.hour) > 12 ? b.hour : lerp(a.hour, b.hour, t)
     this.placeZombies(a, b, t, span)
     this.placeSurvivors(a, b, t, span)
-    outbreakClientFeatures.syncNetFrame(this, a, b, t, span)
+    this.options.features.syncNetFrame(this, a, b, t, span)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
   }
@@ -312,7 +319,7 @@ export class NetSession implements Session {
       personal.ack,
       () => {
         Object.assign(p, personal.survivor)
-        outbreakClientFeatures.reconcileNetLocal(this, personal, shared)
+        this.options.features.reconcileNetLocal(this, personal, shared)
       },
       (cmd) => this.sim.stepSurvivor(this.local, cmd, TICK_DT, COOP_TUNING, true),
     )
@@ -389,7 +396,7 @@ export class NetSession implements Session {
     }
     const shots = sim.combat.shots
     for (const shot of s.shots) if (!shots.some((x) => x.id === shot.id)) shots.push(shot)
-    if (outbreakClientFeatures.applyNetWorld(this, s)) {
+    if (this.options.features.applyNetWorld(this, s)) {
       topology = true
     }
     if (topology) {

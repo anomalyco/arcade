@@ -27,7 +27,7 @@ export default defineStation({
     { label: "Lab Weather GPU across the six presets, 1280×800 (command-buffer envelope)", value: "1.1–1.4 ms", source: "perf/weather-lab.json" },
     { label: "Outbreak 3456×1894 bench-outbreak p95 (Rain / Storm, street & interior)", value: "18.0–18.4 ms", source: "games/outbreak/scripts/bench-outbreak.ts" },
   ],
-  paths: ["packages/kit/weather", "packages/kit/fx/weather.ts", "packages/kit/lab/weather.ts", "games/outbreak/src/weather.ts"],
+  paths: ["packages/kit/weather", "packages/kit/fx/weather.ts", "packages/kit/lab/weather.ts", "games/outbreak/src/weather"],
   branches: ["weather-*"],
   links: [{ label: "Outbreak street", href: "/arcade/outbreak/?peaceful=1&seed=7" }],
 })
