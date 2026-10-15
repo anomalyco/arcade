@@ -10,7 +10,7 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
 
 1. Open the Lab at `/arcade/lab/` (one app for every game; the top-bar Game picker loads one game's adapters or
    all of them). Choose an effect or fixture in the Library drawer
-   (`Ctrl+Space`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
+   (`Ctrl+Space`, then type to filter or use the arrow keys and `Enter`), then its environment in the Outliner's World footer. Select what you are tuning in the Outliner or
    viewport; Details shows its settings first. `⌘K` finds objects, Library items, commands and setting names, and
    the pin on a Details row adds it to the Watch list. Backquote toggles the workbench chrome; games use the same
    panel as a floating overlay.
@@ -36,7 +36,8 @@ number keys `1`–`9` and `0` (outside text fields, Play, the grid and the radia
 three slots around the viewport: the Outliner column (`left`), the top of the Details column (`right`) and a dock under
 the viewport (`dock`, which takes the Library drawer's place until you open the Library again). `⇧1`–`⇧9` pick the
 open station's variants. ✕ in the list header (or `station.close`) goes back to the plain workbench, and choosing
-another section by hand does too. A station whose section belongs to a game that isn't loaded loads that game's
+another section by hand does too. The slots and the dock resize from their edges like the other panels, and each
+station keeps its own sizes ([lab-workbench.md](lab-workbench.md#layout-outliner--details--library-drawer)). A station whose section belongs to a game that isn't loaded loads that game's
 adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`). `?station=<id>` opens one on
 load.
 
@@ -226,7 +227,9 @@ Test an intentional gameplay-physics change in the actual simulation separately 
 ## Preserve input and audio ownership
 
 Text editors, search, `<select>` dropdowns and preset dialogs own printable keys, arrows, Space and clipboard/text-undo
-shortcuts. They must not trigger canvas actions. Placement/move ghosts precede Inspector navigation; focused Inspector
+shortcuts. They must not trigger canvas actions. A list with type-to-filter (the Library) owns printable keys the same
+way: mark its host `data-typeahead` so capture-phase letter shortcuts (`M` mute, `N` voice note) skip it, and stop
+propagation for the keys it handles. Placement/move ghosts precede Inspector navigation; focused Inspector
 precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open
 capture.
 
