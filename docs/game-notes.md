@@ -1256,9 +1256,9 @@ Candidates from the code audits; measure and playtest before moving any into the
   against the exponential chase it replaced: soldiers' velocity jumps (> 1 m/s between frames) fell from 1,494 to
   166 per minute on a clean 30 ms link and from 1,511 to 217 at 80 ± 30 ms with 2% loss, jerk RMS 38,263 → 11,669
   and 42,676 → 16,154 m/s³; a jeep on a figure-eight 209 → 15 and 729 → 181 jumps per minute. The cost is 100 ms more
-  delay: soldiers are drawn 0.46 m behind their server position on average instead of 0.27 m (clean). In practice
-  mode in headless Chromium (`scripts/prove-remote.ts`), frames where a bot's drawn speed jumped > 1.5 m/s fell from
-  58% to 1.4% on the vehicle lot and 48% to 13% downtown.
+  delay: soldiers are drawn 0.46 m behind their server position on average instead of 0.27 m (clean). A one-off
+  headless practice run at the time showed bots' frame-to-frame speed jumps (> 1.5 m/s) falling from 58% to 1.4% of
+  frames on the vehicle lot and 48% to 13% downtown.
 - **Pack entity lists as positional arrays behind the decoder.** Blackout's `shared/wire.ts` sends players, vehicles,
   frags, claymores and `you` as arrays with flag bits and decodes them back to the same `Snapshot` in
   `decodeServer`, so nothing past the socket changed. Downtown, 8 soldiers and 5 vehicles: 1,994 → 1,069 B per
