@@ -31,7 +31,7 @@ import "./pacing"
 import { type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
-import { unseenControls } from "./unseen"
+import { syncUnseenSettingChange, unseenControls } from "./unseen"
 import { type VehicleLabHost } from "./vehicles/index"
 import type { OutbreakWeatherController } from "./weather"
 import { zombieControls } from "./zombie-profile"
@@ -356,6 +356,9 @@ export function handleOutbreakSettingChanged(
   const routed = resolveOutbreakSettingTarget(rawKey)
   const key = routed?.field ?? rawKey
   outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
+  if (syncUnseenSettingChange(settings.unseen, key)) {
+    lab.refresh()
+  }
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
   if (key === "zombieCount") {
