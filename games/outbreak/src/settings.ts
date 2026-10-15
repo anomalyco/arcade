@@ -8,6 +8,7 @@ import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
+import { DEFAULT_PACING_TARGETS, type PacingTargetConfig } from "../shared/difficulty-tuner"
 import { BOT_SKILL_PRESETS } from "../shared/survivor-bot"
 import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
@@ -74,7 +75,7 @@ export type OutbreakCombatSettings = MeleeTuning & {
   bloodStyle: number
 }
 
-export type OutbreakBotSettings = {
+export type OutbreakBotSettings = PacingTargetConfig & {
   botEnabled: number
   botCount: number
   botSkillPreset: number
@@ -164,6 +165,7 @@ export const DEFAULT_OUTBREAK_BOTS: OutbreakBotSettings = {
   botStaminaDiscipline: BOT_SKILL_PRESETS.Skilled.staminaDiscipline,
   botAmmoDiscipline: BOT_SKILL_PRESETS.Skilled.ammoDiscipline,
   botMapKnowledge: BOT_SKILL_PRESETS.Skilled.mapKnowledge,
+  ...DEFAULT_PACING_TARGETS,
 }
 
 export type OutbreakSubsystemMap = {
@@ -299,6 +301,9 @@ const KEY_ROUTING: Readonly<Record<string, KeyTarget>> = (() => {
   map.aiWalkSpeed = { subsystem: "ai", field: "walkSpeed", sample: DEFAULTS_TEMPLATE.ai.walkSpeed }
   for (const field of ["startHour", "safeRadius", "initialDensity", "rampTime", "noiseSensitivity", "maxActiveNearPlayer"] as const) {
     map[`pacing.${field}`] = { subsystem: "ai", field, sample: DEFAULTS_TEMPLATE.ai[field] }
+  }
+  for (const field of Object.keys(DEFAULT_PACING_TARGETS) as (keyof PacingTargetConfig)[]) {
+    map[`pacingTargets.${field}`] = { subsystem: "bots", field, sample: DEFAULTS_TEMPLATE.bots[field] }
   }
   return map
 })()

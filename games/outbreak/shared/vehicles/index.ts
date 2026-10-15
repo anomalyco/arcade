@@ -26,7 +26,6 @@ export * from "../vehicles"
 const SEC_VEHICLES = 64
 const cm = (v: number) => Math.round(v * 100)
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-const encodeSlotIndexById = new Map<string, number>()
 
 export function sameVehicleState(a: VehicleState, b: VehicleState): boolean {
   return (
@@ -256,7 +255,7 @@ export const outbreakVehiclesSharedFeature = registerOutbreakSharedFeature<
     bit: SEC_VEHICLES,
     key: "vehicles",
     collect: ({ sim, isDelta, baseSnap, viewerCenter, interest, bubbleCx, bubbleCy }) => {
-      encodeSlotIndexById.clear()
+      const encodeSlotIndexById = new Map<string, number>()
       for (let i = 0; i < sim.slots.length; i++) {
         const s = sim.slots[i]!
         encodeSlotIndexById.set(s.id, s.index)

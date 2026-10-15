@@ -489,6 +489,24 @@ type ActiveSwingRuntime = {
   wearAccum?: number
 }
 
+export type SerializedActiveSwing = {
+  event: CombatMeleeEvent
+  hitZombieIds: number[]
+  durabilitySpent: boolean
+  attackerId: string
+  attackerIndex: number
+  wearAccum?: number
+}
+
+export type OutbreakCombatSnapshot = {
+  nextShotId: number
+  nextMeleeId: number
+  shots: CombatShotEvent[]
+  meleeSwings: CombatMeleeEvent[]
+  activeSwingsByActor: [string, SerializedActiveSwing][]
+  wearRemainderByActor: [string, number][]
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 export class OutbreakCombatSubsystem {
@@ -498,6 +516,79 @@ export class OutbreakCombatSubsystem {
   private nextMeleeId = 1
   private readonly activeSwings = new WeakMap<object, ActiveSwingRuntime>()
   private readonly wearRemainder = new WeakMap<object, number>()
+
+  snapshot(slots: readonly { id: string; survivor: object }[] = []): OutbreakCombatSnapshot {
+    const activeSwingsByActor: [string, SerializedActiveSwing][] = []
+    const wearRemainderByActor: [string, number][] = []
+    for (const s of slots) {
+      const sw = this.activeSwings.get(s.survivor)
+      if (sw) {
+        activeSwingsByActor.push([
+          s.id,
+          {
+            event: { ...sw.event, hits: sw.event.hits.map((h) => ({ ...h })) },
+            hitZombieIds: [...sw.hitZombieIds],
+            durabilitySpent: sw.durabilitySpent,
+            attackerId: sw.attackerId,
+            attackerIndex: sw.attackerIndex,
+            ...(sw.wearAccum !== undefined ? { wearAccum: sw.wearAccum } : {}),
+          },
+        ])
+      }
+      const rem = this.wearRemainder.get(s.survivor)
+      if (rem !== undefined && rem > 0) {
+        wearRemainderByActor.push([s.id, rem])
+      }
+    }
+    return {
+      nextShotId: this.nextShotId,
+      nextMeleeId: this.nextMeleeId,
+      shots: this.shots.map((sh) => ({ ...sh })),
+      meleeSwings: this.meleeSwings.map((m) => ({
+        ...m,
+        hits: m.hits.map((h) => ({ ...h })),
+      })),
+      activeSwingsByActor,
+      wearRemainderByActor,
+    }
+  }
+
+  restore(snap: OutbreakCombatSnapshot, slots: readonly { id: string; survivor: object }[] = []): void {
+    this.nextShotId = snap.nextShotId
+    this.nextMeleeId = snap.nextMeleeId
+    this.shots.length = 0
+    for (const sh of snap.shots) this.shots.push({ ...sh })
+    this.meleeSwings.length = 0
+    for (const m of snap.meleeSwings) {
+      this.meleeSwings.push({ ...m, hits: m.hits.map((h) => ({ ...h })) })
+    }
+    const slotById = new Map(slots.map((s) => [s.id, s.survivor]))
+    for (const s of slots) {
+      this.activeSwings.delete(s.survivor)
+      this.wearRemainder.delete(s.survivor)
+    }
+    for (const [actorId, sw] of snap.activeSwingsByActor ?? []) {
+      const survivor = slotById.get(actorId)
+      if (!survivor) continue
+      const matchingEvent =
+        this.meleeSwings.find((m) => m.id === sw.event.id) ?? {
+          ...sw.event,
+          hits: sw.event.hits.map((h) => ({ ...h })),
+        }
+      this.activeSwings.set(survivor, {
+        event: matchingEvent,
+        hitZombieIds: new Set(sw.hitZombieIds),
+        durabilitySpent: sw.durabilitySpent,
+        attackerId: sw.attackerId,
+        attackerIndex: sw.attackerIndex,
+        ...(sw.wearAccum !== undefined ? { wearAccum: sw.wearAccum } : {}),
+      })
+    }
+    for (const [actorId, rem] of snap.wearRemainderByActor ?? []) {
+      const survivor = slotById.get(actorId)
+      if (survivor) this.wearRemainder.set(survivor, rem)
+    }
+  }
 
   firePistol(
     player: { x: number; y: number; aim: number; noise: number; vault: unknown } & SurvivorCombatState,

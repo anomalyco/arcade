@@ -17,6 +17,20 @@ export class Rng {
     this.s = seed >>> 0
   }
 
+  getState(): number {
+    return this.s >>> 0
+  }
+
+  setState(state: number): void {
+    this.s = state >>> 0
+  }
+
+  clone(): Rng {
+    const out = new Rng(0)
+    out.s = this.s
+    return out
+  }
+
   next(): number {
     this.s = (this.s + 0x6d2b79f5) >>> 0
     let t = this.s

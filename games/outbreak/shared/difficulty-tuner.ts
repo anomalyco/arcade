@@ -126,6 +126,74 @@ export const TARGET_SURVIVAL_CURVE: Readonly<Record<BotSkillPresetId, SkillTarge
   },
 }
 
+/**
+ * Left 4 Dead AI Director-style fun & pacing target parameters.
+ * Exposed in the shared Lab panel (`'Pacing targets'` group), optimized by the difficulty tuner,
+ * and included on the Problems board decision (`D-22`).
+ */
+export type PacingTargetKey =
+  | "targetNoviceNights"
+  | "targetCasualNights"
+  | "targetSkilledNights"
+  | "targetExpertNights"
+  | "targetPeaksPerNight"
+  | "minRelaxWindowSeconds"
+  | "maxRelaxWindowSeconds"
+  | "targetHighIntensityPct"
+  | "targetCloseCallsPerNight"
+  | "minDeathWarningSeconds"
+  | "minWarnedDeathPct"
+
+export type PacingTargetConfig = Record<PacingTargetKey, number>
+
+export type PacingTargetSpec = {
+  key: PacingTargetKey
+  label: string
+  unit: string
+  min: number
+  max: number
+  step: number
+  defaultValue: number
+}
+
+export const DEFAULT_PACING_TARGETS: PacingTargetConfig = {
+  targetNoviceNights: 0.55,
+  targetCasualNights: 1.6,
+  targetSkilledNights: 3.1,
+  targetExpertNights: 3.7,
+  targetPeaksPerNight: 2.2,
+  minRelaxWindowSeconds: 18,
+  maxRelaxWindowSeconds: 95,
+  targetHighIntensityPct: 26,
+  targetCloseCallsPerNight: 1.2,
+  minDeathWarningSeconds: 3.5,
+  minWarnedDeathPct: 88,
+}
+
+export const PACING_TARGET_SPECS: readonly PacingTargetSpec[] = [
+  { key: "targetNoviceNights", label: "Novice median survival", unit: "nights", min: 0.2, max: 2.0, step: 0.05, defaultValue: DEFAULT_PACING_TARGETS.targetNoviceNights },
+  { key: "targetCasualNights", label: "Casual median survival", unit: "nights", min: 0.8, max: 3.0, step: 0.05, defaultValue: DEFAULT_PACING_TARGETS.targetCasualNights },
+  { key: "targetSkilledNights", label: "Skilled median survival", unit: "nights", min: 1.5, max: 4.0, step: 0.05, defaultValue: DEFAULT_PACING_TARGETS.targetSkilledNights },
+  { key: "targetExpertNights", label: "Expert median survival", unit: "nights", min: 2.5, max: 4.0, step: 0.05, defaultValue: DEFAULT_PACING_TARGETS.targetExpertNights },
+  { key: "targetPeaksPerNight", label: "Tension peaks per night", unit: "/night", min: 0.8, max: 4.5, step: 0.1, defaultValue: DEFAULT_PACING_TARGETS.targetPeaksPerNight },
+  { key: "minRelaxWindowSeconds", label: "Min relax window", unit: "s", min: 6, max: 45, step: 1, defaultValue: DEFAULT_PACING_TARGETS.minRelaxWindowSeconds },
+  { key: "maxRelaxWindowSeconds", label: "Max relax window", unit: "s", min: 40, max: 180, step: 5, defaultValue: DEFAULT_PACING_TARGETS.maxRelaxWindowSeconds },
+  { key: "targetHighIntensityPct", label: "High-intensity time", unit: "%", min: 10, max: 50, step: 1, defaultValue: DEFAULT_PACING_TARGETS.targetHighIntensityPct },
+  { key: "targetCloseCallsPerNight", label: "Close calls per night", unit: "/night", min: 0.3, max: 3.0, step: 0.1, defaultValue: DEFAULT_PACING_TARGETS.targetCloseCallsPerNight },
+  { key: "minDeathWarningSeconds", label: "Min death warning lead", unit: "s", min: 1.0, max: 10.0, step: 0.5, defaultValue: DEFAULT_PACING_TARGETS.minDeathWarningSeconds },
+  { key: "minWarnedDeathPct", label: "Fair warned deaths", unit: "%", min: 60, max: 100, step: 1, defaultValue: DEFAULT_PACING_TARGETS.minWarnedDeathPct },
+]
+
+export const pacingTargetControls = PACING_TARGET_SPECS.map((s) => ({
+  key: s.key,
+  label: s.label,
+  group: "Pacing targets",
+  min: s.min,
+  max: s.max,
+  step: s.step,
+  unit: s.unit,
+}))
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 export function quantizeDifficultyVector(raw: DifficultyVector): DifficultyVector {
@@ -182,14 +250,35 @@ export type PresetSurvivalSummary = {
   night4SurvivalRate: number
   meanKills: number
   meanPeakChasers: number
+  meanIntensity: number
+  peakIntensity: number
+  highIntensityFraction: number
+  buildUpFraction: number
+  relaxFraction: number
+  meanPeaksPerNight: number
+  meanMinRelaxWindowSeconds: number
+  meanMaxRelaxWindowSeconds: number
+  meanCloseCallsPerNight: number
+  warnedDeathRate: number
+  meanDeathWarningSeconds: number
   unfairSpawns: number
   causesOfDeath: Record<string, number>
+}
+
+export type DifficultyLossBreakdown = {
+  total: number
+  survivalCurveLoss: number
+  pacingFunLoss: number
+  monotonicityLoss: number
+  fairnessLoss: number
 }
 
 export type CandidateEvaluation = {
   label: string
   vector: DifficultyVector
   loss: number
+  lossBreakdown: DifficultyLossBreakdown
+  pacingTargets: PacingTargetConfig
   byPreset: Record<BotSkillPresetId, PresetSurvivalSummary>
   runs: BotRunResult[]
 }
@@ -216,9 +305,15 @@ export function summarizePresetRuns(
   const n = Math.max(1, runs.length)
   const causes: Record<string, number> = {}
   let unfair = 0
+  let warnedCount = 0
+  const deathWarnings: number[] = []
   for (const r of runs) {
     causes[r.causeOfDeath] = (causes[r.causeOfDeath] ?? 0) + 1
     unfair += r.unfairSpawns.inView + r.unfairSpawns.behindPlayer
+    if (r.pacing?.warnedDeath ?? true) warnedCount++
+    if (r.pacing?.deathWarningSeconds !== null && r.pacing?.deathWarningSeconds !== undefined) {
+      deathWarnings.push(r.pacing.deathWarningSeconds)
+    }
   }
   return {
     preset,
@@ -238,56 +333,115 @@ export function summarizePresetRuns(
     night4SurvivalRate: Number((runs.filter((r) => r.nightsSurvived >= 3.85).length / n).toFixed(3)),
     meanKills: mean(runs.map((r) => r.killsByWeapon.total)),
     meanPeakChasers: mean(runs.map((r) => r.peakSimultaneousChasers)),
+    meanIntensity: mean(runs.map((r) => r.pacing?.meanIntensity ?? 0.2)),
+    peakIntensity: mean(runs.map((r) => r.pacing?.peakIntensity ?? 0.5)),
+    highIntensityFraction: mean(runs.map((r) => r.pacing?.highIntensityFraction ?? 0.2)),
+    buildUpFraction: mean(runs.map((r) => r.pacing?.buildUpFraction ?? 0.3)),
+    relaxFraction: mean(runs.map((r) => r.pacing?.relaxFraction ?? 0.5)),
+    meanPeaksPerNight: mean(runs.map((r) => r.pacing?.peaksPerNight ?? 2.0)),
+    meanMinRelaxWindowSeconds: mean(runs.map((r) => r.pacing?.minRelaxWindowSeconds ?? 20)),
+    meanMaxRelaxWindowSeconds: mean(runs.map((r) => r.pacing?.maxRelaxWindowSeconds ?? 80)),
+    meanCloseCallsPerNight: mean(runs.map((r) => r.pacing?.closeCallsPerNight ?? 1.0)),
+    warnedDeathRate: Number((warnedCount / n).toFixed(3)),
+    meanDeathWarningSeconds: deathWarnings.length > 0 ? mean(deathWarnings) : 6.0,
     unfairSpawns: unfair,
     causesOfDeath: causes,
   }
 }
 
 /**
- * Loss function measuring how well a candidate `DifficultyVector` matches `TARGET_SURVIVAL_CURVE`:
- * - Penalizes deviation from target median nights and Night 1 survival rates for Novice, Casual, Skilled, Expert.
- * - Penalizes early evening deaths (< 0.15 nights).
- * - Strongly enforces strict monotonic skill ordering: Novice < Casual < Skilled < Expert.
- * - Heavily penalizes any unfair spawns.
+ * Loss function measuring how well a candidate `DifficultyVector` matches both:
+ * 1. The survival curve targets per skill preset (`Novice`..`Expert`)
+ * 2. Left 4 Dead-style fun & pacing targets (`peaksPerNight`, `min/maxRelaxWindowSeconds`,
+ *    `targetHighIntensityPct`, `targetCloseCallsPerNight`, and fair warning-preceded deaths).
  */
-export function computeDifficultyLoss(
+export function computeDifficultyLossBreakdown(
   byPreset: Record<BotSkillPresetId, PresetSurvivalSummary>,
-): number {
+  pacingOverrides?: Partial<PacingTargetConfig>,
+): DifficultyLossBreakdown {
+  const pt: PacingTargetConfig = { ...DEFAULT_PACING_TARGETS, ...pacingOverrides }
+  const customMedianTargets: Record<BotSkillPresetId, number> = {
+    Novice: pt.targetNoviceNights,
+    Casual: pt.targetCasualNights,
+    Skilled: pt.targetSkilledNights,
+    Expert: pt.targetExpertNights,
+    Perfect: TARGET_SURVIVAL_CURVE.Perfect.targetMedianNights,
+  }
+
   const presets: readonly BotSkillPresetId[] = ["Novice", "Casual", "Skilled", "Expert"]
-  let loss = 0
+  let survivalCurveLoss = 0
+  let pacingFunLoss = 0
+  let monotonicityLoss = 0
+  let fairnessLoss = 0
 
   for (const p of presets) {
     const sum = byPreset[p]
     if (!sum || sum.runs === 0) continue
     const target = TARGET_SURVIVAL_CURVE[p]
+    const targetMed = customMedianTargets[p]
 
     // 1. Squared error on median & mean nights survived
-    const medErr = sum.medianNights - target.targetMedianNights
-    const meanErr = sum.meanNights - target.targetMedianNights
-    loss += medErr * medErr * 14.0 + meanErr * meanErr * 8.0
+    const medErr = sum.medianNights - targetMed
+    const meanErr = sum.meanNights - targetMed
+    survivalCurveLoss += medErr * medErr * 14.0 + meanErr * meanErr * 8.0
 
     // 2. Band violation penalty if outside [minMedianNights, maxMedianNights]
-    if (sum.medianNights < target.minMedianNights) {
-      loss += Math.pow(target.minMedianNights - sum.medianNights, 2) * 28.0
-    } else if (sum.medianNights > target.maxMedianNights) {
-      loss += Math.pow(sum.medianNights - target.maxMedianNights, 2) * 28.0
+    const minBand = Math.min(target.minMedianNights, targetMed - 0.25)
+    const maxBand = Math.max(target.maxMedianNights, targetMed + 0.35)
+    if (sum.medianNights < minBand) {
+      survivalCurveLoss += Math.pow(minBand - sum.medianNights, 2) * 28.0
+    } else if (sum.medianNights > maxBand) {
+      survivalCurveLoss += Math.pow(sum.medianNights - maxBand, 2) * 28.0
     }
 
     // 3. Night 1 survival rate alignment
     const n1Err = sum.night1SurvivalRate - target.targetNight1SurvivalRate
-    loss += n1Err * n1Err * 10.0
+    survivalCurveLoss += n1Err * n1Err * 10.0
 
     // 4. Early evening death penalty (< 0.15 nights)
     const earlyDeathRate = 1 - sum.eveningSurvivalRate
     if (earlyDeathRate > target.maxEarlyEveningDeathRate) {
-      loss += Math.pow(earlyDeathRate - target.maxEarlyEveningDeathRate, 2) * 35.0
+      survivalCurveLoss += Math.pow(earlyDeathRate - target.maxEarlyEveningDeathRate, 2) * 35.0
     }
 
-    // 5. Unfair spawn penalty
-    loss += sum.unfairSpawns * 50.0
+    // 5. Left 4 Dead-style pacing & fun targets (weighted across skill tiers, strongest for Casual & Skilled)
+    const tierWeight = p === "Casual" || p === "Skilled" ? 1.0 : 0.6
+
+    // 5a. Tension peaks per night
+    const peakRateErr = sum.meanPeaksPerNight - pt.targetPeaksPerNight
+    pacingFunLoss += tierWeight * peakRateErr * peakRateErr * 1.8
+
+    // 5b. High-intensity time fraction (avoid flat monotony and avoid exhausting 100% siege)
+    const targetHiFrac = pt.targetHighIntensityPct / 100
+    const hiFracErr = sum.highIntensityFraction - targetHiFrac
+    pacingFunLoss += tierWeight * hiFracErr * hiFracErr * 22.0
+
+    // 5c. Relaxation windows between peaks within [minRelaxWindowSeconds, maxRelaxWindowSeconds]
+    if (sum.meanMinRelaxWindowSeconds < pt.minRelaxWindowSeconds) {
+      const deficit = (pt.minRelaxWindowSeconds - sum.meanMinRelaxWindowSeconds) / Math.max(5, pt.minRelaxWindowSeconds)
+      pacingFunLoss += tierWeight * deficit * deficit * 6.0
+    }
+    if (sum.meanMaxRelaxWindowSeconds > pt.maxRelaxWindowSeconds) {
+      const excess = (sum.meanMaxRelaxWindowSeconds - pt.maxRelaxWindowSeconds) / Math.max(20, pt.maxRelaxWindowSeconds)
+      pacingFunLoss += tierWeight * excess * excess * 5.0
+    }
+
+    // 5d. Close calls per night (exciting narrow escapes before death)
+    const ccErr = sum.meanCloseCallsPerNight - pt.targetCloseCallsPerNight
+    pacingFunLoss += tierWeight * ccErr * ccErr * 2.2
+
+    // 6. Fair warning-preceded deaths & zero unfair spawns
+    const targetWarnedRate = pt.minWarnedDeathPct / 100
+    if (sum.warnedDeathRate < targetWarnedRate) {
+      fairnessLoss += Math.pow(targetWarnedRate - sum.warnedDeathRate, 2) * 24.0
+    }
+    if (sum.meanDeathWarningSeconds < pt.minDeathWarningSeconds) {
+      fairnessLoss += Math.pow(pt.minDeathWarningSeconds - sum.meanDeathWarningSeconds, 2) * 0.8
+    }
+    fairnessLoss += sum.unfairSpawns * 50.0
   }
 
-  // 6. Monotonicity across skill tiers (Novice < Casual < Skilled < Expert)
+  // 7. Monotonicity across skill tiers (Novice < Casual < Skilled < Expert)
   for (let i = 0; i < presets.length - 1; i++) {
     const lo = byPreset[presets[i]!]
     const hi = byPreset[presets[i + 1]!]
@@ -295,15 +449,29 @@ export function computeDifficultyLoss(
     const minGap = 0.35
     const medDiff = hi.medianNights - lo.medianNights
     if (medDiff < minGap) {
-      loss += Math.pow(minGap - medDiff, 2) * 45.0
+      monotonicityLoss += Math.pow(minGap - medDiff, 2) * 45.0
     }
     const meanDiff = hi.meanNights - lo.meanNights
     if (meanDiff < minGap) {
-      loss += Math.pow(minGap - meanDiff, 2) * 35.0
+      monotonicityLoss += Math.pow(minGap - meanDiff, 2) * 35.0
     }
   }
 
-  return Number(loss.toFixed(4))
+  const total = survivalCurveLoss + pacingFunLoss + monotonicityLoss + fairnessLoss
+  return {
+    total: Number(total.toFixed(4)),
+    survivalCurveLoss: Number(survivalCurveLoss.toFixed(4)),
+    pacingFunLoss: Number(pacingFunLoss.toFixed(4)),
+    monotonicityLoss: Number(monotonicityLoss.toFixed(4)),
+    fairnessLoss: Number(fairnessLoss.toFixed(4)),
+  }
+}
+
+export function computeDifficultyLoss(
+  byPreset: Record<BotSkillPresetId, PresetSurvivalSummary>,
+  pacingOverrides?: Partial<PacingTargetConfig>,
+): number {
+  return computeDifficultyLossBreakdown(byPreset, pacingOverrides).total
 }
 
 export type EvaluateCandidateOptions = {
@@ -316,6 +484,7 @@ export type EvaluateCandidateOptions = {
   tickDt?: number
   playerCount?: number
   recordReplayForSeed?: number
+  pacingTargets?: Partial<PacingTargetConfig>
 }
 
 export function evaluateDifficultyCandidate(options: EvaluateCandidateOptions): CandidateEvaluation {
@@ -348,11 +517,14 @@ export function evaluateDifficultyCandidate(options: EvaluateCandidateOptions): 
     byPreset[preset] = summarizePresetRuns(preset, sub)
   }
 
-  const loss = computeDifficultyLoss(byPreset)
+  const pacingTargets: PacingTargetConfig = { ...DEFAULT_PACING_TARGETS, ...options.pacingTargets }
+  const lossBreakdown = computeDifficultyLossBreakdown(byPreset, pacingTargets)
   return {
     label: options.label,
     vector,
-    loss,
+    loss: lossBreakdown.total,
+    lossBreakdown,
+    pacingTargets,
     byPreset,
     runs,
   }
@@ -450,6 +622,7 @@ export type CmaEsSearchOptions = {
   timeScale?: number
   initialSigma?: number
   rngSeed?: number
+  pacingTargets?: Partial<PacingTargetConfig>
 }
 
 export type CmaEsSearchResult = {
@@ -517,6 +690,7 @@ export function runCmaEsDifficultySearch(options: CmaEsSearchOptions): CmaEsSear
     presets,
     maxDurationSeconds: options.maxDurationSeconds,
     timeScale: options.timeScale,
+    pacingTargets: options.pacingTargets,
   })
 
   let best = baseline
@@ -544,6 +718,7 @@ export function runCmaEsDifficultySearch(options: CmaEsSearchOptions): CmaEsSear
         presets,
         maxDurationSeconds: options.maxDurationSeconds,
         timeScale: options.timeScale,
+        pacingTargets: options.pacingTargets,
       })
       pop.push({ u, z, evalRes })
       allEvaluations.push(evalRes)

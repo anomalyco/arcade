@@ -174,6 +174,20 @@ export type AISurvivor = {
   noise: number
 } & SurvivorFlashlightState
 
+export type OutbreakAISnapshot = {
+  tick: number
+  threat: number
+  darkness: number
+  nextAgentId: number
+  manualSpawnOnly: boolean
+  rngSeedMix: number
+  config: AIConfig
+  agents: AIAgent[]
+  portalStates: [string, PortalState][]
+  noiseBus: import("@arcade/kit/sim/ai").NoiseBusSnapshot
+  pacing: import("./pacing").PacingDirectorSnapshot
+}
+
 export class OutbreakAISubsystem {
   readonly nav = new GridNav(SIZE, SIZE, 0.5)
   readonly spatial = new SpatialHash(SIZE, SIZE, 4)
@@ -186,6 +200,8 @@ export class OutbreakAISubsystem {
   /** Current 0..1 nocturnal threat / darkness level driven by `dayCycle(hour)`. */
   threat = 1
   darkness = 1
+  /** Optional simulation PRNG state mix for forked rollouts (0 on baseline runs). */
+  rngSeedMix = 0
   private nextAgentId = 1
   private manualSpawnOnly = false
   private walls: Rect[] = []
@@ -437,6 +453,49 @@ export class OutbreakAISubsystem {
     return this.portalStates.get(portalId)?.barricadePlanks ?? 0
   }
 
+  snapshot(): OutbreakAISnapshot {
+    return {
+      tick: this.tick,
+      threat: this.threat,
+      darkness: this.darkness,
+      nextAgentId: this.nextAgentId,
+      manualSpawnOnly: this.manualSpawnOnly,
+      rngSeedMix: this.rngSeedMix,
+      config: { ...this.config },
+      agents: this.agents.map((a) => ({
+        ...a,
+        path: a.path.map((pt) => ({ x: pt.x, y: pt.y })),
+        detachedLimbs: [...a.detachedLimbs],
+      })),
+      portalStates: [...this.portalStates.entries()].map(([k, v]) => [k, { ...v }]),
+      noiseBus: this.noiseBus.snapshot(),
+      pacing: this.pacing.snapshot(),
+    }
+  }
+
+  restore(town: Town, snap: OutbreakAISnapshot, chunkTiles?: ReadonlyMap<string, Uint8Array>): void {
+    this.tick = snap.tick
+    this.threat = snap.threat
+    this.darkness = snap.darkness
+    this.nextAgentId = snap.nextAgentId
+    this.manualSpawnOnly = snap.manualSpawnOnly
+    this.rngSeedMix = snap.rngSeedMix ?? 0
+    this.config = { ...snap.config }
+    this.agents = snap.agents.map((a) => ({
+      ...a,
+      path: a.path.map((pt) => ({ x: pt.x, y: pt.y })),
+      detachedLimbs: [...a.detachedLimbs],
+    }))
+    this.portalStates.clear()
+    for (const [k, v] of snap.portalStates) {
+      this.portalStates.set(k, { ...v, lastBashTime: v.lastBashTime ?? -Infinity })
+    }
+    this.noiseBus.restore(snap.noiseBus)
+    this.pacing.restore(snap.pacing)
+    this.lastTopologyDigest = -1
+    this.rebuildTopology(town, chunkTiles)
+  }
+
   step(
     town: Town,
     player: AISurvivor,
@@ -514,6 +573,7 @@ export class OutbreakAISubsystem {
       this.tick,
       () => this.nextAgentId++,
       this.manualSpawnOnly,
+      this.rngSeedMix,
     )
 
     const res = stepAICrowd(this.agents, {
@@ -522,6 +582,7 @@ export class OutbreakAISubsystem {
       dt,
       worldSize: SIZE,
       worldBounds: town.worldBounds,
+      rngSeedMix: this.rngSeedMix,
       nightFactor,
       solids: this.solids,
       walls: this.walls,

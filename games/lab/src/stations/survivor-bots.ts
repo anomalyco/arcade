@@ -64,18 +64,18 @@ export default defineStation({
   board: { feature: "AR-27" },
   metrics: [
     {
-      label: "Skill preset median survival (Balanced Curve, loss 4.85 vs Today 134.93)",
-      value: "Novice 0.91n · Casual 1.71n · Skilled 2.85n · Expert 3.53n",
+      label: "Skill preset median survival (Balanced Curve, total loss 21.66 vs Today 75.80)",
+      value: "Novice 0.50n · Casual 1.86n · Skilled 2.69n · Expert 3.87n",
       source: "games/outbreak/shared/difficulty-tuner.ts",
     },
     {
-      label: "Perception & action boundary",
-      value: "100% Command-only inputs · Vision LOS + light + attenuated audio",
+      label: "Pure step(state, inputs, dt) -> state & N-rollout branching",
+      value: "Bit-exact SimState snapshot / fork / hash / diff · 100% Command-only inputs",
       source: "games/outbreak/tests/survivor-bot.test.ts",
     },
     {
-      label: "Unfair spawns (in-view / behind-player)",
-      value: "0 / 0 across all multi-seed bot batches",
+      label: "L4D Pacing & Fairness (peaks/night · warned deaths · unfair spawns)",
+      value: "2.3 peaks/n · 34–87s relax windows · 100% warned deaths · 0/0 unfair spawns",
       source: "games/outbreak/shared/bot-runner.ts",
     },
   ],
