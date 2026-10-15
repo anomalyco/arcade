@@ -25,12 +25,7 @@ import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
 import { unseenControls } from "./unseen"
 import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
-import {
-  applyOutbreakWeatherPreset,
-  outbreakWeatherControls,
-  randomizeOutbreakWeather,
-  type OutbreakWeatherController,
-} from "./weather"
+import type { OutbreakWeatherController } from "./weather"
 import { zombieControls } from "./zombie-profile"
 
 export interface OutbreakLabControlHost {
@@ -52,7 +47,7 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, weatherController, progressionHost, vehicleHost } = host
+  const { settings, feelTracker, combatFx, progressionHost, vehicleHost } = host
   return [
     ...aiControls,
     ...audioControls,
@@ -368,27 +363,6 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
       ],
     },
     { key: "weathering", label: "Weathering amount", group: "Generation", min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "weather", label: "Overcast", group: "Day cycle", min: 0, max: 1, step: 0.05 },
-    ...outbreakWeatherControls,
-    {
-      key: "triggerWeatherLightning",
-      label: "Trigger lightning strike",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        weatherController.strikeNow()
-      },
-    },
-    {
-      key: "randomizeWeatherTuning",
-      label: "Randomize weather",
-      group: "Weather",
-      type: "action",
-      run: () => {
-        randomizeOutbreakWeather(settings.weather, settings.weather.weatherTuningSeed)
-        host.lab().refresh()
-      },
-    },
   ]
 }
 
@@ -486,22 +460,6 @@ export function handleOutbreakSettingChanged(
     if (settings.dayCycle.dayNightLook === 1 && pid === "noir") {
       host.setLastDayNightHour(session.view.hour)
       applyOutbreakDayNight(session.view.hour, lookSettings, settings)
-    }
-    lab.refresh()
-  }
-  if (key === "weatherPreset") {
-    applyOutbreakWeatherPreset(settings.weather, String(value ?? settings.weather.weatherPreset))
-    lab.refresh()
-  }
-  if (key === "weatherEnabled") {
-    if (
-      settings.weather.weatherEnabled &&
-      settings.weather.weatherPreset === "clear" &&
-      settings.weather.weatherIntensity <= 0.001
-    ) {
-      applyOutbreakWeatherPreset(settings.weather, "rain")
-    } else if (!settings.weather.weatherEnabled) {
-      settings.weather.weather = 0
     }
     lab.refresh()
   }

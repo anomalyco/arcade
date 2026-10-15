@@ -5,6 +5,7 @@ import { CoopSim } from "../shared/coop-sim"
 import { OutbreakSharedFeatureRegistry } from "../shared/feature-registry"
 import { outbreakClientFeatures, OutbreakClientFeatureRegistry } from "../src/feature-registry"
 import { outbreakMapFeature } from "../src/map"
+import { outbreakWeatherFeature } from "../src/weather"
 
 describe("OutbreakSharedFeatureRegistry", () => {
   test("sorts registered features deterministically by order then id regardless of registration order", () => {
@@ -219,5 +220,19 @@ describe("OutbreakClientFeatureRegistry", () => {
     const controls = mapFeature?.labControls?.({} as any) ?? []
     expect(controls.some((c) => c.key === "mapStyle")).toBe(true)
     expect(controls.some((c) => c.key === "mapMinimap")).toBe(true)
+  })
+
+  test("registers the weather feature in outbreakClientFeatures with Lab controls, commands, and harness hooks", () => {
+    const weatherFeature = outbreakClientFeatures.get("weather")
+    expect(weatherFeature).toBe(outbreakWeatherFeature)
+    expect(weatherFeature?.settingsGroup?.subsystem).toBe("weather")
+    const controls = weatherFeature?.labControls?.({} as any) ?? []
+    expect(controls.some((c) => c.key === "weatherEnabled")).toBe(true)
+    expect(controls.some((c) => c.key === "triggerWeatherLightning")).toBe(true)
+    const commands = weatherFeature?.gameCommands?.({} as any) ?? []
+    expect(commands.map((c) => c.id)).toEqual(["weather.preset", "weather.strike"])
+    const methods = weatherFeature?.harnessMethods?.({} as any, {} as any) ?? {}
+    expect(typeof methods.setWeatherPreset).toBe("function")
+    expect(typeof methods.strikeLightning).toBe("function")
   })
 })
