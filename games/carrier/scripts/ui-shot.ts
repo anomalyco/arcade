@@ -1,4 +1,4 @@
-// UI checks and captures on a real GPU: the Tab menu (players, teams, captains) and SHIP OPERATIONS. Runs ON hailmary
+// UI checks and captures on a real GPU: the Tab menu (players, teams, captains) and DEPLOY. Runs ON hailmary
 // (Mac Studio): Chrome with WebGPU on Metal loads the live dev server; DOM menus are captured over a readback of the
 // game's own frame, as in scripts/mp-shot.ts.
 //
@@ -196,12 +196,12 @@ if (only.includes("mouse")) {
   check(!(await locked(page)), "holding Tab frees the cursor")
   await page.keyboard.up("Tab")
   check(await until(page, () => locked(page), 2000), "releasing Tab takes the lock back")
-  // SHIP OPERATIONS pinned: free; closed: locked.
+  // DEPLOY pinned: free; closed: locked.
   await page.keyboard.press("KeyG")
   await page.waitForTimeout(400)
-  check(!(await locked(page)), "SHIP OPERATIONS frees the cursor")
+  check(!(await locked(page)), "DEPLOY frees the cursor")
   await page.keyboard.press("KeyG")
-  check(await until(page, () => locked(page), 2000), "closing SHIP OPERATIONS takes the lock back")
+  check(await until(page, () => locked(page), 2000), "closing DEPLOY takes the lock back")
   // The debug menu.
   await page.keyboard.press("Backquote")
   await page.waitForTimeout(400)
@@ -212,7 +212,7 @@ if (only.includes("mouse")) {
   await page.keyboard.press("KeyG")
   await page.waitForTimeout(250)
   await page.keyboard.press("Digit2")
-  check(await until(page, async () => (await me(page)).plane >= 0), "launched from SHIP OPERATIONS")
+  check(await until(page, async () => (await me(page)).plane >= 0), "launched from DEPLOY")
   check(await until(page, () => locked(page), 2000), "the lock is back after the menu, as the jet takes over")
   let held = true
   for (let i = 0; i < 20; i++) {
@@ -288,11 +288,11 @@ check((await shipOf(ada, A.ship)).captain === A.id, "the first aboard captains t
 await bo.waitForTimeout(1500)
 await shot(bo, "hud-pilot-on-deck")
 
-// Ship operations: bo opens SHIP OPERATIONS (tap G) and launches with 2; di clicks LAUNCH HORNET.
+// Ship operations: bo opens DEPLOY (tap G) and launches with 2; di clicks LAUNCH HORNET.
 await bo.bringToFront()
 await bo.keyboard.press("KeyG")
 await bo.waitForTimeout(400)
-check(await bo.evaluate(() => (globalThis as unknown as G).carrier.ops.open), "G opens SHIP OPERATIONS")
+check(await bo.evaluate(() => (globalThis as unknown as G).carrier.ops.open), "G opens DEPLOY")
 await shot(bo, "ops-pilot-available")
 await bo.keyboard.press("Digit2")
 check(await until(bo, async () => (await me(bo)).plane >= 0), "bo launches a Hornet with 2")

@@ -101,7 +101,7 @@ const ca: TurretAngles = { yaw: 0, pitch: 0 }
 
 /**
  * The ship's guns from the gunner's seat, and everyone's turrets. The host (the game, or gunnery.html) feeds it:
- * - `setPlayer(id, team)` once known; `man(ship, mount)` when this player takes a gun from SHIP OPERATIONS, `unman()`
+ * - `setPlayer(id, team)` once known; `man(ship, mount)` when this player takes a gun from DEPLOY, `unman()`
  *   when they leave it;
  * - every frame while manning: `update(dt, t, aspect, ship)` (aims, slews, fires, places `cam`), then for everyone
  *   `frame(v)` (the world, remote turrets, effects, HUD, sound);
@@ -185,7 +185,7 @@ export class Gunnery {
     this.team = team
   }
 
-  /** This player takes mount `mount` of ship `ship` (from SHIP OPERATIONS). */
+  /** This player takes mount `mount` of ship `ship` (from DEPLOY). */
   man(ship: number, mount: number): void {
     if (this.seat && this.seat.ship === ship && this.seat.mount === mount) return
     this.seat = { ship, mount }

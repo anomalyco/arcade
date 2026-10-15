@@ -3,7 +3,7 @@
 //
 //   ssh hailmary 'cd /tmp/carrier-f35 && ~/.bun/bin/bun f35-shot.ts --out=/tmp/carrier-f35/out'
 //
-// Steps (--only=solo,mp): solo: SHIP OPERATIONS with both launch ops, LAUNCH F-35C, the jet on deck, the catapult
+// Steps (--only=solo,mp): solo: DEPLOY with both launch ops, LAUNCH F-35C, the jet on deck, the catapult
 // stroke, flying (chase, side, three-quarter), bombs selected (bay open, bombs aboard), a bomb drop, its water spout and
 // a ground burst on an island, then an auto-landing (approach, trap). mp: two pages in one room, an F-35C and a Hornet
 // flying in formation, each drawn by the other page as a remote with its own model; the menu shows the F-35C in use.
@@ -216,7 +216,7 @@ async function until(page: Page, cond: string, ms: number): Promise<boolean> {
 async function solo(): Promise<void> {
   const page = await open(`${base}?seed=7&tod=${tod}`, "solo")
   await page.waitForTimeout(4000)
-  // SHIP OPERATIONS: helm, Hornets and the F-35C.
+  // DEPLOY: helm, Hornets and the F-35C.
   await js(page, "c.ops.pin(true)")
   await page.waitForTimeout(400)
   check(await page.evaluate(() => document.querySelector(".om")?.textContent?.includes("LAUNCH F-35C") ?? false), "the ops menu lists LAUNCH F-35C")
@@ -298,12 +298,12 @@ async function solo(): Promise<void> {
   await bombImpact(page, "13-bomb-ground")
   await inspect(page, null)
   await js(page, "w.loadout.slot = 0")
-  // Landing: near the carrier the HUD offers F LAND; F flies the scripted landing and the hook traps it.
+  // Landing: near the carrier the HUD offers R LAND; R flies the scripted landing and the hook traps it.
   const s2 = await sternPoint(page, 1400, 20)
   await warp(page, s2.x, 26 + 90, s2.z, s2.h, 120 + s2.u)
   await page.waitForTimeout(300)
-  await page.keyboard.press("f")
-  check(await until(page, "f.phase === 'landing'", 3000), "F lands the F-35C")
+  await page.keyboard.press("KeyR")
+  check(await until(page, "f.phase === 'landing'", 3000), "R lands the F-35C")
   await page.waitForTimeout(3500)
   await shot(page, "14-landing-approach")
   await until(page, "f.landing && f.landing.z > -175", 30000)
@@ -441,7 +441,7 @@ async function polish(): Promise<void> {
     const s = await sternPoint(page, 1400, 0)
     await warp(page, s.x, 26 + 90, s.z, s.h, 120 + s.u)
     await page.waitForTimeout(300)
-    await page.keyboard.press("f")
+    await page.keyboard.press("KeyR")
     check(await until(page, "f.phase === 'landing'", 3000), `${name}: captured`)
     await until(page, "f.landing && f.landing.z > f.landing.touchZ - 30", 40000)
     await inspect(page, { yaw: Math.PI / 2, pitch: 0.06, dist: 34 })

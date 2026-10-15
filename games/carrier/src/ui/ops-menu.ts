@@ -10,7 +10,7 @@ const TAP_MS = 220
 
 /**
  * E by physical position only: the "e" character sits on Dvorak's D key (right rudder/strafe), so matching the character
- * would steal a movement key (docs/game-notes.md). Free in flight (V cycles weapons, F flares, X free look, C camera).
+ * would steal a movement key (docs/game-notes.md). In a jet E is the rudder, so the menu leaves it alone (`airborne`).
  */
 const isKey = (e: KeyboardEvent) => e.code === "KeyE"
 
@@ -24,7 +24,7 @@ const REASON: Partial<Record<CrewError, string>> = {
 export type OpsInfo = { ship: string; color: string; name: (id: number) => string }
 
 /**
- * SHIP OPERATIONS: the one place to take the helm, launch a vehicle or man a gun. Hold E to see it, tap E to keep it open, Esc
+ * DEPLOY: the one place to take the helm, launch a vehicle or man a gun. Hold E to see it, tap E to keep it open, Esc
  * or another tap closes it; main.ts frees the mouse while it is open. Each operation (shared/ops.ts) is a row with its number key,
  * its slots (who has each, or a recharge ring) and its state: AVAILABLE, IN USE, RECHARGING with a countdown, or why
  * not. Click a row or press its number to run it; the menu closes. In the air it is read-only.
@@ -39,7 +39,7 @@ export class OpsMenu {
   private info: OpsInfo | null = null
   /** Off while the load screen shows. */
   enabled = true
-  /** While flying, E is right rudder (src/flight/input.ts), so the menu leaves the key alone. */
+  /** In a jet (catapult to wreck), E is right rudder (src/flight/input.ts), so the menu leaves the key alone (main.ts). */
   airborne = false
   /** Out in the boat: the menu opens, read-only (every operation says AT SEA). */
   atSea = false
@@ -163,7 +163,7 @@ export class OpsMenu {
       this.key = key
       this.el.style.setProperty("--tc", info.color)
       this.el.innerHTML = `<div class="om-panel">
-        <div class="om-head"><b>SHIP OPERATIONS</b><span>${esc(info.ship)}</span></div>
+        <div class="om-head"><b>DEPLOY</b><span>${esc(info.ship)}</span></div>
         ${views.map((v, i) => this.row(v, i, info)).join("")}
       </div>`
     }

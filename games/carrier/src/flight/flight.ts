@@ -40,7 +40,7 @@ export class Flight {
   landing: Landing | null = null
   /** The carrier being landed on (until the flight ends). */
   landingShip: (LandingShip & { t: number }) | null = null
-  /** The host shows "F LAND" this frame (shared/landing.ts landTarget found a carrier). */
+  /** The host shows "R LAND" this frame (shared/landing.ts landTarget found a carrier). */
   landPrompt = false
   private prevLanding: Landing | null = null
   /** Gear 0 (up) .. 1 (down), and the tailhook. */

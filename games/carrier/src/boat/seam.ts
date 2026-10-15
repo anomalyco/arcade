@@ -66,7 +66,7 @@ export type BoatFrame = {
 }
 
 /**
- * The boat in the real game (game.ts BoatSeam), like the flight module for jets. LAUNCH BOAT in SHIP OPERATIONS gives
+ * The boat in the real game (game.ts BoatSeam), like the flight module for jets. LAUNCH BOAT in DEPLOY gives
  * the player the ship's boat slot; `start` puts the boat under the crane on their carrier, which lowers it over the port
  * side; then they drive and shoot it (src/boat/boat.ts) until the room picks it up alongside (back to their old role) or
  * it sinks. Online the room runs the authoritative sim (server/core.ts): the driver predicts it here on the same shared

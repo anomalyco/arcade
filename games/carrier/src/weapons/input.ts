@@ -4,7 +4,7 @@ import { KeyStateTracker } from "@arcade/kit/client/controls"
  * Weapon controls while flying, Battlefield-style (bound by physical `KeyboardEvent.code`):
  * - Space or left mouse (under Pointer Lock): fire the selected weapon (hold for the cannon).
  * - 1, 2, 3: select the aircraft's first, second, third weapon (only those it has). Mouse wheel or V: cycle them.
- * - F: flares.
+ * - F: flares, always (landing is R, src/flight/input.ts).
  */
 export class WeaponInput {
   /** Off: nothing is read (not flying, menus, debug panel). */
@@ -13,8 +13,6 @@ export class WeaponInput {
   private mouseFire = false
   private wheel = 0
   private wheelAt = 0
-  /** F lands instead while the flight HUD offers "F LAND" (src/flight/seam.ts sets this every frame). */
-  flaresBlocked = false
   /** Test hook: when set, overrides the trigger. */
   trigger: boolean | null = null
 
@@ -76,7 +74,7 @@ export class WeaponInput {
 
   /** Flares asked for this frame. */
   get flares(): boolean {
-    return this.enabled && !this.flaresBlocked && this.tracker.pressed("KeyF")
+    return this.enabled && this.tracker.pressed("KeyF")
   }
 
   endFrame(): void {

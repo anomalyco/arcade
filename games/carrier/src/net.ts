@@ -82,7 +82,7 @@ export interface Net {
   /** The helm's orders for this player's ship; sent when they change (dropped unless online and at the helm). */
   sendHelm(throttle: number, rudder: number): void
   // Crew requests (shared/crew.ts rules). The answer is a new `crew`, or `refused`.
-  /** Run a ship operation (shared/ops.ts): take the helm, launch a vehicle. The SHIP OPERATIONS menu's only path. */
+  /** Run a ship operation (shared/ops.ts): take the helm, launch a vehicle. The DEPLOY menu's only path. */
   op(id: string): void
   /** Board another ship as `as`, or at its helm if free, else as a pilot. */
   board(ship: number, as?: Role): void
