@@ -1,10 +1,13 @@
 import type { InputOps } from "@arcade/kit/net/jitter-buffer"
-import { Abilities, type AbilityActor, type AbilityEvent, type AbilityHost, type HitDef, abilityState, movement, shieldScale } from "@arcade/kit/sim/abilities"
+import {
+  Abilities, type AbilitiesSnapshot, type AbilityActor, type AbilityEvent, type AbilityHost,
+  type HitDef, abilityState, cloneAbilityState, movement, shieldScale,
+} from "@arcade/kit/sim/abilities"
 import { type Rect, pushOut } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
-import { type PropEvent, Props } from "@arcade/kit/sim/props"
-import { Rng } from "@arcade/kit/sim/rng"
-import { BotBrain } from "./bots"
+import { type PropEvent, Props, type PropsSnapshot } from "@arcade/kit/sim/props"
+import { Rng, hash2 } from "@arcade/kit/sim/rng"
+import { BotBrain, type BotBrainSnapshot } from "./bots"
 import { CENTER, PROP_KINDS, ROPES, SOLIDS, SPAWNS, STAGE, onStage, propLayout } from "./arena"
 import { CHARACTERS, ROSTER, characterOf, type CharacterDef } from "./characters"
 import {
@@ -27,6 +30,8 @@ export const INTENT_OPS: InputOps<Intent> = {
 
 export interface Brain {
   think(world: World, f: Fighter): Intent
+  toSnapshot?(): unknown
+  restoreSnapshot?(state: unknown): void
 }
 
 export type Fighter = AbilityActor & {
@@ -58,6 +63,42 @@ export type Fighter = AbilityActor & {
   slot: number
 }
 
+export type FighterSnapshot = Omit<Fighter, "brain"> & {
+  brain: BotBrainSnapshot | null
+  brainKind?: "bot" | "idle" | "custom"
+  customBrainState?: unknown
+}
+
+export type WorldSnapshot = {
+  version: 1
+  rngState: number
+  dt: number
+  time: number
+  tick: number
+  phase: Phase
+  phaseEnd: number
+  goAt: number
+  round: number
+  winner: string
+  order: string[]
+  players: FighterSnapshot[]
+  events: SimEvent[]
+  props: PropsSnapshot
+  abilities: AbilitiesSnapshot
+  solids: Rect[]
+  botFill: number
+  botCount: number
+  host: string
+}
+
+export type WorldState = WorldSnapshot
+
+export type StepInputs =
+  | Readonly<Record<string, Intent | undefined>>
+  | ReadonlyMap<string, Intent | undefined>
+  | readonly (Intent | undefined)[]
+  | undefined
+
 export type SimEvent =
   | AbilityEvent
   | { k: "hit"; by: string; target: string; x: number; y: number; damage: number; speed: number }
@@ -77,7 +118,7 @@ const BOT_NAMES = ["pip", "mabel", "dex", "zuzu", "otto", "fizz", "lulu", "boz"]
  */
 export class World implements AbilityHost<Fighter> {
   readonly rng: Rng
-  readonly dt = DT
+  dt = DT
   time = 0
   tick = 0
   phase: Phase = "select"
@@ -338,11 +379,12 @@ export class World implements AbilityHost<Fighter> {
     this.events.push({ k: "hit", by: by?.id ?? "", target: t.id, x: t.x, y: t.y, damage: dmg, speed })
   }
 
-  step(): void {
-    this.time += DT
+  step(dt = this.dt, overrides?: ReadonlyMap<string, Intent>): void {
+    this.dt = dt
+    this.time += dt
     this.tick++
     if (this.phase === "select") this.stepSelect()
-    else if (this.phase === "play") this.stepPlay()
+    else if (this.phase === "play") this.stepPlay(dt, overrides)
     else if (this.time >= this.phaseEnd) {
       for (const f of this.players.values()) {
         f.ready = !f.human
@@ -351,7 +393,7 @@ export class World implements AbilityHost<Fighter> {
       this.setPhase("select", SELECT_SECONDS)
     }
     // Inputs are consumed every tick so acks keep moving outside play too.
-    if (this.phase !== "play") for (const f of this.players.values()) this.intentOf(f)
+    if (this.phase !== "play") for (const f of this.players.values()) this.intentOf(f, overrides)
   }
 
   private stepSelect(): void {
@@ -360,7 +402,9 @@ export class World implements AbilityHost<Fighter> {
     if (allReady || this.time >= this.phaseEnd) this.startRound()
   }
 
-  private intentOf(f: Fighter): Intent {
+  private intentOf(f: Fighter, overrides?: ReadonlyMap<string, Intent>): Intent {
+    const ov = overrides?.get(f.id)
+    if (ov !== undefined) return ov
     if (f.brain) return f.alive && this.phase === "play" && this.time >= this.goAt ? f.brain.think(this, f) : NO_INTENT
     const q = f.queue.shift()
     if (!q) return { ...NO_INTENT, aim: f.aim }
@@ -368,22 +412,22 @@ export class World implements AbilityHost<Fighter> {
     return q.intent
   }
 
-  private stepPlay(): void {
+  private stepPlay(dt = this.dt, overrides?: ReadonlyMap<string, Intent>): void {
     const now = this.time
     const live = now >= this.goAt
     // Heavy grounded props (the car) stop walking fighters; light ones get shoved instead.
     this.walk = [...SOLIDS, ...ROPES]
     for (const p of this.props.list) if (p.alive && !p.held && p.z < 0.4 && this.props.def(p).heavy) this.walk.push(this.props.bounds(p))
     for (const f of this.actors) {
-      const intent = this.intentOf(f)
+      const intent = this.intentOf(f, overrides)
       if (!f.alive) {
         if (f.stocks > 0 && now >= f.respawnAt) this.respawn(f)
         continue
       }
       if (f.fallAt) {
         // Over the edge: keep drifting outward, then the knock-out counts.
-        f.x += f.vx * DT
-        f.y += f.vy * DT
+        f.x += f.vx * dt
+        f.y += f.vy * dt
         if (now - f.fallAt >= FALL_SECONDS) this.knockOut(f)
         continue
       }
@@ -393,10 +437,10 @@ export class World implements AbilityHost<Fighter> {
         continue
       }
       const mv = movement(f, this.def(f).abilities, now)
-      if (now < f.launchUntil) this.fly(f)
+      if (now < f.launchUntil) this.fly(f, dt)
       else if (!f.ab.dash) {
         const can = mv.canMove
-        stepBody(f, can ? intent.mx : 0, can ? intent.my : 0, this.def(f).speed * FEEL.moveScale * mv.speed, this.walk, DT, f.radius, FEEL.accel * this.def(f).accel * mv.accel)
+        stepBody(f, can ? intent.mx : 0, can ? intent.my : 0, this.def(f).speed * FEEL.moveScale * mv.speed, this.walk, dt, f.radius, FEEL.accel * this.def(f).accel * mv.accel)
       }
       if (intent.cast >= 0 && intent.cast < 4) {
         // Pressing the grab again throws early.
@@ -414,7 +458,7 @@ export class World implements AbilityHost<Fighter> {
       this.abilitySystem.step()
       const events: PropEvent[] = []
       const pushers = this.actors.filter((f) => f.alive && !f.fallAt && !f.ab.carriedBy)
-      this.props.step(DT, SOLIDS, pushers, events, ROPES)
+      this.props.step(dt, SOLIDS, pushers, events, ROPES)
       for (const e of events) this.propEvent(e)
       for (const p of this.props.list) {
         if (p.alive && !p.held && !onStage(p.x, p.y, 0.3)) {
@@ -432,19 +476,19 @@ export class World implements AbilityHost<Fighter> {
   }
 
   /** Flying from a hit: no control, low friction, bounce off blocks, clear the ropes when fast enough. */
-  private fly(f: Fighter): void {
+  private fly(f: Fighter, dt = this.dt): void {
     const sp = Math.hypot(f.vx, f.vy)
     if (sp > 0) {
-      const k = Math.max(0, sp - FEEL.launchFriction * DT) / sp
+      const k = Math.max(0, sp - FEEL.launchFriction * dt) / sp
       f.vx *= k
       f.vy *= k
     }
     const walls = sp > FEEL.ropeBreak ? SOLIDS : [...SOLIDS, ...ROPES]
-    const steps = Math.max(1, Math.ceil((sp * DT) / 0.12))
+    const steps = Math.max(1, Math.ceil((sp * dt) / 0.12))
     for (let i = 0; i < steps; i++) {
       const ox = f.x, oy = f.y
-      f.x += (f.vx * DT) / steps
-      f.y += (f.vy * DT) / steps
+      f.x += (f.vx * dt) / steps
+      f.y += (f.vy * dt) / steps
       const bx = f.x, by = f.y
       pushOut(f, f.radius, walls)
       if (Math.abs(f.x - bx) > 1e-6) f.vx = -f.vx * FEEL.wallBounce
@@ -497,4 +541,317 @@ export class World implements AbilityHost<Fighter> {
   ranking(): Fighter[] {
     return [...this.actors].sort((a, b) => b.stocks - a.stocks || (a.stocks === 0 ? b.outAt - a.outAt : a.damage - b.damage) || b.kos - a.kos)
   }
+
+  /** Produces a pure, lossless snapshot of the entire `World` state. */
+  toSnapshot(): WorldSnapshot {
+    return {
+      version: 1,
+      rngState: this.rng.getState(),
+      dt: this.dt,
+      time: this.time,
+      tick: this.tick,
+      phase: this.phase,
+      phaseEnd: this.phaseEnd,
+      goAt: this.goAt,
+      round: this.round,
+      winner: this.winner,
+      order: [...this.order],
+      players: this.order.map((id) => {
+        const f = this.players.get(id)!
+        const isBotBrain = f.brain instanceof BotBrain
+        const hasCustomSnap = !isBotBrain && f.brain?.toSnapshot !== undefined
+        return {
+          id: f.id,
+          name: f.name,
+          human: f.human,
+          brain: isBotBrain ? (f.brain as BotBrain).toSnapshot() : null,
+          ...(f.brain
+            ? {
+                brainKind: isBotBrain ? "bot" : hasCustomSnap ? "custom" : "idle",
+                ...(hasCustomSnap ? { customBrainState: JSON.parse(JSON.stringify(f.brain.toSnapshot!())) } : {}),
+              }
+            : {}),
+          x: f.x,
+          y: f.y,
+          vx: f.vx,
+          vy: f.vy,
+          aim: f.aim,
+          alive: f.alive,
+          radius: f.radius,
+          ab: cloneAbilityState(f.ab),
+          char: f.char,
+          pick: f.pick,
+          ready: f.ready,
+          damage: f.damage,
+          stocks: f.stocks,
+          kos: f.kos,
+          falls: f.falls,
+          respawnAt: f.respawnAt,
+          invulnUntil: f.invulnUntil,
+          fallAt: f.fallAt,
+          launchUntil: f.launchUntil,
+          lastHitBy: f.lastHitBy,
+          lastHitAt: f.lastHitAt,
+          queue: f.queue.map((q) => ({ seq: q.seq, intent: { ...q.intent } })),
+          ack: f.ack,
+          outAt: f.outAt,
+          slot: f.slot,
+        }
+      }),
+      events: this.events.map((e) => ({ ...e })),
+      props: this.props.toSnapshot(),
+      abilities: this.abilitySystem.toSnapshot(),
+      solids: this.solids.map((r) => [...r] as Rect),
+      botFill: this.botFill,
+      botCount: this.botCount,
+      host: this.host,
+    }
+  }
+
+  /** Restores a `WorldSnapshot` onto this `World` instance so future ticks are bit-identical. */
+  restoreSnapshot(state: WorldSnapshot): void {
+    this.rng.setState(state.rngState)
+    this.dt = state.dt ?? DT
+    this.time = state.time
+    this.tick = state.tick
+    this.phase = state.phase
+    this.phaseEnd = state.phaseEnd ?? Infinity
+    this.goAt = state.goAt
+    this.round = state.round
+    this.winner = state.winner
+    this.order = [...state.order]
+    this.botFill = state.botFill
+    this.botCount = state.botCount
+    this.host = state.host
+    this.solids = state.solids.map((r) => [...r] as Rect)
+    this.events = state.events.map((e) => ({ ...e }))
+    this.props.restoreSnapshot(state.props)
+    this.abilitySystem.restoreSnapshot(state.abilities)
+
+    const prevPlayers = new Map(this.players)
+    this.players.clear()
+    for (const sf of state.players) {
+      const prev = prevPlayers.get(sf.id)
+      let brain: Brain | null = null
+      if (sf.brain) {
+        if (prev?.brain instanceof BotBrain) {
+          prev.brain.restoreSnapshot(sf.brain)
+          brain = prev.brain
+        } else {
+          brain = BotBrain.fromSnapshot(sf.brain)
+        }
+      } else if (sf.brainKind === "custom" && prev?.brain) {
+        prev.brain.restoreSnapshot?.(JSON.parse(JSON.stringify(sf.customBrainState)))
+        brain = prev.brain
+      } else if (sf.brainKind === "idle") {
+        brain = prev?.brain && !(prev.brain instanceof BotBrain) ? prev.brain : { think: () => NO_INTENT }
+      }
+      this.players.set(sf.id, {
+        id: sf.id,
+        name: sf.name,
+        human: sf.human,
+        brain,
+        x: sf.x,
+        y: sf.y,
+        vx: sf.vx,
+        vy: sf.vy,
+        aim: sf.aim,
+        alive: sf.alive,
+        radius: sf.radius,
+        ab: cloneAbilityState(sf.ab),
+        char: sf.char,
+        pick: sf.pick,
+        ready: sf.ready,
+        damage: sf.damage,
+        stocks: sf.stocks,
+        kos: sf.kos,
+        falls: sf.falls,
+        respawnAt: sf.respawnAt ?? Infinity,
+        invulnUntil: sf.invulnUntil,
+        fallAt: sf.fallAt,
+        launchUntil: sf.launchUntil,
+        lastHitBy: sf.lastHitBy,
+        lastHitAt: sf.lastHitAt,
+        queue: sf.queue.map((q) => ({ seq: q.seq, intent: { ...q.intent } })),
+        ack: sf.ack,
+        outAt: sf.outAt,
+        slot: sf.slot,
+      })
+    }
+  }
+
+  /** Constructs a fresh `World` restored from a `WorldSnapshot`. */
+  static fromSnapshot(state: WorldSnapshot): World {
+    const w = new World(0)
+    w.restoreSnapshot(state)
+    return w
+  }
+
+  /** Deep-clones this `World` via its lossless `WorldSnapshot`. */
+  clone(): World {
+    return World.fromSnapshot(this.toSnapshot())
+  }
+}
+
+type LiveWorld = { world: World | undefined }
+const liveWorlds = new WeakMap<WorldSnapshot, LiveWorld>()
+const liveOrder: LiveWorld[] = []
+const MAX_LIVE_WORLDS = 8
+
+function takeLiveWorld(state: WorldSnapshot): World | undefined {
+  const live = liveWorlds.get(state)
+  if (!live?.world) return undefined
+  liveWorlds.delete(state)
+  const world = live.world
+  live.world = undefined
+  return sameSnapshot(state, world.toSnapshot()) ? world : undefined
+}
+
+function keepLiveWorld(state: WorldSnapshot, world: World): void {
+  const live: LiveWorld = { world }
+  liveWorlds.set(state, live)
+  liveOrder.push(live)
+  if (liveOrder.length > MAX_LIVE_WORLDS) liveOrder.shift()!.world = undefined
+  for (let i = liveOrder.length - 1; i >= 0; i--) if (!liveOrder[i]!.world) liveOrder.splice(i, 1)
+}
+
+function sameLeaf(a: unknown, b: unknown): boolean {
+  return a === b || (Number.isNaN(a) && Number.isNaN(b))
+}
+
+function sameSnapshot(a: unknown, b: unknown): boolean {
+  if (sameLeaf(a, b)) return true
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (!sameSnapshot(a[i], b[i])) return false
+    return true
+  }
+  if (Array.isArray(b)) return false
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  for (const k of keys) {
+    if (!Object.hasOwn(b, k) || !sameSnapshot((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false
+  }
+  return true
+}
+
+/**
+ * Pure simulation transition function `step(state, inputs, dt) -> state`:
+ * Advances a `WorldSnapshot` by one tick without mutating `state`.
+ * Chained calls reuse the live `World` when `state` is unedited; forked or edited states restore into a fresh `World`.
+ */
+export function step(
+  state: WorldSnapshot,
+  inputs?: StepInputs,
+  dt: number = state.dt ?? DT,
+): WorldSnapshot {
+  const world = takeLiveWorld(state) ?? World.fromSnapshot(state)
+  let overrides: Map<string, Intent> | undefined
+  if (inputs !== undefined) {
+    for (let idx = 0; idx < world.order.length; idx++) {
+      const id = world.order[idx]!
+      const f = world.players.get(id)!
+      const intent = Array.isArray(inputs)
+        ? inputs[idx]
+        : inputs instanceof Map
+          ? inputs.get(id)
+          : (inputs as Readonly<Record<string, Intent | undefined>>)[id]
+      if (intent === undefined) continue
+      if (f.human) {
+        const lastSeq = f.queue.length ? f.queue[f.queue.length - 1]!.seq : f.ack
+        world.push(id, lastSeq + 1, { ...intent })
+      } else {
+        overrides ??= new Map()
+        overrides.set(id, { ...intent })
+      }
+    }
+  }
+  world.step(dt, overrides)
+  const next = world.toSnapshot()
+  keepLiveWorld(next, world)
+  return next
+}
+
+export const stepSim = step
+
+const JSON_INF = "__arcade_inf__"
+const JSON_NEG_INF = "__arcade_neg_inf__"
+
+function snapReplacer(_k: string, v: unknown): unknown {
+  if (v === Infinity) return JSON_INF
+  if (v === -Infinity) return JSON_NEG_INF
+  return v
+}
+
+function snapReviver(_k: string, v: unknown): unknown {
+  if (v === JSON_INF) return Infinity
+  if (v === JSON_NEG_INF) return -Infinity
+  return v
+}
+
+export function saveSnapshot(state: WorldSnapshot): string {
+  return JSON.stringify(state, snapReplacer)
+}
+
+export function loadSnapshot(json: string): WorldSnapshot {
+  return JSON.parse(json, snapReviver) as WorldSnapshot
+}
+
+export function cloneSnapshot(state: WorldSnapshot): WorldSnapshot {
+  return loadSnapshot(saveSnapshot(state))
+}
+
+export function forkSnapshot(state: WorldSnapshot, options: { rolloutSeed?: number } = {}): WorldSnapshot {
+  const next = cloneSnapshot(state)
+  if (options.rolloutSeed !== undefined) {
+    const mix = Math.floor(hash2(next.tick, options.rolloutSeed) * 4294967296) >>> 0
+    next.rngState = (next.rngState ^ mix) >>> 0
+    for (let i = 0; i < next.players.length; i++) {
+      const p = next.players[i]!
+      if (p.brain) {
+        const bmix = Math.floor(hash2(next.tick + i * 31, options.rolloutSeed) * 4294967296) >>> 0
+        p.brain.rngState = (p.brain.rngState ^ bmix) >>> 0
+      }
+    }
+  }
+  return next
+}
+
+export function hashSnapshot(state: WorldSnapshot): string {
+  const s = saveSnapshot(state)
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 ^ (c + (i & 255)), 0x85ebca6b) >>> 0
+  }
+  return `${h1.toString(16).padStart(8, "0")}${h2.toString(16).padStart(8, "0")}`
+}
+
+export function diffSnapshot(a: WorldSnapshot, b: WorldSnapshot, path = "root", out: string[] = []): string[] {
+  if (out.length >= 32 || sameLeaf(a, b)) return out
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    out.push(`${path}: ${String(a)} !== ${String(b)}`)
+    return out
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) {
+      out.push(`${path}: array mismatch`)
+      return out
+    }
+    if (a.length !== b.length) out.push(`${path}.length: ${a.length} !== ${b.length}`)
+    const n = Math.min(a.length, b.length)
+    for (let i = 0; i < n && out.length < 32; i++) diffSnapshot(a[i] as WorldSnapshot, b[i] as WorldSnapshot, `${path}[${i}]`, out)
+    return out
+  }
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  for (const k of keys) {
+    if (out.length >= 32) break
+    if (!Object.hasOwn(a, k)) out.push(`${path}.${k}: missing in a`)
+    else if (!Object.hasOwn(b, k)) out.push(`${path}.${k}: missing in b`)
+    else diffSnapshot((a as Record<string, unknown>)[k] as WorldSnapshot, (b as Record<string, unknown>)[k] as WorldSnapshot, `${path}.${k}`, out)
+  }
+  return out
 }

@@ -5,6 +5,16 @@ import type { Brain, Fighter, Intent, World } from "./world"
 
 const TURN = 14 / 30
 
+export type BotBrainSnapshot = {
+  rngState: number
+  aim: number
+  target: string
+  reactAt: number
+  strafe: number
+  strafeAt: number
+  dodgeAt: number
+}
+
 /**
  * A party bot: picks the nearest foe, closes to brawl range, herds wounded foes toward the ropes, steps back from
  * the edge when threatened, and fires its abilities aggressively once aimed.
@@ -20,6 +30,34 @@ export class BotBrain implements Brain {
 
   constructor(seed: number) {
     this.rng = new Rng(seed)
+  }
+
+  toSnapshot(): BotBrainSnapshot {
+    return {
+      rngState: this.rng.getState(),
+      aim: this.aim,
+      target: this.target,
+      reactAt: this.reactAt,
+      strafe: this.strafe,
+      strafeAt: this.strafeAt,
+      dodgeAt: this.dodgeAt,
+    }
+  }
+
+  restoreSnapshot(snap: BotBrainSnapshot): void {
+    this.rng.setState(snap.rngState)
+    this.aim = snap.aim
+    this.target = snap.target
+    this.reactAt = snap.reactAt
+    this.strafe = snap.strafe
+    this.strafeAt = snap.strafeAt
+    this.dodgeAt = snap.dodgeAt
+  }
+
+  static fromSnapshot(snap: BotBrainSnapshot): BotBrain {
+    const b = new BotBrain(0)
+    b.restoreSnapshot(snap)
+    return b
   }
 
   think(w: World, me: Fighter): Intent {

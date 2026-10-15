@@ -1,10 +1,14 @@
 import { describe, expect, mock, test } from "bun:test"
+import { Flock } from "@arcade/kit/sim/boids"
 import { BUILD } from "../shared/build.gen"
 import { ROSTER } from "../shared/characters"
-import { RESULTS_SECONDS, SELECT_SECONDS, STOCKS } from "../shared/config"
+import { DT, RESULTS_SECONDS, SELECT_SECONDS, STOCKS } from "../shared/config"
 import { decodeClient, encodeServer } from "../shared/protocol"
 import { buildSnapshot } from "../shared/view"
-import { INTENT_OPS, NO_INTENT, World } from "../shared/world"
+import {
+  INTENT_OPS, NO_INTENT, World, cloneSnapshot, diffSnapshot, forkSnapshot,
+  hashSnapshot, loadSnapshot, saveSnapshot, step,
+} from "../shared/world"
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {} }))
 const { RoomCore } = await import("../server/room")
@@ -118,5 +122,105 @@ describe("brawl world", () => {
     core.message({ send: (d) => back.push(d), close: () => {} }, JSON.stringify({ type: "hello", name: "kit", build: BUILD, token: welcome.token }))
     expect(JSON.parse(back[0]!).id).toBe(welcome.id)
     expect(core.world.humans.length).toBe(2)
+  })
+
+  test("toSnapshot and restoreSnapshot preserve bit-identical continuation across all roster abilities, swarms and props", () => {
+    const w = new World(11)
+    w.botFill = 6
+    w.fill(6)
+    ROSTER.forEach((c, idx) => {
+      const f = w.actors[idx]!
+      f.pick = f.char = c.id
+    })
+    w.startRound()
+    run(w, 8)
+    expect(w.abilitySystem.projectiles.length + w.abilitySystem.zones.length + w.abilitySystem.swarms.length).toBeGreaterThan(0)
+
+    const saved = saveSnapshot(w.toSnapshot())
+    const restored = World.fromSnapshot(loadSnapshot(saved))
+    expect(diffSnapshot(restored.toSnapshot(), w.toSnapshot())).toEqual([])
+    expect(hashSnapshot(restored.toSnapshot())).toBe(hashSnapshot(w.toSnapshot()))
+
+    for (let t = 0; t < 180; t++) {
+      w.step()
+      restored.step()
+      if (t % 30 === 29) {
+        expect(diffSnapshot(restored.toSnapshot(), w.toSnapshot())).toEqual([])
+        expect(hashSnapshot(restored.toSnapshot())).toBe(hashSnapshot(w.toSnapshot()))
+      }
+    }
+    expect(JSON.stringify(buildSnapshot(restored, "bot1"))).toBe(JSON.stringify(buildSnapshot(w, "bot1")))
+  })
+
+  test("pure step(state, inputs, dt) matches mutable World.step, never mutates input state, and honours caller edits", () => {
+    const w = new World(19)
+    w.botFill = 3
+    w.addHuman("p1", "p1", "chef")
+    w.setReady("p1", true)
+    w.step()
+
+    let s = w.toSnapshot()
+    for (let t = 0; t < 120; t++) {
+      const intent = {
+        mx: Math.cos(t * 0.1),
+        my: Math.sin(t * 0.13),
+        aim: t * 0.07,
+        tx: 14 + Math.cos(t * 0.1) * 3,
+        ty: 10 + Math.sin(t * 0.1) * 3,
+        cast: t % 25 === 0 ? (t / 25) % 4 : -1,
+      }
+      const before = cloneSnapshot(s)
+      w.push("p1", t + 1, intent)
+      w.step(DT)
+      const next = step(s, { p1: intent }, DT)
+      expect(diffSnapshot(s, before)).toEqual([])
+      expect(diffSnapshot(next, w.toSnapshot())).toEqual([])
+      // Stepping `s` a second time (after live world was consumed) restores fresh and gives the exact same state.
+      if (t === 60) {
+        expect(diffSnapshot(step(s, { p1: intent }, DT), next)).toEqual([])
+      }
+      s = next
+    }
+
+    // Mutating a returned snapshot forces a fresh restore that honours the caller's edit.
+    s.players[0]!.x += 2.5
+    s.players[0]!.damage = 88
+    const edited = cloneSnapshot(s)
+    const fresh = World.fromSnapshot(edited)
+    fresh.step(DT)
+    expect(diffSnapshot(step(s, undefined, DT), fresh.toSnapshot())).toEqual([])
+  })
+
+  test("fork equivalence: interleaved forks never share mutable state and identical forks replay bit-identically", () => {
+    const w = new World(23)
+    w.fill(4)
+    w.startRound()
+    run(w, 5)
+    const base = w.toSnapshot()
+
+    let forkA1 = forkSnapshot(base, { rolloutSeed: 101 })
+    let forkA2 = forkSnapshot(base, { rolloutSeed: 101 })
+    let forkB = forkSnapshot(base, { rolloutSeed: 202 })
+
+    for (let t = 0; t < 90; t++) {
+      forkA1 = step(forkA1, undefined, DT)
+      forkB = step(forkB, undefined, DT)
+      forkA2 = step(forkA2, undefined, DT)
+    }
+    expect(diffSnapshot(forkA1, forkA2)).toEqual([])
+    expect(hashSnapshot(forkA1)).toBe(hashSnapshot(forkA2))
+    expect(hashSnapshot(forkA1)).not.toBe(hashSnapshot(forkB))
+  })
+
+  test("Flock boids toSnapshot and restoreSnapshot are bit-identical", () => {
+    const a = new Flock(14, 77, 10, 1.2, 8, 0.75)
+    for (let i = 0; i < 30; i++) a.step(DT, 14, 10 + i * 0.1, 1.2, 8, 3, 1, 0.75)
+    const snap = JSON.parse(JSON.stringify(a.toSnapshot()))
+    const b = Flock.fromSnapshot(snap)
+    for (let i = 0; i < 30; i++) {
+      a.step(DT, 12, 13, 1.2, 9, -2, 2, 0.75, 0.2)
+      b.step(DT, 12, 13, 1.2, 9, -2, 2, 0.75, 0.2)
+    }
+    expect(b.toSnapshot()).toEqual(a.toSnapshot())
   })
 })

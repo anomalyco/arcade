@@ -5,6 +5,18 @@ import { mulberry32 } from "./rng"
  * alignment with the anchor's velocity, plus a little wander), in 3D with y up. Presentation only: the authoritative
  * swarm is one entity (`sim/abilities` swarm); clients flock its members around it. Deterministic per seed.
  */
+export type FlockSnapshot = {
+  size: number
+  t: number
+  x: number[]
+  y: number[]
+  z: number[]
+  vx: number[]
+  vy: number[]
+  vz: number[]
+  phase: number[]
+}
+
 export class Flock {
   readonly x: Float32Array
   readonly y: Float32Array
@@ -30,6 +42,37 @@ export class Flock {
       this.z[i] = az + (r() - 0.5) * spread
       this.phase[i] = r() * Math.PI * 2
     }
+  }
+
+  toSnapshot(): FlockSnapshot {
+    return {
+      size: this.size,
+      t: this.t,
+      x: Array.from(this.x),
+      y: Array.from(this.y),
+      z: Array.from(this.z),
+      vx: Array.from(this.vx),
+      vy: Array.from(this.vy),
+      vz: Array.from(this.vz),
+      phase: Array.from(this.phase),
+    }
+  }
+
+  restoreSnapshot(snap: FlockSnapshot): void {
+    this.t = snap.t
+    this.x.set(snap.x)
+    this.y.set(snap.y)
+    this.z.set(snap.z)
+    this.vx.set(snap.vx)
+    this.vy.set(snap.vy)
+    this.vz.set(snap.vz)
+    this.phase.set(snap.phase)
+  }
+
+  static fromSnapshot(snap: FlockSnapshot): Flock {
+    const flock = new Flock(snap.size, 0, 0, 0, 0)
+    flock.restoreSnapshot(snap)
+    return flock
   }
 
   /**
