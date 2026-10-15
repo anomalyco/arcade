@@ -23,7 +23,7 @@ import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
 import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression/index"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
-import { boxOf, OutbreakVehicleSubsystem, pushOutBox, vehicleSolidRects } from "./vehicles"
+import { OutbreakVehicleSubsystem, vehicleSolidRects } from "./vehicles/index"
 import { StreamingWorld, type WorldMode } from "./world"
 
 /** Where survivors start: the single-player spot first, then beside it. */
@@ -85,8 +85,8 @@ export class CoopSim {
   hour = DEFAULT_PACING_TUNING.startHour
   time = 0
   revision = 0
-  private solids: Rect[]
-  private vehicleSolids: Rect[]
+  solids: Rect[]
+  vehicleSolids: Rect[]
 
   constructor(
     seed: number,
@@ -213,53 +213,6 @@ export class CoopSim {
         return
       }
     }
-    if (p.vehicleId) {
-      const wasPassenger = (p.seatIndex ?? 0) > 0
-      const handled = this.vehicles.stepSeatedSurvivor(
-        slot,
-        command,
-        dt,
-        this.vehicleSolids,
-        this.progression,
-        this.ai,
-        this.time,
-        predict,
-      )
-      if (handled) {
-        stepStamina(p, false, false, dt, resolved.stamina)
-        if (p.vehicleId && wasPassenger && (p.seatIndex ?? 0) > 0) {
-          if (!predict && command.hotbarSlot !== undefined) {
-            this.progression.select(slot, command.hotbarSlot)
-            this.progression.project(slot)
-          }
-          if (!predict && command.hotbarDelta) {
-            this.progression.select(slot, undefined, command.hotbarDelta)
-            this.progression.project(slot)
-          }
-          if (command.flashlight) toggleFlashlight(p)
-          if (!predict) {
-            const ammo = this.progression.pistol(slot.id)
-            const use = this.progression.heldUse(slot.id)
-            const blockers = sightRects(town)
-            if (command.reload) this.combat.startReload(p, this.ai, this.time, ammo)
-            if (command.fire && use === "fire") {
-              if (resolved.infiniteAmmo) ammo.fill()
-              if (viewTime !== undefined && viewTime < this.time) {
-                this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
-                  this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
-                )
-              } else {
-                this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
-              }
-            }
-          }
-        }
-        if (predict && !clampClassic) {
-          this.syncWorldChunks()
-        }
-        return
-      }
-    }
 
     if (!predict && command.hotbarSlot !== undefined) {
       this.progression.select(slot, command.hotbarSlot)
@@ -277,7 +230,6 @@ export class CoopSim {
       stepStamina(p, false, false, dt, resolved.stamina)
       if (!p.vault) {
         pushOut(p, 0.3, this.solids)
-        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         for (const feature of outbreakSharedFeatures.list()) {
           feature.pushOutSurvivor?.(this, p, 0.3, this.featureStates.get(feature.id))
         }
@@ -296,7 +248,6 @@ export class CoopSim {
         p.x += ((command.mx / length) * speed * dt) / steps
         p.y += ((command.my / length) * speed * dt) / steps
         pushOut(p, 0.3, this.solids)
-        for (const v of this.vehicles.list) pushOutBox(p, 0.3, boxOf(v, v.spec))
         for (const feature of outbreakSharedFeatures.list()) {
           feature.pushOutSurvivor?.(this, p, 0.3, this.featureStates.get(feature.id))
         }
@@ -509,14 +460,11 @@ export class CoopSim {
         }),
     )
     if (res.changed) {
-      this.progression.ensureContainerStores()
-      this.vehicles.syncChunks(this.worldStream, this.town)
       for (const feature of outbreakSharedFeatures.list()) {
         feature.onChunkSync?.(this, this.featureStates.get(feature.id))
       }
       this.revision++
       this.solids = solidRects(this.town)
-      this.vehicleSolids = vehicleSolidRects(this.town)
       this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     }
     return res.changed
@@ -525,7 +473,6 @@ export class CoopSim {
   /** Advances everything shared once per tick: clock, channels, flashlights, vehicles, the crowd and its attacks, prompts. */
   stepWorld(dt: number, timeScale: number, tuning: SessionTuning = DEFAULT_STAMINA_TUNING): void {
     const resolved = resolveSessionTuning(tuning)
-    Object.assign(this.vehicles.tuning, resolved.vehicle)
     this.time += dt
     this.hour = advanceHour(this.hour, dt, timeScale)
     this.syncWorldChunks()
@@ -536,7 +483,6 @@ export class CoopSim {
       stepFlashlight(slot.survivor, dt, this.time, flashlightTuning)
     }
 
-    this.vehicles.stepWorld(dt, this.time, this.town, this.vehicleSolids, this.slots, this.ai, this.progression)
     for (const feature of outbreakSharedFeatures.list()) {
       const res = feature.stepWorld?.({
         sim: this,
@@ -561,23 +507,7 @@ export class CoopSim {
     }
 
     const survivors = this.slots.map((s) => {
-      const p = s.survivor
-      const v = this.vehicles.vehicleOf(p)
-      let view: Survivor & { id: string }
-      if (v && (p.seatIndex ?? 0) === 0) {
-        const hlOn = v.headlights && v.hasBattery && !v.wreck
-        view = {
-          ...p,
-          id: s.id,
-          aim: hlOn ? v.h : p.aim,
-          flashlightOn: hlOn || p.flashlightOn,
-          flashlightOutput: hlOn ? 1 : p.flashlightOutput,
-          lightSignature: hlOn ? this.vehicles.tuning.headlightRange : p.lightSignature,
-          noise: v.engineOn ? Math.max(p.noise, this.vehicles.tuning.engineNoise * 0.45) : p.noise,
-        }
-      } else {
-        view = { ...p, id: s.id }
-      }
+      let view: Survivor & { id: string } = { ...s.survivor, id: s.id }
       for (const feature of outbreakSharedFeatures.list()) {
         if (feature.transformAISurvivor) {
           view = feature.transformAISurvivor(this, s, view, this.featureStates.get(feature.id))
@@ -597,10 +527,8 @@ export class CoopSim {
             damage = feature.modifySurvivorDamage(this, slot, damage, this.featureStates.get(feature.id))
           }
         }
-        const v = this.vehicles.vehicleOf(slot.survivor)
-        const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
-        slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
-        if (aiStep.ankleGrabbed[i] && !v) {
+        slot.survivor.health = Math.max(0, slot.survivor.health - damage)
+        if (aiStep.ankleGrabbed[i] && !slot.survivor.vehicleId) {
           slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)
           slot.survivor.vx *= 0.45
           slot.survivor.vy *= 0.45
@@ -615,11 +543,6 @@ export class CoopSim {
     for (const feature of outbreakSharedFeatures.list()) {
       if (feature.refreshPrompt?.(this, slot, this.featureStates.get(feature.id))) return
     }
-    if (slot.survivor.vehicleId) {
-      slot.peek = null
-      slot.prompt = undefined
-      return
-    }
     slot.peek = peekInfoFor(this.town, slot.survivor)
     slot.prompt = selectInteractTarget(this.town, slot.survivor, this.registry)
   }
@@ -627,24 +550,20 @@ export class CoopSim {
   /** Re-derives survivor collision after doors or barricades changed (clients call this after a snapshot). */
   rebuildSolids(): void {
     this.syncWorldChunks()
-    this.vehicles.syncChunks(this.worldStream, this.town)
     for (const feature of outbreakSharedFeatures.list()) {
       feature.onChunkSync?.(this, this.featureStates.get(feature.id))
     }
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
     for (const slot of this.slots) this.refreshPrompt(slot)
   }
 
   /** Collision, crowd navigation and prompts after an external edit (Lab, harness pose). */
   rebuildCollision(): void {
     this.syncWorldChunks()
-    this.vehicles.syncChunks(this.worldStream, this.town)
     for (const feature of outbreakSharedFeatures.list()) {
       feature.onChunkSync?.(this, this.featureStates.get(feature.id))
     }
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
     for (const slot of this.slots) this.refreshPrompt(slot)
@@ -652,8 +571,6 @@ export class CoopSim {
 
   private topologyChanged(): void {
     this.revision++
-    this.progression.ensureContainerStores()
-    this.vehicles.syncChunks(this.worldStream, this.town)
     for (const feature of outbreakSharedFeatures.list()) {
       feature.onTopologyChanged?.(this, this.featureStates.get(feature.id))
     }
@@ -662,7 +579,6 @@ export class CoopSim {
     }
     this.worldStream.rebuildActiveNavTiles(this.town, this.ai.portalStates)
     this.solids = solidRects(this.town)
-    this.vehicleSolids = vehicleSolidRects(this.town)
     this.ai.rebuildTopology(this.town, this.worldStream.navTiles)
   }
 }

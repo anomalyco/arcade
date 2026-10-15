@@ -7,6 +7,7 @@ import { outbreakClientFeatures, OutbreakClientFeatureRegistry } from "../src/fe
 import { outbreakMapFeature } from "../src/map"
 import { outbreakPacingFeature, outbreakPacingSharedFeature } from "../src/pacing"
 import { outbreakProgressionFeature, outbreakProgressionSharedFeature } from "../src/progression"
+import { outbreakVehiclesFeature, outbreakVehiclesSharedFeature } from "../src/vehicles/index"
 import { outbreakWeatherFeature } from "../src/weather"
 
 describe("OutbreakSharedFeatureRegistry", () => {
@@ -264,5 +265,18 @@ describe("OutbreakClientFeatureRegistry", () => {
     expect(typeof methods.stageProgression).toBe("function")
     expect(typeof methods.stock).toBe("function")
     expect(typeof methods.give).toBe("function")
+  })
+
+  test("registers the vehicles feature in both shared and client registries", () => {
+    expect(outbreakSharedFeatures.get("vehicles")).toBe(outbreakVehiclesSharedFeature)
+    expect(outbreakVehiclesSharedFeature.tuning?.namespace).toBe("vehicle")
+    expect(outbreakVehiclesSharedFeature.netSection?.key).toBe("vehicles")
+
+    const vehiclesClient = outbreakClientFeatures.get("vehicles")
+    expect(vehiclesClient).toBe(outbreakVehiclesFeature)
+    const commands = vehiclesClient?.gameCommands?.({} as any) ?? []
+    expect(commands.map((c) => c.id)).toEqual(["vehicle.stage"])
+    const methods = vehiclesClient?.harnessMethods?.({} as any, {} as any) ?? {}
+    expect(typeof methods.stageVehicle).toBe("function")
   })
 })

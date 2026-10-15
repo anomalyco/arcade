@@ -25,7 +25,7 @@ import { type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
 import { unseenControls } from "./unseen"
-import { vehicleLabControls, type VehicleLabHost } from "./vehicle-lab"
+import { type VehicleLabHost } from "./vehicles/index"
 import type { OutbreakWeatherController } from "./weather"
 import { zombieControls } from "./zombie-profile"
 
@@ -48,7 +48,7 @@ export interface OutbreakLabControlHost {
 }
 
 export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabControl[] {
-  const { settings, feelTracker, combatFx, progressionHost, vehicleHost } = host
+  const { settings, feelTracker, combatFx, progressionHost } = host
   const raw: LabControl[] = [
     ...aiControls,
     ...audioControls,
@@ -103,7 +103,6 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
-    ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
       key: "randomizeGroundTuning",

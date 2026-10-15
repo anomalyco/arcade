@@ -40,7 +40,7 @@ import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
 import type { ChannelView, Notice, PickMode } from "./progression"
 import type { Command, Survivor } from "./session"
-import { VEHICLE_KINDS, type VehicleKind } from "./vehicles"
+import { type VehicleKind } from "./vehicles/index"
 import type { ChunkCoord } from "./world"
 
 /** Co-op wire protocol. Text frames are JSON control messages; binary frames are snapshots and compact inputs. */
@@ -488,131 +488,10 @@ const SEC_LURES = 4
 const SEC_BASHES = 8
 const SEC_SHOTS = 16
 const SEC_DELTA = 32
-const SEC_VEHICLES = 64
 const SEC_MELEE = 128
 const V2_MAGIC_BIT = 0x80000000
 
 const timerCapFor = (state: AIState) => (state === "knockdown" ? 2.8 : 0.85)
-
-function sameVehicleState(a: VehicleState, b: VehicleState): boolean {
-  return (
-    a.id === b.id &&
-    a.kind === b.kind &&
-    cm(a.x) === cm(b.x) &&
-    cm(a.y) === cm(b.y) &&
-    packAngle(a.h) === packAngle(b.h) &&
-    Math.round(a.vx * 100) === Math.round(b.vx * 100) &&
-    Math.round(a.vy * 100) === Math.round(b.vy * 100) &&
-    Math.round(a.w * 100) === Math.round(b.w * 100) &&
-    a.hp === b.hp &&
-    a.fuel === b.fuel &&
-    a.hasBattery === b.hasBattery &&
-    a.hasKeys === b.hasKeys &&
-    a.headlights === b.headlights &&
-    a.engineOn === b.engineOn &&
-    a.horn === b.horn &&
-    a.wreck === b.wreck &&
-    a.handbrake === b.handbrake &&
-    Math.round(a.throttle * 7) === Math.round(b.throttle * 7) &&
-    Math.round(a.steer * 7) === Math.round(b.steer * 7) &&
-    a.seats.length === b.seats.length &&
-    a.seats.every((s, i) => s === b.seats[i])
-  )
-}
-
-function writeVehicleState(w: ByteWriter, v: VehicleState): void {
-  const kindIdx = Math.max(0, VEHICLE_KINDS.indexOf(v.kind))
-  const vFlags =
-    (v.hasBattery ? 1 : 0) |
-    (v.hasKeys ? 2 : 0) |
-    (v.headlights ? 4 : 0) |
-    (v.engineOn ? 8 : 0) |
-    (v.horn ? 16 : 0) |
-    (v.wreck ? 32 : 0) |
-    (v.handbrake ? 64 : 0)
-  const vxI = Math.round(clamp(v.vx, -320, 320) * 100)
-  const vyI = Math.round(clamp(v.vy, -320, 320) * 100)
-  const wI = Math.round(clamp(v.w, -30, 30) * 100)
-  const thrQ = Math.round(clamp(v.throttle, -1, 1) * 7)
-  const strQ = Math.round(clamp(v.steer, -1, 1) * 7)
-  const moving = vxI !== 0 || vyI !== 0 || wI !== 0 || thrQ !== 0 || strQ !== 0
-  const occupied = v.seats.some((s) => s >= 0)
-  w.u16(v.id)
-  w.u8((kindIdx & 7) | (moving ? 8 : 0) | (occupied ? 16 : 0))
-  w.u8(vFlags)
-  w.i32(cm(v.x)).i32(cm(v.y)).u16(packAngle(v.h))
-  w.u16(Math.round(clamp(v.hp, 0, 65535))).u8(Math.round(clamp(v.fuel, 0, 255)))
-  if (moving) {
-    w.i16(vxI).i16(vyI).i16(wI)
-    w.u8(packNibblePair(thrQ, strQ))
-  }
-  if (occupied) {
-    let packedSeats = 0
-    for (let i = 0; i < 4; i++) {
-      const s = v.seats[i] ?? -1
-      const nib = s >= 0 && s <= 7 ? s : 0x0f
-      packedSeats |= nib << (i * 4)
-    }
-    w.u16(packedSeats)
-  }
-}
-
-function readVehicleState(r: ByteReader): VehicleState {
-  const id = r.u16()
-  const hdr = r.u8()
-  const kind = VEHICLE_KINDS[hdr & 7] ?? "sedan"
-  const moving = Boolean(hdr & 8)
-  const occupied = Boolean(hdr & 16)
-  const vFlags = r.u8()
-  const x = r.i32() / 100
-  const y = r.i32() / 100
-  const h = unpackAngle(r.u16())
-  const hp = r.u16()
-  const fuel = r.u8()
-  let vx = 0
-  let vy = 0
-  let w = 0
-  let throttle = 0
-  let steer = 0
-  if (moving) {
-    vx = r.i16() / 100
-    vy = r.i16() / 100
-    w = r.i16() / 100
-    const [thrQ, strQ] = unpackNibblePair(r.u8())
-    throttle = thrQ / 7
-    steer = strQ / 7
-  }
-  const seats = [-1, -1, -1, -1]
-  if (occupied) {
-    const packedSeats = r.u16()
-    for (let i = 0; i < 4; i++) {
-      const nib = (packedSeats >>> (i * 4)) & 0x0f
-      seats[i] = nib === 0x0f ? -1 : nib
-    }
-  }
-  return {
-    id,
-    kind,
-    x,
-    y,
-    h,
-    vx,
-    vy,
-    w,
-    hp,
-    fuel,
-    hasBattery: Boolean(vFlags & 1),
-    hasKeys: Boolean(vFlags & 2),
-    headlights: Boolean(vFlags & 4),
-    engineOn: Boolean(vFlags & 8),
-    horn: Boolean(vFlags & 16),
-    wreck: Boolean(vFlags & 32),
-    handbrake: Boolean(vFlags & 64),
-    throttle,
-    steer,
-    seats,
-  }
-}
 function defaultZombieSeed(id: number, townSeed: number): number {
   return (townSeed ^ Math.imul(id + 17, 0x85ebca6b)) >>> 0
 }
@@ -766,7 +645,6 @@ const decodeZombiePools = new WeakMap<AckHistory<SharedSnapshot>, DecodeZombiePo
 const decodeRemovedSet = new Set<number>()
 const decodeRetainedScratch: ZombieState[] = []
 const encodeThrottleZombieMap = new Map<number, ZombieState>()
-const encodeSlotIndexById = new Map<string, number>()
 const encodeRemovedIndices: number[] = []
 const encodeRetainedPrev: ZombieState[] = []
 const encodeRetainedCur: ZombieState[] = []
@@ -1033,48 +911,6 @@ export function encodeShared(
     ? [...(baseSnap.meleeSwings ?? []).filter((m) => sim.time - m.time <= 0.6), ...newMelee]
     : newMelee
 
-  // 4. Vehicles in the recipient's interest bubble
-  const slotIndexById = encodeSlotIndexById
-  slotIndexById.clear()
-  for (let i = 0; i < sim.slots.length; i++) {
-    const s = sim.slots[i]!
-    slotIndexById.set(s.id, s.index)
-  }
-  const emittedVehicles: VehicleState[] = []
-  for (const v of sim.vehicles.list) {
-    if (viewerCenter && !inInterestBubble(v.x, v.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent + 16)) continue
-    const thrQ = Math.round(clamp(v.drive.throttle, -1, 1) * 7)
-    const strQ = Math.round(clamp(v.drive.steer, -1, 1) * 7)
-    emittedVehicles.push({
-      id: v.id,
-      kind: v.kind,
-      x: cm(v.x) / 100,
-      y: cm(v.y) / 100,
-      h: unpackAngle(packAngle(v.h)),
-      vx: Math.round(clamp(v.vx, -320, 320) * 100) / 100,
-      vy: Math.round(clamp(v.vy, -320, 320) * 100) / 100,
-      w: Math.round(clamp(v.w, -30, 30) * 100) / 100,
-      hp: Math.round(clamp(v.hp, 0, 65535)),
-      fuel: Math.round(clamp(v.fuel, 0, 255)),
-      hasBattery: v.hasBattery,
-      hasKeys: v.hasKeys,
-      headlights: v.headlights,
-      engineOn: v.engineOn,
-      horn: v.horn,
-      wreck: v.wreck,
-      handbrake: v.drive.handbrake,
-      throttle: thrQ / 7,
-      steer: strQ / 7,
-      seats: v.seats.map((sid) => (sid ? (slotIndexById.get(sid) ?? -1) : -1)),
-    })
-  }
-  const baseVehicles = baseSnap?.vehicles ?? []
-  const hasVehicles =
-    !isDelta
-      ? emittedVehicles.length > 0
-      : emittedVehicles.length !== baseVehicles.length ||
-        emittedVehicles.some((v, i) => !sameVehicleState(v, baseVehicles[i]!))
-
   const registeredSections = outbreakSharedFeatures.netSections().map(({ feature, codec }) => {
     const collected = codec.collect({
       sim,
@@ -1101,7 +937,6 @@ export function encodeShared(
     (bashes.length > 0 ? SEC_BASHES : 0) |
     (newShots.length > 0 ? SEC_SHOTS : 0) |
     (isDelta ? SEC_DELTA : 0) |
-    (hasVehicles ? SEC_VEHICLES : 0) |
     (newMelee.length > 0 ? SEC_MELEE : 0) |
     extraSectionBits
 
@@ -1116,7 +951,7 @@ export function encodeShared(
       revision: sim.revision & 0xffff,
       survivors,
       zombies: emittedZombies,
-      vehicles: emittedVehicles,
+      vehicles: [],
       doors,
       windows,
       planks,
@@ -1367,10 +1202,6 @@ export function encodeShared(
         w.u32(h.seed)
       }
     }
-  }
-  if (sectionFlags & SEC_VEHICLES) {
-    w.u8(emittedVehicles.length)
-    for (const v of emittedVehicles) writeVehicleState(w, v)
   }
   for (const { codec, collected } of registeredSections) {
     if (collected.shouldWrite && sectionFlags & codec.bit) {
@@ -1703,13 +1534,6 @@ export function decodeShared(
     ? [...(baseSnap.meleeSwings ?? []).filter((m) => time - m.time <= 0.6), ...newMelee]
     : newMelee
 
-  let vehicles: VehicleState[]
-  if (sectionFlags & SEC_VEHICLES) {
-    vehicles = []
-    for (let n = r.u8(), i = 0; i < n; i++) vehicles.push(readVehicleState(r))
-  } else {
-    vehicles = baseSnap?.vehicles ?? []
-  }
   const snap: SharedSnapshot = {
     tick,
     time,
@@ -1717,7 +1541,7 @@ export function decodeShared(
     revision,
     survivors,
     zombies,
-    vehicles,
+    vehicles: baseSnap?.vehicles ?? [],
     doors,
     windows,
     planks,
