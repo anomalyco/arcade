@@ -8,7 +8,7 @@ import type { SmokeTrail } from "../game/smoke-trail"
 import { FLOATS_PER_VERT, type Mesh } from "./mesh"
 import { ATLAS_SIZE } from "./atlas"
 import { type CityChunk, partitionCityMesh } from "./city-mesh"
-import { MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
+import { GetawayFrameStruct, GetawayLightStruct, MAX_LIGHTS, beamShader, litShader, postShader, shadowShader, spriteShader } from "./shaders"
 import { MotionBlur, PreviousTransforms } from '@arcade/kit/gpu/motion-blur'
 import { motionBlur, vehicleVelocityPipeline, particleVelocityPipeline, spriteMotionKeys } from './motion'
 import { mat4 } from 'wgpu-matrix'
@@ -16,7 +16,11 @@ import { mat4 } from 'wgpu-matrix'
 const SAMPLES = 4
 const SHADOW_SIZE = 2048
 const HDR: GPUTextureFormat = "rgba16float"
-export const FRAME_FLOATS = 16 * 2 + 4 * 8
+export const FRAME_FLOATS = GetawayFrameStruct.floatCount
+export const LIGHT_FLOATS = GetawayLightStruct.floatCount
+const LIGHT_VP_OFFSET = GetawayFrameStruct.offsetOf("lightViewProj")
+const CAM_OFFSET = GetawayFrameStruct.offsetOf("cam")
+const SCREEN_OFFSET = GetawayFrameStruct.offsetOf("screen")
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
 const MAX_SPRITES = 6000
@@ -492,9 +496,9 @@ export class Renderer {
     const dt=opts.dt??1/60
     const advance=dt>0||!this.motionReady
     if(advance){
-      this.motionValid=this.motionReady&&dt>0&&dt<.1&&Math.hypot(opts.frame[32]!-this.lastEye[0]!,opts.frame[33]!-this.lastEye[1]!,opts.frame[34]!-this.lastEye[2]!)<20
+      this.motionValid=this.motionReady&&dt>0&&dt<.1&&Math.hypot(opts.frame[CAM_OFFSET]!-this.lastEye[0]!,opts.frame[CAM_OFFSET+1]!-this.lastEye[1]!,opts.frame[CAM_OFFSET+2]!-this.lastEye[2]!)<20
       this.previousVP.set(this.motionValid?this.lastVP:opts.frame.subarray(0,16))
-      this.lastVP.set(opts.frame.subarray(0,16));this.lastEye.set(opts.frame.subarray(32,35));this.motionDt=Math.max(dt,1/240)
+      this.lastVP.set(opts.frame.subarray(0,16));this.lastEye.set(opts.frame.subarray(CAM_OFFSET,CAM_OFFSET+3));this.motionDt=Math.max(dt,1/240)
       if(!this.motionValid){this.history.reset();this.particleHistory.reset()}
       this.history.begin();this.particleHistory.begin();this.motionReady=true
     }
@@ -540,30 +544,21 @@ export class Renderer {
     }
 
     extractFrustumPlanes(opts.frame, 0, this.camPlanes)
-    extractFrustumPlanes(opts.frame, 16, this.shadowPlanes)
+    extractFrustumPlanes(opts.frame, LIGHT_VP_OFFSET, this.shadowPlanes)
 
     const hasFxParticles = Boolean(opts.fxParticles && opts.fxParticles.count > 0)
     const hasFxVolumes = Boolean(opts.fxVolumes && opts.fxVolumes.count > 0)
     if (hasFxParticles && opts.fxParticles) {
-      const u = this.fxParticles.uniforms
-      u.set(opts.frame.subarray(0, 16), 0)
-      u[16] = opts.frame[32]!
-      u[17] = opts.frame[33]!
-      u[18] = opts.frame[34]!
-      u[19] = 0
-      u[20] = 0.22
-      u[21] = 0.25
-      u[22] = 0.36
-      const totalLights = Math.min(MAX_LIGHTS, Math.round(opts.frame[42] ?? 0))
-      let pLights = 0
-      u.fill(0, 24)
-      for (let i = 0; i < totalLights && pLights < 8; i++) {
-        const k = i * 12
-        if (opts.lights[k + 7]! <= 0.01) continue
-        for (let j = 0; j < 8; j++) u[24 + pLights * 8 + j] = opts.lights[k + j]!
-        pLights++
-      }
-      u[23] = pLights
+      this.fxParticles.setFrame({
+        vp: opts.frame,
+        eye: [opts.frame[CAM_OFFSET]!, opts.frame[CAM_OFFSET + 1]!, opts.frame[CAM_OFFSET + 2]!],
+        debug: 0,
+        ambient: [0.22, 0.25, 0.36],
+        lights: opts.lights,
+        lightCount: Math.min(MAX_LIGHTS, Math.round(opts.frame[SCREEN_OFFSET + 2] ?? 0)),
+        lightStride: LIGHT_FLOATS,
+        minLightPower: 0.01,
+      })
       this.fxParticles.upload(opts.fxParticles)
     }
 
@@ -704,23 +699,15 @@ export class Renderer {
     pass.end()
 
     if (hasFxVolumes && opts.fxVolumes) {
-      const u = this.fxVolumes.uniforms
-      u.set(this.inverseVP, 0)
-      u[16] = opts.frame[32]!
-      u[17] = opts.frame[33]!
-      u[18] = opts.frame[34]!
-      u[24] = 0.12
-      u[25] = 0.14
-      u[26] = 0.22
-      const totalLights = Math.min(MAX_LIGHTS, Math.round(opts.frame[42] ?? 0))
-      let count = 0
-      for (let i = 0; i < totalLights && count < 8; i++) {
-        const k = i * 12
-        if (opts.lights[k + 7]! <= 0.01) continue
-        for (let j = 0; j < 8; j++) u[60 + count * 8 + j] = opts.lights[k + j]!
-        count++
-      }
-      u[22] = count
+      this.fxVolumes.setFrame({
+        inverse: this.inverseVP,
+        eye: [opts.frame[CAM_OFFSET]!, opts.frame[CAM_OFFSET + 1]!, opts.frame[CAM_OFFSET + 2]!],
+        ambient: [0.12, 0.14, 0.22],
+        lights: opts.lights,
+        lightCount: Math.min(MAX_LIGHTS, Math.round(opts.frame[SCREEN_OFFSET + 2] ?? 0)),
+        lightStride: LIGHT_FLOATS,
+        minLightPower: 0.01,
+      })
       this.fxVolumes.render(enc, this.hdrView, opts.fxVolumes)
     }
 

@@ -45,6 +45,7 @@ export class RectGrid {
   readonly y0: number
   readonly nx: number
   readonly ny: number
+  private readonly boundsRect: Rect
   private start: Int32Array
   private items: Int32Array
   private stamp: Uint32Array
@@ -65,6 +66,7 @@ export class RectGrid {
     this.y0 = y0 - 1
     this.nx = Math.max(1, Math.ceil((x1 + 1 - this.x0) / GRID_CELL))
     this.ny = Math.max(1, Math.ceil((y1 + 1 - this.y0) / GRID_CELL))
+    this.boundsRect = [this.x0, this.y0, this.x0 + this.nx * GRID_CELL, this.y0 + this.ny * GRID_CELL]
     const counts = new Int32Array(this.nx * this.ny + 1)
     const span = (r: Rect, f: (c: number) => void) => {
       const [a, b, c, d] = this.cells(r[0] - 1e-6, r[1] - 1e-6, r[2] + 1e-6, r[3] + 1e-6)
@@ -105,9 +107,7 @@ export class RectGrid {
 
   /** Nearest hit along a ray within maxT, walking the grid cells the ray crosses. Matches a linear raycast. */
   raycast(ox: number, oy: number, dx: number, dy: number, maxT: number): number {
-    const x1 = this.x0 + this.nx * GRID_CELL
-    const y1 = this.y0 + this.ny * GRID_CELL
-    const enter = rayRect(ox, oy, dx, dy, [this.x0, this.y0, x1, y1], maxT)
+    const enter = rayRect(ox, oy, dx, dy, this.boundsRect, maxT)
     if (enter === Infinity) return Infinity
     const g = this.next()
     const px = ox + dx * enter - this.x0
@@ -240,9 +240,9 @@ export function inRect(x: number, y: number, r: Rect, pad = 0): boolean {
 }
 
 export function distToRect(x: number, y: number, r: Rect): number {
-  const cx = Math.max(r[0], Math.min(x, r[2]))
-  const cy = Math.max(r[1], Math.min(y, r[3]))
-  return Math.hypot(x - cx, y - cy)
+  const dx = x < r[0] ? r[0] - x : x > r[2] ? x - r[2] : 0
+  const dy = y < r[1] ? r[1] - y : y > r[3] ? y - r[3] : 0
+  return dx === 0 ? dy : dy === 0 ? dx : Math.sqrt(dx * dx + dy * dy)
 }
 
 export const rectCenter = (r: Rect): Vec => ({ x: (r[0] + r[2]) / 2, y: (r[1] + r[3]) / 2 })
@@ -307,7 +307,11 @@ export class MinHeap {
   }
 
   private swap(a: number, b: number): void {
-    ;[this.ids[a], this.ids[b]] = [this.ids[b]!, this.ids[a]!]
-    ;[this.keys[a], this.keys[b]] = [this.keys[b]!, this.keys[a]!]
+    const tmpId = this.ids[a]!
+    this.ids[a] = this.ids[b]!
+    this.ids[b] = tmpId
+    const tmpKey = this.keys[a]!
+    this.keys[a] = this.keys[b]!
+    this.keys[b] = tmpKey
   }
 }

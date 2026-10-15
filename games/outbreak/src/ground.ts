@@ -101,7 +101,7 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
   let dirtAmt = gParams.y;
   let wetness = gParams.z;
   var col = baseTint;
-  var localRough = r.u0.w;
+  var localRough = r.roughness;
   var cavity = 1.0;
 
   let n1 = surfaceNoise(p * 1.45 + vec2f(2.3, 6.7));

@@ -1061,35 +1061,32 @@ export class WeaponFx implements ScenePass {
     for (let l = 0; l < 3; l++) if (this.counts[l]) q.writeBuffer(this.rockBuf, l * MAX_ROCKS * ROCK_FLOATS * 4, this.rockData, l * MAX_ROCKS * ROCK_FLOATS, this.counts[l]! * ROCK_FLOATS)
     if (this.fxParticles.count > 0) {
       const f = this.renderer.currentFrame
-      const u = this.fxRenderer.uniforms
-      u.set(f.subarray(0, 16), 0)
-      u[16] = this.eye[0]
-      u[17] = this.eye[1]
-      u[18] = this.eye[2]
-      u[19] = 0
       const sunW = f[FRAME.sunDir + 3]!
       const ambW = f[FRAME.sunColor + 3]!
       const scale = Math.max(0.28, sunW * 0.48 + ambW * 0.72)
-      u[20] = f[FRAME.sunColor]! * scale
-      u[21] = f[FRAME.sunColor + 1]! * scale
-      u[22] = f[FRAME.sunColor + 2]! * scale
-      u.fill(0, 24)
-      let pLights = 0
+      const lights = []
       for (const fl of this.activeFlashes) {
-        if (pLights >= 8) break
+        if (lights.length >= 8) break
         const light = explosionFlashLight(fl.x, fl.y, fl.z, fl.age, EXPLOSION_PRESETS[fl.preset].settings)
         if (!light) continue
-        const o = 24 + pLights++ * 8
-        u[o] = light.x
-        u[o + 1] = light.y
-        u[o + 2] = light.z
-        u[o + 3] = light.radius * 5
-        u[o + 4] = light.r
-        u[o + 5] = light.g
-        u[o + 6] = light.b
-        u[o + 7] = light.power * 0.45
+        lights.push({
+          x: light.x,
+          y: light.y,
+          z: light.z,
+          radius: light.radius * 5,
+          r: light.r,
+          g: light.g,
+          b: light.b,
+          power: light.power * 0.45,
+        })
       }
-      u[23] = pLights
+      this.fxRenderer.setFrame({
+        vp: f,
+        eye: this.eye,
+        debug: 0,
+        ambient: [f[FRAME.sunColor]! * scale, f[FRAME.sunColor + 1]! * scale, f[FRAME.sunColor + 2]! * scale],
+        lights,
+      })
       this.fxRenderer.upload(this.fxParticles)
     }
   }

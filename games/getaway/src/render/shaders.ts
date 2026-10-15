@@ -1,25 +1,36 @@
+import { wgslStruct } from "@arcade/kit/gpu/wgsl"
+
 export const MAX_LIGHTS = 128
+
+export const GetawayFrameStruct = wgslStruct("Frame", {
+  viewProj: "mat4x4f",
+  lightViewProj: "mat4x4f",
+  cam: "vec4f", // xyz camera position, w time
+  focus: "vec4f", // xyz focus car position, w cutaway radius (NDC)
+  screen: "vec4f", // width, height, light count, siren time
+  moonDir: "vec4f", // xyz toward the moon, w intensity
+  spotPos: "vec4f", // helicopter spotlight origin, w on/off
+  spotDir: "vec4f", // xyz direction, w cos(cone)
+  fog: "vec4f", // rgb fog color, w density
+  focusClip: "vec4f", // focus position in NDC (xy), depth (z)
+})
+
+export const GetawayLightStruct = wgslStruct("Light", {
+  pos: "vec4f", // xyz, radius
+  color: "vec4f", // rgb, intensity
+  dir: "vec4f", // xyz spot direction, w cos(cone) or -2 for point
+})
+
+export const GetawayShadowFrameStruct = wgslStruct("Frame", {
+  viewProj: "mat4x4f",
+  lightViewProj: "mat4x4f",
+})
 
 /** Shared frame uniforms, lights and lighting model for every lit pipeline. */
 export const common = /* wgsl */ `
-struct Frame {
-  viewProj: mat4x4f,
-  lightViewProj: mat4x4f,
-  cam: vec4f,          // xyz camera position, w time
-  focus: vec4f,        // xyz focus car position, w cutaway radius (NDC)
-  screen: vec4f,       // width, height, light count, siren time
-  moonDir: vec4f,      // xyz toward the moon, w intensity
-  spotPos: vec4f,      // helicopter spotlight origin, w on/off
-  spotDir: vec4f,      // xyz direction, w cos(cone)
-  fog: vec4f,          // rgb fog color, w density
-  focusClip: vec4f,    // focus position in NDC (xy), depth (z)
-}
+${GetawayFrameStruct.wgsl}
 
-struct Light {
-  pos: vec4f,    // xyz, radius
-  color: vec4f,  // rgb, intensity
-  dir: vec4f,    // xyz spot direction, w cos(cone) or -2 for point
-}
+${GetawayLightStruct.wgsl}
 
 @group(0) @binding(0) var<uniform> F: Frame;
 @group(0) @binding(1) var<storage, read> lights: array<Light>;
@@ -321,10 +332,7 @@ fn cutaway(world: vec3f, fragPos: vec4f, cut: f32) -> bool {
 `
 
 export const shadowShader = /* wgsl */ `
-struct Frame {
-  viewProj: mat4x4f,
-  lightViewProj: mat4x4f,
-}
+${GetawayShadowFrameStruct.wgsl}
 @group(0) @binding(0) var<uniform> F: Frame;
 
 struct Inst {

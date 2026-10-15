@@ -1,5 +1,6 @@
 import type { LabControl } from "../lab-panel"
 import { Rng } from "../sim/rng"
+import { wgslStruct } from "./wgsl"
 
 export type LookPresetId =
   | "current"
@@ -1101,118 +1102,157 @@ export function createLookControls(
 }
 
 /**
- * Packed LookUniforms layout: 16 vec4f = 64 floats (256 bytes).
- * u0:  exposure, tonemap, contrast, toe
- * u1:  shoulder, blackCrush, saturation, temperature
- * u2:  splitTone, shadowTintR, shadowTintG, shadowTintB
- * u3:  highlightTintR, highlightTintG, highlightTintB, paletteMix
- * u4:  ambientFill, shadowColorR, shadowColorG, shadowColorB
- * u5:  practicalWarmth, practicalIntensity, moonIntensity, rimStrength
- * u6:  contactShade, surfaceWetness, fogDensity, fogHeightFalloff
- * u7:  fogColorR, fogColorG, fogColorB, shaftStrength
- * u8:  shaftSlats, bloom, halation, vignette
- * u9:  grain, grainSeed, grainAnimated, chromatic
- * u10: diffuseWrap, diffuseBands, bandSoftness, painterlySmooth
- * u11: outlineStrength, outlineWidth, foliageShift, activeFlag (1 = look active, 0 = identity)
- * u12: paletteWall.rgb, compareMode (0=before, 1=after, 2=wipe)
- * u13: paletteWood.rgb, wipeSplit (0..1)
- * u14: paletteStone.rgb, presetIndex
- * u15: paletteFoliage.rgb, selectiveColor (per-pixel flashlight colour retention)
+ * Typed WGSL layout for `LookUniforms` (64 floats / 256 bytes).
+ * Replaces manual float offset tables and `LK.u0.x..LK.u15.w` swizzles with named fields.
  */
-export const LOOK_UNIFORM_FLOATS = 64
+export const LookUniformsStruct = wgslStruct("LookUniforms", {
+  // u0
+  exposure: "f32",
+  tonemap: "f32",
+  contrast: "f32",
+  toe: "f32",
+  // u1
+  shoulder: "f32",
+  blackCrush: "f32",
+  saturation: "f32",
+  temperature: "f32",
+  // u2
+  splitTone: "f32",
+  shadowTintR: "f32",
+  shadowTintG: "f32",
+  shadowTintB: "f32",
+  // u3
+  highlightTintR: "f32",
+  highlightTintG: "f32",
+  highlightTintB: "f32",
+  paletteMix: "f32",
+  // u4
+  ambientFill: "f32",
+  shadowColorR: "f32",
+  shadowColorG: "f32",
+  shadowColorB: "f32",
+  // u5
+  practicalWarmth: "f32",
+  practicalIntensity: "f32",
+  moonIntensity: "f32",
+  rimStrength: "f32",
+  // u6
+  contactShade: "f32",
+  surfaceWetness: "f32",
+  fogDensity: "f32",
+  fogHeightFalloff: "f32",
+  // u7
+  fogColorR: "f32",
+  fogColorG: "f32",
+  fogColorB: "f32",
+  shaftStrength: "f32",
+  // u8
+  shaftSlats: "f32",
+  bloom: "f32",
+  halation: "f32",
+  vignette: "f32",
+  // u9
+  grain: "f32",
+  grainSeed: "f32",
+  grainAnimated: "f32",
+  chromatic: "f32",
+  // u10
+  diffuseWrap: "f32",
+  diffuseBands: "f32",
+  bandSoftness: "f32",
+  painterlySmooth: "f32",
+  // u11
+  outlineStrength: "f32",
+  outlineWidth: "f32",
+  foliageShift: "f32",
+  activeFlag: "f32",
+  // u12 (vec3f at 16B boundary + f32 = 16B)
+  paletteWall: "vec3f",
+  compareMode: "f32",
+  // u13
+  paletteWood: "vec3f",
+  wipeSplit: "f32",
+  // u14
+  paletteStone: "vec3f",
+  presetIndex: "f32",
+  // u15
+  paletteFoliage: "vec3f",
+  selectiveColor: "f32",
+})
+
+export const LOOK_UNIFORM_FLOATS = LookUniformsStruct.floatCount
 
 export function packLookUniforms(
   settings: LookSettings,
-  out: Float32Array = new Float32Array(LOOK_UNIFORM_FLOATS),
+  out: Float32Array = LookUniformsStruct.createBuffer(),
   offset = 0,
   extra?: { compareMode?: LookCompareMode; wipeSplit?: number; forceActive?: boolean },
 ): Float32Array {
   const presetDef = LOOK_PRESETS[settings.preset] ?? LOOK_PRESETS.current
   const pal = getLookPalette(settings)
   const active = extra?.forceActive ? 1 : isIdentityLook(settings) ? 0 : 1
-
-  // u0
-  out[offset + 0] = settings.exposure
-  out[offset + 1] = settings.tonemap
-  out[offset + 2] = settings.contrast
-  out[offset + 3] = settings.toe
-  // u1
-  out[offset + 4] = settings.shoulder
-  out[offset + 5] = settings.blackCrush
-  out[offset + 6] = settings.saturation
-  out[offset + 7] = settings.temperature
-  // u2
-  out[offset + 8] = settings.splitTone
-  out[offset + 9] = settings.shadowTintR
-  out[offset + 10] = settings.shadowTintG
-  out[offset + 11] = settings.shadowTintB
-  // u3
-  out[offset + 12] = settings.highlightTintR
-  out[offset + 13] = settings.highlightTintG
-  out[offset + 14] = settings.highlightTintB
-  out[offset + 15] = settings.paletteMix
-  // u4
-  out[offset + 16] = settings.ambientFill
-  out[offset + 17] = settings.shadowColorR
-  out[offset + 18] = settings.shadowColorG
-  out[offset + 19] = settings.shadowColorB
-  // u5
-  out[offset + 20] = settings.practicalWarmth
-  out[offset + 21] = settings.practicalIntensity
-  out[offset + 22] = settings.moonIntensity
-  out[offset + 23] = settings.rimStrength
-  // u6
-  out[offset + 24] = settings.contactShade
-  out[offset + 25] = settings.surfaceWetness
-  out[offset + 26] = settings.fogDensity
-  out[offset + 27] = settings.fogHeightFalloff
-  // u7
-  out[offset + 28] = settings.fogColorR
-  out[offset + 29] = settings.fogColorG
-  out[offset + 30] = settings.fogColorB
-  out[offset + 31] = settings.shaftStrength
-  // u8
-  out[offset + 32] = settings.shaftSlats
-  out[offset + 33] = settings.bloom
-  out[offset + 34] = settings.halation
-  out[offset + 35] = settings.vignette
-  // u9
-  out[offset + 36] = settings.grain
-  out[offset + 37] = settings.grainSeed
-  out[offset + 38] = settings.grainAnimated ? 1 : 0
-  out[offset + 39] = settings.chromatic
-  // u10
-  out[offset + 40] = settings.diffuseWrap
-  out[offset + 41] = settings.diffuseBands
-  out[offset + 42] = settings.bandSoftness
-  out[offset + 43] = settings.painterlySmooth
-  // u11
-  out[offset + 44] = settings.outlineStrength
-  out[offset + 45] = settings.outlineWidth
-  out[offset + 46] = settings.foliageShift
-  out[offset + 47] = active
-  // u12
-  out[offset + 48] = pal.wall[0]
-  out[offset + 49] = pal.wall[1]
-  out[offset + 50] = pal.wall[2]
-  out[offset + 51] = extra?.compareMode ?? 1
-  // u13
-  out[offset + 52] = pal.wood[0]
-  out[offset + 53] = pal.wood[1]
-  out[offset + 54] = pal.wood[2]
-  out[offset + 55] = extra?.wipeSplit ?? 0.5
-  // u14
-  out[offset + 56] = pal.stone[0]
-  out[offset + 57] = pal.stone[1]
-  out[offset + 58] = pal.stone[2]
-  out[offset + 59] = presetDef.index
-  // u15
-  out[offset + 60] = pal.foliage[0]
-  out[offset + 61] = pal.foliage[1]
-  out[offset + 62] = pal.foliage[2]
-  out[offset + 63] = settings.selectiveColor
-
-  return out
+  return LookUniformsStruct.pack(
+    {
+      exposure: settings.exposure,
+      tonemap: settings.tonemap,
+      contrast: settings.contrast,
+      toe: settings.toe,
+      shoulder: settings.shoulder,
+      blackCrush: settings.blackCrush,
+      saturation: settings.saturation,
+      temperature: settings.temperature,
+      splitTone: settings.splitTone,
+      shadowTintR: settings.shadowTintR,
+      shadowTintG: settings.shadowTintG,
+      shadowTintB: settings.shadowTintB,
+      highlightTintR: settings.highlightTintR,
+      highlightTintG: settings.highlightTintG,
+      highlightTintB: settings.highlightTintB,
+      paletteMix: settings.paletteMix,
+      ambientFill: settings.ambientFill,
+      shadowColorR: settings.shadowColorR,
+      shadowColorG: settings.shadowColorG,
+      shadowColorB: settings.shadowColorB,
+      practicalWarmth: settings.practicalWarmth,
+      practicalIntensity: settings.practicalIntensity,
+      moonIntensity: settings.moonIntensity,
+      rimStrength: settings.rimStrength,
+      contactShade: settings.contactShade,
+      surfaceWetness: settings.surfaceWetness,
+      fogDensity: settings.fogDensity,
+      fogHeightFalloff: settings.fogHeightFalloff,
+      fogColorR: settings.fogColorR,
+      fogColorG: settings.fogColorG,
+      fogColorB: settings.fogColorB,
+      shaftStrength: settings.shaftStrength,
+      shaftSlats: settings.shaftSlats,
+      bloom: settings.bloom,
+      halation: settings.halation,
+      vignette: settings.vignette,
+      grain: settings.grain,
+      grainSeed: settings.grainSeed,
+      grainAnimated: settings.grainAnimated ? 1 : 0,
+      chromatic: settings.chromatic,
+      diffuseWrap: settings.diffuseWrap,
+      diffuseBands: settings.diffuseBands,
+      bandSoftness: settings.bandSoftness,
+      painterlySmooth: settings.painterlySmooth,
+      outlineStrength: settings.outlineStrength,
+      outlineWidth: settings.outlineWidth,
+      foliageShift: settings.foliageShift,
+      activeFlag: active,
+      paletteWall: pal.wall,
+      compareMode: extra?.compareMode ?? 1,
+      paletteWood: pal.wood,
+      wipeSplit: extra?.wipeSplit ?? 0.5,
+      paletteStone: pal.stone,
+      presetIndex: presetDef.index,
+      paletteFoliage: pal.foliage,
+      selectiveColor: settings.selectiveColor,
+    },
+    out as Float32Array<ArrayBuffer>,
+    offset,
+  )
 }
 
 /**
@@ -1220,24 +1260,7 @@ export function packLookUniforms(
  * Used by both the Lab "Looks" debug room and Outbreak's opt-in look hook.
  */
 export const lookStructWgsl = /* wgsl */ `
-struct LookUniforms {
-  u0: vec4f,  // exposure, tonemap, contrast, toe
-  u1: vec4f,  // shoulder, blackCrush, saturation, temperature
-  u2: vec4f,  // splitTone, shadowTintR, shadowTintG, shadowTintB
-  u3: vec4f,  // highlightTintR, highlightTintG, highlightTintB, paletteMix
-  u4: vec4f,  // ambientFill, shadowColorR, shadowColorG, shadowColorB
-  u5: vec4f,  // practicalWarmth, practicalIntensity, moonIntensity, rimStrength
-  u6: vec4f,  // contactShade, surfaceWetness, fogDensity, fogHeightFalloff
-  u7: vec4f,  // fogColorR, fogColorG, fogColorB, shaftStrength
-  u8: vec4f,  // shaftSlats, bloom, halation, vignette
-  u9: vec4f,  // grain, grainSeed, grainAnimated, chromatic
-  u10: vec4f, // diffuseWrap, diffuseBands, bandSoftness, painterlySmooth
-  u11: vec4f, // outlineStrength, outlineWidth, foliageShift, activeFlag
-  u12: vec4f, // paletteWall.rgb, compareMode
-  u13: vec4f, // paletteWood.rgb, wipeSplit
-  u14: vec4f, // paletteStone.rgb, presetIndex
-  u15: vec4f, // paletteFoliage.rgb, inkLuma
-}
+${LookUniformsStruct.wgsl}
 
 fn lookQuantizeDiffuse(ndlRaw: f32, wrap: f32, bands: f32, softness: f32) -> f32 {
   let wrapped = clamp((ndlRaw + wrap) / (1.0 + max(wrap, 0.0)), 0.0, 1.0);
@@ -1341,24 +1364,24 @@ fn lookGradeColor(
   baseHuePreserve: f32,
   flashMask: f32,
 ) -> vec3f {
-  let exposure = L.u0.x;
-  let tonemapMode = i32(round(L.u0.y));
-  let contrast = L.u0.z;
-  let toe = L.u0.w;
-  let shoulder = L.u1.x;
-  let blackCrush = L.u1.y;
-  let saturation = L.u1.z;
-  let temperature = L.u1.w;
-  let splitTone = L.u2.x;
-  let shadowTint = L.u2.yzw;
-  let highlightTint = L.u3.xyz;
-  let bloomMult = L.u8.y;
-  let halation = L.u8.z;
-  let vigStrength = L.u8.w;
-  let grainStrength = L.u9.x;
-  let grainSeed = L.u9.y;
-  let grainAnim = L.u9.z > 0.5;
-  let selectiveColor = clamp(L.u15.w, 0.0, 1.5);
+  let exposure = L.exposure;
+  let tonemapMode = i32(round(L.tonemap));
+  let contrast = L.contrast;
+  let toe = L.toe;
+  let shoulder = L.shoulder;
+  let blackCrush = L.blackCrush;
+  let saturation = L.saturation;
+  let temperature = L.temperature;
+  let splitTone = L.splitTone;
+  let shadowTint = vec3f(L.shadowTintR, L.shadowTintG, L.shadowTintB);
+  let highlightTint = vec3f(L.highlightTintR, L.highlightTintG, L.highlightTintB);
+  let bloomMult = L.bloom;
+  let halation = L.halation;
+  let vigStrength = L.vignette;
+  let grainStrength = L.grain;
+  let grainSeed = L.grainSeed;
+  let grainAnim = L.grainAnimated > 0.5;
+  let selectiveColor = clamp(L.selectiveColor, 0.0, 1.5);
   let beamRetain = clamp(flashMask * selectiveColor, 0.0, 1.0);
 
   // 1. Add bloom & warm film halation before tone mapping
@@ -1401,7 +1424,7 @@ fn lookGradeColor(
   let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
   let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
   let mono = vec3f(luma) * activeSplit;
-  let warmBias = clamp((hdrIn.r - hdrIn.b * 1.05) / max(hdrIn.r + 0.005, 1e-4) - 0.08, 0.0, 1.0) * clamp(L.u5.x * 1.6, 0.0, 1.0);
+  let warmBias = clamp((hdrIn.r - hdrIn.b * 1.05) / max(hdrIn.r + 0.005, 1e-4) - 0.08, 0.0, 1.0) * clamp(L.practicalWarmth * 1.6, 0.0, 1.0);
   let warmTinted = c * mix(activeSplit, vec3f(1.18, 0.88, 0.52), warmBias * 0.65);
   let effSat = mix(saturation, max(saturation, 0.88), warmBias * 0.82);
   let outsideCol = mix(mono, warmTinted, effSat);

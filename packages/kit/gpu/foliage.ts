@@ -1,4 +1,5 @@
 import { MAT, Mesh, type Rgb } from "./mesh"
+import { wgslStruct } from "./wgsl"
 import { Rng } from "../sim/rng"
 
 /** The three vegetation looks the Lab tunes separately; each has its own presets, parameters and Randomize. */
@@ -2072,31 +2073,45 @@ export function emitGrassFurShells(
   }
 }
 
-/** Floats in `FoliageWindConfig` (3 vec4f). */
-export const FOLIAGE_WIND_FLOATS = 12
-/** Floats in `FoliageActors` (count header + 8 packed xz positions). */
-export const FOLIAGE_ACTOR_FLOATS = 20
+/**
+ * Typed WGSL layout for `FoliageWindConfig` (12 floats / 48 bytes) and `FoliageActors` (20 floats / 80 bytes).
+ */
+export const FoliageWindConfigStruct = wgslStruct("FoliageWindConfig", {
+  treeWindStrength: "f32",
+  treeWindFreq: "f32",
+  treeWindGust: "f32",
+  translucency: "f32",
+  grassWind: "f32",
+  distanceFade: "f32",
+  canopyAO: "f32",
+  normalSoftness: "f32",
+  bushWind: "f32",
+  bushTranslucency: "f32",
+  trampleRadius: "f32",
+  trampleStrength: "f32",
+})
+
+export const FoliageActorsStruct = wgslStruct("FoliageActors", {
+  count: "f32",
+  pad0: "f32",
+  pad1: "f32",
+  pad2: "f32",
+  p: "array<vec4f, 4>",
+})
+
+/** Floats in `FoliageWindConfig` (3 vec4f = 12 floats). */
+export const FOLIAGE_WIND_FLOATS = FoliageWindConfigStruct.floatCount
+/** Floats in `FoliageActors` (count header + 8 packed xz positions = 20 floats). */
+export const FOLIAGE_ACTOR_FLOATS = FoliageActorsStruct.floatCount
 export const FOLIAGE_MAX_ACTORS = 8
 
-/** Pack live uniform-boundary foliage parameters into `FoliageWindConfig` (3 vec4f). */
+/** Pack live uniform-boundary foliage parameters into `FoliageWindConfig` (12 floats). */
 export function packFoliageUniforms(
   params: Readonly<FoliageParams>,
-  out: Float32Array = new Float32Array(FOLIAGE_WIND_FLOATS),
+  out: Float32Array = FoliageWindConfigStruct.createBuffer(),
   offset = 0,
 ): Float32Array {
-  out[offset + 0] = params.treeWindStrength
-  out[offset + 1] = params.treeWindFreq
-  out[offset + 2] = params.treeWindGust
-  out[offset + 3] = params.translucency
-  out[offset + 4] = params.grassWind
-  out[offset + 5] = params.distanceFade
-  out[offset + 6] = params.canopyAO
-  out[offset + 7] = params.normalSoftness
-  out[offset + 8] = params.bushWind
-  out[offset + 9] = params.bushTranslucency
-  out[offset + 10] = params.trampleRadius
-  out[offset + 11] = params.trampleStrength
-  return out
+  return FoliageWindConfigStruct.pack(params, out as Float32Array<ArrayBuffer>, offset)
 }
 
 /**
@@ -2105,17 +2120,19 @@ export function packFoliageUniforms(
  */
 export function packFoliageActors(
   actors: readonly { x: number; z: number }[],
-  out: Float32Array = new Float32Array(FOLIAGE_ACTOR_FLOATS),
+  out: Float32Array = FoliageActorsStruct.createBuffer(),
   offset = 0,
 ): Float32Array {
   const n = Math.min(FOLIAGE_MAX_ACTORS, actors.length)
-  out.fill(0, offset, offset + FOLIAGE_ACTOR_FLOATS)
-  out[offset] = n
+  const p: number[] = []
   for (let i = 0; i < n; i++) {
-    out[offset + 4 + i * 2] = actors[i]!.x
-    out[offset + 5 + i * 2] = actors[i]!.z
+    p.push(actors[i]!.x, actors[i]!.z)
   }
-  return out
+  return FoliageActorsStruct.pack(
+    { count: n, pad0: 0, pad1: 0, pad2: 0, p },
+    out as Float32Array<ArrayBuffer>,
+    offset,
+  )
 }
 
 /** The focus actor plus the nearest others within `radius` metres, capped at `FOLIAGE_MAX_ACTORS`. */
@@ -2139,32 +2156,20 @@ export function nearestFoliageActors(
  * Declare these structs before any uniform struct that embeds them.
  */
 export const foliageWindDeclarationsWgsl = /* wgsl */ `
-struct FoliageWindConfig {
-  // x: treeWindStrength, y: treeWindFreq, z: treeWindGust, w: tree translucency
-  u0: vec4f,
-  // x: grassWind, y: distanceFade, z: canopyAO, w: normalSoftness
-  u1: vec4f,
-  // x: bushWind, y: bush translucency, z: trampleRadius (m), w: trampleStrength
-  u2: vec4f,
-}
+${FoliageWindConfigStruct.wgsl}
 
-struct FoliageActors {
-  // x: actor count (0..8)
-  head: vec4f,
-  // two actor ground positions (x, z) per vec4f
-  p: array<vec4f, 4>,
-}
+${FoliageActorsStruct.wgsl}
 
 fn defaultFoliageWindConfig() -> FoliageWindConfig {
   return FoliageWindConfig(
-    vec4f(0.24, 0.80, 0.42, 0.30),
-    vec4f(0.45, 0.55, 0.72, 0.88),
-    vec4f(0.30, 0.50, 1.10, 0.85)
+    0.24, 0.80, 0.42, 0.30,
+    0.45, 0.55, 0.72, 0.88,
+    0.30, 0.50, 1.10, 0.85
   );
 }
 
 fn noFoliageActors() -> FoliageActors {
-  return FoliageActors(vec4f(0.0), array<vec4f, 4>(vec4f(0.0), vec4f(0.0), vec4f(0.0), vec4f(0.0)));
+  return FoliageActors(0.0, 0.0, 0.0, 0.0, array<vec4f, 4>(vec4f(0.0), vec4f(0.0), vec4f(0.0), vec4f(0.0)));
 }
 
 /** Bush vertices carry aux = 3 + flex; tree canopies 0 < aux <= 1.45; grass blades aux < 0. */
@@ -2176,14 +2181,14 @@ fn foliageTipWeight(aux: f32) -> f32 {
 }
 
 fn foliageTranslucency(aux: f32, cfg: FoliageWindConfig) -> f32 {
-  return select(cfg.u0.w, cfg.u2.y, aux > 2.5);
+  return select(cfg.translucency, cfg.bushTranslucency, aux > 2.5);
 }
 
 /** Horizontal push away from nearby actors: (1 - d/R)^2 falloff, scaled by weight. */
 fn foliageTrample(pos: vec3f, weight: f32, cfg: FoliageWindConfig, actors: FoliageActors) -> vec2f {
-  let count = i32(actors.head.x);
-  if (count <= 0 || weight <= 0.0 || cfg.u2.w <= 0.0) { return vec2f(0.0); }
-  let R = max(0.05, cfg.u2.z);
+  let count = i32(actors.count);
+  if (count <= 0 || weight <= 0.0 || cfg.trampleStrength <= 0.0) { return vec2f(0.0); }
+  let R = max(0.05, cfg.trampleRadius);
   var ap = actors.p;
   var push = vec2f(0.0);
   for (var i = 0; i < 8; i++) {
@@ -2197,7 +2202,7 @@ fn foliageTrample(pos: vec3f, weight: f32, cfg: FoliageWindConfig, actors: Folia
       push += d / max(dist, 0.001) * f * f;
     }
   }
-  return push * R * 0.5 * cfg.u2.w * weight;
+  return push * R * 0.5 * cfg.trampleStrength * weight;
 }
 
 /**
@@ -2212,7 +2217,7 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
   if (aux > 2.5) {
     let flex = clamp(aux - 3.0, 0.0, 1.0);
     let phase = pos.x * 0.9 + pos.z * 0.7 + pos.y * 1.3;
-    let s = cfg.u2.x * 0.05 * flex;
+    let s = cfg.bushWind * 0.05 * flex;
     let gust = 1.0 + 0.5 * sin(time * 0.7 + pos.x * 0.2 + pos.z * 0.15);
     let dx = (sin(time * 2.6 + phase) + 0.4 * sin(time * 5.3 + phase * 1.7)) * s * gust;
     let dz = (cos(time * 2.2 + phase * 0.8) + 0.4 * sin(time * 4.7 - phase * 1.3)) * s * 0.8 * gust;
@@ -2223,9 +2228,9 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     n = normalize(n + vec3f(dx + push.x, 0.0, dz + push.y) * 2.0);
   } else if (aux > 0.0) {
     let flex = clamp((pos.y - 0.35) * 0.26, 0.06, 1.25) * (0.65 + 0.35 * clamp(aux, 0.0, 1.2));
-    let freq = max(0.1, cfg.u0.y);
-    let strength = cfg.u0.x * 0.12 * flex;
-    let gustEnv = 1.0 + cfg.u0.z * (0.42 * sin(time * 0.65 + pos.x * 0.16 + pos.z * 0.12) + 0.24 * cos(time * 1.15 - pos.z * 0.18));
+    let freq = max(0.1, cfg.treeWindFreq);
+    let strength = cfg.treeWindStrength * 0.12 * flex;
+    let gustEnv = 1.0 + cfg.treeWindGust * (0.42 * sin(time * 0.65 + pos.x * 0.16 + pos.z * 0.12) + 0.24 * cos(time * 1.15 - pos.z * 0.18));
     let phase = pos.x * 0.48 + pos.z * 0.36 + pos.y * 0.28;
     let swayX = (sin(time * freq * 2.3 + phase) + 0.52 * sin(time * freq * 1.15 + phase * 1.6 + 1.2)) * strength * gustEnv;
     let swayZ = (cos(time * freq * 1.9 + phase * 0.9) + 0.44 * sin(time * freq * 0.95 - phase * 1.3)) * strength * 0.78 * gustEnv;
@@ -2241,7 +2246,7 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let bladeT = select(clamp(-aux, 0.0, 1.0), clamp(-aux - 2.0, 0.0, 1.0), isShell);
     let bendWeight = bladeT * bladeT;
     let dist = length(eye - pos);
-    let fade = 1.0 - smoothstep(34.0, 72.0, dist) * cfg.u1.y * 0.55;
+    let fade = 1.0 - smoothstep(34.0, 72.0, dist) * cfg.distanceFade * 0.55;
     let windDir = vec2f(0.88, 0.47);
     let crossDir = vec2f(-0.47, 0.88);
     let freq = 0.42;
@@ -2254,8 +2259,8 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let turb = sin(l * 2.30 - u * 1.70 + time * speed * 1.90 + phi * 1.37);
     let flutter = sin(time * 5.0 + pos.x * 0.35 + pos.z * 0.22 + bladeT * 2.5 + phi) * 0.16;
     let scaleAmt = select(0.13, 0.085, isShell);
-    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.u1.x * scaleAmt * bendWeight * fade;
-    let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.u1.x * (scaleAmt * 0.7) * bendWeight * fade;
+    let along = (swell * 0.62 + gust * 0.42 + turb * 0.16 + flutter) * cfg.grassWind * scaleAmt * bendWeight * fade;
+    let across = (gust * 0.22 + turb * 0.12 + flutter * 0.6) * cfg.grassWind * (scaleAmt * 0.7) * bendWeight * fade;
     let push = foliageTrample(pos, bladeT, cfg, actors);
     let wx = windDir.x * along + crossDir.x * across + push.x;
     let wz = windDir.y * along + crossDir.y * across + push.y;

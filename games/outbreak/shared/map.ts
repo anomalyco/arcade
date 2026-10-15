@@ -56,16 +56,45 @@ export function buildingFootprint(b: Building): readonly Rect[] {
   return b.kind === "house" ? [[x, z + 5.5, r, e], [x + 2, z, x + 9.5, z + 5.5], [x + 9.5, z + 1.5, r, z + 5.5]] : [b.rect]
 }
 export function inBuildingFootprint(b: Building, px: number, pz: number): boolean {
-  for (const [x0, z0, x1, z1] of buildingFootprint(b)) {
-    if (px >= x0 && px <= x1 && pz >= z0 && pz <= z1) return true
+  const [x, z, r, e] = b.rect
+  if (px < x || px > r || pz < z || pz > e) return false
+  const fp = b.footprint
+  if (fp) {
+    for (let i = 0; i < fp.length; i++) {
+      const f = fp[i]!
+      if (px >= f[0] && px <= f[2] && pz >= f[1] && pz <= f[3]) return true
+    }
+    return false
   }
-  return false
+  if (b.kind !== "house") return true
+  return pz >= z + 5.5 || (px >= x + 2 && (px <= x + 9.5 || pz >= z + 1.5))
 }
+const PROP_SHAPES = {
+  bed: [1.72, 2.6, 1],
+  sofa: [1.2, 2.6, 1.1],
+  table: [1.5, 1, 0.82],
+  shelf: [1.7, 0.8, 1.8],
+  coffee: [1.1, 1.5, 0.52],
+  counter: [0.8, 2.4, 1.02],
+  fridge: [0.8, 0.9, 1.9],
+  dresser: [2.2, 0.7, 1.1],
+  chair: [0.55, 0.55, 1.05],
+  nightstand: [0.55, 0.55, 0.65],
+  stove: [0.75, 0.8, 0.95],
+  workbench: [0.7, 1.6, 0.95],
+  stash: [0.6, 0.9, 1.25],
+} as const
+
+const propShapeCache = new WeakMap<Prop, { rect: Rect; height: number }>()
+
 export function propShape(p: Prop): { rect: Rect; height: number } | undefined {
-  const shapes = {bed:[1.72,2.6,1],sofa:[1.2,2.6,1.1],table:[1.5,1,.82],shelf:[1.7,.8,1.8],coffee:[1.1,1.5,.52],counter:[.8,2.4,1.02],fridge:[.8,.9,1.9],dresser:[2.2,.7,1.1],chair:[.55,.55,1.05],nightstand:[.55,.55,.65],stove:[.75,.8,.95],workbench:[.7,1.6,.95],stash:[.6,.9,1.25]} as const
-  if(p.kind==="tree") return undefined
-  const [w,d,h]=shapes[p.kind]
-  return {rect:[p.x-w/2,p.y-d/2,p.x+w/2,p.y+d/2],height:h}
+  if (p.kind === "tree") return undefined
+  let hit = propShapeCache.get(p)
+  if (hit) return hit
+  const [w, d, h] = PROP_SHAPES[p.kind]
+  hit = { rect: [p.x - w / 2, p.y - d / 2, p.x + w / 2, p.y + d / 2], height: h }
+  propShapeCache.set(p, hit)
+  return hit
 }
 
 /** Fixed street topology; seeded house palettes, trees and shelf stock. All dimensions are metres. */
@@ -162,9 +191,67 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   return town
 }
 
+function townTopologyDigest(town: Town): number {
+  let h = 2166136261 >>> 0
+  h = Math.imul(h ^ town.barriers.length, 16777619) >>> 0
+  h = Math.imul(h ^ town.props.length, 16777619) >>> 0
+  h = Math.imul(h ^ town.doors.length, 16777619) >>> 0
+  h = Math.imul(h ^ (town.vehicles?.length ?? 0), 16777619) >>> 0
+  if (town.windowOrigin) {
+    h = Math.imul(h ^ (town.windowOrigin[0] | 0), 16777619) >>> 0
+    h = Math.imul(h ^ (town.windowOrigin[1] | 0), 16777619) >>> 0
+  }
+  for (let i = 0; i < town.doors.length; i++) {
+    const d = town.doors[i]!
+    h = Math.imul(h ^ ((d.open ? 1 : 0) | ((d.rect[0] * 10) << 2)), 16777619) >>> 0
+  }
+  return h >>> 0
+}
+
+const sightCache = new WeakMap<Town, { digest: number; barriersRef: Barrier[]; doorsRef: Door[]; rects: Rect[] }>()
+const solidCache = new WeakMap<Town, { digest: number; barriersRef: Barrier[]; doorsRef: Door[]; propsRef: Prop[]; rects: Rect[] }>()
+
 /** Windows/fences remain movement blockers but never eye-height sight blockers. */
-export const sightRects = (town: Town): Rect[] => [...town.barriers.filter(b => b.kind === "wall").map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect)]
-export const solidRects = (town: Town): Rect[] => [...town.barriers.map(b => b.rect), ...town.doors.filter(d => !d.open).map(d => d.rect), ...town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]}), ...(town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS)]
+export const sightRects = (town: Town): Rect[] => {
+  const digest = townTopologyDigest(town)
+  const hit = sightCache.get(town)
+  if (hit && hit.digest === digest && hit.barriersRef === town.barriers && hit.doorsRef === town.doors) {
+    return hit.rects
+  }
+  const rects: Rect[] = []
+  for (let i = 0; i < town.barriers.length; i++) {
+    const b = town.barriers[i]!
+    if (b.kind === "wall") rects.push(b.rect)
+  }
+  for (let i = 0; i < town.doors.length; i++) {
+    const d = town.doors[i]!
+    if (!d.open) rects.push(d.rect)
+  }
+  sightCache.set(town, { digest, barriersRef: town.barriers, doorsRef: town.doors, rects })
+  return rects
+}
+
+export const solidRects = (town: Town): Rect[] => {
+  const digest = townTopologyDigest(town)
+  const hit = solidCache.get(town)
+  if (hit && hit.digest === digest && hit.barriersRef === town.barriers && hit.doorsRef === town.doors && hit.propsRef === town.props) {
+    return hit.rects
+  }
+  const rects: Rect[] = []
+  for (let i = 0; i < town.barriers.length; i++) rects.push(town.barriers[i]!.rect)
+  for (let i = 0; i < town.doors.length; i++) {
+    const d = town.doors[i]!
+    if (!d.open) rects.push(d.rect)
+  }
+  for (let i = 0; i < town.props.length; i++) {
+    const s = propShape(town.props[i]!)
+    if (s) rects.push(s.rect)
+  }
+  const veh = town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS
+  for (let i = 0; i < veh.length; i++) rects.push(veh[i]!)
+  solidCache.set(town, { digest, barriersRef: town.barriers, doorsRef: town.doors, propsRef: town.props, rects })
+  return rects
+}
 
 export function nearbyDoor(town: Town, x: number, y: number): Door | undefined {
   return town.doors.filter(d => distToRect(x, y, d.rect) <= 1.8).sort((a, b) => distToRect(x, y, a.rect) - distToRect(x, y, b.rect))[0]
