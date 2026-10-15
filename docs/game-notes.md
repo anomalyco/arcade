@@ -648,6 +648,17 @@ proven animation techniques to animation.md, not here.
   street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
   paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
+- **Curves for falloffs: a default that is the formula, a table only once reshaped.** Outbreak's flashlight range
+  window (`(1 − x⁴)²`, surface pool and volumetric beam alike), practical lamps' pool edge (`(1 − x²)²`) and the unseen
+  effect's strength by depth (0.38 → 1) are Lab curves (`games/outbreak/src/light-ramps.ts`). Each default is its
+  formula sampled at nine points; while a curve still reads as its default a per-table flag in the lighting uniforms
+  stays 0 and the shader runs the formula, otherwise it reads a 16-sample table (three tables and four flags after the
+  unseen block; the custom uniform buffer grew to 1280 bytes). Day-night sky fill, moon fill and street air haze take
+  curves over darkness the same way on the CPU (`day-night.ts`). `scripts/hour-capture.ts` against main: 1–15 pixels
+  per frame differ by 1 level, the same as a scene and its own repeat in one run, so defaults are unchanged. Paired
+  GPU cost of all three tables on vs off (`scripts/ab-gpu.ts`, 10 rounds, 3456×1894, Dark shroud on) is +0.002 ms
+  street / −0.020 ms interior (MADs 0.06/0.11). The look's `ambientFill` and `fogDensity` change nothing in Outbreak's
+  frame even at their maximum, so they got no curves.
 
 ## Art direction
 
