@@ -95,14 +95,19 @@ export function spawnTownZombies(
   count: number,
   avoidX: number,
   avoidY: number,
-  minClearance = 8.5,
+  minClearance = 3.5,
 ): AIAgent[] {
   const rng = new Rng((town.seed ^ 0x7a4f9b13) >>> 0)
   const agents: AIAgent[] = []
   if (count <= 0) return agents
 
-  // Curated street & yard anchor zones so nearby streets immediately feel inhabited
+  // Curated street, front-lawn, and interior anchor zones so LOS, flashlight beam, and fog-of-war are immediately inhabited
   const anchors: [number, number][] = [
+    [30.0, 37.3],
+    [26.8, 38.6],
+    [32.9, 38.6],
+    [27.9, 27.0],
+    [29.6, 29.9],
     [35.2, 43.2],
     [21.2, 43.5],
     [31.5, 46.5],
@@ -123,21 +128,27 @@ export function spawnTownZombies(
   let nextId = 1
   for (let aIdx = 0; aIdx < anchors.length && agents.length < count; aIdx++) {
     const [ax, ay] = anchors[aIdx]!
-    const groupSize = aIdx < 5 ? 2 + (aIdx % 2) : 2 + rng.int(3)
+    const isHeroAnchor = aIdx < 5
+    const groupSize = isHeroAnchor ? 1 : aIdx < 9 ? 2 + (aIdx % 2) : 2 + rng.int(3)
     for (let m = 0; m < groupSize && agents.length < count; m++) {
       const offsetAngle = rng.range(-Math.PI, Math.PI)
-      const offsetDist = m === 0 ? rng.range(0, 1.2) : rng.range(1.2, 3.8)
+      const offsetDist = isHeroAnchor ? 0 : m === 0 ? rng.range(0, 1.2) : rng.range(1.2, 3.8)
       const candidate = nav.nearest({
         x: Math.max(3, Math.min(SIZE - 3, ax + Math.cos(offsetAngle) * offsetDist)),
         y: Math.max(3, Math.min(SIZE - 3, ay + Math.sin(offsetAngle) * offsetDist)),
       })
-      if (Math.hypot(candidate.x - avoidX, candidate.y - avoidY) < minClearance) continue
-      // Avoid spawning inside locked/closed houses initially unless overflowed
-      const insideHouse = town.buildings.some(
-        (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
-      )
+      if (!isHeroAnchor && Math.hypot(candidate.x - avoidX, candidate.y - avoidY) < minClearance) continue
+      // Allow curated interior anchors (aIdx 3 & 4) inside Ash House; keep random street clusters outside closed houses
+      const allowInterior = aIdx === 3 || aIdx === 4
+      const insideHouse =
+        !allowInterior &&
+        town.buildings.some(
+          (b) => candidate.x > b.rect[0] + 0.2 && candidate.x < b.rect[2] - 0.2 && candidate.y > b.rect[1] + 0.2 && candidate.y < b.rect[3] - 0.2,
+        )
       if (insideHouse) continue
-      const awayAim = Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
+      const awayAim = isHeroAnchor
+        ? Math.PI / 2 + (aIdx === 1 ? 0.35 : aIdx === 2 ? -0.4 : aIdx === 4 ? 2.4 : 0.1)
+        : Math.atan2(candidate.y - avoidY, candidate.x - avoidX) + rng.range(-0.7, 0.7)
       agents.push(createAIAgent(nextId++, town.seed, candidate.x, candidate.y, awayAim))
     }
   }

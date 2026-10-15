@@ -73,7 +73,9 @@ game's own `AGENTS.md`.
 - Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options.
 - To show Kit an orientation, asset, or sandbox setup in his open browser tab, use `bun run arcade …`; to walk him
   through a labeled multi-tab tour or highlight a target with a pinned note, use `arcade tour` and `arcade note`
-  ([docs/dev-control.md#show-kit-things](docs/dev-control.md#show-kit-things)).
+  ([docs/dev-control.md#show-kit-things](docs/dev-control.md#show-kit-things)). For demos he comes back to, add or
+  update a Lab Overworld station (one file in `games/lab/src/stations/`, [docs/lab.md](docs/lab.md#overworld-stations))
+  instead of a tour; `arcade station <id>` jumps his tab there.
 - All tunable values belong in typed settings bound to the shared `LabPanel` (Backquote), with meaningful labels,
   explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only.
 - Use the production effect/material/physics implementation through adapters, never a Lab-only facsimile; label

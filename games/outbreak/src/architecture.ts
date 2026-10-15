@@ -115,8 +115,12 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
 
 /** Broadleaf scaffold: layered bough clusters, bent-normal peripheral leaf rosettes, interior canopy AO and base grass tufts. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
+  plantFootprints.push({x,z,radius,tree:h>2.1,ground})
   buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings)
 }
+
+/** Ground footprints of every plant() since the level build cleared it; the floor map bakes their contact shade. */
+export const plantFootprints:{x:number;z:number;radius:number;tree:boolean;ground:number}[]=[]
 
 /** Procedural bungalow over authoritative room and opening boundaries. */
 export function house(m:Mesh,b:Building,id:number,town:Town) {

@@ -27,6 +27,63 @@ Selecting a fixture intentionally changes scene state. Selecting a tool/effect s
 lighting and authored placement unless the user explicitly changes or resets them. Current lighting survives section
 changes, but environments are section-owned and fixtures can replace them. There is no cross-reload saved-preset library.
 
+## Overworld stations
+
+`/arcade/lab/?overworld` opens the Lab as a map of stations, one plot per demo, drawn by the Lab's own Stage. Number
+keys `1`–`9` and `0`, a click on a plot or strip chip, `⌘K` ("Station: …") or `arcade station <id>` glide the camera
+there (320 ms, cut with reduced motion, interrupted by a drag or wheel) and open the station: its section runs with
+the workbench chrome hidden, and a panel shows status, variants (`1`–`9`), Grid and A/B, live GPU time, measured
+numbers with their sources, recent commits and unmerged branches (dev server only) and links to the live game.
+`[`/`]` step to the previous or next station, `Esc` returns to the map and Backquote shows the full workbench for
+tuning. The map starts with only the shared sections; a station whose section belongs to a game loads that game's
+adapters when it opens (`ensureGame` in `games/lab/src/main.ts`, `LabApi.addSections`).
+
+Each station is one file in `games/lab/src/stations/`, picked up by `import.meta.glob`, so adding a station means
+adding a file. Use stations instead of writing a tour when the thing you want Kit to look at is a demo he will come
+back to. The type is `LabStation` in `packages/kit/lab/overworld/types.ts`:
+
+```ts
+import { defineStation } from "./define"
+
+export default defineStation({
+  id: "weather",                          // arcade station weather, ?overworld&station=weather
+  title: "Weather",
+  summary: "Rain, fog and wind from the shared weather kit, in the Looks room.",
+  order: 30,                              // strip position; the first ten get keys 1–9 and 0
+  prop: "cloud",                          // diorama prop on the plot
+  color: 0x6f9fd8,
+  status: "in-progress",                  // live | in-progress | review | planned
+  demo: { kind: "section", section: "weather", setup: [{ command: "weather.preset", args: { preset: "storm" } }] },
+  defaultVariant: "storm",                // the variant the setup already shows
+  variants: [{ id: "storm", label: "Storm", setup: [{ command: "weather.preset", args: { preset: "storm" } }] }],
+  grid: "looks",                          // optional VARIATION_GRID_PRESETS id for the Grid button
+  board: { feature: "AR-19" },            // where voice notes from this station go
+  metrics: [{ label: "GPU, rain at 1280×800", value: "0.4 ms", source: "perf/weather-lab.json" }],
+  paths: ["packages/kit/weather.ts"],     // recent commits touching these
+  branches: ["weather-*"],                // unmerged branches matching these
+  links: [{ label: "Outbreak street", href: "/arcade/outbreak/?peaceful=1&seed=7" }],
+})
+```
+
+Reference sections by id and put the real setup in commands the section already registers, so a station uses the
+production path exactly as `arcade run` would. If the section isn't merged yet the station still appears and says so.
+`gridVariants("smoke")` turns a variation-grid preset's tiles into variants. Page demos (`{ kind: "page", url }`)
+embed another Arcade page, such as the Characters page; their variants set `url` and run `setup` commands inside the
+page through its dev-control runtime. `bun test games/lab/tests` validates every station file.
+
+### Voice notes
+
+In dev (`bun run dev`), `N` at any station starts a voice note, like Scrawl: talk, hold `Shift` and move to draw,
+`⌘Z` undoes a mark, number keys still switch variants and are logged, `Esc` cancels and `N` finishes. The review card
+shows a contact sheet of keyframes (start, each mark, each variant change, end); `Enter` sends. The dev server
+(`scripts/lab-feedback.ts`) saves the bundle to `~/code/home/artifacts/lab-feedback/<time>-<station>/` (audio,
+contact sheet, frames, `state.json` with the preset JSON, seeds, camera and transport, `feedback.json`, `summary.md`)
+and posts it to the station's decision on the team board (project `arcade`) through the board's feedback path, so
+Whisper transcribes it and the marks are described with their transcript. It then presses Send, which puts it in
+`board.ts inbox`, and writes `transcript.md` once Whisper finishes. Stations without `board.decision` get a
+"<Title> Station" decision on their feature the first time a note is sent, with the variants as options. The board
+token stays in the dev server; production builds don't include the recorder.
+
 ## Bind controls to typed production settings
 
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
@@ -91,6 +148,26 @@ The material authoring goal is reusable typed recipes with base colour, roughnes
 surface response, tested under common lights and at gameplay distance. A complete recipe editor is not implemented.
 When adding one, connect the actual material shader, expose its tunables and retain production defaults; do not create
 a calibration-only shader and call it the game's material.
+
+### Vegetation
+
+The Vegetation section (`packages/kit/lab/foliage.ts`, deep link `#foliage`) tunes the production
+`packages/kit/gpu/foliage.ts` generators that Outbreak builds its town with. Its Tool picker chooses a test room:
+
+- **Tree**: three trees of the current recipe on a lawn by a street. Presets: Oak, Maple, Pine, Birch.
+- **Bush**: a house front with lit windows, foundation planting, a free-standing shrub and a hedge line. Presets:
+  Clipped hedge, Overgrown shrub, Hydrangea.
+- **Grass**: lawn, mulch edge, path and verge. Presets: Lawn, Overgrown lawn, Weeds / dead grass.
+- **Outbreak lot**: all three looks together around a bungalow.
+
+Each look has its own preset, parameters, Randomize (seeded by the Randomize seed, never the structure seed) and
+Reset; changing one look never touches the others. Structural parameters rebuild the room from the structure seed;
+wind, translucency and actor bending are live uniforms. Lighting is Night (2100K streetlamp, moon, the lead walker's
+flashlight), Dusk or Day. The Look picker applies the shared `lookGradeColor` post grade only; the games' scene-side
+look terms (palette, practical warmth) are not reproduced here. Walkers (a survivor and a zombie stand-in) loop
+through the room and bend grass and bushes with the same `foliageTrample` code Outbreak uses for the player and
+zombies. `foliage.set`, `foliage.randomize` and `foliage.preset` (preset JSON version 2; version 1 migrates) drive it
+from `arcade`/bench, and `bun packages/kit/lab/prove-foliage.ts` captures every preset.
 
 Gameplay rules and replicated simulation remain authoritative. Camera, cosmetic effects and presentation clutter stay
 local; Lab tuning must not silently add wire fields or change authoritative movement, damage or collision rules.

@@ -345,7 +345,7 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
   },
   foliage: {
     id: "foliage",
-    title: "Foliage · 4 Tree Species",
+    title: "Vegetation · 4 Tree Presets",
     section: "foliage",
     cols: 2,
     rows: 2,
@@ -353,25 +353,25 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
       {
         id: "oak",
         label: FOLIAGE_PRESETS.oak.label,
-        settings: { treePreset: "oak", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "oak", tool: "tree", cameraMode: "close" },
         subtitle: "Spreading crown · dense canopy lobes",
       },
       {
         id: "maple",
         label: FOLIAGE_PRESETS.maple.label,
-        settings: { treePreset: "maple", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "maple", tool: "tree", cameraMode: "close" },
         subtitle: "Rounded crown · warm autumn mix",
       },
       {
         id: "birch",
         label: FOLIAGE_PRESETS.birch.label,
-        settings: { treePreset: "birch", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "birch", tool: "tree", cameraMode: "close" },
         subtitle: "Columnar crown · high porosity",
       },
       {
         id: "pine",
         label: FOLIAGE_PRESETS.pine.label,
-        settings: { treePreset: "pine", stageMode: "swatch", cameraMode: "close", compare: 1 },
+        settings: { treePreset: "pine", tool: "tree", cameraMode: "close" },
         subtitle: "Conical needle tiers",
       },
     ],
@@ -406,6 +406,33 @@ export const VARIATION_GRID_PRESETS: Record<string, VariationGridConfig> = {
         label: "Cold Moon",
         lighting: { lamps: false, lampPower: 0.8, spot: true, spotPower: 3.5, moonPower: 0.85, count: 1, exposure: 0.05, tone: 1, temperature: -0.45, saturation: 0.88 },
         subtitle: "Moon 0.85 · no lamps · cool -0.45",
+      },
+    ],
+  },
+  fog: {
+    id: "fog",
+    title: "Fog of War · 3 Variants",
+    section: "outbreak-vignette",
+    cols: 3,
+    rows: 1,
+    tiles: [
+      {
+        id: "noir-memory-echo",
+        label: "1 · Noir Memory + Echo (Default)",
+        settings: { directionPreset: 3, fogStyle: 1, fogEdgeSoftness: 0.78, fogMemoryDim: 0.42, fogUnknownGrain: 0.48 },
+        subtitle: "5-tap feathered LOS · 42% cold-ash memory · sound ripples",
+      },
+      {
+        id: "stark-cone-pulse",
+        label: "2 · Stark Cone + Pulse",
+        settings: { directionPreset: 3, fogStyle: 2, fogEdgeSoftness: 0.42, fogMemoryDim: 0.22, fogUnknownGrain: 0.75 },
+        subtitle: "Darkwood spotlight cone · 22% deep shroud · Odradek pulse",
+      },
+      {
+        id: "soft-shroud-classic",
+        label: "3 · Soft Shroud (Classic)",
+        settings: { directionPreset: 3, fogStyle: 0, fogEdgeSoftness: 1.15, fogMemoryDim: 0.68, fogUnknownGrain: 0.15 },
+        subtitle: "Gentle peripheral dim (68%) · soft transitions",
       },
     ],
   },
@@ -472,6 +499,8 @@ const PRESET_ALIASES: Record<string, string> = {
   material: "materials",
   trees: "foliage",
   light: "lighting",
+  "fog-of-war": "fog",
+  "outbreak-fog": "fog",
   rain: "weather",
   "weather-6": "weather",
 }
@@ -479,6 +508,7 @@ const PRESET_ALIASES: Record<string, string> = {
 export function defaultGridPresetForSection(sectionId: string, effectName?: string): string {
   if (sectionId === "weather") return "weather"
   if (sectionId === "looks") return "looks"
+  if (sectionId === "outbreak-vignette") return "fog"
   if (sectionId === "materials") return "materials"
   if (sectionId === "foliage") return "foliage"
   if (sectionId === "lighting") return "lighting"

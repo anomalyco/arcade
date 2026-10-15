@@ -1,6 +1,7 @@
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, spriteShader, postShader, type PostFinishOptions, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { BUILDING_RECTS } from "../shared/map"
+import { outbreakFogOfWarDeclarationsWgsl } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
 
@@ -49,15 +50,15 @@ export const outbreakSceneHooks: SceneHooks = {
   fragmentStart: "surfaceFootprint = max(length(dpdx(o.world)), length(dpdy(o.world))); surfaceTime = F.cam.w;",
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
-    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, defaultFoliageWindConfig());
+    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, OL.veg, OL.vegActors);
     o.world = fw[0];
     o.normal = fw[1];
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
+${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
-${foliageWindDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   switch id {
     ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
@@ -96,26 +97,7 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   if (fade >= 0.995) { return true; }
   return bayer4x4(frag) < fade;
 }
-fn eyeVisible(p: vec2f) -> f32 {
-  let delta = p - lights[0].pos.xz;
-  let d2 = dot(delta, delta);
-  let r = lights[0].pos.w;
-  if (d2 >= r * r) { return 0.0; }
-  let distance = sqrt(d2);
-  let facing = dot(delta / max(distance, 0.001), vec2f(cos(F.effects.x), sin(F.effects.x)));
-  let cone = smoothstep(F.effects.y, F.effects.y + 0.035, facing);
-  let near = 1.0 - smoothstep(F.effects.z - 0.2, F.effects.z, distance);
-  let mask = max(cone, near);
-  if (mask <= 0.0) { return 0.0; }
-  let range = 1.0 - smoothstep(r - 1.0, r, distance);
-  let a = (atan2(delta.y, delta.x) + TAU) % TAU;
-  let f = a / TAU * f32(RAYS) - 0.5;
-  let ray0 = u32(i32(floor(f)) + i32(RAYS)) % RAYS;
-  let ray1 = (ray0 + 1u) % RAYS;
-  let los0 = 1.0 - smoothstep(polar[ray0 * 2u].x + 0.025, polar[ray0 * 2u].x + 0.10, distance);
-  let los1 = 1.0 - smoothstep(polar[ray1 * 2u].x + 0.025, polar[ray1 * 2u].x + 0.10, distance);
-  return mix(los0, los1, fract(f)) * mask * range;
-}`,
+${outbreakFogOfWarDeclarationsWgsl}`,
   directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (i32(round(o.mat)) == 21 && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
@@ -131,6 +113,7 @@ fn eyeVisible(p: vec2f) -> f32 {
   // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
   solidCutaway: "",
   surface: /* wgsl */ `
+  outbreakFlashMask = 0.0;
   let nightLamps = clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
   if (mat == 6) {
     // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
@@ -163,14 +146,16 @@ fn eyeVisible(p: vec2f) -> f32 {
       col *= evalTriplanarPropMod(o.world, n);
     }
     if (!inRoom) {
-      let vigDark = clamp(OL.u2.w, 0.0, 1.2);
-      let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.052, 0.064));
-      let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.42, 0.46, 1.0), vigDark);
-      let extCutDim = select(1.0, select(0.68, 0.92, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
-      col *= periphShade * extCutDim;
-    } else {
+      if (mat != 12) {
+        let vigDark = clamp(OL.u2.w, 0.0, 1.2);
+        let dCenter = length((o.world.xz - vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5))) * vec2f(0.052, 0.064));
+        let periphShade = mix(1.0, clamp(1.18 - dCenter * 0.42, 0.46, 1.0), vigDark);
+        let extCutDim = select(1.0, select(0.68, 0.92, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
+        col *= periphShade * extCutDim;
+      }
+    } else if (mat != 12) {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), w * 0.58) * 0.66;
+      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), w * 0.58) * mix(0.84, 0.66, w);
       // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
       if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
         col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
@@ -180,14 +165,29 @@ fn eyeVisible(p: vec2f) -> f32 {
       // Compress near-field window/porch point-light hotspots on foundation shrub crowns so leaves stay rich olive-gold instead of bleaching white
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(0.10)) * 3.2);
       // Subsurface leaf translucency & grazing rim shifted toward muted autumn olive-ochre
-      let tipWeight = clamp(abs(o.aux), 0.0, 1.0);
+      let tipWeight = foliageTipWeight(o.aux);
+      let transK = foliageTranslucency(o.aux, OL.veg) / 0.3;
       let keyDir = normalize(F.monitorBounds.xyz);
       let forwardScatter = pow(clamp(dot(-V, keyDir) * 0.5 + 0.5, 0.0, 1.0), 3.0);
       let backNormal = max(0.0, dot(-n, keyDir));
-      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight;
+      let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight * transK;
+      // Flashlight transmission: leaves and blades inside the beam glow warm olive (thin-lamina scatter, any facing).
+      if (OL.u4.z > 0.001) {
+        let fRel = o.world.xz - OL.u3.xy;
+        let fAlong = dot(fRel, OL.u3.zw);
+        let fAcross = abs(dot(fRel, vec2f(-OL.u3.w, OL.u3.z)));
+        let fCone = 0.12 + max(0.0, fAlong) * max(0.12, OL.u4.x);
+        let fRange = max(2.8, OL.u4.y);
+        let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * pow(clamp(1.0 - fAlong / fRange, 0.0, 1.0), 1.3) * (1.0 - smoothstep(1.4, 2.4, o.world.y));
+        let facing = max(0.0, dot(-n.xz, OL.u3.zw)) * 0.5 + 0.5;
+        col += o.color * OL.u5.rgb * vec3f(1.05, 1.3, 0.5) * inBeam * facing * OL.u4.z * (0.10 + 0.22 * tipWeight) * transK;
+      }
       let chloroTint = mix(vec3f(0.20, 0.24, 0.10), vec3f(0.42, 0.36, 0.18), sqrt(tipWeight));
       let fresnelRim = pow(1.0 - max(dot(n, V), 0.0), 3.2) * 0.20 * tipWeight * F.ambient.w;
       col += o.color * (chloroTint * transLobe + vec3f(0.40, 0.36, 0.22) * fresnelRim);
+      // Moonlit crown tops: upward-facing outer leaves keep a cool sheen at night so canopies read as rounded masses.
+      let crownSheen = pow(max(n.y, 0.0), 2.0) * (0.35 + 0.65 * tipWeight) * smoothstep(0.5, 1.6, o.world.y);
+      col += o.color * vec3f(0.50, 0.62, 0.90) * OL.u0.y * 0.32 * crownSheen * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * 0.38);
       if (o.world.y < 0.48) {
@@ -201,33 +201,27 @@ fn eyeVisible(p: vec2f) -> f32 {
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
     }
+    let beamAdd = evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
     if (mat != 12) {
-      let visible = eyeVisible(o.world.xz + n.xz * 0.06);
-      let explored = textureSampleLevel(exploredTex, floorSamp, (o.world.xz + n.xz * 0.24) * F.map.xy, 0.0).r;
-      if (mat == 2) {
-        col *= .88;
-        if (inRoom && o.world.y < 2.8) { col *= max(explored, visible); }
-      } else {
-        // Blog Game Tip #6: Pre-fog silhouette darkening & warm-practical hue retention (warmBias) in remembered rooms
-        let luminance = dot(col, vec3f(.2126, .7152, .0722));
-        let warmBias = clamp((col.r - col.b * 1.15) / max(col.r + 0.005, 1e-4), 0.0, 1.0);
-        let periphTint = mix(vec3f(.83, .94, 1.05), vec3f(1.04, .96, .84), w);
-        let peripheral = mix(vec3f(luminance) * periphTint, col, .76 + .20 * warmBias);
-        if (inRoom && o.world.y < 2.8) {
-          let room = mix(vec3f(luminance) * periphTint, col, .88 + .12 * max(visible, warmBias));
-          let reveal = max(explored, visible * 0.94);
-          col = mix(o.color * .012, room * mix(F.effects.w, 1.0, .86), reveal);
-        } else {
-          col = mix(peripheral * (.88 + .12 * explored), col, .88 + .12 * visible);
-        }
-      }
+      col = applyOutbreakFogOfWar(col, o.world, n, o.color, inRoom, mat, w);
     } else {
-      let actorRim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * OL.u2.z;
-      let topCatch = max(0.0, n.y) * 0.45 * OL.u2.z;
-      let rimCol = mix(vec3f(0.032, 0.048, 0.082), vec3f(0.058, 0.046, 0.032), w);
-      col += rimCol * F.ambient.w * (actorRim + topCatch);
+      // Actors in LOS: Limbo/Noir top-down contour rim + anatomical form shading so zombies stay clearly readable even in dark areas
+      let isLiveActor = o.extra.z >= 0.92;
+      let inBeam = clamp(outbreakFlashMask, 0.0, 1.0);
+      let darkLosScale = select(0.42, 1.0 - 0.72 * inBeam, isLiveActor);
+      let v1 = 1.0 - max(dot(n, V), 0.0);
+      let viewRim = v1 * v1;
+      let c1 = clamp(length(n.xz), 0.0, 1.0);
+      let contourRim = c1 * c1 * smoothstep(0.22, 1.62, o.world.y);
+      let actorRim = max(viewRim, contourRim * 0.85) * max(OL.u2.z, 1.0);
+      let topCatch = max(0.0, n.y) * 0.45 * max(OL.u2.z, 1.0) * smoothstep(0.65, 1.68, o.world.y);
+      let heightGrad = smoothstep(0.08, 1.62, o.world.y);
+      let formShade = (0.36 + 0.64 * clamp(n.y * 0.55 + 0.45, 0.0, 1.0)) * (0.42 + 0.58 * heightGrad);
+      let rimCol = mix(vec3f(0.072, 0.088, 0.112), vec3f(0.065, 0.052, 0.038), w);
+      let darkReadFloor = o.color * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
+      col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
     }
-    col += evalFlashlightBeam(o.world, n, o.color, inRoom, mat);
+    col += beamAdd;
   }
   if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }
 `,

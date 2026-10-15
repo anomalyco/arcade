@@ -384,6 +384,8 @@ proven animation techniques to animation.md, not here.
   A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
   Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
   `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+- **Pass per-pixel 3D flashlight irradiance in the HDR alpha channel for selective-colour Noir grading, and pair feathered memory fog with SoA last-known ghosts and jittered sound ripples.**
+  In `packages/kit/gpu/look.ts` and `look-shaders.ts`, `Noir / Limbo` (`selectiveColor = L.u15.w = 1.24`, Outbreak's default look) desaturates the world outside the player's flashlight to near-monochrome (`saturation = 0.04`, `outsideChroma = 0.75 / 255` street, `0.54 / 255` interior) while restoring full natural colour inside the 3D polar-shadow-tested flashlight cone (`beamChroma = 30.48 / 41.19`, `selectiveColorRatio = 40.9× / 76.0×`, `ΔE = 5.69` street / `8.44` interior against `gpt-image-1.5` targets). Encoding `outAlpha = 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0)` in the 4× MSAA `rgba16float` scene pass keeps `1.0` as the fixed point of `one, one-minus-src-alpha` blending so unlit translucent sprites and decals outside the beam never trigger false colour retention, and adds zero render targets or texture bindings. Compiling a dedicated `compositeFast` entry point (1 `src` sample + rational Padé filmic curve without Kuwahara arrays or AgX matrices) and keeping `inst`/`glass` in `fsSolid` inside `ensureLookPipes()` cut `3456×1894` M5 Max Metal whole-frame GPU time from `39.34 → 15.653 ms` (street, MAD `0.026 ms`, fresh-submit `p95 = 18.400 ms`, `realtime_ratio = 0.9975`) and `31.84 → 16.040 ms` (interior, MAD `0.028 ms`, fresh-submit `p95 = 18.800 ms`, `realtime_ratio = 0.9969`). `Vision.actorVisible` (`games/outbreak/shared/vision.ts`) samples an actor's lateral shoulder disk against the polar blocker map so doorway/ray-boundary zombies are never falsely culled while walls/closed doors strictly occlude; `games/outbreak/src/shaders.ts` and `zombies.ts` add a top-down horizontal contour rim (`lumaP92 = 74–88 / 255`, contrast `52–72` in dark LOS), zero-allocation SoA last-known position ghosts (`seenPose` fading over `3.2 s` and clearing when the spot is seen empty), and spatially jittered (`±0.7–1.35 m`) Noir sound ripples across 3 Lab-selectable fog variants (`fogStyle` `0..2`, exposed in the Lab `fog` variation grid).
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -544,6 +546,34 @@ proven animation techniques to animation.md, not here.
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
 
 ## Art direction
+
+### Vegetation looks: tree, bush, grass
+
+- **Three looks, tuned separately** (`packages/kit/gpu/foliage.ts`, Lab Vegetation section `packages/kit/lab/foliage.ts`).
+  Trees (Oak, Maple, Pine, Birch), bushes (Clipped hedge, Overgrown shrub, Hydrangea) and grass (Lawn, Overgrown lawn,
+  Weeds / dead grass) each have their own presets, typed parameters and seeded Randomize; one look never changes
+  another. Outbreak defaults stay Oak + Overgrown shrub + Overgrown lawn, which match the previously shipped values.
+- **Opaque leaf mounds under scalloped rosettes beat flat leaf cards from the top-down camera.** Main's 5-sided
+  cards rendered as visible pentagon plates (no `discard` in `fsSolid`), and without a mass under them the crowns
+  read as dark speckle at 23:00. Each bough cluster and bush lobe is now a jittered ellipsoid mound (~45–54 verts)
+  with 2–3 scalloped rosettes and an edge sprig on its outer shell, plus a cool moonlit sheen on upward leaves at
+  night. In the aligned `look-proof.ts` yard frame the woodland crowns read as rounded masses (crops in
+  `~/code/home/artifacts/2026-10-14-vegetation/sheets/yard-crops.png`, against the gpt-image-1.5 paint-over target).
+- **Bushes encode `aux = 3 + flex`.** Shaders decode it with `foliageTipWeight`/`foliageTranslucency`, so bushes get
+  their own wind, translucency and actor bending without a new vertex attribute. `bushTrim` clips the emitted
+  vertices toward a rounded box (flat top, straight sides, bent normals) to turn a wild shrub into a hedge.
+- **Actor bending**: the player and the seven nearest living zombies are packed into `OL.vegActors` each frame
+  (`nearestFoliageActors`, `packFoliageActors`); grass and bush leaves bend away with a `(1 - d/R)²` falloff. The
+  Lab's `grass-bend-off`/`grass-bend-on` captures (same tick, strength 0 vs 1) differ in 8,205 pixels around the
+  walkers. Flashlight transmission lights leaves and blades inside the beam whatever their facing.
+- **Contact shade** under every `plant()` call (house trees and foundation shrubs, not only `town.props` trees) is
+  stamped locally into the floor map, and bush skirts darken over their lowest 30 cm.
+- **Cost** (Mac Studio, Metal, headless; alternating `bench-outbreak.ts` runs vs `origin/main` 5458b60,
+  `perf/outbreak-vegetation-paired.json`): static vertices 294k → 321k; GPU street 17.09 → 17.69 ms (three runs each,
+  ranges 17.04–17.22 vs 17.66–17.71), interior 17.44 → 18.09 ms; realtime ratio ≥ 0.995 throughout. Fresh-submit p95
+  street 19.9 → 20.9 ms (main itself measured 19.1–21.2 here), interior 19.8 → 20.3–21.2 ms. Disabling actor bending
+  and the beam/sheen terms did not recover the interior cost (18.28 ms), so it is the fuller canopy coverage and
+  vertices. Grass density is cheap: GPU street 17.65 / 17.69 / 17.75 ms at density 0.5 / 1.0 / 1.5.
 
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
