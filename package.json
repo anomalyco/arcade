@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "arcade": "bun scripts/arcade.ts",
-    "check:packages": "bun run --filter '@arcade/*' check"
+    "check:packages": "bun run --filter '@arcade/*' check",
+    "verify": "bun scripts/verify.ts",
+    "verify:release": "bun scripts/verify.ts --release"
   },
   "devDependencies": {
     "vite": "^8.3.4",
