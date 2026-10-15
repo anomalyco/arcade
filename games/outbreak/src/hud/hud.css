@@ -1,7 +1,7 @@
 .callouts { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --callout-size: 12px }
-.callout { position: absolute; left: 0; top: 0; will-change: transform, opacity }
+.callout { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform, opacity }
 .callout-body {
-  position: absolute; left: 0; bottom: 0; transform: translateX(-50%);
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
   display: inline-flex; align-items: center; gap: .42em; padding: .2em .58em .22em;
   border: 1px solid #ffffff24; border-radius: .38em; background: #0a0e0fd9; color: #e4e1d2;
   font: 600 var(--callout-size)/1.25 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .01em;
@@ -22,7 +22,41 @@
 .callout[data-kind="noise"] .callout-body { color: #b9c4cc; font-weight: 500; border-style: dashed; border-color: #b9c4cc55 }
 .callout[data-kind="noise"] .callout-body::before { content: "))"; opacity: .7; letter-spacing: -.12em; margin-right: .12em }
 
-/* Callout mode: actions are reported above the survivor, so the corner HUD shrinks to a hotbar and a summary. */
+/* Character rings: stamina, reload, health and battery beside the survivor. Shape names the ring, colour its range. */
+.vitals { position: fixed; inset: 0; z-index: 9; pointer-events: none; overflow: hidden; --vital-size: 20px }
+.vital {
+  position: absolute; left: 0; top: 0; width: var(--vital-size); height: var(--vital-size); transform-origin: 0 0;
+  border-radius: 50%; background: #0a0e0fb8; box-shadow: 0 1px 6px #0000008c; color: #d3dcc2;
+  will-change: transform, opacity; --ring: calc(var(--vital-size) * .16); --track: #ffffff24
+}
+.vital-ring {
+  position: absolute; inset: 1px; border-radius: 50%;
+  background: conic-gradient(currentColor calc(var(--p, 1) * 360deg), var(--track) 0);
+  -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px));
+  mask: radial-gradient(circle closest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + .5px))
+}
+.vital b {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 700 calc(var(--vital-size) * .46)/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 #000
+}
+.vital[data-meter="health"] b::before {
+  content: ""; width: 38%; height: 38%;
+  background: linear-gradient(currentColor, currentColor) center / 32% 100% no-repeat, linear-gradient(currentColor, currentColor) center / 100% 32% no-repeat
+}
+.vital[data-meter="battery"] b::before {
+  content: ""; width: 26%; height: 42%; border: 1.5px solid currentColor; border-radius: 1.5px; box-sizing: border-box;
+  background: linear-gradient(to top, currentColor calc(var(--p, 1) * 100%), transparent 0)
+}
+.vital[data-meter="stamina"][data-draining="true"] { color: #eef4e0 }
+.vital[data-state="low"] { color: #f0b44a }
+.vital[data-state="critical"] { color: #ff6a4a; background: #1c0a07cc; --track: #ff6a4a70 }
+.vital[data-state="critical"] .vital-ring { animation: vital-flash .5s steps(2, jump-none) infinite alternate }
+@keyframes vital-flash { from { opacity: 1 } to { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) { .vital[data-state="critical"] .vital-ring { animation: none } }
+.vitals[data-reduced="true"] .vital[data-state="critical"] .vital-ring { animation: none }
+
+/* Callout mode: actions are reported on the survivor, so the corner HUD shrinks to a hotbar and a summary. */
 body[data-hud="callouts"] #hud { left: 0; right: 0; bottom: 12px; align-items: center; gap: 5px }
 body[data-hud="callouts"] #meters { gap: 4px }
 body[data-hud="callouts"] #stamina, body[data-hud="callouts"] #battery { width: 72px; height: 3px }
@@ -34,3 +68,5 @@ body[data-hud="callouts"] #status {
   position: fixed; left: 12px; top: 10px; padding: 3px 7px; border: 0; border-radius: 4px; background: #0b1011a0;
   color: #b9b7aa; font-size: 10.5px; opacity: .85
 }
+/* Rings on the survivor replace the stamina and battery bars. */
+body[data-vitals="character"] #meters { display: none }

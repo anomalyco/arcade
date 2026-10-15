@@ -188,6 +188,10 @@ async function main() {
   const coop = CoopView.fromUrl(renderer, params)
   const makeSession = (s: number) => coop.net ?? new LocalSession(s, settings.houseSeed, settings.terrain, settings)
   let session: LocalSession | NetSession = makeSession(seed)
+  coop.companions = () => {
+    const s = session
+    return s instanceof LocalSession ? s.sim.slots.filter((slot) => slot !== s.slot) : []
+  }
   let vision = new Vision()
   let scenery = new SceneryMemory()
   const combinedFog = new CombinedFogMemory()
@@ -764,6 +768,15 @@ async function main() {
         },
       },
       {
+        id: "hud.demo",
+        label: "Show Character HUD Sample",
+        shortLabel: "HUD Sample",
+        category: "Scene",
+        undoable: false,
+        enabled: () => true,
+        run: () => hud.demo(session.view.player),
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
@@ -1330,7 +1343,7 @@ async function main() {
       batteryEl.style.opacity =
         p.flashlightOn && p.battery < settings.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
     }
-    hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player")
+    hud.update(dt, session.view, cam, w, h, settings.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
     syncStatus()
     coop.overlay(cam, w, h, town, vision)
     syncWorldPrompt(w, h)
@@ -1484,6 +1497,7 @@ async function main() {
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
     coop: () => coop.inspect(),
+    hudState: () => hud.inspect(),
     reset,
     freeze: (value = true) => {
       frozen = value

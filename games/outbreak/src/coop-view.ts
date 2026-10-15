@@ -1,12 +1,14 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/gpu/limits"
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
+import type { SurvivorSlot } from "../shared/coop-sim"
 import type { FlashlightTuning } from "../shared/flashlight"
 import { flashlightColor } from "../shared/flashlight"
 import type { Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
+import type { HudRemote } from "./hud"
 import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
 import { Survivor } from "./survivor"
 
@@ -27,6 +29,11 @@ function actorVisibility(vision: Vision, x: number, y: number): number {
 export class CoopView {
   readonly hud: CoopHud
   private avatars = new Map<number, Survivor>()
+  /**
+   * Extra survivors in an offline session, drawn exactly like remote ones. Only automation adds them (the HUD proof
+   * stages a teammate this way); normal offline play has none.
+   */
+  companions: () => readonly SurvivorSlot[] = () => []
 
   constructor(
     private readonly renderer: Renderer,
@@ -73,13 +80,19 @@ export class CoopView {
     return s && (s.x || s.y) ? { ...p, x: p.x + s.x, y: p.y + s.y } : p
   }
 
+  /** Other survivors: the room's remote seats, or offline companions. */
+  get others(): readonly SurvivorSlot[] {
+    return this.net ? this.net.remotes : this.companions()
+  }
+
   /** Packs remote flashlights after the local one. Returns the new light count. */
   flashlights(lights: Float32Array, count: number, town: Town, settings: LightSettings, occluders: number): number {
-    if (!this.net) return count
+    const others = this.others
+    if (!others.length) return count
     const rgb = flashlightColor(settings.flashlightWarmth)
     const cosHalf = Math.cos((settings.flashlightCone * Math.PI) / 360)
     const directScale = settings.practicalWarmth > 0.6 ? 0.28 : 1.0
-    for (const slot of this.net.remotes) {
+    for (const slot of others) {
       const p = slot.survivor
       if (count >= MAX_LIGHTS - 2 || p.flashlightOutput <= 0.001 || !p.flashlightOn) continue
       const inside = town.buildings.some((b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1)
@@ -96,10 +109,11 @@ export class CoopView {
 
   /** Bodies of remote survivors you can see. */
   bodies(dt: number, time: number, town: Town, vision: Vision): Batch[] {
-    if (!this.net) return []
+    const others = this.others
+    if (!others.length && !this.avatars.size) return []
     const out: Batch[] = []
     const live = new Set<number>()
-    for (const slot of this.net.remotes) {
+    for (const slot of others) {
       live.add(slot.index)
       let avatar = this.avatars.get(slot.index)
       if (!avatar) {
@@ -120,14 +134,30 @@ export class CoopView {
   overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision): void {
     this.hud.update()
     const net = this.net
-    if (!net) return
+    const others = this.others
+    if (!net && !others.length) return
     this.hud.nameTags(
-      net.remotes.map((slot) => {
+      others.map((slot) => {
         const p = slot.survivor
         const proj = cam.project(p.x, supportHeight(town, p.x, p.y) + 2.05, p.y, w, h)
-        return { index: slot.index, name: net.nameOf(slot.index), x: proj.x, y: proj.y, visible: proj.ok && actorVisibility(vision, p.x, p.y) > 0.05 }
+        const name = net ? net.nameOf(slot.index) : slot.id
+        return { index: slot.index, name, x: proj.x, y: proj.y, visible: proj.ok && actorVisibility(vision, p.x, p.y) > 0.05 }
       }),
     )
+  }
+
+  /** Other survivors as the character HUD reads them: replicated state, ground height and visibility. */
+  hudRemotes(town: Town, vision: Vision): HudRemote[] {
+    return this.others.map((slot) => {
+      const p = slot.survivor
+      const lift = remoteLift.get(slot) ?? 0
+      return {
+        id: `seat:${slot.index}`,
+        survivor: p,
+        ground: supportHeight(town, p.x, p.y) + lift * 0.58,
+        visible: actorVisibility(vision, p.x, p.y) > 0.05,
+      }
+    })
   }
 
   /** Automation view of the room for proofs and smoke tests. */

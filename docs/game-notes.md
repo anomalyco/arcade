@@ -1111,6 +1111,18 @@ Candidates from the code audits; measure and playtest before moving any into the
   rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
   18.0 ms at 0.9985.
 
+- **Put in-the-moment state on the character and keep it out of the aim.** Outbreak's callouts now sit screen-below
+  the survivor's feet by default (the lowest projected point of a 0.2 m feet circle, so the camera tilt is accounted
+  for), and stamina, reload, health and battery are small rings beside the body that appear only while they have
+  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](outbreak-hud.md)). When the
+  survivor aims within 55° of the side the HUD is on, it slides to the opposite side and returns past 68°
+  (`chooseSide`, `src/hud/placement.ts`), so the flashlight's near field stays clear without flicker. Rings use shape
+  for identity and colour for range, as Dead Space's RIG does. The same components run for co-op teammates from
+  replicated flags only, at 0.8× with their name tag. Metal proof (`scripts/hud-proof.ts`, 37 stills): `hud.update`
+  p95 0.2 ms with three callouts, three rings and a teammate live; a 7-pair same-page A/B against the old log and edge
+  bars measured style and layout −0.003 ms per frame (spread −0.016 to +0.006) and script +0.021 ms (−0.043 to
+  +0.101), both inside their spread.
+
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and
   tonnes. Blackout converts its +X-forward mesh basis and kilograms; converting the complete rotation basis keeps
