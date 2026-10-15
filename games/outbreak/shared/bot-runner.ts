@@ -3,6 +3,7 @@ import { TICK_DT } from "./clock"
 import { isMeleeWeapon } from "./combat"
 import { cloneSimState, CoopSim, forkSimState, hashSimState, type SimState, type SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
+import { DEFAULT_PACING_TUNING } from "./pacing"
 import { buildingAt, type ProgressionTuning } from "./progression"
 import type { Command } from "./session"
 import {
@@ -289,18 +290,16 @@ export type BotRunResult = {
 }
 
 /**
- * Converts elapsed game hours (starting from `startHour`, default 16:00) into continuous `nightsSurvived`
- * and integer `completedNights`.
- * - 16:00..18:00 (first 2 hours): 0.00 .. 0.15 (First Evening)
+ * Converts elapsed game hours (`CoopSim.elapsedHours`, starting from `startHour`, default 17:30) into continuous
+ * `nightsSurvived` and integer `completedNights`. Game hours rather than seconds, because the opening clock runs slower.
+ * - startHour..18:00: 0.00 .. 0.15 (First Evening)
  * - 18:00..06:00 (12 hours of Night 1): 0.15 .. 1.00 (Dawn 1 = 1.0 night survived)
  * - Subsequent 24h cycles: +0.20 across daytime (06:00..18:00) and +0.80 across night (18:00..06:00).
  */
 export function computeNightsSurvived(
-  elapsedSeconds: number,
-  timeScale: number,
-  startHour = 16.0,
+  elapsedHours: number,
+  startHour = DEFAULT_PACING_TUNING.startHour,
 ): { nightsSurvived: number; completedNights: number } {
-  const elapsedHours = (elapsedSeconds * timeScale) / 3600
   const eveningSpan = Math.max(0.5, 18.0 - startHour)
   if (elapsedHours <= eveningSpan) {
     return {
@@ -752,7 +751,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
       warningStartedAt = null
     }
 
-    const nightState = computeNightsSurvived(sim.time, timeScale, startHour)
+    const nightState = computeNightsSurvived(sim.elapsedHours, startHour)
     if (nightState.completedNights > prevCompletedNights) {
       prevCompletedNights = nightState.completedNights
       timeline.push({
@@ -826,7 +825,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
   const lead = slots[0]!.survivor
   const survived = slots.some((s) => s.survivor.health > 0)
   const survivalTime = Number(sim.time.toFixed(2))
-  const { nightsSurvived, completedNights } = computeNightsSurvived(survivalTime, timeScale, startHour)
+  const { nightsSurvived, completedNights } = computeNightsSurvived(sim.elapsedHours, startHour)
   const tel = sim.ai.pacing.telemetry
 
   let causeOfDeath: CauseOfDeath = "survived"
@@ -1116,7 +1115,6 @@ export function runSingleForkRollout(
 
   const startHour = sim.ai.config.startHour
   const initialDeadCount = sim.ai.agents.filter((a) => a.state === "dead").length
-  // Round like runHeadlessBotGame's tick budget so a run capped at maxAbsoluteSeconds ends on the same tick.
   const maxSteps = Math.max(1, Math.round((maxEndSeconds - sim.time) / stepDt))
   const traceIntervalSteps = Math.max(1, Math.round(15 / stepDt))
   const trace: ForkRolloutOutcome["trace"] = [
@@ -1180,7 +1178,7 @@ export function runSingleForkRollout(
   const survived = slots.some((s) => s.survivor.health > 0)
   const survivalTime = Number(sim.time.toFixed(2))
   const additionalSeconds = Number(Math.max(0, survivalTime - checkpoint.t).toFixed(2))
-  const { nightsSurvived } = computeNightsSurvived(survivalTime, timeScale, startHour)
+  const { nightsSurvived } = computeNightsSurvived(sim.elapsedHours, startHour)
   const finalDeadCount = sim.ai.agents.filter((a) => a.state === "dead").length
   const killsDelta = Math.max(0, finalDeadCount - initialDeadCount)
 

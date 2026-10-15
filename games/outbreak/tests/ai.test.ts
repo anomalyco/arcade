@@ -83,7 +83,8 @@ describe("Outbreak AI & survival combat integration", () => {
   })
 
   test("pistol firing spends ledger rounds, emits loud gunshot noise, staggers/kills zombie, and reloads from the belt with R", () => {
-    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    // No opening calm: with D-22's 0.75 hearing, the D-18 calm keeps a 24 m zombie deaf to the first shots.
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
     const p = session.view.player
     Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0 })
     stock(session, 2, { ammo: 6 })

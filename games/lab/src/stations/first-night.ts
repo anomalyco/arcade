@@ -10,14 +10,14 @@ const stage = (scene: string, pause = true): StationCommand[] => [
 const variants: StationVariant[] = [
   {
     id: "opening-calm",
-    label: "Opening calm (16:30)",
-    note: "20 m safe radius around spawn & Ash House (0 zombies within 15 m, 0 inside Ash), 7 spaced solitary shamblers across the block, and warm late-afternoon light.",
+    label: "Opening calm (17:30 dusk)",
+    note: "Starts in the Noir palette: 20 m safe radius around spawn & Ash House (0 zombies within 15 m, 0 inside Ash), 7 spaced solitary shamblers, and an opening clock at 0.25x so 18:00 arrives about 60 s in.",
     setup: stage("opening-calm", false),
   },
   {
     id: "safehouse-workbench",
-    label: "Safehouse & workbench (16:48)",
-    note: "Late-afternoon window light (0.78 >= 0.35 required) lets the player search Ash House and research at the workbench before night falls without draining the flashlight.",
+    label: "Safehouse & workbench (17:48)",
+    note: "About 35 s in, the last daylight plus the flashlight light the bench (0.46 >= 0.35 required), so the player researches before first contact (about 42 s). Opening calm eases zombie perception in over 50 s.",
     setup: stage("safehouse-workbench"),
   },
   {
@@ -44,7 +44,7 @@ export default defineStation({
   id: "first-night",
   title: "Outbreak first-night pacing",
   summary:
-    "Opening safe radius around the safehouse, sparse initial shamblers, late-afternoon 16:30 start for workbench light, first 1–3 zombie dusk encounter, and time/exploration/noise/threat ramp with co-op scaling. Tunables live in the Pacing group.",
+    "17:30 dusk start in the Noir palette with a slowed opening clock (nightfall about 60 s in), opening safe radius and calm, sparse initial shamblers, workbench time before a first 1–3 zombie encounter, and a time/exploration/noise/threat ramp with co-op scaling. Tunables live in the Pacing group.",
   order: 114,
   prop: "house",
   color: 0xd98a3c,
@@ -54,8 +54,9 @@ export default defineStation({
   variants: variants.map((v) => ({ ...v, url: page })),
   metrics: [
     { label: "Zombies within 15 m / 30 m at t = 0 (solo)", value: "16 → 0 / 26 → 4", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
-    { label: "First contact time / peak simultaneous chasers (solo)", value: "0.1 s → 43.85 s / 22 → 4", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
-    { label: "4-player co-op peak simultaneous chasers", value: "23 → 11 (scaled by player count)", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
+    { label: "First contact time / peak simultaneous chasers (solo)", value: "0.1 s → 42.05 s / 23 → 4", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
+    { label: "4-player co-op first contact / peak simultaneous chasers", value: "0.1 s → 43.75 s / 23 → 11 (scaled by player count)", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
+    { label: "Nightfall (18:00) after the 17:30 start", value: "60 s (opening clock 0.25x of 120x)", source: "captures/outbreak-first-night/pacing-10m-proof.json" },
   ],
   paths: [
     "games/outbreak/shared/pacing.ts",
