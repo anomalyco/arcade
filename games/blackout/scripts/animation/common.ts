@@ -66,6 +66,21 @@ export const MOCAP = {
     url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_run_old_001.bvh`,
     sha256: "1985df3f564adc8de91bff9628978c2127b2fc3adcb1a791aac468c6b7bdc12f",
   },
+  walkLeft: {
+    file: "dataset-1_walk-left_normal_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_walk-left_normal_001.bvh`,
+    sha256: "26ee7e8cf65a7c839b7790c90328fcb730e53ab18b4cbef5f8fba397de3ae675",
+  },
+  walkRight: {
+    file: "dataset-1_walk-right_normal_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_walk-right_normal_001.bvh`,
+    sha256: "2b77b84d4caf2e037441d48073f4c3f5e5b43bf98a96f4f4ca96be931a0c3657",
+  },
+  walkBack: {
+    file: "dataset-1_walk-back_normal_001.bvh",
+    url: `${SOURCE}/Bandai-Namco-Research-Motiondataset-1/data/dataset-1_walk-back_normal_001.bvh`,
+    sha256: "4c182559dbd28e4ba485f664dea49817a30fc0acde29b482f1baaeff4fa80397",
+  },
 } as const
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
