@@ -3,7 +3,7 @@
 //   bun run verify              affected checks only, in parallel, with incremental typecheck caches
 //   bun run verify --all        every workspace target, same fast path
 //   bun run verify:release      clean `git archive` export of HEAD, frozen install, then every workspace target's
-//                               check commands with cold caches (only the test worker count changes), smoke and `wrangler deploy --dry-run`
+//                               check commands with cold caches, smoke and `wrangler deploy --dry-run`
 //
 // Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --list (print the plan only).
 //
@@ -11,8 +11,8 @@
 // merge-base with --base, staged, unstaged or untracked) matches its workflow's pull_request paths. So packages/**
 // and root changes check everything, a games/outbreak change checks Outbreak and the Lab, and docs check nothing.
 //
-// Both modes split each target's `check` script into its commands and run them in parallel (test suites one at a
-// time: each already uses every core). The fast path adds `tsc --incremental` build info under
+// Both modes split each target's `check` script into its commands and run them in parallel. Test suites run one at
+// a time with half the cores and a 20 s per-test timeout, so a loaded Studio doesn't fail them. The fast path adds `tsc --incremental` build info under
 // node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
 // Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
@@ -111,8 +111,9 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
         kind = "test"
         // Getaway and Blackout also run packages/kit's suite; when the packages target is in the plan it runs once there.
         if (dedupeKit) cmd = cmd.replace(/\s+\.\.\/\.\.\/packages\/kit\b/, "")
-        // bun's default is one worker per core; on the shared Studio that oversubscribes and trips 5 s test timeouts.
-        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`)
+        // bun's default is one worker per core, which oversubscribes the shared Studio. Several simulation tests take
+        // 1.5-2.5 s idle, so the 5 s default timeout (a hang guard) fails them under load; CI keeps the default.
+        cmd = cmd.replace(/--parallel(?=\s|$)/, `--parallel=${testWorkers}`).replace(/^bun test\b/, "bun test --timeout=20000")
       } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)
       steps.push({ id, cwd, cmd, deps: kind === "other" && build ? [...prep, build] : [...prep], kind })
