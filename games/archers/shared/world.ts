@@ -48,6 +48,8 @@ export type Archer = {
   dodgeY: number
   drawing: boolean
   drawT: number
+  /** Ticks since a direction was last held during the draw: the aim outlives it briefly (AIM_GRACE). */
+  aimAge: number
   aimX: number
   aimY: number
   shield: boolean
@@ -123,6 +125,8 @@ export type BrainState = {
 }
 
 const EPS = 1e-4
+/** Ticks a draw keeps its last direction after the stick or keys let go of it. */
+const AIM_GRACE = 4
 const BOOM_R = 2.1
 const LASER_LEN = 70
 const LASER_BOUNCES = 3
@@ -147,7 +151,7 @@ export function newArcher(id: string, slot: number, name: string, bot: boolean):
   return {
     id, slot, name, bot, alive: false, x: 0, y: 0, vx: 0, vy: 0, face: 1, quiver: [], ground: false, wall: 0, sliding: false,
     coyote: 0, wallCoyote: 0, wallCoyoteDir: 0, jumpBuf: 0, jumping: false, lock: 0, hang: 0, hangCd: 0, dodge: 0, dodgeAge: 0,
-    dodgeCd: 0, dodgeX: 0, dodgeY: 0, drawing: false, drawT: 0, aimX: 1, aimY: 0, shield: false, wings: false, prev: 0,
+    dodgeCd: 0, dodgeX: 0, dodgeY: 0, drawing: false, drawT: 0, aimAge: 0, aimX: 1, aimY: 0, shield: false, wings: false, prev: 0,
     kills: 0, wins: 0, deadAt: -1, killedBy: "", airTime: 0,
   }
 }
@@ -479,8 +483,12 @@ export class World {
     }
     if (a.drawing) {
       a.drawT += DT
-      a.aimX = aim[0]!
-      a.aimY = aim[1]!
+      // Letting go of the direction and the bow together (a tick or two apart on a keyboard) keeps the aim.
+      if (dx || dy) a.aimAge = 0
+      if (dx || dy || ++a.aimAge > AIM_GRACE) {
+        a.aimX = aim[0]!
+        a.aimY = aim[1]!
+      }
       if (a.aimX) a.face = a.aimX > 0 ? 1 : -1
       if (!held(b, BTN.shoot)) {
         a.drawing = false

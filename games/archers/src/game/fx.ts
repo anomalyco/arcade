@@ -93,6 +93,14 @@ export class Fx {
     this.particles.windZ = 0
   }
 
+  /** Drops every live effect (a Lab scene restarting). */
+  clear(): void {
+    this.particles.reset()
+    this.flashes = []
+    this.rings = []
+    this.beams = []
+  }
+
   rnd(): number {
     this.seed = (this.seed * 16807) % 2147483647
     return (this.seed - 1) / 2147483646

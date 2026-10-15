@@ -118,6 +118,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "hordes", label: "Hordes", subject: "Outbreak's roaming hordes and the flow fields they follow", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
+  { id: "archer", label: "Archer", subject: "Archers' arenas, movement tuning and power-ups", host: { kind: "page", url: "/arcade/archers/playground.html" }, panels: page, play: "Play" },
 ]
 
 /** Page stations share URLs, so their kind is by station id. */
@@ -139,6 +140,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-discovery": "discovery",
   "outbreak-hordes": "hordes",
   brawl: "brawler",
+  archers: "archer",
 }
 
 /** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */

@@ -5,7 +5,7 @@ import { SFX } from "./src/sfx-ids"
 export default defineConfig({
   plugins: [audioAssets({ sfx: SFX })],
   base: "./",
-  build: { target: "esnext", outDir: "dist/arcade/archers", emptyOutDir: true },
+  build: { target: "esnext", outDir: "dist/arcade/archers", emptyOutDir: true, rollupOptions: { input: { main: "index.html", playground: "playground.html" } } },
   server: {
     fs: { allow: ["../.."] },
     allowedHosts: true,

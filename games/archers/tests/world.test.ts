@@ -114,6 +114,26 @@ describe("combat", () => {
     expect(w.s.arrows.length).toBe(0)
   })
 
+  test("letting go of the direction and the bow on the same tick keeps the aim; a draw left alone aims ahead", () => {
+    const { a, input, step } = setup()
+    place(a, 4, 4)
+    step(5)
+    input.a = BTN.up | BTN.shoot
+    step(10)
+    input.a = 0
+    const ev = step()
+    const shot = ev.find((e) => e.k === "shoot")
+    expect(shot && shot.k === "shoot" && shot.dy).toBe(1)
+    // Draw up, let go of up, keep drawing: after the grace the aim is straight ahead again.
+    input.a = BTN.up | BTN.shoot
+    step(5)
+    input.a = BTN.shoot
+    step(10)
+    input.a = 0
+    const again = step().find((e) => e.k === "shoot")
+    expect(again && again.k === "shoot" && again.dy).toBe(0)
+  })
+
   test("an arrow kills in one hit and spills the victim's quiver", () => {
     const { w, a, b, step } = setup()
     place(b, 8, 4, 0, 0)

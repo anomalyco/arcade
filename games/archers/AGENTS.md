@@ -30,6 +30,11 @@
   same); the first arrival may add `&arena=cloister` and `&private=1`. Automation only: `?watch` (four bots),
   `&seed=N`, `&arena=cloister`, `&focus=a0&span=4` (close-up camera on one archer). `window.archers` is the client
   Game (`.online` is the session). Keys 1/2 switch arena locally.
+- Lab: `playground.html` (`src/dev/playground.ts`) is the Lab's `archers` station (`games/lab/src/stations/archers.ts`):
+  `#round/<arena>` four bots, `#practice/<arena>/<bots>` you against bots, `#items/<item>` the power-up gallery
+  (`src/dev/gallery.ts`: a scripted shooter and target on the real World through `Game.script`). The Moves knobs are
+  every `Tuning` field, written into the live `world.t` (`Game.restart` keeps it); defaults are `DEFAULT_TUNING`.
+  Commands: `archers.scene {scene, arena, item, bots}` and `archers.state`. Rooms always run `DEFAULT_TUNING`.
 - `bun run dev` runs Wrangler (:8792) and Vite (:5198). `bun run check` before pushing; pushing to `main` deploys
   https://anoma.ly/arcade/archers/.
 - Captures: `bun scripts/capture.ts --query "watch&seed=3" --shots 2,5,9 --out captures/x` (or `--video 20`) against

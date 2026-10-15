@@ -4,6 +4,7 @@
  *
  *   bun scripts/capture.ts --query "watch&seed=3" --shots 2,6,10 --out captures/archers
  *   bun scripts/capture.ts --query "watch&seed=3" --video 24 --out captures/archers
+ *   bun scripts/capture.ts --page playground.html --query nolab --hash items/bomb --shots 2 --out captures/lab
  */
 import { mkdirSync } from "node:fs"
 import { resolve, sep } from "node:path"
@@ -14,6 +15,8 @@ import { chromium } from "playwright-core"
 const { values: o } = parseArgs({
   options: {
     query: { type: "string", default: "watch&seed=3" },
+    page: { type: "string", default: "" },
+    hash: { type: "string", default: "" },
     shots: { type: "string", default: "3" },
     out: { type: "string", default: "captures" },
     video: { type: "string" },
@@ -48,7 +51,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => {
   if (m.type() === "error" || m.type() === "warning") errors.push(m.text())
 })
-await page.goto(`http://127.0.0.1:${server.port}${prefix}?${o.query}`, { waitUntil: "load" })
+await page.goto(`http://127.0.0.1:${server.port}${prefix}${o.page}?${o.query}${o.hash ? `#${o.hash}` : ""}`, { waitUntil: "load" })
 try {
   await page.waitForFunction(() => (globalThis as { archers?: unknown }).archers, null, { timeout: 15_000 })
 } catch (e) {

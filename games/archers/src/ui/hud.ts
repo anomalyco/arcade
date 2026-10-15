@@ -18,6 +18,8 @@ export class Hud {
   private netEl: HTMLDivElement
   private netHtml = ""
   private lastCard = ""
+  /** The "join / play online" line under the controls (off in the Lab playground). */
+  joinHint = true
   private tagEls = new Map<string, HTMLDivElement>()
 
   constructor(readonly root: HTMLElement) {
@@ -106,7 +108,7 @@ export class Hud {
       const k = KEYSETS[d as keyof typeof KEYSETS]
       const caps = (codes: string[]) => codes.slice(0, 1).map((c) => keyCapHtml(c)).join("")
       return `<div class="row">${caps(k.left)}${caps(k.up)}${caps(k.down)}${caps(k.right)} move/aim · ${caps(k.jump)} jump · ${caps(k.shoot)} hold to draw · ${caps(k.dodge)} dodge</div>`
-    }).join("") + (g.online ? "" : `<div class="row dim">Gamepad A or ${keyCapHtml("Enter")} to join · ${keyCapHtml("KeyP")} play online</div>`) : ""
+    }).join("") + (g.online || !this.joinHint ? "" : `<div class="row dim">Gamepad A or ${keyCapHtml("Enter")} to join · ${keyCapHtml("KeyP")} play online</div>`) : ""
     if (this.help.innerHTML !== helpHtml) this.help.innerHTML = helpHtml
   }
 }
