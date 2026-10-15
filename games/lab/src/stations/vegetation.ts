@@ -24,7 +24,10 @@ export default defineStation({
   demo: {
     kind: "section",
     section: "foliage",
+    // Reset every look so variants never inherit another variant's preset.
     setup: [
+      { command: "foliage.preset", args: { kind: "bush", preset: "overgrown" } },
+      { command: "foliage.preset", args: { kind: "grass", preset: "overgrown" } },
       { command: "foliage.preset", args: { tool: "tree", kind: "tree", preset: "oak", lighting: "night", look: "sodium_70s", cameraMode: "game" } },
       { command: "foliage.set", args: { walker: true, flashlight: true } },
     ],
