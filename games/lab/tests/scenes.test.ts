@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { readdirSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { checkAgainstKind, checkKinds } from "@arcade/kit/lab/scenes/kinds"
+import { checkAgainstKind, checkKinds, labChrome, labWidgets } from "@arcade/kit/lab/scenes/kinds"
+import { resolveLayout, trimLayout } from "@arcade/kit/lab/stations/layout"
 import { checkCollection, checkScene } from "@arcade/kit/lab/scenes/model"
 import { openCommands } from "@arcade/kit/lab/scenes/migrate"
 import { createSceneStore, memorySceneStorage } from "@arcade/kit/lab/scenes/store"
 import type { LabStation, StationCommand } from "@arcade/kit/lab/stations/types"
 import { migrateStations, STATION_AREAS } from "../src/scenes/from-stations"
 import { FEEL_ARENA } from "../src/scenes/examples/feel-arena"
-import { LAB_KINDS } from "../src/scenes/kinds"
+import { kindForStation, LAB_KINDS } from "../src/scenes/kinds"
 
 const dir = join(import.meta.dir, "../src/stations")
 const files = readdirSync(dir).filter(f => f.endsWith(".ts") && f !== "index.ts" && f !== "define.ts")
@@ -33,6 +34,37 @@ describe("lab kinds", () => {
     expect(LAB_KINDS.filter(k => k.add?.length).map(k => k.id)).toEqual(["vehicle"])
   })
 })
+
+// Kit, 2026-10-15: a lab shows only what its subject needs; every panel is opt-in per lab kind; no voice-notes panel.
+describe("labs show only what their subject needs", () => {
+  test("only the vehicle lab has an Outliner, page labs show none of the Lab's own chrome, and no kind keeps notes", () => {
+    expect(LAB_KINDS.filter(k => labChrome(k).includes("outliner")).map(k => k.id)).toEqual(["vehicle"])
+    for (const k of LAB_KINDS.filter(k => k.host.kind === "page")) expect({ kind: k.id, chrome: labChrome(k) }).toEqual({ kind: k.id, chrome: [] })
+    expect(LAB_KINDS.filter(k => k.panels.includes("notes") || k.panels.includes("work")).map(k => k.id)).toEqual([])
+  })
+  test("no station file lists a card its lab kind leaves out", () => {
+    for (const st of stations) {
+      const kind = kindForStation(st)
+      if (!kind || !st.layout) continue
+      const layout = resolveLayout(st.layout)
+      const trimmed = trimLayout(layout, labWidgets(kind, st))
+      expect({ station: st.id, layout: toIds(trimmed) }).toEqual({ station: st.id, layout: toIds(layout) })
+    }
+  })
+  test("Outbreak unseen: its Unseen layers, the variants, Play Outbreak and a short status and measured block", () => {
+    const st = stations.find(s => s.id === "outbreak-unseen")!
+    const layout = trimLayout(resolveLayout(st.layout!), labWidgets(kindForStation(st)!, st))
+    expect(toIds(layout)).toEqual({ left: ["status", "metrics"], right: ["controls"], dock: ["variants"] })
+    expect(layout.right[0]!.title).toBe("Unseen layers")
+    expect(st.links?.map(l => l.label)).toEqual(["Play Outbreak"])
+  })
+  test("the vehicle lab's Details groups are Spawn section groups", () => {
+    const spawn = readFileSync(join(import.meta.dir, "../../../packages/kit/lab/spawn.ts"), "utf8")
+    for (const g of LAB_KINDS.find(k => k.id === "vehicle")!.groups!) expect({ group: g, found: spawn.includes(`group:"${g}"`) }).toEqual({ group: g, found: true })
+  })
+})
+
+const toIds = (l: ReturnType<typeof resolveLayout>) => ({ left: l.left.map(w => w.id), right: l.right.map(w => w.id), dock: l.dock.map(w => w.id) })
 
 describe("stations as labs", () => {
   test("every station migrates to valid kept scenes in a named area", () => {

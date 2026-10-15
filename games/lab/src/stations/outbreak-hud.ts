@@ -52,7 +52,6 @@ export default defineStation({
   // A page demo has no Lab section, so no controls or compare cards; the HUD knobs are in the page's own Lab panel.
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
-    right: [{ widget: "links" }, { widget: "changes" }],
-    dock: [{ widget: "variants" }, { widget: "voice" }, { widget: "notes" }],
+    dock: [{ widget: "variants" }],
   },
 })

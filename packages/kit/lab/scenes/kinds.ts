@@ -1,14 +1,28 @@
 import type { LabScene, SceneHost } from "./model"
 
 /**
- * The shared patterns a lab can show. A kind picks the ones its subject needs; nothing else appears. `controls` is the
- * subject's knobs panel, `choices` the kind's named pickers (preset, backdrop, light…), `add` the kind's own add-picker
- * and the list of what it placed, `variants` the strip (digits pick, ⇧digits compare), `readouts` live numbers,
- * `measured` recorded numbers, `views` saved cameras, `notes` text and voice notes, `timeline` a scrubbable clock for
- * subjects that animate (a walk cycle, an explosion).
+ * What a lab can show. Every piece is opt-in per kind, and a lab shows only what its subject needs (Kit, 2026-10-15:
+ * "Shouldn't we just have things that are relevant to what we're experimenting with?"). Its subject's knobs come first.
+ *
+ * - `controls`: the subject's knobs (Details for a section lab, the page's own panel in a card for a page lab).
+ * - `choices`: the kind's named pickers (preset, art direction). `add`: its add-picker. `objects`: the Outliner, only
+ *   for kinds whose subject has placeable objects. `actions`: on-demand events with their own keys.
+ * - `variants`: the variant strip (digits pick, ⇧digit wipes), shown when the lab has variants. `compare`: the A/B and
+ *   variation-grid card, for section kinds with variants.
+ * - `transport`: the clock (retrigger, pause, step, loop, speed) and Details' Retrigger row, for subjects that play out.
+ *   `backdrop`: the room the subject is shown in (environment, room seed).
+ * - `readouts`: live numbers. `measured`: recorded numbers. `views`: saved cameras. `timeline`: a scrubbable clock.
+ * - `notes`: a text note card, for the rare lab that needs one. `work`: recent commits and branches.
+ *
+ * There is no voice-note panel: Kit gives feedback with Scrawl.
  */
-export type LabPanel = "controls" | "choices" | "add" | "actions" | "variants" | "readouts" | "measured" | "views" | "notes" | "timeline" | "work"
-export const LAB_PANELS: readonly LabPanel[] = ["controls", "choices", "add", "actions", "variants", "readouts", "measured", "views", "notes", "timeline", "work"]
+export type LabPanel =
+  | "controls" | "choices" | "add" | "objects" | "actions" | "variants" | "compare" | "transport" | "backdrop"
+  | "readouts" | "measured" | "views" | "timeline" | "notes" | "work"
+export const LAB_PANELS: readonly LabPanel[] = ["controls", "choices", "add", "objects", "actions", "variants", "compare", "transport", "backdrop", "readouts", "measured", "views", "timeline", "notes", "work"]
+
+/** Panels that drive the Lab's own scene, so only section kinds can have them. */
+const SECTION_PANELS: readonly LabPanel[] = ["objects", "compare", "transport", "backdrop"]
 
 /**
  * Letters a kind may give its actions. Every other letter is either a global editor shortcut (A add, C view, D
@@ -47,6 +61,11 @@ export type LabKind = {
   choices?: readonly KindChoice[]
   /** The add-picker's groups. Only kinds whose subject needs company (a vehicle course, walkers) have one. */
   add?: readonly { group: string; parts: readonly KindPart[] }[]
+  /**
+   * For section kinds: the Details groups the subject owns, in order. Without it Details shows the section's groups,
+   * less the backdrop's (`BACKDROP_GROUPS`) unless the kind has `backdrop`.
+   */
+  groups?: readonly string[]
   /** On-demand events (the Feel kind's shot, shove, hit taken, kill, explosion), each with its own key. */
   actions?: readonly KindAction[]
   /** Play mode verb, for kinds with something to possess ("Drive", "Walk"). */
@@ -67,6 +86,10 @@ export function checkKinds(kinds: readonly LabKind[]): string[] {
     for (const p of k.panels) if (!LAB_PANELS.includes(p)) problems.push(`${at}: unknown panel "${p}"`)
     if (k.add?.length && !k.panels.includes("add")) problems.push(`${at}: has an add-picker but no "add" panel`)
     if (k.panels.includes("add") && !k.add?.length) problems.push(`${at}: "add" panel with nothing to add`)
+    if (k.panels.includes("add") && !k.panels.includes("objects")) problems.push(`${at}: "add" places objects, so it needs the "objects" panel (the Outliner)`)
+    if (k.panels.includes("compare") && !k.panels.includes("variants")) problems.push(`${at}: "compare" needs "variants"`)
+    if (k.host.kind === "page") for (const p of SECTION_PANELS) if (k.panels.includes(p)) problems.push(`${at}: "${p}" drives the Lab's own scene; a page lab can't have it`)
+    if (k.groups && k.host.kind !== "section") problems.push(`${at}: only section kinds pick Details groups`)
     if (k.choices?.length && !k.panels.includes("choices")) problems.push(`${at}: has choices but no "choices" panel`)
     if (k.actions?.length && !k.panels.includes("actions")) problems.push(`${at}: has actions but no "actions" panel`)
     if (k.panels.includes("actions") && !k.actions?.length) problems.push(`${at}: "actions" panel with no actions`)
@@ -106,4 +129,50 @@ export function checkAgainstKind(scene: LabScene, kinds: readonly LabKind[]): st
   if (scene.host && kind.host.kind !== scene.host.kind) problems.push(`host: ${kind.label} labs run as a ${kind.host.kind}`)
   if (scene.host?.kind === "section" && kind.host.kind === "section" && scene.host.section !== kind.host.section) problems.push(`host: ${kind.label} labs run section "${kind.host.section}"`)
   return problems
+}
+
+/** Details groups that set the room a subject is shown in, hidden unless the kind has `backdrop`. */
+export const BACKDROP_GROUPS: readonly string[] = ["Environment"]
+
+/**
+ * Pieces of the workbench a focused lab shows, from its kind. A page lab is its page: the Lab's own Outliner, Details,
+ * transport, modes and compare tools all drive the Lab scene behind it, so it shows none of them.
+ */
+export type LabChrome = "edit" | "play" | "details" | "outliner" | "transport" | "compare" | "backdrop"
+export function labChrome(kind: LabKind): LabChrome[] {
+  if (kind.host.kind !== "section") return []
+  const has = (p: LabPanel) => kind.panels.includes(p)
+  const out: LabChrome[] = ["edit"]
+  if (kind.play) out.push("play")
+  if (has("controls")) out.push("details")
+  if (has("objects")) out.push("outliner")
+  if (has("transport")) out.push("transport")
+  if (has("compare")) out.push("compare")
+  if (has("backdrop")) out.push("backdrop")
+  return out
+}
+
+/** Station cards (`StationWidgetKind`) a lab of this kind may show; a station's layout is trimmed to these. */
+export type LabWidget = "status" | "controls" | "variants" | "compare" | "perf" | "metrics" | "changes" | "notes" | "links"
+export function labWidgets(kind: LabKind, station: { variants?: readonly unknown[]; metrics?: readonly unknown[] }): LabWidget[] {
+  const has = (p: LabPanel) => kind.panels.includes(p)
+  const variants = Boolean(station.variants?.length)
+  const out: LabWidget[] = ["status"]
+  if (has("controls")) out.push("controls")
+  if (has("variants") && variants) out.push("variants")
+  if (has("compare") && variants && kind.host.kind === "section") out.push("compare")
+  // The Lab's own frame time; a page lab's Lab scene is suspended behind the page.
+  if (has("readouts") && kind.host.kind === "section") out.push("perf")
+  if (has("measured") && station.metrics?.length) out.push("metrics")
+  if (has("work")) out.push("changes")
+  if (has("notes")) out.push("notes")
+  return out
+}
+
+/** Which Details groups a section lab shows: its own `groups`, or every group but the backdrop's unless it has one. */
+export function detailsGroups(kind: LabKind): ((group: string) => boolean) | null {
+  if (kind.host.kind !== "section") return null
+  if (kind.groups) { const own = new Set(kind.groups); return g => own.has(g) }
+  if (kind.panels.includes("backdrop")) return null
+  return g => !BACKDROP_GROUPS.includes(g)
 }

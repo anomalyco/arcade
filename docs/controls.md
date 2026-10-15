@@ -154,7 +154,7 @@ Arcade Lab workbench standard:
 - **Details toolbar**: Trigger, Frame, Duplicate, Delete, Move and Play show their canvas keys (`Space`, `F`, `D`,
   `⌫`, `G`, `P`). The keys press a button while focus is on the toolbar; in the settings panel below, `f`, `g` and
   `⌫` stay knobs' (first row, group Random, reset a row), so the toolbar is its own small panel.
-- **Voice note** (dev only): logical `N` starts and finishes (mnemonic, so Dvorak users press the key labelled N);
-  hold `Shift` and move to draw; `⌘Z` undoes the last mark; `Esc` cancels; `Enter` sends from the review card. An
-  embedded page that binds a key itself lists it in `<html data-page-keys="KeyN">` and keeps it (Outbreak's map).
+- **Focused labs**: keys for a piece the open lab doesn't show do nothing (`Space`, `K`, `.`, `L` without a clock;
+  `B`, `V` without compare; `P` without Play; every scene key in a page lab). See docs/lab.md, "Labs show only what
+  their subject needs". There is no voice-note key: Kit gives feedback with Scrawl.
 

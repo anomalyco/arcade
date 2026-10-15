@@ -3,6 +3,8 @@ import { tip } from "@arcade/kit/lab/overlays"
 import type { lab } from "@arcade/kit/lab/main"
 import type { StationsController } from "@arcade/kit/lab/stations/workspace"
 import type { LabStation } from "@arcade/kit/lab/stations/types"
+import { detailsGroups, labChrome, type LabChrome, type LabKind } from "@arcade/kit/lab/scenes/kinds"
+import { LAB_KINDS } from "../scenes/kinds"
 import { createCatalog, type HomeLab } from "./catalog"
 import { createHome } from "./home"
 
@@ -53,11 +55,53 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
     return true
   }
 
-  /** A lab shows only its own panels: no Library drawer and no World footer (they pick other sections and things). */
+  /** The open lab's kind; a lab whose kind isn't listed yet gets a bare one for its host (knobs only). */
+  const kindOf = (lab: HomeLab): LabKind => {
+    const station = lab.station()
+    return LAB_KINDS.find(k => k.id === lab.kind.id) ?? {
+      id: lab.kind.id,
+      label: lab.kind.label,
+      subject: lab.summary,
+      host: station.demo.kind === "section" ? { kind: "section", section: station.demo.section } : { kind: "page", url: station.demo.url },
+      panels: ["controls", "variants", "measured"],
+    }
+  }
+  let shown: ReadonlySet<LabChrome> | null = null
+  let actionKeys = new Set<string>()
+
+  /**
+   * A lab shows only what its kind opts into (docs/lab.md, "Labs show only what their subject needs"): the Library and
+   * World footer never, the Outliner, Details, clock, modes and compare tools only where the kind asks. A page lab is
+   * its page, so the Lab's own chrome around it goes; a column with nothing left in it closes.
+   */
   function focus(on: boolean) {
-    if (on) api.slots.root.dataset.library = "off"
-    else delete api.slots.root.dataset.library
-    api.slots.root.toggleAttribute("data-lab-focused", on)
+    const root = api.slots.root
+    if (on) root.dataset.library = "off"
+    else delete root.dataset.library
+    root.toggleAttribute("data-lab-focused", on)
+    const kind = on && current ? kindOf(current) : null
+    shown = kind ? new Set(labChrome(kind)) : null
+    actionKeys = new Set((kind?.actions ?? []).map(a => `Key${a.key}`))
+    if (shown) {
+      root.dataset.labShow = [...shown].join(" ")
+      root.toggleAttribute("data-lab-left-empty", !shown.has("outliner") && api.slots.left.hidden)
+      root.toggleAttribute("data-lab-right-empty", !shown.has("details") && api.slots.right.hidden)
+    } else {
+      delete root.dataset.labShow
+      root.removeAttribute("data-lab-left-empty")
+      root.removeAttribute("data-lab-right-empty")
+    }
+    api.workbench.setDetailsScope(kind ? detailsGroups(kind) : null)
+  }
+
+  /** Workbench keys whose piece the open lab doesn't show do nothing, instead of driving something you can't see. */
+  function hiddenKey(e: KeyboardEvent): boolean {
+    if (!shown || actionKeys.has(e.code)) return false
+    if (!shown.has("edit")) return !/^(Digit[0-9]|Escape|Backquote|Tab|KeyH)$/.test(e.code)
+    if (!shown.has("transport") && ["Space", "KeyK", "Period", "KeyL"].includes(e.code)) return true
+    if (!shown.has("compare") && ["KeyB", "KeyV"].includes(e.code)) return true
+    if (!shown.has("play") && e.code === "KeyP") return true
+    return false
   }
 
   function syncUrl() {
@@ -118,10 +162,16 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
 
   // H, ⌥[ and ⌥] from the viewport and the workbench chrome, never while typing, in Play or inside the Details panel.
   window.addEventListener("keydown", e => {
-    if (home.open || e.metaKey || e.ctrlKey || e.repeat) return
+    if (home.open || e.metaKey || e.ctrlKey) return
     const t = e.composedPath()[0]
     if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLElement && t.isContentEditable)) return
     if (api.workbench.getMode() === "play" || api.panel.hasFocus()) return
+    // Only keys aimed at the scene (the canvas or nothing in particular); a card, the tree or a menu keeps its own.
+    if (current && (t === document.body || t === api.canvas || !(t instanceof Element)) && hiddenKey(e)) {
+      e.stopImmediatePropagation()
+      return
+    }
+    if (e.repeat) return
     // A studio tour running over the Lab steps its own tabs with ⌥[ ⌥].
     if (e.altKey && (e.code === "BracketLeft" || e.code === "BracketRight") && !document.documentElement.hasAttribute("data-arcade-studio-open")) {
       e.preventDefault()

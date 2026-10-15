@@ -1,6 +1,8 @@
 import { createStations, type StationChanges, type StationDev, type StationsController } from "@arcade/kit/lab/stations/workspace"
 import { orderStations, validateStations, type LabStation } from "@arcade/kit/lab/stations/types"
 import type { lab } from "@arcade/kit/lab/main"
+import { labWidgets } from "@arcade/kit/lab/scenes/kinds"
+import { kindForStation } from "./scenes/kinds"
 import { STATIONS } from "./stations/index"
 
 type LabApi = Awaited<ReturnType<typeof lab>>
@@ -23,7 +25,7 @@ export function stationList(): LabStation[] {
   return orderStations(STATIONS).map(o => o.station)
 }
 
-/** Mounts stations into the running Lab, with the dev server's recent changes and voice notes when present. */
+/** Mounts stations into the running Lab, with the dev server's recent changes when present. */
 export async function startStations(api: LabApi, ensureGame: (game: string) => Promise<boolean>): Promise<StationsController> {
   const router = devRouter()
   const dev: StationDev | undefined = router ? { changes: station => fetchChanges(router.pageToken, station) } : undefined
@@ -52,30 +54,12 @@ export async function startStations(api: LabApi, ensureGame: (game: string) => P
     dev,
     // Home lists labs and owns `?lab=`; the workspace only opens what it is given.
     list: false,
+    // A lab shows only the cards its kind opts into (no voice notes, notes only where a kind asks for them).
+    widgets: station => {
+      const kind = kindForStation(station)
+      return kind ? labWidgets(kind, station) : null
+    },
   })
-  if (import.meta.env.DEV && router && dev) {
-    // The recorder is dev-only and loads after the Lab is up.
-    const { createFeedbackRecorder } = await import("@arcade/kit/lab/feedback/recorder")
-    const recorder = createFeedbackRecorder({
-      viewport: api.viewport,
-      canvas: api.canvas,
-      capture: async target => {
-        if (await stations.capturePage(target)) return
-        await api.render()
-        await api.context.stage.captureToCanvas(target)
-      },
-      stations,
-      state: () => ({
-        preset: (() => { try { return JSON.parse(api.workbench.exportPreset()) as unknown } catch { return null } })(),
-        scene: (() => { try { const s = api.workbench.state(); return { section: s.section, environment: s.environment, seed: s.seed, effectSeed: s.effectSeed, transport: s.transport, camera: s.camera, settings: s.settings, lighting: s.lighting } } catch { return null } })(),
-        tuning: { ...api.panel.tuning },
-      }),
-      submit: payload => postFeedback(router.pageToken, payload),
-      isBusy: () => api.workbench.getMode() === "play",
-    })
-    dev.toggleNote = () => recorder.toggle()
-    dev.noteActive = () => recorder.active()
-  }
   // Handles for proofs and the dev console: the stations, the Details panel (knobs over the settings) and the workbench.
   Object.assign(window, { stations, labPanel: api.panel, labWorkbench: api.workbench, labViewport: api.viewportSize })
   return stations
@@ -88,15 +72,4 @@ async function fetchChanges(token: string, station: LabStation): Promise<Station
   if (!q.size) return null
   const res = await fetch(`/__arcade/lab/changes?${q}`, { headers: { "x-arcade-page-token": token } })
   return res.ok ? ((await res.json()) as StationChanges) : null
-}
-
-async function postFeedback(token: string, payload: unknown) {
-  const res = await fetch("/__arcade/lab/feedback", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-arcade-page-token": token },
-    body: JSON.stringify(payload),
-  })
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
-  if (!res.ok && !json.error) json.error = `Dev server answered ${res.status}`
-  return json
 }

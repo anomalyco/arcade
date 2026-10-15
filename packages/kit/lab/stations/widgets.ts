@@ -22,7 +22,6 @@ export type WidgetContext = {
   /** GPU time, frames per second and the section's first telemetry line. */
   live(): string
   changes: (() => Promise<StationChanges | null>) | null
-  note: { toggle(): void; active(): boolean } | null
   storage: Storage | null
   /** The A/B wipe is waiting for a variant to be B. */
   abPending: { get(): boolean; set(on: boolean): void }
@@ -60,7 +59,6 @@ export const WIDGET_TITLES: Record<StationWidgetKind, string> = {
   metrics: "Measured",
   changes: "Recent changes",
   notes: "Notes",
-  voice: "Voice note",
   links: "Links",
 }
 
@@ -73,7 +71,6 @@ export const WIDGET_HINTS: Record<StationWidgetKind, string> = {
   metrics: "Measured numbers with where they came from",
   changes: "Recent commits and unmerged branches (dev server)",
   notes: "Your notes for this station, kept in this browser",
-  voice: "Record a voice note with marks for the board",
   links: "Where the thing lives in the games",
 }
 
@@ -81,13 +78,12 @@ const renderers: Record<StationWidgetKind, Renderer> = {
   status(body, _w, ctx) {
     const s = ctx.station
     const feature = s.board ? `<a class="ls-tag" href="https://opencode-team-board.anomalyco.workers.dev/?open=${html(s.board.feature)}&project=arcade" target="_blank" rel="noreferrer">${html(s.board.feature)} ↗</a>` : ""
-    const runs = s.demo.kind === "section"
-      ? ctx.missing
-        ? `<p class="ls-missing">The <code>${html(ctx.missing)}</code> section isn't in this build yet. The station runs it once that branch merges.</p>`
-        : `<div class="ls-row"><span>Runs</span><code>${html(s.demo.section)}</code>${s.demo.game ? `<span class="ls-dim">${html(s.demo.game)} adapters</span>` : ""}</div>`
-      : `<div class="ls-row"><span>Runs</span><a href="${html(s.demo.url)}">${html(s.demo.url)}</a></div>`
-    const links = s.links?.length ? `<div class="ls-links ls-inline">${s.links.map(l => `<a href="${html(l.href)}" target="_blank" rel="noreferrer">${html(l.label)} ↗</a>`).join("")}</div>` : ""
-    body.innerHTML = `<div class="ls-status-line"><span class="ls-status" data-status="${s.status}">${STATUS_LABEL[s.status]}</span>${s.statusNote ? `<span class="ls-dim">${html(s.statusNote)}</span>` : ""}${feature}</div><p class="ls-summary">${html(s.summary)}</p>${runs}${links}`
+    const missing = s.demo.kind === "section" && ctx.missing
+      ? `<p class="ls-missing">The <code>${html(ctx.missing)}</code> section isn't in this build yet. The station runs it once that branch merges.</p>`
+      : ""
+    // Where it lives in the games, as buttons (Play Outbreak): the one thing to do from here besides tuning.
+    const links = s.links?.length ? `<div class="ls-actions">${s.links.map(l => `<a class="ls-btn" href="${html(l.href)}" target="_blank" rel="noreferrer">${html(l.label)} ↗</a>`).join("")}</div>` : ""
+    body.innerHTML = `<div class="ls-status-line"><span class="ls-status" data-status="${s.status}">${STATUS_LABEL[s.status]}</span>${s.statusNote ? `<span class="ls-dim">${html(s.statusNote)}</span>` : ""}${feature}</div><p class="ls-summary" title="${html(s.summary)}">${html(s.summary)}</p>${missing}${links}`
     return {}
   },
 
@@ -224,7 +220,7 @@ const renderers: Record<StationWidgetKind, Renderer> = {
   metrics(body, _w, ctx) {
     const metrics = ctx.station.metrics ?? []
     body.innerHTML = metrics.length
-      ? metrics.map(m => `<div class="ls-metric"><b>${html(m.value)}</b><span>${html(m.label)}</span>${m.source ? `<code>${html(m.source)}</code>` : ""}</div>`).join("")
+      ? metrics.map(m => `<div class="ls-metric"${m.source ? ` title="Measured by ${html(m.source)}"` : ""}><b>${html(m.value)}</b><span>${html(m.label)}</span></div>`).join("")
       : `<p class="ls-dim">No measurements recorded in the station file.</p>`
     return {}
   },
@@ -255,18 +251,6 @@ const renderers: Record<StationWidgetKind, Renderer> = {
     area.addEventListener("input", () => { try { ctx.storage?.setItem(key, area.value) } catch { /* full */ } })
     body.append(area)
     return {}
-  },
-
-  voice(body, _w, ctx) {
-    if (!ctx.note) { body.innerHTML = `<p class="ls-dim">Voice notes work when the Lab runs under <code>bun run dev</code>.</p>`; return {} }
-    const record = button(`<i></i><span>Voice note</span><kbd>N</kbd>`, () => ctx.note!.toggle(), "ls-btn ls-rec")
-    const hint = document.createElement("p")
-    hint.className = "ls-dim"
-    hint.textContent = `Talk and hold ⇧ to draw. It goes to ${ctx.station.board?.feature ?? "the board"}.`
-    body.append(record, hint)
-    const tick = () => { record.dataset.active = String(ctx.note!.active()) }
-    tick()
-    return { tick }
   },
 
   links(body, _w, ctx) {

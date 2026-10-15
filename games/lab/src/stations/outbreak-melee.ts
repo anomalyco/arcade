@@ -129,7 +129,6 @@ export default defineStation({
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
-    right: [{ widget: "links" }, { widget: "changes" }],
-    dock: [{ widget: "variants" }, { widget: "voice" }, { widget: "notes" }],
+    dock: [{ widget: "variants" }],
   },
 })
