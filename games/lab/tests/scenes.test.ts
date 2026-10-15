@@ -20,7 +20,7 @@ const key = (c: StationCommand) => JSON.stringify([c.command, c.args ?? {}])
 describe("lab kinds", () => {
   test("every kind checks, and every Lab section has exactly one kind", () => {
     expect(checkKinds(LAB_KINDS)).toEqual([])
-    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles"]
+    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles", "rugs"]
     for (const section of sections) expect({ section, kinds: LAB_KINDS.filter(k => k.host.kind === "section" && k.host.section === section).length }).toEqual({ section, kinds: 1 })
   })
   test("the Feel arena example fits the Feel kind, and every featured knob is one its variants or settings use", () => {
@@ -68,7 +68,7 @@ describe("stations as labs", () => {
   test("the migrated scenes load into a store as repo scenes without problems", () => {
     const store = createSceneStore({ storage: memorySceneStorage(), repo: { scenes, collections }, now: () => new Date(NOW) })
     expect(store.problems).toEqual([])
-    expect(store.collections().find(c => c.collection.id === "look-and-light")?.scenes.map(e => e.scene.id)).toEqual(["weather", "vegetation", "looks", "styles", "lighting", "materials"])
+    expect(store.collections().find(c => c.collection.id === "look-and-light")?.scenes.map(e => e.scene.id)).toEqual(["weather", "vegetation", "looks", "styles", "lighting", "materials", "rugs", "rugs-interiors"])
     expect(store.sweep()).toEqual({ archived: [], deleted: [] })
   })
 })

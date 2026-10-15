@@ -67,7 +67,12 @@ try {
   // Start every proof from the files' layouts.
   await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("arcade.lab.station")) localStorage.removeItem(k) })
 
-  const ids = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".ls-station")].map(b => b.dataset.station!))
+  // The Lab opens on Home; this proof drives stations directly, so Home steps aside.
+  await page.evaluate(() => (window as unknown as { labs: { home: { hide(): void } } }).labs.home.hide())
+  const ids = await page.evaluate(() => {
+    const res = (window as unknown as W).labWorkbench.invoke("station.list") as { ok: boolean; result?: { stations: { id: string }[] } }
+    return res.ok ? res.result!.stations.map(s => s.id) : []
+  })
   report.stations = ids
   assert(ids.length >= 13, `expected at least 13 stations, saw ${ids.length}`)
 
@@ -85,13 +90,12 @@ try {
   }
   report.opened = opened
 
-  // Number keys: 3 is Weather; ⇧3 picks its third variant.
-  await page.evaluate(() => (window as unknown as W).stations.close())
+  // Number keys pick the open lab's variants: 3 is Weather's third, Storm.
+  await page.evaluate(() => (window as unknown as W).stations.open("weather"))
+  await page.waitForFunction(() => (window as unknown as W).stations.snapshot().section === "weather", undefined, { timeout: 30000 })
   await page.locator('canvas[aria-label="Lab scene"]').click({ position: { x: 600, y: 300 } })
   await page.keyboard.press("Escape")
   await page.keyboard.press("Digit3")
-  await page.waitForFunction(() => (window as unknown as W).stations.snapshot().section === "weather", undefined, { timeout: 30000 })
-  await page.keyboard.press("Shift+Digit3")
   assert.equal((await snap()).variant?.id, "storm")
   await page.waitForTimeout(1500)
   await page.screenshot({ path: resolve(out, "01-weather-storm.png") })
@@ -198,7 +202,7 @@ try {
   // Text fields own their keys: typing in the notes widget neither switches station nor starts a voice note.
   await page.locator(".ls-notes").click()
   await page.keyboard.type("3n1")
-  assert.equal((await snap()).station?.id, "weather", "digits typed into notes don't switch station")
+  assert.equal((await snap()).station?.id, "weather", "digits typed into notes don't switch lab")
   assert.equal(await page.locator(".fb-pill:not([hidden])").count(), 0, "N typed into notes doesn't record")
   assert.equal(await page.locator(".ls-notes").inputValue(), "3n1")
 

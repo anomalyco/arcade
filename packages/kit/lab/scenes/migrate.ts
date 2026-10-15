@@ -1,5 +1,5 @@
 import type { LabValue } from "../../lab-navigation"
-import type { LabStation, StationCommand, StationVariant } from "../stations/types"
+import type { LabStation, StationCommand, StationStatus, StationVariant } from "../stations/types"
 import type { LabPresetSchema } from "../workbench"
 import {
   SCENE_SCHEMA,
@@ -101,8 +101,58 @@ export function openCommands(scene: LabScene, variantId = scene.variant): SceneC
     ...choiceCommands(scene.choices),
     ...setParams(scene.settings),
     ...host,
-    ...(variant ? [...choiceCommands(variant.choices), ...setParams(variant.set), ...(variant.setup ?? [])] : []),
+    ...(variant ? variantCommands(variant) : []),
   ]
+}
+
+/** The commands a variant runs on top of its lab. */
+export function variantCommands(variant: SceneVariant): SceneCommand[] {
+  return [...choiceCommands(variant.choices), ...setParams(variant.set), ...(variant.setup ?? [])]
+}
+
+const WORK: readonly StationStatus[] = ["live", "in-progress", "review", "planned"]
+
+/**
+ * A lab as a station, so the station workspace can open it: the lab's choices, values and host setup (plus its opening
+ * variant) as the demo's setup, its variants as station variants, and its info back as station fields. The inverse of
+ * `scenesFromStation` for what a station can hold; extras and views beyond one orbit camera have no station form yet.
+ */
+export function stationFromScene(scene: LabScene): LabStation {
+  const info = scene.info ?? {}
+  const camera = scene.views.find(v => v.id === scene.view && v.kind === "orbit")
+  const work = WORK.find(w => w === info.work) ?? (scene.status === "draft" ? "in-progress" : "live")
+  return {
+    id: scene.id,
+    title: scene.title,
+    summary: scene.summary ?? "",
+    order: 0,
+    status: work,
+    ...(info.workNote ? { statusNote: info.workNote } : {}),
+    ...(info.color !== undefined ? { color: info.color } : {}),
+    demo: scene.host?.kind === "page"
+      ? { kind: "page", url: scene.host.url }
+      : {
+        kind: "section",
+        section: scene.host?.kind === "section" ? scene.host.section : "effects",
+        ...(scene.games?.[0] ? { game: scene.games[0] } : {}),
+        setup: openCommands(scene),
+        ...(camera?.kind === "orbit" ? { camera: { yaw: camera.yaw, pitch: camera.pitch, distance: camera.distance, ...(camera.target ? { target: camera.target } : {}) } } : {}),
+      },
+    variants: scene.variants.map(v => ({
+      id: v.id,
+      label: v.label,
+      ...(v.note ? { note: v.note } : {}),
+      setup: variantCommands(v),
+      ...(v.url ? { url: v.url } : {}),
+    })),
+    ...(scene.variant ? { defaultVariant: scene.variant } : {}),
+    ...(scene.layout?.grid ? { grid: scene.layout.grid } : {}),
+    ...(info.board ? { board: info.board } : {}),
+    ...(info.metrics?.length ? { metrics: info.metrics } : {}),
+    ...(info.links?.length ? { links: info.links } : {}),
+    ...(info.paths?.length ? { paths: info.paths } : {}),
+    ...(info.branches?.length ? { branches: info.branches } : {}),
+  }
 }
 
 // ── stations ────────────────────────────────────────────────────────────────────────────────────────────────────────

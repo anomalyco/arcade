@@ -24,6 +24,8 @@ export type WidgetContext = {
   storage: Storage | null
   /** The A/B wipe is waiting for a variant to be B. */
   abPending: { get(): boolean; set(on: boolean): void }
+  /** The key chip before a variant's number: "⇧" while number keys open stations, "" once they pick variants. */
+  variantKey?: string
 }
 
 export type WidgetInstance = {
@@ -116,7 +118,7 @@ const renderers: Record<StationWidgetKind, Renderer> = {
     const list = document.createElement("div")
     list.className = "ls-variants"
     const chips = variants.map((v, i) => {
-      const chip = button(`${i < 9 ? `<kbd>⇧${i + 1}</kbd>` : ""}<span>${html(v.label)}</span>`, () => ctx.chooseVariant(v), "ls-chip")
+      const chip = button(`${i < 9 ? `<kbd>${ctx.variantKey ?? "⇧"}${i + 1}</kbd>` : ""}<span>${html(v.label)}</span>`, () => ctx.chooseVariant(v), "ls-chip")
       chip.dataset.variant = v.id
       if (v.note) chip.title = v.note
       list.append(chip)

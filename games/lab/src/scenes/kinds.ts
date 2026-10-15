@@ -70,6 +70,7 @@ export const LAB_KINDS: readonly LabKind[] = [
     panels: [...tuning, "choices"],
     choices: [choice("direction", "Art direction", "subject", "vignette", directions)],
   },
+  { id: "rug", label: "Rug", subject: "A procedural rug: pattern, palette and wear", host: { kind: "section", section: "rugs" }, panels: tuning },
   {
     id: "style",
     label: "Style",
@@ -102,6 +103,11 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "pacing", label: "Pacing", subject: "Outbreak's first night: waves, threat and quiet", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "flashlight", label: "Flashlight", subject: "The survivor's flashlight beam in the game", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-vehicle", label: "Outbreak vehicle", subject: "Outbreak's cars: finding keys and a battery, headlights, running down the horde", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Drive" },
+  { id: "map", label: "Map", subject: "Outbreak's town map and its districts", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
+  { id: "melee", label: "Melee", subject: "Outbreak's melee weapons: swings, hits and timing", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "unseen", label: "Unseen", subject: "What the survivor can't see, and how it reads", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "interiors", label: "Interiors", subject: "Rugs and furnishing in Outbreak's house interiors", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
+  { id: "bots", label: "Bots", subject: "Survivor bots and the difficulty tuner", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
 ]
 
@@ -116,13 +122,24 @@ const PAGE_STATIONS: Record<string, string> = {
   "first-night": "pacing",
   "outbreak-flashlight": "flashlight",
   "outbreak-vehicles": "outbreak-vehicle",
+  "outbreak-map": "map",
+  "outbreak-melee": "melee",
+  "outbreak-unseen": "unseen",
+  "rugs-interiors": "interiors",
+  "survivor-bots": "bots",
 }
+
+/** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */
+export const FALLBACK_KINDS = { section: "section", page: "page" } as const
 
 /** The kind that runs a host, and which of its choice slots each command prefix fills. */
 export function kindOf(host: SceneHost, station?: string): { kind: string; slotFor: SlotFor } {
   const kind = host.kind === "page"
     ? LAB_KINDS.find(k => k.id === PAGE_STATIONS[station ?? ""])
     : LAB_KINDS.find(k => k.host.kind === "section" && k.host.section === host.section)
-  if (!kind) throw new Error(`No lab kind runs ${host.kind === "page" ? `page station "${station}"` : `section "${host.section}"`}`)
+  if (!kind) {
+    console.warn(`[labs] no lab kind runs ${host.kind === "page" ? `page station "${station}"` : `section "${host.section}"`}; add one to kinds.ts`)
+    return { kind: FALLBACK_KINDS[host.kind], slotFor: () => undefined }
+  }
   return { kind: kind.id, slotFor: prefix => kind.choices?.find(c => c.prefix === `${prefix}:`)?.slot }
 }

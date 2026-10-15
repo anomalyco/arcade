@@ -103,7 +103,7 @@ installs itself on first use.
 | **Carrier (Aboard / Helm)** | `KeyW`/`KeyS` or `ArrowUp`/`ArrowDown` step throttle; `KeyA`/`KeyD` or `ArrowLeft`/`ArrowRight` rudder | `ShiftLeft` / `ShiftRight` fast free-cam pan | — | `KeyE` Deploy menu (hold or tap to pin; `Digit1`–`Digit9` pick op) | Click takes Pointer Lock, mouse orbits ship camera, Wheel zooms | `Digit1`–`Digit9` 10–90% throttle, `Digit0` stop, `Equal`/`NumpadAdd` full ahead | `KeyC` toggle free orbit camera | `Tab` teams/ships (hold or tap to pin), `Escape` release pointer/close menu, `KeyM` mute, `Backquote`/`F2` debug menu | Removed logical `e.key` matching in `Input`, `Helm`, `game.ts` (`KeyC`), and `Mixer` (`KeyM`) so Dvorak `KeyH` (`"d"`) and `KeyI` (`"c"`) no longer trigger rudder or free camera |
 | **Carrier (Flight)** | `KeyW`/`KeyS` throttle/airbrake, `KeyA`/`KeyD` or `ArrowLeft`/`ArrowRight` roll, `ArrowUp`/`ArrowDown` pitch, `KeyQ`/`KeyE` yaw rudder | `ShiftLeft` / `ShiftRight` afterburner | — | `KeyR` carrier land (when prompt shown) | Mouse virtual stick (Pointer Lock), `Mouse0`/`Space` fire, `Mouse2`/`Mouse1`/`KeyX` free look | `Digit1`–`Digit3` select weapon, Wheel/`KeyV` cycle weapon, `KeyF` flares | `KeyC` chase/cockpit camera | `Tab` teams, `KeyG` full map (hold, tap to pin; every Carrier role), `Escape` release pointer, `KeyM` mute, `Backquote`/`F2` debug menu | Removed logical `e.key` matching in `FlightInput` and `WeaponInput` |
 | **Carrier (Boat & Gunnery)** | Boat: `KeyW`/`KeyS` ahead/astern, `KeyA`/`KeyD` steer | Boat: `ShiftLeft` / `ShiftRight` boost | — | `KeyE` Deploy menu (leave turret / view it at sea) | Mouse aim, `Mouse0`/`Space` fire, Turret `Mouse2` scope zoom | — | `KeyC` free camera | `Tab` teams, `Escape` release pointer, `KeyM` mute, `Backquote`/`F2` debug menu | Removed logical `" "` key matching in `BoatInput` and `TurretInput` in favour of `Space` |
-| **Lab & Dev Surfaces** | Play/Possess: `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | Play/Possess: `ShiftLeft` / `ShiftRight` | Play: `Space` brake | Edit mode: logical `P` (`Alt+P` alias) or `▶ Play` button to possess/play, `F8` toggle Eject camera, `Escape` or `■ Stop` exit play & restore checkpoint | Orbit drag, `Shift`+drag pan, `Alt`+drag marquee, `RMB` tap / `Ctrl`+click / menu key radial; `KeyM` mute | Edit canvas: `Space` retrigger, logical `F` frame, `G` move, `Shift`+`R` rotate, `D` duplicate, `Backspace`/`Delete` delete, `B`/`V` compare | Inspector: `Arrow*` navigate/adjust, `Enter`/`Space` edit, `⌫` reset, `R` randomize, `⇧C` copy, `/` search the panel, `⌥1`–`⌥9` tabs, `Cmd+K` command search | `Backquote` toggle Lab chrome/overlay; `Alt+[` / `Alt+]` switch Studio Tour mini-tabs | `LabInput` binds Play-mode movement strictly by physical `e.code` (`KeyW`, `KeyA`, `KeyS`, `KeyD`, `Arrow*`, `Space`, `Shift*`); Edit-mode `P` / `Alt+P` / `F8` work from canvas, Outliner, and Details without requiring an active selection |
+| **Lab & Dev Surfaces** | Play/Possess: `KeyW` `KeyA` `KeyS` `KeyD`, `Arrow*` | Play/Possess: `ShiftLeft` / `ShiftRight` | Play: `Space` brake | Edit mode: logical `P` (`Alt+P` alias) or `▶ Play` button to possess/play, `F8` toggle Eject camera, `Escape` or `■ Stop` exit play & restore checkpoint | Orbit drag, `Shift`+drag pan, `Alt`+drag marquee, `RMB` tap / `Ctrl`+click / menu key radial; `KeyM` mute | Edit canvas: `Space` retrigger, logical `F` frame, `G` move, `Shift`+`R` rotate, `D` duplicate, `Backspace`/`Delete` delete, `B`/`V` compare | Inspector: `Arrow*` navigate/adjust, `Enter`/`Space` edit, `⌫` reset, `R` randomize, `⇧C` copy, `/` search the panel, `⌥1`–`⌥9` tabs, `Cmd+K` command search | `Backquote` toggle Lab chrome/overlay; `H` Home; `Alt+[` / `Alt+]` previous/next lab (Studio Tour mini-tabs while a tour runs) | `LabInput` binds Play-mode movement strictly by physical `e.code` (`KeyW`, `KeyA`, `KeyS`, `KeyD`, `Arrow*`, `Space`, `Shift*`); Edit-mode `P` / `Alt+P` / `F8` work from canvas, Outliner, and Details without requiring an active selection |
 
 ## Lab Play / Possess & Studio Tour shortcuts
 
@@ -130,11 +130,16 @@ Arcade Lab workbench standard:
 
 ## Lab stations
 
-- **Stations**: `Digit1`–`Digit9`, `Digit0` open stations 1–10 from the Edit canvas (outside text fields, Play, the
-  variation grid and the radial, which keep their own number keys; with focus in the Library drawer digits still pick
-  Library categories). `Shift` + `Digit1`–`Digit9` pick the open station's variants. Click a chip in the Outliner's
-  station list or use `⌘K` ("Station: …"); ✕ in the list header closes the station. In an embedded page (Characters,
-  Carrier) the same keys are forwarded from the page.
+- **Home** (the Lab's first page; [lab.md](lab.md#home-and-labs)): Home owns every key while it shows. `/` or `⌘K`
+  search, `↑`/`↓` move (`↑` from the first row goes to the search), `←`/`→` fold, typing a letter jumps to a label,
+  `↵` or a double-click opens a lab, `Esc` goes back to the open lab (from the search, `Esc` clears it first, then
+  returns to the list).
+- **In a lab**: logical `H` shows Home (mnemonic, like `N` and `P`); `Alt+[` / `Alt+]` (physical `BracketLeft` /
+  `BracketRight`) step to the previous or next lab in the collection, unless a studio tour is running, which keeps them
+  for its tabs. Both work from the canvas and the chrome, not while typing, in Play or with focus in Details.
+  `Digit1`–`Digit9` pick the lab's variants (outside text fields, Play, the variation grid and the radial, which keep
+  their own number keys; with focus in the Library drawer digits still pick Library categories); `Shift` + a digit
+  does the same for now. In an embedded page (Characters, Carrier) number keys are forwarded from the page.
 - **Knobs panels** (Details, station controls cards, game overlays): keys work only while focus is inside a panel and
   are knobs' own (`?` lists them): arrows move and adjust, `r` / `⌥R` random / mutate, `g` the focused group, `⇧L`
   lock, hold `\` compare, `⌫` reset a row, `⇧C` copy, `⇧S` save a variant, `u`/`z` undo, `Esc` hands focus back.
