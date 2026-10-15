@@ -671,17 +671,18 @@ export function spawnExplosion(
   // 6. Burning fragments thrown out on ballistic arcs, each laying its own thinning smoke trail with a hot spark at
   //    its head; over water (`Particles.water`) they splash in. Count, size and life vary per fragment.
   const fragments = Math.max(0, Math.round(settings.fragmentCount * lod.countScale))
-  const trailScale = 0.3 * fbSize
   for (let i = 0; i < fragments; i++) {
     const a = sampleAngle(((i + random() * 0.8) / Math.max(1, fragments)) * Math.PI * 2)
     const elevation = airburst ? (random() - 0.4) * 1.4 : 0.22 + random() * 0.66
     const speed = (7 + random() * 9) * velScale
     const horizontal = Math.cos(elevation) * speed
     const shade = 0.06 + random() * 0.1
+    // Bigger chunks burn longer and lay wider trails.
+    const size = (0.05 + random() * 0.08) * velScale * Math.max(1, effScale * 0.55)
     Object.assign(fragmentSpec, {
       kind: "debris",
       life: (2.0 + random() * 2.2) * lod.lifeScale,
-      size: (0.05 + random() * 0.08) * velScale * Math.max(1, effScale * 0.55),
+      size,
       growth: 0,
       gravity: 14.2,
       drag: 0.12,
@@ -693,7 +694,7 @@ export function spawnExplosion(
       temperature: 0,
       turbulence: 1,
       ease: 1,
-      trail: trailScale * (0.65 + random() * 0.7),
+      trail: size * 3.4,
       pop: 0,
     })
     particles.spawn(

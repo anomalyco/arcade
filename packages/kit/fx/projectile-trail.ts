@@ -64,7 +64,7 @@ export function emitTrailBirth(
       "soft",
       (2.2 + random() * 1.4) * (0.5 + 0.5 * strength),
       0.5 * scale * (0.45 + 0.55 * strength),
-      0.5 * scale,
+      0.4 * scale,
       -0.8,
       0.55,
       0,
@@ -91,7 +91,7 @@ export function emitTrailBirth(
     return
   }
   if (type === TrailBirth.splash) {
-    spawnWaterSplash(pool, x, y, z, Math.max(0.12, scale * 0.16), random, { height: 0.55, mist: 2, crown: 0 })
+    spawnWaterSplash(pool, x, y, z, Math.max(0.12, scale * 0.16), random, { height: 0.55, mist: 1, crown: 0 })
     return
   }
   if (type === TrailBirth.pop) spawnSecondaryPop(pool, x, y, z, vx, vy, vz, scale, random)
@@ -149,11 +149,11 @@ export function spawnWaterSplash(pool: Particles, x: number, y: number, z: numbe
     set("water", 1.1 + random() * 0.8, (0.16 + random() * 0.14) * size, 0, 9.81, 0.45, 0, 0.86, 0.91, 0.96, 0.78)
     pool.spawn(spec, x + Math.cos(a) * 2 * size, y + 0.2, z + Math.sin(a) * 2 * size, Math.cos(a) * out, (7 + random() * 9) * Math.sqrt(size) * Math.min(1.4, height), Math.sin(a) * out, random() * 6.283)
   }
-  const mist = options.mist ?? 6
+  const mist = options.mist ?? 4
   for (let i = 0; i < mist; i++) {
     const a = random() * 6.283
     const life = 2.2 + random() * 1.4
-    set("soft", life, (2.2 + random() * 1.2) * size, (3.2 + random()) * size / life, 5.5, 0.9, 0, 0.9, 0.93, 0.96, 0.16)
+    set("soft", life, (2.4 + random() * 1.2) * size, (3.4 + random()) * size / life, 3.5, 1.6, 0, 0.9, 0.93, 0.96, 0.13)
     pool.spawn(spec, x + Math.cos(a) * size, y + 0.6 * size, z + Math.sin(a) * size, pool.windX + Math.cos(a) * size, (6 + random() * 12) * Math.sqrt(size) * height, pool.windZ + Math.sin(a) * size, random() * 6.283)
   }
   const surge = options.surge ?? 0

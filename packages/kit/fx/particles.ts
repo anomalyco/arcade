@@ -84,12 +84,14 @@ export class Particles {
         // where they come to rest. The head throws one short hot spark per step while it is still burning.
         const t=p[i+7]/p[i+8],strength=Math.pow(1-t,1.25)
         const dx=p[i]-ox,dy=p[i+1]-oy,dz=p[i+2]-oz,moved=Math.hypot(dx,dy,dz)
-        const spacing=trail*(0.32+0.6*(1-strength))
+        // At most ~40 puffs/s per fragment: fast, small fragments space their puffs out and widen them to match.
+        const base=trail*(0.32+0.6*(1-strength)),spacing=Math.max(base,moved/Math.max(dt,1e-4)/40)
+        const width=trail*Math.sqrt(spacing/base)
         let carry=p[i+23]+moved+dt*trail*0.9*strength
         while(carry>=spacing&&queued<BIRTH_CAPACITY){
           carry-=spacing
           const k=moved>1e-5?Math.max(0,1-carry/moved):1
-          queue(TrailBirth.puff,ox+dx*k,oy+dy*k,oz+dz*k,p[i+4],p[i+5],p[i+6],trail,strength)
+          queue(TrailBirth.puff,ox+dx*k,oy+dy*k,oz+dz*k,p[i+4],p[i+5],p[i+6],width,strength)
         }
         p[i+23]=Math.min(carry,spacing)
         if(strength>0.3)queue(TrailBirth.head,p[i],p[i+1],p[i+2],p[i+4],p[i+5],p[i+6],trail,strength)

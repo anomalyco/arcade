@@ -1023,7 +1023,7 @@ export class WeaponFx implements ScenePass {
       this.puff(0, x, y + 2, z, 0, 0, 0, 0.2, 8, 20, 5 * hot, 3 * hot, 1.4 * hot, 1, 2)
       // The spout: a tall column of droplets and mist 50-70 m high that falls back, a crown thrown outward and a
       // base surge rolling out over the water.
-      spawnWaterSplash(this.fxParticles, x, y, z, 2.2, Math.random, { height: 1.15, mist: 12, crown: 20, surge: 10 })
+      spawnWaterSplash(this.fxParticles, x, y, z, 2.2, Math.random, { height: 1.15, mist: 6, crown: 20, surge: 10 })
       // A low ring of mist rolling out over the water, and a thin hanging cloud.
       for (let i = 0; i < 14; i++) {
         const a = (i / 14) * Math.PI * 2
