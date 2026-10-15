@@ -16,7 +16,7 @@ import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
 import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
-import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
 import { stageVehicleScene, VEHICLE_SCENES, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
@@ -55,7 +55,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
     feelTracker,
     hud,
     coop,
-    progressionHost,
   } = host
 
   registerGameCommands((commands) => {
@@ -265,21 +264,6 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
             kind,
             ...feelTracker.inspect(),
           }
-        },
-      },
-      {
-        id: "progression.stage",
-        label: "Stage an Inventory or Workbench Scene",
-        shortLabel: "Progression Scene",
-        category: "Scene",
-        undoable: false,
-        args: { scene: { type: "string", description: `Scene (${PROGRESSION_SCENES.join(", ")})` } },
-        enabled: () => !coop.net,
-        run: (_ctx, args) => {
-          const scene = String(args?.scene ?? "bench") as ProgressionScene
-          if (!PROGRESSION_SCENES.includes(scene)) throw new Error(`Unknown scene ${scene}`)
-          stageProgression(progressionHost, scene)
-          return { scene }
         },
       },
       {
