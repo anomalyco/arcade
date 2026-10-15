@@ -1,3 +1,5 @@
+import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
+import { interiorSettings, interiorSignature } from "./interiors/plan"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -106,6 +108,8 @@ export type CompiledRoofChunk = {
   data: ArrayBuffer
   box: readonly [number, number, number, number]
   cutBox: readonly number[]
+  /** Index into the chunk's `buildings` (roofless buildings have no chunk, so this is not the array index). */
+  buildingIndex: number
   lastGlobalId: number
 }
 
@@ -704,6 +708,8 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
+    emitBuildingRugs(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown)
   }
 
   // 5. Walls, windows & fences
@@ -1112,11 +1118,13 @@ export function compileSingleWorldChunk(
     const b = chunk.buildings[localId]!
     const rm = roofScratchPool[localId]!
     if (!rm.count) continue
-    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 6.5, b.rect[3] + 1.7] as const
+    // "outside" chunks are skipped while the survivor stands inside this box, so it hugs the walls (no porch margin).
+    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 6.5, b.rect[3] + 0.1] as const
     roofChunks.push({
       data: stampOutbreakVertexTone(rm.pack()),
       box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + 1.7] as const,
       cutBox: bounds,
+      buildingIndex: localId,
       lastGlobalId: localId,
     })
   }
@@ -1158,11 +1166,14 @@ function packChunkMeshesForWindow(
     }
     return { opaque: outOpaque, glass: compiled.glassChunks }
   }
-  const bldIndexOffset = Math.max(
-    0,
-    windowBuildings.findIndex((b) => b.id === compiled.buildings[0]?.id),
-  )
-  const streamKey = `${compiled.key}:${compiled.hash}:${bldIndexOffset}`
+  // Each roof's aux must be its building's window slot (the index into OL.bldRects). Slots are reused as buildings
+  // leave the window, so a chunk's buildings are not necessarily contiguous. 15 never matches a slot.
+  const globalIds = rChunks.map((rc) => {
+    const id = compiled.buildings[rc.buildingIndex]?.id
+    const slot = id ? windowBuildings.findIndex((b) => b.id === id) : -1
+    return slot >= 0 ? slot : 15
+  })
+  const streamKey = `${compiled.key}:${compiled.hash}:${globalIds.join(",")}`
   const outOpaque: LevelChunk[] = []
   for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
     const c = compiled.staticOpaqueChunks[i]!
@@ -1170,7 +1181,7 @@ function packChunkMeshesForWindow(
   }
   for (let localId = 0; localId < rChunks.length; localId++) {
     const rc = rChunks[localId]!
-    const globalId = Math.min(15, bldIndexOffset + localId)
+    const globalId = globalIds[localId]!
     if (rc.lastGlobalId !== globalId) {
       rc.lastGlobalId = globalId
       const halfId = HALF_INT[globalId]!
@@ -1184,7 +1195,8 @@ function packChunkMeshesForWindow(
       data: rc.data,
       box: rc.box,
       cutBox: rc.cutBox,
-      customCutaway: true,
+      // Skipped whole while inside (keeps fsSolid/HSR for the roof elsewhere); the peek bubble still uses roofCut.
+      customCutaway: "outside",
       streamSlot: slot,
       streamKey,
     })
@@ -1345,6 +1357,7 @@ export class WorldClientStreamer {
           cy: item.cy,
           houseDecay: archSettings.houseDecay,
           weathering: archSettings.weathering,
+          interior: { ...interiorSettings },
         })
         break
       }
@@ -1383,7 +1396,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${interiorSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -1531,7 +1544,7 @@ export class WorldClientStreamer {
 
     this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode, speed)
 
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${this.center.cx},${this.center.cy}`
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}`
     if (winKey === this.lastWindowKey) {
       // Non-transition frame: pre-warm up to 1 lookahead chunk on main thread if not already handled by Workers
       this.stepBakeQueue(1.8, 1)

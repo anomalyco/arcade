@@ -41,6 +41,7 @@ import {
   toSharedWeatherSettings,
   type OutbreakWeatherController,
 } from "./weather"
+import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
 export interface OutbreakHarnessHost {
@@ -77,6 +78,9 @@ export interface OutbreakHarnessHost {
   readonly setLastDayNightHour: (hour: number) => void
   readonly incrementFrames: () => void
   readonly draw: (dt: number) => void
+  /** Rugs and themed interiors, and the level rebuild a structural interior change needs. */
+  readonly interiors: InteriorPresenter
+  readonly rebuildLevel: () => void
 }
 
 export function createOutbreakHarness(host: OutbreakHarnessHost) {
@@ -187,6 +191,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           ),
           windowOrigin: winState.origin,
           isStreamWindow: winState.isStream,
+          windowBuildings: winState.isStream ? worldStreamer.windowBuildings.map((b) => ({ id: b.id, kind: b.kind, rect: b.rect })) : [],
           activeChunks: [...session.sim.worldStream.activeChunks.keys()],
           cachedRenderChunks: worldStreamer.cachedChunkCount,
           pendingBakes: worldStreamer.pendingBakeCount,
@@ -240,7 +245,15 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     hudState: () => hud.inspect(),
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
+    /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
+    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings } }),
+    setInterior(key: string, value: number) {
+      if (!(key in host.interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
+      ;(host.interiors.settings as Record<string, number>)[key] = value
+      if (host.interiors.apply(key) === "structural") host.rebuildLevel()
+    },
     setLab(rawKey: string, value: number | boolean | string) {
+      if (rawKey in host.interiors.settings) return harness.setInterior(rawKey, Number(value))
       const routed = resolveOutbreakSettingTarget(String(rawKey))
       const control = controls.find(
         (c) =>

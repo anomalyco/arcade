@@ -38,7 +38,7 @@ export function sectionLibraryCategory(id: string): LabLibraryCategory {
   const s = id.toLowerCase()
   if (/foliage|tree|grass/.test(s)) return "foliage"
   if (/look|grade/.test(s)) return "looks"
-  if (/material/.test(s)) return "materials"
+  if (/material|rug/.test(s)) return "materials"
   if (/audio|sound/.test(s)) return "audio"
   if (/light/.test(s)) return "lighting"
   if (/effect|fx|splatter|fire|water|explosion|smoke|vignette/.test(s)) return "effects"

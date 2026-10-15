@@ -3,6 +3,7 @@ import { VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
+import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
 export const STREET_LAMP_POSTS = [
@@ -224,7 +225,9 @@ export const OUTBREAK_WINDOW_UNIFORM_OFFSET = 76
 export const OUTBREAK_NOIR_UNIFORM_OFFSET = 112
 /** Volumetric beam block: inverse view-projection (16) then two vec4f. */
 export const OUTBREAK_BEAM_UNIFORM_OFFSET = 140
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = 164
+/** Rugs and themed interiors (see `interiors/wgsl.ts`) start after the beam block. */
+export const OUTBREAK_INTERIOR_UNIFORM_OFFSET = 164
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_INTERIOR_UNIFORM_OFFSET + INTERIOR_UNIFORM_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & {
@@ -975,7 +978,7 @@ struct OutbreakLightingUniforms {
   u17: vec4f, // bounceHeight, 1 / outer half-angle, reserved, reserved
   invViewProj: mat4x4f,
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
-  u19: vec4f, // weatherAir, indoors, groundY, beamReach
+  u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 `

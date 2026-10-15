@@ -56,6 +56,8 @@ export type LabSection = {
   /** Optional instanced meshes/debug geometry inside the Lab's 4x MSAA RGBA16F/depth24plus pass. */
   draw?(pass:GPURenderPassEncoder):void
   telemetry?():string
+  /** True while asynchronous results (for example Worker bakes) have not landed yet; proofs wait before capturing. */
+  busy?():boolean
   /** Workbench hooks for transport, framing, environment reroll and world object manipulation. */
   retrigger?():void
   reroll?():void
