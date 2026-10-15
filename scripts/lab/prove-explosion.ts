@@ -29,9 +29,9 @@ const originals = new Map(
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache)
-  .filter(n => /^chromium-\d+$/.test(n))
+  .filter(n => /^chromium_headless_shell-\d+$/.test(n))
   .reverse()
-  .map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 
 const SNAP_TIMES = [0.05, 0.15, 0.3, 0.6, 1.0, 2.0, 4.0] as const

@@ -3,7 +3,7 @@
 //   bun scripts/compare.ts --phase=before
 //   bun scripts/compare.ts --phase=after
 import { chromium, type Page } from "playwright-core"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
@@ -99,10 +99,17 @@ async function ensureViteServer(): Promise<(() => void) | null> {
 }
 
 export function findChromeExecutable(): string | undefined {
+  const cache = join(homedir(), "Library/Caches/ms-playwright")
+  const headlessShells = existsSync(cache)
+    ? readdirSync(cache)
+        .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
+        .sort()
+        .reverse()
+        .map((n) => join(cache, n, "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
+    : []
   const candidates = [
     chromium.executablePath(),
-    join(homedir(), "Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
-    join(homedir(), "Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+    ...headlessShells,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
   ]

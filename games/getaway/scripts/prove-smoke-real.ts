@@ -13,7 +13,7 @@ const address = fixture?.httpServer?.address()
 const host = typeof address === "object" && address ? `http://localhost:${address.port}` : "http://getaway-smoke.localhost:1355"
 const styles = process.argv.find(a => a.startsWith("--styles="))?.slice(9).split(",").map(Number) ?? (video || timing ? [6,7,8] : [0,1,6,7,8])
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const chrome = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).reverse().map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const chrome = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).reverse().map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--disable-dawn-features=timestamp_quantization"] })
 const errors: string[] = []
 const proof: any[] = []

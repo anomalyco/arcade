@@ -8,7 +8,7 @@ mkdirSync(out,{recursive:true})
 const server=await createServer({root,configFile:join(root,'vite.config.ts'),server:{host:'127.0.0.1',port:0}})
 await server.listen();const address=server.httpServer!.address();if(!address||typeof address==='string')throw Error('port')
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath=readdirSync(cache).filter(n=>/^chromium_headless_shell-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 const browser=await chromium.launch({executablePath,headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist','--mute-audio','--disable-dawn-features=timestamp_quantization']})
 const errors:string[]=[],pairs:any[]=[],median=(n:number[])=>n.toSorted((a,b)=>a-b)[Math.floor(n.length/2)]!
 try{

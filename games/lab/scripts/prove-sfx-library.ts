@@ -21,8 +21,8 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
   return (await f.exists()) ? new Response(f) : new Response("Not found", { status: 404 })
 } })
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath = readdirSync(cache).filter((n) => /^chromium-\d+$/.test(n)).reverse()
-  .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath = readdirSync(cache).filter((n) => /^chromium_headless_shell-\d+$/.test(n)).reverse()
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath, "Playwright Chromium binary required")
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 try {

@@ -13,7 +13,7 @@ const root=resolve(import.meta.dir,"../../.."),out=resolve(root,"captures/lab-ef
 ]
 const baseline=process.env.EFFECTS_BASELINE??"8211aa0",fixtures=files.map(f=>({original:f,temporary:f.replace(/\.ts$/,".effects-baseline.ts")}))
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath=readdirSync(cache).filter(n=>/^chromium_headless_shell-\d+$/.test(n)).reverse().map(n=>`${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 mkdirSync(out,{recursive:true})
 for(const f of fixtures){
   let source=execFileSync("git",["show",`${baseline}:${f.original}`],{cwd:root}).toString()

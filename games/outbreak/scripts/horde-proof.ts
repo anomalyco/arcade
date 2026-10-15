@@ -13,7 +13,8 @@ import { createServer } from "vite"
 const root = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1] ?? fallback
-const modes = new Set(arg("mode", "gpu,stills,clip").split(","))
+const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
+const modes = new Set(arg("mode", wantVideo ? "gpu,stills,clip" : "gpu,stills").split(","))
 const sizes = arg("sizes", "0,500,1000").split(",").map(Number)
 const clipSize = Number(arg("clip-size", "800"))
 const clipSeconds = Number(arg("clip-seconds", "14"))
@@ -40,10 +41,10 @@ await server.listen()
 const port = (server.httpServer!.address() as { port: number }).port
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache)
-  .filter((n) => /^chromium-\d+$/.test(n))
+  .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
   .sort()
   .reverse()
-  .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 assert(executablePath, "Install Chromium before the horde proof")
 // One browser per page: closing a WebGPU page can take the GPU process (and the browser) down with it.

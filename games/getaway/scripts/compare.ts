@@ -1,5 +1,5 @@
 import { chromium } from "playwright-core"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
@@ -76,9 +76,17 @@ function summarize(values: number[]): StatSummary {
 }
 
 function findChromeExecutable(): string {
+  const cache = join(homedir(), "Library/Caches/ms-playwright")
+  const headlessShells = existsSync(cache)
+    ? readdirSync(cache)
+        .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
+        .sort()
+        .reverse()
+        .map((n) => join(cache, n, "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
+    : []
   const candidates = [
-    join(homedir(), "Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
-    join(homedir(), "Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+    chromium.executablePath(),
+    ...headlessShells,
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ]

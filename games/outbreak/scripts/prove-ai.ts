@@ -25,10 +25,10 @@ const fixture = Bun.serve({
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache)
-  .filter((n) => /^chromium-\d+$/.test(n))
+  .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
   .sort()
   .reverse()
-  .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 assert(chrome, "Install Chromium before the Metal proof")
 
@@ -52,10 +52,13 @@ try {
   assert.match(adapter.architecture, /metal/)
 
   let frameIndex = 0
+  const wantVideo = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1"
   const captureFrame = async (stillName?: string) => {
     const padded = String(frameIndex++).padStart(4, "0")
-    const framePath = resolve(framesDir, `frame-${padded}.jpg`)
-    await page.screenshot({ path: framePath, type: "jpeg", quality: 90 })
+    if (wantVideo) {
+      const framePath = resolve(framesDir, `frame-${padded}.jpg`)
+      await page.screenshot({ path: framePath, type: "jpeg", quality: 90 })
+    }
     if (stillName) {
       await page.screenshot({ path: resolve(out, `${stillName}.jpg`), type: "jpeg", quality: 92 })
     }
@@ -164,29 +167,31 @@ try {
 
   assert.deepEqual(errors, [])
 
-  const videoPath = resolve(out, "zombie-ai-complete.mp4")
-  const ff = Bun.spawnSync(
-    [
-      "ffmpeg",
-      "-y",
-      "-framerate",
-      "30",
-      "-i",
-      resolve(framesDir, "frame-%04d.jpg"),
-      "-c:v",
-      "libx264",
-      "-preset",
-      "fast",
-      "-crf",
-      "20",
-      "-pix_fmt",
-      "yuv420p",
-      videoPath,
-    ],
-    { stdout: "inherit", stderr: "inherit" },
-  )
-  assert.equal(ff.exitCode, 0)
-  console.log(`Complete survival video & stills saved to ${out}`)
+  if (wantVideo) {
+    const videoPath = resolve(out, "zombie-ai-complete.mp4")
+    const ff = Bun.spawnSync(
+      [
+        "ffmpeg",
+        "-y",
+        "-framerate",
+        "30",
+        "-i",
+        resolve(framesDir, "frame-%04d.jpg"),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        videoPath,
+      ],
+      { stdout: "inherit", stderr: "inherit" },
+    )
+    assert.equal(ff.exitCode, 0)
+  }
+  console.log(`Complete survival stills${wantVideo ? " & video" : ""} saved to ${out}`)
 } finally {
   await browser.close()
   fixture.stop(true)

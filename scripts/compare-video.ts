@@ -100,15 +100,16 @@ if (typeof scenario?.input !== "function") throw new Error("Scenario must export
 const chrome =
   process.env.CHROME_EXECUTABLE ??
   [
+    chromium.executablePath(),
     ...(existsSync(join(homedir(), "Library/Caches/ms-playwright")) ? readdirSync(join(homedir(), "Library/Caches/ms-playwright")) : [])
-      .filter((n) => /^chromium-\d+$/.test(n))
+      .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
       .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]))
       .map((n) =>
         join(
           homedir(),
           "Library/Caches/ms-playwright",
           n,
-          "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+          "chrome-headless-shell-mac-arm64/chrome-headless-shell",
         ),
       ),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

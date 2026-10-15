@@ -63,7 +63,7 @@ const chrome =
         .filter(n => n.startsWith("chromium-"))
         .sort()
         .reverse()
-        .map(n => join(caches, n, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"))
+        .map(n => join(caches, n, "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
         .find(existsSync)
     : undefined)
 

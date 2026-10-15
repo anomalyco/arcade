@@ -13,8 +13,8 @@ const out = resolve(arg("--out") ?? resolve(root, "../../captures/unified-lab"))
 mkdirSync(out, { recursive: true })
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-const executablePath = readdirSync(cache).filter(n => /^chromium-\d+$/.test(n)).reverse()
-  .map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+const executablePath = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).reverse()
+  .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath, "Playwright Chromium binary required")
 
 let server: ViteDevServer | undefined

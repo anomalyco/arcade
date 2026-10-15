@@ -27,7 +27,7 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const newest = (re: RegExp) => readdirSync(cache).filter(n => re.test(n)).sort((a, b) => Number(b.split("-").pop()) - Number(a.split("-").pop()))
 const executablePath =
   newest(/^chromium_headless_shell-\d+$/).map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync) ??
-  newest(/^chromium-\d+$/).map(n => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
+  newest(/^chromium_headless_shell-\d+$/).map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 
 const browser = await chromium.launch({
   executablePath,

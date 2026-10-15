@@ -69,9 +69,9 @@ function rawHttpUpgrade(port: number, path: string, headers: Record<string, stri
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache)
-  .filter(name => /^chromium-\d+$/.test(name))
+  .filter(name => /^chromium_headless_shell-\d+$/.test(name))
   .reverse()
-  .map(name => `${cache}/${name}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+  .map(name => `${cache}/${name}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
   .find(existsSync)
 
 const browser = await chromium.launch({

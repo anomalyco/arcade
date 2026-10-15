@@ -63,7 +63,7 @@ try {
   await reset();await frame();await page.screenshot({path:join(out,"01-ready.png")})
   await click(12,11)
   let orbit:Awaited<ReturnType<typeof state>>|undefined,pop:typeof orbit,rising:typeof orbit,chasing:typeof orbit,windup:typeof orbit,impact:typeof orbit
-  const clip=process.env.CLIP!=="0"
+  const clip = process.argv.includes("--video") || process.env.ARCADE_VIDEO === "1" || process.env.CLIP === "1"
   for(let i=0;i<240;i++) {
     if(i===115) {await page.keyboard.press("2");await click(6,8)}
     await advance(1000/30);await frame()

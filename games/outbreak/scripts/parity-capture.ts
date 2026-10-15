@@ -19,10 +19,10 @@ const game = resolve(import.meta.dir, "..")
 function launch(): Promise<Browser> {
   const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
   const chrome = readdirSync(cache)
-    .filter((n) => /^chromium-\d+$/.test(n))
+    .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
     .sort()
     .reverse()
-    .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+    .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
     .find(existsSync)
   assert(chrome, "Install Chromium before the capture")
   return chromium.launch({

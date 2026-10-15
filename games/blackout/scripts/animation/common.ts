@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { basename, join, resolve } from "node:path"
 
 export const repoRoot = resolve(import.meta.dir, "../../../..")
 export const blackoutRoot = resolve(import.meta.dir, "../..")
@@ -18,8 +18,13 @@ export function parseArgs(argv: string[], defaults: { tag: string; out: string }
     else flags.add(a.slice(2))
   }
   if (values.tag) tag = values.tag
-  const out = resolve(values.out ?? join(repoRoot, "captures/animation", defaults.out))
-  mkdirSync(out, { recursive: true })
+  let out = resolve(values.out ?? join(repoRoot, "captures/animation", defaults.out))
+  try {
+    mkdirSync(out, { recursive: true })
+  } catch {
+    out = join(repoRoot, "captures/animation", basename(out) || defaults.out)
+    mkdirSync(out, { recursive: true })
+  }
   return { tag, out, values, flags }
 }
 
