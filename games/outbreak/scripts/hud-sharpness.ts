@@ -52,7 +52,9 @@ type Item = { kind: "callout" | "vital" | "control"; label: string; file: string
 const items: Item[] = []
 try {
   for (const dpr of [1, 2]) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: dpr })
+    // One context per DPR, kept open: closing a WebGPU page and opening another has crashed headless Chromium here.
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: dpr })
+    const page = await context.newPage()
     const errors: string[] = []
     page.on("pageerror", (e) => errors.push(e.message))
     await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
@@ -85,7 +87,7 @@ try {
     const found = await page.evaluate(() => {
       const pick = (sel: string, kind: string) =>
         [...document.querySelectorAll<HTMLElement>(sel)]
-          .filter((e) => Number(getComputedStyle(e).opacity) > 0.5 && e.getBoundingClientRect().width > 2)
+          .filter((e) => Number(getComputedStyle(e).opacity) > 0.5 && (e.querySelector(".callout-body") ?? e).getBoundingClientRect().width > 2)
           .map((e) => {
             const r = (e.querySelector(".callout-body") ?? e).getBoundingClientRect()
             return { kind, label: (e.textContent || e.dataset.meter || "").trim(), rect: { x: r.x, y: r.y, width: r.width, height: r.height }, transform: e.style.transform }
@@ -101,7 +103,6 @@ try {
       items.push({ ...(f as Omit<Item, "file" | "dpr">), kind: f.kind as Item["kind"], file, dpr })
     }
     assert.deepEqual(errors, [])
-    await page.close()
   }
   writeFileSync(resolve(out, "items.json"), JSON.stringify(items, null, 2))
   console.log(`${items.length} crops in ${out}`)

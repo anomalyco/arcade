@@ -283,15 +283,16 @@ try {
         vitals: document.body.dataset.vitals,
         modes: [...document.querySelectorAll<HTMLElement>(".vital")].filter((e) => Number(e.style.opacity) > 0.05).map((e) => `${e.dataset.meter}:${e.dataset.mode}`),
         icons: [...document.querySelectorAll<HTMLElement>(".status-icon")].filter((e) => !e.hidden).map((e) => e.dataset.meter),
+        ground: [...document.querySelectorAll<SVGGElement>(".ground-ring g")].filter((g) => Number(g.style.opacity) > 0.05 && (g.closest("svg") as SVGElement).style.display !== "none").map((g) => g.dataset.meter),
         look: document.querySelector<HTMLElement>(".callouts")!.dataset.look,
       }))
       await snap(page, `style-${name}-${look}`, `${["Today", "Below Feet", "Hades Style", "Zomboid Style", "Diegetic"][value]} · ${LOOKS[look]}`)
       const expected: Record<string, () => void> = {
         today: () => assert(dom.vitals === "edge" && dom.modes.length === 0),
-        below: () => assert(dom.modes.includes("stamina:row") && dom.modes.includes("health:row")),
+        below: () => assert(dom.modes.includes("stamina:row") && dom.modes.includes("health:row"), JSON.stringify(dom)),
         hades: () => assert(dom.chrome === "quiet" && dom.modes.includes("stamina:bar") && dom.modes.includes("health:bar")),
         zomboid: () => assert(dom.look === "halo" && dom.icons.includes("stamina") && dom.icons.includes("health") && dom.modes.length === 0),
-        diegetic: () => assert(dom.chrome === "none" && dom.modes.includes("stamina:ground") && dom.modes.includes("health:ground")),
+        diegetic: () => assert(dom.chrome === "none" && dom.ground.includes("stamina") && dom.ground.includes("health"), JSON.stringify(dom)),
       }
       expected[name]!()
     }

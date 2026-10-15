@@ -108,11 +108,8 @@ export type BodyBox = {
   /** Aim as a screen vector (unnormalised). */
   aimX: number
   aimY: number
-  /** Screen centre and size of a ~0.5 m circle on the ground around the feet, for ground-drawn meters. */
-  footX?: number
-  footY?: number
-  footW?: number
-  footH?: number
+  /** A ground circle around the feet projected to the screen (see `VitalsLayout.ground`), for ground-drawn meters. */
+  ground?: readonly number[]
 }
 
 /** The point on the body box edge facing `side`, pushed out by `gap` pixels. */

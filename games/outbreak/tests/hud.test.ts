@@ -9,7 +9,7 @@ import { alignFor, chooseSide, SideBlend, VITALS_BARS, VITALS_BESIDE, VITALS_EDG
 import { DEFAULT_HUD_SETTINGS } from "../src/hud/settings"
 import { resolveStyle, STYLE_BELOW, STYLE_DIEGETIC, STYLE_HADES, STYLE_TODAY, STYLE_ZOMBOID } from "../src/hud/styles"
 import { RemoteAdapter } from "../src/hud/remote"
-import { ActorVitals, type VitalsInput } from "../src/hud/vitals"
+import { ActorVitals, GROUND_SEGMENTS, groundArc, groundFront, type VitalsInput } from "../src/hud/vitals"
 
 describe("callout model", () => {
   test("stacks newest on top, keeps progress nearest the head, and caps the stack", () => {
@@ -357,8 +357,28 @@ describe("HUD styles", () => {
     expect(resolveStyle({ ...base, hudStyle: STYLE_DIEGETIC })).toMatchObject({ vitals: VITALS_GROUND, chrome: "none", quiet: true })
     expect(resolveStyle({ ...base, hudStyle: STYLE_ZOMBOID, calloutPlacement: 0, vitalsPlacement: VITALS_FEET })).toMatchObject({ callouts: "down", vitals: VITALS_FEET })
     expect(resolveStyle({ ...base, hudStyle: STYLE_BELOW, avoidAim: false }).avoid).toBe(false)
-    expect(DEFAULT_HUD_SETTINGS.hudStyle).toBe(STYLE_BELOW)
+    expect(DEFAULT_HUD_SETTINGS.hudStyle).toBe(STYLE_DIEGETIC)
     // Kit turned the noise tags off; they stay a Lab option (HUD › Noise callouts).
     expect(DEFAULT_HUD_SETTINGS.noiseCallouts).toBe(false)
+  })
+})
+
+describe("ground ring", () => {
+  test("arcs follow the projected circle from the front outward and leave the back open", () => {
+    // A circle of radius 10 around (100, 100) drawn as an ellipse squashed to half height.
+    const pts: number[] = []
+    for (let i = 0; i < GROUND_SEGMENTS; i++) {
+      const t = (i / GROUND_SEGMENTS) * Math.PI * 2
+      pts.push(100 + Math.cos(t) * 10, 100 + Math.sin(t) * 5)
+    }
+    expect(groundFront(pts)).toBeCloseTo(105)
+    const nums = (d: string) => d.split(/[ML]/).filter(Boolean).map((p) => p.split(" ").map(Number))
+    const left = nums(groundArc(pts, 1))
+    const right = nums(groundArc(pts, -1))
+    // Both start near the front (bottom) and climb; stamina goes left, health right; neither reaches the top (y < 96.5).
+    expect(left[0]![1]).toBeGreaterThan(104)
+    expect(left.at(-1)![0]).toBeLessThan(95)
+    expect(right.at(-1)![0]).toBeGreaterThan(105)
+    expect(Math.min(...left.map((p) => p[1]!), ...right.map((p) => p[1]!))).toBeGreaterThan(96.5)
   })
 })

@@ -168,8 +168,12 @@ export type VitalsPlacement = {
 
 /** Where an actor's meters go this frame. Each meter takes the first layout that accepts it. */
 export type VitalsLayout = {
-  /** Stamina and health as ellipses on the ground around the feet. */
-  ground?: { x: number; y: number; w: number; h: number }
+  /**
+   * Stamina and health as two arcs of one ring on the ground around the feet. `points` is the projected ground circle,
+   * GROUND_SEGMENTS points as flat [x0, y0, x1, y1, …], point i at plan angle 2πi/GROUND_SEGMENTS from +x (the
+   * screen-bottom point is at index GROUND_SEGMENTS / 4).
+   */
+  ground?: { points: readonly number[]; scale: number }
   /** Every meter as a thin bar, stacked downward from (x, y) and centred on x. */
   bars?: { x: number; y: number; scale: number }
   /** Remaining meters as rings in a row. */
@@ -192,11 +196,53 @@ type RingNode = {
 
 const GROUND_METERS = new Set<MeterId>(["stamina", "health"])
 
+/** Points in a projected ground circle (see `VitalsLayout.ground`). */
+export const GROUND_SEGMENTS = 48
+/** Half-gap at the front of the ring, between the stamina and health arcs (radians of plan angle). */
+const GROUND_FRONT_GAP = 0.09 * Math.PI
+/** Length of each arc. What is left at the back (about 110°) is where the body stands, so nothing crosses the legs. */
+const GROUND_ARC = 0.6 * Math.PI
+
+/** Screen point of the projected ground circle at plan angle `theta`, interpolated between samples. */
+function ringPoint(points: readonly number[], theta: number): [number, number] {
+  const n = GROUND_SEGMENTS
+  let f = ((theta / (2 * Math.PI)) * n) % n
+  if (f < 0) f += n
+  const i = Math.floor(f)
+  const j = (i + 1) % n
+  const t = f - i
+  return [points[i * 2]! + (points[j * 2]! - points[i * 2]!) * t, points[i * 2 + 1]! + (points[j * 2 + 1]! - points[i * 2 + 1]!) * t]
+}
+
+/** SVG path along the ground circle from the front gap outward, toward the left (dir 1) or the right (dir -1). */
+export function groundArc(points: readonly number[], dir: 1 | -1): string {
+  const start = Math.PI / 2 + dir * GROUND_FRONT_GAP
+  const steps = 18
+  let d = ""
+  for (let k = 0; k <= steps; k++) {
+    const [x, y] = ringPoint(points, start + dir * GROUND_ARC * (k / steps))
+    d += `${k ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`
+  }
+  return d
+}
+
+/** Lowest screen point of the ring (its front), for starting callouts below it. */
+export function groundFront(points: readonly number[]): number {
+  return ringPoint(points, Math.PI / 2)[1]
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg"
+type GroundArc = { g: SVGGElement; paths: SVGPathElement[]; fill: SVGPathElement; d: string; state: string; p: string; opacity: string }
+type GroundRing = { svg: SVGSVGElement; arcs: Record<"stamina" | "health", GroundArc>; width: string }
+
 /** Pooled DOM meters for any number of actors. Idle actors write nothing. */
 export class VitalsLayer {
   readonly root: HTMLDivElement
   private nodes = new Map<string, RingNode[]>()
+  private grounds = new Map<string, GroundRing>()
   private reduced = ""
+  /** Device pixels per CSS pixel; ring positions snap to it. */
+  pixelRatio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1
 
   constructor(
     parent: HTMLElement,
@@ -238,8 +284,10 @@ export class VitalsLayer {
     }
     const at: VitalsLayout | null = layout && "ax" in layout ? { row: layout } : layout
     let nodes = this.nodes.get(actorId)
+    if (!at?.ground) this.hideGround(actorId)
     if (!at || vitals.presence <= 0.001) {
       if (nodes) for (const n of nodes) setOpacity(n, "0")
+      this.hideGround(actorId)
       return
     }
     if (!nodes) {
@@ -250,10 +298,12 @@ export class VitalsLayer {
     const mode = (m: Meter): Mode =>
       hidden?.has(m.id) ? "" : at.ground && GROUND_METERS.has(m.id) ? "ground" : at.bars ? "bar" : at.row ? "row" : ""
 
-    // Rings in a row.
+    const snap = (v: number) => Math.round(v * this.pixelRatio) / this.pixelRatio
+    // Rings in a row, each sized by its own width and font size (never a scale transform) and placed on whole device
+    // pixels, so the ring edge and the magazine count stay crisp.
     if (at.row) {
       const row = at.row
-      const d = this.size * row.scale
+      const d = Math.round(this.size * row.scale)
       const gap = d * 0.28
       const skip = new Set(meters.filter((m) => mode(m) !== "row").map((m) => m.id))
       const width = this.rowWidth(vitals, row.scale, skip)
@@ -265,7 +315,7 @@ export class VitalsLayer {
         if (mode(m) !== "row" || m.alpha <= 0.001) continue
         const x = row.reverse ? left + width - offset - d : left + offset
         offset += m.alpha * (d + gap)
-        this.place(nodes[i]!, m, "row", `translate(${x.toFixed(1)}px,${top.toFixed(1)}px) scale(${(d / this.size).toFixed(3)})`, "", reducedMotion)
+        this.place(nodes[i]!, m, "row", `translate(${snap(x)}px,${snap(top)}px)`, `${d}x${d}`, reducedMotion)
       }
     }
     // Thin bars stacked under the feet.
@@ -275,30 +325,95 @@ export class VitalsLayer {
       for (let i = 0; i < meters.length; i++) {
         const m = meters[i]!
         if (mode(m) !== "bar" || m.alpha <= 0.001) continue
-        this.place(nodes[i]!, m, "bar", `translate(${(at.bars.x - w / 2).toFixed(1)}px,${y.toFixed(1)}px)`, `${w.toFixed(0)}x${h.toFixed(1)}`, reducedMotion)
+        this.place(nodes[i]!, m, "bar", `translate(${snap(at.bars.x - w / 2)}px,${snap(y)}px)`, `${w}x${h}`, reducedMotion)
         y += m.alpha * (h + gap)
-      }
-    }
-    // Ellipses on the ground: stamina outside, health just inside it.
-    if (at.ground) {
-      const g = at.ground
-      for (let i = 0; i < meters.length; i++) {
-        const m = meters[i]!
-        if (mode(m) !== "ground" || m.alpha <= 0.001) continue
-        const k = m.id === "health" ? 0.74 : 1
-        const w = g.w * k
-        const h = g.h * k
-        this.place(nodes[i]!, m, "ground", `translate(${(g.x - w / 2).toFixed(1)}px,${(g.y - h / 2).toFixed(1)}px)`, `${w.toFixed(0)}x${h.toFixed(0)}`, reducedMotion)
       }
     }
     for (let i = 0; i < meters.length; i++) {
       const m = meters[i]!
-      if (!mode(m) || m.alpha <= 0.001) setOpacity(nodes[i]!, "0")
+      const md = mode(m)
+      if (!md || md === "ground" || m.alpha <= 0.001) setOpacity(nodes[i]!, "0")
     }
+    if (at.ground) this.drawGround(actorId, vitals, at.ground, hidden)
+  }
+
+  /** Stamina on the left arc and health on the right arc of one ring on the ground, filling from the front. */
+  private drawGround(actorId: string, vitals: ActorVitals, g: NonNullable<VitalsLayout["ground"]>, hidden?: ReadonlySet<MeterId>): void {
+    let ring = this.grounds.get(actorId)
+    if (!ring) {
+      ring = this.createGround()
+      this.grounds.set(actorId, ring)
+    }
+    ring.svg.style.display = ""
+    const width = (2.6 * g.scale).toFixed(2)
+    if (ring.width !== width) {
+      ring.width = width
+      ring.svg.style.setProperty("--ground-w", width)
+    }
+    for (const id of ["stamina", "health"] as const) {
+      const arc = ring.arcs[id]
+      const m = vitals.meter(id)
+      const alpha = hidden?.has(id) ? 0 : m.alpha
+      const opacity = alpha.toFixed(2)
+      if (arc.opacity !== opacity) {
+        arc.opacity = opacity
+        arc.g.style.opacity = opacity
+      }
+      if (alpha <= 0.001) continue
+      const d = groundArc(g.points, id === "stamina" ? 1 : -1)
+      if (arc.d !== d) {
+        arc.d = d
+        for (const path of arc.paths) path.setAttribute("d", d)
+      }
+      const state = m.draining ? `${m.state} draining` : m.state
+      if (arc.state !== state) {
+        arc.state = state
+        arc.g.dataset.state = m.state
+        if (m.draining) arc.g.dataset.draining = "true"
+        else delete arc.g.dataset.draining
+      }
+      const p = m.fill.toFixed(3)
+      if (arc.p !== p) {
+        arc.p = p
+        arc.fill.style.strokeDasharray = `${p} 1`
+        // A zero-length dash still draws its round cap; hide the fill when there is nothing to show.
+        arc.fill.style.opacity = m.fill < 0.01 ? "0" : ""
+      }
+    }
+  }
+
+  private hideGround(actorId: string): void {
+    const ring = this.grounds.get(actorId)
+    if (ring && ring.svg.style.display !== "none") ring.svg.style.display = "none"
+  }
+
+  private createGround(): GroundRing {
+    const svg = document.createElementNS(SVG_NS, "svg")
+    svg.setAttribute("class", "ground-ring")
+    const arcs = {} as GroundRing["arcs"]
+    for (const id of ["stamina", "health"] as const) {
+      const g = document.createElementNS(SVG_NS, "g")
+      g.dataset.meter = id
+      g.style.opacity = "0"
+      // A dark casing for contrast on lit ground, the empty track, and the fill drawn as a dash of the arc's length.
+      const paths = ["casing", "track", "fill"].map((cls) => {
+        const path = document.createElementNS(SVG_NS, "path")
+        path.setAttribute("class", cls)
+        path.setAttribute("pathLength", "1")
+        g.append(path)
+        return path
+      })
+      svg.append(g)
+      arcs[id] = { g, paths, fill: paths[2]!, d: "", state: "", p: "", opacity: "0" }
+    }
+    this.root.append(svg)
+    return { svg, arcs, width: "" }
   }
 
   /** Removes an actor's meters (a remote survivor left). */
   drop(actorId: string): void {
+    this.grounds.get(actorId)?.svg.remove()
+    this.grounds.delete(actorId)
     const nodes = this.nodes.get(actorId)
     if (!nodes) return
     for (const n of nodes) n.el.remove()
@@ -311,7 +426,7 @@ export class VitalsLayer {
   }
 
   private bar(scale: number) {
-    return { w: Math.round(this.size * 2.3 * scale), h: Math.max(3, this.size * 0.22 * scale), gap: Math.max(2, this.size * 0.14 * scale) }
+    return { w: Math.round(this.size * 2.3 * scale), h: Math.max(3, Math.round(this.size * 0.22 * scale)), gap: Math.max(2, Math.round(this.size * 0.14 * scale)) }
   }
 
   private place(n: RingNode, m: Meter, mode: Mode, transform: string, size: string, reducedMotion: boolean): void {
@@ -324,6 +439,9 @@ export class VitalsLayer {
       const [w, h] = size ? size.split("x") : ["", ""]
       n.el.style.width = w ? `${w}px` : ""
       n.el.style.height = h ? `${h}px` : ""
+      // Rings scale their stroke, glyph and count with the ring's own size, not with a transform.
+      if (mode === "row" && w) n.el.style.setProperty("--vital-size", `${w}px`)
+      else n.el.style.removeProperty("--vital-size")
     }
     if (n.transform !== transform) {
       n.transform = transform
