@@ -896,14 +896,14 @@ export class ZombieCrowdRenderer {
         let headPitch = -1.35 * c
 
         if (!isDead) {
-          // Knockdown: knocked onto back or side, struggling to push up as timer expires
-          const struggle = a.timer < 0.85 ? Math.sin((0.85 - a.timer) * 9.0) * 0.18 : 0
-          pelvisY = groundY + (HIP * (1 - c) + 0.15 * c)
-          pelvisPitch = 1.28 * c
-          pelvisRoll = sideSign * 0.42 * c
-          torsoPitch = (1.18 - struggle) * c
-          torsoRoll = sideSign * 0.35 * c
-          headPitch = (0.72 - struggle * 1.2) * c
+          // Knockdown: propped on one elbow with head craned up, struggling to push up as timer expires
+          const struggle = Math.sin(time * 5.2 + a.id * 1.7) * 0.14 + (a.timer < 0.85 ? (0.85 - a.timer) * 0.24 : 0)
+          pelvisY = groundY + (HIP * (1 - c) + 0.16 * c)
+          pelvisPitch = 1.18 * c
+          pelvisRoll = sideSign * 0.46 * c
+          torsoPitch = (1.02 - struggle) * c
+          torsoRoll = sideSign * 0.42 * c
+          headPitch = (0.48 - struggle * 1.1) * c
         } else if (deathVar === 1) {
           // Variant 1: fall backward onto spine
           pelvisPitch = 1.38 * c
@@ -973,6 +973,16 @@ export class ZombieCrowdRenderer {
 
         for (let i = 0; i < 2; i++) {
           const side = i ? 1 : -1
+          const legFwdI = !isDead ? (i === 0 ? 0.62 : 0.34) : legFwd
+          const armFwdI = !isDead
+            ? i === 0
+              ? -0.34
+              : 0.28 + 0.12 * Math.sin(time * 5.2 + a.id)
+            : armFwd
+          const armTargetY =
+            !isDead && i === 1
+              ? groundY + 0.16 + 0.08 * Math.max(0, Math.sin(time * 5.2 + a.id))
+              : groundY + 0.08
           const hipZ = side * RIG.hipW
           const hipX = bBuf[pelvisOff]! + pzAxisX * hipZ
           const hipY = bBuf[pelvisOff + 1]! + pzAxisY * hipZ
@@ -984,9 +994,9 @@ export class ZombieCrowdRenderer {
             hipX,
             hipY,
             hipZWorld,
-            a.x + cosY * legFwd - sinY * side * 0.18,
+            a.x + cosY * legFwdI - sinY * side * 0.18,
             groundY + 0.09,
-            a.y + sinY * legFwd + cosY * side * 0.18,
+            a.y + sinY * legFwdI + cosY * side * 0.18,
             RIG.thigh,
             RIG.shin,
             poleX,
@@ -1030,9 +1040,9 @@ export class ZombieCrowdRenderer {
             shX,
             shY,
             shZWorld,
-            a.x + cosY * armFwd - sinY * side * 0.32,
-            groundY + 0.08,
-            a.y + sinY * armFwd + cosY * side * 0.32,
+            a.x + cosY * armFwdI - sinY * side * 0.32,
+            armTargetY,
+            a.y + sinY * armFwdI + cosY * side * 0.32,
             RIG.upper,
             RIG.fore,
             aPoleX,

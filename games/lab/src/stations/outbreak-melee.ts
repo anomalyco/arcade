@@ -70,8 +70,8 @@ const variants: StationVariant[] = [
   },
   {
     id: "knockdown",
-    label: "Downed & Prompt",
-    note: "Knocked-down zombie at the survivor's feet showing the world-anchored Mouse0 / V Finish off key-cap prompt.",
+    label: "Knockdown Posture",
+    note: "Knocked-down zombie propped on one elbow at the survivor's feet with a subtle ground pulse and fading key cap (no text labels).",
     setup: stage("crowbar", "knockdown"),
   },
   {

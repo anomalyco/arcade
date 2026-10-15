@@ -91,6 +91,8 @@ export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
       Pose,
       | "equippedItem"
       | "meleeWeapon"
+      | "meleeDurability"
+      | "meleeMaxDurability"
       | "meleePhase"
       | "meleePhaseTime"
       | "meleePhaseDuration"
@@ -111,61 +113,98 @@ export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
     aiming?: boolean
   }
 
-/** Builds procedural 3D meshes for all 9 melee weapons (grip at origin, shaft/blade along +x). */
-export function buildMeleeWeaponMeshes(): Record<MeleeWeaponId, Mesh> {
+/** Maps remaining/max melee durability to a visual wear stage: 0 = fresh, 1 = bent/worn, 2 = cracked/failing. */
+export function weaponWearStage(durability?: number, maxDurability?: number): 0 | 1 | 2 {
+  if (maxDurability === undefined || maxDurability <= 0 || durability === undefined) return 0
+  const ratio = clamp(durability / maxDurability, 0, 1)
+  if (ratio <= 0.25) return 2
+  if (ratio <= 0.6) return 1
+  return 0
+}
+
+/** Builds procedural 3D meshes for all 9 melee weapons (grip at origin, shaft/blade along +x) at a given wear stage. */
+export function buildMeleeWeaponMeshes(wear: 0 | 1 | 2 = 0): Record<MeleeWeaponId, Mesh> {
+  const dy = wear === 1 ? 0.042 : wear === 2 ? 0.088 : 0
+  const dz = wear === 1 ? 0.026 : wear === 2 ? 0.056 : 0
+  const gap = wear === 2 ? 0.014 : 0
+  const crackCol = hex(0x161412)
+  const rawSteel = hex(0x7d868e)
+  const rawWood = hex(0x5e4328)
+
   const knife = new Mesh()
   knife.box(-0.04, -0.016, -0.014, 0.11, 0.018, 0.014, hex(0x28231e), MAT.actor)
   knife.box(0.11, -0.024, -0.018, 0.125, 0.026, 0.018, hex(0x7c8286), MAT.shiny)
-  knife.box(0.125, -0.022, -0.005, 0.42, 0.02, 0.005, hex(0xd8dfe4), MAT.shiny)
+  knife.box(0.125, -0.022, -0.005, 0.26, 0.02, 0.005, hex(wear === 2 ? 0x9aa2a8 : 0xd8dfe4), MAT.shiny)
+  if (wear > 0) knife.box(0.25, -0.024, -0.008, 0.275, 0.012, 0.008, crackCol, MAT.actor)
+  knife.box(0.26 + gap, -0.022 + dy * 0.6, -0.005 + dz * 0.6, 0.42, 0.02 + dy * 0.6, 0.005 + dz * 0.6, hex(wear > 0 ? 0xaeb6bc : 0xd8dfe4), MAT.shiny)
 
   const hammer = new Mesh()
-  hammer.box(-0.05, -0.016, -0.015, 0.39, 0.016, 0.015, hex(0x9a6e42), MAT.timber)
+  hammer.box(-0.05, -0.016, -0.015, 0.22, 0.016, 0.015, hex(0x9a6e42), MAT.timber)
   hammer.box(-0.05, -0.018, -0.017, 0.12, 0.018, 0.017, hex(0x2b2d30), MAT.actor)
-  hammer.box(0.36, -0.068, -0.024, 0.46, 0.068, 0.024, hex(0x4a5158), MAT.shiny)
-  hammer.box(0.38, 0.068, -0.02, 0.44, 0.108, 0.02, hex(0x6e7780), MAT.shiny)
+  if (wear > 0) hammer.box(0.21, -0.019, -0.018, 0.24, 0.019, 0.018, crackCol, MAT.actor)
+  hammer.box(0.22 + gap, -0.016 + dy * 0.7, -0.015 + dz * 0.7, 0.39, 0.016 + dy * 0.7, 0.015 + dz * 0.7, wear > 0 ? rawWood : hex(0x9a6e42), MAT.timber)
+  hammer.box(0.36 + gap, -0.068 + dy * 0.7, -0.024 + dz * 0.7, 0.46 + gap, 0.068 + dy * 0.7, 0.024 + dz * 0.7, hex(0x4a5158), MAT.shiny)
+  hammer.box(0.38 + gap, 0.068 + dy * 0.7, -0.02 + dz * 0.7, 0.44 + gap, 0.108 + dy * 0.7, 0.02 + dz * 0.7, hex(0x6e7780), MAT.shiny)
 
   const pipe = new Mesh()
-  pipe.box(-0.06, -0.018, -0.018, 0.58, 0.018, 0.018, hex(0x697279), MAT.shiny)
+  pipe.box(-0.06, -0.018, -0.018, 0.28, 0.018, 0.018, hex(0x697279), MAT.shiny)
   pipe.box(0.02, -0.021, -0.021, 0.16, 0.021, 0.021, hex(0x36393c), MAT.actor)
-  pipe.box(0.54, -0.032, -0.032, 0.64, 0.032, 0.032, hex(0x4e565d), MAT.shiny)
+  if (wear > 0) pipe.box(0.27, -0.022, -0.022, 0.31, 0.022, 0.022, crackCol, MAT.actor)
+  pipe.box(0.28 + gap, -0.018 + dy, -0.018 + dz, 0.58, 0.018 + dy, 0.018 + dz, hex(wear > 0 ? 0x555d63 : 0x697279), MAT.shiny)
+  pipe.box(0.54, -0.032 + dy, -0.032 + dz, 0.64, 0.032 + dy, 0.032 + dz, hex(0x4e565d), MAT.shiny)
 
+  const crowbarPaint = hex(wear === 2 ? 0x72221d : wear === 1 ? 0x942a24 : 0xb5322a)
   const crowbar = new Mesh()
-  crowbar.box(-0.06, -0.021, -0.021, 0.64, 0.021, 0.021, hex(0xb5322a), MAT.actor)
+  crowbar.box(-0.06, -0.021, -0.021, 0.28, 0.021, 0.021, crowbarPaint, MAT.actor)
   crowbar.box(0.02, -0.023, -0.023, 0.18, 0.023, 0.023, hex(0x2e3135), MAT.actor)
   crowbar.box(-0.09, -0.025, -0.015, -0.02, 0.025, 0.015, hex(0x7c8690), MAT.shiny)
-  crowbar.box(0.58, -0.025, -0.026, 0.72, 0.062, 0.028, hex(0x7c8690), MAT.shiny)
-  crowbar.box(0.62, 0.055, -0.026, 0.71, 0.105, 0.036, hex(0x9ca8b2), MAT.shiny)
+  if (wear > 0) {
+    // Visible stress bend & dark fracture notch mid-shaft where the crowbar is yielding
+    crowbar.box(0.265, -0.025, -0.025, 0.305, 0.025, 0.025, crackCol, MAT.actor)
+    crowbar.box(0.28, -0.018 + dy * 0.45, -0.018 + dz * 0.45, 0.46, 0.022 + dy * 0.45, 0.022 + dz * 0.45, rawSteel, MAT.shiny)
+  }
+  crowbar.box(0.28 + gap, -0.021 + dy, -0.021 + dz, 0.64, 0.021 + dy, 0.021 + dz, crowbarPaint, MAT.actor)
+  crowbar.box(0.58 + gap, -0.025 + dy, -0.026 + dz, 0.72 + gap, 0.062 + dy, 0.028 + dz, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.62 + gap, 0.055 + dy, -0.026 + dz, 0.71 + gap, 0.105 + dy, 0.036 + dz, hex(0x9ca8b2), MAT.shiny)
 
   const machete = new Mesh()
   machete.box(-0.05, -0.02, -0.016, 0.13, 0.02, 0.016, hex(0x3a2a1d), MAT.timber)
   machete.box(0.12, -0.03, -0.02, 0.145, 0.032, 0.02, hex(0x4a4e52), MAT.actor)
-  machete.box(0.145, -0.028, -0.006, 0.52, 0.024, 0.006, hex(0xc2cbd2), MAT.shiny)
-  machete.box(0.48, -0.036, -0.006, 0.68, 0.028, 0.006, hex(0xd8e0e6), MAT.shiny)
+  machete.box(0.145, -0.028, -0.006, 0.36, 0.024, 0.006, hex(0xc2cbd2), MAT.shiny)
+  if (wear > 0) machete.box(0.345, -0.03, -0.009, 0.38, 0.015, 0.009, crackCol, MAT.actor)
+  machete.box(0.36 + gap, -0.028 + dy * 0.8, -0.006 + dz, 0.52, 0.024 + dy * 0.8, 0.006 + dz, hex(wear > 0 ? 0x9ca6ae : 0xc2cbd2), MAT.shiny)
+  machete.box(0.48 + gap, -0.036 + dy, -0.006 + dz, 0.68, 0.028 + dy, 0.006 + dz, hex(wear > 0 ? 0xb0bac2 : 0xd8e0e6), MAT.shiny)
 
   const bat = new Mesh()
   bat.box(-0.08, -0.024, -0.024, -0.05, 0.024, 0.024, hex(0x8c663e), MAT.timber)
   bat.box(-0.05, -0.017, -0.017, 0.22, 0.017, 0.017, hex(0x282a2c), MAT.actor)
-  bat.box(0.22, -0.024, -0.024, 0.48, 0.024, 0.024, hex(0xb88b58), MAT.timber)
-  bat.box(0.46, -0.034, -0.034, 0.78, 0.034, 0.034, hex(0xc69862), MAT.timber)
+  bat.box(0.22, -0.024, -0.024, 0.42, 0.024, 0.024, hex(0xb88b58), MAT.timber)
+  if (wear > 0) bat.box(0.40, -0.028, -0.028, 0.445, 0.028, 0.028, crackCol, MAT.actor)
+  bat.box(0.42 + gap, -0.034 + dy, -0.034 + dz, 0.78, 0.034 + dy, 0.034 + dz, wear > 0 ? rawWood : hex(0xc69862), MAT.timber)
 
   const spikedBoard = new Mesh()
   spikedBoard.box(-0.08, -0.022, -0.016, 0.24, 0.022, 0.016, hex(0x524c44), MAT.actor)
-  spikedBoard.box(0.2, -0.042, -0.022, 0.84, 0.042, 0.022, hex(0x8e6b44), MAT.timber)
+  spikedBoard.box(0.2, -0.042, -0.022, 0.44, 0.042, 0.022, hex(0x8e6b44), MAT.timber)
+  if (wear > 0) spikedBoard.box(0.42, -0.046, -0.025, 0.465, 0.046, 0.025, crackCol, MAT.actor)
+  spikedBoard.box(0.44 + gap, -0.042 + dy, -0.022 + dz, 0.84, 0.042 + dy, 0.022 + dz, wear > 0 ? rawWood : hex(0x8e6b44), MAT.timber)
   for (const sx of [0.54, 0.64, 0.73, 0.8]) {
-    spikedBoard.box(sx - 0.008, -0.095, -0.008, sx + 0.008, 0.095, 0.008, hex(0x9ca6ae), MAT.shiny)
+    spikedBoard.box(sx - 0.008 + gap, -0.095 + dy, -0.008 + dz, sx + 0.008 + gap, 0.095 + dy, 0.008 + dz, hex(0x9ca6ae), MAT.shiny)
   }
 
   const axe = new Mesh()
-  axe.box(-0.08, -0.018, -0.015, 0.66, 0.018, 0.015, hex(0x966a3e), MAT.timber)
-  axe.box(0.54, -0.055, -0.024, 0.68, 0.045, 0.024, hex(0x3a4046), MAT.actor)
-  axe.box(0.52, -0.115, -0.012, 0.7, -0.045, 0.012, hex(0xc8d2da), MAT.shiny)
+  axe.box(-0.08, -0.018, -0.015, 0.34, 0.018, 0.015, hex(0x966a3e), MAT.timber)
+  if (wear > 0) axe.box(0.325, -0.022, -0.019, 0.365, 0.022, 0.019, crackCol, MAT.actor)
+  axe.box(0.34 + gap, -0.018 + dy, -0.015 + dz, 0.66, 0.018 + dy, 0.015 + dz, wear > 0 ? rawWood : hex(0x966a3e), MAT.timber)
+  axe.box(0.54 + gap, -0.055 + dy, -0.024 + dz, 0.68 + gap, 0.045 + dy, 0.024 + dz, hex(0x3a4046), MAT.actor)
+  axe.box(0.52 + gap, -0.115 + dy, -0.012 + dz, 0.7 + gap, -0.045 + dy, 0.012 + dz, hex(0xc8d2da), MAT.shiny)
 
   const fireAxe = new Mesh()
   fireAxe.box(-0.1, -0.02, -0.016, 0.42, 0.02, 0.016, hex(0xa87c4f), MAT.timber)
-  fireAxe.box(0.42, -0.021, -0.017, 0.84, 0.021, 0.017, hex(0x9e2420), MAT.actor)
-  fireAxe.box(0.68, -0.065, -0.026, 0.84, 0.055, 0.026, hex(0x9e2420), MAT.actor)
-  fireAxe.box(0.66, -0.135, -0.012, 0.88, -0.055, 0.012, hex(0xd8e2ea), MAT.shiny)
-  fireAxe.box(0.72, 0.055, -0.014, 0.8, 0.125, 0.014, hex(0xb8c2ca), MAT.shiny)
+  if (wear > 0) fireAxe.box(0.405, -0.025, -0.021, 0.445, 0.025, 0.021, crackCol, MAT.actor)
+  fireAxe.box(0.42 + gap, -0.021 + dy, -0.017 + dz, 0.84, 0.021 + dy, 0.017 + dz, hex(wear > 0 ? 0x761b18 : 0x9e2420), MAT.actor)
+  fireAxe.box(0.68 + gap, -0.065 + dy, -0.026 + dz, 0.84 + gap, 0.055 + dy, 0.026 + dz, hex(0x9e2420), MAT.actor)
+  fireAxe.box(0.66 + gap, -0.135 + dy, -0.012 + dz, 0.88 + gap, -0.055 + dy, 0.012 + dz, hex(0xd8e2ea), MAT.shiny)
+  fireAxe.box(0.72 + gap, 0.055 + dy, -0.014 + dz, 0.8 + gap, 0.125 + dy, 0.014 + dz, hex(0xb8c2ca), MAT.shiny)
 
   return {
     knife,
@@ -234,6 +273,7 @@ export class Survivor {
   mag: Frame | null = null
   meleeWeaponFrame: Frame | null = null
   meleeTip: V3 | null = null
+  meleeWearStage: 0 | 1 | 2 = 0
   /**
    * Where the flashlight sits this frame and the way it points: the pistol's light under the barrel when a pistol is
    * drawn (it follows low-ready, raised aim, recoil and reload), otherwise the right hand pointing along the aim.
@@ -270,7 +310,7 @@ export class Survivor {
   private pelvisYaw = spring()
   private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
-  private meleeModels: Record<MeleeWeaponId, number>
+  private meleeModels: Record<MeleeWeaponId, [number, number, number]>
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
     lift: [0, 0, 0] as V3,
@@ -345,10 +385,15 @@ export class Survivor {
       mag,
       toe,
     ].map(m => renderer.addModel(m))
-    const meleeMeshes = buildMeleeWeaponMeshes()
+    const meleeMeshes0 = buildMeleeWeaponMeshes(0)
+    const meleeMeshes1 = buildMeleeWeaponMeshes(1)
+    const meleeMeshes2 = buildMeleeWeaponMeshes(2)
     this.meleeModels = Object.fromEntries(
-      MELEE_WEAPON_IDS.map((id) => [id, renderer.addModel(meleeMeshes[id])]),
-    ) as Record<MeleeWeaponId, number>
+      MELEE_WEAPON_IDS.map((id) => [
+        id,
+        [renderer.addModel(meleeMeshes0[id]), renderer.addModel(meleeMeshes1[id]), renderer.addModel(meleeMeshes2[id])],
+      ]),
+    ) as Record<MeleeWeaponId, [number, number, number]>
   }
 
   reset(): void {
@@ -1188,7 +1233,20 @@ export class Survivor {
     }
     if (this.gun) draw(8, this.gun)
     if (this.mag) draw(9, this.mag)
-    if (this.meleeWeaponFrame && meleeId) emit(push, this.meleeModels[meleeId], this.meleeWeaponFrame, [1, 1, 1], 0)
+    if (this.meleeWeaponFrame && meleeId) {
+      const maxDur = p.meleeMaxDurability ?? meleeDef?.durability ?? 0
+      const curDur = p.meleeDurability ?? maxDur
+      const wear = maxDur > 0 ? clamp(1 - curDur / maxDur, 0, 1) : 0
+      this.meleeWearStage = weaponWearStage(curDur, maxDur)
+      const warpedFrame =
+        wear > 0
+          ? pitch(roll(this.meleeWeaponFrame, wear * 0.14), -wear * 0.11)
+          : this.meleeWeaponFrame
+      const tint: V3 = [1 - wear * 0.16, 1 - wear * 0.2, 1 - wear * 0.22]
+      emit(push, this.meleeModels[meleeId][this.meleeWearStage], warpedFrame, tint, 0)
+    } else {
+      this.meleeWearStage = 0
+    }
     return this.batches
   }
 }

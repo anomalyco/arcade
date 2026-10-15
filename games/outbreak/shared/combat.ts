@@ -1106,16 +1106,11 @@ export class OutbreakCombatSubsystem {
       runtime.event.weaponBroke = true
       player.meleeWeapon = null
       player.meleeComboQueued = false
-      const msg = `${weapon.label} broke!`
-      player.lootMessage = msg
-      player.lootMessageUntil = time + 2.6
-      onNotice?.(msg, "warning", "durability")
+      void time
+      void onNotice
+      void weapon
     } else if (res.low) {
       runtime.event.durabilityLow = true
-      const msg = `${weapon.label} durability low (${res.remaining} left)`
-      player.lootMessage = msg
-      player.lootMessageUntil = time + 2.2
-      onNotice?.(msg, "warning", "durability")
     }
   }
 
