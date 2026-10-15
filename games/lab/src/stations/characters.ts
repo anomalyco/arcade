@@ -28,7 +28,11 @@ export default defineStation({
     setup: [{ command: action }],
   })),
   board: { feature: "AR-16" },
-  paths: ["packages/kit/human-locomotion.ts", "packages/kit/human-pose.ts", "packages/kit/rig.ts", "docs/animation.md"],
-  branches: ["zombie-shamble", "run-realism", "locomotion-pass", "walk-audit"],
+  metrics: [
+    { label: "Survivor aimed walk / run arm RMSE vs reference", value: "64.1° → 2.54° / 46.8° → 4.24°", source: "games/blackout/scripts/animation/survivor-aim.ts" },
+    { label: "Outbreak zombie shamble overall / arm RMSE", value: "20.2° → 6.5° / 24.8° → 4.0°", source: "games/blackout/scripts/animation/shamble-crouch.ts" },
+  ],
+  paths: ["packages/kit/human-locomotion.ts", "packages/kit/human-pose.ts", "packages/kit/rig.ts", "games/outbreak/src/survivor.ts", "docs/animation.md"],
+  branches: ["survivor-aim", "zombie-shamble", "run-realism", "locomotion-pass", "walk-audit"],
   links: [{ label: "Characters page", href: "/arcade/blackout/characters.html" }],
 })

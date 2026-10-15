@@ -812,6 +812,57 @@ async function main() {
         run: () => hud.demo(session.view.player),
       },
       {
+        id: "survivor.aim-demo",
+        label: "Preview Survivor Pistol Stance",
+        shortLabel: "Aim Demo",
+        category: "Scene",
+        undoable: false,
+        args: {
+          mode: {
+            type: "string",
+            description: "Stance mode (aim-fire, low-ready, reload, before)",
+          },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const mode = String(args?.mode ?? "aim-fire")
+          const p = session.view.player
+          p.equippedItem = "pistol"
+          p.magAmmo = p.magCapacity
+          p.reserveAmmo = 16
+          avatar.legacyUnarmedPistol = mode === "before"
+          if (mode === "low-ready") {
+            p.fireCooldown = 0
+            p.recoil = 0
+            p.reloadRemaining = 0
+            avatar.holdRemaining = 0
+            avatar.aimWeight = 0
+            for (let i = 0; i < 24; i++) draw(1 / 60)
+          } else if (mode === "reload") {
+            p.magAmmo = 2
+            p.reloadRemaining = 0.68
+            avatar.holdRemaining = settings.aimHoldTime
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          } else {
+            p.reloadRemaining = 0
+            session.update(
+              1 / 60,
+              { mx: 0, my: 0, aim: p.aim, interact: false, fire: true },
+              0,
+              settings,
+            )
+            for (let i = 0; i < 12; i++) draw(1 / 60)
+          }
+          await device.queue.onSubmittedWorkDone()
+          return {
+            mode,
+            aimWeight: avatar.aimWeight,
+            holdRemaining: avatar.holdRemaining,
+            legacyBefore: avatar.legacyUnarmedPistol,
+          }
+        },
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
