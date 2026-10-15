@@ -1,0 +1,32 @@
+:root {
+  --hud: 1;
+  --bone: #e8e4dc;
+  --ash: rgba(232, 228, 220, 0.55);
+  --night: #07070a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night); color: var(--bone); font-family: "Barlow Condensed", system-ui, sans-serif; }
+canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud .notice { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 20px; }
+#hud .logo { font-weight: 800; font-size: 72px; letter-spacing: 0.2em; }
+
+#hud .strip { position: absolute; top: calc(10px * var(--hud)); left: 50%; transform: translateX(-50%); display: flex; gap: calc(26px * var(--hud)); }
+#hud .slot { display: flex; align-items: center; gap: calc(8px * var(--hud)); font-weight: 800; font-size: calc(15px * var(--hud)); letter-spacing: 0.14em; color: var(--c); text-shadow: 0 0 calc(8px * var(--hud)) color-mix(in srgb, var(--c) 55%, transparent), 0 1px 0 #000; transition: opacity 0.3s; }
+#hud .slot.out { opacity: 0.35; }
+#hud .slot .pips { display: flex; gap: calc(4px * var(--hud)); }
+#hud .slot .pips i { width: calc(6px * var(--hud)); height: calc(6px * var(--hud)); transform: rotate(45deg); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); }
+#hud .slot .pips i.on { background: var(--c); box-shadow: 0 0 calc(6px * var(--hud)) var(--c); }
+
+#hud .card { position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%) scale(0.96); text-align: center; opacity: 0; transition: opacity 0.25s, transform 0.4s cubic-bezier(.2, .9, .3, 1); }
+#hud .card.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#hud .card .title { font-weight: 800; font-size: calc(64px * var(--hud)); letter-spacing: 0.22em; text-shadow: 0 0 calc(24px * var(--hud)) rgba(0, 0, 0, 0.9), 0 2px 0 #000; white-space: nowrap; }
+#hud .card .sub { margin-top: calc(4px * var(--hud)); font-weight: 600; font-size: calc(18px * var(--hud)); letter-spacing: 0.4em; color: var(--ash); text-shadow: 0 1px 0 #000; }
+
+#hud .tags { position: absolute; inset: 0; }
+#hud .tag { position: absolute; left: 0; top: 0; font-weight: 800; font-size: calc(14px * var(--hud)); letter-spacing: 0.16em; color: var(--c); text-shadow: 0 0 8px rgba(0, 0, 0, 0.9), 0 1px 0 #000; white-space: nowrap; }
+
+#hud .help { position: absolute; bottom: calc(14px * var(--hud)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: calc(6px * var(--hud)); font-weight: 600; font-size: calc(16px * var(--hud)); letter-spacing: 0.06em; color: var(--ash); text-shadow: 0 1px 0 #000; }
+#hud .help .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+#hud .help .row.dim { opacity: 0.7; font-size: 0.85em; }
