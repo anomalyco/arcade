@@ -30,9 +30,16 @@ import {
 import { angleSpring, gaitAt, stepHash, stiffness } from "@arcade/kit/human-locomotion"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
 import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { meleeTorsoModulation, poseMeleeArms } from "@arcade/kit/human-melee"
 import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import { angleDiff } from "@arcade/kit/sim/geom"
-import { PISTOL_RELOAD_TIME } from "../shared/combat"
+import {
+  isMeleeWeapon,
+  MELEE_WEAPON_IDS,
+  MELEE_WEAPONS,
+  PISTOL_RELOAD_TIME,
+  type MeleeWeaponId,
+} from "../shared/combat"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
 
@@ -60,11 +67,96 @@ export const survivorAimControls: LabControl[] = [
 
 export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
   Partial<
-    Pick<Pose, "equippedItem" | "fireCooldown" | "reloadRemaining" | "recoil" | "shoveAnim" | "sprinting" | "channel">
+    Pick<
+      Pose,
+      | "equippedItem"
+      | "meleeWeapon"
+      | "meleePhase"
+      | "meleePhaseTime"
+      | "meleePhaseDuration"
+      | "meleeCombo"
+      | "meleeCharge"
+      | "meleeHeavy"
+      | "fireCooldown"
+      | "reloadRemaining"
+      | "recoil"
+      | "shoveAnim"
+      | "sprinting"
+      | "channel"
+    >
   > & {
     /** Optional deterministic override to hold raised aim without firing a shot. */
     aiming?: boolean
   }
+
+/** Builds procedural 3D meshes for all 9 melee weapons (grip at origin, shaft/blade along +x). */
+export function buildMeleeWeaponMeshes(): Record<MeleeWeaponId, Mesh> {
+  const knife = new Mesh()
+  knife.box(-0.04, -0.016, -0.014, 0.11, 0.018, 0.014, hex(0x28231e), MAT.actor)
+  knife.box(0.11, -0.024, -0.018, 0.125, 0.026, 0.018, hex(0x7c8286), MAT.shiny)
+  knife.box(0.125, -0.022, -0.005, 0.42, 0.02, 0.005, hex(0xd8dfe4), MAT.shiny)
+
+  const hammer = new Mesh()
+  hammer.box(-0.05, -0.016, -0.015, 0.39, 0.016, 0.015, hex(0x9a6e42), MAT.timber)
+  hammer.box(-0.05, -0.018, -0.017, 0.12, 0.018, 0.017, hex(0x2b2d30), MAT.actor)
+  hammer.box(0.36, -0.068, -0.024, 0.46, 0.068, 0.024, hex(0x4a5158), MAT.shiny)
+  hammer.box(0.38, 0.068, -0.02, 0.44, 0.108, 0.02, hex(0x6e7780), MAT.shiny)
+
+  const pipe = new Mesh()
+  pipe.box(-0.06, -0.018, -0.018, 0.58, 0.018, 0.018, hex(0x697279), MAT.shiny)
+  pipe.box(0.02, -0.021, -0.021, 0.16, 0.021, 0.021, hex(0x36393c), MAT.actor)
+  pipe.box(0.54, -0.032, -0.032, 0.64, 0.032, 0.032, hex(0x4e565d), MAT.shiny)
+
+  const crowbar = new Mesh()
+  crowbar.box(-0.06, -0.021, -0.021, 0.64, 0.021, 0.021, hex(0xb5322a), MAT.actor)
+  crowbar.box(0.02, -0.023, -0.023, 0.18, 0.023, 0.023, hex(0x2e3135), MAT.actor)
+  crowbar.box(-0.09, -0.025, -0.015, -0.02, 0.025, 0.015, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.58, -0.025, -0.026, 0.72, 0.062, 0.028, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.62, 0.055, -0.026, 0.71, 0.105, 0.036, hex(0x9ca8b2), MAT.shiny)
+
+  const machete = new Mesh()
+  machete.box(-0.05, -0.02, -0.016, 0.13, 0.02, 0.016, hex(0x3a2a1d), MAT.timber)
+  machete.box(0.12, -0.03, -0.02, 0.145, 0.032, 0.02, hex(0x4a4e52), MAT.actor)
+  machete.box(0.145, -0.028, -0.006, 0.52, 0.024, 0.006, hex(0xc2cbd2), MAT.shiny)
+  machete.box(0.48, -0.036, -0.006, 0.68, 0.028, 0.006, hex(0xd8e0e6), MAT.shiny)
+
+  const bat = new Mesh()
+  bat.box(-0.08, -0.024, -0.024, -0.05, 0.024, 0.024, hex(0x8c663e), MAT.timber)
+  bat.box(-0.05, -0.017, -0.017, 0.22, 0.017, 0.017, hex(0x282a2c), MAT.actor)
+  bat.box(0.22, -0.024, -0.024, 0.48, 0.024, 0.024, hex(0xb88b58), MAT.timber)
+  bat.box(0.46, -0.034, -0.034, 0.78, 0.034, 0.034, hex(0xc69862), MAT.timber)
+
+  const spikedBoard = new Mesh()
+  spikedBoard.box(-0.08, -0.022, -0.016, 0.24, 0.022, 0.016, hex(0x524c44), MAT.actor)
+  spikedBoard.box(0.2, -0.042, -0.022, 0.84, 0.042, 0.022, hex(0x8e6b44), MAT.timber)
+  for (const sx of [0.54, 0.64, 0.73, 0.8]) {
+    spikedBoard.box(sx - 0.008, -0.095, -0.008, sx + 0.008, 0.095, 0.008, hex(0x9ca6ae), MAT.shiny)
+  }
+
+  const axe = new Mesh()
+  axe.box(-0.08, -0.018, -0.015, 0.66, 0.018, 0.015, hex(0x966a3e), MAT.timber)
+  axe.box(0.54, -0.055, -0.024, 0.68, 0.045, 0.024, hex(0x3a4046), MAT.actor)
+  axe.box(0.52, -0.115, -0.012, 0.7, -0.045, 0.012, hex(0xc8d2da), MAT.shiny)
+
+  const fireAxe = new Mesh()
+  fireAxe.box(-0.1, -0.02, -0.016, 0.42, 0.02, 0.016, hex(0xa87c4f), MAT.timber)
+  fireAxe.box(0.42, -0.021, -0.017, 0.84, 0.021, 0.017, hex(0x9e2420), MAT.actor)
+  fireAxe.box(0.68, -0.065, -0.026, 0.84, 0.055, 0.026, hex(0x9e2420), MAT.actor)
+  fireAxe.box(0.66, -0.135, -0.012, 0.88, -0.055, 0.012, hex(0xd8e2ea), MAT.shiny)
+  fireAxe.box(0.72, 0.055, -0.014, 0.8, 0.125, 0.014, hex(0xb8c2ca), MAT.shiny)
+
+  return {
+    knife,
+    hammer,
+    pipe,
+    crowbar,
+    machete,
+    bat,
+    "spiked-board": spikedBoard,
+    axe,
+    "fire-axe": fireAxe,
+  }
+}
 
 type ReloadGunKey = readonly [t: number, pitch: number, roll: number, pull: number, drop: number, yaw: number]
 type ReloadHandKey =
@@ -118,6 +210,8 @@ export class Survivor {
   bones: BonePose = {}
   gun: Frame | null = null
   mag: Frame | null = null
+  meleeWeaponFrame: Frame | null = null
+  meleeTip: V3 | null = null
   /**
    * Where the flashlight sits this frame and the way it points: the pistol's light under the barrel when a pistol is
    * drawn (it follows low-ready, raised aim, recoil and reload), otherwise the right hand pointing along the aim.
@@ -150,6 +244,7 @@ export class Survivor {
   private shotCount = 0
   private back = false
   private models: number[]
+  private meleeModels: Record<MeleeWeaponId, number>
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
     lift: [0, 0, 0] as V3,
@@ -224,6 +319,10 @@ export class Survivor {
       mag,
       toe,
     ].map(m => renderer.addModel(m))
+    const meleeMeshes = buildMeleeWeaponMeshes()
+    this.meleeModels = Object.fromEntries(
+      MELEE_WEAPON_IDS.map((id) => [id, renderer.addModel(meleeMeshes[id])]),
+    ) as Record<MeleeWeaponId, number>
   }
 
   reset(): void {
@@ -260,6 +359,8 @@ export class Survivor {
     this.bones = {}
     this.gun = null
     this.mag = null
+    this.meleeWeaponFrame = null
+    this.meleeTip = null
   }
 
   draw(
@@ -280,7 +381,19 @@ export class Survivor {
     const profile = this.profile
     const isZombie = Boolean(profile && profile.handPose === "reach")
     const isStaff = Boolean(profile && profile.handPose === "staff")
-    const isPistol = p.equippedItem === "pistol" && !isZombie && !isStaff && !p.channel && !this.legacyUnarmedPistol
+    const meleeId: MeleeWeaponId | null =
+      !isZombie && !isStaff && (!p.channel || p.channel.kind === "pry")
+        ? isMeleeWeapon(p.meleeWeapon)
+          ? p.meleeWeapon
+          : isMeleeWeapon(p.equippedItem)
+            ? p.equippedItem
+            : p.channel?.kind === "pry"
+              ? "crowbar"
+              : null
+        : null
+    const isMelee = meleeId !== null
+    const isPistol =
+      p.equippedItem === "pistol" && !isMelee && !isZombie && !isStaff && !p.channel && !this.legacyUnarmedPistol
 
     if (teleport) {
       this.yaw = p.aim
@@ -580,8 +693,27 @@ export class Survivor {
     const lean = this.leanX.x * ca + this.leanY.x * sa
     const sideLean = (-this.leanX.x * sa + this.leanY.x * ca) * (profile?.turnBank ?? 1)
 
-    const blade = isPistol ? BLADE_PISTOL * (0.18 + 0.82 * aimW) : 0
-    const counterTwist = this.twist.x * 0.65 * (1 - 0.68 * aimW)
+    const meleeDef = meleeId ? MELEE_WEAPONS[meleeId] : null
+    const meleePhase = p.meleePhase ?? "idle"
+    const meleeProgress =
+      meleePhase === "idle"
+        ? 0
+        : clamp((p.meleePhaseTime ?? 0) / Math.max(0.01, p.meleePhaseDuration ?? 0.12), 0, 1)
+    const meleeMod =
+      isMelee && meleeDef
+        ? meleeTorsoModulation({
+            weaponClass: meleeDef.weaponClass,
+            phase: meleePhase,
+            phaseProgress: meleeProgress,
+            combo: p.meleeCombo ?? 1,
+            charge: p.meleeCharge ?? 0,
+            heavy: Boolean(p.meleeHeavy),
+            weaponLength: meleeDef.length,
+          })
+        : null
+
+    const blade = isPistol ? BLADE_PISTOL * (0.18 + 0.82 * aimW) : meleeMod ? meleeMod.yawAdd : 0
+    const counterTwist = this.twist.x * 0.65 * (1 - 0.68 * aimW) * (meleePhase !== "idle" ? 0.25 : 1)
     const rawChestGoal = p.aim + blade - counterTwist + (shambleMod?.torsoYawAdd ?? 0)
     const clampedChestGoal = isPistol
       ? this.yaw + blade + clamp(angleDiff(rawChestGoal, this.yaw + blade), -twistLimit, twistLimit)
@@ -591,12 +723,22 @@ export class Survivor {
       angleSpring(this.chest, clampedChestGoal, profile.chestHz, dt)
       angleSpring(this.head, p.aim + (shambleMod?.headYawAdd ?? 0), profile.headHz, dt)
     } else {
-      angleSpring(this.chest, clampedChestGoal, 7 + 4 * aimW, dt)
+      const chestHz = isMelee && meleePhase !== "idle" ? 18 : 7 + 4 * aimW
+      angleSpring(this.chest, clampedChestGoal, chestHz, dt)
       angleSpring(this.head, p.aim, 9 + 4 * aimW, dt)
     }
 
     const torsoYaw =
-      (profile ? this.chest.x : isPistol ? this.chest.x : p.aim - this.twist.x * 0.65) + this.recYaw.x * 0.35
+      (profile
+        ? this.chest.x
+        : isPistol
+          ? this.chest.x
+          : isMelee
+            ? meleePhase !== "idle"
+              ? clampedChestGoal
+              : this.chest.x
+            : p.aim - this.twist.x * 0.65) +
+      this.recYaw.x * 0.35
     const tb = torsoYaw - p.aim
     const reloadLook =
       reloadClipT !== null
@@ -612,11 +754,12 @@ export class Survivor {
       0.05 +
       lean +
       (shambleMod?.torsoPitchAdd ?? 0) +
+      (meleeMod?.pitchAdd ?? 0) +
       posturePitch +
       0.24 * crouchT +
       reloadHunch -
       this.torsoKick.x
-    const sideRoll = sideLean * 0.75 + (shambleMod?.torsoRollAdd ?? 0)
+    const sideRoll = sideLean * 0.75 + (shambleMod?.torsoRollAdd ?? 0) + (meleeMod?.rollAdd ?? 0)
 
     let torso = yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw)
     if (isPistol) {
@@ -774,25 +917,55 @@ export class Survivor {
       } else {
         this.mag = null
       }
+      this.meleeWeaponFrame = null
+      this.meleeTip = null
+    } else if (isMelee && meleeDef) {
+      this.gun = null
+      this.mag = null
+      const posed = poseMeleeArms(torso, {
+        weaponClass: meleeDef.weaponClass,
+        phase: meleePhase,
+        phaseProgress: meleeProgress,
+        combo: p.meleeCombo ?? 1,
+        charge: p.meleeCharge ?? 0,
+        heavy: Boolean(p.meleeHeavy),
+        weaponLength: meleeDef.length,
+        gait,
+        armSwing: this.arms[1]!.x,
+      })
+      if ((p.shoveAnim ?? 0) > 0 && meleePhase === "idle") {
+        const shoveU = Math.sin(clamp((p.shoveAnim ?? 0) / 0.28, 0, 1) * Math.PI)
+        const handL = lerp3(posed.handL, at(torso, 0.46, RIG.shoulderY - 0.04, -0.12), shoveU)
+        arms = poseArms(torso, handL, posed.handR)
+      } else {
+        arms = { ua: posed.ua, fa: posed.fa }
+      }
+      this.meleeWeaponFrame = posed.weapon
+      this.meleeTip = posed.tip
     } else {
       this.gun = null
       this.mag = null
+      this.meleeWeaponFrame = null
+      this.meleeTip = null
       const rawHands = profile && profileHands(torso, profile)
       let hands = rawHands
       if (rawHands && profile?.handPose === "reach") {
         hands = shambleHandsFK(torso, this.phase, gait, runBlend, profile, 0)
       }
-      const unarmed = poseUnarmedArms(
+      let [unL, unR] = unarmedHands(
+        {
+          gait,
+          motion: { run: runBlend, crouch: { x: crouchT * 0.09 }, arms: this.arms, hands: this.hands } as never,
+        },
         torso,
-        ...unarmedHands(
-          {
-            gait,
-            motion: { run: runBlend, crouch: { x: crouchT * 0.09 }, arms: this.arms, hands: this.hands } as never,
-          },
-          torso,
-          time * 2,
-        ),
+        time * 2,
       )
+      if ((p.shoveAnim ?? 0) > 0 && !hands) {
+        const shoveU = Math.sin(clamp((p.shoveAnim ?? 0) / 0.28, 0, 1) * Math.PI)
+        unL = lerp3(unL, at(torso, 0.46, RIG.shoulderY - 0.04, -0.12), shoveU)
+        unR = lerp3(unR, at(torso, 0.46, RIG.shoulderY - 0.04, 0.12), shoveU)
+      }
+      const unarmed = poseUnarmedArms(torso, unL, unR)
       arms = hands ? (profile?.handPose === "reach" ? poseUnarmedArms(torso, ...hands) : poseArms(torso, ...hands)) : unarmed
     }
 
@@ -807,7 +980,8 @@ export class Survivor {
       this.light.mounted = false
     }
     this.bones = { pelvis, torso, head }
-    ;(this.bones as BonePose & { gun?: Frame | null }).gun = this.gun
+    ;(this.bones as BonePose & { gun?: Frame | null; melee?: Frame | null }).gun = this.gun
+    ;(this.bones as BonePose & { gun?: Frame | null; melee?: Frame | null }).melee = this.meleeWeaponFrame
     this.batches.length = 0
     let index = 0
     const push: PushPart = (model, x, y, z, yaw, tint, pitchAng, rollAng, flash, alpha = 1) => {
@@ -939,6 +1113,7 @@ export class Survivor {
     }
     if (this.gun) draw(8, this.gun)
     if (this.mag) draw(9, this.mag)
+    if (this.meleeWeaponFrame && meleeId) emit(push, this.meleeModels[meleeId], this.meleeWeaponFrame, [1, 1, 1], 0)
     return this.batches
   }
 }

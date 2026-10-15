@@ -9,6 +9,7 @@ import {
   type LookSettings,
 } from "@arcade/kit/look"
 import type { AIState } from "../shared/ai"
+import { MELEE_WEAPONS, type MeleeWeaponId } from "../shared/combat"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
 import type { Command, LocalSession } from "../shared/session"
@@ -112,6 +113,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         bones: avatar.bones,
         gun: avatar.gun,
         mag: avatar.mag,
+        meleeWeaponFrame: avatar.meleeWeaponFrame,
+        meleeTip: avatar.meleeTip,
         aimWeight: avatar.aimWeight,
         holdRemaining: avatar.holdRemaining,
       }
@@ -341,6 +344,77 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
+    },
+    /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally swings. */
+    stageMelee(weapon: MeleeWeaponId = "crowbar", swing: "none" | "light" | "heavy" | "combo" = "light") {
+      const session = host.session()
+      const { progression, actorId } = session.view
+      const ledger = progression.ledger
+      const def = MELEE_WEAPONS[weapon] ?? MELEE_WEAPONS.crowbar
+      const hb = ledger.store(`${actorId}/hotbar`)
+      if (hb) {
+        hb.slots[2] = { item: def.id, count: 1, charge: def.durability }
+        hb.selected = 2
+        hb.rev = ++ledger.rev
+      }
+      const slot = session.sim.slot(actorId)
+      if (slot) {
+        slot.survivor.meleePhase = "idle"
+        slot.survivor.meleePhaseTime = 0
+        slot.survivor.meleePhaseDuration = 0
+        slot.survivor.meleeCombo = 1
+        slot.survivor.meleeCharge = 0
+        slot.survivor.meleeHeavy = false
+        slot.survivor.meleeComboQueued = false
+        slot.survivor.meleeComboUntil = 0
+        slot.survivor.stamina = 1
+        slot.survivor.exhausted = false
+        progression.project(slot)
+      }
+
+      harness.pose(44, 44, 0)
+      session.ai.agents.length = 0
+      const z1 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.6, def.reach * 0.78), 43.85, "chase", Math.PI)
+      const z2 = session.ai.spawnZombie(session.view.town, 44 + Math.min(1.75, def.reach * 0.85), 44.32, "chase", Math.PI)
+      z1.targetX = z2.targetX = 44
+      z1.targetY = z2.targetY = 44
+
+      if (swing === "light") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 6; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+        }
+      } else if (swing === "heavy") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true, fireHeld: true }, 0, settings)
+        for (let i = 0; i < 24; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: true }, 0, settings)
+        }
+        for (let i = 0; i < 5; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fireHeld: false }, 0, settings)
+        }
+      } else if (swing === "combo") {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: true }, 0, settings)
+        for (let i = 0; i < 16; i++) {
+          session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false, fire: i === 9 }, 0, settings)
+        }
+      } else {
+        session.update(1 / 60, { mx: 0, my: 0, aim: 0, interact: false }, 0, settings)
+      }
+
+      const p = session.view.player
+      return {
+        weapon: p.meleeWeapon,
+        label: def.label,
+        weaponClass: def.weaponClass,
+        durability: p.meleeDurability,
+        maxDurability: p.meleeMaxDurability,
+        phase: p.meleePhase,
+        combo: p.meleeCombo,
+        heavy: p.meleeHeavy,
+        charge: p.meleeCharge,
+        stamina: p.stamina,
+        zombies: session.view.zombies.map((z) => ({ id: z.id, hp: z.hp, state: z.state, detached: z.detachedLimbs })),
+      }
     },
     /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
     stageVehicle(scene: VehicleScene) {
