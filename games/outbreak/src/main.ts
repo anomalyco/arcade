@@ -2,6 +2,15 @@ import { Camera } from "@arcade/kit/client/camera"
 import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
+import {
+  DEFAULT_FEEL_SETTINGS,
+  GameFeel,
+  applyFeelPreset,
+  feelControls,
+  randomizeFeelSettings,
+  type FeelEventKind,
+  type FeelEventPayload,
+} from "@arcade/kit/feel"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import {
   LOOK_PRESETS,
@@ -110,6 +119,8 @@ const settings = {
   ...DEFAULT_OUTBREAK_WEATHER,
   ...zombieTuning,
   ...DEFAULT_HUD_SETTINGS,
+  ...DEFAULT_FEEL_SETTINGS,
+  bloodStyle: 1,
   ...(peaceful ? { zombieCount: 0 } : {}),
   infiniteAmmo: params.has("infiniteAmmo") ? 1 : 0,
 }
@@ -206,6 +217,13 @@ async function main() {
   let avatarPalette: object | null = null
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   const combatFx = new OutbreakCombatFX(renderer)
+  const feel = new GameFeel(settings)
+  let prevHealth = session.view.player.health
+  let prevShoveAnim = session.view.player.shoveAnim
+  let wasVaulting = Boolean(session.view.player.vault)
+  const prevPortalBashTime = new Map<string, number>()
+  const prevPortalPlanks = new Map<string, number>()
+  const prevDoorOpen = new Map<string, boolean>()
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
@@ -297,6 +315,82 @@ async function main() {
     },
     ...zombieControls,
     ...hudControls,
+    {
+      key: "bloodStyle",
+      label: "Blood splatter",
+      group: "Feel",
+      options: [
+        { label: "Wet ballistic + Noir", value: 1 },
+        { label: "Legacy flat", value: 2 },
+        { label: "Off", value: 0 },
+      ],
+    },
+    ...feelControls,
+    {
+      key: "triggerFeelShot",
+      label: "Trigger shot feel",
+      group: "Feel",
+      type: "action",
+      run: () => {
+        const p = session.view.player
+        feel.emit("shot", { power: 1, dir: p.aim })
+      },
+    },
+    {
+      key: "triggerFeelShove",
+      label: "Trigger shove feel",
+      group: "Feel",
+      type: "action",
+      run: () => {
+        const p = session.view.player
+        feel.emit("shove", { power: 1, dir: p.aim, hits: 1 })
+      },
+    },
+    {
+      key: "triggerFeelHitTaken",
+      label: "Trigger hit-taken feel",
+      group: "Feel",
+      type: "action",
+      run: () => {
+        const p = session.view.player
+        feel.emit("hit-taken", { damage: 25, dir: p.aim + Math.PI })
+        combatFx.emitSurvivorHit(
+          p.x,
+          p.y,
+          -Math.cos(p.aim),
+          -Math.sin(p.aim),
+          supportHeight(session.view.town, p.x, p.y),
+          25,
+          Math.floor(session.view.time * 1000) + 1,
+        )
+      },
+    },
+    {
+      key: "triggerFeelExplosion",
+      label: "Trigger explosion feel",
+      group: "Feel",
+      type: "action",
+      run: () => {
+        const p = session.view.player
+        feel.emit("explosion", {
+          x: p.x + Math.cos(p.aim) * 4.5,
+          z: p.y + Math.sin(p.aim) * 4.5,
+          listenerX: p.x,
+          listenerZ: p.y,
+          power: 1,
+        })
+      },
+    },
+    {
+      key: "randomizeFeelTuning",
+      label: "Randomize feel",
+      group: "Feel",
+      type: "action",
+      run: () => {
+        randomizeFeelSettings(settings, settings.feelTuningSeed)
+        lab.refresh()
+      },
+    },
     {
       key: "diagnostic",
       label: "Contribution",
@@ -566,6 +660,10 @@ async function main() {
         key === "clutterSeed"
       )
         syncTextures()
+      if (key === "feelPreset") {
+        applyFeelPreset(settings, settings.feelPreset)
+        lab.refresh()
+      }
       if (key === "lookPreset") {
         const pid = resolveLookPresetId(settings.lookPreset) ?? "current"
         applyLookPreset(lookSettings, pid)
@@ -756,6 +854,50 @@ async function main() {
         },
       },
       {
+        id: "feel.trigger",
+        label: "Trigger Game Feel Event",
+        shortLabel: "Feel",
+        category: "Scene",
+        undoable: false,
+        args: {
+          kind: {
+            type: "string",
+            required: true,
+            description: "Feel event kind (shot, shove, hit-confirmed, kill, hit-taken, explosion, barricade-bash, land)",
+          },
+          power: { type: "number", description: "Multiplier (default: 1)" },
+          damage: { type: "number", description: "Damage amount for hit-taken" },
+          distance: { type: "number", description: "Distance in metres for explosion / barricade-bash" },
+        },
+        enabled: () => true,
+        run: async (_ctx, args) => {
+          const p = session.view.player
+          const kind = String(args?.kind ?? "shot") as FeelEventKind
+          const power = typeof args?.power === "number" ? args.power : 1
+          const damage = typeof args?.damage === "number" ? args.damage : 25
+          const distance = typeof args?.distance === "number" ? args.distance : undefined
+          feel.emit(kind, {
+            power,
+            dir: p.aim,
+            damage,
+            distance,
+            hits: kind === "shove" ? 1 : undefined,
+            lethal: kind === "kill",
+            broke: kind === "barricade-bash",
+          })
+          draw(1 / 60)
+          await device.queue.onSubmittedWorkDone()
+          return {
+            kind,
+            trauma: feel.trauma,
+            damageFlash: feel.damageFlash,
+            hitStopRemaining: feel.hitStopRemaining,
+            offset: { ...feel.offset },
+            post: [...feel.post],
+          }
+        },
+      },
+      {
         id: "weather.preset",
         label: "Set Outbreak Weather Preset",
         shortLabel: "Weather Preset",
@@ -847,6 +989,13 @@ async function main() {
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
+    feel.reset()
+    prevHealth = session.view.player.health
+    prevShoveAnim = session.view.player.shoveAnim
+    wasVaulting = Boolean(session.view.player.vault)
+    prevPortalBashTime.clear()
+    prevPortalPlanks.clear()
+    prevDoorOpen.clear()
     ambientMotion.reset()
     hud.reset()
     weatherController.reset(nextSeed)
@@ -962,6 +1111,130 @@ async function main() {
     }
     const { player: p, town, hour, time, peek, zombies, noises, shots } = session.view
     settings.hour = Math.round(hour * 20) / 20
+    const playerGroundY = supportHeight(town, p.x, p.y)
+
+    // Detect presentation-only game-feel events (never mutates shared simulation or co-op state)
+    if (p.shoveAnim > prevShoveAnim + 0.05) {
+      let shovedHits = 0
+      for (const z of zombies) {
+        if (z.state === "stagger" && z.hitFlash > 0.45 && Math.hypot(z.x - p.x, z.y - p.y) < 2.2) {
+          shovedHits++
+        }
+      }
+      feel.emit("shove", { power: 1, dir: p.aim, hits: shovedHits })
+      if (shovedHits > 0 && settings.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.bloodStyle === 2
+        combatFx.emitShoveHit(p.x, p.y, p.aim, playerGroundY, shovedHits, Math.floor(time * 1000) + 17)
+      }
+    }
+    prevShoveAnim = p.shoveAnim
+
+    if (p.health < prevHealth - 0.1 && time > 0.02) {
+      const damage = prevHealth - p.health
+      let atkDx = -Math.cos(p.aim)
+      let atkDz = -Math.sin(p.aim)
+      let bestDist = 2.5
+      for (const z of zombies) {
+        if (z.state === "dead") continue
+        const d = Math.hypot(p.x - z.x, p.y - z.y)
+        if (d < bestDist && d > 0.01) {
+          bestDist = d
+          atkDx = (p.x - z.x) / d
+          atkDz = (p.y - z.y) / d
+        }
+      }
+      feel.emit("hit-taken", { damage, dx: atkDx, dz: atkDz })
+      if (settings.bloodStyle !== 0) {
+        combatFx.legacyMode = settings.bloodStyle === 2
+        combatFx.emitSurvivorHit(p.x, p.y, atkDx, atkDz, playerGroundY, damage, Math.floor(time * 1000) + 31)
+      }
+    }
+    prevHealth = p.health
+
+    const nowVaulting = Boolean(p.vault)
+    if (wasVaulting && !nowVaulting) {
+      feel.emit("land", { power: 0.75, dir: p.aim })
+    }
+    wasVaulting = nowVaulting
+
+    for (const d of town.doors) {
+      const st = session.ai.portalStates.get(d.id)
+      if (!st) continue
+      const lastBash = prevPortalBashTime.get(d.id) ?? -Infinity
+      const prevPlanks = prevPortalPlanks.get(d.id) ?? st.barricadePlanks
+      const wasOpen = prevDoorOpen.get(d.id) ?? d.open
+      if (st.lastBashTime > lastBash && time - st.lastBashTime < 0.12) {
+        const cx = (d.rect[0] + d.rect[2]) * 0.5
+        const cz = (d.rect[1] + d.rect[3]) * 0.5
+        const broke = st.barricadePlanks < prevPlanks || (d.open && !wasOpen)
+        feel.emit("barricade-bash", {
+          x: cx,
+          z: cz,
+          listenerX: p.x,
+          listenerZ: p.y,
+          broke,
+          power: broke ? 1.25 : 0.85,
+        })
+      }
+      prevPortalBashTime.set(d.id, st.lastBashTime)
+      prevPortalPlanks.set(d.id, st.barricadePlanks)
+      prevDoorOpen.set(d.id, d.open)
+    }
+    for (const win of town.windows) {
+      const st = session.ai.portalStates.get(win.id)
+      if (!st) continue
+      const lastBash = prevPortalBashTime.get(win.id) ?? -Infinity
+      const prevPlanks = prevPortalPlanks.get(win.id) ?? st.barricadePlanks
+      if (st.lastBashTime > lastBash && time - st.lastBashTime < 0.12) {
+        const cx = (win.rect[0] + win.rect[2]) * 0.5
+        const cz = (win.rect[1] + win.rect[3]) * 0.5
+        const broke = st.barricadePlanks < prevPlanks
+        feel.emit("barricade-bash", {
+          x: cx,
+          z: cz,
+          listenerX: p.x,
+          listenerZ: p.y,
+          broke,
+          power: broke ? 1.25 : 0.85,
+        })
+      }
+      prevPortalBashTime.set(win.id, st.lastBashTime)
+      prevPortalPlanks.set(win.id, st.barricadePlanks)
+    }
+
+    combatFx.legacyMode = settings.bloodStyle === 2
+    let addCount = combatFx.processShots(
+      shots,
+      time,
+      dt,
+      session.ai,
+      zombieCrowd,
+      (x, z) => supportHeight(town, x, z),
+      addSprites,
+      0,
+      (shot) => {
+        const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
+        const isLocalShot = distFromMe < 1.8
+        if (isLocalShot) {
+          feel.emit("shot", { power: 1, dir: shot.aim })
+          if (shot.hitZombieId !== null) {
+            feel.emit(shot.killed ? "kill" : "hit-confirmed", {
+              power: shot.detachBone ? 1.25 : 1.0,
+              dir: shot.aim,
+              lethal: shot.killed,
+            })
+          }
+        } else if (distFromMe < 16) {
+          // Co-op peer shot nearby: subtle distance-attenuated local presentation only
+          const peerAtt = Math.max(0, 1 - distFromMe / 16) * 0.35
+          feel.emit("shot", { power: peerAtt, dir: shot.aim })
+        }
+      },
+    )
+
+    const feelOffset = feel.step(dt)
+    const vdt = feel.visualDt(dt)
+
     if (peek) {
       lastPeek = peek
       peekBlend = Math.min(1, peekBlend + dt * 6.5)
@@ -983,6 +1256,7 @@ async function main() {
     const camX = drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0)
     const camY = drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0)
     cam.follow(camX, camY, 0, 0, dt, false)
+    cam.applyFeel(feelOffset)
     cam.update(w / h)
     if (revision !== session.view.revision) {
       revision = session.view.revision
@@ -1054,7 +1328,6 @@ async function main() {
     ])
     let count = 1
     let flashlightSlot = -1
-    const playerGroundY = supportHeight(town, p.x, p.y)
     const flashRgb = flashlightColor(settings.flashlightWarmth)
     if (p.flashlightOutput > 0.001 && settings.flashlightIntensity > 0.001) {
       const inBld = town.buildings.some(
@@ -1076,11 +1349,11 @@ async function main() {
     count = coop.flashlights(lights, count, town, settings, lightOccluders)
 
     const lift = vaultLift(p)
-    const survivorBatches = avatar.draw(drawn, dt, time, (x, z) => supportHeight(town, x, z) + lift)
-    const coopBatches = coop.bodies(dt, time, town, vision)
+    const survivorBatches = avatar.draw(drawn, vdt, time, (x, z) => supportHeight(town, x, z) + lift)
+    const coopBatches = coop.bodies(vdt, time, town, vision)
     const zombieBatches = zombieCrowd.draw(
       zombies,
-      dt,
+      vdt,
       (x, z) => supportHeight(town, x, z),
       vision,
       view,
@@ -1089,18 +1362,8 @@ async function main() {
       time,
     )
 
-    let addCount = combatFx.processShots(
-      shots,
-      time,
-      dt,
-      session.ai,
-      zombieCrowd,
-      (x, z) => supportHeight(town, x, z),
-      addSprites,
-      0,
-    )
     const fxOut = combatFx.stepAndCollect(
-      dt,
+      vdt,
       time,
       town,
       p,
@@ -1284,7 +1547,9 @@ async function main() {
     )
     render.alphaCount = motionOut.alphaCount
     render.addCount = addCount
-    render.splatter = combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    render.splatter =
+      settings.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
+    render.splatterLegacy = settings.bloodStyle === 2
     render.weather = weatherOut.prepareInput
     render.batches = [
       ...groundWearBatches,
@@ -1302,7 +1567,8 @@ async function main() {
     render.occluderCount = frameLightOccluders
     render.lampCount = town.lamps.length
     render.view = view
-    render.grade = [time, settings.diagnostic, lightningFlash * 0.35, settings.exposure]
+    render.grade = [time, settings.diagnostic, Math.max(lightningFlash * 0.35, feel.damageFlash), settings.exposure]
+    render.feel = feel.post
     render.look = lookSettings
     render.lookCompare = lookCompare
     renderer.render(render)
@@ -1470,7 +1736,27 @@ async function main() {
         settings: toSharedWeatherSettings(settings),
         state: { ...weatherController.sim.state },
       },
+      feel: {
+        preset: settings.feelPreset,
+        intensity: settings.feelIntensity,
+        reduceMotion: feel.reducedMotion,
+        trauma: feel.trauma,
+        damageFlash: feel.damageFlash,
+        hitStopRemaining: feel.hitStopRemaining,
+        offset: { ...feel.offset },
+        post: [...feel.post],
+      },
     }),
+    emitFeel(kind: FeelEventKind, payload?: FeelEventPayload) {
+      feel.emit(kind, payload)
+      return {
+        trauma: feel.trauma,
+        damageFlash: feel.damageFlash,
+        hitStopRemaining: feel.hitStopRemaining,
+        offset: { ...feel.offset },
+        post: [...feel.post],
+      }
+    },
     fog: (x: number, y: number) => vision.state(x, y),
     callouts: () =>
       hud.layer.model.items.map((c) => ({ actor: c.actorId, text: c.text, kind: c.kind, slot: c.slot, progress: c.progress })),
@@ -1538,6 +1824,10 @@ async function main() {
         key === "clutterSeed"
       )
         syncTextures()
+      if (key === "feelPreset") {
+        applyFeelPreset(settings, String(value))
+        lab.refresh()
+      }
       if (key === "lookPreset") {
         const pid = resolveLookPresetId(value) ?? "current"
         applyLookPreset(lookSettings, pid)

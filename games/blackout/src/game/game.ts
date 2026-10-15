@@ -12,7 +12,8 @@ import { bakeBounce, buildLevel, type FloorMap } from "../render/level-mesh"
 import { AMBIENT, type Caster, type DynLight, LightCuller } from "../render/lighting"
 import { MAT, Mesh } from "../render/mesh"
 import { PAL, deskMonitorLights, hex, rng } from "../render/models"
-import { juiceSettings, lookMask, type Juice } from "../ui/debug-overlay"
+import { blackoutFeelSettings, juiceSettings, lookMask, type Juice } from "../ui/debug-overlay"
+import { GameFeel } from "@arcade/kit/feel"
 import { gearModels } from "../render/gear"
 import { HOLD, MUZZLE, SHOULDER, personModels } from "../render/person"
 import { wizardModels } from "../render/wizard"
@@ -200,6 +201,7 @@ export class Game {
   }
   readonly smokeVolumes: SmokeVolumes
   readonly explosionParticles: Particles
+  readonly feel = new GameFeel(blackoutFeelSettings)
   private readonly ownsFx: boolean
   private wallRects: Wall[] = []
   readonly juice: Juice
@@ -387,6 +389,7 @@ export class Game {
   /** Drops everything left over from the last match: bodies, tracers, frags, blasts. */
   private clearScene(): void {
     this.splatterFx?.reset();this.splatterEvent=0
+    this.feel.reset()
     this.labFireMap=null
     this.wallRects = [...this.map.walls.filter(w => w.h >= 1.8).map(w => w.rect), ...this.map.windows, ...this.map.glass]
     this.smokeVolumes.reset(this.wallRects)
@@ -613,9 +616,15 @@ export class Game {
         else if (!e.hit) this.impact(e.x1, e.y1, dir, gun)
         if (e.veh && me && Math.hypot(e.x1 - me.x, e.y1 - me.y) < 18) this.sound.impact(e.x1 - me.x, e.y1 - me.y)
         if (e.hit === this.myId) {
-          this.hurt = Math.min(1, this.hurt + 0.45)
-          this.cam?.bump(0.45)
-          this.cam?.kick(Math.cos(dir), Math.sin(dir), 0.9)
+          this.feel.emit("hit-taken", { power: 1, dir })
+          const eff = this.juice.trauma ? this.feel.effectiveIntensity : 0
+          const rm = this.feel.reducedMotion
+          const fScale = eff * this.feel.settings.feelDamageFlash * (rm ? 0.5 : 1)
+          const sScale = rm ? 0 : eff * this.feel.settings.feelShake
+          const kScale = rm ? 0 : eff * this.feel.settings.feelKick
+          this.hurt = Math.min(rm ? 0.35 : 1, this.hurt + 0.45 * fScale)
+          this.cam?.bump(0.45 * sScale)
+          this.cam?.kick(Math.cos(dir), Math.sin(dir), 0.9 * kScale)
           this.sound.hurt()
         } else if (me && !e.hit) {
           // Near miss: a crack as the round passes close by.
@@ -643,18 +652,26 @@ export class Game {
         }
         this.feed.unshift({ killer: this.nameOf(e.killer), victim: this.nameOf(e.victim), kc: this.colorOf(e.killer), vc: this.colorOf(e.victim), how: e.how, t, mine: e.killer === this.myId || mine })
         this.feed.length = Math.min(this.feed.length, 5)
+        const eff = this.juice.trauma ? this.feel.effectiveIntensity : 0
+        const rm = this.feel.reducedMotion
+        const sScale = rm ? 0 : eff * this.feel.settings.feelShake
+        const kScale = rm ? 0 : eff * this.feel.settings.feelKick
+        const pScale = rm ? 0 : eff * this.feel.settings.feelPunch
+        const hsScale = rm ? 0 : eff * this.feel.settings.feelHitStop
         if (e.killer === this.myId) {
+          this.feel.emit("kill", { power: 1, dx: e.dx, dz: e.dy, lethal: true })
           this.killAt = t
-          this.freezeUntil = t + 0.07
+          this.freezeUntil = t + 0.07 * hsScale
           this.sound.hit(true)
-          this.cam?.bump(0.25)
-          if (this.juice.trauma) this.cam?.killPunch()
+          this.cam?.bump(0.25 * sScale)
+          if (this.juice.trauma && pScale > 0) this.cam?.killPunch()
           this.banner = { text: `ELIMINATED ${this.nameOf(e.victim).toUpperCase()}`, t }
         }
         if (mine) {
+          this.feel.emit("hit-taken", { power: 1.5, dx: e.dx, dz: e.dy })
           this.banner = { text: `KILLED BY ${this.nameOf(e.killer).toUpperCase()}`, t }
-          this.cam?.bump(0.8)
-          this.cam?.kick(e.dx, e.dy, 2)
+          this.cam?.bump(0.8 * sScale)
+          this.cam?.kick(e.dx, e.dy, 2 * kScale)
         }
         return
       }
@@ -713,7 +730,10 @@ export class Game {
       case "crash":
         if (me && Math.hypot(e.x - me.x, e.y - me.y) < 30) this.vsound.crash(e.x - me.x, e.y - me.y, e.v)
         if (e.v > 5 && this.juice.vehicleSparks) this.veh.crash(e.id, e.x, e.y, e.v, this.solids)
-        if (this.riding && this.riding.veh === e.id && this.juice.vehicleImpact) this.cam?.impact(e.v)
+        if (this.riding && this.riding.veh === e.id && this.juice.vehicleImpact && !this.feel.reducedMotion) {
+          this.feel.emit("land", { power: Math.min(1.5, e.v / 12) })
+          this.cam?.impact(e.v * this.feel.effectiveIntensity)
+        }
         return
       case "host":
         this.banner = { text: e.what === "reset" ? "HOST RESET THE MATCH" : `HOST SWITCHED TO ${MODES[e.mode].label.toUpperCase()}`, t }
@@ -771,10 +791,17 @@ export class Game {
     const dy = y - me.y
     const d = Math.hypot(dx, dy)
     const k = Math.max(0, 1 - d / 22)
-    this.cam?.bump(Math.min(1, 1.5 * k))
-    if (d > 0.01) this.cam?.kick(-dx / d, -dy / d, 9 * k * k)
-    this.cam?.punch(3 * k * k, (R() < 0.5 ? -1 : 1) * 0.035 * k)
-    if (this.alive && d < FRAG.radius + 1.5) this.hurt = Math.min(1, this.hurt + 0.6 * (1 - d / (FRAG.radius + 1.5)))
+    this.feel.emit("explosion", { x, z: y, listenerX: me.x, listenerZ: me.y, radius: 22 })
+    const eff = this.juice.trauma ? this.feel.effectiveIntensity : 0
+    const rm = this.feel.reducedMotion
+    const sScale = rm ? 0 : eff * this.feel.settings.feelShake
+    const kScale = rm ? 0 : eff * this.feel.settings.feelKick
+    const pScale = rm ? 0 : eff * this.feel.settings.feelPunch
+    const fScale = eff * this.feel.settings.feelDamageFlash * (rm ? 0.5 : 1)
+    this.cam?.bump(Math.min(1, 1.5 * k) * sScale)
+    if (d > 0.01) this.cam?.kick(-dx / d, -dy / d, 9 * k * k * kScale)
+    this.cam?.punch(3 * k * k * pScale, (R() < 0.5 ? -1 : 1) * 0.035 * k * pScale)
+    if (this.alive && d < FRAG.radius + 1.5) this.hurt = Math.min(rm ? 0.35 : 1, this.hurt + 0.6 * (1 - d / (FRAG.radius + 1.5)) * fScale)
     this.sound.explode(dx, dy, e.kind)
   }
 
@@ -861,6 +888,7 @@ export class Game {
     this.vehicleSounds()
     this.bloom = Math.max(0, this.bloom - dt * 2.6)
     this.hurt = Math.max(0, this.hurt - dt * 0.9)
+    this.feel.step(dt)
   }
 
   /** Your own throw or plant animates and sounds at once; the frag itself arrives with the server's throw event. */
@@ -882,6 +910,7 @@ export class Game {
       this.swingReady = t + MELEE.cooldown
       this.swingLand = t + MELEE.windup
       swing(this.avatarMe, t)
+      this.feel.emit("shove", { power: 0.6, dir: this.aim })
       this.sound.swipe(0, 0, true)
     }
     if (!kit.gun) {
@@ -945,9 +974,18 @@ export class Game {
     this.casing(me)
     this.bloom = Math.min(1, this.bloom + (this.gun === "rifle" ? 0.34 : 0.9))
     const cr = CAM_RECOIL[this.gun]
-    this.cam?.kick(-Math.cos(this.aim), -Math.sin(this.aim), cr.kick)
-    this.cam?.bump(cr.shake)
-    this.cam?.punch(cr.punch, (Math.random() < 0.5 ? -1 : 1) * cr.roll)
+    this.feel.emit("shot", {
+      power: this.gun === "sniper" ? 1.8 : this.gun === "shotgun" ? 1.4 : 1.0,
+      dir: this.aim,
+    })
+    const eff = this.juice.trauma ? this.feel.effectiveIntensity : 0
+    const rm = this.feel.reducedMotion
+    const sScale = rm ? 0 : eff * this.feel.settings.feelShake
+    const kScale = rm ? 0 : eff * this.feel.settings.feelKick
+    const pScale = rm ? 0 : eff * this.feel.settings.feelPunch
+    this.cam?.kick(-Math.cos(this.aim), -Math.sin(this.aim), cr.kick * kScale)
+    this.cam?.bump(cr.shake * sScale)
+    this.cam?.punch(cr.punch * pScale, (Math.random() < 0.5 ? -1 : 1) * cr.roll * pScale)
     this.sound.shot(this.gun, 0, 0, true)
   }
 

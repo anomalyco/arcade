@@ -854,7 +854,7 @@ ${motion ? motionGather : ""}
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: vec4f;
 @group(0) @binding(3) var bloomTex: texture_2d<f32>;
-${looks ? `struct Grade { frame: vec4f, look: vec4f }
+${looks || finish ? `struct Grade { frame: vec4f, look: vec4f }
 @group(0) @binding(4) var<uniform> grade: Grade;` : "@group(0) @binding(4) var<uniform> G: vec4f;"}
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
@@ -922,16 +922,26 @@ fn hash(p: vec2f) -> f32 {
 
 // G: time, desaturate, flash, exposure
 @fragment fn composite(o: VO) -> @location(0) vec4f {
-  ${looks ? "let G = grade.frame; let enhanced = grade.look.x > 0.5;" : ""}
+  ${looks ? "let G = grade.frame; let enhanced = grade.look.x > 0.5;" : finish ? "let G = grade.frame; let feel = grade.look;" : ""}
   let uv = o.uv;
   let fromC = uv - 0.5;
   // A touch of chromatic fringing toward the corners.
-  let ca = fromC * dot(fromC, fromC) * ${finish ? finish.chromatic.toFixed(4) : looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
+  let ca = fromC * dot(fromC, fromC) * ${finish ? `(${finish.chromatic.toFixed(4)} + fract(feel.x) * 0.024)` : looks ? "select(0.012, 0.0015, enhanced)" : "0.012"};
   var hdr = vec3f(
     clean(textureSample(src, samp, uv + ca)).r,
     clean(textureSample(src, samp, uv)).g,
     clean(textureSample(src, samp, uv - ca)).b,
   );
+  ${finish ? `if (any(abs(feel.yzw) > vec3f(0.00018))) {
+    let rFeel = length(fromC);
+    let edgeW = smoothstep(0.06, 0.36, rFeel);
+    let vFeel = feel.yz * (0.45 + 0.55 * edgeW) + fromC * (feel.w * 1.45 * edgeW);
+    let s0 = clean(textureSampleLevel(src, samp, clamp(uv - vFeel * 0.85, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s1 = clean(textureSampleLevel(src, samp, clamp(uv - vFeel * 0.38, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s2 = clean(textureSampleLevel(src, samp, clamp(uv + vFeel * 0.38, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    let s3 = clean(textureSampleLevel(src, samp, clamp(uv + vFeel * 0.85, vec2f(0.002), vec2f(0.998)), 0.0)).rgb;
+    hdr = hdr * 0.32 + (s1 + s2) * 0.22 + (s0 + s3) * 0.12;
+  }` : ""}
   ${motion ? "hdr += motionColour(uv) - clean(textureSampleLevel(src, samp, uv, 0.0)).rgb;" : ""}
   let bloom = textureSample(bloomTex, samp, uv).rgb;
   ${finish?.diagnostics ? `if (G.y > 0.5) {
