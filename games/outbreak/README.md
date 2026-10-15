@@ -19,6 +19,11 @@ Below Feet, Hades Style, Zomboid Style, Diegetic), can override callout and ring
 the old bottom-left status log.
 Research, defaults and measurements: [docs/outbreak-hud.md](../../docs/outbreak-hud.md).
 
+`N` (`KeyN`) opens the map: a survey sheet of only what you've seen, with POIs, safehouses, teammates, pings,
+last-known hordes and your own marks. Drag or two-finger swipe pans, pinch or the wheel zooms, a click places a mark.
+The game keeps running while it is open. A compass ring and a corner minimap are optional (Lab › Map), off by
+default. [docs/outbreak-map.md](../../docs/outbreak-map.md).
+
 The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.
 

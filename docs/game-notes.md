@@ -1132,6 +1132,14 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Input
 
+- **Exploration maps: per-chunk memory, tiles built on demand.** Outbreak's map (`games/outbreak/src/map/`) keeps
+  1 m explored cells per 32 m chunk (1 KB each) plus a compact copy of each explored chunk's layout, and draws them
+  through a tile pyramid (16 to 1/16 px per metre, halving) where a tile exists only if something in it was explored
+  and is rebuilt only when stale and on screen, within 3 ms a frame. Prebuilding the opening view's stale tiles while
+  the map is closed (0.6 ms every 120 ms) left 10 of 65 tiles to build on the first open after a 1 km walk (2.2 ms);
+  the first draw took 11 ms and the map's per-frame cost with the sheet closed was p95 0.3 ms. Labels and badges are drawn in screen space at
+  device resolution, never scaled from a tile, so they stay sharp at DPR 2. `docs/outbreak-map.md`.
+
 - **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn
   adapters and stage with one canvas. The first headless Metal proof on both hosts registered 25 assets,
   opened no AudioContexts, and submitted no additional frames after switching to Games or dispatching
