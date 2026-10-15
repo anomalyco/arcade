@@ -84,8 +84,16 @@ describe("LookSettings & Presets (@arcade/kit/look)", () => {
     const lookPost = makeLookPostShader({ chromatic: 0, bloom: 0.045, grain: 0.002, vignette: 0.92, diagnostics: true, shadowLift: 0, huePreserve: 0.35 })
     expect(lookScene).toContain("struct LookUniforms")
     expect(lookScene).toContain("lookQuantizeDiffuse")
+    expect(lookScene).toContain("lookFlashIrradiance")
     expect(lookPost).toContain("lookTonemapAgX")
     expect(lookPost).toContain("kuwaharaPost")
+    expect(lookPost).toContain("flashMask")
+
+    // Noir preset enables light-driven selective colour restoration (u15.w = selectiveColor > 1.0)
+    const noir = createLookSettings("noir")
+    expect(noir.selectiveColor).toBeGreaterThan(1.0)
+    expect(noir.saturation).toBeLessThan(0.15)
+    expect(packLookUniforms(noir)[63]).toBeCloseTo(noir.selectiveColor, 5)
   })
 
   test("deterministic seeded randomization isolates groups and respects bounds", () => {

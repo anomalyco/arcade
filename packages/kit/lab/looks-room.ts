@@ -263,7 +263,8 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   }
 
   // 2b. Character flashlight cone cutting across the steps & cobblestone walk in Noir / Rim mode
-  if (rimStrength > 0.5) {
+  var torchMask = 0.0;
+  if (rimStrength > 0.5 || L.u15.w > 0.01) {
     let torchPos = vec3f(-0.22, 1.18, 0.22);
     let torchAim = normalize(vec3f(0.28, -0.34, 0.90));
     let toTorch = torchPos - o.world;
@@ -273,10 +274,12 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
       let cosAng = dot(-tdir, torchAim);
       let cone = pow(smoothstep(0.84, 0.985, cosAng), 1.6);
       let fade = pow(max(0.0, 1.0 - td / 7.2), 1.35);
+      let tVis = roomShadowVis(o.world + n * 0.02, tdir, td - 0.15);
       let tndl = lookQuantizeDiffuse(dot(n, tdir), wrap, bands, bandSoft);
-      let torchIntensity = clamp((rimStrength - 0.5) * 2.2, 0.0, 3.2) * cone * fade;
-      let torchCol = vec3f(0.84, 0.94, 1.12);
+      let torchIntensity = clamp((max(rimStrength, 1.1) - 0.5) * 2.2, 0.0, 3.2) * cone * fade * tVis;
+      let torchCol = vec3f(1.06, 0.96, 0.84);
       diff += torchCol * torchIntensity * (0.2 + 0.8 * tndl) * 2.1;
+      torchMask = clamp(cone * fade * tVis * 2.4, 0.0, 1.0);
       if (sample.gloss.x > 0.0) {
         let h = normalize(tdir + V);
         let s = pow(max(0.0, dot(n, h)), sample.gloss.x) * (sample.gloss.x + 2.0) * 0.012;
@@ -344,7 +347,7 @@ fn contactCavity(p: vec3f, n: vec3f) -> f32 {
   } else if (F.options.z == 5.0) {
     color = n * 0.5 + 0.5;
   }
-  return vec4f(color, 1.0);
+  return vec4f(color, select(1.0, 1.0 - torchMask, useLook));
 }
 
 @fragment fn fsNormalDepth(o: VOut) -> @location(0) vec4f {
@@ -582,17 +585,19 @@ fn evaluateRoomAtmosphere(
   let caOffset = fromC * dot(fromC, fromC) * (L.u9.w * 0.018);
   let painterly = L.u10.w;
 
+  let centerSamp = textureSampleLevel(tScene, sLinear, uv, 0.0);
+  let flashMask = clamp(1.0 - centerSamp.a, 0.0, 1.0);
   var sceneCol: vec3f;
   if (painterly > 0.01) {
     sceneCol = kuwaharaSmooth(uv, texel, painterly);
   } else if (L.u9.w > 0.001) {
     sceneCol = vec3f(
       textureSampleLevel(tScene, sLinear, clamp(uv + caOffset, vec2f(0.001), vec2f(0.999)), 0.0).r,
-      textureSampleLevel(tScene, sLinear, uv, 0.0).g,
+      centerSamp.g,
       textureSampleLevel(tScene, sLinear, clamp(uv - caOffset, vec2f(0.001), vec2f(0.999)), 0.0).b
     );
   } else {
-    sceneCol = textureSampleLevel(tScene, sLinear, uv, 0.0).rgb;
+    sceneCol = centerSamp.rgb;
   }
 
   // 2. Depth / normal ink outlines from true rendered mesh geometry (Painterly & Ink)
@@ -627,7 +632,7 @@ fn evaluateRoomAtmosphere(
 
   // Apply ink outlines before final film grade so outlines sit inside the graded palette
   if (inkFactor > 0.001) {
-    let inkCol = vec3f(0.04, 0.04, 0.07) * (0.5 + L.u15.w);
+    let inkCol = vec3f(0.04, 0.04, 0.07) * 0.66;
     hdr = mix(hdr, inkCol, inkFactor);
   }
 
@@ -644,7 +649,8 @@ fn evaluateRoomAtmosphere(
     shaftLift,
     0.18,
     0.88,
-    0.25
+    0.25,
+    flashMask
   );
 
   // 5. Split indicator line in A/B Wipe mode

@@ -168,6 +168,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
       overgrowth: number
       treeSlot: number
       houseSeed: number
+      fogStyle: 0 | 1 | 2
+      fogEdgeSoftness: number
+      fogMemoryDim: number
+      fogUnknownGrain: number
       playing: boolean
     } = {
     directionPreset: 3,
@@ -185,6 +189,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     ...flatSurfaceSettings,
     treeSlot: 1,
     houseSeed: 7,
+    fogStyle: 1,
+    fogEdgeSoftness: 0.78,
+    fogMemoryDim: 0.42,
+    fogUnknownGrain: 0.48,
     playing: true,
   }
 
@@ -493,6 +501,20 @@ export const outbreakVignetteSection: SectionFactory = context => {
         value,
       })),
     },
+    {
+      key: "fogStyle",
+      label: "Fog of war style",
+      group: "Direction & View",
+      type: "select",
+      options: [
+        { value: 1, label: "Noir Memory + Echo (Default)" },
+        { value: 2, label: "Stark Cone + Pulse" },
+        { value: 0, label: "Soft Shroud (Classic)" },
+      ],
+    },
+    { key: "fogEdgeSoftness", label: "LOS edge feather", group: "Direction & View", type: "range", min: 0.05, max: 1.5, step: 0.05, unit: "" },
+    { key: "fogMemoryDim", label: "Memory brightness", group: "Direction & View", type: "range", min: 0.1, max: 0.9, step: 0.02, unit: "×" },
+    { key: "fogUnknownGrain", label: "Unknown area grain", group: "Direction & View", type: "range", min: 0.0, max: 1.0, step: 0.02, unit: "" },
 
     // --- Time, Sky & Shadows ---
     { key: "hour", label: "Time of day", group: "Sky & Shadows", type: "range", min: 0, max: 24, step: 0.1, unit: "h" },
@@ -698,8 +720,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
     const effHour = wrapHour(useShippedGlobal ? 18.0 : s.hour)
     const day = dayCycle(effHour)
 
-    // Camera matrix: use Outbreak's 0.52 FOV camera when on preset, or Stage's orbit camera when user orbits
-    if (!stage.camCustom) {
+    // Camera matrix: always build column-major wgpu-matrix from stage focus/pitch/dist
+    {
       cam.x = stage.focus[0]!
       cam.z = stage.focus[2]!
       cam.pitch = stage.camPitch
@@ -840,6 +862,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     vignetteUniforms[113] = effRange
     vignetteUniforms[114] = useShippedGlobal ? 0 : s.flashlightHaze
     vignetteUniforms[115] = flashSlot
+    vignetteUniforms[116] = s.fogStyle
+    vignetteUniforms[117] = s.fogEdgeSoftness
+    vignetteUniforms[118] = s.fogMemoryDim
+    vignetteUniforms[119] = s.fogUnknownGrain
     r.setCustomUniforms(vignetteUniforms)
 
     // Cutaway coordinate in F.eye.xy:

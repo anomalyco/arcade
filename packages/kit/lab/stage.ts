@@ -384,7 +384,7 @@ export class Stage {
     return {u,v,visible:u>=0&&u<=1&&v>=0&&v<=1}
   }
   updateCamera(){
-    if(this.cameraOverride&&!this.camCustom){
+    if(this.cameraOverride){
       this.cameraOverride(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus)
     }else if(this.camCustom){
       writeOrbitCamera(this.width,this.height,this.viewProj,this.inverse,this.eye,this.focus,this.camYaw,this.camPitch,this.camDist)
@@ -435,7 +435,8 @@ export class Stage {
     if(measure&&this.pendingTimer)await this.pendingTimer
     if(this.customRender){
       if(tileViewport){
-        if(!this.tileCustomOutput){
+        if(!this.tileCustomOutput||this.tileCustomOutput.width!==this.width||this.tileCustomOutput.height!==this.height){
+          this.tileCustomOutput?.destroy()
           this.tileCustomOutput=this.device.createTexture({
             size:[this.width,this.height],
             format:this.format,
@@ -449,10 +450,12 @@ export class Stage {
           const clr=enc.beginRenderPass({colorAttachments:[{view:this.outputView,loadOp:"clear",storeOp:"store",clearValue:{r:0.04,g:0.05,b:0.06,a:1}}]})
           clr.end()
         }
+        const copyW=Math.min(this.width,tileViewport.width)
+        const copyH=Math.min(this.height,tileViewport.height)
         enc.copyTextureToTexture(
           {texture:this.tileCustomOutput},
           {texture:this.output,origin:[tileViewport.x,tileViewport.y,0]},
-          [tileViewport.width,tileViewport.height],
+          [copyW,copyH],
         )
         if(tileViewport.present!==false){
           enc.copyTextureToTexture({texture:this.output},{texture:this.context.getCurrentTexture()},[this.outWidth,this.outHeight])

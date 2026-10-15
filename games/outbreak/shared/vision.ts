@@ -63,6 +63,53 @@ export class Vision {
     return distance <= this.settings.awareness || (dx * Math.cos(this.aim) + dy * Math.sin(this.aim)) / distance >= Math.cos(this.settings.cone * Math.PI / 360)
   }
 
+  /**
+   * Authoritative actor LOS visibility weight in [0, 1].
+   * Samples the actor's center and lateral shoulder disk against the polar blocker map so actors peeking through
+   * doorways or straddling discrete polar ray bins are never falsely culled, while strictly blocking through walls/doors.
+   */
+  actorVisible(x: number, y: number, radius = 0.28): number {
+    const dx = x - this.x
+    const dy = y - this.y
+    const distance = Math.hypot(dx, dy)
+    if (distance > this.settings.range + radius) return 0
+    if (distance <= 0.05) return 1
+    const invD = 1 / distance
+    const px = -dy * invD * radius * 0.85
+    const py = dx * invD * radius * 0.85
+    const aimCos = Math.cos(this.aim)
+    const aimSin = Math.sin(this.aim)
+    const cosHalf = Math.cos((this.settings.cone * Math.PI) / 360)
+    const featherCos = cosHalf - 0.065
+    let best = 0
+    for (let k = -1; k <= 1; k++) {
+      const sdx = dx + px * k
+      const sdy = dy + py * k
+      const sDist = Math.hypot(sdx, sdy)
+      if (sDist > this.settings.range || sDist <= 1e-4) continue
+      const a = (Math.atan2(sdy, sdx) + TAU) % TAU
+      const ray = Math.floor((a / TAU) * POLAR_RAYS) % POLAR_RAYS
+      if (sDist > this.rays[ray]! + 0.055) continue
+      let coneWeight = 0
+      if (sDist <= this.settings.awareness) {
+        coneWeight = 1
+      } else if (sDist <= this.settings.awareness + 0.35) {
+        coneWeight = 1 - (sDist - this.settings.awareness) / 0.35
+      }
+      const facing = (sdx * aimCos + sdy * aimSin) / sDist
+      if (facing >= cosHalf) {
+        coneWeight = 1
+      } else if (facing > featherCos) {
+        coneWeight = Math.max(coneWeight, (facing - featherCos) / (cosHalf - featherCos))
+      }
+      if (coneWeight <= 0) continue
+      const rangeWeight = sDist <= this.settings.range - 1.2 ? 1 : Math.max(0, (this.settings.range - sDist) / 1.2)
+      const w = coneWeight * rangeWeight * (k === 0 ? 1 : 0.92)
+      if (w > best) best = w
+    }
+    return Number(best.toFixed(4))
+  }
+
   state(x: number, y: number): "visible" | "explored" | "unexplored" {
     if (this.visible(x, y)) return "visible"
     if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return "unexplored"

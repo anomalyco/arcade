@@ -62,6 +62,8 @@ const BONE_TO_PART: Record<BoneId, number> = {
   "right.foot": 7,
 }
 
+const BONE_INDEX_TO_PART = [0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7]
+
 const BONE_SUBTREE_MASK: Record<BoneId, number> = {
   pelvis: 0x1fff,
   torso: 0b0000001111110,
@@ -287,36 +289,40 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out
 
 /** Builds the 8 instanced zombie body-part meshes (pelvis, torso, head, upperArm, foreArm, thigh, shin, foot). */
 export function buildZombiePartMeshes(): Mesh[] {
-  const box = (w: number, y0: number, h: number, d: number, col: Rgb) => {
+  const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
     const m = new Mesh()
-    m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
+    if (bevel > 0) m.bevelBox(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, bevel, col, col, MAT.actor)
+    else m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, col, MAT.actor)
     return m
   }
-  const skin = hex(0x6c7d60)
-  const forearmSkin = hex(0x4e5d45)
-  const jacket = hex(0x454137)
-  const trousers = hex(0x2b3136)
-  const wound = hex(0x581416)
-  const hair = hex(0x212623)
-  const boot = hex(0x26201c)
+  const skin = hex(0x7c906e)
+  const forearmSkin = hex(0x647857)
+  const jacket = hex(0x61594b)
+  const collar = hex(0x786f5e)
+  const trousers = hex(0x3a434c)
+  const wound = hex(0x9c2024)
+  const hair = hex(0x252b28)
+  const boot = hex(0x28221e)
 
   const pelvis = box(0.25, -0.07, 0.18, 0.34, trousers)
-  const torso = box(0.28, -0.02, 0.48, 0.4, jacket)
-  torso.box(0.11, 0.12, -0.12, 0.145, 0.36, 0.08, wound, MAT.actor)
-  torso.box(-0.145, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
+  const torso = box(0.28, -0.02, 0.48, 0.4, jacket, 0.022)
+  // Lighter shoulder/collar yolk so top-down silhouette reads clearly even in dim ambient
+  torso.box(-0.145, 0.34, -0.205, 0.145, 0.47, 0.205, collar, MAT.actor)
+  torso.box(0.11, 0.12, -0.12, 0.148, 0.36, 0.08, wound, MAT.actor)
+  torso.box(-0.148, 0.16, -0.1, -0.11, 0.38, 0.12, wound, MAT.actor)
 
-  const head = box(0.18, 0.01, 0.24, 0.18, skin)
-  head.box(-0.1, 0.19, -0.11, 0.1, 0.28, 0.11, hair, MAT.actor)
+  const head = box(0.185, 0.01, 0.24, 0.185, skin, 0.024)
+  head.box(-0.1, 0.19, -0.105, 0.1, 0.275, 0.105, hair, MAT.actor)
   for (const z of [-0.042, 0.042]) {
-    head.box(0.086, 0.13, z - 0.016, 0.095, 0.155, z + 0.016, hex(0x98d838), MAT.glow, 0.55)
+    head.box(0.086, 0.13, z - 0.017, 0.098, 0.158, z + 0.017, hex(0xbce858), MAT.glow, 0.72)
   }
 
   const upperArm = box(0.15, -0.29, 0.33, 0.15, jacket)
-  const foreArm = box(0.11, -0.28, 0.3, 0.11, forearmSkin)
-  foreArm.box(-0.04, -0.31, -0.045, 0.055, -0.26, 0.045, wound, MAT.actor)
+  const foreArm = box(0.115, -0.28, 0.3, 0.115, forearmSkin)
+  foreArm.box(-0.04, -0.31, -0.046, 0.058, -0.255, 0.046, wound, MAT.actor)
 
   const thigh = box(0.17, -0.42, 0.46, 0.17, trousers)
-  const shin = box(0.13, -0.41, 0.43, 0.14, trousers)
+  const shin = box(0.135, -0.41, 0.43, 0.14, trousers)
   const foot = box(0.21, -0.075, 0.09, 0.14, boot)
 
   return [pelvis, torso, head, upperArm, foreArm, thigh, shin, foot]
@@ -327,6 +333,9 @@ export class ZombieCrowdRenderer {
   private readonly partData: Float32Array<ArrayBuffer>[]
   readonly partCounts = new Int32Array(PART_COUNT)
   private readonly poolBatches: Batch[]
+  private readonly ghostPartData: Float32Array<ArrayBuffer>[]
+  private readonly ghostPartCounts = new Int32Array(PART_COUNT)
+  private readonly ghostPoolBatches: Batch[]
   private readonly scratchProfile: HumanProfile = { ...humanProfiles.zombie }
   private readonly scratchTorsoFrame: Frame = { p: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
   readonly debris: DetachedDebrisPiece[] = []
@@ -373,6 +382,10 @@ export class ZombieCrowdRenderer {
   private hiddenMask = new Uint16Array(INITIAL_AGENT_CAPACITY)
   private currBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
   private prevBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
+  private seenAt = new Float32Array(INITIAL_AGENT_CAPACITY).fill(-1e9)
+  private seenX = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private seenY = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private seenBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
 
   constructor(renderer: Pick<Renderer, "addModel">, maxAgents = INITIAL_AGENT_CAPACITY) {
     if (maxAgents > this.capacity) this.growCapacity(maxAgents)
@@ -382,6 +395,13 @@ export class ZombieCrowdRenderer {
       model: this.models[i]!,
       data: this.partData[i]!,
       count: 0,
+    }))
+    this.ghostPartData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
+    this.ghostPoolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
+      model: this.models[i]!,
+      data: this.ghostPartData[i]!,
+      count: 0,
+      alpha: true,
     }))
   }
 
@@ -432,12 +452,19 @@ export class ZombieCrowdRenderer {
     this.hiddenMask = nextHidden
     this.currBones = growF32(this.currBones, BONE_STRIDE)
     this.prevBones = growF32(this.prevBones, BONE_STRIDE)
+    const nextSeenAt = new Float32Array(nextCap).fill(-1e9)
+    nextSeenAt.set(this.seenAt)
+    this.seenAt = nextSeenAt
+    this.seenX = growF32(this.seenX)
+    this.seenY = growF32(this.seenY)
+    this.seenBones = growF32(this.seenBones, BONE_STRIDE)
     this.capacity = nextCap
   }
 
   reset(): void {
     this.slotById.clear()
     this.nextSlot = 0
+    this.seenAt.fill(-1e9)
     this.debris.length = 0
   }
 
@@ -554,6 +581,7 @@ export class ZombieCrowdRenderer {
       this.headV[s] = 0
       this.collapse[s] = 0
       this.collapseDir[s] = (agent.id % 2 === 0 ? 1 : -1) * 0.35
+      this.seenAt[s] = -1e9
       let mask = 0
       for (let i = 0; i < agent.detachedLimbs.length; i++) {
         mask |= BONE_SUBTREE_MASK[agent.detachedLimbs[i] as BoneId] ?? 0
@@ -641,18 +669,61 @@ export class ZombieCrowdRenderer {
     this.partCounts[partIndex] = count + 1
   }
 
+  private emitGhostBone(
+    bOff: number,
+    boneIdx: number,
+    partIndex: number,
+    hiddenMask: number,
+    alpha: number,
+  ): void {
+    if ((hiddenMask & (1 << boneIdx)) !== 0) return
+    const count = this.ghostPartCounts[partIndex]!
+    if (count >= MAX_INSTANCES_PER_PART) return
+    const fOff = bOff + boneIdx * 12
+    const b = this.seenBones
+    const xx = b[fOff + 3]!
+    const xy = b[fOff + 4]!
+    const xz = b[fOff + 5]!
+    const yy = b[fOff + 7]!
+    const zx = b[fOff + 9]!
+    const zy = b[fOff + 10]!
+    const zz = b[fOff + 11]!
+    const p = Math.asin(clamp(xy, -1, 1))
+    const c = Math.cos(p)
+    const yaw = c > 1e-4 ? Math.atan2(xz, xx) : Math.atan2(-zx, zz)
+    const r = c > 1e-4 ? Math.atan2(-zy, yy) : 0
+    const offset = count * INST_FLOATS
+    const data = this.ghostPartData[partIndex]!
+    data[offset] = b[fOff]!
+    data[offset + 1] = b[fOff + 1]!
+    data[offset + 2] = b[fOff + 2]!
+    data[offset + 3] = yaw
+    data[offset + 4] = 0.42
+    data[offset + 5] = 0.48
+    data[offset + 6] = 0.58
+    data[offset + 7] = 1
+    data[offset + 8] = p
+    data[offset + 9] = r
+    data[offset + 10] = alpha
+    data[offset + 11] = 0
+    this.ghostPartCounts[partIndex] = count + 1
+  }
+
   draw(
     agents: readonly AIAgent[],
     dt: number,
     support: (x: number, z: number) => number,
     vision: Vision,
     viewRect: readonly [number, number, number, number],
-    zombieTune: ZombieTuning,
+    zombieTune: ZombieTuning & { fogGhostDuration?: number },
     debugOverlay: boolean,
+    time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
     this.partCounts.fill(0)
+    this.ghostPartCounts.fill(0)
     const [vx0, vy0, vx1, vy1] = viewRect
+    const ghostDuration = zombieTune.fogGhostDuration ?? 3.2
 
     // Step detached limb debris
     for (let i = this.debris.length - 1; i >= 0; i--) {
@@ -715,8 +786,31 @@ export class ZombieCrowdRenderer {
       const a = agents[idx]!
       if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue
 
-      const isVisible = vision.visible(a.x, a.y)
-      if (!isVisible && !debugOverlay) continue
+      const visWeight = typeof vision.actorVisible === "function" ? vision.actorVisible(a.x, a.y) : vision.visible(a.x, a.y) ? 1 : 0
+      const isVisible = visWeight > 0.02
+      if (!isVisible && !debugOverlay) {
+        const s = this.slotById.get(a.id)
+        if (s !== undefined && ghostDuration > 0.05 && a.state !== "dead") {
+          const age = time - this.seenAt[s]!
+          if (age >= 0 && age < ghostDuration) {
+            const sx = this.seenX[s]!
+            const sy = this.seenY[s]!
+            if (Math.hypot(a.x - sx, a.y - sy) > 0.85 && vision.visible(sx, sy)) {
+              this.seenAt[s] = -1e9
+            } else {
+              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * 0.56
+              if (gAlpha > 0.02) {
+                const hidden = this.hiddenMask[s]!
+                const bOff = s * BONE_STRIDE
+                for (let b = 0; b < BONE_COUNT; b++) {
+                  this.emitGhostBone(bOff, b, BONE_INDEX_TO_PART[b]!, hidden, gAlpha)
+                }
+              }
+            }
+          }
+        }
+        continue
+      }
 
       const s = this.ensureSlot(a, support)
       let hidden = this.hiddenMask[s]!
@@ -727,17 +821,18 @@ export class ZombieCrowdRenderer {
         this.hiddenMask[s] = hidden
       }
 
-      const shade = 0.86 + ((a.id * 19) % 7) * 0.035
+      const shade = 0.88 + ((a.id * 19) % 7) * 0.035
       const tintR = !isVisible && debugOverlay ? 0.55 : shade
       const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98
       const tintB = !isVisible && debugOverlay ? 0.85 : shade * 0.94
-      const alpha = !isVisible && debugOverlay ? 0.58 : 1.0
+      const alpha = !isVisible && debugOverlay ? 0.58 : Math.min(1.0, 0.25 + 0.75 * visWeight)
       const bOff = s * BONE_STRIDE
       const pelvisOff = bOff
       const torsoOff = bOff + 12
       const headOff = bOff + 24
 
       if (a.state === "dead") {
+        this.seenAt[s] = -1e9
         const col = Math.min(1, this.collapse[s]! + dt * 4.2)
         this.collapse[s] = col
         const c = smoother(col)
@@ -1272,6 +1367,15 @@ export class ZombieCrowdRenderer {
         this.emitBone(bOff, uaIdx, 3, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       }
+
+      if (isVisible) {
+        this.seenAt[s] = time
+        this.seenX[s] = a.x
+        this.seenY[s] = a.y
+        for (let f = 0; f < BONE_STRIDE; f++) {
+          this.seenBones[bOff + f] = bBuf[bOff + f]!
+        }
+      }
     }
 
     this.batches.length = 0
@@ -1279,6 +1383,14 @@ export class ZombieCrowdRenderer {
       const count = this.partCounts[i]!
       if (count > 0) {
         const b = this.poolBatches[i]!
+        b.count = count
+        this.batches.push(b)
+      }
+    }
+    for (let i = 0; i < PART_COUNT; i++) {
+      const count = this.ghostPartCounts[i]!
+      if (count > 0) {
+        const b = this.ghostPoolBatches[i]!
         b.count = count
         this.batches.push(b)
       }
@@ -1337,10 +1449,10 @@ export class ZombieCrowdRenderer {
       alphaSprites[o + 11] = extra
     }
 
-    // Even when full debug overlay is off, show subtle alert "!" marker on newly alerted zombies
+    // Even when full debug overlay is off, show subtle alert "!" marker on newly alerted zombies in LOS
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i]!
-      if (a.state === "alert") {
+      if (a.state === "alert" && (enabled || a.hitFlash > 0.05)) {
         const gy = support(a.x, a.y)
         pushSprite(a.x, gy + 2.25, a.y, 0.22, 1.0, 0.32, 0.18, 0.92, 7, 0, 1, 0)
       }
