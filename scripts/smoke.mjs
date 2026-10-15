@@ -28,14 +28,23 @@ const deadline = setTimeout(() => {
   process.exit(1)
 }, 45_000)
 try {
+  const useSwiftShader = process.platform !== "darwin" || process.env.SMOKE_SWIFTSHADER === "1"
   browser = await chromium.launch({
     headless: true,
     timeout: 10_000,
     args: [
-      "--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-      // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
-      "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio",
-      ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
+      "--enable-unsafe-webgpu",
+      "--mute-audio",
+      ...(useSwiftShader
+        ? [
+            "--use-angle=swiftshader",
+            "--enable-unsafe-swiftshader",
+            // Carrier and Outbreak draw behind the menu and need WebGPU presentation, not merely adapter creation.
+            "--enable-features=Vulkan",
+            "--use-vulkan=swiftshader",
+            ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
+          ]
+        : ["--use-angle=metal", "--ignore-gpu-blocklist"]),
     ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
@@ -44,8 +53,8 @@ try {
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
-  // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  // Bench mode in Lab and Outbreak renders the full initial frame and keeps the loop paused after readiness.
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" || game === "outbreak" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver.

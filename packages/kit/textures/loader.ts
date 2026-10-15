@@ -259,19 +259,24 @@ export async function loadMaterialTextureArray(
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
 
-  // Seed any missing layer with neutral white + matte roughness so all layers have valid mip chains
-  const neutralRgba = new Uint8Array(size * size * 4)
-  for (let i = 0; i < size * size * 4; i += 4) {
-    neutralRgba[i + 0] = 255
-    neutralRgba[i + 1] = 255
-    neutralRgba[i + 2] = 255
-    neutralRgba[i + 3] = 214
-  }
-  const neutralMips = buildLinearMipChain(neutralRgba, size, size)
   const byLayer = new Map(valid.map(v => [v.layer, v.mips]))
+  let neutralMips: MipLevelData[] | undefined
 
   for (let layer = 0; layer < layers; layer++) {
-    const mips = byLayer.get(layer) ?? neutralMips
+    let mips = byLayer.get(layer)
+    if (!mips) {
+      if (!neutralMips) {
+        const neutralRgba = new Uint8Array(size * size * 4)
+        for (let i = 0; i < size * size * 4; i += 4) {
+          neutralRgba[i + 0] = 255
+          neutralRgba[i + 1] = 255
+          neutralRgba[i + 2] = 255
+          neutralRgba[i + 3] = 214
+        }
+        neutralMips = buildLinearMipChain(neutralRgba, size, size)
+      }
+      mips = neutralMips
+    }
     for (let level = 0; level < mipLevelCount; level++) {
       const m = mips[level]!
       device.queue.writeTexture(
