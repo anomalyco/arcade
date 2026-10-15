@@ -80,7 +80,23 @@ export const LAB_KINDS: readonly LabKind[] = [
   },
   { id: "walk-cycle", label: "Walk cycle", subject: "A character's walk, run and poses on the shared rig", host: { kind: "page", url: "/arcade/blackout/characters.html" }, panels: [...page, "timeline"], play: "Walk" },
   { id: "aim", label: "Aim", subject: "The survivor's aim, fire and reload", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
-  { id: "feel", label: "Game feel", subject: "Hit, shot and shove feedback", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  {
+    id: "feel",
+    label: "Feel",
+    subject: "Camera shake and kick, blur bursts, hit-stop, damage flash and blood, on the survivor and a few dummy zombies",
+    // Phase 2 runs in the Outbreak page; phase 4 moves it to a Lab arena built on the Styles section's room sim.
+    host: { kind: "page", url: "/arcade/outbreak/" },
+    panels: [...page, "controls", "actions", "readouts", "timeline", "views"],
+    actions: [
+      { id: "shot", label: "Shot", key: "S", command: "camera.impulse", args: { kind: "shot", power: 1 } },
+      { id: "shove", label: "Shove", key: "V", command: "camera.impulse", args: { kind: "shove", power: 1 } },
+      { id: "hit-taken", label: "Hit taken", key: "T", command: "camera.impulse", args: { kind: "hit-taken", damage: 25 } },
+      // Needs a feel.kill command (a killing shot on the nearest dummy); camera.impulse has no kill kind yet.
+      { id: "kill", label: "Kill", key: "X", command: "feel.kill" },
+      { id: "explosion", label: "Explosion", key: "B", command: "camera.impulse", args: { kind: "explosion", power: 1 } },
+    ],
+    play: "Play",
+  },
   { id: "hud", label: "HUD", subject: "The HUD through a night moment", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "progression", label: "Progression", subject: "Inventory, research and the workbench", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "pacing", label: "Pacing", subject: "Outbreak's first night: waves, threat and quiet", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },

@@ -7,6 +7,7 @@ import { openCommands } from "@arcade/kit/lab/scenes/migrate"
 import { createSceneStore, memorySceneStorage } from "@arcade/kit/lab/scenes/store"
 import type { LabStation, StationCommand } from "@arcade/kit/lab/stations/types"
 import { migrateStations, STATION_AREAS } from "../src/scenes/from-stations"
+import { FEEL_ARENA } from "../src/scenes/examples/feel-arena"
 import { LAB_KINDS } from "../src/scenes/kinds"
 
 const dir = join(import.meta.dir, "../src/stations")
@@ -21,6 +22,12 @@ describe("lab kinds", () => {
     expect(checkKinds(LAB_KINDS)).toEqual([])
     const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles"]
     for (const section of sections) expect({ section, kinds: LAB_KINDS.filter(k => k.host.kind === "section" && k.host.section === section).length }).toEqual({ section, kinds: 1 })
+  })
+  test("the Feel arena example fits the Feel kind, and every featured knob is one its variants or settings use", () => {
+    expect(checkScene(FEEL_ARENA).ok).toBe(true)
+    expect(checkAgainstKind(FEEL_ARENA, LAB_KINDS)).toEqual([])
+    for (const key of FEEL_ARENA.layout!.featured!.keys!) expect(key in FEEL_ARENA.settings).toBe(true)
+    expect(LAB_KINDS.find(k => k.id === "feel")!.actions!.map(a => `${a.key} ${a.label}`)).toEqual(["S Shot", "V Shove", "T Hit taken", "X Kill", "B Explosion"])
   })
   test("no kind is a catch-all: only the vehicle lab has an add-picker", () => {
     expect(LAB_KINDS.filter(k => k.add?.length).map(k => k.id)).toEqual(["vehicle"])

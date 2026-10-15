@@ -21,7 +21,7 @@ export type PartRef = { part: string; settings?: Record<string, LabValue> }
 
 export type SceneHost =
   | { kind: "section"; section: string; setup?: readonly SceneCommand[] }
-  | { kind: "page"; url: string }
+  | { kind: "page"; url: string; setup?: readonly SceneCommand[] }
 
 /** Something the kind's add-picker placed (cones on a vehicle course, walkers in a tree lab). */
 export type SceneExtra = PartRef & {
@@ -225,6 +225,7 @@ export function checkScene(input: unknown): Checked<LabScene> {
       commands(h.setup, "host.setup", problems)
     } else if (h.kind === "page") {
       if (typeof h.url !== "string" || !h.url.startsWith("/arcade/")) problems.push("host.url must be an Arcade path")
+      commands(h.setup, "host.setup", problems)
     } else problems.push('host.kind must be "section" or "page"')
   }
   choices(s.choices, "choices", problems)

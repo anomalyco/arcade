@@ -7,8 +7,19 @@ import type { LabScene, SceneHost } from "./model"
  * `measured` recorded numbers, `views` saved cameras, `notes` text and voice notes, `timeline` a scrubbable clock for
  * subjects that animate (a walk cycle, an explosion).
  */
-export type LabPanel = "controls" | "choices" | "add" | "variants" | "readouts" | "measured" | "views" | "notes" | "timeline" | "work"
-export const LAB_PANELS: readonly LabPanel[] = ["controls", "choices", "add", "variants", "readouts", "measured", "views", "notes", "timeline", "work"]
+export type LabPanel = "controls" | "choices" | "add" | "actions" | "variants" | "readouts" | "measured" | "views" | "notes" | "timeline" | "work"
+export const LAB_PANELS: readonly LabPanel[] = ["controls", "choices", "add", "actions", "variants", "readouts", "measured", "views", "notes", "timeline", "work"]
+
+/**
+ * Letters a kind may give its actions. Every other letter is either a global editor shortcut (A add, C view, D
+ * duplicate, F frame, G move, H home, K pause, L loop, M mute, N note, P play, R rotate, Z slow replay) or a Play
+ * movement key (W A S D, E interact), so an action key never means something else in another lab. S and E are allowed
+ * because actions only fire in Edit, where Play keys are idle.
+ */
+export const ACTION_KEYS = ["B", "E", "I", "J", "O", "Q", "S", "T", "U", "V", "X", "Y"] as const
+
+/** Something the subject does on demand: fire a shot, take a hit. Runs a command; `L` loops every action in order. */
+export type KindAction = { id: string; label: string; key: (typeof ACTION_KEYS)[number]; command: string; args?: Record<string, string | number | boolean> }
 
 export type KindPart = { part: string; label: string }
 
@@ -36,6 +47,8 @@ export type LabKind = {
   choices?: readonly KindChoice[]
   /** The add-picker's groups. Only kinds whose subject needs company (a vehicle course, walkers) have one. */
   add?: readonly { group: string; parts: readonly KindPart[] }[]
+  /** On-demand events (the Feel kind's shot, shove, hit taken, kill, explosion), each with its own key. */
+  actions?: readonly KindAction[]
   /** Play mode verb, for kinds with something to possess ("Drive", "Walk"). */
   play?: string
 }
@@ -55,6 +68,14 @@ export function checkKinds(kinds: readonly LabKind[]): string[] {
     if (k.add?.length && !k.panels.includes("add")) problems.push(`${at}: has an add-picker but no "add" panel`)
     if (k.panels.includes("add") && !k.add?.length) problems.push(`${at}: "add" panel with nothing to add`)
     if (k.choices?.length && !k.panels.includes("choices")) problems.push(`${at}: has choices but no "choices" panel`)
+    if (k.actions?.length && !k.panels.includes("actions")) problems.push(`${at}: has actions but no "actions" panel`)
+    if (k.panels.includes("actions") && !k.actions?.length) problems.push(`${at}: "actions" panel with no actions`)
+    const keys = new Set<string>()
+    for (const a of k.actions ?? []) {
+      if (!(ACTION_KEYS as readonly string[]).includes(a.key)) problems.push(`${at}: action "${a.id}" uses ${a.key}, which is not an action key (${ACTION_KEYS.join(" ")})`)
+      if (keys.has(a.key)) problems.push(`${at}: key ${a.key} is used by two actions`)
+      keys.add(a.key)
+    }
     const slots = new Set<string>()
     for (const c of k.choices ?? []) {
       if (slots.has(c.slot)) problems.push(`${at}: choice slot "${c.slot}" twice`)

@@ -19,10 +19,11 @@ In code a lab is a `LabScene`, because "lab" already names the whole app.
 | File | What it holds |
 | --- | --- |
 | `packages/kit/lab/scenes/model.ts` | `LabScene`, `SceneCollection`, `checkScene`/`checkCollection` (whole-object validation, every problem listed, nothing partial), ids, `sceneJson` (repo-file format), share links (`#lab=` base64url, read back as a draft) |
-| `packages/kit/lab/scenes/kinds.ts` | `LabKind` (subject, host, patterns, choices, add-picker, play verb), `checkKinds`, and `checkAgainstKind`, which rejects choices, parts and extras the lab's kind doesn't have |
+| `packages/kit/lab/scenes/kinds.ts` | `LabKind` (subject, host, patterns, choices, add-picker, actions, play verb), `ACTION_KEYS` (the letters a kind may give its actions), `checkKinds`, and `checkAgainstKind`, which rejects choices, parts and extras the lab's kind doesn't have |
 | `packages/kit/lab/scenes/store.ts` | `createSceneStore`: repo labs merged with this browser's labs and edits, the lifecycle (create, duplicate, keep, archive, restore, delete, revert an edited repo lab, move), collections (create, archive with their labs) and the sweep (drafts untouched for 7 days are archived; local archived labs are deleted 30 days later). Storage is a port with memory and `localStorage` adapters. |
 | `packages/kit/lab/scenes/migrate.ts` | `liftCommands` (setup commands → choices, values and leftover commands, only when their order allows), `choiceCommands` and `openCommands` (the inverse, what opening a lab will run), and migrations from station files, `LabPresetSchema` v1 exports and tour steps |
 | `games/lab/src/scenes/kinds.ts` | The 23 kinds: one per Lab section and one per page station |
+| `games/lab/src/scenes/examples/feel-arena.ts` | The Feel lab worked example: survivor and three dummies, six featured knobs, Feel on/off, Punchy and Reduced motion; impacts are the Feel kind's actions (`S` shot, `V` shove, `T` hit taken, `X` kill, `B` explosion) |
 | `games/lab/src/scenes/from-stations.ts` | The area collection for each station, and `migrateStations` |
 | `games/lab/scripts/stations-to-scenes.ts` | Writes the would-be `games/lab/scenes/**` files and migration notes to `captures/scenes-preview` |
 

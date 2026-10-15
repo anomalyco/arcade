@@ -215,6 +215,24 @@ describe("lab kinds", () => {
     expect(checkKinds([{ ...vehicle, panels: ["controls"] }])).toEqual(['kind "vehicle": has an add-picker but no "add" panel'])
     expect(checkKinds([{ ...weather, add: undefined, panels: ["add", "choices"] }])[0]).toContain("nothing to add")
   })
+  test("action keys come from the action pool and are unique within a kind", () => {
+    const feel: LabKind = {
+      id: "feel",
+      label: "Feel",
+      subject: "Impacts",
+      host: { kind: "page", url: "/arcade/outbreak/" },
+      panels: ["controls", "actions"],
+      actions: [
+        { id: "shot", label: "Shot", key: "S", command: "camera.impulse" },
+        { id: "shove", label: "Shove", key: "V", command: "camera.impulse" },
+      ],
+    }
+    expect(checkKinds([feel])).toEqual([])
+    const clash = { ...feel, actions: [...feel.actions!, { id: "kill", label: "Kill", key: "S" as const, command: "feel.kill" }] }
+    expect(checkKinds([clash])).toEqual(['kind "feel": key S is used by two actions'])
+    const global = { ...feel, actions: [{ id: "x", label: "X", key: "G" as never, command: "x" }] }
+    expect(checkKinds([global])[0]).toContain("uses G, which is not an action key")
+  })
   test("a lab may only use its kind's choices and add-picker", () => {
     const ok = scene({ kind: "weather", host: { kind: "section", section: "weather" }, choices: { preset: { part: "weather:storm" } } })
     expect(checkAgainstKind(ok, [vehicle, weather])).toEqual([])
