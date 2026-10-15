@@ -16,6 +16,7 @@ import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
 import { groundControls, randomizeGroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
+import { DEFAULT_MAP_SETTINGS, mapControls, type OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
 import type { NetSession } from "./net-session"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
@@ -41,6 +42,7 @@ export interface OutbreakLabControlHost {
   readonly progressionHost: ProgressionLabHost
   readonly vehicleHost: VehicleLabHost
   readonly hud: OutbreakHud
+  readonly map: OutbreakMap
   readonly updateProfile: () => void
   readonly regenerate: () => void
   readonly syncTextures: () => void
@@ -172,6 +174,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...zombieControls,
     ...survivorAimControls,
     ...hudControls,
+    ...mapControls,
     {
       key: "bloodStyle",
       label: "Blood splatter",
@@ -398,6 +401,7 @@ export function handleOutbreakSettingChanged(
   const key = routed?.field ?? rawKey
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
+  if (key in DEFAULT_MAP_SETTINGS) host.map.applySettings()
   applyProgressionSetting(progressionHost, key, settings.progression)
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount

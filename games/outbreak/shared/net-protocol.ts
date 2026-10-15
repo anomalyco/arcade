@@ -691,7 +691,7 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
   }
 }
 
-function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
+function readFullZombie(r: ByteReader, townSeed: number, out?: ZombieState): ZombieState {
   const id = r.u16()
   const hdr = r.u8()
   const stateIdx = (hdr & 7) | ((hdr & 64) >>> 3)
@@ -718,6 +718,115 @@ function readFullZombie(r: ByteReader, townSeed: number): ZombieState {
     if (opt & 16) timer = (r.u8() / 255) * tCap
     if (opt & 32) seed = r.u32()
     if (opt & 64) limbMask = r.u8()
+  }
+  if (out) {
+    out.id = id
+    out.seed = seed
+    out.x = x
+    out.y = y
+    out.aim = aim
+    out.state = state
+    out.hp = hp
+    out.hitFlash = hitFlash
+    out.stateTime = stateTime
+    out.timer = timer
+    out.clamber = clamber
+    if (limbMask > 0) out.limbMask = limbMask
+    else delete out.limbMask
+    return out
+  }
+  return {
+    id,
+    seed,
+    x,
+    y,
+    aim,
+    state,
+    hp,
+    hitFlash,
+    stateTime,
+    timer,
+    clamber,
+    ...(limbMask > 0 ? { limbMask } : {}),
+  }
+}
+
+const DECODE_POOL_PAGES = 72
+type DecodeZombiePage = {
+  pool: ZombieState[]
+  list: ZombieState[]
+}
+type DecodeZombiePool = {
+  cursor: number
+  pages: DecodeZombiePage[]
+}
+const decodeZombiePools = new WeakMap<AckHistory<SharedSnapshot>, DecodeZombiePool>()
+const decodeRemovedSet = new Set<number>()
+const decodeRetainedScratch: ZombieState[] = []
+const encodeThrottleZombieMap = new Map<number, ZombieState>()
+const encodeSlotIndexById = new Map<string, number>()
+const encodeRemovedIndices: number[] = []
+const encodeRetainedPrev: ZombieState[] = []
+const encodeRetainedCur: ZombieState[] = []
+const encodeAddedZombies: ZombieState[] = []
+const encodeChangedBits: boolean[] = []
+
+function acquireDecodePage(history?: AckHistory<SharedSnapshot>): DecodeZombiePage | null {
+  if (!history) return null
+  let pool = decodeZombiePools.get(history)
+  if (!pool) {
+    pool = {
+      cursor: 0,
+      pages: Array.from({ length: DECODE_POOL_PAGES }, () => ({ pool: [], list: [] })),
+    }
+    decodeZombiePools.set(history, pool)
+  }
+  const page = pool.pages[pool.cursor % DECODE_POOL_PAGES]!
+  pool.cursor = (pool.cursor + 1) >>> 0
+  page.list.length = 0
+  return page
+}
+
+function acquirePooledZombie(page: DecodeZombiePage | null, index: number): ZombieState | undefined {
+  if (!page) return undefined
+  let z = page.pool[index]
+  if (!z) {
+    z = { id: 0, seed: 0, x: 0, y: 0, aim: 0, state: "wander", hp: 100, hitFlash: 0, stateTime: 0, timer: 0, clamber: 0 }
+    page.pool[index] = z
+  }
+  return z
+}
+
+function writeZombieFields(
+  dst: ZombieState | undefined,
+  id: number,
+  seed: number,
+  x: number,
+  y: number,
+  aim: number,
+  state: AIState,
+  hp: number,
+  hitFlash: number,
+  stateTime: number,
+  timer: number,
+  clamber: number,
+  limbMask = 0,
+): ZombieState {
+  if (dst) {
+    dst.id = id
+    dst.seed = seed
+    dst.x = x
+    dst.y = y
+    dst.aim = aim
+    dst.state = state
+    dst.hp = hp
+    dst.hitFlash = hitFlash
+    dst.stateTime = stateTime
+    dst.timer = timer
+    dst.clamber = clamber
+    if (limbMask > 0) dst.limbMask = limbMask
+    else delete dst.limbMask
+    return dst
   }
   return {
     id,
@@ -793,12 +902,20 @@ export function encodeShared(
   // Use `prevBubbleSnap` (when provided) for cadence holdback so the target `emittedZombies` at `tick` is identical
   // for every client in the bubble even when two clients have acknowledged different `baseSnap` ticks over the WAN.
   const throttleBase = options?.prevBubbleSnap ?? (isDelta ? baseSnap : undefined)
-  const throttleZombieMap = throttleBase ? new Map(throttleBase.zombies.map((z) => [z.id, z])) : null
+  let throttleZombieMap: Map<number, ZombieState> | null = null
+  if (throttleBase) {
+    encodeThrottleZombieMap.clear()
+    for (let i = 0; i < throttleBase.zombies.length; i++) {
+      const z = throttleBase.zombies[i]!
+      encodeThrottleZombieMap.set(z.id, z)
+    }
+    throttleZombieMap = encodeThrottleZombieMap
+  }
   const emittedZombies: ZombieState[] = []
   for (const a of sim.ai.agents) {
     if (viewerCenter && !inInterestBubble(a.x, a.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent)) continue
+    const prev = throttleZombieMap?.get(a.id)
     const q = quantizeZombie(a, sim.town.seed)
-    const prev = throttleZombieMap?.get(q.id)
     if (prev && (isDelta || options?.prevBubbleSnap)) {
       const urgent =
         q.state !== prev.state ||
@@ -915,7 +1032,12 @@ export function encodeShared(
     : newMelee
 
   // 4. Vehicles in the recipient's interest bubble
-  const slotIndexById = new Map(sim.slots.map((s) => [s.id, s.index]))
+  const slotIndexById = encodeSlotIndexById
+  slotIndexById.clear()
+  for (let i = 0; i < sim.slots.length; i++) {
+    const s = sim.slots[i]!
+    slotIndexById.set(s.id, s.index)
+  }
   const emittedVehicles: VehicleState[] = []
   for (const v of sim.vehicles.list) {
     if (viewerCenter && !inInterestBubble(v.x, v.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent + 16)) continue
@@ -1023,16 +1145,22 @@ export function encodeShared(
     for (const z of emittedZombies) writeFullZombie(w, z, sim.town.seed)
   } else {
     const baseZ = baseSnap.zombies
-    const removedIndices: number[] = []
-    const retainedPairs: { prev: ZombieState; cur: ZombieState }[] = []
-    const addedZombies: ZombieState[] = []
+    const removedIndices = encodeRemovedIndices
+    const retainedPrev = encodeRetainedPrev
+    const retainedCur = encodeRetainedCur
+    const addedZombies = encodeAddedZombies
+    removedIndices.length = 0
+    retainedPrev.length = 0
+    retainedCur.length = 0
+    addedZombies.length = 0
     let bi = 0
     let ei = 0
     while (bi < baseZ.length && ei < emittedZombies.length) {
       const bz = baseZ[bi]!
       const ez = emittedZombies[ei]!
       if (bz.id === ez.id) {
-        retainedPairs.push({ prev: bz, cur: ez })
+        retainedPrev.push(bz)
+        retainedCur.push(ez)
         bi++
         ei++
       } else if (bz.id < ez.id) {
@@ -1046,12 +1174,16 @@ export function encodeShared(
     while (ei < emittedZombies.length) addedZombies.push(emittedZombies[ei++]!)
 
     w.uvar(removedIndices.length)
-    for (const idx of removedIndices) w.uvar(idx)
+    for (let i = 0; i < removedIndices.length; i++) w.uvar(removedIndices[i]!)
 
-    const changedBits = retainedPairs.map(({ prev, cur }) => {
+    const changedBits = encodeChangedBits
+    changedBits.length = retainedPrev.length
+    for (let i = 0; i < retainedPrev.length; i++) {
+      const prev = retainedPrev[i]!
+      const cur = retainedCur[i]!
       const dx = cm(cur.x) - cm(prev.x)
       const dy = cm(cur.y) - cm(prev.y)
-      return (
+      changedBits[i] =
         dx !== 0 ||
         dy !== 0 ||
         packAngle8(cur.aim) !== packAngle8(prev.aim) ||
@@ -1062,13 +1194,13 @@ export function encodeShared(
         cur.stateTime !== prev.stateTime ||
         cur.timer !== prev.timer ||
         (cur.limbMask ?? 0) !== (prev.limbMask ?? 0)
-      )
-    })
+    }
     writeBitset(w, changedBits)
 
-    for (let i = 0; i < retainedPairs.length; i++) {
+    for (let i = 0; i < retainedPrev.length; i++) {
       if (!changedBits[i]) continue
-      const { prev, cur } = retainedPairs[i]!
+      const prev = retainedPrev[i]!
+      const cur = retainedCur[i]!
       const dx = cm(cur.x) - cm(prev.x)
       const dy = cm(cur.y) - cm(prev.y)
       const posMode =
@@ -1118,7 +1250,7 @@ export function encodeShared(
     }
 
     w.uvar(addedZombies.length)
-    for (const z of addedZombies) writeFullZombie(w, z, sim.town.seed)
+    for (let i = 0; i < addedZombies.length; i++) writeFullZombie(w, addedZombies[i]!, sim.town.seed)
   }
 
   // Write Portals (only when hasPortals is set)
@@ -1272,23 +1404,53 @@ export function decodeShared(
     })
   }
 
-  let zombies: ZombieState[] = []
+  const page = acquireDecodePage(history)
+  let zombies: ZombieState[]
   if (!isDelta) {
-    for (let n = r.uvar(), i = 0; i < n; i++) {
-      zombies.push(readFullZombie(r, townSeed))
+    const n = r.uvar()
+    zombies = page ? page.list : new Array<ZombieState>(n)
+    zombies.length = n
+    for (let i = 0; i < n; i++) {
+      zombies[i] = readFullZombie(r, townSeed, acquirePooledZombie(page, i))
     }
   } else {
     const baseZ = baseSnap?.zombies ?? []
     const removedCount = r.uvar()
-    const removedSet = new Set<number>()
-    for (let i = 0; i < removedCount; i++) removedSet.add(r.uvar())
-    const retained = baseZ.filter((_, i) => !removedSet.has(i))
+    let retained: readonly ZombieState[]
+    if (removedCount === 0) {
+      retained = baseZ
+    } else {
+      decodeRemovedSet.clear()
+      for (let i = 0; i < removedCount; i++) decodeRemovedSet.add(r.uvar())
+      decodeRetainedScratch.length = 0
+      for (let i = 0; i < baseZ.length; i++) {
+        if (!decodeRemovedSet.has(i)) decodeRetainedScratch.push(baseZ[i]!)
+      }
+      retained = decodeRetainedScratch
+    }
     const changedBits = readBitset(r, retained.length)
-    const updatedRetained: ZombieState[] = new Array(retained.length)
+    zombies = page ? page.list : new Array<ZombieState>(retained.length)
+    zombies.length = retained.length
+    let poolIdx = 0
     for (let i = 0; i < retained.length; i++) {
       const prev = retained[i]!
       if (!changedBits[i]) {
-        updatedRetained[i] = prev
+        zombies[i] = page
+          ? writeZombieFields(
+              acquirePooledZombie(page, poolIdx++),
+              prev.id,
+              prev.seed,
+              prev.x,
+              prev.y,
+              prev.aim,
+              prev.state,
+              prev.hp,
+              prev.hitFlash,
+              prev.stateTime,
+              prev.timer,
+              prev.clamber,
+            )
+          : prev
         continue
       }
       const hdr = r.u8()
@@ -1324,9 +1486,10 @@ export function decodeShared(
         if (fxFlags & 8) timer = (r.u8() / 255) * timerCapFor(state)
         if (fxFlags & 16) limbMask = r.u8()
       }
-      updatedRetained[i] = {
-        id: prev.id,
-        seed: prev.seed,
+      zombies[i] = writeZombieFields(
+        acquirePooledZombie(page, poolIdx++),
+        prev.id,
+        prev.seed,
         x,
         y,
         aim,
@@ -1336,13 +1499,16 @@ export function decodeShared(
         stateTime,
         timer,
         clamber,
-        ...(limbMask > 0 ? { limbMask } : {}),
-      }
+        limbMask,
+      )
     }
     const addedCount = r.uvar()
-    const added: ZombieState[] = []
-    for (let i = 0; i < addedCount; i++) added.push(readFullZombie(r, townSeed))
-    zombies = added.length ? [...updatedRetained, ...added].sort((a, b) => a.id - b.id) : updatedRetained
+    if (addedCount > 0) {
+      for (let i = 0; i < addedCount; i++) {
+        zombies.push(readFullZombie(r, townSeed, acquirePooledZombie(page, poolIdx++)))
+      }
+      zombies.sort((a, b) => a.id - b.id)
+    }
   }
 
   let doors: { open: boolean; locked: boolean }[]

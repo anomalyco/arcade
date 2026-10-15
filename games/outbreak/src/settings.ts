@@ -14,6 +14,7 @@ import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
   DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
@@ -142,6 +143,7 @@ export type OutbreakSubsystemMap = {
   zombies: OutbreakZombieSettings
   survivor: SurvivorAimTuning
   hud: HudSettings
+  map: MapSettings
   audio: AudioSettings
   progression: ProgressionTuning
   world: OutbreakWorldSettings
@@ -172,6 +174,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakZombieSettings &
   SurvivorAimTuning &
   HudSettings &
+  MapSettings &
   AudioSettings &
   ProgressionTuning &
   OutbreakWorldSettings &
@@ -194,6 +197,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "zombies",
   "survivor",
   "hud",
+  "map",
   "audio",
   "progression",
   "world",
@@ -221,6 +225,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     zombies: { ...DEFAULT_OUTBREAK_ZOMBIES },
     survivor: { ...survivorAimTuning },
     hud: { ...DEFAULT_HUD_SETTINGS },
+    map: { ...DEFAULT_MAP_SETTINGS },
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
     world: { ...DEFAULT_OUTBREAK_WORLD },
