@@ -43,6 +43,7 @@ export type OutbreakWeatherSettings = {
 }
 
 const clearBase = createWeatherSettings("clear")
+const CLEAR_SHARED: Readonly<WeatherSettings> = Object.freeze(createWeatherSettings("clear"))
 
 export const DEFAULT_OUTBREAK_WEATHER: OutbreakWeatherSettings = {
   weather: 0,
@@ -66,19 +67,19 @@ export const DEFAULT_OUTBREAK_WEATHER: OutbreakWeatherSettings = {
   weatherTuningSeed: 73,
 }
 
-export function toSharedWeatherSettings(s: Readonly<OutbreakWeatherSettings>): WeatherSettings {
+export function toSharedWeatherSettings(s: Readonly<OutbreakWeatherSettings>, densityScale = 1): WeatherSettings {
   if (!s.weatherEnabled && s.weatherPreset === "clear") {
-    return createWeatherSettings("clear")
+    return CLEAR_SHARED as WeatherSettings
   }
   return weatherSettings({
     preset: s.weatherPreset,
     intensity: s.weatherEnabled ? s.weatherIntensity : 0,
-    density: s.weatherDensity,
+    density: s.weatherDensity * densityScale,
     dropSize: s.weatherDropSize,
     dropLength: s.weatherDropLength,
     dropSpeed: s.weatherDropSpeed,
     litOnly: s.weatherLitOnly,
-    splashRate: s.weatherSplashRate,
+    splashRate: s.weatherSplashRate * densityScale,
     wetness: s.weatherEnabled ? s.weatherWetness : 0,
     puddleCoverage: s.weatherEnabled ? s.weatherPuddleCoverage : 0,
     windSpeed: s.weatherWindSpeed,
@@ -185,6 +186,11 @@ export class OutbreakWeatherController {
   private excludeRects: WeatherExcludeRect[] = []
   private eaves: WeatherEave[] = []
   private readonly activeLights: WeatherLight[] = []
+  private readonly focusScratch: [number, number] = [0, 0]
+  private readonly resultScratch: { state: WeatherFrameState; prepareInput: WeatherPrepareInput | null } = {
+    state: null as unknown as WeatherFrameState,
+    prepareInput: null,
+  }
 
   reset(seed = 7): void {
     this.sim.reset(seed)
@@ -223,13 +229,18 @@ export class OutbreakWeatherController {
     lights: Float32Array
     lightCount: number
     ambientLum: number
+    particleScale?: number
   }): { state: WeatherFrameState; prepareInput: WeatherPrepareInput | null } {
     this.ensureTownGeometry(input.town)
-    const shared = toSharedWeatherSettings(input.settings)
-    const st = this.sim.step(input.dt, shared, input.eye, [input.playerX, input.playerY])
+    this.focusScratch[0] = input.playerX
+    this.focusScratch[1] = input.playerY
+    const shared = toSharedWeatherSettings(input.settings, input.particleScale ?? 1)
+    const st = this.sim.step(input.dt, shared, input.eye, this.focusScratch)
 
     if (isClearWeather(shared) && st.flash <= 0.001) {
-      return { state: st, prepareInput: null }
+      this.resultScratch.state = st
+      this.resultScratch.prepareInput = null
+      return this.resultScratch
     }
 
     // Extract active scene lights (skipping slot 0 reserved for sight LOS)
@@ -284,7 +295,7 @@ export class OutbreakWeatherController {
       state: st,
       viewProj: input.viewProj,
       eye: input.eye,
-      focusXZ: [input.playerX, input.playerY],
+      focusXZ: this.focusScratch,
       viewportWidth: input.canvasWidth,
       viewportHeight: input.canvasHeight,
       fovYRad: 0.52,
@@ -295,7 +306,9 @@ export class OutbreakWeatherController {
       eaves: this.eaves,
       cameraDist: input.zoom,
     }
-    return { state: st, prepareInput }
+    this.resultScratch.state = st
+    this.resultScratch.prepareInput = prepareInput
+    return this.resultScratch
   }
 }
 

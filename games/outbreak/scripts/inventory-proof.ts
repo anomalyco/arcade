@@ -21,7 +21,7 @@ const server = await createServer({
       enforce: "pre",
       transform(code, id) {
         if (id !== resolve(root, "src/main.ts")) return
-        return code.replace("const harness = {", "const harness = { inventoryHud, session: () => session,")
+        return code.replace("Object.assign(harness, { map })", "Object.assign(harness, { map, inventoryHud, session: () => session })")
       },
     },
   ],

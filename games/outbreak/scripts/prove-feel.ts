@@ -18,7 +18,7 @@ const server = await createServer({
       enforce: "pre",
       transform(code, id) {
         if (id !== resolve(game, "src/main.ts")) return
-        return code.replace("const harness = {", "const harness = { renderer, render, lab,")
+        return code.replace("Object.assign(harness, { map })", "Object.assign(harness, { map, renderer, render, lab })")
       },
     },
   ],

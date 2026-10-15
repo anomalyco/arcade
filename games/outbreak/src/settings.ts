@@ -3,6 +3,7 @@ import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/mot
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
+import type { QualityMode } from "@arcade/kit/quality"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
 import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
@@ -68,6 +69,7 @@ export type OutbreakDayCycleSettings = {
 export type OutbreakViewSettings = CameraShakeSettings & {
   zoom: number
   diagnostic: number
+  quality: QualityMode
 }
 
 export type OutbreakCombatSettings = MeleeTuning & {
@@ -137,6 +139,7 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   zoom: 46,
   diagnostic: 0,
+  quality: "auto",
   ...cameraShakeDefaults(),
 }
 

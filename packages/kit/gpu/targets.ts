@@ -301,8 +301,10 @@ export class BloomPyramid {
     downPipe: GPURenderPipeline,
     upPipe: GPURenderPipeline,
     firstDownGroup?: GPUBindGroup,
+    activeLevels = this.levels,
   ): void {
-    for (let i = 0; i < this.levels; i++) {
+    const active = Math.max(1, Math.min(this.levels, Math.round(activeLevels)))
+    for (let i = 0; i < active; i++) {
       const p = enc.beginRenderPass({
         colorAttachments: [
           {
@@ -318,7 +320,7 @@ export class BloomPyramid {
       p.draw(3)
       p.end()
     }
-    for (let k = 0; k < this.levels - 1; k++) {
+    for (let k = this.levels - active; k < this.levels - 1; k++) {
       const p = enc.beginRenderPass({
         colorAttachments: [
           {

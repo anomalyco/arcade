@@ -136,7 +136,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   {
     area: "`gpu-perf` & `fx/frame-timer`",
     description: "Rolling p50/p95/FPS `PerfSampler` and GPU pass timestamp telemetry",
-    match: (s) => s === "@arcade/kit/gpu-perf" || s === "@arcade/kit/fx/frame-timer",
+    match: (s) => s === "@arcade/kit/gpu-perf" || s === "@arcade/kit/fx/frame-timer" || s === "@arcade/kit/quality",
   },
   {
     area: "`fx/{particles,particle-renderer}`",
