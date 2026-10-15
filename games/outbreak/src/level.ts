@@ -3,6 +3,7 @@ import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
+import { interiorSignature } from "./interiors/plan"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect } from "@arcade/kit/sim/geom"
@@ -147,7 +148,7 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, LevelData>()
 export function buildLevel(town: Town): LevelData {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)

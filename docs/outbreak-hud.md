@@ -69,6 +69,10 @@ choice. The game default is Diegetic, Kit's pick on D-13 (`DEFAULT_HUD_SETTINGS.
 | Zomboid Style | outlined text and an action bar over the head | status icons top right (Winded, Hurt, Battery low) | summary and hotbar |
 | Diegetic (default) | outlined text below the feet, info callouts dropped | stamina (left) and health (right) as arcs of a ground ring in front of the feet; reload and battery as rings | hotbar only for 2.2 s after a slot change |
 
+The map ([outbreak-map.md](outbreak-map.md)) adds nothing to the screen by default. Its optional helpers are a
+compass ring on the ground around the survivor, in the same place as the Diegetic ground meters, and a corner minimap
+(Lab › Map › On-screen map).
+
 Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that draws rings. Noise callouts
 ("Noise 32 m" for actions heard 9 m or more away) are off by default since Kit didn't like them; Lab › HUD › Noise
 callouts turns them back on. `ActorFeedback` still reports them, and `CharacterHud` drops them unless the setting is on.

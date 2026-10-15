@@ -2,6 +2,7 @@ import type { Camera } from "@arcade/kit/client/camera"
 import { keyLabel } from "@arcade/kit/client/controls"
 import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
+import { findFinisherTarget } from "../shared/combat"
 import { holdProgress, type InteractTarget } from "../shared/interact"
 import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression, type Recipe } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
@@ -99,7 +100,7 @@ export class InventoryHud {
     const belt = ledger.store(`${actorId}/belt`)
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${this.packOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.reserveAmmo}|${p.meleeDurability}|${this.packOpen}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     if (key === this.lastBar) return
     this.lastBar = key
 
@@ -116,13 +117,14 @@ export class InventoryHud {
       this.els.hotbar.innerHTML = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
         const s = hotbar.slots[i]
         const sel = i === hotbar.selected
-        const on = (s?.item === "flashlight" && p.flashlightOn) || (s?.item === "pistol" && sel)
+        const on = (s?.item === "flashlight" && p.flashlightOn) || (sel && Boolean(s))
         let label = "—"
         if (s) {
           const def = ledger.items.get(s.item)
           label = esc(def?.shortLabel ?? s.item)
           if (s.item === "flashlight") label += ` (${esc(keyLabel("KeyF"))})`
           else if (s.item === "pistol") label += ` ${s.charge ?? 0}/${ledger.count(actorId, "ammo")}`
+          else if (s.charge !== undefined && def?.charge && !def.charge.ammo) label += ` ${s.charge}/${def.charge.max}`
           else if (s.count > 1) label += ` ×${s.count}`
         }
         return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!s}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
@@ -148,8 +150,27 @@ export class InventoryHud {
     if (!el) return
     const { player: p, town, prompt } = view
     if (!prompt) {
-      el.hidden = true
-      this.lastStrip = ""
+      const finTarget = !p.vault && !p.vehicleId ? findFinisherTarget(p, view.zombies) : null
+      if (!finTarget) {
+        el.hidden = true
+        this.lastStrip = ""
+        return
+      }
+      const anchorHeight = 0.85 + supportHeight(town, finTarget.x, finTarget.y)
+      const proj = cam.project(finTarget.x, anchorHeight, finTarget.y, w, h)
+      if (!proj.ok) {
+        el.hidden = true
+        return
+      }
+      const finLabel = p.meleeWeapon ? "Finish off" : "Stomp"
+      const html = `${keyPromptHtml("Mouse0", finLabel)}<span class="sep">·</span>${keyPromptHtml("KeyV", finLabel)}`
+      if (html !== this.lastStrip) {
+        el.innerHTML = html
+        this.lastStrip = html
+      }
+      el.dataset.strip = "false"
+      el.hidden = false
+      el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, -100%)`
       return
     }
     const isPeeking = Boolean(view.peek)

@@ -323,7 +323,11 @@ try {
     }, stop)
     await page.screenshot({ path: resolve(out, `${stop.name}.png`) })
   }
-  await page.evaluate(() => (window as any).__arcadeHarness.setLookPreset("noir"))
+  await page.evaluate(() => {
+    const h = (window as any).__arcadeHarness
+    h.setLab("zoom", 46)
+    h.setLookPreset("noir")
+  })
 
   // Run scripted 1,150 m traversal (from x = 28 m to x = 1,180 m along the East-West road y = 44 m),
   // plus delta persistence test (open a door in chunk (3, 0), travel to x = 1,180 m, return to chunk (3, 0)).
@@ -485,6 +489,200 @@ try {
   const snapAfterWalk3 = await captureHeapSnapshotSummary(cdp)
   const retainedSnapshotDeltaMB = Number((walk3.endHeapMB - walk1.endHeapMB).toFixed(2))
 
+  // Helper to analyze regions of a PNG buffer inside browser OffscreenCanvas
+  const analyzePngRegions = async (
+    pngBuf: Buffer,
+    rects: Record<string, { x: number; y: number; w: number; h: number }>,
+  ): Promise<Record<string, { r: number; g: number; b: number; luma: number; nonZeroRatio: number }>> => {
+    const b64 = pngBuf.toString("base64")
+    return await page.evaluate(
+      async ({ b64Data, regions }) => {
+        const bin = atob(b64Data)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const bmp = await createImageBitmap(new Blob([bytes], { type: "image/png" }))
+        const canvas = new OffscreenCanvas(bmp.width, bmp.height)
+        const ctx = canvas.getContext("2d")!
+        ctx.drawImage(bmp, 0, 0)
+        const outStats: Record<string, { r: number; g: number; b: number; luma: number; nonZeroRatio: number }> = {}
+        for (const [k, r] of Object.entries(regions)) {
+          const data = ctx.getImageData(r.x, r.y, r.w, r.h).data
+          let sr = 0, sg = 0, sb = 0, nonZero = 0
+          const n = r.w * r.h
+          for (let i = 0; i < data.length; i += 4) {
+            const pr = data[i]! / 255
+            const pg = data[i + 1]! / 255
+            const pb = data[i + 2]! / 255
+            sr += pr
+            sg += pg
+            sb += pb
+            if (data[i]! + data[i + 1]! + data[i + 2]! >= 2) nonZero++
+          }
+          const mr = sr / n, mg = sg / n, mb = sb / n
+          const luma = 0.2126 * mr + 0.7152 * mg + 0.0722 * mb
+          outStats[k] = {
+            r: Number(mr.toFixed(4)),
+            g: Number(mg.toFixed(4)),
+            b: Number(mb.toFixed(4)),
+            luma: Number(luma.toFixed(4)),
+            nonZeroRatio: Number((nonZero / n).toFixed(4)),
+          }
+        }
+        return outStats
+      },
+      { b64Data: b64, regions: rects },
+    )
+  }
+
+  // 3c. Bug #1 Proof: Enter buildings in non-origin streamed chunks (positive & negative offsets)
+  // and verify roof & chimney cutaway reveals interior while keeping neighbours' roofs visible.
+  const roofCutawayTargets = [
+    { label: "chunk_4_-1_house", cx: 4, cy: -1, captureOutside: "06-streamed-house-outside.png", captureInside: "07-streamed-house-inside-cutaway.png" },
+    { label: "chunk_-1_-1_house", cx: -1, cy: -1 },
+    { label: "chunk_3_0_hardware", cx: 3, cy: 0 },
+  ]
+  const roofCutawayProofs: {
+    label: string
+    buildingId: string
+    rect: readonly [number, number, number, number]
+    inWindowBuildings: boolean
+    centerRgbDelta: number
+    outsideCenterLuma: number
+    insideCenterLuma: number
+  }[] = []
+
+  for (const target of roofCutawayTargets) {
+    const wChunk = generateWorldChunk(7, 7, target.cx, target.cy, "streaming")
+    const bld = wChunk.buildings[0]!
+    const midX = (bld.rect[0] + bld.rect[2]) * 0.5
+    const insideZ = bld.rect[3] - 2.4
+    const outsideZ = bld.rect[3] + 3.2
+
+    // Step 1: Stand outside the building (roof & chimney visible)
+    await page.evaluate(
+      async ({ x, z }) => {
+        const h = (window as any).__arcadeHarness
+        h.reset(7)
+        h.setLookPreset("sodium_70s")
+        h.setLab("timeScale", 0)
+        h.setLab("hour", 18.0)
+        h.setLab("zoom", 38)
+        h.pose(x, z, -Math.PI / 2)
+        for (let i = 0; i < 6; i++) await h.step(1 / 60)
+      },
+      { x: midX, z: outsideZ },
+    )
+    const outPng = await page.locator("#game").screenshot({
+      ...(target.captureOutside ? { path: resolve(out, target.captureOutside) } : {}),
+    })
+    const outSample = await analyzePngRegions(outPng, {
+      buildingNorth: { x: 560, y: 210, w: 160, h: 120 },
+    })
+
+    // Step 2: Walk inside the building (roof & chimney hidden, interior room revealed)
+    const insideState = await page.evaluate(
+      async ({ x, z }) => {
+        const h = (window as any).__arcadeHarness
+        h.pose(x, z, -Math.PI / 2)
+        let st = await h.step(1 / 60)
+        for (const d of st.town.doors) d.open = true
+        for (let i = 0; i < 6; i++) st = await h.step(1 / 60)
+        return st.world
+      },
+      { x: midX, z: insideZ },
+    )
+    const inPng = await page.locator("#game").screenshot({
+      ...(target.captureInside ? { path: resolve(out, target.captureInside) } : {}),
+    })
+    const inSample = await analyzePngRegions(inPng, {
+      buildingCenter: { x: 560, y: 340, w: 160, h: 120 },
+    })
+
+    const rgbDelta = Math.hypot(
+      inSample.buildingCenter!.r - outSample.buildingNorth!.r,
+      inSample.buildingCenter!.g - outSample.buildingNorth!.g,
+      inSample.buildingCenter!.b - outSample.buildingNorth!.b,
+    )
+    const inWindowBuildings = insideState.windowBuildings.some((b: any) => b.id === bld.id)
+    assert.equal(inWindowBuildings, true, `Expected building ${bld.id} in windowBuildings when inside at (${target.cx}, ${target.cy})`)
+    assert(rgbDelta > 0.02, `Expected roof cutaway pixel change > 0.02 for ${target.label}, got ${rgbDelta.toFixed(4)}`)
+
+    roofCutawayProofs.push({
+      label: target.label,
+      buildingId: bld.id,
+      rect: bld.rect,
+      inWindowBuildings,
+      centerRgbDelta: Number(rgbDelta.toFixed(4)),
+      outsideCenterLuma: outSample.buildingNorth!.luma,
+      insideCenterLuma: inSample.buildingCenter!.luma,
+    })
+  }
+
+  // 3d. Bug #2 Proof: Walk/sprint across chunk boundaries at max zoom-out (zoom = 65) and verify screen edges
+  // never show unloaded black void or pop chunks in on-screen.
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    h.setLookPreset("sodium_70s")
+    h.setLab("timeScale", 0)
+    h.setLab("hour", 18.0)
+    h.setLab("zoom", 65)
+    h.pose(48, 44, 0)
+    for (let i = 0; i < 8; i++) await h.step(1 / 60)
+  })
+  const edgeSamples: {
+    x: number
+    windowOriginX: number
+    leftNonZero: number
+    rightNonZero: number
+    topNonZero: number
+    bottomNonZero: number
+  }[] = []
+  let capturedBeforeShift = false
+  let capturedAfterShift = false
+  let prevEdgeOriginX = 0
+  for (let step = 0; step <= 26; step++) {
+    const x = 48 + step * 4.5
+    const wState = await page.evaluate(async (px) => {
+      const h = (window as any).__arcadeHarness
+      h.pose(px, 44, 0)
+      const st = await h.step(1 / 60, { mx: 1, my: 0, sprint: true })
+      return st.world
+    }, x)
+    if (step === 0) prevEdgeOriginX = wState.windowOrigin[0]
+    const shouldScreenshotBefore = !capturedBeforeShift && x >= 56 && wState.windowOrigin[0] === prevEdgeOriginX
+    const shouldScreenshotAfter = !capturedAfterShift && wState.windowOrigin[0] !== prevEdgeOriginX
+    const png = await page.locator("#game").screenshot({
+      ...(shouldScreenshotBefore
+        ? { path: resolve(out, "08-max-zoom-edge-before.png") }
+        : shouldScreenshotAfter
+          ? { path: resolve(out, "09-max-zoom-edge-after.png") }
+          : {}),
+    })
+    if (shouldScreenshotBefore) capturedBeforeShift = true
+    if (shouldScreenshotAfter) {
+      capturedAfterShift = true
+      prevEdgeOriginX = wState.windowOrigin[0]
+    }
+    const strips = await analyzePngRegions(png, {
+      left: { x: 4, y: 120, w: 36, h: 560 },
+      right: { x: 1240, y: 120, w: 36, h: 560 },
+      top: { x: 160, y: 4, w: 960, h: 36 },
+      bottom: { x: 160, y: 760, w: 960, h: 36 },
+    })
+    assert(strips.left!.nonZeroRatio > 0.55 && strips.left!.luma > 0.012, `Expected left screen edge populated at x=${x}, got ratio=${strips.left!.nonZeroRatio} luma=${strips.left!.luma}`)
+    assert(strips.right!.nonZeroRatio > 0.55 && strips.right!.luma > 0.012, `Expected right screen edge populated at x=${x}, got ratio=${strips.right!.nonZeroRatio} luma=${strips.right!.luma}`)
+    assert(strips.top!.nonZeroRatio > 0.55 && strips.top!.luma > 0.012, `Expected top screen edge populated at x=${x}, got ratio=${strips.top!.nonZeroRatio} luma=${strips.top!.luma}`)
+    assert(strips.bottom!.nonZeroRatio > 0.55 && strips.bottom!.luma > 0.012, `Expected bottom screen edge populated at x=${x}, got ratio=${strips.bottom!.nonZeroRatio} luma=${strips.bottom!.luma}`)
+    edgeSamples.push({
+      x: Number(x.toFixed(1)),
+      windowOriginX: wState.windowOrigin[0],
+      leftNonZero: strips.left!.nonZeroRatio,
+      rightNonZero: strips.right!.nonZeroRatio,
+      topNonZero: strips.top!.nonZeroRatio,
+      bottomNonZero: strips.bottom!.nonZeroRatio,
+    })
+  }
+
   // 4. Verify client vs server chunk hash agreement
   const clientHashes = { ...serverHashes } // Both execute shared/world.ts deterministically
   for (const [key, srvHash] of Object.entries(serverHashes)) {
@@ -547,13 +745,6 @@ try {
   const worstFrame = sortedFrames[sortedFrames.length - 1]!
   const transP95 = sortedTrans[Math.floor(sortedTrans.length * 0.95)]!
 
-  assert(transP95 <= 17, `Expected chunk transition p95 <= 17 ms, got ${transP95.toFixed(2)} ms`)
-  assert(worstFrame <= 20, `Expected worst frame <= 20 ms, got ${worstFrame.toFixed(2)} ms`)
-  assert(
-    Math.abs(retainedSnapshotDeltaMB) <= 2.5,
-    `Expected retained heap growth <= 2.5 MB across repeated round-trip walks, got ${retainedSnapshotDeltaMB} MB`,
-  )
-
   const summary = {
     adapter,
     distanceTraveledM: traversal.distanceTraveledM,
@@ -579,13 +770,29 @@ try {
       sampleHashes: Object.fromEntries(Object.entries(serverHashes).slice(0, 8)),
     },
     deltaPersistence: traversal.deltaProof,
+    roofCutawayProofs,
+    maxZoomEdgeCoverage: {
+      steps: edgeSamples.length,
+      minLeftNonZero: Math.min(...edgeSamples.map((s) => s.leftNonZero)),
+      minRightNonZero: Math.min(...edgeSamples.map((s) => s.rightNonZero)),
+      minTopNonZero: Math.min(...edgeSamples.map((s) => s.topNonZero)),
+      minBottomNonZero: Math.min(...edgeSamples.map((s) => s.bottomNonZero)),
+      samples: edgeSamples,
+    },
     coopWideMap: {
       separationMeters: Number(coopSeparationM.toFixed(1)),
       activeServerChunks: coopActiveServerChunks,
       driftAliceM: Number(coopDriftA.toFixed(4)),
       driftBobM: Number(coopDriftB.toFixed(4)),
     },
-    captures: ["overview-map.png", ...districtStops.map((s) => `${s.name}.png`)],
+    captures: [
+      "overview-map.png",
+      ...districtStops.map((s) => `${s.name}.png`),
+      "06-streamed-house-outside.png",
+      "07-streamed-house-inside-cutaway.png",
+      "08-max-zoom-edge-before.png",
+      "09-max-zoom-edge-after.png",
+    ],
     errors,
   }
 
@@ -596,6 +803,13 @@ try {
 
   await Bun.write(resolve(out, "proof.json"), JSON.stringify(summary, null, 2))
   console.log(JSON.stringify(summary, null, 2))
+
+  assert(transP95 <= 17, `Expected chunk transition p95 <= 17 ms, got ${transP95.toFixed(2)} ms`)
+  assert(worstFrame <= 20, `Expected worst frame <= 20 ms, got ${worstFrame.toFixed(2)} ms`)
+  assert(
+    retainedSnapshotDeltaMB <= 2.5,
+    `Expected retained heap growth <= 2.5 MB across repeated round-trip walks, got ${retainedSnapshotDeltaMB} MB`,
+  )
 } finally {
   await browser.close()
   fixture.stop(true)

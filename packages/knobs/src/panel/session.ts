@@ -7,6 +7,8 @@ export interface PanelSession {
   readonly focus?: { readonly inline: boolean; readonly stop: number }
   /** A page's collapsible custom cards, by title: whether each is folded. */
   readonly folded?: Readonly<Record<string, boolean>>
+  /** A panel's foldable groups, by id: whether each is folded. */
+  readonly groups?: Readonly<Record<string, boolean>>
 }
 
 const tab = (): Storage | null => {

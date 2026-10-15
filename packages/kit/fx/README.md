@@ -13,6 +13,11 @@ takes nearby X/Z wall rectangles and an optional ground-height query. Ground col
 collisions reverse horizontal velocity. The current rectangle check is discrete, so fast collision-critical
 debris should keep its game's swept physics. `prepare()` writes the instance buffer without making particle objects.
 
+A spec with `trail` (metres) is a projectile: each update it lays thinning smoke puffs behind itself that drift with
+`windX`/`windZ`, throws a hot spark at its head, and splashes when it falls below `water` (null: no water). A spec with
+`pop` bursts into a small fireball where it expires. Both are styled in `projectile-trail.ts`, which also exports
+`spawnWaterSplash` for droplet/mist splashes. Explosions use them for `fragmentCount` and `secondaryPops`.
+
 `Emitter.step(x, y, z, dt, amount, "rate" | "distance", emit)` carries fractional births, interpolates positions,
 rejects teleports over 20 m, and limits a step to 128 births. Keep `emit` and the spec outside the frame loop.
 The pool holds 2,048 particles and reports dropped births. The renderer draws lit soft billboards, velocity-stretched

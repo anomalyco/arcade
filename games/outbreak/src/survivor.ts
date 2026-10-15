@@ -27,12 +27,31 @@ import {
   type V3,
   type PushPart,
 } from "@arcade/kit/rig"
-import { angleSpring, gaitAt, stepHash, stiffness } from "@arcade/kit/human-locomotion"
+import {
+  angleSpring,
+  backpedalling,
+  gaitAt,
+  stepHash,
+  stiffness,
+  strafeFootOffset,
+  strafeFootOpen,
+  strafeHipLimit,
+  strafeLegGoal,
+  strafeSeparate,
+  strafeStance,
+} from "@arcade/kit/human-locomotion"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
-import { poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { kneePole, poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { meleeTorsoModulation, poseMeleeArms } from "@arcade/kit/human-melee"
 import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import { angleDiff } from "@arcade/kit/sim/geom"
-import { PISTOL_RELOAD_TIME } from "../shared/combat"
+import {
+  isMeleeWeapon,
+  MELEE_WEAPON_IDS,
+  MELEE_WEAPONS,
+  PISTOL_RELOAD_TIME,
+  type MeleeWeaponId,
+} from "../shared/combat"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
 
@@ -48,6 +67,10 @@ export const survivorAimTuning = {
   aimHoldTime: 2.5,
   aimRecoil: 1.0,
   aimTwistLimit: 1.05,
+  sideStepTurn: humanProfiles.soldier.sideStepTurn,
+  strafeHipTurn: humanProfiles.soldier.strafeHipTurn,
+  crossoverSpeed: humanProfiles.soldier.crossoverSpeed,
+  strafeGap: humanProfiles.soldier.strafeGap,
 }
 export type SurvivorAimTuning = typeof survivorAimTuning
 
@@ -56,15 +79,106 @@ export const survivorAimControls: LabControl[] = [
   { key: "aimHoldTime", label: "Hold time", group: "Survivor aim", min: 0.5, max: 5.0, step: 0.1, unit: "s" },
   { key: "aimRecoil", label: "Recoil", group: "Survivor aim", min: 0, max: 2.5, step: 0.05, unit: "×" },
   { key: "aimTwistLimit", label: "Twist limit · rad", group: "Survivor aim", min: 0.45, max: 1.55, step: 0.05, unit: "rad" },
+  { key: "sideStepTurn", label: "Side-step hip turn · rad", group: "Survivor strafe", min: 0, max: 0.8, step: 0.05, unit: "rad" },
+  { key: "strafeHipTurn", label: "Strafe hip turn · rad", group: "Survivor strafe", min: 0.3, max: 1.05, step: 0.05, unit: "rad" },
+  { key: "crossoverSpeed", label: "Crossover speed · m/s", group: "Survivor strafe", min: 1.2, max: 5, step: 0.1, unit: "m/s" },
+  { key: "strafeGap", label: "Side-step boot gap · m", group: "Survivor strafe", min: 0.12, max: 0.32, step: 0.01, unit: "m" },
 ]
 
 export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
   Partial<
-    Pick<Pose, "equippedItem" | "fireCooldown" | "reloadRemaining" | "recoil" | "shoveAnim" | "sprinting" | "channel">
+    Pick<
+      Pose,
+      | "equippedItem"
+      | "meleeWeapon"
+      | "meleePhase"
+      | "meleePhaseTime"
+      | "meleePhaseDuration"
+      | "meleeCombo"
+      | "meleeCharge"
+      | "meleeHeavy"
+      | "meleeFinisher"
+      | "fireCooldown"
+      | "reloadRemaining"
+      | "recoil"
+      | "shoveAnim"
+      | "stompAnim"
+      | "sprinting"
+      | "channel"
+    >
   > & {
     /** Optional deterministic override to hold raised aim without firing a shot. */
     aiming?: boolean
   }
+
+/** Builds procedural 3D meshes for all 9 melee weapons (grip at origin, shaft/blade along +x). */
+export function buildMeleeWeaponMeshes(): Record<MeleeWeaponId, Mesh> {
+  const knife = new Mesh()
+  knife.box(-0.04, -0.016, -0.014, 0.11, 0.018, 0.014, hex(0x28231e), MAT.actor)
+  knife.box(0.11, -0.024, -0.018, 0.125, 0.026, 0.018, hex(0x7c8286), MAT.shiny)
+  knife.box(0.125, -0.022, -0.005, 0.42, 0.02, 0.005, hex(0xd8dfe4), MAT.shiny)
+
+  const hammer = new Mesh()
+  hammer.box(-0.05, -0.016, -0.015, 0.39, 0.016, 0.015, hex(0x9a6e42), MAT.timber)
+  hammer.box(-0.05, -0.018, -0.017, 0.12, 0.018, 0.017, hex(0x2b2d30), MAT.actor)
+  hammer.box(0.36, -0.068, -0.024, 0.46, 0.068, 0.024, hex(0x4a5158), MAT.shiny)
+  hammer.box(0.38, 0.068, -0.02, 0.44, 0.108, 0.02, hex(0x6e7780), MAT.shiny)
+
+  const pipe = new Mesh()
+  pipe.box(-0.06, -0.018, -0.018, 0.58, 0.018, 0.018, hex(0x697279), MAT.shiny)
+  pipe.box(0.02, -0.021, -0.021, 0.16, 0.021, 0.021, hex(0x36393c), MAT.actor)
+  pipe.box(0.54, -0.032, -0.032, 0.64, 0.032, 0.032, hex(0x4e565d), MAT.shiny)
+
+  const crowbar = new Mesh()
+  crowbar.box(-0.06, -0.021, -0.021, 0.64, 0.021, 0.021, hex(0xb5322a), MAT.actor)
+  crowbar.box(0.02, -0.023, -0.023, 0.18, 0.023, 0.023, hex(0x2e3135), MAT.actor)
+  crowbar.box(-0.09, -0.025, -0.015, -0.02, 0.025, 0.015, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.58, -0.025, -0.026, 0.72, 0.062, 0.028, hex(0x7c8690), MAT.shiny)
+  crowbar.box(0.62, 0.055, -0.026, 0.71, 0.105, 0.036, hex(0x9ca8b2), MAT.shiny)
+
+  const machete = new Mesh()
+  machete.box(-0.05, -0.02, -0.016, 0.13, 0.02, 0.016, hex(0x3a2a1d), MAT.timber)
+  machete.box(0.12, -0.03, -0.02, 0.145, 0.032, 0.02, hex(0x4a4e52), MAT.actor)
+  machete.box(0.145, -0.028, -0.006, 0.52, 0.024, 0.006, hex(0xc2cbd2), MAT.shiny)
+  machete.box(0.48, -0.036, -0.006, 0.68, 0.028, 0.006, hex(0xd8e0e6), MAT.shiny)
+
+  const bat = new Mesh()
+  bat.box(-0.08, -0.024, -0.024, -0.05, 0.024, 0.024, hex(0x8c663e), MAT.timber)
+  bat.box(-0.05, -0.017, -0.017, 0.22, 0.017, 0.017, hex(0x282a2c), MAT.actor)
+  bat.box(0.22, -0.024, -0.024, 0.48, 0.024, 0.024, hex(0xb88b58), MAT.timber)
+  bat.box(0.46, -0.034, -0.034, 0.78, 0.034, 0.034, hex(0xc69862), MAT.timber)
+
+  const spikedBoard = new Mesh()
+  spikedBoard.box(-0.08, -0.022, -0.016, 0.24, 0.022, 0.016, hex(0x524c44), MAT.actor)
+  spikedBoard.box(0.2, -0.042, -0.022, 0.84, 0.042, 0.022, hex(0x8e6b44), MAT.timber)
+  for (const sx of [0.54, 0.64, 0.73, 0.8]) {
+    spikedBoard.box(sx - 0.008, -0.095, -0.008, sx + 0.008, 0.095, 0.008, hex(0x9ca6ae), MAT.shiny)
+  }
+
+  const axe = new Mesh()
+  axe.box(-0.08, -0.018, -0.015, 0.66, 0.018, 0.015, hex(0x966a3e), MAT.timber)
+  axe.box(0.54, -0.055, -0.024, 0.68, 0.045, 0.024, hex(0x3a4046), MAT.actor)
+  axe.box(0.52, -0.115, -0.012, 0.7, -0.045, 0.012, hex(0xc8d2da), MAT.shiny)
+
+  const fireAxe = new Mesh()
+  fireAxe.box(-0.1, -0.02, -0.016, 0.42, 0.02, 0.016, hex(0xa87c4f), MAT.timber)
+  fireAxe.box(0.42, -0.021, -0.017, 0.84, 0.021, 0.017, hex(0x9e2420), MAT.actor)
+  fireAxe.box(0.68, -0.065, -0.026, 0.84, 0.055, 0.026, hex(0x9e2420), MAT.actor)
+  fireAxe.box(0.66, -0.135, -0.012, 0.88, -0.055, 0.012, hex(0xd8e2ea), MAT.shiny)
+  fireAxe.box(0.72, 0.055, -0.014, 0.8, 0.125, 0.014, hex(0xb8c2ca), MAT.shiny)
+
+  return {
+    knife,
+    hammer,
+    pipe,
+    crowbar,
+    machete,
+    bat,
+    "spiked-board": spikedBoard,
+    axe,
+    "fire-axe": fireAxe,
+  }
+}
 
 type ReloadGunKey = readonly [t: number, pitch: number, roll: number, pull: number, drop: number, yaw: number]
 type ReloadHandKey =
@@ -118,6 +232,8 @@ export class Survivor {
   bones: BonePose = {}
   gun: Frame | null = null
   mag: Frame | null = null
+  meleeWeaponFrame: Frame | null = null
+  meleeTip: V3 | null = null
   /**
    * Where the flashlight sits this frame and the way it points: the pistol's light under the barrel when a pistol is
    * drawn (it follows low-ready, raised aim, recoil and reload), otherwise the right hand pointing along the aim.
@@ -149,7 +265,12 @@ export class Survivor {
   private sinceShot = 10
   private shotCount = 0
   private back = false
+  private backness = 0
+  private yawOffset = spring()
+  private pelvisYaw = spring()
+  private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
+  private meleeModels: Record<MeleeWeaponId, number>
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
     lift: [0, 0, 0] as V3,
@@ -224,6 +345,10 @@ export class Survivor {
       mag,
       toe,
     ].map(m => renderer.addModel(m))
+    const meleeMeshes = buildMeleeWeaponMeshes()
+    this.meleeModels = Object.fromEntries(
+      MELEE_WEAPON_IDS.map((id) => [id, renderer.addModel(meleeMeshes[id])]),
+    ) as Record<MeleeWeaponId, number>
   }
 
   reset(): void {
@@ -250,6 +375,8 @@ export class Survivor {
     this.sinceShot = 10
     this.shotCount = 0
     this.back = false
+    this.yawOffset = spring()
+    this.pelvisYaw = spring()
     this.aimWeight = 0
     this.holdRemaining = 0
     this.recBack = spring()
@@ -260,6 +387,8 @@ export class Survivor {
     this.bones = {}
     this.gun = null
     this.mag = null
+    this.meleeWeaponFrame = null
+    this.meleeTip = null
   }
 
   draw(
@@ -280,7 +409,19 @@ export class Survivor {
     const profile = this.profile
     const isZombie = Boolean(profile && profile.handPose === "reach")
     const isStaff = Boolean(profile && profile.handPose === "staff")
-    const isPistol = p.equippedItem === "pistol" && !isZombie && !isStaff && !p.channel && !this.legacyUnarmedPistol
+    const meleeId: MeleeWeaponId | null =
+      !isZombie && !isStaff && (!p.channel || p.channel.kind === "pry")
+        ? isMeleeWeapon(p.meleeWeapon)
+          ? p.meleeWeapon
+          : isMeleeWeapon(p.equippedItem)
+            ? p.equippedItem
+            : p.channel?.kind === "pry"
+              ? "crowbar"
+              : null
+        : null
+    const isMelee = meleeId !== null
+    const isPistol =
+      p.equippedItem === "pistol" && !isMelee && !isZombie && !isStaff && !p.channel && !this.legacyUnarmedPistol
 
     if (teleport) {
       this.yaw = p.aim
@@ -289,6 +430,8 @@ export class Survivor {
       this.svy = p.vy
       this.phase = 0
       this.back = false
+      this.yawOffset = spring()
+      this.pelvisYaw = { x: p.aim, v: 0 }
       this.chest = { x: p.aim, v: 0 }
       this.head = { x: p.aim, v: 0 }
       this.weaponYaw = { x: p.aim, v: 0 }
@@ -318,6 +461,10 @@ export class Survivor {
     const holdTime = clamp(tune.aimHoldTime, 0.5, 5.0)
     const recoilScale = clamp(tune.aimRecoil, 0, 2.5)
     const twistLimit = clamp(tune.aimTwistLimit, 0.45, 1.55)
+    this.strafeProfile.sideStepTurn = tune.sideStepTurn
+    this.strafeProfile.strafeHipTurn = tune.strafeHipTurn
+    this.strafeProfile.crossoverSpeed = tune.crossoverSpeed
+    this.strafeProfile.strafeGap = tune.strafeGap
 
     if (fired) {
       const sc = ++this.shotCount
@@ -376,8 +523,13 @@ export class Survivor {
       const vy = this.svy + (p.vy - this.svy) * k
       const speed = Math.hypot(vx, vy)
       moving = Math.min(1, speed / 3.4)
-      const activeProfile = profile ?? humanProfiles.soldier
-      const curGait = gaitAt(speed, false, 0, activeProfile)
+      const activeProfile = profile ?? this.strafeProfile
+      // Direction-aware stepping shared with Blackout: hips turn partly toward travel, side-steps never cross and
+      // run-speed strafes cross over cleanly (strafeStance), with a continuous forward/backpedal flip.
+      const travelDir = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
+      const stance = strafeStance(speed > 0.2 ? speed : 0, this.yaw, travelDir, activeProfile)
+      const curGait = gaitAt(speed, stance.backness, stance.sideStep, activeProfile)
+      this.backness = stance.backness
       const runBlend = curGait.run
       const leanScale = 0.25 + 0.75 * runBlend
       stepSpring(this.leanX, 90, 0.38, h, vx * 0.028 * leanScale + ((vx - this.svx) / h) * 0.003)
@@ -386,19 +538,27 @@ export class Survivor {
       this.svy = vy
 
       const effTwistLimit = isPistol ? twistLimit : 1.05
-      let travel = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
-      const rawTravelDiff = Math.abs(angleDiff(travel, p.aim))
-      if (this.back ? rawTravelDiff < 1.72 : rawTravelDiff > 2.05) this.back = !this.back
-      if (this.back) travel += Math.PI
-      const want = p.aim + clamp(angleDiff(travel, p.aim), -effTwistLimit, effTwistLimit)
+      const rel = angleDiff(travelDir, p.aim)
+      const hipLimit = Math.min(strafeHipLimit(speed, activeProfile), effTwistLimit)
+      if (speed > 0.35) {
+        const wasBack = this.back
+        this.back = backpedalling(rel, this.back)
+        if (this.back !== wasBack) {
+          // Inertialize the forward/backpedal flip so the hips keep their angular velocity.
+          this.yawOffset.x = clamp(this.yawOffset.x + strafeLegGoal(rel, wasBack, hipLimit) - strafeLegGoal(rel, this.back, hipLimit), -0.85, 0.85)
+        }
+      } else this.back = false
+      stepSpring(this.yawOffset, stiffness(clamp(activeProfile.transitionHz ?? 6, 2, 14)), 1, h, 0)
+      const want = p.aim + clamp((speed > 0.35 ? strafeLegGoal(rel, this.back, hipLimit) : 0) + this.yawOffset.x, -effTwistLimit, effTwistLimit)
       this.yaw += angleDiff(want, this.yaw) * Math.min(1, h * 9)
       this.yaw = p.aim + clamp(angleDiff(this.yaw, p.aim), -effTwistLimit, effTwistLimit)
 
       const c = Math.cos(this.yaw)
       const s = Math.sin(this.yaw)
       const rest = (i: number): V3 => {
-        const x = sx - s * (i ? 0.145 : -0.145)
-        const z = sy + c * (i ? 0.145 : -0.145)
+        const [ox, oz] = strafeFootOffset(stance, this.yaw, i, curGait.stride, activeProfile)
+        const x = sx + ox
+        const z = sy + oz
         return [x, support(x, z), z]
       }
       if (teleport && step === 1) {
@@ -442,14 +602,8 @@ export class Survivor {
             const target = rest(i)
             target[0] += vx * lead - s * f.stepLat
             target[2] += vy * lead + c * f.stepLat
-            // Preserve Blackout's minimum side-step separation.
             const other = this.feet[1 - i]!
-            const side = i ? 1 : -1
-            const lat = (-(target[0] - other.p[0]) * s + (target[2] - other.p[2]) * c) * side
-            if (lat < 0.16) {
-              target[0] -= s * side * (0.16 - lat)
-              target[2] += c * side * (0.16 - lat)
-            }
+            ;[target[0], target[2]] = strafeSeparate(stance, this.yaw, i, [target[0], target[2]], [other.p[0], other.p[2]], activeProfile)
             target[1] = support(target[0], target[2])
             const ep = smoother(f.prevU)
             if (!firstSwingFrame && ep > 0 && ep < 0.95) {
@@ -478,7 +632,7 @@ export class Survivor {
             f.lift[1] + (target[1] - f.lift[1]) * e + liftBell * ((0.085 + 0.125 * runBlend) * clearance + boost),
           )
           f.p = [px, py, pz]
-          f.yaw += angleDiff(this.yaw + f.stepToe, f.yaw) * e
+          f.yaw += angleDiff(this.yaw + strafeFootOpen(stance, i) + f.stepToe, f.yaw) * e
         } else if (!f.planted) {
           f.planted = true
           f.prevU = 0
@@ -486,6 +640,10 @@ export class Survivor {
           this.onFootfall?.(f.p[0], f.p[2], speed)
         }
       })
+      // The pelvis turns between the feet (Blackout's rule), so strafing boots that open toward travel take it along.
+      const f0 = this.feet[0]!.yaw
+      const midYaw = f0 + angleDiff(this.feet[1]!.yaw, f0) * 0.5
+      angleSpring(this.pelvisYaw, p.aim + clamp(angleDiff(midYaw, p.aim), -effTwistLimit, effTwistLimit), activeProfile.bodyHz, h)
       // Anticipatory support floor: blend root terrain support with foot terrain heights (never airborne swing height).
       const footSupport =
         (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
@@ -567,7 +725,7 @@ export class Survivor {
       bobOffset -
       this.reachDrop.x
     let pelvis = roll(
-      yawFrame([p.x, height, p.y], this.yaw + this.twist.x),
+      yawFrame([p.x, height, p.y], this.pelvisYaw.x + this.twist.x),
       Math.cos(this.phase * Math.PI * 2) * (0.07 + 0.03 * (profile?.hipDrop ?? 0)) * moving +
         (shambleMod?.pelvisRollAdd ?? 0),
     )
@@ -580,8 +738,27 @@ export class Survivor {
     const lean = this.leanX.x * ca + this.leanY.x * sa
     const sideLean = (-this.leanX.x * sa + this.leanY.x * ca) * (profile?.turnBank ?? 1)
 
-    const blade = isPistol ? BLADE_PISTOL * (0.18 + 0.82 * aimW) : 0
-    const counterTwist = this.twist.x * 0.65 * (1 - 0.68 * aimW)
+    const meleeDef = meleeId ? MELEE_WEAPONS[meleeId] : null
+    const meleePhase = p.meleePhase ?? "idle"
+    const meleeProgress =
+      meleePhase === "idle"
+        ? 0
+        : clamp((p.meleePhaseTime ?? 0) / Math.max(0.01, p.meleePhaseDuration ?? 0.12), 0, 1)
+    const meleeMod =
+      isMelee && meleeDef
+        ? meleeTorsoModulation({
+            weaponClass: meleeDef.weaponClass,
+            phase: meleePhase,
+            phaseProgress: meleeProgress,
+            combo: p.meleeCombo ?? 1,
+            charge: p.meleeCharge ?? 0,
+            heavy: Boolean(p.meleeHeavy),
+            weaponLength: meleeDef.length,
+          })
+        : null
+
+    const blade = isPistol ? BLADE_PISTOL * (0.18 + 0.82 * aimW) : meleeMod ? meleeMod.yawAdd : 0
+    const counterTwist = this.twist.x * 0.65 * (1 - 0.68 * aimW) * (meleePhase !== "idle" ? 0.25 : 1)
     const rawChestGoal = p.aim + blade - counterTwist + (shambleMod?.torsoYawAdd ?? 0)
     const clampedChestGoal = isPistol
       ? this.yaw + blade + clamp(angleDiff(rawChestGoal, this.yaw + blade), -twistLimit, twistLimit)
@@ -591,12 +768,22 @@ export class Survivor {
       angleSpring(this.chest, clampedChestGoal, profile.chestHz, dt)
       angleSpring(this.head, p.aim + (shambleMod?.headYawAdd ?? 0), profile.headHz, dt)
     } else {
-      angleSpring(this.chest, clampedChestGoal, 7 + 4 * aimW, dt)
+      const chestHz = isMelee && meleePhase !== "idle" ? 18 : 7 + 4 * aimW
+      angleSpring(this.chest, clampedChestGoal, chestHz, dt)
       angleSpring(this.head, p.aim, 9 + 4 * aimW, dt)
     }
 
     const torsoYaw =
-      (profile ? this.chest.x : isPistol ? this.chest.x : p.aim - this.twist.x * 0.65) + this.recYaw.x * 0.35
+      (profile
+        ? this.chest.x
+        : isPistol
+          ? this.chest.x
+          : isMelee
+            ? meleePhase !== "idle"
+              ? clampedChestGoal
+              : this.chest.x
+            : p.aim - this.twist.x * 0.65) +
+      this.recYaw.x * 0.35
     const tb = torsoYaw - p.aim
     const reloadLook =
       reloadClipT !== null
@@ -608,15 +795,24 @@ export class Survivor {
         : 0
     const reloadHunch = reloadLook * 0.22
     const posturePitch = 0.14 * runBlend * (profile?.runPosture ?? 0.18) * (1 - 0.35 * aimW)
+    const stompRaw = p.stompAnim ?? 0
+    const stompProg = stompRaw > 0 ? 1 - clamp(stompRaw / 0.38, 0, 1) : 0
+    const stompWindup = stompRaw > 0 && stompProg < 0.44 ? Math.sin((stompProg / 0.44) * (Math.PI * 0.5)) : 0
+    const stompSlam = stompRaw > 0 && stompProg >= 0.44 ? Math.sin(((stompProg - 0.44) / 0.56) * Math.PI) : 0
+    const finisherPulse =
+      p.meleeFinisher && meleePhase !== "idle" ? Math.sin(meleeProgress * Math.PI) : 0
+    const finisherPitch = finisherPulse * 0.38 + stompSlam * 0.3 - stompWindup * 0.14
     const fwdPitch =
       0.05 +
       lean +
       (shambleMod?.torsoPitchAdd ?? 0) +
+      (meleeMod?.pitchAdd ?? 0) +
+      finisherPitch +
       posturePitch +
       0.24 * crouchT +
       reloadHunch -
       this.torsoKick.x
-    const sideRoll = sideLean * 0.75 + (shambleMod?.torsoRollAdd ?? 0)
+    const sideRoll = sideLean * 0.75 + (shambleMod?.torsoRollAdd ?? 0) + (meleeMod?.rollAdd ?? 0)
 
     let torso = yawFrame(at(pelvis, 0, RIG.waist, 0), torsoYaw)
     if (isPistol) {
@@ -774,25 +970,60 @@ export class Survivor {
       } else {
         this.mag = null
       }
+      this.meleeWeaponFrame = null
+      this.meleeTip = null
+    } else if (isMelee && meleeDef) {
+      this.gun = null
+      this.mag = null
+      const posed = poseMeleeArms(torso, {
+        weaponClass: meleeDef.weaponClass,
+        phase: meleePhase,
+        phaseProgress: meleeProgress,
+        combo: p.meleeCombo ?? 1,
+        charge: p.meleeCharge ?? 0,
+        heavy: Boolean(p.meleeHeavy),
+        weaponLength: meleeDef.length,
+        gait,
+        armSwing: this.arms[1]!.x,
+      })
+      if ((p.shoveAnim ?? 0) > 0 && meleePhase === "idle") {
+        const shoveU = Math.sin(clamp((p.shoveAnim ?? 0) / 0.28, 0, 1) * Math.PI)
+        const handL = lerp3(posed.handL, at(torso, 0.46, RIG.shoulderY - 0.04, -0.12), shoveU)
+        arms = poseArms(torso, handL, posed.handR)
+      } else {
+        arms = { ua: posed.ua, fa: posed.fa }
+      }
+      if (finisherPulse > 0.01) {
+        this.meleeWeaponFrame = pitch(posed.weapon, -0.58 * finisherPulse)
+        this.meleeTip = at(this.meleeWeaponFrame, meleeDef.length, 0, 0)
+      } else {
+        this.meleeWeaponFrame = posed.weapon
+        this.meleeTip = posed.tip
+      }
     } else {
       this.gun = null
       this.mag = null
+      this.meleeWeaponFrame = null
+      this.meleeTip = null
       const rawHands = profile && profileHands(torso, profile)
       let hands = rawHands
       if (rawHands && profile?.handPose === "reach") {
         hands = shambleHandsFK(torso, this.phase, gait, runBlend, profile, 0)
       }
-      const unarmed = poseUnarmedArms(
+      let [unL, unR] = unarmedHands(
+        {
+          gait,
+          motion: { run: runBlend, crouch: { x: crouchT * 0.09 }, arms: this.arms, hands: this.hands } as never,
+        },
         torso,
-        ...unarmedHands(
-          {
-            gait,
-            motion: { run: runBlend, crouch: { x: crouchT * 0.09 }, arms: this.arms, hands: this.hands } as never,
-          },
-          torso,
-          time * 2,
-        ),
+        time * 2,
       )
+      if ((p.shoveAnim ?? 0) > 0 && !hands) {
+        const shoveU = Math.sin(clamp((p.shoveAnim ?? 0) / 0.28, 0, 1) * Math.PI)
+        unL = lerp3(unL, at(torso, 0.46, RIG.shoulderY - 0.04, -0.12), shoveU)
+        unR = lerp3(unR, at(torso, 0.46, RIG.shoulderY - 0.04, 0.12), shoveU)
+      }
+      const unarmed = poseUnarmedArms(torso, unL, unR)
       arms = hands ? (profile?.handPose === "reach" ? poseUnarmedArms(torso, ...hands) : poseArms(torso, ...hands)) : unarmed
     }
 
@@ -807,7 +1038,8 @@ export class Survivor {
       this.light.mounted = false
     }
     this.bones = { pelvis, torso, head }
-    ;(this.bones as BonePose & { gun?: Frame | null }).gun = this.gun
+    ;(this.bones as BonePose & { gun?: Frame | null; melee?: Frame | null }).gun = this.gun
+    ;(this.bones as BonePose & { gun?: Frame | null; melee?: Frame | null }).melee = this.meleeWeaponFrame
     this.batches.length = 0
     let index = 0
     const push: PushPart = (model, x, y, z, yaw, tint, pitchAng, rollAng, flash, alpha = 1) => {
@@ -841,7 +1073,7 @@ export class Survivor {
       const dutyNow = curGait.duty
       const stanceFrac = foot.planted ? clamp(footPhase / Math.max(0.1, dutyNow), 0, 1) : 0
       const sFlat = 0.16 - 0.04 * runBlend
-      const heelStrike0 = this.back ? 0 : (0.26 - 0.04 * runBlend) * (1 - 0.55 * crouchT) * gait * dragKeep
+      const heelStrike0 = (1 - this.backness) * (0.26 - 0.04 * runBlend) * (1 - 0.55 * crouchT) * gait * dragKeep
       const heelStrikePitch = stanceFrac < sFlat ? heelStrike0 * (1 - smooth(stanceFrac / sFlat)) : 0
       const sHeelRise = 0.44 - 0.04 * runBlend
       const heelRiseMax = (0.44 + 0.08 * runBlend) * gait * (1 - 0.55 * drag)
@@ -853,14 +1085,31 @@ export class Survivor {
       let shin: Frame
       let boot: Frame
       let toeFrame: Frame
-      if (foot.planted) {
+      if (i === 1 && stompRaw > 0) {
+        const ac = Math.cos(p.aim)
+        const as = Math.sin(p.aim)
+        const stompFwd = 0.24 * stompWindup + 0.38 * (1 - stompWindup)
+        const stompLift = 0.34 * stompWindup + 0.04 * stompSlam * (1 - clamp((stompProg - 0.44) / 0.28, 0, 1))
+        const ankWorld: V3 = [
+          p.x + ac * stompFwd - as * 0.11,
+          curSupportY + RIG.ankle + stompLift,
+          p.y + as * stompFwd + ac * 0.11,
+        ]
+        const pole = dirIn(pelvis, 1, 0.45, 0.22)
+        const [knee, end] = ik(hip, ankWorld, RIG.thigh, RIG.shin, pole)
+        thigh = limb(hip, knee, pole, pelvis.x)
+        shin = limb(knee, end, pole, pelvis.x)
+        const bootPitch = 0.22 * stompWindup - 0.32 * stompSlam
+        boot = pitch(yawFrame(end, p.aim), bootPitch)
+        toeFrame = pitch(yawFrame(at(boot, RIG.foot, -RIG.ankle, 0), p.aim), bootPitch * 0.5)
+      } else if (foot.planted) {
         const ballWorld: V3 = [foot.p[0] + fc * RIG.foot, foot.p[1], foot.p[2] + fs * RIG.foot]
         const f0 = pitch(yawFrame([0, 0, 0], foot.yaw), stancePitch)
         const riseFrame = pitch(yawFrame([0, 0, 0], foot.yaw), groundSlope + heelRisePitch)
         const off = at(riseFrame, RIG.foot, -RIG.ankle, 0)
         boot = { ...f0, p: [ballWorld[0] - off[0], ballWorld[1] - off[1], ballWorld[2] - off[2]] }
         toeFrame = pitch(yawFrame(ballWorld, foot.yaw), groundSlope)
-        const pole = dirIn(pelvis, 1, 0.28, side * 0.25)
+        const pole = kneePole(pelvis, foot.yaw, side)
         const [knee, end] = ik(hip, boot.p, RIG.thigh, RIG.shin, pole)
         thigh = limb(hip, knee, pole, pelvis.x)
         shin = limb(knee, end, pole, pelvis.x)
@@ -896,7 +1145,7 @@ export class Survivor {
         const chordX =
           (ankle[0] - hip[0]) * pelvis.x[0] + (ankle[1] - hip[1]) * pelvis.x[1] + (ankle[2] - hip[2]) * pelvis.x[2]
         const backKick = runBlend * kickBell * clamp(-chordX / 0.35, 0, 1) * dragKeep
-        const pole = dirIn(pelvis, 1, 0.28 - 0.65 * backKick, side * (0.25 - 0.17 * runBlend * kickBell * dragKeep))
+        const pole = kneePole(pelvis, foot.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * runBlend * kickBell * dragKeep)
         const [knee, end] = ik(hip, ankle, RIG.thigh, RIG.shin, pole)
         thigh = limb(hip, knee, pole, pelvis.x)
         shin = limb(knee, end, pole, pelvis.x)
@@ -939,6 +1188,7 @@ export class Survivor {
     }
     if (this.gun) draw(8, this.gun)
     if (this.mag) draw(9, this.mag)
+    if (this.meleeWeaponFrame && meleeId) emit(push, this.meleeModels[meleeId], this.meleeWeaponFrame, [1, 1, 1], 0)
     return this.batches
   }
 }

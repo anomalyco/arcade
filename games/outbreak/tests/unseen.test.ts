@@ -60,11 +60,11 @@ describe("outbreak unseen visibility & post-process", () => {
     expect(panicEval.effectiveStrength).toBeGreaterThan(nightEval.effectiveStrength)
   })
 
-  test("packs UnseenUniforms (8 floats / 32 bytes) into OutbreakLightingUniforms at offset 164", () => {
+  test("packs UnseenUniforms (8 floats / 32 bytes) into OutbreakLightingUniforms after interior uniforms", () => {
     expect(unseenUniformsStruct.floatCount).toBe(8)
     expect(unseenUniformsStruct.byteSize).toBe(32)
-    expect(OUTBREAK_UNSEEN_UNIFORM_OFFSET).toBe(164)
-    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(172)
+    expect(OUTBREAK_UNSEEN_UNIFORM_OFFSET).toBe(212)
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(220)
 
     const settings = createOutbreakSettings()
     settings.unseen.unseenMode = 1

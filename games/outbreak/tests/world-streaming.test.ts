@@ -311,6 +311,138 @@ describe("Procedural world generation & chunk streaming", () => {
       streamer.updateWindow(x, 44, session.view.town, "streaming")
     }
     expect(session.world.deltas.size).toBe(0)
-    expect(streamer.cachedChunkCount).toBeLessThanOrEqual(24)
+    expect(streamer.cachedChunkCount).toBeLessThanOrEqual(48)
+  })
+
+  test("entering a building in streamed chunks at positive and negative offsets hides its roof (shingles & chimney) and keeps neighbours' roofs visible", () => {
+    const streamer = new WorldClientStreamer()
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
+
+    // Add a simulated co-op remote survivor in another macro-block to ensure multi-survivor building lists never break local cutaway
+    const remoteSlot = session.sim.addSurvivor("remote-peer", 1)
+    Object.assign(remoteSlot.survivor, { x: -160, y: -120 })
+
+    const testChunkOffsets = [
+      [3, 0],
+      [4, -1],
+      [8, 2],
+      [-1, -1],
+      [-3, -2],
+      [-5, -3],
+      [10, -3],
+    ] as const
+
+    const isRoofChunkHidden = (c: { cutBox?: readonly number[]; customCutaway?: boolean | "outside" | "a2c" | "fade" }, px: number, py: number, peeking = false) => {
+      if (c.customCutaway !== "outside" || peeking) return false
+      const box = c.cutBox
+      if (!box) return true
+      return px > box[0]! && px < box[3]! && py > box[2]! && py < box[5]!
+    }
+
+    for (const [cx, cy] of testChunkOffsets) {
+      const wChunk = generateWorldChunk(7, 7, cx, cy, "streaming")
+      expect(wChunk.buildings.length).toBeGreaterThan(0)
+      const targetBld = wChunk.buildings[0]!
+      const compiled = compileSingleWorldChunk(wChunk, 7, 7, 0.22, 1)
+
+      // 1. Verify roof chunk exists for the building and contains both shingles and high rooftop geometry (e.g. chimney)
+      expect(compiled.roofChunks?.length).toBe(wChunk.buildings.length)
+      // Verify no roof or high chimney vertices (> 2.81m inside building footprint) leaked into staticOpaqueChunks
+      const staticBuf = compiled.staticOpaqueChunks[0]!.data
+      const staticBytes = compiled.staticOpaqueChunks[0]!.byteLength ?? staticBuf.byteLength
+      const staticF32 = new Float32Array(staticBuf, 0, staticBytes / 4)
+      for (let v = 0; v < staticBytes / 24; v++) {
+        const vx = staticF32[v * 6]!
+        const vy = staticF32[v * 6 + 1]!
+        const vz = staticF32[v * 6 + 2]!
+        if (vx > targetBld.rect[0] && vx < targetBld.rect[2] && vz > targetBld.rect[1] && vz < targetBld.rect[3]) {
+          expect(vy).toBeLessThanOrEqual(2.81)
+        }
+      }
+
+      // 2. Place player inside the building and update the 5×5 streaming window
+      const insideX = (targetBld.rect[0] + targetBld.rect[2]) * 0.5
+      const insideY = (targetBld.rect[1] + targetBld.rect[3]) * 0.5
+      Object.assign(session.view.player, { x: insideX, y: insideY })
+      session.sim.syncWorldChunks()
+
+      const viewRect: [number, number, number, number] = [insideX - 36, insideY - 22, insideX + 36, insideY + 22]
+      const res = streamer.updateWindow(insideX, insideY, session.view.town, "streaming", viewRect, 0, 0, 1.0)
+      expect(res.changed).toBe(true)
+      expect(res.level).toBeDefined()
+
+      // Building the player is inside must be in windowBuildings (OL.bldRects[0..7])
+      expect(res.buildings.some((b) => b.id === targetBld.id)).toBe(true)
+
+      const roofLevelChunks = res.level!.chunks.filter((c) => c.customCutaway === "outside")
+      expect(roofLevelChunks.length).toBeGreaterThan(1)
+
+      let ownRoofHiddenCount = 0
+      let neighbourRoofCount = 0
+      for (const rc of roofLevelChunks) {
+        const hiddenInside = isRoofChunkHidden(rc, insideX, insideY, false)
+        const isTargetBuildingRoof =
+          Math.abs(rc.cutBox![0]! - (targetBld.rect[0] - 0.1)) < 1e-3 &&
+          Math.abs(rc.cutBox![2]! - (targetBld.rect[1] - 0.1)) < 1e-3
+        if (isTargetBuildingRoof) {
+          expect(hiddenInside).toBe(true)
+          // Standing 3m outside the building in the street/yard must NOT hide its roof
+          expect(isRoofChunkHidden(rc, targetBld.rect[0] - 3.0, insideY, false)).toBe(false)
+          ownRoofHiddenCount++
+        } else {
+          // Neighbouring buildings' roofs in the 5×5 window must remain visible!
+          expect(hiddenInside).toBe(false)
+          neighbourRoofCount++
+        }
+      }
+      expect(ownRoofHiddenCount).toBe(1)
+      expect(neighbourRoofCount).toBeGreaterThan(0)
+    }
+  })
+
+  test("5×5 frustum window covers max zoom-out off-screen, scales lookahead with speed, and fades late chunks", () => {
+    const streamer = new WorldClientStreamer()
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
+
+    // Max zoom-out (zoom = 65) camera ground footprint spans ±35.6 m in X and ±22.4 m in Z
+    const px = 148
+    const py = 44
+    const maxZoomView: [number, number, number, number] = [px - 35.6, py - 22.4, px + 35.6, py + 18.3]
+    const res = streamer.updateWindow(px, py, session.view.town, "streaming", maxZoomView, 18, 0, 1.0)
+    expect(res.changed).toBe(true)
+
+    // Verify rendered chunks cover the entire max-zoom-out frustum plus an off-screen margin on all 4 sides
+    let minChunkX = Infinity, maxChunkX = -Infinity, minChunkZ = Infinity, maxChunkZ = -Infinity
+    for (const c of res.level!.chunks) {
+      if (c.box[0] < minChunkX) minChunkX = c.box[0]
+      if (c.box[2] > maxChunkX) maxChunkX = c.box[2]
+      if (c.box[1] < minChunkZ) minChunkZ = c.box[1]
+      if (c.box[3] > maxChunkZ) maxChunkZ = c.box[3]
+    }
+    expect(minChunkX).toBeLessThanOrEqual(maxZoomView[0] - 12)
+    expect(maxChunkX).toBeGreaterThanOrEqual(maxZoomView[2] + 12)
+    expect(minChunkZ).toBeLessThanOrEqual(maxZoomView[1] - 12)
+    expect(maxChunkZ).toBeGreaterThanOrEqual(maxZoomView[3] + 12)
+
+    // Speed-scaled lookahead queues more chunks at vehicle speed (20 m/s) than walking speed (3 m/s)
+    const walkStreamer = new WorldClientStreamer()
+    walkStreamer.prewarmAround(148, 44, 7, 7, 0.22, 1, "streaming", 3, 0)
+    const walkPending = walkStreamer.pendingBakeCount
+
+    const vehicleStreamer = new WorldClientStreamer()
+    vehicleStreamer.prewarmAround(148, 44, 7, 7, 0.22, 1, "streaming", 20, 0)
+    const vehiclePending = vehicleStreamer.pendingBakeCount
+    expect(vehiclePending).toBeGreaterThan(walkPending)
+
+    // Late-arriving chunk fade ramps chunkFadeAlpha from >0 to 1 over 0.28s and clears
+    streamer.triggerChunkFade("4,1", 10.0)
+    const fadeMid = streamer.updateWindow(px, py, session.view.town, "streaming", maxZoomView, 0, 0, 10.14)
+    expect(streamer.chunkFadeAlpha).toBeGreaterThan(0.4)
+    expect(streamer.chunkFadeAlpha).toBeLessThan(0.6)
+    expect(fadeMid.level!.chunks.some((c) => c.customCutaway === "fade")).toBe(true)
+
+    const fadeDone = streamer.updateWindow(px, py, session.view.town, "streaming", maxZoomView, 0, 0, 10.35)
+    expect(streamer.chunkFadeAlpha).toBe(0)
+    expect(fadeDone.level!.chunks.some((c) => c.customCutaway === "fade")).toBe(false)
   })
 })

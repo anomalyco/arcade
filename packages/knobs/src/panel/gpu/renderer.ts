@@ -192,6 +192,8 @@ export interface GpuGroupBinding {
   readonly die?: { readonly button: HTMLButtonElement; readonly die: HeaderDie }
   /** On a page: the header reads as a card title rather than a small-caps label. */
   readonly title?: boolean
+  /** A foldable group's caret (`folded`): it turns as the header's aria-expanded changes. */
+  readonly fold?: SVGElement
   /** On a page: a preset's name, shown in place of the title while its chip is hovered. */
   readonly peek?: HTMLElement
   /** On a page: the group's presets, as named or numbered segments, or a compact menu. */
@@ -1079,7 +1081,10 @@ class GpuOverlayManager {
     lRect = this.rectOf(labelEl),
   ) {
     const t = this.curTokens
-    const w = this.drawText(text, lRect.left, rowCenterY, withAlpha(t.label, rowAlpha))
+    // Ellipsized to the label's box, as the DOM's text-overflow does.
+    const shown =
+      lRect.width > 0 ? this.fit(text, lRect.width + 1, t.fontSize, t.labelWeight) : text
+    const w = this.drawText(shown, lRect.left, rowCenterY, withAlpha(t.label, rowAlpha))
     const lock = this.curLocks?.get(labelEl)
     if (lock) this.drawLock(lock, rowCenterY, rowAlpha)
     const dot = this.ease(labelEl, "dot", modified ? 1 : 0)
@@ -1170,7 +1175,7 @@ class GpuOverlayManager {
 
   /** Square inside its card, except the card's own rounded corners on the first and last rows. */
   private rowCorners(row: HTMLElement, open = false): [number, number, number, number] {
-    const r = this.curTokens.radius
+    const r = this.curTokens.flat ? 0 : this.curTokens.radius
     if (this.curTokens.rowGap > 0) return open ? [r, r, 0, 0] : [r, r, r, r]
     // A spring's sliders sit inside its row, beside the curve: only their left corners can round.
     const item = row.parentElement?.classList.contains("knobs-card")
@@ -1300,7 +1305,7 @@ class GpuOverlayManager {
       clip,
       color: withAlpha(t.surfaceHi, alpha * wash),
       color2: t.accent,
-      radius: r.height * 0.5,
+      radius: Math.min(r.height * 0.5, t.round),
       glowOrBlur: t.glowStrength * 8,
       kind: 1,
     })
@@ -1583,7 +1588,7 @@ class GpuOverlayManager {
     const r = this.rectOf(el, text.length)
     this.drawText(text, r.right, centerY, color, {
       px: this.curTokens.textControl,
-      weight: 400,
+      weight: this.curTokens.fontWeight,
       align: "right",
       clip,
     })
@@ -1615,8 +1620,21 @@ class GpuOverlayManager {
         kind: 1,
       })
     this.drawRowLabel(x.label, display, modified, centerY, rowAlpha)
-    const cRect = this.rectOf(x.caret)
-    const turn = (this.ease(x.caret, "turn", open ? 1 : 0, LEAD.omega, LEAD.zeta) * Math.PI) / 2
+    this.drawCaret(x.caret, open, withAlpha(this.hot(x.caret, hot, t.dim, t.label), rowAlpha))
+    this.drawFocus(x.head, this.isFocused(x.head), hRect, cardClip)
+    if (x.body.hidden) return { hRect, bodyClip: undefined }
+    const bRect = this.rectOf(x.body)
+    if (bRect.height < 0.5) return { hRect, bodyClip: undefined }
+    return {
+      hRect,
+      bodyClip: intersectClip(cardClip, [bRect.left, bRect.top, bRect.right, bRect.bottom]),
+    }
+  }
+
+  /** A disclosure chevron, turning a quarter on the lead spring as it opens. */
+  private drawCaret(caret: SVGElement, open: boolean, color: Rgba) {
+    const cRect = this.rectOf(caret)
+    const turn = (this.ease(caret, "turn", open ? 1 : 0, LEAD.omega, LEAD.zeta) * Math.PI) / 2
     const cx = cRect.left + cRect.width / 2
     const cy = cRect.top + cRect.height / 2
     const cos = Math.cos(turn)
@@ -1628,15 +1646,7 @@ class GpuOverlayManager {
         cx + chevron[i]! * cos - chevron[i + 1]! * sin,
         cy + chevron[i]! * sin + chevron[i + 1]! * cos,
       )
-    this.pushLine(pts, withAlpha(this.hot(x.caret, hot, t.dim, t.label), rowAlpha), 1.4)
-    this.drawFocus(x.head, this.isFocused(x.head), hRect, cardClip)
-    if (x.body.hidden) return { hRect, bodyClip: undefined }
-    const bRect = this.rectOf(x.body)
-    if (bRect.height < 0.5) return { hRect, bodyClip: undefined }
-    return {
-      hRect,
-      bodyClip: intersectClip(cardClip, [bRect.left, bRect.top, bRect.right, bRect.bottom]),
-    }
+    this.pushLine(pts, color, 1.4)
   }
 
   /** Draws an open body at its reveal's opacity. */
@@ -1767,7 +1777,7 @@ class GpuOverlayManager {
         const lr = this.rectOf(s.label)
         this.drawText(s.label.textContent ?? "", lr.left, lineY, withAlpha(t.dim, rowAlpha), {
           px: t.textCap,
-          weight: 600,
+          weight: t.titleWeight,
           align: "left",
           clip: body,
         })
@@ -1783,7 +1793,7 @@ class GpuOverlayManager {
           color2: withAlpha(t.line, rowAlpha),
           kind: 9,
           p0: s.mode,
-          p1: h / 2,
+          p1: Math.min(h / 2, t.round),
           aux: [col.l, s.mode === 0 ? Math.max(col.c, 0.06) : col.c, col.h, maxC],
         })
         const [x] = this.morph(s.track, [s.thumbX()], row.wave.at - clock, s.dragging(), tr)
@@ -1794,11 +1804,11 @@ class GpuOverlayManager {
           y: lineY - d / 2,
           w: d,
           h: d,
-          radius: d / 2,
+          radius: Math.min(d / 2, t.round),
           fill: rgb,
           ring: 2,
-          ringColor: [1, 1, 1, rowAlpha],
-          shadow: [0.4, 4, 1],
+          ringColor: withAlpha(t.thumb, rowAlpha),
+          shadow: [0.4 * t.lift, 4, 1],
           clip: body,
         })
       }
@@ -1878,7 +1888,7 @@ class GpuOverlayManager {
         y: pr.top + py! - d / 2,
         w: d,
         h: d,
-        radius: d / 2,
+        radius: Math.min(d / 2, t.round),
         fill: withAlpha(t.accent, rowAlpha),
         ring: 1.5,
         ringColor: withAlpha(t.bg, rowAlpha),
@@ -1951,11 +1961,11 @@ class GpuOverlayManager {
           y: cy - d / 2,
           w: d,
           h: d,
-          radius: d / 2,
+          radius: Math.min(d / 2, t.round),
           fill: withAlpha(t.bg, rowAlpha),
           ring: -2,
           ringColor: accent,
-          shadow: [0.3, 3, 1],
+          shadow: [0.3 * t.lift, 3, 1],
           clip: body,
         })
       })
@@ -2200,11 +2210,11 @@ class GpuOverlayManager {
         // Dims while compare is held, like the DOM's 0.2 s opacity transition.
         const comparing = panel.root.hasAttribute("data-comparing")
         this.drawText(
-          this.fit(panel.titleEl.textContent ?? "", tRect.width - indent, px, 600),
+          this.fit(panel.titleEl.textContent ?? "", tRect.width - indent, px, tokens.titleWeight),
           tRect.left + indent,
           tRect.top + tRect.height * 0.5,
           withAlpha(tokens.text, this.ease(panel.titleEl, "compare", comparing ? 0.4 : 1, 26)),
-          { px, weight: 600, clip: panelClip, track: pageB ? -0.015 : -0.01 },
+          { px, weight: tokens.titleWeight, clip: panelClip, track: pageB ? -0.015 : -0.01 },
         )
         for (const hb of panel.headerButtons) {
           if (hb.button.hidden) continue
@@ -2322,7 +2332,7 @@ class GpuOverlayManager {
             withAlpha(this.hot(btn, isActive || chipHovered), this.missed(btn, hinting)),
             {
               px: tokens.textControl,
-              weight: isActive ? 600 : tokens.labelWeight,
+              weight: isActive ? tokens.titleWeight : tokens.labelWeight,
               align: "center",
               clip: stripClip,
             },
@@ -2358,7 +2368,14 @@ class GpuOverlayManager {
         this.curSubHovered = this.curPanelHovered
         for (const btn of panel.actionButtons)
           if (!btn.hidden && btn.isConnected)
-            this.drawButton(btn, activeEl, hinting, 999, tokens.textControl, false)
+            this.drawButton(
+              btn,
+              activeEl,
+              hinting,
+              Math.min(999, tokens.round),
+              tokens.textControl,
+              false,
+            )
         this.curBypassRectCache = bypass
         const hr = this.rectOf(panel.header)
         if (hr.height > 0)
@@ -2379,11 +2396,11 @@ class GpuOverlayManager {
           const shown =
             (head.style.opacity ? Number(head.style.opacity) : 1) * (1 - (lit?.dim ?? 0))
           this.drawText(
-            this.fit(head.textContent ?? "", sr.width - indent * 2, px, 600),
+            this.fit(head.textContent ?? "", sr.width - indent * 2, px, tokens.titleWeight),
             sr.left + indent,
             sr.top + sr.height * 0.5,
             withAlpha(tokens.text, shown),
-            { px, weight: 600, track: -0.015 },
+            { px, weight: tokens.titleWeight, track: -0.015 },
           )
           if (lit?.dot) this.drawMark(lit.dot, lit.mark)
         }
@@ -2421,6 +2438,19 @@ class GpuOverlayManager {
         if (gr.width <= 0 || gr.bottom < bodyClip[1] || gr.top > bodyClip[3]) continue
         this.curClip = clipToTile(g.element, bodyClip)
         const lr = this.rectOf(g.labelEl)
+        // A foldable group's header is a stop: its focus wash, beneath the label.
+        if (g.fold) {
+          const focus = this.ease(g.element, "focus", this.isFocused(g.element) ? 1 : 0)
+          if (focus > 0.005)
+            this.pushPrim({
+              x: gr.left,
+              y: gr.top,
+              w: gr.width,
+              h: gr.height,
+              color: withAlpha(tokens.surface, focus),
+              kind: 1,
+            })
+        }
         if (g.title) {
           // A page card's title; a hovered (or just applied) preset's name crossfades over it.
           const peek = g.peek
@@ -2430,19 +2460,19 @@ class GpuOverlayManager {
           const cy = lr.top + lr.height * 0.5
           if (peek < 0.995)
             this.drawText(
-              this.fit(g.labelEl.textContent ?? "", lr.width, px, 600),
+              this.fit(g.labelEl.textContent ?? "", lr.width, px, tokens.titleWeight),
               lr.left,
               cy,
               withAlpha(tokens.text, 1 - peek),
-              { px, weight: 600, track: -0.01 },
+              { px, weight: tokens.titleWeight, track: -0.01 },
             )
           if (g.peek && peek > 0.005)
             this.drawText(
-              this.fit(g.peek.textContent ?? "", lr.width, px, 600),
+              this.fit(g.peek.textContent ?? "", lr.width, px, tokens.titleWeight),
               lr.left,
               cy,
               withAlpha(tokens.text, peek),
-              { px, weight: 600, track: -0.01 },
+              { px, weight: tokens.titleWeight, track: -0.01 },
             )
         } else
           this.drawText(
@@ -2452,7 +2482,11 @@ class GpuOverlayManager {
             lr.left,
             lr.top + lr.height * 0.5,
             tokens.groupColor,
-            { px: Math.max(9, tokens.groupSize), weight: 600, track: tokens.groupTracking },
+            {
+              px: Math.max(9, tokens.groupSize),
+              weight: tokens.titleWeight,
+              track: tokens.groupTracking,
+            },
           )
         // --k-group-divider: a hairline over every group but the first.
         if (!g.title && tokens.groupDivider[3] > 0 && g.element.previousElementSibling)
@@ -2515,6 +2549,11 @@ class GpuOverlayManager {
           this.drawRoundWash(dr, dimmed, this.wash(button, on))
           this.drawDie(die, dr, withAlpha(this.hot(button, on, tokens.dim), dimmed))
         }
+        if (g.fold) {
+          const hover = this.curSubHovered && g.element.matches(":hover")
+          const open = g.element.getAttribute("aria-expanded") === "true"
+          this.drawCaret(g.fold, open, this.hot(g.fold, hover, tokens.dim, tokens.label))
+        }
       }
 
       this.curAlpha = panelAlpha
@@ -2527,13 +2566,16 @@ class GpuOverlayManager {
         if (cr.width <= 0 || cr.bottom < bodyClip[1] || cr.top > bodyClip[3]) continue
         this.curClip = clipToTile(card, bodyClip)
         this.curAlpha = panelAlpha * this.presence(card)
-        const bars = separate
-          ? [...(card.children as HTMLCollectionOf<HTMLElement>)].flatMap((c) =>
-              c.classList.contains("knobs-spring")
-                ? [...c.querySelectorAll<HTMLElement>(".knobs-sub")]
-                : [c],
-            )
-          : [card]
+        // The flat frame draws no card surfaces: rows sit on the panel (or the host) directly.
+        const bars = tokens.flat
+          ? []
+          : separate
+            ? [...(card.children as HTMLCollectionOf<HTMLElement>)].flatMap((c) =>
+                c.classList.contains("knobs-spring")
+                  ? [...c.querySelectorAll<HTMLElement>(".knobs-sub")]
+                  : [c],
+              )
+            : [card]
         for (const bar of bars) {
           if (bar.hidden) continue
           const br = bar === card ? cr : this.rectOf(bar)
@@ -2566,7 +2608,9 @@ class GpuOverlayManager {
           : rowsAlpha
         const rowAlpha = this.missed(row.row, hinting)
         const rowCenterY = rRect.top + rRect.height * 0.5
-        const hovered = this.isHovered(row.row)
+        // Disabled and read-only rows take no edits, so nothing in them answers the pointer.
+        const blocked = row.row.closest<HTMLElement>("[data-disabled],[data-readonly]")
+        const hovered = !blocked && this.isHovered(row.row)
         this.curSubHovered = hovered
         const isX = row.kind === "color" || row.kind === "point" || row.kind === "easing"
         const hot = isX
@@ -2602,6 +2646,13 @@ class GpuOverlayManager {
             cardClip = intersectClip(cardClip, [ir.left, ir.top, ir.right, ir.bottom])
           }
         }
+        // A disabled row dims as a whole, like the DOM row's opacity.
+        this.curAlpha *= this.ease(
+          row.row,
+          "disabled",
+          blocked?.hasAttribute("data-disabled") ? tokens.disabledOpacity : 1,
+          30,
+        )
         this.curClip = cardClip
         this.curSelected = 0
         if (item && !washed.has(item)) {
@@ -2635,13 +2686,18 @@ class GpuOverlayManager {
           if (rolling) anyMoving = true
           const focused = this.isFocused(sl.track)
           const dragging = sl.isDragging()
+          // A mixed value (a multi-selection whose items differ) shows no fill and reads "—".
+          const mixed = row.row.closest(".knobs-mixed") !== null
+          const shownFill = this.ease(row.row, "mixed", mixed ? 0 : 1, 40)
           // The handle follows the same states as its CSS (hover, keyboard focus, drag).
           sl.handleSpring.set(
-            dragging
-              ? 1
-              : hovered || focused
-                ? Math.max(0.65, tokens.handleRest)
-                : tokens.handleRest,
+            mixed
+              ? 0
+              : dragging
+                ? 1
+                : hovered || focused
+                  ? Math.max(0.65, tokens.handleRest)
+                  : tokens.handleRest,
           )
           sl.fillSpring.omega = tokens.fillOmega
           sl.fillSpring.zeta = tokens.fillZeta
@@ -2674,8 +2730,15 @@ class GpuOverlayManager {
           const digitsText = sl.getDigitsText()
           const lock = this.curLocks?.get(sl.label)
           const locked = lock?.dataset.on === "true"
-          const vRect = this.rectOf(sl.valueButton, digitsText.length * 2 + (locked ? 1 : 0))
+          const vRect = this.rectOf(
+            sl.valueButton,
+            digitsText.length * 2 + (locked ? 1 : 0) + (mixed ? 64 : 0),
+          )
           const lRect = this.rectOf(sl.label)
+          // A row accessory just after the label keeps the ticks clear of it too.
+          const slot = sl.label.nextElementSibling as HTMLElement | null
+          const slotRect = slot?.classList.contains("knobs-accessory") ? this.rectOf(slot) : null
+          const labelEnd = slotRect && slotRect.width > 0 ? slotRect.right : lRect.right
           const zone = this.ease(
             row.row,
             "zone",
@@ -2703,10 +2766,12 @@ class GpuOverlayManager {
             y: rRect.top,
             w: rRect.width,
             h: rRect.height,
-            color: withAlpha(fillTint, rowAlpha),
+            color: withAlpha(fillTint, rowAlpha * shownFill),
             color2: withAlpha(tokens.handle, rowAlpha),
             corners: this.rowCorners(row.row),
             glowOrBlur: tokens.glowStrength,
+            // Rounds the handle's ends unless --k-round squares them.
+            strokeWidth: tokens.round > 0 ? 1 : 0,
             kind: 2,
             blurX,
             // Kind 2 has no vertical blur; the slot carries the handle's inset from the fill edge.
@@ -2714,14 +2779,39 @@ class GpuOverlayManager {
             p0: sl.fillSpring.x,
             p1: sl.handleSpring.x,
             p2: sl.tickCount,
-            p3: this.ease(row.row, "ticks", dragging ? 1 : hovered || focused ? 0.7 : 0),
-            aux: [zone, sl.notchRatio, notch, lRect.right - rRect.left],
+            p3:
+              this.ease(row.row, "ticks", dragging ? 1 : hovered || focused ? 0.7 : 0) * shownFill,
+            aux: [zone, sl.notchRatio, notch * shownFill, labelEnd - rRect.left],
             aux2: withAlpha(tokens.accent, rowAlpha),
           })
 
           this.drawRowLabel(sl.label, row.display, false, rowCenterY, rowAlpha, lRect)
 
-          if (!sl.isEditing()) {
+          if (mixed && !sl.isEditing()) {
+            const valCol = withAlpha(this.hot(sl.valueButton, dragging || focused), rowAlpha)
+            const dashW = this.drawText("—", vRect.right, rowCenterY, valCol, {
+              px: tokens.textControl,
+              weight: tokens.fontWeight,
+              align: "right",
+              family: tokens.valueFamily,
+            })
+            const mark =
+              tokens.readoutMark > 0
+                ? this.ease(row.row, "mark", row.isModified() ? 1 : 0, 26, 0.6)
+                : 0
+            if (mark > 0.005) {
+              const r = 2.5 * Math.max(0, Math.min(1.2, mark))
+              this.shape({
+                x: vRect.right - dashW - 6 - 2.5 - r,
+                y: rowCenterY - r,
+                w: r * 2,
+                h: r * 2,
+                radius: r,
+                fill: withAlpha(tokens.modified, rowAlpha * clamp(mark, 0, 1)),
+                clip: bodyClip,
+              })
+            }
+          } else if (!sl.isEditing()) {
             const unitText = sl.getUnitText()
             const valCol = withAlpha(this.hot(sl.valueButton, dragging || focused), rowAlpha)
             // --k-readout-mark: a modified value takes the modified colour behind a dot.
@@ -2747,7 +2837,7 @@ class GpuOverlayManager {
                   tokens.unitColor ? withAlpha(tokens.unitColor, rowAlpha) : unitInk,
                   {
                     px: valPx,
-                    weight: 400,
+                    weight: tokens.fontWeight,
                     align: "right",
                     family: tokens.valueFamily,
                     ...zoom,
@@ -2770,7 +2860,7 @@ class GpuOverlayManager {
               const feather = valPx * 0.5
               const text = {
                 px: valPx,
-                weight: 400,
+                weight: tokens.fontWeight,
                 align: "right" as const,
                 clip: slotClip,
                 feather,
@@ -2782,7 +2872,7 @@ class GpuOverlayManager {
               const advance = (ch: string) =>
                 ch >= "0" && ch <= "9"
                   ? cell
-                  : this.atlas.measure(ch, valPx, 400, tokens.valueFamily)
+                  : this.atlas.measure(ch, valPx, tokens.fontWeight, tokens.valueFamily)
               let digitsW = 0
               for (const ch of digitsText) digitsW += advance(ch)
               if (mark > 0.005) {
@@ -2919,13 +3009,16 @@ class GpuOverlayManager {
           // The thumb is a span between two edges: the leading edge springs ahead and the trailing
           // one follows, so it stretches into a capsule while it travels; a press widens it toward
           // where it will go, like iOS.
-          const on = row.toggleEl.getAttribute("aria-checked") === "true"
+          const checked = row.toggleEl.getAttribute("aria-checked")
+          const on = checked === "true"
           const pressed = this.curPanelHovered && row.toggleEl.matches(":active")
           const pad = tokens.trayPad
           const d = tRect.height - pad * 2
           const travel = tRect.width - pad * 2 - d
-          const from = pad + (on ? travel : 0) - (pressed && on ? 4 : 0)
-          const to = pad + (on ? travel : 0) + d + (pressed && !on ? 4 : 0)
+          // Mixed: the thumb waits in the middle.
+          const at = checked === "mixed" ? travel / 2 : on ? travel : 0
+          const from = pad + at - (pressed && on ? 4 : 0)
+          const to = pad + at + d + (pressed && !on ? 4 : 0)
           const th = row.thumb
           if (reducedMotion || th.end.x - th.start.x <= 1) th.snap(from, to)
           else {
@@ -2947,8 +3040,11 @@ class GpuOverlayManager {
             w: tRect.width,
             h: tRect.height,
             color: withAlpha(mixColor(tokens.toggleTrack, tokens.accent, prog), rowAlpha),
-            color2: withAlpha(mixColor([1, 1, 1, 1], tokens.toggleThumb, prog), rowAlpha),
+            color2: withAlpha(mixColor(tokens.thumb, tokens.toggleThumb, prog), rowAlpha),
             glowOrBlur: tokens.glowStrength,
+            // Corners follow --k-round (capsule or square); the slot also carries --k-lift.
+            radius: tokens.round,
+            strokeWidth: tokens.lift,
             kind: 4,
             p0: prog,
             p2: th.start.x,

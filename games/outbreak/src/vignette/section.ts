@@ -38,6 +38,8 @@ import { propShape, sightRects, SIZE } from "../../shared/map"
 import { SceneryMemory } from "../../shared/scenery-memory"
 import { supportHeight } from "../../shared/terrain"
 import { FOG_SIZE, Vision } from "../../shared/vision"
+import { InteriorPresenter } from "../interiors"
+import { INTERIOR_UNIFORM_FLOATS } from "../interiors/wgsl"
 import { Survivor } from "../survivor"
 import {
   VIGNETTE_CAMERA_PRESETS,
@@ -211,7 +213,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
   const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_LIGHTS)
   const empty = new Float32Array(0)
-  const vignetteUniforms = new Float32Array(128)
+  /** Material recipes and params (120 floats), then the interior block (rugs and themes). */
+  const VIGNETTE_INTERIOR_OFFSET = 120
+  const vignetteUniforms = new Float32Array(VIGNETTE_INTERIOR_OFFSET + INTERIOR_UNIFORM_FLOATS)
+  let interiors: InteriorPresenter | null = null
   const cam = new Camera()
   const vision = new Vision()
   const scenery = new SceneryMemory()
@@ -238,6 +243,8 @@ export const outbreakVignetteSection: SectionFactory = context => {
     const dummyCtx = dummyCanvas.getContext("webgpu")!
     dummyCtx.configure({ device, format, alphaMode: "opaque" })
     renderer = new Renderer(device, dummyCtx, format, vignetteShaders)
+    const r = renderer
+    interiors = new InteriorPresenter(device, view => r.setDetailTextureArray(view))
     avatar = new Survivor(renderer)
     const doorMesh = new Mesh()
     doorMesh.box(0, 0.13, -0.1, 1.4, 2.3, 0.1, hex(0x463322), MAT.timber)
@@ -427,6 +434,10 @@ export const outbreakVignetteSection: SectionFactory = context => {
     vignetteUniforms[105] = player.y
     vignetteUniforms[106] = s.compareMode === 2 ? Math.max(0.05, s.skyFill) : 1.0
     vignetteUniforms[107] = s.compareMode === 2 ? Math.max(0.05, s.moonStrength) : 1.0
+    if (interiors) {
+      interiors.update(town.buildings, town.houseSeed, player.x, player.y)
+      interiors.pack(vignetteUniforms, VIGNETTE_INTERIOR_OFFSET, town.buildings, town.houseSeed)
+    }
   }
 
   const controls: LabControl[] = [

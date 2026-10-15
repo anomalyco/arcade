@@ -1,1 +1,1 @@
-export { presetCss, problemsPreset, type TokenPreset } from "../core/theme.js"
+export { labPreset, presetCss, problemsPreset, type TokenPreset } from "../core/theme.js"

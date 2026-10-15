@@ -10,9 +10,25 @@ Workbench, on the Inventory First baseline); the design write-up is the D-11 rou
 
 | Store | Holds | Notes |
 | --- | --- | --- |
-| Hotbar (5 slots) | Flashlight, pistol, melee tool, medical, throwable | Items go to their usual slot when it is free (`preferSlots`). `Mouse0` uses the held item. |
+| Hotbar (5 slots) | Flashlight, pistol, melee weapon, medical, throwable | Items go to their usual slot when it is free (`preferSlots`). `Mouse0` uses the held item; holding a melee weapon swings on `Mouse0` (tap for a 2–3 hit combo, hold for a charged heavy cleave; `V` always shoves). |
 | Belt (counters) | 9mm (24), planks (6), scrap (10), chem (6), batteries (3), keys (4) | Never in the hotbar. Reload, barricade, crafting, keys and battery swaps draw from it. |
 | Pack (4 slots) | Parts (toolbox, car battery takes 2), spare tools | `Tab` shows it; a digit swaps that pack slot into the selected hand slot. |
+
+### Melee weapons (`games/outbreak/shared/combat.ts`)
+
+Every melee weapon is a ledger item (`slot: "hand"`, `preferSlots: [2]`) whose `charge` tracks remaining durability hits (`MELEE_WEAPONS[id].durability`). Connecting with zombies or doors/barricades wears durability by 1 per swing (2 on a heavy swing); at 0 the weapon breaks with a callout and `melee.break` SFX.
+
+| Weapon | Class | Damage | Reach | Arc | Combo | Stamina | Knockback | Durability | Noise | Door dmg | Loot buildings |
+| --- | --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --- |
+| `knife` | `one-blade` | 28 | 1.35 m | 75° | 3 | 10 | 1.3 | 30 | 3.5 m | 8 | house kitchens/counters, diner, cabin |
+| `pipe` | `one-blunt` | 36 | 1.60 m | 95° | 3 | 15 | 2.8 | 28 | 7.5 m | 22 | garage, warehouse, gas_station |
+| `hammer` | `one-blunt` | 38 | 1.45 m | 85° | 3 | 14 | 2.6 | 32 | 8.0 m | 30 | hardware, garage, warehouse, house |
+| `crowbar` | `one-blunt` | 42 | 1.65 m | 95° | 3 | 16 | 2.5 | 36 | 7.0 m | 34 | hardware, garage, warehouse, gas_station (also pries keyed doors) |
+| `bat` | `two-heavy` | 46 | 1.85 m | 115° | 3 | 18 | 3.6 | 26 | 6.5 m | 26 | house, grocery, gas_station, police |
+| `machete` | `one-blade` | 52 | 1.70 m | 105° | 3 | 16 | 1.9 | 26 | 5.0 m | 18 | hardware, cabin, grocery |
+| `spiked-board` | `two-heavy` | 55 | 1.90 m | 115° | 2 | 22 | 3.8 | 18 | 7.5 m | 32 | crafted (`recipe:spiked-board`), warehouse |
+| `axe` | `two-heavy` | 65 | 1.85 m | 105° | 2 | 24 | 3.2 | 28 | 8.5 m | 55 | hardware, cabin, garage |
+| `fire-axe` | `two-heavy` | 80 | 2.00 m | 120° | 2 | 28 | 4.0 | 32 | 9.5 m | 75 | police, warehouse, hardware |
 
 The survivor's old fields (`magAmmo`, `reserveAmmo`, `planks`, `channel`) are a projection written by
 `OutbreakProgression.project` each tick, for the HUD, the wire and combat animation. Change items through the ledger,

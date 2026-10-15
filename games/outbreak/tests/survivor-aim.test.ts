@@ -13,8 +13,8 @@ import {
 const dt = 1 / 60
 const DEG = 180 / Math.PI
 
-test("Survivor aim Lab controls cover raise time, hold time, recoil and twist limit", () => {
-  expect(survivorAimControls.every(c => c.group === "Survivor aim")).toBe(true)
+test("Survivor aim Lab controls cover raise time, hold time, recoil, twist limit and strafe", () => {
+  expect(survivorAimControls.every(c => c.group === "Survivor aim" || c.group === "Survivor strafe")).toBe(true)
   expect(survivorAimControls.map(c => c.key).sort()).toEqual(Object.keys(survivorAimTuning).sort())
 })
 

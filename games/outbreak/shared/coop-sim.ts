@@ -1,7 +1,7 @@
 import { RewindHistory } from "@arcade/kit/net/rewind"
 import { pushOut, type Rect } from "@arcade/kit/sim/geom"
 import { canSpawnZombieAt, createAIAgent, DEFAULT_PACING_TUNING, OutbreakAISubsystem, type AIConfig } from "./ai"
-import { createSurvivorCombatState, OutbreakCombatSubsystem } from "./combat"
+import { createSurvivorCombatState, findFinisherTarget, OutbreakCombatSubsystem } from "./combat"
 import { advanceHour } from "./day-cycle"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
@@ -193,8 +193,14 @@ export class CoopSim {
       if (handled) {
         stepStamina(p, false, false, dt, resolved.stamina)
         if (p.vehicleId && wasPassenger && (p.seatIndex ?? 0) > 0) {
-          if (!predict && command.hotbarSlot !== undefined) this.progression.select(slot, command.hotbarSlot)
-          if (!predict && command.hotbarDelta) this.progression.select(slot, undefined, command.hotbarDelta)
+          if (!predict && command.hotbarSlot !== undefined) {
+            this.progression.select(slot, command.hotbarSlot)
+            this.progression.project(slot)
+          }
+          if (!predict && command.hotbarDelta) {
+            this.progression.select(slot, undefined, command.hotbarDelta)
+            this.progression.project(slot)
+          }
           if (command.flashlight) toggleFlashlight(p)
           if (!predict) {
             const ammo = this.progression.pistol(slot.id)
@@ -220,8 +226,14 @@ export class CoopSim {
       }
     }
 
-    if (!predict && command.hotbarSlot !== undefined) this.progression.select(slot, command.hotbarSlot)
-    if (!predict && command.hotbarDelta) this.progression.select(slot, undefined, command.hotbarDelta)
+    if (!predict && command.hotbarSlot !== undefined) {
+      this.progression.select(slot, command.hotbarSlot)
+      this.progression.project(slot)
+    }
+    if (!predict && command.hotbarDelta) {
+      this.progression.select(slot, undefined, command.hotbarDelta)
+      this.progression.project(slot)
+    }
     if (command.flashlight) toggleFlashlight(p)
 
     const x = p.x
@@ -266,13 +278,20 @@ export class CoopSim {
       if (!predict && outcome.topologyChanged) this.topologyChanged()
     }
 
-    if (!predict) this.applyActions(slot, command, dt, resolved.infiniteAmmo, viewTime)
+    if (!predict) this.applyActions(slot, command, dt, resolved, viewTime)
 
     p.vx = dt > 0 ? (p.x - x) / dt : 0
     p.vy = dt > 0 ? (p.y - y) / dt : 0
   }
 
-  private applyActions(slot: SurvivorSlot, command: Command, dt: number, infiniteAmmo: boolean, viewTime?: number): void {
+  private applyActions(
+    slot: SurvivorSlot,
+    command: Command,
+    dt: number,
+    resolved: ReturnType<typeof resolveSessionTuning>,
+    viewTime?: number,
+  ): void {
+    const infiniteAmmo = resolved.infiniteAmmo
     const p = slot.survivor
     const town = this.town
     const progression = this.progression
@@ -322,26 +341,79 @@ export class CoopSim {
       // R swaps a spare battery into the flashlight when it is in hand and low; otherwise it reloads the pistol.
       const battery = held === "flashlight" && (p.battery < 0.95 || p.batteryDepleted) && progression.ledger.count(slot.id, "battery") > 0
       if (battery) verbs.reload = true
-      else if (this.combat.startReload(p, this.ai, this.time, ammo)) progression.ledger.cancel(slot.id)
+      else if (this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
+    }
+    const tryFinisher = () => {
+      const runFinisher = () => {
+        const finTarget = findFinisherTarget(p, this.ai.agents, blockers)
+        if (!finTarget) return null
+        return this.combat.executeFinisher(
+          p,
+          finTarget,
+          this.ai,
+          progression.melee(slot.id),
+          this.time,
+          resolved.melee,
+          slot.id,
+          slot.index,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      }
+      const ev =
+        viewTime !== undefined && viewTime < this.time
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runFinisher)
+          : runFinisher()
+      if (ev) progression.ledger.cancel(slot.id)
+      return Boolean(ev)
     }
     const shove = () => {
+      if (tryFinisher()) return
       const ready = p.shoveCooldown <= 0
-      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id))
+      this.combat.meleeShove(p, this.ai, blockers, this.time, progression.shoveMods(slot.id), slot.id)
       if (ready) progression.ledger.cancel(slot.id)
     }
     if (command.melee) shove()
     if (command.fire) {
-      if (use === "fire") {
+      if ((use === "melee" || use === "shove" || use === "fire") && tryFinisher()) {
+        // Contextual finisher on downed or crawling zombie handled
+      } else if (use === "fire") {
         if (infiniteAmmo) ammo.fill()
         const fired =
           viewTime !== undefined && viewTime < this.time
             ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, () =>
-                this.combat.firePistol(p, this.ai, blockers, this.time, ammo),
+                this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id),
               )
-            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo)
+            : this.combat.firePistol(p, this.ai, blockers, this.time, ammo, slot.id)
         if (fired) progression.ledger.cancel(slot.id)
+      } else if (use === "melee") {
+        const wpn = progression.heldMeleeWeapon(slot.id)
+        if (wpn && this.combat.startMeleeSwing(p, wpn, this.time, resolved.melee)) {
+          progression.ledger.cancel(slot.id)
+        }
       } else if (use === "shove") shove()
       else verbs.fire = true
+    }
+    if (p.meleePhase !== "idle" || p.meleeWeapon) {
+      const runSwing = () =>
+        this.combat.stepMelee(
+          p,
+          dt,
+          this.time,
+          Boolean(command.fireHeld),
+          this.ai,
+          blockers,
+          progression.melee(slot.id),
+          resolved.melee,
+          slot.id,
+          slot.index,
+          town,
+          (text, kind, key) => progression.notify(slot, text, kind, key),
+        )
+      const meleeRes =
+        viewTime !== undefined && viewTime < this.time && p.meleePhase !== "idle"
+          ? this.rewind.withRewoundPositions(this.ai.agents, viewTime, runSwing)
+          : runSwing()
+      if (meleeRes.topologyChanged) this.topologyChanged()
     }
     const made = progression.act(slot, verbs, world, target)
     if (made.noise > 0) {
@@ -456,6 +528,11 @@ export class CoopSim {
         const v = this.vehicles.vehicleOf(slot.survivor)
         const armor = v ? (v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4) : 1
         slot.survivor.health = Math.max(0, slot.survivor.health - damage * armor)
+        if (aiStep.ankleGrabbed[i] && !v) {
+          slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)
+          slot.survivor.vx *= 0.45
+          slot.survivor.vy *= 0.45
+        }
       }
     })
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")

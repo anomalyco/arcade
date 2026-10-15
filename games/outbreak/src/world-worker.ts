@@ -1,5 +1,6 @@
 import { generateWorldChunk, type WorldMode } from "../shared/world"
 import { archSettings } from "./architecture"
+import { interiorSettings } from "./interiors/plan"
 import { compileSingleWorldChunk, recycleTileBuffers } from "./world-streamer"
 
 export type WorldWorkerRequest =
@@ -16,6 +17,7 @@ export type WorldWorkerRequest =
       cy: number
       houseDecay: number
       weathering: number
+      interior?: typeof interiorSettings
     }
   | {
       type: "recycle"
@@ -38,6 +40,7 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
   }
   archSettings.houseDecay = req.houseDecay
   archSettings.weathering = req.weathering
+  if (req.interior) Object.assign(interiorSettings, req.interior)
   const worldChunk = generateWorldChunk(req.seed, req.houseSeed, req.cx, req.cy, req.mode)
   const compiled = compileSingleWorldChunk(
     worldChunk,

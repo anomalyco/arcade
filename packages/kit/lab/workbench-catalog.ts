@@ -526,6 +526,45 @@ export function buildWorkbenchCatalog(ctx: WorkbenchCatalogContext): CatalogEntr
     })
   }
 
+  const rugsSec = sections.find(s => s.id === "rugs")
+  if (rugsSec) {
+    const styleCtrl = rugsSec.controls.find(c => c.key === "style" && "options" in c)
+    if (styleCtrl && "options" in styleCtrl) {
+      for (const opt of styleCtrl.options) {
+        const id = `rug-style:${opt.value}`
+        entries.push({
+          id,
+          label: `${opt.label} rug`,
+          group: "Rugs",
+          category: "materials",
+          collection: "shared",
+          tag: "Rug",
+          sectionId: "rugs",
+          isActive: () => globalSettings.section === "rugs" && rugsSec.settings.view === "single" && rugsSec.settings.style === opt.value,
+          run: () => {
+            setActiveCatalogId(id)
+            if (globalSettings.section !== "rugs") selectSection("rugs")
+            const view = rugsSec.controls.find(ctrl => ctrl.key === "view")
+            if (view) panel.navigation.set(view, "single")
+            panel.navigation.set(styleCtrl, opt.value)
+            frameActiveTarget()
+          },
+        })
+      }
+    }
+    entries.push({
+      id: "section:rugs",
+      label: "Rug Inspector",
+      group: "Rugs",
+      category: "materials",
+      collection: "shared",
+      tag: "Rug",
+      sectionId: "rugs",
+      isActive: () => globalSettings.section === "rugs",
+      run: () => selectSection("rugs"),
+    })
+  }
+
   // 8. Lighting & Looks Categories
   const looksSec = sections.find(s => s.id === "looks")
   if (looksSec && looks) {
