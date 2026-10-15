@@ -14,7 +14,8 @@ const HEARTBEAT_MS = 10_000
  * when the last player leaves they are gone. Ticks while anyone is connected and reports its player count to the Lobby.
  */
 export class Room extends DurableObject<Env> {
-  private core = new RoomCore()
+  // Dev mode comes only from the Worker's own configuration (server/env.ts CARRIER_DEV), never from a client.
+  private core = new RoomCore(Date.now, undefined, { dev: this.env.CARRIER_DEV === "1" })
   private timer: ReturnType<typeof setInterval> | null = null
   private code = ""
   /** Made with Create game: the Lobby keeps it out of quick join. */
