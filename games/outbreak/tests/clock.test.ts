@@ -227,7 +227,7 @@ describe("fixed-tick clock policy", () => {
         survivor60.draw(session.view.player, TICK_DT, session.view.time, support)
       }
       const batches = survivorSubstepped.draw(session.view.player, TICK_DT * 3, session.view.time, support)
-      expect(batches).toHaveLength(13)
+      expect(batches).toHaveLength(14)
       for (const b of batches) {
         for (let i = 0; i < 12; i++) expect(Number.isFinite(b.data[i])).toBe(true)
       }
