@@ -6,6 +6,7 @@ import { outbreakSharedFeatures, OutbreakSharedFeatureRegistry } from "../shared
 import { outbreakClientFeatures, OutbreakClientFeatureRegistry } from "../src/feature-registry"
 import { outbreakMapFeature } from "../src/map"
 import { outbreakPacingFeature, outbreakPacingSharedFeature } from "../src/pacing"
+import { outbreakProgressionFeature, outbreakProgressionSharedFeature } from "../src/progression"
 import { outbreakWeatherFeature } from "../src/weather"
 
 describe("OutbreakSharedFeatureRegistry", () => {
@@ -249,5 +250,19 @@ describe("OutbreakClientFeatureRegistry", () => {
     expect(commands.map((c) => c.id)).toEqual(["pacing.stage"])
     const methods = pacingClient?.harnessMethods?.({} as any, {} as any) ?? {}
     expect(typeof methods.stagePacing).toBe("function")
+  })
+
+  test("registers the progression feature in both shared and client registries", () => {
+    expect(outbreakSharedFeatures.get("progression")).toBe(outbreakProgressionSharedFeature)
+    expect(outbreakProgressionSharedFeature.tuning?.namespace).toBe("progression")
+
+    const progClient = outbreakClientFeatures.get("progression")
+    expect(progClient).toBe(outbreakProgressionFeature)
+    const commands = progClient?.gameCommands?.({} as any) ?? []
+    expect(commands.map((c) => c.id)).toEqual(["progression.stage"])
+    const methods = progClient?.harnessMethods?.({} as any, {} as any) ?? {}
+    expect(typeof methods.stageProgression).toBe("function")
+    expect(typeof methods.stock).toBe("function")
+    expect(typeof methods.give).toBe("function")
   })
 })

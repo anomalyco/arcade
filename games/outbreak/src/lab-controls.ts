@@ -21,7 +21,7 @@ import type { OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
 import type { NetSession } from "./net-session"
 import "./pacing"
-import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
 import { survivorAimControls } from "./survivor"
 import { unseenControls } from "./unseen"
@@ -103,7 +103,6 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...flashlightControls,
     ...flashlightBeamControls,
     ...staminaControls,
-    ...progressionLabControls(progressionHost),
     ...vehicleLabControls(vehicleHost),
     ...groundControls,
     {
@@ -380,7 +379,7 @@ export function handleOutbreakSettingChanged(
   rawKey: string,
   value?: number | boolean | string,
 ): void {
-  const { settings, lookSettings, progressionHost, hud } = host
+  const { settings, lookSettings, hud } = host
   const session = host.session()
   const lab = host.lab()
   const routed = resolveOutbreakSettingTarget(rawKey)
@@ -388,7 +387,6 @@ export function handleOutbreakSettingChanged(
   outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
-  applyProgressionSetting(progressionHost, key, settings.progression)
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount
     session.ai.syncPopulation(session.view.town, session.view.player.x, session.view.player.y)

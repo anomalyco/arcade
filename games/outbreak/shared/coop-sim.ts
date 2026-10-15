@@ -20,7 +20,7 @@ import {
   type PeekInfo,
 } from "./interact"
 import { makeTown, sightRects, SIZE, solidRects, type Town } from "./map"
-import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression"
+import { OutbreakProgression, type Notice, type ProgressionCommand, type ProgressionTuning, type WorldContext } from "./progression/index"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import { resolveSessionTuning, type Command, type SessionTuning, type Survivor } from "./session"
 import { boxOf, OutbreakVehicleSubsystem, pushOutBox, vehicleSolidRects } from "./vehicles"
@@ -534,9 +534,6 @@ export class CoopSim {
     for (const slot of this.slots) {
       this.combat.step(slot.survivor, dt, this.time, this.progression.pistol(slot.id))
       stepFlashlight(slot.survivor, dt, this.time, flashlightTuning)
-    }
-    if (this.progression.step(dt, this.world()).topologyChanged) {
-      this.topologyChanged()
     }
 
     this.vehicles.stepWorld(dt, this.time, this.town, this.vehicleSolids, this.slots, this.ai, this.progression)

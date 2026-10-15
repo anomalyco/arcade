@@ -27,7 +27,7 @@ import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
 import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
-import { stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression-lab"
 import {
   applyOutbreakPreset,
   exportOutbreakPreset,
@@ -104,7 +104,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     coop,
     audio,
     vehicleAudio,
-    progressionHost,
     vehicleHost,
     promptEl,
   } = host
@@ -365,24 +364,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       cam.snap(x, y)
       cam.dist = settings.view.zoom
     },
-    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
-    stock(loaded?: number, belt: Record<string, number> = {}) {
-      const session = host.session()
-      const { progression, actorId } = session.view
-      const ledger = progression.ledger
-      if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
-      for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count(`${actorId}/belt`, item)
-        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
-        if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
-      }
-      const slot = session.sim.slot(actorId)
-      if (slot) progression.project(slot)
-    },
-    /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
-    stageProgression(scene: ProgressionScene) {
-      stageProgression(progressionHost, scene)
-    },
     /** Equips a melee weapon in slot 3 (index 2), positions the survivor, spawns target zombies, and optionally stages combat states. */
     stageMelee(
       weapon: MeleeWeaponId = "crowbar",
@@ -521,11 +502,6 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
     stageVehicle(scene: VehicleScene) {
       stageVehicleScene(vehicleHost, scene)
-    },
-    /** Gives the local survivor an item, routed to belt, hand or pack. */
-    give(item: string, count = 1) {
-      const session = host.session()
-      return session.view.progression.ledger.apply({ kind: "grant", actor: session.view.actorId, item, count }).ok
     },
     spawnZombie(x: number, y: number, state: AIState = "wander", aim?: number) {
       const session = host.session()
