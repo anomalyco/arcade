@@ -1,3 +1,5 @@
+import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
+import { interiorSettings, interiorSignature } from "./interiors/plan"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -704,6 +706,8 @@ export function compileSingleWorldChunk(
     floor(opaqueScratch, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
     floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
     emitPoiArchitecture(mainScratch, b, id, chunkTown)
+    emitBuildingRugs(mainScratch, b, chunkTown)
+    emitInteriorDecor(mainScratch, b, chunkTown)
   }
 
   // 5. Walls, windows & fences
@@ -1344,6 +1348,7 @@ export class WorldClientStreamer {
           cy: item.cy,
           houseDecay: archSettings.houseDecay,
           weathering: archSettings.weathering,
+          interior: { ...interiorSettings },
         })
         break
       }
@@ -1381,7 +1386,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.weathering}:${interiorSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -1517,7 +1522,7 @@ export class WorldClientStreamer {
 
     this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode)
 
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${this.center.cx},${this.center.cy}`
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}`
     if (winKey === this.lastWindowKey) {
       // Non-transition frame: pre-warm up to 1 lookahead chunk on main thread if not already handled by Workers
       this.stepBakeQueue(1.8, 1)

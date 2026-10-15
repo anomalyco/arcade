@@ -1,3 +1,4 @@
+import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls } from "./interiors"
 import { Camera } from "@arcade/kit/client/camera"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
@@ -59,6 +60,7 @@ import {
   flashlightBeamControls,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   OUTBREAK_LOOK_LIGHTING_PRESETS,
   outbreakLightingControls,
   packOutbreakLightingUniforms,
@@ -187,6 +189,7 @@ async function main() {
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
+  const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params)
@@ -1140,6 +1143,11 @@ async function main() {
     lookSettings as unknown as Record<string, string | number | boolean>,
     createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
   )
+  lab.addControls(
+    interiors.settings as unknown as Record<string, string | number | boolean>,
+    interiorControls(() => { interiors.apply("interiorTheme"); level() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
+    { ...DEFAULT_INTERIOR_SETTINGS },
+  )
   let vertices = 0
   function level() {
     session.view.town.foliageDensity = settings.world.foliageDensity
@@ -1723,6 +1731,9 @@ async function main() {
     )
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
+    const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
+    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y)
+    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, interiorBuildings, town.houseSeed)
     renderer.setCustomUniforms(lightingUniforms)
     lastSightX = sightX
     lastSightY = sightY
@@ -2075,6 +2086,13 @@ async function main() {
       input.release()
       clock.reset(performance.now(), liveMove())
       if (!frozen) scheduleFrame()
+    },
+    /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
+    interiors: () => ({ ...interiors.pool.stats, settled: interiors.pool.settled, bytes: interiors.pool.bytes, settings: { ...interiors.settings } }),
+    setInterior(key: string, value: number) {
+      if (!(key in interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
+      ;(interiors.settings as Record<string, number>)[key] = value
+      if (interiors.apply(key) === "structural") level()
     },
     setLab(rawKey: string, value: number | boolean | string) {
       const routed = resolveOutbreakSettingTarget(String(rawKey))
