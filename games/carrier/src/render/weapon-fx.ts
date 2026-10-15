@@ -1007,7 +1007,7 @@ export class WeaponFx implements ScenePass {
 
   /** A big white column of spray (a missile or a jet into the sea): droplets, a crown and mist, no faceted chunks. */
   splash(x: number, y: number, z: number, size = 1): void {
-    spawnWaterSplash(this.fxParticles, x, y, z, size, Math.random, { surge: 6 })
+    spawnWaterSplash(this.fxParticles, x, y, z, size, Math.random, { mist: 0 })
     this.puff(1, x, y + 3, z, 0, 3, 0, 4, 6 * size, 20 * size, 0.92, 0.95, 0.97, 0.3, 0.5)
   }
 

@@ -160,7 +160,7 @@ export function spawnWaterSplash(pool: Particles, x: number, y: number, z: numbe
   for (let i = 0; i < surge; i++) {
     const a = (i / Math.max(1, surge)) * 6.283
     const life = 3 + random()
-    set("soft", life, 1.6 * size, (2.6 * size) / life, -0.15, 1.2, 0, 0.9, 0.93, 0.96, 0.4)
+    set("soft", life, 2.2 * size, (3.2 * size) / life, -0.15, 1.2, 0, 0.9, 0.93, 0.96, 0.16)
     pool.spawn(spec, x + Math.cos(a) * 3 * size, y + 0.8 * size, z + Math.sin(a) * 3 * size, Math.cos(a) * (6 + random() * 4) * size, 0.3, Math.sin(a) * (6 + random() * 4) * size, random() * 6.283)
   }
 }
