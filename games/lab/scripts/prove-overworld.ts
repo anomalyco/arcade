@@ -43,6 +43,14 @@ try {
   await page.waitForFunction(() => Boolean((window as unknown as W).overworld), undefined, { timeout: 90000 })
   report.loadMs = Date.now() - loadStart
   const snap = () => page.evaluate(() => (window as unknown as W).overworld.snapshot())
+  /** Esc until the map shows: the workbench may spend the first Esc clearing a selection. */
+  const backToMap = async () => {
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("Escape")
+      if (await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().view === "overworld", undefined, { timeout: 1500 }).then(() => true, () => false)) return
+    }
+    throw new Error("Esc did not return to the map")
+  }
   const sections = () => page.evaluate(() => [...document.querySelectorAll<HTMLOptionElement>('[data-control="section"] option')].map(o => o.value))
   const startSections = await sections()
   report.startSections = startSections
@@ -70,8 +78,7 @@ try {
   await page.screenshot({ path: resolve(out, "02-explosions-propane.png") })
 
   // Esc back to the map, then the Outbreak station loads its game's adapters on demand.
-  await page.keyboard.press("Escape")
-  await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().view === "overworld")
+  await backToMap()
   await page.waitForTimeout(450)
   await page.screenshot({ path: resolve(out, "03-back-to-map.png") })
   const t1 = Date.now()
@@ -81,11 +88,22 @@ try {
   await page.waitForTimeout(1500)
   await page.screenshot({ path: resolve(out, "04-outbreak.png") })
 
+  // Weather runs the shared weather section with its presets as variants.
+  await backToMap()
+  await page.keyboard.press("Digit3")
+  await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().section === "weather", undefined, { timeout: 30000 })
+  await page.keyboard.press("Digit3")
+  assert.equal((await snap()).variant?.id, "storm")
+  await page.waitForTimeout(1500)
+  await page.screenshot({ path: resolve(out, "04b-weather-storm.png") })
+  await backToMap()
+  await page.keyboard.press("Digit0")
+  await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().section === "outbreak-vignette", undefined, { timeout: 60000 })
+
   // ] steps to the next station without going back.
   await page.keyboard.press("BracketRight")
   await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().station?.id === "blackout", undefined, { timeout: 60000 })
-  await page.keyboard.press("Escape")
-  await page.waitForFunction(() => (window as unknown as W).overworld.snapshot().view === "overworld")
+  await backToMap()
 
   // Voice note at Explosions: talk (fake mic), draw a circle with Shift held, finish, send.
   await page.keyboard.press("Digit1")

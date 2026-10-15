@@ -20,6 +20,7 @@ export type OverworldHost = {
   mode(): "edit" | "play" | undefined
   /** The variation grid owns number keys while it's open. */
   gridOpen(): boolean
+  selectedIds(): readonly string[]
   /** Loads a game's Lab adapters on demand; resolves false when the game has none. */
   ensureGame(game: string): Promise<boolean>
 }
@@ -547,8 +548,11 @@ export function createOverworld(opts: { host: OverworldHost; diorama: OverworldD
     return best?.station.id ?? id
   }
 
+  // What Esc could cancel before the workbench sees it; a section whose selection can't be cleared mustn't trap Esc.
+  let escBefore: { selection: string; grid: boolean } | null = null
   // Capture phase, so digits and arrows don't fall through to the workbench's Library and camera keys.
   window.addEventListener("keydown", e => {
+    if (e.key === "Escape") escBefore = { selection: host.selectedIds().join(","), grid: host.gridOpen() }
     if (host.chrome.visible() || typing(e) || modalOpen() || e.metaKey || e.ctrlKey || e.altKey || host.mode() === "play") return
     const n = digit(e)
     if (view === "station") {
@@ -570,7 +574,8 @@ export function createOverworld(opts: { host: OverworldHost; diorama: OverworldD
 
   // Bubble phase in a station: the workbench handles Esc first (selection, grid, Play) and we take what's left.
   window.addEventListener("keydown", e => {
-    if (view !== "station" || e.defaultPrevented || typing(e) || modalOpen() || e.metaKey || e.ctrlKey || e.altKey) return
+    const stuckSelection = e.key === "Escape" && escBefore !== null && !escBefore.grid && escBefore.selection === host.selectedIds().join(",")
+    if (view !== "station" || (e.defaultPrevented && !stuckSelection) || typing(e) || modalOpen() || e.metaKey || e.ctrlKey || e.altKey) return
     if (host.mode() === "play") return
     if (e.key === "Escape" && !e.repeat) {
       if (opts.dev?.noteActive?.()) return

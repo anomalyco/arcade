@@ -143,6 +143,37 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Anchor camera-wrapped weather volumes on the ground focus point, gate streaks by light cones (`litOnly`), and fold wet-asphalt puddle sheen into existing lamp pools without extra shader registers.**
+  `packages/kit/weather/` (`@arcade/kit/weather`), `packages/kit/lab/weather.ts` and `games/outbreak/src/weather.ts`
+  share one `WeatherSettings` contract and six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`) across the
+  unified Lab (`/arcade/lab/?section=weather`) and Outbreak (`Renderer.draw` via `FrameInput.weather`).
+  - In top-down / three-quarter views (`zoom = 34–46 m`, `pitch = 1.1 rad`), the camera eye sits `30–40 m` above and
+    south of the visible ground patch; anchoring the wrapped two-layer streak/snowflake volume (`24 m` near + `42 m`
+    far), ground splash rings/crowns (`26 m`), and mist billows on `focusXZ` (`anchor = [focusX, groundY, focusZ]`)
+    instead of `eye` keeps every droplet and splash inside the visible streetlamp pools and flashlight cone.
+  - `WeatherRenderer` evaluates up to 12 active scene lights (point lamps + directional cones) in the vertex shader with
+    a forward/backscatter Mie boost, scaling opacity by `litOnly` (`0..1`) so rain outside practical pools fades into
+    darkness while drops slicing through the survivor's flashlight beam or 2100 K sodium streetlamp flare brightly. Up
+    to 8 building interior AABBs (`excludeRects`) cull indoor drops so cutaway rooms stay dry while roof overhang
+    segments (`eaves`) emit concentrated drip lines. Omitting `discard` in premultiplied-alpha `streakFs`/`splashFs`/`mistFs`
+    preserves Apple Silicon TBDR early-Z, and folding `OL.u8.yzw` (`wetness`, `puddleCoverage`, `snowAmount`)
+    into `applySceneLightBounceAndHaze` and `evalFlashlightBeam` avoids crossing the 32-register SIMD occupancy cliff in
+    `fsSolid`.
+  - Across 7 alternating Metal rounds in the Lab (`1280×800`, `perf/weather-lab.json`), whole-frame GPU medians are
+    **`1.32 ms` (`Clear`)**, **`1.39 ms` (`Drizzle`)**, **`1.72 ms` (`Rain`)**, **`1.53 ms` (`Storm`)**, **`1.26 ms` (`Fog`)**,
+    and **`1.28 ms` (`Snow`)**. In Outbreak (`1000×680`), whole-frame GPU medians are **`3.85 / 3.69 / 3.37 / 3.24 / 3.11 / 2.99 ms`**
+    on the street and **`7.20 / 7.37 / 7.29 / 7.49 / 7.59 / 7.37 ms`** in the interior across `Clear / Drizzle / Rain / Storm / Fog / Snow`.
+    In full-resolution `3456×1894` `bench-outbreak.ts` (1 warmup + 7 runs), **Rain** measures **`18.200 ms` street `p95`**
+    (`MAD 0.300`, `realtime 0.9967`, `15.605 ms` GPU) and **`18.400 ms` interior `p95`** (`MAD 0.200`, `realtime 0.9959`,
+    `15.915 ms` GPU); **Storm** measures **`18.000 ms` street `p95`** (`MAD 0.400`, `realtime 0.9963`, `15.711 ms` GPU)
+    and **`18.300 ms` interior `p95`** (`MAD 0.400`, `realtime 0.9980`, `16.061 ms` GPU). Evidence: `perf/weather-lab.json`
+    and `~/code/home/artifacts/2026-10-14-weather/`.
+
+- **Stamp level bakes locally, measure the command-buffer timestamp envelope, pace single-in-flight frames, and pack crowds in `Float32Array` SoA.**
+  - **Level bakes (`games/outbreak/src/level.ts`, `games/carrier/shared/seabed.ts`, `islands.ts`):** Replacing Outbreak's per-texel `384×384` `buildingFootprint`/wall/tree/furniture scan with local bounding-box stamping drops the floor contact AO + indoor mask bake from **270.00 ms warm (941 ms cold) → 1.49 ms (181× faster)** and `compileLevel` from **692.33 ms cold / 794.39 ms warm → 291.02 ms cold / 98.24 ms warm** with `diffBytes = 0` and `diffPixels = 0`. In Carrier, memoizing coral clump head offsets in `dotCell`, stamping island/reef/bank blobs over their local bounding boxes instead of scanning open-ocean texels, and skipping uniform EDT columns/rows cuts `bakeSeabed(1024)` from **434.0 → 102.7 ms** (4.2×) and `bakeSeabed(2048)` from **1,934.0 → 418.4 ms warm / 788.8 ms cold** (4.6×) with `diffBytes = 0` across all 16,777,216 bytes.
+  - **`GpuPerf` envelope & frame pacing (`packages/kit/gpu-perf.ts`, `packages/kit/gpu/renderer.ts`, `games/carrier/src/render/renderer.ts`, `packages/kit/lab/main.ts`, `stage.ts`):** Summing per-pass timestamps across a single TBDR command buffer inflated `GpuPerf.gpuMs` by 8.1×–11.0× (`25.29 ms` in Blackout Office, `37.92 ms` in Downtown, `128.66 ms` in Getaway Chase); using the command-buffer timestamp envelope `(maxT - minT)` reports the true hardware GPU time (`5.40 ms`, `3.87 ms`, `10.81 ms`). Removing out-of-band `flushPending` submissions inside `onSubmittedWorkDone` microtasks, collecting Lab's periodic 45th-frame HUD timestamps asynchronously after scheduling `requestAnimationFrame`, pre-warming Blackout's `SplatterRenderer`/`ParticleRenderer`, and pacing via `installFramePacer` eliminates the `133.4 ms` (8-vsync) `rAF` stalls: across 60-second continuous headless Metal runs (~3,715 frames each), `> 50 ms` `rAF` stalls drop to **0** in Blackout Office (`p50 16.1 ms, p95 16.1 ms, max 27.4 ms`), Carrier (`p50 16.1 ms, p95 16.1 ms, max 28.0 ms`), and Lab (`p50 16.1 ms, p95 16.2 ms, max 24.2 ms`).
+  - **Outbreak 500-zombie crowd SoA & A* repath cap (`games/outbreak/src/zombies.ts`, `packages/kit/sim/ai.ts`):** Raising `MAX_INSTANCES_PER_PART` from `256 → 2048` fixes limb cutoff above 128 zombies (`6,500` vs `2,048` instances at 500 zombies). Adopting `SoAZombieCrowdRenderer` (with `buildZombiePartMeshes()` separated from analytical 2-bone register packing and `26 m` terrain-support LOD) cuts 500-zombie draw CPU from **4.932 ms median / 7.405 ms p95 (11.30 / 36.08 ms in audit) → 0.516 ms median / 0.672 ms p95** (`9.6×` faster while drawing `3.17×` more instances), and 100-zombie draw from **1.160 → 0.249 ms**. Capping `stepAICrowd` A* calls to `MAX_REPATHS_PER_TICK = 4` cuts 500-zombie `ai.step` `p95` from **38.572 → 1.849 ms (20.9× faster)**.
+
 - **Bucket cuttable walls into 2D `(xBand, zBand)` tiles and partition `shadowLightCount` before shadowless lights.**
   In Release 5 (combining `outbreak-lighting`, `architecture-materials`, `ground-clutter`, and `foliage-lab`), 1D `zBand` wall chunking in `games/outbreak/src/level.ts` (`screenChunks`) merged all walls across the 15 m width of a house into one `cutBox`, forcing the entire house's walls into the `discard` pipeline (`levelCut`) whenever the player walked through the hallway. Bucketing `screenChunks` by 2D `4m × 4m` `(xBand, zBand)` tiles keeps 85% of house walls in `fsSolid` with Apple TBDR Hidden-Surface Removal intact. Partitioning shadow-casting lights ahead of shadowless lights in `games/outbreak/src/main.ts` (`render.shadowLightCount`), rejecting cone back-hemispheres (`dot(dv, L.cone.xy) <= 0.0`) before `sqrt` in `lightMask`, replacing the second 5-tap `shadowAt` in `evalFlashlightBeam` with a 1-ray polar check, and precomputing `groundY` per drifter/hinge track in `OutbreakAmbientMotion` cut 3456×1894 M5 Max Metal GPU medians from **17.912→15.450 ms** (street) and **18.793→16.016 ms** (interior), and fresh-submit `p95` from **22.00→18.10 ms** (street, MAD 0.20 ms) and **22.50→19.80 ms** (interior, MAD 0.90 ms) across 1 warmup + 7 measured runs, while reducing Primary 70s Sodium combined ΔE2000 from **13.813→6.677 (-51.7%)**.
 
@@ -502,6 +533,15 @@ proven animation techniques to animation.md, not here.
   without avoiding a pass on this path (`perf/getaway.md`).
 - **Getaway early-Z split was not a clear win.** Opaque/cutaway pipelines with separate alpha chunks measured
   38.254 → 37.308 ms (inside MAD), with increased CPU submission cost; reverted (`perf/autoresearch.md`).
+- **Put the analytic lamp air on the actual lens, and anchor actors with a capsule shadow.** Outbreak's sodium pool
+  centre sits 6.7 m from the visible cobra-head lens, so the 2026-10-14 experiments integrate the air cone along the
+  camera ray from the lens (`STREET_LAMP_POSTS`/`streetLampHead`, six samples clipped to the lamp's height slab, plus a
+  closed-form Gaussian lens/halo line integral) and cast a soft capsule shadow from the survivor and two nearest zombies
+  away from that lens with 22 cm boot contact AO (`evalLampAir`, `evalActorGroundShadow` in
+  `games/outbreak/src/lighting.ts`; Lab Atmosphere group). Against the sodium-70s target (`scripts/look-compare.py`),
+  street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
+  paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
+  inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
 
 ## Art direction
 
@@ -751,6 +791,22 @@ Evidence: `captures/getaway-smoke-realistic/` contains the 1440×1380 sheet, sil
 
 ## Researched, not yet adopted
 
+### Outbreak survey §5 experiments rejected on measurement (2026-10-14)
+
+Evidence and patches: `~/code/home/artifacts/2026-10-14-visual-experiments/progress.md`.
+
+- **Window interior parallax** (virtual room, drapes, valance behind the glass): after Release 5's lamp-box and drape
+  geometry behind 22 % glass, five tunings all moved the window regions away from the target (best: street 6.75 → 8.50,
+  open 4.56 → 6.12) and read paler. The existing geometry already supplies the warm depth.
+- **Light-list grid / static polar rows**: skipping the entire polar dispatch changed GPU time by under 0.15 ms, so
+  row caching cannot pay. A pixel-exact 16×10 view bitmask grid (0 scene pixels changed) had no clear win with only 6/3
+  lights in the benchmark frames; 11 rejected dummy lights cost +2.2–2.5 ms, so revisit if light counts grow.
+- **Directional actor bounce and wet asphalt lamp sheen**: actor pixels moved under 2/255. The 6.2 m lens's mirror point
+  for this camera lands on the far sidewalk under the tree canopy, so a physically placed sheen never reaches the road.
+- **Foliage contact bend and Karis bloom average**: the bend darkened the shrub mass instead of reading as parting.
+  With `bloom = 0.068` and a 0.9 threshold, the Karis average changed the frame by at most 3/255 and frame-to-frame
+  shimmer not at all.
+
 ### Connected smoke research (2026-10-12)
 
 Kit rejected styles 1–5 because their separate silhouettes read as beads. The next study must maintain overlapping
@@ -923,6 +979,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   `scripts/weapons-shot.ts --only=mp`). Bandwidth and room CPU are unmeasured.
 - **Capture DOM UI over WebGPU** by reading the frame back through the game's device, laying it under the page as an
   `<img>` (canvas hidden) and taking a page screenshot (`games/carrier/scripts/mp-shot.ts`).
+
+- **Carry one-shot edges through the input jitter buffer.** Outbreak co-op (`@arcade/kit/net/jitter-buffer.ts`, Wings's
+  playout schedule generalised) never drops a press: an input that arrives after its dry-tick stand-in, or is cut by the
+  queue cap, gives fire/interact/reload to the next applied input; catch-up returns two inputs that the room applies as two
+  movement steps, so client prediction still matches. Over a 3 + 0–8 tick jittery loopback, all five shots landed and the
+  predicted survivor converged within 1 cm (`games/outbreak/tests/coop.test.ts`).
+- **Binary shared snapshot plus per-player prefix.** Outbreak's room encodes survivors, 60 zombies (15 bytes each), doors,
+  barricades, loot and shots once per 20 Hz snapshot and prefixes each player's ack and private survivor state: about
+  1.7 KB per snapshot, 33.7 KB/s per client, room tick 0.12 ms mean at 4 survivors + 60 zombies
+  (`games/outbreak/scripts/coop-bench.ts`).
 
 ## Input
 

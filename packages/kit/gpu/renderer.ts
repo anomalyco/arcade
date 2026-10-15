@@ -7,9 +7,11 @@ import type { SmokeVolumes } from "@arcade/kit/fx/volume"
 import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
+import { installFramePacer } from "../gpu-perf"
 import { MotionHistory, motionSettings, type MotionKey } from "./motion"
 import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer } from "@arcade/kit/fx/splatter-renderer"
+import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
   createLookSettings,
@@ -68,6 +70,7 @@ export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: num
 export type FrameInput = {
   splatter?:Splatter
   fxParticles?: Particles
+  weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
   smokeEnabled?: boolean
   frame: Float32Array<ArrayBuffer>
@@ -103,6 +106,7 @@ export type FrameInput = {
 export class Renderer {
   private splatterRenderer?:SplatterRenderer
   private particleRenderer?:ParticleRenderer
+  private weatherRenderer?:WeatherRenderer
   private readonly splatterEye=new Float32Array(3)
   readonly smokeRenderer: VolumeRenderer
   private readonly smokeMatrix = new Float32Array(16)
@@ -191,7 +195,14 @@ export class Renderer {
     private shaders?: { scene: string; sprite: string; post?: string; lookScene?: string; lookPost?: string },
   ) {
     const d = device
+    this.notifyPacer = installFramePacer(
+      () => this.inflight === 0,
+      () => this.onIdle !== null,
+      d,
+    )
     this.smokeRenderer = new VolumeRenderer(d)
+    this.splatterRenderer = new SplatterRenderer(d)
+    this.particleRenderer = new ParticleRenderer(d, DEPTH, SAMPLES)
     const U = GPUBufferUsage
     this.frameBuf = d.createBuffer({ size: FRAME_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     this.motionBuf = d.createBuffer({ size: Math.max(80, LOOK_UNIFORM_FLOATS * 4), usage: U.UNIFORM | U.COPY_DST })
@@ -557,6 +568,7 @@ export class Renderer {
   private scheduled = false
   inflight = 0
   onIdle: (() => void) | null = null
+  private readonly notifyPacer: () => void
 
   /**
    * Queues a frame. Calls within one task collapse to the last (Game reuses its arrays, so the latest input is always
@@ -665,8 +677,8 @@ export class Renderer {
     this.inflight++
     void this.device.queue.onSubmittedWorkDone().then(() => {
       this.inflight--
-      if (this.pending) this.flushPending()
       this.onIdle?.()
+      this.notifyPacer()
     })
   }
 
@@ -699,6 +711,10 @@ export class Renderer {
       }
       u[23] = pLights
       this.particleRenderer.upload(f.fxParticles)
+    }
+    if (f.weather) {
+      this.weatherRenderer ??= new WeatherRenderer(d, HDR, DEPTH, SAMPLES)
+      this.weatherRenderer.prepare(f.weather)
     }
     if (motion) this.prepareMotion()
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
@@ -875,6 +891,7 @@ export class Renderer {
     }
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
+    if(f.weather)this.weatherRenderer!.draw(pass,motion)
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {

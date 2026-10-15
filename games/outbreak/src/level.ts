@@ -140,8 +140,9 @@ export function buildLevel(town: Town): LevelData {
 function compileLevel(town: Town): LevelData {
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
+  const footprints = town.buildings.map(buildingFootprint)
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
-    if((x>=40&&x<48)||(z>=40&&z<48)||town.buildings.some(b=>buildingFootprint(b).some(f=>x>=f[0]&&x+1<=f[2]&&z>=f[1]&&z+1<=f[3])))continue
+    if((x>=40&&x<48)||(z>=40&&z<48)||footprints.some(fp=>fp.some(f=>x>=f[0]&&x+1<=f[2]&&z>=f[1]&&z+1<=f[3])))continue
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
     m.facet(a,c,b,hex(0x586044),MAT.ground,0); m.facet(a,d,c,hex(0x586044),MAT.ground,0)
   }
@@ -537,13 +538,8 @@ function compileLevel(town: Town): LevelData {
           }
         }
       }
-      if (customId >= 0) {
-        ;(strictlyInsideCutout ? interiorCapByBuilding[customId]! : customByBuilding[customId]!).v.push(...source.v.slice(i, i + 33))
-      } else if (hasScreen) {
-        screen.v.push(...source.v.slice(i, i + 33))
-      } else {
-        opaque.v.push(...source.v.slice(i, i + 33))
-      }
+      const dst = customId >= 0 ? (strictlyInsideCutout ? interiorCapByBuilding[customId]! : customByBuilding[customId]!).v : hasScreen ? screen.v : opaque.v
+      for (let k = i; k < i + 33; k++) dst.push(source.v[k]!)
     }
     const pack = (m: Mesh, cutBox?: readonly number[], customCutaway?: boolean | "outside"): LevelChunk[] => {
       if (!m.count) return []
@@ -565,7 +561,7 @@ function compileLevel(town: Town): LevelData {
         const key = xBand * 64 + zBand
         let bm = bands.get(key)
         if (!bm) { bm = new Mesh(); bands.set(key, bm) }
-        bm.v.push(...screen.v.slice(i, i + 33))
+        for (let k = i; k < i + 33; k++) bm.v.push(screen.v[k]!)
       }
       return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => ({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }
@@ -579,21 +575,53 @@ function compileLevel(town: Town): LevelData {
     return [...pack(opaque), ...screenChunks(), ...customChunks]
   })
   // Indoor sky/moon mask (fd.g) with inward window moonlight shafts, plus rectangular exterior window-spill in bounce.a.
-  const resolution=384, scale=SIZE/resolution, data = new Uint8Array(resolution * resolution * 2)
+  const resolution = 384, scale = SIZE / resolution, data = new Uint8Array(resolution * resolution * 2)
+  for (let i = 1; i < data.length; i += 2) data[i] = 255
   const windows = town.barriers.filter(b => b.kind === "window")
-  const furnitureContacts=town.props.flatMap(p=>{const s=propShape(p);return s?[s.rect]:[]})
-  for (let z = 0; z < resolution; z++) for (let x = 0; x < resolution; x++) {
-    const px=(x+.5)*scale,pz=(z+.5)*scale
-    const indoor = town.buildings.some(b => inBuildingFootprint(b, px, pz))
-    let contact=0
-    for(const wall of town.barriers) if(wall.kind!=="fence") contact=Math.max(contact,Math.exp(-distToRect(px,pz,wall.rect)*4)*.8)
-    for(const p of town.props) {
-      if(p.kind==="tree") contact=Math.max(contact,Math.exp(-((px-p.x)**2+(pz-p.y)**2)/1.5)*.65)
+  const furnitureContacts = town.props.flatMap(p => { const s = propShape(p); return s ? [s.rect] : [] })
+  for (const fp of footprints) {
+    for (const [fx0, fz0, fx1, fz1] of fp) {
+      const x0 = Math.max(0, Math.floor(fx0 / scale)), x1 = Math.min(resolution - 1, Math.ceil(fx1 / scale))
+      const z0 = Math.max(0, Math.floor(fz0 / scale)), z1 = Math.min(resolution - 1, Math.ceil(fz1 / scale))
+      for (let z = z0; z <= z1; z++) {
+        const pz = (z + .5) * scale
+        if (pz < fz0 || pz > fz1) continue
+        for (let x = x0; x <= x1; x++) {
+          const px = (x + .5) * scale
+          if (px >= fx0 && px <= fx1) data[(z * resolution + x) * 2 + 1] = 14
+        }
+      }
     }
-    for(const rect of furnitureContacts)contact=Math.max(contact,Math.exp(-distToRect(px,pz,rect)*5)*.85)
-    data[(z * resolution + x) * 2] = Math.round(contact*255)
-    data[(z * resolution + x) * 2 + 1] = indoor ? 14 : 255
   }
+  const stampRect = (r: readonly [number, number, number, number], decay: number, weight: number, pad: number) => {
+    const x0 = Math.max(0, Math.floor((r[0] - pad) / scale)), x1 = Math.min(resolution - 1, Math.ceil((r[2] + pad) / scale))
+    const z0 = Math.max(0, Math.floor((r[1] - pad) / scale)), z1 = Math.min(resolution - 1, Math.ceil((r[3] + pad) / scale))
+    for (let z = z0; z <= z1; z++) {
+      const pz = (z + .5) * scale
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + .5) * scale
+        const c = Math.round(Math.exp(-distToRect(px, pz, r) * decay) * weight * 255)
+        const idx = (z * resolution + x) * 2
+        if (c > data[idx]!) data[idx] = c
+      }
+    }
+  }
+  for (const wall of town.barriers) if (wall.kind !== "fence") stampRect(wall.rect, 4, .8, 1.6)
+  for (const p of town.props) {
+    if (p.kind !== "tree") continue
+    const x0 = Math.max(0, Math.floor((p.x - 3.1) / scale)), x1 = Math.min(resolution - 1, Math.ceil((p.x + 3.1) / scale))
+    const z0 = Math.max(0, Math.floor((p.y - 3.1) / scale)), z1 = Math.min(resolution - 1, Math.ceil((p.y + 3.1) / scale))
+    for (let z = z0; z <= z1; z++) {
+      const pz = (z + .5) * scale, dz2 = (pz - p.y) ** 2
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + .5) * scale
+        const c = Math.round(Math.exp(-((px - p.x) ** 2 + dz2) / 1.5) * .65 * 255)
+        const idx = (z * resolution + x) * 2
+        if (c > data[idx]!) data[idx] = c
+      }
+    }
+  }
+  for (const rect of furnitureContacts) stampRect(rect, 5, .85, 1.3)
   // Stamp inward moonlight shafts only within each window's local 3m interior footprint (1000x faster than full-grid scan).
   for (const w of windows) {
     const [wx0, wz0, wx1, wz1] = w.rect

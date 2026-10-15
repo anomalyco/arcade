@@ -81,10 +81,18 @@ export class GpuPerf {
         if (sample.slots && read) {
           await read.mapAsync(GPUMapMode.READ)
           const times = new BigUint64Array(read.getMappedRange(0, sample.slots * 8))
-          let ns = 0n
-          for (let i = 0; i < sample.slots; i += 2) ns += times[i + 1]! - times[i]!
+          let minT = 0n
+          let maxT = 0n
+          for (let i = 0; i < sample.slots; i += 2) {
+            const s = times[i]!
+            const e = times[i + 1]!
+            if (s > 0n && e >= s) {
+              if (minT === 0n || s < minT) minT = s
+              if (e > maxT) maxT = e
+            }
+          }
           read.unmap()
-          this.gpuMs = Number(ns) / 1e6
+          this.gpuMs = maxT >= minT ? Number(maxT - minT) / 1e6 : 0
         } else {
           await device.queue.onSubmittedWorkDone()
           this.gpuMs = performance.now() - start
@@ -123,4 +131,150 @@ export class PerfSampler {
     if (headerEl) headerEl.textContent = `FPS ${fps.toFixed(0)} · Frame ms ${frameMs.toFixed(1)} / ${p95Ms.toFixed(1)}\nGPU ${stats.gpuKind === "timestamp" ? "HW" : "queue-wait"} ms ${stats.gpuMs?.toFixed(2) ?? "—"}`
     return this.sample
   }
+}
+
+/**
+ * Paces requestAnimationFrame callbacks at 60 Hz alongside single-in-flight WebGPU queue completions,
+ * avoiding headless BeginFrame starvation and out-of-band swapchain double-submissions.
+ */
+export function installFramePacer(
+  canStep: () => boolean = () => true,
+  isDisabled: () => boolean = () => false,
+  device?: GPUDevice,
+): () => void {
+  if (typeof window === "undefined" || typeof MessageChannel === "undefined") return () => {}
+  const w = window as unknown as {
+    __arcadePacer?: {
+      canStep: () => boolean
+      isDisabled: () => boolean
+      device?: GPUDevice
+      notify: () => void
+    }
+  }
+  if (w.__arcadePacer) {
+    w.__arcadePacer.canStep = canStep
+    w.__arcadePacer.isDisabled = isDisabled
+    if (device) w.__arcadePacer.device = device
+    return w.__arcadePacer.notify
+  }
+  const origRaf = window.requestAnimationFrame.bind(window)
+  const origCancel = window.cancelAnimationFrame.bind(window)
+  const ch = new MessageChannel()
+  let nextId = 1
+  let queue = new Map<number, FrameRequestCallback>()
+  let rafId = 0
+  let chPending = false
+  let lastFireAt = -Infinity
+  let lastPostAt = -Infinity
+  let zeroAdvanceHops = 0
+  const TICK_MS = 1000 / 60
+
+  const canFire = (now: number) => now - lastFireAt >= TICK_MS - 0.65
+
+  const flush = () => {
+    if (!queue.size) return
+    if (rafId) {
+      origCancel(rafId)
+      rafId = 0
+    }
+    const now = performance.now()
+    lastFireAt = now
+    zeroAdvanceHops = 0
+    const batch = queue
+    queue = new Map()
+    for (const cb of batch.values()) {
+      try {
+        cb(now)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    if (queue.size) schedule()
+  }
+
+  const onWake = () => {
+    chPending = false
+    if (state.isDisabled() || !queue.size || (typeof document !== "undefined" && document.hidden)) return
+    const now = performance.now()
+    if (now > lastPostAt) {
+      lastPostAt = now
+      zeroAdvanceHops = 0
+    } else {
+      zeroAdvanceHops++
+    }
+    if (canFire(now)) flush()
+    else if (zeroAdvanceHops < 2000) postChannel()
+  }
+
+  const postChannel = () => {
+    if (chPending) return
+    chPending = true
+    if (zeroAdvanceHops === 0) lastPostAt = performance.now()
+    const dev = state.device
+    if (dev && state.canStep()) {
+      try {
+        dev.queue.submit([])
+        void dev.queue.onSubmittedWorkDone().then(onWake, () => {
+          chPending = false
+        })
+        return
+      } catch {
+        chPending = false
+      }
+    }
+    ch.port2.postMessage(null)
+  }
+
+  let microPending = false
+  const schedule = () => {
+    if (!queue.size || (typeof document !== "undefined" && document.hidden)) return
+    if (!rafId) {
+      rafId = origRaf(() => {
+        rafId = 0
+        if (!queue.size) return
+        if (state.isDisabled() || canFire(performance.now())) flush()
+        else schedule()
+      })
+    }
+    if (!state.isDisabled() && !chPending && !microPending) {
+      microPending = true
+      queueMicrotask(() => {
+        microPending = false
+        if (!state.isDisabled() && queue.size && !chPending && state.canStep()) {
+          postChannel()
+        }
+      })
+    }
+  }
+
+  const state = {
+    canStep,
+    isDisabled,
+    device,
+    notify: () => {
+      if (state.isDisabled() || !queue.size || (typeof document !== "undefined" && document.hidden)) return
+      zeroAdvanceHops = 0
+      const now = performance.now()
+      if (canFire(now)) flush()
+      else postChannel()
+    },
+  }
+  w.__arcadePacer = state
+
+  ch.port1.onmessage = onWake
+
+  window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    if (state.isDisabled()) return origRaf(cb)
+    const id = nextId++
+    queue.set(id, cb)
+    schedule()
+    return id
+  }
+
+  window.cancelAnimationFrame = (id: number): void => {
+    queue.delete(id)
+    origCancel(id)
+  }
+
+  return state.notify
 }

@@ -52,6 +52,7 @@ export function prepareOverworld() {
         telemetry: () => api.sections.find(s => s.id === api.settings.section)?.telemetry?.() ?? "",
         mode: () => api.workbench.getMode(),
         gridOpen: () => api.workbench.gridOpen(),
+        selectedIds: () => api.workbench.getSelectedIds(),
         ensureGame,
       },
       diorama,

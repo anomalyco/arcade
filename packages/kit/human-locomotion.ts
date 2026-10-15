@@ -37,7 +37,7 @@ export function angleSpring(s: Spring, goal: number, hz: number, dt: number): vo
 export function newMotion(x: number, y: number, aim: number) {
   return {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
-    stepCount: 0, clock: 0,
+    stepCount: 0, clock: 0, footDrag: 0, dragFoot: 1 as 0 | 1,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
@@ -63,7 +63,7 @@ export function gaitAt(speed: number, back = false, strafe = 0, animation: Human
   const run = smooth((froude - 0.36) / 0.28)
   // Speed increases mostly via stride at low speeds and increasingly via cadence at high speeds (Alexander 1984).
   const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
-  const stride = h * (effSpeed / Math.sqrt(9.81 * h) + 0.58 + 0.07 * run) / 0.83 * animation.strideScale
+  const stride = h * (effSpeed / Math.sqrt(9.81 * h) + 0.665 - 0.015 * run) / 0.83 * animation.strideScale
   // Arcade sprint is 6.3 m/s: shorter support and a longer flight, not an unreachable planted leg.
   return { run, stride: stride * (back ? 0.85 : 1 - 0.18 * strafe), duty: 0.56 - 0.12 * run - 0.2 * smooth((speed - 2.5) / 3) }
 }
@@ -99,7 +99,7 @@ function computeTarget(a: Avatar, i: number, remaining: number, strafe: number, 
   const pvx = a.svx + (a.vx - a.svx) * blend, pvy = a.svy + (a.vy - a.svy) * blend
   const pspeed = Math.hypot(pvx, pvy)
   const support = gait.duty * gait.stride / Math.max(pspeed, 0.1)
-  const halfStance = Math.min(0.18 - 0.03 * gait.run, support * 0.45, (0.25 - 0.01 * gait.run) / Math.max(pspeed, 0.1))
+  const halfStance = Math.min(0.24 - 0.09 * gait.run, support * (0.49 - 0.04 * gait.run), (0.33 - 0.09 * gait.run) / Math.max(pspeed, 0.1))
   const lag = clamp(((a.x - m.centreX.x) * pvx + (a.y - m.centreY.x) * pvy) / Math.max(pspeed * pspeed, 0.25), -0.22, 0.22)
   // Overgrowth-style lateral shuffle: the outside/leading foot steps out first while the inside/following
   // foot steps up beside it without lunging across the leading leg.
@@ -212,9 +212,12 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   a.legYaw = a.aim + clamp(angleDiff(a.legYaw, a.aim), -1.05, 1.05)
   const curGait = gaitAt(speed, a.back, strafe, animation)
   m.run = curGait.run; m.stride = curGait.stride
+  m.footDrag = clamp(animation.footDrag, 0, 0.95)
+  m.dragFoot = 1
   a.duty = curGait.duty
-  const effStride = curGait.stride * actorStrideTrait
-  const cadence = moving ? Math.max(0.85, speed / effStride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
+  const dragSlow = m.footDrag > 0 ? 1 - 0.28 * m.footDrag * (1 - 0.5 * curGait.run) : 1
+  const effStride = curGait.stride * actorStrideTrait / dragSlow
+  const cadence = moving ? Math.max(0.72, speed / effStride) : (!a.feet[0].planted || !a.feet[1].planted ? 1.7 : 0)
   const wheel = teleport ? 0 : moving ? cadence * dt : distance / effStride
   a.phase = (a.phase + wheel + 1) % 1
   m.stepDebt = Math.min(1, m.stepDebt + wheel * 2)
@@ -316,7 +319,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     }
     const i = a.feet[preferred]!.planted ? preferred : 1 - preferred
     const other = 1 - i
-    const overstretched = travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52)
+    const overstretched = travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52 || (a.feet[other]!.planted && metrics[i]!.rootBehind > 0.345 + 0.155 * curGait.run))
     const flightRelease = 0.32 + 0.16 * strafe
     const supported = a.feet[other]!.planted || (curGait.run > 0.35 && m.swings[other]! > flightRelease) || (overstretched && m.swings[other]! > 0.18)
     const minStance = moving ? Math.max(0.05, stanceDur * 0.55) : 0.04
@@ -341,7 +344,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       const rawDur = moving
         ? (swingFrac - phaseLead) / Math.max(0.85, cadence) * (a.back ? 1.12 : 1 - strafe * 0.14)
         : 0.19
-      m.durations[i] = clamp(rawDur, 0.08, 0.385)
+      m.durations[i] = clamp(rawDur, 0.08, 0.48)
       m.targets[i] = computeTarget(a, i, m.durations[i]!, strafe, curGait, speed, moving)
       m.next = 1 - i; m.stepDebt = Math.max(0, m.stepDebt - 1)
     }
@@ -383,7 +386,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const stepFreq = 2 * cadence
   const rBob = moving ? stepFreq / bobSpringHz : 0
   const bobGain = 1 / Math.sqrt((1 - rBob * rBob) ** 2 + (2 * 0.85 * rBob) ** 2)
-  const bobLead = Math.atan2(2 * 0.85 * rBob, 1 - rBob * rBob) * 0.42
+  const bobLead = Math.atan2(2 * 0.85 * rBob, 1 - rBob * rBob) * (1 - 0.58 * curGait.run) + (1 - curGait.run) * 0.98
   const sprintTaper = smooth((speed - 4.5) / 1.8)
   const targetBobAmp = (0.021 + 0.009 * curGait.run - 0.007 * sprintTaper) * bobScale * a.gait
   const bobGoal = -(targetBobAmp / Math.max(0.35, bobGain)) * Math.sin(theta * 2 + bobLead)
@@ -402,9 +405,10 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const bankScale = clamp(animation.turnBank ?? 1, 0, 2)
   stepSpring(m.bank, k, 0.9, dt, clamp(latAccel * 0.008 * bankScale * a.gait, -0.18, 0.18))
   // Keep PR #9's running attitude separate from root acceleration and contact timing.
-  // Unarmed civilians run with an upright athletic lean rather than the soldier's deep rifle crouch-run.
-  const postureScale = a.unarmed ? 0.32 : 1
-  const crouchScale = a.unarmed ? 0.25 : 1
+  // Unarmed civilians run with an upright athletic lean unless crouch-run is explicitly active.
+  const isCrouchOverride = Boolean((a as { crouchRun?: boolean }).crouchRun) || (animation.crouchDepth ?? 0) > 0.085
+  const postureScale = a.unarmed && !isCrouchOverride ? 0.32 : 1
+  const crouchScale = a.unarmed && !isCrouchOverride ? 0.25 : 1
   const speedRamp = curGait.run * a.gait * (0.65 + 0.35 * smooth((speed - 1.8) / 2.4) + 0.244 * smooth((speed - 4.2) / 2.1))
   const posture = clamp(animation.runPosture, 0, 0.45) * postureScale * speedRamp * smooth(forward)
   const crouch = clamp(animation.crouchDepth ?? 0, 0, 0.16) * crouchScale * speedRamp * (0.35 + 0.65 * smooth(forward))
@@ -438,8 +442,8 @@ export function plantedFoot(a: Avatar, i: number) {
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
-  const walkDrop = a.unarmed ? -0.012 : 0.04
-  const runDrop = a.unarmed ? -0.006 : 0.02
+  const walkDrop = (a.unarmed ? 0.004 : m.footDrag > 0 ? 0.008 : 0.044) * (1 - m.run) + 0.04 * m.run
+  const runDrop = a.unarmed ? -0.008 : 0.02
   return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
     HIP - (walkDrop + m.run * runDrop) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,
     a.y - a.leanY.x * 0.22 + c * m.sway.x + a.hitY.x * 0.5]
