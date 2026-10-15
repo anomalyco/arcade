@@ -145,61 +145,62 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
       borderDist = min(abs(p.x - 38.0), abs(p.x - 50.0));
     }
     let borderSpill = (1.0 - smoothstep(0.0, (0.13 + n1 * 0.22) * dirtAmt, borderDist)) * clamp(dirtAmt, 0.0, 1.5);
+    col *= 0.98 + grit * 0.30 - edgeDirt - n2 * 0.10 * wetness;
+    let jointMask = joint * (1.0 - slabCrack * 0.75);
+    cavity = mix(0.52, 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.45));
     let creviceCol = mix(vec3f(0.036, 0.029, 0.021), vec3f(0.042, 0.055, 0.024), smoothstep(0.42, 0.74, n2) * 0.70);
+    col = mix(creviceCol, col, jointMask);
+    col = mix(col, creviceCol, borderSpill * 0.68);
 
     let sLeafQ = p * 5.6 + vec2f(n1 - 0.5, n2 - 0.5) * 1.3;
     let sLeafH = hash2(floor(sLeafQ) + vec2f(7.3, 2.1));
-    let sLeafMask = step(0.80 - 0.12 * borderSpill, sLeafH) * (1.0 - smoothstep(0.14, 0.32, length(fract(sLeafQ) - 0.5))) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.6));
-
-    col *= 0.98 + grit * 0.30 - edgeDirt - n2 * 0.10 * wetness;
-    col = mix(creviceCol, col, joint * (1.0 - slabCrack * 0.75));
-    col = mix(col, creviceCol, borderSpill * 0.68);
+    let sLeafD = fract(sLeafQ) - 0.5;
+    let sLeafMask = step(0.80 - 0.12 * borderSpill, sLeafH) * (1.0 - smoothstep(0.0196, 0.1024, dot(sLeafD, sLeafD))) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.6));
     col = mix(col, vec3f(0.18, 0.11, 0.042), sLeafMask * 0.78 * dirtAmt);
-    cavity = mix(0.52, 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.45));
   } else {
     // Preserve baseTint for 1970s weathered warm-slate asphalt
     col = baseTint * vec3f(1.12, 1.15, 1.18);
     let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
     let dRut = min(abs(roadU - 0.26), abs(roadU - 0.74));
     let rut = max(0.0, 1.0 - dRut * dRut * 36.0);
-    let dLane = min(abs(roadU - 0.32), abs(roadU - 0.68));
-    let laneCenter = max(0.0, 1.0 - dLane * dLane * 52.0);
+    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
+    let gutterWarp = (n1 - 0.5) * 0.55;
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.52 + gutterWarp * 0.35, gutterDist)) * 0.28 * dirtAmt;
 
     let aggCell1 = hash2(floor(p * 9.5) + vec2f(1.7, 5.3)) - 0.5;
     let aggCell2 = hash2(floor(p * 19.0) + vec2f(8.1, 2.9)) - 0.5;
     let aggFade = 1.0 - smoothstep(0.20, 0.65, surfaceFootprint * 9.5);
     let aggDetail = (aggCell1 * 0.38 + aggCell2 * 0.32 + grit * 0.52) * aggFade;
     let pebbleGlint = step(0.42, aggCell2) * (0.45 + 0.55 * wetness) * aggFade;
+    col *= (1.04 + aggDetail + pebbleGlint * 0.28 + (n2 - 0.5) * 0.26 - rut * 0.07) * gutterShade;
 
     let patchMask = smoothstep(0.58 - wear * 0.06, 0.64 - wear * 0.06, n2 * 0.65 + n1 * 0.35) * step(0.14, roadU) * step(roadU, 0.86);
+    col = mix(col, col * vec3f(0.78, 0.80, 0.82), patchMask * 0.42);
+
     let jagWarp = vec2f(n1 - 0.5, n2 - 0.5) * 0.68 + vec2f(grit, -grit) * 0.19;
     let r1 = abs(fract(p.x * 0.38 + p.y * 0.14 + jagWarp.x) - 0.5);
     let r2 = abs(fract(p.y * 0.44 - p.x * 0.19 + jagWarp.y) - 0.5);
-    let tJunction = step(0.12, r1);
-    let ridgeMin = min(r1, r2 + tJunction * 0.08);
-    let crackGate = smoothstep(0.42, 0.68, n2 + rut * 0.25);
+    let ridgeMin = min(r1, r2 + step(0.12, r1) * 0.08);
+    let crackGate = smoothstep(0.42, 0.68, n2 + rut * 0.25) * wear;
     let aaM = max(surfaceFootprint * 0.35, 0.0025);
-    let crack = (1.0 - smoothstep(0.0015, 0.0085 + aaM, ridgeMin)) * crackGate * wear;
-    let spallPocket = (1.0 - smoothstep(0.008, 0.028, max(r1, r2))) * crackGate * wear;
+    let crack = (1.0 - smoothstep(0.0015, 0.0085 + aaM, ridgeMin)) * crackGate;
+    let spallPocket = (1.0 - smoothstep(0.008, 0.028, max(r1, r2))) * crackGate;
     let tarBand = (1.0 - smoothstep(0.004, 0.015 + aaM, r1)) * step(0.60, n2) * clamp(wear, 0.0, 1.3);
-    let oilStain = smoothstep(0.38, 0.60, n1 * n2 * (0.65 + 0.60 * laneCenter)) * clamp(wear * 0.85, 0.0, 1.3);
-
-    let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
-    let gutterWarp = (n1 - 0.5) * 0.55;
-    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.52 + gutterWarp * 0.35, gutterDist)) * 0.28 * dirtAmt;
-    let qLeaf = p * 5.4 + vec2f(n1 - 0.5, n2 - 0.5) * 1.45;
-    let leafH = hash2(floor(qLeaf) + vec2f(4.7, 9.1));
-    let leafUv = fract(qLeaf) - 0.5;
-    let gutterLeafBias = 1.0 - smoothstep(0.0, 1.85 + gutterWarp, gutterDist);
-    let leafMask = step(0.78 - 0.12 * gutterLeafBias, leafH) * (1.0 - smoothstep(0.14, 0.32, length(leafUv * vec2f(1.0, 1.45)))) * (0.28 + 0.72 * gutterLeafBias) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.4));
-
-    col *= (1.04 + aggDetail + pebbleGlint * 0.28 + (n2 - 0.5) * 0.26 - rut * 0.07) * gutterShade;
-    col = mix(col, col * vec3f(0.78, 0.80, 0.82), patchMask * 0.42);
     col = mix(col, col * vec3f(0.56, 0.57, 0.59), tarBand * 0.42);
+
+    let dLane = min(abs(roadU - 0.32), abs(roadU - 0.68));
+    let laneCenter = max(0.0, 1.0 - dLane * dLane * 52.0);
+    let oilStain = smoothstep(0.38, 0.60, n1 * n2 * (0.65 + 0.60 * laneCenter)) * clamp(wear * 0.85, 0.0, 1.3);
     col = mix(col, col * 0.48, oilStain * 0.52);
     col = mix(col, col * 0.18, clamp(crack + spallPocket * 0.85, 0.0, 1.0) * 0.82);
-    col = mix(col, vec3f(0.20, 0.12, 0.046), leafMask * 0.86 * dirtAmt);
     cavity = (1.0 - crack * 0.42) * gutterShade;
+
+    let qLeaf = p * 5.4 + vec2f(n1 - 0.5, n2 - 0.5) * 1.45;
+    let leafH = hash2(floor(qLeaf) + vec2f(4.7, 9.1));
+    let leafUv = (fract(qLeaf) - 0.5) * vec2f(1.0, 1.45);
+    let gutterLeafBias = 1.0 - smoothstep(0.0, 1.85 + gutterWarp, gutterDist);
+    let leafMask = step(0.78 - 0.12 * gutterLeafBias, leafH) * (1.0 - smoothstep(0.0196, 0.1024, dot(leafUv, leafUv))) * (0.28 + 0.72 * gutterLeafBias) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.4));
+    col = mix(col, vec3f(0.20, 0.12, 0.046), leafMask * 0.86 * dirtAmt);
   }
 
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
@@ -233,8 +234,9 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
           col = mix(col, warmStone, w * 0.65) * 0.76;
           let dxWalk = o.world.x - 27.7;
           if (abs(dxWalk) < 4.5 && o.world.z > 34.8 && o.world.z < 40.4) {
-            let walkCore = exp(-(dxWalk * dxWalk) / 1.25) * smoothstep(40.4, 35.0, o.world.z);
-            let sideSpread = exp(-(dxWalk * dxWalk) / 7.5) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            let dxWalk2 = dxWalk * dxWalk;
+            let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(40.4, 35.0, o.world.z);
+            let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
             let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85);
             col += col * vec3f(1.15, 0.68, 0.24) * (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
           }

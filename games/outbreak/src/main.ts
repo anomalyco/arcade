@@ -1337,17 +1337,11 @@ async function main() {
   let pacerTimer = 0,
     rafScheduled = false,
     channelPending = false
-  const paceChannel = new MessageChannel()
   const canDrawNow = (nowMs: number) =>
     renderer.inflight === 0 &&
-    nowMs - lastDrawAt >= TICK_DT * 1000 - 0.65 &&
+    nowMs - lastDrawAt >= TICK_DT * 1000 - 1.5 &&
     (pendingDrawDt > 0 || clock.readyForStep(nowMs))
-  const msUntilNextDraw = (nowMs: number) => {
-    const stepWait = pendingDrawDt > 0 ? 0 : clock.msUntilNextStep(nowMs)
-    const paceWait = Math.max(0, TICK_DT * 1000 - 0.55 - (nowMs - lastDrawAt))
-    return Math.max(stepWait, paceWait)
-  }
-  paceChannel.port1.onmessage = () => {
+  const onPaceWake = () => {
     channelPending = false
     if (frozen || document.hidden) return
     const now = performance.now()
@@ -1363,21 +1357,10 @@ async function main() {
       rafScheduled = true
       requestAnimationFrame(rafLoop)
     }
-    if (!pacerTimer && !channelPending) {
-      const rem = msUntilNextDraw(performance.now())
-      if (renderer.inflight === 0 && rem <= 1.8) {
-        channelPending = true
-        paceChannel.port2.postMessage(null)
-      } else {
-        const waitMs = Math.max(1, Math.floor(rem - 1.6))
-        pacerTimer = window.setTimeout(() => {
-          pacerTimer = 0
-          if (!frozen && !document.hidden && !channelPending) {
-            channelPending = true
-            paceChannel.port2.postMessage(null)
-          }
-        }, waitMs)
-      }
+    if (renderer.inflight === 0 && !channelPending) {
+      channelPending = true
+      device.queue.submit([])
+      void device.queue.onSubmittedWorkDone().then(onPaceWake)
     }
   }
   const rafLoop = (now: number) => {
@@ -1423,10 +1406,7 @@ async function main() {
     const now = performance.now()
     if (!frozen && !document.hidden && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
-      else {
-        if (pacerTimer) { clearTimeout(pacerTimer); pacerTimer = 0 }
-        scheduleFrame()
-      }
+      else scheduleFrame()
     }
   }
   draw(TICK_DT)

@@ -73,9 +73,13 @@ export const unseenSceneSnippet = wgslSnippet(
 var<private> outbreakUnseenAlpha: f32;
 
 fn fieldSight3(world: vec3f, n: vec3f) -> vec3f {
-  let fv = textureSampleLevel(visField, floorSamp, (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy, 0.0).rgb;
-  let dEye = length(world.xz - lights[0].pos.xz);
-  let gate = 1.0 - smoothstep(lights[0].pos.w - 0.6, lights[0].pos.w + 0.4, dEye);
+  let uv = (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy;
+  let inWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(uv < vec2f(0.003)) || any(uv > vec2f(0.997))));
+  let fv = textureSampleLevel(visField, floorSamp, uv, 0.0).rgb * inWin;
+  let dEyeV = world.xz - lights[0].pos.xz;
+  let r0 = max(0.0, lights[0].pos.w - 0.6);
+  let r1 = lights[0].pos.w + 0.4;
+  let gate = 1.0 - smoothstep(r0 * r0, r1 * r1, dot(dEyeV, dEyeV));
   let vis = fv.x * gate;
   let edgeD = max(fv.z, 1.0 - gate);
   return vec3f(vis, fv.y, edgeD);
@@ -86,7 +90,6 @@ fn applyOutbreakUnseenScene(
   baseFowCol: vec3f,
   world: vec3f,
   n: vec3f,
-  baseColor: vec3f,
   inRoom: bool,
   mat: i32,
   visible: f32,

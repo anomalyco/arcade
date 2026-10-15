@@ -112,6 +112,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
     renderer,
     render,
+    lab,
+    session: () => host.session(),
+    vision: () => host.vision(),
     measureCpuMask(iterations = 200) {
       const session = host.session()
       const vision = host.vision()

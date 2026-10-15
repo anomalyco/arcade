@@ -58,9 +58,8 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       includeNoir
         ? `if (presetIdx == 1) {
       if (mat == 9) { col *= 0.14; }
-      let moonRimDir = normalize(vec3f(-0.35, 0.82, -0.45));
-      let topCatch = max(0.22, dot(n, moonRimDir));
-      let surfBoost = select(select(0.48, 0.24, interior(o.world.xz)), 1.38, mat == 21 || mat == 22);
+      let topCatch = max(0.22, dot(n, vec3f(-0.3504, 0.8210, -0.4505)));
+      let surfBoost = select(0.38, 1.38, mat == 21 || mat == 22);
       col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
     }`
         : "",
@@ -525,8 +524,9 @@ ${
   let effTemp = mix(temperature, max(temperature, 0.06), beamRetain * 0.88);
   hdr = max(hdr * exposure * vec3f(1.0 + effTemp * 0.24, 1.0 + effTemp * 0.03, 1.0 - effTemp * 0.24), vec3f(0.0));
   if (abs(contrast - 1.0) > 0.001) {
-    let hLum = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
-    hdr *= pow(hLum / 0.18, contrast - 1.0);
+    let uC = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4) * 5.5556;
+    let kC = clamp(contrast - 1.0, -0.65, 0.65);
+    hdr *= ((1.0 + kC) * uC + (1.0 - kC)) / max((1.0 - kC) * uC + (1.0 + kC), 1e-3);
   }
   var c = lookApplyTonemapFast(hdr, tonemapMode, max(baseHuePres, beamRetain * 0.55));
   if (shoulder > 0.001) {
@@ -578,9 +578,9 @@ ${
     c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
   }
   ${finish?.customPostHook ?? ""}
-  let v = length(fromC * vec2f(1.0, 0.8));
-  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, v));
-  c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
+  c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, vDist));
+  let s1 = sqrt(clamp(c, vec3f(0.0), vec3f(1.0)));
+  c = mix(s1, sqrt(s1), 0.182);
   // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
   let ign = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));
   c += (ign - 0.5) / 255.0;

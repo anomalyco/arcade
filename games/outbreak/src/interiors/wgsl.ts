@@ -37,7 +37,7 @@ export const outbreakInteriorRefs: InteriorWgslRefs = {
   cfg: "OL.rugCfg",
   theme: i => `OL.bldTheme[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
   buildingCount: "select(4, i32(OL.win.w), OL.win.z > 0.5)",
-  buildingRect: i => `houseRect(${i})`,
+  buildingRect: i => `OL.bldRects[clamp(${i}, 0, 7)]`,
   flashXZ: "OL.u3.xy",
   classicLayout: "OL.win.z < 0.5",
 }
@@ -46,9 +46,6 @@ export function interiorDeclarationsWgsl(r: InteriorWgslRefs): string {
   return /* wgsl */ `
 @group(0) @binding(15) var detailTex: texture_2d_array<f32>;
 @group(0) @binding(16) var detailSamp: sampler;
-var<private> rugUvGrad: vec4f;
-var<private> wallUvGrad: vec4f;
-var<private> floorUvGrad: vec4f;
 
 fn rugLayer(key: i32) -> f32 {
   let e = ${r.dir("key >> 2")};
@@ -57,6 +54,16 @@ fn rugLayer(key: i32) -> f32 {
 }
 
 fn interiorBuildingAt(p: vec2f) -> i32 {
+  if (${r.classicLayout}) {
+    let qId = select(select(3, 2, p.y < 45.0), select(1, 0, p.y < 45.0), p.x < 45.0);
+    if (qId >= ${r.buildingCount}) { return -1; }
+    let b = select(
+      select(vec4f(53.0, 54.0, 72.0, 68.0), vec4f(53.0, 23.0, 73.0, 38.0), p.y < 45.0),
+      select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 45.0),
+      p.x < 45.0
+    );
+    return select(-1, qId, p.x > b.x && p.x < b.z && p.y > b.y && p.y < b.w);
+  }
   let n = ${r.buildingCount};
   for (var i = 0; i < 8; i++) {
     if (i >= n) { break; }
@@ -77,7 +84,7 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
     // Flocked damask: crimson, bottle green or navy (mansion), deep teal with gold (castle).
     let scale = 1.0 / 0.53;
     let uv = vec2f(a, -y) * scale;
-    let m = textureSampleGrad(detailTex, detailSamp, uv, 0, wallUvGrad.xy * scale, wallUvGrad.zw * scale).r;
+    let m = textureSampleLevel(detailTex, detailSamp, uv, 0, materialMipLod(scale)).r;
     var ground = vec3f(0.115, 0.018, 0.016);
     var motif = vec3f(0.048, 0.006, 0.006);
     if (t == 4) { ground = vec3f(0.018, 0.045, 0.042); motif = vec3f(0.16, 0.11, 0.035); }
@@ -90,7 +97,7 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
     // Farmhouse: yellowed floral stripe paper, water-stained and grimy toward the floor.
     let scale = 1.0 / 0.34;
     let uv = vec2f(a, -y) * scale;
-    let m = textureSampleGrad(detailTex, detailSamp, uv, 0, wallUvGrad.xy * scale, wallUvGrad.zw * scale).g;
+    let m = textureSampleLevel(detailTex, detailSamp, uv, 0, materialMipLod(scale)).g;
     let paper = mix(vec3f(0.30, 0.25, 0.15), vec3f(0.20, 0.17, 0.09), variant);
     let stripe = mix(vec3f(0.13, 0.15, 0.08), vec3f(0.17, 0.07, 0.05), step(0.5, variant));
     let stain = smoothstep(0.55, 0.85, surfaceNoise(vec2f(a * 0.7, y * 0.35) + vec2f(1.7, 4.2)));
@@ -110,7 +117,7 @@ fn themedFloor(base: vec3f, p: vec2f, t: i32, variant: f32) -> vec3f {
   if (t == 1 || t == 4) {
     let plank = 0.075;
     let scale = 1.0 / (plank * 8.0);
-    let s = textureSampleGrad(detailTex, detailSamp, p * scale, 0, floorUvGrad.xy * scale, floorUvGrad.zw * scale);
+    let s = textureSampleLevel(detailTex, detailSamp, p * scale, 0, materialMipLod(scale));
     let wood = select(vec3f(0.115, 0.058, 0.026), vec3f(0.070, 0.036, 0.018), t == 4 || variant > 0.6);
     let tone = 0.62 + 0.62 * s.b;
     let macroV = 0.85 + 0.3 * surfaceNoise(p * 0.45 + vec2f(5.2, 1.3));
@@ -133,8 +140,8 @@ fn themedFloor(base: vec3f, p: vec2f, t: i32, variant: f32) -> vec3f {
 `
 }
 
-/** Fragment-start derivatives (must run in uniform control flow). */
-export const interiorFragmentStartWgsl = /* wgsl */ `rugUvGrad = vec4f(dpdx(o.color.rg), dpdy(o.color.rg)); wallUvGrad = vec4f(dpdx(o.world.x + o.world.z), dpdx(o.world.y), dpdy(o.world.x + o.world.z), dpdy(o.world.y)); floorUvGrad = vec4f(dpdx(o.world.xz), dpdy(o.world.xz));`
+/** Fragment-start derivatives (no extra private globals needed; uses `surfaceFootprint`). */
+export const interiorFragmentStartWgsl = ""
 
 /** Material code, run in `postLightMaterial` after the kit surface materials (so it can override their albedo). */
 export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolean): string {
@@ -145,17 +152,15 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
       let uv = clamp(o.color.rg, vec2f(0.0008), vec2f(0.9992));
       if (layer >= 0.5) {
         let li = i32(round(layer));
-        let bias = exp2(${r.cfg}.x);
-        let gx = rugUvGrad.xy * bias;
-        let gy = rugUvGrad.zw * bias;
-        let t = textureSampleGrad(detailTex, detailSamp, uv, li, gx, gy);
+        let rLod = clamp(log2(max(surfaceFootprint * 256.0, 1.0)) + ${r.cfg}.x, 0.0, 8.0);
+        let t = textureSampleLevel(detailTex, detailSamp, uv, li, rLod);
         if (t.a < 0.035) { discard; }
         // Pile relief: height differences across one texel of the sampled mip, mapped to world xz through the
-        // rug's (axis-aligned) uv basis taken from screen-space derivatives.
-        let du = max(length(gx), 1.0 / 2048.0);
-        let dv = max(length(gy), 1.0 / 2048.0);
-        let hu = textureSampleGrad(detailTex, detailSamp, uv + vec2f(du, 0.0), li, gx, gy).a - t.a;
-        let hv = textureSampleGrad(detailTex, detailSamp, uv + vec2f(0.0, dv), li, gx, gy).a - t.a;
+        // rug's (axis-aligned) uv basis from surfaceFootprint.
+        let du = max(surfaceFootprint * 0.35, 1.0 / 1024.0);
+        let dv = du;
+        let hu = textureSampleLevel(detailTex, detailSamp, uv + vec2f(du, 0.0), li, rLod).a - t.a;
+        let hv = textureSampleLevel(detailTex, detailSamp, uv + vec2f(0.0, dv), li, rLod).a - t.a;
         // Vertex blue marks rugs whose long side (v) runs along world x.
         let slopeUV = vec2f(hu / du, hv / dv) * 0.012 * ${r.cfg}.z;
         let slope = select(slopeUV, vec2f(slopeUV.y, slopeUV.x), o.color.b > 0.5);

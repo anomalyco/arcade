@@ -65,9 +65,9 @@ try {
     // Use real shared-Lab controls to regenerate without losing door state or teleporting.
     await page.keyboard.press("Backquote")
     const house=page.getByRole("slider",{name:"House seed",exact:true})
-    await house.fill("12");await house.dispatchEvent("input")
+    await house.focus();await page.keyboard.type("12");await page.keyboard.press("Enter")
     const relief=page.getByRole("slider",{name:"Terrain relief",exact:true})
-    await relief.fill("0.4");await relief.dispatchEvent("input")
+    await relief.focus();await page.keyboard.type("0.4");await page.keyboard.press("Enter")
     const regenerated=await page.evaluate(()=>(window as any).__arcadeHarness.state())
     assert.equal(regenerated.town.houseSeed,12);assert.equal(regenerated.town.terrain,.4)
     assert.deepEqual(regenerated.player,state.player)
