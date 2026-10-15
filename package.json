@@ -6,7 +6,7 @@
   "bin": {
     "arcade": "./scripts/arcade.ts"
   },
-  "workspaces": ["games/getaway", "games/blackout", "games/outbreak", "games/carrier", "games/lab", "packages/*"],
+  "workspaces": ["games/getaway", "games/blackout", "games/outbreak", "games/carrier", "games/lab", "games/brawl", "packages/*"],
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "arcade": "bun scripts/arcade.ts",
