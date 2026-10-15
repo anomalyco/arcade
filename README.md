@@ -14,10 +14,14 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 
 Unlisted: [Outbreak](https://anoma.ly/arcade/outbreak/) — neighbourhood exploration and local survival-game foundation (`games/outbreak`, Worker `arcade-outbreak`). No landing link, indexing, sitemap entry or login.
 
+Unlisted: [Brawl](https://anoma.ly/arcade/brawl/) — top-down party brawler with a character select, six parody heroes
+with their own powers, shoveable props and stock rounds (`games/brawl`, Worker `arcade-brawl`). No landing link or
+indexing.
+
 Unlisted tool: [Lab](https://anoma.ly/arcade/lab/) — the one isolation workbench for every game's effects, materials,
 looks, physics and sound (`games/lab`, Worker `arcade-lab`). Old `/arcade/<game>/lab.html` links redirect to it.
 
-Getaway, Blackout, Outbreak, Carrier, the Lab and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
+Getaway, Blackout, Outbreak, Carrier, Brawl, the Lab and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
 checks and development commands in the game you are changing. Shared code is the private `@arcade/kit` source package.
 Wings, landing and redirects keep their own installs and lockfiles.
 

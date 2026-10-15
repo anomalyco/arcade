@@ -1,0 +1,28 @@
+{
+  "name": "brawl",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "build": "bun scripts/build-id.ts && vite build",
+    "test": "bun scripts/build-id.ts && bun test tests",
+    "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "check": "bun scripts/build-id.ts && tsc --noEmit && bun run typecheck:server && bun run test && vite build",
+    "deploy": "bun scripts/build-id.ts && rm -rf dist && vite build && wrangler deploy"
+  },
+  "dependencies": {
+    "@arcade/kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
+    "playwright-core": "^1.64.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wgpu-matrix": "^3.4.2",
+    "wrangler": "^4.149.0"
+  }
+}

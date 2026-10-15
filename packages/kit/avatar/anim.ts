@@ -154,6 +154,8 @@ export type Avatar = {
   /** Slower, readable wind-up for the skeleton's rake. */
   shambler?: boolean
   swingAt: number
+  /** Game-driven hand targets in torso space (x forward, y up, z right), blended over the arm pose by `k` (0..1). */
+  reach?: { l?: V3; r?: V3; k: number }
 }
 
 export function newAvatar(id: string, x: number, y: number, aim: number, gun: Gun): Avatar {
@@ -844,6 +846,11 @@ function build(a: Avatar, now: number, k: number, clip: Clip | null, ct: number,
   const useFkArms = Boolean(useUnarmedSwing || (enhanced && !clip && !a.bare && profile.handPose === "reach"))
   if (useUnarmedSwing) {
     ;[handL, handR] = unarmedHands(a, torso, t * 2)
+  }
+  if (a.reach && a.reach.k > 0) {
+    const k = Math.min(1, a.reach.k)
+    if (a.reach.l) handL = lerp3(handL, at(torso, a.reach.l[0], a.reach.l[1], a.reach.l[2]), k)
+    if (a.reach.r) handR = lerp3(handR, at(torso, a.reach.r[0], a.reach.r[1], a.reach.r[2]), k)
   }
   const { ua, fa } = useFkArms ? poseUnarmedArms(torso, handL, handR) : poseArms(torso, handL, handR)
 

@@ -9,6 +9,7 @@ export type LookPresetId =
   | "cinematic_dusk"
   | "sodium_70s"
   | "cozy_golden_hour"
+  | "party_pop"
 
 export type LookTonemapMode = 0 | 1 | 2 | 3
 export type LookCompareMode = 0 | 1 | 2
@@ -597,6 +598,74 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       outlineWidth: 1.0,
     },
   },
+  party_pop: {
+    id: "party_pop",
+    index: 6,
+    label: "Party pop",
+    directionRef: "Brawl look D-23 option 2 (candy pastel party stage)",
+    summary: "Bright candy-pastel daylight: saturated hue-preserving tone curve, violet shadows instead of grey, soft wrap light, a cool rim and ink outlines so fighters read from the top-down camera.",
+    palette: {
+      sky: [0.86, 0.78, 0.98],
+      practical: [1.0, 0.86, 0.62],
+      wall: [1.0, 0.62, 0.78],
+      wood: [0.82, 0.58, 0.36],
+      stone: [0.72, 0.9, 0.86],
+      asphalt: [0.42, 0.36, 0.58],
+      foliage: [0.46, 0.82, 0.4],
+      ink: [0.11, 0.07, 0.2],
+    },
+    defaults: {
+      preset: "party_pop",
+      exposure: 1.08,
+      tonemap: 3,
+      contrast: 1.06,
+      toe: 0.04,
+      shoulder: 0.3,
+      blackCrush: 0.0,
+      saturation: 1.12,
+      temperature: 0.04,
+      splitTone: 0.3,
+      shadowTintR: 0.96,
+      shadowTintG: 0.86,
+      shadowTintB: 1.16,
+      highlightTintR: 1.06,
+      highlightTintG: 1.0,
+      highlightTintB: 0.94,
+      paletteMix: 0.0,
+      selectiveColor: 0.0,
+      foliageShift: 0.0,
+      ambientFill: 1.25,
+      shadowColorR: 0.92,
+      shadowColorG: 0.8,
+      shadowColorB: 1.18,
+      practicalWarmth: 0.0,
+      practicalIntensity: 1.0,
+      moonIntensity: 1.0,
+      rimStrength: 0.5,
+      contactShade: 0.35,
+      surfaceWetness: 0.0,
+      fogDensity: 0.0,
+      fogHeightFalloff: 2.2,
+      fogColorR: 0.42,
+      fogColorG: 0.3,
+      fogColorB: 0.6,
+      shaftStrength: 0.0,
+      shaftSlats: 0.35,
+      bloom: 1.15,
+      halation: 0.1,
+      vignette: 0.18,
+      grain: 0.0,
+      grainSeed: 73,
+      grainAnimated: false,
+      chromatic: 0.0,
+      diffuseWrap: 0.35,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.6,
+      outlineWidth: 1.5,
+    },
+  },
 }
 
 export const LOOK_PRESET_IDS = Object.keys(LOOK_PRESETS) as readonly LookPresetId[]
@@ -641,6 +710,9 @@ export function resolveLookPresetId(raw: unknown): LookPresetId | null {
     goldenhour: "cozy_golden_hour",
     cozy: "cozy_golden_hour",
     dir4: "cozy_golden_hour",
+    partypop: "party_pop",
+    party: "party_pop",
+    pastel: "party_pop",
   }
   if (slug in aliases) return aliases[slug]!
   for (const id of LOOK_PRESET_IDS) {

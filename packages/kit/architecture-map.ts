@@ -12,6 +12,7 @@ export const ARCHITECTURE_GAMES = [
   { id: "carrier", label: "Carrier", dirs: ["games/carrier"] },
   { id: "lab", label: "Lab", dirs: ["games/lab", "packages/kit/lab"] },
   { id: "wings", label: "Wings", dirs: ["games/wings"] },
+  { id: "brawl", label: "Brawl", dirs: ["games/brawl"] },
 ] as const
 
 export type ArchitectureGameId = (typeof ARCHITECTURE_GAMES)[number]["id"]
@@ -87,6 +88,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/sim/move",
   },
   {
+    area: "`sim/{abilities,props,boids}`",
+    description: "Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock",
+    match: (s) => s === "@arcade/kit/sim/abilities" || s === "@arcade/kit/sim/props" || s === "@arcade/kit/sim/boids",
+  },
+  {
     area: "`server/*`",
     description: "Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router",
     match: (s) => s.startsWith("@arcade/kit/server/"),
@@ -122,6 +128,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/shaders" ||
       s === "@arcade/kit/gpu/level" ||
       s === "@arcade/kit/gpu/limits",
+  },
+  {
+    area: "`gpu/{boot,scene-frame}`",
+    description: "WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting",
+    match: (s) => s === "@arcade/kit/gpu/boot" || s === "@arcade/kit/gpu/scene-frame",
   },
   {
     area: "`gpu/{motion,motion-blur,sprite-motion}`",
