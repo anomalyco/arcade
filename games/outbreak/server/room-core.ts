@@ -1,10 +1,10 @@
 import { ByteWriter, frame } from "@arcade/kit/net/bytes"
 import { AckHistory, BandwidthPacer } from "@arcade/kit/net/interest"
-import { JitterBuffer } from "@arcade/kit/net/jitter-buffer"
+import { JitterBuffer, socketJitter } from "@arcade/kit/net/jitter-buffer"
 import { Seats } from "@arcade/kit/net/seats"
 import { cleanPlayerName } from "@arcade/kit/sim/matchmaking"
 import { BUILD } from "../shared/build.gen"
-import { TICK_DT } from "../shared/clock"
+import { TICK_DT, TICK_HZ } from "../shared/clock"
 import { COOP_TIME_SCALE, COOP_TUNING, DEFAULT_COOP_ROOM, type CoopRoomOptions } from "../shared/coop-config"
 import { CoopSim, MAX_SURVIVORS, type SurvivorSlot } from "../shared/coop-sim"
 import {
@@ -27,6 +27,11 @@ export const GRACE_MS = 60_000
 /** Per-socket message budget (token bucket): the client sends about 30 input batches per second. */
 const MSG_RATE = 120
 const MSG_BURST = 240
+/**
+ * Inputs arrive over a WebSocket at 60 Hz, two commands per frame. Each command is stepped separately, so after a
+ * short bridge of stand-ins a stalled survivor pauses and then catches up on the real commands exactly.
+ */
+const JITTER = socketJitter(TICK_HZ, { bridgeMs: 70 })
 
 export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
 
@@ -132,7 +137,8 @@ export class CoopRoomCore {
     if (msg.v && msg.v <= this.tick) {
       seat.data.viewTick = msg.v
     }
-    for (let i = 0; i < msg.c.length; i++) seat.data.jitter.push(msg.s + i, unpackCommand(msg.c[i]), this.tick)
+    // step() advances the tick before taking, so these can be applied from the next tick on.
+    for (let i = 0; i < msg.c.length; i++) seat.data.jitter.push(msg.s + i, unpackCommand(msg.c[i]), this.tick + 1)
   }
 
   private hello(conn: Conn, state: ConnState, msg: Extract<ClientMsg, { t: "hello" }>): void {
@@ -145,7 +151,7 @@ export class CoopRoomCore {
     const name = cleanPlayerName(msg.name, MAX_NAME, "Survivor")
     const joined = this.seats.join(name, msg.token, (index, id) => ({
       slot: this.sim.addSurvivor(id, index),
-      jitter: new JitterBuffer(commandOps),
+      jitter: new JitterBuffer(commandOps, JITTER),
       ledgerRev: 0,
       ackSnapTick: 0,
       viewTick: 0,
@@ -160,7 +166,7 @@ export class CoopRoomCore {
     }
     const seat = joined.seat
     // A reconnect starts a fresh command stream (the client's sequence numbers restart at 0).
-    if (joined.resumed) seat.data.jitter = new JitterBuffer(commandOps)
+    if (joined.resumed) seat.data.jitter = new JitterBuffer(commandOps, JITTER)
     seat.data.ledgerRev = 0
     seat.data.ackSnapTick = 0
     seat.data.history.clear()
