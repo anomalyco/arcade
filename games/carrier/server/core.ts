@@ -76,6 +76,9 @@ export const OBJECTIVE_EVERY_MS = 250
 export const OBJECTIVE_IDLE_MS = 1000
 /** A player's captain powers (promote, kick, lock) are ignored this soon after their last one (ms). */
 export const CAPTAIN_COOLDOWN_MS = 400
+/** Per-socket message budget (token bucket): pilots/boats send ~20 Hz poses plus pings, fire and menu actions. */
+const MSG_RATE = 120
+const MSG_BURST = 360
 /** At most this much sea time is simulated in one step; a longer stall (an evicted isolate) skips ahead. */
 const MAX_CATCHUP = 2
 
@@ -116,6 +119,7 @@ export class RoomCore {
   crew: Crew | null = null
   /** Joined connections (hello accepted) and when each last sent anything. */
   private seen = new Map<Conn, number>()
+  private rate = new Map<Conn, { tokens: number; at: number }>()
   /** Each joined connection's player id in the crew. */
   private ids = new Map<Conn, number>()
   private sims = new Map<number, Sim>()
@@ -228,6 +232,17 @@ export class RoomCore {
     const now = this.clock()
     if (this.seen.has(conn)) this.seen.set(conn, now)
     this.sweep(now)
+    let bucket = this.rate.get(conn)
+    if (!bucket) {
+      bucket = { tokens: MSG_BURST, at: now }
+      this.rate.set(conn, bucket)
+    } else {
+      const elapsed = Math.max(0, (now - bucket.at) / 1000)
+      bucket.tokens = Math.min(MSG_BURST, bucket.tokens + elapsed * MSG_RATE)
+      bucket.at = now
+    }
+    if (bucket.tokens < 1) return
+    bucket.tokens -= 1
     const msg = decodeClient(raw)
     if (!msg) return
     if (msg.type === "ping") return conn.send(encode({ type: "pong", c: msg.c, s: now }))
@@ -1144,6 +1159,7 @@ export class RoomCore {
   }
 
   private left(conn: Conn): void {
+    this.rate.delete(conn)
     const id = this.ids.get(conn)
     this.ids.delete(conn)
     // Nobody left: forget the world, so the next visit is a new one.
@@ -1165,6 +1181,7 @@ export class RoomCore {
   }
 
   private forget(): void {
+    this.rate.clear()
     this.planes.clear()
     this.planesSent = 0
     this.world = null

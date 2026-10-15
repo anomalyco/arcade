@@ -351,7 +351,7 @@ export class FlightModule {
     const airborne = this.ctx !== null && this.flight.phase !== "idle"
     if (!airborne) this.hud.update(null)
 
-    this.remotes.sync(v.planes, v.crew)
+    this.remotes.sync(v.planes, v.crew, v.t)
     this.crew = v.crew
     const me = v.crew && playerOf(v.crew, this.net.id)
     // A jet rescued from a sunk carrier flies on as a pilot of the ship it was moved to.

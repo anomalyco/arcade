@@ -14,8 +14,26 @@ const DELAY = 0.12
 /** Past the newest pose, flying jets coast on their velocity for at most this long (s). */
 const COAST = 0.4
 const KEEP = 12
+const GLIDE_RATE = 12
+const GLIDE_JUMP = 80
 
-type Remote = { snaps: PlaneTuple[]; ship: number; pose: PlaneDrawPose; vapourG: number }
+type Remote = {
+  snaps: PlaneTuple[]
+  ship: number
+  pose: PlaneDrawPose
+  vapourG: number
+  /** Fastest observed `seaTime - tuple[0]` offset, and its smoothed value (null when `sync` is called without `t`). */
+  targetLag: number | null
+  lag: number | null
+  coasted: boolean
+  gx: number
+  gy: number
+  gz: number
+  lx: number
+  ly: number
+  lz: number
+  lt: number
+}
 
 const qa: Quat = [0, 0, 0, 1]
 const qb: Quat = [0, 0, 0, 1]
@@ -32,7 +50,7 @@ export class RemotePlanes {
   readonly jets = new Map<number, Remote>()
   private scratch: Plane = makePlane()
 
-  sync(planes: ReadonlyMap<number, PlaneTuple>, crew: Crew | null): void {
+  sync(planes: ReadonlyMap<number, PlaneTuple>, crew: Crew | null, t?: number): void {
     for (const id of this.jets.keys()) {
       const p = crew && playerOf(crew, id)
       if (!planes.has(id) || !p || p.plane < 0) this.jets.delete(id)
@@ -42,12 +60,38 @@ export class RemotePlanes {
       if (!p || p.plane < 0) continue
       let r = this.jets.get(id)
       if (!r) {
-        r = { snaps: [], ship: p.ship, vapourG: 0, pose: { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, pitch: 0, roll: 0, gear: 1, throttle: 0, burner: 0 } }
+        r = {
+          snaps: [],
+          ship: p.ship,
+          vapourG: 0,
+          targetLag: null,
+          lag: null,
+          coasted: false,
+          gx: 0,
+          gy: 0,
+          gz: 0,
+          lx: Number.NaN,
+          ly: Number.NaN,
+          lz: Number.NaN,
+          lt: Number.NaN,
+          pose: { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, pitch: 0, roll: 0, gear: 1, throttle: 0, burner: 0 },
+        }
         this.jets.set(id, r)
       }
       r.ship = p.ship
       const last = r.snaps[r.snaps.length - 1]
       if (last && tuple[0] <= last[0]) continue
+      if (t !== undefined) {
+        const sample = Math.max(0, t - tuple[0])
+        if (r.targetLag === null) {
+          r.targetLag = sample
+          r.lag = sample
+        } else if (sample < r.targetLag) {
+          r.targetLag = sample
+        } else {
+          r.targetLag += (sample - r.targetLag) * 0.01
+        }
+      }
       r.snaps.push(tuple)
       if (r.snaps.length > KEEP) r.snaps.shift()
     }
@@ -68,8 +112,14 @@ export class RemotePlanes {
 
   /** Each jet's pose at sea time t (null for crashed or not yet placeable), with its id. */
   *poses(t: number, shipOf: (id: number) => Ship | null): Generator<[id: number, pose: PlaneDrawPose]> {
-    const rt = t - DELAY
     for (const [id, r] of this.jets) {
+      const fdt = Number.isFinite(r.lt) && t > r.lt && t - r.lt < 0.25 ? t - r.lt : 0
+      if (r.lag !== null && r.targetLag !== null && fdt > 0) {
+        const diff = r.targetLag - r.lag
+        const maxStep = 0.002 * fdt
+        r.lag += Math.max(-maxStep, Math.min(maxStep, diff))
+      }
+      const rt = t - (r.lag ?? 0) - DELAY
       const s = r.snaps
       if (!s.length) continue
       let i = s.length - 1
@@ -85,11 +135,18 @@ export class RemotePlanes {
       const pose = r.pose
       const p = this.scratch
       const kind = vehicleOfCode(use[17])
+      let vx = 0
+      let vy = 0
+      let vz = 0
+      let coasting = false
       if (mode === 0) {
         const ship = shipOf(r.ship)
         if (!ship) continue
         const z = a[1] === 0 && b[1] === 0 ? a[2] + (b[2] - a[2]) * k : use[2]
         launchPose(z, ship, p, kind)
+        r.lx = Number.NaN
+        r.coasted = false
+        r.gx = r.gy = r.gz = 0
       } else if (mode === 3) {
         // Landing: the ship-local pose, placed on our copy of the carrier (qw: the one it lands on, 0 its own).
         const ship = shipOf(use[8] > 0 ? use[8] : r.ship)
@@ -97,6 +154,9 @@ export class RemotePlanes {
         const both = a[1] === 3 && b[1] === 3
         const m = (j: number) => (both ? a[j]! + (b[j]! - a[j]!) * k : use[j]!)
         placeLocal(ship, m(2), m(3), m(4), m(5), m(6), m(7), p)
+        r.lx = Number.NaN
+        r.coasted = false
+        r.gx = r.gy = r.gz = 0
       } else if (a !== b && a[1] === 1 && b[1] === 1) {
         // Hermite between a and b with their velocities.
         const k2 = k * k
@@ -105,9 +165,16 @@ export class RemotePlanes {
         const h10 = k3 - 2 * k2 + k
         const h01 = -2 * k3 + 3 * k2
         const h11 = k3 - k2
+        const d00 = 6 * k2 - 6 * k
+        const d10 = 3 * k2 - 4 * k + 1
+        const d01 = -6 * k2 + 6 * k
+        const d11 = 3 * k2 - 2 * k
         p.x = h00 * a[2] + h10 * span * a[9] + h01 * b[2] + h11 * span * b[9]
         p.y = h00 * a[3] + h10 * span * a[10] + h01 * b[3] + h11 * span * b[10]
         p.z = h00 * a[4] + h10 * span * a[11] + h01 * b[4] + h11 * span * b[11]
+        vx = (d00 * a[2] + d01 * b[2]) / span + d10 * a[9] + d11 * b[9]
+        vy = (d00 * a[3] + d01 * b[3]) / span + d10 * a[10] + d11 * b[10]
+        vz = (d00 * a[4] + d01 * b[4]) / span + d10 * a[11] + d11 * b[11]
         qa[0] = a[5]
         qa[1] = a[6]
         qa[2] = a[7]
@@ -120,13 +187,45 @@ export class RemotePlanes {
       } else {
         // One pose (or the newest, behind us): coast on its velocity for a moment.
         const dt = Math.max(0, Math.min(COAST, rt - use[0]))
+        coasting = dt > 1e-4
         p.x = use[2] + use[9] * dt
         p.y = use[3] + use[10] * dt
         p.z = use[4] + use[11] * dt
+        vx = use[9]
+        vy = use[10]
+        vz = use[11]
         p.qx = use[5]
         p.qy = use[6]
         p.qz = use[7]
         p.qw = use[8]
+      }
+      if (mode === 1) {
+        if (Number.isFinite(r.lx) && fdt > 0) {
+          if (r.coasted && !coasting) {
+            const jx = p.x - r.lx - vx * fdt
+            const jy = p.y - r.ly - vy * fdt
+            const jz = p.z - r.lz - vz * fdt
+            const j = Math.hypot(jx, jy, jz)
+            if (j > GLIDE_JUMP) r.gx = r.gy = r.gz = 0
+            else if (j > 0.02) {
+              r.gx -= jx
+              r.gy -= jy
+              r.gz -= jz
+            }
+          }
+          const d = Math.exp(-fdt * GLIDE_RATE)
+          r.gx *= d
+          r.gy *= d
+          r.gz *= d
+        }
+        r.coasted = coasting
+        r.lx = p.x
+        r.ly = p.y
+        r.lz = p.z
+        r.lt = t
+        p.x += r.gx
+        p.y += r.gy
+        p.z += r.gz
       }
       pose.x = p.x
       pose.y = p.y
