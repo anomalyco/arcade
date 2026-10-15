@@ -1130,6 +1130,7 @@ async function main() {
         fogGhostDuration: settings.fog.fogGhostDuration,
         hideUnseenZombies: unseenEval.hideZombies,
         unseenMode: unseenEval.mode,
+        unseenMemory: unseenEval.layers.memory,
       },
       Boolean(settings.ai.aiDebugOverlay),
       time,
@@ -1417,7 +1418,7 @@ async function main() {
       vehAlphaStart,
     )
     const effectiveFogSettings =
-      unseenEval.mode > 0 && unseenEval.hideZombies
+      unseenEval.active && unseenEval.hideZombies
         ? {
             ...settings.fog,
             fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),

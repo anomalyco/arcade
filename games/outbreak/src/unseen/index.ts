@@ -1,9 +1,16 @@
 export {
+  applyUnseenModePreset,
   DEFAULT_UNSEEN_SETTINGS,
-  UNSEEN_MODE_OPTIONS,
   evaluateUnseenFrame,
+  packUnseenPostParams,
+  resolveUnseenBaseLayers,
+  syncUnseenSettingChange,
+  UNSEEN_MODE_OPTIONS,
+  UNSEEN_PRESETS,
+  unpackUnseenPostParams,
   unseenControls,
   type UnseenFrameEvaluation,
+  type UnseenLayerWeights,
   type UnseenModeId,
   type UnseenSettings,
 } from "./settings"

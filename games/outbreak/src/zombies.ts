@@ -760,7 +760,12 @@ export class ZombieCrowdRenderer {
     support: (x: number, z: number) => number,
     vision: Vision,
     viewRect: readonly [number, number, number, number],
-    zombieTune: ZombieTuning & { fogGhostDuration?: number; hideUnseenZombies?: boolean; unseenMode?: number },
+    zombieTune: ZombieTuning & {
+      fogGhostDuration?: number
+      hideUnseenZombies?: boolean
+      unseenMode?: number
+      unseenMemory?: number
+    },
     debugOverlay: boolean,
     time = 0,
   ): Batch[] {
@@ -770,8 +775,9 @@ export class ZombieCrowdRenderer {
     const [vx0, vy0, vx1, vy1] = viewRect
     const hideUnseen = zombieTune.hideUnseenZombies ?? true
     const unseenMode = zombieTune.unseenMode ?? 0
+    const hasStaleMemory = unseenMode === 4 || (zombieTune.unseenMemory ?? 0) > 0.25
     const baseGhostDuration = zombieTune.fogGhostDuration ?? 3.2
-    const ghostDuration = unseenMode === 4 ? Math.max(baseGhostDuration, 12.0) : baseGhostDuration
+    const ghostDuration = hasStaleMemory ? Math.max(baseGhostDuration, 12.0) : baseGhostDuration
 
     // Step detached limb debris
     for (let i = this.debris.length - 1; i >= 0; i--) {
@@ -846,7 +852,7 @@ export class ZombieCrowdRenderer {
             if (Math.hypot(a.x - sx, a.y - sy) > 0.85 && vision.visible(sx, sy)) {
               this.seenAt[s] = -1e9
             } else {
-              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * (unseenMode === 4 ? 0.68 : 0.56)
+              const gAlpha = Math.pow(1 - age / ghostDuration, 1.55) * (hasStaleMemory ? 0.68 : 0.56)
               if (gAlpha > 0.02) {
                 const hidden = this.hiddenMask[s]!
                 const bOff = s * BONE_STRIDE

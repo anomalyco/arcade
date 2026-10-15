@@ -147,6 +147,7 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
     section: station.demo.kind === "section" && !missing ? station.demo.section : null,
     missing,
     panel: host.panel,
+    pagePanel: station.demo.kind === "page" ? () => framePanel() : undefined,
     variant: () => variant,
     chooseVariant,
     invoke: (command, args) => {
@@ -403,12 +404,25 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
   }
 
   type FrameRuntime = { invokeLocal(command: string, args?: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> }
-  /** The embedded page's dev-control runtime, when the page is served by the dev router. */
-  async function frameRuntime(timeoutMs = 6000): Promise<FrameRuntime | null> {
+  /** The embedded page's dev-control runtime, when the page is served by the dev router or embedded in a station. */
+  async function frameRuntime(timeoutMs = 8000): Promise<FrameRuntime | null> {
     const frame = page.querySelector("iframe")
     for (const start = performance.now(); frame && performance.now() - start < timeoutMs;) {
       const rt = (frame.contentWindow as unknown as { __arcadeDevControl?: Partial<FrameRuntime> } | null)?.__arcadeDevControl
       if (rt?.invokeLocal && frame.contentDocument?.readyState === "complete") return rt as FrameRuntime
+      await new Promise(done => setTimeout(done, 150))
+    }
+    return null
+  }
+  async function framePanel(timeoutMs = 8000): Promise<LabPanel | null> {
+    const frame = page.querySelector("iframe")
+    for (const start = performance.now(); frame && performance.now() - start < timeoutMs;) {
+      const win = frame.contentWindow as unknown as {
+        __arcadeHarness?: { lab?: LabPanel }
+        __arcadeDevControl?: { panels?: Set<LabPanel> }
+      } | null
+      const panel = win?.__arcadeHarness?.lab ?? (win?.__arcadeDevControl?.panels ? [...win.__arcadeDevControl.panels][0] : undefined)
+      if (panel && frame.contentDocument?.readyState === "complete") return panel
       await new Promise(done => setTimeout(done, 150))
     }
     return null
@@ -422,6 +436,7 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
       const res = await rt.invokeLocal(step.command, step.args)
       if (!res.ok) { say(`${label}: ${step.command} failed: ${res.error ?? "unavailable"}`, true); return }
     }
+    for (const instance of instances.values()) instance.refresh?.()
   }
   /** Keys pressed inside an embedded page still reach the station: number keys, ⇧ variants and N. */
   function forwardKeys(frame: HTMLIFrameElement) {
