@@ -1,22 +1,19 @@
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
-import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
 import {
   buildingFootprint,
   CHUNK,
   frontageEnd,
-  inBuildingFootprint,
   propShape,
-  SIZE,
   type Building,
   type Prop,
   type Town,
 } from "../shared/map"
 import { supportHeight, terrainVertex } from "../shared/terrain"
 import {
-  chunkKey,
   generateWorldChunk,
   macroLocalCoord,
   selectActiveWindowCenter,
@@ -28,6 +25,31 @@ import { archSettings, house, plant, plantFootprints } from "./architecture"
 import { DEFAULT_OUTBREAK_LIGHTING, resolveLampLight, stampOutbreakVertexTone } from "./lighting"
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
+
+const GROUND_COLOR: Rgb = hex(0x586044)
+const ROAD_COLOR: Rgb = hex(0x545658)
+const SIDEWALK_COLOR: Rgb = hex(0x78746a)
+const CURB_COLOR: Rgb = hex(0x7c786e)
+
+/** Precomputed IEEE-754 float16 bit patterns for integer global building IDs 0..15. */
+const HALF_INT = new Uint16Array([
+  0x0000, // 0
+  0x3c00, // 1
+  0x4000, // 2
+  0x4200, // 3
+  0x4400, // 4
+  0x4500, // 5
+  0x4600, // 6
+  0x4700, // 7
+  0x4800, // 8
+  0x4880, // 9
+  0x4900, // 10
+  0x4980, // 11
+  0x4a00, // 12
+  0x4a80, // 13
+  0x4b00, // 14
+  0x4b80, // 15
+])
 
 const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, color: number, kind: number) =>
   m.quad(
@@ -41,6 +63,52 @@ const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, c
     kind === 8 ? 0 : kind === 5 ? 1 : kind === 2 ? 4 : kind === 7 ? 3 : kind === 3 ? 6 : 2,
   )
 
+/** Push a single triangle into `v` without allocating temporary point or normal arrays. */
+function pushFacetInline(
+  v: number[],
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  cx: number,
+  cy: number,
+  cz: number,
+  col: Rgb,
+  mat: Mat,
+  aux: number,
+): void {
+  const ux = bx - ax
+  const uy = by - ay
+  const uz = bz - az
+  const wx = cx - ax
+  const wy = cy - ay
+  const wz = cz - az
+  const nx = uy * wz - uz * wy
+  const ny = uz * wx - ux * wz
+  const nz = ux * wy - uy * wx
+  const invL = 1 / (Math.hypot(nx, ny, nz) || 1)
+  const fnx = nx * invL
+  const fny = ny * invL
+  const fnz = nz * invL
+  const cr = col[0]
+  const cg = col[1]
+  const cb = col[2]
+  v.push(
+    ax, ay, az, fnx, fny, fnz, cr, cg, cb, mat, aux,
+    bx, by, bz, fnx, fny, fnz, cr, cg, cb, mat, aux,
+    cx, cy, cz, fnx, fny, fnz, cr, cg, cb, mat, aux,
+  )
+}
+
+export type CompiledRoofChunk = {
+  data: ArrayBuffer
+  box: readonly [number, number, number, number]
+  cutBox: readonly number[]
+  lastGlobalId: number
+}
+
 export type CompiledWorldChunk = {
   key: string
   cx: number
@@ -49,25 +117,21 @@ export type CompiledWorldChunk = {
   staticOpaqueChunks: LevelChunk[]
   glassChunks: LevelChunk[]
   roofMeshes: Mesh[]
+  roofChunks?: CompiledRoofChunk[]
   buildings: Building[]
-  floorTile: Uint8Array // 128 × 128 × 2 (RG8)
-  moonTile: Uint8Array // 256 × 256 (R8)
-  bounceTile: Uint8Array // 64 × 64 × 4 (RGBA8)
+  floorTile: Uint8Array<ArrayBuffer> // 128 × 128 × 2 (RG8)
+  moonTile: Uint8Array<ArrayBuffer> // 256 × 256 (R8)
+  bounceTile: Uint8Array<ArrayBuffer> // 64 × 64 × 4 (RGBA8)
   compileMs: number
 }
 
 /**
  * Emits distinctive 3D architectural silhouettes and roofs (`MAT.roof` with `aux = buildingId`)
- * for procedural POI and building archetypes (`ranch`, `cottage`, `cabin`, `grocery`, `diner`,
+ * for procedural POI and building archetypes (`house`, `ranch`, `cottage`, `cabin`, `grocery`, `diner`,
  * `gas_station`, `police`, `clinic`, `church`, `warehouse`).
  */
 export function emitPoiArchitecture(m: Mesh, b: Building, id: number, town: Town): void {
   const arch = b.archetype ?? b.kind
-  if (b.kind === "house" && arch === "house") {
-    house(m, b, id, town)
-    return
-  }
-
   const [x, z, r, e] = b.rect
   const midZ = (z + e) * 0.5
   const midX = (x + r) * 0.5
@@ -80,9 +144,9 @@ export function emitPoiArchitecture(m: Mesh, b: Building, id: number, town: Town
     m.box(a - 0.036, 0.33, c - 0.036, d + 0.036, 0.37, f + 0.036, hex(0x6e685d), MAT.lit)
   }
 
-  if (arch === "ranch" || arch === "cottage" || arch === "cabin" || arch === "church") {
+  if (arch === "house" || arch === "ranch" || arch === "cottage" || arch === "cabin" || arch === "church") {
     // Pitched shingle gable roof (all tagged MAT.roof, aux = id so it cuts away cleanly when inside)
-    const ridge = arch === "church" ? 5.15 : arch === "cabin" ? 3.85 : 4.15
+    const ridge = arch === "church" ? 5.15 : arch === "cabin" ? 3.85 : arch === "house" ? 4.35 : 4.15
     const roofCol = hex(arch === "church" ? 0x3e4248 : arch === "cabin" ? 0x3c3228 : 0x4e4b46)
     const eaveCol = hex(0x58534a)
     m.quadAuto([x - 0.35, 2.82, e + 0.35], [r + 0.35, 2.82, e + 0.35], [r + 0.35, ridge, midZ], [x - 0.35, ridge, midZ], roofCol, MAT.roof, id)
@@ -209,6 +273,274 @@ export function emitPropFurniture(m: Mesh, p: Prop, town: Town): void {
   }
 }
 
+type PackedPropTemplate = {
+  u8: Uint8Array
+  vertCount: number
+  minX: number
+  minZ: number
+  maxX: number
+  maxZ: number
+}
+
+const TREE_TEMPLATE_BUCKETS = 32
+const GRASS_CLUSTER_BUCKETS = 16
+const propTemplates = new Map<string, PackedPropTemplate>()
+const grassClusterTemplates: PackedPropTemplate[] = []
+const dummyTown: Town = {
+  seed: 7,
+  houseSeed: 7,
+  terrain: 0,
+  foliageDensity: 1,
+  chunks: [[0, 0, 32, 32]],
+  buildings: [],
+  barriers: [],
+  doors: [],
+  windows: [],
+  props: [],
+  lamps: [],
+}
+
+function getPropTemplate(p: Prop): PackedPropTemplate {
+  const key = p.kind === "tree" ? `tree:${Math.min(TREE_TEMPLATE_BUCKETS - 1, Math.floor(p.variant * TREE_TEMPLATE_BUCKETS))}` : p.kind
+  let tpl = propTemplates.get(key)
+  if (tpl) return tpl
+  const m = new Mesh()
+  if (p.kind === "tree") {
+    const bucket = Math.min(TREE_TEMPLATE_BUCKETS - 1, Math.floor(p.variant * TREE_TEMPLATE_BUCKETS))
+    const v = (bucket + 0.5) / TREE_TEMPLATE_BUCKETS
+    // Build at x=50, z=50 so outer-lot tree LOD (2 sprigs/clump) applies consistently, then shift back to origin (0,0,0)
+    plant(m, 50, 50, 4.6 + v * 1.8, 2.05 + v * 0.75, Math.floor(v * 1e6), 0)
+    for (let i = 0; i < m.v.length; i += 11) {
+      m.v[i]! -= 50
+      m.v[i + 2]! -= 50
+    }
+  } else {
+    emitPropFurniture(m, { x: 0, y: 0, kind: p.kind, variant: 0.5 }, dummyTown)
+  }
+  let minX = Infinity,
+    minZ = Infinity,
+    maxX = -Infinity,
+    maxZ = -Infinity
+  for (let i = 0; i < m.v.length; i += 11) {
+    const vx = m.v[i]!
+    const vz = m.v[i + 2]!
+    if (vx < minX) minX = vx
+    if (vx > maxX) maxX = vx
+    if (vz < minZ) minZ = vz
+    if (vz > maxZ) maxZ = vz
+  }
+  const buf = stampOutbreakVertexTone(m.pack())
+  tpl = {
+    u8: new Uint8Array(buf),
+    vertCount: m.count,
+    minX,
+    minZ,
+    maxX,
+    maxZ,
+  }
+  propTemplates.set(key, tpl)
+  return tpl
+}
+
+let templatesInitialized = false
+export function ensurePropTemplates(): void {
+  if (templatesInitialized) return
+  templatesInitialized = true
+  const kinds: readonly Prop["kind"][] = [
+    "bed",
+    "sofa",
+    "coffee",
+    "nightstand",
+    "stove",
+    "counter",
+    "dresser",
+    "fridge",
+    "chair",
+    "table",
+    "shelf",
+  ]
+  for (const kind of kinds) {
+    getPropTemplate({ x: 0, y: 0, kind, variant: 0.5 })
+  }
+  for (let b = 0; b < TREE_TEMPLATE_BUCKETS; b++) {
+    getPropTemplate({ x: 0, y: 0, kind: "tree", variant: (b + 0.5) / TREE_TEMPLATE_BUCKETS })
+  }
+  for (let g = 0; g < GRASS_CLUSTER_BUCKETS; g++) {
+    const m = new Mesh()
+    const gRng = new Rng(((g + 1) * 0x73c9453a) >>> 0)
+    const tufts = scatterGrassClumps({
+      seed: ((g + 1) * 0x453a9e37) >>> 0,
+      bounds: [-0.8, -0.8, 0.8, 0.8],
+      clusterCount: 1,
+      tuftsPerCluster: 3,
+      params: foliageSettings,
+    })
+    for (let i = 0; i < tufts.length; i++) {
+      const t = tufts[i]!
+      if (t.weed) {
+        emitGrassClump(m, t, 0, gRng)
+        continue
+      }
+      emitGrassTuft(m, t.x, 0, t.z, {
+        bladeCount: 2,
+        radius: t.radius * 1.1,
+        height: t.height,
+        width: t.width,
+        curvature: t.curvature,
+        leanAngle: t.leanAngle,
+        rootColor: t.rootColor,
+        tipColor: t.tipColor,
+        rng: gRng,
+      })
+    }
+    const buf = stampOutbreakVertexTone(m.pack())
+    grassClusterTemplates.push({
+      u8: new Uint8Array(buf),
+      vertCount: m.count,
+      minX: -1.1,
+      minZ: -1.1,
+      maxX: 1.1,
+      maxZ: 1.1,
+    })
+  }
+}
+
+// Reusable scratch buffers and meshes for zero-churn compilation
+const POOL_OPAQUE_BYTES = 768 * 1024
+const terrainGrid = new Float32Array(33 * 33)
+const mainScratch = new Mesh()
+const glassScratch = new Mesh()
+const opaqueScratch = new Mesh()
+const screenScratch = new Mesh()
+const roofScratchPool: Mesh[] = []
+const bandScratchPool: Mesh[] = []
+const bandMap = new Map<number, Mesh>()
+const grassPlacementsScratch: { x: number; y: number; z: number; tplIdx: number }[] = []
+
+type TileSet = {
+  floorTile: Uint8Array<ArrayBuffer>
+  moonTile: Uint8Array<ArrayBuffer>
+  bounceTile: Uint8Array<ArrayBuffer>
+  opaqueBuf?: ArrayBuffer
+}
+const tilePool: TileSet[] = []
+
+function acquireTiles(): TileSet {
+  const hit = tilePool.pop()
+  if (hit) {
+    hit.floorTile.fill(0)
+    hit.moonTile.fill(255)
+    hit.bounceTile.fill(0)
+    return hit
+  }
+  return {
+    floorTile: new Uint8Array(128 * 128 * 2),
+    moonTile: new Uint8Array(256 * 256).fill(255),
+    bounceTile: new Uint8Array(64 * 64 * 4),
+    opaqueBuf: new ArrayBuffer(POOL_OPAQUE_BYTES),
+  }
+}
+
+export function recycleCompiledChunk(chunk: CompiledWorldChunk): void {
+  const opaqueBuf = chunk.staticOpaqueChunks[0]?.data
+  if (
+    chunk.floorTile.byteLength === 128 * 128 * 2 &&
+    chunk.moonTile.byteLength === 256 * 256 &&
+    chunk.bounceTile.byteLength === 64 * 64 * 4 &&
+    tilePool.length < 32
+  ) {
+    tilePool.push({
+      floorTile: chunk.floorTile,
+      moonTile: chunk.moonTile,
+      bounceTile: chunk.bounceTile,
+      opaqueBuf: opaqueBuf && opaqueBuf.byteLength >= POOL_OPAQUE_BYTES ? opaqueBuf : undefined,
+    })
+  }
+}
+
+export function recycleTileBuffers(
+  floorBuf: ArrayBuffer,
+  moonBuf: ArrayBuffer,
+  bounceBuf: ArrayBuffer,
+  opaqueBuf?: ArrayBuffer,
+): void {
+  if (
+    floorBuf.byteLength === 128 * 128 * 2 &&
+    moonBuf.byteLength === 256 * 256 &&
+    bounceBuf.byteLength === 64 * 64 * 4 &&
+    tilePool.length < 32
+  ) {
+    tilePool.push({
+      floorTile: new Uint8Array(floorBuf),
+      moonTile: new Uint8Array(moonBuf),
+      bounceTile: new Uint8Array(bounceBuf),
+      opaqueBuf: opaqueBuf && opaqueBuf.byteLength >= POOL_OPAQUE_BYTES ? opaqueBuf : undefined,
+    })
+  }
+}
+
+const f16Scratch = new Float32Array(1)
+const f16Bits = new Uint32Array(f16Scratch.buffer)
+function toHalfBits(v: number): number {
+  f16Scratch[0] = v
+  const x = f16Bits[0]!
+  const sign = (x >>> 16) & 0x8000
+  let exp = ((x >>> 23) & 0xff) - 127 + 15
+  const mant = x & 0x7fffff
+  if (exp <= 0) return sign
+  if (exp >= 31) return sign | 0x7c00
+  let m = mant >> 13
+  if (mant & 0x1000) {
+    m++
+    if (m === 0x400) {
+      m = 0
+      exp++
+    }
+  }
+  return sign | (exp << 10) | m
+}
+
+/** Packs `v` (11 floats/vert) directly into `dstBuf` at byte offset 0 and stamps Outbreak vertex tone in-place. */
+function packAndStampInto(v: readonly number[], dstBuf: ArrayBuffer): void {
+  const n = v.length / 11
+  const f = new Float32Array(dstBuf)
+  const b = new Uint8Array(dstBuf)
+  const i8 = new Int8Array(dstBuf)
+  const h = new Uint16Array(dstBuf)
+  for (let k = 0; k < n; k++) {
+    const s = k * 11
+    const o = k * VERT_BYTES
+    const vy = v[s + 1]!
+    f[o >> 2] = v[s]!
+    f[(o >> 2) + 1] = vy
+    f[(o >> 2) + 2] = v[s + 2]!
+    const snx = Math.max(-127, Math.min(127, Math.round(v[s + 3]! * 127)))
+    const sny = Math.max(-127, Math.min(127, Math.round(v[s + 4]! * 127)))
+    const snz = Math.max(-127, Math.min(127, Math.round(v[s + 5]! * 127)))
+    i8[o + 12] = snx
+    i8[o + 13] = sny
+    i8[o + 14] = snz
+    i8[o + 15] = 0
+    b[o + 16] = Math.max(0, Math.min(255, Math.round(v[s + 6]! * 255)))
+    b[o + 17] = Math.max(0, Math.min(255, Math.round(v[s + 7]! * 255)))
+    b[o + 18] = Math.max(0, Math.min(255, Math.round(v[s + 8]! * 255)))
+    const ny = sny / 127
+    let tone = 1.0
+    if (vy > 0.04 && vy < 0.24 && Math.abs(ny) < 0.45) {
+      tone = 0.72 + (vy - 0.04) * 1.4
+    } else if (ny > 0.35 && ny < 0.88 && vy > 0.35 && vy < 2.45) {
+      tone = 1.16
+    } else if (ny > 0.88 && vy > 0.38 && vy < 1.95) {
+      tone = 1.06
+    } else if (ny < -0.5 && vy > 2.2) {
+      tone = 0.68
+    }
+    b[o + 19] = Math.max(1, Math.min(254, Math.round(tone * 128)))
+    h[(o + 20) >> 1] = toHalfBits(v[s + 9]!)
+    h[(o + 22) >> 1] = toHalfBits(v[s + 10]!)
+  }
+}
+
 /**
  * Compiles a single 32×32 m `WorldChunk` into meshes and per-chunk lighting tiles:
  * - `floorTile`: 128×128 RG8 (0.25 m/texel)
@@ -223,10 +555,12 @@ export function compileSingleWorldChunk(
   foliageDensity = 1,
 ): CompiledWorldChunk {
   const t0 = performance.now()
+  ensurePropTemplates()
   plantFootprints.length = 0
-  const m = new Mesh()
-  const g = new Mesh()
-  const propMeshes: Mesh[] = []
+  mainScratch.v.length = 0
+  glassScratch.v.length = 0
+  opaqueScratch.v.length = 0
+  screenScratch.v.length = 0
 
   const [x0, z0, x1, z1] = chunk.bounds
   const chunkTown: Town = {
@@ -249,41 +583,61 @@ export function compileSingleWorldChunk(
 
   const footprints = chunk.buildings.map(buildingFootprint)
 
-  // 1. Terrain cells (1×1 m) in this 32×32 m chunk
-  for (let z = z0; z < z1; z++) {
+  // 1. Precompute 33×33 terrain height grid and emit 1×1m terrain cells directly into opaqueScratch
+  for (let dz = 0; dz <= CHUNK; dz++) {
+    const wz = z0 + dz
+    const rowOff = dz * 33
+    for (let dx = 0; dx <= CHUNK; dx++) {
+      terrainGrid[rowOff + dx] = terrainVertex(chunkTown, x0 + dx, wz)
+    }
+  }
+  const opV = opaqueScratch.v
+  for (let dz = 0; dz < CHUNK; dz++) {
+    const z = z0 + dz
     const lz = macroLocalCoord(z)
-    for (let x = x0; x < x1; x++) {
+    if (lz >= 40 && lz < 48) continue
+    const r0 = dz * 33
+    const r1 = (dz + 1) * 33
+    for (let dx = 0; dx < CHUNK; dx++) {
+      const x = x0 + dx
       const lx = macroLocalCoord(x)
-      if (
-        (lx >= 40 && lx < 48) ||
-        (lz >= 40 && lz < 48) ||
-        footprints.some((fp) => fp.some((f) => x >= f[0] && x + 1 <= f[2] && z >= f[1] && z + 1 <= f[3]))
-      )
-        continue
-      const a = [x, terrainVertex(chunkTown, x, z), z]
-      const b = [x + 1, terrainVertex(chunkTown, x + 1, z), z]
-      const c = [x + 1, terrainVertex(chunkTown, x + 1, z + 1), z + 1]
-      const d = [x, terrainVertex(chunkTown, x, z + 1), z + 1]
-      m.facet(a, c, b, hex(0x586044), MAT.ground, 0)
-      m.facet(a, d, c, hex(0x586044), MAT.ground, 0)
+      if (lx >= 40 && lx < 48) continue
+      let inFp = false
+      for (let bIdx = 0; bIdx < footprints.length && !inFp; bIdx++) {
+        const fp = footprints[bIdx]!
+        for (let fIdx = 0; fIdx < fp.length; fIdx++) {
+          const f = fp[fIdx]!
+          if (x >= f[0] && x + 1 <= f[2] && z >= f[1] && z + 1 <= f[3]) {
+            inFp = true
+            break
+          }
+        }
+      }
+      if (inFp) continue
+      const ya = terrainGrid[r0 + dx]!
+      const yb = terrainGrid[r0 + dx + 1]!
+      const yc = terrainGrid[r1 + dx + 1]!
+      const yd = terrainGrid[r1 + dx]!
+      pushFacetInline(opV, x, ya, z, x + 1, yc, z + 1, x + 1, yb, z, GROUND_COLOR, MAT.ground, 0)
+      pushFacetInline(opV, x, ya, z, x, yd, z + 1, x + 1, yc, z + 1, GROUND_COLOR, MAT.ground, 0)
     }
   }
 
-  // 2. Arterial streets, curbs & sidewalks in this chunk (aligned to macro-block lx=1 / ly=1)
+  // 2. Arterial streets, curbs & sidewalks in this chunk (emitted directly to opaqueScratch)
   if (chunk.lx === 1) {
     const roadX0 = x0 + 8
     const roadX1 = x0 + 16
-    floor(m, roadX0, z0, roadX1, z1, 0.014, 0x545658, 5)
+    opaqueScratch.quad([roadX0, 0.014, z1], [roadX1, 0.014, z1], [roadX1, 0.014, z0], [roadX0, 0.014, z0], [0, 1, 0], ROAD_COLOR, MAT.ground, 1)
     for (let z = z0; z < z1; z++) {
       const lz = macroLocalCoord(z)
       if (lz >= 38 && lz < 50) continue
       for (const s of [6, 16] as const) {
         const a = x0 + (s === 6 ? 6 : 16.25)
         const b = x0 + (s === 6 ? 7.75 : 18)
-        floor(m, a, z, b, z + 1, 0.1, 0x78746a, 6)
+        opaqueScratch.quad([a, 0.1, z + 1], [b, 0.1, z + 1], [b, 0.1, z], [a, 0.1, z], [0, 1, 0], SIDEWALK_COLOR, MAT.ground, 2)
         const edge = x0 + (s === 6 ? 8 : 16)
         const inner = x0 + (s === 6 ? 7.75 : 16.25)
-        m.quadAuto([edge, 0.014, z], [edge, 0.014, z + 1], [inner, 0.1, z + 1], [inner, 0.1, z], hex(0x7c786e), MAT.ground, 2)
+        opaqueScratch.quadAuto([edge, 0.014, z], [edge, 0.014, z + 1], [inner, 0.1, z + 1], [inner, 0.1, z], CURB_COLOR, MAT.ground, 2)
       }
     }
   }
@@ -291,10 +645,10 @@ export function compileSingleWorldChunk(
     const roadZ0 = z0 + 8
     const roadZ1 = z0 + 16
     if (chunk.lx !== 1) {
-      floor(m, x0, roadZ0, x1, roadZ1, 0.014, 0x545658, 5)
+      opaqueScratch.quad([x0, 0.014, roadZ1], [x1, 0.014, roadZ1], [x1, 0.014, roadZ0], [x0, 0.014, roadZ0], [0, 1, 0], ROAD_COLOR, MAT.ground, 1)
     } else {
-      floor(m, x0, roadZ0, x0 + 8, roadZ1, 0.014, 0x545658, 5)
-      floor(m, x0 + 16, roadZ0, x1, roadZ1, 0.014, 0x545658, 5)
+      opaqueScratch.quad([x0, 0.014, roadZ1], [x0 + 8, 0.014, roadZ1], [x0 + 8, 0.014, roadZ0], [x0, 0.014, roadZ0], [0, 1, 0], ROAD_COLOR, MAT.ground, 1)
+      opaqueScratch.quad([x0 + 16, 0.014, roadZ1], [x1, 0.014, roadZ1], [x1, 0.014, roadZ0], [x0 + 16, 0.014, roadZ0], [0, 1, 0], ROAD_COLOR, MAT.ground, 1)
     }
     for (let x = x0; x < x1; x++) {
       const lx = macroLocalCoord(x)
@@ -302,134 +656,141 @@ export function compileSingleWorldChunk(
       for (const s of [6, 16] as const) {
         const a = z0 + (s === 6 ? 6 : 16.25)
         const b = z0 + (s === 6 ? 7.75 : 18)
-        floor(m, x, a, x + 1, b, 0.1, 0x78746a, 6)
+        opaqueScratch.quad([x, 0.1, b], [x + 1, 0.1, b], [x + 1, 0.1, a], [x, 0.1, a], [0, 1, 0], SIDEWALK_COLOR, MAT.ground, 2)
         const edge = z0 + (s === 6 ? 8 : 16)
         const inner = z0 + (s === 6 ? 7.75 : 16.25)
-        m.quadAuto([x, 0.014, edge], [x + 1, 0.014, edge], [x + 1, 0.1, inner], [x, 0.1, inner], hex(0x7c786e), MAT.ground, 2)
+        opaqueScratch.quadAuto([x, 0.014, edge], [x + 1, 0.014, edge], [x + 1, 0.1, inner], [x, 0.1, inner], CURB_COLOR, MAT.ground, 2)
       }
     }
   }
 
-  // 3. Grass tufts scattered across chunk lawn
+  // 3. Grass tufts scattered across chunk lawn (using pre-packed grass cluster templates)
   const grassRng = new Rng((seed ^ Math.imul(chunk.cx * 73 + chunk.cy * 151, 0x73c9)) >>> 0)
-  const tufts = scatterGrassClumps({
-    seed: (seed ^ Math.imul(chunk.cx * 41 + chunk.cy * 97, 0x453a)) >>> 0,
-    bounds: [x0 + 1.0, z0 + 1.0, x1 - 1.0, z1 - 1.0],
-    clusterCount: Math.max(3, Math.round(9 * foliageDensity)),
-    tuftsPerCluster: 3,
-    params: foliageSettings,
-    avoid: (gx, gz) => {
-      const lx = macroLocalCoord(gx)
-      const lz = macroLocalCoord(gz)
-      if ((lx > 38 && lx < 50) || (lz > 38 && lz < 50)) return true
-      return chunk.buildings.some((b) => gx >= b.rect[0] - 2.5 && gx <= b.rect[2] + 0.5 && gz >= b.rect[1] - 0.5 && gz <= b.rect[3] + 2.5)
-    },
-  })
-  for (const t of tufts) {
-    const y = supportHeight(chunkTown, t.x, t.z)
-    if (t.weed) {
-      emitGrassClump(m, t, y, grassRng)
-      continue
+  const clusterTarget = Math.max(3, Math.round(9 * foliageDensity))
+  grassPlacementsScratch.length = 0
+  for (let attempt = 0; attempt < clusterTarget * 3 && grassPlacementsScratch.length < clusterTarget; attempt++) {
+    const gx = x0 + 1.5 + grassRng.next() * (CHUNK - 3.0)
+    const gz = z0 + 1.5 + grassRng.next() * (CHUNK - 3.0)
+    const lx = macroLocalCoord(gx)
+    const lz = macroLocalCoord(gz)
+    if ((lx > 38 && lx < 50) || (lz > 38 && lz < 50)) continue
+    let inBld = false
+    for (let bIdx = 0; bIdx < chunk.buildings.length; bIdx++) {
+      const b = chunk.buildings[bIdx]!
+      if (gx >= b.rect[0] - 2.5 && gx <= b.rect[2] + 0.5 && gz >= b.rect[1] - 0.5 && gz <= b.rect[3] + 2.5) {
+        inBld = true
+        break
+      }
     }
-    emitGrassTuft(m, t.x, y, t.z, {
-      bladeCount: 2,
-      radius: t.radius * 1.1,
-      height: t.height,
-      width: t.width,
-      curvature: t.curvature,
-      leanAngle: t.leanAngle,
-      rootColor: t.rootColor,
-      tipColor: t.tipColor,
-      rng: grassRng,
+    if (inBld) continue
+    grassPlacementsScratch.push({
+      x: gx,
+      y: supportHeight(chunkTown, gx, gz),
+      z: gz,
+      tplIdx: (attempt + chunk.cx * 3 + chunk.cy * 7) & (GRASS_CLUSTER_BUCKETS - 1),
     })
   }
 
   // 4. Buildings, floors, walkways & POI architecture
-  for (const [id, b] of chunk.buildings.entries()) {
+  for (let id = 0; id < chunk.buildings.length; id++) {
+    const b = chunk.buildings[id]!
     const [bx, bz, br, bend] = b.rect
-    for (const [fx0, fz0, fx1, fz1] of buildingFootprint(b)) {
-      floor(m, fx0, fz0, fx1, fz1, 0.13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
+    const fp = footprints[id]!
+    for (let fIdx = 0; fIdx < fp.length; fIdx++) {
+      const [fx0, fz0, fx1, fz1] = fp[fIdx]!
+      floor(opaqueScratch, fx0, fz0, fx1, fz1, 0.13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
     }
-    floor(m, bx + 4.5, bend, Math.min(br - 0.5, bx + 7), bend + 1.3, 0.13, 0x6a6254, 6)
-    floor(m, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
-    floor(m, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
-    emitPoiArchitecture(m, b, id, chunkTown)
+    floor(opaqueScratch, bx + 4.5, bend, Math.min(br - 0.5, bx + 7), bend + 1.3, 0.13, 0x6a6254, 6)
+    floor(opaqueScratch, bx + 5, bend + 1.3, Math.min(br - 0.5, bx + 6.4), frontageEnd(b) + 2, 0.13, 0x6e6658, 6)
+    floor(opaqueScratch, bx - 3, bz, bx - 0.35, frontageEnd(b) + 2, 0.035, 0x66625a, 7)
+    emitPoiArchitecture(mainScratch, b, id, chunkTown)
   }
 
   // 5. Walls, windows & fences
-  for (const b of chunk.barriers) {
+  const wallTopCol = hex(0x4a4338)
+  const wallCapCol = hex(0x28231d)
+  const trimBaseCol = hex(0x3a2a1c)
+  const sillCol = hex(0x787060)
+  const glassWarmCol = hex(0x463626)
+  const glassCoolCol = hex(0x6e888c)
+  const fenceRailCol = hex(0x6e685a)
+  const fencePostCol = hex(0x645e50)
+  const fencePickCols: readonly Rgb[] = [hex(0x8a8272), hex(0x7c7566), hex(0x948c7b), hex(0x70695b)]
+
+  for (let i = 0; i < chunk.barriers.length; i++) {
+    const b = chunk.barriers[i]!
     const [x, z, r, end] = b.rect
     const color = hex(b.color)
     if (b.kind === "wall") {
-      m.box(x, 0.13, z, r, 2.78, end, color, MAT.wall, 20, hex(0x4a4338))
-      m.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, hex(0x28231d), MAT.lit)
-      m.box(x - 0.02, 0.14, z - 0.02, r + 0.02, 0.26, end + 0.02, hex(0x3a2a1c), MAT.timber)
+      mainScratch.box(x, 0.13, z, r, 2.78, end, color, MAT.wall, 20, wallTopCol)
+      mainScratch.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, wallCapCol, MAT.lit)
+      opaqueScratch.box(x - 0.02, 0.14, z - 0.02, r + 0.02, 0.26, end + 0.02, trimBaseCol, MAT.timber)
     } else if (b.kind === "window") {
-      m.box(x, 0.13, z, r, 0.84, end, color, MAT.wall, 20)
-      m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x4a4338))
-      m.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, hex(0x28231d), MAT.lit)
+      opaqueScratch.box(x, 0.13, z, r, 0.84, end, color, MAT.wall, 20)
+      mainScratch.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, wallTopCol)
+      mainScratch.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, wallCapCol, MAT.lit)
       if (r - x > 1) {
         const zm = (z + end) * 0.5
-        m.box(x - 0.06, 0.79, z - 0.06, r + 0.06, 0.86, end + 0.1, hex(0x787060), MAT.wall)
-        m.box(x - 0.06, 2.14, z - 0.05, r + 0.06, 2.22, end + 0.08, hex(0x787060), MAT.wall)
-        g.box(x + 0.06, 0.86, zm - 0.01, r - 0.06, 2.14, zm + 0.01, hex(0x463626), MAT.glass)
+        opaqueScratch.box(x - 0.06, 0.79, z - 0.06, r + 0.06, 0.86, end + 0.1, sillCol, MAT.wall)
+        mainScratch.box(x - 0.06, 2.14, z - 0.05, r + 0.06, 2.22, end + 0.08, sillCol, MAT.wall)
+        glassScratch.box(x + 0.06, 0.86, zm - 0.01, r - 0.06, 2.14, zm + 0.01, glassWarmCol, MAT.glass)
       } else {
         const xm = (x + r) * 0.5
-        m.box(x - 0.06, 0.79, z - 0.06, r + 0.1, 0.86, end + 0.06, hex(0x787060), MAT.wall)
-        m.box(x - 0.05, 2.14, z - 0.06, r + 0.08, 2.22, end + 0.06, hex(0x787060), MAT.wall)
-        g.box(xm - 0.01, 0.86, z + 0.06, xm + 0.01, 2.14, end - 0.06, hex(0x6e888c), MAT.glass)
+        opaqueScratch.box(x - 0.06, 0.79, z - 0.06, r + 0.1, 0.86, end + 0.06, sillCol, MAT.wall)
+        mainScratch.box(x - 0.05, 2.14, z - 0.06, r + 0.08, 2.22, end + 0.06, sillCol, MAT.wall)
+        glassScratch.box(xm - 0.01, 0.86, z + 0.06, xm + 0.01, 2.14, end - 0.06, glassCoolCol, MAT.glass)
       }
     } else {
-      // Fence
+      // Fence (MAT.timber, never screen-cuttable or roof -> goes directly to opaqueScratch)
       const horizontal = r - x > end - z
       const length = horizontal ? r - x : end - z
       const fenceRng = new Rng((houseSeed ^ Math.floor(x * 31 + z * 59)) >>> 0)
-      const railCol = hex(0x6e685a)
       let pIdx = 0
       for (let d = 0; d < length; d += 0.34, pIdx++) {
         const px = x + (horizontal ? d : 0)
         const pz = z + (horizontal ? 0 : d)
         if (pIdx % 7 === 0) {
-          m.box(px - 0.02, 0.03, pz - 0.02, px + 0.12, 1.22, pz + 0.12, hex(0x645e50), MAT.timber)
+          opaqueScratch.box(px - 0.02, 0.03, pz - 0.02, px + 0.12, 1.22, pz + 0.12, fencePostCol, MAT.timber)
           continue
         }
-        const pCol = hex(fenceRng.pick([0x8a8272, 0x7c7566, 0x948c7b, 0x70695b]))
+        const pCol = fenceRng.pick(fencePickCols)
         const w = horizontal ? 0.14 : 0.07
         const dp = horizontal ? 0.07 : 0.14
-        m.box(px, 0.04, pz, px + w, 1.08, pz + dp, pCol, MAT.timber)
+        opaqueScratch.box(px, 0.04, pz, px + w, 1.08, pz + dp, pCol, MAT.timber)
       }
-      for (const h of [0.3, 0.84]) m.box(x, h, z, r, h + 0.065, end, railCol, MAT.timber)
+      for (const h of [0.3, 0.84]) opaqueScratch.box(x, h, z, r, h + 0.065, end, fenceRailCol, MAT.timber)
     }
   }
 
-  // 6. Props & trees
-  for (const p of chunk.props) {
-    const pm = new Mesh()
-    emitPropFurniture(pm, p, chunkTown)
-    propMeshes.push(pm)
-  }
-
-  // 7. Lamp fixtures
-  for (const [id, p] of chunk.lamps.entries()) {
+  // 7. Lamp fixtures (emitted directly to opaqueScratch)
+  const streetPoleCol = hex(0x353d3c)
+  const streetBulbCol = hex(0xffc980)
+  const porchBulbCol = hex(0xffe0a6)
+  const roomBulbCol = hex(0xe8b86b)
+  for (let id = 0; id < chunk.lamps.length; id++) {
+    const p = chunk.lamps[id]!
     if (p.kind === "window") continue
     if (p.kind === "street") {
-      m.prism(p.x, p.y, 0.13, 0.07, 0.1, 3.8, 8, hex(0x353d3c))
-      m.box(p.x - 0.08, 3.65, p.y - 0.08, p.x + 0.7, 3.8, p.y + 0.08, hex(0x353d3c))
-      m.box(p.x + 0.3, 3.55, p.y - 0.18, p.x + 0.8, 3.65, p.y + 0.18, hex(0xffc980), MAT.lamp, id)
+      opaqueScratch.prism(p.x, p.y, 0.13, 0.07, 0.1, 3.8, 8, streetPoleCol)
+      opaqueScratch.box(p.x - 0.08, 3.65, p.y - 0.08, p.x + 0.7, 3.8, p.y + 0.08, streetPoleCol)
+      opaqueScratch.box(p.x + 0.3, 3.55, p.y - 0.18, p.x + 0.8, 3.65, p.y + 0.18, streetBulbCol, MAT.lamp, id)
     } else if (p.kind === "porch") {
-      m.prism(p.x, p.y - 0.22, 0.1, 0.08, 2.24, 2.38, 7, hex(0xffe0a6), MAT.lamp, id)
+      opaqueScratch.prism(p.x, p.y - 0.22, 0.1, 0.08, 2.24, 2.38, 7, porchBulbCol, MAT.lamp, id)
     } else if (p.kind === "room" && p.h <= 2.3) {
-      m.prism(p.x, p.y, 0.23, 0.125, p.h - 0.13, p.h + 0.16, 9, hex(0xe8b86b), MAT.lamp, id)
+      opaqueScratch.prism(p.x, p.y, 0.23, 0.125, p.h - 0.13, p.h + 0.16, 9, roomBulbCol, MAT.lamp, id)
     }
   }
 
   // 8. Bake per-chunk 128×128 floor contact AO & indoor sky mask tile (0.25 m/texel)
+  const tiles = acquireTiles()
+  const { floorTile, moonTile, bounceTile } = tiles
   const fRes = 128
   const fScale = CHUNK / fRes // 0.25 m
-  const floorTile = new Uint8Array(fRes * fRes * 2)
   for (let i = 1; i < floorTile.length; i += 2) floorTile[i] = 255
-  for (const fp of footprints) {
-    for (const [fx0, fz0, fx1, fz1] of fp) {
+  for (let bIdx = 0; bIdx < footprints.length; bIdx++) {
+    const fp = footprints[bIdx]!
+    for (let fIdx = 0; fIdx < fp.length; fIdx++) {
+      const [fx0, fz0, fx1, fz1] = fp[fIdx]!
       const tx0 = Math.max(0, Math.floor((fx0 - x0) / fScale))
       const tx1 = Math.min(fRes - 1, Math.ceil((fx1 - x0) / fScale))
       const tz0 = Math.max(0, Math.floor((fz0 - z0) / fScale))
@@ -459,8 +820,12 @@ export function compileSingleWorldChunk(
       }
     }
   }
-  for (const wall of chunk.barriers) if (wall.kind !== "fence") stampFloorRect(wall.rect, 4, 0.8, 1.6)
-  for (const p of chunk.props) {
+  for (let i = 0; i < chunk.barriers.length; i++) {
+    const wall = chunk.barriers[i]!
+    if (wall.kind !== "fence") stampFloorRect(wall.rect, 4, 0.8, 1.6)
+  }
+  for (let i = 0; i < chunk.props.length; i++) {
+    const p = chunk.props[i]!
     if (p.kind === "tree") {
       const tx0 = Math.max(0, Math.floor((p.x - 3.1 - x0) / fScale))
       const tx1 = Math.min(fRes - 1, Math.ceil((p.x + 3.1 - x0) / fScale))
@@ -482,30 +847,55 @@ export function compileSingleWorldChunk(
     }
   }
 
-  // 9. Bake per-chunk 256×256 directional moon & tree-canopy mask tile (0.125 m/texel)
+  // 9. Bake per-chunk 256×256 directional moon & tree-canopy mask tile (0.125 m/texel) via direct rect stamping
   const mRes = 256
   const mScale = CHUNK / mRes // 0.125 m
-  const moonTile = new Uint8Array(mRes * mRes).fill(255)
-  for (const b of chunk.buildings) {
-    const [bx0, bz0, bx1, bz1] = b.rect
-    const tx0 = Math.max(0, Math.floor((bx0 - 1.5 - x0) / mScale))
-    const tx1 = Math.min(mRes - 1, Math.ceil((bx1 + 4.5 - x0) / mScale))
-    const tz0 = Math.max(0, Math.floor((bz0 - 1.5 - z0) / mScale))
-    const tz1 = Math.min(mRes - 1, Math.ceil((bz1 + 3.5 - z0) / mScale))
-    for (let tz = tz0; tz <= tz1; tz++) {
-      const pz = z0 + (tz + 0.5) * mScale
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const px = x0 + (tx + 0.5) * mScale
-        const idx = tz * mRes + tx
-        if (inBuildingFootprint(b, px, pz)) {
-          moonTile[idx] = 14
-        } else if (inBuildingFootprint(b, px - 1.15, pz - 0.85)) {
-          moonTile[idx] = Math.min(moonTile[idx]!, 158)
+  for (let bIdx = 0; bIdx < footprints.length; bIdx++) {
+    const fp = footprints[bIdx]!
+    // First pass: exterior directional shadow (+1.15, +0.85)
+    for (let fIdx = 0; fIdx < fp.length; fIdx++) {
+      const [fx0, fz0, fx1, fz1] = fp[fIdx]!
+      const sx0 = fx0 + 1.15
+      const sz0 = fz0 + 0.85
+      const sx1 = fx1 + 1.15
+      const sz1 = fz1 + 0.85
+      const tx0 = Math.max(0, Math.floor((sx0 - x0) / mScale))
+      const tx1 = Math.min(mRes - 1, Math.ceil((sx1 - x0) / mScale))
+      const tz0 = Math.max(0, Math.floor((sz0 - z0) / mScale))
+      const tz1 = Math.min(mRes - 1, Math.ceil((sz1 - z0) / mScale))
+      for (let tz = tz0; tz <= tz1; tz++) {
+        const pz = z0 + (tz + 0.5) * mScale
+        if (pz < sz0 || pz > sz1) continue
+        const rowOff = tz * mRes
+        for (let tx = tx0; tx <= tx1; tx++) {
+          const px = x0 + (tx + 0.5) * mScale
+          if (px >= sx0 && px <= sx1) {
+            const idx = rowOff + tx
+            if (moonTile[idx]! > 158) moonTile[idx] = 158
+          }
+        }
+      }
+    }
+    // Second pass: indoor footprint (14)
+    for (let fIdx = 0; fIdx < fp.length; fIdx++) {
+      const [fx0, fz0, fx1, fz1] = fp[fIdx]!
+      const tx0 = Math.max(0, Math.floor((fx0 - x0) / mScale))
+      const tx1 = Math.min(mRes - 1, Math.ceil((fx1 - x0) / mScale))
+      const tz0 = Math.max(0, Math.floor((fz0 - z0) / mScale))
+      const tz1 = Math.min(mRes - 1, Math.ceil((fz1 - z0) / mScale))
+      for (let tz = tz0; tz <= tz1; tz++) {
+        const pz = z0 + (tz + 0.5) * mScale
+        if (pz < fz0 || pz > fz1) continue
+        const rowOff = tz * mRes
+        for (let tx = tx0; tx <= tx1; tx++) {
+          const px = x0 + (tx + 0.5) * mScale
+          if (px >= fx0 && px <= fx1) moonTile[rowOff + tx] = 14
         }
       }
     }
   }
-  for (const t of chunk.props) {
+  for (let i = 0; i < chunk.props.length; i++) {
+    const t = chunk.props[i]!
     if (t.kind !== "tree") continue
     const rCrown = 2.15 + t.variant * 0.75
     const cxT = t.x + 0.45
@@ -517,11 +907,13 @@ export function compileSingleWorldChunk(
     const invR2 = 1 / (rCrown * rCrown)
     for (let tz = tz0; tz <= tz1; tz++) {
       const dz = z0 + (tz + 0.5) * mScale - czT
+      const dz2 = dz * dz
+      const rowOff = tz * mRes
       for (let tx = tx0; tx <= tx1; tx++) {
-        const idx = tz * mRes + tx
+        const idx = rowOff + tx
         if (moonTile[idx]! <= 25) continue
         const dx = x0 + (tx + 0.5) * mScale - cxT
-        const u2 = (dx * dx + dz * dz) * invR2
+        const u2 = (dx * dx + dz2) * invR2
         if (u2 < 1.0) {
           const atten = Math.round((1 - (1 - u2) * 0.35) * 255)
           if (atten < moonTile[idx]!) moonTile[idx] = atten
@@ -533,9 +925,9 @@ export function compileSingleWorldChunk(
   // 10. Bake per-chunk 64×64 indirect bounce tile (0.5 m/texel)
   const bRes = 64
   const bScale = CHUNK / bRes // 0.5 m
-  const bounceTile = new Uint8Array(bRes * bRes * 4)
   for (let i = 0; i < bRes * bRes; i++) bounceTile[i * 4 + 3] = 255
-  for (const lamp of chunk.lamps) {
+  for (let i = 0; i < chunk.lamps.length; i++) {
+    const lamp = chunk.lamps[i]!
     const res = resolveLampLight(lamp, chunk.buildings, 1, DEFAULT_OUTBREAK_LIGHTING, false)
     const reach = Math.min(9.5, res.r * 1.25)
     const tx0 = Math.max(0, Math.floor((res.lx - reach - x0) / bScale))
@@ -585,57 +977,151 @@ export function compileSingleWorldChunk(
     ]
   }
 
-  const glassChunks = packSimple(g)
-  const staticOpaqueChunks: LevelChunk[] = []
-  for (const pm of propMeshes) {
-    staticOpaqueChunks.push(...packSimple(pm))
-  }
+  // Split mainScratch into roofScratchPool, screenScratch, and opaqueScratch
+  while (roofScratchPool.length < chunk.buildings.length) roofScratchPool.push(new Mesh())
+  for (let i = 0; i < chunk.buildings.length; i++) roofScratchPool[i]!.v.length = 0
 
-  const roofMeshes = chunk.buildings.map(() => new Mesh())
-  if (m.count) {
-    const opaque = new Mesh()
-    const screen = new Mesh()
-    for (let i = 0; i < m.v.length; i += 33) {
+  if (mainScratch.count) {
+    const mv = mainScratch.v
+    for (let i = 0; i < mv.length; i += 33) {
       let maxY = -Infinity
       let hasRoof = false
       let hasScreen = false
-      for (const j of [0, 11, 22]) {
-        const vy = m.v[i + j + 1]!
-        const mat = Math.round(m.v[i + j + 9]!)
-        maxY = Math.max(maxY, vy)
+      for (let j = 0; j < 33; j += 11) {
+        const vy = mv[i + j + 1]!
+        const mat = Math.round(mv[i + j + 9]!)
+        if (vy > maxY) maxY = vy
         if (mat === 21) hasRoof = true
-        if ((mat === 4 || mat === 9 || mat === 11) && maxY > 1.0) hasScreen = true
+        if ((mat === 4 || mat === 9 || mat === 11) && vy > 1.0) hasScreen = true
       }
+      let dst: number[]
       if (hasRoof && chunk.buildings.length > 0) {
-        const localId = Math.max(0, Math.min(chunk.buildings.length - 1, Math.round(m.v[i + 10]!)))
-        const dst = roofMeshes[localId]!.v
-        for (let k = i; k < i + 33; k++) dst.push(m.v[k]!)
+        const localId = Math.max(0, Math.min(chunk.buildings.length - 1, Math.round(mv[i + 10]!)))
+        dst = roofScratchPool[localId]!.v
       } else {
-        const dst = hasScreen ? screen.v : opaque.v
-        for (let k = i; k < i + 33; k++) dst.push(m.v[k]!)
+        dst = hasScreen ? screenScratch.v : opaqueScratch.v
       }
+      for (let k = i; k < i + 33; k++) dst.push(mv[k]!)
     }
-    staticOpaqueChunks.push(...packSimple(opaque))
-    if (screen.count) {
-      const bands = new Map<number, Mesh>()
-      for (let i = 0; i < screen.v.length; i += 33) {
-        const xBand = Math.floor(Math.min(screen.v[i]!, screen.v[i + 11]!, screen.v[i + 22]!) / 4)
-        const zBand = Math.floor(Math.min(screen.v[i + 2]!, screen.v[i + 13]!, screen.v[i + 24]!) / 4)
-        const key = xBand * 1024 + zBand
-        let bm = bands.get(key)
-        if (!bm) {
-          bm = new Mesh()
-          bands.set(key, bm)
-        }
-        for (let k = i; k < i + 33; k++) bm.v.push(screen.v[k]!)
+  }
+
+  // Pack opaqueScratch + pre-packed prop/tree/grass templates into a single pooled LevelChunk per 32×32 m chunk
+  const staticOpaqueChunks: LevelChunk[] = []
+  let propVertsTotal = 0
+  for (let i = 0; i < chunk.props.length; i++) {
+    propVertsTotal += getPropTemplate(chunk.props[i]!).vertCount
+  }
+  for (let i = 0; i < grassPlacementsScratch.length; i++) {
+    propVertsTotal += grassClusterTemplates[grassPlacementsScratch[i]!.tplIdx]!.vertCount
+  }
+  const baseOpaqueVerts = opaqueScratch.count
+  const totalOpaqueVerts = baseOpaqueVerts + propVertsTotal
+  if (totalOpaqueVerts > 0) {
+    let bx0 = x0,
+      bz0 = z0,
+      bx1 = x1,
+      bz1 = z1
+    const neededBytes = totalOpaqueVerts * VERT_BYTES
+    const combinedBuf =
+      tiles.opaqueBuf && tiles.opaqueBuf.byteLength >= neededBytes
+        ? tiles.opaqueBuf
+        : new ArrayBuffer(Math.max(neededBytes, POOL_OPAQUE_BYTES))
+    const combinedU8 = new Uint8Array(combinedBuf, 0, neededBytes)
+    const combinedF32 = new Float32Array(combinedBuf, 0, totalOpaqueVerts * 6)
+    if (baseOpaqueVerts > 0) {
+      for (let i = 0; i < opaqueScratch.v.length; i += 11) {
+        const vx = opaqueScratch.v[i]!
+        const vz = opaqueScratch.v[i + 2]!
+        if (vx < bx0) bx0 = vx
+        if (vx > bx1) bx1 = vx
+        if (vz < bz0) bz0 = vz
+        if (vz > bz1) bz1 = vz
       }
-      for (const bm of bands.values()) {
-        for (const c of packSimple(bm)) {
-          staticOpaqueChunks.push({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] })
-        }
+      packAndStampInto(opaqueScratch.v, combinedBuf)
+    }
+    let vertCursor = baseOpaqueVerts
+    for (let i = 0; i < grassPlacementsScratch.length; i++) {
+      const gp = grassPlacementsScratch[i]!
+      const tpl = grassClusterTemplates[gp.tplIdx]!
+      combinedU8.set(tpl.u8, vertCursor * VERT_BYTES)
+      const endVert = vertCursor + tpl.vertCount
+      const gx = gp.x, gy = gp.y, gz = gp.z
+      for (let v = vertCursor; v < endVert; v++) {
+        const fOff = v * 6
+        combinedF32[fOff] = combinedF32[fOff]! + gx
+        combinedF32[fOff + 1] = combinedF32[fOff + 1]! + gy
+        combinedF32[fOff + 2] = combinedF32[fOff + 2]! + gz
+      }
+      vertCursor = endVert
+    }
+    for (let i = 0; i < chunk.props.length; i++) {
+      const p = chunk.props[i]!
+      const tpl = getPropTemplate(p)
+      const px = p.x
+      const pz = p.y
+      const py = p.kind === "tree" ? supportHeight(chunkTown, px, pz) : 0
+      if (px + tpl.minX < bx0) bx0 = px + tpl.minX
+      if (px + tpl.maxX > bx1) bx1 = px + tpl.maxX
+      if (pz + tpl.minZ < bz0) bz0 = pz + tpl.minZ
+      if (pz + tpl.maxZ > bz1) bz1 = pz + tpl.maxZ
+      combinedU8.set(tpl.u8, vertCursor * VERT_BYTES)
+      const endVert = vertCursor + tpl.vertCount
+      for (let v = vertCursor; v < endVert; v++) {
+        const fOff = v * 6
+        combinedF32[fOff] = combinedF32[fOff]! + px
+        combinedF32[fOff + 1] = combinedF32[fOff + 1]! + py
+        combinedF32[fOff + 2] = combinedF32[fOff + 2]! + pz
+      }
+      vertCursor = endVert
+    }
+    staticOpaqueChunks.push({
+      data: combinedBuf,
+      byteLength: neededBytes,
+      box: [bx0, bz0, bx1, bz1] as const,
+    })
+  }
+
+  // Pack 4×4 m screen-cuttable wall bands using pooled band meshes
+  if (screenScratch.count) {
+    bandMap.clear()
+    let bandPoolIdx = 0
+    const sv = screenScratch.v
+    for (let i = 0; i < sv.length; i += 33) {
+      const xBand = Math.floor(Math.min(sv[i]!, sv[i + 11]!, sv[i + 22]!) / 4)
+      const zBand = Math.floor(Math.min(sv[i + 2]!, sv[i + 13]!, sv[i + 24]!) / 4)
+      const key = xBand * 1024 + zBand
+      let bm = bandMap.get(key)
+      if (!bm) {
+        if (bandPoolIdx >= bandScratchPool.length) bandScratchPool.push(new Mesh())
+        bm = bandScratchPool[bandPoolIdx++]!
+        bm.v.length = 0
+        bandMap.set(key, bm)
+      }
+      for (let k = i; k < i + 33; k++) bm.v.push(sv[k]!)
+    }
+    for (const bm of bandMap.values()) {
+      for (const c of packSimple(bm)) {
+        staticOpaqueChunks.push({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] })
       }
     }
   }
+
+  // Pre-pack roof chunks once per building so window transitions never re-pack roof meshes
+  const roofChunks: CompiledRoofChunk[] = []
+  for (let localId = 0; localId < chunk.buildings.length; localId++) {
+    const b = chunk.buildings[localId]!
+    const rm = roofScratchPool[localId]!
+    if (!rm.count) continue
+    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 6.5, b.rect[3] + 1.7] as const
+    roofChunks.push({
+      data: stampOutbreakVertexTone(rm.pack()),
+      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + 1.7] as const,
+      cutBox: bounds,
+      lastGlobalId: localId,
+    })
+  }
+
+  const glassChunks = packSimple(glassScratch)
 
   return {
     key: chunk.key,
@@ -644,7 +1130,8 @@ export function compileSingleWorldChunk(
     hash: chunk.hash,
     staticOpaqueChunks,
     glassChunks,
-    roofMeshes,
+    roofMeshes: [],
+    roofChunks,
     buildings: chunk.buildings,
     floorTile,
     moonTile,
@@ -654,77 +1141,235 @@ export function compileSingleWorldChunk(
 }
 
 /**
- * Returns a compiled chunk's pre-packed static & glass chunks plus roof chunks tagged with the window-wide `buildingId`.
+ * Returns a compiled chunk's pre-packed static & glass chunks plus roof chunks tagged in-place with the window-wide `buildingId`.
  */
 function packChunkMeshesForWindow(
   compiled: CompiledWorldChunk,
   windowBuildings: readonly Building[],
 ): { opaque: LevelChunk[]; glass: LevelChunk[] } {
-  if (compiled.buildings.length === 0) {
-    return { opaque: compiled.staticOpaqueChunks, glass: compiled.glassChunks }
+  const slot = (((compiled.cy % 3) + 3) % 3) * 3 + (((compiled.cx % 3) + 3) % 3)
+  const rChunks = compiled.roofChunks
+  if (!rChunks || rChunks.length === 0 || compiled.buildings.length === 0) {
+    const streamKey = `${compiled.key}:${compiled.hash}`
+    const outOpaque: LevelChunk[] = []
+    for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
+      const c = compiled.staticOpaqueChunks[i]!
+      outOpaque.push({ ...c, streamSlot: slot, streamKey })
+    }
+    return { opaque: outOpaque, glass: compiled.glassChunks }
   }
   const bldIndexOffset = Math.max(
     0,
     windowBuildings.findIndex((b) => b.id === compiled.buildings[0]?.id),
   )
-  const roofChunks: LevelChunk[] = []
-  compiled.buildings.forEach((b, localId) => {
-    const rm = compiled.roofMeshes[localId]!
-    if (!rm.count) return
-    const globalId = bldIndexOffset + localId
-    const copy = new Mesh()
-    for (let i = 0; i < rm.v.length; i += 11) {
-      for (let k = 0; k < 10; k++) copy.v.push(rm.v[i + k]!)
-      copy.v.push(globalId)
+  const streamKey = `${compiled.key}:${compiled.hash}:${bldIndexOffset}`
+  const outOpaque: LevelChunk[] = []
+  for (let i = 0; i < compiled.staticOpaqueChunks.length; i++) {
+    const c = compiled.staticOpaqueChunks[i]!
+    outOpaque.push({ ...c, streamSlot: slot, streamKey })
+  }
+  for (let localId = 0; localId < rChunks.length; localId++) {
+    const rc = rChunks[localId]!
+    const globalId = Math.min(15, bldIndexOffset + localId)
+    if (rc.lastGlobalId !== globalId) {
+      rc.lastGlobalId = globalId
+      const halfId = HALF_INT[globalId]!
+      const u16 = new Uint16Array(rc.data)
+      const nVerts = rc.data.byteLength / VERT_BYTES
+      for (let v = 0; v < nVerts; v++) {
+        u16[v * 12 + 11] = halfId
+      }
     }
-    const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 6.5, b.rect[3] + 1.7] as const
-    roofChunks.push({
-      data: stampOutbreakVertexTone(copy.pack()),
-      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + 1.7] as const,
-      cutBox: bounds,
+    outOpaque.push({
+      data: rc.data,
+      box: rc.box,
+      cutBox: rc.cutBox,
       customCutaway: true,
+      streamSlot: slot,
+      streamKey,
     })
-  })
+  }
   return {
-    opaque: [...compiled.staticOpaqueChunks, ...roofChunks],
+    opaque: outOpaque,
     glass: compiled.glassChunks,
   }
 }
 
+type BakeTask = {
+  cx: number
+  cy: number
+  seed: number
+  houseSeed: number
+  terrain: number
+  foliageDensity: number
+  mode: WorldMode
+  priority: number
+}
+
 /**
- * Client-side 3×3 chunk window streamer with an LRU cache of compiled chunk tiles
- * and a time-sliced pre-warm queue so chunk transitions never cause frame hitches.
+ * Client-side 3×3 chunk window streamer with a pooled LRU cache of compiled chunk tiles,
+ * directional lookahead pre-warming, and off-thread Web Worker compilation with transferable buffers.
  */
 export class WorldClientStreamer {
   private readonly cache = new Map<string, CompiledWorldChunk>()
-  private readonly bakeQueue: { cx: number; cy: number; seed: number; houseSeed: number; terrain: number; foliageDensity: number; mode: WorldMode }[] = []
-  private readonly maxCachedChunks = 45
+  private readonly bakeQueue: BakeTask[] = []
+  private readonly inflightKeys = new Set<string>()
+  private readonly maxCachedChunks = 24
 
   private readonly stitchedFloor = new Uint8Array(384 * 384 * 2)
   private readonly stitchedMoon = new Uint8Array(768 * 768)
   private readonly stitchedBounce = new Uint8Array(192 * 192 * 4)
+  private readonly stitchedFloorF64 = new Float64Array(this.stitchedFloor.buffer)
+  private readonly stitchedMoonF64 = new Float64Array(this.stitchedMoon.buffer)
+  private readonly stitchedBounceF64 = new Float64Array(this.stitchedBounce.buffer)
+
+  private workers: Worker[] = []
+  private workerBusy: boolean[] = []
+  private nextReqId = 1
+  private lastPlayerX = NaN
+  private lastPlayerY = NaN
+  private dirX = 1
+  private dirY = 0
 
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
   windowBuildings: Building[] = []
+  private readonly buildingSlots: (Building | null)[] = [null, null, null, null, null, null, null, null]
   lastWindowKey = ""
   bakeStepsCompleted = 0
   lastBakeMs = 0
+
+  constructor() {
+    this.initWorkers()
+  }
+
+  private initWorkers(): void {
+    if (typeof Worker === "undefined" || typeof window === "undefined") return
+    try {
+      const count = 2
+      for (let i = 0; i < count; i++) {
+        const w = new Worker(new URL("./world-worker.ts", import.meta.url), { type: "module" })
+        this.workerBusy.push(false)
+        w.onmessage = (ev: MessageEvent<{ id: number; cacheKey: string; compiled: CompiledWorldChunk }>) => {
+          this.workerBusy[i] = false
+          const { cacheKey, compiled } = ev.data
+          this.inflightKeys.delete(cacheKey)
+          if (!this.cache.has(cacheKey)) {
+            this.insertCachedChunk(cacheKey, compiled)
+          } else {
+            recycleCompiledChunk(compiled)
+          }
+          this.pumpWorkers()
+        }
+        w.onerror = () => {
+          this.workerBusy[i] = false
+        }
+        this.workers.push(w)
+      }
+    } catch {
+      this.workers.length = 0
+      this.workerBusy.length = 0
+    }
+  }
+
+  private evictChunk(oldKey: string, oldChunk: CompiledWorldChunk): void {
+    this.cache.delete(oldKey)
+    if (
+      this.workers.length > 0 &&
+      oldChunk.floorTile.byteLength === 128 * 128 * 2 &&
+      oldChunk.moonTile.byteLength === 256 * 256 &&
+      oldChunk.bounceTile.byteLength === 64 * 64 * 4
+    ) {
+      const fBuf = oldChunk.floorTile.buffer
+      const mBuf = oldChunk.moonTile.buffer
+      const bBuf = oldChunk.bounceTile.buffer
+      const opBuf = oldChunk.staticOpaqueChunks[0]?.data
+      const transfer: Transferable[] = [fBuf, mBuf, bBuf]
+      if (opBuf && opBuf.byteLength >= POOL_OPAQUE_BYTES) transfer.push(opBuf)
+      this.workers[0]!.postMessage(
+        {
+          type: "recycle",
+          floorBuf: fBuf,
+          moonBuf: mBuf,
+          bounceBuf: bBuf,
+          opaqueBuf: opBuf && opBuf.byteLength >= POOL_OPAQUE_BYTES ? opBuf : undefined,
+        },
+        transfer,
+      )
+    } else {
+      recycleCompiledChunk(oldChunk)
+    }
+  }
+
+  private insertCachedChunk(k: string, compiled: CompiledWorldChunk): void {
+    if (this.cache.size >= this.maxCachedChunks && !this.cache.has(k)) {
+      // Evict oldest chunk that is not inside the active 3×3 window
+      for (const [oldKey, oldChunk] of this.cache) {
+        if (Math.abs(oldChunk.cx - this.center.cx) <= 1 && Math.abs(oldChunk.cy - this.center.cy) <= 1) continue
+        this.evictChunk(oldKey, oldChunk)
+        break
+      }
+      if (this.cache.size >= this.maxCachedChunks) {
+        const oldest = this.cache.keys().next().value
+        if (oldest !== undefined) {
+          const ev = this.cache.get(oldest)!
+          this.evictChunk(oldest, ev)
+        }
+      }
+    }
+    this.cache.set(k, compiled)
+    this.lastBakeMs = compiled.compileMs
+    this.bakeStepsCompleted++
+  }
+
+  private pumpWorkers(): void {
+    if (this.workers.length === 0 || this.bakeQueue.length === 0) return
+    for (let i = 0; i < this.workers.length; i++) {
+      if (this.workerBusy[i]) continue
+      while (this.bakeQueue.length > 0) {
+        const item = this.bakeQueue.shift()!
+        const k = this.cacheKey(item.seed, item.houseSeed, item.terrain, item.foliageDensity, item.mode, item.cx, item.cy)
+        if (this.cache.has(k) || this.inflightKeys.has(k)) continue
+        this.inflightKeys.add(k)
+        this.workerBusy[i] = true
+        this.workers[i]!.postMessage({
+          id: this.nextReqId++,
+          cacheKey: k,
+          seed: item.seed,
+          houseSeed: item.houseSeed,
+          terrain: item.terrain,
+          foliageDensity: item.foliageDensity,
+          mode: item.mode,
+          cx: item.cx,
+          cy: item.cy,
+          houseDecay: archSettings.houseDecay,
+          weathering: archSettings.weathering,
+        })
+        break
+      }
+    }
+  }
 
   get cachedChunkCount(): number {
     return this.cache.size
   }
 
   get pendingBakeCount(): number {
-    return this.bakeQueue.length
+    return this.bakeQueue.length + this.inflightKeys.size
   }
 
   reset(): void {
+    ensurePropTemplates()
     this.bakeQueue.length = 0
     this.center = { cx: 1, cy: 1 }
     this.windowOrigin = [0, 0]
     this.windowBuildings = []
+    this.buildingSlots.fill(null)
     this.lastWindowKey = ""
+    this.lastPlayerX = NaN
+    this.lastPlayerY = NaN
+    this.dirX = 1
+    this.dirY = 0
   }
 
   private cacheKey(
@@ -751,24 +1396,20 @@ export class WorldClientStreamer {
     const k = this.cacheKey(seed, houseSeed, terrain, foliageDensity, mode, cx, cy)
     const hit = this.cache.get(k)
     if (hit) {
-      // Refresh LRU order
       this.cache.delete(k)
       this.cache.set(k, hit)
       return hit
     }
     const worldChunk = generateWorldChunk(seed, houseSeed, cx, cy, mode)
     const compiled = compileSingleWorldChunk(worldChunk, seed, houseSeed, terrain, foliageDensity)
-    if (this.cache.size >= this.maxCachedChunks) {
-      const oldest = this.cache.keys().next().value
-      if (oldest !== undefined) this.cache.delete(oldest)
-    }
-    this.cache.set(k, compiled)
-    this.lastBakeMs = compiled.compileMs
-    this.bakeStepsCompleted++
+    this.insertCachedChunk(k, compiled)
     return compiled
   }
 
-  /** Queues uncached chunks in a 5×5 lookahead ring around `(playerX, playerY)` for incremental background baking. */
+  /**
+   * Queues uncached chunks along the movement direction and active window corridor
+   * for background Worker compilation and time-sliced pre-warming.
+   */
   prewarmAround(
     playerX: number,
     playerY: number,
@@ -778,35 +1419,83 @@ export class WorldClientStreamer {
     foliageDensity: number,
     mode: WorldMode,
   ): void {
-    const cx0 = Math.floor(playerX / CHUNK)
-    const cy0 = Math.floor(playerY / CHUNK)
-    for (let ring = 1; ring <= 2; ring++) {
-      for (let dy = -ring; dy <= ring; dy++) {
-        for (let dx = -ring; dx <= ring; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue
-          const cx = cx0 + dx
-          const cy = cy0 + dy
-          const k = this.cacheKey(seed, houseSeed, terrain, foliageDensity, mode, cx, cy)
-          if (this.cache.has(k)) continue
-          if (this.bakeQueue.some((q) => q.cx === cx && q.cy === cy && q.seed === seed && q.mode === mode)) continue
-          this.bakeQueue.push({ cx, cy, seed, houseSeed, terrain, foliageDensity, mode })
-        }
+    if (Number.isFinite(this.lastPlayerX)) {
+      const dx = playerX - this.lastPlayerX
+      const dy = playerY - this.lastPlayerY
+      const dist = Math.hypot(dx, dy)
+      if (dist > 0.05) {
+        this.dirX = dx / dist
+        this.dirY = dy / dist
       }
     }
+    this.lastPlayerX = playerX
+    this.lastPlayerY = playerY
+
+    const cCx = this.center.cx
+    const cCy = this.center.cy
+    const winMinY = (cCy - 1) * CHUNK + 10.0
+    const winMaxY = (cCy + 2) * CHUNK - 10.0
+    const nearNorth = playerY < winMinY + 8.0
+    const nearSouth = playerY > winMaxY - 8.0
+    const minDy = nearNorth ? -2 : -1
+    const maxDy = nearSouth ? 2 : 1
+
+    const stepX = this.dirX >= -0.25 ? 1 : -1
+    const dxList = stepX > 0 ? [0, 1, 2, 3, 4, -1] : [0, -1, -2, -3, -4, 1]
+
+    // Prune stale queue items that are behind or outside the active lookahead corridor
+    for (let i = this.bakeQueue.length - 1; i >= 0; i--) {
+      const q = this.bakeQueue[i]!
+      const relX = (q.cx - cCx) * stepX
+      if (relX < -1 || relX > 4 || q.cy < cCy + minDy || q.cy > cCy + maxDy || q.seed !== seed || q.mode !== mode) {
+        this.bakeQueue.splice(i, 1)
+      } else {
+        q.priority = 99
+      }
+    }
+
+    let added = false
+    for (let xi = 0; xi < dxList.length; xi++) {
+      const dx = dxList[xi]!
+      for (let dy = minDy; dy <= maxDy; dy++) {
+        const cx = cCx + dx
+        const cy = cCy + dy
+        const k = this.cacheKey(seed, houseSeed, terrain, foliageDensity, mode, cx, cy)
+        if (this.cache.has(k) || this.inflightKeys.has(k)) continue
+        const priority = xi * 4 + Math.abs(dy)
+        const existing = this.bakeQueue.find((q) => q.cx === cx && q.cy === cy && q.seed === seed && q.mode === mode)
+        if (existing) {
+          existing.priority = priority
+          added = true
+          continue
+        }
+        this.bakeQueue.push({ cx, cy, seed, houseSeed, terrain, foliageDensity, mode, priority })
+        added = true
+      }
+    }
+    if (added && this.bakeQueue.length > 1) {
+      this.bakeQueue.sort((a, b) => a.priority - b.priority)
+    }
+    this.pumpWorkers()
   }
 
-  /** Time-sliced incremental bake: compiles at most 1 queued chunk per frame within `budgetMs`. */
-  stepBakeQueue(budgetMs = 2.5): number {
+  /** Time-sliced incremental bake: compiles at most `maxChunks` queued chunks within `budgetMs`. */
+  stepBakeQueue(budgetMs = 2.0, maxChunks = 1): number {
+    this.pumpWorkers()
     if (this.bakeQueue.length === 0) return 0
+    // When background Web Workers are active, only fall back to main-thread compilation for urgent immediate-ring chunks
+    const urgentOnly = this.workers.length > 0
     const start = performance.now()
     let compiledCount = 0
-    while (this.bakeQueue.length > 0 && performance.now() - start < budgetMs && compiledCount < 1) {
+    while (this.bakeQueue.length > 0 && performance.now() - start < budgetMs && compiledCount < maxChunks) {
+      if (urgentOnly && this.bakeQueue[0]!.priority > 6) break
       const item = this.bakeQueue.shift()!
       const k = this.cacheKey(item.seed, item.houseSeed, item.terrain, item.foliageDensity, item.mode, item.cx, item.cy)
-      if (this.cache.has(k)) continue
+      if (this.cache.has(k) || this.inflightKeys.has(k)) continue
       this.getOrCompileChunk(item.seed, item.houseSeed, item.terrain, item.foliageDensity, item.mode, item.cx, item.cy)
       compiledCount++
     }
+    this.pumpWorkers()
     return compiledCount
   }
 
@@ -827,17 +1516,18 @@ export class WorldClientStreamer {
     this.windowOrigin = [originX, originZ]
 
     this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode)
-    this.stepBakeQueue(2.2)
 
     const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${this.center.cx},${this.center.cy}`
     if (winKey === this.lastWindowKey) {
+      // Non-transition frame: pre-warm up to 1 lookahead chunk on main thread if not already handled by Workers
+      this.stepBakeQueue(1.8, 1)
       return { changed: false, origin: this.windowOrigin, buildings: this.windowBuildings }
     }
     this.lastWindowKey = winKey
 
-    // Assemble the 3×3 chunks in row-major order
+    // Assemble the 3×3 chunks in row-major order and maintain stable building slot indices (0..7)
     const gridChunks: CompiledWorldChunk[] = []
-    const windowBuildings: Building[] = []
+    const activeBlds: Building[] = []
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         const c = this.getOrCompileChunk(
@@ -850,40 +1540,66 @@ export class WorldClientStreamer {
           this.center.cy + dy,
         )
         gridChunks.push(c)
-        for (const b of c.buildings) {
-          if (windowBuildings.length < 8) windowBuildings.push(b)
+        for (let i = 0; i < c.buildings.length; i++) {
+          if (activeBlds.length < 8) activeBlds.push(c.buildings[i]!)
         }
       }
     }
-    this.windowBuildings = windowBuildings
+    // Evict buildings that left the 3×3 window
+    for (let s = 0; s < 8; s++) {
+      const cur = this.buildingSlots[s]
+      if (cur && !activeBlds.some((b) => b.id === cur.id)) {
+        this.buildingSlots[s] = null
+      }
+    }
+    // Place newly entered buildings into free slots so surviving buildings keep their exact globalId
+    for (let i = 0; i < activeBlds.length; i++) {
+      const b = activeBlds[i]!
+      const existingSlot = this.buildingSlots.findIndex((s) => s?.id === b.id)
+      if (existingSlot >= 0) {
+        this.buildingSlots[existingSlot] = b
+      } else {
+        const freeSlot = this.buildingSlots.indexOf(null)
+        if (freeSlot >= 0) this.buildingSlots[freeSlot] = b
+      }
+    }
+    const emptyBld: Building = { id: "", kind: "house", rect: [-99999, -99999, -99998, -99998], color: 0 }
+    this.windowBuildings = this.buildingSlots.map((b) => b ?? emptyBld)
+    const windowBuildings = this.windowBuildings
 
     const allOpaque: LevelChunk[] = []
     const allGlass: LevelChunk[] = []
+    const dstFloorF64 = this.stitchedFloorF64
+    const dstMoonF64 = this.stitchedMoonF64
+    const dstBounceF64 = this.stitchedBounceF64
 
     for (let gy = 0; gy < 3; gy++) {
       for (let gx = 0; gx < 3; gx++) {
         const c = gridChunks[gy * 3 + gx]!
         const packed = packChunkMeshesForWindow(c, windowBuildings)
-        allOpaque.push(...packed.opaque)
-        allGlass.push(...packed.glass)
+        for (let i = 0; i < packed.opaque.length; i++) allOpaque.push(packed.opaque[i]!)
+        for (let i = 0; i < packed.glass.length; i++) allGlass.push(packed.glass[i]!)
 
-        // Blit 128×128 floorTile into 384×384 stitchedFloor
+        // Zero-allocation 64-bit row blits (32 Float64s = 256 bytes per row for floorTile, moonTile, and bounceTile)
+        const srcFloorF64 = new Float64Array(c.floorTile.buffer, c.floorTile.byteOffset, 128 * 32)
         for (let row = 0; row < 128; row++) {
-          const dstRow = (gy * 128 + row) * 384 * 2 + gx * 128 * 2
-          const srcRow = row * 128 * 2
-          this.stitchedFloor.set(c.floorTile.subarray(srcRow, srcRow + 128 * 2), dstRow)
+          const dstOff = (gy * 128 + row) * 96 + gx * 32
+          const srcOff = row * 32
+          for (let k = 0; k < 32; k++) dstFloorF64[dstOff + k] = srcFloorF64[srcOff + k]!
         }
-        // Blit 256×256 moonTile into 768×768 stitchedMoon
+
+        const srcMoonF64 = new Float64Array(c.moonTile.buffer, c.moonTile.byteOffset, 256 * 32)
         for (let row = 0; row < 256; row++) {
-          const dstRow = (gy * 256 + row) * 768 + gx * 256
-          const srcRow = row * 256
-          this.stitchedMoon.set(c.moonTile.subarray(srcRow, srcRow + 256), dstRow)
+          const dstOff = (gy * 256 + row) * 96 + gx * 32
+          const srcOff = row * 32
+          for (let k = 0; k < 32; k++) dstMoonF64[dstOff + k] = srcMoonF64[srcOff + k]!
         }
-        // Blit 64×64 bounceTile into 192×192 stitchedBounce
+
+        const srcBounceF64 = new Float64Array(c.bounceTile.buffer, c.bounceTile.byteOffset, 64 * 32)
         for (let row = 0; row < 64; row++) {
-          const dstRow = (gy * 64 + row) * 192 * 4 + gx * 64 * 4
-          const srcRow = row * 64 * 4
-          this.stitchedBounce.set(c.bounceTile.subarray(srcRow, srcRow + 64 * 4), dstRow)
+          const dstOff = (gy * 64 + row) * 96 + gx * 32
+          const srcOff = row * 32
+          for (let k = 0; k < 32; k++) dstBounceF64[dstOff + k] = srcBounceF64[srcOff + k]!
         }
       }
     }

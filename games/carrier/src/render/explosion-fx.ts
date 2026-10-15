@@ -1204,19 +1204,16 @@ export class ExplosionFx {
     if (this.foamVerts) q.writeBuffer(this.foamBuf, 0, this.foamData, 0, this.foamVerts * FOAM_FLOATS)
     if (this.fxParticles.count > 0) {
       const f = this.renderer.currentFrame
-      const u = this.fxRenderer.uniforms
-      u.set(f.subarray(0, 16), 0)
-      u[16] = this.eye[0]!
-      u[17] = this.eye[1]!
-      u[18] = this.eye[2]!
-      u[19] = 0
       const sunW = f[FRAME.sunDir + 3]!
       const ambW = f[FRAME.sunColor + 3]!
       const scale = Math.max(0.28, sunW * 0.48 + ambW * 0.72)
-      u[20] = f[FRAME.sunColor]! * scale
-      u[21] = f[FRAME.sunColor + 1]! * scale
-      u[22] = f[FRAME.sunColor + 2]! * scale
-      u[23] = 0
+      this.fxRenderer.setFrame({
+        vp: f,
+        eye: this.eye,
+        debug: 0,
+        ambient: [f[FRAME.sunColor]! * scale, f[FRAME.sunColor + 1]! * scale, f[FRAME.sunColor + 2]! * scale],
+        lightCount: 0,
+      })
       this.fxRenderer.upload(this.fxParticles)
     }
   }

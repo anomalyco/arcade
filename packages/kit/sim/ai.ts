@@ -715,6 +715,10 @@ export class GridNav {
     return this.grid[gy * this.w + gx]!
   }
 
+  invalidateTileCache(): void {
+    this.invalidateChunkTileCache()
+  }
+
   private idx(p: Vec): number {
     const cx = clamp(Math.floor(p.x / this.cell), 0, this.w - 1)
     const cy = clamp(Math.floor(p.y / this.cell), 0, this.h - 1)

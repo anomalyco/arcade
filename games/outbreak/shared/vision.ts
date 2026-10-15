@@ -14,6 +14,9 @@ export class Vision {
   readonly rays = new Float32Array(POLAR_RAYS)
   readonly explored = new Uint8Array(FOG_SIZE * FOG_SIZE)
   readonly chunkExplored = new Map<string, Uint8Array>()
+  private readonly tilePool: Uint8Array[] = []
+  private readonly maxCachedTiles = 64
+  exploredCount = 0
   originX = 0
   originY = 0
   x = 0
@@ -43,7 +46,16 @@ export class Vision {
             const v = this.explored[wy * FOG_SIZE + (dx * 64 + lx)]!
             if (v > 0) {
               if (!tile) {
-                tile = new Uint8Array(64 * 64)
+                tile = this.tilePool.pop() ?? new Uint8Array(64 * 64)
+                tile.fill(0)
+                if (this.chunkExplored.size >= this.maxCachedTiles) {
+                  const oldest = this.chunkExplored.keys().next().value
+                  if (oldest !== undefined) {
+                    const ev = this.chunkExplored.get(oldest)
+                    if (ev) this.tilePool.push(ev)
+                    this.chunkExplored.delete(oldest)
+                  }
+                }
                 this.chunkExplored.set(key, tile)
               }
               tile[ly * 64 + lx] = v
@@ -56,23 +68,37 @@ export class Vision {
 
   private loadWindowFromChunks(): void {
     this.explored.fill(0)
+    let count = 0
     const baseCx = Math.round(this.originX / 32)
     const baseCy = Math.round(this.originY / 32)
     for (let dy = 0; dy < 3; dy++) {
       for (let dx = 0; dx < 3; dx++) {
-        const tile = this.chunkExplored.get(`${baseCx + dx},${baseCy + dy}`)
+        const key = `${baseCx + dx},${baseCy + dy}`
+        const tile = this.chunkExplored.get(key)
         if (!tile) continue
+        // Refresh LRU order
+        this.chunkExplored.delete(key)
+        this.chunkExplored.set(key, tile)
         for (let ly = 0; ly < 64; ly++) {
           const wy = dy * 64 + ly
           const rowOff = wy * FOG_SIZE + dx * 64
           const tileOff = ly * 64
           for (let lx = 0; lx < 64; lx++) {
-            this.explored[rowOff + lx] = tile[tileOff + lx]!
+            const v = tile[tileOff + lx]!
+            if (v > 0) {
+              this.explored[rowOff + lx] = v
+              count++
+            }
           }
         }
       }
     }
+    this.exploredCount = count
   }
+
+  private aimCos = 1
+  private aimSin = 0
+  private coneCos = Math.cos((DEFAULT_VISION.cone * Math.PI) / 360)
 
   update(
     x: number,
@@ -85,29 +111,64 @@ export class Vision {
     const ox = peek ? peek.eyeX : x
     const oy = peek ? peek.eyeY : y
     const oAim = peek ? peek.aim : aim
-    const effectiveSettings = peek
-      ? {
-          range: settings.range,
-          cone: Math.max(settings.cone, peek.cone),
-          awareness: Math.max(settings.awareness, peek.awareness),
-        }
-      : settings
-    this.x = ox; this.y = oy; this.aim = oAim; this.settings = effectiveSettings
+    const range = settings.range
+    const cone = peek ? Math.max(settings.cone, peek.cone) : settings.cone
+    const awareness = peek ? Math.max(settings.awareness, peek.awareness) : settings.awareness
+    this.x = ox
+    this.y = oy
+    this.aim = oAim
+    this.settings.range = range
+    this.settings.cone = cone
+    this.settings.awareness = awareness
+    const aimCos = Math.cos(oAim)
+    const aimSin = Math.sin(oAim)
+    const coneCos = Math.cos((cone * Math.PI) / 360)
+    this.aimCos = aimCos
+    this.aimSin = aimSin
+    this.coneCos = coneCos
+
     for (let i = 0; i < POLAR_RAYS; i++) {
-      const a = (i + .5) / POLAR_RAYS * TAU
-      this.rays[i] = Math.min(effectiveSettings.range, raycast(ox, oy, Math.cos(a), Math.sin(a), blockers, effectiveSettings.range))
+      const a = ((i + 0.5) / POLAR_RAYS) * TAU
+      this.rays[i] = Math.min(range, raycast(ox, oy, Math.cos(a), Math.sin(a), blockers, range))
     }
     let changed = false
-    const r = effectiveSettings.range
-    const minGy = Math.max(0, Math.floor((oy - this.originY - r) / FOG_CELL))
-    const maxGy = Math.min(FOG_SIZE, Math.ceil((oy - this.originY + r) / FOG_CELL))
-    const minGx = Math.max(0, Math.floor((ox - this.originX - r) / FOG_CELL))
-    const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + r) / FOG_CELL))
+    const r2 = range * range
+    const aware2 = awareness * awareness
+    const coneCos2 = coneCos * Math.abs(coneCos)
+    const minGy = Math.max(0, Math.floor((oy - this.originY - range) / FOG_CELL))
+    const maxGy = Math.min(FOG_SIZE, Math.ceil((oy - this.originY + range) / FOG_CELL))
+    const minGx = Math.max(0, Math.floor((ox - this.originX - range) / FOG_CELL))
+    const maxGx = Math.min(FOG_SIZE, Math.ceil((ox - this.originX + range) / FOG_CELL))
+    const baseWx = this.originX + 0.5 * FOG_CELL - ox
+    const baseWy = this.originY + 0.5 * FOG_CELL - oy
+    const rays = this.rays
+    const explored = this.explored
+    const invTauRays = POLAR_RAYS / TAU
+
     for (let gy = minGy; gy < maxGy; gy++) {
+      const dy = baseWy + gy * FOG_CELL
+      const dy2 = dy * dy
+      const rowOff = gy * FOG_SIZE
+      const dySin = dy * aimSin
       for (let gx = minGx; gx < maxGx; gx++) {
-        const idx = gy * FOG_SIZE + gx
-        if (!this.explored[idx] && this.visible(this.originX + (gx + .5) * FOG_CELL, this.originY + (gy + .5) * FOG_CELL)) {
-          this.explored[idx] = 255; changed = true
+        const idx = rowOff + gx
+        if (explored[idx]) continue
+        const dx = baseWx + gx * FOG_CELL
+        const d2 = dx * dx + dy2
+        if (d2 > r2) continue
+        if (d2 > aware2) {
+          const dot = dx * aimCos + dySin
+          if (coneCos >= 0 ? dot < 0 || dot * dot < d2 * coneCos2 : dot < 0 && dot * dot > d2 * -coneCos2) {
+            continue
+          }
+        }
+        const distance = Math.sqrt(d2)
+        const a = Math.atan2(dy, dx)
+        const ray = Math.floor((a < 0 ? a + TAU : a) * invTauRays) % POLAR_RAYS
+        if (distance <= rays[ray]! + 0.025) {
+          explored[idx] = 255
+          this.exploredCount++
+          changed = true
         }
       }
     }
@@ -115,12 +176,16 @@ export class Vision {
   }
 
   visible(x: number, y: number): boolean {
-    const dx = x - this.x, dy = y - this.y, distance = Math.hypot(dx, dy)
-    if (distance > this.settings.range) return false
-    const a = (Math.atan2(dy, dx) + TAU) % TAU
-    const ray = Math.floor(a / TAU * POLAR_RAYS) % POLAR_RAYS
-    if (distance > this.rays[ray]! + .025) return false
-    return distance <= this.settings.awareness || (dx * Math.cos(this.aim) + dy * Math.sin(this.aim)) / distance >= Math.cos(this.settings.cone * Math.PI / 360)
+    const dx = x - this.x
+    const dy = y - this.y
+    const d2 = dx * dx + dy * dy
+    const r = this.settings.range
+    if (d2 > r * r) return false
+    const distance = Math.sqrt(d2)
+    const a = Math.atan2(dy, dx)
+    const ray = Math.floor(((a < 0 ? a + TAU : a) / TAU) * POLAR_RAYS) % POLAR_RAYS
+    if (distance > this.rays[ray]! + 0.025) return false
+    return distance <= this.settings.awareness || (dx * this.aimCos + dy * this.aimSin) / distance >= this.coneCos
   }
 
   /**

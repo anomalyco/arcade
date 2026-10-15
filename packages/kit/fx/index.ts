@@ -1,15 +1,18 @@
 export { Particles, Emitter, PARTICLE_CAPACITY, type ParticleSpec, type ParticleKind } from "./particles"
 export {
   ParticleRenderer,
+  ParticleFrameStruct,
   particleShader,
   makeParticleShader,
   blackbodyFireWgsl,
+  type ParticleFrameInput,
+  type ParticleLightInput,
   type ParticleRendererOptions,
 } from "./particle-renderer"
 export { SmokeTrail, type SmokeSource } from "./smoke-trail"
 export { SmokeRenderer as TyreRenderer, tyreShader } from "./tyre-renderer"
 export { SmokeVolumes, GRID, VOLUMES, type Wall } from "./volume"
-export { VolumeRenderer } from "./volume-renderer"
+export { VolumeRenderer, VolumeFrameStruct, type VolumeFrameInput } from "./volume-renderer"
 export { volumeShader } from "./volume-shader"
 export {
   explosionDefaults,

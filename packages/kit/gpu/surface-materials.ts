@@ -1,5 +1,6 @@
 import { Rng } from "../sim/rng"
 import { DEFAULT_TEXTURE_MANIFEST, TEXTURE_LAYER, type TextureAssetId } from "../textures/manifest"
+import { wgslStruct } from "./wgsl"
 
 export type MaterialRecipeId =
   | "wood_planks"
@@ -486,24 +487,44 @@ export function importMaterialPreset(
   }
 }
 
-/** Pack a recipe's 12 parameters into a Float32Array (3 vec4f). */
-export function packMaterialParams(params: MaterialRecipeParams, out = new Float32Array(12), offset = 0): Float32Array {
-  out[offset + 0] = params.baseR
-  out[offset + 1] = params.baseG
-  out[offset + 2] = params.baseB
-  out[offset + 3] = params.roughness
-  out[offset + 4] = params.scale
-  out[offset + 5] = params.elementRatio
-  out[offset + 6] = params.irregularity
-  out[offset + 7] = params.grainScale
-  out[offset + 8] = params.colorVariation
-  out[offset + 9] = params.jointWidth
-  out[offset + 10] = params.wear
-  out[offset + 11] = params.macroVariation
-  return out
+export const MaterialRecipeStruct = wgslStruct("MaterialRecipe", {
+  baseR: "f32",
+  baseG: "f32",
+  baseB: "f32",
+  roughness: "f32",
+  scale: "f32",
+  elementRatio: "f32",
+  irregularity: "f32",
+  grainScale: "f32",
+  colorVariation: "f32",
+  jointWidth: "f32",
+  wear: "f32",
+  macroVariation: "f32",
+})
+
+export const SurfaceTexUniformsStruct = wgslStruct("SurfaceTexUniforms", {
+  enabled: "f32",
+  globalScale: "f32",
+  globalContrast: "f32",
+  globalRoughness: "f32",
+  rugStyle: "f32",
+  wallStyle: "f32",
+  floorStyle: "f32",
+  splitX: "f32",
+  recipeTex: "array<vec4f, 6>",
+  recipeExtra: "array<vec4f, 3>",
+})
+
+/** Pack a recipe's 12 parameters into a Float32Array (12 floats / 48 bytes). */
+export function packMaterialParams(
+  params: MaterialRecipeParams,
+  out: Float32Array = MaterialRecipeStruct.createBuffer(),
+  offset = 0,
+): Float32Array {
+  return MaterialRecipeStruct.pack(params, out as Float32Array<ArrayBuffer>, offset)
 }
 
-export const SURFACE_TEX_UNIFORM_FLOATS = 44
+export const SURFACE_TEX_UNIFORM_FLOATS = SurfaceTexUniformsStruct.floatCount
 
 export type SurfaceTexUniformInput = {
   /** 1 = textured + procedural, 0 = procedural fallback, 2 = A/B split (procedural < splitX, textured >= splitX) */
@@ -523,31 +544,31 @@ export type SurfaceTexUniformInput = {
  */
 export function packSurfaceTexUniforms(
   input: SurfaceTexUniformInput = {},
-  out = new Float32Array(SURFACE_TEX_UNIFORM_FLOATS),
+  out: Float32Array = SurfaceTexUniformsStruct.createBuffer(),
 ): Float32Array {
-  out[0] = input.enabled ?? 1
-  out[1] = input.globalScale ?? 1
-  out[2] = input.globalContrast ?? 1
-  out[3] = input.globalRoughness ?? 0
-  out[4] = input.rugStyle ?? 0
-  out[5] = input.wallStyle ?? 0
-  out[6] = input.floorStyle ?? 0
-  out[7] = input.splitX ?? 27.7
-
+  const recipeTex: number[] = []
+  const recipeExtra: number[] = []
   for (const id of MATERIAL_RECIPE_IDS) {
     const def = MATERIAL_RECIPES[id]
-    const idx = def.index
     const t = { ...def.textureDefaults, ...input.recipes?.[id] }
-    const baseOff = 8 + idx * 4
-    out[baseOff + 0] = t.textureLayer
-    out[baseOff + 1] = t.texScale
-    out[baseOff + 2] = (t.texRotation * Math.PI) / 180
-    out[baseOff + 3] = t.texContrast
-    const extraOff = 32 + idx * 2
-    out[extraOff + 0] = t.texRoughness
-    out[extraOff + 1] = t.texBlend
+    recipeTex.push(t.textureLayer, t.texScale, (t.texRotation * Math.PI) / 180, t.texContrast)
+    recipeExtra.push(t.texRoughness, t.texBlend)
   }
-  return out
+  return SurfaceTexUniformsStruct.pack(
+    {
+      enabled: input.enabled ?? 1,
+      globalScale: input.globalScale ?? 1,
+      globalContrast: input.globalContrast ?? 1,
+      globalRoughness: input.globalRoughness ?? 0,
+      rugStyle: input.rugStyle ?? 0,
+      wallStyle: input.wallStyle ?? 0,
+      floorStyle: input.floorStyle ?? 0,
+      splitX: input.splitX ?? 27.7,
+      recipeTex,
+      recipeExtra,
+    },
+    out as Float32Array<ArrayBuffer>,
+  )
 }
 
 // --- Deterministic CPU mirrors for testing & scatter generation ---
@@ -724,13 +745,24 @@ export function scatterClusteredGroundCover(options: {
   return out
 }
 
-function wgslVec4(a: number, b: number, c: number, d: number): string {
-  return `vec4f(${a.toFixed(4)}, ${b.toFixed(4)}, ${c.toFixed(4)}, ${d.toFixed(4)})`
-}
-
 function defaultRecipeStructWgsl(id: MaterialRecipeId): string {
   const d = MATERIAL_RECIPES[id].defaults
-  return `MaterialRecipe(${wgslVec4(d.baseR, d.baseG, d.baseB, d.roughness)}, ${wgslVec4(d.scale, d.elementRatio, d.irregularity, d.grainScale)}, ${wgslVec4(d.colorVariation, d.jointWidth, d.wear, d.macroVariation)})`
+  return `MaterialRecipe(${[
+    d.baseR,
+    d.baseG,
+    d.baseB,
+    d.roughness,
+    d.scale,
+    d.elementRatio,
+    d.irregularity,
+    d.grainScale,
+    d.colorVariation,
+    d.jointWidth,
+    d.wear,
+    d.macroVariation,
+  ]
+    .map(v => v.toFixed(4))
+    .join(", ")})`
 }
 
 /**
@@ -745,10 +777,10 @@ var<private> surfaceTime: f32;
 var<private> surfaceNormalShift: vec3f;
 var<private> surfaceAlpha: f32;
 
-struct MaterialRecipe {
-  u0: vec4f, // baseR, baseG, baseB, roughness
-  u1: vec4f, // scale, elementRatio, irregularity, grainScale
-  u2: vec4f, // colorVariation, jointWidth, wear, macroVariation
+${MaterialRecipeStruct.wgsl}
+
+fn recipeBaseColor(r: MaterialRecipe) -> vec3f {
+  return vec3f(r.baseR, r.baseG, r.baseB);
 }
 
 @group(0) @binding(10) var materialTexArray: texture_2d_array<f32>;
@@ -870,15 +902,15 @@ fn defaultMaterialRecipe(id: i32) -> MaterialRecipe {
 
 /** Recipe 0: Matte wood planks with staggered lengths, butt-joint AO, cathedral heartwood figure, and projected oak floorboards texture. */
 fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
+  let scale = max(0.25, r.scale);
   let boardWidth = 0.165 / scale;
-  let boardLen = max(0.35, r.u1.y) / scale;
-  let irreg = r.u1.z;
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let jWidth = r.u2.y;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let boardLen = max(0.35, r.elementRatio) / scale;
+  let irreg = r.irregularity;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let jWidth = r.jointWidth;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
 
   let row = floor(p.y / boardWidth);
   let v = fract(p.y / boardWidth);
@@ -920,21 +952,21 @@ fn evalWoodPlanks(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample
   let macroTone = surfaceNoise(p * 0.35 + vec2f(2.1, 5.7)) - 0.5;
   col *= 1.0 + macroTone * 0.18 * macroVar;
 
-  let localRough = clamp(r.u0.w + (1.0 - joints) * 0.12, 0.05, 1.0);
+  let localRough = clamp(r.roughness + (1.0 - joints) * 0.12, 0.05, 1.0);
   return SurfaceSample(col, roughnessToGloss(localRough, 0.035), localRough, joints);
 }
 
 /** Recipe 1: Irregular Voronoi cobblestone / stone pavers with projected stone texture, worn edges, and recessed dirt joints. */
 fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let stoneSize = max(0.15, r.u1.y);
+  let scale = max(0.25, r.scale);
+  let stoneSize = max(0.15, r.elementRatio);
   let cellScale = (1.0 / stoneSize) * scale;
-  let irreg = r.u1.z;
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let jWidth = r.u2.y;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let irreg = r.irregularity;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let jWidth = r.jointWidth;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
 
   let nWarp = surfaceNoise(p * 0.85 + vec2f(1.7, 4.1)) - 0.5;
   let q = p * cellScale + vec2f(nWarp, -nWarp * 0.8) * 0.38 * irreg;
@@ -991,17 +1023,17 @@ fn evalCobblestone(p: vec2f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSampl
   var col = mix(dirtCol, stoneCol, stoneMask);
   col *= 1.0 - (macroNoise - 0.48) * macroVar * 0.22;
 
-  let localRough = clamp(r.u0.w + (1.0 - stoneMask) * 0.12, 0.05, 1.0);
+  let localRough = clamp(r.roughness + (1.0 - stoneMask) * 0.12, 0.05, 1.0);
   return SurfaceSample(col, roughnessToGloss(localRough, 0.05), localRough, mix(0.45, 1.0, bevel * stoneMask));
 }
 
 /** Recipe 2: Plaster & wallpapered wall with 1970s lower walnut wainscot paneling, chair-rail molding, and upper trowel-stippled plaster/wallpaper. */
 fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let scale = max(0.25, r.scale);
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
   surfaceNormalShift = vec3f(0.0);
 
   let uv = vec2f(world.x + world.z, world.y);
@@ -1012,7 +1044,7 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
   let inWainscot = world.y > 0.13 && world.y < 0.96 && abs(normal.y) < 0.35;
   let chairRailBand = smoothstep(0.91, 0.95, world.y) * (1.0 - smoothstep(0.96, 1.01, world.y)) * step(abs(normal.y), 0.35);
   var col = baseTint;
-  var localRough = r.u0.w;
+  var localRough = r.roughness;
 
   if (inWainscot) {
     let boardPitch = 0.14 / scale;
@@ -1028,7 +1060,7 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
     let underTone = baseTint * vec3f(0.84, 0.78, 0.68);
     col = mix(baseTint, underTone, exposedPlaster * (0.55 + 0.45 * colVar));
     col *= 1.0 + stipple * (1.0 + 0.35 * exposedPlaster);
-    localRough = clamp(r.u0.w + exposedPlaster * 0.08, 0.05, 1.0);
+    localRough = clamp(r.roughness + exposedPlaster * 0.08, 0.05, 1.0);
   }
 
   // Moulded wooden chair rail at y ~ 0.95m
@@ -1043,17 +1075,17 @@ fn evalPlasterWall(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialReci
 
 /** Recipe 3: Asphalt road & concrete sidewalk slabs with projected aggregate/concrete textures, tar seams, and worn joints. */
 fn evalAsphaltConcrete(p: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let slabSize = max(0.4, r.u1.y) / scale;
-  let irreg = r.u1.z;
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let jWidth = r.u2.y;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let scale = max(0.25, r.scale);
+  let slabSize = max(0.4, r.elementRatio) / scale;
+  let irreg = r.irregularity;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let jWidth = r.jointWidth;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
 
   var col = baseTint;
-  var localRough = r.u0.w;
+  var localRough = r.roughness;
   var cavity = 1.0;
 
   if (isConcrete) {
@@ -1117,13 +1149,13 @@ fn evalMulchBed(p: vec2f, baseTint: vec3f, scale: f32, gScale: f32) -> SurfaceSa
 
 /** Recipe 4: Clump-correlated lawn turf with impostor blade-tuft relief, mowed/overgrown zones & wind waves. */
 fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let clumpSize = max(0.25, r.u1.y) / scale;
-  let irreg = r.u1.z;
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let scale = max(0.25, r.scale);
+  let clumpSize = max(0.25, r.elementRatio) / scale;
+  let irreg = r.irregularity;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
   surfaceNormalShift = vec3f(0.0);
 
   if (isMulchBed) {
@@ -1194,22 +1226,22 @@ fn evalGrassSoil(p: vec2f, baseTint: vec3f, isMulchBed: bool, r: MaterialRecipe)
   surfaceNormalShift = vec3f(nx, 0.0, nz);
 
   let cavity = clamp(mix(0.48, 1.0, bladeCrest) * (0.82 + 0.18 * overgrownMask), 0.42, 1.0);
-  let localRough = clamp(r.u0.w - gustWave * 0.10 - bladeCrest * 0.06, 0.48, 0.96);
+  let localRough = clamp(r.roughness - gustWave * 0.10 - bladeCrest * 0.06, 0.48, 0.96);
   return SurfaceSample(col, roughnessToGloss(localRough, 0.04), localRough, cavity);
 }
 
 /** Recipe 5: Clustered foliage canopy with procedural leaf-cluster platelets, inter-leaf gaps, and spherized dome shading. */
 fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRecipe) -> SurfaceSample {
-  let scale = max(0.25, r.u1.x);
-  let clusterSize = max(0.2, r.u1.y) / scale;
-  let gScale = max(0.25, r.u1.w);
-  let colVar = r.u2.x;
-  let wear = r.u2.z;
-  let macroVar = r.u2.w;
+  let scale = max(0.25, r.scale);
+  let clusterSize = max(0.2, r.elementRatio) / scale;
+  let gScale = max(0.25, r.grainScale);
+  let colVar = r.colorVariation;
+  let wear = r.wear;
+  let macroVar = r.macroVariation;
   surfaceNormalShift = vec3f(0.0);
 
   let n0 = surfaceNoise(world.xz * 2.1 + 1.3) - 0.5;
-  let warp = vec3f(n0, 0.0, -n0 * 0.8) * clusterSize * 0.9 * r.u1.z;
+  let warp = vec3f(n0, 0.0, -n0 * 0.8) * clusterSize * 0.9 * r.irregularity;
   let clusterCell = floor((world + warp) / clusterSize);
   let hCluster = hash2(clusterCell.xz + vec2f(clusterCell.y * 3.7, 11.3)) - 0.5;
   let hHue = fract((hCluster + 0.5) * 13.7) - 0.5;
@@ -1245,7 +1277,7 @@ fn evalFoliageCanopy(world: vec3f, normal: vec3f, baseTint: vec3f, r: MaterialRe
   ) * leafBumpAtten;
 
   let cavity = clamp(mix(0.54, 1.0, topMask) * (1.0 - 0.32 * leafGap), 0.38, 1.0);
-  return SurfaceSample(col, roughnessToGloss(r.u0.w, 0.05), r.u0.w, cavity);
+  return SurfaceSample(col, roughnessToGloss(r.roughness, 0.05), r.roughness, cavity);
 }
 
 /**
@@ -1531,19 +1563,14 @@ export const resolveSurfaceMaterialWgsl = ""
  * (shiny/gridded floorboards, Cartesian gridded pavers, flat plaster walls, uniform asphalt, blotchy grass).
  */
 export const legacyMaterialComparisonWgsl = /* wgsl */ `
-struct SurfaceTexUniforms {
-  global: vec4f,
-  styles: vec4f,
-  recipeTex: array<vec4f, 6>,
-  recipeExtra: array<vec4f, 3>,
-}
+${SurfaceTexUniformsStruct.wgsl}
 
 @group(0) @binding(12) var<uniform> surfaceTexUniforms: SurfaceTexUniforms;
 
 fn surfaceTexEnabledAt(worldX: f32) -> bool {
-  let mode = surfaceTexUniforms.global.x;
+  let mode = surfaceTexUniforms.enabled;
   if (mode > 1.5) {
-    return worldX >= surfaceTexUniforms.styles.w;
+    return worldX >= surfaceTexUniforms.splitX;
   }
   return mode > 0.5;
 }
@@ -1607,13 +1634,13 @@ fn evalRecipeById(recipeId: i32, world: vec3f, normal: vec3f, baseTint: vec3f, r
       var uv0 = world.xz;
       if (an.x > an.y && an.x >= an.z) { uv0 = vec2f(world.z, world.y); }
       else if (an.z > an.y && an.z > an.x) { uv0 = world.xy; }
-      let effScale = tc.y * max(0.25, r.u1.x) * surfaceTexUniforms.global.y;
+      let effScale = tc.y * max(0.25, r.scale) * surfaceTexUniforms.globalScale;
       let uv = vec2f(uv0.x * c - uv0.y * sn, uv0.x * sn + uv0.y * c) * effScale;
       let lod = clamp(log2(max(surfaceFootprint * effScale * 256.0, 1.0)) - 0.35, 0.0, 8.0);
       let tex = textureSampleLevel(materialTexArray, materialSampler, uv, layer, lod);
       let refLin = textureLayerRefLinear(layer);
       s.albedo = modulateFast(s.albedo, tex, refLin, te.y * tc.w);
-      s.roughness = clamp(mix(s.roughness, tex.a, 0.55 * te.y) + te.x + surfaceTexUniforms.global.w, 0.05, 0.99);
+      s.roughness = clamp(mix(s.roughness, tex.a, 0.55 * te.y) + te.x + surfaceTexUniforms.globalRoughness, 0.05, 0.99);
       s.gloss = roughnessToGloss(s.roughness, 0.04);
     }
   }
