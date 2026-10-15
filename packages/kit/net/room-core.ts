@@ -246,8 +246,13 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
   close(conn: Conn): void {
     const state = this.conns.get(conn)
     this.conns.delete(conn)
-    if (state?.id) this.seats.leave(state.id)
+    if (!state?.id) return
+    this.seats.leave(state.id)
+    this.dropped(state.id)
   }
+
+  /** A seated player's socket closed; the seat is held for `graceMs` (`leave` follows if they don't come back). */
+  protected dropped(_id: string): void {}
 
   /** Kicks players who haven't touched the controls for `idleKickMs` while able to play, with a countdown at the end. */
   private idle(now: number): void {

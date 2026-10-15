@@ -60,11 +60,11 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — | — | — |
 | `sim/flow-field` | Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles | — | — | Yes | — | — | — | — | — |
 | `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — | — | — |
-| `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — | Yes | — |
+| `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
 | `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | — | Yes | — |
 | `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | — | — | — | Yes | — |
-| `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | — | Yes | — | — | — | — | Yes | — |
-| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | — | Yes | — |
+| `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | — | Yes | — | — | — | — | Yes | Yes |
+| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
 | `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
