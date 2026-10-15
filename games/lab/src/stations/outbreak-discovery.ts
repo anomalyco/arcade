@@ -19,7 +19,7 @@ export default defineStation({
   title: "Outbreak: Discovered, Not Told",
   summary:
     "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, and prompt words that fade once you know them. Tunables are in the Discovery group.",
-  order: 114,
+  order: 121,
   prop: "panels",
   color: 0xd8b878,
   status: "live",
