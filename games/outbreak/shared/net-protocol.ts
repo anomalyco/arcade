@@ -378,6 +378,8 @@ export type SnapshotEncodeOptions = {
   viewerCenter?: ChunkCoord
   /** Last snapshot acknowledged by this recipient (enables delta compression against acked state). */
   baseSnap?: SharedSnapshot
+  /** Canonical snapshot emitted for this bubble on the previous snapshot tick, so throttling is independent of `baseSnap`. */
+  prevBubbleSnap?: SharedSnapshot
   /** Monotonic snapshot counter (0, 1, 2, …) for priority-accumulator cadence scheduling. */
   snapIndex?: number
   /** Interest bubble and stride configuration. */
@@ -551,14 +553,17 @@ export function encodeShared(
     })
   }
 
-  // 2. Filter & quantize zombies in the recipient's interest bubble
-  const baseZombieMap = isDelta ? new Map(baseSnap.zombies.map((z) => [z.id, z])) : null
+  // 2. Filter & quantize zombies in the recipient's interest bubble.
+  // Use `prevBubbleSnap` (when provided) for cadence holdback so the target `emittedZombies` at `tick` is identical
+  // for every client in the bubble even when two clients have acknowledged different `baseSnap` ticks over the WAN.
+  const throttleBase = options?.prevBubbleSnap ?? (isDelta ? baseSnap : undefined)
+  const throttleZombieMap = throttleBase ? new Map(throttleBase.zombies.map((z) => [z.id, z])) : null
   const emittedZombies: ZombieState[] = []
   for (const a of sim.ai.agents) {
     if (viewerCenter && !inInterestBubble(a.x, a.y, bubbleCx, bubbleCy, interest.bubbleHalfExtent)) continue
     const q = quantizeZombie(a, sim.town.seed)
-    const prev = baseZombieMap?.get(q.id)
-    if (prev && isDelta) {
+    const prev = throttleZombieMap?.get(q.id)
+    if (prev && (isDelta || options?.prevBubbleSnap)) {
       const urgent =
         q.state !== prev.state ||
         q.hp !== prev.hp ||

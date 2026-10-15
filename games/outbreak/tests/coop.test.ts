@@ -427,6 +427,32 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
     const dec2 = decodeShared(snap2Bytes, 7, clientHist)
     expect(dec2.zombies).toEqual(out2.snap!.zombies)
     expect(dec2.doors).toEqual(out2.snap!.doors)
+
+    // Verify two clients with different acked baseSnap ticks (e.g. 3 vs 6) reconstruct identical zombies at tick 9
+    for (let i = 0; i < 3; i++) {
+      sim.stepSurvivor(slot, { mx: 0, my: 1, aim: 1.0, interact: false }, TICK_DT)
+      sim.stepWorld(TICK_DT, 120)
+    }
+    serverHist.record(6, out2.snap!)
+    const clientHistLag = new AckHistory<SharedSnapshot>(16)
+    clientHistLag.record(3, dec1)
+    const out3A: { snap?: SharedSnapshot } = {}
+    const snap3From6 = encodeShared(sim, 9, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      baseSnap: serverHist.get(6),
+      prevBubbleSnap: out2.snap,
+      snapIndex: 3,
+      outSnapshot: out3A,
+    })
+    const snap3From3 = encodeShared(sim, 9, shooters, undefined, {
+      viewerCenter: { cx: 1, cy: 1 },
+      baseSnap: serverHist.get(3),
+      prevBubbleSnap: out2.snap,
+      snapIndex: 3,
+    })
+    const dec3From6 = decodeShared(snap3From6, 7, clientHist)
+    const dec3From3 = decodeShared(snap3From3, 7, clientHistLag)
+    expect(dec3From3.zombies).toEqual(dec3From6.zombies)
   })
 
   test("per-recipient interest filter sends only zombies inside each survivor's 1 km-separated bubble", () => {
