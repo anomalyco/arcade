@@ -431,6 +431,7 @@ export class SurvivorBot {
   private cachedWalls: Rect[] = []
   private cachedClosedDoors: Rect[] = []
   private stepCounter = 0
+  private kiteLoopIndex = 0
 
   private lastPosX = 0
   private lastPosY = 0
@@ -739,7 +740,7 @@ export class SurvivorBot {
       if (now - this.recentSounds[i]!.time > 4.0) this.recentSounds.splice(i, 1)
     }
     const hearingConfig = {
-      hearingScale: clamp(0.75 + this.skill.awarenessRadius * 0.12, 0.7, 1.4),
+      hearingScale: clamp(0.75 + this.skill.awarenessRadius * 0.08, 0.7, 1.15),
       wallAttenuation: 0.55,
       doorAttenuation: 0.75,
     }
@@ -1081,9 +1082,10 @@ export class SurvivorBot {
   private pickOpenKitePoint(
     px: number,
     py: number,
-    threats: readonly PerceivedThreat[],
+    _threats: readonly PerceivedThreat[],
   ): { x: number; y: number; label: string } {
-    const candidates: readonly { x: number; y: number; label: string }[] = [
+    // Clockwise avenue patrol loop along wide streets (x=44, y=17, x=76, y=73)
+    const loopWaypoints: readonly { x: number; y: number; label: string }[] = [
       { x: 44.0, y: 44.0, label: "Central Crossroads" },
       { x: 44.0, y: 17.0, label: "North Avenue" },
       { x: 76.0, y: 17.0, label: "North-East Avenue" },
@@ -1091,37 +1093,27 @@ export class SurvivorBot {
       { x: 76.0, y: 73.0, label: "South-East Avenue" },
       { x: 44.0, y: 73.0, label: "South Avenue" },
     ]
-    let best = candidates[0]!
-    let bestScore = -Infinity
-    for (const c of candidates) {
-      const distToSelf = Math.hypot(c.x - px, c.y - py)
-      // Prefer a reachable open intersection (not already standing on it, not across the entire town)
-      let score = distToSelf < 7 ? -22 : 26 - Math.abs(distToSelf - 26) * 0.55
-      for (const z of threats) {
-        if (!z.actionable) continue
-        const dz = Math.hypot(c.x - z.x, c.y - z.y)
-        if (dz < 14) {
-          score -= (14 - dz) * 2.2
-        }
-        // Penalize running directly through a close threat toward the waypoint
-        if (z.distance < 8 && distToSelf > 1) {
-          const toWay = Math.atan2(c.y - py, c.x - px)
-          const toZ = Math.atan2(z.y - py, z.x - px)
-          const ang = Math.abs(angleDiff(toWay, toZ))
-          if (ang < 0.75) {
-            score -= (0.75 - ang) * 28
-          }
+    const isKiting =
+      this.currentIntent === "flee-horde" ||
+      this.currentIntent === "kite-shoot" ||
+      this.currentIntent === "reload-cover"
+    if (!isKiting) {
+      let bestIdx = 0
+      let bestDist = Infinity
+      for (let i = 0; i < loopWaypoints.length; i++) {
+        const d = Math.hypot(loopWaypoints[i]!.x - px, loopWaypoints[i]!.y - py)
+        if (d < bestDist) {
+          bestDist = d
+          bestIdx = i
         }
       }
-      if (this.skill.decisionNoise > 0) {
-        score += (this.rng.next() - 0.5) * 2 * this.skill.decisionNoise * 18
-      }
-      if (score > bestScore) {
-        bestScore = score
-        best = c
-      }
+      this.kiteLoopIndex = bestIdx
     }
-    return best
+    const cur = loopWaypoints[this.kiteLoopIndex % loopWaypoints.length]!
+    if (Math.hypot(cur.x - px, cur.y - py) < 3.2) {
+      this.kiteLoopIndex = (this.kiteLoopIndex + 1) % loopWaypoints.length
+    }
+    return loopWaypoints[this.kiteLoopIndex % loopWaypoints.length]!
   }
 
   private findBarricadeCandidate(
@@ -1182,9 +1174,14 @@ export class SurvivorBot {
       world.progression.ledger.count(`${this.actorId}/pack`, "crowbar") > 0
 
     const otherBotTargets = new Set<string>()
+    const hereId = insideBuildingAt(world.town, px, py)?.id ?? null
     for (const c of this.knownContainers.values()) {
       if (c.searched || c.empty || now < c.unreachableUntil) continue
       if (otherBotTargets.has(c.id)) continue
+      // Once the opening calm ends (t > 65s), avoid entering new indoor buildings from outside if threats are known
+      if (now > 65 && c.buildingId && hereId !== c.buildingId && this.perceivedThreats.length > 0) {
+        continue
+      }
       if (!hasKeyOrCrowbar && (c.buildingId === "hardware" || c.buildingId === "pharmacy")) {
         const roomDoor = world.town.doors.find((d) => d.id === `${c.buildingId}-room`)
         const splitY = c.buildingId === "hardware" ? 28.5 : 59.5
@@ -1212,59 +1209,39 @@ export class SurvivorBot {
   }
 
   private pickExploreTarget(world: BotWorldView, px: number, py: number): { x: number; y: number; label: string } {
-    // 1. Check buildings in the current town that still have unsearched containers or haven't been visited
-    const candidateBuildings: { b: Building; x: number; y: number; score: number }[] = []
-    for (const b of world.town.buildings) {
-      const cx = (b.rect[0] + b.rect[2]) * 0.5
-      const cy = (b.rect[1] + b.rect[3]) * 0.5
-      const key = `b:${b.id}`
-      const visited = this.exploredWaypoints.has(key)
-      if (Math.hypot(cx - px, cy - py) < 5.5) {
-        this.exploredWaypoints.add(key)
-        continue
+    // 1. During the opening calm, check buildings in the current town that still have unsearched containers
+    if (world.time < 65) {
+      const candidateBuildings: { b: Building; x: number; y: number; score: number }[] = []
+      for (const b of world.town.buildings) {
+        const cx = (b.rect[0] + b.rect[2]) * 0.5
+        const cy = (b.rect[1] + b.rect[3]) * 0.5
+        const key = `b:${b.id}`
+        const visited = this.exploredWaypoints.has(key)
+        if (Math.hypot(cx - px, cy - py) < 5.5) {
+          this.exploredWaypoints.add(key)
+          continue
+        }
+        const unsearchedInBuilding = world.progression.containers.filter(
+          (c) => c.buildingId === b.id && !c.searched && !this.knownContainers.get(c.id)?.searched,
+        ).length
+        if (visited && unsearchedInBuilding === 0) continue
+        const d = Math.hypot(cx - px, cy - py)
+        const archetypeBonus = b.kind === "hardware" ? 18 : b.kind === "pharmacy" ? 15 : 8
+        const score = (visited ? 0 : 25) + unsearchedInBuilding * 10 + archetypeBonus - d * 0.45
+        const frontDoor = world.town.doors.find((door) => door.id === `${b.id}-front`)
+        const tx = frontDoor ? (frontDoor.rect[0] + frontDoor.rect[2]) * 0.5 : cx
+        const ty = frontDoor ? (frontDoor.rect[1] + frontDoor.rect[3]) * 0.5 - 1.2 : cy
+        candidateBuildings.push({ b, x: tx, y: ty, score })
       }
-      const unsearchedInBuilding = world.progression.containers.filter(
-        (c) => c.buildingId === b.id && !c.searched && !this.knownContainers.get(c.id)?.searched,
-      ).length
-      if (visited && unsearchedInBuilding === 0) continue
-      const d = Math.hypot(cx - px, cy - py)
-      const archetypeBonus = b.kind === "hardware" ? 18 : b.kind === "pharmacy" ? 15 : 8
-      const score = (visited ? 0 : 25) + unsearchedInBuilding * 10 + archetypeBonus - d * 0.45
-      const frontDoor = world.town.doors.find((door) => door.id === `${b.id}-front`)
-      const tx = frontDoor ? (frontDoor.rect[0] + frontDoor.rect[2]) * 0.5 : cx
-      const ty = frontDoor ? (frontDoor.rect[1] + frontDoor.rect[3]) * 0.5 - 1.2 : cy
-      candidateBuildings.push({ b, x: tx, y: ty, score })
-    }
-    if (candidateBuildings.length > 0) {
-      candidateBuildings.sort((a, b) => b.score - a.score)
-      const pick = candidateBuildings[0]!
-      return { x: pick.x, y: pick.y, label: `Explore ${pick.b.kind} (${pick.b.id})` }
+      if (candidateBuildings.length > 0) {
+        candidateBuildings.sort((a, b) => b.score - a.score)
+        const pick = candidateBuildings[0]!
+        return { x: pick.x, y: pick.y, label: `Explore ${pick.b.kind} (${pick.b.id})` }
+      }
     }
 
-    // 2. Explore outward into neighboring chunks along the road network
-    const waypoints: readonly { x: number; y: number; label: string }[] = [
-      { x: 26.7, y: 60.0, label: "Elm House" },
-      { x: 59.5, y: 34.0, label: "Hardware Store" },
-      { x: 59.5, y: 62.0, label: "Pharmacy" },
-      { x: 44.0, y: 44.0, label: "Central Crossroads" },
-      { x: 44.0, y: 18.0, label: "North Avenue" },
-      { x: 78.0, y: 44.0, label: "East District" },
-      { x: 16.0, y: 44.0, label: "West Street" },
-      { x: 44.0, y: 78.0, label: "South Avenue" },
-    ]
-    for (let i = 0; i < waypoints.length; i++) {
-      const wp = waypoints[(i + this.slotIndex * 2) % waypoints.length]!
-      const key = `wp:${Math.round(wp.x)}:${Math.round(wp.y)}`
-      if (Math.hypot(wp.x - px, wp.y - py) < 5.0) {
-        this.exploredWaypoints.add(key)
-        continue
-      }
-      if (!this.exploredWaypoints.has(key)) {
-        return wp
-      }
-    }
-    this.exploredWaypoints.clear()
-    return waypoints[0]!
+    // 2. Patrol along the wide avenue network
+    return this.pickOpenKitePoint(px, py, this.perceivedThreats)
   }
 
   private selectIntent(
@@ -1304,13 +1281,12 @@ export class SurvivorBot {
       })
     }
 
-    // 2. FLEE HORDE: outnumbered, out of ammo with threats nearby, or indoors with approaching threats
-    const hordeThreshold = Math.max(2, Math.round(4.2 - this.skill.panicUnderPressure * 1.8))
+    // 2. FLEE HORDE: outnumbered, out of ammo with active chasers nearby, or indoors with approaching threats
     if (
-      chaserCount >= hordeThreshold ||
-      (nearestDist <= 14.5 && totalAmmo === 0) ||
-      (p.health < 35 && nearestDist < 8.5) ||
-      (hereBuilding && nearestDist < 11.5)
+      chaserCount >= 2 ||
+      (chaserCount >= 1 && nearestDist <= 9.5 && totalAmmo === 0) ||
+      (p.health < 45 && nearestDist < 9.5) ||
+      (hereBuilding && nearestDist < 12.0)
     ) {
       const kitePt = this.pickOpenKitePoint(p.x, p.y, threats)
       candidates.push({
@@ -1327,17 +1303,17 @@ export class SurvivorBot {
     }
 
     // 3. FIGHT MELEE / SHOVE: zombie in close range or conserving ammo on 1 staggered/isolated zombie
-    if (nearestThreat && nearestDist <= 3.6) {
+    if (nearestThreat && nearestDist <= 3.2) {
       const preferMeleeSaveAmmo =
         chaserCount <= 1 &&
         Boolean(meleeWeapon) &&
-        p.health > 45 &&
-        (this.skill.ammoDiscipline > 0.55 || totalAmmo <= 4)
-      const inShoveRange = nearestDist <= 2.15
-      if (inShoveRange || preferMeleeSaveAmmo || totalAmmo === 0) {
+        p.health > 55 &&
+        totalAmmo <= 3
+      const inShoveRange = nearestDist <= 1.85 && chaserCount <= 2
+      if (inShoveRange || preferMeleeSaveAmmo || (totalAmmo === 0 && chaserCount <= 1)) {
         candidates.push({
           intent: "fight-melee",
-          score: (inShoveRange ? 86 : 74) + (meleeWeapon ? 8 : 0) + noise(),
+          score: (inShoveRange ? 84 : 74) + (meleeWeapon ? 6 : 0) + noise(),
           reason: meleeWeapon
             ? `Striking closest zombie (${nearestDist.toFixed(1)}m) with ${meleeWeapon.item}`
             : `Shoving zombie back (${nearestDist.toFixed(1)}m)`,
@@ -1378,7 +1354,7 @@ export class SurvivorBot {
 
     // 6. WORKBENCH & RESEARCH: has parts in pack or researchable recipe at known bench
     const benchSite = this.knownBenches.get("bench:ash") ?? [...this.knownBenches.values()][0]
-    if (benchSite && nearestDist > 5.0) {
+    if (benchSite && chaserCount === 0 && nearestDist > 9.0) {
       const researchable = this.canResearchAnyAtBench(world, benchSite.id)
       const hasPart = this.hasWorkbenchPartInPack(world)
       const benchLight = world.progression.benchLight(
@@ -1476,8 +1452,9 @@ export class SurvivorBot {
       }
     }
 
-    // 11. LOOT CONTAINER / DROP (only when no immediate close threat)
-    if (nearestDist > (totalAmmo === 0 ? 11.5 : 5.2)) {
+    // 11. LOOT CONTAINER / DROP (only when no active chasers and no immediate close threat)
+    const minLootSafeDist = 6.5 + (1 - this.skill.decisionNoise) * 5.0
+    if (chaserCount === 0 && nearestDist > (totalAmmo === 0 ? 12.0 : minLootSafeDist)) {
       const lootTarget = this.findBestLootCandidate(world, p.x, p.y)
       if (lootTarget) {
         candidates.push({
@@ -1610,7 +1587,8 @@ export class SurvivorBot {
     const strikeRange =
       SHOVE_RANGE + (meleeWeapon?.item === "spiked-board" ? 0.32 : meleeWeapon ? 0.22 : 0)
     const canReflexStrike =
-      !panicking || (nearest?.distance !== undefined && nearest.distance <= 1.55)
+      !p.exhausted &&
+      (!panicking || (nearest?.distance !== undefined && nearest.distance <= 1.55))
     let meleeLockedAim = false
     if (
       nearest &&
@@ -1624,7 +1602,12 @@ export class SurvivorBot {
       cmd.aim = this.smoothedAim
       if (Math.abs(angleDiff(this.smoothedAim, aimToZ)) <= 1.05) {
         cmd.melee = true
-        if (meleeWeapon && hotbar?.selected === meleeWeapon.slotIndex) {
+        if (
+          meleeWeapon &&
+          hotbar?.selected === meleeWeapon.slotIndex &&
+          p.meleePhase === "idle" &&
+          p.stamina > 0.48
+        ) {
           cmd.fire = true
         }
         meleeLockedAim = true
@@ -1663,19 +1646,30 @@ export class SurvivorBot {
         cmd.aim = this.smoothedAim
 
         const strikeRange = SHOVE_RANGE + (meleeWeapon?.item === "spiked-board" ? 0.3 : 0.15)
-        if (nearest.distance > strikeRange * 0.88 && p.shoveCooldown <= 0.1) {
+        if (nearest.distance > strikeRange * 0.92 && p.shoveCooldown <= 0.05 && p.meleePhase === "idle") {
           // Step in to land the blow
-          cmd.mx = (nearest.x - p.x) / Math.max(0.1, nearest.distance)
-          cmd.my = (nearest.y - p.y) / Math.max(0.1, nearest.distance)
-        } else if (nearest.distance < 1.35 || p.shoveCooldown > 0.1) {
+          cmd.mx = ((nearest.x - p.x) / Math.max(0.1, nearest.distance)) * kiteThrottle
+          cmd.my = ((nearest.y - p.y) / Math.max(0.1, nearest.distance)) * kiteThrottle
+        } else {
           // Step back after swinging so we don't trade hits
           const kite = this.computeKiteVector(world.town, p.x, p.y, threats)
-          cmd.mx = kite.mx
-          cmd.my = kite.my
+          cmd.mx = kite.mx * kiteThrottle
+          cmd.my = kite.my * kiteThrottle
         }
-        if (nearest.distance <= strikeRange && Math.abs(angleDiff(this.smoothedAim, aimToZ)) <= 0.85) {
+        if (
+          nearest.distance <= strikeRange &&
+          !p.exhausted &&
+          Math.abs(angleDiff(this.smoothedAim, aimToZ)) <= 0.85
+        ) {
           cmd.melee = true
-          cmd.fire = true
+          if (
+            meleeWeapon &&
+            hotbar?.selected === meleeWeapon.slotIndex &&
+            p.meleePhase === "idle" &&
+            p.stamina > 0.42
+          ) {
+            cmd.fire = true
+          }
         }
         return cmd
       }
@@ -1692,20 +1686,17 @@ export class SurvivorBot {
         }
         const kitePt = this.pickOpenKitePoint(p.x, p.y, threats)
         const navMove = this.followPathTo(dt, world, slot, kitePt.x, kitePt.y, true, false)
-        if (nearest.distance < 8.5) {
-          const kite = this.computeKiteVector(world.town, p.x, p.y, threats)
-          const blend = nearest.distance < 3.4 ? 0.38 : 0.15
-          const bx = navMove.mx * (1 - blend) + kite.mx * blend
-          const by = navMove.my * (1 - blend) + kite.my * blend
-          const len = Math.hypot(bx, by) || 1
-          cmd.mx = (bx / len) * kiteThrottle
-          cmd.my = (by / len) * kiteThrottle
-          cmd.interact = navMove.interact
-          cmd.sprint = this.shouldSprint(p, nearest.distance < 2.6 || panicking, now)
-        } else if (nearest.distance > 12.5) {
-          cmd.mx = ((nearest.x - p.x) / nearest.distance) * kiteThrottle
-          cmd.my = ((nearest.y - p.y) / nearest.distance) * kiteThrottle
-        }
+        const kite = this.computeKiteVector(world.town, p.x, p.y, threats)
+        const blend = nearest.distance < 3.4 ? 0.38 : 0.15
+        const bx = navMove.mx * (1 - blend) + kite.mx * blend
+        const by = navMove.my * (1 - blend) + kite.my * blend
+        const len = Math.hypot(bx, by) || 1
+        cmd.mx = (bx / len) * kiteThrottle
+        cmd.my = (by / len) * kiteThrottle
+        cmd.interact = navMove.interact
+        cmd.interactHeld = navMove.interactHeld
+        cmd.jump = navMove.jump
+        cmd.sprint = this.shouldSprint(p, nearest.distance < 2.6 || panicking, now)
 
         if (!meleeLockedAim) {
           const trueAim = Math.atan2(nearest.y - p.y, nearest.x - p.x)
@@ -1714,7 +1705,9 @@ export class SurvivorBot {
         }
 
         const trueAim = Math.atan2(nearest.y - p.y, nearest.x - p.x)
-        const maxFireDist = panicking ? PISTOL_RANGE * 0.85 : 14.5 - this.skill.ammoDiscipline * 3.5
+        const maxFireDist = panicking
+          ? PISTOL_RANGE * 0.75
+          : 5.4 + (1 - this.skill.ammoDiscipline) * 5.2
         const aimTolerance =
           0.11 + (1 - this.skill.ammoDiscipline) * 0.16 + (panicking ? 0.14 : 0)
         const aligned = Math.abs(angleDiff(this.smoothedAim, trueAim)) <= aimTolerance
@@ -1751,14 +1744,14 @@ export class SurvivorBot {
         const len = Math.hypot(bx, by) || 1
         cmd.mx = (bx / len) * kiteThrottle
         cmd.my = (by / len) * kiteThrottle
-        cmd.sprint = this.shouldSprint(p, true, now)
+        cmd.sprint = this.shouldSprint(p, Boolean(nearest && nearest.distance < 2.6) || panicking, now)
         cmd.interact = navMove.interact
         cmd.interactHeld = navMove.interactHeld
         cmd.jump = navMove.jump
         if (!meleeLockedAim) {
           // Keep flashlight and melee arc trained on closest chaser unless opening a door
           const desiredAim =
-            nearest && nearest.distance <= 9.5 && slot.prompt?.kind !== "door"
+            nearest && nearest.distance <= 14.5 && slot.prompt?.kind !== "door"
               ? Math.atan2(nearest.y - p.y, nearest.x - p.x)
               : Math.atan2(cmd.my, cmd.mx)
           this.smoothedAim = this.stepAim(dt, desiredAim, false)
@@ -1773,7 +1766,7 @@ export class SurvivorBot {
         } else if (p.reloadRemaining <= 0) {
           cmd.reload = true
         }
-        if (nearest && nearest.distance < 9.5) {
+        if (nearest && nearest.distance < 15.0) {
           const kitePt = this.pickOpenKitePoint(p.x, p.y, threats)
           const navMove = this.followPathTo(dt, world, slot, kitePt.x, kitePt.y, true, false)
           const kite = this.computeKiteVector(world.town, p.x, p.y, threats)
@@ -1781,7 +1774,7 @@ export class SurvivorBot {
           const bx = navMove.mx * (1 - blend) + kite.mx * blend
           const by = navMove.my * (1 - blend) + kite.my * blend
           const len = Math.hypot(bx, by) || 1
-          const reloadThrottle = clamp(kiteThrottle * 0.92, 0.35, 0.96)
+          const reloadThrottle = clamp(kiteThrottle * 0.94, 0.35, 0.98)
           cmd.mx = (bx / len) * reloadThrottle
           cmd.my = (by / len) * reloadThrottle
           cmd.interact = navMove.interact
@@ -1821,7 +1814,7 @@ export class SurvivorBot {
 
       case "barricade": {
         const distToGoal = Math.hypot(this.goalX - p.x, this.goalY - p.y)
-        if (distToGoal <= INTERACT_RANGE - 0.25) {
+        if (distToGoal <= INTERACT_RANGE - 0.25 && slot.prompt?.kind === "window") {
           const aimToPortal = Math.atan2(this.goalY - p.y, this.goalX - p.x)
           this.smoothedAim = this.stepAim(dt, aimToPortal, false)
           cmd.aim = this.smoothedAim
@@ -1896,28 +1889,29 @@ export class SurvivorBot {
   ): number {
     const skillQuality = clamp(
       1 -
-        this.skill.reactionTime * 0.55 -
-        this.skill.decisionNoise * 0.45 -
-        this.skill.panicUnderPressure * 0.35,
+        this.skill.panicUnderPressure * 0.52 -
+        this.skill.decisionNoise * 0.55 -
+        this.skill.reactionTime * 0.48 -
+        (1 - this.skill.staminaDiscipline) * 0.18,
       0,
       1,
     )
-    const baseMoveThrottle = clamp(0.76 + skillQuality * 0.23, 0.74, 0.99)
-    const chaserCapacity = 1.4 + skillQuality * 3.8
+    const baseMoveThrottle = clamp(0.65 + skillQuality * 0.34, 0.65, 0.99)
+    const chaserCapacity = 1.1 + skillQuality * 4.3
     const overCapacity = Math.max(0, closeChasers - chaserCapacity)
     const hordeCongestion = clamp(
-      1 - overCapacity * (0.06 + this.skill.panicUnderPressure * 0.08 + this.skill.decisionNoise * 0.05),
-      0.42,
+      1 - overCapacity * (0.06 + this.skill.panicUnderPressure * 0.09 + this.skill.decisionNoise * 0.06),
+      0.36,
       1.0,
     )
-    const exhaustedPenalty = p.exhausted ? 0.64 + this.skill.staminaDiscipline * 0.2 : 1.0
-    return clamp(baseMoveThrottle * hordeCongestion * exhaustedPenalty, 0.38, 0.99)
+    const exhaustedPenalty = p.exhausted ? 0.62 + this.skill.staminaDiscipline * 0.22 : 1.0
+    return clamp(baseMoveThrottle * hordeCongestion * exhaustedPenalty, 0.35, 0.99)
   }
 
   private shouldSprint(p: SurvivorSlot["survivor"], emergency: boolean, _now = 0): boolean {
     if (p.exhausted) return false
     if (emergency) return p.stamina > 0.08
-    return p.stamina > Math.max(0.18, this.skill.staminaDiscipline)
+    return p.stamina > Math.min(0.52, Math.max(0.18, this.skill.staminaDiscipline))
   }
 
   private stepAim(dt: number, targetAim: number, combatJitter: boolean): number {
@@ -2143,12 +2137,17 @@ export class SurvivorBot {
       this.repathAt = now + 0.9
     }
 
-    // Advance along waypoints
-    while (
-      this.currentPath.length > 1 &&
-      Math.hypot(this.currentPath[0]!.x - p.x, this.currentPath[0]!.y - p.y) < 0.55
-    ) {
-      this.currentPath.shift()
+    // Advance along waypoints (only use wide arrival radius when next waypoint is in clear line of sight)
+    while (this.currentPath.length > 1) {
+      const d0 = Math.hypot(this.currentPath[0]!.x - p.x, this.currentPath[0]!.y - p.y)
+      const canSeeNext =
+        urgent &&
+        clearLine(p.x, p.y, this.currentPath[1]!.x, this.currentPath[1]!.y, this.cachedSolidBlockers)
+      if (d0 < (canSeeNext ? 1.05 : 0.55)) {
+        this.currentPath.shift()
+      } else {
+        break
+      }
     }
 
     const wp = this.currentPath[0] ?? { x: targetX, y: targetY }

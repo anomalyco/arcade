@@ -1,4 +1,4 @@
-import { raycast, type Rect } from "@arcade/kit/sim/geom"
+import { raycast, rayRect, type Rect } from "@arcade/kit/sim/geom"
 import { POLAR_RAYS } from "@arcade/kit/gpu/limits"
 import type { PeekInfo } from "./interact"
 import { SIZE } from "./map"
@@ -172,7 +172,14 @@ export class Vision {
       }
     }
     for (let i = 0; i < POLAR_RAYS; i++) {
-      this.rays[i] = Math.min(maxCastRange, raycast(ox, oy, RAY_COS[i]!, RAY_SIN[i]!, near, maxCastRange))
+      const dx = RAY_COS[i]!
+      const dy = RAY_SIN[i]!
+      let best = maxCastRange
+      for (let b = 0; b < near.length; b++) {
+        const t = rayRect(ox, oy, dx, dy, near[b]!, best)
+        if (t < best) best = t
+      }
+      this.rays[i] = best
     }
     let changed = false
     const r2 = range * range

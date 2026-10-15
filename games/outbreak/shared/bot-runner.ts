@@ -1,5 +1,6 @@
 import type { AIConfig } from "./ai"
 import { TICK_DT } from "./clock"
+import { isMeleeWeapon } from "./combat"
 import { CoopSim, type SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
 import { buildingAt, type ProgressionTuning } from "./progression"
@@ -429,7 +430,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
         for (const z of sim.ai.agents) {
           if (z.state === "dead" && !deadZombieIds.has(z.id)) {
             deadZombieIds.add(z.id)
-            if (heldItem === "crowbar" || heldItem === "spiked-board") {
+            if (isMeleeWeapon(heldItem)) {
               killsMelee++
             } else {
               killsShove++
