@@ -35,8 +35,8 @@ export const PROP_KINDS: Record<string, PropKindDef> = {
 }
 
 export const SPAWNS = [
-  { x: 5.4, y: 5 }, { x: 22.6, y: 16 }, { x: 22.6, y: 5 }, { x: 5.4, y: 16 },
-  { x: 14, y: 3.7 }, { x: 14, y: 17.3 }, { x: 4.1, y: 10.5 }, { x: 23.9, y: 10.5 },
+  { x: 6.5, y: 6.0 }, { x: 21.5, y: 15.0 }, { x: 21.5, y: 6.0 }, { x: 6.5, y: 15.0 },
+  { x: 14, y: 5.2 }, { x: 14, y: 15.8 }, { x: 5.5, y: 10.5 }, { x: 22.5, y: 10.5 },
 ]
 
 /** Where props start each round, jittered by the round's seed. */

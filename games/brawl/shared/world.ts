@@ -8,8 +8,8 @@ import { BotBrain } from "./bots"
 import { CENTER, PROP_KINDS, ROPES, SOLIDS, SPAWNS, STAGE, onStage, propLayout } from "./arena"
 import { CHARACTERS, ROSTER, characterOf, type CharacterDef } from "./characters"
 import {
-  ACCEL, BOT_FILL, COUNTDOWN_SECONDS, CREDIT_SECONDS, DT, FALL_SECONDS, INVULN_SECONDS, KNOCK_GROWTH, LAUNCH_FRICTION,
-  PLAYER_RADIUS, RESPAWN_SECONDS, RESULTS_SECONDS, ROPE_BREAK, ROUND_SECONDS, SELECT_SECONDS, STOCKS, WALL_BOUNCE,
+  BOT_FILL, COUNTDOWN_SECONDS, CREDIT_SECONDS, DT, FALL_SECONDS, FEEL, INVULN_SECONDS,
+  PLAYER_RADIUS, RESPAWN_SECONDS, RESULTS_SECONDS, ROUND_SECONDS, SELECT_SECONDS, STOCKS,
 } from "./config"
 
 export type Phase = "select" | "play" | "results"
@@ -180,6 +180,24 @@ export class World implements AbilityHost<Fighter> {
     }
   }
 
+  /** Spawns a scripted or Lab bot at (x, y) with the given character and brain. */
+  addBot(char: string, brain: Brain | null, name = char, x = CENTER.x, y = CENTER.y): Fighter {
+    const id = `bot${++this.botCount}`
+    const f = this.newFighter(id, name, brain ?? { think: () => NO_INTENT })
+    f.pick = f.char = characterOf(char) ? char : ROSTER[0]!.id
+    f.ready = true
+    f.stocks = STOCKS
+    this.players.set(id, f)
+    this.order.push(id)
+    this.spawnAt(f, x, y)
+    f.invulnUntil = 0
+    return f
+  }
+
+  resetProps(): void {
+    this.layProps()
+  }
+
   /** A pick on the select screen (or between rounds). */
   pick(id: string, char: string): void {
     const f = this.players.get(id)
@@ -280,13 +298,20 @@ export class World implements AbilityHost<Fighter> {
     this.spawnAt(f, best.x, best.y)
   }
 
+  /** Overcharge multiplier once a round passes FEEL.overchargeAt seconds, preventing drawn-out stalemates. */
+  overcharge(): number {
+    if (this.phase !== "play" || this.time < this.goAt + FEEL.overchargeAt) return 1
+    return 1 + Math.min(1.25, (this.time - this.goAt - FEEL.overchargeAt) / 35)
+  }
+
   /** Damage and knockback: speed grows with the damage taken so far and shrinks with weight. */
   hit(t: Fighter, h: HitDef, by: Fighter | null, fx: number, fy: number, scale: number): void {
     if (!this.targetable(t)) return
     const shield = shieldScale(t, this.time)
-    const dmg = h.damage * scale * shield
+    const over = this.overcharge()
+    const dmg = h.damage * scale * shield * (over > 1 ? 1 + (over - 1) * 0.35 : 1)
     t.damage = Math.min(999, t.damage + dmg)
-    const speed = (h.knock * scale * shield * (1 + t.damage / KNOCK_GROWTH)) / this.def(t).weight
+    const speed = ((h.knock * scale * shield * over * (0.68 + t.damage / FEEL.knockGrowth)) / this.def(t).weight)
     let dx = t.x - fx
     let dy = t.y - fy
     const d = Math.hypot(dx, dy)
@@ -298,9 +323,9 @@ export class World implements AbilityHost<Fighter> {
       dy /= d
     }
     if (speed > 2.5) {
-      t.vx = dx * speed + t.vx * 0.2
-      t.vy = dy * speed + t.vy * 0.2
-      t.launchUntil = Math.max(t.launchUntil, this.time + Math.min(1.1, 0.08 + speed * 0.035))
+      t.vx = dx * speed + t.vx * 0.22
+      t.vy = dy * speed + t.vy * 0.22
+      t.launchUntil = Math.max(t.launchUntil, this.time + Math.min(1.15, 0.09 + speed * 0.038))
       if (t.ab.cast && this.time < t.ab.cast.release) t.ab.cast = null
     } else {
       t.vx += dx * speed
@@ -371,7 +396,7 @@ export class World implements AbilityHost<Fighter> {
       if (now < f.launchUntil) this.fly(f)
       else if (!f.ab.dash) {
         const can = mv.canMove
-        stepBody(f, can ? intent.mx : 0, can ? intent.my : 0, this.def(f).speed * mv.speed, this.walk, DT, f.radius, ACCEL * this.def(f).accel * mv.accel)
+        stepBody(f, can ? intent.mx : 0, can ? intent.my : 0, this.def(f).speed * FEEL.moveScale * mv.speed, this.walk, DT, f.radius, FEEL.accel * this.def(f).accel * mv.accel)
       }
       if (intent.cast >= 0 && intent.cast < 4) {
         // Pressing the grab again throws early.
@@ -410,11 +435,11 @@ export class World implements AbilityHost<Fighter> {
   private fly(f: Fighter): void {
     const sp = Math.hypot(f.vx, f.vy)
     if (sp > 0) {
-      const k = Math.max(0, sp - LAUNCH_FRICTION * DT) / sp
+      const k = Math.max(0, sp - FEEL.launchFriction * DT) / sp
       f.vx *= k
       f.vy *= k
     }
-    const walls = sp > ROPE_BREAK ? SOLIDS : [...SOLIDS, ...ROPES]
+    const walls = sp > FEEL.ropeBreak ? SOLIDS : [...SOLIDS, ...ROPES]
     const steps = Math.max(1, Math.ceil((sp * DT) / 0.12))
     for (let i = 0; i < steps; i++) {
       const ox = f.x, oy = f.y
@@ -422,8 +447,8 @@ export class World implements AbilityHost<Fighter> {
       f.y += (f.vy * DT) / steps
       const bx = f.x, by = f.y
       pushOut(f, f.radius, walls)
-      if (Math.abs(f.x - bx) > 1e-6) f.vx = -f.vx * WALL_BOUNCE
-      if (Math.abs(f.y - by) > 1e-6) f.vy = -f.vy * WALL_BOUNCE
+      if (Math.abs(f.x - bx) > 1e-6) f.vx = -f.vx * FEEL.wallBounce
+      if (Math.abs(f.y - by) > 1e-6) f.vy = -f.vy * FEEL.wallBounce
       if (f.x === ox && f.y === oy) break
     }
   }

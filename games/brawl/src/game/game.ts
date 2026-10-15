@@ -12,13 +12,13 @@ import type { Rect } from "@arcade/kit/sim/geom"
 import { stepBody } from "@arcade/kit/sim/move"
 import { BLOCKS, CENTER, PROP_KINDS, ROPES, SOLIDS, STAGE, STAGE_SIZE } from "../../shared/arena"
 import { CHARACTERS, ROSTER, type CharacterDef } from "../../shared/characters"
-import { ACCEL, DT, PLAYER_RADIUS } from "../../shared/config"
+import { DT, FEEL, PLAYER_RADIUS } from "../../shared/config"
 import { F, type FighterView, type RosterRow, type Snapshot } from "../../shared/view"
 import type { Intent, SimEvent } from "../../shared/world"
 import type { Session } from "../session"
 import type { Sound } from "../sound"
 import { abilityMeshes } from "../render/ability-meshes"
-import { PIT_Y, arenaLevel, propMeshes } from "../render/arena-mesh"
+import { ARENA_THEMES, type ArenaThemeId, DEFAULT_ARENA_THEME, PIT_Y, arenaLevel, propMeshes } from "../render/arena-mesh"
 import { FrameParts, SPRITE } from "../render/frame-parts"
 import { FighterDraw, type FighterModels, carryReach, castReach, drawFighter, registerFighters } from "./fighters"
 import { Fx } from "./fx"
@@ -27,16 +27,6 @@ type Rgb = readonly [number, number, number]
 
 /** Player slot colours: the ring under each fighter, their HUD card and their accent bands. */
 export const SLOT_COLORS: Rgb[] = [[1, 0.25, 0.45], [0.2, 0.62, 1], [1, 0.82, 0.15], [0.3, 0.86, 0.38], [0.72, 0.4, 1], [1, 0.55, 0.15], [0.2, 0.9, 0.85], [0.95, 0.95, 0.95]]
-
-/** Plan sky colour and the key/fill lights of the party stage. */
-const AMBIENT: [number, number, number, number] = [0.3, 0.27, 0.34, 0]
-const STAGE_LIGHTS: SceneLight[] = [
-  { x: CENTER.x, y: CENTER.y + 1, h: 14, r: 30, color: [1, 0.95, 0.88], power: 0.62, size: 1.2 },
-  { x: STAGE[0] + 3, y: STAGE[1] + 2, h: 6, r: 12, color: [1, 0.4, 0.72], power: 0.32, size: 0.5, unshadowed: true },
-  { x: STAGE[2] - 3, y: STAGE[1] + 2, h: 6, r: 12, color: [0.35, 0.8, 1], power: 0.32, size: 0.5, unshadowed: true },
-  { x: STAGE[0] + 3, y: STAGE[3] - 2, h: 6, r: 12, color: [1, 0.8, 0.3], power: 0.3, size: 0.5, unshadowed: true },
-  { x: STAGE[2] - 3, y: STAGE[3] - 2, h: 6, r: 12, color: [0.65, 0.45, 1], power: 0.3, size: 0.5, unshadowed: true },
-]
 
 type Body = { x: number; y: number; vx: number; vy: number }
 type Shown = FighterView & { draw: FighterDraw }
@@ -79,23 +69,33 @@ export class Game {
   cursor = { ...CENTER }
   /** Fixed camera distance (automation close-ups), or null to frame the fighters. */
   zoom: number | null = null
+  theme: ArenaThemeId = DEFAULT_ARENA_THEME
   aim = 0
   /** Damage flash on the screen edge, from your own hits. */
   private hurt = 0
   /** Popups the HUD draws: damage numbers and KO calls. */
   popups: { x: number; y: number; text: string; t0: number; color: Rgb; big?: boolean }[] = []
+  /** Most recent KO for the HUD banner callout. */
+  lastKo: { victim: string; by: string; stocks: number; at: number } | null = null
   private fallingProps: { kind: string; x: number; y: number; h: number; vx: number; vy: number; z: number; vz: number; t0: number }[] = []
   private lastProps = new Map<number, [number, string, number, number, number, number]>()
 
-  constructor(readonly renderer: Renderer, readonly session: Session, readonly sound: Sound) {
+  constructor(readonly renderer: Renderer, readonly session: Session, readonly sound: Sound, theme: ArenaThemeId = DEFAULT_ARENA_THEME) {
     this.cam = new Camera()
     this.cam.snap(CENTER.x, CENTER.y)
-    renderer.setLevel(arenaLevel())
+    this.setTheme(theme)
     this.lights.setBoxes(BLOCKS)
     const add = (m: Mesh) => renderer.addModel(m)
     this.fighterModels = registerFighters(add)
     for (const [k, m] of Object.entries(propMeshes())) this.propModels[k] = add(m)
     for (const [k, m] of Object.entries(abilityMeshes())) this.abModels[k] = add(m)
+  }
+
+  setTheme(theme: ArenaThemeId): void {
+    const t = ARENA_THEMES[theme] ? theme : DEFAULT_ARENA_THEME
+    this.theme = t
+    this.renderer.setLevel(arenaLevel(7, t))
+    this.renderer.setLook(ARENA_THEMES[t].look())
   }
 
   get myId(): string {
@@ -176,6 +176,16 @@ export class Game {
     // Holding the left button keeps swinging as the cooldown allows.
     if (cast < 0 && input.firing && (this.snap?.you?.cd[0] ?? 1) <= 0.05) cast = 0
     if (!this.play) cast = -1
+    if (cast >= 0 && (this.snap?.you?.cd[cast] ?? 0) <= 0.05) {
+      const d = this.fighters.get(this.myId)
+      const me = this.me
+      if (d && me && d.castSlot !== cast) {
+        d.castSlot = cast
+        d.castAt = this.now
+        const ab = this.def(me.c).abilities[cast]
+        if (ab?.effects[0]?.kind === "melee") swing(d.a, d.a.t)
+      }
+    }
     const i: Intent = { mx, my, aim: this.aim, tx: this.cursor.x, ty: this.cursor.y, cast }
     const seq = this.predictor.record(i) + 1
     this.session.send({ type: "intent", seq, i })
@@ -191,7 +201,7 @@ export class Game {
     const f = this.me
     if (!you || !f) return
     const d = this.def(f.c)
-    stepBody(b, you.move ? i.mx : 0, you.move ? i.my : 0, d.speed * you.speed, this.walk, DT, PLAYER_RADIUS, ACCEL * d.accel * you.accel)
+    stepBody(b, you.move ? i.mx : 0, you.move ? i.my : 0, d.speed * FEEL.moveScale * you.speed, this.walk, DT, PLAYER_RADIUS, FEEL.accel * d.accel * you.accel)
   }
 
   private reconcile(s: Snapshot): void {
@@ -336,33 +346,42 @@ export class Game {
         const by = this.fighterAt(e.by)
         const dx = by ? e.x - by.x : 0, dy = by ? e.y - by.y : 0
         if (target) {
-          flinch(target.a, dx, dy, Math.min(2, 0.5 + e.speed / 8))
-          target.a.flash = Math.min(0.6, 0.25 + e.speed / 40)
+          flinch(target.a, dx, dy, Math.min(2.2, 0.55 + e.speed / 7))
+          target.a.flash = Math.min(0.75, 0.3 + e.speed / 32)
         }
-        const strong = e.speed > 9
-        fx.sparks(e.x, e.y, 1, strong ? 18 : 8, strong ? 9 : 6)
-        fx.flash(t, e.x, e.y, 1, strong ? 1.6 : 0.9, [4, 3.4, 2.2], 0.12)
-        if (strong) fx.ring(t, e.x, e.y, 1.4, [3, 3, 3], 0.25, true)
-        this.popups.push({ x: e.x, y: e.y, text: `${Math.round(e.damage)}%`, t0: t, color: this.colorOf(e.by) })
-        snd.play(strong ? "melee.hit.metal" : "melee.hit.wood", e.x, e.y, { gain: Math.min(1, 0.4 + e.speed / 14) })
+        const strong = e.speed > 7.5
+        const col = this.colorOf(e.by)
+        fx.sparks(e.x, e.y, 1, strong ? 22 : 10, strong ? 10 : 6.5)
+        fx.flash(t, e.x, e.y, 1, strong ? 1.85 : 1.05, [4, 3.5, 2.2], 0.14)
+        fx.ring(t, e.x, e.y, strong ? 1.65 : 0.95, strong ? [3.2, 3, 2.6] : [col[0] * 2.5, col[1] * 2.5, col[2] * 2.5], strong ? 0.26 : 0.18, strong)
+        if (strong) fx.light(t, e.x, e.y, 1.3, 6.5, col, 2.8, 0.2)
+        this.popups.push({ x: e.x, y: e.y, text: `+${Math.round(e.damage)}%`, t0: t, color: col })
+        snd.play(strong ? "melee.hit.metal" : "melee.hit.wood", e.x, e.y, { gain: Math.min(1, 0.45 + e.speed / 13) })
+        const hitAng = Math.atan2(dy, dx)
         if (e.target === this.myId) {
-          this.hurt = Math.min(1, this.hurt + 0.25 + e.speed / 30)
-          this.cam.add(0.2 + e.speed / 40, Math.atan2(dy, dx))
-          snd.play("body.hurt", e.x, e.y, { gain: 0.6 })
-        } else if (e.by === this.myId) this.cam.add(0.1 + e.speed / 60, Math.atan2(dy, dx), 0.4)
-        if (strong) this.hitStop.trigger(Math.min(0.1, 0.03 + e.speed / 300), 0.08)
+          this.hurt = Math.min(1, this.hurt + 0.28 + e.speed / 26)
+          this.cam.add((0.24 + e.speed / 32) * FEEL.shakeScale, hitAng)
+          snd.play("body.hurt", e.x, e.y, { gain: 0.65 })
+        } else if (e.by === this.myId) {
+          this.cam.add((0.14 + e.speed / 45) * FEEL.shakeScale, hitAng, 0.45)
+        } else {
+          this.shakeNear(e.x, e.y, (0.08 + e.speed / 80) * FEEL.shakeScale)
+        }
+        if (e.speed > 10.5) this.cam.punch(0.28 * FEEL.shakeScale, 0.008)
+        if (e.speed > 5) this.hitStop.trigger(Math.min(0.11, (0.022 + e.speed / 220) * FEEL.hitStopScale), 0.06)
         break
       }
       case "ko": {
         const dir = Math.atan2(e.y - (STAGE[1] + STAGE[3]) / 2, e.x - (STAGE[0] + STAGE[2]) / 2)
         fx.ko(t, e.x, e.y, dir + Math.PI, this.colorOf(e.victim))
-        snd.play("impact_crash_layered", e.x, e.y, { gain: 0.9 })
-        snd.play("ui_confirm", undefined, undefined, { rate: 0.7 })
-        this.cam.add(0.6, dir)
-        this.cam.punch(0.6, 0.01)
-        this.hitStop.trigger(0.1, 0.05)
+        snd.play("impact_crash_layered", e.x, e.y, { gain: 0.95 })
+        snd.play("ui_confirm", undefined, undefined, { rate: 0.75 })
+        this.cam.add(0.75 * FEEL.shakeScale, dir)
+        this.cam.punch(0.85 * FEEL.shakeScale, 0.014)
+        this.hitStop.trigger(0.12 * FEEL.hitStopScale, 0.04)
         const victim = this.roster.find((r) => r.id === e.victim)
-        this.popups.push({ x: e.x, y: e.y, text: e.stocks > 0 ? "KO!" : "OUT!", t0: t, color: this.colorOf(e.victim), big: true })
+        this.popups.push({ x: e.x, y: e.y, text: e.stocks > 0 ? "RING OUT!" : "ELIMINATED!", t0: t, color: this.colorOf(e.victim), big: true })
+        this.lastKo = { victim: e.victim, by: e.by, stocks: e.stocks, at: t }
         if (victim && e.victim === this.myId) this.hurt = 1
         break
       }
@@ -442,11 +461,11 @@ export class Game {
     }
     // The ground the view covers is about 0.6 × distance tall at this pitch.
     const aspect = w / Math.max(1, h)
-    const span = Math.max((x1 - x0 + 7) / aspect, y1 - y0 + 6)
-    const want = Math.max(17, Math.min(31, span * 1.4))
+    const span = Math.max((x1 - x0 + 5.6) / aspect, y1 - y0 + 4.8)
+    const want = Math.max(14.5, Math.min(26.5, (span * 1.28) / Math.max(0.7, FEEL.camTightness)))
     this.cam.zoomOffset = (this.zoom ?? want) - 24
     const lean = me && mine && has(mine, F.alive)
-    this.cam.follow(cx, cy + 1, lean ? (this.cursor.x - me!.x) * 0.15 : 0, lean ? (this.cursor.y - me!.y) * 0.12 : 0, dt, false)
+    this.cam.follow(cx, cy + 0.85, lean ? (this.cursor.x - me!.x) * 0.16 : 0, lean ? (this.cursor.y - me!.y) * 0.13 : 0, dt, false)
   }
 
   build(w: number, h: number, dt: number): FrameInput {
@@ -514,7 +533,24 @@ export class Game {
       fp.sprite(true, this.cursor.x, 0.04, this.cursor.y, 0.25, c[0], c[1], c[2], 0.8, SPRITE.ring, t, 0.2)
     }
 
-    const sceneLights: SceneLight[] = [...STAGE_LIGHTS]
+    const palette = ARENA_THEMES[this.theme] ?? ARENA_THEMES.spotlit_ring
+    const sceneLights: SceneLight[] = [...palette.lights]
+    if (palette.fighterRimPower > 0) {
+      for (const s of this.shown) {
+        if (!has(s, F.alive) || has(s, F.falling)) continue
+        const col = this.colorOf(s.i)
+        sceneLights.push({
+          x: s.x,
+          y: s.y - 0.3,
+          h: 2.0,
+          r: 3.4,
+          color: [0.35 + col[0] * 0.65, 0.35 + col[1] * 0.65, 0.35 + col[2] * 0.65],
+          power: palette.fighterRimPower * (s.i === this.myId ? 1.25 : 1),
+          size: 0.4,
+          unshadowed: true,
+        })
+      }
+    }
     this.fx.lights(t, sceneLights)
     for (const z of snap?.ab.z ?? []) if (z[1] === "fire") sceneLights.push({ x: z[3], y: z[4], h: 1, r: 5, color: [1, 0.5, 0.2], power: 1.5, size: 0.4 })
     this.lights.update(sceneLights, casters, moving)
@@ -525,9 +561,9 @@ export class Game {
       width: this.renderer.width,
       height: this.renderer.height,
       lightCount: this.lights.lightCount,
-      ambient: AMBIENT,
+      ambient: palette.ambient,
       mapSize: STAGE_SIZE,
-      ao: 0,
+      ao: palette.ao,
     })
     this.hurt *= Math.exp(-dt * 4)
     const L = this.lights
@@ -594,6 +630,9 @@ export class Game {
       // Flying: the body tips back along the flight, and keeps tumbling over the edge.
       const ux = s.vx / sp, uy = s.vy / sp
       turn = { axis: [-uy, 0, ux], angle: -d.tumble * (0.9 + d.spin) }
+    }
+    if ((launched || d.fallAt > 0) && sp > 5 && adt > 0) {
+      this.fx.launchTrail(t, s.x, s.y, s.vx, s.vy, color)
     }
     // Just respawned: a soft pulsing shine while nothing can hit you.
     if (has(s, F.invuln)) d.a.flash = Math.max(d.a.flash, 0.12 + 0.1 * Math.sin(t * 18))
@@ -701,12 +740,13 @@ export class Game {
           }
           break
         case "smoke":
+          fp.sprite(true, x, 0.025, y, r, 0.58, 0.34, 0.95, 0.42 * vis, SPRITE.ring, 0, 0.05)
           for (let i = 0; i < 9; i++) {
             const a2 = i * 2.4 + id
             const rr = r * (0.25 + 0.6 * ((i * 37) % 10) / 10)
             const bob = Math.sin(t * 1.3 + i) * 0.15
-            const g = 0.62 + (i % 3) * 0.08
-            fp.sprite(false, x + Math.cos(a2 + t * 0.2) * rr, 0.6 + bob + (i % 3) * 0.35, y + Math.sin(a2 + t * 0.2) * rr, r * 0.42 * (0.7 + 0.3 * vis), g, g, g + 0.04, 0.8 * vis, SPRITE.puff, 0, 0, a2)
+            const g = 0.2 + (i % 3) * 0.04
+            fp.sprite(false, x + Math.cos(a2 + t * 0.2) * rr, 0.6 + bob + (i % 3) * 0.35, y + Math.sin(a2 + t * 0.2) * rr, r * 0.42 * (0.7 + 0.3 * vis), g + 0.05, g, g + 0.16, 0.38 * vis, SPRITE.puff, 0, 0, a2)
           }
           break
         case "vines": {

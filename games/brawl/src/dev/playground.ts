@@ -13,6 +13,7 @@ import { CENTER } from "../../shared/arena"
 import { CHARACTERS, ROSTER } from "../../shared/characters"
 import { GAME } from "../../shared/config"
 import { Game } from "../game/game"
+import { ARENA_THEMES, type ArenaThemeId, DEFAULT_ARENA_THEME } from "../render/arena-mesh"
 import { Sound } from "../sound"
 import { Hud, SLOT_KEYS } from "../ui/hud"
 import { type LabScene, LabSession } from "./lab-session"
@@ -51,6 +52,7 @@ async function main() {
     character: CHARACTERS[hArg ?? ""] ? hArg! : ROSTER[0]!.id,
     loop: hLoop !== undefined && /^[0-3]$/.test(hLoop) ? Number(hLoop) : -1,
     bots: scene0 === "bots" && Number(hArg) >= 2 ? Math.min(8, Number(hArg)) : 4,
+    theme: DEFAULT_ARENA_THEME,
     speed: 1,
     sound: false,
   })
@@ -62,7 +64,8 @@ async function main() {
     session = new LabSession(scene, { char: String(settings.character), slots: slots(), bots: Number(settings.bots), seed: Number(params.get("seed")) || 7 })
     session.speed = Number(settings.speed)
     input.release()
-    game = new Game(renderer, session, sound)
+    const theme = (settings.theme as ArenaThemeId) in ARENA_THEMES ? (settings.theme as ArenaThemeId) : DEFAULT_ARENA_THEME
+    game = new Game(renderer, session, sound, theme)
     ;(globalThis as { brawl?: Game }).brawl = game
     const arg = scene === "bots" ? settings.bots : settings.character
     const loop = scene === "gallery" && settings.loop !== -1 ? `/${settings.loop}` : ""
@@ -82,6 +85,16 @@ async function main() {
       },
     },
     { key: "bots", label: "Bots", group: "Scene", visible: (s) => s.scene === "bots", min: 2, max: 8, step: 1, change: restart },
+    {
+      key: "theme", label: "Arena theme", group: "Scene",
+      options: [
+        { value: "spotlit_ring", label: "Spotlit Fight Night" },
+        { value: "neon_club", label: "Neon Club Pit" },
+        { value: "back_alley", label: "Back Alley Cage" },
+        { value: "party_pop", label: "Party Pop (Legacy)" },
+      ],
+      change: (v) => game?.setTheme(String(v) as ArenaThemeId),
+    },
     { key: "speed", label: "Sim speed", group: "Scene", min: 0.1, max: 1, step: 0.05, unit: "×", change: (v) => session && (session.speed = Number(v)) },
     { key: "sound", label: "Sound", group: "Scene", type: "toggle", change: (v) => (sound.runtime.muted = !v) },
     { key: "restart", label: "Restart scene", group: "Scene", type: "action", run: () => start() },
@@ -167,7 +180,7 @@ async function main() {
     return
   }
   renderer = new Renderer(g.device, g.context, g.format)
-  renderer.setLook(createLookSettings("party_pop"))
+  renderer.setLook(createLookSettings("night_ring"))
   resize()
   addEventListener("resize", resize)
   start()

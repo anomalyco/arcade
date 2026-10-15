@@ -10,6 +10,7 @@ export type LookPresetId =
   | "sodium_70s"
   | "cozy_golden_hour"
   | "party_pop"
+  | "night_ring"
 
 export type LookTonemapMode = 0 | 1 | 2 | 3
 export type LookCompareMode = 0 | 1 | 2
@@ -666,6 +667,74 @@ export const LOOK_PRESETS: Readonly<Record<LookPresetId, LookPresetDef>> = {
       outlineWidth: 1.5,
     },
   },
+  night_ring: {
+    id: "night_ring",
+    index: 7,
+    label: "Night ring",
+    directionRef: "Brawl spotlit fight night",
+    summary: "Spotlit fight night: high-contrast AgX grade, deep indigo-charcoal shadows, warm overhead key and saturated neon rims so fighters and abilities pop against the dark.",
+    palette: {
+      sky: [0.06, 0.07, 0.13],
+      practical: [1.0, 0.78, 0.42],
+      wall: [0.16, 0.18, 0.26],
+      wood: [0.36, 0.25, 0.18],
+      stone: [0.18, 0.2, 0.28],
+      asphalt: [0.08, 0.09, 0.14],
+      foliage: [0.22, 0.56, 0.28],
+      ink: [0.02, 0.02, 0.05],
+    },
+    defaults: {
+      preset: "night_ring",
+      exposure: 0.96,
+      tonemap: 2,
+      contrast: 1.22,
+      toe: 0.24,
+      shoulder: 0.36,
+      blackCrush: 0.012,
+      saturation: 1.24,
+      temperature: -0.04,
+      splitTone: 0.42,
+      shadowTintR: 0.78,
+      shadowTintG: 0.84,
+      shadowTintB: 1.18,
+      highlightTintR: 1.06,
+      highlightTintG: 0.98,
+      highlightTintB: 0.9,
+      paletteMix: 0.0,
+      selectiveColor: 0.0,
+      foliageShift: 0.0,
+      ambientFill: 0.52,
+      shadowColorR: 0.72,
+      shadowColorG: 0.8,
+      shadowColorB: 1.16,
+      practicalWarmth: 0.12,
+      practicalIntensity: 1.0,
+      moonIntensity: 0.85,
+      rimStrength: 1.15,
+      contactShade: 0.7,
+      surfaceWetness: 0.22,
+      fogDensity: 0.08,
+      fogHeightFalloff: 2.4,
+      fogColorR: 0.05,
+      fogColorG: 0.06,
+      fogColorB: 0.12,
+      shaftStrength: 0.0,
+      shaftSlats: 0.35,
+      bloom: 0.9,
+      halation: 0.14,
+      vignette: 0.58,
+      grain: 0.06,
+      grainSeed: 73,
+      grainAnimated: false,
+      chromatic: 0.06,
+      diffuseWrap: 0.2,
+      diffuseBands: 0,
+      bandSoftness: 0.18,
+      painterlySmooth: 0.0,
+      outlineStrength: 0.72,
+      outlineWidth: 1.5,
+    },
+  },
 }
 
 export const LOOK_PRESET_IDS = Object.keys(LOOK_PRESETS) as readonly LookPresetId[]
@@ -713,6 +782,9 @@ export function resolveLookPresetId(raw: unknown): LookPresetId | null {
     partypop: "party_pop",
     party: "party_pop",
     pastel: "party_pop",
+    nightring: "night_ring",
+    spotlitring: "night_ring",
+    fightnight: "night_ring",
   }
   if (slug in aliases) return aliases[slug]!
   for (const id of LOOK_PRESET_IDS) {

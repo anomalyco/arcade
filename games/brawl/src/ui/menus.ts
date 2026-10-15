@@ -54,7 +54,7 @@ export class Menus {
     this.root.innerHTML = `<div class="landing">
       <div class="parade">${faces}</div>
       <div class="logo">${esc(GAME.title)}</div>
-      <div class="sub">A party brawler. Knock everyone off the stage.</div>
+      <div class="sub">3-STOCK RING-OUT BRAWLER · BUILD DAMAGE % · KNOCK FOES OVER THE ROPES</div>
       ${notice ? `<div class="notice">${esc(notice)}</div>` : ""}
       <label class="field">Your name <input id="name" maxlength="${NAME_MAX}" value="${esc(this.name)}" autocomplete="off" spellcheck="false"></label>
       <div class="buttons">
@@ -135,11 +135,11 @@ export class Menus {
     }).join("")
     const ready = !!me?.ready
     const html = `<div class="select">
-      <div class="top"><div class="logo small">${esc(GAME.title)}</div><div class="hint">Choose your fighter</div>${room ? `<div class="room">Room <b>${esc(room.toUpperCase())}</b></div>` : ""}<div class="timer">${Math.ceil(s.left)}</div></div>
+      <div class="top"><div class="logo small">${esc(GAME.title)}</div><div class="hint">Choose your fighter</div><div class="rules-pill"><b>HOW TO WIN:</b> Hits raise <em>Launch %</em> · Higher % = bigger knockback · Knock foes over the ropes (<b>3 lives</b>)</div>${room ? `<div class="room">Room <b>${esc(room.toUpperCase())}</b></div>` : ""}<div class="timer">${Math.ceil(s.left)}</div></div>
       <div class="grid">${cards}</div>
       <div class="detail" style="--c:${css(show.color)}">
         <div class="bio"><div class="big-nm">${esc(show.name)}</div><div class="tag">“${esc(show.tagline)}”</div>
-          ${stat("Speed", (show.speed - 3.4) / 2.2)}${stat("Weight", (show.weight - 0.7) / 0.9)}</div>
+          ${stat("Speed", (show.speed - 4.5) / 3.0)}${stat("Weight", (show.weight - 0.7) / 0.9)}</div>
         <div class="abls">${abilities}</div>
       </div>
       <div class="players">${players}</div>
@@ -155,12 +155,19 @@ export class Menus {
     const order = [...roster].sort((a, b) => b.stocks - a.stocks || b.kos - a.kos || a.falls - b.falls)
     const win = roster.find((r) => r.id === s.winner) ?? order[0]
     const wc = win ? CHARACTERS[win.char] : undefined
+    const standing = roster.filter((r) => r.stocks > 0)
+    const winReason = standing.length === 1 && win
+      ? `LAST FIGHTER STANDING · ${win.stocks} ${win.stocks === 1 ? "LIFE" : "LIVES"} LEFT · ${win.kos} RING-OUT${win.kos === 1 ? "" : "S"}`
+      : win
+        ? `WINNER ON STOCKS (${win.stocks} LEFT) · ${win.kos} RING-OUT${win.kos === 1 ? "" : "S"}`
+        : ""
     const rows = order.map((r, i) => {
       const c = CHARACTERS[r.char]
-      return `<div class="row" style="--slot:${css(colorOf(r.id))}"><span class="place">${ordinal(i)}</span><div class="mini" style="background-image:url(portraits/${r.char}.jpg)"></div><b>${esc(r.name)}</b><span class="ch">${esc(c?.name ?? "")}</span><span class="n">${r.kos} KO</span><span class="n">${r.falls} fall${r.falls === 1 ? "" : "s"}</span></div>`
+      const status = r.stocks > 0 ? `${r.stocks} ${r.stocks === 1 ? "life" : "lives"} left` : "Eliminated"
+      return `<div class="row" style="--slot:${css(colorOf(r.id))}"><span class="place">${ordinal(i)}</span><div class="mini" style="background-image:url(portraits/${r.char}.jpg)"></div><b>${esc(r.name)}</b><span class="ch">${esc(c?.name ?? "")}</span><span class="n">${status}</span><span class="n">${r.kos} KO${r.kos === 1 ? "" : "s"}</span><span class="n">${r.falls} fall${r.falls === 1 ? "" : "s"}</span></div>`
     }).join("")
     const html = `<div class="results">
-      ${wc ? `<div class="winner" style="--c:${css(wc.color)}"><div class="face" style="background-image:url(portraits/${wc.id}.jpg)"></div><div><div class="wins">${esc(win!.name)} wins!</div><div class="as">as ${esc(wc.name)}</div></div></div>` : ""}
+      ${wc ? `<div class="winner" style="--c:${css(wc.color)}"><div class="face" style="background-image:url(portraits/${wc.id}.jpg)"></div><div><div class="wins">${esc(win!.name)} wins!</div><div class="as">as ${esc(wc.name)}</div><div class="win-reason">${esc(winReason)}</div></div></div>` : ""}
       <div class="table">${rows}</div>
       <div class="next">Next round in ${Math.ceil(s.left)}</div>
     </div>`

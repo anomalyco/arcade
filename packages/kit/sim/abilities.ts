@@ -155,7 +155,7 @@ export function movement(a: AbilityActor, defs: readonly AbilityDef[], now: numb
   const stunned = has(a, "stun", now) || !!a.ab.carriedBy
   const rooted = has(a, "root", now)
   const cast = a.ab.cast
-  const castScale = cast && now < cast.end ? (defs[cast.slot]?.moveScale ?? 0.45) : 1
+  const castScale = cast && now < cast.end ? (defs[cast.slot]?.moveScale ?? 0.68) : 1
   const speed = (1 - amount(a, "slow", now)) * (1 + amount(a, "haste", now)) * castScale
   const accel = has(a, "slide", now) ? 0.12 : 1
   return { speed, accel, canMove: !stunned && !rooted && !a.ab.dash, canCast: !stunned && !a.ab.dash && !a.ab.carry && !(cast && now < cast.end) }

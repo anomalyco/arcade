@@ -10,27 +10,58 @@ export const MAX_PLAYERS = 8
 export const BOT_FILL = 4
 
 export const PLAYER_RADIUS = 0.36
-export const ACCEL = 20
+export const ACCEL = 24
 
 /** Stocks per round; a round lasts at most ROUND_SECONDS. */
 export const STOCKS = 3
-export const SELECT_SECONDS = 25
-export const COUNTDOWN_SECONDS = 3
-export const ROUND_SECONDS = 180
-export const RESULTS_SECONDS = 9
-export const RESPAWN_SECONDS = 2
-export const INVULN_SECONDS = 1.6
+export const SELECT_SECONDS = 15
+export const COUNTDOWN_SECONDS = 1.8
+export const ROUND_SECONDS = 90
+export const RESULTS_SECONDS = 5
+export const RESPAWN_SECONDS = 1.1
+export const INVULN_SECONDS = 1.0
 /** How long a fighter falls past the edge before the knock-out counts. */
-export const FALL_SECONDS = 0.7
+export const FALL_SECONDS = 0.45
 
 /**
  * Knockback grows with damage like a platform fighter: speed = knock × (1 + damage / KNOCK_GROWTH) / weight.
  * Faster than ROPE_BREAK and you fly over the ropes and off the stage.
  */
-export const KNOCK_GROWTH = 70
-export const ROPE_BREAK = 10.5
+export const KNOCK_GROWTH = 38
+export const ROPE_BREAK = 11.4
 /** Friction while flying (m/s²); walls bounce you back at WALL_BOUNCE of your speed. */
-export const LAUNCH_FRICTION = 7
-export const WALL_BOUNCE = 0.55
+export const LAUNCH_FRICTION = 8.0
+export const WALL_BOUNCE = 0.65
+/** Seconds into a round when Sudden Death Overcharge begins ramping up knockback so rounds never drag. */
+export const OVERCHARGE_SECONDS = 45
 /** A knock-out within this many seconds of a hit credits the hitter. */
 export const CREDIT_SECONDS = 6
+
+export type FeelSettings = {
+  moveScale: number
+  accel: number
+  knockGrowth: number
+  ropeBreak: number
+  launchFriction: number
+  wallBounce: number
+  overchargeAt: number
+  hitStopScale: number
+  shakeScale: number
+  camTightness: number
+}
+
+export const DEFAULT_FEEL: Readonly<FeelSettings> = {
+  moveScale: 1,
+  accel: ACCEL,
+  knockGrowth: KNOCK_GROWTH,
+  ropeBreak: ROPE_BREAK,
+  launchFriction: LAUNCH_FRICTION,
+  wallBounce: WALL_BOUNCE,
+  overchargeAt: OVERCHARGE_SECONDS,
+  hitStopScale: 1,
+  shakeScale: 1,
+  camTightness: 1.18,
+}
+
+/** Live tunable feel parameters bound to the shared LabPanel. */
+export const FEEL: FeelSettings = { ...DEFAULT_FEEL }

@@ -3,6 +3,7 @@ import type { EffectDef, HitDef } from "@arcade/kit/sim/abilities"
 import { PROP_KINDS } from "../../shared/arena"
 import { ROSTER } from "../../shared/characters"
 import { DODGE } from "../../shared/characters/types"
+import { FEEL } from "../../shared/config"
 
 const SLOT_NAMES = ["LMB", "Q", "E"] as const
 
@@ -49,6 +50,18 @@ export function tuning(onPropsChanged: () => void): { settings: LabSettings; con
   const dash = DODGE.effects.find((e) => e.kind === "dash") as Extract<EffectDef, { kind: "dash" }>
   add({ key: "dodge.cooldown", label: "Cooldown", group: "Dodge (everyone's Space)", min: 0, max: 6, step: 0.05, unit: "s", change: (v) => (DODGE.cooldown = Number(v)) }, DODGE.cooldown)
   add({ key: "dodge.speed", label: "Hop speed", group: "Dodge (everyone's Space)", min: 4, max: 24, step: 0.5, unit: "m/s", change: (v) => (dash.speed = Number(v)) }, dash.speed)
+
+  const fg = "Feel & Knockback"
+  add({ key: "feel.moveScale", label: "Move speed scale", group: fg, min: 0.6, max: 1.8, step: 0.05, unit: "×", change: (v) => (FEEL.moveScale = Number(v)) }, FEEL.moveScale)
+  add({ key: "feel.accel", label: "Acceleration", group: fg, min: 12, max: 60, step: 1, unit: "m/s²", change: (v) => (FEEL.accel = Number(v)) }, FEEL.accel)
+  add({ key: "feel.knockGrowth", label: "Knockback growth", group: fg, min: 20, max: 90, step: 1, unit: "%", change: (v) => (FEEL.knockGrowth = Number(v)) }, FEEL.knockGrowth)
+  add({ key: "feel.ropeBreak", label: "Rope break speed", group: fg, min: 6, max: 15, step: 0.2, unit: "m/s", change: (v) => (FEEL.ropeBreak = Number(v)) }, FEEL.ropeBreak)
+  add({ key: "feel.launchFriction", label: "Launch friction", group: fg, min: 3, max: 12, step: 0.2, unit: "m/s²", change: (v) => (FEEL.launchFriction = Number(v)) }, FEEL.launchFriction)
+  add({ key: "feel.wallBounce", label: "Rope bounce", group: fg, min: 0.2, max: 1, step: 0.05, unit: "×", change: (v) => (FEEL.wallBounce = Number(v)) }, FEEL.wallBounce)
+  add({ key: "feel.overchargeAt", label: "Overcharge start", group: fg, min: 15, max: 90, step: 5, unit: "s", change: (v) => (FEEL.overchargeAt = Number(v)) }, FEEL.overchargeAt)
+  add({ key: "feel.hitStopScale", label: "Hit-stop scale", group: fg, min: 0, max: 2.5, step: 0.1, unit: "×", change: (v) => (FEEL.hitStopScale = Number(v)) }, FEEL.hitStopScale)
+  add({ key: "feel.shakeScale", label: "Camera shake scale", group: fg, min: 0, max: 2.5, step: 0.1, unit: "×", change: (v) => (FEEL.shakeScale = Number(v)) }, FEEL.shakeScale)
+  add({ key: "feel.camTightness", label: "Camera tightness", group: fg, min: 0.8, max: 1.6, step: 0.02, unit: "×", change: (v) => (FEEL.camTightness = Number(v)) }, FEEL.camTightness)
 
   for (const [kind, d] of Object.entries(PROP_KINDS)) {
     const sub = kind[0]!.toUpperCase() + kind.slice(1)
