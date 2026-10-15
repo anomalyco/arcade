@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { type BombImpact, CombatWorld, type Ground, type MovingShip, bombImpact, bombLaunch, driftShip, makeBombImpact } from "../shared/combat"
 import { DECK_Y } from "../shared/carrier-spec"
-import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { archipelagoFor, terrainHeight } from "../shared/islands"
 import { PLANE, type Plane, type Quat, makePlane, quatAxis, quatMul } from "../shared/plane"
 import { makeSea } from "../shared/sea"
 import { LOADOUTS } from "../shared/weapons"
@@ -129,7 +129,7 @@ describe("bombImpact: the bombsight's prediction", () => {
   })
 
   test("over an island it bursts on the ground the world strikes", () => {
-    const arch = makeArchipelago(7)
+    const arch = archipelagoFor(7)
     const isl = [...arch.islands].sort((a, b) => b.peak - a.peak)[0]!
     const g: Ground = { sea, arch }
     // A run at the island's peak from 3 km out, released at 1,400 m.

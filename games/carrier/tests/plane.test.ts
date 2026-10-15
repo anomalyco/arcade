@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { archipelagoFor, terrainHeight } from "../shared/islands"
 import {
   authority,
   makePlane,
@@ -136,7 +136,7 @@ describe("plane", () => {
   })
 
   test("crashes into an island", () => {
-    const arch = makeArchipelago(7)
+    const arch = archipelagoFor(7)
     const big = arch.islands[0]!
     // Fly level at 60 m toward the centrepiece's peak from 3 km south.
     const p = flying(PLANE.optimalSpeed, 120, 0)

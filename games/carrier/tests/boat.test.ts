@@ -32,7 +32,7 @@ import {
   unpackBoat,
 } from "../shared/boat"
 import { headingTo, makeShip } from "../shared/ship"
-import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { archipelagoFor, terrainHeight } from "../shared/islands"
 import { makeSea, seaHeight, type Sea } from "../shared/sea"
 import { makeWeatherSea, WEATHER_PRESETS } from "../shared/weather"
 import type { Vec3 } from "../shared/plane"
@@ -52,7 +52,7 @@ function storm(): Sea {
   return w.sea
 }
 
-function run(b: Boat, seconds: number, c: BoatControls, sea: Sea, arch: ReturnType<typeof makeArchipelago> | null = null, ships: BoatObstacle[] = [], each?: (b: Boat) => void, dt: number = BOAT.tick): void {
+function run(b: Boat, seconds: number, c: BoatControls, sea: Sea, arch: ReturnType<typeof archipelagoFor> | null = null, ships: BoatObstacle[] = [], each?: (b: Boat) => void, dt: number = BOAT.tick): void {
   const n = Math.round(seconds / dt)
   for (let i = 0; i < n; i++) {
     boatStep(b, c, sea, arch, ships, dt)
@@ -191,7 +191,7 @@ describe("boat sim", () => {
   }
 
   test("runs aground on an island instead of passing through it", () => {
-    const arch = makeArchipelago(7)
+    const arch = archipelagoFor(7)
     const isl = arch.islands[0]!
     const sea = calm()
     const d = Math.hypot(isl.x, isl.z)

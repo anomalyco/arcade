@@ -3,7 +3,7 @@ import { type Conn, RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
 import { DRAFT } from "../shared/carrier-spec"
 import { playerOf } from "../shared/crew"
-import { makeArchipelago, terrainHeight } from "../shared/islands"
+import { archipelagoFor, terrainHeight } from "../shared/islands"
 import {
   OBJECTIVE_DEFAULTS,
   Objective,
@@ -21,7 +21,7 @@ import {
 import { type ServerMsg, decodeClient, decodeServer, encode } from "../shared/protocol"
 
 const SEEDS = [1, 7, 42, 2026, 0xdeadbeef, 95028]
-const arch7 = makeArchipelago(7)
+const arch7 = archipelagoFor(7)
 
 /** Steps an objective from its last time to `to` in 0.1 s steps with the same ships. */
 function run(o: Objective, from: number, to: number, ships: ObjectiveShip[] | ((t: number) => ObjectiveShip[])) {
@@ -44,7 +44,7 @@ const onZone = (o: Objective, i: number, team: number, t: number): ObjectiveShip
 describe("zone placement", () => {
   test("open water, clear of every spawn, deterministic", () => {
     for (const seed of SEEDS) {
-      const arch = makeArchipelago(seed)
+      const arch = archipelagoFor(seed)
       const spawns = spawnPoints(arch)
       let prev = placeZones(arch, spawns, 0, 0, 2, [], 0, OBJECTIVE_DEFAULTS)
       expect(placeZones(arch, spawns, 0, 0, 2, [], 0, OBJECTIVE_DEFAULTS)).toEqual(prev)
@@ -76,7 +76,7 @@ describe("zone placement", () => {
 
   test("a round's first zone sits near the middle, equally reachable from every spawn", () => {
     for (const seed of SEEDS) {
-      const arch = makeArchipelago(seed)
+      const arch = archipelagoFor(seed)
       const spawns = spawnPoints(arch)
       const [z] = placeZones(arch, spawns, 3, 0, 1, [], 0, OBJECTIVE_DEFAULTS)
       expect(Math.hypot(z!.x, z!.z)).toBeLessThanOrEqual(ZONE_AREA.firstReach)
