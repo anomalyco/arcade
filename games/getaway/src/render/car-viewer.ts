@@ -11,7 +11,7 @@ import { paintAtlas } from "./atlas"
 import { buildCar, buildHeli, buildRotor } from "./car-mesh"
 import { MAT, Mesh } from "./mesh"
 import { FRAME_FLOATS, INST_FLOATS, Renderer, SPRITE_FLOATS } from "./renderer"
-import { MAX_LIGHTS } from "./shaders"
+import { GetawayFrameStruct, MAX_LIGHTS } from "./shaders"
 
 const q = new URLSearchParams(location.search)
 const num = (k: string, d: number) => (q.has(k) ? Number(q.get(k)) : d)
@@ -113,31 +113,30 @@ async function main() {
     const eye = [target[0]! - Math.sin(camYaw) * hd, Math.sin(camPitch) * dist, target[2]! - Math.cos(camYaw) * hd]
     const vp = mat4.multiply(mat4.perspective(0.6, w / h, 1, 900), mat4.lookAt(eye, target, [0, 1, 0]))
     const moon = normalize([-0.55, 0.62, -0.55])
-    frame.set(vp, 0)
-    frame.set(lightMatrix([moon[0] * 120, moon[1] * 120, moon[2] * 120], [0, 0, 0]), 16)
-    let o = 32
-    const put = (a: number, b: number, c: number, d: number) => {
-      frame[o++] = a
-      frame[o++] = b
-      frame[o++] = c
-      frame[o++] = d
-    }
-    put(eye[0]!, eye[1]!, eye[2]!, t)
-    put(0, 1, 0, 0)
-    put(w, h, 0, t)
-    put(moon[0], moon[1], moon[2], 0.6)
     const spot = q.get("spot") === "1" && slots[0]
+    let spotPos: readonly [number, number, number, number] = [0, 0, 0, 0]
+    let spotDir: readonly [number, number, number, number] = [0, -1, 0, 1]
     if (spot) {
-      put(spot.x + 6, 30, spot.z - 10, 1)
+      spotPos = [spot.x + 6, 30, spot.z - 10, 1]
       const dir = normalize([-6, -30, 10])
-      put(dir[0], dir[1], dir[2], Math.cos(Math.atan(7.5 / 32)))
-    } else {
-      put(0, 0, 0, 0)
-      put(0, -1, 0, 1)
+      spotDir = [dir[0], dir[1], dir[2], Math.cos(Math.atan(7.5 / 32))]
     }
-    put(0.035, 0.045, 0.085, 0.0035)
     const clip = vec4.transformMat4([0, 1, 0, 1], vp)
-    put(clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0)
+    GetawayFrameStruct.pack(
+      {
+        viewProj: vp,
+        lightViewProj: lightMatrix([moon[0] * 120, moon[1] * 120, moon[2] * 120], [0, 0, 0]),
+        cam: [eye[0]!, eye[1]!, eye[2]!, t],
+        focus: [0, 1, 0, 0],
+        screen: [w, h, 0, t],
+        moonDir: [moon[0], moon[1], moon[2], 0.6],
+        spotPos,
+        spotDir,
+        fog: [0.035, 0.045, 0.085, 0.0035],
+        focusClip: [clip[0]! / clip[3]!, clip[1]! / clip[3]!, clip[2]! / clip[3]!, 0],
+      },
+      frame,
+    )
 
     let n = 0
     const light = (x: number, y: number, z: number, radius: number, r: number, g: number, b: number, k: number, dx = 0, dy = 0, dz = 0, cone = -2) => {
@@ -210,7 +209,7 @@ async function main() {
         }
       }
     })
-    frame[42] = n
+    frame[GetawayFrameStruct.offsetOf("screen") + 2] = n
     renderer.setBeams(new Float32Array(0), 0)
     renderer.render({
       frame,
