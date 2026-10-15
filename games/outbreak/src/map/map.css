@@ -1,0 +1,38 @@
+.obmap { position: fixed; inset: 0; z-index: 40; display: flex; padding: 22px; background: rgba(4, 6, 8, var(--map-backdrop, .55)) }
+.obmap[hidden] { display: none !important }
+.obmap-sheet {
+  position: relative; flex: 1; min-width: 0; overflow: hidden; border-radius: 3px;
+  background: var(--map-sheet, #d6cbb0); color: var(--map-text, #2a231b);
+  box-shadow: 0 0 0 1px var(--map-edge, #8a785a), 0 18px 60px rgba(0, 0, 0, .55);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  --akc-size: 20px
+}
+.obmap-base, .obmap-live { position: absolute; inset: 0; width: 100%; height: 100%; display: block }
+.obmap-live { cursor: crosshair; touch-action: none }
+.obmap-live[data-drag] { cursor: grabbing }
+.obmap-head {
+  position: absolute; left: 14px; top: 12px; display: flex; gap: 10px; align-items: baseline; pointer-events: none;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif
+}
+.obmap-title { font-size: 15px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase }
+.obmap-place { font-size: 13px; font-style: italic; color: var(--map-soft, #6a5b45) }
+.obmap-zoom { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 4px }
+.obmap-zoom button {
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--map-edge, #8a785a); border-radius: 3px;
+  background: color-mix(in srgb, var(--map-sheet, #d6cbb0) 88%, #fff); color: var(--map-text, #2a231b);
+  font: 600 15px/1 ui-monospace, "SF Mono", Menlo, monospace; cursor: pointer
+}
+.obmap-zoom button:hover { background: color-mix(in srgb, var(--map-sheet, #d6cbb0) 70%, #fff) }
+.obmap-zoom button:focus-visible { outline: 2px solid var(--map-text, #2a231b); outline-offset: 1px }
+.obmap-foot {
+  position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; justify-content: space-between;
+  align-items: flex-end; gap: 16px; pointer-events: none; color: var(--map-soft, #6a5b45); font-size: 11px
+}
+.obmap-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center }
+.obmap-legend > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.obmap-scale { display: flex; flex-direction: column; align-items: flex-end; gap: 3px }
+.obmap-scale i { display: block; height: 5px; border: 1.5px solid var(--map-text, #2a231b); border-top: 0 }
+.obmap-scale em { font-style: normal; color: var(--map-text, #2a231b); font-variant-numeric: tabular-nums }
+.obmap-compass { position: fixed; left: 0; top: 0; z-index: 8; pointer-events: none }
+.obmap-minimap { position: fixed; right: 14px; top: 14px; z-index: 8; pointer-events: none; border-radius: 50%; box-shadow: 0 4px 16px rgba(0, 0, 0, .45) }
+.obmap-compass[hidden], .obmap-minimap[hidden] { display: none }
