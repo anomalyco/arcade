@@ -1,6 +1,7 @@
 import { COLLECTION_SCHEMA, type LabScene, type SceneCollection } from "@arcade/kit/lab/scenes/model"
 import { scenesFromStation } from "@arcade/kit/lab/scenes/migrate"
 import { orderStations, type LabStation } from "@arcade/kit/lab/stations/types"
+import { kindOf } from "./kinds"
 
 /** The collection each station's scenes go into. Stations not listed go to "Stations". */
 export const STATION_AREAS: readonly { id: string; title: string; stations: readonly string[] }[] = [
@@ -13,14 +14,14 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
 ]
 const FALLBACK = { id: "stations", title: "Stations" }
 
-/** Every station file as repo scenes in area collections, in station order, with what the migration changed. */
+/** Every station file as repo labs in area collections, in station order, with what the migration changed. */
 export function migrateStations(stations: readonly LabStation[], now: string): { collections: SceneCollection[]; scenes: LabScene[]; notes: string[] } {
   const scenes: LabScene[] = []
   const notes: string[] = []
   const byArea = new Map<string, string[]>()
   for (const { station } of orderStations(stations)) {
     const area = STATION_AREAS.find(a => a.stations.includes(station.id)) ?? FALLBACK
-    const migrated = scenesFromStation(station, { collection: area.id, now })
+    const migrated = scenesFromStation(station, { collection: area.id, now, kindOf })
     scenes.push(...migrated.scenes)
     notes.push(...migrated.notes)
     byArea.set(area.id, [...(byArea.get(area.id) ?? []), ...migrated.scenes.map(s => s.id)])

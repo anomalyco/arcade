@@ -178,15 +178,15 @@ export function createSceneStore(options: SceneStoreOptions) {
     },
 
     /** A new draft, empty or copied from another scene. */
-    create(input: { title: string; collection?: string; host?: SceneHost; from?: string }): SceneEntry {
+    create(input: { title: string; kind: string; collection?: string; host?: SceneHost; from?: string }): SceneEntry {
       const collectionId = input.collection ?? DRAFTS
       const taken = allScenes().filter(e => e.scene.collection === collectionId).map(e => e.scene.id)
       const id = slug(input.title, taken)
       const at = now()
       const base = input.from ? must(input.from).scene : null
       const scene: LabScene = base
-        ? { ...structuredClone(base), id, collection: collectionId, title: input.title, status: "draft", created: at, updated: at, author: options.author }
-        : emptyScene({ id, collection: collectionId, title: input.title, now: at, author: options.author, host: input.host })
+        ? { ...structuredClone(base), id, collection: collectionId, kind: base.kind, title: input.title, status: "draft", created: at, updated: at, author: options.author }
+        : emptyScene({ id, kind: input.kind, collection: collectionId, title: input.title, now: at, author: options.author, host: input.host })
       return put(scene)
     },
 
