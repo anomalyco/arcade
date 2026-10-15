@@ -38,12 +38,14 @@ export const PICKUP_SOUND: Readonly<Record<string, `pickup.${PickupClass | "ammo
   medkit: "pickup.medical",
   bandage: "pickup.medical",
   noisemaker: "pickup.item",
+  bottle: "pickup.item",
+  cans: "pickup.item",
   toolbox: "pickup.part",
   "car-battery": "pickup.part",
 }
 
 /** Which crafting sound each recipe makes. */
-export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker" }
+export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker", tripwire: "tinker" }
 
 /** Channel kinds with a held sound, and what plays when one finishes rather than being cancelled. */
 function channelSound(kind: string, label: string): { loop: string; done: string | null } | null {
@@ -94,6 +96,10 @@ export class InventorySounds {
   private drops = new Set<string>()
   private pings = new Set<number>()
   private lures = new Set<number>()
+  /** D-19 verbs: glass already heard, each tripwire's last armed state, cars already smashed. */
+  private glass = new Set<string>()
+  private trips = new Map<string, number>()
+  private smashed = new Set<string>()
   private started = false
   readonly holds: SoundHold[] = []
 
@@ -103,10 +109,13 @@ export class InventorySounds {
     this.drops.clear()
     this.pings.clear()
     this.lures.clear()
+    this.glass.clear()
+    this.trips.clear()
+    this.smashed.clear()
     this.started = false
   }
 
-  observe(progression: SoundProgression | undefined, hour: number, survivors: readonly { id: string; survivor: SoundActor }[], out: SoundEvent[]): void {
+  observe(progression: SoundProgression | undefined, hour: number, survivors: readonly { id: string; survivor: SoundActor }[], out: SoundEvent[], time = 0): void {
     const holds = this.holds
     holds.length = 0
     const emit = this.started ? (e: SoundEvent) => out.push(e) : () => {}
@@ -171,6 +180,10 @@ export class InventorySounds {
       let dropCount = 0
       let newDrop = false
       for (const [sid, st] of stores) {
+        if (sid.startsWith("glass:") || sid.startsWith("trip:") || sid.startsWith("car:")) {
+          this.verbSound(sid, st, time, emit)
+          continue
+        }
         if (!sid.startsWith("drop:")) continue
         dropCount++
         if (this.drops.has(sid)) continue
@@ -189,5 +202,25 @@ export class InventorySounds {
       if (newLure || progression.lures.length !== this.lures.size) this.lures = new Set(progression.lures.map((l) => l.id))
     }
     this.started = true
+  }
+
+  /** A bottle breaking, cans strung across a doorway rattling as someone walks through, a car window going in and its alarm wailing. */
+  private verbSound(sid: string, st: StoreState, time: number, emit: (e: SoundEvent) => void): void {
+    const at = st.at
+    if (!at) return
+    if (sid.startsWith("glass:")) {
+      if (!this.glass.has(sid)) emit({ id: "glass.break", x: at.x, y: at.y, source: "bottle" })
+      this.glass.add(sid)
+    } else if (sid.startsWith("trip:")) {
+      const armed = st.counts.armed ?? 0
+      if (this.trips.get(sid) === 1 && !armed && !st.counts.down) emit({ id: "lure.land", x: at.x, y: at.y, source: "tripwire", gain: 1.2 })
+      this.trips.set(sid, armed)
+    } else {
+      if (st.counts.smashed && !this.smashed.has(sid)) {
+        emit({ id: "glass.break", x: at.x, y: at.y, source: "car" })
+        this.smashed.add(sid)
+      }
+      if (st.counts.alarm && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "lure.loop", x: at.x, y: at.y })
+    }
   }
 }

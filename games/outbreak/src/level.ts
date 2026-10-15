@@ -86,6 +86,16 @@ function furniture(m: Mesh, p: Prop, town: Town): void {
     m.box(r,.36,(c+e)/2-.08,r+.03,.44,(c+e)/2+.08,hex(0xa89060))
     m.yawBox((a+r)/2,(c+e)/2-.12,.25,.3,.62,.98,.06,hex(0x6e5636),MAT.timber,0,hex(0x7c6240))
     m.yawBox((a+r)/2+.02,(c+e)/2+.04,.2,.22,.98,1.25,-.1,hex(0x8a7a5c),MAT.lit)
+  } else if(kind==="closet") {
+    // A tall bedroom closet against the wall: two louvred doors, slats a hidden survivor can see out through.
+    const {rect:[a,c,r,e],height}=propShape(p)!
+    m.box(a,.13,c,r,height,e,hex(0x553b23),MAT.timber)
+    m.box(a-.02,height,c-.02,r+.02,height+.05,e+.02,hex(0x684a2c),MAT.timber)
+    for(const [d0,d1] of [[a+.05,x-.015],[x+.015,r-.05]] as const){
+      m.box(d0,.2,e,d1,height-.08,e+.02,hex(0x6a4b2e),MAT.timber)
+      for(let i=0;i<7;i++)m.box(d0+.05,1.05+i*.1,e+.02,d1-.05,1.09+i*.1,e+.04,hex(0x3e2b18),MAT.timber)
+    }
+    for(const s of [-1,1])m.box(x+s*.035-.012,.95,e+.02,x+s*.035+.012,1.1,e+.05,hex(0xa89060))
   } else if(kind==="stove") {
     m.box(x-.36,.13,z-.4,x+.36,.92,z+.4,hex(0x584028),MAT.timber)
     m.box(x-.38,.92,z-.42,x+.38,.96,z+.42,hex(0x685e50))

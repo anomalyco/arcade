@@ -135,7 +135,7 @@ nominal so clients can tell. Standing still (under 0.4 m/s), within 2.2 m, squar
 barricade, a player's own included, for `studyTime` (1.5 s) teaches it and pins the student's sketch
 (`OutbreakProgression.study`, snapshotted).
 
-Can tripwire disarming and repair practice arrive with their verbs in slice 4.
+Disarming a can tripwire and practising repairs come with their verbs in slice 4.
 
 Lab: Discovery › Stage: page, page read, found pages, held out; Discovery › page size, page diagram, its time;
 Progression › practised board-up time and noise, learn by watching within, practice from watching, study time. The
@@ -153,3 +153,39 @@ station has matching variants.
 - `tests/discovery.test.ts`: the plank byte round-trips strength, and plain boards never look reinforced.
 - `scripts/discovery-proof.ts found`: stills of the flyer on its shelf, the flyer held up after reading, the chart,
   a corkboard of a sketch, flyer, chart and photo, and a strapped window (staged), which then teaches by looking.
+
+## Slice 4: verbs
+
+New things to do, each read from the world rather than explained. Simulation in `shared/progression.ts` (handlers,
+`stepVerbs`) and `shared/discovery/verbs.ts` (store ids and geometry); presentation in `src/discovery/verbs.ts`
+(`VerbProps`) and `src/discovery/closet.ts`. Tunables are the Progression › **Verbs** group.
+
+| Verb | Input | What it does | State |
+| --- | --- | --- | --- |
+| Crouch | hold Ctrl (`ControlLeft`/`ControlRight`) | Half speed (`crouchSpeed`), footsteps at `crouchNoise` (1.2 m), no sprint, and 55% as much of you to see (`crouchVisibility`, scaling the AI's sight and close-range sensing through `PerceptionTarget.visibility`). The rig drops its hips and leans over its knees | `Command.crouch`; wire bit 0x80 of the action byte, remote survivors in bit 7 of the health byte, the personal snapshot's flag 32 |
+| Hide | E at a bedroom closet | One survivor per closet: still, silent, flashlight off and invisible to the dead (visibility 0). The view goes dark behind louvre slats; E steps back out in front of it. A chaser that loses you walks to where it last saw you and searches | `hide:<closet>` {in, owner}. Every house bedroom has one closet (`closetSpot`), pushed after the other props so nothing seeded earlier moved |
+| Peephole | Shift+E at a shut outer door | Looks out through the door (120° cone) the way a window peek does; E or opening the door stops. Bedroom and back-room doors (`-room`) have none | `peekingWindowId` = the door id |
+| Can tripwire | E at a line; Mouse0 with cans in hand near a doorway (`tripSetTime`) | Pharmacies, police stations and clinics start with cans across their front door. Walking through upright springs them: a 13 m rattle (`tripNoise`) and the cans on the floor. Crouching steps over; the dead always spring them. E works an armed line loose quietly (`tripDisarmTime`), leaves the cans in hand and teaches the recipe (pinned as a sketch, there is no tinker pair; crafted from two scrap). Sprung cans: E picks them up, hold E strings them again | `trip:<portal>` {armed, down}. A line hangs a stride from the opening on the side the camera sees (`tripLine`): inside an east, west or north wall, across the step outside a south one, whose height hides two metres of floor |
+| Bottle | Mouse0 with a bottle in hand | Thrown up to `bottleRange` (12 m), it breaks where it lands: a 15 m noise and glass on the ground. Bottles turn up in counters, fridges and shelves on their own random stream, so other loot is unchanged | `glass:<n>` {t} |
+| Car alarm | E at an abandoned car, or a bottle breaking near one | About half the cars have a working alarm, fixed per car. E puts a window in (glass on the road). An alarm car wails at `alarmNoise` (30 m) on a beat for `alarmTime` (20 s), flashing its indicators, then the battery is dead | `car:<key>` {smashed, alarm, start, until} in deciseconds |
+| Repair | B with a crowbar in hand at a damaged barricade | Re-nails it to full (planks × 100) in `repairTime`, scaled by practice like boarding up (mastery `repair`; watchers gain `watchShare`). A sound barricade still takes a board as before | the AI's portal state |
+
+The prompts follow slice 1: key caps that lose their words after three uses. A tripwire's prompt floats past its wire
+so it never hides it. Sounds: glass breaking for a bottle or a car window, the lure rattle when cans spring, the lure
+loop while an alarm wails (`verbSound` in `src/audio/inventory.ts`).
+
+Lab: Discovery › Stage: crouch, closet, peephole, tripwire, bottle, car alarm, repair; the station's matching
+variants. The harness reports `discovery.verbs` {lines, sprung, glass, smashed, flashing, hidden, crouching}.
+
+### Proof
+
+- `tests/verbs.test.ts`: crouch speed, noise, sprint and visibility; the crouch bit beside an interact action; one
+  closet per bedroom, clear of other furniture in streamed houses; hiding, a taken closet, and a chaser searching where
+  it lost you; peepholes on outer doors only; trapped front doors, rattling versus crouching over, disarming teaches,
+  stringing a new line; bottles, car alarms and a bottle setting one off; crowbar repairs with practice; hidden
+  survivors, lines, alarms and glass through a snapshot, both copies ticking the same.
+- `tests/coop.test.ts`: cans one survivor takes down are down for everyone, the lesson is pinned as theirs, and a
+  crouch shows remotely. `packages/kit/ai.test.ts`: visibility scales sight.
+- `scripts/discovery-proof.ts verbs`: stills of the crouch over a line, sprung cans, an armed line with its prompt,
+  the closet's slats, the peephole view, a bottle in hand and thrown, a car with its window in and indicators
+  flashing, and a barricade before and after a re-nail.

@@ -255,6 +255,12 @@ thigh into the chest (80° hip flexion, 139° knee flexion). Scaling swing lift 
 compensating `unarmedHands` for the extra forward torso pitch brought crouch-run overall angle RMSE against
 `buildCrouchRunReferenceCycle` from 9.5° to 6.0° (leg RMSE 11.8° to 5.5°, soldier leg RMSE 18.5° to 14.1°).
 
+**Outbreak's sneak crouch (Ctrl) is a separate spring, zero unless held.** `Survivor.stealth` in
+`games/outbreak/src/survivor.ts` springs to 1 while `crouching` (k 260, critically damped) and adds a 0.3 m hip drop,
+0.28 rad pelvis pitch and 0.34 rad chest lean on top of the profile's crouch-run terms; the sim halves move speed. At
+0 every added term is `+ 0`, so standing, walking and running poses are unchanged. The low pose has not been measured
+against mocap yet (still: `crouch` in `captures/outbreak-discovery/`).
+
 **Pitch the pelvis about the hip axis, after the support roll.** `build` in `anim.ts` does this so both hip joints
 stay put and planted reaches are unchanged.
 

@@ -1,5 +1,6 @@
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
+import { closetSpot } from "./discovery/closet-spot"
 
 export const CHUNK = 32
 export const SIZE = CHUNK * 3
@@ -17,7 +18,7 @@ export type Building = {
   footprint?: readonly Rect[]
   chunkKey?: string
 }
-export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash"; variant: number }
+export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash" | "closet"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
 export type Town = {
   seed: number
@@ -83,6 +84,7 @@ const PROP_SHAPES = {
   stove: [0.75, 0.8, 0.95],
   workbench: [0.7, 1.6, 0.95],
   stash: [0.6, 0.9, 1.25],
+  closet: [1.2, 0.6, 2.0],
 } as const
 
 const propShapeCache = new WeakMap<Prop, { rect: Rect; height: number }>()
@@ -178,6 +180,13 @@ export function makeTown(seed: number, houseSeed = seed, terrain = .22, foliageD
   }
   for(const [x,y] of [[12.8,24.5],[15.6,29.4],[11.5,33.2],[15.4,35.8],[13.8,49.2],[14,59],[12,63]]) town.props.push({x:x!,y:y!,kind:"tree",variant:rng.next()})
   town.props.push({x:16.4,y:32.6,kind:"tree",variant:.46})
+  // Bedroom closets (D-19 verbs) go last so every seeded prop and loot id before them is unchanged.
+  for (const b of town.buildings) {
+    if (b.kind !== "house") continue
+    const [x, y] = b.rect
+    const spot = closetSpot(y, { x: x + 3.85 }, { x: x + 7.55 })
+    if (spot) town.props.push({ ...spot, kind: "closet", variant: .5 })
+  }
   for (const p of [8, 52, 78]) for (const [x,y] of [[p,39],[p,51],[50,p]]) town.lamps.push({x:x!,y:y!,h:3.55,radius:5.8,power:.28,kind:"street"})
   for (const b of town.buildings) {
     const [x,z,r,e]=b.rect

@@ -242,6 +242,29 @@ describe("CoopRoomCore", () => {
     }
   })
 
+  test("cans one survivor takes down are down for everyone, the lesson is pinned as theirs, and a crouch shows remotely", () => {
+    const core = new CoopRoomCore("test", options, Date.now, "test")
+    const a = client(core, "Ann")
+    const b = client(core, "Bob")
+    run(core, [a, b], 3)
+    const trip = "trip:pharmacy-front"
+    for (const c of [a, b]) expect(c.ledger.store(trip)?.counts.armed).toBe(1)
+    Object.assign(core.sim.slot(b.id)!.survivor, { x: 58.7, y: 69.2, aim: -Math.PI / 2 })
+    core.sim.rebuildSolids()
+    run(core, [a, b], 2, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    run(core, [b], 1, () => ({ ...idle(-Math.PI / 2), interact: true }))
+    run(core, [a, b], Math.ceil(core.sim.progression.tuning.tripDisarmTime / TICK_DT) + 4, (c) => (c === b ? { ...idle(-Math.PI / 2), crouch: true } : idle()))
+    expect(core.sim.progression.learned("tripwire")).toBe(true)
+    const seat = core.sim.slot(b.id)!.index
+    for (const c of [a, b]) {
+      expect(c.ledger.store(trip)?.counts.down).toBe(1)
+      expect(c.ledger.count("team/known", "learned:tripwire")).toBe(1)
+      expect(readPin(c.ledger.store(pinStoreId("tripwire")), "tripwire")).toMatchObject({ actor: b.id, seat, source: "sketch" })
+    }
+    expect(last(a).shared.survivors.find((s) => s.index === seat)?.crouching).toBe(true)
+    expect(last(b).shared.survivors.find((s) => s.index !== seat)?.crouching).toBeUndefined()
+  })
+
   test("a dropped bundle reaches a teammate, and a seat that expires leaves its kit on the floor", () => {
     let now = 0
     const core = new CoopRoomCore("test", options, () => now, "test")

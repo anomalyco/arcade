@@ -52,6 +52,12 @@ export const DRAWINGS: Readonly<Record<string, Drawing>> = {
   ],
   cell: [rect(-0.4, -0.9, 0.4, 0.55), rect(-0.15, 0.55, 0.15, 0.8), [[0.12, 0.35], [-0.15, -0.12], [0.12, -0.12], [-0.12, -0.65]]],
   toolbox: [rect(-0.85, -0.55, 0.85, 0.3), [[-0.3, 0.3], [-0.3, 0.62], [0.3, 0.62], [0.3, 0.3]], [[-0.85, -0.05], [0.85, -0.05]]],
+  // Cans strung across a doorway: the frame, the line low across it, and three cans hanging off it.
+  cans: [
+    [[-0.9, -0.95], [-0.9, 0.9], [0.9, 0.9], [0.9, -0.95]],
+    [[-0.9, -0.45], [0.9, -0.45]],
+    ...[-0.45, 0, 0.45].flatMap((x): Pt[][] => [[[x, -0.45], [x, -0.55]], rect(x - 0.12, -0.9, x + 0.12, -0.55)]),
+  ],
 }
 
 /** The drawing on a recipe's sketch for what it makes. */
@@ -61,6 +67,7 @@ export const RESULT_DRAWING: Readonly<Record<string, string>> = {
   "spiked-board": "spiked-board",
   reinforced: "reinforced",
   battery: "cell",
+  tripwire: "cans",
 }
 
 const GRAPHITE = hex(0x343334)
@@ -128,11 +135,16 @@ function paper(m: Mesh, w: number, h: number, colour: Rgb, torn = false): void {
   if (torn) for (let i = 0; i < 4; i++) m.box(-w / 2 + (i + 0.3) * (w / 4), THICK, h / 2 - 0.006, -w / 2 + (i + 0.6) * (w / 4), THICK + 0.0006, h / 2, hex(0x8a7e62), MAT.lit)
 }
 
-/** A finished sketch: the two materials, a plus, an arrow down, and what they make. */
-export function sketchCard(recipe: string, pair: readonly [string, string]): Mesh {
+/** A finished sketch: the two materials, a plus, an arrow down, and what they make (or just the thing, for no pair). */
+export function sketchCard(recipe: string, pair: readonly [string, string] | undefined): Mesh {
   const m = new Mesh()
   paper(m, CARD.w, CARD.h, PAPER)
   const pen = new Pen(m, recipe.length * 7.1 + 3, THICK)
+  if (!pair) {
+    // Learned by taking one apart, not on the mat: the thing itself, drawn large.
+    pen.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, 0, 0.075, W * 1.15, GRAPHITE)
+    return m
+  }
   pen.draw(pair[0], -0.05, 0.065, 0.036, W, GRAPHITE)
   pen.draw(pair[1], 0.05, 0.065, 0.036, W, GRAPHITE)
   pen.line(-0.01, 0.065, 0.01, 0.065, W, GRAPHITE)

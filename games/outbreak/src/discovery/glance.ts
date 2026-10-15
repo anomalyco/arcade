@@ -71,7 +71,7 @@ export class PageGlance {
   /** Holds a page up for `seconds` (Lab, proofs, and reading). */
   show(site: Pick<PageSite, "recipe" | "style">, seconds: number): void {
     const recipe = RECIPES.find((r) => r.id === site.recipe)
-    if (!recipe) return
+    if (!recipe?.tinker) return
     this.showing = `${site.style}:${site.recipe}`
     this.left = this.total = Math.max(0.1, seconds)
     if (!this.el) return

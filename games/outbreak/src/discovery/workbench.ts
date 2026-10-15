@@ -19,8 +19,10 @@ const FACE = 0.016
 const SKETCH_U = 0.27
 const TRIED_U = 0.085
 const SLOT_PITCH = 0.285
+/** Recipe cards share the board's length (1.47 m of cork), crowding a little as recipes are added. */
+const SKETCH_PITCH = Math.min(SLOT_PITCH, 1.22 / Math.max(1, RECIPES.length - 1))
 
-const FAILED_PAIRS = ALL_PAIRS.map(([a, b]) => pairKey(a, b)).filter((p) => !RECIPES.some((r) => pairKey(r.tinker[0], r.tinker[1]) === p))
+const FAILED_PAIRS = ALL_PAIRS.map(([a, b]) => pairKey(a, b)).filter((p) => !RECIPES.some((r) => r.tinker && pairKey(r.tinker[0], r.tinker[1]) === p))
 
 const FOUND_STYLES = ["flyer", "chart", "photo"] as const
 
@@ -51,7 +53,7 @@ export function onBoard(site: Pick<BenchSite, "bench">, u: number, v: number, li
 }
 
 /** Corkboard slot of a recipe (fixed, so empty cork shows how much is still to find). */
-export const sketchSlot = (recipe: string) => (RECIPES.findIndex((r) => r.id === recipe) - (RECIPES.length - 1) / 2) * SLOT_PITCH
+export const sketchSlot = (recipe: string) => (RECIPES.findIndex((r) => r.id === recipe) - (RECIPES.length - 1) / 2) * SKETCH_PITCH
 export const triedSlot = (pair: string) => (FAILED_PAIRS.indexOf(pair) - (FAILED_PAIRS.length - 1) / 2) * SLOT_PITCH
 
 /**
@@ -89,6 +91,7 @@ export class WorkbenchProps {
     const found = new Map<string, number>()
     for (const r of RECIPES) {
       sketch.set(r.id, renderer.addModel(sketchCard(r.id, r.tinker)))
+      if (!r.tinker) continue
       idea.set(r.id, renderer.addModel(ideaCard(r.id, r.tinker)))
       for (const style of FOUND_STYLES) found.set(`${style}:${r.id}`, renderer.addModel(foundCard(style, r.id, r.tinker)))
     }

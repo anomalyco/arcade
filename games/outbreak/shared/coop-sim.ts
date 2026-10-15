@@ -18,6 +18,7 @@ import {
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures } from "./feature-registry"
 import "./hordes/index"
+import "./discovery/index"
 import { openingClockActive } from "./pacing"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
@@ -300,6 +301,7 @@ export class CoopSim {
     const p = slot.survivor
     const town = this.town
     if (!p.vault) p.aim = command.aim
+    p.crouching = Boolean(command.crouch) && !p.vehicleId
 
     const clampClassic = this.worldStream.mode === "classic"
     for (const feature of outbreakSharedFeatures.list()) {
@@ -348,7 +350,9 @@ export class CoopSim {
       const rawLen = Math.hypot(command.mx, command.my)
       const moving = rawLen > 1e-4
       const length = Math.max(1, rawLen)
-      const speed = stepStamina(p, moving, Boolean(command.sprint), dt, resolved.stamina)
+      const t = this.progression.tuning
+      const crouch = p.crouching ? { speed: t.crouchSpeed, noise: t.crouchNoise } : undefined
+      const speed = stepStamina(p, moving, Boolean(command.sprint), dt, resolved.stamina, crouch)
       const steps = Math.max(1, Math.ceil(dt * 60))
       for (let i = 0; i < steps; i++) {
         p.x += ((command.mx / length) * speed * dt) / steps
@@ -407,7 +411,7 @@ export class CoopSim {
         target &&
         (target.kind === "door" || target.kind === "window") &&
         this.ai.getBarricadePlanks(target.id) > 0 &&
-        (command.interactAction ?? target.primary.id) !== "peek"
+        (command.interactAction ?? (command.sprint && target.alt ? target.alt.id : target.primary.id)) !== "peek"
       if (isBarricadedPortal) {
         p.lootMessage = `Blocked by barricade (${this.ai.getBarricadePlanks(target.id)}/3 planks)`
         p.lootMessageUntil = this.time + 2.0

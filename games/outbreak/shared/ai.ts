@@ -192,6 +192,8 @@ export type AISurvivor = {
   vy: number
   aim: number
   noise: number
+  /** How much of the survivor there is to see, 0..1 (crouched or hidden; default 1). */
+  visibility?: number
 } & SurvivorFlashlightState
 
 export type OutbreakAISnapshot = {
@@ -587,6 +589,7 @@ export class OutbreakAISubsystem {
         lightLevel,
         continuousNoiseRadius: player.noise,
         flashlight,
+        visibility: player.visibility,
       }
     })
 

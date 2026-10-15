@@ -13,6 +13,8 @@ const FOOTPRINT: Record<string, number> = {
   medkit: 0.24,
   bandage: 0.11,
   noisemaker: 0.14,
+  bottle: 0.26,
+  cans: 0.24,
   plank: 0.5,
   scrap: 0.2,
   chem: 0.16,
@@ -52,6 +54,25 @@ export function buildItemMeshes(): Record<string, Mesh> {
   lure.prism(0, 0, 0.044, 0.044, 0.05, 0.053, 12, hex(0xe8e0c8), MAT.lit)
   for (const s of [-1, 1]) lure.prism(s * 0.035, -0.02, 0.022, 0.022, 0.05, 0.075, 8, hex(0xc8b070), MAT.shiny)
   out.noisemaker = lure
+
+  // An empty bottle lying on its side, neck along +x.
+  const bottle = new Mesh()
+  const green = hex(0x2f5a34)
+  bottle.yawBox(-0.04, 0, 0.15, 0.065, 0, 0.065, 0, green, MAT.glass)
+  bottle.yawBox(0.06, 0, 0.05, 0.045, 0.01, 0.055, 0, green, MAT.glass)
+  bottle.yawBox(0.105, 0, 0.04, 0.026, 0.02, 0.046, 0, green, MAT.glass)
+  bottle.yawBox(-0.06, 0, 0.07, 0.068, 0.012, 0.054, 0, hex(0xb8ad8a), MAT.lit)
+  out.bottle = bottle
+
+  // Three tin cans tied along a length of wire, ready to string across a doorway.
+  const cans = new Mesh()
+  cans.box(-0.12, 0.002, -0.004, 0.12, 0.008, 0.004, hex(0x8a8c88), MAT.shiny)
+  for (const [x, z] of [[-0.075, 0.04], [0, -0.035], [0.075, 0.035]] as const) {
+    cans.prism(x, z, 0.03, 0.03, 0, 0.085, 10, hex(0x9aa0a2), MAT.shiny)
+    cans.prism(x, z, 0.027, 0.027, 0.085, 0.088, 10, hex(0x6e7270), MAT.shiny)
+    cans.prism(x, z, 0.031, 0.031, 0.03, 0.055, 10, hex(0xa8442c), MAT.lit)
+  }
+  out.cans = cans
 
   const plank = new Mesh()
   plank.box(-0.25, 0, -0.05, 0.25, 0.028, 0.05, hex(0x8e6f48), MAT.timber, 0, hex(0x9a7a50))

@@ -9,6 +9,8 @@ const PATHS: Record<string, string> = {
   battery: '<rect x="7" y="6" width="10" height="14" rx="1"/><path d="M10 4h4v2h-4zM12 10v6M9 13h6"/>',
   bandage: '<circle cx="10" cy="12" r="6"/><circle cx="10" cy="12" r="2"/><path d="M16 12h5v3h-5"/>',
   noisemaker: '<circle cx="12" cy="13" r="6"/><path d="M12 13V9.5M12 13l2.5 1.5"/><circle cx="6.5" cy="6" r="2"/><circle cx="17.5" cy="6" r="2"/><path d="M8 19l-2 2M16 19l2 2"/>',
+  bottle: '<path d="M4 15.5 13 10.5l3 .2 4-2.4 1 1.8-4 2.4-1.4 2.6-9 5z"/><path d="M7.5 13.6l2 3.4"/>',
+  cans: '<path d="M3 7h18"/><path d="M7 7v2M12 7v2M17 7v2"/><rect x="5" y="9" width="4" height="6" rx=".6"/><rect x="10" y="9" width="4" height="6" rx=".6"/><rect x="15" y="9" width="4" height="6" rx=".6"/>',
   "spiked-board": '<path d="M3 17 18 6l2 2.5L5 19.5z"/><path d="M14 8.5l-1.5-3M16.5 7l-1-3.5M11 11l-2-2.5M18.5 9.5l3-1"/>',
   reinforced: '<rect x="4" y="5" width="16" height="14"/><path d="M4 9l16 4M4 15l16-4"/><circle cx="7" cy="9.8" r=".6"/><circle cx="17" cy="12.2" r=".6"/>',
 }
