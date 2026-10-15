@@ -161,8 +161,9 @@ export class Game {
   // Update --------------------------------------------------------------------------------------------------------
 
   update(realDt: number): void {
+    // Online time can't be dropped: the room keeps going, so a long frame still advances the head in full.
+    if (this.online?.ready) return this.updateOnline(Math.min(1, realDt))
     const dt = Math.min(0.1, realDt)
-    if (this.online?.ready) return this.updateOnline(dt)
     if (this.hitStop > 0) {
       this.hitStop -= dt
       return
@@ -211,7 +212,7 @@ export class Game {
     let prev: Spots | null = null
     let atOld: Spots | null = null
     const device = (b: number) => b | this.controls.buttons("pad0")
-    const events = o.update(dt * 1000, () => device(this.controls.buttons("kb")), (w, t) => {
+    const events = o.update(() => device(this.controls.buttons("kb")), (w, t) => {
       prev = cur
       cur = spotsOf(w)
       if (t === oldHead && o.rb.resimulated > 0) atOld = cur
@@ -247,9 +248,10 @@ export class Game {
       if (a.drawing) this.wasDrawing.add(a.id)
       else this.wasDrawing.delete(a.id)
     }
-    this.fx.update(this.hitStop > 0 ? 0 : dt)
-    this.hurt *= Math.exp(-dt * 3)
-    this.ambient(dt)
+    const fdt = Math.min(0.1, dt)
+    this.fx.update(this.hitStop > 0 ? 0 : fdt)
+    this.hurt *= Math.exp(-fdt * 3)
+    this.ambient(fdt)
   }
 
   private ambient(dt: number): void {

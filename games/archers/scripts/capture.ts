@@ -8,6 +8,7 @@
 import { mkdirSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
+import { CHROME_ARGS, PACE_60 } from "./headless"
 import { chromium } from "playwright-core"
 
 const { values: o } = parseArgs({
@@ -37,10 +38,11 @@ const server = Bun.serve({
     return (await asset.exists()) ? new Response(asset) : new Response("Not found", { status: 404 })
   },
 })
-const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
+const browser = await chromium.launch({ headless: true, args: CHROME_ARGS })
 const size = { width: Number(o.width), height: Number(o.height) }
 const context = await browser.newContext({ viewport: size, ...(o.video ? { recordVideo: { dir: out, size } } : {}) })
 const page = await context.newPage()
+await page.addInitScript(PACE_60)
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => {

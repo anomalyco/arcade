@@ -26,6 +26,8 @@ export class OnlineSession {
   /** Smoothed round trip, ms. */
   rtt = 0
   desyncs = 0
+  /** For proofs: frames run, the last slack the room reported, and how far the head ran past the confirmed tick. */
+  readonly stats = { frames: 0, slack: [] as number[], ahead: [] as number[], arrivals: [] as number[] }
   fatal: string | null = null
   private helloAt = 0
   private held = -1
@@ -81,18 +83,24 @@ export class OnlineSession {
         this.rb.reset(new World(m.s, DEFAULT_TUNING), m.t, { i: m.i })
         if (!this.waitingState || !this.rtt) {
           if (!this.rtt) this.sample(performance.now() - this.helloAt)
-          this.pacer.start(m.t, this.rtt)
+          this.pacer.start(m.t, this.rtt, performance.now())
         }
         this.waitingState = false
         this.held = -1
         return
       case "f": {
         if (!this.rb.ready || this.waitingState) return
+        const now = performance.now()
+        if (this.stats.arrivals.length < 20_000) this.stats.arrivals.push(now)
+        this.pacer.frame(m.t, now)
         const frame: Frame = m.c ? { i: m.i, c: m.c } : { i: m.i }
         const ev = this.rb.confirm(m.t, frame)
         if (ev === "gap") return this.resync()
         this.pending.push(...ev)
-        if (m.a !== null) this.pacer.slack(m.a)
+        if (m.a !== null) {
+          this.pacer.slack(m.a)
+          if (this.stats.slack.length < 20_000) this.stats.slack.push(m.a)
+        }
         if (m.h !== undefined && this.rb.tick === m.t && hashWorld(this.rb.confirmed) !== m.h) {
           this.desyncs++
           console.warn(`archers: world hash differs from the room's at tick ${m.t}; resyncing`)
@@ -110,10 +118,10 @@ export class OnlineSession {
   }
 
   /**
-   * Runs the local step to the head for `dtMs` of real time. `buttons()` is read once per new tick; `after` hears
+   * Runs the local step to the pacer's head tick. `buttons()` is read once per new tick; `after` hears
    * every simulated tick's world (including re-simulated ones). Returns the events to show.
    */
-  update(dtMs: number, buttons: () => Buttons, after?: (w: World, tick: number) => void): SimEvent[] {
+  update(buttons: () => Buttons, after?: (w: World, tick: number) => void): SimEvent[] {
     const now = performance.now()
     if (now - this.pingAt > PING_MS) {
       this.pingAt = now
@@ -124,7 +132,7 @@ export class OnlineSession {
     if (!this.rb.ready) return out
     this.pacer.atLeast(this.rb.tick)
     const from = this.rb.headTick
-    const head = this.pacer.update(dtMs)
+    const head = this.pacer.update(now)
     // A long stall leaves the head far ahead of what we may predict; inputs for ticks past it aren't sent.
     const until = Math.min(head, this.rb.tick + this.rb.maxAhead)
     for (let t = from + 1; t <= until; t++) {
@@ -134,6 +142,8 @@ export class OnlineSession {
       this.held = b
     }
     out.push(...this.rb.advance(until, after))
+    this.stats.frames++
+    if (this.stats.ahead.length < 20_000) this.stats.ahead.push(this.rb.headTick - this.rb.tick)
     return out
   }
 

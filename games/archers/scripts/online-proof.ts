@@ -10,6 +10,7 @@ import { mkdirSync, readdirSync, unlinkSync } from "node:fs"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import type { ServerWebSocket } from "bun"
+import { CHROME_ARGS, PACE_60 } from "./headless"
 import { chromium, type Page } from "playwright-core"
 
 const { values: o } = parseArgs({
@@ -91,7 +92,7 @@ const proxy = Bun.serve<{ path: string; link?: Link }>({
   },
 })
 
-const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
+const browser = await chromium.launch({ headless: true, args: CHROME_ARGS })
 const size = { width: Number(o.width), height: Number(o.height) }
 for (const f of readdirSync(out)) if (f.endsWith(".webm")) unlinkSync(resolve(out, f))
 
@@ -126,6 +127,7 @@ const errors: string[][] = []
 for (let k = 0; k < 2; k++) {
   const context = await browser.newContext({ viewport: size, recordVideo: { dir: out, size } })
   const page = await context.newPage()
+  await page.addInitScript(PACE_60)
   const errs: string[] = []
   page.on("pageerror", (e) => errs.push(e.message))
   page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && errs.push(m.text()))
@@ -137,7 +139,7 @@ for (const page of pages) await page.waitForFunction(() => (globalThis as { arch
 await Promise.all(pages.map((p, k) => play(p, Number(o.seconds) * 1000, 17 + k * 101)))
 
 type Probe = {
-  online: { slot: number; desyncs: number; rtt: number; rb: { tick: number; headTick: number }; pacer: { speed: number } }
+  online: { slot: number; desyncs: number; rtt: number; rb: { tick: number; headTick: number }; pacer: { speed: number }; stats: { frames: number; slack: number[]; ahead: number[]; arrivals: number[] } }
   world: { s: { tick: number; round: number; archers: { name: string; bot: boolean; wins: number; kills: number }[] } }
   counts: Record<string, number>
 }
@@ -145,7 +147,12 @@ for (const [k, page] of pages.entries()) {
   const st = await page.evaluate(() => {
     const g = (globalThis as { archers?: Probe }).archers!
     const n = g.online
-    return { slot: n.slot, desyncs: n.desyncs, rtt: Math.round(n.rtt), confirmed: n.rb.tick, head: n.rb.headTick, speed: n.pacer.speed, round: g.world.s.round, archers: g.world.s.archers.map((a) => `${a.name}${a.bot ? "(bot)" : ""} w${a.wins} k${a.kills}`), counts: g.counts }
+    const q = (v: number[], p: number) => [...v].sort((a, b) => a - b)[Math.floor(p * (v.length - 1))]
+    return {
+      fps: Math.round(n.stats.frames / (performance.now() / 1000)),
+      "slack p10/p50": `${q(n.stats.slack, 0.1)}/${q(n.stats.slack, 0.5)}`,
+      "ahead p50/p95": `${q(n.stats.ahead, 0.5)}/${q(n.stats.ahead, 0.95)}`,
+      "frame gaps ms p50/p95/max": ((g) => `${q(g, 0.5)?.toFixed(1)}/${q(g, 0.95)?.toFixed(1)}/${Math.max(...g).toFixed(0)}`)(n.stats.arrivals.slice(1).map((t, i) => t - n.stats.arrivals[i]!)), slot: n.slot, desyncs: n.desyncs, rtt: Math.round(n.rtt), confirmed: n.rb.tick, head: n.rb.headTick, speed: n.pacer.speed, round: g.world.s.round, archers: g.world.s.archers.map((a) => `${a.name}${a.bot ? "(bot)" : ""} w${a.wins} k${a.kills}`), counts: g.counts }
   })
   console.log(`tab ${k + 1}`, JSON.stringify(st))
   if (errors[k]!.length) console.log(`tab ${k + 1} console:`, errors[k]!.slice(0, 5).join(" | "))

@@ -88,7 +88,8 @@ describe("InputRelay", () => {
 })
 
 describe("rollback over a Wi-Fi link", () => {
-  test("clients agree with the room, own input is instant, and the pacer keeps inputs on time", () => {
+  for (const [name, roomRate] of [["a room on time", 1], ["a room ticking 10% slow", 0.9], ["a room ticking 5% fast", 1.05]] as const)
+  test(`${name}: clients agree with it and the pacer keeps inputs on time`, () => {
     const TICK = 1000 / 60
     const rand = mulberry32(7)
     const room: S = { x: [0, 0] }
@@ -104,7 +105,7 @@ describe("rollback over a Wi-Fi link", () => {
     let sent = 0
     for (const k of [0, 1]) {
       clients[k]!.reset({ x: [0, 0] }, 0, { i: [0, 0] })
-      pacers[k]!.start(0, 80)
+      pacers[k]!.start(0, 80, 0)
     }
     const step = (s: S, f: F) => sim(0).step(s, f)
     for (let ms = 0; ms < 60_000; ms++) {
@@ -113,7 +114,7 @@ describe("rollback over a Wi-Fi link", () => {
         if (m.t <= ran && !m.beat) late++
         relay.receive(k, m.t, m.b, ran)
       }
-      if (ms >= (ran + 1) * TICK) {
+      if (ms >= ((ran + 1) * TICK) / roomRate) {
         ran++
         const f: F = { i: [relay.take(0, ran), relay.take(1, ran)] }
         step(room, f)
@@ -126,11 +127,12 @@ describe("rollback over a Wi-Fi link", () => {
         const p = pacers[k]!
         for (const m of down[k]!.arrived(ms)) {
           c.confirm(m.t, m.f)
+          p.frame(m.t, ms)
           if (m.slack !== null) p.slack(m.slack)
         }
         p.atLeast(c.tick)
         const before = p.tick
-        const head = p.update(1)
+        const head = p.update(ms)
         for (let t = before + 1; t <= head; t++) {
           const was = held[k]!
           if (rand() < 0.02) held[k] = Math.floor(rand() * 3)

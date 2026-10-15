@@ -221,45 +221,74 @@ export class InputRelay<K> {
 export type PacerOptions = {
   /** Ticks early an input should reach the room, at the room's quantile (default 1). */
   target?: number
-  /** Rate change per tick of error, and the most it may change (default 0.02 and 0.06: 0.94x to 1.06x). */
+  /** Lead change per tick of slack error, per report (default 0.01; reports come every tick). */
   gain?: number
+  /** Most the local step runs fast to catch up with its target (default 0.08: 1.08x). Slowing goes down to 0.5x: a
+   *  room whose clock runs slow has to be followed, and holding back is less visible than racing ahead. */
   maxSlew?: number
-  /** Inputs this many ticks late: jump the head forward instead of slewing (default 4)... */
-  jump?: number
-  /** ...at most once per this many ticks, since reports already in flight still show the old lateness (default 120). */
-  jumpEvery?: number
+  /** Further ahead than this from its target and the head jumps instead of slewing (default 8 ticks). */
+  snap?: number
+  /** Frames this recent (ms) estimate the room's tick (default 500). */
+  window?: number
 }
 
 /**
- * The client's head tick: the room's tick plus the one-way trip plus a margin, kept there by running the local fixed
- * step slightly fast or slow from the room's report of how early this client's inputs arrive (`slack`, the fewest
- * ticks early at the room's quantile). Slewing keeps steps even; only a large, lasting shortfall jumps.
+ * The client's head tick: where the room's tick is now, estimated from the frames it sends (the least delayed in the
+ * last half second; this follows a room whose clock runs slow or stalls), plus a lead. The lead is learned from the
+ * room's report of how early this client's inputs arrive (`slack`, at the room's quantile): too late and it grows,
+ * too early and it shrinks, so it settles at the uplink delay plus `target`. The head slews toward that so steps stay
+ * even (catching up at most `maxSlew` faster, holding back down to half speed), jumping forward only when far behind.
  */
 export class TickPacer {
   private head = 0
+  private last = Number.NaN
   private rate = 1
+  private lead = 0
+  /** Recent frames as [local ms, room tick minus local ticks]. */
+  private offsets: [number, number][] = []
   private readonly target: number
   private readonly gain: number
   private readonly maxSlew: number
-  private readonly jump: number
-  private readonly jumpEvery: number
-  private jumpedAt = -Infinity
+  private readonly snap: number
+  private readonly window: number
 
   constructor(
     readonly tickMs: number,
     opts: PacerOptions = {},
   ) {
     this.target = opts.target ?? 1
-    this.gain = opts.gain ?? 0.02
-    this.maxSlew = opts.maxSlew ?? 0.06
-    this.jump = opts.jump ?? 4
-    this.jumpEvery = opts.jumpEvery ?? 120
+    this.gain = opts.gain ?? 0.01
+    this.maxSlew = opts.maxSlew ?? 0.08
+    this.snap = opts.snap ?? 8
+    this.window = opts.window ?? 500
   }
 
-  /** The room was at `tick` when it sent something that took `rttMs` to come back. */
-  start(tick: number, rttMs: number): void {
-    this.head = tick + rttMs / this.tickMs + this.target + 1
+  /** The room sent its state at `tick`, received at local `now` after a round trip of `rttMs`. */
+  start(tick: number, rttMs: number, now: number): void {
+    const oneWay = rttMs / 2 / this.tickMs
+    this.offsets = [[now, tick + oneWay - now / this.tickMs]]
+    this.lead = oneWay + this.target + 1
+    this.head = this.room(now) + this.lead
+    this.last = now
     this.rate = 1
+  }
+
+  /** The room's frame for `tick` arrived at local `now`. */
+  frame(tick: number, now: number): void {
+    this.offsets.push([now, tick - now / this.tickMs])
+    while (this.offsets.length > 1 && this.offsets[0]![0] < now - this.window) this.offsets.shift()
+  }
+
+  /** The room's tick at local `now`, as seen through the fastest recent frame. */
+  room(now: number): number {
+    let best = -Infinity
+    for (const [, o] of this.offsets) if (o > best) best = o
+    return best + now / this.tickMs
+  }
+
+  /** The room's latest measure of how many ticks early this client's inputs arrive. */
+  slack(ticks: number): void {
+    this.lead = Math.max(0, Math.min(60, this.lead + (this.target - ticks) * this.gain))
   }
 
   /** The head tick (whole ticks to have simulated). */
@@ -276,16 +305,9 @@ export class TickPacer {
     return this.rate
   }
 
-  /** The room's latest measure of how many ticks early this client's inputs arrive. */
-  slack(ticks: number): void {
-    const err = ticks - this.target
-    if (err <= -this.jump && this.head - this.jumpedAt > this.jumpEvery) {
-      this.head -= err
-      this.jumpedAt = this.head
-      this.rate = 1
-      return
-    }
-    this.rate = 1 - Math.max(-this.maxSlew, Math.min(this.maxSlew, err * this.gain))
+  /** Ticks the head runs ahead of the room's estimated tick. */
+  get ahead(): number {
+    return this.lead
   }
 
   /** Never behind the confirmed tick: a client can't predict the past. */
@@ -293,8 +315,18 @@ export class TickPacer {
     if (this.head < tick + 1) this.head = tick + 1
   }
 
-  update(dtMs: number): number {
-    this.head += (dtMs / this.tickMs) * this.rate
+  /** Advances to local time `now`; returns the head tick. */
+  update(now: number): number {
+    const dt = Number.isNaN(this.last) ? 0 : Math.max(0, now - this.last)
+    this.last = now
+    const err = this.room(now) + this.lead - this.head
+    if (err > this.snap) {
+      this.head += err
+      this.rate = 1
+    } else {
+      this.rate = 1 + Math.max(-0.5, Math.min(this.maxSlew, err * 0.05))
+      this.head += (dt / this.tickMs) * this.rate
+    }
     return this.tick
   }
 }

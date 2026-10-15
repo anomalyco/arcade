@@ -92,7 +92,8 @@ async function main() {
   let last = performance.now()
   let started = performance.now()
   const frame = (now: number) => {
-    const dt = Math.min(0.1, (now - last) / 1000)
+    const realDt = (now - last) / 1000
+    const dt = Math.min(0.1, realDt)
     last = now
     if (!watch) {
       const known = new Set(seats.map((s) => s.device).filter((d): d is Device => !!d))
@@ -109,7 +110,7 @@ async function main() {
       if (controls.pressed("Digit2")) game.setArena("cloister")
       if (controls.pressed("KeyP")) location.search = "?online"
     }
-    game.update(dt)
+    game.update(realDt)
     renderer.render(game.build(innerWidth, innerHeight, dt))
     sound.listen(game.cam.cx, game.cam.cy)
     const o = game.online

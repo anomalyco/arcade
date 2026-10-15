@@ -20,7 +20,8 @@ indexing.
 
 Unlisted: [Archers](https://anoma.ly/arcade/archers/) — side-view arena archery in a noir silhouette look: arrows that
 stick and must be picked up, dodge-catches, stomps, one-hit kills, chests with special arrows, couch play for up to four
-on keyboards and gamepads against bots (`games/archers`, Worker `arcade-archers`). No landing link or indexing.
+on keyboards and gamepads against bots, and online rooms with rollback (`?online`, or `?room=code` to invite)
+(`games/archers`, Worker `arcade-archers`). No landing link or indexing.
 
 Unlisted tool: [Lab](https://anoma.ly/arcade/lab/) — the one isolation workbench for every game's effects, materials,
 looks, physics and sound (`games/lab`, Worker `arcade-lab`). Old `/arcade/<game>/lab.html` links redirect to it.

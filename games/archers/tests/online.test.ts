@@ -104,9 +104,10 @@ function run(link: LinkProfile, seconds: number, clients = 2, seed = 3) {
         else if (m.type === "roster") c.slot = m.players.find((p) => p.id === c.id)?.slot ?? -1
         else if (m.type === "state") {
           c.rb.reset(new World(m.s, DEFAULT_TUNING), m.t, { i: m.i })
-          c.pacer.start(m.t, ms - c.helloAt)
+          c.pacer.start(m.t, ms - c.helloAt, ms)
         } else if (m.type === "f") {
           const frame: Frame = m.c ? { i: m.i, c: m.c } : { i: m.i }
+          c.pacer.frame(m.t, ms)
           const ev = c.rb.confirm(m.t, frame)
           if (ev === "gap") {
             stats.gaps++
@@ -142,7 +143,7 @@ function run(link: LinkProfile, seconds: number, clients = 2, seed = 3) {
       if (!c.rb.ready) continue
       c.pacer.atLeast(c.rb.tick)
       const from = c.rb.headTick
-      const head = c.pacer.update(1)
+      const head = c.pacer.update(ms)
       for (let t = from + 1; t <= head; t++) {
         const b = c.press(t)
         c.rb.input(t, b)
@@ -172,8 +173,9 @@ describe("online rollback", () => {
     expect(stats.mismatches).toBe(0)
     expect(stats.gaps).toBe(0)
     expect(final).toEqual([true, true])
-    // Rounds were won and lost, so arrows met archers across the wire.
-    expect(core.world.s.round).toBeGreaterThan(2)
+    // Archers died and rounds turned over, so arrows met archers across the wire.
+    expect(stats.events.kill ?? 0).toBeGreaterThan(5)
+    expect(core.world.s.round).toBeGreaterThan(1)
     // Own archer: drawn where the room puts it nearly always (a late input over TCP is the exception).
     expect(quantile(stats.own, 0.9)).toBeLessThan(0.05)
     expect(stats.late / stats.sent).toBeLessThan(0.1)
