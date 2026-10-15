@@ -33,6 +33,8 @@ import {
   type OutbreakSettings,
 } from "./settings"
 import type { Survivor } from "./survivor"
+import type { OutbreakVehicleAudio } from "./vehicle-audio"
+import { stageVehicleScene, type VehicleLabHost, type VehicleScene } from "./vehicle-lab"
 import {
   applyOutbreakWeatherPreset,
   toSharedWeatherSettings,
@@ -60,7 +62,9 @@ export interface OutbreakHarnessHost {
   readonly hud: OutbreakHud
   readonly coop: CoopView
   readonly audio: OutbreakAudio
+  readonly vehicleAudio: OutbreakVehicleAudio
   readonly progressionHost: ProgressionLabHost
+  readonly vehicleHost: VehicleLabHost
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void
@@ -92,7 +96,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     hud,
     coop,
     audio,
+    vehicleAudio,
     progressionHost,
+    vehicleHost,
     promptEl,
   } = host
 
@@ -185,6 +191,32 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           lastBakeMs: worldStreamer.lastBakeMs,
           deltasCount: session.sim.worldStream.deltas.size,
         },
+        vehicles: session.view.vehicles.map((v) => ({
+          id: v.id,
+          kind: v.kind,
+          label: v.spec.label,
+          x: v.x,
+          y: v.y,
+          h: v.h,
+          vx: v.vx,
+          vy: v.vy,
+          speed: Math.hypot(v.vx, v.vy),
+          hp: v.hp,
+          maxHp: v.maxHp,
+          fuel: v.fuel,
+          maxFuel: v.maxFuel,
+          hasBattery: v.hasBattery,
+          hasKeys: v.hasKeys,
+          headlights: v.headlights,
+          engineOn: v.engineOn,
+          horn: v.horn,
+          wreck: v.wreck,
+          seats: [...v.seats],
+          zombieHits: v.zombieHits,
+          zombieKills: v.zombieKills,
+          grabbingZombies: v.grabbingZombies,
+          bangCount: v.bangCount,
+        })),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -201,7 +233,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         progress: c.progress,
       })),
     coop: () => coop.inspect(),
-    audio: () => audio.telemetry(),
+    audio: () => ({ ...audio.telemetry(), vehicle: { ...vehicleAudio.counts } }),
     hudState: () => hud.inspect(),
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
@@ -271,6 +303,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     getLook: () => ({ ...lookSettings }),
     pose(x: number, y: number, aim: number) {
       const session = host.session()
+      session.sim.vehicles.leaveSeat(session.view.actorId, session.view.player)
       Object.assign(session.view.player, {
         x,
         y,
@@ -308,6 +341,10 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     /** Stages a Lab scene (`progression.stage`): search, strip, bench, dark-bench, generator, field-craft, handoff. */
     stageProgression(scene: ProgressionScene) {
       stageProgression(progressionHost, scene)
+    },
+    /** Stages a vehicle scene (`vehicle.stage`): driveway, night-headlights, need-battery, need-keys, police-cruiser, horde-runover. */
+    stageVehicle(scene: VehicleScene) {
+      stageVehicleScene(vehicleHost, scene)
     },
     /** Stages a first-night pacing scene (`pacing.stage`). */
     stagePacing(scene: string) {
