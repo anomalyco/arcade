@@ -158,10 +158,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/fx/tyre-renderer",
   },
   {
-    area: "`fx/{explosion,fire-water,splatter*}`",
-    description: "Multi-stage explosions, fire/water jets, and surface blood decals",
+    area: "`fx/{explosion,projectile-trail,fire-water,splatter*}`",
+    description: "Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals",
     match: (s) =>
       s === "@arcade/kit/fx/explosion" ||
+      s === "@arcade/kit/fx/projectile-trail" ||
       s === "@arcade/kit/fx/fire-water" ||
       s === "@arcade/kit/fx/fire-water-shader" ||
       s === "@arcade/kit/fx/splatter" ||

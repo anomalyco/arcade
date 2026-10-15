@@ -461,6 +461,19 @@ comparison. Presentation settings never touch simulation or network state.
   that cannot cross is short; Outbreak's aimed run at 90° turns its planted boots 17° from the pelvis (mocap 10° to
   13°). The Bandai Namco set has no true side-step or run-strafe clip (its walk-left/right are forward walks with the
   hips toward travel), so the side-step and crossover references are authored.
+- **Procedural melee upper-body posing (`packages/kit/human-melee.ts`, `melee-poses.ts`).** Outbreak's 9 melee weapons
+  map onto three upper-body classes (`one-blunt`, `one-blade`, `two-heavy`) that layer pelvis/chest yaw coil-and-whip
+  plus two-bone IK arm arcs over the standing or moving lower body without slipping planted feet (`0.0 m` toe slip at
+  `0–4.2 m/s`, `maxRightShoulderChordM = 0.500 m <= 0.53 m` chain limit):
+  - `one-blunt` (`crowbar`, `pipe`, `hammer`): Combo 1 forehand sweeps `+120.0° → -90.5°` (`210.5°` arc, `1.236 m` tip
+    reach, `56.6°` chest twist), Combo 2 backhand reverses `-97.2° → +100.0°` (`197.2°` arc), and Combo 3 / charged
+    heavy steps through `+176.2° → -111.0°` (`287.1°` arc, `101.5°` chest twist) with the off-hand counterbalancing.
+  - `one-blade` (`knife`, `machete`): diagonal slashes sweep `+116.8° → -86.7°` (`203.5°` arc, `0.942 m` knife / `1.195 m`
+    machete reach, `49.5°` chest twist) and reverse `-91.9° → +97.2°` (`189.1°` arc) on Combo 2.
+  - `two-heavy` (`bat`, `spiked-board`, `axe`, `fire-axe`): both wrists stay coupled to the handle (`10.7–11.4 cm`
+    mean wrist gap) across a wide horizontal cleave (`+134.3° → -100.2°`, `234.6°` arc, `69.2°` chest twist) and a
+    deep over-the-shoulder charged heavy (`+193.7° → -127.9°`, `321.6°` arc, `1.289–1.385 m` tip reach, `123.3°` chest
+    twist).
 - **The shared contact solver assumes a flat floor at Y = 0.** Outbreak adds terrain support itself.
 - **Continuous playback has not been reviewed** for most passes; evidence is sampled sheets and metrics.
   Headless Chrome cannot hold 60 fps, so recorded video stutters even when the motion is smooth.

@@ -1,5 +1,5 @@
 {
-  "baseline": "457167a",
+  "baseline": "a035957",
   "budgetMs": 16.67,
   "labUnification": {
     "presetCounts": {
@@ -9,27 +9,27 @@
         "scorch": true
       },
       "propane": {
-        "particles": 110,
+        "particles": 112,
         "volumes": 1,
         "scorch": true
       },
       "car": {
-        "particles": 152,
+        "particles": 157,
         "volumes": 1,
         "scorch": true
       },
       "barrel": {
-        "particles": 118,
+        "particles": 122,
         "volumes": 1,
         "scorch": true
       },
       "missile": {
-        "particles": 149,
+        "particles": 155,
         "volumes": 0,
         "scorch": false
       },
       "ship": {
-        "particles": 174,
+        "particles": 193,
         "volumes": 1,
         "scorch": true
       },
@@ -39,7 +39,7 @@
         "scorch": true
       }
     },
-    "getawaySharedParticles": 110,
+    "getawaySharedParticles": 124,
     "getawaySharedVolumes": 1,
     "blackoutSharedParticles": 116,
     "blackoutSharedVolumes": 1,
@@ -93,11 +93,20 @@
       "fire-water:wreck",
       "fire-water:water",
       "splatter:blood",
+      "splatter:zombieBlood",
+      "splatter:survivorBlood",
       "splatter:ink",
       "splatter:slime",
       "splatter:oil",
       "splatter:potion",
       "section:effects",
+      "weather:preset-clear",
+      "weather:preset-drizzle",
+      "weather:preset-rain",
+      "weather:preset-storm",
+      "weather:preset-fog",
+      "weather:preset-snow",
+      "section:weather",
       "section:getaway-effects",
       "section:blackout-effects",
       "section:fire-water",
@@ -107,922 +116,922 @@
   },
   "getawayPerf": {
     "singleBlast": {
-      "beforeGpuMeanMs": 0.6484,
-      "afterGpuMeanMs": 0.7607,
-      "beforeGpuPeakMs": 0.6756,
-      "afterGpuPeakMs": 0.8025,
-      "deltaGpuMeanMs": 0.113,
-      "deltaGpuMadMs": 0.0007,
-      "beforeCpuMeanMs": 0.3967,
-      "afterCpuMeanMs": 0.4733,
-      "beforeCpuPeakMs": 0.6,
-      "afterCpuPeakMs": 1.1,
+      "beforeGpuMeanMs": 1.0097,
+      "afterGpuMeanMs": 1.1055,
+      "beforeGpuPeakMs": 1.9809,
+      "afterGpuPeakMs": 2.7548,
+      "deltaGpuMeanMs": -0.0139,
+      "deltaGpuMadMs": 0.257,
+      "beforeCpuMeanMs": 1.0767,
+      "afterCpuMeanMs": 1.0767,
+      "beforeCpuPeakMs": 1.9,
+      "afterCpuPeakMs": 2.2,
       "within60HzBudget": true,
       "pairs": [
         {
           "pair": 1,
           "before": {
-            "gpuMedianMs": 0.6459,
-            "gpuMeanMs": 0.6496,
-            "gpuPeakMs": 0.6784,
-            "cpuMeanMs": 0.51,
-            "cpuPeakMs": 0.8
+            "gpuMedianMs": 1.0112,
+            "gpuMeanMs": 1.0097,
+            "gpuPeakMs": 1.6059,
+            "cpuMeanMs": 1.0767,
+            "cpuPeakMs": 2.2
           },
           "after": {
-            "gpuMedianMs": 0.7857,
-            "gpuMeanMs": 0.7842,
-            "gpuPeakMs": 0.9059,
-            "cpuMeanMs": 0.6133,
-            "cpuPeakMs": 1.5
+            "gpuMedianMs": 0.8431,
+            "gpuMeanMs": 1.2528,
+            "gpuPeakMs": 6.4829,
+            "cpuMeanMs": 1.0867,
+            "cpuPeakMs": 2.2
           },
-          "deltaGpuMeanMs": 0.1346,
-          "deltaGpuPeakMs": 0.2275
+          "deltaGpuMeanMs": 0.2431,
+          "deltaGpuPeakMs": 4.877
         },
         {
           "pair": 2,
           "before": {
-            "gpuMedianMs": 0.6484,
-            "gpuMeanMs": 0.6506,
-            "gpuPeakMs": 0.6708,
-            "cpuMeanMs": 0.4367,
-            "cpuPeakMs": 0.6
+            "gpuMedianMs": 1.5723,
+            "gpuMeanMs": 1.7153,
+            "gpuPeakMs": 3.3735,
+            "cpuMeanMs": 0.96,
+            "cpuPeakMs": 1.8
           },
           "after": {
-            "gpuMedianMs": 0.7758,
-            "gpuMeanMs": 0.7609,
-            "gpuPeakMs": 0.8004,
-            "cpuMeanMs": 0.4567,
-            "cpuPeakMs": 1.2
+            "gpuMedianMs": 0.8428,
+            "gpuMeanMs": 1.1055,
+            "gpuPeakMs": 3.6198,
+            "cpuMeanMs": 1.05,
+            "cpuPeakMs": 3.1
           },
-          "deltaGpuMeanMs": 0.1103,
-          "deltaGpuPeakMs": 0.1296
+          "deltaGpuMeanMs": -0.6098,
+          "deltaGpuPeakMs": 0.2463
         },
         {
           "pair": 3,
           "before": {
-            "gpuMedianMs": 0.646,
-            "gpuMeanMs": 0.647,
-            "gpuPeakMs": 0.6756,
-            "cpuMeanMs": 0.3967,
-            "cpuPeakMs": 0.8
+            "gpuMedianMs": 0.955,
+            "gpuMeanMs": 0.9798,
+            "gpuPeakMs": 1.6711,
+            "cpuMeanMs": 1.94,
+            "cpuPeakMs": 25.2
           },
           "after": {
-            "gpuMedianMs": 0.7797,
-            "gpuMeanMs": 0.7604,
-            "gpuPeakMs": 0.7956,
-            "cpuMeanMs": 0.5,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 0.8304,
+            "gpuMeanMs": 0.8514,
+            "gpuPeakMs": 1.1909,
+            "cpuMeanMs": 1.0767,
+            "cpuPeakMs": 1.7
           },
-          "deltaGpuMeanMs": 0.1134,
-          "deltaGpuPeakMs": 0.12
+          "deltaGpuMeanMs": -0.1284,
+          "deltaGpuPeakMs": -0.4802
         },
         {
           "pair": 4,
           "before": {
-            "gpuMedianMs": 0.6434,
-            "gpuMeanMs": 0.6464,
-            "gpuPeakMs": 0.6786,
-            "cpuMeanMs": 0.3867,
-            "cpuPeakMs": 0.5
+            "gpuMedianMs": 1.7465,
+            "gpuMeanMs": 1.9395,
+            "gpuPeakMs": 4.5056,
+            "cpuMeanMs": 1.2,
+            "cpuPeakMs": 1.8
           },
           "after": {
-            "gpuMedianMs": 0.7743,
-            "gpuMeanMs": 0.7599,
-            "gpuPeakMs": 0.807,
-            "cpuMeanMs": 0.4967,
-            "cpuPeakMs": 2.1
+            "gpuMedianMs": 2.0123,
+            "gpuMeanMs": 2.3566,
+            "gpuPeakMs": 5.703,
+            "cpuMeanMs": 1.2433,
+            "cpuPeakMs": 2.4
           },
-          "deltaGpuMeanMs": 0.1135,
-          "deltaGpuPeakMs": 0.1284
+          "deltaGpuMeanMs": 0.4171,
+          "deltaGpuPeakMs": 1.1974
         },
         {
           "pair": 5,
           "before": {
-            "gpuMedianMs": 0.6538,
-            "gpuMeanMs": 0.6535,
-            "gpuPeakMs": 0.6739,
-            "cpuMeanMs": 0.4067,
-            "cpuPeakMs": 0.5
+            "gpuMedianMs": 1.9536,
+            "gpuMeanMs": 2.3769,
+            "gpuPeakMs": 5.1269,
+            "cpuMeanMs": 1.03,
+            "cpuPeakMs": 2.6
           },
           "after": {
-            "gpuMedianMs": 0.7802,
-            "gpuMeanMs": 0.7644,
-            "gpuPeakMs": 0.8025,
-            "cpuMeanMs": 0.4733,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 1.2849,
+            "gpuMeanMs": 1.3443,
+            "gpuPeakMs": 2.7548,
+            "cpuMeanMs": 1.2433,
+            "cpuPeakMs": 2.2
           },
-          "deltaGpuMeanMs": 0.1109,
-          "deltaGpuPeakMs": 0.1286
+          "deltaGpuMeanMs": -1.0326,
+          "deltaGpuPeakMs": -2.3721
         },
         {
           "pair": 6,
           "before": {
-            "gpuMedianMs": 0.649,
-            "gpuMeanMs": 0.6469,
-            "gpuPeakMs": 0.671,
-            "cpuMeanMs": 0.3667,
-            "cpuPeakMs": 0.6
+            "gpuMedianMs": 0.8354,
+            "gpuMeanMs": 0.9066,
+            "gpuPeakMs": 1.6043,
+            "cpuMeanMs": 1.1233,
+            "cpuPeakMs": 1.9
           },
           "after": {
-            "gpuMedianMs": 0.7799,
-            "gpuMeanMs": 0.7599,
-            "gpuPeakMs": 0.7949,
-            "cpuMeanMs": 0.4667,
-            "cpuPeakMs": 1
+            "gpuMedianMs": 0.8285,
+            "gpuMeanMs": 0.8927,
+            "gpuPeakMs": 1.5956,
+            "cpuMeanMs": 1.02,
+            "cpuPeakMs": 1.6
           },
-          "deltaGpuMeanMs": 0.113,
-          "deltaGpuPeakMs": 0.1239
+          "deltaGpuMeanMs": -0.0139,
+          "deltaGpuPeakMs": -0.0087
         },
         {
           "pair": 7,
           "before": {
-            "gpuMedianMs": 0.6477,
-            "gpuMeanMs": 0.6484,
-            "gpuPeakMs": 0.677,
-            "cpuMeanMs": 0.3933,
-            "cpuPeakMs": 0.5
+            "gpuMedianMs": 0.8254,
+            "gpuMeanMs": 0.8602,
+            "gpuPeakMs": 1.9809,
+            "cpuMeanMs": 0.9267,
+            "cpuPeakMs": 1.6
           },
           "after": {
-            "gpuMedianMs": 0.7729,
-            "gpuMeanMs": 0.7607,
-            "gpuPeakMs": 0.8154,
-            "cpuMeanMs": 0.43,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 0.8292,
+            "gpuMeanMs": 0.9101,
+            "gpuPeakMs": 2.7339,
+            "cpuMeanMs": 1.04,
+            "cpuPeakMs": 1.8
           },
-          "deltaGpuMeanMs": 0.1123,
-          "deltaGpuPeakMs": 0.1384
+          "deltaGpuMeanMs": 0.0499,
+          "deltaGpuPeakMs": 0.753
         }
       ]
     },
     "worstCase4x": {
-      "beforeGpuMeanMs": 0.6971,
-      "afterGpuMeanMs": 0.8181,
-      "beforeGpuPeakMs": 0.7345,
-      "afterGpuPeakMs": 0.8885,
-      "deltaGpuMeanMs": 0.1207,
-      "deltaGpuMadMs": 0.0007,
-      "beforeCpuMeanMs": 0.44,
-      "afterCpuMeanMs": 0.5,
-      "beforeCpuPeakMs": 0.6,
-      "afterCpuPeakMs": 1.1,
+      "beforeGpuMeanMs": 0.9708,
+      "afterGpuMeanMs": 0.9464,
+      "beforeGpuPeakMs": 2.0579,
+      "afterGpuPeakMs": 1.6931,
+      "deltaGpuMeanMs": -0.0244,
+      "deltaGpuMadMs": 0.0227,
+      "beforeCpuMeanMs": 1.0567,
+      "afterCpuMeanMs": 1.0767,
+      "beforeCpuPeakMs": 2,
+      "afterCpuPeakMs": 1.9,
       "within60HzBudget": true,
       "pairs": [
         {
           "pair": 1,
           "before": {
-            "gpuMedianMs": 0.6936,
-            "gpuMeanMs": 0.6952,
-            "gpuPeakMs": 0.7257,
-            "cpuMeanMs": 0.4567,
-            "cpuPeakMs": 0.9
+            "gpuMedianMs": 0.9277,
+            "gpuMeanMs": 1.5773,
+            "gpuPeakMs": 6.8449,
+            "cpuMeanMs": 1.0567,
+            "cpuPeakMs": 2
           },
           "after": {
-            "gpuMedianMs": 0.8566,
-            "gpuMeanMs": 0.8208,
-            "gpuPeakMs": 0.8885,
-            "cpuMeanMs": 0.5333,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 1.7482,
+            "gpuMeanMs": 2.0553,
+            "gpuPeakMs": 6.5633,
+            "cpuMeanMs": 1.2267,
+            "cpuPeakMs": 2.9
           },
-          "deltaGpuMeanMs": 0.1256,
-          "deltaGpuPeakMs": 0.1628
+          "deltaGpuMeanMs": 0.478,
+          "deltaGpuPeakMs": -0.2816
         },
         {
           "pair": 2,
           "before": {
-            "gpuMedianMs": 0.6988,
-            "gpuMeanMs": 0.6971,
-            "gpuPeakMs": 0.7288,
-            "cpuMeanMs": 0.4367,
-            "cpuPeakMs": 0.6
+            "gpuMedianMs": 0.9022,
+            "gpuMeanMs": 0.9985,
+            "gpuPeakMs": 2.6768,
+            "cpuMeanMs": 1.0433,
+            "cpuPeakMs": 2.1
           },
           "after": {
-            "gpuMedianMs": 0.8425,
-            "gpuMeanMs": 0.8181,
-            "gpuPeakMs": 0.9008,
-            "cpuMeanMs": 0.51,
-            "cpuPeakMs": 1.2
+            "gpuMedianMs": 0.9135,
+            "gpuMeanMs": 0.9992,
+            "gpuPeakMs": 1.6903,
+            "cpuMeanMs": 1.0133,
+            "cpuPeakMs": 1.7
           },
-          "deltaGpuMeanMs": 0.121,
-          "deltaGpuPeakMs": 0.172
+          "deltaGpuMeanMs": 0.0007,
+          "deltaGpuPeakMs": -0.9865
         },
         {
           "pair": 3,
           "before": {
-            "gpuMedianMs": 0.7017,
-            "gpuMeanMs": 0.6989,
-            "gpuPeakMs": 0.7382,
-            "cpuMeanMs": 0.4367,
-            "cpuPeakMs": 0.6
+            "gpuMedianMs": 0.9032,
+            "gpuMeanMs": 0.9639,
+            "gpuPeakMs": 2.1071,
+            "cpuMeanMs": 1.01,
+            "cpuPeakMs": 1.7
           },
           "after": {
-            "gpuMedianMs": 0.8439,
-            "gpuMeanMs": 0.8189,
-            "gpuPeakMs": 0.9093,
-            "cpuMeanMs": 0.46,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 0.904,
+            "gpuMeanMs": 0.9271,
+            "gpuPeakMs": 1.6789,
+            "cpuMeanMs": 1.0433,
+            "cpuPeakMs": 1.5
           },
-          "deltaGpuMeanMs": 0.12,
-          "deltaGpuPeakMs": 0.1711
+          "deltaGpuMeanMs": -0.0368,
+          "deltaGpuPeakMs": -0.4282
         },
         {
           "pair": 4,
           "before": {
-            "gpuMedianMs": 0.6968,
-            "gpuMeanMs": 0.698,
-            "gpuPeakMs": 0.7428,
-            "cpuMeanMs": 0.46,
-            "cpuPeakMs": 0.6
+            "gpuMedianMs": 0.9036,
+            "gpuMeanMs": 0.9422,
+            "gpuPeakMs": 1.7251,
+            "cpuMeanMs": 1.0633,
+            "cpuPeakMs": 1.8
           },
           "after": {
-            "gpuMedianMs": 0.8419,
-            "gpuMeanMs": 0.8179,
-            "gpuPeakMs": 0.8734,
-            "cpuMeanMs": 0.4867,
-            "cpuPeakMs": 1
+            "gpuMedianMs": 0.8938,
+            "gpuMeanMs": 0.9156,
+            "gpuPeakMs": 1.6931,
+            "cpuMeanMs": 1.0767,
+            "cpuPeakMs": 1.9
           },
-          "deltaGpuMeanMs": 0.1199,
-          "deltaGpuPeakMs": 0.1306
+          "deltaGpuMeanMs": -0.0266,
+          "deltaGpuPeakMs": -0.032
         },
         {
           "pair": 5,
           "before": {
-            "gpuMedianMs": 0.6948,
-            "gpuMeanMs": 0.6966,
-            "gpuPeakMs": 0.7345,
-            "cpuMeanMs": 0.44,
-            "cpuPeakMs": 0.5
+            "gpuMedianMs": 0.9072,
+            "gpuMeanMs": 0.936,
+            "gpuPeakMs": 1.6176,
+            "cpuMeanMs": 1.1333,
+            "cpuPeakMs": 1.9
           },
           "after": {
-            "gpuMedianMs": 0.8451,
-            "gpuMeanMs": 0.8168,
-            "gpuPeakMs": 0.8734,
-            "cpuMeanMs": 0.5,
-            "cpuPeakMs": 1.2
+            "gpuMedianMs": 0.8967,
+            "gpuMeanMs": 0.9447,
+            "gpuPeakMs": 1.656,
+            "cpuMeanMs": 1.06,
+            "cpuPeakMs": 1.9
           },
-          "deltaGpuMeanMs": 0.1202,
-          "deltaGpuPeakMs": 0.1389
+          "deltaGpuMeanMs": 0.0087,
+          "deltaGpuPeakMs": 0.0384
         },
         {
           "pair": 6,
           "before": {
-            "gpuMedianMs": 0.6954,
-            "gpuMeanMs": 0.6974,
-            "gpuPeakMs": 0.7402,
-            "cpuMeanMs": 0.4533,
-            "cpuPeakMs": 0.7
+            "gpuMedianMs": 0.9111,
+            "gpuMeanMs": 0.9708,
+            "gpuPeakMs": 2.0579,
+            "cpuMeanMs": 1.0767,
+            "cpuPeakMs": 2.8
           },
           "after": {
-            "gpuMedianMs": 0.8405,
-            "gpuMeanMs": 0.8181,
-            "gpuPeakMs": 0.8774,
-            "cpuMeanMs": 0.5367,
-            "cpuPeakMs": 1.2
+            "gpuMedianMs": 0.905,
+            "gpuMeanMs": 0.9464,
+            "gpuPeakMs": 1.8226,
+            "cpuMeanMs": 1.0967,
+            "cpuPeakMs": 1.7
           },
-          "deltaGpuMeanMs": 0.1207,
-          "deltaGpuPeakMs": 0.1372
+          "deltaGpuMeanMs": -0.0244,
+          "deltaGpuPeakMs": -0.2353
         },
         {
           "pair": 7,
           "before": {
-            "gpuMedianMs": 0.6965,
-            "gpuMeanMs": 0.6962,
-            "gpuPeakMs": 0.7295,
-            "cpuMeanMs": 0.4167,
-            "cpuPeakMs": 0.7
+            "gpuMedianMs": 1.0455,
+            "gpuMeanMs": 1.0654,
+            "gpuPeakMs": 1.8961,
+            "cpuMeanMs": 1.0033,
+            "cpuPeakMs": 2.2
           },
           "after": {
-            "gpuMedianMs": 0.849,
-            "gpuMeanMs": 0.8264,
-            "gpuPeakMs": 0.8901,
-            "cpuMeanMs": 0.4833,
-            "cpuPeakMs": 1.1
+            "gpuMedianMs": 0.9201,
+            "gpuMeanMs": 1.0183,
+            "gpuPeakMs": 1.7176,
+            "cpuMeanMs": 1.09,
+            "cpuPeakMs": 1.9
           },
-          "deltaGpuMeanMs": 0.1302,
-          "deltaGpuPeakMs": 0.1606
+          "deltaGpuMeanMs": -0.0471,
+          "deltaGpuPeakMs": -0.1785
         }
       ]
     }
   },
   "blackoutPerf": {
     "singleBlast": {
-      "beforeGpuMeanMs": 1.0002,
-      "afterGpuMeanMs": 0.8704,
-      "beforeGpuPeakMs": 1.421,
-      "afterGpuPeakMs": 1.0316,
-      "deltaGpuMeanMs": -0.1298,
-      "deltaGpuMadMs": 0.2631,
-      "beforeCpuMeanMs": 0.2367,
-      "afterCpuMeanMs": 0.2333,
-      "beforeCpuPeakMs": 0.7,
-      "afterCpuPeakMs": 0.4,
+      "beforeGpuMeanMs": 0.9298,
+      "afterGpuMeanMs": 1.1321,
+      "beforeGpuPeakMs": 1.7669,
+      "afterGpuPeakMs": 2.1831,
+      "deltaGpuMeanMs": 0.0048,
+      "deltaGpuMadMs": 0.2061,
+      "beforeCpuMeanMs": 0.5567,
+      "afterCpuMeanMs": 0.59,
+      "beforeCpuPeakMs": 0.8,
+      "afterCpuPeakMs": 1.3,
       "within60HzBudget": true,
       "pairs": [
         {
           "pair": 1,
           "before": {
-            "gpuMedianMs": 2.2841,
-            "gpuMeanMs": 2.2728,
-            "gpuPeakMs": 3.4995,
-            "cpuMeanMs": 0.28,
-            "cpuPeakMs": 0.8,
+            "gpuMedianMs": 1.0198,
+            "gpuMeanMs": 1.7483,
+            "gpuPeakMs": 5.9846,
+            "cpuMeanMs": 0.54,
+            "cpuPeakMs": 1.2,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 2.0999,
-            "gpuMeanMs": 1.9693,
-            "gpuPeakMs": 2.6704,
-            "cpuMeanMs": 0.2867,
-            "cpuPeakMs": 0.4,
+            "gpuMedianMs": 2.6306,
+            "gpuMeanMs": 2.988,
+            "gpuPeakMs": 8.4212,
+            "cpuMeanMs": 0.59,
+            "cpuPeakMs": 1,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": -0.3035,
-          "deltaGpuPeakMs": -0.8291
+          "deltaGpuMeanMs": 1.2397,
+          "deltaGpuPeakMs": 2.4366
         },
         {
           "pair": 2,
           "before": {
-            "gpuMedianMs": 0.9494,
-            "gpuMeanMs": 1.0002,
-            "gpuPeakMs": 1.421,
-            "cpuMeanMs": 0.29,
+            "gpuMedianMs": 0.93,
+            "gpuMeanMs": 0.9212,
+            "gpuPeakMs": 1.7669,
+            "cpuMeanMs": 0.5067,
             "cpuPeakMs": 0.7,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 0.902,
-            "gpuMeanMs": 0.8704,
-            "gpuPeakMs": 1.0316,
-            "cpuMeanMs": 0.32,
-            "cpuPeakMs": 0.7,
+            "gpuMedianMs": 1.0953,
+            "gpuMeanMs": 1.1321,
+            "gpuPeakMs": 2.1831,
+            "cpuMeanMs": 0.8167,
+            "cpuPeakMs": 5.7,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": -0.1298,
-          "deltaGpuPeakMs": -0.3894
+          "deltaGpuMeanMs": 0.2109,
+          "deltaGpuPeakMs": 0.4162
         },
         {
           "pair": 3,
           "before": {
-            "gpuMedianMs": 0.721,
-            "gpuMeanMs": 0.7019,
-            "gpuPeakMs": 0.8276,
-            "cpuMeanMs": 0.2367,
-            "cpuPeakMs": 0.7,
+            "gpuMedianMs": 1.7511,
+            "gpuMeanMs": 1.946,
+            "gpuPeakMs": 4.94,
+            "cpuMeanMs": 0.5733,
+            "cpuPeakMs": 0.8,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 0.8843,
-            "gpuMeanMs": 0.8352,
-            "gpuPeakMs": 0.9844,
-            "cpuMeanMs": 0.2333,
-            "cpuPeakMs": 0.3,
+            "gpuMedianMs": 1.718,
+            "gpuMeanMs": 1.7307,
+            "gpuPeakMs": 3.4428,
+            "cpuMeanMs": 0.48,
+            "cpuPeakMs": 0.7,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": 0.1333,
-          "deltaGpuPeakMs": 0.1568
+          "deltaGpuMeanMs": -0.2153,
+          "deltaGpuPeakMs": -1.4972
         },
         {
           "pair": 4,
           "before": {
-            "gpuMedianMs": 0.7457,
-            "gpuMeanMs": 0.7414,
-            "gpuPeakMs": 0.8697,
-            "cpuMeanMs": 0.17,
-            "cpuPeakMs": 0.3,
+            "gpuMedianMs": 0.9084,
+            "gpuMeanMs": 0.8744,
+            "gpuPeakMs": 1.3009,
+            "cpuMeanMs": 0.4767,
+            "cpuPeakMs": 0.6,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 1.0769,
-            "gpuMeanMs": 1.0177,
-            "gpuPeakMs": 1.2621,
-            "cpuMeanMs": 0.2133,
-            "cpuPeakMs": 0.3,
+            "gpuMedianMs": 0.9185,
+            "gpuMeanMs": 0.8792,
+            "gpuPeakMs": 1.2337,
+            "cpuMeanMs": 0.5733,
+            "cpuPeakMs": 2,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": 0.2763,
-          "deltaGpuPeakMs": 0.3924
+          "deltaGpuMeanMs": 0.0048,
+          "deltaGpuPeakMs": -0.0672
         },
         {
           "pair": 5,
           "before": {
-            "gpuMedianMs": 1.4251,
-            "gpuMeanMs": 1.4089,
-            "gpuPeakMs": 2.07,
-            "cpuMeanMs": 0.1533,
-            "cpuPeakMs": 0.3,
+            "gpuMedianMs": 0.9516,
+            "gpuMeanMs": 0.9298,
+            "gpuPeakMs": 1.1943,
+            "cpuMeanMs": 0.5667,
+            "cpuPeakMs": 1,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 1.241,
-            "gpuMeanMs": 1.2335,
-            "gpuPeakMs": 1.7519,
-            "cpuMeanMs": 0.2433,
-            "cpuPeakMs": 0.4,
+            "gpuMedianMs": 0.9219,
+            "gpuMeanMs": 0.9014,
+            "gpuPeakMs": 1.2626,
+            "cpuMeanMs": 0.6167,
+            "cpuPeakMs": 1.7,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": -0.1754,
-          "deltaGpuPeakMs": -0.3181
+          "deltaGpuMeanMs": -0.0284,
+          "deltaGpuPeakMs": 0.0683
         },
         {
           "pair": 6,
           "before": {
-            "gpuMedianMs": 1.6901,
-            "gpuMeanMs": 2.0478,
-            "gpuPeakMs": 3.6366,
-            "cpuMeanMs": 0.3733,
-            "cpuPeakMs": 0.9,
+            "gpuMedianMs": 0.9227,
+            "gpuMeanMs": 0.8906,
+            "gpuPeakMs": 1.1465,
+            "cpuMeanMs": 0.5567,
+            "cpuPeakMs": 0.7,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 0.9042,
-            "gpuMeanMs": 0.8462,
-            "gpuPeakMs": 0.9946,
-            "cpuMeanMs": 0.1833,
-            "cpuPeakMs": 0.4,
+            "gpuMedianMs": 1.0289,
+            "gpuMeanMs": 0.9739,
+            "gpuPeakMs": 1.305,
+            "cpuMeanMs": 0.5833,
+            "cpuPeakMs": 1.3,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": -1.2016,
-          "deltaGpuPeakMs": -2.642
+          "deltaGpuMeanMs": 0.0833,
+          "deltaGpuPeakMs": 0.1585
         },
         {
           "pair": 7,
           "before": {
-            "gpuMedianMs": 0.7214,
-            "gpuMeanMs": 0.6977,
-            "gpuPeakMs": 0.8737,
-            "cpuMeanMs": 0.2067,
-            "cpuPeakMs": 0.4,
+            "gpuMedianMs": 1.4152,
+            "gpuMeanMs": 1.7423,
+            "gpuPeakMs": 5.2019,
+            "cpuMeanMs": 1,
+            "cpuPeakMs": 5.8,
             "activeVolumes": 1
           },
           "after": {
-            "gpuMedianMs": 0.8749,
-            "gpuMeanMs": 0.8355,
-            "gpuPeakMs": 0.9939,
-            "cpuMeanMs": 0.1533,
-            "cpuPeakMs": 0.3,
+            "gpuMedianMs": 1.3725,
+            "gpuMeanMs": 1.3529,
+            "gpuPeakMs": 2.6743,
+            "cpuMeanMs": 0.6,
+            "cpuPeakMs": 1.1,
             "activeVolumes": 1
           },
-          "deltaGpuMeanMs": 0.1378,
-          "deltaGpuPeakMs": 0.1202
+          "deltaGpuMeanMs": -0.3894,
+          "deltaGpuPeakMs": -2.5276
         }
       ]
     },
     "worstCase5xGrenadeSpam": {
-      "beforeGpuMeanMs": 1.9275,
-      "afterGpuMeanMs": 4.8615,
-      "beforeGpuPeakMs": 2.7371,
-      "afterGpuPeakMs": 6.6569,
-      "deltaGpuMeanMs": 1.2208,
-      "deltaGpuMadMs": 0.5944,
-      "beforeCpuMeanMs": 0.3967,
-      "afterCpuMeanMs": 0.4733,
-      "beforeCpuPeakMs": 0.8,
-      "afterCpuPeakMs": 1,
+      "beforeGpuMeanMs": 5.3072,
+      "afterGpuMeanMs": 5.4566,
+      "beforeGpuPeakMs": 7.5102,
+      "afterGpuPeakMs": 7.9177,
+      "deltaGpuMeanMs": 0.1494,
+      "deltaGpuMadMs": 0.3713,
+      "beforeCpuMeanMs": 0.8367,
+      "afterCpuMeanMs": 0.8233,
+      "beforeCpuPeakMs": 2,
+      "afterCpuPeakMs": 2.5,
       "within60HzBudget": true,
       "pairs": [
         {
           "pair": 1,
           "before": {
-            "gpuMedianMs": 1.457,
-            "gpuMeanMs": 1.4532,
-            "gpuPeakMs": 2.012,
-            "cpuMeanMs": 0.49,
-            "cpuPeakMs": 0.8,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 2.2417,
-            "gpuMeanMs": 2.0796,
-            "gpuPeakMs": 2.5851,
-            "cpuMeanMs": 0.6867,
-            "cpuPeakMs": 1.3,
+            "gpuMedianMs": 6.6022,
+            "gpuMeanMs": 6.3314,
+            "gpuPeakMs": 8.9598,
+            "cpuMeanMs": 0.8367,
+            "cpuPeakMs": 2,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 0.6264,
-          "deltaGpuPeakMs": 0.5731
+          "after": {
+            "gpuMedianMs": 5.6872,
+            "gpuMeanMs": 5.3954,
+            "gpuPeakMs": 10.2387,
+            "cpuMeanMs": 0.8233,
+            "cpuPeakMs": 2.7,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": -0.936,
+          "deltaGpuPeakMs": 1.2789
         },
         {
           "pair": 2,
           "before": {
-            "gpuMedianMs": 1.8693,
-            "gpuMeanMs": 1.9275,
-            "gpuPeakMs": 2.7371,
-            "cpuMeanMs": 0.2933,
-            "cpuPeakMs": 0.5,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 6.0279,
-            "gpuMeanMs": 5.5206,
-            "gpuPeakMs": 7.2349,
-            "cpuMeanMs": 0.36,
-            "cpuPeakMs": 0.6,
+            "gpuMedianMs": 5.6163,
+            "gpuMeanMs": 5.3072,
+            "gpuPeakMs": 7.5102,
+            "cpuMeanMs": 0.7867,
+            "cpuPeakMs": 1.7,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 3.5931,
-          "deltaGpuPeakMs": 4.4978
+          "after": {
+            "gpuMedianMs": 5.7389,
+            "gpuMeanMs": 5.4566,
+            "gpuPeakMs": 7.8707,
+            "cpuMeanMs": 0.8133,
+            "cpuPeakMs": 2.5,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": 0.1494,
+          "deltaGpuPeakMs": 0.3605
         },
         {
           "pair": 3,
           "before": {
-            "gpuMedianMs": 3.1682,
-            "gpuMeanMs": 3.0241,
-            "gpuPeakMs": 3.8552,
-            "cpuMeanMs": 0.56,
-            "cpuPeakMs": 1,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 5.6404,
-            "gpuMeanMs": 5.1935,
-            "gpuPeakMs": 6.6569,
-            "cpuMeanMs": 0.4733,
-            "cpuPeakMs": 1,
+            "gpuMedianMs": 5.5067,
+            "gpuMeanMs": 5.9429,
+            "gpuPeakMs": 11.6669,
+            "cpuMeanMs": 1.0133,
+            "cpuPeakMs": 2.8,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 2.1694,
-          "deltaGpuPeakMs": 2.8017
+          "after": {
+            "gpuMedianMs": 6.4477,
+            "gpuMeanMs": 6.4174,
+            "gpuPeakMs": 10.2288,
+            "cpuMeanMs": 1.03,
+            "cpuPeakMs": 4.4,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": 0.4745,
+          "deltaGpuPeakMs": -1.4381
         },
         {
           "pair": 4,
           "before": {
-            "gpuMedianMs": 3.2054,
-            "gpuMeanMs": 3.2492,
-            "gpuPeakMs": 4.7146,
-            "cpuMeanMs": 0.3967,
-            "cpuPeakMs": 1.1,
-            "activeVolumes": 4
+            "gpuMedianMs": 3.4942,
+            "gpuMeanMs": 3.5642,
+            "gpuPeakMs": 5.5852,
+            "cpuMeanMs": 1.4133,
+            "cpuPeakMs": 9.8,
+            "activeVolumes": 3
           },
           "after": {
-            "gpuMedianMs": 5.2553,
-            "gpuMeanMs": 5.4309,
-            "gpuPeakMs": 8.9227,
-            "cpuMeanMs": 0.6467,
+            "gpuMedianMs": 3.3534,
+            "gpuMeanMs": 3.3423,
+            "gpuPeakMs": 4.6967,
+            "cpuMeanMs": 0.72,
             "cpuPeakMs": 1.2,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 2.1817,
-          "deltaGpuPeakMs": 4.2081
+          "deltaGpuMeanMs": -0.2219,
+          "deltaGpuPeakMs": -0.8885
         },
         {
           "pair": 5,
           "before": {
-            "gpuMedianMs": 3.4779,
-            "gpuMeanMs": 3.6407,
-            "gpuPeakMs": 6.4774,
-            "cpuMeanMs": 0.5967,
-            "cpuPeakMs": 1.4,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 4.0107,
-            "gpuMeanMs": 4.8615,
-            "gpuPeakMs": 8.9827,
-            "cpuMeanMs": 0.7167,
-            "cpuPeakMs": 1.7,
+            "gpuMedianMs": 4.7724,
+            "gpuMeanMs": 4.5282,
+            "gpuPeakMs": 6.6446,
+            "cpuMeanMs": 0.8567,
+            "cpuPeakMs": 2.4,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 1.2208,
-          "deltaGpuPeakMs": 2.5053
+          "after": {
+            "gpuMedianMs": 3.8266,
+            "gpuMeanMs": 3.7618,
+            "gpuPeakMs": 6.2181,
+            "cpuMeanMs": 0.77,
+            "cpuPeakMs": 1.6,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": -0.7664,
+          "deltaGpuPeakMs": -0.4265
         },
         {
           "pair": 6,
           "before": {
-            "gpuMedianMs": 1.2682,
-            "gpuMeanMs": 1.2566,
-            "gpuPeakMs": 1.5134,
-            "cpuMeanMs": 0.2933,
-            "cpuPeakMs": 0.7,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 2.2117,
-            "gpuMeanMs": 2.0365,
-            "gpuPeakMs": 2.4403,
-            "cpuMeanMs": 0.3833,
-            "cpuPeakMs": 0.6,
+            "gpuMedianMs": 6.1897,
+            "gpuMeanMs": 5.7819,
+            "gpuPeakMs": 8.7414,
+            "cpuMeanMs": 0.7833,
+            "cpuPeakMs": 1.4,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 0.7799,
-          "deltaGpuPeakMs": 0.9269
+          "after": {
+            "gpuMedianMs": 5.9748,
+            "gpuMeanMs": 6.0956,
+            "gpuPeakMs": 11.247,
+            "cpuMeanMs": 0.8367,
+            "cpuPeakMs": 1.6,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": 0.3137,
+          "deltaGpuPeakMs": 2.5056
         },
         {
           "pair": 7,
           "before": {
-            "gpuMedianMs": 1.2884,
-            "gpuMeanMs": 1.2468,
-            "gpuPeakMs": 1.5116,
-            "cpuMeanMs": 0.2833,
-            "cpuPeakMs": 0.5,
-            "activeVolumes": 4
-          },
-          "after": {
-            "gpuMedianMs": 2.2115,
-            "gpuMeanMs": 2.0363,
-            "gpuPeakMs": 2.3919,
-            "cpuMeanMs": 0.3133,
-            "cpuPeakMs": 0.4,
+            "gpuMedianMs": 4.8556,
+            "gpuMeanMs": 5.1119,
+            "gpuPeakMs": 7.287,
+            "cpuMeanMs": 0.7167,
+            "cpuPeakMs": 1.1,
             "activeVolumes": 3
           },
-          "deltaGpuMeanMs": 0.7895,
-          "deltaGpuPeakMs": 0.8803
+          "after": {
+            "gpuMedianMs": 6.0056,
+            "gpuMeanMs": 5.7295,
+            "gpuPeakMs": 7.9177,
+            "cpuMeanMs": 0.86,
+            "cpuPeakMs": 2.8,
+            "activeVolumes": 3
+          },
+          "deltaGpuMeanMs": 0.6176,
+          "deltaGpuPeakMs": 0.6307
         }
       ]
     }
   },
   "carrierPerf": {
     "singleBlast": {
-      "beforeGpuMeanMs": 0.3508,
-      "afterGpuMeanMs": 0.3767,
-      "beforeGpuPeakMs": 0.4,
-      "afterGpuPeakMs": 0.45,
-      "deltaGpuMeanMs": 0.0392,
-      "deltaGpuMadMs": 0.0509,
-      "beforeCpuMeanMs": 0.0633,
-      "afterCpuMeanMs": 0.05,
-      "beforeCpuPeakMs": 0.325,
-      "afterCpuPeakMs": 0.05,
+      "beforeGpuMeanMs": 0.4308,
+      "afterGpuMeanMs": 0.4325,
+      "beforeGpuPeakMs": 1.025,
+      "afterGpuPeakMs": 0.525,
+      "deltaGpuMeanMs": -0.0016,
+      "deltaGpuMadMs": 0.0257,
+      "beforeCpuMeanMs": 0.0683,
+      "afterCpuMeanMs": 0.0617,
+      "beforeCpuPeakMs": 0.4,
+      "afterCpuPeakMs": 0.275,
       "within60HzBudget": true,
       "pairs": [
         {
           "pair": 1,
           "before": {
-            "gpuMedianMs": 0.45,
-            "gpuMeanMs": 0.48,
+            "gpuMedianMs": 0.4,
+            "gpuMeanMs": 0.4067,
             "gpuPeakMs": 0.55,
-            "cpuMeanMs": 0.0667,
+            "cpuMeanMs": 0.0683,
             "cpuPeakMs": 0.55
           },
           "after": {
-            "gpuMedianMs": 0.65,
-            "gpuMeanMs": 0.6583,
-            "gpuPeakMs": 0.8,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
+            "gpuMedianMs": 0.4,
+            "gpuMeanMs": 0.4333,
+            "gpuPeakMs": 1.125,
+            "cpuMeanMs": 0.0583,
+            "cpuPeakMs": 0.15
           },
-          "deltaGpuMeanMs": 0.1783,
-          "deltaGpuPeakMs": 0.25
+          "deltaGpuMeanMs": 0.0266,
+          "deltaGpuPeakMs": 0.575
+        },
+        {
+          "pair": 2,
+          "before": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4192,
+            "gpuPeakMs": 0.475,
+            "cpuMeanMs": 0.0558,
+            "cpuPeakMs": 0.175
+          },
+          "after": {
+            "gpuMedianMs": 0.4,
+            "gpuMeanMs": 0.4208,
+            "gpuPeakMs": 0.525,
+            "cpuMeanMs": 0.065,
+            "cpuPeakMs": 0.375
+          },
+          "deltaGpuMeanMs": 0.0016,
+          "deltaGpuPeakMs": 0.05
+        },
+        {
+          "pair": 3,
+          "before": {
+            "gpuMedianMs": 0.45,
+            "gpuMeanMs": 0.4642,
+            "gpuPeakMs": 1.025,
+            "cpuMeanMs": 0.085,
+            "cpuPeakMs": 0.4
+          },
+          "after": {
+            "gpuMedianMs": 0.4,
+            "gpuMeanMs": 0.4325,
+            "gpuPeakMs": 0.9,
+            "cpuMeanMs": 0.0567,
+            "cpuPeakMs": 0.125
+          },
+          "deltaGpuMeanMs": -0.0317,
+          "deltaGpuPeakMs": -0.125
+        },
+        {
+          "pair": 4,
+          "before": {
+            "gpuMedianMs": 0.4,
+            "gpuMeanMs": 0.4308,
+            "gpuPeakMs": 1.125,
+            "cpuMeanMs": 0.0583,
+            "cpuPeakMs": 0.225
+          },
+          "after": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4292,
+            "gpuPeakMs": 0.525,
+            "cpuMeanMs": 0.1058,
+            "cpuPeakMs": 0.775
+          },
+          "deltaGpuMeanMs": -0.0016,
+          "deltaGpuPeakMs": -0.6
+        },
+        {
+          "pair": 5,
+          "before": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4483,
+            "gpuPeakMs": 1.15,
+            "cpuMeanMs": 0.0767,
+            "cpuPeakMs": 0.475
+          },
+          "after": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4417,
+            "gpuPeakMs": 0.575,
+            "cpuMeanMs": 0.0583,
+            "cpuPeakMs": 0.225
+          },
+          "deltaGpuMeanMs": -0.0066,
+          "deltaGpuPeakMs": -0.575
+        },
+        {
+          "pair": 6,
+          "before": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4192,
+            "gpuPeakMs": 0.525,
+            "cpuMeanMs": 0.0583,
+            "cpuPeakMs": 0.2
+          },
+          "after": {
+            "gpuMedianMs": 0.45,
+            "gpuMeanMs": 0.4433,
+            "gpuPeakMs": 0.525,
+            "cpuMeanMs": 0.0808,
+            "cpuPeakMs": 0.4
+          },
+          "deltaGpuMeanMs": 0.0241,
+          "deltaGpuPeakMs": 0
+        },
+        {
+          "pair": 7,
+          "before": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4733,
+            "gpuPeakMs": 1.075,
+            "cpuMeanMs": 0.0817,
+            "cpuPeakMs": 0.7
+          },
+          "after": {
+            "gpuMedianMs": 0.425,
+            "gpuMeanMs": 0.4267,
+            "gpuPeakMs": 0.5,
+            "cpuMeanMs": 0.0617,
+            "cpuPeakMs": 0.275
+          },
+          "deltaGpuMeanMs": -0.0466,
+          "deltaGpuPeakMs": -0.575
+        }
+      ]
+    },
+    "worstCase4xSimultaneous": {
+      "beforeGpuMeanMs": 0.5808,
+      "afterGpuMeanMs": 0.5592,
+      "beforeGpuPeakMs": 1.1,
+      "afterGpuPeakMs": 1.175,
+      "deltaGpuMeanMs": -0.0125,
+      "deltaGpuMadMs": 0.0125,
+      "beforeCpuMeanMs": 0.0733,
+      "afterCpuMeanMs": 0.0658,
+      "beforeCpuPeakMs": 0.475,
+      "afterCpuPeakMs": 0.225,
+      "within60HzBudget": true,
+      "pairs": [
+        {
+          "pair": 1,
+          "before": {
+            "gpuMedianMs": 0.575,
+            "gpuMeanMs": 0.5925,
+            "gpuPeakMs": 1.1,
+            "cpuMeanMs": 0.09,
+            "cpuPeakMs": 0.475
+          },
+          "after": {
+            "gpuMedianMs": 0.55,
+            "gpuMeanMs": 0.5592,
+            "gpuPeakMs": 0.75,
+            "cpuMeanMs": 0.0575,
+            "cpuPeakMs": 0.175
+          },
+          "deltaGpuMeanMs": -0.0333,
+          "deltaGpuPeakMs": -0.35
         },
         {
           "pair": 2,
           "before": {
             "gpuMedianMs": 0.575,
-            "gpuMeanMs": 0.5958,
-            "gpuPeakMs": 0.75,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
+            "gpuMeanMs": 0.5808,
+            "gpuPeakMs": 1.15,
+            "cpuMeanMs": 0.06,
+            "cpuPeakMs": 0.225
           },
           "after": {
-            "gpuMedianMs": 1.05,
-            "gpuMeanMs": 1.1,
-            "gpuPeakMs": 1.625,
-            "cpuMeanMs": 0.0525,
-            "cpuPeakMs": 0.125
-          },
-          "deltaGpuMeanMs": 0.5042,
-          "deltaGpuPeakMs": 0.875
-        },
-        {
-          "pair": 3,
-          "before": {
-            "gpuMedianMs": 0.325,
-            "gpuMeanMs": 0.3217,
-            "gpuPeakMs": 0.4,
-            "cpuMeanMs": 0.1025,
+            "gpuMedianMs": 0.55,
+            "gpuMeanMs": 0.5742,
+            "gpuPeakMs": 1.25,
+            "cpuMeanMs": 0.0958,
             "cpuPeakMs": 1.1
           },
-          "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.6383,
-            "gpuPeakMs": 0.775,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "deltaGpuMeanMs": 0.3166,
-          "deltaGpuPeakMs": 0.375
-        },
-        {
-          "pair": 4,
-          "before": {
-            "gpuMedianMs": 0.325,
-            "gpuMeanMs": 0.3275,
-            "gpuPeakMs": 0.35,
-            "cpuMeanMs": 0.0508,
-            "cpuPeakMs": 0.075
-          },
-          "after": {
-            "gpuMedianMs": 0.375,
-            "gpuMeanMs": 0.3667,
-            "gpuPeakMs": 0.425,
-            "cpuMeanMs": 0.055,
-            "cpuPeakMs": 0.2
-          },
-          "deltaGpuMeanMs": 0.0392,
-          "deltaGpuPeakMs": 0.075
-        },
-        {
-          "pair": 5,
-          "before": {
-            "gpuMedianMs": 0.35,
-            "gpuMeanMs": 0.34,
-            "gpuPeakMs": 0.375,
-            "cpuMeanMs": 0.0633,
-            "cpuPeakMs": 0.45
-          },
-          "after": {
-            "gpuMedianMs": 0.375,
-            "gpuMeanMs": 0.3675,
-            "gpuPeakMs": 0.425,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "deltaGpuMeanMs": 0.0275,
-          "deltaGpuPeakMs": 0.05
-        },
-        {
-          "pair": 6,
-          "before": {
-            "gpuMedianMs": 0.35,
-            "gpuMeanMs": 0.3508,
-            "gpuPeakMs": 0.375,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "after": {
-            "gpuMedianMs": 0.375,
-            "gpuMeanMs": 0.3767,
-            "gpuPeakMs": 0.425,
-            "cpuMeanMs": 0.0583,
-            "cpuPeakMs": 0.3
-          },
-          "deltaGpuMeanMs": 0.0259,
-          "deltaGpuPeakMs": 0.05
-        },
-        {
-          "pair": 7,
-          "before": {
-            "gpuMedianMs": 0.375,
-            "gpuMeanMs": 0.3875,
-            "gpuPeakMs": 0.425,
-            "cpuMeanMs": 0.0675,
-            "cpuPeakMs": 0.325
-          },
-          "after": {
-            "gpuMedianMs": 0.375,
-            "gpuMeanMs": 0.3758,
-            "gpuPeakMs": 0.45,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "deltaGpuMeanMs": -0.0117,
-          "deltaGpuPeakMs": 0.025
-        }
-      ]
-    },
-    "worstCase4xSimultaneous": {
-      "beforeGpuMeanMs": 0.6867,
-      "afterGpuMeanMs": 0.6017,
-      "beforeGpuPeakMs": 0.725,
-      "afterGpuPeakMs": 0.725,
-      "deltaGpuMeanMs": -0.085,
-      "deltaGpuMadMs": 0.0591,
-      "beforeCpuMeanMs": 0.0583,
-      "afterCpuMeanMs": 0.05,
-      "beforeCpuPeakMs": 0.3,
-      "afterCpuPeakMs": 0.05,
-      "within60HzBudget": true,
-      "pairs": [
-        {
-          "pair": 1,
-          "before": {
-            "gpuMedianMs": 0.45,
-            "gpuMeanMs": 0.4558,
-            "gpuPeakMs": 0.5,
-            "cpuMeanMs": 0.0692,
-            "cpuPeakMs": 0.625
-          },
-          "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.5983,
-            "gpuPeakMs": 0.725,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "deltaGpuMeanMs": 0.1425,
-          "deltaGpuPeakMs": 0.225
-        },
-        {
-          "pair": 2,
-          "before": {
-            "gpuMedianMs": 0.5,
-            "gpuMeanMs": 0.5067,
-            "gpuPeakMs": 0.55,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
-          },
-          "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.595,
-            "gpuPeakMs": 0.725,
-            "cpuMeanMs": 0.07,
-            "cpuPeakMs": 0.375
-          },
-          "deltaGpuMeanMs": 0.0883,
-          "deltaGpuPeakMs": 0.175
+          "deltaGpuMeanMs": -0.0066,
+          "deltaGpuPeakMs": 0.1
         },
         {
           "pair": 3,
           "before": {
             "gpuMedianMs": 0.6,
-            "gpuMeanMs": 0.5908,
-            "gpuPeakMs": 0.65,
-            "cpuMeanMs": 0.0667,
-            "cpuPeakMs": 0.55
+            "gpuMeanMs": 0.5992,
+            "gpuPeakMs": 1.05,
+            "cpuMeanMs": 0.095,
+            "cpuPeakMs": 0.925
           },
           "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.6042,
-            "gpuPeakMs": 0.725,
+            "gpuMedianMs": 0.55,
+            "gpuMeanMs": 0.5558,
+            "gpuPeakMs": 1.15,
             "cpuMeanMs": 0.05,
             "cpuPeakMs": 0.05
           },
-          "deltaGpuMeanMs": 0.0134,
-          "deltaGpuPeakMs": 0.075
+          "deltaGpuMeanMs": -0.0434,
+          "deltaGpuPeakMs": 0.1
         },
         {
           "pair": 4,
           "before": {
-            "gpuMedianMs": 0.7,
-            "gpuMeanMs": 0.6867,
-            "gpuPeakMs": 0.725,
-            "cpuMeanMs": 0.0583,
-            "cpuPeakMs": 0.3
+            "gpuMedianMs": 0.575,
+            "gpuMeanMs": 0.5842,
+            "gpuPeakMs": 1.075,
+            "cpuMeanMs": 0.0508,
+            "cpuPeakMs": 0.075
           },
           "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.6017,
-            "gpuPeakMs": 0.75,
-            "cpuMeanMs": 0.0617,
-            "cpuPeakMs": 0.4
+            "gpuMedianMs": 0.575,
+            "gpuMeanMs": 0.5592,
+            "gpuPeakMs": 1.175,
+            "cpuMeanMs": 0.0917,
+            "cpuPeakMs": 0.65
           },
-          "deltaGpuMeanMs": -0.085,
-          "deltaGpuPeakMs": 0.025
+          "deltaGpuMeanMs": -0.025,
+          "deltaGpuPeakMs": 0.1
         },
         {
           "pair": 5,
           "before": {
-            "gpuMedianMs": 0.75,
-            "gpuMeanMs": 0.7458,
-            "gpuPeakMs": 0.8,
-            "cpuMeanMs": 0.0542,
-            "cpuPeakMs": 0.175
+            "gpuMedianMs": 0.575,
+            "gpuMeanMs": 0.5533,
+            "gpuPeakMs": 0.65,
+            "cpuMeanMs": 0.0733,
+            "cpuPeakMs": 0.55
           },
           "after": {
-            "gpuMedianMs": 0.625,
-            "gpuMeanMs": 0.6017,
-            "gpuPeakMs": 0.725,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
+            "gpuMedianMs": 0.6,
+            "gpuMeanMs": 0.58,
+            "gpuPeakMs": 1.075,
+            "cpuMeanMs": 0.0658,
+            "cpuPeakMs": 0.225
           },
-          "deltaGpuMeanMs": -0.1441,
-          "deltaGpuPeakMs": -0.075
+          "deltaGpuMeanMs": 0.0267,
+          "deltaGpuPeakMs": 0.425
         },
         {
           "pair": 6,
           "before": {
-            "gpuMedianMs": 0.775,
-            "gpuMeanMs": 0.7642,
-            "gpuPeakMs": 0.8,
-            "cpuMeanMs": 0.0533,
-            "cpuPeakMs": 0.15
+            "gpuMedianMs": 0.55,
+            "gpuMeanMs": 0.5508,
+            "gpuPeakMs": 1.225,
+            "cpuMeanMs": 0.05,
+            "cpuPeakMs": 0.05
           },
           "after": {
-            "gpuMedianMs": 0.675,
-            "gpuMeanMs": 0.6325,
-            "gpuPeakMs": 0.725,
-            "cpuMeanMs": 0.0675,
-            "cpuPeakMs": 0.575
+            "gpuMedianMs": 0.525,
+            "gpuMeanMs": 0.5383,
+            "gpuPeakMs": 1.225,
+            "cpuMeanMs": 0.0725,
+            "cpuPeakMs": 0.425
           },
-          "deltaGpuMeanMs": -0.1317,
-          "deltaGpuPeakMs": -0.075
+          "deltaGpuMeanMs": -0.0125,
+          "deltaGpuPeakMs": 0
         },
         {
           "pair": 7,
           "before": {
-            "gpuMedianMs": 0.75,
-            "gpuMeanMs": 0.76,
-            "gpuPeakMs": 0.8,
-            "cpuMeanMs": 0.0858,
-            "cpuPeakMs": 0.75
+            "gpuMedianMs": 0.575,
+            "gpuMeanMs": 0.55,
+            "gpuPeakMs": 1.125,
+            "cpuMeanMs": 0.0783,
+            "cpuPeakMs": 0.875
           },
           "after": {
-            "gpuMedianMs": 0.675,
-            "gpuMeanMs": 0.655,
-            "gpuPeakMs": 0.775,
-            "cpuMeanMs": 0.05,
-            "cpuPeakMs": 0.05
+            "gpuMedianMs": 0.55,
+            "gpuMeanMs": 0.55,
+            "gpuPeakMs": 1.25,
+            "cpuMeanMs": 0.055,
+            "cpuPeakMs": 0.2
           },
-          "deltaGpuMeanMs": -0.105,
-          "deltaGpuPeakMs": -0.025
+          "deltaGpuMeanMs": 0,
+          "deltaGpuPeakMs": 0.125
         }
       ]
     }
