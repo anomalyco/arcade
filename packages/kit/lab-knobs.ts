@@ -378,7 +378,11 @@ export function ensureLabKnobsStyles() {
   styled = true
   const style = document.createElement("style")
   style.dataset.labKnobs = ""
+  // Games style bare elements (Blackout: \`button { border; padding; letter-spacing }\`), and knobs' own base rules have
+  // no specificity. The doubled :is() is (0,0,2): above a game's element rules, below every knobs class rule.
   style.textContent = `
+:where(.lab-knobs,[data-lab-panel]) .knobs-panel{letter-spacing:normal;text-transform:none;text-shadow:none}
+:where(.lab-knobs,[data-lab-panel]) :is(button,input,select,textarea):is(button,input,select,textarea){font:inherit;color:inherit;letter-spacing:inherit;text-transform:none;background:var(--k-surface);border:0;border-radius:var(--k-radius);padding:revert;margin:revert;min-width:0;min-height:revert;box-shadow:none;outline:revert;user-select:revert}
 .lab-knobs{min-width:0}
 .lab-knobs .knobs-panel.knobs-inline{width:100%}
 .knobs-row[data-lab-disabled]{opacity:.38;pointer-events:none}

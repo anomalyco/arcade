@@ -285,14 +285,18 @@ export async function lab(options:LabOptions) {
       return prefix||raw
     }
   }
+  // The status bar shows telemetry; the panel's own header is hidden in this layout, so only changes are written.
+  const setHeader=(text:string)=>{
+    if(panel!.header.textContent!==text)panel!.header.textContent=text
+    workbench?.setTelemetry(text)
+  }
   const render=async(measure=false)=>{
     const width=Math.max(1,Math.round(viewportHost.clientWidth||innerWidth))
     const height=Math.max(1,Math.round(viewportHost.clientHeight||innerHeight))
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}
     if(workbench?.isVariationGridMultiView()){
       const ms=await workbench.renderVariationGrid(width,height,settings.debug)
-      panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGrid ${workbench.variationGridCostMs?.toFixed(2)??"—"} ms`
-      workbench.setTelemetry(panel!.header.textContent)
+      setHeader(`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGrid ${workbench.variationGridCostMs?.toFixed(2)??"—"} ms`)
       return ms
     }
     stage.resize(width,height)
@@ -308,8 +312,7 @@ export async function lab(options:LabOptions) {
       ?(pass:GPURenderPassEncoder)=>{spawn!.section.draw?.(pass);active.draw?.(pass)}
       :active.draw
     const ms=await stage.render(particles,volume,trail,settings.debug,measure,drawPass)
-    panel!.header.textContent=`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGPU ${stage.gpuMs?.toFixed(2)??"—"} ms${stage.gpuMs===null?" (unavailable)":""}`
-    workbench?.setTelemetry(panel!.header.textContent)
+    setHeader(`${formatHeaderTelemetry(active.telemetry?.()??active.label)}\nGPU ${stage.gpuMs?.toFixed(2)??"—"} ms${stage.gpuMs===null?" (unavailable)":""}`)
     return ms
   }
   const advance=(dt:number)=>{

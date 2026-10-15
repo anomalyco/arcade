@@ -78,7 +78,8 @@ export async function startStations(api: LabApi, ensureGame: (game: string) => P
   const params = new URLSearchParams(location.search)
   const station = params.get("station")
   if (station) await stations.open(station)
-  Object.assign(window, { stations })
+  // Handles for proofs and the dev console: the stations, the Details panel (knobs over the settings) and the workbench.
+  Object.assign(window, { stations, labPanel: api.panel, labWorkbench: api.workbench })
   return stations
 }
 
