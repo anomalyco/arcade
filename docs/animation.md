@@ -29,7 +29,7 @@ means the walk and run reference clips that `common.ts` downloads on first use.
 | `packages/kit/human-profile.ts` | `humanProfiles` presets and their Lab controls (`zombieVariant`) |
 | `packages/kit/shamble-crouch.ts` | `buildShambleReferenceCycle`, `buildCrouchRunReferenceCycle`, `extractAsymmetricBvhCycle`, `shambleHandsFK`, `shambleTorsoModulation`, zombie variants (`limper`, `dragger`, `reacher`, `lunger`) |
 | `packages/kit/rig.ts` | `RIG` link lengths (`thigh`, `shin`, `ankle`, `foot`, `toe`, `heel`), `ik`, frames and springs |
-| `games/blackout/src/game/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips |
+| `packages/kit/avatar/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips (Blackout and Brawl; Blackout's `src/game/anim.ts` re-exports it) |
 | `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks and split boot/toe meshes |
 
 The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`, and the foot splits at the ball (MTP joint) into `RIG.foot = 0.125 m` (ankle to ball) and `RIG.toe = 0.065 m` (ball to toe tip, `0.19 m` total forward reach, `RIG.heel = 0.06 m`). Hip height is about 0.86 m.
