@@ -198,7 +198,15 @@ function flatRuns(channels: Float32Array[]): number {
 }
 
 /** Single-event sounds: more than one strong onset means the generator made a burst or a sequence. */
-const SINGLE = new Set(["gun.pistol.shot", "gun.dry-fire", "flashlight.click", "zombie.hit", "body.hurt", "door.bash"])
+const SINGLE = new Set([
+  "gun.pistol.shot", "gun.dry-fire", "flashlight.click", "zombie.hit", "body.hurt", "door.bash",
+  // A magazine seating (scrape, click) and glass (crack, falling shards) are several onsets by nature.
+  "gun.pistol.mag-release", "item.drop",
+  ...["wood", "plaster", "concrete", "metal"].map(s => `impact.bullet.${s}`),
+])
+
+/** Ambience beds are stereo; positional loops (crafting, generator, horde) are mono like every other emitter. */
+const STEREO = (spec: SfxSpec) => Boolean(spec.loop) && spec.bus === "ambience"
 
 const loudnessOf = (spec: SfxSpec, s: SfxStats) => (spec.loop ? s.lufs : s.momentaryMaxLufs)
 
@@ -262,7 +270,7 @@ async function curateOne(spec: SfxSpec): Promise<Curated> {
   const takes = existsSync(rawDir) ? readdirSync(rawDir).filter(f => f.endsWith(".mp3")).map(f => Number(f.replace(".mp3", ""))).sort((a, b) => a - b) : []
   for (const take of takes) {
     const raw = join(rawDir, `${take}.mp3`)
-    const channels = await decode(raw, spec.loop ? 2 : 1)
+    const channels = await decode(raw, STEREO(spec) ? 2 : 1)
     removeDc(channels)
     const snr = takeSnr(mono(channels))
     const runs = flatRuns(channels)
@@ -329,10 +337,10 @@ async function curate() {
 
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d
 
-async function encode(spec: SfxSpec, channels: Float32Array[], file: string) {
+async function encode(spec: SfxSpec, channels: Float32Array[], file: string, trimDb = 0) {
   const stats = analyzeSfx(channels)
   const measured = loudnessOf(spec, stats)
-  const gainDb = Math.min(spec.target - measured, PEAK_CAP_DB - 0.5 - stats.peakDb)
+  const gainDb = Math.min(spec.target - measured, PEAK_CAP_DB - 0.5 - stats.peakDb) - trimDb
   const g = 10 ** (gainDb / 20)
   // Loops are wrapped in 0.25 s of their own tail before and head after, so the codec's first and last frames (which
   // decode imperfectly) stay outside the loop region [LOOP_WRAP, LOOP_WRAP + length).
@@ -347,7 +355,7 @@ async function encode(spec: SfxSpec, channels: Float32Array[], file: string) {
   })
   const tmp = join(work, "encode.f32")
   writeF32(tmp, scaled)
-  const bitrate = spec.loop ? "96k" : spec.bus === "weapon" || spec.bus === "impact" ? "64k" : "48k"
+  const bitrate = STEREO(spec) ? "96k" : spec.bus === "weapon" || spec.bus === "impact" ? "64k" : "48k"
   await $`ffmpeg -v error -y -f f32le -ar ${SR} -ac ${channels.length} -i ${tmp} -c:a libopus -b:a ${bitrate} -application audio -frame_duration 10 ${file}`.quiet()
 }
 
@@ -379,9 +387,16 @@ async function build() {
         const c = curated.candidates.find(x => x.name === name)!
         const file = `${spec.id}.${++n}.ogg`
         const out = join(outDir, file)
-        await encode(spec, readF32(c.pcm, c.stats.channels), out)
+        const pcm = readF32(c.pcm, c.stats.channels)
+        await encode(spec, pcm, out)
         keep.add(file)
-        const decoded = await decode(out, c.stats.channels)
+        let decoded = await decode(out, c.stats.channels)
+        // Opus can overshoot a peak-capped take on decode; encode it again a little quieter.
+        const over = analyzeSfx(decoded).peakDb - (PEAK_CAP_DB + 0.4)
+        if (over > 0) {
+          await encode(spec, pcm, out, over + 0.2)
+          decoded = await decode(out, c.stats.channels)
+        }
         const stats = analyzeSfx(spec.loop ? decoded.map(ch => ch.subarray(LOOP_WRAP, ch.length - LOOP_WRAP)) : decoded)
         const loop = spec.loop ? { loopStart: LOOP_WRAP / SR, loopEnd: round(LOOP_WRAP / SR + c.stats.durationSeconds, 6) } : undefined
         const loudness = loudnessOf(spec, stats)

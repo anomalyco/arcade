@@ -232,8 +232,8 @@ because none is a clean swap:
   their sound and break that proof. Blackout has no pistol; the library has no rifle, shotgun or sniper. To share them,
   render Blackout's synth into library entries or give the library procedural entries.
 - **Blackout vehicle samples** (`public/sfx/vehicles/`): its crash takes are different encodes of Getaway's crash
-  family (not byte-identical, different lengths and loudness), and six engine loops plus `skid.mp3` (about 250 KB) are
-  no longer referenced since engines became procedural. Pick one crash family and delete the unused loops.
+  family (not byte-identical, different lengths and loudness). Pick one crash family. The six engine loops and
+  `skid.mp3`, unused since engines became procedural, were deleted.
 - **Getaway** sounds are vehicle, siren, radio and round stings: nothing in the library overlaps except `ui.click`,
   which the library reuses from Getaway's own file in place. `repair.mp3` clips (67 samples, +1.4 dBFS).
 - **Carrier** has its own slot bank, picks and SOUNDS audition board (naval weapons, ocean, weather). `ui.tick` reuses
@@ -281,27 +281,9 @@ Getaway's renderer and input are not migrated in this milestone. See `games/outb
 Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
 both GPU devices and their historical counterparts.
 `getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.
-`lab-panel.ts` supplies the current games' floating Lab shell, enable/disable rows, All On / All Off, and input isolation.
-It also accepts numeric range controls (`min`, `max`, `step`), selects (`options` with numeric or string values),
-and an `enabled(settings)` predicate. Groups containing sliders or selects get Copy JSON.
-Each named group gets Randomize: it chooses step-aligned slider values and select options through the same change
-callback as manual edits, then refreshes dependent controls. Disabled sliders are randomized too, so changing styles
-later reveals the new values. Switches are untouched; groups containing only switches have a disabled Randomize button.
-All On / All Off affect switches only and are hidden when there are none. Getaway's Lights group uses both types:
-its Style select switches the live renderer, and its sliders are enabled for the Soft pool style.
-An optional change callback applies settings requiring resource updates, such as Getaway's live car-light meshes.
-`lab-navigation.ts` owns row/group focus, folds, fuzzy matches, value changes and constructor-default resets without DOM
-dependencies. The panel captures keyboard events while open, including matching keyups after closing; exact edits are
-committed on Enter and cancelled on Escape. A compact hint lists navigation/search/group shortcuts. Comparison key
-messages carry modifiers too. Both games run `lab-navigation.test.ts` in their normal check; Getaway's
-`scripts/prove-lab-keyboard.ts` verifies real keyboard capture against Getaway and Blackout input adapters on a preview.
-
-For `fx-kit` adoption: merge `packages/kit/lab-panel.ts`, add `lab-navigation.ts` and `lab-navigation.test.ts`, and retain
-fx-kit's dynamic `addControls`, action controls and `LabOptions` when adapting its bindings to the navigation model.
-Its `type: "range"` optional step needs a concrete step; per-control `change` callbacks must still run through the shared
-write path. Keep action rows in navigation rather than treating them as switches. Include the shared tests in both games'
-package scripts. For comparison panes, also adopt modifier forwarding in `packages/kit/compare.ts` and both games'
-`src/game/input.ts`. The proof runner and Getaway script typecheck entry provide the browser regression check.
+`lab-panel.ts` supplies every game's Lab panel (floating in the games, inspector in the Lab) and its input isolation;
+knobs draws it through `lab-knobs.ts`. `lab-navigation.ts` keeps the DOM-free control model (rows, groups, units,
+value changes, default resets). Controls, keys and the authoring rules are in [lab.md](lab.md).
 Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
 Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel.
 
@@ -339,19 +321,27 @@ In rough order of value against risk:
    `@arcade/kit/fx/{particles,particle-renderer,explosion}`, `@arcade/kit/sim/{matchmaking,rng}`,
    `@arcade/kit/client/{controls,key-cap}`, `@arcade/kit/lab-panel`, and `@arcade/kit/dev-control`. Wings
    (`games/wings/src/render/world/rain.ts`) retains its Three.js TSL node-material rain/spray in its independent project.
-8. **Shared Game Feel toolkit & Wet Ballistic Blood (`@arcade/kit/feel`, `packages/kit/fx/splatter*.ts`).**
-   `GameFeel` maps semantic events (`shot`, `shove`, `hit-confirmed`, `kill`, `hit-taken`, `explosion`, `barricade-bash`, `land`)
-   through per-game presets (`outbreak`, `blackout`, `getaway`, `subtle`, `off`) to Squirrel Eiserloh's `trauma²` 2-octave
-   smooth-noise shake, 240 Hz critically-damped directional recoil/lunge kick, zoom & roll punch, sim-safe presentation
-   hit-stop (`visualDt`), periphery-weighted directional/radial impulse shutter blur, dark crimson damage vignette, and
-   chromatic nudge. All amounts live in the shared `LabPanel` (`Feel` group) with a global intensity slider, an
-   accessibility `feelReduceMotion` setting, and automatic `prefers-reduced-motion: reduce` support. `Splatter` and
-   `SplatterRenderer` add `zombieBlood` and `survivorBlood` presets, 3-tier exit-wound/floor-fan/wall-arc trajectories,
-   two-pass coplanar-first terrain receiver projection, Beer–Lambert optical depth (coagulated venous core to arterial
-   rim), raised meniscus wet specular glints, vertical wall gravity drips, and Noir selective-colour preservation
-   (`alpha: { srcFactor: "zero", dstFactor: "one" }`). Adopted in Outbreak and Blackout; follow-up candidates are migrating
-   Getaway's `Scene.shake`/`hitStop` and Carrier's `TurretCam`/`FlightCam`/`ChaseCam`/`BoatCam` `trauma²` loops to
-   `GameFeel` adapters.
+8. **Composable Camera Shake, Motion-Blur Impulse & Wet Ballistic Blood (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `@arcade/kit/fx/splatter*`).**
+   Each game wires its own combat events directly to small composable primitives with plain default settings objects and
+   per-primitive Lab controls rather than a central event bus or preset registry:
+   - `packages/kit/client/camera.ts` owns `Camera.add(trauma, dir?, kick?)`, `kick`/`kickAngle`, `punch`/`killPunch`,
+     `addFlash`/`damageFlash`, `smoothNoise1D` (`trauma²` 2-octave quintic gradient noise for translation and roll),
+     `attenuateShake`, `prefersReducedMotion`, `HitStop` (`trigger`/`step` presentation time-scale helper),
+     `cameraShakeDefaults()`, and `cameraShakeControls` (`shakeScale`, `kickScale`, `damageFlashScale`, `shakeDecay`,
+     `shakeFrequency`, `maxShakeOffset`, `maxShakeRoll`, `reduceMotion`).
+   - `packages/kit/gpu/motion-blur.ts` owns `MotionBlur`, `MotionBlurBurst` (decaying directional + radial impulse velocity
+     and shutter boost packed into `MotionFrame`), `motionBlurDefaults()`, and `motionBlurControls` (`enabled`, `strength`,
+     `shutter`, `burst`, `burstDecay`). `Renderer` (`packages/kit/gpu/renderer.ts`) runs `MotionBlur` before bloom and
+     post composite whenever continuous shutter blur or an impulse burst is active, with `0.000 ms` steady-state overhead
+     when inactive.
+   - `packages/kit/gpu/look-shaders.ts` and `packages/kit/gpu/shaders.ts` consume `G.z` (`render.grade[2]`) as the damage
+     vignette flash uniform in the existing post composite.
+   - `Splatter` and `SplatterRenderer` (`packages/kit/fx/splatter*.ts`) add `zombieBlood` and `survivorBlood` presets,
+     3-tier exit-wound/floor-fan/wall-arc trajectories, two-pass coplanar-first terrain receiver projection, Beer–Lambert
+     optical depth (coagulated venous core to arterial rim), raised meniscus wet specular glints, vertical wall gravity
+     drips, and Noir selective-colour preservation (`alpha: { srcFactor: "zero", dstFactor: "one" }`). Adopted in Outbreak
+     and Blackout; follow-up candidates are migrating Getaway's `Scene.shake`/`hitStop` and Carrier's camera `trauma²`
+     loops onto `@arcade/kit/client/camera` helpers.
 9. **Remaining candidates:**
    - **Room plumbing:** Throttled lobby reports with a heartbeat, idle kick with a countdown, the build-hash version
      handshake, and seat bookkeeping.

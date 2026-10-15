@@ -84,13 +84,15 @@
   overflow: auto;
   min-height: 0;
 }
-.lab-station-slot[data-slot="left"] { flex: 0 1 auto; max-height: 42%; border-bottom: 1px solid var(--line); }
-.lab-station-slot[data-slot="right"] { flex: 0 1 auto; max-height: 58%; border-bottom: 1px solid var(--line); }
+/* Heights come from the slot handles (panels.ts writes --slot-left-h / --slot-right-h); otherwise content height. */
+.lab-station-slot[data-slot="left"] { flex: 0 1 auto; height: var(--slot-left-h, auto); max-height: var(--slot-left-h, 42%); border-bottom: 1px solid var(--line); }
+.lab-station-slot[data-slot="right"] { flex: 0 1 auto; height: var(--slot-right-h, auto); max-height: var(--slot-right-h, 58%); border-bottom: 1px solid var(--line); }
 .lab-station-dock {
   grid-area: dock;
   flex-direction: row;
   align-items: stretch;
-  max-height: 210px;
+  height: var(--dock-h, auto);
+  max-height: var(--dock-h, 210px);
   background: var(--bg);
   overflow-x: auto;
   overflow-y: hidden;

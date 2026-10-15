@@ -3,6 +3,9 @@ import type { AIState } from "../../shared/ai"
 import type { CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
 import type { FeedbackActor } from "../hud/actor-feedback"
+import { impactDelay, shotImpacts } from "./impacts"
+import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
+import { RELOAD_STARTS, reloadElapsed } from "./reload"
 
 /** One sound to play: a library id at a plan position (x, y), optionally later or quieter. */
 export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; source: string }
@@ -10,10 +13,10 @@ export type SoundEvent = { id: string; x: number; y: number; delay?: number; gai
 /** The survivor fields the director diffs: `FeedbackActor` (the HUD's action feedback contract) plus position. */
 export type SoundActor = Pick<
   FeedbackActor,
-  "health" | "equippedItem" | "magAmmo" | "reserveAmmo" | "planks" | "reloadRemaining" | "shoveAnim" | "channel" | "lootMessage" | "lootMessageUntil" | "flashlightOn" | "exhausted" | "vault"
+  "health" | "equippedItem" | "magAmmo" | "reserveAmmo" | "planks" | "reloadRemaining" | "shoveAnim" | "channel" | "lootMessage" | "lootMessageUntil" | "flashlightOn" | "battery" | "exhausted" | "vault"
 > & { x: number; y: number }
 
-export type SoundZombie = { id: number; x: number; y: number; state: AIState }
+export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number }
 
 /** What the director reads each frame. `CoopSim` provides all of it offline and in co-op (from snapshots). */
 export type SoundWorld = {
@@ -23,6 +26,9 @@ export type SoundWorld = {
   shots: readonly CombatShotEvent[]
   portals: ReadonlyMap<string, { barricadePlanks: number; lastBashTime: number }>
   survivors: readonly { id: string; survivor: SoundActor }[]
+  /** Items, drops, benches, pings and lures (absent in tests that only need combat and doors). */
+  progression?: SoundProgression
+  hour?: number
 }
 
 export const DIRECTOR_TUNING = {
@@ -40,11 +46,13 @@ export const DIRECTOR_TUNING = {
   attackReach: 1.8,
 }
 
+/** Reload parts are scheduled up to this far ahead of the frame that reaches them (s). */
+const RELOAD_LOOKAHEAD = 1 / 50
 const QUIET: ReadonlySet<AIState> = new Set(["wander", "investigate", "search"])
 const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase"])
 const center = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, y: (r[1]! + r[3]!) / 2 })
 
-type ActorMemory = SoundActor & { lootKey: number }
+type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number }
 
 /**
  * Turns world-state changes into sounds. It only reads state (like the HUD's `ActorFeedback`), so the simulation and
@@ -63,6 +71,7 @@ export class SoundDirector {
   private planks = new Map<string, number>()
   private bashes = new Map<string, number>()
   private actors = new Map<string, ActorMemory>()
+  private readonly inventory = new InventorySounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private readonly rng: () => number
@@ -78,6 +87,12 @@ export class SoundDirector {
     this.zombies.clear()
     this.deaths.clear()
     this.actors.clear()
+    this.inventory.reset()
+  }
+
+  /** Sounds held for as long as something lasts, as of the last `observe`: crafts, research, noisemakers, generators. */
+  get holds(): readonly SoundHold[] {
+    return this.inventory.holds
   }
 
   observe(world: SoundWorld, listener: { x: number; y: number }): SoundEvent[] {
@@ -86,7 +101,8 @@ export class SoundDirector {
     const t = world.time
     const near = (x: number, y: number) => Math.hypot(x - listener.x, y - listener.y) <= this.tuning.hearing
 
-    // Shots: the report at the muzzle, a casing a beat later, and the hit, or the kill, at the target.
+    // Shots: the report at the muzzle, a casing a beat later, and the hit, or the kill, at the target; a miss strikes
+    // whatever stopped it (and rings off any pane, board, fence or car it went through), as the round arrives.
     for (const shot of world.shots) {
       if (this.shots.has(shot.id)) continue
       this.shots.add(shot.id)
@@ -97,6 +113,10 @@ export class SoundDirector {
         if (shot.killed && !this.deaths.has(shot.hitZombieId)) {
           this.deaths.add(shot.hitZombieId)
           emit({ id: "zombie.death", x: shot.toX, y: shot.toY, delay: 0.1, source: "shot" })
+        }
+      } else if (this.started) {
+        for (const hit of shotImpacts(world.town, shot, (id) => world.portals.get(id)?.barricadePlanks ?? 0)) {
+          emit({ id: `impact.bullet.${hit.surface}`, x: hit.x, y: hit.y, delay: impactDelay(hit.t), gain: hit.through ? 0.8 : 1, source: "shot" })
         }
       }
     }
@@ -169,19 +189,33 @@ export class SoundDirector {
     for (const { id, survivor: a } of world.survivors) {
       present.add(id)
       const p = this.actors.get(id)
-      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil })
+      // The reload in parts, each when the reload pose reaches it (looking one frame ahead to land on time).
+      let reloadStart = p?.reloadStart ?? t
+      let elapsed = -1
+      if (a.reloadRemaining > 0) {
+        if (!p || p.reloadRemaining <= 0) reloadStart = t
+        elapsed = reloadElapsed(a.reloadRemaining, p?.reloadRemaining ?? 0, reloadStart, t)
+      }
+      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil, reloadStart, reloadElapsed: elapsed })
       if (!p) continue
       const at = { x: a.x, y: a.y, source: id }
-      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0) {
-        if (a.magAmmo === 0 && a.equippedItem === "pistol") emit({ id: "gun.dry-fire", ...at })
-        emit({ id: "gun.pistol.reload", ...at, delay: 0.05 })
+      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0 && a.magAmmo === 0 && a.equippedItem === "pistol") emit({ id: "gun.dry-fire", ...at })
+      if (elapsed >= 0) {
+        const ahead = elapsed + RELOAD_LOOKAHEAD
+        for (const part of RELOAD_STARTS) {
+          if (part.start <= ahead && part.start > p.reloadElapsed + RELOAD_LOOKAHEAD) emit({ id: part.id, ...at, delay: Math.max(0, part.start - elapsed) })
+        }
       }
       if (a.lootMessageUntil !== p.lootKey && a.lootMessage) {
         if (a.lootMessage.startsWith("Out of 9mm")) emit({ id: "gun.dry-fire", ...at })
         else if (a.lootMessage.startsWith("Blocked by barricade")) emit({ id: "door.locked", ...at })
       }
-      if (a.reserveAmmo > p.reserveAmmo) emit({ id: "pickup.ammo", ...at })
-      else if (a.planks > p.planks) emit({ id: "pickup.item", ...at })
+      // Pickups by item class come from the ledger (`InventorySounds`); survivors whose stores this peer cannot see
+      // (other seats on a co-op client) fall back to their replicated ammo and planks.
+      if (!world.progression?.ledger.stores.has(`${id}/belt`)) {
+        if (a.reserveAmmo > p.reserveAmmo) emit({ id: "pickup.ammo", ...at })
+        else if (a.planks > p.planks) emit({ id: "pickup.plank", ...at })
+      }
       if (a.channel?.kind === "search" && (!p.channel || p.channel.targetId !== a.channel.targetId)) emit({ id: "search.rummage", ...at })
       if (a.shoveAnim > p.shoveAnim + 1e-4) emit({ id: "melee.shove", ...at })
       if (a.flashlightOn !== p.flashlightOn) emit({ id: "flashlight.click", ...at })
@@ -203,6 +237,7 @@ export class SoundDirector {
       }
     }
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
+    this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out)
 
     this.started = true
     return out
