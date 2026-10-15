@@ -18,10 +18,14 @@ Unlisted: [Brawl](https://anoma.ly/arcade/brawl/) — top-down party brawler wit
 with their own powers, shoveable props and stock rounds (`games/brawl`, Worker `arcade-brawl`). No landing link or
 indexing.
 
+Unlisted: [Archers](https://anoma.ly/arcade/archers/) — side-view arena archery in a noir silhouette look: arrows that
+stick and must be picked up, dodge-catches, stomps, one-hit kills, chests with special arrows, couch play for up to four
+on keyboards and gamepads against bots (`games/archers`, Worker `arcade-archers`). No landing link or indexing.
+
 Unlisted tool: [Lab](https://anoma.ly/arcade/lab/) — the one isolation workbench for every game's effects, materials,
 looks, physics and sound (`games/lab`, Worker `arcade-lab`). Old `/arcade/<game>/lab.html` links redirect to it.
 
-Getaway, Blackout, Outbreak, Carrier, Brawl, the Lab and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
+Getaway, Blackout, Outbreak, Carrier, Brawl, Archers, the Lab and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
 checks and development commands in the game you are changing. Shared code is the private `@arcade/kit` source package.
 Wings, landing and redirects keep their own installs and lockfiles.
 

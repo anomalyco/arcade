@@ -13,6 +13,7 @@ export const ARCHITECTURE_GAMES = [
   { id: "lab", label: "Lab", dirs: ["games/lab", "packages/kit/lab"] },
   { id: "wings", label: "Wings", dirs: ["games/wings"] },
   { id: "brawl", label: "Brawl", dirs: ["games/brawl"] },
+  { id: "archers", label: "Archers", dirs: ["games/archers"] },
 ] as const
 
 export type ArchitectureGameId = (typeof ARCHITECTURE_GAMES)[number]["id"]
@@ -224,11 +225,12 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/client/chat.css",
   },
   {
-    area: "`client/{input,camera,smooth}` & `orbit-gestures`",
-    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), and orbit/pan/zoom gestures",
+    area: "`client/{input,camera,side-camera,smooth}` & `orbit-gestures`",
+    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), side-view `SideCamera`, and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||
+      s === "@arcade/kit/client/side-camera" ||
       s === "@arcade/kit/client/smooth" ||
       s === "@arcade/kit/orbit-gestures",
   },

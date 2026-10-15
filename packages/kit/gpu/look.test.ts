@@ -19,7 +19,7 @@ import {
 import { makeLookPostShader, makeLookSceneShader, makeSceneShader, postShader, sceneShader } from "./shaders"
 
 describe("LookSettings & Presets (@arcade/kit/look)", () => {
-  test("all 8 presets validate against LOOK_PARAM_SPECS bounds and steps", () => {
+  test("all 9 presets validate against LOOK_PARAM_SPECS bounds and steps", () => {
     expect(LOOK_PRESET_IDS).toEqual([
       "current",
       "noir",
@@ -29,6 +29,7 @@ describe("LookSettings & Presets (@arcade/kit/look)", () => {
       "cozy_golden_hour",
       "party_pop",
       "night_ring",
+      "noir_silhouette",
     ])
     for (const id of LOOK_PRESET_IDS) {
       const settings = createLookSettings(id)
