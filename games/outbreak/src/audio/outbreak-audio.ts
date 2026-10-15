@@ -178,6 +178,7 @@ export class OutbreakAudio {
     const voice = this.runtime.playCue(event.id, {
       time: this.runtime.now + (event.delay ?? 0),
       gain: event.gain,
+      rate: event.rate,
       position: entry.range.max > 0 ? { x: event.x, z: event.y, refDistance: entry.range.ref, maxDistance: entry.range.max, rolloff: 1.4 } : undefined,
     })
     if (voice) {

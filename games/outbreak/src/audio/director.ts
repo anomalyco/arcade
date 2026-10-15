@@ -7,13 +7,29 @@ import { impactDelay, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
 
-/** One sound to play: a library id at a plan position (x, y), optionally later or quieter. */
-export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; source: string }
+/** One sound to play: a library id at a plan position (x, y), optionally later, quieter or pitch-shifted. */
+export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; rate?: number; source: string }
 
 /** The survivor fields the director diffs: `FeedbackActor` (the HUD's action feedback contract) plus position. */
 export type SoundActor = Pick<
   FeedbackActor,
-  "health" | "equippedItem" | "magAmmo" | "reserveAmmo" | "planks" | "reloadRemaining" | "shoveAnim" | "channel" | "lootMessage" | "lootMessageUntil" | "flashlightOn" | "battery" | "exhausted" | "vault"
+  | "health"
+  | "equippedItem"
+  | "meleeWeapon"
+  | "meleeDurability"
+  | "meleeMaxDurability"
+  | "magAmmo"
+  | "reserveAmmo"
+  | "planks"
+  | "reloadRemaining"
+  | "shoveAnim"
+  | "channel"
+  | "lootMessage"
+  | "lootMessageUntil"
+  | "flashlightOn"
+  | "battery"
+  | "exhausted"
+  | "vault"
 > & { x: number; y: number }
 
 export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number }
@@ -133,6 +149,17 @@ export class SoundDirector {
     if (world.meleeSwings) {
       for (const m of world.meleeSwings) {
         const w = MELEE_WEAPONS[m.weapon] ?? MELEE_WEAPONS.crowbar
+        const attacker = world.survivors.find((s) => s.id === m.attackerId)?.survivor
+        const maxDur = attacker?.meleeMaxDurability ?? w.durability
+        const curDur = attacker?.meleeDurability
+        const wear = m.weaponBroke
+          ? 1
+          : curDur !== undefined && maxDur > 0
+            ? Math.max(0, Math.min(1, 1 - curDur / maxDur))
+            : m.durabilityLow
+              ? 0.75
+              : 0
+        const hitRate = wear > 0.08 ? Number((1 - wear * 0.22).toFixed(3)) : undefined
         if (!this.meleeSwings.has(m.id)) {
           this.meleeSwings.add(m.id)
           const isHeavy = m.heavy || w.weaponClass === "two-heavy"
@@ -140,6 +167,7 @@ export class SoundDirector {
             id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
             x: m.x,
             y: m.y,
+            ...(hitRate ? { rate: Number((1 - wear * 0.1).toFixed(3)) } : {}),
             source: m.attackerId,
           })
         }
@@ -153,8 +181,20 @@ export class SoundDirector {
             y: h.y,
             delay: 0.015,
             gain: h.finisher ? 1.3 : m.heavy ? 1.15 : 1,
+            ...(hitRate ? { rate: hitRate } : {}),
             source: m.attackerId,
           })
+          if (!m.weaponBroke && (m.durabilityLow || wear >= 0.65)) {
+            emit({
+              id: "melee.break",
+              x: h.x,
+              y: h.y,
+              delay: 0.032,
+              gain: 0.42,
+              rate: 1.28,
+              source: m.attackerId,
+            })
+          }
           if (h.finisher) {
             emit({
               id: "melee.shove",

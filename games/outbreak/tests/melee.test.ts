@@ -12,10 +12,12 @@ import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { applyZombieState, decodeServerText, decodeSnapshot, packCommand, type ServerMsg } from "../shared/net-protocol"
 import { LOOT_TABLES, OutbreakProgression } from "../shared/progression"
 import { LocalSession, type Command } from "../shared/session"
-import { SoundDirector } from "../src/audio/director"
+import { SoundDirector, type SoundEvent } from "../src/audio/director"
 import { soundWorld } from "../src/audio/world"
+import { OutbreakCombatFX } from "../src/combat-fx"
 import { ActorFeedback } from "../src/hud/actor-feedback"
-import { Survivor } from "../src/survivor"
+import { Survivor, weaponWearStage } from "../src/survivor"
+import { ZombieCrowdRenderer } from "../src/zombies"
 
 function createSession() {
   const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
@@ -185,14 +187,22 @@ describe("Melee attack input, combos, heavy charge, stamina & durability", () =>
     expect(p.meleeDurability).toBe(10)
   })
 
-  test("durability wears on hit, warns when low, and breaks with a HUD callout and sound", () => {
+  test("durability reads diegetically from the world (bent/cracked mesh, strained hit sound, break sound & pieces, no text callouts)", () => {
     const { session, p, step, equip, stand } = createSession()
     const callouts: { text: string; kind: string }[] = []
     const feedback = new ActorFeedback((text, kind) => callouts.push({ text, kind }))
     const director = new SoundDirector(11)
+    const fx = new OutbreakCombatFX({ addModel: () => 0 })
+    const crowd = new ZombieCrowdRenderer({ addModel: () => 0 })
+    const addSprites = new Float32Array(256 * 12)
 
-    // Start with 5 durability on spiked-board (max 20 -> 20% low threshold is 4)
-    equip("spiked-board", 5)
+    // Wear stages progress 0 (fresh) -> 1 (bent) -> 2 (cracked) as durability drops
+    expect(weaponWearStage(45, 45)).toBe(0)
+    expect(weaponWearStage(22, 45)).toBe(1)
+    expect(weaponWearStage(8, 45)).toBe(2)
+
+    // Start with 5 durability on crowbar (max 45 -> low threshold is 16)
+    equip("crowbar", 5)
     stand(44, 44, 0)
     const z = session.ai.spawnZombie(session.view.town, 45.2, 44, "chase", Math.PI)
     z.hp = 1000
@@ -201,32 +211,39 @@ describe("Melee attack input, combos, heavy charge, stamina & durability", () =>
     feedback.observe(p, { time: session.view.time, notices: session.view.notices.splice(0) })
     director.observe(soundWorld(session.sim), p)
 
-    // First light swing drops durability 5 -> 4 (triggers low durability warning!)
+    // Low-durability swing drops durability 5 -> 4, shifts hit sound pitch, and emits NO text callout
+    const lowEvents: SoundEvent[] = []
     step({ fire: true }, 1)
     for (let i = 0; i < 18; i++) {
       step({}, 1)
       z.x = 45.2
       z.y = 44
+      for (const s of director.observe(soundWorld(session.sim), p)) lowEvents.push(s)
       feedback.observe(p, { time: session.view.time, notices: session.view.notices.splice(0) })
     }
     expect(p.meleeDurability).toBe(4)
-    expect(callouts.some((c) => c.text.includes("durability low") && c.kind === "warning")).toBe(true)
+    expect(callouts.some((c) => c.text.includes("durability") || c.text.includes("broke"))).toBe(false)
+    const metalHit = lowEvents.find((e) => e.id === "melee.hit.metal")
+    expect(metalHit).toBeDefined()
+    expect(metalHit?.rate).toBeLessThan(0.85)
+    expect(lowEvents.some((e) => e.id === "melee.break" && (e.gain ?? 1) < 0.6)).toBe(true)
 
-    // Set durability to 1 and swing again -> breaks weapon!
-    equip("spiked-board", 1)
+    // Set durability to 1 and swing again -> breaks weapon with sound + physical 3D pieces, and NO text callout
+    equip("crowbar", 1)
     p.meleePhase = "idle"
-    const sounds: string[] = []
+    const breakEvents: SoundEvent[] = []
     step({ fire: true }, 1)
     for (let i = 0; i < 12; i++) {
       step({}, 1)
-      for (const s of director.observe(soundWorld(session.sim), p)) sounds.push(s.id)
+      for (const s of director.observe(soundWorld(session.sim), p)) breakEvents.push(s)
       feedback.observe(p, { time: session.view.time, notices: session.view.notices.splice(0) })
+      fx.processMeleeSwings(session.view.meleeSwings, session.view.time, TICK_DT, session.ai, crowd, () => 0, addSprites, 0)
     }
     expect(p.meleeWeapon).toBeNull()
     expect(p.meleeDurability).toBe(0)
-    expect(callouts.some((c) => c.text === "Spiked Board broke!" && c.kind === "warning")).toBe(true)
-    expect(sounds).toContain("melee.break")
-    expect(sounds).toContain("melee.hit.wood")
+    expect(callouts.some((c) => c.text.includes("broke") || c.text.includes("durability"))).toBe(false)
+    expect(breakEvents.some((e) => e.id === "melee.break" && (e.gain ?? 1) >= 0.95)).toBe(true)
+    expect(fx.brokenPieces.length).toBeGreaterThanOrEqual(4)
   })
 })
 
@@ -483,6 +500,8 @@ describe("Shared rig melee posing while standing and moving", () => {
             aim: 0,
             equippedItem: weapon,
             meleeWeapon: weapon,
+            meleeDurability: phase === "recovery" ? 6 : phase === "active" ? 20 : 45,
+            meleeMaxDurability: 45,
             meleePhase: phase,
             meleePhaseTime: 0.06,
             meleePhaseDuration: 0.12,
@@ -497,6 +516,7 @@ describe("Shared rig melee posing while standing and moving", () => {
         expect(survivor.meleeWeaponFrame).not.toBeNull()
         expect(survivor.meleeTip).not.toBeNull()
         expect(survivor.gun).toBeNull()
+        expect(survivor.meleeWearStage).toBe(phase === "recovery" ? 2 : phase === "active" ? 1 : 0)
       }
     }
   })

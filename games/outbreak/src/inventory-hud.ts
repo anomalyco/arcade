@@ -28,6 +28,9 @@ export class InventoryHud {
   packOpen = false
   /** The field-craft strip (hold Q). */
   craftOpen = false
+  /** How many finishers the player has performed this session; the small bare key cap fades out after 2. */
+  finisherCount = 0
+  private wasFinishing = false
   private lastBar = ""
   private lastStrip = ""
   private markers: HTMLElement[] = []
@@ -124,7 +127,6 @@ export class InventoryHud {
           label = esc(def?.shortLabel ?? s.item)
           if (s.item === "flashlight") label += ` (${esc(keyLabel("KeyF"))})`
           else if (s.item === "pistol") label += ` ${s.charge ?? 0}/${ledger.count(actorId, "ammo")}`
-          else if (s.charge !== undefined && def?.charge && !def.charge.ammo) label += ` ${s.charge}/${def.charge.max}`
           else if (s.count > 1) label += ` ×${s.count}`
         }
         return `<div class="slot" data-slot="${i + 1}" data-selected="${sel}" data-on="${Boolean(on)}" data-empty="${!s}"><kbd>${i + 1}</kbd><b>${label}</b></div>`
@@ -149,30 +151,38 @@ export class InventoryHud {
     const el = this.els.prompt
     if (!el) return
     const { player: p, town, prompt } = view
+    const finishingNow = Boolean(p.meleeFinisher) || (p.stompAnim ?? 0) > 0
+    if (finishingNow && !this.wasFinishing) this.finisherCount++
+    this.wasFinishing = finishingNow
+
     if (!prompt) {
-      const finTarget = !p.vault && !p.vehicleId ? findFinisherTarget(p, view.zombies) : null
+      const finTarget =
+        !p.vault && !p.vehicleId && this.finisherCount < 2 ? findFinisherTarget(p, view.zombies) : null
       if (!finTarget) {
         el.hidden = true
+        el.style.opacity = ""
         this.lastStrip = ""
         return
       }
-      const anchorHeight = 0.85 + supportHeight(town, finTarget.x, finTarget.y)
+      const anchorHeight = 0.72 + supportHeight(town, finTarget.x, finTarget.y)
       const proj = cam.project(finTarget.x, anchorHeight, finTarget.y, w, h)
       if (!proj.ok) {
         el.hidden = true
+        el.style.opacity = ""
         return
       }
-      const finLabel = p.meleeWeapon ? "Finish off" : "Stomp"
-      const html = `${keyPromptHtml("Mouse0", finLabel)}<span class="sep">·</span>${keyPromptHtml("KeyV", finLabel)}`
+      const html = keyCapHtml("Mouse0")
       if (html !== this.lastStrip) {
         el.innerHTML = html
         this.lastStrip = html
       }
       el.dataset.strip = "false"
+      el.style.opacity = this.finisherCount === 0 ? "0.78" : "0.42"
       el.hidden = false
       el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, -100%)`
       return
     }
+    el.style.opacity = ""
     const isPeeking = Boolean(view.peek)
     const anchorHeight = (isPeeking ? 0.15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
     const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
