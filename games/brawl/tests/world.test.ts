@@ -4,7 +4,7 @@ import { ROSTER } from "../shared/characters"
 import { STOCKS } from "../shared/config"
 import { decodeClient, encodeServer } from "../shared/protocol"
 import { buildSnapshot } from "../shared/view"
-import { World } from "../shared/world"
+import { INTENT_OPS, NO_INTENT, World } from "../shared/world"
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {} }))
 const { RoomCore } = await import("../server/room")
@@ -93,5 +93,30 @@ describe("brawl world", () => {
     expect(sent.some((s) => JSON.parse(s).type === "snap")).toBe(true)
     expect(decodeClient(JSON.stringify({ type: "intent", seq: 1, i: { mx: 1, my: 0, aim: 0, tx: 1, ty: 2, cast: 9 } }))).toEqual({ type: "intent", seq: 1, i: { mx: 1, my: 0, aim: 0, tx: 1, ty: 2, cast: -1 } })
     expect(encodeServer(buildSnapshot(core.world, core.world.humans[0]!.id)).length).toBeLessThan(4000)
+  })
+
+  test("a cast survives being merged or stood in for by the room's jitter buffer", () => {
+    const cast = { ...NO_INTENT, cast: 2, tx: 5, ty: 6 }
+    const move = { ...NO_INTENT, mx: 1, tx: 9, ty: 9 }
+    expect(INTENT_OPS.merge(cast, move)).toEqual({ ...move, cast: 2, tx: 5, ty: 6 })
+    expect(INTENT_OPS.merge(move, cast)).toEqual(cast)
+    expect(INTENT_OPS.standIn(cast).cast).toBe(-1)
+    expect(INTENT_OPS.hasEdges(cast) && !INTENT_OPS.hasEdges(move)).toBe(true)
+  })
+
+  test("a reconnect with the seat's token keeps the fighter; the public id doesn't", () => {
+    const core = new RoomCore("abcd", () => 0)
+    const sent: string[] = []
+    const conn = { send: (d: string) => sent.push(d), close: () => {} }
+    core.message(conn, JSON.stringify({ type: "hello", name: "kit", build: BUILD, pick: "chef" }))
+    const welcome = JSON.parse(sent[0]!) as { id: string; token: string }
+    core.close(conn)
+    const thief: string[] = []
+    core.message({ send: (d) => thief.push(d), close: () => {} }, JSON.stringify({ type: "hello", name: "eve", build: BUILD, id: welcome.id, token: welcome.id }))
+    expect(JSON.parse(thief[0]!).id).not.toBe(welcome.id)
+    const back: string[] = []
+    core.message({ send: (d) => back.push(d), close: () => {} }, JSON.stringify({ type: "hello", name: "kit", build: BUILD, token: welcome.token }))
+    expect(JSON.parse(back[0]!).id).toBe(welcome.id)
+    expect(core.world.humans.length).toBe(2)
   })
 })

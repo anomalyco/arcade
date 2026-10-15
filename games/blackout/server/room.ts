@@ -8,7 +8,7 @@ import { type MapChoice, mapChoiceOf } from "../shared/maps"
 import { hostMaps, hostRestart, moveTeam, shuffleTeams } from "../shared/sim/host"
 import { type ModeId, modeOf } from "../shared/sim/modes"
 import { type RosterRow, type Snapshot, buildSnapshot, rosterOf, snapshotEntities } from "../shared/sim/view"
-import { type Intent, type SimEvent, World } from "../shared/sim/world"
+import { INTENT_OPS, type Intent, type SimEvent, World } from "../shared/sim/world"
 import { type Env, lobbyOf } from "./env"
 import type { RoomReport } from "./matchmaking"
 
@@ -29,7 +29,7 @@ export class RoomCore extends SharedRoomCore<ClientMsg, Intent, RosterRow, SimEv
   world: World
 
   constructor(code: string, mode: ModeId = "ffa", clock: () => number = Date.now, maps: MapChoice = "office") {
-    super({ code, build: BUILD, title: "BLACKOUT", maxPlayers: MAX_PLAYERS, snapEvery: SNAP_EVERY, clock })
+    super({ code, build: BUILD, title: "BLACKOUT", maxPlayers: MAX_PLAYERS, snapEvery: SNAP_EVERY, inputs: INTENT_OPS, clock })
     this.world = new World(seedOf(code), null, mode, maps)
   }
 
@@ -53,10 +53,6 @@ export class RoomCore extends SharedRoomCore<ClientMsg, Intent, RosterRow, SimEv
 
   protected encode(msg: ServerMsg) {
     return encodeServer(msg)
-  }
-
-  protected humanCount() {
-    return this.world.humans.length
   }
 
   protected hasPlayer(id: string) {
