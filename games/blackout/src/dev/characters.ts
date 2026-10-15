@@ -217,7 +217,7 @@ async function main() {
       <nav aria-label="Developer"></nav>
       <div class="bar-actions">
         <button type="button" class="hub-btn" data-action="possess" aria-pressed="false" title="Possess selected character · P">Possess <kbd>P</kbd></button>
-        <button type="button" class="hub-btn" data-action="toggle-lab" aria-pressed="true" title="Toggle Lab panel · Backquote">Lab <kbd>~</kbd></button>
+        <button type="button" class="hub-btn" data-action="toggle-lab" aria-pressed="true" title="Toggle Lab panel · Backquote">Lab <kbd>\`</kbd></button>
         <span class="hub-env" data-env="${environment.toLowerCase()}">${environment}</span>
       </div>
     </header>
@@ -226,7 +226,7 @@ async function main() {
         <div class="actor-tabs" role="tablist" aria-label="Characters"></div>
         <div class="possess-banner" data-possess-banner hidden>
           <span data-possess-text>Possessing</span>
-          <kbd>WASD / ,AOE</kbd><span>Move</span>
+          <kbd>WASD</kbd><span>Move</span>
           <kbd>Shift</kbd><span>Run</span>
           <kbd>Esc</kbd><span>Release</span>
         </div>

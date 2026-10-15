@@ -547,6 +547,34 @@ proven animation techniques to animation.md, not here.
 
 ## Art direction
 
+### Vegetation looks: tree, bush, grass
+
+- **Three looks, tuned separately** (`packages/kit/gpu/foliage.ts`, Lab Vegetation section `packages/kit/lab/foliage.ts`).
+  Trees (Oak, Maple, Pine, Birch), bushes (Clipped hedge, Overgrown shrub, Hydrangea) and grass (Lawn, Overgrown lawn,
+  Weeds / dead grass) each have their own presets, typed parameters and seeded Randomize; one look never changes
+  another. Outbreak defaults stay Oak + Overgrown shrub + Overgrown lawn, which match the previously shipped values.
+- **Opaque leaf mounds under scalloped rosettes beat flat leaf cards from the top-down camera.** Main's 5-sided
+  cards rendered as visible pentagon plates (no `discard` in `fsSolid`), and without a mass under them the crowns
+  read as dark speckle at 23:00. Each bough cluster and bush lobe is now a jittered ellipsoid mound (~45–54 verts)
+  with 2–3 scalloped rosettes and an edge sprig on its outer shell, plus a cool moonlit sheen on upward leaves at
+  night. In the aligned `look-proof.ts` yard frame the woodland crowns read as rounded masses (crops in
+  `~/code/home/artifacts/2026-10-14-vegetation/sheets/yard-crops.png`, against the gpt-image-1.5 paint-over target).
+- **Bushes encode `aux = 3 + flex`.** Shaders decode it with `foliageTipWeight`/`foliageTranslucency`, so bushes get
+  their own wind, translucency and actor bending without a new vertex attribute. `bushTrim` clips the emitted
+  vertices toward a rounded box (flat top, straight sides, bent normals) to turn a wild shrub into a hedge.
+- **Actor bending**: the player and the seven nearest living zombies are packed into `OL.vegActors` each frame
+  (`nearestFoliageActors`, `packFoliageActors`); grass and bush leaves bend away with a `(1 - d/R)²` falloff. The
+  Lab's `grass-bend-off`/`grass-bend-on` captures (same tick, strength 0 vs 1) differ in 8,205 pixels around the
+  walkers. Flashlight transmission lights leaves and blades inside the beam whatever their facing.
+- **Contact shade** under every `plant()` call (house trees and foundation shrubs, not only `town.props` trees) is
+  stamped locally into the floor map, and bush skirts darken over their lowest 30 cm.
+- **Cost** (Mac Studio, Metal, headless; alternating `bench-outbreak.ts` runs vs `origin/main` 5458b60,
+  `perf/outbreak-vegetation-paired.json`): static vertices 294k → 321k; GPU street 17.09 → 17.69 ms (three runs each,
+  ranges 17.04–17.22 vs 17.66–17.71), interior 17.44 → 18.09 ms; realtime ratio ≥ 0.995 throughout. Fresh-submit p95
+  street 19.9 → 20.9 ms (main itself measured 19.1–21.2 here), interior 19.8 → 20.3–21.2 ms. Disabling actor bending
+  and the beam/sheen terms did not recover the interior cost (18.28 ms), so it is the fuller canopy coverage and
+  vertices. Grass density is cheap: GPU street 17.65 / 17.69 / 17.75 ms at density 0.5 / 1.0 / 1.5.
+
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
   stronger baked contact AO, blue cap bevels and more visible floor pattern move the seeded office frame toward C.
@@ -1082,6 +1110,18 @@ Candidates from the code audits; measure and playtest before moving any into the
   spent 0.039 to 0.049 ms per frame in style and layout, against 0.064 to 0.079 ms for the old status line, which
   rewrote its text every frame. `bench-outbreak` (5 runs): street p95 18.0 ms at realtime 0.996, interior p95
   18.0 ms at 0.9985.
+
+- **Put in-the-moment state on the character and keep it out of the aim.** Outbreak's callouts now sit screen-below
+  the survivor's feet by default (the lowest projected point of a 0.2 m feet circle, so the camera tilt is accounted
+  for), and stamina, reload, health and battery are small rings beside the body that appear only while they have
+  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](outbreak-hud.md)). When the
+  survivor aims within 55° of the side the HUD is on, it slides to the opposite side and returns past 68°
+  (`chooseSide`, `src/hud/placement.ts`), so the flashlight's near field stays clear without flicker. Rings use shape
+  for identity and colour for range, as Dead Space's RIG does. The same components run for co-op teammates from
+  replicated flags only, at 0.8× with their name tag. Metal proof (`scripts/hud-proof.ts`, 37 stills): `hud.update`
+  p95 0.2 ms with three callouts, three rings and a teammate live; a 7-pair same-page A/B against the old log and edge
+  bars measured style and layout −0.003 ms per frame (spread −0.016 to +0.006) and script +0.021 ms (−0.043 to
+  +0.101), both inside their spread.
 
 - **Share presentation through explicit units and renderer adapters.** `packages/kit/vehicle/` now supplies both
   games' chassis, posed lamps, tyre emissions and procedural audio. Its inputs use +Y up, +Z forward, metres and

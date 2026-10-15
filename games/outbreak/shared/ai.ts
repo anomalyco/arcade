@@ -212,6 +212,9 @@ export class OutbreakAISubsystem {
   agents: AIAgent[] = []
   config: AIConfig = { ...DEFAULT_AI_CONFIG }
   tick = 0
+  /** Current 0..1 nocturnal threat / darkness level driven by `dayCycle(hour)`. */
+  threat = 1
+  darkness = 1
   private nextAgentId = 1
   private walls: Rect[] = []
   private closedDoors: Rect[] = []
@@ -395,8 +398,17 @@ export class OutbreakAISubsystem {
   ): { topologyChanged: boolean; damage: number[] } {
     this.tick++
     const day = dayCycle(hour)
-    const darkness = 1 - day.sun
-    const nightFactor = 1 + darkness * (this.config.nightMultiplier - 1)
+    this.darkness = day.darkness
+    this.threat = day.threat
+    // Peaceful during the day (0.68× calmer perception/speed), rising through dusk to full nocturnal threat at night
+    const nightFactor = 0.68 + this.threat * (0.32 + (this.config.nightMultiplier - 1))
+    const threatConfig: AIConfig = {
+      ...this.config,
+      aggression: this.config.aggression * (0.65 + 0.35 * this.threat),
+      sightRange: this.config.sightRange * (0.72 + 0.28 * this.threat),
+      walkSpeed: this.config.walkSpeed * (0.82 + 0.18 * this.threat),
+      chaseSpeed: this.config.chaseSpeed * (0.88 + 0.12 * this.threat),
+    }
     const targets: PerceptionTarget[] = survivors.map((player) => {
       const baseLightLevel = samplePointLightLevel(town, hour, player.x, player.y, 1)
       const lightLevel = Math.min(1.5, baseLightLevel + (player.flashlightOn ? player.flashlightOutput * 0.55 : 0))
@@ -467,7 +479,7 @@ export class OutbreakAISubsystem {
       nav: this.nav,
       spatial: this.spatial,
       noiseBus: this.noiseBus,
-      config: this.config,
+      config: threatConfig,
       targets,
     })
 

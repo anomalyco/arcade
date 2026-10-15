@@ -1,5 +1,6 @@
 import { LabPanel, type LabSettings } from "../lab-panel"
 import { isTunable } from "../lab-tuning"
+import { keyLabelSetting } from "../client/controls"
 import { Particles } from "../fx/particles"
 import { SmokeTrail } from "../fx/smoke-trail"
 import { SmokeVolumes } from "../fx/volume"
@@ -165,6 +166,7 @@ export async function lab(options:LabOptions) {
   const particles=new Particles(),volume=new SmokeVolumes(),trail=new SmokeTrail()
   const input=new LabInput(canvas)
   let panel:LabPanel|undefined,active:LabSection,workbench:ReturnType<typeof createWorkbench>|undefined
+  const keyLabels=keyLabelSetting("Controls")
   let spawn:ReturnType<typeof createSpawn>|undefined
   const isPlaygroundSection=(id:string)=>id==="spawn"||id==="effects"||id==="lighting"||id==="physics"
   const context:LabContext={
@@ -244,6 +246,7 @@ export async function lab(options:LabOptions) {
     const inPlayground=Boolean(spawn?.hasActiveScene()&&isPlaygroundSection(id))
     stage.sceneMode=inPlayground||(id==="spawn"||id==="physics"&&spawn)?(spawn?.section.settings.environment==="yard"?3:4):id==="lighting"?1:id==="materials"?2:id==="looks"||id==="weather"?5:0
     panel?.clearControls();panel?.addControls(active.settings,active.controls,workbench?.sectionDefaults(id))
+    panel?.addControls(keyLabels.settings,[keyLabels.control],keyLabels.defaults)
     if(!keepPlayground||id==="effects")active.enter?.()
     else if(id==="spawn")spawn?.section.enter?.()
     workbench?.onSectionChanged()

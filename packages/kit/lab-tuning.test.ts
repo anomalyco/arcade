@@ -65,7 +65,7 @@ describe("seeded Random and Mutate", () => {
     expect(seededPatch([{ ...range, enabled: () => false }, { ...range, key: "d", derived: true }], { size: 1, d: 1 }, 5, "random")).toEqual({})
   })
   test("structural keys are never tuned", () => {
-    for (const key of ["effect", "environment", "room", "seed", "effectSeed", "tuningSeed"]) expect(isStructuralKey(key)).toBe(true)
+    for (const key of ["effect", "environment", "room", "keyLabels", "seed", "effectSeed", "tuningSeed"]) expect(isStructuralKey(key)).toBe(true)
     expect(isStructuralKey("size")).toBe(false)
   })
   test("the tuning seed walks deterministically and stays positive", () => {

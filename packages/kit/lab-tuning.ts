@@ -6,9 +6,9 @@ import { inferControlUnit, type LabControl, type LabRow, type LabSettings, type 
  * source of truth: knobs only draws them. Pure, so it is tested without a DOM.
  */
 
-const STRUCTURAL = /^(effect|environment|room|section)$|seed$/i
+const STRUCTURAL = /^(effect|environment|room|section|keyLabels)$|seed$/i
 
-/** Keys Random and Mutate never touch: the effect and room pickers, and every seed (structural, not tuning). */
+/** Keys Random and Mutate never touch: the effect and room pickers, the key-label layout and every seed. */
 export const isStructuralKey = (key: string) => STRUCTURAL.test(key)
 
 /** The unit knobs shows: LabControl's explicit or inferred unit without the "· retrigger" boundary note. */
