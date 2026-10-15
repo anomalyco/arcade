@@ -6,6 +6,9 @@ import { DECK_CENTRE_Y } from "../shared/launch"
 import { makePlane, worldToShip } from "../shared/plane"
 import type { PlaneTuple } from "../shared/protocol"
 import { makeShip } from "../shared/ship"
+import { BOAT_MODE, makeBoat, packBoat } from "../shared/boat"
+import { makeSea } from "../shared/sea"
+import { RemoteBoats } from "../src/boat/remote-boats"
 import { RemotePlanes } from "../src/flight/remote-planes"
 
 function crewWithPilot(): { crew: Crew; id: number } {
@@ -66,5 +69,38 @@ describe("remote jets", () => {
     expect(p.hook).toBe(1)
     const l = worldToShip(ship, p.x, p.y, p.z)
     expect(l[1]).toBeCloseTo(DECK_CENTRE_Y, 6)
+  })
+
+  test("remote boats step along their velocity arc so they do not lag v * LAG behind dead-reckoned pose", () => {
+    const sea = makeSea(7)
+    const boats = new RemoteBoats()
+    const tuple = packBoat({
+      id: 2,
+      t: 10,
+      x: 100,
+      z: 200,
+      heading: 0,
+      u: 20,
+      v: 0,
+      r: 0,
+      power: 1,
+      rudder: 0,
+      yaw: 0,
+      pitch: 0,
+      mode: BOAT_MODE.drive,
+      modeAt: 0,
+      ship: 1,
+      from: null,
+      firing: false,
+      boosting: true,
+    })
+    boats.sync(new Map([[2, tuple]]), 1, 10.1)
+    for (let i = 0; i < 6; i++) {
+      const t = 10.1 + i / 60
+      boats.update(1 / 60, t, sea, () => null, { sea: null, arch: null, ships: [] })
+    }
+    const rb = boats.boats.get(2)!
+    // Heading 0 moves along -Z at 20 m/s: at t = 10.1 + 5/60, target z is 200 - 20 * (0.1 + 5/60).
+    expect(rb.shown.z).toBeCloseTo(200 - 20 * (0.1 + 5 / 60), 2)
   })
 })

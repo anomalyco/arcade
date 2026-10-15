@@ -44,6 +44,7 @@ export type RemoteBoat = {
   fired: number
   /** The sinking has been shown (its explosion), and the slams already heard. */
   exploded: boolean
+  placed: boolean
   slams: number
   seen: number
 }
@@ -73,7 +74,7 @@ export class RemoteBoats {
       const n = unpackBoat(tuple)
       if (!r) {
         const b = makeBoat(n.x, n.z, n.heading, t)
-        this.boats.set(id, (r = { id, net: n, boat: b, yaw: n.yaw, pitch: n.pitch, shown: { x: n.x, z: n.z, heave: 0, heading: n.heading, pitch: 0, roll: 0, u: 0, v: 0 }, rounds: new BoatRounds(48), turret: makeTurret(), fired: 0, exploded: false, slams: 0, seen: 0 }))
+        this.boats.set(id, (r = { id, net: n, boat: b, yaw: n.yaw, pitch: n.pitch, shown: { x: n.x, z: n.z, heave: 0, heading: n.heading, pitch: 0, roll: 0, u: 0, v: 0 }, rounds: new BoatRounds(48), turret: makeTurret(), fired: 0, exploded: false, placed: false, slams: 0, seen: 0 }))
         r.rounds.hits = false
       }
       // A recovered boat that launches again is a new one.
@@ -102,17 +103,30 @@ export class RemoteBoats {
         }
         // Afloat again at the crane point when it lets go.
         Object.assign(b, makeBoat(s.x, s.z, s.heading, t), { heave: s.heave })
+        r.placed = true
       } else {
         extrapolateBoat(n, t, tgt)
-        const dx = tgt.x - b.x
-        const dz = tgt.z - b.z
-        const k = Math.hypot(dx, dz) > SNAP ? 1 : 1 - Math.exp(-dt / LAG)
-        b.x += dx * k
-        b.z += dz * k
-        b.heading = wrap(b.heading + wrap(tgt.heading - b.heading) * k)
         b.u = n.u
         b.v = n.v
         b.r = n.r
+        if (!r.placed || Math.hypot(tgt.x - b.x, tgt.z - b.z) > SNAP) {
+          r.placed = true
+          b.x = tgt.x
+          b.z = tgt.z
+          b.heading = tgt.heading
+        } else {
+          // Move on our own velocity along the midpoint arc (matching extrapolateBoat), then close the remaining error.
+          const mid = b.heading + n.r * dt * 0.5
+          const sm = Math.sin(mid)
+          const cm = Math.cos(mid)
+          b.x += (n.u * sm + n.v * cm) * dt
+          b.z += (-n.u * cm + n.v * sm) * dt
+          b.heading = wrap(b.heading + n.r * dt)
+          const k = 1 - Math.exp(-dt / LAG)
+          b.x += (tgt.x - b.x) * k
+          b.z += (tgt.z - b.z) * k
+          b.heading = wrap(b.heading + wrap(tgt.heading - b.heading) * k)
+        }
         b.power = n.power
         b.rudder = n.rudder
         b.boosting = n.boosting
