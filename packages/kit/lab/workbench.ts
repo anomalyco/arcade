@@ -639,6 +639,9 @@ export function createWorkbench(opts: WorkbenchOptions) {
         syncVariationGridOverlay()
         return variationGridCostMs
       } finally {
+        if (variationGrid && focusedGridTile !== null && focusedGridTile >= 1 && focusedGridTile <= variationGrid.tiles.length) {
+          applyTileSettingsToSection(activeSection(), variationGrid.tiles[focusedGridTile - 1]!)
+        }
         activeGridRender = null
       }
     })()
@@ -2555,6 +2558,13 @@ export function createWorkbench(opts: WorkbenchOptions) {
     }
   }
 
+  // An open radial belongs to the viewport: a press or focus anywhere else (a panel, a station card) closes it.
+  for (const type of ["pointerdown", "focusin"] as const) {
+    document.addEventListener(type, event => {
+      if (radialState.phase !== "closed" && !viewportEl.contains(event.target as Node | null)) closeRadial()
+    }, { capture: true })
+  }
+
   // Exiting Play mode and hiding custom viewport cursor whenever user interacts with UI panels outside canvas
   for (const zone of [topbar, outlinerEl, libraryEl, inspectorEl, bottombar, modalBackdrop]) {
     zone.addEventListener("pointerenter", () => {
@@ -2634,7 +2644,25 @@ export function createWorkbench(opts: WorkbenchOptions) {
     return best
   }
 
+  /** Whether a screen point is on the viewport itself, not on a panel, menu or the chrome over or beside it. */
+  function onViewport(clientX: number, clientY: number): boolean {
+    const rect = viewportEl.getBoundingClientRect()
+    if (clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) return false
+    const hit = document.elementFromPoint(clientX, clientY)
+    return hit === canvas || (hit !== null && transformGizmo.root.contains(hit))
+  }
+
+  function closeRadial() {
+    if (radialState.phase === "closed") return
+    radialState.close()
+    radialDOM.sync()
+    viewportCursor.update({ state: "hidden" })
+    syncTransportAndHints()
+  }
+
+  /** Opens the radial at an RMB tap or Ctrl-click; only on the viewport, never over the panels. */
   function openRadialAtScreen(clientX: number, clientY: number, viaKeyboard = false) {
+    if (!onViewport(clientX, clientY)) return
     const rect = viewportEl.getBoundingClientRect()
     const [u, v] = canvasUV({ clientX, clientY })
     const sec = activeSection()
@@ -3342,9 +3370,10 @@ export function createWorkbench(opts: WorkbenchOptions) {
       event.preventDefault()
       setPlayMode("play")
     } else if (event.key === "ContextMenu" && !event.repeat) {
-      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key.
+      // M is the Lab's mute key (docs/controls.md); the radial opens from RMB tap, Ctrl+click or the menu key, and
+      // the key only while the viewport (not a panel button) has focus.
       event.preventDefault()
-      openRadialFromKeyboard()
+      if (document.activeElement === canvas || document.activeElement === document.body) openRadialFromKeyboard()
     } else if (key === "i" && !event.repeat) {
       event.preventDefault()
       commands.execute("object.inspect")

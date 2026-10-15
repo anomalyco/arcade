@@ -1,6 +1,6 @@
 import { HIP, RIG } from "./rig"
 import { humanProfiles, type HumanProfile } from "./human-profile"
-import { at, clamp, moved, pitch, smooth, smoother, spring, stepSpring, yawFrame, type Spring, type V3 } from "./rig"
+import { at, clamp, moved, pitch, smooth, smoother, spring, stepSpring, yawFrame, type Frame, type Spring, type V3 } from "./rig"
 
 export type Foot = { p: V3; yaw: number; pitch: number; planted: boolean; lift: V3; liftYaw: number }
 /** Presentation state only. No game, weapon, mesh, DOM or network dependency. */
@@ -62,10 +62,13 @@ export function gaitAt(speed: number, back = false, strafe = 0, animation: Human
   const froude = speed * speed / (9.81 * h)
   const run = smooth((froude - 0.36) / 0.28)
   // Speed increases mostly via stride at low speeds and increasingly via cadence at high speeds (Alexander 1984).
+  // In forward walking (1 - run) * (1 - strafe), ball-of-foot (RIG.foot) push-off lengthens effective leg reach.
   const effSpeed = speed - 0.22 * Math.max(0, speed - 3.6) * smooth((speed - 3.0) / 3.3)
-  const stride = h * (effSpeed / Math.sqrt(9.81 * h) + 0.665 - 0.015 * run) / 0.83 * animation.strideScale
+  const dragKeep = 1 - clamp(animation.footDrag ?? 0, 0, 0.95)
+  const toeReach = (RIG.foot + RIG.heel) * 0.90 * (1 - run) * (1 - strafe) * (back ? 0 : 1) * dragKeep
+  const stride = (h * (effSpeed / Math.sqrt(9.81 * h) + 0.665 - 0.015 * run) / 0.83 + toeReach) * animation.strideScale
   // Arcade sprint is 6.3 m/s: shorter support and a longer flight, not an unreachable planted leg.
-  return { run, stride: stride * (back ? 0.85 : 1 - 0.18 * strafe), duty: 0.56 - 0.12 * run - 0.2 * smooth((speed - 2.5) / 3) }
+  return { run, stride: stride * (back ? 0.85 : 1 - 0.18 * strafe), duty: 0.54 - 0.10 * run - 0.2 * smooth((speed - 2.5) / 3) }
 }
 
 function home(a: Avatar, i: number, lead: number, vx = a.svx, vy = a.svy, extraWidth = 0): V3 {
@@ -99,7 +102,8 @@ function computeTarget(a: Avatar, i: number, remaining: number, strafe: number, 
   const pvx = a.svx + (a.vx - a.svx) * blend, pvy = a.svy + (a.vy - a.svy) * blend
   const pspeed = Math.hypot(pvx, pvy)
   const support = gait.duty * gait.stride / Math.max(pspeed, 0.1)
-  const halfStance = Math.min(0.24 - 0.09 * gait.run, support * (0.49 - 0.04 * gait.run), (0.33 - 0.09 * gait.run) / Math.max(pspeed, 0.1))
+  const fwdWalk = (1 - gait.run) * (1 - strafe) * (a.back ? 0 : 1)
+  const halfStance = Math.min(0.24 + 0.015 * fwdWalk - 0.09 * gait.run, support * (0.49 - 0.04 * gait.run), (0.33 + 0.025 * fwdWalk - 0.09 * gait.run) / Math.max(pspeed, 0.1))
   const lag = clamp(((a.x - m.centreX.x) * pvx + (a.y - m.centreY.x) * pvy) / Math.max(pspeed * pspeed, 0.25), -0.22, 0.22)
   // Overgrowth-style lateral shuffle: the outside/leading foot steps out first while the inside/following
   // foot steps up beside it without lunging across the leading leg.
@@ -319,7 +323,8 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     }
     const i = a.feet[preferred]!.planted ? preferred : 1 - preferred
     const other = 1 - i
-    const overstretched = travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52 || (a.feet[other]!.planted && metrics[i]!.rootBehind > 0.345 + 0.155 * curGait.run))
+    const fwdWalk = (1 - curGait.run) * (1 - strafe) * (a.back ? 0 : 1)
+    const overstretched = travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52 || (a.feet[other]!.planted && metrics[i]!.rootBehind > 0.345 + 0.095 * fwdWalk + 0.155 * curGait.run))
     const flightRelease = 0.32 + 0.16 * strafe
     const supported = a.feet[other]!.planted || (curGait.run > 0.35 && m.swings[other]! > flightRelease) || (overstretched && m.swings[other]! > 0.18)
     const minStance = moving ? Math.max(0.05, stanceDur * 0.55) : 0.04
@@ -333,7 +338,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       // Same-foot (stepIdx - 2) high-pass blue-noise variation: genuine step-to-step organic variation
       // while telescoping each foot's mean to zero so L/R step symmetry stays ~1.000.
       const blue = (ch: number) => 0.65 * stepHash(actorSeed, stepIdx, ch) - 0.55 * stepHash(actorSeed, stepIdx - 2, ch)
-      m.stepReach[i] = actorStrideTrait * (1 + varAmt * 0.065 * blue(1))
+      m.stepReach[i] = actorStrideTrait * (1 + varAmt * (0.046 + 0.019 * curGait.run) * blue(1))
       m.stepLat[i] = varAmt * 0.018 * stepHash(actorSeed, stepIdx, 2)
       m.stepLiftVar[i] = 1 + varAmt * 0.16 * stepHash(actorSeed, stepIdx, 3)
       m.stepToeYaw[i] = varAmt * 0.065 * stepHash(actorSeed, stepIdx, 4)
@@ -358,7 +363,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   // Phase-compensated two-stage arm & forearm springs opposing leg swing so the hand peaks in phase with the opposite leg.
   const armScale = clamp(animation.armSwing ?? 1, 0, 2) * (actorSeed !== 0 ? 1 + varAmt * 0.06 * stepHash(actorSeed, 0, 9) : 1)
   const footNorm = clamp(footForward / Math.max(0.35, curGait.stride * 0.44), -1, 1)
-  const armLeadRad = 0.22 + 1.06 * curGait.run
+  const armLeadRad = 0.14 + 1.14 * curGait.run
   const phaseArm = -Math.cos(TAU * a.phase + armLeadRad) * a.gait
   const armSignal = moving ? footNorm * 0.25 + phaseArm * 0.75 : footNorm
   const slowDrift = 1 + varAmt * 0.05 * Math.sin(m.clock * 1.4 + actorSeed)
@@ -426,23 +431,48 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
 
 function lockToe(a: Avatar, i: number): void {
   const f = a.feet[i]!
-  a.motion.toes[i] = [f.p[0] + Math.cos(f.yaw) * 0.19, 0, f.p[2] + Math.sin(f.yaw) * 0.19]
+  a.motion.toes[i] = [f.p[0] + Math.cos(f.yaw) * RIG.foot, 0, f.p[2] + Math.sin(f.yaw) * RIG.foot]
 }
 
-/** Heel-strike dorsiflexion at contact rolls flat by Down, then rolls onto the locked toe in terminal stance (heel-off). */
+/** Stance foot roll: heel-strike dorsiflexion -> foot-flat -> heel-rise onto the locked ball of the foot -> toe-off. */
+export function stanceFootRoll(a: Avatar, i: number): { footPitch: number; heelRisePitch: number; toeRelPitch: number } {
+  const f = a.feet[i]!, m = a.motion
+  const s = m.stances?.[i] ?? 0
+  const isDrag = i === (m.dragFoot ?? 1) && (m.footDrag ?? 0) > 0
+  const drag = isDrag ? clamp(m.footDrag ?? 0, 0, 0.95) : 0
+  const dragKeep = 1 - drag
+  const turnKeep = smooth((0.90 - Math.abs(angleDiff(f.yaw, a.legYaw))) / 0.15)
+  const sFlat = 0.16 - 0.04 * m.run
+  const heelStrike0 = a.back ? 0 : (0.26 - 0.04 * m.run) * a.gait * dragKeep * turnKeep
+  const heelStrikePitch = s < sFlat ? heelStrike0 * (1 - smooth(s / sFlat)) : 0
+  const sHeelRise = 0.44 - 0.04 * m.run
+  const heelRiseMax = (0.44 + 0.08 * m.run) * a.gait * (1 - 0.55 * drag)
+  const riseU = smooth((s - sHeelRise) / (1 - sHeelRise))
+  const heelRisePitch = s > sHeelRise ? -heelRiseMax * riseU : 0
+  const footPitch = heelStrikePitch + heelRisePitch
+  return { footPitch, heelRisePitch, toeRelPitch: -footPitch }
+}
+
+/** Heel-strike dorsiflexion at contact rolls flat by Down, then rolls onto the locked ball of the foot in terminal stance (heel-off). */
 export function plantedFoot(a: Avatar, i: number) {
-  const f = a.feet[i]!, toe = a.motion.toes[i]!
-  const s = a.motion.stances?.[i] ?? 0
-  const toeOff = -(0.20 + 0.06 * a.motion.run) * smooth((s - 0.62) / 0.38) * a.gait
-  const frame = pitch(yawFrame([0, 0, 0], f.yaw), toeOff)
-  const offset = at(frame, 0.19, -RIG.ankle, 0)
-  return moved(frame, [toe[0] - offset[0], toe[1] - offset[1], toe[2] - offset[2]])
+  const f = a.feet[i]!, ball = a.motion.toes[i]!
+  const { footPitch, heelRisePitch } = stanceFootRoll(a, i)
+  const frame = pitch(yawFrame([0, 0, 0], f.yaw), footPitch)
+  const riseFrame = pitch(yawFrame([0, 0, 0], f.yaw), heelRisePitch)
+  const offset = at(riseFrame, RIG.foot, -RIG.ankle, 0)
+  return moved(frame, [ball[0] - offset[0], ball[1] - offset[1], ball[2] - offset[2]])
+}
+
+/** Toe (ball-of-foot) frame for a planted foot: locked flat on the ball throughout stance while the foot rolls heel-to-toe. */
+export function plantedToe(a: Avatar, i: number, _ft?: Frame) {
+  const f = a.feet[i]!, ball = a.motion.toes[i]!
+  return yawFrame([ball[0], ball[1], ball[2]], f.yaw)
 }
 
 /** Head is the lean pivot; hips move underneath rather than throwing the head forward. */
 export function pelvisPoint(a: Avatar): V3 {
   const m = a.motion, c = Math.cos(m.pelvis.x), s = Math.sin(m.pelvis.x)
-  const walkDrop = (a.unarmed ? 0.004 : m.footDrag > 0 ? 0.008 : 0.044) * (1 - m.run) + 0.04 * m.run
+  const walkDrop = (a.unarmed ? -0.008 : m.footDrag > 0 ? 0.008 : 0.044) * (1 - m.run) + 0.04 * m.run
   const runDrop = a.unarmed ? -0.008 : 0.02
   return [a.x - a.leanX.x * 0.22 - s * m.sway.x + a.hitX.x * 0.5,
     HIP - (walkDrop + m.run * runDrop) * a.gait - m.crouch.x + m.bob.x + a.dip.x - Math.hypot(a.leanX.x, a.leanY.x) ** 2 * 0.3,

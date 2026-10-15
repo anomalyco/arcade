@@ -4,14 +4,17 @@ import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/la
 import type { LookPresetId } from "@arcade/kit/look"
 import { migrateKnobsVariantJson } from "@arcade/kit/lab-tuning"
 import { aiControls, DEFAULT_AI_CONFIG, type AIConfig } from "../shared/ai"
+import { DEFAULT_MELEE_TUNING, type MeleeTuning } from "../shared/combat"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightTuning } from "../shared/flashlight"
 import { DEFAULT_PROGRESSION_TUNING, type ProgressionTuning } from "../shared/progression"
 import { DEFAULT_STAMINA_TUNING, type StaminaTuning } from "../shared/stamina"
+import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
   DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
@@ -64,7 +67,7 @@ export type OutbreakViewSettings = CameraShakeSettings & {
   diagnostic: number
 }
 
-export type OutbreakCombatSettings = {
+export type OutbreakCombatSettings = MeleeTuning & {
   infiniteAmmo: number
   bloodStyle: number
 }
@@ -121,6 +124,7 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
   bloodStyle: 1,
+  ...DEFAULT_MELEE_TUNING,
 }
 
 export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
@@ -139,6 +143,7 @@ export type OutbreakSubsystemMap = {
   zombies: OutbreakZombieSettings
   survivor: SurvivorAimTuning
   hud: HudSettings
+  map: MapSettings
   audio: AudioSettings
   progression: ProgressionTuning
   world: OutbreakWorldSettings
@@ -148,6 +153,7 @@ export type OutbreakSubsystemMap = {
   view: OutbreakViewSettings
   combat: OutbreakCombatSettings
   motion: MotionBlurSettings
+  vehicle: VehicleTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -168,6 +174,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakZombieSettings &
   SurvivorAimTuning &
   HudSettings &
+  MapSettings &
   AudioSettings &
   ProgressionTuning &
   OutbreakWorldSettings &
@@ -176,7 +183,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakDayCycleSettings &
   OutbreakViewSettings &
   OutbreakCombatSettings &
-  MotionBlurSettings
+  MotionBlurSettings &
+  VehicleTuning
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -189,6 +197,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "zombies",
   "survivor",
   "hud",
+  "map",
   "audio",
   "progression",
   "world",
@@ -198,6 +207,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "view",
   "combat",
   "motion",
+  "vehicle",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -215,6 +225,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     zombies: { ...DEFAULT_OUTBREAK_ZOMBIES },
     survivor: { ...survivorAimTuning },
     hud: { ...DEFAULT_HUD_SETTINGS },
+    map: { ...DEFAULT_MAP_SETTINGS },
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
     world: { ...DEFAULT_OUTBREAK_WORLD },
@@ -224,6 +235,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     view: { ...DEFAULT_OUTBREAK_VIEW },
     combat: { ...DEFAULT_OUTBREAK_COMBAT },
     motion: { ...DEFAULT_OUTBREAK_MOTION },
+    vehicle: { ...DEFAULT_VEHICLE_TUNING },
   }
 }
 

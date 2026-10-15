@@ -38,6 +38,7 @@ below and in this file's git history.
 | 3 | #20 | View controls, Outbreak interaction and art, locomotion, explosion FX |
 | 4 | #21 | Lab layout, generated textures, foliage, zombie AI, looks, Outbreak vignette, Outbreak perf pass |
 | 5 | #29, #31 | Outbreak lighting, architecture materials, ground clutter, foliage; ΔE2000 and perf pass below |
+| 6 | #85 | Outbreak first-night pacing, Lab resizable panels and compact Library, dead proof cleanup |
 
 Release 5 measured the merged Outbreak look against the 70s sodium paint-over targets with
 `LOOK_PHASE=release5 bun games/outbreak/scripts/look-proof.ts`. Combined ΔE2000 went from 13.8 to 6.7: street at

@@ -105,6 +105,10 @@ export type ChunkDelta = {
   windows: Record<string, WindowDelta>
   searched: Record<string, boolean>
   zombies: Record<number, SavedZombieState>
+  /** Saved drivable vehicles currently parked/left in this chunk. */
+  vehicles?: Record<number, import("./vehicles").SavedVehicleState>
+  /** Native vehicle spawn IDs that were driven out of this chunk. */
+  removedVehicles?: Record<number, boolean>
   /** Aggregate living zombie count while the chunk is unloaded (simulation LOD). */
   aggregateZombies: number
   visited: boolean

@@ -218,6 +218,19 @@ proven animation techniques to animation.md, not here.
   - **Carrier (`960×720`)**: single deck strike **0.351→0.377 ms** mean (**0.400→0.450 ms** peak, delta `+0.039 ms`, MAD `0.051`);
     4× simultaneous ship+airburst+boat worst-case **0.687→0.602 ms** mean (**0.725→0.725 ms** peak, delta `-0.085 ms`, MAD `0.059`).
   All single and worst-case scenarios remain well within the 16.67 ms (60 Hz) frame budget; non-exploding frames add zero draws or passes.
+  R-1 follow-up (`explosion-r1`): big hits now throw **burning fragments that lay their own smoke trails** instead of
+  straight smoke beams. `ParticleSpec.trail` (metres) marks a particle as a projectile; `Particles.update` lays thinning,
+  wind-drifting puffs by distance travelled (capped at ~40 puffs/s per fragment, widened to match), a short hot spark at
+  the head, a splash when it crosses `Particles.water`, and `ParticleSpec.pop` fires a delayed fireball burst where a
+  particle expires (`packages/kit/fx/projectile-trail.ts`). Presets gain `fragmentCount`/`secondaryPops` (ship 16/3,
+  missile 6/0, car 4/1, barrel 3/1, propane 2/0, grenade and pop none); the ship hit also lingers 7 s with a taller
+  column. Carrier's faceted white spray balls (the "ice shards" in R-1's boat and bench frames) are replaced by
+  `spawnWaterSplash`: velocity-stretched droplets, a crown and soft mist. Peak pool use: ship 1,129 of 2,048 at Lab scale.
+  On Mac Studio/Metal against the R-1 head (`perf/explosion-unify.json`, seven alternating pairs, whole frame), paired
+  GPU mean deltas stay within noise: Getaway single `-0.014 ms` (MAD `0.257`), 4x `-0.024 ms`; Blackout single
+  `+0.005 ms`, 5-grenade `+0.149 ms` (MAD `0.371`, peak 7.92 ms vs 7.51 ms; grenades throw no fragments); Carrier single
+  `-0.002 ms` (0.43 ms mean), 4x `-0.013 ms`. The Carrier proof camera now passes radians to `Camera.set` (it was
+  clamped to top-down) and clears every effect pool between beats.
 
 - **Preserve destination HDR alpha on blood decals for Noir selective colour, and gate shared `MotionBlur` impulse bursts to active frames (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `packages/kit/fx/splatter*.ts`).**
   Outbreak's Noir look encodes per-pixel flashlight irradiance in `hdrView.a` (`1.0 - lookFlashIrradiance`). `SplatterRenderer` previously blended alpha with `srcFactor: "one", dstFactor: "one-minus-src-alpha"`, overwriting `hdrView.a` to `~0.95` and erasing the flashlight's selective-colour mask so blood inside the beam desaturated to flat grey, while `zombies.ts` left `prevBones` zeroed on first-frame detachments, launching detached-limb blood upward at `+30 m/s`. Preserving destination alpha (`alpha: { srcFactor: "zero", dstFactor: "one" }`), evaluating flashlight and room-lamp wet meniscus specular in `SplatterRenderer`, splitting exit-wound droplets into immediate under-body pool, directional floor fan, and wall-arc tiers with two-pass coplanar-first terrain receivers, and running `@arcade/kit/gpu/motion-blur` (`MotionBlur` + `MotionBlurBurst`) before bloom/composite only when continuous shutter blur or an impulse burst is active (`0.000 ms` steady-state overhead when inactive; `compositeFast` runs on every Noir frame) raise Outbreak's Noir selective-red ratio from **`7.38× → 36.16×`**, improve street beam-blood $\Delta E_{2000}$ **`10.41 → 8.46`** and wall-splatter $\Delta E_{2000}$ **`17.82 → 12.67`** against the `gpt-image-1.5` paint-over target (`captures/game-feel/blood-metrics.json`), and keep steady-state `3456×1894` GPU time within noise (`+0.007 ms` street / `-0.016 ms` interior).
@@ -1136,6 +1149,14 @@ Candidates from the code audits; measure and playtest before moving any into the
   `0.000 m` drift. See `docs/outbreak-world.md`.
 
 ## Input
+
+- **Exploration maps: per-chunk memory, tiles built on demand.** Outbreak's map (`games/outbreak/src/map/`) keeps
+  1 m explored cells per 32 m chunk (1 KB each) plus a compact copy of each explored chunk's layout, and draws them
+  through a tile pyramid (16 to 1/16 px per metre, halving) where a tile exists only if something in it was explored
+  and is rebuilt only when stale and on screen, within 3 ms a frame. Prebuilding the opening view's stale tiles while
+  the map is closed (0.6 ms every 120 ms) left 10 of 65 tiles to build on the first open after a 1 km walk (2.2 ms);
+  the first draw took 11 ms and the map's per-frame cost with the sheet closed was p95 0.3 ms. Labels and badges are drawn in screen space at
+  device resolution, never scaled from a tile, so they stay sharp at DPR 2. `docs/outbreak-map.md`.
 
 - **Render a read-only catalogue on demand.** `packages/kit/dev-hub-viewer.ts` reuses the shipped Lab spawn
   adapters and stage with one canvas. The first headless Metal proof on both hosts registered 25 assets,

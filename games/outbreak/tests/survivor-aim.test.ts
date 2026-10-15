@@ -31,7 +31,7 @@ test("equipped pistol stays in visible low ready while idle and walking with fre
       n * dt,
       () => 0,
     )
-    expect(batches).toHaveLength(14)
+    expect(batches).toHaveLength(16)
     expect(s.gun).not.toBeNull()
     expect(s.aimWeight).toBeLessThan(0.05)
     if (n >= 60) {
@@ -131,7 +131,7 @@ test("reloading drives left hand from belt pouch to pistol grip well with visibl
       (30 + i) * dt,
       () => 0,
     )
-    if (batches.length === 15 && s.mag !== null) sawMagBatch = true
+    if (batches.length === 17 && s.mag !== null) sawMagBatch = true
     const j = extractBonePoseJoints(s.bones)
     minHipDist = Math.min(minHipDist, len(sub(j.wristL, j.hipL)))
     const well: V3 = [s.gun!.p[0], s.gun!.p[1] - 0.05, s.gun!.p[2]]
@@ -167,8 +167,8 @@ test("aiming while walking, running, strafing and backpedalling respects twist l
       const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
       const curPlanted: [boolean, boolean] = [fts[0]!.planted, fts[1]!.planted]
       const toes: [V3, V3] = [
-        at(s.bones["left.foot"]!, 0.19, -RIG.ankle, 0),
-        at(s.bones["right.foot"]!, 0.19, -RIG.ankle, 0),
+        [...s.bones["left.toe"]!.p],
+        [...s.bones["right.toe"]!.p],
       ]
       if (n >= 60) {
         for (const i of [0, 1] as const) {

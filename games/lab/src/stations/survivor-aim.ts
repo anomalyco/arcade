@@ -90,8 +90,13 @@ export default defineStation({
     },
     {
       label: "Pose-diff arm angle RMSE (Aimed Walk / Aimed Run / Low Ready)",
-      value: "64.1° → 2.54° / 46.8° → 4.24° / 31.4° → 4.62°",
+      value: "64.1° → 2.60° / 46.8° → 4.28° / 31.5° → 4.43°",
       source: "games/blackout/scripts/animation/survivor-aim.ts",
+    },
+    {
+      label: "Ball-of-foot (MTP) toe roll & planted slip",
+      value: "+32.7° walk / +44.2° run dorsiflexion (0.0 mm slip)",
+      source: "games/blackout/scripts/animation/pose-diff.ts",
     },
   ],
   paths: [
@@ -100,7 +105,7 @@ export default defineStation({
     "games/blackout/scripts/animation/survivor-aim.ts",
     "docs/animation.md",
   ],
-  branches: ["survivor-aim"],
+  branches: ["toe-joints", "survivor-aim"],
   links: [
     { label: "Play Outbreak", href: "/arcade/outbreak/?seed=7&infiniteAmmo=1" },
     { label: "Characters page", href: "/arcade/blackout/characters.html#survivor" },

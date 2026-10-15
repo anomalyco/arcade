@@ -1242,6 +1242,7 @@ export class WorldClientStreamer {
   private lastPlayerY = NaN
   private dirX = 1
   private dirY = 0
+  private fastLookahead = false
 
   center: ChunkCoord = { cx: 1, cy: 1 }
   windowOrigin: [number, number] = [0, 0]
@@ -1383,6 +1384,7 @@ export class WorldClientStreamer {
     this.lastPlayerY = NaN
     this.dirX = 1
     this.dirY = 0
+    this.fastLookahead = false
   }
 
   private cacheKey(
@@ -1431,7 +1433,9 @@ export class WorldClientStreamer {
     terrain: number,
     foliageDensity: number,
     mode: WorldMode,
+    speed = 0,
   ): void {
+    this.fastLookahead = speed > 6.0
     if (Number.isFinite(this.lastPlayerX)) {
       const dx = playerX - this.lastPlayerX
       const dy = playerY - this.lastPlayerY
@@ -1448,19 +1452,26 @@ export class WorldClientStreamer {
     const cCy = this.center.cy
     const winMinY = (cCy - 1) * CHUNK + 10.0
     const winMaxY = (cCy + 2) * CHUNK - 10.0
-    const nearNorth = playerY < winMinY + 8.0
-    const nearSouth = playerY > winMaxY - 8.0
-    const minDy = nearNorth ? -2 : -1
-    const maxDy = nearSouth ? 2 : 1
+    const nearNorth = playerY < winMinY + 8.0 || (this.fastLookahead && this.dirY < -0.5)
+    const nearSouth = playerY > winMaxY - 8.0 || (this.fastLookahead && this.dirY > 0.5)
+    const minDy = nearNorth ? (this.fastLookahead && this.dirY < -0.5 ? -3 : -2) : -1
+    const maxDy = nearSouth ? (this.fastLookahead && this.dirY > 0.5 ? 3 : 2) : 1
 
     const stepX = this.dirX >= -0.25 ? 1 : -1
-    const dxList = stepX > 0 ? [0, 1, 2, 3, 4, -1] : [0, -1, -2, -3, -4, 1]
+    const dxList = this.fastLookahead
+      ? stepX > 0
+        ? [0, 1, 2, 3, 4, 5, -1]
+        : [0, -1, -2, -3, -4, -5, 1]
+      : stepX > 0
+        ? [0, 1, 2, 3, 4, -1]
+        : [0, -1, -2, -3, -4, 1]
+    const maxRelX = this.fastLookahead ? 5 : 4
 
     // Prune stale queue items that are behind or outside the active lookahead corridor
     for (let i = this.bakeQueue.length - 1; i >= 0; i--) {
       const q = this.bakeQueue[i]!
       const relX = (q.cx - cCx) * stepX
-      if (relX < -1 || relX > 4 || q.cy < cCy + minDy || q.cy > cCy + maxDy || q.seed !== seed || q.mode !== mode) {
+      if (relX < -1 || relX > maxRelX || q.cy < cCy + minDy || q.cy > cCy + maxDy || q.seed !== seed || q.mode !== mode) {
         this.bakeQueue.splice(i, 1)
       } else {
         q.priority = 99
@@ -1497,11 +1508,13 @@ export class WorldClientStreamer {
     this.pumpWorkers()
     if (this.bakeQueue.length === 0) return 0
     // When background Web Workers are active, only fall back to main-thread compilation for urgent immediate-ring chunks
+    // (expanded to priority <= 10 at vehicle speeds so the next 3×3 window's leading edge is always ready before transition).
     const urgentOnly = this.workers.length > 0
+    const maxUrgentPriority = this.fastLookahead ? 10 : 6
     const start = performance.now()
     let compiledCount = 0
     while (this.bakeQueue.length > 0 && performance.now() - start < budgetMs && compiledCount < maxChunks) {
-      if (urgentOnly && this.bakeQueue[0]!.priority > 6) break
+      if (urgentOnly && this.bakeQueue[0]!.priority > maxUrgentPriority) break
       const item = this.bakeQueue.shift()!
       const k = this.cacheKey(item.seed, item.houseSeed, item.terrain, item.foliageDensity, item.mode, item.cx, item.cy)
       if (this.cache.has(k) || this.inflightKeys.has(k)) continue
@@ -1521,6 +1534,7 @@ export class WorldClientStreamer {
     playerY: number,
     town: Town,
     mode: WorldMode,
+    speed = 0,
   ): { changed: boolean; level?: LevelData; origin: [number, number]; buildings: Building[] } {
     const foliageDensity = town.foliageDensity ?? 1
     this.center = selectActiveWindowCenter(playerX, playerY, this.center)
@@ -1528,7 +1542,7 @@ export class WorldClientStreamer {
     const originZ = (this.center.cy - 1) * CHUNK
     this.windowOrigin = [originX, originZ]
 
-    this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode)
+    this.prewarmAround(playerX, playerY, town.seed, town.houseSeed, town.terrain, foliageDensity, mode, speed)
 
     const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}`
     if (winKey === this.lastWindowKey) {
