@@ -58,8 +58,19 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
  * viewport (Outliner column, top of Details, a dock under the viewport). Kit rearranges and configures widgets with
  * ✎; the layout is saved per station in this browser and can be copied into the station file.
  */
-export function createStations(opts: { host: StationHost; stations: readonly LabStation[]; dev?: StationDev; storage?: Storage | null }) {
+export function createStations(opts: {
+  host: StationHost
+  stations: readonly LabStation[]
+  dev?: StationDev
+  storage?: Storage | null
+  /**
+   * Whether the workspace draws its station list, keeps `?station=` in the URL and opens stations from number keys.
+   * The Lab's Home turns all three off: it lists labs itself, and number keys pick the open lab's variant.
+   */
+  list?: boolean
+}) {
   const { host } = opts
+  const listed = opts.list !== false
   const storage = opts.storage === undefined ? (() => { try { return localStorage } catch { return null } })() : opts.storage
   const ordered = orderStations(opts.stations)
   const byId = new Map(ordered.map(o => [o.station.id, o]))
@@ -80,7 +91,7 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
 
   // ── station list (top of the Outliner) ─────────────────────────────────────────────────────────────────────────────
   const list = host.slots.list
-  list.hidden = ordered.length === 0
+  list.hidden = !listed || ordered.length === 0
   const head = el("div", "ls-list-head", list)
   const headTitle = el("button", "ls-list-title", head)
   headTitle.type = "button"
@@ -160,6 +171,7 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
     note: opts.dev?.toggleNote ? { toggle: () => void opts.dev!.toggleNote!(), active: () => Boolean(opts.dev!.noteActive?.()) } : null,
     storage,
     abPending: { get: () => abPending, set: on => { abPending = on } },
+    variantKey: listed ? "⇧" : "",
   })
 
   function disposeWidgets() {
@@ -475,6 +487,7 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
   }
 
   function syncUrl() {
+    if (!listed) return
     const params = new URLSearchParams(location.search)
     params.delete("overworld")
     if (current) params.set("station", current.id)
@@ -483,11 +496,12 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
     history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`)
   }
 
-  /** Opens a station in place: its section and setup run, then its widgets fill their slots. */
-  async function open(id: string) {
-    const entry = byId.get(id) ?? ordered.find(o => o.station.title.toLowerCase() === id.toLowerCase())
-    if (!entry) { say(`No station "${id}"`, true); return false }
-    const station = entry.station
+  /** Opens a station (by id, or one built from a lab) in place: its section and setup run, then its widgets fill their slots. */
+  async function open(target: string | LabStation) {
+    const station = typeof target === "string"
+      ? (byId.get(target) ?? ordered.find(o => o.station.title.toLowerCase() === target.toLowerCase()))?.station
+      : target
+    if (!station) { say(`No station "${String(target)}"`, true); return false }
     const token = ++opening
     closeMenu()
     closePage()
@@ -575,9 +589,23 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
     emit({ kind: "variant", station: current.id, variant: v.id })
   }
 
-  /** Number keys open stations; ⇧ with a number picks the open station's variant. */
+  /**
+   * With the station list, number keys open stations and ⇧ with a number picks the open station's variant. Without it
+   * (the Lab's Home), a number picks the open lab's variant and ⇧ with a number shows what you see now beside that
+   * variant as an A/B wipe.
+   */
   function digit(n: number, shift: boolean) {
     if (host.mode() === "play") return false
+    if (!listed) {
+      const v = current?.variants?.[n === 0 ? 9 : n - 1]
+      if (!v) return false
+      if (shift && current?.demo.kind === "section" && v.id !== variant?.id) {
+        const pinned = host.invoke("compare.pin-a")
+        if (pinned.ok) abPending = true
+      }
+      chooseVariant(v)
+      return true
+    }
     if (shift) {
       const v = current?.variants?.[n === 0 ? 9 : n - 1]
       if (!v) return false
@@ -700,7 +728,8 @@ export function createStations(opts: { host: StationHost; stations: readonly Lab
       return { station: current.id, editing, saved: Boolean(savedLayout(storage, current.id)), layout: toStationLayout(layout) }
     },
   })
-  for (const { station, key } of ordered) {
+  // With the Lab's Home, labs register their own commands.
+  for (const { station, key } of listed ? ordered : []) {
     host.commands.register({
       id: `station.go.${station.id}`,
       label: `Station: ${station.title}`,

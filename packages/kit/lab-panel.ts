@@ -10,6 +10,7 @@ import {
   type LabValue,
 } from "./lab-navigation"
 import type { HostHistory } from "@arcade/knobs"
+import type { Command, CommandsFromOptions } from "@arcade/knobs/ui"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
 export { formatLabValue, inferControlUnit, resolveControlField } from "./lab-navigation"
@@ -387,6 +388,11 @@ export class LabPanel implements LabKnobsHost {
   /** Sets the panel's search text and Modified chip, as typing and clicking would. */
   setSearch(next: { query?: string; modified?: boolean }) {
     this.ensureMain()?.setSearch(next)
+  }
+
+  /** The panel's own view (and its station cards) as ⌘K commands: actions, presets, fields and resets. */
+  commands(options: CommandsFromOptions = {}): Command[] {
+    return [...(this.main ? [this.main] : []), ...this.claims].flatMap(view => view.commands(options))
   }
 
   /** The settings the panel's own view shows on screen now (after its tab, folds and search). */

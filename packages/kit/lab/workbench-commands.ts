@@ -30,7 +30,8 @@ import { FOLIAGE_LIGHTINGS, FOLIAGE_LOOKS } from "./foliage"
 import { isLibraryAsset, isPlaceable, LIBRARY_CATEGORIES, type createLibrary } from "./library"
 import type { LookLabController } from "./looks"
 import { OUTLINER_GROUPS, type createOutliner } from "./outliner"
-import type { createPalette } from "./palette"
+import type { Command as PaletteCommand } from "@arcade/knobs/ui"
+import { ask } from "./overlays"
 import type { createSpawn } from "./spawn"
 import type { Stage } from "./stage"
 import type { TransformMode } from "./transform"
@@ -104,7 +105,7 @@ export interface WorkbenchCommandsHost {
   lockedIds: Set<string>
   getOutliner: () => ReturnType<typeof createOutliner>
   getLibraryDrawer: () => ReturnType<typeof createLibrary<CatalogEntry>>
-  getPalette: () => ReturnType<typeof createPalette>
+  getPalette: () => { open(query?: string): void; readonly isOpen: boolean; results(query: string): PaletteCommand[] }
   getWatchPins: () => WatchPin[]
   setWatchPins: (next: WatchPin[]) => void
   pinSetting: (sectionId: string, key: string, pinned?: boolean) => boolean
@@ -116,7 +117,7 @@ export interface WorkbenchCommandsHost {
   syncTransportAndHints: () => void
   syncChrome: () => void
   renderNow: () => Promise<unknown>
-  showToast: (message: string, isError?: boolean) => void
+  showToast: (message: string, isError?: boolean, action?: { label: string; run: () => void }) => void
 }
 
 export function registerWorkbenchCommands(commands: LabCommandRegistry, host: WorkbenchCommandsHost): void {
@@ -348,26 +349,40 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
         if (!obj || !obj.deletable) return
         const owner = resolveObjectOwner(obj.id)
         if (!owner.deleteObject) return
-        const before = captureSnapshot()
         const selIds = owner.selectedObjectIds?.length ? [...owner.selectedObjectIds] : [obj.id]
         const targetIds = selIds.includes(obj.id) ? selIds : [obj.id]
         if (targetIds.length > 1 && owner.deleteObjects) {
-          const removed = owner.deleteObjects(targetIds)
-          if (removed > 0) {
-            recordHistory(`Delete ${removed} objects`, before)
-            panel.sync()
-            syncChrome()
-            void renderNow()
-            showToast(`Deleted ${removed} objects`)
+          const deleteAll = () => {
+            const before = captureSnapshot()
+            const removed = owner.deleteObjects!(targetIds)
+            if (removed > 0) {
+              recordHistory(`Delete ${removed} objects`, before)
+              panel.sync()
+              syncChrome()
+              void renderNow()
+              showToast(`Deleted ${removed} objects`, false, { label: "Undo", run: undo })
+            }
+          }
+          // A key or a click asks before a multi-selection goes; the `arcade` CLI deletes at once.
+          if (ctx?.source === "cli") deleteAll()
+          else {
+            const names = allSceneObjects().filter(o => targetIds.includes(o.id)).map(o => o.label)
+            void ask({
+              title: `Delete ${targetIds.length} objects?`,
+              body: `${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""} leave the scene. Undo brings them back.`,
+              confirm: "Delete",
+              destructive: true,
+            }).then(ok => ok && deleteAll())
           }
           return
         }
+        const before = captureSnapshot()
         if (owner.deleteObject(obj.id)) {
           recordHistory(`Delete ${obj.label}`, before)
           panel.sync()
           syncChrome()
           void renderNow()
-          showToast(`Deleted ${obj.label}`)
+          showToast(`Deleted ${obj.label}`, false, { label: "Undo", run: undo })
         }
       },
     },
@@ -1964,13 +1979,14 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
       shortLabel: "Search",
       category: "Navigation",
       shortcut: "⌘K",
-      args: { query: { type: "string", description: "Initial query (@ scene, # settings, + library, > commands)" } },
+      args: { query: { type: "string", description: "Initial query (scene objects, commands, Details, library and settings)" } },
       enabled: () => true,
       run: (_ctx, args) => {
         const palette = getPalette()
         if (getMode() === "play") setPlayMode("edit")
-        palette.open(typeof args?.query === "string" ? args.query : "")
-        return { open: palette.isOpen, results: palette.results.map(r => ({ kind: r.kind, label: r.label, meta: r.meta })) }
+        const query = typeof args?.query === "string" ? args.query : ""
+        palette.open(query)
+        return { open: palette.isOpen, results: palette.results(query).slice(0, 40).map(r => ({ section: r.section ?? null, label: r.label, hint: r.hint ?? null, disabled: Boolean(r.disabled) })) }
       },
     },
     {

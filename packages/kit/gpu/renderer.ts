@@ -281,6 +281,10 @@ export class Renderer {
   drawnChunks = 0
   /** Coalesced level chunk draw calls issued last frame. */
   drawnChunkDraws = 0
+  /** Level chunks currently resident, for diagnostics. */
+  get levelChunkCount(): number {
+    return this.chunks.length
+  }
   /** Successfully submitted frames, not draw requests or confirmed screen presentations. */
   submittedFrames = 0
   width = 0

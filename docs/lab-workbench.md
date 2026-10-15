@@ -14,11 +14,11 @@ around the viewport ([lab.md](lab.md#stations)).
 
 Board decision D-4 (AR-13) picked concept 1 from `2026-10-14-lab-layout/` (Unreal/Unity style), plus ⌘K universal
 search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts the shell; the pieces live in
-`outliner.ts`, `library.ts`, `palette.ts` and `watch.ts`, wired by `workbench.ts`.
+`outliner.ts`, `library.ts`, `watch.ts` and `perf.ts`, with knobs' overlays (`overlays.ts`), wired by `workbench.ts`.
 
 ```
 ┌ top bar: Hub · Lab <game> · Edit/Play/Box/2F · transport ⟲ ❚❚ ⏭ ↻ speed clock · A V Wipe · View · ⌘K Search · ⌖ ↶ ↷ ⋯ ┐
-├ Outliner ─────────┬ viewport (canvas, HUD badge, toast, Watch list) ─────────┬ Details ───────────────────┤
+├ Outliner ─────────┬ viewport (canvas, HUD badge, frame time, Watch list) ────┬ Details ───────────────────┤
 │ search · filter   │                                                          │ selection header, toolbar │
 │ Vehicles 1        │                                                          │ tabs · search · Modified  │
 │ Props 6 ▸ Cone ×5 ├ Library drawer: categories · collections · tiles ────────┤ Transform → object groups │
@@ -27,8 +27,9 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
 └ status: focus pill · telemetry · hints ─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Outliner** (left) lists only what is in the scene (`allSceneObjects()`), grouped Characters, Vehicles, Props,
-  Emitters, Lights and Fixtures (specimens) with counts and collapse. Repeated kinds fold into one row (`Cone ×5`,
+- **Outliner** (left, `packages/kit/lab/outliner.ts`, a knobs/ui `tree`) lists only what is in the scene
+  (`allSceneObjects()`), grouped Characters, Vehicles, Props, Emitters, Lights and Fixtures (specimens) with counts and
+  collapse. Repeated kinds fold into one row (`Cone ×5`,
   expandable; clicking the fold selects every member). Type filter menu, `Search scene` field and a per-row lock
   (locked objects are skipped by viewport picking and the marquee). Selection syncs both ways: click replaces,
   `⌘`/`Ctrl`-click toggles, `Shift`-click selects a range; viewport clicks, Shift-clicks and marquees highlight and
@@ -74,12 +75,21 @@ search and pinned Watch values from concept 3. `packages/kit/lab/main.ts` mounts
   viewport box, so the render loop no longer reads layout every frame; a panel change marks the size stale and the
   next frame measures it once, because Chrome delivered ResizeObserver callbacks 7–8 frames late while dragging. The
   canvas is resized right before it is drawn, so a resize never presents an empty canvas.
-- **⌘K** searches scene objects (select and frame), Library items, registry commands (those without required
-  arguments) and every section's setting names (switch section if needed, clear Details filters, scroll, focus and
-  flash the field). Prefixes: `@` scene, `#` settings, `+` library, `>` commands. `/` also opens it.
-- **Watch** pins any Details field (hover a row, click the pin) to a small list in the viewport's lower left. Values
-  update live, modified values are accented, clicking a name jumps to the field, `×` unpins. Pins persist in
-  `localStorage` (`arcade.lab.watch.v1`).
+- **⌘K** is knobs' `commandPalette` (`/` also opens it). It lists scene objects (select and frame), registry commands
+  (those without required arguments, run by their ids with their keys as chips), the Details panel's own actions,
+  presets, fields and resets (knobs' `commandsFrom`, under `Details · <group>`), Library items, and every other
+  section's settings (switch section, clear Details filters, scroll, focus and flash the field). With no query it
+  shows recent commands first. `palette.open query=…` replies with the ranked results.
+- **Watch** pins any Details field (hover a row, click the pin) to a knobs readout panel in the viewport's lower left:
+  a numeric setting is a sparkline of the values it has had, any other a watch of its text. Values are pushed only
+  when they change (checked four times a second), so an idle list does nothing per frame. Clicking a name jumps to
+  the field, `×` unpins (accented while the value is modified). Pins persist in `localStorage` (`arcade.lab.watch.v1`).
+- **Frame time** (click the status bar's stats, or `view.perf`): a knobs graph of the frame interval, CPU (the
+  frame's script work) and GPU (timestamp queries) against a 16.7 ms line, and CPU and GPU meters against the same
+  budget, in the viewport's upper right. Frames are pushed only while it shows; it remembers whether it was open.
+- **Overlays** come from `@arcade/knobs/ui` in the Lab's preset (`setupLabOverlays`): top-bar hints are `tooltip`s
+  with their shortcut as key chips (`tip(el, text, shortcut)`), notices are `toast`s (deletes carry Undo), and
+  deleting several objects at once asks first with `confirm` (the `arcade` CLI deletes without asking).
 
 Kept unchanged: transport, A/B compare, radial menu, cursor states, Edit/Play, preset/recipe dialogs (now under `⋯`),
 text-field ownership and the CLI. Every layout action is a registry command:
@@ -95,7 +105,8 @@ text-field ownership and the CLI. Every layout action is a registry command:
 | `library.view` | `view?` (`tiles`/`list`), `group?`, `focus?` | Switch the item view or collection; `focus` moves keyboard focus to the items |
 | `library.previews` | `ids?`, `clear?` | Render missing previews for the current view (or `ids`), or forget them |
 | `layout.panels` | `panel?`, `size?`, `collapsed?`, `reset?` | Resize, collapse or reset `left`, `right`, `drawer`, `dock`, `leftSlot`, `rightSlot`; returns sizes |
-| `palette.open` | `query?` | Open ⌘K search |
+| `palette.open` | `query?` | Open ⌘K search; returns the ranked results |
+| `view.perf` | `show?` | Show, hide or toggle the frame-time readout |
 | `watch.pin` / `watch.unpin` | `key`, `section?`, `pinned?` / `all?` | Manage Watch pins |
 | `details.filter` | `modified?`, `query?`, `all?` | Details filters; returns the visible keys |
 | `details.reveal` | `key`, `section?` | Jump to a setting |
@@ -238,7 +249,8 @@ Priority order:
    `Render previews` and the items; each keeps one tab stop. A focused item shows its whole name on a card over its
    neighbours.
    A focused Outliner tree owns arrows, `Space`, `Enter`, `Home`/`End` and `Escape`; other keys fall through to
-   the Edit canvas shortcuts below.
+   the Edit canvas shortcuts below. Letters never jump to rows (knobs' type-ahead is off here): they stay the
+   workbench's shortcuts, and `Search scene` finds things by name.
 2. **Open Radial Marking Menu (`RMB`, `Ctrl+LMB`, or the `ContextMenu` key)**:
    - Uses 8 fixed compass sectors (`0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°`), a `14 px` center dead zone, `96 px` ring radius, and `180 ms` tap-to-latch vs. hold-flick-release threshold.
    - Unavailable commands stay dimmed (`aria-disabled="true"`) in their fixed compass slot so neighbor angles never shift.
@@ -294,6 +306,14 @@ hivemind run --kind browser -- bun games/lab/scripts/prove-stations.ts --serve
 hivemind run --kind browser --fetch captures/lab-panels -- bun packages/kit/lab/prove-panels.ts
 hivemind run --fetch captures/lab-car-playground -- bun packages/kit/lab/prove-car-playground.ts
 ```
+
+`hivemind run --kind browser --fetch captures/lab-overlays -- bun packages/kit/lab/prove-overlays.ts` proves the
+readouts and overlays in Spawn: the Frame button's tooltip with its `F` chip and no native `title` left in the top bar;
+⌘K finding and running Frame Scene, and `palette.open` returning Details fields through `commandsFrom`; deleting two
+selected lights asks first, Esc keeps them, Delete removes them and the toast's Undo restores them; a numeric Watch
+pin is a sparkline and a choice a watch, an idle Watch list makes no DOM changes for a second and an edit reaches it;
+the frame-time readout shows its graph and two meters, with main-thread task time per second hidden and shown.
+It also proves (in `prove-knobs.ts`) that compare (hold `\`) held past a key nudge's settle leaves the nudge one undo step.
 
 `hivemind run --kind browser --fetch captures/lab-knobs -- bun packages/kit/lab/prove-knobs.ts` proves the knobs panels
 at 1440×900 and 1728×1117@2x on the Outbreak scenes station and the vignette section: no rounded box anywhere in the
