@@ -8,6 +8,7 @@ import {
   type SurvivorCombatState,
 } from "./combat"
 import { CoopSim, type SurvivorSlot } from "./coop-sim"
+import { outbreakSharedFeatures } from "./feature-registry"
 import { DEFAULT_FLASHLIGHT_TUNING, type FlashlightState, type FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
 import { inventoryView, type InventoryState } from "./inventory"
@@ -48,6 +49,7 @@ export type ResolvedSessionTuning = {
   melee: MeleeTuning
   vehicle: VehicleTuning
   infiniteAmmo: boolean
+  features?: Readonly<Record<string, Record<string, unknown>>>
 }
 
 function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedSessionTuning {
@@ -62,14 +64,18 @@ function isNamespacedSessionTuning(tuning: SessionTuning): tuning is NamespacedS
 }
 
 export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTuning {
+  const features = outbreakSharedFeatures.resolveTuningNamespaces(
+    tuning as Record<string, unknown> | undefined,
+  )
   if (!tuning) {
     return {
       stamina: DEFAULT_STAMINA_TUNING,
       flashlight: DEFAULT_FLASHLIGHT_TUNING,
       ai: undefined,
-      melee: DEFAULT_MELEE_TUNING,
-      vehicle: DEFAULT_VEHICLE_TUNING,
+      melee: (features.melee as MeleeTuning | undefined) ?? DEFAULT_MELEE_TUNING,
+      vehicle: (features.vehicle as VehicleTuning | undefined) ?? DEFAULT_VEHICLE_TUNING,
       infiniteAmmo: false,
+      features,
     }
   }
   if (isNamespacedSessionTuning(tuning)) {
@@ -86,9 +92,10 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
       stamina: tuning.stamina ? { ...DEFAULT_STAMINA_TUNING, ...tuning.stamina } : DEFAULT_STAMINA_TUNING,
       flashlight: tuning.flashlight ? { ...DEFAULT_FLASHLIGHT_TUNING, ...tuning.flashlight } : DEFAULT_FLASHLIGHT_TUNING,
       ai: tuning.ai,
-      melee: meleeOut,
-      vehicle: tuning.vehicle ? { ...DEFAULT_VEHICLE_TUNING, ...tuning.vehicle } : DEFAULT_VEHICLE_TUNING,
+      melee: (features.melee as MeleeTuning | undefined) ?? meleeOut,
+      vehicle: (features.vehicle as VehicleTuning | undefined) ?? (tuning.vehicle ? { ...DEFAULT_VEHICLE_TUNING, ...tuning.vehicle } : DEFAULT_VEHICLE_TUNING),
       infiniteAmmo: Boolean(tuning.combat?.infiniteAmmo),
+      features,
     }
   }
   const hasAiKeys =
@@ -127,9 +134,10 @@ export function resolveSessionTuning(tuning?: SessionTuning): ResolvedSessionTun
           maxActiveNearPlayer: tuning.maxActiveNearPlayer,
         }
       : undefined,
-    melee: { ...DEFAULT_MELEE_TUNING, ...tuning },
-    vehicle: { ...DEFAULT_VEHICLE_TUNING, ...tuning },
+    melee: (features.melee as MeleeTuning | undefined) ?? { ...DEFAULT_MELEE_TUNING, ...tuning },
+    vehicle: (features.vehicle as VehicleTuning | undefined) ?? { ...DEFAULT_VEHICLE_TUNING, ...tuning },
     infiniteAmmo: Boolean(tuning.infiniteAmmo),
+    features,
   }
 }
 

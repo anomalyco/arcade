@@ -12,11 +12,12 @@ import { supportHeight } from "../shared/terrain"
 import { audioControls } from "./audio"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight } from "./day-night"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
 import { groundControls, randomizeGroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
-import { DEFAULT_MAP_SETTINGS, mapControls, type OutbreakMap } from "./map"
+import type { OutbreakMap } from "./map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
 import type { NetSession } from "./net-session"
 import { applyProgressionSetting, progressionLabControls, type ProgressionLabHost } from "./progression-lab"
@@ -175,7 +176,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...zombieControls,
     ...survivorAimControls,
     ...hudControls,
-    ...mapControls,
+    ...outbreakClientFeatures.collectLabControls(host),
     {
       key: "bloodStyle",
       label: "Blood splatter",
@@ -401,9 +402,9 @@ export function handleOutbreakSettingChanged(
   const lab = host.lab()
   const routed = resolveOutbreakSettingTarget(rawKey)
   const key = routed?.field ?? rawKey
+  outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
   if (key === "humanProfile" || key.startsWith("zombie")) host.updateProfile()
   if (key in DEFAULT_HUD_SETTINGS) hud.applySettings()
-  if (key in DEFAULT_MAP_SETTINGS) host.map.applySettings()
   applyProgressionSetting(progressionHost, key, settings.progression)
   if (key === "zombieCount") {
     session.ai.config.zombieCount = settings.ai.zombieCount

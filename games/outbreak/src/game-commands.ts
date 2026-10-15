@@ -10,9 +10,11 @@ import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
 import { FOG_SIZE, type Vision } from "../shared/vision"
 import type { CoopView } from "./coop-view"
+import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
+import type { OutbreakMap } from "./map"
 import type { NetSession } from "./net-session"
 import { PROGRESSION_SCENES, stageProgression, type ProgressionLabHost, type ProgressionScene } from "./progression-lab"
 import type { OutbreakSettings } from "./settings"
@@ -32,6 +34,7 @@ export interface OutbreakGameCommandsHost {
   readonly settings: OutbreakSettings
   readonly feelTracker: OutbreakFeelTracker
   readonly hud: OutbreakHud
+  readonly map?: OutbreakMap
   readonly coop: CoopView
   readonly lab: LabPanel
   readonly progressionHost: ProgressionLabHost
@@ -448,6 +451,7 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           return { triggered: true, strike }
         },
       },
+      ...outbreakClientFeatures.collectGameCommands(host),
     ])
   })
 }

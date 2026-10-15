@@ -73,7 +73,6 @@ import {
   resolveWorldMode,
 } from "./settings"
 import { OutbreakFeelTracker } from "./feel-events"
-import { registerGameCommands } from "@arcade/kit/dev-control"
 import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
 import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
@@ -512,7 +511,6 @@ async function main() {
   )
   bindOutbreakLabControls(lab, settings, controls)
 
-  registerGameCommands((commands) => commands.registerAll(map.labCommands()))
   registerOutbreakGameCommands({
     device,
     renderer,
@@ -525,6 +523,7 @@ async function main() {
     settings,
     feelTracker,
     hud,
+    map,
     coop,
     lab,
     progressionHost,
@@ -1450,6 +1449,7 @@ async function main() {
     weatherController,
     worldStreamer,
     hud,
+    map,
     coop,
     audio,
     vehicleAudio,
@@ -1487,7 +1487,7 @@ async function main() {
     interiors,
     rebuildLevel: () => level(),
   })
-  Object.assign(window, { __arcadeHarness: Object.assign(harness, { map }) })
+  Object.assign(window, { __arcadeHarness: harness })
   scheduleFrame()
 }
 
