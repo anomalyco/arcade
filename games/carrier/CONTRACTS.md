@@ -256,6 +256,10 @@ crew requests `op(id)` (a ship operation, shared/ops.ts: `"helm"` takes the helm
 menu's only path), `board(ship, as?: "helm" | "pilot")`, `newShip()`, `recover(how)` (the jet is gone,
 the pilot waits on deck), and the captain powers `promote(player)`, `kick(player)`, `lock(locked)`. Client messages
 `op`, `promote`, `kick`, `lock` (no `takehelm` / `launch`). `connect({ room, seed, name, private, onFull })`.
+Chat (`shared/chat.ts`): client `chat { text, crew? }` (decoded with `cleanChat`: control/bidi stripped, ≤ 120 code
+points), server `chat { from, name, team, text, crew? }` stamped from the room's crew, 5 lines per 5 s per player
+(over it dropped silently; `Net.sendChat` refuses first and the feed says TOO FAST), crew lines only to the sender's
+team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they echo locally.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
 
 ## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
