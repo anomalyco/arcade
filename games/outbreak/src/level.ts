@@ -544,7 +544,9 @@ function compileLevel(town: Town): LevelData {
         if (id >= 2) return minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
         const inSouth = minX > b[0] + .35 && maxX < b[2] - .35 && minZ > b[1] + 5.55 && maxZ < b[3] + 1.65
         const inNorth = minX > b[0] + 2.25 && maxX < b[0] + 9.25 && minZ > b[1] + .35 && maxZ < b[3] + 1.65
-        return inSouth || inNorth
+        // North-east wing (map.ts buildingFootprint): its roof starts just past the wing's north wall.
+        const inWing = minX > b[0] + 9.25 && maxX < b[2] - .35 && minZ > b[1] + 1.3 && maxZ < b[3] + 1.65
+        return inSouth || inNorth || inWing
       }
       if (hasRoof) {
         const id = Math.max(0, Math.min(BUILDING_RECTS.length - 1, Math.round(source.v[i + 10]!)))

@@ -155,6 +155,18 @@ proven animation techniques to animation.md, not here.
   paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
   rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
   reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Light a pair of wall sconces with one unshadowed half-space light, clipped in the shader.** Outbreak's sconces
+  (`games/outbreak/src/interiors/sconces.ts`) are recorded per painting pair while the decor is emitted (in the chunk
+  Worker for streamed houses, `collectSconces` for the origin block) and lit only in the house the camera is inside,
+  nearest first, up to `QualityProfile.maxSconceLights` (3 pairs high, 2 balanced, 0 low). `cone.w = 1.25` marks them;
+  the `lightMask` hook cuts each just behind its wall (so the room behind stays dark without a shadow pass), above the
+  wall tops, and to its room along the wall (perpendicular walls found when the decor is laid out), and the attenuation
+  hook sums two bulbs `extra.w` either side with a near-field core, ×3 on the wall they hang on to undo
+  `wallDirectScale`, which made a single wall light invisible. All bulbs read one reserved `lampPower` slot
+  (`SCONCE_LAMP_SLOT`) so they switch with the light. Measured on the mini, paired at
+  3456×1894: one light per pair costs +0.42 ms (high, MAD 0.19) in a lit room and +0.21 ms on the interior bench,
+  +0.16/+0.10 ms balanced, 0 low; one light per bulb had cost twice that. Also found: the origin houses' north-east
+  wing roof never opened (`level.ts` `strictlyInsideHouse` left the wing out of the "outside" chunks).
 - **Streamed house roofs are `customCutaway: "outside"` chunks.** Since the TBDR pass (d86d5df) custom-cutaway chunks
   only use the discard pipeline while peeking, so streamed roofs marked `true` never opened when the survivor stood
   inside. They are now skipped whole while the survivor is inside the building's rect, like the origin block's interior
