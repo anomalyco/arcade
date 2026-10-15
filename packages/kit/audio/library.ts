@@ -12,7 +12,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "vehicle"
-  | "creature" | "crowd" | "cooking"
+  | "creature" | "crowd" | "cooking" | "bow"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -72,6 +72,7 @@ const step = (surface: string, gait: "walk" | "run") =>
 
 const OUTBREAK = ["outbreak"] as const
 const BRAWL = ["brawl"] as const
+const ARCHERS = ["archers"] as const
 
 const SURFACE_PHRASE: Record<SfxSurface, string> = { concrete: "a gritty concrete sidewalk", grass: "short dry grass and soft earth", wood: "old wooden floorboards inside a house" }
 
@@ -476,6 +477,78 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "cooking.sizzle", label: "Pan sizzle", group: "cooking", bus: "foley", variants: 3, target: -22, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
     cooldown: 0.15, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: BRAWL, durationRange: [0.6, 1.8],
     generate: { prompt: `A hot oily frying pan slapped down on a surface: a sharp burst of loud sizzling hiss and crackling fat that dies away quickly, close and dry. ${NO_SPEECH}`, duration: 1.3, candidates: 4, influence: 0.55 },
+  },
+
+  // Arena archery
+  {
+    id: "bow.draw", label: "Bow draw", group: "bow", bus: "weapon", variants: 3, target: -26, gain: 0.7, pitchJitter: 0.06, gainJitter: 0.1,
+    cooldown: 0.08, maxVoices: 4, range: { ref: 2, max: 16 }, wet: 0.05, usedBy: ARCHERS, durationRange: [0.2, 0.8],
+    generate: { prompt: `A wooden recurve bow being drawn back quickly: a short taut creak of wood and a stretching bowstring, close and dry. One draw only. ${NO_SPEECH}`, duration: 0.6, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "bow.release", label: "Bow release", group: "bow", bus: "weapon", variants: 4, target: -20, gain: 0.85, pitchJitter: 0.07, gainJitter: 0.1,
+    maxVoices: 4, range: { ref: 3, max: 26 }, wet: 0.08, usedBy: ARCHERS, durationRange: [0.12, 0.7],
+    generate: { prompt: `A single arrow loosed from a recurve bow: a sharp deep bowstring twang and a fast arrow whoosh flying away, close and dry. One shot only. ${NO_SPEECH}`, duration: 0.6, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "arrow.thunk", label: "Arrow thunk (stone)", group: "bow", bus: "impact", variants: 4, target: -22.5, gain: 1.2, pitchJitter: 0.08, gainJitter: 0.1,
+    maxVoices: 5, range: { ref: 3, max: 30 }, wet: 0.1, usedBy: ARCHERS, durationRange: [0.1, 0.7],
+    generate: { prompt: `A single arrow striking and sticking into old mossy stone masonry: a hard punchy thunk with the wooden shaft quivering briefly and a few grains of grit, close and dry. One impact only. ${NO_SPEECH}`, duration: 0.6, candidates: 6, influence: 0.6 },
+  },
+  {
+    id: "arrow.hit", label: "Arrow hits body", group: "bow", bus: "impact", variants: 3, target: -20.5, gain: 1.2, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 3, range: { ref: 3, max: 30 }, wet: 0.1, usedBy: ARCHERS, durationRange: [0.12, 0.8],
+    generate: { prompt: `A single arrow hitting a person wearing a heavy cloth cloak: a deep muffled thud with a sharp cloth snap and a short grunt-free body impact, close and dry. One impact only. No speech, no voice, no music.`, duration: 0.6, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "arrow.catch", label: "Arrow caught", group: "bow", bus: "foley", variants: 3, target: -21, gain: 0.85, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 3, range: { ref: 2, max: 20 }, wet: 0.06, usedBy: ARCHERS, durationRange: [0.1, 0.6],
+    generate: { prompt: `A hand snatching a flying arrow out of the air: a fast whoosh ending in a sharp leather glove slap on a wooden shaft, close and dry. One catch only. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "arrow.pickup", label: "Arrow into quiver", group: "bow", bus: "foley", variants: 3, target: -25, gain: 0.7, pitchJitter: 0.08, gainJitter: 0.1,
+    cooldown: 0.05, maxVoices: 3, range: { ref: 2, max: 14 }, wet: 0.04, usedBy: ARCHERS, durationRange: [0.1, 0.6],
+    generate: { prompt: `A single wooden arrow being dropped into a leather quiver full of arrows: a quick light wooden rattle and clack, close and dry. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "archer.dodge", label: "Cloak dodge", group: "bow", bus: "foley", variants: 3, target: -24, gain: 0.75, pitchJitter: 0.08, gainJitter: 0.1,
+    maxVoices: 4, range: { ref: 2, max: 16 }, wet: 0.05, usedBy: ARCHERS, durationRange: [0.1, 0.6],
+    generate: { prompt: `A person diving into a fast roll in a heavy cloak: a quick whooshing cloth flap and rustle, close and dry. One movement only. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "archer.feathers", label: "Feather burst", group: "bow", bus: "foley", variants: 3, target: -22, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 3, range: { ref: 3, max: 24 }, wet: 0.08, usedBy: ARCHERS, durationRange: [0.2, 1.2],
+    generate: { prompt: `A sudden burst of feathers and a cloak tearing: a soft explosive flutter of many feathers with a sharp cloth rip, close and dry. ${NO_SPEECH}`, duration: 0.9, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "chest.open", label: "Treasure chest opens", group: "bow", bus: "foley", variants: 2, target: -22, gain: 0.8, pitchJitter: 0.04, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 3, max: 26 }, wet: 0.1, usedBy: ARCHERS, durationRange: [0.4, 1.6],
+    generate: { prompt: `An old wooden treasure chest lid flung open: a short creak of iron hinges and a bright magical shimmer chime, close. ${NO_SPEECH}`, duration: 1.2, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "bomb.explode", label: "Bomb arrow explosion", group: "bow", bus: "impact", variants: 3, target: -16, gain: 0.95, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 3, range: { ref: 5, max: 60 }, wet: 0.2, usedBy: ARCHERS, durationRange: [0.6, 2.2],
+    generate: { prompt: `A small black-powder bomb exploding against a stone wall in a ruined courtyard: a punchy boom with crumbling stone debris raining down and a short echo. ${NO_SPEECH}`, duration: 1.8, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "laser.beam", label: "Laser arrow beam", group: "bow", bus: "spell", variants: 3, target: -20, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 2, range: { ref: 4, max: 40 }, wet: 0.12, usedBy: ARCHERS, durationRange: [0.2, 1.2],
+    generate: { prompt: `A magical beam of light fired from a bow: a bright crackling energy zap that sizzles and rings briefly as it ricochets, close. ${NO_SPEECH}`, duration: 0.9, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "bramble.grow", label: "Bramble grows", group: "bow", bus: "foley", variants: 2, target: -24.5, gain: 1.05, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 2, range: { ref: 3, max: 26 }, wet: 0.08, usedBy: ARCHERS, durationRange: [0.3, 1.4],
+    generate: { prompt: `Thorny vines bursting out of stone and growing in an instant: fast creaking, cracking and rustling wood and leaves, close and dry. ${NO_SPEECH}`, duration: 1, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "shield.break", label: "Shield breaks", group: "bow", bus: "spell", variants: 2, target: -20, gain: 0.85, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 3, max: 30 }, wet: 0.12, usedBy: ARCHERS, durationRange: [0.3, 1.4],
+    generate: { prompt: `A magical protective bubble shattering: a bright crystalline glassy crack with a shimmering chime tail, close. ${NO_SPEECH}`, duration: 1, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "wings.flap", label: "Wing flap", group: "bow", bus: "foley", variants: 3, target: -24, gain: 0.75, pitchJitter: 0.08, gainJitter: 0.1,
+    cooldown: 0.06, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: ARCHERS, durationRange: [0.12, 0.6],
+    generate: { prompt: `A single powerful flap of large feathered wings: a deep soft whump of air and feathers, close and dry. One flap only. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.55 },
   },
 
 
