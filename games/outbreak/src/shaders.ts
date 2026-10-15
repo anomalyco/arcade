@@ -80,6 +80,7 @@ ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 fn houseRect(id: i32) -> vec4f {
   if (OL.win.z > 0.5) {
+    if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
     return OL.bldRects[clamp(id, 0, 7)];
   }
   switch id {

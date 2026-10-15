@@ -2165,6 +2165,7 @@ async function main() {
         ),
         windowOrigin: currentWindowOrigin,
         isStreamWindow: currentIsStreamWindow,
+        windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings.map((b) => ({ id: b.id, kind: b.kind, rect: b.rect })) : [],
         activeChunks: [...session.sim.worldStream.activeChunks.keys()],
         cachedRenderChunks: worldStreamer.cachedChunkCount,
         pendingBakes: worldStreamer.pendingBakeCount,

@@ -82,7 +82,10 @@ try {
         await new Promise(r => setTimeout(r, 30))
       }
       for (let i = 0; i < 6; i++) await h.step()
-      return { settleMs: Math.round(performance.now() - t0), interiors: h.interiors?.() ?? null, player: h.state().player }
+      const state = h.state()
+      const p = state.player
+      const windowSlot = (state.world?.windowBuildings ?? []).findIndex((b: { rect: number[] }) => p.x > b.rect[0] && p.x < b.rect[2] && p.y > b.rect[1] && p.y < b.rect[3])
+      return { settleMs: Math.round(performance.now() - t0), interiors: h.interiors?.() ?? null, player: p, streamed: state.world?.isStreamWindow ?? false, windowSlot }
     }, scene)
     await page.evaluate(() => {
       for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, .hud, #hud")) el.style.visibility = "hidden"
@@ -92,7 +95,7 @@ try {
       for (const el of document.querySelectorAll<HTMLElement>("#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, .hud, #hud")) el.style.visibility = ""
     })
     ;(report.scenes as Record<string, unknown>)[scene.name] = { ...scene, ...stats }
-    console.log(scene.name, JSON.stringify({ settleMs: stats.settleMs, resident: stats.interiors?.resident, bakes: stats.interiors?.bakes, maxBakeMs: stats.interiors?.maxBakeMs, maxUploadMs: stats.interiors?.maxUploadMs }))
+    console.log(scene.name, JSON.stringify({ streamed: stats.streamed, windowSlot: stats.windowSlot, settleMs: stats.settleMs, resident: stats.interiors?.resident, bakes: stats.interiors?.bakes, maxBakeMs: stats.interiors?.maxBakeMs, maxUploadMs: stats.interiors?.maxUploadMs }))
   }
   report.errors = errors
   if (errors.length) console.error(errors.slice(0, 10).join("\n"))
