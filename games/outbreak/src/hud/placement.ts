@@ -9,14 +9,19 @@
 export type Side = "up" | "down" | "left" | "right"
 
 /** Lab values for `calloutPlacement`. */
+export const CALLOUTS_STYLE = -1
 export const CALLOUTS_BELOW = 0
 export const CALLOUTS_ABOVE = 1
 export const CALLOUTS_BESIDE = 2
 
-/** Lab values for `vitalsPlacement`. */
+/** Lab values for `vitalsPlacement`: how stamina, reload, health and battery are drawn. */
+export const VITALS_STYLE = -1
 export const VITALS_BESIDE = 0
 export const VITALS_FEET = 1
 export const VITALS_EDGE = 2
+export const VITALS_BARS = 3
+export const VITALS_GROUND = 4
+export const VITALS_ICONS = 5
 
 export const OPPOSITE: Record<Side, Side> = { up: "down", down: "up", left: "right", right: "left" }
 const VECTOR: Record<Side, readonly [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
@@ -103,6 +108,11 @@ export type BodyBox = {
   /** Aim as a screen vector (unnormalised). */
   aimX: number
   aimY: number
+  /** Screen centre and size of a ~0.5 m circle on the ground around the feet, for ground-drawn meters. */
+  footX?: number
+  footY?: number
+  footW?: number
+  footH?: number
 }
 
 /** The point on the body box edge facing `side`, pushed out by `gap` pixels. */
