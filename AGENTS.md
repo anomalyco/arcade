@@ -76,10 +76,12 @@ game's own `AGENTS.md`.
 - To show Kit an orientation, asset, or sandbox setup in his open browser tab, use `bun run arcade …`; to walk him
   through a labeled multi-tab tour or highlight a target with a pinned note, use `arcade tour` and `arcade note`
   ([docs/dev-control.md#show-kit-things](docs/dev-control.md#show-kit-things)). For demos he comes back to, add or
-  update a Lab Overworld station (one file in `games/lab/src/stations/`, [docs/lab.md](docs/lab.md#overworld-stations))
+  update a Lab station (one file in `games/lab/src/stations/`, [docs/lab.md](docs/lab.md#stations))
   instead of a tour; `arcade station <id>` jumps his tab there.
 - All tunable values belong in typed settings bound to the shared `LabPanel` (Backquote), with meaningful labels,
-  explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only.
+  explicit units/ranges/steps, approved defaults and Reset. Query parameters are for automation only. The panel draws
+  with knobs (`packages/knobs`, vendored from Kit's knobs repo; refresh it with `bun packages/knobs/scripts/sync.ts`,
+  never edit it in place).
 - Use the production effect/material/physics implementation through adapters, never a Lab-only facsimile; label
   unintegrated candidates and renderer stubs honestly. Improve the shared panel rather than adding game-specific UI.
 - New authoring paths must keep parameter Randomize reproducible and separate from room/effect seeds, validate

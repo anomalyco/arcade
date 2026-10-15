@@ -3492,8 +3492,8 @@ class PageControlRuntime {
 
   private connect() {
     if (!this.routerConfig) return
-    // A page embedded in a Lab Overworld station is driven through its embedder, not as a separate CLI target.
-    try { if (window.frameElement?.closest("[data-overworld]")) return } catch { /* cross-origin parent */ }
+    // A page embedded in a Lab station is driven through its embedder, not as a separate CLI target.
+    try { if (window.frameElement?.closest("[data-station-page]")) return } catch { /* cross-origin parent */ }
     const proto = location.protocol === "https:" ? "wss:" : "ws:"
     const wsUrl = `${proto}//${location.host}${this.routerConfig.controlPath}?token=${encodeURIComponent(this.routerConfig.pageToken)}&pageId=${encodeURIComponent(this.pageId)}`
     try {

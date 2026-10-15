@@ -6,7 +6,9 @@ the implemented workbench API and proof; research proposals are not supported ac
 Desktop workbench for the shared isolation Lab (`packages/kit/lab/`, served by the Lab app at `/arcade/lab/`).
 Embedded game debug overlays (`new LabPanel(...)` in Getaway, Blackout and Outbreak) retain their lightweight floating
 overlay behavior (`layout: "floating"`, `capture: "open"`). The standalone Lab mounts the three-column workbench shell
-with `LabPanel` in `layout: "inspector"` and `capture: "focus"`.
+with `LabPanel` in `layout: "inspector"` and `capture: "focus"`. Both draw with knobs through
+`packages/kit/lab-knobs.ts` ([lab.md](lab.md#bind-controls-to-typed-production-settings)); stations add widget slots
+around the viewport ([lab.md](lab.md#stations)).
 
 ## Pain points in the previous Lab UI
 
@@ -131,13 +133,15 @@ Catalog entries pushed directly in `buildCatalog()` still work; `libraryCategory
     across slider drags, `<output>` horizontal scrubs, `F`-hold scrubs, arrow-key holds, exact number edits, group
     resets and group randomizations.
   - `onFocusChange?: (focused: boolean, activeRow?: LabRow) => void` and `onToggle?: (visible: boolean) => void`.
-- Each group header provides `Randomize`, `Reset` (`aria-label="Reset <group>"`) and `Copy` (`aria-label="Copy <group> JSON"`).
-  In the inspector layout they are hover icons (⚄ ↺ ⧉) beside an accent modified count.
+- `LabOptions` also takes `history` (the workbench's undo and redo, used by knobs' `u`/`z`), `variants` (where saved
+  knobs variants are kept; the Lab keys them per section), `groupActions: false` (no dice) and `pill: false`.
+- Knobs draws each group as a card with a die (Random, `⌥` Mutate) and a reset icon that shows while the group differs
+  from its defaults; the header has Random, Reset, Copy and `?`.
 - Inspector layout only: `addControls(settings, controls, defaults?)` takes approved defaults for Reset and modified
-  highlighting; `setView({ order, filter })` orders groups and filters rows (also applied to keyboard navigation via
-  `LabNavigation.filter`); `reveal(key)` unfolds, focuses, scrolls and flashes a row; `resetControl(key)`;
-  `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin. Rows render as 24 px label/value
-  pairs with scrub fields (drag the value, double-click for exact entry), tabular numbers and a range fill.
+  highlighting; `setView({ order, filter })` orders groups and filters rows; `reveal(key)` focuses, scrolls and flashes
+  a row; `resetControl(key)`; `modifiedControls()`; `LabOptions.onPin`/`isPinned` add the per-row Watch pin (a dot at
+  the row's left edge on hover). `panel.mountView(el, { id, include })` adds another knobs card over the same settings
+  (station `controls` widgets), sharing the write path, transactions, tuning seed and history.
   Floating game overlays keep their previous look.
 - Horizontal pointer dragging on `<output>` (and holding `F` over an active numeric row) scrubs values continuously
   (`Shift` ×10, `Alt` ×0.1; `Escape` cancels an active `F`-scrub).
@@ -212,9 +216,10 @@ Priority order:
 3. **Active placement ghost or modal transform** (`Place <item>`, `Move <object>` `G`, `Rotate <object>` `⇧R` or `G`→`R`):
    - `Click` or `Enter` commits as 1 undo transaction (`Shift+Click` stamps and stays armed for ghosts), `[` / `]` rotates yaw by 15° (`Shift` 1°), arrow keys nudge on the ground plane, typing digits (`0–9`, `-`, `.`, `Tab` for `X`/`Z`) enters exact coordinate/angle values live, and `Escape` cancels and restores pre-gesture state with 0 history entries.
    - Selected movable objects also display an in-viewport **Transform Gizmo** (`packages/kit/lab/transform.ts`) with draggable Move (`✥`) and Rotate (`↻`) handles and inline numeric `X` / `Z` / `°` inputs, plus a context-aware viewport reticle (`[data-viewport-cursor]`) that hides in `Play` mode.
-4. **Focused Inspector (`LabPanel`)**: `↑`/`↓` rows, `←`/`→` adjust (`Shift` ×10, `Alt` ×0.1), `Tab`/`Shift+Tab` groups,
-   `Enter`/`Space` edit or toggle, `0` reset control, `Shift+0` reset group, `R` randomize group, `C` copy group JSON,
-   `Escape` returns focus to the canvas.
+4. **Focused Inspector (`LabPanel`, drawn by knobs)**: knobs' keys (`?` in the panel lists them): `↑`/`↓` rows,
+   `←`/`→` adjust (`Shift` ×10, `⌥`-drag fine), digits or `Enter` edit a number, `⌫` reset a row, `r`/`⌥R` random or
+   mutate, `g` the focused group, `⇧L` lock, hold `\` compare, `⇧C` copy, `u`/`z` undo through the workbench, `Escape`
+   returns focus to the canvas.
 5. **Play mode (`mode === "play"`)**: Entered explicitly with `P` (or `Play · P` / Radial `Possess`) when a character
    exists (`?bench` auto-enables `input.enabled` on `Spawn character` for non-interactive regression scripts). Captures a
    `prePlayCheckpoint` on entry. Owns `WASD`, Dvorak `, o a e`, arrows, `Space` (handbrake) and `Shift` (boost/sprint).

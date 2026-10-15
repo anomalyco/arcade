@@ -1,11 +1,11 @@
-// Runs one Overworld station's demo setup and every variant against the production Lab build (headless Metal),
+// Runs one Lab station's demo setup and every variant against the production Lab build (headless Metal),
 // asserts each command succeeds with no console errors, and captures a frame per variant.
 //   bun games/lab/scripts/prove-station.ts <station-id> [--out dir]
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
-import type { LabStation, StationCommand } from "@arcade/kit/lab/overworld/types"
+import type { LabStation, StationCommand } from "@arcade/kit/lab/stations/types"
 
 const id = process.argv[2]
 assert(id && !id.startsWith("--"), "usage: prove-station.ts <station-id> [--out dir]")

@@ -1,0 +1,22 @@
+{
+  "name": "@arcade/knobs",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./panel": "./src/panel/index.ts",
+    "./themes": "./src/themes/index.ts"
+  },
+  "scripts": {
+    "sync": "bun scripts/sync.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck"
+  },
+  "dependencies": {
+    "@kitlangton/rolling-number": "^0.4.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.9.3"
+  }
+}
