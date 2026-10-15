@@ -236,8 +236,10 @@ export class InventoryHud {
     }
     el.style.opacity = ""
     const isPeeking = Boolean(view.peek)
-    const anchorHeight = (isPeeking ? 0.15 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
-    const proj = cam.project(prompt.worldX, anchorHeight, prompt.worldY, w, h)
+    // At a workbench the prompt hangs below the bench, clear of the mat and the corkboard.
+    const below = prompt.kind === "bench"
+    const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, prompt.worldX, prompt.worldY)
+    const proj = cam.project(prompt.worldX, anchorHeight, below ? prompt.rect[3] + 0.2 : prompt.worldY, w, h)
     if (!proj.ok) {
       el.hidden = true
       return
@@ -249,7 +251,7 @@ export class InventoryHud {
     }
     el.dataset.strip = String(html.startsWith('<div class="strip'))
     el.hidden = false
-    el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : "-100%"})`
+    el.style.transform = `translate(${proj.x.toFixed(1)}px, ${proj.y.toFixed(1)}px) translate(-50%, ${isPeeking ? "18px" : below ? "8px" : "-100%"})`
   }
 
   private promptHtml(view: SessionView, prompt: InteractTarget, hold: number): string {
