@@ -19,8 +19,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Shared code and conventions
 
-- [shared-code.md](shared-code.md): what the games duplicate and what belongs in `packages/kit/`. Check before
-  writing something another game already has.
+- [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check
+  before writing something another game already has.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
 - [controls.md](controls.md): cross-game key bindings and HUD prompts. Read before changing input or prompts.
@@ -33,6 +33,7 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [lab.md](lab.md): the Lab authoring contract for tunable effects, materials, physics, audio and rendering
   options. Read before adding or tuning any of them.
 - [lab-workbench.md](lab-workbench.md): the current Lab shell and its input API.
+- [lab-adapters.md](lab-adapters.md): how a game adds Lab sections, material and physics adapters, and spawnables.
 - [knobs-requests.md](knobs-requests.md): what Arcade has asked knobs for, and whether a sync has brought it yet.
 - [lab-effects.md](lab-effects.md): how to tune Blackout and Getaway effects in the Lab.
 - [lab-scenes.md](lab-scenes.md): proposal for focused labs, lab kinds and collections (AR-25), and its data-model spike.

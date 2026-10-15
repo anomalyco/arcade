@@ -1,385 +1,48 @@
 # Shared code
 
-Code the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`, `brawl`) and `lab` carry their own copy of, and what to
-extract. Extract something only when it is the same idea across multiple games and has a current consumer in each. Game
-rules, maps, meshes and the look stay in the games. For the full engine layer map and the generated per-game adoption
-table across Getaway, Blackout, Outbreak, Carrier, Lab and Wings, see [architecture.md](architecture.md).
+What the workspace games (`getaway`, `blackout`, `outbreak`, `carrier`, `brawl`, `lab`) still carry their own copy of,
+and what to do about it. What is already shared, and which game uses which `@arcade/kit` module, is the generated
+table in [architecture.md](architecture.md); check it before writing something a game might already have.
+
+Extract something only when it is the same idea across games and has a current consumer in each. Game rules, maps,
+meshes and the look stay in the games. A game path that re-exports a kit module in one line (for example
+`games/getaway/src/game/fx.ts` → `@arcade/kit/vehicle/fx`) is not duplication.
 
 ## Where it goes
 
-`packages/kit/` is the private, versionless `@arcade/kit` Bun workspace package: plain TypeScript source, no build
-step. Getaway, Blackout, Outbreak, Carrier and Lab declare `"@arcade/kit": "workspace:*"` and import subpaths, for
-example:
+`packages/kit/` is the private, versionless `@arcade/kit` package: plain TypeScript source, no build step. Games
+declare `"@arcade/kit": "workspace:*"` and import subpaths (`@arcade/kit/gpu/renderer`, `@arcade/kit/compare.css`);
+Vite and Wrangler bundle the source. Proof and benchmark scripts for kit code live in root `scripts/` (Lab proofs in
+`scripts/lab/`), not in `packages/kit/`. `games/*/shared/` (the authoritative simulation) imports only pure kit
+modules (`sim/`, `net/`, `limits`), never `gpu/`, `client/`, `avatar/`, `fx/` or `lab/`. Install and verification
+are in the root [AGENTS.md](../AGENTS.md); Lab adapters are in [lab-adapters.md](lab-adapters.md).
 
-```ts
-import { LabPanel } from "@arcade/kit/lab-panel"
-import "@arcade/kit/compare.css"
-```
+## Remaining duplication
 
-Its exports resolve directly to `.ts` source (and `.css` assets); Vite and Wrangler bundle them in each game.
-`packages/kit/tsconfig.json` checks every shared TypeScript file independently, including files no game imports yet.
-Shared package tests (including `packages/kit/architecture-map.test.ts`, which checks `docs/architecture.md`) run with
-`bun run --cwd packages/kit check` or root `bun run check:packages`.
+Roughly in order of value against risk. Line counts are from `main` at the time of writing.
 
-## Install, check and ship
+| Idea | Shared version (users) | Game-owned copies | Notes |
+|---|---|---|---|
+| Room server plumbing | `net/room-core`, `server/{room-object,lobby-object,worker}`, `net/room-socket` (Blackout, Brawl) | Getaway `server/{core,room,lobby}.ts` (269 + 102 + 36), Carrier `server/{core,room,lobby}.ts` (1,206 + 95 + 72), Outbreak `server/{room-core,room}.ts` (291 + 71) | Outbreak's core already uses `net/{seats,jitter-buffer,bytes,interest,rewind}` directly. Getaway and Carrier keep public-id reconnect and latest-input overwrite. Move the Durable Object accept/tick loop and Lobby first; the per-game cores can follow. |
+| Snapshot interpolation and prediction | `net/{interpolate,prediction}` (Blackout, Brawl, Outbreak) | Getaway `src/game/{net,netcode,interp}.ts` (195 + 354 + 21), Carrier `src/net.ts` (605) | Server-side `net/rewind` (lag-compensated hitscan) is Outbreak-only; Blackout's sniper and rifle are the next users. |
+| Adaptive quality | `quality` (Outbreak) | Blackout and Brawl `MAX_DPR = 1.5`, Carrier 1.5, Getaway `Math.min(dpr, 2)` | Wiring is per game: each needs its own scale hooks (DPR, shadows, ray steps). |
+| WebGPU renderer | `gpu/renderer`, `gpu/shaders`, `gpu/mesh` (Blackout, Brawl, Lab, Outbreak) | Getaway `src/render/{renderer,shaders,mesh}.ts` (585 + 645 + 123, ortho shadows, 48-byte vertices), Carrier `src/render/renderer.ts` (207, ocean and sky) | Migrate Getaway behind `scripts/prove-pixel-parity.ts`. Carrier's ocean and sky passes are game-specific. |
+| Frame light packing | `gpu/scene-frame` (`SceneLights`, `packSceneFrame`; Brawl) | Blackout `src/render/lighting.ts` (253), Outbreak `src/lighting.ts` (1,500) | Both pack `FRAME_FLOATS` by hand. Outbreak's map-aware culler with monitor/bounce caches is more than `scene-frame` does; generalise it when a second game needs it. |
+| Keyboard input | `client/input` (Blackout, Brawl, Outbreak) | Getaway `src/game/input.ts` (123), Carrier `src/input.ts` (142) | Getaway, Blackout, Outbreak and Carrier already use `client/controls` for prompts. |
+| Camera and shake | `client/camera` (`Camera.add`, `HitStop`, shake controls; Blackout, Brawl, Lab, Outbreak) | Getaway `src/game/camera.ts` (93) plus `Scene.shake`/`hitStop`, Carrier `src/render/camera.ts` (224, `trauma²`) | Move the shake loops onto the shared helpers; the camera rigs stay per game. |
+| Vehicle simulation | none; presentation is shared (`vehicle/{chassis,body-pose,emissions,fx,lights,audio}`) | Getaway `shared/sim/vehicle.ts` (415), Blackout `shared/sim/vehicle{,-rules}.ts` (353 + 369), Outbreak `shared/vehicles.ts` (1,852) | Handling is tuned per game. A shared core is worth it only if a fourth game needs cars. |
+| Tyre marks | `fx/skids` + `fx/skid-renderer` through `vehicle/driving-fx` (Outbreak) | Blackout's sprite skids in `src/game/vehicles.ts`; Getaway keeps its sprite path on purpose (byte-identical captures, `prove-driving-fx-parity.ts`) | Blackout can switch to `contacts()` + `SkidMarks` the way Outbreak did. |
 
-Run `bun install --frozen-lockfile` at the repository root. The workspace explicitly includes `games/getaway`,
-`games/blackout`, `games/outbreak`, `games/carrier`, `games/lab`, `games/brawl` and `packages/*`; it has one root `bun.lock` and hoisted dependencies configured in `bunfig.toml`.
-Wings, landing and redirects retain their independent installs, lockfiles and workflows.
-
-Run each game's `bun run check`, dev, build and deploy commands from its own directory as before. Keep Vite,
-Wrangler, TypeScript and Playwright versions aligned in the game manifests. Root scripts declare their own tooling
-dependencies in the root manifest and use normal package imports rather than reaching into a game's `node_modules`.
-
-All workspace game workflows (`getaway.yml`, `blackout.yml`, `outbreak.yml`, `carrier.yml`, `lab.yml`, `brawl.yml`) install at the root, then check and smoke-load the game's production bundle. Their paths include
-`packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml`, so shared changes check all consumers.
-Blackout also watches `games/getaway/shared/**` for its cross-game benchmark typecheck, and Blackout and Outbreak watch
-`games/getaway/public/sfx/**` for the shared audio asset route. A separate
-`packages.yml` workflow runs the shared packages' typecheck and tests. Deploy jobs stay per game.
-
-For Cloudflare Builds, use the repository root for installation (`bun install --frozen-lockfile`) and then target the
-game (`bun run --cwd games/blackout build` / `bun run --cwd games/blackout deploy`). A game-only source upload omits
-the workspace package. Verify packaging from a clean `git archive` export with the root frozen install, package
-checks, all affected game checks, and `bunx --no-install wrangler deploy --dry-run` from each game.
-
-## Lab panel
-
-`packages/kit/lab-panel.ts` is the one debug panel for every game: switches, sliders, presets, Copy, perf readout. It
-draws with knobs (`packages/knobs`, vendored from Kit's knobs repo) through `packages/kit/lab-knobs.ts`. New tunables go there, not into URL parameters. When a game needs a new kind of control, add it to the shared panel.
-
-## Candidates
-
-Shared FX now lives in `packages/kit/fx/` ([API](../packages/kit/fx/README.md)). Getaway's two small adapters
-use the extracted tyre simulation and shader/pipeline without changing the image. Blackout supplies camera,
-culled lights, readable depth and wall rectangles to the bounded volume path. The same package supplies fixed
-particle storage, rate/distance emitters, lit billboards, bouncing/stretched sparks and instanced debris.
-The particle renderer's current consumer is the shared Lab (`/arcade/lab/`); existing game debris
-remains game-owned. Both workflows already trigger on `packages/kit/**`, and both client typechecks include the
-FX source. `packages/kit/lab/` owns the sandbox, controls and test scene. Each game's `src/lab.ts` supplies camera
-matrices and material catalogs. FX proof and GPU-cost limitations are in `perf/fx-kit.md`.
-
-Driving FX are shared too. Getaway's skid ribbons, tyre smoke, sparks and exhaust already lived in
-`packages/kit/vehicle` (`fx.ts`, `emissions.ts`) and `packages/kit/fx` (`smoke-trail.ts`, `tyre-renderer.ts`);
-Outbreak used them only through Getaway's drift proxy, which rarely fired on its grippy cars, drew near-black 9 s
-sprite marks on dark asphalt and self-lit smoke. Now `fx/skids.ts` + `fx/skid-renderer.ts` add persistent multiplied
-decals (kit `Renderer` `skids` input), `vehicle/slip.ts` estimates per-wheel slip from body motion,
-`VehicleEmissions.contacts` takes per-wheel contacts with road/dirt/wet surfaces, and `vehicle/driving-fx.ts` is the
-shared Lab group. Getaway keeps its proxy path and sprite skids with byte-identical captures
-(`games/getaway/scripts/prove-driving-fx-parity.ts`); Outbreak uses the new path
-(`games/outbreak/scripts/prove-driving-fx.ts`). Blackout's vehicles still use `car()` and sprite skids and could
-switch to `contacts()` + `SkidMarks` the same way; Carrier has no ground vehicles.
-
-All Lab tuning uses `LabPanel`, including the section/effect/debug selects, parameter sliders and playback,
-copy and carve actions. `LabControl` supports toggles, typed selects, ranges and actions; `addControls(settings,
-controls)` binds another game-owned settings object without copying it. Toggle presets leave selects and ranges
-alone. The panel captures game keys while open, preserving main's keyboard navigation/search/exact editing.
-The standalone sandbox uses `capture: "focus"`, so clicking the canvas enables its playable character while keeping
-the panel visible. Getaway retains the approved single tyre-smoke look; study variants do not return to gameplay.
-
-## Add an isolation experiment to the Lab
-
-Open the Lab (`/arcade/lab/` under `bun run dev`). Backquote opens the shared panel; its Section select
-chooses Effects, Lighting, Materials, Physics or Spawn. The sandbox has one device and frame loop. Switching sections
-clears shared particles and volumes, calls the old section's `leave`, then calls the new section's `enter`.
-Only the active section updates or draws. Lighting settings survive section changes so effects can be inspected
-under the lighting you just tuned. Hidden pages stop simulation and rendering.
-
-Effects has eight presets, play/loop, retrigger, parameter sliders, Copy and smoke carving. Lighting has up to
-eight lights, lamp power/radius/height, a spotlight with cone/yaw/pitch, polar shadows, moon controls and tone/grade.
-Density, additive particle overdraw, smoke optical depth and volume bounds are Effects views. Lighting-only and
-surface normals are available across sections. Normals omits tyre/volume smoke, which has no surface normal.
-GPU ms measures the dependent interval from polar compute (or scene start) through the offscreen composite.
-The presentation copy is outside that interval; unsupported timestamp queries display “unavailable”.
-
-A game adds sections through `lab({ camera, sections })` in its entry file. For example, this isolated emission
-study uses the shared particle renderer and puts its rate control in the shared panel:
-
-```ts
-import { lab, type SectionFactory } from "../../../packages/kit/lab/main"
-import { Emitter, type ParticleSpec } from "../../../packages/kit/fx/particles"
-
-const fountain: SectionFactory = ({ particles }) => {
-  const settings = { rate: 40 }
-  const emitter = new Emitter()
-  const spec: ParticleSpec = {
-    kind: "water", life: 2, size: 0.1, growth: 0, gravity: 10, drag: 0.2,
-    bounce: 0.2, r: 0.3, g: 0.7, b: 1, alpha: 0.8,
-  }
-  return {
-    id: "fountain", label: "Fountain", settings,
-    controls: [{ key: "rate", label: "Rate", type: "range", min: 1, max: 100 }],
-    enter: () => emitter.reset(),
-    update(dt) {
-      emitter.step(0, 0.5, 0, dt, settings.rate, "rate",
-        (x, y, z) => { particles.spawn(spec, x, y, z, 0, 8, 0) })
-      particles.update(dt)
-    },
-    telemetry: () => `${particles.count} particles`,
-  }
-}
-
-// Keep the game's existing camera writer.
-void lab({ camera, sections: [fountain] })
-```
-
-`LabSection` in `packages/kit/lab/types.ts` also supports `prepare()` for uploads and `draw(pass)` for game-owned
-geometry. The pass is 4× MSAA, `rgba16float`, with `depth24plus`. Bind your own pipeline and resources before
-drawing. `context.stage.viewProj` and `.eye` expose the current camera. Allocate buffers in the factory, reuse
-them in `prepare`, and release section-specific external listeners in `leave`. Factories run once; re-entry calls
-`enter` again. IDs must be unique. Section controls bind directly to its `settings` object.
-
-### Connect Materials and Physics through adapters
-
-Materials runs the shared procedural material recipes from `packages/kit/gpu/surface-materials.ts` across Room, Material
-Ball, and Surface Plane swatches under the Lab's lighting presets, with Before/After/A-B Split comparison, typed
-parameter ranges/units, Reset, Undo/Redo, versioned preset export/import, and a separate deterministic `tuningSeed` for
-group randomization. Both entries also import the actual game `MAT` constants (25 codes) in the folded Game Catalog group,
-and `MaterialAdapter.prepare(code, context)` / `draw(pass, code)` remain available for game-specific code hooks.
-The shared Lab itself imports no game modules. `packages/kit/textures/` and `scripts/texture-assets.ts` supply the
-16-layer `256×256` `rgba8unorm-srgb` material texture array (`texture-assets/*.webp`, 1.10 MB prepared, 1.18 MB sources)
-with linear-light mipmaps, authored roughness in alpha, derived lawn detail normal, and per-recipe Lab controls.
-
-Physics uses the merged `getaway-clutter` solver and shares the Spawn section's props. The adapter supplies
-`bodies`, `update(dt)`, `reset()` and optional `wakeAll()`. `DebugBody` uses the client's position, half-extents,
-yaw/pitch/roll, awake and enabled fields. Convert rotations if the solver differs from local Z roll, X pitch,
-then Y yaw. The Lab draws at most 512 oriented collider boxes, orange awake and cyan sleeping, and counts every
-enabled body. Play, Colliders, Sleeping bodies, Reset and Wake all stay in the panel. Without an adapter it shows
-“adapter pending” and zero bodies. A standalone section can still use `lab({ camera, physics: context => adapter })`.
-
-### Add spawnables through game adapters
-
-Both game entries compose Getaway's `src/lab/spawn.ts` with Blackout's `src/lab/spawn.ts`. Getaway registers every
-vehicle spec and all 17 street prop kinds. Blackout registers its animated soldier. The generic core imports no
-game code; `SpawnFactory` supplies an item world and a list of character factories:
-
-```ts
-import { lab } from "../../../packages/kit/lab/main"
-import { getawaySpawn } from "./lab/spawn"
-import { blackoutSpawn } from "../../blackout/src/lab/spawn"
-
-void lab({
-  camera, // Use the sixth argument, focus [x, y, z], as the camera's target.
-  spawn(context) {
-    const getaway = getawaySpawn(context)
-    return {
-      items: getaway.items,
-      characters: [...getaway.characters, blackoutSpawn(context)],
-    }
-  },
-})
-```
-
-Add a character by appending a `CharacterSpawnable` with a unique `id`, a `label`, and `create(context, at)`.
-The factory returns `point` (world X/Y/Z and yaw), `update(dt, input)`, `prepare()`, `lights()` and `inspect()`.
-Optional `leave()` releases the old character when it is replaced. Cache models in the factory closure so
-respawning reuses GPU buffers. `context.stage.meshes` accepts position/normal/RGB/emission vertices, then draws
-instances submitted during `prepare`. Adapters translate game material codes and rotation conventions. The Lab
-uses the actual car/soldier geometry with simplified shared shading; it does not run either game's whole renderer.
-
-Getaway's adapter calls `stepAndCollide`, `Chassis`, `wheelRotation` and `VehicleEmissions`. Blackout's calls its
-shared movement step and `animate`/`pose`. A character that advances the shared tyre trail sets `updatesTrail`.
-The core supplies canvas-owned WASD/Dvorak/arrows, Space and Shift state. Cars use Space for handbrake and Shift
-for boost; soldiers use Shift to sprint. Clicking the canvas focuses gameplay. Panel focus, panel pointer input,
-Backquote, window blur and section changes release held keys. The shared panel's interaction model is unchanged.
-
-An `ItemWorld` supplies `items`, `spawn(id, at)`, `clear()`, physics lifecycle methods, `prepare()`, `lights` and
-`inspect()`. Add street props through Getaway's `PROP_KINDS`/`SPECS`, mesh and contact-shape catalog, so the Lab
-and game share their dimensions and reactions. `StreetProps.spawn` and `clear` are bounded client-only operations.
-Car contacts use the production swept-car contact path, including breakage, hydrant water and delayed propane
-explosions. Props affect presentation and do not change authoritative car handling.
-
-Spawn keeps one controlled character, at most 512 props and four placed lights. Choose Character then Spawn
-character. Item placement supports the character's position, a distance ahead, a row along its heading or a grid.
-Clear all removes items, debris, reactions, triggered effects and placed lights while retaining the character.
-The Effects controls trigger the eight shared presets. Lights drops a lamp, spotlight or torch; the
-rendering budget remains eight lights, with explosion flashes and character lights taking priority over placed
-lights and the yard fill. Spawn and Physics share the same ground plane, three walls and driveable ramp.
-Switch to Physics to pause/reset/wake props or inspect colliders and awake/sleeping counts.
-
-Run `bun games/getaway/scripts/prove-lab-spawn.ts` on headless Metal. It drives a car through five cones and a
-propane tank with actual keyboard input, verifies chassis motion and tyre emission, and walks/sprints the soldier
-through Blackout's host. It also exercises every car spec, row/grid/clear, all effects, placed lights and panel
-input release. Evidence is in `perf/lab-spawn.json`; stills are in `captures/lab-spawn/`.
-
-To add a game to the Lab, give it a module in `games/lab/src/games/` that exports its sections, materials and
-characters, and list it (with its section ids) in `games/lab/src/games/registry.ts`. Each module is its own chunk,
-loaded only when its game is chosen. Game-specific assets/dependencies belong in the game's adapters. Query parameters never select sections or looks; `?bench` only stops the live loop and
-exposes `window.lab` for deterministic automation. Current merged-host proofs:
-`bun games/getaway/scripts/prove-lab-spawn.ts`, `prove-lab-effects.ts`, `prove-fire-water.ts` and
-`prove-fx-integration.ts` on headless Metal. Earlier `prove-fx-playwright.ts` records the pre-cleanup study protocol.
-
-## Shared motion blur
-
-`packages/kit/gpu/motion-blur.ts` owns the bounded eight-tap, depth-aware shutter gather, camera reprojection,
-stable transform history and transient part identities. Getaway supplies half-resolution camera/car/wheel/particle
-velocities before bloom. Blackout supplies full-resolution MSAA MRT velocities and embeds the shared gather in its
-existing composite. Both accept current/previous VP transforms, elapsed time, colour/depth and strength/shutter.
-Transient keys preserve emission points and allow fast tracer travel without weakening actor teleport rejection.
-Neither path feeds colour history back into the next frame. DOM HUDs stay outside the blur.
-
-Getaway defaults on at strength 0.65 / shutter 0.5, with stronger blur under the existing nitro envelope. Blackout
-remains off by default at strength 1 / shutter 1 when enabled. All settings live in Backquote Lab controls.
-The final M5 Max 1440p whole-GPU paired deltas are Getaway +0.233 ms (MAD .002), Blackout office +0.229 ms
-(MAD .004), downtown +0.813 ms (MAD .212). The downtown MRT path misses the 0.5 ms target. There is no tile-max;
-foreground expansion and layered transparent velocity remain conservative. Reproduce with `prove-motion-blur.ts`
-and `games/blackout/scripts/prove-shared-motion.ts`. Raw evidence and limits: `perf/shared-motion.md`.
-
-## Other shared code and candidates
-
-`packages/kit/vehicle/` now owns Getaway and Blackout's presentation chassis, body transforms, lamp submission and
-Lab tunables, tyre heat/emissions, skids, pops, and procedural engine/gearbox/tyre voices. See its README for the
-coordinate and renderer contracts. Each game supplies terrain, interpolated controls, meshes and renderer/audio
-sinks. Blackout's adapter converts its +X-forward mesh convention and kilograms; simulation and human rigs remain
-game-owned. The smoke pool and GPU pipeline are canonical in `kit/fx`; vehicle smoke paths are compatibility adapters.
+Intentional copies, not to extract: Carrier's ocean rain (`src/render/rain.ts`, displaced onto Gerstner waves) and
+Wings's Three.js rain are not `@arcade/kit/weather`; Wings is an independent project.
 
 ## Sound
 
-The shared sound library (`@arcade/kit/audio/library`, [sfx-library.md](sfx-library.md)) holds sounds by semantic id
-with one source file each. Migrations checked against [sfx-inventory.md](sfx-inventory.md) and left as follow-ups,
-because none is a clean swap:
+The shared library (`@arcade/kit/audio/library`, [sfx-library.md](sfx-library.md)) holds sounds by semantic id.
+Remaining overlap, checked against [sfx-inventory.md](sfx-inventory.md); none is a clean swap:
 
-- **Blackout guns, footsteps and mechanics** are procedural (`games/blackout/src/audio/sound.ts`), animation-cued and
-  proven graph-identical to the Lab's path (`games/lab/scripts/prove-game-audio.ts`). Library samples would change
-  their sound and break that proof. Blackout has no pistol; the library has no rifle, shotgun or sniper. To share them,
-  render Blackout's synth into library entries or give the library procedural entries.
-- **Blackout vehicle samples** (`public/sfx/vehicles/`): its crash takes are different encodes of Getaway's crash
-  family (not byte-identical, different lengths and loudness). Pick one crash family. The six engine loops and
-  `skid.mp3`, unused since engines became procedural, were deleted.
-- **Getaway** sounds are vehicle, siren, radio and round stings: nothing in the library overlaps except `ui.click`,
-  which the library reuses from Getaway's own file in place. `repair.mp3` clips (67 samples, +1.4 dBFS).
-- **Carrier** has its own slot bank, picks and SOUNDS audition board (naval weapons, ocean, weather). `ui.tick` reuses
-  its picked click in place. 99 alternate takes (5.8 MB) are in the repo but load only when auditioned.
-- **Wings** is procedural and an independent project.
-
-### Outbreak M1 extractions
-
-Blackout and Outbreak now consume `@arcade/kit/gpu/{mesh,renderer,shaders,limits,level}`,
-`@arcade/kit/client/{camera,input,controls}`, `@arcade/kit/rig`, and `@arcade/kit/sim/{geom,rng}`.
-Blackout's original paths re-export the shared implementations. The renderer owns packed vertices/instances,
-polar-light compute, cutaway chunks, MSAA/HDR targets and the five-level bloom/post chain. `makeSceneShader`
-accepts pure WGSL surface and directional-light hooks, with Blackout's shader behavior as its default.
-An optional exploration texture is available at binding 9; Blackout never samples it. Binding 7 retains the motion
-uniform, and binding 8 holds the separate fine moon mask. The shipped Blackout look/motion variants share this engine.
-`gpu/surface-materials.ts` supplies opt-in matte outdoor finishes and footprint-filtered detail. `gpu/look.ts`
-(`@arcade/kit/look`) and `lab/looks.ts` supply the shared `LookSettings` presets, WGSL grading/lighting hooks, and the
-Lab `Looks` debug room; `Renderer.setLook` / `FrameInput.look` opt into `makeLookSceneShader` and `makeLookPostShader`
-while keeping `"Current"` pixel-identical to the baseline pipelines. Outbreak selects
-the existing dense shadow kernel and custom post constants through shared shader options; default Blackout output
-is preserved. House and terrain generation remain game-owned. See `docs/outbreak-look.md` for measured cost and gaps.
-
-Outbreak reserves polar slot zero for eye-height sight with zero light power. Its CPU exploration mask uses the
-same ray angles and slab geometry. The shared `Input` binds movement and actions by physical `KeyboardEvent.code`
-(`KeyE` primary interact, `KeyF` alias) while `@arcade/kit/client/controls` resolves on-screen prompt labels from
-`navigator.keyboard.getLayoutMap()` (see [Controls standard](controls.md)). Rig math, IK, springs and human
-dimensions are shared. Outbreak's civilian meshes and unarmed planted-foot gait adapt only the needed parts of
-Blackout's soldier code.
-
-Human locomotion, profiles and semantic detachment now live in `human-locomotion`, `human-profile` and `human-pose`
-on the canonical rig. Blackout supplies weapon/reload/melee clips. See [Human rig](human-rig.md) for ownership,
-attachments, stable cosmetic IDs and velocity spaces.
-
-Remaining migration targets: split material-specific
-scene shading from the shared WGSL contract; generalize the map-aware LightCuller when another game needs its
-monitor/bounce caches. The Outbreak map/lighting writer and gameplay Session stay game-owned.
-
-Custom discard routing is separate from appearance hooks. `solidCutaway` defaults to the old `cutaway` hook;
-Outbreak explicitly leaves it empty and marks roof/high chunks with `LevelChunk.customCutaway`. Pure opaque
-triangles have no screen cutaway bounds, while walls retain the existing screen test. Other consumers retain
-their existing shader and routing behavior. Measurement and limits: `perf/outbreak-performance.md`.
-
-Getaway's renderer and input are not migrated in this milestone. See `games/outbreak/README.md` for proof and limits.
-
-Already shared: `packages/kit/compare.ts` / `compare.css` serve both comparison pages; `gpu-perf.ts` instruments
-both GPU devices and their historical counterparts.
-`getaway-main-hook.ts` supplies both games' historical Getaway instrumentation without a cross-game script import.
-`lab-panel.ts` supplies every game's Lab panel (floating in the games, inspector in the Lab) and its input isolation;
-knobs draws it through `lab-knobs.ts`. `lab-navigation.ts` keeps the DOM-free control model (rows, groups, units,
-value changes, default resets). Controls, keys and the authoring rules are in [lab.md](lab.md).
-Each game's `src/ui/debug-overlay.ts` declares its own effect settings and telemetry adapter. The panel opens for
-Backquote; `?perf=1` / `?lab=1` open it for automation. Styles and effect comparisons belong in this panel.
-
-In rough order of value against risk:
-
-1. **Matchmaker and lobby Durable Object (completed in `@arcade/kit/sim/matchmaking`).** `SharedMatchmaker`,
-   `pickOpenRoom`, `randomRoomCode`, and `cleanPlayerName` are shared across Getaway, Blackout, Outbreak, and Carrier,
-   with configurable `maxPlayers`, `staleMs`, `isOpen`, and `preferPhase`. All four `Lobby` Durable Objects persist room
-   reports in `ctx.storage`.
-2. **2D OBB contacts, spatial grids, and binary min-heaps (completed in `@arcade/kit/sim/{obb,geom}`).** `obb.ts`
-   provides the shared Box2D 2-point SAT manifold and block impulse solver across Getaway (`ShapeXZ`, `resolveXZ`) and
-   Blackout (`ShapeXY`, `resolveXY`); `geom.ts` provides `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, and `MinHeap`
-   across Blackout and Outbreak (`ai.ts`, `nav.ts`, `level-mesh.ts`, `lighting.ts`, `world-gen.ts`).
-3. **Seeded RNG, hashing, and progression ledger (completed in `@arcade/kit/sim/{rng,ledger}`).** `rng.ts` exports
-   `mulberry32`, `Rng` (with `.seed()`), `seedOf`, `hash2`, and `hash3` across Getaway, Blackout, Outbreak, Carrier,
-   Lab, and the audio runtime; `ledger.ts` powers Outbreak's deterministic inventory, containers, and workbench crafting.
-4. **Physical keyboard controls and HUD labels (completed in `@arcade/kit/client/{controls,input,key-cap}`).** Physical
-   `KeyboardEvent.code` bindings, `KeyStateTracker`, `isEditableEventTarget`, `requestCanvasPointerLock`, QWERTY
-   `keyLabel` / `moveClusterLabel` prompts with the opt-in `keyLabelSetting`, and the `keyCapHtml` / `keyPromptHtml`
-   key caps (tap, hold ring, wide, mouse) are shared across Getaway, Blackout, Outbreak, Carrier, and Lab.
-5. **Dev supervisors, build hashes, and rolling perf telemetry (completed in `scripts/{build-id,game-dev}.ts` & `@arcade/kit/gpu-perf`).**
-   `writeBuildId` and `runGameDev` unify per-game build-ID and dev supervisors; `PerfSampler` unifies rolling p50/p95/FPS
-   telemetry formatting across `DebugOverlay` panels.
-6. **Modular Look & Vignette shaders (`@arcade/kit/gpu/look-shaders`, `@arcade/kit/lab/looks-room`, `games/outbreak/src/vignette/`).**
-   `makeLookSceneShader` and `makeLookPostShader` live in `gpu/look-shaders.ts` (re-exported by `gpu/shaders.ts`), the
-   Lab Looks calibration room lives in `lab/looks-room.ts`, and Outbreak's vignette splits into `vignette/{presets,shaders,section}.ts`.
-7. **Shared Weather system & Lab Weather section (`@arcade/kit/weather`, `packages/kit/lab/weather.ts`, `games/outbreak/src/weather.ts`).**
-   `packages/kit/weather/` owns `WeatherSettings`, the six presets (`Clear`, `Drizzle`, `Rain`, `Storm`, `Fog`, `Snow`),
-   continuous-phase `WeatherSimulation` (wind gusts, seeded multi-stroke lightning, progressive surface `wetness`),
-   `weatherSurfaceDeclarationsWgsl` (puddle masks, concentric raindrop ripples, stretched wet mirror streaks), and
-   `WeatherRenderer` (GPU-instanced two-layer streaks/snowflakes, splash rings + upward crowns + roof-eave drips,
-   interior building exclusion rects, and 12-light cone/pool illumination with `litOnly` gating). Carrier retains its
-   ocean-specific `games/carrier/src/render/rain.ts` and `shared/weather.ts` because its splash pass is displaced directly
-   onto `SEA_WGSL` Gerstner waves under a reversed-Z `RelView` ocean camera, while sharing `@arcade/kit/gpu/mesh`,
-   `@arcade/kit/fx/{particles,particle-renderer,explosion}`, `@arcade/kit/sim/{matchmaking,rng}`,
-   `@arcade/kit/client/{controls,key-cap}`, `@arcade/kit/lab-panel`, and `@arcade/kit/dev-control`. Wings
-   (`games/wings/src/render/world/rain.ts`) retains its Three.js TSL node-material rain/spray in its independent project.
-8. **Composable Camera Shake, Motion-Blur Impulse & Wet Ballistic Blood (`@arcade/kit/client/camera`, `@arcade/kit/gpu/motion-blur`, `@arcade/kit/fx/splatter*`).**
-   Each game wires its own combat events directly to small composable primitives with plain default settings objects and
-   per-primitive Lab controls rather than a central event bus or preset registry:
-   - `packages/kit/client/camera.ts` owns `Camera.add(trauma, dir?, kick?)`, `kick`/`kickAngle`, `punch`/`killPunch`,
-     `addFlash`/`damageFlash`, `smoothNoise1D` (`trauma²` 2-octave quintic gradient noise for translation and roll),
-     `attenuateShake`, `prefersReducedMotion`, `HitStop` (`trigger`/`step` presentation time-scale helper),
-     `cameraShakeDefaults()`, and `cameraShakeControls` (`shakeScale`, `kickScale`, `damageFlashScale`, `shakeDecay`,
-     `shakeFrequency`, `maxShakeOffset`, `maxShakeRoll`, `reduceMotion`).
-   - `packages/kit/gpu/motion-blur.ts` owns `MotionBlur`, `MotionBlurBurst` (decaying directional + radial impulse velocity
-     and shutter boost packed into `MotionFrame`), `motionBlurDefaults()`, and `motionBlurControls` (`enabled`, `strength`,
-     `shutter`, `burst`, `burstDecay`). `Renderer` (`packages/kit/gpu/renderer.ts`) runs `MotionBlur` before bloom and
-     post composite whenever continuous shutter blur or an impulse burst is active, with `0.000 ms` steady-state overhead
-     when inactive.
-   - `packages/kit/gpu/look-shaders.ts` and `packages/kit/gpu/shaders.ts` consume `G.z` (`render.grade[2]`) as the damage
-     vignette flash uniform in the existing post composite.
-   - `Splatter` and `SplatterRenderer` (`packages/kit/fx/splatter*.ts`) add `zombieBlood` and `survivorBlood` presets,
-     3-tier exit-wound/floor-fan/wall-arc trajectories, two-pass coplanar-first terrain receiver projection, Beer–Lambert
-     optical depth (coagulated venous core to arterial rim), raised meniscus wet specular glints, vertical wall gravity
-     drips, and Noir selective-colour preservation (`alpha: { srcFactor: "zero", dstFactor: "one" }`). Adopted in Outbreak
-     and Blackout; follow-up candidates are migrating Getaway's `Scene.shake`/`hitStop` and Carrier's camera `trauma²`
-     loops onto `@arcade/kit/client/camera` helpers.
-9. **Remaining candidates:**
-   - **Room plumbing (Blackout and Brawl):** `@arcade/kit/net/room-core` (`RoomCore`: build handshake, `Seats` held 15 s
-     for a reconnect with the private token from `welcome` (a public id never reclaims a seat), a `JitterBuffer` per
-     seat feeding the World one intent per tick with the game's `InputOps` edges carried forward, a per-socket token
-     bucket (120 messages/s, burst 240), idle kick with a countdown, fixed-tick broadcast of events, roster changes and
-     snapshots),
-     `@arcade/kit/server/{room-object,lobby-object,worker}` (the Room Durable Object's socket accept, bounded catch-up
-     tick loop and throttled Lobby reports with a heartbeat; the storage-backed Lobby; the `/arcade/<game>` Worker
-     router) and `@arcade/kit/net/room-socket` (the client socket with token seat reclaim, backoff and version reload).
-       Blackout's `server/room.ts` keeps only its World hooks and room options. Getaway, Outbreak and Carrier still own
-     theirs.
-   - **Brawl's engine pieces (completed):** `@arcade/kit/sim/abilities` (data-driven, server-authoritative abilities:
-     wind-ups, cooldowns, channels and recovery; melee, projectiles and lobs, bursts, zones, seeking swarms, dashes with
-     trails, grabs and throws, blinks, decoys, swaps and status effects; a compact `abilityView` for snapshots), `sim/props` (shoveable circle/box props with knockback and wall bounces), `sim/boids` (seeded
-     flocks), `gpu/boot` (`openGpu`, shared with Blackout), `gpu/scene-frame` (`SceneLights` + `packSceneFrame` for a
-     small fixed light rig) and `avatar/anim` `reach` (torso-space hand targets for cast poses). Brawl is the first
-     consumer of abilities/props/boids; Blackout's grenades and Outbreak's pushable bins are candidates for props.
-   - **Post-processing chain & vertex packing in Getaway:** Getaway still owns its ortho-shadow renderer and 48-byte
-     vertex layout while Blackout and Outbreak share `@arcade/kit/gpu/{renderer,mesh}`.
-   - **Session & snapshot interpolation:** `@arcade/kit/net` now has the shared pieces (Outbreak co-op is the first
-     consumer): `jitter-buffer` (Wings's adaptive playout buffer, with one-shot edges carried forward instead of dropped
-     and small packet-loss gaps bridged by stand-ins), `seats` (public id vs private reconnect token), `bytes` (binary
-     writer/reader with LEB128/ZigZag varints, 8/12/16-bit angle packers, nibble pairs, bitsets and shared-prefix `frame`),
-     `interest` (`inInterestBubble`, `PriorityAccumulator`, `AckHistory` for delta compression against `ackSnapTick`, and
-     `BandwidthPacer` for adaptive snapshot stride), `rewind` (`RewindHistory` for server-side lag-compensated hitscan
-     rewind), `interpolate` (`SnapshotBuffer`, render between the two snapshots around `now − delay`) and `prediction`
-     (`Predictor` replay on ack, `Smoother` correction offset). `RoomCore` (Blackout, Brawl) uses `seats` and
-     `jitter-buffer`; Blackout draws remote soldiers and vehicles through `interpolate` and predicts with `prediction`.
-     `RewindHistory` for 20-tick sniper/rifle hitscan rewind in Blackout, and Getaway's `queue` trim and public-id
-     reconnect, are the next adopters ([outbreak-coop.md](outbreak-coop.md)).
+- **Blackout's guns, footsteps and mechanics** are procedural (`games/blackout/src/audio/sound.ts`) and proven
+  graph-identical to the Lab's path (`games/lab/scripts/prove-game-audio.ts`). Library samples would change their
+  sound. To share them, render the synth into library entries or give the library procedural entries.
+- **Blackout's crash samples** (`public/sfx/vehicles/`) are different encodes of Getaway's crash family. Pick one.
+- **Getaway** shares only `ui.click` with the library. **Carrier** keeps its own slot bank and audition board.

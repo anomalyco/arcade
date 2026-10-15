@@ -13,7 +13,7 @@ Choose Spawn, pick a character, then Spawn character. Click the canvas to drive 
 Space is the car handbrake; Shift boosts the car or sprints the soldier. Item controls place a single prop, a row
 or a grid at the character or ahead of it. Clear all retains the character. Physics inspects that same item world.
 
-See [how to add a section or adapter](../../../docs/shared-code.md#add-an-isolation-experiment-to-the-lab).
+See [how to add a section or adapter](../../../docs/lab-adapters.md).
 
 The fixture lighting is a sandbox renderer. Its polar table handles nine box occluders at 256 angles for up to
 eight lights; moon shadows use analytic box tests. The calibration sphere only receives shadows. Shared particle
