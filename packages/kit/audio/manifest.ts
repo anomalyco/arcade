@@ -274,6 +274,9 @@ type DecodedPcm = {
  * Generates a deterministic PCM stem from a metadata fallback recipe so offline/headless tests
  * and environments without network fetch still exercise the exact sample-layer graph.
  */
+/** Level of a looped stand-in relative to a one-shot's: about -28 dBFS RMS instead of -14. */
+const LOOP_FALLBACK_GAIN = 0.2
+
 export function synthesizeFallbackPcm(meta: SampleAssetMeta, sampleRate = 48000): DecodedPcm {
   const spec = meta.fallbackSynth ?? {
     durationSeconds: meta.durationSeconds ?? 0.4,
@@ -326,6 +329,11 @@ export function synthesizeFallbackPcm(meta: SampleAssetMeta, sampleRate = 48000)
   }
 
   if (spec.loop || meta.loop) {
+    // A constant loop at the one-shot level sits ~16 dB over the -30 LUFS beds it stands in for.
+    for (let i = 0; i < length; i++) {
+      left[i]! *= LOOP_FALLBACK_GAIN
+      right[i]! *= LOOP_FALLBACK_GAIN
+    }
     const fade = Math.min(128, Math.floor(length / 4))
     for (let i = 0; i < fade; i++) {
       const w = i / fade
@@ -349,6 +357,8 @@ export class SampleBank {
   private rawBytes = new Map<string, Promise<ArrayBuffer | null>>()
   private decodedPcm = new Map<string, DecodedPcm>()
   private decodedAssets = new Set<string>()
+  /** Assets whose fetch or decode failed: these play their synthesized stand-in. */
+  private failedAssets = new Set<string>()
   private contextCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>()
   private baseUrl = defaultSfxBaseUrl()
   private fallbackSeeded = false
@@ -392,7 +402,9 @@ export class SampleBank {
   async loadAll(ctx: BaseAudioContext, fetchImpl: typeof fetch | undefined = typeof fetch !== "undefined" ? fetch : undefined): Promise<number> {
     this.loadingInFlight = true
     try {
-      const entries = [...this.manifest.entries()]
+      // Loops first: the ambience beds are the first thing a player hears, and nothing else can stand in for them.
+      const looped = (m: SampleAssetMeta) => Number(Boolean(m.loop || m.loopEnd !== undefined || m.fallbackSynth?.loop))
+      const entries = [...this.manifest.entries()].sort((a, b) => looped(b[1]) - looped(a[1]))
       const concurrency = Math.min(12, Math.max(1, entries.length))
       let cursor = 0
       const workers: Promise<void>[] = []
@@ -423,6 +435,7 @@ export class SampleBank {
                   } catch {}
                 }
               }
+              this.failedAssets.add(id)
               this.fallbackSeeded = true
             }
           })(),
@@ -437,6 +450,15 @@ export class SampleBank {
 
   get loadedCount(): number {
     return this.fallbackSeeded ? this.manifest.size : this.decodedPcm.size
+  }
+
+  /**
+   * Whether `id` is still on its way (fetching or decoding during `loadAll`). Playing it now would play its synthesized
+   * stand-in instead, which for a loop is a constant tone well above the library's loudness targets, and a looping
+   * voice keeps that buffer after the real file arrives, so callers wait instead.
+   */
+  isPending(id: string): boolean {
+    return this.loadingInFlight && this.manifest.has(id) && !this.decodedAssets.has(id) && !this.failedAssets.has(id)
   }
 
   /** Successfully fetched and browser-decoded assets, excluding procedural fallbacks. */

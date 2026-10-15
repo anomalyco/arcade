@@ -14,6 +14,16 @@ import {
   SpellAudioEmitter,
   tyreSlip,
   VehicleAudioEmitter,
+  busVolume,
+  DEFAULT_VOLUME_SETTINGS,
+  loadVolumeSettings,
+  saveVolumeSettings,
+  selectSfx,
+  sfxCues,
+  sfxManifest,
+  synthesizeFallbackPcm,
+  volumeControls,
+  volumeStorageKey,
 } from "@arcade/kit/audio"
 
 function createTestRuntime(seed = 7, maxVoices = 12) {
@@ -261,5 +271,51 @@ describe("offline deterministic rendering, clip protection, silence windows, and
     expect(stats!.clippedSamples).toBe(0)
     expect(lab.section.telemetry!()).toContain("dBFS")
     lab.dispose()
+  })
+})
+
+describe("samples still loading", () => {
+  test("a cue whose sample is still on its way is skipped, not played as its loud synthesized stand-in", () => {
+    const entries = selectSfx(["game:outbreak"]).filter((e) => e.id === "ambience.threat")
+    const ctx = new DeterministicOfflineAudioContext(2, 48000 * 4, 48000) as unknown as OfflineAudioContext
+    const runtime = new AudioRuntime({ context: ctx, manifest: sfxManifest(entries), cues: sfxCues(entries) })
+    runtime.sampleBank.loadingInFlight = true
+    expect(runtime.playCue("ambience.threat")).toBeNull()
+    expect(runtime.telemetry().pendingSkips).toBe(1)
+    expect(runtime.telemetry().activeVoices).toBe(0)
+    // Once loading ends (here: failed, so the stand-in is all there is) the cue plays.
+    runtime.sampleBank.loadingInFlight = false
+    expect(runtime.playCue("ambience.threat")).not.toBeNull()
+  })
+
+  test("a looped stand-in sits near the beds' loudness, not 16 dB over it", () => {
+    const meta = sfxManifest(selectSfx(["game:outbreak"])).find((m) => m.id.startsWith("ambience.night.suburb"))!
+    const pcm = synthesizeFallbackPcm(meta, 48000)
+    const ch = pcm.channels[0]!
+    let sum = 0
+    for (const v of ch) sum += v * v
+    const rmsDb = 10 * Math.log10(sum / ch.length)
+    expect(rmsDb).toBeLessThan(-25)
+    expect(rmsDb).toBeGreaterThan(-35)
+  })
+})
+
+describe("player volume", () => {
+  test("channels scale their buses, save per game, and a game shows only the channels it has", () => {
+    const s = { ...DEFAULT_VOLUME_SETTINGS, volumeEffects: 50, volumeAmbience: 25, volumeVoice: 0 }
+    expect(busVolume(s, "weapon")).toBe(0.5)
+    expect(busVolume(s, "foley")).toBe(0.5)
+    expect(busVolume(s, "ambience")).toBe(0.25)
+    expect(busVolume(s, "voice")).toBe(0)
+    const store = new Map<string, string>()
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
+    const json = saveVolumeSettings(storage, "demo", s)
+    expect(store.get(volumeStorageKey("demo"))).toBe(json)
+    store.set(volumeStorageKey("demo"), JSON.stringify({ ...JSON.parse(json), volumeMaster: 300 }))
+    const loaded = { ...DEFAULT_VOLUME_SETTINGS }
+    expect(loadVolumeSettings(storage, "demo", loaded)).toBe(true)
+    expect(loaded).toEqual({ ...s, volumeMaster: DEFAULT_VOLUME_SETTINGS.volumeMaster })
+    expect(loadVolumeSettings(storage, "other", loaded)).toBe(false)
+    expect(volumeControls(["master", "effects", "ambience", "voice"], "Volume", { voice: "Zombie voices" }).map((c) => c.label)).toEqual(["Master", "Effects", "Ambience", "Zombie voices"])
   })
 })

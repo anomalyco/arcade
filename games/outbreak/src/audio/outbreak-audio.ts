@@ -1,4 +1,4 @@
-import { AudioRuntime, MIX_CATEGORIES, selectSfx, sfxCues, sfxEntry, sfxManifest, type VoiceHandle } from "@arcade/kit/audio"
+import { AudioRuntime, busVolume, loadVolumeSettings, MIX_CATEGORIES, saveVolumeSettings, selectSfx, sfxCues, sfxEntry, sfxManifest, type VoiceHandle } from "@arcade/kit/audio"
 import { dayCycle } from "../../shared/day-cycle"
 import type { Town } from "../../shared/map"
 import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
@@ -54,6 +54,7 @@ export class OutbreakAudio {
   private indoor = 0
   private town: Town | null = null
   private saved = ""
+  private savedVolume = ""
   private applied = ""
   /** Sounds played per library id, for proofs. */
   readonly playedById: Record<string, number> = {}
@@ -79,7 +80,14 @@ export class OutbreakAudio {
     try { saved = JSON.parse(options.storage?.getItem(STORAGE_KEY) ?? "{}") ?? {} } catch { /* Defaults. */ }
     // Automation (navigator.webdriver) starts muted unless a saved choice says otherwise: proofs never make sound.
     settings.audioMuted = typeof saved.muted === "boolean" ? Number(saved.muted) : options.automated ? 1 : settings.audioMuted
-    if (typeof saved.master === "number" && saved.master >= 0 && saved.master <= 100) settings.audioMaster = saved.master
+    // Volumes are saved per game by the kit; the master level once lived beside mute.
+    const loaded = loadVolumeSettings(options.storage, "outbreak", settings)
+    if (!loaded && typeof saved.master === "number" && saved.master >= 0 && saved.master <= 100) {
+      settings.volumeMaster = saved.master
+      saveVolumeSettings(options.storage, "outbreak", settings)
+    }
+    // Only a change the player makes is saved, so defaults stay defaults.
+    this.savedVolume = saveVolumeSettings(null, "outbreak", settings)
     this.runtime.muted = Boolean(settings.audioMuted)
   }
 
@@ -121,12 +129,13 @@ export class OutbreakAudio {
     if (key === this.applied) return
     this.applied = key
     rt.setMuted(Boolean(s.audioMuted))
-    rt.setVolume(s.audioMaster / 100)
+    rt.setVolume(s.volumeMaster / 100)
     rt.maxVoices = Math.round(s.audioVoiceCap)
     rt.setReverbWet(s.audioReverb)
-    for (const bus of MIX_CATEGORIES) rt.setBusGain(bus, (s[AUDIO_BUS_LEVELS[bus]] as number) / 100)
+    for (const bus of MIX_CATEGORIES) rt.setBusGain(bus, ((s[AUDIO_BUS_LEVELS[bus]] as number) / 100) * busVolume(s, bus))
     this.occlusion.strength = s.audioOcclusion
-    const saved = JSON.stringify({ muted: Boolean(s.audioMuted), master: s.audioMaster })
+    this.savedVolume = saveVolumeSettings(this.options.storage, "outbreak", s, this.savedVolume)
+    const saved = JSON.stringify({ muted: Boolean(s.audioMuted) })
     if (saved !== this.saved) {
       this.saved = saved
       try { this.options.storage?.setItem(STORAGE_KEY, saved) } catch { /* Private mode. */ }

@@ -12,6 +12,7 @@ import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
 import { ZombieFootsteps } from "../src/audio/zombie-steps"
 import { SoundOcclusion, surfaceAt } from "../src/audio/space"
 import { pursuers, soundWorld } from "../src/audio/world"
+import { createOutbreakSettings, resolveWorldMode } from "../src/settings"
 
 const ids = (events: readonly SoundEvent[]) => events.map((e) => e.id)
 const idle = { mx: 0, my: 0, aim: 0, interact: false }
@@ -308,5 +309,36 @@ describe("Outbreak acoustic space", () => {
     expect(occlusion.query(10, 44, inside.x, inside.y)).toBeGreaterThan(0.5)
     occlusion.strength = 0
     expect(occlusion.query(10, 44, inside.x, inside.y)).toBe(0)
+  })
+})
+
+describe("a fresh start is quiet", () => {
+  test("no car alarm or other alarm wails at spawn, idle or walking into streamed lots, unless the player sets one off", () => {
+    const settings = createOutbreakSettings(new URLSearchParams())
+    for (const seed of [1, 2, 3, 7, 11]) {
+      const session = new LocalSession(seed, settings.world.houseSeed, settings.world.terrain, settings.ai, settings.progression, resolveWorldMode(settings.world.worldMode))
+      const director = new SoundDirector()
+      const p = session.view.player
+      const alarms: string[] = []
+      for (let f = 0; f < 40 / TICK_DT; f++) {
+        // Idle for 5 s, then sprint east out of the origin block.
+        const moving = f * TICK_DT > 5
+        if (f > 0) session.update(TICK_DT, { ...idle, mx: moving ? 1 : 0, sprint: moving }, settings.dayCycle.timeScale, settings)
+        director.observe(soundWorld(session.sim), p)
+        for (const h of director.holds) if (h.key.startsWith("alarm:")) alarms.push(`${seed}: ${h.key} at ${(f * TICK_DT).toFixed(1)} s`)
+        for (const n of session.sim.ai.noiseBus.events) if (n.kind === "alarm") alarms.push(`${seed}: alarm noise at ${(f * TICK_DT).toFixed(1)} s`)
+      }
+      expect(alarms).toEqual([])
+    }
+  })
+
+  test("a vignette's long-dead car alarm never sounds, even at time zero", () => {
+    const director = new SoundDirector()
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const a = sim.addSurvivor("a", 0)
+    const car = sim.progression.verbs.cars[0]!
+    sim.progression.ledger.createStore({ id: `car:${car.key}`, mode: "counters", scope: "shared", at: { x: car.x, y: car.y }, initial: { smashed: 1, alarm: 1, until: 1, old: 1 } })
+    director.observe({ ...soundWorld(sim), time: 0 }, a.survivor)
+    expect(director.holds.filter((h) => h.key.startsWith("alarm:"))).toEqual([])
   })
 })
