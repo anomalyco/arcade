@@ -740,12 +740,13 @@ export class Game {
           }
           break
         case "smoke":
+          fp.sprite(true, x, 0.025, y, r, 0.58, 0.34, 0.95, 0.42 * vis, SPRITE.ring, 0, 0.05)
           for (let i = 0; i < 9; i++) {
             const a2 = i * 2.4 + id
             const rr = r * (0.25 + 0.6 * ((i * 37) % 10) / 10)
             const bob = Math.sin(t * 1.3 + i) * 0.15
-            const g = 0.62 + (i % 3) * 0.08
-            fp.sprite(false, x + Math.cos(a2 + t * 0.2) * rr, 0.6 + bob + (i % 3) * 0.35, y + Math.sin(a2 + t * 0.2) * rr, r * 0.42 * (0.7 + 0.3 * vis), g, g, g + 0.04, 0.8 * vis, SPRITE.puff, 0, 0, a2)
+            const g = 0.2 + (i % 3) * 0.04
+            fp.sprite(false, x + Math.cos(a2 + t * 0.2) * rr, 0.6 + bob + (i % 3) * 0.35, y + Math.sin(a2 + t * 0.2) * rr, r * 0.42 * (0.7 + 0.3 * vis), g + 0.05, g, g + 0.16, 0.38 * vis, SPRITE.puff, 0, 0, a2)
           }
           break
         case "vines": {
