@@ -382,8 +382,8 @@ weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is 
 Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captures: `scripts/daynight-shot.ts`.
 
 - Time of day is a pure function of (room seed, sea time, room override), like the weather. A day is `DAY_CYCLE`
-  (300 s = 5 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~175 s of day (07:00-17:00), ~31 s
-  of golden hour, sunset and dusk, ~62 s of night, ~31 s of dawn. Rooms start at 09:00-11:00 (seeded).
+  (600 s = 10 min) of sea time. The clock runs unevenly through it (`DAY_KNOTS`): ~350 s of day (07:00-17:00), ~62 s
+  of golden hour, sunset and dusk, ~125 s of night, ~62 s of dawn. Rooms start at 09:00-11:00 (seeded).
   - `timelinePhase(seed, t)`: phase in days. `hourOfPhase` and `phaseOfHour` convert between phase and clock hour.
   - `skyAt(seed, phase)`: hour, sun and moon directions, the moon's lit fraction, the star rotation.
   - The sun's path is stylised for the views players get: it rises in the north at 06:00, stands 60° up at a bearing

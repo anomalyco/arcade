@@ -6,7 +6,7 @@
  * `frac(phase)` maps to the clock through a monotone spline. One day lasts DAY_CYCLE seconds of sea time, and the
  * clock does not run evenly through it: most of a day is daylight, and dusk, night and dawn pass quicker (DAY_KNOTS).
  * A room starts in the morning (DAY_START hours, seeded), so players arrive to the sunny look and their first sunset
- * comes after about two minutes.
+ * comes after about four minutes.
  *
  * Overrides. A host or dev can set the clock: from sea time `at` the room blends, over `fade` s, from its old course
  * (`from` phase, running at `fromSpeed`) to the new one (`to` phase, then running at `speed` × normal; 0 freezes it).
@@ -23,8 +23,8 @@
  * No DOM or Worker APIs: this runs in the Durable Object and the browser.
  */
 
-/** Seconds of sea time per full day at speed 1 (5 min). */
-export const DAY_CYCLE = 300
+/** Seconds of sea time per full day at speed 1 (10 min). */
+export const DAY_CYCLE = 600
 
 /**
  * The clock's course through one cycle: phase (fraction of DAY_CYCLE) → clock hour. Between knots the clock runs
