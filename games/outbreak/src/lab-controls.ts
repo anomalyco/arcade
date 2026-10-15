@@ -1,5 +1,5 @@
 import { cameraShakeControls } from "@arcade/kit/client/camera"
-import type { DiscoveryHost } from "./discovery/index"
+import type { DiscoveryHost } from "./discovery/stage"
 import { motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, type LookSettings } from "@arcade/kit/look"
@@ -19,26 +19,34 @@ import { audioControls } from "./audio"
 import type { BotsLabController } from "./bots-lab"
 import type { OutbreakCombatFX } from "./combat-fx"
 import { applyOutbreakDayNight, DAY_NIGHT_CURVE_KEYS, DAY_NIGHT_CURVES } from "./day-night"
-import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import { fogOfWarControls } from "./fog-of-war"
 import { groundControls, randomizeGroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, hudControls, type OutbreakHud } from "./hud"
-import type { OutbreakMap } from "./map"
+import type { OutbreakMap } from "./map/map"
 import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightingControls } from "./lighting"
-import "./hordes/index"
-import "./melee/index"
 import type { NetSession } from "./net-session"
-import "./pacing"
-import { type ProgressionLabHost } from "./progression-lab"
-import { resolveOutbreakSettingTarget, type OutbreakSettings } from "./settings"
+import { type ProgressionLabHost } from "./progression/lab"
+import { resolveOutbreakSettingTarget, type OutbreakSettings, type OutbreakSubsystemKey } from "./settings"
 import { survivorAimControls } from "./survivor"
 import { syncUnseenSettingChange, unseenControls } from "./unseen"
-import { type VehicleLabHost } from "./vehicles/index"
-import type { OutbreakWeatherController } from "./weather"
+import type { VehicleLabHost } from "./vehicle-lab"
+import type { OutbreakWeatherController } from "./weather/controller"
 import { zombieControls } from "./zombie-profile"
 
+/** The feature Lab hooks (the client feature registry, passed in by `main.ts`). */
+export interface OutbreakLabFeatures {
+  collectLabControls(host: OutbreakLabControlHost): LabControl[]
+  notifySettingChanged(
+    host: OutbreakLabControlHost,
+    rawKey: string,
+    routed: { subsystem: OutbreakSubsystemKey; field: string } | null,
+    value?: number | boolean | string,
+  ): boolean
+}
+
 export interface OutbreakLabControlHost {
+  readonly features: OutbreakLabFeatures
   readonly session: () => LocalSession | NetSession
   readonly settings: OutbreakSettings
   readonly lookSettings: LookSettings
@@ -190,7 +198,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     ...zombieControls,
     ...survivorAimControls,
     ...hudControls,
-    ...outbreakClientFeatures.collectLabControls(host),
+    ...host.features.collectLabControls(host),
     {
       key: "bloodStyle",
       label: "Blood splatter",
@@ -368,7 +376,7 @@ export function handleOutbreakSettingChanged(
   const lab = host.lab()
   const routed = resolveOutbreakSettingTarget(rawKey)
   const key = routed?.field ?? rawKey
-  outbreakClientFeatures.notifySettingChanged(host, rawKey, routed, value)
+  host.features.notifySettingChanged(host, rawKey, routed, value)
   if (syncUnseenSettingChange(settings.unseen, key)) {
     lab.refresh()
   }

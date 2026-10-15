@@ -2,35 +2,12 @@ import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { AIState } from "../../shared/ai"
 import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
-import type { FeedbackActor } from "../hud/actor-feedback"
 import { impactDelay, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
+import type { SoundActor, SoundEvent } from "./types"
 
-/** One sound to play: a library id at a plan position (x, y), optionally later, quieter or pitch-shifted. */
-export type SoundEvent = { id: string; x: number; y: number; delay?: number; gain?: number; rate?: number; source: string }
-
-/** The survivor fields the director diffs: `FeedbackActor` (the HUD's action feedback contract) plus position. */
-export type SoundActor = Pick<
-  FeedbackActor,
-  | "health"
-  | "equippedItem"
-  | "meleeWeapon"
-  | "meleeDurability"
-  | "meleeMaxDurability"
-  | "magAmmo"
-  | "reserveAmmo"
-  | "planks"
-  | "reloadRemaining"
-  | "shoveAnim"
-  | "channel"
-  | "lootMessage"
-  | "lootMessageUntil"
-  | "flashlightOn"
-  | "battery"
-  | "exhausted"
-  | "vault"
-> & { x: number; y: number }
+export type { SoundActor, SoundEvent } from "./types"
 
 export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number }
 

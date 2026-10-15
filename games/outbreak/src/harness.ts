@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import type { DiscoveryHost } from "./discovery/index"
+import type { DiscoveryHost } from "./discovery/stage"
 import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import {
@@ -24,15 +24,12 @@ import type { OutbreakCombatFX } from "./combat-fx"
 import type { CoopView } from "./coop-view"
 import { applyOutbreakDayNight } from "./day-night"
 import { isCurveValue } from "@arcade/kit/ramps"
-import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHud } from "./hud"
 import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "./lighting"
-import type { OutbreakMap } from "./map"
-import "./hordes/index"
-import "./melee/index"
+import type { OutbreakMap } from "./map/map"
 import type { NetSession } from "./net-session"
-import { type ProgressionLabHost } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression/lab"
 import {
   applyOutbreakPreset,
   exportOutbreakPreset,
@@ -45,12 +42,20 @@ import type { Survivor } from "./survivor"
 import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
 import { applyVehicleStunt } from "./vehicle-lab"
-import { type OutbreakVehicleRenderer, type VehicleLabHost } from "./vehicles/index"
-import type { OutbreakWeatherController } from "./weather"
+import type { VehicleLabHost } from "./vehicle-lab"
+import type { OutbreakVehicleRenderer } from "./vehicles"
+import type { OutbreakWeatherController } from "./weather/controller"
 import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
 
+/** The feature harness hooks (the client feature registry, passed in by `main.ts`). */
+export interface OutbreakHarnessFeatures {
+  collectHarnessState(host: OutbreakHarnessHost): Record<string, unknown>
+  collectHarnessMethods(host: OutbreakHarnessHost, harness: OutbreakHarness): Record<string, unknown>
+}
+
 export interface OutbreakHarnessHost {
+  readonly features: OutbreakHarnessFeatures
   readonly adapter: GPUAdapter
   readonly device: GPUDevice
   readonly renderer: Renderer
@@ -260,7 +265,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
           lastBakeMs: worldStreamer.lastBakeMs,
           deltasCount: session.sim.worldStream.deltas.size,
         },
-        ...outbreakClientFeatures.collectHarnessState(host),
+        ...host.features.collectHarnessState(host),
       }
     },
     triggerImpulse(kind: "shot" | "shove" | "hit-taken" | "explosion", opts?: { power?: number; damage?: number }) {
@@ -465,7 +470,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
       return harness.state()
     },
   }
-  Object.assign(harness, outbreakClientFeatures.collectHarnessMethods(host, harness))
+  Object.assign(harness, host.features.collectHarnessMethods(host, harness))
   return harness
 }
 

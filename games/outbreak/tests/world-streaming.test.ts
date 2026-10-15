@@ -17,6 +17,7 @@ import { Mesh } from "@arcade/kit/gpu/mesh"
 import { housePlanting } from "../src/architecture"
 import { buildLevel } from "../src/level"
 import { windowBuildingBits } from "../src/lighting"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { WorldClientStreamer, compileSingleWorldChunk, ensurePropTemplates, recycleCompiledChunk, useOriginBuild } from "../src/world-streamer"
 import { Loopback } from "./loopback"
@@ -212,6 +213,7 @@ describe("Procedural world generation & chunk streaming", () => {
     const net = new Loopback(core, 2)
 
     const clientA = new NetSession({
+      features,
       url: "loop",
       room: "wide",
       name: "Alice",
@@ -219,6 +221,7 @@ describe("Procedural world generation & chunk streaming", () => {
       WebSocket: net.socketClass(),
     })
     const clientB = new NetSession({
+      features,
       url: "loop",
       room: "wide",
       name: "Bob",

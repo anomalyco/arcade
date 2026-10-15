@@ -1,29 +1,12 @@
-import type { Camera } from "@arcade/kit/client/camera"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
 import type { PersonalSnapshot, SharedSnapshot } from "../shared/net-protocol"
-import type { LocalSession } from "../shared/session"
-import type { OutbreakCombatFX } from "./combat-fx"
-import type { OutbreakFeelTracker } from "./feel-events"
-import type { OutbreakGameCommandsHost } from "./game-commands"
-import type { OutbreakHarness, OutbreakHarnessHost } from "./harness"
-import type { OutbreakLabControlHost } from "./lab-controls"
-import type { NetSession } from "./net-session"
-import type { OutbreakSettings, OutbreakSubsystemKey } from "./settings"
-import type { ZombieCrowdRenderer } from "./zombies"
-
-export interface OutbreakFeelFrameContext {
-  readonly tracker: OutbreakFeelTracker
-  readonly session: LocalSession | NetSession
-  readonly combatFx: OutbreakCombatFX
-  readonly zombieCrowd: ZombieCrowdRenderer
-  readonly addSprites: Float32Array
-  readonly addCount: number
-  readonly playerGroundY: number
-  readonly dt: number
-  readonly settings: OutbreakSettings
-  readonly cam: Camera
-}
+import type { OutbreakFeelFeatures, OutbreakFeelFrameContext, OutbreakFeelTracker } from "./feel-events"
+import type { OutbreakCommandFeatures, OutbreakGameCommandsHost } from "./game-commands"
+import type { OutbreakHarness, OutbreakHarnessFeatures, OutbreakHarnessHost } from "./harness"
+import type { OutbreakLabControlHost, OutbreakLabFeatures } from "./lab-controls"
+import type { NetSession, NetSessionFeatures } from "./net-session"
+import type { OutbreakSubsystemKey } from "./settings"
 
 export interface OutbreakClientFeatureFeelHooks {
   /** Resets any presentation-only edge/dedup state owned by this feature when the player or session resets. */
@@ -88,11 +71,18 @@ function compareFeatures(a: { id: string; order?: number }, b: { id: string; ord
 
 /**
  * Deterministic client-side registry for Outbreak features.
- * Allows each feature folder (`src/map/`, `src/weather/`, `src/pacing/`, `src/progression/`, `src/vehicles/`, `src/melee/`)
- * to register its Lab controls, settings handler, dev-control commands, harness stage methods, feel events, and `NetSession` hooks
- * without colliding in central files.
+ * Each feature folder (`src/<feature>/index.ts`, listed in `src/features.ts`) registers its Lab controls, settings
+ * handler, dev-control commands, harness stage methods, feel events and `NetSession` hooks here. The central modules
+ * never import the registry: `main.ts` hands it to them through the small hook interfaces it implements.
  */
-export class OutbreakClientFeatureRegistry {
+export class OutbreakClientFeatureRegistry
+  implements
+    OutbreakLabFeatures,
+    OutbreakCommandFeatures,
+    OutbreakHarnessFeatures,
+    OutbreakFeelFeatures,
+    NetSessionFeatures
+{
   private readonly byId = new Map<string, OutbreakClientFeature>()
   private sortedCache: readonly OutbreakClientFeature[] | null = null
 

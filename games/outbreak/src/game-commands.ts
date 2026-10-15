@@ -1,31 +1,35 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import type { DiscoveryHost } from "./discovery/index"
+import type { DiscoveryHost } from "./discovery/stage"
 import type { Input } from "@arcade/kit/client/input"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabPanel } from "@arcade/kit/lab-panel"
+import type { LabCommand } from "@arcade/kit/lab/commands"
 import type { AIState } from "../shared/ai"
 import { sightRects } from "../shared/map"
 import type { SceneryMemory } from "../shared/scenery-memory"
 import type { LocalSession } from "../shared/session"
 import { FOG_SIZE, type Vision } from "../shared/vision"
 import type { CoopView } from "./coop-view"
-import { outbreakClientFeatures } from "./feature-registry"
 import type { OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakHarness } from "./harness"
 import type { OutbreakHud } from "./hud"
-import type { OutbreakMap } from "./map"
-import "./hordes/index"
-import "./melee/index"
+import type { OutbreakMap } from "./map/map"
 import type { NetSession } from "./net-session"
-import { type ProgressionLabHost } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression/lab"
 import type { InventoryHud } from "./inventory-hud"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
-import { stageVehicleScene, type VehicleLabHost } from "./vehicles/index"
-import type { OutbreakWeatherController } from "./weather"
+import { stageVehicleScene, type VehicleLabHost } from "./vehicle-lab"
+import type { OutbreakWeatherController } from "./weather/controller"
+
+/** The feature command hooks (the client feature registry, passed in by `main.ts`). */
+export interface OutbreakCommandFeatures {
+  collectGameCommands(host: OutbreakGameCommandsHost): LabCommand[]
+}
 
 export interface OutbreakGameCommandsHost {
+  readonly features: OutbreakCommandFeatures
   readonly device: GPUDevice
   readonly renderer: Renderer
   readonly session: () => LocalSession | NetSession
@@ -363,7 +367,7 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
           }
         },
       },
-      ...outbreakClientFeatures.collectGameCommands(host),
+      ...host.features.collectGameCommands(host),
     ])
   })
 }

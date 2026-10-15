@@ -76,7 +76,7 @@ store, `bench:<house>`.
 ## Lab
 
 Every tunable is a typed row in the shared LabPanel's **Progression** group (`progressionControls` in
-`shared/progression.ts`, bound by `src/progression-lab.ts`): loot rate, search, smash, board-up, heal, craft,
+`shared/progression/tuning.ts`, bound by `src/progression/lab.ts`): loot rate, search, smash, board-up, heal, craft,
 research and pry times, their noise, the light research needs, a recipe cost multiplier, reinforced plank HP, heal
 amounts, noisemaker radius and duration, and the generator hum. Costs and times apply at once; a new loot rate
 restocks containers nobody has searched. In co-op the room keeps its defaults. The group also has actions to give

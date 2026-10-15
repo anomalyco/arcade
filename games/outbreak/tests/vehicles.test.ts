@@ -6,6 +6,7 @@ import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { LocalSession } from "../shared/session"
 import { generateChunkVehicleSpawns } from "../shared/vehicles"
 import { chunkKey, generateWorldChunk } from "../shared/world"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
 
@@ -231,6 +232,7 @@ describe("Outbreak vehicles", () => {
     const net = new Loopback(room, 2)
 
     const driverClient = new NetSession({
+      features,
       url: "loop",
       room: "coopveh",
       name: "Driver",
@@ -238,6 +240,7 @@ describe("Outbreak vehicles", () => {
       WebSocket: net.socketClass(),
     })
     const passengerClient = new NetSession({
+      features,
       url: "loop",
       room: "coopveh",
       name: "Passenger",

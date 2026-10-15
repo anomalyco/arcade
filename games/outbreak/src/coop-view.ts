@@ -9,7 +9,7 @@ import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
 import { CoopHud, playerName } from "./coop-hud"
 import type { HudRemote } from "./hud"
-import { NetSession, remoteLift, SURVIVOR_COLOURS } from "./net-session"
+import { NetSession, remoteLift, SURVIVOR_COLOURS, type NetSessionFeatures } from "./net-session"
 import { beamPose } from "./flashlight-beam"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
@@ -58,7 +58,7 @@ export class CoopView {
   }
 
   /** `?room=<code>` joins that room; anything else plays offline. */
-  static fromUrl(renderer: Renderer, params: URLSearchParams): CoopView {
+  static fromUrl(renderer: Renderer, params: URLSearchParams, features: NetSessionFeatures): CoopView {
     const room = params.get("room")?.toLowerCase().replace(/[^a-z0-9]/g, "") || null
     if (!room) return new CoopView(renderer, null, null, !params.has("bench"))
     const dir = location.pathname.replace(/[^/]*$/, "")
@@ -68,6 +68,7 @@ export class CoopView {
       room,
       name: playerName(params),
       storage: sessionStorage,
+      features,
       onReload: () => {
         // Reload once into the same room; a second mismatch within a minute means the rollout is still under way.
         const last = Number(sessionStorage.getItem("outbreak.coop.reloadAt") ?? 0)

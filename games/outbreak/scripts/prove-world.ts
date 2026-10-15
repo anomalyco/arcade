@@ -13,6 +13,7 @@ import {
   type DistrictKind,
   type WorldChunk,
 } from "../shared/world"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "../tests/loopback"
 
@@ -696,8 +697,8 @@ try {
   let virtualMs = 0
   const room = new CoopRoomCore("proof", { ...DEFAULT_COOP_ROOM, zombieCount: 12 }, () => virtualMs, BUILD)
   const loopback = new Loopback(room, 2)
-  const netA = new NetSession({ url: "loop", room: "proof", name: "Alice", now: () => loopback.now, WebSocket: loopback.socketClass() })
-  const netB = new NetSession({ url: "loop", room: "proof", name: "Bob", now: () => loopback.now, WebSocket: loopback.socketClass() })
+  const netA = new NetSession({ features, url: "loop", room: "proof", name: "Alice", now: () => loopback.now, WebSocket: loopback.socketClass() })
+  const netB = new NetSession({ features, url: "loop", room: "proof", name: "Bob", now: () => loopback.now, WebSocket: loopback.socketClass() })
   for (let i = 0; i < 10; i++) {
     virtualMs = loopback.now * 1000
     loopback.step()

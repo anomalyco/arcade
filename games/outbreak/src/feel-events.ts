@@ -3,12 +3,28 @@ import { MotionBlurBurst } from "@arcade/kit/gpu/motion-blur"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
-import { outbreakClientFeatures } from "./feature-registry"
 import type { NetSession } from "./net-session"
-import "./melee/index"
 import type { OutbreakSettings } from "./settings"
-import "./vehicles/index"
 import type { ZombieCrowdRenderer } from "./zombies"
+
+export interface OutbreakFeelFrameContext {
+  readonly tracker: OutbreakFeelTracker
+  readonly session: LocalSession | NetSession
+  readonly combatFx: OutbreakCombatFX
+  readonly zombieCrowd: ZombieCrowdRenderer
+  readonly addSprites: Float32Array
+  readonly addCount: number
+  readonly playerGroundY: number
+  readonly dt: number
+  readonly settings: OutbreakSettings
+  readonly cam: Camera
+}
+
+/** The feature feel hooks the tracker runs (the client feature registry, passed in by `main.ts`). */
+export interface OutbreakFeelFeatures {
+  resetFeel(tracker: OutbreakFeelTracker, player: { health: number; shoveAnim: number; vault: unknown }): void
+  processFeelFrame(ctx: OutbreakFeelFrameContext): number
+}
 
 /**
  * Tracks presentation-only combat state transitions (shoves, hits taken, vault landings, portal bashes, and shots)
@@ -29,6 +45,7 @@ export class OutbreakFeelTracker {
     private readonly cam: Camera,
     private readonly settings: OutbreakSettings,
     initialPlayer: { health: number; shoveAnim: number; vault: unknown },
+    private readonly features: OutbreakFeelFeatures,
   ) {
     this.reset(initialPlayer)
   }
@@ -43,7 +60,7 @@ export class OutbreakFeelTracker {
     this.prevPortalBashTime.clear()
     this.prevPortalPlanks.clear()
     this.prevDoorOpen.clear()
-    outbreakClientFeatures.resetFeel(this, player)
+    this.features.resetFeel(this, player)
   }
 
   triggerShot(aim: number, power = 1): void {
@@ -266,7 +283,7 @@ export class OutbreakFeelTracker {
       },
     )
 
-    addCount = outbreakClientFeatures.processFeelFrame({
+    addCount = this.features.processFeelFrame({
       tracker: this,
       session,
       combatFx,

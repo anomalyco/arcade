@@ -5,7 +5,8 @@ import type { Vision } from "../../shared/vision"
 import { chunkKey, generateWorldChunk } from "../../shared/world"
 import type { CoopView } from "../coop-view"
 import { SURVIVOR_COLOURS } from "../net-session"
-import type { MapFrame, MapVehicle } from "./index"
+import type { MapFrame } from "./map"
+import type { MapVehicle } from "./screen"
 
 export type MapGameInput = {
   session: { readonly view: SessionView; readonly sim: CoopSim }

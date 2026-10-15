@@ -25,7 +25,11 @@ import { LocalSession, type Command } from "../shared/session"
 import { MELEE_WEAPONS } from "../shared/combat"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { BenchLean, ClosetView, DiscoveryProps, PageGlance, type DiscoveryHost } from "./discovery/index"
+import { ClosetView } from "./discovery/closet"
+import { PageGlance } from "./discovery/glance"
+import { BenchLean } from "./discovery/lean"
+import { DiscoveryProps } from "./discovery/props"
+import type { DiscoveryHost } from "./discovery/stage"
 import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
 import { FrameClock, TICK_DT } from "../shared/clock"
 import { sightRects, SIZE } from "../shared/map"
@@ -62,9 +66,9 @@ import { OutbreakHud } from "./hud"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
 import { InventoryHud } from "./inventory-hud"
 import { packLightOccluders, windowStateKey } from "./light-occluders"
-import { MAP_KEY, OutbreakMap } from "./map"
+import { MAP_KEY, OutbreakMap } from "./map/map"
 import { gameMapFrame } from "./map/game"
-import { type ProgressionLabHost } from "./progression-lab"
+import { type ProgressionLabHost } from "./progression/lab"
 import { type VehicleLabHost } from "./vehicle-lab"
 import { BotsLabController } from "./bots-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
@@ -72,11 +76,12 @@ import { OutbreakVehicleRenderer } from "./vehicles"
 import { applyVehicleStunt } from "./vehicle-lab"
 import { SURVIVOR_COLOURS } from "./net-session"
 import { WEATHER_PRESETS } from "@arcade/kit/weather"
-import { OutbreakWeatherController } from "./weather"
+import { OutbreakWeatherController } from "./weather/controller"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
 import { ZombieCrowdRenderer } from "./zombies"
-import { hordeWatchPoint, renderFlowOverlay } from "./hordes/index"
+import { renderFlowOverlay } from "./hordes/flow-overlay"
+import { hordeWatchPoint } from "./hordes/stage"
 import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
 import { zombieProfile } from "./zombie-profile"
 import {
@@ -85,6 +90,7 @@ import {
   migrateOutbreakLocalStorage,
   resolveWorldMode,
 } from "./settings"
+import { outbreakClientFeatures } from "./features"
 import { OutbreakFeelTracker } from "./feel-events"
 import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
@@ -233,7 +239,7 @@ async function main() {
   const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
-  const coop = CoopView.fromUrl(renderer, params)
+  const coop = CoopView.fromUrl(renderer, params, outbreakClientFeatures)
   const makeSession = (s: number) =>
     coop.net ??
     new LocalSession(
@@ -333,7 +339,7 @@ async function main() {
     const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
     return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
   }
-  const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player)
+  const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player, outbreakClientFeatures)
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
@@ -379,6 +385,7 @@ async function main() {
   }
   const botsLab = new BotsLabController(settings)
   const labControlHost: OutbreakLabControlHost = {
+    features: outbreakClientFeatures,
     session: () => session,
     settings,
     lookSettings,
@@ -645,6 +652,7 @@ async function main() {
   bindOutbreakLabControls(lab, settings, controls)
 
   registerOutbreakGameCommands({
+    features: outbreakClientFeatures,
     device,
     renderer,
     session: () => session,
@@ -1798,6 +1806,7 @@ async function main() {
   }
   draw(TICK_DT)
   const harness = createOutbreakHarness({
+    features: outbreakClientFeatures,
     adapter,
     device,
     renderer,

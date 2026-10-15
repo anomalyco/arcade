@@ -8,6 +8,7 @@ import assert from "node:assert/strict"
 import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
 import { TICK_DT } from "../shared/clock"
 import type { Command } from "../shared/session"
+import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=").slice(1).join("=")
@@ -20,7 +21,7 @@ const store = (p: string) => ({ getItem: (k: string) => memory.get(p + k) ?? nul
 
 const clients = Array.from(
   { length: playerCount },
-  (_, i) => new NetSession({ url: wsUrl, room, name: `Smoke ${String.fromCharCode(65 + i)}`, storage: store(`p${i}`) }),
+  (_, i) => new NetSession({ features, url: wsUrl, room, name: `Smoke ${String.fromCharCode(65 + i)}`, storage: store(`p${i}`) }),
 )
 const a = clients[0]!
 const b = clients[1]!
