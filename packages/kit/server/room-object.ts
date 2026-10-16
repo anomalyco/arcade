@@ -3,8 +3,8 @@ import type { Conn } from "../net/room-core"
 
 /** What the Durable Object drives: a `RoomCore` or anything shaped like one. */
 export type TickedCore = {
-  readonly code: string
-  readonly connections: number
+  readonly code?: string
+  readonly connections?: number
   /** Called when a socket is accepted, before its first message. */
   open?(conn: Conn): void
   message(conn: Conn, raw: unknown): void
@@ -23,18 +23,26 @@ const HEARTBEAT_MS = 10_000
  * bounded catch-up after a stall), drops the core once the room empties, and reports to the Lobby when what it would
  * report changes (throttled) plus a heartbeat. The subclass builds the core and says what to report.
  */
-export abstract class RoomObject<Env, Core extends TickedCore, Report> extends DurableObject<Env> {
+export abstract class RoomObject<Env, Core extends TickedCore, Report = void> extends DurableObject<Env> {
   protected core: Core | null = null
+  protected readonly sockets = new Set<Conn>()
   private timer: ReturnType<typeof setInterval> | null = null
   private clock = 0
   private reported = ""
   private reportAt = 0
 
   protected abstract readonly tickMs: number
+  protected readonly maxCatchup: number = MAX_CATCHUP
+  protected readonly heartbeatMs: number = HEARTBEAT_MS
+  protected readonly catchup: boolean = true
   /** The live core, created (and configured from the joining URL and storage) when needed. */
   protected abstract open(code: string, url: URL): Promise<Core>
-  /** What the Lobby should know; `empty` once the last socket left. */
-  protected abstract report(core: Core, empty: boolean): Report
+  /** Whether the room should stay alive on this tick (defaults to active socket count). */
+  protected isAlive(core: Core): boolean {
+    return (core.connections ?? this.sockets.size) > 0
+  }
+  /** What the Lobby should know; `empty` once the room is closing. Return `null` if the game has no Lobby. */
+  protected abstract report(core: Core, empty: boolean): Report | null
   /** Sends a report to the Lobby. */
   protected abstract send(report: Report): Promise<unknown>
 
@@ -58,10 +66,24 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report> extends D
         } catch {}
       },
     }
+    this.sockets.add(conn)
     core.open?.(conn)
-    socket.addEventListener("message", (e) => core.message(conn, e.data))
-    socket.addEventListener("close", () => core.close(conn))
-    socket.addEventListener("error", () => core.close(conn))
+    let closed = false
+    const onClose = () => {
+      if (closed) return
+      closed = true
+      this.sockets.delete(conn)
+      core.close(conn)
+    }
+    socket.addEventListener("message", (e) => {
+      if (typeof Blob !== "undefined" && e.data instanceof Blob) {
+        void e.data.arrayBuffer().then((buf) => core.message(conn, buf))
+        return
+      }
+      core.message(conn, e.data)
+    })
+    socket.addEventListener("close", onClose)
+    socket.addEventListener("error", onClose)
     if (!this.timer) {
       this.clock = Date.now()
       this.timer = setInterval(() => this.loop(), this.tickMs)
@@ -70,8 +92,25 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report> extends D
   }
 
   private loop(): void {
-    const core = this.core!
-    if (core.connections === 0) {
+    const core = this.core
+    if (!core) {
+      if (this.timer) clearInterval(this.timer)
+      this.timer = null
+      return
+    }
+    if (!this.catchup) {
+      core.step()
+      if (!this.isAlive(core)) {
+        clearInterval(this.timer!)
+        this.timer = null
+        this.publish(core, true)
+        this.core = null
+        return
+      }
+      this.publish(core, false)
+      return
+    }
+    if (!this.isAlive(core)) {
       clearInterval(this.timer!)
       this.timer = null
       this.publish(core, true)
@@ -81,9 +120,9 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report> extends D
     }
     const now = Date.now()
     let due = Math.floor((now - this.clock) / this.tickMs)
-    if (due > MAX_CATCHUP) {
-      this.clock = now - MAX_CATCHUP * this.tickMs
-      due = MAX_CATCHUP
+    if (due > this.maxCatchup) {
+      this.clock = now - this.maxCatchup * this.tickMs
+      due = this.maxCatchup
     }
     for (let i = 0; i < due; i++) core.step()
     this.clock += due * this.tickMs
@@ -91,11 +130,13 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report> extends D
   }
 
   /** Fire-and-forget; a failed report is retried on the next tick. */
-  private publish(core: Core, force: boolean): void {
-    const report = this.report(core, core.connections === 0)
+  private publish(core: Core, empty: boolean): void {
+    if (!this.report || !this.send) return
+    const report = this.report(core, empty)
+    if (report === null || report === undefined) return
     const key = JSON.stringify(report)
     const now = Date.now()
-    if (!force && (now - this.reportAt < REPORT_MIN_MS || (key === this.reported && now - this.reportAt < HEARTBEAT_MS))) return
+    if (!empty && (now - this.reportAt < REPORT_MIN_MS || (key === this.reported && now - this.reportAt < this.heartbeatMs))) return
     this.reported = key
     this.reportAt = now
     this.send(report).then(undefined, () => (this.reported = ""))

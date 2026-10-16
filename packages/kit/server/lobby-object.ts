@@ -32,6 +32,10 @@ export class LobbyObject<Env, R extends BaseRoomReport> extends DurableObject<En
     return this.mm.create(Date.now())
   }
 
+  info(code: string) {
+    return this.mm.info(code, Date.now())
+  }
+
   stats() {
     return this.mm.stats(Date.now())
   }
