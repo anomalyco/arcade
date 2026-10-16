@@ -4,6 +4,7 @@ import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuilding
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { interiorSignature } from "./interiors/plan"
+import { propDressingState, replacedByLibrary } from "./props/state"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -163,7 +164,7 @@ export type OriginLevel = Omit<LevelData, "chunks" | "glass"> & { chunks: Origin
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, OriginLevel>()
 export function buildLevel(town: Town): OriginLevel {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propDressingState.on ? 1 : 0}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)
@@ -376,7 +377,7 @@ function compileLevel(town: Town): OriginLevel {
       for (const h of [.30, .84]) m.box(x, h, z, r, h + .065, end, railCol, MAT.timber)
     }
   }
-  for (const p of town.props) { const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
+  for (const p of town.props) { if (replacedByLibrary(p, town)) continue; const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
   for (const [id, p] of town.lamps.entries()) {
     if(p.kind==="window")continue
     const m = at(p.x, p.y)

@@ -10,6 +10,7 @@ import "./map/index"
 import "./melee/index"
 import "./pacing/index"
 import "./progression/index"
+import "./props/index"
 import "./vehicles/index"
 import "./weather/index"
 

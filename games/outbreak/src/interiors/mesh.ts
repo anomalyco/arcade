@@ -253,7 +253,15 @@ const nearestLamp = (town: Town, x: number, z: number) => {
 }
 
 /** Resident Evil dressing for a building: wainscoting, portraits, a clock, a fireplace, sconces and a save-room desk. */
-export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[]): void {
+/** Floor footprint of a piece standing on face `f` at `a`: `w` along the wall, `d` out from it. */
+function faceFootprint(f: Face, a: number, w: number, d: number): Rect {
+  const n0 = f.at, n1 = f.at + f.side * d
+  const lo = Math.min(n0, n1), hi = Math.max(n0, n1)
+  return f.axis === "x" ? [a - w / 2, lo, a + w / 2, hi] : [lo, a - w / 2, hi, a + w / 2]
+}
+
+/** `footprints` (optional) receives the floor rects of the standing pieces (fireplace, clock, desk) so other dressing can keep off them. */
+export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[], footprints?: Rect[]): void {
   if (plan.theme === "plain" || !interiorSettings.decor) return
   const faces = interiorFaces(b, town)
   if (interiorSettings.wainscot) for (const f of faces) wainscot(m, f, plan.theme)
@@ -283,16 +291,23 @@ export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: Interi
     if (fp) {
       const lamp = nearestLamp(town, fp.f.axis === "x" ? fp.a : fp.f.at, fp.f.axis === "x" ? fp.f.at : fp.a)
       fireplace(m, fp.f, fp.a, plan.theme, lamp)
+      footprints?.push(faceFootprint(fp.f, fp.a, 1.9, 0.52))
       painting(m, fp.f, fp.a, 1.1, 0.8, 1.85, rng, true)
     }
   }
   if (residential && plan.theme !== "station") {
     const c = take(0.8)
-    if (c) grandfatherClock(m, c.f, c.a, plan.theme)
+    if (c) {
+      grandfatherClock(m, c.f, c.a, plan.theme)
+      footprints?.push(faceFootprint(c.f, c.a, 0.6, 0.4))
+    }
   }
   if (plan.theme === "station" || plan.theme === "mansion" || (plan.theme === "baker" && rng.next() < 0.5)) {
     const t = take(1.0)
-    if (t) typewriterDesk(m, t.f, t.a)
+    if (t) {
+      typewriterDesk(m, t.f, t.a)
+      footprints?.push(faceFootprint(t.f, t.a, 0.8, 0.52))
+    }
   }
   const paintings = residential ? 3 : 2
   for (let i = 0; i < paintings; i++) {

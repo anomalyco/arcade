@@ -1,13 +1,14 @@
 import { defineConfig } from "vite"
 import { audioAssets } from "../../scripts/audio-assets"
 import { textureAssets } from "../../scripts/texture-assets"
+import { propAssets } from "../../scripts/prop-assets"
 import { writeBuildId } from "../../scripts/build-id"
 
 // Co-op clients send this hash of shared/ in hello; a room built from other shared code asks them to reload.
 writeBuildId(new URL(".", import.meta.url).pathname)
 
 export default defineConfig({
-  plugins: [audioAssets({ sfx: ["game:outbreak"] }), textureAssets()],
+  plugins: [audioAssets({ sfx: ["game:outbreak"] }), textureAssets(), propAssets()],
   base: "./",
   build: {
     target: "esnext",
