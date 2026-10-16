@@ -35,12 +35,12 @@ describe("Lab stations", () => {
     })
     expect(prefixed).toEqual([])
   })
-  test("Outbreak look's variants are six groups that compose, opening on today's look at the start house", () => {
+  test("Outbreak look's variants are seven groups that compose, opening on today's look at the start house", () => {
     const st = stations.find(s => s.id === "outbreak-look")!
-    expect(variantGroups(st.variants).map(g => g.id)).toEqual(["Look", "Hero", "Shot", "Weather", "Beam", "Unseen"])
+    expect(variantGroups(st.variants).map(g => g.id)).toEqual(["Look", "Hero", "Shot", "Detail", "Weather", "Beam", "Unseen"])
     expect(composes(st)).toBe(true)
     const picks = defaultPicks(st)
-    expect(Object.fromEntries([...picks].map(([g, v]) => [g, v.id]))).toEqual({ Look: "today", Hero: "hero-from-look", Shot: "front-walk-dusk", Weather: "clear", Beam: "beam-medium", Unseen: "unseen-shroud-blend" })
+    expect(Object.fromEntries([...picks].map(([g, v]) => [g, v.id]))).toEqual({ Look: "today", Hero: "hero-from-look", Shot: "front-walk-dusk", Detail: "detail-today", Weather: "clear", Beam: "beam-medium", Unseen: "unseen-shroud-blend" })
     // A Hero pick re-applies the Look under it rather than resetting it.
     const mannequin = st.variants!.find(v => v.id === "hero-mannequin")!
     const setup = composedSetup(st, pickAfter(st, picks, st.variants!.find(v => v.id === "deeper-noir")!), mannequin)

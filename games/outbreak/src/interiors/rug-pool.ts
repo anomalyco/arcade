@@ -3,9 +3,10 @@ import { RUG_DIRECTORY_SLOTS } from "./wgsl"
 import { createRugWorker, type RugWorkerRequest, type RugWorkerResponse } from "@arcade/kit/textures/rug-baker"
 
 export type RugRequest = {
-  /** Directory key (stream slot × 4 + rug index). */
+  /** Directory key (stream slot × 4 + rug index); -1 for a layer the caller looks up with `layerOf`. */
   dirKey: number
-  spec: RugSpec
+  /** The procedural rug to bake; omitted for `imageUrl` requests. */
+  spec?: RugSpec
   /** Lower is more urgent (metres from the survivor to the room). */
   priority: number
   /** Hand-painted manifest texture to use instead of the procedural bake. */
@@ -88,9 +89,19 @@ export class RugPool {
   /** Replaces the wanted rugs. Cheap; call whenever the survivor or the streamed window moves. */
   setRequests(reqs: readonly RugRequest[]): void {
     this.requests = reqs
-      .map(r => ({ ...r, key: r.imageUrl ? `img|${r.imageUrl}|${this.size}` : rugSpecKey(r.spec, this.size) }))
+      .filter(r => r.imageUrl || r.spec)
+      .map(r => ({ ...r, key: r.imageUrl ? this.imageKey(r.imageUrl) : rugSpecKey(r.spec!, this.size) }))
       .sort((a, b) => a.priority - b.priority)
     this.refreshDirectory()
+  }
+
+  private imageKey(url: string): string {
+    return `img|${url}|${this.size}`
+  }
+
+  /** Texture layer (1..N) holding an image request, or 0 while it is not resident. */
+  layerOf(imageUrl: string): number {
+    return this.layers.findIndex(l => l.key === this.imageKey(imageUrl)) + 1
   }
 
   private refreshDirectory(): void {
@@ -99,9 +110,9 @@ export class RugPool {
     const want = this.requests.slice(0, this.rugLayers)
     for (const r of want) {
       const li = this.layers.findIndex(l => l.key === r.key)
-      if (li < 0 || r.dirKey < 0 || r.dirKey >= this.directory.length) continue
+      if (li < 0) continue
       this.layers[li]!.used = this.clock
-      this.directory[r.dirKey] = li + 1
+      if (r.dirKey >= 0 && r.dirKey < this.directory.length) this.directory[r.dirKey] = li + 1
       resident++
     }
     this.stats.resident = resident
@@ -141,7 +152,7 @@ export class RugPool {
         if (this.inflight.size >= 2) break
         if (this.pendingKeys.has(r.key) || this.layers.some(l => l.key === r.key) || this.ready.some(j => j.key === r.key)) continue
         if (r.imageUrl) this.post({ id: 0, kind: "image", url: r.imageUrl, size: this.size }, r.key)
-        else this.post({ id: 0, kind: "rug", spec: r.spec, size: this.size }, r.key)
+        else if (r.spec) this.post({ id: 0, kind: "rug", spec: r.spec, size: this.size }, r.key)
       }
     }
     this.refreshDirectory()

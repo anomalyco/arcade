@@ -5,9 +5,9 @@ const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean | string) => ({ command: "scene.set-param", args: { key, value } })
 const pose = (x: number, y: number, aim: number, extra: Record<string, boolean> = {}) => ({ command: "player.pose", args: { x, y, aim, ...extra } })
 
-// The variants are six groups that compose: a Look, a Hero on top of it, where and when (Shot), the weather, the beam
-// tier and the unseen layer. Each sets only its own knobs and every group's pick is applied in this order, so choosing
-// a Hero keeps the Look and switching the Shot keeps the beam tier.
+// The variants are seven groups that compose: a Look, a Hero on top of it, where and when (Shot), surface detail, the
+// weather, the beam tier and the unseen layer. Each sets only its own knobs and every group's pick is applied in this
+// order, so choosing a Hero keeps the Look and switching the Shot keeps the beam tier.
 const look = (preset: string): StationCommand[] => [{ command: "look.preset", args: { preset } }]
 const hero = (style: number): StationCommand[] => [set("heroStyle", style)]
 const shot = (hour: number, zoom: number, at: StationCommand, ...extra: StationCommand[]): StationCommand[] => [set("timeScale", 0), set("hour", hour), set("zoom", zoom), at, ...extra]
@@ -34,7 +34,11 @@ const variants: StationVariant[] = [
   { id: "street-raised-aim", group: "Shot", label: "Street, raised aim", note: "Pistol light on the raised barrel.", setup: shot(22, 42, street(-0.35), { command: "survivor.aim-demo", args: { mode: "aim-fire" } }) },
   { id: "doorway-night", group: "Shot", label: "Doorway, night", note: "The door frame cuts the beam.", setup: shot(22, 34, pose(27.7, 31, Math.PI, { openDoor: true })) },
   { id: "hallway-night", group: "Shot", label: "Hallway, night", note: "Inside at 22:00, flashlight on: the unseen layer around the beam.", setup: shot(22, 36, hall(true)) },
+  { id: "entry-hall-night", group: "Shot", label: "Entry hall from above", note: "19:00 on the hall runner by the front door, flashlight up the hall: Kit's Resident Evil house frame.", setup: shot(19, 26, pose(27.7, 34.3, -Math.PI / 2, { flashlight: true })) },
   { id: "hallway-day", group: "Shot", label: "Hallway, day", note: "At 14:00 the unseen layers scale down.", setup: shot(14, 36, hall(false)) },
+  // Detail spikes for a Resident Evil house (AR-42): the painted floor plate is Ash's living room and hall only.
+  { id: "detail-today", group: "Detail", label: "Today", note: "Procedural floorboards.", setup: [set("paintedPlate", 0)] },
+  { id: "painted-plate", group: "Detail", label: "Painted floor plate", note: "Living room and hall floor from the RE mansion paint-over, rectified through the camera, lit live.", setup: [set("paintedPlate", 1)] },
   { id: "clear", group: "Weather", label: "Clear", note: "No rain.", setup: [{ command: "weather.preset", args: { preset: "clear" } }] },
   { id: "rain", group: "Weather", label: "Rain", note: "Rain and mist thicken the air.", setup: [{ command: "weather.preset", args: { preset: "rain" } }] },
   // The flashlight beam (was the outbreak-flashlight station): off and the volumetric tiers.
@@ -65,7 +69,7 @@ export default defineStation({
   color: 0xd9a441,
   status: "review",
   demo: { kind: "page", url: page },
-  defaultVariant: ["today", "hero-from-look", "front-walk-dusk", "clear", "beam-medium", "unseen-shroud-blend"],
+  defaultVariant: ["today", "hero-from-look", "front-walk-dusk", "detail-today", "clear", "beam-medium", "unseen-shroud-blend"],
   variants: variants.map(v => ({ ...v, url: page })),
   board: { feature: "AR-42", decision: "D-28" },
   metrics: [
@@ -77,13 +81,14 @@ export default defineStation({
     "packages/kit/avatar/simple-figure.ts",
     "games/outbreak/src/flashlight-beam.ts",
     "games/outbreak/src/unseen",
+    "games/outbreak/src/interiors",
   ],
   branches: ["outbreak-look*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
     right: [
-      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Grade", "Look · Lights"] },
+      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Grade", "Look · Lights", "Look · Detail"] },
       { widget: "controls", id: "sections", title: "Beam and unseen", groups: ["Flashlight", "Unseen"] },
     ],
     dock: [{ widget: "variants" }],
