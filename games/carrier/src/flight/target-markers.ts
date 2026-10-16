@@ -10,25 +10,25 @@ type Projector = {
 }
 
 const CSS = `
-#tg { position: fixed; inset: 0; pointer-events: none; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-weight: 300;
+#tmk { position: fixed; inset: 0; pointer-events: none; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-weight: 300;
   text-transform: uppercase; text-shadow: 0 0 2px rgba(6, 16, 30, 0.95), 0 1px 6px rgba(6, 16, 30, 0.7); }
-#tg[hidden], #tg [hidden] { display: none !important; }
-#tg .m { position: absolute; left: 0; top: 0; will-change: transform; }
-#tg .m i { position: absolute; display: block; filter: drop-shadow(0 0 1px rgba(6, 16, 30, 0.95)) drop-shadow(0 0 2px rgba(6, 16, 30, 0.6)); }
-#tg .m span { position: absolute; left: 0; transform: translateX(-50%); font-size: 10px; letter-spacing: 0.2em; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: 0.9; }
-#tg .ship i { left: -11px; top: -8px; width: 22px; height: 16px; }
-#tg .ship i::before, #tg .ship i::after { content: ""; position: absolute; top: 0; bottom: 0; width: 5px; border: 2px solid currentColor; }
-#tg .ship i::before { left: 0; border-right: 0; }
-#tg .ship i::after { right: 0; border-left: 0; }
-#tg .ship span { top: 11px; }
-#tg .jet i { left: -6px; top: -6px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor; transform: rotate(45deg); }
-#tg .jet span { top: 11px; }
-#tg .boat i { left: -4px; top: -4px; width: 8px; height: 8px; box-sizing: border-box; border: 2px solid currentColor; transform: rotate(45deg); }
-#tg .boat span { top: 8px; }
-#tg .edge i { left: -8px; top: -8px; width: 16px; height: 16px; }
-#tg .edge i::before { content: ""; position: absolute; left: 2px; top: 4px; width: 8px; height: 8px; border: solid currentColor; border-width: 2px 2px 0 0; transform: rotate(45deg); }
-#tg .edge span { top: 0; font-size: 10px; }
-body.mn-open #tg { display: none; }
+#tmk[hidden], #tmk [hidden] { display: none !important; }
+#tmk .m { position: absolute; left: 0; top: 0; will-change: transform; }
+#tmk .m i { position: absolute; display: block; filter: drop-shadow(0 0 1px rgba(6, 16, 30, 0.95)) drop-shadow(0 0 2px rgba(6, 16, 30, 0.6)); }
+#tmk .m span { position: absolute; left: 0; transform: translateX(-50%); font-size: 10px; letter-spacing: 0.2em; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: 0.9; }
+#tmk .ship i { left: -11px; top: -8px; width: 22px; height: 16px; }
+#tmk .ship i::before, #tmk .ship i::after { content: ""; position: absolute; top: 0; bottom: 0; width: 5px; border: 2px solid currentColor; }
+#tmk .ship i::before { left: 0; border-right: 0; }
+#tmk .ship i::after { right: 0; border-left: 0; }
+#tmk .ship span { top: 11px; }
+#tmk .jet i { left: -6px; top: -6px; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor; transform: rotate(45deg); }
+#tmk .jet span { top: 11px; }
+#tmk .boat i { left: -4px; top: -4px; width: 8px; height: 8px; box-sizing: border-box; border: 2px solid currentColor; transform: rotate(45deg); }
+#tmk .boat span { top: 8px; }
+#tmk .edge i { left: -8px; top: -8px; width: 16px; height: 16px; }
+#tmk .edge i::before { content: ""; position: absolute; left: 2px; top: 4px; width: 8px; height: 8px; border: solid currentColor; border-width: 2px 2px 0 0; transform: rotate(45deg); }
+#tmk .edge span { top: 0; font-size: 10px; }
+body.mn-open #tmk { display: none; }
 `
 
 type Mark = { el: HTMLElement; icon: HTMLElement; label: HTMLElement; kind: string; text: string; color: string }
@@ -47,14 +47,14 @@ export class TargetMarkers {
   private used = 0
 
   constructor(parent: HTMLElement = document.body) {
-    if (!document.getElementById("tg-css")) {
+    if (!document.getElementById("tmk-css")) {
       const style = document.createElement("style")
-      style.id = "tg-css"
+      style.id = "tmk-css"
       style.textContent = CSS
       document.head.append(style)
     }
     const root = document.createElement("div")
-    root.id = "tg"
+    root.id = "tmk"
     parent.append(root)
     this.root = root
   }

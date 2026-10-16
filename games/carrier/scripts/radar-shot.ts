@@ -134,7 +134,7 @@ async function shot(page: Page, name: string): Promise<void> {
     document.getElementById("radar-shot-bg")?.remove()
     document.getElementById("view")!.style.visibility = ""
   })
-  const s = await js<string>(page, "return `${f.phase} y ${Math.round(f.plane.y)} markers ${[...document.querySelectorAll('#tg .m:not([hidden])')].map((m) => m.className.slice(2)).join(',')}`").catch(() => "")
+  const s = await js<string>(page, "return `${f.phase} y ${Math.round(f.plane.y)} markers ${[...document.querySelectorAll('#tmk .m:not([hidden])')].map((m) => m.className.slice(2)).join(',')}`").catch(() => "")
   console.log(`shot ${name}: ${s}`)
 }
 
@@ -200,7 +200,7 @@ async function solo(): Promise<void> {
     await warp(page, x, 450, z, b + 0.12, 150)
     await page.waitForTimeout(2200)
     await shot(page, "01-approach-enemy-carrier")
-    check(await page.evaluate(() => document.querySelectorAll("#tg .m.ship:not([hidden])").length > 0), "a bracket on the enemy carrier in view")
+    check(await page.evaluate(() => document.querySelectorAll("#tmk .m.ship:not([hidden])").length > 0), "a bracket on the enemy carrier in view")
     // Closer, 1.6 km.
     await warp(page, e.x - Math.sin(b) * 1600, 300, e.z + Math.cos(b) * 1600, b - 0.08, 140)
     await page.waitForTimeout(2200)
@@ -209,7 +209,7 @@ async function solo(): Promise<void> {
     await warp(page, e.x - Math.sin(b) * 3000, 500, e.z + Math.cos(b) * 3000, b + Math.PI - 0.7, 150)
     await page.waitForTimeout(2200)
     await shot(page, "03-edge-arrow-to-enemy")
-    check(await page.evaluate(() => document.querySelectorAll("#tg .m.edge:not([hidden])").length === 1), "an edge arrow toward the nearest enemy carrier")
+    check(await page.evaluate(() => document.querySelectorAll("#tmk .m.edge:not([hidden])").length === 1), "an edge arrow toward the nearest enemy carrier")
   }
   // The full map on G.
   await mapKey(page, true)
@@ -281,7 +281,7 @@ async function mp(): Promise<void> {
   await a.waitForTimeout(2500)
   check(await until(a, "[...w.jets.values()].some((j) => j.alive)", 3000), "A sees B's jet")
   await shot(a, "10-mp-enemy-jet-ahead")
-  check(await a.evaluate(() => document.querySelectorAll("#tg .m.jet:not([hidden])").length > 0), "a diamond on the enemy jet")
+  check(await a.evaluate(() => document.querySelectorAll("#tmk .m.jet:not([hidden])").length > 0), "a diamond on the enemy jet")
   await mapKey(a, true)
   await a.waitForTimeout(400)
   await shot(a, "11-mp-full-map")
