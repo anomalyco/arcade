@@ -1557,7 +1557,7 @@ async function main() {
     rBatches.length = 0
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
-    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile.clutterScale, !currentIsStreamWindow, level)) rBatches.push(b)
+    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, !currentIsStreamWindow, level)) rBatches.push(b)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
     if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)

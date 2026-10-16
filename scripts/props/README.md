@@ -23,11 +23,14 @@ Work files (source images, raw GLBs, previews, reports) live outside the repo, b
 3. **Blender cleanup**, `blender-cleanup.py` (headless Blender 5.2, one process for all props):
    - drop floater islands, orient the front to game +Z (yaw from `fixups.json` or the long axis), scale to the
      catalogue size (footprint within ±12% of a uniform fit, height exact), pivot on the floor;
-   - octree remesh (depth 7) plus a voxel pass, because TRELLIS meshes are open and collapse decimation stalls on
-     their holes. Shreds under 0.4% of the surface go. Each LOD takes the finest remesh that reaches its budget:
-     depth 7, then 8, then the source itself, then 6 and 5. A thin wall riddled with voxel holes has a high genus,
-     which sets a floor on decimation; a finer or coarser grid closes the holes;
-   - per-corner colour from the source texture (nearest point, filtered to the triangle's size), kit material from
+   - decimate candidates to each LOD budget and keep the one closest to the source: the source itself, the source
+     with its small cracks filled (holes up to 24 edges), and only if neither fits the budget an octree remesh
+     (depth 7, 8, 6, 5, each with a voxel pass and shreds under 0.4% dropped). The score is the 90th-percentile
+     distance from source samples to the candidate (torn panels, lost legs) plus the reverse (webbing), over the
+     bounding-box diagonal; `report.json` lists every candidate's score. At game budgets the source wins almost
+     everywhere: the remesh that the first batch relied on closed or tore thin panels such as cabinet doors;
+   - per-corner colour from the source texture (a short ray along the face normal, so a thin panel's front does
+     not take its back's colour; nearest point as fallback; filtered to the triangle's size), kit material from
      metallic/roughness, Cycles AO with a floor plane (only the LOD and the floor occlude);
    - write `.prop` (format in `packages/kit/props/format.ts`) and three preview renders to `<work>/preview/`.
 
@@ -43,18 +46,23 @@ pivot, size within 16%, triangles within 2% of budget).
 
 ## Fixups
 
-`fixups.json`, per id: `yaw` (degrees, overrides the auto orientation), `octree` (force one remesh depth, 0 for the
-source mesh), `smooth` (normal smoothing angle, default 40°).
+`fixups.json`, per id: `yaw` (degrees, overrides the auto orientation), `candidates` (the mesh candidates to try, for
+example `["octree 7"]`), `smooth` (normal smoothing angle, default 40°).
 
 ## Measured (Mac Studio, M5 Max, 2026-10-16)
 
-- TRELLIS.2: 66 s per asset on average (38–104 s; cutout 8 s, generation 52 s, texture bake 4 s), plus 47 s to load
-  the pipeline once per batch. 26 props in 29 minutes.
-- Blender cleanup: 154 s for all 26 (1–29 s each; the slow ones fall back through several remesh depths).
-- Output: 1,073 KB for 26 props, two LODs each.
+- TRELLIS.2: 71 s per asset on average (38–196 s; cutout 8 s, generation 52 s, texture bake 5 s), plus about 50 s to
+  load the pipeline once per batch. The first 26 took 29 minutes.
+- Blender cleanup: about 50 s for all 26.
+- Output: 4.2 MB for 26 props, two LODs each, at 2–15k triangles for LOD0 and 400–4k for LOD1.
 
-Weak results to regenerate first: plate stack, typewriter, book stack, cardboard boxes (thin parts shred), and the
-fern's fronds were lost, so `potted-plant` ships as a cracked plant pot.
+The first batch used 0.4–3k-triangle budgets and an octree remesh, which tore thin panels (cabinet doors, chair
+slats). Six small props (typewriter, phone, books, boxes, plates, plant) were redone from chunkier pictures; the first
+pictures had flaps, fronds and levers that shredded. Plates and the typewriter are still the weakest.
+
+The cleanup has no texture atlas. Vertex colour at these budgets reads at the game camera (a 1.8 m counter is about
+240 px wide on Retina), and an atlas would need a textured model path through the shared lit shader. That is the next
+step if small props need sharper print and wear.
 
 ## Licences
 
