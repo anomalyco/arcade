@@ -11,7 +11,8 @@ import { dressSurfaces, footprintOf, furnishRoom, placementTriangles, type Place
 import { hash2 } from "@arcade/kit/sim/rng"
 import { propShape, type Building, type Town } from "../../shared/map"
 import { emitInteriorDecor } from "../interiors/mesh"
-import { REPLACED_KINDS } from "./state"
+import type { TableLamp } from "../lightbake"
+import { furnishedHouse, propDressingState, REPLACED_KINDS } from "./state"
 
 /** Clutter stops being added to a room past this many LOD0 triangles (anchors always draw). */
 export const ROOM_TRIANGLE_BUDGET = 14000
@@ -159,3 +160,29 @@ export function furnishHouse(b: Building, town: Town, density: number, seed: num
 }
 
 export const instancesOf = (f: HouseFurnishing): PropInstance[] => [...f.anchors, ...f.clutter]
+
+let planned: { key: string; houses: HouseFurnishing[] } = { key: "", houses: [] }
+
+/** The furnished houses for the current `propDressingState`, planned once per town, density and seed; [] when off. */
+export function furnishedHouses(town: Town): HouseFurnishing[] {
+  const { on, density, seed } = propDressingState
+  if (!on) return []
+  const key = `${town.seed}/${town.houseSeed}/${density}/${seed}/${town.buildings.length}`
+  if (key !== planned.key) planned = { key, houses: town.buildings.filter(furnishedHouse).map(b => furnishHouse(b, town, density, seed)) }
+  return planned.houses
+}
+
+/** Clutter standing on the floor taller than this is grounded in the floor bake like furniture. */
+const GROUNDED_HEIGHT = 0.3
+
+/** Footprints of floor clutter over 0.3 m (crates, boxes, pots, radiator, clock, piano, TV) for the floor contact bake. */
+export const propFloorFootprints = (town: Town): { rect: Rect; height: number }[] =>
+  furnishedHouses(town).flatMap(h => h.clutter)
+    .filter(p => p.y < 0.01 && p.spec.size[1] * p.scale > GROUNDED_HEIGHT)
+    .map(p => ({ rect: p.footprint, height: p.spec.size[1] * p.scale }))
+
+/** Table lamps the dressing placed, with their shade centre height, for the bounce bake (`bakeOutbreakBounce`). */
+export const propLamps = (town: Town): TableLamp[] =>
+  furnishedHouses(town).flatMap(h => h.clutter)
+    .filter(p => p.spec.shade !== undefined)
+    .map(p => ({ x: p.x, z: p.z, h: p.y + ((1 + p.spec.shade!) / 2) * p.spec.size[1] * p.scale }))

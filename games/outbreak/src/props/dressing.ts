@@ -3,9 +3,9 @@ import { PROP_IDS } from "@arcade/kit/props/catalogue"
 import { PropBatches, PropModels, type PropInstance } from "@arcade/kit/props/models"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
-import { furnishHouse, instancesOf, type HouseFurnishing } from "./furnish"
+import { furnishedHouses, instancesOf, type HouseFurnishing } from "./furnish"
 import type { OutbreakPropSettings } from "./settings"
-import { furnishedHouse, propDressingState } from "./state"
+import { propDressingState } from "./state"
 
 const NONE: readonly Batch[] = []
 let current: PropDressing | null = null
@@ -20,12 +20,12 @@ export class PropDressing {
   readonly models: PropModels
   private readonly batches: PropBatches
   private loading: Promise<void> | null = null
-  private key = ""
   private houses: HouseFurnishing[] = []
   private instances: PropInstance[] = []
 
-  constructor(renderer: Pick<Renderer, "addModel" | "setModel">) {
-    this.models = new PropModels(renderer)
+  /** `lampAux`: the map light slot lamp shades glow through (Outbreak's `TABLE_LAMP_SLOT`). */
+  constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number) {
+    this.models = new PropModels(renderer, undefined, { lampAux })
     this.batches = new PropBatches(this.models)
     current = this
   }
@@ -40,19 +40,22 @@ export class PropDressing {
    */
   collect(town: Town, view: Rect, s: OutbreakPropSettings, zoom: number, clutterScale: number, originBuild: boolean, rebuildLevel: () => void): readonly Batch[] {
     const on = Boolean(s.propsOn)
-    if (propDressingState.on !== on) {
-      propDressingState.on = on
+    const density = s.propClutter * clutterScale
+    const st = propDressingState
+    // The level grounds floor clutter and bakes table-lamp pools from the same plan, so a new plan rebuilds it.
+    if (st.on !== on || (on && (st.density !== density || st.seed !== s.propSeed))) {
+      st.on = on
+      st.density = density
+      st.seed = s.propSeed
       rebuildLevel()
     }
     if (!on || !originBuild) return NONE
     if (!this.loading) this.loading = this.models.ensure(PROP_IDS)
     this.models.setLook({ brightness: s.propBrightness, ao: s.propAO, saturation: s.propSaturation })
-    const density = s.propClutter * clutterScale
-    const key = `${town.seed}/${town.houseSeed}/${density}/${s.propSeed}/${town.buildings.length}`
-    if (key !== this.key) {
-      this.key = key
-      this.houses = town.buildings.filter(furnishedHouse).map(b => furnishHouse(b, town, density, s.propSeed))
-      this.instances = this.houses.flatMap(instancesOf)
+    const houses = furnishedHouses(town)
+    if (houses !== this.houses) {
+      this.houses = houses
+      this.instances = houses.flatMap(instancesOf)
     }
     const lod = zoom > s.propLodZoom ? 1 : 0
     const [x0, z0, x1, z1] = view

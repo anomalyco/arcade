@@ -1,7 +1,7 @@
 import type { Mesh } from "../gpu/mesh"
 import { INST_FLOATS, type Batch } from "../gpu/renderer"
-import { PROP_IDS } from "./catalogue"
-import { decodeProp, propTriangles, type PropAsset } from "./format"
+import { PROP_IDS, propSpec } from "./catalogue"
+import { decodeProp, propTriangles, type PropAsset, type PropLod } from "./format"
 import { DEFAULT_PROP_LOOK, propMesh, type PropLook } from "./mesh"
 
 /** One placed prop: game-space position of its floor pivot, yaw (0 faces +Z), uniform scale. */
@@ -56,12 +56,27 @@ export class PropLibrary {
 /** The renderer surface props need: register a model, and optionally replace one in place when the look changes. */
 export type PropModelHost = { addModel(mesh: Mesh): number; setModel?(index: number, mesh: Mesh): void }
 
+export type PropModelOptions = {
+  /**
+   * Map light slot for lamp shades (`PropSpec.shade`): their faces draw as `MAT.lamp` with this aux, so they glow and
+   * dim with whatever the game drives that slot with. Models are shared by every instance, so one slot serves all.
+   * Without it shades are plain lit faces.
+   */
+  lampAux?: number
+}
+
 /** Registers every loaded prop's LODs as instanced models (`Renderer.addModel`) and rebuilds them when the look changes. */
 export class PropModels {
   private readonly models = new Map<string, number[]>()
   private look: PropLook = { ...DEFAULT_PROP_LOOK }
 
-  constructor(private readonly host: PropModelHost, readonly library = new PropLibrary()) {}
+  constructor(private readonly host: PropModelHost, readonly library = new PropLibrary(), private readonly options: PropModelOptions = {}) {}
+
+  private mesh(id: string, lod: PropLod): Mesh {
+    const shade = propSpec(id).shade
+    const aux = this.options.lampAux
+    return propMesh(lod, this.look, shade !== undefined && aux !== undefined ? { from: shade * propSpec(id).size[1], aux } : undefined)
+  }
 
   /** Loads and registers the given props; resolves when all that exist are drawable. */
   async ensure(ids: readonly string[]): Promise<void> {
@@ -69,7 +84,7 @@ export class PropModels {
     for (const id of ids) {
       if (this.models.has(id)) continue
       const asset = this.library.get(id)
-      if (asset) this.models.set(id, asset.lods.map(lod => this.host.addModel(propMesh(lod, this.look))))
+      if (asset) this.models.set(id, asset.lods.map(lod => this.host.addModel(this.mesh(id, lod))))
     }
   }
 
@@ -98,7 +113,7 @@ export class PropModels {
     if (!this.host.setModel) return
     for (const [id, models] of this.models) {
       const asset = this.library.get(id)!
-      models.forEach((index, lod) => this.host.setModel!(index, propMesh(asset.lods[lod]!, this.look)))
+      models.forEach((index, lod) => this.host.setModel!(index, this.mesh(id, asset.lods[lod]!)))
     }
   }
 }

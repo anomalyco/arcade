@@ -13,22 +13,28 @@ export type PropLook = {
 
 export const DEFAULT_PROP_LOOK: PropLook = { brightness: 1.6, ao: 0.55, saturation: 1 }
 
-const KNOWN_MATS = new Set<number>(Object.values(MAT))
+/** Lamp faces: triangles whose lowest corner is at or above `from` metres draw as `MAT.lamp` tied to map light `aux`. */
+export type PropGlow = { from: number; aux: number }
 
 /** Expands one LOD into the kit's non-indexed vertex list (24-byte packed on upload), ready for `Renderer.addModel`. */
-export function propMesh(lod: PropLod, look: PropLook = DEFAULT_PROP_LOOK, mesh = new Mesh()): Mesh {
+export function propMesh(lod: PropLod, look: PropLook = DEFAULT_PROP_LOOK, glow?: PropGlow): Mesh {
   const { positions: p, normals: n, colors: c, ao, mats, indices } = lod
+  const mesh = new Mesh()
   const v = mesh.v
-  for (let i = 0; i < indices.length; i++) {
-    const k = indices[i]!
-    const occ = 1 - look.ao * (1 - ao[k]! / 255)
-    let r = c[k * 3]! / 255, g = c[k * 3 + 1]! / 255, b = c[k * 3 + 2]! / 255
-    const y = r * 0.299 + g * 0.587 + b * 0.114
-    r = (y + (r - y) * look.saturation) * look.brightness * occ
-    g = (y + (g - y) * look.saturation) * look.brightness * occ
-    b = (y + (b - y) * look.saturation) * look.brightness * occ
-    const m = mats[k]!
-    v.push(p[k * 3]!, p[k * 3 + 1]!, p[k * 3 + 2]!, n[k * 3]!, n[k * 3 + 1]!, n[k * 3 + 2]!, r, g, b, (KNOWN_MATS.has(m) ? m : MAT.lit) as Mat, 0)
+  for (let t = 0; t < indices.length; t += 3) {
+    const lamp = glow !== undefined && Math.min(p[indices[t]! * 3 + 1]!, p[indices[t + 1]! * 3 + 1]!, p[indices[t + 2]! * 3 + 1]!) >= glow.from
+    for (let i = t; i < t + 3; i++) {
+      const k = indices[i]!
+      const occ = 1 - look.ao * (1 - ao[k]! / 255)
+      let r = c[k * 3]! / 255, g = c[k * 3 + 1]! / 255, b = c[k * 3 + 2]! / 255
+      const y = r * 0.299 + g * 0.587 + b * 0.114
+      r = (y + (r - y) * look.saturation) * look.brightness * occ
+      g = (y + (g - y) * look.saturation) * look.brightness * occ
+      b = (y + (b - y) * look.saturation) * look.brightness * occ
+      // Lit or shiny only: other ids are actor, hero or emissive paths with their own colour rules.
+      const mat: Mat = lamp ? MAT.lamp : mats[k] === MAT.shiny ? MAT.shiny : MAT.lit
+      v.push(p[k * 3]!, p[k * 3 + 1]!, p[k * 3 + 2]!, n[k * 3]!, n[k * 3 + 1]!, n[k * 3 + 2]!, r, g, b, mat, lamp ? glow.aux : 0)
+    }
   }
   return mesh
 }

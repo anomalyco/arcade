@@ -1,7 +1,14 @@
 import { SIZE, type Building, type Prop, type Town } from "../../shared/map"
 
-/** Whether the library furnishes the houses; the level builder reads it (like `interiorSettings`). */
-export const propDressingState = { on: false }
+/**
+ * Whether the library furnishes the houses, and the clutter density and seed it plans with. `PropDressing.collect`
+ * sets it and rebuilds the level on change; the level builder reads it (like `interiorSettings`) to skip box furniture,
+ * ground floor clutter and bake table-lamp pools.
+ */
+export const propDressingState = { on: false, density: 1, seed: 0 }
+
+/** The part of the level cache key the library owns; unchanged from before clutter was stamped while off. */
+export const propLevelSignature = (): string => (propDressingState.on ? `1/${propDressingState.density}/${propDressingState.seed}` : "0")
 
 /** Gameplay prop kinds the library draws instead of their box furniture. Workbench, stash and closet keep their own. */
 export const REPLACED_KINDS: ReadonlySet<Prop["kind"]> = new Set(["bed", "sofa", "table", "shelf", "coffee", "counter", "fridge", "dresser", "chair", "nightstand", "stove"])
