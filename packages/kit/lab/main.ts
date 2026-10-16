@@ -11,6 +11,7 @@ import { createLighting } from "./lighting"
 import { createLooksSection } from "./looks"
 import { createMaterials } from "./materials"
 import { createRugsSection } from "./rugs"
+import { createPropsSection } from "./props"
 import { createPhysics } from "./physics"
 import { createWeatherSection } from "./weather"
 import { createDebugWorld } from "./world/world"
@@ -217,7 +218,7 @@ export async function lab(options:LabOptions) {
   const world=createDebugWorld(context)
   context.world=world
   const effects=createEffects(context),looks=createLooksSection(context),weather=createWeatherSection(context),physics=createPhysics(context,spawn?.physics??options.physics?.(context))
-  const sections=[effects.section,weather.section,createLighting(context),looks.section,createMaterials(context,options.materials??[]),createRugsSection(context),createFoliage(context),createWorldSection(context,world),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
+  const sections=[effects.section,weather.section,createLighting(context),looks.section,createMaterials(context,options.materials??[]),createRugsSection(context),createPropsSection(context),createFoliage(context),createWorldSection(context,world),physics.section,...(spawn?[spawn.section]:[]),...(options.sections??[]).map(create=>create(context))]
   const ids=new Set<string>()
   for(const section of sections){if(ids.has(section.id))throw new Error(`Duplicate Lab section: ${section.id}`);ids.add(section.id)}
   for(const s of sections)sectionSelect.add(new Option(s.label,s.id))

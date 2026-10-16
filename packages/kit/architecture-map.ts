@@ -153,6 +153,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s.startsWith("@arcade/kit/textures/"),
   },
   {
+    area: "`props/*`",
+    description: "Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement",
+    match: (s) => s.startsWith("@arcade/kit/props/"),
+  },
+  {
     area: "`look` & `gpu/look-shaders`",
     description: "`LookSettings` presets and WGSL scene/post grading hooks",
     match: (s) =>

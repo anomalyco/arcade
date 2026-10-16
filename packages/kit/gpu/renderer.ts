@@ -896,6 +896,11 @@ export class Renderer {
     return this.models.length - 1
   }
 
+  /** Replaces a registered model's vertices, reusing its buffer when the new mesh fits. */
+  setModel(index: number, mesh: Mesh): void {
+    this.models[index] = this.upload(mesh.pack(), this.models[index] ?? null)
+  }
+
   updateBounce(data: Uint8Array<ArrayBuffer>, w: number, h: number): void {
     this.device.queue.writeTexture({ texture: this.bounceTex }, data, { bytesPerRow: w * 4 }, [w, h])
   }

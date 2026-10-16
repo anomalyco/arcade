@@ -565,6 +565,45 @@ export function buildWorkbenchCatalog(ctx: WorkbenchCatalogContext): CatalogEntr
     })
   }
 
+  const propsSec = sections.find(s => s.id === "props")
+  if (propsSec) {
+    const propCtrl = propsSec.controls.find(c => c.key === "prop" && "options" in c)
+    if (propCtrl && "options" in propCtrl) {
+      for (const opt of propCtrl.options) {
+        const id = `prop:${opt.value}`
+        entries.push({
+          id,
+          label: opt.label,
+          group: "Furniture & props",
+          category: "objects",
+          collection: "shared",
+          tag: "Prop",
+          sectionId: "props",
+          isActive: () => globalSettings.section === "props" && propsSec.settings.view === "single" && propsSec.settings.prop === opt.value,
+          run: () => {
+            setActiveCatalogId(id)
+            if (globalSettings.section !== "props") selectSection("props")
+            const view = propsSec.controls.find(ctrl => ctrl.key === "view")
+            if (view) panel.navigation.set(view, "single")
+            panel.navigation.set(propCtrl, opt.value)
+            frameActiveTarget()
+          },
+        })
+      }
+    }
+    entries.push({
+      id: "section:props",
+      label: "Every prop",
+      group: "Furniture & props",
+      category: "objects",
+      collection: "shared",
+      tag: "Prop",
+      sectionId: "props",
+      isActive: () => globalSettings.section === "props",
+      run: () => selectSection("props"),
+    })
+  }
+
   // 8. Lighting & Looks Categories
   const looksSec = sections.find(s => s.id === "looks")
   if (looksSec && looks) {

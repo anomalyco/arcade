@@ -10,7 +10,7 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
   { id: "characters", title: "Characters and feel", stations: ["characters", "survivor-aim", "game-feel"] },
   { id: "outbreak", title: "Outbreak", stations: ["outbreak-look", "outbreak", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-discovery", "outbreak-hordes", "survivor-bots", "rugs-interiors", "styles"] },
   { id: "games", title: "Other games", stations: ["blackout", "getaway", "carrier", "brawl", "archers"] },
-  { id: "assets", title: "Textures and sound", stations: ["rugs", "audio"] },
+  { id: "assets", title: "Textures, props and sound", stations: ["rugs", "props", "audio"] },
   // Superseded by the Look and world and Effects labs; archived in every browser until Kit decides to delete them.
   { id: "archive", title: "Archive", archived: true, stations: ["looks", "lighting", "weather", "materials", "vegetation", "explosions", "smoke-fire"] },
 ]
