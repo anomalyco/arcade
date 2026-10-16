@@ -133,7 +133,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   {
     area: "`gpu/{boot,scene-frame}`",
     description: "WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting",
-    match: (s) => s === "@arcade/kit/gpu/boot" || s === "@arcade/kit/gpu/scene-frame",
+    match: (s) => s === "@arcade/kit/gpu/boot" || s === "@arcade/kit/gpu/scene-frame" || s === "@arcade/kit/gpu/frame-parts",
   },
   {
     area: "`gpu/{motion,motion-blur,sprite-motion}`",
