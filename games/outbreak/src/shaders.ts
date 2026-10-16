@@ -14,7 +14,7 @@ import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
-import { outbreakHeroWgsl } from "./look/shader"
+import { outbreakBeanFragmentStartWgsl, outbreakHeroWgsl } from "./look/shader"
 import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
 import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
 
@@ -73,6 +73,8 @@ export const outbreakSceneHooks: SceneHooks = {
       if (att <= 0.0035) { continue; }
     }`,
   lightAccumulate: "if (L.cone.w > 1.5) { outbreakFlashIrr = att * diffuse * vis; }",
+  // Soft Bean (outbreakWrap = its wrap + 1) takes its own light wrap; everything else keeps the shared one.
+  diffuseTerm: "let wrapK = select(wrap, outbreakWrap - 1.0, outbreakWrap > 0.5); let diffuse = max((ndl + wrapK) / (1.0 + wrapK), 0.0);",
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
   ambient: "outbreakSkyAmbient(n, F.ambient.rgb) * mix(0.03, 0.88, select(1.0, select(fd.g * 0.28, 0.03, abs(n.y) < 0.5), inRoom && o.world.y < 2.8)) + select(vec3f(0.0), vec3f(0.004, 0.0024, 0.0010), inRoom && o.world.y < 2.8)",
   diagnostics: "F.map.z",
@@ -97,7 +99,7 @@ export const outbreakSceneHooks: SceneHooks = {
     albedo *= vTone;
     outbreakAlbedo = albedo;
     outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
-  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); surfaceTime = F.cam.w; ${interiorFragmentStartWgsl}`,
+  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
   vertex: /* wgsl */ `
   if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
     let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, OL.veg, OL.vegActors);
@@ -343,6 +345,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let darkReadFloor = outbreakAlbedo * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
       if (o.aux > 4.5 && o.aux < 5.5) {
         col = outbreakHeroSurface(max(col, darkReadFloor), outbreakAlbedo, n, V, w, darkLosScale);
+      } else if (o.aux > 5.5 && o.aux < 6.5) {
+        col = outbreakBeanSurface(max(col, darkReadFloor), outbreakAlbedo, n, V, w, darkLosScale);
       } else {
         col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
       }
@@ -350,10 +354,12 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     }
     col += beamAdd * outbreakSeen;
     // Colour comes from light: lit surfaces keep it wherever the scenery is known, not only in sight (light rule on);
-    // the sight area adds a small lift, and the hero keeps a little so the survivor reads as today.
+    // the sight area adds a small lift, and the hero keeps a little so the survivor reads as today. Soft Bean keeps
+    // its own share of its player colour (OL.bean.w) so teammates stay apart in the dark.
     let lit = litMask * mix(outbreakSeen, max(outbreakSeen, outbreakKnown), lightRule);
     let lift = OL.colour.y * lightRule * outbreakSeen;
-    let heroKeep = select(0.0, 0.25 * lightRule, mat == 12 && o.aux > 4.5 && o.aux < 5.5);
+    let beanKeep = select(0.0, clamp(OL.bean.w, 0.0, 1.0), mat == 12 && o.aux > 5.5 && o.aux < 6.5);
+    let heroKeep = select(beanKeep, 0.25, mat == 12 && o.aux > 4.5 && o.aux < 5.5) * lightRule;
     let baseFlashMask = max(lit + lift * (1.0 - lit), heroKeep);
     outbreakFlashMask = select(baseFlashMask, baseFlashMask - outbreakUnseenAlpha, outbreakUnseenAlpha > 0.0);
   }

@@ -54,8 +54,9 @@ import {
 } from "../shared/combat"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
-import { DEFAULT_HERO_LOOK, HERO_AUX, heroShape, heroTint } from "./look/hero"
-import { simpleFigureMeshes } from "@arcade/kit/avatar/simple-figure"
+import { BEAN_AUX, beanTint, DEFAULT_HERO_LOOK, HERO_AUX, heroShape, heroTint, softBeanShape } from "./look/hero"
+import { SURVIVOR_COLOURS } from "./seat-colours"
+import { simpleFigureMeshes, softBeanMeshes, type SimpleFigureBone } from "@arcade/kit/avatar/simple-figure"
 
 export const PISTOL_MUZZLE = 0.20
 export const PISTOL_HOLD = { fwd: 0.375, up: 1.35, side: 0.045 } as const
@@ -322,10 +323,15 @@ export class Survivor {
   private pelvisYaw = spring()
   private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
-  /** Model ids per shape (today's boxes, mannequin, capsule), in the same part order as `models`. */
+  /** Model ids per shape (today's boxes, mannequin, capsule, Soft Bean), in the same part order as `models`. */
   private shapes: number[][]
   /** Linear jacket colour of a co-op seat, tinting the simple styles; null offline. */
   private seat: [number, number, number] | null
+  /** Co-op seat index (0 offline), picking Soft Bean's colour. */
+  private seatIndex: number
+  private renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setModel">>
+  /** Soft Bean's shape knobs its meshes were last built from; it is built on first use and rebuilt when they change. */
+  private beanKey = ""
   private meleeModels: Record<MeleeWeaponId, [number, number, number]>
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
@@ -354,10 +360,12 @@ export class Survivor {
 
   /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
   constructor(
-    renderer: Pick<Renderer, "addModel">,
+    renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setModel">>,
     palette: { torso: number; legs: number } = OFFLINE_PALETTE,
   ) {
+    this.renderer = renderer
     this.seat = palette === OFFLINE_PALETTE ? null : (hex(palette.torso).map(c => c ** 2.2) as [number, number, number])
+    this.seatIndex = Math.max(0, SURVIVOR_COLOURS.indexOf(palette as (typeof SURVIVOR_COLOURS)[number]))
     const box = (w: number, y0: number, h: number, d: number, color: number) => {
       const m = new Mesh()
       m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, hex(color), MAT.actor)
@@ -407,7 +415,7 @@ export class Survivor {
       const ids = [f.pelvis, f.torso, f.head, f.upperArm, f.foreArm, f.thigh, f.shin, f.foot, null, null, f.toe]
       return ids.map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     }
-    this.shapes = [this.models, simple("mannequin"), simple("capsule")]
+    this.shapes = [this.models, simple("mannequin"), simple("capsule"), []]
     const meleeMeshes0 = buildMeleeWeaponMeshes(0)
     const meleeMeshes1 = buildMeleeWeaponMeshes(1)
     const meleeMeshes2 = buildMeleeWeaponMeshes(2)
@@ -417,6 +425,23 @@ export class Survivor {
         [renderer.addModel(meleeMeshes0[id]), renderer.addModel(meleeMeshes1[id]), renderer.addModel(meleeMeshes2[id])],
       ]),
     ) as Record<MeleeWeaponId, [number, number, number]>
+  }
+
+  /** Builds Soft Bean's meshes, or rebuilds them in place when its shape knobs changed. */
+  private ensureBean(tune: SurvivorAimTuning): void {
+    const shape = softBeanShape(tune)
+    const key = JSON.stringify(shape)
+    if (key === this.beanKey) return
+    const f = softBeanMeshes(shape, { aux: BEAN_AUX })
+    const order: (SimpleFigureBone | null)[] = ["pelvis", "torso", "head", "upperArm", "foreArm", "thigh", "shin", "foot", null, null, "toe"]
+    const ids = this.shapes[3]!
+    const setModel = this.renderer.setModel?.bind(this.renderer)
+    order.forEach((bone, i) => {
+      if (!bone) ids[i] = this.models[i]!
+      else if (ids.length > i && setModel) setModel(ids[i]!, f[bone])
+      else ids[i] = this.renderer.addModel(f[bone])
+    })
+    this.beanKey = key
   }
 
   reset(): void {
@@ -1119,8 +1144,9 @@ export class Survivor {
       this.batches.push({ model, data, count: 1 })
     }
     const shape = heroShape(tune.heroStyle)
+    if (shape === 3) this.ensureBean(tune)
     const models = this.shapes[shape]!
-    const bodyTint: V3 = shape ? heroTint(tune, this.seat) : [1, 1, 1]
+    const bodyTint: V3 = shape === 3 ? beanTint(tune, this.seatIndex) : shape ? heroTint(tune, this.seat) : [1, 1, 1]
     const draw = (id: number, frame: ReturnType<typeof yawFrame>) =>
       emit(push, models[id]!, frame, id === 8 || id === 9 ? [1, 1, 1] : bodyTint, 0)
     draw(0, pelvis)

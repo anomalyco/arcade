@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FLOATS_PER_VERT, MAT } from "../gpu/mesh"
-import { simpleFigureMeshes } from "./simple-figure"
+import { DEFAULT_SOFT_BEAN, simpleFigureMeshes, softBeanMeshes } from "./simple-figure"
 
 const bounds = (v: readonly number[]) => {
   const lo = [Infinity, Infinity, Infinity]
@@ -56,3 +56,38 @@ for (const shape of ["mannequin", "capsule"] as const) {
     expect(foot.hi[0]).toBeGreaterThan(0.11)
   })
 }
+
+test("soft bean: outward cloth triangles, dark eyes only on the head, limbs span their bones, shape knobs scale it", () => {
+  const meshes = softBeanMeshes(DEFAULT_SOFT_BEAN, { aux: 6 })
+  for (const [bone, mesh] of Object.entries(meshes)) {
+    const v = mesh.v
+    expect(v.length % (FLOATS_PER_VERT * 3)).toBe(0)
+    let outward = 0
+    let total = 0
+    let dark = 0
+    for (let t = 0; t < v.length; t += FLOATS_PER_VERT * 3) {
+      const p = [0, 1, 2].map(i => [v[t + i * FLOATS_PER_VERT]!, v[t + i * FLOATS_PER_VERT + 1]!, v[t + i * FLOATS_PER_VERT + 2]!])
+      const n = [v[t + 3]!, v[t + 4]!, v[t + 5]!]
+      const e1 = [0, 1, 2].map(k => p[1]![k]! - p[0]![k]!)
+      const e2 = [0, 1, 2].map(k => p[2]![k]! - p[0]![k]!)
+      const f = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!]
+      total++
+      if (f[0]! * n[0]! + f[1]! * n[1]! + f[2]! * n[2]! > 0) outward++
+      if (v[t + 6]! < 0.5) dark++
+      expect(v[t + 9]).toBe(MAT.cloth)
+      expect(v[t + 10]).toBe(6)
+    }
+    expect(outward / total, bone).toBeGreaterThan(0.97)
+    if (bone === "head") expect(dark).toBeGreaterThan(0)
+    else expect(dark, bone).toBe(0)
+  }
+  expect(bounds(meshes.thigh.v).lo[1]).toBeLessThan(-0.4)
+  expect(bounds(meshes.foreArm.v).lo[1]).toBeLessThan(-0.3)
+  const foot = bounds(meshes.foot.v)
+  expect(foot.lo[1]).toBeGreaterThan(-0.095)
+  expect(foot.lo[1]).toBeLessThan(-0.075)
+  const big = softBeanMeshes({ ...DEFAULT_SOFT_BEAN, head: 1.3, limb: 1.3, face: false })
+  expect(bounds(big.head.v).hi[1]).toBeGreaterThan(bounds(meshes.head.v).hi[1])
+  expect(bounds(big.thigh.v).hi[2]).toBeGreaterThan(bounds(meshes.thigh.v).hi[2])
+  expect(big.head.v.length).toBeLessThan(meshes.head.v.length)
+})

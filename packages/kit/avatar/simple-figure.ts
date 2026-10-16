@@ -34,6 +34,7 @@ export function lathe(
   segments: number,
   mat: Mat,
   aux: number,
+  color: readonly [number, number, number] = WHITE,
 ): void {
   const rings = profile.length
   // Points and normals in (along, a, b) space: along is the axis, a and b span the cross-section.
@@ -72,7 +73,7 @@ export function lathe(
     // Counter-clockwise seen from outside.
     const ccw = f[0]! * avg[0]! + f[1]! * avg[1]! + f[2]! * avg[2]! >= 0
     const order = ccw ? [[pa, na], [pb, nb], [pc, nc]] : [[pa, na], [pc, nc], [pb, nb]]
-    for (const [p, n] of order) m.vert(p!, n!, WHITE, mat, aux)
+    for (const [p, n] of order) m.vert(p!, n!, color, mat, aux)
   }
   for (let i = 0; i < rings - 1; i++) {
     for (let j = 0; j < segments; j++) {
@@ -153,5 +154,94 @@ export function simpleFigureMeshes(shape: SimpleFigureShape, opts: SimpleFigureO
     lathe(out.foot, [0, -0.036, 0], "x", ellipse(7, 0.1, 0.03), 0.06, 0.049, seg, mat, aux)
     lathe(out.toe, [0, 0.032, 0], "x", ellipse(6, 0.036, 0.02), 0.042, 0.052, seg, mat, aux)
   }
+  return out
+}
+
+/**
+ * Soft Bean's shape (the hero concept's design 1): multipliers on its default proportions, all 1 by default.
+ * `round` is how much the limbs and body swell between their joints (0 straight capsules, 1 full sausages).
+ */
+export type SoftBeanShape = { head: number; body: number; limb: number; round: number; face: boolean }
+
+export const DEFAULT_SOFT_BEAN: SoftBeanShape = { head: 1, body: 1, limb: 1, round: 0.35, face: true }
+
+/** Eye colour: the instance tint multiplies it, so the eyes stay near-black on every player colour. */
+const EYE = [0.02, 0.02, 0.025] as const
+
+/**
+ * Capsule profile from `y0` (radius `r0`) to `y1` (radius `r1`) with hemispherical ends and the straight middle
+ * swelling by `bulge` of its radius at the centre, so neighbouring bones overlap into one soft limb.
+ */
+function softCapsule(y0: number, y1: number, r0: number, r1: number, bulge: number, capRings = 5, midRings = 4): Profile {
+  const lo = Math.min(y0, y1)
+  const hi = Math.max(y0, y1)
+  const rLo = y0 < y1 ? r0 : r1
+  const rHi = y0 < y1 ? r1 : r0
+  const a = lo + rLo
+  const b = Math.max(a, hi - rHi)
+  const out: [number, number][] = []
+  for (let i = 0; i <= capRings; i++) {
+    const t = (Math.PI / 2) * (i / capRings)
+    out.push([a - Math.cos(t) * rLo, Math.sin(t) * rLo])
+  }
+  for (let i = 1; i < midRings; i++) {
+    const u = i / midRings
+    out.push([a + (b - a) * u, (rLo + (rHi - rLo) * u) * (1 + bulge * Math.sin(Math.PI * u))])
+  }
+  for (let i = 0; i <= capRings; i++) {
+    const t = (Math.PI / 2) * (i / capRings)
+    out.push([b + Math.sin(t) * rHi, Math.cos(t) * rHi])
+  }
+  return out
+}
+
+/**
+ * Soft Bean: a round head with two dot eyes (or none), a bean body and thick soft limbs whose capsule ends overlap at
+ * every joint so the figure reads as one smooth toy. Same bone frames and white cloth vertices as the other shapes.
+ */
+export function softBeanMeshes(shape: SoftBeanShape = DEFAULT_SOFT_BEAN, opts: SimpleFigureOptions = {}): Record<SimpleFigureBone, Mesh> {
+  const mat = opts.mat ?? MAT.cloth
+  const aux = opts.aux ?? 0
+  const seg = opts.segments ?? 16
+  const out = {} as Record<SimpleFigureBone, Mesh>
+  for (const bone of ["pelvis", "torso", "head", "upperArm", "foreArm", "thigh", "shin", "foot", "toe"] as const) out[bone] = new Mesh()
+  const round = Math.max(0, Math.min(1, shape.round))
+  const bulge = 0.2 * round
+  const body = shape.body
+  const l = shape.limb
+  const soft = (m: Mesh, top: number, bottom: number, rTop: number, rBottom: number, flatten = 1, s = seg) =>
+    lathe(m, [0, 0, 0], "y", softCapsule(bottom, top, rBottom * l, rTop * l, bulge), 1, flatten, s, mat, aux)
+
+  // Hips and belly: one bean from below the waist to the shoulders, wider across than front to back.
+  ellipsoid(out.pelvis, [0, 0.01, 0], [0.13 * body, 0.12, 0.175 * body], seg, mat, aux, 10)
+  lathe(out.torso, [0, 0, 0], "y", softCapsule(-0.08, 0.5, 0.175 * body, 0.16 * body, 0.6 * bulge, 6, 6), 1, 1.22, seg + 4, mat, aux)
+
+  // Round head sitting straight on the shoulders; a squarer egg at low roundness.
+  const r = 0.16 * shape.head
+  const cy = 0.02 + r * 0.92
+  const headC: [number, number, number] = [0.012, cy, 0]
+  ellipsoid(out.head, headC, [r, r * (1.08 - 0.08 * round), r], seg + 4, mat, aux, 12)
+  if (shape.face) {
+    // Two dots on the front, a little above centre so the steep top-down camera still sees them.
+    for (const side of [-1, 1]) {
+      const az = 0.34 * side
+      const el = 0.2
+      const d = r * 0.975
+      const c: [number, number, number] = [headC[0] + d * Math.cos(el) * Math.cos(az), cy + d * Math.sin(el), d * Math.cos(el) * Math.sin(az)]
+      const e = 0.019 * Math.max(0.8, shape.head)
+      lathe(out.head, c, "x", ellipse(6, e * 0.55), e, e * 1.25, 10, mat, aux, EYE)
+    }
+  }
+
+  // Arms: soft capsules overlapping at the elbow, a ball mitten for a hand.
+  soft(out.upperArm, 0.05, -0.29, 0.07, 0.064)
+  soft(out.foreArm, 0.035, -0.24, 0.062, 0.058)
+  ellipsoid(out.foreArm, [0, -0.272, 0], [0.064 * l, 0.064 * l, 0.06 * l], seg, mat, aux, 8)
+  // Legs: thick and short-looking, overlapping at the knee and into the hips.
+  soft(out.thigh, 0.06, -0.42, 0.098, 0.088)
+  soft(out.shin, 0.04, -0.4, 0.086, 0.08)
+  // Round nub feet: the ankle sits inside the shin's end, the sole on the ground (−RIG.ankle).
+  lathe(out.foot, [0.02, -0.042, 0], "x", ellipse(8, 0.105), 0.072 * Math.max(1, l * 0.9), 0.045, seg, mat, aux)
+  lathe(out.toe, [0.012, 0.036, 0], "x", ellipse(6, 0.045), 0.068 * Math.max(1, l * 0.9), 0.044, seg, mat, aux)
   return out
 }
