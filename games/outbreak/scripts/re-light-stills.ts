@@ -3,7 +3,7 @@
  * light, floor detail): each shot is captured with the new Look knobs off and on from the same headless run, so the
  * only difference is the knobs. Local build (run `bun run build` first) or `--url`.
  *
- *   bun scripts/re-light-stills.ts [--url <build>] [--main https://anoma.ly/arcade/outbreak/] [--out <dir>] [--only hall,street]
+ *   bun scripts/re-light-stills.ts [--url <build>] [--main https://anoma.ly/arcade/outbreak/ | --main-dir <dist>] [--out <dir>] [--only hall,street]
  *
  * `RL_VARIANTS` (JSON `{ name: { knob: value } }`) replaces the default before / colour / after knob sets. `--main`
  * also captures every scene from a second build (production) first, as variant `main`, in the same run.
@@ -24,18 +24,19 @@ const out = resolve(arg("out", resolve(game, "../../captures/re-light"))!)
 const only = arg("only")?.split(",")
 mkdirSync(out, { recursive: true })
 
-let base = arg("url")
-let fixture: ReturnType<typeof Bun.serve> | null = null
-if (!base) {
-  const root = resolve(game, "dist/arcade/outbreak")
-  assert(existsSync(resolve(root, "index.html")), "run bun run build first")
-  fixture = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+const fixtures: ReturnType<typeof Bun.serve>[] = []
+/** Serves a built `dist/arcade/outbreak` directory and returns its game URL. */
+function serve(root: string): string {
+  assert(existsSync(resolve(root, "index.html")), `no build in ${root} (run bun run build first)`)
+  const fixture = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
     const path = new URL(req.url).pathname.replace(/^\/arcade\/outbreak/, "")
     const file = Bun.file(resolve(root, `.${path === "/" || path === "" ? "/index.html" : path}`))
     return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
   } })
-  base = `http://127.0.0.1:${fixture.port}/arcade/outbreak/`
+  fixtures.push(fixture)
+  return `http://127.0.0.1:${fixture.port}/arcade/outbreak/`
 }
+const base = arg("url") ?? serve(resolve(game, "dist/arcade/outbreak"))
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
@@ -52,8 +53,12 @@ const VARIANTS: Record<string, Record<string, number>> = process.env.RL_VARIANTS
   colour: { ...OFF, lightColour: 1 },
   after: { lightColour: 1, dustAmount: 0.6 },
 }
-/** Optional second build (e.g. production) captured first for every scene, with no knobs set, as variant `main`. */
-const mainUrl = arg("main")
+/**
+ * Optional second build captured first for every scene, with no knobs set, as variant `main`: a URL (`--main`, e.g.
+ * production) or a local build directory (`--main-dir <worktree>/games/outbreak/dist/arcade/outbreak`).
+ */
+const mainDir = arg("main-dir")
+const mainUrl = mainDir ? serve(resolve(mainDir)) : arg("main")
 const HALL: Pose = { x: 27.7, y: 34.3, aim: -Math.PI / 2 }
 const SCENES: Scene[] = [
   { name: "hall-19h", pose: HALL, hour: 19, zoom: 26 },
@@ -120,7 +125,7 @@ try {
 } finally {
   writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
   await browser.close()
-  fixture?.stop(true)
+  for (const f of fixtures) f.stop(true)
 }
 if (errors.length) console.error(errors.slice(0, 10).join("\n"))
 console.log(out)
