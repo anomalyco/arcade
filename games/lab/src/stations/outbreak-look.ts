@@ -32,12 +32,12 @@ const unseen = (mode: number, hour = 22): StationCommand[] => [
 
 const variants: StationVariant[] = [
   // Look presets: every knob in Look · Grade, Look · Lights and Look · Hero, named and versioned (look/presets.ts).
-  { id: "today", label: "Look · Today", note: "The shipped look: Noir grade by hour, box survivor.", setup: look("today") },
-  { id: "deeper-noir", label: "Look · Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
-  { id: "warm-practicals", label: "Look · Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
-  { id: "cold-moonlight", label: "Look · Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
-  { id: "vivid-world", label: "Look · Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
-  { id: "big-walk", label: "Look · Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
+  { id: "today", boardOption: "1", label: "Look · Today", note: "The shipped look: Noir grade by hour, box survivor.", setup: look("today") },
+  { id: "deeper-noir", boardOption: "2", label: "Look · Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
+  { id: "warm-practicals", boardOption: "3", label: "Look · Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
+  { id: "cold-moonlight", boardOption: "4", label: "Look · Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
+  { id: "vivid-world", boardOption: "5", label: "Look · Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
+  { id: "big-walk", boardOption: "6", label: "Look · Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
   // The survivor's style alone, on today's world.
   { id: "hero-today", label: "Hero · Today", note: "Jacket, jeans and boots: today's box figure.", setup: hero(0) },
   { id: "hero-mannequin", label: "Hero · Matte mannequin", note: "Smooth putty-grey mannequin, no face, mitten hands.", setup: hero(1) },
@@ -77,7 +77,7 @@ export default defineStation({
   demo: { kind: "page", url: page },
   defaultVariant: "today",
   variants: variants.map(v => ({ ...v, url: page })),
-  board: { feature: "AR-12" },
+  board: { feature: "AR-42", decision: "D-28" },
   metrics: [
     { label: "Volumetric beam pass + composite, Medium, 3456×1894", value: "0.06 / 0.13 ms street, 0.04 / 0.23 ms interior", source: "games/outbreak/scripts/ab-gpu.ts" },
     { label: "Unseen solo layers, GPU pass delta at 3456×1894", value: "+0.070 to +0.389 ms", source: "games/outbreak/scripts/prove-unseen.ts" },
