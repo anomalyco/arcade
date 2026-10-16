@@ -32,6 +32,28 @@ export type OutbreakLookTrims = {
   skyAmbient: number
   /** × moonlight. */
   moonlight: number
+  /**
+   * Colour comes from light (1) or from the old hue-based grade (0). At night only surfaces lit by a real light (the
+   * flashlight, lamps, windows, headlights, muzzle flash and their bounce) keep colour, in proportion to the light they
+   * get; moonlit and dark surfaces go near-monochrome. Fades in with darkness, so the day keeps its colour.
+   */
+  lightColour: number
+  /** Saturation of unlit surfaces while the light rule holds. */
+  worldSaturation: number
+  /** How much colour light brings back (the grade's selective colour while the light rule holds). */
+  litColour: number
+  /** Extra colour inside the survivor's sight, as a share of full lit colour. Keep it small. */
+  visionLift: number
+  /** How much baked lamp bounce counts as light for colour. */
+  bounceColour: number
+  /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
+  dustAmount: number
+  /** × how brightly motes catch the light. */
+  dustBrightness: number
+  /** × mote size. */
+  dustSize: number
+  /** Motes under lamps and sconces too, not only in the flashlight beam (1 on). */
+  dustLamps: number
 }
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
@@ -49,10 +71,21 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lampWarmth: 0,
   skyAmbient: 1,
   moonlight: 1,
+  lightColour: 1,
+  worldSaturation: 0.06,
+  litColour: 0.92,
+  visionLift: 0.08,
+  bounceColour: 0.6,
+  dustAmount: 0.6,
+  dustBrightness: 1,
+  dustSize: 1,
+  dustLamps: 1,
 }
 
 const GRADE = "Look · Grade"
 const LIGHTS = "Look · Lights"
+const LIGHT_COLOUR = "Look · Light colour"
+const AIR = "Look · Air"
 
 export const lookTrimControls: LabControl[] = [
   { key: "lookSaturation", label: "World saturation", group: GRADE, min: 0, max: 3, step: 0.05, unit: "×" },
@@ -68,21 +101,45 @@ export const lookTrimControls: LabControl[] = [
   { key: "lampWarmth", label: "Lamp warmth shift", group: LIGHTS, min: -0.6, max: 0.6, step: 0.02, unit: "" },
   { key: "skyAmbient", label: "Cool sky ambient", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "moonlight", label: "Moonlight", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lightColour", label: "Colour only from light", group: LIGHT_COLOUR, min: 0, max: 1, step: 1, unit: "" },
+  { key: "worldSaturation", label: "Unlit world saturation", group: LIGHT_COLOUR, min: 0, max: 1, step: 0.01, unit: "" },
+  { key: "litColour", label: "Lit colour strength", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.02, unit: "×" },
+  { key: "visionLift", label: "Vision area lift", group: LIGHT_COLOUR, min: 0, max: 0.5, step: 0.01, unit: "" },
+  { key: "bounceColour", label: "Lamp bounce gives colour", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "dustAmount", label: "Dust motes", group: AIR, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
+  { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },
+  { key: "dustLamps", label: "Motes under lamps", group: AIR, min: 0, max: 1, step: 1, unit: "" },
 ]
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+const mix = (a: number, b: number, t: number) => a + (b - a) * t
 
-/** The grade the renderer gets this frame: `base` (the hour's look) with the trims applied, written into `out`. */
-export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | undefined, out: LookSettings): LookSettings {
+/**
+ * How strongly the light-colour rule holds at this darkness (0 day, 1 night). The scene shader computes the same
+ * weight from the sun (`outbreakLightRule` in `lighting.ts`), so the grade and the colour mask agree.
+ */
+export function lightRuleWeight(t: Partial<OutbreakLookTrims> | undefined, darkness: number): number {
+  const x = clamp((darkness - 0.2) / 0.6, 0, 1)
+  return (t?.lightColour ?? 0) * x * x * (3 - 2 * x)
+}
+
+/**
+ * The grade the renderer gets this frame: `base` (the hour's look) with the trims applied, written into `out`. Under
+ * the light-colour rule unlit surfaces drop to `worldSaturation` (× the saturation trim), the hue-based warm-practical lift is off (lamplight
+ * brings its colour back through the mask instead) and selective colour is `litColour` (× the beam-colour trim).
+ */
+export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | undefined, out: LookSettings, darkness = 1): LookSettings {
   Object.assign(out, base)
   if (!t) return out
-  out.saturation = clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6)
+  const rule = lightRuleWeight(t, darkness)
+  out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp((t.worldSaturation ?? 0.06) * (t.lookSaturation ?? 1), 0, 1.6), rule)
   out.exposure = base.exposure * (t.lookExposure ?? 1)
   out.contrast = clamp(base.contrast * (t.lookContrast ?? 1), 0.6, 1.8)
   out.vignette = base.vignette * (t.lookVignette ?? 1)
   out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0), -1, 1)
-  out.selectiveColor = clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5)
-  out.practicalWarmth = clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2)
+  out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp((t.litColour ?? 0.92) * (t.beamColour ?? 1), 0, 1.5), rule)
+  out.practicalWarmth = mix(clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2), 0, rule)
   return out
 }
 

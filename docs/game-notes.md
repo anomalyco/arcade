@@ -155,6 +155,28 @@ proven animation techniques to animation.md, not here.
   paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
   rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
   reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **At night, colour comes only from light: drive the grade's selective-colour mask from what a surface receives, and
+  give the sight area only a small lift.** Kit's rule for the Resident Evil house (AR-42): the world is near-monochrome
+  unless a real light falls on it. Outbreak already wrote received flashlight and practical irradiance into the HDR
+  alpha (`outbreakColorMask`), but the grade also kept the whole sight area at saturation 0.42 and lifted any warm
+  pixel by hue (`warmBias`), so dark brown floors stayed brown. Under the rule (Look · Light colour, default on,
+  `look/world.ts` `trimLook` and `lightRuleWeight`) the grade's unlit saturation drops to 0.06, the hue lift is off,
+  baked lamp bounce counts as light (`outbreakBounce` leaves its luminance for the mask), lit memory keeps its colour
+  in the fog of war, lit surfaces keep it wherever the scenery is known, and the sight area adds 0.08 of the mask. The
+  moon gives no colour (scotopic, and it reads right). The rule fades in with darkness from the sun term, the same
+  smoothstep on the CPU (grade) and in WGSL (`outbreakLightRule`), so the day is untouched (noon stills differ by 1
+  pixel). One float of mask, no new target: paired GPU Δ −0.005 ms hall / −0.006 ms street at 3456×1894 on the M5 Max.
+- **Dust motes are a world-anchored lattice drawn per light, shaded in the vertex stage and shadowed in the fragment
+  stage.** `games/outbreak/src/air/dust.ts` is a kit `ScenePass` in the alpha slot (the renderer now rebinds the scene
+  group before alpha plugins). Air is a lattice of cells with at most one mote each, orbiting slowly inside its cell, so
+  a sweeping beam reveals motes that stay put and parallax comes from their real heights. Each light draws only the
+  cells in its own volume (the flashlight's cone box at 0.32 m cells, 18 432 instances; a box under each lamp, 768
+  each with the cell size grown to fit), the vertex stage keeps a mote only where its light reaches it (beam profile
+  and falloff, lamp falloff and the same sconce, window and ceiling cuts as the surfaces) and the fragment stage
+  shadows it through that light's polar row and hides it outside sight, so motes never glint behind a wall. Additive,
+  depth-tested, destination alpha kept. Lab: Look · Air. Lamps get motes on High (12) and Balanced (6), not Low. Cost:
+  paired GPU Δ +0.049 ms hall / +0.017 ms street at 3456×1894 (`scripts/ab-gpu.ts`). Stills:
+  `games/outbreak/scripts/re-light-stills.ts`.
 - **Project a paint-over onto the floor through the gameplay camera, and it becomes a plain top-down texture.** For
   the Resident Evil house study (AR-42) the mansion paint-over of Ash's hall was rectified onto the floor plane with
   a homography fitted to 67 floor points the capture projected (exact to 0.000 px), cleaned of furniture and painted

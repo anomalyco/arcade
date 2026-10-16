@@ -38,7 +38,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
   mapUv: "(p - OL.win.xy) * F.map.xy",
-  bounce: "bounceAt(o.world.xz + n.xz * 0.3) * (0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
+  bounce: "outbreakBounce(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `var att = 0.0;
     if (L.cone.w > 1.5) {
@@ -315,7 +315,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     }
     let beamAdd = evalFlashlight(o.world, n);
     let flashIrr = outbreakFlashMask;
+    let lightRule = outbreakLightRule();
+    let litMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2);
+    outbreakLitMask = litMask * lightRule;
     outbreakSeen = 1.0;
+    outbreakKnown = 1.0;
     if (mat != 12) {
       col = applyOutbreakFogOfWar(col, o.world, n, inRoom, mat, w);
     } else {
@@ -342,7 +346,12 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen;
-    let baseFlashMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2) * outbreakSeen;
+    // Colour comes from light: lit surfaces keep it wherever the scenery is known, not only in sight (light rule on);
+    // the sight area adds a small lift, and the hero keeps a little so the survivor reads as today.
+    let lit = litMask * mix(outbreakSeen, max(outbreakSeen, outbreakKnown), lightRule);
+    let lift = OL.colour.y * lightRule * outbreakSeen;
+    let heroKeep = select(0.0, 0.25 * lightRule, mat == 12 && o.aux > 4.5 && o.aux < 5.5);
+    let baseFlashMask = max(lit + lift * (1.0 - lit), heroKeep);
     outbreakFlashMask = select(baseFlashMask, baseFlashMask - outbreakUnseenAlpha, outbreakUnseenAlpha > 0.0);
   }
   if (mat == 6) { outbreakFlashMask = 0.55; }

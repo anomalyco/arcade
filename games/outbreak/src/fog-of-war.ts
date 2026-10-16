@@ -593,6 +593,7 @@ fn applyOutbreakFogOfWar(
   let expUv = (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy;
   let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
   let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
+  outbreakKnown = select(1.0, explored, inRoom && world.y < 2.8);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
   let memDim = clamp(
@@ -613,7 +614,8 @@ fn applyOutbreakFogOfWar(
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
   let memTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
-  let memSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0);
+  // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule).
+  let memSat = mix(select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0), 1.0, outbreakLitMask);
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
 
   var baseFowCol: vec3f;
