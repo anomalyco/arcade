@@ -106,6 +106,8 @@ export type LabContext = {
   activeGround?:(x:number,z:number)=>number
   hasPlaygroundScene?:()=>boolean
   emit?:(event:LabEvent)=>void
+  /** The shared base debug world (`world/world.ts`): the Look and world lab edits it, Effects draws into it. */
+  world?:import("./world/world").DebugWorld
 }
 export type SectionFactory = (context:LabContext)=>LabSection
 /** Shape is compatible with getaway-clutter's Body; no dependency on that worktree's solver. */

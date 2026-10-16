@@ -88,6 +88,9 @@ game's own `AGENTS.md`.
 ## Lab and showing Kit
 
 - Read [docs/lab.md](docs/lab.md) before adding or tuning effects, materials, physics, audio or rendering options.
+- Look, light, weather, materials, vegetation and effects labs share the base debug world (`packages/kit/lab/world/`)
+  and differ by knobs and presets: to show a new idea, add a preset to `WORLD_PRESETS` (and a knob if it needs one),
+  not a new lab or bespoke room. Separate labs are only for scenes that are a game's own page.
 - Labs show only what their subject needs; every panel is opt-in per lab kind (`LabKind.panels`), the subject's knobs
   come first and largest, and there is no voice-notes panel (Kit uses Scrawl). Don't add a panel, card or toolbar
   button to every lab; give it to the kinds that need it.

@@ -28,6 +28,34 @@ Selecting a fixture intentionally changes scene state. Selecting a tool/effect s
 lighting and authored placement unless the user explicitly changes or resets them. Current lighting survives section
 changes, but environments are section-owned and fixtures can replace them. There is no cross-reload saved-preset library.
 
+## One base world: add a preset, not a lab
+
+Look, light, weather, materials, vegetation and effects labs share one base scene, the **debug world**
+(`packages/kit/lab/world/`): a few metres of street with a house corner (doorway, window, planks and a lamp inside), a
+porch lamp and a streetlamp, a lawn with a production-generated tree, bushes and grass, a puddle by the curb, a figure
+on the sidewalk and a parked car. It is drawn by the kit `Renderer` (the one Brawl and Blackout ship) with the kit look
+(`gpu/look.ts`), weather (`kit/weather`), floor materials (`floorPattern` in `gpu/shaders.ts`, `MAT`) and foliage
+generators (`gpu/foliage.ts`), and lit by a day/dusk/night clock (`worldClock`: sky, a high sun or moon key light and the
+practical lamps). There is one world per Lab (`LabContext.world`); its section draws it through `Stage.customRender`.
+
+- **Look and world** (`world` section, station `look-and-world`) holds every knob in Details, tabbed Look, Light,
+  Weather, Materials and Vegetation, with curated presets on top. A preset is a named set of knob values over the
+  defaults (`WORLD_PRESETS` in `world/presets.ts`): Clear day, Golden hour, Dusk, Noir rain, 70s sodium, Painterly,
+  Storm night, Foggy dawn, Snow night, Night lamps, Brick and concrete, Autumn yard, Pine and weeds. Reset (or the Clear
+  day preset) restores the defaults. `world.preset`, `world.set`, `world.export` and `world.import` drive it; the export
+  is versioned (`arcade.lab.world`, version 1) and import validates every key, type, range and choice before it changes
+  anything.
+- **Effects** (`effects` station on the Effects section) plays the shared explosions, smoke, fire and tyre smoke in the
+  same world: the Lab's particles and smoke volumes go to the kit renderer as `fxParticles`/`smoke`, explosion flashes
+  become extra lights, and the World group sets the time of day and grade. Scene → Stage room shows the old stage.
+- To explore a new look, light, weather, material or planting idea, add a preset to `WORLD_PRESETS` (and a variant
+  appears in the lab), not a new lab or a bespoke room. Add a knob to the world when a preset needs one. Keep a separate
+  lab only where a game's own page is the scene (Outbreak systems, vehicles, characters, audio).
+
+Not reproduced yet: the per-surface material recipes (`surface-materials.ts`) and foliage wind, translucency and actor
+bending only exist in Outbreak's own scene shader, so the world's Materials tab picks floor patterns and paints and the
+Vegetation tab rebuilds the recipe's structure. Rugs stays a texture lab (`rugs` section) beside its in-game interiors lab.
+
 ## Home and labs
 
 The Lab opens on **Home**: every lab, grouped by collection, in a knobs/ui outliner (`tree`) with the selected lab
@@ -39,7 +67,7 @@ Home covers the workbench, which stops drawing until a lab opens. In a lab the t
 (section labs; a page lab just switches). A lab shows only what its subject needs (below): the Library drawer and the
 World footer (the global section, environment and seed pickers) are always hidden and `Ctrl+Space` does nothing while
 one is open (`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
-work. `arcade run lab.list`, `lab.open {"id": "look-and-light/weather"}` and `lab.home` do the same from the CLI.
+work. `arcade run lab.list`, `lab.open {"id": "world/look-and-world"}` and `lab.home` do the same from the CLI.
 
 Labs come and go from Home. `+` (or ＋ New lab) starts a draft lab of any section kind in Drafts and opens it; `⌘D`
 makes a draft copy beside the selected lab; `⌘S` keeps a draft; `⌫` archives a lab (Undo in the toast) and archived
@@ -49,8 +77,11 @@ file. Drafts nobody touched for 7 days are archived, and labs archived here are 
 Lab starts (`createSceneStore().sweep()`). Labs made here live in `localStorage` (`arcade.lab.scenes.v1`).
 
 Labs come from station files for now (`games/lab/src/home/catalog.ts`): each station becomes a kept lab in an area
-collection (`STATION_AREAS` in `games/lab/src/scenes/from-stations.ts`), merged with this browser's own labs
-(`createSceneStore`). A lab a station became unchanged opens that station; one the migration split off (Explosions'
+collection (`STATION_AREAS` in `games/lab/src/scenes/from-stations.ts`: Look and world, Characters and feel, Outbreak,
+Other games, Textures and sound). Stations in the `archived` area (the superseded Looks, Lighting, Weather, Materials,
+Vegetation, Explosions and Smoke & fire labs) ship archived: they wait folded under Archived on Home, still open from old
+links, and Restore brings one back in that browser. The repo's labs are merged with this browser's own labs
+(`createSceneStore`). A lab a station became unchanged opens that station; one the migration split off (Effects'
 splatter variants) opens a station built from the lab (`stationFromScene`). Every station needs a lab kind in
 `games/lab/src/scenes/kinds.ts`; one without starts as a plain `section` or `page` lab and logs a warning, and
 `games/lab/tests/scenes.test.ts` fails until it has one. The model and the plan are in [lab-scenes.md](lab-scenes.md).
@@ -261,7 +292,7 @@ a calibration-only shader and call it the game's material.
 
 ### Vegetation
 
-The Vegetation section (`packages/kit/lab/foliage.ts`, deep link `#foliage`) tunes the production
+The Vegetation section (archived; the Look and world lab's Vegetation tab replaces it) (`packages/kit/lab/foliage.ts`, deep link `#foliage`) tunes the production
 `packages/kit/gpu/foliage.ts` generators that Outbreak builds its town with. Its Tool picker chooses a test room:
 
 - **Tree**: three trees of the current recipe on a lawn by a street. Presets: Oak, Maple, Pine, Birch.

@@ -50,6 +50,13 @@ export const LAB_KINDS: readonly LabKind[] = [
     panels: directions,
     choices: [choice("preset", "Look", "subject", "look", lookPresets)],
   },
+  {
+    id: "world",
+    label: "Look and world",
+    subject: "The shared debug world: look, light, weather, materials and vegetation as knobs and presets",
+    host: { kind: "section", section: "world" },
+    panels: [...still, "compare"],
+  },
   { id: "light", label: "Light", subject: "The lighting rig: lamps, moon, spot and shadows", host: { kind: "section", section: "lighting" }, panels: still },
   { id: "material", label: "Material", subject: "A material recipe on swatches", host: { kind: "section", section: "materials" }, panels: still },
   { id: "physics", label: "Physics", subject: "Rigid bodies and collisions", host: { kind: "section", section: "physics" }, panels: [...still, "transport", "readouts", "timeline"] },

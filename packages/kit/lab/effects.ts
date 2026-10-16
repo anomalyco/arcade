@@ -16,6 +16,7 @@ import {
 import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
 import type { LabControl } from "../lab-panel"
 import { curveTable, curveText, gradientTable, gradientText, parseCurve, parseGradient } from "../ramps"
+import { LOOK_PRESETS, LOOK_PRESET_IDS } from "../gpu/look"
 import { walls, type LabLight } from "./stage"
 import type { LabContext, LabSection } from "./types"
 
@@ -79,6 +80,22 @@ export function createEffects(context:LabContext) {
     seed:7,
     roomSeed:1,
     tuningSeed:137,
+    backdrop:"world",
+  }
+  Object.defineProperties(params,{
+    worldHour:{enumerable:true,get:()=>context.world?.state.hour??13,set:(v:number)=>{if(context.world)context.world.state.hour=Number(v)}},
+    worldLook:{enumerable:true,get:()=>context.world?.look.preset??"current",set:(v:string)=>{context.world?.setLook(String(v))}},
+  })
+  // The Effects lab plays on the shared debug world (world/world.ts) unless the stage room is picked.
+  // On the world the Spawn playground (if any) is neither drawn nor collided with.
+  const onWorld=()=>Boolean(context.world)&&params.backdrop==="world"
+  const inPlayground=()=>!onWorld()&&Boolean(context.hasPlaygroundScene?.())
+  const sceneWalls=()=>onWorld()?[]:context.activeWalls?.()??walls
+  const sceneGround=()=>onWorld()?undefined:context.activeGround
+  const applyBackdrop=()=>{
+    const world=context.world
+    if(world&&onWorld()){stage.customRender=(w,h,view)=>world.render(w,h,view)}
+    else if(stage.customRender)stage.customRender=undefined
   }
   const applySmoke=()=>{
     for(const key of Object.keys(smokeDefaults) as SmokeKey[])volume.settings[key]=params[key]
@@ -106,13 +123,13 @@ export function createEffects(context:LabContext) {
   }
   const reset=(name=String(params.effect||effect))=>{
     effect=name;params.effect=effect;time=0;seed=Math.max(1,Math.round(params.seed))
-    const activeWalls=context.activeWalls?.()??walls
+    const activeWalls=sceneWalls()
     particles.reset()
-    if(!context.hasPlaygroundScene?.()||effect==="tyre"){trail.reset();trail.seedWind(seed)}
+    if(!inPlayground()||effect==="tyre"){trail.reset();trail.seedWind(seed)}
     emitter.reset();volume.reset(activeWalls,seed)
     Object.assign(source,{smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0})
     const tx=params.targetX,tz=params.targetZ
-    const gy=context.activeGround?context.activeGround(tx,tz):0
+    const ground=sceneGround(),gy=ground?ground(tx,tz):0
     applySmoke()
     if(effect==="smoke")volume.spawn(tx,tz)
     if(effect==="explosion"){
@@ -140,8 +157,8 @@ export function createEffects(context:LabContext) {
   const advance=(dt:number)=>{
     time+=dt
     const tx=params.targetX,tz=params.targetZ
-    const activeWalls=context.activeWalls?.()??walls
-    const groundFn=context.activeGround
+    const activeWalls=sceneWalls()
+    const groundFn=sceneGround()
     if(effect==="tyre"&&time<3.5){trail.follow(source,tx+Math.sin(time*1.8)*2,tz+Math.cos(time*1.8)*1.5,0,0,dt,params.density)}
     if(effect==="water"||effect==="fire"||effect==="nitro")emitter.step(tx,0.3,tz,dt,params.rate,"rate",emit)
     if(effect==="explosion")applyExplosionSmokeLive(volume,params,params.density)
@@ -150,15 +167,19 @@ export function createEffects(context:LabContext) {
     if(params.loop&&time>=loopPeriod-1e-6)reset()
   }
   const prepare=()=>{
-    if(context.hasPlaygroundScene?.())return
+    if(inPlayground())return
     if(effect!=="explosion"){
       stage.dynamicLights=null
       return
     }
-    const tx=params.targetX,tz=params.targetZ,gy=context.activeGround?context.activeGround(tx,tz):0
+    const tx=params.targetX,tz=params.targetZ,ground=sceneGround(),gy=ground?ground(tx,tz):0
     const flash=explosionFlashLight(tx,gy,tz,time,params)
     if(!flash){
       stage.dynamicLights=null
+      return
+    }
+    if(onWorld()){
+      stage.dynamicLights=[flash]
       return
     }
     const s=stage.lighting,deg=Math.PI/180,count=Math.max(0,Math.min(7,Math.round(s.count)))
@@ -184,6 +205,9 @@ export function createEffects(context:LabContext) {
     stage.dynamicLights=lights
   }
   const controls:LabControl[]=[
+    {key:"backdrop",label:"Scene",group:"World",type:"select",options:[{value:"world",label:"Debug world"},{value:"stage",label:"Stage room"}],change:()=>{applyBackdrop();context.sync()}},
+    {key:"worldHour",label:"Time of day",group:"World",type:"range",min:0,max:24,step:0.25,unit:"h",visible:s=>s.backdrop==="world"},
+    {key:"worldLook",label:"Grade",group:"World",type:"select",options:LOOK_PRESET_IDS.map(id=>({value:id,label:LOOK_PRESETS[id].label})),visible:s=>s.backdrop==="world",change:value=>{context.world?.setLook(String(value));context.sync()}},
     {key:"effect",label:"Effect",group:"Emitter",type:"select",options:effectOptions,change:value=>reset(String(value))},
     {key:"explosionPreset",label:"Preset",group:"Emitter",type:"select",options:explosionPresetOptions,visible:s=>s.effect==="explosion",change:value=>{
       const pid=isExplosionPresetId(value)?value:"grenade"
@@ -287,9 +311,9 @@ export function createEffects(context:LabContext) {
   ]
   const section:LabSection={
     id:"effects",label:"Effects",settings:params,controls,
-    enter:()=>reset(),
-    leave:()=>{if(!context.hasPlaygroundScene?.())stage.dynamicLights=null},
-    update:dt=>{if(params.playing)advance(dt)},
+    enter:()=>{reset();applyBackdrop();if(onWorld())context.world!.frame({x:params.targetX,z:params.targetZ-1.5,dist:15})},
+    leave:()=>{if(!inPlayground())stage.dynamicLights=null;if(onWorld())stage.customRender=undefined},
+    update:dt=>{if(params.playing)advance(dt);context.world?.update(dt)},
     prepare,
     retrigger:()=>reset(),
     reroll,

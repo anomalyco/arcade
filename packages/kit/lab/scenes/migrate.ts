@@ -242,7 +242,7 @@ export function scenesFromStation(station: LabStation, opts: { collection: strin
   let grid = station.grid
   for (const v of station.variants ?? []) {
     const first = v.setup?.[0]
-    const target = first?.command === "scene.select-section" ? String(first.args?.id ?? "") : ""
+    const target = first?.command === "scene.select-section" ? String(first.args?.section ?? first.args?.id ?? "") : ""
     if (target && target !== demo.section) {
       elsewhere.set(target, [...(elsewhere.get(target) ?? []), { ...v, setup: v.setup!.slice(1) }])
     } else if (v.setup?.length === 1 && v.setup[0]!.command === "grid.open" && typeof v.setup[0]!.args?.preset === "string") {
