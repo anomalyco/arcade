@@ -44,6 +44,7 @@ game's own `AGENTS.md`.
 - Adding a game: put it in `games/<name>`, give its Worker the name `arcade-<name>` with the routes above, set Vite's
   outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, add it to the root
   `package.json` workspaces and `WORKSPACE_GAMES` in `scripts/verify.ts`, and add a panel to `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
+- New game ideas start as a single-screen low-res toy prototype (`bun scripts/new-toy.ts <name>`, [docs/prototyping.md](docs/prototyping.md)) on `@arcade/kit` primitives to prove the feel of movement, camera and the core verb before adding custom meshes, shaders or multiplayer.
 - Prototypes are unlisted: deploy normally, skip the landing panel, add `noindex`, and list the game in the README's
   prototypes section. Promote a game by adding the landing panel and removing `noindex`.
 
