@@ -187,7 +187,11 @@ proven animation techniques to animation.md, not here.
   light, the colour rule gives the pools their colour. Bake: 15 ms for the origin town (all of `bakeOutbreakBounce`).
   Client-side table lamps from the furniture library bake the same way (`bakeOutbreakBounce(town, tableLamps)`,
   `tableLampPool`: 2.6 m, the dimmest accent lamp's power), and their shades glow through the fixture slot
-  `TABLE_LAMP_SLOT` (MAT.lamp aux), which follows the room lamps' hour and power; no live light, no shared state.
+  `TABLE_LAMP_SLOT` (MAT.lamp aux), which follows the room lamps' hour and power; no shared state. Indoors the
+  nearest table lamps are also live (`games/outbreak/src/table-lamps.ts`, Look · Lights › Live table lamps: 2 on
+  High/Balanced, 0 on Low): unshadowed, cut in the shader to the rect between the walls around the lamp
+  (`tableLampClip`, cone.w −3) so they never light through a wall. The baked pool stays: it is the doorway spill and
+  the bounce, and the live light adds direct light and shading on props. Paired GPU Δ at 3456×1894: +0.11 ms.
 - **Project a paint-over onto the floor through the gameplay camera, and it becomes a plain top-down texture.** For
   the Resident Evil house study (AR-42) the mansion paint-over of Ash's hall was rectified onto the floor plane with
   a homography fitted to 67 floor points the capture projected (exact to 0.000 px), cleaned of furniture and painted

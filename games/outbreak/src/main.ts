@@ -1,6 +1,7 @@
 import { Camera } from "@arcade/kit/client/camera"
 import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
-import { TABLE_LAMP_SLOT } from "./lightbake"
+import { TABLE_LAMP_SLOT, type TableLamp } from "./lightbake"
+import { TableLampLights } from "./table-lamps"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -43,6 +44,7 @@ import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
 import { PropDressing } from "./props/dressing"
+import { propLamps } from "./props/furnish"
 import {
   CombinedFogMemory,
   collectFogSoundSprites,
@@ -352,6 +354,8 @@ async function main() {
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
   const propDressing = new PropDressing(renderer, TABLE_LAMP_SLOT)
+  const tableLamps = new TableLampLights()
+  const NO_TABLE_LAMPS: readonly TableLamp[] = []
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
   const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
@@ -1293,6 +1297,9 @@ async function main() {
       settings.lighting.practicalWarmth,
       interiors.settings,
     )
+    tableLamps.setSources(currentIsStreamWindow ? NO_TABLE_LAMPS : propLamps(town), town)
+    const tableLampCount = settings.look.tableLamps >= 0 ? settings.look.tableLamps : Math.min(2, qProfile.maxSconceLights)
+    count = tableLamps.write(lights, count, MAX_LIGHTS, inInteriorView ? tableLampCount : 0, cutX, cutY, sconceLevel, settings.lighting.practicalWarmth, 0.55 * settings.look.tableLampPower)
     const vehOut = vehicleRenderer.collect(
       vdt,
       time,

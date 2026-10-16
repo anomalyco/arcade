@@ -79,7 +79,10 @@ export const outbreakSceneHooks: SceneHooks = {
   smoothShadows: true,
   shadowTaps: 5,
   // Sconces (cone.w 1.25, interiors/sconces.ts): cut just behind their wall, above the wall tops, and to their room along the wall.
-  lightMask: `if (L.cone.w > 1.125 && L.cone.w < 1.5) {
+  // Table lamps (cone.w -3, table-lamps.ts): cut to the room rect in cone.xyz / extra.x and below the wall tops.
+  lightMask: `if (L.cone.w < -2.5) {
+      if (world.y > 2.75 || world.x < L.cone.x - 0.03 || world.x > L.cone.z + 0.03 || world.z < L.cone.y - 0.03 || world.z > L.extra.x + 0.03) { continue; }
+    } else if (L.cone.w > 1.125 && L.cone.w < 1.5) {
       let along = dot(dv, abs(L.cone.yx));
       if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
     } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,

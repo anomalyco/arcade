@@ -56,6 +56,10 @@ export type OutbreakLookTrims = {
   dustLamps: number
   /** × the baked room light indoors: the room lamps' pools and their bounce (also scaled by the hour and room-lamp power). */
   bakedLight: number
+  /** Live table lamps from the furniture library: how many near the camera (-1 by quality tier, 0 baked pools only). */
+  tableLamps: number
+  /** × live table-lamp power. */
+  tableLampPower: number
 }
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
@@ -83,6 +87,8 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dustSize: 1,
   dustLamps: 1,
   bakedLight: 4,
+  tableLamps: -1,
+  tableLampPower: 1,
 }
 
 const GRADE = "Look · Grade"
@@ -105,6 +111,8 @@ export const lookTrimControls: LabControl[] = [
   { key: "skyAmbient", label: "Cool sky ambient", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "moonlight", label: "Moonlight", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "bakedLight", label: "Baked room light (pools + bounce)", group: LIGHTS, min: 0, max: 8, step: 0.05, unit: "×" },
+  { key: "tableLamps", label: "Live table lamps", group: LIGHTS, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off (baked only)" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 4, label: "4" }] },
+  { key: "tableLampPower", label: "Table lamp power", group: LIGHTS, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "lightColour", label: "Colour only from light", group: LIGHT_COLOUR, min: 0, max: 1, step: 1, unit: "" },
   { key: "worldSaturation", label: "Unlit world saturation", group: LIGHT_COLOUR, min: 0, max: 1, step: 0.01, unit: "" },
   { key: "litColour", label: "Lit colour strength", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.02, unit: "×" },
