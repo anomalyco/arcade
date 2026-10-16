@@ -4,6 +4,7 @@
 // add, drag, label and jump between; in/out loop ranges; playback on one rAF clock that moves
 // the playhead every frame and sleeps when nothing moves.
 import { Spring, springMotion } from "../core/spring.js"
+import { hints } from "../panel/page-hints.js"
 import { contextMenu, type MenuEntry } from "./menu.js"
 import { applyLook, frameLoop, reducedMotion, type UiLook } from "./look.js"
 import { softClamp } from "./split-model.js"
@@ -69,6 +70,11 @@ export interface TimelineOptions extends UiLook {
   onRanges?(ranges: readonly TimelineRange[]): void
   /** Playback passed a marker. */
   onCross?(marker: TimelineMarker): void
+  /**
+   * Play, each marker and the playhead take codes in the page's hint mode (`s`), on by default:
+   * a marker's code jumps to it, the playhead's focuses the timeline.
+   */
+  readonly hints?: boolean
 }
 
 export interface Timeline {
@@ -787,6 +793,39 @@ export function timeline(container: HTMLElement, options: TimelineOptions): Time
     }
   })
 
+  const unregisterHints =
+    options.hints === false
+      ? undefined
+      : hints.register(
+          root,
+          () => [
+            { el: playBtn, label: playing ? "Pause" : "Play", activate: toggle },
+            ...markers.flatMap((m) => {
+              const n = markerEls.get(m.id)
+              if (!n || n.dataset.leaving !== undefined) return []
+              const label = n.querySelector<HTMLElement>(".knobs-tl-mlabel")
+              return [
+                {
+                  el: n.querySelector<HTMLElement>(".knobs-tl-pin") ?? n,
+                  label: m.label ?? "Marker",
+                  ...(label && !label.hidden ? { labelEl: label } : {}),
+                  activate: () => {
+                    select({ kind: "marker", id: m.id })
+                    setTime(m.time, "marker")
+                    root.focus({ preventScroll: true })
+                  },
+                },
+              ]
+            }),
+            {
+              el: head,
+              label: "Playhead",
+              activate: () => root.focus({ preventScroll: true }),
+            },
+          ],
+          { listen: false, rank: 1 },
+        )
+
   // A context menu on markers, ranges and the ruler.
   const menu = contextMenu(track, (e) => {
     const t = (e?.target as HTMLElement | null) ?? null
@@ -932,6 +971,7 @@ export function timeline(container: HTMLElement, options: TimelineOptions): Time
     zoom,
     focus: () => root.focus({ preventScroll: true }),
     dispose() {
+      unregisterHints?.()
       loop.stop()
       ro.disconnect()
       menu.dispose()

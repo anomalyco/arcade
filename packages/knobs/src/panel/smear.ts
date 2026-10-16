@@ -42,3 +42,12 @@ export function smearPill(pill: HTMLElement, cap: number) {
     frame = requestAnimationFrame(run)
   })
 }
+
+/**
+ * How wide a range band's end smears (px) at `speed` px/s, by `strength` (--k-range-blur, 0 to 1):
+ * the slider fill's edge ramp, so both read alike. 0 under a quarter pixel, so it rests crisp.
+ */
+export function rangeSmear(speed: number, strength: number) {
+  const px = Math.min(28, speed * 0.022 * strength)
+  return px < 0.25 ? 0 : px
+}

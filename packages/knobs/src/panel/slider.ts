@@ -3,16 +3,9 @@ import type { Knob as KnobField } from "../core/schema.js"
 import { springMotion } from "../core/spring.js"
 import { tick } from "./haptics.js"
 import { keyPrefs } from "./prefs.js"
-import {
-  clamp,
-  FILL,
-  POP_MS,
-  popScale,
-  Roll,
-  rollTarget,
-  Spring,
-  VelocityTracker,
-} from "./motion.js"
+import { clamp, FILL, POP_MS, popScale, type Roll, Spring, VelocityTracker } from "./motion.js"
+import { syncPlaces } from "./reel.js"
+import { band, textGive, type Band } from "./give.js"
 import { onPan } from "./swipe.js"
 
 export interface DigitPlace {
@@ -79,8 +72,8 @@ export interface Slider {
   retune(field: KnobField): void
   /** The field it currently draws. */
   readonly field: KnobField
-  /** Open the inline editor (used when a digit is typed on the track). */
-  edit(): void
+  /** Open the inline editor, with `initial` in place of the value (a digit typed on the track). */
+  edit(initial?: string): void
   /** Puts a row accessory just after the label; the ticks and handle keep clear of it too. */
   slot(node: HTMLElement): void
   dispose(): void
@@ -159,10 +152,18 @@ export function createSlider(
   const digits = el("span", "knobs-digits")
   value.append(digits)
   const unit = el("span", "knobs-unit")
+  // The readout's own text, editable in place: same type, same right edge, the unit after it.
   const number = el("input", "knobs-number")
-  number.type = "number"
+  number.type = "text"
+  number.inputMode = "decimal"
+  number.autocomplete = "off"
+  number.spellcheck = false
+  number.enterKeyHint = "done"
   number.name = `${key}-value`
   number.hidden = true
+  /** Measures the typed text, so the field is as wide as it (and never narrower than the digits). */
+  const fitter = el("span", "knobs-number-fit")
+  fitter.setAttribute("aria-hidden", "true")
   /** Lays out everything that follows from the field: marks, notch, labels and limits. */
   const shape = () => {
     const display = field.label ?? key
@@ -176,7 +177,6 @@ export function createSlider(
     const ticks: HTMLElement[] = []
     for (let i = 0; i < count; i++) {
       const r = i / (count - 1)
-      if (Math.abs(r - notchRatio) < 0.025) continue
       const mark = el("i")
       mark.style.left = `${r * 100}%`
       ticks.push(mark)
@@ -188,9 +188,6 @@ export function createSlider(
     if (field.unit) {
       if (!unit.isConnected) value.append(unit)
     } else unit.remove()
-    number.min = String(field.min)
-    number.max = String(field.max)
-    number.step = String(field.step)
     number.setAttribute("aria-label", `${display} value`)
   }
   shape()
@@ -198,7 +195,7 @@ export function createSlider(
   // fill's exact sub-pixel edge), inside a still layer that fades it where the text sits.
   const handleZone = el("div", "knobs-handle-zone")
   handleZone.append(handle)
-  track.append(fill, marks, handleZone, label, value, number)
+  track.append(fill, marks, handleZone, label, value, number, fitter)
   root.append(track)
   // Hover ticks and the default notch stay clear of both the readout and the label.
   let trackWidth = 0
@@ -277,64 +274,15 @@ export function createSlider(
   const velocity = new VelocityTracker()
   let initialized = false
 
-  // Mirrors @kitlangton/rolling-number: each place is a wheel that rolls through every face in
-  // the value's direction (98 → 108 rolls the tens 9 → 0 forwards), new places rise in after a
-  // short hold, cascading outward, and leaving places fade over ~65% of the duration.
-  function syncDigits(text: string, trend: number, ms: number, delay: number) {
-    const now = performance.now()
-    const live = digitPlaces.filter((p) => !p.exiting).length
-    const step = Math.min(ms * 0.045, (ms * 0.3) / Math.max(1, text.length - live))
-    for (let j = 0; j < Math.max(text.length, digitPlaces.length); j++) {
-      const ch = j < text.length ? text[text.length - 1 - j]! : undefined
-      const place = digitPlaces[j]
-      if (ch === undefined) {
-        if (place && !place.exiting) {
-          place.exiting = true
-          place.presence.set(0, ms * 0.65, now, delay)
-        }
-        continue
-      }
-      const digit = ch >= "0" && ch <= "9" ? Number(ch) : Number.NaN
-      if (!place) {
-        const hold = ms > 0 ? delay + Math.max(0, j - live) * step : 0
-        const presence = new Roll(ms > 0 && initialized ? 0 : 1)
-        if (ms > 0 && initialized) presence.set(1, ms, now, hold)
-        digitPlaces[j] = {
-          ch,
-          wheel: new Roll(Number.isNaN(digit) ? 0 : digit),
-          presence,
-          enterAt: now + hold,
-          enterMs: ms > 0 && initialized ? ms : 0,
-          exiting: false,
-        }
-        continue
-      }
-      if (place.exiting) {
-        place.exiting = false
-        place.presence.set(1, ms, now, delay)
-      }
-      const wasDigit = place.ch >= "0" && place.ch <= "9"
-      if (!Number.isNaN(digit)) {
-        if (!wasDigit || ms <= 0) place.wheel.snap(digit)
-        else {
-          const at = place.wheel.sample(now).position
-          if (((Math.round(at) % 10) + 10) % 10 !== digit || !place.wheel.resting(now))
-            place.wheel.set(rollTarget(at, digit, trend), ms, now, delay)
-        }
-      }
-      place.ch = ch
-    }
-    while (
-      digitPlaces.length > text.length &&
-      digitPlaces.at(-1)!.exiting &&
-      digitPlaces.at(-1)!.presence.resting(now)
-    )
-      digitPlaces.pop()
-  }
+  // Mirrors @kitlangton/rolling-number (see syncPlaces).
+  const syncDigits = (text: string, trend: number, ms: number, delay: number) =>
+    syncPlaces(digitPlaces, text, trend, ms, delay, initialized)
 
   let current = field.value
   let lastRollerLen = fmtDigits(field.value).length
   let rollerDirty = false
+  /** The reel was just made (showTyped), so its first roll waits a frame or two. */
+  let freshRoller = false
   // Entering or leaving the notch's magnet eases the last few px instead of jumping.
   let settleUntil = 0
   const settling = () => inHand() && performance.now() < settleUntil
@@ -450,6 +398,7 @@ export function createSlider(
     if (instant) delay = 0
     const roll = () => {
       rollerDirty = false
+      freshRoller = false
       lastRollerLen = digitsStr.length
       roller.update({
         value: v,
@@ -468,8 +417,9 @@ export function createSlider(
       fastPatchDigits(digitsStr)
     ) {
       rollerDirty = true
-    } else if (delay > 0 && animateDom) {
-      rollTimer = setTimeout(roll, delay)
+    } else if ((delay > 0 || freshRoller) && animateDom) {
+      // A reel made just now (showTyped) is measured on its first frame: it rolls after that.
+      rollTimer = setTimeout(roll, Math.max(delay, freshRoller ? 40 : 0))
     } else {
       roll()
     }
@@ -485,6 +435,7 @@ export function createSlider(
     shape()
     places = field.decimals ?? decimals(field.step)
     if (places !== placesBefore) {
+      roller.destroy()
       digits.replaceChildren()
       roller = makeRoller(current)
       lastRollerLen = fmtDigits(current).length
@@ -667,9 +618,13 @@ export function createSlider(
   // Vertical scrolling is left alone so the page and panel still scroll.
   let panRaw = 0
   let panValue = 0
+  /** The pan along the track (px), and its give past an end: the readout's. */
+  let panBand: Band = { at: 0, give: 0 }
+  const give = textGive(value, () => onMotionWake?.())
   /** Between a pan's first move and its end (`panning` lets go a little sooner, at the lift). */
   let panGesture = false
   const panLift = () => {
+    give.release()
     if (!panning) return
     panning = false
     letGo()
@@ -691,16 +646,20 @@ export function createSlider(
       if (!panGesture || current !== panValue) {
         panGesture = true
         panRaw = panValue = current
+        panBand = { at: ((current - field.min) / span) * width, give: 0 }
         committed = false
       }
-      panRaw = clamp(panRaw + (dx / width) * span, field.min, field.max)
+      panBand = band(panBand, dx, 0, width)
+      panRaw = clamp(field.min + (panBand.at / width) * span, field.min, field.max)
       pull(panRaw)
       panValue = current
+      if (panBand.give !== give.give) give.hold(panBand.give)
     },
     lift: panLift,
     end() {
       panLift()
       panGesture = false
+      panBand = { at: 0, give: 0 }
     },
     step(direction) {
       const next = stepValue(field, current, direction)
@@ -708,32 +667,71 @@ export function createSlider(
     },
   })
 
-  const edit = () => {
-    number.value = String(current)
-    number.hidden = false
-    value.hidden = true
+  const parse = (text: string) => {
+    const n = parseFloat(text.trim().replace(",", "."))
+    return Number.isFinite(n) ? n : undefined
+  }
+  const fit = () => {
+    fitter.textContent = number.value
+    number.style.width = `${Math.max(fitter.offsetWidth + 1, parseFloat(number.style.minWidth) || 0)}px`
+  }
+  /**
+   * The digits become editable where they stand: the field takes their right edge and width, so
+   * nothing moves, and the unit stays after it. `initial` (a typed digit) replaces the text.
+   */
+  const edit = (initial?: string) => {
+    if (number.hidden) {
+      const t = track.getBoundingClientRect()
+      const d = digits.getBoundingClientRect()
+      // Its 1px of right padding keeps the caret in view, just past the last digit.
+      number.style.right = `${t.right - d.right - 1}px`
+      number.style.minWidth = `${d.width + 1}px`
+      number.hidden = false
+      root.classList.add("knobs-editing")
+    }
+    number.value = initial ?? fmtDigits(current)
+    fit()
     number.focus()
-    number.select()
+    if (initial === undefined) number.select()
+    else number.setSelectionRange(initial.length, initial.length)
     onMotionWake?.()
   }
-  const done = (commit: boolean) => {
+  /** The readout shows `typed` at once, to roll from it to the value it lands on. */
+  const showTyped = (typed: number) => {
+    const text = fmtDigits(typed)
+    syncDigits(text, 0, 0, 0)
+    if (!gpuActive()) {
+      roller.destroy()
+      digits.replaceChildren()
+      roller = makeRoller(typed)
+      freshRoller = true
+      lastRollerLen = text.length
+    }
+  }
+  /**
+   * Enter commits: the value takes the nearest step in range, its digits rolling there from what
+   * was typed and the fill gliding after. Esc puts the text back as it was.
+   */
+  const done = (commit: boolean, refocus = true) => {
     if (number.hidden) return
-    const next = number.valueAsNumber
+    const typed = commit ? parse(number.value) : undefined
     number.hidden = true
-    value.hidden = false
-    if (commit && Number.isFinite(next)) set(quantize(next))
-    halt()
-    fillSpring.snap(ratioOf(current))
-    synced = true
-    paint(current, false)
-    track.focus({ preventScroll: true })
+    root.classList.remove("knobs-editing")
+    const result = typed === undefined ? current : quantize(typed)
+    const rolled = typed !== undefined && fmtDigits(typed) !== fmtDigits(result)
+    if (rolled) showTyped(typed)
+    if (result !== current) set(result)
+    else if (rolled) update(current)
+    else paint(current, true)
+    if (refocus) track.focus({ preventScroll: true })
     onMotionWake?.()
   }
   value.onclick = (event) => {
     // Pointer clicks are handled on release; this covers keyboard/AT activation.
     if (event.detail === 0) edit()
   }
-  number.onblur = () => done(true)
+  number.oninput = fit
+  number.onblur = () => done(true, false)
   number.onkeydown = (event) => {
     if (event.key === "Enter") {
       event.preventDefault()
@@ -743,6 +741,14 @@ export function createSlider(
       event.preventDefault()
       event.stopPropagation()
       done(false)
+    } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      // ↑↓ step the text (⇧ by the big step); Enter still commits it.
+      event.preventDefault()
+      event.stopPropagation()
+      const by = (event.shiftKey ? keyPrefs(track).bigStep : 1) * (event.key === "ArrowUp" ? 1 : -1)
+      number.value = fmtDigits(stepValue(field, parse(number.value) ?? current, by))
+      fit()
+      number.select()
     }
   }
   track.onkeydown = (event) => {

@@ -31,7 +31,10 @@ export interface FieldMeta {
   /** One muted line under the section's heading on a page (the first field that gives one wins). */
   readonly sectionDescription?: string
   readonly shortcut?: string
-  /** `false` keeps the field out of Random and Mutate, as a lock does, but by declaration. */
+  /**
+   * `false` keeps the field out of Random and Mutate, as a lock does, but by declaration. Switches,
+   * seeds and key combinations start out; `true` brings them in.
+   */
   readonly random?: boolean
   /**
    * The row dims and takes no edits from the pointer or keys (focus can still reach it, to read
@@ -173,6 +176,12 @@ export interface CurveField extends FieldMeta {
 export interface ActionField extends FieldMeta {
   readonly kind: "action"
   readonly run?: () => void
+  /** The combination that presses it (`"Shift+K"`), shown as a key cap at the row's end. */
+  readonly shortcut?: string
+  /** Where `shortcut` works, as a toolbar button's (see `ToolbarShortcut`); `"panel"` by default. */
+  readonly scope?: "page" | "panel" | "none"
+  /** The user can rebind it in place: a click or Enter on the key cap listens for a new one. */
+  readonly rebind?: boolean
 }
 export interface Vec3 {
   readonly x: number
@@ -502,11 +511,33 @@ export function choice<const T extends readonly [string, ...string[]]>(
     meta,
   )
 }
-/** `action("Replay", { run })`: a button row. Its key also reaches the store's `onAction`. */
-export function action(label?: string, meta?: Omit<FieldMeta, "label"> & { run?: () => void }) {
+/**
+ * `action("Replay", { run, shortcut: "Shift+K", global: true, rebind: true })`: a button row. Its
+ * key also reaches the store's `onAction`. `shortcut` presses it as a toolbar button's does (a
+ * combination, or `{ key, scope }`), and `rebind` lets the user change it from its key cap.
+ */
+export function action(
+  label?: string,
+  meta?: Omit<FieldMeta, "label" | "shortcut"> & {
+    run?: () => void
+    shortcut?: string | ToolbarShortcut
+    /** A plain-string shortcut works anywhere on the page (as `scope: "page"`). */
+    global?: boolean
+    rebind?: boolean
+  },
+) {
+  const { shortcut, global, rebind, run, ...rest } = meta ?? {}
+  const key = shortcutOf({ ...(shortcut ? { shortcut } : {}), ...(global ? { global } : {}) })
+  const combo = key ? normalizeCombo(key.key) : ""
+  if (key && !combo) throw new Error("An action's shortcut must name a key.")
   const field: ActionField = withMeta(
-    { kind: "action" as const, ...(meta?.run ? { run: meta.run } : {}) },
-    { ...meta, ...(label !== undefined ? { label } : {}) },
+    {
+      kind: "action" as const,
+      ...(run ? { run } : {}),
+      ...(key ? { shortcut: combo, scope: key.scope } : {}),
+      ...(rebind ? { rebind: true } : {}),
+    },
+    { ...rest, ...(label !== undefined ? { label } : {}) },
   )
   return field
 }
@@ -546,8 +577,12 @@ export function flatSpring(
   }
 }
 let springIds = 0
+/**
+ * A switch. Switches usually show or hide things (a view, a scene's parts), so Random and Mutate
+ * leave them alone unless `random: true`.
+ */
 export function toggle(value: boolean, meta?: FieldMeta): Toggle {
-  return withMeta({ kind: "toggle" as const, value }, meta)
+  return withMeta({ kind: "toggle" as const, value }, { ...meta, random: meta?.random ?? false })
 }
 /** `spring({ duration: 0.4, bounce: 0.2 })`, like SwiftUI's `.spring(duration:bounce:)`. */
 export function spring(value: Partial<SpringValue> = {}, meta?: FieldMeta): SpringField {
@@ -793,14 +828,23 @@ export function curve(
     options,
   )
 }
-/** A toolbar item's shortcut as `{ key, scope }`, or undefined without one. */
-export function toolbarShortcut(
-  item: ToolbarItem,
-): { readonly key: string; readonly scope: "page" | "panel" | "none" } | undefined {
-  const s = item.shortcut
+type ResolvedShortcut = { readonly key: string; readonly scope: "page" | "panel" | "none" }
+function shortcutOf(o: {
+  readonly shortcut?: string | ToolbarShortcut
+  readonly global?: boolean
+}): ResolvedShortcut | undefined {
+  const s = o.shortcut
   if (!s) return undefined
-  if (typeof s === "string") return { key: s, scope: item.global ? "page" : "panel" }
-  return s.key ? { key: s.key, scope: s.scope ?? (item.global ? "page" : "panel") } : undefined
+  if (typeof s === "string") return { key: s, scope: o.global ? "page" : "panel" }
+  return s.key ? { key: s.key, scope: s.scope ?? (o.global ? "page" : "panel") } : undefined
+}
+/** A toolbar item's shortcut as `{ key, scope }`, or undefined without one. */
+export function toolbarShortcut(item: ToolbarItem): ResolvedShortcut | undefined {
+  return shortcutOf(item)
+}
+/** An action row's shortcut as `{ key, scope }`, or undefined without one. */
+export function actionShortcut(field: ActionField): ResolvedShortcut | undefined {
+  return field.shortcut ? { key: field.shortcut, scope: field.scope ?? "panel" } : undefined
 }
 /** A wrapping row of buttons with icons and shortcut chips; holds no value. */
 export function toolbar(items: readonly ToolbarItem[], meta?: FieldMeta): ToolbarField {

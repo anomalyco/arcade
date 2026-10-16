@@ -1,3 +1,5 @@
+import { cue } from "./sound.js"
+
 export interface HintCandidate {
   readonly key: string
   readonly display: string
@@ -118,8 +120,12 @@ export function computeHintPrefixes(
   items: readonly HintCandidate[],
   rawQuery = "",
 ): HintResolution {
+  return resolveHintCodes(assignHintCodes(items), rawQuery)
+}
+
+/** How `codes` read with `rawQuery` typed: which still match, what's typed of each, a sole match. */
+export function resolveHintCodes(codes: readonly string[], rawQuery = ""): HintResolution {
   const q = rawQuery.toLowerCase().replace(/[^a-z]/g, "")
-  const codes = assignHintCodes(items)
   const matchIndices: number[] = []
 
   const badges: HintBadgeState[] = codes.map((code, i) => {
@@ -149,9 +155,19 @@ export interface HintTarget extends HintCandidate {
   activate(): void
 }
 
+/** Where a badge goes: just after its label, else at the element's top-left corner. */
+export interface HintSpot {
+  readonly el: HTMLElement
+  readonly labelEl?: HTMLElement
+}
+
 export interface HintController {
   readonly isActive: boolean
+  /** Hint mode inside this panel alone: its own codes, and it hears the keys (`handleKey`). */
   start(targets: HintTarget[]): void
+  /** Draws badges with codes the page's coordinator chose; it hears the keys and calls `narrow`. */
+  show(targets: readonly HintSpot[], codes: readonly string[]): void
+  narrow(query: string): void
   stop(): void
   handleKey(event: KeyboardEvent): boolean
 }
@@ -166,8 +182,12 @@ export function createHintController(
   layer.setAttribute("aria-hidden", "true")
 
   let active = false
+  /** Started by `start`: this controller hears the keys and activates the match itself. */
+  let local = false
   let query = ""
+  let spots: readonly HintSpot[] = []
   let targets: HintTarget[] = []
+  let codes: readonly string[] = []
   let badgeNodes: {
     tag: HTMLElement
     typedSpan: HTMLElement
@@ -177,10 +197,13 @@ export function createHintController(
   function stop() {
     if (!active) return
     active = false
+    local = false
     query = ""
     root.classList.remove("knobs-hinting")
-    for (const t of targets) t.el.classList.remove("knobs-hint-match", "knobs-hint-miss")
+    for (const t of spots) t.el.classList.remove("knobs-hint-match", "knobs-hint-miss")
+    spots = []
     targets = []
+    codes = []
     badgeNodes = []
     layer.replaceChildren()
     layer.remove()
@@ -189,15 +212,15 @@ export function createHintController(
 
   function paint() {
     if (!active) return
-    const resolution = computeHintPrefixes(targets, query)
-    if (resolution.uniqueMatchIndex >= 0) {
+    const resolution = resolveHintCodes(codes, query)
+    if (local && resolution.uniqueMatchIndex >= 0) {
       const hit = targets[resolution.uniqueMatchIndex]!
       stop()
       hit.activate()
       return
     }
-    for (let i = 0; i < targets.length; i++) {
-      const t = targets[i]!
+    for (let i = 0; i < spots.length; i++) {
+      const t = spots[i]!
       const b = resolution.badges[i]!
       const node = badgeNodes[i]
       t.el.classList.toggle("knobs-hint-match", b.match)
@@ -212,27 +235,25 @@ export function createHintController(
     wakeGpu()
   }
 
-  function start(nextTargets: HintTarget[]) {
+  function show(nextSpots: readonly HintSpot[], nextCodes: readonly string[]) {
     stop()
-    if (nextTargets.length === 0) return
+    if (nextSpots.length === 0) return
     active = true
     query = ""
-    targets = nextTargets
+    spots = nextSpots
+    codes = nextCodes
     root.classList.add("knobs-hinting")
     if (!layer.isConnected) root.append(layer)
+    cue(root, "hint")
 
     const rootRect = root.getBoundingClientRect()
-    const resolution = computeHintPrefixes(targets, "")
-    badgeNodes = targets.map((t, i) => {
-      const b = resolution.badges[i]!
+    badgeNodes = spots.map((t) => {
       const tag = doc.createElement("kbd")
       tag.className = "knobs-hint"
       const typedSpan = doc.createElement("span")
       typedSpan.className = "knobs-hint-typed"
-      typedSpan.textContent = b.typed
       const restSpan = doc.createElement("span")
       restSpan.className = "knobs-hint-rest"
-      restSpan.textContent = b.rest
       tag.append(typedSpan, restSpan)
 
       const rect = t.el.getBoundingClientRect()
@@ -254,8 +275,21 @@ export function createHintController(
     paint()
   }
 
+  function start(nextTargets: HintTarget[]) {
+    show(nextTargets, assignHintCodes(nextTargets))
+    if (!active) return
+    local = true
+    targets = nextTargets
+  }
+
+  function narrow(next: string) {
+    if (next.length > query.length) cue(root, "type")
+    query = next
+    paint()
+  }
+
   function handleKey(event: KeyboardEvent): boolean {
-    if (!active) return false
+    if (!active || !local) return false
     event.preventDefault()
     event.stopPropagation()
     if (event.key === "Escape") {
@@ -264,11 +298,12 @@ export function createHintController(
       query = query.slice(0, -1)
       paint()
     } else if (event.key === "Enter") {
-      const resolution = computeHintPrefixes(targets, query)
+      const resolution = resolveHintCodes(codes, query)
       const first = targets[resolution.matchIndices[0] ?? -1]
       stop()
       first?.activate()
     } else if (/^[a-zA-Z]$/.test(event.key)) {
+      cue(root, "type")
       query += event.key.toLowerCase()
       paint()
     }
@@ -280,6 +315,8 @@ export function createHintController(
       return active
     },
     start,
+    show,
+    narrow,
     stop,
     handleKey,
   }

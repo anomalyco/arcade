@@ -1,6 +1,10 @@
 import { springEasing } from "../core/spring.js"
+import rollingCss from "../panel/rolling-css.js"
 import { presetCss, type TokenPreset } from "../core/theme.js"
+import { activityCss } from "./activity-css.js"
+import { bentoCss } from "./bento-css.js"
 import { overlayCss } from "./overlay-css.js"
+import { pickerCss } from "./picker-css.js"
 import { readoutCss } from "./readout-css.js"
 
 export type UiTheme = "dark" | "light" | "auto"
@@ -114,6 +118,28 @@ const css = `
 :is(.knobs-tree,.knobs-split>.knobs-pane>.knobs-pane-clip>.knobs-pane-inner>.knobs-pane-head) [hidden]{display:none!important}
 :is(.knobs-pane-head,.knobs-pane-rail,.knobs-tree) svg{display:block;flex:none}
 
+/* Scroll fades: a scroller's content fades out over --knobs-fade at an edge with more beyond it,
+   coming in over the first --knobs-fade-travel of scroll, so reaching an end never pops. They're
+   scroll-driven (no script), so where those aren't supported there's no fade. --knobs-fade-inset
+   starts the top one below a sticky header; .knobs-scroll-fade-x fades across instead (a single
+   line that's cut off, like a tree's labels: no ellipsis). Pane bodies, trees and the palette's
+   list carry the class; around a panel the GPU draws, the mask goes (it would trap the panel's
+   overlays under it). */
+@property --knobs-fade-a{syntax:"<number>";inherits:false;initial-value:1}
+@property --knobs-fade-b{syntax:"<number>";inherits:false;initial-value:1}
+@keyframes knobs-fade-a{from{--knobs-fade-a:1}to{--knobs-fade-a:0}}
+@keyframes knobs-fade-b{from{--knobs-fade-b:0}to{--knobs-fade-b:1}}
+@supports (animation-timeline:scroll()){
+  :is(.knobs-scroll-fade,.knobs-scroll-fade-x){--knobs-fade:20px;--knobs-fade-travel:24px;animation:knobs-fade-a linear both,knobs-fade-b linear both;animation-duration:auto;
+    animation-timeline:scroll(self block),scroll(self block);animation-range:0 var(--knobs-fade-travel),calc(100% - var(--knobs-fade-travel)) 100%}
+  .knobs-scroll-fade{--knobs-fade-mask:linear-gradient(to bottom,#000 var(--knobs-fade-inset,0px),rgb(0 0 0/var(--knobs-fade-a)) var(--knobs-fade-inset,0px),#000 calc(var(--knobs-fade-inset,0px) + var(--knobs-fade)),#000 calc(100% - var(--knobs-fade)),rgb(0 0 0/var(--knobs-fade-b)));-webkit-mask-image:var(--knobs-fade-mask);mask-image:var(--knobs-fade-mask)}
+  .knobs-scroll-fade-x{--knobs-fade:16px;--knobs-fade-travel:4px;animation-timeline:scroll(self inline),scroll(self inline);
+    --knobs-fade-mask:linear-gradient(to right,rgb(0 0 0/var(--knobs-fade-a)),#000 var(--knobs-fade),#000 calc(100% - var(--knobs-fade)),rgb(0 0 0/var(--knobs-fade-b)));-webkit-mask-image:var(--knobs-fade-mask);mask-image:var(--knobs-fade-mask)}
+  .knobs-scroll-fade:has(.knobs-panel[data-gpu-active="true"]){-webkit-mask-image:none;mask-image:none}
+  .knobs-tree-row[data-editing] .knobs-tree-label{-webkit-mask-image:none;mask-image:none}
+}
+@supports not (animation-timeline:scroll()){.knobs-scroll-fade-x{text-overflow:ellipsis}}
+
 /* Split: panes along a row or column, hairline dividers with a wider grip. */
 .knobs-split{position:relative;display:flex;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
 .knobs-split[data-direction="column"]{flex-direction:column}
@@ -126,7 +152,7 @@ const css = `
 .knobs-pane-inner{position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0}
 .knobs-pane-body{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .knobs-pane[data-scroll] .knobs-pane-body{overflow:auto;scrollbar-width:thin}
-.knobs-pane[data-rail][data-collapsed][data-settled]>.knobs-pane-clip,.knobs-pane:not([data-rail])[data-collapsed][data-settled]>.knobs-pane-clip>.knobs-pane-inner>.knobs-pane-body{visibility:hidden}
+.knobs-pane[data-rail][data-collapsed][data-settled]>.knobs-pane-clip>.knobs-pane-inner,.knobs-pane:not([data-rail])[data-collapsed][data-settled]>.knobs-pane-clip>.knobs-pane-inner>.knobs-pane-body{visibility:hidden}
 .knobs-ui .knobs-pane-head{display:flex;align-items:center;gap:6px;flex:none;height:var(--ku-row);padding:0 calc(var(--ku-inset) - 4px) 0 var(--ku-inset);user-select:none;-webkit-user-select:none}
 .knobs-pane-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:var(--ku-title-weight);color:var(--ku-text)}
 .knobs-pane-count{flex:none;color:var(--ku-dim);font-variant-numeric:tabular-nums}
@@ -137,17 +163,29 @@ const css = `
 .knobs-ui .knobs-pane-btn[aria-pressed="true"]{color:var(--ku-accent)}
 .knobs-pane-btn svg{width:13px;height:13px}
 .knobs-pane-head[data-toggles]{cursor:pointer}
-.knobs-pane-caret{transition:transform var(--ku-ease-ms) var(--ku-ease)}
-.knobs-pane[data-collapsed] .knobs-pane-caret{transform:rotate(-90deg)}
-/* A collapsed pane's rail: its title along the edge; a click opens it. */
-.knobs-ui .knobs-pane-rail{position:absolute;inset:0;margin:var(--ku-pane-m);border-radius:var(--ku-pane-radius);background-color:var(--ku-pane-bg);box-shadow:var(--ku-pane-ring);display:flex;align-items:center;gap:8px;color:var(--ku-label);cursor:pointer;opacity:0;pointer-events:none;
+/* A collapsed pane's rail: its title along the edge; a click opens it. It holds on to the edge the
+   pane folds toward, as wide as the rail, over the card (which folds to its size): only its label
+   and chevron draw, and a nested split's slot, which has no card, gives it one of its own. */
+.knobs-ui .knobs-pane-rail{position:absolute;margin:var(--ku-pane-m);border-radius:var(--ku-pane-radius);background-color:transparent;display:flex;align-items:center;gap:8px;color:var(--ku-label);cursor:pointer;opacity:0;pointer-events:none;
   font-weight:var(--ku-title-weight);transition:background .15s,color .15s}
-.knobs-split[data-direction="row"]>.knobs-pane>.knobs-pane-rail{writing-mode:vertical-rl;padding:10px 0}
-.knobs-split[data-direction="column"]>.knobs-pane>.knobs-pane-rail{padding:0 var(--ku-inset)}
+.knobs-ui .knobs-pane[data-nested]>.knobs-pane-rail{background-color:var(--ku-pane-bg);box-shadow:var(--ku-pane-ring)}
+.knobs-split[data-direction="row"]>.knobs-pane>.knobs-pane-rail{top:0;bottom:0;width:var(--ku-rail);writing-mode:vertical-rl;padding:10px 0}
+.knobs-split[data-direction="row"]>.knobs-pane[data-edge="start"]>.knobs-pane-rail{right:0}
+.knobs-split[data-direction="row"]>.knobs-pane[data-edge="end"]>.knobs-pane-rail{left:0}
+.knobs-split[data-direction="column"]>.knobs-pane>.knobs-pane-rail{left:0;right:0;height:var(--ku-rail);padding:0 var(--ku-inset)}
+.knobs-split[data-direction="column"]>.knobs-pane[data-edge="start"]>.knobs-pane-rail{bottom:0}
+.knobs-split[data-direction="column"]>.knobs-pane[data-edge="end"]>.knobs-pane-rail{top:0}
 .knobs-pane[data-collapsed]>.knobs-pane-rail{pointer-events:auto}
-.knobs-ui .knobs-pane-rail:is(:hover,:focus-visible){background-image:linear-gradient(var(--ku-wash),var(--ku-wash));color:var(--ku-text)}
-.knobs-pane-rail span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.knobs-pane-rail svg{width:11px;height:11px;color:var(--ku-dim);writing-mode:horizontal-tb}
+.knobs-ui .knobs-pane[data-collapsed]>.knobs-pane-rail:is(:hover,:focus-visible){background-image:linear-gradient(var(--ku-wash),var(--ku-wash));color:var(--ku-text)}
+.knobs-pane-rail-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.knobs-pane-chevron{display:flex;flex:none;width:11px;height:11px;writing-mode:horizontal-tb;color:var(--ku-dim)}
+.knobs-pane-turn{display:flex;width:100%;height:100%;transform-origin:50% 50%}
+.knobs-pane-rail svg{width:11px;height:11px}
+/* The rail's chevron stands in for the header's collapse icon (it turns into the rail's), so the
+   icon itself isn't drawn; hovering its button lights the chevron instead. */
+.knobs-pane[data-morph]>.knobs-pane-clip>.knobs-pane-inner>.knobs-pane-head>.knobs-pane-collapse>svg{visibility:hidden}
+.knobs-pane[data-morph]:not([data-collapsed]):has(>.knobs-pane-clip>.knobs-pane-inner>.knobs-pane-head>.knobs-pane-collapse:is(:hover,:focus-visible))>.knobs-pane-rail .knobs-pane-chevron{color:var(--ku-text)}
+.knobs-pane[data-morph]:not([data-collapsed])>.knobs-pane-rail .knobs-pane-chevron{transition:color .15s}
 
 .knobs-divider{position:relative;z-index:2;flex:none;width:1px;background:var(--ku-divider);touch-action:none;outline:none}
 .knobs-split[data-direction="column"]>.knobs-divider{width:auto;height:1px}
@@ -190,7 +228,7 @@ const css = `
 .knobs-tree-row[aria-expanded="true"]>.knobs-tree-caret{transform:rotate(90deg)}
 .knobs-tree-row:not([aria-expanded])>.knobs-tree-caret{visibility:hidden}
 .knobs-tree-icon{flex:none;display:flex;align-items:center;justify-content:center;width:14px;margin-right:6px;color:var(--ku-dim);font-size:calc(var(--ku-font-size) - 1px)}
-.knobs-tree-label{position:relative;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:var(--ku-font-weight)}
+.knobs-tree-label{position:relative;flex:1;min-width:0;overflow:hidden;font-weight:var(--ku-font-weight)}
 .knobs-tree-row[data-ancestor] .knobs-tree-label{color:var(--ku-label)}
 .knobs-tree-label .knobs-tree-mark{color:var(--ku-accent)}
 .knobs-tree-row[data-off~="visible"] :is(.knobs-tree-label,.knobs-tree-icon){opacity:.45}
@@ -228,7 +266,7 @@ const css = `
 .knobs-tl-play svg{width:12px;height:12px}
 .knobs-timeline[data-playing] .knobs-tl-play{background:var(--ku-accent);color:var(--ku-bg)}
 .knobs-tl-time{display:flex;flex-direction:column;line-height:1.2;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-.knobs-tl-now{font:var(--ku-font-weight) var(--ku-value-size)/1.2 var(--ku-value-font);color:var(--ku-text);white-space:nowrap}
+.knobs-tl-now{font:var(--ku-font-weight) var(--ku-value-size)/1.2 var(--ku-value-font);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";color:var(--ku-text);white-space:nowrap}
 .knobs-tl-sub{font-size:var(--ku-text-meta);color:var(--ku-dim);white-space:nowrap}
 .knobs-tl-track{position:relative;flex:1;min-width:0;overflow:hidden;border-radius:var(--ku-radius);background:var(--ku-surface);cursor:col-resize;touch-action:none;
   transition:background calc(var(--ku-hover-out) * 1ms)}
@@ -281,7 +319,8 @@ export function injectUiStyles(doc: Document) {
   if (doc.querySelector("style[data-knobs-ui]")) return
   const style = doc.createElement("style")
   style.dataset.knobsUi = ""
-  style.textContent = css + readoutCss + overlayCss
+  style.textContent =
+    css + readoutCss + overlayCss + bentoCss + activityCss + pickerCss + rollingCss
   doc.head.append(style)
 }
 

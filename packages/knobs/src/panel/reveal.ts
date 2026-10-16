@@ -1,7 +1,17 @@
+import { springEasing } from "../core/spring.js"
+
 const EASE_OUT = "cubic-bezier(.2,.8,.2,1)"
-const EASE_IN = "cubic-bezier(.4,0,.8,.4)"
+// Opening and closing ride springs with no bounce (.22 s and .18 s): they leave at once and
+// settle softly, where an ease-in close starts late and lands hard.
+const OPEN = springEasing((2 * Math.PI) / 0.22, 1)
+const CLOSE = springEasing((2 * Math.PI) / 0.18, 1)
+/** How far the content drifts with the moving edge (px), at most, so it isn't a still crop. */
+const DRIFT = 10
+/** Where in a close the content has faded out, so nothing lingers cropped as the edge arrives. */
+const FADED = 0.6
 
 const running = new WeakMap<HTMLElement, Animation>()
+const drifting = new WeakMap<HTMLElement, Animation[]>()
 const activeNodes = new Set<HTMLElement>()
 let revealVersion = 0
 
@@ -54,6 +64,35 @@ export function resize(node: HTMLElement, from: number) {
   }
   animation.oncancel = settle
   animation.onfinish = settle
+}
+
+/**
+ * Slides `node`'s children with its moving edge, by up to `by` px: down into place as it opens,
+ * up as it closes, from wherever they are when it turns around. Transforms only, so the GPU
+ * renderer (which reads live rects while a reveal runs) draws the same.
+ */
+function drift(node: HTMLElement, show: boolean, by: number, timing: KeyframeAnimationOptions) {
+  const prev = drifting.get(node)
+  const kids = [...node.children].filter((k): k is HTMLElement => k instanceof HTMLElement)
+  let from = show ? -by : 0
+  if (prev?.length) {
+    const first = kids[0]
+    const m = first ? new DOMMatrix(getComputedStyle(first).transform) : undefined
+    if (m) from = m.f
+    for (const a of prev) a.cancel()
+  }
+  drifting.delete(node)
+  if (by < 0.5 || kids.length > 48) return
+  const to = show ? 0 : -by
+  drifting.set(
+    node,
+    kids.map((k) =>
+      k.animate(
+        [{ transform: `translateY(${from}px)` }, { transform: `translateY(${to}px)` }],
+        timing,
+      ),
+    ),
+  )
 }
 
 /**
@@ -116,14 +155,23 @@ export function reveal(node: HTMLElement, show: boolean, after?: () => void, del
   node.style.overflow = "hidden"
   if (!show) node.dataset.leaving = "true"
   // --k-reveal-ease retunes the opening curve (the meta page's "Reveal curve").
-  const ease = cs.getPropertyValue("--k-reveal-ease").trim() || EASE_OUT
-  const animation = node.animate([current, show ? open : closed], {
-    duration: show ? 180 : 130,
-    easing: show ? ease : EASE_IN,
+  const custom = show ? cs.getPropertyValue("--k-reveal-ease").trim() : ""
+  const curve = custom ? { easing: custom, ms: 180 } : show ? OPEN : CLOSE
+  const timing: KeyframeAnimationOptions = {
+    duration: curve.ms,
+    easing: curve.easing,
     // A turn in a cascade: hold the starting frame until it comes.
     delay,
     fill: "backwards",
-  })
+  }
+  const animation = node.animate(
+    show
+      ? [current, open]
+      : [current, { opacity: 0, offset: Math.max(0, FADED - (1 - f) * FADED) }, closed],
+    timing,
+  )
+  // Disclosures (an inline editor, a folding card) carry their content with the edge.
+  if (node.dataset.drift !== undefined) drift(node, show, Math.min(DRIFT, height * 0.12), timing)
   running.set(node, animation)
   activeNodes.add(node)
   revealVersion++

@@ -10,7 +10,13 @@ export interface Variants<V> {
   readonly ready: boolean
   list(): readonly Variant<V>[]
   save(name?: string): Variant<V>
-  load(id: string): void
+  /**
+   * Applies a saved variant, making it the active preset (see `Controls.activePreset`); one undo
+   * step, or folded into the last with `coalesce` (a pan across the strip).
+   */
+  load(id: string, options?: { coalesce?: boolean }): void
+  /** Renames a saved variant (an empty name clears it); kept in storage with the variants. */
+  rename(id: string, name: string): void
   remove(id: string): void
   export(): string
   import(json: string): void
@@ -21,7 +27,7 @@ export function createVariants<S extends Schema>(
   key: string,
   storage: () => StoragePort | null,
   get: () => Values<S>,
-  set: (v: Values<S>) => void,
+  set: (v: Values<S>, id: string, coalesce: boolean) => void,
   notify: () => void,
   enabled: () => boolean,
 ): Variants<Values<S>> {
@@ -96,11 +102,27 @@ export function createVariants<S extends Schema>(
       persist([...list, variant])
       return variant
     },
-    load(id) {
+    load(id, options) {
       read()
       const variant = list.find((v) => v.id === id)
       if (!variant) throw new Error(`Unknown variant: ${id}`)
-      set(variant.values)
+      set(variant.values, id, Boolean(options?.coalesce))
+    },
+    rename(id, name) {
+      read()
+      if (name.length > 100) throw new Error("Variant names must be at most 100 characters.")
+      const at = list.findIndex((v) => v.id === id)
+      if (at < 0) throw new Error(`Unknown variant: ${id}`)
+      const was = list[at]!
+      const trimmed = name.trim()
+      if ((was.name ?? "") === trimmed) return
+      const next = [...list]
+      next[at] = Object.freeze({
+        id: was.id,
+        ...(trimmed ? { name: trimmed } : {}),
+        values: was.values,
+      })
+      persist(next)
     },
     remove(id) {
       read()

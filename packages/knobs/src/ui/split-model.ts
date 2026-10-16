@@ -225,6 +225,54 @@ export function edgeOf(panes: readonly PaneSpec[], id: string): "start" | "end" 
   return panes.findIndex((p) => p.id === id) < first ? "start" : "end"
 }
 
+/** How far a folding pane is from its open size (0) to its rail (1), by the size it shows. */
+export function foldProgress(size: number, open: number, rail: number): number {
+  const span = open - rail
+  if (span <= 0) return size > rail ? 0 : 1
+  return Math.min(1, Math.max(0, (open - size) / span))
+}
+
+/** How much of each face a folding pane shows (0…1): its content, open, and its rail, folded. */
+export interface FoldFaces {
+  readonly content: number
+  readonly rail: number
+}
+
+/** A face that's leaving is gone by this far along the fold. */
+export const FACE_OUT = 0.4
+/** A face that's arriving shows only over this last part of the fold. */
+export const FACE_IN = 0.3
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
+
+/**
+ * One face's opacity, `away` (0…1) from where it belongs. It holds where it is inside a band:
+ * no higher than the leaving curve, no lower than the arriving one, which lies inside it. So a
+ * face leaves early, arrives late, and a fold that turns back mid-flight keeps every face where
+ * it was until the travel reaches the other curve: nothing jumps.
+ */
+function face(prev: number, away: number) {
+  const lo = clamp01(1 - away / FACE_IN)
+  const hi = clamp01(1 - away / FACE_OUT)
+  return Math.min(hi, Math.max(lo, prev))
+}
+
+/**
+ * The faces at fold progress `p`, from the last frame's. The content and the rail never show
+ * together: the content is gone before 40% and the rail starts past 70% (folding or opening).
+ */
+export function foldFaces(prev: FoldFaces, p: number): FoldFaces {
+  return { content: face(prev.content, p), rail: face(prev.rail, 1 - p) }
+}
+
+/**
+ * The fold's chevron turn (degrees) at progress `p`: half a turn from the open pane's chevron to
+ * the rail's, rolling the way the pane's edge travels.
+ */
+export function chevronTurn(p: number, edge: "start" | "end"): number {
+  return (edge === "start" ? 180 : -180) * (1 - clamp01(p))
+}
+
 /** A saved layout, kept only where it names known panes with sane values. */
 export function parseLayout(raw: unknown, panes: readonly PaneSpec[]): SplitLayout | undefined {
   if (!raw || typeof raw !== "object") return undefined

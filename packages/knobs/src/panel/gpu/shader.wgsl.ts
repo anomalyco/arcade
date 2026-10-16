@@ -21,16 +21,18 @@ struct Prim {
   color: vec4f,   // primary r, g, b, a
   color2: vec4f,  // secondary r, g, b, a (border / handle / thumb / glow)
   look: vec4f,    // radius, strokeWidth, glowOrBlur, kind
-  motion: vec4f,  // blurX, blurY, unused, cornersInUv + 2 * (mask index + 1)
+  motion: vec4f,  // blurX, blurY, turn (kind 5, radians), cornersInUv + 2 * (mask index + 1)
   extra: vec4f,   // kind-specific params
   aux: vec4f,     // kind-specific params
   aux2: vec4f,    // kind-specific color
 }
 
-// A panel morphing out of its chip clips its content to the shape and reveals it top first.
+// A panel morphing out of its chip clips its content to the shape and reveals it top first,
+// blurred, faded and scaled as the DOM's filter, opacity and scale do it.
 struct Mask {
   rect: vec4f,    // x, y, w, h in viewport CSS px
-  look: vec4f,    // radius, fully shown above y, hidden below y, unused
+  look: vec4f,    // radius, fully shown above y, hidden below y, content blur (px)
+  fx: vec4f,      // content opacity, content scale, scale origin x, y (viewport CSS px)
 }
 
 struct View {
@@ -66,8 +68,16 @@ struct Out {
   // Shadows and the pill/switch glows reach ~14px past their shapes.
   let wide = p.look.w == 0.0 || p.look.w == 3.0 || p.look.w == 4.0 || p.look.w == 10.0;
   let padGlow = select(p.look.z * 1.6, p.look.z * 2.2 + 8.0, wide);
-  let pad = vec2f(padGlow + 2.0) + abs(p.motion.xy) * 0.65;
-  let screenPx = (r.xy - pad) + c * (r.zw + pad * 2.0);
+  var pad = vec2f(padGlow + 2.0) + abs(p.motion.xy) * 0.65;
+  var screenPx = (r.xy - pad) + c * (r.zw + pad * 2.0);
+  // Morphing content: the quad grows by the blur's reach and scales with the content.
+  let mi = u32(p.motion.w) >> 1u;
+  if (mi > 0u) {
+    let m = masks[mi - 1u];
+    pad += vec2f(m.look.w * 2.5 + 1.0);
+    let content = (r.xy - pad) + c * (r.zw + pad * 2.0);
+    screenPx = m.fx.zw + (content - m.fx.zw) * m.fx.y;
+  }
 
   var o: Out;
   o.pos = vec4f(screenPx / view.size * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0), 0.0, 1.0);
@@ -123,34 +133,50 @@ fn hash21(q: vec2f) -> f32 {
   return fract(52.9829189 * fract(dot(q, vec2f(0.06711056, 0.00583715))));
 }
 
-// kind 0: Panel card surface + elevation shadow + border + specular rim
+// kind 0: Panel card surface + elevation shadow + border + specular rim. With a hairline width
+// (extra.z, whole device px) the edge is that hairline just outside the card, like CSS's
+// 0 0 0 w spread shadow, and the rim is CSS's inset 0 w 0; otherwise a 1px border and a 1px rim.
 fn shadePanel(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   let r = p.look.x;
   let dist = roundedBox(local, size, r);
   let bodyCov = covSd(dist);
+  let hair = p.extra.z;
   var out = vec4f(0.0);
+  if (hair > 0.0 && dist > -1.0) {
+    out = premul(p.color2) * clamp(covSd(dist - hair) - bodyCov, 0.0, 1.0);
+  }
 
   // Floating drop shadow when glowOrBlur (look.z) > 0; like box-shadow, never under the card.
   if (p.look.z > 0.5 && dist > -1.0) {
     let shDist = roundedBox(local - vec2f(0.0, 6.0), size, r);
     let shBlur = max(p.look.z, 2.0);
     let shA = pow(clamp(1.0 - smoothstep(-shBlur * 0.3, shBlur * 1.5, shDist), 0.0, 1.0), 1.8) * p.extra.x;
-    out = vec4f(0.0, 0.0, 0.0, shA * (1.0 - bodyCov));
+    out = over(out, vec4f(0.0, 0.0, 0.0, shA * (1.0 - bodyCov)));
   }
   if (bodyCov <= 0.0) { return out; }
 
   var card = premul(p.color) * bodyCov;
 
-  // The rim, built like CSS's inset 0 1px 0: inside the border, minus that shape moved down 1px.
+  // The rim, built like CSS's inset 0 w 0: inside the border, minus that shape moved down w.
   let inner = local - vec2f(1.0);
   let innerSize = size - vec2f(2.0);
-  let rimCov = covSd(roundedBox(inner, innerSize, r - 1.0)) *
-    (1.0 - covSd(roundedBox(inner - vec2f(0.0, 1.0), innerSize, r - 1.0)));
+  let w = select(1.0, hair, hair > 0.0);
+  let innerCov = covSd(roundedBox(inner, innerSize, r - 1.0));
+  let rimCov = innerCov * (1.0 - covSd(roundedBox(inner - vec2f(0.0, w), innerSize, r - 1.0)));
   card = over(card, premul(p.aux2) * rimCov);
 
+  // A morphing card's specular ring (extra.y), w wide inside the border like CSS's inset 0 0 0 w.
+  if (p.extra.y > 0.001) {
+    let ring = innerCov *
+      (1.0 - covSd(roundedBox(inner - vec2f(w), innerSize - vec2f(2.0 * w), r - 1.0 - w)));
+    card = over(card, vec4f(vec3f(p.extra.y), p.extra.y) * ring);
+  }
+
   // 1px border
-  let borderCov = hairline(dist, max(p.look.y, 1.0));
-  card = over(card, premul(p.color2) * borderCov);
+  if (hair <= 0.0) {
+    let borderCov = hairline(dist, max(p.look.y, 1.0));
+    card = over(card, premul(p.color2) * borderCov);
+  }
 
   return over(out, card);
 }
@@ -170,7 +196,11 @@ fn shadeTrack(p: Prim, local: vec2f, size: vec2f) -> vec4f {
     }
   }
 
-  let cov = covSd(dist);
+  var cov = covSd(dist);
+  // A range band's moving ends (motion.x low, motion.y high, px): each edge box-blurred by its own
+  // smear, which is a linear ramp as wide as the smear, centred on the edge.
+  if (p.motion.x > 0.0) { cov *= clamp(local.x / p.motion.x, 0.0, 1.0); }
+  if (p.motion.y > 0.0) { cov *= clamp((size.x - local.x) / p.motion.y, 0.0, 1.0); }
   if (cov > 0.0) {
     let hover = clamp(p.extra.x, 0.0, 1.0);
     let top = 1.0 - smoothstep(0.0, size.y * 0.65, local.y);
@@ -268,22 +298,20 @@ fn shadeSlider(p: Prim, local: vec2f, size: vec2f, fragPos: vec2f) -> vec4f {
     let stepU = 1.0 / (tickCount - 1.0);
     let nearestIdx = round(u / stepU);
     let tickX = nearestIdx * stepU * span;
-    if (p.aux.z <= 0.005 || abs(tickX - nx) >= 3.0) {
-      let dx = abs(local.x - tickX);
-      let dy = abs(local.y - size.y * 0.5);
-      let tDist = max(dx - 0.5, dy - 3.5);
-      let tCov = covSd(tDist) * clear;
-      if (tCov > 0.0) {
-        let ta = tCov * tickAlpha * 0.22;
-        acc = over(acc, vec4f(p.aux2.rgb * ta, ta));
-      }
+    let dx = abs(local.x - tickX);
+    let dy = abs(local.y - size.y * 0.5);
+    let tDist = max(dx - 0.5, dy - 3.5);
+    let tCov = covSd(tDist) * clear;
+    if (tCov > 0.0) {
+      let ta = tCov * tickAlpha * 0.22;
+      acc = over(acc, vec4f(p.aux2.rgb * ta, ta));
     }
   }
 
-  // Default notch: a slightly taller, brighter centerline tick among the scale ticks.
+  // Default notch: a short tick rising from the bottom edge, off the scale's centerline.
   if (p.aux.z > 0.005 && clear > 0.0) {
-    let nh = select(9.0, 11.0, p.aux.z > 0.8);
-    let nCov = covSd(roundedBox(local - vec2f(nx - 0.75, (size.y - nh) * 0.5), vec2f(1.5, nh), 0.75)) * clear;
+    let nh = select(4.0, 6.0, p.aux.z > 0.8);
+    let nCov = covSd(roundedBox(local - vec2f(nx - 0.75, size.y - nh), vec2f(1.5, nh + 1.0), 0.75)) * clear;
     let na = nCov * p.aux2.a * p.aux.z;
     acc = over(acc, vec4f(p.aux2.rgb * na, na));
   }
@@ -303,7 +331,13 @@ fn samplePillAt(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   let cov = covSd(dist);
   if (cov <= 0.0) { return out; }
   var pill = premul(p.color) * cov;
-  let rimCov = hairline(dist, 1.0);
+  // Its outline is look.y wide (1px by default), over a top light (aux2) like CSS's inset 0 w 0.
+  let w = select(1.0, p.look.y, p.look.y > 0.0);
+  if (p.aux2.a > 0.0) {
+    let lit = cov * (1.0 - covSd(roundedBox(local - vec2f(0.0, w), size, r)));
+    pill = over(pill, premul(p.aux2) * lit);
+  }
+  let rimCov = hairline(dist, w);
   pill = over(pill, vec4f(p.color2.rgb * p.color2.a * rimCov, p.color2.a * rimCov));
   return over(out, pill);
 }
@@ -376,12 +410,34 @@ fn sampleAtlasAlpha(p: Prim, local: vec2f, size: vec2f) -> f32 {
   return textureSampleLevel(labels, smp, uv, 0.0).a;
 }
 
-// kind 5: Native-rasterized atlas text & hint badges with directional motion blur
-fn shadeText(p: Prim, local: vec2f, size: vec2f, fragPos: vec2f) -> vec4f {
+// kind 5: Native-rasterized atlas text & hint badges with directional motion blur (or, for a
+// glyph, look.z of round blur)
+fn shadeText(p: Prim, rectLocal: vec2f, rectSize: vec2f, fragPos: vec2f) -> vec4f {
+  // A turning glyph (motion.z, clockwise) sits in a quad √2 its size, sampled turned back.
+  var local = rectLocal;
+  var size = rectSize;
+  if (p.motion.z != 0.0) {
+    size = rectSize / 1.41421356;
+    let c = rectLocal - rectSize * 0.5;
+    let s = sin(p.motion.z);
+    let co = cos(p.motion.z);
+    local = vec2f(co * c.x + s * c.y, -s * c.x + co * c.y) + size * 0.5;
+  }
   let blur = p.motion.xy;
   let len = length(blur);
   var a = 0.0;
-  if (len < 0.45) {
+  if (p.look.z > 0.05) {
+    // A glyph blooming out of its slot is blurred as the DOM's filter does (look.z is its
+    // σ, px): a disc twice that wide, in jittered taps.
+    let j = hash21(fragPos) * 6.2831853;
+    for (var k = 0; k < 12; k++) {
+      let f = f32(k);
+      let r = p.look.z * 2.0 * sqrt((f + 0.5) / 12.0);
+      let t = f * 2.3999632 + j;
+      a += sampleAtlasAlpha(p, local + vec2f(cos(t), sin(t)) * r, size);
+    }
+    a = a / 12.0;
+  } else if (len < 0.45) {
     a = sampleAtlasAlpha(p, local, size);
   } else {
     let n = clamp(i32(len / 1.5) + 3, 4, 12);
@@ -408,6 +464,8 @@ fn shadeDot(p: Prim, local: vec2f, size: vec2f) -> vec4f {
 }
 
 // kind 8: Polyline stroke through pts[extra.x .. extra.x + extra.y] (viewport px), look.y wide.
+// motion.x (px) smears it across while it moves: the stroke box-blurred by that width, a
+// trapezoid that keeps its ink (the DOM blurs its path by the same spread).
 fn shadeLine(p: Prim, screen: vec2f) -> vec4f {
   let start = u32(p.extra.x);
   let count = u32(p.extra.y);
@@ -419,7 +477,15 @@ fn shadeLine(p: Prim, screen: vec2f) -> vec4f {
     let t = clamp(dot(screen - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
     d = min(d, length(screen - a - ab * t));
   }
-  let a = covSd(d - p.look.y * 0.5) * p.color.a;
+  let w = p.look.y;
+  let blur = p.motion.x;
+  if (blur < 0.25) {
+    let a = covSd(d - w * 0.5) * p.color.a;
+    return vec4f(p.color.rgb * a, a);
+  }
+  let bw = blur + 1.0 / view.dpr;
+  let lo = min(w, bw);
+  let a = (lo / bw) * clamp(((w + bw) * 0.5 - d) / lo, 0.0, 1.0) * p.color.a;
   return vec4f(p.color.rgb * a, a);
 }
 
@@ -561,59 +627,101 @@ fn shadeShape(p: Prim, local: vec2f, size: vec2f) -> vec4f {
   return out;
 }
 
-@fragment fn fs_main(in: Out) -> @location(0) vec4f {
-  let p = prims[in.id];
+// A shape smeared along motion.xy (px), as a moving curve point is: a box blur along its travel.
+fn shadeShapeSmeared(p: Prim, local: vec2f, size: vec2f, fragPos: vec2f) -> vec4f {
+  let blur = p.motion.xy;
+  let len = length(blur);
+  if (len < 0.25) { return shadeShape(p, local, size); }
+  let n = clamp(i32(len / 1.2) + 3, 4, 12);
+  let j = hash21(fragPos);
+  var acc = vec4f(0.0);
+  for (var k = 0; k < n; k++) {
+    let f = (f32(k) + j) / f32(n) - 0.5;
+    acc += shadeShape(p, local - blur * f, size);
+  }
+  return acc / f32(n);
+}
+
+// A prim's colour at viewport point \`at\` (frag: its device px), within its clip.
+fn shadeAt(p: Prim, at: vec2f, rect: vec4f, frag: vec2f) -> vec4f {
   let clipDist = min(
-    min(in.screenPx.x - p.clip.x, p.clip.z - in.screenPx.x),
-    min(in.screenPx.y - p.clip.y, p.clip.w - in.screenPx.y)
+    min(at.x - p.clip.x, p.clip.z - at.x),
+    min(at.y - p.clip.y, p.clip.w - at.y)
   );
   let clipCov = clamp(clipDist * view.dpr + 0.5, 0.0, 1.0);
   if (clipCov <= 0.0) { return vec4f(0.0); }
-  var maskCov = 1.0;
-  let mi = u32(p.motion.w) >> 1u;
-  if (mi > 0u) {
-    let m = masks[mi - 1u];
-    maskCov = covSd(roundedBox(in.screenPx - m.rect.xy, m.rect.zw, m.look.x));
-    if (m.look.z > m.look.y) {
-      maskCov *= clamp((m.look.z - in.screenPx.y) / (m.look.z - m.look.y), 0.0, 1.0);
-    }
-    if (maskCov <= 0.0) { return vec4f(0.0); }
-  }
 
-  let local = in.screenPx - in.rect.xy;
+  let local = at - rect.xy;
   // Sub-pixel shapes keep their size: a 0.5px hairline covers one device pixel, as in the DOM.
-  let size = max(in.rect.zw, vec2f(0.01));
+  let size = max(rect.zw, vec2f(0.01));
   let kind = i32(p.look.w + 0.5);
 
   var out = vec4f(0.0);
   switch (kind) {
     case 0: { out = shadePanel(p, local, size); }
     case 1: { out = shadeTrack(p, local, size); }
-    case 2: { out = shadeSlider(p, local, size, in.pos.xy); }
-    case 3: { out = shadePill(p, local, size, in.pos.xy); }
+    case 2: { out = shadeSlider(p, local, size, frag); }
+    case 3: { out = shadePill(p, local, size, frag); }
     case 4: { out = shadeToggle(p, local, size); }
     case 5: {
-      out = shadeText(p, local, size, in.pos.xy);
+      out = shadeText(p, local, size, frag);
       // Feathered slot for rolling digits: fade toward the clip's top and bottom edges.
       if (p.extra.x > 0.0) {
-        let edge = min(in.screenPx.y - p.clip.y, p.clip.w - in.screenPx.y);
+        let edge = min(at.y - p.clip.y, p.clip.w - at.y);
         out = out * smoothstep(0.0, p.extra.x, edge);
       }
       // Gaps around a range's thumbs: aux.xy at, aux.z half-width, aux.w ramp; extra.yz strength.
       if (p.aux.z > 0.0) {
-        let x = in.screenPx.x;
+        let x = at.x;
         out = out * (1.0 - p.extra.y * (1.0 - smoothstep(p.aux.z, p.aux.z + p.aux.w, abs(x - p.aux.x))));
         out = out * (1.0 - p.extra.z * (1.0 - smoothstep(p.aux.z, p.aux.z + p.aux.w, abs(x - p.aux.y))));
       }
     }
-    case 8: { out = shadeLine(p, in.screenPx); }
+    case 8: { out = shadeLine(p, at); }
     case 9: { out = shadeStrip(p, local, size); }
-    case 10: { out = shadeShape(p, local, size); }
-    case 11: { out = shadeDie(p, in.rect, in.pos.xy); }
-    case 12: { out = shadeArea(p, in.screenPx, in.rect); }
+    case 10: { out = shadeShapeSmeared(p, local, size, frag); }
+    case 11: { out = shadeDie(p, rect, frag); }
+    case 12: { out = shadeArea(p, at, rect); }
     case 13: { out = shadeRamp(p, local, size); }
     default: { out = shadeDot(p, local, size); }
   }
-  return out * (clipCov * maskCov);
+  return out * clipCov;
+}
+
+@fragment fn fs_main(in: Out) -> @location(0) vec4f {
+  let p = prims[in.id];
+  let mi = u32(p.motion.w) >> 1u;
+  if (mi == 0u) { return shadeAt(p, in.screenPx, in.rect, in.pos.xy); }
+
+  // Morphing content: clipped to the shape and revealed top first on screen, after it has been
+  // scaled about the origin and blurred, like the DOM's clip-path and mask over its filter.
+  let m = masks[mi - 1u];
+  var maskCov = covSd(roundedBox(in.screenPx - m.rect.xy, m.rect.zw, m.look.x)) * m.fx.x;
+  if (m.look.z > m.look.y) {
+    maskCov *= clamp((m.look.z - in.screenPx.y) / (m.look.z - m.look.y), 0.0, 1.0);
+  }
+  if (maskCov <= 0.0) { return vec4f(0.0); }
+  let o = m.fx.zw;
+  let s = max(m.fx.y, 0.01);
+  let sigma = m.look.w * s;
+  if (sigma < 0.05) {
+    let at = o + (in.screenPx - o) / s;
+    return shadeAt(p, at, in.rect, at * view.dpr) * maskCov;
+  }
+  // A Gaussian (σ = the CSS blur radius) from a jittered Vogel disc of samples.
+  let n = clamp(i32(sigma * 2.5) + 6, 8, 24);
+  let reach = sigma * 2.5;
+  let spin = hash21(in.pos.xy) * 6.2831853;
+  var acc = vec4f(0.0);
+  var total = 0.0;
+  for (var k = 0; k < n; k++) {
+    let r = sqrt((f32(k) + 0.5) / f32(n)) * reach;
+    let a = f32(k) * 2.39996323 + spin;
+    let at = o + (in.screenPx + vec2f(cos(a), sin(a)) * r - o) / s;
+    let w = exp(-0.5 * (r * r) / (sigma * sigma));
+    acc += shadeAt(p, at, in.rect, at * view.dpr) * w;
+    total += w;
+  }
+  return acc / total * maskCov;
 }
 `

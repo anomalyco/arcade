@@ -1,7 +1,10 @@
 import {
+  actionShortcut,
   hasValue,
   isReadout,
   same,
+  toolbarShortcut,
+  type ActionField,
   type Choice,
   type Field,
   type Knob,
@@ -12,6 +15,7 @@ import {
   type Values,
 } from "../core/schema.js"
 import { REFRESHES } from "../core/internal.js"
+import { comboLabel, letterOf, matchesCombo } from "../core/keys.js"
 import type { SpringValue } from "../core/spring.js"
 import type {
   ControlAction,
@@ -37,11 +41,13 @@ import {
   pointRow,
   springRow,
   type EditorRow,
+  type RowOptions,
   type SubTrack,
 } from "./editors.js"
 import { curveRow, gradientRow } from "./ramps.js"
 import {
   angleRow,
+  keyCap,
   keybindRow,
   rangeRow,
   seedRow,
@@ -49,16 +55,27 @@ import {
   vecRow,
   type ToolbarRow,
 } from "./inspector.js"
+import { spin, spinning } from "./spin.js"
 import { createSearch, markLabel, matchSpan, type SearchBar } from "./search.js"
 import { READOUT, type ReadoutPort } from "../core/readout.js"
 import { readoutRow, type ReadoutRow } from "./readout-row.js"
 import { toast } from "../ui/toast.js"
 import { createTabStrip, type TabSpec } from "./tabs.js"
 import { createChoice, type ChoiceControl } from "./choice.js"
+import { createOptionKeys } from "./optkeys.js"
+import {
+  commandScope,
+  digitOption,
+  escapeTo,
+  scopeLabel,
+  type CommandScope,
+  type FocusLevel,
+} from "./scope.js"
 import { trackHas } from "./has.js"
 import { createHintController, type HintTarget } from "./hints.js"
+import { pageHints } from "./page-hints.js"
 import { createHeaderDie, GROUP_DIE, type HeaderDie } from "./die.js"
-import { iconSvg, type IconName } from "./icons.js"
+import { CHECK_PATH, iconSvg, type IconName } from "./icons.js"
 import { batchMeasures } from "./measure.js"
 import { Edges } from "./motion.js"
 import { morphFromChip, type PanelMorph } from "./morph.js"
@@ -88,9 +105,18 @@ import { createPresetStrip, type PresetStrip } from "./presets.js"
 import { placeSegPill, primeSegPill } from "./seg.js"
 import { smearPill } from "./smear.js"
 import { tapTick, tick } from "./haptics.js"
+import { changed, cue, resolveSound, sound, SOUND_PREF, soundPanel } from "./sound.js"
+import { panSwitch } from "./thumb.js"
 import { createSlider, type Slider, stepValue } from "./slider.js"
 import { readSession, writeSession } from "./session.js"
-import { DEFAULT_PREFS, type KeyPrefs, keyLabel, resolveKeys, setKeyPrefs } from "./prefs.js"
+import {
+  arrowOf,
+  DEFAULT_PREFS,
+  type KeyPrefs,
+  keyLabel,
+  resolveKeys,
+  setKeyPrefs,
+} from "./prefs.js"
 import { DELAYED, injectPreset, injectStyles } from "./styles.js"
 
 export interface Panel {
@@ -120,6 +146,8 @@ export interface PanelSearch {
   readonly chips: readonly string[]
 }
 let layer = 2147480001
+/** How long Copy holds its check (drawn by about 0.2 s) before turning back. */
+const COPIED_MS = 1000
 /** The tab each panel last showed, by controls id, so a panel mounted again opens on it. */
 const lastTab = new Map<string, string>()
 /** A highlight's reveal waits this long (ms) after the user last scrolled, typed or touched. */
@@ -188,6 +216,15 @@ function buildPanel<S extends Schema>(
   const titleText = options.title === undefined ? controls.id : options.title
   if (options.restored) root.dataset.restored = ""
   if (options.haptics === false) root.dataset.haptics = "off"
+  const soundOptions = resolveSound(options.sound)
+  if (soundOptions) {
+    soundPanel(root, soundOptions)
+    // The user's own choice (the ? popover's Sounds), kept in the store's storage.
+    try {
+      const kept = controls.storage?.getItem(SOUND_PREF)
+      if (kept === "on" || kept === "off") sound.enable(kept === "on")
+    } catch {}
+  }
   root.setAttribute("role", inline ? "region" : "dialog")
   root.setAttribute("aria-label", `${titleText || controls.id} controls`)
   host.append(root)
@@ -210,6 +247,14 @@ function buildPanel<S extends Schema>(
     status.textContent = message
     reveal(status, true)
     statusTimer = setTimeout(() => reveal(status, false), linger)
+  }
+  // What's shown in place (the copy check) is still said to assistive tech.
+  const live = el("span")
+  live.className = "knobs-sr"
+  live.setAttribute("aria-live", "polite")
+  const announce = (message: string) => {
+    live.textContent = ""
+    queueMicrotask(() => (live.textContent = message))
   }
   const run = (action: () => unknown) => {
     try {
@@ -260,15 +305,18 @@ function buildPanel<S extends Schema>(
   /** Whether a command is on (it has a key, or its button stays). */
   const bound = (command: PanelCommand) => keys[command].length > 0
   const pressed = (command: PanelCommand, event: KeyboardEvent) => keys[command].includes(event.key)
-  /** ⌥ commands match by physical key: ⌥ changes the character on macOS. */
+  /** ⌥ commands match by the layout's letter: ⌥ changes the typed character on macOS. */
   const pressedAlt = (command: PanelCommand, event: KeyboardEvent) =>
-    keys[command].some((k) => k.length === 1 && event.code === `Key${k.toUpperCase()}`)
+    keys[command].some((k) => k.length === 1 && letterOf(event) === k.toUpperCase())
 
   const header = el("header")
   const headerOptions = typeof options.header === "object" ? options.header : undefined
-  /** Whether a header button shows (`header.buttons`); its key works either way. */
+  /**
+   * Whether a header button shows (`header.buttons`; all but help without a list, since `?` opens
+   * the shortcuts and the title's tooltip says so). Its key works either way.
+   */
   const shows = (button: HeaderButton) =>
-    !headerOptions?.buttons || headerOptions.buttons.includes(button)
+    headerOptions?.buttons ? headerOptions.buttons.includes(button) : button !== "help"
   const headerButtons: { button: HTMLButtonElement; icon: IconName }[] = []
   const headActions = el("div")
   headActions.className = "knobs-head-actions"
@@ -278,6 +326,17 @@ function buildPanel<S extends Schema>(
     node.setAttribute("aria-label", label)
     if (shortcut) node.setAttribute("aria-keyshortcuts", shortcut)
     return node
+  }
+  /**
+   * A button that's there only when it's useful (a group's or the panel's reset, undo, redo): it
+   * keeps its slot either way and blooms in and out of it (see `[data-shown]` in the styles).
+   */
+  const bloom = (node: HTMLButtonElement, on: boolean) => {
+    const shown = String(on)
+    if (node.disabled !== !on) node.disabled = !on
+    if (node.dataset.shown === shown) return false
+    node.dataset.shown = shown
+    return true
   }
   const place = (node: HTMLButtonElement, icon: IconName) => {
     headActions.append(node)
@@ -294,6 +353,13 @@ function buildPanel<S extends Schema>(
   popover.setAttribute("aria-label", "Keyboard shortcuts")
   const popGrid = el("div")
   popGrid.className = "knobs-popover-grid"
+  const SCOPED = {
+    both: "Random / Reset all",
+    random: "Random all",
+    reset: "Reset all",
+    mutate: "Mutate all: small changes",
+  }
+  const scopedDescs: [HTMLElement, string][] = []
   const show = (command: PanelCommand, alt = false) =>
     keys[command].map((k) => keyLabel(k, alt)).join(" / ")
   const pair = (a: PanelCommand, b: PanelCommand, what: string) =>
@@ -304,7 +370,7 @@ function buildPanel<S extends Schema>(
       ? [
           ["Tab / ⇧Tab", "Next / previous group"],
           ["⌥↑ / ⌥↓", "Previous / next section"],
-          ["1–9", "Group preset"],
+          ["1–9", "Row's option, else group preset"],
           ...(page.filter !== false ? [["/", "Filter rows"]] : []),
         ]
       : [
@@ -314,6 +380,7 @@ function buildPanel<S extends Schema>(
             ? [["⌥1–9", "Switch tab"]]
             : []),
           ...(options.search ? [["/", "Search"]] : []),
+          ["1–9", "Pick the row's option"],
         ]) as [string, string][]),
     [prefs.vim ? "←→ / h l" : "←→", `Adjust value (⇧ ×${prefs.bigStep})`],
     ["⌥ drag", "Fine adjust"],
@@ -321,14 +388,15 @@ function buildPanel<S extends Schema>(
     ...(bound("hint") ? [[show("hint"), "Jump to anything by code"]] : []),
     ...(prefs.edit ? [[page ? "Enter" : "0–9 / Enter", "Edit number inline"]] : []),
     ...(bound("reset") ? [[keyLabel(keys.reset[0]!), "Reset row · delete saved preset"]] : []),
+    // What R, ⇧R and ⌥R act on follows focus; these read it when the popover shows.
     ...(bound("random") && bound("resetAll")
-      ? [[`${show("random")} / ${show("resetAll")}`, "Random / Reset all"]]
+      ? [[`${show("random")} / ${show("resetAll")}`, SCOPED.both]]
       : bound("random")
-        ? [[show("random"), "Random"]]
+        ? [[show("random"), SCOPED.random]]
         : bound("resetAll")
-          ? [[show("resetAll"), "Reset all"]]
+          ? [[show("resetAll"), SCOPED.reset]]
           : []),
-    ...(bound("mutate") ? [[show("mutate", true), "Mutate: small changes"]] : []),
+    ...(bound("mutate") ? [[show("mutate", true), SCOPED.mutate]] : []),
     ...(bound("group") && (bound("random") || bound("mutate"))
       ? [[`${show("group")} / ${show("group", true)}`, "Random / Mutate group"]]
       : []),
@@ -337,23 +405,90 @@ function buildPanel<S extends Schema>(
     ...(bound("menu") ? [["⇧F10", "Row menu"]] : []),
     ...(bound("compare") ? [[`hold ${show("compare")}`, "Compare with before"]] : []),
     ...(bound("copy") ? [[show("copy"), "Copy values"]] : []),
-    ...(showVariants && bound("save") ? [[show("save"), "Save as preset"]] : []),
+    ...(showVariants && bound("save") ? [[show("save"), "Save and name a preset"]] : []),
     ...(pair("undo", "redo", "Undo / Redo") as [string, string][]),
     ...(bound("undo") && !bound("redo") ? [[show("undo"), "Undo"]] : []),
     ...(close
-      ? [["Esc", "Close panel"]]
-      : inline && !page && bound("leave")
-        ? [[show("leave"), "Leave the panel"]]
-        : []),
+      ? [["Esc", "Up a level: row, card, panel, close"]]
+      : page || (inline && keys.leave.includes("Escape"))
+        ? [["Esc", "Up a level: row, card, panel, out"]]
+        : inline && bound("leave")
+          ? [
+              ["Esc", "Up a level: row, card, panel"],
+              [show("leave"), "Leave the panel"],
+            ]
+          : []),
   ] as [string, string][]) {
-    popGrid.append(el("kbd", k), el("span", desc))
+    const span = el("span", desc)
+    popGrid.append(el("kbd", k), span)
+    if (Object.values(SCOPED).includes(desc)) scopedDescs.push([span, desc])
   }
   popover.append(popGrid)
+  /**
+   * The active preset over what a command at `scope` acts on: the group's own preset for a row or
+   * card in a group that has one, else the panel's. Its name, and whether those keys are off it.
+   */
+  const baseAt = (scope: CommandScope, from: Node | null) => {
+    const group =
+      scope === "row"
+        ? rows[rowAt(from)]?.group
+        : scope === "group"
+          ? (cardOf(from)?.dataset.group ?? undefined)
+          : undefined
+    const keys =
+      scope === "row"
+        ? (rows[rowAt(from)]?.keys ?? [])
+        : scope === "group"
+          ? cardKeys(cardOf(from)!)
+          : scope === "selection"
+            ? (selectionKeys() ?? [])
+            : undefined
+    const index = group === undefined ? -1 : controls.activeGroupPreset(group)
+    const ref = controls.activePreset()
+    const name =
+      index >= 0
+        ? controls.groupPresets[group!]?.[index]?.name
+        : ref?.kind === "preset"
+          ? presetLabel(ref.id)
+          : ref
+            ? presetStrip.getEntries().find((e) => e.id === `v:${ref.id}`)?.label
+            : undefined
+    if (!name) return null
+    const off = keys
+      ? keys.some((k) => controls.isModified(k as keyof S & string))
+      : controls.isModified()
+    return { name, off }
+  }
+  /** Rewrites the popover's R, ⇧R and ⌥R lines for where focus is (or was, before it opened). */
+  const describeScope = (from: Node | null = doc.activeElement) => {
+    const scope = scopeAt(from)
+    // With an active preset, Random explores around it and Reset goes back to it first.
+    const base = baseAt(scope, from)
+    const lead = (verb: string) => (scope === "all" ? verb : scopeLabel(verb, scope))
+    const random = base ? `${lead("Random")} around ${base.name}` : scopeLabel("Random", scope)
+    const reset = !base
+      ? scopeLabel("Reset", scope)
+      : base.off
+        ? `${scope === "all" ? "Back" : `${scopeLabel("Reset", scope)} back`} to ${base.name}`
+        : `${scopeLabel("Reset", scope)} to defaults`
+    for (const [span, which] of scopedDescs) {
+      const text =
+        which === SCOPED.both
+          ? `${random} / ${reset}`
+          : which === SCOPED.random
+            ? random
+            : which === SCOPED.reset
+              ? reset
+              : `${scopeLabel("Mutate", scope)}: small changes`
+      if (span.textContent !== text) span.textContent = text
+    }
+  }
 
   let positioned: { constrain(): void; dispose(): void } | undefined
   let helpButton: HTMLButtonElement | undefined
   const togglePopover = (open?: boolean) => {
     const next = open ?? (popover.hidden || popover.dataset.leaving === "true")
+    if (next) describeScope()
     reveal(popover, next)
     helpButton?.setAttribute("aria-expanded", String(next))
     positioned?.constrain()
@@ -388,17 +523,64 @@ function buildPanel<S extends Schema>(
   if ((!bound("random") && !bound("mutate")) || !shows("random")) randomButton.hidden = true
   randomButton.onclick = (event) => run(() => reroll(undefined, event.altKey))
   randomButton.querySelector(".knobs-icon")?.replaceWith(die.node)
-  const resetBtn = command("reset", "Reset", ariaKeys(keys.resetAll), controls.reset)
+  // Resetting everything turns the header's ↺ once (spin.ts), from the button or ⇧R alike. It
+  // stays while it turns, so another press adds a turn, and leaves once it has stopped.
+  const resetAll = () => {
+    if (!resetBtn.hidden && resetBtn.dataset.shown === "true" && !header.hidden)
+      spin(resetBtn, wakeGpu, syncResets)
+    cue(root, "reset")
+    controls.reset()
+  }
+  const resetBtn = command("reset", "Reset", ariaKeys(keys.resetAll), resetAll)
   if (!bound("resetAll") || !marks || !shows("reset")) resetBtn.hidden = true
+  bloom(resetBtn, false)
   const copyButton = command("copy", "Copy", ariaKeys(keys.copy), copyValues)
   if (!bound("copy") || !shows("copy")) copyButton.hidden = true
-  const undoButton = iconButton("undo", "Undo", ariaKeys(keys.undo), controls.undo)
-  const redoButton = iconButton("redo", "Redo", ariaKeys(keys.redo), controls.redo)
+  copyButton.classList.add("knobs-copy")
+  // Copying turns the glyph into a check that draws itself, held a moment (see .knobs-copied).
+  const check = doc.createElementNS("http://www.w3.org/2000/svg", "svg")
+  check.setAttribute("viewBox", "0 0 256 256")
+  check.setAttribute("aria-hidden", "true")
+  check.setAttribute("class", "knobs-icon knobs-check")
+  const checkPath = doc.createElementNS("http://www.w3.org/2000/svg", "path")
+  checkPath.setAttribute("d", CHECK_PATH)
+  checkPath.setAttribute("pathLength", "1")
+  check.append(checkPath)
+  copyButton.append(check)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const copied = () => {
+    clearTimeout(copiedTimer)
+    copyButton.dataset.copied = ""
+    cue(root, "copy")
+    announce("Copied")
+    copiedTimer = setTimeout(() => {
+      delete copyButton.dataset.copied
+      wakeGpu()
+    }, COPIED_MS)
+  }
+  const undo = () => {
+    if (controls.canUndo) cue(root, "undo")
+    controls.undo()
+  }
+  const redo = () => {
+    if (controls.canRedo) cue(root, "redo")
+    controls.redo()
+  }
+  const undoButton = iconButton("undo", "Undo", ariaKeys(keys.undo), undo)
+  const redoButton = iconButton("redo", "Redo", ariaKeys(keys.redo), redo)
+  // Undo shows while there's history and Redo while there's a future, each in its own slot.
+  const history = el("span")
+  history.className = "knobs-head-history"
+  bloom(undoButton, false)
+  bloom(redoButton, false)
   if (showHistory && (bound("undo") || bound("redo"))) {
-    place(undoButton, "undo").classList.add("knobs-head-split")
+    place(undoButton, "undo")
     place(redoButton, "redo")
+    history.append(undoButton, redoButton)
+    headActions.append(history)
     if (!bound("undo") || !shows("undo")) undoButton.hidden = true
     if (!bound("redo") || !shows("redo")) redoButton.hidden = true
+    if (undoButton.hidden && redoButton.hidden) history.hidden = true
   }
   if (showFooter && bound("help")) {
     helpButton = headButton("help", "Keyboard shortcuts", "?", () => togglePopover())
@@ -407,12 +589,20 @@ function buildPanel<S extends Schema>(
     if (!shows("help")) helpButton.hidden = true
   }
   const dismiss = close ? headButton("close", `Close ${controls.id}`, "", close) : undefined
-  if (dismiss && !showFooter) dismiss.classList.add("knobs-head-split")
+  dismiss?.classList.add("knobs-close")
+  if (dismiss && (!helpButton || helpButton.hidden)) dismiss.classList.add("knobs-head-split")
   if (dismiss && !shows("close")) dismiss.hidden = true
+  // Fixed slots, left to right: Undo · Redo, Reset, Copy, then Random in the corner (and ? · ✕
+  // past it). Undo, Redo and Reset come and go in place (bloom), so nothing else ever moves.
+  for (const node of [history, resetBtn, copyButton, randomButton, helpButton, dismiss])
+    if (node && (node !== history || history.parentNode)) headActions.append(node)
   const titleEl = el(
     "strong",
     titleText && headerOptions?.title !== false ? readableTitle(titleText) : "",
   )
+  // Without the ? button, the title's tooltip keeps the shortcuts discoverable.
+  if (helpButton?.hidden)
+    titleEl.title = `${titleEl.textContent ? `${titleEl.textContent}\n` : ""}Press ${show("help")} for keyboard shortcuts`
   const presetLabel = (id: string) =>
     options.presetLabels?.[id] ??
     (id === "default" ? options.defaultLabel : undefined) ??
@@ -543,6 +733,9 @@ function buildPanel<S extends Schema>(
     if (known) return known
     const tile = el("div")
     tile.className = "knobs-tile"
+    // A card takes focus (a click on its empty area or heading, Esc from a row), for R and ⇧R.
+    tile.tabIndex = -1
+    tile.setAttribute("role", "group")
     if (group) {
       tile.dataset.group = group
       tile.setAttribute("aria-label", groupTitle(group, section))
@@ -555,6 +748,7 @@ function buildPanel<S extends Schema>(
     tile.append(inner)
     if (group !== undefined && folds.has(group)) {
       tile.dataset.foldable = ""
+      inner.dataset.drift = ""
       inner.hidden = folds.get(group)!
       tile.toggleAttribute("data-folded", folds.get(group)!)
     }
@@ -568,10 +762,21 @@ function buildPanel<S extends Schema>(
     const card = el("div")
     card.className = "knobs-card"
     if (group) card.dataset.group = group
+    // A card takes focus (a click on its empty area or heading, Esc from a row), for R and ⇧R.
+    card.tabIndex = -1
+    card.setAttribute("role", "group")
+    if (group) card.setAttribute("aria-label", groupTitle(group))
     const block: Block = { group, card }
     if (group) {
       block.head = groupHead(group)
       block.gpuGroup = gpuGroups.at(-1)
+      // A click on a heading that doesn't fold focuses its card.
+      const head = block.head
+      head.addEventListener("click", (event) => {
+        if (head.hasAttribute("data-foldable") || (event.target as Element).closest("button"))
+          return
+        card.focus({ preventScroll: true, focusVisible: false } as FocusOptions)
+      })
     }
     cards.push(card)
     return block
@@ -658,6 +863,7 @@ function buildPanel<S extends Schema>(
    */
   function fold(group: string, next = !folds.get(group), animate = true, remember = true) {
     if (!folds.has(group)) return
+    if (userFolding && folds.get(group) !== next) cue(root, next ? "close" : "open")
     if (page && folds.get(group) !== next) noteFold(userFolding ? "user" : "code")
     if (remember) auto.groups.delete(group)
     if (folds.get(group) === next && page) return
@@ -711,20 +917,24 @@ function buildPanel<S extends Schema>(
     const gRight = el("span")
     const gBtns: HTMLButtonElement[] = []
     for (const act of allActions.filter((a) => a.group === groupName)) {
-      const b = button(act.label, () => act.run(controls.get(), controls))
+      const b = button(act.label, () => {
+        cue(root, "press")
+        return act.run(controls.get(), controls)
+      })
       gBtns.push(b)
       gRight.append(b)
     }
     // Shown only while something in the group differs from its defaults.
     const gReset = iconButton("reset", `Reset ${title}`, "", () => {
+      spin(gReset, wakeGpu, syncResets)
+      cue(root, "reset")
       controls.resetGroup(groupName)
       if (doc.activeElement === gReset)
         rows.find((r) => r.group === groupName)?.input.focus({ preventScroll: true })
     })
     gReset.className = "knobs-group-reset"
     gReset.dataset.hint = `${title} reset`
-    gReset.dataset.shown = "false"
-    gReset.disabled = true
+    bloom(gReset, false)
     groupResetButtons.set(groupName, gReset)
     // The group's own die: Random for just these rows (⌥ mutates them).
     const gDie = createHeaderDie(doc, () => wakeGpu(), GROUP_DIE)
@@ -941,6 +1151,7 @@ function buildPanel<S extends Schema>(
   const applyGroupPreset = (group: string, index: number, coalesce = false) => {
     const preset = controls.groupPresets[group]?.[index]
     if (!preset) return
+    cue(root, coalesce ? "select" : "preset")
     controls.groupPreset(group, index, { coalesce })
     // Names that show already say which one it is.
     peek(group, preset.name, 1100)
@@ -968,6 +1179,13 @@ function buildPanel<S extends Schema>(
   const tracks = new Map<HTMLElement, SubTrack>()
   /** Toolbar rows by key, for their shortcuts. */
   const toolbars = new Map<string, ToolbarRow>()
+  /** Action rows with a shortcut (declared, or able to take one), by key. */
+  const keyedActions = new Map<string, { row: Row; button: HTMLButtonElement }>()
+  /** Where an action's shortcut works now: the store's rebinding, else its own. */
+  const actionKey = (key: string, field: ActionField) => {
+    const combo = controls.shortcut(key as keyof S & string)
+    return combo ? { key: combo, scope: actionShortcut(field)?.scope ?? "panel" } : undefined
+  }
   /** Readout rows by key, told when the store pushes to them. */
   const readouts = new Map<string, ReadoutRow>()
   const readoutPort = (controls as unknown as { [READOUT]?: ReadoutPort })[READOUT]
@@ -1008,6 +1226,8 @@ function buildPanel<S extends Schema>(
     mixed?: boolean
     /** The sub-heading it sits under (a `subhead` id). */
     subhead?: string
+    /** Catches up with what isn't a value (a rebound shortcut), on every store change. */
+    refresh?(): void
   }
   interface RowSpec {
     id: string
@@ -1090,13 +1310,9 @@ function buildPanel<S extends Schema>(
     const f = spec.field
     const where = `${spec.group ?? ""}\u0000${page ? (spec.section ?? "") : ""}`
     if (spec.parts) return `pair\u0000${spec.keys.join("\u0000")}\u0000${where}`
-    if (
-      f.kind === "knob" ||
-      f.kind === "toggle" ||
-      f.kind === "action" ||
-      f.kind === "toolbar" ||
-      isReadout(f)
-    )
+    if (f.kind === "action")
+      return `action\u0000${f.shortcut ? 1 : 0}\u0000${f.rebind ? 1 : 0}\u0000${where}`
+    if (f.kind === "knob" || f.kind === "toggle" || f.kind === "toolbar" || isReadout(f))
       return `${f.kind}\u0000${where}`
     if (f.kind === "vec")
       return `vec\u0000${f.axes}\u0000${f.axisLabels?.join(",") ?? ""}\u0000${f.link ? 1 : 0}\u0000${where}`
@@ -1125,14 +1341,19 @@ function buildPanel<S extends Schema>(
       section: spec.section,
       wave,
     }
-    const set = (value: unknown, setOpts?: { coalesce?: boolean }) =>
+    const set = (value: unknown, setOpts?: { coalesce?: boolean }) => {
+      const before = controls.get()[key]
+      if (!same(before, value)) changed(root, key, field, before, value)
       controls.set({ [key]: value } as Partial<Values<S>>, setOpts)
+    }
     const plain = (values: Record<string, unknown>) => values[key]
     // No way to reset a row (`keys: { reset: false }`), no modified marks.
     const isModified = () =>
       marks && bound("reset") && spec.keys.some((k) => controls.isModified(k as keyof S & string))
     const resetRow = () => {
-      if (bound("reset")) run(() => controls.reset(spec.keys as (keyof S & string)[]))
+      if (!bound("reset")) return
+      cue(root, "reset")
+      run(() => controls.reset(spec.keys as (keyof S & string)[]))
     }
     let label: (text: string) => void = () => {}
     const retuneBase = (row: Row, next: RowSpec) => {
@@ -1185,22 +1406,104 @@ function buildPanel<S extends Schema>(
       const press = el("button", display)
       press.type = "button"
       press.className = "knobs-action"
-      if (field.shortcut) press.setAttribute("aria-keyshortcuts", field.shortcut)
-      press.onclick = () => run(() => controls.action(key as keyof S & string))
+      press.onclick = () => {
+        cue(root, "press")
+        run(() => controls.action(key as keyof S & string))
+      }
       row.append(press)
       label = (text) => (press.textContent = text)
-      return {
+      // Its shortcut sits at the row's end as a key cap, one that listens for a new combination
+      // when the field says `rebind`; ←/→ go between the button and the cap.
+      const combo = () => controls.shortcut(key as keyof S & string) ?? ""
+      let shownKey: string | undefined
+      const cap = field.rebind
+        ? keyCap({
+            doc,
+            row,
+            empty: "Add key",
+            name: () => `${display} shortcut`,
+            set: (next) => {
+              if (next) cue(root, "capture")
+              controls.rebind(key as keyof S & string, next)
+            },
+            wake: () => wakeGpu(),
+          })
+        : undefined
+      const chip = cap?.chip ?? (field.shortcut ? el("kbd", "knobs-keys") : undefined)
+      if (chip) {
+        if (!cap) chip.dataset.static = ""
+        row.dataset.keyed = ""
+        row.append(chip)
+      }
+      if (cap)
+        row.addEventListener("keydown", (event) => {
+          const dir = arrowOf(event)
+          if (!dir || event.metaKey || event.ctrlKey || cap.capturing()) return
+          const to =
+            dir > 0 && event.target === press
+              ? cap.chip
+              : dir < 0 && event.target === cap.chip
+                ? press
+                : undefined
+          if (!to) return
+          event.preventDefault()
+          event.stopPropagation()
+          to.focus()
+        })
+      const paintKey = () => {
+        const now = combo()
+        if (now === shownKey) return
+        shownKey = now
+        const where = actionKey(key, this_.field as ActionField)
+        if (where && where.scope !== "none") press.setAttribute("aria-keyshortcuts", where.key)
+        else press.removeAttribute("aria-keyshortcuts")
+        if (cap) cap.show(now)
+        else if (chip) {
+          chip.textContent = now ? comboLabel(now) : ""
+          chip.hidden = !now
+        }
+        wakeGpu()
+      }
+      const this_: Row = {
         ...base,
         row,
         labelEl: press,
         input: press,
-        gpu: [{ kind: "action", key, display, row, button: press, wave, isModified: () => false }],
+        gpu: [
+          {
+            kind: "action",
+            key,
+            display,
+            row,
+            button: press,
+            ...(chip
+              ? {
+                  keys: {
+                    chip,
+                    text: cap?.text ?? chip,
+                    capturing: cap?.capturing ?? (() => false),
+                  },
+                }
+              : {}),
+            wave,
+            isModified: () => false,
+          },
+        ],
         value: () => undefined,
         set: () => {},
         retune(next) {
           retuneBase(this, next)
+          shownKey = undefined
+          paintKey()
+        },
+        refresh: paintKey,
+        dispose: () => {
+          if (keyedActions.get(key)?.row === this_) keyedActions.delete(key)
         },
       }
+      if (field.shortcut || field.rebind) keyedActions.set(key, { row: this_, button: press })
+      paintKey()
+      return this_
     }
     if (field.kind === "toolbar") {
       const bar = toolbarRow(
@@ -1215,7 +1518,15 @@ function buildPanel<S extends Schema>(
           isModified: () => false,
           wake: () => wakeGpu(),
         },
-        (item) => run(() => controls.action(key as keyof S & string, item.id ?? item.label)),
+        (item) => {
+          cue(root, "press")
+          run(() => controls.action(key as keyof S & string, item.id ?? item.label))
+        },
+        (item) => {
+          const combo = controls.shortcut(key as keyof S & string, item.id ?? item.label)
+          const scope = toolbarShortcut(item)?.scope ?? (item.global ? "page" : "panel")
+          return combo ? { key: combo, scope } : undefined
+        },
       )
       toolbars.set(key, bar)
       return {
@@ -1229,6 +1540,7 @@ function buildPanel<S extends Schema>(
         gpu: [...bar.gpu],
         value: () => undefined,
         set: () => {},
+        refresh: () => bar.refresh(),
         retune(next) {
           this.field = next.field
           this.display = next.field.label ?? key
@@ -1426,6 +1738,13 @@ function buildPanel<S extends Schema>(
       if (!tapped) tick(toggle)
     }
     row.append(toggle)
+    // A sideways pan anywhere on the row takes the thumb in hand (see thumb.ts).
+    panSwitch(row, toggle, {
+      value: () =>
+        toggle.getAttribute("aria-checked") === "mixed" ? "mixed" : Boolean(controls.get()[key]),
+      set: (on, coalesce) => run(() => set(on, { coalesce })),
+      wake: () => wakeGpu(),
+    })
     return {
       ...base,
       row,
@@ -2119,8 +2438,11 @@ function buildPanel<S extends Schema>(
               {
                 label: "Reset",
                 shortcut: keyLabel(keys.reset[0]!),
-                disabled: !chosen.some((k) => controls.isModified(k)),
-                run: () => run(() => controls.reset(chosen)),
+                disabled: !controls.canReset(chosen),
+                run: () => {
+                  cue(root, "reset")
+                  run(() => controls.reset(chosen))
+                },
               },
             ]
           : []),
@@ -2164,10 +2486,12 @@ function buildPanel<S extends Schema>(
   apply.setAttribute("aria-label", "Import JSON")
   apply.hidden = true
 
-  const copy = async (value: string) => {
+  /** Copies `value`; the header's Copy turns into a check (`inPlace`, while it shows) or says so. */
+  const copy = async (value: string, inPlace = true) => {
     try {
       await doc.defaultView!.navigator.clipboard.writeText(value)
-      say("Copied.")
+      if (inPlace && !copyButton.hidden && !header.hidden) copied()
+      else say("Copied.")
     } catch {
       text.value = value
       if (page) togglePopover(true)
@@ -2186,7 +2510,10 @@ function buildPanel<S extends Schema>(
   const customActions = el("div")
   customActions.className = "knobs-custom-actions"
   for (const act of panelActions) {
-    const b = button(act.label, () => act.run(controls.get(), controls))
+    const b = button(act.label, () => {
+      cue(root, "press")
+      return act.run(controls.get(), controls)
+    })
     if (act.shortcut) b.setAttribute("aria-keyshortcuts", act.shortcut)
     customActions.append(b)
     gpuActionButtons.push(b)
@@ -2197,7 +2524,7 @@ function buildPanel<S extends Schema>(
     const transfer = el("div")
     transfer.className = "knobs-transfer"
     transfer.append(
-      button("Export presets", () => void copy(controls.variants.export())),
+      button("Export presets", () => void copy(controls.variants.export(), false)),
       button("Import presets", () => {
         reveal(text, true)
         reveal(apply, true)
@@ -2208,12 +2535,33 @@ function buildPanel<S extends Schema>(
     )
     popover.append(transfer)
   }
+  // A panel with sound offers the user's own switch with the shortcuts, kept like other prefs.
+  let unsubscribeSound = () => {}
+  if (soundOptions && showFooter) {
+    const pref = el("div")
+    pref.className = "knobs-transfer knobs-sound-pref"
+    const soundButton = button("", () => {
+      sound.enable(!sound.enabled)
+      try {
+        controls.storage?.setItem(SOUND_PREF, sound.enabled ? "on" : "off")
+      } catch {}
+      cue(root, "toggle", { direction: 1 })
+    })
+    const paintSound = () => {
+      soundButton.textContent = sound.enabled ? "Sounds on" : "Sounds off"
+      soundButton.setAttribute("aria-pressed", String(sound.enabled))
+    }
+    paintSound()
+    unsubscribeSound = sound.subscribe(paintSound)
+    pref.append(soundButton)
+    popover.append(pref)
+  }
 
   if (page) {
     // The shortcuts float under the header's tools; the clipboard fallback and imports open in them.
     if (panelActions.length > 0) tools.insertBefore(customActions, headActions)
     popover.append(text, apply)
-    root.append(header, body, popover, status)
+    root.append(header, body, popover, status, live)
   } else {
     root.append(header)
     if (showFooter) root.append(popover)
@@ -2221,7 +2569,7 @@ function buildPanel<S extends Schema>(
     if (search) root.append(search.element)
     root.append(presetStrip.element, body)
     if (panelActions.length > 0) root.append(customActions)
-    root.append(text, apply, status)
+    root.append(text, apply, status, live)
   }
 
   // Changes that move several rows at once (presets, reset, random, undo) ripple down the panel:
@@ -2257,6 +2605,29 @@ function buildPanel<S extends Schema>(
   }
   const isMixed = (r: Row) => r.keys.some((k) => controls.isMixed(k as keyof S & string))
   let lastRefresh = (controls as unknown as { [REFRESHES]?: number })[REFRESHES] ?? 0
+  /**
+   * Each reset shows while it has somewhere to go (back to the active preset, else to the
+   * defaults), for the scope ⇧R would reset from there (its group's ↺, the header's ↺ for
+   * everything), and stays while it turns.
+   */
+  function syncResets() {
+    let changed = false
+    for (const [groupName, gReset] of groupResetButtons) {
+      const groupMod = controls.canReset(groupKeys(groupName) as (keyof S & string)[])
+      // A group's reset is a coarse reset, so it follows `resetAll`.
+      if (bloom(gReset, (marks && groupMod && bound("resetAll")) || spinning(gReset)))
+        changed = true
+    }
+    if (bloom(resetBtn, controls.canReset() || spinning(resetBtn))) changed = true
+    if (changed) wakeGpu()
+  }
+  /** The active presets as last shown, so a change of base alone still updates the resets. */
+  let shownBase = ""
+  const baseSignature = () =>
+    JSON.stringify([
+      controls.activePreset(),
+      Object.keys(controls.groupPresets).map((g) => controls.activeGroupPreset(g)),
+    ])
   function update() {
     if (!controls.enabled) {
       close?.()
@@ -2298,6 +2669,11 @@ function buildPanel<S extends Schema>(
 
     wakeGpu()
   }
+  function markRow(row: Row, values: Record<string, unknown>, baseline: Record<string, unknown>) {
+    const modified = marks && bound("reset") && row.keys.some((k) => !same(values[k], baseline[k]))
+    if (row.row.classList.contains("knobs-modified") !== modified)
+      row.row.classList.toggle("knobs-modified", modified)
+  }
   /** Sets a row's turn on what it times (see `DELAYED`), each only when it differs. */
   function delayRow(row: HTMLElement, wait: string) {
     for (const el of row.querySelectorAll<HTMLElement>(DELAYED)) {
@@ -2312,10 +2688,14 @@ function buildPanel<S extends Schema>(
     stagger: number,
     landing: boolean,
   ) {
-    const locked = controls.locked as Record<string, unknown>
+    // Marks say what differs from the active preset (the defaults without one).
+    const baseline = controls.baseValues() as Record<string, unknown>
     const fresh = (r: Row) => r.row.dataset.shown === undefined
     const now = performance.now()
     let turn = 0
+    const based = baseSignature()
+    const rebased = based !== shownBase
+    shownBase = based
     for (const row of moving) {
       const instant = !initialized || landing || fresh(row)
       row.row.dataset.shown = ""
@@ -2332,9 +2712,7 @@ function buildPanel<S extends Schema>(
         row.wave.at = row.wave.until = 0
         delayRow(row.row, "")
       }
-      const modified = marks && bound("reset") && row.keys.some((k) => !same(values[k], locked[k]))
-      if (row.row.classList.contains("knobs-modified") !== modified)
-        row.row.classList.toggle("knobs-modified", modified)
+      markRow(row, values, baseline)
       const mixed = isMixed(row)
       row.mixed = mixed
       if (row.row.classList.contains("knobs-mixed") !== mixed)
@@ -2346,34 +2724,25 @@ function buildPanel<S extends Schema>(
       else if (row.editor) {
         row.editor.update(value as Value, delay, instant, mixed)
         if (mixed)
-          for (const read of row.row.querySelectorAll(".knobs-x-read")) read.textContent = "—"
+          for (const read of row.row.querySelectorAll<HTMLElement>(".knobs-x-read"))
+            if ((read.dataset.text ?? read.textContent) !== "—") read.textContent = "—"
       } else if (row.field.kind === "toggle")
         row.input.setAttribute("aria-checked", mixed ? "mixed" : String(Boolean(value)))
     }
-    for (const row of rows) applyState(row)
+    for (const row of rows) {
+      // A new base moves the marks of rows whose values stayed put.
+      if (rebased) markRow(row, values, baseline)
+      applyState(row)
+      row.refresh?.()
+    }
     // controls.refresh(): the accessories are asked again too.
     const refreshes = (controls as unknown as { [REFRESHES]?: number })[REFRESHES] ?? 0
     if (refreshes !== lastRefresh) {
       lastRefresh = refreshes
       for (const r of rows) fillAccessory(r)
     }
-    if (!initialized || moving.length > 0 || landing || turn > 0 || rows.some(fresh)) {
-      let anyMod = false
-      for (const [groupName, gReset] of groupResetButtons) {
-        const groupMod = rows.some(
-          (r) => r.group === groupName && r.keys.some((k) => !same(values[k], locked[k])),
-        )
-        if (groupMod) anyMod = true
-        // A group's reset is a coarse reset, so it follows `resetAll`.
-        const shown = marks && groupMod && bound("resetAll")
-        if (gReset.disabled !== !shown) gReset.disabled = !shown
-        const s = String(shown)
-        if (gReset.dataset.shown !== s) gReset.dataset.shown = s
-      }
-      const totalMod =
-        anyMod || rows.some((r) => !r.group && r.keys.some((k) => !same(values[k], locked[k])))
-      if (resetBtn.disabled !== !totalMod) resetBtn.disabled = !totalMod
-    }
+    if (!initialized || moving.length > 0 || landing || turn > 0 || rebased || rows.some(fresh))
+      syncResets()
     let unlocked = 0
     for (const row of rows) {
       if (!row.keys.length) continue
@@ -2392,8 +2761,8 @@ function buildPanel<S extends Schema>(
     }
     if (root.hasAttribute("data-comparing") !== controls.comparing)
       root.toggleAttribute("data-comparing", controls.comparing)
-    if (undoButton.disabled !== !controls.canUndo) undoButton.disabled = !controls.canUndo
-    if (redoButton.disabled !== !controls.canRedo) redoButton.disabled = !controls.canRedo
+    const undoMoved = bloom(undoButton, controls.canUndo)
+    if (bloom(redoButton, controls.canRedo) || undoMoved) wakeGpu()
     if (controls.error && status.textContent !== controls.error) say(controls.error, 8000)
     for (const [group, c] of groupChips) c.show(String(controls.matchingGroupPreset(group)))
     if (search) {
@@ -2492,6 +2861,33 @@ function buildPanel<S extends Schema>(
         add(stop, label, () => stop.focus())
       }
     return targets
+  }
+  // Page-wide hint mode: this panel's targets join every other panel's and piece's on the page,
+  // and draws its own badges (both renderers) with the codes the page chose.
+  const unregisterHints =
+    (options.hints ?? "page") === "page" && bound("hint")
+      ? pageHints(doc).register(
+          root,
+          () =>
+            collectHintTargets().map((t) => ({
+              el: t.el,
+              label: t.display,
+              ...(t.labelEl ? { labelEl: t.labelEl } : {}),
+              activate: t.activate,
+            })),
+          {
+            rank: 0,
+            paint: {
+              show: (spots, codes) => hintCtrl.show(spots, codes),
+              narrow: (query) => hintCtrl.narrow(query),
+              clear: () => hintCtrl.stop(),
+            },
+          },
+        )
+      : undefined
+  const stopHints = () => {
+    if (unregisterHints) pageHints(doc).stop()
+    hintCtrl.stop()
   }
   /** A page's ↑↓ stops: every row and custom control, down each column, then the next. */
   const pageStops = () => {
@@ -2972,14 +3368,144 @@ function buildPanel<S extends Schema>(
     }
   })
 
-  /** The group of the focused row or group header. */
+  /** The group of the focused row, group header or card. */
   const focusedGroup = (target: HTMLElement) =>
-    rows[rowAt(target)]?.group ?? target.closest<HTMLElement>(".knobs-group-head")?.dataset.group
+    rows[rowAt(target)]?.group ??
+    target.closest<HTMLElement>(".knobs-group-head,.knobs-tile,.knobs-card")?.dataset.group
+
+  // ——— Focus scope: a row, its card, or the panel (see scope.ts) ———
+  /** The card `node` sits in (a page's tile, a panel's card); a group's heading stands for its card. */
+  const cardOf = (node: Node | null): HTMLElement | null => {
+    if (!(node instanceof Element) || !root.contains(node)) return null
+    if (page) return node.closest<HTMLElement>(".knobs-tile")
+    const head = node.closest<HTMLElement>(".knobs-group-head")
+    if (head) return blocks.find((b) => b.head === head)?.card ?? null
+    return node.closest<HTMLElement>(".knobs-card")
+  }
+  const focusLevel = (node: Node | null): FocusLevel => {
+    if (!node || !root.contains(node)) return "none"
+    if (rowAt(node) >= 0) return "row"
+    return cardOf(node) ? "card" : "panel"
+  }
+  const scopeAt = (node: Node | null) => commandScope(focusLevel(node), selected.size > 0)
+  /** Random (or Mutate, `nudge`) for what focus is on: its row, its card, else everything. */
+  const rollFrom = (target: Node | null, nudge: boolean) => {
+    const scope = scopeAt(target)
+    if (scope === "selection") return reroll(selectionKeys(), nudge)
+    if (scope === "all") return reroll(undefined, nudge)
+    if (scope === "row") {
+      const r = rows[rowAt(target)]!
+      // The row's group die tumbles for it, if it has one: the header's means everything.
+      return reroll(r.keys, nudge, (r.group && groupDice.get(r.group)?.die) || die)
+    }
+    const card = cardOf(target)!
+    const group = card.dataset.group
+    if (group && groupDice.has(group)) return rerollGroup(group, nudge)
+    reroll(cardKeys(card), nudge)
+  }
+  /** ⇧R for what focus is on, as R picks it. */
+  const resetFrom = (target: Node | null) => {
+    const scope = scopeAt(target)
+    if (scope === "all") return resetAll()
+    cue(root, "reset")
+    if (scope === "selection") return controls.reset(selectionKeys())
+    if (scope === "row") return controls.reset(keysOf([rowAt(target)]))
+    const card = cardOf(target)!
+    const keys = cardKeys(card) as (keyof S & string)[]
+    // A group's card turns the group's ↺, as its click would, and resets as it does.
+    const gReset = card.dataset.group ? groupResetButtons.get(card.dataset.group) : undefined
+    if (gReset?.dataset.shown === "true") spin(gReset, wakeGpu, syncResets)
+    if (gReset && card.dataset.group) controls.resetGroup(card.dataset.group)
+    else if (keys.length) controls.reset(keys)
+  }
+  const cardKeys = (card: HTMLElement) =>
+    rows.filter((r) => card.contains(r.row)).flatMap((r) => r.keys)
+  /** Esc from a row or card: up a level, to the card and then the panel itself. */
+  const climb = (target: Node | null) => {
+    const level = focusLevel(target)
+    const card = level === "row" ? cardOf(target) : null
+    const next = escapeTo(level, card !== null)
+    const quiet = { preventScroll: true } as FocusOptions
+    if (next === "card") card!.focus(quiet)
+    else if (next === "panel") root.focus(quiet)
+  }
+  const optionKeys = createOptionKeys(doc, root, () => wakeGpu())
+  root.tabIndex = -1
+  // The card focus is on wears a soft wash (data-k-scope), both renderers; a row's own focus
+  // wash is the card children's (see styles).
+  let scoped: HTMLElement | null = null
+  const syncScope = () => {
+    const active = doc.activeElement
+    const card = focusLevel(active) === "card" ? cardOf(active) : null
+    if (card !== scoped) {
+      scoped?.removeAttribute("data-k-scope")
+      card?.setAttribute("data-k-scope", "")
+      scoped = card
+      wakeGpu()
+    }
+    if (!popover.hidden) describeScope()
+    optionKeys.show(optionsAt(active))
+  }
+  let scopeQueued = false
+  const queueScope = () => {
+    if (scopeQueued) return
+    scopeQueued = true
+    queueMicrotask(() => {
+      scopeQueued = false
+      syncScope()
+    })
+  }
+  root.addEventListener("focusin", queueScope)
+  root.addEventListener("focusout", queueScope)
+  root.addEventListener("click", queueScope)
+  root.addEventListener("keyup", queueScope)
+  // The digits ride along when the rows scroll under them.
+  root.addEventListener("scroll", queueScope, { capture: true, passive: true })
+  // A row's options as the digits pick them: a choice's, or an editor's presets.
+  const choiceOptions = new WeakMap<Row, RowOptions>()
+  const optionsOf = (r: Row): RowOptions | undefined => {
+    if (r.editor?.options) return r.editor.options
+    const control = r.choice
+    if (!control || r.field.kind !== "choice") return undefined
+    let o = choiceOptions.get(r)
+    if (!o) {
+      const values = r.field.options
+      o = {
+        count: values.length,
+        choose: (i) => run(() => r.set(values[i])),
+        shown: () => (control.isMenu() ? [] : control.buttons),
+        anchor: control.menu,
+      }
+      choiceOptions.set(r, o)
+    }
+    return o
+  }
+  const optionsAt = (node: Element | null) => {
+    if (hintCtrl.isActive || !node || !root.contains(node)) return undefined
+    const r = rows[rowAt(node)]
+    if (!r || r.row.closest("[data-disabled],[data-readonly]")) return undefined
+    return optionsOf(r)
+  }
+  /** 1–9 on a row with options pick the nth; the row takes the digits even past its last. */
+  const pickOption = (event: KeyboardEvent) => {
+    if (!/^[1-9]$/.test(event.key) || event.altKey || event.shiftKey) return false
+    const target = event.target as HTMLElement
+    const r = rows[rowAt(target)]
+    const o = r && optionsOf(r)
+    if (!o) return false
+    event.preventDefault()
+    event.stopPropagation()
+    const i = digitOption(event.key, o.count)
+    if (i !== undefined && !r.row.closest("[data-disabled],[data-readonly]")) o.choose(i)
+    return true
+  }
+  // A read-only field takes no typing, so the page's shortcuts still reach past it.
   const isTyping = (target: EventTarget | null) =>
-    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLTextAreaElement && !target.readOnly) ||
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable) ||
     (target instanceof HTMLInputElement &&
+      !target.readOnly &&
       !["range", "checkbox", "radio", "button"].includes(target.type))
   /**
    * Presses the toolbar button whose shortcut this is: any of them while the panel has focus,
@@ -3003,10 +3529,26 @@ function buildPanel<S extends Schema>(
       bar.press(item)
       return true
     }
+    for (const [key, { row, button }] of keyedActions) {
+      if (row.row.hasAttribute("data-disabled") || row.row.hasAttribute("data-readonly")) continue
+      const where = actionKey(key, row.field as ActionField)
+      if (!where || where.scope === "none" || (where.scope === "panel" && !inPanel)) continue
+      if (!matchesCombo(where.key, event)) continue
+      event.preventDefault()
+      if (!reducedMotion()) {
+        button.classList.add("knobs-pressed")
+        setTimeout(() => button.classList.remove("knobs-pressed"), 140)
+      }
+      cue(root, "press")
+      run(() => controls.action(key as keyof S & string))
+      wakeGpu()
+      return true
+    }
     return false
   }
   const onGlobalKey = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.isComposing || !toolbars.size) return
+    if (event.defaultPrevented || event.isComposing || (!toolbars.size && !keyedActions.size))
+      return
     const target = event.target as Node | null
     if (target && root.contains(target)) return
     if (isTyping(target)) return
@@ -3022,7 +3564,9 @@ function buildPanel<S extends Schema>(
     if (event.isComposing) return
     const target = event.target as HTMLElement
     const typing = isTyping(target)
-    // A toolbar's shortcuts come first, ⌘ combinations included.
+    // A focused row's options take the digits; then a toolbar's shortcuts, ⌘ combinations included.
+    if (!typing && !hintCtrl.isActive && !event.metaKey && !event.ctrlKey && pickOption(event))
+      return
     if (!typing && !hintCtrl.isActive && pressTool(event, true)) return
     if (event.metaKey || event.ctrlKey) return
     if (event.altKey) {
@@ -3049,7 +3593,7 @@ function buildPanel<S extends Schema>(
         !all && bound("mutate") && pressedAlt("group", event) ? focusedGroup(target) : undefined
       if (!all && !group) return
       event.preventDefault()
-      if (all) run(() => reroll(selectionKeys(), true))
+      if (all) run(() => rollFrom(target, true))
       else if (group) run(() => rerollGroup(group, true))
       return
     }
@@ -3072,6 +3616,19 @@ function buildPanel<S extends Schema>(
         event.preventDefault()
         event.stopPropagation()
         closeFilter(true)
+        return
+      }
+      // Up a level a press: a row to its card, the card to the panel; from there, out.
+      const level = typing ? "none" : focusLevel(target)
+      if (level === "row" || level === "card") {
+        event.preventDefault()
+        event.stopPropagation()
+        climb(target)
+        return
+      }
+      if (page && level === "panel") {
+        event.preventDefault()
+        ;(doc.activeElement as HTMLElement | null)?.blur()
         return
       }
       if (close) {
@@ -3124,7 +3681,9 @@ function buildPanel<S extends Schema>(
     if (event.key === "Tab" && !inline) {
       const list = focusables()
       const at = list.indexOf(target)
-      if (list.length && (at < 0 || at === (event.shiftKey ? 0 : list.length - 1))) {
+      // From the panel or a card, Tab goes on from there as the browser takes it.
+      const between = target === root || cardOf(target) === target
+      if (list.length && ((at < 0 && !between) || at === (event.shiftKey ? 0 : list.length - 1))) {
         event.preventDefault()
         list[event.shiftKey ? list.length - 1 : 0]!.focus()
       }
@@ -3198,12 +3757,12 @@ function buildPanel<S extends Schema>(
     }
     if (pressed("redo", event)) {
       event.preventDefault()
-      controls.redo()
+      redo()
       return
     }
     if (pressed("undo", event)) {
       event.preventDefault()
-      controls.undo()
+      undo()
       return
     }
     if (pressed("first", event)) {
@@ -3234,17 +3793,17 @@ function buildPanel<S extends Schema>(
     if (pressed("hint", event)) {
       event.preventDefault()
       hintScrollY = win?.scrollY ?? 0
-      hintCtrl.start(collectHintTargets())
+      if (!unregisterHints || !pageHints(doc).start()) hintCtrl.start(collectHintTargets())
       return
     }
     if (pressed("resetAll", event)) {
       event.preventDefault()
-      run(controls.reset)
+      run(() => resetFrom(target))
       return
     }
     if (pressed("random", event)) {
       event.preventDefault()
-      run(() => reroll(selectionKeys(), false))
+      run(() => rollFrom(target, false))
       return
     }
     if (pressed("group", event) && bound("random")) {
@@ -3277,6 +3836,7 @@ function buildPanel<S extends Schema>(
       const chosen = selectionKeys() ?? (index >= 0 ? keysOf([index]) : undefined)
       if (chosen?.length) {
         event.preventDefault()
+        cue(root, "reset")
         run(() => controls.reset(chosen))
       }
       return
@@ -3302,6 +3862,12 @@ function buildPanel<S extends Schema>(
       event.stopPropagation()
       const list = stops()
       const at = list.findIndex((stop) => stop.contains(target))
+      // From a card, into its first row (or, going up, its last).
+      if (at < 0 && cardOf(target) === target) {
+        const inside = rows.filter((r) => target.contains(r.row) && visible(r.input))
+        const r = down ? inside[0] : inside.at(-1)
+        if (r) return void r.input.focus(page ? { preventScroll: true } : undefined)
+      }
       const step = at + (down ? 1 : -1)
       const next =
         at < 0
@@ -3320,7 +3886,14 @@ function buildPanel<S extends Schema>(
       event.preventDefault()
       event.stopPropagation()
       const t = tracks.get(target)!
-      t.set(stepValue(t.field, t.get(), (right ? 1 : -1) * (event.shiftKey ? prefs.bigStep : 1)))
+      const next = stepValue(
+        t.field,
+        t.get(),
+        (right ? 1 : -1) * (event.shiftKey ? prefs.bigStep : 1),
+      )
+      // An arrow against an end meets it, as a pan's give does.
+      if (next === t.get()) cue(root, "limit")
+      t.set(next)
     } else if (
       (left || right) &&
       index >= 0 &&
@@ -3344,8 +3917,7 @@ function buildPanel<S extends Schema>(
     } else if (prefs.edit && tracks.has(target) && /^[0-9.\-]$/.test(event.key)) {
       event.preventDefault()
       const { slider } = tracks.get(target)!
-      slider.edit()
-      slider.number.value = event.key
+      slider.edit(event.key)
     }
   }
 
@@ -3584,7 +4156,7 @@ function buildPanel<S extends Schema>(
     const scrolled = body.getBoundingClientRect().top < header.getBoundingClientRect().bottom - 1
     if (header.hasAttribute("data-scrolled") !== scrolled)
       header.toggleAttribute("data-scrolled", scrolled)
-    if (hintCtrl.isActive && Math.abs(win.scrollY - hintScrollY) > 24) hintCtrl.stop()
+    if (hintCtrl.isActive && Math.abs(win.scrollY - hintScrollY) > 24) stopHints()
     trackSection()
   }
   const onScrollEnd = () => (scrollGoal = undefined)
@@ -3624,6 +4196,8 @@ function buildPanel<S extends Schema>(
     root.addEventListener("focusin", (event) => {
       const t = event.target as HTMLElement
       if (jumping || header.contains(t) || popover.contains(t) || !body.contains(t)) return
+      // A card taking focus (a click in it, Esc from a row) is already where the eye is.
+      if (t.classList.contains("knobs-tile")) return
       const item =
         t.closest<HTMLElement>(".knobs-card > *") ??
         t.closest<HTMLElement>("[data-knobs-stop]") ??
@@ -3934,6 +4508,7 @@ function buildPanel<S extends Schema>(
       clearTimeout(nudgeEnd)
       for (const k of inHand) controls.hold(k, false)
       inHand.clear()
+      clearTimeout(copiedTimer)
       for (const t of peekTimers.values()) clearTimeout(t)
       for (const r of [...rows, ...leavingRows]) dropGpu(r)
       for (const c of groupChips.values()) c.dispose()
@@ -3954,6 +4529,7 @@ function buildPanel<S extends Schema>(
         doc.removeEventListener(type, endScrub, true)
       doc.defaultView?.removeEventListener("blur", endScrub)
       endScrub()
+      unregisterHints?.()
       hintCtrl.stop()
       modeObserver.disconnect()
       unregisterGpu?.()
@@ -3973,6 +4549,8 @@ function buildPanel<S extends Schema>(
       controls.compare(false)
       morph?.dispose()
       untrackHas()
+      unsubscribeSound()
+      optionKeys.dispose()
       root.remove()
     },
   }

@@ -278,7 +278,7 @@ export function commandPalette(options: CommandPaletteOptions): CommandPalette {
     input.value = query
     field.append(input)
     const list = doc.createElement("div")
-    list.className = "knobs-palette-list"
+    list.className = "knobs-palette-list knobs-scroll-fade"
     list.setAttribute("role", "listbox")
     list.id = `knobs-palette-list-${Math.random().toString(36).slice(2, 8)}`
     input.setAttribute("aria-controls", list.id)

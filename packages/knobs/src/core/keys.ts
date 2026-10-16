@@ -82,13 +82,47 @@ export function normalizeCombo(combo: string): string {
   return [...MODS.filter((m) => mods.has(m)), key].join("+")
 }
 
+/** The keyboard layout's character for each physical key (Chromium), read once: Dvorak, AZERTY… */
+let layout: ReadonlyMap<string, string> | null = null
+let layoutAsked = false
+function askLayout() {
+  if (layoutAsked) return
+  layoutAsked = true
+  const keyboard = (
+    globalThis.navigator as
+      | { keyboard?: { getLayoutMap?(): Promise<ReadonlyMap<string, string>> } }
+      | undefined
+  )?.keyboard
+  keyboard
+    ?.getLayoutMap?.()
+    .then((map) => {
+      layout = map
+    })
+    .catch(() => {})
+}
+
+/**
+ * The letter a keydown means in the user's layout, or `""` when it isn't a letter key. The typed
+ * character when it's a plain letter (Dvorak's K is K); with ⌥, which changes the character on
+ * macOS, the layout's letter for that physical key (QWERTY's when the layout can't be read).
+ */
+export function letterOf(event: KeyboardEvent): string {
+  askLayout()
+  const code = event.code ?? ""
+  if (/^[a-z]$/i.test(event.key) && !event.altKey) return event.key.toUpperCase()
+  const mapped = layout?.get(code)
+  if (mapped && /^[a-z]$/i.test(mapped)) return mapped.toUpperCase()
+  return /^Key[A-Z]$/.test(code) ? code.slice(3) : ""
+}
+
 /** The combination a keydown names, or `""` for a bare modifier. */
 export function comboFromEvent(event: KeyboardEvent): string {
   if (["Shift", "Alt", "Meta", "Control", "CapsLock", "Fn", "OS"].includes(event.key)) return ""
   const code = event.code ?? ""
-  // Letters and digits by position: ⌥ and ⇧ change the character on macOS.
-  const key = /^Key[A-Z]$/.test(code)
-    ? code.slice(3)
+  const letter = letterOf(event)
+  // Letters as the layout names them, digits by position: ⌥ and ⇧ change the character on macOS.
+  const key = letter
+    ? letter
     : /^Digit\d$/.test(code)
       ? code.slice(5)
       : code === "Space"

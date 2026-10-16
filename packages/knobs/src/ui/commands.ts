@@ -1,6 +1,6 @@
 // commandsFrom(controls): a store's actions, toolbar buttons, presets and fields as palette
 // commands, so ⌘K reaches everything a panel shows.
-import { hasValue, isReadout, toolbarShortcut, type Field } from "../core/schema.js"
+import { hasValue, isReadout, type Field } from "../core/schema.js"
 import type { Controls } from "../core/store.js"
 import type { Command } from "./palette.js"
 
@@ -26,12 +26,16 @@ export function commandsFrom(
   const id = (s: string) => `${controls.id}:${s}`
   const schema = controls.schema as Record<string, Field>
   for (const [key, field] of Object.entries(schema)) {
+    const keyOf = (item?: string) => {
+      const combo = controls.shortcut(key, item)
+      return combo ? { shortcut: combo } : {}
+    }
     if (field.kind === "action")
       out.push({
         id: id(key),
         label: labelOf(key, field),
         section: sec(field.group ? (controls.groupLabel(field.group) ?? field.group) : "Actions"),
-        ...(field.shortcut ? { shortcut: field.shortcut } : {}),
+        ...keyOf(),
         disabled: controls.isDisabled(key),
         run: () => controls.action(key),
       })
@@ -41,7 +45,7 @@ export function commandsFrom(
           id: id(`${key}/${item.id ?? item.label}`),
           label: item.label,
           section: sec(field.label ?? "Actions"),
-          ...(toolbarShortcut(item) ? { shortcut: toolbarShortcut(item)!.key } : {}),
+          ...keyOf(item.id ?? item.label),
           ...(item.disabled ? { disabled: true } : {}),
           run: () => controls.action(key, item.id ?? item.label),
         })

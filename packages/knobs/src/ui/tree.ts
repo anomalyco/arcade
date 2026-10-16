@@ -1,4 +1,5 @@
 import { Spring, springMotion } from "../core/spring.js"
+import { claimsHintKey, hints } from "../panel/page-hints.js"
 import { applyLook, frameLoop, ICONS, reducedMotion, syncFrame, type UiLook } from "./look.js"
 import {
   dropTarget,
@@ -81,6 +82,11 @@ export interface TreeOptions<T> extends UiLook {
    * has, the letters typed right after it carry on the run.
    */
   readonly typeahead?: boolean | ((key: string) => boolean)
+  /**
+   * Its rows on screen take codes in the page's hint mode (`s`), on by default; a code selects its
+   * row as a click does. While the page has hint mode, `s` goes to it rather than type-ahead.
+   */
+  readonly hints?: boolean
 }
 
 export interface Tree<T> {
@@ -157,7 +163,7 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
   const renamed = new Map<string, string>()
 
   const root = doc.createElement("div")
-  root.className = "knobs-tree"
+  root.className = "knobs-tree knobs-scroll-fade"
   root.tabIndex = 0
   root.setAttribute("role", "tree")
   root.setAttribute("aria-multiselectable", "true")
@@ -226,7 +232,7 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
     const icon = doc.createElement("span")
     icon.className = "knobs-tree-icon"
     const label = doc.createElement("span")
-    label.className = "knobs-tree-label"
+    label.className = "knobs-tree-label knobs-scroll-fade-x"
     const text = doc.createElement("span")
     text.className = "knobs-tree-text"
     label.append(text)
@@ -773,6 +779,10 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
   const typesAhead = (key: string, running: boolean) => {
     const rule = options.typeahead ?? true
     if (rule === false) return false
+    // A run starts on a letter or digit: punctuation (⇧1 is "!") is left to the page's shortcuts.
+    if (!(running && typed !== "") && !/^[\p{L}\p{N}]$/u.test(key)) return false
+    if (!(running && typed !== "") && options.hints !== false && claimsHintKey(doc, key))
+      return false
     return rule === true || (running && typed !== "") || rule(key)
   }
   root.addEventListener("keydown", (e) => {
@@ -852,6 +862,29 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
       e.stopPropagation()
     }
   })
+  const unregisterHints =
+    options.hints === false
+      ? undefined
+      : hints.register(
+          root,
+          () =>
+            [...views.values()]
+              .filter((v) => !v.leaving && rowIndex.has(v.id))
+              .sort((a, b) => rowIndex.get(a.id)! - rowIndex.get(b.id)!)
+              .map(({ id, el, text }) => ({
+                el,
+                label: text.textContent ?? "",
+                labelEl: text,
+                activate: () => {
+                  if (!rowIndex.has(id)) return
+                  setSelection(select(rows, sel, id), id)
+                  root.focus({ preventScroll: true })
+                  scrollToRow(id)
+                  sync("scroll")
+                },
+              })),
+          { listen: false, rank: 1 },
+        )
   root.addEventListener("focus", () => {
     if (!active && rows.length) {
       active = sel.ids.find((id) => rowIndex.has(id)) ?? rows[0]!.id
@@ -991,6 +1024,7 @@ export function tree<T>(container: HTMLElement, options: TreeOptions<T>): Tree<T
     rename: (id) => startRename(id),
     refresh: () => rebindAll(true),
     dispose() {
+      unregisterHints?.()
       loop.stop()
       autoScroll.stop()
       ro.disconnect()

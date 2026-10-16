@@ -3,6 +3,7 @@ import { equal, type Schema, type Values } from "../core/schema.js"
 import type { Controls } from "../core/store.js"
 import { Edges, Spring } from "./motion.js"
 import { tick } from "./haptics.js"
+import { cue } from "./sound.js"
 import { measure } from "./measure.js"
 import { smearPill } from "./smear.js"
 import { livePill, panOptions } from "./swipe.js"
@@ -13,25 +14,49 @@ export interface PresetEntry<V = Record<string, unknown>> {
   readonly rawId: string
   readonly label: string
   readonly values: V
-  apply(): void
+  /** Applies it (making it the active preset); `coalesce` folds it into the last undo step. */
+  apply(coalesce?: boolean): void
 }
 
 export interface ActivePresetState {
   readonly activeId: string
   readonly activeIndex: number
   readonly isCustom: boolean
+  /** The active preset's chip, while the values have moved off it (its modified mark). */
+  readonly drifted?: boolean
+}
+
+/** How strong the selection pill stays on the active preset once the values drift off it. */
+export const DRIFTED_PILL = 0.5
+
+/** The strip's id for the store's active preset (`p:` a preset, `v:` a saved variant), if any. */
+export function activeEntryId(controls: Controls<any>): string | null {
+  const ref = controls.activePreset()
+  return ref ? `${ref.kind === "preset" ? "p" : "v"}:${ref.id}` : null
 }
 
 /**
  * Resolves which preset or variant is currently active.
- * Honors `lastAppliedId` when its values still match `currentValues`, so cycling never gets
- * stuck when a saved variant has the exact same values as a built-in preset.
+ * The store's active preset (`baseId`) holds the selection however far the values drift from it.
+ * Without one, `lastAppliedId` is honoured when its values still match `currentValues`, so
+ * cycling never gets stuck when a saved variant has the exact same values as a built-in preset.
  */
 export function resolveActivePresetEntry<V extends Record<string, any>>(
   entries: readonly PresetEntry<V>[],
   currentValues: V,
   lastAppliedId: string | null,
+  baseId: string | null = null,
 ): ActivePresetState {
+  if (baseId !== null) {
+    const at = entries.findIndex((e) => e.id === baseId)
+    if (at >= 0)
+      return {
+        activeId: baseId,
+        activeIndex: at,
+        isCustom: false,
+        drifted: !equal(entries[at]!.values, currentValues),
+      }
+  }
   if (lastAppliedId !== null) {
     const pinnedIdx = entries.findIndex((e) => e.id === lastAppliedId)
     if (pinnedIdx >= 0 && equal(entries[pinnedIdx]!.values, currentValues)) {
@@ -78,8 +103,12 @@ export interface PresetStrip {
   getActiveState(): ActivePresetState
   cycle(direction: -1 | 1): void
   selectById(id: string): void
-  /** Saves the current values as "Variant N"; returns a status message. */
+  /** Saves the current values as "Variant N" and opens its name to typing; returns a status message. */
   save(): string
+  /** Opens the active chip's name to typing, when it's a saved variant; returns a status message. */
+  rename(): string | undefined
+  /** The name field while a chip's name is being typed. */
+  readonly nameField: () => HTMLInputElement | null
   /** Deletes the selected chip when it's a saved variant; returns a status message. */
   deleteActive(): string | undefined
   update(): void
@@ -138,6 +167,7 @@ export function createPresetStrip<S extends Schema>(
   let prevActiveId = ""
   let prevActiveIndex = -2
   let prevIsCustom = false
+  let prevDrifted = false
   let initializedPill = false
   /** While the pill slides to a new chip, a resize retargets it instead of snapping it there. */
   let slideUntil = 0
@@ -150,7 +180,7 @@ export function createPresetStrip<S extends Schema>(
         rawId: id,
         label: presetLabel(id),
         values: presetValues,
-        apply: () => controls.preset(id),
+        apply: (coalesce) => controls.preset(id, { coalesce }),
       }),
     )
     if (!showVariants) return presetEntries
@@ -161,7 +191,7 @@ export function createPresetStrip<S extends Schema>(
       rawId: v.id,
       label: v.name ?? v.id.slice(0, 8),
       values: v.values,
-      apply: () => controls.variants.load(v.id),
+      apply: (coalesce) => controls.variants.load(v.id, { coalesce }),
     }))
     return [...presetEntries, ...variantEntries]
   }
@@ -187,6 +217,7 @@ export function createPresetStrip<S extends Schema>(
       }),
       (box) => placePill(box, snap),
     )
+    placeName()
   }
   function placePill(
     box: { left: number; width: number; top: number; height: number; trackWidth: number },
@@ -214,29 +245,33 @@ export function createPresetStrip<S extends Schema>(
     pill.style.right = `${box.trackWidth - right}px`
     pill.style.top = `${top}px`
     pill.style.height = `${box.height}px`
-    pill.style.opacity = "1"
+    pill.style.opacity = activeState.drifted ? String(DRIFTED_PILL) : "1"
     pill.style.scale = ""
     if (first) doc.defaultView?.requestAnimationFrame(() => (pill.style.transition = ""))
   }
 
+  const resolve = () =>
+    resolveActivePresetEntry(entries, controls.get(), lastAppliedId, activeEntryId(controls))
   function syncSelection(snap = false) {
-    const values = controls.get()
-    activeState = resolveActivePresetEntry(entries, values, lastAppliedId)
+    activeState = resolve()
     if (lastAppliedId !== null && activeState.activeId !== lastAppliedId) {
       lastAppliedId = null
     }
+    const drifted = Boolean(activeState.drifted)
     if (
       !snap &&
       initializedPill &&
       activeState.activeId === prevActiveId &&
       activeState.activeIndex === prevActiveIndex &&
-      activeState.isCustom === prevIsCustom
+      activeState.isCustom === prevIsCustom &&
+      drifted === prevDrifted
     ) {
       return
     }
     prevActiveId = activeState.activeId
     prevActiveIndex = activeState.activeIndex
     prevIsCustom = activeState.isCustom
+    prevDrifted = drifted
     root.dataset.activePreset = activeState.activeId
     root.dataset.value = activeState.activeId
     for (let i = 0; i < buttons.length; i++) {
@@ -244,6 +279,12 @@ export function createPresetStrip<S extends Schema>(
       const checked = i === activeState.activeIndex
       b.setAttribute("aria-checked", String(checked))
       b.classList.toggle("knobs-preset-active", checked)
+      // The active preset's modified mark, as a row's dot says it differs from its base.
+      if (b.hasAttribute("data-drifted") !== (checked && drifted))
+        b.toggleAttribute("data-drifted", checked && drifted)
+      const label = entries[i]?.label ?? ""
+      const aria = checked && drifted ? `${label}, modified` : label
+      if (b.getAttribute("aria-label") !== aria) b.setAttribute("aria-label", aria)
     }
     measurePill(snap)
   }
@@ -251,12 +292,11 @@ export function createPresetStrip<S extends Schema>(
   function selectAt(index: number, coalesce = false) {
     const entry = entries[index]
     if (!entry) return
+    // A scrub's later stops are detents; a fresh pick lands.
+    cue(root, coalesce ? "select" : "preset", { direction: index - activeState.activeIndex })
     lastAppliedId = entry.id
-    run(() => {
-      // A scrub is one gesture, so it lands in history as one step.
-      if (coalesce) controls.set(entry.values, { coalesce: true, source: entry.kind })
-      else entry.apply()
-    })
+    // A scrub is one gesture, so it lands in history as one step.
+    run(() => entry.apply(coalesce))
     syncSelection(false)
     onAfterChange?.()
   }
@@ -268,7 +308,7 @@ export function createPresetStrip<S extends Schema>(
 
   function cycle(direction: -1 | 1) {
     if (entries.length === 0) return
-    const current = resolveActivePresetEntry(entries, controls.get(), lastAppliedId)
+    const current = resolve()
     const nextIdx = nextPresetIndex(entries.length, current.activeIndex, direction)
     if (nextIdx >= 0) selectAt(nextIdx)
   }
@@ -300,7 +340,8 @@ export function createPresetStrip<S extends Schema>(
           b.onclick = (e) => {
             e.preventDefault()
             focusQuietly()
-            if (idx !== activeState.activeIndex) selectAt(idx)
+            // The active chip again brings its values back once they've drifted.
+            if (idx !== activeState.activeIndex || activeState.drifted) selectAt(idx)
           }
           return b
         })
@@ -335,14 +376,110 @@ export function createPresetStrip<S extends Schema>(
   }
 
   function save() {
+    finishName(true)
     const used = new Set(controls.variants.list().map((v) => v.name))
     let n = 1
     while (used.has(`Variant ${n}`)) n++
     const variant = controls.variants.save(`Variant ${n}`)
+    // The saved values become the active preset: Reset comes back to them, Random roams near.
+    controls.variants.load(variant.id)
     lastAppliedId = `v:${variant.id}`
     update()
+    startName(
+      entries.findIndex((e) => e.id === `v:${variant.id}`),
+      true,
+    )
     onAfterChange?.()
-    return `Saved “Variant ${n}”.`
+    return `Saved “Variant ${n}”. Type a name, or Enter to keep it.`
+  }
+
+  // Naming: a field over the chip, its name selected so typing replaces it. Enter (or leaving
+  // it) keeps what's typed; Esc keeps the name it had. The strip keeps focus afterwards.
+  let naming: {
+    input: HTMLInputElement
+    id: string
+    was: string
+  } | null = null
+  function placeName() {
+    if (!naming) return
+    const btn = buttons[entries.findIndex((e) => e.id === naming!.id)]
+    if (!btn) return void finishName(false)
+    // A rebuilt strip has new chips; the one being named keeps its name hidden under the field.
+    if (!btn.hasAttribute("data-naming")) btn.toggleAttribute("data-naming", true)
+    const { input } = naming
+    measure(
+      () => ({
+        left: track.offsetLeft + btn.offsetLeft,
+        top: track.offsetTop + btn.offsetTop,
+        width: btn.offsetWidth,
+        height: btn.offsetHeight,
+      }),
+      (box) => {
+        input.style.left = `${box.left}px`
+        input.style.top = `${box.top}px`
+        input.style.width = `${box.width}px`
+        input.style.height = `${box.height}px`
+      },
+    )
+  }
+  function startName(index: number, fresh = false) {
+    const entry = entries[index]
+    if (!entry || entry.kind !== "variant") return false
+    finishName(true)
+    const input = el("input", "knobs-preset-name")
+    input.type = "text"
+    input.value = entry.label
+    input.maxLength = 100
+    input.spellcheck = false
+    input.autocomplete = "off"
+    input.setAttribute("aria-label", fresh ? "Name the saved preset" : `Rename ${entry.label}`)
+    naming = { input, id: entry.id, was: entry.label }
+    root.append(input)
+    placeName()
+    input.focus({ preventScroll: true })
+    input.select()
+    input.onkeydown = (event) => {
+      // Typing stays in the field: the panel's keys wait until the name is in.
+      event.stopPropagation()
+      if (event.key === "Enter" || event.key === "Escape") {
+        event.preventDefault()
+        run(() => finishName(event.key === "Enter", true))
+      }
+    }
+    input.onblur = () => run(() => finishName(true))
+    input.onpointerdown = (event) => event.stopPropagation()
+    onAfterChange?.()
+    return true
+  }
+  function finishName(keep: boolean, refocus = false) {
+    if (!naming) return undefined
+    const { input, id, was } = naming
+    naming = null
+    input.onblur = null
+    const name = input.value.trim()
+    const entry = entries.find((e) => e.id === id)
+    for (const b of buttons) b.removeAttribute("data-naming")
+    // The field lets go on the way out (see .knobs-preset-name[data-leaving]).
+    input.dataset.leaving = ""
+    input.blur()
+    setTimeout(() => input.remove(), 140)
+    if (refocus) focusQuietly()
+    let message: string | undefined
+    if (keep && entry?.kind === "variant" && name && name !== was) {
+      controls.variants.rename(entry.rawId, name)
+      update()
+      message = `Named “${name}”.`
+    }
+    onAfterChange?.()
+    return message
+  }
+  function rename() {
+    const index = activeState.activeIndex
+    const entry = entries[index]
+    if (!entry || activeState.isCustom) return undefined
+    if (entry.kind !== "variant") return "Built-in presets keep their names."
+    startName(index)
+    return undefined
   }
 
   function deleteActive() {
@@ -385,10 +522,14 @@ export function createPresetStrip<S extends Schema>(
     track.setPointerCapture(event.pointerId)
     focusQuietly()
     const idx = chipIndexAt(event.clientX, event.clientY)
-    if (idx >= 0 && idx !== activeState.activeIndex) {
+    if (idx >= 0 && (idx !== activeState.activeIndex || activeState.drifted)) {
       selectAt(idx)
       scrubCommitted = true
     }
+  }
+  track.ondblclick = (event) => {
+    const idx = chipIndexAt(event.clientX, event.clientY)
+    if (idx >= 0) run(() => (startName(idx) ? undefined : rename()))
   }
   track.onpointermove = (event) => {
     if (!scrubbing) return
@@ -423,6 +564,13 @@ export function createPresetStrip<S extends Schema>(
       event.preventDefault()
       event.stopPropagation()
       selectAt(entries.length - 1)
+    } else if (event.key === "F2" || (event.key === "Enter" && !event.shiftKey)) {
+      const entry = entries[activeState.activeIndex]
+      // Enter names a saved variant; on a built-in preset it's left to the panel.
+      if (event.key === "Enter" && entry?.kind !== "variant") return
+      event.preventDefault()
+      event.stopPropagation()
+      run(() => rename())
     } else if ((event.key === "Backspace" || event.key === "Delete") && showVariants) {
       event.preventDefault()
       event.stopPropagation()
@@ -442,7 +590,7 @@ export function createPresetStrip<S extends Schema>(
     box: track,
     pill,
     buttons: () => buttons,
-    selected: () => resolveActivePresetEntry(entries, controls.get(), lastAppliedId).activeIndex,
+    selected: () => resolve().activeIndex,
     select: (i, coalesce) => selectAt(i, coalesce),
     rest: () => measurePill(),
     wake,
@@ -473,7 +621,12 @@ export function createPresetStrip<S extends Schema>(
       return message
     },
     deleteActive,
+    rename,
+    nameField: () => naming?.input ?? null,
     update,
-    dispose: () => ro.disconnect(),
+    dispose: () => {
+      finishName(false)
+      ro.disconnect()
+    },
   }
 }
