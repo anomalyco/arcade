@@ -323,7 +323,7 @@ describe("player volume", () => {
     let changes = 0
     const volumes = { ...DEFAULT_VOLUME_SETTINGS }
     let addedBag: Record<string, boolean | number | string> = {}
-    let addedControls: { key: string; label: string }[] = []
+    let addedControls: readonly { key: string; label: string }[] = []
     bindVolumeControls(
       {
         addControls(bag, controls) {
