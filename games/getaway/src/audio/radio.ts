@@ -45,6 +45,7 @@ export class Radio {
   private decoding = false
   private clean: GainNode | null = null
   private scanner: GainNode | null = null
+  private scannerGain: GainNode | null = null
   private current: AudioBufferSourceNode | null = null
   private busyUntil = 0
   private pending: Pending | null = null
@@ -182,7 +183,7 @@ export class Radio {
 
   private build(ctx: BaseAudioContext) {
     this.clean = ctx.createGain()
-    this.clean.gain.value = 0.85
+    this.clean.gain.value = 0.85 * this.a.voiceScale()
     this.clean.connect(this.a.master)
     // Scanner: a cheap speaker in the driver's car, picking the cops up from a distance.
     const hp = ctx.createBiquadFilter()
@@ -193,12 +194,18 @@ export class Radio {
     lp.frequency.value = 1900
     lp.Q.value = 0.9
     const scanner = ctx.createGain()
-    scanner.gain.value = 0.42
+    scanner.gain.value = 0.42 * this.a.voiceScale()
+    this.scannerGain = scanner
     hp.connect(lp)
     lp.connect(scanner)
     scanner.connect(this.a.master)
     this.scanner = ctx.createGain()
     this.scanner.connect(hp)
+    this.a.onVolume(() => {
+      const scale = this.a.voiceScale()
+      if (this.clean) this.clean.gain.value = 0.85 * scale
+      if (this.scannerGain) this.scannerGain.gain.value = 0.42 * scale
+    })
   }
 
   private async decode(ctx: BaseAudioContext) {

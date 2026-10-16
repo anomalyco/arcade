@@ -1,4 +1,4 @@
-import type { LabControl } from "../lab-panel"
+import type { LabControl, LabPanel } from "../lab-panel"
 import type { MixCategory } from "./types"
 
 /**
@@ -53,6 +53,46 @@ export const volumeStorageKey = (game: string) => `arcade.volume.${game}.v1`
 /** Lab rows for the channels a game has, in the order given (`labels` renames one, e.g. Voices → "Zombie voices"). */
 export function volumeControls(channels: readonly VolumeChannel[], group = "Volume", labels: Partial<Record<VolumeChannel, string>> = {}): LabControl[] {
   return channels.map((c) => ({ key: KEY[c], label: labels[c] ?? LABEL[c], group, min: 0, max: 100, step: 5, unit: "%" }))
+}
+
+/** Binds a `Volume` group (Mute + channel sliders) on a `LabPanel` to a game's `VolumeSettings` and mute state. */
+export function bindVolumeControls(
+  panel: Pick<LabPanel, "addControls">,
+  opts: {
+    volumes: VolumeSettings
+    channels: readonly VolumeChannel[]
+    labels?: Partial<Record<VolumeChannel, string>>
+    group?: string
+    getMuted: () => boolean
+    setMuted: (muted: boolean) => void
+    onChange: () => void
+  },
+): void {
+  const group = opts.group ?? "Volume"
+  const bag: Record<string, boolean | number | string> = {}
+  Object.defineProperty(bag, "audioMuted", {
+    enumerable: true,
+    configurable: true,
+    get: opts.getMuted,
+    set: (v) => opts.setMuted(Boolean(v)),
+  })
+  for (const ch of opts.channels) {
+    const k = KEY[ch]
+    Object.defineProperty(bag, k, {
+      enumerable: true,
+      configurable: true,
+      get: () => opts.volumes[k],
+      set: (v) => {
+        opts.volumes[k] = clampLevel(Number(v))
+        opts.onChange()
+      },
+    })
+  }
+  panel.addControls(
+    bag,
+    [{ key: "audioMuted", label: "Mute (M)", group }, ...volumeControls(opts.channels, group, opts.labels)],
+    { audioMuted: false, ...DEFAULT_VOLUME_SETTINGS },
+  )
 }
 
 /** The player's volume for one bus, 0..1, master excluded (the runtime applies master on its own). */

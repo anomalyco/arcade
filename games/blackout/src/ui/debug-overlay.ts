@@ -1,7 +1,9 @@
+import { bindVolumeControls, DEFAULT_VOLUME_SETTINGS, loadVolumeSettings, saveVolumeSettings, type VolumeSettings } from "@arcade/kit/audio/volume"
 import { cameraShakeControls, cameraShakeDefaults } from "@arcade/kit/client/camera"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
+import type { Sound } from "../audio/sound"
 import { animationControls, animationLab } from "../game/anim-settings"
 import { motionSettings } from "../render/motion"
 import { bloodSplatterSettings } from "../game/splatter"
@@ -151,7 +153,7 @@ const controls: LabControl[] = [
 
 export class DebugOverlay extends LabPanel {
   private readonly sampler = new PerfSampler(180)
-  constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}, extra: LabControl[] = []) {
+  constructor(settings: Juice, params: URLSearchParams, release: () => void = () => {}, extra: LabControl[] = [], sound?: Sound) {
     super(animationLab(settings, params), [...controls, ...animationControls, ...extra], params, release)
     this.addControls(settings, lightControls.filter(c => c.key !== "style").map(c => ({ ...c, group: "Vehicle lights" })))
     this.addControls(bloodSplatterSettings,[{key:"style",label:"Style",group:"Blood",type:"select",options:[{value:0,label:"Current"},{value:1,label:"Surface splatter"}]}])
@@ -161,6 +163,23 @@ export class DebugOverlay extends LabPanel {
       {key:"burst",label:"Impulse burst",group:"Motion",min:0,max:2,step:.05,unit:"×"},
       {key:"burstDecay",label:"Burst decay",group:"Motion",min:4,max:30,step:1,unit:"/s"},
     ])
+    if (sound) {
+      const storage = typeof localStorage !== "undefined" ? localStorage : null
+      const volumes: VolumeSettings = { ...DEFAULT_VOLUME_SETTINGS }
+      loadVolumeSettings(storage, "blackout", volumes)
+      let saved = saveVolumeSettings(null, "blackout", volumes)
+      sound.setVolumes(volumes)
+      bindVolumeControls(this, {
+        volumes,
+        channels: ["master", "effects", "ambience"],
+        getMuted: () => sound.muted,
+        setMuted: (m) => sound.setMuted(m),
+        onChange: () => {
+          sound.setVolumes(volumes)
+          saved = saveVolumeSettings(storage, "blackout", volumes, saved)
+        },
+      })
+    }
     const keyLabels = keyLabelSetting()
     this.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
     this.addControls(

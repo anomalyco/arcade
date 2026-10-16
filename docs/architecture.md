@@ -82,7 +82,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — | — | — |
 | `client/{controls,key-cap,action-glyphs,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, prompt action glyphs, and chat styling | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `client/{input,camera,side-camera,smooth}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), side-view `SideCamera`, and orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | — | Yes | — | Yes | — | Yes | Yes |
+| `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — | — |
 | `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | Yes | — | Yes | — | — | — |

@@ -59,7 +59,7 @@ async function main() {
   const automatedLook = params.get("mux") === "1" || params.has("bench") || params.has("manualVideo")
   if (automatedLook && params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
-  const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
+  const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) }, [], sound)
   // Resolution, bloom and smoke volumes follow the quality tier (Auto by default; View → Quality in the Lab).
   const quality = new GameQuality({
     game: "blackout",
@@ -139,7 +139,7 @@ async function main() {
   input.onKey = (code) => {
     if (code === "Backquote") debug.toggle()
     if (code === "KeyB" && params.get("peaceful") !== "1" && session instanceof SandboxSession) session.toggleBots()
-    if (code === "KeyM") sound.setMuted(!sound.muted)
+    if (code === "KeyM") { sound.setMuted(!sound.muted); debug.refresh() }
     // T keeps the scoreboard open (the host picks teams there) until pressed again.
     if (code === "KeyT") scores = !scores
     // Between floors the number keys vote for the next mode.

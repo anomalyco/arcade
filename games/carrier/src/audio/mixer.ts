@@ -19,6 +19,7 @@
  * any module can place a sound in the world. Works on an OfflineAudioContext too (`use`), for scripted renders.
  */
 
+import { DEFAULT_VOLUME_SETTINGS, loadVolumeSettings, saveVolumeSettings, type VolumeSettings } from "@arcade/kit/audio/volume"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
 
 export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
@@ -58,7 +59,9 @@ export class Mixer {
   echo!: GainNode
   room!: GainNode
   levels: Levels = { ...DEFAULT_LEVELS }
+  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
   muted = false
+  private savedVolumes = ""
   noise!: NoiseBank
   analyser!: AnalyserNode
   /** Where each kind of sound plugs in. */
@@ -75,6 +78,12 @@ export class Mixer {
   private peakBuf: Float32Array<ArrayBuffer> | null = null
 
   constructor(attach = true) {
+    if (attach) {
+      this.volumes = { ...DEFAULT_VOLUME_SETTINGS }
+      const storage = typeof localStorage !== "undefined" ? localStorage : null
+      loadVolumeSettings(storage, "carrier", this.volumes)
+      this.savedVolumes = saveVolumeSettings(null, "carrier", this.volumes)
+    }
     this.restore()
     if (!attach || typeof window === "undefined") return
     const start = () => {
@@ -141,7 +150,7 @@ export class Mixer {
     limiter.attack.value = 0.001
     limiter.release.value = 0.15
     const trim = gain(MAKEUP_TRIM)
-    this.master = gain(this.muted ? 0 : this.levels.master)
+    this.master = gain(this.masterGain())
     const clip = ctx.createWaveShaper()
     clip.curve = softClip()
     clip.oversample = "2x"
@@ -161,15 +170,15 @@ export class Mixer {
     const duckWx = gain(1, this.canopy)
     const duckOwn = gain(1, sum)
     this.ducks = [duckEng, duckFly, duckWx, duckOwn]
-    this.ownLevel = gain(this.levels.engines, duckOwn)
+    this.ownLevel = gain(this.busGain("engines"), duckOwn)
     this.bus = {
-      engines: gain(this.levels.engines, duckEng),
+      engines: gain(this.busGain("engines"), duckEng),
       own: this.ownLevel,
-      flyby: gain(this.levels.flyby, duckFly),
-      weather: gain(this.levels.weather, duckWx),
-      sfx: gain(this.levels.sfx, sum),
-      weapons: gain(this.levels.weapons, sum),
-      ui: gain(this.levels.ui, sum),
+      flyby: gain(this.busGain("flyby"), duckFly),
+      weather: gain(this.busGain("weather"), duckWx),
+      sfx: gain(this.busGain("sfx"), sum),
+      weapons: gain(this.busGain("weapons"), sum),
+      ui: gain(this.busGain("ui"), sum),
     }
     // Space: a big soft open-air ocean reverb (behind the canopy with the world), a dark slapback off the water, and the
     // cockpit's small metal room for your own sounds.
@@ -209,6 +218,21 @@ export class Mixer {
     this.levels[name] = Math.max(0, Math.min(1.5, v))
     this.apply()
     this.save()
+  }
+
+  setVolumes(): void {
+    this.apply()
+    const storage = typeof localStorage !== "undefined" ? localStorage : null
+    this.savedVolumes = saveVolumeSettings(storage, "carrier", this.volumes, this.savedVolumes)
+  }
+
+  private masterGain(): number {
+    return this.muted ? 0 : this.levels.master * (this.volumes.volumeMaster / 100)
+  }
+
+  private busGain(name: Exclude<Level, "master">): number {
+    const ch = name === "weather" ? this.volumes.volumeAmbience : this.volumes.volumeEffects
+    return this.levels[name] * (ch / 100)
   }
 
   setMuted(m: boolean): void {
@@ -257,14 +281,14 @@ export class Mixer {
     if (!c) return
     const now = c.currentTime
     const set = (g: GainNode, v: number) => g.gain.setTargetAtTime(v, now, 0.03)
-    set(this.master, this.muted ? 0 : this.levels.master)
-    set(this.bus.engines, this.levels.engines)
-    set(this.ownLevel, this.levels.engines)
-    set(this.bus.flyby, this.levels.flyby)
-    set(this.bus.sfx, this.levels.sfx)
-    set(this.bus.weapons, this.levels.weapons)
-    set(this.bus.weather, this.levels.weather)
-    set(this.bus.ui, this.levels.ui)
+    set(this.master, this.masterGain())
+    set(this.bus.engines, this.busGain("engines"))
+    set(this.ownLevel, this.busGain("engines"))
+    set(this.bus.flyby, this.busGain("flyby"))
+    set(this.bus.sfx, this.busGain("sfx"))
+    set(this.bus.weapons, this.busGain("weapons"))
+    set(this.bus.weather, this.busGain("weather"))
+    set(this.bus.ui, this.busGain("ui"))
   }
 
   private restore(): void {
