@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { bodyPoint } from "./body-pose"
+import { bodyPoint, instanceRotation } from "./body-pose"
 
 test("bodyPoint uses the instance shader's roll, pitch, yaw order and full body height", () => {
   const p = bodyPoint({ x: 10, z: 20, h: Math.PI / 2 }, { height: 4, roll: Math.PI / 2, pitch: Math.PI / 2 }, [1, 2, 3])
@@ -30,4 +30,12 @@ test("omitted spring fields default to zero without losing yaw or translation", 
   const c = { x: 10, z: 20, h: Math.PI / 2 }
   expect(bodyPoint(c, {}, [0, 1, 2])).toEqual([12, 1, 20])
   expect(bodyPoint(c, { height: 3 }, [0, 1, 2])).toEqual([12, 4, 20])
+})
+
+test("instanceRotation maps Z/X/Y vehicle angles into the Z/X/-Y instance basis", () => {
+  const out = { yaw: 0, roll: 0, pitch: 0 }
+  instanceRotation(out, 0, 0, 0)
+  expect(out.yaw).toBeCloseTo(Math.PI / 2, 10)
+  expect(out.roll).toBeCloseTo(0, 10)
+  expect(out.pitch).toBeCloseTo(0, 10)
 })

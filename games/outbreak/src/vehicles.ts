@@ -1,7 +1,7 @@
 import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import { INST_FLOATS, SPRITE_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import { angleDiff } from "@arcade/kit/sim/geom"
-import { bodyPoint, type BodyPose } from "@arcade/kit/vehicle/body-pose"
+import { instanceRotation, type BodyPose } from "@arcade/kit/vehicle/body-pose"
 import { Chassis, wheelRotation } from "@arcade/kit/vehicle/chassis"
 import { DrivingFx } from "@arcade/kit/vehicle/driving-fx"
 import { EmissionState, TYRE_SURFACE, VehicleEmissions, type WheelContact } from "@arcade/kit/vehicle/emissions"
@@ -76,16 +76,7 @@ export function toKitVehicleSpec(kind: VehicleKind): KitVehicleSpec {
   }
 }
 
-export function instanceRotation(out: { yaw: number; roll: number; pitch: number }, yaw: number, roll: number, pitch: number): void {
-  const c = { x: 0, z: 0, h: yaw }
-  const pose = { roll, pitch }
-  const x = bodyPoint(c, pose, [0, 0, 1])
-  const y = bodyPoint(c, pose, [0, 1, 0])
-  const z = bodyPoint(c, pose, [-1, 0, 0])
-  out.roll = Math.asin(Math.max(-1, Math.min(1, -z[1])))
-  out.pitch = Math.atan2(x[1], y[1])
-  out.yaw = Math.atan2(-z[0], z[2])
-}
+export { instanceRotation }
 
 export type VehicleDraw = {
   id: number

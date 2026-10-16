@@ -1,42 +1,12 @@
-import { DurableObject } from "cloudflare:workers"
+import { LobbyObject } from "@arcade/kit/server/lobby-object"
 import { roomCode } from "../shared/crew"
 import type { Env } from "./env"
-import { Matchmaker, type RoomEntry, type RoomReport } from "./matchmaking"
+import { Matchmaker, type RoomReport } from "./matchmaking"
 
-/**
- * Singleton matchmaker (`LOBBY.idFromName("lobby")`). Room reports are kept in storage too, so a Lobby that was evicted
- * or restarted still knows every live room at once instead of waiting for their next heartbeat.
- */
-export class Lobby extends DurableObject<Env> {
-  private mm = new Matchmaker()
-
+/** Singleton matchmaker (`@arcade/kit/server/lobby-object`, `LOBBY.idFromName("lobby")`). */
+export class Lobby extends LobbyObject<Env, RoomReport> {
   constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env)
-    void ctx.blockConcurrencyWhile(async () => {
-      const saved = await ctx.storage.get<RoomEntry[]>("rooms")
-      for (const r of saved ?? []) this.mm.rooms.set(r.code, r)
-    })
-  }
-
-  async report(r: RoomReport): Promise<void> {
-    this.mm.report(r, Date.now())
-    await this.ctx.storage.put("rooms", [...this.mm.rooms.values()])
-  }
-
-  quick(): string {
-    return this.mm.quick(Date.now())
-  }
-
-  create(): string {
-    return this.mm.create(Date.now())
-  }
-
-  info(code: string) {
-    return this.mm.info(code, Date.now())
-  }
-
-  stats() {
-    return this.mm.stats(Date.now())
+    super(ctx, env, new Matchmaker())
   }
 }
 
@@ -53,9 +23,6 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
  *   POST /api/create       -> { room }  a fresh private code (also GET, so a plain link works)
  *   GET  /api/room/:code   -> { code, players, full, live }
  *   GET  /api/stats        -> { players, games }
- *
- * A Room reports itself with `lobbyOf(env.LOBBY).report({ code, players, private })` (throttled, with a heartbeat well
- * inside STALE_MS). The first arrival in an empty room makes it private by connecting to `/ws?room=CODE&private=1`.
  */
 export async function lobbyApi(path: string, req: Request, ns: LobbyNs): Promise<Response | null> {
   if (!path.startsWith("/api/")) return null

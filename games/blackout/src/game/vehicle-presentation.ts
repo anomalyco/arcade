@@ -1,5 +1,5 @@
 import { Chassis, wheelRotation } from "@arcade/kit/vehicle/chassis"
-import { bodyPoint, type BodyPose } from "@arcade/kit/vehicle/body-pose"
+import { instanceRotation, type BodyPose } from "@arcade/kit/vehicle/body-pose"
 import { EmissionState } from "@arcade/kit/vehicle/emissions"
 import type { VehicleSpec, VehicleView, Controls } from "@arcade/kit/vehicle/types"
 import { VEHICLES, forwardSpeed, lateralSpeed, type VehicleKind } from "../../shared/sim/vehicle"
@@ -63,10 +63,4 @@ export class VehiclePresentation {
   }
 }
 
-export function instanceRotation(out: { yaw: number; roll: number; pitch: number }, yaw: number, roll: number, pitch: number) {
-  const c = { x: 0, z: 0, h: yaw }, pose = { roll, pitch }
-  const x = bodyPoint(c, pose, [0, 0, 1]), y = bodyPoint(c, pose, [0, 1, 0]), z = bodyPoint(c, pose, [-1, 0, 0])
-  out.roll = Math.asin(Math.max(-1, Math.min(1, -z[1])))
-  out.pitch = Math.atan2(x[1], y[1])
-  out.yaw = Math.atan2(-z[0], z[2])
-}
+export { instanceRotation }
