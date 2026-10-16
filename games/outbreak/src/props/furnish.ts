@@ -15,7 +15,7 @@ import type { TableLamp } from "../lightbake"
 import { furnishedHouse, propDressingState, REPLACED_KINDS } from "./state"
 
 /** Clutter stops being added to a room past this many LOD0 triangles (anchors always draw). */
-export const ROOM_TRIANGLE_BUDGET = 14000
+export const ROOM_TRIANGLE_BUDGET = 40000
 
 const WALL_YAW: Record<WallSide, number> = { n: 0, s: Math.PI, w: -Math.PI / 2, e: Math.PI / 2 }
 

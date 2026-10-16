@@ -156,6 +156,38 @@ def drop_floaters(obj, min_faces=12, min_diag=0.015, voids=False):
     return len(islands), len(doomed)
 
 
+def drop_hidden(obj, rays=32):
+    """Remove faces no ray from outside can reach. TRELLIS wraps solid parts in a second, inner shell (a stack of
+    books came back with 2.4x a box's area); decimating both lets the inner one poke through as dark wedges, and it
+    spends half the budget on faces nobody sees. A face stays if any of `rays` directions escapes from either side,
+    and is turned to face the side that escapes."""
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bvh = BVHTree.FromBMesh(bm)
+    k = np.arange(rays) + 0.5
+    phi = np.arccos(1 - 2 * k / rays)
+    theta = np.pi * (1 + 5 ** 0.5) * k
+    dirs = [Vector(d) for d in np.stack([np.cos(theta) * np.sin(phi), np.sin(theta) * np.sin(phi), np.cos(phi)], 1).tolist()]
+    eps = 1e-4 * max(obj.dimensions)
+    hidden, flipped = [], []
+    escapes = lambda o, ds: any(bvh.ray_cast(o, d)[0] is None for d in ds)
+    for f in bm.faces:
+        c, n = f.calc_center_median(), f.normal
+        if escapes(c + n * eps, [d for d in dirs if d.dot(n) >= 0]):
+            continue
+        if escapes(c - n * eps, [d for d in dirs if d.dot(n) < 0]):
+            flipped.append(f)  # only its back is exposed: the face is wound inwards and would shade dark
+        else:
+            hidden.append(f)
+    bmesh.ops.reverse_faces(bm, faces=flipped)
+    bmesh.ops.delete(bm, geom=hidden, context="FACES")
+    bm.to_mesh(obj.data)
+    bm.free()
+    return len(hidden), len(flipped)
+
+
 def orient_and_scale(obj, spec, fix):
     me = obj.data
     co = np.empty(len(me.vertices) * 3, dtype=np.float32)
@@ -180,6 +212,8 @@ def orient_and_scale(obj, spec, fix):
     s = float(np.exp(np.log(ratio).mean()))
     per = np.clip(ratio / s, 0.88, 1.12) * s
     per[2] = ratio[2]  # height is exact: clutter sits on catalogue surface heights, and a table is table height
+    if spec["role"] == "clutter":
+        per[:] = s  # small things keep their proportions (a stretched box reads as wrong at once), at the catalogue's volume
     centre = np.array([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, mn[2]])
     me.transform(Matrix.Translation(Vector((-centre).tolist())))
     me.transform(Matrix.Diagonal((per[0], per[1], per[2], 1.0)))
@@ -266,11 +300,21 @@ class SourceSampler:
         texels = (np.abs(u1[:, 0] * u2[:, 1] - u1[:, 1] * u2[:, 0]) * 0.5).sum() * W * H
         self.texels_per_m2 = texels / max(world, 1e-9)
 
-    def uv(self, pts):
+    def uv(self, pts, normals=None):
+        """UV of the source surface at each point. With normals, a short ray along the face normal picks the surface
+        the face lies on, so a thin panel's front does not take the colour of its back (or of the recess behind it);
+        the nearest point is the fallback."""
         idx = np.empty(len(pts), dtype=np.int64)
         loc = np.empty((len(pts), 3), dtype=np.float64)
         for i, p in enumerate(pts):
-            hit = self.bvh.find_nearest(Vector(p.tolist()))
+            hit = None
+            if normals is not None:
+                n = Vector(normals[i].tolist())
+                hit = self.bvh.ray_cast(Vector(p.tolist()) + n * 0.003, -n, 0.012)
+                if hit[0] is None:
+                    hit = None
+            if hit is None:
+                hit = self.bvh.find_nearest(Vector(p.tolist()))
             loc[i] = hit[0][:]
             idx[i] = hit[2]
         a, b, c = self.tri_v[idx, 0], self.tri_v[idx, 1], self.tri_v[idx, 2]
@@ -343,9 +387,11 @@ def corner_data(obj, sampler, base_levels, mr_levels, smooth_deg):
     # Filter the texture to the triangle's footprint: a vertex colour cannot carry finer detail than its triangle.
     lvl = np.clip(0.5 * np.log2(np.maximum(area * sampler.texels_per_m2, 1.0)) - 1.0, 0, len(base_levels) - 1)
     pull = tp * 0.7 + cen[:, None, :] * 0.3
-    uv_c = sampler.uv(pull.reshape(-1, 3))
+    fn = np.cross(tp[:, 1] - tp[:, 0], tp[:, 2] - tp[:, 0])
+    fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-12)
+    uv_c = sampler.uv(pull.reshape(-1, 3), np.repeat(fn, 3, 0))
     col = sample(base_levels, uv_c, np.repeat(lvl, 3))[:, :3]
-    uv_m = sampler.uv(cen)
+    uv_m = sampler.uv(cen, fn)
     mr = sample(mr_levels, uv_m, lvl) if mr_levels else np.zeros((len(cen), 4), dtype=np.float32)
     shiny = (mr[:, 2] > 0.5) | (mr[:, 1] < 0.32)
     mat = np.where(shiny, MAT_SHINY, MAT_LIT).astype(np.uint8)
@@ -437,6 +483,93 @@ def preview(pid, verts_lo, idx_lo, lo, hi, tris):
     return files
 
 
+def refine(obj, tris, rounds=6):
+    """Split the longest edges until the mesh has `tris` triangles. Collapse decimation spends triangles on shape
+    only, so a flat book cover ends as two long triangles and its vertex colours smear into dark wedges; the last
+    third of the budget goes to colour resolution instead, evenly over the surface (the splits are planar)."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    for _ in range(rounds):
+        room = (tris - len(bm.faces)) // 2
+        if room < max(8, tris * 0.01):
+            break
+        edges = sorted(bm.edges, key=lambda e: e.calc_length(), reverse=True)[: min(room, len(bm.edges) // 3)]
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=1)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+GEOMETRY_SHARE = 0.65
+
+
+def candidate_solid(pid, obj, name):
+    """A mesh to decimate: the cleaned source, the source with its small cracks filled, or an octree remesh."""
+    if name == "source":
+        return src_copy(obj)
+    if name == "filled":
+        solid = src_copy(obj)
+        bm = bmesh.new()
+        bm.from_mesh(solid.data)
+        bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=24)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        bm.to_mesh(solid.data)
+        bm.free()
+        return solid
+    depth = int(name.split()[1])
+    solid = remeshed(obj, depth, "SHARP")
+    n = len(solid.data.polygons)
+    # Remeshed density is even, so faces measure area: shreds under 0.4% of the surface go too. Every closed island
+    # keeps a floor of triangles through decimation (the armchair's 227 fragments held it at 3326 of 700).
+    isl, gone = drop_floaters(solid, min_faces=max(12, int(n * 0.004)), voids=True)
+    print(f"{pid}: {name}: {n} faces, {isl} islands, dropped {gone} faces", flush=True)
+    return solid
+
+
+def surface_points(obj, n, seed=7):
+    me = obj.data
+    me.calc_loop_triangles()
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    tv = np.empty(len(me.loop_triangles) * 3, dtype=np.int32)
+    me.loop_triangles.foreach_get("vertices", tv)
+    t = co[tv.reshape(-1, 3)]
+    area = np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1)
+    rng = np.random.default_rng(seed)
+    pick = rng.choice(len(t), size=n, p=area / area.sum())
+    u, v = rng.random(n), rng.random(n)
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    tp = t[pick]
+    return tp[:, 0] + (tp[:, 1] - tp[:, 0]) * u[:, None] + (tp[:, 2] - tp[:, 0]) * v[:, None], co, tv.reshape(-1, 3)
+
+
+class Reference:
+    """Two-sided shape error against the source: the 90th percentile distance from source samples to a candidate
+    (torn panels, lost legs) plus the same from candidate samples to the source (webbing, closed gaps), over the
+    bounding-box diagonal."""
+
+    def __init__(self, obj, n=6000):
+        from mathutils.bvhtree import BVHTree
+        self.pts, co, tv = surface_points(obj, n)
+        self.bvh = BVHTree.FromPolygons(co.tolist(), tv.tolist())
+        self.diag = float(np.linalg.norm(co.max(0) - co.min(0)))
+        self.n = n
+
+    @staticmethod
+    def distances(pts, bvh):
+        return np.array([bvh.find_nearest(Vector(p.tolist()))[3] for p in pts])
+
+    def error(self, cand):
+        from mathutils.bvhtree import BVHTree
+        pts, co, tv = surface_points(cand, self.n, seed=11)
+        cbvh = BVHTree.FromPolygons(co.tolist(), tv.tolist())
+        a = np.percentile(self.distances(self.pts, cbvh), 90)
+        b = np.percentile(self.distances(pts, self.bvh), 90)
+        return float(a + b) / self.diag
+
+
 def build(pid, raw):
     spec = next(s for s in SPECS["props"] if s["id"] == pid)
     t0 = time.time()
@@ -447,32 +580,45 @@ def build(pid, raw):
     mr_levels = mip_chain(pixels(mr)) if mr else None
     islands, dropped = drop_floaters(obj)
     yaw, size = orient_and_scale(obj, spec, FIX.get(pid, {}))
+    hidden, flipped = drop_hidden(obj)
     sampler = SourceSampler(obj, base_levels)
-    # A fine remesh of thin upholstery can come out riddled with tunnels, and a high-genus surface cannot decimate
-    # below a floor (the armchair stuck at 3326 of 700 triangles at depth 7, 712 at depth 6). Each LOD takes the finest
-    # remesh that reaches its budget; the unremeshed source is the last resort.
-    fixed = FIX.get(pid, {}).get("octree")
-    solids, depths, lods_raw = {}, [], []
+    # Candidates per LOD, scored against the source surface; the lowest error within budget wins. At game budgets
+    # (6-15k for anchors) the open source decimates directly and keeps thin panels (cabinet doors, chair slats) that
+    # the octree remesh closed or tore; the remesh stays as a fallback for meshes whose holes stall decimation.
+    fixed = FIX.get(pid, {}).get("candidates")
+    ref = Reference(obj)
+    solids, chosen, lods_raw = {}, [], []
     for tris in spec["lod"]:
-        reached = {}
-        for depth in [fixed] if fixed is not None else [7, 8, 0, 6, 5]:
-            if depth not in solids:
-                solids[depth] = remeshed(obj, depth, "SHARP") if depth else src_copy(obj)
-                if depth:
-                    n = len(solids[depth].data.polygons)
-                    # Remeshed density is even, so faces measure area: shreds under 0.4% of the surface go too. Every
-                    # closed island keeps a floor of triangles through decimation, and the armchair's 227 fragments
-                    # alone held it at 3326 of a 700-triangle budget.
-                    isl, gone = drop_floaters(solids[depth], min_faces=max(12, int(n * 0.004)), voids=True)
-                    print(f"{pid}: octree {depth}: {n} faces, {isl} islands, dropped {gone} faces", flush=True)
-            lod = decimate(solids[depth], tris)
-            reached[depth] = len(lod.data.polygons)
-            if reached[depth] <= tris * 1.02:
-                break
-            bpy.data.objects.remove(lod)
-        else:
-            raise RuntimeError(f"no remesh decimates to {tris} triangles (reached {reached})")
-        depths.append(depth)
+        scores = {}
+        best = None
+        for name in fixed or ["source", "filled", "octree 7", "octree 8", "octree 6", "octree 5"]:
+            if name.startswith("octree") and best is not None:
+                break  # remeshes only when no source-based mesh fits the budget
+            if name not in solids:
+                solids[name] = candidate_solid(pid, obj, name)
+            shape = int(tris * GEOMETRY_SHARE)
+            lod = decimate(solids[name], shape)
+            n = len(lod.data.polygons)
+            if n <= shape * 1.02:
+                refine(lod, tris)
+                n = len(lod.data.polygons)
+            if n > tris * 1.02:
+                scores[name] = f"stalled at {n}"
+                bpy.data.objects.remove(lod)
+                continue
+            err = ref.error(lod)
+            scores[name] = round(err, 5)
+            if best is None or err < best[1]:
+                if best is not None:
+                    bpy.data.objects.remove(best[2])
+                best = (name, err, lod)
+            else:
+                bpy.data.objects.remove(lod)
+        if best is None:
+            raise RuntimeError(f"no candidate decimates to {tris} triangles ({scores})")
+        name, err, lod = best
+        print(f"{pid}: {tris} tris -> {name} ({scores})", flush=True)
+        chosen.append({"mesh": name, "error": round(err, 5), "scores": scores})
         pos, nrm, col, mat, order = corner_data(lod, sampler, base_levels, mr_levels, FIX.get(pid, {}).get("smooth", 40))
         ao = bake_ao(lod)[order]
         # Blender (x, y, z up) -> game (x, y up, z front): front is -Y in Blender.
@@ -492,6 +638,8 @@ def build(pid, raw):
     s = float(np.exp(np.log(ratio[[0, 2]]).mean()))
     per = np.clip(ratio / s, 0.88, 1.12) * s
     per[1] = ratio[1]
+    if spec["role"] == "clutter":
+        per[:] = float(np.exp(np.log(ratio).mean()))
     pivot = np.array([(glo[0] + ghi[0]) / 2, glo[1], (glo[2] + ghi[2]) / 2])
     for l in lods_raw:
         l[0][:] = (l[0] - pivot) * per
@@ -503,9 +651,9 @@ def build(pid, raw):
     write_prop(out, lods, lo.tolist(), hi.tolist())
     files = preview(pid, lods[0][0], lods[0][1], lo, hi, spec["lod"][0])
     rec = {
-        "id": pid, "yaw": yaw, "size": [round(v, 3) for v in (hi - lo).tolist()], "islands": islands, "dropped_faces": dropped,
+        "id": pid, "yaw": yaw, "size": [round(v, 3) for v in (hi - lo).tolist()], "islands": islands, "dropped_faces": dropped, "hidden_faces": hidden, "flipped_faces": flipped,
         "lods": [{"verts": int(len(v)), "tris": int(len(i) // 3)} for v, i in lods], "bytes": os.path.getsize(out),
-        "remesh": [f"octree {d}" if d else "none" for d in depths], "seconds": round(time.time() - t0, 1), "preview": files,
+        "mesh": chosen, "seconds": round(time.time() - t0, 1), "preview": files,
     }
     return rec
 

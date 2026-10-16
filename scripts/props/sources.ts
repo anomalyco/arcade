@@ -27,18 +27,22 @@ export const SUBJECTS: Record<string, string> = {
   "tv-set": "a 1970s television set in a wooden cabinet with a curved grey screen, dials and a speaker grille, on four short legs",
   "radiator": "an old cast-iron column radiator painted cream with flaking paint and rust spots, on small feet",
   "table-lamp": "a brass table lamp with a pleated faded cream fabric shade",
-  "potted-plant": "a dead, drooping fern in a cracked terracotta pot, dry brown fronds",
+  "potted-plant": "a cracked terracotta pot holding a dead shrub whose dried brown foliage forms one dense, rounded, solid-looking clump above the rim, no thin stems or fronds sticking out",
   "wooden-crate": "a weathered wooden shipping crate with plank sides and stencil-free plain wood",
-  "cardboard-boxes": "two stacked old cardboard moving boxes, the top one slightly open and dented, brown tape",
-  "book-stack": "a small stack of four old leather-bound books lying flat, worn spines in brown, burgundy and green",
+  "cardboard-boxes": "two stacked old cardboard moving boxes, both closed with the flaps taped shut, boxy and slightly dented, brown tape",
+  "book-stack": "a neat stack of four thick, closed old hardback books lying flat, square edges aligned, worn spines in brown, burgundy and green",
   "bottles": "three old glass bottles standing together, dark green, brown and clear, one with a cork",
-  "typewriter": "an old black manual typewriter with round keys and a sheet of blank paper in it",
-  "rotary-phone": "a black 1960s rotary dial telephone with its handset on the cradle",
-  "plate-stack": "a small stack of chipped white china plates with a cup on top",
+  "typewriter": "a chunky old black manual typewriter with a solid boxy body, the keys forming a dense stepped block, no paper, no thin levers sticking out",
+  "rotary-phone": "a chunky black 1960s rotary dial telephone with a solid rounded body and the thick handset resting on top, no cord",
+  "plate-stack": "a neat stack of six thick, chipped white china plates, no cup",
 }
+
+/** Small props whose first pictures had thin parts TRELLIS.2 and the cleanup shredded: ask for closed, chunky forms. */
+const CHUNKY = new Set(["potted-plant", "cardboard-boxes", "book-stack", "typewriter", "rotary-phone", "plate-stack"])
+const CHUNKY_STYLE = "Simple, chunky, closed solid shapes that read at a glance from above; no thin sheets, wires, gaps or loose parts."
 
 export const promptFor = (id: string): string => {
   const subject = SUBJECTS[id]
   if (!subject) throw new Error(`no source prompt for ${id}`)
-  return `${STYLE} The object: ${subject}.`
+  return `${STYLE} The object: ${subject}.${CHUNKY.has(id) ? ` ${CHUNKY_STYLE}` : ""}`
 }

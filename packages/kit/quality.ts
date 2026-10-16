@@ -33,6 +33,8 @@ export interface QualityProfile extends QualityScaling {
   readonly ambientMotion: boolean
   /** Multiplier for secondary exterior clutter density (0..1). */
   readonly clutterScale: number
+  /** Coarsest-first floor for generated furniture (`@arcade/kit/props`): 1 draws every prop at its far LOD. */
+  readonly minPropLod: number
 }
 
 export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
@@ -47,6 +49,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     maxSconceLights: 3,
     ambientMotion: true,
     clutterScale: 1.0,
+    minPropLod: 0,
   },
   balanced: {
     tier: "balanced",
@@ -59,6 +62,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     maxSconceLights: 2,
     ambientMotion: true,
     clutterScale: 1.0,
+    minPropLod: 0,
   },
   low: {
     tier: "low",
@@ -71,6 +75,7 @@ export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
     maxSconceLights: 0,
     ambientMotion: false,
     clutterScale: 0.5,
+    minPropLod: 1,
   },
 }
 

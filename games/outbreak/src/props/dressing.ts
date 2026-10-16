@@ -1,6 +1,7 @@
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import { PROP_IDS } from "@arcade/kit/props/catalogue"
 import { PropBatches, PropModels, type PropInstance } from "@arcade/kit/props/models"
+import type { QualityProfile } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
 import { furnishedHouses, instancesOf, type HouseFurnishing } from "./furnish"
@@ -38,9 +39,9 @@ export class PropDressing {
    * Per-frame: the prop batches to draw, empty while off, loading, or when the level on screen is a streamed one.
    * Switching props on or off calls `rebuildLevel` so the level builder drops or restores the box furniture.
    */
-  collect(town: Town, view: Rect, s: OutbreakPropSettings, zoom: number, clutterScale: number, originBuild: boolean, rebuildLevel: () => void): readonly Batch[] {
+  collect(town: Town, view: Rect, s: OutbreakPropSettings, zoom: number, quality: Pick<QualityProfile, "clutterScale" | "minPropLod">, originBuild: boolean, rebuildLevel: () => void): readonly Batch[] {
     const on = Boolean(s.propsOn)
-    const density = s.propClutter * clutterScale
+    const density = s.propClutter * quality.clutterScale
     const st = propDressingState
     // The level grounds floor clutter and bakes table-lamp pools from the same plan, so a new plan rebuilds it.
     if (st.on !== on || (on && (st.density !== density || st.seed !== s.propSeed))) {
@@ -57,7 +58,7 @@ export class PropDressing {
       this.houses = houses
       this.instances = houses.flatMap(instancesOf)
     }
-    const lod = zoom > s.propLodZoom ? 1 : 0
+    const lod = Math.max(quality.minPropLod, zoom > s.propLodZoom ? 1 : 0)
     const [x0, z0, x1, z1] = view
     return this.batches.collect(this.instances, () => lod, p => p.x > x0 - 2 && p.x < x1 + 2 && p.z > z0 - 2 && p.z < z1 + 2)
   }
