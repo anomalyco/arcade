@@ -8,6 +8,27 @@ import type { Session } from "./session"
 
 const PING_MS = 2000
 const CONNECT_TIMEOUT_MS = 10000
+const tokenKey = (room: string) => `getaway.token.${room}`
+
+function getStoredToken(room: string): string {
+  try {
+    return typeof sessionStorage !== "undefined" ? (sessionStorage.getItem(tokenKey(room)) ?? "") : ""
+  } catch {
+    return ""
+  }
+}
+
+function setStoredToken(room: string, token: string): void {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(tokenKey(room), token)
+  } catch {}
+}
+
+function clearStoredToken(room: string): void {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(tokenKey(room))
+  } catch {}
+}
 
 function socketUrl(room: string, priv: boolean) {
   const dir = location.pathname.replace(/[^/]*$/, "")
@@ -64,7 +85,9 @@ export class NetSession implements Session {
     private name: string,
     private picks: Record<Role, string>,
     private priv: boolean,
-  ) {}
+  ) {
+    this.token = getStoredToken(room)
+  }
 
   get myId() {
     return this.id
@@ -101,7 +124,10 @@ export class NetSession implements Session {
     switch (msg.type) {
       case "welcome":
         this.id = msg.id
-        if (msg.token) this.token = msg.token
+        if (msg.token) {
+          this.token = msg.token
+          setStoredToken(this.room, msg.token)
+        }
         this.retry = 0
         if (!this.client) this.client = new NetClient(generateCity(msg.seed), msg.id, (m) => this.send(m))
         else {
@@ -128,6 +154,7 @@ export class NetSession implements Session {
         } else if (msg.code === "idle") {
           this.state = "kicked"
           this.kickReason = msg.message
+          clearStoredToken(this.room)
           this.ready?.reject(new Error(msg.message))
           this.ready = null
         }

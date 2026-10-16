@@ -1,14 +1,16 @@
-import { DT, HEAD_START_SECONDS, INTRO_SECONDS, TICK_HZ, VEHICLE_BY_ID, type Role, type Vehicle } from "../../shared/config"
+import { Glide, SnapshotBuffer } from "@arcade/kit/net/interpolate"
+import { OptimisticEvents } from "@arcade/kit/net/prediction"
+import { DT, GADGETS, HEAD_START_SECONDS, INTRO_SECONDS, LOADOUT, TICK_HZ, VEHICLE_BY_ID, type GadgetId, type Role, type Vehicle } from "../../shared/config"
 import type { ClientMsg, ServerMsg } from "../../shared/protocol"
 import { quantizeInput } from "../../shared/protocol"
 import type { Box, City } from "../../shared/sim/city"
 import { propBox } from "../../shared/sim/gadgets"
 import { type Body, type Input, collideBoxes, collideCars, lateralSpeed, newBody, speedOf, stepAndCollide, stepHeight, toggleEngine } from "../../shared/sim/vehicle"
-import type { CarView, Phase, SimEvent, WorldView } from "../../shared/sim/world"
+import { MAX_STRIPS, SURVIVAL, type CarView, type Phase, type SimEvent, type WorldView } from "../../shared/sim/world"
 import { lerpView } from "./interp"
 import { crossTunnel } from "../../shared/sim/tunnel"
 
-/** Other cars are drawn this far in the past so there are always two snapshots to blend between. */
+/** Other cars are drawn 80–100 ms in the past so there are always two snapshots to blend between. */
 export const INTERP_TICKS = Math.round(0.1 * TICK_HZ)
 const MAX_PENDING = 3 * TICK_HZ
 const SNAP_KEEP = TICK_HZ
@@ -26,7 +28,18 @@ const FAR = 28
 /** After a predicted hit on another car, its server-side impact is ignored this long (the hit already played locally). */
 const HIT_HOLD = 0.5
 
-type Snap = { tick: number; view: WorldView }
+export type Snap = { tick: number; view: WorldView }
+export const remoteBuffer = (): SnapshotBuffer<Snap> => new SnapshotBuffer<Snap>(0.1, SNAP_KEEP, 0.25, { min: 0.08, max: 0.1 })
+
+export type GetawayOptimisticKind = "gadget" | "engine" | "boost" | "landing"
+export type GetawayOptimisticPayload = {
+  slot?: 0 | 1
+  gadgetId?: GadgetId
+  prevCharges?: number
+  engineOff?: boolean
+  prevFuel?: number
+}
+
 type Pending = { seq: number; input: Input }
 type Pose = { x: number; z: number; h: number; y?: number; tunnels?: number }
 
@@ -57,14 +70,15 @@ export class NetClient {
   pending: Pending[] = []
   body: Body | null = null
   events: SimEvent[] = []
+  readonly optimistic = new OptimisticEvents<GetawayOptimisticKind, GetawayOptimisticPayload>()
   private prevBody: Body | null = null
   private carId = -1
   private role: Role = "cop"
   private vehicle: Vehicle | null = null
   private phase: Phase = "intro"
   private phaseT = 0
-  private snaps: Snap[] = []
-  private est = 0
+  private buf = remoteBuffer()
+  private glides = new Map<number, Glide>()
   private acc = 0
   private err: Pose = { x: 0, z: 0, h: 0 }
   private boxes: Box[]
@@ -77,9 +91,13 @@ export class NetClient {
   private localHits = new Map<number, { at: number; impact: number }>()
   private clock = 0
   private replaying = false
-  /** Engine key state the server last saw (edge detection for H presses), at the ack and live. */
+  /** Engine and gadget key state the server last saw (edge detection for H and Q/E presses), at the ack and live. */
   private ackEngine = false
   private engineHeld = false
+  private ackGadget: 0 | 1 | null = null
+  private gadgetHeld: 0 | 1 | null = null
+  private predictedGadgetCd: [number, number] = [0, 0]
+  private predictedGadgetCharges: [number | null, number | null] = [null, null]
 
   constructor(
     readonly city: City,
@@ -90,35 +108,48 @@ export class NetClient {
   }
 
   get latest(): Snap | null {
-    return this.snaps[this.snaps.length - 1] ?? null
+    return this.buf.latest ?? null
   }
 
   /** The socket was replaced. The server forgets in-flight inputs, so drop them too. */
   resetStream() {
     this.pending = []
+    this.optimistic.reset()
+    this.buf.clear()
+    this.glides.clear()
   }
 
   receive(msg: ServerMsg) {
-    if (msg.type === "events") this.events.push(...msg.events)
-    else if (msg.type === "snapshot") this.snapshot(msg)
+    if (msg.type === "events") {
+      for (const e of msg.events) {
+        if (e.carId === this.carId && e.kind === "gadget" && this.optimistic.confirmWhere((p) => p.kind === "gadget")) continue
+        if (e.carId === this.carId && e.kind === "landing" && this.optimistic.confirmWhere((p) => p.kind === "landing")) continue
+        this.events.push(e)
+      }
+    } else if (msg.type === "snapshot") {
+      this.snapshot(msg)
+    }
   }
 
   private snapshot(msg: Extract<ServerMsg, { type: "snapshot" }>) {
     const last = this.latest
     if (last && msg.tick <= last.tick) return
-    this.snaps.push({ tick: msg.tick, view: msg.view })
-    while (this.snaps.length > SNAP_KEEP) this.snaps.shift()
-    const d = msg.tick - this.est
-    if (!last || Math.abs(d) > TICK_HZ / 2) this.est = msg.tick
-    else this.est += d * 0.1
+    if (last && msg.view.round !== last.view.round) {
+      this.buf.clear()
+      this.glides.clear()
+    }
+    this.buf.push(msg.tick * DT, { tick: msg.tick, view: msg.view }, this.clock)
     const acked = this.pending.find((p) => p.seq === msg.ack)
-    if (acked) this.ackEngine = !!acked.input.engine
+    if (acked) {
+      this.ackEngine = !!acked.input.engine
+      this.ackGadget = acked.input.gadget ?? null
+    }
     this.pending = this.pending.filter((p) => p.seq > msg.ack)
-    this.reconcile(msg.view, msg.you)
+    this.reconcile(msg.view, msg.you, msg.ack)
   }
 
   /** Resets to the server's body for the last acked input, then replays everything still in flight. */
-  private reconcile(view: WorldView, you: Body | null) {
+  private reconcile(view: WorldView, you: Body | null, ack = 0) {
     const car = view.cars.find((c) => c.ownerId === this.myId && !c.ghost)
     const spec = car ? VEHICLE_BY_ID.get(car.vehicle) : undefined
     if (!you || !car || !spec) {
@@ -127,11 +158,17 @@ export class NetClient {
       this.err = { x: 0, z: 0, h: 0 }
       this.proxies = []
       this.proxyErr.clear()
+      this.optimistic.reset()
       return
     }
     const before = this.body ? this.visual() : null
     const beforeProxies = new Map(this.proxies.map((p) => [p.id, this.proxyVisual(p)]))
     const fresh = car.id !== this.carId
+    if (fresh) {
+      this.optimistic.reset()
+      this.predictedGadgetCd = [car.gadgets?.[0]?.cooldown ?? 0, car.gadgets?.[1]?.cooldown ?? 0]
+      this.predictedGadgetCharges = [car.gadgets?.[0]?.charges ?? null, car.gadgets?.[1]?.charges ?? null]
+    }
     this.carId = car.id
     this.role = car.role
     this.vehicle = spec
@@ -142,6 +179,7 @@ export class NetClient {
     this.body = clone(you)
     this.prevBody = clone(you)
     this.engineHeld = this.ackEngine
+    this.gadgetHeld = this.ackGadget
     this.proxies = []
     for (const c of view.cars) {
       const s = VEHICLE_BY_ID.get(c.vehicle)
@@ -151,8 +189,33 @@ export class NetClient {
     }
     this.proxies.sort((a, b) => a.id - b.id)
     this.replaying = true
-    for (const p of this.pending) this.advance(p.input)
+    for (const p of this.pending) this.advance(p.input, p.seq)
     this.replaying = false
+    const isConfirmed = (ev: { kind: GetawayOptimisticKind; payload: GetawayOptimisticPayload }) => {
+      if (ev.kind === "gadget") {
+        const slot = ev.payload.slot ?? 0
+        const sg = car.gadgets?.[slot]
+        const spec = ev.payload.gadgetId ? GADGETS[ev.payload.gadgetId] : undefined
+        if (!sg || !spec) return false
+        return sg.charges < (ev.payload.prevCharges ?? sg.charges) || sg.cooldown >= spec.cooldown - 0.25
+      }
+      if (ev.kind === "engine") return Boolean(you.engineOff) === Boolean(ev.payload.engineOff)
+      if (ev.kind === "boost") return Boolean(you.boosting) || Boolean(this.body?.boosting) || you.boostFuel < (ev.payload.prevFuel ?? 1) - 1e-4
+      return true
+    }
+    while (this.optimistic.confirmWhere((ev) => ev.seq <= ack && isConfirmed(ev))) {
+      // Confirm all predictions whose server effect is already visible at `ack`.
+    }
+    // `socketJitter` bridges brief stalls with stand-ins before carrying late edges forward,
+    // so only reject once `ack` has passed the bridge window without the server applying the action.
+    this.optimistic.reconcile(ack - 4, isConfirmed)
+    for (const slot of [0, 1] as const) {
+      if (!this.optimistic.hasPending("gadget", `gadget:${slot}`)) {
+        const sg = car.gadgets?.[slot]
+        this.predictedGadgetCd[slot] = sg?.cooldown ?? 0
+        this.predictedGadgetCharges[slot] = sg ? sg.charges : null
+      }
+    }
     const errs = new Map<number, Pose>()
     if (!fresh)
       for (const p of this.proxies) {
@@ -175,12 +238,20 @@ export class NetClient {
   }
 
   /** One predicted tick, following World.step: phase clock first, then drive or hold still. Waiting never advances on its own. */
-  private advance(input: Input) {
+  private advance(input: Input, seq = this.seq) {
     const b = this.body
     if (!b || !this.vehicle) return
     this.prevBody = clone(b)
+    if (!this.replaying) {
+      for (const slot of [0, 1] as const) {
+        if (this.predictedGadgetCd[slot] > 0) this.predictedGadgetCd[slot] = Math.max(0, this.predictedGadgetCd[slot] - DT)
+      }
+    }
     const press = !!input.engine && !this.engineHeld
     this.engineHeld = !!input.engine
+    const g = input.gadget ?? null
+    const gadgetPress = g !== null && g !== this.gadgetHeld ? g : null
+    this.gadgetHeld = g
     this.phaseT += DT
     if (this.phase === "end") return
     if (this.phase === "intro" && this.phaseT >= INTRO_SECONDS) {
@@ -197,8 +268,50 @@ export class NetClient {
       b.vz *= 0.85
       return
     }
-    if (press) toggleEngine(b)
+    if (press) {
+      toggleEngine(b)
+      if (!this.replaying) {
+        const nextOff = !!b.engineOff
+        this.optimistic.predict({
+          seq,
+          kind: "engine",
+          key: "engine",
+          payload: { engineOff: nextOff },
+          reapply: () => {
+            if (this.body) this.body.engineOff = nextOff
+          },
+          rollback: () => {
+            if (this.body) this.body.engineOff = !nextOff
+          },
+        })
+      }
+    }
+    if (!this.replaying && gadgetPress !== null) {
+      this.predictGadget(gadgetPress, seq)
+    }
+    const wasBoosting = !!b.boosting
+    const prevFuel = b.boostFuel
     let impact = stepAndCollide(b, input, this.vehicle, DT, this.boxes, undefined, this.city.ramps)
+    if (!this.replaying && !wasBoosting && b.boosting) {
+      this.optimistic.predict({
+        seq,
+        kind: "boost",
+        key: "boost",
+        payload: { prevFuel },
+        rollback: () => {
+          if (this.body) this.body.boosting = false
+        },
+      })
+    }
+    if (!this.replaying && b.landing > 0) {
+      this.events.push({ t: this.latest?.view.t ?? 0, kind: "landing", text: "", carId: this.carId, impact: b.landing })
+      this.optimistic.predict({
+        seq,
+        kind: "landing",
+        key: "landing",
+        payload: {},
+      })
+    }
     if (b.tunnels !== this.prevBody.tunnels) {
       this.prevBody = clone(b)
       this.err = { x: 0, z: 0, h: 0 }
@@ -220,6 +333,33 @@ export class NetClient {
     if (touched) collideBoxes(b, this.vehicle, this.boxes)
     this.impactPrev = this.impactNow
     this.impactNow = impact
+  }
+
+  private predictGadget(rawSlot: 0 | 1, seq: number) {
+    const slot: 0 | 1 = SURVIVAL ? 0 : rawSlot
+    const gid = LOADOUT[this.role][slot]
+    if (SURVIVAL && (this.role !== "cop" || gid !== "spike")) return
+    const phaseOk = this.role === "cop" ? this.phase === "chase" : (this.phase === "headstart" || this.phase === "chase") && !this.latest?.view.busted
+    if (!phaseOk) return
+    const cd = this.predictedGadgetCd[slot]
+    if (cd > 0.05) return
+    const spec = GADGETS[gid]
+    const prevCharges = this.predictedGadgetCharges[slot] ?? (SURVIVAL && gid === "spike" ? MAX_STRIPS : spec.charges)
+    if (prevCharges <= 0 && !(SURVIVAL && gid === "spike")) return
+    this.predictedGadgetCd[slot] = spec.cooldown
+    this.predictedGadgetCharges[slot] = Math.max(0, prevCharges - 1)
+    const carName = this.latest?.view.cars.find((c) => c.id === this.carId)?.name ?? "Unit"
+    this.events.push({ t: this.latest?.view.t ?? 0, kind: "gadget", text: `${carName} deployed ${spec.name}`, carId: this.carId })
+    this.optimistic.predict({
+      seq,
+      kind: "gadget",
+      key: `gadget:${slot}`,
+      payload: { slot, gadgetId: gid, prevCharges },
+      rollback: () => {
+        this.predictedGadgetCd[slot] = 0
+        this.predictedGadgetCharges[slot] = prevCharges
+      },
+    })
   }
 
   /** Mirrors World.moving for the predicted phase. */
@@ -278,7 +418,6 @@ export class NetClient {
 
   /** Runs fixed 30 Hz input ticks (sending each input), then builds the view to draw. Null until the first snapshot. */
   update(dt: number, raw: Input): WorldView | null {
-    this.est += dt * TICK_HZ
     this.acc = Math.min(this.acc + dt, 0.25)
     const input = quantizeInput(raw)
     while (this.acc >= DT) {
@@ -287,36 +426,56 @@ export class NetClient {
       this.send({ type: "input", seq, input })
       this.pending.push({ seq, input })
       if (this.pending.length > MAX_PENDING) this.pending.shift()
-      this.advance(input)
+      this.advance(input, seq)
     }
     this.clock += dt
     ease(this.err, dt)
     for (const e of this.proxyErr.values()) ease(e, dt)
-    return this.view()
+    return this.view(dt)
   }
 
-  /** Snapshots bracketing (estimated server tick - INTERP_TICKS), blended, with your predicted car merged in. */
-  view(): WorldView | null {
+  /** Snapshots bracketing the adaptive time-stretched render time, blended, with your predicted car merged in. */
+  view(dt = 0): WorldView | null {
     const latest = this.latest
     if (!latest) return null
-    const target = this.est - INTERP_TICKS
-    let a = this.snaps[0]!
-    let b = a
-    for (const s of this.snaps) {
-      if (s.tick <= target) a = s
-      b = s
-      if (s.tick >= target) break
-    }
-    const spanTicks = b.tick - a.tick
-    const over = Math.min(0.25, Math.max(0, (target - b.tick) * DT))
+    const sample = this.buf.sample(this.clock)
+    if (!sample) return this.merge(latest.view, latest.view)
+    const { a, b, t, over } = sample
+    const span = Math.max(0, (b.tick - a.tick) * DT)
     let view =
-      spanTicks <= 0
+      span <= 0
         ? over > 0
           ? lerpView(b.view, b.view, 1, 0, over)
           : b.view
-        : lerpView(a.view, b.view, Math.max(0, Math.min(1, (target - a.tick) / spanTicks)), spanTicks * DT, over)
-    if (view.round !== latest.view.round) view = latest.view
+        : lerpView(a.view, b.view, t, span, over)
+    if (view.round !== latest.view.round) {
+      view = latest.view
+      this.glides.clear()
+    } else {
+      view = this.applyGlides(view, dt)
+    }
     return this.merge(view, latest.view)
+  }
+
+  private applyGlides(view: WorldView, dt: number): WorldView {
+    let changed = false
+    const cars = view.cars.map((c) => {
+      if (c.id === this.carId || c.ownerId === this.myId) return c
+      if (c.ghost) {
+        this.glides.get(c.id)?.reset()
+        return c
+      }
+      let g = this.glides.get(c.id)
+      if (!g) {
+        g = new Glide(10, 4)
+        this.glides.set(c.id, g)
+      }
+      if (dt > 0) g.step(c.x, c.z, c.vx, c.vz, dt)
+      if (Math.abs(g.x) < 1e-4 && Math.abs(g.y) < 1e-4) return c
+      changed = true
+      return { ...c, x: c.x + g.x, z: c.z + g.y }
+    })
+    return changed ? { ...view, cars } : view
   }
 
   private merge(view: WorldView, latest: WorldView): WorldView {
@@ -329,6 +488,18 @@ export class NetClient {
     const mine: CarView = { ...base, x: p.x, z: p.z, h: p.h, vx: b.vx, vz: b.vz, speed: speedOf(b), drift: lateralSpeed(b), stun: b.stun, boost: b.boostFuel, wheels: b.wheels ?? 0, ghost: false, impact }
     Object.assign(mine, { tunnels: b.tunnels, y: Math.max(0, p.y), vy: b.vy, airborne: b.airborne, landing: b.landing, landings: b.landings, braking: b.braking, boosting: b.boosting })
     mine.engineOff = !!b.engineOff
+    const latestMine = latest.cars.find((c) => c.id === this.carId) ?? base
+    if (latestMine.gadgets) {
+      mine.gadgets = latestMine.gadgets.map((g, i) => {
+        const slot = (i === 1 ? 1 : 0) as 0 | 1
+        if (!this.optimistic.hasPending("gadget", `gadget:${slot}`)) return g
+        const cooldown = Math.max(g.cooldown, this.predictedGadgetCd[slot])
+        const charges = this.predictedGadgetCharges[slot] ?? g.charges
+        const phaseOk = mine.role === "cop" ? this.phase === "chase" : (this.phase === "headstart" || this.phase === "chase") && !latest.busted
+        const ready = (!SURVIVAL || (mine.role === "cop" && g.id === "spike")) && cooldown <= 0 && (charges > 0 || (SURVIVAL && g.id === "spike")) && phaseOk
+        return { ...g, cooldown, charges, ready }
+      })
+    }
     const proxies = new Map(this.proxies.map((q) => [q.id, q]))
     const cars = view.cars.filter((c) => c.ownerId !== this.myId || c.id === this.carId).map((c) => (c.id === this.carId ? mine : this.near(c, p, proxies.get(c.id))))
     if (!cars.includes(mine)) cars.push(mine)
