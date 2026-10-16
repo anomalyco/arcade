@@ -12,6 +12,7 @@ describe("live table lamps", () => {
   })
 
   test("the start houses' lamps write warm unshadowed lights, nearest first, up to the cap", () => {
+    const was = propDressingState.on
     propDressingState.on = true
     try {
       const town = makeTown(7)
@@ -29,7 +30,7 @@ describe("live table lamps", () => {
       expect(lights[o + 13]).toBe(-1)
       expect(live.write(lights, 1, 8, 0, l.x, l.z, 1, 0, 0.55)).toBe(1)
     } finally {
-      propDressingState.on = false
+      propDressingState.on = was
     }
   })
 })

@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { makeTown } from "../shared/map"
 import { furnishedHouses, propFloorFootprints, propLamps } from "../src/props/furnish"
 import { propDressingState, propLevelSignature } from "../src/props/state"
 
-const reset = () => Object.assign(propDressingState, { on: false, density: 1, seed: 0 })
+const initial = { ...propDressingState }
+const off = () => Object.assign(propDressingState, { on: false, density: 1, seed: 0 })
+const restore = () => Object.assign(propDressingState, initial)
 
 describe("prop dressing exports for the level bake", () => {
-  afterEach(reset)
+  beforeEach(off)
+  afterEach(restore)
 
   test("nothing while off, and the level key is unchanged", () => {
     const town = makeTown(7)

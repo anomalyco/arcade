@@ -35,7 +35,7 @@
   from `src/props/`: anchors replace the gameplay furniture's boxes one for one (collisions stay `PROP_SHAPES`), and
   clutter is client-only. The level bake reads the same plan through `propDressingState`: floor clutter over 0.3 m
   is grounded like furniture (`propFloorFootprints`), and table lamps bake pools (`propLamps`), with shades glowing on
-  `TABLE_LAMP_SLOT`. Lab: Backquote › Props ("Furnish start houses", default off) and the Lab's `props` station.
+  `TABLE_LAMP_SLOT`. On by default; Lab: Backquote › Props ("Furnish start houses") and the Lab's `props` station.
   Stills and paired GPU cost: `bun scripts/props-stills.ts` (via `hivemind run --kind browser`).
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. Stills: `bun scripts/look-stills.ts`
