@@ -84,6 +84,7 @@ export const LAB_KINDS: readonly LabKind[] = [
     choices: [choice("direction", "Art direction", "subject", "vignette", vignetteDirections)],
   },
   { id: "rug", label: "Rug", subject: "A procedural rug: pattern, palette and wear", host: { kind: "section", section: "rugs" }, panels: still },
+  { id: "furniture", label: "Furniture", subject: "A generated furniture or clutter prop and its LODs", host: { kind: "section", section: "props" }, panels: still },
   {
     id: "style",
     label: "Style",
