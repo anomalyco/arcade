@@ -5,8 +5,8 @@
  *   bun scripts/bean-stills.ts --out <dir>
  *
  * Captures the start house's bedroom and hall at 21:00 with the flashlight on, Today and Soft Bean, full frame and a
- * 2× crop around the survivor; a four-player lineup in the living room with flashlights on and off, Today and Soft
- * Bean; then labelled comparison sheets; then alternates Today and Soft Bean on the same frozen bedroom frame timing
+ * 2× crop around the survivor; a four-player lineup in the living room with flashlights on and off and in the unlit
+ * entry hall, Today and Soft Bean; then labelled comparison sheets; then alternates Today and Soft Bean on the same frozen bedroom frame timing
  * each with the renderer's timestamp queries (3456×1894). Headless Metal Chromium, muted, no visible window.
  */
 import assert from "node:assert/strict"
@@ -42,11 +42,14 @@ const FACE = Math.PI / 2
 // Teammates are only drawn inside the local survivor's sight (its 2.5 m awareness covers the sides), so the local
 // survivor stands second from the left.
 const LINEUP = { x: 25, y: 32.6, aim: FACE, mates: [{ x: 24.15, y: 32.6, aim: FACE }, { x: 25.85, y: 32.6, aim: FACE }, { x: 26.7, y: 32.6, aim: FACE }] }
+// The same four in a column down the unlit entry hall: what each keeps of its colour with no light on it.
+const HALL_LINEUP = { x: 27.7, y: 32.3, aim: FACE, mates: [{ x: 27.7, y: 31.45, aim: FACE }, { x: 27.7, y: 33.15, aim: FACE }, { x: 27.7, y: 34.0, aim: FACE }] }
 const shots: Shot[] = [
   { name: "bedroom-21h", hour: 21, zoom: 26, ...BEDROOM, flashlight: true },
   { name: "hall-21h", hour: 21, zoom: 26, ...HALL, flashlight: true },
   { name: "lineup-21h-lights", hour: 21, zoom: 18, ...LINEUP, flashlight: true },
-  { name: "lineup-21h-dark", hour: 21, zoom: 18, ...LINEUP, flashlight: false },
+  { name: "lineup-21h-lamps", hour: 21, zoom: 18, ...LINEUP, flashlight: false },
+  { name: "lineup-21h-dark", hour: 21, zoom: 18, ...HALL_LINEUP, flashlight: false },
 ]
 const STYLES = [{ id: "today", style: 0, label: "Today" }, { id: "bean", style: SOFT_BEAN_STYLE, label: "Soft Bean" }] as const
 const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, .coop-tag"
@@ -154,8 +157,8 @@ try {
   const pair = (shot: string, close = false) => STYLES.map(st => ({ label: st.label, file: files[`${shot}-${st.id}${close ? "-close" : ""}`]! }))
   await sheet(sheetPage, resolve(out, "compare-bedroom.jpg"), "Bedroom, 21:00, flashlight on", [pair("bedroom-21h", true), pair("bedroom-21h")], 760)
   await sheet(sheetPage, resolve(out, "compare-hall.jpg"), "Entry hall, 21:00, flashlight on", [pair("hall-21h", true), pair("hall-21h")], 760)
-  await sheet(sheetPage, resolve(out, "lineup.jpg"), "Four players, living room at 21:00: flashlights on (top), off (bottom)", [
-    pair("lineup-21h-lights", true), pair("lineup-21h-dark", true),
+  await sheet(sheetPage, resolve(out, "lineup.jpg"), "Four players at 21:00: living room with flashlights on, by lamplight alone, and unlit in the entry hall", [
+    pair("lineup-21h-lights", true), pair("lineup-21h-lamps", true), pair("lineup-21h-dark", true),
   ], 760)
   await sheet(sheetPage, resolve(out, "compare.jpg"), "Soft Bean prototype: Today vs Soft Bean at 21:00", [
     pair("bedroom-21h", true), pair("hall-21h", true), pair("lineup-21h-dark", true),

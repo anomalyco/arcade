@@ -163,7 +163,7 @@ export function simpleFigureMeshes(shape: SimpleFigureShape, opts: SimpleFigureO
  */
 export type SoftBeanShape = { head: number; body: number; limb: number; round: number; face: boolean }
 
-export const DEFAULT_SOFT_BEAN: SoftBeanShape = { head: 1, body: 1, limb: 1, round: 0.6, face: true }
+export const DEFAULT_SOFT_BEAN: SoftBeanShape = { head: 1, body: 1, limb: 1, round: 0.35, face: true }
 
 /** Eye colour: the instance tint multiplies it, so the eyes stay near-black on every player colour. */
 const EYE = [0.02, 0.02, 0.025] as const
