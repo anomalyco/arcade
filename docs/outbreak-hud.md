@@ -180,6 +180,30 @@ device pixels each frame. Fewer words: container strips drop the title, the "bel
 remain) and the "1–3 Take one" hint, since each item already carries its digit; car prompts say Drive, Ride, Fit
 battery, Unlock, Refuel, No battery, No keys or Empty tank instead of "Drive Sedan (0/4 · 85% fuel)".
 
+### Action glyphs (D-25)
+
+Kit picked Bold Glyph on D-25, so prompts are now a key cap and a filled glyph, with words only where the glyph would
+be ambiguous: `[E] door-open ◦ lock` on a shut door, `[E] eye ◦ window-open` on a closed window, `[Shift][E] eye` for a
+door's peephole, a boot beside the LMB cap on a downed zombie. The words that stay are "Locked" (a keyed door you can't
+open, which would otherwise look like the Lock action), the item a ground drop holds ("9mm Ammo") and "Ride" (the seat
+glyph alone could mean sit). Discovery's word fading still applies to those words.
+
+- **Glyph set**: `@arcade/kit/client/action-glyphs` (`actionGlyphHtml`, 35 glyphs). Each is hand-authored on a
+  24-unit grid as filled shapes plus a few round strokes, in `currentColor`, so the prompt's ink, the hold verb's
+  dim and warm colours and any idle dimming apply as they do to text. Main edges sit on whole grid units, so 24 px is
+  pixel-exact at DPR 1 and 2, and 16 px at DPR 1.5. Smaller sizes add optical weight (fills outlined by 0.45 units
+  at 20 px and 0.9 at 16 px) so thin parts keep a device pixel. "No battery", "No keys" and "Empty tank" are their
+  base glyphs with a bar cut through. The glyph box is a whole number of CSS pixels and sits in the prompt's
+  pixel-snapped row.
+- **Mapping**: `src/hud/prompt-glyphs.ts` (`promptGlyph(kind, action)`) picks the glyph and the word to keep for every
+  prompt the game builds, listed in `PROMPT_ACTIONS`. Unknown actions keep their label and draw no glyph. The glyph
+  carries the action's full label as `aria-label` and `<title>`. `tests/prompt-glyphs.test.ts` scans `shared/` for
+  every prompt label (`InteractAction` literals and the vehicle `actionLabel`s) and fails if one is not listed or has
+  no glyph, so a new verb needs a glyph.
+- **Lab**: HUD › Prompt icons (on by default) and Prompt icon size (16, 20 or 24 px, default 24). The `outbreak-hud`
+  station's "Prompt icons" variant (`hud.state` "icons") shows the whole set at 16, 20 and 24 px with the prompts
+  that use each glyph and any word kept beside it, drawn by the same code as the prompt.
+
 Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
 softening instead of being reused by index.
 

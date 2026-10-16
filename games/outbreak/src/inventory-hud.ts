@@ -1,8 +1,8 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { findFinisherTarget } from "../shared/combat"
-import { holdProgress, type InteractTarget } from "../shared/interact"
+import { holdProgress, type InteractAction, type InteractTarget } from "../shared/interact"
 import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
@@ -11,6 +11,7 @@ import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/
 import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
 import { hudMotion, snapToPixels } from "./hud/motion"
 import { PromptView } from "./hud/prompt"
+import { FINISHER_GLYPH, promptGlyph, promptGlyphHtml } from "./hud/prompt-glyphs"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const MARKER_RANGE = 30
@@ -24,6 +25,10 @@ function loadFamiliar(): Record<string, number> {
     return {}
   }
 }
+
+/** Prompt glyphs (Lab › HUD): on by default, at a CSS pixel size of 16, 20 or 24. */
+export type PromptGlyphSettings = { promptIcons: boolean; promptIconSize: number }
+export const DEFAULT_PROMPT_GLYPH_SETTINGS: PromptGlyphSettings = { promptIcons: true, promptIconSize: 24 }
 
 /** Where an item lands when taken, for the strip's small tag. */
 function destination(progression: OutbreakProgression, item: string): "belt" | "hand" | "pack" {
@@ -61,8 +66,9 @@ export class InventoryHud {
     /** The Discovery settings: searched containers and drops shown as props, prompt words that fade with use. */
     private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
     /** Dock dimming (Lab › HUD). */
-    dockSettings: DockSettings = DEFAULT_DOCK_SETTINGS,
+    dockSettings: DockSettings & Partial<PromptGlyphSettings> = DEFAULT_DOCK_SETTINGS,
   ) {
+    this.glyphs = "promptIcons" in dockSettings ? (dockSettings as PromptGlyphSettings) : DEFAULT_PROMPT_GLYPH_SETTINGS
     const { belt, hotbar, pack } = els
     const dock = belt?.closest<HTMLElement>("#dock")
     const hud = dock?.closest<HTMLElement>("#hud")
@@ -70,6 +76,9 @@ export class InventoryHud {
     if (belt && hotbar && pack && dock && hud && sheet) this.dock = new Dock({ hud, dock, belt, hotbar, pack, sheet }, dockSettings)
     if (els.prompt) this.prompt = new PromptView(els.prompt)
   }
+
+  /** Read live, so Lab changes apply on the next frame. */
+  private readonly glyphs: PromptGlyphSettings
 
   /** The floating world prompt. */
   readonly prompt: PromptView | null = null
@@ -108,9 +117,9 @@ export class InventoryHud {
     return label
   }
 
-  private cap(code: string, target: InteractTarget, label: string, options?: Parameters<typeof keyPromptHtml>[2]): string {
-    const word = this.word(target, label)
-    return word ? keyPromptHtml(code, word, options) : keyCapHtml(code, options)
+  private cap(code: string, target: InteractTarget, action: InteractAction): string {
+    const face = this.actionHtml(target, action)
+    return face ? `<span class="akp">${keyCapHtml(code)}<span class="akp-label">${face}</span></span>` : keyCapHtml(code)
   }
 
   /** The store whose contents the strip above `target` lists, if it lists any. */
@@ -181,7 +190,7 @@ export class InventoryHud {
       }
       prompt.update({
         target: `finisher:${finTarget.id}`,
-        html: `<div class="prompt-line">${keyCapHtml("Mouse0")}</div>`,
+        html: `<div class="prompt-line"><span class="akp">${keyCapHtml("Mouse0")}${this.glyphs.promptIcons ? promptGlyphHtml(FINISHER_GLYPH, "Finish off", this.glyphs.promptIconSize) : ""}</span></div>`,
         x: proj.x,
         y: proj.y,
         place: "above",
@@ -210,16 +219,27 @@ export class InventoryHud {
     })
   }
 
-  /** The key row: E and its verb, the hold verb on the same ringed cap, and Shift+E when there is one. */
+  /**
+   * One action's face beside its cap: the glyph (D-25) and any word it still needs, or the label alone with prompt
+   * icons off. Words still fade with familiarity (Discovery › Fade words).
+   */
+  private actionHtml(target: InteractTarget, action: InteractAction): string {
+    const g = this.glyphs.promptIcons ? promptGlyph(target.kind, action) : { glyph: null, word: action.label, label: action.label }
+    const word = g.word ? this.word(target, g.word) : ""
+    const glyph = g.glyph ? promptGlyphHtml(g.glyph, g.label, this.glyphs.promptIconSize) : ""
+    return `${glyph}${word ? `<span class="akp-word">${esc(word)}</span>` : ""}`
+  }
+
+  /** The key row: E and its action, the hold action on the same ringed cap, and Shift+E when there is one. */
   private lineHtml(prompt: InteractTarget): string {
     const parts: string[] = []
-    const tap = this.word(prompt, prompt.primary.label)
+    const tap = this.actionHtml(prompt, prompt.primary)
     if (prompt.secondary) {
-      const held = this.word(prompt, prompt.secondary.label)
+      const held = this.actionHtml(prompt, prompt.secondary)
       const cap = keyCapHtml("KeyE", { hold: true })
-      parts.push(`<span class="akp akp-dual">${cap}${tap ? `<span class="akp-label">${esc(tap)}</span>` : ""}${held ? `<span class="akp-hold"><i aria-hidden="true"></i>${esc(held)}</span>` : ""}</span>`)
-    } else parts.push(this.cap("KeyE", prompt, prompt.primary.label))
-    if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt.label)}</span>`)
+      parts.push(`<span class="akp akp-dual">${cap}${tap ? `<span class="akp-label">${tap}</span>` : ""}${held ? `<span class="akp-hold"><i aria-hidden="true"></i>${held}</span>` : ""}</span>`)
+    } else parts.push(this.cap("KeyE", prompt, prompt.primary))
+    if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt)}</span>`)
     return `<div class="prompt-line">${parts.join('<span class="sep" aria-hidden="true"></span>')}</div>`
   }
 
