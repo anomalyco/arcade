@@ -680,8 +680,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   (`recover(.., "landed")`, the slot frees at once) or sunk (`"crashed"`, 40 s). Either way `recover` puts the driver back
   in the role they launched from (`CrewPlayer.back`: the helm or their gun, if still free; else a pilot on deck). A
   client's `recover` for a boat is ignored. Tab shows drivers as BOAT; the ops menu opens read-only at sea (AT SEA).
-- Sim (`boatStep`, fixed 60 Hz, deterministic): 45 kn, ~3.6 s to 90%, Shift boost (×1.2 speed for 3 s, 10 s recharge),
-  astern, ~45-60 m circle at speed heeling into the turn, planing trim and lift, 10 buoyancy points with real gravity
+- Sim (`boatStep`, fixed 60 Hz, deterministic): 110 kn (the carrier's 92 kn plus a margin), ~4 s to 90%, Shift boost
+  (×1.2 speed for 3 s, 10 s recharge), astern, ~85 m circle at speed heeling into the turn, planing trim and lift, 10 buoyancy points with real gravity
   (airborne off storm crests: up to ~2 s and ~11 m in heavy seas, slams on landing; calm swells hop < 3 m), jets only
   push and steer while the stern is wet, island grounding and carrier-hull bounces (`carrierHalfBeam`), soft world edge.
   Remote boats float locally (`boatFloat`) on the plan pose.

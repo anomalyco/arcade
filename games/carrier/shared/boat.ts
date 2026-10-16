@@ -38,14 +38,14 @@ export const BOAT = {
 
   // Propulsion: the throttle order maps to a target speed; below it the jets push with thrust · (1 − fade · u/U),
   // easing off over the last `band` m/s; above it the hull coasts down on its drag.
-  /** 45 kn at full power. */
-  topSpeed: 45 * KNOT,
+  /** 110 kn at full power: a fast interceptor, well clear of the carrier's 92 kn. */
+  topSpeed: 110 * KNOT,
   /** Acceleration from rest (m/s²): ~4 s to 90% of top speed. */
-  thrust: 7.6,
+  thrust: 18.5,
   thrustFade: 0.45,
   band: 1.6,
   /** Coasting deceleration at top speed (m/s²), its linear share, and a friction so it stops. */
-  coastDrag: 2.4,
+  coastDrag: 5.8,
   linearShare: 0.3,
   friction: 0.18,
   /** A transom-first hull drags harder: drag multiplier going astern. */
@@ -135,7 +135,7 @@ export const BOAT = {
 
   /** World edge: beyond this radius a growing current pushes the boat back (as SHIP.edge). */
   edge: 8500,
-  edgePush: 0.01,
+  edgePush: 0.025,
 } as const
 
 /** 0 launching (on the crane), 1 driving, 2 recovering (crane), 3 sinking. */

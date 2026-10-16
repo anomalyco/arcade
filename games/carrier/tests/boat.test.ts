@@ -31,7 +31,7 @@ import {
   turretStep,
   unpackBoat,
 } from "../shared/boat"
-import { headingTo, makeShip } from "../shared/ship"
+import { SHIP, headingTo, makeShip } from "../shared/ship"
 import { archipelagoFor, terrainHeight } from "../shared/islands"
 import { makeSea, seaHeight, type Sea } from "../shared/sea"
 import { makeWeatherSea, WEATHER_PRESETS } from "../shared/weather"
@@ -88,15 +88,16 @@ describe("boat sim", () => {
     expect(Math.abs(b.u)).toBeLessThan(0.05)
   })
 
-  test("reaches ~45 kn, most of it in ~4 s", () => {
+  test("reaches ~110 kn, faster than the carrier, most of it in ~4 s", () => {
     const sea = calm()
     const b = makeBoat(0, 0, 0)
     let t90 = -1
     run(b, 15, FULL, sea, null, [], (x) => {
       if (t90 < 0 && x.u > 0.85 * BOAT.topSpeed) t90 = x.t
     })
-    expect(b.u / KNOT).toBeGreaterThan(43)
-    expect(b.u / KNOT).toBeLessThan(47)
+    expect(b.u / KNOT).toBeGreaterThan(106)
+    expect(b.u / KNOT).toBeLessThan(114)
+    expect(b.u).toBeGreaterThan(SHIP.topSpeed * 1.15)
     expect(t90).toBeGreaterThan(2)
     expect(t90).toBeLessThan(5)
   })
@@ -114,14 +115,14 @@ describe("boat sim", () => {
     expect(b.boost).toBe(1)
   })
 
-  test("turns a tight circle at speed (~60 m across) and heels into it", () => {
+  test("turns a tight circle at speed (~85 m across) and heels into it", () => {
     const sea = calm()
     const b = makeBoat(0, 0, 0)
     run(b, 10, FULL, sea)
     run(b, 6, { ...FULL, steer: 1 }, sea)
     const radius = b.u / b.r
-    expect(radius * 2).toBeGreaterThan(40)
-    expect(radius * 2).toBeLessThan(80)
+    expect(radius * 2).toBeGreaterThan(60)
+    expect(radius * 2).toBeLessThan(110)
     // Heels INTO a starboard turn: starboard down is roll > 0.
     expect(b.roll).toBeGreaterThan(0.05)
   })
