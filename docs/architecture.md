@@ -55,7 +55,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | Shared module (`@arcade/kit` / `@arcade/knobs`) | Responsibility | Getaway | Blackout | Outbreak | Carrier | Lab | Wings | Brawl | Archers |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | `sim/rng` | Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`) | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | — | — | Yes | — |
+| `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | Yes | — | Yes | — |
 | `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — | — | — |
 | `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — | — | — |
 | `sim/flow-field` | Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles | — | — | Yes | — | — | — | — | — |
@@ -69,7 +69,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{cull,targets,pass-graph}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{renderer,shaders,level}` & `limits` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | — | — | Yes | Yes |
+| `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | — | Yes | Yes |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — | Yes | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | — | Yes | Yes |
