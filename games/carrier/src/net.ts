@@ -145,8 +145,23 @@ const RETRY_MAX_MS = 8000
 /** Unchanged helm orders are resent this often anyway (a lost frame never leaves the ship on a stale order). */
 const HELM_RESEND_MS = 1000
 const RELOAD_KEY = "carrier.reloadAt"
+const TOKEN_PREFIX = "carrier.token."
 /** The local player's id offline. */
 const SOLO_ID = 1
+
+function readToken(room: string): string | null {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage.getItem(TOKEN_PREFIX + room) : null
+  } catch {
+    return null
+  }
+}
+
+function writeToken(room: string, token: string): void {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(TOKEN_PREFIX + room, token)
+  } catch {}
+}
 
 const randomU32 = () => crypto.getRandomValues(new Uint32Array(1))[0]!
 
@@ -191,6 +206,7 @@ class NetClient implements Net {
   private clock = new ClockSync()
   private world: World | null = null
   private ws: WebSocket | null = null
+  private token: string | null = null
   private helloAt = 0
   private pings = 0
   private retries = 0
@@ -213,6 +229,7 @@ class NetClient implements Net {
       return
     }
     this.room = roomName(opts.room)
+    this.token = readToken(this.room)
     this.welcomeTimer = setTimeout(() => this.world || this.offline(randomU32()), WELCOME_MS)
     this.open()
   }
@@ -448,6 +465,7 @@ class NetClient implements Net {
       // Back to the ship and role we had before the connection dropped.
       const me = this.crew && playerOf(this.crew, this.id)
       if (me) hello.back = { ship: me.ship, role: roleOf(me) }
+      if (this.token) hello.token = this.token
       ws.send(encode(hello))
       this.ping(ws)
     }
@@ -574,6 +592,10 @@ class NetClient implements Net {
         this.seed = msg.seed
         this.players = msg.players
         this.id = msg.id
+        if (msg.token) {
+          this.token = msg.token
+          if (this.room) writeToken(this.room, msg.token)
+        }
         this.dev = msg.dev === true
         this.state = "online"
         this.retries = 0
