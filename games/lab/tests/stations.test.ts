@@ -8,7 +8,7 @@ const dir = join(import.meta.dir, "../src/stations")
 const files = readdirSync(dir).filter(f => f.endsWith(".ts") && f !== "index.ts" && f !== "define.ts")
 const stations: LabStation[] = await Promise.all(files.map(async f => (await import(join(dir, f))).default as LabStation))
 // The Lab's own sections (packages/kit/lab/main.ts) plus the Audio section games/lab adds.
-const SHARED = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio"]
+const SHARED = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "world"]
 
 describe("Lab stations", () => {
   test("every station file validates", () => {

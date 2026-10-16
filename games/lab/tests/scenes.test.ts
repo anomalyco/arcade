@@ -21,7 +21,7 @@ const key = (c: StationCommand) => JSON.stringify([c.command, c.args ?? {}])
 describe("lab kinds", () => {
   test("every kind checks, and every Lab section has exactly one kind", () => {
     expect(checkKinds(LAB_KINDS)).toEqual([])
-    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles", "rugs"]
+    const sections = ["effects", "weather", "lighting", "looks", "materials", "foliage", "physics", "spawn", "audio", "getaway-effects", "blackout-effects", "fire-water", "splatter", "outbreak-vignette", "styles", "rugs", "world"]
     for (const section of sections) expect({ section, kinds: LAB_KINDS.filter(k => k.host.kind === "section" && k.host.section === section).length }).toEqual({ section, kinds: 1 })
   })
   test("the Feel arena example fits the Feel kind, and every featured knob is one its variants or settings use", () => {
@@ -70,7 +70,8 @@ describe("stations as labs", () => {
   test("every station migrates to valid kept scenes in a named area", () => {
     for (const s of scenes) expect({ id: s.id, problems: checkScene(s).ok ? [] : (checkScene(s) as { problems: string[] }).problems }).toEqual({ id: s.id, problems: [] })
     for (const c of collections) expect(checkCollection(c).ok).toBe(true)
-    expect(scenes.every(s => s.status === "kept")).toBe(true)
+    const archivedArea = STATION_AREAS.find(a => a.archived)!.stations
+    for (const s of scenes) expect({ id: s.id, status: s.status }).toEqual({ id: s.id, status: archivedArea.some(id => s.id === id || s.id.startsWith(`${id}-`)) ? "archived" : "kept" })
     const placed = new Set(scenes.map(s => s.id))
     for (const st of stations) expect(placed.has(st.id)).toBe(true)
     // A new station file needs a line in STATION_AREAS (games/lab/src/scenes/from-stations.ts): the collection Home lists it in.
@@ -98,13 +99,17 @@ describe("stations as labs", () => {
   })
   test("variants that switched section became their own scenes, and grid variants became the scene's grid", () => {
     expect(scenes.find(s => s.id === "explosions-splatter")?.host).toEqual({ kind: "section", section: "splatter" })
+    expect(scenes.find(s => s.id === "effects-splatter")?.host).toEqual({ kind: "section", section: "splatter" })
     expect(scenes.find(s => s.id === "outbreak")?.layout?.grid).toBe("fog")
     expect(notes.some(n => n.includes("explosions-splatter"))).toBe(true)
   })
   test("the migrated scenes load into a store as repo scenes without problems", () => {
     const store = createSceneStore({ storage: memorySceneStorage(), repo: { scenes, collections }, now: () => new Date(NOW) })
     expect(store.problems).toEqual([])
-    expect(store.collections().find(c => c.collection.id === "look-and-light")?.scenes.map(e => e.scene.id)).toEqual(["weather", "vegetation", "looks", "styles", "lighting", "materials", "rugs", "rugs-interiors"])
+    expect(store.collections().find(c => c.collection.id === "world")?.scenes.map(e => e.scene.id)).toEqual(["look-and-world", "effects", "effects-splatter"])
+    // The superseded look, light, weather, material, vegetation and effect labs wait in the archive.
+    expect(store.collections().find(c => c.collection.id === "archive")?.scenes).toEqual([])
+    expect(store.scenes({ archived: true }).filter(e => e.scene.status === "archived").map(e => e.scene.id).sort()).toEqual(["explosions", "explosions-splatter", "lighting", "looks", "materials", "smoke-fire", "vegetation", "weather"])
     expect(store.sweep()).toEqual({ archived: [], deleted: [] })
   })
 })

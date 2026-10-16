@@ -4,15 +4,15 @@ import { orderStations, type LabStation } from "@arcade/kit/lab/stations/types"
 import { kindOf } from "./kinds"
 
 /** The collection each station's scenes go into. Stations not listed go to "Stations". */
-export const STATION_AREAS: readonly { id: string; title: string; stations: readonly string[] }[] = [
-  { id: "effects", title: "Effects", stations: ["explosions", "smoke-fire", "blackout", "getaway"] },
-  { id: "look-and-light", title: "Look and light", stations: ["weather", "vegetation", "looks", "styles", "lighting", "materials", "rugs", "rugs-interiors"] },
+export const STATION_AREAS: readonly { id: string; title: string; stations: readonly string[]; archived?: boolean }[] = [
+  // Look, light, weather, materials, vegetation and effects share the base debug world and differ by knobs and presets.
+  { id: "world", title: "Look and world", stations: ["look-and-world", "effects"] },
   { id: "characters", title: "Characters and feel", stations: ["characters", "survivor-aim", "game-feel"] },
-  { id: "outbreak", title: "Outbreak", stations: ["outbreak-look", "outbreak", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-discovery", "outbreak-hordes", "survivor-bots"] },
-  { id: "audio", title: "Audio", stations: ["audio"] },
-  { id: "carrier", title: "Carrier", stations: ["carrier"] },
-  { id: "brawl", title: "Brawl", stations: ["brawl"] },
-  { id: "archers", title: "Archers", stations: ["archers"] },
+  { id: "outbreak", title: "Outbreak", stations: ["outbreak-look", "outbreak", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-discovery", "outbreak-hordes", "survivor-bots", "rugs-interiors", "styles"] },
+  { id: "games", title: "Other games", stations: ["blackout", "getaway", "carrier", "brawl", "archers"] },
+  { id: "assets", title: "Textures and sound", stations: ["rugs", "audio"] },
+  // Superseded by the Look and world and Effects labs; archived in every browser until Kit decides to delete them.
+  { id: "archive", title: "Archive", archived: true, stations: ["looks", "lighting", "weather", "materials", "vegetation", "explosions", "smoke-fire"] },
 ]
 const FALLBACK = { id: "stations", title: "Stations" }
 
@@ -24,11 +24,13 @@ export function migrateStations(stations: readonly LabStation[], now: string): {
   for (const { station } of orderStations(stations)) {
     const area = STATION_AREAS.find(a => a.stations.includes(station.id)) ?? FALLBACK
     const migrated = scenesFromStation(station, { collection: area.id, now, kindOf })
+    if ("archived" in area && area.archived) for (const s of migrated.scenes) s.status = "archived"
     scenes.push(...migrated.scenes)
     notes.push(...migrated.notes)
     byArea.set(area.id, [...(byArea.get(area.id) ?? []), ...migrated.scenes.map(s => s.id)])
   }
-  const collections = [...byArea].map(([id, order]): SceneCollection => ({
+  const rank = (id: string) => { const i = STATION_AREAS.findIndex(a => a.id === id); return i < 0 ? STATION_AREAS.length : i }
+  const collections = [...byArea].sort(([a], [b]) => rank(a) - rank(b)).map(([id, order]): SceneCollection => ({
     schema: COLLECTION_SCHEMA,
     id,
     title: (STATION_AREAS.find(a => a.id === id) ?? FALLBACK).title,
