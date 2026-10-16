@@ -46,6 +46,7 @@ import {
   collectFogSoundSprites,
 } from "./fog-of-war"
 import { applyOutbreakDayNight } from "./day-night"
+import { trimLook } from "./look/world"
 import { GroundWearRenderer, packGroundCfgBits } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -144,6 +145,7 @@ function foliageActors(p: { x: number; y: number }, zombies: readonly { x: numbe
 
 const params = new URLSearchParams(location.search)
 const lookSettings = createLookSettings("noir")
+const gradedLook = createLookSettings("noir")
 const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
 try {
   migrateOutbreakLocalStorage(localStorage)
@@ -1587,7 +1589,7 @@ async function main() {
       burst: motionBurst,
       dt,
     }
-    render.look = lookSettings
+    render.look = trimLook(lookSettings, settings.look, gradedLook)
     render.lookCompare = lookCompare
     render.postParams = unseenEval.postParams
     renderer.render(render)

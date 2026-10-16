@@ -722,6 +722,22 @@ proven animation techniques to animation.md, not here.
 
 ## Art direction
 
+### Outbreak look: one lab, knobs as trims on the day cycle (2026-10-15)
+
+- **Trims, not overrides.** The Day → Dusk → Noir cycle rewrites the grade and the lights whenever the hour changes,
+  so Look · Grade and Look · Lights (`games/outbreak/src/look/world.ts`) scale or offset what the cycle produces
+  (`trimLook` on the grade handed to the renderer, `trimLighting` inside `packOutbreakLightingUniforms`). A tuned look
+  survives the clock moving; every default is the identity, so today's frames are unchanged.
+- **Presets set every knob.** `look/presets.ts` holds named, versioned knob sets (Today, Deeper noir, Warmer
+  practicals, Colder moonlight, Vivid world with a grey hero, Big Walk contrast); applying one sets all Look knobs,
+  so they never leak into each other, and Today is Reset. Lab: the `outbreak-look` lab (the start house at 17:30),
+  which also holds the beam and unseen variants that used to be their own stations.
+- **Survivor styles** (Look · Hero): today's boxes, a matte mannequin, a flat-tone silhouette and a capsule figure,
+  same rig and animation (`tests/look.test.ts` checks every part lands where today's does). Co-op teammates draw with
+  the local choice, tinted a little toward their seat colour. Stills: `games/outbreak/scripts/look-stills.ts`.
+- At the start house at 17:30 most of the frame is lit by the flashlight and the porch, so grade trims read mostly in
+  the lamp pools; world saturation needs ×2 or more before the street visibly gains colour under Noir.
+
 ### Vegetation looks: tree, bush, grass
 
 - **Three looks, tuned separately** (`packages/kit/gpu/foliage.ts`, Lab Vegetation section `packages/kit/lab/foliage.ts`).

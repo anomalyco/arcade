@@ -55,5 +55,5 @@ export default defineStation({
   ],
   paths: ["packages/kit/gpu/look.ts", "packages/kit/gpu/look-shaders.ts", "packages/kit/lab/looks.ts"],
   branches: ["looks", "outbreak-noir", "noir-v2", "flashlight-beam"],
-  links: [{ label: "Noir flashlight beam off / on (live game)", href: "/arcade/lab/?overworld&station=outbreak-flashlight" }],
+  links: [{ label: "Outbreak look: Noir grade, lamps and beam (live game)", href: "/arcade/lab/?lab=outbreak/outbreak-look" }],
 })

@@ -9,13 +9,15 @@ import {
   survivorAimControls,
   survivorAimTuning,
 } from "../src/survivor"
+import { heroLookControls } from "../src/look/hero"
 
 const dt = 1 / 60
 const DEG = 180 / Math.PI
 
 test("Survivor aim Lab controls cover raise time, hold time, recoil, twist limit and strafe", () => {
   expect(survivorAimControls.every(c => c.group === "Survivor aim" || c.group === "Survivor strafe")).toBe(true)
-  expect(survivorAimControls.map(c => c.key).sort()).toEqual(Object.keys(survivorAimTuning).sort())
+  // The rest of the survivor's tuning is its look (Look · Hero).
+  expect([...survivorAimControls, ...heroLookControls].map(c => c.key).sort()).toEqual(Object.keys(survivorAimTuning).sort())
 })
 
 test("equipped pistol stays in visible low ready while idle and walking with free left-arm counter-swing", () => {

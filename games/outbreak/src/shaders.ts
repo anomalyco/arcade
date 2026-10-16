@@ -14,6 +14,7 @@ import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
+import { outbreakHeroWgsl } from "./look/shader"
 import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
 import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
 
@@ -182,7 +183,8 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   return bayer4x4(frag) < fade;
 }
 ${outbreakFogOfWarDeclarationsWgsl}
-${interiorDeclarationsWgsl(outbreakInteriorRefs)}`,
+${interiorDeclarationsWgsl(outbreakInteriorRefs)}
+${outbreakHeroWgsl}`,
   directional: "mix(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), vec3f(1.0, 0.79, 0.53), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
@@ -332,7 +334,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let formShade = (0.36 + 0.64 * clamp(n.y * 0.55 + 0.45, 0.0, 1.0)) * (0.42 + 0.58 * heightGrad);
       let rimCol = mix(vec3f(0.072, 0.088, 0.112), vec3f(0.065, 0.052, 0.038), w);
       let darkReadFloor = outbreakAlbedo * formShade * mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w) * darkLosScale;
-      col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
+      if (o.aux > 4.5 && o.aux < 5.5) {
+        col = outbreakHeroSurface(max(col, darkReadFloor), outbreakAlbedo, n, V, w, darkLosScale);
+      } else {
+        col = max(col, darkReadFloor) + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale;
+      }
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen;

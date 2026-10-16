@@ -11,7 +11,7 @@ should move and why, read [animation.md](animation.md).
 | `human-profile` | Serializable soldier, wizard and zombie presentation presets; shared Lab controls |
 | `human-locomotion` | World-locked contacts, toe roll, swing/reach, timing asymmetry, foot drag and pelvis springs |
 | `human-pose` | Arm/leg IK, semantic bones, attachments, visibility and copied detach motion |
-| `avatar/*` | Avatar adapter (`anim`), weapon aim/recoil and action clips, soldier/wizard/zombie/skeleton meshes, ragdolls; Blackout's `src/game/anim.ts`, `ragdoll.ts` and `src/render/person.ts` re-export them |
+| `avatar/*` | Avatar adapter (`anim`), weapon aim/recoil and action clips, soldier/wizard/zombie/skeleton meshes, single-tone `simple-figure` meshes (mannequin, capsule) for any bone set, ragdolls; Blackout's `src/game/anim.ts`, `ragdoll.ts` and `src/render/person.ts` re-export them |
 
 All frames and velocities use world XYZ with Y up. The locomotion adapter's `x/y`, `vx/vy` and aim follow the
 games' X/Z ground plane. Angles are radians, distances metres, linear velocities metres/sec, angular velocities

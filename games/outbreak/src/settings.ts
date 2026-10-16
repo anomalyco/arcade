@@ -30,6 +30,7 @@ import {
   type FlashlightBeamSettings,
   type OutbreakLightingSettings,
 } from "./lighting"
+import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather/settings"
@@ -213,6 +214,7 @@ export type OutbreakSubsystemMap = {
   vehicle: VehicleTuning
   bots: OutbreakBotSettings
   hordes: OutbreakHordeSettings
+  look: OutbreakLookTrims
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -247,7 +249,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   MotionBlurSettings &
   VehicleTuning &
   OutbreakBotSettings &
-  OutbreakHordeSettings
+  OutbreakHordeSettings &
+  OutbreakLookTrims
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -275,6 +278,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "vehicle",
   "bots",
   "hordes",
+  "look",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -307,6 +311,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     vehicle: { ...DEFAULT_VEHICLE_TUNING },
     bots: { ...DEFAULT_OUTBREAK_BOTS },
     hordes: { ...DEFAULT_OUTBREAK_HORDES },
+    look: { ...DEFAULT_LOOK_TRIMS },
   }
 }
 

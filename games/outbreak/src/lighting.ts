@@ -5,6 +5,8 @@ import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
+import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
+import { trimLighting, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
@@ -250,7 +252,9 @@ export const OUTBREAK_INTERIOR_UNIFORM_OFFSET = 164
 export const OUTBREAK_UNSEEN_UNIFORM_OFFSET = OUTBREAK_INTERIOR_UNIFORM_OFFSET + INTERIOR_UNIFORM_FLOATS
 /** Reshaped falloff curves (see `light-ramps.ts`): flags, then a 16-sample table each. */
 export const OUTBREAK_RAMP_UNIFORM_OFFSET = OUTBREAK_UNSEEN_UNIFORM_OFFSET + 8
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT_RAMP_FLOATS
+/** The simple survivor's surface (see `look/hero.ts`): rim strength, rim exponent, flatten, colour kept. */
+export const OUTBREAK_HERO_UNIFORM_OFFSET = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT_RAMP_FLOATS
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_HERO_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -290,6 +294,8 @@ export type OutbreakLightingUniformSettings =
         fogFadeTime?: number
       }
       unseen?: Partial<UnseenSettings>
+      look?: Partial<OutbreakLookTrims>
+      survivor?: Partial<HeroLookSettings>
     }
 
 export type OutbreakLightingFrameState = {
@@ -359,7 +365,7 @@ export function packOutbreakLightingUniforms(
 ): Float32Array<ArrayBuffer> {
   const raw = state.settings
   const isNested = "flashlight" in raw
-  const l = isNested ? raw.lighting : raw
+  const l = isNested ? { ...raw.lighting, ...trimLighting(raw.lighting, raw.look) } : raw
   const fl = isNested ? raw.flashlight : raw
   const fg = isNested ? raw.fog : raw
   const un = isNested ? raw.unseen : raw
@@ -526,6 +532,11 @@ export function packOutbreakLightingUniforms(
     out,
     OUTBREAK_RAMP_UNIFORM_OFFSET,
   )
+  const hero = (isNested ? raw.survivor : undefined) ?? DEFAULT_HERO_LOOK
+  out[OUTBREAK_HERO_UNIFORM_OFFSET] = hero.heroRim ?? DEFAULT_HERO_LOOK.heroRim
+  out[OUTBREAK_HERO_UNIFORM_OFFSET + 1] = hero.heroRimTight ?? DEFAULT_HERO_LOOK.heroRimTight
+  out[OUTBREAK_HERO_UNIFORM_OFFSET + 2] = hero.heroFlat ?? DEFAULT_HERO_LOOK.heroFlat
+  out[OUTBREAK_HERO_UNIFORM_OFFSET + 3] = hero.heroSaturation ?? DEFAULT_HERO_LOOK.heroSaturation
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1114,6 +1125,7 @@ struct OutbreakLightingUniforms {
   u18: vec4f, // beamDensity, beamDust, beamGlare, beamSamples
   u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
   unseen: UnseenUniforms,${lightRampFieldsWgsl}
+  hero: vec4f, // simple survivor: rim strength, rim exponent, flatten, colour kept
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
