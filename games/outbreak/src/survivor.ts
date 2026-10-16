@@ -54,6 +54,8 @@ import {
 } from "../shared/combat"
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
+import { DEFAULT_HERO_LOOK, HERO_AUX, heroShape, heroTint } from "./look/hero"
+import { simpleFigureMeshes } from "@arcade/kit/avatar/simple-figure"
 
 export const PISTOL_MUZZLE = 0.20
 export const PISTOL_HOLD = { fwd: 0.375, up: 1.35, side: 0.045 } as const
@@ -75,6 +77,7 @@ export const survivorAimTuning = {
   strafeHipTurn: humanProfiles.soldier.strafeHipTurn,
   crossoverSpeed: humanProfiles.soldier.crossoverSpeed,
   strafeGap: humanProfiles.soldier.strafeGap,
+  ...DEFAULT_HERO_LOOK,
 }
 export type SurvivorAimTuning = typeof survivorAimTuning
 
@@ -266,6 +269,8 @@ function keyedReload<T extends readonly [number, ...unknown[]]>(keys: readonly T
  * low-ready pistol carry, fast anticipation-free raise to two-handed aim on fire, per-shot recoil,
  * configurable post-shot aim hold, and keyframed magazine-to-grip reload.
  */
+const OFFLINE_PALETTE = { torso: 0x8c6b42, legs: 0x41474b }
+
 export class Survivor {
   /** Optional presentation override; does not change the Session's player or movement. */
   profile?: HumanProfile
@@ -317,6 +322,10 @@ export class Survivor {
   private pelvisYaw = spring()
   private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
+  /** Model ids per shape (today's boxes, mannequin, capsule), in the same part order as `models`. */
+  private shapes: number[][]
+  /** Linear jacket colour of a co-op seat, tinting the simple styles; null offline. */
+  private seat: [number, number, number] | null
   private meleeModels: Record<MeleeWeaponId, [number, number, number]>
   private feet = [-1, 1].map(() => ({
     p: [0, 0, 0] as V3,
@@ -346,8 +355,9 @@ export class Survivor {
   /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
   constructor(
     renderer: Pick<Renderer, "addModel">,
-    palette: { torso: number; legs: number } = { torso: 0x8c6b42, legs: 0x41474b },
+    palette: { torso: number; legs: number } = OFFLINE_PALETTE,
   ) {
+    this.seat = palette === OFFLINE_PALETTE ? null : (hex(palette.torso).map(c => c ** 2.2) as [number, number, number])
     const box = (w: number, y0: number, h: number, d: number, color: number) => {
       const m = new Mesh()
       m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, hex(color), MAT.actor)
@@ -392,6 +402,12 @@ export class Survivor {
       mag,
       toe,
     ].map(m => renderer.addModel(m))
+    const simple = (shape: "mannequin" | "capsule") => {
+      const f = simpleFigureMeshes(shape, { aux: HERO_AUX })
+      const ids = [f.pelvis, f.torso, f.head, f.upperArm, f.foreArm, f.thigh, f.shin, f.foot, null, null, f.toe]
+      return ids.map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
+    }
+    this.shapes = [this.models, simple("mannequin"), simple("capsule")]
     const meleeMeshes0 = buildMeleeWeaponMeshes(0)
     const meleeMeshes1 = buildMeleeWeaponMeshes(1)
     const meleeMeshes2 = buildMeleeWeaponMeshes(2)
@@ -1102,7 +1118,11 @@ export class Survivor {
       data.set([x, y, z, yaw, ...tint, 1, pitchAng, rollAng, alpha, flash])
       this.batches.push({ model, data, count: 1 })
     }
-    const draw = (id: number, frame: ReturnType<typeof yawFrame>) => emit(push, this.models[id]!, frame, [1, 1, 1], 0)
+    const shape = heroShape(tune.heroStyle)
+    const models = this.shapes[shape]!
+    const bodyTint: V3 = shape ? heroTint(tune, this.seat) : [1, 1, 1]
+    const draw = (id: number, frame: ReturnType<typeof yawFrame>) =>
+      emit(push, models[id]!, frame, id === 8 || id === 9 ? [1, 1, 1] : bodyTint, 0)
     draw(0, pelvis)
     draw(1, torso)
     draw(2, head)

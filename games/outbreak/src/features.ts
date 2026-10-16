@@ -5,6 +5,7 @@
  */
 import "./discovery/index"
 import "./hordes/index"
+import "./look/index"
 import "./map/index"
 import "./melee/index"
 import "./pacing/index"

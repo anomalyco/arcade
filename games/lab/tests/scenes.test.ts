@@ -51,11 +51,11 @@ describe("labs show only what their subject needs", () => {
       expect({ station: st.id, layout: toIds(trimmed) }).toEqual({ station: st.id, layout: toIds(layout) })
     }
   })
-  test("Outbreak unseen: its Unseen layers, the variants, Play Outbreak and a short status and measured block", () => {
-    const st = stations.find(s => s.id === "outbreak-unseen")!
+  test("Outbreak look: its Look and Beam and unseen knobs, the variants, Play Outbreak and a short status and measured block", () => {
+    const st = stations.find(s => s.id === "outbreak-look")!
     const layout = trimLayout(resolveLayout(st.layout!), labWidgets(kindForStation(st)!, st))
-    expect(toIds(layout)).toEqual({ left: ["status", "metrics"], right: ["controls"], dock: ["variants"] })
-    expect(layout.right[0]!.title).toBe("Unseen layers")
+    expect(toIds(layout)).toEqual({ left: ["status", "metrics"], right: ["controls", "sections"], dock: ["variants"] })
+    expect(layout.right.map(w => w.title)).toEqual(["Look", "Beam and unseen"])
     expect(st.links?.map(l => l.label)).toEqual(["Play Outbreak"])
   })
   test("the vehicle lab's Details groups are Spawn section groups", () => {
