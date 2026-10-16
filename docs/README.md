@@ -19,6 +19,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Shared code and conventions
 
+- [prototyping.md](prototyping.md): the toy-first workflow (`bun scripts/new-toy.ts <name>`): how to prove game feel
+  on `@arcade/kit` primitives and `LabPanel` knobs before building custom meshes, shaders or multiplayer rooms.
 - [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check
   before writing something another game already has.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
