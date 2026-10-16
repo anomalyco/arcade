@@ -104,7 +104,7 @@ const GAMES: Game[] = [
   {
     name: "outbreak",
     tickHz: 60,
-    buffer: async () => (await import("../games/outbreak/src/net-session")).remoteBuffer() as SnapshotBuffer<unknown>,
+    buffer: async () => (await client("outbreak", "net-session")).remoteBuffer() as SnapshotBuffer<unknown>,
     rewind: 0.25,
     async core(clock) {
       const { CoopRoomCore } = await server("outbreak", "room-core")
