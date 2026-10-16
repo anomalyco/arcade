@@ -259,7 +259,9 @@ export const OUTBREAK_HERO_UNIFORM_OFFSET = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT
 export const OUTBREAK_COLOUR_UNIFORM_OFFSET = OUTBREAK_HERO_UNIFORM_OFFSET + 4
 /** Dust motes in the light (see `air/dust.ts`): amount, brightness, size, motes under lamps. */
 export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_DUST_UNIFORM_OFFSET + 4
+/** Soft Bean's surface (see `look/hero.ts`): light wrap, sheen, sheen exponent, own colour in the dark. */
+export const OUTBREAK_BEAN_UNIFORM_OFFSET = OUTBREAK_DUST_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -542,6 +544,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 1] = hero.heroRimTight ?? DEFAULT_HERO_LOOK.heroRimTight
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 2] = hero.heroFlat ?? DEFAULT_HERO_LOOK.heroFlat
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 3] = hero.heroSaturation ?? DEFAULT_HERO_LOOK.heroSaturation
+  out[OUTBREAK_BEAN_UNIFORM_OFFSET] = hero.beanWrap ?? DEFAULT_HERO_LOOK.beanWrap
+  out[OUTBREAK_BEAN_UNIFORM_OFFSET + 1] = hero.beanSheen ?? DEFAULT_HERO_LOOK.beanSheen
+  out[OUTBREAK_BEAN_UNIFORM_OFFSET + 2] = hero.beanSheenTight ?? DEFAULT_HERO_LOOK.beanSheenTight
+  out[OUTBREAK_BEAN_UNIFORM_OFFSET + 3] = hero.beanOwnColour ?? DEFAULT_HERO_LOOK.beanOwnColour
   const look = (isNested ? raw.look : undefined) ?? DEFAULT_LOOK_TRIMS
   out[OUTBREAK_COLOUR_UNIFORM_OFFSET] = look.lightColour ?? DEFAULT_LOOK_TRIMS.lightColour
   out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 1] = look.visionLift ?? DEFAULT_LOOK_TRIMS.visionLift
@@ -1159,6 +1165,7 @@ struct OutbreakLightingUniforms {
   hero: vec4f, // simple survivor: rim strength, rim exponent, flatten, colour kept
   colour: vec4f, // light-colour rule: on, vision lift, bounce weight; baked room light scale
   dust: vec4f, // dust motes: amount, brightness, size, under lamps
+  bean: vec4f, // Soft Bean: light wrap, sheen, sheen exponent, own colour in the dark
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1178,6 +1185,8 @@ var<private> outbreakBounceIrr: f32;
 /** The colour mask from light alone, times the light rule, before the sight terms (for the fog's memory tone). */
 var<private> outbreakLitMask: f32;
 var<private> outbreakInRoom: bool;
+/** Soft Bean's light wrap on this fragment, or −1 for everything else (set in fragmentStart, read by diffuseTerm). */
+var<private> outbreakWrap: f32;
 
 
 /**

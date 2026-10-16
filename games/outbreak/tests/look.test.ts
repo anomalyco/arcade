@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
-import { OUTBREAK_HERO_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
-import { DEFAULT_HERO_LOOK, heroLookControls, heroShape, heroTint, HERO_STYLE_SURFACES, HERO_STYLES } from "../src/look/hero"
+import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { beanTint, DEFAULT_HERO_LOOK, heroLookControls, heroShape, heroTint, HERO_STYLE_SURFACES, HERO_STYLES, SOFT_BEAN_STYLE } from "../src/look/hero"
+import { SURVIVOR_COLOURS } from "../src/seat-colours"
 import { applyLookPreset } from "../src/look/index"
 import { OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
 import { DEFAULT_LOOK_TRIMS, lightRuleWeight, lookTrimControls, trimLighting, trimLook } from "../src/look/world"
@@ -87,7 +88,7 @@ describe("Outbreak look", () => {
   })
 
   test("survivor styles: today keeps its boxes; simple styles draw their own tinted figure with the same rig", () => {
-    expect(HERO_STYLES.map(s => heroShape(HERO_STYLES.indexOf(s)))).toEqual([0, 1, 1, 2])
+    expect(HERO_STYLES.map(s => heroShape(HERO_STYLES.indexOf(s)))).toEqual([0, 1, 1, 2, 3])
     let next = 0
     const s = new Survivor({ addModel: () => next++ })
     const pose = { x: 27.7, y: 41, vx: 1.4, vy: 0, aim: 0 }
@@ -113,6 +114,45 @@ describe("Outbreak look", () => {
       const fb = b.draw(p, 1 / 60, n / 60, () => 0, { heroStyle: 3 }).map(x => [...x.data.slice(0, 4), ...x.data.slice(8, 10)])
       expect(fb).toEqual(fa)
     }
+  })
+
+  test("Soft Bean: its own figure on the same rig, one colour per seat, rebuilt in place when its shape changes", () => {
+    expect(HERO_STYLES[SOFT_BEAN_STYLE]!.id).toBe("bean")
+    let next = 0
+    const set: number[] = []
+    const renderer = { addModel: () => next++, setModel: (i: number) => void set.push(i) }
+    const pose = { x: 27.7, y: 41, vx: 1.4, vy: 0, aim: 0 }
+    const solo = new Survivor(renderer)
+    const capsule = solo.draw(pose, 1 / 60, 0, () => 0, { heroStyle: 3 }).map(b => b.model)
+    const bean = solo.draw(pose, 1 / 60, 0, () => 0, { heroStyle: SOFT_BEAN_STYLE })
+    expect(bean.map(b => b.model)).not.toEqual(capsule)
+    expect([...bean[0]!.data.slice(4, 7)].map(v => +v.toFixed(4))).toEqual(beanTint(DEFAULT_HERO_LOOK, 0).map(v => +Math.fround(v).toFixed(4)))
+    const before = next
+    solo.draw(pose, 1 / 60, 0, () => 0, { heroStyle: SOFT_BEAN_STYLE, beanHead: 1.3 })
+    expect(next).toBe(before)
+    expect(set.length).toBe(9)
+    // Four seats, four clearly different colours (hue families of the name tags).
+    const tints = SURVIVOR_COLOURS.map(c => new Survivor({ addModel: () => 0 }, c).draw(pose, 1 / 60, 0, () => 0, { heroStyle: SOFT_BEAN_STYLE })[0]!.data.slice(4, 7))
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+      const d = Math.hypot(tints[i]![0]! - tints[j]![0]!, tints[i]![1]! - tints[j]![1]!, tints[i]![2]! - tints[j]![2]!)
+      expect(d).toBeGreaterThan(0.2)
+    }
+    // A skin, not a rig change: every part lands where today's figure puts it.
+    const a = new Survivor({ addModel: () => 0 })
+    const b = new Survivor({ addModel: () => 0 })
+    for (let n = 0; n < 90; n++) {
+      const p = { ...pose, x: 27.7 + n * 1.4 / 60 }
+      const fa = a.draw(p, 1 / 60, n / 60, () => 0, { heroStyle: 0 }).map(x => [...x.data.slice(0, 4), ...x.data.slice(8, 10)])
+      const fb = b.draw(p, 1 / 60, n / 60, () => 0, { heroStyle: SOFT_BEAN_STYLE }).map(x => [...x.data.slice(0, 4), ...x.data.slice(8, 10)])
+      expect(fb).toEqual(fa)
+    }
+  })
+
+  test("Soft Bean packs its wrap, sheen and own colour", () => {
+    const settings = createOutbreakSettings()
+    Object.assign(settings.survivor, { heroStyle: SOFT_BEAN_STYLE, beanWrap: 0.7, beanSheen: 1.1, beanSheenTight: 4, beanOwnColour: 0.3 })
+    const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
+    expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
   })
 
   test("co-op seats tint the simple figure a little toward their jacket", () => {

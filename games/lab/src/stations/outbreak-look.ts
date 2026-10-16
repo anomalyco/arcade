@@ -32,6 +32,7 @@ const variants: StationVariant[] = [
   { id: "hero-mannequin", group: "Hero", label: "Matte mannequin", note: "Smooth putty-grey mannequin, no face, mitten hands.", setup: hero(1) },
   { id: "hero-silhouette", group: "Hero", label: "Flat silhouette", note: "Near-black flat figure; a tight rim draws its edge.", setup: hero(2) },
   { id: "hero-capsule", group: "Hero", label: "Capsule figure", note: "Chalky toy of capsules and a ball head.", setup: hero(3) },
+  { id: "hero-bean", group: "Hero", label: "Soft Bean", note: "Round matte toy in one colour per player, two dot eyes, soft wrap light and sheen (hero concept design 1).", setup: hero(4) },
   // Where the survivor stands and when: the start house at dusk is the default start.
   { id: "front-walk-dusk", group: "Shot", label: "Front walk, dusk", note: "The default start: the front walk at 17:30, looking up at the porch.", setup: shot(17.5, 40, pose(27.7, 41, -Math.PI / 2)) },
   { id: "street-night", group: "Shot", label: "Street, night", note: "Down the road at 22:00, beam along the street.", setup: shot(22, 42, street(0.12)) },

@@ -18,7 +18,7 @@ export type OutbreakLookPreset = {
 
 const { lookIdea: _, ...TRIMS } = DEFAULT_LOOK_TRIMS
 const TODAY: OutbreakLookKnobs = { ...TRIMS, ...DEFAULT_HERO_LOOK }
-const hero = (style: number): HeroLookSettings => ({ heroStyle: style, ...HERO_STYLE_SURFACES[style]! })
+const hero = (style: number): Pick<HeroLookSettings, "heroStyle"> & (typeof HERO_STYLE_SURFACES)[number] => ({ heroStyle: style, ...HERO_STYLE_SURFACES[style]! })
 
 export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
   {
