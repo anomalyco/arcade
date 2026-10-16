@@ -10,11 +10,24 @@ export type Pending<C> = { seq: number; cmd: C }
 export class Predictor<C> {
   private pending: Pending<C>[] = []
   private next = 0
+  private baseInFlight: number | null = null
+  private excess = 0
   /** Last acknowledged sequence. */
   ack = -1
 
   get unacked(): readonly Pending<C>[] {
     return this.pending
+  }
+
+  /**
+   * Gentle tick-rate multiplier (0.98..1.02) for the client's fixed-tick accumulator so clock drift between client
+   * and server drains smoothly without building a server input backlog that forces a 2-input catch-up merge.
+   */
+  get pace(): number {
+    if (this.baseInFlight === null) return 1
+    if (this.excess > 0.5) return Math.max(0.97, 1 - this.excess * 0.025)
+    if (this.pending.length === 0 && this.ack >= 0) return 1.02
+    return 1
   }
 
   /** Assigns the next sequence number and keeps the command for replay. */
@@ -49,14 +62,25 @@ export class Predictor<C> {
     let drop = 0
     while (drop < this.pending.length && this.pending[drop]!.seq <= ack) drop++
     if (drop) this.pending.splice(0, drop)
+    const n = this.pending.length
+    if (this.baseInFlight === null || n < this.baseInFlight) {
+      this.baseInFlight = n
+      this.excess = 0
+    } else {
+      const diff = n - this.baseInFlight
+      this.baseInFlight += Math.min(diff, 1) * 0.0005
+      this.excess += (Math.min(diff, 3) - this.excess) * 0.35
+    }
     restore()
     for (const p of this.pending) replay(p.cmd, p.seq)
-    return this.pending.length
+    return n
   }
 
   reset(): void {
     this.pending.length = 0
     this.ack = -1
+    this.baseInFlight = null
+    this.excess = 0
   }
 }
 

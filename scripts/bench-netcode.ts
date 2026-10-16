@@ -240,6 +240,53 @@ const GAMES: Game[] = [
       JSON.stringify({ type: "input", seq, input: { throttle: keys[1] >= 0 ? 1 : 0, brake: keys[1] < 0 ? 1 : 0, steer: keys[0], handbrake: false, boost: false, gadget: press ? 0 : null, engine: false } }),
     ],
   },
+  {
+    name: "carrier",
+    tickHz: 20,
+    // RemotePlanes interpolates with adaptive 80–120 ms delay and 400 ms stall coasting.
+    buffer: async () => new SnapshotBuffer(0.12, 12, 0.4, { min: 0.08, max: 0.12 }),
+    rewind: 0.12,
+    async core(clock) {
+      const { RoomCore } = await server("carrier", "core")
+      return new RoomCore(clock, () => 42) as Core
+    },
+    hello: async () => JSON.stringify({ type: "hello", build: await build("carrier"), name: "bench" }),
+    welcome: (d) => (json(d)?.type === "welcome" ? String(json(d)!.id) : null),
+    isSnapshot: (d) => typeof d === "string" && d.startsWith('{"type":"planes"'),
+    watch(core, id, applied) {
+      const numId = Number(id)
+      const ids = (core as unknown as { ids: Map<Conn, number> }).ids
+      const queued: { seq: number; edge: boolean; move: Move }[] = []
+      const origMsg = core.message.bind(core)
+      core.message = (conn, raw) => {
+        origMsg(conn, raw)
+        if (ids.get(conn) !== numId || typeof raw !== "string") return
+        const m = json(raw)
+        if (m?.type !== "plane" || !Array.isArray(m.p)) return
+        const p = m.p as number[]
+        queued.push({ seq: Math.round(p[0]! * 20), edge: p[13] === 1, move: [Math.sign(p[9]!), Math.sign(p[11]!)] })
+      }
+      const origStep = core.step.bind(core)
+      core.step = () => {
+        while (queued.length) {
+          const q = queued.shift()!
+          applied(q.seq, q.edge, [q.move])
+        }
+        origStep()
+      }
+    },
+    sender: async (): Promise<Sender> => (seq, _tick, press, keys) => {
+      const frames: Data[] = []
+      if (seq === 1) frames.push(JSON.stringify({ type: "op", op: "hornet" }))
+      frames.push(
+        JSON.stringify({
+          type: "plane",
+          p: [seq * 0.05, 1, keys[0] * 10, 300, keys[1] * 10, 0, 0, 0, 1, keys[0] * 100, 0, keys[1] * 100, 0.8, press ? 1 : 0, 0, 0, 0],
+        }),
+      )
+      return frames
+    },
+  },
 ]
 
 type Run = {

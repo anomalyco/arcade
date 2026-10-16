@@ -777,7 +777,7 @@ export class Game {
       this.ground = { x: locked.tx, y: locked.ty }
       this.cursor = { ...this.ground }
     }
-    this.acc = Math.min(this.acc + dt, DT * 5)
+    this.acc = Math.min(this.acc + dt * this.predictor.pace, DT * 5)
     while (this.acc >= DT) {
       this.acc -= DT
       const live = this.alive
