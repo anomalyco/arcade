@@ -585,4 +585,66 @@ describe("engine", () => {
       expect(decoded.view.cars.length).toBe(2)
     }
   })
+
+  test("optimistic gadget deploy, engine toggle and boost fire on the press frame, deduplicate server echoes, and roll back on rejection", () => {
+    const net = new Net()
+    const { a, b } = pair(net)
+    settle(net, a, b)
+    const world = net.core.world!
+    for (let i = 0; i < 400 && !(world.phase === "chase" && world.phaseT > 1); i++) {
+      net.tick()
+      a.frame(drive(i))
+      b.frame(IDLE)
+    }
+    expect(world.phase).toBe("chase")
+    b.client!.drainEvents()
+
+    // Press Q (gadget 0), boost and engine toggle on the cop: feedback is immediate on the press frame before the server hears it.
+    const vPress = b.frame({ ...IDLE, throttle: 1, boost: true, gadget: 0 })!
+    const copPress = vPress.cars.find((c) => c.ownerId === b.client!.myId)!
+    expect(copPress.gadgets![0]!.ready).toBe(false)
+    expect(copPress.gadgets![0]!.charges).toBe(MAX_STRIPS - 1)
+    expect(copPress.boosting).toBe(true)
+    const immediateEvents = b.client!.drainEvents()
+    expect(immediateEvents.filter((e) => e.kind === "gadget").length).toBe(1)
+
+    // Advance until the server confirms: the echoed server "gadget" event is deduplicated (does not fire a second time).
+    let echoedGadgets = 0
+    for (let i = 0; i < 15; i++) {
+      net.tick()
+      a.frame(drive(i))
+      b.frame({ ...IDLE, throttle: 1 })
+      echoedGadgets += b.client!.drainEvents().filter((e) => e.kind === "gadget").length
+    }
+    expect(echoedGadgets).toBe(0)
+    expect(b.client!.optimistic.stats.confirmed).toBeGreaterThanOrEqual(2)
+    expect(b.client!.optimistic.stats.rejected).toBe(0)
+
+    // Force a server-side rejection: clear the client's local cooldown prediction while the server still has the strip on cooldown.
+    ;(b.client as unknown as { predictedGadgetCd: [number, number] }).predictedGadgetCd[0] = 0
+    const vReject = b.frame({ ...IDLE, gadget: 0 })!
+    expect(vReject.cars.find((c) => c.ownerId === b.client!.myId)!.gadgets![0]!.charges).toBe(MAX_STRIPS - 2)
+    for (let i = 0; i < 16; i++) {
+      net.tick()
+      a.frame(drive(i))
+      b.frame(IDLE)
+    }
+    expect(b.client!.optimistic.stats.rejected).toBe(1)
+    const copAfter = b.client!.view()!.cars.find((c) => c.ownerId === b.client!.myId)!
+    expect(copAfter.gadgets![0]!.charges).toBe(MAX_STRIPS - 1)
+  })
+
+  test("per-socket message rate limiting drops bursts above MSG_BURST", () => {
+    const net = new Net()
+    const a = join(net, "Ada")
+    settle(net, a)
+    let pongs = 0
+    for (let i = 0; i < 200; i++) {
+      net.core.message(a.pipe.conn, encodeClient({ type: "ping", t: i }))
+    }
+    net.t += 10
+    pongs = a.pipe.take().filter((m) => m.type === "pong").length
+    expect(pongs).toBeGreaterThan(80)
+    expect(pongs).toBeLessThanOrEqual(120)
+  })
 })

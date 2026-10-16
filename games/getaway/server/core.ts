@@ -42,6 +42,8 @@ const newJitter = () => new JitterBuffer(INPUT_OPS, ROOM_JITTER)
 const STARVE_TICKS = 15
 const CHAT_BURST = 3
 const CHAT_REFILL_TICKS = 0.8 * TICK_HZ
+const MSG_RATE = 90
+const MSG_BURST = 120
 const SNAPSHOT_EVERY = Math.max(1, Math.round(TICK_HZ / SNAPSHOT_HZ))
 
 const sameInput = (a: Input, b: Input) =>
@@ -67,6 +69,7 @@ export class RoomCore {
   private conns = new Set<Conn>()
   private players = new Map<string, Player>()
   private byConn = new Map<Conn, Player>()
+  private msgBuckets = new Map<Conn, { tokens: number; at: number }>()
 
   constructor(readonly code: string) {
     this.seed = seedOf(code)
@@ -87,6 +90,7 @@ export class RoomCore {
 
   close(conn: Conn) {
     this.conns.delete(conn)
+    this.msgBuckets.delete(conn)
     const p = this.byConn.get(conn)
     if (!p) return
     this.byConn.delete(conn)
@@ -99,7 +103,22 @@ export class RoomCore {
     this.broadcastRoster()
   }
 
+  private allowMessage(conn: Conn): boolean {
+    let b = this.msgBuckets.get(conn)
+    if (!b) {
+      b = { tokens: MSG_BURST, at: this.tick }
+      this.msgBuckets.set(conn, b)
+    } else if (this.tick > b.at) {
+      b.tokens = Math.min(MSG_BURST, b.tokens + (this.tick - b.at) * (MSG_RATE / TICK_HZ))
+      b.at = this.tick
+    }
+    if (b.tokens < 1) return false
+    b.tokens -= 1
+    return true
+  }
+
   message(conn: Conn, raw: unknown) {
+    if (!this.allowMessage(conn)) return
     const msg = decodeClient(raw)
     if (!msg) return
     if (msg.type === "ping") return this.send(conn, { type: "pong", t: msg.t })
@@ -145,7 +164,7 @@ export class RoomCore {
       }
       // First person into an empty room gets a fresh game instead of a stale round.
       if (this.players.size === 0) this.world = null
-      const id = msg.id && !this.players.has(msg.id) ? msg.id : newId()
+      const id = newId()
       p = { id, token: newToken(), name: msg.name, picks: msg.picks, conn, jitter: newJitter(), input: NO_INPUT, starve: 0, goneAt: 0, idle: 0, last: NO_INPUT, chatTokens: CHAT_BURST, chatAt: this.tick }
       this.players.set(id, p)
       this.syncParticipants()

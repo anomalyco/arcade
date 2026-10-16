@@ -184,8 +184,8 @@ const GAMES: Game[] = [
   {
     name: "getaway",
     tickHz: 30,
-    // NetClient draws others INTERP_TICKS (100 ms) behind its estimate of the server tick.
-    buffer: async () => new SnapshotBuffer(0.1),
+    // NetClient draws remote cars with adaptive time-stretched SnapshotBuffer (80–100 ms).
+    buffer: async () => (await import("../games/getaway/src/game/netcode")).remoteBuffer() as SnapshotBuffer<unknown>,
     rewind: 0,
     async core() {
       const { RoomCore } = await server("getaway", "core")
@@ -1082,12 +1082,128 @@ async function benchArchersOptimistic(link: LinkProfile, seed: number): Promise<
   }
 }
 
+async function benchGetawayOptimistic(link: LinkProfile, seed: number): Promise<OptimisticRow> {
+  const { RoomCore } = await server("getaway", "core")
+  const { DT, TICK_HZ } = await import("../games/getaway/shared/config.ts")
+  const { decodeServer, encodeClient } = await import("../games/getaway/shared/protocol.ts")
+  const { NetClient } = await import("../games/getaway/src/game/netcode.ts")
+
+  const tickMs = 1000 / TICK_HZ
+  let nowMs = 0
+  const core = new RoomCore("OPTGW")
+
+  type WireEvt = { at: number; fn: () => void }
+  const wire: WireEvt[] = []
+  let sockSeed = seed
+
+  const makePeer = (name: string) => {
+    const up = new TcpLink(link, mulberry32((sockSeed += 139)))
+    const down = new TcpLink(link, mulberry32((sockSeed += 149)))
+    let netClient: InstanceType<typeof NetClient> | null = null
+    const conn: Conn = {
+      send(raw: Data) {
+        const s = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+        const msg = decodeServer(s)
+        if (!msg) return
+        const at = msg.type === "snapshot" || msg.type === "events" ? down.deliver(nowMs) : nowMs + link.rttMs / 2
+        wire.push({
+          at,
+          fn: () => {
+            if (msg.type === "welcome") {
+              netClient = new NetClient(core.world!.city, msg.id, (cm) => {
+                const text = encodeClient(cm)
+                wire.push({ at: up.deliver(nowMs), fn: () => core.message(conn, text) })
+              })
+            } else {
+              netClient?.receive(msg)
+            }
+          },
+        })
+      },
+      close() {},
+    }
+    core.open(conn)
+    core.message(conn, encodeClient({ type: "hello", name, picks: { robber: "muscle", cop: "cruiser" } }))
+    return {
+      get client() {
+        return netClient
+      },
+    }
+  }
+
+  const rob = makePeer("Rob")
+  const cop = makePeer("Cop")
+
+  // Advance past intro (4s) + headstart (5s) = 9s (270 ticks) + 25s of chase (750 ticks).
+  const totalTicks = (10 + 25) * TICK_HZ
+  for (let tick = 0; tick < totalTicks + 30; tick++) {
+    nowMs = tick * tickMs
+    wire.sort((x, y) => x.at - y.at)
+    while (wire.length && wire[0]!.at <= nowMs) wire.shift()!.fn()
+
+    if (tick < totalTicks && rob.client && cop.client) {
+      const inChase = core.world?.phase === "chase"
+      const gadget = inChase && tick > 310 && tick % 330 === 20 ? (0 as const) : null
+      const boost = inChase && tick % 120 >= 10 && tick % 120 < 35
+      const engine = inChase && (tick % 240 === 80 || tick % 240 === 95)
+      rob.client.update(DT, {
+        throttle: 1,
+        brake: 0,
+        steer: Math.sin(tick * 0.06) * 0.5,
+        handbrake: tick % 90 > 78,
+        boost: tick % 150 >= 20 && tick % 150 < 45,
+        gadget: null,
+        engine: false,
+      })
+      cop.client.update(DT, {
+        throttle: 1,
+        brake: 0,
+        steer: Math.cos(tick * 0.05) * 0.5,
+        handbrake: false,
+        boost,
+        gadget,
+        engine,
+      })
+      rob.client.drainEvents()
+      cop.client.drainEvents()
+    } else {
+      rob.client?.update(DT, { throttle: 0, brake: 1, steer: 0, handbrake: false, boost: false, gadget: null, engine: false })
+      cop.client?.update(DT, { throttle: 0, brake: 1, steer: 0, handbrake: false, boost: false, gadget: null, engine: false })
+    }
+    core.step()
+  }
+
+  const rSt = rob.client!.optimistic.stats
+  const cSt = cop.client!.optimistic.stats
+  const predicted = rSt.predicted + cSt.predicted
+  const confirmed = rSt.confirmed + cSt.confirmed
+  const rejected = rSt.rejected + cSt.rejected
+  const resolvedActions = Math.max(1, confirmed + rejected)
+  return {
+    game: "getaway",
+    link: link.name,
+    pressToFeedbackMs: 0,
+    actionsPredicted: predicted,
+    actionsConfirmed: confirmed,
+    actionsRejected: rejected,
+    actionMispredictPct: +((rejected / resolvedActions) * 100).toFixed(2),
+    hitsPredicted: 0,
+    hitTP: 0,
+    hitTN: 0,
+    hitFP: 0,
+    hitFN: 0,
+    hitFalsePositivePct: 0,
+    hitDisagreePct: 0,
+  }
+}
+
 const optimisticRows: OptimisticRow[] = []
 for (const link of Object.values(LINKS)) {
   if (!ONLY || ONLY.includes("outbreak")) optimisticRows.push(await benchOutbreakOptimistic(link, 42))
   if (!ONLY || ONLY.includes("blackout")) optimisticRows.push(await benchBlackoutOptimistic(link, 42))
   if (!ONLY || ONLY.includes("brawl")) optimisticRows.push(await benchBrawlOptimistic(link, 42))
   if (!ONLY || ONLY.includes("archers")) optimisticRows.push(await benchArchersOptimistic(link, 42))
+  if (!ONLY || ONLY.includes("getaway")) optimisticRows.push(await benchGetawayOptimistic(link, 42))
 }
 if (optimisticRows.length) {
   console.table(optimisticRows)
