@@ -131,7 +131,8 @@ export type WeaponMount = {
   restYaw: number
   /** Idle elevation, radians up from horizontal. */
   restPitch: number
-  /** Training limits in ship space (radians, same convention as `restYaw`, min < max), so it never fires through the ship. */
+  /** Training limits in ship space (radians, same convention as `restYaw`, min < max; may run past ±π), so it never
+   *  fires through the ship. */
   yawArc: readonly [number, number]
   /** Elevation limits, radians. */
   pitchArc: readonly [number, number]
@@ -140,6 +141,10 @@ export type WeaponMount = {
   /** Hit-test sphere around the mount (centre `pos` raised by `radius * 0.8`). */
   radius: number
 }
+
+/** Every mount trains through `TRAVERSE` (200°), centred on `mid` (ship-local yaw). */
+const TRAVERSE = (200 * Math.PI) / 180
+const arc = (mid: number): readonly [number, number] => [mid - TRAVERSE / 2, mid + TRAVERSE / 2]
 
 /** Top of the weapon sponsons, just under the deck edge (above every catwalk sponson's top). */
 const WEAPON_Y = DECK_Y - 0.3
@@ -158,11 +163,11 @@ const sponson = (side: 1 | -1, z: number, half: number): Box => {
  * port bow (abreast the "07") and one on the starboard quarter.
  */
 export const WEAPON_MOUNTS: readonly WeaponMount[] = [
-  { kind: "gun", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, 140], restYaw: -0.12, restPitch: 0.04, yawArc: [-2.8, 0.5], pitchArc: [-0.12, 1.1], sponson: sponson(-1, 140, 8.5), radius: 8 },
-  { kind: "sam", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, 86], restYaw: -Math.PI / 2, restPitch: 0.35, yawArc: [-Math.PI + 0.15, -0.15], pitchArc: [0, 1.2], sponson: sponson(-1, 86, 7.5), radius: 7 },
-  { kind: "ciws", side: "port", pos: [WEAPON_X, WEAPON_Y, 130], restYaw: 0.6, restPitch: 0.05, yawArc: [-0.3, Math.PI - 0.15], pitchArc: [-0.35, 1.4], sponson: sponson(1, 130, 7), radius: 7 },
-  { kind: "sam", side: "port", pos: [WEAPON_X, WEAPON_Y, -154], restYaw: Math.PI / 2, restPitch: 0.35, yawArc: [0.15, Math.PI - 0.15], pitchArc: [0, 1.2], sponson: sponson(1, -154, 7.5), radius: 7 },
-  { kind: "ciws", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, -155], restYaw: -Math.PI + 0.6, restPitch: 0.05, yawArc: [-Math.PI + 0.15, 0.3], pitchArc: [-0.35, 1.4], sponson: sponson(-1, -155, 7), radius: 7 },
+  { kind: "gun", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, 140], restYaw: -0.12, restPitch: 0.04, yawArc: arc(-1.15), pitchArc: [-0.12, 1.1], sponson: sponson(-1, 140, 8.5), radius: 8 },
+  { kind: "sam", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, 86], restYaw: -Math.PI / 2, restPitch: 0.35, yawArc: arc(-Math.PI / 2), pitchArc: [0, 1.2], sponson: sponson(-1, 86, 7.5), radius: 7 },
+  { kind: "ciws", side: "port", pos: [WEAPON_X, WEAPON_Y, 130], restYaw: 0.6, restPitch: 0.05, yawArc: arc((Math.PI - 0.45) / 2), pitchArc: [-0.35, 1.4], sponson: sponson(1, 130, 7), radius: 7 },
+  { kind: "sam", side: "port", pos: [WEAPON_X, WEAPON_Y, -154], restYaw: Math.PI / 2, restPitch: 0.35, yawArc: arc(Math.PI / 2), pitchArc: [0, 1.2], sponson: sponson(1, -154, 7.5), radius: 7 },
+  { kind: "ciws", side: "starboard", pos: [-WEAPON_X, WEAPON_Y, -155], restYaw: -Math.PI + 0.6, restPitch: 0.05, yawArc: arc((0.45 - Math.PI) / 2), pitchArc: [-0.35, 1.4], sponson: sponson(-1, -155, 7), radius: 7 },
 ]
 
 /** Axis-aligned bounds of everything the carrier model draws (hull, island, radar, elevator, weapon sponsons, vehicles). */

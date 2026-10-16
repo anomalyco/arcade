@@ -31,6 +31,7 @@ export type { MountKind }
 
 const G = 9.81
 const DEG = Math.PI / 180
+const TAU = Math.PI * 2
 const MAX_PEAK = 640
 
 /** What the gunnery weapons are called in kill feeds and on the wire. */
@@ -191,8 +192,9 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 /** Clamps a wanted aim into the mount's arcs: pitch into `pitchArc`; a yaw outside `yawArc` goes to the nearer end. */
 export function clampAim(m: WeaponMount, yaw: number, pitch: number, out: TurretAngles = { yaw: 0, pitch: 0 }): TurretAngles {
   const [y0, y1] = m.yawArc
-  let y = wrap(yaw)
-  if (y < y0 || y > y1) y = Math.abs(wrap(y - y0)) <= Math.abs(wrap(y - y1)) ? y0 : y1
+  // Into [y0, y0 + 2π): arcs may run past ±π (the port SAM's ends wrap round the stern).
+  let y = y0 + (((yaw - y0) % TAU) + TAU) % TAU
+  if (y > y1) y = Math.abs(wrap(y - y0)) <= Math.abs(wrap(y - y1)) ? y0 : y1
   out.yaw = y
   out.pitch = Math.max(m.pitchArc[0], Math.min(m.pitchArc[1], pitch))
   return out
@@ -207,7 +209,7 @@ const ca: TurretAngles = { yaw: 0, pitch: 0 }
 
 /**
  * Trains turret `cur` of mount `i` toward the wanted aim for `dt` seconds: the aim clamped to the arcs, then each axis
- * at most its rate. The arcs never wrap past ±π, so yaw moves linearly inside them (never through the ship).
+ * at most its rate. Yaw stays inside [y0, y1] (it may pass ±π) and moves linearly there, never through the ship.
  * Returns true when it is on the (clamped) aim.
  */
 export function slewTurret(cur: TurretAngles, i: number, wantYaw: number, wantPitch: number, dt: number): boolean {
