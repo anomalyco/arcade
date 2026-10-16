@@ -1,6 +1,7 @@
 import { LAB_LOOK } from "@arcade/kit/lab-knobs"
 import { popover, split, toast, tree, type Split, type Tree } from "@arcade/knobs/ui"
 import { ask, tip } from "@arcade/kit/lab/overlays"
+import { variantGroups } from "@arcade/kit/lab/stations/variants"
 import { matches, type Catalog, type HomeCollection, type HomeLab } from "./catalog"
 import "./home.css"
 
@@ -156,11 +157,18 @@ export function createHome(options: HomeOptions) {
       about.innerHTML = `<p class="lh-empty">Pick a lab to see what it holds.</p>`
       return
     }
-    const variants = lab.variants
-      .slice(0, 9)
-      .map((v, i) => `<li><kbd>${i + 1}</kbd>${html(v.label)}</li>`)
+    // Each group under its own heading, a few names each; number keys run through the groups in order (1–9).
+    const groups = variantGroups(lab.variants)
+    const shown = groups.length > 1 ? 4 : 9
+    let n = 0
+    const variants = groups
+      .map(g => {
+        const items = g.variants.map(v => ({ v, key: ++n <= 9 ? n : null }))
+        const list = items.slice(0, shown).map(({ v, key }) => (key ? `<li><kbd>${key}</kbd>${html(v.label)}</li>` : `<li class="lh-unkeyed">${html(v.label)}</li>`)).join("")
+        const more = items.length > shown ? `<li class="lh-more">and ${items.length - shown} more</li>` : ""
+        return `<h3>${html(g.id)}</h3><ol class="lh-variants">${list}${more}</ol>`
+      })
       .join("")
-    const more = lab.variants.length > 9 ? `<li class="lh-more">and ${lab.variants.length - 9} more</li>` : ""
     const status = lab.status === "draft" ? "Draft" : lab.status === "archived" ? "Archived" : null
     about.innerHTML = `
       <div class="lh-about-head" style="--c:${hex(lab.color)}">
@@ -168,7 +176,7 @@ export function createHome(options: HomeOptions) {
         <p class="lh-meta">${html(lab.kind.label)} lab<span>·</span>${html(lab.collection.title)}${status ? `<span>·</span>${status}` : ""}${lab.source === "edited" ? "<span>·</span>Edited here" : ""}</p>
       </div>
       ${lab.summary ? `<p class="lh-summary">${html(lab.summary)}</p>` : ""}
-      ${variants ? `<h3>Variants</h3><ol class="lh-variants">${variants}${more}</ol>` : ""}
+      ${variants}
       <div class="lh-actions">
         <button type="button" class="lh-open" data-open>Open<kbd>↵</kbd></button>
         ${actions(lab).map(a => `<button type="button" class="lh-act" data-act="${a.id}"${a.danger ? " data-danger" : ""}>${a.label}</button>`).join("")}

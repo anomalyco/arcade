@@ -3,6 +3,7 @@ import type { LabPanel } from "../../lab-panel"
 import type { Stage } from "../stage"
 import { addWidget, featuredGroups, findWidget, moveWidget, nudgeWidget, parseLayout, removeWidget, resolveLayout, saveLayout, savedLayout, stationLayout, toStationLayout, trimLayout, updateWidget, type GroupInfo, type PlacedWidget, type ResolvedLayout } from "./layout"
 import { STATION_SLOTS, STATUS_LABEL, WIDGET_KINDS, orderStations, type LabStation, type StationCommand, type StationEvent, type StationSlot, type StationSnapshot, type StationVariant, type StationWidgetKind } from "./types"
+import { composedSetup, composes, defaultPicks, groupOf, orderedVariants, pickAfter } from "./variants"
 import { renderWidget, WIDGET_HINTS, WIDGET_TITLES, type StationChanges, type WidgetContext, type WidgetInstance } from "./widgets"
 import "./style.css"
 
@@ -82,6 +83,8 @@ export function createStations(opts: {
 
   let current: LabStation | null = null
   let variant: StationVariant | null = null
+  /** Each variant group's pick; they compose (see `composedSetup`). */
+  let picks = new Map<string, StationVariant>()
   let missing: string | null = null
   let layout: ResolvedLayout | null = null
   let editing = false
@@ -165,7 +168,9 @@ export function createStations(opts: {
     panel: host.panel,
     pagePanel: station.demo.kind === "page" ? () => framePanel() : undefined,
     variant: () => variant,
+    picks: () => picks,
     chooseVariant,
+    reopen: () => void open(station),
     invoke: (command, args) => {
       const res = host.invoke(command, args)
       return res.ok ? { ok: true } : { ok: false, error: res.error }
@@ -175,7 +180,6 @@ export function createStations(opts: {
     changes: opts.dev ? () => opts.dev!.changes(station) : null,
     storage,
     abPending: { get: () => abPending, set: on => { abPending = on } },
-    variantKey: listed ? "⇧" : "",
   })
 
   function disposeWidgets() {
@@ -495,6 +499,7 @@ export function createStations(opts: {
     disposeWidgets()
     missing = null
     variant = null
+    picks = new Map()
     abPending = false
     if (station.demo.kind === "section") {
       const { section, game } = station.demo
@@ -509,7 +514,9 @@ export function createStations(opts: {
         try { host.select(section) } finally { selecting = false }
         applyCamera(station)
         runCommands(station.demo.setup, station.title)
-        variant = station.variants?.find(v => v.id === station.defaultVariant) ?? null
+        landOn(station)
+        // Several groups compose from the start: every group's pick runs on top of the demo's setup.
+        if (variant && composes(station)) runCommands(composedSetup(station, picks, variant), station.title)
       }
     } else {
       host.suspend(true)
@@ -520,8 +527,8 @@ export function createStations(opts: {
       forwardKeys(frame)
       page.replaceChildren(frame)
       page.hidden = false
-      variant = station.variants?.find(v => v.id === station.defaultVariant) ?? null
-      void runInFrame(variant?.setup, station.title)
+      landOn(station)
+      void runInFrame(variant ? composedSetup(station, picks, variant) : undefined, station.title)
     }
     const first = !current
     current = station
@@ -546,6 +553,7 @@ export function createStations(opts: {
     if (editing) { editing = false; host.root.removeAttribute("data-station-editing") }
     current = null
     variant = null
+    picks = new Map()
     missing = null
     layout = null
     abPending = false
@@ -558,13 +566,21 @@ export function createStations(opts: {
     emit({ kind: "station", station: null })
   }
 
+  /** The open station's default picks; the last group's is `variant`. */
+  function landOn(station: LabStation) {
+    picks = defaultPicks(station)
+    variant = [...picks.values()].at(-1) ?? null
+  }
+
   function chooseVariant(v: StationVariant) {
     if (!current) return
+    const setup = composedSetup(current, picks, v)
     if (current.demo.kind === "page") {
       const frame = page.querySelector("iframe")
       if (frame && v.url && frame.getAttribute("src") !== v.url) frame.src = v.url
-      void runInFrame(v.setup, v.label)
-    } else if (!runCommands(v.setup, v.label)) return
+      void runInFrame(setup, v.label)
+    } else if (!runCommands(setup, v.label)) return
+    picks = pickAfter(current, picks, v)
     variant = v
     if (abPending && current.demo.kind === "section") {
       abPending = false
@@ -573,7 +589,7 @@ export function createStations(opts: {
       else say(res.error, true)
     }
     for (const instance of instances.values()) instance.refresh?.()
-    emit({ kind: "variant", station: current.id, variant: v.id })
+    emit({ kind: "variant", station: current.id, variant: v.id, group: groupOf(v) })
   }
 
   /**
@@ -584,7 +600,7 @@ export function createStations(opts: {
   function digit(n: number, shift: boolean) {
     if (host.mode() === "play") return false
     if (!listed) {
-      const v = current?.variants?.[n === 0 ? 9 : n - 1]
+      const v = orderedVariants(current?.variants)[n === 0 ? 9 : n - 1]
       if (!v) return false
       if (shift && current?.demo.kind === "section" && v.id !== variant?.id) {
         const pinned = host.invoke("compare.pin-a")
@@ -594,7 +610,7 @@ export function createStations(opts: {
       return true
     }
     if (shift) {
-      const v = current?.variants?.[n === 0 ? 9 : n - 1]
+      const v = orderedVariants(current?.variants)[n === 0 ? 9 : n - 1]
       if (!v) return false
       chooseVariant(v)
       return true
@@ -634,6 +650,8 @@ export function createStations(opts: {
     for (const instance of instances.values()) instance.tick?.()
   }, 500)
 
+  const pickIds = () => Object.fromEntries([...picks].map(([group, v]) => [group, v.id]))
+
   // ── commands (⌘K, radial, `arcade station`) ────────────────────────────────────────────────────────────────────
   const ids = () => ordered.map(o => o.station.id).join(", ")
   host.commands.register({
@@ -660,7 +678,7 @@ export function createStations(opts: {
     category: "Navigation",
     readOnly: true,
     enabled: () => true,
-    run: () => ({ current: current?.id ?? null, variant: variant?.id ?? null, stations: ordered.map(o => ({ id: o.station.id, key: o.key, title: o.station.title, status: o.station.status, board: o.station.board?.feature ?? null })) }),
+    run: () => ({ current: current?.id ?? null, variant: variant?.id ?? null, picks: pickIds(), stations: ordered.map(o => ({ id: o.station.id, key: o.key, title: o.station.title, status: o.station.status, board: o.station.board?.feature ?? null })) }),
   })
   host.commands.register({
     id: "station.variant",
@@ -672,11 +690,11 @@ export function createStations(opts: {
     disabledReason: () => "Open a station with variants first.",
     run: (_ctx, args) => {
       const raw = String(args?.id ?? "").trim().toLowerCase()
-      const variants = current?.variants ?? []
+      const variants = orderedVariants(current?.variants)
       const v = variants.find(x => x.id === raw || x.label.toLowerCase() === raw) ?? variants[Number(raw) - 1]
       if (!v) throw new Error(`Unknown variant "${raw}". Variants: ${variants.map(x => x.id).join(", ")}.`)
       chooseVariant(v)
-      return { station: current?.id, variant: v.id }
+      return { station: current?.id, variant: v.id, picks: pickIds() }
     },
   })
   host.commands.register({
@@ -739,7 +757,7 @@ export function createStations(opts: {
     say,
     on(listener: (e: StationEvent) => void) { listeners.add(listener); return () => listeners.delete(listener) },
     snapshot(): StationSnapshot {
-      return { view: current ? "station" : "lab", station: current, variant, section: current?.demo.kind === "section" && !missing ? current.demo.section : null, url: location.href }
+      return { view: current ? "station" : "lab", station: current, variant, picks: pickIds(), section: current?.demo.kind === "section" && !missing ? current.demo.section : null, url: location.href }
     },
     /** The open station's layout, as a station file writes it. */
     layout: () => (layout ? toStationLayout(layout) : null),

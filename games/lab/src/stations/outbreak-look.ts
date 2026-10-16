@@ -5,77 +5,67 @@ const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean | string) => ({ command: "scene.set-param", args: { key, value } })
 const pose = (x: number, y: number, aim: number, extra: Record<string, boolean> = {}) => ({ command: "player.pose", args: { x, y, aim, ...extra } })
 
-// Every variant starts from the game's own defaults for the other sections, so switching never leaves rain or a beam
-// tier behind: the Shroud blend unseen look (D-21), Medium beam, clear weather.
-const defaults: StationCommand[] = [
-  set("unseenMode", 10),
-  set("beamQuality", 2),
-  { command: "weather.preset", args: { preset: "clear" } },
-]
-
-/** The start house at dusk, the default start: the survivor on the front walk at 17:30, looking up at the porch. */
-const startHouse: StationCommand[] = [...defaults, set("timeScale", 0), set("hour", 17.5), set("zoom", 40), pose(27.7, 41, -Math.PI / 2)]
-const look = (preset: string): StationCommand[] => [...startHouse, { command: "look.preset", args: { preset } }]
-const hero = (style: number): StationCommand[] => [...look("today"), set("heroStyle", style)]
-
-const night: StationCommand[] = [...defaults, set("timeScale", 0), set("hour", 22)]
-const street = (aim: number) => [...night, set("zoom", 42), pose(24, 44, aim)]
-const hall = (aim: number) => [...night, set("zoom", 34), pose(27.7, 31, aim, { openDoor: true })]
-const unseen = (mode: number, hour = 22): StationCommand[] => [
-  ...defaults,
-  set("timeScale", 0),
-  set("hour", hour),
-  set("zoom", 36),
-  set("unseenMode", mode),
-  pose(27.7, 31.2, -0.45, { openDoor: true, flashlight: hour > 18 }),
-]
+// The variants are six groups that compose: a Look, a Hero on top of it, where and when (Shot), the weather, the beam
+// tier and the unseen layer. Each sets only its own knobs and every group's pick is applied in this order, so choosing
+// a Hero keeps the Look and switching the Shot keeps the beam tier.
+const look = (preset: string): StationCommand[] => [{ command: "look.preset", args: { preset } }]
+const hero = (style: number): StationCommand[] => [set("heroStyle", style)]
+const shot = (hour: number, zoom: number, at: StationCommand, ...extra: StationCommand[]): StationCommand[] => [set("timeScale", 0), set("hour", hour), set("zoom", zoom), at, ...extra]
+const street = (aim: number) => pose(24, 44, aim)
+const hall = (flashlight: boolean) => pose(27.7, 31.2, -0.45, { openDoor: true, flashlight })
 
 const variants: StationVariant[] = [
   // Look presets: every knob in Look · Grade, Look · Lights and Look · Hero, named and versioned (look/presets.ts).
-  { id: "today", boardOption: "1", label: "Look · Today", note: "The shipped look: Noir grade by hour, box survivor.", setup: look("today") },
-  { id: "deeper-noir", boardOption: "2", label: "Look · Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
-  { id: "warm-practicals", boardOption: "3", label: "Look · Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
-  { id: "cold-moonlight", boardOption: "4", label: "Look · Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
-  { id: "vivid-world", boardOption: "5", label: "Look · Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
-  { id: "big-walk", boardOption: "6", label: "Look · Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
-  // The survivor's style alone, on today's world.
-  { id: "hero-today", label: "Hero · Today", note: "Jacket, jeans and boots: today's box figure.", setup: hero(0) },
-  { id: "hero-mannequin", label: "Hero · Matte mannequin", note: "Smooth putty-grey mannequin, no face, mitten hands.", setup: hero(1) },
-  { id: "hero-silhouette", label: "Hero · Flat silhouette", note: "Near-black flat figure; a tight rim draws its edge.", setup: hero(2) },
-  { id: "hero-capsule", label: "Hero · Capsule figure", note: "Chalky toy of capsules and a ball head.", setup: hero(3) },
-  // The flashlight beam (was the outbreak-flashlight station): off and the volumetric tiers, at night.
-  { id: "beam-off", label: "Beam · Off", note: "Closed-form air glow only (Noir v2).", setup: [...street(0.12), set("beamQuality", 0)] },
-  { id: "beam-low", label: "Beam · Low", note: "1/4 resolution, 6 samples.", setup: [...street(0.12), set("beamQuality", 1)] },
-  { id: "beam-medium", label: "Beam · Medium", note: "Default: 1/2 resolution, 8 samples.", setup: street(0.12) },
-  { id: "beam-high", label: "Beam · High", note: "1/2 resolution, 14 samples.", setup: [...street(0.12), set("beamQuality", 3)] },
-  { id: "beam-raised", label: "Beam · Raised aim", note: "Pistol light on the raised barrel.", setup: [...street(-0.35), { command: "survivor.aim-demo", args: { mode: "aim-fire" } }] },
-  { id: "beam-rain", label: "Beam · Rain", note: "Rain and mist thicken the air.", setup: [...street(0.12), { command: "weather.preset", args: { preset: "rain" } }] },
-  { id: "beam-doorway", label: "Beam · Through a doorway", note: "Door frame cuts the shaft.", setup: hall(Math.PI) },
+  { id: "today", group: "Look", boardOption: "1", label: "Today", note: "The shipped look: Noir grade by hour, box survivor.", setup: look("today") },
+  { id: "deeper-noir", group: "Look", boardOption: "2", label: "Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
+  { id: "warm-practicals", group: "Look", boardOption: "3", label: "Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
+  { id: "cold-moonlight", group: "Look", boardOption: "4", label: "Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
+  { id: "vivid-world", group: "Look", boardOption: "5", label: "Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
+  { id: "big-walk", group: "Look", boardOption: "6", label: "Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
+  // The survivor's style over the Look; "From the look" keeps the one the Look preset chose.
+  { id: "hero-from-look", group: "Hero", label: "From the look", note: "The survivor style the Look preset sets.", setup: [] },
+  { id: "hero-today", group: "Hero", label: "Today", note: "Jacket, jeans and boots: today's box figure.", setup: hero(0) },
+  { id: "hero-mannequin", group: "Hero", label: "Matte mannequin", note: "Smooth putty-grey mannequin, no face, mitten hands.", setup: hero(1) },
+  { id: "hero-silhouette", group: "Hero", label: "Flat silhouette", note: "Near-black flat figure; a tight rim draws its edge.", setup: hero(2) },
+  { id: "hero-capsule", group: "Hero", label: "Capsule figure", note: "Chalky toy of capsules and a ball head.", setup: hero(3) },
+  // Where the survivor stands and when: the start house at dusk is the default start.
+  { id: "front-walk-dusk", group: "Shot", label: "Front walk, dusk", note: "The default start: the front walk at 17:30, looking up at the porch.", setup: shot(17.5, 40, pose(27.7, 41, -Math.PI / 2)) },
+  { id: "street-night", group: "Shot", label: "Street, night", note: "Down the road at 22:00, beam along the street.", setup: shot(22, 42, street(0.12)) },
+  { id: "street-raised-aim", group: "Shot", label: "Street, raised aim", note: "Pistol light on the raised barrel.", setup: shot(22, 42, street(-0.35), { command: "survivor.aim-demo", args: { mode: "aim-fire" } }) },
+  { id: "doorway-night", group: "Shot", label: "Doorway, night", note: "The door frame cuts the beam.", setup: shot(22, 34, pose(27.7, 31, Math.PI, { openDoor: true })) },
+  { id: "hallway-night", group: "Shot", label: "Hallway, night", note: "Inside at 22:00, flashlight on: the unseen layer around the beam.", setup: shot(22, 36, hall(true)) },
+  { id: "hallway-day", group: "Shot", label: "Hallway, day", note: "At 14:00 the unseen layers scale down.", setup: shot(14, 36, hall(false)) },
+  { id: "clear", group: "Weather", label: "Clear", note: "No rain.", setup: [{ command: "weather.preset", args: { preset: "clear" } }] },
+  { id: "rain", group: "Weather", label: "Rain", note: "Rain and mist thicken the air.", setup: [{ command: "weather.preset", args: { preset: "rain" } }] },
+  // The flashlight beam (was the outbreak-flashlight station): off and the volumetric tiers.
+  { id: "beam-off", group: "Beam", label: "Off", note: "Closed-form air glow only (Noir v2).", setup: [set("beamQuality", 0)] },
+  { id: "beam-low", group: "Beam", label: "Low", note: "1/4 resolution, 6 samples.", setup: [set("beamQuality", 1)] },
+  { id: "beam-medium", group: "Beam", label: "Medium", note: "Default: 1/2 resolution, 8 samples.", setup: [set("beamQuality", 2)] },
+  { id: "beam-high", group: "Beam", label: "High", note: "1/2 resolution, 14 samples.", setup: [set("beamQuality", 3)] },
   // What the survivor can't see (was the outbreak-unseen station); Shroud blend is the default (D-21).
-  { id: "unseen-shroud-blend", label: "Unseen · Shroud blend (default)", note: "Dark shroud, a little film static and a faint warp.", setup: unseen(10) },
-  { id: "unseen-off", label: "Unseen · Off", note: "Noir fog of war with no unseen post-process.", setup: unseen(0) },
-  { id: "unseen-acid-knife", label: "Unseen · Acid Knife glitch", note: "Stepped block and scanline tear, red/cyan split.", setup: unseen(1) },
-  { id: "unseen-warp", label: "Unseen · Warp wobble", note: "Slow domain-warped refraction outside sight.", setup: unseen(2) },
-  { id: "unseen-dark-shroud", label: "Unseen · Dark shroud", note: "Soft penumbra into deep desaturated dark.", setup: unseen(3) },
-  { id: "unseen-stale-memory", label: "Unseen · Stale memory", note: "Unseen rooms freeze as a faded snapshot.", setup: unseen(4) },
-  { id: "unseen-noise-film", label: "Unseen · Noise film", note: "16mm grain thickening away from sight.", setup: unseen(5) },
-  { id: "unseen-shroud-noise", label: "Unseen · Shroud + Noise", note: "Dark shroud with analog grain.", setup: unseen(6) },
-  { id: "unseen-memory-warp", label: "Unseen · Memory + Warp", note: "Faded memory under slow refraction.", setup: unseen(7) },
-  { id: "unseen-edge-glitch", label: "Unseen · Edge glitch + Shroud", note: "Glitch only on the sight boundary, over the shroud.", setup: unseen(8) },
-  { id: "unseen-daylight", label: "Unseen · By day", note: "At 14:00 the unseen layers scale down.", setup: unseen(10, 14) },
+  { id: "unseen-shroud-blend", group: "Unseen", label: "Shroud blend", note: "The default: dark shroud, a little film static and a faint warp.", setup: [set("unseenMode", 10)] },
+  { id: "unseen-off", group: "Unseen", label: "Off", note: "Noir fog of war with no unseen post-process.", setup: [set("unseenMode", 0)] },
+  { id: "unseen-acid-knife", group: "Unseen", label: "Acid Knife glitch", note: "Stepped block and scanline tear, red/cyan split.", setup: [set("unseenMode", 1)] },
+  { id: "unseen-warp", group: "Unseen", label: "Warp wobble", note: "Slow domain-warped refraction outside sight.", setup: [set("unseenMode", 2)] },
+  { id: "unseen-dark-shroud", group: "Unseen", label: "Dark shroud", note: "Soft penumbra into deep desaturated dark.", setup: [set("unseenMode", 3)] },
+  { id: "unseen-stale-memory", group: "Unseen", label: "Stale memory", note: "Unseen rooms freeze as a faded snapshot.", setup: [set("unseenMode", 4)] },
+  { id: "unseen-noise-film", group: "Unseen", label: "Noise film", note: "16mm grain thickening away from sight.", setup: [set("unseenMode", 5)] },
+  { id: "unseen-shroud-noise", group: "Unseen", label: "Shroud + Noise", note: "Dark shroud with analog grain.", setup: [set("unseenMode", 6)] },
+  { id: "unseen-memory-warp", group: "Unseen", label: "Memory + Warp", note: "Faded memory under slow refraction.", setup: [set("unseenMode", 7)] },
+  { id: "unseen-edge-glitch", group: "Unseen", label: "Edge glitch + Shroud", note: "Glitch only on the sight boundary, over the shroud.", setup: [set("unseenMode", 8)] },
 ]
 
 export default defineStation({
   id: "outbreak-look",
   title: "Outbreak look",
   summary:
-    "The start house at dusk in the live game, with every look knob in one place: survivor style, world grade, lamps and sky. Curated presets set all the knobs at once; the beam and unseen sections are here too.",
+    "The start house at dusk in the live game, with every look knob in one place: survivor style, world grade, lamps and sky. Curated presets set all the knobs at once; pick a Hero, shot, weather, beam tier and unseen layer on top of any Look.",
   order: 99,
   prop: "house",
   color: 0xd9a441,
   status: "review",
   demo: { kind: "page", url: page },
-  defaultVariant: "today",
+  defaultVariant: ["today", "hero-from-look", "front-walk-dusk", "clear", "beam-medium", "unseen-shroud-blend"],
   variants: variants.map(v => ({ ...v, url: page })),
   board: { feature: "AR-42", decision: "D-28" },
   metrics: [

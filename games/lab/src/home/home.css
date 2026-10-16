@@ -170,7 +170,11 @@
   gap: 8px;
   height: 24px;
 }
-.lh-variants .lh-more {
+.lh-variants + h3 {
+  margin-top: 12px;
+}
+.lh-variants .lh-more,
+.lh-variants .lh-unkeyed {
   padding-left: 24px;
   color: var(--tx3);
 }

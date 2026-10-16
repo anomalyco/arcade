@@ -45,6 +45,8 @@ export type SceneVariant = {
   id: string
   label: string
   note?: string
+  /** The axis it picks on (Look, Hero); picks in different groups compose. Every variant has one, or none does. */
+  group?: string
   choices?: SceneChoices
   set?: Record<string, LabValue>
   setup?: readonly SceneCommand[]
@@ -94,8 +96,10 @@ export type LabScene = {
   views: readonly SceneView[]
   view?: string
   variants: readonly SceneVariant[]
-  /** The variant the scene opens on. */
-  variant?: string
+  /** The variant the scene opens on, or one per group. */
+  variant?: string | readonly string[]
+  /** Its variant groups are sections of one choice instead of axes that compose (scenes that can't stack). */
+  pickOne?: boolean
   layout?: SceneLayout
   info?: SceneInfo
   note?: string
@@ -270,8 +274,14 @@ export function checkScene(input: unknown): Checked<LabScene> {
       values(v.set, `${at}.set`, problems)
       commands(v.setup, `${at}.setup`, problems)
       if (v.url !== undefined && (typeof v.url !== "string" || !v.url.startsWith("/arcade/"))) problems.push(`${at}.url must be an Arcade path`)
+      if (v.group !== undefined && (typeof v.group !== "string" || !v.group.trim())) problems.push(`${at}.group must be a name`)
     })
-    if (s.variant !== undefined && !ids.has(String(s.variant))) problems.push(`variant "${String(s.variant)}" is not one of the variants`)
+    const grouped = s.variants.filter(v => isRecord(v) && v.group !== undefined).length
+    if (grouped && grouped < s.variants.length) problems.push("give every variant a group, or none")
+    const opening = s.variant === undefined ? [] : Array.isArray(s.variant) ? s.variant : [s.variant]
+    for (const id of opening) if (!ids.has(String(id))) problems.push(`variant "${String(id)}" is not one of the variants`)
+    if (s.pickOne !== undefined && typeof s.pickOne !== "boolean") problems.push("pickOne must be true or false")
+    if (s.pickOne === true && opening.length > 1) problems.push("a pickOne lab opens on one variant")
   }
   if (s.info !== undefined) {
     if (!isRecord(s.info)) problems.push("info must be an object")
@@ -297,7 +307,7 @@ export function checkCollection(input: unknown): Checked<SceneCollection> {
 
 const KEY_ORDER: readonly (keyof LabScene)[] = [
   "schema", "id", "collection", "kind", "title", "status", "summary", "author", "created", "updated", "games", "host",
-  "choices", "extras", "settings", "seeds", "views", "view", "variants", "variant", "layout", "info", "note",
+  "choices", "extras", "settings", "seeds", "views", "view", "variants", "variant", "pickOne", "layout", "info", "note",
 ]
 
 /** A scene as a repo file: fixed key order, two-space indent, trailing newline, so diffs stay small. */

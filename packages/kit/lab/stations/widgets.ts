@@ -1,6 +1,10 @@
+import { createRemoteControls, type ControlDescriptor } from "@arcade/knobs"
+import { mountPanel } from "@arcade/knobs/panel"
 import type { LabPanel } from "../../lab-panel"
+import { LAB_LOOK } from "../../lab-knobs"
 import type { PlacedWidget } from "./layout"
 import { STATUS_LABEL, type LabStation, type StationVariant, type StationWidgetKind } from "./types"
+import { composes, variantGroups } from "./variants"
 
 export type StationChange = { sha: string; subject: string; when: string }
 export type StationBranch = { name: string; ahead: number; subject: string; when: string }
@@ -16,7 +20,11 @@ export type WidgetContext = {
   /** For page demos: resolves to the embedded page's LabPanel once loaded. */
   pagePanel?: () => Promise<LabPanel | null>
   variant(): StationVariant | null
+  /** Each variant group's pick, by group. */
+  picks(): ReadonlyMap<string, StationVariant>
   chooseVariant(variant: StationVariant): void
+  /** Opens the station again from its own setup (a single group's Base). */
+  reopen(): void
   invoke(command: string, args?: Record<string, unknown>): { ok: true } | { ok: false; error: string }
   say(text: string, error?: boolean): void
   /** GPU time, frames per second and the section's first telemetry line. */
@@ -25,8 +33,6 @@ export type WidgetContext = {
   storage: Storage | null
   /** The A/B wipe is waiting for a variant to be B. */
   abPending: { get(): boolean; set(on: boolean): void }
-  /** The key chip before a variant's number: "⇧" while number keys open stations, "" once they pick variants. */
-  variantKey?: string
 }
 
 export type WidgetInstance = {
@@ -38,6 +44,9 @@ export type WidgetInstance = {
 }
 
 type Renderer = (body: HTMLElement, widget: PlacedWidget, ctx: WidgetContext) => WidgetInstance
+
+/** The choice a single group shows before any variant: the station's own setup. */
+const BASE = "__base"
 
 const html = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
 
@@ -65,7 +74,7 @@ export const WIDGET_TITLES: Record<StationWidgetKind, string> = {
 export const WIDGET_HINTS: Record<StationWidgetKind, string> = {
   status: "What the station is, its status and board feature",
   controls: "Knobs cards for chosen Details groups",
-  variants: "The station's variants (⇧1–⇧9)",
+  variants: "The station's variants, one choice per group; groups compose",
   compare: "A/B wipe and the variation grid",
   perf: "GPU time, frame rate and the section's telemetry",
   metrics: "Measured numbers with where they came from",
@@ -150,24 +159,48 @@ const renderers: Record<StationWidgetKind, Renderer> = {
   },
 
   variants(body, _w, ctx) {
-    const variants = ctx.station.variants ?? []
-    if (!variants.length) { body.innerHTML = `<p class="ls-dim">No variants.</p>`; return {} }
-    const list = document.createElement("div")
-    list.className = "ls-variants"
-    const chips = variants.map((v, i) => {
-      const chip = button(`${i < 9 ? `<kbd>${ctx.variantKey ?? "⇧"}${i + 1}</kbd>` : ""}<span>${html(v.label)}</span>`, () => ctx.chooseVariant(v), "ls-chip")
-      chip.dataset.variant = v.id
-      if (v.note) chip.title = v.note
-      list.append(chip)
-      return chip
+    const groups = variantGroups(ctx.station.variants)
+    if (!groups.length) { body.innerHTML = `<p class="ls-dim">No variants.</p>`; return {} }
+    // Groups that don't stack (one group, or `pickOne`) get a first choice for "none of these": a single group the
+    // station doesn't open on a variant of starts at Base, the station's own setup; with `pickOne` the groups not
+    // holding the pick show "—". Choosing either opens the station again from its setup.
+    const stack = composes(ctx.station)
+    const single = groups.length === 1
+    const base = !stack && (!single || !ctx.picks().size)
+    const value = (group: string) => ctx.picks().get(group)?.id ?? BASE
+    // One labelled choice row per group: segments while they fit, a menu past four.
+    const descriptors: ControlDescriptor[] = groups.map(g => ({
+      kind: "choice",
+      key: g.id,
+      label: single ? "Variant" : g.id,
+      default: value(g.id),
+      choices: [...(base ? [{ id: BASE, label: single ? "Base" : "—" }] : []), ...g.variants.map(v => ({ id: v.id, label: v.label }))],
+    }))
+    let pushing = false
+    const store = createRemoteControls(`station-variants-${ctx.station.id}`, descriptors, {
+      storage: null,
+      persist: "none",
+      marks: false,
+      nullDefaults: false,
+      onSet: (key, chosen) => {
+        if (pushing) return
+        // Opening again rebuilds this card, so not from inside its own change.
+        if (chosen === BASE) return void queueMicrotask(() => ctx.reopen())
+        const v = groups.find(g => g.id === key)?.variants.find(x => x.id === chosen)
+        if (v && ctx.picks().get(key)?.id !== v.id) ctx.chooseVariant(v)
+        // A setup that failed leaves the picks as they were; the row follows them.
+        refresh()
+      },
     })
-    body.append(list)
+    const el = document.createElement("div")
+    el.className = "ls-variant-groups"
+    body.append(el)
+    const panel = mountPanel(store, el, { title: false, header: false, ...LAB_LOOK, renderer: "dom", variants: false, haptics: false, session: false })
     const refresh = () => {
-      const current = ctx.variant()?.id
-      for (const chip of chips) chip.dataset.active = String(chip.dataset.variant === current)
+      pushing = true
+      try { store.sync(Object.fromEntries(groups.map(g => [g.id, value(g.id)]))) } finally { pushing = false }
     }
-    refresh()
-    return { refresh }
+    return { refresh, dispose: () => panel.dispose() }
   },
 
   compare(body, _w, ctx) {

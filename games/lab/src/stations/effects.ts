@@ -12,7 +12,7 @@ const explosions = [
   ["pop", "Small pop", 2.2],
 ] as const
 const set = (key: string, value: string | number | boolean) => ({ command: "scene.set-param", args: { key, value } })
-const world = [set("backdrop", "world")]
+const trigger = { command: "effect.trigger", args: { seed: 7 } }
 
 export default defineStation({
   id: "effects",
@@ -23,26 +23,32 @@ export default defineStation({
   prop: "burst",
   color: 0xff7a2f,
   status: "review",
-  demo: { kind: "section", section: "effects", setup: [...world, set("effect", "explosion"), set("explosionPreset", "grenade"), { command: "effect.loop", args: { loop: true, interval: 2.2 } }, { command: "effect.trigger", args: { seed: 7 } }] },
-  defaultVariant: "grenade",
+  demo: { kind: "section", section: "effects", setup: [set("backdrop", "world")] },
+  // Groups that compose, applied in this order: where the effect plays, the light, then the effect itself (it fires
+  // last, so it reads against both). The blood variants run the Splatter section; on Home they are a lab of their own.
+  defaultVariant: ["world", "day", "grenade"],
   variants: [
+    { id: "world", group: "Backdrop", label: "Street", note: "The Look and world street.", setup: [set("backdrop", "world")] },
+    { id: "stage-room", group: "Backdrop", label: "Stage room (before)", note: "The old blue stage room the effects used to play in.", setup: [set("backdrop", "stage")] },
+    { id: "day", group: "Light", label: "Day", note: "13:00 in the current grade.", setup: [set("worldHour", 13), set("worldLook", "current")] },
+    { id: "night", group: "Light", label: "Night, Noir", note: "23:00 under Noir: the flash lights the street.", setup: [set("worldHour", 23), set("worldLook", "noir")] },
     ...explosions.map(([id, label, interval]): StationVariant => ({
       id,
+      group: "Effect",
       label,
-      setup: [...world, set("effect", "explosion"), set("explosionPreset", id), { command: "effect.loop", args: { loop: true, interval } }, { command: "effect.trigger", args: { seed: 7 } }],
+      setup: [set("effect", "explosion"), set("explosionPreset", id), { command: "effect.loop", args: { loop: true, interval } }, trigger],
     })),
-    ...gridVariants("smoke").map(v => ({ ...v, setup: [...world, set("effect", "smoke"), ...(v.setup ?? []), { command: "effect.trigger", args: { seed: 7 } }] })),
-    { id: "fire", label: "Fire", setup: [...world, set("effect", "fire"), { command: "effect.trigger", args: { seed: 7 } }] },
-    { id: "tyre", label: "Tyre smoke", setup: [...world, set("effect", "tyre"), { command: "effect.trigger", args: { seed: 7 } }] },
-    { id: "night-grenade", label: "Grenade at night", note: "23:00 under Noir: the flash lights the street.", setup: [...world, set("worldHour", 23), set("worldLook", "noir"), set("effect", "explosion"), set("explosionPreset", "grenade"), { command: "effect.trigger", args: { seed: 7 } }] },
+    ...gridVariants("smoke").map(v => ({ ...v, group: "Effect", setup: [set("effect", "smoke"), ...(v.setup ?? []), trigger] })),
+    { id: "fire", group: "Effect", label: "Fire", setup: [set("effect", "fire"), trigger] },
+    { id: "tyre", group: "Effect", label: "Tyre smoke", setup: [set("effect", "tyre"), trigger] },
     {
       id: "blood-wet",
+      group: "Blood",
       label: "Blood splatter (Wet ballistic)",
       note: "Surface-clipped ballistic splatter with coagulated venous core, arterial rim, directional streaks, and wet meniscus specular.",
       setup: [{ command: "scene.select-section", args: { section: "splatter" } }, set("style", 1), set("preset", "zombieBlood")],
     },
-    { id: "blood-legacy", label: "Blood splatter (Legacy flat)", note: "Previous particle-sprite blood for A/B comparison.", setup: [{ command: "scene.select-section", args: { section: "splatter" } }, set("style", 0)] },
-    { id: "stage-room", label: "Stage room (before)", note: "The old blue stage room the effects used to play in.", setup: [set("backdrop", "stage"), set("effect", "explosion"), set("explosionPreset", "grenade"), { command: "effect.trigger", args: { seed: 7 } }] },
+    { id: "blood-legacy", group: "Blood", label: "Blood splatter (Legacy flat)", note: "Previous particle-sprite blood for A/B comparison.", setup: [{ command: "scene.select-section", args: { section: "splatter" } }, set("style", 0)] },
   ],
   grid: "explosions",
   board: { feature: "AR-15" },

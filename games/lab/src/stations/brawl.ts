@@ -15,6 +15,7 @@ const roster = [
 const variants: StationVariant[] = [
   ...roster.map(([id, label, note]): StationVariant => ({
     id,
+    group: "Character",
     label,
     note: `${note} Loops every ability in turn at two dummies and a few props.`,
     url: `${page}#gallery/${id}`,
@@ -22,6 +23,7 @@ const variants: StationVariant[] = [
   })),
   {
     id: "props",
+    group: "Round",
     label: "Prop playground",
     note: "Every prop on the ring with Big Slab throwing whatever is nearest. Click in and play: WASD, mouse, Q / E / Space.",
     url: `${page}#props/chef`,
@@ -29,6 +31,7 @@ const variants: StationVariant[] = [
   },
   {
     id: "bots-4",
+    group: "Round",
     label: "4-bot round",
     note: "The game's own BotBrains using every ability, rounds back to back.",
     url: `${page}#bots/4`,
@@ -36,6 +39,7 @@ const variants: StationVariant[] = [
   },
   {
     id: "bots-8",
+    group: "Round",
     label: "8-bot round",
     note: "A full room of eight bots.",
     url: `${page}#bots/8`,
@@ -54,6 +58,7 @@ export default defineStation({
   status: "in-progress",
   demo: { kind: "page", url: `${page}#gallery/bea` },
   defaultVariant: "bea",
+  pickOne: true,
   variants,
   board: { feature: "AR-38" },
   metrics: [
