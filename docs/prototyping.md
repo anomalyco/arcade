@@ -2,6 +2,21 @@
 
 New game ideas in `arcade` start as a single-screen, low-resolution toy built on `@arcade/kit` primitives (`bun scripts/new-toy.ts <name>`). A toy proves that moving, aiming, and hitting feel good on plain boxes and cylinders before anyone writes custom meshes, skeletal animations, custom WGSL shaders, procedural worlds, or Durable Object rooms.
 
+## Cheap presentation, shared feel on by default
+
+Low fidelity means cheap *presentation*, not stripped *feel*. A toy draws with test models (boxes, capsules, prisms,
+flat colours, one stock look), but it uses the kit's shared game feel from the first day, because it costs nothing:
+
+- **Camera and impact:** `Camera` shake and directional kick, `HitStop` (`@arcade/kit/client/camera`).
+- **Effects:** shared particles, explosions, smoke and trails (`@arcade/kit/fx`).
+- **Sound:** placeholder sounds from the shared library (`@arcade/kit/audio`) and the shared volume controls.
+- **Characters, when the idea needs people:** the shared human rig with procedural animation (`@arcade/kit/avatar`).
+- **Bots, input and tuning:** shared input bindings by physical key, bots for playtests, and `LabPanel` knobs.
+
+Trying a different game style (top-down, side-view, first-person) should mean a different camera and arena, not new
+infrastructure. Never rebuild one of these per toy. If a toy needs something the kit doesn't have, add it to the kit
+once, so the next toy gets it free; shared libraries grow from real needs, not up front.
+
 ## Why feel comes before meshes
 
 Game ideas almost never play the way they sound in a pitch. Studios that consistently ship responsive action games separate **finding the toy** from **dressing the world**:
@@ -19,7 +34,7 @@ When starting a new game or mode in `arcade`, keep the prototype inside four con
 | --- | --- | --- |
 | **Geometry** | `@arcade/kit/gpu/mesh` primitives (`Mesh.box`, `Mesh.prism`, `Mesh.bevelBox`) colored by role: player, threat, goal, wall. | Blender `.glb` assets, `@arcade/kit/avatar` human rigs, surface material recipes, foliage. |
 | **World & Net** | Single fixed arena (for example 24×24 m) in `shared/sim.ts`, stepped locally at 60 Hz with `@arcade/kit/sim/move` (`stepBody`). | `@arcade/kit/server` (`RoomObject`, `LobbyObject`, `gameWorker`), snapshot interpolation, or chunk streaming. |
-| **Shaders & Post** | Stock `@arcade/kit/gpu/renderer` + `@arcade/kit/gpu/scene-frame` (`SceneLights`, `packSceneFrame`). | Custom WGSL passes, volumetric smoke, weather passes, custom post-grading. |
+| **Shaders & Post** | Stock `@arcade/kit/gpu/renderer` + `@arcade/kit/gpu/scene-frame` (`SceneLights`, `packSceneFrame`), with the kit's stock particles and look. | Custom WGSL passes, volumetric smoke, weather passes, custom post-grading. |
 | **Tuning** | Every feel constant (`moveSpeed`, `accel`, `dashImpulse`, `cooldown`, `knockback`, `hitStopMs`, `shake`) bound to `@arcade/kit/lab-panel` (`Backquote`). | Hardcoded magic numbers scattered across simulation files. |
 
 ## Building a toy in 30 seconds
@@ -43,7 +58,7 @@ Spend the first hour exclusively on **Character, Camera, and Controls** with the
 
 1. **Movement envelope**: Tune top speed, acceleration, and deceleration (`stepBody` `accel` rate) until figure-eights around two box pillars feel crisp. Test whether stopping is instant or carries momentum, and whether turning while sprinting feels responsive.
 2. **Primary verb & commitment**: Give the player one primary action (`Mouse0` or `Space`) with a clear windup, active window, and recovery cooldown. A verb feels weighty when the player commits to a trajectory or cooldown for 150–400 ms rather than spamming every frame.
-3. **Impact response without particles**: Sell hits using timing and motion before adding particle emitters:
+3. **Impact response**: Sell hits with timing and motion first, then the kit's stock particles and sounds (no custom effects yet):
    - **Hitstop (`HitStop.trigger`)**: Freeze presentation steps for 30–70 ms on heavy hits while the camera continues to shake.
    - **Directional camera kick (`cam.add(amount, dir)`)**: Kick the camera along the attack vector on impact.
    - **Knockback & permanence**: Push hit targets physically across the floor and leave knocked-out boxes on the arena floor so the aftermath of a fight is legible.
