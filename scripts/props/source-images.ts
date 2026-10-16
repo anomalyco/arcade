@@ -33,8 +33,9 @@ const proc = Bun.spawn(["ssh", "pro", remote], { stdin: new TextEncoder().encode
 let failed = 0
 let buf = ""
 const decoder = new TextDecoder()
-for await (const chunk of proc.stdout) {
-  buf += decoder.decode(chunk, { stream: true })
+const reader = proc.stdout.getReader()
+for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+  buf += decoder.decode(chunk.value, { stream: true })
   let nl: number
   while ((nl = buf.indexOf("\n")) >= 0) {
     const line = buf.slice(0, nl).trim()
