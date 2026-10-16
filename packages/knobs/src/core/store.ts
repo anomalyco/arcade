@@ -1,6 +1,7 @@
 import { formatCode, type CodeFormat } from "./code.js"
+import { normalizeCombo } from "./keys.js"
 import { mutateValues } from "./mutate.js"
-import { randomValues } from "./random.js"
+import { around, pick, randomValues } from "./random.js"
 import { REFRESHES, RESET_KEYS, RESHAPE, type Reshape, type ResetKeys } from "./internal.js"
 import {
   pushReadout,
@@ -16,6 +17,7 @@ import {
   normalizeField,
   same,
   hasValue,
+  toolbarShortcut,
   type Field,
   isReadout,
   type ReadoutInput,
@@ -30,9 +32,29 @@ import { browserStorage, storageKey, type StoragePort } from "./storage.js"
 import { createVariants, type Variants } from "./variants.js"
 
 declare const __KNOBS_DEV__: boolean
+/** knobs' development build, or its source under a dev server (Vite's `import.meta.env.DEV`). */
+const devBuild = (): boolean =>
+  typeof __KNOBS_DEV__ !== "undefined"
+    ? __KNOBS_DEV__
+    : ((import.meta as { env?: { DEV?: boolean } }).env?.DEV ?? true)
 export type ThemeMode = "dark" | "light" | "auto"
 export type DensityMode = "compact" | "default" | "comfortable"
 export type RendererMode = "gpu" | "dom" | "auto"
+/** When a store's chip shows; see `ChipOptions.reveal`. */
+export type RevealMode = "hover" | "shortcut" | "always"
+/** The floating chip `attach` puts on an element, which grows into its panel. */
+export interface ChipOptions {
+  /** Text beside the cog, e.g. `"knobs"`. Just the cog by default. */
+  readonly label?: string
+  /**
+   * When the chip shows. `"hover"`: while the element is hovered or focused. `"shortcut"`: hidden
+   * until `shortcut` turns on knobs mode (remembered for the tab), then on hover. `"always"`:
+   * whenever its panel is closed. `"hover"` in development, `"shortcut"` in production builds.
+   */
+  readonly reveal?: RevealMode
+  /** The key that toggles knobs mode for `"shortcut"` chips: `"Alt+Shift+D"` (⌥⇧D) by default. */
+  readonly shortcut?: string
+}
 export type ChangeSource =
   | "local"
   | "remote"
@@ -58,6 +80,16 @@ export interface ChangeMeta {
   readonly coalesce?: boolean
   readonly key?: string
   readonly group?: string
+  /** A reset that went back to the active preset (see `Controls.activePreset`), not the defaults. */
+  readonly base?: boolean
+}
+/**
+ * The preset last applied from the strip: a schema preset (by id) or a saved variant. It's the
+ * base Reset returns to and Random explores around.
+ */
+export interface PresetRef {
+  readonly kind: "preset" | "variant"
+  readonly id: string
 }
 export interface ControlAction<V = State> {
   readonly id?: string
@@ -135,12 +167,23 @@ export type PanelKeys = { readonly [C in PanelCommand]?: string | boolean } & {
   /** `false` stops ↑/↓ at the first and last rows instead of wrapping around. */
   readonly wrap?: boolean
 }
+/** `glass` (the default): ticks with a faint ring. `mech`: drier, the rings all but gone. */
+export type SoundTheme = "glass" | "mech"
+/** A mount's `sound`, beyond `true`. */
+export interface SoundOptions {
+  /** This panel's level, 0–1 (times `sound.volume`). */
+  readonly volume?: number
+  readonly theme?: SoundTheme
+}
 /** A header button (see `MountPanelOptions.header`). */
 export type HeaderButton = "random" | "reset" | "copy" | "undo" | "redo" | "help" | "close"
 export interface HeaderOptions {
   /** `false` hides the title; the buttons stay at the right. */
   readonly title?: boolean
-  /** Which buttons show, all of them (that are on) by default. */
+  /**
+   * Which buttons show (of those that are on). All but `help` by default: its `?` key opens the
+   * shortcuts either way, and the title's tooltip says so. List `"help"` to bring the button back.
+   */
   readonly buttons?: readonly HeaderButton[]
 }
 export interface MountPanelOptions extends LabelOptions {
@@ -153,6 +196,14 @@ export interface MountPanelOptions extends LabelOptions {
    */
   readonly keys?: PanelKeys
   /**
+   * Hint mode's reach. `"page"` (the default): `s` labels every visible control in every panel
+   * and knobs/ui piece on the page (and the host's `data-hint` elements), so pressed here or
+   * anywhere outside a text field it jumps across all of them; with nothing else on the page it's
+   * this panel's alone, as always. `"panel"`: `s` here labels only this panel's controls, and they
+   * don't join the page's. `keys: { hint: false }` turns hint mode off here either way.
+   */
+  readonly hints?: "page" | "panel"
+  /**
    * `false` hides what says a value differs from its default: modified dots and readout marks,
    * group reset icons and the header's Reset. For panels whose values belong to someone else
    * (a prototype's settings), where "default" means nothing. The store's `marks` by default.
@@ -163,7 +214,8 @@ export interface MountPanelOptions extends LabelOptions {
   /**
    * `false` drops the header (title and buttons) for a host that draws its own. An object keeps
    * it and chooses what shows: `{ title: false, buttons: ["random", "undo", "redo"] }`. A button
-   * left out keeps its key; a command that's off (`keys`) loses its button either way.
+   * left out keeps its key; a command that's off (`keys`) loses its button either way. Without a
+   * list, every button but `help` shows (see `HeaderOptions`).
    */
   readonly header?: boolean | HeaderOptions
   /**
@@ -207,6 +259,13 @@ export interface MountPanelOptions extends LabelOptions {
    * Reduced motion turns them off too.
    */
   readonly haptics?: boolean
+  /**
+   * Sound effects: quiet, short ticks and clicks synthesized live for the panel's moments (a
+   * slider's detents, a switch, Random, Copy…). Off by default; `true` turns them on, or
+   * `{ volume, theme }`. The page's switch (`sound.enable(false)` from `knobs/panel`) mutes every
+   * panel, and the `?` popover offers it as Sounds, kept in the store's storage.
+   */
+  readonly sound?: boolean | SoundOptions
   /** Called once the panel is mounted, with a handle to focus it (a host's "Tune" key). */
   readonly onReady?: (panel: PanelHandle) => void
   /** What Copy (and ⇧C) puts on the clipboard; `controls.code()` by default. */
@@ -280,7 +339,7 @@ export interface PanelModule {
     container: HTMLElement,
     options?: MountPanelOptions,
   ): PanelHandle
-  attach(controls: Controls<any>, element: HTMLElement): () => void
+  attach(controls: Controls<any>, element: HTMLElement, chip?: ChipOptions): () => void
 }
 export interface ControlsOptions<S extends Schema> extends LabelOptions {
   enabled?: boolean | (() => boolean)
@@ -291,6 +350,8 @@ export interface ControlsOptions<S extends Schema> extends LabelOptions {
    * dev-only and ship constants.
    */
   ship?: () => Promise<PanelModule>
+  /** The chip `attach` shows: its label, when it shows and the knobs-mode key (see `ChipOptions`). */
+  chip?: ChipOptions
   /**
    * The longest (ms) a key changed here outranks incoming values for it (see `sync`), so an echo
    * of an older value still in flight can't pull it back. The hold ends early once the remote
@@ -357,6 +418,8 @@ export interface Controls<S extends Schema = Schema> {
   readonly renderer: RendererMode
   readonly keys: PanelKeys | undefined
   readonly marks: boolean
+  /** The chip's options, with `reveal` and `shortcut` resolved. */
+  readonly chip: ChipOptions & { readonly reveal: RevealMode; readonly shortcut: string }
   /** How page cards show group presets (`groupPresetDisplay`, `auto` by default). */
   readonly groupPresetDisplay: GroupPresetDisplay
   /** A group's display label (`groupLabels`, else its fields' `groupLabel`), if it has one. */
@@ -416,17 +479,28 @@ export interface Controls<S extends Schema = Schema> {
   readonly canRedo: boolean
   subscribe(cb: () => void): () => void
   /**
-   * Back to the defaults: every field, or only `keys`. Locks don't apply; disabled and read-only
-   * fields keep their values.
+   * Back to the active preset (see `activePreset`) while anything differs from it, else to the
+   * defaults: every field, or only `keys`. Reaching the defaults with every field also forgets
+   * the active preset. Locks don't apply; disabled and read-only fields keep their values.
    */
   reset(keys?: readonly (keyof S & string)[]): void
+  /** One key, as `reset` does: to the active preset's value, else (already there) its default. */
   resetKey(key: keyof S & string): void
+  /**
+   * A group, as `reset` does: to its active group preset (or the panel's active preset) while it
+   * differs from it, else to its defaults, which forgets the group's preset.
+   */
   resetGroup(group: string): void
+  /** Whether the key (or anything) differs from the active preset; the defaults without one. */
   isModified(key?: keyof S & string): boolean
+  /** Whether `reset` (of every field, or `keys`) would change anything. */
+  canReset(keys?: readonly (keyof S & string)[]): boolean
+  /** What differs from the defaults (the values `code()` and Swift export care about). */
   modified(): Partial<Values<S>>
   /**
    * Random values for every field that can roll (see `canRoll`), or those among `keys`, drawn
-   * from `random`. One undo step.
+   * from `random`. With an active preset, they land near its values (see `AROUND`) instead of
+   * anywhere in range. One undo step.
    */
   randomize(keys?: readonly (keyof S & string)[]): void
   /** Small changes around the current values instead of a re-roll; skips what can't roll. */
@@ -434,6 +508,17 @@ export interface Controls<S extends Schema = Schema> {
   /** Keeps fields out of Random and Mutate (or lets them back in). Saved with the values. */
   lock(keys: (keyof S & string) | readonly (keyof S & string)[], locked?: boolean): void
   isLocked(key: keyof S & string): boolean
+  /**
+   * The combination that presses an action row now, or a toolbar's button (`item`, its id or
+   * label): the user's rebinding, else the declared `shortcut`; `""` when cleared, undefined
+   * when there's none.
+   */
+  shortcut(key: keyof S & string, item?: string): string | undefined
+  /**
+   * Rebinds an action row's shortcut (or a toolbar button's): a combination, `""` for none, or
+   * undefined to restore the declared one. Not undoable; saved with the values, as locks are.
+   */
+  rebind(key: keyof S & string, combo: string | undefined, item?: string): void
   /**
    * Whether Random and Mutate may change `key`: it holds a value and isn't locked, `random:
    * false`, refused by `tunable`, disabled or read-only.
@@ -461,19 +546,33 @@ export interface Controls<S extends Schema = Schema> {
    */
   compare(hold: boolean): void
   readonly comparing: boolean
-  preset(id: string): void
+  /**
+   * Applies a preset and makes it the active one (`"default"` clears it); one undo step, or
+   * folded into the last with `coalesce` (a pan across the strip).
+   */
+  preset(id: string, options?: { coalesce?: boolean }): void
   matchingPreset(): string
+  /**
+   * The preset (or saved variant) last applied, which Reset returns to and Random explores
+   * around, or null. Kept with the values; forgotten by a reset to the defaults.
+   */
+  activePreset(): PresetRef | null
+  /** The group preset last applied to `group` (0-based), or -1. */
+  activeGroupPreset(group: string): number
+  /** The values Reset returns to first: the active presets over the defaults. */
+  baseValues(): Values<S>
   /** Each group's numbered presets, complete over the keys they cover. */
   readonly groupPresets: Readonly<Record<string, readonly GroupPreset<Values<S>>[]>>
   /**
-   * Applies a group's preset (0-based), one undo step; `coalesce` folds it into the previous
-   * one (a pan across a card's presets).
+   * Applies a group's preset (0-based) and makes it the group's active one, one undo step;
+   * `coalesce` folds it into the previous one (a pan across a card's presets).
    */
   groupPreset(group: string, index: number, options?: { coalesce?: boolean }): void
   /** The group preset the current values match, or -1. */
   matchingGroupPreset(group: string): number
   code(format?: CodeFormat, values?: Values<S>): string
-  attach(element: HTMLElement): () => void
+  /** Shows the floating chip on `element`; `chip` overrides the store's chip options. */
+  attach(element: HTMLElement, chip?: ChipOptions): () => void
   mount(container: HTMLElement, options?: MountPanelOptions): () => void
 }
 /** Whether two fields draw and behave the same (a reshape keeps such a key's value). */
@@ -533,6 +632,8 @@ export function defineControls<const S extends Schema>(
   let read = false
   let error: string | null = null
   let locks = new Set<string>()
+  /** Rebound shortcuts, by action key or `key/item` for a toolbar's button (`""` cleared). */
+  let bindings = new Map<string, string>()
   /** The earlier values shown while compare is held. */
   let comparing: Values<S> | null = null
   let landing = false
@@ -548,8 +649,20 @@ export function defineControls<const S extends Schema>(
   const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
   const isHeld = (key: string) =>
     grabbed.has(key) || (echo > 0 && now() - (changedAt.get(key) ?? -Infinity) < echo)
-  const past: Values<S>[] = []
-  const future: Values<S>[] = []
+  /** The active presets: the panel's (a preset or saved variant) and each group's. */
+  interface Base {
+    readonly preset: PresetRef | null
+    readonly groups: Readonly<Record<string, number>>
+  }
+  const NO_BASE: Base = Object.freeze({ preset: null, groups: Object.freeze({}) })
+  let base: Base = NO_BASE
+  /** An undo step: the values and the active presets with them. */
+  interface Entry {
+    readonly values: Values<S>
+    readonly base: Base
+  }
+  const past: Entry[] = []
+  const future: Entry[] = []
   const HISTORY = 100
   const stateKey = storageKey(id, "state")
   const buildPresets = () =>
@@ -645,6 +758,13 @@ export function defineControls<const S extends Schema>(
                   (k: unknown) => typeof k === "string" && Object.hasOwn(schema, k),
                 ),
               )
+            if (data.bindings && typeof data.bindings === "object")
+              bindings = new Map(
+                Object.entries(data.bindings as Record<string, unknown>).flatMap(([id, combo]) =>
+                  typeof combo === "string" && bindable(id) ? [[id, normalizeCombo(combo)]] : [],
+                ),
+              )
+            base = readBase(data.base)
           }
         }
       } catch (cause) {
@@ -665,6 +785,8 @@ export function defineControls<const S extends Schema>(
           version: 1,
           values: current,
           ...(locks.size ? { locks: [...locks] } : {}),
+          ...(bindings.size ? { bindings: Object.fromEntries(bindings) } : {}),
+          ...(base !== NO_BASE ? { base } : {}),
         }),
       )
       error = null
@@ -676,6 +798,124 @@ export function defineControls<const S extends Schema>(
     current = next
     persist()
     notify()
+  }
+  const makeBase = (preset: PresetRef | null, groups: Readonly<Record<string, number>>): Base =>
+    preset === null && Object.keys(groups).length === 0
+      ? NO_BASE
+      : Object.freeze({ preset, groups: Object.freeze({ ...groups }) })
+  const sameBase = (a: Base, b: Base) =>
+    a === b ||
+    (a.preset?.kind === b.preset?.kind &&
+      a.preset?.id === b.preset?.id &&
+      Object.keys(a.groups).length === Object.keys(b.groups).length &&
+      Object.entries(a.groups).every(([g, i]) => b.groups[g] === i))
+  /** Drops what no longer exists: a preset the schema lost, a group preset out of range. */
+  function validBase(b: Base): Base {
+    const preset =
+      b.preset?.kind === "preset" &&
+      !(b.preset.id !== "default" && Object.hasOwn(presets, b.preset.id))
+        ? null
+        : b.preset
+    const groups = Object.fromEntries(
+      Object.entries(b.groups).filter(([g, i]) => groupPresets[g]?.[i] !== undefined),
+    )
+    const next = makeBase(preset, groups)
+    return sameBase(next, b) ? b : next
+  }
+  function readBase(raw: unknown): Base {
+    if (!raw || typeof raw !== "object") return NO_BASE
+    const { preset, groups } = raw as { preset?: unknown; groups?: unknown }
+    const ref =
+      preset &&
+      typeof preset === "object" &&
+      ((preset as PresetRef).kind === "preset" || (preset as PresetRef).kind === "variant") &&
+      typeof (preset as PresetRef).id === "string"
+        ? Object.freeze({ kind: (preset as PresetRef).kind, id: (preset as PresetRef).id })
+        : null
+    const byGroup =
+      groups && typeof groups === "object"
+        ? Object.fromEntries(
+            Object.entries(groups as Record<string, unknown>).filter((e): e is [string, number] =>
+              Number.isInteger(e[1]),
+            ),
+          )
+        : {}
+    return validBase(makeBase(ref, byGroup))
+  }
+  /** The active presets, after letting go of a saved variant that's since been deleted. */
+  function activeBase(): Base {
+    load()
+    const ref = base.preset
+    if (ref?.kind === "variant" && !variants.list().some((v) => v.id === ref.id))
+      base = makeBase(null, base.groups)
+    return base
+  }
+  const hasBase = () => activeBase() !== NO_BASE
+  let baseCache:
+    | {
+        base: Base
+        schema: S
+        presets: unknown
+        groupPresets: unknown
+        variants: unknown
+        values: Values<S>
+      }
+    | undefined
+  function baseValues(): Values<S> {
+    if (!enabled()) return locked
+    const b = activeBase()
+    if (b === NO_BASE) return locked
+    const list = b.preset?.kind === "variant" ? variants.list() : null
+    const c = baseCache
+    if (
+      c &&
+      c.base === b &&
+      c.schema === schema &&
+      c.presets === presets &&
+      c.groupPresets === groupPresets &&
+      c.variants === list
+    )
+      return c.values
+    let out: Record<string, unknown> = locked
+    const ref = b.preset
+    if (ref?.kind === "preset" && Object.hasOwn(presets, ref.id)) out = presets[ref.id]!
+    else if (ref?.kind === "variant") {
+      const found = list?.find((v) => v.id === ref.id)
+      if (found) out = normalize(schema, found.values)
+    }
+    const groups = Object.entries(b.groups)
+    if (groups.length) {
+      out = { ...out }
+      for (const [g, i] of groups) Object.assign(out, groupPresets[g]?.[i]?.values)
+    }
+    const values = Object.freeze(out) as Values<S>
+    baseCache = { base: b, schema, presets, groupPresets, variants: list, values }
+    return values
+  }
+  /** Whether the active presets give `key` its base (else Random rolls it freely). */
+  const covered = (key: string) => {
+    const b = activeBase()
+    if (b.preset) return true
+    const group = (schema[key] as Field | undefined)?.group
+    return group !== undefined && Object.hasOwn(b.groups, group)
+  }
+  /** The declared shortcut of an action (`key`) or a toolbar's button (`key/item`), if it has one. */
+  function declaredShortcut(id: string): { found: boolean; combo?: string } {
+    const slash = id.indexOf("/")
+    const key = slash < 0 ? id : id.slice(0, slash)
+    const field = Object.hasOwn(schema, key) ? (schema[key] as Field) : undefined
+    if (field?.kind === "action" && slash < 0)
+      return { found: true, ...(field.shortcut ? { combo: field.shortcut } : {}) }
+    if (field?.kind === "toolbar" && slash >= 0) {
+      const item = field.items.find((i) => (i.id ?? i.label) === id.slice(slash + 1))
+      if (!item) return { found: false }
+      const key = toolbarShortcut(item)?.key
+      return { found: true, ...(key ? { combo: normalizeCombo(key) } : {}) }
+    }
+    return { found: false }
+  }
+  function bindable(id: string) {
+    return declaredShortcut(id).found
   }
   const fieldKeys = () => valueKeys(schema)
   const valueField = (k: string) => {
@@ -762,13 +1002,23 @@ export function defineControls<const S extends Schema>(
     }
     for (const k of Object.keys(diff)) pending.delete(k)
   }
-  function set(
-    patch: Partial<Values<S>>,
-    setOpts?: { coalesce?: boolean; source?: ChangeSource; key?: string; group?: string },
-  ) {
+  type WriteOptions = {
+    coalesce?: boolean
+    source?: ChangeSource
+    key?: string
+    group?: string
+    base?: boolean
+  }
+  function set(patch: Partial<Values<S>>, setOpts?: WriteOptions) {
+    write(patch, setOpts)
+  }
+  /** `set`, moving the active presets to `nextBase` in the same undo step. */
+  function write(patch: Partial<Values<S>>, setOpts?: WriteOptions, nextBase?: Base) {
     if (!enabled()) return
     release()
     const previous = load()
+    const was = activeBase()
+    const moves = nextBase !== undefined && !sameBase(nextBase, was)
     // A mixed key's first edit is news even when it picks the value shown: it applies to all.
     const forced = mixed.size ? Object.keys(patch).filter((k) => mixed.has(k) && valueField(k)) : []
     for (const k of forced) mixed.delete(k)
@@ -778,8 +1028,9 @@ export function defineControls<const S extends Schema>(
     }
     const { next, diff } = applied
     for (const k of forced) if (!(k in diff)) diff[k] = next[k]
-    if (Object.keys(diff).length === 0) return
-    if (next === previous) {
+    const changed = Object.keys(diff).length > 0
+    if (!changed && !moves) return
+    if (next === previous && !moves) {
       notify()
       options.onChange?.(diff as Partial<Values<S>>, next, {
         source: setOpts?.source ?? "local",
@@ -788,18 +1039,32 @@ export function defineControls<const S extends Schema>(
       return
     }
     if (!setOpts?.coalesce || past.length === 0) {
-      past.push(previous)
+      past.push({ values: previous, base: was })
       if (past.length > HISTORY) past.shift()
     }
     future.length = 0
+    if (moves) base = nextBase
     markChanged(diff)
     commit(next)
+    if (!changed) return
     options.onChange?.(diff as Partial<Values<S>>, next, {
       source: setOpts?.source ?? "local",
       ...(setOpts?.coalesce ? { coalesce: true } : {}),
       ...(setOpts?.key ? { key: setOpts.key } : {}),
       ...(setOpts?.group ? { group: setOpts.group } : {}),
+      ...(setOpts?.base ? { base: true } : {}),
     })
+  }
+  /** Moves to a history entry (values and active presets); returns the entry it left. */
+  function step(to: Entry, source: "undo" | "redo"): Entry {
+    const before = load()
+    const left = { values: before, base: activeBase() }
+    const diff = changes(before, to.values)
+    base = validBase(to.base)
+    markChanged(diff as Record<string, unknown>)
+    commit(to.values)
+    if (Object.keys(diff).length) options.onChange?.(diff, to.values, { source })
+    return left
   }
   /** Applies incoming values as they are (no holds), flagging a landing for the notify. */
   function place(values: Record<string, unknown>, replace: boolean, land: boolean) {
@@ -932,6 +1197,7 @@ export function defineControls<const S extends Schema>(
       locked = normalize(schema, {})
       presets = buildPresets()
       groupPresets = buildGroupPresets()
+      base = validBase(base)
       for (const k of [...locks]) if (!valueField(k)) locks.delete(k)
       for (const k of [...pending.keys()]) if (!valueField(k)) pending.delete(k)
       for (const k of [...mixed]) if (!valueField(k)) mixed.delete(k)
@@ -976,6 +1242,45 @@ export function defineControls<const S extends Schema>(
       return () => readoutListeners.delete(cb)
     },
   }
+  const variants = createVariants(
+    () => schema,
+    id,
+    storageKey(id, "variants"),
+    variantStorage,
+    get,
+    (v, variant, coalesce) =>
+      write(
+        v,
+        { source: "variant", coalesce },
+        makeBase(Object.freeze({ kind: "variant", id: variant }), {}),
+      ),
+    notify,
+    enabled,
+  )
+  /** The keys a coarse reset may move: those with a value that aren't disabled or read-only. */
+  const resettable = (keys?: readonly string[]) =>
+    (keys ?? fieldKeys()).filter((k) => valueField(k) && !blocked(k))
+  /** Whether any of `keys` stands off the active presets, so a reset goes back to them first. */
+  function offBase(keys: readonly string[]) {
+    if (!hasBase()) return false
+    const cur = load()
+    const b = baseValues()
+    return keys.some((k) => !same(cur[k], b[k]))
+  }
+  function toBase(keys: readonly string[], meta: { key?: string; group?: string }) {
+    const b = baseValues()
+    const patch = Object.fromEntries(keys.map((k) => [k, b[k]])) as Partial<Values<S>>
+    write(patch, { source: "reset", base: true, ...meta })
+  }
+  /** `keys` back to their defaults, reported key by key. */
+  function toDefaults(keys: readonly string[], nextBase: Base | undefined) {
+    const patch: Record<string, unknown> = {}
+    for (const k of keys) patch[k] = locked[k]
+    write(patch as Partial<Values<S>>, { source: "reset" }, nextBase)
+    const resetKeys = (options as { [RESET_KEYS]?: ResetKeys })[RESET_KEYS]
+    if (resetKeys) resetKeys(Object.keys(patch))
+    else for (const key of Object.keys(patch)) options.onReset?.({ key })
+  }
   const controls: Controls<S> & {
     [RESHAPE]: Reshape
     [READOUT]: ReadoutPort
@@ -997,6 +1302,11 @@ export function defineControls<const S extends Schema>(
     renderer,
     keys: options.keys,
     marks: options.marks !== false,
+    chip: Object.freeze({
+      ...options.chip,
+      reveal: options.chip?.reveal ?? (devBuild() ? "hover" : "shortcut"),
+      shortcut: options.chip?.shortcut ?? "Alt+Shift+D",
+    }),
     groupPresetDisplay: options.groupPresetDisplay ?? "auto",
     groupLabel: (group) => options.groupLabels?.[group] ?? fieldLabels().group.get(group),
     sectionLabel: (section) =>
@@ -1080,24 +1390,14 @@ export function defineControls<const S extends Schema>(
       if (hostHistory) return hostHistory.undo()
       const previous = past.pop()
       if (!previous) return
-      const before = load()
-      const diff = changes(before, previous)
-      future.push(before)
-      markChanged(diff as Record<string, unknown>)
-      commit(previous)
-      options.onChange?.(diff, previous, { source: "undo" })
+      future.push(step(previous, "undo"))
     },
     redo() {
       release()
       if (hostHistory) return hostHistory.redo()
       const next = future.pop()
       if (!next) return
-      const before = load()
-      const diff = changes(before, next)
-      past.push(before)
-      markChanged(diff as Record<string, unknown>)
-      commit(next)
-      options.onChange?.(diff, next, { source: "redo" })
+      past.push(step(next, "redo"))
     },
     getServerSnapshot: () => locked,
     subscribe(cb) {
@@ -1115,25 +1415,23 @@ export function defineControls<const S extends Schema>(
     },
     reset(keys) {
       if (!enabled()) return
+      const open = resettable(keys)
+      if (offBase(open)) return toBase(open, {})
       // Disabled and read-only fields keep their values; a reset that skips some is reported
-      // key by key rather than as "everything".
+      // key by key rather than as "everything". Only a reset of everything forgets the preset.
       const skipped = fieldKeys().some(blocked)
       if (!keys && !skipped) {
-        set(locked, { source: "reset" })
+        write(locked, { source: "reset" }, NO_BASE)
         options.onReset?.({})
         return
       }
-      const patch: Record<string, unknown> = {}
-      for (const k of keys ?? fieldKeys()) if (valueField(k) && !blocked(k)) patch[k] = locked[k]
-      set(patch as Partial<Values<S>>, { source: "reset" })
-      const resetKeys = (options as { [RESET_KEYS]?: ResetKeys })[RESET_KEYS]
-      if (resetKeys) resetKeys(Object.keys(patch))
-      else for (const key of Object.keys(patch)) options.onReset?.({ key })
+      toDefaults(open, keys ? undefined : NO_BASE)
     },
     resetKey(key) {
       if (!enabled()) return
       if (!valueField(key)) throw new Error(`Unknown control key: ${key}`)
       if (blocked(key)) return
+      if (offBase([key])) return toBase([key], { key })
       set({ [key]: locked[key] } as Partial<Values<S>>, { source: "reset", key })
       options.onReset?.({ key })
     },
@@ -1143,16 +1441,37 @@ export function defineControls<const S extends Schema>(
         (k) => schema[k]!.group === group && hasValue(schema[k]!),
       )
       const open = keys.filter((k) => !blocked(k))
-      if (open.length < keys.length) return controls.reset(open as (keyof S & string)[])
+      const b = activeBase()
+      const index = b.groups[group]
+      if (offBase(open)) {
+        toBase(open, { group })
+        // The group's own preset again: a peer that applies its presets itself hears it so.
+        const preset = index === undefined ? undefined : groupPresets[group]?.[index]
+        if (preset && index !== undefined) options.onPreset?.({ group, index, name: preset.name })
+        return
+      }
+      const { [group]: _, ...others } = b.groups
+      const forget = index === undefined ? undefined : makeBase(b.preset, others)
+      if (open.length < keys.length) return toDefaults(open, forget)
       const patch: Record<string, unknown> = {}
       for (const k of keys) patch[k] = locked[k]
-      set(patch as Partial<Values<S>>, { source: "reset", group })
+      write(patch as Partial<Values<S>>, { source: "reset", group }, forget)
       options.onReset?.({ group })
     },
     isModified(key) {
       const cur = get()
-      if (key !== undefined) return !same(cur[key], locked[key])
-      return !equal(cur, locked)
+      const b = baseValues()
+      if (key !== undefined) return !same(cur[key], b[key])
+      return !equal(cur, b)
+    },
+    canReset(keys) {
+      if (!enabled()) return false
+      const cur = get()
+      const b = baseValues()
+      return (
+        resettable(keys).some((k) => !same(cur[k], b[k]) || !same(cur[k], locked[k])) ||
+        (!keys && hasBase())
+      )
     },
     modified() {
       const cur = get()
@@ -1167,8 +1486,19 @@ export function defineControls<const S extends Schema>(
       const chosen = pool(keys)
       if (chosen.length === 0) return
       // Only the chosen fields draw, in schema order, so a seeded roll reproduces.
-      const sub = Object.fromEntries(chosen.map((k) => [k, schema[k]])) as Schema
-      set(randomValues(sub, draw) as Partial<Values<S>>, { source: "randomize" })
+      if (!hasBase()) {
+        const sub = Object.fromEntries(chosen.map((k) => [k, schema[k]])) as Schema
+        set(randomValues(sub, draw) as Partial<Values<S>>, { source: "randomize" })
+        return
+      }
+      // With an active preset, keys it covers land near its values instead.
+      const b = baseValues()
+      const patch: Record<string, unknown> = {}
+      for (const k of chosen) {
+        const field = valueField(k)!
+        patch[k] = covered(k) ? around(field, b[k], draw) : pick(field, draw)
+      }
+      set(patch as Partial<Values<S>>, { source: "randomize" })
     },
     mutate(keys) {
       if (!enabled()) return
@@ -1196,6 +1526,30 @@ export function defineControls<const S extends Schema>(
       if (!enabled()) return false
       load()
       return locks.has(key)
+    },
+    shortcut(key, item) {
+      const id = item === undefined ? key : `${key}/${item}`
+      const declared = declaredShortcut(id)
+      if (!declared.found) return undefined
+      if (enabled()) load()
+      const bound = enabled() ? bindings.get(id) : undefined
+      return bound ?? declared.combo
+    },
+    rebind(key, combo, item) {
+      const id = item === undefined ? key : `${key}/${item}`
+      const declared = declaredShortcut(id)
+      if (!declared.found) throw new Error(`Not an action or toolbar button: ${id}`)
+      if (!enabled()) return
+      load()
+      const next = combo === undefined ? undefined : normalizeCombo(combo)
+      if (combo !== undefined && combo.trim() && !next)
+        throw new Error(`Not a key combination: ${combo}`)
+      const was = bindings.get(id)
+      if (next === undefined || next === (declared.combo ?? "")) bindings.delete(id)
+      else bindings.set(id, next)
+      if (bindings.get(id) === was) return
+      persist()
+      notify()
     },
     canRoll(key) {
       if (!enabled()) return false
@@ -1225,16 +1579,20 @@ export function defineControls<const S extends Schema>(
     compare(hold) {
       if (!enabled()) return
       if (!hold) return release()
-      const before = past.at(-1)
+      const before = past.at(-1)?.values
       const now = load()
       if (comparing || !before || equal(before, now)) return
       comparing = before
       options.onChange?.(changes(now, before), before, { source: "compare" })
       notify()
     },
-    preset(id) {
+    preset(id, presetOptions) {
       if (!Object.hasOwn(presets, id)) throw new Error(`Unknown preset: ${id}`)
-      set(presets[id], { source: "preset" })
+      write(
+        presets[id]!,
+        { source: "preset", coalesce: presetOptions?.coalesce },
+        id === "default" ? NO_BASE : makeBase(Object.freeze({ kind: "preset", id }), {}),
+      )
     },
     matchingPreset: () => Object.keys(presets).find((id) => equal(get(), presets[id])) ?? "custom",
     get groupPresets() {
@@ -1244,9 +1602,23 @@ export function defineControls<const S extends Schema>(
       const preset = groupPresets[group]?.[index]
       if (!preset) throw new Error(`Unknown preset ${index + 1} for group ${group}`)
       if (!enabled()) return
-      set(preset.values, { source: "preset", group, coalesce: presetOptions?.coalesce })
+      const b = activeBase()
+      write(
+        preset.values,
+        { source: "preset", group, coalesce: presetOptions?.coalesce },
+        makeBase(b.preset, { ...b.groups, [group]: index }),
+      )
       options.onPreset?.({ group, index, name: preset.name })
     },
+    activePreset() {
+      if (!enabled()) return null
+      return activeBase().preset
+    },
+    activeGroupPreset(group) {
+      if (!enabled()) return -1
+      return activeBase().groups[group] ?? -1
+    },
+    baseValues,
     matchingGroupPreset(group) {
       const cur = get() as Record<string, unknown>
       return (groupPresets[group] ?? []).findIndex((p) =>
@@ -1254,17 +1626,8 @@ export function defineControls<const S extends Schema>(
       )
     },
     code: (format, values) => formatCode(values ?? get(), format),
-    variants: createVariants(
-      () => schema,
-      id,
-      storageKey(id, "variants"),
-      variantStorage,
-      get,
-      (v) => set(v, { source: "variant" }),
-      notify,
-      enabled,
-    ),
-    attach(element) {
+    variants,
+    attach(element, chip) {
       // A shipped store loads the host's panel module; a dev build its own lazy chunk. A
       // production build of an unshipped store has neither, so no panel code is reachable.
       const load = options.ship
@@ -1277,7 +1640,7 @@ export function defineControls<const S extends Schema>(
       let detach: (() => void) | undefined
       void load()
         .then((attach) => {
-          if (!disposed && enabled()) detach = attach(controls, element)
+          if (!disposed && enabled()) detach = attach(controls, element, chip)
         })
         .catch((cause) => {
           error = String(cause)

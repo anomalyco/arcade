@@ -3,6 +3,7 @@ import { iconSvg } from "./icons.js"
 import { openMenu, type Menu } from "./menu.js"
 import { placeSegPill } from "./seg.js"
 import { smearPill } from "./smear.js"
+import { stepList, textGive, type Steps } from "./give.js"
 import { onPan, panOptions } from "./swipe.js"
 
 export interface ChoiceItem {
@@ -20,8 +21,6 @@ export const SEARCH_CHOICES = 8
 const MIN_PAD = 6
 /** How much of a menu's value (em, beside its chrome) shows before the row's label gives way. */
 const VALUE_FLOOR_EM = 4
-/** Finger travel (px) per option when panning over the menu button. */
-const MENU_PAN_STEP = 28
 
 export interface ChoiceControl {
   /** The segmented control and the menu button; one is hidden at a time. */
@@ -163,28 +162,40 @@ export function createChoice(
     select: (i, coalesce) => o.choose(items[i]!.value, coalesce),
     rest: () => placeSegPill(seg, buttons, o.value()),
     wake: () => o.wake?.(),
+    row,
   })
-  let travel = 0
+  // The menu steps a choice every LIST_STEP px; past either end its value gives a little.
+  let travel: Steps | undefined
   let panned = false
+  const give = textGive(menuValue, () => o.wake?.())
+  const letGo = () => {
+    give.release()
+    if (!travel) return
+    travel = undefined
+    panned = false
+    row.classList.remove("knobs-active")
+    o.wake?.()
+  }
   onPan(menu, {
     move(dx) {
-      travel += dx
-      while (Math.abs(travel) >= MENU_PAN_STEP) {
-        const d = Math.sign(travel)
-        travel -= d * MENU_PAN_STEP
-        const at = items.findIndex((i) => i.value === o.value())
-        const item = items[Math.max(0, Math.min(items.length - 1, at + d))]
-        if (item && item.value !== o.value()) {
-          o.choose(item.value, panned)
-          panned = true
-          tick(menu)
-        }
+      if (!travel) {
+        travel = { travel: 0, give: 0 }
+        row.classList.add("knobs-active")
+        o.wake?.()
       }
+      const at = items.findIndex((i) => i.value === o.value())
+      const { next, index } = stepList(travel, dx, at, items.length)
+      travel = next
+      const item = index === undefined ? undefined : items[index]
+      if (item && item.value !== o.value()) {
+        o.choose(item.value, panned)
+        panned = true
+        tick(menu)
+      }
+      if (next.give !== give.give) give.hold(next.give)
     },
-    end() {
-      travel = 0
-      panned = false
-    },
+    lift: () => give.release(),
+    end: letGo,
     step: (d) => step(d, false),
   })
 

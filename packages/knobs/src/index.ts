@@ -18,6 +18,7 @@ export {
   curve,
   toolbar,
   toolbarShortcut,
+  actionShortcut,
   watch,
   sparkline,
   graph,
@@ -83,17 +84,20 @@ export {
   type SampleCurveOptions,
 } from "./core/ramp.js"
 export { bezierCss, bezierPoint, EASINGS, type Bezier, type EasingName } from "./core/easing.js"
+export { AROUND } from "./core/random.js"
 export {
   defineControls,
   type ChangeMeta,
   type GestureEvent,
   type ChangeSource,
+  type ChipOptions,
   type ControlAction,
   type Controls,
   type ControlsOptions,
   type DensityMode,
   type GroupPreset,
   type GroupPresetDisplay,
+  type PresetRef,
   type HeaderButton,
   type HeaderOptions,
   type HostHistory,
@@ -108,7 +112,10 @@ export {
   type SearchOptions,
   type SyncOptions,
   type RendererMode,
+  type RevealMode,
   type SectionFolded,
+  type SoundOptions,
+  type SoundTheme,
   type ThemeMode,
 } from "./core/store.js"
 export {
@@ -135,6 +142,7 @@ export type { TokenPreset } from "./core/theme.js"
 export { formatCode, type CodeFormat } from "./core/code.js"
 export {
   comboFromEvent,
+  letterOf,
   comboLabel,
   comboParts,
   matchesCombo,

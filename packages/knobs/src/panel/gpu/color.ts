@@ -110,6 +110,10 @@ export interface PanelThemeTokens {
   readonly toggleTrack: Rgba
   readonly toggleThumb: Rgba
   readonly rim: Rgba
+  /** The panel's hairline edge (--k-edge), drawn --k-rim-width wide like the rim. */
+  readonly edge: Rgba
+  /** Width (CSS px) of the edge, the rim and the selected pill's outline (--k-rim-width). */
+  readonly rimWidth: number
   readonly rowHover: Rgba
   /** Space between rows (px); above 0 each row is its own bar rather than part of one card. */
   readonly rowGap: number
@@ -186,6 +190,8 @@ export interface PanelThemeTokens {
   readonly blurStrength: number
   /** Smear on moving fill edges and selection pills, 0 (off) to 1 (--k-motion-blur). */
   readonly motionBlur: number
+  /** Smear on a range band's moving ends, 0 (off) to 1 (--k-range-blur). */
+  readonly rangeBlur: number
   readonly glowStrength: number
   /** 0 is an opaque panel; up to 1 thins it over a blurred backdrop (--k-glass). */
   readonly glass: number
@@ -339,15 +345,17 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     segActive,
     toggleTrack,
     toggleThumb,
-    rim: parseCssColor(token(style, "rim"), isLight ? [1, 1, 1, 0.75] : [1, 1, 1, 0.09]),
+    rim: parseCssColor(token(style, "rim"), isLight ? [1, 1, 1, 0.6] : [1, 1, 1, 0.1]),
+    edge: parseCssColor(token(style, "edge"), isLight ? [0, 0, 0, 0.07] : [1, 1, 1, 0.07]),
+    rimWidth: lengthProp(style, "rim-width", fontSize, 1),
     page: parseCssColor(
       token(style, "page"),
       isLight ? [0.902, 0.902, 0.922, 1] : [0.063, 0.063, 0.071, 1],
     ),
     rowHover: withAlpha(surface, 0.5),
     rowGap: numProp(style, "row-gap", 0),
-    hoverIn: numProp(style, "hover-in", 150),
-    hoverOut: numProp(style, "hover-out", 150),
+    hoverIn: numProp(style, "hover-in", 0),
+    hoverOut: numProp(style, "hover-out", 120),
     handleRest: numProp(style, "handle-rest", 0),
     handle: colorProp(style, "handle", accent),
     handleInset: lengthProp(style, "handle-inset", fontSize, 0),
@@ -366,7 +374,7 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     curveDashed: style.getPropertyValue("--k-curve-guide").trim() === "dashed",
     curveDot: numProp(style, "curve-dot", 1),
     pillBg: cssMix(accent, segActive, 0.18),
-    pillBorder: withAlpha(accent, 0.32),
+    pillBorder: withAlpha(accent, 0.18),
     fillRest: cssMix(accent, fillBase, numProp(style, "fill-rest-mix", 20) / 100),
     fillActive: cssMix(accent, fillBase, numProp(style, "fill-active-mix", 30) / 100),
     fillHover: cssMix(
@@ -409,6 +417,7 @@ export function readPanelTokens(panel: HTMLElement, version = -1): PanelThemeTok
     hintTypedOpacity: numProp(style, "hint-typed-opacity", 0.42),
     blurStrength: numProp(style, "blur", 1),
     motionBlur: Math.min(1, Math.max(0, numProp(style, "motion-blur", 0))),
+    rangeBlur: Math.min(1, Math.max(0, numProp(style, "range-blur", 0.5))),
     glowStrength: numProp(style, "glow", 0.5),
     glass: Math.min(1, Math.max(0, numProp(style, "glass", 0))),
     glassTone: numProp(style, "glass-tone", isLight ? 1.08 : 0.5),

@@ -6,6 +6,8 @@
 // under the finger (see `tapTick`). Panels mounted with `haptics: false` (data-haptics="off"), a
 // reduced-motion preference and pointers that aren't touch get nothing.
 
+import { cue, type SoundCue } from "./sound.js"
+
 /** The shortest gap (ms) between two ticks: a quick flick across many stops doesn't buzz. */
 const MIN_GAP = 45
 /** How long (ms) Android's motor runs for a tick. */
@@ -47,8 +49,12 @@ const wanted = (from: Element) => {
   )
 }
 
-/** One light tick for a change made by `from`'s control, unless ticks are off or too close. */
-export function tick(from: Element): void {
+/**
+ * One light tick for a change made by `from`'s control, unless ticks are off or too close. With
+ * `sound`, a panel that plays sounds plays that cue at the same moment (see sound.ts).
+ */
+export function tick(from: Element, sound?: SoundCue): void {
+  if (sound) cue(from, sound)
   if (!wanted(from)) return
   const now = performance.now()
   if (now - last < MIN_GAP) return

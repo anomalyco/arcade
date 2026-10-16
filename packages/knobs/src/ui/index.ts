@@ -3,6 +3,15 @@ export { commandsFrom, type CommandsFromOptions } from "./commands.js"
 export { confirm, type ConfirmOptions } from "./confirm.js"
 export { overlayLook, type Anchor } from "./layer.js"
 export {
+  assignPageCodes,
+  hints,
+  pageHints,
+  type HintPainter,
+  type HintSourceOptions,
+  type PageHints,
+  type PageHintTarget,
+} from "../panel/page-hints.js"
+export {
   fuzzy,
   inTriangle,
   marks,
@@ -104,3 +113,47 @@ export {
   type TreeFilter,
   type TreeMove,
 } from "./tree-model.js"
+export { bento, type Bento, type BentoItem, type BentoOptions } from "./bento.js"
+export {
+  fitRect,
+  FIT_MAX,
+  motionBlur,
+  neighbour as bentoNeighbour,
+  planBento,
+  rowTarget,
+  windowOf as bentoWindow,
+  type BentoDirection,
+  type BentoLayout,
+  type BentoMode,
+  type BentoPlan,
+  type BentoRect,
+} from "./bento-model.js"
+export {
+  activity,
+  type Activity,
+  type ActivityOptions,
+} from "./activity.js"
+export {
+  diffActivity,
+  flattenActivity,
+  formatDuration,
+  indexActivity,
+  keepSelection as keepActivitySelection,
+  navigateActivity,
+  railSegments,
+  showsSelection,
+  stackRows,
+  type ActivityEvent,
+  type ActivityInput,
+  type ActivityKey,
+  type ActivityKind,
+  type ActivityRow,
+  type RailNode,
+} from "./activity-model.js"
+export {
+  optionPicker,
+  type OptionPicker,
+  type OptionPickerOptions,
+  type PickerOption,
+} from "./picker.js"
+export { claimsDigit, digitPick, keepPick, stepPick } from "./picker-model.js"

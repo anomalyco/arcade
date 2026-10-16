@@ -24,8 +24,19 @@ import type {
 } from "./gpu/renderer.js"
 import { arrowOf, bigOf } from "./prefs.js"
 import { clamp } from "./motion.js"
+import { fadeText, rollingReadout, rollMs } from "./reel.js"
 import { reveal } from "./reveal.js"
 import { createSlider, decimals, type Slider } from "./slider.js"
+import { band, stepList, stretched, textGive, type Band, type Steps } from "./give.js"
+import { tick } from "./haptics.js"
+import {
+  curveBlur,
+  curveSmear,
+  LINE_SMEAR,
+  morphLoop,
+  RampMorph,
+  smearFilters,
+} from "./ramp-morph.js"
 import { onPan } from "./swipe.js"
 
 /** What a row needs from the panel. */
@@ -73,6 +84,18 @@ export interface EditorRow {
   dispose(): void
   readonly tracks: readonly SubTrack[]
   readonly gpu: readonly GpuRowBinding[]
+  /** Named options the digits pick while the row is focused (a ramp's or easing's presets). */
+  readonly options?: RowOptions
+}
+
+/** A row's options as the digits 1–9 pick them (see scope.ts). */
+export interface RowOptions {
+  readonly count: number
+  choose(i: number): void
+  /** The options while they show (segments, chips), for a digit on each; empty while hidden. */
+  shown(): readonly HTMLElement[]
+  /** What stands for them while they're hidden (a menu's button, a head's mini curve). */
+  readonly anchor: Element
 }
 
 export const reducedMotion = (doc: Document) =>
@@ -184,6 +207,7 @@ export function expander(c: RowContext<unknown>, summary: Node[], body: Node[]) 
   head.append(label, sum)
   const bodyEl = el("div", "knobs-x-body")
   bodyEl.hidden = !c.expanded
+  bodyEl.dataset.drift = ""
   bodyEl.append(...body)
   row.append(head, bodyEl)
   const isOpen = () => head.getAttribute("aria-expanded") === "true"
@@ -259,8 +283,11 @@ export function strip(c: RowContext<unknown>, o: StripOptions) {
     const stops = Array.from({ length: 25 }, (_, i) => `${colorAt!(i / 24)} ${xOf(i / 24)}px`)
     track.style.background = `linear-gradient(to right,${stops.join(",")})`
   }
+  /** How far (px) a pan holds the thumb past an end. */
+  let give = 0
+  const thumbX = () => xOf(ratio(current)) + give
   const placeThumb = (instant: boolean) => {
-    if (size.w) place([thumb], instant, () => (thumb.style.left = `${xOf(ratio(current))}px`))
+    if (size.w) place([thumb], instant, () => (thumb.style.left = `${thumbX()}px`))
   }
   const size = measure(track, () => {
     paint(true)
@@ -319,8 +346,9 @@ export function strip(c: RowContext<unknown>, o: StripOptions) {
   }
   track.onpointerup = release
   track.onpointercancel = release
-  // A sideways pan scrubs like a drag: 1:1 with the fingers, as one undo step.
-  let panAt: number | undefined
+  // A sideways pan scrubs like a drag: 1:1 with the fingers, as one undo step. Past an end the
+  // thumb gives a little and springs back when it's let go.
+  let panAt: Band | undefined
   onPan(track, {
     accept: () => !dragging,
     move(dx) {
@@ -328,18 +356,31 @@ export function strip(c: RowContext<unknown>, o: StripOptions) {
       const w = size.w || track.clientWidth
       const h = size.h || track.clientHeight
       if (!w) return
+      const room = Math.max(1, w - h)
       if (panAt === undefined) {
-        panAt = current
+        panAt = { at: ratio(current) * room, give: 0 }
         o.start()
         line.classList.add("knobs-active")
         c.wake()
       }
-      panAt = clamp(panAt + (dx / Math.max(1, w - h)) * span, o.min, o.max)
-      o.set(quantize(panAt, false))
+      const before = panAt.give
+      panAt = band(panAt, dx, 0, room)
+      if (stretched(before, panAt.give)) tick(track, "limit")
+      const moved = give !== panAt.give
+      give = panAt.give
+      o.set(quantize(o.min + (panAt.at / room) * span, false))
+      if (moved) {
+        placeThumb(false)
+        c.wake()
+      }
     },
     end() {
       panAt = undefined
       line.classList.remove("knobs-active")
+      if (give !== 0) {
+        give = 0
+        placeThumb(false)
+      }
       c.wake()
     },
     step(direction) {
@@ -364,7 +405,7 @@ export function strip(c: RowContext<unknown>, o: StripOptions) {
     track,
     read,
     mode: 0,
-    thumbX: () => (size.w ? xOf(ratio(current)) : 0),
+    thumbX: () => (size.w ? thumbX() : 0),
     dragging: () => line.classList.contains("knobs-active"),
   }
   return {
@@ -698,6 +739,7 @@ export function colorRow(c: RowContext<ColorField>): EditorRow {
   })
   const strips = editor.strips
   const x = expander(c, [hex, swatch], [editor.body])
+  let placed = false
   x.head.addEventListener("keydown", (event) => {
     const dir = arrow(event)
     if (!dir || event.target !== x.head || !plainKey(event)) return
@@ -708,6 +750,31 @@ export function colorRow(c: RowContext<ColorField>): EditorRow {
     editor.send({
       h: (((h + dir * (event.shiftKey ? bigOf(event) : event.altKey ? 0.1 : 1)) % 360) + 360) % 360,
     })
+  })
+  // A sideways pan on the head turns the hue with the fingers (a degree a px, wrapping), as one
+  // undo step, the swatch and hex following live.
+  let hueAt: number | undefined
+  onPan(x.head, {
+    move(dx) {
+      if (hueAt === undefined) {
+        hueAt = editor.color().h
+        g.start()
+        x.head.setAttribute("data-panned", "")
+        c.wake()
+      }
+      hueAt += dx
+      editor.send({ h: ((hueAt % 360) + 360) % 360 })
+    },
+    end() {
+      if (hueAt === undefined) return
+      hueAt = undefined
+      x.head.removeAttribute("data-panned")
+      c.wake()
+    },
+    step(direction) {
+      g.start()
+      editor.send({ h: (((editor.color().h + direction) % 360) + 360) % 360 })
+    },
   })
   const gpu: GpuColorRow = {
     kind: "color",
@@ -729,12 +796,15 @@ export function colorRow(c: RowContext<ColorField>): EditorRow {
     stops: () => [x.head, ...(x.isOpen() ? strips.map((s) => s.track) : [])].filter(visible),
     tracks: [],
     gpu: [gpu],
-    update(value, _delay, _instant, mixed = false) {
+    update(value, _delay, instant = false, mixed = false) {
       const shown = parseColor(value)!
       const rgb = editor.show(shown, mixed)
       // Mixed leaves an empty well: no one colour stands for the selection.
       swatch.style.backgroundColor = mixed ? "transparent" : rgb
-      hex.textContent = mixed ? "—" : colorHex(shown).toUpperCase()
+      // A new colour crossfades its hex, except under the user's own hand.
+      const hand = x.row.querySelector(".knobs-active,[data-panned]") !== null
+      fadeText(hex, mixed ? "—" : colorHex(shown).toUpperCase(), !hand && !instant && placed)
+      placed = true
     },
     dispose: () => editor.dispose(),
   }
@@ -758,6 +828,8 @@ export function pointRow(c: RowContext<PointField>): EditorRow {
   const puck = el("i", "knobs-pad-puck")
   pad.append(vLine, hLine, home, puck)
   const x = expander(c, [read], [pad])
+  const rolling = rollingReadout(read)
+  let placed = false
   const fmt = (v: number, step: number) => v.toFixed(decimals(step))
   const format = (p: Point) => `${fmt(p.x, f.step.x)}, ${fmt(p.y, f.step.y)}`
   let shown = f.value
@@ -771,9 +843,15 @@ export function pointRow(c: RowContext<PointField>): EditorRow {
     const [rx, ry] = ratio(p)
     return [PAD_INSET + (size.w - PAD_INSET * 2) * rx, PAD_INSET + (size.h - PAD_INSET * 2) * ry]
   }
+  /** How far (px) a pan holds the puck past the pad's edges. */
+  let give: [number, number] = [0, 0]
+  const puckAt = (): [number, number] => {
+    const [px, py] = at(shown)
+    return [px + give[0], py + give[1]]
+  }
   const layout = (instant: boolean) => {
     if (!size.w) return
-    const [px, py] = at(shown)
+    const [px, py] = puckAt()
     const [hx, hy] = at(f.value)
     place([puck, vLine, hLine], instant, () => {
       puck.style.translate = `${px}px ${py}px`
@@ -839,32 +917,47 @@ export function pointRow(c: RowContext<PointField>): EditorRow {
   pad.onpointerup = release
   pad.onpointercancel = release
   // A pan that starts sideways moves the puck with the fingers in both axes, as one undo step.
-  let panAt: Point | undefined
+  // Past an edge the puck gives a little, and springs back when it's let go.
+  let panAt: [Band, Band] | undefined
   onPan(
     pad,
     {
       accept: () => !dragging,
       move(dx, dy) {
-        const w = size.w || pad.clientWidth
-        const h = size.h || pad.clientHeight
-        if (!w) return
+        const w = (size.w || pad.clientWidth) - PAD_INSET * 2
+        const h = (size.h || pad.clientHeight) - PAD_INSET * 2
+        if (w <= 0) return
         if (!panAt) {
-          panAt = shown
+          const [rx, ry] = ratio(shown)
+          panAt = [
+            { at: rx * w, give: 0 },
+            { at: ry * h, give: 0 },
+          ]
           g.start()
           pad.classList.add("knobs-active")
           c.wake()
         }
-        const spanX = f.max.x - f.min.x
-        const spanY = f.max.y - f.min.y
-        panAt = {
-          x: clamp(panAt.x + (dx / (w - PAD_INSET * 2)) * spanX, f.min.x, f.max.x),
-          y: clamp(panAt.y + (dy / (h - PAD_INSET * 2)) * spanY, f.min.y, f.max.y),
+        const before = panAt[0].give || panAt[1].give
+        panAt = [band(panAt[0], dx, 0, w), band(panAt[1], dy, 0, Math.max(0, h))]
+        if (stretched(before, panAt[0].give || panAt[1].give)) tick(pad, "limit")
+        const moved = give[0] !== panAt[0].give || give[1] !== panAt[1].give
+        give = [panAt[0].give, panAt[1].give]
+        g.set({
+          x: f.min.x + (panAt[0].at / w) * (f.max.x - f.min.x),
+          y: f.min.y + (h > 0 ? panAt[1].at / h : 0.5) * (f.max.y - f.min.y),
+        })
+        if (moved) {
+          layout(false)
+          c.wake()
         }
-        g.set(panAt)
       },
       end() {
         panAt = undefined
         pad.classList.remove("knobs-active")
+        if (give[0] || give[1]) {
+          give = [0, 0]
+          layout(false)
+        }
         c.wake()
       },
       step(direction) {
@@ -907,7 +1000,7 @@ export function pointRow(c: RowContext<PointField>): EditorRow {
     x: x.gpu,
     read,
     pad,
-    puck: () => (size.w ? at(shown) : [0, 0]),
+    puck: () => (size.w ? puckAt() : [0, 0]),
     home: () => (size.w ? at(f.value) : [0, 0]),
     dragging: () => pad.classList.contains("knobs-active"),
     wave: c.wave,
@@ -920,34 +1013,135 @@ export function pointRow(c: RowContext<PointField>): EditorRow {
     stops: () => [x.head, ...(x.isOpen() ? [pad] : [])].filter(visible),
     tracks: [],
     gpu: [gpu],
-    update(value, _delay, _instant, mixed = false) {
-      const first = read.textContent === ""
+    update(value, delay, instant = false, mixed = false) {
+      const first = !placed
+      placed = true
       shown = value as Point
-      read.textContent = mixed ? "—" : format(shown)
+      // Random, presets, undo and keys roll the coordinates; a drag or pan (the hand) doesn't.
+      const ms = first || instant || pad.classList.contains("knobs-active") ? 0 : rollMs(x.row)
+      rolling.show(
+        mixed
+          ? ["—"]
+          : [
+              { value: shown.x, decimals: decimals(f.step.x) },
+              ", ",
+              { value: shown.y, decimals: decimals(f.step.y) },
+            ],
+        ms,
+        delay,
+      )
       pad.setAttribute("aria-valuetext", mixed ? "Mixed" : format(shown))
       layout(first)
     },
-    dispose: () => size.disconnect(),
+    dispose() {
+      size.disconnect()
+      rolling.dispose()
+    },
   }
 }
+
+/**
+ * A sideways pan on a row's head steps through its presets like a menu, a tick each, as one undo
+ * step; past either end `nudged` (the head's mini strip or curve) gives a little.
+ */
+export function panPresets(
+  c: RowContext<unknown>,
+  head: HTMLElement,
+  nudged: HTMLElement | SVGElement,
+  o: {
+    readonly count: number
+    /** The preset showing, or -1. */
+    at(): number
+    choose(i: number, coalesce: boolean): void
+  },
+) {
+  if (!o.count) return
+  let travel: Steps | undefined
+  let chosen = false
+  const give = textGive(nudged, () => c.wake())
+  const letGo = () => {
+    give.release()
+    if (!travel) return
+    travel = undefined
+    chosen = false
+    head.removeAttribute("data-panned")
+    c.wake()
+  }
+  const move = (dx: number, size?: number) => {
+    if (!travel) {
+      travel = { travel: 0, give: 0 }
+      // In hand: the head's wash, however the pointer got there.
+      head.setAttribute("data-panned", "")
+      c.wake()
+    }
+    const at = o.at()
+    const { next, index } = stepList(travel, dx, at, o.count, size)
+    travel = next
+    if (index !== undefined && index !== at) {
+      o.choose(index, chosen)
+      chosen = true
+      tick(head)
+    }
+    if (next.give !== give.give) give.hold(next.give)
+  }
+  // A pointer dragged sideways on the head steps the same way, a step every `DRAG_STEP` px. Only
+  // past a few px is it a drag: a click still opens the row, and a drag's own click is swallowed.
+  let press: { id: number; x: number; y: number; last: number; dragging: boolean } | undefined
+  head.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.pointerType === "touch") return
+    if ((event.target as Element).closest("button,input")) return
+    press = { id: event.pointerId, x: event.clientX, y: event.clientY, last: 0, dragging: false }
+  })
+  head.addEventListener("pointermove", (event) => {
+    if (!press || event.pointerId !== press.id) return
+    const dx = event.clientX - press.x
+    if (!press.dragging) {
+      if (Math.abs(dx) < DRAG_START) {
+        if (Math.abs(event.clientY - press.y) >= DRAG_START) press = undefined
+        return
+      }
+      press.dragging = true
+      press.last = Math.sign(dx) * DRAG_START
+      head.setPointerCapture(event.pointerId)
+    }
+    move(dx - press.last, DRAG_STEP)
+    press.last = dx
+  })
+  const drop = (event: PointerEvent) => {
+    if (!press || event.pointerId !== press.id) return
+    const dragged = press.dragging
+    press = undefined
+    if (!dragged) return
+    letGo()
+    // The click this release makes (in the same task) would open or fold the row: it was a drag.
+    const swallow = (click: Event) => {
+      click.preventDefault()
+      click.stopImmediatePropagation()
+    }
+    head.addEventListener("click", swallow, { capture: true, once: true })
+    setTimeout(() => head.removeEventListener("click", swallow, { capture: true }), 0)
+  }
+  head.addEventListener("pointerup", drop)
+  head.addEventListener("pointercancel", drop)
+  onPan(head, {
+    move: (dx) => move(dx),
+    lift: () => give.release(),
+    end: letGo,
+    step(direction) {
+      const at = o.at()
+      const next = at < 0 ? (direction > 0 ? 0 : o.count - 1) : at + direction
+      if (next >= 0 && next < o.count && next !== at) o.choose(next, false)
+    },
+  })
+}
+
+/** How far (px) a pointer goes sideways on a head before it's a drag, and px per preset after. */
+const DRAG_START = 4
+const DRAG_STEP = 24
 
 const EASE_PAD = { x: 12, y: 10 }
 const MINI = { w: 30, y: [-0.3, 1.3] as const }
 
-/** The curve's samples mapped into a box: x 0…1 across, y over `range` bottom to top. */
-function bezierCurve(
-  b: Bezier,
-  w: number,
-  h: number,
-  padX: number,
-  padY: number,
-  range: readonly [number, number],
-) {
-  const map = mapper(w, h, padX, padY, range)
-  const out: number[] = []
-  for (let i = 0; i <= 48; i++) out.push(...map(...bezierPoint(b, i / 48)))
-  return out
-}
 const mapper =
   (w: number, h: number, padX: number, padY: number, range: readonly [number, number]) =>
   (x: number, y: number): [number, number] => [
@@ -1000,37 +1194,122 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
   const range = EASING_Y
   const map = (px: number, py: number) =>
     mapper(size.w, size.h, EASE_PAD.x, EASE_PAD.y, range)(px, py)
-  const curvePoints = () =>
-    size.w ? bezierCurve(shown, size.w, size.h, EASE_PAD.x, EASE_PAD.y, range) : []
+  /** Which handle a pan holds past the box's edges, and how far (px). */
+  let give: [number, number, number] = [-1, 0, 0]
+  // What's drawn: the curve's samples and both handles in the 0…1 box (y up, over EASING_Y),
+  // moving between easings on one spring with the same morph a curve row uses (ramp-morph.ts).
+  const spanY = range[1] - range[0]
+  const norm = (y: number) => (clamp(y, range[0], range[1]) - range[0]) / spanY
+  const morph = new RampMorph(2, 2)
+  const unitSamples = () => {
+    const out: number[] = []
+    for (let i = 0; i <= 48; i++) {
+      const [bx, by] = bezierPoint(shown, i / 48)
+      out.push(bx, norm(by))
+    }
+    return out
+  }
+  const unitHandles = () => {
+    const w = Math.max(1, size.w - EASE_PAD.x * 2)
+    const h = Math.max(1, size.h - EASE_PAD.y * 2)
+    return [0, 1].map((i) => {
+      const [gx, gy] = give[0] === i ? [give[1] / w, give[2] / h] : [0, 0]
+      return [clamp(shown[i * 2]!, 0, 1) + gx, norm(shown[i * 2 + 1]!) - gy]
+    })
+  }
+  const toPx = (ux: number, uy: number): [number, number] => [
+    EASE_PAD.x + ux * (size.w - EASE_PAD.x * 2),
+    EASE_PAD.y + (1 - uy) * (size.h - EASE_PAD.y * 2),
+  ]
+  const handleAt = (i: number): [number, number] => {
+    const d = morph.live[i]
+    return d ? toPx(d.at[0]!, d.at[1]!) : map(shown[i * 2]!, shown[i * 2 + 1]!)
+  }
+  const curvePoints = () => {
+    if (!size.w) return []
+    const s = morph.samples
+    const out: number[] = []
+    for (let i = 0; i < s.length; i += 2) out.push(...toPx(s[i]!, s[i + 1]!))
+    return out
+  }
   const armPoints = () =>
-    size.w
-      ? [...map(0, 0), ...map(shown[0], shown[1]), ...map(1, 1), ...map(shown[2], shown[3])]
-      : []
-  const miniPoints = () => bezierCurve(shown, MINI.w, miniSize.h, 1.5, 1.5, MINI.y)
-  const layout = (instant: boolean) => {
-    if (!size.w) return
-    plot.setAttribute("viewBox", `0 0 ${size.w} ${size.h}`)
-    const [x0, y0] = map(0, 0)
-    const [x1, y1] = map(1, 1)
-    guides.setAttribute(
-      "d",
-      `M${EASE_PAD.x} ${y0}H${size.w - EASE_PAD.x}M${EASE_PAD.x} ${y1}H${size.w - EASE_PAD.x}M${x0} ${y0}L${x1} ${y1}`,
-    )
+    size.w ? [...map(0, 0), ...handleAt(0), ...map(1, 1), ...handleAt(1)] : []
+  const miniPoints = () => {
+    if (!miniSize.h) return []
+    const s = morph.samples
+    const [m0, m1] = MINI.y
+    const out: number[] = []
+    for (let i = 0; i < s.length; i += 2) {
+      const y = clamp(range[0] + s[i + 1]! * spanY, m0, m1)
+      out.push(1.5 + s[i]! * (MINI.w - 3), 1.5 + ((m1 - y) / (m1 - m0)) * (miniSize.h - 3))
+    }
+    return out
+  }
+  const plotSmears = smearFilters(c.doc, plot)
+  const lineSmear = plotSmears.line(curve)
+  let strength = 0
+  /** A handle's smear (px, along its travel): 0 at rest and in hand. */
+  const handleSmear = (i: number): [number, number] => {
+    const d = morph.live[i]
+    if (!d || !strength || !morph.moving) return [0, 0]
+    const vx = d.vel[0]! * (size.w - EASE_PAD.x * 2)
+    const vy = -d.vel[1]! * (size.h - EASE_PAD.y * 2)
+    const speed = Math.hypot(vx, vy)
+    const px = curveSmear(speed, strength)
+    return px ? [(vx / speed) * px, (vy / speed) * px] : [0, 0]
+  }
+  const lineBlur = () =>
+    strength && morph.moving
+      ? curveSmear(
+          morph.sampleSpeed(size.w - EASE_PAD.x * 2, size.h - EASE_PAD.y * 2),
+          strength,
+          LINE_SMEAR,
+        )
+      : 0
+  /** Writes the morph's frame to the DOM (the GPU reads the same numbers through its binding). */
+  const draw = () => {
     const a = armPoints()
-    place([curve, arms, ...handles], instant, () => {
-      setPath(curve, curvePoints())
-      arms.style.setProperty(
-        "d",
-        `path("M${a[0]} ${a[1]}L${a[2]} ${a[3]}M${a[4]} ${a[5]}L${a[6]} ${a[7]}")`,
-      )
+    // The handles are what a pointer grabs, so they're placed for the GPU too.
+    if (a.length === 8) {
       handles[0]!.style.translate = `${a[2]}px ${a[3]}px`
       handles[1]!.style.translate = `${a[6]}px ${a[7]}px`
-    })
+    }
+    if (x.row.closest('[data-gpu-active="true"]')) return
+    if (miniSize.h) setPath(miniPath, miniPoints())
+    if (!size.w) return
+    setPath(curve, curvePoints())
+    lineSmear(lineBlur())
+    arms.style.setProperty(
+      "d",
+      `path("M${a[0]} ${a[1]}L${a[2]} ${a[3]}M${a[4]} ${a[5]}L${a[6]} ${a[7]}")`,
+    )
+    handles.forEach((h, i) => plotSmears.dot(h, ...handleSmear(i)))
+  }
+  const loop = morphLoop(c, morph, draw)
+  let placed = false
+  const layout = (instant: boolean, delay = 0) => {
+    if (size.w) {
+      plot.setAttribute("viewBox", `0 0 ${size.w} ${size.h}`)
+      const [x0, y0] = map(0, 0)
+      const [x1, y1] = map(1, 1)
+      guides.setAttribute(
+        "d",
+        `M${EASE_PAD.x} ${y0}H${size.w - EASE_PAD.x}M${EASE_PAD.x} ${y1}H${size.w - EASE_PAD.x}M${x0} ${y0}L${x1} ${y1}`,
+      )
+    }
+    const still = instant || !placed || reducedMotion(c.doc)
+    placed = true
+    morph.set(unitSamples(), unitHandles(), { instant: still, delay, now: performance.now() })
+    if (morph.moving) {
+      strength = curveBlur(x.row)
+      loop.kick()
+    }
+    draw()
   }
   const size = measure(box, () => layout(true))
   const miniSize = measure(mini, () => {
     mini.setAttribute("viewBox", `0 0 ${MINI.w} ${miniSize.h}`)
-    place([miniPath], true, () => setPath(miniPath, miniPoints()))
+    layout(true)
   })
   const g = gesture(c)
   let dragging = -1
@@ -1039,7 +1318,6 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
   let fine = false
   let anchor: [number, number] = [0, 0]
   let anchorValue = shown
-  const spanY = range[1] - range[0]
   const unit = () => [size.w - EASE_PAD.x * 2, size.h - EASE_PAD.y * 2] as const
   const move = (i: number, px: number, py: number) => {
     const next = [...shown] as [number, number, number, number]
@@ -1106,9 +1384,13 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
       move(i, shown[i * 2]! + dx * by, shown[i * 2 + 1]! + dy * by)
     })
   })
-  // A pan that starts sideways moves the hovered (or focused) handle with the fingers.
+  // A pan that starts sideways moves the hovered (or focused) handle with the fingers; past the
+  // box's edges it gives a little and springs back when it's let go.
   let panned = -1
-  let panAt: [number, number] = [0, 0]
+  let panAt: [Band, Band] = [
+    { at: 0, give: 0 },
+    { at: 0, give: 0 },
+  ]
   const panTarget = () => {
     const hovered = handles.findIndex((h) => h.matches(":hover"))
     return hovered >= 0 ? hovered : handles.findIndex((h) => h === c.doc.activeElement)
@@ -1118,26 +1400,38 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
     {
       accept: () => dragging < 0 && panTarget() >= 0,
       move(dx, dy) {
-        const w = size.w || box.clientWidth
-        const h = size.h || box.clientHeight
-        if (!w) return
+        const w = (size.w || box.clientWidth) - EASE_PAD.x * 2
+        const h = (size.h || box.clientHeight) - EASE_PAD.y * 2
+        if (w <= 0 || h <= 0) return
         if (panned < 0) {
           panned = panTarget()
           if (panned < 0) return
-          panAt = [shown[panned * 2]!, shown[panned * 2 + 1]!]
+          panAt = [
+            { at: shown[panned * 2]! * w, give: 0 },
+            { at: ((range[1] - shown[panned * 2 + 1]!) / spanY) * h, give: 0 },
+          ]
           g.start()
           box.classList.add("knobs-active")
           c.wake()
         }
-        panAt = [
-          clamp(panAt[0] + dx / (w - EASE_PAD.x * 2), 0, 1),
-          clamp(panAt[1] - (dy / (h - EASE_PAD.y * 2)) * spanY, range[0], range[1]),
-        ]
-        move(panned, ...panAt)
+        const before = panAt[0].give || panAt[1].give
+        panAt = [band(panAt[0], dx, 0, w), band(panAt[1], dy, 0, h)]
+        if (stretched(before, panAt[0].give || panAt[1].give)) tick(box, "limit")
+        const moved = give[1] !== panAt[0].give || give[2] !== panAt[1].give
+        give = [panned, panAt[0].give, panAt[1].give]
+        move(panned, panAt[0].at / w, range[1] - (panAt[1].at / h) * spanY)
+        if (moved) {
+          layout(true)
+          c.wake()
+        }
       },
       end() {
         panned = -1
         box.classList.remove("knobs-active")
+        if (give[1] || give[2]) {
+          give = [-1, 0, 0]
+          layout(false)
+        }
         c.wake()
       },
       step(direction) {
@@ -1154,6 +1448,11 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
     const next = i < 0 ? (dir > 0 ? 0 : names.length - 1) : (i + dir + names.length) % names.length
     c.set(EASINGS[names[next]!])
   }
+  panPresets(c, x.head, mini, {
+    count: names.length,
+    at: () => names.findIndex((n) => n === easingName(shown)),
+    choose: (i, coalesce) => c.set(EASINGS[names[i]!], { coalesce }),
+  })
   for (const target of [chips, x.head])
     target.addEventListener("keydown", (event) => {
       const dir = arrow(event)
@@ -1174,6 +1473,9 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
     box,
     curve: curvePoints,
     arms: armPoints,
+    advance: (now) => morph.step(now),
+    blur: lineBlur,
+    smear: handleSmear,
     guides: () => (size.w ? [...map(0, 0), ...map(1, 1)] : []),
     handles,
     chips: chipButtons,
@@ -1188,24 +1490,31 @@ export function easingRow(c: RowContext<EasingField>): EditorRow {
     stops: () => [x.head, ...(x.isOpen() ? [chips, ...handles] : [])].filter(visible),
     tracks: [],
     gpu: [gpu],
-    update(value, _delay, _instant, mixed = false) {
+    options: {
+      count: names.length,
+      choose: (i) => c.set(EASINGS[names[i]!]),
+      shown: () => (x.isOpen() && visible(chips) ? chipButtons : []),
+      anchor: mini,
+    },
+    update(value, delay, instant = false, mixed = false) {
       const first = name.dataset.placed === undefined
       name.dataset.placed = ""
       shown = value as Bezier
       const match = mixed ? undefined : easingName(shown)
-      name.textContent = mixed ? "—" : (match ?? "")
+      const hand = box.classList.contains("knobs-active") || x.head.hasAttribute("data-panned")
+      fadeText(name, mixed ? "—" : (match ?? ""), !first && !instant && !hand)
       for (const [i, b] of chipButtons.entries())
         b.setAttribute("aria-checked", String(names[i] === match))
       handles.forEach((h, i) =>
         h.setAttribute("aria-valuetext", `x ${shown[i * 2]}, y ${shown[i * 2 + 1]}`),
       )
       const held = dragging >= 0 || panned >= 0
-      layout(first || held)
-      if (miniSize.h) place([miniPath], first || held, () => setPath(miniPath, miniPoints()))
+      layout(first || held || instant, delay)
     },
     dispose() {
       size.disconnect()
       miniSize.disconnect()
+      loop.dispose()
     },
   }
 }

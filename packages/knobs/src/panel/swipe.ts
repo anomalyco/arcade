@@ -1,3 +1,4 @@
+import { rubber, unrubber } from "./give.js"
 import { tick } from "./haptics.js"
 
 /** A pause this long (ms) with no wheel events ends a gesture. */
@@ -449,18 +450,30 @@ const reach = (slots: readonly Slot[], i: number, dir: number) => {
   return (a.right - a.left + b.right - b.left) / 2 + 4
 }
 
-/** Pushes the pill `delta` px; it joins a neighbour once past halfway to it, and holds at the ends. */
+/** Whether a pill's offset is past an end: its give (see give.ts). */
+export const giving = (slots: readonly Slot[], { index, offset }: Slide) =>
+  offset !== 0 && reach(slots, index, Math.sign(offset)) === undefined
+
+/**
+ * Pushes the pill `delta` px; it joins a neighbour once past halfway to it. Past an end it gives
+ * like every control does (see give.ts): a little, less and less, and turning back takes the give
+ * up 1:1 before it moves on.
+ */
 export function slide(slots: readonly Slot[], from: Slide, delta: number): Slide {
   let { index, offset } = from
+  if (giving(slots, from)) {
+    if (Math.sign(delta) === Math.sign(offset))
+      return { index, offset: rubber(unrubber(offset) + delta) }
+    const left = offset + delta
+    if (left === 0 || Math.sign(left) === Math.sign(offset)) return { index, offset: left }
+    offset = 0
+    delta = left
+  }
   offset += delta
   for (;;) {
     const dir = offset > 0 ? 1 : -1
     const d = reach(slots, index, dir)
-    if (d === undefined) {
-      const w = slots[index] ? slots[index]!.right - slots[index]!.left : 0
-      offset = Math.max(-w, Math.min(w, offset))
-      return { index, offset }
-    }
+    if (d === undefined) return { index, offset: rubber(offset) }
     if (Math.abs(offset) <= d / 2) return { index, offset }
     index += dir
     offset -= dir * d
@@ -469,18 +482,15 @@ export function slide(slots: readonly Slot[], from: Slide, delta: number): Slide
 
 /**
  * The pill's live edges: its centre is its option's plus the offset, and its width blends toward
- * the neighbour it heads for, so it's continuous as the selection changes hands. Past the ends it
- * gives way like a rubber band.
+ * the neighbour it heads for, so it's continuous as the selection changes hands. Past the ends the
+ * offset is its give.
  */
 export function pillAt(slots: readonly Slot[], { index, offset }: Slide): Slot {
   const a = slots[index]!
   const w = a.right - a.left
   const dir = offset > 0 ? 1 : -1
   const d = reach(slots, index, dir)
-  if (d === undefined) {
-    const o = offset / (1 + Math.abs(offset) / (w * 0.5))
-    return { left: a.left + o, right: a.right + o, top: a.top }
-  }
+  if (d === undefined) return { left: a.left + offset, right: a.right + offset, top: a.top }
   const b = slots[index + dir]!
   const width = w + (b.right - b.left - w) * (Math.abs(offset) / d)
   const c = centre(a) + offset
@@ -514,6 +524,8 @@ export function panOptions(
     readonly minWidth?: number
     /** Places the pill's top too, for options that wrap onto rows. */
     readonly rows?: boolean
+    /** A row held in its active state (`knobs-active`) while the pill is in hand. */
+    readonly row?: HTMLElement
   },
 ) {
   let slots: Slot[] = []
@@ -521,6 +533,7 @@ export function panOptions(
   let committed = false
   const rest = () => {
     live.delete(o.box)
+    o.row?.classList.remove("knobs-active")
     o.pill.style.transition = ""
     o.rest()
     o.wake?.()
@@ -553,6 +566,7 @@ export function panOptions(
         if (!at) {
           slots = measure()
           committed = false
+          o.row?.classList.add("knobs-active")
         }
         if (!slots.length) return
         at = { index: selected >= 0 ? selected : dx > 0 ? 0 : slots.length - 1, offset: 0 }
@@ -560,6 +574,8 @@ export function panOptions(
       }
       const next = slide(slots, at, dx)
       if (next.index !== at.index) choose(next.index)
+      // Meeting an end ticks once, as it starts to give.
+      else if (!giving(slots, at) && giving(slots, next)) tick(o.box, "limit")
       at = next
       paint(pillAt(slots, at))
     },

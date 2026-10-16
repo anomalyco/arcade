@@ -1,4 +1,5 @@
 import { Spring, springMotion, type SpringValue } from "../core/spring.js"
+import { cue } from "./sound.js"
 
 // A die drawn like Phosphor's dice icons, but solid: a rounded cube whose bevel is inked wherever the
 // surface turns more than `bevel` degrees from a face. Face-on, that band is exactly the glyph's
@@ -176,6 +177,15 @@ export class DieMotion {
     return face.value
   }
 
+  /** A quarter turn sideways (`dir` +1 rolls it rightwards): a die rolled along under the fingers. */
+  turn(dir: -1 | 1) {
+    // A fast scrub doesn't wind it up: it rolls along at most a few faces behind.
+    if (Math.abs(this.ry.target + 90 * dir - this.ry.x) > 270) return this.value
+    this.ry.set(this.ry.target + 90 * dir)
+    this.value = frontFace(this.rx.target, this.ry.target)
+    return this.value
+  }
+
   snapTo(value: number) {
     const face = FACES.find((f) => f.value === value) ?? FACES[0]!
     this.value = face.value
@@ -200,6 +210,20 @@ export interface DieView {
   readonly rx: number
   readonly ry: number
   readonly energy: number
+}
+
+/** The face a cube turned `rx`, `ry` (degrees) shows the viewer. */
+export function frontFace(rx: number, ry: number) {
+  let best = FACES[0]!
+  let z = Number.NEGATIVE_INFINITY
+  for (const f of FACES) {
+    const v = rotate(f.n, rx, ry)[2]
+    if (v > z) {
+      z = v
+      best = f
+    }
+  }
+  return best.value
 }
 
 /** The value congruent to `base` (mod 360) closest to `around`. */
@@ -482,6 +506,7 @@ export function createHeaderDie(doc: Document, onFrame: () => void, size = HEADE
     size,
     /** Tumble to another face; `nudge` turns a quarter onto a neighbour instead (Mutate). */
     roll(nudge = false) {
+      cue(node, nudge ? "mutate" : "random")
       const still = win?.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       if (still) {
         const others = FACES.filter((f) => f.value !== motion.value)
@@ -493,6 +518,22 @@ export function createHeaderDie(doc: Document, onFrame: () => void, size = HEADE
       }
       if (nudge) motion.nudge()
       else motion.roll()
+      if (!frame) {
+        last = performance.now()
+        frame = requestAnimationFrame(tick)
+      }
+    },
+    /** A quarter turn sideways with a pan (`dir` +1 rightwards). */
+    turn(dir: -1 | 1) {
+      const still = win?.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      if (still) {
+        motion.snapTo(frontFace(motion.rx.target, motion.ry.target + 90 * dir))
+        view = motion.step(0)
+        paint()
+        onFrame()
+        return
+      }
+      motion.turn(dir)
       if (!frame) {
         last = performance.now()
         frame = requestAnimationFrame(tick)
