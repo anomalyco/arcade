@@ -816,4 +816,56 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
     a.close()
     b.close()
   })
+
+  test("remote survivors and zombies coast through a snapshot stall and ease recovery with Glide", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("coast", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 2, 0)
+    const sock = net.socketClass()
+    const a = new NetSession({ features, url: "loop", room: "coast", name: "Ann", now: () => net.now, WebSocket: sock })
+    const b = new NetSession({ features, url: "loop", room: "coast", name: "Bob", now: () => net.now, WebSocket: sock })
+
+    for (let i = 0; i < 30; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, { ...idle(0), mx: 1 })
+      b.update(TICK_DT, idle(0))
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+    }
+
+    const remoteAnnOnB = b.remotes[0]!.survivor
+    const xBeforeStall = remoteAnnOnB.x
+    // Stall downstream snapshots for 10 ticks (167 ms) while local clock advances: remote survivor coasts forward instead of freezing
+    net.lossRate = 1
+    for (let i = 0; i < 10; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, { ...idle(0), mx: 1 })
+      b.update(TICK_DT, idle(0))
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+    }
+    const xAfterCoast = remoteAnnOnB.x
+    expect(xAfterCoast).toBeGreaterThan(xBeforeStall + 0.15)
+
+    // Restore link: Glide prevents a hard teleport jump on the first frame after the stall ends
+    net.lossRate = 0
+    let maxStepJump = 0
+    let prevX = remoteAnnOnB.x
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      a.update(TICK_DT, { ...idle(0), mx: 1 })
+      b.update(TICK_DT, idle(0))
+      a.sync(TICK_DT)
+      b.sync(TICK_DT)
+      maxStepJump = Math.max(maxStepJump, Math.abs(remoteAnnOnB.x - prevX))
+      prevX = remoteAnnOnB.x
+    }
+    expect(maxStepJump).toBeLessThan(0.5)
+
+    a.close()
+    b.close()
+  })
 })
