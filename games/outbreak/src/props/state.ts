@@ -1,11 +1,17 @@
 import { SIZE, type Building, type Prop, type Town } from "../../shared/map"
+import { DEFAULT_PROP_SETTINGS } from "./settings"
 
 /**
  * Whether the library furnishes the houses, and the clutter density and seed it plans with. `PropDressing.collect`
  * sets it and rebuilds the level on change; the level builder reads it (like `interiorSettings`) to skip box furniture,
  * ground floor clutter and bake table-lamp pools.
  */
-export const propDressingState = { on: false, density: 1, seed: 0 }
+export const propDressingState = {
+  // Starts at the defaults (High tier density) so the first level build already matches the first frame.
+  on: DEFAULT_PROP_SETTINGS.propsOn,
+  density: DEFAULT_PROP_SETTINGS.propClutter,
+  seed: DEFAULT_PROP_SETTINGS.propSeed,
+}
 
 /** The part of the level cache key the library owns; unchanged from before clutter was stamped while off. */
 export const propLevelSignature = (): string => (propDressingState.on ? `1/${propDressingState.density}/${propDressingState.seed}` : "0")

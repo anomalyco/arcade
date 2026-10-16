@@ -13,7 +13,7 @@ const hero = (style: number): StationCommand[] => [set("heroStyle", style)]
 const shot = (hour: number, zoom: number, at: StationCommand, ...extra: StationCommand[]): StationCommand[] => [set("timeScale", 0), set("hour", hour), set("zoom", zoom), at, ...extra]
 const street = (aim: number) => pose(24, 44, aim)
 const hall = (flashlight: boolean) => pose(27.7, 31.2, -0.45, { openDoor: true, flashlight })
-const detail = (plates: number, ash: number, decals: number, grime: number, caps: number, props = false): StationCommand[] => [
+const detail = (plates: number, ash: number, decals: number, grime: number, caps: number, props = true): StationCommand[] => [
   set("floorPlates", plates), set("paintedPlate", ash), set("decalDensity", decals), set("skirtingGrime", grime), set("wallCaps", caps), set("propsOn", props),
 ]
 
@@ -41,11 +41,10 @@ const variants: StationVariant[] = [
   { id: "entry-hall-night", group: "Shot", label: "Entry hall from above", note: "19:00 on the hall runner by the front door, flashlight up the hall: Kit's Resident Evil house frame.", setup: shot(19, 26, pose(27.7, 34.3, -Math.PI / 2, { flashlight: true })) },
   { id: "hallway-day", group: "Shot", label: "Hallway, day", note: "At 14:00 the unseen layers scale down.", setup: shot(14, 36, hall(false)) },
   // Floor and trim detail for a Resident Evil house (AR-42). Today is the shipped default; the others switch parts off.
-  { id: "detail-today", group: "Detail", label: "Today", note: "Painted floors in every house, Ash's paint-over plate, seeded stains and papers, grime along the skirting, moulded wall tops.", setup: detail(1, 1, 0.35, 0.6, 1) },
-  { id: "detail-procedural", group: "Detail", label: "Procedural floors (before)", note: "The floors before AR-42: one procedural board tone per theme, flat wall tops, no decals.", setup: detail(0, 0, 0, 0, 0) },
+  { id: "detail-today", group: "Detail", label: "Today", note: "Painted floors in every house, Ash's paint-over plate, seeded stains and papers, grime along the skirting, moulded wall tops, and the generated furniture in the start houses.", setup: detail(1, 1, 0.35, 0.6, 1) },
+  { id: "detail-procedural", group: "Detail", label: "Procedural floors (before)", note: "The floors before AR-42: one procedural board tone per theme, flat wall tops, no decals, box furniture.", setup: detail(0, 0, 0, 0, 0, false) },
   { id: "detail-plates-only", group: "Detail", label: "Painted floors, no decals", note: "The generated floor plates alone, with no stains, papers or skirting grime.", setup: detail(1, 1, 0, 0, 1) },
   { id: "detail-heavy", group: "Detail", label: "Heavy wear", note: "Twice the decals and more grime: a house left for years.", setup: detail(1, 1, 0.7, 1.1, 1) },
-  { id: "detail-props", group: "Detail", label: "Today, furnished", note: "Today's floors with the generated furniture library (Props › Furnish start houses, off in the game). Props take colour only where light lands, like every surface.", setup: detail(1, 1, 0.35, 0.6, 1, true) },
   { id: "clear", group: "Weather", label: "Clear", note: "No rain.", setup: [{ command: "weather.preset", args: { preset: "clear" } }] },
   { id: "rain", group: "Weather", label: "Rain", note: "Rain and mist thicken the air.", setup: [{ command: "weather.preset", args: { preset: "rain" } }] },
   // The flashlight beam (was the outbreak-flashlight station): off and the volumetric tiers.

@@ -76,7 +76,11 @@ try {
     const failure = document.querySelector(sel[0])?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
     return document.querySelector(sel[1]) ? "lobby ready" : false
-  }, game, { timeout: 20_000 })
+  }, game, { timeout: 20_000 }).catch(async error => {
+    const status = await page.evaluate(() => document.querySelector("#status, .notice")?.textContent ?? "").catch(() => "")
+    console.error(`${game}: not ready after 20 s; status ${JSON.stringify(status)}; browser errors ${JSON.stringify(errors)}`)
+    throw error
+  })
   // Let initialization promises and the first presentation frames report errors.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.deepEqual(errors, [], `${game}: browser errors`)
