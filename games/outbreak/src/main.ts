@@ -1,5 +1,6 @@
 import { Camera } from "@arcade/kit/client/camera"
 import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
+import { TABLE_LAMP_SLOT } from "./lightbake"
 import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel } from "@arcade/kit/lab-panel"
@@ -1279,6 +1280,7 @@ async function main() {
     }
     const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
     lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
+    lampPower[TABLE_LAMP_SLOT] = sconceLevel * 0.5
     interiors.sconces.setSources(currentIsStreamWindow ? worldStreamer.windowSconces : originSconces)
     count = interiors.sconces.write(
       lights,

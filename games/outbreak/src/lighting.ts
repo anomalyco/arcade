@@ -7,7 +7,7 @@ import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings }
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
-import { addLampPool, type BakeLamp } from "./lightbake"
+import { addLampPool, tableLampPool, type BakeLamp, type TableLamp } from "./lightbake"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
@@ -809,9 +809,10 @@ export function bakedRoomLamp(lamp: Lamp, buildings: readonly Building[]): BakeL
  * Concrete Baking Recommendation #1:
  * Bakes indirect light into a 192x192 RGBA8 `bounceTex` (0.5m/texel) using an 8-neighbour corner-safe Dijkstra
  * flood-fill over `town.lamps` (`room`, `porch`, `window`, `street`), blocked by solid walls.
- * Stores `sqrt(rgb)` in `.rgb` for dark precision and wall-free coverage in `.a`.
+ * Stores `sqrt(rgb)` in `.rgb` for dark precision and wall-free coverage in `.a`. `tableLamps` are the client-side
+ * furniture library's lamps, baked as pools only (`tableLampPool`).
  */
-export function bakeOutbreakBounce(town: Town): FloorMap {
+export function bakeOutbreakBounce(town: Town, tableLamps: readonly TableLamp[] = []): FloorMap {
   const w = 192
   const h = 192
   const cx = SIZE / w
@@ -938,6 +939,7 @@ export function bakeOutbreakBounce(town: Town): FloorMap {
     const pool = bakedRoomLamp(lamp, town.buildings)
     if (pool) addLampPool(acc, solid, w, 0, 0, cx, pool)
   }
+  for (const l of tableLamps) addLampPool(acc, solid, w, 0, 0, cx, tableLampPool(l))
 
   const data = new Uint8Array(w * h * 4)
   for (let i = 0; i < w * h; i++) {
