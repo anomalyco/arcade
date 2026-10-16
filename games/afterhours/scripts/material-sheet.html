@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="noindex" />
+    <title>Afterhours material sheet</title>
+    <style>
+      html, body { margin: 0; background: #000; overflow: hidden }
+      canvas { display: block; width: 100vw; height: 100vh }
+      #labels { position: fixed; inset: 0; pointer-events: none; font: 11px ui-monospace, Menlo, monospace; color: #ddd }
+      #labels div { position: absolute; transform: translate(-50%, 0); text-shadow: 0 0 3px #000 }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="labels"></div>
+    <script type="module" src="./material-sheet-page.ts"></script>
+  </body>
+</html>

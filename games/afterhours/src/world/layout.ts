@@ -51,8 +51,8 @@ export const BOOTH = { x: 9, z: 127.5, w: 3.4, d: 2.8, h: 2.9 }
 export const PARKING_LOT: Rect = { min: [-42, 38], max: [42, 112] }
 
 export const BUILDING = {
-  /** Two-storey concrete block. */
-  main: { min: [-55, -22] as Vec2, max: [35, 22] as Vec2, height: 8.4 },
+  /** Five-storey concrete research block: `storeys` floors of `storeyHeight`, plus parapet up to `height`. */
+  main: { min: [-55, -22] as Vec2, max: [35, 22] as Vec2, height: 19.6, storeys: 5, storeyHeight: 3.8 },
   /** Single-storey east annex. */
   annex: { min: [35, -38] as Vec2, max: [62, 6] as Vec2, height: 5.2 },
   wallThickness: 0.35,
@@ -61,7 +61,7 @@ export const BUILDING = {
   /** Main entrance on the south face of the main block. */
   entrance: { x: 0, z: 22, width: 3.6, height: 2.7 },
   /** Large radio dish on the roof, tilted so it points down at the ground behind the building. */
-  dish: { x: 6, z: -4, diameter: 17, tilt: 0.95, yaw: Math.PI },
+  dish: { x: 6, z: -4, diameter: 25.5, tilt: 0.95, yaw: Math.PI },
   /** Loading dock on the north face. */
   dock: { x: -30, z: -22, width: 14, depth: 9, height: 1.25 },
 }

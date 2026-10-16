@@ -2,7 +2,7 @@ import * as THREE from "three/webgpu"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import type { WorldContext, WorldModule } from "./world/context"
 import { VIEWPOINTS, type ViewpointName } from "./world/layout"
-import { loadMaterials } from "./render/materials"
+import { MATERIAL_CONTROLS, MATERIAL_SETTINGS, bindMaterialSettings, loadMaterials } from "./render/materials"
 import { createAtmosphere } from "./render/atmosphere"
 import { createLighting } from "./render/lighting"
 import { createPost } from "./render/post"
@@ -61,6 +61,9 @@ const ctx: WorldContext = {
   params,
 }
 
+Object.assign(ctx.settings, MATERIAL_SETTINGS)
+bindMaterialSettings(ctx.settings)
+ctx.controls.push(...MATERIAL_CONTROLS)
 await loadMaterials(renderer).catch((e) => fail(`materials: ${e}`))
 const only = params.get("only")?.split(",")
 const updates: NonNullable<WorldModule["update"]>[] = []
