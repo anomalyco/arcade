@@ -640,7 +640,7 @@ export function reconcileOutbreakOptimistic(
   const p = slot.survivor
   const town = sim.town
 
-  host.optimistic.reconcile(personal.ack, (ev) => {
+  const isConfirmed = (ev: (typeof host.optimistic.entries)[number]): boolean => {
     switch (ev.kind) {
       case "door": {
         const idx = town.doors.findIndex((d) => d.id === ev.payload.doorId)
@@ -665,7 +665,13 @@ export function reconcileOutbreakOptimistic(
       case "melee":
         return (personal.survivor.meleePhase ?? "idle") !== "idle" || (personal.survivor.meleeSwingId ?? 0) > 0
     }
-  })
+  }
+  while (host.optimistic.confirmWhere((ev) => ev.seq <= personal.ack && isConfirmed(ev))) {
+    // Confirm all predictions whose server effect is already visible at `personal.ack`.
+  }
+  // `socketJitter` bridges brief stalls with stand-ins before carrying late edges,
+  // so only reject once `personal.ack` has passed the bridge window without the server applying the action.
+  host.optimistic.reconcile(personal.ack - 4, isConfirmed)
   refreshPendingPickupItems(host)
   void p
 }

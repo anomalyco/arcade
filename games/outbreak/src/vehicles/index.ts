@@ -1,4 +1,4 @@
-import { lerp, lerpAngle } from "@arcade/kit/net/interpolate"
+import { Glide, hermite2, lerp, lerpAngle } from "@arcade/kit/net/interpolate"
 import type { VehicleState } from "../../shared/net-protocol"
 import { supportHeight } from "../../shared/terrain"
 import {
@@ -16,7 +16,7 @@ import { stageVehicleScene, VEHICLE_SCENES, vehicleLabControls, type VehicleScen
 const processedVehicleHitsByTracker = new WeakMap<OutbreakFeelTracker, Set<string>>()
 const netVehicleTablesBySession = new WeakMap<
   NetSession,
-  { prevVehicles: Map<number, VehicleState>; slotIdByIndex: Map<number, string> }
+  { prevVehicles: Map<number, VehicleState>; slotIdByIndex: Map<number, string>; glides: Map<number, Glide> }
 >()
 
 function getProcessedHits(tracker: OutbreakFeelTracker): Set<string> {
@@ -34,6 +34,7 @@ function getNetTables(net: NetSession) {
     tables = {
       prevVehicles: new Map<number, VehicleState>(),
       slotIdByIndex: new Map<number, string>(),
+      glides: new Map<number, Glide>(),
     }
     netVehicleTablesBySession.set(net, tables)
   }
@@ -215,9 +216,9 @@ export const outbreakVehiclesFeature = registerOutbreakClientFeature({
         lv.seats[p.seatIndex ?? 0] = net.local.id
       }
     },
-    onSyncFrame: (net, a, b, t, span) => {
+    onSyncFrame: (net, a, b, t, span, over = 0, dt = 0) => {
       if (!b.vehicles) return
-      const { prevVehicles: prev } = getNetTables(net)
+      const { prevVehicles: prev, glides } = getNetTables(net)
       prev.clear()
       const aVehicles = a.vehicles
       if (aVehicles) {
@@ -235,11 +236,21 @@ export const outbreakVehiclesFeature = registerOutbreakClientFeature({
         if (!lv || lv.id === localDrivenId) continue
         const va = prev.get(vb.id) ?? vb
         const teleport = Math.hypot(vb.x - va.x, vb.y - va.y) > 8
-        lv.x = teleport ? vb.x : lerp(va.x, vb.x, t)
-        lv.y = teleport ? vb.y : lerp(va.y, vb.y, t)
-        lv.h = lerpAngle(va.h, vb.h, t)
-        lv.vx = teleport ? vb.vx : (vb.x - va.x) / span
-        lv.vy = teleport ? vb.vy : (vb.y - va.y) / span
+        const hp = teleport
+          ? { x: vb.x, y: vb.y, vx: vb.vx, vy: vb.vy }
+          : hermite2(va, vb, va === vb ? 0 : span, t, over)
+        let glide = glides.get(vb.id)
+        if (!glide) {
+          glide = new Glide(10, 4)
+          glides.set(vb.id, glide)
+        }
+        if (teleport) glide.reset()
+        const pos = dt > 0 ? glide.step(hp.x, hp.y, hp.vx, hp.vy, dt) : { x: hp.x + glide.x, y: hp.y + glide.y }
+        lv.x = pos.x
+        lv.y = pos.y
+        lv.h = teleport ? vb.h : lerpAngle(va.h, vb.h, t) + vb.w * over
+        lv.vx = hp.vx
+        lv.vy = hp.vy
         for (let s = 0; s < lv.seats.length; s++) {
           const sid = lv.seats[s]!
           if (!sid) continue

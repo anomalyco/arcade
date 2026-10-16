@@ -24,7 +24,7 @@ export interface OutbreakClientFeatureNetHooks {
   /** Reconciles local predicted survivor state against `personal` and `shared` before input replay. */
   onReconcileLocal?(net: NetSession, personal: PersonalSnapshot, shared: SharedSnapshot): void
   /** Interpolates remote feature entities between snapshots `a` and `b` at render factor `t` (60 Hz frame sync). */
-  onSyncFrame?(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void
+  onSyncFrame?(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over?: number, dt?: number): void
 }
 
 export interface OutbreakClientFeature {
@@ -196,9 +196,9 @@ export class OutbreakClientFeatureRegistry
     }
   }
 
-  syncNetFrame(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
+  syncNetFrame(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over = 0, dt = 0): void {
     for (const feature of this.list()) {
-      feature.netSession?.onSyncFrame?.(net, a, b, t, span)
+      feature.netSession?.onSyncFrame?.(net, a, b, t, span, over, dt)
     }
   }
 }

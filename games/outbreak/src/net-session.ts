@@ -1,6 +1,6 @@
 import { ByteWriter } from "@arcade/kit/net/bytes"
 import { AckHistory } from "@arcade/kit/net/interest"
-import { lerp, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
+import { Glide, lerp, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
 import { OptimisticEvents, Predictor, Smoother } from "@arcade/kit/net/prediction"
 import {
   matchServerCombatEvents,
@@ -71,11 +71,14 @@ export interface NetSessionFeatures {
   /** Applies discrete feature state from a snapshot; true when nav or solid topology changed. */
   applyNetWorld(net: NetSession, shared: SharedSnapshot): boolean
   reconcileNetLocal(net: NetSession, personal: PersonalSnapshot, shared: SharedSnapshot): void
-  syncNetFrame(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void
+  syncNetFrame(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over?: number, dt?: number): void
 }
 
 const TOKEN_KEY = "outbreak.coop.token."
 const STATUS_CONNECTING = "Connecting to room…"
+
+export const remoteBuffer = (delay = 0.1): SnapshotBuffer<SharedSnapshot> =>
+  new SnapshotBuffer<SharedSnapshot>(delay, 32, 0.25, { min: 0.08, max: 0.1 })
 
 /**
  * A co-op room as a `Session`: the local survivor is predicted with the room's own simulation code and reconciled
@@ -115,6 +118,8 @@ export class NetSession implements Session, OutbreakOptimisticHost {
   private prevSentSeq = 0
   private outWriter = new ByteWriter(64)
   private agents = new Map<number, AIAgent>()
+  private readonly zombieGlides = new Map<number, Glide>()
+  private readonly survivorGlides = new Map<number, Glide>()
   private readonly prevZombies = new Map<number, ZombieState>()
   private readonly seenZombies = new Set<number>()
   private readonly prevSurvivors = new Map<number, RemoteSurvivor>()
@@ -133,7 +138,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     this.local = this.sim.addSurvivor("local", 0)
     this.view = slotView(this.sim, () => this.local)
     this.view.pendingItems = this.pendingPickupItems
-    this.snapshots = new SnapshotBuffer(options.delay ?? 0.1)
+    this.snapshots = remoteBuffer(options.delay ?? 0.1)
     this.now = options.now ?? (() => performance.now() / 1000)
     this.storage = options.storage
     this.open()
@@ -207,13 +212,13 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     stepOutbreakDoorAngles(this, dt)
     const bracket = this.snapshots.sample(this.now())
     if (!bracket) return
-    const { a, b, t } = bracket
+    const { a, b, t, over } = bracket
     const span = Math.max(1e-3, b.time - a.time)
-    this.sim.time = lerp(a.time, b.time, t)
+    this.sim.time = lerp(a.time, b.time, t) + over
     this.sim.hour = Math.abs(b.hour - a.hour) > 12 ? b.hour : lerp(a.hour, b.hour, t)
-    this.placeZombies(a, b, t, span)
-    this.placeSurvivors(a, b, t, span)
-    this.options.features.syncNetFrame(this, a, b, t, span)
+    this.placeZombies(a, b, t, span, over, dt)
+    this.placeSurvivors(a, b, t, span, over, dt)
+    this.options.features.syncNetFrame(this, a, b, t, span, over, dt)
     const shots = this.sim.combat.shots
     for (let i = shots.length - 1; i >= 0; i--) if (this.sim.time - shots[i]!.time > 0.6) shots.splice(i, 1)
   }
@@ -305,6 +310,8 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         this.lastAppliedRevision = -1
         this.snapHistory.clear()
         this.snapshots.clear()
+        this.zombieGlides.clear()
+        this.survivorGlides.clear()
         this.welcomed = true
         this.status = null
         return
@@ -430,7 +437,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     }
   }
 
-  private placeZombies(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
+  private placeZombies(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over = 0, dt = 0): void {
     const prev = this.prevZombies
     prev.clear()
     for (let i = 0; i < a.zombies.length; i++) {
@@ -448,21 +455,37 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         agent = createAIAgent(z.id, z.seed, z.x, z.y, z.aim)
         this.agents.set(z.id, agent)
       }
+      let glide = this.zombieGlides.get(z.id)
+      if (!glide) {
+        glide = new Glide(12, 2.5)
+        this.zombieGlides.set(z.id, glide)
+      }
       const p = prev.get(z.id) ?? z
       const teleport = Math.hypot(z.x - p.x, z.y - p.y) > 4
-      agent.x = teleport ? z.x : lerp(p.x, z.x, t)
-      agent.y = teleport ? z.y : lerp(p.y, z.y, t)
+      const vx = teleport || z.state === "dead" ? 0 : (z.x - p.x) / span
+      const vy = teleport || z.state === "dead" ? 0 : (z.y - p.y) / span
+      const tx = teleport ? z.x : lerp(p.x, z.x, t) + vx * over
+      const ty = teleport ? z.y : lerp(p.y, z.y, t) + vy * over
+      if (teleport) glide.reset()
+      const pos = dt > 0 ? glide.step(tx, ty, vx, vy, dt) : { x: tx + glide.x, y: ty + glide.y }
+      agent.x = pos.x
+      agent.y = pos.y
       agent.aim = lerpAngle(p.aim, z.aim, t)
-      agent.vx = teleport ? 0 : (z.x - p.x) / span
-      agent.vy = teleport ? 0 : (z.y - p.y) / span
+      agent.vx = vx
+      agent.vy = vy
       applyZombieState(agent, t < 0.5 ? p : z)
       list.push(agent)
       seen.add(z.id)
     }
-    for (const id of this.agents.keys()) if (!seen.has(id)) this.agents.delete(id)
+    for (const id of this.agents.keys()) {
+      if (!seen.has(id)) {
+        this.agents.delete(id)
+        this.zombieGlides.delete(id)
+      }
+    }
   }
 
-  private placeSurvivors(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number): void {
+  private placeSurvivors(a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over = 0, dt = 0): void {
     const prev = this.prevSurvivors
     prev.clear()
     for (let i = 0; i < a.survivors.length; i++) {
@@ -478,23 +501,46 @@ export class NetSession implements Session, OutbreakOptimisticHost {
       const id = this.roster.find((e) => e.index === r.index)?.id ?? `remote${r.index}`
       let slot = this.sim.slots.find((s) => s.index === r.index)
       if (!slot) slot = this.sim.addSurvivor(id, r.index)
-      writeRemote(slot, prev.get(r.index) ?? r, r, t, span)
+      let glide = this.survivorGlides.get(r.index)
+      if (!glide) {
+        glide = new Glide(12, 2.5)
+        this.survivorGlides.set(r.index, glide)
+      }
+      writeRemote(slot, prev.get(r.index) ?? r, r, t, span, over, dt, glide)
     }
     for (let i = this.sim.slots.length - 1; i >= 0; i--) {
       const slot = this.sim.slots[i]!
-      if (slot !== this.local && !present.has(slot.index)) this.sim.removeSurvivor(slot.id)
+      if (slot !== this.local && !present.has(slot.index)) {
+        this.survivorGlides.delete(slot.index)
+        this.sim.removeSurvivor(slot.id)
+      }
     }
   }
 }
 
-function writeRemote(slot: SurvivorSlot, a: RemoteSurvivor, b: RemoteSurvivor, t: number, span: number): void {
+function writeRemote(
+  slot: SurvivorSlot,
+  a: RemoteSurvivor,
+  b: RemoteSurvivor,
+  t: number,
+  span: number,
+  over = 0,
+  dt = 0,
+  glide?: Glide,
+): void {
   const p = slot.survivor
   const teleport = Math.hypot(b.x - a.x, b.y - a.y) > 4
-  p.x = teleport ? b.x : lerp(a.x, b.x, t)
-  p.y = teleport ? b.y : lerp(a.y, b.y, t)
+  const vx = teleport ? 0 : (b.x - a.x) / span
+  const vy = teleport ? 0 : (b.y - a.y) / span
+  const tx = teleport ? b.x : lerp(a.x, b.x, t) + vx * over
+  const ty = teleport ? b.y : lerp(a.y, b.y, t) + vy * over
+  if (teleport) glide?.reset()
+  const pos = glide && dt > 0 ? glide.step(tx, ty, vx, vy, dt) : { x: tx + (glide?.x ?? 0), y: ty + (glide?.y ?? 0) }
+  p.x = pos.x
+  p.y = pos.y
   p.aim = lerpAngle(a.aim, b.aim, t)
-  p.vx = teleport ? 0 : (b.x - a.x) / span
-  p.vy = teleport ? 0 : (b.y - a.y) / span
+  p.vx = vx
+  p.vy = vy
   p.flashlightOn = b.flashlightOn
   p.flashlightOutput = lerp(a.flashlightOutput, b.flashlightOutput, t)
   p.sprinting = b.sprinting
