@@ -8,8 +8,8 @@ import type { Ship } from "../../shared/ship"
 import { vehicleOfCode } from "../../shared/vehicles"
 import type { PlaneDrawPose } from "../render/plane-pass"
 
-/** Remote jets are drawn this far behind the newest pose (s): two relay frames at 20 Hz, so we almost always have a
- *  pose on each side. */
+/** Remote jets are drawn this far behind the newest pose (s): 80 ms on clean links up to 120 ms under jitter. */
+const MIN_DELAY = 0.08
 const DELAY = 0.12
 /** Past the newest pose, flying jets coast on their velocity for at most this long (s). */
 const COAST = 0.4
@@ -22,8 +22,9 @@ type Remote = {
   ship: number
   pose: PlaneDrawPose
   vapourG: number
-  /** Fastest observed `seaTime - tuple[0]` offset, and its smoothed value (null when `sync` is called without `t`). */
+  /** Fastest observed `seaTime - tuple[0]` offset, arrival jitter EMA, and time-stretched shift (`null` when `sync` is called without `t`). */
   targetLag: number | null
+  jitter: number
   lag: number | null
   coasted: boolean
   gx: number
@@ -65,6 +66,7 @@ export class RemotePlanes {
           ship: p.ship,
           vapourG: 0,
           targetLag: null,
+          jitter: 0,
           lag: null,
           coasted: false,
           gx: 0,
@@ -85,11 +87,13 @@ export class RemotePlanes {
         const sample = Math.max(0, t - tuple[0])
         if (r.targetLag === null) {
           r.targetLag = sample
-          r.lag = sample
+          r.lag = sample + MIN_DELAY
         } else if (sample < r.targetLag) {
           r.targetLag = sample
         } else {
-          r.targetLag += (sample - r.targetLag) * 0.01
+          const dev = sample - r.targetLag
+          r.jitter += (Math.min(dev, 0.08) - r.jitter) * 0.12
+          r.targetLag += Math.min(dev, 0.02) * 0.01
         }
       }
       r.snaps.push(tuple)
@@ -99,8 +103,8 @@ export class RemotePlanes {
 
   /** Jets that crashed: where, how long ago (s) at sea time t, and the first crashed pose (its velocity, attitude). */
   *crashes(t: number): Generator<{ id: number; x: number; y: number; z: number; age: number; snap: PlaneTuple }> {
-    const rt = t - DELAY
     for (const [id, r] of this.jets) {
+      const rt = r.lag !== null ? t - r.lag : t - DELAY
       const s = r.snaps
       const last = s[s.length - 1]
       if (!last || last[1] !== 2) continue
@@ -115,11 +119,14 @@ export class RemotePlanes {
     for (const [id, r] of this.jets) {
       const fdt = Number.isFinite(r.lt) && t > r.lt && t - r.lt < 0.25 ? t - r.lt : 0
       if (r.lag !== null && r.targetLag !== null && fdt > 0) {
-        const diff = r.targetLag - r.lag
-        const maxStep = 0.002 * fdt
-        r.lag += Math.max(-maxStep, Math.min(maxStep, diff))
+        const delay = Math.max(MIN_DELAY, Math.min(DELAY, MIN_DELAY + r.jitter * 1.5))
+        const target = r.targetLag + delay
+        const diff = target - r.lag
+        const maxStep = 0.02 * fdt
+        const eased = diff * (1 - Math.exp(-fdt * 2))
+        r.lag += Math.max(-maxStep, Math.min(maxStep, eased))
       }
-      const rt = t - (r.lag ?? 0) - DELAY
+      const rt = r.lag !== null ? t - r.lag : t - DELAY
       const s = r.snaps
       if (!s.length) continue
       let i = s.length - 1

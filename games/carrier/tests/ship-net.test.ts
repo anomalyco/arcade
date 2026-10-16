@@ -331,4 +331,36 @@ describe("captains on the room", () => {
     expect(playerOf(core.crew!, back.id)!.ship).toBe(ship)
     expect(core.crew!.ships.find((s) => s.id === ship)!.locked).toBe(true)
   })
+
+  test("seat token reclaims player id and locked ship on reload while blocking unverified outsiders and kick-ban evaders", () => {
+    const { core, join, say, mate, run } = room()
+    const a = join("ada")
+    join("cy")
+    const b = mate("bo", a)
+    const d = mate("di", a)
+    const ship = playerOf(core.crew!, a.id)!.ship
+    const bId = b.id
+    const bToken = b.last("welcome")!.token!
+    expect(typeof bToken).toBe("string")
+    say(a, { type: "lock", locked: true })
+    // Stranger claiming `back` on a locked ship without having been a member is refused the locked berth.
+    const stranger = join("eve", { back: { ship, role: "pilot" } })
+    expect(playerOf(core.crew!, stranger.id)!.ship).not.toBe(ship)
+    // bo drops and reloads with only the sessionStorage token (no `back` payload): reclaims same id and locked berth.
+    core.close(b)
+    const boReload = join("bo", { token: bToken })
+    expect(boReload.id).toBe(bId)
+    expect(playerOf(core.crew!, boReload.id)!.ship).toBe(ship)
+    // di is kicked, then reconnects with token: keeps same id so the kick ban still blocks boarding `ship`.
+    run(500)
+    const dId = d.id
+    const dToken = d.last("welcome")!.token!
+    say(a, { type: "kick", player: dId })
+    core.close(d)
+    const diBack = join("di", { token: dToken, back: { ship, role: "pilot" } })
+    expect(diBack.id).toBe(dId)
+    expect(playerOf(core.crew!, diBack.id)!.ship).not.toBe(ship)
+    say(diBack, { type: "board", ship })
+    expect(diBack.last("nope")!.error).toBe("kicked")
+  })
 })

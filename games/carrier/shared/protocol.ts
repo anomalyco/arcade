@@ -26,9 +26,9 @@ export type ClientMsg =
    * `build` is the client's BUILD (shared/build.gen.ts). `resume` is the world a reconnecting client already shows; an
    * empty room adopts it instead of making a new one, so a lone player's network blip doesn't change the world. `name`
    * is the player's name; `back` is the ship and role a reconnecting client had: the helm again if it is still free, a
-   * pilot again (back on the deck) otherwise.
+   * pilot again (back on the deck) otherwise. `token` is the private seat token issued in `welcome`.
    */
-  | { type: "hello"; build: string; resume?: World; name?: string; back?: { ship: number; role: Role } }
+  | { type: "hello"; build: string; resume?: World; name?: string; back?: { ship: number; role: Role }; token?: string }
   | { type: "ping"; c: number }
   /** The helm's orders for its ship: throttle -1..1 (negative is astern; the sim clamps it) and rudder -1..1. Ignored from anyone but that ship's helm. */
   | { type: "helm"; o: number; r: number }
@@ -103,8 +103,8 @@ export type ClientMsg =
 export const DEV_MESSAGES: ReadonlySet<ClientMsg["type"]> = new Set<ClientMsg["type"]>(["weather", "time", "bot", "objective"])
 
 export type ServerMsg =
-  /** `id` is this connection's player id in the crew. `dev`: the room runs in dev mode (it takes `DEV_MESSAGES`). */
-  | { type: "welcome"; seed: number; epoch: number; now: number; players: number; id: number; dev?: true }
+  /** `id` is this connection's player id in the crew. `token` is the private seat token for reconnects. `dev`: the room runs in dev mode (it takes `DEV_MESSAGES`). */
+  | { type: "welcome"; seed: number; epoch: number; now: number; players: number; id: number; token?: string; dev?: true }
   /** The server runs different shared code than this client: reload the page. */
   | { type: "reload" }
   /** The room has CREW.roomMax players: pick another. */
@@ -422,6 +422,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       if (isStr(o.name, 64)) msg.name = o.name
       const back = o.back as Record<string, unknown> | undefined
       if (back && typeof back === "object" && isCount(back.ship) && isRole(back.role)) msg.back = { ship: back.ship, role: back.role }
+      if (isStr(o.token, 64) && o.token.length > 0) msg.token = o.token
       return msg
     }
   }
@@ -436,7 +437,10 @@ export function decodeServer(raw: unknown): ServerMsg | null {
     case "welcome": {
       const w = worldOf(o)
       if (!w || !isTime(o.now) || !isCount(o.players) || !isCount(o.id)) return null
-      return o.dev === true ? { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id, dev: true } : { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id }
+      const msg: Extract<ServerMsg, { type: "welcome" }> = { type: "welcome", seed: w.seed, epoch: w.epoch, now: o.now, players: o.players, id: o.id }
+      if (isStr(o.token, 64) && o.token.length > 0) msg.token = o.token
+      if (o.dev === true) msg.dev = true
+      return msg
     }
     case "reload":
       return { type: "reload" }

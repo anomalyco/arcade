@@ -2,7 +2,10 @@ import { BUILD } from "../shared/build.gen"
 import {
   type Crew,
   type Outcome,
+  type Role,
   createShip,
+  crewName,
+  hasRoom,
   joinCrew,
   joinShip,
   launch,
@@ -76,6 +79,8 @@ export const OBJECTIVE_EVERY_MS = 250
 export const OBJECTIVE_IDLE_MS = 1000
 /** A player's captain powers (promote, kick, lock) are ignored this soon after their last one (ms). */
 export const CAPTAIN_COOLDOWN_MS = 400
+/** How long a disconnected player's seat token, crew id, ship berth, and stats are held for reconnect (ms). */
+export const RECONNECT_MS = 60_000
 /** Per-socket message budget (token bucket): pilots/boats send ~20 Hz poses plus pings, fire and menu actions. */
 const MSG_RATE = 120
 const MSG_BURST = 360
@@ -83,7 +88,23 @@ const MSG_BURST = 360
 const MAX_CATCHUP = 2
 
 const randomU32 = () => crypto.getRandomValues(new Uint32Array(1))[0]!
+const newToken = (): string => {
+  const b = new Uint8Array(16)
+  crypto.getRandomValues(b)
+  let s = ""
+  for (const x of b) s += x.toString(16).padStart(2, "0")
+  return s
+}
 const round = (v: number, k: number) => Math.round(v * k) / k
+
+type Departed = {
+  id: number
+  name: string
+  ship: number
+  role: Role
+  stats?: { kills: number; deaths: number }
+  until: number
+}
 
 type Sim = { ship: Ship; controls: ShipControls }
 
@@ -122,6 +143,9 @@ export class RoomCore {
   private rate = new Map<Conn, { tokens: number; at: number }>()
   /** Each joined connection's player id in the crew. */
   private ids = new Map<Conn, number>()
+  /** Private seat token per active player id, and recently disconnected players held for `RECONNECT_MS`. */
+  private tokens = new Map<number, string>()
+  private departed = new Map<string, Departed>()
   private sims = new Map<number, Sim>()
   /** The weather-scaled sea every ship floats on (shared/weather.ts): the room's weather at its sea time. */
   private sea: Sea | null = null
@@ -1091,6 +1115,30 @@ export class RoomCore {
       conn.close(4003, "stale client")
       return
     }
+    if (msg.token) {
+      for (const [oldConn, oldId] of this.ids) {
+        if (this.tokens.get(oldId) !== msg.token) continue
+        const p = this.crew ? playerOf(this.crew, oldId) : undefined
+        const stats = this.stats.get(oldId)
+        if (p) {
+          this.departed.set(msg.token, {
+            id: oldId,
+            name: p.name,
+            ship: p.ship,
+            role: p.role,
+            stats: stats ? { ...stats } : undefined,
+            until: now + RECONNECT_MS,
+          })
+        }
+        this.seen.delete(oldConn)
+        this.rate.delete(oldConn)
+        this.ids.delete(oldConn)
+        this.tokens.delete(oldId)
+        this.drop(oldId)
+        oldConn.close(4001, "replaced")
+        break
+      }
+    }
     if (!this.world) {
       const resume = msg.resume && msg.resume.epoch <= now ? msg.resume : null
       const world = (this.world = resume ?? { seed: this.random() >>> 0, epoch: now })
@@ -1107,36 +1155,64 @@ export class RoomCore {
     }
     const world = this.world
     const crew = this.crew!
-    const id = this.nextId++
-    const joined = joinCrew(crew, id, msg.name ?? "", now)
+    for (const [tok, d] of this.departed) if (d.until <= now) this.departed.delete(tok)
+    let prevTok = msg.token && this.departed.has(msg.token) ? msg.token : undefined
+    if (!prevTok && !msg.token && msg.back) {
+      const wantName = crewName(msg.name)
+      for (const [tok, d] of this.departed) {
+        if (d.ship === msg.back.ship && d.name === wantName) {
+          prevTok = tok
+          break
+        }
+      }
+    }
+    const prev = prevTok ? this.departed.get(prevTok) : undefined
+    const rejoining = prev && !playerOf(crew, prev.id) ? prev : undefined
+    const id = rejoining ? rejoining.id : this.nextId++
+    const token = rejoining && prevTok ? prevTok : newToken()
+    const back = msg.back ?? (rejoining ? { ship: rejoining.ship, role: rejoining.role } : undefined)
+    const backShip = back ? shipOf(crew, back.ship) : undefined
+    const verifiedMember = Boolean(rejoining && back && rejoining.ship === back.ship)
+    const unlockForJoin = Boolean(
+      backShip && backShip.locked && verifiedMember && hasRoom(backShip) && !backShip.bans.some((b) => b.player === id && b.until > now),
+    )
+    if (unlockForJoin && backShip) backShip.locked = false
+    const joined = joinCrew(crew, id, msg.name ?? rejoining?.name ?? "", now)
+    if (unlockForJoin && backShip) backShip.locked = true
     if (joined.error) {
       conn.send(encode({ type: "full" }))
       conn.close(4004, "room full")
       if (this.seen.size === 0) this.forget()
       return
     }
+    if (prevTok) this.departed.delete(prevTok)
     this.seen.set(conn, now)
     this.ids.set(conn, id)
+    this.tokens.set(id, token)
+    if (rejoining?.stats) this.stats.set(id, rejoining.stats)
     // A reconnecting player gets their old ship back: the helm if they had it and it's still free, else a plane.
-    const back = msg.back
     const events = [...joined.events]
-    if (back && shipOf(crew, back.ship)) {
+    if (back && backShip) {
       const p = playerOf(crew, id)!
-      const ship = shipOf(crew, back.ship)!
-      const role = back.role === "helm" && (ship.helm === null || ship.helm === id) ? "helm" : "pilot"
+      const role = back.role === "helm" && (backShip.helm === null || backShip.helm === id) ? "helm" : "pilot"
       let out: Outcome | null = null
-      // A locked ship still takes back a member whose connection dropped.
+      // A locked ship only takes back a verified member whose connection dropped.
       if (p.ship !== back.ship) {
-        const locked = ship.locked
-        ship.locked = false
+        const locked = backShip.locked
+        if (locked && verifiedMember) backShip.locked = false
         out = joinShip(crew, id, back.ship, now, role)
-        ship.locked = locked
-      }
-      else if (role === "helm" && p.role === "pilot") out = takeHelm(crew, id, now)
+        backShip.locked = locked
+      } else if (role === "helm" && p.role === "pilot") out = takeHelm(crew, id, now)
       else if (role === "pilot" && p.role === "helm") out = launch(crew, id, now)
       if (out && !out.error) events.push(...out.events)
     }
-    conn.send(encode(this.dev ? { type: "welcome", seed: world.seed, epoch: world.epoch, now, players: this.seen.size, id, dev: true } : { type: "welcome", seed: world.seed, epoch: world.epoch, now, players: this.seen.size, id }))
+    conn.send(
+      encode(
+        this.dev
+          ? { type: "welcome", seed: world.seed, epoch: world.epoch, now, players: this.seen.size, id, token, dev: true }
+          : { type: "welcome", seed: world.seed, epoch: world.epoch, now, players: this.seen.size, id, token },
+      ),
+    )
     if (this.bots?.size) conn.send(encode({ type: "bots", b: this.bots.list() }))
     this.apply(null, { events })
     conn.send(this.shipsFrame())
@@ -1164,7 +1240,23 @@ export class RoomCore {
     this.ids.delete(conn)
     // Nobody left: forget the world, so the next visit is a new one.
     if (this.seen.size === 0) return this.forget()
-    if (id !== undefined) this.drop(id)
+    if (id !== undefined) {
+      const token = this.tokens.get(id)
+      const p = this.crew ? playerOf(this.crew, id) : undefined
+      const stats = this.stats.get(id)
+      if (token && p) {
+        this.departed.set(token, {
+          id,
+          name: p.name,
+          ship: p.ship,
+          role: p.role,
+          stats: stats ? { ...stats } : undefined,
+          until: this.clock() + RECONNECT_MS,
+        })
+      }
+      this.tokens.delete(id)
+      this.drop(id)
+    }
     this.broadcast(null)
   }
 
@@ -1182,6 +1274,8 @@ export class RoomCore {
 
   private forget(): void {
     this.rate.clear()
+    this.tokens.clear()
+    this.departed.clear()
     this.planes.clear()
     this.planesSent = 0
     this.world = null

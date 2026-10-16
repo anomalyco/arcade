@@ -103,4 +103,14 @@ describe("remote jets", () => {
     // Heading 0 moves along -Z at 20 m/s: at t = 10.1 + 5/60, target z is 200 - 20 * (0.1 + 5/60).
     expect(rb.shown.z).toBeCloseTo(200 - 20 * (0.1 + 5 / 60), 2)
   })
+
+  test("adaptive plane lag starts at 80 ms on clean links and slews smoothly under jitter", () => {
+    const { crew, id } = crewWithPilot()
+    const r = new RemotePlanes()
+    r.sync(new Map([[id, flying(10.0, 0, 100)]]), crew, 10.02)
+    r.sync(new Map([[id, flying(10.05, 5, 100)]]), crew, 10.07)
+    // At t = 10.11, lag is 0.02 (one-way) + 0.08 (MIN_DELAY) = 0.10 s, so rt = 10.01 -> x = 1.0 m (vs 0 m at fixed 120 ms).
+    const [[, p]] = [...r.poses(10.11, () => null)]
+    expect(p.x).toBeCloseTo(1.0, 2)
+  })
 })
