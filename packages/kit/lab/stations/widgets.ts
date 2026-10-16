@@ -107,6 +107,7 @@ const renderers: Record<StationWidgetKind, Renderer> = {
         body.replaceChildren()
         mounted = panel.mountView(body, {
           id: `station-${ctx.station.id}-${w.id}`,
+          title: w.title ?? WIDGET_TITLES.controls,
           include: row => groups.has(row.group) || Boolean(row.control && keys.has(row.control.key)),
           order: () => [...groups],
           claim: true,
@@ -133,6 +134,7 @@ const renderers: Record<StationWidgetKind, Renderer> = {
     }
     const view = ctx.panel.mountView(body, {
       id: `station-${ctx.station.id}-${w.id}`,
+      title: w.title ?? WIDGET_TITLES.controls,
       include: row => groups.has(row.group) || Boolean(row.control && keys.has(row.control.key)),
       order: () => [...groups],
       // Details leaves these rows out while the card shows them, so each setting appears once.
