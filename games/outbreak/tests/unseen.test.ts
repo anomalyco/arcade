@@ -26,10 +26,13 @@ import {
 } from "../src/unseen"
 
 describe("outbreak unseen visibility & post-process", () => {
-  test("defaults to Off (mode 0) and exposes all 13 Lab controls in the Unseen group", () => {
-    expect(DEFAULT_UNSEEN_SETTINGS.unseenMode).toBe(0)
+  test("defaults to Shroud blend (mode 10) and exposes all 13 Lab controls in the Unseen group", () => {
+    expect(DEFAULT_UNSEEN_SETTINGS.unseenMode).toBe(10)
+    expect(DEFAULT_UNSEEN_SETTINGS.unseenShroud).toBe(UNSEEN_PRESETS[10].shroud)
+    expect(DEFAULT_UNSEEN_SETTINGS.unseenNoise).toBe(UNSEEN_PRESETS[10].noise)
+    expect(DEFAULT_UNSEEN_SETTINGS.unseenWarp).toBe(UNSEEN_PRESETS[10].warp)
     expect(DEFAULT_UNSEEN_SETTINGS.hideUnseenZombies).toBe(true)
-    expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(unseenControls.every((c) => c.group === "Unseen")).toBe(true)
     expect(unseenControls.map((c) => c.key)).toEqual([
       "unseenMode",
