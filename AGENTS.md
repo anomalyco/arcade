@@ -58,8 +58,9 @@ game's own `AGENTS.md`.
   both before writing something a game already has. `games/*/shared/` imports only pure kit modules (`sim/`, `net/`,
   `limits`).
 - Read [docs/game-notes.md](docs/game-notes.md) and [docs/rendering-techniques.md](docs/rendering-techniques.md)
-  before rendering, performance, input, multiplayer or feel work. Add a technique to `docs/game-notes.md` once it
-  is proven in a game, with where it lives and what it measured (animation techniques go in `docs/animation.md`).
+  before rendering, performance, input, multiplayer or feel work, and read [docs/netcode.md](docs/netcode.md) before any
+  multiplayer or net work. Add a technique to `docs/game-notes.md` once it is proven in a game, with where it lives and
+  what it measured (animation techniques go in `docs/animation.md`).
 
 ## Rendering
 

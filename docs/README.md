@@ -8,6 +8,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [game-notes.md](game-notes.md): proven techniques for proving changes, rendering, art direction, multiplayer,
   input, feel and audio. Read before rendering, performance, input, multiplayer or feel work; add an entry once a
   technique is proven.
+- [netcode.md](netcode.md): how Arcade games hide network latency (client prediction, `OptimisticEvents`, wind-ups,
+  adaptive time-stretched `SnapshotBuffer`, `hermite2` + coasting + `Glide`, `RewindHistory`, `RollbackClient`,
+  `socketJitter`, and the new-game checklist). Read before any multiplayer or net work.
 - [rendering-techniques.md](rendering-techniques.md): catalogue of rendering techniques with have/missing status,
   cost and location. Read before adding lighting, shadows, materials, post-processing or GPU performance work.
 - [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
