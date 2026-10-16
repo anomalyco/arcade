@@ -390,6 +390,29 @@ describe("Predictor & ClockSync & LocationHint", () => {
     expect(predictor.reconcile(2, () => (x = 0), () => {})).toBe(0)
   })
 
+  test("Predictor.pace trims a fast client clock so server JitterBuffer never merges catch-up inputs", () => {
+    const runClockDrift = (paced: boolean) => {
+      const jb = new JitterBuffer(ops, socketJitter(30))
+      const pred = new Predictor<number>()
+      const dt = 1 / 30
+      let acc = 0
+      // Simulate 60 s at 30 Hz where the client's frame clock runs +1.5% faster than the server's tick clock.
+      for (let tick = 0; tick < 1800; tick++) {
+        acc += dt * 1.015 * (paced ? pred.pace : 1)
+        while (acc >= dt) {
+          acc -= dt
+          const seq = pred.record(1)
+          jb.push(seq, { mx: 1, fire: false, n: seq }, tick + 1)
+        }
+        jb.take(tick)
+        if (tick % 2 === 0 && jb.ack >= 0) pred.reconcile(jb.ack, () => {}, () => {})
+      }
+      return jb.stats.caughtUp
+    }
+    expect(runClockDrift(false)).toBeGreaterThan(20)
+    expect(runClockDrift(true)).toBe(0)
+  })
+
   test("OptimisticEvents predicts, reapplies in-flight overlays, confirms, and rolls back rejections", () => {
     const opt = new OptimisticEvents<"door" | "shot" | "pickup", { open?: boolean; item?: string }>()
     let doorOpen = false

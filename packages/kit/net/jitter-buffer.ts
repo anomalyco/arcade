@@ -177,9 +177,14 @@ export class JitterBuffer<T> {
     if (++this.windowTicks >= c.window) {
       if (c.lateQuantile !== undefined) {
         this.retarget(c.lateQuantile)
-        if (this.want < this.target && this.windowUnderruns === 0) this.target--
+        if (this.want < this.target && this.windowUnderruns === 0 && this.windowMinSlack >= 1) this.target--
         // Shrinking (or a client clock running fast) leaves the schedule deeper than the target: catch up a tick.
-        if (this.offset > this.fastest + Math.max(this.target, this.want)) {
+        if (
+          this.windowUnderruns === 0 &&
+          this.windowMinSlack >= 1 &&
+          this.windowMinSlack !== Infinity &&
+          this.offset > this.fastest + Math.max(this.target, this.want)
+        ) {
           this.offset--
           this.stats.caughtUp++
         }
