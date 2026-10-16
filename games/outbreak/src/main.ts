@@ -41,6 +41,7 @@ import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
+import { PropDressing } from "./props/dressing"
 import {
   CombinedFogMemory,
   collectFogSoundSprites,
@@ -349,6 +350,7 @@ async function main() {
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
+  const propDressing = new PropDressing(renderer)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
   const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
@@ -1546,6 +1548,7 @@ async function main() {
     rBatches.length = 0
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
+    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile.clutterScale, !currentIsStreamWindow, level)) rBatches.push(b)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
     if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)

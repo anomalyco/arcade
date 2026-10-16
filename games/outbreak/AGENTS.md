@@ -31,6 +31,10 @@
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the
   `rugs-interiors` station. Proof: `bun scripts/interiors-proof.ts --phase after` (via `hivemind run --kind browser`).
+- Generated furniture (`@arcade/kit/props`, pipeline in `scripts/props/README.md`) furnishes the start block's houses
+  from `src/props/`: anchors replace the gameplay furniture's boxes one for one (collisions stay `PROP_SHAPES`), and
+  clutter is client-only. Lab: Backquote › Props ("Furnish start houses", default off) and the Lab's `props` station.
+  Stills and paired GPU cost: `bun scripts/props-stills.ts` (via `hivemind run --kind browser`).
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. Stills: `bun scripts/look-stills.ts`
   (via `hivemind run --kind browser`). Defaults stay today's look until Kit picks.
