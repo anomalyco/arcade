@@ -83,6 +83,7 @@ export default defineStation({
     { label: "Volumetric beam pass + composite, Medium, 3456×1894", value: "0.06 / 0.13 ms street, 0.04 / 0.23 ms interior", source: "games/outbreak/scripts/ab-gpu.ts" },
     { label: "Unseen solo layers, GPU pass delta at 3456×1894", value: "+0.070 to +0.389 ms", source: "games/outbreak/scripts/prove-unseen.ts" },
     { label: "Colour only from light / dust motes, paired GPU Δ at 3456×1894", value: "−0.005 / +0.049 ms hall, −0.006 / +0.017 ms street", source: "games/outbreak/scripts/ab-gpu.ts" },
+    { label: "Soft Bean vs today's survivor, paired GPU Δ at 3456×1894, bedroom 21:00", value: "−0.02 ms (MAD 0.09, inconclusive)", source: "games/outbreak/scripts/bean-stills.ts" },
     { label: "Baked lamp pools / floor plates / decals / wall tops, paired GPU Δ at 3456×1894", value: "−0.022 / −0.003 / −0.004 / +0.089 ms interior; all +0.13 ms interior, ~0 street", source: "games/outbreak/scripts/ab-gpu.ts" },
   ],
   paths: [

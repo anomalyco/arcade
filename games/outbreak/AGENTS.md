@@ -39,7 +39,8 @@
   Stills and paired GPU cost: `bun scripts/props-stills.ts` (via `hivemind run --kind browser`).
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. Stills: `bun scripts/look-stills.ts`
-  (via `hivemind run --kind browser`). Defaults stay today's look until Kit picks.
+  (via `hivemind run --kind browser`). Defaults stay today's look until Kit picks. Soft Bean (Hero › Survivor style) has
+  its own shape, colour and surface knobs; stills and paired GPU cost: `bun scripts/bean-stills.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:
   `bun scripts/prove-driving-fx.ts` (via `hivemind run --kind browser --fetch captures/driving-fx`).
