@@ -1,3 +1,4 @@
+import type { VolumeSettings } from "@arcade/kit/audio/volume"
 import type { Gun } from "../../shared/config"
 import { EV } from "../game/anim"
 
@@ -9,12 +10,15 @@ import { EV } from "../game/anim"
 export class Sound {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
+  private humGain: GainNode | null = null
   private comp: DynamicsCompressorNode | null = null
   private verb: ConvolverNode | null = null
   private noise: AudioBuffer | null = null
   muted = false
-  /** Master level under the mute (the Lab's volume); the game leaves it at 1. */
+  /** Master, effects and ambience levels under the mute (the Lab's volume or player VolumeSettings); defaults to 1. */
   volume = 1
+  effects = 1
+  ambience = 1
 
   /** Starts on a gesture; the Lab passes its own shared context instead of creating one. */
   start(context?: AudioContext): void {
@@ -63,7 +67,8 @@ export class Sound {
     lp.type = "lowpass"
     lp.frequency.value = 180
     const hg = ctx.createGain()
-    hg.gain.value = 0.025
+    hg.gain.value = 0.025 * this.ambience
+    this.humGain = hg
     hum.connect(lp).connect(hg).connect(this.master)
     hum.start()
   }
@@ -76,10 +81,18 @@ export class Sound {
   setMuted(m: boolean): void {
     this.muted = m
     if (this.master) this.master.gain.value = m ? 0 : 0.75 * this.volume
+    if (this.humGain) this.humGain.gain.value = 0.025 * this.ambience
   }
 
   setVolume(level: number): void {
     this.volume = level
+    this.setMuted(this.muted)
+  }
+
+  setVolumes(v: VolumeSettings): void {
+    this.volume = v.volumeMaster / 100
+    this.effects = v.volumeEffects / 100
+    this.ambience = v.volumeAmbience / 100
     this.setMuted(this.muted)
   }
 
@@ -89,7 +102,7 @@ export class Sound {
     if (!ctx || !this.master || this.muted || ctx.state !== "running") return null
     const d = Math.hypot(dx, dy)
     const g = ctx.createGain()
-    g.gain.value = gain / (1 + d * d * 0.01)
+    g.gain.value = (gain * this.effects) / (1 + d * d * 0.01)
     const lp = ctx.createBiquadFilter()
     lp.type = "lowpass"
     lp.frequency.value = Math.min(20000, 22000 / (1 + d * 0.18))

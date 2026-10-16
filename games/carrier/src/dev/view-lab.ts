@@ -1,12 +1,14 @@
+import { bindVolumeControls } from "@arcade/kit/audio/volume"
 import type { GameQuality } from "@arcade/kit/client/quality"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { mixer } from "../audio/mixer"
 import type { CarrierQuality } from "../quality"
 import type { DebugTab } from "./debug-menu"
 
 /** Stylesheets the shared panel (and knobs, which draws it) put in the document head; the debug menu is a shadow root. */
 const PANEL_STYLES = "style[data-knobs-style], style[data-knobs-preset], style[data-lab-knobs], style[data-lab-panel-css]"
 
-/** VIEW tab: the quality tier (Auto adapts resolution and bloom to the GPU; the choice is saved for the game). */
+/** VIEW tab: the quality tier and player volume (Auto adapts resolution and bloom to the GPU; choices are saved for the game). */
 export class ViewLab {
   private panel: LabPanel | null = null
 
@@ -30,6 +32,14 @@ export class ViewLab {
         },
       })
       this.opts.quality.addTo(panel)
+      const mix = mixer()
+      bindVolumeControls(panel, {
+        volumes: mix.volumes,
+        channels: ["master", "effects", "ambience"],
+        getMuted: () => mix.muted,
+        setMuted: (m) => mix.setMuted(m),
+        onChange: () => mix.setVolumes(),
+      })
       for (const s of document.head.querySelectorAll(PANEL_STYLES)) el.append(s.cloneNode(true))
       el.append(panel.host)
       this.panel = panel

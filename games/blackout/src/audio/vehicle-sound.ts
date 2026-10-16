@@ -71,7 +71,7 @@ export class VehicleSound {
       v.driver.update(v.view, { throttle: braking ? 0 : Math.abs(s.thr), brake: Number(braking), steer: 0, handbrake: !!s.handbrake, boost: false }, dt, "road", v.gate)
       const d = s.mine ? 0 : dist(s), began = this.starts.get(s.id)
       const warm = began === undefined ? 1 : Math.max(0, Math.min(1, (t - began - 0.5) / 0.6))
-      v.gain.gain.setTargetAtTime(warm * (s.mine ? 1 : 0.9 * roll(d) * (driving ? 0.6 : 1)), t, 0.08)
+      v.gain.gain.setTargetAtTime(this.sound.effects * warm * (s.mine ? 1 : 0.9 * roll(d) * (driving ? 0.6 : 1)), t, 0.08)
       v.pan.pan.setTargetAtTime(s.mine ? 0 : panOf(s.dx), t, 0.05)
       v.lp.frequency.setTargetAtTime(Math.max(250, 16000 / (1 + d * 0.12)), t, 0.06)
     }
@@ -95,7 +95,7 @@ export class VehicleSound {
     const fade = held < 1.2 ? 1 : Math.max(0, 1 - (held - 1.2) / 0.4)
     horn.src?.playbackRate.setTargetAtTime(pitch(s.kind), t, 0.01)
     horn.lp.frequency.setTargetAtTime(Math.max(800, 6000 / (1 + d * 0.05)), t, 0.03)
-    horn.gain.gain.setTargetAtTime(0.16 * fade / (1 + d * d * 0.006), t, 0.015)
+    horn.gain.gain.setTargetAtTime(0.16 * this.sound.effects * fade / (1 + d * d * 0.006), t, 0.015)
     horn.pan.pan.setTargetAtTime(s.mine ? 0 : panOf(s.dx), t, 0.03)
   }
 
@@ -106,7 +106,7 @@ export class VehicleSound {
     const ctx = this.ctx, d = Math.hypot(dx, dy), s = ctx.createBufferSource()
     s.buffer = buf; s.playbackRate.value = rate
     const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = Math.min(18000, 20000 / (1 + d * 0.12))
-    const g = ctx.createGain(); g.gain.value = gain / (1 + d * d * 0.01)
+    const g = ctx.createGain(); g.gain.value = (gain * this.sound.effects) / (1 + d * d * 0.01)
     const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-0.85, Math.min(0.85, dx / 12))
     s.connect(lp).connect(g).connect(pan).connect(this.master)
     s.start(ctx.currentTime + delay)

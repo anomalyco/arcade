@@ -1,6 +1,8 @@
+import { bindVolumeControls } from "@arcade/kit/audio/volume"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { PerfSampler, type FramePerfSample } from "@arcade/kit/gpu-perf"
+import { audio } from "../audio/audio"
 import { chassisSettings } from "../game/chassis"
 import { vehicleEffects } from "../game/vehicle-emissions"
 import type { Scene } from "../game/scene"
@@ -113,6 +115,15 @@ export class DebugOverlay extends LabPanel {
         set: (v) => { sound.reset(); sound.procedural = Boolean(v) },
       })
       this.addControls(audioBag, [{ key: "proceduralAudio", label: "Procedural audio", group: "Audio" }], { proceduralAudio: sound.procedural })
+      bindVolumeControls(this, {
+        volumes: audio.volumes,
+        channels: ["master", "effects", "ambience", "voice"],
+        labels: { voice: "Police radio" },
+        getMuted: () => audio.muted,
+        setMuted: (m) => audio.setMuted(m),
+        onChange: () => audio.applyVolumes(),
+      })
+      audio.onMute(() => this.refresh())
     }
     this.addControls(motionBlur, [...motionBlurControls], motionBlurDefaults())
     const keyLabels = keyLabelSetting()

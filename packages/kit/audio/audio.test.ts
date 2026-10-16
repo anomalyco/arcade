@@ -14,6 +14,7 @@ import {
   SpellAudioEmitter,
   tyreSlip,
   VehicleAudioEmitter,
+  bindVolumeControls,
   busVolume,
   DEFAULT_VOLUME_SETTINGS,
   loadVolumeSettings,
@@ -317,5 +318,36 @@ describe("player volume", () => {
     expect(loaded).toEqual({ ...s, volumeMaster: DEFAULT_VOLUME_SETTINGS.volumeMaster })
     expect(loadVolumeSettings(storage, "other", loaded)).toBe(false)
     expect(volumeControls(["master", "effects", "ambience", "voice"], "Volume", { voice: "Zombie voices" }).map((c) => c.label)).toEqual(["Master", "Effects", "Ambience", "Zombie voices"])
+
+    let muted = false
+    let changes = 0
+    const volumes = { ...DEFAULT_VOLUME_SETTINGS }
+    let addedBag: Record<string, boolean | number | string> = {}
+    let addedControls: readonly { key: string; label: string }[] = []
+    bindVolumeControls(
+      {
+        addControls(bag, controls) {
+          addedBag = bag
+          addedControls = controls
+        },
+      },
+      {
+        volumes,
+        channels: ["master", "effects", "ambience"],
+        getMuted: () => muted,
+        setMuted: (m) => {
+          muted = m
+        },
+        onChange: () => {
+          changes++
+        },
+      },
+    )
+    expect(addedControls.map((c) => c.key)).toEqual(["audioMuted", "volumeMaster", "volumeEffects", "volumeAmbience"])
+    addedBag.audioMuted = true
+    expect(muted).toBe(true)
+    addedBag.volumeEffects = 45
+    expect(volumes.volumeEffects).toBe(45)
+    expect(changes).toBe(1)
   })
 })

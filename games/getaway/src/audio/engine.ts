@@ -6,6 +6,7 @@
  * until then); M toggles a global mute that is remembered in localStorage.
  */
 
+import { DEFAULT_VOLUME_SETTINGS, loadVolumeSettings, saveVolumeSettings, type VolumeSettings } from "@arcade/kit/audio/volume"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
 
 export const SFX = [
@@ -72,6 +73,9 @@ export class AudioEngine {
   /** Reverb send; spatial voices feed it more the further away they are. */
   verb!: GainNode
   muted = false
+  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
+  private savedVolumes = ""
+  private busFade: Record<Bus, number> = { sfx: 1, amb: 1, sting: 1 }
   private duck!: GainNode
   /** Low-pass after the duck, normally wide open; closes briefly when your car takes a big hit. */
   private daze!: BiquadFilterNode
@@ -81,6 +85,7 @@ export class AudioEngine {
   private nitroShots = new Map<AudioBufferSourceNode, GainNode>()
   private readyFns: (() => void)[] = []
   private muteFns: ((muted: boolean) => void)[] = []
+  private volumeFns: (() => void)[] = []
 
   /**
    * `bindDom: false` (the Lab) leaves out the game's page wiring: no saved mute, sample fetch, gesture unlock, `M` key
@@ -93,6 +98,10 @@ export class AudioEngine {
       return
     }
     if (options.bindDom === false) return
+    this.volumes = { ...DEFAULT_VOLUME_SETTINGS }
+    const storage = typeof localStorage !== "undefined" ? localStorage : null
+    loadVolumeSettings(storage, "getaway", this.volumes)
+    this.savedVolumes = saveVolumeSettings(null, "getaway", this.volumes)
     try {
       this.muted = localStorage.getItem(MUTE_KEY) === "1"
     } catch {}
@@ -139,6 +148,35 @@ export class AudioEngine {
     fn(this.muted)
   }
 
+  onVolume(fn: () => void) {
+    this.volumeFns.push(fn)
+    fn()
+  }
+
+  masterScale() {
+    return this.muted ? 0 : this.volumes.volumeMaster / 100
+  }
+
+  busScale(bus: Bus) {
+    return (bus === "amb" ? this.volumes.volumeAmbience : this.volumes.volumeEffects) / 100
+  }
+
+  voiceScale() {
+    return this.volumes.volumeVoice / 100
+  }
+
+  applyVolumes() {
+    const storage = typeof localStorage !== "undefined" ? localStorage : null
+    this.savedVolumes = saveVolumeSettings(storage, "getaway", this.volumes, this.savedVolumes)
+    if (this.ctx) {
+      this.master.gain.setTargetAtTime(this.masterScale(), this.now, 0.04)
+      this.sfx.gain.setTargetAtTime(this.busFade.sfx * this.busScale("sfx"), this.now, 0.04)
+      this.amb.gain.setTargetAtTime(this.busFade.amb * this.busScale("amb"), this.now, 0.04)
+      this.sting.gain.setTargetAtTime(this.busFade.sting * this.busScale("sting"), this.now, 0.04)
+    }
+    for (const fn of this.volumeFns) fn()
+  }
+
   buffer(name: SfxName) {
     return this.buffers.get(name)
   }
@@ -148,16 +186,17 @@ export class AudioEngine {
     try {
       localStorage.setItem(MUTE_KEY, m ? "1" : "0")
     } catch {}
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 1, this.now, 0.04)
+    if (this.ctx) this.master.gain.setTargetAtTime(this.masterScale(), this.now, 0.04)
     if (!m) this.play("ui_click", { bus: "sting", gain: 0.5 })
     for (const fn of this.muteFns) fn(m)
   }
 
   /** Bus level, e.g. fading the world out under the end card. */
   fadeBus(bus: Bus, level: number, tau: number) {
+    this.busFade[bus] = level
     if (!this.ctx) return
     const g = bus === "sfx" ? this.sfx : bus === "amb" ? this.amb : this.sting
-    g.gain.setTargetAtTime(level, this.now, tau)
+    g.gain.setTargetAtTime(level * this.busScale(bus), this.now, tau)
   }
 
   /** Pulls the sfx and ambience buses down under a stinger, then lets them back up. */
@@ -277,7 +316,7 @@ export class AudioEngine {
     output.gain.value = 0.66
     comp.connect(limiter).connect(output).connect(ctx.destination)
     this.master = ctx.createGain()
-    this.master.gain.value = this.muted ? 0 : 1
+    this.master.gain.value = this.masterScale()
     this.master.connect(comp)
     this.daze = ctx.createBiquadFilter()
     this.daze.type = "lowpass"
@@ -287,10 +326,13 @@ export class AudioEngine {
     this.duck = ctx.createGain()
     this.duck.connect(this.daze)
     this.sfx = ctx.createGain()
+    this.sfx.gain.value = this.busFade.sfx * this.busScale("sfx")
     this.sfx.connect(this.duck)
     this.amb = ctx.createGain()
+    this.amb.gain.value = this.busFade.amb * this.busScale("amb")
     this.amb.connect(this.duck)
     this.sting = ctx.createGain()
+    this.sting.gain.value = this.busFade.sting * this.busScale("sting")
     this.sting.connect(this.master)
     // Street-canyon reverb: a short synthetic impulse (decaying noise with early slap-back off the buildings).
     const conv = ctx.createConvolver()
