@@ -13,8 +13,14 @@ import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES } from "../light-ramps"
  * - 7: Combo: Memory + Warp (Faded archival room memory swimming under slow dark-water refraction)
  * - 8: Combo: Edge glitch + Shroud (Acid Knife glitch restricted to the LOS boundary band + Dark shroud + subtle Noise film)
  * - 9: Custom layers (arbitrary user mix of the 5 combinable layers + edge-band control)
+ * - 10: Shroud blend, the default (Dark shroud with a little Noise film static and a faint Warp wobble; Kit's D-21 pick)
  */
-export type UnseenModeId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+export type UnseenModeId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+
+/** The mode a fresh game starts in. */
+export const DEFAULT_UNSEEN_MODE: UnseenModeId = 10
+
+const isUnseenModeId = (m: number): m is UnseenModeId => Number.isInteger(m) && m >= 0 && m <= 10
 
 export type UnseenLayerWeights = {
   glitch: number
@@ -43,14 +49,14 @@ export type UnseenSettings = {
 }
 
 export const DEFAULT_UNSEEN_SETTINGS: UnseenSettings = {
-  unseenMode: 0,
+  unseenMode: DEFAULT_UNSEEN_MODE,
   unseenStrength: 1.0,
   unseenGlitch: 0.0,
   unseenGlitchEdge: 0.0,
-  unseenWarp: 0.0,
-  unseenShroud: 0.0,
+  unseenWarp: 0.15,
+  unseenShroud: 1.0,
   unseenMemory: 0.0,
-  unseenNoise: 0.0,
+  unseenNoise: 0.3,
   unseenNightScale: 0.75,
   unseenEdgeSoftness: 0.85,
   unseenUpdateRate: 10,
@@ -68,9 +74,11 @@ export const UNSEEN_PRESETS: Readonly<Record<Exclude<UnseenModeId, 9>, UnseenLay
   6: { glitch: 0, glitchEdge: 0, warp: 0, shroud: 0.85, memory: 0, noise: 0.75 },
   7: { glitch: 0, glitchEdge: 0, warp: 0.65, shroud: 0, memory: 0.90, noise: 0 },
   8: { glitch: 1.0, glitchEdge: 0.85, warp: 0, shroud: 0.85, memory: 0, noise: 0.35 },
+  10: { glitch: 0, glitchEdge: 0, warp: 0.15, shroud: 1.0, memory: 0, noise: 0.3 },
 }
 
 export const UNSEEN_MODE_OPTIONS: readonly { label: string; value: UnseenModeId }[] = [
+  { label: "Shroud blend (default)", value: 10 },
   { label: "Off", value: 0 },
   { label: "Acid Knife glitch", value: 1 },
   { label: "Warp wobble", value: 2 },
@@ -219,10 +227,11 @@ const UNSEEN_LAYER_KEYS = new Set([
 ])
 
 /**
- * Populates the individual layer sliders on `settings` from one of the built-in presets (`0..8`).
+ * Populates the individual layer sliders on `settings` from one of the built-in presets (`0..8`, `10`).
  */
 export function applyUnseenModePreset(settings: UnseenSettings, mode = settings.unseenMode): void {
-  const m = (Math.round(mode) >= 0 && Math.round(mode) <= 9 ? Math.round(mode) : 0) as UnseenModeId
+  const r = Math.round(mode)
+  const m: UnseenModeId = isUnseenModeId(r) ? r : 0
   settings.unseenMode = m
   if (m === 9) return
   const preset = UNSEEN_PRESETS[m]
@@ -236,15 +245,14 @@ export function applyUnseenModePreset(settings: UnseenSettings, mode = settings.
 
 /**
  * Keeps `unseenMode` and the individual layer sliders synchronized when edited in the Lab or via commands:
- * - Picking a preset (`unseenMode` 0..8) sets the layer sliders to that preset's weights.
+ * - Picking a preset (`unseenMode` 0..8 or 10) sets the layer sliders to that preset's weights.
  * - Picking `unseenMode = 9` ("Custom layers") from Off seeds a starter Shroud + Noise mix if all layers are zero.
  * - Dragging any layer slider (`unseenGlitch`, `unseenWarp`, etc.) promotes `unseenMode` to `9` ("Custom layers").
  */
 export function syncUnseenSettingChange(settings: UnseenSettings, changedKey: string): boolean {
   if (changedKey === "unseenMode") {
-    const m = (Math.round(settings.unseenMode) >= 0 && Math.round(settings.unseenMode) <= 9
-      ? Math.round(settings.unseenMode)
-      : 0) as UnseenModeId
+    const r = Math.round(settings.unseenMode)
+    const m: UnseenModeId = isUnseenModeId(r) ? r : 0
     if (m !== 9) {
       applyUnseenModePreset(settings, m)
     } else {
@@ -323,7 +331,7 @@ export function unpackUnseenPostParams(postParams: readonly [number, number, num
 
 export function resolveUnseenBaseLayers(settings: Partial<UnseenSettings> | undefined): UnseenLayerWeights {
   const rawMode = Math.round(settings?.unseenMode ?? DEFAULT_UNSEEN_SETTINGS.unseenMode)
-  const mode = (rawMode >= 0 && rawMode <= 9 ? rawMode : 0) as UnseenModeId
+  const mode: UnseenModeId = isUnseenModeId(rawMode) ? rawMode : 0
   if (mode === 0) {
     return { glitch: 0, glitchEdge: 0, warp: 0, shroud: 0, memory: 0, noise: 0 }
   }
@@ -355,7 +363,7 @@ export function evaluateUnseenFrame(
   playerMaxHp = 100,
 ): UnseenFrameEvaluation {
   const rawMode = Math.round(settings?.unseenMode ?? DEFAULT_UNSEEN_SETTINGS.unseenMode)
-  const mode = (rawMode >= 0 && rawMode <= 9 ? rawMode : 0) as UnseenModeId
+  const mode: UnseenModeId = isUnseenModeId(rawMode) ? rawMode : 0
   const strength = clamp(settings?.unseenStrength ?? DEFAULT_UNSEEN_SETTINGS.unseenStrength, 0, 2)
   const nightScale = clamp(settings?.unseenNightScale ?? DEFAULT_UNSEEN_SETTINGS.unseenNightScale, 0, 1)
   const edgeSoftness = clamp(settings?.unseenEdgeSoftness ?? DEFAULT_UNSEEN_SETTINGS.unseenEdgeSoftness, 0.1, 2.0)

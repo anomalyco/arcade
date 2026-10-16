@@ -32,8 +32,14 @@ const dayPose = (mode: number) => [
 
 const variants: StationVariant[] = [
   {
+    id: "shroud-blend",
+    label: "Shroud blend (default)",
+    note: "The game's default: Dark shroud with a little Noise film static and a faint Warp wobble.",
+    setup: nightPose(10),
+  },
+  {
     id: "off",
-    label: "Off (today)",
+    label: "Off",
     note: "Current Noir fog of war with no post-process unseen distortion.",
     setup: nightPose(0),
     boardOption: "1",
@@ -95,7 +101,7 @@ const variants: StationVariant[] = [
     id: "daylight",
     label: "By day (subtle)",
     note: "Daylight at 14:00 scales unseen layers down automatically via Night scaling.",
-    setup: dayPose(8),
+    setup: dayPose(10),
   },
 ]
 
@@ -103,13 +109,13 @@ export default defineStation({
   id: "outbreak-unseen",
   title: "Outbreak unseen",
   summary:
-    "How areas outside the survivor's line-of-sight cone, close awareness circle, and flashlight beam are treated. Variants compare Off, five solo layers, and curated multi-layer combos (Shroud + Noise, Memory + Warp, Edge glitch + Shroud); mix any combination live in the Unseen layers panel.",
+    "How areas outside the survivor's line-of-sight cone, close awareness circle, and flashlight beam are treated. The default is Shroud blend. Variants compare Off, five solo layers, and curated multi-layer combos (Shroud + Noise, Memory + Warp, Edge glitch + Shroud); mix any combination live in the Unseen layers panel.",
   order: 102,
   prop: "house",
   color: 0x6b8cff,
   status: "review",
   demo: { kind: "page", url: page },
-  defaultVariant: "edge-glitch-shroud",
+  defaultVariant: "shroud-blend",
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-31", decision: "D-21" },
   metrics: [

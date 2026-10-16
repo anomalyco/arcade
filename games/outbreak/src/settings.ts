@@ -367,18 +367,10 @@ export function createOutbreakSettings(params?: URLSearchParams): OutbreakSettin
   const settings = attachCompatibilityForwarders(subsystems)
   if (params) {
     migrateOutbreakUrlParams(params, settings)
+    // A preset mode from the URL brings its own layers unless the URL also sets layers.
     const u = settings.unseen
-    if (
-      u.unseenMode >= 1 &&
-      u.unseenMode <= 8 &&
-      u.unseenGlitch === 0 &&
-      u.unseenWarp === 0 &&
-      u.unseenShroud === 0 &&
-      u.unseenMemory === 0 &&
-      u.unseenNoise === 0
-    ) {
-      applyUnseenModePreset(u, u.unseenMode)
-    }
+    const layersInUrl = [...params.keys()].some((k) => /unseen(Glitch|GlitchEdge|Warp|Shroud|Memory|Noise)$/.test(k))
+    if (u.unseenMode !== 9 && !layersInUrl) applyUnseenModePreset(u, u.unseenMode)
   }
   return settings
 }
