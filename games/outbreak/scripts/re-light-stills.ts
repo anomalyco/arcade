@@ -45,7 +45,7 @@ assert(chrome)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 
 type Pose = { x: number; y: number; aim: number }
-type Scene = { name: string; pose: Pose; hour: number; zoom: number }
+type Scene = { name: string; pose: Pose; hour: number; zoom: number; flash?: boolean }
 /** Knob sets per variant; every variant sets every key so they never leak. */
 const OFF = { lightColour: 0, dustAmount: 0 }
 const VARIANTS: Record<string, Record<string, number>> = process.env.RL_VARIANTS ? JSON.parse(process.env.RL_VARIANTS) : {
@@ -65,6 +65,7 @@ const SCENES: Scene[] = [
   { name: "hall-21h", pose: HALL, hour: 21, zoom: 32 },
   { name: "living-21h", pose: { x: 25.2, y: 33.6, aim: Math.PI * 0.9 }, hour: 21, zoom: 26 },
   { name: "bedroom-21h", pose: { x: 27.5, y: 27.2, aim: Math.PI * 0.8 }, hour: 21, zoom: 26 },
+  { name: "bedroom-lamp-21h", pose: { x: 27.6, y: 26.6, aim: -0.8 }, hour: 21, zoom: 22, flash: false },
   { name: "house-20h", pose: { x: 30.5, y: 30.2, aim: 0 }, hour: 20, zoom: 44 },
   { name: "house-noon", pose: { x: 30.5, y: 30.2, aim: 0 }, hour: 12, zoom: 30 },
   { name: "street-18h", pose: { x: 27.7, y: 41, aim: -Math.PI / 2 }, hour: 18, zoom: 40 },
@@ -86,8 +87,8 @@ async function still(page: Page, scene: Scene, variant: string) {
     for (const [k, v] of Object.entries(knobs)) h.setLab(k, v)
     h.pose(scene.pose.x, scene.pose.y, scene.pose.aim)
     const p = h.state().player
-    p.flashlightOn = true
-    p.flashlightOutput = 1
+    p.flashlightOn = scene.flash !== false
+    p.flashlightOutput = scene.flash !== false ? 1 : 0
     const t0 = performance.now()
     while (performance.now() - t0 < 15000) {
       await h.step(1 / 60, { mx: 0, my: 0, aim: scene.pose.aim })

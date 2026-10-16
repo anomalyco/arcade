@@ -132,7 +132,9 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     let dPlan2 = dot(dv, dv);
     if (dPlan2 >= r * r) { return o; }
     // The same cuts the surfaces get: sconces stop at their wall, windows light outwards, lamps stay under the ceiling.
-    if (L.cone.w > 1.125) {
+    if (L.cone.w < -2.5) {
+      if (p.y > 2.75 || p.x < L.cone.x || p.x > L.cone.z || p.z < L.cone.y || p.z > L.extra.x) { return o; }
+    } else if (L.cone.w > 1.125) {
       if (p.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x) { return o; }
     } else if (L.cone.w > 0.5) {
       if (dot(dv, L.cone.xy) <= 0.0) { return o; }
