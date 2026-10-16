@@ -59,6 +59,9 @@ const SCENES: Scene[] = [
   { name: "hall-19h", pose: HALL, hour: 19, zoom: 26 },
   { name: "hall-21h", pose: HALL, hour: 21, zoom: 32 },
   { name: "living-21h", pose: { x: 25.2, y: 33.6, aim: Math.PI * 0.9 }, hour: 21, zoom: 26 },
+  { name: "bedroom-21h", pose: { x: 27.5, y: 27.2, aim: Math.PI * 0.8 }, hour: 21, zoom: 26 },
+  { name: "house-20h", pose: { x: 30.5, y: 30.2, aim: 0 }, hour: 20, zoom: 44 },
+  { name: "house-noon", pose: { x: 30.5, y: 30.2, aim: 0 }, hour: 12, zoom: 30 },
   { name: "street-18h", pose: { x: 27.7, y: 41, aim: -Math.PI / 2 }, hour: 18, zoom: 40 },
   { name: "street-noon", pose: { x: 27.7, y: 41, aim: -Math.PI / 2 }, hour: 12, zoom: 40 },
 ].filter(s => !only || only.some(o => s.name.startsWith(o)))
@@ -89,7 +92,8 @@ async function still(page: Page, scene: Scene, variant: string) {
     }
     for (let i = 0; i < 30; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: scene.pose.aim })
     const s = h.state()
-    return { hour: s.hour, player: { x: s.player.x, y: s.player.y }, quality: h.quality?.() ?? null }
+    const st = h.interiors?.()
+    return { hour: s.hour, player: { x: s.player.x, y: s.player.y }, tier: h.quality?.()?.activeTier ?? null, floor: st?.floor ?? null, resident: st?.resident, settled: st?.settled }
   }, { scene, knobs: VARIANTS[variant]! })
   await page.evaluate(sel => { for (const el of document.querySelectorAll<HTMLElement>(sel)) el.style.visibility = "hidden" }, HUD)
   const file = resolve(out, `${scene.name}-${variant}.png`)

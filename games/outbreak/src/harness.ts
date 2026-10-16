@@ -310,7 +310,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     reset: host.reset,
     freeze: (value = true) => host.setFrozen(value),
     /** Rugs and themed interiors: pool readiness and memory, and a setter for their Lab keys. */
-    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings }, sconceLights: host.interiors.sconces.lastCount }),
+    interiors: () => ({ ...host.interiors.pool.stats, settled: host.interiors.pool.settled, bytes: host.interiors.pool.bytes, settings: { ...host.interiors.settings }, floor: { plates: [...host.interiors.floorLayers.plates], decals: host.interiors.floorLayers.decals }, sconceLights: host.interiors.sconces.lastCount }),
     /** Sconces of the current level or streamed window (positions, wall normals, building rects). */
     sconces: () => host.interiors.sconces.list(),
     setInterior(key: string, value: number) {

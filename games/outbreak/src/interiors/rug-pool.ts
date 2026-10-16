@@ -11,6 +11,8 @@ export type RugRequest = {
   priority: number
   /** Hand-painted manifest texture to use instead of the procedural bake. */
   imageUrl?: string
+  /** Keep the image's own alpha (decal atlases) instead of the rug pile height. */
+  keepAlpha?: boolean
 }
 
 type Layer = { key: string | null; used: number }
@@ -151,7 +153,7 @@ export class RugPool {
       for (const r of this.requests.slice(0, this.rugLayers)) {
         if (this.inflight.size >= 2) break
         if (this.pendingKeys.has(r.key) || this.layers.some(l => l.key === r.key) || this.ready.some(j => j.key === r.key)) continue
-        if (r.imageUrl) this.post({ id: 0, kind: "image", url: r.imageUrl, size: this.size }, r.key)
+        if (r.imageUrl) this.post({ id: 0, kind: "image", url: r.imageUrl, size: this.size, keepAlpha: r.keepAlpha }, r.key)
         else if (r.spec) this.post({ id: 0, kind: "rug", spec: r.spec, size: this.size }, r.key)
       }
     }

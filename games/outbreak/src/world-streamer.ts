@@ -1,4 +1,4 @@
-import { emitBuildingRugs, emitInteriorDecor } from "./interiors/mesh"
+import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, interiorSignature } from "./interiors/plan"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
@@ -1066,10 +1066,12 @@ export function compileSingleWorldChunk(
       mainScratch.box(x, 0.13, z, r, 2.78, end, color, MAT.wall, 20, wallTopCol)
       mainScratch.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, wallCapCol, MAT.lit)
       opaqueScratch.box(x - 0.02, 0.14, z - 0.02, r + 0.02, 0.26, end + 0.02, trimBaseCol, MAT.timber)
+      emitWallCapMoulding(mainScratch, x, z, r, end)
     } else if (b.kind === "window") {
       opaqueScratch.box(x, 0.13, z, r, 0.84, end, color, MAT.wall, 20)
       mainScratch.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, wallTopCol)
       mainScratch.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, wallCapCol, MAT.lit)
+      emitWallCapMoulding(mainScratch, x, z, r, end)
       if (r - x > 1) {
         const zm = (z + end) * 0.5
         opaqueScratch.box(x - 0.06, 0.79, z - 0.06, r + 0.06, 0.86, end + 0.1, sillCol, MAT.wall)

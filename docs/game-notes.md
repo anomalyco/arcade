@@ -192,10 +192,31 @@ proven animation techniques to animation.md, not here.
   `games/outbreak/src/interiors/wgsl.ts`, one `RugPool` layer loaded by the rug Worker, plate layer and brightness
   packed in `rugCfg.w`). Because the floor is planar the plate is right from every camera position and zoom, unlike an
   RE background, and the flashlight, polar shadows and grade light it live; rugs and furniture draw on top. Lab:
-  Look · Detail › Painted floor plate (default off), `outbreak-look` station Detail group. Stills:
+  Look · Detail › Painted floor plate (default on), `outbreak-look` station Detail group. Stills:
   `games/outbreak/scripts/re-house-stills.ts --mode plate`. The board wear reads only where light falls under Noir.
-  GPU cost not measured yet (one fetch on floor fragments in the rectangle). Study and ranking:
-  `~/code/home/artifacts/2026-10-16-re-house/techniques.md`.
+  Study and ranking: `~/code/home/artifacts/2026-10-16-re-house/techniques.md`.
+- **Floor every house from a small generated plate library, and flatten each plate before it tiles.** Two gpt-image-2
+  top-down albedo plates per theme (mansion walnut herringbone, village oak, farmhouse pine, plain boards; 1024², 4 m
+  each, `games/outbreak/src/interiors/plates/floor-<theme>-<a|b>.webp`) replace the procedural board tone; each house
+  picks one by its seeded variant (`floorPlateFor`) and the plate tiles in world space with a slow tone noise. Raw
+  generations carry big wear patches that repeat as a visible grid, so each plate is divided by its own wrapped
+  36 px blur (ImageMagick `-fx "u/max(v,0.005)"`), keeping planks, seams and small stains, then levelled to a mean
+  sRGB of ~0.26–0.38. The detail sampler clamps, so the shader wraps with `fract` and an explicit LOD. Plates are
+  `RugPool` layers (default raised from 8 to 12 layers, about +22 MB) ranked by distance to the house, slightly ahead
+  of its rugs; layer and gain per window building go in `bldPlate`. Station keeps its checker tiles and the authored
+  kitchens keep theirs. Paired GPU Δ at 3456×1894: −0.003 ms interior, +0.004 ms street (noise).
+- **Dress floors with seeded decals evaluated in the floor shader, not decal geometry.** A 4×4 gpt-image-2 atlas on a
+  green screen (cup rings, water stains, mould, scuffs, prints, blood, letters, newspaper, leaves), keyed to straight
+  alpha by un-blending the screen colour, is one pool layer loaded with `keepAlpha`. `interiorFloorDetail` hashes a
+  1.7 m world cell (pcg4d, seeded by the rug reroll) and places at most one decal per cell, kept inside its cell so a
+  fragment needs one fetch; papers draw opaque, stains multiply into the floor. Grime darkens and desaturates the floor
+  along the skirting from the baked floor occlusion (`floorData(p).r`). Rugs and furniture cover both. Lab:
+  Look · Detail › Floor decals 0.35, Decal strength, Grime along skirting 0.6. Paired GPU Δ: −0.004 ms interior.
+- **Give wall tops a moulded profile from the visible faces only.** From the top-down camera the 2.8 m wall tops are
+  long bands; `emitWallCapMoulding` adds a dark cove and a walnut bead along both faces of every wall run (cove front,
+  bead front, bead top: six triangles a side, `MAT.cap` so the cutaway takes them with the walls, never above 2.80 m so
+  the roof cut does not). Full boxes cost +0.17 ms indoors at 3456×1894 (cause not isolated; likely the extra triangles in each shadow pass); the
+  front-faces-only version costs +0.089 ms. All AR-42 floor and trim detail together: +0.13 ms interior, ~0 street.
 - **Light a pair of wall sconces with one unshadowed half-space light, clipped in the shader.** Outbreak's sconces
   (`games/outbreak/src/interiors/sconces.ts`) are recorded per painting pair while the decor is emitted (in the chunk
   Worker for streamed houses, `collectSconces` for the origin block) and lit only in the house the camera is inside,
