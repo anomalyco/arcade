@@ -1,3 +1,4 @@
+import type { PartModels } from "./anim"
 import { GUN_IDS, type Gun } from "./gun"
 import { MAT, type Mat, Mesh, type Rgb } from "../gpu/mesh"
 import { hex } from "../gpu/mesh"
@@ -277,4 +278,26 @@ export type PersonModels = {
 export function personModels(): PersonModels {
   const by = <T>(f: (g: Gun) => T) => Object.fromEntries(GUN_IDS.map((g) => [g, f(g)])) as Record<Gun, T>
   return { pelvis: pelvis(), torso: torso(), head: head(), upperArm: upperArm(), foreArm: foreArm(), thigh: thigh(), shin: shin(), foot: foot(), toe: toe(), pump: pump(), gun: by(gun), mag: by(mag), casing: by(casing), hole: hole() }
+}
+
+/** Registers the shared low-poly human rig's parts on a renderer in one call. */
+export function registerPersonModels(addModel: (m: Mesh) => number, m: PersonModels = personModels()): PartModels {
+  const by = (rec: Record<Gun, Mesh>) =>
+    Object.fromEntries(GUN_IDS.map((g) => [g, addModel(rec[g])])) as Record<Gun, number>
+  return {
+    pelvis: addModel(m.pelvis),
+    torso: addModel(m.torso),
+    head: addModel(m.head),
+    upperArm: addModel(m.upperArm),
+    foreArm: addModel(m.foreArm),
+    thigh: addModel(m.thigh),
+    shin: addModel(m.shin),
+    foot: addModel(m.foot),
+    toe: addModel(m.toe),
+    pump: addModel(m.pump),
+    gun: by(m.gun),
+    mag: by(m.mag),
+    casing: by(m.casing),
+    hole: addModel(m.hole),
+  }
 }

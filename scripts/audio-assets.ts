@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url"
 import type { Plugin } from "vite"
 import { selectSfx, sfxUrl } from "../packages/kit/audio/library"
 import { DEFAULT_SAMPLE_MANIFEST } from "../packages/kit/audio/manifest"
+export { TOY_SFX } from "../packages/kit/audio/sound-bank"
 
 /** Request path relative to the host: the dev router strips `/arcade/<id>`, a standalone server with a base does not. */
 export function hostPath(url: string | undefined, base: string) {

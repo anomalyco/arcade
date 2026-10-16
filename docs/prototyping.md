@@ -32,10 +32,10 @@ When starting a new game or mode in `arcade`, keep the prototype inside four con
 
 | Constraint | Toy phase (Days 1–2) | Graduate only after feel is proven |
 | --- | --- | --- |
-| **Geometry** | `@arcade/kit/gpu/mesh` primitives (`Mesh.box`, `Mesh.prism`, `Mesh.bevelBox`) colored by role: player, threat, goal, wall. | Blender `.glb` assets, `@arcade/kit/avatar` human rigs, surface material recipes, foliage. |
-| **World & Net** | Single fixed arena (for example 24×24 m) in `shared/sim.ts`, stepped locally at 60 Hz with `@arcade/kit/sim/move` (`stepBody`). | `@arcade/kit/server` (`RoomObject`, `LobbyObject`, `gameWorker`), snapshot interpolation, or chunk streaming. |
-| **Shaders & Post** | Stock `@arcade/kit/gpu/renderer` + `@arcade/kit/gpu/scene-frame` (`SceneLights`, `packSceneFrame`), with the kit's stock particles and look. | Custom WGSL passes, volumetric smoke, weather passes, custom post-grading. |
-| **Tuning** | Every feel constant (`moveSpeed`, `accel`, `dashImpulse`, `cooldown`, `knockback`, `hitStopMs`, `shake`) bound to `@arcade/kit/lab-panel` (`Backquote`). | Hardcoded magic numbers scattered across simulation files. |
+| **Geometry** | `@arcade/kit/gpu/mesh` primitives (`Mesh.box`, `Mesh.prism`, `Mesh.bevelBox`) or the shared `@arcade/kit/avatar` human rig (`registerPersonModels`) in flat role colours: player, threat, goal, wall. | Bespoke character/prop meshes, Blender `.glb` assets, surface material recipes, foliage. |
+| **World & Net** | Single fixed arena (for example 24×24 m) in `shared/sim.ts`, stepped locally at 60 Hz with `@arcade/kit/sim/move` (`stepBody`) and simple steering bots. | `@arcade/kit/server` (`RoomObject`, `LobbyObject`, `gameWorker`), snapshot interpolation, or chunk streaming. |
+| **Shaders & Post** | Stock `@arcade/kit/gpu/renderer` + `@arcade/kit/gpu/scene-frame` (`SceneLights`, `packSceneFrame`), with the kit's stock particles, explosions, skids, and one default look (`createLookSettings`). | Custom WGSL passes, volumetric smoke, weather passes, custom post-grading. |
+| **Tuning** | Every feel constant (`viewStyle`, `actorMesh`, `moveSpeed`, `accel`, `dashImpulse`, `cooldown`, `knockback`, `hitStopMs`, `shake`, `botSpeed`) plus shared camera/volume/quality controls bound to `@arcade/kit/lab-panel` (`Backquote`). | Hardcoded magic numbers scattered across simulation files. |
 
 ## Building a toy in 30 seconds
 
@@ -46,11 +46,11 @@ bun scripts/new-toy.ts <name>
 bun --cwd games/<name> run dev
 ```
 
-The scaffold generates three small files on `@arcade/kit`:
+The scaffold generates three small files on `@arcade/kit` with shared feel wired on by default:
 
-1. `shared/sim.ts`: Plain-data state (`ToyState`), a `FEEL` object with `LabControl[]` definitions, and a deterministic `stepToy(state, input, dt)` loop using `stepBody` from `@arcade/kit/sim/move`.
-2. `src/main.ts`: Boots WebGPU via `openGpu`, builds three primitive models (`Mesh.box` floor/pillars, `Mesh.prism` capsule), drives `Camera` and `HitStop` from `@arcade/kit/client/camera`, reads physical keys via `Input` (`@arcade/kit/client/input`), and mounts `LabPanel` (`Backquote`) so every movement and impact constant is live-tunable while playing.
-3. `index.html` + `vite.config.ts`: Minimal Vite entry under `/arcade/<name>/` with `<meta name="robots" content="noindex">`.
+1. `shared/sim.ts`: Plain-data state (`ToyState`), a `FEEL` object with `LabControl[]` definitions (`viewStyle`, `actorMesh`, movement, impact, and bot knobs), and a deterministic `stepToy(state, input, dt)` loop with steering bots using `stepBody` from `@arcade/kit/sim/move`.
+2. `src/main.ts`: Boots WebGPU via `openGpu`, wires adaptive quality (`GameQuality` + `GpuPerf`), one stock look (`createLookSettings`), the shared human rig (`registerPersonModels`, `newAvatar`, `animate`, `pose`, `swing`, `hit`, `EV`) plus primitive capsule/cube/triangle models (`Mesh.box`, `Mesh.prism`), top-down/isometric/side cameras (`Camera`, `SideCamera`, `HitStop`, `cameraShakeControls`), shared FX (`Particles`, `spawnExplosion`, `SkidMarks`, `FrameParts`), `SoundBank` placeholder library audio + volume controls (`@arcade/kit/audio`), physical key-cap HUD (`Input`, `keyPromptHtml`), and `LabPanel` (`Backquote`).
+3. `index.html` + `vite.config.ts`: Minimal Vite entry under `/arcade/<name>/` with `audioAssets({ sfx: TOY_SFX })`, `textureAssets()`, and `<meta name="robots" content="noindex">`.
 
 ## What to tune in the first hour (the 3Cs)
 
