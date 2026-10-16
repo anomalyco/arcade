@@ -157,6 +157,21 @@ describe("slew and arcs", () => {
     expect(clampAim(m, 0, -5).pitch).toBe(m.pitchArc[0])
   })
 
+  test("every mount trains through 200°; an arc running past ±π keeps aims in range and clamps to the nearer end", () => {
+    for (const m of WEAPON_MOUNTS) expect(m.yawArc[1] - m.yawArc[0]).toBeCloseTo((200 * Math.PI) / 180, 9)
+    const i = WEAPON_MOUNTS.findIndex((m) => m.yawArc[1] > Math.PI)
+    expect(i).toBeGreaterThanOrEqual(0)
+    const m = WEAPON_MOUNTS[i]!
+    const [y0, y1] = m.yawArc
+    // Just inside the far end, asked for as its wrapped (negative) angle: still that end, not clamped.
+    expect(clampAim(m, y1 - 0.05 - 2 * Math.PI, 0).yaw).toBeCloseTo(y1 - 0.05, 9)
+    expect(clampAim(m, y1 + 0.1, 0).yaw).toBeCloseTo(y1, 9)
+    expect(clampAim(m, y0 - 0.1, 0).yaw).toBeCloseTo(y0, 9)
+    const a = restAngles(i)
+    for (let k = 0; k < 2000; k++) slewTurret(a, i, y1 - 2 * Math.PI, 0, DT)
+    expect(a.yaw).toBeCloseTo(y1, 6)
+  })
+
   test("turrets train at their own rates and stop on the clamped aim", () => {
     for (const i of [CIWS, SAM, GUN]) {
       const m = WEAPON_MOUNTS[i]!
