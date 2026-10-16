@@ -14,7 +14,7 @@ export const RUG_DIRECTORY_SLOTS = 9
 
 export const interiorUniformFieldsWgsl = /* wgsl */ `
   rugDir: array<vec4f, ${RUG_DIRECTORY_SLOTS}>, // per stream slot: texture layer of rugs 0..3, -1 = not baked
-  rugCfg: vec4f, // mip bias (log2), brightness, pile relief, debug
+  rugCfg: vec4f, // mip bias (log2), brightness, pile relief, painted plate (layer + brightness / 4, 0 off)
   bldTheme: array<vec4f, 2>, // theme id per window building (0..7)`
 
 export type InteriorWgslRefs = {
@@ -74,6 +74,22 @@ fn interiorBuildingAt(p: vec2f) -> i32 {
     if (p.x > b.x && p.x < b.z && p.y > b.y && p.y < b.w) { return i; }
   }
   return -1;
+}
+
+/**
+ * Painted floor plate (Lab spike, AR-42): one unique top-down albedo for Ash's living room and hall (x 22–30.92,
+ * z 29.5–35.5), rectified from a paint-over through the gameplay camera. Returns alpha 0 outside it or when off.
+ */
+fn interiorPlate(p: vec2f) -> vec4f {
+  let w = ${r.cfg}.w;
+  if (w < 1.0 || !(${r.classicLayout})) { return vec4f(0.0); }
+  let rect = vec4f(22.0, 29.5, 30.92, 35.5);
+  let uv = (p - rect.xy) / (rect.zw - rect.xy);
+  if (any(uv <= vec2f(0.0)) || any(uv >= vec2f(1.0))) { return vec4f(0.0); }
+  // 1024 texels over the plate's 6 m depth (its denser axis).
+  let lod = clamp(log2(max(surfaceFootprint * 171.0, 1.0)), 0.0, 9.0);
+  let t = textureSampleLevel(detailTex, detailSamp, uv, i32(floor(w)), lod);
+  return vec4f(t.rgb * fract(w) * 4.0, 1.0);
 }
 
 fn interiorThemeOf(i: i32) -> i32 {
@@ -183,7 +199,10 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
       }
       gloss = vec2f(0.0);
     } else if ((mat == 4 && o.world.y < 2.75 && n.y < 0.5) || (mat == 20 && i32(round(o.aux)) == 4)) {
-      let bi = interiorBuildingAt(o.world.xz + n.xz * 0.3);
+      var plate = vec4f(0.0);
+      if (mat == 20) { plate = interiorPlate(o.world.xz); }
+      var bi = -1;
+      if (plate.a > 0.5) { albedo = plate.rgb; } else { bi = interiorBuildingAt(o.world.xz + n.xz * 0.3); }
       if (bi >= 0) {
         let th = interiorThemeOf(bi);
         let variant = clamp(fract(${r.theme("bi")}) / 0.45, 0.0, 1.0);

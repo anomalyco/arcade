@@ -24,6 +24,9 @@ export type InteriorLabSettings = SconceLightSettings & {
   rugSeed: number
   interiorDecor: number
   wainscot: number
+  /** Spike (AR-42): Ash's living room and hall floor drawn from a painted plate (0 off, 1 on). */
+  paintedPlate: number
+  plateBrightness: number
 }
 
 export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
@@ -37,6 +40,8 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
   rugSeed: 0,
   interiorDecor: 1,
   wainscot: 1,
+  paintedPlate: 0,
+  plateBrightness: 1.7,
   ...DEFAULT_SCONCE_LIGHT_SETTINGS,
 }
 
@@ -57,10 +62,19 @@ export function interiorControls(onStructural: () => void, onPool: () => void, o
     { key: "sconceLights", label: "Lit sconce pairs", group, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 3, label: "3" }, { value: 4, label: "4" }] },
     { key: "sconcePower", label: "Sconce brightness", group, min: 0, max: 3, step: 0.05, unit: "×" },
     { key: "sconceRadius", label: "Sconce reach", group, min: 1.5, max: 5, step: 0.1, unit: "m" },
+    { key: "paintedPlate", label: "Painted floor plate (Ash)", group: "Look · Detail", type: "toggle" },
+    { key: "plateBrightness", label: "Plate brightness", group: "Look · Detail", min: 0.5, max: 3.5, step: 0.05, unit: "×" },
     { key: "rugResolution", label: "Rug texture size", group, type: "select", folded: true, options: [{ value: 512, label: "512 px" }, { value: 1024, label: "1024 px" }, { value: 2048, label: "2048 px" }], change: onPool },
     { key: "rugLayers", label: "Rug texture layers", group, min: 2, max: 16, step: 1, unit: "", folded: true, change: onPool },
   ]
 }
+
+/**
+ * The painted floor plate: the Resident Evil mansion paint-over of the entry hall, rectified onto the floor plane
+ * through the gameplay camera, cleaned of furniture and light by an image edit (one 1024² pool layer). It covers
+ * `PLATE_RECT` in `wgsl.ts`; rugs and furniture draw on top and the live lights light it.
+ */
+const PLATE_URL = new URL("./plates/ash-hall-floor.webp", import.meta.url).href
 
 const HANDMADE = { persian: "rug_persian_burgundy.webp", sage: "rug_oriental_sage.webp", runner: "rug_braided_runner.webp" }
 
@@ -134,11 +148,12 @@ export class InteriorPresenter {
       }
       this.lastBuildingsIds = ids
     }
-    const key = `${houseSeed}|${this.lastBuildingsIds}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}`
+    const key = `${houseSeed}|${this.lastBuildingsIds}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}|${this.settings.paintedPlate}`
     if (key !== this.lastKey || (!deferStep && now - this.lastPlan > 1000)) {
       this.lastKey = key
       this.lastPlan = now
       const reqs: RugRequest[] = []
+      if (this.settings.paintedPlate) reqs.push({ dirKey: -1, priority: -1, imageUrl: PLATE_URL })
       if (this.settings.rugSource !== 2) {
         for (const b of buildings) {
           const plan = planInterior(b, houseSeed)
@@ -171,7 +186,9 @@ export class InteriorPresenter {
     out[c] = this.settings.rugMipBias
     out[c + 1] = this.settings.rugBrightness
     out[c + 2] = this.settings.rugRelief
-    out[c + 3] = 0
+    // Plate layer in the integer part, brightness / 4 in the fraction; 0 when off or not yet resident.
+    const plate = this.settings.paintedPlate ? this.pool.layerOf(PLATE_URL) : 0
+    out[c + 3] = plate > 0 ? plate + Math.min(0.999, this.settings.plateBrightness / 4) : 0
     for (let i = 0; i < 8; i++) {
       const b = buildings[i]
       if (!b) { out[c + 4 + i] = 0; continue }

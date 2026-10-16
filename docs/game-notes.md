@@ -155,6 +155,17 @@ proven animation techniques to animation.md, not here.
   paired GPU Δ −0.5 ms on a 180–250 ms Air frame at 3456×1894 (MAD 1.1 ms, inside noise). Lessons: the noir look's moon
   rim read `o.color` and showed the UV gradient until `SceneHooks.lookBaseColor` let games supply their albedo; WGSL
   reserves `macro`; Lab sections that bake asynchronously report `busy()` so `prove-station.ts` waits for them.
+- **Project a paint-over onto the floor through the gameplay camera, and it becomes a plain top-down texture.** For
+  the Resident Evil house study (AR-42) the mansion paint-over of Ash's hall was rectified onto the floor plane with
+  a homography fitted to 67 floor points the capture projected (exact to 0.000 px), cleaned of furniture and painted
+  light by one image edit, and drawn as albedo for the living room and hall (`interiorPlate` in
+  `games/outbreak/src/interiors/wgsl.ts`, one `RugPool` layer loaded by the rug Worker, plate layer and brightness
+  packed in `rugCfg.w`). Because the floor is planar the plate is right from every camera position and zoom, unlike an
+  RE background, and the flashlight, polar shadows and grade light it live; rugs and furniture draw on top. Lab:
+  Look · Detail › Painted floor plate (default off), `outbreak-look` station Detail group. Stills:
+  `games/outbreak/scripts/re-house-stills.ts --mode plate`. The board wear reads only where light falls under Noir.
+  GPU cost not measured yet (one fetch on floor fragments in the rectangle). Study and ranking:
+  `~/code/home/artifacts/2026-10-16-re-house/techniques.md`.
 - **Light a pair of wall sconces with one unshadowed half-space light, clipped in the shader.** Outbreak's sconces
   (`games/outbreak/src/interiors/sconces.ts`) are recorded per painting pair while the decor is emitted (in the chunk
   Worker for streamed houses, `collectSconces` for the origin block) and lit only in the house the camera is inside,
