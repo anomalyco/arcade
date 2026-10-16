@@ -1,3 +1,4 @@
+import { MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import type { Rect } from "@arcade/kit/sim/geom"
 
 /**
@@ -83,4 +84,21 @@ export function addLampPool(acc: Float32Array, solid: Uint8Array, res: number, x
       acc[i * 3 + 2] += lamp.color[2] * f
     }
   }
+}
+
+/**
+ * Fixture slot for table-lamp shades: faces drawn with MAT.lamp and this aux glow with the room lamps (the hour, Lab
+ * room power). The slot below the sconces' (`SCONCE_LAMP_SLOT`, the last).
+ */
+export const TABLE_LAMP_SLOT = MAX_MAP_LIGHTS - 2
+
+/** A table lamp from the furniture library: plan position and the height of its shade's centre (m). */
+export type TableLamp = { x: number; z: number; h: number }
+
+/**
+ * The baked pool of a client-side table lamp (props `table-lamp` clutter): a small warm pool like the dimmest room
+ * accent lamp, starting at the shade. Its shade glows through `TABLE_LAMP_SLOT` (lighting.ts).
+ */
+export function tableLampPool(l: TableLamp): BakeLamp {
+  return { x: l.x, z: l.z, h: Math.max(0.6, l.h), r: 2.6, color: [1, 0.4448, 0.0936], power: 0.11 }
 }
