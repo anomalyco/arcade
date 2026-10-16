@@ -20,6 +20,8 @@ const variants: StationVariant[] = [
   { id: "pack", label: "Pack open (Tab)", note: "The pack grows out of its chip at the end of the belt; Tab again folds it back.", setup: dock("pack") },
   { id: "craft", label: "Field craft (hold Q)", note: "Field craft rises out of the dock.", setup: dock("craft") },
   { id: "vehicle", label: "Driving", note: "Fuel on the dashboard gauge, key hints that fade after first use.", setup: dock("vehicle") },
+  // D-25 (Bold Glyph): the action glyph set the world prompt draws beside its key cap.
+  { id: "prompt-icons", label: "Prompt icons", note: "Every action glyph at 16, 20 and 24 px with the prompts that use it; walk to a door to see one live.", setup: dock("icons") },
 ]
 
 export default defineStation({
@@ -43,7 +45,7 @@ export default defineStation({
     { label: "Proof stills (styles × Noir/70s, stamina states, crowd)", value: "47", source: "games/outbreak/scripts/hud-proof.ts" },
     { label: "HUD transitions with no pops or jumps (frame-stepped)", value: "16 / 16", source: "games/outbreak/scripts/hud-motion-proof.ts" },
   ],
-  paths: ["games/outbreak/src/hud", "games/outbreak/scripts/hud-proof.ts", "games/outbreak/scripts/hud-moment.ts", "games/outbreak/scripts/hud-motion-proof.ts", "games/outbreak/scripts/hud-polish-proof.ts", "docs/outbreak-hud.md"],
+  paths: ["games/outbreak/src/hud", "packages/kit/client/action-glyphs.ts", "games/outbreak/scripts/hud-proof.ts", "games/outbreak/scripts/hud-moment.ts", "games/outbreak/scripts/hud-motion-proof.ts", "games/outbreak/scripts/hud-polish-proof.ts", "docs/outbreak-hud.md"],
   branches: ["outbreak-hud*"],
   links: [
     { label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" },

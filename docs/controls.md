@@ -58,6 +58,7 @@ installs itself on first use.
 | `keyCapHtml("ShiftLeft")`, `keyCapHtml("Space")` | Wide caps (Shift, Ctrl, Alt, Tab, Enter, Esc, Backspace) and a wider Space bar |
 | `keyCapHtml("Mouse0")`, `keyCapHtml("Mouse2")` | Mouse icon with the left or right button filled (`Mouse1`, `Wheel` fill the wheel) |
 | `keyPromptHtml("KeyE", "Open", options)` | Cap followed by the action verb, the usual prompt row |
+| `actionGlyphHtml("door-open", { size, label })` (`@arcade/kit/client/action-glyphs`) | A filled action glyph in `currentColor` to put beside a cap instead of a verb (Outbreak's world prompt, D-25) |
 
 - Drive `progress` from the game's own hold timer every frame; the component has no timer of its own.
 - Theme with `--akc-face`, `--akc-ink`, `--akc-edge`, `--akc-ring`, `--akc-track` and `--akc-size` on any ancestor.

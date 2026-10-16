@@ -62,6 +62,10 @@ export const DEFAULT_HUD_SETTINGS = {
   teammateCallouts: TEAMMATE_IMPORTANT,
   /** Size of other survivors' callouts and rings relative to yours. */
   teammateScale: 0.8,
+  /** World prompts show an action glyph beside the key cap (D-25, Bold Glyph) and drop the words it makes clear. */
+  promptIcons: true,
+  /** Prompt glyph size in CSS pixels: 16, 20 or 24 (24 is pixel-exact at DPR 1 and 2). */
+  promptIconSize: 24,
   /** Opacity the bottom dock settles to after a few idle seconds; it brightens on any change. */
   dockIdleOpacity: 0.5,
   /** Seconds without a change before the dock dims. */
@@ -147,6 +151,17 @@ export const hudControls: LabControl[] = [
     ],
   },
   { key: "teammateScale", label: "Teammate HUD size", group: "HUD", min: 0.5, max: 1, step: 0.05, unit: "×" },
+  { key: "promptIcons", label: "Prompt icons", group: "HUD" },
+  {
+    key: "promptIconSize",
+    label: "Prompt icon size",
+    group: "HUD",
+    options: [
+      { label: "16 px", value: 16 },
+      { label: "20 px", value: 20 },
+      { label: "24 px", value: 24 },
+    ],
+  },
   { key: "dockIdleOpacity", label: "Idle dock opacity", group: "HUD motion", min: 0.2, max: 1, step: 0.05, unit: "" },
   { key: "dockDimAfter", label: "Dim dock after", group: "HUD motion", min: 0.5, max: 10, step: 0.5, unit: "s" },
   { key: "hudMotionSpeed", label: "Motion speed", group: "HUD motion", min: 0.25, max: 3, step: 0.05, unit: "×" },

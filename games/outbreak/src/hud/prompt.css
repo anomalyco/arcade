@@ -42,3 +42,19 @@
 #prompt .akc-hold { padding: 5px; margin: -5px 0 }
 #prompt .akc-hold::before { padding: 6px }
 #prompt .akc-ring { padding: 3px }
+/* Action glyphs (D-25): whole-pixel boxes in currentColor, so the hold colour and dimming apply like text. */
+#prompt .akp-label, #prompt .akp-hold { display: inline-flex; align-items: center; gap: var(--hud-2) }
+#prompt .prompt-glyph { display: block; flex: none }
+#prompt .akp-word { color: inherit }
+
+/* The Lab's prompt glyph sheet (glyph-sheet.ts). */
+#glyph-sheet {
+  position: fixed; top: var(--hud-6); left: 50%; translate: -50% 0; z-index: 30; max-height: calc(100vh - 48px); overflow: auto;
+  padding: var(--hud-4) var(--hud-5); columns: 2; column-gap: var(--hud-7); pointer-events: auto
+}
+#glyph-sheet .gs-row { display: flex; align-items: center; gap: var(--hud-4); min-height: 32px; break-inside: avoid }
+#glyph-sheet .gs-head { color: var(--hud-ink-3); font-size: var(--hud-xs) }
+#glyph-sheet .gs-cell { width: 24px; display: flex; justify-content: center; flex: none }
+#glyph-sheet .gs-name { display: flex; flex-direction: column; max-width: 300px; white-space: normal; font-size: var(--hud-xs); line-height: 14px; color: var(--hud-ink-2) }
+#glyph-sheet .gs-name b { color: var(--hud-ink); font-weight: 600 }
+#glyph-sheet .gs-name small { color: var(--hud-warm) }

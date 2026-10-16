@@ -20,6 +20,7 @@ import { type ProgressionLabHost } from "./progression/lab"
 import type { InventoryHud } from "./inventory-hud"
 import type { OutbreakSettings } from "./settings"
 import type { Survivor } from "./survivor"
+import { showGlyphSheet } from "./hud/glyph-sheet"
 import { stageVehicleScene, type VehicleLabHost } from "./vehicle-lab"
 import type { OutbreakWeatherController } from "./weather/controller"
 
@@ -290,12 +291,13 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
         shortLabel: "HUD State",
         category: "Scene",
         undoable: false,
-        args: { state: { type: "string", description: "idle (dim dock), awake, pack (Tab open), craft (hold Q open) or vehicle" } },
+        args: { state: { type: "string", description: "idle (dim dock), awake, pack (Tab open), craft (hold Q open), vehicle or icons (the prompt glyph sheet)" } },
         enabled: () => Boolean(host.inventoryHud),
         run: (_ctx, args) => {
           const inv = host.inventoryHud!
           const view = host.session().view
           const state = String(args?.state ?? "awake")
+          showGlyphSheet(state === "icons")
           inv.close()
           const grant = (item: string, count: number) => view.progression.ledger.apply({ kind: "grant", actor: view.actorId, item, count })
           if (state !== "idle") for (const [item, n] of [["scrap", 2], ["plank", 2], ["ammo", 6], ["noisemaker", 1]] as const) grant(item, n)
