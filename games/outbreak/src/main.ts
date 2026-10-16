@@ -351,7 +351,7 @@ async function main() {
   const { hitStop, motionBurst } = feelTracker
   const groundWear = new GroundWearRenderer(renderer)
   const exteriorClutter = new ExteriorClutterRenderer(renderer)
-  const propDressing = new PropDressing(renderer)
+  const propDressing = new PropDressing(renderer, TABLE_LAMP_SLOT)
   const ambientMotion = new OutbreakAmbientMotion(renderer)
   const weatherController = new OutbreakWeatherController()
   const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)

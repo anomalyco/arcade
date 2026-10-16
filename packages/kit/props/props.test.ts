@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import { PROP_SPECS, propSpec } from "./catalogue"
+import { MAT } from "../gpu/mesh"
 import { decodeProp, encodeProp, type PropAsset } from "./format"
 import { DEFAULT_PROP_LOOK, propMesh } from "./mesh"
 import { PropBatches, PropModels, yawFacing } from "./models"
@@ -53,7 +54,22 @@ describe("prop meshes and batches", () => {
     expect(m.v.length).toBe(3 * 11)
     expect(m.v[6]).toBeCloseTo(200 / 255, 3)
     expect(m.v[2 * 11 + 6]).toBeCloseTo(0, 3) // fully occluded corner
-    expect(m.v[2 * 11 + 9]).toBe(24)
+    expect([m.v[9], m.v[11 + 9], m.v[2 * 11 + 9]]).toEqual([MAT.lit, MAT.shiny, MAT.lit]) // only lit or shiny
+  })
+
+  test("lamp faces above the shade line glow through the given light slot", () => {
+    const quad: PropAsset["lods"][number] = {
+      ...tri.lods[0]!,
+      positions: new Float32Array([-0.5, 0, 0, 0.5, 0, 0, 0, 0.4, 0, -0.5, 0.6, 0, 0.5, 0.6, 0, 0, 1, 0]),
+      normals: new Float32Array(18).fill(0),
+      colors: new Uint8Array(18).fill(200),
+      ao: new Uint8Array(6).fill(255),
+      mats: new Uint8Array(6),
+      indices: new Uint16Array([0, 1, 2, 3, 4, 5]),
+    }
+    const m = propMesh(quad, DEFAULT_PROP_LOOK, { from: 0.5, aux: 30 })
+    expect([m.v[9], m.v[10]]).toEqual([MAT.lit, 0])
+    expect([m.v[3 * 11 + 9], m.v[3 * 11 + 10]]).toEqual([MAT.lamp, 30])
   })
 
   test("one batch per model, LOD per instance", async () => {

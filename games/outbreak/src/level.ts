@@ -5,7 +5,8 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSignature } from "./interiors/plan"
-import { propDressingState, replacedByLibrary } from "./props/state"
+import { propFloorFootprints, propLamps } from "./props/furnish"
+import { propLevelSignature, replacedByLibrary } from "./props/state"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -165,7 +166,7 @@ export type OriginLevel = Omit<LevelData, "chunks" | "glass"> & { chunks: Origin
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, OriginLevel>()
 export function buildLevel(town: Town): OriginLevel {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propDressingState.on ? 1 : 0}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propLevelSignature()}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)
@@ -547,6 +548,7 @@ function compileLevel(town: Town): OriginLevel {
     }
   }
   for (const rect of furnitureContacts) stampRect(rect, 5, .85, 1.3)
+  for (const f of propFloorFootprints(town)) stampRect(f.rect, 5, .85, 1.3)
   // Contact shade under house trees and shrubs, stamped locally (crown shade for trees, a tight dark pool for bushes).
   for (const f of plantFootprints) {
     if (f.ground > 0.3) continue
@@ -599,6 +601,6 @@ function compileLevel(town: Town): OriginLevel {
     chunks: chunks([...meshes, ...props], true),
     glass: chunks(glasses),
     floor: { data, w: resolution, h: resolution, moon: bakeOutbreakMoonMask(town) },
-    bounce: bakeOutbreakBounce(town),
+    bounce: bakeOutbreakBounce(town, propLamps(town)),
   }
 }

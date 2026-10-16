@@ -28,6 +28,8 @@ export type PropSpec = {
   surface?: number
   /** Triangle budgets for LOD0 (close) and LOD1 (far). */
   lod: readonly [number, number]
+  /** A lamp's shade starts at this fraction of the height: faces above it can glow (`PropModelOptions.lampAux`). */
+  shade?: number
 }
 
 const anchor = (id: string, label: string, size: PropSpec["size"], placement: PropPlacement, rooms: PropRoom[], lod: PropSpec["lod"], surface?: number): PropSpec =>
@@ -53,7 +55,7 @@ export const PROP_SPECS: readonly PropSpec[] = [
   anchor("upright-piano", "Upright piano", [1.48, 1.25, 0.6], "wall", ["living", "study"], [2400, 700], 1.25),
   anchor("tv-set", "1970s TV set", [0.82, 0.82, 0.5], "wall", ["living"], [1400, 400], 0.82),
   anchor("radiator", "Cast-iron radiator", [0.75, 0.72, 0.2], "wall", ["any"], [1200, 400]),
-  clutter("table-lamp", "Brass table lamp", [0.32, 0.56, 0.32], "tabletop", ["living", "bedroom", "study", "hall"]),
+  { ...clutter("table-lamp", "Brass table lamp", [0.32, 0.56, 0.32], "tabletop", ["living", "bedroom", "study", "hall"]), shade: 0.48 },
   clutter("potted-plant", "Cracked plant pot", [0.42, 0.5, 0.42], "corner", ["living", "hall", "study"], [1200, 400]),
   clutter("wooden-crate", "Wooden crate", [0.62, 0.48, 0.5], "floor", ["store", "kitchen", "hall", "any"], [500, 150]),
   clutter("cardboard-boxes", "Cardboard boxes", [0.66, 0.62, 0.5], "floor", ["store", "bedroom", "hall", "any"], [850, 250]),
