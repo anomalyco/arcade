@@ -80,7 +80,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | — | Yes | Yes |
 | `avatar/*` | Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls | — | Yes | — | — | — | — | Yes | Yes |
 | `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — | — | — |
-| `client/{controls,key-cap,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, and chat styling | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| `client/{controls,key-cap,action-glyphs,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, prompt action glyphs, and chat styling | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `client/{input,camera,side-camera,smooth}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), side-view `SideCamera`, and orbit/pan/zoom gestures | — | Yes | Yes | — | Yes | — | Yes | Yes |
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | — | Yes | — | Yes | — | Yes | Yes |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — | — |
