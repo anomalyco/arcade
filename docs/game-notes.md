@@ -177,6 +177,14 @@ proven animation techniques to animation.md, not here.
   depth-tested, destination alpha kept. Lab: Look · Air. Lamps get motes on High (12) and Balanced (6), not Low. Cost:
   paired GPU Δ +0.049 ms hall / +0.017 ms street at 3456×1894 (`scripts/ab-gpu.ts`). Stills:
   `games/outbreak/scripts/re-light-stills.ts`.
+- **Bake the room lamps that are not live indoors as line-of-sight floor pools in the bounce texture.** Indoors only the
+  shadow-casting lamp of each house is a live light (unshadowed lamps would light through walls), so the other room
+  lamps lit nothing but a faint Dijkstra bounce, and Kit's paint-over rooms have warm lamp pools. `lightbake.ts` adds
+  each accent lamp's direct pool (cos³ inverse-square from the bulb height, windowed to its reach, marched against the
+  wall grid so it stops at walls and spills through doorways) into the same 0.5 m `bounceTex` the origin bake and every
+  streamed chunk already write, so it costs no GPU work beyond the existing fetch and follows the hour, room-lamp power,
+  cutaway and streaming. Indoors the bake is scaled by Look · Lights › Baked room light (default ×4); because it is
+  light, the colour rule gives the pools their colour. Bake: 15 ms for the origin town (all of `bakeOutbreakBounce`).
 - **Project a paint-over onto the floor through the gameplay camera, and it becomes a plain top-down texture.** For
   the Resident Evil house study (AR-42) the mansion paint-over of Ash's hall was rectified onto the floor plane with
   a homography fitted to 67 floor points the capture projected (exact to 0.000 px), cleaned of furniture and painted

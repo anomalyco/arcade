@@ -29,7 +29,8 @@ import {
 import { archSettings, house, houseFrontage, housePlanting, plant, plantFootprints, type HouseDecayState } from "./architecture"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
 import { buildLevel, type OriginChunk } from "./level"
-import { DEFAULT_OUTBREAK_LIGHTING, resolveLampLight, stampOutbreakVertexTone } from "./lighting"
+import { bakedRoomLamp, DEFAULT_OUTBREAK_LIGHTING, resolveLampLight, stampOutbreakVertexTone } from "./lighting"
+import { addLampPool, wallGrid } from "./lightbake"
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 
@@ -1289,6 +1290,29 @@ export function compileSingleWorldChunk(
           const next = Math.min(1, cur + res.color[c]! * f * 0.5)
           bounceTile[idx + c] = Math.round(Math.sqrt(next) * 255)
         }
+      }
+    }
+  }
+  // Baked pools of the room accent lamps (line of sight against this chunk's walls), as in the origin town's bake.
+  let poolAcc: Float32Array | null = null
+  let poolSolid: Uint8Array | null = null
+  for (let i = 0; i < chunk.lamps.length; i++) {
+    const pool = bakedRoomLamp(chunk.lamps[i]!, chunk.buildings)
+    if (!pool) continue
+    if (!poolAcc || !poolSolid) {
+      poolAcc = new Float32Array(bRes * bRes * 3)
+      poolSolid = wallGrid(chunk.barriers.filter(b => b.kind === "wall").map(b => b.rect), x0, z0, bRes, bScale)
+    }
+    addLampPool(poolAcc, poolSolid, bRes, x0, z0, bScale, pool)
+  }
+  if (poolAcc) {
+    for (let i = 0; i < bRes * bRes; i++) {
+      for (let c = 0; c < 3; c++) {
+        const add = poolAcc[i * 3 + c]!
+        if (add <= 0) continue
+        const idx = i * 4 + c
+        const cur = (bounceTile[idx]! / 255) ** 2
+        bounceTile[idx] = Math.round(Math.sqrt(Math.min(1, cur + add * 0.5)) * 255)
       }
     }
   }

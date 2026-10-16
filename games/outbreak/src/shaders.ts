@@ -38,7 +38,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
   mapUv: "(p - OL.win.xy) * F.map.xy",
-  bounce: "outbreakBounce(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z)",
+  bounce: "outbreakBounce(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z * select(1.0, OL.colour.w, outbreakInRoom))",
   lightLeak: "0.006 * vis",
   lightAttenuation: `var att = 0.0;
     if (L.cone.w > 1.5) {
