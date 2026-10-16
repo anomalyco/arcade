@@ -66,10 +66,10 @@ export type SoftBeanSettings = {
 export type HeroLookSettings = { heroStyle: number } & HeroSurface & SoftBeanSettings
 
 /**
- * Seat hues: red, blue, yellow, green, the concept's four. Player 1 is red rather than the amber of its name tag
- * because the house's lamps and the beam are amber too, and an amber bean turns cream in them. Lightness keeps the
- * figure near the brightness of today's jacket so lamps don't burn it out. Own colour 0.45: enough that teammates stay
- * apart in an unlit room, while the beam and lamps still make the figure clearly more colourful than the dark around it.
+ * Seat hues: red, blue, amber, green, the concept's four. Player 1 is red rather than the amber of its name tag because
+ * the house's lamps and the beam are amber too, and an amber bean turns cream in them. Own colour 0.45: enough that
+ * teammates keep their hue away from the light, while the beam and lamps still make the figure clearly more colourful
+ * than the dark around it.
  */
 export const DEFAULT_SOFT_BEAN_LOOK: SoftBeanSettings = {
   beanHead: DEFAULT_SOFT_BEAN.head,
@@ -79,10 +79,10 @@ export const DEFAULT_SOFT_BEAN_LOOK: SoftBeanSettings = {
   beanFace: 1,
   beanHue: 4,
   beanHue2: 212,
-  beanHue3: 46,
+  beanHue3: 40,
   beanHue4: 128,
-  beanSaturation: 0.75,
-  beanLightness: 0.42,
+  beanSaturation: 0.72,
+  beanLightness: 0.52,
   beanWrap: 0.6,
   beanSheen: 0.6,
   beanSheenTight: 3,
