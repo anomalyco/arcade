@@ -1,5 +1,6 @@
 import type { LabValue } from "../../lab-navigation"
 import type { LabStation, StationCommand, StationStatus, StationVariant } from "../stations/types"
+import { variantGroups, variantIdList } from "../stations/variants"
 import type { LabPresetSchema } from "../workbench"
 import {
   SCENE_SCHEMA,
@@ -95,13 +96,13 @@ const setParams = (set: Record<string, LabValue> = {}): SceneCommand[] =>
 
 /** What opening a section lab runs after selecting its host section, then what its variant adds. */
 export function openCommands(scene: LabScene, variantId = scene.variant): SceneCommand[] {
-  const variant = scene.variants.find(v => v.id === variantId)
+  const ids = variantIdList(variantId)
   const host = scene.host?.kind === "section" ? scene.host.setup ?? [] : []
   return [
     ...choiceCommands(scene.choices),
     ...setParams(scene.settings),
     ...host,
-    ...(variant ? variantCommands(variant) : []),
+    ...scene.variants.filter(v => ids.includes(v.id)).flatMap(variantCommands),
   ]
 }
 
@@ -135,17 +136,20 @@ export function stationFromScene(scene: LabScene): LabStation {
         kind: "section",
         section: scene.host?.kind === "section" ? scene.host.section : "effects",
         ...(scene.games?.[0] ? { game: scene.games[0] } : {}),
-        setup: openCommands(scene),
+        // With several variant groups the station workspace runs every group's pick after this setup.
+        setup: openCommands(scene, !scene.pickOne && variantGroups(scene.variants).length > 1 ? [] : scene.variant),
         ...(camera?.kind === "orbit" ? { camera: { yaw: camera.yaw, pitch: camera.pitch, distance: camera.distance, ...(camera.target ? { target: camera.target } : {}) } } : {}),
       },
     variants: scene.variants.map(v => ({
       id: v.id,
       label: v.label,
       ...(v.note ? { note: v.note } : {}),
+      ...(v.group ? { group: v.group } : {}),
       setup: variantCommands(v),
       ...(v.url ? { url: v.url } : {}),
     })),
     ...(scene.variant ? { defaultVariant: scene.variant } : {}),
+    ...(scene.pickOne ? { pickOne: true } : {}),
     ...(scene.layout?.grid ? { grid: scene.layout.grid } : {}),
     ...(info.board ? { board: info.board } : {}),
     ...(info.metrics?.length ? { metrics: info.metrics } : {}),
@@ -159,6 +163,12 @@ export function stationFromScene(scene: LabScene): LabStation {
 
 export type Migrated = { scenes: LabScene[]; notes: string[] }
 
+/** A station's `defaultVariant`, as the lab's `variant`, keeping only variants the lab kept. */
+function opening(ids: string | readonly string[] | undefined, kept: readonly StationVariant[]): { variant?: string | readonly string[] } {
+  const list = variantIdList(ids).filter(id => kept.some(v => v.id === id))
+  return list.length === 0 ? {} : list.length === 1 && typeof ids === "string" ? { variant: list[0]! } : { variant: list }
+}
+
 const titleCase = (id: string) => id.replace(/-/g, " ").replace(/^./, c => c.toUpperCase())
 
 function variantOf(v: StationVariant, slotFor: SlotFor | null): SceneVariant {
@@ -167,6 +177,7 @@ function variantOf(v: StationVariant, slotFor: SlotFor | null): SceneVariant {
     id: v.id,
     label: v.label,
     ...(v.note ? { note: v.note } : {}),
+    ...(v.group ? { group: v.group } : {}),
     ...(Object.keys(lifted.choices).length ? { choices: lifted.choices } : {}),
     ...(Object.keys(lifted.set).length ? { set: lifted.set } : {}),
     ...(lifted.setup.length ? { setup: lifted.setup } : {}),
@@ -227,6 +238,7 @@ export function scenesFromStation(station: LabStation, opts: { collection: strin
       views: [],
       variants: (station.variants ?? []).map(v => variantOf(v, null)),
       ...(station.defaultVariant ? { variant: station.defaultVariant } : {}),
+      ...(station.pickOne ? { pickOne: true } : {}),
       ...(Object.keys(layout).length ? { layout } : {}),
       info,
     }
@@ -267,7 +279,8 @@ export function scenesFromStation(station: LabStation, opts: { collection: strin
     views,
     ...(views.length ? { view: "station" } : {}),
     variants: mine.map(v => variantOf(v, own.slotFor)),
-    ...(station.defaultVariant && mine.some(v => v.id === station.defaultVariant) ? { variant: station.defaultVariant } : {}),
+    ...(opening(station.defaultVariant, mine)),
+    ...(station.pickOne ? { pickOne: true } : {}),
     ...(Object.keys(layout).length || grid ? { layout: { ...layout, ...(grid ? { grid } : {}) } } : {}),
     info,
   }]

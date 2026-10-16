@@ -7,8 +7,8 @@ import type { LabScene, SceneHost } from "./model"
  * - `controls`: the subject's knobs (Details for a section lab, the page's own panel in a card for a page lab).
  * - `choices`: the kind's named pickers (preset, art direction). `add`: its add-picker. `objects`: the Outliner, only
  *   for kinds whose subject has placeable objects. `actions`: on-demand events with their own keys.
- * - `variants`: the variant strip (digits pick, ⇧digit wipes), shown when the lab has variants. `compare`: the A/B and
- *   variation-grid card, for section kinds with variants.
+ * - `variants`: the Variants card, one choice per variant group (digits pick, ⇧digit wipes), shown when the lab has
+ *   variants. `compare`: the A/B and variation-grid card, for section kinds with variants.
  * - `transport`: the clock (retrigger, pause, step, loop, speed) and Details' Retrigger row, for subjects that play out.
  *   `backdrop`: the room the subject is shown in (environment, room seed).
  * - `readouts`: live numbers. `measured`: recorded numbers. `views`: saved cameras. `timeline`: a scrubbable clock.

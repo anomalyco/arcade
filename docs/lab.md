@@ -63,8 +63,8 @@ described beside it (`split`). `/` or `⌘K` searches (every word must match the
 `↑`/`↓` move, `←`/`→` fold a collection, `↵` or a double-click opens, and `Esc` goes back to the lab you came from.
 Home covers the workbench, which stops drawing until a lab opens. In a lab the top bar shows `Labs › collection › lab`;
 `H` (or Labs) comes back to Home, the lab's name lists the others in its collection, and `⌥[` `⌥]` step through them.
-`1`–`9` pick the open lab's variants, and `⇧` with a number shows what you see now beside that variant as an A/B wipe
-(section labs; a page lab just switches). A lab shows only what its subject needs (below): the Library drawer and the
+`1`–`9` pick the open lab's variants (group by group, in order), and `⇧` with a number shows what you see now beside
+that variant as an A/B wipe (section labs; a page lab just switches). A lab shows only what its subject needs (below): the Library drawer and the
 World footer (the global section, environment and seed pickers) are always hidden and `Ctrl+Space` does nothing while
 one is open (`data-library="off"` on the workbench root). `?lab=<collection>/<id>` opens a lab on load, and old `?station=<id>` links still
 work. `arcade run lab.list`, `lab.open {"id": "world/look-and-world"}` and `lab.home` do the same from the CLI.
@@ -130,7 +130,7 @@ Widgets (`packages/kit/lab/stations/widgets.ts`):
 | --- | --- |
 | `status` | Status, board feature, a three-line summary and the station's links as buttons |
 | `controls` | Knobs cards for chosen Details `groups` and single `keys`, over the same settings as Details |
-| `variants` | The variants as chips (`⇧1`–`⇧9`) |
+| `variants` | One knobs choice row per variant group (segments, or a menu past four); groups compose |
 | `compare` | A/B wipe (pin A, pick a variant for B) and the variation grid when the station names one |
 | `perf` | Frame rate and the Lab's telemetry line (section counts, GPU time), twice a second |
 | `metrics` | Measured numbers with their sources |
@@ -190,6 +190,23 @@ each variant through `station.variant` and records the page's Lab settings, body
 section-demo station, `bun games/lab/scripts/prove-station.ts <id>` runs the demo and every variant against the
 production build. It waits while the section's optional `busy()` is true, so a section that bakes in a Worker (Rugs)
 is captured after its results land.
+
+### Variant groups
+
+When a lab's variants are more than one set of ideas (a look, a survivor style, a beam tier), give each variant a
+`group` instead of a prefix in its label. The Variants card shows one labelled choice per group, and picks in different
+groups compose: choosing a variant runs every group's pick in group order with the new one in its group, so a Hero
+applies on top of the chosen Look and changing the Shot keeps the beam tier. Write each group's setups to change only
+that group's knobs; put groups that refine others later (Look before Hero, Feel before the Moment that fires with it).
+`defaultVariant` takes one id per group; groups without one open on their first variant, and all of them run when the
+lab opens. `outbreak-look` (Look, Hero, Shot, Weather, Beam, Unseen) and `game-feel` (Feel, Blood, Moment) are the
+models.
+
+Some groups can't stack because each variant stages the whole scene (a weapon demo and a crawler demo, a Brawl
+character and a bot round). Set `pickOne: true` and the groups become sections of one choice: a pick in one clears the
+others, which show "—". A lab with one set of variants needs no groups; its row reads Variant, with Base (the lab's own
+setup) when `defaultVariant` is unset. Every variant has a group or none does, which `bun test games/lab/tests` checks
+along with labels that repeat a prefix ("Look · …").
 
 ## Bind controls to typed production settings
 

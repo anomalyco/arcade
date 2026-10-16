@@ -1,5 +1,6 @@
 import type { LabValue } from "../../lab-navigation"
 import { VARIATION_GRID_PRESETS } from "../variation-grid"
+import { variantProblems } from "./variants"
 
 /** One command the station runs through the Lab's command registry, as `arcade run <command> '<args>'` would. */
 export type StationCommand = { command: string; args?: Record<string, LabValue> }
@@ -8,7 +9,12 @@ export type StationVariant = {
   id: string
   label: string
   note?: string
-  /** Commands that put the station's demo into this variant. */
+  /**
+   * The axis this variant picks on (Look, Hero, Beam), shown as its own single choice in the dock. Picks in different
+   * groups compose: choosing a Hero keeps the Look. Give every variant a group or none (one group, "Variants").
+   */
+  group?: string
+  /** Commands that put the station's demo into this variant. With groups, only what its own axis changes. */
   setup?: readonly StationCommand[]
   /** For page demos: the page URL that shows this variant. */
   url?: string
@@ -52,8 +58,16 @@ export type LabStation = {
   statusNote?: string
   demo: StationDemo
   variants?: readonly StationVariant[]
-  /** The variant the demo's setup already shows, highlighted when the station opens. */
-  defaultVariant?: string
+  /**
+   * The variant the station opens on, at most one per group. With one group it's the one the demo's setup already
+   * shows; with several, groups without one open on their first variant, and every group's pick runs at open.
+   */
+  defaultVariant?: string | readonly string[]
+  /**
+   * Its variant groups are sections of one choice rather than axes that compose: a pick in one group clears the others.
+   * For scenes that can't stack (a weapon demo and a crawler demo each stage the whole scene).
+   */
+  pickOne?: boolean
   /** Variation-grid preset to open from the station panel (`grid.open`). */
   grid?: string
   /** Board feature (and decision, if one already exists) that voice notes from this station go to. */
@@ -93,13 +107,16 @@ export type StationLayout = { [S in StationSlot]?: readonly StationWidget[] }
 export type StationSnapshot = {
   view: "lab" | "station"
   station: LabStation | null
+  /** The variant chosen last (or opened on). */
   variant: StationVariant | null
+  /** Each group's pick, by group. */
+  picks: Record<string, string>
   section: string | null
   url: string
 }
 export type StationEvent =
   | { kind: "station"; station: string | null }
-  | { kind: "variant"; station: string; variant: string }
+  | { kind: "variant"; station: string; variant: string; group: string }
 
 /** Lab settings from a variation-grid preset's tiles, as station variants. */
 export function gridVariants(preset: string, pick?: readonly string[]): StationVariant[] {
@@ -142,7 +159,7 @@ export function validateStations(stations: readonly LabStation[]): string[] {
       if (variants.has(v.id)) problems.push(`${at}: duplicate variant "${v.id}"`)
       variants.add(v.id)
     }
-    if (s.defaultVariant && !variants.has(s.defaultVariant)) problems.push(`${at}: defaultVariant "${s.defaultVariant}" is not one of its variants`)
+    for (const problem of variantProblems(s)) problems.push(`${at}: ${problem}`)
     for (const slot of Object.keys(s.layout ?? {})) {
       if (!STATION_SLOTS.includes(slot as StationSlot)) problems.push(`${at}: layout slot "${slot}" must be left, right or dock`)
       for (const w of s.layout?.[slot as StationSlot] ?? []) if (!WIDGET_KINDS.includes(w.widget)) problems.push(`${at}: unknown widget "${w.widget}"`)

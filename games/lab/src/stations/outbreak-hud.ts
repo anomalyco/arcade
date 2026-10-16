@@ -3,39 +3,41 @@ import { defineStation } from "./define"
 
 const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean) => ({ command: "scene.set-param", args: { key, value } })
-// hud.demo puts a sample on the survivor: an action in progress, loot pops, half-spent stamina and a hit.
-const dock = (state: string) => [set("hudStyle", 4), { command: "hud.state", args: { state } }]
-const style = (value: number) => [set("hudStyle", value), set("calloutPlacement", -1), set("vitalsPlacement", -1), set("avoidAim", true), { command: "hud.demo" }]
+// Two groups that compose: a HUD style and a state to see it in. hud.state shows the dock in a state (it closes the pack
+// and craft first); hud.demo puts a sample on the survivor: an action in progress, loot pops, half-spent stamina and a hit.
+const state = (name: string) => [{ command: "hud.state", args: { state: name } }]
+const style = (value: number) => [set("hudStyle", value), set("calloutPlacement", -1), set("vitalsPlacement", -1), set("avoidAim", true)]
 
 // The same five directions as the board's D-13 prototype; each is one Lab "HUD style" (Backquote › HUD in the page).
 const variants: StationVariant[] = [
-  { id: "today", boardOption: "1", label: "Today", note: "Callouts above the head, stamina and battery as bars over the hotbar.", setup: style(0) },
-  { id: "below", boardOption: "2", label: "Below Feet", note: "Callouts under the survivor, rings beside them.", setup: style(1) },
-  { id: "hades", boardOption: "3", label: "Hades Style", note: "Thin bars under the feet, no summary, dimmed hotbar.", setup: style(2) },
-  { id: "zomboid", boardOption: "4", label: "Zomboid Style", note: "Outlined text and an action bar over the head, status icons top right.", setup: style(3) },
-  { id: "diegetic", boardOption: "5", label: "Diegetic", note: "Default (Kit's pick). Stamina left and health right on a ring on the ground; hold Shift to sprint.", setup: style(4) },
-  // HUD states (AR-24 design pass): the dock and its motion in each state, in the Diegetic style.
-  { id: "dock-idle", label: "Dock idle", note: "No change for a few seconds: the belt and hand slots settle dim (Lab › HUD motion › Idle dock opacity).", setup: dock("idle") },
-  { id: "dock-awake", label: "Dock after a pickup", note: "Something changed: the dock brightens, counts roll and new supplies slide in.", setup: dock("awake") },
-  { id: "pack", label: "Pack open (Tab)", note: "The pack grows out of its chip at the end of the belt; Tab again folds it back.", setup: dock("pack") },
-  { id: "craft", label: "Field craft (hold Q)", note: "Field craft rises out of the dock.", setup: dock("craft") },
-  { id: "vehicle", label: "Driving", note: "Fuel on the dashboard gauge, key hints that fade after first use.", setup: dock("vehicle") },
+  { id: "today", group: "Style", boardOption: "1", label: "Today", note: "Callouts above the head, stamina and battery as bars over the hotbar.", setup: style(0) },
+  { id: "below", group: "Style", boardOption: "2", label: "Below Feet", note: "Callouts under the survivor, rings beside them.", setup: style(1) },
+  { id: "hades", group: "Style", boardOption: "3", label: "Hades Style", note: "Thin bars under the feet, no summary, dimmed hotbar.", setup: style(2) },
+  { id: "zomboid", group: "Style", boardOption: "4", label: "Zomboid Style", note: "Outlined text and an action bar over the head, status icons top right.", setup: style(3) },
+  { id: "diegetic", group: "Style", boardOption: "5", label: "Diegetic", note: "Default (Kit's pick). Stamina left and health right on a ring on the ground; hold Shift to sprint.", setup: style(4) },
+  // HUD states (AR-24 design pass): the dock and its motion in each state.
+  { id: "sample", group: "State", label: "Sample", note: "An action in progress, loot pops, half-spent stamina and a hit.", setup: [...state("awake"), { command: "hud.demo" }] },
+  { id: "dock-idle", group: "State", label: "Dock idle", note: "No change for a few seconds: the belt and hand slots settle dim (Lab › HUD motion › Idle dock opacity).", setup: state("idle") },
+  { id: "dock-awake", group: "State", label: "Dock after a pickup", note: "Something changed: the dock brightens, counts roll and new supplies slide in.", setup: state("awake") },
+  { id: "pack", group: "State", label: "Pack open (Tab)", note: "The pack grows out of its chip at the end of the belt; Tab again folds it back.", setup: state("pack") },
+  { id: "craft", group: "State", label: "Field craft (hold Q)", note: "Field craft rises out of the dock.", setup: state("craft") },
+  { id: "vehicle", group: "State", label: "Driving", note: "Fuel on the dashboard gauge, key hints that fade after first use.", setup: state("vehicle") },
   // D-25 (Bold Glyph): the action glyph set the world prompt draws beside its key cap.
-  { id: "prompt-icons", label: "Prompt icons", note: "Every action glyph at 16, 20 and 24 px with the prompts that use it; walk to a door to see one live.", setup: dock("icons") },
+  { id: "prompt-icons", group: "State", label: "Prompt icons", note: "Every action glyph at 16, 20 and 24 px with the prompts that use it; walk to a door to see one live.", setup: state("icons") },
 ]
 
 export default defineStation({
   id: "outbreak-hud",
   title: "Outbreak HUD",
   summary:
-    "The live game with the character HUD. The first five variants are the HUD styles on the board decision (where callouts, stamina, reload, health and battery sit); the rest are HUD states from the AR-24 design pass: the dock idle and awake, the pack, field craft and driving. Play to see the motion live.",
+    "The live game with the character HUD. Pick a Style (the five on the board decision: where callouts, stamina, reload, health and battery sit) and a State to see it in (from the AR-24 design pass: the dock idle and awake, the pack, field craft and driving). Play to see the motion live.",
   order: 112,
   prop: "figure",
   color: 0xe0b45a,
   status: "review",
   statusNote: "D-13 chosen: Diegetic",
   demo: { kind: "page", url: page },
-  defaultVariant: "diegetic",
+  defaultVariant: ["diegetic", "sample"],
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-24", decision: "D-13" },
   metrics: [

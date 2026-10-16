@@ -149,7 +149,7 @@
   font: 11.5px/1.4 var(--sans);
   user-select: text;
 }
-.ls-card[data-widget="controls"] .ls-card-body { padding: 0 2px 2px; }
+.ls-card:is([data-widget="controls"], [data-widget="variants"]) .ls-card-body { padding: 0 2px 2px; }
 /* Once its knobs panel is in, a controls card's title and buttons are knobs' header row, scrolling with the rows. */
 .ls-card[data-widget="controls"]:has(.knobs-panel) > .ls-card-head { display: none; }
 .ls-card[data-widget="controls"]:has(.knobs-panel) > .ls-card-body { padding-top: 8px; }
@@ -174,9 +174,8 @@ a.ls-btn { text-decoration: none; }
 .ls-links { display: flex; flex-direction: column; gap: 4px; }
 .ls-links.ls-inline { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; }
 
-/* Buttons and variant chips share one shape with the Lab's chrome: control height, small radius, a quiet surface. */
-.ls-btn,
-.ls-chip {
+/* Buttons share one shape with the Lab's chrome: control height, small radius, a quiet surface. */
+.ls-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -191,15 +190,9 @@ a.ls-btn { text-decoration: none; }
   cursor: pointer;
   white-space: nowrap;
 }
-.ls-btn:hover, .ls-chip:hover { background: var(--hover); color: var(--tx); }
+.ls-btn:hover { background: var(--hover); color: var(--tx); }
 .ls-btn[data-active="true"], .ls-primary { background: var(--acc-b); color: var(--tx); }
 .ls-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-/* Variants are equal cells, one per row-width share, so long and short names don't make a ragged strip. */
-.ls-variants { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
-.ls-chip { padding-left: 4px; }
-.ls-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ls-chip kbd { flex: none; }
-.ls-chip[data-active="true"] { background: var(--acc-b); color: var(--tx); }
 .ls-live { font: 11px/1.5 var(--mono); color: var(--tx); font-variant-numeric: tabular-nums; }
 .ls-metric { display: grid; grid-template-columns: 1fr; gap: 1px; }
 .ls-metric b { font: 600 11.5px var(--mono); color: var(--tx); }

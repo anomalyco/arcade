@@ -29,9 +29,12 @@ export default defineStation({
   statusNote: "R-3 waiting",
   demo: { kind: "page", url: "/arcade/blackout/characters.html#survivor" },
   defaultVariant: "survivor-walk",
+  // Each variant plays one actor's action, so Gait and Strafe are sections of one choice.
+  pickOne: true,
   variants: [
     ...loops.map(([id, label, actor, action, toeJoint]): StationVariant => ({
       id,
+      group: "Gait",
       label,
       note: toeJoint
         ? "Ball-of-foot (MTP) toe joint (RIG.foot = 0.125 m, RIG.toe = 0.065 m): heel-strike → foot-flat → heel-rise → toe-off roll with 0.0 mm planted ball slip."
@@ -41,6 +44,7 @@ export default defineStation({
     })),
     ...strafes.map(([id, label, actor, mode, speed, note]): StationVariant => ({
       id,
+      group: "Strafe",
       label,
       note,
       url: `/arcade/blackout/characters.html#${actor}`,

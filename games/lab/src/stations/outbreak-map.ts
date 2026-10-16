@@ -8,11 +8,11 @@ const sheet = (style: number, zoom: number): StationCommand[] => [set("mapStyle"
 const onScreen = (mode: number): StationCommand[] => [set("mapStyle", 0), set("mapMinimap", mode), { command: "map.demo" }, { command: "map.close" }]
 
 const variants: StationVariant[] = [
-  { id: "survey", label: "Survey paper", note: "Default. N opens the map; drag or two-finger swipe to pan, pinch to zoom, click to mark.", setup: sheet(0, 2.4) },
-  { id: "close", label: "Up close", note: "The start street at 7 px/m: safehouses with their workbench, kerbs, hatched roofs.", setup: sheet(0, 7) },
-  { id: "noir", label: "Noir survey", note: "The same sheet in the night look.", setup: sheet(1, 2.4) },
-  { id: "compass", label: "Compass ring", note: "Optional. A ring on the ground with bearings to marks, teammates, pings and known places.", setup: onScreen(1) },
-  { id: "minimap", label: "Corner minimap", note: "Optional. A north-up minimap from the same cached tiles.", setup: onScreen(2) },
+  { id: "survey", group: "Map sheet", label: "Survey paper", note: "Default. N opens the map; drag or two-finger swipe to pan, pinch to zoom, click to mark.", setup: sheet(0, 2.4) },
+  { id: "close", group: "Map sheet", label: "Up close", note: "The start street at 7 px/m: safehouses with their workbench, kerbs, hatched roofs.", setup: sheet(0, 7) },
+  { id: "noir", group: "Map sheet", label: "Noir survey", note: "The same sheet in the night look.", setup: sheet(1, 2.4) },
+  { id: "compass", group: "On screen", label: "Compass ring", note: "Optional. A ring on the ground with bearings to marks, teammates, pings and known places.", setup: onScreen(1) },
+  { id: "minimap", group: "On screen", label: "Corner minimap", note: "Optional. A north-up minimap from the same cached tiles.", setup: onScreen(2) },
 ]
 
 export default defineStation({
@@ -26,6 +26,7 @@ export default defineStation({
   status: "review",
   demo: { kind: "page", url: page },
   defaultVariant: "survey",
+  pickOne: true,
   variants: variants.map((v) => ({ ...v, url: page })),
   metrics: [
     { label: "Map update with the sheet closed, p95 over a 1 km walk", value: "0.3 ms", source: "games/outbreak/scripts/map-proof.ts" },

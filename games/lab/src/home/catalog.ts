@@ -3,6 +3,7 @@ import { migrateStations } from "../scenes/from-stations"
 import { stationFromScene } from "@arcade/kit/lab/scenes/migrate"
 import { browserSceneStorage, createSceneStore, memorySceneStorage, type SceneEntry, type SceneStorage } from "@arcade/kit/lab/scenes/store"
 import type { LabStation } from "@arcade/kit/lab/stations/types"
+import { orderedVariants } from "@arcade/kit/lab/stations/variants"
 
 /** Station files carry no dates; their labs all take this one so a repo lab never looks edited. */
 const STATION_EPOCH = "2026-10-15T00:00:00.000Z"
@@ -18,7 +19,8 @@ export type HomeLab = {
   status: SceneEntry["scene"]["status"]
   source: SceneEntry["source"]
   color: number | undefined
-  variants: readonly { id: string; label: string }[]
+  /** In group order, as number keys pick them. */
+  variants: readonly { id: string; label: string; group?: string }[]
   /** What the station workspace opens: the station file itself for a lab it became unchanged, else one built from the lab. */
   station(): LabStation
 }
@@ -52,7 +54,7 @@ export function createCatalog(stations: readonly LabStation[], storage: Storage 
       status: scene.status,
       source: entry.source,
       color: scene.info?.color,
-      variants: scene.variants.map(v => ({ id: v.id, label: v.label })),
+      variants: orderedVariants(scene.variants).map(v => ({ id: v.id, label: v.label, ...(v.group ? { group: v.group } : {}) })),
       station: () => original ?? stationFromScene(scene),
     }
   }

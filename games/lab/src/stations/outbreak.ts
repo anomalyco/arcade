@@ -8,6 +8,8 @@ const directions = [
   ["cozy", "Golden hour"],
   ["shipped", "Shipped"],
 ] as const
+const time = (value: number) => ({ command: "scene.set-param", args: { key: "timeScale", value } })
+const hour = (value: number) => ({ command: "scene.set-param", args: { key: "hour", value } })
 
 export default defineStation({
   id: "outbreak",
@@ -26,49 +28,22 @@ export default defineStation({
       { command: "vignette.camera", args: { preset: "game", cutaway: "cutaway" } },
     ],
   },
-  defaultVariant: "noir",
+  // Three groups that compose, applied in this order: the art direction, the time of day, then the camera.
+  defaultVariant: ["noir", "as-directed", "game"],
   variants: [
     ...directions.map(([id, label]) => ({
       id,
+      group: "Direction",
       label,
-      setup: [
-        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
-        { command: "vignette.preset", args: { direction: id } },
-      ],
+      setup: [{ command: "vignette.preset", args: { direction: id } }],
     })),
-    {
-      id: "day",
-      label: "Day (13:00)",
-      setup: [
-        { command: "vignette.preset", args: { direction: "noir" } },
-        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
-        { command: "scene.set-param", args: { key: "hour", value: 13 } },
-      ],
-    },
-    {
-      id: "dusk-cycle",
-      label: "Dusk (17:00)",
-      setup: [
-        { command: "vignette.preset", args: { direction: "noir" } },
-        { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
-        { command: "scene.set-param", args: { key: "hour", value: 17 } },
-      ],
-    },
-    {
-      id: "timelapse",
-      label: "Day → Night Time-Lapse",
-      setup: [
-        { command: "vignette.preset", args: { direction: "noir" } },
-        { command: "scene.set-param", args: { key: "hour", value: 12.5 } },
-        { command: "scene.set-param", args: { key: "timeScale", value: 480 } },
-      ],
-    },
-    {
-      id: "fog-grid",
-      label: "Fog of War (3×1 Grid)",
-      setup: [{ command: "grid.open", args: { preset: "fog" } }],
-    },
-    { id: "close-up", label: "Street close-up", setup: [{ command: "vignette.camera", args: { preset: "street" } }] },
+    { id: "as-directed", group: "Time", label: "As directed", note: "Paused at the direction's own hour.", setup: [time(0)] },
+    { id: "day", group: "Time", label: "Day (13:00)", setup: [time(0), hour(13)] },
+    { id: "dusk-cycle", group: "Time", label: "Dusk (17:00)", setup: [time(0), hour(17)] },
+    { id: "timelapse", group: "Time", label: "Day → Night Time-Lapse", setup: [hour(12.5), time(480)] },
+    { id: "game", group: "Camera", label: "Game camera", note: "The game's own camera, walls cut away.", setup: [{ command: "vignette.camera", args: { preset: "game", cutaway: "cutaway" } }] },
+    { id: "close-up", group: "Camera", label: "Street close-up", setup: [{ command: "vignette.camera", args: { preset: "street" } }] },
+    { id: "fog-grid", group: "Camera", label: "Fog of War (3×1 Grid)", setup: [{ command: "grid.open", args: { preset: "fog" } }] },
   ],
   board: { feature: "AR-12" },
   metrics: [{ label: "ΔE2000 to the 70s target, street at 18:00", value: "12.8 → 5.8", source: "docs/integration.md (release 5)" }],
