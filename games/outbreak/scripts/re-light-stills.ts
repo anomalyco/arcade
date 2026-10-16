@@ -3,7 +3,10 @@
  * light, floor detail): each shot is captured with the new Look knobs off and on from the same headless run, so the
  * only difference is the knobs. Local build (run `bun run build` first) or `--url`.
  *
- *   bun scripts/re-light-stills.ts [--url https://anoma.ly/arcade/outbreak/] [--out <dir>] [--only hall,street]
+ *   bun scripts/re-light-stills.ts [--url <build>] [--main https://anoma.ly/arcade/outbreak/] [--out <dir>] [--only hall,street]
+ *
+ * `RL_VARIANTS` (JSON `{ name: { knob: value } }`) replaces the default before / colour / after knob sets. `--main`
+ * also captures every scene from a second build (production) first, as variant `main`, in the same run.
  *
  * Headless Metal Chromium, muted, no visible window. Run through `hivemind run --kind browser`.
  */
@@ -44,11 +47,13 @@ type Pose = { x: number; y: number; aim: number }
 type Scene = { name: string; pose: Pose; hour: number; zoom: number }
 /** Knob sets per variant; every variant sets every key so they never leak. */
 const OFF = { lightColour: 0, dustAmount: 0 }
-const VARIANTS: Record<string, Record<string, number>> = {
+const VARIANTS: Record<string, Record<string, number>> = process.env.RL_VARIANTS ? JSON.parse(process.env.RL_VARIANTS) : {
   before: OFF,
   colour: { ...OFF, lightColour: 1 },
   after: { lightColour: 1, dustAmount: 0.6 },
 }
+/** Optional second build (e.g. production) captured first for every scene, with no knobs set, as variant `main`. */
+const mainUrl = arg("main")
 const HALL: Pose = { x: 27.7, y: 34.3, aim: -Math.PI / 2 }
 const SCENES: Scene[] = [
   { name: "hall-19h", pose: HALL, hour: 19, zoom: 26 },
@@ -97,10 +102,16 @@ try {
   const page = await browser.newPage({ viewport: { width: 1536, height: 1024 }, deviceScaleFactor: 1 })
   page.on("pageerror", e => errors.push(e.message))
   page.on("console", m => { if (m.type() === "error" || /wgsl|WGSL|validation/i.test(m.text())) errors.push(m.text()) })
+  if (mainUrl) {
+    VARIANTS.main = {}
+    await page.goto(`${mainUrl}?solo&seed=7&bench&peaceful=1`)
+    await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 60000 })
+    for (const scene of SCENES) await still(page, scene, "main")
+  }
   await page.goto(`${base}?solo&seed=7&bench&peaceful=1`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 60000 })
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
-  for (const scene of SCENES) for (const variant of Object.keys(VARIANTS)) await still(page, scene, variant)
+  for (const scene of SCENES) for (const variant of Object.keys(VARIANTS)) if (variant !== "main") await still(page, scene, variant)
   meta.errors = errors
 } finally {
   writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))

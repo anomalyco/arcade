@@ -7,6 +7,7 @@ import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings }
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
+import { addLampPool, type BakeLamp } from "./lightbake"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
@@ -254,7 +255,7 @@ export const OUTBREAK_UNSEEN_UNIFORM_OFFSET = OUTBREAK_INTERIOR_UNIFORM_OFFSET +
 export const OUTBREAK_RAMP_UNIFORM_OFFSET = OUTBREAK_UNSEEN_UNIFORM_OFFSET + 8
 /** The simple survivor's surface (see `look/hero.ts`): rim strength, rim exponent, flatten, colour kept. */
 export const OUTBREAK_HERO_UNIFORM_OFFSET = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT_RAMP_FLOATS
-/** The light-colour rule (see `look/world.ts`): on, vision lift, bounce weight, reserved. */
+/** The light-colour rule (see `look/world.ts`): on, vision lift, bounce weight; then the baked room light scale. */
 export const OUTBREAK_COLOUR_UNIFORM_OFFSET = OUTBREAK_HERO_UNIFORM_OFFSET + 4
 /** Dust motes in the light (see `air/dust.ts`): amount, brightness, size, motes under lamps. */
 export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
@@ -545,7 +546,7 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_COLOUR_UNIFORM_OFFSET] = look.lightColour ?? DEFAULT_LOOK_TRIMS.lightColour
   out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 1] = look.visionLift ?? DEFAULT_LOOK_TRIMS.visionLift
   out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 2] = look.bounceColour ?? DEFAULT_LOOK_TRIMS.bounceColour
-  out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 3] = 0
+  out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 3] = look.bakedLight ?? DEFAULT_LOOK_TRIMS.bakedLight
   out[OUTBREAK_DUST_UNIFORM_OFFSET] = look.dustAmount ?? DEFAULT_LOOK_TRIMS.dustAmount
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 1] = look.dustBrightness ?? DEFAULT_LOOK_TRIMS.dustBrightness
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 2] = look.dustSize ?? DEFAULT_LOOK_TRIMS.dustSize
@@ -794,6 +795,17 @@ export function resolveLampLight(
 }
 
 /**
+ * A room accent lamp's pool for the bake (`lightbake.ts`), or undefined for lamps that are live lights indoors (the
+ * shadow-casting primary lamp) and for porch, window and street lamps.
+ */
+export function bakedRoomLamp(lamp: Lamp, buildings: readonly Building[]): BakeLamp | undefined {
+  if (lamp.kind !== "room") return undefined
+  const res = resolveLampLight(lamp, buildings, 1, DEFAULT_OUTBREAK_LIGHTING, false)
+  if (res.castShadows || res.power <= 0.001) return undefined
+  return { x: res.lx, z: res.ly, h: Math.max(0.6, res.lh), r: res.r * 1.1, color: res.color, power: res.power }
+}
+
+/**
  * Concrete Baking Recommendation #1:
  * Bakes indirect light into a 192x192 RGBA8 `bounceTex` (0.5m/texel) using an 8-neighbour corner-safe Dijkstra
  * flood-fill over `town.lamps` (`room`, `porch`, `window`, `street`), blocked by solid walls.
@@ -921,6 +933,10 @@ export function bakeOutbreakBounce(town: Town): FloorMap {
       dist[i] = Infinity
     }
     touched.length = 0
+  }
+  for (const lamp of town.lamps) {
+    const pool = bakedRoomLamp(lamp, town.buildings)
+    if (pool) addLampPool(acc, solid, w, 0, 0, cx, pool)
   }
 
   const data = new Uint8Array(w * h * 4)
@@ -1139,7 +1155,7 @@ struct OutbreakLightingUniforms {
   u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
   unseen: UnseenUniforms,${lightRampFieldsWgsl}
   hero: vec4f, // simple survivor: rim strength, rim exponent, flatten, colour kept
-  colour: vec4f, // light-colour rule: on, vision lift, bounce weight, reserved
+  colour: vec4f, // light-colour rule: on, vision lift, bounce weight; baked room light scale
   dust: vec4f, // dust motes: amount, brightness, size, under lamps
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;

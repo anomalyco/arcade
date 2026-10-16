@@ -54,6 +54,8 @@ export type OutbreakLookTrims = {
   dustSize: number
   /** Motes under lamps and sconces too, not only in the flashlight beam (1 on). */
   dustLamps: number
+  /** × the baked room light indoors: the room lamps' pools and their bounce (also scaled by the hour and room-lamp power). */
+  bakedLight: number
 }
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
@@ -80,6 +82,7 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dustBrightness: 1,
   dustSize: 1,
   dustLamps: 1,
+  bakedLight: 4,
 }
 
 const GRADE = "Look · Grade"
@@ -101,6 +104,7 @@ export const lookTrimControls: LabControl[] = [
   { key: "lampWarmth", label: "Lamp warmth shift", group: LIGHTS, min: -0.6, max: 0.6, step: 0.02, unit: "" },
   { key: "skyAmbient", label: "Cool sky ambient", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "moonlight", label: "Moonlight", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "bakedLight", label: "Baked room light (pools + bounce)", group: LIGHTS, min: 0, max: 8, step: 0.05, unit: "×" },
   { key: "lightColour", label: "Colour only from light", group: LIGHT_COLOUR, min: 0, max: 1, step: 1, unit: "" },
   { key: "worldSaturation", label: "Unlit world saturation", group: LIGHT_COLOUR, min: 0, max: 1, step: 0.01, unit: "" },
   { key: "litColour", label: "Lit colour strength", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.02, unit: "×" },
