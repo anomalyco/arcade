@@ -3,6 +3,7 @@ import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
+import { emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSignature } from "./interiors/plan"
 import { propDressingState, replacedByLibrary } from "./props/state"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
@@ -289,11 +290,13 @@ function compileLevel(town: Town): OriginLevel {
       m.box(x,.13,z,r,2.78,end,color,MAT.wall,20,hex(0x4a4338))
       m.box(x+.03,2.78,z+.03,r-.03,2.80,end-.03,hex(0x28231d),MAT.lit)
       m.box(x - .02, .14, z - .02, r + .02, .26, end + .02, hex(0x3a2a1c), MAT.timber)
+      emitWallCapMoulding(m, x, z, r, end)
     } else if (b.kind === "window") {
       // Lower wall apron and upper wall header around the 0.85..2.15m window opening
       m.box(x, .13, z, r, .84, end, color, MAT.wall, 20)
       m.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, hex(0x4a4338))
       m.box(x+.03, 2.78, z+.03, r-.03, 2.80, end-.03, hex(0x28231d), MAT.lit)
+      emitWallCapMoulding(m, x, z, r, end)
       const owner=town.buildings.findIndex(h=>x>=h.rect[0]-.01&&r<=h.rect[2]+.01&&z>=h.rect[1]&&end<=h.rect[3])
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])

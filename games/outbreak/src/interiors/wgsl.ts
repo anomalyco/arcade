@@ -9,13 +9,25 @@
 export const MAT_RUG = 25
 
 /** Outbreak interior block appended to `OutbreakLightingUniforms` (offsets in floats from its start). */
-export const INTERIOR_UNIFORM_FLOATS = 48
+export const INTERIOR_UNIFORM_FLOATS = 64
 export const RUG_DIRECTORY_SLOTS = 9
 
 export const interiorUniformFieldsWgsl = /* wgsl */ `
   rugDir: array<vec4f, ${RUG_DIRECTORY_SLOTS}>, // per stream slot: texture layer of rugs 0..3, -1 = not baked
   rugCfg: vec4f, // mip bias (log2), brightness, pile relief, painted plate (layer + brightness / 4, 0 off)
-  bldTheme: array<vec4f, 2>, // theme id per window building (0..7)`
+  bldTheme: array<vec4f, 2>, // theme id per window building (0..7)
+  bldPlate: array<vec4f, 2>, // floor plate per window building: layer + brightness / 4, 0 none
+  floorCfg: vec4f, // plate tile (m), decal density, decal strength, decal atlas layer (0 off)
+  floorCfg2: vec4f, // skirting grime, unused`
+
+/**
+ * Kinds in the 4×4 decal atlas (`decals/floor-decals.webp`, row-major): 0 cup ring, 1 water stain, 2 mould,
+ * 3 scuffs, 4 muddy prints, 5 mould spots, 6 blood pool, 7 blood spatter, 8 letter, 9 envelope, 10 newspaper,
+ * 11 index cards, 12 burn, 13 tar, 14 dusty prints, 15 leaves. Thirty-two slots weight how often each turns up.
+ */
+const DECAL_SLOTS = [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 4, 4, 5, 12, 13, 14, 14, 14, 8, 8, 9, 9, 10, 10, 11, 15, 15, 6, 7]
+const decalWords = [0, 1, 2, 3].map(w => DECAL_SLOTS.slice(w * 8, w * 8 + 8).reduce((acc, k, i) => (acc | (k << (i * 4))) >>> 0, 0))
+const hexU = (n: number) => `0x${n.toString(16)}u`
 
 export type InteriorWgslRefs = {
   /** Expression returning the directory vec4 for a slot `s` (i32). */
@@ -23,6 +35,11 @@ export type InteriorWgslRefs = {
   cfg: string
   /** Expression returning the theme id (f32) of building index `i` (i32). */
   theme: (i: string) => string
+  /** Expression returning the floor plate (layer + brightness / 4) of building index `i` (i32). */
+  plate: (i: string) => string
+  /** The floorCfg and floorCfg2 vectors. */
+  floor: string
+  floor2: string
   /** Number of buildings to search and the rect of building `i`. */
   buildingCount: string
   buildingRect: (i: string) => string
@@ -38,6 +55,9 @@ export const outbreakInteriorRefs: InteriorWgslRefs = {
   dir: s => `OL.rugDir[clamp(${s}, 0, ${RUG_DIRECTORY_SLOTS - 1})]`,
   cfg: "OL.rugCfg",
   theme: i => `OL.bldTheme[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
+  plate: i => `OL.bldPlate[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
+  floor: "OL.floorCfg",
+  floor2: "OL.floorCfg2",
   buildingCount: "select(4, i32(OL.win.w), OL.win.z > 0.5)",
   buildingRect: i => `OL.bldRects[clamp(${i}, 0, 7)]`,
   flashXZ: "OL.u3.xy",
@@ -90,6 +110,71 @@ fn interiorPlate(p: vec2f) -> vec4f {
   let lod = clamp(log2(max(surfaceFootprint * 171.0, 1.0)), 0.0, 9.0);
   let t = textureSampleLevel(detailTex, detailSamp, uv, i32(floor(w)), lod);
   return vec4f(t.rgb * fract(w) * 4.0, 1.0);
+}
+
+/**
+ * Generated floor plate for building bi (AR-42): one 1024² top-down albedo per building, chosen from its theme's
+ * library and tiled every floorCfg.x metres in world space. A slow tone noise hides the repeat. Alpha 0 when none.
+ */
+fn interiorFloorPlate(p: vec2f, bi: i32) -> vec4f {
+  let w = ${r.plate("bi")};
+  if (w < 1.0) { return vec4f(0.0); }
+  let tile = max(${r.floor}.x, 0.5);
+  let lod = clamp(log2(max(surfaceFootprint * 1024.0 / tile, 1.0)), 0.0, 9.0);
+  // The detail sampler clamps, so wrap by hand (explicit LOD, so the wrap leaves no derivative seam).
+  let t = textureSampleLevel(detailTex, detailSamp, fract(p / tile), i32(floor(w)), lod);
+  let macroV = 0.84 + 0.32 * surfaceNoise(p * 0.21 + vec2f(3.7, 8.1));
+  return vec4f(t.rgb * fract(w) * 4.0 * macroV, 1.0);
+}
+
+/** Four hashes in [0, 1) for an integer cell (pcg4d). */
+fn interiorHash4(c: vec2i, seed: u32) -> vec4f {
+  var v = vec4u(u32(c.x), u32(c.y), seed, u32(c.x) ^ u32(c.y) ^ 0x9e3779b9u) * 1664525u + 1013904223u;
+  v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+  v ^= v >> vec4u(16u);
+  v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+  return vec4f(v >> vec4u(8u)) / 16777216.0;
+}
+
+/**
+ * Floor dressing (AR-42): seeded stains, scuffs, papers, leaves and the odd blood mark from the decal atlas, one
+ * candidate per 1.7 m cell kept inside its cell so one fetch covers it, then grime darkening the floor along the
+ * skirting from the baked floor occlusion. Rugs and furniture draw over all of it.
+ */
+fn interiorFloorDetail(albedoIn: vec3f, p: vec2f, seed: u32) -> vec3f {
+  var albedo = albedoIn;
+  let cfg = ${r.floor};
+  let grime = ${r.floor2}.x;
+  if (grime > 0.0) {
+    let occ = smoothstep(0.06, 0.55, floorData(p).r) * grime;
+    let l = dot(albedo, vec3f(0.2126, 0.7152, 0.0722));
+    albedo = mix(albedo, vec3f(l) * vec3f(0.80, 0.74, 0.62), occ * 0.5) * (1.0 - 0.45 * occ);
+  }
+  if (cfg.w < 1.0 || cfg.y <= 0.0) { return albedo; }
+  let cell = 1.7;
+  let c = floor(p / cell);
+  let h = interiorHash4(vec2i(c), seed);
+  if (h.x >= cfg.y) { return albedo; }
+  let s = u32(h.y * 32.0) & 31u;
+  let word = select(select(${hexU(decalWords[0]!)}, ${hexU(decalWords[1]!)}, s >= 8u), select(${hexU(decalWords[2]!)}, ${hexU(decalWords[3]!)}, s >= 24u), s >= 16u);
+  let kind = (word >> ((s & 7u) * 4u)) & 15u;
+  let paper = (kind >= 8u && kind <= 11u) || kind == 15u;
+  let blood = kind == 6u || kind == 7u;
+  let size = select(mix(0.62, 1.05, h.z), mix(0.42, 0.52, h.z), paper);
+  let room = cell - size * 1.42;
+  let centre = (c + 0.5) * cell + (fract(h.zw * vec2f(37.13, 53.71)) - 0.5) * room;
+  let a = h.w * 6.2831853;
+  let d = p - centre;
+  let q = vec2f(d.x * cos(a) + d.y * sin(a), -d.x * sin(a) + d.y * cos(a)) / size + 0.5;
+  if (any(q <= vec2f(0.0)) || any(q >= vec2f(1.0))) { return albedo; }
+  let uv = (vec2f(f32(kind & 3u), f32(kind >> 2u)) + 0.03 + q * 0.94) * 0.25;
+  let lod = clamp(log2(max(surfaceFootprint * 256.0 / size, 1.0)), 0.0, 5.0);
+  let t = textureSampleLevel(detailTex, detailSamp, uv, i32(cfg.w), lod);
+  let fade = 1.0 - smoothstep(3.5, 5.0, lod);
+  if (paper) { return mix(albedo, t.rgb * 0.5, t.a * fade * min(cfg.z, 1.0)); }
+  if (blood) { return mix(albedo, t.rgb * 0.42, t.a * fade * 0.9 * min(cfg.z, 1.0)); }
+  let tl = dot(t.rgb, vec3f(0.2126, 0.7152, 0.0722));
+  return mix(albedo, mix(vec3f(tl), t.rgb, 0.5) * 0.55, t.a * fade * clamp(0.75 * cfg.z, 0.0, 1.0));
 }
 
 fn interiorThemeOf(i: i32) -> i32 {
@@ -199,23 +284,25 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
       }
       gloss = vec2f(0.0);
     } else if ((mat == 4 && o.world.y < 2.75 && n.y < 0.5) || (mat == 20 && i32(round(o.aux)) == 4)) {
-      var plate = vec4f(0.0);
-      if (mat == 20) { plate = interiorPlate(o.world.xz); }
-      var bi = -1;
-      if (plate.a > 0.5) { albedo = plate.rgb; } else { bi = interiorBuildingAt(o.world.xz + n.xz * 0.3); }
+      let bi = interiorBuildingAt(o.world.xz + n.xz * 0.3);
       if (bi >= 0) {
         let th = interiorThemeOf(bi);
         let variant = clamp(fract(${r.theme("bi")}) / 0.45, 0.0, 1.0);
-        if (th > 0) {
-          if (mat == 4) {
-            if (interior(o.world.xz + n.xz * 0.3)) { albedo = themedWall(albedo, o.world.x + o.world.z, o.world.y, th, variant); }
-          } else {
-            ${classicKitchen ? `let classic = ${r.classicLayout};
-            let kb = select(${r.buildingRect("bi")}, select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0), classic);
-            let pk = o.world.xz;
-            let inKitchen = (classic || ${r.authoredKitchen("bi")}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
-            if (!inKitchen) { albedo = themedFloor(albedo, o.world.xz, th, variant); }
+        if (mat == 4) {
+          if (th > 0 && interior(o.world.xz + n.xz * 0.3)) { albedo = themedWall(albedo, o.world.x + o.world.z, o.world.y, th, variant); }
+        } else {
+          ${classicKitchen ? `let classic = ${r.classicLayout};
+          let kb = select(${r.buildingRect("bi")}, select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0), classic);
+          let pk = o.world.xz;
+          let inKitchen = (classic || ${r.authoredKitchen("bi")}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
+          let plate = interiorPlate(o.world.xz);
+          if (plate.a > 0.5) {
+            albedo = plate.rgb;
+          } else if (!inKitchen) {
+            let fp = interiorFloorPlate(o.world.xz, bi);
+            if (fp.a > 0.5) { albedo = fp.rgb; } else if (th > 0) { albedo = themedFloor(albedo, o.world.xz, th, variant); }
           }
+          albedo = interiorFloorDetail(albedo, o.world.xz, u32(${r.floor2}.y));
         }
       }
     }

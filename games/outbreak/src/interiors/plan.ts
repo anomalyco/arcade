@@ -42,6 +42,7 @@ export const interiorSettings = {
   rugs: 1,
   decor: 1,
   wainscot: 1,
+  wallCaps: 1,
 }
 
 /** Rug top height above the 0.13 m house floor. */
@@ -157,4 +158,4 @@ export function planInterior(b: Building, houseSeed: number): InteriorPlan {
 export const themeIndex = (t: InteriorTheme) => INTERIOR_THEMES.indexOf(t)
 
 /** Cache-key fragment for everything in `interiorSettings` that changes level geometry. */
-export const interiorSignature = () => `${interiorSettings.theme}|${interiorSettings.rugSeed}|${interiorSettings.rugs}|${interiorSettings.decor}|${interiorSettings.wainscot}`
+export const interiorSignature = () => `${interiorSettings.theme}|${interiorSettings.rugSeed}|${interiorSettings.rugs}|${interiorSettings.decor}|${interiorSettings.wainscot}|${interiorSettings.wallCaps}`

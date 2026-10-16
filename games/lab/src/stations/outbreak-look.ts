@@ -13,6 +13,9 @@ const hero = (style: number): StationCommand[] => [set("heroStyle", style)]
 const shot = (hour: number, zoom: number, at: StationCommand, ...extra: StationCommand[]): StationCommand[] => [set("timeScale", 0), set("hour", hour), set("zoom", zoom), at, ...extra]
 const street = (aim: number) => pose(24, 44, aim)
 const hall = (flashlight: boolean) => pose(27.7, 31.2, -0.45, { openDoor: true, flashlight })
+const detail = (plates: number, ash: number, decals: number, grime: number, caps: number): StationCommand[] => [
+  set("floorPlates", plates), set("paintedPlate", ash), set("decalDensity", decals), set("skirtingGrime", grime), set("wallCaps", caps),
+]
 
 const variants: StationVariant[] = [
   // Look presets: every knob in Look · Grade, Look · Lights and Look · Hero, named and versioned (look/presets.ts).
@@ -37,9 +40,11 @@ const variants: StationVariant[] = [
   { id: "hallway-night", group: "Shot", label: "Hallway, night", note: "Inside at 22:00, flashlight on: the unseen layer around the beam.", setup: shot(22, 36, hall(true)) },
   { id: "entry-hall-night", group: "Shot", label: "Entry hall from above", note: "19:00 on the hall runner by the front door, flashlight up the hall: Kit's Resident Evil house frame.", setup: shot(19, 26, pose(27.7, 34.3, -Math.PI / 2, { flashlight: true })) },
   { id: "hallway-day", group: "Shot", label: "Hallway, day", note: "At 14:00 the unseen layers scale down.", setup: shot(14, 36, hall(false)) },
-  // Detail spikes for a Resident Evil house (AR-42): the painted floor plate is Ash's living room and hall only.
-  { id: "detail-today", group: "Detail", label: "Today", note: "Procedural floorboards.", setup: [set("paintedPlate", 0)] },
-  { id: "painted-plate", group: "Detail", label: "Painted floor plate", note: "Living room and hall floor from the RE mansion paint-over, rectified through the camera, lit live.", setup: [set("paintedPlate", 1)] },
+  // Floor and trim detail for a Resident Evil house (AR-42). Today is the shipped default; the others switch parts off.
+  { id: "detail-today", group: "Detail", label: "Today", note: "Painted floors in every house, Ash's paint-over plate, seeded stains and papers, grime along the skirting, moulded wall tops.", setup: detail(1, 1, 0.35, 0.6, 1) },
+  { id: "detail-procedural", group: "Detail", label: "Procedural floors (before)", note: "The floors before AR-42: one procedural board tone per theme, flat wall tops, no decals.", setup: detail(0, 0, 0, 0, 0) },
+  { id: "detail-plates-only", group: "Detail", label: "Painted floors, no decals", note: "The generated floor plates alone, with no stains, papers or skirting grime.", setup: detail(1, 1, 0, 0, 1) },
+  { id: "detail-heavy", group: "Detail", label: "Heavy wear", note: "Twice the decals and more grime: a house left for years.", setup: detail(1, 1, 0.7, 1.1, 1) },
   { id: "clear", group: "Weather", label: "Clear", note: "No rain.", setup: [{ command: "weather.preset", args: { preset: "clear" } }] },
   { id: "rain", group: "Weather", label: "Rain", note: "Rain and mist thicken the air.", setup: [{ command: "weather.preset", args: { preset: "rain" } }] },
   // The flashlight beam (was the outbreak-flashlight station): off and the volumetric tiers.
@@ -77,6 +82,7 @@ export default defineStation({
     { label: "Volumetric beam pass + composite, Medium, 3456×1894", value: "0.06 / 0.13 ms street, 0.04 / 0.23 ms interior", source: "games/outbreak/scripts/ab-gpu.ts" },
     { label: "Unseen solo layers, GPU pass delta at 3456×1894", value: "+0.070 to +0.389 ms", source: "games/outbreak/scripts/prove-unseen.ts" },
     { label: "Colour only from light / dust motes, paired GPU Δ at 3456×1894", value: "−0.005 / +0.049 ms hall, −0.006 / +0.017 ms street", source: "games/outbreak/scripts/ab-gpu.ts" },
+    { label: "Baked lamp pools / floor plates / decals / wall tops, paired GPU Δ at 3456×1894", value: "−0.022 / −0.003 / −0.004 / +0.089 ms interior; all +0.13 ms interior, ~0 street", source: "games/outbreak/scripts/ab-gpu.ts" },
   ],
   paths: [
     "games/outbreak/src/look",

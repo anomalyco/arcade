@@ -138,6 +138,43 @@ function wainscot(m: Mesh, f: Face, theme: InteriorTheme): void {
   faceBox(m, f, (f.a0 + f.a1) / 2, 0, len, 0.035, top - 0.04, top, rgb(w.rail), w.mat, rgb(w.rail))
 }
 
+const CAP_COVE = rgb(0x2a1a10)
+const CAP_BEAD = rgb(0x84603a)
+
+/**
+ * Moulded wall top (AR-42): a dark cove and a proud walnut bead along both faces of a wall's top, so from the game
+ * camera the wall tops read as trimmed rails instead of flat bands. MAT.cap so it is cut with the walls; it stays
+ * at or below 2.80 m so the roof cut never takes it.
+ */
+export function emitWallCapMoulding(m: Mesh, x: number, z: number, r: number, end: number): void {
+  if (!interiorSettings.wallCaps) return
+  const alongX = r - x >= end - z
+  // Only the faces the camera sees (a front per rail and the bead's top): six triangles a side, not two boxes.
+  const front = (side: -1 | 1, out: number, y0: number, y1: number, col: Rgb) => {
+    if (alongX) {
+      const f = side < 0 ? z - out : end + out
+      if (side < 0) m.quadAuto([r, y0, f], [x, y0, f], [x, y1, f], [r, y1, f], col, MAT.cap)
+      else m.quadAuto([x, y0, f], [r, y0, f], [r, y1, f], [x, y1, f], col, MAT.cap)
+    } else {
+      const f = side < 0 ? x - out : r + out
+      if (side < 0) m.quadAuto([f, y0, z], [f, y0, end], [f, y1, end], [f, y1, z], col, MAT.cap)
+      else m.quadAuto([f, y0, end], [f, y0, z], [f, y1, z], [f, y1, end], col, MAT.cap)
+    }
+  }
+  for (const side of [-1, 1] as const) {
+    front(side, 0.03, 2.6, 2.745, CAP_COVE)
+    front(side, 0.065, 2.745, 2.8, CAP_BEAD)
+    const [a, b] = side < 0 ? [-0.065, 0] : [0, 0.065]
+    if (alongX) {
+      const z0 = side < 0 ? z + a : end + a, z1 = side < 0 ? z + b : end + b
+      m.quad([x, 2.8, z1], [r, 2.8, z1], [r, 2.8, z0], [x, 2.8, z0], [0, 1, 0], CAP_BEAD, MAT.cap)
+    } else {
+      const x0 = side < 0 ? x + a : r + a, x1 = side < 0 ? x + b : r + b
+      m.quad([x0, 2.8, end], [x1, 2.8, end], [x1, 2.8, z], [x0, 2.8, z], [0, 1, 0], CAP_BEAD, MAT.cap)
+    }
+  }
+}
+
 const PORTRAITS = [0x2a2218, 0x1e2422, 0x2c1c18, 0x1a1c26, 0x30281a]
 
 function painting(m: Mesh, f: Face, a: number, w: number, h: number, yc: number, rng: Rng, gilt: boolean): void {
