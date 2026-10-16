@@ -16,7 +16,8 @@ const hall = (flashlight: boolean) => pose(27.7, 31.2, -0.45, { openDoor: true, 
 
 const variants: StationVariant[] = [
   // Look presets: every knob in Look · Grade, Look · Lights and Look · Hero, named and versioned (look/presets.ts).
-  { id: "today", group: "Look", boardOption: "1", label: "Today", note: "The shipped look: Noir grade by hour, box survivor.", setup: look("today") },
+  { id: "today", group: "Look", boardOption: "1", label: "Today", note: "The shipped look: Noir grade by hour, colour only where light falls, dust in the beams.", setup: look("today") },
+  { id: "hue-colour", group: "Look", label: "Before: colour by hue", note: "The look before the light-colour rule: the whole sight area keeps colour.", setup: look("hue-colour") },
   { id: "deeper-noir", group: "Look", boardOption: "2", label: "Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
   { id: "warm-practicals", group: "Look", boardOption: "3", label: "Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
   { id: "cold-moonlight", group: "Look", boardOption: "4", label: "Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
@@ -75,6 +76,7 @@ export default defineStation({
   metrics: [
     { label: "Volumetric beam pass + composite, Medium, 3456×1894", value: "0.06 / 0.13 ms street, 0.04 / 0.23 ms interior", source: "games/outbreak/scripts/ab-gpu.ts" },
     { label: "Unseen solo layers, GPU pass delta at 3456×1894", value: "+0.070 to +0.389 ms", source: "games/outbreak/scripts/prove-unseen.ts" },
+    { label: "Colour only from light / dust motes, paired GPU Δ at 3456×1894", value: "−0.005 / +0.049 ms hall, −0.006 / +0.017 ms street", source: "games/outbreak/scripts/ab-gpu.ts" },
   ],
   paths: [
     "games/outbreak/src/look",
@@ -82,13 +84,14 @@ export default defineStation({
     "games/outbreak/src/flashlight-beam.ts",
     "games/outbreak/src/unseen",
     "games/outbreak/src/interiors",
+    "games/outbreak/src/air",
   ],
   branches: ["outbreak-look*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
     right: [
-      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Grade", "Look · Lights", "Look · Detail"] },
+      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Light colour", "Look · Air", "Look · Grade", "Look · Lights", "Look · Detail"] },
       { widget: "controls", id: "sections", title: "Beam and unseen", groups: ["Flashlight", "Unseen"] },
     ],
     dock: [{ widget: "variants" }],

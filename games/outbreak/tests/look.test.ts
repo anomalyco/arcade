@@ -5,7 +5,7 @@ import { OUTBREAK_HERO_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../s
 import { DEFAULT_HERO_LOOK, heroLookControls, heroShape, heroTint, HERO_STYLE_SURFACES, HERO_STYLES } from "../src/look/hero"
 import { applyLookPreset } from "../src/look/index"
 import { OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
-import { DEFAULT_LOOK_TRIMS, lookTrimControls, trimLighting, trimLook } from "../src/look/world"
+import { DEFAULT_LOOK_TRIMS, lightRuleWeight, lookTrimControls, trimLighting, trimLook } from "../src/look/world"
 import { createOutbreakSettings, createOutbreakSubsystemDefaults } from "../src/settings"
 import { Survivor } from "../src/survivor"
 
@@ -23,10 +23,18 @@ const frame = (settings: ReturnType<typeof createOutbreakSettings>) => ({
 })
 
 describe("Outbreak look", () => {
-  test("today's look is the identity: default trims change neither the grade nor the lighting uniforms", () => {
+  test("today's look is the identity apart from the light-colour rule, which holds at night and not by day", () => {
     const base = createLookSettings("noir")
-    const out = trimLook(base, DEFAULT_LOOK_TRIMS, createLookSettings("current"))
-    expect(out).toEqual(base)
+    expect(trimLook(base, { ...DEFAULT_LOOK_TRIMS, lightColour: 0 }, createLookSettings("current"))).toEqual(base)
+    expect(trimLook(base, DEFAULT_LOOK_TRIMS, createLookSettings("current"), 0)).toEqual(base)
+    const night = trimLook(base, DEFAULT_LOOK_TRIMS, createLookSettings("current"), 1)
+    expect(night).toEqual({
+      ...base,
+      saturation: DEFAULT_LOOK_TRIMS.worldSaturation,
+      selectiveColor: DEFAULT_LOOK_TRIMS.litColour,
+      practicalWarmth: 0,
+    })
+    expect(lightRuleWeight(DEFAULT_LOOK_TRIMS, 0.5)).toBeCloseTo(0.5)
     const settings = createOutbreakSettings()
     expect(trimLighting(settings.lighting, settings.look)).toMatchObject({
       skyFill: settings.lighting.skyFill,
@@ -65,7 +73,7 @@ describe("Outbreak look", () => {
     const settings = createOutbreakSettings()
     applyLookPreset(settings, "warm-practicals")
     const base = createLookSettings("noir")
-    const graded = trimLook(base, settings.look, createLookSettings("noir"))
+    const graded = trimLook(base, settings.look, createLookSettings("noir"), 0)
     expect(graded.practicalWarmth).toBeCloseTo(base.practicalWarmth + 0.9)
     expect(graded.saturation).toBeCloseTo(base.saturation * 1.3)
     const lit = trimLighting(settings.lighting, settings.look)

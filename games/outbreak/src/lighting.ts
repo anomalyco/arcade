@@ -6,7 +6,7 @@ import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "
 import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
-import { trimLighting, type OutbreakLookTrims } from "./look/world"
+import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
@@ -254,7 +254,11 @@ export const OUTBREAK_UNSEEN_UNIFORM_OFFSET = OUTBREAK_INTERIOR_UNIFORM_OFFSET +
 export const OUTBREAK_RAMP_UNIFORM_OFFSET = OUTBREAK_UNSEEN_UNIFORM_OFFSET + 8
 /** The simple survivor's surface (see `look/hero.ts`): rim strength, rim exponent, flatten, colour kept. */
 export const OUTBREAK_HERO_UNIFORM_OFFSET = OUTBREAK_RAMP_UNIFORM_OFFSET + LIGHT_RAMP_FLOATS
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_HERO_UNIFORM_OFFSET + 4
+/** The light-colour rule (see `look/world.ts`): on, vision lift, bounce weight, reserved. */
+export const OUTBREAK_COLOUR_UNIFORM_OFFSET = OUTBREAK_HERO_UNIFORM_OFFSET + 4
+/** Dust motes in the light (see `air/dust.ts`): amount, brightness, size, motes under lamps. */
+export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_DUST_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -537,6 +541,15 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 1] = hero.heroRimTight ?? DEFAULT_HERO_LOOK.heroRimTight
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 2] = hero.heroFlat ?? DEFAULT_HERO_LOOK.heroFlat
   out[OUTBREAK_HERO_UNIFORM_OFFSET + 3] = hero.heroSaturation ?? DEFAULT_HERO_LOOK.heroSaturation
+  const look = (isNested ? raw.look : undefined) ?? DEFAULT_LOOK_TRIMS
+  out[OUTBREAK_COLOUR_UNIFORM_OFFSET] = look.lightColour ?? DEFAULT_LOOK_TRIMS.lightColour
+  out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 1] = look.visionLift ?? DEFAULT_LOOK_TRIMS.visionLift
+  out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 2] = look.bounceColour ?? DEFAULT_LOOK_TRIMS.bounceColour
+  out[OUTBREAK_COLOUR_UNIFORM_OFFSET + 3] = 0
+  out[OUTBREAK_DUST_UNIFORM_OFFSET] = look.dustAmount ?? DEFAULT_LOOK_TRIMS.dustAmount
+  out[OUTBREAK_DUST_UNIFORM_OFFSET + 1] = look.dustBrightness ?? DEFAULT_LOOK_TRIMS.dustBrightness
+  out[OUTBREAK_DUST_UNIFORM_OFFSET + 2] = look.dustSize ?? DEFAULT_LOOK_TRIMS.dustSize
+  out[OUTBREAK_DUST_UNIFORM_OFFSET + 3] = look.dustLamps ?? DEFAULT_LOOK_TRIMS.dustLamps
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1126,6 +1139,8 @@ struct OutbreakLightingUniforms {
   u19: vec4f, // weatherAir, indoors, groundY, beamReach${interiorUniformFieldsWgsl}
   unseen: UnseenUniforms,${lightRampFieldsWgsl}
   hero: vec4f, // simple survivor: rim strength, rim exponent, flatten, colour kept
+  colour: vec4f, // light-colour rule: on, vision lift, bounce weight, reserved
+  dust: vec4f, // dust motes: amount, brightness, size, under lamps
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1138,6 +1153,12 @@ var<private> outbreakFlashIrr: f32;
 var<private> outbreakAlbedo: vec3f;
 var<private> outbreakPracticalIrr: f32;
 var<private> outbreakSeen: f32;
+/** 1 where the scenery is known (exterior, or an explored room), set by the fog of war. */
+var<private> outbreakKnown: f32;
+/** Received lamp bounce (luminance), left by \`outbreakBounce\` for the colour mask. */
+var<private> outbreakBounceIrr: f32;
+/** The colour mask from light alone, times the light rule, before the sight terms (for the fog's memory tone). */
+var<private> outbreakLitMask: f32;
 var<private> outbreakInRoom: bool;
 
 
@@ -1409,9 +1430,25 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
   return add * OL.u5.rgb;
 }
 
-/** Selective-colour mask from received flashlight, bounce and practical light, through a soft exponential knee. */
+/** How strongly the light-colour rule holds: the toggle, faded in with darkness (\`lightRuleWeight\` in look/world.ts). */
+fn outbreakLightRule() -> f32 {
+  let x = clamp((0.8 - F.monitorBounds.w) / 0.6, 0.0, 1.0);
+  return OL.colour.x * x * x * (3.0 - 2.0 * x);
+}
+
+/** Baked lamp bounce at a plan point; also leaves its luminance for the colour mask. */
+fn outbreakBounce(p: vec2f, scale: f32) -> vec3f {
+  let b = bounceAt(p) * scale;
+  outbreakBounceIrr = dot(b, vec3f(0.2126, 0.7152, 0.0722));
+  return b;
+}
+
+/**
+ * Selective-colour mask from received flashlight, practical light (every light in the lights loop: lamps, sconces,
+ * windows, headlights, muzzle flash) and, under the light rule, baked lamp bounce, through a soft exponential knee.
+ */
 fn outbreakColorMask(flashIrr: f32) -> f32 {
-  let e = flashIrr + outbreakPracticalIrr * OL.u16.y;
+  let e = flashIrr + outbreakPracticalIrr * OL.u16.y + outbreakBounceIrr * OL.colour.z * outbreakLightRule();
   return 1.0 - fastExpNeg(e / max(OL.u13.w, 0.01));
 }
 

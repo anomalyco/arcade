@@ -4,6 +4,58 @@ import { common } from "@arcade/kit/gpu/shaders"
 import { raycast } from "@arcade/kit/sim/geom"
 import { outbreakLightingStructWgsl } from "./lighting"
 
+/** The flashlight's softened, windowed inverse-square falloff and its cone with a hot core (the surface shading's shape). */
+export const beamShapeWgsl = /* wgsl */ `
+fn falloff(d2: f32) -> f32 {
+  let r = max(OL.u4.y, 1.0);
+  let x2 = d2 / (r * r);
+  let soft = max(OL.u13.z, 0.1);
+  if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
+  return win * win / (1.0 + d2 / (soft * soft));
+}
+
+/** Cone and hot core, by angle off the axis as a share of the outer half-angle. */
+fn profile(cosT: f32) -> f32 {
+  let t = acos(clamp(cosT, -1.0, 1.0)) * OL.u17.y;
+  let cone = 1.0 - smoothstep(OL.u11.z, 1.15, t);
+  let tc = t / max(OL.u12.x, 0.05);
+  return cone + OL.u11.w * exp(-tc * tc);
+}
+`
+
+/**
+ * Visibility of a 3D point from a light's polar shadow row (`lensVis(slot * RAYS, point - lens, lens height)`):
+ * walls and closed doors cut it, low props and actors only below their height, interpolated between two rays.
+ */
+export const lensVisibilityWgsl = /* wgsl */ `
+fn lowShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32) -> f32 {
+  if (t0 >= FAR || y >= h - 0.03 || d <= t0) { return 1.0; }
+  let lift = hl + 0.6;
+  let end = min(t1 * (lift - y) / max(lift - h, 0.05), t1 + 6.0);
+  let s = smoothstep(t0 - 0.03, t0 + 0.03, d) * (1.0 - smoothstep(end - 0.1, end + 0.1, d));
+  return 1.0 - s * 0.9;
+}
+
+fn rayVis(base: u32, ray: u32, d: f32, y: f32, hl: f32) -> f32 {
+  let p0 = polar[(base + ray) * 2u];
+  var v = 1.0 - smoothstep(p0.x - 0.03, p0.x + 0.06, d);
+  if (v <= 0.0 || d <= p0.y - 0.04) { return v; }
+  let p1 = polar[(base + ray) * 2u + 1u];
+  return v * lowShadow(p0.y, p0.z, p0.w, d, y, hl) * lowShadow(p1.x, p1.y, p1.z, d, y, hl);
+}
+
+/** Visibility of a 3D point from the lens, interpolated between the two nearest polar rays. */
+fn lensVis(base: u32, rel: vec3f, hl: f32) -> f32 {
+  let d = length(rel.xz);
+  if (d < 0.05) { return 1.0; }
+  let f = (atan2(rel.z, rel.x) / TAU + 1.0) * f32(RAYS) - 0.5;
+  let r0 = u32(floor(f)) % RAYS;
+  let r1 = (r0 + 1u) % RAYS;
+  return mix(rayVis(base, r0, d, rel.y + hl, hl), rayVis(base, r1, d, rel.y + hl, hl), fract(f));
+}
+`
+
 /**
  * Volumetric flashlight shaft: single scattering marched through the beam cone along each view ray at reduced
  * resolution. The ray is clipped analytically to the cone (a little wider than the lit cone), the beam range and the
@@ -33,49 +85,8 @@ fn unproject(ndc: vec2f, z: f32) -> vec3f {
   return h.xyz / h.w;
 }
 
-fn falloff(d2: f32) -> f32 {
-  let r = max(OL.u4.y, 1.0);
-  let x2 = d2 / (r * r);
-  let soft = max(OL.u13.z, 0.1);
-  if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
-  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
-  return win * win / (1.0 + d2 / (soft * soft));
-}
-
-/** Cone and hot core, by angle off the axis as a share of the outer half-angle. */
-fn profile(cosT: f32) -> f32 {
-  let t = acos(clamp(cosT, -1.0, 1.0)) * OL.u17.y;
-  let cone = 1.0 - smoothstep(OL.u11.z, 1.15, t);
-  let tc = t / max(OL.u12.x, 0.05);
-  return cone + OL.u11.w * exp(-tc * tc);
-}
-
-fn lowShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32) -> f32 {
-  if (t0 >= FAR || y >= h - 0.03 || d <= t0) { return 1.0; }
-  let lift = hl + 0.6;
-  let end = min(t1 * (lift - y) / max(lift - h, 0.05), t1 + 6.0);
-  let s = smoothstep(t0 - 0.03, t0 + 0.03, d) * (1.0 - smoothstep(end - 0.1, end + 0.1, d));
-  return 1.0 - s * 0.9;
-}
-
-fn rayVis(base: u32, ray: u32, d: f32, y: f32, hl: f32) -> f32 {
-  let p0 = polar[(base + ray) * 2u];
-  var v = 1.0 - smoothstep(p0.x - 0.03, p0.x + 0.06, d);
-  if (v <= 0.0 || d <= p0.y - 0.04) { return v; }
-  let p1 = polar[(base + ray) * 2u + 1u];
-  return v * lowShadow(p0.y, p0.z, p0.w, d, y, hl) * lowShadow(p1.x, p1.y, p1.z, d, y, hl);
-}
-
-/** Visibility of a 3D point from the lens, interpolated between the two nearest polar rays. */
-fn lensVis(base: u32, rel: vec3f, hl: f32) -> f32 {
-  let d = length(rel.xz);
-  if (d < 0.05) { return 1.0; }
-  let f = (atan2(rel.z, rel.x) / TAU + 1.0) * f32(RAYS) - 0.5;
-  let r0 = u32(floor(f)) % RAYS;
-  let r1 = (r0 + 1u) % RAYS;
-  return mix(rayVis(base, r0, d, rel.y + hl, hl), rayVis(base, r1, d, rel.y + hl, hl), fract(f));
-}
-
+${beamShapeWgsl}
+${lensVisibilityWgsl}
 fn dust(p: vec3f) -> f32 {
   let t = F.cam.w;
   let a = noise2(p.xz * 1.3 + vec2f(t * 0.06, -t * 0.035) + vec2f(p.y * 1.7, -p.y * 0.9));

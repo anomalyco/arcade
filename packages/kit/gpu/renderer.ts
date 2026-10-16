@@ -1473,7 +1473,11 @@ export class Renderer {
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
     if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
     if(f.weather)this.weatherRenderer!.draw(pass,motion)
-    this.passes.drawSlot("alpha", pass)
+    if (this.passes.count("alpha")) {
+      // Splatter, particles and weather bind their own groups; alpha plugins get the scene's back.
+      pass.setBindGroup(0, this.sceneGroup)
+      this.passes.drawSlot("alpha", pass)
+    }
     pass.end()
 
     if (f.smoke && f.smokeEnabled && f.smoke.count) {

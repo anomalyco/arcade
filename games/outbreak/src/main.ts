@@ -47,6 +47,7 @@ import {
 } from "./fog-of-war"
 import { applyOutbreakDayNight } from "./day-night"
 import { trimLook } from "./look/world"
+import { DustPass } from "./air/dust"
 import { GroundWearRenderer, packGroundCfgBits } from "./ground"
 import { buildLevel, hex } from "./level"
 import { archSettings } from "./architecture"
@@ -240,6 +241,8 @@ async function main() {
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
   const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
+  const dust = new DustPass(renderer.passContext)
+  renderer.addPass("alpha", dust)
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params, outbreakClientFeatures)
@@ -1558,6 +1561,7 @@ async function main() {
     rBatches.push(doorBatch)
     if (openWindows) rBatches.push(sashBatch)
     render.lightCount = count
+    dust.frame(count, qProfile.tier, settings.look.dustAmount > 0)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
     const beamTier = BEAM_QUALITY_TIERS[Math.round(settings.flashlight.beamQuality)] ?? BEAM_QUALITY_TIERS[2]
@@ -1589,7 +1593,7 @@ async function main() {
       burst: motionBurst,
       dt,
     }
-    render.look = trimLook(lookSettings, settings.look, gradedLook)
+    render.look = trimLook(lookSettings, settings.look, gradedLook, 1 - day.sun)
     render.lookCompare = lookCompare
     render.postParams = unseenEval.postParams
     renderer.render(render)

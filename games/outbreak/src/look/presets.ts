@@ -21,7 +21,20 @@ const TODAY: OutbreakLookKnobs = { ...TRIMS, ...DEFAULT_HERO_LOOK }
 const hero = (style: number): HeroLookSettings => ({ heroStyle: style, ...HERO_STYLE_SURFACES[style]! })
 
 export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
-  { id: "today", label: "Today", version: 1, note: "The shipped look: Noir grade by hour, box survivor.", knobs: TODAY },
+  {
+    id: "today",
+    label: "Today",
+    version: 2,
+    note: "The shipped look: Noir grade by hour, colour only where light falls, box survivor.",
+    knobs: TODAY,
+  },
+  {
+    id: "hue-colour",
+    label: "Before: colour by hue",
+    version: 1,
+    note: "The look before the light-colour rule: the whole sight area keeps colour and warm surfaces keep theirs.",
+    knobs: { ...TODAY, lightColour: 0 },
+  },
   {
     id: "deeper-noir",
     label: "Deeper noir",
