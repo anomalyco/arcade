@@ -82,8 +82,12 @@ export const ZOMBIE_ARCHETYPES: readonly ZombieArchetypeSpec[] = [
 ] as const
 
 export function zombieHash(seed: number, id = 0): number {
-  const mixed = (seed ^ Math.imul(id | 0, 0x9e3779b1)) >>> 0
-  return Math.imul((mixed ^ 0x5bd1e995) >>> 0, 0x27d4eb2d) >>> 0
+  let h = ((seed | 0) ^ Math.imul((id | 0) + 1, 0x9e3779b1)) >>> 0
+  h ^= h >>> 16
+  h = Math.imul(h, 0x85ebca6b) >>> 0
+  h ^= h >>> 13
+  h = Math.imul(h, 0xc2b2ae35) >>> 0
+  return (h ^ (h >>> 16)) >>> 0
 }
 
 export function zombieArchetypeIndex(seed: number, id = 0): number {
