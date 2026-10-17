@@ -5,6 +5,7 @@ import { ROOF_Y } from "../layout"
 import { materialFor } from "../../render/materials"
 import { Builder, FLOOR_Y, TUBE, fluorescentPanel, glow, M, STOREY_H, T, type Band, corridorBands, flicker, wall } from "./kit"
 import { LOBBY, STOREYS } from "./core"
+import { STYLES } from "./styles"
 
 // A working lift in the core: walk in, press E at the car panel (next storey up, wrapping to the ground floor) or at a
 // landing's call button. The scissor gate and landing doors close, the car lurches, grinds up or down the shaft past
@@ -53,7 +54,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     const ext = { y0: FLOOR_Y - 0.26, y1: FLOOR_Y + STOREY_H - 0.26 }
     const opening = [{ a0: DX0 - 0.06, a1: DX1 + 0.06, top: DOOR.h + 0.06 }]
     // Shaft north wall: tiled lobby face, bare concrete on the shaft side, cut for the landing doors.
-    wall(shaft, "x", SHAFT.x0, -36.15, LOBBY.z1, 19.53, corridorBands, opening)
+    wall(shaft, "x", SHAFT.x0, -36.15, LOBBY.z1, 19.53, STYLES[s]!.bands, opening)
     wall(shaft, "x", SHAFT.x0, -36.15, 19.53, SHAFT.z0, shaftBands, opening, { ...ext, collide: false })
     wall(shaft, "z", LOBBY.z1, SHAFT.z1 + 0.14, SHAFT.x1, -36.15, shaftBands, [], ext)
     wall(shaft, "x", SHAFT.x0, -36.15, SHAFT.z1, SHAFT.z1 + 0.14, shaftBands, [{ a0: SHAFT.x0, a1: -39.13, bottom: 0.84, top: 2.66 }], { ...ext, collide: false })

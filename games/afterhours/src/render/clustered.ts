@@ -1,5 +1,6 @@
 import { DataTexture, FloatType, RGBAFormat, type Light } from "three/webgpu"
-import { Break, Fn, If, Loop, directPointLight, dot, int, ivec2, smoothstep, textureLoad, vec4, positionView, positionWorld } from "three/tsl"
+import { Break, Fn, If, Loop, clamp, directPointLight, dot, float, int, ivec2, log, positionView, positionWorld, screenCoordinate, smoothstep, textureLoad, uniform, vec4 } from "three/tsl"
+import { Vector2 } from "three/webgpu"
 import { insideNode } from "./volumes"
 import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js"
 import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.js"
@@ -7,7 +8,7 @@ import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.j
 // Forward+ clustered lighting with a spot cone per light. three's ClusteredLightsNode only shades omni point lights;
 // sodium heads, fluorescent panels and window spills are directional, so every point light may carry
 // `userData.cone = { dir: [x, y, z] (world, unit), cosOuter, cosInner }` and the shading loop applies the cone.
-// Two extra rows in the light data texture hold it (row 2: dir + cos outer, row 3: cos inner).
+// Extra rows in the light data texture hold it (row 2: dir + cos outer, row 3: cos inner + mask, row 4: spill).
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -26,7 +27,7 @@ class ConeClusteredLightsNode extends Base {
     super(maxLights, tileSize, zSlices, maxLightsPerCluster)
     const self = this as N
     self._lightsTexture.dispose()
-    self._lightsTexture = new DataTexture(new Float32Array(maxLights * 4 * 4), maxLights, 4, RGBAFormat, FloatType)
+    self._lightsTexture = new DataTexture(new Float32Array(maxLights * 4 * 5), maxLights, 5, RGBAFormat, FloatType)
   }
 
   create(width: number, height: number) {
@@ -37,6 +38,33 @@ class ConeClusteredLightsNode extends Base {
     // The node only needs a number here (it is never sized into WGSL for storage buffers).
     const idx = self._lightIndexes
     if (idx && typeof idx.bufferCount !== "number") idx.bufferCount = idx.value.count
+    // The cluster grid spans the drawing buffer, but the scene pass renders at a reduced internal resolution
+    // (TAAU), and fragments index the grid with `screenCoordinate` in render-target pixels. Unscaled, every pixel
+    // read a cluster covering a different part of the frustum and lamps dropped out in hard, tile-aligned
+    // rectangles (the "dark translucent slab"). Map fragment coordinates into drawing-buffer pixels first.
+    const NX = Math.floor(self.getBufferFitSize(width) / self.tileSize)
+    const NY = Math.floor(self.getBufferFitSize(height) / self.tileSize)
+    const NZ = self.zSlices
+    const tile = (screenCoordinate as N).mul(this._toGrid).div(self.tileSize).floor()
+    const viewDepth = (positionView as N).z.negate()
+    const slice = log(viewDepth.div(self._cameraNear)).mul(float(1).div(log(self._cameraFar.div(self._cameraNear)))).mul(NZ)
+    const z = (clamp as N)(slice.floor(), 0, NZ - 1)
+    const tx = (clamp as N)(tile.x, 0, NX - 1)
+    const ty = (clamp as N)(tile.y, 0, NY - 1)
+    self._screenClusterIndex = int(tx).add(int(ty).mul(NX)).add(int(z).mul(NX * NY)).toVar()
+  }
+
+  /** Drawing-buffer pixels per render-target pixel of the pass being shaded. */
+  _toGrid = uniform(new Vector2(1, 1))
+  private _db = new Vector2()
+
+  updateBefore(frame: N) {
+    super.updateBefore(frame)
+    const r = frame.renderer
+    const rt = r.getRenderTarget()
+    r.getDrawingBufferSize(this._db)
+    if (rt && rt.width > 0 && rt.height > 0) this._toGrid.value.set(this._db.x / rt.width, this._db.y / rt.height)
+    else this._toGrid.value.set(1, 1)
   }
 
   updateLightsTexture(camera: N) {
@@ -58,6 +86,7 @@ class ConeClusteredLightsNode extends Base {
       data[line * 3 + o + 1] = mask?.mode ?? 0
       data[line * 3 + o + 2] = mask?.y0 ?? -1e5
       data[line * 3 + o + 3] = mask?.y1 ?? 1e5
+      data[line * 4 + o] = (lights[order[i]!]!.userData.spill as number | undefined) ?? 0
     }
   }
 
@@ -91,7 +120,10 @@ class ConeClusteredLightsNode extends Base {
           const yW = (smoothstep as N)(row3.z.sub(0.08), row3.z.add(0.02), pw.y).mul((smoothstep as N)(row3.w.add(0.08), row3.w.sub(0.02), pw.y))
           const dirView = self._cameraViewMatrix.mul(vec4(c.xyz, 0)).xyz
           const cosA = dot(lightVector.normalize().negate(), dirView)
-          const cone = (smoothstep as N)(c.w, ci, cosA).mul(zoneW).mul(yW)
+          // Spill: real fixtures throw some light outside their cone, and in a room the pool bounces off the floor
+          // onto the walls; a small per-light floor on the cone stands in for both.
+          const spill = (textureLoad(self._lightsTexture, ivec2(idx, 4)) as N).x
+          const cone = (smoothstep as N)(c.w, ci, cosA).mul(spill.oneMinus()).add(spill).mul(zoneW).mul(yW)
           builder.lightsNode.setupDirectLight(
             builder,
             this,

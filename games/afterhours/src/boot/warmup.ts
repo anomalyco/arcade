@@ -22,7 +22,11 @@ export type Warmup = {
   /** True once the scene pass has rendered at least once (warm-up needs its render context). */
   readonly ready: boolean
   /** Compiles every drawable in `root` (detached from the scene) in the background. */
-  warm(root: THREE.Object3D): Promise<void>
+  /**
+   * Compiles every drawable in `root`. `progressive`: `root` may already be in the scene; its drawables are hidden now
+   * and revealed one by one as their pipelines are ready (`onReveal` fires after each), nearest/visible first.
+   */
+  warm(root: THREE.Object3D, options?: { progressive?: boolean; onReveal?: () => void }): Promise<void>
   /** Runs one frame of the render loop with the renderer's normal top-level state. */
   frame(fn: () => void): void
   /** Warm up objects added under `root` from now on before they are drawn (with `root` itself while it waits). */
@@ -32,7 +36,7 @@ export type Warmup = {
 }
 
 /** Materials compiled concurrently per warm-up. */
-const CHAINS = 6
+const CHAINS = 3
 
 /**
  * @param sliceMs main-thread time per frame that background compiles may take before yielding to rendering
@@ -179,6 +183,21 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     return result
   }
 
+  const frustum = new THREE.Frustum()
+  const projView = new THREE.Matrix4()
+  const sphere = new THREE.Sphere()
+  const eye = new THREE.Vector3()
+  /** Lower is sooner: in view first, then by distance from the camera. */
+  const priority = (o: THREE.Object3D) => {
+    if (!o.frustumCulled) return 0
+    const d = o as Any
+    const bounds = d.isInstancedMesh ? (d.boundingSphere ?? (d.computeBoundingSphere(), d.boundingSphere)) : d.geometry?.boundingSphere ?? (d.geometry?.computeBoundingSphere(), d.geometry?.boundingSphere)
+    if (!bounds) return 1e6
+    sphere.copy(bounds).applyMatrix4(o.matrixWorld)
+    const dist = Math.max(0, sphere.distanceToPoint(eye))
+    return frustum.intersectsSphere(sphere) ? dist : 1e4 + dist
+  }
+
   return {
     get ready() {
       return ready
@@ -198,12 +217,28 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
       }
       frameEnd = performance.now()
     },
-    async warm(root) {
+    async warm(root, options = {}) {
       const t = tracked.get(root)
       if (t) t.waiting = false
+      const mine = new Set<THREE.Object3D>()
+      if (options.progressive) {
+        root.traverse((o) => {
+          if (isDrawable(o) && !hiddenMask.has(o)) {
+            hiddenMask.set(o, o.layers.mask)
+            o.layers.mask = 0
+            mine.add(o)
+          }
+        })
+      }
+      const reveal = (o: THREE.Object3D) => {
+        if (!mine.delete(o)) return
+        unhide([o])
+        options.onReveal?.()
+      }
       try {
-        await warmRoot(root)
+        await warmRoot(root, reveal)
       } finally {
+        unhide([...mine])
         if (t) unhide(t.held.splice(0))
       }
     },
@@ -215,9 +250,13 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     },
   }
 
-  async function warmRoot(root: THREE.Object3D) {
+  async function warmRoot(root: THREE.Object3D, onCompiled: (o: THREE.Object3D) => void = () => {}) {
     if (!ready) return
     root.updateMatrixWorld(true)
+    camera.updateMatrixWorld()
+    camera.getWorldPosition(eye)
+    projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    frustum.setFromProjectionMatrix(projView)
     // Objects grouped by material: different materials compile concurrently (node building interleaves on the main
     // thread, pipelines compile in parallel on the GPU process), objects sharing a material go one after another so
     // the second one hits the first one's cached shaders instead of building them again.
@@ -230,12 +269,22 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
       if (!list) groups.set(key, (list = []))
       list.push(o)
     })
-    const chains = [...groups.values()]
+    // What the player can see first, within and across material groups.
+    const score = new Map<THREE.Object3D, number>()
+    const chains = [...groups.values()].map((list) => {
+      for (const o of list) score.set(o, priority(o))
+      return list.sort((a, b) => score.get(a)! - score.get(b)!)
+    })
+    chains.sort((a, b) => score.get(a[0]!)! - score.get(b[0]!)!)
     enter()
     try {
       await Promise.all(
         Array.from({ length: Math.min(CHAINS, chains.length) }, async () => {
-          for (let list = chains.shift(); list; list = chains.shift()) for (const o of list) await compileOne(o)
+          for (let list = chains.shift(); list; list = chains.shift())
+            for (const o of list) {
+              await compileOne(o)
+              onCompiled(o)
+            }
         }),
       )
     } finally {

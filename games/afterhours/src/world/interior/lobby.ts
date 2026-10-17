@@ -21,8 +21,8 @@ export function buildLobby(b: Builder) {
   wall(b, "z", z0, z1, x0 - WALL_T, x0, lobbyBands, [doorOpening(12)])
   wall(b, "z", z0, z1, x1, x1 + WALL_T, lobbyBands, [doorOpening(12)])
   door(b, 0, z0 - WALL_T / 2, { rot: 0, width: 1.8, leaves: 2, open: Math.PI / 2, plate: false })
-  door(b, x0 - WALL_T / 2, 12, { rot: Math.PI / 2 })
-  door(b, x1 + WALL_T / 2, 12, { rot: -Math.PI / 2 })
+  door(b, x0 - WALL_T / 2, 12, { rot: Math.PI / 2, locked: true })
+  door(b, x1 + WALL_T / 2, 12, { rot: -Math.PI / 2, locked: true })
 
   ceiling(b, x0, z0, x1, z1)
   for (const x of [-4.8, 0, 4.8])

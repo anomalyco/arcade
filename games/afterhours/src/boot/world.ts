@@ -6,6 +6,7 @@ import { createAtmosphere, insideBuilding } from "../render/atmosphere"
 import { createLighting } from "../render/lighting"
 import { createPost } from "../render/post"
 import { Player } from "../player"
+import { Doors } from "../world/doors"
 import { nextFrame, yieldToMain } from "./schedule"
 import { createWarmup } from "./warmup"
 import { distanceTo } from "./priority"
@@ -90,6 +91,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     floors: [],
     ladders: [],
     lamps: [],
+    doors: new Doors(params.has("shot")),
     settings: { "player.walk": 1.9, "player.sensitivity": 1 },
     controls: [
       { key: "player.walk", label: "Walk speed", group: "Player", unit: "m/s", min: 0.8, max: 4, step: 0.1 },
@@ -155,6 +157,8 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   step("compiling", 0.95)
 
   let streaming = true
+  let revealed = false
+  const firstShown = new Set<string>()
   /** One frame: module updates, atmosphere, lighting and the post chain. Player input/movement is the caller's. */
   const render = (dt: number, time: number) =>
     warmup.frame(() => {
@@ -182,14 +186,30 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
         warmup.track(s.root)
         performance.mark(`queue:${s.name}:${Math.round(distanceTo(s.root, eye))}m`)
         performance.mark(`mod:${s.name}:compile:start`)
+        // Progressive: the module joins the scene now with everything hidden, and each object appears as soon as its
+        // pipelines are ready, in-view and nearest first.
+        const progressive = params.get("bootProgressive") !== "0"
+        const warming = warmup.warm(s.root, {
+          // `bootProgressive=0` (automation/A-B only): show whole modules once compiled.
+          progressive,
+          onReveal: () => {
+            revealed = true
+            if (!firstShown.has(s.name)) {
+              firstShown.add(s.name)
+              performance.mark(`mod:${s.name}:first`)
+            }
+          },
+        })
+        if (progressive) scene.add(s.root)
         try {
-          await warmup.warm(s.root)
+          await warming
         } catch (e) {
           fail(`${s.name} warm-up: ${e instanceof Error ? e.message : e}`)
         }
         performance.mark(`mod:${s.name}:compile:end`)
-        scene.add(s.root)
+        if (!progressive) scene.add(s.root)
         performance.mark(`mod:${s.name}:shown`)
+        revealed = true
       }
       hooks.onShown?.(name, ++done, pending.length)
     }
@@ -215,6 +235,12 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     modules: wanted,
     get streaming() {
       return streaming
+    },
+    /** True (once) when something new became visible since the last call: worth drawing a frame for. */
+    takeReveal() {
+      const r = revealed
+      revealed = false
+      return r
     },
     render,
     stream,

@@ -1,4 +1,5 @@
 import { BUILDING, CORE } from "../layout"
+import { STYLES } from "./styles"
 import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall } from "./kit"
 
 // Structure shared by every storey: the floor slabs of storeys 1–4 (and the one under the roof deck), the switchback
@@ -181,7 +182,10 @@ function stairWalls(b: Builder, i: number) {
   wall(b, "z", ST.wallZ0, ST.z1 + 0.14, ST.x1, -39.5, stairBands, [], ext)
   // North wall: corridor tile on the hall side is the hall's; this is the stair side, with the door.
   wall(b, "x", -43.25, ST.x1, ST.wallZ0, ST.z0, stairBands, [doorOpening(ST.door)], ext)
-  door(b, ST.door, ST.wallZ0 + 0.075, { rot: Math.PI, open: i === 3 ? 1.48 : 1.5, wedge: i !== 3 })
+  // Threshold through the wall thickness (the slab is cut for the stairwell here).
+  b.box(M.darkSteel, ST.door - 0.55, FLOOR_Y - 0.02, ST.wallZ0 - 0.01, ST.door + 0.55, FLOOR_Y + 0.002, ST.z0 + 0.01, { cast: false })
+  b.walk(ST.door - 0.55, ST.wallZ0 - 0.02, ST.door + 0.55, ST.z0 + 0.02)
+  door(b, ST.door, ST.wallZ0 + 0.075, { rot: Math.PI, open: i === 3 ? 0 : 0.7 })
 }
 
 /** Caged bulkhead light (wall-mounted, lens facing out along `yaw`). */
@@ -231,14 +235,16 @@ function midLight(b: Builder, i: number, yMid: number) {
 /** Hall from the corridor to the stair door and lift lobby. */
 function hall(b: Builder, i: number) {
   const { x0, x1, z0, z1 } = HALL
-  b.floor("linoleum", x0, z0 - 0.15, x1, z1)
+  const style = STYLES[i]!
+  b.floor(style.floor, x0, z0 - 0.15, x1, z1)
   const sy = FLOOR_Y + 0.0015
-  for (const x of [x0 + 0.42, x1 - 0.42]) b.box(M.stripe, x - 0.05, sy - 0.01, z0 + 0.3, x + 0.05, sy, z1 - 0.1, { cast: false })
-  wall(b, "z", z0, z1, x0 - 0.15, x0, corridorBands)
-  wall(b, "z", z0, z1, x1, x1 + 0.15, corridorBands)
-  // Hall face of the stair wall (tile), either side of the door.
-  wall(b, "x", x0, LOBBY.x0, z1 - 0.012, z1, corridorBands, [doorOpening(ST.door, DOOR_W)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
-  ceiling(b, x0, z0 - 0.15, x1, z1)
+  // Hall stripes start where the corridor's edge stripe stops (ground floor) and run to the stair wall.
+  if (i === 0) for (const x of [x0 + 0.42, x1 - 0.42]) b.box(M.stripe, x - 0.05, sy - 0.01, z0 - 0.62, x + 0.05, sy, z1 - 0.1, { cast: false })
+  wall(b, "z", z0, z1, x0 - 0.15, x0, style.bands)
+  wall(b, "z", z0, z1, x1, x1 + 0.15, style.bands)
+  // Hall face of the stair wall, either side of the door.
+  wall(b, "x", x0, LOBBY.x0, z1 - 0.012, z1, style.bands, [doorOpening(ST.door, DOOR_W)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  ceiling(b, x0, z0 - 0.15, x1, z1, style.missing * 0.5, 90 + i)
   const dead = i === 4
   for (const z of [3.6, 7.2, 10.8, 14.4]) troffer(b, -40.2, z, z === 7.2 && !dead ? "on" : "off", PANEL_ON)
   if (!dead) b.lamp({ kind: "fluorescent", position: [-40.2, CEIL_Y + 0.1, 7.2], direction: [0, -1, 0], color: TUBE, intensity: 4, range: 7, angle: 1.3, penumbra: 0.7, size: 1.2 })
@@ -254,8 +260,8 @@ function lobby(b: Builder, i: number) {
   b.floor("terrazzo", x0, z0, x1, z1)
   b.floor("terrazzo", x0, ST.wallZ0, HALL.x1 + 0.15, z0)
   // North wall (lobby/room), east wall, and the lobby face of the shaft wall (the lift module cuts the doors).
-  wall(b, "x", HALL.x1 + 0.15, -36.15, ST.wallZ0, z0, corridorBands)
-  wall(b, "z", ST.wallZ0, z1, x1, -36.15, corridorBands)
+  wall(b, "x", HALL.x1 + 0.15, -36.15, ST.wallZ0, z0, STYLES[i]!.bands)
+  wall(b, "z", ST.wallZ0, z1, x1, -36.15, STYLES[i]!.bands)
   ceiling(b, x0, ST.wallZ0, x1, z1)
   troffer(b, -37.8, 18, i === 4 ? "off" : "on", PANEL_ON)
 }

@@ -4,6 +4,7 @@ import type { Lamp, WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM } from "./geo"
 import { materialFor } from "../../render/materials"
 import { DOCK_DOORS, band, facades, fbox, normal, point, type Facade } from "./shell"
+import { addFacadeDoor, rollupLeaf, steelLeaf } from "./doors"
 
 // The back of the building (concept r5-06): raised loading dock with bumpers and steps, one roll-up door shut and
 // one half open with warm light spilling from a shallow receiving bay, a dock lamp, the dumpster, an unmarked box
@@ -15,7 +16,7 @@ const DK = BUILDING.dock
 const WALL_Z = BUILDING.main.min[1]
 export const PLATFORM = { x0: DK.x - DK.width / 2, x1: DK.x + DK.width / 2, z0: WALL_Z - 4.5, z1: WALL_Z, y: DK.height }
 
-export function buildDock(ctx: WorldContext, b: Batch) {
+export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
   const P = PLATFORM
   const north = facades().find((f) => f.name === "main-north")!
 
@@ -43,23 +44,77 @@ export function buildDock(ctx: WorldContext, b: Batch) {
     }
   }
 
-  rollup(b, north, DOCK_DOORS.closed.u0, DOCK_DOORS.closed.u1, DOCK_DOORS.y0, DOCK_DOORS.head, DOCK_DOORS.head)
-  rollup(b, north, DOCK_DOORS.open.u0, DOCK_DOORS.open.u1, DOCK_DOORS.y0, DOCK_DOORS.head, DOCK_DOORS.y0 + DOCK_DOORS.openHeight)
-  for (const d of [DOCK_DOORS.open, DOCK_DOORS.closed]) ctx.colliders.push({ min: [d.u0, P.y, WALL_Z - 0.05], max: [d.u1, DOCK_DOORS.head, WALL_Z + T] })
+  // Working roll-up doors (E: fully open / shut); the west one is shut, the east one stands about half open on load.
+  // The curtain lifts 1.8 m (bottom edge clears a head) and visually coils into the head box as it goes.
+  const lift = 1.8
+  for (const [key, d, start] of [["closed", DOCK_DOORS.closed, 0], ["open", DOCK_DOORS.open, 0.49]] as const) {
+    rollupFrame(b, north, d.u0, d.u1, DOCK_DOORS.y0, DOCK_DOORS.head)
+    const curtain = rollupLeaf(`dock-rollup-${key}`, d.u1 - d.u0, DOCK_DOORS.head - DOCK_DOORS.y0)
+    addFacadeDoor(ctx, root, {
+      id: `dock-rollup-${key}`,
+      f: north,
+      u0: d.u0,
+      u1: d.u1,
+      y0: DOCK_DOORS.y0,
+      depth: 0.17,
+      height: DOCK_DOORS.head - DOCK_DOORS.y0,
+      leaf: curtain.leaf,
+      onMove: (t) => curtain.coil(Math.max(0, Math.min(1, t)) * lift),
+      openAngle: 0,
+      startOpen: start,
+      sound: "gate",
+      slide: { axis: [0, 1, 0], distance: lift },
+      thickness: 0.08,
+    })
+  }
 
   // Receiving bay behind the open door: block walls, a few crates, lit by a bare fixture.
   const bx0 = DOCK_DOORS.open.u0 - 1.6
-  const bx1 = DOCK_DOORS.open.u1 + 1.6
+  // East end takes in the dock man door too, so it opens into the bay.
+  const bx1 = DOCK_DOORS.man.u1 + 0.55
   const bz0 = WALL_Z + T
   const bz1 = WALL_Z + 6.5
   const by = P.y
   // The bay is the dock's key light (concept r5-06): concrete block walls lit deep sodium-orange by a hot fixture,
   // and a floor that carries a little warm glow of its own so the slot still reads if the light budget trims a lamp.
-  const bayFloor = materialFor("emissive", { color: 0x4a3420, roughness: 0.5, emissive: new THREE.Color(1, 0.3, 0.04), intensity: 0.35, name: "facility_bay_floor" })
+  const bayFloor = materialFor("emissive", { color: 0x4a3420, roughness: 0.5, emissive: new THREE.Color(1, 0.3, 0.04), intensity: 0.5, name: "facility_bay_floor" })
   b.box(bayFloor, bx0, BUILDING.floorY, bz0, bx1, by, bz1, SKIP_BOTTOM)
-  b.box("concrete_block", bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
-  b.box("concrete_block", bx0 - 0.2, by, bz0, bx0, 4.2, bz1)
-  b.box("concrete_block", bx1, by, bz0, bx1 + 0.2, 4.2, bz1)
+  ctx.floors.push({ min: [bx0, WALL_Z - 0.05], max: [bx1, bz1], y: by })
+  ctx.colliders.push(
+    { min: [bx0 - 0.2, -0.5, bz1], max: [bx1 + 0.2, 4.4, bz1 + 0.2] },
+    { min: [bx0 - 0.2, -0.5, bz0], max: [bx0, 4.4, bz1] },
+    { min: [bx1, -0.5, bz0], max: [bx1 + 0.2, 4.4, bz1] },
+  )
+  // Second, unlit bay behind the shut roll-up door.
+  {
+    const cx0 = DOCK_DOORS.closed.u0 - 1.8
+    const cx1 = bx0 - 0.2
+    b.box("concrete_floor_dry", cx0, BUILDING.floorY, bz0, cx1, by, bz1, SKIP_BOTTOM)
+    b.box("concrete_block", cx0 - 0.2, by, bz1, cx1, 4.2, bz1 + 0.2)
+    b.box("concrete_block", cx0 - 0.2, by, bz0, cx0, 4.2, bz1)
+    b.box("concrete_dark", cx0 - 0.2, 4.2, bz0, cx1, 4.4, bz1 + 0.2)
+    ctx.floors.push({ min: [cx0, WALL_Z - 0.05], max: [cx1, bz1], y: by })
+    ctx.colliders.push({ min: [cx0 - 0.2, -0.5, bz1], max: [cx1, 4.4, bz1 + 0.2] }, { min: [cx0 - 0.2, -0.5, bz0], max: [cx0, 4.4, bz1] })
+  }
+  // Bay walls: painted block glowing sodium-orange (self-lit so the slot reads like the concept whatever reaches it),
+  // with darker recessed mortar joints in 400×200 running bond.
+  const glowBlock = materialFor("emissive", { color: 0x5a4632, roughness: 0.85, emissive: new THREE.Color(1, 0.36, 0.07), intensity: 0.4, name: "facility_bay_block" })
+  const glowMortar = materialFor("emissive", { color: 0x2a2018, roughness: 0.95, emissive: new THREE.Color(1, 0.36, 0.07), intensity: 0.08, name: "facility_bay_mortar" })
+  b.box(glowBlock, bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
+  b.box(glowBlock, bx0 - 0.2, by, bz0, bx0, 4.2, bz1)
+  b.box(glowBlock, bx1, by, bz0, bx1 + 0.2, 4.2, bz1)
+  for (let k = 1; by + k * 0.2 < 4.2; k++) {
+    const y = by + k * 0.2
+    b.box(glowMortar, bx0, y - 0.006, bz1 - 0.004, bx1, y + 0.006, bz1)
+    b.box(glowMortar, bx0, y - 0.006, bz0, bx0 + 0.004, y + 0.006, bz1)
+    b.box(glowMortar, bx1 - 0.004, y - 0.006, bz0, bx1, y + 0.006, bz1)
+    const off = k % 2 ? 0 : 0.2
+    for (let x = bx0 + off; x < bx1; x += 0.4) b.box(glowMortar, x - 0.005, y - 0.2, bz1 - 0.004, x + 0.005, y, bz1)
+    for (let z = bz0 + off; z < bz1; z += 0.4) {
+      b.box(glowMortar, bx0, y - 0.2, z - 0.005, bx0 + 0.004, y, z + 0.005)
+      b.box(glowMortar, bx1 - 0.004, y - 0.2, z - 0.005, bx1, y, z + 0.005)
+    }
+  }
   // Block skin on the dock wall around the roll-up doors and the man door, from grade up to the first floor band.
   blockSkin(b)
   b.box("concrete_dark", bx0 - 0.2, 4.2, bz0, bx1 + 0.2, 4.4, bz1 + 0.2)
@@ -69,9 +124,22 @@ export function buildDock(ctx: WorldContext, b: Batch) {
   const bayCx = (DOCK_DOORS.open.u0 + DOCK_DOORS.open.u1) / 2
   const SODIUM: [number, number, number] = [1, 0.36, 0.07]
   // Fill inside the bay: paints the block walls and floor deep orange.
-  ctx.lamps.push({ kind: "sodium", position: [bayCx, 3.6, bz0 + 2.6], color: SODIUM, intensity: 140, range: 9, size: 0.3 })
-  // No separate throw spot: bisecting r5-06 showed any spot out of the door floods the truck box (the rig lights it
-  // without a usable cone); the bay fill and the emissive bay carry the slot, the man-door wall-pack the court.
+  ctx.lamps.push({ kind: "sodium", position: [bayCx, 3.9, bz0 + 4.2], direction: [0, -0.94, 0.34], color: SODIUM, intensity: 600, range: 9, angle: 1.2, penumbra: 0.6, size: 0.3 })
+  // Small omni deep in the bay: washes the back and side block walls, too short-ranged to reach the truck.
+  ctx.lamps.push({ kind: "sodium", position: [bayCx, 2.4, bz1 - 1.3], color: SODIUM, intensity: 300, range: 4, size: 0.2 })
+  // Throw out through the half-open door, slightly down onto the dock edge and court; the truck casts its shadow.
+  ctx.lamps.push({
+    kind: "sodium",
+    position: [bayCx, 2.2, bz0 + 1.2],
+    direction: [0, -0.32, -0.95],
+    color: SODIUM,
+    intensity: 800,
+    range: 16,
+    angle: 0.5,
+    penumbra: 0.5,
+    shadow: true,
+    size: 0.2,
+  })
 
 
   // Swing-arm dock lamp beside the open door.
@@ -85,39 +153,47 @@ export function buildDock(ctx: WorldContext, b: Batch) {
 
   // Personnel doors (dock man-door, west and annex back doors) with caged wall lights.
   for (const f of facades()) {
-    for (const h of f.holes) if (h.kind === "door") personnelDoor(ctx, b, f, h.u0, h.u1, h.y0, h.y1)
+    for (const h of f.holes) if (h.kind === "door") personnelDoor(ctx, root, b, f, h.u0, h.u1, h.y0, h.y1)
   }
 
 }
 
-function rollup(b: Batch, f: Facade, u0: number, u1: number, y0: number, head: number, bottom: number) {
+/** Static guide channels and head box of a roll-up door (the curtain itself is a door leaf). */
+function rollupFrame(b: Batch, f: Facade, u0: number, u1: number, y0: number, head: number) {
   const d = 0.17
-  for (const u of [u0, u1 - 0.1]) fbox(b, "metal_dark", f, u, u + 0.1, y0, head, d - 0.06, d + 0.06)
-  for (let y = head; y > bottom + 0.01; y -= 0.16) {
-    const yb = Math.max(bottom, y - 0.16)
-    fbox(b, "metal_painted", f, u0 + 0.05, u1 - 0.05, yb, y - 0.01, d - 0.02, d + 0.02)
-    fbox(b, "metal_painted", f, u0 + 0.05, u1 - 0.05, yb + 0.03, y - 0.04, d - 0.04, d - 0.02)
-  }
-  fbox(b, "rubber", f, u0 + 0.05, u1 - 0.05, bottom - 0.05, bottom + 0.04, d - 0.04, d + 0.04)
-  fbox(b, "metal_dark", f, u0 + 0.6, u0 + 0.75, bottom + 0.06, bottom + 0.16, d - 0.1, d - 0.03)
+  for (const u of [u0 - 0.06, u1 - 0.04]) fbox(b, "metal_dark", f, u, u + 0.1, y0, head, d - 0.07, d + 0.07)
+  fbox(b, "metal_dark", f, u0 - 0.06, u1 + 0.06, head - 0.04, head + 0.12, d - 0.07, T)
 }
 
-function personnelDoor(ctx: WorldContext, b: Batch, f: Facade, u0: number, u1: number, y0: number, y1: number) {
+function personnelDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, u0: number, u1: number, y0: number, y1: number) {
   const fr = 0.05
-  fbox(b, "metal_dark", f, u0, u1, y1 - fr, y1, 0.08, 0.2)
-  fbox(b, "metal_dark", f, u0, u0 + fr, y0, y1, 0.08, 0.2)
-  fbox(b, "metal_dark", f, u1 - fr, u1, y0, y1, 0.08, 0.2)
-  fbox(b, "door_steel", f, u0 + fr, u1 - fr, y0, y1 - fr, 0.12, 0.16)
-  const flip = f.out > 0 === (f.axis === "x")
-  const hu = flip ? u1 - 0.18 : u0 + 0.18
-  fbox(b, "metal_galvanized", f, hu - 0.03, hu + 0.03, y0 + 0.95, y0 + 1.1, 0.06, 0.12)
-  // Kick plate and a small wired-glass vision panel.
-  fbox(b, "metal_galvanized", f, u0 + fr, u1 - fr, y0, y0 + 0.25, 0.115, 0.12)
-  fbox(b, "glass_dark", f, (u0 + u1) / 2 - 0.1, (u0 + u1) / 2 + 0.1, y0 + 1.35, y0 + 1.75, 0.11, 0.115)
+  // Frame round the opening (head and jambs sit outside the clear width), a flush threshold through the wall.
+  fbox(b, "metal_dark", f, u0 - fr, u1 + fr, y1, y1 + fr, 0.06, 0.22)
+  fbox(b, "metal_dark", f, u0 - fr, u0, y0, y1, 0.06, 0.22)
+  fbox(b, "metal_dark", f, u1, u1 + fr, y0, y1, 0.06, 0.22)
+  const ta = point(f, u0, 0, -0.05)
+  const tb = point(f, u1, 0, T + 0.05)
+  ctx.floors.push({ min: [Math.min(ta.x, tb.x), Math.min(ta.z, tb.z)], max: [Math.max(ta.x, tb.x), Math.max(ta.z, tb.z)], y: y0 })
+  addFacadeDoor(ctx, root, {
+    id: `door-${f.name}-${Math.round(u0)}`,
+    f,
+    u0: u0 + 0.005,
+    u1: u1 - 0.005,
+    y0,
+    depth: 0.14,
+    height: y1 - y0 - 0.01,
+    leaf: steelLeaf(`door-${f.name}-${Math.round(u0)}`, u1 - u0 - 0.01, y1 - y0 - 0.01),
+    openAngle: 1.75,
+    swing: "auto",
+    sound: "steel",
+  })
   // Step / stoop outside.
   const s0 = point(f, u0 - 0.5, 0, 0)
   const s1 = point(f, u1 + 0.5, y0 > 1 ? 0 : y0, -1.1)
-  if (y0 < 1) b.box("concrete_wall", s0.x, -0.05, s0.z, s1.x, y0, s1.z, SKIP_BOTTOM)
+  if (y0 < 1) {
+    b.box("concrete_wall", s0.x, -0.05, s0.z, s1.x, y0, s1.z, SKIP_BOTTOM)
+    ctx.floors.push({ min: [Math.min(s0.x, s1.x), Math.min(s0.z, s1.z)], max: [Math.max(s0.x, s1.x), Math.max(s0.z, s1.z)], y: y0 })
+  }
   // Light head (the security_light model) is placed in props.ts; here its lamp and a glowing lens under the cage.
   const { u: lu, y: lyTop } = lightAbove(f, u0, u1, y1)
   const ly = lyTop + 0.17

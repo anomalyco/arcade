@@ -39,7 +39,7 @@ export function build(ctx: WorldContext): WorldModule {
   const b = new Batch()
   const dish = buildDish(ctx, root, b)
   buildRoof(ctx, b)
-  buildDock(ctx, b)
+  buildDock(ctx, b, root)
   buildGrounds(ctx, b, root)
   b.flush(root, { name: "facility-details" })
   // Models stream in after the first frame; colliders and contact shadows are already in place.

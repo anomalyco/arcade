@@ -256,6 +256,7 @@ for (const m of modNames) {
   at(`mod ${m}: build`, (r) => r.marks[`mod:${m}:build:end`]! - r.marks[`mod:${m}:build:start`]!)
   if (all.some((r) => r.marks[`mod:${m}:compile:end`] !== undefined))
     at(`mod ${m}: compileAsync`, (r) => r.marks[`mod:${m}:compile:end`]! - r.marks[`mod:${m}:compile:start`]!)
+  if (all.some((r) => r.marks[`mod:${m}:first`] !== undefined)) at(`mod ${m}: first object visible`, (r) => r.marks[`mod:${m}:first`])
   if (all.some((r) => r.marks[`mod:${m}:shown`] !== undefined)) at(`mod ${m}: shown at`, (r) => r.marks[`mod:${m}:shown`])
 }
 for (const m of ["rig", "first:compile"]) {

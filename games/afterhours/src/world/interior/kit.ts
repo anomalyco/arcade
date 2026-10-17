@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { abs, attribute, float, floor, fract, hash, max, mix, positionWorld, pow, sin, step, time, uniform, uv, vec2, vec3 } from "three/tsl"
+import { abs, attribute, float, floor, fract, hash, max, mix, normalWorldGeometry, positionWorld, pow, sin, step, time, uniform, uv, vec2, vec3 } from "three/tsl"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
@@ -12,6 +12,7 @@ export type Mat = MaterialName | THREE.Material | Paint
 export type Band = readonly [y0: number, y1: number, mat: Mat]
 
 export const FLOOR_Y = 0.16
+export const STOREY_H = BUILDING.main.storeyHeight
 export const CEIL_Y = 3.1
 export const DOOR_W = 0.92
 export const DOOR_H = 2.12
@@ -90,8 +91,50 @@ const vcMaterial = (() => {
   return m
 })()
 
+/** Carpet tiles (50 cm, laid quarter-turned so alternate tiles read lighter), seams and fibre noise; one shader. */
+function carpetTiles() {
+  const m = nodeMat(0x3a3832, 0.98, 0, "carpet_tiles")
+  const p = positionWorld.xz.mul(2)
+  const c = floor(p)
+  const f = fract(p)
+  const checker = fract(c.x.add(c.y).mul(0.5)).mul(2)
+  const seam = max(step(f.x, 0.012), step(f.y, 0.012))
+  const fibre = hash(floor(positionWorld.xz.mul(220)).dot(vec2(1, 157))).mul(0.12)
+  const wear = hash(c.dot(vec2(7, 113))).mul(0.06)
+  m.colorNode = vec3(0.105, 0.1, 0.088).mul(float(0.92).add(checker.mul(0.12)).add(fibre).sub(wear)).mul(float(1).sub(seam.mul(0.45)))
+  return m
+}
+
+/** Painted concrete block (40 × 20 cm running bond) in two-tone epoxy, darker below 1.2 m; one shader for any wall. */
+function blockWall() {
+  const m = nodeMat(0xc9c4ad, 0.32, 0, "epoxy_block")
+  const n = normalWorldGeometry
+  const along = mix(positionWorld.x, positionWorld.z, step(abs(n.z), abs(n.x)))
+  const y = positionWorld.y.sub(FLOOR_Y)
+  const yy = fract(y.div(STOREY_H)).mul(STOREY_H)
+  const course = floor(yy.div(0.2))
+  const u = fract(along.div(0.4).add(fract(course.mul(0.5))))
+  const v = fract(yy.div(0.2))
+  const joint = max(step(u, 0.025), step(v, 0.05))
+  const low = step(yy, 1.2)
+  const band = step(1.2, yy).mul(step(yy, 1.3))
+  const base = mix(vec3(0.5, 0.49, 0.42), vec3(0.17, 0.22, 0.19), low)
+  m.colorNode = mix(base, vec3(0.09, 0.13, 0.12), band).mul(float(1).sub(joint.mul(0.3)))
+  m.roughnessNode = float(0.28).add(joint.mul(0.5))
+  return m
+}
+
+/** Yellow/black diagonal hazard stripes in world XZ (floor markings) or XY/ZY (walls); one shader. */
+function hazardStripes() {
+  const m = nodeMat(0x8a7010, 0.55, 0, "hazard_stripes")
+  const p = positionWorld
+  const d = fract(p.x.add(p.z).add(p.y).mul(3.5))
+  m.colorNode = mix(vec3(0.02, 0.02, 0.018), vec3(0.62, 0.46, 0.04), step(0.5, d))
+  return m
+}
+
 export const M = {
-  frame: paint(0x2b3a31, 0.45, 0.45),
+  frame: paint(0x16211b, 0.5, 0.35),
   tbar: paint(0x6e6f68, 0.7, 0.1),
   housing: paint(0x5a5b56, 0.7, 0.2),
   diffuserOff: paint(0x8d9290, 0.35, 0),
@@ -131,6 +174,23 @@ export const M = {
   cardboard: paint(0x6a5236, 0.9, 0),
   concreteSink: paint(0x6e6e66, 0.8, 0),
   rubber: paint(0x141414, 0.9, 0),
+  carpet: carpetTiles(),
+  block: blockWall(),
+  hazard: hazardStripes(),
+  vinylBeige: paint(0x8f8468, 0.82, 0),
+  vinylSeam: paint(0x6f6650, 0.85, 0),
+  veneer: paint(0x5a3b22, 0.45, 0),
+  veneerDark: paint(0x3b2615, 0.5, 0),
+  antistatic: paint(0x7b807e, 0.6, 0),
+  raised: paint(0x8f918a, 0.5, 0.05),
+  perf: paint(0x50534f, 0.6, 0.3),
+  blue: paint(0x23324a, 0.25, 0),
+  amberGlow: glow(0x2a1a04, 0xffa018, 1.6, "amber_glow"),
+  tarp: paint(0x1f3f66, 0.55, 0),
+  plywood: paint(0x8a6a42, 0.85, 0),
+  vend: paint(0x6a1812, 0.4, 0.2),
+  vendFront: glow(0x101010, 0xe8e0c8, 0.9, "vend_front"),
+  sofa: paint(0x4a3a2a, 0.9, 0),
   beige: paint(0x9a927c, 0.55, 0),
   enamel: paint(0x7d8a7e, 0.4, 0.1),
   stencil: paint(0xb9b29a, 0.8, 0),
@@ -149,10 +209,11 @@ export const corridorBands: Band[] = [
   [DOOR_H + 0.05, CEIL_Y, "painted_wall"],
 ]
 
+/** Lobby: the corridor's tile courses and dark band at the same heights (they meet at the link), painted above. */
 export const lobbyBands: Band[] = [
-  [0, 0.25, "tile_green_dark"],
-  [0.25, 1.1, "tile_green"],
-  [1.1, 1.2, "tile_green_dark"],
+  [0, 0.3, "tile_green_dark"],
+  [0.3, 1.02, "tile_green"],
+  [1.02, 1.2, "tile_green_dark"],
   [1.2, CEIL_Y, "painted_wall"],
 ]
 
@@ -189,7 +250,6 @@ export function T(x: number, y: number, z: number, ry = 0, rx = 0, rz = 0, order
 type AddOpts = { worldUV?: boolean; cast?: boolean }
 type Part = { mat: THREE.Material; cast: boolean; vc: boolean; pos: number[]; nor: number[]; uv: number[]; col: number[]; rm: number[] }
 
-export const STOREY_H = BUILDING.main.storeyHeight
 
 // Box faces: normal, then the four corners as (x, y, z) picks from [min, max] (0 = min, 1 = max), counter-clockwise.
 const FACES: [number, number, number, number[][]][] = [
@@ -207,9 +267,18 @@ const FACES: [number, number, number, number[][]][] = [
  * colliders, floors, lamps) by whole storeys, so the same code builds every floor. UVs are computed before the lift so
  * tile courses line up the same way on every storey.
  */
+const QUAD = [0, 1, 2, 0, 2, 3]
+
 export class Builder {
   private parts = new Map<string, Part>()
   readonly group = new THREE.Group()
+  /** Streamed furniture models (drawn only near the camera's storey, see interior.ts). */
+  readonly props = new THREE.Group()
+  /** Small desk and bench props (drawn only on the camera's own storey, indoors). */
+  readonly small = new THREE.Group()
+  /** LOD1 copies of the furniture and small props, drawn instead of them from other storeys and from outside. */
+  readonly propsLod = new THREE.Group()
+  readonly smallLod = new THREE.Group()
   oy = 0
   zone = "interior:0"
   private storeyIndex = 0
@@ -220,6 +289,11 @@ export class Builder {
     storey = 0,
   ) {
     this.group.name = `interior:${name}`
+    this.props.name = `interior:${name}:props`
+    this.small.name = `interior:${name}:small`
+    this.propsLod.name = `interior:${name}:props-lod1`
+    this.smallLod.name = `interior:${name}:small-lod1`
+    this.group.add(this.props, this.small, this.propsLod, this.smallLod)
     this.storey = storey
   }
 
@@ -285,7 +359,7 @@ export class Builder {
       if (opts?.skip && opts.skip.includes("XxYyZz"[f]!)) continue
       const [nx, ny, nz, cs] = FACES[f]!
       const v = cs.map(([a, b, c]) => [a ? hi[0]! : lo[0]!, b ? hi[1]! : lo[1]!, c ? hi[2]! : lo[2]!])
-      for (const k of [0, 1, 2, 0, 2, 3]) {
+      for (const k of QUAD) {
         const [x, y, z] = v[k]!
         p.pos.push(x!, y! + oy, z!)
         p.nor.push(nx, ny, nz)
@@ -296,12 +370,33 @@ export class Builder {
     this.paintVerts(p, mat, n)
   }
 
-  /** Box of size w×h×d centred at the origin of `m` (plus a local offset). */
+  /** Box of size w×h×d centred at the origin of `m` (plus a local offset), written straight into the batch. */
   boxM(mat: Mat, m: THREE.Matrix4, w: number, h: number, d: number, ox = 0, oy = 0, oz = 0, opts?: AddOpts) {
-    const g = new THREE.BoxGeometry(w, h, d)
-    g.translate(ox, oy, oz)
-    g.applyMatrix4(m)
-    this.add(mat, g, opts)
+    const p = this.part(mat, opts?.cast ?? true)
+    const e = m.elements
+    const lo = [ox - w / 2, oy - h / 2, oz - d / 2]
+    const hi = [ox + w / 2, oy + h / 2, oz + d / 2]
+    const yo = this.oy
+    for (let f = 0; f < 6; f++) {
+      const [lx, ly, lz, cs] = FACES[f]!
+      // Rotation-only normal (no scale in these matrices).
+      const nx = e[0]! * lx + e[4]! * ly + e[8]! * lz
+      const ny = e[1]! * lx + e[5]! * ly + e[9]! * lz
+      const nz = e[2]! * lx + e[6]! * ly + e[10]! * lz
+      for (const k of QUAD) {
+        const c = cs[k]!
+        const x = c[0] ? hi[0]! : lo[0]!
+        const y = c[1] ? hi[1]! : lo[1]!
+        const z = c[2] ? hi[2]! : lo[2]!
+        const wx = e[0]! * x + e[4]! * y + e[8]! * z + e[12]!
+        const wy = e[1]! * x + e[5]! * y + e[9]! * z + e[13]!
+        const wz = e[2]! * x + e[6]! * y + e[10]! * z + e[14]!
+        p.pos.push(wx, wy + yo, wz)
+        p.nor.push(nx, ny, nz)
+        uvFor(wx, wy, wz, nx, ny, nz, p.uv)
+      }
+    }
+    this.paintVerts(p, mat, 36)
   }
 
   /** Bevelled box (rounded edges) of size w×h×d centred at the origin of `m` plus an offset. */
@@ -468,17 +563,70 @@ export type DoorOpts = {
   wallT?: number
   width?: number
   leaves?: 1 | 2
-  /** Opening angle in radians; positive swings the leaf to the back (-Z local) side. */
+  /** Initial opening in radians; positive swings the leaf to the back (-Z local) side. Becomes `startOpen`. */
   open?: number
+  /** Full swing in radians (default max(1.6, |open|)). */
+  angle?: number
+  /** "fixed" where one side of the opening is blocked: the leaf only swings to the side `open`/`angle` gives. */
+  swing?: "auto" | "fixed"
+  locked?: boolean
   glass?: THREE.Material | null
   plate?: boolean
   /** Horizontal push bar instead of levers (fire exits). */
   panic?: boolean
-  /** Rubber wedge under the open leaf. */
-  wedge?: boolean
+  /** Leaf finish (default institutional green steel). */
+  leaf?: Mat
+  sound?: "steel" | "wood" | "glass"
 }
 
-/** Institutional steel door: frame, leaf (or pair), wire-glass vision panel, kick plates, lever, red push band. */
+const leafTemplates = new Map<string, THREE.Object3D[]>()
+let doorSeq = 0
+
+/** Leaf geometry in its own frame (hinge at the origin, panel along +x, faces ±z), built once per variant. */
+function leafTemplate(ctx: WorldContext, lw: number, glass: THREE.Material | null, leafMat: Mat, panic: boolean, pair: boolean) {
+  const key = `${lw.toFixed(3)}|${glass?.uuid ?? "-"}|${typeof leafMat === "string" ? leafMat : "paint" in leafMat ? leafMat.c.join() : leafMat.uuid}|${panic}|${pair}`
+  const hit = leafTemplates.get(key)
+  if (hit) return hit
+  const t = 0.045
+  const b = new Builder(ctx, "door-leaf")
+  const L = new THREE.Matrix4()
+  const cx = lw / 2
+  b.boxM(leafMat, L, lw, DOOR_H - 0.01, t, cx, (DOOR_H - 0.01) / 2 + 0.005, 0)
+  for (const s of [1, -1]) {
+    const fz = s * (t / 2 + 0.002)
+    b.boxM(M.kick, L, lw - 0.04, 0.25, 0.003, cx, 0.14, fz)
+    if (panic && s > 0) {
+      b.boxM(M.kick, L, 0.05, 0.08, 0.07, 0.08, 1.0, t / 2 + 0.035)
+      b.boxM(M.kick, L, 0.05, 0.08, 0.07, lw - 0.08, 1.0, t / 2 + 0.035)
+      b.rbox(M.darkSteel, L, lw - 0.16, 0.06, 0.05, 0.02, lw / 2, 1.0, t / 2 + 0.07)
+    } else {
+      b.boxM(M.kick, L, 0.05, 0.05, 0.05, lw - 0.07, 1.04, s * (t / 2 + 0.025))
+      b.boxM(M.kick, L, 0.13, 0.022, 0.022, lw - 0.12, 1.04, s * (t / 2 + 0.05))
+    }
+    if (glass) {
+      const gw = pair ? 0.2 : 0.3
+      const gh = pair ? 0.7 : 0.46
+      const gx = pair ? lw / 2 : lw * 0.56
+      const gy = pair ? 1.45 : 1.6
+      b.quad(glass, T(gx, gy, s * (t / 2 + 0.003), s > 0 ? 0 : Math.PI), gw, gh, { cast: false })
+      b.boxM(leafMat, L, gw + 0.06, 0.03, 0.012, gx, gy + gh / 2 + 0.015, s * (t / 2 + 0.006))
+      b.boxM(leafMat, L, gw + 0.06, 0.03, 0.012, gx, gy - gh / 2 - 0.015, s * (t / 2 + 0.006))
+      b.boxM(leafMat, L, 0.03, gh, 0.012, gx - gw / 2 - 0.015, gy, s * (t / 2 + 0.006))
+      b.boxM(leafMat, L, 0.03, gh, 0.012, gx + gw / 2 + 0.015, gy, s * (t / 2 + 0.006))
+    }
+  }
+  const holder = new THREE.Group()
+  b.flush(holder)
+  const meshes = b.group.children.filter((c) => (c as THREE.Mesh).isMesh)
+  leafTemplates.set(key, meshes)
+  return meshes
+}
+
+/**
+ * Institutional door: static frame and casings in the builder's batch; each leaf its own object registered with the
+ * shared door system (`ctx.doors`, KeyE), which owns its swing and collider. Leaves of the same variant share
+ * geometry.
+ */
 export function door(b: Builder, x: number, z: number, o: DoorOpts) {
   const w = o.width ?? DOOR_W
   const t = 0.045
@@ -492,48 +640,51 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts) {
   b.boxM(M.frame, F, 0.05, DOOR_H + 0.05, fd, -w / 2 - 0.025, (DOOR_H + 0.05) / 2, 0)
   b.boxM(M.frame, F, 0.05, DOOR_H + 0.05, fd, w / 2 + 0.025, (DOOR_H + 0.05) / 2, 0)
   b.boxM(M.frame, F, w + 0.1, 0.05, fd, 0, DOOR_H + 0.025, 0)
+  // Face casings: a 6 cm dark steel return on both wall faces, so the jamb reads as a heavy frame.
+  for (const s of [1, -1]) {
+    const zc = s * (fd / 2 + 0.006)
+    b.boxM(M.frame, F, 0.06, DOOR_H + 0.11, 0.012, -w / 2 - 0.08, (DOOR_H + 0.11) / 2, zc)
+    b.boxM(M.frame, F, 0.06, DOOR_H + 0.11, 0.012, w / 2 + 0.08, (DOOR_H + 0.11) / 2, zc)
+    b.boxM(M.frame, F, w + 0.28, 0.06, 0.012, 0, DOOR_H + 0.08, zc)
+  }
   if (o.plate ?? true) {
     b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, wallT / 2 + 0.006)
     b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, -wallT / 2 - 0.006)
   }
   const lw = w / leaves - (leaves === 2 ? 0.004 : 0.006)
   const glass = o.glass === undefined ? M.wireGlass : o.glass
+  const tpl = leafTemplate(b.ctx, lw, glass, o.leaf ?? "door_steel", !!o.panic, leaves === 2)
+  const angle = Math.max(o.angle ?? 1.6, Math.abs(open))
+  const sign = open < 0 || (o.angle ?? 0) < 0 ? -1 : 1
+  const ids = Array.from({ length: leaves }, () => `${b.group.name}:door${doorSeq++}`)
+  const v = new THREE.Vector3()
   for (let i = 0; i < leaves; i++) {
     const mirror = i === 1
-    const hingeX = mirror ? w / 2 : -w / 2
-    const dir = mirror ? -1 : 1
-    const pivotZ = open > 0 ? -wallT / 2 : wallT / 2
-    const L = open
-      ? F.clone().multiply(T(hingeX + dir * t / 2, 0, pivotZ, mirror ? Math.PI - open : open))
-      : F.clone().multiply(T(hingeX + dir * 0.003, 0, 0, mirror ? Math.PI : 0))
-    const cx = lw / 2
-    b.boxM("door_steel", L, lw, DOOR_H - 0.01, t, cx, (DOOR_H - 0.01) / 2 + 0.005, 0)
-    for (const s of [1, -1]) {
-      const fz = s * (t / 2 + 0.002)
-      b.boxM(M.kick, L, lw - 0.04, 0.25, 0.003, cx, 0.14, fz)
-      if (o.panic && s > 0) {
-        b.boxM(M.kick, L, 0.05, 0.08, 0.07, 0.08, 1.0, t / 2 + 0.035)
-        b.boxM(M.kick, L, 0.05, 0.08, 0.07, lw - 0.08, 1.0, t / 2 + 0.035)
-        b.rbox(M.darkSteel, L, lw - 0.16, 0.06, 0.05, 0.02, lw / 2, 1.0, t / 2 + 0.07)
-      } else {
-        // lever handle on the latch side
-        b.boxM(M.kick, L, 0.05, 0.05, 0.05, lw - 0.07, 1.04, s * (t / 2 + 0.025))
-        b.boxM(M.kick, L, 0.13, 0.022, 0.022, lw - 0.12, 1.04, s * (t / 2 + 0.05))
-      }
-      if (glass) {
-        const gw = leaves === 2 ? 0.2 : 0.3
-        const gh = leaves === 2 ? 0.7 : 0.46
-        const gx = leaves === 2 ? lw / 2 : lw * 0.56
-        const gy = leaves === 2 ? 1.45 : 1.6
-        b.quad(glass, L.clone().multiply(T(gx, gy, s * (t / 2 + 0.003), s > 0 ? 0 : Math.PI)), gw, gh, { cast: false })
-        b.boxM("door_steel", L, gw + 0.06, 0.03, 0.012, gx, gy + gh / 2 + 0.015, s * (t / 2 + 0.006))
-        b.boxM("door_steel", L, gw + 0.06, 0.03, 0.012, gx, gy - gh / 2 - 0.015, s * (t / 2 + 0.006))
-        b.boxM("door_steel", L, 0.03, gh, 0.012, gx - gw / 2 - 0.015, gy, s * (t / 2 + 0.006))
-        b.boxM("door_steel", L, 0.03, gh, 0.012, gx + gw / 2 + 0.015, gy, s * (t / 2 + 0.006))
-      }
+    const hingeX = mirror ? w / 2 - 0.003 : -w / 2 + 0.003
+    v.set(hingeX, 0, 0).applyMatrix4(F)
+    const leaf = new THREE.Group()
+    leaf.name = ids[i]!
+    for (const m of tpl) {
+      const c = (m as THREE.Mesh).clone()
+      c.matrixAutoUpdate = true
+      leaf.add(c)
     }
-    b.collideLocal(L, [0, 0, -t / 2 - 0.02], [lw, DOOR_H, t / 2 + 0.02])
-    if (open && o.wedge) b.boxM(M.rubber, L, 0.07, 0.035, 0.14, lw - 0.1, 0.017, open > 0 ? -0.09 : 0.09)
+    leaf.rotation.y = o.rot + (mirror ? Math.PI : 0)
+    b.group.add(leaf)
+    b.ctx.doors.add({
+      id: ids[i],
+      leaf,
+      hinge: [v.x, v.y + b.oy, v.z],
+      width: lw,
+      height: DOOR_H,
+      thickness: t,
+      openAngle: (mirror ? -1 : 1) * sign * angle,
+      startOpen: Math.min(1, Math.abs(open) / angle),
+      swing: o.swing ?? "auto",
+      locked: o.locked ?? false,
+      sound: o.sound ?? (o.leaf === M.veneer ? "wood" : "steel"),
+      ...(leaves === 2 ? { double: ids[1 - i] } : {}),
+    })
   }
 }
 
@@ -597,6 +748,14 @@ export function troffer(b: Builder, x: number, z: number, state: TrofferState, o
     g.applyMatrix4(pm)
     b.mesh(state.material, g)
   }
+}
+
+/** Parabolic louvre over a troffer: specular aluminium blades in a 3 × 8 cell grid (1980s office fittings). */
+export function louvre(b: Builder, x: number, z: number) {
+  const y1 = CEIL_Y - 0.012
+  const y0 = y1 - 0.055
+  for (let k = 1; k < 3; k++) b.box(M.steel, x - 0.285 + k * 0.19 - 0.004, y0, z - 0.58, x - 0.285 + k * 0.19 + 0.004, y1, z + 0.58, { cast: false })
+  for (let k = 1; k < 8; k++) b.box(M.steel, x - 0.285, y0, z - 0.585 + k * 0.146 - 0.004, x + 0.285, y1, z - 0.585 + k * 0.146 + 0.004, { cast: false })
 }
 
 /** Cheap deterministic flicker: mostly on, with stuttering bursts. Returns 0..1. */

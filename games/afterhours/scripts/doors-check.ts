@@ -1,0 +1,272 @@
+// Headless doors check: drives the real player with physical-key presses (KeyE, KeyW) on the Metal adapter.
+//
+//   bun scripts/doors-check.ts                 # self-test: injects a throwaway door + wall into a terrain-only page
+//   bun scripts/doors-check.ts --all           # every registered door: doorway audit, then E + walk through both ways
+//   bun scripts/doors-check.ts --all --q "only=terrain,compound" --view gate
+//
+// The self-test door exists only inside this script's page; nothing is added to the game. Expects the dev server on
+// :5196. Exits 1 on any failure.
+import { chromium, type Page } from "playwright-core"
+import { existsSync, readdirSync } from "node:fs"
+
+const args = process.argv.slice(2)
+const flag = (name: string) => {
+  const i = args.indexOf(`--${name}`)
+  if (i < 0) return undefined
+  const v = args[i + 1]
+  args.splice(i, 2)
+  return v
+}
+const all = args.includes("--all")
+const extra = flag("q") ?? (all ? "" : "only=terrain")
+const view = flag("view") ?? "lot"
+const shot = flag("shot")
+
+const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
+const chrome = readdirSync(cache)
+  .filter((n) => /^chromium_headless_shell-\d+$/.test(n))
+  .sort()
+  .reverse()
+  .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
+  .find(existsSync)
+const browser = await chromium.launch({
+  executablePath: chrome,
+  headless: true,
+  args: ["--enable-unsafe-webgpu", "--mute-audio", "--use-angle=metal", "--ignore-gpu-blocklist"],
+})
+const page = await browser.newPage({ viewport: { width: 960, height: 640 } })
+const errors: string[] = []
+page.on("pageerror", (e) => errors.push(e.message))
+await page.goto(`http://localhost:5196/?view=${view}${extra ? `&${extra}` : ""}`)
+await page.waitForFunction(() => (globalThis as { __afterhours?: { ready: boolean } }).__afterhours?.ready, null, { timeout: 120_000 })
+
+let failed = 0
+const check = (ok: boolean, what: string) => {
+  console.log(`${ok ? "ok  " : "FAIL"} ${what}`)
+  if (!ok) failed++
+}
+
+type Info = { id: string; hx: number; hy: number; hz: number; nx: number; nz: number; mx: number; mz: number; partner?: string }
+
+/** Doorway geometry of every door (internal fields; automation only). */
+const doorInfo = () =>
+  page.evaluate(() => {
+    type D = { id: string; hx: number; hy: number; hz: number; yaw0: number; xa: number; xb: number; spec: { double?: string } }
+    const doors = (globalThis as unknown as { __afterhoursDoors: { all(): D[] } }).__afterhoursDoors
+    const list = doors.all()
+    const mid = (d: D) => {
+      const m = (d.xa + d.xb) / 2
+      return [d.hx + m * Math.cos(d.yaw0), d.hz - m * Math.sin(d.yaw0)]
+    }
+    return list.map((d) => {
+      let [mx, mz] = mid(d)
+      const p = d.spec.double ? list.find((o) => o.id === d.spec.double) : undefined
+      if (p) {
+        const [px, pz] = mid(p)
+        mx = (mx! + px!) / 2
+        mz = (mz! + pz!) / 2
+      }
+      return { id: d.id, hx: d.hx, hy: d.hy, hz: d.hz, nx: Math.sin(d.yaw0), nz: Math.cos(d.yaw0), mx: mx!, mz: mz!, partner: d.spec.double }
+    })
+  })
+
+/** Puts the player `dist` m from the doorway on side `s`, facing it, aimed at the leaf. */
+async function stand(d: Info, s: number, dist: number) {
+  await page.evaluate(
+    ({ d, s, dist }) => {
+      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; vy: number; fly: boolean } }).__afterhoursPlayer
+      p.fly = false
+      p.pos.x = d.mx + d.nx * s * dist
+      p.pos.z = d.mz + d.nz * s * dist
+      p.pos.y = d.hy + 0.05
+      p.vy = 0
+      p.yaw = Math.atan2(d.nx * s, d.nz * s)
+      p.pitch = -Math.atan2(1.65 - 1.0, dist)
+    },
+    { d, s, dist },
+  )
+  await page.waitForTimeout(150)
+}
+
+const state = (id: string) =>
+  page.evaluate((id) => {
+    const g = globalThis as unknown as {
+      __afterhoursDoors: { get(id: string): { amount: number; isOpen: boolean } | undefined; centreOf(id: string): { x: number; z: number } | null; focused: { id: string } | null }
+      __afterhoursPlayer: { pos: { x: number; y: number; z: number } }
+    }
+    const d = g.__afterhoursDoors?.get(id)
+    if (!d) return null
+    return { amount: d.amount, isOpen: d.isOpen, centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
+  }, id).then((st) => {
+    if (!st) throw new Reloaded(id)
+    return st
+  })
+
+/** The door vanished mid-test: the dev server hot-reloaded the page (another agent saved a file). */
+class Reloaded extends Error {
+  constructor(id: string) {
+    super(`door ${id} missing (page reloaded?)`)
+  }
+}
+
+const ready = () => page.waitForFunction(() => (globalThis as { __afterhours?: { ready: boolean } }).__afterhours?.ready, null, { timeout: 120_000 })
+
+/** Closes a door (and its partner) through the API and waits for it to latch. */
+async function ensureClosed(id: string) {
+  await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } | undefined } }).__afterhoursDoors.get(id)?.close(), id)
+  for (let i = 0; i < 30 && (await state(id)).amount > 0.005; i++) await page.waitForTimeout(100)
+}
+
+/** Points the camera at a world point. */
+const aim = (x: number, y: number, z: number) =>
+  page.evaluate(
+    ({ x, y, z }) => {
+      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number } }).__afterhoursPlayer
+      const dx = x - p.pos.x
+      const dz = z - p.pos.z
+      p.yaw = Math.atan2(-dx, -dz)
+      p.pitch = -Math.atan2(p.pos.y + 1.65 - y, Math.hypot(dx, dz))
+    },
+    { x, y, z },
+  )
+
+const side = (d: Info, p: { x: number; z: number }) => (p.x - d.mx) * d.nx + (p.z - d.mz) * d.nz
+
+async function walk(ms: number, key = "KeyW") {
+  await page.keyboard.down(key)
+  await page.waitForTimeout(ms)
+  await page.keyboard.up(key)
+  await page.waitForTimeout(100)
+}
+
+/** E to open from side `s`, walk through, then turn round and E to close from the other side. */
+async function throughAndBack(d: Info, s: number) {
+  await ensureClosed(d.id)
+  await stand(d, s, 1.1)
+  let st = await state(d.id)
+  check(st.focused === d.id, `${d.id} side ${s > 0 ? "+" : "-"}: prompt targets the door (focused ${st.focused})`)
+  await page.keyboard.press("KeyE")
+  await page.waitForTimeout(1000)
+  st = await state(d.id)
+  check(st.isOpen && st.amount > 0.9, `${d.id}: E opens it (amount ${st.amount.toFixed(2)})`)
+  check(side(d, st.centre) * s < 0.05, `${d.id}: leaf swung away from the player (leaf side ${side(d, st.centre).toFixed(2)})`)
+  await walk(1700)
+  st = await state(d.id)
+  const crossed = side(d, st.pos) * s
+  check(crossed < -0.5, `${d.id}: walked through the doorway (now ${crossed.toFixed(2)} m past it)`)
+  // Turn round 1.4 m past the opening; aim at the open leaf, or (wide doors) at the open doorway, and close it.
+  await page.evaluate(
+    ({ d, s }) => {
+      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number } } }).__afterhoursPlayer
+      p.pos.x = d.mx - d.nx * s * 1.4
+      p.pos.z = d.mz - d.nz * s * 1.4
+    },
+    { d, s },
+  )
+  await aim(st.centre.x, d.hy + 1.0, st.centre.z)
+  await page.waitForTimeout(150)
+  st = await state(d.id)
+  let via = "leaf"
+  if (st.focused !== d.id) {
+    via = "doorway"
+    await aim(d.mx, d.hy + 1.0, d.mz)
+    await page.waitForTimeout(150)
+    st = await state(d.id)
+  }
+  check(st.focused === d.id, `${d.id}: open door targetable from the far side via ${via} (focused ${st.focused})`)
+  await page.keyboard.press("KeyE")
+  // Walk on through the doorway, out of the leaf's sweep: a 5.5 m gate leaf closing on a player standing in its arc
+  // stops against them and finishes once they're clear.
+  await walk(1600)
+  await page.waitForTimeout(1100)
+  st = await state(d.id)
+  check(!st.isOpen && st.amount < 0.01, `${d.id}: E closes it (amount ${st.amount.toFixed(3)})`)
+}
+
+if (!all) {
+  // Throwaway door in a wall, built only in this page: hinge at the wall gap's west jamb, 1 m leaf along +x.
+  const d = await page.evaluate(() => {
+    const g = globalThis as unknown as {
+      __afterhoursDebug: { scene: object }
+      __afterhoursPlayer: { pos: { x: number; y: number; z: number }; ctx: { colliders: { min: number[]; max: number[] }[]; floors: unknown[] } }
+      __afterhoursDoors: { add(spec: unknown): unknown; all(): unknown[] }
+    }
+    const Object3D = Object.getPrototypeOf(Object.getPrototypeOf(g.__afterhoursDebug.scene)).constructor as new () => object
+    const p = g.__afterhoursPlayer.pos
+    const hx = Math.round(p.x) - 0.5
+    const hz = Math.round(p.z) - 4
+    const y = p.y
+    const c = g.__afterhoursPlayer.ctx.colliders
+    c.push({ min: [hx - 4, y - 1, hz - 0.1], max: [hx, y + 3, hz + 0.1] }, { min: [hx + 1, y - 1, hz - 0.1], max: [hx + 5, y + 3, hz + 0.1] })
+    g.__afterhoursDoors.add({ id: "test", leaf: new Object3D(), hinge: [hx, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, sound: "steel" })
+    g.__afterhoursDoors.add({ id: "test-locked", leaf: new Object3D(), hinge: [hx + 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, locked: true })
+    return true
+  })
+  void d
+  const info = (await doorInfo()).filter((x) => x.id === "test")[0]!
+  // Closed door blocks.
+  await stand(info, 1, 1.1)
+  if (shot) await page.waitForTimeout(500).then(() => page.screenshot({ path: shot }))
+  await walk(1500)
+  let st = await state("test")
+  check(side(info, st.pos) > 0.25, `test: closed door blocks (player ${side(info, st.pos).toFixed(2)} m in front)`)
+  await throughAndBack(info, 1)
+  await throughAndBack(info, -1)
+  // Closing on a player in the doorway: the leaf stops against them instead of pushing.
+  await stand(info, 1, 1.1)
+  await page.keyboard.press("KeyE")
+  await page.waitForTimeout(900)
+  await page.evaluate((info) => {
+    const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; z: number } } }).__afterhoursPlayer.pos
+    p.x = info.hx + 0.45
+    p.z = info.mz - 0.1
+  }, info)
+  await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } } }).__afterhoursDoors.get("test")!.close())
+  await page.waitForTimeout(1000)
+  st = await state("test")
+  check(st.amount > 0.15, `test: closing leaf stops against a player in the doorway (amount ${st.amount.toFixed(2)})`)
+  // Step back out of the leaf's arc (towards the side it opened from).
+  await walk(1200, "KeyS")
+  await page.waitForTimeout(1000)
+  st = await state("test")
+  check(st.amount < 0.01, `test: and finishes closing once they've stepped out (amount ${st.amount.toFixed(3)})`)
+  // Locked door: E rattles, stays shut.
+  const locked = (await doorInfo()).find((x) => x.id === "test-locked")!
+  await stand(locked, 1, 1.1)
+  const promptText = await page.evaluate(() => document.querySelector(".door-prompt")?.textContent ?? "")
+  check(promptText.includes("Locked"), `test-locked: prompt reads "${promptText}"`)
+  await page.keyboard.press("KeyE")
+  await page.waitForTimeout(600)
+  st = await state("test-locked")
+  check(!st.isOpen && st.amount === 0, "test-locked: E rattles, stays shut")
+} else {
+  const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
+  for (const i of issues) check(false, `${i.id}: ${i.issue}`)
+  const infos = await doorInfo()
+  console.log(`${infos.length} doors registered`)
+  const done = new Set<string>()
+  for (const d of infos) {
+    if (done.has(d.id)) continue
+    done.add(d.id)
+    if (d.partner) done.add(d.partner)
+    const locked = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { locked: boolean } } }).__afterhoursDoors.get(id)!.locked, d.id)
+    if (locked) {
+      console.log(`skip ${d.id} (locked)`)
+      continue
+    }
+    for (const s of [1, -1]) {
+      try {
+        await throughAndBack(d, s)
+      } catch (e) {
+        if (!(e instanceof Reloaded)) throw e
+        console.log(`note: ${e.message}; waiting for the page and retrying ${d.id} side ${s}`)
+        await ready()
+        await throughAndBack(d, s)
+      }
+    }
+  }
+}
+
+check(errors.length === 0, `no page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`)
+await browser.close()
+process.exit(failed ? 1 : 0)

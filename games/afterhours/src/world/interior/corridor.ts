@@ -54,19 +54,28 @@ export function buildCorridor(b: Builder) {
   b.floor("linoleum", x0, zn - WALL_T, x1, zs + WALL_T)
   b.floor("linoleum", link.min[0], zs + WALL_T, link.max[0], lobbyZ)
   const sy = FLOOR_Y + 0.0015
-  for (const z of [zn + 0.42, zs - 0.42]) b.box(M.stripe, x0 + 0.1, sy - 0.01, z - 0.05, x1 - 0.42, sy, z + 0.05, { cast: false })
-  for (const x of [link.min[0] + 0.42, link.max[0] - 0.42]) b.box(M.stripe, x - 0.05, sy - 0.01, zs - 0.37, x + 0.05, sy, lobbyZ - 0.1, { cast: false })
+  // Edge stripes: the north one runs the full length; the south one stops at the hall and the link, whose own stripes
+  // turn the corner into them (mitred at 0.42 m from the walls), so every stripe joins another.
+  const zS = zs - 0.42
+  b.box(M.stripe, x0 + 0.1, sy - 0.01, zn + 0.37, link.max[0] - 0.37, sy, zn + 0.47, { cast: false })
+  for (const [a, c] of [
+    [x0 + 0.1, HALL.x0 + 0.47],
+    [HALL.x1 - 0.47, link.min[0] + 0.47],
+  ])
+    b.box(M.stripe, a, sy - 0.01, zS - 0.05, c, sy, zS + 0.05, { cast: false })
+  b.box(M.stripe, link.max[0] - 0.47, sy - 0.01, zn + 0.37, link.max[0] - 0.37, sy, lobbyZ - 0.1, { cast: false })
+  b.box(M.stripe, link.min[0] + 0.37, sy - 0.01, zS - 0.05, link.min[0] + 0.47, sy, lobbyZ - 0.1, { cast: false })
 
   // Walls
   const northOpenings = NORTH_DOORS.map((x) => doorOpening(x))
   const southOpenings = [
     ...SOUTH_DOORS.map((x) => doorOpening(x)),
     { a0: link.min[0], a1: link.max[0], top: CEIL_Y },
-    { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: DOOR_H + 0.35 },
+    { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: CEIL_Y },
   ]
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, zn - WALL_T, zn, corridorBands, northOpenings)
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, zs, zs + WALL_T, corridorBands, southOpenings)
-  wall(b, "z", zn, zs, x0 - WALL_T, x0, corridorBands, [doorOpening(0, 1.7)])
+  wall(b, "z", zn, zs, x0 - WALL_T, x0, corridorBands)
   wall(b, "z", zn, zs, x1, x1 + WALL_T, corridorBands, [doorOpening(0, 1.7)])
   wall(b, "z", zs, lobbyZ - WALL_T, link.min[0] - WALL_T, link.min[0], corridorBands)
   wall(b, "z", zs, lobbyZ - WALL_T, link.max[0], link.max[0] + WALL_T, corridorBands)
@@ -75,17 +84,17 @@ export function buildCorridor(b: Builder) {
   const glow = staticGlass()
   for (const x of NORTH_DOORS) {
     if (x === LAB_DOOR) continue
-    door(b, x, zn - WALL_T / 2, { rot: 0, glass: x === STATIC_DOOR ? glow.material : undefined })
+    door(b, x, zn - WALL_T / 2, { rot: 0, locked: true, glass: x === STATIC_DOOR ? glow.material : undefined })
   }
   for (const x of SOUTH_DOORS) {
     if (x === CLOSET_DOOR) continue
-    door(b, x, zs + WALL_T / 2, { rot: Math.PI })
+    door(b, x, zs + WALL_T / 2, { rot: Math.PI, locked: true })
   }
-  // Hinged on the east jamb so the open leaf doesn't hide the room from the corridor (concept r5-05).
-  door(b, LAB_DOOR, zn - WALL_T / 2, { rot: Math.PI, open: -1.45 })
-  door(b, CLOSET_DOOR, zs + WALL_T / 2, { rot: Math.PI, open: 1.5 })
-  door(b, x0 - WALL_T / 2, 0, { rot: Math.PI / 2, width: 1.7, leaves: 2, plate: false })
-  door(b, x1 + WALL_T / 2, 0, { rot: -Math.PI / 2, width: 1.7, leaves: 2, plate: false })
+  // Hinged on the west jamb and swung well past square into the room: from the corridor the leaf reads as a dark slab
+  // just inside the left jamb and the room opens up beyond it (concept r5-05).
+  door(b, LAB_DOOR, zn - WALL_T / 2, { rot: 0, open: 1.6 })
+  door(b, CLOSET_DOOR, zs + WALL_T / 2, { rot: Math.PI, open: 0.6 })
+  door(b, x1 + WALL_T / 2, 0, { rot: -Math.PI / 2, width: 1.7, leaves: 2, plate: false, locked: true })
 
   // Static-lit room behind the north door: a narrow flickering spot aimed out through the vision panel.
   const staticSpec: Lamp = {

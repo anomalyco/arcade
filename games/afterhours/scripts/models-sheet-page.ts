@@ -5,6 +5,7 @@
 //   &view=back     view from the +Z side instead; view=side looks along -X
 //   &night=1       dark teal fog with one warm overhead lamp, closer to the game's look
 //   &cell=420x300  cell size in px
+//   &lod=1         render each model's LOD1 (models without one show LOD0)
 //   &inst=pallet   extra cell drawing a 3×3 instanceModel() grid
 //   &stats=1       no shadows; report material objects, node programs and pipelines built for the models in __sheet.stats
 //   &raw=1         disable models.ts material sharing (A/B for stats)
@@ -24,6 +25,7 @@ addEventListener("unhandledrejection", (e) => status.errors.push(String((e as Pr
 const names = (params.get("only")?.split(",") ?? Object.keys(MODELS)) as ModelName[]
 const [cw, ch] = (params.get("cell") ?? "384x288").split("x").map(Number) as [number, number]
 const night = params.get("night") === "1"
+const lod = Number(params.get("lod") ?? 0)
 const view = params.get("view") ?? "front"
 const cols = Math.max(1, Math.min(names.length, Math.floor(innerWidth / cw)))
 const rows = Math.ceil(names.length / cols)
@@ -98,7 +100,7 @@ for (let i = 0; i < names.length; i++) {
   const [w, h, d] = info.size as readonly [number, number, number]
   let model: THREE.Group
   try {
-    model = await loadModel(name)
+    model = await loadModel(name, { lod: lod as 0 | 1 })
   } catch (e) {
     status.errors.push(`${name}: ${String(e)}`)
     continue
@@ -154,7 +156,9 @@ for (let i = 0; i < names.length; i++) {
   ctx.fillStyle = "rgba(0,0,0,0.55)"
   ctx.fillRect(x, y + ch - 18, cw, 18)
   ctx.fillStyle = "#e8e8e8"
-  ctx.fillText(`${name}  ${w}×${h}×${d} m  ${(info.tris / 1000).toFixed(1)}k  ${info.kb} KB`, x + 6, y + ch - 5)
+  const lodInfo = info as { lod1?: number }
+  const tris = lod === 1 && lodInfo.lod1 ? `LOD1 ${(lodInfo.lod1 / 1000).toFixed(1)}k` : `${(info.tris / 1000).toFixed(1)}k`
+  ctx.fillText(`${name}  ${w}×${h}×${d} m  ${tris}  ${info.kb} KB`, x + 6, y + ch - 5)
   scene.remove(model)
 }
 if (statsMode) {

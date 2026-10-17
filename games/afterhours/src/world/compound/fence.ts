@@ -230,17 +230,26 @@ function buildGate(ctx: WorldContext, root: THREE.Object3D) {
   const leafH = H - 0.15
   const batch = new Batch()
   const meshBatch = new Batch()
-  const leaves: { hx: number; yaw: number }[] = [
-    { hx: FENCE.gate.x0, yaw: Math.PI / 2 },
-    { hx: FENCE.gate.x1, yaw: (150 * Math.PI) / 180 },
+  // A double gate on the shared door system (one E swings both leaves away from the player). The outward sweep is kept
+  // clear: the boom cabinet stands east of the east leaf's arc and the cones sit outside the west one's. They start
+  // shut: the night shift closes the gate.
+  const leaves = [
+    { id: "gate-w", partner: "gate-e", hx: FENCE.gate.x0, mirror: false, angle: Math.PI / 2, open: 0 },
+    { id: "gate-e", partner: "gate-w", hx: FENCE.gate.x1, mirror: true, angle: -Math.PI / 2, open: 0 },
   ]
-  for (const leaf of leaves) {
-    const m = matrix(leaf.hx, heightAt(leaf.hx, z), z, leaf.yaw)
-    const b = batch.child(m)
-    const mb = meshBatch.child(m)
+  for (const spec of leaves) {
+    const leaf = new THREE.Group()
+    leaf.name = spec.id
+    const lb = new Batch()
+    const lm = new Batch()
+    // Leaves are modelled extending to +x; the east one is turned half round so it extends to -x.
+    const m = matrix(0, 0, 0, spec.mirror ? Math.PI : 0)
+    const b = lb.child(m)
+    const mb = lm.child(m)
     const x0 = 0.1
     const x1 = x0 + L
-    const y0 = 0.1
+    // Bottom rail clears the 0.12 m booth island the east leaf sweeps over.
+    const y0 = 0.17
     const y1 = leafH
     const v = (x: number, y: number) => new THREE.Vector3(x, y, 0)
     for (const [a, c] of [
@@ -255,22 +264,30 @@ function buildGate(ctx: WorldContext, root: THREE.Object3D) {
     // Barbed extension arms and strands on top of the leaf.
     for (const x of [x0, x1]) b.add(galv, rod(v(x, y1), v(x, y1 + 0.42), 0.014, 4))
     for (const y of [0.14, 0.28, 0.42]) b.add(wireMat, rod(v(x0, y1 + y), v(x1, y1 + y), 0.006, 3))
-    // Hinges and drop rod.
-    for (const y of [0.4, y1 - 0.3]) b.at(material("metal_dark"), box(0.12, 0.08, 0.08), 0.04, y, 0)
+    // Hinge collars and drop rod.
+    for (const y of [0.4, y1 - 0.3]) b.at(material("metal_dark"), cyl(0.05, 0.05, 0.1, 10), 0, y, 0)
     b.add(galv, rod(v(x1 - 0.12, -0.02), v(x1 - 0.12, 0.9), 0.01, 4))
     const panel = new THREE.PlaneGeometry(L, y1 - y0)
     const uv = panel.attributes.uv!
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * L, uv.getY(i) * (y1 - y0))
     mb.at(fenceMesh(), panel, (x0 + x1) / 2, (y0 + y1) / 2, 0)
-
-    // Colliders along the leaf.
-    const dx = Math.cos(leaf.yaw)
-    const dz = -Math.sin(leaf.yaw)
-    for (let s = 0.2; s <= L; s += 0.5) {
-      const cx = leaf.hx + dx * s
-      const cz = z + dz * s
-      ctx.colliders.push({ min: [cx - 0.12, 0, cz - 0.12], max: [cx + 0.12, leafH + 0.5, cz + 0.12] })
-    }
+    lb.build(leaf, { castShadow: (mat) => mat === galv, name: spec.id })
+    for (const mesh of lm.build(leaf, { name: `${spec.id}-mesh`, receiveShadow: false })) mesh.renderOrder = 1
+    root.add(leaf)
+    ctx.doors.add({
+      id: spec.id,
+      leaf,
+      hinge: [spec.hx, heightAt(spec.hx, z), z],
+      // The two leaves overlap slightly at the meeting stiles so there is no gap to aim (or walk) through.
+      width: spec.mirror ? -(x1 + 0.04) : x1 + 0.04,
+      height: leafH + 0.42,
+      thickness: 0.06,
+      openAngle: spec.angle,
+      swing: "auto",
+      startOpen: spec.open,
+      double: spec.partner,
+      sound: "gate",
+    })
   }
   // Heavier gate posts with caps.
   for (const hx of [FENCE.gate.x0, FENCE.gate.x1]) {
@@ -290,7 +307,7 @@ function sphere6(r: number) {
 /** Red/white boom barrier across the inbound lane, pivoting on a steel cabinet beside the booth. */
 function buildBoom(ctx: WorldContext, root: THREE.Object3D) {
   const batch = new Batch()
-  const px = BOOTH.x - BOOTH.w / 2 - 1.9
+  const px = BOOTH.x - BOOTH.w / 2 - 1.3
   const pz = FENCE.max[1] + 3.2
   const y = heightAt(px, pz)
   const cab = flat(0x4f5344, 0.65, 0.3)
@@ -301,14 +318,14 @@ function buildBoom(ctx: WorldContext, root: THREE.Object3D) {
   batch.at(material("metal_dark"), box(0.46, 0.04, 0.4), px, y + 1.21, pz)
   batch.at(material("metal_dark"), cyl(0.09, 0.09, 0.44, 10), px, armY, pz, 0, Math.PI / 2)
   const armLen = px - 0.22 - tipX
-  // Red and white stripes, 0.5 m each, as separate segments of the arm.
+  // Red and white stripes, 0.5 m each, as separate segments of the arm. The boom stays down (static): walkers pass
+  // round its tip.
   for (let s = 0, k = 0; s < armLen - 0.01; s += 0.5, k++) {
     const segLen = Math.min(0.5, armLen - s)
     batch.at(k % 2 ? boomWhite() : boomRed(), box(segLen, 0.085, 0.06), tipX + s + segLen / 2, armY, pz)
   }
-  // Counterweight stub behind the pivot.
+  // Counterweight stub behind the pivot, red reflectors along the arm.
   batch.at(material("metal_dark"), box(0.7, 0.16, 0.12), px + 0.45, armY, pz)
-  // Red reflectors along the arm.
   for (let s = 1; s < armLen; s += 2) batch.at(glowReflector(), box(0.06, 0.05, 0.065), tipX + s, armY, pz)
   // Fork rest post at the tip.
   const rx = tipX + 0.3

@@ -41,6 +41,8 @@ export type ModelSource = {
   drop?: RegExp
   /** Simplify (meshopt) when the source has more triangles than this. */
   maxTris?: number
+  /** Also build a simplified LOD1 (target triangles) in the same file; see buildLod1. */
+  lod1?: number
   /** Atlas (base colour) edge in px; default from the model's size: 2048 vehicles, 1024 ≥ 0.5 m, else 512. */
   atlas?: 512 | 1024 | 2048
   /** Who should place it and what it is. */
@@ -60,43 +62,43 @@ const objaverse = (uid: string, shard: string, title: string, author: string, li
 export const MODEL_SOURCES: Record<string, ModelSource> = {
   // Vehicles: no CC0 period car of usable quality exists, so these are Daniel Zhabotinsky's unbranded, invented-marque
   // early-80s American cars (CC-BY 4.0, "use it at your discretion"), real proportions, ~20K tris with interiors.
-  car_wagon: {
+  car_wagon: { lod1: 5000,
     src: objaverse("aa0becb6e854422596cac6b21bf79787", "000-124", "Fairheaven SW '84 - Low poly model", "Daniel Zhabotinsky"),
     yaw: -90,
     size: { axis: "z", m: 5.05 },
     note: "hero: early-80s mid-size station wagon (compound lot)",
   },
-  car_sedan: {
+  car_sedan: { lod1: 5000,
     src: objaverse("e2678da920cc4be68dbc193727919ffb", "000-031", "Fairheaven LT '80 - Low poly model", "Daniel Zhabotinsky"),
     yaw: -90,
     size: { axis: "z", m: 5.2 },
     note: "1980 full-size four-door sedan",
   },
-  car_sedan_b: {
+  car_sedan_b: { lod1: 5000,
     src: objaverse("892b2684fb37442299bfad9222cf331c", "000-078", "Negotiator '80 - Low poly model", "Daniel Zhabotinsky"),
     yaw: 90,
     size: { axis: "z", m: 5.1 },
     note: "late-70s/1980 four-door sedan (detective green)",
   },
-  car_pickup: {
+  car_pickup: { lod1: 5000,
     src: objaverse("6c48c94be8974dc7a5932f697c0ba68f", "000-089", "Conquer '89 Pickup - Low poly model", "Daniel Zhabotinsky"),
     yaw: -90,
     size: { axis: "z", m: 4.5 },
     note: "compact two-door pickup (80s body)",
   },
-  van: {
+  van: { lod1: 5000,
     src: objaverse("09d718c9cf72401b8534d265a06a803f", "000-087", "Shvan '92 - Low poly model", "Daniel Zhabotinsky"),
     yaw: -90,
     size: { axis: "z", m: 5.0 },
     note: "full-size cargo van (body style 1971–96)",
   },
-  box_truck: {
+  box_truck: { lod1: 5000,
     src: objaverse("663a0953c038434a918cb85725c88ffa", "000-119", "LCT 3000 '95 - Low poly model", "Daniel Zhabotinsky"),
     yaw: 90,
     size: { axis: "z", m: 6.6 },
     note: "cab-over box truck (loading dock)",
   },
-  covered_car: { src: { site: "polyhaven", id: "covered_car" }, note: "car under a dusty cover (creepy, compound/dock)" },
+  covered_car: { lod1: 3000, src: { site: "polyhaven", id: "covered_car" }, note: "car under a dusty cover (creepy, compound/dock)" },
 
   // Exterior props
   dumpster: {
@@ -125,7 +127,7 @@ export const MODEL_SOURCES: Record<string, ModelSource> = {
   },
   crate_wood: { src: { site: "polyhaven", id: "wooden_crate_02" }, yaw: 90, note: "wooden crate" },
   milk_crate: { src: { site: "polyhaven", id: "plastic_crate_03" }, maxTris: 10000, note: "red plastic milk crate" },
-  cardboard_box: { src: { site: "polyhaven", id: "cardboard_box_01" }, note: "taped cardboard box" },
+  cardboard_box: { lod1: 300, maxTris: 2500, src: { site: "polyhaven", id: "cardboard_box_01" }, note: "taped cardboard box" },
   utility_box: { src: { site: "polyhaven", id: "utility_box_01" }, note: "grey electrical cabinet" },
   utility_box_b: { src: { site: "polyhaven", id: "utility_box_02" }, note: "green double-door electrical cabinet" },
   ac_unit: { src: { site: "polyhaven", id: "exterior_aircon_unit" }, keep: /_rusted$/, note: "wall-mounted condenser unit" },
@@ -135,14 +137,14 @@ export const MODEL_SOURCES: Record<string, ModelSource> = {
   hand_truck: { src: { site: "polyhaven", id: "hand_truck" }, note: "two-wheel hand truck (dock)" },
 
   // Interior
-  office_desk: { src: { site: "polyhaven", id: "metal_office_desk" }, yaw: 180, note: "steel tanker desk" },
-  office_chair: {
+  office_desk: { lod1: 1500, src: { site: "polyhaven", id: "metal_office_desk" }, yaw: 180, note: "steel tanker desk" },
+  office_chair: { lod1: 1500,
     src: objaverse("b228a29fa84544c2be501c295653ffe7", "000-140", "Office Chair", "nokillnando"),
     yaw: 180,
     size: { axis: "y", m: 0.98 },
     note: "fabric swivel task chair",
   },
-  stack_chair: { src: { site: "polyhaven", id: "SchoolChair_01" }, yaw: 180, note: "moulded stacking chair" },
+  stack_chair: { lod1: 1000, src: { site: "polyhaven", id: "SchoolChair_01" }, yaw: 180, note: "moulded stacking chair" },
   filing_cabinet: {
     src: objaverse("f0742791a0ea432db1f432c24de83867", "000-108", "File Cabinet", "LtxxwSibeRia"),
     yaw: 180,
@@ -169,14 +171,71 @@ export const MODEL_SOURCES: Record<string, ModelSource> = {
     note: "black rotary desk telephone",
   },
   metal_rack: { src: { site: "polyhaven", id: "worn_metal_rack" }, note: "worn steel shelving unit" },
-  steel_shelves: { src: { site: "polyhaven", id: "steel_frame_shelves_03" }, note: "steel-frame shelves" },
+  steel_shelves: { lod1: 2000, src: { site: "polyhaven", id: "steel_frame_shelves_03" }, note: "steel-frame shelves" },
   chemistry_set: { src: { site: "polyhaven", id: "chemistry_set" }, maxTris: 30000, note: "lab glassware on stands" },
-  glassware: {
+  glassware: { lod1: 600,
     src: objaverse("b8594f7dc7e8442dbaaae7a11da4a962", "000-054", "Chemistry Glassware", "maxdragon"),
     size: { axis: "y", m: 0.33 },
     note: "beakers, flask, graduated cylinders",
   },
   microscope: { src: { site: "polyhaven", id: "industrial_microscope" }, note: "lab microscope" },
+  // Realism-audit additions (docs/prop-audit.md): period fittings the procedural props were standing in for.
+  vending_machine: {
+    yaw: 180,
+    lod1: 2500,
+    src: objaverse("eb605bea59574e43a6abc4109798d36d", "000-044", "Old Caffee Vending Machine", "gorzi90"),
+    size: { axis: "y", m: 1.83 },
+    note: "retro coffee vending machine (lounge)",
+  },
+  water_cooler: {
+    yaw: 180,
+    src: objaverse("4b88c4c4e94c497ca39f831f374e89fc", "000-144", "Water cooler", "tboiston"),
+    size: { axis: "y", m: 1.32 },
+    note: "bottled water cooler",
+  },
+  radiator: {
+    lod1: 2000,
+    src: objaverse("8a1a2e0263aa401591c1e87d824a79ef", "000-019", "Old Radiator", "thethieme"),
+    size: { axis: "y", m: 0.62 },
+    note: "cast-iron column radiator under a window",
+  },
+  space_heater: {
+    yaw: 180,
+    lod1: 1500,
+    src: objaverse("7b35843ab9364ca695f11224698efabe", "000-023", "space Heater", "bloodmeat08"),
+    size: { axis: "y", m: 0.42 },
+    note: "vintage radiant space heater on a wire stand (booth)",
+  },
+  coat_rack: {
+    lod1: 1500,
+    src: objaverse("72e821fc75d9473183a63d548959693b", "000-148", "Coat Rack", "Whostea"),
+    size: { axis: "y", m: 1.85 },
+    note: "bentwood coat stand",
+  },
+  drinking_fountain: {
+    yaw: 180,
+    lod1: 1500,
+    maxTris: 6000,
+    src: objaverse("796e0b2660a440e3a2e8a24c6ed0fe72", "000-058", "Drinking Fountain", "MooKorea"),
+    size: { axis: "x", m: 0.46 },
+    note: "wall-hung steel drinking fountain (corridors)",
+  },
+  desk_fan: {
+    lod1: 1500,
+    maxTris: 6000,
+    src: objaverse("79bb384f2ed545a5ae8c2b9cfa06cd8f", "000-087", "Retro-style Desk Fan", "futaba_blender"),
+    size: { axis: "y", m: 0.36 },
+    note: "steel desk fan",
+  },
+  fire_extinguisher: {
+    src: objaverse("5676b179b3b744c0aaae53a3dcea2300", "000-112", "Fire Extinguisher", "loichuet1"),
+    size: { axis: "y", m: 0.6 },
+    note: "red stored-pressure extinguisher (corridor cabinets, booth)",
+  },
+  wall_clock: { src: { site: "polyhaven", id: "wall_clock" }, yaw: 180, note: "institutional wall clock" },
+  desk_lamp: { lod1: 2000, src: { site: "polyhaven", id: "desk_lamp_arm_01" }, maxTris: 12000, note: "sprung-arm desk lamp" },
+  lab_stool: { lod1: 1200, src: { site: "polyhaven", id: "metal_stool_02" }, note: "steel lab stool with a wooden seat" },
+  lounge_chair: { lod1: 1500, src: { site: "polyhaven", id: "mid_century_lounge_chair" }, yaw: 180, note: "leather swivel lounge chair" },
   wet_floor_sign: { src: { site: "polyhaven", id: "WetFloorSign_01" }, note: "yellow wet-floor sign" },
   fluorescent_light: { src: { site: "polyhaven", id: "mounted_fluorescent_lights" }, keep: /_d$/, note: "surface-mount fluorescent tube fixture" },
   security_camera: { src: { site: "polyhaven", id: "security_camera_01" }, yaw: 180, note: "housed CCTV camera on bracket" },
@@ -622,7 +681,65 @@ async function atlasModel(name: string, spec: ModelSource, doc: any) {
   for (const tex of root.listTextures()) if (![tBase, tNormal, tOrm, tEm].includes(tex)) tex.dispose()
 }
 
-type Stats = { tris: number; bytes: number; size: [number, number, number]; footprint: [number, number]; meshes: number; materials: number }
+// ---------------------------------------------------------------------------------------------------------------
+// LOD1: a simplified copy of the model in the same file, under a node named "lod1" (the full model moves under
+// "lod0"). Same materials and atlas, so no extra textures and no new shaders; the extra geometry is a few KB.
+
+const nodeTris = (node: any): number => {
+  let n = 0
+  node.traverse((c: any) => {
+    for (const p of c.getMesh()?.listPrimitives() ?? []) n += (p.getIndices()?.getCount() ?? p.getAttribute("POSITION").getCount()) / 3
+  })
+  return Math.round(n)
+}
+
+/** Reduces an indexed primitive to about `target` triangles. Seams are respected first (keeps normals/UVs exact);
+ *  only if that stalls far above target does it go permissive, weighted by normals so shading creases survive, and
+ *  finally sloppy (cluster) simplification. */
+function reducePrimitive(doc: any, prim: any, target: number) {
+  const f32 = (a: any) => (a.getArray() instanceof Float32Array ? a.getArray() : Float32Array.from({ length: a.getCount() * a.getElementSize() }, (_, i) => a.getElement(Math.floor(i / a.getElementSize()), [])[i % a.getElementSize()]))
+  const positions = f32(prim.getAttribute("POSITION"))
+  const normals = f32(prim.getAttribute("NORMAL"))
+  const indices = Uint32Array.from(prim.getIndices().getArray())
+  const want = Math.max(3, Math.floor(target) * 3)
+  if (indices.length <= want) return
+  const close = (d: Uint32Array) => d.length <= want * 1.3
+  let [dst] = mo.MeshoptSimplifier.simplifyWithAttributes(indices, positions, 3, normals, 3, [0.5, 0.5, 0.5], null, want, 0.05, [])
+  if (!close(dst)) [dst] = mo.MeshoptSimplifier.simplifyWithAttributes(indices, positions, 3, normals, 3, [0.5, 0.5, 0.5], null, want, 1, ["Permissive"])
+  if (!close(dst)) [dst] = mo.MeshoptSimplifier.simplifySloppy(indices, positions, 3, null, want, 1)
+  prim.setIndices(doc.createAccessor().setType("SCALAR").setArray(dst).setBuffer(doc.getRoot().listBuffers()[0]))
+  fn.compactPrimitive(prim)
+}
+
+function buildLod1(doc: any, targetTris: number): number {
+  const root = doc.getRoot()
+  const scene = root.getDefaultScene() ?? root.listScenes()[0]
+  const kids = scene.listChildren()
+  const lod0 = doc.createNode("lod0")
+  for (const k of kids) {
+    scene.removeChild(k)
+    lod0.addChild(k)
+  }
+  const lod1 = doc.createNode("lod1")
+  scene.addChild(lod0).addChild(lod1)
+  const total = nodeTris(lod0)
+  const ratio = Math.min(1, targetTris / total)
+  for (const k of kids) {
+    const src = k.getMesh()
+    if (!src) continue
+    const mesh = doc.createMesh(`${src.getName()}_lod1`)
+    for (const p of src.listPrimitives()) {
+      const c = p.clone()
+      // Glass and other small parts are kept in proportion; nothing drops below 12 triangles.
+      reducePrimitive(doc, c, Math.max(12, ((c.getIndices()?.getCount() ?? 0) / 3) * ratio))
+      mesh.addPrimitive(c)
+    }
+    lod1.addChild(doc.createNode(`${k.getName()}_lod1`).setMesh(mesh))
+  }
+  return nodeTris(lod1)
+}
+
+type Stats = { tris: number; lod1?: number; bytes: number; size: [number, number, number]; footprint: [number, number]; meshes: number; materials: number }
 
 async function convert(name: string, spec: ModelSource, input: string, output: string): Promise<Stats> {
   const doc = (await io.read(input)).setLogger(logger)
@@ -692,15 +809,19 @@ async function convert(name: string, spec: ModelSource, input: string, output: s
     await doc.transform(fn.simplify({ simplifier: mo.MeshoptSimplifier, ratio: spec.maxTris / before, error: 0.002, lockBorder: false }))
   }
   await atlasModel(name, spec, doc)
-  await doc.transform(fn.weld(), fn.join({ keepNamed: false }), fn.prune(), fn.dedup(), fn.meshopt({ encoder: mo.MeshoptEncoder, level: "medium" }))
+  await doc.transform(fn.weld(), fn.join({ keepNamed: false }))
+  const lod1Tris = spec.lod1 ? buildLod1(doc, spec.lod1) : 0
+  await doc.transform(fn.prune(), fn.dedup(), fn.meshopt({ encoder: mo.MeshoptEncoder, level: "medium" }))
   await io.write(output, doc)
 
   const out = await io.read(output)
   const ob = fn.getBounds(out.getRoot().getDefaultScene() ?? out.getRoot().listScenes()[0])
   const r = (v: number) => Math.round(v * 1000) / 1000
   const size: [number, number, number] = [r(ob.max[0] - ob.min[0]), r(ob.max[1] - ob.min[1]), r(ob.max[2] - ob.min[2])]
+  const lod0 = out.getRoot().listNodes().find((n: any) => n.getName() === "lod0")
   return {
-    tris: Math.round(triCount(out)),
+    tris: Math.round(lod0 ? nodeTris(lod0) : triCount(out)),
+    ...(lod1Tris ? { lod1: lod1Tris } : {}),
     bytes: statSync(output).size,
     size,
     footprint: [size[0], size[2]],
@@ -784,7 +905,7 @@ if (existsSync(modelsTs)) {
     const body = Object.entries(ordered)
       .map(([name, m]) => {
         const note = MODEL_SOURCES[name]!.note.replace(/"/g, '\\"')
-        return `  ${name}: { size: [${m.size.join(", ")}], tris: ${m.tris}, kb: ${Math.round(m.bytes / 1024)}, licence: "${m.licence}", note: "${note}" },`
+        return `  ${name}: { size: [${m.size.join(", ")}], tris: ${m.tris},${m.lod1 ? ` lod1: ${m.lod1},` : ""} kb: ${Math.round(m.bytes / 1024)}, licence: "${m.licence}", note: "${note}" },`
       })
       .join("\n")
     writeFileSync(modelsTs, `${text.slice(0, i)}${begin}\nexport const MODELS = {\n${body}\n} as const satisfies Record<string, ModelInfo>\n${text.slice(j)}`)

@@ -7,7 +7,10 @@ const RADIUS = 0.3
 const EYE = 1.65
 const STEP = 0.45
 
-/** First-person walker: pointer-lock mouse look, WASD by physical key, Shift to run, collision against the world. */
+/**
+ * First-person walker: pointer-lock mouse look, WASD by physical key, Shift to run, KeyE to open/close the door under
+ * the crosshair, collision against the world and against door leaves (`ctx.doors`, which it drives each frame).
+ */
 export class Player {
   readonly pos = { x: 0, y: 0, z: 0 }
   yaw = 0
@@ -25,6 +28,8 @@ export class Player {
     private ctx: WorldContext,
     enabled: boolean,
   ) {
+    ctx.doors.attach(ctx, { pos: this.pos, camera })
+    ;(globalThis as { __afterhoursPlayer?: Player }).__afterhoursPlayer = this
     if (!enabled) return
     canvas.addEventListener("click", () => canvas.requestPointerLock())
     document.addEventListener("mousemove", (e) => {
@@ -37,6 +42,7 @@ export class Player {
       if (e.target instanceof HTMLInputElement) return
       this.keys.add(e.code)
       if (e.code === "KeyF" && !e.repeat) this.flashlight = !this.flashlight
+      if (e.code === "KeyE" && !e.repeat) ctx.doors.use()
       if (e.code === "KeyN" && !e.repeat) this.fly = !this.fly
       const views = Object.keys(VIEWPOINTS) as ViewpointName[]
       const digit = e.code.startsWith("Digit") ? Number(e.code.slice(5)) : 0
@@ -62,6 +68,7 @@ export class Player {
   }
 
   update(dt: number) {
+    this.ctx.doors.update(dt)
     const k = this.keys
     const fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0)
     const side = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0)
@@ -137,6 +144,7 @@ export class Player {
       const cz = Math.max(b.min[2], Math.min(nz, b.max[2]))
       if ((nx - cx) ** 2 + (nz - cz) ** 2 < RADIUS * RADIUS) return
     }
+    if (this.ctx.doors.blocks(this.pos.x, this.pos.z, nx, nz, feet, head, RADIUS)) return
     this.pos.x = nx
     this.pos.z = nz
   }

@@ -37,8 +37,8 @@ export function buildLab(b: Builder) {
   b.rod(M.steel, [sx, y + 0.93, z0 + 0.08], [sx, y + 1.25, z0 + 0.08], 0.012)
   b.rod(M.steel, [sx, y + 1.25, z0 + 0.08], [sx, y + 1.22, z0 + 0.3], 0.012)
 
-  // Canopy fume hood over the west bench (seen through the door, left), its duct into the ceiling.
-  const hz = -4.95
+  // Canopy fume hood over the west bench by the far corner (seen at the side through the door), duct into the ceiling.
+  const hz = -8.35
   const hxc = x0 + 0.43
   const hood = new THREE.CylinderGeometry(0.33, Math.SQRT1_2, 1, 4, 1)
   hood.rotateY(Math.PI / 4)
@@ -52,19 +52,19 @@ export function buildLab(b: Builder) {
   const top = y + 0.935
   const zb = z0 + 0.38
   // A stack of notebooks.
-  b.box(M.paper, -22.05, top, zb - 0.05, -21.82, top + 0.04, zb + 0.25)
-  b.box(M.cardboard, -22.03, top + 0.04, zb - 0.03, -21.84, top + 0.06, zb + 0.22)
+  b.box(M.paper, -23.55, top, zb - 0.05, -23.32, top + 0.04, zb + 0.25)
+  b.box(M.cardboard, -23.53, top + 0.04, zb - 0.03, -23.34, top + 0.06, zb + 0.22)
 
   // Desk lamp: the only warm light in the building.
-  // On the west bench under the chalkboard, arm reaching out over the bench top (+x).
-  const lx = x0 + 0.15
-  const lz = -6.1
+  // On the far (north) bench under the chalkboard, arm reaching out over the bench towards the door.
+  const lx = -24.35
+  const lz = z0 + 0.14
   b.cyl("metal_dark", T(lx, top + 0.012, lz), 0.075, 0.085, 0.024, 16)
-  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.05, top + 0.36, lz - 0.06], 0.008)
-  b.rod(M.lampShade, [lx + 0.05, top + 0.36, lz - 0.06], [lx + 0.26, top + 0.42, lz - 0.18], 0.008)
+  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.04, top + 0.38, lz + 0.05], 0.008)
+  b.rod(M.lampShade, [lx + 0.04, top + 0.38, lz + 0.05], [lx + 0.12, top + 0.44, lz + 0.26], 0.008)
   const shade = new THREE.Matrix4().compose(
-    new THREE.Vector3(lx + 0.3, top + 0.36, lz - 0.2),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.55)),
+    new THREE.Vector3(lx + 0.14, top + 0.38, lz + 0.3),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.55, 0, 0)),
     new THREE.Vector3(1, 1, 1),
   )
   b.cyl(M.lampShade, shade, 0.035, 0.085, 0.13, 16, { open: true })
@@ -74,10 +74,10 @@ export function buildLab(b: Builder) {
   b.add(M.bulbWarm, bulb, { cast: false })
   b.lamp({
     kind: "incandescent",
-    position: [lx + 0.33, top + 0.3, lz - 0.2],
-    direction: [0.53, -0.85, 0],
+    position: [lx + 0.14, top + 0.32, lz + 0.33],
+    direction: [0, -0.85, 0.53],
     color: WARM,
-    intensity: 90,
+    intensity: 260,
     range: 5,
     angle: 1.0,
     penumbra: 0.8,
@@ -86,39 +86,37 @@ export function buildLab(b: Builder) {
   })
 
   // Island lab table with four stools.
-  const tx0 = -20.6
-  const tx1 = -18.2
-  const tz0 = -7.0
-  const tz1 = -5.8
+  const tx0 = -23.7
+  const tx1 = -21.5
+  const tz0 = -6.2
+  const tz1 = -5.2
   b.box(M.epoxy, tx0, y + 0.88, tz0, tx1, y + 0.92, tz1)
   b.box(M.cabinet, tx0 + 0.05, y + 0.8, tz0 + 0.05, tx1 - 0.05, y + 0.88, tz1 - 0.05)
   for (const lx2 of [tx0 + 0.08, tx1 - 0.08])
     for (const lz2 of [tz0 + 0.08, tz1 - 0.08]) b.box(M.cabinet, lx2 - 0.025, y, lz2 - 0.025, lx2 + 0.025, y + 0.8, lz2 + 0.025)
   b.collide(tx0, y, tz0, tx1, y + 0.92, tz1)
-  b.box(M.paper, -19.4, y + 0.92, -6.6, -19.18, y + 0.922, -6.32, { cast: false })
-  stool(b, -20.1, -5.2)
-  stool(b, -18.8, -5.1)
-  stool(b, -21.2, -6.5)
-  stool(b, -19.5, -7.6)
+  b.box(M.paper, -22.3, y + 0.92, -5.85, -22.08, y + 0.922, -5.57, { cast: false })
+  stool(b, -22.05, -4.55)
+  stool(b, -23.05, -4.7)
+  stool(b, -21.0, -5.9)
+  stool(b, -22.7, -6.85)
 
-  // Chalkboard on the west wall over the bench (right of the hood from the door), wiped but not clean.
-  const cbz0 = -8.7
-  const cbz1 = -6.05
-  const cby0 = y + 1.1
+  // Chalkboard on the far (north) wall over the bench, framed by the doorway from the corridor; wiped, not clean.
+  const cbx0 = -24.75
+  const cbx1 = -22.45
+  const cby0 = y + 1.12
   const cby1 = y + 2.2
-  const wx = x0
-  b.box(M.wood, wx, cby0 - 0.05, cbz0 - 0.05, wx + 0.04, cby1 + 0.05, cbz1 + 0.05)
-  b.box(M.chalkboard, wx + 0.04, cby0, cbz0, wx + 0.045, cby1, cbz1, { cast: false })
-  b.box("metal_galvanized", wx + 0.04, cby0 - 0.06, cbz0, wx + 0.11, cby0 - 0.04, cbz1)
+  const wz = z0
+  b.box(M.wood, cbx0 - 0.05, cby0 - 0.05, wz, cbx1 + 0.05, cby1 + 0.05, wz + 0.04)
+  b.box(M.chalkboard, cbx0, cby0, wz + 0.04, cbx1, cby1, wz + 0.045, { cast: false })
+  b.box("metal_galvanized", cbx0, cby0 - 0.06, wz + 0.04, cbx1, cby0 - 0.04, wz + 0.11)
   const smears = [
-    [-7.9, 1.8, 1.3, 0.45, 0.05],
-    [-6.9, 1.55, 1.2, 0.5, -0.04],
-    [-7.4, 1.32, 0.9, 0.25, 0.02],
+    [-24.0, 1.85, 1.2, 0.42, 0.05],
+    [-23.1, 1.58, 1.1, 0.5, -0.04],
+    [-23.6, 1.34, 0.8, 0.22, 0.02],
   ] as const
-  smears.forEach(([z, h, w, hh, r], i) =>
-    b.quad(M.chalkSmear, T(wx + 0.0465 + i * 0.0003, y + h, z, Math.PI / 2, 0, r), w, hh, { cast: false }),
-  )
-  b.box(M.paper, wx + 0.07, cby0 - 0.05, -6.6, wx + 0.1, cby0 - 0.035, -6.52, { cast: false })
+  smears.forEach(([x, h, w, hh, r], i) => b.quad(M.chalkSmear, T(x, y + h, wz + 0.0465 + i * 0.0003, 0, 0, r), w, hh, { cast: false }))
+  b.box(M.paper, -23.0, cby0 - 0.05, wz + 0.07, -22.92, cby0 - 0.035, wz + 0.1, { cast: false })
 
   // Tall glass-fronted supply cabinet by the door wall.
   const cx0 = x0

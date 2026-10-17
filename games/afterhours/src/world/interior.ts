@@ -6,7 +6,7 @@ import { buildCore, buildSlabs } from "./interior/core"
 import { buildCorridor } from "./interior/corridor"
 import { buildLift } from "./interior/lift"
 import { buildLobby } from "./interior/lobby"
-import { placeProps } from "./interior/props"
+import { bakeModels, placeProps } from "./interior/props"
 import { buildCloset, buildLab } from "./interior/rooms"
 import { buildStorey, groundWindows } from "./interior/storeys"
 import { resetFurnish } from "./interior/furnish"
@@ -32,6 +32,8 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const first = Math.max(0, Math.min(BUILDING.main.storeys - 1, Math.floor((startY - 0.15) / STOREY_H)))
 
   const groups: THREE.Object3D[] = []
+  const builders: Builder[] = []
+  const proxies: (THREE.Object3D | null)[] = []
   const upper: { update(time: number): void }[] = []
   let corridor: { update(time: number): void } | null = null
   const buildOne = async (i: number) => {
@@ -46,10 +48,17 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
       buildCloset(b)
       groundWindows(b)
       placeProps(b)
-    } else upper.push(await buildStorey(b, i, pause))
+      proxies[i] = null
+    } else {
+      const st = await buildStorey(b, i, pause)
+      upper.push(st)
+      proxies[i] = st.proxy
+    }
     await pause()
     b.flush()
+    void bakeModels(b)
     groups[i] = b.group
+    builders[i] = b
     await pause()
   }
   await buildOne(first)
@@ -66,6 +75,8 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const icam = ctx.params.get("icam")?.split(",").map(Number)
   ;(globalThis as { __interior?: unknown }).__interior = { lift, ctx }
   let shown = -2
+  let propKey = ""
+  const NEAR = 18
   return {
     update(dt, time, camera) {
       if (icam && icam.length >= 5) {
@@ -82,6 +93,46 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
       if (s !== shown) {
         shown = s
         groups.forEach((g, i) => (g.visible = s < 0 || Math.abs(i - s) <= 1))
+      }
+      // Furniture: indoors only the camera's storey; outdoors only storeys level with the camera and within NEAR m
+      // of the block (seen through a window at a useful size). Desk-top props: indoors on the camera's storey only.
+      // Lit rooms keep a cheap silhouette (proxy) wherever their furniture is hidden.
+      const dx = Math.max(min[0] - p.x, 0, p.x - max[0])
+      const dz = Math.max(min[1] - p.z, 0, p.z - max[1])
+      const dist = Math.hypot(dx, dz)
+      const near = !inside && dist < NEAR
+      const close = !inside && dist < 8
+      let key = ""
+      for (let i = 0; i < builders.length; i++) {
+        const mid = 0.15 + i * STOREY_H + 1.5
+        const on = inside ? i === s : near && Math.abs(mid - p.y) < 9
+        key += on ? "1" : "0"
+      }
+      key += `${s}${close ? 1 : 0}`
+      // Outdoors, each instanced stretch of (LOD1) furniture also has to be near the camera itself.
+      if (near)
+        for (let i = 0; i < builders.length; i++) {
+          if (key[i] !== "1") continue
+          for (const grp of [builders[i]!.propsLod, builders[i]!.smallLod])
+            for (const g of grp.children) {
+              const bd = g.userData.bounds as { x0: number; x1: number; z0: number; z1: number } | undefined
+              if (!bd) continue
+              g.visible = Math.hypot(Math.max(bd.x0 - p.x, 0, p.x - bd.x1), Math.max(bd.z0 - p.z, 0, p.z - bd.z1)) < NEAR
+            }
+        }
+      if (key !== propKey) {
+        propKey = key
+        builders.forEach((b, i) => {
+          const on = key[i] === "1"
+          const own = inside && i === s
+          // Full models on the camera's own storey; LOD1 copies from outside.
+          b.props.visible = own
+          b.small.visible = own
+          b.propsLod.visible = on && !own
+          b.smallLod.visible = on && !own && close
+          const px = proxies[i]
+          if (px) px.visible = !on
+        })
       }
     },
   }

@@ -2,7 +2,8 @@ import * as THREE from "three/webgpu"
 import { decalMaterial } from "./windows"
 import { BUILDING } from "../layout"
 import type { WorldContext } from "../context"
-import { MODELS, instanceModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { MODELS, loadModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
 import { PLATFORM, lightAbove } from "./dock"
 import { DOCK_DOORS } from "./shell"
 import { CORE, ROOF_DOOR, band, facades, normal, point } from "./shell"
@@ -56,7 +57,7 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
   // On the dock: a loaded pallet of boxes at the west end, an empty pallet stack, milk crates and the hand truck.
   const ph = size("pallet")[1]
   {
-    const x = P.x0 + 0.9
+    const x = P.x0 + 0.68
     const z = P.z1 - 1.2
     put("pallet", x, P.y, z, 0.04, { collide: 0.05, blob: 0.6 })
     const top = P.y + ph
@@ -72,7 +73,7 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
     ctx.colliders.push({ min: [x - 0.6, P.y, z - 0.6], max: [x + 0.6, P.y + ph + bh * 3, z + 0.6] })
   }
   {
-    const x = P.x0 + 2.4
+    const x = -31.0
     const z = P.z1 - 1.0
     for (let k = 0; k < 4; k++) put("pallet", x + (k % 2) * 0.03, P.y + k * ph, z - (k % 3) * 0.02, -0.03 + k * 0.025, k ? {} : { collide: 0.05, blob: 0.6 })
     ctx.colliders.push({ min: [x - 0.6, P.y, z - 0.6], max: [x + 0.6, P.y + ph * 4, z + 0.6] })
@@ -184,19 +185,23 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
 
   contactShadows(root, blobs)
 
-  // Stream the meshes in; each model fails on its own.
+  // Stream the models in and bake every placement into one static mesh per material (the models share an atlas
+  // material, so this is a handful of draws and no per-InstancedMesh shader builds). The truck keeps an LOD pair.
   const pending: Promise<void>[] = []
-  for (const [name, items] of lists) {
+  const props = [...lists].filter(([n]) => n !== "box_truck")
+  pending.push(
+    bakeModels(props.map(([n, items]) => [n, items] as const)).then((g) => void root.add(g)),
+  )
+  const truck = lists.get("box_truck")
+  if (truck) {
     pending.push(
-      instanceModel(name, items)
-        .then((g) => {
-          g.traverse((o) => {
-            o.matrixAutoUpdate = false
-            o.updateMatrix()
-          })
-          root.add(g)
-        })
-        .catch((e) => console.warn(`facility: model ${name} failed`, e)),
+      Promise.all([bakeModels([["box_truck", truck]]), bakeModels([["box_truck", truck]], 1)]).then(([near, far]) => {
+        const lod = new THREE.LOD()
+        lod.name = "box_truck_lod"
+        lod.addLevel(near, 0)
+        lod.addLevel(far, 30)
+        root.add(lod)
+      }),
     )
   }
   return Promise.all(pending)
@@ -233,4 +238,64 @@ function contactShadows(root: THREE.Object3D, blobs: { x: number; z: number; y: 
   mesh.renderOrder = 1
   mesh.matrixAutoUpdate = false
   root.add(mesh)
+}
+
+/** Loads each model (failures skip that model) and merges all placements into one mesh per material + layout. */
+async function bakeModels(entries: readonly (readonly [ModelName, readonly Item[]])[], lod: 0 | 1 = 0) {
+  const group = new THREE.Group()
+  group.name = lod ? "facility-props-lod1" : "facility-props"
+  const buckets = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[]; cast: boolean }>()
+  const loaded = await Promise.all(
+    entries.map(([n]) => loadModel(n, { lod }).catch((e) => (console.warn(`facility: model ${n} failed`, e), null))),
+  )
+  const m = new THREE.Matrix4()
+  const q = new THREE.Quaternion()
+  const up = new THREE.Vector3(0, 1, 0)
+  entries.forEach(([, items], k) => {
+    const template = loaded[k]
+    if (!template) return
+    template.updateMatrixWorld(true)
+    template.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh || Array.isArray(mesh.material)) return
+      const mat = mesh.material
+      const keep = ["position", "normal", "uv", ...((mat as THREE.MeshStandardMaterial).vertexColors ? ["color"] : [])].filter((a) => mesh.geometry.attributes[a])
+      const key = `${mat.uuid}|${keep.join(",")}`
+      let b = buckets.get(key)
+      if (!b) buckets.set(key, (b = { material: mat, geos: [], cast: false }))
+      b.cast ||= mesh.castShadow
+      const base = floatCopy(mesh.geometry, keep)
+      for (const it of items) {
+        m.compose(new THREE.Vector3(...it.position), q.setFromAxisAngle(up, it.yaw), new THREE.Vector3(1, 1, 1)).multiply(mesh.matrixWorld)
+        b.geos.push(base.clone().applyMatrix4(m))
+      }
+      base.dispose()
+    })
+  })
+  for (const b of buckets.values()) {
+    const merged = mergeGeometries(b.geos, false)
+    for (const g of b.geos) g.dispose()
+    if (!merged) continue
+    merged.computeBoundingSphere()
+    const mesh = new THREE.Mesh(merged, b.material)
+    mesh.castShadow = b.cast
+    mesh.receiveShadow = true
+    mesh.matrixAutoUpdate = false
+    group.add(mesh)
+  }
+  return group
+}
+
+/** Indexed float copy of the attributes merging needs (meshopt-quantised inputs come in mixed array types). */
+function floatCopy(src: THREE.BufferGeometry, names: string[]) {
+  const g = new THREE.BufferGeometry()
+  for (const n of names) {
+    const a = src.attributes[n] as THREE.BufferAttribute
+    const out = new Float32Array(a.count * a.itemSize)
+    for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) out[i * a.itemSize + c] = a.getComponent(i, c)
+    g.setAttribute(n, new THREE.BufferAttribute(out, a.itemSize))
+  }
+  if (src.index) g.setIndex(Array.from(src.index.array as ArrayLike<number>))
+  else g.setIndex(Array.from({ length: src.attributes.position!.count }, (_, i) => i))
+  return g
 }

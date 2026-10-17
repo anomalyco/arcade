@@ -141,6 +141,11 @@ export function createPost(ctx: WorldContext) {
     { key: "post.bloom", label: "Bloom", group: "Camera", min: 0, max: 1.5, step: 0.01, value: 0.26 },
     { key: "post.bloomRadius", label: "Bloom radius", group: "Camera", min: 0, max: 1, step: 0.01, value: 0.75 },
     { key: "post.bloomThreshold", label: "Bloom threshold", group: "Camera", min: 0, max: 2, step: 0.01, value: 0.0 },
+    // The bloom is a diffusion-filter glow over the whole (dark) frame plus glare round emitters. Lit surfaces only
+    // feed it up to a cap (in exposed, display-linear units), so a bright room seen up close doesn't drown in its own
+    // veil (the booth read as thick orange haze); emitter cores above the hot level bloom fully again.
+    { key: "post.bloomSurfaceCap", label: "Bloom: lit-surface cap (exposed)", group: "Camera", min: 0.005, max: 2, step: 0.005, value: 0.02 },
+    { key: "post.bloomHot", label: "Bloom: emitter level (exposed)", group: "Camera", min: 0.5, max: 20, step: 0.1, value: 4 },
     { key: "post.ssr", label: "Wet reflections (SSR)", group: "Reflections", type: "toggle", value: true },
     { key: "post.ssrStrength", label: "Strength", group: "Reflections", unit: "×", min: 0, max: 3, step: 0.05, value: 1.3 },
     { key: "post.ssrWet", label: "Dielectric reflectance", group: "Reflections", min: 0, max: 1, step: 0.01, value: 0.5 },
@@ -355,7 +360,9 @@ export function createPost(ctx: WorldContext) {
           const dx = dot(L.sub(rm), side)
           const dy = dot(L.sub(rm), fwd.cross(side).normalize().cross(side)).abs().add(dot(L.sub(rm), vec3(0, 1, 0)).abs())
           const lobe = exp(dx.mul(dx).div(across.mul(across)).add(dy.mul(dy).div(along.mul(along))).negate())
-          g.addAssign(E.rgb.mul(lobe).div(dl.mul(dl).add(4)).mul(exp(dl.mul(E.w).negate())))
+          // The emitter is only seen (and mirrored) from inside its cone, like its light.
+          const aim = smoothstep(lightB.element(i).w.sub(0.1), lightC.element(i).w, dot(L.negate(), lightC.element(i).xyz))
+          g.addAssign(E.rgb.mul(lobe).mul(aim.mul(0.9).add(0.1)).div(dl.mul(dl).add(4)).mul(exp(dl.mul(E.w).negate())))
         })
         acc.addAssign(g.mul(fres).mul(wet).mul(T).mul(glintStrength))
       })
@@ -428,6 +435,8 @@ export function createPost(ctx: WorldContext) {
   const dofFocus = uniform(8)
   const dofBokeh = uniform(1)
   const exposure = uniform(1)
+  const bloomCap = uniform(0.02)
+  const bloomHot = uniform(4)
   const bloomNodeRef: { node: N } = { node: null }
   const grade = {
     lift: uniform(0.028),
@@ -572,7 +581,14 @@ export function createPost(ctx: WorldContext) {
       // Optional: thin-lens depth of field on the resolved image (focus distance in metres, view-space depth).
       resolved = convertToTexture(dof(resolved, scenePass.getViewZNode(), dofFocus, float(1), dofBokeh) as N) as N
     }
-    const bl = bloom(resolved, 0.22, 0.75, 0) as N
+    const bloomInput = Fn(() => {
+      const c = resolved.sample(uv()).rgb
+      const l = luminance(c).mul(exposure).max(1e-5)
+      const keep = bloomCap.div(l).min(1)
+      const hot = smoothstep(bloomHot, bloomHot.mul(2), l)
+      return vec4(c.mul(mix(keep, float(1), hot)), 1)
+    })()
+    const bl = bloom(bloomInput, 0.22, 0.75, 0) as N
     bloomNodeRef.node = bl
 
     const finish = Fn(() => {
@@ -581,7 +597,11 @@ export function createPost(ctx: WorldContext) {
       // aberration towards the corners, from the resolved HDR image.
       const d0 = u0.sub(0.5)
       const r2 = dot(d0.mul(vec2(resolution.x.div(resolution.y), 1)), d0.mul(vec2(resolution.x.div(resolution.y), 1)))
-      const u = d0.mul(r2.mul(grade.distortion).add(1)).div(grade.distortion.mul(0.45).add(1)).add(0.5)
+      // Zoom by the corner's stretch so the corners stay inside the frame (sampling past the edge smeared a strip of
+      // clamped, jitter-flickering edge pixels down the side).
+      const aspect = resolution.x.div(resolution.y)
+      const corner = aspect.mul(aspect).add(1).mul(0.25)
+      const u = d0.mul(r2.mul(grade.distortion).add(1)).div(corner.mul(grade.distortion.max(0)).add(1)).add(0.5)
       const off = u.sub(0.5)
       const ca = off.mul(length(off).mul(2)).mul(grade.aberration).div(resolution)
       let hdr: N = vec3(resolved.sample(u.add(ca)).r, resolved.sample(u).g, resolved.sample(u.sub(ca)).b)
@@ -661,6 +681,8 @@ export function createPost(ctx: WorldContext) {
 
   // ------------------------------------------------------------------ per-frame
   const candidates: LampRuntime[] = []
+  /** Lamps whose fog light was evaluated last frame (selection hysteresis). */
+  const scattering = new Set<LampRuntime>()
   const frustum = new THREE.Frustum()
   const projView = new THREE.Matrix4()
   const sphere = new THREE.Sphere()
@@ -745,6 +767,7 @@ export function createPost(ctx: WorldContext) {
     /** Pause dynamic resolution while the world streams in (capped/hitchy frames are not a GPU-cost signal). */
     setBooting(on: boolean) {
       booting = on
+      renderState.streaming = on
     },
     render() {
       frame++
@@ -793,8 +816,11 @@ export function createPost(ctx: WorldContext) {
         if (!frustum.intersectsSphere(sphere)) continue
         candidates.push(r)
       }
-      const score = (r: LampRuntime) => (r.lamp.intensity * r.level * r.sigma * r.transmittance) / Math.max(r.distance - r.lamp.range, 1)
-      candidates.sort((a, b) => score(b) - score(a))
+      // Ranked by nominal output (not the flicker level, which reshuffled the budget every frame and popped other lamps'
+      // fog in and out), with a bonus for lamps already in the set so near-ties don't swap back and forth.
+      const score = (r: LampRuntime) =>
+        ((r.lamp.intensity * r.vis * r.sigma * r.transmittance) / Math.max(r.distance - r.lamp.range, 1)) * (scattering.has(r) ? 1.5 : 1)
+      candidates.sort((a, b) => score(b) - score(a) || a.lamp.position[0] - b.lamp.position[0] || a.lamp.position[2] - b.lamp.position[2])
       const strength = num(ctx, "scatter.strength")
       const budget = Math.min(MAX_SCATTER, Math.round(num(ctx, indoor > 0.5 ? "scatter.lightsIndoor" : "scatter.lights")))
       let count = 0
@@ -804,8 +830,10 @@ export function createPost(ctx: WorldContext) {
         const sigma = fogSigma(camPos.value)
         pushLight(count++, f.pos, f.range, f.radiance, sigma, f.dir, f.cosOuter, f.cosInner, num(ctx, "flash.near"))
       }
+      scattering.clear()
       for (const r of candidates) {
         if (count >= budget) break
+        scattering.add(r)
         pushLight(count++, r.pos, r.lamp.range, r.radiance, r.level * r.vis * r.sigma * r.transmittance * strength, r.dir, r.cosOuter, r.cosInner, (r.lamp.size ?? 0.2) * 0.5, r.mask, r.level * r.vis, r.sigma)
       }
       lightCount.value = count
@@ -837,6 +865,8 @@ export function createPost(ctx: WorldContext) {
       bl.strength.value = num(ctx, "post.bloom")
       bl.radius.value = num(ctx, "post.bloomRadius")
       bl.threshold.value = num(ctx, "post.bloomThreshold")
+      bloomCap.value = num(ctx, "post.bloomSurfaceCap")
+      bloomHot.value = num(ctx, "post.bloomHot")
       grade.lift.value = num(ctx, "grade.lift")
       grade.warmth.value = num(ctx, "grade.warmth")
       grade.teal.value = num(ctx, "grade.teal")

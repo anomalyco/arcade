@@ -42,9 +42,17 @@ export function build(ctx: WorldContext): WorldModule | void {
   const ev = ctx.params.has("cev") ? Number(ctx.params.get("cev")) : NaN
   const pin = ctx.params.get("ccam")?.split(",").map(Number)
   const pinned = pin && pin.length >= 5 && pin.every(Number.isFinite) ? pin : null
+  // `cdoor=1` opens the booth door once the world is up (captures of the open leaf).
+  const openDoor = ctx.params.get("cdoor") === "1"
   return {
     update(_dt, _time, camera) {
       for (const t of ticks) t()
+      if (openDoor) {
+        // Shot mode doesn't step the player, which normally drives the door system; step it here instead.
+        const d = ctx.doors.get("booth")
+        if (d && !d.isOpen) d.open()
+        ctx.doors.update(_dt)
+      }
       if (Number.isFinite(ev)) ctx.settings["post.exposure"] = ev
       if (pinned) {
         camera.position.set(pinned[0]!, pinned[1]!, pinned[2]!)

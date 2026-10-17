@@ -4,6 +4,7 @@ import type { Lamp, WorldContext } from "../context"
 import { Batch, QuadBuilder, SKIP_BOTTOM, rng } from "./geo"
 import { material } from "../../render/materials"
 import { buildFireEscape } from "./firescape"
+import { addFacadeDoor, glassLeaf, steelLeaf } from "./doors"
 import { clearGlassMaterial, decalMaterial, windowMaterial } from "./windows"
 
 // The facility's outer shell: board-formed concrete walls built inward from the footprint, recessed window rows on
@@ -322,7 +323,7 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
     const counters = new Map<string, number>()
     for (const h of f.holes) {
       if (h.kind === "fireDoor") {
-        fireDoor(b, f, h)
+        fireDoor(ctx, root, b, f, h)
         continue
       }
       if (h.kind !== "window") continue
@@ -418,7 +419,7 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
     ring(b, "concrete_wall", bd.y0, bd.y1, bd.proj, bd.y0 < ANNEX_TOP ? ANNEX.max[1] : undefined, FE_CUT)
   }
   ring(b, "concrete_wall", CROWN.y0, MAIN_TOP, CROWN.proj)
-  buildCore(ctx, b, glass, clear, stain, lit)
+  buildCore(ctx, root, b, glass, clear, stain, lit)
 
   // Fire escape on the west face, with rust weeping down the wall under each landing.
   const west = facades().find((f) => f.name === "main-west")!
@@ -431,7 +432,7 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
   b.box("concrete_floor", ANNEX.min[0], -0.3, ANNEX.min[1], ANNEX.max[0], FY, ANNEX.max[1], SKIP_BOTTOM)
   ctx.floors.push({ min: MAIN.min, max: MAIN.max, y: FY }, { min: ANNEX.min, max: ANNEX.max, y: FY })
 
-  buildEntrance(ctx, b, glass, alu, clear)
+  buildEntrance(ctx, root, b, glass, alu, clear)
 
   b.flush(root, { name: "shell" })
   glass.flush(root, { name: "shell-glass", castShadow: false })
@@ -477,29 +478,31 @@ function ring(b: Batch, mat: "concrete_wall" | "concrete_dark", y0: number, y1: 
   b.box(mat, max[0] - 0.05, y0, eastFromZ ?? min[1] + 0.05, max[0] + proj, y1, max[1] - 0.05)
 }
 
-/** Steel fire door in its frame, standing wide open against the wall outside (fire escape side). */
-function fireDoor(b: Batch, f: Facade, h: Hole) {
+/** Steel fire door onto a fire-escape landing: frame, flush threshold through the wall, a working leaf. */
+function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, h: Hole) {
   const fr = 0.06
   fbox(b, "metal_dark", f, h.u0 - fr, h.u1 + fr, h.y1, h.y1 + fr, -0.02, T)
   fbox(b, "metal_dark", f, h.u0 - fr, h.u0, h.y0, h.y1, -0.02, T)
   fbox(b, "metal_dark", f, h.u1, h.u1 + fr, h.y0, h.y1, -0.02, T)
   fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.01, h.y0 + 0.006, 0, T)
-  // Leaf hinged on the u1 jamb, swung ~165° out so it rests nearly flat against the wall.
-  const n = normal(f)
-  const t = tangent(f)
-  const hinge = point(f, h.u1, h.y0 + 0.01, -0.03)
-  const theta = 2.88
-  const dir = t.clone().multiplyScalar(-Math.cos(theta)).addScaledVector(n, Math.sin(theta))
-  const w = h.u1 - h.u0 - 0.02
-  const g = new THREE.BoxGeometry(w, h.y1 - h.y0 - 0.03, 0.045)
-  g.translate(w / 2, (h.y1 - h.y0 - 0.03) / 2, 0)
-  const m = new THREE.Matrix4().makeBasis(dir, new THREE.Vector3(0, 1, 0), dir.clone().cross(new THREE.Vector3(0, 1, 0)))
-  m.setPosition(hinge)
-  b.add("door_steel", g, m, [w, 2])
-  // Push bar on the inside face of the leaf.
-  const bar = new THREE.BoxGeometry(w - 0.2, 0.06, 0.06)
-  bar.translate(w / 2, 1.0, -0.05)
-  b.add("metal_galvanized", bar, m)
+  const a = point(f, h.u0, 0, -0.05)
+  const c = point(f, h.u1, 0, T + 0.05)
+  ctx.floors.push({ min: [Math.min(a.x, c.x), Math.min(a.z, c.z)], max: [Math.max(a.x, c.x), Math.max(a.z, c.z)], y: h.y0 })
+  const k = Math.round(h.y0 / SH)
+  // ~165° either way: flat against the wall outside (clear of the flights) or against the corridor's end wall inside.
+  addFacadeDoor(ctx, root, {
+    id: `fire-escape-${k}`,
+    f,
+    u0: h.u0 + 0.01,
+    u1: h.u1 - 0.01,
+    y0: h.y0,
+    depth: 0.1,
+    height: h.y1 - h.y0 - 0.02,
+    leaf: steelLeaf(`fire-escape-${k}`, h.u1 - h.u0 - 0.02, h.y1 - h.y0 - 0.02),
+    openAngle: 2.85,
+    swing: "auto",
+    sound: "steel",
+  })
 }
 
 /**
@@ -507,7 +510,7 @@ function fireDoor(b: Batch, f: Facade, h: Hole) {
  * (north face with the roof door). Hollow: the interior builds the stair and lift inside it. A tall glazed slot over
  * the stair lets its landings glow through the fog.
  */
-function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Material, stain: QuadBuilder, lit: QuadBuilder) {
+function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Batch, clear: THREE.Material, stain: QuadBuilder, lit: QuadBuilder) {
   const { x0, x1, z0, z1, top } = CORE
   const zs = MAIN.max[1]
   const col = (bx0: number, by0: number, bz0: number, bx1: number, by1: number, bz1: number) => {
@@ -554,7 +557,7 @@ function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Mater
   col(x0, ROOF_Y - 0.3, z0, D.x0, top, z0 + T)
   col(D.x1, ROOF_Y - 0.3, z0, x1, top, z0 + T)
   col(D.x0, D.y1, z0, D.x1, top, z0 + T)
-  roofDoor(ctx, b)
+  roofDoor(ctx, root, b)
   // Roof slab, coping and plinth.
   b.box("concrete_wall", x0, top - 0.3, z0, x1, top, z1)
   b.box("concrete_dark", x0 - 0.08, top, z0 - 0.08, x1 + 0.08, top + 0.16, z1 + 0.08)
@@ -569,28 +572,29 @@ function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Mater
   addStain(stain, south, sx1, x1, top, 3.5, 0.6)
 }
 
-/** Steel door from the stair house onto the roof, standing open, with a flood light above it (head from props.ts). */
-function roofDoor(ctx: WorldContext, b: Batch) {
+/** Steel door from the stair house onto the roof (working leaf), with a flood light above it (head from props.ts). */
+function roofDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch) {
   const D = ROOF_DOOR
   const z = CORE.z0
   const fr = 0.07
   b.box("metal_dark", D.x0 - fr, D.y0, z - 0.03, D.x0, D.y1 + fr, z + T)
   b.box("metal_dark", D.x1, D.y0, z - 0.03, D.x1 + fr, D.y1 + fr, z + T)
   b.box("metal_dark", D.x0, D.y1, z - 0.03, D.x1, D.y1 + fr, z + T)
-  b.box("metal_galvanized", D.x0, D.y0 - 0.01, z, D.x1, D.y0 + 0.02, z + T)
-  // Leaf hinged at x1, swung out ~110° onto the roof.
-  const w = D.x1 - D.x0 - 0.02
-  const theta = 1.95
-  const dir = new THREE.Vector3(-Math.cos(theta), 0, -Math.sin(theta))
-  const g = new THREE.BoxGeometry(w, D.y1 - D.y0 - 0.03, 0.05)
-  g.translate(w / 2, (D.y1 - D.y0 - 0.03) / 2, 0)
-  const m = new THREE.Matrix4().makeBasis(dir, new THREE.Vector3(0, 1, 0), dir.clone().cross(new THREE.Vector3(0, 1, 0)))
-  m.setPosition(D.x1, D.y0 + 0.02, z - 0.04)
-  b.add("door_steel", g, m, [w, 2])
-  const tip = new THREE.Vector3(D.x1, 0, z - 0.04).addScaledVector(dir, w)
-  ctx.colliders.push({
-    min: [Math.min(D.x1, tip.x) - 0.04, D.y0, Math.min(z - 0.04, tip.z) - 0.04],
-    max: [Math.max(D.x1, tip.x) + 0.04, D.y1, Math.max(z - 0.04, tip.z) + 0.04],
+  b.box("metal_galvanized", D.x0, D.y0 - 0.01, z, D.x1, D.y0 + 0.006, z + T)
+  ctx.floors.push({ min: [D.x0, z - 0.1], max: [D.x1, z + T + 0.1], y: D.y0 })
+  const leaf = steelLeaf("roof-door", D.x1 - D.x0 - 0.02, D.y1 - D.y0 - 0.02, 0.05, false)
+  leaf.rotation.y = 0
+  root.add(leaf)
+  ctx.doors.add({
+    id: "roof-door",
+    leaf,
+    hinge: [D.x0 + 0.01, D.y0, z + 0.06],
+    width: D.x1 - D.x0 - 0.02,
+    height: D.y1 - D.y0 - 0.02,
+    thickness: 0.05,
+    openAngle: 1.75,
+    swing: "auto",
+    sound: "steel",
   })
   ctx.lamps.push({
     kind: "incandescent",
@@ -644,7 +648,7 @@ function buildRoofDecks(ctx: WorldContext, b: Batch) {
 }
 
 /** Lobby storefront, aluminium door frame with both leaves standing open, canopy on columns, landing and step. */
-function buildEntrance(ctx: WorldContext, b: Batch, glass: Batch, alu: THREE.Material, clear: THREE.Material) {
+function buildEntrance(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Batch, alu: THREE.Material, clear: THREE.Material) {
   const z = MAIN.max[1]
   const gz = z - 0.12
   const top = 3.1
@@ -666,36 +670,28 @@ function buildEntrance(ctx: WorldContext, b: Batch, glass: Batch, alu: THREE.Mat
     if (Math.abs(x0 + x1) > 0.1) glass.box(clear, x0, FY + 0.12, gz - 0.006, x1, doorTop, gz + 0.006)
     glass.box(clear, x0, doorTop + 0.14, gz - 0.006, x1, top - 0.08, gz + 0.006)
   }
-  // Both leaves swung out ~100° onto the landing, clear of the doorway.
+  // Working double doors (open on load so the lobby is reachable); the floor runs flush through the threshold.
   const w = hw - 0.08
-  const leaf = (s: -1 | 1) => {
-    const theta = 1.75
-    const dir = new THREE.Vector3(-s * Math.cos(theta), 0, Math.sin(theta))
-    const m = new THREE.Matrix4().makeBasis(dir, new THREE.Vector3(0, 1, 0), dir.clone().cross(new THREE.Vector3(0, 1, 0)))
-    m.setPosition(s * (hw - 0.06), FY + 0.012, gz + 0.1)
-    const parts: [number, number, number, number][] = [
-      [0, 0, w, 0.18],
-      [0, ENT.height - 0.12, w, ENT.height - 0.03],
-      [0, 0, 0.09, ENT.height - 0.03],
-      [w - 0.09, 0, w, ENT.height - 0.03],
-      [0.09, 0.98, w - 0.09, 1.04],
-    ]
-    for (const [x0, y0, x1, y1] of parts) {
-      const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, 0.05)
-      g.translate((x0 + x1) / 2, (y0 + y1) / 2, 0)
-      b.add(alu, g, m)
-    }
-    const pane = new THREE.BoxGeometry(w - 0.18, ENT.height - 0.33, 0.012)
-    pane.translate(w / 2, 0.18 + (ENT.height - 0.33) / 2, 0)
-    glass.add(clear, pane, m)
-    const tip = new THREE.Vector3(s * (hw - 0.06), 0, gz + 0.1).addScaledVector(dir, w)
-    const xa = Math.min(s * (hw - 0.06), tip.x)
-    const xb = Math.max(s * (hw - 0.06), tip.x)
-    // Keep the leaf collider entirely outside the doorway's clear width.
-    ctx.colliders.push({ min: [s < 0 ? xa - 0.04 : Math.max(xa, hw) - 0.02, 0, gz + 0.1], max: [s < 0 ? Math.min(xb, -hw) + 0.02 : xb + 0.04, 3, tip.z + 0.04] })
+  for (const sgn of [-1, 1] as const) {
+    const id = sgn < 0 ? "entrance-left" : "entrance-right"
+    const leaf = glassLeaf(id, -sgn * w, ENT.height - 0.02, clear, alu)
+    root.add(leaf)
+    ctx.doors.add({
+      id,
+      leaf,
+      hinge: [sgn * (hw - 0.06), FY, gz],
+      width: -sgn * w,
+      height: ENT.height - 0.02,
+      thickness: 0.05,
+      openAngle: 1.45,
+      swing: "auto",
+      // About half open on load (a 1.3 m gap: the lobby is reachable without touching them); E swings them wide.
+      startOpen: 0.49,
+      double: sgn < 0 ? "entrance-right" : "entrance-left",
+      sound: "glass",
+    })
   }
-  leaf(-1)
-  leaf(1)
+  ctx.floors.push({ min: [-hw, z - T - 0.1], max: [hw, z + 0.1], y: FY })
 
   // Canopy: a thick board-formed slab on two square columns.
   const cz = z + 5
@@ -730,28 +726,34 @@ function buildEntrance(ctx: WorldContext, b: Batch, glass: Batch, alu: THREE.Mat
   ctx.lamps.push(lamp)
 }
 
+/** Wall colliders from the facades: solid everywhere except walkable openings (doors, roll-ups, the core). */
 function wallColliders(ctx: WorldContext) {
-  const H = MAIN_TOP + COPE
   const hw = ENT.width / 2
-  const z = MAIN.max[1]
-  const add = (x0: number, z0: number, x1: number, z1: number, h = H, y0 = -0.5) => ctx.colliders.push({ min: [x0, y0, z0], max: [x1, h, z1] })
-  // South face: the doorway and the core opening are gaps.
-  for (const [a, c] of spans(MAIN.min[0], MAIN.max[0], [[CORE.x0 + T, CORE.x1 - T], [-hw, hw]])) add(a, z - T, c, z)
-  add(MAIN.min[0], MAIN.min[1], MAIN.max[0], MAIN.min[1] + T)
-  add(MAIN.max[0] - T, MAIN.min[1], MAIN.max[0], MAIN.max[1])
-  // West face, with a doorway onto each fire-escape landing.
-  const x0 = MAIN.min[0]
-  add(x0, MAIN.min[1], x0 + T, FE_DOOR.z0)
-  add(x0, FE_DOOR.z1, x0 + T, MAIN.max[1])
-  let y = -0.5
-  for (let i = 1; i < STOREYS; i++) {
-    add(x0, FE_DOOR.z0, x0 + T, FE_DOOR.z1, storeyY(i), y)
-    y = storeyY(i) + FE_DOOR.h
+  for (const f of facades()) {
+    const top = f.y1 + COPE
+    const gaps = f.holes
+      .filter((h) => h.kind === "door" || h.kind === "fireDoor" || h.kind === "rollup" || h.kind === "rollupOpen" || h.kind === "open")
+      // Roll-up curtains lift into the wall above the head: no collider there either (nothing walks at that height).
+      .map((h) => ({ u0: h.u0, u1: h.u1, y0: h.y0, y1: h.kind === "rollup" || h.kind === "rollupOpen" ? h.y1 + 2 : h.y1 }))
+    if (f.name === "main-south") gaps.push({ u0: -hw, u1: hw, y0: FY, y1: FY + ENT.height })
+    const cuts = [...new Set([f.u0, f.u1, ...gaps.flatMap((g) => [g.u0, g.u1])])].filter((u) => u >= f.u0 && u <= f.u1).sort((a, c) => a - c)
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const a = cuts[i]!
+      const c = cuts[i + 1]!
+      const m = (a + c) / 2
+      const here = gaps.filter((g) => g.u0 <= m && g.u1 >= m).sort((p, q) => p.y0 - q.y0)
+      let y = -0.5
+      const push = (y0: number, y1: number) => {
+        if (y1 - y0 < 1e-3) return
+        const p0 = point(f, a, y0, 0)
+        const p1 = point(f, c, y1, T)
+        ctx.colliders.push({ min: [Math.min(p0.x, p1.x), y0, Math.min(p0.z, p1.z)], max: [Math.max(p0.x, p1.x), y1, Math.max(p0.z, p1.z)] })
+      }
+      for (const g of here) {
+        push(y, g.y0)
+        y = Math.max(y, g.y1)
+      }
+      push(y, top)
+    }
   }
-  add(x0, FE_DOOR.z0, x0 + T, FE_DOOR.z1, H, y)
-  const AH = ANNEX_TOP + COPE
-  add(ANNEX.min[0], ANNEX.max[1] - T, ANNEX.max[0], ANNEX.max[1], AH)
-  add(ANNEX.min[0], ANNEX.min[1], ANNEX.max[0], ANNEX.min[1] + T, AH)
-  add(ANNEX.max[0] - T, ANNEX.min[1], ANNEX.max[0], ANNEX.max[1], AH)
-  add(ANNEX.min[0], ANNEX.min[1], ANNEX.min[0] + T, MAIN.min[1], AH)
 }

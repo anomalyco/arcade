@@ -2,36 +2,15 @@ import * as THREE from "three/webgpu"
 import type { WorldContext } from "../context"
 import { material } from "../../render/materials"
 import { Batch, box, cyl, matrix, rod, sphere } from "./geo"
-import { flat, wood } from "./mats"
+import { flat } from "./mats"
 
-// Small procedural outdoor clutter with no model in the library: the janitor's mop bucket cart, bollards and a bare
-// flagpole. One merged batch. The modelled props (dumpsters, hydrant, bench, ...) are in compound/models.ts.
+// Small procedural outdoor clutter with no model in the library: bollards and a bare flagpole. One merged batch.
+// The modelled props (dumpsters, hydrant, bench, wet-floor sign, ...) are in compound/models.ts.
 
 /** Top of the facility's perimeter walk (facility/grounds.ts), where props by the building stand. */
 export const FACILITY_WALK_Y = 0.03
 
-const yellowPlastic = () => flat(0xb88f14, 0.5)
 const safetyYellow = () => flat(0x9a7e18, 0.65, 0.2)
-
-function mopBucket(b: Batch) {
-  const y = yellowPlastic()
-  // Tapered square bucket with a rolled rim, wringer and casters.
-  const bucket = cyl(0.27, 0.22, 0.4, 4, false)
-  b.at(y, bucket, 0, 0.26, 0, Math.PI / 4)
-  b.at(y, cyl(0.29, 0.29, 0.04, 4, true), 0, 0.46, 0, Math.PI / 4)
-  b.at(material("rubber"), box(0.36, 0.01, 0.36), 0, 0.44, 0)
-  b.at(y, box(0.62, 0.05, 0.42), 0, 0.07, 0)
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.at(material("rubber"), cyl(0.035, 0.035, 0.03, 10), sx * 0.26, 0.035, sz * 0.17, 0, Math.PI / 2)
-  // Side-press wringer.
-  b.at(flat(0x6c6a5c, 0.5, 0.3), box(0.2, 0.18, 0.3), 0.12, 0.6, 0)
-  b.at(y, box(0.08, 0.12, 0.36), -0.02, 0.57, 0)
-  b.add(material("metal_galvanized"), rod({ x: 0.2, y: 0.65, z: 0 }, { x: 0.32, y: 1.1, z: 0 }, 0.012, 5))
-  b.at(material("rubber"), cyl(0.02, 0.02, 0.12, 6), 0.33, 1.15, 0, 0, 0, -0.26)
-  // Mop leaning in the bucket.
-  b.add(wood(0x5a4026, 0x7a5a36), rod({ x: -0.06, y: 0.25, z: -0.04 }, { x: -0.3, y: 1.45, z: -0.12 }, 0.013, 5))
-  const head = cyl(0.09, 0.05, 0.22, 7)
-  b.at(flat(0x77705e, 0.95), head, -0.05, 0.36, -0.04)
-}
 
 function bollard(b: Batch, x: number, z: number, y = 0) {
   b.at(safetyYellow(), cyl(0.08, 0.08, 1.0, 18), x, y + 0.5, z)
@@ -54,10 +33,6 @@ function flagpole(b: Batch) {
 export function buildProps(ctx: WorldContext, root: THREE.Object3D, walkY: number) {
   const batch = new Batch()
   const at = (x: number, y: number, z: number, yaw = 0) => batch.child(matrix(x, y, z, yaw))
-
-  // Mop bucket cart left beside the entrance doors.
-  mopBucket(at(-2.9, FACILITY_WALK_Y, 23.4, 0.5))
-  ctx.colliders.push({ min: [-3.3, 0, 23.1], max: [-2.5, 0.9, 23.7] })
 
   // Bollards at the head of the entrance walk and beside the booth.
   for (const x of [-3.0, 3.0]) {

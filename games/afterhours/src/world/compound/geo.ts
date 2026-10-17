@@ -50,6 +50,16 @@ export function sphere(r: number, ws = 10, hs = 6, thetaStart = 0, thetaLength =
   return g
 }
 
+/** Surface of revolution about +Y through `profile` [radius, y] points (bottom to top), UVs in metres. */
+export function lathe(profile: [number, number][], seg = 20) {
+  const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), seg)
+  const uv = g.attributes.uv!
+  const rMax = Math.max(...profile.map((p) => p[0]))
+  const h = profile[profile.length - 1]![1] - profile[0]![1]
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * rMax, uv.getY(i) * h)
+  return g
+}
+
 /** Horizontal plane facing +Y, UVs in metres. */
 export function plane(w: number, d: number) {
   const g = new THREE.PlaneGeometry(w, d)

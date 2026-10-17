@@ -37,7 +37,7 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix()
 })
 
-if (!shot) hud.innerHTML = `<div class="hint">Click to look · WASD move · Shift run · F flashlight · N fly · 1–${Object.keys(VIEWPOINTS).length} viewpoints · \` lab</div>`
+if (!shot) hud.innerHTML = `<div class="hint">Click to look · WASD move · Shift run · E doors / lift · F flashlight · N fly · 1–${Object.keys(VIEWPOINTS).length} viewpoints · \` lab</div>`
 
 const device = (renderer.backend as unknown as { device?: GPUDevice }).device
 let rendered = 0
@@ -69,12 +69,22 @@ const tick = () => {
     })
   }
 }
-// While the world streams in, frames are capped: at full rate the render loop took ~30% of the main thread that
-// shader building needs (measured at 4× CPU throttling), so everything arrived much later.
-const STREAMING_FRAME_MS = 1000 / 15
+// While the world streams in, the main thread belongs to shader building (the frame loop took 22% of a 4× CPU boot at
+// 15 fps): draw at ~5 fps, plus a frame as soon as something new appears (≥ 100 ms apart) and while the player moves.
+// `bootFps` (automation/A-B only) overrides the streaming frame rate.
+const STREAMING_FRAME_MS = 1000 / Number(params.get("bootFps") ?? 5)
+const REVEAL_FRAME_MS = 100
+let lastInput = -Infinity
+for (const type of ["keydown", "pointermove", "pointerdown"]) addEventListener(type, () => (lastInput = performance.now()), { passive: true })
+const keys = new Set<string>()
+addEventListener("keydown", (e) => keys.add((e as KeyboardEvent).code))
+addEventListener("keyup", (e) => keys.delete((e as KeyboardEvent).code))
+addEventListener("blur", () => keys.clear())
 let lastFrame = -Infinity
 renderer.setAnimationLoop((now: number) => {
-  if (world.streaming && rendered > 2 && now - lastFrame < STREAMING_FRAME_MS - 2) return
+  const since = now - lastFrame
+  const wanted = since >= STREAMING_FRAME_MS - 2 || (since >= REVEAL_FRAME_MS && (world.takeReveal() || keys.size > 0 || now - lastInput < 300))
+  if (world.streaming && rendered > 2 && !wanted) return
   lastFrame = now
   tick()
 })

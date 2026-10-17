@@ -1,13 +1,14 @@
 import * as THREE from "three/webgpu"
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { WorldContext } from "../context"
 import { BOOTH } from "../layout"
-import { MODELS, instanceModel, loadModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
+import { MODELS, loadModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
 import { Batch, matrix } from "./geo"
 import { shadowLayer } from "./mats"
 import { LOT_Y, stall } from "./lot"
 import { WAGON_APRON } from "./booth"
 import { FACILITY_WALK_Y } from "./props"
-import { FY, WALL } from "./booth"
+import { FY, HEAD, WALL } from "./booth"
 
 // Real modelled vehicles and props from the shared library (src/render/models.ts). Colliders and contact-shadow
 // decals are built at once from the known sizes; the .glb files stream in afterwards in parallel, so the first frame
@@ -77,8 +78,8 @@ function items(): Item[] {
 
     // Gate and booth: cones by the boom, a cabinet behind the booth, a trash can on the island, a flood light on the
     // booth roof aimed at the gate, and inside the guard's terminal, phone and chair.
-    { name: "traffic_cone", position: [-4.1, 0, 125.3], yaw: 0.4 },
-    { name: "traffic_cone", position: [-3.3, 0, 126.6], yaw: 1.9 },
+    { name: "traffic_cone", position: [-6.2, 0, 125.1], yaw: 0.4 },
+    { name: "traffic_cone", position: [-6.6, 0, 126.9], yaw: 1.9 },
     { name: "traffic_cone", position: [4.2, 0, 120.4], yaw: 3.0 },
     { name: "utility_box", position: [bx + 1.1, 0.12, bz - BOOTH.d / 2 - 0.45], yaw: NORTH, inset: 0, shadow: "blob" },
     { name: "trash_can", position: [bx + BOOTH.w / 2 + 0.55, 0.12, bz + 0.9], yaw: EAST, inset: 0.08, shadow: "blob" },
@@ -86,6 +87,13 @@ function items(): Item[] {
     { name: "crt_terminal", position: [deskX, desk, bz - 0.5], yaw: EAST },
     { name: "telephone", position: [deskX + 0.05, desk, bz + 0.2], yaw: EAST + 0.35 },
     { name: "office_chair", position: [bx - 0.35, FY, bz + 0.05], yaw: WEST + 0.5, inset: 0.15 },
+    // Institutional clock over the north window (facing into the booth) and an extinguisher on the south knee wall
+    // west of the door, clear of the leaf's inward sweep.
+    { name: "wall_clock", position: [bx + 0.6, HEAD + 0.04, bz - BOOTH.d / 2 + WALL + 0.025], yaw: SOUTH },
+    { name: "fire_extinguisher", position: [bx, FY + 0.32, bz + BOOTH.d / 2 - WALL - 0.095], yaw: NORTH },
+
+    // A wet-floor sign left out on the walk beside the entrance doors (the janitor's been through).
+    { name: "wet_floor_sign", position: [-2.9, FACILITY_WALK_Y, 23.4], yaw: SOUTH + 0.5 },
   ]
 }
 
@@ -136,7 +144,8 @@ export function buildModels(ctx: WorldContext, root: THREE.Object3D) {
   for (const it of list) if (it.inset !== undefined) ctx.colliders.push(modelCollider(it.name, it, it.inset))
   contactShadows(root, list)
 
-  // Group by model: repeated, upright props are instanced; singles and tilted ones are plain clones.
+  // Group by model: repeated, upright props are merged into plain meshes (one per sub-mesh, sharing the model's atlas
+  // material; small InstancedMeshes would each compile their own shader); singles and tilted ones are plain clones.
   const byName = new Map<ModelName, Item[]>()
   for (const it of list) {
     const arr = byName.get(it.name) ?? []
@@ -148,7 +157,7 @@ export function buildModels(ctx: WorldContext, root: THREE.Object3D) {
     const upright = group.filter((it) => !it.tilt)
     const tilted = group.filter((it) => it.tilt)
     if (upright.length > 1) {
-      loads.push(instanceModel(name, upright).then((g) => void root.add(g)))
+      loads.push(mergeModel(name, upright).then((g) => void root.add(g)))
     } else {
       for (const it of upright) loads.push(place(root, it))
     }
@@ -159,8 +168,19 @@ export function buildModels(ctx: WorldContext, root: THREE.Object3D) {
   })
 }
 
+const CARS = new Set<ModelName>(["car_wagon", "car_sedan", "car_sedan_b", "car_pickup", "van", "covered_car"])
+/** Cars switch to their simplified LOD1 copy beyond this distance from the camera (m). */
+const CAR_LOD_DISTANCE = 25
+
 async function place(root: THREE.Object3D, it: Item) {
-  const model = await loadModel(it.name)
+  let model: THREE.Object3D
+  if (CARS.has(it.name)) {
+    const [near, far] = await Promise.all([loadModel(it.name), loadModel(it.name, { lod: 1 })])
+    const lod = new THREE.LOD()
+    lod.addLevel(near, 0)
+    lod.addLevel(far, CAR_LOD_DISTANCE)
+    model = lod
+  } else model = await loadModel(it.name)
   const outer = new THREE.Group()
   outer.position.set(it.position[0], it.position[1], it.position[2])
   outer.rotation.y = it.yaw ?? 0
@@ -171,4 +191,52 @@ async function place(root: THREE.Object3D, it: Item) {
     outer.add(pivot)
   } else outer.add(model)
   root.add(outer)
+}
+
+/** Every placement of a model baked into one plain Mesh per sub-mesh (static props; geometry converted to float). */
+async function mergeModel(name: ModelName, placements: Item[]) {
+  const template = await loadModel(name)
+  template.updateMatrixWorld(true)
+  const group = new THREE.Group()
+  group.name = `${name}×${placements.length}`
+  const m = new THREE.Matrix4()
+  template.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    if (!mesh.isMesh) return
+    const base = toFloat(mesh.geometry)
+    const parts = placements.map((p) => {
+      m.compose(new THREE.Vector3(...p.position), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.yaw ?? 0), new THREE.Vector3(1, 1, 1))
+      return base.clone().applyMatrix4(m.multiply(mesh.matrixWorld))
+    })
+    const geo = mergeGeometries(parts, false)
+    base.dispose()
+    for (const g of parts) g.dispose()
+    if (!geo) return
+    const merged = new THREE.Mesh(geo, mesh.material)
+    merged.name = mesh.name
+    merged.castShadow = mesh.castShadow
+    merged.receiveShadow = mesh.receiveShadow
+    merged.matrixAutoUpdate = false
+    group.add(merged)
+  })
+  return group
+}
+
+/** Copy of a geometry with plain Float32 attributes (glTF attributes may be quantised or interleaved). */
+function toFloat(src: THREE.BufferGeometry) {
+  const g = new THREE.BufferGeometry()
+  for (const [key, a] of Object.entries(src.attributes)) {
+    const n = a.count
+    const k = a.itemSize
+    const out = new Float32Array(n * k)
+    for (let i = 0; i < n; i++) {
+      out[i * k] = a.getX(i)
+      if (k > 1) out[i * k + 1] = a.getY(i)
+      if (k > 2) out[i * k + 2] = a.getZ(i)
+      if (k > 3) out[i * k + 3] = a.getW(i)
+    }
+    g.setAttribute(key, new THREE.BufferAttribute(out, k))
+  }
+  if (src.index) g.setIndex(Array.from(src.index.array as ArrayLike<number>))
+  return g
 }

@@ -5,6 +5,7 @@ import { materialFor } from "../../render/materials"
 import { FIRE_ESCAPE } from "../layout"
 import {
   type Band,
+  type Mat,
   Builder,
   CEIL_Y,
   DOOR_H,
@@ -20,11 +21,13 @@ import {
   fluorescentPanel,
   paint,
   troffer,
+  louvre,
   wall,
 } from "./kit"
 import { HALL, SHELL } from "./core"
 import { bulletin, extinguisher, fluoro, fountain, hazardLight, rigLevel } from "./corridor"
-import { furnish, flushModels } from "./furnish"
+import { furnish, flushModels, furnishNook, loungeChairs } from "./furnish"
+import { STYLES, type Style } from "./styles"
 
 // Storeys 1–4: the same double-loaded corridor the full length of the block, rooms between the facade's window piers
 // running back to the exterior wall, each storey with its own trade: 1 offices, 2 labs, 3 records and the computer
@@ -46,6 +49,10 @@ export type Room = {
   enter: boolean
   lit: boolean
   index: number
+  /** Door not locked: open rooms, lit rooms and a scattering of others, all fully furnished. */
+  unlocked: boolean
+  /** Layout variety: an open break area, a cross corridor to the facade, a glazed machine room, a storage nook. */
+  kind?: "lounge" | "cross" | "glass" | "nook"
 }
 
 /** Corridor wall room-side face and exterior lining face (|z|). */
@@ -77,6 +84,13 @@ const PICKS: Record<number, { enter: [number, number][]; lit: [number, number][]
   4: { enter: [[-1, 3], [-1, 7], [1, 5], [1, 9], [-1, 13]], lit: [] },
 }
 
+const KINDS: Record<number, [number, number, NonNullable<Room["kind"]>][]> = {
+  1: [[-1, 6, "lounge"]],
+  2: [[-1, 7, "cross"], [1, 9, "lounge"]],
+  3: [[1, 11, "glass"], [-1, 2, "nook"]],
+  4: [[-1, 9, "nook"]],
+}
+
 export function roomsFor(storey: number): Room[] {
   const picks = PICKS[storey]!
   const has = (list: [number, number][], side: number, i: number) => list.some(([s, k]) => s === side && k === i)
@@ -98,7 +112,7 @@ export function roomsFor(storey: number): Room[] {
     }
     bounds.forEach(([x0, x1], index) => {
       const win = WIN.find((a) => a >= x0 - 0.01 && a + WIN_W <= x1 + 0.01 && !(side > 0 && a + WIN_W > CORE_X0 - 0.1 && a < CORE_X1 + 0.1)) ?? null
-      const enter = has(picks.enter, side, index)
+      const enter = has(picks.enter, side, index) || (KINDS[storey]?.some(([sd, i]) => sd === side && i === index) ?? false)
       const litHere = picks.lit.some(([s, px]) => s === side && px >= x0 && px <= x1)
       out.push({
         side,
@@ -109,8 +123,10 @@ export function roomsFor(storey: number): Room[] {
         door: x0 + 0.8,
         win,
         enter,
-        lit: enter || litHere,
+        lit: enter || litHere || KINDS[storey]?.some(([sd, i, k]) => sd === side && i === index && k !== "nook") === true,
         index,
+        unlocked: enter || litHere || index % (storey === 4 ? 2 : 4) === 1,
+        kind: KINDS[storey]?.find(([sd, i]) => sd === side && i === index)?.[2],
       })
     })
   }
@@ -139,7 +155,10 @@ const blindMats = (() => {
 })()
 
 /** Clear plastic sheeting, hung from the ceiling on storey 4. */
-const plasticMat = materialFor("flat", { color: 0xd8dcd6, roughness: 0.25, transparent: 0.32, side: THREE.DoubleSide, name: "interior_plastic" })
+/** Polythene sheeting: nearly clear, glossy (the tubes streak across its folds), never a dark veil. */
+const plasticMat = materialFor("flat", { color: 0xe8ece6, roughness: 0.12, transparent: 0.12, side: THREE.DoubleSide, name: "interior_plastic" })
+/** Machine-room glazing: clear, faintly green-edged plate glass. */
+const glazing = materialFor("flat", { color: 0xd4e4dc, roughness: 0.03, transparent: 0.08, name: "interior_glazing" })
 
 /** Soft-edged floor and ceiling decals (water stains, puddles) with an irregular outline, in the quad's 0..1 UVs. */
 const decal = (color: number, roughness: number, alpha: number, name: string) => {
@@ -172,24 +191,46 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
   // ---------------------------------------------------------------- corridor
   const x0 = SHELL.x0
   const x1 = SHELL.x1
-  b.floor("linoleum", x0, -ZC, x1, ZC)
+  const style = STYLES[storey]!
+  const special = rooms.filter((r) => r.kind)
+  // Floor: storey finish, with the raised-floor stretch outside the machine room on storey 3.
+  b.floor(style.floor, x0, -ZC, x1, ZC)
+  if (storey === 3) raisedCorridor(b, special.find((r) => r.kind === "glass")!)
+  if (storey === 4) slabRemnants(b, rnd)
   const sy = FLOOR_Y + 0.0015
-  const stripe = theme === "labs" ? paint(0x6a5a1c, 0.25) : theme === "records" ? paint(0x23324a, 0.22) : M.stripe
-  for (const z of [-1.18, 1.18]) b.box(stripe, x0 + 0.4, sy - 0.01, z - 0.05, x1 - 0.4, sy, z + 0.05, { cast: false })
+  // Edge stripes run in segments that stop at every wide opening (hall, lounge, cross corridor, nook).
+  const gaps = (side: number) =>
+    [
+      ...(side > 0 ? [[HALL.x0 - 0.15, HALL.x1 + 0.15] as [number, number]] : []),
+      ...special.filter((r) => r.side === side && r.kind !== "glass").map((r) => [r.x0, r.x1] as [number, number]),
+    ].sort((p, q) => p[0] - q[0])
+  if (style.stripe)
+    for (const side of [-1, 1]) {
+      let cur = x0 + 0.4
+      for (const [g0, g1] of [...gaps(side), [x1 - 0.4, x1] as [number, number]]) {
+        if (g0 - cur > 0.2) b.box(style.stripe, cur, sy - 0.01, side * 1.18 - 0.06, g0, sy, side * 1.18 + 0.06, { cast: false })
+        cur = g1
+      }
+    }
   const north = rooms.filter((r) => r.side < 0)
   const south = rooms.filter((r) => r.side > 0)
-  wall(b, "x", x0, x1, -ZC, -1.6, corridorBands, north.map((r) => doorOpening(r.door)))
-  wall(b, "x", x0, x1, 1.6, ZC, corridorBands, [...south.map((r) => doorOpening(r.door)), { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: DOOR_H + 0.35 }])
-  wall(b, "z", -1.6, 1.6, x0, x0 + 0.04, corridorBands, [doorOpening(FIRE_ESCAPE.door.z, FIRE_ESCAPE.door.width)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  const openingFor = (r: Room) =>
+    r.kind === "glass"
+      ? [doorOpening(r.door), { a0: r.door + 0.75, a1: r.x1 - 0.3, bottom: 0.9, top: 2.3 }]
+      : r.kind
+        ? [{ a0: r.x0 + 0.06, a1: r.x1 - 0.06, top: CEIL_Y }]
+        : [doorOpening(r.door)]
+  wall(b, "x", x0, x1, -ZC, -1.6, style.bands, north.flatMap(openingFor))
+  wall(b, "x", x0, x1, 1.6, ZC, style.bands, [...south.flatMap(openingFor), { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: CEIL_Y }])
+  wall(b, "z", -1.6, 1.6, x0, x0 + 0.04, style.bands, [doorOpening(FIRE_ESCAPE.door.z, FIRE_ESCAPE.door.width)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
   // East end: the facade has a window on the corridor axis from storey 2 up.
-  wall(b, "z", -1.6, 1.6, x1 - 0.04, x1, corridorBands, storey >= 2 ? [{ a0: -1.6, a1: 1.6, bottom: SILL, top: HEAD }] : [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
-  // Fire exit onto the escape landing: push-bar door, opens inward, held open on the top storey.
-  door(b, x0 - 0.175, FIRE_ESCAPE.door.z, { rot: Math.PI / 2, wallT: 0.35, width: FIRE_ESCAPE.door.width, open: storey === 4 ? -1.45 : -1.2, panic: true, glass: null, plate: false, wedge: storey === 4 })
+  wall(b, "z", -1.6, 1.6, x1 - 0.04, x1, style.bands, storey >= 2 ? [{ a0: -1.6, a1: 1.6, bottom: SILL, top: HEAD }] : [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  // The fire-exit leaf itself is the facility's (a door in the shell's opening); this storey only lines the reveal.
   b.box(M.frame, x0 + 0.04, FLOOR_Y + DOOR_H + 0.25, -0.3, x0 + 0.15, FLOOR_Y + DOOR_H + 0.52, 0.3)
   b.box(M.exitSign, x0 + 0.15, FLOOR_Y + DOOR_H + 0.28, -0.27, x0 + 0.155, FLOOR_Y + DOOR_H + 0.49, 0.27, { cast: false })
   b.lamp({ kind: "exit", position: [x0 + 0.3, FLOOR_Y + DOOR_H + 0.38, 0], color: [1, 0.08, 0.04], intensity: 1, range: 3, size: 0.35 })
 
-  ceiling(b, x0, -1.6, x1, 1.6, abandoned ? 0.22 : 0, storey, abandoned ? (x, z) => fallenTile(b, x, z, rnd) : undefined)
+  ceiling(b, x0, -1.6, x1, 1.6, style.missing, storey, abandoned ? (x, z) => rnd() < 0.18 && fallenTile(b, x, z, rnd) : undefined)
   const dead = new Set<number>()
   const flick = new Map<number, number>()
   for (let x = 33; x >= -51; x -= 3) {
@@ -199,13 +240,18 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
   }
   let flickCount = 0
   for (let x = 33; x >= -51; x -= 3) {
+    if (abandoned && rnd() < 0.35) {
+      hangingTroffer(b, x, rnd)
+      continue
+    }
+    if (style.louvre) louvre(b, x, 0)
     if (dead.has(x)) {
       troffer(b, x, 0, "off", PANEL_ON)
       continue
     }
     const f = flick.get(x)
     const real = (x - 33) % 6 === 0 || f !== undefined
-    const lamp = real ? b.lamp(fluoro(x, 0, f)) : null
+    const lamp = real ? b.lamp(fluoro(x, 0, f, storey === 1 ? 9 : 6)) : null
     if (f !== undefined && flickCount < 3 && lamp) {
       flickCount++
       const p = fluorescentPanel(1)
@@ -213,7 +259,7 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
       troffer(b, x, 0, { flicker: f, ...p }, PANEL_ON)
     } else troffer(b, x, 0, "on", PANEL_ON)
   }
-  corridorDressing(b, storey, theme, rnd)
+  corridorDressing(b, storey, theme, rnd, special)
 
   // ---------------------------------------------------------------- rooms
   for (const p of PART) {
@@ -224,8 +270,8 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
     if (ri % 3 === 0) await pause()
     const zc = r.side * ZC
     const zw = r.side * ZW
-    const records = theme === "records" && r.index % 2 === 1
-    const floorMat = theme === "offices" ? CARPET : records ? RAISED : "linoleum"
+    const records = theme === "records" && (r.index % 2 === 1 || r.kind === "glass")
+    const floorMat = r.kind === "cross" ? style.floor : theme === "offices" ? M.carpet : records ? RAISED : abandoned ? "concrete_floor_dry" : "linoleum"
     // Floor (notched rooms: full depth at the window end only where there is no core).
     if (r.wx0 === r.x0 && r.wx1 === r.x1) b.floor(floorMat, r.x0, Math.min(zc, zw), r.x1, Math.max(zc, zw))
     else {
@@ -256,15 +302,44 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
         const on = r.lit && (tz >= 12 || r.enter) && !(abandoned && rnd() < 0.5)
         troffer(b, tx, r.side * tz, on ? "on" : "off", PANEL_ON)
       }
-    if (r.lit) for (const v of r.enter ? [7.2, 14.4] : [14.4]) b.lamp(fluoro(cols[v > 10 ? 1 : 0]!, rz(r, v), abandoned ? 0.8 : undefined, 30))
-    door(b, r.door, r.side * (1.6 + 0.075), { rot: r.side < 0 ? 0 : Math.PI, open: r.enter ? 1.35 + rnd() * 0.25 : 0 })
-    furnish(b, theme, r, rnd)
+    if (style.louvre) for (const tx of cols) for (const tz of rows) if (tx - 0.31 >= r.x0 && tx + 0.31 <= r.x1 && !(tz + 0.6 > CORE_Z && (tx - 0.31 < r.wx0 || tx + 0.31 > r.wx1))) louvre(b, tx, r.side * tz)
+    if (r.lit) for (const v of r.enter || r.kind ? [7.2, 14.4] : [14.4]) b.lamp(fluoro(cols[v > 10 ? 1 : 0]!, rz(r, v), abandoned ? 0.8 : undefined, 30))
+    if (r.kind !== "lounge" && r.kind !== "cross" && r.kind !== "nook") {
+      const chem = theme === "labs" && r.side > 0 && !r.unlocked
+      door(b, r.door, r.side * (1.6 + 0.075), {
+        rot: r.side < 0 ? 0 : Math.PI,
+        open: r.enter ? 0.5 + rnd() * 0.9 : 0,
+        locked: !r.unlocked || chem,
+        leaf: style.leaf,
+        glass: theme === "offices" ? null : undefined,
+      })
+      if (chem) hazardPlacard(b, r.door + 0.75, r.side * 1.59, r.side)
+    }
+    if (r.kind === "glass") machineGlazing(b, r)
+    if (r.kind === "lounge") lounge(b, r, rnd)
+    else if (r.kind === "cross") crossCorridor(b, r, style)
+    else if (r.kind === "nook") nook(b, r, rnd)
+    else furnish(b, theme, r, rnd)
     if (abandoned) roomDecay(b, r, rnd)
   }
   flushModels(b)
+  // Far-view silhouettes for lit rooms (desks against the light), drawn while the real furniture is hidden.
+  const px = new Builder(b.ctx, `storey-${storey}-proxy`, storey)
+  for (const r of rooms) {
+    if (!r.lit || theme === "labs") continue
+    const cx = (r.wx0 + r.wx1) / 2
+    for (const dx of [-1.12, 1.12]) {
+      const zc = rz(r, 16.4)
+      px.box(M.darkSteel, cx + dx - 1.0, FLOOR_Y, zc - 0.45, cx + dx + 1.0, FLOOR_Y + 0.76, zc + 0.45, { cast: false })
+      const zc2 = rz(r, 15.5)
+      px.box(M.rubber, cx + dx - 0.25, FLOOR_Y, zc2 - 0.25, cx + dx + 0.25, FLOOR_Y + 0.95, zc2 + 0.25, { cast: false })
+    }
+  }
+  px.flush(b.group)
   await pause()
 
   return {
+    proxy: px.group as THREE.Object3D,
     update(time: number) {
       for (const f of flickers) f.level.value = rigLevel(f.lamp) ?? flicker(time, f.seed, f.amount)
     },
@@ -312,17 +387,69 @@ function fallenTile(b: Builder, x: number, z: number, rnd: () => number) {
   for (let k = 0; k < 5; k++) b.box(M.debris, x + (rnd() - 0.5) * 1.2, y, z + (rnd() - 0.5) * 1.2, x + (rnd() - 0.5) * 1.2 + 0.04, y + 0.012, z + (rnd() - 0.5) * 1.2 + 0.03, { cast: false })
 }
 
-function corridorDressing(b: Builder, storey: number, theme: Theme, rnd: () => number) {
-  // Same fittings as the ground floor, shuffled per storey.
-  extinguisher(b, -20 + storey * 3.1, -1.6)
-  extinguisher(b, 18 - storey * 2.3, -1.6)
-  fountain(b, -24.6 + storey * 1.7, 1.6)
-  if (theme !== "abandoned") bulletin(b, 3.5 - storey * 2, 1.6)
-  hazardLight(b, -30 + storey, -1.6, false)
-  hazardLight(b, 25 - storey, -1.6, theme === "abandoned")
-  if (theme === "abandoned") b.lamp({ kind: "warning", position: [25 - storey, FLOOR_Y + 2.55, -1.4], color: [1, 0.12, 0.05], intensity: 1.5, range: 3, size: 0.12 })
-  if (theme === "labs") safetyShower(b, 9.3, -1.6)
+function corridorDressing(b: Builder, storey: number, theme: Theme, rnd: () => number, special: Room[]) {
+  // Same fittings as the ground floor, shuffled per storey, kept clear of doors and the wide openings.
+  const doors = roomsFor(storey).map((r) => [r.side, r.door] as const)
+  const clear = (x: number, side: number) => {
+    for (let k = 0; k < 8; k++) {
+      const bad =
+        special.some((r) => r.side === side && x > r.x0 - 0.6 && x < r.x1 + 0.6) ||
+        (side > 0 && x > HALL.x0 - 0.8 && x < HALL.x1 + 0.8) ||
+        doors.some(([s, d]) => s === side && Math.abs(x - d) < 1.0)
+      if (!bad) return x
+      x += 2.7
+    }
+    return x
+  }
+  extinguisher(b, clear(-20 + storey * 3.1, -1), -1.6)
+  extinguisher(b, clear(18 - storey * 2.3, -1), -1.6)
+  if (theme !== "abandoned") fountain(b, clear(-24.6 + storey * 1.7, 1), 1.6)
+  if (theme !== "abandoned" && theme !== "records") bulletin(b, clear(3.5 - storey * 2, 1), 1.6)
+  hazardLight(b, clear(-30 + storey, -1), -1.6, false)
+  const hx = clear(25 - storey, -1)
+  hazardLight(b, hx, -1.6, theme === "abandoned")
+  if (theme === "abandoned") b.lamp({ kind: "warning", position: [hx, FLOOR_Y + 2.55, -1.4], color: [1, 0.12, 0.05], intensity: 1.5, range: 3, size: 0.12 })
+  if (theme === "labs") {
+    safetyShower(b, clear(9.3, -1), -1.6)
+    safetyShower(b, clear(-15.3, -1), -1.6)
+  }
+  if (theme === "offices") vinylSeams(b, special)
+  if (theme === "records") cableTray(b)
   if (theme === "abandoned") decayCorridor(b, rnd)
+}
+
+/** Butt seams of the wallcovering every 0.9 m on both corridor walls (storey 1). */
+function vinylSeams(b: Builder, special: Room[]) {
+  for (const side of [-1, 1]) {
+    const z = side * 1.6
+    for (let x = SHELL.x0 + 0.9; x < SHELL.x1; x += 0.9) {
+      if (special.some((r) => r.side === side && x > r.x0 && x < r.x1)) continue
+      if (side > 0 && x > HALL.x0 - 0.2 && x < HALL.x1 + 0.2) continue
+      b.box(M.vinylSeam, x - 0.002, FLOOR_Y + 0.93, z - side * 0.002, x + 0.002, CEIL_Y, z, { cast: false })
+    }
+  }
+}
+
+/** Ladder cable tray hung below the ceiling along the corridor (storey 3), cable bundles in it. */
+function cableTray(b: Builder) {
+  const y = CEIL_Y - 0.32
+  const z0 = 0.55
+  const z1 = 0.95
+  b.box("metal_galvanized", SHELL.x0, y, z0, SHELL.x1, y + 0.08, z0 + 0.012)
+  b.box("metal_galvanized", SHELL.x0, y, z1 - 0.012, SHELL.x1, y + 0.08, z1)
+  for (let x = SHELL.x0 + 0.15; x < SHELL.x1; x += 0.3) b.box("metal_galvanized", x - 0.01, y, z0, x + 0.01, y + 0.012, z1, { cast: false })
+  for (let x = SHELL.x0 + 0.75; x < SHELL.x1; x += 1.5) {
+    b.rod(M.darkSteel, [x, y, z0 - 0.02], [x, CEIL_Y, z0 - 0.02], 0.005, 4)
+    b.rod(M.darkSteel, [x, y, z1 + 0.02], [x, CEIL_Y, z1 + 0.02], 0.005, 4)
+    b.box(M.darkSteel, x - 0.015, y - 0.02, z0 - 0.04, x + 0.015, y, z1 + 0.04)
+  }
+  for (const [dz, r, mat] of [
+    [0.08, 0.035, M.rubber],
+    [0.17, 0.03, paint(0x5a5f62, 0.6)],
+    [0.26, 0.04, M.rubber],
+    [0.33, 0.022, paint(0x7a6a3a, 0.6)],
+  ] as const)
+    b.rod(mat, [SHELL.x0, y + 0.012 + r, z0 + dz], [SHELL.x1, y + 0.012 + r, z0 + dz], r, 6)
 }
 
 /** Emergency drench shower and eyewash on the corridor wall (labs storey). */
@@ -355,19 +482,13 @@ function decayCorridor(b: Builder, rnd: () => number) {
     const len = 0.3 + rnd() * 1.1
     b.rod(M.rubber, [x, CEIL_Y + 0.05, z], [x + (rnd() - 0.5) * 0.2, CEIL_Y - len, z + (rnd() - 0.5) * 0.2], 0.006, 4)
   }
-  // A troffer hanging on two wires at a steep angle.
-  for (const x of [-9, 21.6]) {
-    const m = T(x, CEIL_Y - 0.55, 0.2, 0.2, 0.15, 0.75)
-    b.boxM(M.housing, m, 0.6, 0.08, 1.2)
-    b.quad(M.diffuserOff, m.clone().multiply(T(0, -0.041, 0, 0, Math.PI / 2)), 0.56, 1.16, { cast: false })
-    b.rod(M.rubber, [x - 0.25, CEIL_Y, 0.2], [x - 0.25, CEIL_Y - 0.33, 0.25], 0.004, 4)
-    b.rod(M.rubber, [x + 0.25, CEIL_Y, 0.2], [x + 0.2, CEIL_Y - 0.75, 0.0], 0.004, 4)
-  }
-  // Plastic sheeting across half the corridor, gaffer-taped to the grid, the other half torn and pulled aside.
-  for (const x of [-30, -3, 15]) {
-    plastic(b, x, -1.6, 0.25, rnd)
-    plastic(b, x + 0.05, 0.9, 1.6, rnd, 0.6)
-  }
+  // Plastic sheeting: one torn sheet bunched against the north wall (no full-height planes across the corridor), and
+  // blue tarps: one hung over a doorway, one on the floor catching a leak.
+  plastic(b, -30, -1.6, -0.9, rnd, 0.35)
+  tarpHung(b, 6.6, -1.6, rnd)
+  tarpFloor(b, -12, 0.3, rnd)
+  // Dead end: plywood hoarding across the corridor at x = 22, chairs stacked against it.
+  hoarding(b, 22)
   for (let k = 0; k < 6; k++) {
     const x = SHELL.x0 + 6 + rnd() * 80
     b.quad(PUDDLE, T(x, FLOOR_Y + 0.002, (rnd() - 0.5) * 1.6, rnd() * 3, -Math.PI / 2), 0.6 + rnd() * 1.4, 0.4 + rnd() * 0.9, { cast: false })
@@ -436,4 +557,204 @@ export function groundWindows(b: Builder) {
   const xi = SHELL.x1 + 0.06 - 0.12
   for (const a of bays(6, 22, [], 2.6)) b.quad(blindMats.closed, T(xi, y, a + WIN_W / 2, -Math.PI / 2), WIN_W - 0.04, h, { cast: false })
   for (const a of bays(-22, 22, [[-12.5, -7]])) b.quad(blindMats.closed, T(SHELL.x0 + 0.06, y, a + WIN_W / 2, Math.PI / 2), WIN_W - 0.04, h, { cast: false })
+}
+
+// ------------------------------------------------------------------------------------------------ storey identities
+
+/** Raised access floor in the corridor outside the machine room: 60 cm grey tiles, a few perforated. */
+function raisedCorridor(b: Builder, r: Room) {
+  const y = FLOOR_Y + 0.0012
+  const xa = Math.ceil((r.x0 - 3) / 0.6) * 0.6
+  const xb = r.x1 + 3
+  b.box(M.raised, xa, y - 0.01, -1.6, xb, y, 1.6, { cast: false })
+  for (let x = xa; x <= xb + 1e-3; x += 0.6) b.box(M.darkSteel, x - 0.005, y, -1.6, x + 0.005, y + 0.0008, 1.6, { cast: false })
+  for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.darkSteel, xa, y, z - 0.005, xb, y + 0.0008, z + 0.005, { cast: false })
+  for (let x = xa + 1.2; x < xb - 0.6; x += 2.4) b.box(M.perf, x + 0.03, y, -0.27, x + 0.57, y + 0.0009, 0.27, { cast: false })
+  // Ramp nosings at each end.
+  for (const x of [xa, xb]) b.box(M.hazard, x - 0.04, y - 0.01, -1.6, x + 0.04, y + 0.002, 1.6, { cast: false })
+}
+
+/** Patches of old linoleum and adhesive left on the stripped slab. */
+function slabRemnants(b: Builder, rnd: () => number) {
+  for (let k = 0; k < 9; k++) {
+    const x = SHELL.x0 + 4 + rnd() * 80
+    const w = 0.6 + rnd() * 2.2
+    const z0 = -1.6 + rnd() * 1.2
+    b.box("linoleum", x, FLOOR_Y, z0, x + w, FLOOR_Y + 0.003, z0 + 0.5 + rnd() * 1.4, { cast: false })
+  }
+}
+
+/** A fitting hanging out of the grid on two wires, a T-bar sagging beside it. */
+function hangingTroffer(b: Builder, x: number, rnd: () => number) {
+  const tilt = 0.5 + rnd() * 0.4
+  const m = T(x, CEIL_Y - 0.5, 0.15, rnd() * 0.4, 0.1, tilt)
+  b.boxM(M.housing, m, 0.6, 0.08, 1.2)
+  b.quad(M.diffuserOff, m.clone().multiply(T(0, -0.041, 0, 0, Math.PI / 2)), 0.56, 1.16, { cast: false })
+  b.rod(M.rubber, [x - 0.25, CEIL_Y, 0.2], [x - 0.25, CEIL_Y - 0.3, 0.25], 0.004, 4)
+  b.rod(M.rubber, [x + 0.25, CEIL_Y, 0.2], [x + 0.2, CEIL_Y - 0.72, 0.0], 0.004, 4)
+  b.rod(M.tbar, [x - 1.2, CEIL_Y - 0.01, 0.6], [x + 0.8, CEIL_Y - 0.45 - rnd() * 0.3, 0.55], 0.008, 4)
+}
+
+/** Chemical store placard beside a lab door: a hazard diamond (four coloured quarters) and a chevron floor strip. */
+function hazardPlacard(b: Builder, x: number, z: number, side: number) {
+  const y = FLOOR_Y + 1.55
+  const yaw = side > 0 ? Math.PI : 0
+  const cols = [paint(0x2a4a8a, 0.5), paint(0x8a1a12, 0.5), paint(0x9a8012, 0.5), paint(0xcfcbbb, 0.6)]
+  const off = [
+    [0, 0.07],
+    [-0.07, 0],
+    [0.07, 0],
+    [0, -0.07],
+  ]
+  off.forEach(([dx, dy], i) => b.boxM(cols[(i + 1) % 4]!, T(x + dx! * (side > 0 ? -1 : 1), y + dy!, z, yaw, 0, Math.PI / 4), 0.095, 0.095, 0.006))
+  b.box(M.hazard, x - 1.3, FLOOR_Y + 0.0015, Math.min(z, z - side * 0.25), x + 0.1, FLOOR_Y + 0.0025, Math.max(z, z - side * 0.25), { cast: false })
+}
+
+/** Glazed corridor wall into the machine room: plate glass in steel mullions, halon warning beacons over the door. */
+function machineGlazing(b: Builder, r: Room) {
+  const a0 = r.door + 0.75
+  const a1 = r.x1 - 0.3
+  const z = r.side * 1.675
+  const y0 = FLOOR_Y + 0.9
+  const y1 = FLOOR_Y + 2.3
+  b.box(M.frame, a0, y0 - 0.04, z - 0.09, a1, y0, z + 0.09)
+  b.box(M.frame, a0, y1, z - 0.09, a1, y1 + 0.05, z + 0.09)
+  const n = Math.max(1, Math.round((a1 - a0) / 1.2))
+  for (let k = 0; k <= n; k++) {
+    const x = a0 + ((a1 - a0) * k) / n
+    b.box(M.frame, x - 0.025, y0, z - 0.04, x + 0.025, y1, z + 0.04)
+  }
+  b.quad(glazing, T((a0 + a1) / 2, (y0 + y1) / 2, z, r.side > 0 ? Math.PI : 0), a1 - a0, y1 - y0, { cast: false })
+  b.collide(a0, y0, z - 0.03, a1, y1, z + 0.03)
+  // Halon discharge beacons (amber, red) and a blank instruction plate beside the door.
+  const zf = r.side * 1.59
+  for (const [dx, mat] of [
+    [-0.2, M.amberGlow],
+    [0.2, M.hazardRed],
+  ] as const) {
+    b.box(M.darkSteel, r.door + dx - 0.07, FLOOR_Y + 2.32, zf - r.side * 0.06, r.door + dx + 0.07, FLOOR_Y + 2.36, zf)
+    b.cyl(mat, T(r.door + dx, FLOOR_Y + 2.42, zf - r.side * 0.04), 0.045, 0.05, 0.12, 12, { cast: false })
+  }
+  b.lamp({ kind: "warning", position: [r.door - 0.2, FLOOR_Y + 2.45, zf - r.side * 0.2], color: [1, 0.55, 0.1], intensity: 1.2, range: 3.5, size: 0.08 })
+  b.box(M.safety, r.door + 0.6, FLOOR_Y + 1.35, zf - r.side * 0.006, r.door + 0.95, FLOOR_Y + 1.8, zf, { cast: false })
+  b.box(M.felt, r.door + 0.63, FLOOR_Y + 1.38, zf - r.side * 0.008, r.door + 0.92, FLOOR_Y + 1.77, zf - r.side * 0.006, { cast: false })
+}
+
+/** Break area open to the corridor: vending machines, sofa, coffee table, a table with chairs, water cooler; a back
+ *  partition with a closed door to a storeroom. */
+function lounge(b: Builder, r: Room, rnd: () => number) {
+  const s = r.side
+  const back = 8.4
+  wall(b, "x", r.x0, r.x1, Math.min(rz(r, back), rz(r, back + 0.12)), Math.max(rz(r, back), rz(r, back + 0.12)), roomBands, [doorOpening(r.x1 - 1.2)])
+  door(b, r.x1 - 1.2, rz(r, back + 0.06), { rot: s < 0 ? 0 : Math.PI, locked: true })
+  // Two vending machines against the left partition, fronts facing across the room.
+  for (const [k, v] of [0.9, 2.0].entries()) {
+    const x = r.x0 + 0.45
+    const m = T(x, FLOOR_Y, rz(r, v), Math.PI / 2)
+    b.rbox(M.vend, m, 0.95, 1.83, 0.82, 0.03, 0, 0.915, 0)
+    b.quad(M.vendFront, m.clone().multiply(T(-0.08, 1.15, 0.412)), 0.6, 1.1, { cast: false })
+    b.boxM(M.darkSteel, m, 0.2, 0.5, 0.02, 0.33, 1.1, 0.41)
+    b.boxM(M.darkSteel, m, 0.6, 0.18, 0.04, -0.08, 0.3, 0.41)
+    b.boxM(M.steel, m, 0.04, 0.04, 0.02, 0.33, 1.25, 0.43)
+    if (k === 0) b.lamp({ kind: "fluorescent", position: [x + 0.7, FLOOR_Y + 1.2, rz(r, v)], color: [0.95, 0.9, 0.75], intensity: 2.5, range: 4, size: 0.5 })
+    b.collide(x - 0.45, FLOOR_Y, rz(r, v) - 0.48, x + 0.42, FLOOR_Y + 1.83, rz(r, v) + 0.48)
+  }
+  // Sofa along the back partition, coffee table in front.
+  const sx = (r.x0 + r.x1) / 2 - 0.5
+  const sm = T(sx, FLOOR_Y, rz(r, back - 0.5), s < 0 ? Math.PI : 0)
+  b.rbox(M.sofa, sm, 2.0, 0.42, 0.85, 0.06, 0, 0.21, 0)
+  b.rbox(M.sofa, sm, 2.0, 0.42, 0.22, 0.06, 0, 0.55, 0.33)
+  for (const dx of [-0.94, 0.94]) b.rbox(M.sofa, sm, 0.18, 0.62, 0.85, 0.05, dx, 0.31, 0)
+  for (const dx of [-0.5, 0.5]) b.rbox(M.sofa, sm, 0.9, 0.12, 0.62, 0.05, dx, 0.47, -0.08)
+  b.collide(sx - 1.05, FLOOR_Y, rz(r, back - 0.5) - 0.45, sx + 1.05, FLOOR_Y + 0.8, rz(r, back - 0.5) + 0.45)
+  const tm = T(sx, FLOOR_Y, rz(r, back - 1.7))
+  b.rbox(M.wood, tm, 1.1, 0.04, 0.55, 0.01, 0, 0.42, 0)
+  for (const [dx, dz] of [[-0.48, -0.22], [0.48, -0.22], [-0.48, 0.22], [0.48, 0.22]]) b.boxM(M.darkSteel, tm, 0.03, 0.4, 0.03, dx!, 0.2, dz!)
+  b.collide(sx - 0.55, FLOOR_Y, rz(r, back - 1.7) - 0.28, sx + 0.55, FLOOR_Y + 0.44, rz(r, back - 1.7) + 0.28)
+  paperStackLounge(b, sx - 0.2, FLOOR_Y + 0.44, rz(r, back - 1.7), rnd)
+  // Round table with stacking chairs near the corridor.
+  const rx = r.x1 - 1.3
+  const rv = 3.2
+  b.cyl(M.laminateTop, T(rx, FLOOR_Y + 0.72, rz(r, rv)), 0.45, 0.45, 0.03, 24)
+  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.36, rz(r, rv)), 0.03, 0.03, 0.7, 8)
+  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.015, rz(r, rv)), 0.25, 0.28, 0.03, 16)
+  b.collide(rx - 0.45, FLOOR_Y, rz(r, rv) - 0.45, rx + 0.45, FLOOR_Y + 0.74, rz(r, rv) + 0.45)
+  b.cyl(M.paper, T(rx + 0.1, FLOOR_Y + 0.78, rz(r, rv) + 0.1), 0.04, 0.035, 0.09, 12)
+  loungeChairs(b, r, rx, rv, rnd)
+  // Water cooler by the opening.
+  const wx = r.x1 - 0.35
+  const wv = 0.6
+  b.rbox(M.beige, T(wx, FLOOR_Y, rz(r, wv)), 0.32, 0.95, 0.32, 0.02, 0, 0.475, 0)
+  b.cyl(paint(0x2f4f78, 0.1), T(wx, FLOOR_Y + 1.15, rz(r, wv)), 0.13, 0.13, 0.4, 16)
+  b.collide(wx - 0.17, FLOOR_Y, rz(r, wv) - 0.17, wx + 0.17, FLOOR_Y + 1.35, rz(r, wv) + 0.17)
+}
+
+function paperStackLounge(b: Builder, x: number, y: number, z: number, rnd: () => number) {
+  for (let k = 0; k < 4; k++) b.boxM(M.paper, T(x + (rnd() - 0.5) * 0.2, y + 0.003 + k * 0.004, z + (rnd() - 0.5) * 0.1, rnd() * 3), 0.21, 0.003, 0.28, 0, 0, 0, { cast: false })
+}
+
+/** Cross corridor through to a window on the facade, finished like the main corridor. */
+function crossCorridor(b: Builder, r: Room, style: Style) {
+  const za = Math.min(rz(r, 0), rz(r, DEPTH))
+  const zb = Math.max(rz(r, 0), rz(r, DEPTH))
+  wall(b, "z", za, zb, r.x0, r.x0 + 0.01, style.bands, [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  wall(b, "z", za, zb, r.x1 - 0.01, r.x1, style.bands, [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  if (style.stripe) {
+    const cx = (r.x0 + r.x1) / 2
+    b.box(style.stripe, cx - 0.06, FLOOR_Y + 0.0005, za + 0.1, cx + 0.06, FLOOR_Y + 0.0015, zb - 0.3, { cast: false })
+  }
+  extinguisher(b, r.x0 + 0.01, 0)
+  safetyShower(b, r.x1 - 0.12 - 0.4, rz(r, 9) + 0.0)
+}
+
+/** Dead-end storage nook: a shallow bay off the corridor stacked with chairs and boxes, a partition behind. */
+function nook(b: Builder, r: Room, rnd: () => number) {
+  const back = 3.4
+  wall(b, "x", r.x0, r.x1, Math.min(rz(r, back), rz(r, back + 0.12)), Math.max(rz(r, back), rz(r, back + 0.12)), roomBands)
+  furnishNook(b, r, back, rnd)
+}
+
+/** Blue tarp hung from the grid over a doorway, sagging and creased. */
+function tarpHung(b: Builder, x: number, zWall: number, rnd: () => number) {
+  const w = 2.2
+  const h = CEIL_Y - FLOOR_Y - 0.5
+  const g = new THREE.PlaneGeometry(w, h, 10, 8)
+  const pos = g.getAttribute("position")
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i)
+    const v = pos.getY(i)
+    pos.setZ(i, Math.sin(u * 4 + rnd() * 0.3) * 0.06 + (0.5 - v / h) * 0.12 + Math.sin(v * 7) * 0.02)
+  }
+  g.computeVertexNormals()
+  g.applyMatrix4(T(x, CEIL_Y - h / 2, zWall + 0.2, 0))
+  b.add(M.tarp, g, { worldUV: false, cast: false })
+  b.box(M.wood, x - w / 2, CEIL_Y - 0.04, zWall + 0.15, x + w / 2, CEIL_Y - 0.01, zWall + 0.22)
+}
+
+/** Tarp spread on the floor under a leak, edges folded, a bucket of brown water on it. */
+function tarpFloor(b: Builder, x: number, z: number, rnd: () => number) {
+  const g = new THREE.PlaneGeometry(1.8, 1.4, 8, 6)
+  const pos = g.getAttribute("position")
+  for (let i = 0; i < pos.count; i++) {
+    const e = Math.max(Math.abs(pos.getX(i)) / 0.9, Math.abs(pos.getY(i)) / 0.7)
+    pos.setZ(i, e > 0.85 ? 0.03 + rnd() * 0.04 : rnd() * 0.01)
+  }
+  g.computeVertexNormals()
+  g.applyMatrix4(T(x, FLOOR_Y + 0.004, z, 0.3, -Math.PI / 2))
+  b.add(M.tarp, g, { worldUV: false, cast: false })
+  b.quad(PUDDLE, T(x + 0.2, FLOOR_Y + 0.02, z - 0.1, 0, -Math.PI / 2), 0.9, 0.6, { cast: false })
+  b.cyl(M.darkSteel, T(x - 0.4, FLOOR_Y + 0.16, z + 0.3), 0.15, 0.13, 0.3, 16, { open: true })
+}
+
+/** Plywood hoarding across the corridor on its studs, hazard tape on it: the east end is closed off. */
+function hoarding(b: Builder, x: number) {
+  b.box(M.plywood, x, FLOOR_Y, -1.6, x + 0.018, CEIL_Y, 1.6)
+  for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.wood, x + 0.018, FLOOR_Y, z - 0.02, x + 0.1, CEIL_Y, z + 0.02)
+  b.box(M.wood, x + 0.018, FLOOR_Y, -1.6, x + 0.1, FLOOR_Y + 0.05, 1.6)
+  b.box(M.wood, x + 0.018, CEIL_Y - 0.05, -1.6, x + 0.1, CEIL_Y, 1.6)
+  for (const y of [1.0, 1.25]) b.box(M.hazard, x - 0.004, FLOOR_Y + y, -1.6, x, FLOOR_Y + y + 0.08, 1.6, { cast: false })
+  // Seams between sheets.
+  b.box(M.darkSteel, x - 0.002, FLOOR_Y, -0.38, x, CEIL_Y, -0.36, { cast: false })
+  b.box(M.darkSteel, x - 0.002, FLOOR_Y + 2.44, -1.6, x, FLOOR_Y + 2.45, 1.6, { cast: false })
+  b.collide(x - 0.02, FLOOR_Y, -1.6, x + 0.1, CEIL_Y, 1.6)
 }

@@ -17,7 +17,8 @@ const buckets = new Map<Builder, Map<string, { name: ModelName; cast: boolean; p
 function put(b: Builder, name: ModelName, p: Prop, cast: boolean) {
   let m = buckets.get(b)
   if (!m) buckets.set(b, (m = new Map()))
-  const key = `${name}:${cast}`
+  // Instanced per 22.5 m stretch of the block, so the view culling in interior.ts can drop far stretches.
+  const key = `${name}:${cast}:${Math.floor((p.position[0] + 55) / 22.5)}`
   let e = m.get(key)
   if (!e) m.set(key, (e = { name, cast, props: [] }))
   e.props.push(p)
@@ -31,11 +32,15 @@ export function flushModels(b: Builder) {
 /** Blinking indicator lamps on computer cabinets: each lamp its own rate and colour. */
 const panelLights = (() => {
   const m = new THREE.MeshStandardNodeMaterial({ color: 0x050505, roughness: 0.4 })
-  const c = floor(positionWorld.mul(60))
+  // A strip of lamps on a 2.2 cm pitch drawn on one flat panel: round-ish dots, each its own rate and colour.
+  const q = positionWorld.mul(45)
+  const c = floor(q)
+  const f = fract(q).sub(0.5).abs()
+  const dot = step(f.x.max(f.z), 0.28).mul(step(f.y, 0.28))
   const h = hash(c.x.add(c.y.mul(31)).add(c.z.mul(17)))
   const blink = step(0.45, fract(time.mul(h.mul(1.8).add(0.15)).add(h.mul(10))))
   const colour = mix(vec3(1, 0.42, 0.08), vec3(0.35, 1, 0.4), step(0.62, h))
-  m.emissiveNode = colour.mul(blink).mul(step(0.25, h)).mul(2.2)
+  m.emissiveNode = colour.mul(blink).mul(step(0.25, h)).mul(dot).mul(2.2)
   m.name = "interior_panel_lights"
   return m
 })()
@@ -68,14 +73,14 @@ function paperStack(b: Builder, x: number, y: number, z: number, yaw: number, rn
 
 // ------------------------------------------------------------------------------------------------ offices
 function offices(b: Builder, r: Room, rnd: () => number) {
-  const full = r.enter || r.lit
-  const cast = r.enter
+  const full = r.unlocked
+  const cast = r.unlocked
   const cx = (r.wx0 + r.wx1) / 2
   const deskTop = FLOOR_Y + MODELS.office_desk.size[1]
   const rows = full ? [16.4, 10.6] : [16.4]
   for (const [ri, v] of rows.entries()) {
     for (const [k, dx] of [-1.12, 1.12].entries()) {
-      if (ri > 0 && k === 1 && !r.enter) continue
+      if (ri > 0 && k === 1 && !r.unlocked) continue
       const x = cx + dx
       const yaw = fc(r) + (rnd() - 0.5) * 0.06
       put(b, "office_desk", { position: at(r, x, v), yaw }, cast)
@@ -92,10 +97,10 @@ function offices(b: Builder, r: Room, rnd: () => number) {
   const fx = r.x0 + MODELS.filing_cabinet.size[2] / 2 + 0.02
   for (let k = 0; k < n; k++) {
     const v = 2.4 + k * 0.48
-    if (r.enter && k === 2) put(b, "filing_cabinet_open", { position: at(r, r.x0 + MODELS.filing_cabinet_open.size[2] / 2 + 0.02, v + 0.1), yaw: yawToward(1, 0), inset: 0.05 }, cast)
+    if (r.unlocked && k === 2) put(b, "filing_cabinet_open", { position: at(r, r.x0 + MODELS.filing_cabinet_open.size[2] / 2 + 0.02, v + 0.1), yaw: yawToward(1, 0), inset: 0.05 }, cast)
     else put(b, "filing_cabinet", { position: at(r, fx, v), yaw: yawToward(1, 0) }, cast)
   }
-  if (r.enter) {
+  if (r.unlocked) {
     put(b, "cardboard_box", { position: at(r, r.x1 - 0.4, 3.0), yaw: rnd() }, cast)
     put(b, "cardboard_box", { position: at(r, r.x1 - 0.42, 3.0, FLOOR_Y + MODELS.cardboard_box.size[1]), yaw: rnd(), collide: false, blob: 0 }, cast)
     put(b, "stack_chair", { position: at(r, r.x1 - 0.5, 6.5), yaw: yawToward(-1, 0) }, cast)
@@ -104,15 +109,15 @@ function offices(b: Builder, r: Room, rnd: () => number) {
 
 // ------------------------------------------------------------------------------------------------ labs
 function labs(b: Builder, r: Room, rnd: () => number) {
-  const full = r.enter || r.lit
-  const cast = r.enter
+  const full = r.unlocked
+  const cast = r.unlocked
   const top = FLOOR_Y + 0.935
   const v0 = 2.6
   const v1 = vMax(r, "x0")
   const za = rz(r, v0)
   const zb = rz(r, v1)
   benchRun(b, "z", Math.min(za, zb), Math.max(za, zb), r.x0, r.x0 + 0.68)
-  for (let v = v0 + 1; v < v1 - 0.6; v += 2.6) put(b, "glassware", { position: at(r, r.x0 + 0.36, v, top), yaw: yawToward(1, 0) + (rnd() - 0.5) * 0.4, collide: false, blob: 0 }, false)
+  if (full) for (let v = v0 + 1; v < v1 - 0.6; v += 5.2) put(b, "glassware", { position: at(r, r.x0 + 0.36, v, top), yaw: yawToward(1, 0) + (rnd() - 0.5) * 0.4, collide: false, blob: 0 }, false)
   if (full) {
     const w1 = vMax(r, "x1")
     const hoodV = Math.min(w1 - 1.0, 13.5)
@@ -130,7 +135,7 @@ function labs(b: Builder, r: Room, rnd: () => number) {
       [0.75, 0.95],
     ] as const)
       stool(b, cx + dx + (rnd() - 0.5) * 0.15, rz(r, 8.4 + dv))
-    if (r.enter) {
+    if (r.unlocked) {
       put(b, "microscope", { position: at(r, cx - 0.6, 8.3, FLOOR_Y + 0.92), yaw: fw(r) + 0.4, collide: false, blob: 0 }, false)
       put(b, "glassware", { position: at(r, cx + 0.6, 8.5, FLOOR_Y + 0.92), yaw: rnd() * 6, collide: false, blob: 0 }, false)
       if (!chemistryPlaced.has(b.storey)) {
@@ -177,8 +182,8 @@ function fumeHood(b: Builder, xWall: number, z: number, facing: 1 | -1) {
 
 // ------------------------------------------------------------------------------------------------ records
 function computerRoom(b: Builder, r: Room, rnd: () => number) {
-  const full = r.enter || r.lit
-  const cast = r.enter
+  const full = r.unlocked
+  const cast = r.unlocked
   const v1 = vMax(r, "x0")
   // Tape drives in a row along the left wall, reels behind smoked glass.
   const n = full ? Math.floor((v1 - 2.5) / 0.8) : 3
@@ -209,7 +214,7 @@ function tapeDrive(b: Builder, x: number, z: number, yaw: number, rnd: () => num
   }
   b.quad(M.glass, m.clone().multiply(T(0, 1.22, -0.39, Math.PI)), 0.6, 0.78, { cast: false })
   b.boxM(M.darkSteel, m, 0.56, 0.12, 0.012, 0, 0.72, -0.352)
-  for (let k = 0; k < 8; k++) b.boxM(panelLights, m, 0.022, 0.016, 0.006, -0.24 + k * 0.068, 0.74, -0.36, { cast: false })
+  b.boxM(panelLights, m, 0.5, 0.022, 0.006, 0, 0.74, -0.36, { cast: false })
   for (let k = 0; k < 4; k++) b.boxM(M.beige, m, 0.05, 0.035, 0.02, -0.18 + k * 0.12, 0.68, -0.36)
   for (let k = 0; k < 6; k++) b.boxM(M.darkSteel, m, 0.5, 0.012, 0.004, 0, 0.12 + k * 0.06, -0.352, { cast: false })
   b.collideLocal(m, [-0.37, 0, -0.36], [0.37, 1.8, 0.36])
@@ -223,8 +228,7 @@ function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
     b.rbox(M.beige, m, 0.7, 0.3, 0.6, 0.04, 0, 1.75, 0.02)
     b.boxM(SMOKED, m, 0.5, 0.12, 0.004, 0, 1.78, -0.29)
   } else
-    for (let row = 0; row < 6; row++)
-      for (let k = 0; k < 10; k++) b.boxM(panelLights, m, 0.014, 0.014, 0.005, -0.3 + k * 0.066, 1.2 + row * 0.05, -0.382, { cast: false })
+    b.boxM(panelLights, m, 0.64, 0.28, 0.005, 0, 1.33, -0.382, { cast: false })
   for (let k = 0; k < 10; k++) b.boxM(M.darkSteel, m, 0.6, 0.01, 0.004, 0, 0.15 + k * 0.05, -0.382, { cast: false })
   b.collideLocal(m, [-0.4, 0, -0.38], [0.4, disk ? 1.9 : 1.6, 0.38])
 }
@@ -241,8 +245,8 @@ function lineprinter(b: Builder, x: number, z: number, side: number, rnd: () => 
 }
 
 function recordsRoom(b: Builder, r: Room, rnd: () => number) {
-  const full = r.enter || r.lit
-  const cast = r.enter
+  const full = r.unlocked
+  const cast = r.unlocked
   const [w, , d] = MODELS.steel_shelves.size
   const rows = full ? 6 : 2
   for (let k = 0; k < rows; k++) {
@@ -260,17 +264,17 @@ function recordsRoom(b: Builder, r: Room, rnd: () => number) {
 
 // ------------------------------------------------------------------------------------------------ abandoned
 function abandoned(b: Builder, r: Room, rnd: () => number) {
-  const cast = r.enter
+  const cast = r.unlocked
   const cx = (r.wx0 + r.wx1) / 2
   // A desk shoved askew, chairs knocked over, cabinets left open; one cabinet face down.
   put(b, "office_desk", { position: at(r, cx + (rnd() - 0.5) * 1.5, 13 + rnd() * 3), yaw: fc(r) + (rnd() - 0.5) * 1.2 }, cast)
-  const chairs = r.enter ? 5 : 2
+  const chairs = r.unlocked ? 5 : 2
   for (let k = 0; k < chairs; k++) {
     const tipped = rnd() < 0.6
     const p = at(r, r.x0 + 0.6 + rnd() * (r.x1 - r.x0 - 1.2), 3 + rnd() * 10, tipped ? FLOOR_Y + 0.3 : FLOOR_Y)
     put(b, "stack_chair", { position: p, yaw: rnd() * 6.28, ...(tipped ? { tilt: new THREE.Euler(rnd() < 0.5 ? Math.PI / 2 : -Math.PI / 2, 0, 0) } : {}) }, cast)
   }
-  if (r.enter) {
+  if (r.unlocked) {
     put(b, "filing_cabinet_open", { position: at(r, r.x0 + 0.55, 3.2), yaw: yawToward(1, 0), inset: 0.05 }, cast)
     put(b, "filing_cabinet", { position: at(r, cx, 8, FLOOR_Y + MODELS.filing_cabinet.size[2] / 2), yaw: fc(r) + 0.3, tilt: new THREE.Euler(-Math.PI / 2, 0, 0) }, cast)
     b.collide(cx - 0.7, FLOOR_Y, rz(r, 8) - 0.7, cx + 0.7, FLOOR_Y + 0.5, rz(r, 8) + 0.7)
@@ -281,4 +285,23 @@ function abandoned(b: Builder, r: Room, rnd: () => number) {
 
 export function resetFurnish() {
   chemistryPlaced = new Set()
+}
+
+/** Stacking chairs round the lounge table. */
+export function loungeChairs(b: Builder, r: Room, x: number, v: number, rnd: () => number) {
+  for (let k = 0; k < 3; k++) {
+    const a = k * 2.1 + rnd() * 0.4
+    put(b, "stack_chair", { position: at(r, x + Math.cos(a) * 0.75, v + Math.sin(a) * 0.75), yaw: yawToward(-Math.cos(a), -Math.sin(a) * r.side) + (rnd() - 0.5) * 0.4 }, true)
+  }
+}
+
+/** Storage nook contents: chairs stacked in towers, boxes, a rack. */
+export function furnishNook(b: Builder, r: Room, back: number, rnd: () => number) {
+  const n = Math.floor((r.x1 - r.x0 - 0.6) / 0.62)
+  for (let k = 0; k < n; k++) {
+    const x = r.x0 + 0.45 + k * 0.62
+    const h = 2 + Math.floor(rnd() * 4)
+    for (let j = 0; j < h; j++) put(b, "stack_chair", { position: at(r, x, back - 0.45, FLOOR_Y + j * 0.11), yaw: fw(r), collide: j === 0, blob: j === 0 ? 1.2 : 0 }, false)
+  }
+  for (let k = 0; k < 4; k++) put(b, "cardboard_box", { position: at(r, r.x0 + 0.4 + rnd() * (r.x1 - r.x0 - 0.8), 1.2 + rnd() * 0.8), yaw: rnd() * 3 }, false)
 }

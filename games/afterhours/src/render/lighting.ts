@@ -265,6 +265,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
       ],
       value: 512,
     },
+    { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0.22 },
+    { key: "light.spillExterior", label: "Spot spill outdoors", group: "Lighting", min: 0, max: 0.3, step: 0.005, value: 0.02 },
     { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
@@ -547,9 +549,13 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const occPoint = new THREE.Vector3()
 
   const tmpCam = new THREE.Vector3()
+  let lastSpill = [NaN, NaN]
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
   let frame = 0
+  let wasStreaming = false
+  let shadowColliders = -1
+  const doorAmounts: number[] = []
 
   const rig = {
     update(dt: number, time: number) {
@@ -560,6 +566,12 @@ export function createLighting(ctx: WorldContext, player: Player) {
       camera.updateMatrixWorld()
       tmpCam.setFromMatrixPosition(camera.matrixWorld)
       const extScale = num(ctx, "light.lampsExterior")
+      const spillIn = num(ctx, "light.spillInterior")
+      const spillOut = num(ctx, "light.spillExterior")
+      if (spillIn !== lastSpill[0] || spillOut !== lastSpill[1]) {
+        lastSpill = [spillIn, spillOut]
+        for (const r of rigs) r.lastPos[0] = NaN
+      }
       const intScale = num(ctx, "light.lampsInterior")
       const flickerScale = num(ctx, "light.flicker")
       const sodiumShift = num(ctx, "light.sodiumShift")
@@ -593,14 +605,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
           // Building lamps light only the inside of the building, street and lot lamps only the outside; the guard
           // booth's lamp lights both (its glass spills onto the road, as in the concept).
           r.mask.mode = r.zone.interior || inside(r.pos) ? 1 : inside(r.pos, true) ? 0 : 2
+          // Spots in rooms and semi-open spaces (bays, booth, doorways) light the space around their pool by bounce;
+          // street and yard heads stay tight so the night between them stays black.
+          r.point.userData.spill = r.dir ? (r.mask.mode === 2 ? spillOut : spillIn) : 0
           if (r.zone.interior) [r.mask.y0, r.mask.y1] = storeySlab(r.zone.storey)
           else [r.mask.y0, r.mask.y1] = [-1e5, 1e5]
         }
         r.level = flickerLevel(r, time, flickerScale)
         lampColor(l, sodiumShift, r.color)
         if (l.kind === "sodium") coldSodium(r.color, r.flicker.warm)
-        // Booth (mode 0) is a lit room too: interior scale, not the street-lamp scale.
-        const lampScale = r.zone.interior || r.mask.mode !== 2 ? intScale : extScale
+        // The booth lamp (mode 0) lights a room and the forecourt: halfway between the interior and street scales.
+        const lampScale = r.zone.interior || r.mask.mode === 1 ? intScale : r.mask.mode === 0 ? (intScale + extScale) / 2 : extScale
         r.scale = lampScale
         r.radiance.copy(r.color).multiplyScalar(l.intensity * lampScale)
         r.distance = r.pos.distanceTo(tmpCam)
@@ -670,6 +685,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
         l.shadow.camera.far = w.lamp.range
         l.shadow.needsUpdate = true
       }
+      const streamingNow = renderState.streaming
+      let worldChanged = (wasStreaming && !streamingNow) || ctx.colliders.length !== shadowColliders
+      wasStreaming = streamingNow
+      shadowColliders = ctx.colliders.length
+      const doors = ctx.doors.all()
+      for (let i = 0; i < doors.length; i++) {
+        const a = doors[i]!.amount
+        if (a !== doorAmounts[i]) worldChanged = true
+        doorAmounts[i] = a
+      }
+      doorAmounts.length = doors.length
       for (const s of slots) {
         const w = s.rig
         if (!w) {
@@ -684,8 +710,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
         }
         s.light.color.copy(w.color)
         s.light.intensity = w.lamp.intensity * w.scale * w.level * w.shadowWeight * w.vis
-        // The world is static; refresh one pooled map now and then in case geometry streamed in.
-        if (frame % 45 === slots.indexOf(s) * 7 || frame < 6) s.light.shadow.needsUpdate = true
+        // Pooled maps are re-rendered only when the world changed: while modules stream in (one map now and then),
+        // when colliders arrive or a door swings. A periodic refresh of a finished world re-caught the swaying pines
+        // at a new phase each time, so their shadows jumped every ~0.75 s with the camera standing still.
+        if (worldChanged || (streamingNow && frame % 45 === slots.indexOf(s) * 7) || frame < 6) s.light.shadow.needsUpdate = true
       }
 
       // Flashlight: hand-held, lagging slightly behind the view.

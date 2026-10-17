@@ -1,11 +1,12 @@
 import * as THREE from "three/webgpu"
 import type { Box, WorldContext } from "../context"
+import { LOG_SHAPES, STUMP_SHAPES, deadwoodInCell } from "./deadwood"
+import { deadwoodMaterials, logGeometry, stumpGeometry } from "./deadwood-mesh"
+import type { Trees } from "./placement"
 import { SHOULDER, compoundDistance, fbm, heightAt, roadEdgeDistance } from "../height"
-import { material } from "../../render/materials"
 import { hash3, rng, range } from "./rng"
-import { VIEWPOINTS } from "../layout"
 import { CELL, UNDER, cellRect } from "./paint"
-import { InstLayer, band, foliageMaterial, trunkMaterial } from "./render"
+import { InstLayer, band, foliageMaterial } from "./render"
 
 // Forest floor detail near the player: sword-fern clumps, salal, verge grass, fallen twigs, logs and stumps.
 // Generated deterministically per 8 m cell on first approach, cached, and gathered into instance lists whenever the
@@ -15,13 +16,12 @@ const CELL_M = 8
 const REACH = 46
 const LOG_REACH = 90
 
-type Part = "fernA" | "fernB" | "grass" | "salal" | "twigs" | "log0" | "log1" | "log2" | "stump"
-const PARTS: Part[] = ["fernA", "fernB", "grass", "salal", "twigs", "log0", "log1", "log2", "stump"]
-const LOGS = [
-  { len: 6.5, r: 0.24 },
-  { len: 11, r: 0.34 },
-  { len: 15, r: 0.46 },
-]
+const PLANTS = ["fernA", "fernB", "grass", "salal", "twigs"] as const
+type Plant = (typeof PLANTS)[number]
+/** Part index: plants first, then one per log shape, then one per stump shape. */
+const LOG0 = PLANTS.length
+const STUMP0 = LOG0 + LOG_SHAPES.length
+const PART_COUNT = STUMP0 + STUMP_SHAPES
 
 type Buf = { pos: number[]; nor: number[]; uv: number[]; flex: number[]; idx: number[] }
 
@@ -112,66 +112,28 @@ function twigs(seed: number) {
   return g
 }
 
-function logGeometry(len: number, radius: number) {
-  const g = new THREE.CylinderGeometry(radius * 0.9, radius, len, 10, 4, false)
-  g.rotateZ(Math.PI / 2)
-  // Metre UVs along the log.
-  const uv = g.attributes.uv!
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * radius, uv.getY(i) * len)
-  const pos = g.attributes.position!
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i)
-    // A gentle sag and lumps so it reads as a fallen trunk, not a pipe.
-    pos.setY(i, pos.getY(i) * (1 + 0.08 * Math.sin(x * 2.1)) - 0.04 * Math.cos((x / len) * Math.PI))
-  }
-  g.computeVertexNormals()
-  g.setAttribute("flex", new THREE.Float32BufferAttribute(new Float32Array(pos.count), 1))
-  return g
-}
-
-function stumpGeometry() {
-  const g = new THREE.CylinderGeometry(0.34, 0.5, 1, 10, 2, false)
-  g.translate(0, 0.5, 0)
-  const pos = g.attributes.position!
-  for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i)
-    const a = Math.atan2(pos.getZ(i), pos.getX(i))
-    if (y > 0.99) pos.setY(i, 0.8 + 0.25 * Math.abs(Math.sin(a * 2.5)) + 0.1 * Math.sin(a * 7))
-    if (y < 0.01) {
-      pos.setX(i, pos.getX(i) * 1.25)
-      pos.setZ(i, pos.getZ(i) * 1.25)
-      pos.setY(i, -0.3)
-    }
-  }
-  const uv = g.attributes.uv!
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2.6, pos.getY(i))
-  g.computeVertexNormals()
-  g.setAttribute("flex", new THREE.Float32BufferAttribute(new Float32Array(pos.count), 1))
-  return g
-}
-
 type CellData = { part: Uint8Array; data: Float32Array; n: number }
 
-export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
+export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture, trees: Trees) {
   const near = band(-1e5, REACH - 8)
   const logBand = band(-1e5, LOG_REACH - 8)
   const plant = (c: THREE.Color) => foliageMaterial(atlas, c, near)
-  const bark = trunkMaterial(material("bark"), logBand)
+  const bark = deadwoodMaterials()
   const fernMat = plant(new THREE.Color(0.9, 1.05, 0.85))
-  const geos: Record<Part, { geometry: THREE.BufferGeometry; material: THREE.Material; cap: number; shadow: boolean }> = {
-    fernA: { geometry: fernClump(7), material: fernMat, cap: 2500, shadow: false },
-    fernB: { geometry: fernClump(8), material: fernMat, cap: 2500, shadow: false },
-    grass: { geometry: crossed(UNDER.grass, 0.75, 0.7, 3, 9), material: plant(new THREE.Color(1, 1, 0.9)), cap: 6000, shadow: false },
-    salal: { geometry: crossed(UNDER.salal, 0.7, 0.6, 3, 10), material: plant(new THREE.Color(0.9, 1, 0.9)), cap: 3000, shadow: false },
-    twigs: { geometry: twigs(11), material: plant(new THREE.Color(1, 1, 1)), cap: 3000, shadow: false },
-    log0: { geometry: logGeometry(LOGS[0]!.len, LOGS[0]!.r), material: bark, cap: 600, shadow: true },
-    log1: { geometry: logGeometry(LOGS[1]!.len, LOGS[1]!.r), material: bark, cap: 600, shadow: true },
-    log2: { geometry: logGeometry(LOGS[2]!.len, LOGS[2]!.r), material: bark, cap: 600, shadow: true },
-    stump: { geometry: stumpGeometry(), material: bark, cap: 800, shadow: true },
+  const plants: Record<Plant, { geometry: THREE.BufferGeometry; material: THREE.Material; cap: number }> = {
+    fernA: { geometry: fernClump(7), material: fernMat, cap: 2500 },
+    fernB: { geometry: fernClump(8), material: fernMat, cap: 2500 },
+    grass: { geometry: crossed(UNDER.grass, 0.75, 0.7, 3, 9), material: plant(new THREE.Color(1, 1, 0.9)), cap: 6000 },
+    salal: { geometry: crossed(UNDER.salal, 0.7, 0.6, 3, 10), material: plant(new THREE.Color(0.9, 1, 0.9)), cap: 3000 },
+    twigs: { geometry: twigs(11), material: plant(new THREE.Color(1, 1, 1)), cap: 2000 },
   }
-  const layers = PARTS.map((p) => {
-    const g = geos[p]
-    const l = new InstLayer(g.cap, [{ geometry: g.geometry, material: g.material, castShadow: g.shadow, name: `undergrowth-${p}` }])
+  const parts = [
+    ...PLANTS.map((p) => ({ ...plants[p], shadow: false, name: p })),
+    ...LOG_SHAPES.map((L, i) => ({ geometry: logGeometry(L.len, L.r, 300 + i), material: bark, cap: 120, shadow: true, name: `log${i}`, band: logBand })),
+    ...Array.from({ length: STUMP_SHAPES }, (_, i) => ({ geometry: stumpGeometry(i, 400 + i), material: bark, cap: 160, shadow: true, name: `stump${i}`, band: logBand })),
+  ]
+  const layers = parts.map((g) => {
+    const l = new InstLayer(g.cap, [{ geometry: g.geometry, material: g.material, castShadow: g.shadow, name: `undergrowth-${g.name}`, band: "band" in g ? g.band : undefined }])
     for (const m of l.meshes) ctx.scene.add(m)
     return l
   })
@@ -188,8 +150,8 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
   const generate = (ci: number, cj: number): CellData => {
     const part: number[] = []
     const data: number[] = []
-    const put = (p: Part, x: number, y: number, z: number, s: number, yaw: number, tint: number) => {
-      part.push(PARTS.indexOf(p))
+    const put = (p: Plant | number, x: number, y: number, z: number, s: number, yaw: number, tint: number) => {
+      part.push(typeof p === "number" ? p : PLANTS.indexOf(p))
       data.push(x, y, z, s, Math.cos(yaw), Math.sin(yaw), tint)
     }
     const x0 = ci * CELL_M
@@ -215,36 +177,19 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
         const salD = fbm(x, z, 2, 1 / 17, 43)
         if (fernD > -0.05 && h < 0.24 + fernD * 1.1) put(h < 0.5 ? "fernA" : "fernB", x, heightAt(x, z), z, 0.7 + hash3(i, j, ci + cj) * 0.6, yaw, tint)
         else if (salD > 0.15 && h < 0.5) put("salal", x, heightAt(x, z), z, 0.6 + h, yaw, tint)
-        else if (h > 0.9) put("twigs", x, heightAt(x, z), z, 0.8 + h * 0.4, yaw, tint)
+        else if (h > 0.95) put("twigs", x, heightAt(x, z), z, 0.8 + h * 0.4, yaw, tint)
         else if (road < 14 && h < 0.3) put("grass", x, heightAt(x, z), z, 0.5 + h, yaw, tint * 0.9)
       }
     }
-    // Logs and stumps (sparse).
-    const lh = hash3(ci, cj, 90)
-    if (lh < 0.34) {
-      const x = x0 + hash3(ci, cj, 91) * CELL_M
-      const z = z0 + hash3(ci, cj, 92) * CELL_M
-      const v = Math.floor(hash3(ci, cj, 93) * 3)
-      const L = LOGS[v]!
-      const yaw = hash3(ci, cj, 94) * Math.PI * 2
-      const dx = Math.cos(yaw) * L.len * 0.5
-      const dz = Math.sin(yaw) * L.len * 0.5
-      const clear = Math.min(roadEdgeDistance(x, z), roadEdgeDistance(x + dx, z + dz), roadEdgeDistance(x - dx, z - dz))
-      const comp = Math.min(compoundDistance(x + dx, z + dz), compoundDistance(x - dx, z - dz))
-      const onView = Object.values(VIEWPOINTS).some((v) => Math.hypot(v.pos[0] - x, v.pos[2] - z) < L.len * 0.5 + 4)
-      if (clear > 5 && comp > 6 && !onView) {
-        const y = Math.min(heightAt(x + dx, z + dz), heightAt(x - dx, z - dz), heightAt(x, z)) + L.r * 0.55
-        put(`log${v}` as Part, x, y, z, 0.85 + hash3(ci, cj, 95) * 0.3, yaw, 0.8 + lh)
-      }
-    } else if (lh > 0.82) {
-      const x = x0 + hash3(ci, cj, 96) * CELL_M
-      const z = z0 + hash3(ci, cj, 97) * CELL_M
-      if (roadEdgeDistance(x, z) > 4 && compoundDistance(x, z) > 6) put("stump", x, heightAt(x, z), z, 0.6 + hash3(ci, cj, 98) * 0.7, hash3(ci, cj, 99) * 6.28, 0.9)
+    // Logs and stumps: placed by the stand (deadwood.ts). Yaw maps local +X to world (cos, sin), as in the shader.
+    for (const d of deadwoodInCell(trees, ci, cj, CELL_M)) {
+      const p = d.kind === "log" ? LOG0 + d.shape : STUMP0 + d.shape
+      put(p, d.x, d.y, d.z, d.scale, d.yaw, 0.75 + hash3(ci, cj, 85) * 0.5)
     }
     return { part: Uint8Array.from(part), data: Float32Array.from(data), n: part.length }
   }
 
-  const counts = new Int32Array(PARTS.length)
+  const counts = new Int32Array(PART_COUNT)
   const last = new THREE.Vector3(1e9, 0, 1e9)
   const rebuild = (cx: number, cz: number) => {
     counts.fill(0)
@@ -272,14 +217,14 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
           const x = cell.data[o]!
           const z = cell.data[o + 2]!
           const d = Math.hypot(x - cx, z - cz)
-          const isLog = p >= 5
+          const isLog = p >= LOG0
           if (d > (isLog ? LOG_REACH : REACH) + 4) continue
           const l = layers[p]!
           if (counts[p]! >= l.capacity) continue
           const y = cell.data[o + 1]!
           const s = cell.data[o + 3]!
           l.set(counts[p]!++, x, y, z, s, cell.data[o + 4]!, cell.data[o + 5]!, cell.data[o + 6]!, x * 0.37 + z * 0.11)
-          if (isLog && d < 24 && slot < logPool.length) slot = colliderFor(PARTS[p]!, x, y, z, s, cell.data[o + 4]!, cell.data[o + 5]!, slot)
+          if (isLog && d < 24 && slot < logPool.length) slot = colliderFor(p, x, y, z, s, cell.data[o + 4]!, cell.data[o + 5]!, slot)
         }
       }
     }
@@ -290,15 +235,15 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
     layers.forEach((l, i) => l.commit(counts[i]!))
   }
 
-  const colliderFor = (p: Part, x: number, y: number, z: number, s: number, c: number, sn: number, slot: number) => {
-    if (p === "stump") {
+  const colliderFor = (p: number, x: number, y: number, z: number, s: number, c: number, sn: number, slot: number) => {
+    if (p >= STUMP0) {
       const b = logPool[slot++]!
       const r = 0.45 * s
       b.min[0] = x - r; b.min[1] = y - 0.3; b.min[2] = z - r
-      b.max[0] = x + r; b.max[1] = y + 0.9 * s; b.max[2] = z + r
+      b.max[0] = x + r; b.max[1] = y + (p === STUMP0 ? 1.1 : 0.55) * s; b.max[2] = z + r
       return slot
     }
-    const L = LOGS[Number(p.slice(3))]!
+    const L = LOG_SHAPES[p - LOG0]!
     // Local +X maps to world (cos, sin), matching the instance yaw rotation in the shader.
     const ax = c
     const az = sn

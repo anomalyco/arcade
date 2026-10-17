@@ -41,6 +41,8 @@ export type FlashState = {
 
 export const renderState = {
   lamps: [] as LampRuntime[],
+  /** True while modules are still streaming in (set through the post chain's `setBooting`). */
+  streaming: false,
   /** The lighting rig's per-frame update, for perf scripts that drive frames themselves. */
   lightingUpdate: null as ((dt: number, time: number) => void) | null,
   flash: {

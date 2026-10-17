@@ -1,7 +1,8 @@
 {
  "car_wagon": {
   "tris": 23581,
-  "bytes": 982816,
+  "lod1": 4998,
+  "bytes": 1073840,
   "size": [
    1.87,
    1.416,
@@ -11,14 +12,15 @@
    1.87,
    5.05
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:aa0becb6e854422596cac6b21bf79787",
   "licence": "CC-BY-4.0"
  },
  "car_sedan": {
   "tris": 22168,
-  "bytes": 888860,
+  "lod1": 4979,
+  "bytes": 976464,
   "size": [
    1.912,
    1.409,
@@ -28,14 +30,15 @@
    1.912,
    5.2
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:e2678da920cc4be68dbc193727919ffb",
   "licence": "CC-BY-4.0"
  },
  "car_sedan_b": {
   "tris": 21556,
-  "bytes": 903472,
+  "lod1": 4988,
+  "bytes": 994640,
   "size": [
    1.997,
    1.424,
@@ -45,14 +48,15 @@
    1.997,
    5.1
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:892b2684fb37442299bfad9222cf331c",
   "licence": "CC-BY-4.0"
  },
  "car_pickup": {
   "tris": 22502,
-  "bytes": 1065736,
+  "lod1": 4993,
+  "bytes": 1154260,
   "size": [
    1.789,
    1.746,
@@ -62,14 +66,15 @@
    1.789,
    4.5
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:6c48c94be8974dc7a5932f697c0ba68f",
   "licence": "CC-BY-4.0"
  },
  "van": {
   "tris": 23940,
-  "bytes": 1157964,
+  "lod1": 4995,
+  "bytes": 1244004,
   "size": [
    2.396,
    2.097,
@@ -79,14 +84,15 @@
    2.396,
    5
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:09d718c9cf72401b8534d265a06a803f",
   "licence": "CC-BY-4.0"
  },
  "box_truck": {
   "tris": 19222,
-  "bytes": 875528,
+  "lod1": 4999,
+  "bytes": 969844,
   "size": [
    2.864,
    3.127,
@@ -96,14 +102,15 @@
    2.864,
    6.6
   ],
-  "meshes": 2,
+  "meshes": 4,
   "materials": 2,
   "source": "sketchfab:663a0953c038434a918cb85725c88ffa",
   "licence": "CC-BY-4.0"
  },
  "covered_car": {
   "tris": 12592,
-  "bytes": 605532,
+  "lod1": 2984,
+  "bytes": 655284,
   "size": [
    1.789,
    1.411,
@@ -113,7 +120,7 @@
    1.789,
    4.38
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "polyhaven:covered_car",
   "licence": "CC0-1.0"
@@ -289,8 +296,9 @@
   "licence": "CC0-1.0"
  },
  "cardboard_box": {
-  "tris": 16952,
-  "bytes": 616788,
+  "tris": 2630,
+  "lod1": 300,
+  "bytes": 516672,
   "size": [
    0.387,
    0.342,
@@ -300,7 +308,7 @@
    0.387,
    0.516
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "polyhaven:cardboard_box_01",
   "licence": "CC0-1.0"
@@ -426,7 +434,8 @@
  },
  "office_desk": {
   "tris": 6898,
-  "bytes": 393660,
+  "lod1": 1500,
+  "bytes": 418624,
   "size": [
    2,
    0.787,
@@ -436,14 +445,15 @@
    2,
    0.947
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "polyhaven:metal_office_desk",
   "licence": "CC0-1.0"
  },
  "office_chair": {
   "tris": 9450,
-  "bytes": 417084,
+  "lod1": 1499,
+  "bytes": 441596,
   "size": [
    0.758,
    0.98,
@@ -453,14 +463,15 @@
    0.758,
    0.721
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "sketchfab:b228a29fa84544c2be501c295653ffe7",
   "licence": "CC-BY-4.0"
  },
  "stack_chair": {
   "tris": 5072,
-  "bytes": 396148,
+  "lod1": 1000,
+  "bytes": 410396,
   "size": [
    0.566,
    1.006,
@@ -470,7 +481,7 @@
    0.566,
    0.675
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "polyhaven:SchoolChair_01",
   "licence": "CC0-1.0"
@@ -579,7 +590,8 @@
  },
  "steel_shelves": {
   "tris": 8396,
-  "bytes": 324888,
+  "lod1": 1989,
+  "bytes": 356484,
   "size": [
    2.351,
    2.312,
@@ -589,7 +601,7 @@
    2.351,
    0.721
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "polyhaven:steel_frame_shelves_03",
   "licence": "CC0-1.0"
@@ -613,7 +625,8 @@
  },
  "glassware": {
   "tris": 4004,
-  "bytes": 92064,
+  "lod1": 600,
+  "bytes": 102048,
   "size": [
    0.736,
    0.33,
@@ -623,7 +636,7 @@
    0.736,
    0.319
   ],
-  "meshes": 1,
+  "meshes": 2,
   "materials": 1,
   "source": "sketchfab:b8594f7dc7e8442dbaaae7a11da4a962",
   "licence": "CC-BY-4.0"
@@ -643,6 +656,219 @@
   "meshes": 1,
   "materials": 1,
   "source": "polyhaven:industrial_microscope",
+  "licence": "CC0-1.0"
+ },
+ "vending_machine": {
+  "tris": 7617,
+  "lod1": 2507,
+  "bytes": 197284,
+  "size": [
+   0.618,
+   1.83,
+   0.622
+  ],
+  "footprint": [
+   0.618,
+   0.622
+  ],
+  "meshes": 3,
+  "materials": 2,
+  "source": "sketchfab:eb605bea59574e43a6abc4109798d36d",
+  "licence": "CC-BY-4.0"
+ },
+ "water_cooler": {
+  "tris": 2184,
+  "bytes": 107396,
+  "size": [
+   0.296,
+   1.32,
+   0.323
+  ],
+  "footprint": [
+   0.296,
+   0.323
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:4b88c4c4e94c497ca39f831f374e89fc",
+  "licence": "CC-BY-4.0"
+ },
+ "radiator": {
+  "tris": 7534,
+  "lod1": 1997,
+  "bytes": 518884,
+  "size": [
+   0.923,
+   0.62,
+   0.077
+  ],
+  "footprint": [
+   0.923,
+   0.077
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:8a1a2e0263aa401591c1e87d824a79ef",
+  "licence": "CC-BY-4.0"
+ },
+ "space_heater": {
+  "tris": 5954,
+  "lod1": 1500,
+  "bytes": 145564,
+  "size": [
+   0.362,
+   0.42,
+   0.27
+  ],
+  "footprint": [
+   0.362,
+   0.27
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:7b35843ab9364ca695f11224698efabe",
+  "licence": "CC-BY-4.0"
+ },
+ "coat_rack": {
+  "tris": 5580,
+  "lod1": 1500,
+  "bytes": 588768,
+  "size": [
+   0.424,
+   1.85,
+   0.408
+  ],
+  "footprint": [
+   0.424,
+   0.408
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:72e821fc75d9473183a63d548959693b",
+  "licence": "CC-BY-4.0"
+ },
+ "drinking_fountain": {
+  "tris": 5999,
+  "lod1": 1499,
+  "bytes": 132712,
+  "size": [
+   0.46,
+   0.621,
+   0.571
+  ],
+  "footprint": [
+   0.46,
+   0.571
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:796e0b2660a440e3a2e8a24c6ed0fe72",
+  "licence": "CC-BY-4.0"
+ },
+ "desk_fan": {
+  "tris": 7373,
+  "lod1": 1500,
+  "bytes": 267572,
+  "size": [
+   0.349,
+   0.36,
+   0.248
+  ],
+  "footprint": [
+   0.349,
+   0.248
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:79bb384f2ed545a5ae8c2b9cfa06cd8f",
+  "licence": "CC-BY-4.0"
+ },
+ "fire_extinguisher": {
+  "tris": 2792,
+  "bytes": 357180,
+  "size": [
+   0.324,
+   0.6,
+   0.165
+  ],
+  "footprint": [
+   0.324,
+   0.165
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:5676b179b3b744c0aaae53a3dcea2300",
+  "licence": "CC-BY-4.0"
+ },
+ "wall_clock": {
+  "tris": 3658,
+  "bytes": 85872,
+  "size": [
+   0.32,
+   0.32,
+   0.047
+  ],
+  "footprint": [
+   0.32,
+   0.047
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:wall_clock",
+  "licence": "CC0-1.0"
+ },
+ "desk_lamp": {
+  "tris": 12410,
+  "lod1": 2114,
+  "bytes": 416248,
+  "size": [
+   0.202,
+   0.893,
+   0.614
+  ],
+  "footprint": [
+   0.202,
+   0.614
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "polyhaven:desk_lamp_arm_01",
+  "licence": "CC0-1.0"
+ },
+ "lab_stool": {
+  "tris": 6532,
+  "lod1": 1199,
+  "bytes": 255492,
+  "size": [
+   0.448,
+   0.458,
+   0.473
+  ],
+  "footprint": [
+   0.448,
+   0.473
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "polyhaven:metal_stool_02",
+  "licence": "CC0-1.0"
+ },
+ "lounge_chair": {
+  "tris": 6148,
+  "lod1": 1500,
+  "bytes": 575740,
+  "size": [
+   1.009,
+   1.169,
+   1.19
+  ],
+  "footprint": [
+   1.009,
+   1.19
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "polyhaven:mid_century_lounge_chair",
   "licence": "CC0-1.0"
  },
  "wet_floor_sign": {

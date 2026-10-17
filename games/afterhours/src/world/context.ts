@@ -1,5 +1,6 @@
 import type * as THREE from "three/webgpu"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
+import type { Doors } from "./doors"
 
 /** Axis-aligned solid the player cannot walk through. */
 export type Box = { min: readonly [number, number, number]; max: readonly [number, number, number] }
@@ -50,6 +51,8 @@ export type WorldContext = {
   floors: Floor[]
   ladders: Ladder[]
   lamps: Lamp[]
+  /** Every openable door (hinged, sliding, roll-up): `ctx.doors.add(...)`. See the migration note in `world/doors.ts`. */
+  doors: Doors
   /** Lab panel settings shared by every module; add defaults here and controls to `controls`. */
   settings: LabSettings
   controls: LabControl[]

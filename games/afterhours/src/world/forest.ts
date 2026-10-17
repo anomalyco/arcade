@@ -5,7 +5,7 @@ import { material } from "../render/materials"
 import { forestBase, forestImpostors } from "./forest/textures"
 import { buildTree, impostorInput, impostorSize, type Kind, type TreeModel } from "./forest/species"
 import { VARIANTS, type Trees } from "./forest/placement"
-import { InstLayer, band, foliageMaterial, forestUniforms, impostorMaterial, trunkMaterial } from "./forest/render"
+import { InstLayer, band, foliageMaterial, forestUniforms, impostorMaterial, solidMaterial } from "./forest/render"
 import { buildUndergrowth } from "./forest/undergrowth"
 import { yieldToMain } from "../boot/schedule"
 
@@ -30,7 +30,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const defaults: Record<string, number> = {
     "forest.lod0": 34,
     "forest.lod1": 110,
-    "forest.far": 650,
+    "forest.far": 1000,
     "forest.fade": 5,
     "forest.wind": 0.35,
     "forest.shadows": 2,
@@ -39,7 +39,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   ctx.controls.push(
     { key: "forest.lod0", label: "Full-detail tree distance", group: "Forest", unit: "m", min: 10, max: 80, step: 1 },
     { key: "forest.lod1", label: "Mid-detail tree distance", group: "Forest", unit: "m", min: 40, max: 300, step: 5 },
-    { key: "forest.far", label: "Far tree cull distance", group: "Forest", unit: "m", min: 150, max: 1000, step: 10 },
+    { key: "forest.far", label: "Far tree cull distance", group: "Forest", unit: "m", min: 150, max: 1400, step: 10 },
     { key: "forest.fade", label: "LOD cross-fade width", group: "Forest", unit: "m", min: 1, max: 20, step: 0.5 },
     { key: "forest.wind", label: "Wind", group: "Forest", min: 0, max: 1.5, step: 0.05 },
     { key: "forest.shadows", label: "Near tree shadows (0 off, 1 trunks, 2 trunks + crowns)", group: "Forest", min: 0, max: 2, step: 1 },
@@ -67,11 +67,11 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const bark = material("bark")
   const mats = new Map<string, THREE.Material>()
   const matFor = (kind: Kind, lod: 0 | 1, part: "trunk" | "foliage") => {
-    const key = `${kind}:${lod}:${part}`
+    const key = part === "trunk" ? "trunk" : `${kind}:${lod}:${part}`
     let m = mats.get(key)
     if (!m) {
       const b = lod === 0 ? bands.lod0 : bands.lod1
-      m = part === "trunk" ? trunkMaterial(bark, b) : foliageMaterial(atlas.texture, FOLIAGE_COLOR[kind], b)
+      m = part === "trunk" ? solidMaterial(bark) : foliageMaterial(atlas.texture, FOLIAGE_COLOR[kind], b)
       mats.set(key, m)
     }
     return m
@@ -83,20 +83,46 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   models.forEach((m, vi) => {
     near.push(
       new InstLayer(1500, [
-        { geometry: m.lod0.trunk, material: matFor(m.kind, 0, "trunk"), castShadow: true, name: `tree-${vi}-lod0-trunk` },
+        { geometry: m.lod0.trunk, material: matFor(m.kind, 0, "trunk"), castShadow: true, name: `tree-${vi}-lod0-trunk`, band: bands.lod0 },
         { geometry: m.lod0.foliage, material: matFor(m.kind, 0, "foliage"), castShadow: true, name: `tree-${vi}-lod0-foliage` },
       ]),
     )
     mid.push(
       new InstLayer(6000, [
-        { geometry: m.lod1.trunk, material: matFor(m.kind, 1, "trunk"), name: `tree-${vi}-lod1-trunk` },
+        { geometry: m.lod1.trunk, material: matFor(m.kind, 1, "trunk"), name: `tree-${vi}-lod1-trunk`, band: bands.lod1 },
         { geometry: m.lod1.foliage, material: matFor(m.kind, 1, "foliage"), name: `tree-${vi}-lod1-foliage` },
       ]),
     )
   })
   for (const l of [...near, ...mid]) for (const mesh of l.meshes) ctx.scene.add(mesh)
 
-  // Far layer: every tree but saplings, static.
+  // Grid cell offsets sorted by distance, so instance lists are written nearest first: drawn front to back, the
+  // alpha-tested cards behind nearer trees fail the depth test instead of being shaded.
+  const g = trees.grid
+  const ring: number[] = []
+  {
+    const R = g.n
+    const offs: [number, number, number][] = []
+    for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) offs.push([di, dj, di * di + dj * dj])
+    offs.sort((a, b) => a[2] - b[2])
+    for (const o of offs) ring.push(o[0], o[1], o[2])
+  }
+  /** Calls `f` for every tree in cells within `reach` metres of (cx, cz), nearest cells first. */
+  const forNear = (cx: number, cz: number, reach: number, f: (k: number) => void) => {
+    const ci = Math.floor((cx + WORLD_HALF) / g.size)
+    const cj = Math.floor((cz + WORLD_HALF) / g.size)
+    const maxD2 = (reach / g.size + 1.5) ** 2
+    for (let r = 0; r < ring.length; r += 3) {
+      if (ring[r + 2]! > maxD2) break
+      const i = ci + ring[r]!
+      const j = cj + ring[r + 1]!
+      if (i < 0 || j < 0 || i >= g.n || j >= g.n) continue
+      const c = j * g.n + i
+      for (let o = g.cellStart[c]!; o < g.cellStart[c + 1]!; o++) f(g.order[o]!)
+    }
+  }
+
+  // Far layer: every tree but saplings, re-sorted front to back when the player has moved a long way.
   const quad = new THREE.BufferGeometry()
   quad.setAttribute("position", new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3))
   quad.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3))
@@ -104,17 +130,19 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const sizes = models.map(impostorSize)
   const farCount = countWhere(trees, (k) => models[trees.variant[k]!]!.kind !== "sapling")
   const far = new InstLayer(farCount, [{ geometry: quad, material: impostorMaterial(impostorTex, new THREE.Color(1, 1, 1), bands.lod2), name: "tree-impostors" }])
-  {
+  const farAt = new THREE.Vector3(1e9, 0, 1e9)
+  const sortFar = (cx: number, cz: number) => {
     let n = 0
-    // Write far-to-near from the centre so rings closest to the facility draw last (cheap, stable ordering).
-    for (let k = 0; k < trees.count; k++) {
+    forNear(cx, cz, WORLD_HALF * 3, (k) => {
       const vi = trees.variant[k]!
-      if (models[vi]!.kind === "sapling") continue
+      if (models[vi]!.kind === "sapling") return
       const sc = trees.scale[k]!
       far.set(n++, trees.x[k]!, trees.y[k]!, trees.z[k]!, sc, vi, trees.tint[k]!, sizes[vi]!.w * sc, sizes[vi]!.h * sc)
-    }
+    })
     far.commit(n)
+    farAt.set(cx, 0, cz)
   }
+  sortFar(ctx.camera.position.x, ctx.camera.position.z)
   for (const mesh of far.meshes) ctx.scene.add(mesh)
 
   // Trunk colliders: a fixed pool of boxes refilled around the player.
@@ -125,7 +153,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     ctx.colliders.push(b as Box)
   }
 
-  const undergrowth = buildUndergrowth(ctx, assets.undergrowth)
+  const undergrowth = buildUndergrowth(ctx, assets.undergrowth, trees)
 
   const last = new THREE.Vector3(1e9, 0, 1e9)
   let lastLod0 = 0
@@ -133,7 +161,9 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const counts0 = new Int32Array(models.length)
   const counts1 = new Int32Array(models.length)
 
-  const rebuild = (cx: number, cz: number) => {
+  const lastFwd = new THREE.Vector2(0, -1)
+  const fwd = new THREE.Vector3()
+  const rebuild = (cx: number, cz: number, fx: number, fz: number) => {
     const d0 = num("forest.lod0")
     const d1 = num("forest.lod1")
     const F = num("forest.fade")
@@ -141,43 +171,36 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     counts0.fill(0)
     counts1.fill(0)
     let slot = 0
-    const g = trees.grid
     const reach = d1 + margin
-    const i0 = Math.max(0, Math.floor((cx - reach + WORLD_HALF) / g.size))
-    const i1 = Math.min(g.n - 1, Math.floor((cx + reach + WORLD_HALF) / g.size))
-    const j0 = Math.max(0, Math.floor((cz - reach + WORLD_HALF) / g.size))
-    const j1 = Math.min(g.n - 1, Math.floor((cz + reach + WORLD_HALF) / g.size))
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const c = j * g.n + i
-        for (let o = g.cellStart[c]!; o < g.cellStart[c + 1]!; o++) {
-          const k = g.order[o]!
-          const x = trees.x[k]!
-          const z = trees.z[k]!
-          const d = Math.hypot(x - cx, z - cz)
-          if (d > reach) continue
-          const vi = trees.variant[k]!
-          const m = models[vi]!
-          const sc = trees.scale[k]!
-          const yaw = trees.yaw[k]!
-          const cy = Math.cos(yaw)
-          const sy = Math.sin(yaw)
-          const y = trees.y[k]!
-          if (d < d0 + margin && counts0[vi]! < near[vi]!.capacity) near[vi]!.set(counts0[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
-          if (d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
-          if (d < COLLIDER_RADIUS && slot < COLLIDER_SLOTS && m.kind !== "sapling") {
-            const r = Math.max(0.12, m.baseRadius * sc * 0.9)
-            const b = pool[slot++]!
-            b.min[0] = x - r
-            b.min[1] = y - 1
-            b.min[2] = z - r
-            b.max[0] = x + r
-            b.max[1] = y + Math.min(6, m.trunkTop * sc)
-            b.max[2] = z + r
-          }
-        }
+    forNear(cx, cz, reach, (k) => {
+      const x = trees.x[k]!
+      const z = trees.z[k]!
+      const dx = x - cx
+      const dz = z - cz
+      const d = Math.hypot(dx, dz)
+      if (d > reach) return
+      const vi = trees.variant[k]!
+      const m = models[vi]!
+      const sc = trees.scale[k]!
+      const yaw = trees.yaw[k]!
+      const cy = Math.cos(yaw)
+      const sy = Math.sin(yaw)
+      const y = trees.y[k]!
+      if (d < d0 + margin && counts0[vi]! < near[vi]!.capacity) near[vi]!.set(counts0[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
+      // Mid trees cast no shadows, so the ones well behind the camera can be skipped (refreshed on turning).
+      const behind = d > 14 && (dx * fx + dz * fz) / d < -0.3
+      if (!behind && d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
+      if (d < COLLIDER_RADIUS && slot < COLLIDER_SLOTS && m.kind !== "sapling") {
+        const r = Math.max(0.12, m.baseRadius * sc * 0.9)
+        const b = pool[slot++]!
+        b.min[0] = x - r
+        b.min[1] = y - 1
+        b.min[2] = z - r
+        b.max[0] = x + r
+        b.max[1] = y + Math.min(6, m.trunkTop * sc)
+        b.max[2] = z + r
       }
-    }
+    })
     for (; slot < COLLIDER_SLOTS; slot++) {
       pool[slot]!.min[1] = -1e4
       pool[slot]!.max[1] = -1e4
@@ -206,8 +229,9 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     bands.lod1.lo.value = d0 - F
     bands.lod1.hi.value = d1 - F
     bands.lod2.lo.value = d1 - F
-    // Nothing past the point where the ground fog leaves under 1 % of a silhouette's contrast.
-    const fog = Number(s["fog.density"] ?? 0)
+    // Nothing past the point where the fog leaves ~1 % of a silhouette's contrast, judged at mid-crown height (the
+    // fog thins with height, so crowns against the sky carry further than trunks).
+    const fog = Number(s["fog.density"] ?? 0) * Math.exp(-12 / Math.max(1, Number(s["fog.height"] ?? 30)))
     bands.lod2.hi.value = fog > 0 ? Math.min(num("forest.far"), 4.5 / fog) : num("forest.far")
     const sh = num("forest.shadows")
     for (const l of near) {
@@ -216,7 +240,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     }
   }
   applySettings()
-  const sig = () => ["forest.lod0", "forest.lod1", "forest.fade", "forest.wind", "forest.far", "forest.shadows"].map(num).join(",") + s["fog.density"]
+  const sig = () => ["forest.lod0", "forest.lod1", "forest.fade", "forest.wind", "forest.far", "forest.shadows"].map(num).join(",") + s["fog.density"] + s["fog.height"]
   let lastSig = sig()
 
   ;(globalThis as { __forest?: unknown }).__forest = {
@@ -238,10 +262,17 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
         applySettings()
         last.set(1e9, 0, 1e9)
       }
-      if (Math.hypot(p.x - last.x, p.z - last.z) > 3) {
+      camera.getWorldDirection(fwd)
+      const fl = Math.hypot(fwd.x, fwd.z) || 1
+      const fx = fwd.x / fl
+      const fz = fwd.z / fl
+      // Rebuild after moving 3 m or turning ~25 degrees.
+      if (Math.hypot(p.x - last.x, p.z - last.z) > 3 || fx * lastFwd.x + fz * lastFwd.y < 0.9) {
         last.copy(p)
-        rebuild(p.x, p.z)
+        lastFwd.set(fx, fz)
+        rebuild(p.x, p.z, fx, fz)
       }
+      if (Math.hypot(p.x - farAt.x, p.z - farAt.z) > 40) sortFar(p.x, p.z)
       undergrowth.update(dt, time, camera)
     },
   }

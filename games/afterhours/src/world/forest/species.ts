@@ -205,7 +205,58 @@ function bufGeometry(b: Buf) {
   return g
 }
 
-function trunkGeometry(spec: Spec, H: number, top: number, radial: number, rings: number[]) {
+/**
+ * Wooden limbs for the full-detail trunk: a tapered 5-sided tube from inside the trunk out along each limb's droop
+ * curve, so every needle card hangs off a visible branch (dead lower limbs get their whole length, live limbs the
+ * inner part the foliage doesn't cover).
+ */
+function limbWood(spec: Spec, H: number, limbs: Limb[], pos: number[], nor: number[], uv: number[], flex: number[], idx: number[]) {
+  const sides = 5
+  const p = new THREE.Vector3()
+  const q = new THREE.Vector3()
+  const t = new THREE.Vector3()
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  for (const l of limbs) {
+    const dead = l.cell === FOLIAGE.dead
+    if (l.weight >= 2 && !dead && l.d.y > 0.6) continue
+    const reach = dead ? 0.85 : 0.45
+    const r0 = Math.min(radiusAt(spec, H, l.o.y) * 0.45, 0.025 + l.len * (dead ? 0.018 : 0.022))
+    const segs = 3
+    const start = pos.length / 3
+    for (let k = 0; k <= segs; k++) {
+      const u = (k / segs) * reach
+      limbPoint(l, u, p)
+      if (k === 0) p.addScaledVector(l.d, -0.15)
+      limbPoint(l, Math.min(1, u + 0.05), q)
+      t.subVectors(q, p).normalize()
+      a.crossVectors(t, UP).normalize()
+      if (a.lengthSq() < 0.01) a.set(1, 0, 0)
+      b.crossVectors(a, t).normalize()
+      const r = r0 * (1 - (k / segs) * 0.75)
+      for (let i = 0; i <= sides; i++) {
+        const ang = (i / sides) * Math.PI * 2
+        const c = Math.cos(ang)
+        const sn = Math.sin(ang)
+        const nx = a.x * c + b.x * sn
+        const ny = a.y * c + b.y * sn
+        const nz = a.z * c + b.z * sn
+        pos.push(p.x + nx * r, p.y + ny * r, p.z + nz * r)
+        nor.push(nx, ny, nz)
+        uv.push((i / sides) * 0.3, u * l.len)
+        flex.push(l.len * u)
+      }
+    }
+    const cols = sides + 1
+    for (let k = 0; k < segs; k++)
+      for (let i = 0; i < sides; i++) {
+        const v = start + k * cols + i
+        idx.push(v, v + cols, v + 1, v + 1, v + cols, v + cols + 1)
+      }
+  }
+}
+
+function trunkGeometry(spec: Spec, H: number, top: number, radial: number, rings: number[], limbs: Limb[] = []) {
   const pos: number[] = []
   const nor: number[] = []
   const uv: number[] = []
@@ -242,6 +293,7 @@ function trunkGeometry(spec: Spec, H: number, top: number, radial: number, rings
     const last = (rings.length - 1) * cols
     for (let i = 0; i < radial; i++) idx.push(last + i, c, last + i + 1)
   }
+  limbWood(spec, H, limbs, pos, nor, uv, flex, idx)
   const g = new THREE.BufferGeometry()
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
   g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3))
@@ -289,7 +341,7 @@ export function buildTree(kind: Kind, seed: number): TreeModel {
     height: H,
     trunkTop: top,
     baseRadius: radiusAt(spec, H, 0.5),
-    lod0: { trunk: trunkGeometry(spec, H, top, radial, rings0), foliage: bufGeometry(f0) },
+    lod0: { trunk: trunkGeometry(spec, H, top, radial, rings0, limbs), foliage: bufGeometry(f0) },
     lod1: { trunk: trunkGeometry(spec, H, top, Math.max(4, Math.round(radial * 0.6)), rings1), foliage: bufGeometry(f1) },
     limbs,
     radius: (y) => radiusAt(spec, H, y),

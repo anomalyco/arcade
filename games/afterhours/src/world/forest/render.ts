@@ -10,6 +10,7 @@ import {
   fract,
   interleavedGradientNoise,
   length,
+  lights,
   max,
   mod,
   normalLocal,
@@ -99,10 +100,21 @@ function ditherMask(b: Band) {
   return step(float(1).sub(fi), n).mul(float(1).sub(step(float(1).sub(fo), n)))
 }
 
-/** Bark: a clone of the library bark material placed per instance (hard switch between levels, no cutout). */
-export function trunkMaterial(base: THREE.Material, b: Band) {
+// One position graph for every solid instanced forest part (trunks at both LODs, logs, stumps, end grain): the band
+// is read per object from `mesh.userData.forestBand` (works in the shadow pass too, where the material is swapped),
+// so all of them share shaders with their library material class instead of compiling one per band.
+const objectBand = (key: "lo" | "hi") =>
+  (uniform(0) as N).onObjectUpdate((frame: { object?: THREE.Object3D }, self: { value: number }) => {
+    const b = frame.object?.userData.forestBand as Band | undefined
+    if (b) self.value = b[key].value
+  })
+let sharedSolidPosition: N = null
+const solidPosition = () => (sharedSolidPosition ??= instancePosition({ lo: objectBand("lo"), hi: objectBand("hi") }, false, true))
+
+/** A library material placed per instance (hard switch between levels, no cutout). Set `mesh.userData.forestBand`. */
+export function solidMaterial(base: THREE.Material) {
   const m = (base as THREE.MeshStandardNodeMaterial).clone()
-  m.positionNode = instancePosition(b, false, true)
+  m.positionNode = solidPosition()
   return m
 }
 
@@ -129,6 +141,9 @@ export function foliageMaterial(atlas: THREE.Texture, color: THREE.Color, b: Ban
 /** Far trees: one camera-facing quad per tree, painted from the tree's own cards. */
 export function impostorMaterial(atlas: THREE.Texture, color: THREE.Color, b: Band) {
   const m = new THREE.MeshStandardNodeMaterial()
+  // Past the mid-tree range no lamp reaches through the fog: light only by the fog skylight (environment), which
+  // skips the per-pixel clustered-light loop and the shadowed spot lights on the most overdrawn surface in the frame.
+  m.lightsNode = lights([])
   m.side = THREE.DoubleSide
   m.alphaTest = 0.5
   m.roughness = 0.9
@@ -171,7 +186,7 @@ export class InstLayer {
 
   constructor(
     readonly capacity: number,
-    parts: { geometry: THREE.BufferGeometry; material: THREE.Material; castShadow?: boolean; name: string }[],
+    parts: { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; castShadow?: boolean; name: string; band?: Band }[],
   ) {
     this.a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
     this.b = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
@@ -181,11 +196,13 @@ export class InstLayer {
       const g = new THREE.InstancedBufferGeometry()
       for (const [k, v] of Object.entries(part.geometry.attributes)) g.setAttribute(k, v)
       g.setIndex(part.geometry.index)
+      for (const grp of part.geometry.groups) g.addGroup(grp.start, grp.count, grp.materialIndex)
       g.setAttribute("iA", this.a)
       g.setAttribute("iB", this.b)
       g.instanceCount = 0
       const mesh = new THREE.Mesh(g, part.material)
       mesh.name = part.name
+      if (part.band) mesh.userData.forestBand = part.band
       mesh.frustumCulled = false
       mesh.castShadow = part.castShadow ?? false
       mesh.receiveShadow = true
