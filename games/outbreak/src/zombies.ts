@@ -26,6 +26,7 @@ import { angleDiff } from "@arcade/kit/sim/geom"
 import type { AIAgent, AIConfig, NoiseEvent } from "../shared/ai"
 import type { Vision } from "../shared/vision"
 import { hex } from "./level"
+import { refinedZombieMeshes, zombiePalette } from "./look/refined-figure"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 
 export type DetachedDebrisPiece = {
@@ -359,6 +360,11 @@ export function buildZombiePartMeshes(): Mesh[] {
 
 export class ZombieCrowdRenderer {
   private readonly models: number[]
+  /** The refined look's parts (Look · Zombies), same order as `models`; built on first use. */
+  private refinedModels: number[] | null = null
+  private readonly addModel: Pick<Renderer, "addModel">["addModel"]
+  /** The current zombie's per-part tint (9 × rgb): all 1 for today's look, its seeded palette for the refined look. */
+  private readonly partTint = new Float32Array(PART_COUNT * 3).fill(1)
   private readonly partData: Float32Array<ArrayBuffer>[]
   readonly partCounts = new Int32Array(PART_COUNT)
   private readonly poolBatches: Batch[]
@@ -424,6 +430,7 @@ export class ZombieCrowdRenderer {
 
   constructor(renderer: Pick<Renderer, "addModel">, maxAgents = INITIAL_AGENT_CAPACITY) {
     if (maxAgents > this.capacity) this.growCapacity(maxAgents)
+    this.addModel = renderer.addModel.bind(renderer)
     this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
     this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
@@ -659,9 +666,9 @@ export class ZombieCrowdRenderer {
     data[offset + 1] = b[fOff + 1]!
     data[offset + 2] = b[fOff + 2]!
     data[offset + 3] = yaw
-    data[offset + 4] = tintR
-    data[offset + 5] = tintG
-    data[offset + 6] = tintB
+    data[offset + 4] = tintR * this.partTint[partIndex * 3]!
+    data[offset + 5] = tintG * this.partTint[partIndex * 3 + 1]!
+    data[offset + 6] = tintB * this.partTint[partIndex * 3 + 2]!
     data[offset + 7] = 1
     data[offset + 8] = 0
     data[offset + 9] = 0
@@ -703,9 +710,9 @@ export class ZombieCrowdRenderer {
     data[offset + 1] = b[fOff + 1]!
     data[offset + 2] = b[fOff + 2]!
     data[offset + 3] = yaw
-    data[offset + 4] = tintR
-    data[offset + 5] = tintG
-    data[offset + 6] = tintB
+    data[offset + 4] = tintR * this.partTint[partIndex * 3]!
+    data[offset + 5] = tintG * this.partTint[partIndex * 3 + 1]!
+    data[offset + 6] = tintB * this.partTint[partIndex * 3 + 2]!
     data[offset + 7] = 1
     data[offset + 8] = p
     data[offset + 9] = r
@@ -761,6 +768,7 @@ export class ZombieCrowdRenderer {
     vision: Vision,
     viewRect: readonly [number, number, number, number],
     zombieTune: ZombieTuning & {
+      zombieLook?: number
       fogGhostDuration?: number
       hideUnseenZombies?: boolean
       unseenMode?: number
@@ -770,6 +778,11 @@ export class ZombieCrowdRenderer {
     time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
+    const refined = Math.round(zombieTune.zombieLook ?? 0) === 1
+    if (refined && !this.refinedModels) this.refinedModels = refinedZombieMeshes().map((m) => this.addModel(m))
+    const models = refined ? this.refinedModels! : this.models
+    for (let i = 0; i < PART_COUNT; i++) this.poolBatches[i]!.model = this.ghostPoolBatches[i]!.model = models[i]!
+    if (!refined) this.partTint.fill(1)
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
     const [vx0, vy0, vx1, vy1] = viewRect
@@ -867,6 +880,7 @@ export class ZombieCrowdRenderer {
       }
 
       const s = this.ensureSlot(a, support)
+      if (refined) zombiePalette(a.seed, this.partTint)
       let hidden = this.hiddenMask[s]!
       if (a.detachedLimbs.length > 0) {
         for (let i = 0; i < a.detachedLimbs.length; i++) {

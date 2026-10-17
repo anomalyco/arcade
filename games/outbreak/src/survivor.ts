@@ -55,6 +55,7 @@ import {
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
 import { BEAN_AUX, beanTint, DEFAULT_HERO_LOOK, HERO_AUX, heroShape, heroTint, softBeanShape } from "./look/hero"
+import { refinedSurvivorMeshes } from "./look/refined-figure"
 import { SURVIVOR_COLOURS } from "./seat-colours"
 import { simpleFigureMeshes, softBeanMeshes, type SimpleFigureBone } from "@arcade/kit/avatar/simple-figure"
 
@@ -323,7 +324,7 @@ export class Survivor {
   private pelvisYaw = spring()
   private strafeProfile: HumanProfile = { ...humanProfiles.soldier }
   private models: number[]
-  /** Model ids per shape (today's boxes, mannequin, capsule, Soft Bean), in the same part order as `models`. */
+  /** Model ids per shape (today's boxes, mannequin, capsule, Soft Bean, today refined), in the same part order as `models`. */
   private shapes: number[][]
   /** Linear jacket colour of a co-op seat, tinting the simple styles; null offline. */
   private seat: [number, number, number] | null
@@ -415,7 +416,10 @@ export class Survivor {
       const ids = [f.pelvis, f.torso, f.head, f.upperArm, f.foreArm, f.thigh, f.shin, f.foot, null, null, f.toe]
       return ids.map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     }
-    this.shapes = [this.models, simple("mannequin"), simple("capsule"), []]
+    const refined = refinedSurvivorMeshes(palette, BEAN_AUX)
+    const refinedIds = [refined.pelvis, refined.torso, refined.head, refined.upperArm, refined.foreArm, refined.thigh, refined.shin, refined.foot, null, null, refined.toe]
+      .map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
+    this.shapes = [this.models, simple("mannequin"), simple("capsule"), [], refinedIds]
     const meleeMeshes0 = buildMeleeWeaponMeshes(0)
     const meleeMeshes1 = buildMeleeWeaponMeshes(1)
     const meleeMeshes2 = buildMeleeWeaponMeshes(2)
@@ -1146,7 +1150,7 @@ export class Survivor {
     const shape = heroShape(tune.heroStyle)
     if (shape === 3) this.ensureBean(tune)
     const models = this.shapes[shape]!
-    const bodyTint: V3 = shape === 3 ? beanTint(tune, this.seatIndex) : shape ? heroTint(tune, this.seat) : [1, 1, 1]
+    const bodyTint: V3 = shape === 3 ? beanTint(tune, this.seatIndex) : shape === 1 || shape === 2 ? heroTint(tune, this.seat) : [1, 1, 1]
     const draw = (id: number, frame: ReturnType<typeof yawFrame>) =>
       emit(push, models[id]!, frame, id === 8 || id === 9 ? [1, 1, 1] : bodyTint, 0)
     draw(0, pelvis)

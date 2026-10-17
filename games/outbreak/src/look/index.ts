@@ -39,6 +39,15 @@ function controls(host: OutbreakLabControlHost): LabControl[] {
       },
     },
     ...heroLookControls,
+    {
+      key: "zombieLook",
+      label: "Zombie look",
+      group: "Look · Zombies",
+      options: [
+        { label: "Today (boxes)", value: 0 },
+        { label: "Refined (palettes, torn clothes)", value: 1 },
+      ],
+    },
     ...lookTrimControls,
   ]
 }

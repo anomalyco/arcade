@@ -15,9 +15,12 @@ export const HERO_STYLES = [
   { id: "silhouette", label: "Flat-tone silhouette" },
   { id: "capsule", label: "Capsule figure" },
   { id: "bean", label: "Soft Bean" },
+  { id: "refined", label: "Today, refined" },
 ] as const
 
 export const SOFT_BEAN_STYLE = 4
+/** Today's survivor from chamfered parts with colour-blocked clothes and baked creases (AR-42 paint-over). */
+export const REFINED_STYLE = 5
 
 /** `aux` on simple-figure vertices: Outbreak's actor shading gives them the hero surface. */
 export const HERO_AUX = 5
@@ -97,14 +100,16 @@ export const HERO_STYLE_SURFACES: readonly HeroSurface[] = [
   { heroTone: 0.5, heroWarmth: -0.15, heroRim: 0.8, heroRimTight: 5, heroFlat: 0.15, heroSaturation: 0.8 },
   // Soft Bean ignores these (its own knobs below); kept so every style loads a full surface.
   { heroTone: 0.5, heroWarmth: -0.15, heroRim: 0.8, heroRimTight: 5, heroFlat: 0.15, heroSaturation: 0.8 },
+  // Today, refined keeps today's actor shading; like Today it ignores these.
+  { heroTone: 0.42, heroWarmth: 0.25, heroRim: 1, heroRimTight: 4, heroFlat: 0.3, heroSaturation: 0.5 },
 ]
 
 export const DEFAULT_HERO_LOOK: HeroLookSettings = { heroStyle: 0, ...HERO_STYLE_SURFACES[0]!, ...DEFAULT_SOFT_BEAN_LOOK }
 
-/** Which simple-figure shape a style draws (0: today's boxes, 3: Soft Bean). */
-export function heroShape(style: number): 0 | 1 | 2 | 3 {
+/** Which shape a style draws (0: today's boxes, 1 mannequin, 2 capsule, 3: Soft Bean, 4: today refined). */
+export function heroShape(style: number): 0 | 1 | 2 | 3 | 4 {
   const s = Math.round(style)
-  return s === 1 || s === 2 ? 1 : s === 3 ? 2 : s === SOFT_BEAN_STYLE ? 3 : 0
+  return s === 1 || s === 2 ? 1 : s === 3 ? 2 : s === SOFT_BEAN_STYLE ? 3 : s === REFINED_STYLE ? 4 : 0
 }
 
 export function softBeanShape(look: SoftBeanSettings): SoftBeanShape {
@@ -113,8 +118,11 @@ export function softBeanShape(look: SoftBeanSettings): SoftBeanShape {
 
 const GROUP = "Look · Hero"
 const isBean = (s: Readonly<Record<string, unknown>>) => Math.round(Number(s.heroStyle)) === SOFT_BEAN_STYLE
-const isSimple = (s: Readonly<Record<string, unknown>>) => !isBean(s)
+const isSimple = (s: Readonly<Record<string, unknown>>) => [1, 2, 3].includes(Math.round(Number(s.heroStyle)))
 const bean = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isBean })
+/** Today, refined shares Soft Bean's surface: wrap, sheen and own colour in the dark. */
+const isBeanSurface = (s: Readonly<Record<string, unknown>>) => isBean(s) || Math.round(Number(s.heroStyle)) === REFINED_STYLE
+const beanSurface = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isBeanSurface })
 const simple = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isSimple })
 
 export const heroLookControls: LabControl[] = [
@@ -136,10 +144,10 @@ export const heroLookControls: LabControl[] = [
   bean({ key: "beanHue4", label: "Player 4 hue", subsection: "Colour", min: 0, max: 360, step: 1, unit: "°" }),
   bean({ key: "beanSaturation", label: "Saturation", subsection: "Colour", min: 0, max: 1, step: 0.01, unit: "" }),
   bean({ key: "beanLightness", label: "Lightness", subsection: "Colour", min: 0.1, max: 0.9, step: 0.01, unit: "" }),
-  bean({ key: "beanOwnColour", label: "Own colour in the dark", subsection: "Colour", min: 0, max: 1, step: 0.05, unit: "" }),
-  bean({ key: "beanWrap", label: "Light wrap", subsection: "Surface", min: 0, max: 1, step: 0.05, unit: "" }),
-  bean({ key: "beanSheen", label: "Sheen", subsection: "Surface", min: 0, max: 2, step: 0.05, unit: "×" }),
-  bean({ key: "beanSheenTight", label: "Sheen tightness", subsection: "Surface", min: 1, max: 8, step: 0.25, unit: "" }),
+  beanSurface({ key: "beanOwnColour", label: "Own colour in the dark", subsection: "Colour", min: 0, max: 1, step: 0.05, unit: "" }),
+  beanSurface({ key: "beanWrap", label: "Light wrap", subsection: "Surface", min: 0, max: 1, step: 0.05, unit: "" }),
+  beanSurface({ key: "beanSheen", label: "Sheen", subsection: "Surface", min: 0, max: 2, step: 0.05, unit: "×" }),
+  beanSurface({ key: "beanSheenTight", label: "Sheen tightness", subsection: "Surface", min: 1, max: 8, step: 0.25, unit: "" }),
 ]
 
 /** Soft Bean's linear albedo for a co-op seat (0 offline and the first seat): HSL in sRGB, then to linear. */

@@ -38,7 +38,8 @@ import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weathe
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
 
 export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings
-export type OutbreakZombieSettings = ZombieTuning & { humanProfile: number }
+/** `zombieLook`: 0 today's boxes, 1 refined (chamfered parts, seeded clothing palettes, torn hems; Look · Zombies). */
+export type OutbreakZombieSettings = ZombieTuning & { humanProfile: number; zombieLook: number }
 
 export type OutbreakWorldSettings = {
   worldMode: number
@@ -107,6 +108,7 @@ export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
 
 export const DEFAULT_OUTBREAK_ZOMBIES: OutbreakZombieSettings = {
   humanProfile: 0,
+  zombieLook: 0,
   ...zombieTuning,
 }
 
