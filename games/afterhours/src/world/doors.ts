@@ -2,12 +2,14 @@ import type * as THREE from "three/webgpu"
 import type { Box, Floor, WorldContext } from "./context"
 import { heightAt } from "./height"
 import { DoorAudio, type DoorSound } from "./doors/audio"
+import { profileFor, stepMotion, type MotionState, type Profile } from "./doors/motion"
 import { DoorPrompt, type DoorVerb } from "./doors/hud"
 
 /*
  * Shared doors: every hinged, sliding or roll-up door in the world goes through `ctx.doors.add`. The system owns the
- * leaf's transform, its collider (an oriented box that follows the leaf, read by the player every move), the damped
- * swing, the KeyE interaction and prompt, and the procedural sounds.
+ * leaf's transform, its collider (an oriented box that follows the leaf, read by the player every move), the heavy
+ * eased motion (`doors/motion.ts`: latch hesitation, ease-in, slow travel, door-closer approach and latch; E mid-swing
+ * reverses), the KeyE interaction and prompt, and the procedural sounds (`doors/audio.ts`: speed-driven creak).
  *
  * MIGRATION (static leaf + collider → ctx.doors.add)
  *
@@ -26,7 +28,10 @@ import { DoorPrompt, type DoorVerb } from "./doors/hud"
  *         openAngle: Math.PI * 0.5,  // sign = fixed swing direction (+ = counter-clockwise seen from above)
  *         swing: "auto",              // "auto": opens away from the player; "fixed": always sign(openAngle)
  *         startOpen: 0, sound: "steel",
+ *         mass: 1.2,                  // optional: heavier/lighter than a typical door of this sound (time ∝ √mass)
+ *         // duration: 2.4,           // optional: explicit seconds for a full swing (overrides mass)
  *       })
+ *     Typical full-swing times: wood 1.5 s, glass 1.45 s, steel 1.9 s, gate 3.6 s, roll-up (slide axis ≈ ±Y) 3.0 s.
  *     Double doors: give both leaves ids and `double: "<other id>"` on each; one E press swings both.
  *     Sliding / roll-up doors: `slide: { axis: [0, 1, 0], distance: 2.2 }` (world unit axis) translates the leaf
  *     instead of rotating it; `onMove(t)` lets you drive custom visuals (slats coiling into a drum) from the 0..1 state.
@@ -74,6 +79,10 @@ export type DoorSpec = {
   sound?: DoorSound
   /** Sliding / roll-up door: translate the leaf `distance` metres along the world unit `axis` instead of rotating. */
   slide?: { axis: readonly [number, number, number]; distance: number }
+  /** Weight relative to a typical door of this `sound` (1); travel time scales with √mass. */
+  mass?: number
+  /** Seconds for a full 0 → 1 travel at the default speed (overrides `mass`). */
+  duration?: number
   /** Called whenever the leaf moves, with the open fraction (may overshoot 1 slightly on hinged doors). */
   onMove?: (t: number) => void
 }
@@ -96,7 +105,6 @@ const REACH = 1.8
 const PLAYER_R = 0.3
 const PLAYER_STEP = 0.45
 const PLAYER_EYE = 1.65
-const DAMPING = 0.72
 const SUB = 1 / 120
 
 type PlayerRef = { pos: { x: number; y: number; z: number }; camera: THREE.PerspectiveCamera }
@@ -114,8 +122,12 @@ class Door implements DoorHandle {
   readonly height: number
   readonly swingMag: number
   readonly reachR: number
+  readonly profile: Profile
   t: number
   v = 0
+  hold = 0
+  plan: MotionState["plan"] = null
+  tooth = 0
   target: number
   dir: number
   rattle = 0
@@ -142,7 +154,9 @@ class Door implements DoorHandle {
     this.swingMag = Math.abs(spec.openAngle)
     this.reachR = Math.abs(spec.width) + (spec.slide ? Math.abs(spec.slide.distance) : 0) + 0.5
     this.dir = Math.sign(spec.openAngle) || 1
+    this.profile = profileFor(spec.sound ?? "steel", spec.slide, spec.mass, spec.duration)
     this.t = this.target = Math.max(0, Math.min(1, spec.startOpen ?? 0))
+    this.tooth = Math.floor(this.t * this.profile.teeth)
     this.yaw = this.yaw0
     this.pose(this.t)
     this.apply()
@@ -308,11 +322,13 @@ export class Doors {
     this.colliders = ctx.colliders
     this.floors = ctx.floors
     this.settings = ctx.settings
+    ctx.settings["doors.speed"] ??= 1
     ctx.settings["doors.volume"] ??= 0.6
-    ctx.settings["doors.swing"] ??= 0.6
+    ctx.settings["doors.creak"] ??= 1
     ctx.controls.push(
+      { key: "doors.speed", label: "Door speed", group: "Doors", unit: "×", min: 0.25, max: 3, step: 0.05 },
       { key: "doors.volume", label: "Door sound volume", group: "Doors", min: 0, max: 1, step: 0.05 },
-      { key: "doors.swing", label: "Door swing time", group: "Doors", unit: "s", min: 0.25, max: 1.5, step: 0.05 },
+      { key: "doors.creak", label: "Creak volume", group: "Doors", min: 0, max: 2, step: 0.05 },
     )
     if (!this.quiet && typeof document !== "undefined") this.prompt = new DoorPrompt()
   }
@@ -349,12 +365,15 @@ export class Doors {
   /** Sets a door's target (and its partner's). */
   command(d: Door, target: number, partner: boolean) {
     if (target === d.target) return
-    if (target > 0 && d.t < 0.05 && !d.spec.slide && (d.spec.swing ?? "auto") === "auto") d.dir = this.awayDir(d)
+    const atRest = !d.active || (Math.abs(d.v) < 1e-3 && d.hold <= 0)
+    if (atRest && target > 0 && d.t < 0.05 && !d.spec.slide && (d.spec.swing ?? "auto") === "auto") d.dir = this.awayDir(d)
     d.target = target
     d.active = true
-    if (this.audio && this.player) {
-      if (target > 0) this.audio.open(d.spec.sound ?? "steel", this.pan(d))
-      else this.audio.closing(d.spec.sound ?? "steel", this.pan(d))
+    if (atRest) {
+      // From rest the latch (or the gate's chain) releases first; mid-swing a reversal just brakes and turns round.
+      d.hold = d.profile.hesitate * (target > d.t ? 1 : 0.5)
+      d.plan = null
+      if (target > d.t && d.t < 0.02 && this.player) this.audio?.release(d.spec.sound ?? "steel", d.profile.kind, this.pan(d))
     }
     const p = partner && d.spec.double ? this.byId.get(d.spec.double) : undefined
     if (p) this.command(p, target, false)
@@ -430,55 +449,54 @@ export class Doors {
 
   /** Per frame (called by the player before it moves): animates doors and updates the prompt. */
   update(dt: number) {
-    const swing = Number(this.settings["doors.swing"] ?? 0.6)
-    const w = 4 / (DAMPING * Math.max(0.1, swing))
-    const k = w * w
-    const c = 2 * DAMPING * w
-    if (this.audio) this.audio.volume = Number(this.settings["doors.volume"] ?? 0.6)
+    const speed = Number(this.settings["doors.speed"] ?? 1)
+    if (this.audio) {
+      this.audio.volume = Number(this.settings["doors.volume"] ?? 0.6)
+      this.audio.creakVolume = Number(this.settings["doors.creak"] ?? 1)
+    }
     const p = this.player?.pos
     const feet = p ? p.y + PLAYER_STEP : 0
     const head = p ? p.y + PLAYER_EYE + 0.1 : 0
     for (const d of this.list) {
       if (!d.active) continue
       if (d.rattle > 0) d.rattle = Math.max(0, d.rattle - dt)
+      const sound = d.spec.sound ?? "steel"
+      const prof = d.profile
       let left = dt
       while (left > 1e-6) {
         const h = Math.min(SUB, left)
         left -= h
-        const v = d.v + (k * (d.target - d.t) - c * d.v) * h
-        let t = d.t + v * h
-        let nv = v
-        let latched = false
-        if (d.target === 0 && t <= 0) {
-          latched = d.t > 0
-          t = 0
-          nv = 0
-        }
-        if (d.spec.slide && t > 1) {
-          t = 1
-          nv = 0
-        }
-        if (p) {
+        const prev = d.t
+        const t = stepMotion(d, prof, d.target, speed, h)
+        const latched = d.target === 0 && t === 0 && prev > 0
+        if (p && t !== prev) {
           const before = d.penetration(p.x, p.z, feet, head, PLAYER_R)
-          const prev = d.t
           d.pose(t)
           const after = d.penetration(p.x, p.z, feet, head, PLAYER_R)
           if (after > 0 && after > before) {
             // The leaf would hit the player: it stops against them and resumes when they move.
             d.pose(prev)
             d.v = 0
+            d.plan = null
             break
           }
         } else d.pose(t)
-        if (latched && this.audio) this.audio.latch(d.spec.sound ?? "steel", this.pan(d), Math.abs(d.v))
+        if (latched && this.audio) this.audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration)
+        if (t === d.target && !d.plan) d.v = 0
         d.t = t
-        d.v = nv
       }
-      if (Math.abs(d.target - d.t) < 1e-4 && Math.abs(d.v) < 1e-3 && d.rattle === 0) {
-        d.t = d.target
+      if (prof.teeth) {
+        const tooth = Math.floor(d.t * prof.teeth + 1e-6)
+        if (tooth !== d.tooth && this.audio) this.audio.tick(this.pan(d))
+        d.tooth = tooth
+      }
+      // Leaf speed relative to the peak of a full swing (1.875 / duration for the quintic curve).
+      this.audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
+      if (d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
         d.v = 0
         d.pose(d.t)
         d.active = false
+        this.audio?.stopLoop(d.id)
       }
       d.apply()
     }

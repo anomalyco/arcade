@@ -66,7 +66,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     shaft.rbox(steel, F, 0.08, DOOR.h + 0.08, 0.06, 0.01, DOOR.w / 2 + 0.04, (DOOR.h + 0.08) / 2, 0)
     shaft.rbox(steel, F, DOOR.w + 0.16, 0.08, 0.06, 0.01, 0, DOOR.h + 0.04, 0)
     shaft.box(M.steel, DX0, y - 0.01, LOBBY.z1 - 0.04, DX1, y + 0.004, CAR.z0, { cast: false })
-    for (let k = 0; k < 12; k++) shaft.box(M.darkSteel, DX0 + 0.04 + k * 0.088, y + 0.0035, LOBBY.z1, DX0 + 0.06 + k * 0.088, y + 0.005, CAR.z0 - 0.02, { cast: false })
+    for (let k = 0; k < 12; k++) shaft.box(M.darkSteel, DX0 + 0.04 + k * 0.088, y + 0.004, LOBBY.z1, DX0 + 0.06 + k * 0.088, y + 0.008, CAR.z0 - 0.02, { cast: false })
     shaft.walk(DX0, LOBBY.z1 - 0.05, DX1, CAR.z0 + 0.01, y + 0.004)
     shaft.rbox(steel, T(CALL.x, y + CALL.y, CALL.z - 0.006), 0.12, 0.26, 0.012, 0.004)
     shaft.cyl(M.darkSteel, T(CALL.x, y + CALL.y + 0.04, CALL.z - 0.014, 0, Math.PI / 2), 0.026, 0.026, 0.012, 16)

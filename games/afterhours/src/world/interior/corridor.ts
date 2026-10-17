@@ -23,6 +23,7 @@ import {
   staticGlass,
   troffer,
   wall,
+  LAYER,
 } from "./kit"
 
 // The main corridor (concept r3-02) and the short link north from the lobby. The corridor runs from the link
@@ -55,7 +56,7 @@ export function buildCorridor(b: Builder) {
   // Floors: waxed linoleum with dark green border stripes, continuing up the link.
   b.floor("linoleum", x0, zn - WALL_T, x1, zs + WALL_T)
   b.floor("linoleum", link.min[0], zs + WALL_T, link.max[0], lobbyZ)
-  const sy = FLOOR_Y + 0.0015
+  const sy = FLOOR_Y + LAYER
   // Edge stripes: the north one runs the full length; the south one stops at the hall and the link, whose own stripes
   // turn the corner into them (mitred at 0.42 m from the walls), so every stripe joins another.
   const zS = zs - 0.42
@@ -240,8 +241,8 @@ export function extinguisher(b: Builder, x: number, zWall: number) {
   const hi = Math.max(z, z1)
   b.box(M.frame, x - 0.3, y0, lo, x + 0.3, y0 + 0.03, hi)
   b.box(M.frame, x - 0.3, y0 + 0.77, lo, x + 0.3, y0 + 0.8, hi)
-  b.box(M.frame, x - 0.3, y0, lo, x - 0.27, y0 + 0.8, hi)
-  b.box(M.frame, x + 0.27, y0, lo, x + 0.3, y0 + 0.8, hi)
+  b.box(M.frame, x - 0.3, y0 + 0.03, lo, x - 0.27, y0 + 0.77, hi)
+  b.box(M.frame, x + 0.27, y0 + 0.03, lo, x + 0.3, y0 + 0.77, hi)
   b.box(M.felt, x - 0.27, y0 + 0.03, z + s * 0.004, x + 0.27, y0 + 0.77, z + s * 0.006, { cast: false })
   b.quad(M.glass, T(x, y0 + 0.4, z1 - s * 0.004, s > 0 ? 0 : Math.PI), 0.54, 0.74, { cast: false })
   b.box(M.steel, x + 0.2, y0 + 0.34, z1, x + 0.24, y0 + 0.46, z1 + s * 0.015)

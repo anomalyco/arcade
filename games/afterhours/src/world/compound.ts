@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { buildFence } from "./compound/fence"
+import { buildGate } from "./compound/gate"
 import { buildBooth } from "./compound/booth"
 import { buildLot, WALK_Y } from "./compound/lot"
 import { buildProps } from "./compound/props"
@@ -14,9 +15,10 @@ export function build(ctx: WorldContext): WorldModule | void {
   root.name = "compound"
   ctx.scene.add(root)
 
-  const ticks: (() => void)[] = []
+  const ticks: ((dt: number) => void)[] = []
   const parts: [string, () => void][] = [
     ["fence", () => buildFence(ctx, root)],
+    ["gate", () => void ticks.push(buildGate(ctx, root))],
     ["booth", () => buildBooth(ctx, root)],
     [
       "lot",
@@ -42,15 +44,18 @@ export function build(ctx: WorldContext): WorldModule | void {
   const ev = ctx.params.has("cev") ? Number(ctx.params.get("cev")) : NaN
   const pin = ctx.params.get("ccam")?.split(",").map(Number)
   const pinned = pin && pin.length >= 5 && pin.every(Number.isFinite) ? pin : null
-  // `cdoor=1` opens the booth door once the world is up (captures of the open leaf).
-  const openDoor = ctx.params.get("cdoor") === "1"
+  // `copen=booth,ctl-gate,ctl-boom` opens those doors / presses those controls once the world is up (captures of the
+  // open states); `cdoor=1` is short for `copen=booth`.
+  const openIds = [...(ctx.params.get("copen")?.split(",").filter(Boolean) ?? []), ...(ctx.params.get("cdoor") === "1" ? ["booth"] : [])]
   return {
     update(_dt, _time, camera) {
-      for (const t of ticks) t()
-      if (openDoor) {
+      for (const t of ticks) t(_dt)
+      if (openIds.length) {
         // Shot mode doesn't step the player, which normally drives the door system; step it here instead.
-        const d = ctx.doors.get("booth")
-        if (d && !d.isOpen) d.open()
+        for (const id of openIds) {
+          const d = ctx.doors.get(id)
+          if (d && !d.isOpen) d.open()
+        }
         ctx.doors.update(_dt)
       }
       if (Number.isFinite(ev)) ctx.settings["post.exposure"] = ev

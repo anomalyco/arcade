@@ -80,7 +80,7 @@ function items(): Item[] {
     // booth roof aimed at the gate, and inside the guard's terminal, phone and chair.
     { name: "traffic_cone", position: [-6.2, 0, 125.1], yaw: 0.4 },
     { name: "traffic_cone", position: [-6.6, 0, 126.9], yaw: 1.9 },
-    { name: "traffic_cone", position: [4.2, 0, 120.4], yaw: 3.0 },
+    { name: "traffic_cone", position: [-4.6, 0, 119.4], yaw: 3.0 },
     { name: "utility_box", position: [bx + 1.1, 0.12, bz - BOOTH.d / 2 - 0.45], yaw: NORTH, inset: 0, shadow: "blob" },
     { name: "trash_can", position: [bx + BOOTH.w / 2 + 0.55, 0.12, bz + 0.9], yaw: EAST, inset: 0.08, shadow: "blob" },
     { name: "security_light", position: [bx - BOOTH.w / 2 + 0.05, 2.875, bz - BOOTH.d / 2 + 0.3], yaw: WEST - 0.35 },
@@ -89,8 +89,8 @@ function items(): Item[] {
     { name: "office_chair", position: [bx - 0.35, FY, bz + 0.05], yaw: WEST + 0.5, inset: 0.15 },
     // Institutional clock over the north window (facing into the booth) and an extinguisher on the south knee wall
     // west of the door, clear of the leaf's inward sweep.
-    { name: "wall_clock", position: [bx + 0.6, HEAD + 0.04, bz - BOOTH.d / 2 + WALL + 0.025], yaw: SOUTH },
-    { name: "fire_extinguisher", position: [bx, FY + 0.32, bz + BOOTH.d / 2 - WALL - 0.095], yaw: NORTH },
+    { name: "wall_clock", position: [bx + 0.6, HEAD + 0.04, bz - BOOTH.d / 2 + WALL + 0.036], yaw: SOUTH },
+    { name: "fire_extinguisher", position: [bx, FY + 0.22, bz + BOOTH.d / 2 - WALL - 0.1], yaw: NORTH },
 
     // A wet-floor sign left out on the walk beside the entrance doors (the janitor's been through).
     { name: "wet_floor_sign", position: [-2.9, FACILITY_WALK_Y, 23.4], yaw: SOUTH + 0.5 },

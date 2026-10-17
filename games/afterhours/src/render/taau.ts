@@ -93,6 +93,8 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
       const sumWeight = float(0).toVar()
       const moment1 = vec4(0).toVar()
       const moment2 = vec4(0).toVar()
+      const boxMin = vec4(1e9).toVar()
+      const boxMax = vec4(0).toVar()
       const offsets = [
         [-1, -1], [0, -1], [1, -1],
         [-1, 0], [0, 0], [1, 0],
@@ -108,15 +110,20 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
         sumWeight.addAssign(w)
         moment1.addAssign(c)
         moment2.addAssign(c.pow2())
+        boxMin.assign(boxMin.min(c))
+        boxMax.assign(boxMax.max(c))
       }
       const currentColor = sumColor.div(sumWeight.max(1e-8))
 
       const n = float(offsets.length)
       const mean = moment1.div(n)
-      const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2())
+      // At rest the clip box widens to 2σ (bounded by the neighbourhood's min/max, so nothing outside the local
+      // colours survives): a 1σ box sits inside the jittering edge of a bright window and drags the history with the
+      // jitter every frame, which shimmered on every lit edge. In motion it tightens to three's 0.5σ.
+      const varianceGamma = mix(0.5, 2, motionFactor.oneMinus().pow2().mul(motionPx.div(2).saturate().oneMinus()))
       const variance = moment2.div(n).sub(mean.pow2()).max(0).sqrt().mul(varianceGamma)
-      const minColor = mean.sub(variance)
-      const maxColor = mean.add(variance)
+      const minColor = mean.sub(variance).max(boxMin)
+      const maxColor = mean.add(variance).min(boxMax)
 
       const historyColor = catmullRom(historyNode, historyUV, outputSizeF)
       const clippedHistoryColor = clipAABB(mean.clamp(minColor, maxColor), historyColor, minColor, maxColor)
@@ -131,7 +138,9 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
       const lock = max(gatedThinFeature, lockNode.sample(historyUV).r.mul(decay)).saturate()
       const lockedHistoryColor = mix(clippedHistoryColor, historyColor, lock)
 
-      const currentWeight = float(self.currentFrameWeight).toVar()
+      // 0.3× the current-frame weight when still: residual jitter aliasing on bright edges (lit windows) shrinks with
+      // it; motion, disocclusion and the variance clip still bring new content in quickly.
+      const currentWeight = float(self.currentFrameWeight).mul(mix(float(0.3), float(1), motionPx.saturate())).toVar()
       currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1))
       colorOutput.assign(flickerReduction(currentColor, lockedHistoryColor, currentWeight))
       lockOutput.assign(lock)

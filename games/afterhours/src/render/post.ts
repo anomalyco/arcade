@@ -29,6 +29,7 @@ import {
   fract,
   sin,
   sample,
+  texture,
   screenCoordinate,
   screenUV,
   smoothstep,
@@ -54,6 +55,7 @@ import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
 import type { LightMask } from "./clustered"
 import { insideNode, segmentTouchesNode } from "./volumes"
 import { sharpTaau } from "./taau"
+import { taau } from "three/addons/tsl/display/TAAUNode.js"
 
 // The frame: one scene pass with a small G-buffer (normals, metal/rough, velocity), then at reduced resolution the
 // lamps' single-scattering in the fog (equiangular-sampled per light, cone- and phase-aware), streaky wet-surface SSR
@@ -85,11 +87,9 @@ export function createPost(ctx: WorldContext) {
       min: 0.5,
       max: 2,
       step: 0.05,
-      // Retina: 0.8 samples per CSS px, reconstructed by TAAU to a 1.25× output (≈ 7–8 ms instead of ~85 ms at 2×).
-      // Retina: 1 sample per CSS px (half the native 2× canvas), reconstructed to native resolution by TAAU and
-      // sharpened; output at the display's own pixel ratio, so the browser never upscales the canvas (the old 1.25×
-      // canvas was stretched 1.6× by the compositor, the main source of blur).
-      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 1 : 1,
+      // Retina: 0.9 samples per CSS px, reconstructed by TAAU to the 1.5× output and sharpened (the old 0.8 samples on a
+      // 1.25× canvas, stretched 1.6× by the compositor, was the main source of blur).
+      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 0.9 : 1,
     },
     { key: "post.autoRes", label: "Auto resolution (hold 60 fps)", group: "Performance", type: "toggle", value: true },
     { key: "post.minScale", label: "Auto resolution floor", group: "Performance", unit: "×", min: 0.4, max: 1, step: 0.05, value: 0.7 },
@@ -101,10 +101,13 @@ export function createPost(ctx: WorldContext) {
       min: 1,
       max: 2,
       step: 0.25,
-      value: 2,
+      // 1.5 on Retina: TAAU + sharpening at 1.5× gets within a hair of a native 2× canvas for ~2/3 of the post cost
+      // (TAAU's history passes scale with output pixels); the browser's last 1.33× stretch is mild.
+      value: 1.5,
     },
     { key: "post.taa", label: "Temporal AA + upscale (TAAU)", group: "Performance", type: "toggle", value: true },
-    { key: "post.taaSharpness", label: "TAAU resolve sharpness (at rest)", group: "Performance", min: 0, max: 1, step: 0.05, value: 1 },
+    { key: "post.taaSharp", label: "TAAU: stable sharp resolve (off = three's stock TAAU)", group: "Performance", type: "toggle", value: true },
+    { key: "post.taaSharpness", label: "TAAU resolve sharpness (at rest)", group: "Performance", min: 0, max: 1, step: 0.05, value: 0.4 },
     { key: "post.sharpness", label: "Sharpness (contrast-adaptive)", group: "Camera", min: 0, max: 1, step: 0.05, value: 0.6 },
     {
       key: "post.debug",
@@ -152,6 +155,7 @@ export function createPost(ctx: WorldContext) {
     { key: "post.bloomSurfaceCap", label: "Bloom: lit-surface cap (exposed)", group: "Camera", min: 0.005, max: 2, step: 0.005, value: 0.02 },
     { key: "post.bloomHot", label: "Bloom: emitter level (exposed)", group: "Camera", min: 0.5, max: 20, step: 0.1, value: 4 },
     { key: "post.ssr", label: "Wet reflections (SSR)", group: "Reflections", type: "toggle", value: true },
+    { key: "post.ssrAccumulate", label: "Temporal accumulation (stable at rest)", group: "Reflections", type: "toggle", value: true },
     { key: "post.ssrStrength", label: "Strength", group: "Reflections", unit: "×", min: 0, max: 3, step: 0.05, value: 1.3 },
     { key: "post.ssrWet", label: "Dielectric reflectance", group: "Reflections", min: 0, max: 1, step: 0.01, value: 0.5 },
     { key: "post.ssrRough", label: "Roughness cut-off", group: "Reflections", min: 0.1, max: 1, step: 0.01, value: 0.85 },
@@ -174,7 +178,8 @@ export function createPost(ctx: WorldContext) {
     { key: "grade.shoulder", label: "Highlight roll-off", group: "Grade", min: 0.3, max: 6, step: 0.05, value: 1.6 },
     { key: "grade.contrast", label: "Contrast", group: "Grade", min: 0.5, max: 1.6, step: 0.01, value: 1.12 },
     { key: "grade.saturation", label: "Saturation", group: "Grade", min: 0, max: 2, step: 0.01, value: 0.92 },
-    { key: "grade.grain", label: "Film grain", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.022 },
+    // Fine and faint by default: a re-rolled per-pixel grain reads as shimmer on a still frame.
+    { key: "grade.grain", label: "Film grain", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.008 },
     { key: "grade.temperature", label: "White balance: temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: -0.12 },
     { key: "grade.tint", label: "White balance: tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.04 },
     { key: "grade.gamma", label: "Mid-tone curve (gamma)", group: "Grade", min: 0.6, max: 1.6, step: 0.01, value: 1.06 },
@@ -401,6 +406,8 @@ export function createPost(ctx: WorldContext) {
   // Rough wet asphalt smears reflections into long vertical streaks: blur along screen Y in proportion to the
   // surface roughness and the reflected distance, only a little along X.
   const ssrSize = uniform(new THREE.Vector2(1, 1))
+  /** 1 re-rolls the streak taps every frame (the stock behaviour, when accumulation is off). */
+  const ssrJitter = uniform(0)
   const streak = Fn(() => {
     const u = uv()
     const rough = mrTex.sample(u).g
@@ -413,7 +420,9 @@ export function createPost(ctx: WorldContext) {
     const texel = vec2(1).div(ssrSize)
     const len = ssrStreak.mul(rough.mul(rough).add(0.02)).mul(hitDist.div(dist.max(1))).mul(0.25).clamp(0, 0.3).max(texel.y.mul(1.5))
     const wide = len.mul(0.08).max(texel.x.mul(1.5))
-    const j = interleavedGradientNoise(screenCoordinate.xy).add(frameNoise.mul(0.618034)).fract().sub(0.5)
+    // A fixed per-pixel tap offset (not re-rolled per frame): the accumulation below smooths it once, and a still
+    // camera gets a still streak.
+    const j = interleavedGradientNoise(screenCoordinate.xy).add(frameNoise.mul(0.618034).mul(ssrJitter)).fract().sub(0.5)
     const acc = vec4(0).toVar()
     const wsum = float(0).toVar()
     const TAPS = 8
@@ -428,6 +437,37 @@ export function createPost(ctx: WorldContext) {
   })()
   const ssrStreaked = rtt(streak, null, null, { resolutionScale: 0.5 } as never) as N
 
+  // Temporal accumulation of the reflections at their own (low) resolution. The camera's TAA jitter moves every SSR
+  // texel by a fraction of itself each frame, so bright reflections (lamp pools, lit windows) flickered blockwise;
+  // TAAU can't absorb that because its 3×3 neighbourhood sits inside one coarse reflection texel and flickers with it.
+  // History is reprojected with the surface velocity, clamped to the current 3×3 box (padded) and blended slowly at
+  // rest, quickly in motion.
+  const ssrHistory = new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false })
+  const ssrHistoryTex = texture(ssrHistory.texture) as N
+  const ssrResponse = uniform(0.08)
+  const ssrHistoryValid = uniform(0)
+  const accumulate = Fn(() => {
+    const u = uv()
+    const texel = vec2(1).div(ssrSize)
+    const cur = ssrStreaked.sample(u).toVar()
+    const mn = cur.toVar()
+    const mx = cur.toVar()
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+      const c = ssrStreaked.sample(u.add(texel.mul(vec2(ox, oy))))
+      mn.assign(min(mn, c))
+      mx.assign(max(mx, c))
+    }
+    const offset = vel.sample(u).xy.mul(vec2(0.5, -0.5))
+    const hu = u.sub(offset)
+    const inside = hu.greaterThanEqual(vec2(0)).all().and(hu.lessThanEqual(vec2(1)).all())
+    const pad = mx.sub(mn).mul(0.25)
+    const prev = ssrHistoryTex.sample(hu).clamp(mn.sub(pad), mx.add(pad))
+    const motion = offset.mul(ssrSize).length()
+    const a = inside.and(ssrHistoryValid.greaterThan(0.5)).select(mix(ssrResponse, float(1), motion.div(1.5).saturate()), float(1))
+    return mix(prev, cur, a)
+  })()
+  const ssrAccum = rtt(accumulate, null, null, { resolutionScale: 0.5 } as never) as N
+
   // ------------------------------------------------------------------ ambient occlusion
   const aoNode = ao(depth, normal, camera) as N
   aoNode.resolutionScale = 0.5
@@ -436,7 +476,7 @@ export function createPost(ctx: WorldContext) {
   const aoStrength = uniform(0.7)
 
   // ------------------------------------------------------------------ composite (HDR)
-  const lastFlags = { ssr: true, ao: true, taa: true, debug: "final", dof: false, rain: false }
+  const lastFlags = { ssr: true, ao: true, taa: true, taaSharp: true, debug: "final", dof: false, rain: false }
   const dofFocus = uniform(8)
   const dofBokeh = uniform(1)
   const exposure = uniform(1)
@@ -515,7 +555,7 @@ export function createPost(ctx: WorldContext) {
   }
   const upsample = (u: N, dist: N, withSsr: boolean) => ({
     scatter: bilateral(scatterTex, halfSize, u, dist),
-    ssr: withSsr ? bilateral(ssrStreaked, ssrSize, u, dist) : vec3(0),
+    ssr: withSsr ? bilateral(ssrAccum, ssrSize, u, dist) : vec3(0),
   })
   const compositeTex = rtt(vec4(0), null, null, { resolutionScale: 1 } as never) as N
   let scaleState = { internal: -1, dpr: -1, ssr: -1, ao: -1 }
@@ -529,6 +569,7 @@ export function createPost(ctx: WorldContext) {
     const aoScale = num(ctx, indoor > 0.5 ? "post.aoScale" : "post.aoScaleOutdoor")
     if (ssrScale !== scaleState.ssr || aoScale !== scaleState.ao) {
       ssrStreaked.setResolutionScale(internal * ssrScale)
+      ssrAccum.setResolutionScale(internal * ssrScale)
       ssrNode.resolutionScale = internal * ssrScale
       aoNode.resolutionScale = internal * aoScale
       scaleState.ssr = ssrScale
@@ -544,6 +585,7 @@ export function createPost(ctx: WorldContext) {
     compositeTex.setResolutionScale(internal)
     scatterTex.setResolutionScale(internal * 0.5)
     ssrStreaked.setResolutionScale(internal * ssrScale)
+    ssrAccum.setResolutionScale(internal * ssrScale)
     ssrNode.resolutionScale = internal * ssrScale
     aoNode.resolutionScale = internal * aoScale
   }
@@ -557,7 +599,8 @@ export function createPost(ctx: WorldContext) {
     const useRain = flag(ctx, "rain.on")
     lastFlags.rain = useRain
     lastFlags.dof = useDof
-    Object.assign(lastFlags, { ssr: useSsr, ao: useAo, taa: useTaa, debug })
+    const useSharpTaa = flag(ctx, "post.taaSharp")
+    Object.assign(lastFlags, { ssr: useSsr, ao: useAo, taa: useTaa, taaSharp: useSharpTaa, debug })
     aoNode.useTemporalFiltering = useTaa
 
     const composite = Fn(() => {
@@ -579,8 +622,8 @@ export function createPost(ctx: WorldContext) {
 
     let resolved: N
     if (useTaa) {
-      const t = sharpTaau(compositeTex, depth, vel, camera)
-      taauRef.node = t
+      const t = useSharpTaa ? sharpTaau(compositeTex, depth, vel, camera) : (taau(compositeTex, depth, vel, camera) as N)
+      taauRef.node = useSharpTaa ? t : null
       resolved = t.getTextureNode()
     } else {
       taauRef.node = null
@@ -698,7 +741,7 @@ export function createPost(ctx: WorldContext) {
 
     const show: Record<string, N> = {
       scatter: (vec4 as N)((sRGBTransferOETF as N)(scatterTex.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
-      ssr: (vec4 as N)((sRGBTransferOETF as N)(ssrStreaked.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
+      ssr: (vec4 as N)((sRGBTransferOETF as N)(ssrAccum.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
       ao: (vec4 as N)((vec3 as N)(aoTex.sample(uv()).r), 1),
       rough: (vec4 as N)(mrTex.sample(uv()).g, ssrWeight, mrTex.sample(uv()).r, 1),
     }
@@ -805,6 +848,7 @@ export function createPost(ctx: WorldContext) {
         flag(ctx, "post.ssr") !== lastFlags.ssr ||
         flag(ctx, "post.ao") !== lastFlags.ao ||
         flag(ctx, "post.taa") !== lastFlags.taa ||
+        flag(ctx, "post.taaSharp") !== lastFlags.taaSharp ||
         String(ctx.settings["post.debug"]) !== lastFlags.debug ||
         flag(ctx, "post.dof") !== lastFlags.dof ||
         flag(ctx, "rain.on") !== lastFlags.rain
@@ -906,6 +950,9 @@ export function createPost(ctx: WorldContext) {
       grade.saturation.value = num(ctx, "grade.saturation")
       grade.grain.value = num(ctx, "grade.grain")
       sharpness.value = num(ctx, "post.sharpness")
+      const accumulate = flag(ctx, "post.ssrAccumulate")
+      ssrResponse.value = accumulate ? 0.08 : 1
+      ssrJitter.value = accumulate ? 0 : 1
       if (taauRef.node) taauRef.node.sharpness.value = num(ctx, "post.taaSharpness")
       grade.vignette.value = num(ctx, "grade.vignette")
       grade.aberration.value = num(ctx, "grade.aberration")
@@ -921,6 +968,17 @@ export function createPost(ctx: WorldContext) {
       indoorU.value = indoor
 
       pipeline.render()
+
+      // Keep this frame's accumulated reflections as next frame's history (same size, so a plain copy).
+      const src = ssrAccum.renderTarget as THREE.RenderTarget | undefined
+      if (flag(ctx, "post.ssr") && src && src.width > 1) {
+        if (ssrHistory.width !== src.width || ssrHistory.height !== src.height) {
+          ssrHistory.setSize(src.width, src.height)
+          ;(renderer as unknown as { initRenderTarget(t: THREE.RenderTarget): void }).initRenderTarget(ssrHistory)
+          ssrHistoryValid.value = 0
+        } else ssrHistoryValid.value = 1
+        renderer.copyTextureToTexture(src.texture, ssrHistory.texture)
+      } else ssrHistoryValid.value = 0
     },
   }
   // Automation hook for GPU-time breakdowns: scripts render frames back-to-back with settings toggled.

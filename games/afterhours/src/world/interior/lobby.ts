@@ -15,7 +15,7 @@ export function buildLobby(b: Builder) {
 
   // Terrazzo runs right out under the storefront to the door sill, its top flush with the shell slab and the entrance
   // landing (BUILDING.floorY), so the threshold has no step.
-  const fy = BUILDING.floorY + 0.001
+  const fy = BUILDING.floorY + 0.005
   b.box("terrazzo", x0, fy - 0.012, z0, x1, fy, 21.81, { cast: false, skip: "y" })
   b.walk(x0, z0, x1, 21.81, fy)
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, z0 - WALL_T, z0, lobbyBands, [doorOpening(0, 1.8)])

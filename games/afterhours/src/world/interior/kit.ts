@@ -12,6 +12,9 @@ export type Mat = MaterialName | THREE.Material | Paint
 export type Band = readonly [y0: number, y1: number, mat: Mat]
 
 export const FLOOR_Y = 0.16
+/** Thin floor layers (stripes, markings) sit this far above the finish: ≥ 4 mm so the depth buffer separates them
+ *  at corridor distances (1–2 mm layers fought at 20–40 m). */
+export const LAYER = 0.004
 export const STOREY_H = BUILDING.main.storeyHeight
 export const CEIL_Y = 3.1
 export const DOOR_W = 0.92
@@ -448,7 +451,8 @@ export class Builder {
   }
 
   floor(mat: Mat, x0: number, z0: number, x1: number, z1: number) {
-    this.box(mat, x0, FLOOR_Y - 0.012, z0, x1, FLOOR_Y, z1, { cast: false, skip: "y" })
+    // Top face only: the edges would be coplanar with the wall faces they tuck under.
+    this.box(mat, x0, FLOOR_Y - 0.012, z0, x1, FLOOR_Y, z1, { cast: false, skip: "XxyZz" })
     this.walk(x0, z0, x1, z1)
   }
 
@@ -515,10 +519,20 @@ export function wall(
   extent?: { y0: number; y1: number; collide?: boolean },
 ) {
   const sorted = [...openings].sort((p, q) => p.a0 - q.a0)
+  // End caps are recessed 2 mm: a wall's end usually butts into a perpendicular wall or the shell, where a flush cap is
+  // coplanar with that wall's face and z-fights.
+  const CAP = 0.002
   const seg = (s0: number, s1: number, y0: number, y1: number) => {
     if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) return
-    if (axis === "x") b.box(mat, s0, y0, c0, s1, y1, c1)
-    else b.box(mat, c0, y0, s0, c1, y1, s1)
+    if (axis === "x") {
+      b.box(mat, s0, y0, c0, s1, y1, c1, { skip: "Xx" })
+      b.box(mat, s0 + CAP, y0, c0, s0 + CAP, y1, c1, { skip: "XYyZz" })
+      b.box(mat, s1 - CAP, y0, c0, s1 - CAP, y1, c1, { skip: "xYyZz" })
+    } else {
+      b.box(mat, c0, y0, s0, c1, y1, s1, { skip: "Zz" })
+      b.box(mat, c0, y0, s0 + CAP, c1, y1, s0 + CAP, { skip: "XxYyZ" })
+      b.box(mat, c0, y0, s1 - CAP, c1, y1, s1 - CAP, { skip: "XxYyz" })
+    }
   }
   const top = extent?.y1 ?? CEIL_Y + 0.02
   const base = extent?.y0 ?? FLOOR_Y - 0.01
@@ -637,14 +651,16 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts) {
   const F = T(x, y, z, o.rot)
   const fd = wallT + 0.04
   // Frame
-  b.boxM(M.frame, F, 0.05, DOOR_H + 0.05, fd, -w / 2 - 0.025, (DOOR_H + 0.05) / 2, 0)
-  b.boxM(M.frame, F, 0.05, DOOR_H + 0.05, fd, w / 2 + 0.025, (DOOR_H + 0.05) / 2, 0)
+  // Jambs stop under the head and the casing legs under the casing head: overlapping pieces put coplanar faces on the
+  // frame front at the top corners (z-fighting squares).
+  b.boxM(M.frame, F, 0.05, DOOR_H, fd, -w / 2 - 0.025, DOOR_H / 2, 0)
+  b.boxM(M.frame, F, 0.05, DOOR_H, fd, w / 2 + 0.025, DOOR_H / 2, 0)
   b.boxM(M.frame, F, w + 0.1, 0.05, fd, 0, DOOR_H + 0.025, 0)
   // Face casings: a 6 cm dark steel return on both wall faces, so the jamb reads as a heavy frame.
   for (const s of [1, -1]) {
     const zc = s * (fd / 2 + 0.006)
-    b.boxM(M.frame, F, 0.06, DOOR_H + 0.11, 0.012, -w / 2 - 0.08, (DOOR_H + 0.11) / 2, zc)
-    b.boxM(M.frame, F, 0.06, DOOR_H + 0.11, 0.012, w / 2 + 0.08, (DOOR_H + 0.11) / 2, zc)
+    b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, -w / 2 - 0.08, (DOOR_H + 0.05) / 2, zc)
+    b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, w / 2 + 0.08, (DOOR_H + 0.05) / 2, zc)
     b.boxM(M.frame, F, w + 0.28, 0.06, 0.012, 0, DOOR_H + 0.08, zc)
   }
   if (o.plate ?? true) {
@@ -695,7 +711,7 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts) {
  */
 export function ceiling(b: Builder, x0: number, z0: number, x1: number, z1: number, missing = 0, seed = 1, fallen?: (x: number, z: number) => void) {
   const y0 = CEIL_Y - 0.006
-  if (missing <= 0) b.box("ceiling_tile", x0, CEIL_Y, z0, x1, CEIL_Y + 0.03, z1, { cast: false, skip: "Y" })
+  if (missing <= 0) b.box("ceiling_tile", x0, CEIL_Y, z0, x1, CEIL_Y + 0.03, z1, { cast: false, skip: "XxYZz" })
   else {
     let s = seed * 9973 + 7
     const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647)
@@ -722,12 +738,13 @@ export function ceiling(b: Builder, x0: number, z0: number, x1: number, z1: numb
   for (let k = Math.ceil((x0 - 0.3) / 0.6); 0.3 + k * 0.6 < x1; k++) {
     const x = 0.3 + k * 0.6
     if (x - x0 < 0.05) continue
-    b.box(M.tbar, x - 0.012, y0, z0, x + 0.012, CEIL_Y, z1, { cast: false, skip: "Y" })
+    b.box(M.tbar, x - 0.012, y0, z0, x + 0.012, CEIL_Y, z1, { cast: false, skip: "YZz" })
   }
   for (let k = Math.ceil((z0 - 0.6) / 1.2); 0.6 + k * 1.2 < z1; k++) {
     const z = 0.6 + k * 1.2
     if (z - z0 < 0.05) continue
-    b.box(M.tbar, x0, y0, z - 0.012, x1, CEIL_Y, z + 0.012, { cast: false, skip: "Y" })
+    // Cross tees hang 3 mm lower than the mains, so their undersides don't fight at every crossing.
+    b.box(M.tbar, x0, y0 - 0.003, z - 0.012, x1, CEIL_Y, z + 0.012, { cast: false, skip: "XxY" })
   }
 }
 

@@ -365,8 +365,10 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
   const white = new MeshBuilder()
 
   const flat = () => 1
+  // Crown fades in off the county road and out again through the gate, so the asphalt meets the flat parking lot
+  // (compound LOT_Y = 0.04) flush at z = 112 instead of with a 7 cm step.
   const accessCrown = (s: number) => {
-    const t = Math.min(Math.max((s - j.sStart) / 12, 0), 1)
+    const t = Math.min(Math.max((s - j.sStart) / 12, 0), 1, (j.sEnd - s) / 14)
     return t * t * (3 - 2 * t)
   }
 

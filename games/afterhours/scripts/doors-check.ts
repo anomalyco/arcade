@@ -3,6 +3,7 @@
 //   bun scripts/doors-check.ts                 # self-test: injects a throwaway door + wall into a terrain-only page
 //   bun scripts/doors-check.ts --all           # every registered door: doorway audit, then E + walk through both ways
 //   bun scripts/doors-check.ts --all --q "only=terrain,compound" --view gate
+//   bun scripts/doors-check.ts --all --only fire-escape,roof   # only doors whose id starts with one of these
 //
 // The self-test door exists only inside this script's page; nothing is added to the game. Expects the dev server on
 // :5196. Exits 1 on any failure.
@@ -18,6 +19,8 @@ const flag = (name: string) => {
   return v
 }
 const all = args.includes("--all")
+const only = flag("only")?.split(",").filter(Boolean)
+const wanted = (id: string) => !only || only.some((p) => id.startsWith(p))
 const extra = flag("q") ?? (all ? "" : "only=terrain")
 const view = flag("view") ?? "lot"
 const shot = flag("shot")
@@ -38,7 +41,13 @@ const page = await browser.newPage({ viewport: { width: 960, height: 640 } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto(`http://localhost:5196/?view=${view}${extra ? `&${extra}` : ""}`)
-await page.waitForFunction(() => (globalThis as { __afterhours?: { ready: boolean } }).__afterhours?.ready, null, { timeout: 120_000 })
+/** Waits until world streaming has finished (every module shown, `complete`) and a few full frames have run. */
+const ready = () =>
+  page.waitForFunction(() => {
+    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    return !!s?.complete && s.ready
+  }, null, { timeout: 240_000 })
+await ready()
 
 let failed = 0
 const check = (ok: boolean, what: string) => {
@@ -96,7 +105,7 @@ const state = (id: string) =>
     }
     const d = g.__afterhoursDoors?.get(id)
     if (!d) return null
-    return { amount: d.amount, isOpen: d.isOpen, centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
+    return { amount: d.amount, isOpen: d.isOpen, moving: (d as unknown as { active: boolean }).active, centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
   }, id).then((st) => {
     if (!st) throw new Reloaded(id)
     return st
@@ -109,12 +118,19 @@ class Reloaded extends Error {
   }
 }
 
-const ready = () => page.waitForFunction(() => (globalThis as { __afterhours?: { ready: boolean } }).__afterhours?.ready, null, { timeout: 120_000 })
+
+/** Waits until a door has stopped moving (doors are slow and heavy: up to ~4.5 s for a gate); returns seconds waited. */
+async function settle(id: string, timeout = 9000) {
+  const t0 = performance.now()
+  await page.waitForTimeout(100)
+  while (performance.now() - t0 < timeout && (await state(id)).moving) await page.waitForTimeout(100)
+  return (performance.now() - t0) / 1000
+}
 
 /** Closes a door (and its partner) through the API and waits for it to latch. */
 async function ensureClosed(id: string) {
   await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } | undefined } }).__afterhoursDoors.get(id)?.close(), id)
-  for (let i = 0; i < 30 && (await state(id)).amount > 0.005; i++) await page.waitForTimeout(100)
+  await settle(id)
 }
 
 /** Points the camera at a world point. */
@@ -146,9 +162,10 @@ async function throughAndBack(d: Info, s: number) {
   let st = await state(d.id)
   check(st.focused === d.id, `${d.id} side ${s > 0 ? "+" : "-"}: prompt targets the door (focused ${st.focused})`)
   await page.keyboard.press("KeyE")
-  await page.waitForTimeout(1000)
+  const took = await settle(d.id)
   st = await state(d.id)
-  check(st.isOpen && st.amount > 0.9, `${d.id}: E opens it (amount ${st.amount.toFixed(2)})`)
+  check(st.isOpen && st.amount > 0.99, `${d.id}: E opens it (amount ${st.amount.toFixed(2)}, ${took.toFixed(1)} s)`)
+  check(took > 1.2, `${d.id}: heavy, unhurried swing (${took.toFixed(1)} s > 1.2 s)`)
   check(side(d, st.centre) * s < 0.05, `${d.id}: leaf swung away from the player (leaf side ${side(d, st.centre).toFixed(2)})`)
   await walk(1700)
   st = await state(d.id)
@@ -175,10 +192,18 @@ async function throughAndBack(d: Info, s: number) {
   }
   check(st.focused === d.id, `${d.id}: open door targetable from the far side via ${via} (focused ${st.focused})`)
   await page.keyboard.press("KeyE")
-  // Walk on through the doorway, out of the leaf's sweep: a 5.5 m gate leaf closing on a player standing in its arc
-  // stops against them and finishes once they're clear.
+  // Walk straight on through the doorway, out of the leaf's sweep: a closing leaf that meets the player stops against
+  // them and finishes once they're clear (a 5.5 m gate leaf's arc covers the whole gateway).
+  await page.evaluate(
+    ({ d, s }) => {
+      const p = (globalThis as unknown as { __afterhoursPlayer: { yaw: number; pitch: number } }).__afterhoursPlayer
+      p.yaw = Math.atan2(-d.nx * s, -d.nz * s)
+      p.pitch = 0
+    },
+    { d, s },
+  )
   await walk(1600)
-  await page.waitForTimeout(1100)
+  await settle(d.id)
   st = await state(d.id)
   check(!st.isOpen && st.amount < 0.01, `${d.id}: E closes it (amount ${st.amount.toFixed(3)})`)
 }
@@ -215,21 +240,35 @@ if (!all) {
   // Closing on a player in the doorway: the leaf stops against them instead of pushing.
   await stand(info, 1, 1.1)
   await page.keyboard.press("KeyE")
-  await page.waitForTimeout(900)
+  await settle("test")
   await page.evaluate((info) => {
     const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; z: number } } }).__afterhoursPlayer.pos
     p.x = info.hx + 0.45
     p.z = info.mz - 0.1
   }, info)
   await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } } }).__afterhoursDoors.get("test")!.close())
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(3000)
   st = await state("test")
   check(st.amount > 0.15, `test: closing leaf stops against a player in the doorway (amount ${st.amount.toFixed(2)})`)
   // Step back out of the leaf's arc (towards the side it opened from).
   await walk(1200, "KeyS")
-  await page.waitForTimeout(1000)
+  await settle("test")
   st = await state("test")
   check(st.amount < 0.01, `test: and finishes closing once they've stepped out (amount ${st.amount.toFixed(3)})`)
+  // Interrupt: close mid-swing; the leaf brakes and turns round without jumping, then latches.
+  await stand(info, 1, 1.1)
+  await page.keyboard.press("KeyE")
+  await page.waitForTimeout(800)
+  await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } } }).__afterhoursDoors.get("test")!.close())
+  const samples: number[] = []
+  for (let i = 0; i < 60 && (samples.length < 3 || (await state("test")).moving); i++) {
+    samples.push((await state("test")).amount)
+    await page.waitForTimeout(50)
+  }
+  const peak = Math.max(...samples)
+  const jump = Math.max(...samples.slice(1).map((a, i) => Math.abs(a - samples[i]!)))
+  st = await state("test")
+  check(peak > 0.1 && peak < 0.95 && jump < 0.12 && st.amount === 0, `test: reversed mid-swing smoothly (peak ${peak.toFixed(2)}, max step ${jump.toFixed(3)}, end ${st.amount})`)
   // Locked door: E rattles, stays shut.
   const locked = (await doorInfo()).find((x) => x.id === "test-locked")!
   await stand(locked, 1, 1.1)
@@ -241,9 +280,11 @@ if (!all) {
   check(!st.isOpen && st.amount === 0, "test-locked: E rattles, stays shut")
 } else {
   const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
-  for (const i of issues) check(false, `${i.id}: ${i.issue}`)
-  const infos = await doorInfo()
-  console.log(`${infos.length} doors registered`)
+  for (const i of issues) if (wanted(i.id)) check(false, `${i.id}: ${i.issue}`)
+  const registered = await doorInfo()
+  const infos = registered.filter((d) => wanted(d.id))
+  console.log(`${registered.length} doors registered, checking ${infos.length}`)
+  check(infos.length > 0, `doors match ${only ? `--only ${only.join(",")}` : "--all"}`)
   const done = new Set<string>()
   for (const d of infos) {
     if (done.has(d.id)) continue

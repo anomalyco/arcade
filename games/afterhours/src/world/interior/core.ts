@@ -1,6 +1,6 @@
 import { BUILDING, CORE } from "../layout"
 import { STYLES } from "./styles"
-import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall } from "./kit"
+import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall, LAYER } from "./kit"
 
 // Structure shared by every storey: the floor slabs of storeys 1–4 (and the one under the roof deck), the switchback
 // stair from the ground floor to the roof, and on every storey the hall from the corridor to the stair door and the
@@ -85,7 +85,7 @@ function landing(b: Builder, i: number) {
   b.walk(ST.x0, ST.z0, ST.wellX0, ST.zFlight, y)
   b.walk(ST.wellX0, ST.z0, xEast, zEast, y)
   // Edge nosings along the drop into the flights below.
-  b.box(M.darkSteel, ST.x0, y - 0.03, ST.zFlight - 0.04, ST.wellX0, y + 0.003, ST.zFlight)
+  b.box(M.darkSteel, ST.x0, y - 0.03, ST.zFlight - 0.04, ST.wellX0, y + 0.003, ST.zFlight + 0.003)
   // Storey number: i + 1 painted bars on the west wall, abstract (no readable figures).
   const zc = 17.4
   for (let k = 0; k <= i; k++) {
@@ -115,7 +115,7 @@ function flights(b: Builder, i: number) {
   const yMid = y0 + 11 * RISE
   b.box("concrete_floor", ST.x0, yMid - 0.22, ST.zMid, ST.x1, yMid, ST.z1)
   b.walk(ST.x0, ST.zMid, ST.x1, ST.z1, yMid)
-  b.box(M.darkSteel, ST.wellX1, yMid - 0.03, ST.zMid, ST.x1, yMid + 0.003, ST.zMid + 0.04)
+  b.box(M.darkSteel, ST.wellX1, yMid - 0.03, ST.zMid - 0.003, ST.x1, yMid + 0.003, ST.zMid + 0.04)
   // East flight: 9 treads north, arriving at the next storey's landing.
   for (let j = 1; j <= 9; j++) {
     const zb = ST.zMid - (j - 1) * GOING
@@ -133,7 +133,10 @@ function flights(b: Builder, i: number) {
 function step(b: Builder, x0: number, x1: number, z0: number, z1: number, top: number, dir: 1 | -1) {
   b.box("concrete_floor", x0, top - RISE - 0.02, z0, x1, top, z1, { skip: "y" })
   const front = dir > 0 ? z0 : z1
-  b.box(M.darkSteel, x0 + 0.03, top - 0.025, front - (dir > 0 ? 0 : 0.045), x1 - 0.03, top + 0.003, front + (dir > 0 ? 0.045 : 0), { cast: false })
+  // Nosing 3 mm proud of the riser face (flush, it fought the riser).
+  const nz0 = dir > 0 ? front - 0.003 : front - 0.045
+  const nz1 = dir > 0 ? front + 0.045 : front + 0.003
+  b.box(M.darkSteel, x0 + 0.03, top - 0.025, nz0, x1 - 0.03, top + 0.003, nz1, { cast: false })
   b.walk(x0, z0, x1, z1, top)
 }
 
@@ -141,7 +144,8 @@ function soffit(b: Builder, x0: number, x1: number, za: number, zb: number, ya: 
   const len = Math.hypot(zb - za, yb - ya)
   const pitch = Math.atan2(yb - ya, zb - za)
   const m = T((x0 + x1) / 2, (ya + yb) / 2, (za + zb) / 2, 0, -pitch)
-  b.boxM("concrete_wall", m, x1 - x0, 0.16, len, 0, 0, 0)
+  // 3 mm narrower than the flight each side: flush, its sides fought the treads' side faces.
+  b.boxM("concrete_wall", m, x1 - x0 - 0.006, 0.16, len, 0, 0, 0)
 }
 
 /** Steel pipe handrails: wall rails on brackets and the guard round the well with balusters. */
@@ -236,8 +240,9 @@ function midLight(b: Builder, i: number, yMid: number) {
 function hall(b: Builder, i: number) {
   const { x0, x1, z0, z1 } = HALL
   const style = STYLES[i]!
-  b.floor(style.floor, x0, z0 - 0.15, x1, z1)
-  const sy = FLOOR_Y + 0.0015
+  b.floor(style.floor, x0, z0, x1, z1)
+  b.walk(x0, z0 - 0.15, x1, z0)
+  const sy = FLOOR_Y + LAYER
   // Hall stripes start where the corridor's edge stripe stops (ground floor) and run to the stair wall.
   if (i === 0) for (const x of [x0 + 0.42, x1 - 0.42]) b.box(M.stripe, x - 0.05, sy - 0.01, z0 - 0.62, x + 0.05, sy, z1 - 0.1, { cast: false })
   wall(b, "z", z0, z1, x0 - 0.15, x0, style.bands)

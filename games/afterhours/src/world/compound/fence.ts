@@ -1,16 +1,19 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
-import { BOOTH, FENCE } from "../layout"
+import { FENCE } from "../layout"
 import { material, materialFor } from "../../render/materials"
 import { Batch, box, cyl, matrix, rod } from "./geo"
-import { boomRed, boomWhite, fenceVeil, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
+import { fenceVeil, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
 
 // Perimeter fence: galvanised line posts every FENCE.postSpacing m, top rail, chain-link mesh, 45° outriggers with
-// three barbed strands and a concertina razor coil, the swing gate on the south side and the boom barrier at the booth.
+// three barbed strands and a concertina razor coil. The gates and the boom barrier are in compound/gate.ts.
 // Each straight run is merged into one mesh per material so the ~870 m of fence costs a few draw calls and still culls.
 
 type Run = { a: THREE.Vector2; b: THREE.Vector2; out: THREE.Vector3; endPosts: [boolean, boolean] }
+
+/** Opening for the pedestrian gate in the south fence, east of the vehicle gate (between the two end posts). */
+export const PED_GATE = { x0: 6.6, x1: 7.6 }
 
 const H = FENCE.height
 const ARM = FENCE.barbHeight
@@ -26,7 +29,9 @@ function runs(): Run[] {
   const v = (x: number, z: number) => new THREE.Vector2(x, z)
   return [
     { a: v(x0, z1), b: v(g0, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
-    { a: v(g1, z1), b: v(x1, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
+    // East of the vehicle opening: a short run, the pedestrian gate opening (PED_GATE), then the long run.
+    { a: v(g1, z1), b: v(PED_GATE.x0, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
+    { a: v(PED_GATE.x1, z1), b: v(x1, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
     { a: v(x1, z1), b: v(x1, z0), out: new THREE.Vector3(1, 0, 0), endPosts: [true, true] },
     { a: v(x1, z0), b: v(x0, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
     { a: v(x0, z0), b: v(x0, z1), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
@@ -216,129 +221,16 @@ export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
     ctx.colliders.push({ min: [minX, -1, minZ], max: [maxX, H + ARM + 0.3, maxZ] })
   })
 
-  buildGate(ctx, root)
-  buildBoom(ctx, root)
-}
-
-/** Two swing leaves hinged on the gate posts: the west one swung fully open inside, the east one ajar. */
-function buildGate(ctx: WorldContext, root: THREE.Object3D) {
-  const galv = fenceSteel()
-  const wireMat = darkWire()
-  const z = FENCE.max[1]
-  const width = FENCE.gate.x1 - FENCE.gate.x0
-  const L = width / 2 - 0.12
-  const leafH = H - 0.15
-  const batch = new Batch()
-  const meshBatch = new Batch()
-  // A double gate on the shared door system (one E swings both leaves away from the player). The outward sweep is kept
-  // clear: the boom cabinet stands east of the east leaf's arc and the cones sit outside the west one's. They start
-  // shut: the night shift closes the gate.
-  const leaves = [
-    { id: "gate-w", partner: "gate-e", hx: FENCE.gate.x0, mirror: false, angle: Math.PI / 2, open: 0 },
-    { id: "gate-e", partner: "gate-w", hx: FENCE.gate.x1, mirror: true, angle: -Math.PI / 2, open: 0 },
-  ]
-  for (const spec of leaves) {
-    const leaf = new THREE.Group()
-    leaf.name = spec.id
-    const lb = new Batch()
-    const lm = new Batch()
-    // Leaves are modelled extending to +x; the east one is turned half round so it extends to -x.
-    const m = matrix(0, 0, 0, spec.mirror ? Math.PI : 0)
-    const b = lb.child(m)
-    const mb = lm.child(m)
-    const x0 = 0.1
-    const x1 = x0 + L
-    // Bottom rail clears the 0.12 m booth island the east leaf sweeps over.
-    const y0 = 0.17
-    const y1 = leafH
-    const v = (x: number, y: number) => new THREE.Vector3(x, y, 0)
-    for (const [a, c] of [
-      [v(x0, y0), v(x1, y0)],
-      [v(x0, y1), v(x1, y1)],
-      [v(x0, y0), v(x0, y1)],
-      [v(x1, y0), v(x1, y1)],
-      [v(x0, (y0 + y1) / 2), v(x1, (y0 + y1) / 2)],
-      [v(x0, y0), v(x1, y1)],
-    ] as const)
-      b.add(galv, rod(a, c, 0.024, 6))
-    // Barbed extension arms and strands on top of the leaf.
-    for (const x of [x0, x1]) b.add(galv, rod(v(x, y1), v(x, y1 + 0.42), 0.014, 4))
-    for (const y of [0.14, 0.28, 0.42]) b.add(wireMat, rod(v(x0, y1 + y), v(x1, y1 + y), 0.006, 3))
-    // Hinge collars and drop rod.
-    for (const y of [0.4, y1 - 0.3]) b.at(material("metal_dark"), cyl(0.05, 0.05, 0.1, 10), 0, y, 0)
-    b.add(galv, rod(v(x1 - 0.12, -0.02), v(x1 - 0.12, 0.9), 0.01, 4))
-    const panel = new THREE.PlaneGeometry(L, y1 - y0)
-    const uv = panel.attributes.uv!
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * L, uv.getY(i) * (y1 - y0))
-    mb.at(fenceMesh(), panel, (x0 + x1) / 2, (y0 + y1) / 2, 0)
-    lb.build(leaf, { castShadow: (mat) => mat === galv, name: spec.id })
-    for (const mesh of lm.build(leaf, { name: `${spec.id}-mesh`, receiveShadow: false })) mesh.renderOrder = 1
-    root.add(leaf)
-    ctx.doors.add({
-      id: spec.id,
-      leaf,
-      hinge: [spec.hx, heightAt(spec.hx, z), z],
-      // The two leaves overlap slightly at the meeting stiles so there is no gap to aim (or walk) through.
-      width: spec.mirror ? -(x1 + 0.04) : x1 + 0.04,
-      height: leafH + 0.42,
-      thickness: 0.06,
-      openAngle: spec.angle,
-      swing: "auto",
-      startOpen: spec.open,
-      double: spec.partner,
-      sound: "gate",
-    })
-  }
-  // Heavier gate posts with caps.
+  // Heavier posts either side of the vehicle opening (the sliding gate and its hardware are in compound/gate.ts).
+  const posts = new Batch()
   for (const hx of [FENCE.gate.x0, FENCE.gate.x1]) {
-    const y = heightAt(hx, z)
-    batch.at(galv, cyl(0.07, 0.07, H + 0.6, 8), hx, y + (H + 0.6) / 2 - 0.3, z)
-    batch.at(galv, sphere6(0.08), hx, y + H + 0.32, z)
-    batch.at(material("concrete_dark"), cyl(0.22, 0.24, 0.12, 8), hx, y + 0.04, z)
+    const y = heightAt(hx, FENCE.max[1])
+    posts.at(galv, cyl(0.07, 0.07, H + 0.6, 12), hx, y + (H + 0.6) / 2 - 0.3, FENCE.max[1])
+    posts.at(galv, new THREE.SphereGeometry(0.08, 12, 6), hx, y + H + 0.32, FENCE.max[1])
+    posts.at(material("concrete_dark"), cyl(0.22, 0.24, 0.12, 12), hx, y + 0.04, FENCE.max[1])
   }
-  batch.build(root, { castShadow: (m) => m === galv, name: "gate" })
-  for (const mesh of meshBatch.build(root, { name: "gate-mesh", receiveShadow: false })) mesh.renderOrder = 1
+  posts.build(root, { castShadow: true, name: "gate-posts" })
 }
-
-function sphere6(r: number) {
-  return new THREE.SphereGeometry(r, 8, 5)
-}
-
-/** Red/white boom barrier across the inbound lane, pivoting on a steel cabinet beside the booth. */
-function buildBoom(ctx: WorldContext, root: THREE.Object3D) {
-  const batch = new Batch()
-  const px = BOOTH.x - BOOTH.w / 2 - 1.3
-  const pz = FENCE.max[1] + 3.2
-  const y = heightAt(px, pz)
-  const cab = flat(0x4f5344, 0.65, 0.3)
-  const armY = y + 1.0
-  const tipX = -2.9
-  batch.at(material("concrete_dark"), box(0.75, 0.14, 0.65), px, y + 0.07, pz)
-  batch.at(cab, box(0.42, 1.05, 0.36), px, y + 0.14 + 0.525, pz)
-  batch.at(material("metal_dark"), box(0.46, 0.04, 0.4), px, y + 1.21, pz)
-  batch.at(material("metal_dark"), cyl(0.09, 0.09, 0.44, 10), px, armY, pz, 0, Math.PI / 2)
-  const armLen = px - 0.22 - tipX
-  // Red and white stripes, 0.5 m each, as separate segments of the arm. The boom stays down (static): walkers pass
-  // round its tip.
-  for (let s = 0, k = 0; s < armLen - 0.01; s += 0.5, k++) {
-    const segLen = Math.min(0.5, armLen - s)
-    batch.at(k % 2 ? boomWhite() : boomRed(), box(segLen, 0.085, 0.06), tipX + s + segLen / 2, armY, pz)
-  }
-  // Counterweight stub behind the pivot, red reflectors along the arm.
-  batch.at(material("metal_dark"), box(0.7, 0.16, 0.12), px + 0.45, armY, pz)
-  for (let s = 1; s < armLen; s += 2) batch.at(glowReflector(), box(0.06, 0.05, 0.065), tipX + s, armY, pz)
-  // Fork rest post at the tip.
-  const rx = tipX + 0.3
-  batch.at(cab, cyl(0.04, 0.04, armY - y - 0.05, 6), rx, y + (armY - y - 0.05) / 2, pz)
-  batch.at(cab, box(0.04, 0.16, 0.14), rx, armY - 0.01, pz)
-  batch.at(material("concrete_dark"), cyl(0.18, 0.2, 0.1, 8), rx, y + 0.03, pz)
-  batch.build(root, { castShadow: true, name: "boom" })
-  ctx.colliders.push({ min: [tipX, armY - 0.1, pz - 0.06], max: [px + 0.8, armY + 0.1, pz + 0.06] })
-  ctx.colliders.push({ min: [px - 0.3, y, pz - 0.3], max: [px + 0.3, y + 1.3, pz + 0.3] })
-  ctx.colliders.push({ min: [rx - 0.1, y, pz - 0.1], max: [rx + 0.1, armY, pz + 0.1] })
-}
-
-const glowReflector = () => flat(0x5a0a06, 0.3, 0)
 
 /**
  * A weathered warning plate on the fence (local frame: +Z faces out of the compound), with an abstract pictogram and
@@ -402,14 +294,14 @@ function signPlate(b: Batch, variant: number) {
 const signRust = () => flat(0x4a2414, 0.9)
 
 /** The library's alpha-tested chain-link, double-sided. */
-function fenceMesh() {
+export function fenceMesh() {
   const m = material("chainlink")
   m.side = THREE.DoubleSide
   return m
 }
 
 /** Weathered, dark galvanised steel: posts and rails read as dark silhouettes against the lit fog (r3-01, r5-01). */
-const fenceSteel = () => materialFor("flat", { color: 0x23262a, color2: 0x3a342c, roughness: 0.6, roughness2: 0.85, metalness: 0.5, noise: { scale: 2, channel: 1, smooth: true } })
+export const fenceSteel = () => materialFor("flat", { color: 0x23262a, color2: 0x3a342c, roughness: 0.6, roughness2: 0.85, metalness: 0.5, noise: { scale: 2, channel: 1, smooth: true } })
 
 /** Oxidised barbed and razor wire: dark so the coil reads as a silhouette against the fog at 25–40 m. */
-const darkWire = () => materialFor("flat", { color: 0x1c1e1f, roughness: 0.5, metalness: 0.6 })
+export const darkWire = () => materialFor("flat", { color: 0x1c1e1f, roughness: 0.5, metalness: 0.6 })

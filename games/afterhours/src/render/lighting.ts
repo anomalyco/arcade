@@ -10,6 +10,11 @@ import {
   length,
   max,
   mrt,
+  normalWorld,
+  positionWorld,
+  reference,
+  uniform,
+  texture,
   normalize,
   smoothstep,
   uv,
@@ -234,18 +239,74 @@ function flickerLevel(r: Rig, time: number, scale: number) {
   }
 }
 
-/** Shaped flashlight beam: a hot centre, a darker ring, a bright caustic ring and a soft wide spill. */
+/**
+ * Shaped flashlight beam: a hot centre, a faint soft reflector ring and a wide dim spill (an incandescent torch with
+ * a stippled reflector: the ring is a few percent, not a hard caustic halo).
+ */
 const flashCookie = Fn(([coord]: [N]) => {
   const r = length(coord.xy.sub(0.5)).mul(2)
-  const hot = exp(r.mul(r).mul(-14)).mul(1.1)
-  const ring = exp(abs(r.sub(0.34)).mul(-30)).mul(0.45)
-  const dip = exp(abs(r.sub(0.24)).mul(-24)).mul(-0.15)
-  const spill = smoothstep(1, 0.25, r).mul(0.28)
+  const hot = exp(r.mul(r).mul(-12)).mul(1.1)
+  const ring = exp(r.sub(0.4).div(0.09).pow(2).negate()).mul(0.07)
+  const dip = float(0)
+  const spill = smoothstep(1, 0.3, r).mul(0.3)
   // Slight lens/reflector imperfection so the spot isn't perfectly round.
   const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
   const wobble = ang.mul(5).sin().mul(0.04).add(ang.mul(3).add(1.3).sin().mul(0.03)).add(1)
   return vec3(1, 0.97, 0.9).mul(max(hot.add(ring).add(dip).add(spill), 0).mul(wobble))
 })
+
+/**
+ * Slope-scaled, distance-aware depth bias for a spot light's perspective shadow map, evaluated per receiving
+ * fragment. The world-space slack needed to avoid acne is about one shadow texel (which grows linearly with distance
+ * from the light) times tan(angle between the surface normal and the light), so floors at grazing angles get much
+ * more than surfaces facing the light. Converted to the map's [0, 1] perspective depth: dz = Δd·n·f / ((f − n)·d²).
+ * The light's own `bias`/`normalBias` stay as small constant floors.
+ */
+function spotBias(light: THREE.SpotLight, lightPos: N, scale: N) {
+  const cam = light.shadow.camera
+  const near = reference("near", "float", cam)
+  const far = reference("far", "float", cam)
+  const size = reference("mapSize", "vec2", light.shadow) as N
+  const halfAngle = reference("angle", "float", light)
+  return Fn(() => {
+    const toL = (lightPos as N).sub(positionWorld)
+    const d = length(toL).max(0.05)
+    const c = (normalWorld as N).dot(toL.div(d)).abs().max(0.08)
+    const tanT = c.mul(c).oneMinus().max(0).sqrt().div(c).min(10)
+    const texel = d.mul(halfAngle.tan().mul(2)).div(size.x)
+    const slack = texel.mul(tanT.mul(1.2).add(0.6)).mul(scale)
+    return slack.mul(near).mul(far).div(far.sub(near).mul(d).mul(d)).negate()
+  })()
+}
+
+/**
+ * Stable PCF for spot shadows: a fixed 3×3 grid of comparison taps (no per-pixel noise rotation, which shimmered
+ * under the temporal AA's sub-pixel jitter) on a linearly filtered comparison sampler (see `smoothShadowMap`), so
+ * each tap is itself a bilinear 2×2 PCF: 36 effective taps, soft edges with no texel stair-steps.
+ */
+const stablePCF = Fn(({ depthTexture, shadowCoord, shadow }: N) => {
+  const size = reference("mapSize", "vec2", shadow) as N
+  const radius = reference("radius", "float", shadow) as N
+  const step = vec2(1).div(size).mul(radius.mul(0.5).max(0.5))
+  let sum: N = null
+  for (const oy of [-1, 0, 1]) {
+    for (const ox of [-1, 0, 1]) {
+      const v = (texture as N)(depthTexture, shadowCoord.xy.add(step.mul(vec2(ox, oy)))).compare(shadowCoord.z)
+      sum = sum === null ? v : sum.add(v)
+    }
+  }
+  return sum.mul(1 / 9)
+})
+
+/** Comparison sampling with linear filtering (hardware 2×2 PCF) once three has created the light's shadow map. */
+function smoothShadowMap(light: THREE.SpotLight) {
+  const depth = (light.shadow.map as unknown as { depthTexture?: THREE.Texture } | null)?.depthTexture
+  if (depth && depth.minFilter !== THREE.LinearFilter) {
+    depth.minFilter = THREE.LinearFilter
+    depth.magFilter = THREE.LinearFilter
+    depth.needsUpdate = true
+  }
+}
 
 export function createLighting(ctx: WorldContext, player: Player) {
   addControls(ctx, [
@@ -277,6 +338,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0.09 },
     { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
     { key: "flash.near", label: "Beam fade-in distance", group: "Flashlight", unit: "m", min: 0, max: 8, step: 0.1, value: 3 },
+    { key: "light.shadowBias", label: "Shadow bias (slope-scaled)", group: "Lighting", unit: "texels", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "flash.shadows", label: "Casts shadows", group: "Flashlight", type: "toggle", value: true },
     {
       key: "flash.shadowSize",
@@ -355,6 +417,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   adoptLamps()
   renderState.lamps = rigs
 
+  const shadowBiasScale = uniform(1)
   // ---------------------------------------------------------------- shadow pool
   type Slot = { light: THREE.SpotLight; rig: Rig | null }
   const slots: Slot[] = []
@@ -377,10 +440,14 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const light = new THREE.SpotLight(0xffffff, 0, 30, 1, 0.5, 2)
       light.castShadow = true
       light.shadow.mapSize.set(size, size)
-      light.shadow.bias = -0.0004
-      light.shadow.normalBias = 0.03
-      light.shadow.radius = 3
+      light.shadow.bias = 0
+      light.shadow.normalBias = 0.01
+      light.shadow.radius = 2
       light.shadow.camera.near = 0.25
+      const lp = uniform(new THREE.Vector3())
+      light.userData.biasPos = lp
+      ;(light.shadow as unknown as { biasNode: unknown }).biasNode = spotBias(light, lp, shadowBiasScale)
+      ;(light.shadow as unknown as { filterNode: unknown }).filterNode = stablePCF
       light.shadow.autoUpdate = false
       scene.add(light, light.target)
       slots.push({ light, rig: null })
@@ -395,9 +462,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
   // "Casts shadows" off is zero shadow intensity with the map frozen instead.
   flash.castShadow = true
   flash.shadow.mapSize.setScalar(Number(ctx.settings["flash.shadowSize"]))
-  flash.shadow.bias = -0.0003
-  flash.shadow.normalBias = 0.02
-  flash.shadow.camera.near = 0.2
+  flash.shadow.bias = 0
+  flash.shadow.normalBias = 0.01
+  flash.shadow.radius = 2
+  flash.shadow.camera.near = 0.3
+  const flashBiasPos = uniform(new THREE.Vector3())
+  ;(flash.shadow as unknown as { biasNode: unknown }).biasNode = spotBias(flash, flashBiasPos, shadowBiasScale)
+  ;(flash.shadow as unknown as { filterNode: unknown }).filterNode = stablePCF
+  // Shadow-map stability: the light only moves when the hand has moved more than a hair, so a still player gets a
+  // still shadow map (no sub-texel re-quantisation shimmer from the sway filter's endless tiny convergence).
+  const appliedDir = new THREE.Vector3(0, 0, -1)
+  const appliedPos = new THREE.Vector3()
   ;(flash as unknown as { colorNode: unknown }).colorNode = flashCookie
   scene.add(flash, flash.target)
   const flashDir = new THREE.Vector3(0, 0, -1)
@@ -708,6 +783,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
           s.light.target.position.copy(w.pos).add(w.dir!)
           s.light.shadow.needsUpdate = true
         }
+        ;(s.light.userData.biasPos as { value: THREE.Vector3 }).value.copy(s.light.position)
         s.light.color.copy(w.color)
         s.light.intensity = w.lamp.intensity * w.scale * w.level * w.shadowWeight * w.vis
         // Pooled maps are re-rendered only when the world changed: while modules stream in (one map now and then),
@@ -717,18 +793,28 @@ export function createLighting(ctx: WorldContext, player: Player) {
       }
 
       // Flashlight: hand-held, lagging slightly behind the view.
+      shadowBiasScale.value = num(ctx, "light.shadowBias")
+      smoothShadowMap(flash)
+      for (const s of slots) smoothShadowMap(s.light)
       const on = player.flashlight
       flashLevel += ((on ? 1 : 0) - flashLevel) * Math.min(1, dt * 30)
       const forward = fwd.set(0, -0.04, -1).applyQuaternion(camera.quaternion).normalize()
       const lag = num(ctx, "flash.lag")
       const k = lag > 0 ? 1 - Math.exp(-dt / lag) : 1
       flashDir.lerp(forward, frame < 3 ? 1 : k).normalize()
-      flash.position.set(0.22, -0.28, -0.1).applyQuaternion(camera.quaternion).add(tmpCam)
-      flash.target.position.copy(flash.position).addScaledVector(flashDir, 10)
+      const handPos = fwd.set(0.22, -0.28, -0.1).applyQuaternion(camera.quaternion).add(tmpCam)
+      if (frame < 3 || appliedDir.angleTo(flashDir) > 4e-4 || appliedPos.distanceToSquared(handPos) > 1e-6) {
+        appliedDir.copy(flashDir)
+        appliedPos.copy(handPos)
+      }
+      flash.position.copy(appliedPos)
+      flash.target.position.copy(appliedPos).addScaledVector(appliedDir, 10)
+      flashBiasPos.value.copy(appliedPos)
       const angle = (num(ctx, "flash.angle") * Math.PI) / 180
       flash.angle = angle
       flash.distance = num(ctx, "flash.range")
-      flash.shadow.camera.far = flash.distance
+      // Tight depth range for the beam: precision where the floor actually is.
+      flash.shadow.camera.far = Math.min(flash.distance, 25)
       flash.intensity = num(ctx, "flash.intensity") * flashLevel
       flash.color.copy(flashColor)
       // The flashlight never leaves the light list (toggling its visibility would change every material's light

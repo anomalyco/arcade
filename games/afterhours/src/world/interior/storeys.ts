@@ -23,6 +23,7 @@ import {
   troffer,
   louvre,
   wall,
+  LAYER,
 } from "./kit"
 import { HALL, SHELL } from "./core"
 import { bulletin, extinguisher, fluoro, fountain, hazardLight, rigLevel } from "./corridor"
@@ -199,7 +200,7 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
   b.floor(style.floor, x0, -ZC, x1, ZC)
   if (storey === 3) raisedCorridor(b, special.find((r) => r.kind === "glass")!)
   if (storey === 4) slabRemnants(b, rnd)
-  const sy = FLOOR_Y + 0.0015
+  const sy = FLOOR_Y + LAYER
   // Edge stripes run in segments that stop at every wide opening (hall, lounge, cross corridor, nook).
   const gaps = (side: number) =>
     [
@@ -380,7 +381,7 @@ function windowDressing(b: Builder, r: Room, rnd: () => number) {
 }
 
 function raisedFloorGrid(b: Builder, r: Room) {
-  const y = FLOOR_Y + 0.001
+  const y = FLOOR_Y + LAYER
   const za = Math.min(r.side * ZC, r.side * CORE_Z)
   const zb = Math.max(r.side * ZC, r.side * CORE_Z)
   for (let x = Math.ceil(r.x0 / 0.6) * 0.6; x < r.x1; x += 0.6) b.box(M.darkSteel, x - 0.006, y - 0.01, za, x + 0.006, y, zb, { cast: false })
@@ -573,15 +574,15 @@ export function groundWindows(b: Builder) {
 
 /** Raised access floor in the corridor outside the machine room: 60 cm grey tiles, a few perforated. */
 function raisedCorridor(b: Builder, r: Room) {
-  const y = FLOOR_Y + 0.0012
+  const y = FLOOR_Y + 2 * LAYER
   const xa = Math.ceil((r.x0 - 3) / 0.6) * 0.6
   const xb = r.x1 + 3
   b.box(M.raised, xa, y - 0.01, -1.6, xb, y, 1.6, { cast: false })
-  for (let x = xa; x <= xb + 1e-3; x += 0.6) b.box(M.darkSteel, x - 0.005, y, -1.6, x + 0.005, y + 0.0008, 1.6, { cast: false })
-  for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.darkSteel, xa, y, z - 0.005, xb, y + 0.0008, z + 0.005, { cast: false })
-  for (let x = xa + 1.2; x < xb - 0.6; x += 2.4) b.box(M.perf, x + 0.03, y, -0.27, x + 0.57, y + 0.0009, 0.27, { cast: false })
+  for (let x = xa; x <= xb + 1e-3; x += 0.6) b.box(M.darkSteel, x - 0.005, y, -1.6, x + 0.005, y + LAYER, 1.6, { cast: false })
+  for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.darkSteel, xa, y, z - 0.005, xb, y + LAYER, z + 0.005, { cast: false })
+  for (let x = xa + 1.2; x < xb - 0.6; x += 2.4) b.box(M.perf, x + 0.03, y, -0.27, x + 0.57, y + LAYER, 0.27, { cast: false })
   // Ramp nosings at each end.
-  for (const x of [xa, xb]) b.box(M.hazard, x - 0.04, y - 0.01, -1.6, x + 0.04, y + 0.002, 1.6, { cast: false })
+  for (const x of [xa, xb]) b.box(M.hazard, x - 0.04, y - 0.01, -1.6, x + 0.04, y + LAYER, 1.6, { cast: false })
 }
 
 /** Patches of old linoleum and adhesive left on the stripped slab. */
@@ -590,7 +591,8 @@ function slabRemnants(b: Builder, rnd: () => number) {
     const x = SHELL.x0 + 4 + rnd() * 80
     const w = 0.6 + rnd() * 2.2
     const z0 = -1.6 + rnd() * 1.2
-    b.box("linoleum", x, FLOOR_Y, z0, x + w, FLOOR_Y + 0.003, z0 + 0.5 + rnd() * 1.4, { cast: false })
+    // Each patch its own layer, so overlapping patches don't fight.
+    b.box("linoleum", x, FLOOR_Y, z0, x + w, FLOOR_Y + LAYER * (1 + k * 0.5), z0 + 0.5 + rnd() * 1.4, { cast: false })
   }
 }
 
@@ -617,7 +619,7 @@ function hazardPlacard(b: Builder, x: number, z: number, side: number) {
     [0, -0.07],
   ]
   off.forEach(([dx, dy], i) => b.boxM(cols[(i + 1) % 4]!, T(x + dx! * (side > 0 ? -1 : 1), y + dy!, z, yaw, 0, Math.PI / 4), 0.095, 0.095, 0.006))
-  b.box(M.hazard, x - 1.3, FLOOR_Y + 0.0015, Math.min(z, z - side * 0.25), x + 0.1, FLOOR_Y + 0.0025, Math.max(z, z - side * 0.25), { cast: false })
+  b.box(M.hazard, x - 1.3, FLOOR_Y, Math.min(z, z - side * 0.25), x + 0.1, FLOOR_Y + LAYER, Math.max(z, z - side * 0.25), { cast: false })
 }
 
 /** Glazed corridor wall into the machine room: plate glass in steel mullions, halon warning beacons over the door. */
@@ -627,8 +629,8 @@ function machineGlazing(b: Builder, r: Room) {
   const z = r.side * 1.675
   const y0 = FLOOR_Y + 0.9
   const y1 = FLOOR_Y + 2.3
-  b.box(M.frame, a0, y0 - 0.04, z - 0.09, a1, y0, z + 0.09)
-  b.box(M.frame, a0, y1, z - 0.09, a1, y1 + 0.05, z + 0.09)
+  b.box(M.frame, a0, y0 - 0.04, z - 0.09, a1, y0 + 0.006, z + 0.09)
+  b.box(M.frame, a0, y1 - 0.006, z - 0.09, a1, y1 + 0.05, z + 0.09)
   const n = Math.max(1, Math.round((a1 - a0) / 1.2))
   for (let k = 0; k <= n; k++) {
     const x = a0 + ((a1 - a0) * k) / n
@@ -707,7 +709,7 @@ function crossCorridor(b: Builder, r: Room, style: Style) {
   wall(b, "z", za, zb, r.x1 - 0.01, r.x1, style.bands, [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
   if (style.stripe) {
     const cx = (r.x0 + r.x1) / 2
-    b.box(style.stripe, cx - 0.06, FLOOR_Y + 0.0005, za + 0.1, cx + 0.06, FLOOR_Y + 0.0015, zb - 0.3, { cast: false })
+    b.box(style.stripe, cx - 0.06, FLOOR_Y, za + 0.1, cx + 0.06, FLOOR_Y + LAYER, zb - 0.3, { cast: false })
   }
   extinguisher(b, r.x0 + 0.01, 0)
   safetyShower(b, r.x1 - 0.12 - 0.4, rz(r, 9) + 0.0)

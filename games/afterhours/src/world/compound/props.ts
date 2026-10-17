@@ -34,14 +34,15 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D, walkY: numbe
   const batch = new Batch()
   const at = (x: number, y: number, z: number, yaw = 0) => batch.child(matrix(x, y, z, yaw))
 
-  // Bollards at the head of the entrance walk and beside the booth.
+  // Bollards at the head of the entrance walk.
   for (const x of [-3.0, 3.0]) {
     bollard(batch, x, 36.6, walkY)
     ctx.colliders.push({ min: [x - 0.1, 0, 36.5], max: [x + 0.1, 1.1, 36.7] })
   }
-  for (const z of [126.3, 128.7]) {
-    bollard(batch, 6.85, z, 0.12)
-    ctx.colliders.push({ min: [6.75, 0, z - 0.1], max: [6.95, 1.1, z + 0.1] })
+  // Two at the booth island's nose, facing the lane (clear of the walk past the booth's west side).
+  for (const z of [124.6, 130.9]) {
+    bollard(batch, 5.2, z, 0.12)
+    ctx.colliders.push({ min: [5.1, 0, z - 0.1], max: [5.3, 1.1, z + 0.1] })
   }
 
   // Flagpole without a flag on the lawn west of the apron.
