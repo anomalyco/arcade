@@ -54,7 +54,8 @@ export function liftGate(b: Builder, g: LiftGateSpec): string {
   b.box(M.darkSteel, Math.min(s0x, s1x), y + 0.012, Math.min(s0z, s1z), Math.max(s0x, s1x), y + h - 0.06, Math.max(s0z, s1z))
   // Leaf: leading stile (with the latch), lattice group scaled by the fold.
   const lb = new Builder(b.ctx, `gate-${g.id}`, 0)
-  lb.box(M.darkSteel, 0, 0.012, -0.02, 0.04, h - 0.06, 0.02)
+  // Stile 30 mm deep: 5 mm inside the faces of any 40 mm jamb post it closes against (no coplanar faces).
+  lb.box(M.darkSteel, 0, 0.012, -0.015, 0.04, h - 0.06, 0.015)
   if (!openable(g.state)) lb.rbox(KEY, T(0.06, 1.05, 0.03), 0.06, 0.07, 0.025, 0.008)
   const lat = new Builder(b.ctx, `gate-${g.id}-lattice`, 0)
   const n = Math.max(4, Math.round(w / 0.14))

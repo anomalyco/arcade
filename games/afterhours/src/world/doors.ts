@@ -121,7 +121,7 @@ const SUB = 1 / 120
 /** Below this open fraction a door counts as shut and latched (body pushes don't move it unless `panic`). */
 const LATCHED = 0.02
 /** Seconds a door with a closer rests open before it swings shut. */
-const CLOSER_DELAY = 4
+const CLOSER_DELAY = 3
 
 type PlayerRef = { pos: { x: number; y: number; z: number }; camera: THREE.PerspectiveCamera }
 
@@ -279,6 +279,9 @@ class Door implements DoorHandle {
 
   /** Wide leaves (gates) and sliding/roll-up doors can also be closed by aiming at the open doorway itself. */
   get wide() {
+    // Small controls (buttons, hatches) are only ever targeted on themselves: a pressed button must not claim the air
+    // in front of it and steal focus from its neighbour.
+    if (this.height < 1.2) return false
     return !!this.spec.slide || this.xb - this.xa > 1.5
   }
 
@@ -407,22 +410,44 @@ export class Doors {
     const s = Math.sin(d.yaw)
     const lz = (x - d.hx) * s + (z - d.hz) * c
     const w = Math.sign(d.spec.width) || 1
-    if (Math.sign(lz) !== d.dir * w) return -1
     const t0 = d.t
-    d.pose(1)
-    if (d.penetration(nx, nz, feet, head, r) > 0) {
-      d.pose(t0)
-      return -1 // against the open stop
+    let t: number
+    if (Math.sign(lz) === d.dir * w) {
+      // Pushing it open: swing just far enough to clear the body, unless it is already against its open stop.
+      d.pose(1)
+      if (d.penetration(nx, nz, feet, head, r) > 0) {
+        d.pose(t0)
+        return -1
+      }
+      let lo = t0
+      let hi = 1
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2
+        d.pose(mid)
+        if (d.penetration(nx, nz, feet, head, r) > 0) lo = mid
+        else hi = mid
+      }
+      t = Math.min(1, hi + 0.002)
+    } else {
+      // From the side it opens towards: an open leaf standing across the way (a fire-escape door over a narrow
+      // landing) is pushed back towards its frame, but never shut and latched by the body; a shut door just blocks.
+      if (shut) return -1
+      const floor = LATCHED + 0.01
+      d.pose(floor)
+      if (d.penetration(nx, nz, feet, head, r) > 0) {
+        d.pose(t0)
+        return -1
+      }
+      let lo = floor
+      let hi = t0
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2
+        d.pose(mid)
+        if (d.penetration(nx, nz, feet, head, r) > 0) hi = mid
+        else lo = mid
+      }
+      t = Math.max(floor, lo - 0.002)
     }
-    let lo = t0
-    let hi = 1
-    for (let i = 0; i < 14; i++) {
-      const mid = (lo + hi) / 2
-      d.pose(mid)
-      if (d.penetration(nx, nz, feet, head, r) > 0) lo = mid
-      else hi = mid
-    }
-    const t = Math.min(1, hi + 0.002)
     d.pose(t)
     d.t = d.target = t
     d.plan = null
@@ -432,8 +457,8 @@ export class Doors {
     d.idle = 0
     d.active = true
     const vmax = 3 / d.profile.duration
-    const v = Math.min(vmax, (t - d.t0) / Math.max(1e-3, this.lastDt))
-    if (v > d.v) d.v = v
+    const v = Math.max(-vmax, Math.min(vmax, (t - d.t0) / Math.max(1e-3, this.lastDt)))
+    if (v > 0 ? v > d.v : v < d.v) d.v = v
     // A fast first contact (running into it) bangs.
     if (this.frame - d.contact > 3 && d.v * d.profile.duration > 1.2) this.audio?.bump(d.spec.sound ?? "steel", this.pan(d), Math.min(1, (d.v * d.profile.duration) / 3))
     d.contact = this.frame
@@ -592,14 +617,18 @@ export class Doors {
         let t: number
         let bump = 0
         if (d.free) {
-          // Coasting after a push: hinge friction, a soft bounce off the open stop, latching if it swings shut.
+          // Coasting after a push: hinge friction, a soft bounce off the open stop. It comes to rest just short of the
+          // frame rather than latching (only E or a closer shuts a door).
           d.v *= Math.exp(-2.6 * h)
           t = d.t + d.v * h
           if (t >= 1) {
             t = 1
             bump = d.v * prof.duration
             d.v = d.v > 0.05 ? -d.v * 0.28 : 0
-          } else if (t <= 0) t = 0
+          } else if (t <= LATCHED + 0.01 && d.v < 0) {
+            t = Math.min(prev, LATCHED + 0.01)
+            d.v = 0
+          }
           d.target = t
         } else t = stepMotion(d, prof, d.target, speed * (d.slow ? 0.55 : 1), h)
         const latched = d.target === 0 && t === 0 && prev > 0

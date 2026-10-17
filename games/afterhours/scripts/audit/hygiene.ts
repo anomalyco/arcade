@@ -165,7 +165,8 @@ const statics: Finding[] = await page.evaluate((only) => {
       if (L < 1e-8) continue
       nx /= L; ny /= L; nz /= L
       const a = [Math.abs(nx), Math.abs(ny), Math.abs(nz)]
-      const ax = a[0] > 0.9995 ? 0 : a[1] > 0.9995 ? 1 : a[2] > 0.9995 ? 2 : -1
+      // Strictly axis-aligned only (0.6°): a leaf open at 1.6 rad is nearly x-facing, but its triangles are not one plane.
+      const ax = a[0] > 0.99995 ? 0 : a[1] > 0.99995 ? 1 : a[2] > 0.99995 ? 2 : -1
       if (ax < 0) continue
       const s = [nx, ny, nz][ax] > 0 ? 1 : -1
       const pts3 = v.map((q) => [q.x, q.y, q.z])

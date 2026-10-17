@@ -90,3 +90,4 @@
 - Perf: outdoor draws 1190–1370 (was 475); s0 52 lamps, s3 51 (budget 48); boot 7.0 s normal, 24–30 s at 4×.
 - Interior (dock): build a dock-height (1.25 m) platform/leveller inside the north wall x -37..-23.2, ~1.5 m deep, behind all three dock doors, with steps/ramp down to receiving 0.15; resolve FL-1 overlap (propose new FREIGHT position). A bright flat panel fills the dock man-door opening from the interior side: find and remove.
 - Doors: fully open roll-up (bottom edge ~3.55 m) can't be targeted from inside to close: doorway-plane targeting for slides should cover it (doors agent), else facility lowers open height.
+- Facility: duplicate 'facility-details:pine_needles' ground in src/world/facility/grounds.ts (drawn twice): remove; also switch windows.ts:103–105 to decalBias.

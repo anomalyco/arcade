@@ -104,6 +104,27 @@ if (cage) {
   check(p.grounded && p.y > cage.max[1] - 1 && maxStep(tr) < 0.035, `caged ladder: climbs onto the roof (at ${p.x.toFixed(2)}, ${p.y.toFixed(2)}; eye max ${(maxStep(tr) * 100).toFixed(2)} cm per frame)`)
 }
 
+// Fire-escape doors (panic bar + closer, opening out across the 0.75 m landing walkway): with a leaf standing open,
+// walking along the walkway into it from the side it opens towards swings it back, so the way north is never shut.
+for (const id of ["fire-escape-1", "fire-escape-2", "fire-escape-3", "fire-escape-4"]) {
+  const info = await page.evaluate((id) => {
+    const d = (globalThis as unknown as { __afterhoursDoors: { get(id: string): { hy: number; open(): void } | undefined } }).__afterhoursDoors.get(id)
+    if (!d) return null
+    d.open()
+    return { y: d.hy }
+  }, id)
+  if (!info) {
+    check(false, `${id} registered`)
+    continue
+  }
+  await page.waitForTimeout(2800)
+  await evalP(`p.pos.x = -55.39; p.pos.z = 0.3; p.pos.y = ${info.y + 0.02}; p.yaw = 0; p.pitch = 0; p.resetMotion()`)
+  await page.waitForTimeout(200)
+  await hold("KeyW", (p) => p.z < -1.4, 4000)
+  p = await pos()
+  check(p.z < -1.2, `${id}: open leaf across the landing doesn't trap the walkway (reached z ${p.z.toFixed(2)})`)
+}
+
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`)
 await browser.close()
 process.exit(failed ? 1 : 0)

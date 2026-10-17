@@ -215,7 +215,32 @@ const inventory = await page.evaluate(() => {
   return Object.fromEntries(Object.entries(out).sort((a, b) => b[1].meshes - a[1].meshes).map(([k, v]) => [k, { meshes: v.meshes, materials: v.materials.size, tris: Math.round(v.tris) }]))
 })
 
-const result = { size: `${w}x${h}`, views: reports, inventory, errors: errors.slice(0, 5) }
+// Lamp census per culling zone (budget ≤ 48 per interior storey), with near-coincident pairs that could merge.
+const lamps = await page.evaluate(() => {
+  const ctx = (globalThis as any).__interior?.ctx
+  const list = (ctx?.lamps ?? []) as any[]
+  const zones: Record<string, { total: number; kinds: Record<string, number>; shadow: number; closePairs: number; examples: string[] }> = {}
+  for (const l of list) {
+    const z = (zones[l.zone ?? "?"] ??= { total: 0, kinds: {}, shadow: 0, closePairs: 0, examples: [] })
+    z.total++
+    z.kinds[l.kind] = (z.kinds[l.kind] ?? 0) + 1
+    if (l.shadow) z.shadow++
+  }
+  for (let i = 0; i < list.length; i++)
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j]
+      if (a.zone !== b.zone || a.kind !== b.kind) continue
+      const d = Math.hypot(a.position[0] - b.position[0], a.position[1] - b.position[1], a.position[2] - b.position[2])
+      if (d < 1.3) {
+        const z = zones[a.zone ?? "?"]!
+        z.closePairs++
+        if (z.examples.length < 4) z.examples.push(`${a.kind} (${a.position.map((x: number) => x.toFixed(1))}) ↔ ${d.toFixed(2)} m`)
+      }
+    }
+  return zones
+})
+
+const result = { size: `${w}x${h}`, views: reports, inventory, lamps, errors: errors.slice(0, 5) }
 if (outFile) writeFileSync(outFile, JSON.stringify(result, null, 1))
 console.log(JSON.stringify({ ...result, views: Object.fromEntries(Object.entries(reports).map(([k, v]) => [k, { ...(v as any), raw: undefined }])) }, null, 1))
 await browser.close()

@@ -62,6 +62,7 @@ const snap = (d: any) => ({
     depthStencil: d.depthStencil && { ...d.depthStencil, stencilFront: { ...d.depthStencil.stencilFront }, stencilBack: { ...d.depthStencil.stencilBack } },
     multisample: d.multisample && { ...d.multisample },
   })
+  ;(g.__long = [] as number[]), new PerformanceObserver((l) => { for (const e of l.getEntries()) g.__long.push(e.duration) }).observe({ type: "longtask", buffered: true })
   const D = GPUDevice.prototype as any
   const Q = GPUQueue.prototype as any
   const wrap = (proto: any, key: string, f: (orig: any) => any) => {
@@ -247,7 +248,9 @@ const result = await page.evaluate(async (doReplay) => {
   const marks: Record<string, number> = {}
   for (const m of performance.getEntriesByType("mark")) marks[m.name] ??= +m.startTime.toFixed(0)
   const lat = [...log.asyncLatency].sort((a: number, b: number) => a - b)
+  const long = [...(g.__long as number[])].sort((a, b) => b - a)
   const out: any = {
+    longTasks: { count: long.length, over1s: long.filter((x) => x > 1000).length, top: long.slice(0, 8).map((x) => Math.round(x)) },
     marks: Object.fromEntries(Object.entries(marks).filter(([k]) => /^(gpu:init:end|materials:end|frame:1:gpu|boot:complete|mod:.*:(build:end|shown))$/.test(k))),
     gpu: {
       shaderModules: log.modules,

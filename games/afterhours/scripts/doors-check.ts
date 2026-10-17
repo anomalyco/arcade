@@ -287,6 +287,47 @@ async function pushWalk(d: Info, run: boolean, ms: number) {
   return { crossed: side(d, end.pos) * sign, amount: end.amount, peak: Math.max(...samples.map((x) => x.amount), end.amount), stuck, reversals, fastest, slowest: slowest === Infinity ? 0 : slowest }
 }
 
+/**
+ * A small control using the door system (a push button): from 0.7 m in front of it (either side), with the crosshair
+ * on its centre, it must take the focus (not a neighbour) and E must operate it.
+ */
+async function controlCheck(id: string) {
+  for (const s of [1, -1]) {
+    const r = await page.evaluate(
+      async ({ id, s }) => {
+        type C = { yaw0: number; isOpen: boolean; centre(o: object): { x: number; y: number; z: number } }
+        const g = globalThis as unknown as {
+          __afterhoursDoors: { get(id: string): C; focused: { id: string } | null }
+          __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; resetMotion(): void }
+        }
+        const d = g.__afterhoursDoors.get(id)
+        const c = d.centre({})
+        const nx = Math.sin(d.yaw0) * s
+        const nz = Math.cos(d.yaw0) * s
+        const p = g.__afterhoursPlayer
+        p.pos.x = c.x + nx * 0.7
+        p.pos.z = c.z + nz * 0.7
+        p.pos.y = c.y
+        p.resetMotion()
+        await new Promise((r) => setTimeout(r, 700))
+        const eye = p.pos.y + 1.65
+        p.yaw = Math.atan2(nx, nz)
+        p.pitch = -Math.atan2(eye - c.y, 0.7)
+        await new Promise((r) => setTimeout(r, 200))
+        return { focused: g.__afterhoursDoors.focused?.id ?? null, open: d.isOpen }
+      },
+      { id, s },
+    )
+    if (r.focused !== id) continue
+    await page.keyboard.press("KeyE")
+    await page.waitForTimeout(600)
+    const open = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { isOpen: boolean } } }).__afterhoursDoors.get(id).isOpen, id)
+    check(open !== r.open, `${id} (control): crosshair on it takes the focus and E operates it`)
+    return
+  }
+  check(false, `${id} (control): can't be targeted from 0.7 m in front of it`)
+}
+
 if (!all) {
   // Throwaway door in a wall, built only in this page: hinge at the wall gap's west jamb, 1 m leaf along +x.
   const d = await page.evaluate(() => {
@@ -379,7 +420,10 @@ if (!all) {
   await stand(info, -1, 1.5)
   const wrong = await pushWalk(info, false, 1500)
   st = await state("test")
-  check(wrong.crossed > 0.25 && Math.abs(st.amount - 0.15) < 0.01, `test push from the swing side blocks (player ${wrong.crossed.toFixed(2)} m short, door ${st.amount.toFixed(2)})`)
+  check(
+    wrong.crossed > 0.25 && st.amount < 0.14 && st.amount >= 0.02,
+    `test push from the swing side swings it back towards the frame, unlatched, and blocks (player ${wrong.crossed.toFixed(2)} m short, door 0.15 → ${st.amount.toFixed(2)})`,
+  )
   await setAjar("test", 0, 1)
   await stand(info, 1, 1.5)
   const shut = await pushWalk(info, false, 1500)
@@ -417,7 +461,7 @@ if (!all) {
     if (d.partner) done.add(d.partner)
     const small = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { height: number } } }).__afterhoursDoors.get(id)!.height < 1.2, d.id)
     if (small) {
-      console.log(`skip ${d.id} (not a doorway: a control using the door system)`)
+      await controlCheck(d.id)
       continue
     }
     const locked = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { locked: boolean } } }).__afterhoursDoors.get(id)!.locked, d.id)
