@@ -28,7 +28,8 @@ const variants: StationVariant[] = [
   { id: "big-walk", group: "Look", boardOption: "6", label: "Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
   // The survivor's style over the Look; "From the look" keeps the one the Look preset chose.
   { id: "hero-from-look", group: "Hero", label: "From the look", note: "The survivor style the Look preset sets.", setup: [] },
-  { id: "hero-today", group: "Hero", label: "Today", note: "Jacket, jeans and boots: today's box figure.", setup: hero(0) },
+  { id: "hero-colour-blocks", group: "Hero", label: "Colour Blocks", note: "Blocky low-poly survivors with chamfered clothes, hats, packs and holsters; 4 distinct people in co-op.", setup: hero(5) },
+  { id: "hero-today", group: "Hero", label: "Today (boxes)", note: "Jacket, jeans and boots: the original box figure.", setup: hero(0) },
   { id: "hero-mannequin", group: "Hero", label: "Matte mannequin", note: "Smooth putty-grey mannequin, no face, mitten hands.", setup: hero(1) },
   { id: "hero-silhouette", group: "Hero", label: "Flat silhouette", note: "Near-black flat figure; a tight rim draws its edge.", setup: hero(2) },
   { id: "hero-capsule", group: "Hero", label: "Capsule figure", note: "Chalky toy of capsules and a ball head.", setup: hero(3) },

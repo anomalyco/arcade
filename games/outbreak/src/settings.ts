@@ -108,7 +108,7 @@ export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
 
 export const DEFAULT_OUTBREAK_ZOMBIES: OutbreakZombieSettings = {
   humanProfile: 0,
-  zombieLook: 0,
+  zombieLook: 1,
   ...zombieTuning,
 }
 

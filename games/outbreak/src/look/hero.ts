@@ -15,12 +15,13 @@ export const HERO_STYLES = [
   { id: "silhouette", label: "Flat-tone silhouette" },
   { id: "capsule", label: "Capsule figure" },
   { id: "bean", label: "Soft Bean" },
-  { id: "refined", label: "Today, refined" },
+  { id: "colour-blocks", label: "Colour Blocks" },
 ] as const
 
 export const SOFT_BEAN_STYLE = 4
-/** Today's survivor from chamfered parts with colour-blocked clothes and baked creases (AR-42 paint-over). */
-export const REFINED_STYLE = 5
+/** Colour Blocks survivor: chamfered clothing blocks, headgear, pack and holster (`look/survivors.ts`, AR-42 / D-31). */
+export const COLOUR_BLOCKS_STYLE = 5
+export const REFINED_STYLE = COLOUR_BLOCKS_STYLE
 
 /** `aux` on simple-figure vertices: Outbreak's actor shading gives them the hero surface. */
 export const HERO_AUX = 5
@@ -104,12 +105,16 @@ export const HERO_STYLE_SURFACES: readonly HeroSurface[] = [
   { heroTone: 0.42, heroWarmth: 0.25, heroRim: 1, heroRimTight: 4, heroFlat: 0.3, heroSaturation: 0.5 },
 ]
 
-export const DEFAULT_HERO_LOOK: HeroLookSettings = { heroStyle: 0, ...HERO_STYLE_SURFACES[0]!, ...DEFAULT_SOFT_BEAN_LOOK }
+export const DEFAULT_HERO_LOOK: HeroLookSettings = {
+  heroStyle: COLOUR_BLOCKS_STYLE,
+  ...HERO_STYLE_SURFACES[COLOUR_BLOCKS_STYLE]!,
+  ...DEFAULT_SOFT_BEAN_LOOK,
+}
 
-/** Which shape a style draws (0: today's boxes, 1 mannequin, 2 capsule, 3: Soft Bean, 4: today refined). */
+/** Which shape a style draws (0: today's boxes, 1 mannequin, 2 capsule, 3: Soft Bean, 4: Colour Blocks). */
 export function heroShape(style: number): 0 | 1 | 2 | 3 | 4 {
   const s = Math.round(style)
-  return s === 1 || s === 2 ? 1 : s === 3 ? 2 : s === SOFT_BEAN_STYLE ? 3 : s === REFINED_STYLE ? 4 : 0
+  return s === 1 || s === 2 ? 1 : s === 3 ? 2 : s === SOFT_BEAN_STYLE ? 3 : s === COLOUR_BLOCKS_STYLE ? 4 : 0
 }
 
 export function softBeanShape(look: SoftBeanSettings): SoftBeanShape {
@@ -120,9 +125,7 @@ const GROUP = "Look · Hero"
 const isBean = (s: Readonly<Record<string, unknown>>) => Math.round(Number(s.heroStyle)) === SOFT_BEAN_STYLE
 const isSimple = (s: Readonly<Record<string, unknown>>) => [1, 2, 3].includes(Math.round(Number(s.heroStyle)))
 const bean = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isBean })
-/** Today, refined shares Soft Bean's surface: wrap, sheen and own colour in the dark. */
-const isBeanSurface = (s: Readonly<Record<string, unknown>>) => isBean(s) || Math.round(Number(s.heroStyle)) === REFINED_STYLE
-const beanSurface = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isBeanSurface })
+const beanSurface = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isBean })
 const simple = (control: LabControl): LabControl => ({ ...control, group: GROUP, visible: isSimple })
 
 export const heroLookControls: LabControl[] = [
