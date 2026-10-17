@@ -159,6 +159,8 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
   const size = new THREE.Vector2()
   const lookAt = new THREE.Vector3()
   const rot = new THREE.Matrix4()
+  const _inv = new THREE.Matrix4()
+  const _p = new THREE.Vector3()
   let lastMs = 0
 
   const sceneOf = (o: THREE.Object3D) => {
@@ -199,6 +201,8 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     // Mirror the view camera across the glass plane (same projection; the image is flipped by the reflection).
     plane.setFromNormalAndCoplanarPoint(best.normal, best.center)
     virtualCam.copy(camera as THREE.PerspectiveCamera, false)
+    // Must match the renderer's, or render() re-derives the projection and drops the oblique clip below.
+    virtualCam.coordinateSystem = camera.coordinateSystem
     const reflectPoint = (v: THREE.Vector3) => v.sub(best!.normal.clone().multiplyScalar(2 * plane.distanceToPoint(v)))
     virtualCam.position.copy(reflectPoint(camPos.clone()))
     rot.extractRotation(camera.matrixWorld)
@@ -221,16 +225,31 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     // Oblique near plane = the glass, so nothing behind the mirror (the wall, the next room) is rendered into it.
     plane.applyMatrix4(virtualCam.matrixWorldInverse)
     clip.set(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant)
+    // Orient it so the room side (in front of the glass) is positive.
+    _p.copy(best.center).addScaledVector(best.normal, 1).applyMatrix4(virtualCam.matrixWorldInverse)
+    if (clip.x * _p.x + clip.y * _p.y + clip.z * _p.z + clip.w < 0) clip.negate()
+    // Oblique near plane = the glass. The renderer uses a reversed, infinite-far depth buffer (near → 1, far → 0), so
+    // the depth row becomes w − k·(C·v): exactly 1 on the glass (the new near plane), > 1 behind it (clipped), and
+    // falling towards 0 into the room. C is normalised so k = 0.5 keeps every visible point inside [0, 1].
     const pm = virtualCam.projectionMatrix
-    q.x = (Math.sign(clip.x) + pm.elements[8]!) / pm.elements[0]!
-    q.y = (Math.sign(clip.y) + pm.elements[9]!) / pm.elements[5]!
-    q.z = -1
-    q.w = (1 + pm.elements[10]!) / pm.elements[14]!
-    clip.multiplyScalar(1 / clip.dot(q))
-    pm.elements[2] = clip.x
-    pm.elements[6] = clip.y
-    pm.elements[10] = clip.z
-    pm.elements[14] = clip.w
+    const len = Math.hypot(clip.x, clip.y, clip.z)
+    clip.multiplyScalar(1 / len)
+    if ((renderer as unknown as { reversedDepthBuffer?: boolean }).reversedDepthBuffer) {
+      const k = 0.5
+      pm.elements[2] = pm.elements[3]! - k * clip.x
+      pm.elements[6] = pm.elements[7]! - k * clip.y
+      pm.elements[10] = pm.elements[11]! - k * clip.z
+      pm.elements[14] = pm.elements[15]! - k * clip.w
+    } else {
+      // Standard [0, 1] depth: Lengyel's construction with the far corner q on the plane's side.
+      clip.negate()
+      q.set(Math.sign(clip.x), Math.sign(clip.y), 1, 1).applyMatrix4(_inv.copy(pm).invert())
+      clip.multiplyScalar(1 / clip.dot(q))
+      pm.elements[2] = clip.x
+      pm.elements[6] = clip.y
+      pm.elements[10] = clip.z
+      pm.elements[14] = clip.w
+    }
     virtualCam.projectionMatrixInverse.copy(pm).invert()
 
     renderer.getDrawingBufferSize(size)
