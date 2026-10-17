@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { BUILDING, CORE as PLAN, FIRE_ESCAPE, ROOF_Y, storeyY } from "../layout"
+import { ANNEX_DOOR, BUILDING, CORE as PLAN, FIRE_ESCAPE, ROOF_Y, storeyY } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch, QuadBuilder, SKIP_BOTTOM, rng } from "./geo"
 import { material } from "../../render/materials"
@@ -48,7 +48,7 @@ const MODULE = 5.4
 const OPENING = 3.3
 const PANES = 3
 
-type Hole = { u0: number; u1: number; y0: number; y1: number; kind: "window" | "storefront" | "door" | "rollup" | "rollupOpen" | "fireDoor" | "open" }
+type Hole = { u0: number; u1: number; y0: number; y1: number; kind: "window" | "storefront" | "door" | "rollup" | "rollupOpen" | "fireDoor" | "open" | "innerDoor" }
 
 export type Facade = {
   name: string
@@ -194,6 +194,8 @@ export function facades(): Facade[] {
       ...windowRow(ANNEX.max[1], MAIN.max[1], storeyRow(0), [], 2.6),
       ...windowRow(ANNEX.max[1], MAIN.max[1], storeyRow(1), [], 2.6),
       ...upperRows(MAIN.min[1], MAIN.max[1], [[-17.2, -12.8]], 2),
+      // Ground door through to the annex (plant), building program §4 request 4.
+      { u0: ANNEX_DOOR.z - ANNEX_DOOR.width / 2, u1: ANNEX_DOOR.z + ANNEX_DOOR.width / 2, y0: FY, y1: FY + 2.1, kind: "innerDoor" },
     ],
   }
   const annexRow = { sill: 1.0, head: 2.35 }
@@ -272,9 +274,36 @@ export type ShellResult = {
   litPanes: { center: THREE.Vector3; normal: THREE.Vector3; color: [number, number, number]; facade: string; row: string }[]
 }
 
+/** Lit-window kinds at 3 a.m. (building program §3). */
+type LitKind = "warm" | "cool" | "lamp" | "crt" | "hood" | "red" | "work"
+const LIT_PATTERN: [face: "south" | "north", storey: number, x: number, kind: LitKind][] = [
+  ["south", 0, 14.3, "warm"], // 0-38 cafeteria vending glow
+  ["south", 1, -1.9, "lamp"], // 1-24 desk lamp
+  ["south", 1, 25.1, "lamp"], // 1-25
+  ["south", 1, 30.5, "lamp"],
+  ["south", 2, 8.9, "cool"], // 2-27 lab, lit for safety
+  ["south", 2, 14.3, "cool"],
+  ["south", 3, -12.7, "crt"], // 3-24 faint CRT
+  ["south", 3, 30.5, "cool"], // 3-25 corner
+  ["south", 4, 30.5, "warm"], // 4-14 the Director (only lit window on 4)
+  ["north", 3, 3.5, "warm"], // 3-08
+  ["north", 3, 8.9, "warm"],
+  ["north", 4, 3.5, "red"], // 4-11 red beacon
+  ["north", 2, -39.7, "hood"], // 2-04 fume-hood glow
+  ["north", 4, -28.9, "work"], // 4-01 clamp work lights
+]
 const WARM: [number, number, number] = [1.4, 0.78, 0.36]
 const COOL: [number, number, number] = [0.85, 1.1, 0.95]
 const PALE: [number, number, number] = [1.25, 1.02, 0.62]
+const LIT_TINT: Record<LitKind, [number, number, number]> = {
+  warm: WARM,
+  cool: COOL,
+  lamp: [1.0, 0.6, 0.28],
+  crt: COOL,
+  hood: [0.55, 0.85, 0.75],
+  red: [1.3, 0.08, 0.05],
+  work: [1.5, 1.3, 0.9],
+}
 const GRIME: [number, number, number] = [0, 0, 0]
 const RUST: [number, number, number] = [0.2, 0.075, 0.02]
 const COPE = COPING.h
@@ -305,15 +334,19 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
   const alu = material("metal_dark")
   const clear = clearGlassMaterial()
 
-  // CRT rooms: specific openings left with a terminal on (facade, storey, index).
-  const crtSlots = new Set(["main-south:s2:5", "main-west:s3:1", "main-north:s4:9", "main-north:s1:3", "main-south:s4:12", "annex-south:ground:1"])
-  // Ground-floor windows that are guaranteed lit, because their spill matters for the views.
-  const forcedLit = new Set(["main-south:ground:3", "main-south:ground:10", "main-north:ground:12", "annex-south:ground:3", "main-east:ground:0"])
-  // 3 a.m.: one office corner on the fourth floor (south-east) still fully lit, someone working late.
-  // and the second floor's south offices (the concepts' band of fluorescent windows) mostly still on.
-  const lateFloor = (f: Facade, k: number, h: Hole) =>
-    (k === 3 && ((f.name === "main-south" && h.u0 > 17) || (f.name === "main-east" && h.u0 > 9))) ||
-    (k === 2 && f.name === "main-south" && h.u0 > -34 && h.u0 < 30 && Math.sin(h.u0 * 12.9898) * 43758.5 % 1 < 0.32)
+  // Annex (no interior rooms behind its windows): fake rooms, a few lit, one CRT.
+  const crtSlots = new Set(["annex-south:ground:1"])
+  const forcedLit = new Set(["annex-south:ground:3"])
+  // Main block: the 3 a.m. pattern of docs/building-program.md §3, by facade, storey and bay centre x.
+  const pattern = new Map<string, LitKind>(LIT_PATTERN.map(([face, k, x, kind]) => [`${face}:${k}:${x}`, kind]))
+  const litAt = (f: Facade, k: number, h: Hole): LitKind | undefined => {
+    const c = Math.round(((h.u0 + h.u1) / 2) * 10) / 10
+    for (const [key, kind] of pattern) {
+      const [face, ks, xs] = key.split(":")
+      if (`main-${face}` === f.name && Number(ks) === k && Math.abs(Number(xs) - c) < 0.6) return kind
+    }
+    return undefined
+  }
 
   for (const f of facades()) {
     wallBoxes(b, f, "concrete_wall")
@@ -324,6 +357,10 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
     for (const h of f.holes) {
       if (h.kind === "fireDoor") {
         fireDoor(ctx, root, b, f, h)
+        continue
+      }
+      if (h.kind === "innerDoor") {
+        annexDoor(ctx, root, b, f, h)
         continue
       }
       if (h.kind !== "window") continue
@@ -347,12 +384,13 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
       // Hopper transom low in the taller office windows.
       if (storey > 0) fbox(b, "metal_dark", f, h.u0, h.u1, h.y0 + 0.5, h.y0 + 0.56, GLASS_D - 0.04, GLASS_D + 0.04)
       const roll = rand()
-      const isCrt = crtSlots.has(id)
-      const pLit = storey === 0 ? 0.1 : 0.06
-      const roomLit = forcedLit.has(id) || lateFloor(f, storey, h) || (!isCrt && roll < pLit)
-      const oneLit = !roomLit && !isCrt && roll < pLit + 0.05
+      const kind = isMain ? litAt(f, storey, h) : undefined
+      const isCrt = isMain ? kind === "crt" : crtSlots.has(id)
+      const pLit = 0.1
+      const roomLit = isMain ? !!kind && kind !== "crt" : forcedLit.has(id) || (!isCrt && roll < pLit)
+      const oneLit = !isMain && !roomLit && !isCrt && roll < pLit + 0.05
       const tintRoll = rand()
-      const tint = storey === 2 && f.name === "main-south" ? (tintRoll < 0.7 ? COOL : PALE) : tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
+      const tint = kind ? LIT_TINT[kind] : tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
       const litPane = Math.floor(rand() * PANES)
       const crtPane = Math.floor(rand() * PANES)
       // Main-block panes are see-through (real rooms behind): seeds offset by 2 switch the shaders to their
@@ -502,6 +540,31 @@ function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, 
     openAngle: 1.9,
     swing: "auto",
     sound: "steel",
+    panic: true,
+    closer: true,
+  })
+}
+
+/** Steel door from the cafeteria end of the main block into the annex plant corridor (door closer, no panic bar). */
+function annexDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, h: Hole) {
+  const fr = 0.06
+  fbox(b, "metal_dark", f, h.u0 - fr, h.u1 + fr, h.y1, h.y1 + fr, -0.02, T + 0.02)
+  fbox(b, "metal_dark", f, h.u0 - fr, h.u0, h.y0, h.y1, -0.02, T + 0.02)
+  fbox(b, "metal_dark", f, h.u1, h.u1 + fr, h.y0, h.y1, -0.02, T + 0.02)
+  fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.01, h.y0 + 0.006, 0, T)
+  addFacadeDoor(ctx, root, {
+    id: "annex-door",
+    f,
+    u0: h.u0 + 0.01,
+    u1: h.u1 - 0.01,
+    y0: h.y0,
+    depth: T / 2,
+    height: h.y1 - h.y0 - 0.02,
+    leaf: steelLeaf("annex-door", h.u1 - h.u0 - 0.02, h.y1 - h.y0 - 0.02),
+    openAngle: 1.75,
+    swing: "auto",
+    sound: "steel",
+    closer: true,
   })
 }
 
@@ -595,6 +658,7 @@ function roofDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch) {
     openAngle: 1.75,
     swing: "auto",
     sound: "steel",
+    closer: true,
   })
   ctx.lamps.push({
     kind: "incandescent",
@@ -732,7 +796,7 @@ function wallColliders(ctx: WorldContext) {
   for (const f of facades()) {
     const top = f.y1 + COPE
     const gaps = f.holes
-      .filter((h) => h.kind === "door" || h.kind === "fireDoor" || h.kind === "rollup" || h.kind === "rollupOpen" || h.kind === "open")
+      .filter((h) => h.kind === "door" || h.kind === "fireDoor" || h.kind === "innerDoor" || h.kind === "rollup" || h.kind === "rollupOpen" || h.kind === "open")
       // Roll-up curtains lift into the wall above the head: no collider there either (nothing walks at that height).
       .map((h) => ({ u0: h.u0, u1: h.u1, y0: h.y0, y1: h.kind === "rollup" || h.kind === "rollupOpen" ? h.y1 + 2 : h.y1 }))
     if (f.name === "main-south") gaps.push({ u0: -hw, u1: hw, y0: FY, y1: FY + ENT.height })

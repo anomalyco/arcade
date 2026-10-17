@@ -6,6 +6,9 @@ import { buildCore, buildSlabs } from "./interior/core"
 import { buildLift } from "./interior/lift"
 import { bakeModels } from "./interior/props"
 import { STOREY_MODULES } from "./interior/storeys/index"
+import * as kitDemo from "./interior/storeys/kitdemo"
+
+export { interiorRooms, interiorDoors } from "./interior/registry"
 
 // Everything inside the main block's shell: the ground floor (lobby, link, corridor, lab, closet), storeys 1–4, the
 // slabs between them, the stair core from the ground to the roof and the lift. Each storey is its own group so only
@@ -32,7 +35,9 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const updates: ((time: number) => void)[] = []
   const buildOne = async (i: number) => {
     const b = new Builder(ctx, `storey-${i}`, i)
-    const h = await STOREY_MODULES[i]!.build(b, { storey: i, pause })
+    // Automation only: `kitdemo=<storey>` replaces that storey with the kit's reference layout (API check).
+    const mod = Number(ctx.params.get("kitdemo") ?? -1) === i ? kitDemo : STOREY_MODULES[i]!
+    const h = await mod.build(b, { storey: i, pause })
     if (h.update) updates.push(h.update)
     proxies[i] = h.proxy ?? null
     await pause()

@@ -20,6 +20,7 @@ const work = join(tmpdir(), "afterhours-documents")
 const fontDir = join(tmpdir(), "afterhours-fonts")
 const keepPng = process.argv.includes("--png")
 const ATLAS = 4096
+const ATLAS_MAX_H = 6144
 mkdirSync(out, { recursive: true })
 mkdirSync(work, { recursive: true })
 mkdirSync(fontDir, { recursive: true })
@@ -72,11 +73,11 @@ await page.setContent(`<!doctype html><html><head><style>${fontFaces}</style></h
 <script>window.__images = ${JSON.stringify(images)}</script><script type="module">${js}</script></body></html>`)
 await page.waitForFunction(() => typeof (globalThis as { __build?: unknown }).__build === "function", undefined, { timeout: 60_000 })
 const t0 = performance.now()
-const result = (await page.evaluate((n) => (globalThis as unknown as { __build: (n: number) => Promise<unknown> }).__build(n), ATLAS)) as {
+const result = (await page.evaluate((n) => (globalThis as unknown as { __build: (n: number, h: number) => Promise<unknown> }).__build(n[0]!, n[1]!), [ATLAS, ATLAS_MAX_H])) as {
   base: string
   normal: string
   orm: string
-  manifest: { atlas: number; documents: Record<string, { title: string; size: [number, number]; uv: number[]; tags: string[]; paper: string; pxPerMm: number }>; swatches: Record<string, [number, number]> }
+  manifest: { atlas: [number, number]; documents: Record<string, { title: string; size: [number, number]; uv: number[]; tags: string[]; paper: string; pxPerMm: number }>; swatches: Record<string, [number, number]> }
 }
 await browser.close()
 console.log(`rendered ${Object.keys(result.manifest.documents).length} documents in ${((performance.now() - t0) / 1000).toFixed(1)} s`)
@@ -90,15 +91,19 @@ const run = async (cmd: string[]) => {
   const err = await new Response(p.stderr).text()
   if ((await p.exited) !== 0) throw new Error(`${cmd[0]} failed: ${err.slice(-500)}`)
 }
-const resize = (input: string, size: number, output: string) => run(["ffmpeg", "-y", "-loglevel", "error", "-i", input, "-vf", `scale=${size}:${size}:flags=lanczos`, output])
+/** Downscale by an integer factor (non-square atlases). */
+const resize = (input: string, _size: number, output: string, factor: number) =>
+  run(["ffmpeg", "-y", "-loglevel", "error", "-i", input, "-vf", `scale=iw/${factor}:ih/${factor}:flags=lanczos`, output])
 const basePng = png(result.base, join(work, "base.png"))
 const normalFull = png(result.normal, join(work, "normal-full.png"))
 const ormFull = png(result.orm, join(work, "orm-full.png"))
-await resize(normalFull, ATLAS / 2, join(work, "normal.png"))
-await resize(ormFull, ATLAS / 4, join(work, "orm.png"))
-// Text must stay crisp: base colour in UASTC (RDO-tuned for size), normal UASTC, ORM is flat regions → ETC1S.
+await resize(normalFull, 0, join(work, "normal.png"), 4)
+await resize(ormFull, 0, join(work, "orm.png"), 8)
+// Base colour: ETC1S at maximum quality with full mips. Measured on this atlas: UASTC (RDO 3) 14.3 MB vs ETC1S q255
+// 3.3 MB, with text and handwriting still crisp at ~3 px/mm (smooth paper grain keeps the codebook small).
+// Normal UASTC at quarter size (creases and grain only), ORM ETC1S at eighth size (flat per-document values).
 await Promise.all([
-  run(["basisu", "-ktx2", "-mipmap", "-uastc", "-uastc_level", "2", "-uastc_rdo_l", "3", "-srgb", "-mip_srgb", basePng, "-output_file", join(out, "base.ktx2")]),
+  run(["basisu", "-ktx2", "-mipmap", "-q", "255", "-comp_level", "2", "-srgb", "-mip_srgb", basePng, "-output_file", join(out, "base.ktx2")]),
   run(["basisu", "-ktx2", "-mipmap", "-uastc", "-uastc_level", "1", "-uastc_rdo_l", "2", "-normal_map", "-linear", "-mip_linear", join(work, "normal.png"), "-output_file", join(out, "normal.ktx2")]),
   run(["basisu", "-ktx2", "-mipmap", "-q", "200", "-linear", "-mip_linear", join(work, "orm.png"), "-output_file", join(out, "orm.ktx2")]),
 ])

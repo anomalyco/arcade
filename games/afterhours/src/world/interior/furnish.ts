@@ -151,7 +151,7 @@ function labs(b: Builder, r: Room, rnd: () => number) {
   }
 }
 
-function island(b: Builder, x: number, z: number, w: number, d: number, side: number) {
+export function island(b: Builder, x: number, z: number, w: number, d: number, side: number) {
   const y = FLOOR_Y
   const x0 = x - w / 2
   const x1 = x + w / 2
@@ -167,7 +167,7 @@ function island(b: Builder, x: number, z: number, w: number, d: number, side: nu
 }
 
 /** Enclosed fume hood against a side wall (front facing `facing` along x), with sash glass and its duct. */
-function fumeHood(b: Builder, xWall: number, z: number, facing: 1 | -1) {
+export function fumeHood(b: Builder, xWall: number, z: number, facing: 1 | -1) {
   const y = FLOOR_Y
   const cx = xWall + facing * 0.42
   const m = T(cx, y, z, facing > 0 ? -Math.PI / 2 : Math.PI / 2)
@@ -202,10 +202,10 @@ function computerRoom(b: Builder, r: Room, rnd: () => number) {
   put(b, "crt_terminal", { position: at(r, cx - 0.4, 16.9, FLOOR_Y + MODELS.office_desk.size[1]), yaw: fc(r), collide: false, blob: 0 }, false)
   put(b, "crt_terminal", { position: at(r, cx + 0.45, 16.9, FLOOR_Y + MODELS.office_desk.size[1]), yaw: fc(r) - 0.15, collide: false, blob: 0 }, false)
   put(b, "office_chair", { position: at(r, cx, 15.9), yaw: fw(r) + (rnd() - 0.5) * 0.6, inset: 0.15 }, cast)
-  if (full) lineprinter(b, cx + 0.2, rz(r, 6), r.side, rnd)
+  if (full) lineprinter(b, cx + 0.2, rz(r, 6), r.side > 0 ? 0 : Math.PI, rnd)
 }
 
-function tapeDrive(b: Builder, x: number, z: number, yaw: number, rnd: () => number) {
+export function tapeDrive(b: Builder, x: number, z: number, yaw: number, rnd: () => number) {
   const m = T(x, FLOOR_Y, z, yaw)
   b.rbox(CAB_GREY, m, 0.72, 1.78, 0.7, 0.03, 0, 0.89, 0)
   b.rbox(CAB_BLUE, m, 0.74, 0.16, 0.72, 0.03, 0, 1.72, 0)
@@ -225,7 +225,7 @@ function tapeDrive(b: Builder, x: number, z: number, yaw: number, rnd: () => num
   b.collideLocal(m, [-0.37, 0, -0.36], [0.37, 1.8, 0.36])
 }
 
-function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
+export function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
   const m = T(x, FLOOR_Y, z, yaw)
   b.rbox(disk ? CAB_BLUE : CAB_GREY, m, 0.8, 1.6, 0.76, 0.03, 0, 0.8, 0)
   b.boxM(M.darkSteel, m, 0.004, 1.5, 0.004, 0, 0.8, -0.381, { cast: false })
@@ -240,8 +240,8 @@ function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
 
 /** Band printer on its stand: rounded chassis, sloped acoustic hood with a smoked window, platen and tractor-feed
  *  slot, control panel with lamps, fanfold paper fed from a box behind and draped down into the catch basket in front. */
-function lineprinter(b: Builder, x: number, z: number, side: number, rnd: () => number) {
-  const m = T(x, FLOOR_Y, z, side > 0 ? 0 : Math.PI)
+export function lineprinter(b: Builder, x: number, z: number, yaw: number, rnd: () => number) {
+  const m = T(x, FLOOR_Y, z, yaw)
   // Stand: frame and four legs on levelling feet.
   for (const dx of [-0.55, 0.55])
     for (const dz of [-0.3, 0.3]) {
@@ -297,7 +297,7 @@ function lineprinter(b: Builder, x: number, z: number, side: number, rnd: () => 
 const paperTwoSided = materialFor("flat", { color: 0xcfcbbb, roughness: 0.9, side: THREE.DoubleSide, name: "interior_paper_2s" })
 
 /** Cabinet door detail on a front face at local z: perimeter seam, handle, raised vent louvres. */
-function doorRelief(b: Builder, m: THREE.Matrix4, w: number, h: number, yc: number, z: number) {
+export function doorRelief(b: Builder, m: THREE.Matrix4, w: number, h: number, yc: number, z: number) {
   const seam = 0.006
   b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc + h / 2, z - 0.001, { cast: false })
   b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc - h / 2, z - 0.001, { cast: false })

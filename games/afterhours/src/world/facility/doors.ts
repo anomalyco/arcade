@@ -120,6 +120,8 @@ export type FacadeDoor = {
   thickness?: number
   double?: string
   onMove?: (t: number) => void
+  panic?: boolean
+  closer?: boolean
 }
 
 /** Registers a facade door: hinge at the u0 jamb (leaf runs along +tangent), closed pose along the wall. */
@@ -144,5 +146,7 @@ export function addFacadeDoor(ctx: WorldContext, root: THREE.Object3D, d: Facade
     slide: d.slide,
     double: d.double,
     onMove: d.onMove,
+    panic: d.panic,
+    closer: d.closer,
   })
 }

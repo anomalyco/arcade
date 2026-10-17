@@ -81,17 +81,24 @@ def lum(px):
 
 def suit(px, w, h):
     # UV layout: the jeans occupy the middle column (u 0.36..0.73), the shirt the rest. Trousers become dark charcoal
-    # work twill (denim fades flattened), the shirt a washed grey-green work shirt; the belt stays dark leather.
+    # work twill (albedo ~0.06, denim fades flattened), the shirt a washed grey-green work shirt (~0.2); the weave and
+    # seams stay as relative detail.
     u = np.linspace(0, 1, w)[None, :].repeat(h, 0)
     l = lum(px)
     jeans = (u > 0.36) & (u < 0.73)
-    mean_j = l[jeans].mean()
-    lj = mean_j + (l - mean_j) * 0.45
-    trousers = np.stack([lj * 0.62, lj * 0.64, lj * 0.58], -1)
-    mean_s = l[~jeans].mean()
-    ls = mean_s + (l - mean_s) * 0.8
-    shirt = np.stack([ls * 1.55, ls * 1.62, ls * 1.36], -1)
+    rel_j = np.clip(l / max(l[jeans].mean(), 1e-3), 0.3, 1.8)
+    lj = 0.062 * (1 + (rel_j - 1) * 0.5)
+    trousers = np.stack([lj * 0.98, lj * 1.0, lj * 0.94], -1)
+    rel_s = np.clip(l / max(l[~jeans].mean(), 1e-3), 0.2, 1.8)
+    ls = 0.2 * (1 + (rel_s - 1) * 0.85)
+    shirt = np.stack([ls * 0.95, ls * 1.0, ls * 0.8], -1)
     px[..., :3] = np.where(jeans[..., None], trousers, shirt)
+
+
+def skin_tone(px, w, h):
+    # The MakeHuman diffuse is lit and saturated for its own renderer: desaturate a third and darken a little.
+    l = lum(px)[..., None]
+    px[..., :3] = (l + (px[..., :3] - l) * 0.62) * 0.82
 
 
 def boots(px, w, h):
@@ -125,6 +132,7 @@ def material(name, color, normal=None, rough=0.8, alpha=False):
 
 
 skin = load(os.path.join(data, "skins/middleage_caucasian_male/middleage_lightskinned_male_diffuse.png"), 1024)
+tint(skin, skin_tone)
 suit_c = load(os.path.join(data, "clothes/male_casualsuit01/male_casualsuit01_diffuse.png"), 1024)
 tint(suit_c, suit)
 suit_n = load(os.path.join(data, "clothes/male_casualsuit01/male_casualsuit01_normal.png"), 1024)

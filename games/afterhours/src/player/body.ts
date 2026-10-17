@@ -29,8 +29,12 @@ const SPARE_LAYER = 5
 const EYE = 1.65
 const STEP = 0.45
 const KIT_LEG = RIG.thigh + RIG.shin
+/** Length of the E reach (out and back), seconds. */
+const REACH_S = 0.75
+/** Forearm pronation from the rest pose's palms-forward to palms-on-the-thighs (radians). */
+const PALM_IN = -1.2
 
-type Settings = { show: boolean; back: number; lampShadows: boolean }
+type Settings = { show: boolean; back: number; lookBack: number; lampShadows: boolean }
 
 const v = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 const tv = (p: V3) => new THREE.Vector3(p[0], p[1], p[2])
@@ -55,15 +59,18 @@ export function createBody(ctx: WorldContext, player: Player) {
   const params = ctx.params
   ctx.settings["player.body"] ??= params.get("body") !== "0"
   ctx.settings["player.bodyBack"] ??= 0.1
+  ctx.settings["player.bodyLookBack"] ??= 0.12
   ctx.settings["player.bodyLampShadows"] ??= true
   ctx.controls.push(
     { key: "player.body", label: "Show body", group: "Player", type: "toggle" },
     { key: "player.bodyBack", label: "Body behind the eyes", group: "Player", unit: "m", min: 0, max: 0.3, step: 0.01 },
+    { key: "player.bodyLookBack", label: "Hips back when looking down", group: "Player", unit: "m", min: 0, max: 0.3, step: 0.01 },
     { key: "player.bodyLampShadows", label: "Body in lamp shadows", group: "Player", type: "toggle" },
   )
   const settings = (): Settings => ({
     show: ctx.settings["player.body"] !== false,
     back: Number(ctx.settings["player.bodyBack"] ?? 0.1),
+    lookBack: Number(ctx.settings["player.bodyLookBack"] ?? 0.12),
     lampShadows: ctx.settings["player.bodyLampShadows"] !== false,
   })
 
@@ -88,10 +95,10 @@ export function createBody(ctx: WorldContext, player: Player) {
       root.add(gltf.scene)
       root.visible = false
       // Compile off the critical path, then show.
-      const mask = camera.layers.mask
-      camera.layers.enableAll()
-      await ctx.renderer.compileAsync(root, camera, ctx.scene).catch(() => {})
-      camera.layers.mask = mask
+      // Compile with a camera that sees the head layer too (the view camera keeps rendering meanwhile).
+      const probe = camera.clone()
+      probe.layers.enable(HEAD_LAYER)
+      await ctx.renderer.compileAsync(root, probe, ctx.scene).catch(() => {})
       ctx.scene.add(root)
       rig = r
       gait.reset()
@@ -127,6 +134,13 @@ export function createBody(ctx: WorldContext, player: Player) {
   }
 
   const shadowed = createShadowHook(ctx, player)
+  // E (doors, the lift): a hand reaches out to the handle height in front and comes back.
+  let reachT = -1
+  if (!params.has("shot")) {
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "KeyE" && !e.repeat && !(e.target instanceof HTMLInputElement)) reachT = 0
+    })
+  }
 
   function update(dt: number) {
     demo.update(dt)
@@ -171,13 +185,18 @@ export function createBody(ctx: WorldContext, player: Player) {
       }
     }
 
-    rig.pose(pose, sc, baseY, ground, normals, (need) => {
+    // Looking down, the head comes forward over the toes: the hips and chest settle back under the eyes instead.
+    const steep = THREE.MathUtils.smoothstep(-player.pitch, 1.1, 1.45)
+    const lookBack = Math.max(0, -Math.sin(player.pitch)) * s.lookBack + steep * 0.1
+    rig.pose(pose, sc, baseY, ground, normals, fwd.clone().multiplyScalar(-lookBack), (need) => {
       // Lower the hips just enough for both legs to reach (stairs down, a foot on a lower step), eased.
       const k = need > drop ? 1 - Math.exp(-dt * 30) : 1 - Math.exp(-dt * 6)
       drop += (need - drop) * k
       return drop
     })
-    rig.hands(pose, sc, player, torch)
+    if (reachT >= 0) reachT = reachT + dt > REACH_S ? -1 : reachT + dt
+    if (demo.reach >= 0) reachT = demo.reach
+    rig.hands(pose, sc, player.flashlight && demo.hold, player, torch, reachT < 0 ? 0 : Math.sin((Math.PI * reachT) / REACH_S) ** 2)
     rig.finish()
     if (s.lampShadows) shadowed(rig.pelvisWorld)
     demo.after(rig.pelvisWorld, player.yaw)
@@ -289,20 +308,24 @@ class Rig {
     this.gripOffset = [grip(0), grip(1)]
 
     const headBones = new Set<THREE.Object3D>([byName.get("head")!, byName.get("neck_01")!])
+    const neck = wp("neck_01")
     scene.traverse((o) => {
       const mesh = o as THREE.SkinnedMesh
       if (!mesh.isSkinnedMesh) return
       mesh.frustumCulled = false
       mesh.castShadow = true
-      mesh.receiveShadow = true
+      // Lamp maps are sized for rooms, not sleeves: self-shadowing came out as acne stripes on the cloth.
+      mesh.receiveShadow = false
       mesh.layers.set(BODY_LAYER)
       const mat = mesh.material as THREE.MeshStandardMaterial
       mat.envMapIntensity = 0.5
+      // Blender exports double-sided; from the eyes the insides of the collar and sleeves must not render.
+      mat.side = THREE.FrontSide
       if (mesh.name.includes("short02")) {
         mesh.layers.set(HEAD_LAYER)
         return
       }
-      splitHead(mesh, headBones)
+      splitHead(mesh, headBones, neck)
     })
   }
 
@@ -327,11 +350,11 @@ class Rig {
   }
 
   /** Pelvis, spine, neck/head and both legs. `fit(need)` returns the eased hip drop for the drop the legs need. */
-  pose(pose: GaitPose, sc: number, baseY: number, ground: [number, number], normals: THREE.Vector3[], fit: (need: number) => number) {
+  pose(pose: GaitPose, sc: number, baseY: number, ground: [number, number], normals: THREE.Vector3[], shift: THREE.Vector3, fit: (need: number) => number) {
     const kitToWorld = (p: V3, y0: number, out: THREE.Vector3) => out.set(p[0] * sc, y0 + p[1] * sc, p[2] * sc)
     // Hip drop: how far the pelvis must come down so each ankle is reachable with the mesh's leg length.
     const reach = (this.lens.thigh + this.lens.shin) * 0.995
-    const pelvisAt = kitToWorld(pose.pelvis.p, baseY, v())
+    const pelvisAt = kitToWorld(pose.pelvis.p, baseY, v()).add(shift)
     let need = 0
     const ankle = [v(), v()]
     for (let i = 0; i < 2; i++) {
@@ -389,7 +412,7 @@ class Rig {
   }
 
   /** Arms: the kit's unarmed swing, or the right hand holding the flashlight out along the beam. */
-  hands(pose: GaitPose, sc: number, player: Player, torch: THREE.Object3D) {
+  hands(pose: GaitPose, sc: number, hold: boolean, player: Player, torch: THREE.Object3D, reach: number) {
     const kitArm = (RIG.upper + RIG.fore) * sc
     const armK = (this.lens.upper + this.lens.fore) / kitArm
     const torsoX = pose.torso.x, torsoY = pose.torso.y
@@ -405,26 +428,37 @@ class Rig {
       const target = v((kHand[0] - kSh[0]) * sc * armK, (kHand[1] - kSh[1]) * sc * armK, (kHand[2] - kSh[2]) * sc * armK).add(sh)
       target.addScaledVector(tv(pose.torso.z), side * 0.025)
       let pole: V3 = [kEl[0] - kSh[0], kEl[1] - kSh[1], kEl[2] - kSh[2]]
-      const holding = i === 1 && player.flashlight
+      const holding = i === 1 && hold
       let barrel: THREE.Vector3 | null = null
       if (holding) {
-        // Torch at chest height to the right, pointing where you look (pitch eased so looking at your feet keeps the
-        // hand in front of you); the elbow drops below and out.
+        // Torch low at the right hip-front, pointing where you look (pitch eased so looking at your feet keeps the hand
+        // in front of you). It stays below the beam's cone (render/lighting.ts emits the beam from 0.22 right, 0.28
+        // down, 0.1 ahead of the eye), or the beam would blow out the fist at point-blank range.
         const yaw = player.yaw
-        const pitchArm = THREE.MathUtils.clamp(player.pitch, -0.7, 0.5)
+        const pitchArm = THREE.MathUtils.clamp(player.pitch, -0.7, 0.4)
         const cf = v(-Math.sin(yaw) * Math.cos(pitchArm), Math.sin(pitchArm), -Math.cos(yaw) * Math.cos(pitchArm))
         const right = v(Math.cos(yaw), 0, -Math.sin(yaw))
         const eye = v(player.pos.x, player.pos.y + EYE, player.pos.z)
-        target.copy(eye).addScaledVector(right, 0.2).addScaledVector(cf, 0.36)
-        target.y -= 0.36 + 0.06 * Math.max(0, -pitchArm)
+        target.copy(eye).addScaledVector(right, 0.2).addScaledVector(cf, 0.2)
+        target.y -= 0.55 + 0.08 * Math.max(0, -pitchArm)
+        pole = [right.x * 0.7, -1, right.z * 0.7]
         barrel = v(-Math.sin(yaw) * Math.cos(player.pitch), Math.sin(player.pitch), -Math.cos(yaw) * Math.cos(player.pitch))
-        pole = [right.x * 0.6, -1, right.z * 0.6]
+      }
+      // Reaching hand: the free one (left while the right holds the torch).
+      if (reach > 0 && i === (hold ? 0 : 1)) {
+        const yaw = player.yaw
+        const goal = v(player.pos.x - Math.sin(yaw) * 0.55 + Math.cos(yaw) * side * 0.12, player.pos.y + 1.02, player.pos.z - Math.cos(yaw) * 0.55 - Math.sin(yaw) * side * 0.12)
+        target.lerp(goal, reach)
+        pole = [pole[0] * (1 - reach) + side * Math.cos(yaw) * reach, pole[1] * (1 - reach) - reach, pole[2] * (1 - reach) - side * Math.sin(yaw) * reach]
       }
       const shV: V3 = [sh.x, sh.y, sh.z]
       const [el, wr] = ik(shV, [target.x, target.y, target.z], this.lens.upper, this.lens.fore, pole)
       const ua = `upperarm${sfx}` as BoneName, fa = `lowerarm${sfx}` as BoneName, hand = `hand${sfx}` as BoneName
       this.setWorld(ua, this.frame(ua, limb(shV, el, torsoX, torsoY)))
-      this.setWorld(fa, this.frame(fa, limb(el, wr, torsoX, torsoY)))
+      // The forearm turns the palm in toward the thigh (the rest pose has it facing forward); a torch hand turns less.
+      const tw = (holding ? 0.4 : 1) * PALM_IN * side
+      const ref: V3 = [torsoX[0] * Math.cos(tw) + pose.torso.z[0] * Math.sin(tw), torsoX[1] * Math.cos(tw) + pose.torso.z[1] * Math.sin(tw), torsoX[2] * Math.cos(tw) + pose.torso.z[2] * Math.sin(tw)]
+      this.setWorld(fa, this.frame(fa, limb(el, wr, ref, torsoY)))
       if (barrel) {
         // Hammer grip: the barrel runs pinky→index through the fist, the hand continues the forearm.
         const x = barrel.clone()
@@ -443,10 +477,9 @@ class Rig {
         this.bones[hand].quaternion.copy(this.restLocal.get(this.bones[hand])!)
         this.refresh(this.bones[hand])
       }
-      this.curl(i as 0 | 1, holding ? 1 : 0.25 + 0.15 * pose.run)
+      this.curl(i as 0 | 1, holding ? 1 : 0.5 + 0.2 * pose.run)
     }
-    torch.visible = player.flashlight
-    ;(torch.userData.lensLevel as { value: number }).value = player.flashlight ? 1 : 0
+    torch.visible = hold
   }
 
   private curl(side: 0 | 1, amount: number) {
@@ -467,7 +500,7 @@ class Rig {
  * Moves the head/neck/hair triangles of a skinned mesh into their own mesh on HEAD_LAYER (same geometry buffers, same
  * skeleton): the view camera never sees them, lamp shadows still do.
  */
-function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>) {
+function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>, neck: THREE.Vector3) {
   const geo = mesh.geometry
   const index = geo.index
   const joints = geo.getAttribute("skinIndex")
@@ -477,10 +510,15 @@ function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>) {
   const headJoint = new Set<number>()
   bones.forEach((b, i) => headBones.has(b) && headJoint.add(i))
   const isHead = new Uint8Array(joints.count)
+  const pos = geo.getAttribute("position")
+  const p = new THREE.Vector3()
   for (let i = 0; i < joints.count; i++) {
     let w = 0
     for (let k = 0; k < 4; k++) if (headJoint.has(joints.getComponent(i, k))) w += weights.getComponent(i, k)
-    isHead[i] = w > 0.5 ? 1 : 0
+    // The collar and the tops of the shoulders right under the eyes go too (bind pose, metres).
+    p.fromBufferAttribute(pos, i).applyMatrix4(mesh.bindMatrix)
+    const collar = (p.y > neck.y - 0.06 && Math.hypot(p.x - neck.x, p.z - neck.z) < 0.13) || p.y > neck.y + 0.02
+    isHead[i] = w > 0.5 || collar ? 1 : 0
   }
   const body: number[] = []
   const head: number[] = []

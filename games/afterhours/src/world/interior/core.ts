@@ -1,5 +1,6 @@
 import { BUILDING, CORE } from "../layout"
 import { STYLES } from "./styles"
+import { doorway } from "./doorway"
 import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall, LAYER } from "./kit"
 
 // Structure shared by every storey: the floor slabs of storeys 1–4 (and the one under the roof deck), the switchback
@@ -30,6 +31,9 @@ export const ST = {
   door: -40.9,
   wallZ0: CORE.stair.min[1] - 0.15,
 }
+
+/** Telecom room door in the hall's west wall (z centre of SERVICE.TC). */
+export const TC_DOOR_Z = 8.6
 
 export const HALL = { x0: CORE.hall.min[0], x1: CORE.hall.max[0], z0: CORE.hall.min[1] + 0.15, z1: ST.wallZ0 }
 export const LOBBY = { x0: CORE.liftLobby.min[0], x1: CORE.liftLobby.max[0] - 0.02, z0: CORE.liftLobby.min[1], z1: 19.45 }
@@ -247,7 +251,9 @@ function hall(b: Builder, i: number) {
   const sy = FLOOR_Y + LAYER
   // Hall stripes start where the corridor's edge stripe stops (ground floor) and run to the stair wall.
   if (i === 0) for (const x of [x0 + 0.42, x1 - 0.42]) b.box(M.stripe, x - 0.05, sy - 0.01, z0 - 0.62, x + 0.05, sy, z1 - 0.1, { cast: false })
-  wall(b, "z", z0, z1, x0 - 0.15, x0, style.bands)
+  // West wall: the telecom room TC-n's door (service stack, keycard "comms").
+  wall(b, "z", z0, z1, x0 - 0.15, x0, style.bands, [doorOpening(TC_DOOR_Z)])
+  doorway(b, { x: x0 - 0.075, z: TC_DOOR_Z, rot: Math.PI / 2, id: "TC", state: "keycard:comms", sign: { number: `TC-${i}`, label: "TELECOM" } })
   wall(b, "z", z0, z1, x1, x1 + 0.15, style.bands)
   // Hall face of the stair wall, either side of the door.
   wall(b, "x", x0, LOBBY.x0, z1 - 0.012, z1, style.bands, [doorOpening(ST.door, DOOR_W)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })

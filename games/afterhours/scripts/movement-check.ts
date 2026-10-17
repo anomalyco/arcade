@@ -90,22 +90,41 @@ async function route(legs: { yaw: number; until: (p: { x: number; y: number; z: 
   }, 0)) as Sample[]
 }
 
-/** Max eye change per frame, normalised to a 60 Hz frame, ignoring the turn-in at the start. */
-function smoothness(trace: Sample[]) {
+/**
+ * Eye smoothness on a uniform 60 Hz clock (the trace is resampled by time, so headless frame-time jitter doesn't read
+ * as motion): the largest per-frame change, and jerk (the largest change of that per-frame change).
+ */
+function smoothness(raw: Sample[]) {
+  const trace: Sample[] = []
+  let t = raw[0]!.t
+  for (let i = 1; i < raw.length; i++) {
+    const a = raw[i - 1]!
+    const b = raw[i]!
+    while (t <= b.t && b.t > a.t) {
+      const u = (t - a.t) / (b.t - a.t)
+      trace.push({ ...b, t, dt: 1 / 60, y: u < 1 ? a.y : b.y, eye: a.eye + (b.eye - a.eye) * u })
+      t += 1 / 60
+    }
+  }
   let eye60 = 0
   let body = 0
   let eyeRaw = 0
+  // Jerk: how much the per-frame eye change itself changes (a tread kink or a snap shows up here even at a run).
+  let jerk = 0
+  let prev: number | null = null
   for (let i = 1; i < trace.length; i++) {
     const a = trace[i - 1]!
     const b = trace[i]!
     if (b.dt <= 0) continue
-    const de = Math.abs(b.eye - a.eye)
-    eyeRaw = Math.max(eyeRaw, de)
-    eye60 = Math.max(eye60, (de * (1 / 60)) / Math.max(b.dt, 1 / 240))
+    const v60 = ((b.eye - a.eye) * (1 / 60)) / Math.max(b.dt, 1 / 240)
+    eye60 = Math.max(eye60, Math.abs(v60))
+    if (prev !== null) jerk = Math.max(jerk, Math.abs(v60 - prev))
+    prev = v60
     body = Math.max(body, Math.abs(b.y - a.y))
   }
-  const fps = trace.length / trace.reduce((s, x) => s + x.dt, 0)
-  return { eye60, eyeRaw, body, fps, rise: trace.at(-1)!.y - trace[0]!.y, frames: trace.length }
+  const fps = raw.length / raw.slice(1).reduce((s, x) => s + x.dt, 0)
+  for (let i = 1; i < raw.length; i++) eyeRaw = Math.max(eyeRaw, Math.abs(raw[i]!.eye - raw[i - 1]!.eye))
+  return { eye60, eyeRaw, body, jerk, fps, rise: raw.at(-1)!.y - raw[0]!.y, frames: raw.length }
 }
 
 const WEST = -42.28
@@ -132,12 +151,17 @@ for (const run of [false, true]) {
   const tu = await route(up, run)
   const su = smoothness(tu)
   check(su.rise > 3.5, `${tag} up: climbed a storey (${su.rise.toFixed(2)} m)`)
-  const limit = run ? 0.035 : 0.02
-  check(su.eye60 <= limit, `${tag} up: eye smooth (max ${(su.eye60 * 100).toFixed(2)} cm per 60 Hz frame, ${(su.eyeRaw * 100).toFixed(2)} cm raw at ${su.fps.toFixed(0)} fps; body snaps ${(su.body * 100).toFixed(1)} cm)`)
+  // At a run the climb itself is ~5 cm of height per 60 Hz frame (a steady ramp), so there the check is on jerk: the
+  // frame-to-frame change of that rate. A tread snap would show as ~9 cm; the eased climb onset at the foot of a flight
+  // (0 → 2.8 m/s vertical in ~0.2 s) is ~1.2 cm.
+  const ok = (s: ReturnType<typeof smoothness>) => (run ? s.jerk <= 0.015 : s.eye60 <= 0.02 && s.jerk <= 0.005)
+  const fmt = (s: ReturnType<typeof smoothness>) =>
+    `max ${(s.eye60 * 100).toFixed(2)} cm per 60 Hz frame, jerk ${(s.jerk * 100).toFixed(2)} cm, ${(s.eyeRaw * 100).toFixed(2)} cm raw at ${s.fps.toFixed(0)} fps; body snaps ${(s.body * 100).toFixed(1)} cm`
+  check(ok(su), `${tag} up: eye smooth (${fmt(su)})`)
   const td = await route(down, run)
   const sd = smoothness(td)
   check(Math.abs((await pos()).y - y0) < 0.05, `${tag} down: back on the ground floor (${(sd.rise).toFixed(2)} m)`)
-  check(sd.eye60 <= limit, `${tag} down: eye smooth (max ${(sd.eye60 * 100).toFixed(2)} cm per 60 Hz frame, ${(sd.eyeRaw * 100).toFixed(2)} cm raw; body snaps ${(sd.body * 100).toFixed(1)} cm)`)
+  check(ok(sd), `${tag} down: eye smooth (${fmt(sd)})`)
   check(td.every((s) => s.grounded), `${tag} down: followed the treads (never airborne)`)
   traces[`${tag}-up`] = tu
   traces[`${tag}-down`] = td

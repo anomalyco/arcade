@@ -186,6 +186,9 @@ function personnelDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Fac
     openAngle: 1.75,
     swing: "auto",
     sound: "steel",
+    // Exit doors: panic bar inside, closer.
+    panic: true,
+    closer: true,
   })
   // Step / stoop outside.
   const s0 = point(f, u0 - 0.5, 0, 0)

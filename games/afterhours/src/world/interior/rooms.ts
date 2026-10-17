@@ -259,7 +259,7 @@ function roundedCap(hw: number, hd: number, r: number, y: number, n = 6) {
 }
 
 /** Commercial mop bucket: tapered moulded tub with a rolled rim, grey water, side-press wringer, casters, mop. */
-function bucket(b: Builder, x: number, z: number) {
+export function bucket(b: Builder, x: number, z: number) {
   const y = FLOOR_Y
   const at = (g: THREE.BufferGeometry, yaw = 0) => g.applyMatrix4(T(x, y, z, yaw))
   // Tub (long axis along Z), wall leaning out towards the rim.

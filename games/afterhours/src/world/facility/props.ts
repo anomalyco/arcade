@@ -5,6 +5,7 @@ import type { WorldContext } from "../context"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { MODELS, loadModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
 import { PLATFORM, lightAbove } from "./dock"
+import { ANNEX_PLANT } from "./annex"
 import { DOCK_DOORS } from "./shell"
 import { CORE, ROOF_DOOR, band, facades, normal, point } from "./shell"
 
@@ -181,6 +182,23 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
     put("utility_box_b", ANNEX.max[0] + ud2 / 2 + 0.02, 0.4, -20.8, e, { collide: 0 })
     put("utility_box", ANNEX.max[0] + ud / 2 + 0.02, 0, -18.9, e, { collide: 0, blob: 0.45 })
     put("utility_box_b", P.x1 + 6.2, 0, WALL_Z - ud2 / 2 - 0.02, yawToward(0, -1), { collide: 0, blob: 0.5 })
+  }
+
+  // Annex plant room: electrical cabinets, the janitor's shelves and kit.
+  {
+    const R = ANNEX_PLANT
+    const fy = BUILDING.floorY
+    const e = yawToward(1, 0)
+    const [, , u2] = size("utility_box_b")
+    put("utility_box_b", R.x0 + u2 / 2 + 0.02, fy, -4.0, e, { collide: 0, blob: 0.4 })
+    put("utility_box_b", R.x0 + u2 / 2 + 0.02, fy, -5.1, e, { collide: 0, blob: 0.4 })
+    const s = yawToward(0, -1)
+    const [, , sd] = size("steel_shelves")
+    put("steel_shelves", 47.0, fy, R.z1 - sd / 2 - 0.05, s, { collide: 0.02, blob: 0.4 })
+    put("metal_rack", 50.0, fy, R.z1 - size("metal_rack")[2] / 2 - 0.05, s, { collide: 0.02, blob: 0.4 })
+    put("drum_steel", R.x1 - 0.5, fy, R.z0 + 0.6, 0.7, { collide: 0.05, blob: 0.5 })
+    put("trash_can", 52.6, fy, R.z1 - 0.5, 2.1, { collide: 0.05, blob: 0.45 })
+    put("wet_floor_sign", 45.6, fy, -8.6, 0.6, { blob: 0.3 })
   }
 
   contactShadows(root, blobs)

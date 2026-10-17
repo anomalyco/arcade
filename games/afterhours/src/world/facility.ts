@@ -7,6 +7,7 @@ import { buildDish } from "./facility/dish"
 import { buildRoof } from "./facility/roof"
 import { buildDock } from "./facility/dock"
 import { buildGrounds } from "./facility/grounds"
+import { buildAnnex } from "./facility/annex"
 import { windowGlow } from "./facility/windows"
 import { buildProps } from "./facility/props"
 
@@ -41,12 +42,13 @@ export function build(ctx: WorldContext): WorldModule {
   buildRoof(ctx, b)
   buildDock(ctx, b, root)
   buildGrounds(ctx, b, root)
+  buildAnnex(ctx, b)
   b.flush(root, { name: "facility-details" })
   // Models stream in after the first frame; colliders and contact shadows are already in place.
   void buildProps(ctx, root)
 
   // Window spill: a dim light just outside a few lit ground-floor windows, enough to pool on the paving.
-  const spill = shell.litPanes.filter((p) => p.row === "ground" && /^(main-south:ground:(3|10)|main-north:ground:12|annex-south:ground:3|main-east:ground:0)$/.test(p.facade))
+  const spill = shell.litPanes.filter((p) => p.row === "ground" && (p.facade.startsWith("main-") || p.facade === "annex-south:ground:3"))
   for (const p of spill) {
     const pos = p.center.clone().addScaledVector(p.normal, 0.45)
     ctx.lamps.push({

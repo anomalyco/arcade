@@ -6,8 +6,12 @@ import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
 
 /*
- * INTERIOR KIT — the shared construction API for storey agents. Import from `./api` (this file plus props, lights and
- * styles), never from another storey's file.
+ * INTERIOR KIT — the shared construction API for storey agents. Storey files import everything from `./api`:
+ *   plan.ts (program coordinates), partition.ts (partition / studWall / column), doorway.ts (doorway + states),
+ *   room.ts (room surfaces, windows, lit troffers), spine.ts (corridor), services.ts (service stack, riser W-1),
+ *   lights.ts (every fixture with its lamp), fixtures.ts (furniture), props.ts (placeModels), registry.ts.
+ *   storeys/kitdemo.ts is a worked example of all of them (automation: `?kitdemo=<storey>`).
+ * This file holds the low-level primitives below.
  *
  * COORDINATES
  *   Metres, Y up, +Z south. Author every storey in GROUND-FLOOR coordinates: finished floor FLOOR_Y = 0.16, ceiling
@@ -699,6 +703,10 @@ export type DoorOpts = {
   /** Leaf finish (default institutional green steel). */
   leaf?: Mat
   sound?: "steel" | "wood" | "glass"
+  /** Stable door id (pairs get `${id}` and `${id}:b`). Default: auto. */
+  id?: string
+  /** Leaf thickness (default 45 mm; insulated cold-room doors ~0.1). */
+  thickness?: number
 }
 
 const leafTemplates = new Map<string, THREE.Object3D[]>()
@@ -749,9 +757,9 @@ function leafTemplate(ctx: WorldContext, lw: number, glass: THREE.Material | nul
  * shared door system (`ctx.doors`, KeyE), which owns its swing and collider. Leaves of the same variant share
  * geometry.
  */
-export function door(b: Builder, x: number, z: number, o: DoorOpts) {
+export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
   const w = o.width ?? DOOR_W
-  const t = 0.045
+  const t = o.thickness ?? 0.045
   const wallT = o.wallT ?? 0.15
   const leaves = o.leaves ?? 1
   const open = o.open ?? 0
@@ -780,7 +788,7 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts) {
   const tpl = leafTemplate(b.ctx, lw, glass, o.leaf ?? "door_steel", !!o.panic, leaves === 2)
   const angle = Math.max(o.angle ?? 1.6, Math.abs(open))
   const sign = open < 0 || (o.angle ?? 0) < 0 ? -1 : 1
-  const ids = Array.from({ length: leaves }, () => `${b.group.name}:door${doorSeq++}`)
+  const ids = o.id ? (leaves === 2 ? [o.id, `${o.id}:b`] : [o.id]) : Array.from({ length: leaves }, () => `${b.group.name}:door${doorSeq++}`)
   const v = new THREE.Vector3()
   for (let i = 0; i < leaves; i++) {
     const mirror = i === 1
@@ -810,6 +818,7 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts) {
       ...(leaves === 2 ? { double: ids[1 - i] } : {}),
     })
   }
+  return ids
 }
 
 /**

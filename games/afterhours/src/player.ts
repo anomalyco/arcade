@@ -80,7 +80,7 @@ export class Player {
   flashlight = false
   fly = false
   /** Automation only: when an array, every update pushes a sample (time, dt, feet, eye). */
-  trace: { t: number; dt: number; y: number; eye: number; crouch: number; grounded: boolean }[] | null = null
+  trace: { t: number; dt: number; x: number; z: number; y: number; eye: number; offset: number; base: number; crouch: number; grounded: boolean }[] | null = null
   private keys = new Set<string>()
   private stepListeners: ((e: StepEvent) => void)[] = []
   private grounded = true
@@ -91,6 +91,15 @@ export class Player {
   private crouchWanted = false
   private eyeOffset = 0
   private eyeOffsetV = 0
+  /** Eye base: the ground box-filtered along the walking direction (a ramp on stairs), or the feet in the air. */
+  private base = 0
+  private lastY = 0
+  private wasGrounded = true
+  /** Body snaps this frame (ladder top, landing) that the eye should ease through. */
+  private snap = 0
+  private near: Floor[] = []
+  private cutsX: number[] = []
+  private cutsZ: number[] = []
   private phase = 0
   private bobAmp = 0
   private roll = 0
@@ -197,8 +206,10 @@ export class Player {
   resetMotion() {
     this.vel.x = this.vel.y = this.vel.z = 0
     this.eyeOffset = this.eyeOffsetV = 0
-    this.grounded = true
+    this.grounded = this.wasGrounded = true
     this.coyote = 0
+    this.base = this.filteredGround()
+    this.lastY = this.pos.y
   }
 
   private get eyeHeight() {
@@ -256,7 +267,7 @@ export class Player {
       this.move(0, wz * walk * 0.4 * dt * Math.abs(fwd || side))
       const top = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
       if (this.pos.y < top) {
-        this.eyeOffset -= top - this.pos.y
+        this.snap += top - this.pos.y
         this.pos.y = top
       }
       this.grounded = true
@@ -270,7 +281,7 @@ export class Player {
 
     // Horizontal: accelerate towards the wished velocity; friction when there's no input; little air control.
     const crouchK = 1 - 0.55 * this.crouch
-    const stairK = this.stairs > 0 ? 0.88 : 1
+    const stairK = this.stairs > 0 ? 0.75 : 1
     const wish = (fwd || side ? 1 : 0) * walk * (run && this.crouch < 0.5 ? 2.3 : 1) * crouchK * stairK
     const rate = this.grounded ? (fwd || side ? 9 : 11) : 1.2
     const a = 1 - Math.exp(-rate * dt)
@@ -298,11 +309,8 @@ export class Player {
       const g = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
       const d = g - this.pos.y
       if (d >= -STEP_DOWN) {
-        // Continuous ground (slopes, a moving lift floor) is followed directly; a discrete step is smoothed.
-        if (Math.abs(d) > 0.03 + 0.9 * moved) {
-          this.eyeOffset -= d
-          this.stairs = 0.4
-        }
+        // A discrete step (stairs, a kerb) slows the walk a little; the eye follows the filtered ground, not this snap.
+        if (Math.abs(d) > 0.03 + 0.9 * moved) this.stairs = 0.4
         this.pos.y = g
         this.vel.y = 0
       } else {
@@ -319,7 +327,7 @@ export class Player {
       const g = this.groundAt(this.pos.x, this.pos.z, Math.max(this.pos.y, this.pos.y - this.vel.y * dt) + 0.02)
       if (this.vel.y <= 0 && this.pos.y <= g) {
         const impact = -this.vel.y
-        this.eyeOffset -= g - this.pos.y
+        this.snap += g - this.pos.y
         this.pos.y = g
         this.vel.y = 0
         this.grounded = true
@@ -333,7 +341,21 @@ export class Player {
 
   /** Eye spring, gait cycle, footsteps, bob/sway/roll and the camera. `stride` is the distance walked this frame. */
   private finish(dt: number, stride: number, ladder: boolean) {
-    // Critically damped spring on the eye offset.
+    // Eye base. On the ground it is the floor averaged over ±0.3 m around the feet (exact, so a flight of 0.28 m treads
+    // becomes a straight ramp with no per-tread step); any jump left in it (a tall step, taking off, landing) goes into
+    // the eye offset, which a critically damped spring brings back to zero.
+    const base = this.fly ? this.pos.y : this.grounded && !ladder ? this.filteredGround() : this.pos.y
+    const db = base - this.base
+    if (this.fly) this.eyeOffset = this.eyeOffsetV = 0
+    else if (this.grounded && this.wasGrounded && !ladder) {
+      if (Math.abs(db) > 0.03 + 0.9 * stride) this.eyeOffset -= db
+      // Stairs (the smoothed ground climbs or falls steeply underfoot): walk a little slower, from the first tread.
+      else if (stride > 1e-3 && Math.abs(db) > 0.3 * stride) this.stairs = 0.4
+    } else this.eyeOffset -= db - (this.pos.y - this.lastY - this.snap)
+    this.base = base
+    this.lastY = this.pos.y
+    this.wasGrounded = this.grounded
+    this.snap = 0
     if (dt > 0) {
       const w = EYE_OMEGA
       this.eyeOffsetV += (-w * w * this.eyeOffset - 2 * w * this.eyeOffsetV) * dt
@@ -351,7 +373,8 @@ export class Player {
       if (crossed && (speed > 0.35 || ladder)) this.emit("step", speed, ladder ? 0.4 : Math.min(1, 0.25 + speed / 5))
     }
     const moving = this.grounded && !this.fly && speed > 0.2 ? 1 : 0
-    this.bobAmp += (moving * Math.min(speed, 4.5) - this.bobAmp) * (1 - Math.exp(-dt * 6))
+    // On stairs the body rises with the treads instead of bobbing over level strides: half the bob.
+    this.bobAmp += (moving * Math.min(speed, 4.5) * (this.stairs > 0 ? 0.5 : 1) - this.bobAmp) * (1 - Math.exp(-dt * 6))
     // Strafe roll: lean slightly into a sideways move.
     const right = this.vel.x * Math.cos(this.yaw) - this.vel.z * Math.sin(this.yaw)
     this.roll += (-right * 0.007 - this.roll) * (1 - Math.exp(-dt * 6))
@@ -366,7 +389,7 @@ export class Player {
     s.stepPhase = this.phase
     s.speed = speed
     this.apply()
-    if (this.trace) this.trace.push({ t: this.time, dt, y: this.pos.y, eye: this.camera.position.y, crouch: this.crouch, grounded: this.grounded })
+    if (this.trace) this.trace.push({ t: this.time, dt, x: this.pos.x, z: this.pos.z, y: this.pos.y, eye: this.camera.position.y, offset: this.eyeOffset, base: this.base, crouch: this.crouch, grounded: this.grounded })
   }
 
   private emit(kind: StepEvent["kind"], speed: number, intensity: number) {
@@ -384,7 +407,7 @@ export class Player {
     // Lowest at each footfall (phase 0 and 0.5), highest mid-stride; a slight sway towards the planted foot.
     const bobY = -amp * (0.5 + 0.5 * Math.cos(2 * p))
     const sway = amp * 0.35 * Math.sin(p)
-    const eyeY = this.pos.y + this.eyeHeight + this.eyeOffset + bobY
+    const eyeY = this.base + this.eyeHeight + this.eyeOffset + bobY
     const cx = this.pos.x + Math.cos(this.yaw) * sway
     const cz = this.pos.z - Math.sin(this.yaw) * sway
     this.camera.position.set(cx, eyeY, cz)
@@ -414,6 +437,63 @@ export class Player {
     }
     this.floor = floor
     return g
+  }
+
+  /**
+   * Walkable height under the feet smoothed with a 2D tent kernel (±0.3 m, up to ±0.5 m at a run), integrated exactly
+   * over the floor rectangles (all axis-aligned), so a flight of treads becomes an even ramp with no per-tread kink and
+   * no lag, whatever the walking direction. Heights more than 0.75 m from the current base (the flight on the other
+   * side of the well) and, when standing on a floor, places with no floor (inside a wall) are left out and the
+   * remaining weights renormalised, so only the treads underfoot shape the ramp.
+   */
+  private filteredGround() {
+    // Wider at a run, so the climb eases in over the same time at the foot of a flight (a straight ramp is unchanged).
+    const H = 0.3 + 0.2 * Math.max(0, Math.min(1, (Math.hypot(this.vel.x, this.vel.z) - 1.9) / 2.5))
+    const { x, z } = this.pos
+    // Heights are judged against the previous eye base (continuous), not the snapping feet: a tread entering or
+    // leaving the window when the body steps would otherwise kink the ramp for a frame.
+    const ref = this.wasGrounded ? this.base : this.pos.y
+    const maxY = ref + 0.75
+    const near = this.near
+    const xs = this.cutsX
+    const zs = this.cutsZ
+    near.length = xs.length = zs.length = 0
+    xs.push(-H, H)
+    zs.push(-H, H)
+    for (const f of this.ctx.floors) {
+      if (f.y > maxY || f.max[0] < x - H || f.min[0] > x + H || f.max[1] < z - H || f.min[1] > z + H) continue
+      near.push(f)
+      for (const v of [f.min[0] - x, f.max[0] - x]) if (v > -H && v < H) xs.push(v)
+      for (const v of [f.min[1] - z, f.max[1] - z]) if (v > -H && v < H) zs.push(v)
+    }
+    xs.sort((a, b) => a - b)
+    zs.sort((a, b) => a - b)
+    // Tent antiderivative on [-H, H] (total weight 1).
+    const F = (q: number) => (H * q - (Math.sign(q) * q * q) / 2) / (H * H)
+    // On a floor, cells with no floor (inside a wall, the void beside a stair) don't count; the rest are renormalised.
+    const indoors = this.floor !== null
+    let sum = 0
+    let total = 0
+    for (let i = 1; i < xs.length; i++) {
+      const wx = F(xs[i]!) - F(xs[i - 1]!)
+      if (wx <= 1e-9) continue
+      const px = x + (xs[i]! + xs[i - 1]!) / 2
+      for (let j = 1; j < zs.length; j++) {
+        const wz = F(zs[j]!) - F(zs[j - 1]!)
+        if (wz <= 1e-9) continue
+        const pz = z + (zs[j]! + zs[j - 1]!) / 2
+        let g = -Infinity
+        for (const f of near) if (px >= f.min[0] && px <= f.max[0] && pz >= f.min[1] && pz <= f.max[1] && f.y > g) g = f.y
+        if (g === -Infinity) {
+          if (indoors) continue
+          g = heightAt(px, pz)
+        } else g = Math.max(g, heightAt(px, pz))
+        if (Math.abs(g - ref) > 0.75) continue
+        sum += g * wx * wz
+        total += wx * wz
+      }
+    }
+    return total > 0.05 ? sum / total : this.pos.y
   }
 
   /**

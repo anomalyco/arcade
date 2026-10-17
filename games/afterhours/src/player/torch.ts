@@ -1,5 +1,4 @@
 import * as THREE from "three/webgpu"
-import { color, float, uniform } from "three/tsl"
 
 // A period two-D-cell aluminium flashlight (black anodised barrel with knurled grip, flared reflector head, tail cap),
 // turned from a lathe profile. Origin at the grip (where the fist closes), lens toward -Z.
@@ -18,9 +17,7 @@ export function createTorch() {
   body.computeVertexNormals()
   const metal = new THREE.MeshStandardNodeMaterial({ color: 0x141416, metalness: 0.85, roughness: 0.42 })
   const knurl = new THREE.MeshStandardNodeMaterial({ color: 0x101012, metalness: 0.8, roughness: 0.7 })
-  const lensLevel = uniform(0)
   const lens = new THREE.MeshStandardNodeMaterial({ color: 0x222222, metalness: 0, roughness: 0.05 })
-  lens.emissiveNode = color(1, 0.86, 0.66).mul(float(lensLevel).mul(6))
 
   const group = new THREE.Group()
   group.name = "torch"
@@ -32,7 +29,6 @@ export function createTorch() {
     m.receiveShadow = true
     group.add(m)
   }
-  group.userData.lensLevel = lensLevel
   group.visible = false
   return group
 }

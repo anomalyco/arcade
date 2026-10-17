@@ -1,17 +1,20 @@
 {
- "atlas": 4096,
+ "atlas": [
+  4096,
+  6016
+ ],
  "documents": {
   "memo_signin": {
-   "title": "Memo: night shift sign-in procedure",
+   "title": "Memo: night sign-in at the lobby guard desk",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.443359375,
-    0.0029296875,
-    0.59716796875,
-    0.20166015625
+    0.169189453125,
+    0.0019946808510638296,
+    0.32958984375,
+    0.14311835106382978
    ],
    "tags": [
     "board",
@@ -19,38 +22,38 @@
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "memo_carbon_inventory": {
-   "title": "Carbon copy: Sublevel B equipment inventory",
+   "title": "Carbon copy: Sublevel equipment inventory",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.60302734375,
-    0.0029296875,
-    0.7568359375,
-    0.20166015625
+    0.33544921875,
+    0.0019946808510638296,
+    0.495849609375,
+    0.14311835106382978
    ],
    "tags": [
     "desk",
     "clipboard"
    ],
    "paper": "onion",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "notice_sublevel": {
-   "title": "Notice: unauthorized access to Sublevel C",
+   "title": "Notice: unauthorized access to the Sublevel",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.7626953125,
-    0.0029296875,
-    0.91650390625,
-    0.20166015625
+    0.501708984375,
+    0.0019946808510638296,
+    0.662109375,
+    0.14311835106382978
    ],
    "tags": [
     "board",
@@ -58,26 +61,26 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
-  "notice_parking": {
-   "title": "Notice: Parking Lot B closed",
+  "notice_north_lot": {
+   "title": "Notice: north lot closed",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.22021484375,
-    0.15673828125,
-    0.4189453125
+    0.66796875,
+    0.0019946808510638296,
+    0.828369140625,
+    0.14311835106382978
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "notice_firedoors": {
    "title": "Notice: do not prop fire doors",
@@ -86,36 +89,36 @@
     0.279
    ],
    "uv": [
-    0.16259765625,
-    0.22021484375,
-    0.31640625,
-    0.4189453125
+    0.834228515625,
+    0.0019946808510638296,
+    0.99462890625,
+    0.14311835106382978
    ],
    "tags": [
     "wall",
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "notice_nightshift": {
-   "title": "Notice: night shift sign in at lobby desk",
+   "title": "Notice: night shift sign in at the lobby guard desk",
    "size": [
     0.216,
     0.14
    ],
    "uv": [
-    0.8056640625,
-    0.62939453125,
-    0.95947265625,
-    0.729248046875
+    0.1943359375,
+    0.8262965425531915,
+    0.354736328125,
+    0.8971077127659575
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "goldenrod",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "signin_sheet": {
    "title": "Night sign-in sheet (handwritten)",
@@ -124,10 +127,10 @@
     0.279
    ],
    "uv": [
-    0.322265625,
-    0.22021484375,
-    0.47607421875,
-    0.4189453125
+    0.0029296875,
+    0.15608377659574468,
+    0.163330078125,
+    0.29720744680851063
    ],
    "tags": [
     "clipboard",
@@ -135,19 +138,19 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
-  "roster_duty": {
-   "title": "Duty roster, week of Oct 15 (one name crossed out)",
+  "roster_operators": {
+   "title": "Operator watch roster, week of Oct 15 (SL names struck out)",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.48193359375,
-    0.22021484375,
-    0.6357421875,
-    0.4189453125
+    0.169189453125,
+    0.15608377659574468,
+    0.32958984375,
+    0.29720744680851063
    ],
    "tags": [
     "board",
@@ -155,7 +158,163 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
+  },
+  "roster_sl_rotation": {
+   "title": "Records: SL rotation roster 1981–84, names crossed out in red",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.33544921875,
+    0.15608377659574468,
+    0.495849609375,
+    0.29720744680851063
+   ],
+   "tags": [
+    "desk",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "memo_next_of_kin": {
+   "title": "Memo: SL rotation — next of kin letters (6)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.501708984375,
+    0.15608377659574468,
+    0.662109375,
+    0.29720744680851063
+   ],
+   "tags": [
+    "desk",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "letter_regret": {
+   "title": "Half-typed letter: '…regret to inform you that…'",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.66796875,
+    0.15608377659574468,
+    0.828369140625,
+    0.29720744680851063
+   ],
+   "tags": [
+    "desk",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "security_log": {
+   "title": "Protective Services night log (last entry 01:40, FL-1 called)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.834228515625,
+    0.15608377659574468,
+    0.99462890625,
+    0.29720744680851063
+   ],
+   "tags": [
+    "desk",
+    "clipboard",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "ops_log": {
+   "title": "Operations log, console 3-06 ('03:04 — ???')",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.0029296875,
+    0.3011968085106383,
+    0.163330078125,
+    0.44232047872340424
+   ],
+   "tags": [
+    "desk",
+    "clipboard",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "work_order_halt": {
+   "title": "Work order: halt all work 4th floor, by order of the Director",
+   "size": [
+    0.216,
+    0.14
+   ],
+   "uv": [
+    0.360595703125,
+    0.8262965425531915,
+    0.52099609375,
+    0.8971077127659575
+   ],
+   "tags": [
+    "desk",
+    "board",
+    "creepy"
+   ],
+   "paper": "yellow",
+   "pxPerMm": 3.04
+  },
+  "work_order_night": {
+   "title": "Night janitor work order (the player's task list)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.169189453125,
+    0.3011968085106383,
+    0.32958984375,
+    0.44232047872340424
+   ],
+   "tags": [
+    "clipboard",
+    "desk"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
+  },
+  "log_shower_test": {
+   "title": "Weekly safety-shower test log (blank after Oct 3)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.33544921875,
+    0.3011968085106383,
+    0.495849609375,
+    0.44232047872340424
+   ],
+   "tags": [
+    "wall",
+    "clipboard",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 3.04
   },
   "signup_bowling": {
    "title": "Bowling league sign-up sheet",
@@ -164,17 +323,17 @@
     0.279
    ],
    "uv": [
-    0.6416015625,
-    0.22021484375,
-    0.79541015625,
-    0.4189453125
+    0.501708984375,
+    0.3011968085106383,
+    0.662109375,
+    0.44232047872340424
    ],
    "tags": [
     "board",
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "flyer_bowling": {
    "title": "Bowling league flyer with tear-off tabs",
@@ -183,17 +342,17 @@
     0.279
    ],
    "uv": [
-    0.80126953125,
-    0.22021484375,
-    0.955078125,
-    0.4189453125
+    0.66796875,
+    0.3011968085106383,
+    0.828369140625,
+    0.44232047872340424
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "goldenrod",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "poster_missing_cat": {
    "title": "Missing cat poster (Biscuit)",
@@ -202,10 +361,10 @@
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.4248046875,
-    0.15673828125,
-    0.62353515625
+    0.834228515625,
+    0.3011968085106383,
+    0.99462890625,
+    0.44232047872340424
    ],
    "tags": [
     "board",
@@ -213,7 +372,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "menu_cafeteria": {
    "title": "Cafeteria menu, week of Oct 15 1984",
@@ -222,17 +381,17 @@
     0.279
    ],
    "uv": [
-    0.16259765625,
-    0.4248046875,
-    0.31640625,
-    0.62353515625
+    0.0029296875,
+    0.4463098404255319,
+    0.163330078125,
+    0.5874335106382979
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "poster_radiation": {
    "title": "Safety poster: caution radiation area",
@@ -241,16 +400,16 @@
     0.432
    ],
    "uv": [
-    0.16259765625,
-    0.0029296875,
-    0.297119140625,
-    0.2109375
+    0.43603515625,
+    0.5914228723404256,
+    0.552734375,
+    0.7142619680851063
    ],
    "tags": [
     "wall"
    ],
    "paper": "poster",
-   "pxPerMm": 1.97
+   "pxPerMm": 1.71
   },
   "poster_chemical": {
    "title": "Safety poster: chemical hazards, know your labels",
@@ -259,65 +418,137 @@
     0.432
    ],
    "uv": [
-    0.302978515625,
-    0.0029296875,
-    0.4375,
-    0.2109375
+    0.55859375,
+    0.5914228723404256,
+    0.67529296875,
+    0.7142619680851063
    ],
    "tags": [
     "wall"
    ],
    "paper": "poster",
-   "pxPerMm": 1.97
+   "pxPerMm": 1.71
   },
-  "map_evacuation": {
-   "title": "Evacuation route map, typical floor",
+  "map_evac_0": {
+   "title": "Evacuation route map, storey 0",
    "size": [
     0.279,
     0.216
    ],
    "uv": [
-    0.246337890625,
-    0.62939453125,
-    0.421630859375,
-    0.76513671875
+    0.68115234375,
+    0.5914228723404256,
+    0.868896484375,
+    0.6904920212765957
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.57
+   "pxPerMm": 2.75
+  },
+  "map_evac_1": {
+   "title": "Evacuation route map, storey 1",
+   "size": [
+    0.279,
+    0.216
+   ],
+   "uv": [
+    0.0029296875,
+    0.7232380319148937,
+    0.190673828125,
+    0.8223071808510638
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.75
+  },
+  "map_evac_2": {
+   "title": "Evacuation route map, storey 2",
+   "size": [
+    0.279,
+    0.216
+   ],
+   "uv": [
+    0.196533203125,
+    0.7232380319148937,
+    0.38427734375,
+    0.8223071808510638
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.75
+  },
+  "map_evac_3": {
+   "title": "Evacuation route map, storey 3",
+   "size": [
+    0.279,
+    0.216
+   ],
+   "uv": [
+    0.39013671875,
+    0.7232380319148937,
+    0.577880859375,
+    0.8223071808510638
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.75
+  },
+  "map_evac_4": {
+   "title": "Evacuation route map, storey 4",
+   "size": [
+    0.279,
+    0.216
+   ],
+   "uv": [
+    0.583740234375,
+    0.7232380319148937,
+    0.771484375,
+    0.8223071808510638
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.75
   },
   "form_requisition": {
-   "title": "Lab supply requisition form (OSR 113-B)",
+   "title": "Lab supply requisition form (IOPS 113-B)",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.322265625,
-    0.4248046875,
-    0.47607421875,
-    0.62353515625
+    0.169189453125,
+    0.4463098404255319,
+    0.32958984375,
+    0.5874335106382979
    ],
    "tags": [
     "desk",
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "printout_greenbar": {
-   "title": "Green-bar computer printout (receiver log)",
+   "title": "Green-bar printout: SL link log (03:02 link up, 03:04 saturated)",
    "size": [
     0.378,
     0.279
    ],
    "uv": [
     0.0029296875,
-    0.62939453125,
-    0.240478515625,
-    0.8046875
+    0.5914228723404256,
+    0.25732421875,
+    0.719248670212766
    ],
    "tags": [
     "desk",
@@ -325,7 +556,7 @@
     "creepy"
    ],
    "paper": "greenbar",
-   "pxPerMm": 2.57
+   "pxPerMm": 2.75
   },
   "note_repeated": {
    "title": "Legal pad sheet, one line written over and over",
@@ -335,9 +566,9 @@
    ],
    "uv": [
     0.0029296875,
-    0.0029296875,
-    0.15673828125,
-    0.21435546875
+    0.0019946808510638296,
+    0.163330078125,
+    0.15209441489361702
    ],
    "tags": [
     "desk",
@@ -345,19 +576,19 @@
     "creepy"
    ],
    "paper": "legal",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "sticky_dish": {
-   "title": "Sticky note: dish motor down",
+   "title": "Sticky note: dish stays pointed down",
    "size": [
     0.076,
     0.076
    ],
    "uv": [
-    0.16259765625,
-    0.810546875,
-    0.2421875,
-    0.89013671875
+    0.819091796875,
+    0.8262965425531915,
+    0.896728515625,
+    0.879155585106383
    ],
    "tags": [
     "desk",
@@ -365,7 +596,7 @@
     "wall"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.29
+   "pxPerMm": 4.18
   },
   "sticky_marge": {
    "title": "Sticky note: call Marge",
@@ -374,17 +605,17 @@
     0.076
    ],
    "uv": [
-    0.248046875,
-    0.810546875,
-    0.32763671875,
-    0.89013671875
+    0.902587890625,
+    0.8262965425531915,
+    0.980224609375,
+    0.879155585106383
    ],
    "tags": [
     "desk",
     "board"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.29
+   "pxPerMm": 4.18
   },
   "sticky_dont": {
    "title": "Sticky note: don't answer 300",
@@ -393,17 +624,36 @@
     0.076
    ],
    "uv": [
-    0.33349609375,
-    0.810546875,
-    0.4130859375,
-    0.89013671875
+    0.0029296875,
+    0.9047539893617021,
+    0.08056640625,
+    0.9576130319148937
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.29
+   "pxPerMm": 4.18
+  },
+  "sticky_back5": {
+   "title": "Sticky note: back in 5 — R. (lab 2-27)",
+   "size": [
+    0.076,
+    0.076
+   ],
+   "uv": [
+    0.08642578125,
+    0.9047539893617021,
+    0.1640625,
+    0.9576130319148937
+   ],
+   "tags": [
+    "desk",
+    "creepy"
+   ],
+   "paper": "sticky",
+   "pxPerMm": 4.18
   },
   "card_extensions": {
    "title": "Index card: phone extensions",
@@ -412,17 +662,17 @@
     0.076
    ],
    "uv": [
-    0.4189453125,
-    0.810546875,
-    0.53857421875,
-    0.88232421875
+    0.169921875,
+    0.9047539893617021,
+    0.287841796875,
+    0.9527925531914894
    ],
    "tags": [
     "desk",
     "board"
    ],
    "paper": "card",
-   "pxPerMm": 3.86
+   "pxPerMm": 3.8
   },
   "polaroid_dish": {
    "title": "Polaroid: the dish at dusk",
@@ -431,17 +681,17 @@
     0.107
    ],
    "uv": [
-    0.609375,
-    0.62939453125,
-    0.70166015625,
-    0.741455078125
+    0.0029296875,
+    0.8262965425531915,
+    0.0927734375,
+    0.9007646276595744
    ],
    "tags": [
     "board",
     "desk"
    ],
    "paper": "polaroid",
-   "pxPerMm": 4.29
+   "pxPerMm": 4.18
   },
   "polaroid_corridor": {
    "title": "Polaroid: corridor at 2:40 am",
@@ -450,10 +700,10 @@
     0.107
    ],
    "uv": [
-    0.70751953125,
-    0.62939453125,
-    0.7998046875,
-    0.741455078125
+    0.0986328125,
+    0.8262965425531915,
+    0.1884765625,
+    0.9007646276595744
    ],
    "tags": [
     "board",
@@ -461,7 +711,7 @@
     "creepy"
    ],
    "paper": "polaroid",
-   "pxPerMm": 4.29
+   "pxPerMm": 4.18
   },
   "calendar_oct84": {
    "title": "Wall calendar page, October 1984",
@@ -470,17 +720,17 @@
     0.215
    ],
    "uv": [
-    0.427490234375,
-    0.62939453125,
-    0.603515625,
-    0.7646484375
+    0.77734375,
+    0.7232380319148937,
+    0.959228515625,
+    0.8183178191489362
    ],
    "tags": [
     "wall",
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 2.57
+   "pxPerMm": 2.66
   },
   "directory_extensions": {
    "title": "Typed station telephone directory",
@@ -489,10 +739,10 @@
     0.279
    ],
    "uv": [
-    0.48193359375,
-    0.4248046875,
-    0.6357421875,
-    0.62353515625
+    0.33544921875,
+    0.4463098404255319,
+    0.495849609375,
+    0.5874335106382979
    ],
    "tags": [
     "wall",
@@ -500,7 +750,7 @@
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "memo_coffee": {
    "title": "Memo: coffee fund short",
@@ -509,36 +759,36 @@
     0.14
    ],
    "uv": [
-    0.0029296875,
-    0.810546875,
-    0.15673828125,
-    0.910400390625
+    0.52685546875,
+    0.8262965425531915,
+    0.687255859375,
+    0.8971077127659575
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "pink",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "checklist_rounds": {
-   "title": "Night rounds checklist (last rounds unticked)",
+   "title": "Night rounds checklist (FL-1 gate open at 0310)",
    "size": [
     0.216,
     0.279
    ],
    "uv": [
-    0.6416015625,
-    0.4248046875,
-    0.79541015625,
-    0.62353515625
+    0.501708984375,
+    0.4463098404255319,
+    0.662109375,
+    0.5874335106382979
    ],
    "tags": [
     "clipboard",
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 2.92
+   "pxPerMm": 3.04
   },
   "envelope_interoffice": {
    "title": "Interoffice routing envelope",
@@ -547,59 +797,369 @@
     0.33
    ],
    "uv": [
-    0.80126953125,
-    0.4248046875,
-    0.947998046875,
-    0.618408203125
+    0.66796875,
+    0.4463098404255319,
+    0.81884765625,
+    0.5819481382978723
    ],
    "tags": [
     "desk",
     "floor"
    ],
    "paper": "manila",
-   "pxPerMm": 2.4
+   "pxPerMm": 2.47
+  },
+  "timecard_halverson": {
+   "title": "Time card: D. Halverson (SL, punched IN 22:58)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.26318359375,
+    0.5914228723404256,
+    0.34375,
+    0.715591755319149
+   ],
+   "tags": [
+    "wall",
+    "desk",
+    "creepy"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 3.99
+  },
+  "timecard_lindqvist": {
+   "title": "Time card: E. Lindqvist (SL, punched IN 22:58)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.349609375,
+    0.5914228723404256,
+    0.43017578125,
+    0.715591755319149
+   ],
+   "tags": [
+    "wall",
+    "desk",
+    "creepy"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 3.99
+  },
+  "board_dosimeter": {
+   "title": "Sign: SUBLEVEL — DOSIMETER REQUIRED (0-15)",
+   "size": [
+    0.45,
+    0.3
+   ],
+   "uv": [
+    0.693115234375,
+    0.8262965425531915,
+    0.813232421875,
+    0.8808178191489362
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.09
+  },
+  "stencil_w1": {
+   "title": "Stencil: W-1 — SL TRUNK (riser cupboard)",
+   "size": [
+    0.36,
+    0.12
+   ],
+   "uv": [
+    0.374755859375,
+    0.9047539893617021,
+    0.47509765625,
+    0.9275265957446809
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.14
+  },
+  "plate_el0": {
+   "title": "Door plate: EL-0 Electrical",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.48095703125,
+    0.9047539893617021,
+    0.569091796875,
+    0.9273603723404256
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_el1": {
+   "title": "Door plate: EL-1 Electrical",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.574951171875,
+    0.9047539893617021,
+    0.6630859375,
+    0.9273603723404256
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_el2": {
+   "title": "Door plate: EL-2 Electrical",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.6689453125,
+    0.9047539893617021,
+    0.757080078125,
+    0.9273603723404256
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_el3": {
+   "title": "Door plate: EL-3 Electrical",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.762939453125,
+    0.9047539893617021,
+    0.85107421875,
+    0.9273603723404256
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_el4": {
+   "title": "Door plate: EL-4 Electrical",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.85693359375,
+    0.9047539893617021,
+    0.945068359375,
+    0.9273603723404256
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_tc0": {
+   "title": "Door plate: TC-0 Telecom",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.0029296875,
+    0.9616023936170213,
+    0.091064453125,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_tc1": {
+   "title": "Door plate: TC-1 Telecom",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.096923828125,
+    0.9616023936170213,
+    0.18505859375,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_tc2": {
+   "title": "Door plate: TC-2 Telecom",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.19091796875,
+    0.9616023936170213,
+    0.279052734375,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_tc3": {
+   "title": "Door plate: TC-3 Telecom",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.284912109375,
+    0.9616023936170213,
+    0.373046875,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_tc4": {
+   "title": "Door plate: TC-4 Telecom",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.37890625,
+    0.9616023936170213,
+    0.467041015625,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_jc": {
+   "title": "Door plate: Janitor closet",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.472900390625,
+    0.9616023936170213,
+    0.56103515625,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "plate_vault": {
+   "title": "Door plate: vault, two-person rule (1-01v)",
+   "size": [
+    0.2,
+    0.075
+   ],
+   "uv": [
+    0.56689453125,
+    0.9616023936170213,
+    0.655029296875,
+    0.9842087765957447
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.8
+  },
+  "sign_out_of_order": {
+   "title": "Taped sign: OUT OF ORDER (4th floor WCs)",
+   "size": [
+    0.216,
+    0.14
+   ],
+   "uv": [
+    0.293701171875,
+    0.9047539893617021,
+    0.368896484375,
+    0.937998670212766
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 1.42
   }
  },
  "swatches": {
   "pin_red": [
    0.0087890625,
-   0.9931640625
+   0.995345744680851
   ],
   "pin_blue": [
    0.0205078125,
-   0.9931640625
+   0.995345744680851
   ],
   "pin_yellow": [
    0.0322265625,
-   0.9931640625
+   0.995345744680851
   ],
   "pin_green": [
    0.0439453125,
-   0.9931640625
+   0.995345744680851
   ],
   "pin_white": [
    0.0556640625,
-   0.9931640625
+   0.995345744680851
   ],
   "steel": [
    0.0673828125,
-   0.9931640625
+   0.995345744680851
   ],
   "brass": [
    0.0791015625,
-   0.9931640625
+   0.995345744680851
   ],
   "tape": [
    0.0908203125,
-   0.9931640625
+   0.995345744680851
   ],
   "clip_black": [
    0.1025390625,
-   0.9931640625
+   0.995345744680851
   ],
   "cork": [
    0.1142578125,
-   0.9931640625
+   0.995345744680851
   ]
  }
 }

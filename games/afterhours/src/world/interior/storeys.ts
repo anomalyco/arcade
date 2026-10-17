@@ -143,7 +143,7 @@ export const rz = (r: Room, v: number) => r.side * (ZC + v)
 export const DEPTH = ZW - ZC
 
 /** Venetian blinds: horizontal slats from the world height, closed (opaque) or tilted open (light between slats). */
-const blindMats = (() => {
+export const blindMats = (() => {
   const make = (open: boolean) => {
     const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.6, side: THREE.DoubleSide })
     const f = fract(positionWorld.y.mul(40))
@@ -161,9 +161,9 @@ const blindMats = (() => {
 
 /** Clear plastic sheeting, hung from the ceiling on storey 4. */
 /** Polythene sheeting: nearly clear, glossy (the tubes streak across its folds), never a dark veil. */
-const plasticMat = materialFor("flat", { color: 0xe8ece6, roughness: 0.12, transparent: 0.12, side: THREE.DoubleSide, name: "interior_plastic" })
+export const plasticMat = materialFor("flat", { color: 0xe8ece6, roughness: 0.12, transparent: 0.12, side: THREE.DoubleSide, name: "interior_plastic" })
 /** Machine-room glazing: clear, faintly green-edged plate glass. */
-const glazing = materialFor("flat", { color: 0xd4e4dc, roughness: 0.03, transparent: 0.08, name: "interior_glazing" })
+export const glazing = materialFor("flat", { color: 0xd4e4dc, roughness: 0.03, transparent: 0.08, name: "interior_glazing" })
 
 /** Soft-edged floor and ceiling decals (water stains, puddles) with an irregular outline, in the quad's 0..1 UVs. */
 const decal = (color: number, roughness: number, alpha: number, name: string) => {
@@ -179,8 +179,8 @@ const decal = (color: number, roughness: number, alpha: number, name: string) =>
   m.name = `interior_${name}`
   return m
 }
-const STAIN = decal(0x2e2518, 0.95, 0.7, "stain_decal")
-const PUDDLE = decal(0x080908, 0.03, 0.85, "puddle_decal")
+export const STAIN = decal(0x2e2518, 0.95, 0.7, "stain_decal")
+export const PUDDLE = decal(0x080908, 0.03, 0.85, "puddle_decal")
 
 const CARPET = paint(0x3a3630, 0.97)
 const RAISED = paint(0x8f918a, 0.55)
@@ -352,7 +352,7 @@ export async function buildStorey(b: Builder, storey: number, pause: () => Promi
   }
 }
 
-function windowDressing(b: Builder, r: Room, rnd: () => number) {
+export function windowDressing(b: Builder, r: Room, rnd: () => number) {
   const a = r.win!
   const s = r.side
   const zf = s * ZW
@@ -383,7 +383,7 @@ function windowDressing(b: Builder, r: Room, rnd: () => number) {
   b.box(M.beige, a + 0.03, yTop - 0.06 - h, zf - s * 0.06, a + WIN_W - 0.03, yTop - 0.04 - h, zf - s * 0.03, { cast: false })
 }
 
-function raisedFloorGrid(b: Builder, r: Room) {
+export function raisedFloorGrid(b: Builder, r: Room) {
   const y = FLOOR_Y + LAYER
   const za = Math.min(r.side * ZC, r.side * CORE_Z)
   const zb = Math.max(r.side * ZC, r.side * CORE_Z)
@@ -392,7 +392,7 @@ function raisedFloorGrid(b: Builder, r: Room) {
 }
 
 /** A ceiling tile on the floor: whole and skewed, or snapped in two. */
-function fallenTile(b: Builder, x: number, z: number, rnd: () => number) {
+export function fallenTile(b: Builder, x: number, z: number, rnd: () => number) {
   const y = FLOOR_Y
   const yaw = rnd() * Math.PI
   if (rnd() < 0.5) b.boxM("ceiling_tile", T(x + (rnd() - 0.5) * 0.6, y + 0.03, z + (rnd() - 0.5) * 0.6, yaw, (rnd() - 0.5) * 0.08, (rnd() - 0.5) * 0.25), 0.6, 0.02, 1.2)
@@ -434,18 +434,21 @@ function corridorDressing(b: Builder, storey: number, theme: Theme, rnd: () => n
 
 /** Butt seams of the wallcovering every 0.9 m on both corridor walls (storey 1). */
 function vinylSeams(b: Builder, special: Room[]) {
+  const doors = roomsFor(1)
   for (const side of [-1, 1]) {
     const z = side * 1.6
     for (let x = SHELL.x0 + 0.9; x < SHELL.x1; x += 0.9) {
       if (special.some((r) => r.side === side && x > r.x0 && x < r.x1)) continue
       if (side > 0 && x > HALL.x0 - 0.2 && x < HALL.x1 + 0.2) continue
+      // Never across a door opening (a seam strip there read as a glowing line in the doorway).
+      if (doors.some((r) => r.side === side && Math.abs(x - r.door) < 0.62)) continue
       b.box(M.vinylSeam, x - 0.002, FLOOR_Y + 0.93, z - side * 0.002, x + 0.002, CEIL_Y, z, { cast: false })
     }
   }
 }
 
 /** Ladder cable tray hung below the ceiling along the corridor (storey 3), cable bundles in it. */
-function cableTray(b: Builder) {
+export function cableTray(b: Builder) {
   const y = CEIL_Y - 0.32
   const z0 = 0.55
   const z1 = 0.95
@@ -467,7 +470,7 @@ function cableTray(b: Builder) {
 }
 
 /** Emergency drench shower and eyewash on the corridor wall (labs storey). */
-function safetyShower(b: Builder, x: number, zWall: number) {
+export function safetyShower(b: Builder, x: number, zWall: number) {
   const z = zWall + 0.12
   b.rod(M.safety, [x, FLOOR_Y, z], [x, CEIL_Y - 0.2, z], 0.02, 10)
   b.rod(M.safety, [x, CEIL_Y - 0.2, z], [x, CEIL_Y - 0.2, z + 0.45], 0.02, 10)
@@ -511,7 +514,7 @@ function decayCorridor(b: Builder, rnd: () => number) {
 }
 
 /** Hanging plastic sheet across z0..z1 at x, wrinkled, stopping `gap` short of the floor. */
-function plastic(b: Builder, x: number, z0: number, z1: number, rnd: () => number, gap = 0.04) {
+export function plastic(b: Builder, x: number, z0: number, z1: number, rnd: () => number, gap = 0.04) {
   const w = z1 - z0
   const h = CEIL_Y - FLOOR_Y - gap
   const g = new THREE.PlaneGeometry(w, h, 12, 10)
@@ -589,7 +592,7 @@ function raisedCorridor(b: Builder, r: Room) {
 }
 
 /** Patches of old linoleum and adhesive left on the stripped slab. */
-function slabRemnants(b: Builder, rnd: () => number) {
+export function slabRemnants(b: Builder, rnd: () => number) {
   for (let k = 0; k < 9; k++) {
     const x = SHELL.x0 + 4 + rnd() * 80
     const w = 0.6 + rnd() * 2.2
@@ -600,7 +603,7 @@ function slabRemnants(b: Builder, rnd: () => number) {
 }
 
 /** A fitting hanging out of the grid on two wires, a T-bar sagging beside it. */
-function hangingTroffer(b: Builder, x: number, rnd: () => number) {
+export function hangingTroffer(b: Builder, x: number, rnd: () => number) {
   const tilt = 0.5 + rnd() * 0.4
   const m = T(x, CEIL_Y - 0.5, 0.15, rnd() * 0.4, 0.1, tilt)
   b.boxM(M.housing, m, 0.6, 0.08, 1.2)
@@ -611,7 +614,7 @@ function hangingTroffer(b: Builder, x: number, rnd: () => number) {
 }
 
 /** Chemical store placard beside a lab door: a hazard diamond (four coloured quarters) and a chevron floor strip. */
-function hazardPlacard(b: Builder, x: number, z: number, side: number) {
+export function hazardPlacard(b: Builder, x: number, z: number, side: number) {
   const y = FLOOR_Y + 1.55
   const yaw = side > 0 ? Math.PI : 0
   const cols = [paint(0x2a4a8a, 0.5), paint(0x8a1a12, 0.5), paint(0x9a8012, 0.5), paint(0xcfcbbb, 0.6)]
@@ -626,7 +629,7 @@ function hazardPlacard(b: Builder, x: number, z: number, side: number) {
 }
 
 /** Glazed corridor wall into the machine room: plate glass in steel mullions, halon warning beacons over the door. */
-function machineGlazing(b: Builder, r: Room) {
+export function machineGlazing(b: Builder, r: Room) {
   const a0 = r.door + 0.75
   const a1 = r.x1 - 0.3
   const z = r.side * 1.675
@@ -725,7 +728,7 @@ function nook(b: Builder, r: Room, rnd: () => number) {
 }
 
 /** Blue tarp hung from the grid over a doorway, sagging and creased. */
-function tarpHung(b: Builder, x: number, zWall: number, rnd: () => number) {
+export function tarpHung(b: Builder, x: number, zWall: number, rnd: () => number) {
   const w = 2.2
   const h = CEIL_Y - FLOOR_Y - 0.5
   const g = new THREE.PlaneGeometry(w, h, 10, 8)
@@ -742,7 +745,7 @@ function tarpHung(b: Builder, x: number, zWall: number, rnd: () => number) {
 }
 
 /** Tarp spread on the floor under a leak, edges folded, a bucket of brown water on it. */
-function tarpFloor(b: Builder, x: number, z: number, rnd: () => number) {
+export function tarpFloor(b: Builder, x: number, z: number, rnd: () => number) {
   const g = new THREE.PlaneGeometry(1.8, 1.4, 8, 6)
   const pos = g.getAttribute("position")
   for (let i = 0; i < pos.count; i++) {
@@ -757,7 +760,7 @@ function tarpFloor(b: Builder, x: number, z: number, rnd: () => number) {
 }
 
 /** Plywood hoarding across the corridor on its studs, hazard tape on it: the east end is closed off. */
-function hoarding(b: Builder, x: number) {
+export function hoarding(b: Builder, x: number) {
   b.box(M.plywood, x, FLOOR_Y, -1.6, x + 0.018, CEIL_Y, 1.6)
   for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.wood, x + 0.018, FLOOR_Y, z - 0.02, x + 0.1, CEIL_Y, z + 0.02)
   b.box(M.wood, x + 0.018, FLOOR_Y, -1.6, x + 0.1, FLOOR_Y + 0.05, 1.6)
