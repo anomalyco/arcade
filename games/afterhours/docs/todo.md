@@ -46,3 +46,11 @@
 - Kit nice-to-have: pedestal eyewash, freestanding drench shower, softer closed blinds, less boxy fume hood.
 - Gameplay: sub-room ids (2-02b, 2-07b, 2-10b) need to be in the room registry.
 - Re-capture s2 microbiology UV and containment isolator after brightening.
+
+## From storey 3 agent
+- Kit: services.ts chase wall east face (x -36.075) has toilet tile to z 16.05; north of toilets (z > 9.6) should be room finish.
+- Kit: room() should pass troffers.perLamp.
+- Assets: screen rectangle metadata for crt_terminal/television so "on" screens can overlay.
+- Kit: officeSet chair faces away from desk (also reported by s1/s2).
+- Doors-check: "E closes it" flaky under load.
+- s3: landmark (machine-room glass wall from stair hall) reads dimly; terminal pool sparse; re-capture machine room/spine/pool after late changes.
