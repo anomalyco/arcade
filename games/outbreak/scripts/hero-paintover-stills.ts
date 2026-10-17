@@ -60,9 +60,9 @@ const UP = -Math.PI / 2
 const DOWN = Math.PI / 2
 
 const COOP_LINEUP: Companion[] = [
-  { id: "maya", index: 1, x: 27.15, y: 39.7, aim: DOWN - 0.18, flashlight: true },
-  { id: "hank", index: 2, x: 27.95, y: 39.55, aim: DOWN + 0.12, flashlight: true },
-  { id: "tess", index: 3, x: 28.75, y: 39.75, aim: DOWN + 0.28, flashlight: true },
+  { id: "maya", index: 1, x: 27.15, y: 39.75, aim: DOWN - 0.15, flashlight: true },
+  { id: "hank", index: 2, x: 27.95, y: 40.0, aim: DOWN + 0.08, flashlight: true },
+  { id: "tess", index: 3, x: 28.75, y: 40.25, aim: DOWN + 0.24, flashlight: true },
 ]
 
 const STREET_HORDE: Z[] = [
@@ -90,8 +90,8 @@ const shots: Shot[] = [
     hour: 21,
     zoom: 28,
     x: 26.35,
-    y: 39.85,
-    aim: DOWN - 0.32,
+    y: 39.5,
+    aim: 0.65,
     flashlight: true,
     companions: COOP_LINEUP,
     walk: 18,
@@ -101,8 +101,8 @@ const shots: Shot[] = [
     hour: 14,
     zoom: 28,
     x: 26.35,
-    y: 39.85,
-    aim: DOWN - 0.32,
+    y: 39.5,
+    aim: 0.65,
     flashlight: false,
     companions: COOP_LINEUP.map(c => ({ ...c, flashlight: false })),
     walk: 18,
@@ -140,28 +140,40 @@ const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .h
 const errors: string[] = []
 const meta: Record<string, unknown> = { shots: {} }
 
+async function waitForWorldReady(page: Page) {
+  await page.evaluate(async () => {
+    const h = (window as any).__arcadeHarness
+    h.freeze(true)
+    h.setQuality("high")
+    h.setLab("timeScale", 0)
+    h.setLab("zombieCount", 0)
+    const t0 = performance.now()
+    while (performance.now() - t0 < 20000) {
+      await h.step(1 / 60, { mx: 0, my: 0, aim: -Math.PI / 2 })
+      const props = h.state().props
+      const rugs = h.interiors?.()
+      if ((props?.ready ?? true) && (rugs?.settled ?? true) && performance.now() - t0 > 600) break
+      await new Promise(r => setTimeout(r, 25))
+    }
+  })
+}
+
 async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, number>) {
   return page.evaluate(async ({ s, set }) => {
     const h = (window as any).__arcadeHarness
     h.freeze(true)
-    h.reset(7)
-    h.setQuality("high")
     h.setLab("timeScale", 0)
     h.setLab("zombieCount", 0)
     h.setLab("hour", s.hour)
     h.setZoomRaw(s.zoom)
-    if (s.companions?.length) {
-      h.setLab("cone", 360)
-      h.setLab("awareness", 14)
-    } else {
-      h.setLab("cone", 110)
-      h.setLab("awareness", 2.5)
-    }
     for (const [k, v] of Object.entries(set)) {
       try { h.setLab(k, v) } catch { /* ignore */ }
     }
-    h.pose(s.x, s.y, s.aim)
     const sim = h.session().sim
+    while (sim.slots.length > 1) sim.removeSurvivor(sim.slots[1]!.id)
+    sim.ai.agents.length = 0
+    sim.ai.nextId = 1
+    h.pose(s.x, s.y, s.aim)
     const addedSlots: any[] = []
     for (const c of s.companions ?? []) {
       const slot = sim.addSurvivor(c.id, c.index)
@@ -189,17 +201,8 @@ async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, numb
         slot.survivor.flashlightOutput = spec.flashlight ? 1 : 0
       }
     }
-    const t0 = performance.now()
-    while (performance.now() - t0 < 20000) {
-      pinActors()
-      await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
-      const props = h.state().props
-      const rugs = h.interiors?.()
-      if ((props?.ready ?? true) && (rugs?.settled ?? true) && performance.now() - t0 > 600) break
-      await new Promise(r => setTimeout(r, 25))
-    }
     for (const z of s.zombies ?? []) h.spawnZombie(z.x, z.y, "chase", z.aim)
-    for (let i = 0; i < (s.walk ?? 24); i++) {
+    for (let i = 0; i < (s.walk ?? 18); i++) {
       pinActors()
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     }
@@ -252,6 +255,7 @@ async function sheet(page: Page, file: string, title: string, rows: { label: str
 
 try {
   const page = await open(W, H, 2)
+  await waitForWorldReady(page)
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   await page.addStyleTag({ content: `${HUD} { visibility: hidden !important; }` })
   const files: Record<string, string> = {}
@@ -279,28 +283,14 @@ try {
       console.log(name, JSON.stringify(info.look), `zombies=${info.zombies}`, `companions=${info.companions}`)
     }
   }
-  if (looks.length > 1) {
-    const sheetPage = await browser.newPage()
-    for (const shot of shots) {
-      const row = (k: string) =>
-        looks.map(id => ({
-          label: `${LOOKS[id]!.label}${k ? ` (${k})` : ""}`,
-          file: files[`${shot.name}-${id}${k ? `-${k}` : ""}`]!,
-        }))
-      await sheet(sheetPage, resolve(out, `compare-${shot.name}.jpg`), shot.name, [row("x3"), row("x2"), row("")], 760)
-    }
-    await sheetPage.close()
-  }
 
   if (bench && looks.length > 1) {
-    await page.close()
-    const gpuPage = await open(1728, 947, 2)
-    meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+    await page.setViewportSize({ width: 1728, height: 947 })
+    meta.gpuViewport = await page.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
     const med = (xs: number[]) => {
       const s = [...xs].sort((p, q) => p - q)
       return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2
     }
-    // Build a dense 60-zombie street horde shot specifically for horde GPU/CPU benchmarking
     const denseHordeZombies: Z[] = Array.from({ length: 60 }, (_, i) => ({
       x: 24.5 + (i % 10) * 0.72,
       y: 41.8 + Math.floor(i / 10) * 0.72,
@@ -323,18 +313,21 @@ try {
     ]
     const perf: Record<string, unknown> = {}
     for (const shot of benchShots) {
+      await setup(page, shot, LOOKS.before!.set)
       const gpuA: number[] = []
       const gpuB: number[] = []
       const cpuA: number[] = []
       const cpuB: number[] = []
       for (let r = 0; r < rounds; r++) {
         for (const after of r % 2 ? [true, false] : [false, true]) {
-          await setup(gpuPage, shot, LOOKS[after ? "after" : "before"]!.set)
-          const res = await gpuPage.evaluate(async () => {
+          const set = LOOKS[after ? "after" : "before"]!.set
+          const res = await page.evaluate(async ({ set, aim }) => {
             const h = (window as any).__arcadeHarness
+            for (const [k, v] of Object.entries(set)) h.setLab(k, v)
+            await h.step(1 / 60, { mx: 0, my: 0, aim })
             const g: number[] = []
             const c: number[] = []
-            for (let i = 0; i < 18; i++) {
+            for (let i = 0; i < 12; i++) {
               const t0 = performance.now()
               const gpuMs = await h.renderer.measure(h.render)
               const cpuMs = performance.now() - t0
@@ -344,7 +337,7 @@ try {
             const gSorted = g.slice(2).sort((x: number, y: number) => x - y)
             const cSorted = c.slice(2).sort((x: number, y: number) => x - y)
             return { gpu: gSorted[gSorted.length >> 1]!, cpu: cSorted[cSorted.length >> 1]! }
-          })
+          }, { set, aim: shot.aim })
           ;(after ? gpuB : gpuA).push(res.gpu)
           ;(after ? cpuB : cpuA).push(res.cpu)
         }
@@ -366,6 +359,17 @@ try {
       )
     }
     meta.perf = perf
+  }
+
+  if (looks.length > 1) {
+    for (const shot of shots) {
+      const row = (k: string) =>
+        looks.map(id => ({
+          label: `${LOOKS[id]!.label}${k ? ` (${k})` : ""}`,
+          file: files[`${shot.name}-${id}${k ? `-${k}` : ""}`]!,
+        }))
+      await sheet(page, resolve(out, `compare-${shot.name}.jpg`), shot.name, [row("x3"), row("x2"), row("")], 760)
+    }
   }
   meta.errors = errors
 } finally {
