@@ -86,6 +86,7 @@ const ctx: WorldContext = {
   camera,
   colliders: [],
   floors: [],
+  ladders: [],
   lamps: [],
   settings: { "player.walk": 1.9, "player.sensitivity": 1 },
   controls: [

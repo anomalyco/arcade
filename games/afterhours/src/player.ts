@@ -75,7 +75,16 @@ export class Player {
     const dx = ((-sin * fwd + cos * side) / len) * this.speed * dt
     const dz = ((-cos * fwd - sin * side) / len) * this.speed * dt
 
-    if (this.fly) {
+    const ladder = this.fly ? undefined : this.ladderAt()
+    if (ladder) {
+      this.vy = 0
+      this.pos.y = Math.min(Math.max(this.pos.y + fwd * 1.4 * dt, ladder.min[1] - 0.05), ladder.max[1])
+      this.move(dx * 0.4, 0)
+      this.move(0, dz * 0.4)
+      const top = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP)
+      if (this.pos.y < top) this.pos.y = top
+      this.bob += Math.abs(fwd) * dt * 2.5
+    } else if (this.fly) {
       this.pos.x += dx
       this.pos.z += dz
       const up = (k.has("Space") ? 1 : 0) - (k.has("KeyC") ? 1 : 0)
@@ -99,6 +108,13 @@ export class Player {
     const bobAmt = this.fly ? 0 : Math.min(this.speed, 4) * 0.012
     this.camera.position.set(this.pos.x, this.pos.y + EYE + Math.sin(this.bob * 2) * bobAmt, this.pos.z)
     this.camera.rotation.set(this.pitch, this.yaw, Math.sin(this.bob) * bobAmt * 0.15, "YXZ")
+  }
+
+  private ladderAt() {
+    const p = this.pos
+    return this.ctx.ladders.find(
+      (l) => p.x >= l.min[0] && p.x <= l.max[0] && p.z >= l.min[2] && p.z <= l.max[2] && p.y + 0.3 >= l.min[1] && p.y <= l.max[1],
+    )
   }
 
   /** Highest walkable surface at (x, z) that is no higher than `maxY`. */

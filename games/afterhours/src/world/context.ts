@@ -31,7 +31,12 @@ export type Lamp = {
   size?: number
   /** Flicker amount 0..1 (fluorescent tubes on their way out). */
   flicker?: number
+  /** Culling zone: "exterior", or "interior:<storey>" for lamps inside the main block. Lighting skips far zones. */
+  zone?: string
 }
+
+/** A climbable volume (fire-escape and access ladders). Inside it, W/S climb up/down instead of walking. */
+export type Ladder = { min: readonly [number, number, number]; max: readonly [number, number, number] }
 
 export type WorldModule = {
   update?: (dt: number, time: number, camera: THREE.PerspectiveCamera) => void
@@ -43,6 +48,7 @@ export type WorldContext = {
   camera: THREE.PerspectiveCamera
   colliders: Box[]
   floors: Floor[]
+  ladders: Ladder[]
   lamps: Lamp[]
   /** Lab panel settings shared by every module; add defaults here and controls to `controls`. */
   settings: LabSettings
