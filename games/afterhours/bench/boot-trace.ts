@@ -49,6 +49,7 @@ await page.addInitScript((emulate: string) => {
     codeOf: new WeakMap<object, string>(),
     nodeBuilds: 0,
     buildsBy: {} as Record<string, number>,
+    pipesBy: {} as Record<string, number>,
     nodeBuildSyncMs: 0,
     nodeBuildAsyncWallMs: 0,
     firstFrameAt: 0,
@@ -137,6 +138,20 @@ const snap = (d: any) => ({
     set(v) {
       dbg = v
       if (emulate === "attr") v.renderer.backend.capabilities.getUniformBufferLimit = () => 0
+      // New render pipelines per module (pipelines.getForRender creates and caches them).
+      const pipes = v.renderer._pipelines
+      const gfr = pipes.getForRender
+      pipes.getForRender = function (ro: any, ...rest: any[]) {
+        const before = pipes.caches.size
+        const r = gfr.call(this, ro, ...rest)
+        if (pipes.caches.size > before) {
+          let root = ro.object
+          while (root?.parent && root.parent.type !== "Scene") root = root.parent
+          const mod = root?.name || ro.object?.type || "?"
+          log.pipesBy[mod] = (log.pipesBy[mod] ?? 0) + (pipes.caches.size - before)
+        }
+        return r
+      }
       const nodes = v.renderer._nodes
       const create = nodes._createNodeBuilder
       nodes._createNodeBuilder = function (...a: any[]) {
@@ -252,6 +267,7 @@ const result = await page.evaluate(async (doReplay) => {
       bufferMB: +(log.bufferBytes / 1e6).toFixed(1),
       writeBufferMB: +(log.writeBufferBytes / 1e6).toFixed(1),
     },
+    pipelinesBy: Object.fromEntries(Object.entries(log.pipesBy as Record<string, number>).sort((a, b) => b[1] - a[1])),
     nodeBuildsBy: Object.fromEntries(Object.entries(log.buildsBy as Record<string, number>).sort((a, b) => b[1] - a[1])),
     nodeBuilds: { count: log.nodeBuilds, syncMs: +log.nodeBuildSyncMs.toFixed(0), asyncWallMs: +log.nodeBuildAsyncWallMs.toFixed(0) },
   }

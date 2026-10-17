@@ -271,28 +271,68 @@ export class Player {
     const toggle = Number(this.ctx.settings["player.crouchMode"] ?? 0) === 1
     this.crouchWanted = toggle ? this.crouchToggled : k.has("KeyC")
     if (!toggle) this.crouchToggled = false
-    const target = this.crouchWanted || !this.headroom(this.pos.x, this.pos.z, this.pos.y + EYE + CROWN) ? 1 : 0
+    // (No forced crouch on a ladder: its volume is the climbing column, hatch frames and cages included.)
+    const forced = !this.ladderAt() && !this.headroom(this.pos.x, this.pos.z, this.pos.y + EYE + CROWN)
+    const target = this.crouchWanted || forced ? 1 : 0
     this.crouch += (target - this.crouch) * (1 - Math.exp(-dt / 0.09))
     if (Math.abs(target - this.crouch) < 0.002) this.crouch = target
 
+    // Ladders. Inside a ladder volume the body is on the rungs: W climbs (or descends while looking well down), S
+    // descends, whatever the facing, and there is no forward drift off the rungs; A/D shift a little along them,
+    // kept inside the volume. At the bottom, S or no input is ordinary walking (step off backwards); at the top, W
+    // steps forward off the ladder onto the landing.
     const ladder = this.ladderAt()
-    if (ladder) {
+    const climb = fwd > 0 ? (this.pitch < -0.6 ? -1 : 1) : fwd < 0 ? -1 : 0
+    const footing = ladder ? this.groundAt(this.pos.x, this.pos.z, this.pos.y + 0.05) : 0
+    const onRungs = ladder && !(this.pos.y <= footing + 0.02 && climb <= 0)
+    if (ladder && onRungs) {
       this.vel.x = this.vel.y = this.vel.z = 0
-      const y0 = this.pos.y
-      this.pos.y = Math.min(Math.max(this.pos.y + fwd * 1.4 * dt, ladder.min[1] - 0.05), ladder.max[1])
-      this.move(wx * walk * 0.4 * dt * Math.abs(fwd || side), 0)
-      this.move(0, wz * walk * 0.4 * dt * Math.abs(fwd || side))
-      const top = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
-      if (this.pos.y < top) {
-        this.snap += top - this.pos.y
-        this.pos.y = top
-      }
-      this.grounded = true
+      this.grounded = false
       this.coyote = 0
       this.jumpBuffer = 0
+      const y0 = this.pos.y
+      const top = ladder.max[1]
+      // Onto the rungs: the body eases to the ladder's centre line (it may have walked in at the volume's edge, against
+      // a rail or the cage), so the climb and the step off at the top are clear.
+      const cx = (ladder.min[0] + ladder.max[0]) / 2
+      const cz = (ladder.min[2] + ladder.max[2]) / 2
+      const pull = Math.min(1, 2.5 * dt)
+      if (!side) {
+        this.pos.x += (cx - this.pos.x) * pull
+        this.pos.z += (cz - this.pos.z) * pull
+      }
+      if (this.pos.y >= top - 0.01 && climb > 0) {
+        // Dismount at the top: step forward; the first floor within a step takes the feet.
+        this.pos.y = top
+        const sx = this.pos.x
+        const sz = this.pos.z
+        this.move(wx * walk * 0.6 * dt, 0)
+        this.move(0, wz * walk * 0.6 * dt)
+        const g = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
+        if (g >= this.pos.y - STEP_DOWN && (!this.ladderAt() || g >= this.pos.y - 0.2)) {
+          this.snap += g - this.pos.y
+          this.pos.y = g
+          this.grounded = true
+        }
+        this.finish(dt, Math.hypot(this.pos.x - sx, this.pos.z - sz), !this.grounded)
+        return
+      }
+      const ny = Math.min(top, this.pos.y + climb * 1.25 * dt)
+      // A floor inside the column (a parapet coping, a step) lifts the feet onto it; the eye eases through.
+      if (ny < footing) this.snap += footing - ny
+      this.pos.y = Math.max(footing, ny)
+      if (side) {
+        const c = Math.cos(this.yaw)
+        const sn = Math.sin(this.yaw)
+        const m = 0.6 * dt * side
+        const nx = Math.max(ladder.min[0] + 0.02, Math.min(ladder.max[0] - 0.02, this.pos.x + c * m))
+        const nz = Math.max(ladder.min[2] + 0.02, Math.min(ladder.max[2] - 0.02, this.pos.z - sn * m))
+        this.move(nx - this.pos.x, 0)
+        this.move(0, nz - this.pos.z)
+      }
+      if (this.pos.y <= footing + 1e-3) this.grounded = true
       // Rungs: a hand-and-foot step every 0.3 m climbed.
-      const climbed = Math.abs(this.pos.y - y0)
-      this.finish(dt, climbed / 0.6, true)
+      this.finish(dt, Math.abs(this.pos.y - y0) / 0.6, true)
       return
     }
 

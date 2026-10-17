@@ -1,4 +1,4 @@
-import { type Builder, type POpening, type StoreyContext, type StoreyHandle, Builder as B, FLOOR_Y, serviceStack, spine } from "../api"
+import { type Builder, type POpening, type StoreyContext, type StoreyHandle, FLOOR_Y, serviceStack, spine } from "../api"
 import { type K, flushDocs, hazardDiamond, plate, wallDoc } from "./s2/props"
 import { buildNorth } from "./s2/north"
 import { buildSouth } from "./s2/south"
@@ -12,7 +12,7 @@ import { buildSouth } from "./s2/south"
  */
 export async function build(b: Builder, { pause }: StoreyContext): Promise<StoreyHandle> {
   let seed = 20402
-  const k: K = { b, s: new B(b.ctx, "storey-2-clutter", b.storey), docs: [], rnd: () => ((seed = (seed * 16807) % 2147483647) / 2147483647), updates: [] }
+  const k: K = { b, s: b.smallBuilder, docs: [], rnd: () => ((seed = (seed * 16807) % 2147483647) / 2147483647), updates: [] }
   const svc = serviceStack(b)
   const door = (at: number, side: "a" | "b", id: string, state: "open" | "closed" | `keycard:${string}`, label: string): POpening => ({
     kind: "door",
@@ -73,8 +73,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   rooms.push(...(await buildSouth(k, pause)))
   await pause()
 
-  k.s.flush(b.small)
-  flushDocs(k, b.small)
+  flushDocs(k)
   const ups = [sp.update, ...rooms.map((r) => r.update), ...k.updates]
   return { update: (t) => ups.forEach((u) => u(t)), proxy: null }
 }

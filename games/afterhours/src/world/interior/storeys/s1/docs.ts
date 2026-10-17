@@ -1,5 +1,5 @@
-import { type DocumentPlacement, documentGeometry, documentMaterial } from "../../../../render/documents"
-import type { Builder } from "../../api"
+import type { DocumentPlacement } from "../../../../render/documents"
+import { type Builder, addDocuments } from "../../api"
 
 // Paperwork for storey 1: collect placements (ground-floor coordinates) while the rooms build, then merge every sheet,
 // pin and tape strip into the storey's batch as one draw (the documents atlas material).
@@ -19,6 +19,6 @@ export class Paper {
   }
   flush(b: Builder) {
     if (!this.list.length) return
-    b.add(documentMaterial(), documentGeometry(this.list), { worldUV: false, cast: false })
+    addDocuments(b, this.list)
   }
 }

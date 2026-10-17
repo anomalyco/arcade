@@ -2,7 +2,6 @@ import * as THREE from "three/webgpu"
 import { BUILDING } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM } from "./geo"
-import { materialFor } from "../../render/materials"
 import { DOCK_DOORS, band, facades, fbox, normal, openingFrame, point, type Facade } from "./shell"
 import { addFacadeDoor, rollupLeaf, steelLeaf } from "./doors"
 
@@ -25,16 +24,7 @@ export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
   b.box("metal_dark", P.x0, P.y - 0.12, P.z0 - 0.012, P.x1, P.y + 0.002, P.z0 + 0.1)
   ctx.floors.push({ min: [P.x0, P.z0], max: [P.x1, P.z1], y: P.y })
   ctx.colliders.push({ min: [P.x0, -0.5, P.z0], max: [P.x1, P.y, P.z1] })
-  const steps = [0.42, 0.84]
-  for (let i = 0; i < steps.length; i++) {
-    const x1 = P.x1 + (steps.length - i) * 0.42
-    b.box("concrete_wall", P.x1, -0.05, P.z1 - 2.6, x1, steps[i]!, P.z1 - 0.4, SKIP_BOTTOM)
-    ctx.floors.push({ min: [P.x1, P.z1 - 2.6], max: [x1, P.z1 - 0.4], y: steps[i]! })
-  }
-  // Pipe handrail beside the steps.
-  for (const x of [P.x1 + 0.05, P.x1 + 0.8]) b.cylinder("metal_galvanized", x, x > P.x1 + 0.5 ? 0.42 : P.y, P.z1 - 2.55, 0.025, x > P.x1 + 0.5 ? 1.35 : 0.95, 6)
-  b.strut("metal_galvanized", new THREE.Vector3(P.x1 + 0.05, P.y + 0.95, P.z1 - 2.55), new THREE.Vector3(P.x1 + 0.8, 1.77, P.z1 - 2.55), 0.05, true)
-  b.strut("metal_galvanized", new THREE.Vector3(P.x1 + 0.8, 1.77, P.z1 - 2.55), new THREE.Vector3(P.x1 + 0.8, 1.77, P.z1 - 0.5), 0.05, true)
+  dockSteps(ctx, b)
 
   // Dock bumpers either side of each roll-up door.
   for (const d of [DOCK_DOORS.open, DOCK_DOORS.closed]) {
@@ -45,8 +35,9 @@ export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
   }
 
   // Working roll-up doors (E: fully open / shut); the west one is shut, the east one stands about half open on load.
-  // The curtain lifts 1.8 m (bottom edge clears a head) and visually coils into the head box as it goes.
-  const lift = 1.8
+
+  // Fully open = curtain coiled into the head box (bottom edge 0.1 m under the head).
+  const lift = DOCK_DOORS.head - DOCK_DOORS.y0 - 0.1
   for (const [key, d, start] of [["closed", DOCK_DOORS.closed, 0], ["open", DOCK_DOORS.open, 0.49]] as const) {
     rollupFrame(b, north, d.u0, d.u1, DOCK_DOORS.y0, DOCK_DOORS.head)
     const curtain = rollupLeaf(`dock-rollup-${key}`, d.u1 - d.u0, DOCK_DOORS.head - DOCK_DOORS.y0)
@@ -68,77 +59,14 @@ export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
     })
   }
 
-  // Receiving bay behind the open door: block walls, a few crates, lit by a bare fixture.
-  const bx0 = DOCK_DOORS.open.u0 - 1.6
-  // East end takes in the dock man door too, so it opens into the bay.
-  const bx1 = DOCK_DOORS.man.u1 + 0.55
-  const bz0 = WALL_Z + T
-  const bz1 = WALL_Z + 6.5
-  const by = P.y
-  // The bay is the dock's key light (concept r5-06): concrete block walls lit deep sodium-orange by a hot fixture,
-  // and a floor that carries a little warm glow of its own so the slot still reads if the light budget trims a lamp.
-  const bayFloor = materialFor("emissive", { color: 0x4a3420, roughness: 0.5, emissive: new THREE.Color(1, 0.3, 0.04), intensity: 0.5, name: "facility_bay_floor" })
-  b.box(bayFloor, bx0 - 0.005, BUILDING.floorY, bz0 - 0.005, bx1 + 0.005, by, bz1 + 0.005, SKIP_BOTTOM)
-  ctx.floors.push({ min: [bx0, WALL_Z - 0.05], max: [bx1, bz1], y: by })
-  ctx.colliders.push(
-    { min: [bx0 - 0.2, -0.5, bz1], max: [bx1 + 0.2, 4.4, bz1 + 0.2] },
-    { min: [bx0 - 0.2, -0.5, bz0], max: [bx0, 4.4, bz1] },
-    { min: [bx1, -0.5, bz0], max: [bx1 + 0.2, 4.4, bz1] },
-  )
-  // Behind the shut roll-up door is the interior's receiving room and freight lift (FREIGHT): only a threshold strip
-  // through the wall at dock height here, no walls of ours.
-  {
-    const d = DOCK_DOORS.closed
-    // Only through the wall thickness (stopping 6 mm short of its inner face): the interior's receiving floor is beyond.
-    b.box("concrete_floor_dry", d.u0 - 0.1, BUILDING.floorY, WALL_Z - 0.01, d.u1 + 0.1, by, bz0 - 0.006, SKIP_BOTTOM)
-    ctx.floors.push({ min: [d.u0 - 0.1, WALL_Z - 0.05], max: [d.u1 + 0.1, bz0 + 0.1], y: by })
-  }
-
-  // Bay walls: painted block glowing sodium-orange (self-lit so the slot reads like the concept whatever reaches it),
-  // with darker recessed mortar joints in 400×200 running bond.
-  const glowBlock = materialFor("emissive", { color: 0x5a4632, roughness: 0.85, emissive: new THREE.Color(1, 0.36, 0.07), intensity: 0.4, name: "facility_bay_block" })
-  const glowMortar = materialFor("emissive", { color: 0x2a2018, roughness: 0.95, emissive: new THREE.Color(1, 0.36, 0.07), intensity: 0.08, name: "facility_bay_mortar" })
-  b.box(glowBlock, bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
-  b.box(glowBlock, bx0 - 0.2, by, bz0, bx0, 4.2, bz1)
-  b.box(glowBlock, bx1, by, bz0, bx1 + 0.2, 4.2, bz1)
-  for (let k = 1; by + k * 0.2 < 4.2; k++) {
-    const y = by + k * 0.2
-    b.box(glowMortar, bx0, y - 0.006, bz1 - 0.004, bx1, y + 0.006, bz1)
-    b.box(glowMortar, bx0, y - 0.006, bz0, bx0 + 0.004, y + 0.006, bz1)
-    b.box(glowMortar, bx1 - 0.004, y - 0.006, bz0, bx1, y + 0.006, bz1)
-    const off = k % 2 ? 0 : 0.2
-    for (let x = bx0 + off; x < bx1; x += 0.4) b.box(glowMortar, x - 0.005, y - 0.2, bz1 - 0.004, x + 0.005, y, bz1)
-    for (let z = bz0 + off; z < bz1; z += 0.4) {
-      b.box(glowMortar, bx0, y - 0.2, z - 0.005, bx0 + 0.004, y, z + 0.005)
-      b.box(glowMortar, bx1 - 0.004, y - 0.2, z - 0.005, bx1, y, z + 0.005)
-    }
+  // Everything inside the shell (behind the roll-ups and the man door) is the interior's receiving room 0-16; only a
+  // dock-height threshold through the wall thickness under each roll-up is ours.
+  for (const d of [DOCK_DOORS.closed, DOCK_DOORS.open]) {
+    b.box("concrete_floor_dry", d.u0 - 0.1, BUILDING.floorY, WALL_Z - 0.01, d.u1 + 0.1, P.y, WALL_Z + T - 0.006, SKIP_BOTTOM)
+    ctx.floors.push({ min: [d.u0 - 0.1, WALL_Z - 0.05], max: [d.u1 + 0.1, WALL_Z + T], y: P.y })
   }
   // Block skin on the dock wall around the roll-up doors and the man door, from grade up to the first floor band.
   blockSkin(b)
-  b.box("concrete_dark", bx0 - 0.2, 4.2, bz0, bx1 + 0.2, 4.4, bz1 + 0.2)
-  b.box("metal_painted", bx0 + 2.4, by, bz1 - 0.6, bx0 + 4.4, by + 2.0, bz1 - 0.15)
-  b.box("metal_dark", (bx0 + bx1) / 2 - 0.15, 4.0, bz0 + 2.8, (bx0 + bx1) / 2 + 0.15, 4.2, bz0 + 3.2)
-  b.box("emissive_sodium", (bx0 + bx1) / 2 - 0.5, 3.92, bz0 + 2.92, (bx0 + bx1) / 2 + 0.5, 4.0, bz0 + 3.08)
-  const bayCx = (DOCK_DOORS.open.u0 + DOCK_DOORS.open.u1) / 2
-  const SODIUM: [number, number, number] = [1, 0.36, 0.07]
-  // Fill inside the bay: paints the block walls and floor deep orange.
-  ctx.lamps.push({ kind: "sodium", position: [bayCx, 3.9, bz0 + 4.2], direction: [0, -0.94, 0.34], color: SODIUM, intensity: 600, range: 9, angle: 1.2, penumbra: 0.6, size: 0.3 })
-  // Small omni deep in the bay: washes the back and side block walls, too short-ranged to reach the truck.
-  ctx.lamps.push({ kind: "sodium", position: [bayCx, 2.4, bz1 - 1.3], color: SODIUM, intensity: 300, range: 4, size: 0.2 })
-  // Throw out through the half-open door, slightly down onto the dock edge and court; the truck casts its shadow.
-  ctx.lamps.push({
-    kind: "sodium",
-    position: [bayCx, 2.2, bz0 + 1.2],
-    direction: [0, -0.32, -0.95],
-    color: SODIUM,
-    intensity: 800,
-    range: 16,
-    angle: 0.5,
-    penumbra: 0.5,
-    shadow: true,
-    size: 0.2,
-  })
-
 
   // Swing-arm dock lamp beside the open door.
   const ax = DOCK_DOORS.open.u1 + 0.55
@@ -148,6 +76,20 @@ export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
   head.rotateX(-Math.PI / 2 - 0.5)
   head.translate(ax - 0.45, 3.32, WALL_Z - 1.1)
   b.add("metal_dark", head)
+  // The dock's key light now the bay's fake glow is gone: the swing-arm sodium aimed down over the dock edge and court.
+  b.cylinder("emissive_sodium", ax - 0.47, 3.2, WALL_Z - 1.15, 0.1, 0.02, 12)
+  ctx.lamps.push({
+    kind: "sodium",
+    position: [ax - 0.47, 3.18, WALL_Z - 1.15],
+    direction: [-0.25, -0.85, -0.46],
+    color: [1, 0.5, 0.16],
+    intensity: 260,
+    range: 14,
+    angle: 0.75,
+    penumbra: 0.6,
+    shadow: true,
+    size: 0.2,
+  })
 
   // Personnel doors (dock man-door, west and annex back doors) with caged wall lights.
   for (const f of facades()) {
@@ -239,4 +181,51 @@ function blockSkin(b: Batch) {
     }
     if (u < x1) fbox(b, "concrete_block", f, u, x1, ya, yb, -0.005, 0)
   }
+}
+
+/**
+ * Solid cast-in-place concrete steps from the court up to the dock (1.25 m): 7 equal risers (~179 mm) and 280 mm
+ * goings descending east from the platform, each step a solid block down to the ground, and a continuous 42 mm pipe
+ * handrail on the open side with posts landing on treads, a level extension at each end and returns down to the posts.
+ */
+function dockSteps(ctx: WorldContext, b: Batch) {
+  const P = PLATFORM
+  const N = 7
+  const rise = P.y / N
+  const go = 0.28
+  const z0 = P.z1 - 2.4
+  const z1 = P.z1 - 0.4
+  for (let i = 1; i < N; i++) {
+    const h = P.y - i * rise
+    const xa = P.x1 + (i - 1) * go
+    const xb = P.x1 + i * go
+    b.box("concrete_wall", xa, -0.05, z0, xb, h, z1, SKIP_BOTTOM)
+    ctx.floors.push({ min: [xa, z0], max: [xb, z1], y: h })
+  }
+  // Handrail on the open (south) edge: 900 mm above the nosing line.
+  const zr = z0 + 0.06
+  const R = 0.042
+  const top = P.y + 0.9
+  const nosing = (x: number) => P.y - ((x - P.x1) / go) * rise
+  const xEnd = P.x1 + (N - 1) * go
+  const pts = [
+    new THREE.Vector3(P.x1 - 0.3, top, zr),
+    new THREE.Vector3(P.x1, top, zr),
+    new THREE.Vector3(xEnd, nosing(xEnd) + 0.9, zr),
+    new THREE.Vector3(xEnd + go, nosing(xEnd) + 0.9, zr),
+  ]
+  for (let k = 0; k < pts.length - 1; k++) b.strut("metal_galvanized", pts[k]!, pts[k + 1]!, R, true)
+  // Posts: on the platform at the top, on tread 3, and on the ground past the bottom step; the rail ends turn down.
+  const posts: [number, number][] = [
+    [P.x1 - 0.3, P.y],
+    [P.x1 + 2.5 * go, P.y - 3 * rise],
+    [xEnd + go, 0],
+  ]
+  for (const [x, base] of posts) {
+    const railY = x <= P.x1 ? top : x >= xEnd ? nosing(xEnd) + 0.9 : nosing(x) + 0.9
+    b.cylinder("metal_galvanized", x, base, zr, R / 2, railY - base, 10)
+    b.cylinder("metal_galvanized", x, base, zr, 0.045, 0.012, 12)
+  }
+  // Collider along the rail so the open side can't be walked off.
+  ctx.colliders.push({ min: [P.x1 - 0.3, 0, zr - 0.03], max: [xEnd + go, top, zr + 0.03] })
 }

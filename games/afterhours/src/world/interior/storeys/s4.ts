@@ -1,6 +1,6 @@
 import type { DocumentPlacement } from "../../../render/documents"
-import { documentMesh } from "../../../render/documents"
 import {
+  addDocuments,
   type Builder,
   type POpening,
   type StoreyContext,
@@ -13,7 +13,6 @@ import {
   PUDDLE,
   ROOM_BANDS,
   STYLES,
-  Builder as StoreyBuilder,
   T,
   hangingTroffer,
   partition,
@@ -40,7 +39,7 @@ const HOARD_T = 0.05
 const EXEC: Style = { floor: BROADLOOM, bands: EXEC_BANDS, stripe: null, missing: 0, louvre: false }
 
 export async function build(b: Builder, { pause }: StoreyContext): Promise<StoreyHandle> {
-  const sb = new StoreyBuilder(b.ctx, `storey-${b.storey}-small`, b.storey)
+  const sb = b.smallBuilder
   const docs: DocumentPlacement[] = []
   const s: S4 = { b, sb, docs, rnd: rng(4401) }
 
@@ -114,13 +113,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   await buildEast(s, pause)
 
   // Paperwork: one merged draw, drawn with the storey's small props.
-  if (docs.length) {
-    const mesh = documentMesh(docs)
-    mesh.position.y = b.oy
-    mesh.updateMatrix()
-    b.small.add(mesh)
-  }
-  sb.flush(b.small)
+  addDocuments(sb, docs)
   return {
     update: (t) => {
       west.update(t)

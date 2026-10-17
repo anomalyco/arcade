@@ -1,6 +1,6 @@
-import { type DocumentId, type DocumentPlacement, documentGeometry, documentMaterial } from "../../../../render/documents"
+import type { DocumentId, DocumentPlacement } from "../../../../render/documents"
 import { MODELS } from "../../../../render/models"
-import { type Builder, type RoomHandle, FLOOR_Y } from "../../api"
+import { type Builder, type RoomHandle, FLOOR_Y, addDocuments } from "../../api"
 
 /** Shared state while storey 3 builds: seeded random, the paperwork list, room handles to update. */
 export class S3 {
@@ -14,7 +14,7 @@ export class S3 {
     this.docs.push({ id, position, normal, ...o })
   }
   flushDocs() {
-    if (this.docs.length) this.b.add(documentMaterial(), documentGeometry(this.docs), { worldUV: false, cast: false })
+    addDocuments(this.b, this.docs)
   }
 }
 

@@ -73,6 +73,9 @@ export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { 
     bounds.z0 = Math.min(bounds.z0, p.position[2] - 1)
     bounds.z1 = Math.max(bounds.z1, p.position[2] + 1)
     if ((p.collide ?? true) && !p.tilt) b.ctx.colliders.push(modelCollider(name, world, p.inset ?? 0.03))
+    // Square-on models are depth obstacles: procedural details placed against them are kept 4.5 mm clear.
+    const yq = ((p.yaw ?? 0) / (Math.PI / 2)) % 1
+    if (!p.tilt && (Math.abs(yq) < 1e-3 || Math.abs(Math.abs(yq) - 1) < 1e-3)) b.depthObstacles.push(modelCollider(name, world, 0))
     const blob = p.blob ?? (p.position[1] <= FLOOR_Y + 0.01 && !p.tilt ? 1.25 : 0)
     if (blob > 0) {
       const s = typeof p.scale === "number" ? p.scale : 1
@@ -163,8 +166,12 @@ export async function bakeModels(b: Builder) {
       nrm.getNormalMatrix(full)
       const P = geo.getAttribute("position")
       const n = P.count
+      // Feet, glides and base plates thinner than 3.5 mm would z-fight with the floor they stand on: thicken to 4.5 mm.
+      const base = m.elements[13]!
       for (let i = 0; i < n; i++) {
         tmpV3.fromBufferAttribute(P, i).applyMatrix4(full)
+        const dy = tmpV3.y - base
+        if (dy > 1e-4 && dy < 0.0035) tmpV3.y = base + 0.0045
         pos[(vo + i) * 3] = tmpV3.x
         pos[(vo + i) * 3 + 1] = tmpV3.y
         pos[(vo + i) * 3 + 2] = tmpV3.z

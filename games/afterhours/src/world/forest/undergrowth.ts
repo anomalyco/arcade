@@ -16,7 +16,7 @@ const CELL_M = 8
 const REACH = 46
 const LOG_REACH = 90
 
-const PLANTS = ["fernA", "fernB", "grass", "salal", "twigs"] as const
+const PLANTS = ["fern", "grass", "salal", "twigs"] as const
 type Plant = (typeof PLANTS)[number]
 /** Part index: plants first, then one per log shape, then one per stump shape. */
 const LOG0 = PLANTS.length
@@ -121,8 +121,8 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture, trees:
   const bark = deadwoodMaterials()
   const fernMat = plant(new THREE.Color(0.9, 1.05, 0.85))
   const plants: Record<Plant, { geometry: THREE.BufferGeometry; material: THREE.Material; cap: number }> = {
-    fernA: { geometry: fernClump(7), material: fernMat, cap: 2500 },
-    fernB: { geometry: fernClump(8), material: fernMat, cap: 2500 },
+    // Both clump variants in one geometry would double every instance, so one clump, varied by yaw, scale and tint.
+    fern: { geometry: fernClump(7), material: fernMat, cap: 5000 },
     grass: { geometry: crossed(UNDER.grass, 0.75, 0.7, 3, 9), material: plant(new THREE.Color(1, 1, 0.9)), cap: 6000 },
     salal: { geometry: crossed(UNDER.salal, 0.7, 0.6, 3, 10), material: plant(new THREE.Color(0.9, 1, 0.9)), cap: 3000 },
     twigs: { geometry: twigs(11), material: plant(new THREE.Color(1, 1, 1)), cap: 2000 },
@@ -175,7 +175,7 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture, trees:
         }
         const fernD = fbm(x, z, 2, 1 / 22, 41)
         const salD = fbm(x, z, 2, 1 / 17, 43)
-        if (fernD > -0.05 && h < 0.24 + fernD * 1.1) put(h < 0.5 ? "fernA" : "fernB", x, heightAt(x, z), z, 0.7 + hash3(i, j, ci + cj) * 0.6, yaw, tint)
+        if (fernD > -0.05 && h < 0.24 + fernD * 1.1) put("fern", x, heightAt(x, z), z, 0.65 + hash3(i, j, ci + cj) * 0.7, yaw, tint)
         else if (salD > 0.15 && h < 0.5) put("salal", x, heightAt(x, z), z, 0.6 + h, yaw, tint)
         else if (h > 0.95) put("twigs", x, heightAt(x, z), z, 0.8 + h * 0.4, yaw, tint)
         else if (road < 14 && h < 0.3) put("grass", x, heightAt(x, z), z, 0.5 + h, yaw, tint * 0.9)

@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { abs, float, floor, fract, hash, max, mix, sin, smoothstep, time, uv, vec2, vec3 } from "three/tsl"
-import { type DocumentId, type DocumentPlacement, documentGeometry, documentMaterial } from "../../../../render/documents"
+import type { DocumentId, DocumentPlacement } from "../../../../render/documents"
+import { addDocuments } from "../../api"
 import {
   type Band,
   type Builder,
@@ -75,7 +76,7 @@ export class Docs {
   }
   flush(b: Builder) {
     if (!this.list.length) return
-    b.add(documentMaterial(), documentGeometry(this.list), { worldUV: false, cast: false })
+    addDocuments(b, this.list)
     this.list = []
   }
 }

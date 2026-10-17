@@ -42,12 +42,11 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   const iw = island.x1 - island.x0
   const id = island.z1 - island.z0
   b.at(material("concrete_floor"), box(iw, ISLAND, id), (island.x0 + island.x1) / 2, ISLAND / 2, (island.z0 + island.z1) / 2)
-  b.at(flat(0x8a7a3a, 0.7), box(0.2, 0.005, id + 0.02), island.x0 + 0.1, ISLAND + 0.001, (island.z0 + island.z1) / 2)
+  b.at(flat(0x8a7a3a, 0.7), box(0.2, 0.006, id + 0.02), island.x0 + 0.1, ISLAND + 0.002, (island.z0 + island.z1) / 2)
   ctx.floors.push({ min: [x + island.x0, z + island.z0], max: [x + island.x1, z + island.z1], y: y0 + ISLAND })
 
   // Plinth, step and interior floor.
   b.at(dark, box(w + 0.3, FY, d + 0.3), 0, FY / 2, 0)
-  b.at(dark, box(1.3, 0.1, 0.4), 1.0, 0.05, hd + 0.35)
   b.at(material("linoleum"), plane(w - 2 * WALL, d - 2 * WALL), 0, FY + 0.004, 0)
 
   // Corner columns.
@@ -111,7 +110,7 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   b.at(frame, cyl(0.09, 0.09, 0.3, 8), -0.7, TOP + 0.45, -0.6)
   b.at(frame, cyl(0.13, 0.13, 0.04, 8), -0.7, TOP + 0.62, -0.6)
   b.add(material("metal_galvanized"), rod({ x: hw + 0.03, y: 0.5, z: -hd + 0.25 }, { x: hw + 0.03, y: TOP, z: -hd + 0.25 }, 0.018, 6))
-  b.at(flat(0x55574c, 0.6, 0.3), box(0.08, 0.36, 0.28), hw + 0.06, 0.55, -hd + 0.4)
+  b.at(flat(0x55574c, 0.6, 0.3), box(0.08, 0.36, 0.28), hw + 0.04, 0.55, -hd + 0.4)
 
   doorFrame(b, DOOR.a, DOOR.b, JAMB, hd)
 
@@ -144,10 +143,12 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   const gap = 0.003
   const axisX = DOOR.b - gap - LEAF_T / 2
   const leafW = DOOR.b - DOOR.a - 2 * gap
-  const leafH = HEAD - JAMB - FY - 2 * gap
+  // Leaf bottom clears the 8 mm threshold plate by the same 3 mm gap as the jambs and head.
+  const lift = THRESHOLD + gap
+  const leafH = HEAD - JAMB - FY - lift - gap
   const leaf = new THREE.Group()
   leaf.name = "booth-door"
-  doorLeaf(leaf, leafW, leafH, gap, glass)
+  doorLeaf(leaf, leafW, leafH, lift, glass)
   root.add(leaf)
   const leafZ = hd - WALL / 2
   ctx.doors.add({
@@ -179,6 +180,8 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
 }
 
 const LEAF_T = 0.045
+/** Threshold plate height (its top sits 4 mm above the linoleum). */
+const THRESHOLD = 0.008
 
 /**
  * Continuous hollow-metal frame around the opening: two jambs and a head of the same rolled profile (a face, two
@@ -235,8 +238,8 @@ function doorFrame(b: Batch, xa: number, xb: number, J: number, hd: number) {
   ] as const)
     for (const sz of [-1, 1]) b.at(seam, box(0.003, m, 0.002), cx, yOpen + J / 2, zc + sz * (depth / 2 + 0.001), 0, 0, rz)
   // Flush threshold plate across the full frame depth, with a ribbed tread.
-  b.at(material("metal_dark"), box(xb - xa + 2 * J, 0.006, depth), (xa + xb) / 2, FY + 0.003, zc)
-  for (let k = -3; k <= 3; k++) b.at(seam, box(xb - xa, 0.002, 0.004), (xa + xb) / 2, FY + 0.0065, zc + k * 0.018)
+  b.at(material("metal_dark"), box(xb - xa + 2 * J, THRESHOLD, depth), (xa + xb) / 2, FY + THRESHOLD / 2, zc)
+  for (let k = -3; k <= 3; k++) b.at(seam, box(xb - xa, 0.006, 0.004), (xa + xb) / 2, FY + THRESHOLD + 0.001, zc + k * 0.018)
 }
 
 /**
@@ -269,7 +272,7 @@ function doorLeaf(parent: THREE.Object3D, w: number, h: number, lift: number, gl
   for (const sz of [-1, 1]) {
     b.at(dark, box(L - 2 * stile, 0.01, 0.004), -L / 2, y(gy0 - 0.165), sz * (T * 0.3 + 0.002))
     b.at(dark, box(L - 2 * stile, 0.01, 0.004), -L / 2, y(0.225), sz * (T * 0.3 + 0.002))
-    b.at(chrome, box(L - 0.04, 0.2, 0.002), -L / 2, y(0.12), sz * (T / 2 + 0.001))
+    b.at(chrome, box(L - 0.04, 0.2, 0.004), -L / 2, y(0.12), sz * (T / 2 + 0.002))
   }
   // Glazed vision panel with glazing stops.
   b.add(glass, planeZ(L - 2 * stile, gy1 - gy0), matrix(-L / 2, y((gy0 + gy1) / 2), 0))
@@ -281,8 +284,8 @@ function doorLeaf(parent: THREE.Object3D, w: number, h: number, lift: number, gl
   }
   // Butt hinge knuckles on the axis (inside the rounded edge's radius, so they turn in place).
   for (const v of [0.25, h / 2 + 0.1, h - 0.25]) {
-    b.at(dark, cyl(r + 0.002, r + 0.002, 0.1, 14), 0, y(v), 0)
-    b.at(dark, cyl(r + 0.0025, r + 0.0025, 0.004, 14), 0, y(v + 0.052), 0)
+    b.at(dark, cyl(r + 0.004, r + 0.004, 0.1, 14), 0, y(v), 0)
+    b.at(dark, cyl(r + 0.0055, r + 0.0055, 0.004, 14), 0, y(v + 0.052), 0)
   }
   // Lever sets near the latch edge on both faces: round rose, lever, key escutcheon below.
   for (const sz of [-1, 1]) {
@@ -347,7 +350,7 @@ function furnish(b: Batch) {
   const clip = b.child(matrix(deskX + 0.08, surface, 0.72, 0.2))
   clip.at(wood(0x5a4026, 0x6e5030), roundedSlab(0.23, 0.32, 0.006, 0.012), 0, 0, 0)
   clip.at(flat(0xd2ccb8, 0.9), box(0.21, 0.002, 0.27), 0, 0.007, 0.018)
-  clip.at(flat(0xc8c2ae, 0.9), box(0.205, 0.002, 0.265), 0.004, 0.0085, 0.022, 0.03)
+  clip.at(flat(0xc8c2ae, 0.9), box(0.205, 0.004, 0.265), 0.004, 0.010, 0.022, 0.03)
   clip.at(material("chrome"), roundedSlab(0.1, 0.035, 0.008, 0.008), 0, 0.007, -0.135)
   clip.at(material("chrome"), cyl(0.005, 0.005, 0.1, 8), 0, 0.016, -0.15, 0, 0, Math.PI / 2)
   // Steel vacuum flask with its cup-lid, a stoneware mug and a pencil tin.

@@ -73,11 +73,20 @@ export function build(ctx: WorldContext): WorldModule {
   const controls = { tilt: 0, yaw: 0 }
   // Automation only: `fcam=x,y,z,yaw,pitch` pins the camera for facility review captures.
   const fcam = ctx.params.get("fcam")?.split(",").map(Number)
+  // Automation only: `fdoors=open|closed` commands every facility door once after load (captures of door states).
+  const fdoors = ctx.params.get("fdoors")
+  let doorsDone = !fdoors
   // Automation only: `fdebug=1` with `fcam` drops the fog and adds flat fill light to judge geometry.
   const debugLight = ctx.params.get("fdebug") === "1"
   if (debugLight) ctx.scene.add(new THREE.HemisphereLight(0xc8d4d0, 0x30302c, 2.5))
   return {
     update(_dt, time, camera) {
+      // (Shot mode doesn't run the player, which normally steps the doors: step them here for these captures.)
+      if (fdoors && ctx.params.has("shot")) ctx.doors.update(_dt)
+      if (!doorsDone && time > 1) {
+        doorsDone = true
+        for (const d of ctx.doors.all()) if (/^(dock|door-|fire|roof|annex|entrance)/.test(d.id)) fdoors === "open" ? d.open() : d.close()
+      }
       if (fcam && fcam.length >= 5) {
         camera.position.set(fcam[0]!, fcam[1]!, fcam[2]!)
         camera.rotation.set(fcam[4]!, fcam[3]!, 0, "YXZ")

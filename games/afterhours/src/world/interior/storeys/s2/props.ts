@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
-import { type Builder, type Mat, FLOOR_Y, M, T, glow, paint } from "../../api"
+import { type Builder, type Mat, FLOOR_Y, M, T, addDocuments, glow, paint } from "../../api"
 import { materialFor } from "../../../../render/materials"
-import { type DocumentId, type DocumentPlacement, documentGeometry, documentMaterial } from "../../../../render/documents"
+import type { DocumentId, DocumentPlacement } from "../../../../render/documents"
 
 // Storey 2 (Sample Sciences) local props: lab clutter, equipment and signage that only this storey uses. Static
 // fixtures go into the storey builder `b`; bench clutter (bottles, jars, glassware) into `s`, a second builder flushed
@@ -124,17 +124,9 @@ export function corkBoard(k: K, x: number, y: number, z: number, nx: number, nz:
   })
 }
 /** Merged document mesh for the storey (one draw), lifted to the storey and added to `parent`. */
-export function flushDocs(k: K, parent: THREE.Object3D) {
-  if (!k.docs.length) return
-  const g = documentGeometry(k.docs)
-  g.translate(0, k.b.oy, 0)
-  g.computeBoundingSphere()
-  const mesh = new THREE.Mesh(g, documentMaterial())
-  mesh.name = `s2-documents×${k.docs.length}`
-  mesh.receiveShadow = true
-  mesh.castShadow = false
-  mesh.matrixAutoUpdate = false
-  parent.add(mesh)
+export function flushDocs(k: K) {
+  addDocuments(k.b.smallBuilder, k.docs)
+  k.docs.length = 0
 }
 
 // ------------------------------------------------------------------------------------------------ signage

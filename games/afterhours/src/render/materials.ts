@@ -47,6 +47,8 @@ import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 //     `polygonOffset`, `depthWrite`, `fog`, a replaced `positionNode`/`colorNode`, etc. Clones that set the same flags
 //     share one shader (e.g. all `.clone()` + `vertexColors = true` road decals: one extra shader in total). Set flags
 //     identically across your clones and don't give each clone its own node graph.
+//   - Decals / coplanar overlays: never set `polygonOffset*` by hand; call `decalBias(material, strength)`, which gets
+//     the sign right for the reversed depth buffer (three r186 doesn't flip it) and keeps the magnitude gentle.
 //   - Replacing a node (e.g. `colorNode`) on a clone makes that clone a new shader; build such graphs once and reuse
 //     the material, or put the variation into a `materialFor` parameter.
 //
@@ -293,11 +295,30 @@ function pineCard(): THREE.Texture {
   return t
 }
 
+/** +1 with a reversed depth buffer (greater depth = nearer), −1 with a standard one; set by `loadMaterials`. */
+let biasSign = -1
+
+/**
+ * Pulls a decal material towards the camera so it wins depth ties with the surface under it, with the right sign for
+ * the renderer's depth mode. three r186 passes `polygonOffset*` straight to WebGPU's depthBias without flipping it for
+ * reversed depth, so a hand-written negative offset pushes decals *behind* their surface (distant decals vanish and
+ * draw in as you approach). Use this instead of setting polygonOffset yourself; call it after `loadMaterials` (any
+ * builder). `strength` 1 ≈ 2 depth units + 0.5 slope; bias is pipeline state, so it never adds a shader. Returns `m`.
+ */
+export function decalBias<M extends THREE.Material>(m: M, strength = 1): M {
+  m.polygonOffset = true
+  m.polygonOffsetFactor = biasSign * strength * 0.5
+  m.polygonOffsetUnits = biasSign * strength * 2
+  return m
+}
+
 /**
  * Called once after the renderer exists. Starts every texture download (transcoded off the main thread) and resolves
  * when all are on their textures; materials can be built before that, their maps fill in when ready.
  */
 export async function loadMaterials(renderer: THREE.WebGPURenderer) {
+  const rp = renderer as unknown as { reversedDepthBuffer?: boolean; backend?: { parameters?: { reversedDepthBuffer?: boolean } } }
+  biasSign = (rp.reversedDepthBuffer ?? rp.backend?.parameters?.reversedDepthBuffer) ? 1 : -1
   anisotropy = Math.min(16, renderer.getMaxAnisotropy?.() ?? 8)
   for (const t of textures.values()) t.anisotropy = anisotropy
   ktx2 ??= new KTX2Loader().setTranscoderPath(`${BASE}basis/`).setWorkerLimit(Math.max(4, Math.min(8, navigator.hardwareConcurrency - 2))).detectSupport(renderer)

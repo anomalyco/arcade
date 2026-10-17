@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { materialFor } from "../../render/materials"
+import { decalBias, materialFor } from "../../render/materials"
 
 // The compound's one-off finishes. Every one is a member of the shared "flat" or "emissive" surface class from
 // render/materials.ts, so all colours, glows, the booth glass and the contact-shadow layers compile to a handful of
@@ -38,9 +38,7 @@ export const shadowLayer = () => {
   if (!shadowMat) {
     shadowMat = new THREE.MeshBasicNodeMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false })
     shadowMat.name = "compound_contact_shadow"
-    shadowMat.polygonOffset = true
-    shadowMat.polygonOffsetFactor = -2
-    shadowMat.polygonOffsetUnits = -2
+    decalBias(shadowMat)
   }
   return shadowMat
 }

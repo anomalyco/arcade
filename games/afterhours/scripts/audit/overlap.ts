@@ -88,7 +88,7 @@ const res = await page.evaluate(() => {
     }
     return out
   }
-  const found = new Map<string, { n: number; area: number; at: number[] }>()
+  const found = new Map<string, { n: number; area: number; at: number[]; ex: string[] }>()
   const keys = [...planes.keys()]
   for (const key of keys) {
     const [ax, s, ci] = key.split("|").map(Number)

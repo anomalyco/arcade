@@ -18,7 +18,6 @@ const MAIN = BUILDING.main
 const ANNEX = BUILDING.annex
 const WALL_Z = MAIN.min[1]
 const P = PLATFORM
-const BAY = { x0: -31.3, x1: -24.9, z0: WALL_Z + 0.4, z1: WALL_Z + 6.4, y: P.y }
 
 type Item = Placement & { position: [number, number, number]; yaw: number }
 
@@ -51,9 +50,9 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
 
   // Dumpster against the wall east of the dock steps, a bag beside it.
   const dz = WALL_Z - 0.12 - size("dumpster")[2] / 2
-  put("dumpster", P.x1 + 2.3, 0, dz, 0.03, { collide: 0.02, blob: 0.8 })
-  put("trashbag", P.x1 + 3.55, 0, dz + 0.2, 1.1, { blob: 0.5 })
-  put("trashbag", P.x1 + 3.4, 0, dz - 0.45, 2.6, { blob: 0.5 })
+  put("dumpster", P.x1 + 3.4, 0, dz, 0.03, { collide: 0.02, blob: 0.8 })
+  put("trashbag", P.x1 + 4.65, 0, dz + 0.2, 1.1, { blob: 0.5 })
+  put("trashbag", P.x1 + 4.5, 0, dz - 0.45, 2.6, { blob: 0.5 })
 
   // On the dock: a loaded pallet of boxes at the west end, an empty pallet stack, milk crates and the hand truck.
   const ph = size("pallet")[1]
@@ -90,24 +89,7 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
     ctx.colliders.push({ min: [x - 0.3, P.y, z - 0.2], max: [x + 0.85, P.y + mh * 2, z + 0.2] })
   }
 
-  // Receiving bay behind the half-open door: crates on pallets and boxes.
-  {
-    const x = BAY.x0 + 0.9
-    const z = BAY.z1 - 0.9
-    put("pallet", x, BAY.y, z, 0, { collide: 0.05, blob: 0.6 })
-    let t = BAY.y + ph
-    t = stack("crate_wood", x, t, z - 0.27, 0)
-    stack("crate_wood", x + 0.02, BAY.y + ph, z + 0.28, 0.02)
-    stack("crate_wood", x, t, z - 0.25, -0.05)
-    put("pallet", BAY.x1 - 1.1, BAY.y, BAY.z1 - 0.8, 0.08, { collide: 0.05, blob: 0.6 })
-    const [bw, , bd] = size("cardboard_box")
-    for (let i = 0; i < 2; i++)
-      for (let j = 0; j < 2; j++) {
-        const t2 = stack("cardboard_box", BAY.x1 - 1.35 + i * (bw + 0.02), BAY.y + ph, BAY.z1 - 1.05 + j * (bd + 0.02), 0.08)
-        if (i + j < 2) stack("cardboard_box", BAY.x1 - 1.35 + i * (bw + 0.02), t2, BAY.z1 - 1.05 + j * (bd + 0.02), 0.2)
-      }
-    put("drum_steel", BAY.x1 - 0.5, BAY.y, BAY.z0 + 1.6, 0.4, { collide: 0.05, blob: 0.6 })
-  }
+
 
   // Drums by the truck court, west of the dock: a cluster of blue steel drums and two red hazard drums.
   {
@@ -181,7 +163,7 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
     put("utility_box", ANNEX.max[0] + ud / 2 + 0.02, 0.4, -22.2, e, { collide: 0 })
     put("utility_box_b", ANNEX.max[0] + ud2 / 2 + 0.02, 0.4, -20.8, e, { collide: 0 })
     put("utility_box", ANNEX.max[0] + ud / 2 + 0.02, 0, -18.9, e, { collide: 0, blob: 0.45 })
-    put("utility_box_b", P.x1 + 6.2, 0, WALL_Z - ud2 / 2 - 0.02, yawToward(0, -1), { collide: 0, blob: 0.5 })
+    put("utility_box_b", P.x1 + 7.4, 0, WALL_Z - ud2 / 2 - 0.02, yawToward(0, -1), { collide: 0, blob: 0.5 })
   }
 
   // Annex plant room: electrical cabinets, the janitor's shelves and kit.

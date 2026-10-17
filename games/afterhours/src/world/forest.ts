@@ -189,7 +189,8 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
       if (d < d0 + margin && counts0[vi]! < near[vi]!.capacity) near[vi]!.set(counts0[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
       // Mid trees cast no shadows, so the ones well behind the camera can be skipped (refreshed on turning).
       const behind = d > 14 && (dx * fx + dz * fz) / d < -0.3
-      if (!behind && d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
+      // Saplings (1-3 m) are lost in the undergrowth and fog past the full-detail range: no mid-detail draw for them.
+      if (!behind && m.kind !== "sapling" && d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
       if (d < COLLIDER_RADIUS && slot < COLLIDER_SLOTS && m.kind !== "sapling") {
         const r = Math.max(0.12, m.baseRadius * sc * 0.9)
         const b = pool[slot++]!

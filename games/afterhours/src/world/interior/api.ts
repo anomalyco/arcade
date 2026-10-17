@@ -5,6 +5,9 @@
 export * from "./plan"
 // Construction primitives (Builder, materials, wall, door, ceiling, troffer, filtered patterns, constants).
 export {
+  addDocuments,
+  finishedFace,
+  surfaceDepth,
   Builder,
   type Mat,
   type Band,
