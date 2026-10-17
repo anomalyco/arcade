@@ -279,7 +279,7 @@ try {
           await page.screenshot({ path: files[`${name}-x${k}`], clip })
         }
       }
-      ;(meta.shots as Record<string, unknown>)[name] = { ...shot, look: id, ...info }
+      ;(meta.shots as Record<string, unknown>)[name] = { ...shot, ...info, lookId: id }
       console.log(name, JSON.stringify(info.look), `zombies=${info.zombies}`, `companions=${info.companions}`)
     }
   }

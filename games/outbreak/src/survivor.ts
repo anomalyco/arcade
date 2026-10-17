@@ -378,11 +378,11 @@ export class Survivor {
   ) {
     this.renderer = renderer
     const numericSeat = typeof paletteOrSeat === "number" ? Math.max(0, Math.trunc(paletteOrSeat)) : null
-    const palette =
-      numericSeat !== null
+    const palette: { torso: number; legs: number } =
+      typeof paletteOrSeat === "number"
         ? numericSeat === 0
           ? OFFLINE_PALETTE
-          : SURVIVOR_COLOURS[numericSeat % SURVIVOR_COLOURS.length]!
+          : SURVIVOR_COLOURS[numericSeat! % SURVIVOR_COLOURS.length]!
         : paletteOrSeat
     const colourIdx = SURVIVOR_COLOURS.indexOf(palette as (typeof SURVIVOR_COLOURS)[number])
     this.seat = palette === OFFLINE_PALETTE ? null : (hex(palette.torso).map(c => c ** 2.2) as [number, number, number])
