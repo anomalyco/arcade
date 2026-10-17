@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
-import { type Builder, type Mat, CEIL_Y, FLOOR_Y, M, T, ceiling, closetBands, corridorBands, fluorescentPanel, troffer, wall } from "./kit"
+import { paint, type Builder, type Mat, CEIL_Y, FLOOR_Y, M, PANEL_ON, T, ceiling, closetBands, corridorBands, troffer, wall } from "./kit"
 import { CORRIDOR, WALL_T, fluoro } from "./corridor"
 
 // The two rooms you can walk into off the corridor: a lab (concept r5-05) north of the corridor, and the janitor's
@@ -19,12 +19,12 @@ export function buildLab(b: Builder) {
   wall(b, "z", z0 - WALL_T, z1, x1, x1 + WALL_T, corridorBands)
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, z0 - WALL_T, z0, corridorBands)
   ceiling(b, x0, z0, x1, z1)
-  const on = fluorescentPanel(0.8).material
+  // Lit from the corridor door (concept r5-05): the panel over the far bench on, the rest dead.
   for (const tx of [-23.4, -19.2])
     for (const tz of [-3.6, -7.2]) {
-      const lit = tx === -19.2 && tz === -7.2
-      troffer(b, tx, tz, lit ? "on" : "off", on)
-      if (lit) b.lamp(fluoro(tx, tz, 0.15, 5))
+      const lit = tx === -23.4 && tz === -7.2
+      troffer(b, tx, tz, lit ? "on" : "off", PANEL_ON)
+      if (lit) b.lamp(fluoro(tx, tz, 0.15, 60))
     }
 
   // Perimeter benches: north wall and west wall, steel base cabinets with drawers, black epoxy tops.
@@ -37,16 +37,17 @@ export function buildLab(b: Builder) {
   b.rod(M.steel, [sx, y + 0.93, z0 + 0.08], [sx, y + 1.25, z0 + 0.08], 0.012)
   b.rod(M.steel, [sx, y + 1.25, z0 + 0.08], [sx, y + 1.22, z0 + 0.3], 0.012)
 
-  // Canopy fume hood over the north bench with its duct into the ceiling.
-  const hx = -24.0
+  // Canopy fume hood over the west bench (seen through the door, left), its duct into the ceiling.
+  const hz = -4.95
+  const hxc = x0 + 0.43
   const hood = new THREE.CylinderGeometry(0.33, Math.SQRT1_2, 1, 4, 1)
   hood.rotateY(Math.PI / 4)
-  hood.scale(1.9, 0.42, 0.85)
-  hood.translate(hx, y + 2.08, z0 + 0.43)
+  hood.scale(0.85, 0.42, 1.9)
+  hood.translate(hxc, y + 2.08, hz)
   b.add("metal_galvanized", hood)
-  b.box("metal_galvanized", hx - 0.95, y + 1.82, z0 + 0.005, hx + 0.95, y + 1.87, z0 + 0.86)
-  b.cyl("metal_galvanized", T(hx, (y + 2.25 + CEIL_Y) / 2, z0 + 0.4), 0.15, 0.15, CEIL_Y - y - 2.25, 14)
-  for (let k = 0; k < 4; k++) b.cyl("metal_dark", T(hx, y + 2.35 + k * 0.17, z0 + 0.4), 0.153, 0.153, 0.015, 14)
+  b.box("metal_galvanized", x0 + 0.005, y + 1.82, hz - 0.95, x0 + 0.86, y + 1.87, hz + 0.95)
+  b.cyl("metal_galvanized", T(x0 + 0.4, (y + 2.25 + CEIL_Y) / 2, hz), 0.15, 0.15, CEIL_Y - y - 2.25, 14)
+  for (let k = 0; k < 4; k++) b.cyl("metal_dark", T(x0 + 0.4, y + 2.35 + k * 0.17, hz), 0.153, 0.153, 0.015, 14)
 
   const top = y + 0.935
   const zb = z0 + 0.38
@@ -55,14 +56,15 @@ export function buildLab(b: Builder) {
   b.box(M.cardboard, -22.03, top + 0.04, zb - 0.03, -21.84, top + 0.06, zb + 0.22)
 
   // Desk lamp: the only warm light in the building.
-  const lx = -21.3
-  const lz = z0 + 0.3
+  // On the west bench under the chalkboard, arm reaching out over the bench top (+x).
+  const lx = x0 + 0.15
+  const lz = -6.1
   b.cyl("metal_dark", T(lx, top + 0.012, lz), 0.075, 0.085, 0.024, 16)
-  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.06, top + 0.36, lz + 0.05], 0.008)
-  b.rod(M.lampShade, [lx + 0.06, top + 0.36, lz + 0.05], [lx + 0.18, top + 0.42, lz + 0.26], 0.008)
+  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.05, top + 0.36, lz - 0.06], 0.008)
+  b.rod(M.lampShade, [lx + 0.05, top + 0.36, lz - 0.06], [lx + 0.26, top + 0.42, lz - 0.18], 0.008)
   const shade = new THREE.Matrix4().compose(
-    new THREE.Vector3(lx + 0.2, top + 0.36, lz + 0.3),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.55, 0, 0)),
+    new THREE.Vector3(lx + 0.3, top + 0.36, lz - 0.2),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.55)),
     new THREE.Vector3(1, 1, 1),
   )
   b.cyl(M.lampShade, shade, 0.035, 0.085, 0.13, 16, { open: true })
@@ -72,10 +74,10 @@ export function buildLab(b: Builder) {
   b.add(M.bulbWarm, bulb, { cast: false })
   b.lamp({
     kind: "incandescent",
-    position: [lx + 0.2, top + 0.3, lz + 0.33],
-    direction: [0, -0.85, 0.53],
+    position: [lx + 0.33, top + 0.3, lz - 0.2],
+    direction: [0.53, -0.85, 0],
     color: WARM,
-    intensity: 10,
+    intensity: 90,
     range: 5,
     angle: 1.0,
     penumbra: 0.8,
@@ -84,38 +86,39 @@ export function buildLab(b: Builder) {
   })
 
   // Island lab table with four stools.
-  const tx0 = -21.7
-  const tx1 = -18.7
-  const tz0 = -6.5
-  const tz1 = -5.1
+  const tx0 = -20.6
+  const tx1 = -18.2
+  const tz0 = -7.0
+  const tz1 = -5.8
   b.box(M.epoxy, tx0, y + 0.88, tz0, tx1, y + 0.92, tz1)
   b.box(M.cabinet, tx0 + 0.05, y + 0.8, tz0 + 0.05, tx1 - 0.05, y + 0.88, tz1 - 0.05)
   for (const lx2 of [tx0 + 0.08, tx1 - 0.08])
     for (const lz2 of [tz0 + 0.08, tz1 - 0.08]) b.box(M.cabinet, lx2 - 0.025, y, lz2 - 0.025, lx2 + 0.025, y + 0.8, lz2 + 0.025)
   b.collide(tx0, y, tz0, tx1, y + 0.92, tz1)
-  b.box(M.paper, -20.6, y + 0.92, -5.95, -20.38, y + 0.922, -5.67, { cast: false })
-  stool(b, -21.0, -4.6)
-  stool(b, -19.55, -4.45)
-  stool(b, -20.5, -7.05)
-  stool(b, -19.1, -7.0)
+  b.box(M.paper, -19.4, y + 0.92, -6.6, -19.18, y + 0.922, -6.32, { cast: false })
+  stool(b, -20.1, -5.2)
+  stool(b, -18.8, -5.1)
+  stool(b, -21.2, -6.5)
+  stool(b, -19.5, -7.6)
 
-  // Chalkboard on the east wall, wiped but not clean.
-  const cbz0 = -7.7
-  const cbz1 = -3.3
-  const cby0 = y + 0.95
-  const cby1 = y + 2.12
-  b.box(M.wood, x1 - 0.04, cby0 - 0.05, cbz0 - 0.05, x1, cby1 + 0.05, cbz1 + 0.05)
-  b.box(M.chalkboard, x1 - 0.045, cby0, cbz0, x1 - 0.04, cby1, cbz1, { cast: false })
-  b.box("metal_galvanized", x1 - 0.11, cby0 - 0.06, cbz0, x1 - 0.04, cby0 - 0.04, cbz1)
+  // Chalkboard on the west wall over the bench (right of the hood from the door), wiped but not clean.
+  const cbz0 = -8.7
+  const cbz1 = -6.05
+  const cby0 = y + 1.1
+  const cby1 = y + 2.2
+  const wx = x0
+  b.box(M.wood, wx, cby0 - 0.05, cbz0 - 0.05, wx + 0.04, cby1 + 0.05, cbz1 + 0.05)
+  b.box(M.chalkboard, wx + 0.04, cby0, cbz0, wx + 0.045, cby1, cbz1, { cast: false })
+  b.box("metal_galvanized", wx + 0.04, cby0 - 0.06, cbz0, wx + 0.11, cby0 - 0.04, cbz1)
   const smears = [
-    [-6.6, 1.75, 1.6, 0.5, 0.05],
-    [-4.6, 1.5, 1.9, 0.6, -0.04],
-    [-5.4, 1.25, 1.2, 0.3, 0.02],
+    [-7.9, 1.8, 1.3, 0.45, 0.05],
+    [-6.9, 1.55, 1.2, 0.5, -0.04],
+    [-7.4, 1.32, 0.9, 0.25, 0.02],
   ] as const
   smears.forEach(([z, h, w, hh, r], i) =>
-    b.quad(M.chalkSmear, T(x1 - 0.0465 - i * 0.0003, y + h, z, -Math.PI / 2, 0, r), w, hh, { cast: false }),
+    b.quad(M.chalkSmear, T(wx + 0.0465 + i * 0.0003, y + h, z, Math.PI / 2, 0, r), w, hh, { cast: false }),
   )
-  b.box(M.paper, x1 - 0.1, cby0 - 0.05, -4.1, x1 - 0.07, cby0 - 0.035, -4.02, { cast: false })
+  b.box(M.paper, wx + 0.07, cby0 - 0.05, -6.6, wx + 0.1, cby0 - 0.035, -6.52, { cast: false })
 
   // Tall glass-fronted supply cabinet by the door wall.
   const cx0 = x0
@@ -318,6 +321,6 @@ function bucket(b: Builder, x: number, z: number) {
   b.collide(x - 0.22, y, z - 0.27, x + 0.22, y + 0.6, z + 0.27)
 }
 
-const water = Object.assign(new THREE.MeshStandardNodeMaterial({ color: 0x1d2019, roughness: 0.05, metalness: 0 }), { name: "interior_mop_water" })
-const mopStrand = Object.assign(new THREE.MeshStandardNodeMaterial({ color: 0x6a665a, roughness: 1, metalness: 0 }), { name: "interior_mop_strand" })
+const water = paint(0x1d2019, 0.05)
+const mopStrand = paint(0x6a665a, 1)
 

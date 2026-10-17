@@ -33,7 +33,7 @@ import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 // `SurfaceMaterial.surfaceParams` and its scans in `surfaceSlots`, read per object at draw time. No vertex or instance
 // attribute is needed to pick a variant; the material object is the variant.
 //   - `material(name)` works as before. Each name is a member of: ground (asphalt, asphalt_lot, road_line_*, gravel,
-//     concrete_floor) · natural (forest_floor, grass, dirt) · scan (concrete_wall/dark/floor_dry, bark, wood_pole,
+//     concrete_floor) · natural (forest_floor, grass, dirt) · scan (concrete_wall/dark/floor_dry/block, bark, wood_pole,
 //     metal_galvanized, metal_dark, ceiling_tile, terrazzo, painted_wall) · paint (metal_painted, door_steel) ·
 //     tile (tile_green, tile_green_dark) · flat (barbed_wire, rubber, plastic_orange, chrome, glass_dark) ·
 //     emissive (glass_lit, emissive_sodium, emissive_fluorescent) · singletons linoleum, pine_needles, pine_foliage,
@@ -71,6 +71,8 @@ export type MaterialName =
   | "concrete_floor"
   /** Indoor concrete slab: same scan as `concrete_floor`, never wet. */
   | "concrete_floor_dry"
+  /** Painted CMU block wall, 400×200 mm running bond with mortar joints (UV metres, U along the wall, V up). */
+  | "concrete_block"
   | "bark"
   /** Alpha-tested pine branch card (UV 0..1 across the card, branch base at v = 0, tip at v = 1). Double-sided. */
   | "pine_needles"
@@ -490,10 +492,13 @@ function wet(s: Surf, porosity: N, film: N, puddles: N): Surf {
   const filmRough = mix(film, film.add(0.1), dry)
   let color = s.color.mul(mix(float(1), float(1).sub(porosity), filmAmt))
   color = mix(color, color.mul(0.55), puddle)
+  // Wet aggregate tips: sparse near-mirror glints that keep the scan's micro normal, so lamps sparkle and streak.
+  const glint = smoothstep(0.86, 0.95, texture(noise(), positionWorld.xz.mul(1 / 0.35)).a).mul(filmAmt)
   let rough = mix(s.rough, min(s.rough, filmRough), filmAmt)
+  rough = mix(rough, float(0.04), glint)
   rough = mix(rough, float(0.035), puddle)
-  // The film fills the micro relief; standing water is flat.
-  const normal = mix(mix(s.normal, FLAT, filmAmt.mul(0.45)), FLAT, puddle)
+  // The film fills some of the micro relief (the rest breaks reflections into streaks); standing water is flat.
+  const normal = mix(mix(s.normal, FLAT, filmAmt.mul(0.3)), FLAT, puddle)
   return { ...s, color, rough, normal }
 }
 
@@ -631,6 +636,39 @@ function natural(o: NaturalOpts) {
   )
 }
 
+/**
+ * Rectangular unit grid in UV metres (blocks, tiles, slabs): `w`×`h` units with `joint`-wide joints, every other row
+ * shifted by `bond` of a unit (0.5 = running bond). All inputs may be per-object nodes. Returns the unit id, a 0..1
+ * joint mask (anti-aliased, keeps its average coverage when thinner than a pixel), and a tangent-space normal that
+ * rolls into the joint over `bevel` metres.
+ */
+function unitGrid(uvn: N, w: N, h: N, joint: N, bond: N, bevel: N) {
+  const row: N = floor(uvn.y.div(h))
+  const shift: N = fract(row.mul(0.5)).mul(2).mul(bond).mul(w)
+  const q: N = vec2(uvn.x.add(shift), uvn.y)
+  const cell: N = vec2(w, h)
+  const id: N = floor(q.div(cell))
+  const f: N = q.sub(id.mul(cell))
+  const ex: N = min(f.x, w.sub(f.x))
+  const ey: N = min(f.y, h.sub(f.y))
+  const half: N = joint.mul(0.5)
+  const ax: N = fwidth(uvn.x).max(1e-5)
+  const ay: N = fwidth(uvn.y).max(1e-5)
+  // Coverage of each joint band, widened to at least a pixel but scaled down so its average stays right.
+  const band = (e: N, a: N): N => {
+    const hw = max(half, a.mul(0.75))
+    return float(1).sub(smoothstep(hw.sub(a.mul(0.5)), hw.add(a.mul(0.5)), e)).mul(half.div(hw))
+  }
+  const mask: N = max(band(ex, ax), band(ey, ay))
+  const sx: N = f.x.lessThan(w.mul(0.5)).select(float(-1), float(1))
+  const sy: N = f.y.lessThan(h.mul(0.5)).select(float(-1), float(1))
+  const bx: N = smoothstep(half.add(bevel), half, ex).mul(sx)
+  const by: N = smoothstep(half.add(bevel), half, ey).mul(sy)
+  const rnd: N = hash(id.x.add(311).mul(157.31).add(id.y.add(197).mul(91.7)))
+  const rnd2: N = hash(id.x.add(53).mul(71.9).add(id.y.add(11).mul(213.3)))
+  return { id, f, mask, bx, by, rnd, rnd2 }
+}
+
 // ---- scan: scanned walls, wood, bark, ceiling, terrazzo, bare metals --------------------------------------------
 // p0 size, antiTile, saturation, normalScale   p1 tint rgb, metal from map   p2 roughA, roughB, metal, imperfection
 // p3 imperfection size, streak stain, uv stain, spangle
@@ -646,25 +684,58 @@ defineClass("scan", {
     const uvStain = smoothstep(0.78, 0.97, wnoise(uv(), 5).r).mul(0.35).mul(p[3].z)
     const spangle = texture(noise(), uv().mul(9)).a
     const imp = sample("imperfections", uv(), p[3].x)
-    const color = saturate(s.color, p[0].z)
+    // Optional unit grid (CMU blocks, terrazzo slabs): joints, per-unit tint, recessed joint normals. p4.x = 0 disables.
+    const on = p[4].x.greaterThan(0).select(float(1), float(0))
+    const g = unitGrid(uv(), p[4].x.max(0.01), p[4].y.max(0.01), p[4].z, p[4].w, p[5].y)
+    const jm = g.mask.mul(on)
+    const unitTint = mix(float(1), mix(float(1).sub(p[5].z), float(1).add(p[5].z), g.rnd), on)
+    // Contrast around mid-grey (speckle punch for terrazzo); 1 = unchanged.
+    const scanCol = max(mix(vec3(0.25), saturate(s.color, p[0].z), p[5].w), vec3(0))
+    const color = scanCol
       .mul(p[1].xyz)
+      .mul(unitTint)
       .mul(float(1).sub(worldStain))
       .mul(float(1).sub(uvStain))
       .mul(mix(float(1), mix(float(0.88), float(1.06), spangle), p[3].w))
-    const rough = s.rough.mul(p[2].x).add(p[2].y).add(imp.rough.mul(p[2].w)).add(spangle.mul(0.18).mul(p[3].w))
-    return { color, rough: clamp(rough, 0.02, 1), metal: mix(p[2].z, s.metal, p[1].w), normal: s.normal, normalScale: p[0].w, ao: s.ao }
+      .mul(float(1).sub(jm.mul(p[5].x)))
+    const rough = s.rough.mul(p[2].x).add(p[2].y).add(imp.rough.mul(p[2].w)).add(spangle.mul(0.18).mul(p[3].w)).add(jm.mul(0.4))
+    const sn = s.normal.mul(2).sub(1)
+    const bev = vec2(g.bx, g.by).mul(on).mul(0.7)
+    const normal = vec3(sn.xy.add(bev), sn.z).normalize().mul(0.5).add(0.5)
+    return { color, rough: clamp(rough, 0.02, 1), metal: mix(p[2].z, s.metal, p[1].w), normal, normalScale: p[0].w, ao: s.ao.mul(float(1).sub(jm.mul(0.45))) }
   },
 })
-type ScanOpts = { set: SetName; antiTile?: boolean; sat?: number; tint: number | readonly [number, number, number]; normalScale?: number; rough: [number, number]; metal?: number; metalMap?: boolean; imp?: [amount: number, size: number]; streaks?: boolean; stains?: boolean; spangle?: boolean }
+type ScanOpts = {
+  set: SetName
+  /** Metres per scan tile (default: the set's). */
+  size?: number
+  antiTile?: boolean
+  sat?: number
+  tint: number | readonly [number, number, number]
+  normalScale?: number
+  rough: [number, number]
+  metal?: number
+  metalMap?: boolean
+  imp?: [amount: number, size: number]
+  streaks?: boolean
+  stains?: boolean
+  spangle?: boolean
+  /** Unit grid in metres: block/slab size, joint width, row offset (0.5 = running bond), joint darkening, bevel, per-unit tint ±. */
+  grid?: { w: number; h: number; joint: number; bond?: number; dark?: number; bevel?: number; vary?: number }
+  /** Albedo contrast about mid-grey (1 = scan as is). */
+  contrast?: number
+}
 function scan(o: ScanOpts) {
   const t = typeof o.tint === "number" ? [o.tint, o.tint, o.tint] : o.tint
   return member(
     "scan",
     [
-      SETS[o.set].size, o.antiTile ? 1 : 0, o.sat ?? 1, o.normalScale ?? 1,
+      o.size ?? SETS[o.set].size, o.antiTile ? 1 : 0, o.sat ?? 1, o.normalScale ?? 1,
       ...t, o.metalMap ? 1 : 0,
       ...o.rough, o.metal ?? 0, o.imp?.[0] ?? 0,
       o.imp?.[1] ?? 1, o.streaks ? 1 : 0, o.stains ? 1 : 0, o.spangle ? 1 : 0,
+      o.grid?.w ?? 0, o.grid?.h ?? 0, o.grid?.joint ?? 0, o.grid?.bond ?? 0,
+      o.grid?.dark ?? 0, o.grid?.bevel ?? 0, o.grid?.vary ?? 0, o.contrast ?? 1,
     ],
     [map(o.set, "albedo"), map(o.set, "surface")],
   )
@@ -710,37 +781,40 @@ function tileGrid(size: number, joint: number, bevel: number, tilt: number, uvn:
   const normal = vec3(nxy as N, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2)) as N).normalize().mul(0.5).add(0.5)
   return { id, f, edge, rnd, rnd2, groutMask, normal }
 }
-// p0 glaze rgb   p1 grout rgb
+// p0 glaze rgb, tile size (m)   p1 grout rgb, joint (m)
 defineClass("tile", {
   graph: (p) => {
-    const t = tileGrid(0.152, 0.003, 0.0045, 0.035)
+    const g = unitGrid(uv(), p[0].w, p[0].w, p[1].w, float(0), float(0.005))
     const imp = sample("imperfections", uv(), float(1.7))
-    const tileTint = mix(float(0.93), float(1.05), t.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), t.rnd2))
+    const tileTint = mix(float(0.92), float(1.06), g.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), g.rnd2))
     const crazing = wnoise(uv(), 0.9).a
     const glazeCol = p[0].xyz.mul(tileTint).mul(mix(float(0.97), float(1.02), crazing))
     const groutCol = p[1].xyz.mul(mix(float(0.6), float(1), wnoise(uv(), 0.7).b))
-    const color = mix(glazeCol, groutCol, t.groutMask)
-    const rough = mix(float(0.07).add(imp.rough.mul(0.25)), float(0.85), t.groutMask)
-    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: t.normal, ao: mix(float(1), float(0.6), t.groutMask) }
+    const color = mix(glazeCol, groutCol, g.mask)
+    const rough = mix(float(0.05).add(imp.rough.mul(0.22)), float(0.85), g.mask)
+    // Rounded glaze edge plus a slight per-tile tilt, so highlights break up tile by tile down a corridor.
+    const nxy: N = vec2(g.bx.mul(0.6).add(g.rnd.sub(0.5).mul(0.05)), g.by.mul(0.6).add(g.rnd2.sub(0.5).mul(0.05))).mul(g.mask.oneMinus())
+    const normal = vec3(nxy, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2))).normalize().mul(0.5).add(0.5)
+    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
   },
 })
 
 // ---- linoleum: waxed VCT floor -------------------------------------------------------------------------------------
 defineClass("linoleum", {
   graph: () => {
-    const t = tileGrid(0.305, 0.0012, 0.0006, 0.012)
+    const t = tileGrid(0.305, 0.0025, 0.0008, 0.012)
     // VCT chip marbling, quarter-turned on alternate tiles like a laid floor.
     const turn = fract(t.id.x.add(t.id.y).mul(0.5)).greaterThan(0.25)
     const local = turn.select(vec2(t.f.y, t.f.x), t.f)
     const chips = texture(noise(), local.mul(vec2(1.6, 0.55)).add(t.id.mul(0.37))).a
     const fleck = smoothstep(0.82, 0.86, texture(noise(), local.mul(9).add(t.id.mul(0.71))).b)
-    const tint = mix(float(0.92), float(1.05), t.rnd)
+    const tint = mix(float(0.84), float(1.1), t.rnd).mul(mix(vec3(1.02, 0.98, 0.97), vec3(0.97, 1.01, 1.02), t.rnd2))
     let color = vec3(0.36, 0.38, 0.33).mul(tint).mul(mix(float(0.86), float(1.08), chips))
     color = mix(color, vec3(0.16, 0.17, 0.15), fleck.mul(0.6))
-    color = mix(color, vec3(0.08, 0.08, 0.07), t.groutMask)
+    color = mix(color, vec3(0.05, 0.05, 0.045), t.groutMask)
     const imp = sample("imperfections", uv(), float(2.3))
     const scuff = wnoise(uv(), 3.1).g
-    const rough = float(0.06).add(imp.rough.mul(0.32)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.groutMask.mul(0.5))
+    const rough = float(0.04).add(t.rnd2.mul(0.05)).add(imp.rough.mul(0.3)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.groutMask.mul(0.5))
     return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: t.normal, ao: float(1) }
   },
 })
@@ -886,10 +960,10 @@ defineClass("chainlink", {
 // Library
 
 const BUILD: Record<MaterialName, () => THREE.Material> = {
-  asphalt: () => ground({ set: "asphalt", antiTile: true, sat: 0.6, macro: true, tint: 0.72, normalScale: 1.2, rough: [0.25, 0.7], porosity: 0.55, film: 0.26, puddles: 1 }),
-  asphalt_lot: () => ground({ set: "asphalt_lot", antiTile: true, sat: 0.35, macro: true, tint: 1.05, normalScale: 1.1, rough: [0.25, 0.68], porosity: 0.55, film: 0.28, puddles: 1.15 }),
-  road_line_yellow: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.25, puddles: 1, paint: rgb(lin(0.55, 0.36, 0.06)) }),
-  road_line_white: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.25, puddles: 1, paint: rgb(lin(0.62, 0.62, 0.58)) }),
+  asphalt: () => ground({ set: "asphalt", antiTile: true, sat: 0.5, macro: true, tint: 0.5, normalScale: 1.2, rough: [0.25, 0.7], porosity: 0.6, film: 0.13, puddles: 1 }),
+  asphalt_lot: () => ground({ set: "asphalt_lot", antiTile: true, sat: 0.3, macro: true, tint: 0.78, normalScale: 1.1, rough: [0.25, 0.68], porosity: 0.6, film: 0.15, puddles: 1.15 }),
+  road_line_yellow: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.12, puddles: 1, paint: rgb(lin(0.55, 0.36, 0.06)) }),
+  road_line_white: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.12, puddles: 1, paint: rgb(lin(0.62, 0.62, 0.58)) }),
   gravel: () => ground({ set: "gravel", antiTile: true, sat: 0.6, macro: true, tint: 0.55, normalScale: 1.3, rough: [1, 0], porosity: 0.45, film: 0.38, puddles: 0.55 }),
   concrete_floor: () => ground({ set: "concrete_floor", antiTile: true, sat: 0.4, macro: false, tint: 0.9, normalScale: 1, rough: [0.3, 0.62], porosity: 0.4, film: 0.3, puddles: 0.7 }),
   forest_floor: () =>
@@ -905,15 +979,21 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
   metal_galvanized: () => scan({ set: "metal_galvanized", sat: 0.15, tint: 1.05, rough: [0.6, 0.12], metal: 1, normalScale: 0.6, spangle: true }),
   metal_dark: () => scan({ set: "metal_dark", tint: 0.7, rough: [0.8, 0.25], metalMap: true }),
   ceiling_tile: () => scan({ set: "ceiling_tile", tint: [0.7, 0.69, 0.63], rough: [0, 0.92], normalScale: 0.8, stains: true }),
-  terrazzo: () => scan({ set: "terrazzo", tint: 0.78, rough: [0.1, 0.08], imp: [0.22, 2.1], normalScale: 0.4 }),
+  // Polished terrazzo in 600 mm slabs with dark divider strips; speckle contrast up, waxed gloss (r5-02).
+  terrazzo: () =>
+    scan({ set: "terrazzo", size: 0.32, sat: 0.55, tint: [0.7, 0.7, 0.66], contrast: 1.8, rough: [0.06, 0.03], imp: [0.16, 2.1], normalScale: 0.25, grid: { w: 0.6, h: 0.6, joint: 0.004, dark: 0.75, bevel: 0.0015, vary: 0.04 } }),
+  // 8×16" (400×200 mm) CMU in running bond, painted over, 10 mm recessed mortar joints (r5-06 dock wall).
+  concrete_block: () =>
+    scan({ set: "concrete_dark", antiTile: true, sat: 0.3, tint: [0.78, 0.72, 0.6], rough: [0.5, 0.45], normalScale: 1.1, streaks: true, grid: { w: 0.4, h: 0.2, joint: 0.01, bond: 0.5, dark: 0.45, bevel: 0.006, vary: 0.06 } }),
   painted_wall: () => {
     const c = new THREE.Color(0xb8b8a8).multiplyScalar(0.82)
     return scan({ set: "plaster", sat: 0.3, tint: [c.r, c.g, c.b], rough: [0.25, 0.62], normalScale: 0.6 })
   },
   metal_painted: () => member("paint", [...rgb(0x5c615c), 0.35]),
   door_steel: () => member("paint", [...rgb(0x3d5a4b), 0.3]),
-  tile_green: () => member("tile", [...rgb(lin(0.42, 0.53, 0.45)), 0, ...rgb(lin(0.36, 0.37, 0.33)), 0]),
-  tile_green_dark: () => member("tile", [...rgb(lin(0.055, 0.12, 0.085)), 0, ...rgb(lin(0.2, 0.21, 0.19)), 0]),
+  // 6" (152 mm) glazed tile, 4 mm grout: dark grey grout reads as a grid at corridor distances (r3-02, r5-05).
+  tile_green: () => member("tile", [...rgb(lin(0.42, 0.53, 0.45)), 0.152, ...rgb(lin(0.11, 0.12, 0.11)), 0.004]),
+  tile_green_dark: () => member("tile", [...rgb(lin(0.055, 0.12, 0.085)), 0.152, ...rgb(lin(0.2, 0.21, 0.19)), 0.004]),
   linoleum: () => member("linoleum", []),
   pine_needles: () => member("pine_needles", []),
   pine_foliage: () => member("pine_foliage", []),

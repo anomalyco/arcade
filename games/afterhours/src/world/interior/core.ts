@@ -1,5 +1,5 @@
 import { BUILDING, CORE } from "../layout"
-import { type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall } from "./kit"
+import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall } from "./kit"
 
 // Structure shared by every storey: the floor slabs of storeys 1–4 (and the one under the roof deck), the switchback
 // stair from the ground floor to the roof, and on every storey the hall from the corridor to the stair door and the
@@ -59,8 +59,9 @@ export function buildSlabs(b: Builder) {
   b.storey = 0
 }
 
-export function buildCore(b: Builder) {
+export async function buildCore(b: Builder, pause: () => Promise<void>) {
   for (let i = 0; i <= STOREYS; i++) {
+    await pause()
     b.storey = i
     landing(b, i)
     if (i === STOREYS) continue
@@ -174,7 +175,9 @@ function railings(b: Builder, yMid: number) {
 function stairWalls(b: Builder, i: number) {
   const ext = { y0: FLOOR_Y - 0.26, y1: FLOOR_Y + STOREY_H - 0.26 }
   wall(b, "z", ST.wallZ0, ST.z1 + 0.14, -43.25, ST.x0, stairBands, [], ext)
-  wall(b, "x", -43.25, -39.5, ST.z1, ST.z1 + 0.14, stairBands, [], ext)
+  // South wall, open where the tower's glazed slot looks in on the mid landing.
+  wall(b, "x", -43.25, -39.5, ST.z1, ST.z1 + 0.14, stairBands, [{ a0: -40.27, a1: -39.5, bottom: 0.84, top: 2.66 }], ext)
+  b.collide(-40.27, ext.y0, ST.z1, -39.5, ext.y1, ST.z1 + 0.14)
   wall(b, "z", ST.wallZ0, ST.z1 + 0.14, ST.x1, -39.5, stairBands, [], ext)
   // North wall: corridor tile on the hall side is the hall's; this is the stair side, with the door.
   wall(b, "x", -43.25, ST.x1, ST.wallZ0, ST.z0, stairBands, [doorOpening(ST.door)], ext)
@@ -188,7 +191,7 @@ function lightBulkhead(b: Builder, x: number, y: number, z: number, yaw: number,
   b.cyl(lit ? M.bulbCool : M.hazardOff, m.clone().multiply(T(0, 0, 0.05, 0, Math.PI / 2)), 0.085, 0.09, 0.06, 16, { cast: false })
   for (let k = -1; k <= 1; k++) b.boxM(M.darkSteel, m, 0.012, 0.2, 0.012, k * 0.06, 0, 0.09)
   b.boxM(M.darkSteel, m, 0.2, 0.012, 0.012, 0, 0, 0.09)
-  if (lit) b.lamp({ kind: "fluorescent", position: [x, y - 0.05, z + 0.25], color: [0.82, 0.93, 1.0], intensity: 3.2, range: 7, size: 0.18 })
+  if (lit) b.lamp({ kind: "fluorescent", position: [x, y - 0.05, z + 0.25], color: TUBE, intensity: 6, range: 7, size: 0.18 })
 }
 
 function emergency(b: Builder, xWall: number, y: number, z: number, on: boolean) {
@@ -204,7 +207,7 @@ function emergency(b: Builder, xWall: number, y: number, z: number, on: boolean)
 
 /** Light on the mid-landing wall; one is dead, its lens smashed on the landing with the rubbish nobody swept up. */
 function midLight(b: Builder, i: number, yMid: number) {
-  const x = -41.4
+  const x = -40.75
   const z = ST.z1 - 0.07
   const dead = i === 2
   lightBulkhead(b, x, yMid + 2.15, z, Math.PI, !dead)
@@ -238,7 +241,7 @@ function hall(b: Builder, i: number) {
   ceiling(b, x0, z0 - 0.15, x1, z1)
   const dead = i === 4
   for (const z of [3.6, 7.2, 10.8, 14.4]) troffer(b, -40.2, z, z === 7.2 && !dead ? "on" : "off", PANEL_ON)
-  if (!dead) b.lamp({ kind: "fluorescent", position: [-40.2, CEIL_Y + 0.1, 7.2], direction: [0, -1, 0], color: [0.85, 0.95, 1.0], intensity: 4, range: 7, angle: 1.3, penumbra: 0.7, size: 1.2 })
+  if (!dead) b.lamp({ kind: "fluorescent", position: [-40.2, CEIL_Y + 0.1, 7.2], direction: [0, -1, 0], color: TUBE, intensity: 4, range: 7, angle: 1.3, penumbra: 0.7, size: 1.2 })
   // Floor plan holder and a fire extinguisher by the stair door.
   b.rbox(M.frame, T(x0 + 0.02, FLOOR_Y + 1.5, 13.4, Math.PI / 2), 0.5, 0.36, 0.02, 0.006)
   b.quad(M.paper, T(x0 + 0.032, FLOOR_Y + 1.5, 13.4, Math.PI / 2), 0.44, 0.3, { cast: false })

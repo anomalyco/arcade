@@ -3,7 +3,7 @@ import { decalMaterial } from "./windows"
 import { BUILDING } from "../layout"
 import type { WorldContext } from "../context"
 import { MODELS, instanceModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
-import { PLATFORM } from "./dock"
+import { PLATFORM, lightAbove } from "./dock"
 import { DOCK_DOORS } from "./shell"
 import { CORE, ROOF_DOOR, band, facades, normal, point } from "./shell"
 
@@ -142,7 +142,8 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
     for (const h of f.holes) {
       if (h.kind !== "door" && h.kind !== "fireDoor") continue
       const d = size("security_light")[2]
-      const c = point(f, (h.u0 + h.u1) / 2, h.y1 + 0.18, -d / 2)
+      const at = lightAbove(f, h.u0, h.u1, h.y1)
+      const c = point(f, at.u, at.y, -d / 2)
       put("security_light", c.x, c.y, c.z, yawToward(n.x, n.z))
     }
   }

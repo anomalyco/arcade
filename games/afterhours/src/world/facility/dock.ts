@@ -2,8 +2,8 @@ import * as THREE from "three/webgpu"
 import { BUILDING } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM } from "./geo"
-import { material } from "../../render/materials"
-import { DOCK_DOORS, facades, fbox, normal, point, type Facade } from "./shell"
+import { materialFor } from "../../render/materials"
+import { DOCK_DOORS, band, facades, fbox, normal, point, type Facade } from "./shell"
 
 // The back of the building (concept r5-06): raised loading dock with bumpers and steps, one roll-up door shut and
 // one half open with warm light spilling from a shallow receiving bay, a dock lamp, the dumpster, an unmarked box
@@ -53,28 +53,26 @@ export function buildDock(ctx: WorldContext, b: Batch) {
   const bz0 = WALL_Z + T
   const bz1 = WALL_Z + 6.5
   const by = P.y
-  const block = material("painted_wall")
-  b.box("concrete_floor", bx0, BUILDING.floorY, bz0, bx1, by, bz1, SKIP_BOTTOM)
-  b.box(block, bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
-  b.box(block, bx0 - 0.2, by, bz0, bx0, 4.2, bz1)
-  b.box(block, bx1, by, bz0, bx1 + 0.2, 4.2, bz1)
+  // The bay is the dock's key light (concept r5-06): concrete block walls lit deep sodium-orange by a hot fixture,
+  // and a floor that carries a little warm glow of its own so the slot still reads if the light budget trims a lamp.
+  const bayFloor = materialFor("emissive", { color: 0x4a3420, roughness: 0.5, emissive: new THREE.Color(1, 0.3, 0.04), intensity: 0.35, name: "facility_bay_floor" })
+  b.box(bayFloor, bx0, BUILDING.floorY, bz0, bx1, by, bz1, SKIP_BOTTOM)
+  b.box("concrete_block", bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
+  b.box("concrete_block", bx0 - 0.2, by, bz0, bx0, 4.2, bz1)
+  b.box("concrete_block", bx1, by, bz0, bx1 + 0.2, 4.2, bz1)
+  // Block skin on the dock wall around the roll-up doors and the man door, from grade up to the first floor band.
+  blockSkin(b)
   b.box("concrete_dark", bx0 - 0.2, 4.2, bz0, bx1 + 0.2, 4.4, bz1 + 0.2)
   b.box("metal_painted", bx0 + 2.4, by, bz1 - 0.6, bx0 + 4.4, by + 2.0, bz1 - 0.15)
   b.box("metal_dark", (bx0 + bx1) / 2 - 0.15, 4.0, bz0 + 2.8, (bx0 + bx1) / 2 + 0.15, 4.2, bz0 + 3.2)
-  b.box("emissive_sodium", (bx0 + bx1) / 2 - 0.08, 3.92, bz0 + 2.92, (bx0 + bx1) / 2 + 0.08, 4.0, bz0 + 3.08)
+  b.box("emissive_sodium", (bx0 + bx1) / 2 - 0.5, 3.92, bz0 + 2.92, (bx0 + bx1) / 2 + 0.5, 4.0, bz0 + 3.08)
   const bayCx = (DOCK_DOORS.open.u0 + DOCK_DOORS.open.u1) / 2
-  ctx.lamps.push({
-    kind: "incandescent",
-    position: [bayCx, 3.85, bz0 + 3.0],
-    direction: [0, -0.62, -0.78],
-    color: [1, 0.62, 0.3],
-    intensity: 420,
-    range: 22,
-    angle: 0.85,
-    penumbra: 0.5,
-    shadow: true,
-    size: 0.2,
-  })
+  const SODIUM: [number, number, number] = [1, 0.36, 0.07]
+  // Fill inside the bay: paints the block walls and floor deep orange.
+  ctx.lamps.push({ kind: "sodium", position: [bayCx, 3.6, bz0 + 2.6], color: SODIUM, intensity: 140, range: 9, size: 0.3 })
+  // No separate throw spot: bisecting r5-06 showed any spot out of the door floods the truck box (the rig lights it
+  // without a usable cone); the bay fill and the emissive bay carry the slot, the man-door wall-pack the court.
+
 
   // Swing-arm dock lamp beside the open door.
   const ax = DOCK_DOORS.open.u1 + 0.55
@@ -120,9 +118,10 @@ function personnelDoor(ctx: WorldContext, b: Batch, f: Facade, u0: number, u1: n
   const s0 = point(f, u0 - 0.5, 0, 0)
   const s1 = point(f, u1 + 0.5, y0 > 1 ? 0 : y0, -1.1)
   if (y0 < 1) b.box("concrete_wall", s0.x, -0.05, s0.z, s1.x, y0, s1.z, SKIP_BOTTOM)
-  // Light head (the security_light model) is placed in props.ts; here only its lamp.
-  const lu = (u0 + u1) / 2
-  const ly = y1 + 0.35
+  // Light head (the security_light model) is placed in props.ts; here its lamp and a glowing lens under the cage.
+  const { u: lu, y: lyTop } = lightAbove(f, u0, u1, y1)
+  const ly = lyTop + 0.17
+  fbox(b, "emissive_sodium", f, lu - 0.09, lu + 0.09, lyTop - 0.05, lyTop + 0.02, -0.32, -0.14)
   const n = normal(f)
   const lp = point(f, lu, ly - 0.05, -0.3)
   const lamp: Lamp = {
@@ -130,8 +129,8 @@ function personnelDoor(ctx: WorldContext, b: Batch, f: Facade, u0: number, u1: n
     position: [lp.x, lp.y, lp.z],
     direction: [n.x * 0.45, -0.89, n.z * 0.45],
     color: [1, 0.7, 0.4],
-    intensity: 70,
-    range: 10,
+    intensity: f.name === "main-north" ? 160 : 70,
+    range: f.name === "main-north" ? 14 : 10,
     angle: 1.15,
     penumbra: 0.8,
     size: 0.15,
@@ -139,3 +138,30 @@ function personnelDoor(ctx: WorldContext, b: Batch, f: Facade, u0: number, u1: n
   ctx.lamps.push(lamp)
 }
 
+
+/** Where the wall light over a personnel door sits: the dock man door's wall-pack is set up and off to the side. */
+export function lightAbove(f: Facade, u0: number, u1: number, y1: number) {
+  if (f.name === "main-north" && u0 === DOCK_DOORS.man.u0) return { u: u1 + 0.75, y: y1 + 0.75 }
+  return { u: (u0 + u1) / 2, y: y1 + 0.18 }
+}
+
+/** Concrete block skin (proud of the board-formed wall by 5 mm) round the dock openings, up to the first floor band. */
+function blockSkin(b: Batch) {
+  const f = facades().find((x) => x.name === "main-north")!
+  const x0 = -38
+  const x1 = -21.5
+  const top = band(1).y0
+  const D = DOCK_DOORS
+  const holes = [D.open, D.closed].map((d) => ({ u0: d.u0, u1: d.u1, y0: D.y0, y1: top })).concat([{ u0: D.man.u0, u1: D.man.u1, y0: D.y0, y1: D.y0 + 2.1 }])
+  const ys = [0, D.y0, D.y0 + 2.1, top]
+  for (let i = 0; i < ys.length - 1; i++) {
+    const ya = ys[i]!
+    const yb = ys[i + 1]!
+    let u = x0
+    for (const h of holes.filter((h) => h.y0 <= ya + 1e-6 && h.y1 >= yb - 1e-6).sort((a, c) => a.u0 - c.u0)) {
+      if (h.u0 > u) fbox(b, "concrete_block", f, u, h.u0, ya, yb, -0.005, 0)
+      u = h.u1
+    }
+    if (u < x1) fbox(b, "concrete_block", f, u, x1, ya, yb, -0.005, 0)
+  }
+}

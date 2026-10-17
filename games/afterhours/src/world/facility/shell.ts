@@ -309,8 +309,10 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
   // Ground-floor windows that are guaranteed lit, because their spill matters for the views.
   const forcedLit = new Set(["main-south:ground:3", "main-south:ground:10", "main-north:ground:12", "annex-south:ground:3", "main-east:ground:0"])
   // 3 a.m.: one office corner on the fourth floor (south-east) still fully lit, someone working late.
+  // and the second floor's south offices (the concepts' band of fluorescent windows) mostly still on.
   const lateFloor = (f: Facade, k: number, h: Hole) =>
-    k === 3 && ((f.name === "main-south" && h.u0 > 17) || (f.name === "main-east" && h.u0 > 9))
+    (k === 3 && ((f.name === "main-south" && h.u0 > 17) || (f.name === "main-east" && h.u0 > 9))) ||
+    (k === 2 && f.name === "main-south" && h.u0 > -34 && h.u0 < 30 && Math.sin(h.u0 * 12.9898) * 43758.5 % 1 < 0.32)
 
   for (const f of facades()) {
     wallBoxes(b, f, "concrete_wall")
@@ -345,11 +347,11 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
       if (storey > 0) fbox(b, "metal_dark", f, h.u0, h.u1, h.y0 + 0.5, h.y0 + 0.56, GLASS_D - 0.04, GLASS_D + 0.04)
       const roll = rand()
       const isCrt = crtSlots.has(id)
-      const pLit = storey === 0 ? 0.12 : 0.05
+      const pLit = storey === 0 ? 0.1 : 0.06
       const roomLit = forcedLit.has(id) || lateFloor(f, storey, h) || (!isCrt && roll < pLit)
       const oneLit = !roomLit && !isCrt && roll < pLit + 0.05
       const tintRoll = rand()
-      const tint = tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
+      const tint = storey === 2 && f.name === "main-south" ? (tintRoll < 0.7 ? COOL : PALE) : tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
       const litPane = Math.floor(rand() * PANES)
       const crtPane = Math.floor(rand() * PANES)
       // Main-block panes are see-through (real rooms behind): seeds offset by 2 switch the shaders to their
@@ -416,7 +418,7 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
     ring(b, "concrete_wall", bd.y0, bd.y1, bd.proj, bd.y0 < ANNEX_TOP ? ANNEX.max[1] : undefined, FE_CUT)
   }
   ring(b, "concrete_wall", CROWN.y0, MAIN_TOP, CROWN.proj)
-  buildCore(ctx, b, glass, clear, stain)
+  buildCore(ctx, b, glass, clear, stain, lit)
 
   // Fire escape on the west face, with rust weeping down the wall under each landing.
   const west = facades().find((f) => f.name === "main-west")!
@@ -505,7 +507,7 @@ function fireDoor(b: Batch, f: Facade, h: Hole) {
  * (north face with the roof door). Hollow: the interior builds the stair and lift inside it. A tall glazed slot over
  * the stair lets its landings glow through the fog.
  */
-function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Material, stain: QuadBuilder) {
+function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Material, stain: QuadBuilder, lit: QuadBuilder) {
   const { x0, x1, z0, z1, top } = CORE
   const zs = MAIN.max[1]
   const col = (bx0: number, by0: number, bz0: number, bx1: number, by1: number, bz1: number) => {
@@ -534,6 +536,15 @@ function buildCore(ctx: WorldContext, b: Batch, glass: Batch, clear: THREE.Mater
   for (let k = 0; k <= STOREYS; k++) {
     const y = Math.min(sy1 - 0.08, Math.max(sy0, storeyY(k) - 0.2))
     b.box("metal_dark", sx0, y, z1 - 0.25, sx1, y + 0.08, z1 - 0.15)
+  }
+  // Stairwell fluorescents left on all night: a glow on the slot glass around each half landing (one tube out).
+  const n = new THREE.Vector3(0, 0, 1)
+  for (let k = 0; k < STOREYS; k++) {
+    if (k === 2) continue
+    const yc = storeyY(k) + SH * 0.5
+    const ya = Math.max(sy0 + 0.05, yc - 1.0)
+    const yb = Math.min(sy1 - 0.05, yc + 1.0)
+    lit.quad(new THREE.Vector3(sx0 + 0.06, ya, z1 - 0.185), new THREE.Vector3(sx1 - sx0 - 0.12, 0, 0), new THREE.Vector3(0, yb - ya, 0), n, [1, 1], [0.8, 0.98, 0.9, 2.92])
   }
   // North face of the stair house with the roof door.
   const D = ROOF_DOOR

@@ -25,6 +25,9 @@ import {
   pow,
   roughness,
   rtt,
+  convertToTexture,
+  fract,
+  sin,
   sample,
   screenCoordinate,
   screenUV,
@@ -42,11 +45,12 @@ import {
   velocity,
 } from "three/tsl"
 import { bloom } from "three/addons/tsl/display/BloomNode.js"
+import { dof } from "three/addons/tsl/display/DepthOfFieldNode.js"
 import { ssr } from "three/addons/tsl/display/SSRNode.js"
 import { ao } from "three/addons/tsl/display/GTAONode.js"
 import { taau } from "three/addons/tsl/display/TAAUNode.js"
 import type { WorldContext } from "../world/context"
-import { fogSigma, fogTransmittance, insideBuilding } from "./atmosphere"
+import { fogSigma, fogTransmittance, fogUniforms, insideBuilding } from "./atmosphere"
 import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
 import type { LightMask } from "./clustered"
 import { insideNode, segmentTouchesNode } from "./volumes"
@@ -64,6 +68,13 @@ const Loop = TslLoop as N
 /** Lights the fog scattering pass evaluates per pixel (the flashlight takes slot 0 when on). */
 const MAX_SCATTER = 24
 
+/** Simple white balance: temperature shifts blue↔amber, tint green↔magenta, luminance roughly kept. */
+function whiteBalance(temp: number, tint: number, out: THREE.Color) {
+  out.setRGB(1 + 0.25 * temp, 1 - 0.18 * tint, 1 - 0.35 * temp)
+  const l = 0.2126 * out.r + 0.7152 * out.g + 0.0722 * out.b
+  return out.multiplyScalar(1 / l)
+}
+
 export function createPost(ctx: WorldContext) {
   addControls(ctx, [
     {
@@ -74,8 +85,8 @@ export function createPost(ctx: WorldContext) {
       min: 0.5,
       max: 2,
       step: 0.05,
-      // Retina: 0.9 samples per CSS px, reconstructed by TAAU to a 1.25× output (≈ 7–8 ms instead of ~85 ms at 2×).
-      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 0.9 : 1,
+      // Retina: 0.8 samples per CSS px, reconstructed by TAAU to a 1.25× output (≈ 7–8 ms instead of ~85 ms at 2×).
+      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 0.8 : 1,
     },
     { key: "post.autoRes", label: "Auto resolution (hold 60 fps)", group: "Performance", type: "toggle", value: true },
     { key: "post.minScale", label: "Auto resolution floor", group: "Performance", unit: "×", min: 0.4, max: 1, step: 0.05, value: 0.6 },
@@ -104,9 +115,10 @@ export function createPost(ctx: WorldContext) {
       ],
       value: "final",
     },
-    { key: "scatter.strength", label: "Lamp light in fog", group: "Fog scattering", unit: "×", min: 0, max: 6, step: 0.05, value: 0.3 },
-    { key: "scatter.halo", label: "Halo (side leak)", group: "Fog scattering", min: 0, max: 0.5, step: 0.005, value: 0.05 },
-    { key: "scatter.reflection", label: "Glow reflected on wet ground", group: "Fog scattering", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
+    { key: "scatter.strength", label: "Lamp light in fog", group: "Fog scattering", unit: "×", min: 0, max: 6, step: 0.05, value: 0.12 },
+    { key: "scatter.halo", label: "Halo (side leak)", group: "Fog scattering", min: 0, max: 0.5, step: 0.005, value: 0.03 },
+    { key: "scatter.reflection", label: "Glow reflected on wet ground", group: "Fog scattering", unit: "×", min: 0, max: 4, step: 0.05, value: 4 },
+    { key: "scatter.coneLength", label: "Visible cone length", group: "Fog scattering", unit: "m", min: 1, max: 40, step: 0.5, value: 4.5 },
     { key: "scatter.forward", label: "Forward scattering (g)", group: "Fog scattering", min: 0, max: 0.9, step: 0.01, value: 0.6 },
     {
       key: "scatter.samples",
@@ -122,36 +134,53 @@ export function createPost(ctx: WorldContext) {
       ],
       value: 4,
     },
-    { key: "scatter.lights", label: "Lights evaluated", group: "Fog scattering", min: 0, max: MAX_SCATTER, step: 1, value: 16 },
-    { key: "post.exposure", label: "Exposure", group: "Camera", unit: "EV", min: -6, max: 4, step: 0.05, value: -2 },
+    { key: "scatter.lights", label: "Lights evaluated outdoors", group: "Fog scattering", min: 0, max: MAX_SCATTER, step: 1, value: 16 },
+    { key: "scatter.lightsIndoor", label: "Lights evaluated indoors", group: "Fog scattering", min: 0, max: MAX_SCATTER, step: 1, value: 8 },
+    { key: "post.exposure", label: "Exposure", group: "Camera", unit: "EV", min: -6, max: 4, step: 0.05, value: -2.2 },
     { key: "post.interiorExposure", label: "Indoor exposure offset", group: "Camera", unit: "EV", min: -4, max: 2, step: 0.05, value: -1 },
-    { key: "post.bloom", label: "Bloom", group: "Camera", min: 0, max: 1.5, step: 0.01, value: 0.22 },
+    { key: "post.bloom", label: "Bloom", group: "Camera", min: 0, max: 1.5, step: 0.01, value: 0.26 },
     { key: "post.bloomRadius", label: "Bloom radius", group: "Camera", min: 0, max: 1, step: 0.01, value: 0.75 },
     { key: "post.bloomThreshold", label: "Bloom threshold", group: "Camera", min: 0, max: 2, step: 0.01, value: 0.0 },
     { key: "post.ssr", label: "Wet reflections (SSR)", group: "Reflections", type: "toggle", value: true },
-    { key: "post.ssrStrength", label: "Strength", group: "Reflections", unit: "×", min: 0, max: 3, step: 0.05, value: 1 },
+    { key: "post.ssrStrength", label: "Strength", group: "Reflections", unit: "×", min: 0, max: 3, step: 0.05, value: 1.3 },
     { key: "post.ssrWet", label: "Dielectric reflectance", group: "Reflections", min: 0, max: 1, step: 0.01, value: 0.5 },
-    { key: "post.ssrRough", label: "Roughness cut-off", group: "Reflections", min: 0.1, max: 1, step: 0.01, value: 0.6 },
-    { key: "post.ssrStreak", label: "Vertical streaking", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
+    { key: "post.ssrRough", label: "Roughness cut-off", group: "Reflections", min: 0.1, max: 1, step: 0.01, value: 0.85 },
+    { key: "post.ssrStreak", label: "Vertical streaking", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 2.2 },
     { key: "post.ssrDistance", label: "Max distance", group: "Reflections", unit: "m", min: 2, max: 80, step: 1, value: 30 },
+    { key: "post.glint", label: "Lamp glints on wet ground", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 2 },
     { key: "post.ssrQuality", label: "Ray steps indoors", group: "Reflections", min: 0.1, max: 1, step: 0.05, value: 0.6 },
-    { key: "post.ssrQualityOutdoor", label: "Ray steps outdoors", group: "Reflections", min: 0.1, max: 1, step: 0.05, value: 0.3 },
+    { key: "post.ssrQualityOutdoor", label: "Ray steps outdoors", group: "Reflections", min: 0.1, max: 1, step: 0.05, value: 0.2 },
     { key: "post.ssrScale", label: "Resolution indoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.5 },
-    { key: "post.ssrScaleOutdoor", label: "Resolution outdoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.35 },
+    { key: "post.ssrScaleOutdoor", label: "Resolution outdoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.25 },
     { key: "post.aoScale", label: "Resolution", group: "Ambient occlusion", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.5 },
     { key: "post.aoScaleOutdoor", label: "Resolution outdoors", group: "Ambient occlusion", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.35 },
     { key: "post.aoSamples", label: "Samples", group: "Ambient occlusion", min: 4, max: 16, step: 1, value: 8 },
     { key: "post.ao", label: "Ambient occlusion", group: "Ambient occlusion", type: "toggle", value: true },
     { key: "post.aoStrength", label: "Strength", group: "Ambient occlusion", min: 0, max: 1, step: 0.01, value: 0.7 },
     { key: "post.aoRadius", label: "Radius", group: "Ambient occlusion", unit: "m", min: 0.1, max: 3, step: 0.05, value: 0.8 },
-    { key: "grade.lift", label: "Teal lift (blacks)", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.015 },
-    { key: "grade.warmth", label: "Warm highlights", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.35 },
-    { key: "grade.teal", label: "Teal shadows", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.4 },
+    { key: "grade.lift", label: "Teal lift (blacks)", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.018 },
+    { key: "grade.warmth", label: "Warm highlights", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.12 },
+    { key: "grade.teal", label: "Teal shadows", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "grade.shoulder", label: "Highlight roll-off", group: "Grade", min: 0.3, max: 6, step: 0.05, value: 1.6 },
-    { key: "grade.contrast", label: "Contrast", group: "Grade", min: 0.5, max: 1.6, step: 0.01, value: 1.08 },
-    { key: "grade.saturation", label: "Saturation", group: "Grade", min: 0, max: 2, step: 0.01, value: 1.0 },
+    { key: "grade.contrast", label: "Contrast", group: "Grade", min: 0.5, max: 1.6, step: 0.01, value: 1.12 },
+    { key: "grade.saturation", label: "Saturation", group: "Grade", min: 0, max: 2, step: 0.01, value: 0.92 },
     { key: "grade.grain", label: "Film grain", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.022 },
-    { key: "grade.vignette", label: "Vignette", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.35 },
+    { key: "grade.temperature", label: "White balance: temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: -0.12 },
+    { key: "grade.tint", label: "White balance: tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.04 },
+    { key: "grade.gamma", label: "Mid-tone curve (gamma)", group: "Grade", min: 0.6, max: 1.6, step: 0.01, value: 1.06 },
+    { key: "grade.warmSaturation", label: "Warm-hue saturation (practicals)", group: "Grade", min: 0, max: 2, step: 0.01, value: 1.4 },
+    { key: "grade.halation", label: "Halation", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.18 },
+    { key: "grade.distortion", label: "Lens distortion (barrel)", group: "Grade", min: -0.1, max: 0.15, step: 0.005, value: 0.025 },
+    { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0.25 },
+    { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.45 },
+    { key: "grade.interiorExposure", label: "Indoor grade exposure", group: "Grade", unit: "EV", min: -2, max: 2, step: 0.05, value: 0 },
+    { key: "rain.on", label: "Drizzle (streaks in lamp light)", group: "Weather", type: "toggle", value: false },
+    { key: "rain.brightness", label: "Drizzle catch-light", group: "Weather", unit: "×", min: 0, max: 100, step: 1, value: 30 },
+    { key: "rain.amount", label: "Drizzle density", group: "Weather", min: 0, max: 1, step: 0.01, value: 0.6 },
+    { key: "post.dof", label: "Depth of field", group: "Camera", type: "toggle", value: false },
+    { key: "post.dofFocus", label: "Focus distance", group: "Camera", unit: "m", min: 0.5, max: 60, step: 0.5, value: 8 },
+    { key: "post.dofAperture", label: "Bokeh size", group: "Camera", min: 0, max: 4, step: 0.05, value: 1 },
+    { key: "grade.vignette", label: "Vignette", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.45 },
     { key: "grade.aberration", label: "Chromatic aberration", group: "Grade", unit: "px", min: 0, max: 4, step: 0.1, value: 0.8 },
   ])
 
@@ -207,12 +236,16 @@ export function createPost(ctx: WorldContext) {
   const lightC = uniformArray(LC, "vec4") as N
   const LD = blank() // near-fade radius (light only emerges into the fog beyond the fixture / lens)
   const lightD = uniformArray(LD, "vec4") as N
+  const LE = blank() // raw emitter output (rgb, before fog scaling) and local fog extinction, for wet glints
+  const lightE = uniformArray(LE, "vec4") as N
+  const glintStrength = uniform(1)
   const lightCount = uniform(0, "int")
   const phaseG = uniform(0.6)
   const ssrStreak = uniform(1)
   const reflStreak = ssrStreak
 
   const haloLeak = uniform(0.06)
+  const coneLen = uniform(6)
   const reflWet = uniform(0.5)
   const reflRough = uniform(0.6)
   const reflStrength = uniform(1)
@@ -256,7 +289,10 @@ export function createPost(ctx: WorldContext) {
           })
           const zoneW = D.y.greaterThan(1.5).select(ins.oneMinus(), D.y.greaterThan(0.5).select(ins, 1))
           const yW = smoothstep(D.z.sub(0.3), D.z, sp.y).mul(smoothstep(D.w.add(0.3), D.w, sp.y))
-          const win = ld.div(A.w).pow(4).oneMinus().clamp().pow(2).mul(smoothstep(0, D.x, ld)).mul(zoneW).mul(yW)
+          // Visible beam length: the concept's lamps show a short soft cone under the head that dies well above the
+          // ground, not a column of light all the way down (extra falloff beyond inverse-square, a stylised choice).
+          const beam = exp(ld.div(coneLen).negate())
+          const win = ld.div(A.w).pow(4).oneMinus().clamp().pow(2).mul(smoothstep(0, D.x, ld)).mul(zoneW).mul(yW).mul(beam)
           const cosT = dot(ln, rd).negate()
           const hg = g2.oneMinus().div(pow(g2.add(1).sub(g.mul(2).mul(cosT)).max(1e-4), 1.5))
           const phase = mix(float(1), hg, 0.85).mul(1 / (4 * Math.PI))
@@ -302,6 +338,26 @@ export function createPost(ctx: WorldContext) {
         const T = fogTransmittance(camPos, world)
         const refl = airlight(world.add(nW.mul(0.02)), rr, float(250), Math.max(2, samples >> 1), jitter)
         acc.addAssign(refl.mul(fres).mul(wet).mul(T).mul(reflStrength))
+        // Emitter glints: the lamp heads themselves mirrored in the wet surface. SSR can't (the emitters are tiny and
+        // the glow sprites write no depth), so each fog-scattering lamp adds a lobe around its mirror direction whose
+        // width grows with roughness; with the jittered normal above it draws the long vertical streaks of r3-05.
+        const g = vec3(0).toVar()
+        // Anisotropic lobe around the un-jittered mirror direction: tight across (a lamp-wide streak), long along
+        // the view's vertical plane (the wet-asphalt smear), both widening with roughness.
+        const rm = rd.sub(nW.mul(dot(rd, nW).mul(2))).normalize()
+        const across = mr.g.mul(0.02).add(0.004)
+        const along = mr.g.mul(mr.g).mul(0.6).add(0.02).mul(reflStreak.mul(0.5))
+        Loop(lightCount, ({ i }: { i: N }) => {
+          const E = lightE.element(i)
+          const toL = lightA.element(i).xyz.sub(world)
+          const dl = length(toL).max(0.5)
+          const L = toL.div(dl)
+          const dx = dot(L.sub(rm), side)
+          const dy = dot(L.sub(rm), fwd.cross(side).normalize().cross(side)).abs().add(dot(L.sub(rm), vec3(0, 1, 0)).abs())
+          const lobe = exp(dx.mul(dx).div(across.mul(across)).add(dy.mul(dy).div(along.mul(along))).negate())
+          g.addAssign(E.rgb.mul(lobe).div(dl.mul(dl).add(4)).mul(exp(dl.mul(E.w).negate())))
+        })
+        acc.addAssign(g.mul(fres).mul(wet).mul(T).mul(glintStrength))
       })
       return vec4(acc, 1)
     })()
@@ -343,7 +399,7 @@ export function createPost(ctx: WorldContext) {
     // At least ~1.5 source texels of blur so the low-res reflection never shows its pixels, and a per-pixel,
     // per-frame jitter of the taps that the temporal resolve averages into a smooth streak.
     const texel = vec2(1).div(ssrSize)
-    const len = ssrStreak.mul(rough.mul(rough).add(0.02)).mul(hitDist.div(dist.max(1))).mul(0.25).clamp(0, 0.12).max(texel.y.mul(1.5))
+    const len = ssrStreak.mul(rough.mul(rough).add(0.02)).mul(hitDist.div(dist.max(1))).mul(0.25).clamp(0, 0.3).max(texel.y.mul(1.5))
     const wide = len.mul(0.08).max(texel.x.mul(1.5))
     const j = interleavedGradientNoise(screenCoordinate.xy).add(frameNoise.mul(0.618034)).fract().sub(0.5)
     const acc = vec4(0).toVar()
@@ -368,7 +424,9 @@ export function createPost(ctx: WorldContext) {
   const aoStrength = uniform(0.7)
 
   // ------------------------------------------------------------------ composite (HDR)
-  const lastFlags = { ssr: true, ao: true, taa: true, debug: "final" }
+  const lastFlags = { ssr: true, ao: true, taa: true, debug: "final", dof: false, rain: false }
+  const dofFocus = uniform(8)
+  const dofBokeh = uniform(1)
   const exposure = uniform(1)
   const bloomNodeRef: { node: N } = { node: null }
   const grade = {
@@ -381,8 +439,44 @@ export function createPost(ctx: WorldContext) {
     vignette: uniform(0.35),
     aberration: uniform(0.8),
     shoulder: uniform(1.6),
+    halation: uniform(0.15),
+    warmSaturation: uniform(1.35),
+    distortion: uniform(0.02),
+    gamma: uniform(1),
   }
+  const wb = uniform(new THREE.Color(1, 1, 1))
+  const interiorTint = uniform(new THREE.Color(1, 1, 1))
+  const indoorU = uniform(0)
   const resolution = uniform(new THREE.Vector2(1, 1))
+
+  // Drizzle: falling streaks in three depth layers near the camera, visible only where lamp light scatters in the
+  // fog (the streaks catch the light, as in a photo of rain under a streetlight) and only in front of the surface.
+  // Screen-space and analytic: one hash per layer per pixel, no particles.
+  const rainAmount = uniform(0.6)
+  const rainTime = uniform(0)
+  const rainGain = uniform(30)
+  const rainStreaks = (u: N, dist: N, light: N) => {
+    const acc = float(0).toVar()
+    const aspect = resolution.x.div(resolution.y)
+    for (const [depthM, scale, speed] of [
+      [2.5, 70, 1.9],
+      [5, 120, 1.35],
+      [9, 190, 1.0],
+    ] as const) {
+      const p = vec2(u.x.mul(aspect).mul(scale), u.y.mul(scale * 0.12).add(rainTime.mul(speed * scale * 0.12)))
+      const cell = p.floor()
+      const f = p.fract()
+      const h = fract(sin(dot(cell, vec2(12.9898, 78.233))).mul(43758.5453))
+      const h2 = fract(h.mul(91.7))
+      // A thin vertical streak at a random x in some cells, with a soft head/tail along its length.
+      const line = smoothstep(0.06, 0.0, abs(f.x.sub(h2.mul(0.8).add(0.1))))
+      const along = smoothstep(0, 0.3, f.y).mul(smoothstep(1, 0.6, f.y))
+      const present = h.lessThan(rainAmount.mul(0.35))
+      const inFront = smoothstep(depthM - 1, depthM + 1, dist)
+      acc.addAssign(present.select(line.mul(along).mul(inFront), float(0)))
+    }
+    return light.mul(acc).mul(rainGain).add(fogUniforms.color.mul(0.25).mul(acc))
+  }
 
   /** Joint bilateral upsample of a low-res buffer (fog light, reflections), guided by full-res depth. */
   const halfSize = uniform(new THREE.Vector2(1, 1))
@@ -443,6 +537,10 @@ export function createPost(ctx: WorldContext) {
     const useAo = flag(ctx, "post.ao")
     const useTaa = flag(ctx, "post.taa")
     const debug = String(ctx.settings["post.debug"])
+    const useDof = flag(ctx, "post.dof")
+    const useRain = flag(ctx, "rain.on")
+    lastFlags.rain = useRain
+    lastFlags.dof = useDof
     Object.assign(lastFlags, { ssr: useSsr, ao: useAo, taa: useTaa, debug })
     aoNode.useTemporalFiltering = useTaa
 
@@ -458,6 +556,7 @@ export function createPost(ctx: WorldContext) {
       const up = upsample(u, dist, useSsr)
       if (useSsr) c = c.add(up.ssr.mul(ssrStrength).mul(T))
       c = c.add(up.scatter)
+      if (useRain) c = c.add(rainStreaks(u, dist, up.scatter))
       return vec4(c, 1)
     })()
     compositeTex.node = composite
@@ -469,17 +568,29 @@ export function createPost(ctx: WorldContext) {
     } else {
       resolved = compositeTex
     }
+    if (useDof) {
+      // Optional: thin-lens depth of field on the resolved image (focus distance in metres, view-space depth).
+      resolved = convertToTexture(dof(resolved, scenePass.getViewZNode(), dofFocus, float(1), dofBokeh) as N) as N
+    }
     const bl = bloom(resolved, 0.22, 0.75, 0) as N
     bloomNodeRef.node = bl
 
     const finish = Fn(() => {
-      const u = uv()
-      // Lens: a little lateral chromatic aberration towards the corners, sampled from the resolved HDR image.
+      const u0 = uv()
+      // Lens: a touch of barrel distortion (sampled slightly zoomed so corners stay filled), then lateral chromatic
+      // aberration towards the corners, from the resolved HDR image.
+      const d0 = u0.sub(0.5)
+      const r2 = dot(d0.mul(vec2(resolution.x.div(resolution.y), 1)), d0.mul(vec2(resolution.x.div(resolution.y), 1)))
+      const u = d0.mul(r2.mul(grade.distortion).add(1)).div(grade.distortion.mul(0.45).add(1)).add(0.5)
       const off = u.sub(0.5)
       const ca = off.mul(length(off).mul(2)).mul(grade.aberration).div(resolution)
       let hdr: N = vec3(resolved.sample(u.add(ca)).r, resolved.sample(u).g, resolved.sample(u.sub(ca)).b)
-      hdr = hdr.add(bl.rgb)
+      // Halation: film's red-orange glow around bright sources (light scattering back off the film base), from the
+      // wide bloom, weighted to the red layer.
+      hdr = hdr.add(bl.rgb).add(bl.rgb.mul(vec3(1, 0.35, 0.12)).mul(grade.halation))
       hdr = hdr.mul(exposure)
+      // White balance (temperature: blue↔amber, tint: green↔magenta) and the indoor grade (dim, warm-green tubes).
+      hdr = hdr.mul(wb).mul(mix(vec3(1), interiorTint, indoorU))
 
       // Split-tone in scene-linear: cool teal into the shadows, sodium warmth into the highlights.
       const lum = luminance(hdr).toVar()
@@ -502,10 +613,16 @@ export function createPost(ctx: WorldContext) {
       let ldr: N = mix(huePreserve, perChannel, smoothstep(4, 40, peak))
       // Saturation around luminance.
       const l2 = luminance(ldr)
-      ldr = mix(vec3(l2), ldr, grade.saturation).max(0)
+      // Film keeps practicals' orange rich even in a cool, desaturated grade: warm hues (red > green > blue) get
+      // their own saturation, so lit windows and sodium heads stay amber instead of drifting to beige.
+      const mx = max(max(ldr.r, ldr.g), ldr.b).max(1e-5)
+      const warmth = smoothstep(0.15, 0.45, ldr.r.sub(ldr.b).div(mx)).mul(smoothstep(0.02, 0.12, mx))
+      ldr = mix(vec3(l2), ldr, mix(grade.saturation, grade.warmSaturation, warmth)).max(0)
       ldr = sRGBTransferOETF(ldr)
       // Contrast around mid-grey, then the lifted teal floor of a night film print.
       ldr = ldr.sub(0.42).mul(grade.contrast).add(0.42).clamp()
+      // Grade curve: gamma on the mids (after contrast), keeping black and white points.
+      ldr = ldr.pow(grade.gamma)
       const liftCol = vec3(0.55, 1.05, 1.0).mul(grade.lift)
       ldr = liftCol.add(ldr.mul(vec3(1).sub(liftCol)))
 
@@ -561,8 +678,11 @@ export function createPost(ctx: WorldContext) {
     ci: number,
     near: number,
     mask?: LightMask,
+    raw = 0,
+    sigmaHere = 0,
   ) => {
     LD[i]!.set(near, mask?.mode ?? 0, mask?.y0 ?? -1e5, mask?.y1 ?? 1e5)
+    LE[i]!.set(rad.r * raw, rad.g * raw, rad.b * raw, sigmaHere)
     LA[i]!.set(pos.x, pos.y, pos.z, range)
     LB[i]!.set(rad.r * k, rad.g * k, rad.b * k, co)
     LC[i]!.set(dir?.x ?? 0, dir?.y ?? -1, dir?.z ?? 0, ci)
@@ -634,7 +754,9 @@ export function createPost(ctx: WorldContext) {
         flag(ctx, "post.ssr") !== lastFlags.ssr ||
         flag(ctx, "post.ao") !== lastFlags.ao ||
         flag(ctx, "post.taa") !== lastFlags.taa ||
-        String(ctx.settings["post.debug"]) !== lastFlags.debug
+        String(ctx.settings["post.debug"]) !== lastFlags.debug ||
+        flag(ctx, "post.dof") !== lastFlags.dof ||
+        flag(ctx, "rain.on") !== lastFlags.rain
       ) {
         build()
       }
@@ -674,7 +796,7 @@ export function createPost(ctx: WorldContext) {
       const score = (r: LampRuntime) => (r.lamp.intensity * r.level * r.sigma * r.transmittance) / Math.max(r.distance - r.lamp.range, 1)
       candidates.sort((a, b) => score(b) - score(a))
       const strength = num(ctx, "scatter.strength")
-      const budget = Math.min(MAX_SCATTER, Math.round(num(ctx, "scatter.lights")))
+      const budget = Math.min(MAX_SCATTER, Math.round(num(ctx, indoor > 0.5 ? "scatter.lightsIndoor" : "scatter.lights")))
       let count = 0
       const f = renderState.flash
       if (f.on && budget > 0) {
@@ -684,7 +806,7 @@ export function createPost(ctx: WorldContext) {
       }
       for (const r of candidates) {
         if (count >= budget) break
-        pushLight(count++, r.pos, r.lamp.range, r.radiance, r.level * r.vis * r.sigma * r.transmittance * strength, r.dir, r.cosOuter, r.cosInner, (r.lamp.size ?? 0.2) * 0.5, r.mask)
+        pushLight(count++, r.pos, r.lamp.range, r.radiance, r.level * r.vis * r.sigma * r.transmittance * strength, r.dir, r.cosOuter, r.cosInner, (r.lamp.size ?? 0.2) * 0.5, r.mask, r.level * r.vis, r.sigma)
       }
       lightCount.value = count
       phaseG.value = num(ctx, "scatter.forward")
@@ -695,6 +817,11 @@ export function createPost(ctx: WorldContext) {
       reflRough.value = ssrRough.value
       reflStrength.value = num(ctx, "scatter.reflection")
       haloLeak.value = num(ctx, "scatter.halo")
+      coneLen.value = num(ctx, "scatter.coneLength")
+      rainTime.value = performance.now() / 1000
+      rainAmount.value = num(ctx, "rain.amount")
+      rainGain.value = num(ctx, "rain.brightness")
+      glintStrength.value = num(ctx, "post.glint")
       ssrStrength.value = num(ctx, "post.ssrStrength")
       ssrStreak.value = num(ctx, "post.ssrStreak")
       ssrNode.maxDistance.value = num(ctx, "post.ssrDistance")
@@ -719,6 +846,16 @@ export function createPost(ctx: WorldContext) {
       grade.grain.value = num(ctx, "grade.grain")
       grade.vignette.value = num(ctx, "grade.vignette")
       grade.aberration.value = num(ctx, "grade.aberration")
+      dofFocus.value = num(ctx, "post.dofFocus")
+      dofBokeh.value = num(ctx, "post.dofAperture")
+      grade.halation.value = num(ctx, "grade.halation")
+      grade.warmSaturation.value = num(ctx, "grade.warmSaturation")
+      grade.distortion.value = num(ctx, "grade.distortion")
+      grade.gamma.value = num(ctx, "grade.gamma")
+      whiteBalance(num(ctx, "grade.temperature"), num(ctx, "grade.tint"), wb.value)
+      whiteBalance(num(ctx, "grade.interiorTemperature"), num(ctx, "grade.interiorTint"), interiorTint.value)
+      interiorTint.value.multiplyScalar(2 ** num(ctx, "grade.interiorExposure"))
+      indoorU.value = indoor
 
       pipeline.render()
     },

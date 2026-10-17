@@ -1,6 +1,6 @@
 import type * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
-import { BUILDING, ROOF_Y } from "./layout"
+import { BUILDING, ROOF_Y, VIEWPOINTS, type ViewpointName } from "./layout"
 import { Builder, STOREY_H } from "./interior/kit"
 import { buildCore, buildSlabs } from "./interior/core"
 import { buildCorridor } from "./interior/corridor"
@@ -8,37 +8,58 @@ import { buildLift } from "./interior/lift"
 import { buildLobby } from "./interior/lobby"
 import { placeProps } from "./interior/props"
 import { buildCloset, buildLab } from "./interior/rooms"
-import { buildStorey } from "./interior/storeys"
+import { buildStorey, groundWindows } from "./interior/storeys"
 import { resetFurnish } from "./interior/furnish"
 
 // Everything inside the main block's shell: the ground floor (lobby, link, corridor, lab, closet), storeys 1–4, the
 // slabs between them, the stair core from the ground to the roof and the lift. Each storey is its own group so only
 // the storeys near the player draw while they're inside; the core is always drawn (the stairwell sees them all).
 
-export function build(ctx: WorldContext): WorldModule {
+/** Yields to the browser between chunks so the build never blocks a frame for long. */
+const pause = () =>
+  new Promise<void>((r) => {
+    const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler
+    if (s?.yield) s.yield().then(r)
+    else setTimeout(r)
+  })
+
+export async function build(ctx: WorldContext): Promise<WorldModule> {
   resetFurnish()
+  // The player's starting storey first (all named viewpoints are on the ground or outside, so normally storey 0).
+  const view = VIEWPOINTS[(ctx.params.get("view") ?? "road") as ViewpointName]
+  const icamY = Number(ctx.params.get("icam")?.split(",")[1])
+  const startY = Number.isFinite(icamY) ? icamY : (view?.pos[1] ?? 0)
+  const first = Math.max(0, Math.min(BUILDING.main.storeys - 1, Math.floor((startY - 0.15) / STOREY_H)))
+
+  const groups: THREE.Object3D[] = []
+  const upper: { update(time: number): void }[] = []
+  let corridor: { update(time: number): void } | null = null
+  const buildOne = async (i: number) => {
+    const b = new Builder(ctx, `storey-${i}`, i)
+    if (i === 0) {
+      buildLobby(b)
+      await pause()
+      corridor = buildCorridor(b)
+      await pause()
+      buildLab(b)
+      await pause()
+      buildCloset(b)
+      groundWindows(b)
+      placeProps(b)
+    } else upper.push(await buildStorey(b, i, pause))
+    await pause()
+    b.flush()
+    groups[i] = b.group
+    await pause()
+  }
+  await buildOne(first)
   const core = new Builder(ctx, "core")
   buildSlabs(core)
-  buildCore(core)
+  await buildCore(core, pause)
   core.flush()
-
-  const ground = new Builder(ctx, "storey-0", 0)
-  buildLobby(ground)
-  const corridor = buildCorridor(ground)
-  buildLab(ground)
-  buildCloset(ground)
-  placeProps(ground)
-  ground.flush()
-
-  const groups: THREE.Object3D[] = [ground.group]
-  const upper: { update(time: number): void }[] = []
-  for (let i = 1; i < BUILDING.main.storeys; i++) {
-    const b = new Builder(ctx, `storey-${i}`, i)
-    upper.push(buildStorey(b, i))
-    b.flush()
-    groups.push(b.group)
-  }
+  await pause()
   const lift = buildLift(ctx, ctx.scene)
+  for (let i = 0; i < BUILDING.main.storeys; i++) if (i !== first) await buildOne(i)
 
   const { min, max } = BUILDING.main
   // Automation only: `icam=x,y,z,yawDeg,pitchDeg` pins the camera for captures of rooms with no named viewpoint.
@@ -51,7 +72,7 @@ export function build(ctx: WorldContext): WorldModule {
         camera.position.set(icam[0]!, icam[1]!, icam[2]!)
         camera.rotation.set((icam[4]! * Math.PI) / 180, (icam[3]! * Math.PI) / 180, 0, "YXZ")
       }
-      corridor.update(time)
+      corridor?.update(time)
       for (const u of upper) u.update(time)
       lift.update(dt, time, camera)
       // Inside the block only the player's storey and its neighbours can be seen; outside, every lit window counts.

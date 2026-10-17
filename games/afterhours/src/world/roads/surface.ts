@@ -256,6 +256,44 @@ function cracks(mb: MeshBuilder, line: Line, s0: number, s1: number, half: numbe
   }
 }
 
+/** Extrudes a cross-section profile [(u, y)] along the line between s0 and s1. Positive u is south on the county road.
+ *  `ramp` metres at each end drop the profile's height to zero (kerb drops, no open end caps). */
+function profileRibbon(mb: MeshBuilder, line: Line, s0: number, s1: number, cols: readonly [number, number][], ramp: number, seed: number) {
+  const stations = line.stations(s0, s1, 0.5)
+  let prev: number[] | null = null
+  for (const s of stations) {
+    const p = line.at(s)
+    const k = ramp > 0 ? Math.min(1, (s - s0) / ramp, (s1 - s) / ramp) : 1
+    const row: number[] = []
+    let across = 0
+    for (let i = 0; i < cols.length; i++) {
+      const [u, y] = cols[i]!
+      if (i > 0) across += Math.hypot(u - cols[i - 1]![0], y - cols[i - 1]![1])
+      const x = p.x - p.tz * u
+      const z = p.z + p.tx * u
+      row.push(mb.vert(x, heightAt(x, z) + 0.02 + y * k, z, across, s, 0.85 + 0.25 * noise2(x / 6, z / 6, seed)))
+    }
+    if (prev) {
+      const flip = cols[cols.length - 1]![0] < cols[0]![0]
+      for (let i = 0; i < row.length - 1; i++) {
+        if (flip) mb.quad(prev[i + 1]!, prev[i]!, row[i + 1]!, row[i]!)
+        else mb.quad(prev[i]!, prev[i + 1]!, row[i]!, row[i + 1]!)
+      }
+    }
+    prev = row
+  }
+}
+
+/** County-road arc length nearest to world x. */
+function sAtX(line: Line, x: number) {
+  let best = 0
+  for (const p of line.pts) if (p.x <= x) best = p.s
+  return best
+}
+
+/** Edge-of-town stretch either side of the junction: gutter pans, kerbs, a sidewalk on the south side (r5-04). */
+export const KERB_X = [-290, 150] as const
+
 function triUp(mb: MeshBuilder, a: number, b: number, c: number) {
   const p = mb.pos
   const ax = p[b * 3]! - p[a * 3]!
@@ -355,11 +393,40 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
     seed: 32,
     visible: (s) => Math.abs(s - sJ) < 160 || ((s % 12) + 12) % 12 < 3,
   })
+  // Kerbed stretch: concrete gutter pan and kerb replace the broken edge and the white edge line.
+  const k0 = sAtX(county, KERB_X[0])
+  const k1 = sAtX(county, KERB_X[1])
+  const kerbed = (s: number) => s > k0 - 1 && s < k1 + 1
+  const conc = new MeshBuilder()
+  const kerb = new MeshBuilder()
+  const pan = (side: 1 | -1): [number, number][] => [
+    [side * (HC - 0.42), 0.012],
+    [side * (HC - 0.1), -0.005],
+    [side * (HC + 0.06), 0.0],
+  ]
+  const kerbProfile = (side: 1 | -1): [number, number][] => [
+    [side * (HC + 0.05), 0.0],
+    [side * (HC + 0.07), 0.13],
+    [side * (HC + 0.11), 0.155],
+    [side * (HC + 0.24), 0.16],
+    // North side has no sidewalk: the kerb's back drops to the verge.
+    ...(side < 0 ? ([[side * (HC + 0.27), 0.0]] as [number, number][]) : []),
+  ]
+  profileRibbon(conc, county, k0, k1, pan(1), 0, 71)
+  profileRibbon(conc, county, k0, j.countyGap[0], pan(-1), 0, 72)
+  profileRibbon(conc, county, j.countyGap[1], k1, pan(-1), 0, 73)
+  profileRibbon(kerb, county, k0, k1, kerbProfile(1), 1.2, 74)
+  profileRibbon(kerb, county, k0, j.countyGap[0], kerbProfile(-1), 1.2, 75)
+  profileRibbon(kerb, county, j.countyGap[1], k1, kerbProfile(-1), 1.2, 76)
+  // Sidewalk slabs on the south side, flush with the kerb top, with a soft edge down to the verge.
+  profileRibbon(conc, county, k0 + 1.2, k1 - 1.2, [[HC + 0.24, 0.16], [HC + 1.75, 0.15], [HC + 1.8, 0.0]], 0, 77)
+
   const cL = (s: number) => HC + edgeJitter(s, 3)
   const cR = (s: number) => HC + edgeJitter(s, 3 + 17)
-  strip(white, county, -(HC - 0.28), 0.1, 0, g0 - 1, { ...cOpts, seed: 33, edge: cL })
-  strip(white, county, -(HC - 0.28), 0.1, g1 + 1, county.length, { ...cOpts, seed: 34, edge: cL })
-  strip(white, county, HC - 0.28, 0.1, 0, county.length, { ...cOpts, seed: 35, edge: cR })
+  const rural = (s: number) => !kerbed(s)
+  strip(white, county, -(HC - 0.28), 0.1, 0, g0 - 1, { ...cOpts, seed: 33, edge: cL, visible: rural })
+  strip(white, county, -(HC - 0.28), 0.1, g1 + 1, county.length, { ...cOpts, seed: 34, edge: cL, visible: rural })
+  strip(white, county, HC - 0.28, 0.1, 0, county.length, { ...cOpts, seed: 35, edge: cR, visible: rural })
 
   // Access paint: stop line for southbound traffic, double yellow and edge lines up to just short of the gate.
   const sStop = j.sStart + 2.4
@@ -391,6 +458,8 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
     [yellow, decalMaterial("road_line_yellow"), true],
     [white, decalMaterial("road_line_white"), true],
     [tar, decalMaterial("asphalt"), true],
+    [conc, decalMaterial("concrete_floor"), true],
+    [kerb, decalMaterial("concrete_floor", -1), true],
   ]
   for (const [mb, mat, colors] of meshes) {
     const geo = mb.geometry(colors)

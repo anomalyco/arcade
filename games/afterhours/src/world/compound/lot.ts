@@ -142,14 +142,15 @@ export function buildLot(ctx: WorldContext, root: THREE.Object3D) {
 
   batch.build(root, { castShadow: (m) => m === curb, receiveShadow: true, name: "lot" })
 
-  // Sodium poles on footings in the double-row medians and one at the entry. One dead, one failing.
+  // Sodium poles on footings. Only two burn (one of them failing); the rest are dead, so the lot is mostly dark
+  // between two pools of light (r5-01).
   const poles = new Batch()
   const pole = (x: number, z: number, heading: number, state: "on" | "dead" | "flicker", shadow: boolean) =>
-    sodiumPole(ctx, poles, { x, z, height: 9.2, heading, arm: 1.6, style: "shoebox", state, shadow, intensity: 5500, range: 40, footing: 0.6 })
+    sodiumPole(ctx, poles, { x, z, height: 9.2, heading, arm: 1.6, style: "shoebox", state, shadow, intensity: 3600, range: 34, footing: 0.6 })
   const bx = AISLE_X + 6 * STALL_W
-  pole(-bx, 56, Math.PI / 2, "on", true)
-  pole(bx, 56, Math.PI / 2, "on", false)
-  const failing = pole(-bx, 74, Math.PI / 2, "flicker", false)
+  pole(-bx, 56, Math.PI / 2, "dead", false)
+  const failing = pole(bx, 56, Math.PI / 2, "flicker", true)
+  pole(-bx, 74, Math.PI / 2, "dead", false)
   pole(bx, 74, Math.PI / 2, "dead", false)
   pole(-AISLE_X - 4.5, 100, 0, "on", true)
   poles.build(root, { castShadow: true, name: "lot-poles" })

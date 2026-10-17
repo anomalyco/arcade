@@ -38,10 +38,11 @@ export function windowMaterial() {
   const blinds = mix(float(1), slats, covered)
   const inX = step(abs(p.x.sub(fract(seed.mul(13.7)))), mix(float(0.15), float(0.45), fract(seed.mul(3.1))))
   const inY = step(p.y, mix(float(0.12), float(0.4), fract(seed.mul(5.9))))
-  const furniture = mix(float(1).sub(inX.mul(inY).mul(0.8)), mix(float(0.35), float(1), covered), real)
+  const furniture = mix(float(1).sub(inX.mul(inY).mul(0.8)), mix(float(0.7), float(1), covered), real)
   const edge = smoothstep(0.0, 0.04, p.x).mul(smoothstep(0.0, 0.04, float(1).sub(p.x))).mul(smoothstep(0.0, 0.05, p.y)).mul(smoothstep(0.0, 0.05, float(1).sub(p.y)))
-  const litGlow = pane.xyz.mul(room).mul(blinds).mul(furniture).mul(edge).mul(0.55)
-  const litOpacity = mix(float(1), mix(float(0.3), float(0.95), covered), real)
+  // Real rooms: the pane carries the ceiling glow (bright, readable from far off before the interior lights it).
+  const litGlow = pane.xyz.mul(room).mul(blinds).mul(furniture).mul(edge).mul(mix(float(0.35), float(0.95), real))
+  const litOpacity = mix(float(1), mix(float(0.62), float(0.97), covered), real)
 
   // CRT room.
   const d = length(vec2(p.x.sub(pane.x), p.y.sub(pane.y)).mul(vec2(1.0, 1.6)))

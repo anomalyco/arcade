@@ -5,6 +5,7 @@ import { MODELS, instanceModel, loadModel, modelCollider, yawToward, type ModelN
 import { Batch, matrix } from "./geo"
 import { shadowLayer } from "./mats"
 import { LOT_Y, stall } from "./lot"
+import { WAGON_APRON } from "./booth"
 import { FACILITY_WALK_Y } from "./props"
 import { FY, WALL } from "./booth"
 
@@ -41,7 +42,8 @@ function items(): Item[] {
   const desk = FY + 0.78
   return [
     // Lot: the hero wagon in a stall near the gate, a few cars spread through the rows, one long-parked under a cover.
-    parked("car_wagon", 5, -1, 6, 0.1, -0.1, -0.03),
+    // Hero wagon outside the fence on the gravel-edged apron west of the gate, broadside to the road (r3-01, r5-01).
+    { name: "car_wagon", position: [WAGON_APRON.x, WAGON_APRON.y, WAGON_APRON.z], yaw: EAST - 0.04, inset: 0.08, shadow: "car" },
     parked("car_sedan", 1, 1, 1, -0.1, 0, -0.02),
     parked("car_sedan_b", 3, -1, 2, 0.15, 0.2, 0.025),
     parked("car_pickup", 0, -1, 1, 0, 0.3, 0),

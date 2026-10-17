@@ -17,6 +17,7 @@ import {
   vec3,
   float,
   pmremTexture,
+  normalWorld,
 } from "three/tsl"
 import type { WorldContext } from "../world/context"
 import { VOLUMES, distanceToBuilding as distToBuilding, inside, insideNode } from "./volumes"
@@ -42,6 +43,7 @@ export const fogUniforms = {
   /** Radiance of the interior haze where no lamp lights it: dark and neutral, not the outdoor teal skylight. */
   interiorColor: uniform(new THREE.Color()),
   envInterior: uniform(0.06),
+  interiorAmbient: uniform(new THREE.Color()),
   color: uniform(new THREE.Color()),
   skyColor: uniform(new THREE.Color()),
   skyGlow: uniform(0.3),
@@ -155,16 +157,17 @@ export const skyRadiance = (camera: N, dir: N) => {
 
 export function createAtmosphere(ctx: WorldContext) {
   addControls(ctx, [
-    { key: "fog.density", label: "Ground density", group: "Fog", unit: "1/m", min: 0, max: 0.06, step: 0.0005, value: 0.016 },
-    { key: "fog.height", label: "Height falloff", group: "Fog", unit: "m", min: 4, max: 120, step: 1, value: 30 },
-    { key: "fog.interior", label: "Interior haze", group: "Fog", unit: "1/m", min: 0, max: 0.03, step: 0.0005, value: 0.006 },
+    { key: "fog.density", label: "Ground density", group: "Fog", unit: "1/m", min: 0, max: 0.06, step: 0.0005, value: 0.01 },
+    { key: "fog.height", label: "Height falloff", group: "Fog", unit: "m", min: 4, max: 120, step: 1, value: 20 },
+    { key: "fog.interior", label: "Interior haze", group: "Fog", unit: "1/m", min: 0, max: 0.03, step: 0.0005, value: 0.012 },
     { key: "fog.hue", label: "Colour hue", group: "Fog", unit: "°", min: 120, max: 220, step: 1, value: 181 },
-    { key: "fog.saturation", label: "Colour saturation", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.8 },
-    { key: "fog.brightness", label: "Brightness", group: "Fog", min: 0, max: 0.5, step: 0.001, value: 0.038 },
+    { key: "fog.saturation", label: "Colour saturation", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.75 },
+    { key: "fog.brightness", label: "Brightness", group: "Fog", min: 0, max: 0.5, step: 0.001, value: 0.034 },
     { key: "sky.dark", label: "Sky above fog", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.45 },
     { key: "sky.glow", label: "Horizon glow", group: "Fog", min: 0, max: 2, step: 0.01, value: 0.35 },
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
     { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
+    { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.08 },
     { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])
@@ -209,9 +212,12 @@ export function createAtmosphere(ctx: WorldContext) {
     // Inside the building the fog-sky skylight can't reach the walls: fade the environment to a faint remnant there
     // (ambient and reflections), keeping exterior faces of the outer walls on the sky.
     envNode = (pmremTexture as N)(envTarget.texture)
-    ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = envNode.mul(
-      mix(float(1), fogUniforms.envInterior, insideNode(positionWorld, 0.05, false)),
-    )
+    // Indoors the sky can't reach: the environment becomes a dim warm-green bounce (light off tile and lino),
+    // a little brighter from below than above so ceilings don't fall to black — cheap stand-in for interior GI.
+    const ins = insideNode(positionWorld, 0.05, false)
+    const up = (normalWorld as N).y
+    const bounce = fogUniforms.interiorAmbient.mul(mix(float(1.15), float(0.8), up.mul(0.5).add(0.5)))
+    ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = mix(envNode, envNode.mul(fogUniforms.envInterior).add(bounce), ins)
   }
 
   const hsl = new THREE.Color()
@@ -230,6 +236,7 @@ export function createAtmosphere(ctx: WorldContext) {
     fogUniforms.skyGlow.value = num(ctx, "sky.glow")
     envGround.value = num(ctx, "env.ground")
     fogUniforms.envInterior.value = num(ctx, "env.interior")
+    fogUniforms.interiorAmbient.value.setRGB(0.78, 0.95, 0.7).multiplyScalar(num(ctx, "env.interiorGI"))
     fogUniforms.interiorColor.value.setRGB(0.9, 0.95, 0.92).multiplyScalar(num(ctx, "fog.interiorTone"))
     ctx.scene.environmentIntensity = num(ctx, "env.intensity")
     bakeEnv()

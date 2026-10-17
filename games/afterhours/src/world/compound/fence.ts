@@ -2,9 +2,9 @@ import * as THREE from "three/webgpu"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
 import { BOOTH, FENCE } from "../layout"
-import { material } from "../../render/materials"
+import { material, materialFor } from "../../render/materials"
 import { Batch, box, cyl, matrix, rod } from "./geo"
-import { boomRed, boomWhite, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
+import { boomRed, boomWhite, fenceVeil, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
 
 // Perimeter fence: galvanised line posts every FENCE.postSpacing m, top rail, chain-link mesh, 45° outriggers with
 // three barbed strands and a concertina razor coil, the swing gate on the south side and the boom barrier at the booth.
@@ -14,8 +14,8 @@ type Run = { a: THREE.Vector2; b: THREE.Vector2; out: THREE.Vector3; endPosts: [
 
 const H = FENCE.height
 const ARM = FENCE.barbHeight
-const POST_R = 0.03
-const END_R = 0.05
+const POST_R = 0.044
+const END_R = 0.06
 const MESH_BOTTOM = 0.04
 const MESH_TOP = H - 0.05
 
@@ -30,6 +30,8 @@ function runs(): Run[] {
     { a: v(x1, z1), b: v(x1, z0), out: new THREE.Vector3(1, 0, 0), endPosts: [true, true] },
     { a: v(x1, z0), b: v(x0, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
     { a: v(x0, z0), b: v(x0, z1), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
+    // Inner security fence: the service yard west of the loading dock (seen behind the dock, concept r5-06).
+    { a: v(-54, -24), b: v(-54, -95), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
   ]
 }
 
@@ -64,7 +66,7 @@ function coil(start: THREE.Vector3, dir: THREE.Vector3, out: THREE.Vector3, len:
   const segPerLoop = 11
   const loops = Math.floor(len / pitch)
   const n = loops * segPerLoop + 1
-  const wire = 0.007
+  const wire = 0.016
   const pos = new Float32Array(n * 3 * 3)
   const nor = new Float32Array(n * 3 * 3)
   const uvs = new Float32Array(n * 3 * 2)
@@ -140,8 +142,8 @@ const SIGNS: [number, number, number][] = [
 ]
 
 export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
-  const galv = material("metal_galvanized")
-  const wireMat = material("barbed_wire")
+  const galv = fenceSteel()
+  const wireMat = darkWire()
   const meshMat = fenceMesh()
   const all = runs()
 
@@ -162,7 +164,7 @@ export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
     pts.forEach((p, i) => {
       const end = (i === 0 && run.endPosts[0]) || (i === n && run.endPosts[1])
       const r = end ? END_R : POST_R
-      batch.at(galv, cyl(r, r, H + 0.05 + 0.4, 6, true), p.x, p.y + (H + 0.05) / 2 - 0.2, p.z)
+      batch.at(galv, cyl(r, r, H + 0.05 + 0.4, 8, true), p.x, p.y + (H + 0.05) / 2 - 0.2, p.z)
       batch.at(galv, cyl(r * 1.25, r * 1.25, 0.05, 6), p.x, p.y + H + 0.03, p.z)
       // 45° outrigger arm leaning out of the compound.
       const top = new THREE.Vector3(p.x, p.y + H + 0.03, p.z)
@@ -182,12 +184,15 @@ export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
     // Three barbed strands up the outriggers.
     for (const f of [0.34, 0.67, 1]) {
       const off = new THREE.Vector3().addScaledVector(out, ARM * f).setY(H + 0.05 + ARM * f)
-      batch.add(wireMat, rod(first.clone().add(off), last.clone().add(off), 0.0035, 3))
+      batch.add(wireMat, rod(first.clone().add(off), last.clone().add(off), 0.006, 3))
     }
     const coilStart = first.clone().addScaledVector(out, 0.2).setY(first.y + H + 0.36)
-    batch.add(wireMat, coil(coilStart, dir, out, len, 0.3, 0.3, ri * 3.1))
+    batch.add(wireMat, coil(coilStart, dir, out, len, 0.36, 0.22, ri * 3.1))
     const meshBatch = new Batch()
     meshBatch.add(meshMat, meshStrip(pts, out, MESH_BOTTOM, MESH_TOP))
+    // Faint dark veil on the same strip: the mesh's average coverage, so the fence still reads as a darker band
+    // against the fog at 25–40 m where the wires fall below a pixel.
+    meshBatch.add(fenceVeil(), meshStrip(pts, out, MESH_BOTTOM, MESH_TOP))
 
     // Warning plates.
     for (const [sr, sd, variant] of SIGNS) {
@@ -217,8 +222,8 @@ export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
 
 /** Two swing leaves hinged on the gate posts: the west one swung fully open inside, the east one ajar. */
 function buildGate(ctx: WorldContext, root: THREE.Object3D) {
-  const galv = material("metal_galvanized")
-  const wireMat = material("barbed_wire")
+  const galv = fenceSteel()
+  const wireMat = darkWire()
   const z = FENCE.max[1]
   const width = FENCE.gate.x1 - FENCE.gate.x0
   const L = width / 2 - 0.12
@@ -249,7 +254,7 @@ function buildGate(ctx: WorldContext, root: THREE.Object3D) {
       b.add(galv, rod(a, c, 0.024, 6))
     // Barbed extension arms and strands on top of the leaf.
     for (const x of [x0, x1]) b.add(galv, rod(v(x, y1), v(x, y1 + 0.42), 0.014, 4))
-    for (const y of [0.14, 0.28, 0.42]) b.add(wireMat, rod(v(x0, y1 + y), v(x1, y1 + y), 0.0035, 3))
+    for (const y of [0.14, 0.28, 0.42]) b.add(wireMat, rod(v(x0, y1 + y), v(x1, y1 + y), 0.006, 3))
     // Hinges and drop rod.
     for (const y of [0.4, y1 - 0.3]) b.at(material("metal_dark"), box(0.12, 0.08, 0.08), 0.04, y, 0)
     b.add(galv, rod(v(x1 - 0.12, -0.02), v(x1 - 0.12, 0.9), 0.01, 4))
@@ -385,3 +390,9 @@ function fenceMesh() {
   m.side = THREE.DoubleSide
   return m
 }
+
+/** Weathered, dark galvanised steel: posts and rails read as dark silhouettes against the lit fog (r3-01, r5-01). */
+const fenceSteel = () => materialFor("flat", { color: 0x23262a, color2: 0x3a342c, roughness: 0.6, roughness2: 0.85, metalness: 0.5, noise: { scale: 2, channel: 1, smooth: true } })
+
+/** Oxidised barbed and razor wire: dark so the coil reads as a silhouette against the fog at 25–40 m. */
+const darkWire = () => materialFor("flat", { color: 0x1c1e1f, roughness: 0.5, metalness: 0.6 })

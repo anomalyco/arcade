@@ -1,8 +1,9 @@
 import * as THREE from "three/webgpu"
-import { float, floor, fract, hash, mix, positionWorld, smoothstep, uniform, uv, vec2, vec3 } from "three/tsl"
+import { float, floor, fract, hash, mix, positionWorld, smoothstep, vec2, vec3 } from "three/tsl"
 import type { Box, Floor, Lamp, WorldContext } from "../context"
 import { ROOF_Y } from "../layout"
-import { Builder, FLOOR_Y, M, STOREY_H, T, type Band, corridorBands, flicker, wall } from "./kit"
+import { materialFor } from "../../render/materials"
+import { Builder, FLOOR_Y, TUBE, fluorescentPanel, glow, M, STOREY_H, T, type Band, corridorBands, flicker, wall } from "./kit"
 import { LOBBY, STOREYS } from "./core"
 
 // A working lift in the core: walk in, press E at the car panel (next storey up, wrapping to the ground floor) or at a
@@ -55,7 +56,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     wall(shaft, "x", SHAFT.x0, -36.15, LOBBY.z1, 19.53, corridorBands, opening)
     wall(shaft, "x", SHAFT.x0, -36.15, 19.53, SHAFT.z0, shaftBands, opening, { ...ext, collide: false })
     wall(shaft, "z", LOBBY.z1, SHAFT.z1 + 0.14, SHAFT.x1, -36.15, shaftBands, [], ext)
-    wall(shaft, "x", SHAFT.x0, -36.15, SHAFT.z1, SHAFT.z1 + 0.14, shaftBands, [], { ...ext, collide: false })
+    wall(shaft, "x", SHAFT.x0, -36.15, SHAFT.z1, SHAFT.z1 + 0.14, shaftBands, [{ a0: SHAFT.x0, a1: -39.13, bottom: 0.84, top: 2.66 }], { ...ext, collide: false })
     shaft.box(M.concrete, SHAFT.x0, ext.y0, SHAFT.z0, SHAFT.x0 + 0.02, ext.y1, SHAFT.z1, { cast: false })
     const y = FLOOR_Y
     // Door frame, sill, call button and the floor dial over the doors.
@@ -165,11 +166,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   car.flush(carRoot)
 
   // Fluorescent panel in the ceiling, flickering.
-  const carLevel = uniform(1)
-  const panelMat = new THREE.MeshStandardNodeMaterial({ color: 0x101210, roughness: 0.4 })
-  const stripes = fract(uv().x.mul(3)).sub(0.5).abs().mul(-1.2).add(1)
-  panelMat.emissiveNode = vec3(0.84, 0.94, 1.0).mul(stripes).mul(carLevel).mul(4)
-  panelMat.name = "interior_lift_panel"
+  const { material: panelMat, level: carLevel } = fluorescentPanel(1)
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 - 0.62, z1 - z0 - 0.72), panelMat)
   panel.rotation.x = Math.PI / 2
   panel.position.set((x0 + x1) / 2, h - 0.13, (z0 + z1) / 2)
@@ -197,10 +194,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   carRoot.add(gateRoot)
 
   // Lit button and lit position lamp (one of each, moved to the active one).
-  const litMat = new THREE.MeshStandardNodeMaterial({ color: 0x221100 })
-  litMat.emissive = new THREE.Color(1, 0.55, 0.15)
-  litMat.emissiveIntensity = 3
-  litMat.name = "interior_lift_lit"
+  const litMat = glow(0x221100, 0xff8c26, 3, "lift_lit")
   const litButton = new THREE.Mesh(new THREE.CylinderGeometry(0.0195, 0.0195, 0.007, 16).rotateX(Math.PI / 2), litMat)
   litButton.position.set(panelX, 0, z0 + 0.0185)
   litButton.visible = false
@@ -218,8 +212,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   const doors = new THREE.InstancedMesh(doorGeo, steel, LEVELS * 2)
   doors.name = "interior:lift-landing-doors"
   const vision = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.34), M.wireGlass, LEVELS * 2)
-  const needleMat = new THREE.MeshStandardNodeMaterial({ color: 0x0a0a0a, roughness: 0.5 })
-  needleMat.name = "interior_lift_needle"
+  const needleMat = materialFor("flat", { color: 0x0a0a0a, roughness: 0.5, name: "interior_lift_needle" })
   const needles = new THREE.InstancedMesh(new THREE.BoxGeometry(0.008, 0.15, 0.004).translate(0, 0.075, 0), needleMat, LEVELS)
   for (const m of [doors, vision, needles]) {
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -228,8 +221,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   }
 
   // Ropes: four on the car, four on the counterweight, scaled to length each frame.
-  const ropeMat = new THREE.MeshStandardNodeMaterial({ color: 0x2a2a28, roughness: 0.6, metalness: 0.7 })
-  ropeMat.name = "interior_lift_rope"
+  const ropeMat = materialFor("flat", { color: 0x2a2a28, roughness: 0.6, metalness: 0.7, name: "interior_lift_rope" })
   const ropes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 6).translate(0, 0.5, 0), ropeMat, 8)
   ropes.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   ropes.frustumCulled = false
@@ -258,7 +250,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     kind: "fluorescent",
     position: [DOOR.c, carFloorY(0) + h - 0.2, (z0 + z1) / 2],
     direction: [0, -1, 0],
-    color: [0.85, 0.95, 1.0],
+    color: TUBE,
     intensity: 3,
     range: 5,
     angle: 1.35,

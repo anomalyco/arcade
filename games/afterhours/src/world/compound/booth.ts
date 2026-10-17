@@ -17,7 +17,13 @@ const HEAD = 2.15
 const TOP = 2.55
 export const WALL = 0.14
 
+/** Paved apron west of the gate, outside the fence, where the hero wagon is parked (clear of the access road's
+ *  west shoulder at x ≈ -4.4 and of the gate leaves, which swing inward). */
+const APRON = { x0: -12.6, x1: -4.8, z0: 133.4, z1: 142.2 }
+export const WAGON_APRON = { x: -8.2, y: 0.03, z: 137.8 }
+
 export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
+  buildApron(ctx, root)
   const { x, z, w, d } = BOOTH
   const y0 = heightAt(x, z)
   const hw = w / 2
@@ -27,7 +33,7 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   const concrete = material("concrete_wall")
   const dark = material("concrete_dark")
   const frame = material("metal_dark")
-  const inner = flat(0xa39d84, 0.85)
+  const inner = flat(0x553416, 0.9)
   const glass = boothGlass()
 
   // Raised concrete island the booth, boom and lamp stand on, with a curb nose facing the road.
@@ -98,7 +104,7 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   // Flat roof with a deep overhang, metal fascia and a ceiling inside.
   b.at(dark, box(w + 0.75, 0.26, d + 0.75), 0, TOP + 0.13, 0)
   b.at(frame, box(w + 0.79, 0.07, d + 0.79), 0, TOP + 0.29, 0)
-  b.at(material("ceiling_tile"), box(w - 2 * WALL, 0.02, d - 2 * WALL), 0, TOP - 0.01, 0)
+  b.at(flat(0x4a3018, 0.9), box(w - 2 * WALL, 0.02, d - 2 * WALL), 0, TOP - 0.01, 0)
   // Roof vent and conduit down the east column to a junction box.
   b.at(frame, cyl(0.09, 0.09, 0.3, 8), -0.7, TOP + 0.45, -0.6)
   b.at(frame, cyl(0.13, 0.13, 0.04, 8), -0.7, TOP + 0.62, -0.6)
@@ -124,7 +130,7 @@ export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   batch.build(root, { castShadow: (m) => m !== glass, name: "booth" })
 
   // A warm bulb under the ceiling plus the space heater's glow.
-  ctx.lamps.push({ kind: "incandescent", position: [x, y0 + TOP - 0.2, z], color: [1, 0.62, 0.3], intensity: 140, range: 16, size: 0.12 })
+  ctx.lamps.push({ kind: "incandescent", position: [x, y0 + TOP - 0.2, z], color: [1, 0.48, 0.16], intensity: 150, range: 14, size: 0.25 })
 
   // Sodium davit lamp at the booth's south-west corner, reaching over the lane (concept r3-01 / r5-03).
   const poles = new Batch()
@@ -192,7 +198,21 @@ function furnish(b: Batch) {
   // Wall clock over the north window.
   b.at(flat(0xd8d2c0, 0.6), cyl(0.13, 0.13, 0.03, 16), 0.6, HEAD + 0.2, -hd + WALL + 0.02, 0, Math.PI / 2)
 
-  // Ceiling fixture: a shallow shade and a bare bulb.
-  b.at(material("metal_painted"), cyl(0.09, 0.2, 0.09, 14, true), 0, TOP - 0.1, 0)
-  b.at(glow(1, 0.62, 0.3, 30), sphere(0.045, 10, 8), 0, TOP - 0.17, 0)
+  // Ceiling fixture: a frosted drum diffuser glowing warm, the way the concept's booth reads from the road.
+  b.at(material("metal_painted"), cyl(0.24, 0.24, 0.03, 20), 0, TOP - 0.035, 0)
+  b.at(glow(1, 0.4, 0.1, 3), cyl(0.21, 0.19, 0.1, 20), 0, TOP - 0.1, 0)
+}
+
+/** Wet asphalt apron with a broken concrete curb on its west and north edges and a faded stop bar. */
+function buildApron(ctx: WorldContext, root: THREE.Object3D) {
+  const b = new Batch()
+  const { x0, x1, z0, z1 } = APRON
+  const y = WAGON_APRON.y
+  b.at(material("asphalt_lot"), plane(x1 - x0, z1 - z0), (x0 + x1) / 2, y, (z0 + z1) / 2)
+  const curb = material("concrete_wall")
+  b.at(curb, box(0.18, 0.14, z1 - z0), x0 - 0.09, 0.07, (z0 + z1) / 2)
+  b.at(curb, box(x1 - x0 + 0.18, 0.14, 0.18), (x0 + x1) / 2 - 0.09, 0.07, z0 - 0.09)
+  b.at(material("road_line_white"), plane(0.1, 5.2), x0 + 1.0, y + 0.006, (z0 + z1) / 2)
+  b.build(root, { castShadow: false, name: "apron" })
+  ctx.floors.push({ min: [x0, z0], max: [x1, z1], y })
 }

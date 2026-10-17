@@ -1,9 +1,9 @@
 import * as THREE from "three/webgpu"
-import { POWER, countyRoadZ } from "../layout"
+import { BOOTH, POWER, countyRoadZ } from "../layout"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
-import { material } from "../../render/materials"
-import { Line, MeshBuilder, Parts, beam, boxM, cylM, rng, tubeInto } from "./util"
+import { Line, Parts, beam, boxM, cylM, poleWood, rng } from "./util"
+import type { Wires } from "./wires"
 import type { Junction } from "./surface"
 
 // Weathered wooden utility poles with crossarms, glass insulators, braces and the odd transformer can, carrying
@@ -49,9 +49,9 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
   // Shaft, sunk into the ground, with a slight random height so the line is not ruler straight.
   const top = H + (r() - 0.5) * 0.4
   const shaft = cylM(0.105, 0.15, top + 1.2, 14)
-  parts.add("wood_pole", shaft, at(new THREE.Matrix4().makeTranslation(0, (top - 1.2) / 2, 0)))
+  parts.add(poleWood(), shaft, at(new THREE.Matrix4().makeTranslation(0, (top - 1.2) / 2, 0)))
   // Cap and a ground-line stain band read as weathering in the flashlight.
-  parts.add("wood_pole", cylM(0.11, 0.11, 0.06, 14), at(new THREE.Matrix4().makeTranslation(0, top + 0.02, 0)))
+  parts.add(poleWood(), cylM(0.11, 0.11, 0.06, 14), at(new THREE.Matrix4().makeTranslation(0, top + 0.02, 0)))
   parts.add("bark", cylM(0.153, 0.156, 0.5, 14, true), at(new THREE.Matrix4().makeTranslation(0, 0.2, 0)))
 
   const arms: THREE.Vector3[][] = []
@@ -59,7 +59,7 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
     const dy = ARM_Y - ai * 1.25 + (top - H)
     const af = at(armFrame(nx, nz, dy))
     const off = 0.17
-    parts.add("wood_pole", boxM(2.45, 0.095, 0.12), af.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, off)))
+    parts.add(poleWood(), boxM(2.45, 0.095, 0.12), af.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, off)))
     // Flat steel braces from the arm down to the pole.
     for (const sx of [-1, 1]) {
       const g = beam(new THREE.Vector3(sx * 0.62, -0.03, off - 0.04), new THREE.Vector3(0, -0.66, 0.12), 0.04, 0.008)
@@ -94,7 +94,7 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
   return { x: spec.x, z: spec.z, frame, arms, phone }
 }
 
-function sag(a: THREE.Vector3, b: THREE.Vector3, amount: number, n: number) {
+export function sag(a: THREE.Vector3, b: THREE.Vector3, amount: number, n: number) {
   const pts: THREE.Vector3[] = []
   for (let i = 0; i <= n; i++) {
     const t = i / n
@@ -118,7 +118,7 @@ function cornerPoint(access: Line, j: Junction): [number, number] {
   return best
 }
 
-export function buildPower(ctx: WorldContext, root: THREE.Object3D, parts: Parts, access: Line, j: Junction) {
+export function buildPower(ctx: WorldContext, parts: Parts, wires: Wires, access: Line, j: Junction) {
   const corner = cornerPoint(access, j)
   const countyNormal = (x: number): [number, number] => {
     const dz = (9 / 140) * Math.cos(x / 140)
@@ -176,7 +176,6 @@ export function buildPower(ctx: WorldContext, root: THREE.Object3D, parts: Parts
   const accessPoles = [countyPoles[cornerIndex]!, ...accessSpecs.map((s) => buildPole(parts, s))]
 
   // Conductors and phone cable.
-  const wires = new MeshBuilder()
   const string = (poles: Pole[], arm: (i: number) => number) => {
     for (let i = 0; i < poles.length - 1; i++) {
       const a = poles[i]!
@@ -186,9 +185,9 @@ export function buildPower(ctx: WorldContext, root: THREE.Object3D, parts: Parts
       for (let w = 0; w < 3; w++) {
         const pa = a.arms[arm(i)]![w]!
         const pb = b.arms[arm(i + 1)]![w]!
-        tubeInto(wires, sag(pa, pb, span * (0.017 + w * 0.001), n), 0.011)
+        wires.add(sag(pa, pb, span * (0.017 + w * 0.001), n), 0.013)
       }
-      tubeInto(wires, sag(a.phone, b.phone, span * 0.026, n), 0.017)
+      wires.add(sag(a.phone, b.phone, span * 0.026, n), 0.02)
     }
   }
   string(countyPoles, () => 0)
@@ -201,29 +200,21 @@ export function buildPower(ctx: WorldContext, root: THREE.Object3D, parts: Parts
     const af = pole.frame.clone().multiply(armFrame(spec.arms[0]![0], spec.arms[0]![1], ARM_Y - 2.2))
     const from = new THREE.Vector3(0.1, 0.63, -0.42).applyMatrix4(af)
     const to = pole.arms[0]![2]!
-    tubeInto(wires, sag(from, to, 0.15, 6), 0.008)
+    wires.add(sag(from, to, 0.15, 6), 0.009)
   }
 
-  // Dead-end guy wire and anchor on the last access pole.
+  // Dead-end guy on the last access pole: anchored out on the forest side (east, away from the lane), leaning a little
+  // north to take the line's pull, and kept south of the guard booth so nothing crosses the booth, barrier or road.
   const last = accessPoles[accessPoles.length - 1]!
-  const prevPole = accessPoles[accessPoles.length - 2]!
-  const dx = last.x - prevPole.x
-  const dz = last.z - prevPole.z
-  const dl = Math.hypot(dx, dz)
-  const anchor = new THREE.Vector3(last.x + (dx / dl) * 5.5, 0, last.z + (dz / dl) * 5.5)
-  anchor.y = heightAt(anchor.x, anchor.z) + 0.15
+  const ax = last.x + 5.2
+  const az = Math.max(last.z - 1.4, BOOTH.z + BOOTH.d / 2 + 4)
+  const anchor = new THREE.Vector3(ax, heightAt(ax, az) + 0.15, az)
   const guyTop = new THREE.Vector3(0, ARM_Y - 0.3, 0).applyMatrix4(last.frame)
-  tubeInto(wires, [guyTop, anchor], 0.008)
+  wires.add([guyTop, anchor], 0.009)
   parts.add("metal_galvanized", cylM(0.03, 0.03, 0.4, 6), new THREE.Matrix4().makeTranslation(anchor.x, anchor.y - 0.1, anchor.z))
   const guyDir = guyTop.clone().sub(anchor).normalize()
-  parts.add("plastic_orange", beam(anchor.clone().addScaledVector(guyDir, 0.2), anchor.clone().addScaledVector(guyDir, 2.6), 0.05, 0.05))
-
-  const wireGeo = wires.geometry()
-  wireGeo.computeBoundingSphere()
-  const wireMesh = new THREE.Mesh(wireGeo, material("metal_dark"))
-  wireMesh.name = "power:wires"
-  wireMesh.matrixAutoUpdate = false
-  root.add(wireMesh)
+  parts.add("plastic_orange", beam(anchor.clone().addScaledVector(guyDir, 0.15), anchor.clone().addScaledVector(guyDir, 2.2), 0.045, 0.045))
+  ctx.colliders.push({ min: [ax - 0.15, anchor.y - 0.2, az - 0.15], max: [ax + 0.15, anchor.y + 1.6, az + 0.15] })
 
   for (const p of [...countyPoles, ...accessPoles.slice(1)]) {
     const g = heightAt(p.x, p.z)

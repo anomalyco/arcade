@@ -69,6 +69,7 @@ type Rig = LampRuntime & {
   /** Smoothed glow visibility (zone + walls between camera and emitter). */
   glowVis: number
   glowSeen: boolean
+  scale: number
   lastPos: [number, number, number]
   point: THREE.PointLight
   shadowWeight: number
@@ -248,7 +249,8 @@ const flashCookie = Fn(([coord]: [N]) => {
 
 export function createLighting(ctx: WorldContext, player: Player) {
   addControls(ctx, [
-    { key: "light.lamps", label: "Lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
+    { key: "light.lampsExterior", label: "Exterior lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 0.3 },
+    { key: "light.lampsInterior", label: "Interior lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 0.8 },
     { key: "light.ambient", label: "Extra fill (hemisphere)", group: "Lighting", min: 0, max: 1, step: 0.005, value: 0.02 },
     { key: "light.shadows", label: "Shadowed lamps", group: "Lighting", min: 0, max: MAX_POOL, step: 1, value: 2 },
     {
@@ -334,6 +336,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       want: false,
       glowVis: 0,
       glowSeen: true,
+      scale: 1,
       lastPos: [NaN, NaN, NaN],
       lastIntensity: lamp.intensity,
       animated: false,
@@ -556,7 +559,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
       glows.visible = glowRigs.length > 0
       camera.updateMatrixWorld()
       tmpCam.setFromMatrixPosition(camera.matrixWorld)
-      const lampScale = num(ctx, "light.lamps")
+      const extScale = num(ctx, "light.lampsExterior")
+      const intScale = num(ctx, "light.lampsInterior")
       const flickerScale = num(ctx, "light.flicker")
       const sodiumShift = num(ctx, "light.sodiumShift")
       hemi.intensity = num(ctx, "light.ambient")
@@ -595,6 +599,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
         r.level = flickerLevel(r, time, flickerScale)
         lampColor(l, sodiumShift, r.color)
         if (l.kind === "sodium") coldSodium(r.color, r.flicker.warm)
+        // Booth (mode 0) is a lit room too: interior scale, not the street-lamp scale.
+        const lampScale = r.zone.interior || r.mask.mode !== 2 ? intScale : extScale
+        r.scale = lampScale
         r.radiance.copy(r.color).multiplyScalar(l.intensity * lampScale)
         r.distance = r.pos.distanceTo(tmpCam)
         r.sigma = fogSigma(r.pos)
@@ -676,7 +683,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
           s.light.shadow.needsUpdate = true
         }
         s.light.color.copy(w.color)
-        s.light.intensity = w.lamp.intensity * lampScale * w.level * w.shadowWeight * w.vis
+        s.light.intensity = w.lamp.intensity * w.scale * w.level * w.shadowWeight * w.vis
         // The world is static; refresh one pooled map now and then in case geometry streamed in.
         if (frame % 45 === slots.indexOf(s) * 7 || frame < 6) s.light.shadow.needsUpdate = true
       }
@@ -732,7 +739,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
         c[i * 4 + 3] = size * gz
         // Emitter luminance ~ intensity / visible area, kept in a range bloom turns into a soft halo.
         const lum =
-          (gs * r.glow * r.glowVis * r.level * r.transmittance * Math.sqrt(r.lamp.intensity * lampScale)) / (Math.max(size, 0.15) * 6)
+          (gs * r.glow * r.glowVis * r.level * r.transmittance * Math.sqrt(r.lamp.intensity * r.scale)) / (Math.max(size, 0.15) * 6)
         col[i * 4] = r.color.r * lum
         col[i * 4 + 1] = r.color.g * lum
         col[i * 4 + 2] = r.color.b * lum

@@ -73,7 +73,7 @@ export function placeProps(b: Builder) {
 
   // ---- Lobby security desk (behind the reception counter). The guard sits on the north side facing the entrance,
   // so desk, terminal and phone fronts face north (yaw 0) and the chair faces south.
-  const desk = { x: -5.5, z: 13.95 }
+  const desk = { x: 5.5, z: 13.95 }
   const top = y + MODELS.office_desk.size[1]
   place(b, "office_desk", [{ position: [desk.x, y, desk.z], yaw: 0 }])
   place(b, "crt_terminal", [{ position: [desk.x - 0.3, top, desk.z + 0.05], yaw: 0.12, collide: false }])
@@ -81,8 +81,8 @@ export function placeProps(b: Builder) {
   place(b, "office_chair", [{ position: [desk.x - 0.2, y, desk.z - 0.85], yaw: Math.PI + 0.35, inset: 0.12 }])
   // Filing cabinets against the west wall behind the desk, fronts facing east.
   place(b, "filing_cabinet", [
-    { position: [-8.72, y, 11.2], yaw: yawToward(1, 0) },
-    { position: [-8.72, y, 11.66], yaw: yawToward(1, 0) },
+    { position: [8.72, y, 11.2], yaw: yawToward(-1, 0) },
+    { position: [8.72, y, 11.66], yaw: yawToward(-1, 0) },
   ])
 
   // ---- Corridor: wet-floor sign by the closet, CCTV camera high on the south wall looking west.
@@ -93,8 +93,8 @@ export function placeProps(b: Builder) {
   // and a TV on an AV cart.
   const bench = y + 0.935
   place(b, "chemistry_set", [{ position: [-24.1, bench, LAB.z0 + 0.34], yaw: Math.PI, collide: false }])
-  place(b, "glassware", [{ position: [-19.6, y + 0.92, -5.5], yaw: Math.PI + 0.2, collide: false }])
-  place(b, "microscope", [{ position: [-21.15, y + 0.92, -5.85], yaw: 0.4, collide: false }])
+  place(b, "glassware", [{ position: [LAB.x0 + 0.36, bench, -7.3], yaw: yawToward(1, 0) + 0.2, collide: false, blob: 0 }])
+  place(b, "microscope", [{ position: [-19.9, y + 0.92, -6.4], yaw: 0.9, collide: false, blob: 0 }])
   place(b, "filing_cabinet_open", [{ position: [LAB.x1 - 0.55, y, LAB.z0 + 0.6], yaw: yawToward(-1, 0), inset: 0.05 }])
   avCart(b, LAB.x1 - 0.45, -2.5)
 

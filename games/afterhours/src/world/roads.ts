@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { WORLD_HALF, accessRoadSamples, countyRoadSamples } from "./layout"
 import { Line, Parts } from "./roads/util"
+import { Wires } from "./roads/wires"
 import { instanceModel, modelCollider, yawToward, type Placement } from "../render/models"
 import { heightAt } from "./height"
 import { buildSurface, junctionFor } from "./roads/surface"
@@ -25,10 +26,12 @@ export function build(ctx: WorldContext): WorldModule | void {
   buildSurface(root, access, county, junction)
   // Poles, fixtures and furniture share one merge bucket per material.
   const parts = new Parts()
-  const power = buildPower(ctx, root, parts, access, junction)
-  buildLights(ctx, parts, access, county, junction, power.corner)
+  const wires = new Wires()
+  const power = buildPower(ctx, parts, wires, access, junction)
+  buildLights(ctx, parts, wires, access, county, junction, power.corner, power.countyPoles)
   buildFurniture(ctx, parts, access, county, junction, power.accessPoles)
   parts.build(root, "roads", { castShadow: true })
+  const updateWires = wires.build(root, ctx.renderer)
 
   // Electrical cabinet at the foot of the last pole before the gate (streams in; not needed for the first frame).
   const last = power.accessPoles[power.accessPoles.length - 1]!
@@ -37,4 +40,6 @@ export function build(ctx: WorldContext): WorldModule | void {
   void instanceModel("utility_box_b", [cab])
     .then((g) => root.add(g))
     .catch(() => {})
+
+  return { update: (_dt, _t, camera) => updateWires(camera) }
 }

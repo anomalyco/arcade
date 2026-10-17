@@ -3,7 +3,7 @@ import { abs, attribute, float, floor, fract, hash, max, mix, positionWorld, pow
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
-import { material, type MaterialName } from "../../render/materials"
+import { material, materialFor, type MaterialName } from "../../render/materials"
 
 // Shared construction kit for the interior: merged static geometry per material with world-space metre UVs, walls
 // with tile bands, steel doors, drop ceilings with troffers, and the few one-off materials the library lacks.
@@ -16,43 +16,48 @@ export const CEIL_Y = 3.1
 export const DOOR_W = 0.92
 export const DOOR_H = 2.12
 
-const std = (color: number, roughness: number, metalness = 0, name = "") => {
+/** A material with its own node graph (one shader each; only for the few procedural surfaces). */
+const nodeMat = (color: number, roughness: number, metalness = 0, name = "") => {
   const m = new THREE.MeshStandardNodeMaterial({ color, roughness, metalness })
   m.name = `interior_${name}`
   return m
 }
 
-const emissive = (color: number, emissiveColor: number, intensity: number, name: string) => {
-  const m = std(color, 0.5, 0, name)
-  m.emissive = new THREE.Color(emissiveColor)
-  m.emissiveIntensity = intensity
-  return m
-}
+/** Shared-class glow (render/materials.ts `flat` class: one shader for every flat colour and glow). */
+export const glow = (color: number, emissiveColor: number, intensity: number, name: string) =>
+  materialFor("flat", { color, roughness: 0.5, emissive: emissiveColor, intensity, name: `interior_${name}` })
 
 /** Wire glass: dark frosted pane with a square wire mesh, in the pane's local 0..1 UVs. */
 function wireGlass() {
-  const m = std(0x2a3431, 0.22, 0, "wire_glass")
+  const m = nodeMat(0x2a3431, 0.22, 0, "wire_glass")
   const g = fract(uv().mul(vec2(12, 18)))
   const wire = max(step(0.93, g.x), step(0.93, g.y))
   m.colorNode = mix(vec3(0.05, 0.07, 0.066), vec3(0.2, 0.21, 0.2), wire)
   return m
 }
 
-/** Fluorescent diffuser lens with four tubes showing through (stripes across the short side of the panel). */
-export function fluorescentPanel(level = 1) {
-  const m = std(0x101210, 0.4, 0, "fluorescent_panel")
+/** Old tubes behind yellowed diffusers: warm green-white, dim (concept r3-02), shared by lamps and emitters. */
+export const TUBE: [number, number, number] = [0.86, 0.95, 0.62]
+/** The lobby's one panel: a warmer, yellower tube (concept r5-02). */
+export const TUBE_WARM: [number, number, number] = [1.0, 0.86, 0.55]
+
+/** Fluorescent diffuser lens with four tubes showing through (stripes across the short side of the panel). Tint and
+ *  level are uniforms, so every panel shares one shader. Brightness is kept near the lamp it stands for. */
+export function fluorescentPanel(level = 1, tint: readonly [number, number, number] = TUBE) {
+  const m = nodeMat(0x101210, 0.4, 0, "fluorescent_panel")
   const u = uniform(level)
   const stripes = pow(abs(sin(uv().x.mul(Math.PI * 4))), float(2.5)).mul(0.55).add(0.45)
   const edge = step(0.04, uv().x).mul(step(uv().x, 0.96)).mul(step(0.02, uv().y)).mul(step(uv().y, 0.98))
-  m.emissiveNode = vec3(0.86, 0.95, 1.0).mul(stripes).mul(edge).mul(u).mul(5.5)
+  m.emissiveNode = uniform(new THREE.Color(...tint)).mul(stripes).mul(edge).mul(u).mul(1.9)
   return { material: m, level: u }
 }
 
 export const PANEL_ON = fluorescentPanel(1).material
+export const PANEL_WARM = fluorescentPanel(1, TUBE_WARM).material
 
 /** Frosted pane lit from behind by something like a television tuned to nothing: coarse flickering white static. */
 function staticGlass() {
-  const m = std(0x101414, 0.3, 0, "static_glass")
+  const m = nodeMat(0x101414, 0.3, 0, "static_glass")
   const u = uniform(1)
   const cell = floor(uv().mul(vec2(46, 64)))
   const frame = floor(time.mul(22))
@@ -60,7 +65,7 @@ function staticGlass() {
   const roll = sin(uv().y.mul(9).add(time.mul(3.1))).mul(0.12).add(0.88)
   const g = fract(uv().mul(vec2(12, 18)))
   const wire = max(step(0.93, g.x), step(0.93, g.y))
-  m.emissiveNode = vec3(0.82, 0.9, 1.0).mul(n.mul(0.6).add(0.4)).mul(roll).mul(u).mul(float(1).sub(wire.mul(0.7))).mul(3.2)
+  m.emissiveNode = vec3(0.82, 0.9, 1.0).mul(n.mul(0.6).add(0.4)).mul(roll).mul(u).mul(float(1).sub(wire.mul(0.7))).mul(1.3)
   return { material: m, level: u }
 }
 
@@ -105,9 +110,9 @@ export const M = {
   leaf: paint(0x1b2e1d, 0.65, 0),
   soil: paint(0x15110d, 1, 0),
   red: paint(0x7a1610, 0.45, 0.1),
-  hazardRed: emissive(0x2a0806, 0xff2a12, 1.4, "hazard_red"),
+  hazardRed: glow(0x2a0806, 0xff2a12, 1.4, "hazard_red"),
   hazardOff: paint(0x3a1410, 0.4, 0),
-  exitSign: emissive(0x1a0404, 0xff1a0c, 2.2, "exit_sign"),
+  exitSign: glow(0x1a0404, 0xff1a0c, 2.2, "exit_sign"),
   cabinet: paint(0x5d665e, 0.5, 0.35),
   epoxy: paint(0x161817, 0.3, 0),
   steel: paint(0x9a9c98, 0.32, 0.9),
@@ -116,9 +121,9 @@ export const M = {
   chalkboard: paint(0x1a2620, 0.88, 0),
   chalkSmear: paint(0x2a3832, 0.95, 0),
   wood: paint(0x4a3420, 0.6, 0),
-  glass: Object.assign(std(0xcfe2dc, 0.04, 0, "glass"), { transparent: true, opacity: 0.22, depthWrite: false }),
-  bulbWarm: emissive(0x332211, 0xffb060, 6, "bulb_warm"),
-  bulbCool: emissive(0x223030, 0xd8eeff, 5, "bulb_cool"),
+  glass: materialFor("flat", { color: 0xcfe2dc, roughness: 0.04, transparent: 0.22, name: "interior_glass" }),
+  bulbWarm: glow(0x332211, 0xffb060, 6, "bulb_warm"),
+  bulbCool: glow(0x223030, 0xd8eeff, 5, "bulb_cool"),
   lampShade: paint(0xb8b4a4, 0.4, 0.6),
   yellow: paint(0x8f7212, 0.5, 0),
   jugWhite: paint(0xbcbcb0, 0.55, 0),

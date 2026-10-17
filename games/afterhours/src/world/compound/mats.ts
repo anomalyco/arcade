@@ -27,7 +27,7 @@ const seeThrough = (color: number, opacity: number, roughness: number, glowColor
   })
 
 /** Booth window glass: thin, slightly dirty, with a faint warm glow from the lit interior behind it. */
-export const boothGlass = () => seeThrough(0x6a6252, 0.16, 0.06, new THREE.Color(1, 0.6, 0.28), 0.25)
+export const boothGlass = () => seeThrough(0x3a2410, 0.35, 0.06, new THREE.Color(1, 0.36, 0.08), 0.7)
 
 /** One layer of a stacked contact-shadow decal (several nested layers fake the soft falloff). */
 export const shadowLayer = () => seeThrough(0x000000, 0.2, 1)
@@ -42,3 +42,6 @@ export const signBlank = () => materialFor("flat", { color: 0x7a7a70, color2: 0x
 export const signRed = () => flat(0x7c1a12, 0.7)
 export const signYellow = () => flat(0xa8841c, 0.7)
 export const signInk = () => flat(0x1b1b18, 0.8)
+
+/** Chain-link veil: the fence mesh's average coverage as a faint dark layer (same flags as the glass: one shader). */
+export const fenceVeil = () => seeThrough(0x0c0f0e, 0.14, 0.9)

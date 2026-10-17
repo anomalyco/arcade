@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { atan, float, fract, mix, positionWorld, sin, smoothstep, step, uv, vec3 } from "three/tsl"
 import type { Lamp } from "../context"
+import { materialFor } from "../../render/materials"
 import { FIRE_ESCAPE } from "../layout"
 import {
   type Band,
@@ -67,10 +68,12 @@ const roomBands: Band[] = [
   [0.1, 99, "painted_wall"],
 ]
 
+/** Open rooms (side, index) and lit rooms (side, any x inside the room): a scattering of late workers at 3 a.m.,
+ *  including the south-east corner rooms of storeys 1–3 that face the lot and the access road. */
 const PICKS: Record<number, { enter: [number, number][]; lit: [number, number][] }> = {
-  1: { enter: [[-1, 2], [-1, 8], [1, 4], [1, 10]], lit: [[-1, 12], [1, 6], [1, 13]] },
-  2: { enter: [[-1, 4], [-1, 10], [1, 3], [1, 12]], lit: [[-1, 1], [1, 7]] },
-  3: { enter: [[-1, 5], [-1, 11], [1, 2], [1, 8]], lit: [[1, 13], [-1, 14]] },
+  1: { enter: [[-1, 2], [-1, 8], [1, 4], [1, 10]], lit: [[1, 31], [1, 4.5], [-1, 15], [1, -18]] },
+  2: { enter: [[-1, 4], [-1, 10], [1, 3], [1, 12]], lit: [[1, 26], [-1, -50], [1, 10]] },
+  3: { enter: [[-1, 5], [-1, 11], [1, 2], [1, 8]], lit: [[1, 31], [1, 20.5], [-1, 26], [1, -2]] },
   4: { enter: [[-1, 3], [-1, 7], [1, 5], [1, 9], [-1, 13]], lit: [] },
 }
 
@@ -96,6 +99,7 @@ export function roomsFor(storey: number): Room[] {
     bounds.forEach(([x0, x1], index) => {
       const win = WIN.find((a) => a >= x0 - 0.01 && a + WIN_W <= x1 + 0.01 && !(side > 0 && a + WIN_W > CORE_X0 - 0.1 && a < CORE_X1 + 0.1)) ?? null
       const enter = has(picks.enter, side, index)
+      const litHere = picks.lit.some(([s, px]) => s === side && px >= x0 && px <= x1)
       out.push({
         side,
         x0,
@@ -105,7 +109,7 @@ export function roomsFor(storey: number): Room[] {
         door: x0 + 0.8,
         win,
         enter,
-        lit: enter || has(picks.lit, side, index),
+        lit: enter || litHere,
         index,
       })
     })
@@ -135,11 +139,7 @@ const blindMats = (() => {
 })()
 
 /** Clear plastic sheeting, hung from the ceiling on storey 4. */
-const plasticMat = (() => {
-  const m = new THREE.MeshStandardNodeMaterial({ color: 0xd8dcd6, roughness: 0.25, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false })
-  m.name = "interior_plastic"
-  return m
-})()
+const plasticMat = materialFor("flat", { color: 0xd8dcd6, roughness: 0.25, transparent: 0.32, side: THREE.DoubleSide, name: "interior_plastic" })
 
 /** Soft-edged floor and ceiling decals (water stains, puddles) with an irregular outline, in the quad's 0..1 UVs. */
 const decal = (color: number, roughness: number, alpha: number, name: string) => {
@@ -161,7 +161,7 @@ const PUDDLE = decal(0x080908, 0.03, 0.85, "puddle_decal")
 const CARPET = paint(0x3a3630, 0.97)
 const RAISED = paint(0x8f918a, 0.55)
 
-export function buildStorey(b: Builder, storey: number) {
+export async function buildStorey(b: Builder, storey: number, pause: () => Promise<void>) {
   const theme = THEMES[storey]!
   const rooms = roomsFor(storey)
   let seed = storey * 7919 + 13
@@ -181,7 +181,8 @@ export function buildStorey(b: Builder, storey: number) {
   wall(b, "x", x0, x1, -ZC, -1.6, corridorBands, north.map((r) => doorOpening(r.door)))
   wall(b, "x", x0, x1, 1.6, ZC, corridorBands, [...south.map((r) => doorOpening(r.door)), { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: DOOR_H + 0.35 }])
   wall(b, "z", -1.6, 1.6, x0, x0 + 0.04, corridorBands, [doorOpening(FIRE_ESCAPE.door.z, FIRE_ESCAPE.door.width)], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
-  wall(b, "z", -1.6, 1.6, x1 - 0.04, x1, corridorBands, [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
+  // East end: the facade has a window on the corridor axis from storey 2 up.
+  wall(b, "z", -1.6, 1.6, x1 - 0.04, x1, corridorBands, storey >= 2 ? [{ a0: -1.6, a1: 1.6, bottom: SILL, top: HEAD }] : [], { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false })
   // Fire exit onto the escape landing: push-bar door, opens inward, held open on the top storey.
   door(b, x0 - 0.175, FIRE_ESCAPE.door.z, { rot: Math.PI / 2, wallT: 0.35, width: FIRE_ESCAPE.door.width, open: storey === 4 ? -1.45 : -1.2, panic: true, glass: null, plate: false, wedge: storey === 4 })
   b.box(M.frame, x0 + 0.04, FLOOR_Y + DOOR_H + 0.25, -0.3, x0 + 0.15, FLOOR_Y + DOOR_H + 0.52, 0.3)
@@ -219,7 +220,8 @@ export function buildStorey(b: Builder, storey: number) {
     wall(b, "z", -ZW, -ZC, p - 0.06, p + 0.06, roomBands)
     if (!coreGap(p)) wall(b, "z", ZC, ZW, p - 0.06, p + 0.06, roomBands)
   }
-  for (const r of rooms) {
+  for (const [ri, r] of rooms.entries()) {
+    if (ri % 3 === 0) await pause()
     const zc = r.side * ZC
     const zw = r.side * ZW
     const records = theme === "records" && r.index % 2 === 1
@@ -254,12 +256,13 @@ export function buildStorey(b: Builder, storey: number) {
         const on = r.lit && (tz >= 12 || r.enter) && !(abandoned && rnd() < 0.5)
         troffer(b, tx, r.side * tz, on ? "on" : "off", PANEL_ON)
       }
-    if (r.lit) for (const v of r.enter ? [7.2, 14.4] : [14.4]) b.lamp(fluoro(cols[v > 10 ? 1 : 0]!, rz(r, v), abandoned ? 0.8 : undefined, 7))
+    if (r.lit) for (const v of r.enter ? [7.2, 14.4] : [14.4]) b.lamp(fluoro(cols[v > 10 ? 1 : 0]!, rz(r, v), abandoned ? 0.8 : undefined, 30))
     door(b, r.door, r.side * (1.6 + 0.075), { rot: r.side < 0 ? 0 : Math.PI, open: r.enter ? 1.35 + rnd() * 0.25 : 0 })
     furnish(b, theme, r, rnd)
     if (abandoned) roomDecay(b, r, rnd)
   }
   flushModels(b)
+  await pause()
 
   return {
     update(time: number) {
@@ -403,4 +406,34 @@ function roomDecay(b: Builder, r: Room, rnd: () => number) {
     b.quad(STAIN, T(x, CEIL_Y - 0.5, r.side * (ZC + 0.003), r.side > 0 ? 0 : Math.PI), 0.5 + rnd() * 0.6, 1.4, { cast: false })
   }
   if (r.enter && rnd() < 0.7) plastic(b, r.x0 + (r.x1 - r.x0) * 0.6, rz(r, 6), rz(r, 9), rnd, 0.3)
+}
+
+/** Same bay rule as the facility's facades (5.4 m module, 3.3 m openings, centred, `edge` clear at each end). */
+function bays(u0: number, u1: number, skip: [number, number][], edge = 2.2) {
+  const pier = 5.4 - WIN_W
+  const n = Math.max(0, Math.floor((u1 - u0 - edge * 2 + pier) / 5.4))
+  const start = (u0 + u1) / 2 - (n * 5.4 - pier) / 2
+  const out: number[] = []
+  for (let i = 0; i < n; i++) {
+    const a = start + i * 5.4
+    if (!skip.some(([s0, s1]) => a + WIN_W > s0 && a < s1)) out.push(a)
+  }
+  return out
+}
+
+/**
+ * Ground-floor windows outside the lobby, lab and closet: offices that are shut for the night, so each window shows
+ * fully lowered, closed venetian blinds just inside the glass (the facility's glass would otherwise show the void).
+ */
+export function groundWindows(b: Builder) {
+  const sill = 1.0 - FLOOR_Y
+  const head = 2.35 - FLOOR_Y
+  const h = head - sill - 0.04
+  const y = FLOOR_Y + sill + 0.02 + h / 2
+  const zi = ZW + 0.06
+  for (const a of bays(SHELL.x0 - 0.35, SHELL.x1 + 0.35, [[-38, -21.5]])) b.quad(blindMats.closed, T(a + WIN_W / 2, y, -zi, 0), WIN_W - 0.04, h, { cast: false })
+  for (const a of bays(SHELL.x0 - 0.35, SHELL.x1 + 0.35, [[-10.5, 10.5], [-43.35, -36.05]])) b.quad(blindMats.closed, T(a + WIN_W / 2, y, zi, Math.PI), WIN_W - 0.04, h, { cast: false })
+  const xi = SHELL.x1 + 0.06 - 0.12
+  for (const a of bays(6, 22, [], 2.6)) b.quad(blindMats.closed, T(xi, y, a + WIN_W / 2, -Math.PI / 2), WIN_W - 0.04, h, { cast: false })
+  for (const a of bays(-22, 22, [[-12.5, -7]])) b.quad(blindMats.closed, T(SHELL.x0 + 0.06, y, a + WIN_W / 2, Math.PI / 2), WIN_W - 0.04, h, { cast: false })
 }

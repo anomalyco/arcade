@@ -3,7 +3,7 @@ import { ACCESS_ROAD, COUNTY_ROAD } from "../layout"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
 import { materialFor } from "../../render/materials"
-import { Line, MeshBuilder, Parts, boxM, cylM, hash, rng } from "./util"
+import { Line, MeshBuilder, Parts, boxM, cylM, hash, poleWood, rng } from "./util"
 import { HA, HC, type Junction } from "./surface"
 
 // Road furniture: a blank stop sign and a blank guide sign at the junction, a weathered blank notice on the access
@@ -34,7 +34,7 @@ function stopSign(parts: Parts, red: THREE.Material, white: THREE.Material, m: T
 }
 
 function guideSign(parts: Parts, green: THREE.Material, white: THREE.Material, m: THREE.Matrix4) {
-  for (const x of [-0.5, 0.5]) parts.add("wood_pole", boxM(0.1, 2.6, 0.1), m.clone().multiply(T(x, 0.9, -0.07)))
+  for (const x of [-0.5, 0.5]) parts.add(poleWood(), boxM(0.1, 2.6, 0.1), m.clone().multiply(T(x, 0.9, -0.07)))
   parts.add(white, boxM(1.6, 0.82, 0.02), m.clone().multiply(T(0, 2.0, -0.012)))
   parts.add(green, boxM(1.52, 0.74, 0.025), m.clone().multiply(T(0, 2.0, 0)))
   // A plain arrow pointing to the viewer's left (towards the facility); deliberately no lettering.
@@ -137,12 +137,6 @@ export function buildFurniture(
       delineator(parts, facing(x, z, -p.tx, -p.tz).multiply(lean))
     }
   }
-  for (const off of [-30, -15, 15, 30]) {
-    const s = (j.countyGap[0] + j.countyGap[1]) / 2 + off
-    const p = county.at(s)
-    const [x, z] = county.offset(s, HC + COUNTY_ROAD.shoulder + 0.35)
-    delineator(parts, facing(x, z, p.tz, -p.tx))
-  }
 
   // Culvert under the access road with headwalls and guardrail on both sides.
   {
@@ -179,8 +173,8 @@ export function buildFurniture(
         outward.push(new THREE.Vector3(-p.tz * side, 0, p.tx * side))
         if (i >= 0 && i <= posts) {
           const pm = facing(x, z, -p.tz * side, p.tx * side, (r() - 0.5) * 0.06)
-          parts.add("wood_pole", boxM(0.15, 1.3, 0.2), pm.clone().multiply(T(0, 0.2, 0.2)))
-          parts.add("wood_pole", boxM(0.15, 0.36, 0.14), pm.clone().multiply(T(0, 0.6, 0.06)))
+          parts.add(poleWood(), boxM(0.15, 1.3, 0.2), pm.clone().multiply(T(0, 0.2, 0.2)))
+          parts.add(poleWood(), boxM(0.15, 0.36, 0.14), pm.clone().multiply(T(0, 0.6, 0.06)))
           ctx.colliders.push({ min: [x - 0.25, g, z - 0.25], max: [x + 0.25, g + 0.8, z + 0.25] })
         }
       }
@@ -209,15 +203,15 @@ export function buildFurniture(
     parts.add("metal_galvanized", railBack)
   }
 
-  // Drainage grate in the gravel at the north-west corner of the junction.
-  {
-    const s = j.countyGap[0] - 4
+  // Storm drain grates in the gutter pans of the kerbed stretch.
+  for (const [off, side] of [[-4, -1], [-46, -1], [9, 1], [52, 1]] as const) {
+    const s = (off < 0 ? j.countyGap[0] : j.countyGap[1]) + off
     const p = county.at(s)
-    const [x, z] = county.offset(s, -(HC + 0.7))
+    const [x, z] = county.offset(s, side * (HC - 0.2))
     const m = facing(x, z, p.tz, -p.tx)
-    parts.add("concrete_dark", boxM(1.1, 0.12, 0.8), m.clone().multiply(T(0, 0.0, 0)))
-    parts.add("glass_dark", boxM(0.9, 0.02, 0.6), m.clone().multiply(T(0, 0.055, 0)))
-    for (let k = 0; k < 9; k++) parts.add("metal_dark", boxM(0.035, 0.03, 0.62), m.clone().multiply(T(-0.4 + k * 0.1, 0.07, 0)))
+    parts.add("glass_dark", boxM(0.86, 0.02, 0.34), m.clone().multiply(T(0, 0.012, 0)))
+    for (let k = 0; k < 10; k++) parts.add("metal_dark", boxM(0.03, 0.03, 0.38), m.clone().multiply(T(-0.405 + k * 0.09, 0.03, 0)))
+    for (const zz of [-0.18, 0.18]) parts.add("metal_dark", boxM(0.9, 0.03, 0.03), m.clone().multiply(T(0, 0.03, zz)))
   }
 
 }

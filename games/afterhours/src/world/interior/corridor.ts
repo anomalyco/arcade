@@ -17,6 +17,7 @@ import {
   flicker as flickerLevel,
   fluorescentPanel,
   PANEL_ON,
+  TUBE,
   staticGlass,
   troffer,
   wall,
@@ -26,7 +27,7 @@ import {
 // junction (x ≈ 0) west to the far double doors; layout's corridor rect starts at x = -9, so the junction stretch
 // x -9..1.6 is built here too to join it to the link.
 
-const COOL: [number, number, number] = [0.85, 0.95, 1.0]
+const COOL = TUBE
 export const WALL_T = 0.15
 
 export const CORRIDOR = {
@@ -80,7 +81,8 @@ export function buildCorridor(b: Builder) {
     if (x === CLOSET_DOOR) continue
     door(b, x, zs + WALL_T / 2, { rot: Math.PI })
   }
-  door(b, LAB_DOOR, zn - WALL_T / 2, { rot: 0, open: 1.45 })
+  // Hinged on the east jamb so the open leaf doesn't hide the room from the corridor (concept r5-05).
+  door(b, LAB_DOOR, zn - WALL_T / 2, { rot: Math.PI, open: -1.45 })
   door(b, CLOSET_DOOR, zs + WALL_T / 2, { rot: Math.PI, open: 1.5 })
   door(b, x0 - WALL_T / 2, 0, { rot: Math.PI / 2, width: 1.7, leaves: 2, plate: false })
   door(b, x1 + WALL_T / 2, 0, { rot: -Math.PI / 2, width: 1.7, leaves: 2, plate: false })

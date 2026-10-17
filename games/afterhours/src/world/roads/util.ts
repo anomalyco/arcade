@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { Vec2 } from "../layout"
-import { material, type MaterialName } from "../../render/materials"
+import { material, type MaterialName, type SurfaceMaterial } from "../../render/materials"
 
 // Shared helpers for the road builders: a resampled centre line with arc length, deterministic noise, a small
 // indexed mesh builder, metre-UV primitives and a per-material merge bucket so the whole road network is a handful
@@ -278,5 +278,17 @@ export function decalMaterial(name: MaterialName, offset = -2) {
   m.polygonOffsetUnits = offset * 2
   m.vertexColors = true
   m.name = `${name}_road`
+  return m
+}
+
+let poleWoodMat: THREE.Material | null = null
+/** Creosoted pole wood: the library wood scan tinted darker (same shader, only the per-material tint differs). */
+export function poleWood() {
+  if (poleWoodMat) return poleWoodMat
+  const m = material("wood_pole").clone() as SurfaceMaterial
+  // Scan class: p1.rgb is the albedo tint.
+  if (m.surfaceParams) for (let i = 4; i < 7; i++) m.surfaceParams[i]! *= 0.5
+  m.name = "wood_pole_dark"
+  poleWoodMat = m
   return m
 }

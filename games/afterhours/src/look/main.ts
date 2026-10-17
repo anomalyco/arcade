@@ -3,7 +3,7 @@ import { LabPanel, type LabSettings } from "@arcade/kit/lab-panel"
 import { createLoader } from "../boot/loader"
 import { heightAt } from "../world/height"
 import { VIEWPOINTS, type ViewpointName } from "../world/layout"
-import { bootWorld } from "./world"
+import { bootWorld } from "../boot/world"
 import { CAMERA_PRESETS, LOOK_PRESETS, QUALITY, type CameraPreset } from "./presets"
 import { createLookUi } from "./ui"
 import "./look.css"
@@ -25,9 +25,8 @@ const status: Status = { ready: false, complete: false, frames: 0, errors: [], f
 ;(globalThis as { __afterhours?: Status }).__afterhours = status
 if (shot) document.body.classList.add("shot")
 
-const world = await bootWorld(canvas, params, (label, f) => loader.step(label, f))
-const { ctx, renderer, camera, player, atmosphere, lighting, post, warmup, updates } = world
-status.errors = world.errors
+const world = await bootWorld(canvas, params, { view: "lot", errors: status.errors, onStep: (label, f) => loader.step(label, f) })
+const { ctx, renderer, camera, player } = world
 
 // ------------------------------------------------------------------------------------------- view size
 /** CSS size of the 3D view; the stage keeps the concept art's 3:2 frame. */
@@ -72,12 +71,8 @@ const frame = (settings: LabSettings | null, dt: number) => {
   if (settings) Object.assign(live, settings)
   Object.assign(live, overlay())
   if (!state.freeze) state.time += dt
-  const t = state.time
-  for (const u of updates) u(dt, t, camera)
-  atmosphere.update(dt, t)
-  lighting.update(dt, t)
   enforceSize()
-  post.render()
+  world.render(dt, state.time)
   enforceSize()
   for (const k of Object.keys(live)) if (!(k in saved)) delete live[k]
   Object.assign(live, saved)
@@ -151,11 +146,9 @@ renderer.setAnimationLoop(() => {
   const now = performance.now()
   const dt = Math.min((now - last) / 1000, 0.1)
   last = now
-  warmup.frame(() => {
-    if (!shot) player.update(dt)
-    if (job) stepJob(job)
-    else frame(null, dt)
-  })
+  if (!shot) player.update(dt)
+  if (job) stepJob(job)
+  else frame(null, dt)
   if (++rendered === 1) loader.live()
   if (!status.complete) return
   status.frames++
@@ -180,8 +173,8 @@ setViewSize(shot ? innerWidth : 1536, shot ? innerHeight : 1024)
 const initialCam = params.get("cam") ?? "r3-01"
 setCamera(initialCam)
 
-await world.stream(
-  () => {
+await world.stream({
+  onBuilt: () => {
     const defaults = structuredClone(ctx.settings)
     if (shot) {
       const look = LOOK_PRESETS.find((p) => p.id === params.get("look"))
@@ -193,8 +186,8 @@ await world.stream(
     ui = createLookUi({ ctx, stage, canvas, panel, defaults, state, setViewSize, setCamera, cameraNow, renderStills, getCameraPreset: () => cameraPreset })
     ui.setCamera(initialCam)
   },
-  (done, total) => loader.stream(`streaming ${done}/${total}`, done, total),
-)
+  onShown: (name, done, total) => loader.stream(`streaming ${name}`, done, total),
+})
 // The camera may have been placed before every floor existed (interiors): re-seat it on the finished world.
 setCamera((cameraPreset as CameraPreset | null)?.id ?? initialCam)
 loader.done()
