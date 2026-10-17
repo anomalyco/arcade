@@ -213,7 +213,7 @@ def orient_and_scale(obj, spec, fix):
     per = np.clip(ratio / s, 0.88, 1.12) * s
     per[2] = ratio[2]  # height is exact: clutter sits on catalogue surface heights, and a table is table height
     if spec["role"] == "clutter":
-        per[:] = s  # small things keep their proportions (a stretched box reads as wrong at once), at the catalogue's volume
+        per = np.clip(ratio / s, 0.90, 1.10) * s  # small things keep their proportions within ±10%, at the catalogue's volume
     centre = np.array([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, mn[2]])
     me.transform(Matrix.Translation(Vector((-centre).tolist())))
     me.transform(Matrix.Diagonal((per[0], per[1], per[2], 1.0)))
@@ -270,7 +270,7 @@ def decimate(src, tris):
 
 
 class SourceSampler:
-    """Looks up the generated texture at any point near the source surface (nearest point, barycentric UV)."""
+    """Looks up the generated texture or direct vertex colours at any point near the source surface."""
 
     def __init__(self, obj, levels):
         from mathutils.bvhtree import BVHTree
@@ -284,26 +284,38 @@ class SourceSampler:
         me.loop_triangles.foreach_get("vertices", tv)
         tl = np.empty(nt * 3, dtype=np.int32)
         me.loop_triangles.foreach_get("loops", tl)
-        uv = np.empty(len(me.loops) * 2, dtype=np.float32)
-        me.uv_layers.active.data.foreach_get("uv", uv)
-        uv = uv.reshape(-1, 2)
         tv = tv.reshape(-1, 3)
         self.tri_v = co[tv]
-        self.tri_uv = uv[tl.reshape(-1, 3)]
         self.bvh = BVHTree.FromPolygons(co.tolist(), tv.tolist())
-        H, W = levels[0].shape[:2]
-        e1 = self.tri_v[:, 1] - self.tri_v[:, 0]
-        e2 = self.tri_v[:, 2] - self.tri_v[:, 0]
-        world = np.linalg.norm(np.cross(e1, e2), axis=1).sum() * 0.5
-        u1 = self.tri_uv[:, 1] - self.tri_uv[:, 0]
-        u2 = self.tri_uv[:, 2] - self.tri_uv[:, 0]
-        texels = (np.abs(u1[:, 0] * u2[:, 1] - u1[:, 1] * u2[:, 0]) * 0.5).sum() * W * H
-        self.texels_per_m2 = texels / max(world, 1e-9)
+        self.has_uv = levels is not None and me.uv_layers.active is not None
+        self.tri_vc = None
+        if self.has_uv:
+            uv = np.empty(len(me.loops) * 2, dtype=np.float32)
+            me.uv_layers.active.data.foreach_get("uv", uv)
+            uv = uv.reshape(-1, 2)
+            self.tri_uv = uv[tl.reshape(-1, 3)]
+            H, W = levels[0].shape[:2]
+            e1 = self.tri_v[:, 1] - self.tri_v[:, 0]
+            e2 = self.tri_v[:, 2] - self.tri_v[:, 0]
+            world = np.linalg.norm(np.cross(e1, e2), axis=1).sum() * 0.5
+            u1 = self.tri_uv[:, 1] - self.tri_uv[:, 0]
+            u2 = self.tri_uv[:, 2] - self.tri_uv[:, 0]
+            texels = (np.abs(u1[:, 0] * u2[:, 1] - u1[:, 1] * u2[:, 0]) * 0.5).sum() * W * H
+            self.texels_per_m2 = texels / max(world, 1e-9)
+        else:
+            self.texels_per_m2 = 1.0
+            ca = me.color_attributes.active_color or (me.color_attributes[0] if len(me.color_attributes) else None)
+            if ca is not None:
+                if ca.domain == "CORNER":
+                    raw_c = np.empty(len(me.loops) * 4, dtype=np.float32)
+                    ca.data.foreach_get("color_srgb", raw_c)
+                    self.tri_vc = raw_c.reshape(-1, 4)[tl.reshape(-1, 3)]
+                else:
+                    raw_c = np.empty(len(me.vertices) * 4, dtype=np.float32)
+                    ca.data.foreach_get("color_srgb", raw_c)
+                    self.tri_vc = raw_c.reshape(-1, 4)[tv]
 
-    def uv(self, pts, normals=None):
-        """UV of the source surface at each point. With normals, a short ray along the face normal picks the surface
-        the face lies on, so a thin panel's front does not take the colour of its back (or of the recess behind it);
-        the nearest point is the fallback."""
+    def _hit_barycentric(self, pts, normals=None):
         idx = np.empty(len(pts), dtype=np.int64)
         loc = np.empty((len(pts), 3), dtype=np.float64)
         for i, p in enumerate(pts):
@@ -322,11 +334,22 @@ class SourceSampler:
         d00 = (v0 * v0).sum(1); d01 = (v0 * v1).sum(1); d11 = (v1 * v1).sum(1)
         d20 = (v2 * v0).sum(1); d21 = (v2 * v1).sum(1)
         den = np.maximum(d00 * d11 - d01 * d01, 1e-18)
-        w1 = (d11 * d20 - d01 * d21) / den
-        w2 = (d00 * d21 - d01 * d20) / den
-        w0 = 1 - w1 - w2
+        w1 = np.clip((d11 * d20 - d01 * d21) / den, 0.0, 1.0)
+        w2 = np.clip((d00 * d21 - d01 * d20) / den, 0.0, 1.0)
+        w0 = np.clip(1.0 - w1 - w2, 0.0, 1.0)
+        return idx, w0, w1, w2
+
+    def uv(self, pts, normals=None):
+        """UV of the source surface at each point."""
+        idx, w0, w1, w2 = self._hit_barycentric(pts, normals)
         t = self.tri_uv[idx]
         return t[:, 0] * w0[:, None] + t[:, 1] * w1[:, None] + t[:, 2] * w2[:, None]
+
+    def vertex_rgba(self, pts, normals=None):
+        """Interpolated COLOR_0 (RGB base_color + alpha shiny flag) on vertex-coloured GLBs."""
+        idx, w0, w1, w2 = self._hit_barycentric(pts, normals)
+        vc = self.tri_vc[idx]
+        return vc[:, 0] * w0[:, None] + vc[:, 1] * w1[:, None] + vc[:, 2] * w2[:, None]
 
 
 def bake_ao(obj, samples=48, distance=0.35):
@@ -384,16 +407,21 @@ def corner_data(obj, sampler, base_levels, mr_levels, smooth_deg):
     tp = co[lv[loops]]  # (F,3,3)
     cen = tp.mean(1)
     area = np.linalg.norm(np.cross(tp[:, 1] - tp[:, 0], tp[:, 2] - tp[:, 0]), axis=1) * 0.5
-    # Filter the texture to the triangle's footprint: a vertex colour cannot carry finer detail than its triangle.
-    lvl = np.clip(0.5 * np.log2(np.maximum(area * sampler.texels_per_m2, 1.0)) - 1.0, 0, len(base_levels) - 1)
     pull = tp * 0.7 + cen[:, None, :] * 0.3
     fn = np.cross(tp[:, 1] - tp[:, 0], tp[:, 2] - tp[:, 0])
     fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-12)
-    uv_c = sampler.uv(pull.reshape(-1, 3), np.repeat(fn, 3, 0))
-    col = sample(base_levels, uv_c, np.repeat(lvl, 3))[:, :3]
-    uv_m = sampler.uv(cen, fn)
-    mr = sample(mr_levels, uv_m, lvl) if mr_levels else np.zeros((len(cen), 4), dtype=np.float32)
-    shiny = (mr[:, 2] > 0.5) | (mr[:, 1] < 0.32)
+    if sampler.has_uv:
+        lvl = np.clip(0.5 * np.log2(np.maximum(area * sampler.texels_per_m2, 1.0)) - 1.0, 0, len(base_levels) - 1)
+        uv_c = sampler.uv(pull.reshape(-1, 3), np.repeat(fn, 3, 0))
+        col = sample(base_levels, uv_c, np.repeat(lvl, 3))[:, :3]
+        uv_m = sampler.uv(cen, fn)
+        mr = sample(mr_levels, uv_m, lvl) if mr_levels else np.zeros((len(cen), 4), dtype=np.float32)
+        shiny = (mr[:, 2] > 0.5) | (mr[:, 1] < 0.32)
+    else:
+        rgba_c = sampler.vertex_rgba(pull.reshape(-1, 3), np.repeat(fn, 3, 0))
+        col = np.clip(rgba_c[:, :3], 0.0, 1.0)
+        rgba_m = sampler.vertex_rgba(cen, fn)
+        shiny = rgba_m[:, 3] > 0.998
     mat = np.where(shiny, MAT_SHINY, MAT_LIT).astype(np.uint8)
     corner_order = loops.reshape(-1)
     return co[lv[corner_order]], nrm[corner_order], col, np.repeat(mat, 3), corner_order
@@ -576,7 +604,7 @@ def build(pid, raw):
     reset()
     obj = import_raw(raw)
     base, mr = images(obj)
-    base_levels = mip_chain(pixels(base))
+    base_levels = mip_chain(pixels(base)) if base else None
     mr_levels = mip_chain(pixels(mr)) if mr else None
     islands, dropped = drop_floaters(obj)
     yaw, size = orient_and_scale(obj, spec, FIX.get(pid, {}))

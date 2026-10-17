@@ -39,6 +39,12 @@ parser.add_argument("--force", action="store_true")
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--faces", type=int, default=40000)
 parser.add_argument("--texture", type=int, default=2048)
+parser.add_argument("--no-resident", action="store_true", help="Run inline instead of using the resident trellis_worker daemon")
+parser.add_argument("--idle-timeout", type=int, default=300, help="Resident worker idle unload timeout in seconds (default 300)")
+parser.add_argument("--stage1a-only", action="store_true", help="Disable Stage 1B sampler/flood-fill/vertex-color changes (bit-identical mode)")
+parser.add_argument("--vertex-color-only", action="store_true", default=True, help="Skip xatlas/mtldiffrast UV bake and sample O-Voxel attributes at vertices")
+parser.add_argument("--with-texture", action="store_true", help="Bake 2048x2048 UV texture instead of vertex-only attributes")
+parser.add_argument("--shape-seeds", type=int, default=3, help="Number of coarse 32^3 shape seeds to score (default 3)")
 args = parser.parse_args()
 
 src_dir = os.path.join(args.work, "source")
@@ -48,6 +54,44 @@ wanted = [s for s in args.ids.split(",") if s] or sorted(f[:-4] for f in os.list
 todo = [i for i in wanted if os.path.exists(os.path.join(src_dir, f"{i}.png")) and (args.force or not os.path.exists(os.path.join(raw_dir, f"{i}.glb")))]
 if not todo:
     print("nothing to do")
+    sys.exit(0)
+
+bake_texture = args.with_texture or args.stage1a_only or (not args.vertex_color_only)
+fast_sampler = not args.stage1a_only
+fill_interior = not args.stage1a_only
+shape_seeds = 1 if args.stage1a_only else args.shape_seeds
+
+if not args.no_resident and os.path.exists(os.path.join(TRELLIS_HOME, "trellis_worker.py")):
+    import trellis_worker  # noqa: E402
+    t0 = time.time()
+    info, cold = trellis_worker.ensure_worker(idle_timeout=args.idle_timeout)
+    load_s = info.get("initial_load_s", 0.0) if cold else 0.0
+    print(f"resident worker ready (pid={info.get('pid')}, cold={cold}, load={load_s:.1f}s)", flush=True)
+    timings = open(os.path.join(raw_dir, "timings.jsonl"), "a")
+    for idx, pid in enumerate(todo):
+        res = trellis_worker.send_request({
+            "cmd": "job",
+            "id": pid,
+            "image_path": os.path.join(src_dir, f"{pid}.png"),
+            "cutout_path": os.path.join(raw_dir, f"{pid}-cutout.png"),
+            "out_glb": os.path.join(raw_dir, f"{pid}.glb"),
+            "out_ovoxel": None if bake_texture else os.path.join(raw_dir, f"{pid}.ovoxel.npz"),
+            "seed": args.seed,
+            "faces": args.faces,
+            "texture": args.texture,
+            "bake_texture": bake_texture,
+            "fast_sampler": fast_sampler,
+            "fill_interior_voxels": fill_interior,
+            "num_shape_seeds": shape_seeds,
+            "report_cold_load": (cold and idx == 0),
+        })
+        if not res.get("ok"):
+            print(f"{pid}: failed ({res.get('error')})", flush=True)
+            continue
+        timings.write(json.dumps(res) + "\n")
+        timings.flush()
+        print(json.dumps(res), flush=True)
+    print(f"done: {len(todo)} props in {time.time() - t0:.0f}s (load {load_s:.0f}s)")
     sys.exit(0)
 
 t0 = time.time()

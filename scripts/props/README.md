@@ -17,9 +17,7 @@ Work files (source images, raw GLBs, previews, reports) live outside the repo, b
    2password run --env "OPENAI_API_KEY=op://Automation/OpenAI API Key/credential" -- bun scripts/props/source-images.ts
    ```
 
-2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout, image → 3D on the Studio's
-   Metal port at `~/code/experiments/image-to-3d/trellis2-mac`, exported as a 40k-triangle GLB with 2048² base colour
-   and metallic/roughness. One job at a time: `hivemind run --kind render --worker studio`.
+2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout (skipped when the source or cached cutout PNG already has alpha), image → 3D on the Apple Silicon Metal port at `~/code/experiments/image-to-3d/trellis2-mac` through the resident `trellis_worker.py` daemon (`low_vram=False`, 5-minute idle auto-unload), exported as a 40k-triangle GLB with direct O-Voxel vertex attributes (`COLOR_0` + `.ovoxel.npz` sidecar, or `--with-texture` for a 2048² UV atlas). Routed to a remote worker (`--worker mini` default, `--worker pro` fallback; never `studio` unless `ALLOW_STUDIO_TRELLIS=1`), one job at a time: `hivemind run --kind render --worker mini`.
 3. **Blender cleanup**, `blender-cleanup.py` (headless Blender 5.2, one process for all props):
    - drop floater islands, orient the front to game +Z (yaw from `fixups.json` or the long axis), scale to the
      catalogue size (footprint within ±12% of a uniform fit, height exact), pivot on the floor;
@@ -49,10 +47,21 @@ pivot, size within 16%, triangles within 2% of budget).
 `fixups.json`, per id: `yaw` (degrees, overrides the auto orientation), `candidates` (the mesh candidates to try, for
 example `["octree 7"]`), `smooth` (normal smoothing angle, default 40°).
 
-## Measured (Mac Studio, M5 Max, 2026-10-16)
+## Measured (2026-10-16 baseline vs 2026-10-17 Stage 1)
 
-- TRELLIS.2: 71 s per asset on average (38–196 s; cutout 8 s, generation 52 s, texture bake 5 s), plus about 50 s to
-  load the pipeline once per batch. The first 26 took 29 minutes.
+- **Baseline (2026-10-16)**: 71 s per asset on average (38–196 s; cutout 8 s, generation 52 s, texture bake 5 s), plus
+  49.5 s to load the pipeline once per batch. The first 26 took 29 minutes.
+- **Stage 1 (2026-10-17)**:
+  - Pipeline load: **0.0 s** warm via resident `trellis_worker.py` (auto-unloads after 5 idle minutes; cold load cut from
+    49.5 s to **17.7–20.0 s** by skipping redundant `initialize_weights` + `reset_parameters`, skipping unused `1024`
+    cascade models, lazy-loading `BiRefNet`, and using `local_files_only=True` HF cache lookup).
+  - **Stage 1A (lossless, bit-identical raw mesh `max_vert_abs_diff = 0.0`)**: `chesterfield-sofa` drops from **85.3 s**
+    (plus 29.2 s CPU BiRefNet) to **44.5 s** (`generate_s`: 69.9 s → 30.1 s; `shape_dec_s`: 28.5 s → 2.4 s via
+    vectorized `_CPUHashMap`; `cond_s`: 1.07 s → 0.20 s with `low_vram=False`).
+  - **Stage 1B (8-step `[0.70, 1.0]` CFG + exterior voxel flood-fill + direct O-Voxel vertex colour sampling)**:
+    - On Studio (`M5 Max`, measured before remote offload): `chesterfield-sofa` drops to **24.1 s** total (`sparse_s` 7.8 s, `shape_slat_s` 3.4 s, `tex_slat_s` 2.4 s, `shape_dec_s` 1.9 s, `tex_dec_s` 0.5 s, `bake_s` 3.9 s), with two-sided mesh distance `mean_rel = 0.0286` vs baseline.
+    - On `mini` (`M4 Pro`, 64 GB, remote render worker under `taskpolicy -b`): `plate-stack` single-seed drops from **707.2 s** (`11,631` tokens, `10.44M` raw triangles) to **125.4 s** (**5.64× faster**; `shape_slat_s` 194.4 s → 20.4 s, `tex_slat_s` 111.5 s → 12.4 s, `shape_dec_s` 275.7 s → 30.8 s, `bake_s` 23.0 s → 3.3 s), and `chesterfield-sofa` Stage 1A is bit-identical (`max_vert_abs_diff = 0.0`) with Stage 1B surface distance `mean_rel = 0.0142` (`p90_rel = 0.0243`).
+    - Regenerated weak props (`plate-stack`, `typewriter`, `book-stack`) on `mini` with Best-of-3 shape seeds + crack-closed exterior flood-fill: `plate-stack` surface error dropped `0.0175 → 0.0077` (`−56%`, hidden faces `20,257 → 8,733`), `book-stack` hidden faces dropped `14,239 → 3,640` (`−74%`), and `typewriter` LOD1 error dropped `0.0274 → 0.0227`.
 - Blender cleanup: about 50 s for all 26.
 - Output: 4.2 MB for 26 props, two LODs each, at 2–15k triangles for LOD0 and 400–4k for LOD1.
 
