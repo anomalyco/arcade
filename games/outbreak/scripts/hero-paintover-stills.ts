@@ -1,13 +1,14 @@
 /**
- * Hero and zombie paint-over frames (AR-42), one headless run (via hivemind run --kind browser):
+ * Colour Blocks survivors & Former Townsfolk zombies (AR-42 / D-31), one headless run (via hivemind run --kind browser):
  *
  *   bun scripts/hero-paintover-stills.ts --out <dir> [--looks before,after] [--bench]
  *
- * Captures the survivor in the start house's bedroom and entry hall at 21:00 with the flashlight on, two zombies in
- * the beam up the entry hall, and a group of zombies on the street at dusk: full frame at the game camera plus 2× and
- * 3× crops around the subject. `--looks` picks which looks to capture: `before` is today's survivor and zombies,
- * `after` turns on the refined survivor (Look · Hero › Survivor style › Today, refined) and the refined zombies
- * (Look · Zombies › Zombie look). `--bench` adds paired GPU timing (3456×1894) on the street horde and the bedroom.
+ * Captures before (Today boxes: heroStyle=0, zombieLook=0) vs after (Colour Blocks + Former Townsfolk: heroStyle=5,
+ * zombieLook=1) across:
+ *   - solo survivor (night 21:00 & day 14:00)
+ *   - 4 co-op survivors side by side (Cole, Maya, Hank, Tess; night 21:00 & day 14:00)
+ *   - horde of townsfolk zombies (night 21:00 & day 14:00)
+ * Plus 2×/3× crops, side-by-side comparison contact sheets, and paired GPU + CPU timing at 3456×1894.
  * Headless Metal Chromium, muted, no visible window.
  */
 import assert from "node:assert/strict"
@@ -21,10 +22,10 @@ const arg = (name: string, fallback?: string) => {
   const i = process.argv.indexOf(`--${name}`)
   return i >= 0 ? process.argv[i + 1] : fallback
 }
-const out = resolve(arg("out", resolve(root, "../../captures/hero-paintover"))!)
-const looks = arg("looks", "before")!.split(",")
+const out = resolve(arg("out", resolve(root, "../../captures/outbreak-characters"))!)
+const looks = arg("looks", "before,after")!.split(",")
 const bench = process.argv.includes("--bench")
-const rounds = Number(arg("rounds", "10"))
+const rounds = Number(arg("rounds", "8"))
 mkdirSync(out, { recursive: true })
 
 const server = await createServer({ root, logLevel: "error", server: { host: "127.0.0.1", port: 0 } })
@@ -34,36 +35,111 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
   .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath)
-const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
+const browser = await chromium.launch({
+  executablePath,
+  headless: true,
+  args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
+})
 
 type Z = { x: number; y: number; aim: number }
-type Shot = { name: string; hour: number; zoom: number; x: number; y: number; aim: number; flashlight: boolean; zombies?: Z[]; walk?: number }
+type Companion = { id: string; index: number; x: number; y: number; aim: number; flashlight: boolean }
+type Shot = {
+  name: string
+  hour: number
+  zoom: number
+  x: number
+  y: number
+  aim: number
+  flashlight: boolean
+  companions?: Companion[]
+  zombies?: Z[]
+  walk?: number
+}
+
 const UP = -Math.PI / 2
 const DOWN = Math.PI / 2
+
+const COOP_LINEUP: Companion[] = [
+  { id: "maya", index: 1, x: 27.15, y: 39.7, aim: DOWN - 0.18, flashlight: true },
+  { id: "hank", index: 2, x: 27.95, y: 39.55, aim: DOWN + 0.12, flashlight: true },
+  { id: "tess", index: 3, x: 28.75, y: 39.75, aim: DOWN + 0.28, flashlight: true },
+]
+
+const STREET_HORDE: Z[] = [
+  { x: 25.8, y: 43.2, aim: Math.PI + 0.08 },
+  { x: 26.5, y: 44.5, aim: Math.PI - 0.12 },
+  { x: 27.2, y: 43.5, aim: Math.PI + 0.22 },
+  { x: 27.9, y: 44.9, aim: Math.PI - 0.18 },
+  { x: 28.6, y: 42.9, aim: Math.PI + 0.05 },
+  { x: 29.3, y: 44.1, aim: Math.PI - 0.08 },
+  { x: 30.0, y: 45.2, aim: Math.PI + 0.25 },
+  { x: 26.2, y: 45.5, aim: Math.PI - 0.32 },
+  { x: 28.2, y: 45.8, aim: Math.PI - 0.15 },
+  { x: 29.8, y: 43.2, aim: Math.PI + 0.14 },
+  { x: 30.8, y: 44.3, aim: Math.PI },
+  { x: 27.4, y: 42.6, aim: Math.PI + 0.3 },
+]
+
 const shots: Shot[] = [
-  { name: "bedroom-21h", hour: 21, zoom: 26, x: 27.5, y: 27.2, aim: Math.PI * 0.8, flashlight: true },
-  { name: "hall-21h", hour: 21, zoom: 26, x: 27.7, y: 34.3, aim: UP, flashlight: true },
-  // Two zombies coming down the hall runner into the beam.
-  { name: "hall-zombies-21h", hour: 21, zoom: 26, x: 27.7, y: 34.6, aim: UP, flashlight: true, walk: 24, zombies: [{ x: 27.5, y: 31.4, aim: DOWN }, { x: 28.3, y: 30.5, aim: DOWN + 0.2 }] },
-  // A loose group crossing the street at dusk, the survivor's beam along the road.
+  // Solo survivor (night & day)
+  { name: "solo-night-21h", hour: 21, zoom: 26, x: 27.7, y: 34.3, aim: UP, flashlight: true },
+  { name: "solo-day-14h", hour: 14, zoom: 26, x: 27.7, y: 40.4, aim: DOWN + 0.25, flashlight: false },
+  // 4 co-op survivors side by side (night & day)
   {
-    name: "street-horde-1830", hour: 18.5, zoom: 34, x: 22, y: 44, aim: 0.05, flashlight: true, walk: 30,
-    zombies: [
-      { x: 26.2, y: 43.1, aim: Math.PI }, { x: 27.0, y: 44.6, aim: Math.PI + 0.2 }, { x: 27.9, y: 43.6, aim: Math.PI - 0.3 },
-      { x: 28.6, y: 45.3, aim: Math.PI + 0.4 }, { x: 29.3, y: 42.6, aim: Math.PI - 0.1 }, { x: 30.2, y: 44.3, aim: Math.PI },
-      { x: 25.4, y: 45.6, aim: Math.PI - 0.5 },
-    ],
+    name: "coop-night-21h",
+    hour: 21,
+    zoom: 28,
+    x: 26.35,
+    y: 39.85,
+    aim: DOWN - 0.32,
+    flashlight: true,
+    companions: COOP_LINEUP,
+    walk: 18,
+  },
+  {
+    name: "coop-day-14h",
+    hour: 14,
+    zoom: 28,
+    x: 26.35,
+    y: 39.85,
+    aim: DOWN - 0.32,
+    flashlight: false,
+    companions: COOP_LINEUP.map(c => ({ ...c, flashlight: false })),
+    walk: 18,
+  },
+  // Horde of Former Townsfolk zombies (night & day)
+  {
+    name: "horde-night-21h",
+    hour: 21,
+    zoom: 32,
+    x: 22.4,
+    y: 44.1,
+    aim: 0.04,
+    flashlight: true,
+    zombies: STREET_HORDE,
+    walk: 26,
+  },
+  {
+    name: "horde-day-14h",
+    hour: 14,
+    zoom: 32,
+    x: 22.4,
+    y: 44.1,
+    aim: 0.04,
+    flashlight: false,
+    zombies: STREET_HORDE,
+    walk: 26,
   },
 ]
+
 const LOOKS: Record<string, { label: string; set: Record<string, number> }> = {
-  before: { label: "Today", set: { heroStyle: 0, zombieLook: 0 } },
-  after: { label: "Refined", set: { heroStyle: 5, zombieLook: 1 } },
+  before: { label: "Before (Today boxes)", set: { heroStyle: 0, zombieLook: 0 } },
+  after: { label: "After (Colour Blocks & Former Townsfolk)", set: { heroStyle: 5, zombieLook: 1 } },
 }
 const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, .coop-tag, .ob-hud, [data-callout-layer], .ob-callout-layer"
 const errors: string[] = []
 const meta: Record<string, unknown> = { shots: {} }
 
-/** Same frame for stills and timing: look, pose, hour, zoom, props settled, then zombies spawned and walked a fixed count of ticks. */
 async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, number>) {
   return page.evaluate(async ({ s, set }) => {
     const h = (window as any).__arcadeHarness
@@ -74,18 +150,48 @@ async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, numb
     h.setLab("zombieCount", 0)
     h.setLab("hour", s.hour)
     h.setZoomRaw(s.zoom)
+    if (s.companions?.length) {
+      h.setLab("cone", 360)
+      h.setLab("awareness", 14)
+    } else {
+      h.setLab("cone", 110)
+      h.setLab("awareness", 2.5)
+    }
     for (const [k, v] of Object.entries(set)) {
-      try { h.setLab(k, v) } catch { /* the before build has no zombieLook */ }
+      try { h.setLab(k, v) } catch { /* ignore */ }
     }
     h.pose(s.x, s.y, s.aim)
-    const light = () => {
+    const sim = h.session().sim
+    const addedSlots: any[] = []
+    for (const c of s.companions ?? []) {
+      const slot = sim.addSurvivor(c.id, c.index)
+      slot.survivor.x = c.x
+      slot.survivor.y = c.y
+      slot.survivor.aim = c.aim
+      slot.survivor.flashlightOn = c.flashlight
+      slot.survivor.flashlightOutput = c.flashlight ? 1 : 0
+      addedSlots.push({ slot, spec: c })
+    }
+    const pinActors = () => {
       const p = h.state().player
+      p.x = s.x
+      p.y = s.y
+      p.aim = s.aim
       p.flashlightOn = s.flashlight
       p.flashlightOutput = s.flashlight ? 1 : 0
+      for (const { slot, spec } of addedSlots) {
+        slot.survivor.x = spec.x
+        slot.survivor.y = spec.y
+        slot.survivor.aim = spec.aim
+        slot.survivor.vx = 0
+        slot.survivor.vy = 0
+        slot.survivor.flashlightOn = spec.flashlight
+        slot.survivor.flashlightOutput = spec.flashlight ? 1 : 0
+      }
     }
     const t0 = performance.now()
     while (performance.now() - t0 < 20000) {
-      light()
+      pinActors()
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
       const props = h.state().props
       const rugs = h.interiors?.()
@@ -93,16 +199,23 @@ async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, numb
       await new Promise(r => setTimeout(r, 25))
     }
     for (const z of s.zombies ?? []) h.spawnZombie(z.x, z.y, "chase", z.aim)
-    for (let i = 0; i < (s.walk ?? 30); i++) {
-      light()
+    for (let i = 0; i < (s.walk ?? 24); i++) {
+      pinActors()
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     }
-    const all = [{ x: s.x, y: s.y }, ...(s.zombies ?? [])]
     const zs = h.session().view.zombies.filter((a: any) => a.state !== "dead").map((a: any) => ({ x: a.x, y: a.y }))
-    const group = s.zombies ? zs : all
-    const mid: [number, number, number] = [group.reduce((t: number, m: any) => t + m.x, 0) / group.length, 0.9, group.reduce((t: number, m: any) => t + m.y, 0) / group.length]
-    const rect = h.resolveTargetRect(s.zombies ? { world: mid } : { objectId: "player" })
-    return { look: h.state().look, rect, zombies: zs }
+    const focusGroup = s.zombies?.length
+      ? zs
+      : s.companions?.length
+        ? [{ x: s.x, y: s.y }, ...s.companions.map(c => ({ x: c.x, y: c.y }))]
+        : [{ x: s.x, y: s.y }]
+    const mid: [number, number, number] = [
+      focusGroup.reduce((t: number, m: any) => t + m.x, 0) / focusGroup.length,
+      0.9,
+      focusGroup.reduce((t: number, m: any) => t + m.y, 0) / focusGroup.length,
+    ]
+    const rect = h.resolveTargetRect(s.zombies?.length || s.companions?.length ? { world: mid } : { objectId: "player" })
+    return { look: h.state().look, rect, zombies: zs.length, companions: addedSlots.length }
   }, { s, set })
 }
 
@@ -152,19 +265,28 @@ try {
         const cx = info.rect.x + info.rect.width / 2
         const cy = info.rect.y + info.rect.height / 2
         for (const k of [2, 3]) {
-          const clip = { x: Math.max(0, Math.min(W - W / k, cx - W / (2 * k))), y: Math.max(0, Math.min(H - H / k, cy - H / (2 * k))), width: W / k, height: H / k }
+          const clip = {
+            x: Math.max(0, Math.min(W - W / k, cx - W / (2 * k))),
+            y: Math.max(0, Math.min(H - H / k, cy - H / (2 * k))),
+            width: W / k,
+            height: H / k,
+          }
           files[`${name}-x${k}`] = resolve(out, `${name}-x${k}.png`)
           await page.screenshot({ path: files[`${name}-x${k}`], clip })
         }
       }
       ;(meta.shots as Record<string, unknown>)[name] = { ...shot, look: id, ...info }
-      console.log(name, JSON.stringify(info.look), info.zombies.length)
+      console.log(name, JSON.stringify(info.look), `zombies=${info.zombies}`, `companions=${info.companions}`)
     }
   }
   if (looks.length > 1) {
     const sheetPage = await browser.newPage()
     for (const shot of shots) {
-      const row = (k: string) => looks.map(id => ({ label: `${LOOKS[id]!.label}${k ? ` (${k})` : ""}`, file: files[`${shot.name}-${id}${k ? `-${k}` : ""}`]! }))
+      const row = (k: string) =>
+        looks.map(id => ({
+          label: `${LOOKS[id]!.label}${k ? ` (${k})` : ""}`,
+          file: files[`${shot.name}-${id}${k ? `-${k}` : ""}`]!,
+        }))
       await sheet(sheetPage, resolve(out, `compare-${shot.name}.jpg`), shot.name, [row("x3"), row("x2"), row("")], 760)
     }
     await sheetPage.close()
@@ -174,27 +296,76 @@ try {
     await page.close()
     const gpuPage = await open(1728, 947, 2)
     meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
-    const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
-    const gpu: Record<string, unknown> = {}
-    for (const shot of [shots[3]!, shots[0]!]) {
-      const a: number[] = [], b: number[] = []
+    const med = (xs: number[]) => {
+      const s = [...xs].sort((p, q) => p - q)
+      return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2
+    }
+    // Build a dense 60-zombie street horde shot specifically for horde GPU/CPU benchmarking
+    const denseHordeZombies: Z[] = Array.from({ length: 60 }, (_, i) => ({
+      x: 24.5 + (i % 10) * 0.72,
+      y: 41.8 + Math.floor(i / 10) * 0.72,
+      aim: Math.PI + ((i % 5) - 2) * 0.08,
+    }))
+    const benchShots: Shot[] = [
+      {
+        name: "horde-60-night-21h",
+        hour: 21,
+        zoom: 34,
+        x: 21.8,
+        y: 44.0,
+        aim: 0.02,
+        flashlight: true,
+        zombies: denseHordeZombies,
+        walk: 16,
+      },
+      shots[2]!, // coop-night-21h (4 co-op survivors)
+      shots[0]!, // solo-night-21h
+    ]
+    const perf: Record<string, unknown> = {}
+    for (const shot of benchShots) {
+      const gpuA: number[] = []
+      const gpuB: number[] = []
+      const cpuA: number[] = []
+      const cpuB: number[] = []
       for (let r = 0; r < rounds; r++) {
         for (const after of r % 2 ? [true, false] : [false, true]) {
           await setup(gpuPage, shot, LOOKS[after ? "after" : "before"]!.set)
-          const ms = await gpuPage.evaluate(async () => {
+          const res = await gpuPage.evaluate(async () => {
             const h = (window as any).__arcadeHarness
-            const v: number[] = []
-            for (let i = 0; i < 18; i++) v.push(await h.renderer.measure(h.render))
-            return v.slice(2).sort((x: number, y: number) => x - y)[1]!
+            const g: number[] = []
+            const c: number[] = []
+            for (let i = 0; i < 18; i++) {
+              const t0 = performance.now()
+              const gpuMs = await h.renderer.measure(h.render)
+              const cpuMs = performance.now() - t0
+              g.push(gpuMs)
+              c.push(cpuMs)
+            }
+            const gSorted = g.slice(2).sort((x: number, y: number) => x - y)
+            const cSorted = c.slice(2).sort((x: number, y: number) => x - y)
+            return { gpu: gSorted[gSorted.length >> 1]!, cpu: cSorted[cSorted.length >> 1]! }
           })
-          ;(after ? b : a).push(ms)
+          ;(after ? gpuB : gpuA).push(res.gpu)
+          ;(after ? cpuB : cpuA).push(res.cpu)
         }
       }
-      const diffs = a.map((x, i) => b[i]! - x)
-      gpu[shot.name] = { before: med(a), after: med(b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), raw: { a, b } }
-      console.log(`GPU ${shot.name} before=${med(a).toFixed(3)} after=${med(b).toFixed(3)} paired Δ=${med(diffs).toFixed(3)} ms`)
+      const gpuDiffs = gpuA.map((x, i) => gpuB[i]! - x)
+      const cpuDiffs = cpuA.map((x, i) => cpuB[i]! - x)
+      perf[shot.name] = {
+        gpuBeforeMs: med(gpuA),
+        gpuAfterMs: med(gpuB),
+        gpuPairedDeltaMedianMs: med(gpuDiffs),
+        gpuPairedDeltaMadMs: med(gpuDiffs.map(d => Math.abs(d - med(gpuDiffs)))),
+        cpuBeforeMs: med(cpuA),
+        cpuAfterMs: med(cpuB),
+        cpuPairedDeltaMedianMs: med(cpuDiffs),
+        cpuPairedDeltaMadMs: med(cpuDiffs.map(d => Math.abs(d - med(cpuDiffs)))),
+      }
+      console.log(
+        `PERF ${shot.name}: GPU before=${med(gpuA).toFixed(3)}ms after=${med(gpuB).toFixed(3)}ms Δ=${med(gpuDiffs).toFixed(3)}ms | CPU before=${med(cpuA).toFixed(3)}ms after=${med(cpuB).toFixed(3)}ms Δ=${med(cpuDiffs).toFixed(3)}ms`,
+      )
     }
-    meta.gpu = gpu
+    meta.perf = perf
   }
   meta.errors = errors
 } finally {
