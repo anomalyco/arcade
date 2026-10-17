@@ -19,6 +19,7 @@ import { buildLevel } from "../src/level"
 import { windowBuildingBits } from "../src/lighting"
 import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
+import { propDressingState } from "../src/props/state"
 import { WorldClientStreamer, compileSingleWorldChunk, ensurePropTemplates, recycleCompiledChunk, useOriginBuild } from "../src/world-streamer"
 import { Loopback } from "./loopback"
 
@@ -555,5 +556,37 @@ describe("Streamed lots match the origin build", () => {
   test("window building bits mark L-plan bungalows and the authored origin houses", () => {
     const bld = (id: string, kind: "house" | "hardware") => ({ id, kind })
     expect(windowBuildingBits([bld("ash", "house"), bld("c4_2-house", "house"), bld("store", "hardware"), bld("", "house")])).toBe(0b11 | (1 << 8))
+  })
+
+  test("streamed origin chunks keep every non-replaced prop in its own chunk and recompile when propDressingState toggles", () => {
+    ensurePropTemplates()
+    const saved = { ...propDressingState }
+    try {
+      Object.assign(propDressingState, { on: true, density: 1, seed: 0 })
+      const c01 = compileSingleWorldChunk(generateWorldChunk(7, 7, 0, 1, "streaming"), 7, 7, 0.22, 1)
+      // Chunk (0, 1) covers x in 0..32, z in 32..64; no prop from hardware/pharmacy (x = 53..73) may leak into its static mesh
+      for (const s of c01.staticOpaqueChunks) {
+        expect(s.box[0]).toBeGreaterThanOrEqual(-4)
+        expect(s.box[2]).toBeLessThanOrEqual(42)
+        expect(s.box[1]).toBeGreaterThanOrEqual(22)
+        expect(s.box[3]).toBeLessThanOrEqual(72)
+      }
+
+      const streamer = new WorldClientStreamer()
+      const town = makeTown(7, 7, 0.22, 1)
+      const view: [number, number, number, number] = [-1, 15, 50, 48]
+      const onRes = streamer.updateWindow(24.8, 33, town, "streaming", view, 0, 0, 1.0)
+      expect(onRes.changed).toBe(true)
+      const onBytes = onRes.level!.chunks.reduce((n, c) => n + (c.byteLength ?? c.data.byteLength), 0)
+
+      // Toggling propDressingState.on to false invalidates the window and restores box furniture in the streamed origin chunks
+      propDressingState.on = false
+      const offRes = streamer.updateWindow(24.8, 33, town, "streaming", view, 0, 0, 1.1)
+      expect(offRes.changed).toBe(true)
+      const offBytes = offRes.level!.chunks.reduce((n, c) => n + (c.byteLength ?? c.data.byteLength), 0)
+      expect(offBytes).toBeGreaterThan(onBytes)
+    } finally {
+      Object.assign(propDressingState, saved)
+    }
   })
 })

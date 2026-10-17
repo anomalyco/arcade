@@ -20,7 +20,7 @@ export const propLevelSignature = (): string => (propDressingState.on ? `1/${pro
 export const REPLACED_KINDS: ReadonlySet<Prop["kind"]> = new Set(["bed", "sofa", "table", "shelf", "coffee", "counter", "fridge", "dresser", "chair", "nightstand", "stove"])
 
 /** The start block's houses (the origin build), the ones furnished first. */
-export const furnishedHouse = (b: Building): boolean => b.kind === "house" && b.rect[2] <= SIZE && b.rect[3] <= SIZE
+export const furnishedHouse = (b: Building): boolean => b.kind === "house" && (b.id === "ash" || b.id === "elm") && b.rect[2] <= SIZE && b.rect[3] <= SIZE
 
 /** True when the library draws this gameplay prop, so the level builder skips its box furniture. */
 export function replacedByLibrary(p: Prop, town: Town): boolean {

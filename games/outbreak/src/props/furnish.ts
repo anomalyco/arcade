@@ -9,7 +9,7 @@ import { propSpec, type PropRoom } from "@arcade/kit/props/catalogue"
 import type { PropInstance } from "@arcade/kit/props/models"
 import { dressSurfaces, footprintOf, furnishRoom, placementTriangles, type PlacedProp, type Rect, type Surface, type WallSide } from "@arcade/kit/props/placement"
 import { hash2 } from "@arcade/kit/sim/rng"
-import { propShape, type Building, type Town } from "../../shared/map"
+import { makeTown, propShape, type Building, type Town } from "../../shared/map"
 import { emitInteriorDecor } from "../interiors/mesh"
 import type { TableLamp } from "../lightbake"
 import { furnishedHouse, propDressingState, REPLACED_KINDS } from "./state"
@@ -162,13 +162,25 @@ export function furnishHouse(b: Building, town: Town, density: number, seed: num
 export const instancesOf = (f: HouseFurnishing): PropInstance[] => [...f.anchors, ...f.clutter]
 
 let planned: { key: string; houses: HouseFurnishing[] } = { key: "", houses: [] }
+let cachedOrigin: { key: string; town: Town } | null = null
+
+/** Full origin-block town (`ash` and `elm` with all walls/props) even when `StreamingWorld` has shifted active chunks. */
+export function originFurnishTown(town: Town): Town {
+  if (!town.activeChunkKeys && town.buildings.some(b => b.id === "ash") && town.buildings.some(b => b.id === "elm")) return town
+  const key = `${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity ?? 1}`
+  if (cachedOrigin?.key !== key) {
+    cachedOrigin = { key, town: makeTown(town.seed, town.houseSeed, town.terrain, town.foliageDensity) }
+  }
+  return cachedOrigin.town
+}
 
 /** The furnished houses for the current `propDressingState`, planned once per town, density and seed; [] when off. */
 export function furnishedHouses(town: Town): HouseFurnishing[] {
   const { on, density, seed } = propDressingState
   if (!on) return []
-  const key = `${town.seed}/${town.houseSeed}/${density}/${seed}/${town.buildings.length}`
-  if (key !== planned.key) planned = { key, houses: town.buildings.filter(furnishedHouse).map(b => furnishHouse(b, town, density, seed)) }
+  const full = originFurnishTown(town)
+  const key = `${full.seed}/${full.houseSeed}/${density}/${seed}`
+  if (key !== planned.key) planned = { key, houses: full.buildings.filter(furnishedHouse).map(b => furnishHouse(b, full, density, seed)) }
   return planned.houses
 }
 

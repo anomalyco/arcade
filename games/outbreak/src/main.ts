@@ -44,7 +44,7 @@ import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
 import { PropDressing } from "./props/dressing"
-import { propLamps } from "./props/furnish"
+import { originFurnishTown, propLamps } from "./props/furnish"
 import {
   CombinedFogMemory,
   collectFogSoundSprites,
@@ -1297,7 +1297,7 @@ async function main() {
       settings.lighting.practicalWarmth,
       interiors.settings,
     )
-    tableLamps.setSources(currentIsStreamWindow ? NO_TABLE_LAMPS : propLamps(town), town)
+    tableLamps.setSources(mode === "procedural" ? NO_TABLE_LAMPS : propLamps(town), originFurnishTown(town))
     const tableLampCount = settings.look.tableLamps >= 0 ? settings.look.tableLamps : Math.min(2, qProfile.maxSconceLights)
     count = tableLamps.write(lights, count, MAX_LIGHTS, inInteriorView ? tableLampCount : 0, cutX, cutY, sconceLevel, settings.lighting.practicalWarmth, 0.55 * settings.look.tableLampPower)
     const vehOut = vehicleRenderer.collect(
@@ -1557,7 +1557,7 @@ async function main() {
     rBatches.length = 0
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
-    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, !currentIsStreamWindow, level)) rBatches.push(b)
+    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, mode !== "procedural", level)) rBatches.push(b)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
     if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)

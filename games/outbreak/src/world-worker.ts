@@ -1,6 +1,7 @@
 import { generateWorldChunk, type WorldMode } from "../shared/world"
 import { archSettings } from "./architecture"
 import { interiorSettings } from "./interiors/plan"
+import { propDressingState } from "./props/state"
 import { compileSingleWorldChunk, recycleTileBuffers } from "./world-streamer"
 
 export type WorldWorkerRequest =
@@ -20,6 +21,7 @@ export type WorldWorkerRequest =
       clutterDensity: number
       clutterSeed: number
       interior?: typeof interiorSettings
+      props?: typeof propDressingState
     }
   | {
       type: "recycle"
@@ -45,6 +47,7 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
   archSettings.clutterDensity = req.clutterDensity
   archSettings.clutterSeed = req.clutterSeed
   if (req.interior) Object.assign(interiorSettings, req.interior)
+  if (req.props) Object.assign(propDressingState, req.props)
   const worldChunk = generateWorldChunk(req.seed, req.houseSeed, req.cx, req.cy, req.mode)
   const compiled = compileSingleWorldChunk(
     worldChunk,

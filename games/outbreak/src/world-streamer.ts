@@ -1,5 +1,6 @@
 import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, interiorSignature } from "./interiors/plan"
+import { propDressingState, propLevelSignature } from "./props/state"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -1780,6 +1781,7 @@ export class WorldClientStreamer {
           clutterDensity: archSettings.clutterDensity,
           clutterSeed: archSettings.clutterSeed,
           interior: { ...interiorSettings },
+          props: { ...propDressingState },
         })
         break
       }
@@ -1829,7 +1831,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -2057,7 +2059,7 @@ export class WorldClientStreamer {
     this.chunkFadeAlpha = maxFadeProgress
 
     const { rx, ry } = WorldClientStreamer.computeRenderRadius(viewRect)
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
     const centerMoved = winKey !== this.lastWindowKey
 
     if (!centerMoved && !this.outerRingDirty) {

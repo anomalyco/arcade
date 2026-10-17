@@ -1,6 +1,6 @@
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import { PROP_IDS } from "@arcade/kit/props/catalogue"
-import { PropBatches, PropModels, type PropInstance } from "@arcade/kit/props/models"
+import { PropBatches, PropLibrary, PropModels, type PropInstance } from "@arcade/kit/props/models"
 import type { QualityProfile } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
@@ -25,8 +25,8 @@ export class PropDressing {
   private instances: PropInstance[] = []
 
   /** `lampAux`: the map light slot lamp shades glow through (Outbreak's `TABLE_LAMP_SLOT`). */
-  constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number) {
-    this.models = new PropModels(renderer, undefined, { lampAux })
+  constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number, library?: PropLibrary) {
+    this.models = new PropModels(renderer, library, { lampAux })
     this.batches = new PropBatches(this.models)
     current = this
   }
@@ -36,11 +36,21 @@ export class PropDressing {
   }
 
   /**
-   * Per-frame: the prop batches to draw, empty while off, loading, or when the level on screen is a streamed one.
-   * Switching props on or off calls `rebuildLevel` so the level builder drops or restores the box furniture.
+   * Per-frame: the prop batches to draw, empty while off, loading, or when the world is purely procedural.
+   * Switching props on or off (or falling back if all `.prop` assets fail to load) calls `rebuildLevel` so the level
+   * builder drops or restores the box furniture.
    */
   collect(town: Town, view: Rect, s: OutbreakPropSettings, zoom: number, quality: Pick<QualityProfile, "clutterScale" | "minPropLod">, originBuild: boolean, rebuildLevel: () => void): readonly Batch[] {
-    const on = Boolean(s.propsOn)
+    if (Boolean(s.propsOn) && originBuild && !this.loading) {
+      this.loading = this.models.ensure(PROP_IDS).then(() => {
+        if (!PROP_IDS.some(id => this.models.has(id)) && propDressingState.on) {
+          propDressingState.on = false
+          rebuildLevel()
+        }
+      })
+    }
+    const available = !this.ready || PROP_IDS.some(id => this.models.has(id))
+    const on = Boolean(s.propsOn) && originBuild && available
     const density = s.propClutter * quality.clutterScale
     const st = propDressingState
     // The level grounds floor clutter and bakes table-lamp pools from the same plan, so a new plan rebuilds it.
@@ -50,8 +60,7 @@ export class PropDressing {
       st.seed = s.propSeed
       rebuildLevel()
     }
-    if (!on || !originBuild) return NONE
-    if (!this.loading) this.loading = this.models.ensure(PROP_IDS)
+    if (!on) return NONE
     this.models.setLook({ brightness: s.propBrightness, ao: s.propAO, saturation: s.propSaturation })
     const houses = furnishedHouses(town)
     if (houses !== this.houses) {
