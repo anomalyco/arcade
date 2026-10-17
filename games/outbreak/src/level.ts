@@ -381,7 +381,7 @@ function compileLevel(town: Town): OriginLevel {
       for (const h of [.30, .84]) m.box(x, h, z, r, h + .065, end, railCol, MAT.timber)
     }
   }
-  for (const p of town.props) { if (replacedByLibrary(p, town)) continue; const mesh=new Mesh(); furniture(mesh,p,town); props.push(mesh) }
+  for (const p of town.props) { const mesh = new Mesh(); if (!replacedByLibrary(p, town)) furniture(mesh, p, town); props.push(mesh) }
   for (const [id, p] of town.lamps.entries()) {
     if(p.kind==="window")continue
     const m = at(p.x, p.y)

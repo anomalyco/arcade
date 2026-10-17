@@ -10,6 +10,7 @@ import type { LookPresetId, LookSettings } from "@arcade/kit/look"
 import { Rng } from "@arcade/kit/sim/rng"
 import { BUILDING_RECTS, CHUNK, type Prop, type Town } from "../../shared/map"
 import { buildLevel } from "../level"
+import { propDressingState } from "../props/state"
 
 export type VignetteSurfaceId =
   | "wood_floor"
@@ -807,12 +808,18 @@ function cropChunkToVignette(chunk: LevelChunk): LevelChunk | null {
 }
 
 export function buildVignetteLevel(town: Town): LevelData {
-  // Temporarily tag seed so buildLevel's 3-entry cache doesn't collide with full-town builds
-  const raw = buildLevel(town)
-  return {
-    chunks: raw.chunks.map(cropChunkToVignette).filter((c): c is LevelChunk => c !== null),
-    glass: raw.glass.map(cropChunkToVignette).filter((c): c is LevelChunk => c !== null),
-    floor: raw.floor,
-    bounce: raw.bounce,
+  // Vignette scenes do not run PropDressing, so keep the level's box furniture intact.
+  const wasOn = propDressingState.on
+  propDressingState.on = false
+  try {
+    const raw = buildLevel(town)
+    return {
+      chunks: raw.chunks.map(cropChunkToVignette).filter((c): c is LevelChunk => c !== null),
+      glass: raw.glass.map(cropChunkToVignette).filter((c): c is LevelChunk => c !== null),
+      floor: raw.floor,
+      bounce: raw.bounce,
+    }
+  } finally {
+    propDressingState.on = wasOn
   }
 }
