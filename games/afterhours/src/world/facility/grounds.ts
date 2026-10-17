@@ -62,14 +62,11 @@ export function buildGrounds(ctx: WorldContext, b: Batch, root: THREE.Object3D) 
     b.add("pine_needles", shrubGeo, m, 1, true)
   }
 
-  // Condenser units on a pad by the west wall.
+  // Condenser pad by the west wall (the units themselves are ac_unit models from props.ts).
   for (const z of [3.5, 6.5]) {
     const x = MAIN.min[0] - 2.6
     b.box("concrete_dark", x - 0.8, 0, z - 1.0, x + 0.8, 0.15, z + 1.0)
-    b.box("metal_painted", x - 0.6, 0.15, z - 0.8, x + 0.6, 1.1, z + 0.8)
-    b.cylinder("metal_dark", x, 1.1, z, 0.45, 0.05, 16)
-    b.box("metal_galvanized", MAIN.min[0] - 0.12, 0.4, z - 0.05, x - 0.6, 0.48, z + 0.05)
-    ctx.colliders.push({ min: [x - 0.8, -0.5, z - 1.0], max: [x + 0.8, 1.15, z + 1.0] })
+    b.box("metal_galvanized", MAIN.min[0] - 0.12, 0.4, z - 0.05, x - 0.45, 0.48, z + 0.05)
   }
 
   // Standby generator enclosure east of the annex, with its belly tank and exhaust.
@@ -89,17 +86,11 @@ export function buildGrounds(ctx: WorldContext, b: Batch, root: THREE.Object3D) 
     ctx.colliders.push({ min: [x - 2.8, -0.5, z - 1.6], max: [x + 2.8, 2.7, z + 1.6] })
   }
 
-  // Utility meters and disconnects on the annex east wall.
+  // Conduit risers for the utility cabinets on the annex east wall (cabinets are utility_box models from props.ts).
   {
     const x = ANNEX.max[0]
-    const zc = -21
-    const boxes: [number, number, number, number][] = [
-      [-1.2, 1.2, 0.5, 0.7], [-0.4, 1.3, 0.35, 0.45], [0.2, 1.3, 0.35, 0.45], [0.8, 1.15, 0.55, 0.8], [-0.1, 2.0, 1.6, 0.35],
-    ]
-    for (const [dz, yy, w, h] of boxes) b.box("metal_painted", x, yy, zc + dz - w / 2, x + 0.22, yy + h, zc + dz + w / 2)
-    for (const [dz] of boxes.slice(0, 4)) b.box("metal_galvanized", x + 0.04, 0, zc + dz - 0.03, x + 0.1, 1.2, zc + dz + 0.03)
-    for (const dz of [-0.4, 0.2]) b.cylinder("glass_dark", x + 0.25, 1.45, zc + dz, 0.09, 0.02, 12)
-    b.box("metal_galvanized", x + 0.04, 2.35, zc - 0.03, x + 0.1, ANNEX.height, zc + 0.03)
+    for (const z of [-22.2, -21.4, -20.2]) b.box("metal_galvanized", x + 0.04, 0, z - 0.03, x + 0.1, 0.4, z + 0.03)
+    b.box("metal_galvanized", x + 0.04, 1.55, -21.43, x + 0.1, ANNEX.height, -21.37)
   }
 
   // Transformer pad in a chain-link enclosure, south of the annex.

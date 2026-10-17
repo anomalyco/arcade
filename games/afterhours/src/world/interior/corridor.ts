@@ -148,8 +148,6 @@ export function buildCorridor(b: Builder) {
   for (let x = x0 + 1; x < x1; x += 1.5) b.box("metal_galvanized", x - 0.012, cy - 0.025, zn, x + 0.012, cy + 0.025, zn + 0.08)
   for (const x of [-18, -37, -49.6]) b.cyl("metal_galvanized", T(x, (cy + FLOOR_Y + 2.7) / 2, zn + 0.05), 0.016, 0.016, cy - FLOOR_Y - 2.7, 6)
 
-  // Ceiling camera on a wall bracket looking down the corridor.
-  camera(b, -12.5, zs, Math.PI / 2 + 0.25)
 
   // Fire extinguisher cabinet (north wall), drinking fountain and bulletin board (south wall).
   extinguisher(b, -31, zn)
@@ -210,15 +208,6 @@ function hazardLight(b: Builder, x: number, zWall: number, lit: boolean) {
     b.box("metal_dark", x + Math.cos(a) * 0.065 - 0.004, y - 0.07, z + 0.1 + Math.sin(a) * 0.065 - 0.004, x + Math.cos(a) * 0.065 + 0.004, y + 0.08, z + 0.1 + Math.sin(a) * 0.065 + 0.004)
   }
   b.cyl("metal_dark", T(x, y + 0.085, z + 0.1), 0.07, 0.07, 0.02, 12)
-}
-
-function camera(b: Builder, x: number, zWall: number, yaw: number) {
-  const y = CEIL_Y - 0.25
-  b.box("metal_dark", x - 0.04, y - 0.05, zWall - 0.25, x + 0.04, y + 0.05, zWall)
-  const m = T(x, y - 0.06, zWall - 0.3, yaw, -0.35)
-  b.boxM(M.camera, m, 0.11, 0.1, 0.3, 0, 0, 0)
-  b.boxM(M.camera, m, 0.15, 0.015, 0.36, 0, 0.065, 0.03)
-  b.cyl(M.cameraLens, m.clone().multiply(T(0, 0, -0.15, 0, Math.PI / 2)), 0.035, 0.035, 0.02, 12)
 }
 
 function extinguisher(b: Builder, x: number, zWall: number) {

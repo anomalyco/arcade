@@ -1,0 +1,699 @@
+{
+ "car_wagon": {
+  "tris": 23581,
+  "bytes": 1081764,
+  "size": [
+   1.87,
+   1.416,
+   5.05
+  ],
+  "footprint": [
+   1.87,
+   5.05
+  ],
+  "meshes": 9,
+  "materials": 9,
+  "source": "sketchfab:aa0becb6e854422596cac6b21bf79787",
+  "licence": "CC-BY-4.0"
+ },
+ "car_sedan": {
+  "tris": 22168,
+  "bytes": 1004984,
+  "size": [
+   1.912,
+   1.409,
+   5.2
+  ],
+  "footprint": [
+   1.912,
+   5.2
+  ],
+  "meshes": 8,
+  "materials": 8,
+  "source": "sketchfab:e2678da920cc4be68dbc193727919ffb",
+  "licence": "CC-BY-4.0"
+ },
+ "car_sedan_b": {
+  "tris": 21556,
+  "bytes": 1050628,
+  "size": [
+   1.997,
+   1.424,
+   5.1
+  ],
+  "footprint": [
+   1.997,
+   5.1
+  ],
+  "meshes": 8,
+  "materials": 8,
+  "source": "sketchfab:892b2684fb37442299bfad9222cf331c",
+  "licence": "CC-BY-4.0"
+ },
+ "car_pickup": {
+  "tris": 22502,
+  "bytes": 860856,
+  "size": [
+   1.789,
+   1.746,
+   4.5
+  ],
+  "footprint": [
+   1.789,
+   4.5
+  ],
+  "meshes": 7,
+  "materials": 7,
+  "source": "sketchfab:6c48c94be8974dc7a5932f697c0ba68f",
+  "licence": "CC-BY-4.0"
+ },
+ "van": {
+  "tris": 23940,
+  "bytes": 1038612,
+  "size": [
+   2.396,
+   2.097,
+   5
+  ],
+  "footprint": [
+   2.396,
+   5
+  ],
+  "meshes": 8,
+  "materials": 8,
+  "source": "sketchfab:09d718c9cf72401b8534d265a06a803f",
+  "licence": "CC-BY-4.0"
+ },
+ "box_truck": {
+  "tris": 18998,
+  "bytes": 985372,
+  "size": [
+   2.864,
+   3.127,
+   6.6
+  ],
+  "footprint": [
+   2.864,
+   6.6
+  ],
+  "meshes": 9,
+  "materials": 9,
+  "source": "sketchfab:663a0953c038434a918cb85725c88ffa",
+  "licence": "CC-BY-4.0"
+ },
+ "covered_car": {
+  "tris": 12592,
+  "bytes": 398060,
+  "size": [
+   1.789,
+   1.411,
+   4.38
+  ],
+  "footprint": [
+   1.789,
+   4.38
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:covered_car",
+  "licence": "CC0-1.0"
+ },
+ "dumpster": {
+  "tris": 12622,
+  "bytes": 438988,
+  "size": [
+   1.9,
+   1.443,
+   1.285
+  ],
+  "footprint": [
+   1.9,
+   1.285
+  ],
+  "meshes": 3,
+  "materials": 3,
+  "source": "sketchfab:e8b38df736994cf8b4f7a3a9d2980f6b",
+  "licence": "CC-BY-4.0"
+ },
+ "fire_hydrant": {
+  "tris": 12000,
+  "bytes": 413624,
+  "size": [
+   0.275,
+   0.799,
+   0.317
+  ],
+  "footprint": [
+   0.275,
+   0.317
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:fire_hydrant",
+  "licence": "CC0-1.0"
+ },
+ "bench": {
+  "tris": 4796,
+  "bytes": 593840,
+  "size": [
+   1.8,
+   0.809,
+   0.651
+  ],
+  "footprint": [
+   1.8,
+   0.651
+  ],
+  "meshes": 3,
+  "materials": 3,
+  "source": "sketchfab:01a5b64427984632bb44242da3813bb1",
+  "licence": "CC-BY-4.0"
+ },
+ "trash_can": {
+  "tris": 7532,
+  "bytes": 580540,
+  "size": [
+   0.773,
+   0.906,
+   0.549
+  ],
+  "footprint": [
+   0.773,
+   0.549
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:metal_trash_can",
+  "licence": "CC0-1.0"
+ },
+ "traffic_cone": {
+  "tris": 1136,
+  "bytes": 364688,
+  "size": [
+   0.39,
+   0.71,
+   0.39
+  ],
+  "footprint": [
+   0.39,
+   0.39
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:1cbffb4169684e5a84ba186882bd55d7",
+  "licence": "CC-BY-4.0"
+ },
+ "drum_steel": {
+  "tris": 1473,
+  "bytes": 302720,
+  "size": [
+   0.634,
+   0.93,
+   0.639
+  ],
+  "footprint": [
+   0.634,
+   0.639
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:barrel_03",
+  "licence": "CC0-1.0"
+ },
+ "drum_hazard": {
+  "tris": 2682,
+  "bytes": 388056,
+  "size": [
+   0.563,
+   0.88,
+   0.563
+  ],
+  "footprint": [
+   0.563,
+   0.563
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:Barrel_01",
+  "licence": "CC0-1.0"
+ },
+ "pallet": {
+  "tris": 2160,
+  "bytes": 306348,
+  "size": [
+   1.2,
+   0.216,
+   1.206
+  ],
+  "footprint": [
+   1.2,
+   1.206
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:d30bd5cc3eeb4052904fd85988402868",
+  "licence": "CC-BY-4.0"
+ },
+ "crate_wood": {
+  "tris": 5176,
+  "bytes": 363244,
+  "size": [
+   1.166,
+   0.464,
+   0.529
+  ],
+  "footprint": [
+   1.166,
+   0.529
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:wooden_crate_02",
+  "licence": "CC0-1.0"
+ },
+ "milk_crate": {
+  "tris": 12720,
+  "bytes": 609076,
+  "size": [
+   0.481,
+   0.265,
+   0.265
+  ],
+  "footprint": [
+   0.481,
+   0.265
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:plastic_crate_03",
+  "licence": "CC0-1.0"
+ },
+ "cardboard_box": {
+  "tris": 16952,
+  "bytes": 382080,
+  "size": [
+   0.387,
+   0.342,
+   0.516
+  ],
+  "footprint": [
+   0.387,
+   0.516
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:cardboard_box_01",
+  "licence": "CC0-1.0"
+ },
+ "utility_box": {
+  "tris": 4404,
+  "bytes": 253392,
+  "size": [
+   0.52,
+   1.12,
+   0.432
+  ],
+  "footprint": [
+   0.52,
+   0.432
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:utility_box_01",
+  "licence": "CC0-1.0"
+ },
+ "utility_box_b": {
+  "tris": 6268,
+  "bytes": 278620,
+  "size": [
+   0.92,
+   1.12,
+   0.432
+  ],
+  "footprint": [
+   0.92,
+   0.432
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:utility_box_02",
+  "licence": "CC0-1.0"
+ },
+ "ac_unit": {
+  "tris": 9493,
+  "bytes": 798320,
+  "size": [
+   0.8,
+   0.928,
+   0.374
+  ],
+  "footprint": [
+   0.8,
+   0.374
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:exterior_aircon_unit",
+  "licence": "CC0-1.0"
+ },
+ "security_light": {
+  "tris": 4668,
+  "bytes": 482016,
+  "size": [
+   0.323,
+   0.531,
+   0.417
+  ],
+  "footprint": [
+   0.323,
+   0.417
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:security_light",
+  "licence": "CC0-1.0"
+ },
+ "tyre": {
+  "tris": 2880,
+  "bytes": 411328,
+  "size": [
+   0.6,
+   0.6,
+   0.165
+  ],
+  "footprint": [
+   0.6,
+   0.165
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:old_tyre",
+  "licence": "CC0-1.0"
+ },
+ "trashbag": {
+  "tris": 4482,
+  "bytes": 294744,
+  "size": [
+   0.528,
+   0.575,
+   0.463
+  ],
+  "footprint": [
+   0.528,
+   0.463
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:trashbag",
+  "licence": "CC0-1.0"
+ },
+ "hand_truck": {
+  "tris": 13220,
+  "bytes": 699016,
+  "size": [
+   0.593,
+   1.403,
+   0.693
+  ],
+  "footprint": [
+   0.593,
+   0.693
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:hand_truck",
+  "licence": "CC0-1.0"
+ },
+ "office_desk": {
+  "tris": 6898,
+  "bytes": 218740,
+  "size": [
+   2,
+   0.787,
+   0.947
+  ],
+  "footprint": [
+   2,
+   0.947
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:metal_office_desk",
+  "licence": "CC0-1.0"
+ },
+ "office_chair": {
+  "tris": 9450,
+  "bytes": 759100,
+  "size": [
+   0.758,
+   0.98,
+   0.721
+  ],
+  "footprint": [
+   0.758,
+   0.721
+  ],
+  "meshes": 4,
+  "materials": 4,
+  "source": "sketchfab:b228a29fa84544c2be501c295653ffe7",
+  "licence": "CC-BY-4.0"
+ },
+ "stack_chair": {
+  "tris": 5072,
+  "bytes": 241080,
+  "size": [
+   0.566,
+   1.006,
+   0.675
+  ],
+  "footprint": [
+   0.566,
+   0.675
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:SchoolChair_01",
+  "licence": "CC0-1.0"
+ },
+ "filing_cabinet": {
+  "tris": 2227,
+  "bytes": 431828,
+  "size": [
+   0.44,
+   1.32,
+   0.512
+  ],
+  "footprint": [
+   0.44,
+   0.512
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:f0742791a0ea432db1f432c24de83867",
+  "licence": "CC-BY-4.0"
+ },
+ "filing_cabinet_open": {
+  "tris": 1432,
+  "bytes": 98964,
+  "size": [
+   0.643,
+   1.32,
+   1.033
+  ],
+  "footprint": [
+   0.643,
+   1.033
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:e7fec8b453ef4105ace383dde017485c",
+  "licence": "CC-BY-4.0"
+ },
+ "crt_terminal": {
+  "tris": 2557,
+  "bytes": 212320,
+  "size": [
+   0.46,
+   0.29,
+   0.487
+  ],
+  "footprint": [
+   0.46,
+   0.487
+  ],
+  "meshes": 6,
+  "materials": 6,
+  "source": "sketchfab:847c174b86e24d868d25217ca2297886",
+  "licence": "CC-BY-4.0"
+ },
+ "television": {
+  "tris": 2310,
+  "bytes": 166696,
+  "size": [
+   0.4,
+   0.411,
+   0.35
+  ],
+  "footprint": [
+   0.4,
+   0.35
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:television_02",
+  "licence": "CC0-1.0"
+ },
+ "telephone": {
+  "tris": 3184,
+  "bytes": 296996,
+  "size": [
+   0.22,
+   0.099,
+   0.121
+  ],
+  "footprint": [
+   0.22,
+   0.121
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:5b5d2f1ece3745279f2129fff13933d5",
+  "licence": "CC-BY-4.0"
+ },
+ "metal_rack": {
+  "tris": 6372,
+  "bytes": 301080,
+  "size": [
+   0.915,
+   1.9,
+   0.6
+  ],
+  "footprint": [
+   0.915,
+   0.6
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:worn_metal_rack",
+  "licence": "CC0-1.0"
+ },
+ "steel_shelves": {
+  "tris": 8396,
+  "bytes": 466448,
+  "size": [
+   2.351,
+   2.312,
+   0.721
+  ],
+  "footprint": [
+   2.351,
+   0.721
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:steel_frame_shelves_03",
+  "licence": "CC0-1.0"
+ },
+ "chemistry_set": {
+  "tris": 29997,
+  "bytes": 650708,
+  "size": [
+   1.078,
+   0.429,
+   0.354
+  ],
+  "footprint": [
+   1.078,
+   0.354
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:chemistry_set",
+  "licence": "CC0-1.0"
+ },
+ "glassware": {
+  "tris": 4004,
+  "bytes": 82632,
+  "size": [
+   0.736,
+   0.33,
+   0.319
+  ],
+  "footprint": [
+   0.736,
+   0.319
+  ],
+  "meshes": 3,
+  "materials": 3,
+  "source": "sketchfab:b8594f7dc7e8442dbaaae7a11da4a962",
+  "licence": "CC-BY-4.0"
+ },
+ "microscope": {
+  "tris": 16598,
+  "bytes": 493508,
+  "size": [
+   0.215,
+   0.462,
+   0.498
+  ],
+  "footprint": [
+   0.215,
+   0.498
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:industrial_microscope",
+  "licence": "CC0-1.0"
+ },
+ "wet_floor_sign": {
+  "tris": 228,
+  "bytes": 115884,
+  "size": [
+   0.3,
+   0.63,
+   0.359
+  ],
+  "footprint": [
+   0.3,
+   0.359
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "polyhaven:WetFloorSign_01",
+  "licence": "CC0-1.0"
+ },
+ "fluorescent_light": {
+  "tris": 3540,
+  "bytes": 172652,
+  "size": [
+   0.911,
+   0.032,
+   0.042
+  ],
+  "footprint": [
+   0.911,
+   0.042
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:mounted_fluorescent_lights",
+  "licence": "CC0-1.0"
+ },
+ "security_camera": {
+  "tris": 13571,
+  "bytes": 308976,
+  "size": [
+   0.17,
+   0.286,
+   0.554
+  ],
+  "footprint": [
+   0.17,
+   0.554
+  ],
+  "meshes": 2,
+  "materials": 2,
+  "source": "polyhaven:security_camera_01",
+  "licence": "CC0-1.0"
+ }
+}

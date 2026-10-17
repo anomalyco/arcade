@@ -2,12 +2,12 @@ import * as THREE from "three/webgpu"
 import type { Box, WorldContext, WorldModule } from "./context"
 import { WORLD_HALF } from "./layout"
 import { material } from "../render/materials"
-import { foliageAtlas } from "./forest/textures"
-import { buildTree, impostorSize, paintImpostors, IMPOSTOR, type Kind, type TreeModel } from "./forest/species"
-import { placeTrees, VARIANTS, type Trees } from "./forest/placement"
+import { forestBase, forestImpostors } from "./forest/textures"
+import { buildTree, impostorInput, impostorSize, type Kind, type TreeModel } from "./forest/species"
+import { VARIANTS, type Trees } from "./forest/placement"
 import { InstLayer, band, foliageMaterial, forestUniforms, impostorMaterial, trunkMaterial } from "./forest/render"
-import { alphaTexture } from "./forest/textures"
 import { buildUndergrowth } from "./forest/undergrowth"
+import { yieldToMain } from "../boot/schedule"
 
 // Dense Douglas-fir / lodgepole forest from the world edge to the road verges. Near trees are full card models,
 // mid trees a lighter version of the same limbs, far trees one impostor quad each; near and mid instance lists are
@@ -25,7 +25,7 @@ const FOLIAGE_COLOR: Record<Kind, THREE.Color> = {
 const COLLIDER_SLOTS = 320
 const COLLIDER_RADIUS = 26
 
-export function build(ctx: WorldContext): WorldModule | void {
+export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const s = ctx.settings
   const defaults: Record<string, number> = {
     "forest.lod0": 34,
@@ -46,12 +46,17 @@ export function build(ctx: WorldContext): WorldModule | void {
   )
   const num = (k: string) => Number(s[k] ?? defaults[k])
 
+  // Tree models are built here (a few ms each, yielding between them); the textures and placement run in a Worker
+  // meanwhile, so the main thread stays free.
   const t0 = performance.now()
-  const atlas = foliageAtlas()
-  const models: TreeModel[] = VARIANTS.map((v) => buildTree(v.kind, v.seed))
-  const impostorCanvas = paintImpostors(models, atlas.canvas)
-  const impostorTex = alphaTexture(impostorCanvas)
-  const trees = placeTrees({ density: 1, seed: 1984 })
+  const models: TreeModel[] = []
+  for (const v of VARIANTS) {
+    models.push(buildTree(v.kind, v.seed))
+    await yieldToMain()
+  }
+  const [assets, impostorTex] = await Promise.all([forestBase(), forestImpostors(models.map(impostorInput))])
+  const trees = assets.trees
+  const atlas = { texture: assets.foliage }
   const tGen = performance.now() - t0
 
   const bands = {
@@ -120,7 +125,7 @@ export function build(ctx: WorldContext): WorldModule | void {
     ctx.colliders.push(b as Box)
   }
 
-  const undergrowth = buildUndergrowth(ctx, trees)
+  const undergrowth = buildUndergrowth(ctx, assets.undergrowth)
 
   const last = new THREE.Vector3(1e9, 0, 1e9)
   let lastLod0 = 0
@@ -217,9 +222,9 @@ export function build(ctx: WorldContext): WorldModule | void {
   ;(globalThis as { __forest?: unknown }).__forest = {
     trees: trees.count,
     genMs: +tGen.toFixed(1),
+    workerMs: assets.workerMs,
     stats: () => ({ lod0: lastLod0, lod1: lastLod1, far: far.count }),
   }
-  void IMPOSTOR
   // Automation hook for per-group GPU ablations.
   if (ctx.params.has("perf")) (globalThis as { __fctx?: unknown }).__fctx = ctx
 

@@ -23,6 +23,8 @@ export const ROWS: { head: number; facing: -1 | 1 }[] = [
   { head: 56, facing: -1 },
   { head: 74, facing: 1 },
   { head: 74, facing: -1 },
+  // A single row nearer the gate, nosed south towards the entry drive.
+  { head: 92, facing: 1 },
 ]
 
 /** Centre of stall `i` (0 = nearest the aisle) on side `side` (-1 west, +1 east) of a row. */
@@ -100,7 +102,7 @@ export function buildLot(ctx: WorldContext, root: THREE.Object3D) {
   curbRun(x0 - 0.18, z1 + 0.09, -5.2, z1 + 0.09)
   curbRun(5.2, z1 + 0.09, x1 + 0.18, z1 + 0.09)
 
-  // North walk along the lot, the entrance walk and the apron under the entrance.
+  // North walk along the lot, split where the facility's entrance walk meets it.
   const ent = BUILDING.entrance
   const walkN = z0 - 2.6
   const slab = (ax: number, az: number, bx: number, bz: number) => {
@@ -113,9 +115,10 @@ export function buildLot(ctx: WorldContext, root: THREE.Object3D) {
     if (w > d) for (let s = ax + 1.5; s < bx - 0.2; s += 1.5) batch.at(joint, box(0.015, 0.004, d - 0.02), s, WALK_Y + 0.001, (az + bz) / 2)
     else for (let s = az + 1.5; s < bz - 0.2; s += 1.5) batch.at(joint, box(w - 0.02, 0.004, 0.015), (ax + bx) / 2, WALK_Y + 0.001, s)
   }
-  slab(x0 - 0.18, walkN, x1 + 0.18, z0)
-  slab(ent.x - 2.4, ent.z + 5, ent.x + 2.4, walkN)
-  slab(ent.x - 8, ent.z, ent.x + 8, ent.z + 5)
+  // The facility owns the canopy landing and the entrance walk (x ±2.6 up to the lot edge); leave a gap for it.
+  const gap = 2.6
+  slab(x0 - 0.18, walkN, ent.x - gap, z0)
+  slab(ent.x + gap, walkN, x1 + 0.18, z0)
   // Curb face along the lot side of the north walk.
   batch.at(curb, box(x1 - x0 + 0.36, 0.02, 0.2), cx, WALK_Y + 0.01, z0 - 0.1)
 

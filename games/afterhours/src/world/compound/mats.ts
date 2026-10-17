@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { abs, clamp, color, float, fract, fwidth, max, mix, mx_noise_float, sin, smoothstep, step, uv, vec2 } from "three/tsl"
+import { abs, attribute, clamp, color, float, fract, fwidth, length, max, mix, mx_noise_float, sin, smoothstep, step, uv, vec2 } from "three/tsl"
 import { material } from "../../render/materials"
 
 // One-off materials only the compound needs (period paint colours, wood grain, booth glass, sign plates, the boom's
@@ -15,26 +15,58 @@ const once = <T extends THREE.Material>(key: string, make: () => T): T => {
   return m
 }
 
-/** Clear-coated period car paint. */
-export const paint = (hex: number, roughness = 0.42, clearcoat = 0.8) =>
-  once(`paint_${hex.toString(16)}_${roughness}`, () => {
-    const m = new THREE.MeshPhysicalNodeMaterial({ color: hex, roughness, metalness: 0.15, clearcoat, clearcoatRoughness: 0.18 })
-    return m
-  })
+/**
+ * A surface finish that does not need its own material: colour, roughness, metalness and emission are written into
+ * the geometry's vertex attributes by `Batch.add`, and every finish of a kind shares one material (one shader).
+ */
+export type Finish = {
+  readonly isFinish: true
+  readonly kind: "flat" | "wood"
+  readonly color: THREE.Color
+  readonly roughness: number
+  readonly metalness: number
+  /** Emission strength (emissive = colour × this). */
+  readonly emissive: number
+}
+
+const finish = (kind: Finish["kind"], color: THREE.Color, roughness: number, metalness: number, emissive = 0): Finish => ({
+  isFinish: true,
+  kind,
+  color,
+  roughness,
+  metalness,
+  emissive,
+})
 
 /** Flat painted steel or plastic. */
-export const flat = (hex: number, roughness = 0.6, metalness = 0) =>
-  once(`flat_${hex.toString(16)}_${roughness}_${metalness}`, () => new THREE.MeshStandardNodeMaterial({ color: hex, roughness, metalness }))
+export const flat = (hex: number, roughness = 0.6, metalness = 0) => finish("flat", new THREE.Color(hex), roughness, metalness)
 
-/** Simulated wood-grain vinyl (station wagon panels) or weathered wood (bench slats); grain runs along U. */
+/** Weathered wood or wood-grain vinyl; grain runs along U and modulates the base colour around `dark`..`light`. */
 export const wood = (dark: number, light: number, roughness = 0.55) =>
-  once(`wood_${dark.toString(16)}_${light.toString(16)}`, () => {
-    const m = new THREE.MeshStandardNodeMaterial({ roughness, metalness: 0 })
-    const p = uv()
-    const warp = mx_noise_float(p.mul(vec2(0.6, 9))).mul(3.5)
-    const grain = sin(p.y.mul(90).add(warp)).mul(0.5).add(0.5)
-    const streak = mx_noise_float(p.mul(vec2(1.5, 40))).mul(0.5).add(0.5)
-    m.colorNode = mix(color(dark), color(light), grain.mul(0.6).add(streak.mul(0.4)))
+  finish("wood", new THREE.Color(dark).lerp(new THREE.Color(light), 0.5), roughness, 0)
+
+/** A self-lit emitter (a bulb, glowing heater coils). */
+export const glow = (r: number, g: number, b: number, intensity: number) => finish("flat", new THREE.Color(r, g, b), 1, 0, intensity)
+
+/** The single shared material for every finish of a kind; reads `fcolor` (vec3) and `fpbr` (roughness, metalness,
+ *  emission) from the vertices. */
+export const finishMaterial = (kind: Finish["kind"]) =>
+  once(`finish_${kind}`, () => {
+    const m = new THREE.MeshStandardNodeMaterial()
+    const c = attribute<"vec3">("fcolor", "vec3")
+    const pbr = attribute<"vec3">("fpbr", "vec3")
+    if (kind === "wood") {
+      const p = uv()
+      const warp = mx_noise_float(p.mul(vec2(0.6, 9))).mul(3.5)
+      const grain = sin(p.y.mul(90).add(warp)).mul(0.5).add(0.5)
+      const streak = mx_noise_float(p.mul(vec2(1.5, 40))).mul(0.5).add(0.5)
+      m.colorNode = c.mul(mix(float(0.62), float(1.3), grain.mul(0.6).add(streak.mul(0.4))))
+    } else {
+      m.colorNode = c
+      m.emissiveNode = c.mul(pbr.z)
+    }
+    m.roughnessNode = pbr.x
+    m.metalnessNode = pbr.y
     return m
   })
 
@@ -76,15 +108,6 @@ export const boothGlass = () =>
     m.emissiveIntensity = 0.25
     m.depthWrite = false
     m.side = THREE.DoubleSide
-    return m
-  })
-
-/** A dim warm emitter for the booth's bulb and anything that must read as lit. */
-export const glow = (r: number, g: number, b: number, intensity: number) =>
-  once(`glow_${r}_${g}_${b}_${intensity}`, () => {
-    const m = new THREE.MeshStandardNodeMaterial({ color: 0x000000, roughness: 1 })
-    m.emissive = new THREE.Color(r, g, b)
-    m.emissiveIntensity = intensity
     return m
   })
 
@@ -194,6 +217,26 @@ export const signs = () =>
     return new THREE.MeshStandardNodeMaterial({ map: tex, roughness: 0.75, metalness: 0.1 })
   })
 
-/** Car window glass: near-black with a sharp clear-coat so sodium lamps streak across it. */
-export const carGlass = () =>
-  once("car_glass", () => new THREE.MeshPhysicalNodeMaterial({ color: 0x0c1012, roughness: 0.04, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.03 }))
+/**
+ * Contact-shadow decal: black with a soft falloff in UV space. "blob" is a rounded rectangle filling the quad
+ * (under a car body), "tyre" a tighter, darker ellipse (under a tyre's footprint).
+ */
+export const contactShadow = (kind: "blob" | "tyre") =>
+  once(`contact_${kind}`, () => {
+    const m = new THREE.MeshBasicNodeMaterial({ color: 0x000000 })
+    m.transparent = true
+    m.depthWrite = false
+    m.polygonOffset = true
+    m.polygonOffsetFactor = -2
+    m.polygonOffsetUnits = -2
+    const p = uv().sub(0.5).mul(2)
+    if (kind === "blob") {
+      const q = max(abs(p).sub(vec2(0.62, 0.45)), 0)
+      const d = length(q.div(vec2(0.38, 0.55)))
+      m.opacityNode = float(1).sub(smoothstep(0, 1, d)).pow(1.6).mul(0.78)
+    } else {
+      const d = length(p)
+      m.opacityNode = float(1).sub(smoothstep(0.15, 1, d)).pow(2).mul(0.9)
+    }
+    return m
+  })

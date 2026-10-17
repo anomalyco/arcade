@@ -37,6 +37,8 @@ export type FlashState = {
 
 export const renderState = {
   lamps: [] as LampRuntime[],
+  /** The lighting rig's per-frame update, for perf scripts that drive frames themselves. */
+  lightingUpdate: null as ((dt: number, time: number) => void) | null,
   flash: {
     on: false,
     pos: new THREE.Vector3(),

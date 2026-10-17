@@ -4,9 +4,8 @@ import { SHOULDER, compoundDistance, fbm, heightAt, roadEdgeDistance } from "../
 import { material } from "../../render/materials"
 import { hash3, rng, range } from "./rng"
 import { VIEWPOINTS } from "../layout"
-import { CELL, UNDER, cellRect, undergrowthAtlas } from "./textures"
+import { CELL, UNDER, cellRect } from "./paint"
 import { InstLayer, band, foliageMaterial, trunkMaterial } from "./render"
-import type { Trees } from "./placement"
 
 // Forest floor detail near the player: sword-fern clumps, salal, verge grass, fallen twigs, logs and stumps.
 // Generated deterministically per 8 m cell on first approach, cached, and gathered into instance lists whenever the
@@ -153,12 +152,10 @@ function stumpGeometry() {
 
 type CellData = { part: Uint8Array; data: Float32Array; n: number }
 
-export function buildUndergrowth(ctx: WorldContext, trees: Trees) {
-  void trees
-  const atlas = undergrowthAtlas()
+export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture) {
   const near = band(-1e5, REACH - 8)
   const logBand = band(-1e5, LOG_REACH - 8)
-  const plant = (c: THREE.Color) => foliageMaterial(atlas.texture, c, near)
+  const plant = (c: THREE.Color) => foliageMaterial(atlas, c, near)
   const bark = trunkMaterial(material("bark"), logBand)
   const fernMat = plant(new THREE.Color(0.9, 1.05, 0.85))
   const geos: Record<Part, { geometry: THREE.BufferGeometry; material: THREE.Material; cap: number; shadow: boolean }> = {

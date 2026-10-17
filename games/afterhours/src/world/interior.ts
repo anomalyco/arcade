@@ -3,6 +3,7 @@ import { Builder } from "./interior/kit"
 import { buildCorridor } from "./interior/corridor"
 import { buildLobby } from "./interior/lobby"
 import { buildCloset, buildLab } from "./interior/rooms"
+import { placeProps } from "./interior/props"
 
 // Everything inside the main block's shell: lobby, link corridor, main corridor, the lab and the janitor's closet.
 
@@ -12,6 +13,8 @@ export function build(ctx: WorldContext): WorldModule {
   const corridor = buildCorridor(b)
   buildLab(b)
   buildCloset(b)
+  // Models stream in after the first frame; colliders and contact shadows are already in place.
+  void placeProps(b)
   b.flush()
   // Automation only: `icam=x,y,z,yawDeg,pitchDeg` pins the camera for captures of rooms with no named viewpoint.
   const icam = ctx.params.get("icam")?.split(",").map(Number)

@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu"
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { type Builder, type Mat, CEIL_Y, FLOOR_Y, M, T, ceiling, closetBands, corridorBands, fluorescentPanel, troffer, wall } from "./kit"
 import { CORRIDOR, WALL_T, fluoro } from "./corridor"
 
@@ -62,25 +63,9 @@ export function buildLab(b: Builder) {
   b.cyl("metal_galvanized", T(hx, (y + 2.25 + CEIL_Y) / 2, z0 + 0.4), 0.15, 0.15, CEIL_Y - y - 2.25, 14)
   for (let k = 0; k < 4; k++) b.cyl("metal_dark", T(hx, y + 2.35 + k * 0.17, z0 + 0.4), 0.153, 0.153, 0.015, 14)
 
-  // Glassware and bottles along the bench.
   const top = y + 0.935
   const zb = z0 + 0.38
-  glassBeaker(b, -25.0, top, zb, 0.05, 0.14)
-  glassBeaker(b, -24.82, top, zb + 0.12, 0.035, 0.1)
-  flask(b, -24.5, top, zb - 0.05, 0.075)
-  flask(b, -24.25, top, zb + 0.1, 0.055)
-  glassBeaker(b, -23.9, top, zb, 0.06, 0.18)
-  b.cyl(M.jugBrown, T(-23.55, top + 0.11, zb - 0.1), 0.045, 0.045, 0.22, 12)
-  b.cyl(M.jugBrown, T(-23.55, top + 0.25, zb - 0.1), 0.015, 0.03, 0.06, 8)
-  b.cyl(M.jugWhite, T(-23.4, top + 0.08, zb + 0.08), 0.035, 0.035, 0.16, 12)
-  // Ring stand with a clamp and a flask.
-  b.box("metal_dark", -22.95, top, zb - 0.1, -22.75, top + 0.015, zb + 0.15)
-  rod(b, M.steel, [-22.9, top, zb - 0.05], [-22.9, top + 0.6, zb - 0.05], 0.006)
-  rod(b, M.steel, [-22.9, top + 0.32, zb - 0.05], [-22.72, top + 0.32, zb + 0.05], 0.005)
-  b.cyl(M.steel, T(-22.72, top + 0.32, zb + 0.05), 0.05, 0.05, 0.008, 14)
-  flask(b, -22.72, top + 0.33, zb + 0.05, 0.05)
-  glassBeaker(b, -22.4, top, zb + 0.05, 0.045, 0.13)
-  // Coffee maker style carafe and a stack of notebooks.
+  // A stack of notebooks.
   b.box(M.paper, -22.05, top, zb - 0.05, -21.82, top + 0.04, zb + 0.25)
   b.box(M.cardboard, -22.03, top + 0.04, zb - 0.03, -21.84, top + 0.06, zb + 0.22)
 
@@ -105,7 +90,7 @@ export function buildLab(b: Builder) {
     position: [lx + 0.2, top + 0.3, lz + 0.33],
     direction: [0, -0.85, 0.53],
     color: WARM,
-    intensity: 6,
+    intensity: 10,
     range: 5,
     angle: 1.0,
     penumbra: 0.8,
@@ -124,7 +109,6 @@ export function buildLab(b: Builder) {
     for (const lz2 of [tz0 + 0.08, tz1 - 0.08]) b.box(M.cabinet, lx2 - 0.025, y, lz2 - 0.025, lx2 + 0.025, y + 0.8, lz2 + 0.025)
   b.collide(tx0, y, tz0, tx1, y + 0.92, tz1)
   b.box(M.paper, -20.6, y + 0.92, -5.95, -20.38, y + 0.922, -5.67, { cast: false })
-  glassBeaker(b, -19.4, y + 0.92, -5.6, 0.05, 0.12)
   stool(b, -21.0, -4.6)
   stool(b, -19.55, -4.45)
   stool(b, -20.5, -7.05)
@@ -185,15 +169,6 @@ function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0: numbe
   else b.collide(c0, y, a0, c1 + 0.02, y + 0.935, a1)
 }
 
-function glassBeaker(b: Builder, x: number, y: number, z: number, r: number, h: number) {
-  b.cyl(M.glass, T(x, y + h / 2, z), r, r * 0.97, h, 14, { cast: false })
-}
-
-function flask(b: Builder, x: number, y: number, z: number, r: number) {
-  b.cyl(M.glass, T(x, y + r * 1.0, z), r * 0.3, r, r * 2, 14, { cast: false })
-  b.cyl(M.glass, T(x, y + r * 2.5, z), r * 0.28, r * 0.3, r * 1.0, 10, { cast: false })
-}
-
 function stool(b: Builder, x: number, z: number) {
   const y = FLOOR_Y
   b.cyl(M.stoolSeat, T(x, y + 0.66, z), 0.17, 0.17, 0.05, 18)
@@ -229,42 +204,6 @@ export function buildCloset(b: Builder) {
   rod(b, M.steel, [bx + 0.03, by - 0.06, bz], [bx + 0.03, by - 0.5, bz], 0.002, 4)
   b.lamp({ kind: "incandescent", position: [bx, by - 0.2, bz], color: WARM, intensity: 3, range: 4.5, shadow: true, size: 0.06 })
 
-  // Wire shelving along the east wall stocked with cleaning chemicals and boxes.
-  const sx0 = x1 - 0.5
-  const sx1 = x1 - 0.02
-  const sz0 = 2.75
-  const sz1 = 4.9
-  for (const px of [sx0, sx1 - 0.02])
-    for (const pz of [sz0, sz1 - 0.02]) b.box("metal_galvanized", px, y, pz, px + 0.02, y + 2.0, pz + 0.02)
-  let seed = 11
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  const shelfYs = [0.12, 0.55, 0.98, 1.41, 1.84]
-  for (const sh of shelfYs) {
-    b.box("metal_galvanized", sx0, y + sh, sz0, sx1, y + sh + 0.02, sz1)
-    if (sh > 1.8) continue
-    let z = sz0 + 0.05
-    while (z < sz1 - 0.15) {
-      const kind = rnd()
-      const sy = y + sh + 0.02
-      if (kind < 0.35) {
-        const w = 0.16
-        b.box(rnd() < 0.5 ? M.jugWhite : M.jugBlue, sx0 + 0.08, sy, z, sx0 + 0.08 + 0.13, sy + 0.28, z + w)
-        b.cyl(M.red, T(sx0 + 0.145, sy + 0.3, z + w / 2), 0.02, 0.02, 0.04, 8)
-        z += w + 0.03
-      } else if (kind < 0.6) {
-        const r = 0.04 + rnd() * 0.02
-        const h = 0.18 + rnd() * 0.12
-        b.cyl(rnd() < 0.5 ? M.jugBrown : M.jugWhite, T(sx0 + 0.2, sy + h / 2, z + r), r, r, h, 10)
-        z += r * 2 + 0.03
-      } else if (kind < 0.85) {
-        const w = 0.25 + rnd() * 0.15
-        b.box(M.cardboard, sx0 + 0.03, sy, z, sx1 - 0.03, sy + 0.2 + rnd() * 0.15, z + w)
-        z += w + 0.02
-      } else z += 0.12
-    }
-  }
-  b.collide(sx0, y, sz0, x1, y + 2.0, sz1)
-
   // Floor-mounted mop sink in the back corner with a wall faucet.
   const mx0 = x0
   const mx1 = x0 + 0.75
@@ -291,14 +230,107 @@ export function buildCloset(b: Builder) {
   b.box(M.stoolSeat, x0 + 0.06, y, 3.98, x0 + 0.16, y + 0.1, 4.25)
 }
 
+/** Ring of points around a rounded rectangle (half extents hw × hd, corner radius r) at height y, counter-clockwise
+ *  seen from above. */
+function roundedRing(hw: number, hd: number, r: number, y: number, n: number, out: number[]) {
+  const corners: [number, number, number][] = [
+    [hw - r, hd - r, 0],
+    [-(hw - r), hd - r, Math.PI / 2],
+    [-(hw - r), -(hd - r), Math.PI],
+    [hw - r, -(hd - r), Math.PI * 1.5],
+  ]
+  for (const [cx, cz, a0] of corners)
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / (n - 1)) * (Math.PI / 2)
+      out.push(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r)
+    }
+}
+
+/** Surface swept through a list of rounded-rectangle rings [hw, hd, r, y] (a moulded tub, rim and inner wall). */
+function sweptTub(rings: readonly (readonly [number, number, number, number])[], n = 6, capBottom = true) {
+  const pos: number[] = []
+  for (const [hw, hd, r, y] of rings) roundedRing(hw, hd, r, y, n, pos)
+  const per = n * 4
+  const idx: number[] = []
+  for (let k = 0; k < rings.length - 1; k++)
+    for (let i = 0; i < per; i++) {
+      const a = k * per + i
+      const b2 = k * per + ((i + 1) % per)
+      const c = a + per
+      const d = b2 + per
+      idx.push(a, c, b2, b2, c, d)
+    }
+  if (capBottom) {
+    const centre = pos.length / 3
+    pos.push(0, rings[0]![3], 0)
+    for (let i = 0; i < per; i++) idx.push(centre, i, (i + 1) % per)
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+/** Rounded-rectangle cap (water surface, lids) at height y. */
+function roundedCap(hw: number, hd: number, r: number, y: number, n = 6) {
+  const pos: number[] = [0, y, 0]
+  roundedRing(hw, hd, r, y, n, pos)
+  const per = n * 4
+  const idx: number[] = []
+  for (let i = 0; i < per; i++) idx.push(0, 1 + ((i + 1) % per), 1 + i)
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+/** Commercial mop bucket: tapered moulded tub with a rolled rim, grey water, side-press wringer, casters, mop. */
 function bucket(b: Builder, x: number, z: number) {
   const y = FLOOR_Y
-  b.box(M.yellow, x - 0.2, y + 0.06, z - 0.25, x + 0.2, y + 0.38, z + 0.25)
-  b.box("metal_dark", x - 0.17, y + 0.38, z - 0.22, x + 0.17, y + 0.381, z + 0.05, { cast: false })
-  b.box(M.yellow, x - 0.16, y + 0.38, z + 0.06, x + 0.16, y + 0.58, z + 0.22)
-  rod(b, "metal_dark", [x, y + 0.58, z + 0.14], [x, y + 1.05, z + 0.24], 0.012)
-  for (const dx of [-0.17, 0.17]) for (const dz of [-0.22, 0.22]) b.cyl("rubber", T(x + dx, y + 0.03, z + dz), 0.03, 0.03, 0.03, 8)
-  rod(b, M.wood, [x - 0.05, y + 0.2, z - 0.1], [x - 0.12, y + 1.5, z - 0.3], 0.013)
+  const at = (g: THREE.BufferGeometry, yaw = 0) => g.applyMatrix4(T(x, y, z, yaw))
+  // Tub (long axis along Z), wall leaning out towards the rim.
+  const tub = sweptTub([
+    [0.15, 0.2, 0.05, 0.075],
+    [0.165, 0.215, 0.06, 0.1],
+    [0.19, 0.245, 0.075, 0.36],
+    [0.2, 0.255, 0.08, 0.375],
+    [0.197, 0.252, 0.078, 0.392],
+    [0.184, 0.239, 0.07, 0.385],
+    [0.17, 0.225, 0.062, 0.2],
+  ])
+  b.add(M.yellow, at(tub))
+  b.add(water, at(roundedCap(0.172, 0.227, 0.062, 0.215)), { cast: false })
+  // Caster forks and wheels under the corners.
+  for (const dx of [-0.13, 0.13])
+    for (const dz of [-0.18, 0.18]) {
+      b.box("metal_dark", x + dx - 0.015, y + 0.045, z + dz - 0.02, x + dx + 0.015, y + 0.075, z + dz + 0.02)
+      b.cyl("rubber", T(x + dx, y + 0.028, z + dz, 0, 0, Math.PI / 2), 0.028, 0.028, 0.022, 14)
+    }
+  // Wringer sitting across the rear of the tub: rounded box with a press plate, lever and grip.
+  const W = T(x, y + 0.39, z + 0.13)
+  const body = new RoundedBoxGeometry(0.3, 0.2, 0.17, 3, 0.025)
+  body.applyMatrix4(W.clone().multiply(T(0, 0.1, 0)))
+  b.add(M.yellow, body)
+  const plate = new RoundedBoxGeometry(0.24, 0.16, 0.025, 2, 0.008)
+  plate.applyMatrix4(W.clone().multiply(T(0, 0.11, -0.04)))
+  b.add("metal_dark", plate)
+  rod(b, "metal_galvanized", [x + 0.155, y + 0.52, z + 0.13], [x + 0.17, y + 0.95, z + 0.2], 0.011)
+  rod(b, "metal_galvanized", [x + 0.17, y + 0.95, z + 0.2], [x - 0.02, y + 0.98, z + 0.21], 0.011)
+  rod(b, "rubber", [x + 0.02, y + 0.98, z + 0.21], [x - 0.1, y + 0.985, z + 0.215], 0.017, 10)
+  // Mop standing in the water: wooden handle, clamp and a hank of grey strands.
+  const mx = x - 0.04
+  const mz = z - 0.09
+  rod(b, M.wood, [mx, y + 0.24, mz], [mx - 0.1, y + 1.45, mz - 0.2], 0.013)
+  b.cyl("metal_dark", T(mx, y + 0.27, mz), 0.03, 0.03, 0.05, 10)
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2
+    rod(b, mopStrand, [mx + Math.cos(a) * 0.02, y + 0.26, mz + Math.sin(a) * 0.02], [mx + Math.cos(a) * 0.075, y + 0.2, mz + Math.sin(a) * 0.07], 0.012, 5)
+  }
   b.collide(x - 0.22, y, z - 0.27, x + 0.22, y + 0.6, z + 0.27)
 }
+
+const water = Object.assign(new THREE.MeshStandardNodeMaterial({ color: 0x1d2019, roughness: 0.05, metalness: 0 }), { name: "interior_mop_water" })
+const mopStrand = Object.assign(new THREE.MeshStandardNodeMaterial({ color: 0x6a665a, roughness: 1, metalness: 0 }), { name: "interior_mop_strand" })
 

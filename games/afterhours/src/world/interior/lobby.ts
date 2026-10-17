@@ -53,46 +53,12 @@ function reception(b: Builder) {
   b.box(M.laminateTop, fx1 - 0.58, y + 1.08, 12.6, fx1 + 0.03, y + 1.12, fz0)
   b.collide(fx0, y, fz0 - 0.08, fx1 + 0.03, y + 1.12, fz1 + 0.06)
   b.collide(fx1 - 0.58, y, 12.6, fx1 + 0.03, y + 1.12, fz0)
-  // Security desk behind it.
-  const dz0 = 13.5
-  const dz1 = 14.3
-  const dx0 = -7.2
-  const dx1 = -3.8
-  b.box(M.laminate, dx0, y + 0.72, dz0, dx1, y + 0.76, dz1)
-  b.box(M.laminate, dx0, y, dz0, dx0 + 0.04, y + 0.72, dz1)
-  b.box(M.laminate, dx1 - 0.45, y, dz0, dx1, y + 0.72, dz1)
-  b.box(M.laminate, dx0, y + 0.2, dz0, dx1, y + 0.72, dz0 + 0.03)
-  b.collide(dx0, y, dz0, dx1, y + 0.76, dz1)
-  // CRT monitor facing the counter.
-  const cm = T(-5.6, y + 0.76, 13.95, 0)
-  b.boxM(M.beige, cm, 0.42, 0.06, 0.38, 0, 0.03, 0)
-  b.boxM(M.beige, cm, 0.38, 0.34, 0.24, 0, 0.26, 0.04)
-  b.boxM(M.beige, cm, 0.28, 0.24, 0.16, 0, 0.25, -0.15)
-  b.quad(M.crtScreen, cm.clone().multiply(T(0, 0.27, 0.161)), 0.3, 0.23, { cast: false })
-  b.boxM(M.beige, cm, 0.44, 0.04, 0.16, 0, 0.02, 0.32)
-  // Second monitor, off.
-  const cm2 = T(-6.6, y + 0.76, 13.95, 0.25)
-  b.boxM(M.beige, cm2, 0.36, 0.3, 0.22, 0, 0.17, 0.04)
-  b.boxM(M.beige, cm2, 0.26, 0.2, 0.14, 0, 0.16, -0.13)
-  b.quad(M.phone, cm2.clone().multiply(T(0, 0.17, 0.151)), 0.27, 0.21, { cast: false })
-  // Desk phone with a coiled-cord handset.
-  const pm = T(-4.4, y + 0.76, 14.0, -0.3)
-  b.boxM(M.phone, pm, 0.22, 0.07, 0.2, 0, 0.035, 0, { cast: false })
-  b.boxM(M.phone, pm, 0.22, 0.04, 0.05, 0, 0.09, 0)
-  b.boxM(M.phone, pm, 0.05, 0.05, 0.06, -0.09, 0.08, 0)
-  b.boxM(M.phone, pm, 0.05, 0.05, 0.06, 0.09, 0.08, 0)
   // Clipboard and paper on the counter, a mug.
   const clip = T(-5.2, y + 1.121, 15.45, 0.15)
   b.boxM(M.clipboard, clip, 0.23, 0.006, 0.32, 0, 0.003, 0, { cast: false })
   b.boxM(M.paper, clip, 0.21, 0.002, 0.27, 0, 0.007, 0.015, { cast: false })
   b.boxM("metal_galvanized", clip, 0.08, 0.012, 0.025, 0, 0.012, -0.14)
   b.cyl(M.paper, T(-3.4, y + 1.17, 15.5), 0.04, 0.04, 0.1, 12)
-  // Desk chair.
-  const ch = T(-5.6, y, 13.0, 0.2)
-  b.cyl("metal_dark", ch.clone().multiply(T(0, 0.25, 0)), 0.025, 0.025, 0.42, 8)
-  b.boxM(M.chairBlack, ch, 0.48, 0.08, 0.46, 0, 0.48, 0)
-  b.boxM(M.chairBlack, ch, 0.44, 0.5, 0.06, 0, 0.82, -0.25)
-  for (let i = 0; i < 5; i++) b.boxM("metal_dark", ch.clone().multiply(T(0, 0.04, 0, (i / 5) * Math.PI * 2)), 0.04, 0.03, 0.3, 0, 0, 0.15)
 }
 
 /** Row of moulded orange shell chairs on a steel beam against the east wall at `xWall`, facing -X, from z = zStart. */

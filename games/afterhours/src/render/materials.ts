@@ -25,13 +25,14 @@ import {
   vec2,
   vec3,
 } from "three/tsl"
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 
 // The one place surface materials come from. Builders ask for a material by name and give their geometry UVs in
 // metres (1 UV unit = 1 m) so every material tiles at real-world scale; the material owns its texture repeat.
 //
-// Textured materials sample CC0 scans from public/textures/<set>/ (color sRGB, normal OpenGL, arm = AO/rough/metal;
-// fetched by scripts/fetch-textures.ts, sources in public/textures/CREDITS.md). Tile, linoleum, chain-link, glass,
+// Textured materials sample CC0 scans from public/textures/<set>/ as GPU-compressed KTX2 (albedo = colour + roughness,
+// surface = normal XY + AO + metalness; built by scripts/fetch-textures.ts, sources in public/textures/CREDITS.md). Tile, linoleum, chain-link, glass,
 // the pine card and the emissives are procedural. Outdoor ground (asphalt, lot, road paint, concrete floor, gravel)
 // is wet: a world-space puddle mask from a tiling noise texture turns flat cavities into near-mirror water and leaves
 // a darker, glossy film elsewhere, driven by the global `materials.*` settings below.
@@ -130,97 +131,66 @@ export const MATERIAL_CONTROLS: LabControl[] = [
 // Textures
 
 const BASE = `${import.meta.env.BASE_URL}textures/`
-const loader = new THREE.TextureLoader()
 const textures = new Map<string, THREE.Texture>()
-const pending: Promise<unknown>[] = []
+const ready = new Map<string, Promise<void>>()
 let anisotropy = 8
 
-type Kind = "color" | "normal" | "arm"
+type Kind = "albedo" | "surface"
 
-/** A scanned map from public/textures/<set>/<kind>.jpg; `size` is the metres one tile covers (sets `repeat`). */
-function map(setName: string, kind: Kind, size: number): THREE.Texture {
+/**
+ * A scanned map from public/textures/<set>/<kind>.ktx2 (Basis UASTC, transcoded to BC7/ASTC in a worker). Returns a
+ * placeholder texture at once and fills it with the compressed mip chain when it arrives, so node graphs can be built
+ * before loading finishes; `loadMaterials` waits for all of them.
+ *   albedo:  RGB colour (sRGB) + A roughness
+ *   surface: RG normal XY (OpenGL) + B AO + A metalness
+ */
+function map(setName: SetName, kind: Kind): THREE.Texture {
   const key = `${setName}/${kind}`
   const hit = textures.get(key)
   if (hit) return hit
-  let t!: THREE.Texture
-  pending.push(new Promise((resolve, reject) => (t = loader.load(`${BASE}${key}.jpg`, resolve, undefined, () => reject(new Error(`texture ${key}`))))))
+  const t = new THREE.CompressedTexture([], 1, 1)
   t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.colorSpace = kind === "color" ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  t.colorSpace = kind === "albedo" ? THREE.SRGBColorSpace : THREE.NoColorSpace
   t.anisotropy = anisotropy
-  // Consumers that sample `material.normalMap` with the texture matrix (terrain blend) get the same metre scale.
-  t.repeat.set(1 / size, 1 / size)
   t.name = key
   textures.set(key, t)
   return t
 }
 
+let ktx2: KTX2Loader | null = null
+function fill(key: string, t: THREE.Texture): Promise<void> {
+  const loaded = ktx2!.loadAsync(`${BASE}${key}.ktx2`).then((src) => {
+    const c = t as THREE.CompressedTexture
+    c.mipmaps = src.mipmaps
+    c.image = src.image
+    c.format = src.format
+    c.type = src.type
+    c.generateMipmaps = false
+    c.minFilter = THREE.LinearMipmapLinearFilter
+    c.magFilter = THREE.LinearFilter
+    c.flipY = false
+    c.anisotropy = anisotropy
+    c.needsUpdate = true
+  })
+  ready.set(key, loaded)
+  return loaded
+}
+
 /**
  * Tiling value-noise fbm, four independent histogram-equalised channels (value = percentile, so thresholds are
- * coverage fractions). R: blobs (4 cells/tile), G: 8, B: 16, A: 32.
+ * coverage fractions). R: blobs (4 cells/tile), G: 8, B: 16, A: 32. Precomputed by scripts/fetch-textures.ts.
  */
+const NOISE_SIZE = 512
 let noiseTex: THREE.DataTexture | null = null
 function noise(): THREE.DataTexture {
   if (noiseTex) return noiseTex
-  const S = 512
-  const data = new Uint8Array(S * S * 4)
-  const val = new Float32Array(S * S)
-  const rnd = (x: number, y: number, s: number) => {
-    let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0
-    h = Math.imul(h ^ (h >>> 13), 1274126177)
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296
-  }
-  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
-  const BINS = 4096
-  const hist = new Uint32Array(BINS)
-  for (let c = 0; c < 4; c++) {
-    const base = 4 << c
-    let lo = Infinity
-    let hi = -Infinity
-    for (let y = 0; y < S; y++) {
-      for (let x = 0; x < S; x++) {
-        let v = 0
-        let amp = 1
-        // Octaves stop at 4 px per cell so the finest layer never aliases into blocks.
-        for (let n = base, o = 0; n <= S / 4; n *= 2, o++) {
-          const fx = (x / S) * n
-          const fy = (y / S) * n
-          const ix = Math.floor(fx)
-          const iy = Math.floor(fy)
-          const tx = fade(fx - ix)
-          const ty = fade(fy - iy)
-          const sd = c * 16 + o
-          const a = rnd(ix % n, iy % n, sd)
-          const b = rnd((ix + 1) % n, iy % n, sd)
-          const d = rnd(ix % n, (iy + 1) % n, sd)
-          const e = rnd((ix + 1) % n, (iy + 1) % n, sd)
-          v += amp * (a + (b - a) * tx + (d - a) * ty + (a - b - d + e) * tx * ty)
-          amp *= 0.5
-        }
-        val[y * S + x] = v
-        if (v < lo) lo = v
-        if (v > hi) hi = v
-      }
-    }
-    // Histogram equalisation: each texel becomes its percentile.
-    hist.fill(0)
-    const k = (BINS - 1) / (hi - lo)
-    for (let i = 0; i < S * S; i++) hist[Math.round((val[i]! - lo) * k)]!++
-    let acc = 0
-    for (let b = 0; b < BINS; b++) {
-      const n = hist[b]!
-      hist[b] = Math.round(((acc + n / 2) / (S * S)) * 255)
-      acc += n
-    }
-    for (let i = 0; i < S * S; i++) data[i * 4 + c] = hist[Math.round((val[i]! - lo) * k)]!
-  }
-  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat)
+  const t = new THREE.DataTexture(new Uint8Array(NOISE_SIZE * NOISE_SIZE * 4), NOISE_SIZE, NOISE_SIZE, THREE.RGBAFormat)
   t.wrapS = t.wrapT = THREE.RepeatWrapping
   t.magFilter = THREE.LinearFilter
   t.minFilter = THREE.LinearMipmapLinearFilter
   t.generateMipmaps = true
   t.colorSpace = THREE.NoColorSpace
   t.name = "materials/noise"
-  t.needsUpdate = true
   noiseTex = t
   return t
 }
@@ -296,65 +266,84 @@ function pineCard(): THREE.Texture {
   return t
 }
 
-/** Called once after the renderer exists, before any builder runs: loads every scanned set and builds procedural maps. */
+/**
+ * Called once after the renderer exists. Starts every texture download (transcoded off the main thread) and resolves
+ * when all are on their textures; materials can be built before that, their maps fill in when ready.
+ */
 export async function loadMaterials(renderer: THREE.WebGPURenderer) {
   anisotropy = Math.min(16, renderer.getMaxAnisotropy?.() ?? 8)
   for (const t of textures.values()) t.anisotropy = anisotropy
-  for (const [setName, size] of Object.entries(SETS)) for (const kind of ["color", "normal", "arm"] as const) map(setName, kind, size)
-  noise()
-  pineCard()
-  await Promise.all(pending)
+  ktx2 ??= new KTX2Loader().setTranscoderPath(`${BASE}basis/`).setWorkerLimit(Math.max(4, Math.min(8, navigator.hardwareConcurrency - 2))).detectSupport(renderer)
+  for (const [setName, spec] of Object.entries(SETS) as [SetName, (typeof SETS)[SetName]][]) {
+    for (const kind of spec.kinds) {
+      const t = map(setName, kind)
+      if (!ready.has(t.name)) fill(t.name, t)
+    }
+  }
+  const tex = noise()
+  const bytes = fetch(`${BASE}noise.bin`)
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`noise.bin: HTTP ${r.status}`))))
+    .then((buf) => {
+      ;(tex.image as { data: Uint8Array }).data = new Uint8Array(buf)
+      tex.needsUpdate = true
+    })
+  await Promise.all([...ready.values(), bytes])
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Sampling helpers
 
-/** Metres covered by one tile of each scanned set. */
+/** Metres covered by one tile of each scanned set, and which of its maps exist. */
+const BOTH = ["albedo", "surface"] as const
 const SETS = {
-  asphalt: 3.5,
-  asphalt_lot: 2.6,
-  gravel: 1.5,
-  forest_floor: 1.75,
-  forest_moss: 2,
-  grass: 2,
-  dirt: 1.4,
-  concrete_wall: 1.8,
-  concrete_dark: 2,
-  concrete_floor: 3,
-  bark: 1.2,
-  wood_pole: 1,
-  metal_painted: 1.2,
-  metal_galvanized: 1,
-  metal_dark: 1,
-  ceiling_tile: 3.66,
-  terrazzo: 0.6,
-  plaster: 2,
-  imperfections: 1.5,
+  asphalt: { size: 3.5, kinds: BOTH },
+  asphalt_lot: { size: 2.6, kinds: BOTH },
+  gravel: { size: 1.5, kinds: BOTH },
+  forest_floor: { size: 1.75, kinds: BOTH },
+  forest_moss: { size: 2, kinds: BOTH },
+  grass: { size: 2, kinds: BOTH },
+  dirt: { size: 1.4, kinds: BOTH },
+  concrete_wall: { size: 1.8, kinds: BOTH },
+  concrete_dark: { size: 2, kinds: BOTH },
+  concrete_floor: { size: 3, kinds: BOTH },
+  bark: { size: 1.2, kinds: BOTH },
+  wood_pole: { size: 1, kinds: BOTH },
+  metal_painted: { size: 1.2, kinds: BOTH },
+  metal_galvanized: { size: 1, kinds: BOTH },
+  metal_dark: { size: 1, kinds: BOTH },
+  ceiling_tile: { size: 3.66, kinds: BOTH },
+  terrazzo: { size: 0.6, kinds: BOTH },
+  plaster: { size: 2, kinds: BOTH },
+  /** Roughness only (albedo alpha). */
+  imperfections: { size: 1.5, kinds: ["albedo"] as const },
 } as const
 type SetName = keyof typeof SETS
 
 /** Surface channels: colour (linear), roughness, packed tangent-space normal (0..1), AO, metalness. */
 type Surf = { color: N; rough: N; normal: N; ao: N; metal: N }
 
-function sample(name: SetName, uvn: N = uv(), size: number = SETS[name]): Surf {
+/** Two texture bindings per set: albedo (colour + roughness) and surface (normal XY + AO + metalness). */
+function sample(name: SetName, uvn: N = uv(), size: number = SETS[name].size): Surf {
   const p = uvn.mul(1 / size)
-  const c = texture(map(name, "color", SETS[name]), p)
-  const n = texture(map(name, "normal", SETS[name]), p)
-  const a = texture(map(name, "arm", SETS[name]), p)
-  return { color: c.rgb, rough: a.g, normal: n.xyz, ao: a.r, metal: a.b }
+  const a = texture(map(name, "albedo"), p)
+  if (!(SETS[name].kinds as readonly Kind[]).includes("surface")) return { color: a.rgb, rough: a.a, normal: FLAT, ao: float(1), metal: float(0) }
+  const s = texture(map(name, "surface"), p)
+  const xy = s.rg.mul(2).sub(1)
+  const z = sqrt(float(1).sub(xy.dot(xy)).max(0))
+  return { color: a.rgb, rough: a.a, normal: vec3(s.rg, z.mul(0.5).add(0.5)), ao: s.b, metal: s.a }
 }
 
 /**
  * Breaks visible repetition: blends the set with a rotated, slightly rescaled copy of itself by a world-space noise
  * mask (the rotated normal is turned back into the surface's tangent frame).
  */
-function antiTile(name: SetName, uvn: N = uv(), maskPeriod = SETS[name] * 2.7): Surf {
+function antiTile(name: SetName, uvn: N = uv(), maskPeriod = SETS[name].size * 2.7): Surf {
   const A = sample(name, uvn)
   const ang = 0.63
   const ca = Math.cos(ang)
   const sa = Math.sin(ang)
   const ruv = vec2(uvn.x.mul(ca).sub(uvn.y.mul(sa)), uvn.x.mul(sa).add(uvn.y.mul(ca))).add(vec2(13.7, 5.3))
-  const B = sample(name, ruv, SETS[name] * 1.13)
+  const B = sample(name, ruv, SETS[name].size * 1.13)
   const bn = B.normal.mul(2).sub(1)
   const bnr = vec3(bn.x.mul(ca).add(bn.y.mul(sa)), bn.y.mul(ca).sub(bn.x.mul(sa)), bn.z).mul(0.5).add(0.5)
   const w = smoothstep(0.32, 0.68, wnoise(positionWorld.xz, maskPeriod).b)
@@ -436,13 +425,6 @@ function std(s: Surf, f: Finish = {}, ctor: typeof THREE.MeshStandardNodeMateria
   return m
 }
 
-/** Exposes the scanned normal map on the material too, for consumers that blend library materials themselves. */
-function withNormalMap(m: Std, setName: SetName, scale = 1): Std {
-  m.normalMap = map(setName, "normal", SETS[setName])
-  m.normalScale = new THREE.Vector2(scale, scale)
-  return m
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // Procedural tiles
 
@@ -514,19 +496,19 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
   asphalt: () => {
     const s = antiTile("asphalt")
     const base = { ...s, color: macro(saturate(s.color, 0.6).mul(0.72)), rough: s.rough.mul(0.25).add(0.7) }
-    return withNormalMap(std(wet(base, { porosity: 0.55, film: 0.26, puddles: 1 }), { normalScale: 1.2 }), "asphalt")
+    return std(wet(base, { porosity: 0.55, film: 0.26, puddles: 1 }), { normalScale: 1.2 })
   },
   asphalt_lot: () => {
     const s = antiTile("asphalt_lot")
     const base = { ...s, color: macro(saturate(s.color, 0.35).mul(1.05)), rough: s.rough.mul(0.25).add(0.68) }
-    return withNormalMap(std(wet(base, { porosity: 0.55, film: 0.28, puddles: 1.15 }), { normalScale: 1.1 }), "asphalt_lot")
+    return std(wet(base, { porosity: 0.55, film: 0.28, puddles: 1.15 }), { normalScale: 1.1 })
   },
   road_line_yellow: () => roadPaint(new THREE.Color(0.55, 0.36, 0.06)),
   road_line_white: () => roadPaint(new THREE.Color(0.62, 0.62, 0.58)),
   gravel: () => {
     const s = antiTile("gravel")
     const base = { ...s, color: macro(saturate(s.color, 0.6).mul(0.55)) }
-    return withNormalMap(std(wet(base, { porosity: 0.45, film: 0.38, puddles: 0.55 }), { normalScale: 1.3 }), "gravel")
+    return std(wet(base, { porosity: 0.45, film: 0.38, puddles: 0.55 }), { normalScale: 1.3 })
   },
   forest_floor: () => {
     const needles = antiTile("forest_floor")
@@ -540,17 +522,17 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
       ao: mix(needles.ao, moss.ao.mul(0.5).add(0.5), w),
       metal: float(0),
     }
-    return withNormalMap(std(damp(s, 0.6, 0.8), { normalScale: 1.2 }), "forest_floor", 1.2)
+    return std(damp(s, 0.6, 0.8), { normalScale: 1.2 })
   },
   grass: () => {
     const s = antiTile("grass")
     const color = macro(saturate(s.color, 0.75).mul(vec3(0.34, 0.33, 0.24)), 0.04)
-    return withNormalMap(std(damp({ ...s, color }, 0.5, 0.85), { normalScale: 1.1 }), "grass", 1.1)
+    return std(damp({ ...s, color }, 0.5, 0.85), { normalScale: 1.1 })
   },
   dirt: () => {
     const s = antiTile("dirt")
     const color = macro(saturate(s.color, 0.7).mul(0.62))
-    return withNormalMap(std(damp({ ...s, color }, 0.9, 0.7), { normalScale: 1.2 }), "dirt", 1.2)
+    return std(damp({ ...s, color }, 0.9, 0.7), { normalScale: 1.2 })
   },
   concrete_wall: () => {
     const s = sample("concrete_wall")
@@ -560,25 +542,25 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
     const blot = wnoise(vec2(p.x.add(p.z), p.y), 9).r
     const stain = smoothstep(0.45, 0.95, streak).mul(0.38).add(smoothstep(0.6, 0.95, blot).mul(0.18))
     const color = saturate(s.color, 0.3).mul(vec3(0.8, 0.83, 0.82)).mul(float(1).sub(stain))
-    return withNormalMap(std({ ...s, color, rough: s.rough.mul(0.2).add(0.76) }, { normalScale: 1.4 }), "concrete_wall")
+    return std({ ...s, color, rough: s.rough.mul(0.2).add(0.76) }, { normalScale: 1.4 })
   },
   concrete_dark: () => {
     const s = antiTile("concrete_dark")
     const color = saturate(s.color, 0.35).mul(0.62)
-    return withNormalMap(std({ ...s, color }, { normalScale: 1.2 }), "concrete_dark")
+    return std({ ...s, color }, { normalScale: 1.2 })
   },
   concrete_floor: () => {
     const s = antiTile("concrete_floor")
     const base = { ...s, color: saturate(s.color, 0.4).mul(0.9), rough: s.rough.mul(0.3).add(0.62) }
-    return withNormalMap(std(wet(base, { porosity: 0.4, film: 0.3, puddles: 0.7 }), { normalScale: 1 }), "concrete_floor")
+    return std(wet(base, { porosity: 0.4, film: 0.3, puddles: 0.7 }), { normalScale: 1 })
   },
   concrete_floor_dry: () => {
     const s = antiTile("concrete_floor")
-    return withNormalMap(std({ ...s, color: saturate(s.color, 0.4).mul(0.9), rough: s.rough.mul(0.35).add(0.45) }), "concrete_floor")
+    return std({ ...s, color: saturate(s.color, 0.4).mul(0.9), rough: s.rough.mul(0.35).add(0.45) })
   },
   bark: () => {
     const s = sample("bark")
-    return withNormalMap(std({ ...s, color: saturate(s.color, 0.8).mul(vec3(0.5, 0.44, 0.4)), rough: s.rough.mul(0.3).add(0.68) }, { normalScale: 1.6 }), "bark")
+    return std({ ...s, color: saturate(s.color, 0.8).mul(vec3(0.5, 0.44, 0.4)), rough: s.rough.mul(0.3).add(0.68) }, { normalScale: 1.6 })
   },
   pine_needles: () => {
     const t = texture(pineCard(), uv())
@@ -608,7 +590,7 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
     const s = sample("wood_pole")
     // Creosote-treated pole weathered grey-brown.
     const color = saturate(s.color, 0.6).mul(vec3(0.42, 0.33, 0.26))
-    return withNormalMap(std({ ...s, color, rough: s.rough.mul(0.25).add(0.7) }, { normalScale: 1.6 }), "wood_pole")
+    return std({ ...s, color, rough: s.rough.mul(0.25).add(0.7) }, { normalScale: 1.6 })
   },
   metal_painted: () => paintedMetal(0x5c615c, 0.35),
   door_steel: () => paintedMetal(0x3d5a4b, 0.3),

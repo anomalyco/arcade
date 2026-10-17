@@ -17,10 +17,10 @@ import {
   vec3,
   vec4,
 } from "three/tsl"
-import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js"
-import type { WorldContext } from "../world/context"
+import { ConeClusteredLighting } from "./clustered"
+import type { Lamp, WorldContext } from "../world/context"
 import type { Player } from "../player"
-import { fogSigma, opticalDepth } from "./atmosphere"
+import { distanceToBuilding, fogSigma, insideBuilding, opticalDepth } from "./atmosphere"
 import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
 
 // The light rig. Every registered lamp becomes an unshadowed clustered point light (Forward+, culled per cluster); a
@@ -33,11 +33,16 @@ type N = any
 const Fn = TslFn as N
 
 const MAX_POOL = 6
+/** Emitter glow instances (buffers are allocated once at this size so late lamps never reallocate them). */
+const GLOW_CAPACITY = 1024
+/** Within this distance of the building shell, lamps on both sides of its walls stay on (doors, windows). */
+const ZONE_MARGIN = 25
 const FADE_S = 0.35
 
 type Flicker = { next: number; until: number; toggle: number; on: boolean; slow: number; seed: number }
 
 type Rig = LampRuntime & {
+  color: THREE.Color
   point: THREE.PointLight
   shadowWeight: number
   flicker: Flicker
@@ -56,6 +61,17 @@ function rng(seed: number) {
   }
 }
 const random = rng(0x9e3779b9)
+
+/**
+ * Lamp colour as rendered. Low/high-pressure sodium is a narrow orange spectrum; builders give an RGB that reads
+ * slightly yellow, so the rig deepens it towards the concept's orange (a render decision, kept in one place).
+ */
+function lampColor(l: Lamp, shift: number, out: THREE.Color) {
+  out.setRGB(l.color[0], l.color[1], l.color[2])
+  if (l.kind === "sodium") out.multiply(_tint.setRGB(1, 1 - 0.3 * shift, 1 - 0.55 * shift))
+  return out
+}
+const _tint = new THREE.Color()
 
 /** Fluorescent stutter / dying sodium / beacon blink for one lamp at `time`. Returns the intensity multiplier. */
 function flickerLevel(r: Rig, time: number, scale: number) {
@@ -117,7 +133,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   addControls(ctx, [
     { key: "light.lamps", label: "Lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "light.ambient", label: "Extra fill (hemisphere)", group: "Lighting", min: 0, max: 1, step: 0.005, value: 0.02 },
-    { key: "light.shadows", label: "Shadowed lamps", group: "Lighting", min: 0, max: MAX_POOL, step: 1, value: 3 },
+    { key: "light.shadows", label: "Shadowed lamps", group: "Lighting", min: 0, max: MAX_POOL, step: 1, value: 2 },
     {
       key: "light.shadowSize",
       label: "Lamp shadow map",
@@ -128,33 +144,56 @@ export function createLighting(ctx: WorldContext, player: Player) {
         { value: 1024, label: "1024" },
         { value: 2048, label: "2048" },
       ],
-      value: 1024,
+      value: 512,
     },
+    { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "glow.size", label: "Glow size", group: "Lighting", unit: "×", min: 0.2, max: 4, step: 0.05, value: 1 },
-    { key: "flash.intensity", label: "Intensity", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 10, value: 260 },
+    { key: "flash.intensity", label: "Intensity", group: "Flashlight", unit: "cd", min: 0, max: 4000, step: 10, value: 1000 },
     { key: "flash.angle", label: "Beam half-angle", group: "Flashlight", unit: "°", min: 8, max: 45, step: 1, value: 24 },
     { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 40 },
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0.09 },
+    { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
+    { key: "flash.near", label: "Beam fade-in distance", group: "Flashlight", unit: "m", min: 0, max: 8, step: 0.1, value: 3 },
     { key: "flash.shadows", label: "Casts shadows", group: "Flashlight", type: "toggle", value: true },
+    {
+      key: "flash.shadowSize",
+      label: "Shadow map",
+      group: "Flashlight",
+      type: "select",
+      options: [
+        { value: 256, label: "256" },
+        { value: 512, label: "512" },
+        { value: 1024, label: "1024" },
+      ],
+      value: 512,
+    },
+    { key: "light.cull", label: "Cull lamps by view and zone", group: "Lighting", type: "toggle", value: true },
   ])
 
   const { renderer, scene, camera } = ctx
-  ;(renderer as unknown as { lighting: unknown }).lighting = new ClusteredLighting(512, 32, 24, 48)
+  ;(renderer as unknown as { lighting: unknown }).lighting = new ConeClusteredLighting(512, 32, 24, 48)
 
   const hemi = new THREE.HemisphereLight(0x2c5450, 0x0b0f0d, 0.1)
   scene.add(hemi)
 
   // ---------------------------------------------------------------- lamps → clustered point lights
+  // Lamps may be registered after the rig exists (modules stream in after the first frame), so they are adopted in
+  // update() too; `lamp.position` is re-read every frame (the loader parks a module's lamps until it is shown).
   const rigs: Rig[] = []
-  for (const lamp of ctx.lamps) {
+  const glowRigs: Rig[] = []
+  const addRig = (lamp: Lamp) => {
     const point = new THREE.PointLight(new THREE.Color(...lamp.color), 0, lamp.range, 2)
     point.castShadow = false
-    scene.add(point)
     const angle = lamp.angle ?? 0.9
     const pen = lamp.penumbra ?? 0.5
-    rigs.push({
+    if (lamp.direction) {
+      const d = new THREE.Vector3(...lamp.direction).normalize()
+      point.userData.cone = { dir: [d.x, d.y, d.z], cosOuter: Math.cos(angle), cosInner: Math.cos(angle * (1 - pen)) }
+    }
+    scene.add(point)
+    const rig: Rig = {
       lamp,
       pos: new THREE.Vector3(),
       dir: lamp.direction ? new THREE.Vector3(...lamp.direction).normalize() : null,
@@ -166,13 +205,21 @@ export function createLighting(ctx: WorldContext, player: Player) {
       cosOuter: lamp.direction ? Math.cos(angle) : -2,
       cosInner: lamp.direction ? Math.cos(angle * (1 - pen)) : -1,
       point,
+      color: new THREE.Color(),
       shadowWeight: 0,
       flicker: { next: random() * 4, until: 0, toggle: 0, on: true, slow: 0, seed: random() },
       lastIntensity: lamp.intensity,
       animated: false,
       glow: lamp.kind === "window" ? 0 : 1,
-    })
+    }
+    rigs.push(rig)
+    if (rig.glow > 0 && glowRigs.length < GLOW_CAPACITY) glowRigs.push(rig)
   }
+  let adopted = 0
+  const adoptLamps = () => {
+    while (adopted < ctx.lamps.length) addRig(ctx.lamps[adopted++]!)
+  }
+  adoptLamps()
   renderState.lamps = rigs
 
   // ---------------------------------------------------------------- shadow pool
@@ -190,8 +237,6 @@ export function createLighting(ctx: WorldContext, player: Player) {
     for (const s of slots) {
       if (s.light.shadow.mapSize.x !== size) {
         s.light.shadow.mapSize.set(size, size)
-        s.light.shadow.map?.dispose()
-        s.light.shadow.map = null as unknown as THREE.RenderTarget
         s.light.shadow.needsUpdate = true
       }
     }
@@ -213,8 +258,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
 
   // ---------------------------------------------------------------- flashlight
   const flash = new THREE.SpotLight(0xfff0dc, 0, 40, 0.42, 0.35, 2)
-  flash.castShadow = flag(ctx, "flash.shadows")
-  flash.shadow.mapSize.set(1024, 1024)
+  // castShadow stays on for good: toggling it at runtime recompiles every material and crashes r186's ShadowNode.
+  // "Casts shadows" off is zero shadow intensity with the map frozen instead.
+  flash.castShadow = true
+  flash.shadow.mapSize.setScalar(Number(ctx.settings["flash.shadowSize"]))
   flash.shadow.bias = -0.0003
   flash.shadow.normalBias = 0.02
   flash.shadow.camera.near = 0.2
@@ -225,8 +272,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   let flashLevel = 0
 
   // ---------------------------------------------------------------- emitter glows
-  const glowRigs = rigs.filter((r) => r.glow > 0)
-  const n = Math.max(1, glowRigs.length)
+  const n = GLOW_CAPACITY
   const centerAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
   const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
   const dirAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
@@ -240,14 +286,15 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const toCam = normalize((cameraPosition as N).sub(center.xyz))
   // Pull the quad towards the camera so the fixture housing doesn't clip the core.
   glowMat.positionNode = center.xyz.add(toCam.mul(center.w.mul(0.35)))
-  glowMat.scaleNode = vec2(center.w.mul(2))
+  glowMat.scaleNode = vec2(center.w.mul(4))
   const facing = gdir.w.greaterThan(0.5).select(smoothstep(-0.25, 0.45, toCam.dot(gdir.xyz)), float(1))
   const r = length(uv().sub(0.5)).mul(2)
   // Hot core (the lamp's visible envelope) plus a short glare skirt; the wide halo is the fog in-scatter in post.
-  const core = exp(r.mul(r).mul(-90)).mul(facing)
-  const skirt = exp(r.mul(-7)).mul(0.08).mul(facing.mul(0.75).add(0.25))
+  const core = exp(r.mul(r).mul(-360)).mul(facing)
+  const glare = exp(r.mul(r).mul(-40)).mul(0.12).mul(facing.mul(0.6).add(0.4))
+  const skirt = exp(r.mul(-9)).mul(0.04).mul(facing.mul(0.75).add(0.25))
   const edge = smoothstep(1, 0.8, r)
-  glowMat.colorNode = vec4(gcol.rgb.mul(core.add(skirt)).mul(edge), 1)
+  glowMat.colorNode = vec4(gcol.rgb.mul(core.add(glare).add(skirt)).mul(edge), 1)
   glowMat.opacityNode = float(1)
   // Additive over the colour target only: leave the G-buffer attachments (normals, roughness, velocity) untouched.
   // Additive zero over the G-buffer attachments (post.ts gives them material blending) leaves them untouched.
@@ -259,19 +306,45 @@ export function createLighting(ctx: WorldContext, player: Player) {
   glows.visible = glowRigs.length > 0
   scene.add(glows)
 
+  // Clustered lights cost per pixel for every light whose sphere touches the pixel's cluster, and their data is
+  // re-sorted and re-uploaded each frame: drop lamps whose light can't reach anything on screen (outside the view
+  // frustum, switched off, still parked by the streaming loader) and, across the building shell, lamps on the
+  // other side of the walls when the camera is not near a door or window.
+  const frustum = new THREE.Frustum()
+  const projView = new THREE.Matrix4()
+  const sphere = new THREE.Sphere()
+  let camInside = false
+  let camNearBuilding = false
+  const lampNeeded = (r: Rig) => {
+    if (r.level <= 0.003 || r.lamp.intensity <= 0 || r.pos.y < -500) return false
+    sphere.set(r.pos, r.lamp.range)
+    if (!frustum.intersectsSphere(sphere)) return false
+    const inside = insideBuilding(r.pos)
+    if (inside !== camInside && !camNearBuilding) return false
+    return true
+  }
   const tmpCam = new THREE.Vector3()
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
   let frame = 0
 
-  return {
+  const rig = {
     update(dt: number, time: number) {
       frame++
+      adoptLamps()
+      ;(glows as unknown as { count: number }).count = glowRigs.length
+      glows.visible = glowRigs.length > 0
       camera.updateMatrixWorld()
       tmpCam.setFromMatrixPosition(camera.matrixWorld)
       const lampScale = num(ctx, "light.lamps")
       const flickerScale = num(ctx, "light.flicker")
+      const sodiumShift = num(ctx, "light.sodiumShift")
       hemi.intensity = num(ctx, "light.ambient")
+      const cull = flag(ctx, "light.cull")
+      projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      frustum.setFromProjectionMatrix(projView)
+      camInside = insideBuilding(tmpCam)
+      camNearBuilding = distanceToBuilding(tmpCam) < ZONE_MARGIN
 
       // Lamps: live position/intensity (builders may animate them), flicker, fog terms.
       for (const r of rigs) {
@@ -283,14 +356,16 @@ export function createLighting(ctx: WorldContext, player: Player) {
         r.pos.set(l.position[0], l.position[1], l.position[2])
         if (r.dir) r.pos.addScaledVector(r.dir, 0.12)
         r.level = flickerLevel(r, time, flickerScale)
-        r.radiance.setRGB(l.color[0], l.color[1], l.color[2]).multiplyScalar(l.intensity * lampScale)
+        lampColor(l, sodiumShift, r.color)
+        r.radiance.copy(r.color).multiplyScalar(l.intensity * lampScale)
         r.distance = r.pos.distanceTo(tmpCam)
         r.sigma = fogSigma(r.pos)
         r.transmittance = Math.exp(-opticalDepth(tmpCam, r.pos))
         r.point.position.copy(r.pos)
-        r.point.color.setRGB(l.color[0], l.color[1], l.color[2])
+        r.point.color.copy(r.color)
         r.point.distance = l.range
         r.point.intensity = l.intensity * lampScale * r.level * (1 - r.shadowWeight)
+        r.point.visible = !cull || lampNeeded(r)
       }
 
       // Shadow pool: pick the most important shadow-casting fixtures near the camera.
@@ -301,7 +376,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       }
       order.length = 0
       for (const r of rigs) {
-        if (!r.lamp.shadow || !r.dir || r.distance > r.lamp.range + 45) continue
+        if (!r.lamp.shadow || !r.dir || !r.point.visible || r.pos.y < -500 || r.distance > r.lamp.range + 15) continue
         order.push(r)
       }
       const score = (r: Rig) => (r.lamp.intensity * (0.3 + 0.7 * r.level)) / (Math.max(r.distance - r.lamp.range * 0.3, 1) ** 2)
@@ -338,7 +413,13 @@ export function createLighting(ctx: WorldContext, player: Player) {
           s.light.intensity = 0
           continue
         }
-        s.light.color.setRGB(w.lamp.color[0], w.lamp.color[1], w.lamp.color[2])
+        // A lamp can move after hand-over (the loader un-parks streamed modules; the dish beacon turns).
+        if (!s.light.position.equals(w.pos)) {
+          s.light.position.copy(w.pos)
+          s.light.target.position.copy(w.pos).add(w.dir!)
+          s.light.shadow.needsUpdate = true
+        }
+        s.light.color.copy(w.color)
         s.light.intensity = w.lamp.intensity * lampScale * w.level * w.shadowWeight
         // The world is static; refresh one pooled map now and then in case geometry streamed in.
         if (frame % 45 === slots.indexOf(s) * 7 || frame < 6) s.light.shadow.needsUpdate = true
@@ -359,14 +440,22 @@ export function createLighting(ctx: WorldContext, player: Player) {
       flash.shadow.camera.far = flash.distance
       flash.intensity = num(ctx, "flash.intensity") * flashLevel
       flash.color.copy(flashColor)
-      flash.visible = flashLevel > 0.01
+      // The flashlight never leaves the light list (toggling its visibility would change every material's light
+      // set and recompile them all on F): off is zero intensity and a frozen shadow map.
+      const lit = flashLevel > 0.01
       const wantShadow = flag(ctx, "flash.shadows")
-      if (flash.castShadow !== wantShadow) flash.castShadow = wantShadow
+      flash.shadow.autoUpdate = lit && wantShadow
+      flash.shadow.intensity = wantShadow ? 1 : 0
+      const fsize = Number(ctx.settings["flash.shadowSize"])
+      if (flash.shadow.mapSize.x !== fsize) {
+        flash.shadow.mapSize.setScalar(fsize)
+        flash.shadow.needsUpdate = true
+      }
       const fs = renderState.flash
-      fs.on = flash.visible
+      fs.on = lit
       fs.pos.copy(flash.position)
       fs.dir.copy(flashDir)
-      fs.radiance.copy(flashColor).multiplyScalar(flash.intensity)
+      fs.radiance.copy(flashColor).multiplyScalar(flash.intensity * num(ctx, "flash.scatter"))
       fs.range = flash.distance
       fs.cosOuter = Math.cos(angle)
       fs.cosInner = Math.cos(angle * 0.45)
@@ -386,17 +475,23 @@ export function createLighting(ctx: WorldContext, player: Player) {
         c[i * 4 + 3] = size * gz
         // Emitter luminance ~ intensity / visible area, kept in a range bloom turns into a soft halo.
         const lum = (gs * r.level * r.transmittance * Math.sqrt(r.lamp.intensity * lampScale)) / (size * 6)
-        col[i * 4] = r.lamp.color[0] * lum
-        col[i * 4 + 1] = r.lamp.color[1] * lum
-        col[i * 4 + 2] = r.lamp.color[2] * lum
+        col[i * 4] = r.color.r * lum
+        col[i * 4 + 1] = r.color.g * lum
+        col[i * 4 + 2] = r.color.b * lum
         d[i * 4] = r.dir?.x ?? 0
         d[i * 4 + 1] = r.dir?.y ?? 0
         d[i * 4 + 2] = r.dir?.z ?? 0
         d[i * 4 + 3] = r.dir ? 1 : 0
+      }
+      for (const a of [centerAttr, colorAttr, dirAttr]) {
+        a.clearUpdateRanges()
+        a.addUpdateRange(0, Math.max(1, glowRigs.length) * 4)
       }
       centerAttr.needsUpdate = true
       colorAttr.needsUpdate = true
       dirAttr.needsUpdate = true
     },
   }
+  renderState.lightingUpdate = rig.update
+  return rig
 }

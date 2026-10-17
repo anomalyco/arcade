@@ -20,6 +20,15 @@ only warm colour, glowing halos and light cones in the fog, wet reflective aspha
 silhouettes fading into fog, real 35 mm film grain, restraint and emptiness. Interior: pale green tile, waxed
 linoleum reflecting fluorescent tubes, steel doors with wire-glass windows.
 
+## Non-negotiables (user feedback)
+
+- **Realism above all.** Anything that reads low-poly, boxy or procedural-toy (flat-sided cars, box trucks, cube
+  furniture) is a failure. Prefer real CC0 scanned/modelled assets (`src/render/models.ts` loader, `public/models/`)
+  over procedural boxes for hero props; when procedural, use bevels, curvature, real proportions and detail.
+- **Fast boot.** The page must show a real frame within ~2–3 s and finish streaming in the rest. Heavy generation off
+  the main thread or cached; no blocking work at startup that isn't needed for the first view.
+- **The machine is shared.** Keep headless captures few and short; don't run many browsers at once.
+
 ## Tech
 
 - three.js **r186** `WebGPURenderer` with TSL node materials. Import from `three/webgpu`, `three/tsl` and

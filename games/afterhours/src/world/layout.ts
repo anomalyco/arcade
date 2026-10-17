@@ -76,6 +76,40 @@ export const INTERIOR = {
   link: { min: [-1.6, -1.6] as Vec2, max: [1.6, 9] as Vec2 },
 }
 
+/**
+ * Vertical plan of the main block, shared by the facility (exterior) and interior agents.
+ * Storey i (0 = ground) has its finished floor at `storeyY(i)`; ceilings are `INTERIOR.ceiling` above that.
+ * The roof deck (walkable) is at `ROOF_Y`.
+ */
+export const storeyY = (i: number) => BUILDING.floorY + i * BUILDING.main.storeyHeight
+export const ROOF_Y = storeyY(BUILDING.main.storeys)
+
+/**
+ * Stair and lift core (the facility's blank tower on the south face, x -43.45..-35.95, projecting to z 25.2).
+ * Inside: a switchback stair from the ground floor to the roof, and one lift shaft beside it. A short hall on every
+ * storey joins the core to that storey's main corridor (x -42..-38.5, z 1.6..16.2). On the roof the stair exits
+ * through a door in the core tower's north face onto the roof deck.
+ */
+export const CORE = {
+  stair: { min: [-43.1, 16.2] as Vec2, max: [-39.7, 24.9] as Vec2 },
+  lift: { min: [-39.5, 19.6] as Vec2, max: [-36.3, 24.9] as Vec2 },
+  /** Lift lobby in front of the lift doors on every storey. */
+  liftLobby: { min: [-39.5, 16.2] as Vec2, max: [-36.3, 19.6] as Vec2 },
+  hall: { min: [-42, 1.6] as Vec2, max: [-38.5, 16.2] as Vec2 },
+  roofDoor: { x: -39.7, z: 16.2, width: 1.1 },
+}
+
+/**
+ * Exterior steel fire escape on the west face (x = BUILDING.main.min x): zig-zag stairs with a landing at every
+ * upper storey and a drop ladder from the first landing to the ground. Each landing has a door through the west wall
+ * into the west end of that storey's corridor (door centre z = 0, width 1.0). A caged ladder continues from the top
+ * landing over the parapet onto the roof.
+ */
+export const FIRE_ESCAPE = { x: -55, z0: -6, z1: 6, depth: 1.5, door: { z: 0, width: 1.0 } }
+
+/** Upper-storey plan: the same double-loaded corridor as the ground floor, the full length of the main block. */
+export const UPPER = { corridor: { min: [-54.65, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 } }
+
 /** Utility poles carrying power lines along the east side of the access road, then into the compound. */
 export const POWER = { spacing: 42, offset: 7.5, poleHeight: 10.5 }
 

@@ -11,11 +11,11 @@ import { sodiumPole } from "./lamps"
 // a single warm bulb inside, so it reads as a glowing orange box in the fog (concept r5-03 / r3-01). The door on the
 // south face stands open and the floor is walkable.
 
-const FY = 0.2
+export const FY = 0.2
 const SILL = 1.05
 const HEAD = 2.15
 const TOP = 2.55
-const WALL = 0.14
+export const WALL = 0.14
 
 export function buildBooth(ctx: WorldContext, root: THREE.Object3D) {
   const { x, z, w, d } = BOOTH
@@ -156,7 +156,8 @@ function planeZ(len: number, h: number) {
   return new THREE.PlaneGeometry(len, h)
 }
 
-/** Counter along the road-side window with the guard's things on it, a stool, a heater and a clock. */
+/** Counter along the road-side window with the guard's smaller things, a heater and a clock (the terminal, phone and
+ * chair are models, see compound/models.ts). */
 function furnish(b: Batch) {
   const hw = BOOTH.w / 2
   const hd = BOOTH.d / 2
@@ -171,24 +172,6 @@ function furnish(b: Batch) {
   b.at(material("metal_painted"), box(deskW - 0.06, 0.02, len), deskX, FY + 0.18, 0)
   const surface = top + 0.04
 
-  // Small CRT monitor facing into the booth, its screen a dim green.
-  const crt = b.child(matrix(deskX - 0.04, surface, -0.55, 0.12))
-  crt.at(beige, box(0.36, 0.31, 0.34), 0, 0.17, 0)
-  crt.at(beige, box(0.26, 0.22, 0.12), -0.18, 0.15, 0)
-  crt.at(flat(0x1a1c18, 0.4), box(0.012, 0.23, 0.27), 0.18, 0.18, 0)
-  crt.at(glow(0.35, 0.75, 0.5, 0.9), planeX(0.22, 0.17), 0.1871, 0.18, 0)
-  crt.at(beige, box(0.2, 0.03, 0.2), 0, 0.01, 0)
-
-  // Rotary desk phone.
-  const phone = b.child(matrix(deskX + 0.05, surface, 0.18, -0.3))
-  const red = flat(0x5e1a12, 0.35)
-  phone.at(red, box(0.2, 0.07, 0.22), 0, 0.035, 0)
-  phone.at(red, box(0.17, 0.04, 0.17), 0, 0.085, 0)
-  phone.at(flat(0xc8c2ae, 0.4), cyl(0.05, 0.05, 0.01, 12), 0.03, 0.08, 0, 0, 0, 0.35)
-  phone.at(red, box(0.055, 0.045, 0.23), -0.06, 0.125, 0)
-  phone.at(red, box(0.06, 0.06, 0.05), -0.06, 0.11, 0.1)
-  phone.at(red, box(0.06, 0.06, 0.05), -0.06, 0.11, -0.1)
-
   // Clipboard with a sheet, a thermos and a mug.
   const clip = b.child(matrix(deskX + 0.08, surface, 0.72, 0.2))
   clip.at(wood(0x5a4026, 0x6e5030), box(0.23, 0.008, 0.32), 0, 0.004, 0)
@@ -201,23 +184,13 @@ function furnish(b: Batch) {
   b.at(flat(0x2b2b28, 0.5), cyl(0.035, 0.035, 0.1, 10), deskX - 0.18, surface + 0.05, 0.42)
   b.at(flat(0x1f2e45, 0.7), box(0.22, 0.03, 0.3), deskX - 0.02, surface + 0.015, -0.1)
 
-  // Swivel stool.
-  const stool = b.child(matrix(-0.45, FY, 0.15))
-  stool.at(flat(0x3b1d16, 0.5), cyl(0.18, 0.18, 0.07, 14), 0, 0.68, 0)
-  stool.at(material("chrome"), cyl(0.022, 0.022, 0.6, 8), 0, 0.34, 0)
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.4
-    stool.add(material("chrome"), rod({ x: 0, y: 0.1, z: 0 }, { x: Math.cos(a) * 0.26, y: 0.02, z: Math.sin(a) * 0.26 }, 0.015, 5))
-  }
-
   // Space heater in the north-east corner with glowing coils.
   const heater = b.child(matrix(hw - WALL - 0.25, FY, -hd + WALL + 0.18, -0.6))
   heater.at(flat(0x6a6250, 0.5, 0.3), box(0.36, 0.42, 0.16), 0, 0.21, 0)
   heater.at(glow(1, 0.32, 0.08, 2.2), box(0.28, 0.2, 0.01), 0, 0.24, 0.08)
 
-  // Wall clock over the north window and a coat on a hook by the door.
+  // Wall clock over the north window.
   b.at(flat(0xd8d2c0, 0.6), cyl(0.13, 0.13, 0.03, 16), 0.6, HEAD + 0.2, -hd + WALL + 0.02, 0, Math.PI / 2)
-  b.at(flat(0x2b2620, 0.8), box(0.34, 0.75, 0.12), hw - WALL - 0.12, FY + 1.3, hd - WALL - 0.3, Math.PI / 2)
 
   // Ceiling fixture: a shallow shade and a bare bulb.
   b.at(material("metal_painted"), cyl(0.09, 0.2, 0.09, 14, true), 0, TOP - 0.1, 0)

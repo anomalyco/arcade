@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { rng, range, lerp, type Rng } from "./rng"
-import { CELL, FOLIAGE, cellRect } from "./textures"
+import { CELL, FOLIAGE, IMPOSTOR, cellRect, type ImpostorInput } from "./paint"
 
 // Procedural conifers. Each variant is a trunk plus branch cards (one card per limb, bent to droop and rolled so the
 // crown has volume), built at two detail levels from the same limb list so LODs keep the same silhouette, and painted
@@ -303,9 +303,9 @@ export function merge(geos: THREE.BufferGeometry[]) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Impostor atlas: each tree painted side-on from its LOD0 cards.
+// Impostors (painted by paint.ts, usually in a Worker)
 
-export const IMPOSTOR = { cols: 8, rows: 2, cellW: 256, cellH: 512 }
+export { IMPOSTOR }
 
 /** World size of a variant's impostor quad: width (m) and height (m), base at y = -0.7. */
 export function impostorSize(m: TreeModel) {
@@ -313,72 +313,16 @@ export function impostorSize(m: TreeModel) {
   return { w: Math.max(h * 0.5, m.spread * 2.2), h }
 }
 
-export function paintImpostors(models: TreeModel[], foliage: HTMLCanvasElement) {
-  const { cols, rows, cellW, cellH } = IMPOSTOR
-  const c = document.createElement("canvas")
-  c.width = cols * cellW
-  c.height = rows * cellH
-  const g = c.getContext("2d", { willReadFrequently: true })!
-  const p = new THREE.Vector3()
-  const q = new THREE.Vector3()
-  models.forEach((m, index) => {
-    const ox = (index % cols) * cellW
-    const oy = Math.floor(index / cols) * cellH
-    const { w, h } = impostorSize(m)
-    const sx = cellW / w
-    const sy = cellH / h
-    const X = (x: number) => ox + cellW / 2 + x * sx
-    const Y = (y: number) => oy + cellH - (y + 0.7) * sy
-    g.save()
-    g.beginPath()
-    g.rect(ox, oy, cellW, cellH)
-    g.clip()
-    // Trunk.
-    g.fillStyle = "#2c241d"
-    g.beginPath()
-    const ys = [0, m.trunkTop * 0.25, m.trunkTop * 0.5, m.trunkTop * 0.75, m.trunkTop]
-    ys.forEach((y, i) => (i ? g.lineTo(X(-m.radius(y)), Y(y)) : g.moveTo(X(-m.radius(y)), Y(y))))
-    for (let i = ys.length - 1; i >= 0; i--) g.lineTo(X(m.radius(ys[i]!) + 0.02), Y(ys[i]!))
-    g.closePath()
-    g.fill()
-    // Cards back to front (painter's order along z), each bend segment as an affine-mapped slice of its texture.
-    const cards = [...m.limbs].sort((a, b) => a.o.z + a.d.z * a.len * 0.5 - (b.o.z + b.d.z * b.len * 0.5))
-    for (const l of cards) {
-      const segs = 3
-      const [u0, v0] = cellRect(l.cell)
-      for (let k = 0; k < segs; k++) {
-        const ua = k / segs
-        const ub = (k + 1) / segs
-        limbPoint(l, ua, p)
-        limbPoint(l, ub, q)
-        const half = l.width / 2
-        const A = [X(p.x - l.s.x * half), Y(p.y - l.s.y * half)] as const
-        const B = [X(q.x - l.s.x * half), Y(q.y - l.s.y * half)] as const
-        const C = [X(p.x + l.s.x * half), Y(p.y + l.s.y * half)] as const
-        const srcX = u0 * CELL * 2 + ua * CELL
-        const srcY = v0 * CELL * 2
-        const srcW = CELL / segs
-        // Map source (srcW x CELL) onto A -> B (u) and A -> C (v).
-        const a = (B[0] - A[0]) / srcW
-        const b = (B[1] - A[1]) / srcW
-        const cc = (C[0] - A[0]) / CELL
-        const d = (C[1] - A[1]) / CELL
-        if (Math.abs(a * d - b * cc) < 1e-4) {
-          // Edge-on: draw a thin stroke of the spray so the silhouette keeps its mass.
-          g.strokeStyle = "rgba(38,52,34,0.9)"
-          g.lineWidth = Math.max(1, l.width * sx * 0.25)
-          g.beginPath()
-          g.moveTo(X(p.x), Y(p.y))
-          g.lineTo(X(q.x), Y(q.y))
-          g.stroke()
-          continue
-        }
-        g.setTransform(a, b, cc, d, A[0], A[1])
-        g.drawImage(foliage, srcX, srcY, srcW, CELL, 0, 0, srcW, CELL)
-        g.setTransform(1, 0, 0, 1, 0, 0)
-      }
-    }
-    g.restore()
-  })
-  return c
+/** Plain, transferable description of a tree for the impostor painter. */
+export function impostorInput(m: TreeModel): ImpostorInput {
+  const { w, h } = impostorSize(m)
+  const radii = [0, 0.25, 0.5, 0.75, 1].map((t) => m.radius(m.trunkTop * t))
+  const v = (x: THREE.Vector3) => [x.x, x.y, x.z]
+  return {
+    w,
+    h,
+    trunkTop: m.trunkTop,
+    radii,
+    limbs: m.limbs.map((l) => ({ o: v(l.o), d: v(l.d), s: v(l.s), len: l.len, width: l.width, droop: l.droop, cell: l.cell })),
+  }
 }

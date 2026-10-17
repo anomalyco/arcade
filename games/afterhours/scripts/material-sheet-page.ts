@@ -15,7 +15,7 @@ const ALL: MaterialName[] = [
 ]
 
 const params = new URLSearchParams(location.search)
-const status = { ready: false, frames: 0, errors: [] as string[] }
+const status = { ready: false, frames: 0, errors: [] as string[], loadMs: 0, textureMB: 0 }
 ;(globalThis as { __sheet?: typeof status }).__sheet = status
 addEventListener("error", (e) => status.errors.push(String((e as ErrorEvent).message)))
 
@@ -31,7 +31,9 @@ const settings = { ...MATERIAL_SETTINGS }
 if (params.has("wet")) settings["materials.wetness"] = Number(params.get("wet"))
 if (params.has("puddles")) settings["materials.puddles"] = Number(params.get("puddles"))
 bindMaterialSettings(settings)
+const t0 = performance.now()
 await loadMaterials(renderer)
+status.loadMs = performance.now() - t0
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 400)
@@ -119,5 +121,8 @@ renderer.setAnimationLoop(() => {
       labelRoot.append(el)
     }
   }
-  if (status.frames === 6) status.ready = true
+  if (status.frames === 6) {
+    status.textureMB = (renderer.info.memory as { texturesSize?: number }).texturesSize! / 2 ** 20
+    status.ready = true
+  }
 })

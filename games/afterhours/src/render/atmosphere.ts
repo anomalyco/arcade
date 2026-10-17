@@ -86,6 +86,18 @@ export function opticalDepth(a: THREE.Vector3, b: THREE.Vector3) {
   return height * (1 - inside) + fogCpu.interior * len * inside
 }
 
+/** Distance from a point to the nearest building volume (0 inside). */
+export function distanceToBuilding(p: THREE.Vector3) {
+  let d = Infinity
+  for (const b of BOXES) {
+    const dx = Math.max(b.min[0] - p.x, 0, p.x - b.max[0])
+    const dy = Math.max(b.min[1] - p.y, 0, p.y - b.max[1])
+    const dz = Math.max(b.min[2] - p.z, 0, p.z - b.max[2])
+    d = Math.min(d, Math.hypot(dx, dy, dz))
+  }
+  return d
+}
+
 export function insideBuilding(p: THREE.Vector3) {
   return BOXES.some((b) => p.x > b.min[0] && p.x < b.max[0] && p.y > b.min[1] && p.y < b.max[1] && p.z > b.min[2] && p.z < b.max[2])
 }
@@ -142,9 +154,9 @@ export function createAtmosphere(ctx: WorldContext) {
     { key: "fog.density", label: "Ground density", group: "Fog", unit: "1/m", min: 0, max: 0.06, step: 0.0005, value: 0.016 },
     { key: "fog.height", label: "Height falloff", group: "Fog", unit: "m", min: 4, max: 120, step: 1, value: 30 },
     { key: "fog.interior", label: "Interior haze", group: "Fog", unit: "1/m", min: 0, max: 0.03, step: 0.0005, value: 0.006 },
-    { key: "fog.hue", label: "Colour hue", group: "Fog", unit: "°", min: 120, max: 220, step: 1, value: 172 },
-    { key: "fog.saturation", label: "Colour saturation", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.42 },
-    { key: "fog.brightness", label: "Brightness", group: "Fog", min: 0, max: 0.5, step: 0.001, value: 0.12 },
+    { key: "fog.hue", label: "Colour hue", group: "Fog", unit: "°", min: 120, max: 220, step: 1, value: 181 },
+    { key: "fog.saturation", label: "Colour saturation", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.8 },
+    { key: "fog.brightness", label: "Brightness", group: "Fog", min: 0, max: 0.5, step: 0.001, value: 0.038 },
     { key: "sky.dark", label: "Sky above fog", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.45 },
     { key: "sky.glow", label: "Horizon glow", group: "Fog", min: 0, max: 2, step: 0.01, value: 0.35 },
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },

@@ -2,12 +2,12 @@ import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { buildFence } from "./compound/fence"
 import { buildBooth } from "./compound/booth"
-import { buildLot, stall, WALK_Y } from "./compound/lot"
-import { buildVehicles } from "./compound/vehicles"
+import { buildLot, WALK_Y } from "./compound/lot"
 import { buildProps } from "./compound/props"
+import { buildModels } from "./compound/models"
 
 // The compound around the building: perimeter fence and gate, guard booth, parking lot with its sodium poles, the
-// parked cars and the outdoor clutter. Each part builds independently so one failure leaves the rest standing.
+// parked cars and outdoor props (real models, streamed in after the first frame) and procedural clutter. Each part builds independently so one failure leaves the rest standing.
 
 export function build(ctx: WorldContext): WorldModule | void {
   const root = new THREE.Group()
@@ -25,19 +25,8 @@ export function build(ctx: WorldContext): WorldModule | void {
         if (follow) ticks.push(follow)
       },
     ],
-    [
-      "vehicles",
-      () => {
-        const coupe = stall(1, 1, 1)
-        const truck = stall(0, -1, 1)
-        buildVehicles(ctx, root, [
-          { kind: "wagon", x: -19.5, z: 90.6, heading: -0.18, paint: 0x3a2318 },
-          { kind: "coupe", x: coupe.x - 0.1, z: coupe.z, heading: coupe.heading - 0.02, paint: 0x7e745c },
-          { kind: "pickup", x: truck.x, z: truck.z + 0.3, heading: truck.heading, paint: "library" },
-        ])
-      },
-    ],
     ["props", () => buildProps(ctx, root, WALK_Y)],
+    ["models", () => buildModels(ctx, root)],
   ]
   for (const [name, run] of parts) {
     try {

@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { finishMaterial, type Finish } from "./mats"
 
 // Small geometry kit for the compound: primitives with UVs in metres and a batch that merges everything added with
 // the same material into one mesh, so hundreds of posts, curbs and props cost a handful of draw calls.
@@ -82,48 +83,6 @@ export function rod(a: THREE.Vector3Like, b: THREE.Vector3Like, r: number, seg =
   return g
 }
 
-/**
- * Side silhouette in the XY plane: a straight bottom at y0 from x0 to x1 with wheel-arch cut-outs, then the `top`
- * outline from front (x1) back to rear (x0). Used for car bodies, wood panels and truck beds.
- */
-export function sideShape(
-  x0: number,
-  x1: number,
-  y0: number,
-  top: [number, number][],
-  arches: { x: number; y: number; r: number }[] = [],
-) {
-  const s = new THREE.Shape()
-  s.moveTo(x0, y0)
-  for (const a of [...arches].sort((p, q) => p.x - q.x)) {
-    const dy = y0 - a.y
-    if (Math.abs(dy) >= a.r) continue
-    const dx = Math.sqrt(a.r * a.r - dy * dy)
-    if (a.x - dx < x0 || a.x + dx > x1) continue
-    s.lineTo(a.x - dx, y0)
-    const t = Math.asin(dy / a.r)
-    s.absarc(a.x, a.y, a.r, Math.PI - t, t, true)
-  }
-  s.lineTo(x1, y0)
-  for (const p of top) s.lineTo(p[0], p[1])
-  s.lineTo(x0, y0)
-  return s
-}
-
-/** Extrudes a side shape across `width` (centred on z = 0) with a rounded bevel. */
-export function extrudeSide(shape: THREE.Shape, width: number, bevel = 0.03, curveSegments = 10) {
-  const g = new THREE.ExtrudeGeometry(shape, {
-    depth: Math.max(width - bevel * 2, 0.001),
-    bevelEnabled: bevel > 0,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelSegments: 2,
-    curveSegments,
-  })
-  g.translate(0, 0, -(width - bevel * 2) / 2)
-  return g
-}
-
 export function matrix(x: number, y: number, z: number, ry = 0, rx = 0, rz = 0, s = 1) {
   tmpE.set(rx, ry, rz, "YXZ")
   tmpQ.setFromEuler(tmpE)
@@ -150,8 +109,22 @@ export class Batch {
 
   constructor(private parent?: THREE.Matrix4) {}
 
-  add(mat: THREE.Material, geo: THREE.BufferGeometry, m?: THREE.Matrix4) {
+  add(surface: THREE.Material | Finish, geo: THREE.BufferGeometry, m?: THREE.Matrix4) {
     const g = normalise(geo)
+    let mat: THREE.Material
+    if ("isFinish" in surface) {
+      const n = g.attributes.position!.count
+      const col = new Float32Array(n * 3)
+      const pbr = new Float32Array(n * 3)
+      const { r, g: gr, b } = surface.color
+      for (let i = 0; i < n; i++) {
+        col.set([r, gr, b], i * 3)
+        pbr.set([surface.roughness, surface.metalness, surface.emissive], i * 3)
+      }
+      g.setAttribute("fcolor", new THREE.BufferAttribute(col, 3))
+      g.setAttribute("fpbr", new THREE.BufferAttribute(pbr, 3))
+      mat = finishMaterial(surface.kind)
+    } else mat = surface
     if (m) g.applyMatrix4(m)
     if (this.parent) g.applyMatrix4(this.parent)
     let list = this.parts.get(mat)
@@ -160,7 +133,7 @@ export class Batch {
     return this
   }
 
-  at(mat: THREE.Material, geo: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) {
+  at(mat: THREE.Material | Finish, geo: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) {
     return this.add(mat, geo, matrix(x, y, z, ry, rx, rz))
   }
 

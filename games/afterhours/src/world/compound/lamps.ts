@@ -41,14 +41,14 @@ export function sodiumPole(ctx: WorldContext, batch: Batch, spec: PoleSpec) {
   const foot = spec.footing ?? 0
   const h = spec.height
   if (foot > 0) {
-    b.at(material("concrete_wall"), cyl(0.28, 0.3, foot + 0.1, 10), 0, (foot - 0.1) / 2, 0)
+    b.at(material("concrete_wall"), cyl(0.28, 0.3, foot + 0.1, 20), 0, (foot - 0.1) / 2, 0)
     b.at(dark, box(0.34, 0.03, 0.34), 0, foot + 0.015, 0)
   } else {
-    b.at(material("concrete_dark"), cyl(0.3, 0.34, 0.16, 10), 0, 0.02, 0)
+    b.at(material("concrete_dark"), cyl(0.3, 0.34, 0.16, 20), 0, 0.02, 0)
   }
   const bend = spec.style === "cobra" ? 1.1 : 0
   const shaftTop = h + 0.12 - bend
-  b.at(steel, cyl(0.075, 0.115, shaftTop - foot, 8, true), 0, foot + (shaftTop - foot) / 2, 0)
+  b.at(steel, cyl(0.075, 0.115, shaftTop - foot, 20, true), 0, foot + (shaftTop - foot) / 2, 0)
   // Base plate and access hatch.
   b.at(steel, cyl(0.15, 0.15, 0.05, 8), 0, foot + 0.025, 0)
   b.at(dark, box(0.012, 0.22, 0.09), -0.11, foot + 0.6, 0)
@@ -57,7 +57,7 @@ export function sodiumPole(ctx: WorldContext, batch: Batch, spec: PoleSpec) {
     const curve = new THREE.CurvePath<THREE.Vector3>()
     curve.add(new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, shaftTop, 0), new THREE.Vector3(0, h + 0.15, 0), new THREE.Vector3(bend, h + 0.12, 0)))
     curve.add(new THREE.LineCurve3(new THREE.Vector3(bend, h + 0.12, 0), new THREE.Vector3(headX - 0.25, h + 0.08, 0)))
-    b.add(steel, tube(curve, 0.055, 24, 6))
+    b.add(steel, tube(curve, 0.055, 32, 14))
     // Cobra head: long tapering housing with a sag lens underneath.
     const housing = sphere(1, 12, 8)
     housing.scale(0.42, 0.1, 0.19)

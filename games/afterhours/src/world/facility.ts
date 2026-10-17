@@ -8,6 +8,7 @@ import { buildRoof } from "./facility/roof"
 import { buildDock } from "./facility/dock"
 import { buildGrounds } from "./facility/grounds"
 import { windowGlow } from "./facility/windows"
+import { buildProps } from "./facility/props"
 
 // The facility exterior (concept r3-01, r5-01, r5-06): the two-storey board-formed concrete block and its annex,
 // window rows with a few rooms still lit, the glazed lobby front, the rooftop radio dish, the loading dock and the
@@ -41,6 +42,8 @@ export function build(ctx: WorldContext): WorldModule {
   buildDock(ctx, b)
   buildGrounds(ctx, b, root)
   b.flush(root, { name: "facility-details" })
+  // Models stream in after the first frame; colliders and contact shadows are already in place.
+  void buildProps(ctx, root)
 
   // Window spill: a dim light just outside a few lit ground-floor windows, enough to pool on the paving.
   const spill = shell.litPanes.filter((p) => p.row === "ground" && /^(main-south:ground:(3|10)|main-north:ground:12|annex-south:ground:3|main-east:ground:0)$/.test(p.facade))
