@@ -38,6 +38,8 @@ export const MAIN_TOP = ROOF_Y + 1.05
 export const ANNEX_TOP = ANNEX_ROOF_Y + 1.0
 /** Stair and lift core tower: projects from the south face and rises above the roof as the stair house. */
 export const CORE = { x0: PLAN.stair.min[0] - T, x1: PLAN.lift.max[0] + T, z0: PLAN.stair.min[1] - T, z1: MAIN.max[1] + 3.2, top: MAIN_TOP + 3.2 }
+/** Steel frame section round the roof door (the concrete opening is cut this much wider). */
+const DOOR_FRAME = 0.07
 /** Door from the stair house onto the roof (north face of the tower). */
 export const ROOF_DOOR = { x0: PLAN.roofDoor.x - PLAN.roofDoor.width / 2, x1: PLAN.roofDoor.x + PLAN.roofDoor.width / 2, y0: ROOF_Y, y1: ROOF_Y + 2.1 }
 const FE = FIRE_ESCAPE
@@ -143,7 +145,8 @@ export function facades(): Facade[] {
       ...upperRows(MAIN.min[0], MAIN.max[0], coreSkip),
       { u0: -9, u1: 9, y0: FY, y1: 3.1, kind: "storefront" },
       // The core tower is open to the building on every storey (the interior's stair and lift run through).
-      { u0: CORE.x0 + T, u1: CORE.x1 - T, y0: FY, y1: MAIN_TOP + 1, kind: "open" },
+      // (The whole tower width: the tower's own side walls take over from the facade wall, so nothing doubles.)
+      { u0: CORE.x0, u1: CORE.x1, y0: FY, y1: MAIN_TOP + 1, kind: "open" },
     ],
   }
   const d = DOCK_DOORS
@@ -510,7 +513,8 @@ function addSplash(q: QuadBuilder, f: Facade, u0: number, u1: number, yBottom: n
 function ring(b: Batch, mat: "concrete_wall" | "concrete_dark", y0: number, y1: number, proj: number, eastFromZ?: number, westCuts: [number, number][] = []) {
   const min = MAIN.min
   const max = MAIN.max
-  for (const [a, c] of spans(min[0] - proj, max[0] + proj, CORE_CUT)) b.box(mat, a, y0, max[1] - 0.05, c, y1, max[1] + proj)
+  // Band ends run 2 cm into the core tower's side walls so their end faces are buried, not coplanar.
+  for (const [a, c] of spans(min[0] - proj, max[0] + proj, [[CORE.x0 + 0.02, CORE.x1 - 0.02]])) b.box(mat, a, y0, max[1] - 0.05, c, y1, max[1] + proj)
   b.box(mat, min[0] - proj, y0, min[1] - proj, eastFromZ === undefined ? max[0] + proj : max[0], y1, min[1] + 0.05)
   for (const [a, c] of spans(min[1] + 0.05, max[1] - 0.05, westCuts)) b.box(mat, min[0] - proj, y0, a, min[0] + 0.05, y1, c)
   b.box(mat, max[0] - 0.05, y0, eastFromZ ?? min[1] + 0.05, max[0] + proj, y1, max[1] - 0.05)
@@ -579,12 +583,14 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
   const col = (bx0: number, by0: number, bz0: number, bx1: number, by1: number, bz1: number) => {
     ctx.colliders.push({ min: [bx0, by0, bz0], max: [bx1, by1, bz1] })
   }
-  // Side walls: full height where the tower projects, roof-to-top over the main block.
+  // Side walls: full height through the facade wall line and where the tower projects, roof-to-top over the main
+  // block (they replace the facade wall across the tower's width; no two solids share a face).
+  const zw = zs - T
   for (const [a, c] of [[x0, x0 + T], [x1 - T, x1]] as const) {
-    b.box("concrete_wall", a, -0.05, zs, c, top, z1, SKIP_BOTTOM)
-    b.box("concrete_wall", a, ROOF_Y - 0.3, z0, c, top, zs)
-    col(a, -0.5, zs, c, top, z1)
-    col(a, ROOF_Y - 0.3, z0, c, top, zs)
+    b.box("concrete_wall", a, -0.05, zw, c, top, z1, SKIP_BOTTOM)
+    b.box("concrete_wall", a, ROOF_Y - 0.3, z0 + T, c, top, zw)
+    col(a, -0.5, zw, c, top, z1)
+    col(a, ROOF_Y - 0.3, z0, c, top, zw)
   }
   // South wall with the stair slot.
   const sx0 = PLAN.stair.min[0] + 0.9
@@ -596,7 +602,7 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
   b.box("concrete_wall", sx0, -0.05, z1 - T, sx1, sy0, z1, SKIP_BOTTOM)
   b.box("concrete_wall", sx0, sy1, z1 - T, sx1, top, z1)
   col(x0, -0.5, z1 - T, x1, top, z1)
-  glass.box(clear, sx0, sy0, z1 - 0.2, sx1, sy1, z1 - 0.19)
+  glass.box(clear, sx0 + 0.06, sy0, z1 - 0.2, sx1 - 0.06, sy1, z1 - 0.19)
   b.box("metal_dark", sx0, sy0, z1 - 0.24, sx0 + 0.06, sy1, z1 - 0.16)
   b.box("metal_dark", sx1 - 0.06, sy0, z1 - 0.24, sx1, sy1, z1 - 0.16)
   for (let k = 0; k <= STOREYS; k++) {
@@ -612,17 +618,19 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
     const yb = Math.min(sy1 - 0.05, yc + 1.0)
     lit.quad(new THREE.Vector3(sx0 + 0.06, ya, z1 - 0.185), new THREE.Vector3(sx1 - sx0 - 0.12, 0, 0), new THREE.Vector3(0, yb - ya, 0), n, [1, 1], [0.8, 0.98, 0.9, 2.92])
   }
-  // North face of the stair house with the roof door.
+  // North face of the stair house with the roof door: full width (the side walls start behind it), the opening cut
+  // round the steel frame so jambs and head fill it instead of sharing faces with the concrete.
   const D = ROOF_DOOR
-  b.box("concrete_wall", x0, ROOF_Y - 0.3, z0, D.x0, top, z0 + T)
-  b.box("concrete_wall", D.x1, ROOF_Y - 0.3, z0, x1, top, z0 + T)
-  b.box("concrete_wall", D.x0, D.y1, z0, D.x1, top, z0 + T)
+  const fr = DOOR_FRAME
+  b.box("concrete_wall", x0, ROOF_Y - 0.3, z0, D.x0 - fr, top, z0 + T)
+  b.box("concrete_wall", D.x1 + fr, ROOF_Y - 0.3, z0, x1, top, z0 + T)
+  b.box("concrete_wall", D.x0 - fr, D.y1 + fr, z0, D.x1 + fr, top, z0 + T)
   col(x0, ROOF_Y - 0.3, z0, D.x0, top, z0 + T)
   col(D.x1, ROOF_Y - 0.3, z0, x1, top, z0 + T)
   col(D.x0, D.y1, z0, D.x1, top, z0 + T)
   roofDoor(ctx, root, b)
-  // Roof slab, coping and plinth.
-  b.box("concrete_wall", x0, top - 0.3, z0, x1, top, z1)
+  // Roof slab between the walls, coping over everything, plinth.
+  b.box("concrete_wall", x0 + T, top - 0.3, z0 + T, x1 - T, top, z1 - T)
   b.box("concrete_dark", x0 - 0.08, top, z0 - 0.08, x1 + 0.08, top + 0.16, z1 + 0.08)
   b.box("concrete_dark", x0 - 0.06, -0.05, z1, x1 + 0.06, PLINTH.y1, z1 + PLINTH.proj, SKIP_BOTTOM)
   // Ground slab of the projecting part.
@@ -639,11 +647,12 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
 function roofDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch) {
   const D = ROOF_DOOR
   const z = CORE.z0
-  const fr = 0.07
-  b.box("metal_dark", D.x0 - fr, D.y0, z - 0.03, D.x0, D.y1 + fr, z + T)
-  b.box("metal_dark", D.x1, D.y0, z - 0.03, D.x1 + fr, D.y1 + fr, z + T)
-  b.box("metal_dark", D.x0, D.y1, z - 0.03, D.x1, D.y1 + fr, z + T)
-  b.box("metal_galvanized", D.x0, D.y0 - 0.01, z, D.x1, D.y0 + 0.006, z + T)
+  const fr = DOOR_FRAME
+  // Pressed-steel frame: proud of both wall faces by 1.5 cm so no face lies in the concrete's planes.
+  b.box("metal_dark", D.x0 - fr, D.y0, z - 0.015, D.x0, D.y1 + fr, z + T + 0.015)
+  b.box("metal_dark", D.x1, D.y0, z - 0.015, D.x1 + fr, D.y1 + fr, z + T + 0.015)
+  b.box("metal_dark", D.x0, D.y1, z - 0.015, D.x1, D.y1 + fr, z + T + 0.015)
+  b.box("metal_galvanized", D.x0, D.y0 - 0.01, z - 0.01, D.x1, D.y0 + 0.02, z + T + 0.01)
   ctx.floors.push({ min: [D.x0, z - 0.1], max: [D.x1, z + T + 0.1], y: D.y0 })
   const leaf = steelLeaf("roof-door", D.x1 - D.x0 - 0.02, D.y1 - D.y0 - 0.02, 0.05, false)
   leaf.rotation.y = 0
@@ -685,15 +694,18 @@ function buildRoofDecks(ctx: WorldContext, b: Batch) {
   const stair = PLAN.stair
   const lift = PLAN.lift
   const rects: [number, number, number, number][] = [
-    [x0, stair.min[0], z0, z1],
-    [lift.max[0], x1, z0, z1],
-    [stair.min[0], lift.max[0], z0, stair.min[1]],
-    [stair.max[0], lift.max[0], stair.min[1], lift.min[1]],
+    [x0, CORE.x0, z0, z1],
+    [CORE.x1, x1, z0, z1],
+    [CORE.x0, CORE.x1, z0, CORE.z0],
   ]
   for (const [a, c, d, e] of rects) {
     b.box("gravel", a, ROOF_Y - 0.3, d, c, ROOF_Y, e, SKIP_BOTTOM)
     ctx.floors.push({ min: [a, d], max: [c, e], y: ROOF_Y })
   }
+  // Inside the stair house: the lift lobby's roof-level floor, east of the interior's stair-head floor (x < −38.9).
+  void stair
+  b.box("concrete_floor_dry", -38.9, ROOF_Y - 0.3, CORE.z0 + T, lift.max[0], ROOF_Y, lift.min[1] - 0.01, SKIP_BOTTOM)
+  ctx.floors.push({ min: [-38.9, CORE.z0 + T], max: [lift.max[0], lift.min[1]], y: ROOF_Y })
   b.box("gravel", ANNEX.min[0], ANNEX_ROOF_Y - 0.3, ANNEX.min[1] + T, ANNEX.max[0] - T, ANNEX_ROOF_Y, ANNEX.max[1] - T, SKIP_BOTTOM)
   ctx.floors.push({ min: [ANNEX.min[0], ANNEX.min[1] + T], max: [ANNEX.max[0] - T, ANNEX.max[1] - T], y: ANNEX_ROOF_Y })
   // Coping tops.
