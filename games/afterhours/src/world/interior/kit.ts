@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { abs, attribute, float, floor, fract, hash, max, mix, normalWorldGeometry, positionWorld, pow, sin, step, time, uniform, uv, vec2, vec3 } from "three/tsl"
+import { abs, attribute, float, floor, fract, fwidth, hash, max, mix, normalWorldGeometry, positionWorld, pow, sin, smoothstep, step, time, uniform, uv, vec2, vec3 } from "three/tsl"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
@@ -31,11 +31,31 @@ const nodeMat = (color: number, roughness: number, metalness = 0, name = "") => 
 export const glow = (color: number, emissiveColor: number, intensity: number, name: string) =>
   materialFor("flat", { color, roughness: 0.5, emissive: emissiveColor, intensity, name: `interior_${name}` })
 
+// ---- filtered pattern helpers: every hard threshold integrated over the pixel footprint (fwidth), so patterns fade
+// to their average when sub-pixel instead of crawling under TAA jitter.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type N = any
+/** Antialiased step(edge, x). */
+export const aaStep = (edge: N, x: N): N => {
+  const w = fwidth(x).mul(0.75).max(1e-5)
+  return smoothstep(float(edge).sub(w), float(edge).add(w), x)
+}
+/** Inside-[a, b] window on x, antialiased. */
+export const aaWindow = (x: N, a: number, b: number): N => aaStep(a, x).mul(float(1).sub(aaStep(b, x)))
+/** Box-filtered coverage of lines of width `wl` (fraction of the period) at the start of every period of t. */
+const lineInt = (x: N, wl: number): N => floor(x).mul(wl).add(fract(x).min(wl))
+export const aaLines = (t: N, wl: number): N => {
+  const w = fwidth(t).max(1e-4)
+  return lineInt(t.add(w.mul(0.5)), wl).sub(lineInt(t.sub(w.mul(0.5)), wl)).div(w).clamp(0, 1)
+}
+/** Fade factor for detail at frequency `t` (cycles per unit): 1 when well resolved, 0 below ~2 pixels a cycle. */
+export const aaFade = (t: N): N => float(1).sub(smoothstep(0.25, 0.5, fwidth(t)))
+
 /** Wire glass: dark frosted pane with a square wire mesh, in the pane's local 0..1 UVs. */
 function wireGlass() {
   const m = nodeMat(0x2a3431, 0.22, 0, "wire_glass")
-  const g = fract(uv().mul(vec2(12, 18)))
-  const wire = max(step(0.93, g.x), step(0.93, g.y))
+  const g = uv().mul(vec2(12, 18))
+  const wire = max(aaLines(g.x, 0.07), aaLines(g.y, 0.07))
   m.colorNode = mix(vec3(0.05, 0.07, 0.066), vec3(0.2, 0.21, 0.2), wire)
   return m
 }
@@ -50,8 +70,14 @@ export const TUBE_WARM: [number, number, number] = [1.0, 0.86, 0.55]
 export function fluorescentPanel(level = 1, tint: readonly [number, number, number] = TUBE) {
   const m = nodeMat(0x101210, 0.4, 0, "fluorescent_panel")
   const u = uniform(level)
-  const stripes = pow(abs(sin(uv().x.mul(Math.PI * 4))), float(2.5)).mul(0.55).add(0.45)
-  const edge = step(0.04, uv().x).mul(step(uv().x, 0.96)).mul(step(0.02, uv().y)).mul(step(uv().y, 0.98))
+  // Tube stripes fade to their mean (0.45 + 0.55 × ~0.5) when they get sub-pixel; the lit edge is a filtered window.
+  const tubes = uv().x.mul(2)
+  // Soft humps (a diffuser blurs the tubes): steep pow-sine flanks were bright gradients that shimmered under jitter.
+  const stripes = mix(float(0.86), abs(sin(tubes.mul(Math.PI * 2))).mul(0.22).add(0.72), aaFade(tubes.mul(4)))
+  // The diffuser dims towards its frame over a few cm (a real lens does): a hard bright→black edge is what TAA
+  // couldn't settle, the HDR contrast across one pixel swinging with every jitter offset.
+  const soft = (t: N, a: number, b: number) => smoothstep(a, b, t.min(float(1).sub(t)))
+  const edge = soft(uv().x, 0.01, 0.12).mul(soft(uv().y, 0.005, 0.06)).mul(aaWindow(uv().x, 0.01, 0.99))
   m.emissiveNode = uniform(new THREE.Color(...tint)).mul(stripes).mul(edge).mul(u).mul(1.9)
   return { material: m, level: u }
 }
@@ -67,9 +93,11 @@ function staticGlass() {
   const frame = floor(time.mul(22))
   const n = hash(cell.x.add(cell.y.mul(157)).add(frame.mul(911)))
   const roll = sin(uv().y.mul(9).add(time.mul(3.1))).mul(0.12).add(0.88)
-  const g = fract(uv().mul(vec2(12, 18)))
-  const wire = max(step(0.93, g.x), step(0.93, g.y))
-  m.emissiveNode = vec3(0.82, 0.9, 1.0).mul(n.mul(0.6).add(0.4)).mul(roll).mul(u).mul(float(1).sub(wire.mul(0.7))).mul(1.3)
+  const g = uv().mul(vec2(12, 18))
+  const wire = max(aaLines(g.x, 0.07), aaLines(g.y, 0.07))
+  // Static cells fade to mid-grey when they get sub-pixel.
+  const grain = mix(float(0.7), n.mul(0.6).add(0.4), aaFade(uv().x.mul(46)))
+  m.emissiveNode = vec3(0.82, 0.9, 1.0).mul(grain).mul(roll).mul(u).mul(float(1).sub(wire.mul(0.7))).mul(1.3)
   return { material: m, level: u }
 }
 
@@ -99,10 +127,9 @@ function carpetTiles() {
   const m = nodeMat(0x3a3832, 0.98, 0, "carpet_tiles")
   const p = positionWorld.xz.mul(2)
   const c = floor(p)
-  const f = fract(p)
-  const checker = fract(c.x.add(c.y).mul(0.5)).mul(2)
-  const seam = max(step(f.x, 0.012), step(f.y, 0.012))
-  const fibre = hash(floor(positionWorld.xz.mul(220)).dot(vec2(1, 157))).mul(0.12)
+  const checker = mix(float(0.5), fract(c.x.add(c.y).mul(0.5)).mul(2), aaFade(p.x))
+  const seam = max(aaLines(p.x, 0.024), aaLines(p.y, 0.024))
+  const fibre = hash(floor(positionWorld.xz.mul(220)).dot(vec2(1, 157))).mul(0.12).mul(aaFade(positionWorld.x.mul(220))).add(float(0.06).mul(float(1).sub(aaFade(positionWorld.x.mul(220)))))
   const wear = hash(c.dot(vec2(7, 113))).mul(0.06)
   m.colorNode = vec3(0.105, 0.1, 0.088).mul(float(0.92).add(checker.mul(0.12)).add(fibre).sub(wear)).mul(float(1).sub(seam.mul(0.45)))
   return m
@@ -116,11 +143,10 @@ function blockWall() {
   const y = positionWorld.y.sub(FLOOR_Y)
   const yy = fract(y.div(STOREY_H)).mul(STOREY_H)
   const course = floor(yy.div(0.2))
-  const u = fract(along.div(0.4).add(fract(course.mul(0.5))))
-  const v = fract(yy.div(0.2))
-  const joint = max(step(u, 0.025), step(v, 0.05))
-  const low = step(yy, 1.2)
-  const band = step(1.2, yy).mul(step(yy, 1.3))
+  const ut = along.div(0.4).add(fract(course.mul(0.5)))
+  const joint = max(aaLines(ut, 0.025), aaLines(yy.div(0.2), 0.05))
+  const low = float(1).sub(aaStep(1.2, yy))
+  const band = aaWindow(yy, 1.2, 1.3)
   const base = mix(vec3(0.5, 0.49, 0.42), vec3(0.17, 0.22, 0.19), low)
   m.colorNode = mix(base, vec3(0.09, 0.13, 0.12), band).mul(float(1).sub(joint.mul(0.3)))
   m.roughnessNode = float(0.28).add(joint.mul(0.5))
@@ -131,8 +157,8 @@ function blockWall() {
 function hazardStripes() {
   const m = nodeMat(0x8a7010, 0.55, 0, "hazard_stripes")
   const p = positionWorld
-  const d = fract(p.x.add(p.z).add(p.y).mul(3.5))
-  m.colorNode = mix(vec3(0.02, 0.02, 0.018), vec3(0.62, 0.46, 0.04), step(0.5, d))
+  const d = p.x.add(p.z).add(p.y).mul(3.5)
+  m.colorNode = mix(vec3(0.02, 0.02, 0.018), vec3(0.62, 0.46, 0.04), aaLines(d, 0.5))
   return m
 }
 

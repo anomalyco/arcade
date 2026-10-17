@@ -232,10 +232,14 @@ export function createPost(ctx: WorldContext) {
   const camPos = uniform(new THREE.Vector3())
   const frameNoise = uniform(0)
 
+  // Reversed-Z (renderer option): the cleared far plane is depth 0 instead of 1.
+  const reversedZ = (renderer as unknown as { reversedDepthBuffer?: boolean }).reversedDepthBuffer === true
+  const isSky = (d: N) => (reversedZ ? d.lessThanEqual(1e-6) : d.greaterThanEqual(0.99999))
+
   /** World position and view distance of the pixel at `u` from the depth buffer (sky pushed far away). */
   const worldAt = (u: N, d: N) => {
     const vp = getViewPosition(u, d, projInv) as N
-    const sky = d.greaterThanEqual(0.99999)
+    const sky = isSky(d)
     const dist = sky.select(float(3000), length(vp))
     const dir = camWorld.mul(vec4(vp.normalize(), 0)).xyz.normalize()
     return { dist, dir, world: camPos.add(dir.mul(dist)) }
@@ -337,7 +341,7 @@ export function createPost(ctx: WorldContext) {
         .smoothstep(reflRough, reflRough.mul(0.2))
         .mul(mix(reflWet, float(1), mr.r))
         .mul(smoothstep(0.55, 0.85, nW.y))
-        .mul(d.lessThan(0.99999).select(float(1), float(0)))
+        .mul(isSky(d).select(float(0), float(1)))
         .toVar()
       If(wet.greaterThan(0.002), () => {
         // Rough wet surfaces smear the reflection vertically: tilt the mirror normal by a per-pixel random
@@ -609,7 +613,9 @@ export function createPost(ctx: WorldContext) {
       const { world, dist } = worldAt(u, d)
       const T = fogTransmittance(camPos, world).toVar()
       let c: N = color.sample(u).rgb
-      if (useAo) c = c.mul(mix(float(1), aoTex.sample(u).r, aoStrength.mul(T)))
+      // Sky pixels are skipped: with reversed-Z the cleared depth (0) isn't GTAO's "background" (≥ 1), so it shades them.
+      const aoW: N = (isSky(d) as N).select(float(0), aoStrength.mul(T))
+      if (useAo) c = c.mul(mix(float(1), aoTex.sample(u).r, aoW))
       // Half-resolution buffers come back through a depth-aware (joint bilateral) upsample so fog light and
       // reflections don't bleed a blocky fringe across silhouettes (poles, fence posts, door frames).
       const up = upsample(u, dist, useSsr)

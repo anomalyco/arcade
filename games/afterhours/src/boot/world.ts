@@ -68,7 +68,8 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   const imports = new Map(wanted.map((name) => [name, MODULES[name]!().catch((e: unknown) => e)]))
 
   step("starting webgpu", 0.05)
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, trackTimestamp: params.has("perf") })
+  // Reversed-Z: float depth precision where it matters (far facades); `reversedDepth=0` is for A/B automation only.
+  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, trackTimestamp: params.has("perf"), reversedDepthBuffer: params.get("reversedDepth") !== "0" } as ConstructorParameters<typeof THREE.WebGPURenderer>[0])
   performance.mark("gpu:init:start")
   await renderer.init()
   performance.mark("gpu:init:end")
@@ -81,7 +82,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   renderer.shadowMap.type = THREE.PCFShadowMap
 
   const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(68, (canvas.clientWidth || innerWidth) / (canvas.clientHeight || innerHeight), 0.08, 1600)
+  const camera = new THREE.PerspectiveCamera(68, (canvas.clientWidth || innerWidth) / (canvas.clientHeight || innerHeight), Number(params.get("near") ?? 0.15), 1600)
   ;(globalThis as { __afterhoursDebug?: unknown }).__afterhoursDebug = { renderer, scene, camera }
   const ctx: WorldContext = {
     scene,

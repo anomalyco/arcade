@@ -24,6 +24,8 @@ import {
   louvre,
   wall,
   LAYER,
+  aaFade,
+  aaStep,
 } from "./kit"
 import { HALL, SHELL } from "./core"
 import { bulletin, extinguisher, fluoro, fountain, hazardLight, rigLevel } from "./corridor"
@@ -145,7 +147,7 @@ const blindMats = (() => {
   const make = (open: boolean) => {
     const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.6, side: THREE.DoubleSide })
     const f = fract(positionWorld.y.mul(40))
-    const shade = mix(float(0.55), float(1), step(0.12, f))
+    const shade = mix(float(0.94), mix(float(0.55), float(1), aaStep(0.12, f)), aaFade(positionWorld.y.mul(40)))
     m.colorNode = vec3(0.62, 0.6, 0.53).mul(shade)
     if (open) {
       m.opacityNode = step(f, 0.62)

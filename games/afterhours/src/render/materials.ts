@@ -493,7 +493,10 @@ function wet(s: Surf, porosity: N, film: N, puddles: N): Surf {
   let color = s.color.mul(mix(float(1), float(1).sub(porosity), filmAmt))
   color = mix(color, color.mul(0.55), puddle)
   // Wet aggregate tips: sparse near-mirror glints that keep the scan's micro normal, so lamps sparkle and streak.
-  const glint = smoothstep(0.86, 0.95, texture(noise(), positionWorld.xz.mul(1 / 0.35)).a).mul(filmAmt)
+  // Spots are ~11 mm: once a pixel covers several, blend to their average coverage instead of sparkling per frame.
+  const gn = texture(noise(), positionWorld.xz.mul(1 / 0.35)).a
+  const glintFade = smoothstep(0.003, 0.012, footprint(positionWorld.xz))
+  const glint = mix(aaStep(float(0.9), gn, 0.03), float(0.1), glintFade).mul(filmAmt)
   let rough = mix(s.rough, min(s.rough, filmRough), filmAmt)
   rough = mix(rough, float(0.04), glint)
   rough = mix(rough, float(0.035), puddle)
@@ -637,10 +640,32 @@ function natural(o: NaturalOpts) {
 }
 
 /**
+ * Box-filtered coverage of periodic joints: `t` in period units with a joint of width `k` (fraction of a period)
+ * centred on every integer, averaged over a footprint of `w` periods. Exact integral of the pulse train, so a joint
+ * thinner than a pixel fades to its average coverage `k` instead of crawling under TAA jitter.
+ */
+function jointCoverage(t: N, k: N, w: N): N {
+  const x: N = t.add(k.mul(0.5))
+  const F = (v: N): N => floor(v).mul(k).add(min(fract(v), k))
+  const fw: N = w.max(1e-4)
+  return clamp(F(x.add(fw.mul(0.5))).sub(F(x.sub(fw.mul(0.5)))).div(fw), 0, 1)
+}
+
+/** Anti-aliased threshold of a procedural value: smoothstep over ± its screen-space derivative (at least `soft`). */
+function aaStep(edge: N, x: N, soft = 0.01): N {
+  const w: N = max(fwidth(x), float(soft))
+  return smoothstep(edge.sub(w), edge.add(w), x)
+}
+
+/** Metres of surface under one pixel at `uvn` (UV metres). */
+const footprint = (uvn: N): N => max(fwidth(uvn.x), fwidth(uvn.y))
+
+/**
  * Rectangular unit grid in UV metres (blocks, tiles, slabs): `w`×`h` units with `joint`-wide joints, every other row
  * shifted by `bond` of a unit (0.5 = running bond). All inputs may be per-object nodes. Returns the unit id, a 0..1
- * joint mask (anti-aliased, keeps its average coverage when thinner than a pixel), and a tangent-space normal that
- * rolls into the joint over `bevel` metres.
+ * joint mask (box-filtered: thin joints fade to their average), bevel normals that roll into each joint over `bevel`
+ * metres (faded to flat once the bevel is smaller than a pixel), and `detail`, 1 near and → 0 once a whole unit spans
+ * only a few pixels (for per-unit tilt/tint that would otherwise flicker at unit edges).
  */
 function unitGrid(uvn: N, w: N, h: N, joint: N, bond: N, bevel: N) {
   const row: N = floor(uvn.y.div(h))
@@ -652,21 +677,31 @@ function unitGrid(uvn: N, w: N, h: N, joint: N, bond: N, bevel: N) {
   const ex: N = min(f.x, w.sub(f.x))
   const ey: N = min(f.y, h.sub(f.y))
   const half: N = joint.mul(0.5)
-  const ax: N = fwidth(uvn.x).max(1e-5)
-  const ay: N = fwidth(uvn.y).max(1e-5)
-  // Coverage of each joint band, widened to at least a pixel but scaled down so its average stays right.
-  const band = (e: N, a: N): N => {
-    const hw = max(half, a.mul(0.75))
-    return float(1).sub(smoothstep(hw.sub(a.mul(0.5)), hw.add(a.mul(0.5)), e)).mul(half.div(hw))
-  }
-  const mask: N = max(band(ex, ax), band(ey, ay))
+  // Derivatives from the continuous UV (the row shift jumps at row edges).
+  const ax: N = fwidth(uvn.x).max(1e-6)
+  const ay: N = fwidth(uvn.y).max(1e-6)
+  // 1.5 px box: wide enough that TAA's ±½ px jitter barely changes a joint's coverage from frame to frame.
+  const cx: N = jointCoverage(q.x.div(w), joint.div(w), ax.mul(1.5).div(w))
+  const cy: N = jointCoverage(q.y.div(h), joint.div(h), ay.mul(1.5).div(h))
+  const mask: N = float(1).sub(float(1).sub(cx).mul(float(1).sub(cy)))
+  const fp: N = max(ax, ay)
+  const bevelFade: N = float(1).sub(smoothstep(bevel.mul(0.35), bevel.mul(1.5), fp))
   const sx: N = f.x.lessThan(w.mul(0.5)).select(float(-1), float(1))
   const sy: N = f.y.lessThan(h.mul(0.5)).select(float(-1), float(1))
-  const bx: N = smoothstep(half.add(bevel), half, ex).mul(sx)
-  const by: N = smoothstep(half.add(bevel), half, ey).mul(sy)
+  const bx: N = smoothstep(half.add(bevel), half, ex).mul(sx).mul(bevelFade)
+  const by: N = smoothstep(half.add(bevel), half, ey).mul(sy).mul(bevelFade)
+  const detail: N = float(1).sub(smoothstep(min(w, h).div(16), min(w, h).div(5), fp))
   const rnd: N = hash(id.x.add(311).mul(157.31).add(id.y.add(197).mul(91.7)))
   const rnd2: N = hash(id.x.add(53).mul(71.9).add(id.y.add(11).mul(213.3)))
-  return { id, f, mask, bx, by, rnd, rnd2 }
+  return { id, f, mask, bx, by, rnd, rnd2, detail }
+}
+
+/** Glazed/waxed tile normal: bevel roll-off plus a per-tile tilt that fades with distance. Packed 0..1. */
+function tileNormal(g: ReturnType<typeof unitGrid>, bevel: number, tilt: number): N {
+  const tx: N = g.rnd.sub(0.5).mul(tilt).mul(g.detail)
+  const ty: N = g.rnd2.sub(0.5).mul(tilt).mul(g.detail)
+  const nxy: N = vec2(g.bx.mul(bevel).add(tx), g.by.mul(bevel).add(ty)).mul(g.mask.oneMinus())
+  return vec3(nxy, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2))).normalize().mul(0.5).add(0.5)
 }
 
 // ---- scan: scanned walls, wood, bark, ceiling, terrazzo, bare metals --------------------------------------------
@@ -758,43 +793,19 @@ defineClass("paint", {
 })
 
 // ---- tile: glazed ceramic wall tile with grout -------------------------------------------------------------------
-/** Square tile grid: per-tile id, distance to the nearest joint (m), and a tangent-space bevel/tilt normal. */
-function tileGrid(size: number, joint: number, bevel: number, tilt: number, uvn: N = uv()) {
-  const g: N = uvn.div(size)
-  const id: N = floor(g)
-  const f: N = fract(g).mul(size)
-  const ex = min(f.x, float(size).sub(f.x))
-  const ey = min(f.y, float(size).sub(f.y))
-  const edge = min(ex, ey)
-  const rnd: N = hash(id.x.add(311).mul(157.31).add(id.y.add(197).mul(91.7)))
-  const rnd2: N = hash(id.x.add(53).mul(71.9).add(id.y.add(11).mul(213.3)))
-  const aa = fwidth(uvn.x).add(fwidth(uvn.y)).mul(0.5)
-  const groutMask = float(1).sub(smoothstep(float(joint * 0.5).sub(aa), float(joint * 0.5).add(aa), edge))
-  // Rounded glaze edge: normal leans toward the nearest joint inside the bevel band.
-  const sx = f.x.lessThan(float(size * 0.5)).select(float(-1), float(1))
-  const sy = f.y.lessThan(float(size * 0.5)).select(float(-1), float(1))
-  const bx = smoothstep(float(joint * 0.5 + bevel), float(joint * 0.5), ex).mul(sx)
-  const by = smoothstep(float(joint * 0.5 + bevel), float(joint * 0.5), ey).mul(sy)
-  const tx = rnd.sub(0.5).mul(tilt)
-  const ty = rnd2.sub(0.5).mul(tilt)
-  const nxy: N = vec2((bx as N).mul(0.55).add(tx), (by as N).mul(0.55).add(ty)).mul(groutMask.oneMinus())
-  const normal = vec3(nxy as N, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2)) as N).normalize().mul(0.5).add(0.5)
-  return { id, f, edge, rnd, rnd2, groutMask, normal }
-}
 // p0 glaze rgb, tile size (m)   p1 grout rgb, joint (m)
 defineClass("tile", {
   graph: (p) => {
     const g = unitGrid(uv(), p[0].w, p[0].w, p[1].w, float(0), float(0.005))
     const imp = sample("imperfections", uv(), float(1.7))
-    const tileTint = mix(float(0.92), float(1.06), g.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), g.rnd2))
+    const tileTint = mix(float(1), mix(float(0.92), float(1.06), g.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), g.rnd2)), g.detail.mul(0.6).add(0.4))
     const crazing = wnoise(uv(), 0.9).a
     const glazeCol = p[0].xyz.mul(tileTint).mul(mix(float(0.97), float(1.02), crazing))
     const groutCol = p[1].xyz.mul(mix(float(0.6), float(1), wnoise(uv(), 0.7).b))
     const color = mix(glazeCol, groutCol, g.mask)
     const rough = mix(float(0.05).add(imp.rough.mul(0.22)), float(0.85), g.mask)
     // Rounded glaze edge plus a slight per-tile tilt, so highlights break up tile by tile down a corridor.
-    const nxy: N = vec2(g.bx.mul(0.6).add(g.rnd.sub(0.5).mul(0.05)), g.by.mul(0.6).add(g.rnd2.sub(0.5).mul(0.05))).mul(g.mask.oneMinus())
-    const normal = vec3(nxy, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2))).normalize().mul(0.5).add(0.5)
+    const normal = tileNormal(g, 0.6, 0.05)
     return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
   },
 })
@@ -802,20 +813,20 @@ defineClass("tile", {
 // ---- linoleum: waxed VCT floor -------------------------------------------------------------------------------------
 defineClass("linoleum", {
   graph: () => {
-    const t = tileGrid(0.305, 0.0025, 0.0008, 0.012)
+    const t = unitGrid(uv(), float(0.305), float(0.305), float(0.0025), float(0), float(0.0008))
     // VCT chip marbling, quarter-turned on alternate tiles like a laid floor.
     const turn = fract(t.id.x.add(t.id.y).mul(0.5)).greaterThan(0.25)
     const local = turn.select(vec2(t.f.y, t.f.x), t.f)
     const chips = texture(noise(), local.mul(vec2(1.6, 0.55)).add(t.id.mul(0.37))).a
-    const fleck = smoothstep(0.82, 0.86, texture(noise(), local.mul(9).add(t.id.mul(0.71))).b)
+    const fleck = aaStep(float(0.84), texture(noise(), local.mul(9).add(t.id.mul(0.71))).b, 0.02)
     const tint = mix(float(0.84), float(1.1), t.rnd).mul(mix(vec3(1.02, 0.98, 0.97), vec3(0.97, 1.01, 1.02), t.rnd2))
     let color = vec3(0.36, 0.38, 0.33).mul(tint).mul(mix(float(0.86), float(1.08), chips))
     color = mix(color, vec3(0.16, 0.17, 0.15), fleck.mul(0.6))
-    color = mix(color, vec3(0.05, 0.05, 0.045), t.groutMask)
+    color = mix(color, vec3(0.05, 0.05, 0.045), t.mask)
     const imp = sample("imperfections", uv(), float(2.3))
     const scuff = wnoise(uv(), 3.1).g
-    const rough = float(0.04).add(t.rnd2.mul(0.05)).add(imp.rough.mul(0.3)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.groutMask.mul(0.5))
-    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: t.normal, ao: float(1) }
+    const rough = float(0.04).add(t.rnd2.mul(0.05)).add(imp.rough.mul(0.3)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.mask.mul(0.5))
+    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: tileNormal(t, 0.55, 0.012), ao: float(1) }
   },
 })
 
@@ -879,12 +890,12 @@ defineClass("emissive", {
   graph: (p) => {
     // Prismatic acrylic lens: faint fine grid of brighter cells over a flat glow.
     const g = abs(fract(uv().div(0.012)).sub(0.5))
-    const prism = mix(float(0.9), float(1.06), smoothstep(0.1, 0.4, max(g.x, g.y)))
+    const prism = mix(mix(float(0.9), float(1.06), smoothstep(0.1, 0.4, max(g.x, g.y))), float(1.01), smoothstep(0.002, 0.006, footprint(uv())))
     // Lit window: warm interior with lamp pools and blinds on some windows.
     const q = uv()
     const room = wnoise(q, 6).r
     const lamp = wnoise(q, 2.2).g
-    const blinds = sin(q.y.mul((Math.PI * 2) / 0.045)).mul(0.5).add(0.5)
+    const blinds = mix(sin(q.y.mul((Math.PI * 2) / 0.045)).mul(0.5).add(0.5), float(0.5), smoothstep(0.008, 0.02, footprint(q)))
     const hasBlinds = smoothstep(0.55, 0.6, wnoise(floor(q.div(1.8)).add(0.5).mul(1.8), 31).b)
     const glow = mix(float(0.55), float(1.25), room.mul(0.6).add(lamp.mul(0.4))).mul(mix(float(1), mix(float(0.55), float(1), blinds), hasBlinds.mul(0.8)))
     const e = p[1].xyz.mul(mix(float(1), prism, p[1].w)).mul(mix(float(1), glow, p[2].x))

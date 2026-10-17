@@ -1,8 +1,8 @@
 import * as THREE from "three/webgpu"
-import { floor, fract, hash, mix, positionWorld, step, time, vec3 } from "three/tsl"
+import { float, floor, fract, hash, mix, positionWorld, step, time, vec3 } from "three/tsl"
 import { MODELS, type ModelName, yawToward } from "../../render/models"
 import { materialFor } from "../../render/materials"
-import { type Builder, FLOOR_Y, M, T, paint } from "./kit"
+import { type Builder, FLOOR_Y, M, T, aaFade, aaWindow, paint } from "./kit"
 import { type Prop, placeModels, wastebasket } from "./props"
 import { benchRun, stool } from "./rooms"
 import type { Room, Theme } from "./storeys"
@@ -36,8 +36,9 @@ const panelLights = (() => {
   // A strip of lamps on a 2.2 cm pitch drawn on one flat panel: round-ish dots, each its own rate and colour.
   const q = positionWorld.mul(45)
   const c = floor(q)
-  const f = fract(q).sub(0.5).abs()
-  const dot = step(f.x.max(f.z), 0.28).mul(step(f.y, 0.28))
+  // Dots as filtered windows; sub-pixel they average to their area instead of sparkling.
+  const qa = q.x.add(q.z)
+  const dot = aaWindow(fract(qa), 0.22, 0.78).mul(aaWindow(fract(q.y), 0.22, 0.78)).mul(aaFade(qa)).add(float(0.31).mul(float(1).sub(aaFade(qa))))
   const h = hash(c.x.add(c.y.mul(31)).add(c.z.mul(17)))
   const blink = step(0.45, fract(time.mul(h.mul(1.8).add(0.15)).add(h.mul(10))))
   const colour = mix(vec3(1, 0.42, 0.08), vec3(0.35, 1, 0.4), step(0.62, h))

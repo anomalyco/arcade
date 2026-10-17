@@ -1,7 +1,7 @@
 import TAAUNode from "three/addons/tsl/display/TAAUNode.js"
-import { clipAABB, flickerReduction, sampleCurrentDepth, samplePreviousDepth } from "three/addons/tsl/utils/TAAUtils.js"
-import { Fn as TslFn, context, convertToTexture, exp, float, ivec2, luminance, max, mix, outputStruct, property, texture, uniform, uv, vec2, vec4 } from "three/tsl"
-import type { Camera } from "three/webgpu"
+import { clipAABB, sampleCurrentDepth, samplePreviousDepth } from "three/addons/tsl/utils/TAAUtils.js"
+import { Fn as TslFn, context, convertToTexture, exp, float, ivec2, luminance, max, mix, outputStruct, property, texture, uniform, uv, vec2, vec4, velocity } from "three/tsl"
+import { Matrix4, type Camera } from "three/webgpu"
 
 // three's TAAU with a sharper resolve. Two changes to its resolve shader, the rest (jitter, history, depth tests,
 // locks, variance clip) is three's:
@@ -10,6 +10,14 @@ import type { Camera } from "three/webgpu"
 //   samples are all there is.
 // - History is read with a 5-tap Catmull-Rom filter instead of bilinear, so reprojection while moving doesn't blur a
 //   little more every frame (the smear in motion).
+// - Reconstruction, neighbourhood clip and history blend all run on tone-compressed colour (c / (1 + max(c)), Karis),
+//   so a panel rim or lit window edge that is 50× brighter than the wall beside it converges like any other edge
+//   instead of flickering pixel by pixel; the result is expanded back to linear HDR.
+// - The jitter spans 0.75 of an output pixel while the camera is still (full span in motion).
+// - The velocity node keeps the unjittered projection between frames. Stock TAAU resets it to null after every frame,
+//   so any material compiled outside the pipeline (the boot warm-up and streamed modules compile between frames) baked
+//   the *jittered* camera projection into its velocity: a static camera then reported the jitter as motion, history
+//   was reprojected by it and nothing accumulated, so every bright edge flickered pixel by pixel.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -39,9 +47,45 @@ const catmullRom = (tex: N, uvIn: N, size: N) => {
   return sum.div(wsum).max(0)
 }
 
+/** Karis tone compression and its inverse (on rgb; alpha passes through). */
+const compress = (c: N) => vec4(c.rgb.div(max(max(c.r, c.g), c.b).add(1)), c.a)
+const expand = (c: N) => vec4(c.rgb.div(float(1).sub(max(max(c.r, c.g), c.b)).max(1e-4)), c.a)
+
+const REST_JITTER = 0.75
+/** One projection object for every material's velocity, shared across TAAU rebuilds (materials keep a reference). */
+const VELOCITY_PROJECTION = new Matrix4()
+
 class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
   /** 0 = three's kernel width at rest, 1 = narrowed to one output pixel. */
   readonly sharpness = uniform(1)
+  private lastCamera: number[] = []
+
+  constructor(...args: N[]) {
+    super(...args)
+    velocity.setProjectionMatrix(VELOCITY_PROJECTION)
+  }
+
+  clearViewOffset() {
+    super.clearViewOffset()
+    velocity.setProjectionMatrix(VELOCITY_PROJECTION)
+  }
+
+  setViewOffset(inputWidth: number, inputHeight: number) {
+    const self = this as N
+    super.setViewOffset(inputWidth, inputHeight)
+    VELOCITY_PROJECTION.copy(self._originalProjectionMatrix)
+    velocity.setProjectionMatrix(VELOCITY_PROJECTION)
+    const e = self.camera.matrixWorld.elements as number[]
+    let still = this.lastCamera.length === 16
+    for (let i = 0; i < 16; i++) {
+      if (still && Math.abs(e[i]! - this.lastCamera[i]!) > 1e-6) still = false
+      this.lastCamera[i] = e[i]!
+    }
+    if (!still) return
+    const j = self._jitterOffset.value
+    j.multiplyScalar(REST_JITTER)
+    self.camera.setViewOffset(inputWidth, inputHeight, j.x, j.y, inputWidth, inputHeight)
+  }
 
   setup(builder: N) {
     const result = super.setup(builder)
@@ -105,7 +149,7 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
         const tapCenter = vec2(tap).add(vec2(0.5).add(self._jitterOffset))
         const delta = pIn.sub(tapCenter)
         const w = exp(delta.dot(delta).mul(k).negate()).add(x === 0 && y === 0 ? 1e-6 : 0)
-        const c = self.beautyNode.load(tap).max(0)
+        const c = compress(self.beautyNode.load(tap).max(0))
         sumColor.addAssign(c.mul(w))
         sumWeight.addAssign(w)
         moment1.addAssign(c)
@@ -125,7 +169,7 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
       const minColor = mean.sub(variance).max(boxMin)
       const maxColor = mean.add(variance).min(boxMax)
 
-      const historyColor = catmullRom(historyNode, historyUV, outputSizeF)
+      const historyColor = compress(catmullRom(historyNode, historyUV, outputSizeF))
       const clippedHistoryColor = clipAABB(mean.clamp(minColor, maxColor), historyColor, minColor, maxColor)
 
       const currentLuma = luminance(currentColor.rgb)
@@ -142,7 +186,7 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
       // it; motion, disocclusion and the variance clip still bring new content in quickly.
       const currentWeight = float(self.currentFrameWeight).mul(mix(float(0.3), float(1), motionPx.saturate())).toVar()
       currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1))
-      colorOutput.assign(flickerReduction(currentColor, lockedHistoryColor, currentWeight))
+      colorOutput.assign(expand(mix(lockedHistoryColor, currentColor, currentWeight)))
       lockOutput.assign(lock)
       return vec4(0)
     })
