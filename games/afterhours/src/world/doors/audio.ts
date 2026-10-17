@@ -158,6 +158,16 @@ export class DoorAudio {
     if (kind === "gate" || kind === "rollup") this.chain(v, v.t + 0.02, 5, 0.25, 0.16)
   }
 
+  /** A body (or the open stop) hitting the leaf: a hollow knock through the leaf's resonances, `k` 0..1. */
+  bump(sound: DoorSound, pan: number, k: number) {
+    const v = this.voice(pan)
+    if (!v) return
+    const s = VOICE[sound]
+    this.thud(v, v.t, s.thud * 1.15, s.thudGain * (0.35 + 0.65 * k))
+    this.burst(v, v.t + 0.003, 0.08 + 0.06 * k, 0.18 + 0.25 * k, s.click * 0.4, s.ring)
+    if (sound === "gate") this.chain(v, v.t + 0.01, 3 + Math.round(4 * k), 0.2, 0.14)
+  }
+
   /** Roll-up ratchet tooth. */
   tick(pan: number) {
     const v = this.voice(pan)

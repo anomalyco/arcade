@@ -110,6 +110,21 @@ export const FIRE_ESCAPE = { x: -55, z0: -6, z1: 6, depth: 1.5, door: { z: 0, wi
 /** Upper-storey plan: the same double-loaded corridor as the ground floor, the full length of the main block. */
 export const UPPER = { corridor: { min: [-54.65, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 } }
 
+/** Ground-floor spine east of the lobby (building program §0); the upper storeys use `UPPER.corridor`. */
+export const CORRIDOR_EAST = { min: [1.6, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 }
+
+/** Freight lift FL-1 between the ground floor (receiving / decon) and the Sublevel only. */
+export const FREIGHT = { car: { min: [-36.85, -20.5] as Vec2, max: [-33.25, -15.5] as Vec2 }, stops: ["SL", 0] as const }
+
+/** Sublevel floor height (placeholder until the Sublevel is built). */
+export const SUBLEVEL_Y = -6.2
+
+/** Riser W-1 under the dish feed: a locked cupboard on every storey, trunk down to the Sublevel. */
+export const RISER = { min: [5.4, -4.6] as Vec2, max: [6.6, -3.4] as Vec2 }
+
+/** Ground-floor door through the main block's east wall into the annex. */
+export const ANNEX_DOOR = { x: 34.65, z: -8, width: 1.2 }
+
 /** Utility poles carrying power lines along the east side of the access road, then into the compound. */
 export const POWER = { spacing: 42, offset: 7.5, poleHeight: 10.5 }
 

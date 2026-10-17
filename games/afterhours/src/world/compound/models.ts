@@ -97,7 +97,7 @@ function items(): Item[] {
   ]
 }
 
-/** Footprint-sized soft shadow decals: a blob under each item, plus a dark patch at each tyre for cars. */
+/** Footprint-sized soft shadow decals under each item (cars get tyre patches at their measured contacts in `place`). */
 function contactShadows(root: THREE.Object3D, list: Item[]) {
   const batch = new Batch()
   const layer = shadowLayer()
@@ -109,11 +109,6 @@ function contactShadows(root: THREE.Object3D, list: Item[]) {
     for (let k = 0; k < 4; k++) {
       const grow = 0.5 - k * 0.18
       b.add(layer, roundRect(w + grow, d + grow, Math.min(w, d) * 0.25 + grow * 0.4), matrix(0, 0.006 + k * 0.001, 0))
-    }
-    if (it.shadow === "car") {
-      for (const zz of [-0.31, 0.3])
-        for (const sd of [-1, 1])
-          for (let k = 0; k < 2; k++) b.add(layer, ellipse(0.24 - k * 0.07, 0.42 - k * 0.12), matrix(sd * (w / 2 - 0.22), 0.011 + k * 0.001, zz * d))
     }
   }
   for (const m of batch.build(root, { receiveShadow: false, name: "model-shadows" })) m.renderOrder = 2
@@ -176,10 +171,18 @@ async function place(root: THREE.Object3D, it: Item) {
   let model: THREE.Object3D
   if (CARS.has(it.name)) {
     const [near, far] = await Promise.all([loadModel(it.name), loadModel(it.name, { lod: 1 })])
+    // Each level is levelled and dropped onto its own measured tyre contacts (LOD0 and LOD1 can differ).
+    const tyres = groundOnTyres(near)
+    groundOnTyres(far)
     const lod = new THREE.LOD()
     lod.addLevel(near, 0)
     lod.addLevel(far, CAR_LOD_DISTANCE)
     model = lod
+    const sh = new Batch()
+    for (const [tx, tz] of tyres) for (let k = 0; k < 3; k++) sh.add(shadowLayer(), ellipse(0.2 - k * 0.05, 0.36 - k * 0.09), matrix(tx, 0.011 + k * 0.001, tz))
+    const patches = new THREE.Group()
+    for (const m of sh.build(patches, { receiveShadow: false, name: `${it.name}-tyre-shadows` })) m.renderOrder = 2
+    model.add(patches)
   } else model = await loadModel(it.name)
   const outer = new THREE.Group()
   outer.position.set(it.position[0], it.position[1], it.position[2])
@@ -191,6 +194,54 @@ async function place(root: THREE.Object3D, it: Item) {
     outer.add(pivot)
   } else outer.add(model)
   root.add(outer)
+}
+
+/**
+ * Finds the four tyre contact points of a car model (lowest vertex in each corner quadrant, ignoring the middle third
+ * of the length where sills/exhausts hang), tilts the model so all four sit in one horizontal plane and lifts or drops
+ * it so that plane is y = 0. Returns the contact points [x, z] in model space.
+ */
+function groundOnTyres(model: THREE.Object3D): [number, number][] {
+  model.updateMatrixWorld(true)
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert()
+  const box = new THREE.Box3().setFromObject(model)
+  box.applyMatrix4(inv)
+  const cz = (box.min.z + box.max.z) / 2
+  const halfL = (box.max.z - box.min.z) / 2
+  const low: { y: number; x: number; z: number }[] = [0, 1, 2, 3].map(() => ({ y: Infinity, x: 0, z: 0 }))
+  const v = new THREE.Vector3()
+  model.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    if (!mesh.isMesh) return
+    const pos = mesh.geometry.attributes.position!
+    const m = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld)
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m)
+      if (Math.abs(v.z - cz) < halfL * 0.33) continue
+      const q = (v.x > 0 ? 1 : 0) + (v.z > cz ? 2 : 0)
+      if (v.y < low[q]!.y) low[q] = { y: v.y, x: v.x, z: v.z }
+    }
+  })
+  if (low.some((l) => !Number.isFinite(l.y))) return []
+  // Plane through the four contacts (least squares on the corners): pitch along z, roll along x.
+  const [fl, fr, rl, rr] = [low[0]!, low[1]!, low[2]!, low[3]!]
+  const dzFront = (fl.z + fr.z) / 2 - (rl.z + rr.z) / 2
+  const pitch = Math.atan(((fl.y + fr.y) / 2 - (rl.y + rr.y) / 2) / (dzFront || 1))
+  const dxSide = (fr.x + rr.x) / 2 - (fl.x + rl.x) / 2
+  const roll = Math.atan(((fr.y + rr.y) / 2 - (fl.y + rl.y) / 2) / (dxSide || 1))
+  model.rotation.x += pitch
+  model.rotation.z -= roll
+  model.updateMatrixWorld(true)
+  // After levelling, drop the lowest contact onto y = 0.
+  let minY = Infinity
+  const parentInv = new THREE.Matrix4().copy(model.parent ? model.parent.matrixWorld : new THREE.Matrix4()).invert()
+  for (const l of low) {
+    v.set(l.x, l.y, l.z).applyMatrix4(model.matrix)
+    minY = Math.min(minY, v.y)
+  }
+  void parentInv
+  model.position.y -= minY
+  return low.map((l) => [l.x, l.z])
 }
 
 /** Every placement of a model baked into one plain Mesh per sub-mesh (static props; geometry converted to float). */

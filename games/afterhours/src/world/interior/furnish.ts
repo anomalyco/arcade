@@ -53,7 +53,7 @@ const SMOKED = paint(0x0b0e0f, 0.06)
 const TAPE = paint(0x1a130d, 0.35)
 const HOOD = paint(0xa7aca4, 0.45, 0.15)
 
-let chemistryPlaced = new Set<number>()
+const chemistryPlaced = new Set<number>()
 
 export function furnish(b: Builder, theme: Theme, r: Room, rnd: () => number) {
   if (theme === "offices") offices(b, r, rnd)
@@ -162,7 +162,7 @@ function island(b: Builder, x: number, z: number, w: number, d: number, side: nu
   for (const lx of [x0 + 0.08, x1 - 0.08]) for (const lz of [z0 + 0.08, z1 - 0.08]) b.box(M.cabinet, lx - 0.025, y, lz - 0.025, lx + 0.025, y + 0.8, lz + 0.025)
   // Service spine: gas taps and an outlet strip down the middle.
   b.rbox(M.cabinet, T(x, y + 1.0, z), w - 0.4, 0.16, 0.12, 0.02)
-  for (let k = 0; k < 4; k++) b.cyl(M.steel, T(x0 + 0.5 + k * ((w - 1) / 3), y + 1.1, z + 0.07 * side, 0, Math.PI / 2), 0.008, 0.008, 0.08, 8)
+  for (let k = 0; k < 4; k++) b.cyl(M.steel, T(x0 + 0.5 + k * ((w - 1) / 3), y + 1.03, z + 0.08 * side, 0, Math.PI / 2), 0.008, 0.008, 0.06, 8)
   b.collide(x0, y, z0, x1, y + 1.1, z1)
 }
 
@@ -348,8 +348,9 @@ function abandoned(b: Builder, r: Room, rnd: () => number) {
   }
 }
 
-export function resetFurnish() {
-  chemistryPlaced = new Set()
+/** Forget per-storey placement state (called at the start of each storey's build). */
+export function resetFurnish(storey: number) {
+  chemistryPlaced.delete(storey)
 }
 
 /** Stacking chairs round the lounge table. */

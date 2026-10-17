@@ -40,6 +40,9 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 960, height: 640 } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
+// Swallow Vite's HMR socket: other agents save files constantly, and a hot reload mid-run wipes the injected test
+// doors and the player's state. The page still loads the current code at start.
+await page.routeWebSocket(/.*/, () => {})
 await page.goto(`http://localhost:5196/?view=${view}${extra ? `&${extra}` : ""}`)
 /** Waits until world streaming has finished (every module shown, `complete`) and a few full frames have run. */
 const ready = () =>
@@ -91,6 +94,7 @@ async function stand(d: Info, s: number, dist: number) {
       p.vy = 0
       p.yaw = Math.atan2(d.nx * s, d.nz * s)
       p.pitch = -Math.atan2(1.65 - 1.0, dist)
+      ;(p as unknown as { resetMotion?: () => void }).resetMotion?.()
     },
     { d, s, dist },
   )
@@ -105,7 +109,7 @@ const state = (id: string) =>
     }
     const d = g.__afterhoursDoors?.get(id)
     if (!d) return null
-    return { amount: d.amount, isOpen: d.isOpen, moving: (d as unknown as { active: boolean }).active, centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
+    return { amount: d.amount, isOpen: d.isOpen, moving: ((x: { plan: unknown; free: boolean; hold: number }) => !!x.plan || x.free || x.hold > 0)(d as unknown as { plan: unknown; free: boolean; hold: number }), centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
   }, id).then((st) => {
     if (!st) throw new Reloaded(id)
     return st
@@ -208,6 +212,65 @@ async function throughAndBack(d: Info, s: number) {
   check(!st.isOpen && st.amount < 0.01, `${d.id}: E closes it (amount ${st.amount.toFixed(3)})`)
 }
 
+/** Sets a door ajar at open fraction `t` swinging towards `dir`, at rest (automation only). */
+const setAjar = (id: string, t: number, dir: number) =>
+  page.evaluate(
+    ({ id, t, dir }) => {
+      type D = { t: number; target: number; v: number; dir: number; plan: unknown; free: boolean; touched: boolean; active: boolean; pose(t: number): void; apply(): void }
+      const d = (globalThis as unknown as { __afterhoursDoors: { get(id: string): D } }).__afterhoursDoors.get(id)
+      Object.assign(d, { t, target: t, v: 0, dir, plan: null, free: false, touched: false, active: false })
+      d.pose(t)
+      d.apply()
+    },
+    { id, t, dir },
+  )
+
+/** Holds W (and Shift) into a door from the current stand, sampling the player and the leaf every 50 ms. */
+async function pushWalk(d: Info, run: boolean, ms: number) {
+  if (run) await page.keyboard.down("ShiftLeft")
+  await page.keyboard.down("KeyW")
+  const s0 = side(d, (await state(d.id)).pos)
+  const samples: { t: number; side: number; amount: number }[] = []
+  const t0 = performance.now()
+  while (performance.now() - t0 < ms) {
+    const st = await state(d.id)
+    samples.push({ t: performance.now(), side: side(d, st.pos), amount: st.amount })
+    await page.waitForTimeout(50)
+  }
+  await page.keyboard.up("KeyW")
+  if (run) await page.keyboard.up("ShiftLeft")
+  await page.waitForTimeout(150)
+  const end = await state(d.id)
+  // Stalls: 150 ms windows (after the first 300 ms of acceleration, before reaching the far side) with < 3 cm progress.
+  let stuck = 0
+  let reversals = 0
+  let fastest = 0
+  let slowest = Infinity
+  const sign = Math.sign(s0) || 1
+  for (let i = 3; i < samples.length; i++) {
+    const a = samples[i - 3]!
+    const b = samples[i]!
+    const dt = (b.t - a.t) / 1000
+    const prog = (a.side - b.side) * sign
+    if (b.t - samples[0]!.t > 300 && b.side * sign > -0.5) {
+      if (prog < 0.03) stuck++
+      const sp = prog / dt
+      // Walking speed before contact vs. while the leaf is moving under the push.
+      if (b.amount === a.amount && b.side * sign > 0.6) fastest = Math.max(fastest, sp)
+      else if (b.amount > a.amount) slowest = Math.min(slowest, sp)
+    }
+  }
+  let lastDir = 0
+  for (let i = 1; i < samples.length; i++) {
+    const dA = samples[i]!.amount - samples[i - 1]!.amount
+    if (Math.abs(dA) < 1e-4) continue
+    const dir = Math.sign(dA)
+    if (lastDir && dir !== lastDir) reversals++
+    lastDir = dir
+  }
+  return { crossed: side(d, end.pos) * sign, amount: end.amount, peak: Math.max(...samples.map((x) => x.amount), end.amount), stuck, reversals, fastest, slowest: slowest === Infinity ? 0 : slowest }
+}
+
 if (!all) {
   // Throwaway door in a wall, built only in this page: hinge at the wall gap's west jamb, 1 m leaf along +x.
   const d = await page.evaluate(() => {
@@ -225,6 +288,7 @@ if (!all) {
     c.push({ min: [hx - 4, y - 1, hz - 0.1], max: [hx, y + 3, hz + 0.1] }, { min: [hx + 1, y - 1, hz - 0.1], max: [hx + 5, y + 3, hz + 0.1] })
     g.__afterhoursDoors.add({ id: "test", leaf: new Object3D(), hinge: [hx, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, sound: "steel" })
     g.__afterhoursDoors.add({ id: "test-locked", leaf: new Object3D(), hinge: [hx + 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, locked: true })
+    g.__afterhoursDoors.add({ id: "test-panic", leaf: new Object3D(), hinge: [hx - 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, panic: true, sound: "steel" })
     return true
   })
   void d
@@ -278,6 +342,41 @@ if (!all) {
   await page.waitForTimeout(600)
   st = await state("test-locked")
   check(!st.isOpen && st.amount === 0, "test-locked: E rattles, stays shut")
+
+  // Body push. An ajar door yields at a walk (slowly) and at a run (bangs open), the player passes without sticking;
+  // pushing from the side it swings towards just blocks; a room door stays where it was left (no closer).
+  for (const run of [false, true]) {
+    await setAjar("test", 0.15, 1)
+    await stand(info, 1, 1.5)
+    const r = await pushWalk(info, run, run ? 1500 : 2600)
+    const tag = run ? "run" : "walk"
+    check(r.crossed < -0.4, `test push (${tag}): body pushed the ajar door and passed (${r.crossed.toFixed(2)} m past, door ${r.amount.toFixed(2)})`)
+    check(r.peak > (run ? 0.75 : 0.4), `test push (${tag}): leaf swung open (peak ${r.peak.toFixed(2)})`)
+    check(r.stuck === 0, `test push (${tag}): no stuck frames (${r.stuck} stalled 150 ms windows)`)
+    check(r.reversals <= 2, `test push (${tag}): leaf moved without jitter (${r.reversals} direction changes)`)
+    if (!run) check(r.slowest < r.fastest * 0.95, `test push (walk): pushing slows the walk (${r.slowest.toFixed(2)} vs ${r.fastest.toFixed(2)} m/s)`)
+  }
+  await page.waitForTimeout(5000)
+  st = await state("test")
+  check(st.amount > 0.3, `test: room door stays where it was pushed (amount ${st.amount.toFixed(2)} after 5 s)`)
+  await setAjar("test", 0.15, 1)
+  await stand(info, -1, 1.5)
+  const wrong = await pushWalk(info, false, 1500)
+  st = await state("test")
+  check(wrong.crossed > 0.25 && Math.abs(st.amount - 0.15) < 0.01, `test push from the swing side blocks (player ${wrong.crossed.toFixed(2)} m short, door ${st.amount.toFixed(2)})`)
+  await setAjar("test", 0, 1)
+  await stand(info, 1, 1.5)
+  const shut = await pushWalk(info, false, 1500)
+  check(shut.crossed > 0.25, `test: shut latched door ignores pushing (player ${shut.crossed.toFixed(2)} m short)`)
+  // Panic-bar door: pushes open from shut, then its closer draws it shut a few seconds later.
+  const panic = (await doorInfo()).find((x) => x.id === "test-panic")!
+  await stand(panic, 1, 1.5)
+  const pr = await pushWalk(panic, false, 2600)
+  check(pr.crossed < -0.4 && pr.peak > 0.3, `test-panic: pushed open from shut and passed (${pr.crossed.toFixed(2)} m, peak ${pr.peak.toFixed(2)})`)
+  await page.waitForTimeout(4000)
+  await settle("test-panic", 9000)
+  st = await state("test-panic")
+  check(st.amount === 0, `test-panic: closer drew it shut (amount ${st.amount})`)
 } else {
   const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
   for (const i of issues) if (wanted(i.id)) check(false, `${i.id}: ${i.issue}`)
@@ -290,6 +389,11 @@ if (!all) {
     if (done.has(d.id)) continue
     done.add(d.id)
     if (d.partner) done.add(d.partner)
+    const small = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { height: number } } }).__afterhoursDoors.get(id)!.height < 1.2, d.id)
+    if (small) {
+      console.log(`skip ${d.id} (not a doorway: a control using the door system)`)
+      continue
+    }
     const locked = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { locked: boolean } } }).__afterhoursDoors.get(id)!.locked, d.id)
     if (locked) {
       console.log(`skip ${d.id} (locked)`)

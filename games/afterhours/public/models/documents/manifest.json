@@ -1,0 +1,605 @@
+{
+ "atlas": 4096,
+ "documents": {
+  "memo_signin": {
+   "title": "Memo: night shift sign-in procedure",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.443359375,
+    0.0029296875,
+    0.59716796875,
+    0.20166015625
+   ],
+   "tags": [
+    "board",
+    "desk",
+    "clipboard"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "memo_carbon_inventory": {
+   "title": "Carbon copy: Sublevel B equipment inventory",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.60302734375,
+    0.0029296875,
+    0.7568359375,
+    0.20166015625
+   ],
+   "tags": [
+    "desk",
+    "clipboard"
+   ],
+   "paper": "onion",
+   "pxPerMm": 2.92
+  },
+  "notice_sublevel": {
+   "title": "Notice: unauthorized access to Sublevel C",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.7626953125,
+    0.0029296875,
+    0.91650390625,
+    0.20166015625
+   ],
+   "tags": [
+    "board",
+    "wall",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "notice_parking": {
+   "title": "Notice: Parking Lot B closed",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.0029296875,
+    0.22021484375,
+    0.15673828125,
+    0.4189453125
+   ],
+   "tags": [
+    "board",
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "notice_firedoors": {
+   "title": "Notice: do not prop fire doors",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.16259765625,
+    0.22021484375,
+    0.31640625,
+    0.4189453125
+   ],
+   "tags": [
+    "wall",
+    "board"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "notice_nightshift": {
+   "title": "Notice: night shift sign in at lobby desk",
+   "size": [
+    0.216,
+    0.14
+   ],
+   "uv": [
+    0.8056640625,
+    0.62939453125,
+    0.95947265625,
+    0.729248046875
+   ],
+   "tags": [
+    "board",
+    "wall"
+   ],
+   "paper": "goldenrod",
+   "pxPerMm": 2.92
+  },
+  "signin_sheet": {
+   "title": "Night sign-in sheet (handwritten)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.322265625,
+    0.22021484375,
+    0.47607421875,
+    0.4189453125
+   ],
+   "tags": [
+    "clipboard",
+    "desk",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "roster_duty": {
+   "title": "Duty roster, week of Oct 15 (one name crossed out)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.48193359375,
+    0.22021484375,
+    0.6357421875,
+    0.4189453125
+   ],
+   "tags": [
+    "board",
+    "wall",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "signup_bowling": {
+   "title": "Bowling league sign-up sheet",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.6416015625,
+    0.22021484375,
+    0.79541015625,
+    0.4189453125
+   ],
+   "tags": [
+    "board",
+    "clipboard"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "flyer_bowling": {
+   "title": "Bowling league flyer with tear-off tabs",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.80126953125,
+    0.22021484375,
+    0.955078125,
+    0.4189453125
+   ],
+   "tags": [
+    "board",
+    "wall"
+   ],
+   "paper": "goldenrod",
+   "pxPerMm": 2.92
+  },
+  "poster_missing_cat": {
+   "title": "Missing cat poster (Biscuit)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.0029296875,
+    0.4248046875,
+    0.15673828125,
+    0.62353515625
+   ],
+   "tags": [
+    "board",
+    "wall",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "menu_cafeteria": {
+   "title": "Cafeteria menu, week of Oct 15 1984",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.16259765625,
+    0.4248046875,
+    0.31640625,
+    0.62353515625
+   ],
+   "tags": [
+    "board",
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "poster_radiation": {
+   "title": "Safety poster: caution radiation area",
+   "size": [
+    0.279,
+    0.432
+   ],
+   "uv": [
+    0.16259765625,
+    0.0029296875,
+    0.297119140625,
+    0.2109375
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "poster",
+   "pxPerMm": 1.97
+  },
+  "poster_chemical": {
+   "title": "Safety poster: chemical hazards, know your labels",
+   "size": [
+    0.279,
+    0.432
+   ],
+   "uv": [
+    0.302978515625,
+    0.0029296875,
+    0.4375,
+    0.2109375
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "poster",
+   "pxPerMm": 1.97
+  },
+  "map_evacuation": {
+   "title": "Evacuation route map, typical floor",
+   "size": [
+    0.279,
+    0.216
+   ],
+   "uv": [
+    0.246337890625,
+    0.62939453125,
+    0.421630859375,
+    0.76513671875
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.57
+  },
+  "form_requisition": {
+   "title": "Lab supply requisition form (OSR 113-B)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.322265625,
+    0.4248046875,
+    0.47607421875,
+    0.62353515625
+   ],
+   "tags": [
+    "desk",
+    "clipboard"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "printout_greenbar": {
+   "title": "Green-bar computer printout (receiver log)",
+   "size": [
+    0.378,
+    0.279
+   ],
+   "uv": [
+    0.0029296875,
+    0.62939453125,
+    0.240478515625,
+    0.8046875
+   ],
+   "tags": [
+    "desk",
+    "floor",
+    "creepy"
+   ],
+   "paper": "greenbar",
+   "pxPerMm": 2.57
+  },
+  "note_repeated": {
+   "title": "Legal pad sheet, one line written over and over",
+   "size": [
+    0.216,
+    0.297
+   ],
+   "uv": [
+    0.0029296875,
+    0.0029296875,
+    0.15673828125,
+    0.21435546875
+   ],
+   "tags": [
+    "desk",
+    "floor",
+    "creepy"
+   ],
+   "paper": "legal",
+   "pxPerMm": 2.92
+  },
+  "sticky_dish": {
+   "title": "Sticky note: dish motor down",
+   "size": [
+    0.076,
+    0.076
+   ],
+   "uv": [
+    0.16259765625,
+    0.810546875,
+    0.2421875,
+    0.89013671875
+   ],
+   "tags": [
+    "desk",
+    "board",
+    "wall"
+   ],
+   "paper": "sticky",
+   "pxPerMm": 4.29
+  },
+  "sticky_marge": {
+   "title": "Sticky note: call Marge",
+   "size": [
+    0.076,
+    0.076
+   ],
+   "uv": [
+    0.248046875,
+    0.810546875,
+    0.32763671875,
+    0.89013671875
+   ],
+   "tags": [
+    "desk",
+    "board"
+   ],
+   "paper": "sticky",
+   "pxPerMm": 4.29
+  },
+  "sticky_dont": {
+   "title": "Sticky note: don't answer 300",
+   "size": [
+    0.076,
+    0.076
+   ],
+   "uv": [
+    0.33349609375,
+    0.810546875,
+    0.4130859375,
+    0.89013671875
+   ],
+   "tags": [
+    "desk",
+    "creepy"
+   ],
+   "paper": "sticky",
+   "pxPerMm": 4.29
+  },
+  "card_extensions": {
+   "title": "Index card: phone extensions",
+   "size": [
+    0.127,
+    0.076
+   ],
+   "uv": [
+    0.4189453125,
+    0.810546875,
+    0.53857421875,
+    0.88232421875
+   ],
+   "tags": [
+    "desk",
+    "board"
+   ],
+   "paper": "card",
+   "pxPerMm": 3.86
+  },
+  "polaroid_dish": {
+   "title": "Polaroid: the dish at dusk",
+   "size": [
+    0.088,
+    0.107
+   ],
+   "uv": [
+    0.609375,
+    0.62939453125,
+    0.70166015625,
+    0.741455078125
+   ],
+   "tags": [
+    "board",
+    "desk"
+   ],
+   "paper": "polaroid",
+   "pxPerMm": 4.29
+  },
+  "polaroid_corridor": {
+   "title": "Polaroid: corridor at 2:40 am",
+   "size": [
+    0.088,
+    0.107
+   ],
+   "uv": [
+    0.70751953125,
+    0.62939453125,
+    0.7998046875,
+    0.741455078125
+   ],
+   "tags": [
+    "board",
+    "desk",
+    "creepy"
+   ],
+   "paper": "polaroid",
+   "pxPerMm": 4.29
+  },
+  "calendar_oct84": {
+   "title": "Wall calendar page, October 1984",
+   "size": [
+    0.28,
+    0.215
+   ],
+   "uv": [
+    0.427490234375,
+    0.62939453125,
+    0.603515625,
+    0.7646484375
+   ],
+   "tags": [
+    "wall",
+    "board"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.57
+  },
+  "directory_extensions": {
+   "title": "Typed station telephone directory",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.48193359375,
+    0.4248046875,
+    0.6357421875,
+    0.62353515625
+   ],
+   "tags": [
+    "wall",
+    "desk",
+    "board"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "memo_coffee": {
+   "title": "Memo: coffee fund short",
+   "size": [
+    0.216,
+    0.14
+   ],
+   "uv": [
+    0.0029296875,
+    0.810546875,
+    0.15673828125,
+    0.910400390625
+   ],
+   "tags": [
+    "board",
+    "wall"
+   ],
+   "paper": "pink",
+   "pxPerMm": 2.92
+  },
+  "checklist_rounds": {
+   "title": "Night rounds checklist (last rounds unticked)",
+   "size": [
+    0.216,
+    0.279
+   ],
+   "uv": [
+    0.6416015625,
+    0.4248046875,
+    0.79541015625,
+    0.62353515625
+   ],
+   "tags": [
+    "clipboard",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.92
+  },
+  "envelope_interoffice": {
+   "title": "Interoffice routing envelope",
+   "size": [
+    0.25,
+    0.33
+   ],
+   "uv": [
+    0.80126953125,
+    0.4248046875,
+    0.947998046875,
+    0.618408203125
+   ],
+   "tags": [
+    "desk",
+    "floor"
+   ],
+   "paper": "manila",
+   "pxPerMm": 2.4
+  }
+ },
+ "swatches": {
+  "pin_red": [
+   0.0087890625,
+   0.9931640625
+  ],
+  "pin_blue": [
+   0.0205078125,
+   0.9931640625
+  ],
+  "pin_yellow": [
+   0.0322265625,
+   0.9931640625
+  ],
+  "pin_green": [
+   0.0439453125,
+   0.9931640625
+  ],
+  "pin_white": [
+   0.0556640625,
+   0.9931640625
+  ],
+  "steel": [
+   0.0673828125,
+   0.9931640625
+  ],
+  "brass": [
+   0.0791015625,
+   0.9931640625
+  ],
+  "tape": [
+   0.0908203125,
+   0.9931640625
+  ],
+  "clip_black": [
+   0.1025390625,
+   0.9931640625
+  ],
+  "cork": [
+   0.1142578125,
+   0.9931640625
+  ]
+ }
+}

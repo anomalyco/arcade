@@ -1,6 +1,7 @@
 performance.mark("boot:main")
 import * as THREE from "three/webgpu"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { keyLabel, moveClusterLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { VIEWPOINTS } from "./world/layout"
 import { createLoader } from "./boot/loader"
 import { bootWorld } from "./boot/world"
@@ -37,7 +38,12 @@ addEventListener("resize", () => {
   camera.updateProjectionMatrix()
 })
 
-if (!shot) hud.innerHTML = `<div class="hint">Click to look · WASD move · Shift run · E doors / lift · F flashlight · N fly · 1–${Object.keys(VIEWPOINTS).length} viewpoints · \` lab</div>`
+const hint = () =>
+  `<div class="hint">Click to look · ${moveClusterLabel()} move · ${keyLabel("ShiftLeft")} run · ${keyLabel("KeyC")} crouch · ${keyLabel("Space")} jump · ${keyLabel("KeyE")} doors / lift · ${keyLabel("KeyF")} flashlight · ${keyLabel("KeyN")} fly · 1–${Object.keys(VIEWPOINTS).length} viewpoints · ${keyLabel("Backquote")} lab</div>`
+if (!shot) {
+  hud.innerHTML = hint()
+  onKeyLayoutChange(() => (hud.innerHTML = hint()))
+}
 
 const device = (renderer.backend as unknown as { device?: GPUDevice }).device
 let rendered = 0

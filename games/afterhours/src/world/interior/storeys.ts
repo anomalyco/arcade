@@ -29,7 +29,7 @@ import {
 } from "./kit"
 import { HALL, SHELL } from "./core"
 import { bulletin, extinguisher, fluoro, fountain, hazardLight, rigLevel } from "./corridor"
-import { furnish, flushModels, furnishNook, loungeChairs } from "./furnish"
+import { furnish, flushModels, furnishNook, loungeChairs, resetFurnish } from "./furnish"
 import { STYLES, type Style } from "./styles"
 import { MODELS, yawToward } from "../../render/models"
 import { placeModels } from "./props"
@@ -186,6 +186,7 @@ const CARPET = paint(0x3a3630, 0.97)
 const RAISED = paint(0x8f918a, 0.55)
 
 export async function buildStorey(b: Builder, storey: number, pause: () => Promise<void>) {
+  resetFurnish(storey)
   const theme = THEMES[storey]!
   const rooms = roomsFor(storey)
   let seed = storey * 7919 + 13
@@ -713,8 +714,7 @@ function crossCorridor(b: Builder, r: Room, style: Style) {
     const cx = (r.x0 + r.x1) / 2
     b.box(style.stripe, cx - 0.06, FLOOR_Y, za + 0.1, cx + 0.06, FLOOR_Y + LAYER, zb - 0.3, { cast: false })
   }
-  extinguisher(b, r.x0 + 0.01, 0)
-  safetyShower(b, r.x1 - 0.12 - 0.4, rz(r, 9) + 0.0)
+  // (Wall fittings here were placed with the z-wall helpers on an x-facing wall and stood free in the opening.)
 }
 
 /** Dead-end storage nook: a shallow bay off the corridor stacked with chairs and boxes, a partition behind. */

@@ -29,8 +29,21 @@ const seeThrough = (color: number, opacity: number, roughness: number, glowColor
 /** Booth window glass: thin, slightly dirty, with a faint warm glow from the lit interior behind it. */
 export const boothGlass = () => seeThrough(0x3a2410, 0.35, 0.06, new THREE.Color(1, 0.36, 0.08), 0.7)
 
-/** One layer of a stacked contact-shadow decal (several nested layers fake the soft falloff). */
-export const shadowLayer = () => seeThrough(0x000000, 0.2, 1)
+/**
+ * One layer of a stacked contact-shadow decal (nested layers fake the soft falloff). Unlit: a lit black layer still
+ * picks up the fog/sky specular and reads as a BRIGHT patch over wet asphalt. One shared material, one shader.
+ */
+let shadowMat: THREE.MeshBasicNodeMaterial | null = null
+export const shadowLayer = () => {
+  if (!shadowMat) {
+    shadowMat = new THREE.MeshBasicNodeMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false })
+    shadowMat.name = "compound_contact_shadow"
+    shadowMat.polygonOffset = true
+    shadowMat.polygonOffsetFactor = -2
+    shadowMat.polygonOffsetUnits = -2
+  }
+  return shadowMat
+}
 
 /** Boom barrier stripe colours. */
 export const boomRed = () => flat(0x7a120c, 0.5)

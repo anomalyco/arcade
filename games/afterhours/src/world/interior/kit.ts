@@ -5,8 +5,90 @@ import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
 
-// Shared construction kit for the interior: merged static geometry per material with world-space metre UVs, walls
-// with tile bands, steel doors, drop ceilings with troffers, and the few one-off materials the library lacks.
+/*
+ * INTERIOR KIT — the shared construction API for storey agents. Import from `./api` (this file plus props, lights and
+ * styles), never from another storey's file.
+ *
+ * COORDINATES
+ *   Metres, Y up, +Z south. Author every storey in GROUND-FLOOR coordinates: finished floor FLOOR_Y = 0.16, ceiling
+ *   CEIL_Y = 3.1. `new Builder(ctx, name, storey)` lifts everything it emits (meshes, colliders, floors, lamps) by
+ *   storey × STOREY_H (3.8 m); `b.oy` is that lift if you ever need a world height. Thin layers (stripes, decals) go
+ *   ≥ LAYER (4 mm) above the surface they sit on; never put two faces in one plane (z-fighting, see below).
+ *
+ * BUILDER (one per storey, created for you by interior.ts and passed to your storey module)
+ *   b.box(mat, x0,y0,z0, x1,y1,z1, { cast?, skip? })   axis-aligned box; `skip` drops faces ("X"/"x" = +/−X face…)
+ *   b.boxM(mat, m, w,h,d, ox,oy,oz)                    box in a local frame `m` (build with T(x,y,z, yaw, pitch, roll))
+ *   b.rbox(mat, m, w,h,d, radius, ox,oy,oz)            bevelled box: use for anything you see up close
+ *   b.cyl(mat, m, rTop, rBot, h, seg, { open? }) · b.rod(mat, p0, p1, r, seg) · b.quad(mat, m, w, h) (keeps 0..1 UVs)
+ *   b.add(mat, geometry)                               any BufferGeometry (consumed); world UVs in metres by default
+ *   b.collide(x0,y0,z0, x1,y1,z1) · b.collideLocal(m, min, max)   player colliders (AABBs, storey-lifted)
+ *   b.floor(mat, x0,z0, x1,z1)                         finish at FLOOR_Y + walkable floor · b.walk(...) floor only
+ *   b.lamp(lamp)                                       registers a light (storey-lifted, tagged zone "interior:<n>")
+ *   b.mesh(material, geometry)                         an unmerged mesh (per-instance animated materials only)
+ *   Static geometry is merged per material per storey at flush, so draw calls don't grow with detail.
+ *
+ * MATERIALS
+ *   Mat = a library name ("tile_green", "linoleum", "terrazzo", "ceiling_tile", "door_steel", …: render/materials.ts),
+ *   a shared Paint (`paint(hex, roughness, metalness)`: every Paint draws with ONE vertex-colour shader — use it for
+ *   all flat colours), or a THREE.Material. Glows: `glow(color, emissive, intensity, name)` (shared flat class).
+ *   `M` holds the kit's palette (M.frame, M.steel, M.darkSteel, M.carpet, M.block, M.hazard, M.glass, …). Don't
+ *   create per-object node materials: each new node graph is a shader compile (boot cost). Procedural patterns must
+ *   be filtered (aaStep / aaWindow / aaLines / aaFade below) or they crawl under TAA.
+ *
+ * WALLS · OPENINGS · WINDOWS
+ *   wall(b, "x"|"z", a0, a1, c0, c1, bands, openings?, extent?)   straight wall along x (z thickness c0..c1) or z.
+ *     bands: [[y0, y1, mat], …] heights above the floor (corridorBands, lobbyBands, closetBands, or STYLES[n].bands).
+ *     openings: doorOpening(centre, width?) for doors; { a0, a1, top, bottom? } for windows/hatches (bottom = sill).
+ *     extent: { y0, y1, collide? } for walls that aren't floor-to-ceiling. Colliders cover solid spans and sills.
+ *     Wall ends are recessed 2 mm so a wall can butt into another without fighting.
+ *
+ * DOORS (all doors open: shared door system, KeyE)
+ *   door(b, x, z, { rot, wallT?, width?, leaves?, open?, angle?, swing?, locked?, glass?, leaf?, panic?, plate?, sound? })
+ *     Centre (x, z) on the WHOLE wall assembly including any finish layer, and pass that full thickness as wallT, so
+ *     frame, casings and plates sit proud of every face. rot 0 = front (+z local) faces +z; rot π for the other side.
+ *     open = start angle (rad, sign = side); angle = full swing; swing "fixed" where one side is blocked; leaves 2 for
+ *     pairs; glass null for solid leaves (default wire glass); leaf: M.veneer etc. The opening must follow the
+ *     doorway rule in world/doors.ts (no collider across it, floor through it). Check with
+ *     `bun scripts/doors-check.ts --all --q "only=interior,facility" --view corridor`.
+ *
+ * CEILINGS · LIGHTS
+ *   ceiling(b, x0, z0, x1, z1, missing?, seed?, fallen?)   drop ceiling + T-bar grid on the global 0.6 × 1.2 m module
+ *     (X lines at 0.3 + 0.6k, Z lines at 0.6 + 1.2k); `missing` 0..1 leaves tiles out (decay).
+ *   troffer(b, x, z, "on" | "off" | flicker, PANEL_ON)  recessed 0.6 × 1.2 fitting at a grid cell centre
+ *     (x = 0.6k, z = 1.2k); louvre(b, x, z) adds a parabolic louvre. PANEL_WARM for the lobby tint.
+ *   Real light: b.lamp(fluoro(x, z, flicker?, intensity?)) (`./api`) — a downward spot just above the panel. Rule: a
+ *     lit room gets ~1 real lamp per 15–25 m² (intensity 8–30 cd at current exposure); the rest of its panels are
+ *     emissive only. Lamps on storey n carry zone "interior:n"; the lighting rig culls other storeys.
+ *     Flicker: fluorescentPanel(level) gives a material + level uniform; drive it from rigLevel(lamp) in update().
+ *
+ * FINISHES PER STOREY
+ *   STYLES[n] (`./styles`): floor, wall bands, floor stripe, door leaf, ceiling decay, louvres. The core hall and lift
+ *   lobby use the same STYLES[n], so a storey that changes its corridor finish should change it there.
+ *
+ * FURNITURE (real models)
+ *   placeModels(b, name, [{ position, yaw, scale?, collide?, inset?, blob?, tilt? }], { cast? })  (`./api`)
+ *     Library models (render/models.ts MODELS: size, front faces −Z, pivot at base centre; yawToward(dx, dz)).
+ *     Positions in ground-floor coordinates. Adds colliders (modelCollider with `inset`) and a soft contact shadow
+ *     for floor props now; after the storey flushes, every placement is baked into a few merged meshes per material
+ *     (no InstancedMesh: small instanced groups each compile a shader). Desk-top props are drawn only on the camera's
+ *     storey; chairs/stools too; LOD1 copies are drawn from outside and from other storeys automatically.
+ *   For procedural pieces: bevel (rbox), real thickness, every part touching what holds it (no floating brackets, no
+ *   rods through surfaces); wastebasket(b, x, z) is the shared bin.
+ *
+ * CULLING · ZONES · LOD (handled by interior.ts; know the rules)
+ *   Indoors: storeys n−1..n+1 are drawn, full furniture only on n. Outdoors within 18 m of the block: LOD1 furniture
+ *   for storeys level with the camera, per 22.5 m stretch; small props within 8 m. Your module's `proxy` group is
+ *   shown wherever its furniture is hidden (lit rooms: a desk silhouette is enough).
+ *
+ * STOREY MODULES
+ *   src/world/interior/storeys/sN.ts exports `build(b, { storey, pause }): Promise<{ update?, proxy? }>` (types.ts).
+ *   Call `await pause()` every few rooms. Leave the core hall opening and (storeys 1–4) the fire-escape door opening
+ *   at x −54.65, z 0. Register the module in storeys/index.ts.
+ *
+ * Z-FIGHTING
+ *   Never two coplanar faces: drop hidden faces with `skip`, offset layers ≥ 4 mm, keep trims/plates proud of every
+ *   finish layer. Check with the coplanar audit (ask the kit owner) or a stand-still flicker map.
+ */
 
 export type Mat = MaterialName | THREE.Material | Paint
 export type Band = readonly [y0: number, y1: number, mat: Mat]

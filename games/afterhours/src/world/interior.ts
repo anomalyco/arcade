@@ -3,13 +3,9 @@ import type { WorldContext, WorldModule } from "./context"
 import { BUILDING, ROOF_Y, VIEWPOINTS, type ViewpointName } from "./layout"
 import { Builder, STOREY_H } from "./interior/kit"
 import { buildCore, buildSlabs } from "./interior/core"
-import { buildCorridor } from "./interior/corridor"
 import { buildLift } from "./interior/lift"
-import { buildLobby } from "./interior/lobby"
-import { bakeModels, placeProps } from "./interior/props"
-import { buildCloset, buildLab } from "./interior/rooms"
-import { buildStorey, groundWindows } from "./interior/storeys"
-import { resetFurnish } from "./interior/furnish"
+import { bakeModels } from "./interior/props"
+import { STOREY_MODULES } from "./interior/storeys/index"
 
 // Everything inside the main block's shell: the ground floor (lobby, link, corridor, lab, closet), storeys 1–4, the
 // slabs between them, the stair core from the ground to the roof and the lift. Each storey is its own group so only
@@ -24,7 +20,6 @@ const pause = () =>
   })
 
 export async function build(ctx: WorldContext): Promise<WorldModule> {
-  resetFurnish()
   // The player's starting storey first (all named viewpoints are on the ground or outside, so normally storey 0).
   const view = VIEWPOINTS[(ctx.params.get("view") ?? "road") as ViewpointName]
   const icamY = Number(ctx.params.get("icam")?.split(",")[1])
@@ -34,26 +29,12 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const groups: THREE.Object3D[] = []
   const builders: Builder[] = []
   const proxies: (THREE.Object3D | null)[] = []
-  const upper: { update(time: number): void }[] = []
-  let corridor: { update(time: number): void } | null = null
+  const updates: ((time: number) => void)[] = []
   const buildOne = async (i: number) => {
     const b = new Builder(ctx, `storey-${i}`, i)
-    if (i === 0) {
-      buildLobby(b)
-      await pause()
-      corridor = buildCorridor(b)
-      await pause()
-      buildLab(b)
-      await pause()
-      buildCloset(b)
-      groundWindows(b)
-      placeProps(b)
-      proxies[i] = null
-    } else {
-      const st = await buildStorey(b, i, pause)
-      upper.push(st)
-      proxies[i] = st.proxy
-    }
+    const h = await STOREY_MODULES[i]!.build(b, { storey: i, pause })
+    if (h.update) updates.push(h.update)
+    proxies[i] = h.proxy ?? null
     await pause()
     b.flush()
     void bakeModels(b)
@@ -83,8 +64,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
         camera.position.set(icam[0]!, icam[1]!, icam[2]!)
         camera.rotation.set((icam[4]! * Math.PI) / 180, (icam[3]! * Math.PI) / 180, 0, "YXZ")
       }
-      corridor?.update(time)
-      for (const u of upper) u.update(time)
+      for (const u of updates) u(time)
       lift.update(dt, time, camera)
       // Inside the block only the player's storey and its neighbours can be seen; outside, every lit window counts.
       const p = camera.position

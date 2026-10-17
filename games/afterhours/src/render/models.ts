@@ -266,6 +266,47 @@ function materialSignature(m: THREE.Material): string {
 
 const shared = new Map<string, THREE.Material>()
 
+/**
+ * A material in the exact layout every model material has (same node program and pipeline), over a KTX2 atlas set
+ * outside the glTF files — used by src/render/documents.ts. Returns at once; the textures stream in.
+ *   base: sRGB colour; normal: tangent-space OpenGL; orm: R occlusion, G roughness, B metalness.
+ */
+export function atlasMaterial(urls: { base: string; normal: string; orm: string }, name = "atlas"): THREE.Material {
+  const tex = (srgb: boolean) => {
+    // Same sampler state as glTF textures (repeat, trilinear) so the cache key matches the models'.
+    const t = new THREE.CompressedTexture([], 1, 1)
+    t.wrapS = t.wrapT = THREE.RepeatWrapping
+    t.minFilter = THREE.LinearMipmapLinearFilter
+    t.magFilter = THREE.LinearFilter
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
+    t.flipY = false
+    return t
+  }
+  const map = tex(true)
+  const normalMap = tex(false)
+  const orm = tex(false)
+  const m = new THREE.MeshStandardMaterial({ map, normalMap, roughnessMap: orm, metalnessMap: orm, aoMap: orm, roughness: 1, metalness: 1, side: THREE.DoubleSide })
+  m.name = name
+  const n = toNodeMaterial(m)
+  canonicalise(n)
+  void ensureKtx2().then(() =>
+    Promise.all(
+      ([[map, urls.base], [normalMap, urls.normal], [orm, urls.orm]] as const).map(([t, url]) =>
+        ktx2.loadAsync(url).then((src) => {
+          t.mipmaps = src.mipmaps
+          t.image = src.image
+          t.format = src.format
+          t.type = src.type
+          t.generateMipmaps = false
+          t.needsUpdate = true
+          src.dispose()
+        }),
+      ),
+    ),
+  )
+  return n
+}
+
 /** Drops vertex attributes the material can't read (they still split the shader key) and widens quantised UVs so
  *  every model geometry has the same attribute layout. */
 function canonicaliseGeometry(g: THREE.BufferGeometry, mats: THREE.Material[]) {

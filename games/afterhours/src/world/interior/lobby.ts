@@ -66,82 +66,152 @@ function reception(b: Builder) {
   b.cyl(M.paper, T(3.4, y + 1.17, 15.5), 0.04, 0.04, 0.1, 12)
 }
 
-/** Moulded shell seat (seat pan curving up into the back, dished across), two-sided, base of the back at the origin,
- *  front facing local +Z. Built once and copied. */
+/**
+ * One-piece moulded shell (seat pan, waist curve, raked back) with real thickness and a rolled edge all round: a top
+ * surface grid, the same grid offset 9 mm along its normals underneath, and a rounded rim ring stitched between them,
+ * all sharing vertices so normals run smoothly over the edge. Local frame: centre of the seat pan's underside at the
+ * origin's (0, 0.445, 0), front facing +Z, width along X. Built once and copied.
+ */
+const SHELL_T = 0.009
+const SEAT_UNDER = 0.446
 const shellGeo = (() => {
-  // Profile from the front lip of the seat to the top of the back: [z, y].
-  const prof: [number, number][] = [
-    [0.21, 0.43], [0.19, 0.455], [0.1, 0.46], [0.0, 0.455], [-0.1, 0.45], [-0.16, 0.46], [-0.2, 0.5],
-    [-0.22, 0.56], [-0.235, 0.64], [-0.25, 0.72], [-0.265, 0.8], [-0.275, 0.86], [-0.27, 0.885],
+  // Centreline profile [z, y], front lip to top of the back.
+  const raw: [number, number][] = [
+    [0.222, 0.418], [0.212, 0.446], [0.17, 0.458], [0.08, 0.457], [-0.02, 0.452], [-0.11, 0.455], [-0.165, 0.472],
+    [-0.2, 0.505], [-0.218, 0.56], [-0.233, 0.64], [-0.248, 0.72], [-0.262, 0.8], [-0.27, 0.845], [-0.268, 0.868],
   ]
-  const nu = 9
+  // Resample evenly along the arc.
+  const len = [0]
+  for (let k = 1; k < raw.length; k++) len.push(len[k - 1]! + Math.hypot(raw[k]![0] - raw[k - 1]![0], raw[k]![1] - raw[k - 1]![1]))
+  const nv = 22
+  const nu = 13
+  const prof: [number, number][] = []
+  for (let j = 0; j < nv; j++) {
+    const d = (j / (nv - 1)) * len[len.length - 1]!
+    let k = 1
+    while (k < len.length - 1 && len[k]! < d) k++
+    const t = (d - len[k - 1]!) / (len[k]! - len[k - 1]!)
+    prof.push([raw[k - 1]![0] + (raw[k]![0] - raw[k - 1]![0]) * t, raw[k - 1]![1] + (raw[k]![1] - raw[k - 1]![1]) * t])
+  }
   const pos: number[] = []
-  const idx: number[] = []
-  for (let j = 0; j < prof.length; j++) {
+  const v = (i: number) => new THREE.Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
+  // Top surface: dished across (sides of the seat rise, sides of the back wrap forward), corners rounded in plan.
+  for (let j = 0; j < nv; j++) {
     const [pz, py] = prof[j]!
-    const back = py > 0.5
-    const hw = back ? 0.22 : 0.235
+    const backness = THREE.MathUtils.smoothstep(py, 0.47, 0.56)
+    const ends = Math.min(j, nv - 1 - j)
+    const round = ends === 0 ? 0.84 : ends === 1 ? 0.95 : ends === 2 ? 0.985 : 1
+    const hw = (0.232 - backness * 0.012) * round
     for (let i = 0; i < nu; i++) {
       const u = (i / (nu - 1)) * 2 - 1
-      const dish = u * u * 0.035
-      pos.push(u * hw, py + (back ? 0 : dish), pz + (back ? dish : 0))
+      const dish = u * u * 0.028
+      pos.push(u * hw, py + dish * (1 - backness), pz + dish * backness * 1.3)
     }
   }
-  for (let j = 0; j < prof.length - 1; j++)
-    for (let i = 0; i < nu - 1; i++) {
-      const a = j * nu + i
-      idx.push(a, a + 1, a + nu, a + 1, a + nu + 1, a + nu)
+  const at = (j: number, i: number) => j * nu + i
+  // Normals of the top grid (finite differences), oriented up/forward.
+  const nrm: THREE.Vector3[] = []
+  for (let j = 0; j < nv; j++)
+    for (let i = 0; i < nu; i++) {
+      const du = v(at(j, Math.min(nu - 1, i + 1))).sub(v(at(j, Math.max(0, i - 1))))
+      const dv = v(at(Math.min(nv - 1, j + 1), i)).sub(v(at(Math.max(0, j - 1), i)))
+      nrm.push(new THREE.Vector3().crossVectors(dv, du).normalize())
     }
-  const front = new THREE.BufferGeometry()
-  front.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
-  front.setIndex(idx)
-  front.computeVertexNormals()
-  // Underside: offset along the normal, reversed winding.
-  const n = front.getAttribute("normal")
-  const pos2 = pos.map((v, k) => v - n.array[k]! * 0.007)
-  const idx2: number[] = []
-  for (let k = 0; k < idx.length; k += 3) idx2.push(idx[k]!, idx[k + 2]!, idx[k + 1]!)
-  const under = new THREE.BufferGeometry()
-  under.setAttribute("position", new THREE.Float32BufferAttribute(pos2, 3))
-  under.setIndex(idx2)
-  under.computeVertexNormals()
-  return [front, under]
+  const seatN = nrm[at(4, (nu - 1) / 2)]!
+  if (seatN.y < 0) for (const n of nrm) n.negate()
+  const nTop = nv * nu
+  for (let k = 0; k < nTop; k++) {
+    const p = v(k).addScaledVector(nrm[k]!, -SHELL_T)
+    pos.push(p.x, p.y, p.z)
+  }
+  // Border loop and the rolled rim ring (half-way through the thickness, pushed outwards by half of it).
+  const loop: [number, number][] = []
+  for (let i = 0; i < nu; i++) loop.push([0, i])
+  for (let j = 1; j < nv; j++) loop.push([j, nu - 1])
+  for (let i = nu - 2; i >= 0; i--) loop.push([nv - 1, i])
+  for (let j = nv - 2; j >= 1; j--) loop.push([j, 0])
+  const rimStart = pos.length / 3
+  for (const [j, i] of loop) {
+    const ij = at(Math.min(nv - 2, Math.max(1, j)), Math.min(nu - 2, Math.max(1, i)))
+    const out = v(at(j, i)).sub(v(ij))
+    out.addScaledVector(nrm[at(j, i)]!, -out.dot(nrm[at(j, i)]!)).normalize()
+    const p = v(at(j, i)).addScaledVector(nrm[at(j, i)]!, -SHELL_T / 2).addScaledVector(out, SHELL_T * 0.55)
+    pos.push(p.x, p.y, p.z)
+  }
+  const idx: number[] = []
+  const tri = (a: number, b: number, c: number, want: THREE.Vector3) => {
+    const n = new THREE.Vector3().crossVectors(v(b).sub(v(a)), v(c).sub(v(a)))
+    if (n.dot(want) >= 0) idx.push(a, b, c)
+    else idx.push(a, c, b)
+  }
+  for (let j = 0; j < nv - 1; j++)
+    for (let i = 0; i < nu - 1; i++) {
+      const a = at(j, i), b2 = at(j, i + 1), c = at(j + 1, i), d = at(j + 1, i + 1)
+      const n = nrm[a]!
+      tri(a, b2, c, n)
+      tri(b2, d, c, n)
+      const m = n.clone().negate()
+      tri(a + nTop, b2 + nTop, c + nTop, m)
+      tri(b2 + nTop, d + nTop, c + nTop, m)
+    }
+  for (let k = 0; k < loop.length; k++) {
+    const k1 = (k + 1) % loop.length
+    const t0 = at(...loop[k]!), t1 = at(...loop[k1]!)
+    const m0 = rimStart + k, m1 = rimStart + k1
+    const out = v(m0).sub(v(t0).addScaledVector(nrm[t0]!, -SHELL_T / 2))
+    tri(t0, t1, m1, out)
+    tri(t0, m1, m0, out)
+    tri(m0, m1, t1 + nTop, out)
+    tri(m0, t1 + nTop, t0 + nTop, out)
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
 })()
 
 /**
- * Row of moulded orange shell chairs on a steel beam at x, from z = zStart, facing +X (`facing` 1) or -X (-1).
+ * Airport-style beam seating along local x (row centred on `zStart…`), facing +X (`facing` 1) or -X: a rectangular
+ * steel beam on two T-legs with rubber pads, each shell bolted down through a cast bracket (post + saddle plate) to
+ * the beam. One seat is missing its shell (bare bracket and bolts), one hangs loose on a lost bolt.
  */
 function chairs(b: Builder, xRow: number, zStart: number, n: number, facing: 1 | -1) {
   const y = FLOOR_Y
-  const pitch = 0.6
+  const pitch = 0.58
   const zEnd = zStart + (n - 1) * pitch
-  // Built facing +Z in a local frame; the rotation turns local +Z to world ±X, and local x to world ∓z·facing.
   const F = T(xRow, y, 0, facing * (Math.PI / 2))
   const lx = (z: number) => -facing * z
-  const pipe = (p0: number[], p1: number[], r: number) => {
-    const a = new THREE.Vector3(p0[0], p0[1], p0[2]).applyMatrix4(F)
-    const c = new THREE.Vector3(p1[0], p1[1], p1[2]).applyMatrix4(F)
-    b.rod(M.steel, [a.x, a.y, a.z], [c.x, c.y, c.z], r, 10)
-  }
-  const ends = [lx(zStart - 0.15), lx(zEnd + 0.15)]
-  // Tubular beam, two T-legs with splayed feet, a bracket under every seat.
-  pipe([Math.min(...ends), 0.38, 0], [Math.max(...ends), 0.38, 0], 0.025)
-  for (const e of ends) {
-    pipe([e, 0.38, 0], [e, 0.03, 0], 0.022)
-    pipe([e, 0.02, -0.25], [e, 0.02, 0.3], 0.016)
-    b.rbox(M.rubber, F, 0.04, 0.02, 0.05, 0.008, e, 0.01, -0.25)
-    b.rbox(M.rubber, F, 0.04, 0.02, 0.05, 0.008, e, 0.01, 0.3)
+  const xa = Math.min(lx(zStart), lx(zEnd)) - 0.2
+  const xb = Math.max(lx(zStart), lx(zEnd)) + 0.2
+  const steel = M.darkSteel
+  // Beam: 80 × 50 mm box section, end caps.
+  const beamY = 0.335
+  b.rbox(steel, F, xb - xa, 0.05, 0.08, 0.006, (xa + xb) / 2, beamY, -0.04)
+  for (const x of [xa, xb]) b.rbox(M.rubber, F, 0.006, 0.044, 0.074, 0.002, x - Math.sign(x - (xa + xb) / 2) * -0.003, beamY, -0.04)
+  // T-legs in the gaps between the first two and last two seats: post, foot bar, pads.
+  const legs = [lx(zStart + pitch / 2), lx(zEnd - pitch / 2)]
+  for (const x of legs) {
+    b.rbox(steel, F, 0.06, beamY - 0.025 - 0.03, 0.05, 0.006, x, (beamY - 0.025 + 0.03) / 2, -0.04)
+    b.rbox(steel, F, 0.07, 0.03, 0.62, 0.006, x, 0.015 + 0.012, -0.04)
+    for (const z of [-0.33, 0.25]) b.rbox(M.rubber, F, 0.08, 0.012, 0.08, 0.004, x, 0.006, z)
   }
   for (let i = 0; i < n; i++) {
     const x = lx(zStart + i * pitch)
-    const S = F.clone().multiply(T(x, 0, 0.04))
-    for (const g of shellGeo) b.add("plastic_orange", g.clone().applyMatrix4(S))
-    pipe([x, 0.38, 0], [x, 0.44, 0.02], 0.014)
-    pipe([x, 0.4, -0.02], [x, 0.6, -0.2], 0.012)
+    const missing = i === 2
+    const loose = i === 4
+    // Bracket: post from the beam top up to a saddle plate under the seat pan, two bolt heads on the plate.
+    const plateY = SEAT_UNDER - 0.006
+    b.rbox(steel, F, 0.05, plateY - (beamY + 0.025), 0.04, 0.005, x, (plateY + beamY + 0.025) / 2, -0.03)
+    b.rbox(steel, F, 0.2, 0.012, 0.16, 0.004, x, plateY, -0.02)
+    for (const bx of [-0.07, 0.07]) b.cyl(missing ? M.steel : steel, F.clone().multiply(T(x + bx, plateY + 0.009, -0.02)), 0.009, 0.009, 0.006, 8)
+    if (missing) continue
+    const S = F.clone().multiply(T(x, loose ? 0.004 : 0, 0, loose ? 0.06 : 0, loose ? -0.035 : 0, loose ? 0.025 : 0))
+    b.add("plastic_orange", shellGeo.clone().applyMatrix4(S))
   }
   const z0 = Math.min(zStart, zEnd) - 0.4
   const z1 = Math.max(zStart, zEnd) + 0.4
-  b.collide(xRow - 0.32, y, z0, xRow + 0.32, y + 0.9, z1)
+  b.collide(xRow - 0.34, y, z0, xRow + 0.3, y + 0.9, z1)
 }
 
 /** Felt letter board with rows of white letters too small and blurred to read. */

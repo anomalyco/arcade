@@ -36,6 +36,10 @@ import { DoorPrompt, type DoorVerb } from "./doors/hud"
  *     Sliding / roll-up doors: `slide: { axis: [0, 1, 0], distance: 2.2 }` (world unit axis) translates the leaf
  *     instead of rotating it; `onMove(t)` lets you drive custom visuals (slats coiling into a drum) from the 0..1 state.
  *     Locked doors: `locked: true` (E rattles, prompt says Locked); flip `door.locked` at runtime to unlock.
+ *     Body push: an ajar or open leaf yields when the player walks or runs into it from the side it swings away from
+ *     (slow push at a walk, banging open at a run, coasting and a soft bounce off the open stop). Shut doors need E,
+ *     except `panic: true` (panic-bar fire doors; default for gates), which push open from the push side.
+ *     `closer: true` (default = `panic`) makes a used door draw itself slowly shut ~4 s after coming to rest.
  *  5. Pick `openAngle` so the fully open leaf (plus ~4% overshoot) clears jambs, walls and furniture on BOTH sides when
  *     `swing: "auto"`; use `swing: "fixed"` where one side is blocked (a door against a corridor wall).
  *  6. Avoid putting the leaf inside a transformed parent; if you must, keep the parent translation-only and pass the
@@ -83,6 +87,14 @@ export type DoorSpec = {
   mass?: number
   /** Seconds for a full 0 → 1 travel at the default speed (overrides `mass`). */
   duration?: number
+  /**
+   * Opens to a body push even when shut (panic-bar fire doors, swing gates): from the push side only, i.e. the side the
+   * door swings away from (either side for `swing: "auto"`). Default: true for gates. Other doors yield to a push only
+   * once ajar (amount > 0.02); shut and latched they need E.
+   */
+  panic?: boolean
+  /** Door closer: once the player has used it, it slowly swings shut ~4 s after coming to rest. Default: `panic`. */
+  closer?: boolean
   /** Called whenever the leaf moves, with the open fraction (may overshoot 1 slightly on hinged doors). */
   onMove?: (t: number) => void
 }
@@ -106,6 +118,10 @@ const PLAYER_R = 0.3
 const PLAYER_STEP = 0.45
 const PLAYER_EYE = 1.65
 const SUB = 1 / 120
+/** Below this open fraction a door counts as shut and latched (body pushes don't move it unless `panic`). */
+const LATCHED = 0.02
+/** Seconds a door with a closer rests open before it swings shut. */
+const CLOSER_DELAY = 4
 
 type PlayerRef = { pos: { x: number; y: number; z: number }; camera: THREE.PerspectiveCamera }
 
@@ -132,6 +148,19 @@ class Door implements DoorHandle {
   dir: number
   rattle = 0
   active = false
+  /** Coasting after a body push: no plan, `v` decays with hinge friction and bounces off the open stop. */
+  free = false
+  /** Closing under its own closer (slower than a hand). */
+  slow = false
+  /** Used by the player since it last closed (arms the closer). */
+  touched = false
+  /** Seconds at rest open (closer countdown). */
+  idle = 0
+  /** Open fraction at the start of this frame (push velocity), and the frame of the last push contact. */
+  t0 = 0
+  contact = -9
+  readonly panic: boolean
+  readonly closer: boolean
   // Current pose (collider): yaw and offset from the hinge.
   yaw: number
   ox = 0
@@ -155,6 +184,8 @@ class Door implements DoorHandle {
     this.reachR = Math.abs(spec.width) + (spec.slide ? Math.abs(spec.slide.distance) : 0) + 0.5
     this.dir = Math.sign(spec.openAngle) || 1
     this.profile = profileFor(spec.sound ?? "steel", spec.slide, spec.mass, spec.duration)
+    this.panic = !spec.slide && (spec.panic ?? this.profile.kind === "gate")
+    this.closer = !spec.slide && (spec.closer ?? this.panic)
     this.t = this.target = Math.max(0, Math.min(1, spec.startOpen ?? 0))
     this.tooth = Math.floor(this.t * this.profile.teeth)
     this.yaw = this.yaw0
@@ -290,6 +321,8 @@ export class Doors {
   private audio: DoorAudio | null
   private prompt: DoorPrompt | null = null
   private focus: Door | null = null
+  private frame = 0
+  private lastDt = 1 / 60
   private tmp = { x: 0, y: 0, z: 0 }
 
   constructor(private quiet: boolean) {
@@ -334,16 +367,84 @@ export class Doors {
   }
 
   /**
-   * True when moving the player circle from (x, z) to (nx, nz) would push it deeper into a door leaf. Moves that
-   * leave or reduce an overlap are allowed, so a door can never trap the player.
+   * The player circle moving from (x, z) to (nx, nz) against the door leaves. Returns the fraction of the move to make:
+   * 1 (clear), 0 (blocked by a leaf), or in between when the body pushes a leaf open (resistance by the door's mass
+   * and the lever arm). A pushed leaf is swung just far enough to clear the new position (so there is never overlap or
+   * jitter) and keeps that angular velocity, coasting on after the player stops. Leaves only ever move away from the
+   * player, and moves that leave or reduce an overlap are always allowed, so a door can never trap anyone.
    */
-  blocks(x: number, z: number, nx: number, nz: number, feet: number, head: number, r: number) {
+  push(x: number, z: number, nx: number, nz: number, feet: number, head: number, r: number) {
+    let k = 1
     for (const d of this.list) {
       if (Math.abs(nx - d.hx) > d.reachR + r || Math.abs(nz - d.hz) > d.reachR + r) continue
       const pn = d.penetration(nx, nz, feet, head, r)
-      if (pn > 0 && pn > d.penetration(x, z, feet, head, r) - 1e-6) return true
+      if (pn <= 0 || pn <= d.penetration(x, z, feet, head, r) - 1e-6) continue
+      const lever = this.yieldTo(d, x, z, nx, nz, feet, head, r)
+      if (lever < 0) return 0
+      // Heavier doors and pushes near the hinge slow the player more.
+      k = Math.min(k, (0.7 + 0.3 * lever) / (1 + 0.12 * d.profile.duration))
     }
-    return false
+    return k
+  }
+
+  /** True when moving from (x, z) to (nx, nz) would push deeper into a leaf that won't yield. */
+  blocks(x: number, z: number, nx: number, nz: number, feet: number, head: number, r: number) {
+    return this.push(x, z, nx, nz, feet, head, r) === 0
+  }
+
+  /**
+   * Swings `d` open just far enough to clear a player circle at (nx, nz), if the body can push it: unlocked, ajar (or
+   * a panic door), and the player on the side it swings away from. Returns the lever arm 0..1 (contact distance from
+   * the hinge over the leaf length), or -1 when the leaf holds.
+   */
+  private yieldTo(d: Door, x: number, z: number, nx: number, nz: number, feet: number, head: number, r: number) {
+    if (d.spec.slide || d.locked || d.hold > 0) return -1
+    const shut = d.t < LATCHED
+    if (shut && !d.panic) return -1
+    if (shut && (d.spec.swing ?? "auto") === "auto") d.dir = this.sideDir(d, x, z)
+    // Increasing t moves the leaf towards local -z·dir·sign(width): the player must be on the other side.
+    const c = Math.cos(d.yaw)
+    const s = Math.sin(d.yaw)
+    const lz = (x - d.hx) * s + (z - d.hz) * c
+    const w = Math.sign(d.spec.width) || 1
+    if (Math.sign(lz) !== d.dir * w) return -1
+    const t0 = d.t
+    d.pose(1)
+    if (d.penetration(nx, nz, feet, head, r) > 0) {
+      d.pose(t0)
+      return -1 // against the open stop
+    }
+    let lo = t0
+    let hi = 1
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2
+      d.pose(mid)
+      if (d.penetration(nx, nz, feet, head, r) > 0) lo = mid
+      else hi = mid
+    }
+    const t = Math.min(1, hi + 0.002)
+    d.pose(t)
+    d.t = d.target = t
+    d.plan = null
+    d.free = true
+    d.slow = false
+    d.touched = true
+    d.idle = 0
+    d.active = true
+    const vmax = 3 / d.profile.duration
+    const v = Math.min(vmax, (t - d.t0) / Math.max(1e-3, this.lastDt))
+    if (v > d.v) d.v = v
+    // A fast first contact (running into it) bangs.
+    if (this.frame - d.contact > 3 && d.v * d.profile.duration > 1.2) this.audio?.bump(d.spec.sound ?? "steel", this.pan(d), Math.min(1, (d.v * d.profile.duration) / 3))
+    d.contact = this.frame
+    d.apply()
+    return Math.min(1, Math.hypot(nx - d.hx, nz - d.hz) / Math.max(0.1, d.xb - d.xa))
+  }
+
+  /** Swing sign that moves the leaf away from a body at (x, z). */
+  private sideDir(d: Door, x: number, z: number) {
+    const side = (x - d.hx) * Math.sin(d.yaw0) + (z - d.hz) * Math.cos(d.yaw0)
+    return (Math.sign(side) || 1) * (Math.sign(d.spec.width) || 1)
   }
 
   /** KeyE: toggles the door under the crosshair. Returns the door used, if any. */
@@ -364,7 +465,11 @@ export class Doors {
 
   /** Sets a door's target (and its partner's). */
   command(d: Door, target: number, partner: boolean) {
-    if (target === d.target) return
+    if (target === d.target && !d.free) return
+    d.free = false
+    d.slow = false
+    d.touched = true
+    d.idle = 0
     const atRest = !d.active || (Math.abs(d.v) < 1e-3 && d.hold <= 0)
     if (atRest && target > 0 && d.t < 0.05 && !d.spec.slide && (d.spec.swing ?? "auto") === "auto") d.dir = this.awayDir(d)
     d.target = target
@@ -449,6 +554,8 @@ export class Doors {
 
   /** Per frame (called by the player before it moves): animates doors and updates the prompt. */
   update(dt: number) {
+    this.frame++
+    this.lastDt = dt
     const speed = Number(this.settings["doors.speed"] ?? 1)
     if (this.audio) {
       this.audio.volume = Number(this.settings["doors.volume"] ?? 0.6)
@@ -467,7 +574,19 @@ export class Doors {
         const h = Math.min(SUB, left)
         left -= h
         const prev = d.t
-        const t = stepMotion(d, prof, d.target, speed, h)
+        let t: number
+        let bump = 0
+        if (d.free) {
+          // Coasting after a push: hinge friction, a soft bounce off the open stop, latching if it swings shut.
+          d.v *= Math.exp(-2.6 * h)
+          t = d.t + d.v * h
+          if (t >= 1) {
+            t = 1
+            bump = d.v * prof.duration
+            d.v = d.v > 0.05 ? -d.v * 0.28 : 0
+          } else if (t <= 0) t = 0
+          d.target = t
+        } else t = stepMotion(d, prof, d.target, speed * (d.slow ? 0.55 : 1), h)
         const latched = d.target === 0 && t === 0 && prev > 0
         if (p && t !== prev) {
           const before = d.penetration(p.x, p.z, feet, head, PLAYER_R)
@@ -482,9 +601,20 @@ export class Doors {
           }
         } else d.pose(t)
         if (latched && this.audio) this.audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration)
-        if (t === d.target && !d.plan) d.v = 0
+        if (bump > 0.6) this.audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
+        if (d.free && t === 0) {
+          d.v = 0
+          d.free = false
+        }
+        if (!d.free && t === d.target && !d.plan) d.v = 0
         d.t = t
       }
+      if (d.free && Math.abs(d.v) < 0.004) {
+        d.free = false
+        d.v = 0
+        d.target = d.t
+      }
+      d.t0 = d.t
       if (prof.teeth) {
         const tooth = Math.floor(d.t * prof.teeth + 1e-6)
         if (tooth !== d.tooth && this.audio) this.audio.tick(this.pan(d))
@@ -492,11 +622,26 @@ export class Doors {
       }
       // Leaf speed relative to the peak of a full swing (1.875 / duration for the quintic curve).
       this.audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
-      if (d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
+      if (!d.free && d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
         d.v = 0
         d.pose(d.t)
-        d.active = false
-        this.audio?.stopLoop(d.id)
+        if (d.t < LATCHED) d.touched = false
+        d.slow &&= d.t > 0
+        if (d.closer && d.touched && d.t >= LATCHED) {
+          // The closer waits, then draws the leaf shut slowly (the player in the way just stops it).
+          d.idle += dt
+          if (d.idle > CLOSER_DELAY) {
+            d.idle = 0
+            d.touched = false
+            d.slow = true
+            d.target = 0
+            d.hold = 0.25
+            d.plan = null
+          }
+        } else {
+          d.active = false
+          this.audio?.stopLoop(d.id)
+        }
       }
       d.apply()
     }
@@ -529,6 +674,8 @@ export class Doors {
     const saved = this.list.map((d) => [d.t, d.dir] as const)
     for (const d of this.list) d.pose(1)
     for (const d of this.list) {
+      // Small "doors" (push buttons, hatches) aren't doorways.
+      if (d.height < 1.2) continue
       const partner = d.spec.double ? this.byId.get(d.spec.double) : undefined
       if (d.spec.double && !partner) issues.push({ id: d.id, issue: `partner ${d.spec.double} not registered` })
       // Opening centre: the closed leaf's midpoint, or the midpoint between both closed leaves.

@@ -74,18 +74,21 @@ export function buildLot(ctx: WorldContext, root: THREE.Object3D) {
     }
   })
 
-  // Concrete wheel stops in most stalls.
+  // Concrete wheel stops in most stalls: 1.8 m long in a 2.7 m stall with only a few cm of drift, so neighbours and
+  // back-to-back rows never touch; none in the stalls beside the pole footings on the double-row head lines.
+  const poleX = AISLE_X + 6 * STALL_W
   ROWS.forEach((r, ri) => {
     for (const side of [-1, 1] as const) {
       for (let i = 0; i < nStalls; i++) {
         if (rnd() < 0.3) continue
         const s = stall(ri, side, i)
-        const jitter = (rnd() - 0.5) * 0.25
-        const yaw = (rnd() - 0.5) * 0.12
+        const jitter = (rnd() - 0.5) * 0.12
+        const yaw = (rnd() - 0.5) * 0.03
+        if ((r.head === 56 || r.head === 74) && Math.abs(Math.abs(s.x) - poleX) < 1.6) continue
         const z = r.head - r.facing * 0.55
         batch.at(curb, box(1.8, 0.12, 0.16), s.x + jitter, LOT_Y + 0.06, z, yaw)
         batch.at(curb, box(1.7, 0.03, 0.1), s.x + jitter, LOT_Y + 0.13, z, yaw)
-        ctx.colliders.push({ min: [s.x - 0.9, 0, z - 0.1], max: [s.x + 0.9, 0.2, z + 0.1] })
+        ctx.colliders.push({ min: [s.x + jitter - 0.9, 0, z - 0.1], max: [s.x + jitter + 0.9, 0.2, z + 0.1] })
       }
     }
   })

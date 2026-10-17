@@ -6,7 +6,13 @@ import type { Doors } from "./doors"
 export type Box = { min: readonly [number, number, number]; max: readonly [number, number, number] }
 
 /** A walkable horizontal surface (building floors, the loading dock, booth floor). Outdoors the terrain is the floor. */
-export type Floor = { min: readonly [number, number]; max: readonly [number, number]; y: number }
+export type Floor = {
+  min: readonly [number, number]
+  max: readonly [number, number]
+  y: number
+  /** Footstep surface for `Player.onStep` ("concrete", "tile", "linoleum", "steel", "wood"…); default "floor". */
+  surface?: string
+}
 
 /**
  * A light source a builder places. Builders only describe fixtures; `render/lighting.ts` decides which become real

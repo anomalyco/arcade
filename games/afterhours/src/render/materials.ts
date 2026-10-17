@@ -6,6 +6,8 @@ import {
   floor,
   fract,
   fwidth,
+  dFdx,
+  dFdy,
   hash,
   interleavedGradientNoise,
   log2,
@@ -492,16 +494,16 @@ function wet(s: Surf, porosity: N, film: N, puddles: N): Surf {
   const filmRough = mix(film, film.add(0.1), dry)
   let color = s.color.mul(mix(float(1), float(1).sub(porosity), filmAmt))
   color = mix(color, color.mul(0.55), puddle)
-  // Wet aggregate tips: sparse near-mirror glints that keep the scan's micro normal, so lamps sparkle and streak.
-  // Spots are ~11 mm: once a pixel covers several, blend to their average coverage instead of sparkling per frame.
-  const gn = texture(noise(), positionWorld.xz.mul(1 / 0.35)).a
-  const glintFade = smoothstep(0.003, 0.012, footprint(positionWorld.xz))
-  const glint = mix(aaStep(float(0.9), gn, 0.03), float(0.1), glintFade).mul(filmAmt)
+  // Broad smeared sheen instead of point glints: 1–3 m patches where the film is thicker and glossier (no
+  // pixel-sized mirror spots, which sparkle under a small bright lamp whatever the anti-aliasing).
+  const sheen = smoothstep(0.35, 0.85, texture(noise(), positionWorld.xz.mul(1 / 6)).g).mul(filmAmt)
   let rough = mix(s.rough, min(s.rough, filmRough), filmAmt)
-  rough = mix(rough, float(0.04), glint)
+  rough = mix(rough, rough.mul(0.75), sheen)
   rough = mix(rough, float(0.035), puddle)
-  // The film fills some of the micro relief (the rest breaks reflections into streaks); standing water is flat.
-  const normal = mix(mix(s.normal, FLAT, filmAmt.mul(0.3)), FLAT, puddle)
+  // The film fills some of the micro relief (the rest breaks reflections into streaks); standing water is flat. With
+  // distance the relief goes sub-pixel: fade it under the film so it can't alias (specularAA widens the rest).
+  const far = smoothstep(0.004, 0.03, footprint(positionWorld.xz))
+  const normal = mix(mix(s.normal, FLAT, filmAmt.mul(mix(float(0.3), float(0.8), far))), FLAT, puddle)
   return { ...s, color, rough, normal }
 }
 
@@ -595,7 +597,8 @@ defineClass("ground", {
     const rough = mix(s0.rough.mul(p[2].x).add(p[2].y), float(0.55), wear)
     const normal = mix(s0.normal, FLAT, wear.mul(0.6))
     const s = wet({ ...s0, color, rough, normal }, p[2].z, p[2].w, p[3].x)
-    return { color: s.color, rough: clamp(s.rough, 0.02, 1), metal: float(0), normal: s.normal, normalScale: p[1].w, ao: s.ao }
+    const aaRough = specularAA(clamp(s.rough, 0.02, 1), s.normal, p[1].w, uv(), p[0].x.div(1024), float(0.012))
+    return { color: s.color, rough: aaRough, metal: float(0), normal: s.normal, normalScale: p[1].w, ao: s.ao }
   },
 })
 type GroundOpts = { set: SetName; antiTile: boolean; sat: number; macro: boolean; tint: number | readonly [number, number, number]; normalScale: number; rough: [number, number]; porosity: number; film: number; puddles: number; paint?: readonly [number, number, number] }
@@ -659,6 +662,25 @@ function aaStep(edge: N, x: N, soft = 0.01): N {
 
 /** Metres of surface under one pixel at `uvn` (UV metres). */
 const footprint = (uvn: N): N => max(fwidth(uvn.x), fwidth(uvn.y))
+
+/**
+ * Specular anti-aliasing (Kaplanyan & Hill 2016, plus a Toksvig-style mip term): widens roughness by the variance of
+ * the normal under one pixel, so detail too fine to resolve turns into a broader, stable highlight instead of
+ * sparkling under TAA. `normal` is the packed tangent-space normal (0..1) and `scale` its strength. Variance comes from
+ * the screen-space derivatives of the scaled normal, plus `lost` (the map's normal variance, xy² mean) as the texture
+ * minifies past `metresPerTexel` and mip filtering averages its relief away.
+ */
+function specularAA(rough: N, normal: N, scale: N, uvn: N, metresPerTexel: N, lost: N): N {
+  const nxy: N = normal.xy.mul(2).sub(1).mul(scale)
+  const dx: N = dFdx(nxy)
+  const dy: N = dFdy(nxy)
+  const screenVar: N = dx.dot(dx).add(dy.dot(dy)).mul(0.25)
+  const texelsPerPixel: N = footprint(uvn).div(metresPerTexel.max(1e-6))
+  const mipVar: N = lost.mul(scale.mul(scale)).mul(smoothstep(0.7, 6, texelsPerPixel))
+  const a: N = rough.mul(rough)
+  const a2: N = a.mul(a).add(min(screenVar.add(mipVar).mul(2), float(0.05)))
+  return sqrt(sqrt(a2))
+}
 
 /**
  * Rectangular unit grid in UV metres (blocks, tiles, slabs): `w`×`h` units with `joint`-wide joints, every other row
@@ -737,7 +759,8 @@ defineClass("scan", {
     const sn = s.normal.mul(2).sub(1)
     const bev = vec2(g.bx, g.by).mul(on).mul(0.7)
     const normal = vec3(sn.xy.add(bev), sn.z).normalize().mul(0.5).add(0.5)
-    return { color, rough: clamp(rough, 0.02, 1), metal: mix(p[2].z, s.metal, p[1].w), normal, normalScale: p[0].w, ao: s.ao.mul(float(1).sub(jm.mul(0.45))) }
+    const aaRough = specularAA(clamp(rough, 0.02, 1), normal, p[0].w, uv(), p[0].x.div(1024), float(0.04))
+    return { color, rough: aaRough, metal: mix(p[2].z, s.metal, p[1].w), normal, normalScale: p[0].w, ao: s.ao.mul(float(1).sub(jm.mul(0.45))) }
   },
 })
 type ScanOpts = {
@@ -806,7 +829,8 @@ defineClass("tile", {
     const rough = mix(float(0.05).add(imp.rough.mul(0.22)), float(0.85), g.mask)
     // Rounded glaze edge plus a slight per-tile tilt, so highlights break up tile by tile down a corridor.
     const normal = tileNormal(g, 0.6, 0.05)
-    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
+    const aaRough = specularAA(clamp(rough, 0.02, 1), normal, float(1), uv(), float(1), float(0))
+    return { color, rough: aaRough, metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
   },
 })
 
@@ -826,7 +850,8 @@ defineClass("linoleum", {
     const imp = sample("imperfections", uv(), float(2.3))
     const scuff = wnoise(uv(), 3.1).g
     const rough = float(0.04).add(t.rnd2.mul(0.05)).add(imp.rough.mul(0.3)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.mask.mul(0.5))
-    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: tileNormal(t, 0.55, 0.012), ao: float(1) }
+    const normal = tileNormal(t, 0.55, 0.012)
+    return { color, rough: specularAA(clamp(rough, 0.02, 1), normal, float(1), uv(), float(1), float(0)), metal: float(0), normal, ao: float(1) }
   },
 })
 

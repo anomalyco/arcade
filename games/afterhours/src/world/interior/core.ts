@@ -189,7 +189,9 @@ function stairWalls(b: Builder, i: number) {
   // Threshold through the wall thickness (the slab is cut for the stairwell here).
   b.box(M.darkSteel, ST.door - 0.55, FLOOR_Y - 0.02, ST.wallZ0 - 0.01, ST.door + 0.55, FLOOR_Y + 0.002, ST.z0 + 0.01, { cast: false })
   b.walk(ST.door - 0.55, ST.wallZ0 - 0.02, ST.door + 0.55, ST.z0 + 0.02)
-  door(b, ST.door, ST.wallZ0 + 0.075, { rot: Math.PI, open: i === 3 ? 0 : 0.7 })
+  // Centred on the whole assembly (stair wall + the hall's 12 mm finish layer) so the frame, casings and sign plates
+  // sit proud of the finish instead of inside it.
+  door(b, ST.door, (ST.wallZ0 - 0.012 + ST.z0) / 2, { rot: Math.PI, wallT: ST.z0 - ST.wallZ0 + 0.012, open: i === 3 ? 0 : 0.7 })
 }
 
 /** Caged bulkhead light (wall-mounted, lens facing out along `yaw`). */
