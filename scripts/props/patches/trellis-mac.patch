@@ -1,0 +1,875 @@
+diff --git a/backends/mesh_extract.py b/backends/mesh_extract.py
+index b548dd5..e43dc0a 100644
+--- a/backends/mesh_extract.py
++++ b/backends/mesh_extract.py
+@@ -5,6 +5,7 @@ Replaces the CUDA-only o_voxel._C hashmap operations with Python dicts.
+ Produces identical output to the CUDA version for inference.
+ """
+ 
++import os
+ import torch
+ import numpy as np
+ from typing import Union
+@@ -83,13 +84,6 @@ def flexible_dual_grid_to_mesh(
+ 
+     N = dual_vertices.shape[0]
+ 
+-    # Build coordinate lookup on CPU
+-    coords_cpu = coords.cpu()
+-    coord_to_idx = {}
+-    for i in range(N):
+-        key = (coords_cpu[i, 0].item(), coords_cpu[i, 1].item(), coords_cpu[i, 2].item())
+-        coord_to_idx[key] = i
+-
+     # Find connected voxels for each intersected edge
+     edge_neighbor_voxel = coords.reshape(N, 1, 1, 3) + _edge_neighbor_voxel_offset
+     connected_voxel = edge_neighbor_voxel[intersected_flag]
+@@ -98,16 +92,41 @@ def flexible_dual_grid_to_mesh(
+     if M == 0:
+         return torch.zeros(0, 3, device=device), torch.zeros(0, 3, dtype=torch.long, device=device)
+ 
+-    # Look up neighbor indices via dict
+-    connected_cpu = connected_voxel.cpu().reshape(-1, 3)
+-    indices = []
+-    for j in range(connected_cpu.shape[0]):
+-        key = (connected_cpu[j, 0].item(), connected_cpu[j, 1].item(), connected_cpu[j, 2].item())
+-        indices.append(coord_to_idx.get(key, 0xFFFFFFFF))
++    if os.environ.get("TRELLIS2_FAST_MESH_EXTRACT", "1") == "1":
++        D, H, W = int(grid_size[0].item()), int(grid_size[1].item()), int(grid_size[2].item())
++        table_size = D * H * W
++        lookup = torch.full((table_size,), -1, dtype=torch.int32, device=device)
++        flat_coords = (coords[:, 0].long() * (H * W) + coords[:, 1].long() * W + coords[:, 2].long())
++        lookup[flat_coords] = torch.arange(N, dtype=torch.int32, device=device)
+ 
+-    connected_voxel_indices = torch.tensor(indices, dtype=torch.int64, device=device).reshape(M, 4)
+-    connected_voxel_valid = (connected_voxel_indices != 0xFFFFFFFF).all(dim=1)
+-    quad_indices = connected_voxel_indices[connected_voxel_valid].long()
++        c3 = connected_voxel.reshape(-1, 3).long()
++        valid = ((c3[:, 0] >= 0) & (c3[:, 0] < D) &
++                 (c3[:, 1] >= 0) & (c3[:, 1] < H) &
++                 (c3[:, 2] >= 0) & (c3[:, 2] < W))
++        flat_q = (c3[:, 0] * (H * W) + c3[:, 1] * W + c3[:, 2]).clamp(0, table_size - 1)
++        res = lookup[flat_q]
++        res[~valid] = -1
++        connected_voxel_indices = res.reshape(M, 4)
++        connected_voxel_valid = (connected_voxel_indices >= 0).all(dim=1)
++        quad_indices = connected_voxel_indices[connected_voxel_valid].long()
++    else:
++        # Build coordinate lookup on CPU
++        coords_cpu = coords.cpu()
++        coord_to_idx = {}
++        for i in range(N):
++            key = (coords_cpu[i, 0].item(), coords_cpu[i, 1].item(), coords_cpu[i, 2].item())
++            coord_to_idx[key] = i
++
++        # Look up neighbor indices via dict
++        connected_cpu = connected_voxel.cpu().reshape(-1, 3)
++        indices = []
++        for j in range(connected_cpu.shape[0]):
++            key = (connected_cpu[j, 0].item(), connected_cpu[j, 1].item(), connected_cpu[j, 2].item())
++            indices.append(coord_to_idx.get(key, 0xFFFFFFFF))
++
++        connected_voxel_indices = torch.tensor(indices, dtype=torch.int64, device=device).reshape(M, 4)
++        connected_voxel_valid = (connected_voxel_indices != 0xFFFFFFFF).all(dim=1)
++        quad_indices = connected_voxel_indices[connected_voxel_valid].long()
+     L = quad_indices.shape[0]
+ 
+     if L == 0:
+diff --git a/patches/mps_compat.py b/patches/mps_compat.py
+index 732e074..9137cf7 100644
+--- a/patches/mps_compat.py
++++ b/patches/mps_compat.py
+@@ -53,40 +53,47 @@ def patch_sparse_attention():
+ 
+     sdpa_block = """\
+     elif config.ATTN in ('sdpa', 'naive'):
++        import os
+         from torch.nn.functional import scaled_dot_product_attention as sdpa_fn
+         if num_all_args == 1:
+             q, k, v = qkv.unbind(dim=1)
+         elif num_all_args == 2:
+             k, v = kv.unbind(dim=1)
+-        H = q.shape[-2]
+-        max_q = max(q_seqlen)
+-        max_kv = max(kv_seqlen) if kv_seqlen is not None else max_q
+         B = len(q_seqlen)
+-        C_q = q.shape[-1]
+-        C_v = v.shape[-1]
+-        q_padded = torch.zeros(B, max_q, H, C_q, device=device, dtype=q.dtype)
+-        k_padded = torch.zeros(B, max_kv, H, C_q, device=device, dtype=k.dtype)
+-        v_padded = torch.zeros(B, max_kv, H, C_v, device=device, dtype=v.dtype)
+-        q_offset = 0
+-        kv_offset = 0
+-        for b in range(B):
+-            ql = q_seqlen[b]
+-            kvl = kv_seqlen[b] if kv_seqlen is not None else ql
+-            q_padded[b, :ql] = q[q_offset:q_offset+ql]
+-            k_padded[b, :kvl] = k[kv_offset:kv_offset+kvl]
+-            v_padded[b, :kvl] = v[kv_offset:kv_offset+kvl]
+-            q_offset += ql
+-            kv_offset += kvl
+-        q_padded = q_padded.permute(0, 2, 1, 3)
+-        k_padded = k_padded.permute(0, 2, 1, 3)
+-        v_padded = v_padded.permute(0, 2, 1, 3)
+-        out_padded = sdpa_fn(q_padded, k_padded, v_padded)
+-        out_padded = out_padded.permute(0, 2, 1, 3)
+-        out_list = []
+-        for b in range(B):
+-            ql = q_seqlen[b]
+-            out_list.append(out_padded[b, :ql])
+-        out = torch.cat(out_list, dim=0)
++        if B == 1 and os.environ.get("TRELLIS2_FAST_SDPA", "1") == "1":
++            q_in = q.unsqueeze(0).permute(0, 2, 1, 3)
++            k_in = k.unsqueeze(0).permute(0, 2, 1, 3)
++            v_in = v.unsqueeze(0).permute(0, 2, 1, 3)
++            out = sdpa_fn(q_in, k_in, v_in).permute(0, 2, 1, 3).squeeze(0)
++        else:
++            H = q.shape[-2]
++            max_q = max(q_seqlen)
++            max_kv = max(kv_seqlen) if kv_seqlen is not None else max_q
++            C_q = q.shape[-1]
++            C_v = v.shape[-1]
++            q_padded = torch.zeros(B, max_q, H, C_q, device=device, dtype=q.dtype)
++            k_padded = torch.zeros(B, max_kv, H, C_q, device=device, dtype=k.dtype)
++            v_padded = torch.zeros(B, max_kv, H, C_v, device=device, dtype=v.dtype)
++            q_offset = 0
++            kv_offset = 0
++            for b in range(B):
++                ql = q_seqlen[b]
++                kvl = kv_seqlen[b] if kv_seqlen is not None else ql
++                q_padded[b, :ql] = q[q_offset:q_offset+ql]
++                k_padded[b, :kvl] = k[kv_offset:kv_offset+kvl]
++                v_padded[b, :kvl] = v[kv_offset:kv_offset+kvl]
++                q_offset += ql
++                kv_offset += kvl
++            q_padded = q_padded.permute(0, 2, 1, 3)
++            k_padded = k_padded.permute(0, 2, 1, 3)
++            v_padded = v_padded.permute(0, 2, 1, 3)
++            out_padded = sdpa_fn(q_padded, k_padded, v_padded)
++            out_padded = out_padded.permute(0, 2, 1, 3)
++            out_list = []
++            for b in range(B):
++                ql = q_seqlen[b]
++                out_list.append(out_padded[b, :ql])
++            out = torch.cat(out_list, dim=0)
+ """
+ 
+     src = src.replace(
+diff --git a/tests/test_worker_and_extract.py b/tests/test_worker_and_extract.py
+new file mode 100644
+index 0000000..677993e
+--- /dev/null
++++ b/tests/test_worker_and_extract.py
+@@ -0,0 +1,189 @@
++import os
++import sys
++import tempfile
++import threading
++import time
++import unittest
++
++import torch
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++if os.path.join(ROOT, "TRELLIS.2") not in sys.path:
++    sys.path.insert(0, os.path.join(ROOT, "TRELLIS.2"))
++
++import trellis_worker
++from backends.mesh_extract import flexible_dual_grid_to_mesh
++
++
++class TestMeshExtractEquivalence(unittest.TestCase):
++    def test_fast_lookup_matches_dict_fallback_bit_exact(self):
++        coords = torch.tensor(
++            [
++                [1, 1, 1],
++                [1, 1, 2],
++                [1, 2, 1],
++                [1, 2, 2],
++                [2, 1, 1],
++                [2, 1, 2],
++                [2, 2, 1],
++                [2, 2, 2],
++            ],
++            dtype=torch.int32,
++        )
++        torch.manual_seed(7)
++        dual_vertices = torch.rand((coords.shape[0], 3), dtype=torch.float32) * 0.6 + 0.2
++        intersected = torch.zeros((coords.shape[0], 3), dtype=torch.bool)
++        intersected[0] = torch.tensor([True, True, True])
++        aabb = [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]]
++
++        prev = os.environ.get("TRELLIS2_FAST_MESH_EXTRACT")
++        try:
++            os.environ["TRELLIS2_FAST_MESH_EXTRACT"] = "0"
++            v_slow, f_slow = flexible_dual_grid_to_mesh(
++                coords, dual_vertices, intersected, None, aabb, grid_size=8
++            )
++            os.environ["TRELLIS2_FAST_MESH_EXTRACT"] = "1"
++            v_fast, f_fast = flexible_dual_grid_to_mesh(
++                coords, dual_vertices, intersected, None, aabb, grid_size=8
++            )
++        finally:
++            if prev is None:
++                os.environ.pop("TRELLIS2_FAST_MESH_EXTRACT", None)
++            else:
++                os.environ["TRELLIS2_FAST_MESH_EXTRACT"] = prev
++
++        self.assertTrue(torch.equal(v_slow, v_fast))
++        self.assertTrue(torch.equal(f_slow, f_fast))
++        self.assertEqual(f_fast.shape, (6, 3))
++
++
++class TestResidentWorkerLifecycle(unittest.TestCase):
++    def test_fifo_order_error_isolation_and_idle_unload(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            sock_path = os.path.join(tmp, "worker.sock")
++            exit_events: list[str] = []
++            execution_order: list[str] = []
++
++            srv = trellis_worker.TrellisResidentServer(
++                socket_path=sock_path,
++                idle_timeout=0.25,
++                on_exit=lambda: exit_events.append("exited"),
++            )
++            srv.pipeline = object()  # Pre-populated mock pipeline so load_pipeline is a no-op
++
++            def mock_execute(job: dict) -> dict:
++                jid = job["id"]
++                execution_order.append(jid)
++                time.sleep(float(job.get("sleep_s", 0.05)))
++                if job.get("fail"):
++                    raise RuntimeError(f"boom:{jid}")
++                srv.jobs_completed += 1
++                return {"ok": True, "id": jid, "seen_env": os.environ.get("TEST_STAGE1_FLAG")}
++
++            srv._execute_job = mock_execute  # type: ignore[method-assign]
++
++            server_thread = threading.Thread(target=srv.serve_forever, daemon=True)
++            server_thread.start()
++
++            # Wait for socket to bind
++            t0 = time.time()
++            while not os.path.exists(sock_path) and time.time() - t0 < 2.0:
++                time.sleep(0.01)
++            self.assertTrue(os.path.exists(sock_path))
++
++            info = trellis_worker.ping_worker(sock_path)
++            self.assertIsNotNone(info)
++            self.assertTrue(info["ok"])
++
++            # Submit 3 jobs concurrently in staggered order; verify FIFO execution & error isolation
++            results: dict[str, dict] = {}
++
++            def submit(req: dict):
++                results[req["id"]] = trellis_worker.send_request(req, socket_path=sock_path, timeout=5.0)
++
++            t1 = threading.Thread(target=submit, args=({"cmd": "job", "id": "first", "sleep_s": 0.12},))
++            t2 = threading.Thread(target=submit, args=({"cmd": "job", "id": "second-fail", "sleep_s": 0.02, "fail": True},))
++            t3 = threading.Thread(target=submit, args=({"cmd": "job", "id": "third", "sleep_s": 0.02},))
++            t1.start()
++            time.sleep(0.02)
++            t2.start()
++            time.sleep(0.02)
++            t3.start()
++            t1.join()
++            t2.join()
++            t3.join()
++
++            self.assertEqual(execution_order, ["first", "second-fail", "third"])
++            self.assertTrue(results["first"]["ok"])
++            self.assertFalse(results["second-fail"]["ok"])
++            self.assertIn("boom:second-fail", results["second-fail"]["error"])
++            self.assertTrue(results["third"]["ok"])
++
++            # Wait for automatic idle unload (idle_timeout=0.25s)
++            server_thread.join(timeout=2.0)
++            self.assertFalse(server_thread.is_alive())
++            self.assertEqual(exit_events, ["exited"])
++            self.assertFalse(os.path.exists(sock_path))
++
++
++class TestExteriorPruneAndScore(unittest.TestCase):
++    def test_prunes_hollow_interior_cavity(self):
++        from trellis2.pipelines.trellis2_image_to_3d import Trellis2ImageTo3DPipeline
++
++        # Create a 64^3 cube shell with an enclosed hollow cavity inside
++        occ = torch.zeros((1, 1, 64, 64, 64), dtype=torch.float32)
++        occ[:, :, 16:48, 16:48, 16:48] = 1.0
++        occ[:, :, 26:38, 26:38, 26:38] = 0.0  # enclosed 12^3 hollow cavity
++
++        occ32_unpruned, info_unpruned = Trellis2ImageTo3DPipeline._exterior_prune_and_score(
++            occ > 0.5, resolution=32, prune=False
++        )
++        occ32_pruned, info_pruned = Trellis2ImageTo3DPipeline._exterior_prune_and_score(
++            occ > 0.5, resolution=32, prune=True
++        )
++        self.assertEqual(info_unpruned["cavity_voxels64"], 12**3)
++        self.assertLess(info_pruned["n_tokens"], info_unpruned["n_tokens"])
++        self.assertEqual(info_pruned["n_components"], 1)
++
++
++class TestSkipInitWeights(unittest.TestCase):
++    def test_from_pretrained_skips_and_restores_initializers(self):
++        import json
++        from safetensors.torch import save_file
++        import trellis2.models as tmodels
++
++        init_calls: list[str] = []
++
++        class DummyBase(torch.nn.Module):
++            def initialize_weights(self):
++                init_calls.append("base_init")
++
++        class DummyModel(DummyBase):
++            def __init__(self, dim: int = 4):
++                super().__init__()
++                self.fc = torch.nn.Linear(dim, dim)
++                self.initialize_weights()
++
++        tmodels.DummyModel = DummyModel  # type: ignore[attr-defined]
++        with tempfile.TemporaryDirectory() as tmp:
++            ckpt = os.path.join(tmp, "dummy")
++            with open(f"{ckpt}.json", "w") as f:
++                json.dump({"name": "DummyModel", "args": {"dim": 4}}, f)
++            w = torch.arange(16, dtype=torch.float32).reshape(4, 4)
++            b = torch.ones(4, dtype=torch.float32)
++            save_file({"fc.weight": w, "fc.bias": b}, f"{ckpt}.safetensors")
++
++            m = tmodels.from_pretrained(ckpt)
++            self.assertEqual(init_calls, [])
++            self.assertTrue(torch.equal(m.fc.weight, w))
++            self.assertTrue(torch.equal(m.fc.bias, b))
++
++            # Direct instantiation after from_pretrained must still run initialize_weights
++            _ = DummyModel(4)
++            self.assertEqual(init_calls, ["base_init"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/trellis_worker.py b/trellis_worker.py
+new file mode 100644
+index 0000000..77c802f
+--- /dev/null
++++ b/trellis_worker.py
+@@ -0,0 +1,517 @@
++#!/usr/bin/env python3
++"""
++Resident TRELLIS.2 worker for Apple Silicon (MPS + Metal).
++
++Keeps the 8 active 512-pipeline models (~10.9 GB) warm in unified memory,
++processes a FIFO queue of image-to-3D jobs over a Unix domain socket, and
++automatically unloads itself after --idle-timeout seconds (default 300s = 5 min)
++so the Mac Studio's 36 GB RAM is freed for builds, browsers, and games.
++
++Jobs must still be invoked through hivemind, one at a time:
++  hivemind run --kind render --worker studio -- \\
++    ~/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python \\
++    ~/code/experiments/image-to-3d/trellis2-mac/trellis_worker.py run ...
++"""
++
++import argparse
++import gc
++import json
++import os
++import queue
++import socket
++import subprocess
++import sys
++import threading
++import time
++import traceback
++
++TRELLIS_HOME = os.path.dirname(os.path.abspath(__file__))
++DEFAULT_TMP = "/private/var/folders/4t/_jnrck017r5f_jttbc19b7s40000gn/T/opencode"
++if not os.path.isdir(DEFAULT_TMP):
++    DEFAULT_TMP = os.path.expanduser("~/.cache")
++os.makedirs(DEFAULT_TMP, exist_ok=True)
++DEFAULT_SOCKET = os.environ.get("TRELLIS2_WORKER_SOCKET", os.path.join(DEFAULT_TMP, "trellis2-worker.sock"))
++DEFAULT_LOG = os.environ.get("TRELLIS2_WORKER_LOG", os.path.join(DEFAULT_TMP, "trellis2-worker.log"))
++DEFAULT_IDLE_TIMEOUT = int(os.environ.get("TRELLIS2_IDLE_TIMEOUT", "300"))
++
++
++def _setup_env():
++    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
++    os.environ.setdefault("ATTN_BACKEND", "sdpa")
++    os.environ.setdefault("SPARSE_ATTN_BACKEND", "sdpa")
++    try:
++        import flex_gemm  # noqa: F401
++        os.environ.setdefault("SPARSE_CONV_BACKEND", "flex_gemm")
++    except (ImportError, RuntimeError):
++        os.environ.setdefault("SPARSE_CONV_BACKEND", "none")
++    if os.path.join(TRELLIS_HOME, "TRELLIS.2") not in sys.path:
++        sys.path.insert(0, os.path.join(TRELLIS_HOME, "TRELLIS.2"))
++    if TRELLIS_HOME not in sys.path:
++        sys.path.insert(0, TRELLIS_HOME)
++    stubs = os.path.join(TRELLIS_HOME, "stubs")
++    if stubs not in sys.path:
++        sys.path.append(stubs)
++
++
++class TrellisResidentServer:
++    def __init__(self, socket_path: str = DEFAULT_SOCKET, idle_timeout: int = DEFAULT_IDLE_TIMEOUT, on_exit=None):
++        self.socket_path = socket_path
++        self.idle_timeout = idle_timeout
++        self.pipeline = None
++        self.initial_load_s = 0.0
++        self.jobs_completed = 0
++        self.last_active = time.time()
++        self.busy = False
++        self.pending_jobs = 0
++        self.stop_requested = False
++        self._lock = threading.Lock()
++        self._exited = threading.Event()
++        self._server_sock: socket.socket | None = None
++        self._on_exit = on_exit or (lambda: os._exit(0))
++        self.job_queue: "queue.Queue[tuple[dict, queue.Queue]]" = queue.Queue()
++
++    def load_pipeline(self):
++        if self.pipeline is not None:
++            return
++        _setup_env()
++        import torch
++        from trellis2.pipelines.trellis2_image_to_3d import Trellis2ImageTo3DPipeline
++
++        t0 = time.perf_counter()
++        self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
++        self.pipeline.to(torch.device("mps"))
++        if torch.backends.mps.is_available():
++            torch.mps.synchronize()
++        self.initial_load_s = round(time.perf_counter() - t0, 2)
++        with self._lock:
++            self.last_active = time.time()
++        print(f"[trellis-worker] pipeline loaded on MPS in {self.initial_load_s:.2f}s (pid={os.getpid()}, idle_timeout={self.idle_timeout}s)", flush=True)
++
++    def unload_and_exit(self, reason: str):
++        with self._lock:
++            self.stop_requested = True
++            srv = self._server_sock
++            self._server_sock = None
++        print(f"[trellis-worker] shutting down ({reason})", flush=True)
++        try:
++            if self.socket_path and os.path.exists(self.socket_path):
++                os.unlink(self.socket_path)
++        except OSError:
++            pass
++        try:
++            import torch
++            self.pipeline = None
++            gc.collect()
++            if torch.backends.mps.is_available():
++                torch.mps.empty_cache()
++        except Exception:
++            pass
++        if srv is not None:
++            try:
++                srv.close()
++            except OSError:
++                pass
++        try:
++            self._on_exit()
++        finally:
++            self._exited.set()
++
++    def _prepare_cutout(self, job: dict):
++        import numpy as np
++        from PIL import Image
++
++        image_path = job["image_path"]
++        cutout_path = job.get("cutout_path")
++        reuse_cutout = job.get("reuse_cutout", True)
++
++        if reuse_cutout and cutout_path and os.path.exists(cutout_path):
++            img = Image.open(cutout_path).convert("RGBA")
++            return img, 0.0, "cached_cutout"
++
++        src = Image.open(image_path)
++        if src.mode == "RGBA":
++            arr = np.array(src)
++            if arr[:, :, 3].min() < 255 and os.environ.get("TRELLIS2_SKIP_REMBG_WHEN_ALPHA", "1") == "1":
++                if cutout_path:
++                    src.save(cutout_path)
++                return src, 0.0, "source_alpha"
++
++        rgb = src.convert("RGB")
++        rgba = np.array(self.pipeline.rembg_model(rgb))
++        rgba[:, :, 3] = np.where(rgba[:, :, 3] > 200, 255, 0).astype(np.uint8)
++        out = Image.fromarray(rgba, "RGBA")
++        if cutout_path:
++            out.save(cutout_path)
++        return out, None, "birefnet"
++
++    def _execute_job(self, job: dict) -> dict:
++        import numpy as np
++        import torch
++        import fast_simplification
++        import o_voxel.postprocess
++
++        # Apply any per-job env overrides (for Stage 1A vs 1B benchmarking)
++        env_overrides = job.get("env", {})
++        prev_env = {}
++        for k, v in env_overrides.items():
++            prev_env[k] = os.environ.get(k)
++            os.environ[k] = str(v)
++
++        try:
++            t_start = time.perf_counter()
++            load_s = self.initial_load_s if self.jobs_completed == 0 and job.get("report_cold_load", False) else 0.0
++
++            t_c0 = time.perf_counter()
++            img, cut_override, cut_source = self._prepare_cutout(job)
++            if torch.backends.mps.is_available():
++                torch.mps.synchronize()
++            t_cut = round(time.perf_counter() - t_c0, 3) if cut_override is None else cut_override
++
++            seed = int(job.get("seed", 42))
++            faces_target = int(job.get("faces", 40000))
++            tex_size = int(job.get("texture", 2048))
++            bake_texture = job.get("bake_texture", None)
++            fast_sampler = job.get("fast_sampler", None)
++            fill_interior = job.get("fill_interior_voxels", None)
++            num_shape_seeds = job.get("num_shape_seeds", None)
++
++            t_g0 = time.perf_counter()
++            out = self.pipeline.run(
++                img,
++                seed=seed,
++                pipeline_type="512",
++                fast_sampler=fast_sampler,
++                fill_interior_voxels=fill_interior,
++                num_shape_seeds=num_shape_seeds,
++            )
++            mesh = out[0] if isinstance(out, list) else out
++            if torch.backends.mps.is_available():
++                torch.mps.synchronize()
++            t_gen = round(time.perf_counter() - t_g0, 3)
++
++            v = mesh.vertices.cpu().numpy()
++            f = mesh.faces.cpu().numpy()
++            raw_tris = int(len(f))
++            if v.shape[0] == 0 or raw_tris == 0:
++                return {"ok": False, "error": "empty mesh", "id": job.get("id")}
++
++            t_b0 = time.perf_counter()
++            target = min(200000, raw_tris)
++            if raw_tris > target:
++                sv, sf = fast_simplification.simplify(v, f, 1.0 - target / raw_tris)
++                vt = torch.from_numpy(sv).float()
++                ft = torch.from_numpy(sf.astype("int32"))
++            else:
++                vt = mesh.vertices.cpu().float()
++                ft = mesh.faces.cpu().int()
++
++            attrs_cpu = mesh.attrs.cpu()
++            coords_cpu = mesh.coords.cpu()
++            glb = o_voxel.postprocess.to_glb(
++                vertices=vt,
++                faces=ft,
++                attr_volume=attrs_cpu,
++                coords=coords_cpu,
++                attr_layout=mesh.layout,
++                voxel_size=mesh.voxel_size,
++                aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
++                decimation_target=faces_target,
++                texture_size=tex_size,
++                bake_texture=bake_texture,
++                verbose=False,
++            )
++            out_glb = job["out_glb"]
++            os.makedirs(os.path.dirname(os.path.abspath(out_glb)), exist_ok=True)
++            glb.export(out_glb)
++
++            out_ovoxel = job.get("out_ovoxel")
++            if out_ovoxel:
++                np.savez(
++                    out_ovoxel,
++                    coords=coords_cpu.numpy().astype(np.uint16),
++                    attrs=np.clip(np.round(attrs_cpu.numpy() * 255.0), 0, 255).astype(np.uint8),
++                    voxel_size=np.float32(mesh.voxel_size),
++                )
++
++            t_bake = round(time.perf_counter() - t_b0, 3)
++            total_s = round(time.perf_counter() - t_start, 3)
++            if torch.backends.mps.is_available():
++                torch.mps.empty_cache()
++
++            self.jobs_completed += 1
++            stage_t = dict(getattr(self.pipeline, "last_stage_timings", None) or {})
++            rec = {
++                "ok": True,
++                "id": job.get("id", os.path.basename(out_glb)),
++                "load_s": round(load_s, 2),
++                "cutout_s": round(t_cut, 2),
++                "cutout_source": cut_source,
++                "generate_s": round(t_gen, 2),
++                "bake_s": round(t_bake, 2),
++                "total_s": round(total_s, 2),
++                "raw_tris": raw_tris,
++                "out_tris": int(len(glb.faces)),
++                "stages": stage_t,
++                "shape_seed_info": getattr(self.pipeline, "last_shape_seed_info", None),
++                "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
++            }
++            print(f"[trellis-worker] finished {rec['id']} in {rec['total_s']}s (gen {rec['generate_s']}s, bake {rec['bake_s']}s)", flush=True)
++            return rec
++        finally:
++            for k, old_v in prev_env.items():
++                if old_v is None:
++                    os.environ.pop(k, None)
++                else:
++                    os.environ[k] = old_v
++
++    execute_job = _execute_job
++
++    def _worker_loop(self):
++        while not self.stop_requested:
++            try:
++                job, reply_q = self.job_queue.get(timeout=0.5)
++            except queue.Empty:
++                continue
++            with self._lock:
++                self.busy = True
++                self.last_active = time.time()
++            try:
++                res = self._execute_job(job)
++            except Exception as e:
++                traceback.print_exc()
++                res = {"ok": False, "error": str(e), "id": job.get("id")}
++            finally:
++                with self._lock:
++                    self.last_active = time.time()
++                    self.busy = False
++                    self.pending_jobs = max(0, self.pending_jobs - 1)
++                self.job_queue.task_done()
++            reply_q.put(res)
++
++    def _idle_watchdog(self):
++        poll_s = min(2.0, max(0.05, self.idle_timeout / 4.0))
++        while not self.stop_requested:
++            time.sleep(poll_s)
++            reason = None
++            with self._lock:
++                if not self.stop_requested and not self.busy and self.pending_jobs == 0:
++                    idle_s = time.time() - self.last_active
++                    if idle_s >= self.idle_timeout:
++                        self.stop_requested = True
++                        reason = f"idle for {idle_s:.1f}s >= {self.idle_timeout}s"
++            if reason is not None:
++                self.unload_and_exit(reason)
++                return
++
++    def _handle_client(self, conn: socket.socket):
++        try:
++            data = b""
++            while not data.endswith(b"\n"):
++                chunk = conn.recv(65536)
++                if not chunk:
++                    break
++                data += chunk
++            if not data:
++                return
++            req = json.loads(data.decode("utf-8"))
++            cmd = req.get("cmd", "job")
++            if cmd == "ping":
++                with self._lock:
++                    busy = self.busy
++                    queued = max(0, self.pending_jobs - (1 if busy else 0))
++                    idle_s = round(time.time() - self.last_active, 1)
++                resp = {
++                    "ok": True,
++                    "pid": os.getpid(),
++                    "busy": busy,
++                    "queued": queued,
++                    "idle_s": idle_s,
++                    "idle_timeout": self.idle_timeout,
++                    "initial_load_s": self.initial_load_s,
++                    "jobs_completed": self.jobs_completed,
++                }
++                conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
++            elif cmd == "stop":
++                resp = {"ok": True, "stopped": True, "pid": os.getpid()}
++                conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
++                conn.close()
++                self.unload_and_exit("explicit stop command")
++            elif cmd == "job":
++                reply_q: "queue.Queue[dict]" = queue.Queue(maxsize=1)
++                with self._lock:
++                    if self.stop_requested:
++                        conn.sendall((json.dumps({"ok": False, "error": "worker is stopping", "id": req.get("id")}) + "\n").encode("utf-8"))
++                        return
++                    self.pending_jobs += 1
++                    self.last_active = time.time()
++                self.job_queue.put((req, reply_q))
++                resp = reply_q.get()
++                conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
++            else:
++                conn.sendall((json.dumps({"ok": False, "error": f"unknown cmd: {cmd}"}) + "\n").encode("utf-8"))
++        except Exception as e:
++            try:
++                conn.sendall((json.dumps({"ok": False, "error": str(e)}) + "\n").encode("utf-8"))
++            except Exception:
++                pass
++        finally:
++            try:
++                conn.close()
++            except Exception:
++                pass
++
++    def serve_forever(self):
++        if os.path.exists(self.socket_path):
++            try:
++                os.unlink(self.socket_path)
++            except OSError:
++                pass
++        self.load_pipeline()
++        threading.Thread(target=self._worker_loop, daemon=True).start()
++        threading.Thread(target=self._idle_watchdog, daemon=True).start()
++
++        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
++        self._server_sock = srv
++        srv.bind(self.socket_path)
++        srv.listen(32)
++        print(f"[trellis-worker] listening on {self.socket_path}", flush=True)
++        while not self.stop_requested:
++            try:
++                conn, _ = srv.accept()
++                threading.Thread(target=self._handle_client, args=(conn,), daemon=True).start()
++            except Exception:
++                if self.stop_requested:
++                    break
++        self._exited.wait(timeout=5.0)
++
++
++def send_request(req: dict, socket_path: str = DEFAULT_SOCKET, timeout: float = 900.0) -> dict:
++    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
++    s.settimeout(timeout)
++    s.connect(socket_path)
++    try:
++        s.sendall((json.dumps(req) + "\n").encode("utf-8"))
++        buf = b""
++        while not buf.endswith(b"\n"):
++            chunk = s.recv(65536)
++            if not chunk:
++                break
++            buf += chunk
++        return json.loads(buf.decode("utf-8"))
++    finally:
++        s.close()
++
++
++def ping_worker(socket_path: str = DEFAULT_SOCKET) -> dict | None:
++    if not os.path.exists(socket_path):
++        return None
++    try:
++        return send_request({"cmd": "ping"}, socket_path=socket_path, timeout=3.0)
++    except Exception:
++        return None
++
++
++def ensure_worker(socket_path: str = DEFAULT_SOCKET, idle_timeout: int = DEFAULT_IDLE_TIMEOUT, log_path: str = DEFAULT_LOG) -> tuple[dict, bool]:
++    """Return (ping_info, started_cold). Spawns the background daemon if not already running."""
++    info = ping_worker(socket_path)
++    if info and info.get("ok"):
++        return info, False
++
++    cmd = [
++        sys.executable,
++        os.path.abspath(__file__),
++        "serve",
++        "--socket",
++        socket_path,
++        "--idle-timeout",
++        str(idle_timeout),
++    ]
++    with open(log_path, "a") as log_f:
++        proc = subprocess.Popen(
++            cmd,
++            stdout=log_f,
++            stderr=log_f,
++            stdin=subprocess.DEVNULL,
++            start_new_session=True,
++        )
++    t0 = time.time()
++    while time.time() - t0 < 180.0:
++        time.sleep(0.5)
++        info = ping_worker(socket_path)
++        if info and info.get("ok"):
++            return info, True
++        if proc.poll() is not None:
++            raise RuntimeError(f"trellis_worker exited prematurely with code {proc.returncode} (see {log_path})")
++    raise RuntimeError(f"Timed out waiting for trellis_worker to start (see {log_path})")
++
++
++def main():
++    sub_common = argparse.ArgumentParser(add_help=False)
++    sub_common.add_argument("--socket", default=argparse.SUPPRESS)
++    sub_common.add_argument("--idle-timeout", type=int, default=argparse.SUPPRESS)
++
++    parser = argparse.ArgumentParser(description="Resident TRELLIS.2 worker on Apple Silicon")
++    parser.add_argument("--socket", default=DEFAULT_SOCKET)
++    parser.add_argument("--idle-timeout", type=int, default=DEFAULT_IDLE_TIMEOUT)
++    sub = parser.add_subparsers(dest="subcmd", required=True)
++
++    sub.add_parser("serve", help="Run the resident worker daemon", parents=[sub_common])
++    sub.add_parser("status", help="Check resident worker status", parents=[sub_common])
++    sub.add_parser("stop", help="Stop resident worker and unload weights", parents=[sub_common])
++
++    p_run = sub.add_parser("run", help="Submit a job to the resident worker (starts it if needed)", parents=[sub_common])
++    p_run.add_argument("--id", required=True)
++    p_run.add_argument("--image", required=True)
++    p_run.add_argument("--cutout", default="")
++    p_run.add_argument("--out-glb", required=True)
++    p_run.add_argument("--out-ovoxel", default="")
++    p_run.add_argument("--seed", type=int, default=42)
++    p_run.add_argument("--faces", type=int, default=40000)
++    p_run.add_argument("--texture", type=int, default=2048)
++    p_run.add_argument("--vertex-color-only", action="store_true")
++    p_run.add_argument("--with-texture", action="store_true")
++    p_run.add_argument("--fast-sampler", action="store_true")
++    p_run.add_argument("--fill-interior", action="store_true")
++    p_run.add_argument("--shape-seeds", type=int, default=1)
++
++    args = parser.parse_args()
++    if args.subcmd == "serve":
++        srv = TrellisResidentServer(socket_path=args.socket, idle_timeout=args.idle_timeout)
++        srv.serve_forever()
++    elif args.subcmd == "status":
++        info = ping_worker(args.socket)
++        print(json.dumps(info or {"ok": False, "running": False}))
++    elif args.subcmd == "stop":
++        info = ping_worker(args.socket)
++        if not info:
++            print(json.dumps({"ok": True, "already_stopped": True}))
++        else:
++            print(json.dumps(send_request({"cmd": "stop"}, socket_path=args.socket, timeout=10.0)))
++    elif args.subcmd == "run":
++        info, cold = ensure_worker(socket_path=args.socket, idle_timeout=args.idle_timeout)
++        res = send_request(
++            {
++                "cmd": "job",
++                "id": args.id,
++                "image_path": args.image,
++                "cutout_path": args.cutout or None,
++                "out_glb": args.out_glb,
++                "out_ovoxel": args.out_ovoxel or None,
++                "seed": args.seed,
++                "faces": args.faces,
++                "texture": args.texture,
++                "bake_texture": bool(args.with_texture or not args.vertex_color_only),
++                "fast_sampler": args.fast_sampler,
++                "fill_interior_voxels": args.fill_interior,
++                "num_shape_seeds": args.shape_seeds,
++                "report_cold_load": cold,
++            },
++            socket_path=args.socket,
++        )
++        print(json.dumps(res))
++        if not res.get("ok"):
++            sys.exit(1)
++
++
++if __name__ == "__main__":
++    main()
