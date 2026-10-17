@@ -26,7 +26,12 @@ import { angleDiff } from "@arcade/kit/sim/geom"
 import type { AIAgent, AIConfig, NoiseEvent } from "../shared/ai"
 import type { Vision } from "../shared/vision"
 import { hex } from "./level"
-import { refinedZombieMeshes, zombiePalette } from "./look/refined-figure"
+import {
+  townsfolkZombieMeshes,
+  ZOMBIE_ARCHETYPES,
+  zombieArchetypeIndex,
+  zombiePalette,
+} from "./look/refined-figure"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 
 export type DetachedDebrisPiece = {
@@ -42,6 +47,10 @@ export type DetachedDebrisPiece = {
 }
 
 const PART_COUNT = 9
+const ARCH_COUNT = ZOMBIE_ARCHETYPES.length
+const ARCH_PART_COUNT = 3
+const ARCH_BUCKET_COUNT = ARCH_COUNT * ARCH_PART_COUNT
+const MAX_INSTANCES_PER_ARCH = 1024
 export const MAX_INSTANCES_PER_PART = 4096
 const BONE_COUNT = 15
 const BONE_STRIDE = BONE_COUNT * 12
@@ -360,8 +369,17 @@ export function buildZombiePartMeshes(): Mesh[] {
 
 export class ZombieCrowdRenderer {
   private readonly models: number[]
-  /** The refined look's parts (Look · Zombies), same order as `models`; built on first use. */
+  /** Former Townsfolk look: shared limb/foot models (9 entries, 0..2 from archetype 0, 3..8 shared) + 18 archetype buckets (6 × pelvis/torso/head). */
   private refinedModels: number[] | null = null
+  private archModels: number[] | null = null
+  private archPartData: Float32Array<ArrayBuffer>[] | null = null
+  private readonly archPartCounts = new Int32Array(ARCH_BUCKET_COUNT)
+  private archPoolBatches: Batch[] | null = null
+  private archGhostPartData: Float32Array<ArrayBuffer>[] | null = null
+  private readonly archGhostPartCounts = new Int32Array(ARCH_BUCKET_COUNT)
+  private archGhostPoolBatches: Batch[] | null = null
+  private refinedActive = false
+  private currentArch = 0
   private readonly addModel: Pick<Renderer, "addModel">["addModel"]
   /** The current zombie's per-part tint (9 × rgb): all 1 for today's look, its seeded palette for the refined look. */
   private readonly partTint = new Float32Array(PART_COUNT * 3).fill(1)
@@ -643,6 +661,31 @@ export class ZombieCrowdRenderer {
     return s
   }
 
+  private ensureTownsfolkPools(): void {
+    if (this.refinedModels) return
+    const { archetypes, shared } = townsfolkZombieMeshes()
+    const archModels: number[] = []
+    for (const a of archetypes) {
+      archModels.push(this.addModel(a.pelvis), this.addModel(a.torso), this.addModel(a.head))
+    }
+    const sharedModels = shared.map((m) => this.addModel(m))
+    this.archModels = archModels
+    this.refinedModels = [archModels[0]!, archModels[1]!, archModels[2]!, ...sharedModels]
+    this.archPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
+    this.archPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
+      model: archModels[i]!,
+      data: this.archPartData![i]!,
+      count: 0,
+    }))
+    this.archGhostPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
+    this.archGhostPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
+      model: archModels[i]!,
+      data: this.archGhostPartData![i]!,
+      count: 0,
+      alpha: true,
+    }))
+  }
+
   private emitUprightBone(
     bOff: number,
     boneIdx: number,
@@ -660,8 +703,19 @@ export class ZombieCrowdRenderer {
     if (count >= MAX_INSTANCES_PER_PART) return
     const fOff = bOff + boneIdx * 12
     const b = this.currBones
-    const offset = count * INST_FLOATS
-    const data = this.partData[partIndex]!
+    let data: Float32Array
+    let offset: number
+    if (this.refinedActive && partIndex < ARCH_PART_COUNT) {
+      const bucket = this.currentArch * ARCH_PART_COUNT + partIndex
+      const aCount = this.archPartCounts[bucket]!
+      if (aCount >= MAX_INSTANCES_PER_ARCH) return
+      data = this.archPartData![bucket]!
+      offset = aCount * INST_FLOATS
+      this.archPartCounts[bucket] = aCount + 1
+    } else {
+      data = this.partData[partIndex]!
+      offset = count * INST_FLOATS
+    }
     data[offset] = b[fOff]!
     data[offset + 1] = b[fOff + 1]!
     data[offset + 2] = b[fOff + 2]!
@@ -704,8 +758,19 @@ export class ZombieCrowdRenderer {
     const c = Math.cos(p)
     const yaw = c > 1e-4 ? Math.atan2(xz, xx) : Math.atan2(-zx, zz)
     const r = c > 1e-4 ? Math.atan2(-zy, yy) : 0
-    const offset = count * INST_FLOATS
-    const data = this.partData[partIndex]!
+    let data: Float32Array
+    let offset: number
+    if (this.refinedActive && partIndex < ARCH_PART_COUNT) {
+      const bucket = this.currentArch * ARCH_PART_COUNT + partIndex
+      const aCount = this.archPartCounts[bucket]!
+      if (aCount >= MAX_INSTANCES_PER_ARCH) return
+      data = this.archPartData![bucket]!
+      offset = aCount * INST_FLOATS
+      this.archPartCounts[bucket] = aCount + 1
+    } else {
+      data = this.partData[partIndex]!
+      offset = count * INST_FLOATS
+    }
     data[offset] = b[fOff]!
     data[offset + 1] = b[fOff + 1]!
     data[offset + 2] = b[fOff + 2]!
@@ -744,8 +809,19 @@ export class ZombieCrowdRenderer {
     const c = Math.cos(p)
     const yaw = c > 1e-4 ? Math.atan2(xz, xx) : Math.atan2(-zx, zz)
     const r = c > 1e-4 ? Math.atan2(-zy, yy) : 0
-    const offset = count * INST_FLOATS
-    const data = this.ghostPartData[partIndex]!
+    let data: Float32Array
+    let offset: number
+    if (this.refinedActive && partIndex < ARCH_PART_COUNT) {
+      const bucket = this.currentArch * ARCH_PART_COUNT + partIndex
+      const aCount = this.archGhostPartCounts[bucket]!
+      if (aCount >= MAX_INSTANCES_PER_ARCH) return
+      data = this.archGhostPartData![bucket]!
+      offset = aCount * INST_FLOATS
+      this.archGhostPartCounts[bucket] = aCount + 1
+    } else {
+      data = this.ghostPartData[partIndex]!
+      offset = count * INST_FLOATS
+    }
     data[offset] = b[fOff]!
     data[offset + 1] = b[fOff + 1]!
     data[offset + 2] = b[fOff + 2]!
@@ -779,12 +855,18 @@ export class ZombieCrowdRenderer {
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
     const refined = Math.round(zombieTune.zombieLook ?? 0) === 1
-    if (refined && !this.refinedModels) this.refinedModels = refinedZombieMeshes().map((m) => this.addModel(m))
+    if (refined) this.ensureTownsfolkPools()
+    this.refinedActive = refined
+    this.currentArch = 0
     const models = refined ? this.refinedModels! : this.models
     for (let i = 0; i < PART_COUNT; i++) this.poolBatches[i]!.model = this.ghostPoolBatches[i]!.model = models[i]!
     if (!refined) this.partTint.fill(1)
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
+    if (refined) {
+      this.archPartCounts.fill(0)
+      this.archGhostPartCounts.fill(0)
+    }
     const [vx0, vy0, vx1, vy1] = viewRect
     const hideUnseen = zombieTune.hideUnseenZombies ?? true
     const unseenMode = zombieTune.unseenMode ?? 0
@@ -821,8 +903,18 @@ export class ZombieCrowdRenderer {
       }
       const count = this.partCounts[d.partIndex]!
       if (count < MAX_INSTANCES_PER_PART) {
-        const offset = count * INST_FLOATS
-        const data = this.partData[d.partIndex]!
+        let data: Float32Array
+        let offset: number
+        if (refined && d.partIndex < ARCH_PART_COUNT) {
+          const aCount = this.archPartCounts[d.partIndex]!
+          if (aCount >= MAX_INSTANCES_PER_ARCH) continue
+          data = this.archPartData![d.partIndex]!
+          offset = aCount * INST_FLOATS
+          this.archPartCounts[d.partIndex] = aCount + 1
+        } else {
+          data = this.partData[d.partIndex]!
+          offset = count * INST_FLOATS
+        }
         data[offset] = d.p[0]
         data[offset + 1] = d.p[1]
         data[offset + 2] = d.p[2]
@@ -852,6 +944,7 @@ export class ZombieCrowdRenderer {
     for (let idx = 0; idx < agents.length; idx++) {
       const a = agents[idx]!
       if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue
+      if (refined) this.currentArch = zombieArchetypeIndex(a.seed, a.id)
 
       const visWeight = typeof vision.actorVisible === "function" ? vision.actorVisible(a.x, a.y) : vision.visible(a.x, a.y) ? 1 : 0
       const isVisible = visWeight > 0.02
@@ -880,7 +973,7 @@ export class ZombieCrowdRenderer {
       }
 
       const s = this.ensureSlot(a, support)
-      if (refined) zombiePalette(a.seed, this.partTint)
+      if (refined) zombiePalette(a.seed, this.partTint, a.id)
       let hidden = this.hiddenMask[s]!
       if (a.detachedLimbs.length > 0) {
         for (let i = 0; i < a.detachedLimbs.length; i++) {
@@ -1701,20 +1794,55 @@ export class ZombieCrowdRenderer {
     }
 
     this.batches.length = 0
-    for (let i = 0; i < PART_COUNT; i++) {
-      const count = this.partCounts[i]!
-      if (count > 0) {
-        const b = this.poolBatches[i]!
-        b.count = count
-        this.batches.push(b)
+    if (refined) {
+      for (let i = 0; i < ARCH_BUCKET_COUNT; i++) {
+        const count = this.archPartCounts[i]!
+        if (count > 0) {
+          const b = this.archPoolBatches![i]!
+          b.count = count
+          this.batches.push(b)
+        }
       }
-    }
-    for (let i = 0; i < PART_COUNT; i++) {
-      const count = this.ghostPartCounts[i]!
-      if (count > 0) {
-        const b = this.ghostPoolBatches[i]!
-        b.count = count
-        this.batches.push(b)
+      for (let i = ARCH_PART_COUNT; i < PART_COUNT; i++) {
+        const count = this.partCounts[i]!
+        if (count > 0) {
+          const b = this.poolBatches[i]!
+          b.count = count
+          this.batches.push(b)
+        }
+      }
+      for (let i = 0; i < ARCH_BUCKET_COUNT; i++) {
+        const count = this.archGhostPartCounts[i]!
+        if (count > 0) {
+          const b = this.archGhostPoolBatches![i]!
+          b.count = count
+          this.batches.push(b)
+        }
+      }
+      for (let i = ARCH_PART_COUNT; i < PART_COUNT; i++) {
+        const count = this.ghostPartCounts[i]!
+        if (count > 0) {
+          const b = this.ghostPoolBatches[i]!
+          b.count = count
+          this.batches.push(b)
+        }
+      }
+    } else {
+      for (let i = 0; i < PART_COUNT; i++) {
+        const count = this.partCounts[i]!
+        if (count > 0) {
+          const b = this.poolBatches[i]!
+          b.count = count
+          this.batches.push(b)
+        }
+      }
+      for (let i = 0; i < PART_COUNT; i++) {
+        const count = this.ghostPartCounts[i]!
+        if (count > 0) {
+          const b = this.ghostPoolBatches[i]!
+          b.count = count
+          this.batches.push(b)
+        }
       }
     }
     return this.batches
