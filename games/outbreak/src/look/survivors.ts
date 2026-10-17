@@ -1,4 +1,6 @@
 import { FLOATS_PER_VERT, hex, MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import type { SurvivorVariant } from "../../shared/loadout"
+import { SURVIVOR_COLOURS } from "../seat-colours"
 import { chamferBox, shadedBox, type BakedShade } from "./chamfer"
 
 /**
@@ -42,9 +44,14 @@ export type SurvivorBuild = {
 }
 
 export type SurvivorVariantSpec = {
+  readonly variant: SurvivorVariant
   readonly id: string
   readonly name: string
   readonly role: string
+  readonly detail: string
+  readonly torso: number
+  readonly legs: number
+  readonly css: string
   readonly headgear: SurvivorHeadgear
   readonly beard?: boolean
   readonly build: SurvivorBuild
@@ -69,9 +76,14 @@ export type SurvivorVariantSpec = {
 
 export const SURVIVORS: readonly SurvivorVariantSpec[] = [
   {
+    variant: 0,
     id: "cole",
     name: "Cole",
     role: "Scavenger",
+    detail: "Tan field jacket & slate denim",
+    torso: SURVIVOR_COLOURS[0]!.torso,
+    legs: SURVIVOR_COLOURS[0]!.legs,
+    css: SURVIVOR_COLOURS[0]!.css,
     headgear: "hair",
     build: { torsoWidth: 1.03, torsoDepth: 1.02, limbScale: 1.02, headScale: 1.0 },
     palette: {
@@ -92,9 +104,14 @@ export const SURVIVORS: readonly SurvivorVariantSpec[] = [
     },
   },
   {
+    variant: 1,
     id: "maya",
     name: "Maya",
     role: "Medic",
+    detail: "Slate medic coat, cap & trauma pack",
+    torso: SURVIVOR_COLOURS[1]!.torso,
+    legs: SURVIVOR_COLOURS[1]!.legs,
+    css: SURVIVOR_COLOURS[1]!.css,
     headgear: "cap",
     build: { torsoWidth: 0.92, torsoDepth: 0.94, limbScale: 0.93, headScale: 0.98 },
     palette: {
@@ -115,9 +132,14 @@ export const SURVIVORS: readonly SurvivorVariantSpec[] = [
     },
   },
   {
+    variant: 2,
     id: "hank",
     name: "Hank",
     role: "Mechanic",
+    detail: "Ochre work vest, rolled flannel & beanie",
+    torso: SURVIVOR_COLOURS[2]!.torso,
+    legs: SURVIVOR_COLOURS[2]!.legs,
+    css: SURVIVOR_COLOURS[2]!.css,
     headgear: "beanie",
     beard: true,
     build: { torsoWidth: 1.12, torsoDepth: 1.08, limbScale: 1.08, headScale: 1.04, rolledSleeves: true },
@@ -139,9 +161,14 @@ export const SURVIVORS: readonly SurvivorVariantSpec[] = [
     },
   },
   {
+    variant: 3,
     id: "tess",
     name: "Tess",
     role: "Ranger",
+    detail: "Sage ranger parka, boonie hat & corduroys",
+    torso: SURVIVOR_COLOURS[3]!.torso,
+    legs: SURVIVOR_COLOURS[3]!.legs,
+    css: SURVIVOR_COLOURS[3]!.css,
     headgear: "boonie",
     build: { torsoWidth: 0.96, torsoDepth: 0.96, limbScale: 0.96, headScale: 0.99 },
     palette: {
