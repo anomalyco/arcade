@@ -2,6 +2,7 @@ import { BUILDING, INTERIOR } from "../layout"
 import * as THREE from "three/webgpu"
 import { type Builder, FLOOR_Y, M, PANEL_WARM, T, TUBE_WARM, ceiling, door, doorOpening, lobbyBands, troffer, wall } from "./kit"
 import { WALL_T, fluoro } from "./corridor"
+import { wastebasket } from "./props"
 
 // Lobby (concept r5-02): terrazzo floor, tiled wainscot, drop ceiling with one troffer left on, reception counter and
 // dark security desk with a CRT, a row of orange shell chairs, a directory board, potted plants, and propped-open
@@ -40,7 +41,7 @@ export function buildLobby(b: Builder) {
   plant(b, x1 - 0.5, z1 - 0.6)
 
   // Wastebasket by the chairs.
-  b.cyl("metal_dark", T(-2.5, FLOOR_Y + 0.17, 17.6), 0.15, 0.13, 0.34, 14, { open: true })
+  wastebasket(b, -2.5, 17.6)
 }
 
 function reception(b: Builder) {

@@ -48,12 +48,12 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js"
 import { dof } from "three/addons/tsl/display/DepthOfFieldNode.js"
 import { ssr } from "three/addons/tsl/display/SSRNode.js"
 import { ao } from "three/addons/tsl/display/GTAONode.js"
-import { taau } from "three/addons/tsl/display/TAAUNode.js"
 import type { WorldContext } from "../world/context"
 import { fogSigma, fogTransmittance, fogUniforms, insideBuilding } from "./atmosphere"
 import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
 import type { LightMask } from "./clustered"
 import { insideNode, segmentTouchesNode } from "./volumes"
+import { sharpTaau } from "./taau"
 
 // The frame: one scene pass with a small G-buffer (normals, metal/rough, velocity), then at reduced resolution the
 // lamps' single-scattering in the fog (equiangular-sampled per light, cone- and phase-aware), streaky wet-surface SSR
@@ -86,10 +86,13 @@ export function createPost(ctx: WorldContext) {
       max: 2,
       step: 0.05,
       // Retina: 0.8 samples per CSS px, reconstructed by TAAU to a 1.25× output (≈ 7–8 ms instead of ~85 ms at 2×).
-      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 0.8 : 1,
+      // Retina: 1 sample per CSS px (half the native 2× canvas), reconstructed to native resolution by TAAU and
+      // sharpened; output at the display's own pixel ratio, so the browser never upscales the canvas (the old 1.25×
+      // canvas was stretched 1.6× by the compositor, the main source of blur).
+      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 1 : 1,
     },
     { key: "post.autoRes", label: "Auto resolution (hold 60 fps)", group: "Performance", type: "toggle", value: true },
-    { key: "post.minScale", label: "Auto resolution floor", group: "Performance", unit: "×", min: 0.4, max: 1, step: 0.05, value: 0.6 },
+    { key: "post.minScale", label: "Auto resolution floor", group: "Performance", unit: "×", min: 0.4, max: 1, step: 0.05, value: 0.7 },
     {
       key: "post.maxDpr",
       label: "Output pixel ratio cap (Retina)",
@@ -98,9 +101,11 @@ export function createPost(ctx: WorldContext) {
       min: 1,
       max: 2,
       step: 0.25,
-      value: 1.25,
+      value: 2,
     },
     { key: "post.taa", label: "Temporal AA + upscale (TAAU)", group: "Performance", type: "toggle", value: true },
+    { key: "post.taaSharpness", label: "TAAU resolve sharpness (at rest)", group: "Performance", min: 0, max: 1, step: 0.05, value: 1 },
+    { key: "post.sharpness", label: "Sharpness (contrast-adaptive)", group: "Camera", min: 0, max: 1, step: 0.05, value: 0.6 },
     {
       key: "post.debug",
       label: "Show buffer",
@@ -174,8 +179,8 @@ export function createPost(ctx: WorldContext) {
     { key: "grade.tint", label: "White balance: tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.04 },
     { key: "grade.gamma", label: "Mid-tone curve (gamma)", group: "Grade", min: 0.6, max: 1.6, step: 0.01, value: 1.06 },
     { key: "grade.warmSaturation", label: "Warm-hue saturation (practicals)", group: "Grade", min: 0, max: 2, step: 0.01, value: 1.4 },
-    { key: "grade.halation", label: "Halation", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.18 },
-    { key: "grade.distortion", label: "Lens distortion (barrel)", group: "Grade", min: -0.1, max: 0.15, step: 0.005, value: 0.025 },
+    { key: "grade.halation", label: "Halation", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.08 },
+    { key: "grade.distortion", label: "Lens distortion (barrel)", group: "Grade", min: -0.1, max: 0.15, step: 0.005, value: 0 },
     { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0.25 },
     { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.45 },
     { key: "grade.interiorExposure", label: "Indoor grade exposure", group: "Grade", unit: "EV", min: -2, max: 2, step: 0.05, value: 0 },
@@ -186,7 +191,7 @@ export function createPost(ctx: WorldContext) {
     { key: "post.dofFocus", label: "Focus distance", group: "Camera", unit: "m", min: 0.5, max: 60, step: 0.5, value: 8 },
     { key: "post.dofAperture", label: "Bokeh size", group: "Camera", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "grade.vignette", label: "Vignette", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.45 },
-    { key: "grade.aberration", label: "Chromatic aberration", group: "Grade", unit: "px", min: 0, max: 4, step: 0.1, value: 0.8 },
+    { key: "grade.aberration", label: "Chromatic aberration", group: "Grade", unit: "px", min: 0, max: 4, step: 0.1, value: 0 },
   ])
 
   const { renderer, scene, camera } = ctx
@@ -438,6 +443,8 @@ export function createPost(ctx: WorldContext) {
   const bloomCap = uniform(0.02)
   const bloomHot = uniform(4)
   const bloomNodeRef: { node: N } = { node: null }
+  const taauRef: { node: N } = { node: null }
+  const sharpness = uniform(0.5)
   const grade = {
     lift: uniform(0.028),
     warmth: uniform(0.35),
@@ -572,9 +579,11 @@ export function createPost(ctx: WorldContext) {
 
     let resolved: N
     if (useTaa) {
-      const t = taau(compositeTex, depth, vel, camera) as N
+      const t = sharpTaau(compositeTex, depth, vel, camera)
+      taauRef.node = t
       resolved = t.getTextureNode()
     } else {
+      taauRef.node = null
       resolved = compositeTex
     }
     if (useDof) {
@@ -604,7 +613,26 @@ export function createPost(ctx: WorldContext) {
       const u = d0.mul(r2.mul(grade.distortion).add(1)).div(corner.mul(grade.distortion.max(0)).add(1)).add(0.5)
       const off = u.sub(0.5)
       const ca = off.mul(length(off).mul(2)).mul(grade.aberration).div(resolution)
-      let hdr: N = vec3(resolved.sample(u.add(ca)).r, resolved.sample(u).g, resolved.sample(u.sub(ca)).b)
+      // Contrast-adaptive sharpening (RCAS-style) of the upscaled image, in a tone-compressed space so emitters don't
+      // ring: a negative-lobe cross filter whose lobe is limited so the result never leaves the neighbours' range.
+      const px = vec2(1).div(resolution)
+      const centre = resolved.sample(u).rgb
+      const comp = (c: N) => c.mul(exposure).div(c.mul(exposure).add(1))
+      const e = comp(centre)
+      const nb = comp(resolved.sample(u.add(vec2(0, px.y.negate()))).rgb)
+      const nd = comp(resolved.sample(u.add(vec2(px.x.negate(), 0))).rgb)
+      const nf = comp(resolved.sample(u.add(vec2(px.x, 0))).rgb)
+      const nh = comp(resolved.sample(u.add(vec2(0, px.y))).rgb)
+      const mn4 = min(min(nb, nd), min(nf, nh))
+      const mx4 = max(max(nb, nd), max(nf, nh))
+      const hitMin = mn4.div(mx4.mul(4).max(1e-5))
+      const hitMax = vec3(1).sub(mx4).div(mn4.mul(4).sub(4).min(-1e-5))
+      const lobeRGB = max(hitMin.negate(), hitMax)
+      const lobe = max(-0.1875, min(max(max(lobeRGB.r, lobeRGB.g), lobeRGB.b), 0)).mul(sharpness)
+      const sharp = nb.add(nd).add(nf).add(nh).mul(lobe).add(e).div(lobe.mul(4).add(1)).clamp(0, 0.999)
+      const sharpHdr = sharp.div(vec3(1).sub(sharp)).div(exposure)
+      // Lateral chromatic aberration as a delta on top (zero by default).
+      let hdr: N = sharpHdr.add(vec3(resolved.sample(u.add(ca)).r, centre.g, resolved.sample(u.sub(ca)).b).sub(centre))
       // Halation: film's red-orange glow around bright sources (light scattering back off the film base), from the
       // wide bloom, weighted to the red layer.
       hdr = hdr.add(bl.rgb).add(bl.rgb.mul(vec3(1, 0.35, 0.12)).mul(grade.halation))
@@ -862,6 +890,9 @@ export function createPost(ctx: WorldContext) {
       indoor += (inside - indoor) * (frame < 3 ? 1 : 0.03)
       exposure.value = 2 ** (num(ctx, "post.exposure") + indoor * num(ctx, "post.interiorExposure"))
       const bl = bloomNodeRef.node
+      // The glow keeps its size and cost in CSS pixels whatever the output pixel ratio (half of a 1.25× canvas).
+      const bloomScale = Math.min(0.5, 0.625 / Math.max(1, scaleState.dpr))
+      if (bl.getResolutionScale() !== bloomScale) bl.setResolutionScale(bloomScale)
       bl.strength.value = num(ctx, "post.bloom")
       bl.radius.value = num(ctx, "post.bloomRadius")
       bl.threshold.value = num(ctx, "post.bloomThreshold")
@@ -874,6 +905,8 @@ export function createPost(ctx: WorldContext) {
       grade.shoulder.value = num(ctx, "grade.shoulder")
       grade.saturation.value = num(ctx, "grade.saturation")
       grade.grain.value = num(ctx, "grade.grain")
+      sharpness.value = num(ctx, "post.sharpness")
+      if (taauRef.node) taauRef.node.sharpness.value = num(ctx, "post.taaSharpness")
       grade.vignette.value = num(ctx, "grade.vignette")
       grade.aberration.value = num(ctx, "grade.aberration")
       dofFocus.value = num(ctx, "post.dofFocus")

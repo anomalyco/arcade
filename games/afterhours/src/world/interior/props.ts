@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import { float, smoothstep, uv } from "three/tsl"
 import { MODELS, type ModelInfo, type ModelName, type Placement, loadModel, modelCollider, yawToward } from "../../render/models"
-import { type Builder, FLOOR_Y, M, T } from "./kit"
+import { type Builder, type Mat, FLOOR_Y, M, T } from "./kit"
 import { CORRIDOR } from "./corridor"
 import { CLOSET, LAB } from "./rooms"
 
@@ -30,10 +30,37 @@ const te = new THREE.Euler()
  * and contact shadows go in immediately; the model streams in and joins the builder's group when loaded.
  */
 /** Desk-top and bench-top props: never cast shadows, drawn only on the camera's own storey. */
-const SMALL = new Set<ModelName>(["crt_terminal", "telephone", "glassware", "microscope", "chemistry_set", "cardboard_box", "television", "wet_floor_sign"])
+const SMALL = new Set<ModelName>([
+  "crt_terminal",
+  "telephone",
+  "glassware",
+  "microscope",
+  "chemistry_set",
+  "cardboard_box",
+  "television",
+  "wet_floor_sign",
+  "fire_extinguisher",
+  "desk_fan",
+  "desk_lamp",
+  "drinking_fountain",
+])
 /** Dense models that only read from close up (chairs: ~5–9k triangles each): same visibility as the small props, but
  *  they keep their shadows in open rooms. */
-const NEAR_ONLY = new Set<ModelName>(["office_chair", "stack_chair"])
+const NEAR_ONLY = new Set<ModelName>(["office_chair", "stack_chair", "lab_stool", "lounge_chair", "coat_rack", "radiator", "water_cooler"])
+
+/** Steel mesh-sided wastebasket profile: tapered body with a rolled rim and a recessed base, lathed at 24 segments. */
+const basketGeo = (() => {
+  const pts = [
+    [0.0, 0.004], [0.112, 0.004], [0.118, 0.012], [0.121, 0.02], [0.14, 0.3], [0.148, 0.304], [0.152, 0.312],
+    [0.148, 0.32], [0.139, 0.318], [0.134, 0.3], [0.115, 0.03], [0.0, 0.026],
+  ].map(([x, y]) => new THREE.Vector2(x!, y!))
+  return new THREE.LatheGeometry(pts, 24)
+})()
+
+export function wastebasket(b: Builder, x: number, z: number, mat: Mat = M.darkSteel) {
+  b.add(mat, basketGeo.clone().translate(x, FLOOR_Y, z))
+  b.collide(x - 0.15, FLOOR_Y, z - 0.15, x + 0.15, FLOOR_Y + 0.32, z + 0.15)
+}
 
 export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { cast?: boolean } = {}) {
   if (!props.length) return

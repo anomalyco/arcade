@@ -1,8 +1,9 @@
 import * as THREE from "three/webgpu"
 import { floor, fract, hash, mix, positionWorld, step, time, vec3 } from "three/tsl"
 import { MODELS, type ModelName, yawToward } from "../../render/models"
+import { materialFor } from "../../render/materials"
 import { type Builder, FLOOR_Y, M, T, paint } from "./kit"
-import { type Prop, placeModels } from "./props"
+import { type Prop, placeModels, wastebasket } from "./props"
 import { benchRun, stool } from "./rooms"
 import type { Room, Theme } from "./storeys"
 import { DEPTH, rz } from "./storeys"
@@ -89,7 +90,8 @@ function offices(b: Builder, r: Room, rnd: () => number) {
       if ((k + ri) % 2 === 0) put(b, "crt_terminal", { position: at(r, x - 0.35, v + 0.1, deskTop), yaw: fc(r) + 0.1, collide: false, blob: 0 }, false)
       else put(b, "telephone", { position: at(r, x + 0.55, v + 0.15, deskTop), yaw: fc(r) - 0.3, collide: false, blob: 0 }, false)
       paperStack(b, x + 0.2, deskTop, rz(r, v - 0.05), rnd() * 0.4, rnd)
-      if (rnd() < 0.5) b.cyl(M.darkSteel, T(x + 0.85, FLOOR_Y + 0.15, rz(r, v - 0.6)), 0.14, 0.12, 0.3, 14, { open: true })
+      if (rnd() < 0.5) wastebasket(b, x + 0.85, rz(r, v - 0.6))
+      if (full && (k + ri) % 2 === 1 && rnd() < 0.5) put(b, "desk_fan", { position: at(r, x - 0.7, v + 0.2, deskTop), yaw: fc(r) + (rnd() - 0.5) * 0.8, collide: false, blob: 0 }, false)
     }
   }
   // Filing cabinets along the side wall.
@@ -101,6 +103,7 @@ function offices(b: Builder, r: Room, rnd: () => number) {
     else put(b, "filing_cabinet", { position: at(r, fx, v), yaw: yawToward(1, 0) }, cast)
   }
   if (r.unlocked) {
+    if (rnd() < 0.6) put(b, "coat_rack", { position: at(r, r.x1 - 0.35, 0.5), yaw: rnd() * 6, inset: 0.08 }, cast)
     put(b, "cardboard_box", { position: at(r, r.x1 - 0.4, 3.0), yaw: rnd() }, cast)
     put(b, "cardboard_box", { position: at(r, r.x1 - 0.42, 3.0, FLOOR_Y + MODELS.cardboard_box.size[1]), yaw: rnd(), collide: false, blob: 0 }, cast)
     put(b, "stack_chair", { position: at(r, r.x1 - 0.5, 6.5), yaw: yawToward(-1, 0) }, cast)
@@ -215,8 +218,9 @@ function tapeDrive(b: Builder, x: number, z: number, yaw: number, rnd: () => num
   b.quad(M.glass, m.clone().multiply(T(0, 1.22, -0.39, Math.PI)), 0.6, 0.78, { cast: false })
   b.boxM(M.darkSteel, m, 0.56, 0.12, 0.012, 0, 0.72, -0.352)
   b.boxM(panelLights, m, 0.5, 0.022, 0.006, 0, 0.74, -0.36, { cast: false })
-  for (let k = 0; k < 4; k++) b.boxM(M.beige, m, 0.05, 0.035, 0.02, -0.18 + k * 0.12, 0.68, -0.36)
-  for (let k = 0; k < 6; k++) b.boxM(M.darkSteel, m, 0.5, 0.012, 0.004, 0, 0.12 + k * 0.06, -0.352, { cast: false })
+  for (let k = 0; k < 4; k++) b.rbox(M.beige, m, 0.05, 0.035, 0.02, 0.006, -0.18 + k * 0.12, 0.68, -0.36)
+  // Lower door: seam round it, a recessed handle, and a louvred vent of raised slats.
+  doorRelief(b, m, 0.62, 0.55, 0.36, -0.351)
   b.collideLocal(m, [-0.37, 0, -0.36], [0.37, 1.8, 0.36])
 }
 
@@ -229,19 +233,79 @@ function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
     b.boxM(SMOKED, m, 0.5, 0.12, 0.004, 0, 1.78, -0.29)
   } else
     b.boxM(panelLights, m, 0.64, 0.28, 0.005, 0, 1.33, -0.382, { cast: false })
-  for (let k = 0; k < 10; k++) b.boxM(M.darkSteel, m, 0.6, 0.01, 0.004, 0, 0.15 + k * 0.05, -0.382, { cast: false })
+  doorRelief(b, m, 0.7, 0.9, 0.5, -0.381)
   b.collideLocal(m, [-0.4, 0, -0.38], [0.4, disk ? 1.9 : 1.6, 0.38])
 }
 
+/** Band printer on its stand: rounded chassis, sloped acoustic hood with a smoked window, platen and tractor-feed
+ *  slot, control panel with lamps, fanfold paper fed from a box behind and draped down into the catch basket in front. */
 function lineprinter(b: Builder, x: number, z: number, side: number, rnd: () => number) {
   const m = T(x, FLOOR_Y, z, side > 0 ? 0 : Math.PI)
-  b.rbox(M.beige, m, 1.2, 0.95, 0.72, 0.05, 0, 0.475, 0)
-  b.rbox(CAB_GREY, m, 1.22, 0.18, 0.74, 0.06, 0, 1.03, 0)
-  b.boxM(SMOKED, m, 0.8, 0.1, 0.02, 0, 1.05, -0.37)
-  // Fanfold paper spilling from the top and stacked behind.
-  for (let k = 0; k < 14; k++) b.boxM(M.paper, m, 0.38, 0.004, 0.28, 0, 1.13 + k * 0.0045, 0.12 + (rnd() - 0.5) * 0.01, { cast: false })
-  b.quad(M.paper, m.clone().multiply(T(0, 1.05, -0.5, 0, -1.0)), 0.38, 0.4, { cast: false })
-  b.collideLocal(m, [-0.6, 0, -0.36], [0.6, 1.15, 0.36])
+  // Stand: frame and four legs on levelling feet.
+  for (const dx of [-0.55, 0.55])
+    for (const dz of [-0.3, 0.3]) {
+      b.boxM(M.darkSteel, m, 0.04, 0.42, 0.04, dx, 0.21, dz)
+      b.boxM(M.rubber, m, 0.06, 0.015, 0.06, dx, 0.008, dz)
+    }
+  b.boxM(M.darkSteel, m, 1.14, 0.04, 0.64, 0, 0.42, 0)
+  // Chassis with panel seams and recessed vent slots on the sides.
+  b.rbox(M.beige, m, 1.2, 0.55, 0.72, 0.04, 0, 0.715, 0)
+  b.boxM(M.darkSteel, m, 0.004, 0.45, 0.004, 0, 0.7, -0.362, { cast: false })
+  for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) b.boxM(M.darkSteel, m, 0.006, 0.012, 0.4, sx * 0.602, 0.56 + k * 0.035, 0, { cast: false })
+  // Platen bar and tractor slot across the top.
+  b.rbox(CAB_GREY, m, 1.16, 0.06, 0.2, 0.02, 0, 1.02, -0.2)
+  b.boxM(M.rubber, m, 1.0, 0.035, 0.06, 0, 1.02, -0.06)
+  for (const dx of [-0.42, 0.42]) b.boxM(M.darkSteel, m, 0.05, 0.05, 0.16, dx, 1.03, -0.06)
+  // Sloped acoustic hood with a smoked window, hinged at the back.
+  const hood = m.clone().multiply(T(0, 1.1, 0.12, 0, -0.32))
+  b.rbox(CAB_GREY, hood, 1.18, 0.05, 0.5, 0.03, 0, 0, 0)
+  b.boxM(SMOKED, hood, 0.76, 0.012, 0.28, 0, 0.026, -0.02, { cast: false })
+  // Control panel on the front right: lamps and buttons.
+  const pm = m.clone().multiply(T(0.38, 0.92, -0.36, 0, -0.5))
+  b.rbox(M.darkSteel, pm, 0.32, 0.12, 0.03, 0.01)
+  b.boxM(panelLights, pm, 0.24, 0.02, 0.006, 0, 0.03, -0.017, { cast: false })
+  for (let k = 0; k < 4; k++) b.rbox(k === 3 ? M.red : M.beige, pm, 0.035, 0.03, 0.02, 0.006, -0.1 + k * 0.065, -0.025, -0.018)
+  // Fanfold stock in a box behind the stand.
+  b.boxM(M.cardboard, m, 0.44, 0.32, 0.32, 0, 0.16, 0.55)
+  for (let k = 0; k < 10; k++) b.boxM(M.paper, m, 0.38, 0.004, 0.28, 0, 0.33 + k * 0.004, 0.55 + (rnd() - 0.5) * 0.01, { cast: false })
+  // Printed sheet: up out of the slot, over the front edge and down in folds into a wire basket.
+  const pts: [number, number][] = [
+    [-0.06, 1.05], [-0.2, 1.12], [-0.36, 1.08], [-0.42, 0.95], [-0.44, 0.75], [-0.47, 0.55], [-0.53, 0.38], [-0.62, 0.3],
+  ]
+  const seg = pts.length - 1
+  const pos: number[] = []
+  const idx: number[] = []
+  for (let i = 0; i <= seg; i++) for (const u of [-0.19, 0.19]) pos.push(u, pts[i]![1], pts[i]![0])
+  for (let i = 0; i < seg; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
+  const sheet = new THREE.BufferGeometry()
+  sheet.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  sheet.setIndex(idx)
+  sheet.computeVertexNormals()
+  sheet.applyMatrix4(m)
+  b.add(paperTwoSided, sheet, { cast: false })
+  // Catch basket: wire frame with a fold pile in it.
+  for (const dz of [-0.5, -0.85]) b.rod(M.darkSteel, [-0.25, 0.3, dz], [0.25, 0.3, dz], 0.006, 5)
+  for (const dx of [-0.25, 0.25]) {
+    b.rod(M.darkSteel, [dx, 0.3, -0.5], [dx, 0.3, -0.85], 0.006, 5)
+    b.rod(M.darkSteel, [dx, 0.3, -0.85], [dx, 0.02, -0.85], 0.006, 5)
+  }
+  for (let k = 0; k < 6; k++) b.boxM(M.paper, m, 0.38, 0.006, 0.28, (rnd() - 0.5) * 0.02, 0.06 + k * 0.007, -0.68, { cast: false })
+  b.collideLocal(m, [-0.6, 0, -0.9], [0.6, 1.2, 0.72])
+}
+
+const paperTwoSided = materialFor("flat", { color: 0xcfcbbb, roughness: 0.9, side: THREE.DoubleSide, name: "interior_paper_2s" })
+
+/** Cabinet door detail on a front face at local z: perimeter seam, handle, raised vent louvres. */
+function doorRelief(b: Builder, m: THREE.Matrix4, w: number, h: number, yc: number, z: number) {
+  const seam = 0.006
+  b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc + h / 2, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc - h / 2, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, seam, h, 0.004, -w / 2, yc, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, seam, h, 0.004, w / 2, yc, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, 0.004, h, 0.004, 0, yc, z - 0.001, { cast: false })
+  for (const sx of [-1, 1]) b.rbox(M.steel, m, 0.018, 0.12, 0.025, 0.006, sx * 0.04, yc + 0.05, z - 0.014)
+  const n = Math.floor((h * 0.35) / 0.03)
+  for (let k = 0; k < n; k++) for (const sx of [-1, 1]) b.boxM(M.frame, m, w / 2 - 0.08, 0.012, 0.014, sx * (w / 4), yc - h / 2 + 0.06 + k * 0.03, z - 0.006)
 }
 
 function recordsRoom(b: Builder, r: Room, rnd: () => number) {

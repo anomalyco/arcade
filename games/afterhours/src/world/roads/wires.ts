@@ -1,12 +1,15 @@
 import * as THREE from "three/webgpu"
-import { attribute, cameraPosition, float, length, max, positionLocal, uniform } from "three/tsl"
+import { attribute, cameraPosition, clamp, float, length, max, positionLocal, uniform, varying } from "three/tsl"
 import { materialFor } from "../../render/materials"
 
-// Overhead wires as thin tubes that never go sub-pixel: the vertex shader pushes each ring out from its centre line so
-// the wire stays at least `MIN_PX` pixels wide however far away it is, which keeps the crisp dark silhouettes against
-// the fog glow of the concept art instead of shimmering dashes. One mesh, one extra shader for the whole network.
+// Overhead wires as real-diameter tubes with alpha coverage: where a wire would be thinner than `MIN_PX` on screen, the
+// vertex shader widens it to `MIN_PX` and fades its opacity by the same ratio, so near wires stay crisp dark silhouettes
+// against the fog and distant ones become faint separate hairlines instead of shimmering dashes or a fused band.
+// One mesh, one extra shader for the whole network.
 
-const MIN_PX = 1.6
+const MIN_PX = 0.9
+/** Coverage floor so the farthest spans don't vanish completely. */
+const MIN_ALPHA = 0.06
 const SIDES = 4
 const Y = new THREE.Vector3(0, 1, 0)
 
@@ -63,9 +66,11 @@ export class Wires {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const centre = attribute("wireCentre", "vec3") as any
     const off = positionLocal.sub(centre)
-    const grow = max(float(1), length(centre.sub(cameraPosition)).mul(pxScale).div(length(off)))
-    const mat = materialFor("flat", { color: 0x050505, roughness: 0.55, metalness: 0.2 }).clone()
-    mat.positionNode = centre.add(off.mul(grow))
+    // Real radius over the radius MIN_PX pixels would need at this distance: < 1 means sub-pixel.
+    const cover = length(off).div(length(centre.sub(cameraPosition)).mul(pxScale))
+    const mat = materialFor("flat", { color: 0x050505, roughness: 0.55, metalness: 0.2, transparent: 1 }).clone()
+    mat.positionNode = centre.add(off.mul(max(float(1), cover.reciprocal())))
+    mat.opacityNode = varying(clamp(cover, MIN_ALPHA, 1))
     mat.name = "overhead_wire"
 
     const mesh = new THREE.Mesh(g, mat)

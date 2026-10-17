@@ -1,13 +1,18 @@
 import * as THREE from "three/webgpu"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { paint, type Builder, type Mat, CEIL_Y, FLOOR_Y, M, PANEL_ON, T, ceiling, closetBands, corridorBands, troffer, wall } from "./kit"
-import { CORRIDOR, WALL_T, fluoro } from "./corridor"
+import { fluoro } from "./corridor"
+import { INTERIOR } from "../layout"
+import { MODELS } from "../../render/models"
+import { placeModels } from "./props"
 
 // The two rooms you can walk into off the corridor: a lab (concept r5-05) north of the corridor, and the janitor's
 // closet to the south. Every other door is closed.
 
-export const LAB = { x0: -25.5, x1: -17, z0: -9.6, z1: CORRIDOR.zn - WALL_T }
-export const CLOSET = { x0: -32.6, x1: -29.4, z0: CORRIDOR.zs + WALL_T, z1: 5.0 }
+// Plain numbers from layout here (not corridor.ts): corridor.ts → props.ts → rooms.ts is an import cycle.
+const WALL_T = 0.15
+export const LAB = { x0: -25.5, x1: -17, z0: -9.6, z1: INTERIOR.corridor.min[1] - WALL_T }
+export const CLOSET = { x0: -32.6, x1: -29.4, z0: INTERIOR.corridor.max[1] + WALL_T, z1: 5.0 }
 
 const WARM: [number, number, number] = [1.0, 0.68, 0.38]
 
@@ -59,22 +64,11 @@ export function buildLab(b: Builder) {
   // On the far (north) bench under the chalkboard, arm reaching out over the bench towards the door.
   const lx = -24.35
   const lz = z0 + 0.14
-  b.cyl("metal_dark", T(lx, top + 0.012, lz), 0.075, 0.085, 0.024, 16)
-  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.04, top + 0.38, lz + 0.05], 0.008)
-  b.rod(M.lampShade, [lx + 0.04, top + 0.38, lz + 0.05], [lx + 0.12, top + 0.44, lz + 0.26], 0.008)
-  const shade = new THREE.Matrix4().compose(
-    new THREE.Vector3(lx + 0.14, top + 0.38, lz + 0.3),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.55, 0, 0)),
-    new THREE.Vector3(1, 1, 1),
-  )
-  b.cyl(M.lampShade, shade, 0.035, 0.085, 0.13, 16, { open: true })
-  b.cyl(M.lampShade, shade.clone().multiply(T(0, 0.065, 0)), 0.035, 0.035, 0.01, 12)
-  const bulb = new THREE.SphereGeometry(0.03, 10, 8)
-  bulb.applyMatrix4(shade.clone().multiply(T(0, -0.04, 0)))
-  b.add(M.bulbWarm, bulb, { cast: false })
+  // Sprung-arm lamp (library model), arm reaching towards the door; its spot light hangs under the shade.
+  placeModels(b, "desk_lamp", [{ position: [lx, top, lz + MODELS.desk_lamp.size[2] / 2 - 0.05], yaw: Math.PI, collide: false, blob: 0 }])
   b.lamp({
     kind: "incandescent",
-    position: [lx + 0.14, top + 0.32, lz + 0.33],
+    position: [lx, top + 0.4, lz + 0.5],
     direction: [0, -0.85, 0.53],
     color: WARM,
     intensity: 260,
@@ -157,19 +151,9 @@ export function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0
   else b.collide(c0, y, a0, c1 + f * 0.02, y + 0.935, a1)
 }
 
+/** Steel lab stool (library model), a little turned. */
 export function stool(b: Builder, x: number, z: number) {
-  const y = FLOOR_Y
-  b.cyl(M.stoolSeat, T(x, y + 0.66, z), 0.17, 0.17, 0.05, 18)
-  b.cyl("metal_dark", T(x, y + 0.625, z), 0.12, 0.12, 0.02, 12)
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.4
-    b.rod("metal_dark", [x + Math.cos(a) * 0.1, y + 0.62, z + Math.sin(a) * 0.1], [x + Math.cos(a) * 0.2, y, z + Math.sin(a) * 0.2], 0.011, 6)
-  }
-  const ring = new THREE.TorusGeometry(0.16, 0.008, 6, 20)
-  ring.rotateX(Math.PI / 2)
-  ring.translate(x, y + 0.24, z)
-  b.add("metal_dark", ring)
-  b.collide(x - 0.18, y, z - 0.18, x + 0.18, y + 0.68, z + 0.18)
+  placeModels(b, "lab_stool", [{ position: [x, FLOOR_Y, z], yaw: Math.sin(x * 12.9 + z * 7.1) * 3, inset: 0.06 }])
 }
 
 export function buildCloset(b: Builder) {

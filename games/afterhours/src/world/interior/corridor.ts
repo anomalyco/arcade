@@ -3,6 +3,8 @@ import type { Lamp } from "../context"
 import { INTERIOR } from "../layout"
 import { renderState } from "../../render/shared"
 import { HALL } from "./core"
+import { MODELS } from "../../render/models"
+import { placeModels } from "./props"
 import {
   type Builder,
   CEIL_Y,
@@ -226,26 +228,36 @@ export function hazardLight(b: Builder, x: number, zWall: number, lit: boolean) 
   b.cyl("metal_dark", T(x, y + 0.085, z + 0.1), 0.07, 0.07, 0.02, 12)
 }
 
+/** Recessed-look extinguisher cabinet (steel frame, felt back, glass front) with the extinguisher model inside, on a
+ *  wall at zWall facing the corridor; signal panel above. Works on either corridor wall. */
 export function extinguisher(b: Builder, x: number, zWall: number) {
   const y0 = FLOOR_Y + 0.9
+  const s = zWall < 0 ? 1 : -1
   const z = zWall
-  b.box(M.frame, x - 0.32, y0, z, x + 0.32, y0 + 0.8, z + 0.07)
-  b.box(M.felt, x - 0.28, y0 + 0.04, z + 0.069, x + 0.28, y0 + 0.76, z + 0.0695, { cast: false })
-  b.cyl(M.red, T(x, y0 + 0.36, z + 0.06), 0.075, 0.075, 0.5, 14)
-  b.cyl("metal_dark", T(x, y0 + 0.66, z + 0.06), 0.03, 0.05, 0.1, 10)
-  b.quad(M.glass, T(x, y0 + 0.4, z + 0.075), 0.56, 0.72, { cast: false })
-  b.box(M.red, x - 0.18, y0 + 0.86, z, x + 0.18, y0 + 0.98, z + 0.02)
+  const d = 0.21
+  const z1 = z + s * d
+  const lo = Math.min(z, z1)
+  const hi = Math.max(z, z1)
+  b.box(M.frame, x - 0.3, y0, lo, x + 0.3, y0 + 0.03, hi)
+  b.box(M.frame, x - 0.3, y0 + 0.77, lo, x + 0.3, y0 + 0.8, hi)
+  b.box(M.frame, x - 0.3, y0, lo, x - 0.27, y0 + 0.8, hi)
+  b.box(M.frame, x + 0.27, y0, lo, x + 0.3, y0 + 0.8, hi)
+  b.box(M.felt, x - 0.27, y0 + 0.03, z + s * 0.004, x + 0.27, y0 + 0.77, z + s * 0.006, { cast: false })
+  b.quad(M.glass, T(x, y0 + 0.4, z1 - s * 0.004, s > 0 ? 0 : Math.PI), 0.54, 0.74, { cast: false })
+  b.box(M.steel, x + 0.2, y0 + 0.34, z1, x + 0.24, y0 + 0.46, z1 + s * 0.015)
+  b.box(M.red, x - 0.18, y0 + 0.86, z, x + 0.18, y0 + 0.98, z + s * 0.02)
+  placeModels(b, "fire_extinguisher", [
+    { position: [x, y0 + 0.06, z + s * (0.02 + MODELS.fire_extinguisher.size[2] / 2)], yaw: s > 0 ? Math.PI : 0, collide: false, blob: 0 },
+  ])
+  b.collide(x - 0.3, y0, lo, x + 0.3, y0 + 0.8, hi)
 }
 
+/** Wall-hung steel drinking fountain (library model), back to the wall at zWall. */
 export function fountain(b: Builder, x: number, zWall: number) {
-  const y = FLOOR_Y + 0.82
-  const z = zWall
-  b.box(M.steel, x - 0.24, y - 0.1, z - 0.38, x + 0.24, y + 0.05, z)
-  b.box(M.steel, x - 0.2, y - 0.38, z - 0.18, x + 0.2, y - 0.1, z)
-  b.box("metal_dark", x - 0.16, y + 0.02, z - 0.32, x + 0.16, y + 0.051, z - 0.06, { cast: false })
-  b.cyl(M.steel, T(x, y + 0.08, z - 0.12), 0.012, 0.015, 0.06, 8)
-  b.box(M.steel, x + 0.2, y - 0.02, z - 0.39, x + 0.24, y + 0.03, z - 0.3)
-  b.collide(x - 0.24, FLOOR_Y, z - 0.38, x + 0.24, y + 0.05, z)
+  const s = zWall < 0 ? 1 : -1
+  const [, , d] = MODELS.drinking_fountain.size
+  placeModels(b, "drinking_fountain", [{ position: [x, FLOOR_Y + 0.3, zWall + (s * d) / 2], yaw: s > 0 ? Math.PI : 0, collide: false, blob: 0 }])
+  b.collide(x - 0.24, FLOOR_Y, Math.min(zWall, zWall + s * d), x + 0.24, FLOOR_Y + 0.95, Math.max(zWall, zWall + s * d))
 }
 
 export function bulletin(b: Builder, x: number, zWall: number) {

@@ -489,7 +489,7 @@ function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, 
   const c = point(f, h.u1, 0, T + 0.05)
   ctx.floors.push({ min: [Math.min(a.x, c.x), Math.min(a.z, c.z)], max: [Math.max(a.x, c.x), Math.max(a.z, c.z)], y: h.y0 })
   const k = Math.round(h.y0 / SH)
-  // ~165° either way: flat against the wall outside (clear of the flights) or against the corridor's end wall inside.
+  // ~110° either way: stands off the wall so the open leaf can still be grabbed from both sides.
   addFacadeDoor(ctx, root, {
     id: `fire-escape-${k}`,
     f,
@@ -499,7 +499,7 @@ function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, 
     depth: 0.1,
     height: h.y1 - h.y0 - 0.02,
     leaf: steelLeaf(`fire-escape-${k}`, h.u1 - h.u0 - 0.02, h.y1 - h.y0 - 0.02),
-    openAngle: 2.85,
+    openAngle: 1.9,
     swing: "auto",
     sound: "steel",
   })

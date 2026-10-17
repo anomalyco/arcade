@@ -153,7 +153,7 @@ export function buildLights(
     const a = south[i]!
     const b = south[i + 1]!
     const span = Math.hypot(b.x - a.x, b.z - a.z)
-    for (let w = 0; w < 2; w++) wires.add(sag(a.tops[w]!, b.tops[w]!, span * 0.02, Math.round(span / 3)), 0.012)
+    for (let w = 0; w < 2; w++) wires.add(sag(a.tops[w]!, b.tops[w]!, span * (0.016 + 0.004 * Math.abs(Math.sin(i * 2.3 + w))), Math.round(span / 3)), 0.0068)
   }
 
   // One davit on the approach (west side, behind the r5-03 view); the guard booth's own lamp (compound) lights the gate.

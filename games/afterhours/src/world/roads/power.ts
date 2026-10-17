@@ -12,8 +12,10 @@ import type { Junction } from "./surface"
 
 const H = POWER.poleHeight
 const ARM_Y = H - 0.55
-const PHONE_Y = H - 3.1
-const INSULATOR_X = [-1.05, -0.38, 1.05]
+/** Phone/CATV cable bracket, ~1.75 m under the crossarm. */
+const PHONE_Y = H - 2.3
+/** Outer conductors at the arm ends; the middle one rides a pole-top pin (0.55 m up, see `buildPole`). */
+const INSULATOR_X = [-1.08, 0, 1.08]
 
 export type Pole = {
   x: number
@@ -67,10 +69,16 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
     }
     const pts: THREE.Vector3[] = []
     for (const x of INSULATOR_X) {
-      parts.add("metal_galvanized", cylM(0.012, 0.012, 0.12, 5), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.1, off)))
-      parts.add("glass_dark", cylM(0.032, 0.06, 0.1, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.16, off)))
-      parts.add("glass_dark", cylM(0.045, 0.032, 0.04, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.225, off)))
-      pts.push(tmp.set(x, 0.235, off).applyMatrix4(af).clone())
+      // Middle conductor: pole-top pin on the top arm; on a second (lower) arm it sits just off the pole instead.
+      const pin = x === 0 && ai === 0
+      const ix = x === 0 && !pin ? -0.42 : x
+      const iy = pin ? 0.62 : 0.1
+      const iz = pin ? 0 : off
+      if (pin) parts.add("metal_galvanized", boxM(0.05, 0.4, 0.03), af.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0.12)))
+      parts.add("metal_galvanized", cylM(0.012, 0.012, 0.12, 5), af.clone().multiply(new THREE.Matrix4().makeTranslation(ix, iy, iz)))
+      parts.add("glass_dark", cylM(0.032, 0.06, 0.1, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(ix, iy + 0.06, iz)))
+      parts.add("glass_dark", cylM(0.045, 0.032, 0.04, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(ix, iy + 0.125, iz)))
+      pts.push(tmp.set(ix, iy + 0.135, iz).applyMatrix4(af).clone())
     }
     arms.push(pts)
   })
@@ -181,13 +189,15 @@ export function buildPower(ctx: WorldContext, parts: Parts, wires: Wires, access
       const a = poles[i]!
       const b = poles[i + 1]!
       const span = Math.hypot(b.x - a.x, b.z - a.z)
-      const n = Math.max(8, Math.round(span / 3))
+      const n = Math.max(12, Math.round(span / 2))
+      // Each wire hangs from its own insulator with its own sag (1.5–2.1 % of span; phone cable a little deeper).
+      const r = rng(Math.round(a.x * 31 + a.z * 17) + i)
       for (let w = 0; w < 3; w++) {
         const pa = a.arms[arm(i)]![w]!
         const pb = b.arms[arm(i + 1)]![w]!
-        wires.add(sag(pa, pb, span * (0.017 + w * 0.001), n), 0.013)
+        wires.add(sag(pa, pb, span * (0.015 + r() * 0.006), n), 0.0068)
       }
-      wires.add(sag(a.phone, b.phone, span * 0.026, n), 0.02)
+      wires.add(sag(a.phone, b.phone, span * (0.021 + r() * 0.005), n), 0.01)
     }
   }
   string(countyPoles, () => 0)
@@ -200,7 +210,7 @@ export function buildPower(ctx: WorldContext, parts: Parts, wires: Wires, access
     const af = pole.frame.clone().multiply(armFrame(spec.arms[0]![0], spec.arms[0]![1], ARM_Y - 2.2))
     const from = new THREE.Vector3(0.1, 0.63, -0.42).applyMatrix4(af)
     const to = pole.arms[0]![2]!
-    wires.add(sag(from, to, 0.15, 6), 0.009)
+    wires.add(sag(from, to, 0.15, 6), 0.006)
   }
 
   // Dead-end guy on the last access pole: anchored out on the forest side (east, away from the lane), leaning a little
@@ -210,7 +220,7 @@ export function buildPower(ctx: WorldContext, parts: Parts, wires: Wires, access
   const az = Math.max(last.z - 1.4, BOOTH.z + BOOTH.d / 2 + 4)
   const anchor = new THREE.Vector3(ax, heightAt(ax, az) + 0.15, az)
   const guyTop = new THREE.Vector3(0, ARM_Y - 0.3, 0).applyMatrix4(last.frame)
-  wires.add([guyTop, anchor], 0.009)
+  wires.add([guyTop, anchor], 0.006)
   parts.add("metal_galvanized", cylM(0.03, 0.03, 0.4, 6), new THREE.Matrix4().makeTranslation(anchor.x, anchor.y - 0.1, anchor.z))
   const guyDir = guyTop.clone().sub(anchor).normalize()
   parts.add("plastic_orange", beam(anchor.clone().addScaledVector(guyDir, 0.15), anchor.clone().addScaledVector(guyDir, 2.2), 0.045, 0.045))

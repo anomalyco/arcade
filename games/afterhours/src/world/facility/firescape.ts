@@ -20,7 +20,8 @@ const STEEL = "metal_dark" as const
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
 
 /** Footprint of the flight leaving landing i (1-based storey) upward; alternates sides of the door. */
-const flightSpan = (i: number) => (i % 2 === 1 ? { lo: Z0 + 1.4, hi: -0.2, up: 1 } : { lo: 0.2, hi: Z1 - 1.4, up: -1 })
+// The flights stop 0.85 m short of the door's centre line so the approach to each door stays clear of their rails.
+const flightSpan = (i: number) => (i % 2 === 1 ? { lo: Z0 + 1.0, hi: -0.85, up: 1 } : { lo: 0.85, hi: Z1 - 1.0, up: -1 })
 
 export const DROP_LADDER_Z = Z1 - 0.6
 export const ROOF_LADDER_Z = Z1 - 0.55

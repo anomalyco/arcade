@@ -28,6 +28,8 @@ import { HALL, SHELL } from "./core"
 import { bulletin, extinguisher, fluoro, fountain, hazardLight, rigLevel } from "./corridor"
 import { furnish, flushModels, furnishNook, loungeChairs } from "./furnish"
 import { STYLES, type Style } from "./styles"
+import { MODELS, yawToward } from "../../render/models"
+import { placeModels } from "./props"
 
 // Storeys 1–4: the same double-loaded corridor the full length of the block, rooms between the facade's window piers
 // running back to the exterior wall, each storey with its own trade: 1 offices, 2 labs, 3 records and the computer
@@ -352,10 +354,18 @@ function windowDressing(b: Builder, r: Room, rnd: () => number) {
   const zf = s * ZW
   // Sill board and a fin-tube radiator cover beneath.
   b.box(paint(0x8b8878, 0.6), a - 0.05, FLOOR_Y + SILL - 0.025, zf - s * 0.16, a + WIN_W + 0.05, FLOOR_Y + SILL + 0.005, zf + s * 0.02)
-  const rm = T(a + WIN_W / 2, FLOOR_Y + 0.38, zf - s * 0.1)
-  b.rbox(M.beige, rm, 2.2, 0.5, 0.14, 0.03)
-  for (let k = 0; k < 22; k++) b.box(M.darkSteel, a + WIN_W / 2 - 1.0 + k * 0.095, FLOOR_Y + 0.6, zf - s * 0.15, a + WIN_W / 2 - 0.97 + k * 0.095, FLOOR_Y + 0.635, zf - s * 0.05, { cast: false })
-  b.collide(a + WIN_W / 2 - 1.1, FLOOR_Y, Math.min(zf, zf - s * 0.2), a + WIN_W / 2 + 1.1, FLOOR_Y + 0.65, Math.max(zf, zf - s * 0.2))
+  if (r.unlocked) {
+    // Cast-iron column radiators under the sill on their feet, a little off the wall, with the supply pipe.
+    const [rw, , rd] = MODELS.radiator.size
+    const zr = zf - s * (rd / 2 + 0.05)
+    placeModels(b, "radiator", [-0.5, 0.5].map((k) => ({ position: [a + WIN_W / 2 + k * (rw + 0.06), FLOOR_Y + 0.02, zr] as const, yaw: s > 0 ? 0 : Math.PI, inset: 0 })))
+    b.rod(M.darkSteel, [a + WIN_W / 2 - rw - 0.1, FLOOR_Y + 0.08, zr], [a + WIN_W / 2 + rw + 0.1, FLOOR_Y + 0.08, zr], 0.012, 8)
+  } else {
+    const rm = T(a + WIN_W / 2, FLOOR_Y + 0.38, zf - s * 0.1)
+    b.rbox(M.beige, rm, 2.2, 0.5, 0.14, 0.03)
+    for (let k = 0; k < 22; k++) b.box(M.darkSteel, a + WIN_W / 2 - 1.0 + k * 0.095, FLOOR_Y + 0.6, zf - s * 0.15, a + WIN_W / 2 - 0.97 + k * 0.095, FLOOR_Y + 0.635, zf - s * 0.05, { cast: false })
+    b.collide(a + WIN_W / 2 - 1.1, FLOOR_Y, Math.min(zf, zf - s * 0.2), a + WIN_W / 2 + 1.1, FLOOR_Y + 0.65, Math.max(zf, zf - s * 0.2))
+  }
   // Venetian blinds: lowered anywhere from a third to all the way, a few raised, some with the slats open.
   const r0 = rnd()
   const drop = r0 < 0.15 ? 0.06 : 0.35 + rnd() * 0.65
@@ -648,25 +658,22 @@ function lounge(b: Builder, r: Room, rnd: () => number) {
   wall(b, "x", r.x0, r.x1, Math.min(rz(r, back), rz(r, back + 0.12)), Math.max(rz(r, back), rz(r, back + 0.12)), roomBands, [doorOpening(r.x1 - 1.2)])
   door(b, r.x1 - 1.2, rz(r, back + 0.06), { rot: s < 0 ? 0 : Math.PI, locked: true })
   // Two vending machines against the left partition, fronts facing across the room.
-  for (const [k, v] of [0.9, 2.0].entries()) {
-    const x = r.x0 + 0.45
-    const m = T(x, FLOOR_Y, rz(r, v), Math.PI / 2)
-    b.rbox(M.vend, m, 0.95, 1.83, 0.82, 0.03, 0, 0.915, 0)
-    b.quad(M.vendFront, m.clone().multiply(T(-0.08, 1.15, 0.412)), 0.6, 1.1, { cast: false })
-    b.boxM(M.darkSteel, m, 0.2, 0.5, 0.02, 0.33, 1.1, 0.41)
-    b.boxM(M.darkSteel, m, 0.6, 0.18, 0.04, -0.08, 0.3, 0.41)
-    b.boxM(M.steel, m, 0.04, 0.04, 0.02, 0.33, 1.25, 0.43)
-    if (k === 0) b.lamp({ kind: "fluorescent", position: [x + 0.7, FLOOR_Y + 1.2, rz(r, v)], color: [0.95, 0.9, 0.75], intensity: 2.5, range: 4, size: 0.5 })
-    b.collide(x - 0.45, FLOOR_Y, rz(r, v) - 0.48, x + 0.42, FLOOR_Y + 1.83, rz(r, v) + 0.48)
-  }
-  // Sofa along the back partition, coffee table in front.
+  // Two coffee vending machines side by side against the left partition, fronts facing across the room.
+  const vx = r.x0 + MODELS.vending_machine.size[2] / 2 + 0.03
+  placeModels(b, "vending_machine", [0.75, 1.42].map((v) => ({ position: [vx, FLOOR_Y, rz(r, v)] as const, yaw: yawToward(1, 0), inset: 0.02 })))
+  b.lamp({ kind: "fluorescent", position: [vx + 0.6, FLOOR_Y + 1.2, rz(r, 1.1)], color: [0.95, 0.9, 0.75], intensity: 2.5, range: 4, size: 0.5 })
+  // Two lounge chairs angled round the coffee table.
   const sx = (r.x0 + r.x1) / 2 - 0.5
-  const sm = T(sx, FLOOR_Y, rz(r, back - 0.5), s < 0 ? Math.PI : 0)
-  b.rbox(M.sofa, sm, 2.0, 0.42, 0.85, 0.06, 0, 0.21, 0)
-  b.rbox(M.sofa, sm, 2.0, 0.42, 0.22, 0.06, 0, 0.55, 0.33)
-  for (const dx of [-0.94, 0.94]) b.rbox(M.sofa, sm, 0.18, 0.62, 0.85, 0.05, dx, 0.31, 0)
-  for (const dx of [-0.5, 0.5]) b.rbox(M.sofa, sm, 0.9, 0.12, 0.62, 0.05, dx, 0.47, -0.08)
-  b.collide(sx - 1.05, FLOOR_Y, rz(r, back - 0.5) - 0.45, sx + 1.05, FLOOR_Y + 0.8, rz(r, back - 0.5) + 0.45)
+  const tv = back - 1.7
+  placeModels(
+    b,
+    "lounge_chair",
+    [-1, 1].map((k) => {
+      const cx = sx + k * 1.25
+      const cv = tv + 0.45
+      return { position: [cx, FLOOR_Y, rz(r, cv)] as const, yaw: yawToward(sx - cx, rz(r, tv) - rz(r, cv)) + k * 0.15, inset: 0.18 }
+    }),
+  )
   const tm = T(sx, FLOOR_Y, rz(r, back - 1.7))
   b.rbox(M.wood, tm, 1.1, 0.04, 0.55, 0.01, 0, 0.42, 0)
   for (const [dx, dz] of [[-0.48, -0.22], [0.48, -0.22], [-0.48, 0.22], [0.48, 0.22]]) b.boxM(M.darkSteel, tm, 0.03, 0.4, 0.03, dx!, 0.2, dz!)
@@ -675,18 +682,17 @@ function lounge(b: Builder, r: Room, rnd: () => number) {
   // Round table with stacking chairs near the corridor.
   const rx = r.x1 - 1.3
   const rv = 3.2
-  b.cyl(M.laminateTop, T(rx, FLOOR_Y + 0.72, rz(r, rv)), 0.45, 0.45, 0.03, 24)
-  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.36, rz(r, rv)), 0.03, 0.03, 0.7, 8)
-  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.015, rz(r, rv)), 0.25, 0.28, 0.03, 16)
+  b.cyl(M.laminateTop, T(rx, FLOOR_Y + 0.72, rz(r, rv)), 0.45, 0.45, 0.03, 32)
+  b.cyl(M.steel, T(rx, FLOOR_Y + 0.7, rz(r, rv)), 0.45, 0.45, 0.012, 32, { open: true })
+  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.36, rz(r, rv)), 0.03, 0.03, 0.7, 16)
+  b.cyl(M.darkSteel, T(rx, FLOOR_Y + 0.015, rz(r, rv)), 0.25, 0.28, 0.03, 32)
   b.collide(rx - 0.45, FLOOR_Y, rz(r, rv) - 0.45, rx + 0.45, FLOOR_Y + 0.74, rz(r, rv) + 0.45)
   b.cyl(M.paper, T(rx + 0.1, FLOOR_Y + 0.78, rz(r, rv) + 0.1), 0.04, 0.035, 0.09, 12)
   loungeChairs(b, r, rx, rv, rnd)
   // Water cooler by the opening.
   const wx = r.x1 - 0.35
   const wv = 0.6
-  b.rbox(M.beige, T(wx, FLOOR_Y, rz(r, wv)), 0.32, 0.95, 0.32, 0.02, 0, 0.475, 0)
-  b.cyl(paint(0x2f4f78, 0.1), T(wx, FLOOR_Y + 1.15, rz(r, wv)), 0.13, 0.13, 0.4, 16)
-  b.collide(wx - 0.17, FLOOR_Y, rz(r, wv) - 0.17, wx + 0.17, FLOOR_Y + 1.35, rz(r, wv) + 0.17)
+  placeModels(b, "water_cooler", [{ position: [wx, FLOOR_Y, rz(r, wv)], yaw: yawToward(-1, 0), inset: 0.02 }])
 }
 
 function paperStackLounge(b: Builder, x: number, y: number, z: number, rnd: () => number) {
