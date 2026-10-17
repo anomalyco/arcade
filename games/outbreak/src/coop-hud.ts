@@ -18,11 +18,11 @@ async function copy(text: string): Promise<boolean> {
   }
 }
 
-export type NameTag = { index: number; name: string; x: number; y: number; visible: boolean }
+export type NameTag = { index: number; variant?: number; name: string; x: number; y: number; visible: boolean }
 
 /**
- * Co-op menu and name tags. Offline it is a single "Host co-op" button that creates a room, copies its link and
- * joins it. In a room it lists the survivors with their seat colours and offers the invite link again.
+ * Co-op menu and name tags. Offline it offers a "Co-op · Loadout" button that opens the start/loadout screen.
+ * In a room it lists the survivors with their chosen look colours and offers the invite link and lobby controls.
  */
 export class CoopHud {
   readonly root: HTMLElement
@@ -30,20 +30,46 @@ export class CoopHud {
   private note: HTMLElement | null = null
   private tags = new Map<number, HTMLElement>()
   private lastKey = ""
+  private net: NetSession | null = null
+  private room: string | null = null
+  private onOpenLobby?: () => void
+  private onLeaveRoom?: () => void
 
-  constructor(private readonly net: NetSession | null, private readonly room: string | null) {
+  constructor(
+    net: NetSession | null,
+    room: string | null,
+    callbacks?: { onOpenLobby?: () => void; onLeaveRoom?: () => void },
+  ) {
     this.root = document.createElement("div")
     this.root.id = "coop"
+    this.onOpenLobby = callbacks?.onOpenLobby
+    this.onLeaveRoom = callbacks?.onLeaveRoom
     document.body.append(this.root)
+    this.bind(net, room)
+  }
+
+  bind(net: NetSession | null, room: string | null): void {
+    this.net = net
+    this.room = room
+    this.lastKey = ""
+    this.root.replaceChildren()
     if (!net || !room) {
+      delete this.root.dataset.room
+      this.list = null
+      this.note = null
       const host = document.createElement("button")
       host.type = "button"
-      host.textContent = "Host co-op"
-      host.title = "Create a room for up to 4 survivors and copy its invite link"
-      host.addEventListener("click", async () => {
+      host.dataset.openLobby = "true"
+      host.textContent = "Co-op · Loadout"
+      host.title = "Choose your survivor, starting kit, or host a 1–4 survivor co-op room"
+      host.addEventListener("click", () => {
+        if (this.onOpenLobby) {
+          this.onOpenLobby()
+          return
+        }
         const code = randomRoomCode(undefined, Math.random, 5)
         const link = inviteLink(code)
-        await copy(link)
+        void copy(link)
         sessionStorage.setItem("outbreak.coop.copied", code)
         location.assign(link)
       })
@@ -51,7 +77,7 @@ export class CoopHud {
       return
     }
     this.root.dataset.room = room
-    this.root.innerHTML = `<div class="head"><b>Co-op</b><span class="code">${esc(room)}</span><button type="button" data-copy>Copy invite link</button><a href="${esc(location.pathname)}" title="Leave the room and play offline">Leave</a></div><ul></ul><div class="note" role="status"></div>`
+    this.root.innerHTML = `<div class="head"><b>Co-op</b><span class="code">${esc(room)}</span><button type="button" data-copy>Copy invite link</button><a href="${esc(location.pathname)}" data-leave title="Leave the room and play offline">Leave</a></div><ul></ul><div class="note" role="status"></div>`
     this.list = this.root.querySelector("ul")
     this.note = this.root.querySelector(".note")
     const button = this.root.querySelector<HTMLButtonElement>("[data-copy]")!
@@ -59,6 +85,12 @@ export class CoopHud {
       button.blur()
       button.textContent = (await copy(inviteLink(room))) ? "Link copied" : inviteLink(room)
       setTimeout(() => (button.textContent = "Copy invite link"), 2400)
+    })
+    const leave = this.root.querySelector<HTMLAnchorElement>("[data-leave]")!
+    leave.addEventListener("click", (e) => {
+      if (!this.onLeaveRoom) return
+      e.preventDefault()
+      this.onLeaveRoom()
     })
     if (sessionStorage.getItem("outbreak.coop.copied") === room) {
       sessionStorage.removeItem("outbreak.coop.copied")
@@ -79,7 +111,8 @@ export class CoopHud {
     const net = this.net
     if (!net || !this.list || !this.note) return
     const rows = net.roster.map((r) => {
-      const colour = SURVIVOR_COLOURS[r.index % SURVIVOR_COLOURS.length]!.css
+      const variant = r.variant ?? r.index
+      const colour = SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!.css
       const you = r.id === net.id ? " (you)" : ""
       return `<li data-connected="${r.connected}"><i style="background:${colour}"></i>${esc(r.name)}${you}${r.connected ? "" : " · reconnecting"}</li>`
     })
@@ -97,13 +130,14 @@ export class CoopHud {
     for (const t of tags) {
       seen.add(t.index)
       let el = this.tags.get(t.index)
+      const colour = SURVIVOR_COLOURS[(t.variant ?? t.index) % SURVIVOR_COLOURS.length]!.css
       if (!el) {
         el = document.createElement("div")
         el.className = "coop-tag"
-        el.style.setProperty("--seat", SURVIVOR_COLOURS[t.index % SURVIVOR_COLOURS.length]!.css)
         document.body.append(el)
         this.tags.set(t.index, el)
       }
+      el.style.setProperty("--seat", colour)
       if (el.textContent !== t.name) {
         el.textContent = t.name
         el.dataset.w = ""
@@ -133,13 +167,21 @@ export class CoopHud {
 export function playerName(params: URLSearchParams): string {
   const fromUrl = params.get("name")
   if (fromUrl) {
-    localStorage.setItem("outbreak.name", fromUrl)
+    savePlayerName(fromUrl)
     return fromUrl
   }
-  const saved = localStorage.getItem("outbreak.name")
-  if (saved) return saved
+  try {
+    const saved = localStorage.getItem("outbreak.name")
+    if (saved) return saved
+  } catch {}
   const names = ["Ash", "Birch", "Cedar", "Elm", "Hazel", "Juniper", "Maple", "Rowan", "Sorrel", "Wren"]
   const name = names[Math.floor(Math.random() * names.length)]!
-  localStorage.setItem("outbreak.name", name)
+  savePlayerName(name)
   return name
+}
+
+export function savePlayerName(name: string): void {
+  try {
+    localStorage.setItem("outbreak.name", name)
+  } catch {}
 }

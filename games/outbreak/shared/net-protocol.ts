@@ -38,12 +38,14 @@ import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
+import { isLoadoutId, isSurvivorVariant } from "./loadout"
 import type { ChannelView, Notice, PickMode } from "./types"
 import type { Command, Survivor } from "./sim-types"
 import { packPlanks, unpackPlanks } from "./discovery/barricade"
 import type { VehicleKind } from "./vehicles/types"
 import type { ChunkCoord } from "./world"
 import type {
+  RoomPhase,
   RosterEntry,
   ClientMsg,
   ServerMsg,
@@ -58,6 +60,7 @@ import type {
 } from "./net-types"
 
 export type {
+  RoomPhase,
   RosterEntry,
   ClientMsg,
   ServerMsg,
@@ -219,7 +222,24 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       name: typeof o.name === "string" ? o.name : "",
       token: typeof o.token === "string" ? o.token.slice(0, 64) : undefined,
       build: o.build,
+      ...(isSurvivorVariant(o.variant) ? { variant: o.variant } : {}),
+      ...(isLoadoutId(o.loadout) ? { loadout: o.loadout } : {}),
+      ...(typeof o.lobby === "boolean" ? { lobby: o.lobby } : {}),
     }
+  if (o.t === "pick") {
+    return {
+      t: "pick",
+      ...(isSurvivorVariant(o.variant) ? { variant: o.variant } : {}),
+      ...(isLoadoutId(o.loadout) ? { loadout: o.loadout } : {}),
+      ...(typeof o.name === "string" ? { name: o.name } : {}),
+    }
+  }
+  if (o.t === "ready" && typeof o.ready === "boolean") {
+    return { t: "ready", ready: o.ready }
+  }
+  if (o.t === "start") {
+    return { t: "start" }
+  }
   if (o.t === "in" && Number.isSafeInteger(o.s) && Array.isArray(o.c) && o.c.length <= 64) {
     const a = typeof o.a === "number" && Number.isSafeInteger(o.a) && o.a > 0 ? o.a : undefined
     const v = typeof o.v === "number" && Number.isSafeInteger(o.v) && o.v > 0 ? o.v : undefined

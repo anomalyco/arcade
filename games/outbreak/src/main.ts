@@ -252,13 +252,15 @@ async function main() {
   const coop = CoopView.fromUrl(renderer, params, outbreakClientFeatures)
   const makeSession = (s: number) =>
     coop.net ??
-    new LocalSession(
-      s,
-      settings.world.houseSeed,
-      settings.world.terrain,
-      settings.ai,
-      settings.progression,
-      resolveWorldMode(settings.world.worldMode),
+    coop.applySoloLoadout(
+      new LocalSession(
+        s,
+        settings.world.houseSeed,
+        settings.world.terrain,
+        settings.ai,
+        settings.progression,
+        resolveWorldMode(settings.world.worldMode),
+      ),
     )
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
@@ -547,7 +549,7 @@ async function main() {
   const clock = new FrameClock()
   const liveMove = () => ({ ...input.move(), sprint: input.sprinting })
   const stepSimulation = (wallNow: number) => {
-    if (frozen || document.hidden) {
+    if (frozen || document.hidden || coop.paused) {
       clock.pause(wallNow)
       return 0
     }
@@ -818,6 +820,7 @@ async function main() {
     clock.reset(performance.now(), liveMove())
   }
   let lastWallDrawAt = 0
+  coop.onSessionChange = () => reset()
   reset()
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   let lastNotice: { text: string; until: number } | null = null
@@ -883,7 +886,7 @@ async function main() {
     coop.net?.sync(dt)
     if (coop.localPalette !== avatarPalette) {
       avatarPalette = coop.localPalette
-      avatar = avatarPalette ? new Survivor(renderer, coop.localPalette!) : avatar
+      avatar = new Survivor(renderer, coop.localPalette ?? undefined)
       avatar.onFootfall = footfall
       updateProfile()
     }

@@ -19,6 +19,7 @@ import { TICK_DT } from "../shared/clock"
 import { COOP_TUNING, DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { CoopSim, type SurvivorSlot } from "../shared/coop-sim"
 import type { InteractionRegistry } from "../shared/interact"
+import { clampSurvivorVariant, DEFAULT_LOADOUT, type LoadoutId, type SurvivorVariant } from "../shared/loadout"
 import {
   applyZombieState,
   commandOps,
@@ -31,6 +32,7 @@ import {
   type CommandTuple,
   type PersonalSnapshot,
   type RemoteSurvivor,
+  type RoomPhase,
   type RosterEntry,
   type ServerMsg,
   type SharedSnapshot,
@@ -49,6 +51,11 @@ export type NetSessionOptions = {
   url: string
   room: string
   name: string
+  variant?: SurvivorVariant
+  loadout?: LoadoutId
+  /** When true (browser lobby flow), stays in `"lobby"` phase until Ready/Start instead of auto-starting on welcome. */
+  lobby?: boolean
+  onLobbyChange?: () => void
   storage?: KeyValueStore
   /** Interpolation delay for remote survivors and zombies, in seconds. */
   delay?: number
@@ -94,6 +101,11 @@ export class NetSession implements Session, OutbreakOptimisticHost {
   readonly snapshots: SnapshotBuffer<SharedSnapshot>
   readonly snapHistory = new AckHistory<SharedSnapshot>(32)
   roster: RosterEntry[] = []
+  phase: RoomPhase = "lobby"
+  hostId = ""
+  variant: SurvivorVariant = 0
+  loadout: LoadoutId = DEFAULT_LOADOUT
+  ready = false
   id = ""
   index = 0
   status: string | null = STATUS_CONNECTING
@@ -126,7 +138,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
   private readonly now: () => number
   private readonly storage: KeyValueStore | undefined
 
-  constructor(private readonly options: NetSessionOptions) {
+  constructor(readonly options: NetSessionOptions) {
     const o = DEFAULT_COOP_ROOM
     this.sim = new CoopSim(o.seed, o.houseSeed, o.terrain, { zombieCount: 0 })
     this.local = this.sim.addSurvivor("local", 0)
@@ -135,7 +147,33 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     this.snapshots = remoteBuffer(options.delay ?? 0.1)
     this.now = options.now ?? (() => performance.now() / 1000)
     this.storage = options.storage
+    this.variant = options.variant ?? 0
+    this.loadout = options.loadout ?? DEFAULT_LOADOUT
     this.open()
+  }
+
+  get isHost(): boolean {
+    return this.id !== "" && this.id === this.hostId
+  }
+
+  variantOfSeat(seatIndex: number): SurvivorVariant {
+    return this.roster.find((r) => r.index === seatIndex)?.variant ?? clampSurvivorVariant(seatIndex)
+  }
+
+  pick(patch: { variant?: SurvivorVariant; loadout?: LoadoutId; name?: string }): void {
+    if (patch.variant !== undefined) this.options.variant = patch.variant
+    if (patch.loadout !== undefined) this.options.loadout = patch.loadout
+    if (patch.name !== undefined) this.options.name = patch.name
+    this.send({ t: "pick", ...patch })
+  }
+
+  setReady(ready: boolean): void {
+    this.ready = ready
+    this.send({ t: "ready", ready })
+  }
+
+  start(): void {
+    this.send({ t: "start" })
   }
 
   get ai(): OutbreakAISubsystem {
@@ -169,7 +207,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
 
   /** One fixed 60 Hz tick of local input: quantized identically to the wire, predicted at once, sent in batches. */
   update(_dt: number, command: Command): void {
-    if (!this.welcomed) return
+    if (!this.welcomed || this.phase === "lobby") return
     const tuple = packCommand(command)
     const quantCmd = unpackCommand(tuple)
     const seq = this.predictor.record(quantCmd)
@@ -248,7 +286,15 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     ws.onopen = () => {
       this.retries = 0
       const token = this.storage?.getItem(TOKEN_KEY + this.options.room) ?? undefined
-      this.send({ t: "hello", name: this.options.name, token, build: BUILD })
+      this.send({
+        t: "hello",
+        name: this.options.name,
+        token,
+        build: BUILD,
+        ...(this.options.variant !== undefined ? { variant: this.options.variant } : {}),
+        ...(this.options.loadout !== undefined ? { loadout: this.options.loadout } : {}),
+        lobby: Boolean(this.options.lobby),
+      })
     }
     ws.onmessage = (e: MessageEvent) => {
       if (typeof e.data === "string") {
@@ -295,6 +341,11 @@ export class NetSession implements Session, OutbreakOptimisticHost {
           Object.assign(this.local.survivor, { aim: old.aim })
         }
         this.index = msg.index
+        this.phase = msg.phase ?? "running"
+        this.hostId = msg.hostId ?? ""
+        this.variant = msg.variant ?? clampSurvivorVariant(msg.index)
+        this.loadout = msg.loadout ?? this.options.loadout ?? DEFAULT_LOADOUT
+        if (this.loadout !== DEFAULT_LOADOUT) this.sim.progression.setLoadout(this.local, this.loadout)
         this.predictor.reset()
         this.optimistic.reset()
         this.pendingPickupItems.clear()
@@ -308,11 +359,36 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         this.survivorGlides.clear()
         this.welcomed = true
         this.status = null
+        if (!this.options.lobby && this.phase === "lobby" && this.isHost) {
+          this.send({ t: "start" })
+        }
+        this.options.onLobbyChange?.()
         return
       }
-      case "roster":
+      case "roster": {
+        const prevPhase = this.phase
         this.roster = msg.players
+        if (msg.phase) this.phase = msg.phase
+        if (msg.hostId !== undefined) this.hostId = msg.hostId
+        const self = msg.players.find((p) => p.id === this.id)
+        if (self) {
+          if (self.variant !== undefined) this.variant = self.variant
+          if (self.loadout !== undefined && self.loadout !== this.loadout) {
+            this.loadout = self.loadout
+            this.sim.progression.setLoadout(this.local, this.loadout)
+          }
+          if (self.ready !== undefined) this.ready = self.ready
+          if (self.host) this.hostId = this.id
+        }
+        if (prevPhase === "lobby" && this.phase === "running") {
+          this.predictor.reset()
+          this.optimistic.reset()
+          this.outbox = []
+          this.prevSent = []
+        }
+        this.options.onLobbyChange?.()
         return
+      }
       case "pong":
         this.rtt = Math.max(0, this.now() - msg.c)
         return

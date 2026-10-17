@@ -28,6 +28,7 @@ type Coop = {
   id: string
   index: number
   connected: boolean
+  phase: "lobby" | "running"
   roster: { name: string }[]
   local: { x: number; y: number; magAmmo: number }
   remotes: { index: number; x: number; y: number }[]
@@ -63,7 +64,14 @@ try {
   const [a, b] = pages as [Page, Page]
   await until("both connected with a roster of two", async () => {
     const [ca, cb] = [await coop(a), await coop(b)]
-    return ca.connected && cb.connected && ca.roster.length === 2 && cb.roster.length === 2 && ca.remotes.length === 1 && cb.remotes.length === 1
+    return ca.connected && cb.connected && ca.roster.length === 2 && cb.roster.length === 2
+  })
+  if ((await coop(a)).phase === "lobby") {
+    await a.click('[data-act="start"]')
+  }
+  await until("both running with remote survivor", async () => {
+    const [ca, cb] = [await coop(a), await coop(b)]
+    return ca.phase === "running" && cb.phase === "running" && ca.remotes.length === 1 && cb.remotes.length === 1
   })
   report.joined = true
 

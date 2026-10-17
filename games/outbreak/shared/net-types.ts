@@ -3,6 +3,7 @@ import type { InterestConfig } from "@arcade/kit/net/interest"
 import type { LedgerDelta } from "@arcade/kit/sim/ledger"
 import type { AIState } from "./ai"
 import type { CombatMeleeEvent, CombatShotEvent, MeleeWeaponId } from "./combat"
+import type { LoadoutId, SurvivorVariant } from "./loadout"
 import type { Survivor } from "./sim-types"
 import type { Notice } from "./types"
 import type { VehicleKind } from "./vehicles/types"
@@ -13,13 +14,35 @@ import type { ChunkCoord } from "./world"
  * them without importing `net-protocol.ts` (which encodes a whole `CoopSim`).
  */
 
-export type RosterEntry = { id: string; index: number; name: string; connected: boolean }
+export type RoomPhase = "lobby" | "running"
+
+export type RosterEntry = {
+  id: string
+  index: number
+  name: string
+  connected: boolean
+  variant?: SurvivorVariant
+  loadout?: LoadoutId
+  ready?: boolean
+  host?: boolean
+}
 
 export type ClientMsg =
-  | { t: "hello"; name: string; token?: string; build: string }
+  | {
+      t: "hello"
+      name: string
+      token?: string
+      build: string
+      variant?: SurvivorVariant
+      loadout?: LoadoutId
+      lobby?: boolean
+    }
   /** Commands `s`, `s+1`, … for consecutive 60 Hz ticks, plus optional `a` (last acked snapshot tick) and `v` (view tick). */
   | { t: "in"; s: number; c: CommandTuple[]; a?: number; v?: number }
   | { t: "ping"; c: number; a?: number }
+  | { t: "pick"; variant?: SurvivorVariant; loadout?: LoadoutId; name?: string }
+  | { t: "ready"; ready: boolean }
+  | { t: "start" }
 
 export type ServerMsg =
   | {
@@ -32,8 +55,12 @@ export type ServerMsg =
       houseSeed: number
       terrain: number
       zombieCount: number
+      phase?: RoomPhase
+      hostId?: string
+      variant?: SurvivorVariant
+      loadout?: LoadoutId
     }
-  | { t: "roster"; players: RosterEntry[] }
+  | { t: "roster"; players: RosterEntry[]; phase?: RoomPhase; hostId?: string }
   | { t: "error"; message: string }
   | { t: "reload" }
   | { t: "pong"; c: number }

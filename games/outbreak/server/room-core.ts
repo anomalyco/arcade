@@ -8,6 +8,13 @@ import { TICK_DT, TICK_HZ } from "../shared/clock"
 import { COOP_TIME_SCALE, COOP_TUNING, DEFAULT_COOP_ROOM, type CoopRoomOptions } from "../shared/coop-config"
 import { CoopSim, MAX_SURVIVORS, type SurvivorSlot } from "../shared/coop-sim"
 import {
+  clampSurvivorVariant,
+  DEFAULT_LOADOUT,
+  SURVIVOR_VARIANT_COUNT,
+  type LoadoutId,
+  type SurvivorVariant,
+} from "../shared/loadout"
+import {
   commandOps,
   decodeClient,
   encodePersonal,
@@ -16,6 +23,7 @@ import {
   SNAPSHOT_EVERY,
   unpackCommand,
   type ClientMsg,
+  type RoomPhase,
   type RosterEntry,
   type ServerMsg,
   type SharedSnapshot,
@@ -49,6 +57,9 @@ type SeatData = {
   history: AckHistory<SharedSnapshot>
   pacer: BandwidthPacer
   lastSnapTick: number
+  variant: SurvivorVariant
+  loadout: LoadoutId
+  ready: boolean
 }
 type ConnState = { seatId: string | null; tokens: number; at: number; bytes: number }
 
@@ -56,6 +67,7 @@ type ConnState = { seatId: string | null; tokens: number; at: number; bytes: num
 export class CoopRoomCore {
   readonly sim: CoopSim
   readonly seats: Seats<SeatData>
+  phase: RoomPhase
   tick = 0
   private snapIndex = 0
   private conns = new Map<Conn, ConnState>()
@@ -73,6 +85,50 @@ export class CoopRoomCore {
   ) {
     this.sim = new CoopSim(options.seed, options.houseSeed, options.terrain, { zombieCount: options.zombieCount })
     this.seats = new Seats(MAX_SURVIVORS, GRACE_MS, clock)
+    this.phase = options.initialPhase ?? (build === "bench" ? "running" : "lobby")
+  }
+
+  /** Seat id of the current room host (lowest-index connected seat, or first held seat). */
+  get hostId(): string | undefined {
+    return this.seats.all.find((s) => s.connected)?.id ?? this.seats.all[0]?.id
+  }
+
+  /** True if another seat in the room has already claimed `variant`. */
+  isVariantTaken(variant: SurvivorVariant, excludeSeatId?: string): boolean {
+    return this.seats.all.some((s) => s.id !== excludeSeatId && s.data.variant === variant)
+  }
+
+  /** Picks `preferred` when unclaimed, otherwise the lowest free survivor variant (0..3). */
+  private pickFreeVariant(preferred?: SurvivorVariant, excludeSeatId?: string): SurvivorVariant {
+    if (preferred !== undefined && !this.isVariantTaken(preferred, excludeSeatId)) return preferred
+    for (let i = 0; i < SURVIVOR_VARIANT_COUNT; i++) {
+      const v = i as SurvivorVariant
+      if (!this.isVariantTaken(v, excludeSeatId)) return v
+    }
+    return clampSurvivorVariant(preferred, 0)
+  }
+
+  /** Transitions the room from `"lobby"` to `"running"` and broadcasts the updated roster and initial running snapshot. */
+  start(): boolean {
+    if (this.phase === "running") return false
+    this.phase = "running"
+    for (const seat of this.seats.all) {
+      seat.data.ready = true
+      seat.data.jitter = new JitterBuffer(commandOps, JITTER)
+    }
+    this.sendRoster(true)
+    this.snapshot()
+    return true
+  }
+
+  private checkAutoStart(): void {
+    if (this.phase !== "lobby") return
+    const connected = this.seats.all.filter((s) => s.connected)
+    if (connected.length >= 2 && connected.every((s) => s.data.ready)) {
+      this.start()
+    } else {
+      this.sendRoster()
+    }
   }
 
   get connections(): number {
@@ -106,7 +162,7 @@ export class CoopRoomCore {
     if (!state?.seatId) return
     const stillOpen = [...this.conns.values()].some((c) => c.seatId === state.seatId)
     if (!stillOpen) this.seats.leave(state.seatId)
-    this.sendRoster()
+    this.checkAutoStart()
   }
 
   private send(conn: Conn, msg: ServerMsg | Uint8Array): void {
@@ -131,6 +187,45 @@ export class CoopRoomCore {
     if (!state.seatId) return
     const seat = this.seats.byId(state.seatId)
     if (!seat) return
+    if (msg.t === "pick") {
+      if (this.phase !== "lobby") return
+      let changed = false
+      if (msg.name !== undefined) {
+        const nextName = cleanPlayerName(msg.name, MAX_NAME, "Survivor")
+        if (nextName !== seat.name) {
+          seat.name = nextName
+          changed = true
+        }
+      }
+      if (msg.variant !== undefined && !this.isVariantTaken(msg.variant, seat.id) && seat.data.variant !== msg.variant) {
+        seat.data.variant = msg.variant
+        seat.data.ready = false
+        changed = true
+      }
+      if (msg.loadout !== undefined && seat.data.loadout !== msg.loadout) {
+        seat.data.loadout = msg.loadout
+        this.sim.progression.setLoadout(seat.data.slot, msg.loadout)
+        seat.data.ledgerRev = 0
+        seat.data.ready = false
+        changed = true
+      }
+      if (changed) this.sendRoster(true)
+      return
+    }
+    if (msg.t === "ready") {
+      if (this.phase !== "lobby") return
+      seat.data.ready = msg.ready
+      this.checkAutoStart()
+      return
+    }
+    if (msg.t === "start") {
+      if (this.phase !== "lobby") return
+      const connected = this.seats.all.filter((s) => s.connected)
+      const allReady = connected.length > 0 && connected.every((s) => s.data.ready)
+      if (seat.id === this.hostId || allReady) this.start()
+      return
+    }
+    if (this.phase === "lobby") return
     if (msg.a && msg.a > seat.data.ackSnapTick && seat.data.history.get(msg.a)) {
       seat.data.ackSnapTick = msg.a
     }
@@ -149,16 +244,25 @@ export class CoopRoomCore {
       return
     }
     const name = cleanPlayerName(msg.name, MAX_NAME, "Survivor")
-    const joined = this.seats.join(name, msg.token, (index, id) => ({
-      slot: this.sim.addSurvivor(id, index),
-      jitter: new JitterBuffer(commandOps, JITTER),
-      ledgerRev: 0,
-      ackSnapTick: 0,
-      viewTick: 0,
-      history: new AckHistory<SharedSnapshot>(32),
-      pacer: new BandwidthPacer(SNAPSHOT_EVERY, 9, 22 * 1024),
-      lastSnapTick: -SNAPSHOT_EVERY,
-    }))
+    const joined = this.seats.join(name, msg.token, (index, id) => {
+      const slot = this.sim.addSurvivor(id, index)
+      const variant = this.pickFreeVariant(msg.variant ?? clampSurvivorVariant(index), id)
+      const loadout = msg.loadout ?? DEFAULT_LOADOUT
+      if (loadout !== DEFAULT_LOADOUT) this.sim.progression.setLoadout(slot, loadout)
+      return {
+        slot,
+        jitter: new JitterBuffer(commandOps, JITTER),
+        ledgerRev: 0,
+        ackSnapTick: 0,
+        viewTick: 0,
+        history: new AckHistory<SharedSnapshot>(32),
+        pacer: new BandwidthPacer(SNAPSHOT_EVERY, 9, 22 * 1024),
+        lastSnapTick: -SNAPSHOT_EVERY,
+        variant,
+        loadout,
+        ready: this.phase === "running",
+      }
+    })
     if (!joined.ok) {
       this.send(conn, { t: "error", message: `Room ${this.code} is full (${MAX_SURVIVORS} survivors).` })
       conn.close(4001, "room full")
@@ -166,7 +270,18 @@ export class CoopRoomCore {
     }
     const seat = joined.seat
     // A reconnect starts a fresh command stream (the client's sequence numbers restart at 0).
-    if (joined.resumed) seat.data.jitter = new JitterBuffer(commandOps, JITTER)
+    if (joined.resumed) {
+      seat.data.jitter = new JitterBuffer(commandOps, JITTER)
+      if (this.phase === "lobby") {
+        if (msg.variant !== undefined && !this.isVariantTaken(msg.variant, seat.id)) {
+          seat.data.variant = msg.variant
+        }
+        if (msg.loadout !== undefined && msg.loadout !== seat.data.loadout) {
+          seat.data.loadout = msg.loadout
+          this.sim.progression.setLoadout(seat.data.slot, msg.loadout)
+        }
+      }
+    }
     seat.data.ledgerRev = 0
     seat.data.ackSnapTick = 0
     seat.data.history.clear()
@@ -178,6 +293,9 @@ export class CoopRoomCore {
       }
     }
     state.seatId = seat.id
+    if (msg.lobby === false && this.phase === "lobby" && seat.id === this.hostId) {
+      this.phase = "running"
+    }
     const o = this.options
     this.send(conn, {
       t: "welcome",
@@ -189,21 +307,38 @@ export class CoopRoomCore {
       houseSeed: o.houseSeed,
       terrain: o.terrain,
       zombieCount: o.zombieCount,
+      phase: this.phase,
+      hostId: this.hostId,
+      variant: seat.data.variant,
+      loadout: seat.data.loadout,
     })
     this.sendRoster(true)
-    this.snapshot([conn])
+    if (this.phase === "running") this.snapshot([conn])
   }
 
   private roster(): RosterEntry[] {
-    return this.seats.all.map((s) => ({ id: s.id, index: s.index, name: s.name, connected: s.connected }))
+    const hostId = this.hostId
+    return this.seats.all.map((s) => ({
+      id: s.id,
+      index: s.index,
+      name: s.name,
+      connected: s.connected,
+      variant: s.data.variant,
+      loadout: s.data.loadout,
+      ready: s.data.ready,
+      host: s.id === hostId,
+    }))
   }
 
   private sendRoster(force = false): void {
     const players = this.roster()
-    const key = JSON.stringify(players)
+    const hostId = this.hostId
+    const key = JSON.stringify({ phase: this.phase, hostId, players })
     if (!force && key === this.rosterKey) return
     this.rosterKey = key
-    for (const [conn, s] of this.conns) if (s.seatId) this.send(conn, { t: "roster", players })
+    for (const [conn, s] of this.conns) {
+      if (s.seatId) this.send(conn, { t: "roster", players, phase: this.phase, hostId })
+    }
   }
 
   /** True while anyone is connected or a dropped survivor is still within its grace window. */
@@ -211,12 +346,12 @@ export class CoopRoomCore {
     return this.conns.size > 0 || this.seats.all.length > 0
   }
 
-  /** One 60 Hz tick. The world pauses while nobody is connected. */
+  /** One 60 Hz tick. The world pauses while nobody is connected or while the room is in the pre-game lobby. */
   step(): void {
     const expired = this.seats.expire()
-    for (const seat of expired) this.sim.removeSurvivor(seat.id, true)
-    if (expired.length) this.sendRoster()
-    if (!this.seats.connectedCount) return
+    for (const seat of expired) this.sim.removeSurvivor(seat.id, this.phase === "running")
+    if (expired.length) this.checkAutoStart()
+    if (!this.seats.connectedCount || this.phase === "lobby") return
     this.tick++
     const sim = this.sim
     for (const seat of this.seats.all) {
