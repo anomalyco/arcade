@@ -326,6 +326,7 @@ describe("Co-op melee attribution & friendly-fire off", () => {
 
     const ann = mkClient("Ann")
     const bob = mkClient("Bob")
+    core.start()
     const slotA = core.sim.slot(ann.id)!
     const slotB = core.sim.slot(bob.id)!
 
@@ -425,6 +426,7 @@ describe("Co-op melee attribution & friendly-fire off", () => {
     }
     core.open(conn)
     core.message(conn, JSON.stringify({ t: "hello", name: "Ann", build: "test" }))
+    core.start()
     const slotA = core.sim.slot(annId)!
     Object.assign(slotA.survivor, { x: 40, y: 44, aim: 0 })
 

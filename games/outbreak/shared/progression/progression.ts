@@ -17,6 +17,7 @@ import { FoundKnowledge } from "../discovery/knowledge"
 import { Tinkering } from "../discovery/tinkering"
 import { ALL_PAIRS, benchOfMat, MAT_SLOTS, matStoreId } from "../discovery/tinker"
 import { INTERACT_RANGE, type InteractAction, type InteractActorState, type InteractionHandler, type RawInteractCandidate } from "../interact"
+import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
 import { ACTOR_STORES, CATALOG, ITEMS, RECIPES, type Recipe } from "./catalog"
 import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, type BenchSite, type LootSite } from "./loot"
@@ -226,6 +227,21 @@ export class OutbreakProgression implements ProgressionHost {
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "pistol" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "ammo", count: 6 })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank", count: 2 })
+    this.ledger.apply({ kind: "select", actor: slot.id, slot: 1 })
+    this.project(slot)
+  }
+
+  /** Applies a starting loadout kit (`shared/loadout.ts`) to a fresh survivor before the run starts. */
+  setLoadout(slot: ProgressionSlot, loadout: LoadoutId = DEFAULT_LOADOUT): void {
+    this.ledger.removeActor(slot.id)
+    this.addActor(slot)
+    const spec = loadoutSpec(loadout)
+    for (const grant of spec.items) {
+      this.ledger.apply({ kind: "grant", actor: slot.id, item: grant.item, count: grant.count })
+      if (grant.charge !== undefined) {
+        this.ledger.apply({ kind: "setCharge", actor: slot.id, item: grant.item, charge: grant.charge })
+      }
+    }
     this.ledger.apply({ kind: "select", actor: slot.id, slot: 1 })
     this.project(slot)
   }

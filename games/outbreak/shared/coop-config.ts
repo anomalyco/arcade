@@ -3,7 +3,13 @@ import { DEFAULT_FLASHLIGHT_TUNING } from "./flashlight"
 import type { NamespacedSessionTuning } from "./session"
 import { DEFAULT_STAMINA_TUNING } from "./stamina"
 
-export type CoopRoomOptions = { seed: number; houseSeed: number; terrain: number; zombieCount: number }
+export type CoopRoomOptions = {
+  seed: number
+  houseSeed: number
+  terrain: number
+  zombieCount: number
+  initialPhase?: "lobby" | "running"
+}
 
 /** Every co-op room plays the curated neighbourhood the offline game starts in. */
 export const DEFAULT_COOP_ROOM: CoopRoomOptions = { seed: 7, houseSeed: 7, terrain: 0.22, zombieCount: DEFAULT_AI_CONFIG.zombieCount }

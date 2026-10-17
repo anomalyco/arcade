@@ -26,7 +26,9 @@ import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/disc
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { outbreakClientFeatures as features } from "../src/features"
 import { SoundDirector } from "../src/audio/director"
-import { NetSession } from "../src/net-session"
+import { shouldShowStartScreen } from "../src/lobby/lobby-ui"
+import { SURVIVORS, survivorSpec } from "../src/lobby/survivors"
+import { NetSession, SURVIVOR_COLOURS } from "../src/net-session"
 import { Loopback } from "./loopback"
 
 const idle = (aim = 0): Command => ({ mx: 0, my: 0, aim, interact: false })
@@ -108,6 +110,7 @@ function client(core: CoopRoomCore, name: string, token?: string): Client {
 
 /** Each tick, every client sends one command (from `cmd`, or idle) and the room steps once. */
 function run(core: CoopRoomCore, clients: Client[], ticks: number, cmd: (c: Client, i: number) => Command = () => idle()): void {
+  if (core.phase === "lobby") core.start()
   for (let i = 0; i < ticks; i++) {
     for (const c of clients) core.message(c.conn, JSON.stringify({ t: "in", s: c.seq++, c: [packCommand(cmd(c, i))] }))
     core.step()
@@ -867,5 +870,229 @@ describe("Wire protocol encode/decode, interest management & delta against ack u
 
     a.close()
     b.close()
+  })
+})
+
+describe("CoopRoomCore lobby phase machine", () => {
+  const options = { ...DEFAULT_COOP_ROOM, zombieCount: 4 }
+
+  test("sim stays paused in lobby, ignores inputs, and starts only on host start or all-ready", () => {
+    const core = new CoopRoomCore("lobby1", options, Date.now, "test")
+    expect(core.phase).toBe("lobby")
+
+    const ann = client(core, "Ann")
+    const bob = client(core, "Bob")
+    expect(core.hostId).toBe(ann.id)
+
+    const slotA = core.sim.slot(ann.id)!
+    const startX = slotA.survivor.x
+    const startTime = core.sim.time
+
+    // While in lobby, inputs and ticks do not advance the simulation or send snapshots
+    for (let i = 0; i < 20; i++) {
+      core.message(ann.conn, JSON.stringify({ t: "in", s: ann.seq++, c: [packCommand({ mx: 1, my: 0, aim: 0, interact: false, fire: true })] }))
+      core.step()
+    }
+    expect(core.phase).toBe("lobby")
+    expect(core.tick).toBe(0)
+    expect(core.sim.time).toBe(startTime)
+    expect(slotA.survivor.x).toBe(startX)
+    expect(slotA.survivor.magAmmo).toBe(6)
+    expect(ann.snaps).toHaveLength(0)
+
+    // Non-host cannot force start when not everyone is ready
+    core.message(bob.conn, JSON.stringify({ t: "start" }))
+    expect(core.phase).toBe("lobby")
+
+    // Host starts the room: phase transitions to running, initial snapshots arrive, and sim steps normally
+    core.message(ann.conn, JSON.stringify({ t: "start" }))
+    expect(core.phase).toBe("running")
+    expect(ann.snaps.length).toBeGreaterThanOrEqual(1)
+    expect(bob.snaps.length).toBeGreaterThanOrEqual(1)
+    const roster = bob.msgs.filter((m) => m.t === "roster").at(-1)
+    expect(roster && roster.t === "roster" && roster.phase).toBe("running")
+
+    for (let i = 0; i < 10; i++) {
+      core.message(ann.conn, JSON.stringify({ t: "in", s: ann.seq++, c: [packCommand({ mx: 1, my: 0, aim: 0, interact: false })] }))
+      core.step()
+    }
+    expect(core.tick).toBe(10)
+    expect(slotA.survivor.x).toBeGreaterThan(startX)
+  })
+
+  test("all-ready with 2+ connected survivors automatically transitions lobby to running", () => {
+    const core = new CoopRoomCore("lobby2", options, Date.now, "test")
+    const ann = client(core, "Ann")
+    const bob = client(core, "Bob")
+
+    core.message(ann.conn, JSON.stringify({ t: "ready", ready: true }))
+    expect(core.phase).toBe("lobby")
+    const midRoster = bob.msgs.filter((m) => m.t === "roster").at(-1)
+    expect(midRoster && midRoster.t === "roster" && midRoster.players.find((p) => p.id === ann.id)?.ready).toBe(true)
+
+    core.message(bob.conn, JSON.stringify({ t: "ready", ready: true }))
+    expect(core.phase).toBe("running")
+    expect(ann.snaps.length).toBeGreaterThanOrEqual(1)
+    expect(bob.snaps.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test("authoritatively blocks duplicate survivor variants and propagates survivor + loadout picks", () => {
+    const core = new CoopRoomCore("lobby3", options, Date.now, "test")
+    const ann = client(core, "Ann")
+    const bob = client(core, "Bob")
+
+    const welcomeA = ann.msgs.find((m) => m.t === "welcome")
+    const welcomeB = bob.msgs.find((m) => m.t === "welcome")
+    expect(welcomeA && welcomeA.t === "welcome" && welcomeA.variant).toBe(0)
+    expect(welcomeB && welcomeB.t === "welcome" && welcomeB.variant).toBe(1)
+
+    // Ann tries to pick Bob's variant (1): server blocks duplicate pick and keeps Ann on 0
+    core.message(ann.conn, JSON.stringify({ t: "pick", variant: 1 }))
+    expect(core.seats.byId(ann.id)?.data.variant).toBe(0)
+
+    // Ann picks unclaimed variant 2 and Breacher loadout: succeeds and updates her starting kit
+    core.message(ann.conn, JSON.stringify({ t: "ready", ready: true }))
+    core.message(ann.conn, JSON.stringify({ t: "pick", variant: 2, loadout: "breacher", name: "Claire" }))
+    const seatA = core.seats.byId(ann.id)!
+    expect(seatA.data.variant).toBe(2)
+    expect(seatA.data.loadout).toBe("breacher")
+    expect(seatA.name).toBe("Claire")
+    // Changing pick resets ready state
+    expect(seatA.data.ready).toBe(false)
+    expect(core.sim.progression.ledger.count(ann.id, "pipe")).toBe(1)
+    expect(core.sim.slot(ann.id)!.survivor.planks).toBe(2)
+
+    // Bob can now claim variant 0 (freed by Ann) and Medic loadout
+    core.message(bob.conn, JSON.stringify({ t: "pick", variant: 0, loadout: "medic" }))
+    expect(core.seats.byId(bob.id)?.data.variant).toBe(0)
+    expect(core.seats.byId(bob.id)?.data.loadout).toBe("medic")
+    expect(core.sim.progression.ledger.count(bob.id, "bandage")).toBe(1)
+
+    const latestRoster = bob.msgs.filter((m) => m.t === "roster").at(-1)
+    expect(latestRoster && latestRoster.t === "roster" ? latestRoster.players.map((p) => ({ name: p.name, variant: p.variant, loadout: p.loadout })) : []).toEqual([
+      { name: "Claire", variant: 2, loadout: "breacher" },
+      { name: "Bob", variant: 0, loadout: "medic" },
+    ])
+  })
+
+  test("reconnect during lobby preserves seat, variant, and loadout; late join after start drops straight into running", () => {
+    let now = 0
+    const core = new CoopRoomCore("lobby4", options, () => now, "test")
+    const ann = client(core, "Ann")
+    core.message(ann.conn, JSON.stringify({ t: "pick", variant: 3, loadout: "scavenger" }))
+    core.close(ann.conn)
+    now += 2_000
+
+    // Reconnect in lobby with token keeps seat, variant 3, and scavenger loadout
+    const annBack = client(core, "Ann", ann.token)
+    expect(annBack.id).toBe(ann.id)
+    const welcomeBack = annBack.msgs.find((m) => m.t === "welcome")
+    expect(welcomeBack && welcomeBack.t === "welcome" && welcomeBack.variant).toBe(3)
+    expect(welcomeBack && welcomeBack.t === "welcome" && welcomeBack.loadout).toBe("scavenger")
+    expect(welcomeBack && welcomeBack.t === "welcome" && welcomeBack.phase).toBe("lobby")
+
+    // Start room, then late joiner connects with a desired variant/loadout
+    core.message(annBack.conn, JSON.stringify({ t: "start" }))
+    expect(core.phase).toBe("running")
+
+    const lateConn: Conn = {
+      send(d) {
+        if (typeof d === "string") lateMsgs.push(decodeServerText(d)!)
+        else lateSnaps.push(decodeSnapshot(d, 7))
+      },
+      close() {},
+    }
+    const lateMsgs: ServerMsg[] = []
+    const lateSnaps: ReturnType<typeof decodeSnapshot>[] = []
+    core.open(lateConn)
+    // Variant 3 is taken by Ann, so requesting variant 3 assigns lowest unclaimed (0), while applying medic loadout
+    core.message(lateConn, JSON.stringify({ t: "hello", name: "Dan", build: "test", variant: 3, loadout: "medic" }))
+    const lateWelcome = lateMsgs.find((m) => m.t === "welcome")
+    expect(lateWelcome && lateWelcome.t === "welcome" && lateWelcome.phase).toBe("running")
+    expect(lateWelcome && lateWelcome.t === "welcome" && lateWelcome.variant).toBe(0)
+    expect(lateWelcome && lateWelcome.t === "welcome" && lateWelcome.loadout).toBe("medic")
+    expect(lateSnaps.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test("NetSession with lobby: true waits in lobby until host starts, then steps normally", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("netlobby", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 2)
+    const sock = net.socketClass()
+
+    const host = new NetSession({
+      features,
+      url: "loop",
+      room: "netlobby",
+      name: "Host",
+      variant: 1,
+      loadout: "breacher",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    const guest = new NetSession({
+      features,
+      url: "loop",
+      room: "netlobby",
+      name: "Guest",
+      variant: 1, // duplicate of host -> server assigns 0
+      loadout: "medic",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+
+    for (let i = 0; i < 6; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(host.connected).toBe(true)
+    expect(guest.connected).toBe(true)
+    expect(host.phase).toBe("lobby")
+    expect(guest.phase).toBe("lobby")
+    expect(host.isHost).toBe(true)
+    expect(guest.isHost).toBe(false)
+    expect(host.variant).toBe(1)
+    expect(guest.variant).toBe(0)
+
+    const hostStartX = host.view.player.x
+    host.update(TICK_DT, { mx: 1, my: 0, aim: 0, interact: false })
+    expect(host.view.player.x).toBe(hostStartX)
+
+    host.start()
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      host.update(TICK_DT, { mx: 1, my: 0, aim: 0, interact: false })
+      guest.update(TICK_DT, idle())
+      host.sync(TICK_DT)
+      guest.sync(TICK_DT)
+    }
+    expect(host.phase).toBe("running")
+    expect(guest.phase).toBe("running")
+    expect(host.view.player.x).toBeGreaterThan(hostStartX)
+
+    host.close()
+    guest.close()
+  })
+
+  test("shouldShowStartScreen opens on normal visits and suppresses for automation or room URLs", () => {
+    expect(shouldShowStartScreen("")).toBe(true)
+    expect(shouldShowStartScreen("?solo&seed=7&bench")).toBe(false)
+    expect(shouldShowStartScreen("?seed=7&peaceful=1")).toBe(false)
+    expect(shouldShowStartScreen("?room=abcde")).toBe(false)
+    expect(shouldShowStartScreen("?solo&seed=7&bench&lobby=1")).toBe(true)
+    expect(shouldShowStartScreen("?lobby=0")).toBe(false)
+  })
+
+  test("SURVIVORS contract provides 4 distinct variants aligned with SURVIVOR_COLOURS", () => {
+    expect(SURVIVORS).toHaveLength(4)
+    SURVIVORS.forEach((s, i) => {
+      expect(s.variant).toBe(i as 0 | 1 | 2 | 3)
+      expect(s.torso).toBe(SURVIVOR_COLOURS[i]!.torso)
+      expect(s.legs).toBe(SURVIVOR_COLOURS[i]!.legs)
+      expect(survivorSpec(i)).toBe(s)
+    })
   })
 })
