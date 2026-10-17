@@ -48,6 +48,8 @@ import { taau } from "three/addons/tsl/display/TAAUNode.js"
 import type { WorldContext } from "../world/context"
 import { fogSigma, fogTransmittance, insideBuilding } from "./atmosphere"
 import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
+import type { LightMask } from "./clustered"
+import { insideNode, segmentTouchesNode } from "./volumes"
 
 // The frame: one scene pass with a small G-buffer (normals, metal/rough, velocity), then at reduced resolution the
 // lamps' single-scattering in the fog (equiangular-sampled per light, cone- and phase-aware), streaky wet-surface SSR
@@ -72,11 +74,21 @@ export function createPost(ctx: WorldContext) {
       min: 0.5,
       max: 2,
       step: 0.05,
-      value: 1,
+      // Retina: 0.9 samples per CSS px, reconstructed by TAAU to a 1.25× output (≈ 7–8 ms instead of ~85 ms at 2×).
+      value: typeof devicePixelRatio === "number" && devicePixelRatio > 1.1 ? 0.9 : 1,
     },
     { key: "post.autoRes", label: "Auto resolution (hold 60 fps)", group: "Performance", type: "toggle", value: true },
     { key: "post.minScale", label: "Auto resolution floor", group: "Performance", unit: "×", min: 0.4, max: 1, step: 0.05, value: 0.6 },
-    { key: "post.maxDpr", label: "Output pixel ratio cap", group: "Performance", unit: "×", min: 1, max: 2, step: 0.25, value: 2 },
+    {
+      key: "post.maxDpr",
+      label: "Output pixel ratio cap (Retina)",
+      group: "Performance",
+      unit: "×",
+      min: 1,
+      max: 2,
+      step: 0.25,
+      value: 1.25,
+    },
     { key: "post.taa", label: "Temporal AA + upscale (TAAU)", group: "Performance", type: "toggle", value: true },
     {
       key: "post.debug",
@@ -207,6 +219,8 @@ export function createPost(ctx: WorldContext) {
 
   /** Single-scattered lamp light along the ray ro + rd·[0, dist] (equiangular sampling per light). */
   const airlight = (ro: N, rd: N, dist: N, samples: number, jitter: N) => {
+    // Rays that never come near a building skip the per-sample interior test (most outdoor pixels).
+    const touches = segmentTouchesNode(ro, rd, dist.min(400)).toVar()
     const g = phaseG
     const g2 = g.mul(g)
     const acc = vec3(0).toVar()
@@ -233,7 +247,16 @@ export function createPost(ctx: WorldContext) {
           const ln = lx.div(ld)
           // Refractor glass leaks a little light sideways, which is what draws the round halo around each head.
           const cone = smoothstep(B.w, C.w, dot(ln, C.xyz)).mul(haloLeak.oneMinus()).add(haloLeak)
-          const win = ld.div(A.w).pow(4).oneMinus().clamp().pow(2).mul(smoothstep(0, D.x, ld))
+          // Walls bound lamp light in the fog as well: interior lamps only light interior haze of their storey,
+          // exterior lamps only the outdoor fog (soft across doorways).
+          const sp = ro.add(rd.mul(sv))
+          const ins = float(0).toVar()
+          If(touches, () => {
+            ins.assign(insideNode(sp, 0.5))
+          })
+          const zoneW = D.y.greaterThan(1.5).select(ins.oneMinus(), D.y.greaterThan(0.5).select(ins, 1))
+          const yW = smoothstep(D.z.sub(0.3), D.z, sp.y).mul(smoothstep(D.w.add(0.3), D.w, sp.y))
+          const win = ld.div(A.w).pow(4).oneMinus().clamp().pow(2).mul(smoothstep(0, D.x, ld)).mul(zoneW).mul(yW)
           const cosT = dot(ln, rd).negate()
           const hg = g2.oneMinus().div(pow(g2.add(1).sub(g.mul(2).mul(cosT)).max(1e-4), 1.5))
           const phase = mix(float(1), hg, 0.85).mul(1 / (4 * Math.PI))
@@ -527,56 +550,82 @@ export function createPost(ctx: WorldContext) {
   let frame = 0
   let indoor = 0
 
-  const pushLight = (i: number, pos: THREE.Vector3, range: number, rad: THREE.Color, k: number, dir: THREE.Vector3 | null, co: number, ci: number, near: number) => {
-    LD[i]!.set(near, 0, 0, 0)
+  const pushLight = (
+    i: number,
+    pos: THREE.Vector3,
+    range: number,
+    rad: THREE.Color,
+    k: number,
+    dir: THREE.Vector3 | null,
+    co: number,
+    ci: number,
+    near: number,
+    mask?: LightMask,
+  ) => {
+    LD[i]!.set(near, mask?.mode ?? 0, mask?.y0 ?? -1e5, mask?.y1 ?? 1e5)
     LA[i]!.set(pos.x, pos.y, pos.z, range)
     LB[i]!.set(rad.r * k, rad.g * k, rad.b * k, co)
     LC[i]!.set(dir?.x ?? 0, dir?.y ?? -1, dir?.z ?? 0, ci)
   }
 
   // Dynamic resolution: when frames run long for a while, step the 3D resolution down (TAAU keeps the output sharp);
-  // when they have been comfortably on time for a few seconds, step back up. Steps are coarse and rate-limited so
-  // render targets are not reallocated constantly; captures (`?shot`) keep a fixed resolution.
+  // after a calm stretch, step back up. Hysteresis: a long median window, a 0.6 s hold after every change, and a calm
+  // period before stepping up that doubles each time an up-step had to be undone (so it settles instead of
+  // oscillating). Paused while the world streams in (`setBooting`) and in `?shot` captures.
   let autoScale = 1
   let lastNow = 0
   const recent: number[] = []
   let calmSince = 0
   let holdUntil = 0
-  let backoff = 3000
+  let backoff = 4000
+  let lastUpAt = -Infinity
+  let booting = false
   const autoResolution = (now: number) => {
     const enabled = flag(ctx, "post.autoRes") && !ctx.params.has("shot")
     if (!enabled) {
       autoScale = 1
+      lastNow = 0
       return
     }
     const dt = lastNow ? now - lastNow : 16
     lastNow = now
-    if (dt > 250) return // tab switch, breakpoint, loading hitch
+    if (booting || dt > 250) {
+      recent.length = 0
+      calmSince = now
+      return
+    }
     recent.push(dt)
-    if (recent.length > 40) recent.shift()
-    if (recent.length < 40 || now < holdUntil) return
+    if (recent.length > 45) recent.shift()
+    if (recent.length < 45 || now < holdUntil) return
     const sorted = [...recent].sort((a, b) => a - b)
-    const median = sorted[20]!
+    const median = sorted[22]!
+    const p80 = sorted[36]!
     const floor = num(ctx, "post.minScale")
-    if (median > 18.5 && autoScale > floor) {
+    if (median > 18.5 && autoScale > floor + 1e-3) {
       autoScale = Math.max(floor, autoScale - 0.1)
+      // Undoing a recent up-step: wait much longer before trying again.
+      if (now - lastUpAt < 5000) backoff = Math.min(backoff * 2, 60000)
       recent.length = 0
       holdUntil = now + 600
       calmSince = now
-      backoff = Math.min(backoff * 2, 30000)
-    } else if (median < 17.4 && autoScale < 1) {
+    } else if (p80 < 17.6 && autoScale < 1 - 1e-3) {
       if (now - calmSince > backoff) {
         autoScale = Math.min(1, autoScale + 0.1)
+        lastUpAt = now
         recent.length = 0
         holdUntil = now + 600
         calmSince = now
       }
-    } else if (median >= 17.4) {
+    } else if (p80 >= 17.6) {
       calmSince = now
     }
   }
 
   const api = {
+    /** Pause dynamic resolution while the world streams in (capped/hitchy frames are not a GPU-cost signal). */
+    setBooting(on: boolean) {
+      booting = on
+    },
     render() {
       frame++
       autoResolution(performance.now())
@@ -617,7 +666,7 @@ export function createPost(ctx: WorldContext) {
       frustum.setFromProjectionMatrix(projView)
       candidates.length = 0
       for (const r of renderState.lamps) {
-        if (r.level <= 0.01 || r.sigma <= 0) continue
+        if (r.level <= 0.01 || r.vis <= 0.001 || r.sigma <= 0) continue
         sphere.set(r.pos, r.lamp.range)
         if (!frustum.intersectsSphere(sphere)) continue
         candidates.push(r)
@@ -635,7 +684,7 @@ export function createPost(ctx: WorldContext) {
       }
       for (const r of candidates) {
         if (count >= budget) break
-        pushLight(count++, r.pos, r.lamp.range, r.radiance, r.level * r.sigma * r.transmittance * strength, r.dir, r.cosOuter, r.cosInner, (r.lamp.size ?? 0.2) * 0.5)
+        pushLight(count++, r.pos, r.lamp.range, r.radiance, r.level * r.vis * r.sigma * r.transmittance * strength, r.dir, r.cosOuter, r.cosInner, (r.lamp.size ?? 0.2) * 0.5, r.mask)
       }
       lightCount.value = count
       phaseG.value = num(ctx, "scatter.forward")

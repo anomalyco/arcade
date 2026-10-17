@@ -320,13 +320,6 @@ function flare(asphalt: MeshBuilder, gravel: MeshBuilder, access: Line, county: 
   }
 }
 
-function tarMaterial() {
-  const m = decalMaterial("asphalt", true) as THREE.MeshStandardNodeMaterial
-  m.roughness = Math.max(0.05, (m.roughness ?? 0.35) * 0.45)
-  m.name = "asphalt_tar"
-  return m
-}
-
 export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, j: Junction) {
   const asphalt = new MeshBuilder()
   const gravel = new MeshBuilder()
@@ -389,15 +382,15 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
   cracks(tar, county, 0, county.length, HC, flat, 61)
   cracks(tar, access, j.sMouth, j.sFence, HA, accessCrown, 62)
 
-  const asphaltMat = material("asphalt").clone()
-  asphaltMat.vertexColors = true
-  asphaltMat.name = "asphalt_road"
+  // Every road clone sets the same flags (vertex colours + polygon offset) so they share one shader; the asphalt is
+  // pulled forward a little over the terrain, the paint and tar a little more.
+  const asphaltMat = decalMaterial("asphalt", -1)
   const meshes: [MeshBuilder, THREE.Material, boolean][] = [
     [asphalt, asphaltMat, true],
     [gravel, material("gravel"), false],
-    [yellow, decalMaterial("road_line_yellow", true), true],
-    [white, decalMaterial("road_line_white", true), true],
-    [tar, tarMaterial(), true],
+    [yellow, decalMaterial("road_line_yellow"), true],
+    [white, decalMaterial("road_line_white"), true],
+    [tar, decalMaterial("asphalt"), true],
   ]
   for (const [mb, mat, colors] of meshes) {
     const geo = mb.geometry(colors)

@@ -48,11 +48,11 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
 
   // Shaft, sunk into the ground, with a slight random height so the line is not ruler straight.
   const top = H + (r() - 0.5) * 0.4
-  const shaft = cylM(0.105, 0.15, top + 1.2, 9)
+  const shaft = cylM(0.105, 0.15, top + 1.2, 14)
   parts.add("wood_pole", shaft, at(new THREE.Matrix4().makeTranslation(0, (top - 1.2) / 2, 0)))
   // Cap and a ground-line stain band read as weathering in the flashlight.
-  parts.add("wood_pole", cylM(0.11, 0.11, 0.06, 9), at(new THREE.Matrix4().makeTranslation(0, top + 0.02, 0)))
-  parts.add("bark", cylM(0.153, 0.156, 0.5, 9, true), at(new THREE.Matrix4().makeTranslation(0, 0.2, 0)))
+  parts.add("wood_pole", cylM(0.11, 0.11, 0.06, 14), at(new THREE.Matrix4().makeTranslation(0, top + 0.02, 0)))
+  parts.add("bark", cylM(0.153, 0.156, 0.5, 14, true), at(new THREE.Matrix4().makeTranslation(0, 0.2, 0)))
 
   const arms: THREE.Vector3[][] = []
   spec.arms.forEach(([nx, nz], ai) => {
@@ -68,8 +68,8 @@ function buildPole(parts: Parts, spec: PoleSpec): Pole {
     const pts: THREE.Vector3[] = []
     for (const x of INSULATOR_X) {
       parts.add("metal_galvanized", cylM(0.012, 0.012, 0.12, 5), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.1, off)))
-      parts.add("glass_dark", cylM(0.032, 0.06, 0.1, 8), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.16, off)))
-      parts.add("glass_dark", cylM(0.045, 0.032, 0.04, 8), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.225, off)))
+      parts.add("glass_dark", cylM(0.032, 0.06, 0.1, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.16, off)))
+      parts.add("glass_dark", cylM(0.045, 0.032, 0.04, 10), af.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.225, off)))
       pts.push(tmp.set(x, 0.235, off).applyMatrix4(af).clone())
     }
     arms.push(pts)

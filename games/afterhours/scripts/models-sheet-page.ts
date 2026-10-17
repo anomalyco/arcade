@@ -11,7 +11,7 @@
 // Driven by scripts/models-sheet.ts (headless capture).
 import * as THREE from "three/webgpu"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
-import { MODELS, instanceModel, loadModel, modelMaterialSharing, type ModelName } from "../src/render/models"
+import { MODELS, initModels, instanceModel, loadModel, modelMaterialSharing, type ModelName } from "../src/render/models"
 
 const params = new URLSearchParams(location.search)
 const status = { ready: false, errors: [] as string[], stats: null as Record<string, unknown> | null }
@@ -38,6 +38,7 @@ ctx.fillRect(0, 0, sheet.width, sheet.height)
 const gpu = document.querySelector<HTMLCanvasElement>("#gpu")!
 const renderer = new THREE.WebGPURenderer({ canvas: gpu, antialias: true })
 await renderer.init()
+initModels(renderer)
 renderer.setPixelRatio(1)
 renderer.setSize(cw, ch, false)
 renderer.toneMapping = THREE.AgXToneMapping

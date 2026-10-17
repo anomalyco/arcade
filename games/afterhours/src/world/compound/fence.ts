@@ -4,7 +4,7 @@ import { heightAt } from "../height"
 import { BOOTH, FENCE } from "../layout"
 import { material } from "../../render/materials"
 import { Batch, box, cyl, matrix, rod } from "./geo"
-import { boomStripes, fenceMesh, flat, signs } from "./mats"
+import { boomRed, boomWhite, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
 
 // Perimeter fence: galvanised line posts every FENCE.postSpacing m, top rail, chain-link mesh, 45° outriggers with
 // three barbed strands and a concertina razor coil, the swing gate on the south side and the boom barrier at the booth.
@@ -198,11 +198,7 @@ export function buildFence(ctx: WorldContext, root: THREE.Object3D) {
       const tilt = ((sd * 7.3) % 1) * 0.08 - 0.04
       const px = x + out.x * 0.035
       const pz = z + out.z * 0.035
-      const face = new THREE.PlaneGeometry(0.62, 0.465)
-      const uv = face.attributes.uv!
-      for (let k = 0; k < uv.count; k++) uv.setX(k, (variant + uv.getX(k)) / 4)
-      batch.add(signs(), face, matrix(px + out.x * 0.006, 1.55, pz + out.z * 0.006, yaw, 0, tilt))
-      batch.add(material("metal_painted"), box(0.6, 0.45, 0.008), matrix(px, 1.55, pz, yaw, 0, tilt))
+      signPlate(batch.child(matrix(px, 1.55, pz, yaw, 0, tilt)), variant)
     }
 
     batch.build(root, { castShadow: (m) => m === galv, name: `fence${ri}` })
@@ -300,7 +296,11 @@ function buildBoom(ctx: WorldContext, root: THREE.Object3D) {
   batch.at(material("metal_dark"), box(0.46, 0.04, 0.4), px, y + 1.21, pz)
   batch.at(material("metal_dark"), cyl(0.09, 0.09, 0.44, 10), px, armY, pz, 0, Math.PI / 2)
   const armLen = px - 0.22 - tipX
-  batch.at(boomStripes(), box(armLen, 0.085, 0.06), tipX + armLen / 2, armY, pz)
+  // Red and white stripes, 0.5 m each, as separate segments of the arm.
+  for (let s = 0, k = 0; s < armLen - 0.01; s += 0.5, k++) {
+    const segLen = Math.min(0.5, armLen - s)
+    batch.at(k % 2 ? boomWhite() : boomRed(), box(segLen, 0.085, 0.06), tipX + s + segLen / 2, armY, pz)
+  }
   // Counterweight stub behind the pivot.
   batch.at(material("metal_dark"), box(0.7, 0.16, 0.12), px + 0.45, armY, pz)
   // Red reflectors along the arm.
@@ -317,3 +317,71 @@ function buildBoom(ctx: WorldContext, root: THREE.Object3D) {
 }
 
 const glowReflector = () => flat(0x5a0a06, 0.3, 0)
+
+/**
+ * A weathered warning plate on the fence (local frame: +Z faces out of the compound), with an abstract pictogram and
+ * no text: 0 danger band + triangle, 1 yellow diamond + bolt, 2 prohibition ring, 3 blank.
+ */
+function signPlate(b: Batch, variant: number) {
+  const W = 0.6
+  const H = 0.45
+  const f = 0.006
+  b.at(variant === 3 ? signBlank() : signPlateMat(), box(W, H, 0.008), 0, 0, 0)
+  const flatShape = (shape: THREE.Shape, z = f) => {
+    const g = new THREE.ShapeGeometry(shape)
+    g.translate(0, 0, z)
+    return g
+  }
+  const tri = (cx: number, cy: number, r: number) => {
+    const s = new THREE.Shape()
+    s.moveTo(cx, cy + r)
+    s.lineTo(cx + r * 0.95, cy - r * 0.6)
+    s.lineTo(cx - r * 0.95, cy - r * 0.6)
+    s.closePath()
+    return s
+  }
+  if (variant === 0) {
+    b.at(signRed(), box(W - 0.02, 0.11, 0.004), 0, H / 2 - 0.065, f)
+    b.add(signInk(), flatShape(tri(0, -0.04, 0.13)))
+    b.at(signPlateMat(), box(0.02, 0.07, 0.004), 0, -0.035, f + 0.002)
+    b.at(signPlateMat(), box(0.02, 0.02, 0.004), 0, -0.095, f + 0.002)
+  } else if (variant === 1) {
+    const d = new THREE.Shape()
+    d.moveTo(0, 0.17)
+    d.lineTo(0.17, 0)
+    d.lineTo(0, -0.17)
+    d.lineTo(-0.17, 0)
+    d.closePath()
+    b.add(signYellow(), flatShape(d))
+    const bolt = new THREE.Shape()
+    bolt.moveTo(0.02, 0.12)
+    bolt.lineTo(-0.04, 0.0)
+    bolt.lineTo(0.0, 0.0)
+    bolt.lineTo(-0.025, -0.11)
+    bolt.lineTo(0.05, 0.02)
+    bolt.lineTo(0.005, 0.02)
+    bolt.closePath()
+    b.add(signInk(), flatShape(bolt, f + 0.002))
+  } else if (variant === 2) {
+    const ring = new THREE.RingGeometry(0.12, 0.15, 28)
+    ring.translate(0, 0, f)
+    b.add(signRed(), ring)
+    b.at(signInk(), new THREE.CircleGeometry(0.025, 14), 0, 0.065, f + 0.001)
+    b.at(signInk(), box(0.04, 0.1, 0.004), 0, -0.01, f + 0.001)
+    b.at(signRed(), box(0.28, 0.026, 0.004), 0, 0, f + 0.003, 0, 0, -Math.PI / 4)
+  }
+  // Bolts and rust streaks running down from them.
+  for (const x of [-W / 2 + 0.04, W / 2 - 0.04]) {
+    b.at(signInk(), new THREE.CircleGeometry(0.009, 8), x, H / 2 - 0.04, f + 0.001)
+    b.at(signRust(), box(0.012, 0.12 + Math.abs(x) * 0.3, 0.004), x, H / 2 - 0.1 - Math.abs(x) * 0.15, f)
+  }
+}
+
+const signRust = () => flat(0x4a2414, 0.9)
+
+/** The library's alpha-tested chain-link, double-sided. */
+function fenceMesh() {
+  const m = material("chainlink")
+  m.side = THREE.DoubleSide
+  return m
+}

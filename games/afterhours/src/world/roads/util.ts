@@ -269,13 +269,14 @@ export class Parts {
   }
 }
 
-/** Local material: a weathered copy of a library material with polygon offset so it sits on top of the road. */
-export function decalMaterial(name: MaterialName, vertexColors: boolean) {
+/** A vertex-coloured, polygon-offset copy of a library material for road surfaces and paint. All callers set the same
+ *  flags, so every copy shares one shader; only the (pipeline-state) offset strength differs. */
+export function decalMaterial(name: MaterialName, offset = -2) {
   const m = material(name).clone()
   m.polygonOffset = true
-  m.polygonOffsetFactor = -2
-  m.polygonOffsetUnits = -4
-  m.vertexColors = vertexColors
-  m.name = `${name}_decal`
+  m.polygonOffsetFactor = offset
+  m.polygonOffsetUnits = offset * 2
+  m.vertexColors = true
+  m.name = `${name}_road`
   return m
 }

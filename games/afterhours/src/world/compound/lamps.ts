@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { Lamp, WorldContext } from "../context"
 import { heightAt } from "../height"
-import { material } from "../../render/materials"
+import { material, type SurfaceMaterial } from "../../render/materials"
 import { Batch, box, cyl, matrix, sphere, tube } from "./geo"
 import { renderState } from "../../render/shared"
 
@@ -34,7 +34,7 @@ export function sodiumPole(ctx: WorldContext, batch: Batch, spec: PoleSpec) {
   const steel = material("metal_dark")
   const dark = material("metal_dark")
   let lens = spec.state === "dead" ? material("glass_dark") : material("emissive_sodium")
-  // A failing lamp gets its own lens material so its glow can follow the light rig's flicker.
+  // A failing lamp gets its own lens (a clone with identical flags, so the same shader) whose glow follows the flicker.
   if (spec.state === "flicker") lens = lens.clone()
   const y0 = heightAt(spec.x, spec.z)
   const b = batch.child(matrix(spec.x, y0, spec.z, -spec.heading))
@@ -90,17 +90,22 @@ export function sodiumPole(ctx: WorldContext, batch: Batch, spec: PoleSpec) {
       ...(spec.state === "flicker" ? { flicker: 0.6 } : {}),
     }
     ctx.lamps.push(lamp)
-    if (spec.state === "flicker") return { lamp, lens: lens as THREE.MeshStandardMaterial }
+    if (spec.state === "flicker") return { lamp, lens: lens as SurfaceMaterial }
   }
   return null
 }
 
-/** Keeps a failing lamp's lens in step with the light rig's flicker level for that lamp. */
-export function lensFollower(target: { lamp: Lamp; lens: THREE.MeshStandardMaterial }) {
-  const base = target.lens.emissiveIntensity
+/** Keeps a failing lamp's lens in step with the light rig's flicker level (scales the emissive class's glow slot). */
+export function lensFollower(target: { lamp: Lamp; lens: SurfaceMaterial }) {
+  const p = target.lens.surfaceParams
+  const base = [p[4]!, p[5]!, p[6]!]
   let runtime: { lamp: Lamp; level: number } | undefined
   return () => {
     runtime ??= renderState.lamps.find((r) => r.lamp === target.lamp)
-    if (runtime) target.lens.emissiveIntensity = base * Math.max(runtime.level, 0.02)
+    if (!runtime) return
+    const k = Math.max(runtime.level, 0.02)
+    p[4] = base[0]! * k
+    p[5] = base[1]! * k
+    p[6] = base[2]! * k
   }
 }

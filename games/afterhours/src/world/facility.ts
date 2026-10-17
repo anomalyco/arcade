@@ -38,7 +38,7 @@ export function build(ctx: WorldContext): WorldModule {
 
   const b = new Batch()
   const dish = buildDish(ctx, root, b)
-  buildRoof(b)
+  buildRoof(ctx, b)
   buildDock(ctx, b)
   buildGrounds(ctx, b, root)
   b.flush(root, { name: "facility-details" })

@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu"
 import { BUILDING } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM } from "./geo"
+import { material } from "../../render/materials"
 import { DOCK_DOORS, facades, fbox, normal, point, type Facade } from "./shell"
 
 // The back of the building (concept r5-06): raised loading dock with bumpers and steps, one roll-up door shut and
@@ -13,12 +14,6 @@ const T = BUILDING.wallThickness
 const DK = BUILDING.dock
 const WALL_Z = BUILDING.main.min[1]
 export const PLATFORM = { x0: DK.x - DK.width / 2, x1: DK.x + DK.width / 2, z0: WALL_Z - 4.5, z1: WALL_Z, y: DK.height }
-
-function localMat(color: number, roughness: number, metalness = 0, name = "facility_paint") {
-  const m = new THREE.MeshStandardNodeMaterial({ color, roughness, metalness })
-  m.name = name
-  return m
-}
 
 export function buildDock(ctx: WorldContext, b: Batch) {
   const P = PLATFORM
@@ -58,7 +53,7 @@ export function buildDock(ctx: WorldContext, b: Batch) {
   const bz0 = WALL_Z + T
   const bz1 = WALL_Z + 6.5
   const by = P.y
-  const block = localMat(0x9a8f78, 0.85, 0, "facility_block_wall")
+  const block = material("painted_wall")
   b.box("concrete_floor", bx0, BUILDING.floorY, bz0, bx1, by, bz1, SKIP_BOTTOM)
   b.box(block, bx0 - 0.2, by, bz1, bx1 + 0.2, 4.2, bz1 + 0.2)
   b.box(block, bx0 - 0.2, by, bz0, bx0, 4.2, bz1)

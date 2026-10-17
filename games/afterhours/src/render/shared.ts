@@ -22,6 +22,10 @@ export type LampRuntime = {
   distance: number
   cosOuter: number
   cosInner: number
+  /** Culling fade weight (0 culled … 1 fully on). */
+  vis: number
+  /** Where the lamp's light may land (interior/exterior, storey heights). */
+  mask: { mode: 0 | 1 | 2; y0: number; y1: number }
 }
 
 export type FlashState = {

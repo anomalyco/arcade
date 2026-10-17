@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu"
 import type { Lamp } from "../context"
 import { INTERIOR } from "../layout"
 import { renderState } from "../../render/shared"
+import { HALL } from "./core"
 import {
   type Builder,
   CEIL_Y,
@@ -15,6 +16,7 @@ import {
   doorOpening,
   flicker as flickerLevel,
   fluorescentPanel,
+  PANEL_ON,
   staticGlass,
   troffer,
   wall,
@@ -45,7 +47,7 @@ export function buildCorridor(b: Builder) {
   const { x0, x1, zn, zs } = CORRIDOR
   const link = INTERIOR.link
   const lobbyZ = INTERIOR.lobby.min[1]
-  const on = fluorescentPanel(1).material
+  const on = PANEL_ON
 
   // Floors: waxed linoleum with dark green border stripes, continuing up the link.
   b.floor("linoleum", x0, zn - WALL_T, x1, zs + WALL_T)
@@ -56,7 +58,11 @@ export function buildCorridor(b: Builder) {
 
   // Walls
   const northOpenings = NORTH_DOORS.map((x) => doorOpening(x))
-  const southOpenings = [...SOUTH_DOORS.map((x) => doorOpening(x)), { a0: link.min[0], a1: link.max[0], top: CEIL_Y }]
+  const southOpenings = [
+    ...SOUTH_DOORS.map((x) => doorOpening(x)),
+    { a0: link.min[0], a1: link.max[0], top: CEIL_Y },
+    { a0: HALL.x0 - 0.15, a1: HALL.x1 + 0.15, top: DOOR_H + 0.35 },
+  ]
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, zn - WALL_T, zn, corridorBands, northOpenings)
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, zs, zs + WALL_T, corridorBands, southOpenings)
   wall(b, "z", zn, zs, x0 - WALL_T, x0, corridorBands, [doorOpening(0, 1.7)])
@@ -80,7 +86,7 @@ export function buildCorridor(b: Builder) {
   door(b, x1 + WALL_T / 2, 0, { rot: -Math.PI / 2, width: 1.7, leaves: 2, plate: false })
 
   // Static-lit room behind the north door: a narrow flickering spot aimed out through the vision panel.
-  const staticLamp: Lamp = {
+  const staticSpec: Lamp = {
     kind: "fluorescent",
     position: [STATIC_DOOR + 0.1, FLOOR_Y + 1.75, zn - WALL_T - 0.7],
     direction: norm(0, -0.42, 1),
@@ -93,7 +99,7 @@ export function buildCorridor(b: Builder) {
     size: 0.3,
     flicker: 1,
   }
-  b.lamp(staticLamp)
+  const staticLamp = b.lamp(staticSpec)
 
   // Ceilings and fixtures every 3 m; two flicker halfway down, three are dead.
   ceiling(b, x0, zn, x1, zs)
@@ -110,13 +116,12 @@ export function buildCorridor(b: Builder) {
       troffer(b, x, 0, "off", on)
       continue
     }
-    const lamp = fluoro(x, 0, f)
+    const lamp = b.lamp(fluoro(x, 0, f))
     if (f !== undefined) {
       const p = fluorescentPanel(1)
       flickers.push({ level: p.level, amount: f, seed: -x, lamp })
       troffer(b, x, 0, { flicker: f, ...p }, on)
     } else troffer(b, x, 0, "on", on)
-    b.lamp(lamp)
   }
   for (const z of [3.6, 7.2]) {
     troffer(b, 0, z, "on", on)
@@ -164,8 +169,8 @@ export function buildCorridor(b: Builder) {
   }
 }
 
-const rigIndex = new Map<Lamp, number>()
-function rigLevel(lamp: Lamp): number | undefined {
+export const rigIndex = new Map<Lamp, number>()
+export function rigLevel(lamp: Lamp): number | undefined {
   const list = renderState.lamps
   let i = rigIndex.get(lamp)
   if (i === undefined || list[i]?.lamp !== lamp) {
@@ -198,7 +203,7 @@ export function fluoro(x: number, z: number, flicker?: number, intensity = 4): L
   }
 }
 
-function hazardLight(b: Builder, x: number, zWall: number, lit: boolean) {
+export function hazardLight(b: Builder, x: number, zWall: number, lit: boolean) {
   const y = FLOOR_Y + 2.55
   const z = zWall
   b.box("metal_dark", x - 0.08, y - 0.1, z, x + 0.08, y - 0.06, z + 0.08)
@@ -210,7 +215,7 @@ function hazardLight(b: Builder, x: number, zWall: number, lit: boolean) {
   b.cyl("metal_dark", T(x, y + 0.085, z + 0.1), 0.07, 0.07, 0.02, 12)
 }
 
-function extinguisher(b: Builder, x: number, zWall: number) {
+export function extinguisher(b: Builder, x: number, zWall: number) {
   const y0 = FLOOR_Y + 0.9
   const z = zWall
   b.box(M.frame, x - 0.32, y0, z, x + 0.32, y0 + 0.8, z + 0.07)
@@ -221,7 +226,7 @@ function extinguisher(b: Builder, x: number, zWall: number) {
   b.box(M.red, x - 0.18, y0 + 0.86, z, x + 0.18, y0 + 0.98, z + 0.02)
 }
 
-function fountain(b: Builder, x: number, zWall: number) {
+export function fountain(b: Builder, x: number, zWall: number) {
   const y = FLOOR_Y + 0.82
   const z = zWall
   b.box(M.steel, x - 0.24, y - 0.1, z - 0.38, x + 0.24, y + 0.05, z)
@@ -232,7 +237,7 @@ function fountain(b: Builder, x: number, zWall: number) {
   b.collide(x - 0.24, FLOOR_Y, z - 0.38, x + 0.24, y + 0.05, z)
 }
 
-function bulletin(b: Builder, x: number, zWall: number) {
+export function bulletin(b: Builder, x: number, zWall: number) {
   const y0 = FLOOR_Y + 1.05
   const z = zWall
   const w = 1.6

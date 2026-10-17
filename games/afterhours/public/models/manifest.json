@@ -1,7 +1,7 @@
 {
  "car_wagon": {
   "tris": 23581,
-  "bytes": 1081764,
+  "bytes": 982816,
   "size": [
    1.87,
    1.416,
@@ -11,14 +11,14 @@
    1.87,
    5.05
   ],
-  "meshes": 9,
-  "materials": 9,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:aa0becb6e854422596cac6b21bf79787",
   "licence": "CC-BY-4.0"
  },
  "car_sedan": {
   "tris": 22168,
-  "bytes": 1004984,
+  "bytes": 888860,
   "size": [
    1.912,
    1.409,
@@ -28,14 +28,14 @@
    1.912,
    5.2
   ],
-  "meshes": 8,
-  "materials": 8,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:e2678da920cc4be68dbc193727919ffb",
   "licence": "CC-BY-4.0"
  },
  "car_sedan_b": {
   "tris": 21556,
-  "bytes": 1050628,
+  "bytes": 903472,
   "size": [
    1.997,
    1.424,
@@ -45,14 +45,14 @@
    1.997,
    5.1
   ],
-  "meshes": 8,
-  "materials": 8,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:892b2684fb37442299bfad9222cf331c",
   "licence": "CC-BY-4.0"
  },
  "car_pickup": {
   "tris": 22502,
-  "bytes": 860856,
+  "bytes": 1065736,
   "size": [
    1.789,
    1.746,
@@ -62,14 +62,14 @@
    1.789,
    4.5
   ],
-  "meshes": 7,
-  "materials": 7,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:6c48c94be8974dc7a5932f697c0ba68f",
   "licence": "CC-BY-4.0"
  },
  "van": {
   "tris": 23940,
-  "bytes": 1038612,
+  "bytes": 1157964,
   "size": [
    2.396,
    2.097,
@@ -79,14 +79,14 @@
    2.396,
    5
   ],
-  "meshes": 8,
-  "materials": 8,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:09d718c9cf72401b8534d265a06a803f",
   "licence": "CC-BY-4.0"
  },
  "box_truck": {
-  "tris": 18998,
-  "bytes": 985372,
+  "tris": 19222,
+  "bytes": 875528,
   "size": [
    2.864,
    3.127,
@@ -96,14 +96,14 @@
    2.864,
    6.6
   ],
-  "meshes": 9,
-  "materials": 9,
+  "meshes": 2,
+  "materials": 2,
   "source": "sketchfab:663a0953c038434a918cb85725c88ffa",
   "licence": "CC-BY-4.0"
  },
  "covered_car": {
   "tris": 12592,
-  "bytes": 398060,
+  "bytes": 605532,
   "size": [
    1.789,
    1.411,
@@ -120,7 +120,7 @@
  },
  "dumpster": {
   "tris": 12622,
-  "bytes": 438988,
+  "bytes": 317448,
   "size": [
    1.9,
    1.443,
@@ -130,14 +130,14 @@
    1.9,
    1.285
   ],
-  "meshes": 3,
-  "materials": 3,
+  "meshes": 1,
+  "materials": 1,
   "source": "sketchfab:e8b38df736994cf8b4f7a3a9d2980f6b",
   "licence": "CC-BY-4.0"
  },
  "fire_hydrant": {
   "tris": 12000,
-  "bytes": 413624,
+  "bytes": 636008,
   "size": [
    0.275,
    0.799,
@@ -154,7 +154,7 @@
  },
  "bench": {
   "tris": 4796,
-  "bytes": 593840,
+  "bytes": 320024,
   "size": [
    1.8,
    0.809,
@@ -164,14 +164,14 @@
    1.8,
    0.651
   ],
-  "meshes": 3,
-  "materials": 3,
+  "meshes": 1,
+  "materials": 1,
   "source": "sketchfab:01a5b64427984632bb44242da3813bb1",
   "licence": "CC-BY-4.0"
  },
  "trash_can": {
   "tris": 7532,
-  "bytes": 580540,
+  "bytes": 685056,
   "size": [
    0.773,
    0.906,
@@ -188,7 +188,7 @@
  },
  "traffic_cone": {
   "tris": 1136,
-  "bytes": 364688,
+  "bytes": 419468,
   "size": [
    0.39,
    0.71,
@@ -205,7 +205,7 @@
  },
  "drum_steel": {
   "tris": 1473,
-  "bytes": 302720,
+  "bytes": 476540,
   "size": [
    0.634,
    0.93,
@@ -222,7 +222,7 @@
  },
  "drum_hazard": {
   "tris": 2682,
-  "bytes": 388056,
+  "bytes": 536008,
   "size": [
    0.563,
    0.88,
@@ -239,7 +239,7 @@
  },
  "pallet": {
   "tris": 2160,
-  "bytes": 306348,
+  "bytes": 400196,
   "size": [
    1.2,
    0.216,
@@ -256,7 +256,7 @@
  },
  "crate_wood": {
   "tris": 5176,
-  "bytes": 363244,
+  "bytes": 559508,
   "size": [
    1.166,
    0.464,
@@ -273,7 +273,7 @@
  },
  "milk_crate": {
   "tris": 12720,
-  "bytes": 609076,
+  "bytes": 355652,
   "size": [
    0.481,
    0.265,
@@ -290,7 +290,7 @@
  },
  "cardboard_box": {
   "tris": 16952,
-  "bytes": 382080,
+  "bytes": 616788,
   "size": [
    0.387,
    0.342,
@@ -307,7 +307,7 @@
  },
  "utility_box": {
   "tris": 4404,
-  "bytes": 253392,
+  "bytes": 509316,
   "size": [
    0.52,
    1.12,
@@ -324,7 +324,7 @@
  },
  "utility_box_b": {
   "tris": 6268,
-  "bytes": 278620,
+  "bytes": 531164,
   "size": [
    0.92,
    1.12,
@@ -341,7 +341,7 @@
  },
  "ac_unit": {
   "tris": 9493,
-  "bytes": 798320,
+  "bytes": 335740,
   "size": [
    0.8,
    0.928,
@@ -358,7 +358,7 @@
  },
  "security_light": {
   "tris": 4668,
-  "bytes": 482016,
+  "bytes": 312308,
   "size": [
    0.323,
    0.531,
@@ -375,7 +375,7 @@
  },
  "tyre": {
   "tris": 2880,
-  "bytes": 411328,
+  "bytes": 499456,
   "size": [
    0.6,
    0.6,
@@ -392,7 +392,7 @@
  },
  "trashbag": {
   "tris": 4482,
-  "bytes": 294744,
+  "bytes": 468040,
   "size": [
    0.528,
    0.575,
@@ -409,7 +409,7 @@
  },
  "hand_truck": {
   "tris": 13220,
-  "bytes": 699016,
+  "bytes": 740484,
   "size": [
    0.593,
    1.403,
@@ -426,7 +426,7 @@
  },
  "office_desk": {
   "tris": 6898,
-  "bytes": 218740,
+  "bytes": 393660,
   "size": [
    2,
    0.787,
@@ -443,7 +443,7 @@
  },
  "office_chair": {
   "tris": 9450,
-  "bytes": 759100,
+  "bytes": 417084,
   "size": [
    0.758,
    0.98,
@@ -453,14 +453,14 @@
    0.758,
    0.721
   ],
-  "meshes": 4,
-  "materials": 4,
+  "meshes": 1,
+  "materials": 1,
   "source": "sketchfab:b228a29fa84544c2be501c295653ffe7",
   "licence": "CC-BY-4.0"
  },
  "stack_chair": {
   "tris": 5072,
-  "bytes": 241080,
+  "bytes": 396148,
   "size": [
    0.566,
    1.006,
@@ -477,7 +477,7 @@
  },
  "filing_cabinet": {
   "tris": 2227,
-  "bytes": 431828,
+  "bytes": 551140,
   "size": [
    0.44,
    1.32,
@@ -494,7 +494,7 @@
  },
  "filing_cabinet_open": {
   "tris": 1432,
-  "bytes": 98964,
+  "bytes": 292068,
   "size": [
    0.643,
    1.32,
@@ -511,7 +511,7 @@
  },
  "crt_terminal": {
   "tris": 2557,
-  "bytes": 212320,
+  "bytes": 163336,
   "size": [
    0.46,
    0.29,
@@ -521,14 +521,14 @@
    0.46,
    0.487
   ],
-  "meshes": 6,
-  "materials": 6,
+  "meshes": 1,
+  "materials": 1,
   "source": "sketchfab:847c174b86e24d868d25217ca2297886",
   "licence": "CC-BY-4.0"
  },
  "television": {
   "tris": 2310,
-  "bytes": 166696,
+  "bytes": 128624,
   "size": [
    0.4,
    0.411,
@@ -545,7 +545,7 @@
  },
  "telephone": {
   "tris": 3184,
-  "bytes": 296996,
+  "bytes": 201816,
   "size": [
    0.22,
    0.099,
@@ -562,7 +562,7 @@
  },
  "metal_rack": {
   "tris": 6372,
-  "bytes": 301080,
+  "bytes": 518868,
   "size": [
    0.915,
    1.9,
@@ -579,7 +579,7 @@
  },
  "steel_shelves": {
   "tris": 8396,
-  "bytes": 466448,
+  "bytes": 324888,
   "size": [
    2.351,
    2.312,
@@ -589,14 +589,14 @@
    2.351,
    0.721
   ],
-  "meshes": 2,
-  "materials": 2,
+  "meshes": 1,
+  "materials": 1,
   "source": "polyhaven:steel_frame_shelves_03",
   "licence": "CC0-1.0"
  },
  "chemistry_set": {
   "tris": 29997,
-  "bytes": 650708,
+  "bytes": 542196,
   "size": [
    1.078,
    0.429,
@@ -613,7 +613,7 @@
  },
  "glassware": {
   "tris": 4004,
-  "bytes": 82632,
+  "bytes": 92064,
   "size": [
    0.736,
    0.33,
@@ -623,14 +623,14 @@
    0.736,
    0.319
   ],
-  "meshes": 3,
-  "materials": 3,
+  "meshes": 1,
+  "materials": 1,
   "source": "sketchfab:b8594f7dc7e8442dbaaae7a11da4a962",
   "licence": "CC-BY-4.0"
  },
  "microscope": {
   "tris": 16598,
-  "bytes": 493508,
+  "bytes": 360804,
   "size": [
    0.215,
    0.462,
@@ -647,7 +647,7 @@
  },
  "wet_floor_sign": {
   "tris": 228,
-  "bytes": 115884,
+  "bytes": 189184,
   "size": [
    0.3,
    0.63,
@@ -664,7 +664,7 @@
  },
  "fluorescent_light": {
   "tris": 3540,
-  "bytes": 172652,
+  "bytes": 169016,
   "size": [
    0.911,
    0.032,
@@ -674,14 +674,14 @@
    0.911,
    0.042
   ],
-  "meshes": 2,
-  "materials": 2,
+  "meshes": 1,
+  "materials": 1,
   "source": "polyhaven:mounted_fluorescent_lights",
   "licence": "CC0-1.0"
  },
  "security_camera": {
   "tris": 13571,
-  "bytes": 308976,
+  "bytes": 310164,
   "size": [
    0.17,
    0.286,

@@ -2,6 +2,8 @@ import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { WORLD_HALF, accessRoadSamples, countyRoadSamples } from "./layout"
 import { Line, Parts } from "./roads/util"
+import { instanceModel, modelCollider, yawToward, type Placement } from "../render/models"
+import { heightAt } from "./height"
 import { buildSurface, junctionFor } from "./roads/surface"
 import { buildPower } from "./roads/power"
 import { buildLights } from "./roads/lights"
@@ -27,4 +29,12 @@ export function build(ctx: WorldContext): WorldModule | void {
   buildLights(ctx, parts, access, county, junction, power.corner)
   buildFurniture(ctx, parts, access, county, junction, power.accessPoles)
   parts.build(root, "roads", { castShadow: true })
+
+  // Electrical cabinet at the foot of the last pole before the gate (streams in; not needed for the first frame).
+  const last = power.accessPoles[power.accessPoles.length - 1]!
+  const cab: Placement = { position: [last.x + 0.75, heightAt(last.x + 0.75, last.z), last.z + 0.2], yaw: yawToward(-1, 0) }
+  ctx.colliders.push(modelCollider("utility_box_b", cab))
+  void instanceModel("utility_box_b", [cab])
+    .then((g) => root.add(g))
+    .catch(() => {})
 }

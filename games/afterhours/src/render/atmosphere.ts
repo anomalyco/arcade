@@ -13,10 +13,13 @@ import {
   select,
   smoothstep,
   uniform,
+  vec2,
   vec3,
+  float,
+  pmremTexture,
 } from "three/tsl"
 import type { WorldContext } from "../world/context"
-import { BUILDING } from "../world/layout"
+import { VOLUMES, distanceToBuilding as distToBuilding, inside, insideNode } from "./volumes"
 import { addControls, num } from "./shared"
 
 // Night sky and exponential height fog. The fog is evaluated analytically along each view ray (height falloff plus a
@@ -27,11 +30,7 @@ import { addControls, num } from "./shared"
 type N = any
 const Fn = TslFn as N
 
-/** Interior volumes (the building shell): fog inside is a thin haze, not the outdoor bank. */
-const BOXES = [
-  { min: [BUILDING.main.min[0], -1, BUILDING.main.min[1]], max: [BUILDING.main.max[0], BUILDING.main.height, BUILDING.main.max[1]] },
-  { min: [BUILDING.annex.min[0], -1, BUILDING.annex.min[1]], max: [BUILDING.annex.max[0], BUILDING.annex.height, BUILDING.annex.max[1]] },
-] as const
+const BOXES = VOLUMES
 
 export const fogUniforms = {
   /** Extinction at the base height (1/m). */
@@ -40,6 +39,9 @@ export const fogUniforms = {
   falloff: uniform(1 / 28),
   base: uniform(0),
   interior: uniform(0.004),
+  /** Radiance of the interior haze where no lamp lights it: dark and neutral, not the outdoor teal skylight. */
+  interiorColor: uniform(new THREE.Color()),
+  envInterior: uniform(0.06),
   color: uniform(new THREE.Color()),
   skyColor: uniform(new THREE.Color()),
   skyGlow: uniform(0.3),
@@ -86,27 +88,16 @@ export function opticalDepth(a: THREE.Vector3, b: THREE.Vector3) {
   return height * (1 - inside) + fogCpu.interior * len * inside
 }
 
-/** Distance from a point to the nearest building volume (0 inside). */
-export function distanceToBuilding(p: THREE.Vector3) {
-  let d = Infinity
-  for (const b of BOXES) {
-    const dx = Math.max(b.min[0] - p.x, 0, p.x - b.max[0])
-    const dy = Math.max(b.min[1] - p.y, 0, p.y - b.max[1])
-    const dz = Math.max(b.min[2] - p.z, 0, p.z - b.max[2])
-    d = Math.min(d, Math.hypot(dx, dy, dz))
-  }
-  return d
-}
+export const distanceToBuilding = distToBuilding
 
+/** Inside the building or the booth (fog/exposure sense). */
 export function insideBuilding(p: THREE.Vector3) {
-  return BOXES.some((b) => p.x > b.min[0] && p.x < b.max[0] && p.y > b.min[1] && p.y < b.max[1] && p.z > b.min[2] && p.z < b.max[2])
+  return inside(p, true)
 }
 
 /** Local extinction at a point (1/m), interior-aware. */
 export function fogSigma(p: THREE.Vector3) {
-  for (const b of BOXES) {
-    if (p.x > b.min[0] && p.x < b.max[0] && p.y > b.min[1] && p.y < b.max[1] && p.z > b.min[2] && p.z < b.max[2]) return fogCpu.interior
-  }
+  if (inside(p, true)) return fogCpu.interior
   return fogCpu.density * Math.exp(-fogCpu.falloff * Math.min(p.y - fogCpu.base, 200))
 }
 
@@ -122,8 +113,8 @@ const boxSpanNode = (o: N, d: N, b: (typeof BOXES)[number]) => {
   return max(t1.sub(t0), 0)
 }
 
-/** TSL optical depth between two world points (same model as `opticalDepth`). */
-export const fogOpticalDepth = Fn(([a, b]: [N, N]) => {
+/** TSL optical depth between two world points, split into (outdoor, indoor) parts. */
+export const fogOpticalDepth2 = Fn(([a, b]: [N, N]) => {
   const d = b.sub(a).toVar()
   const len = d.length().max(1e-4)
   const x = fogUniforms.falloff.mul(d.y).toVar()
@@ -132,8 +123,21 @@ export const fogOpticalDepth = Fn(([a, b]: [N, N]) => {
   let inside: N = boxSpanNode(a, d, BOXES[0])
   for (let i = 1; i < BOXES.length; i++) inside = inside.add(boxSpanNode(a, d, BOXES[i]!))
   const inn = inside.min(1).toVar()
-  return height.mul(inn.oneMinus()).add(fogUniforms.interior.mul(len).mul(inn))
+  return (vec2 as N)(height.mul(inn.oneMinus()), fogUniforms.interior.mul(len).mul(inn))
 })
+
+/** TSL optical depth between two world points (same model as `opticalDepth`). */
+export const fogOpticalDepth = (a: N, b: N) => {
+  const t = fogOpticalDepth2(a, b)
+  return t.x.add(t.y)
+}
+
+/** Local extinction (1/m) at a world point in a shader, with a soft ramp through walls and doorways. */
+export const fogSigmaNode = (p: N) => {
+  const ins = insideNode(p, 0.6)
+  const out = fogUniforms.density.mul(exp(fogUniforms.falloff.negate().mul(min(p.y.sub(fogUniforms.base), 200))))
+  return mix(out, fogUniforms.interior, ins)
+}
 
 /** Fog transmittance from the camera to a world point. */
 export const fogTransmittance = (camera: N, world: N) => exp(fogOpticalDepth(camera, world).negate())
@@ -160,13 +164,21 @@ export function createAtmosphere(ctx: WorldContext) {
     { key: "sky.dark", label: "Sky above fog", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.45 },
     { key: "sky.glow", label: "Horizon glow", group: "Fog", min: 0, max: 2, step: 0.01, value: 0.35 },
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
+    { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
+    { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])
 
   ctx.scene.background = null
   ctx.scene.fog = null
-  const fogFactor = fogTransmittance(cameraPosition, positionWorld).oneMinus()
-  ;(ctx.scene as unknown as { fogNode: N }).fogNode = fog(fogUniforms.color, fogFactor)
+  // Outdoor and indoor stretches of the view ray fog towards different colours: the teal fog bank outside, a dark
+  // neutral haze inside (its light comes from the lamps' in-scattering, added in post).
+  const tau = fogOpticalDepth2(cameraPosition, positionWorld).toVar()
+  const aOut = exp(tau.x.negate()).oneMinus()
+  const aIn = exp(tau.y.negate()).oneMinus()
+  const fogFactor = exp(tau.x.add(tau.y).negate()).oneMinus()
+  const fogColor = fogUniforms.color.mul(aOut).add(fogUniforms.interiorColor.mul(aIn)).div(aOut.add(aIn).max(1e-5))
+  ;(ctx.scene as unknown as { fogNode: N }).fogNode = fog(fogColor, fogFactor)
   ctx.scene.backgroundNode = skyRadiance(cameraPosition, positionWorldDirection)
 
   // Skylight: the fog bank itself is the only ambient source. Bake the sky (as seen from eye height, fully fogged at
@@ -181,6 +193,7 @@ export function createAtmosphere(ctx: WorldContext) {
   const pmrem = new THREE.PMREMGenerator(ctx.renderer)
   let envTarget: THREE.RenderTarget | null = null
   let envKey = ""
+  let envNode: N = null
   const bakeEnv = () => {
     const key = ["fog.hue", "fog.saturation", "fog.brightness", "sky.dark", "sky.glow", "env.ground", "fog.density", "fog.height"]
       .map((k) => ctx.settings[k])
@@ -189,7 +202,16 @@ export function createAtmosphere(ctx: WorldContext) {
     envKey = key
     envTarget?.dispose()
     envTarget = pmrem.fromScene(envScene as never, 0.02) as unknown as THREE.RenderTarget
-    ctx.scene.environment = envTarget.texture
+    if (envNode) {
+      envNode.value = envTarget.texture
+      return
+    }
+    // Inside the building the fog-sky skylight can't reach the walls: fade the environment to a faint remnant there
+    // (ambient and reflections), keeping exterior faces of the outer walls on the sky.
+    envNode = (pmremTexture as N)(envTarget.texture)
+    ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = envNode.mul(
+      mix(float(1), fogUniforms.envInterior, insideNode(positionWorld, 0.05, false)),
+    )
   }
 
   const hsl = new THREE.Color()
@@ -207,6 +229,8 @@ export function createAtmosphere(ctx: WorldContext) {
     fogUniforms.skyColor.value.copy(fogUniforms.color.value).multiplyScalar(num(ctx, "sky.dark"))
     fogUniforms.skyGlow.value = num(ctx, "sky.glow")
     envGround.value = num(ctx, "env.ground")
+    fogUniforms.envInterior.value = num(ctx, "env.interior")
+    fogUniforms.interiorColor.value.setRGB(0.9, 0.95, 0.92).multiplyScalar(num(ctx, "fog.interiorTone"))
     ctx.scene.environmentIntensity = num(ctx, "env.intensity")
     bakeEnv()
   }

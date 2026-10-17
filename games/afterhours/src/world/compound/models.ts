@@ -3,7 +3,7 @@ import type { WorldContext } from "../context"
 import { BOOTH } from "../layout"
 import { MODELS, instanceModel, loadModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
 import { Batch, matrix } from "./geo"
-import { contactShadow } from "./mats"
+import { shadowLayer } from "./mats"
 import { LOT_Y, stall } from "./lot"
 import { FACILITY_WALK_Y } from "./props"
 import { FY, WALL } from "./booth"
@@ -90,22 +90,41 @@ function items(): Item[] {
 /** Footprint-sized soft shadow decals: a blob under each item, plus a dark patch at each tyre for cars. */
 function contactShadows(root: THREE.Object3D, list: Item[]) {
   const batch = new Batch()
-  const blob = contactShadow("blob")
-  const tyre = contactShadow("tyre")
+  const layer = shadowLayer()
   for (const it of list) {
     if (!it.shadow) continue
     const [w, , d] = MODELS[it.name].size
     const b = batch.child(matrix(it.position[0], it.position[1], it.position[2], it.yaw ?? 0))
-    b.add(blob, quad(w + 0.45, d + 0.5), matrix(0, 0.006, 0))
+    // Nested rounded rectangles at 20 % each: the overlap darkens towards the middle like a soft falloff.
+    for (let k = 0; k < 4; k++) {
+      const grow = 0.5 - k * 0.18
+      b.add(layer, roundRect(w + grow, d + grow, Math.min(w, d) * 0.25 + grow * 0.4), matrix(0, 0.006 + k * 0.001, 0))
+    }
     if (it.shadow === "car") {
-      for (const zz of [-0.31, 0.3]) for (const sd of [-1, 1]) b.add(tyre, quad(0.5, 0.9), matrix(sd * (w / 2 - 0.22), 0.008, zz * d))
+      for (const zz of [-0.31, 0.3])
+        for (const sd of [-1, 1])
+          for (let k = 0; k < 2; k++) b.add(layer, ellipse(0.24 - k * 0.07, 0.42 - k * 0.12), matrix(sd * (w / 2 - 0.22), 0.011 + k * 0.001, zz * d))
     }
   }
   for (const m of batch.build(root, { receiveShadow: false, name: "model-shadows" })) m.renderOrder = 2
 }
 
-function quad(w: number, d: number) {
-  const g = new THREE.PlaneGeometry(w, d)
+function roundRect(w: number, d: number, r: number) {
+  const s = new THREE.Shape()
+  const x = w / 2 - r
+  const z = d / 2 - r
+  s.absarc(x, z, r, 0, Math.PI / 2, false)
+  s.absarc(-x, z, r, Math.PI / 2, Math.PI, false)
+  s.absarc(-x, -z, r, Math.PI, Math.PI * 1.5, false)
+  s.absarc(x, -z, r, Math.PI * 1.5, Math.PI * 2, false)
+  const g = new THREE.ShapeGeometry(s, 4)
+  g.rotateX(-Math.PI / 2)
+  return g
+}
+
+function ellipse(rx: number, rz: number) {
+  const g = new THREE.CircleGeometry(1, 16)
+  g.scale(rx, rz, 1)
   g.rotateX(-Math.PI / 2)
   return g
 }

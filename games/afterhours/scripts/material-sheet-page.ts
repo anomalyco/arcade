@@ -15,7 +15,7 @@ const ALL: MaterialName[] = [
 ]
 
 const params = new URLSearchParams(location.search)
-const status = { ready: false, frames: 0, errors: [] as string[], loadMs: 0, textureMB: 0 }
+const status = { ready: false, frames: 0, errors: [] as string[], loadMs: 0, textureMB: 0, programs: "" }
 ;(globalThis as { __sheet?: typeof status }).__sheet = status
 addEventListener("error", (e) => status.errors.push(String((e as ErrorEvent).message)))
 
@@ -122,6 +122,8 @@ renderer.setAnimationLoop(() => {
     }
   }
   if (status.frames === 6) {
+    const pp = (renderer as unknown as { _pipelines: { programs: Record<string, Map<unknown, unknown>>; caches: Map<unknown, unknown> } })._pipelines
+    status.programs = `${pp.programs.fragment!.size} fragment / ${pp.programs.vertex!.size} vertex / ${pp.caches.size} pipelines`
     status.textureMB = (renderer.info.memory as { texturesSize?: number }).texturesSize! / 2 ** 20
     status.ready = true
   }

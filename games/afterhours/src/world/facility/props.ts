@@ -1,11 +1,11 @@
 import * as THREE from "three/webgpu"
-import { Fn, attribute, float, max, smoothstep, uv } from "three/tsl"
+import { decalMaterial } from "./windows"
 import { BUILDING } from "../layout"
 import type { WorldContext } from "../context"
 import { MODELS, instanceModel, modelCollider, yawToward, type ModelName, type Placement } from "../../render/models"
 import { PLATFORM } from "./dock"
 import { DOCK_DOORS } from "./shell"
-import { CORE, band, facades, normal, point } from "./shell"
+import { CORE, ROOF_DOOR, band, facades, normal, point } from "./shell"
 
 // Real models around the facility (src/render/models.ts): the box truck backed onto the dock, the dumpster, pallets
 // loaded with boxes and crates, drums, a hand truck, wall-mounted condensers, flood lights over the back doors,
@@ -140,11 +140,17 @@ export function buildProps(ctx: WorldContext, root: THREE.Object3D) {
   for (const f of facades()) {
     const n = normal(f)
     for (const h of f.holes) {
-      if (h.kind !== "door") continue
+      if (h.kind !== "door" && h.kind !== "fireDoor") continue
       const d = size("security_light")[2]
       const c = point(f, (h.u0 + h.u1) / 2, h.y1 + 0.18, -d / 2)
       put("security_light", c.x, c.y, c.z, yawToward(n.x, n.z))
     }
+  }
+
+  // Flood light over the roof door of the stair house.
+  {
+    const d = size("security_light")[2]
+    put("security_light", (ROOF_DOOR.x0 + ROOF_DOOR.x1) / 2, ROOF_DOOR.y1 + 0.2, CORE.z0 - d / 2, yawToward(0, -1))
   }
 
   // CCTV cameras high on the building corners, looking out along the walls, and one on the core over the entrance.
@@ -200,7 +206,7 @@ function contactShadows(root: THREE.Object3D, blobs: { x: number; z: number; y: 
   if (!blobs.length) return
   const pos: number[] = []
   const uvs: number[] = []
-  const alpha: number[] = []
+  const decal: number[] = []
   const idx: number[] = []
   for (const b of blobs) {
     const c = Math.cos(b.yaw)
@@ -211,30 +217,18 @@ function contactShadows(root: THREE.Object3D, blobs: { x: number; z: number; y: 
       const lz = (v * b.d) / 2
       pos.push(b.x + lx * c + lz * s, b.y + 0.012, b.z - lx * s + lz * c)
       uvs.push(u, v)
-      alpha.push(b.a)
+      decal.push(0, 0, 0, b.a + 2)
     }
     idx.push(base, base + 2, base + 1, base, base + 3, base + 2)
   }
   const g = new THREE.BufferGeometry()
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
   g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
-  g.setAttribute("blob", new THREE.Float32BufferAttribute(alpha, 1))
+  g.setAttribute("decal", new THREE.Float32BufferAttribute(decal, 4))
   g.setIndex(idx)
   g.computeBoundingSphere()
-  const m = new THREE.MeshBasicNodeMaterial({ color: 0x000000, transparent: true })
-  m.depthWrite = false
-  m.polygonOffset = true
-  m.polygonOffsetFactor = -2
-  m.polygonOffsetUnits = -2
-  const a = Fn(() => {
-    const p = uv()
-    // Superellipse so long props (truck, pallets) get a boxy-but-soft footprint.
-    const r = max(p.x.abs().pow(4).add(p.y.abs().pow(4)).pow(0.25), float(0))
-    return float(1).sub(smoothstep(0.55, 1.0, r))
-  })()
-  m.opacityNode = a.mul(a).mul(attribute<"float">("blob", "float"))
-  m.name = "facility_contact_shadow"
-  const mesh = new THREE.Mesh(g, m)
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(new Array<number>(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3))
+  const mesh = new THREE.Mesh(g, decalMaterial())
   mesh.renderOrder = 1
   mesh.matrixAutoUpdate = false
   root.add(mesh)

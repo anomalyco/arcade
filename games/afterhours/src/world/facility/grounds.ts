@@ -3,6 +3,8 @@ import { BUILDING } from "../layout"
 import type { WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM, rng } from "./geo"
 import { PLATFORM } from "./dock"
+import { material } from "../../render/materials"
+import { ANNEX_TOP } from "./shell"
 
 // The ground right around the building: concrete walks and the truck court, the entrance walk to the car park,
 // planting beds with clipped shrubs, ground-mounted plant (condensers, a standby generator), utility meters, a
@@ -90,7 +92,7 @@ export function buildGrounds(ctx: WorldContext, b: Batch, root: THREE.Object3D) 
   {
     const x = ANNEX.max[0]
     for (const z of [-22.2, -21.4, -20.2]) b.box("metal_galvanized", x + 0.04, 0, z - 0.03, x + 0.1, 0.4, z + 0.03)
-    b.box("metal_galvanized", x + 0.04, 1.55, -21.43, x + 0.1, ANNEX.height, -21.37)
+    b.box("metal_galvanized", x + 0.04, 1.55, -21.43, x + 0.1, ANNEX_TOP, -21.37)
   }
 
   // Transformer pad in a chain-link enclosure, south of the annex.
@@ -99,8 +101,7 @@ export function buildGrounds(ctx: WorldContext, b: Batch, root: THREE.Object3D) 
     const x1 = 49
     const z0 = 10
     const z1 = 16.5
-    const green = new THREE.MeshStandardNodeMaterial({ color: 0x2c3a2e, roughness: 0.65, metalness: 0.25 })
-    green.name = "facility_transformer"
+    const green = "metal_painted" as const
     b.box("concrete_wall", x0 + 1, -0.1, z0 + 1, x1 - 1, 0.25, z1 - 1, SKIP_BOTTOM)
     b.box(green, x0 + 2.2, 0.25, z0 + 1.8, x1 - 2.2, 1.9, z1 - 2.2)
     for (let k = 0; k < 7; k++) b.box(green, x0 + 2.4 + k * 0.48, 0.45, z1 - 2.2, x0 + 2.52 + k * 0.48, 1.7, z1 - 1.85)
@@ -161,11 +162,7 @@ function shrubGeometry() {
 }
 
 function puddles(root: THREE.Object3D, rand: () => number) {
-  const water = new THREE.MeshStandardNodeMaterial({ color: 0x040505, roughness: 0.03, metalness: 0 })
-  water.name = "facility_puddle"
-  water.polygonOffset = true
-  water.polygonOffsetFactor = -1
-  water.polygonOffsetUnits = -1
+  const water = material("glass_dark")
   const geos: THREE.BufferGeometry[] = []
   const spots: [number, number, number][] = [
     [-31, -28.5, 1.1], [-26.5, -31.5, 1.5], [-21.5, -27.2, 0.7], [-36.5, -34, 1.2], [-18, -24.5, 0.6], [-24.5, -38, 1.7],

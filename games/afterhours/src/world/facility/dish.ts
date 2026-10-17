@@ -1,8 +1,9 @@
 import * as THREE from "three/webgpu"
-import { uniform } from "three/tsl"
+import { materialFor } from "../../render/materials"
 import { BUILDING } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch } from "./geo"
+import { cagedLadder } from "./access"
 import { MAIN_ROOF_Y } from "./shell"
 
 // The rooftop radio telescope: a rooftop plant-room plinth, a flared concrete pedestal, a steel turntable and yoke
@@ -59,9 +60,13 @@ export function buildDish(ctx: WorldContext, root: THREE.Object3D, staticBatch: 
   ped.translate(D.x, (P.top + PED_TOP_WORLD) / 2 + 0.06, D.z)
   staticBatch.add("concrete_wall", ped, undefined, [6, 2.5])
   staticBatch.box("concrete_dark", D.x - 1.95 * S, PED_TOP_WORLD, D.z - 1.95 * S, D.x + 1.95 * S, PED_TOP_WORLD + 0.08 * S, D.z + 1.95 * S)
-  // Service ladder up the plinth.
-  for (const dx of [-0.25, 0.25]) staticBatch.box("metal_galvanized", P.max[0], MAIN_ROOF_Y, -9 + dx - 0.025, P.max[0] + 0.17, P.top + 1.0, -9 + dx + 0.025)
-  for (let y = MAIN_ROOF_Y + 0.3; y < P.top + 0.9; y += 0.3) staticBatch.box("metal_galvanized", P.max[0] + 0.12, y, -9.25, P.max[0] + 0.17, y + 0.03, -8.75)
+  // Service ladder up the plinth; its top is walkable around the pedestal.
+  const deck = P.top + 0.12
+  cagedLadder(ctx, staticBatch, { x: P.max[0], z: -9, nx: 1, nz: 0, y0: MAIN_ROOF_Y, y1: deck + 1.0, arrive: deck, standoff: 0.17 })
+  ctx.floors.push({ min: [P.min[0] - 0.06, P.min[1] - 0.06], max: [P.max[0] + 0.06, P.max[1] + 0.06], y: deck })
+  ctx.colliders.push({ min: [P.min[0], MAIN_ROOF_Y - 0.1, P.min[1]], max: [P.max[0] + 0.06, deck, P.max[1] + 0.06] })
+  const half = (8.4 * S) / 2
+  ctx.colliders.push({ min: [D.x - half, deck - 0.1, D.z - half], max: [D.x + half, PED_TOP_WORLD + 1.5 * S, D.z + half] })
 
   // Azimuth group: turntable, elevation housing and yoke arms.
   const mount = new THREE.Group()
@@ -182,13 +187,14 @@ export function buildDish(ctx: WorldContext, root: THREE.Object3D, staticBatch: 
   eb.flush(el, { name: "dish" })
 
   // Obstruction light on the top of the rim (dish-local -Z rim point is highest when tilted).
-  const beaconMat = new THREE.MeshStandardNodeMaterial({ color: 0x200404, roughness: 0.4 })
-  const beaconLevel = uniform(1)
-  beaconMat.emissiveNode = uniform(new THREE.Color(3.0, 0.08, 0.04)).mul(beaconLevel)
-  beaconMat.name = "facility_beacon"
+  // Shared emissive surface class; the blink scales this member's own emissive constants (surfaceParams[4..6]).
+  const beaconMat = materialFor("emissive", { color: 0x200404, roughness: 0.4, emissive: new THREE.Color(1, 0.027, 0.013), intensity: 3, name: "facility_beacon" })
+  const beaconOn = Array.from(beaconMat.surfaceParams.subarray(4, 7))
   const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), beaconMat)
   const beaconLocal = new THREE.Vector3(0, profileY(R) + 0.45, -R - 0.05)
   beacon.position.copy(beaconLocal)
+  // Same receive-shadow flag as the merged glass_lit meshes, so it shares their emissive-class program.
+  beacon.receiveShadow = true
   el.add(beacon)
   const lamp: Lamp = {
     kind: "warning",
@@ -222,7 +228,7 @@ export function buildDish(ctx: WorldContext, root: THREE.Object3D, staticBatch: 
       // Slow obstruction blink: about a second on, then a dim tail.
       const phase = (time % period) / period
       const on = phase < 0.45 ? 1 : Math.max(0.04, 1 - (phase - 0.45) * 8)
-      beaconLevel.value = on
+      for (let k = 0; k < 3; k++) beaconMat.surfaceParams[4 + k] = beaconOn[k]! * on
       lamp.intensity = 6 * on
     },
   }

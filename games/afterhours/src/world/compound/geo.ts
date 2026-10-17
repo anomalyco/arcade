@@ -1,6 +1,5 @@
 import * as THREE from "three/webgpu"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
-import { finishMaterial, type Finish } from "./mats"
 
 // Small geometry kit for the compound: primitives with UVs in metres and a batch that merges everything added with
 // the same material into one mesh, so hundreds of posts, curbs and props cost a handful of draw calls.
@@ -109,22 +108,8 @@ export class Batch {
 
   constructor(private parent?: THREE.Matrix4) {}
 
-  add(surface: THREE.Material | Finish, geo: THREE.BufferGeometry, m?: THREE.Matrix4) {
+  add(mat: THREE.Material, geo: THREE.BufferGeometry, m?: THREE.Matrix4) {
     const g = normalise(geo)
-    let mat: THREE.Material
-    if ("isFinish" in surface) {
-      const n = g.attributes.position!.count
-      const col = new Float32Array(n * 3)
-      const pbr = new Float32Array(n * 3)
-      const { r, g: gr, b } = surface.color
-      for (let i = 0; i < n; i++) {
-        col.set([r, gr, b], i * 3)
-        pbr.set([surface.roughness, surface.metalness, surface.emissive], i * 3)
-      }
-      g.setAttribute("fcolor", new THREE.BufferAttribute(col, 3))
-      g.setAttribute("fpbr", new THREE.BufferAttribute(pbr, 3))
-      mat = finishMaterial(surface.kind)
-    } else mat = surface
     if (m) g.applyMatrix4(m)
     if (this.parent) g.applyMatrix4(this.parent)
     let list = this.parts.get(mat)
@@ -133,7 +118,7 @@ export class Batch {
     return this
   }
 
-  at(mat: THREE.Material | Finish, geo: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) {
+  at(mat: THREE.Material, geo: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) {
     return this.add(mat, geo, matrix(x, y, z, ry, rx, rz))
   }
 

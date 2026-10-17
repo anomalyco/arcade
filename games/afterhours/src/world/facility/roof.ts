@@ -1,17 +1,25 @@
 import * as THREE from "three/webgpu"
 import { BUILDING } from "../layout"
+import type { WorldContext } from "../context"
 import { Batch, rng } from "./geo"
-import { ANNEX_ROOF_Y, MAIN_ROOF_Y, facades, finPositions, CROWN, normal, point, tangent, type Facade } from "./shell"
+import { cagedLadder, crossover } from "./access"
+import { ANNEX_ROOF_Y, ANNEX_TOP, MAIN_ROOF_Y, MAIN_TOP, facades, finPositions, CROWN, normal, point, tangent, type Facade } from "./shell"
 
 // Rooftop plant and the things hung on the walls: HVAC units, mushroom vents, exhaust stacks, conduit runs, antenna
-// masts, a roof hatch, the caged ladder from the annex roof up to the main roof, and downpipes with their scuppers.
+// masts, a roof hatch, caged ladders (ground to annex roof, annex roof to main roof) with steps over the parapets,
+// and downpipes with their scuppers. Everything bulky on the roofs is a collider so the decks can be walked.
 
 const MAIN = BUILDING.main
 const ANNEX = BUILDING.annex
 
+const COPE = 0.14
+let colliders: WorldContext["colliders"] = []
+const solid = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => colliders.push({ min: [x0, y0, z0], max: [x1, y1, z1] })
+
 function hvac(b: Batch, x: number, y: number, z: number, w: number, d: number, rotated = false) {
   const [sx, sz] = rotated ? [d, w] : [w, d]
   const h = 1.45
+  solid(x - sx / 2 - 0.15, y, z - sz / 2 - 0.15, x + sx / 2 + 0.15, y + 0.2 + h + 0.2, z + sz / 2 + 0.15)
   b.box("concrete_dark", x - sx / 2 - 0.15, y, z - sz / 2 - 0.15, x + sx / 2 + 0.15, y + 0.2, z + sz / 2 + 0.15)
   b.box("metal_painted", x - sx / 2, y + 0.2, z - sz / 2, x + sx / 2, y + 0.2 + h, z + sz / 2)
   // Louvre lines along the long sides.
@@ -36,7 +44,8 @@ function hvac(b: Batch, x: number, y: number, z: number, w: number, d: number, r
   }
 }
 
-export function buildRoof(b: Batch) {
+export function buildRoof(ctx: WorldContext, b: Batch) {
+  colliders = ctx.colliders
   const rand = rng(77)
   const mr = MAIN_ROOF_Y
   hvac(b, -40, mr, -10, 3.4, 1.8)
@@ -62,10 +71,12 @@ export function buildRoof(b: Batch) {
       b.cylinder("metal_galvanized", x, mr + h + 0.14, z, 0.9, 0.7, 16)
       b.cylinder("metal_dark", x, mr + h + 0.84, z, 0.95, 0.08, 16)
     }
+    solid(x0, mr - 0.1, z0, x1 + 0.05, mr + h + 0.14, z1 + 0.05)
   }
 
   // Large supply duct from the west unit to the plant room.
   b.box("metal_galvanized", -38.2, mr + 0.5, -10.5, -12, mr + 1.3, -9.5)
+  solid(-38.2, mr, -10.6, -12, mr + 1.3, -9.4)
   for (let x = -36; x < -12; x += 3) b.box("concrete_dark", x - 0.15, mr, -10.6, x + 0.15, mr + 0.5, -9.4)
 
   // Mushroom vents and plumbing stacks.
@@ -74,11 +85,13 @@ export function buildRoof(b: Batch) {
     [40, -30, ANNEX_ROOF_Y], [58, -30, ANNEX_ROOF_Y], [42, 0, ANNEX_ROOF_Y],
   ]
   for (const [x, z, y] of vents) {
+    solid(x - 0.3, y, z - 0.3, x + 0.3, y + 0.73, z + 0.3)
     b.cylinder("metal_galvanized", x, y, z, 0.18, 0.55, 10)
     b.cylinder("metal_galvanized", x, y + 0.55, z, 0.38, 0.18, 12, 0.12)
   }
   for (const [x, z, h] of [[-12, -18, 2.6], [-12.6, -18, 2.1], [31, 18, 3.2]] as const) {
     b.cylinder("metal_dark", x, mr, z, 0.11, h, 8)
+    solid(x - 0.15, mr, z - 0.15, x + 0.15, mr + h, z + 0.15)
     b.cylinder("metal_dark", x, mr + h, z, 0.16, 0.12, 8)
   }
 
@@ -103,6 +116,7 @@ export function buildRoof(b: Batch) {
   // Antenna masts (thin silhouettes against the fog in the concept).
   const mast = (x: number, z: number, h: number, arms: number) => {
     b.box("concrete_dark", x - 0.3, mr, z - 0.3, x + 0.3, mr + 0.25, z + 0.3)
+    solid(x - 0.3, mr, z - 0.3, x + 0.3, mr + h, z + 0.3)
     b.cylinder("metal_galvanized", x, mr + 0.25, z, 0.05, h, 6, 0.03)
     for (let k = 0; k < arms; k++) {
       const y = mr + h - 0.4 - k * 0.9
@@ -120,18 +134,16 @@ export function buildRoof(b: Batch) {
   // Roof hatch.
   b.box("concrete_dark", -15.6, mr, 4.4, -14.4, mr + 0.5, 5.6)
   b.box("metal_painted", -15.65, mr + 0.5, 4.35, -14.35, mr + 0.58, 5.65)
+  solid(-15.65, mr, 4.35, -14.35, mr + 0.58, 5.65)
 
-  // Caged ladder on the main block's east wall, from the annex roof to the main roof.
-  const lx = MAIN.max[0]
-  const lz = -15
-  for (const dz of [-0.24, 0.24]) b.box("metal_galvanized", lx, ANNEX_ROOF_Y, lz + dz - 0.025, lx + 0.22, MAIN.height + 1.1, lz + dz + 0.025)
-  for (let y = ANNEX_ROOF_Y + 0.3; y < MAIN.height + 0.9; y += 0.3) b.box("metal_galvanized", lx + 0.15, y, lz - 0.24, lx + 0.19, y + 0.03, lz + 0.24)
-  for (let y = ANNEX_ROOF_Y + 2.2; y < MAIN.height + 1.1; y += 0.75) {
-    b.box("metal_galvanized", lx + 0.85, y, lz - 0.38, lx + 0.89, y + 0.05, lz + 0.38)
-    b.box("metal_galvanized", lx + 0.2, y, lz - 0.4, lx + 0.89, y + 0.05, lz - 0.36)
-    b.box("metal_galvanized", lx + 0.2, y, lz + 0.36, lx + 0.89, y + 0.05, lz + 0.4)
-  }
-  for (const dz of [-0.38, 0, 0.38]) b.box("metal_galvanized", lx + 0.85, ANNEX_ROOF_Y + 2.2, lz + dz - 0.02, lx + 0.89, MAIN.height + 1.15, lz + dz + 0.02)
+  // Caged ladder on the main block's east wall, from the annex roof over the parapet onto the main roof.
+  const mainCoping = MAIN_TOP + COPE
+  cagedLadder(ctx, b, { x: MAIN.max[0], z: -15, nx: 1, nz: 0, y0: ANNEX_ROOF_Y, y1: mainCoping + 1.0, arrive: mainCoping, cageFrom: ANNEX_ROOF_Y + 2.3 })
+  crossover(ctx, b, MAIN.max[0], -15, 1, 0, mr, mainCoping, BUILDING.wallThickness + 0.1)
+  // Access ladder up the annex's east wall from the ground to the annex roof.
+  const annexCoping = ANNEX_TOP + COPE
+  cagedLadder(ctx, b, { x: ANNEX.max[0], z: -30, nx: 1, nz: 0, y0: 0, y1: annexCoping + 1.0, arrive: annexCoping, cageFrom: 2.4 })
+  crossover(ctx, b, ANNEX.max[0], -30, 1, 0, ANNEX_ROOF_Y, annexCoping, BUILDING.wallThickness + 0.1)
 
   // Downpipes with scupper heads, wall brackets and shoes.
   const fs = facades()

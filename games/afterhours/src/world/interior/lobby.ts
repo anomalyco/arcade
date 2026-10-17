@@ -1,4 +1,4 @@
-import { INTERIOR } from "../layout"
+import { BUILDING, INTERIOR } from "../layout"
 import { type Builder, CEIL_Y, FLOOR_Y, M, T, ceiling, door, doorOpening, fluorescentPanel, lobbyBands, troffer, wall } from "./kit"
 import { WALL_T, fluoro } from "./corridor"
 
@@ -12,7 +12,11 @@ export function buildLobby(b: Builder) {
   const [x1, z1] = max
   const on = fluorescentPanel(1).material
 
-  b.floor("terrazzo", x0, z0, x1, z1)
+  // Terrazzo runs right out under the storefront to the door sill, its top flush with the shell slab and the entrance
+  // landing (BUILDING.floorY), so the threshold has no step.
+  const fy = BUILDING.floorY + 0.001
+  b.box("terrazzo", x0, fy - 0.012, z0, x1, fy, 21.81, { cast: false, skip: "y" })
+  b.walk(x0, z0, x1, 21.81, fy)
   wall(b, "x", x0 - WALL_T, x1 + WALL_T, z0 - WALL_T, z0, lobbyBands, [doorOpening(0, 1.8)])
   wall(b, "z", z0, z1, x0 - WALL_T, x0, lobbyBands, [doorOpening(12)])
   wall(b, "z", z0, z1, x1, x1 + WALL_T, lobbyBands, [doorOpening(12)])

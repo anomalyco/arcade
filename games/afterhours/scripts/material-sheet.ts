@@ -41,10 +41,10 @@ const stats = await page
     const s = (globalThis as { __sheet?: { ready: boolean; errors: string[] } }).__sheet
     return s && (s.ready || s.errors.length > 0) ? s : null
   }, undefined, { timeout: 120_000 })
-  .then((h) => h.jsonValue() as unknown as Promise<{ loadMs: number; textureMB: number }>)
+  .then((h) => h.jsonValue() as unknown as Promise<{ loadMs: number; textureMB: number; programs: string }>)
   .catch((e: Error) => (errors.push(e.message), null))
 const file = `${outDir}/materials-${name}.png`
 await page.screenshot({ path: file })
-console.log(JSON.stringify({ file, loadMs: stats ? Math.round(stats.loadMs) : null, textureMB: stats ? +stats.textureMB.toFixed(1) : null, errors: errors.slice(0, 8) }))
+console.log(JSON.stringify({ file, loadMs: stats ? Math.round(stats.loadMs) : null, textureMB: stats ? +stats.textureMB.toFixed(1) : null, programs: stats?.programs, errors: errors.slice(0, 8) }))
 await browser.close()
 process.exit(0)

@@ -1,5 +1,6 @@
 import { DataTexture, FloatType, RGBAFormat, type Light } from "three/webgpu"
-import { Break, Fn, If, Loop, directPointLight, dot, int, ivec2, smoothstep, textureLoad, vec4, positionView } from "three/tsl"
+import { Break, Fn, If, Loop, directPointLight, dot, int, ivec2, smoothstep, textureLoad, vec4, positionView, positionWorld } from "three/tsl"
+import { insideNode } from "./volumes"
 import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js"
 import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.js"
 
@@ -12,6 +13,11 @@ import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.j
 type N = any
 
 export type Cone = { dir: readonly [number, number, number]; cosOuter: number; cosInner: number }
+/**
+ * Where a light may shade (`userData.mask`): mode 0 anywhere, 1 only inside interior volumes, 2 only outside them,
+ * clipped to world heights [y0, y1] (an interior lamp's own storey, so it can't light the floor above or below).
+ */
+export type LightMask = { mode: 0 | 1 | 2; y0: number; y1: number }
 
 const Base = ClusteredLightsNode as unknown as new (...args: number[]) => N
 
@@ -48,6 +54,10 @@ class ConeClusteredLightsNode extends Base {
       data[line * 2 + o + 2] = cone?.dir[2] ?? 0
       data[line * 2 + o + 3] = cone ? cone.cosOuter : -3
       data[line * 3 + o] = cone ? cone.cosInner : -2
+      const mask = lights[order[i]!]!.userData.mask as LightMask | undefined
+      data[line * 3 + o + 1] = mask?.mode ?? 0
+      data[line * 3 + o + 2] = mask?.y0 ?? -1e5
+      data[line * 3 + o + 3] = mask?.y1 ?? 1e5
     }
   }
 
@@ -61,6 +71,9 @@ class ConeClusteredLightsNode extends Base {
     Object.getPrototypeOf(ClusteredLightsNode.prototype).setupLights.call(this, builder, lightNodes)
 
     ;(Fn as N)(() => {
+      // Per-fragment interior membership, shared by every light: walls are hard boundaries for lamp light.
+      const pw = positionWorld as N
+      const ins = insideNode(pw, 0.1).toVar()
       ;(Loop as N)(self.maxLightsPerCluster, ({ i }: N) => {
         const lightIndex = self.getTile(i)
         ;(If as N)(lightIndex.equal(int(0)), () => {
@@ -71,10 +84,14 @@ class ConeClusteredLightsNode extends Base {
         const lightVector = viewPosition.sub(positionView)
         ;(If as N)(dot(lightVector, lightVector).lessThanEqual(distance.mul(distance)), () => {
           const c = textureLoad(self._lightsTexture, ivec2(idx, 2)) as N
-          const ci = (textureLoad(self._lightsTexture, ivec2(idx, 3)) as N).x
+          const row3 = textureLoad(self._lightsTexture, ivec2(idx, 3)) as N
+          const ci = row3.x
+          const mode = row3.y
+          const zoneW = mode.greaterThan(1.5).select(ins.oneMinus(), mode.greaterThan(0.5).select(ins, 1))
+          const yW = (smoothstep as N)(row3.z.sub(0.08), row3.z.add(0.02), pw.y).mul((smoothstep as N)(row3.w.add(0.08), row3.w.sub(0.02), pw.y))
           const dirView = self._cameraViewMatrix.mul(vec4(c.xyz, 0)).xyz
           const cosA = dot(lightVector.normalize().negate(), dirView)
-          const cone = (smoothstep as N)(c.w, ci, cosA)
+          const cone = (smoothstep as N)(c.w, ci, cosA).mul(zoneW).mul(yW)
           builder.lightsNode.setupDirectLight(
             builder,
             this,

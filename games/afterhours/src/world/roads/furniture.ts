@@ -2,17 +2,15 @@ import * as THREE from "three/webgpu"
 import { ACCESS_ROAD, COUNTY_ROAD } from "../layout"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
+import { materialFor } from "../../render/materials"
 import { Line, MeshBuilder, Parts, boxM, cylM, hash, rng } from "./util"
 import { HA, HC, type Junction } from "./surface"
 
 // Road furniture: a blank stop sign and a blank guide sign at the junction, a weathered blank notice on the access
 // road, white delineator posts, a culvert with headwalls and W-beam guardrail, and a drainage grate. No text anywhere.
 
-function signMaterial(color: number, roughness: number) {
-  const m = new THREE.MeshStandardNodeMaterial({ color, roughness, metalness: 0.15 })
-  m.name = "sign_face"
-  return m
-}
+// Sign faces and painted posts share the library's one "flat" shader.
+const signMaterial = (color: number, roughness: number) => materialFor("flat", { color, roughness, metalness: 0.15 })
 
 /** Frame at ground (x, z) whose +Z (the sign face) points along (nx, nz). */
 function facing(x: number, z: number, nx: number, nz: number, yawJitter = 0) {
@@ -60,7 +58,7 @@ function noticeSign(parts: Parts, face: THREE.Material, m: THREE.Matrix4) {
 }
 
 function delineator(parts: Parts, m: THREE.Matrix4) {
-  parts.add("road_line_white", boxM(0.08, 1.45, 0.02), m.clone().multiply(T(0, 0.4, 0)))
+  parts.add(materialFor("flat", { color: 0x9a9b94, roughness: 0.5 }), boxM(0.08, 1.45, 0.02), m.clone().multiply(T(0, 0.4, 0)))
   parts.add("plastic_orange", boxM(0.06, 0.15, 0.026), m.clone().multiply(T(0, 1.0, 0)))
 }
 

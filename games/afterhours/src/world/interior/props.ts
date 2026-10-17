@@ -8,10 +8,10 @@ import { CLOSET, LAB } from "./rooms"
 // Real models for the interior's furniture and props (render/models.ts). Colliders and contact shadows are placed
 // synchronously; the models stream in afterwards and join the interior group, so nothing here blocks the first frame.
 
-type Prop = Placement & { collide?: boolean; inset?: number; blob?: number }
+export type Prop = Placement & { collide?: boolean; inset?: number; blob?: number; /** Extra local tilt (tipped-over props). */ tilt?: THREE.Euler }
 
 /** Soft dark ellipse on the floor under a prop: the ambient-occlusion contact the light rig can't give small props. */
-const blobMat = (() => {
+export const blobMat = (() => {
   const m = new THREE.MeshBasicNodeMaterial({ color: 0x000000, transparent: true, depthWrite: false })
   const d = uv().sub(0.5).length().mul(2)
   m.opacityNode = float(1).sub(smoothstep(0.35, 1, d)).mul(0.55)
@@ -23,40 +23,50 @@ const blobMat = (() => {
 })()
 
 const pending: Promise<unknown>[] = []
+const tq = new THREE.Quaternion()
+const te = new THREE.Euler()
 
-function place(b: Builder, name: ModelName, props: Prop[]) {
+/**
+ * Places a model at every prop (local ground-floor coordinates; the builder's storey lifts them), instanced. Colliders
+ * and contact shadows go in immediately; the model streams in and joins the builder's group when loaded.
+ */
+export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { cast?: boolean } = {}) {
+  if (!props.length) return
   const [w, , d] = MODELS[name].size
+  const oy = b.oy
+  const matrices: THREE.Matrix4[] = []
   for (const p of props) {
-    if (p.collide ?? true) b.ctx.colliders.push(modelCollider(name, p, p.inset ?? 0.03))
-    const blob = p.blob ?? (p.position[1] <= FLOOR_Y + 0.01 ? 1.25 : 0)
+    const world = { ...p, position: [p.position[0], p.position[1] + oy, p.position[2]] as const }
+    if ((p.collide ?? true) && !p.tilt) b.ctx.colliders.push(modelCollider(name, world, p.inset ?? 0.03))
+    const blob = p.blob ?? (p.position[1] <= FLOOR_Y + 0.01 && !p.tilt ? 1.25 : 0)
     if (blob > 0) {
       const s = typeof p.scale === "number" ? p.scale : 1
       b.quad(blobMat, T(p.position[0], p.position[1] + 0.002, p.position[2], p.yaw ?? 0, -Math.PI / 2), w * s * blob, d * s * blob, { cast: false })
     }
+    te.set(p.tilt?.x ?? 0, p.yaw ?? 0, p.tilt?.z ?? 0, "YXZ")
+    const s = typeof p.scale === "number" ? p.scale : 1
+    matrices.push(new THREE.Matrix4().compose(new THREE.Vector3(...world.position), tq.setFromEuler(te), new THREE.Vector3(s, s, s)))
   }
-  const load =
-    props.length > 1
-      ? instanceModel(name, props)
-      : loadModel(name).then((g) => {
-          const p = props[0]!
-          g.position.set(...p.position)
-          g.rotation.y = p.yaw ?? 0
-          if (p.scale !== undefined) typeof p.scale === "number" ? g.scale.setScalar(p.scale) : g.scale.set(...p.scale)
-          return g
-        })
+  const group = b.group
   pending.push(
-    load
+    instanceModel(name, matrices)
       .then((g) => {
         g.traverse((o) => {
           o.matrixAutoUpdate = false
           o.updateMatrix()
+          if (opts.cast === false) o.castShadow = false
         })
         g.updateMatrixWorld(true)
-        b.group.add(g)
+        group.add(g)
       })
       .catch((e) => console.error(`interior: model ${name} failed: ${e}`)),
   )
 }
+
+const place = (b: Builder, name: ModelName, props: Prop[]) => placeModels(b, name, props)
+
+/** Resolves when every model placed so far has loaded. */
+export const modelsLoaded = () => Promise.all(pending)
 
 export function placeProps(b: Builder) {
   const y = FLOOR_Y
@@ -99,7 +109,6 @@ export function placeProps(b: Builder) {
     { position: [CLOSET.x0 + 1.25, y + MODELS.cardboard_box.size[1], CLOSET.z1 - 0.28], yaw: -0.3, collide: false },
   ])
 
-  return Promise.all(pending)
 }
 
 /** Steel AV cart (two shelves on round posts, casters) with the television on top. */

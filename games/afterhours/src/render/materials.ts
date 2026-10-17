@@ -11,13 +11,13 @@ import {
   log2,
   max,
   min,
-  mix,
-  normalMap,
+  mix as tslMix,
+  normalMap as tslNormalMap,
   normalWorldGeometry,
   positionWorld,
   screenCoordinate,
   sin,
-  smoothstep,
+  smoothstep as tslSmoothstep,
   sqrt,
   texture,
   uniform,
@@ -28,6 +28,26 @@ import {
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 
+// MIGRATION NOTE (shader count, docs/boot-architecture.md). Every library material is now a member of a shared
+// surface class: all members of a class compile to ONE shader, because the per-material constants live in
+// `SurfaceMaterial.surfaceParams` and its scans in `surfaceSlots`, read per object at draw time. No vertex or instance
+// attribute is needed to pick a variant; the material object is the variant.
+//   - `material(name)` works as before. Each name is a member of: ground (asphalt, asphalt_lot, road_line_*, gravel,
+//     concrete_floor) · natural (forest_floor, grass, dirt) · scan (concrete_wall/dark/floor_dry, bark, wood_pole,
+//     metal_galvanized, metal_dark, ceiling_tile, terrazzo, painted_wall) · paint (metal_painted, door_steel) ·
+//     tile (tile_green, tile_green_dark) · flat (barbed_wire, rubber, plastic_orange, chrome, glass_dark) ·
+//     emissive (glass_lit, emissive_sodium, emissive_fluorescent) · singletons linoleum, pine_needles, pine_foliage,
+//     chainlink, car_paint (MeshPhysical).
+//   - One-off colours/glows/thin glass: use `materialFor("flat", { color, roughness, metalness, emissive, intensity,
+//     transparent, side })` or `materialFor("emissive", { color, emissive, intensity })` instead of
+//     `new MeshStandardNodeMaterial({ color })`. Any number of these share one shader per flag set.
+//   - The shader key still includes on/off material flags: `vertexColors`, `transparent`, `side`, `alphaTest`,
+//     `polygonOffset`, `depthWrite`, `fog`, a replaced `positionNode`/`colorNode`, etc. Clones that set the same flags
+//     share one shader (e.g. all `.clone()` + `vertexColors = true` road decals: one extra shader in total). Set flags
+//     identically across your clones and don't give each clone its own node graph.
+//   - Replacing a node (e.g. `colorNode`) on a clone makes that clone a new shader; build such graphs once and reuse
+//     the material, or put the variation into a `materialFor` parameter.
+//
 // The one place surface materials come from. Builders ask for a material by name and give their geometry UVs in
 // metres (1 UV unit = 1 m) so every material tiles at real-world scale; the material owns its texture repeat.
 //
@@ -80,7 +100,10 @@ export type MaterialName =
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
-type Std = THREE.MeshStandardNodeMaterial
+// Node graphs here mix typed and untyped (per-object) nodes; these three are used untyped.
+const mix = tslMix as N
+const smoothstep = tslSmoothstep as N
+const normalMap = tslNormalMap as N
 
 // ---------------------------------------------------------------------------------------------------------------
 // Global tunables
@@ -319,34 +342,109 @@ const SETS = {
 } as const
 type SetName = keyof typeof SETS
 
+// ---------------------------------------------------------------------------------------------------------------
+// Surface classes
+//
+// Each class builds its TSL node graph once. Every material of the class is its own `SurfaceMaterial` object that
+// shares those node instances and carries its constants in `surfaceParams` (vec4 slots) and its scanned maps in
+// `surfaceSlots`; per-object uniforms and texture bindings read them when each object draws. three keys node builds
+// on the graph's node ids plus the material's on/off flags, so all materials of a class (and their clones, as long
+// as flags like vertexColors / side / transparent / polygonOffset / positionNode match) compile to one shader.
+
+const PARAM_SLOTS = 6
+
+/** A library material: a shared class graph plus per-material constants. Clones keep both. */
+export class SurfaceMaterial extends THREE.MeshStandardNodeMaterial {
+  surfaceClass = ""
+  surfaceParams = new Float32Array(PARAM_SLOTS * 4)
+  surfaceSlots: THREE.Texture[] = []
+  override copy(source: THREE.MeshStandardNodeMaterial): this {
+    super.copy(source)
+    if (source instanceof SurfaceMaterial) {
+      this.surfaceClass = source.surfaceClass
+      this.surfaceParams = source.surfaceParams.slice()
+      this.surfaceSlots = [...source.surfaceSlots]
+    }
+    return this
+  }
+}
+
+type ObjFrame = { material?: Partial<SurfaceMaterial> | null }
+
+/** Per-object vec4 constants of one class: `p[i]` reads `material.surfaceParams[4i..4i+3]` for each object drawn. */
+function classParams(): N[] {
+  return Array.from({ length: PARAM_SLOTS }, (_, i) =>
+    (uniform(new THREE.Vector4()) as N).onObjectUpdate((frame: ObjFrame, self: { value: THREE.Vector4 }) => {
+      const p = frame.material?.surfaceParams
+      if (p) self.value.fromArray(p, i * 4)
+    }),
+  )
+}
+
+/** Texture nodes of the class graph being built, per slot; `member` rebinds them for each object drawn. */
+let slotNodes: N[][] = []
+
+/**
+ * Per-object texture slot: a sampler of `material.surfaceSlots[slot]` at `uvn`. `initial` decides the colour space
+ * and must differ between slots of one class (bindings are shared by texture identity at build time).
+ */
+function slotSampler(slot: number, initial: THREE.Texture) {
+  return (uvn: N): N => {
+    const node = texture(initial, uvn) as N
+    ;(slotNodes[slot] ??= []).push(node)
+    return node
+  }
+}
+
+/**
+ * A uniform that stays 1 and, before each object draws, points the class's slot texture nodes at that object's
+ * material textures (TextureNode manages its own update type, so the swap rides on this node instead).
+ */
+function slotBinder(nodes: N[][]): N {
+  return (uniform(1) as N).onObjectUpdate((frame: ObjFrame) => {
+    const slots = frame.material?.surfaceSlots
+    if (!slots) return
+    for (let i = 0; i < nodes.length; i++) {
+      const t = slots[i]
+      if (t) for (const n of nodes[i]!) n.value = t
+    }
+  })
+}
+
 /** Surface channels: colour (linear), roughness, packed tangent-space normal (0..1), AO, metalness. */
 type Surf = { color: N; rough: N; normal: N; ao: N; metal: N }
 
-/** Two texture bindings per set: albedo (colour + roughness) and surface (normal XY + AO + metalness). */
-function sample(name: SetName, uvn: N = uv(), size: number = SETS[name].size): Surf {
-  const p = uvn.mul(1 / size)
-  const a = texture(map(name, "albedo"), p)
-  if (!(SETS[name].kinds as readonly Kind[]).includes("surface")) return { color: a.rgb, rough: a.a, normal: FLAT, ao: float(1), metal: float(0) }
-  const s = texture(map(name, "surface"), p)
+/** Samples an albedo + surface slot pair at `uvn / size`. */
+function sampleSlots(albedo: (u: N) => N, surface: ((u: N) => N) | null, uvn: N, size: N): Surf {
+  const p = uvn.div(size)
+  const a = albedo(p)
+  if (!surface) return { color: a.rgb, rough: a.a, normal: FLAT, ao: float(1), metal: float(0) }
+  const s = surface(p)
   const xy = s.rg.mul(2).sub(1)
   const z = sqrt(float(1).sub(xy.dot(xy)).max(0))
   return { color: a.rgb, rough: a.a, normal: vec3(s.rg, z.mul(0.5).add(0.5)), ao: s.b, metal: s.a }
 }
 
+/** A fixed set (same for every member of a class), sampled at `uvn / size`. */
+function sample(name: SetName, uvn: N = uv(), size: N = float(SETS[name].size)): Surf {
+  const hasSurface = (SETS[name].kinds as readonly Kind[]).includes("surface")
+  return sampleSlots((p) => texture(map(name, "albedo"), p), hasSurface ? (p) => texture(map(name, "surface"), p) : null, uvn, size)
+}
+
 /**
- * Breaks visible repetition: blends the set with a rotated, slightly rescaled copy of itself by a world-space noise
- * mask (the rotated normal is turned back into the surface's tangent frame).
+ * Breaks visible repetition: blends a sample with a rotated, slightly rescaled copy of itself by a world-space noise
+ * mask (the rotated normal is turned back into the surface's tangent frame). `amount` 0 = plain sample.
  */
-function antiTile(name: SetName, uvn: N = uv(), maskPeriod = SETS[name].size * 2.7): Surf {
-  const A = sample(name, uvn)
+function antiTile(albedo: (u: N) => N, surface: (u: N) => N, uvn: N, size: N, amount: N): Surf {
+  const A = sampleSlots(albedo, surface, uvn, size)
   const ang = 0.63
   const ca = Math.cos(ang)
   const sa = Math.sin(ang)
   const ruv = vec2(uvn.x.mul(ca).sub(uvn.y.mul(sa)), uvn.x.mul(sa).add(uvn.y.mul(ca))).add(vec2(13.7, 5.3))
-  const B = sample(name, ruv, SETS[name].size * 1.13)
+  const B = sampleSlots(albedo, surface, ruv, size.mul(1.13))
   const bn = B.normal.mul(2).sub(1)
   const bnr = vec3(bn.x.mul(ca).add(bn.y.mul(sa)), bn.y.mul(ca).sub(bn.x.mul(sa)), bn.z).mul(0.5).add(0.5)
-  const w = smoothstep(0.32, 0.68, wnoise(positionWorld.xz, maskPeriod).b)
+  const w = smoothstep(0.32, 0.68, texture(noise(), positionWorld.xz.div(size.mul(2.7))).b).mul(amount)
   return {
     color: mix(A.color, B.color, w),
     rough: mix(A.rough, B.rough, w),
@@ -357,77 +455,238 @@ function antiTile(name: SetName, uvn: N = uv(), maskPeriod = SETS[name].size * 2
 }
 
 const luma = (c: N): N => c.dot(vec3(0.2126, 0.7152, 0.0722))
-const saturate = (c: N, s: number): N => mix(vec3(luma(c)), c, s)
+const saturate = (c: N, s: N): N => mix(vec3(luma(c)), c, s)
 const FLAT = vec3(0.5, 0.5, 1)
 
 /** Large-scale tint/brightness drift in world space so kilometre-scale ground never reads as a repeat. */
-function macro(color: N, greenShift = 0): N {
+function macro(color: N, amount: N, greenShift: N): N {
   const p = positionWorld.xz
   const big = wnoise(p, 260).r
   const mid = wnoise(p, 70).g
-  const k = U.variation
+  const k = U.variation.mul(amount)
   const bright = mix(float(1), mix(float(0.62), float(1.32), big.mul(0.65).add(mid.mul(0.35))), k)
-  const hue = mix(vec3(1), mix(vec3(1.06, 0.98, 0.9), vec3(0.9 + greenShift, 1.02 + greenShift, 0.94), mid), k)
+  const green = vec3(float(0.9).add(greenShift), float(1.02).add(greenShift), 0.94)
+  const hue = mix(vec3(1), mix(vec3(1.06, 0.98, 0.9), green, mid), k)
   return color.mul(bright).mul(hue)
-}
-
-type WetOpts = {
-  /** How much the dry albedo darkens under a water film (porous asphalt ≈ 0.55, dense concrete ≈ 0.35). */
-  porosity: number
-  /** Roughness of the wet film. */
-  film: number
-  /** Puddle coverage multiplier for this surface (0 = no standing water). */
-  puddles: number
 }
 
 /**
  * Wet ground: darker albedo and a glossy film everywhere, standing water (near-mirror, flat normal) where a
  * world-space noise mask plus surface cavities fall below the waterline, only on upward-facing surfaces.
+ * porosity: albedo darkening under the film; film: film roughness; puddles: coverage multiplier.
  */
-function wet(s: Surf, o: WetOpts): Surf {
+function wet(s: Surf, porosity: N, film: N, puddles: N): Surf {
   const w = U.wetness
   const p = positionWorld.xz.div(U.puddleScale)
   const up = smoothstep(0.82, 0.97, normalWorldGeometry.y)
   // Percentile-equalised noise; cavities (low AO) collect water first.
   const h = wnoise(p, 41).r.mul(0.62).add(wnoise(p, 13).g.mul(0.38)).add(s.ao.oneMinus().mul(0.35))
-  const line = float(1.12).sub(U.puddles.mul(o.puddles).mul(0.82))
+  const line = float(1.12).sub(U.puddles.mul(puddles).mul(0.82))
   const puddle = smoothstep(line, line.add(0.035), h).mul(up).mul(smoothstep(0.15, 0.6, w))
   // Damp edge around each puddle, and streaky drying elsewhere.
   const edge = smoothstep(line.sub(0.09), line, h).mul(up)
   const dry = wnoise(p, 9).b
-  const film = w.mul(mix(float(0.8), float(1), dry)).max(edge.mul(w))
-  const filmRough = mix(float(o.film), float(o.film).add(0.1), dry)
-  let color = s.color.mul(mix(float(1), float(1 - o.porosity), film))
+  const filmAmt = w.mul(mix(float(0.8), float(1), dry)).max(edge.mul(w))
+  const filmRough = mix(film, film.add(0.1), dry)
+  let color = s.color.mul(mix(float(1), float(1).sub(porosity), filmAmt))
   color = mix(color, color.mul(0.55), puddle)
-  let rough = mix(s.rough, min(s.rough, filmRough), film)
+  let rough = mix(s.rough, min(s.rough, filmRough), filmAmt)
   rough = mix(rough, float(0.035), puddle)
   // The film fills the micro relief; standing water is flat.
-  const normal = mix(mix(s.normal, FLAT, film.mul(0.45)), FLAT, puddle)
+  const normal = mix(mix(s.normal, FLAT, filmAmt.mul(0.45)), FLAT, puddle)
   return { ...s, color, rough, normal }
 }
 
 /** Damp natural ground: darker and a little glossier, no standing water. */
-function damp(s: Surf, amount: number, gloss: number): Surf {
+function damp(s: Surf, amount: N, gloss: N): Surf {
   const f = U.wetness.mul(amount)
   return { ...s, color: s.color.mul(mix(float(1), float(0.72), f)), rough: mix(s.rough, s.rough.mul(gloss), f) }
 }
 
-type Finish = { normalScale?: number; metalness?: number; useMetalMap?: boolean; ao?: boolean }
+type Graph = {
+  color: N
+  rough: N
+  metal: N
+  normal?: N
+  normalScale?: N
+  ao?: N
+  emissive?: N
+  opacity?: N
+  alphaTest?: N
+}
 
-function std(s: Surf, f: Finish = {}, ctor: typeof THREE.MeshStandardNodeMaterial = THREE.MeshStandardNodeMaterial): Std {
-  const m = new ctor()
-  m.colorNode = s.color
-  m.roughnessNode = clamp(s.rough, 0.02, 1)
-  m.metalnessNode = f.useMetalMap ? s.metal : float(f.metalness ?? 0)
-  const k = f.normalScale ?? 1
-  m.normalNode = normalMap(s.normal, vec2(k, k))
-  if (f.ao !== false) m.aoNode = s.ao
+type ClassDef = {
+  /** Builds the shared graph once; `p` are the per-object vec4 constants. */
+  graph: (p: N[]) => Graph
+  /** Texture slots each member fills (in order), and the texture each slot starts on. */
+  slots?: () => THREE.Texture[]
+  /** Material flags common to the class (they are part of the shader key). */
+  flags?: (m: SurfaceMaterial) => void
+  physical?: boolean
+}
+
+type ClassState = { def: ClassDef; graph: Graph | null; slots: THREE.Texture[] }
+const classes = new Map<string, ClassState>()
+
+function defineClass(name: string, def: ClassDef) {
+  classes.set(name, { def, graph: null, slots: [] })
+}
+
+/** A new member of `cls` with the given constants (vec4 slots, flattened) and textures. */
+function member(cls: string, params: readonly number[], slots: THREE.Texture[] = []): SurfaceMaterial {
+  const c = classes.get(cls)
+  if (!c) throw new Error(`unknown surface class ${cls}`)
+  if (!c.graph) {
+    c.slots = c.def.slots?.() ?? []
+    slotNodes = []
+    const g = c.def.graph(classParams())
+    // Rides on colour, roughness and AO so a clone that replaces one of them still rebinds its textures.
+    if (slotNodes.length) {
+      const bind = slotBinder(slotNodes)
+      g.color = g.color.mul(bind)
+      g.rough = g.rough.mul(bind)
+      if (g.ao) g.ao = g.ao.mul(bind)
+    }
+    slotNodes = []
+    c.graph = g
+  }
+  const g = c.graph
+  const m = new SurfaceMaterial()
+  m.surfaceClass = cls
+  m.surfaceParams.set(params.slice(0, PARAM_SLOTS * 4))
+  m.surfaceSlots = slots.length ? slots : c.slots
+  m.colorNode = g.color
+  m.roughnessNode = g.rough
+  m.metalnessNode = g.metal
+  if (g.normal) m.normalNode = normalMap(g.normal, g.normalScale ? vec2(g.normalScale, g.normalScale) : null)
+  if (g.ao) m.aoNode = g.ao
+  if (g.emissive) m.emissiveNode = g.emissive
+  if (g.opacity) m.opacityNode = g.opacity
+  if (g.alphaTest) m.alphaTestNode = g.alphaTest
+  c.def.flags?.(m)
   return m
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// Procedural tiles
+const rgb = (c: THREE.ColorRepresentation) => {
+  const k = new THREE.Color(c)
+  return [k.r, k.g, k.b] as const
+}
 
+// ---- ground: wet outdoor ground and road paint ------------------------------------------------------------------
+// p0 size, antiTile, saturation, macro   p1 tint rgb, normalScale   p2 roughA, roughB, porosity, film
+// p3 puddles, paint amount              p4 paint rgb
+defineClass("ground", {
+  slots: () => [map("asphalt", "albedo"), map("asphalt", "surface")],
+  graph: (p) => {
+    const s0 = antiTile(slotSampler(0, map("asphalt", "albedo")), slotSampler(1, map("asphalt", "surface")), uv(), p[0].x, p[0].y)
+    const wp = positionWorld.xz
+    // Thermoplastic worn through by tyres: patches of asphalt show where the noise drops.
+    const wear = smoothstep(0.06, 0.26, wnoise(wp, 7).r.mul(0.55).add(wnoise(wp, 1.3).a.mul(0.45))).mul(p[3].y)
+    const base = macro(saturate(s0.color, p[0].z).mul(p[1].xyz), p[0].w, float(0))
+    const color = mix(base, p[4].xyz.mul(mix(float(0.8), float(1), s0.ao)), wear)
+    const rough = mix(s0.rough.mul(p[2].x).add(p[2].y), float(0.55), wear)
+    const normal = mix(s0.normal, FLAT, wear.mul(0.6))
+    const s = wet({ ...s0, color, rough, normal }, p[2].z, p[2].w, p[3].x)
+    return { color: s.color, rough: clamp(s.rough, 0.02, 1), metal: float(0), normal: s.normal, normalScale: p[1].w, ao: s.ao }
+  },
+})
+type GroundOpts = { set: SetName; antiTile: boolean; sat: number; macro: boolean; tint: number | readonly [number, number, number]; normalScale: number; rough: [number, number]; porosity: number; film: number; puddles: number; paint?: readonly [number, number, number] }
+function ground(o: GroundOpts) {
+  const t = typeof o.tint === "number" ? [o.tint, o.tint, o.tint] : o.tint
+  const paint = o.paint ?? [0, 0, 0]
+  return member(
+    "ground",
+    [SETS[o.set].size, o.antiTile ? 1 : 0, o.sat, o.macro ? 1 : 0, ...t, o.normalScale, ...o.rough, o.porosity, o.film, o.puddles, o.paint ? 1 : 0, 0, 0, ...paint, 0],
+    [map(o.set, "albedo"), map(o.set, "surface")],
+  )
+}
+
+// ---- natural: forest floor, grass, dirt (damp, macro variation, optional moss layer) ---------------------------
+// p0 sizeA, sizeB, moss amount, green shift   p1 tintA rgb, satA   p2 tintB rgb, satB   p3 damp, gloss, normalScale
+defineClass("natural", {
+  slots: () => [map("forest_floor", "albedo"), map("forest_floor", "surface"), map("forest_moss", "albedo"), map("forest_moss", "surface")],
+  graph: (p) => {
+    const A = antiTile(slotSampler(0, map("forest_floor", "albedo")), slotSampler(1, map("forest_floor", "surface")), uv(), p[0].x, float(1))
+    const B = sampleSlots(slotSampler(2, map("forest_moss", "albedo")), slotSampler(3, map("forest_moss", "surface")), uv(), p[0].y)
+    const w = smoothstep(0.55, 0.8, wnoise(positionWorld.xz, 31).r.mul(0.7).add(wnoise(positionWorld.xz, 7).a.mul(0.3))).mul(p[0].z)
+    const color = mix(saturate(A.color, p[1].w).mul(p[1].xyz), saturate(B.color, p[2].w).mul(p[2].xyz), w.mul(0.7))
+    const s0: Surf = {
+      color: macro(color, float(1), p[0].w),
+      rough: mix(A.rough, B.rough, w),
+      normal: mix(A.normal, B.normal, w),
+      ao: mix(A.ao, B.ao.mul(0.5).add(0.5), w),
+      metal: float(0),
+    }
+    const s = damp(s0, p[3].x, p[3].y)
+    return { color: s.color, rough: clamp(s.rough, 0.02, 1), metal: float(0), normal: s.normal, normalScale: p[3].z, ao: s.ao }
+  },
+})
+type NaturalOpts = { set: SetName; moss?: SetName; tint: readonly [number, number, number]; sat: number; mossTint?: readonly [number, number, number]; mossSat?: number; green: number; damp: number; gloss: number; normalScale: number }
+function natural(o: NaturalOpts) {
+  const moss = o.moss ?? o.set
+  return member(
+    "natural",
+    [SETS[o.set].size, SETS[moss].size, o.moss ? 1 : 0, o.green, ...o.tint, o.sat, ...(o.mossTint ?? o.tint), o.mossSat ?? o.sat, o.damp, o.gloss, o.normalScale, 0],
+    [map(o.set, "albedo"), map(o.set, "surface"), map(moss, "albedo"), map(moss, "surface")],
+  )
+}
+
+// ---- scan: scanned walls, wood, bark, ceiling, terrazzo, bare metals --------------------------------------------
+// p0 size, antiTile, saturation, normalScale   p1 tint rgb, metal from map   p2 roughA, roughB, metal, imperfection
+// p3 imperfection size, streak stain, uv stain, spangle
+defineClass("scan", {
+  slots: () => [map("concrete_wall", "albedo"), map("concrete_wall", "surface")],
+  graph: (p) => {
+    const s = antiTile(slotSampler(0, map("concrete_wall", "albedo")), slotSampler(1, map("concrete_wall", "surface")), uv(), p[0].x, p[0].y)
+    const wp = positionWorld
+    // Rain-streaked staining running down every face (world space, so it ignores each wall's UV orientation).
+    const streak = texture(noise(), vec2(wp.x.add(wp.z).div(2.3), wp.y.div(26))).g
+    const blot = wnoise(vec2(wp.x.add(wp.z), wp.y), 9).r
+    const worldStain = smoothstep(0.45, 0.95, streak).mul(0.38).add(smoothstep(0.6, 0.95, blot).mul(0.18)).mul(p[3].y)
+    const uvStain = smoothstep(0.78, 0.97, wnoise(uv(), 5).r).mul(0.35).mul(p[3].z)
+    const spangle = texture(noise(), uv().mul(9)).a
+    const imp = sample("imperfections", uv(), p[3].x)
+    const color = saturate(s.color, p[0].z)
+      .mul(p[1].xyz)
+      .mul(float(1).sub(worldStain))
+      .mul(float(1).sub(uvStain))
+      .mul(mix(float(1), mix(float(0.88), float(1.06), spangle), p[3].w))
+    const rough = s.rough.mul(p[2].x).add(p[2].y).add(imp.rough.mul(p[2].w)).add(spangle.mul(0.18).mul(p[3].w))
+    return { color, rough: clamp(rough, 0.02, 1), metal: mix(p[2].z, s.metal, p[1].w), normal: s.normal, normalScale: p[0].w, ao: s.ao }
+  },
+})
+type ScanOpts = { set: SetName; antiTile?: boolean; sat?: number; tint: number | readonly [number, number, number]; normalScale?: number; rough: [number, number]; metal?: number; metalMap?: boolean; imp?: [amount: number, size: number]; streaks?: boolean; stains?: boolean; spangle?: boolean }
+function scan(o: ScanOpts) {
+  const t = typeof o.tint === "number" ? [o.tint, o.tint, o.tint] : o.tint
+  return member(
+    "scan",
+    [
+      SETS[o.set].size, o.antiTile ? 1 : 0, o.sat ?? 1, o.normalScale ?? 1,
+      ...t, o.metalMap ? 1 : 0,
+      ...o.rough, o.metal ?? 0, o.imp?.[0] ?? 0,
+      o.imp?.[1] ?? 1, o.streaks ? 1 : 0, o.stains ? 1 : 0, o.spangle ? 1 : 0,
+    ],
+    [map(o.set, "albedo"), map(o.set, "surface")],
+  )
+}
+
+// ---- paint: painted steel with chips and scratches (fixed scan) ---------------------------------------------------
+// p0 paint rgb, chipping
+defineClass("paint", {
+  graph: (p) => {
+    const s = sample("metal_painted")
+    // The scan is yellow paint; keep only its luminance variation, recolour, and let scratches show steel.
+    const scratch = smoothstep(0.55, 0.85, s.metal)
+    const chip = smoothstep(float(1).sub(p[0].w.mul(0.3)), 1, wnoise(uv(), 0.7).a)
+    const bare = scratch.max(chip)
+    const lum = luma(s.color).div(0.45)
+    const color = mix(p[0].xyz.mul(mix(float(0.85), float(1.08), lum)), vec3(0.32, 0.31, 0.3), bare)
+    const rough = mix(float(0.42).add(s.rough.mul(0.45)), float(0.5), bare)
+    return { color, rough: clamp(rough, 0.02, 1), metal: bare, normal: s.normal, normalScale: float(0.8), ao: s.ao }
+  },
+})
+
+// ---- tile: glazed ceramic wall tile with grout -------------------------------------------------------------------
 /** Square tile grid: per-tile id, distance to the nearest joint (m), and a tangent-space bevel/tilt normal. */
 function tileGrid(size: number, joint: number, bevel: number, tilt: number, uvn: N = uv()) {
   const g: N = uvn.div(size)
@@ -451,319 +710,239 @@ function tileGrid(size: number, joint: number, bevel: number, tilt: number, uvn:
   const normal = vec3(nxy as N, sqrt(float(1).sub(nxy.dot(nxy)).max(0.2)) as N).normalize().mul(0.5).add(0.5)
   return { id, f, edge, rnd, rnd2, groutMask, normal }
 }
-
-function ceramic(glaze: THREE.Color, groutColor: THREE.Color): Std {
-  const size = 0.152
-  const t = tileGrid(size, 0.003, 0.0045, 0.035)
-  const imp = sample("imperfections", uv(), 1.7)
-  const tileTint = mix(float(0.93), float(1.05), t.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), t.rnd2))
-  const crazing = wnoise(uv(), 0.9).a
-  const glazeCol = vec3(glaze.r, glaze.g, glaze.b).mul(tileTint).mul(mix(float(0.97), float(1.02), crazing))
-  const groutCol = vec3(groutColor.r, groutColor.g, groutColor.b).mul(mix(float(0.6), float(1), wnoise(uv(), 0.7).b))
-  const color = mix(glazeCol, groutCol, t.groutMask)
-  const rough = mix(float(0.07).add(imp.rough.mul(0.25)), float(0.85), t.groutMask)
-  return std({ color, rough, normal: t.normal, ao: mix(float(1), float(0.6), t.groutMask), metal: float(0) })
-}
-
-function linoleum(): Std {
-  const size = 0.305
-  const t = tileGrid(size, 0.0012, 0.0006, 0.012)
-  // VCT chip marbling, quarter-turned on alternate tiles like a laid floor.
-  const turn = fract(t.id.x.add(t.id.y).mul(0.5)).greaterThan(0.25)
-  const local = turn.select(vec2(t.f.y, t.f.x), t.f)
-  const chips = texture(noise(), local.mul(vec2(1.6, 0.55)).add(t.id.mul(0.37))).a
-  const fleck = smoothstep(0.82, 0.86, texture(noise(), local.mul(9).add(t.id.mul(0.71))).b)
-  const base = vec3(0.36, 0.38, 0.33)
-  const tint = mix(float(0.92), float(1.05), t.rnd)
-  let color = base.mul(tint).mul(mix(float(0.86), float(1.08), chips))
-  color = mix(color, vec3(0.16, 0.17, 0.15), fleck.mul(0.6))
-  color = mix(color, vec3(0.08, 0.08, 0.07), t.groutMask)
-  const imp = sample("imperfections", uv(), 2.3)
-  const scuff = wnoise(uv(), 3.1).g
-  const rough = float(0.06).add(imp.rough.mul(0.32)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.groutMask.mul(0.5))
-  return std({ color, rough, normal: t.normal, ao: float(1), metal: float(0) })
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// Library
-
-const c3 = (hex: number) => {
-  const c = new THREE.Color(hex)
-  return vec3(c.r, c.g, c.b)
-}
-
-const BUILD: Record<MaterialName, () => THREE.Material> = {
-  asphalt: () => {
-    const s = antiTile("asphalt")
-    const base = { ...s, color: macro(saturate(s.color, 0.6).mul(0.72)), rough: s.rough.mul(0.25).add(0.7) }
-    return std(wet(base, { porosity: 0.55, film: 0.26, puddles: 1 }), { normalScale: 1.2 })
+// p0 glaze rgb   p1 grout rgb
+defineClass("tile", {
+  graph: (p) => {
+    const t = tileGrid(0.152, 0.003, 0.0045, 0.035)
+    const imp = sample("imperfections", uv(), float(1.7))
+    const tileTint = mix(float(0.93), float(1.05), t.rnd).mul(mix(vec3(1.02, 0.99, 1), vec3(0.98, 1.01, 1), t.rnd2))
+    const crazing = wnoise(uv(), 0.9).a
+    const glazeCol = p[0].xyz.mul(tileTint).mul(mix(float(0.97), float(1.02), crazing))
+    const groutCol = p[1].xyz.mul(mix(float(0.6), float(1), wnoise(uv(), 0.7).b))
+    const color = mix(glazeCol, groutCol, t.groutMask)
+    const rough = mix(float(0.07).add(imp.rough.mul(0.25)), float(0.85), t.groutMask)
+    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: t.normal, ao: mix(float(1), float(0.6), t.groutMask) }
   },
-  asphalt_lot: () => {
-    const s = antiTile("asphalt_lot")
-    const base = { ...s, color: macro(saturate(s.color, 0.35).mul(1.05)), rough: s.rough.mul(0.25).add(0.68) }
-    return std(wet(base, { porosity: 0.55, film: 0.28, puddles: 1.15 }), { normalScale: 1.1 })
+})
+
+// ---- linoleum: waxed VCT floor -------------------------------------------------------------------------------------
+defineClass("linoleum", {
+  graph: () => {
+    const t = tileGrid(0.305, 0.0012, 0.0006, 0.012)
+    // VCT chip marbling, quarter-turned on alternate tiles like a laid floor.
+    const turn = fract(t.id.x.add(t.id.y).mul(0.5)).greaterThan(0.25)
+    const local = turn.select(vec2(t.f.y, t.f.x), t.f)
+    const chips = texture(noise(), local.mul(vec2(1.6, 0.55)).add(t.id.mul(0.37))).a
+    const fleck = smoothstep(0.82, 0.86, texture(noise(), local.mul(9).add(t.id.mul(0.71))).b)
+    const tint = mix(float(0.92), float(1.05), t.rnd)
+    let color = vec3(0.36, 0.38, 0.33).mul(tint).mul(mix(float(0.86), float(1.08), chips))
+    color = mix(color, vec3(0.16, 0.17, 0.15), fleck.mul(0.6))
+    color = mix(color, vec3(0.08, 0.08, 0.07), t.groutMask)
+    const imp = sample("imperfections", uv(), float(2.3))
+    const scuff = wnoise(uv(), 3.1).g
+    const rough = float(0.06).add(imp.rough.mul(0.32)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.groutMask.mul(0.5))
+    return { color, rough: clamp(rough, 0.02, 1), metal: float(0), normal: t.normal, ao: float(1) }
   },
-  road_line_yellow: () => roadPaint(new THREE.Color(0.55, 0.36, 0.06)),
-  road_line_white: () => roadPaint(new THREE.Color(0.62, 0.62, 0.58)),
-  gravel: () => {
-    const s = antiTile("gravel")
-    const base = { ...s, color: macro(saturate(s.color, 0.6).mul(0.55)) }
-    return std(wet(base, { porosity: 0.45, film: 0.38, puddles: 0.55 }), { normalScale: 1.3 })
-  },
-  forest_floor: () => {
-    const needles = antiTile("forest_floor")
-    const moss = sample("forest_moss")
-    const w = smoothstep(0.55, 0.8, wnoise(positionWorld.xz, 31).r.mul(0.7).add(wnoise(positionWorld.xz, 7).a.mul(0.3)))
-    const color = mix(saturate(needles.color, 0.8).mul(vec3(0.42, 0.4, 0.38)), saturate(moss.color, 0.75).mul(vec3(0.42, 0.46, 0.36)), w.mul(0.7))
-    const s: Surf = {
-      color: macro(color, 0.03),
-      rough: mix(needles.rough, moss.rough, w),
-      normal: mix(needles.normal, moss.normal, w),
-      ao: mix(needles.ao, moss.ao.mul(0.5).add(0.5), w),
-      metal: float(0),
+})
+
+// ---- flat: untextured surfaces with optional noise variation, smudge roughness and glow ---------------------------
+// p0 colour A rgb, noise scale   p1 colour B rgb, smudge size   p2 roughA, roughB, metalA, metalB
+// p3 noise lo, hi, smooth (0/1), smudge roughness   p4 noise channel mask rgba   p5 emissive rgb (linear, × intensity)
+defineClass("flat", {
+  graph: (p) => {
+    const n = texture(noise(), uv().mul(p[0].w)).dot(p[4])
+    const span = p[3].y.sub(p[3].x).max(1e-4)
+    const lin = clamp(n.sub(p[3].x).div(span), 0, 1)
+    const t = mix(lin, lin.mul(lin).mul(float(3).sub(lin.mul(2))), p[3].z)
+    const imp = sample("imperfections", uv(), p[1].w)
+    return {
+      color: mix(p[0].xyz, p[1].xyz, t),
+      rough: clamp(mix(p[2].x, p[2].y, t).add(imp.rough.mul(p[3].w)), 0.02, 1),
+      metal: mix(p[2].z, p[2].w, t),
+      emissive: p[5].xyz,
     }
-    return std(damp(s, 0.6, 0.8), { normalScale: 1.2 })
   },
-  grass: () => {
-    const s = antiTile("grass")
-    const color = macro(saturate(s.color, 0.75).mul(vec3(0.34, 0.33, 0.24)), 0.04)
-    return std(damp({ ...s, color }, 0.5, 0.85), { normalScale: 1.1 })
+})
+type FlatOpts = {
+  color: THREE.ColorRepresentation
+  /** Second colour the noise blends toward (default: `color`). */
+  color2?: THREE.ColorRepresentation
+  roughness?: number
+  roughness2?: number
+  metalness?: number
+  metalness2?: number
+  /** Noise variation: tiles per metre, channel 0..3 (R 4, G 8, B 16, A 32 cells per tile), lo/hi window, smoothstep. */
+  noise?: { scale: number; channel: 0 | 1 | 2 | 3; lo?: number; hi?: number; smooth?: boolean }
+  /** Smudged gloss: roughness added from the imperfection scan, and its tile size (m). */
+  smudge?: { amount: number; size: number }
+  /** Glow in linear RGB, multiplied by `intensity`. */
+  emissive?: THREE.ColorRepresentation
+  intensity?: number
+}
+function flatParams(o: FlatOpts): number[] {
+  const c = rgb(o.color)
+  const c2 = o.color2 !== undefined ? rgb(o.color2) : c
+  const r = o.roughness ?? 0.6
+  const m = o.metalness ?? 0
+  const mask = [0, 0, 0, 0]
+  if (o.noise) mask[o.noise.channel] = 1
+  const e = o.emissive !== undefined ? rgb(o.emissive).map((v) => v * (o.intensity ?? 1)) : [0, 0, 0]
+  return [
+    ...c, o.noise?.scale ?? 1,
+    ...c2, o.smudge?.size ?? 1,
+    r, o.roughness2 ?? r, m, o.metalness2 ?? m,
+    o.noise?.lo ?? 0, o.noise?.hi ?? 1, o.noise?.smooth ? 1 : 0, o.smudge?.amount ?? 0,
+    ...mask,
+    ...e, 0,
+  ]
+}
+/** Linear-RGB triple from 0..1 values (for colours already given in linear space). */
+const lin = (r: number, g: number, b: number) => new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace)
+
+// ---- emissive: lamp lenses and lit windows -----------------------------------------------------------------------
+// p0 base rgb, roughness   p1 emissive rgb (× intensity), prism lens   p2 lit-room variation
+defineClass("emissive", {
+  graph: (p) => {
+    // Prismatic acrylic lens: faint fine grid of brighter cells over a flat glow.
+    const g = abs(fract(uv().div(0.012)).sub(0.5))
+    const prism = mix(float(0.9), float(1.06), smoothstep(0.1, 0.4, max(g.x, g.y)))
+    // Lit window: warm interior with lamp pools and blinds on some windows.
+    const q = uv()
+    const room = wnoise(q, 6).r
+    const lamp = wnoise(q, 2.2).g
+    const blinds = sin(q.y.mul((Math.PI * 2) / 0.045)).mul(0.5).add(0.5)
+    const hasBlinds = smoothstep(0.55, 0.6, wnoise(floor(q.div(1.8)).add(0.5).mul(1.8), 31).b)
+    const glow = mix(float(0.55), float(1.25), room.mul(0.6).add(lamp.mul(0.4))).mul(mix(float(1), mix(float(0.55), float(1), blinds), hasBlinds.mul(0.8)))
+    const e = p[1].xyz.mul(mix(float(1), prism, p[1].w)).mul(mix(float(1), glow, p[2].x))
+    return { color: p[0].xyz, rough: p[0].w, metal: float(0), emissive: e }
   },
-  dirt: () => {
-    const s = antiTile("dirt")
-    const color = macro(saturate(s.color, 0.7).mul(0.62))
-    return std(damp({ ...s, color }, 0.9, 0.7), { normalScale: 1.2 })
-  },
-  concrete_wall: () => {
-    const s = sample("concrete_wall")
-    // Rain-streaked staining running down every face (world space, so it ignores each wall's UV orientation).
-    const p = positionWorld
-    const streak = texture(noise(), vec2(p.x.add(p.z).div(2.3), p.y.div(26))).g
-    const blot = wnoise(vec2(p.x.add(p.z), p.y), 9).r
-    const stain = smoothstep(0.45, 0.95, streak).mul(0.38).add(smoothstep(0.6, 0.95, blot).mul(0.18))
-    const color = saturate(s.color, 0.3).mul(vec3(0.8, 0.83, 0.82)).mul(float(1).sub(stain))
-    return std({ ...s, color, rough: s.rough.mul(0.2).add(0.76) }, { normalScale: 1.4 })
-  },
-  concrete_dark: () => {
-    const s = antiTile("concrete_dark")
-    const color = saturate(s.color, 0.35).mul(0.62)
-    return std({ ...s, color }, { normalScale: 1.2 })
-  },
-  concrete_floor: () => {
-    const s = antiTile("concrete_floor")
-    const base = { ...s, color: saturate(s.color, 0.4).mul(0.9), rough: s.rough.mul(0.3).add(0.62) }
-    return std(wet(base, { porosity: 0.4, film: 0.3, puddles: 0.7 }), { normalScale: 1 })
-  },
-  concrete_floor_dry: () => {
-    const s = antiTile("concrete_floor")
-    return std({ ...s, color: saturate(s.color, 0.4).mul(0.9), rough: s.rough.mul(0.35).add(0.45) })
-  },
-  bark: () => {
-    const s = sample("bark")
-    return std({ ...s, color: saturate(s.color, 0.8).mul(vec3(0.5, 0.44, 0.4)), rough: s.rough.mul(0.3).add(0.68) }, { normalScale: 1.6 })
-  },
-  pine_needles: () => {
+})
+
+// ---- singletons (one material each) ---------------------------------------------------------------------------------
+defineClass("pine_needles", {
+  graph: () => {
     const t = texture(pineCard(), uv())
     // Keep coverage through the mip chain so distant cards don't evaporate.
     const lod = log2(max(fwidth(uv().x).mul(512), fwidth(uv().y).mul(1024)).max(1))
-    const m = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaTest: 0.45 })
-    m.colorNode = t.rgb
-    m.opacityNode = clamp(t.a.mul(lod.mul(0.35).add(1)), 0, 1)
-    m.roughnessNode = float(0.72)
-    m.metalnessNode = float(0)
-    return m
+    return { color: t.rgb, rough: float(0.72), metal: float(0), opacity: clamp(t.a.mul(lod.mul(0.35).add(1)), 0, 1) }
   },
-  pine_foliage: () => {
+  flags: (m) => {
+    m.side = THREE.DoubleSide
+    m.alphaTest = 0.45
+  },
+})
+defineClass("pine_foliage", {
+  graph: () => {
     const p = positionWorld
     const a = texture(noise(), vec2(p.x.add(p.y.mul(0.7)), p.z.sub(p.y.mul(0.4))).mul(3.1)).a
     const b = texture(noise(), vec2(p.z.add(p.y), p.x.sub(p.y)).mul(1.3)).b
     const clump = smoothstep(0.25, 0.75, a.mul(0.6).add(b.mul(0.4)))
-    const color = mix(vec3(0.006, 0.012, 0.007), vec3(0.03, 0.055, 0.028), clump)
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = color
-    m.roughnessNode = float(0.8)
-    m.metalnessNode = float(0)
-    m.aoNode = mix(float(0.45), float(1), clump)
-    return m
+    return { color: mix(vec3(0.006, 0.012, 0.007), vec3(0.03, 0.055, 0.028), clump), rough: float(0.8), metal: float(0), ao: mix(float(0.45), float(1), clump) }
   },
-  wood_pole: () => {
-    const s = sample("wood_pole")
-    // Creosote-treated pole weathered grey-brown.
-    const color = saturate(s.color, 0.6).mul(vec3(0.42, 0.33, 0.26))
-    return std({ ...s, color, rough: s.rough.mul(0.25).add(0.7) }, { normalScale: 1.6 })
-  },
-  metal_painted: () => paintedMetal(0x5c615c, 0.35),
-  door_steel: () => paintedMetal(0x3d5a4b, 0.3),
-  metal_galvanized: () => {
-    const s = sample("metal_galvanized")
-    const spangle = texture(noise(), uv().mul(9)).a
-    const color = saturate(s.color, 0.15).mul(1.05).mul(mix(float(0.88), float(1.06), spangle))
-    return std({ ...s, color, rough: s.rough.mul(0.6).add(spangle.mul(0.18)).add(0.12) }, { metalness: 1, normalScale: 0.6 })
-  },
-  metal_dark: () => {
-    const s = sample("metal_dark")
-    return std({ ...s, color: s.color.mul(0.7), rough: s.rough.mul(0.8).add(0.25) }, { useMetalMap: true })
-  },
-  chainlink: () => chainlink(),
-  barbed_wire: () => {
-    const rust = smoothstep(0.62, 0.9, texture(noise(), uv().mul(3)).r)
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = mix(vec3(0.42, 0.43, 0.42), vec3(0.16, 0.08, 0.04), rust)
-    m.roughnessNode = mix(float(0.42), float(0.85), rust)
-    m.metalnessNode = mix(float(1), float(0.2), rust)
-    return m
-  },
-  glass_lit: () => {
-    const p = uv()
-    const room = wnoise(p, 6).r
-    const lamp = wnoise(p, 2.2).g
-    const blinds = sin(p.y.mul(Math.PI * 2 / 0.045)).mul(0.5).add(0.5)
-    const hasBlinds = smoothstep(0.55, 0.6, wnoise(floor(p.div(1.8)).add(0.5).mul(1.8), 31).b)
-    const glow = mix(float(0.55), float(1.25), room.mul(0.6).add(lamp.mul(0.4))).mul(mix(float(1), mix(float(0.55), float(1), blinds), hasBlinds.mul(0.8)))
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = vec3(0.02, 0.018, 0.014)
-    m.roughnessNode = float(0.06)
-    m.metalnessNode = float(0)
-    m.emissiveNode = vec3(1.0, 0.66, 0.34).mul(glow).mul(2.2)
-    return m
-  },
-  glass_dark: () => {
-    const imp = sample("imperfections", uv(), 0.9)
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = vec3(0.006, 0.008, 0.008)
-    m.roughnessNode = float(0.03).add(imp.rough.mul(0.22))
-    m.metalnessNode = float(0)
-    return m
-  },
-  tile_green: () => ceramic(new THREE.Color(0.42, 0.53, 0.45), new THREE.Color(0.36, 0.37, 0.33)),
-  tile_green_dark: () => ceramic(new THREE.Color(0.055, 0.12, 0.085), new THREE.Color(0.2, 0.21, 0.19)),
-  linoleum: () => linoleum(),
-  ceiling_tile: () => {
-    const s = sample("ceiling_tile")
-    const stain = smoothstep(0.78, 0.97, wnoise(uv(), 5).r)
-    const color = s.color.mul(vec3(0.7, 0.69, 0.63)).mul(float(1).sub(stain.mul(0.35)))
-    return std({ ...s, color, rough: float(0.92) }, { normalScale: 0.8 })
-  },
-  terrazzo: () => {
-    const s = sample("terrazzo")
-    const imp = sample("imperfections", uv(), 2.1)
-    return std({ ...s, color: s.color.mul(0.78), rough: float(0.08).add(imp.rough.mul(0.22)).add(s.rough.mul(0.1)) }, { normalScale: 0.4 })
-  },
-  painted_wall: () => {
-    const s = sample("plaster")
-    const color = saturate(s.color, 0.3).mul(c3(0xb8b8a8)).mul(0.82)
-    return std({ ...s, color, rough: s.rough.mul(0.25).add(0.62) }, { normalScale: 0.6 })
-  },
-  rubber: () => {
-    const n = texture(noise(), uv().mul(4)).a
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = vec3(0.012, 0.012, 0.012).mul(mix(float(0.8), float(1.4), n))
-    m.roughnessNode = mix(float(0.72), float(0.9), n)
-    m.metalnessNode = float(0)
-    return m
-  },
-  car_paint: () => {
-    const m = new THREE.MeshPhysicalNodeMaterial({ color: 0x3a4a3e, roughness: 0.38, metalness: 0.45, clearcoat: 1, clearcoatRoughness: 0.06 })
-    const grime = smoothstep(0.55, 0.95, wnoise(uv(), 1.4).r)
-    m.colorNode = c3(0x2f3d33).mul(mix(float(1), float(0.75), grime))
-    m.clearcoatRoughnessNode = mix(float(0.04), float(0.25), grime)
-    return m
-  },
-  chrome: () => {
-    const imp = sample("imperfections", uv(), 0.5)
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = vec3(0.78, 0.78, 0.8)
-    m.roughnessNode = float(0.05).add(imp.rough.mul(0.25))
-    m.metalnessNode = float(1)
-    return m
-  },
-  plastic_orange: () => {
-    const n = texture(noise(), uv().mul(2)).g
-    const m = new THREE.MeshStandardNodeMaterial()
-    m.colorNode = c3(0xb5561a).mul(mix(float(0.85), float(1.05), n))
-    m.roughnessNode = mix(float(0.38), float(0.55), n)
-    m.metalnessNode = float(0)
-    return m
-  },
-  emissive_sodium: () => {
-    const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.3, metalness: 0 })
-    m.colorNode = vec3(0.05, 0.03, 0.01)
-    m.emissiveNode = vec3(1.0, 0.5, 0.14).mul(9)
-    return m
-  },
-  emissive_fluorescent: () => {
-    // Prismatic acrylic lens: faint fine grid of brighter cells over a flat glow.
-    const g = abs(fract(uv().div(0.012)).sub(0.5))
-    const prism = mix(float(0.9), float(1.06), smoothstep(0.1, 0.4, max(g.x, g.y)))
-    const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0 })
-    m.colorNode = vec3(0.6, 0.62, 0.6)
-    m.emissiveNode = vec3(0.92, 0.97, 1.0).mul(prism).mul(7)
-    return m
-  },
-}
-
-function roadPaint(paint: THREE.Color): Std {
-  const s = sample("asphalt")
-  const p = positionWorld.xz
-  // Thermoplastic worn through by tyres: patches of asphalt show where the noise drops.
-  const wear = smoothstep(0.06, 0.26, wnoise(p, 7).r.mul(0.55).add(wnoise(p, 1.3).a.mul(0.45)))
-  const col = mix(saturate(s.color, 0.6).mul(0.6), vec3(paint.r, paint.g, paint.b).mul(mix(float(0.8), float(1), s.ao)), wear)
-  const base: Surf = { ...s, color: col, rough: mix(s.rough.mul(0.25).add(0.7), float(0.55), wear), normal: mix(s.normal, FLAT, wear.mul(0.6)) }
-  return std(wet(base, { porosity: 0.3, film: 0.25, puddles: 1 }))
-}
-
-function paintedMetal(hex: number, chipping: number): Std {
-  const s = sample("metal_painted")
-  // The scan is yellow paint; keep only its luminance variation, recolour, and let scratches show steel.
-  const scratch = smoothstep(0.55, 0.85, s.metal)
-  const chip = smoothstep(1 - chipping * 0.3, 1, wnoise(uv(), 0.7).a)
-  const bare = scratch.max(chip)
-  const lum = luma(s.color).div(0.45)
-  const color = mix(c3(hex).mul(mix(float(0.85), float(1.08), lum)), vec3(0.32, 0.31, 0.3), bare)
-  const rough = mix(float(0.42).add(s.rough.mul(0.45)), float(0.5), bare)
-  return std({ ...s, color, rough, metal: bare }, { useMetalMap: true, normalScale: 0.8 })
-}
-
+})
 /**
  * Galvanised chain-link: analytic diamond mesh (2" / 50 mm between parallel wires, 3.6 mm wire) in UV metres.
  * Alpha-tested with screen-space dithering once the wire gets thinner than a pixel, so the far fence keeps its
  * average coverage instead of vanishing or turning into a solid sheet. Round-wire normals; double-sided.
  */
-function chainlink(): Std {
-  const pitch = 0.05
-  const hw = 0.0018
-  const p = uv()
-  const a = p.x.add(p.y).div(pitch * Math.SQRT2)
-  const b = p.x.sub(p.y).div(pitch * Math.SQRT2)
-  const da = fract(a).sub(0.5).mul(pitch) // signed perpendicular distance to wire centre (m)
-  const db = fract(b).sub(0.5).mul(pitch)
-  const fw = max(fwidth(da), float(1e-5))
-  const hwe = max(float(hw), fw.mul(0.6))
-  const cover = (d: N) => clamp(hwe.sub(abs(d)).div(fw).add(0.5), 0, 1).mul(float(hw).div(hwe))
-  const oa = cover(da)
-  const ob = cover(db)
-  const opacity = max(oa, ob)
-  // Round wire: lean the normal across the nearer wire.
-  const ta = clamp(da.div(hw), -1, 1)
-  const tb = clamp(db.div(hw), -1, 1)
-  const useA = abs(da).lessThan(abs(db))
-  const t = useA.select(ta, tb)
-  const dir = useA.select(vec2(0.7071, 0.7071), vec2(0.7071, -0.7071))
-  const nxy = dir.mul(t).mul(0.85)
-  const normal = vec3(nxy, sqrt(float(1).sub(nxy.dot(nxy)))).mul(0.5).add(0.5)
-  const n = wnoise(p, 2.5).r
-  const m = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaTest: 0.5 })
-  m.colorNode = vec3(0.5, 0.52, 0.5).mul(mix(float(0.75), float(1.1), n))
-  m.metalnessNode = float(0.85)
-  m.roughnessNode = mix(float(0.38), float(0.6), n)
-  m.normalNode = normalMap(normal)
-  m.opacityNode = opacity
-  m.alphaTestNode = interleavedGradientNoise(screenCoordinate).mul(0.96).add(0.02)
-  return m
+defineClass("chainlink", {
+  graph: () => {
+    const pitch = 0.05
+    const hw = 0.0018
+    const p = uv()
+    const a = p.x.add(p.y).div(pitch * Math.SQRT2)
+    const b = p.x.sub(p.y).div(pitch * Math.SQRT2)
+    const da = fract(a).sub(0.5).mul(pitch) // signed perpendicular distance to wire centre (m)
+    const db = fract(b).sub(0.5).mul(pitch)
+    const fw = max(fwidth(da), float(1e-5))
+    const hwe = max(float(hw), fw.mul(0.6))
+    const cover = (d: N) => clamp(hwe.sub(abs(d)).div(fw).add(0.5), 0, 1).mul(float(hw).div(hwe))
+    const opacity = max(cover(da), cover(db))
+    // Round wire: lean the normal across the nearer wire.
+    const ta = clamp(da.div(hw), -1, 1)
+    const tb = clamp(db.div(hw), -1, 1)
+    const useA = abs(da).lessThan(abs(db))
+    const t = useA.select(ta, tb)
+    const dir = useA.select(vec2(0.7071, 0.7071), vec2(0.7071, -0.7071))
+    const nxy = dir.mul(t).mul(0.85)
+    const normal = vec3(nxy, sqrt(float(1).sub(nxy.dot(nxy)))).mul(0.5).add(0.5)
+    const n = wnoise(p, 2.5).r
+    return {
+      color: vec3(0.5, 0.52, 0.5).mul(mix(float(0.75), float(1.1), n)),
+      rough: mix(float(0.38), float(0.6), n),
+      metal: float(0.85),
+      normal,
+      opacity,
+      alphaTest: interleavedGradientNoise(screenCoordinate).mul(0.96).add(0.02),
+    }
+  },
+  flags: (m) => {
+    m.side = THREE.DoubleSide
+    m.alphaTest = 0.5
+  },
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Library
+
+const BUILD: Record<MaterialName, () => THREE.Material> = {
+  asphalt: () => ground({ set: "asphalt", antiTile: true, sat: 0.6, macro: true, tint: 0.72, normalScale: 1.2, rough: [0.25, 0.7], porosity: 0.55, film: 0.26, puddles: 1 }),
+  asphalt_lot: () => ground({ set: "asphalt_lot", antiTile: true, sat: 0.35, macro: true, tint: 1.05, normalScale: 1.1, rough: [0.25, 0.68], porosity: 0.55, film: 0.28, puddles: 1.15 }),
+  road_line_yellow: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.25, puddles: 1, paint: rgb(lin(0.55, 0.36, 0.06)) }),
+  road_line_white: () => ground({ set: "asphalt", antiTile: false, sat: 0.6, macro: false, tint: 0.6, normalScale: 1, rough: [0.25, 0.7], porosity: 0.3, film: 0.25, puddles: 1, paint: rgb(lin(0.62, 0.62, 0.58)) }),
+  gravel: () => ground({ set: "gravel", antiTile: true, sat: 0.6, macro: true, tint: 0.55, normalScale: 1.3, rough: [1, 0], porosity: 0.45, film: 0.38, puddles: 0.55 }),
+  concrete_floor: () => ground({ set: "concrete_floor", antiTile: true, sat: 0.4, macro: false, tint: 0.9, normalScale: 1, rough: [0.3, 0.62], porosity: 0.4, film: 0.3, puddles: 0.7 }),
+  forest_floor: () =>
+    natural({ set: "forest_floor", moss: "forest_moss", tint: [0.42, 0.4, 0.38], sat: 0.8, mossTint: [0.42, 0.46, 0.36], mossSat: 0.75, green: 0.03, damp: 0.6, gloss: 0.8, normalScale: 1.2 }),
+  grass: () => natural({ set: "grass", tint: [0.34, 0.33, 0.24], sat: 0.75, green: 0.04, damp: 0.5, gloss: 0.85, normalScale: 1.1 }),
+  dirt: () => natural({ set: "dirt", tint: [0.62, 0.62, 0.62], sat: 0.7, green: 0, damp: 0.9, gloss: 0.7, normalScale: 1.2 }),
+  concrete_wall: () => scan({ set: "concrete_wall", sat: 0.3, tint: [0.8, 0.83, 0.82], rough: [0.2, 0.76], normalScale: 1.4, streaks: true }),
+  concrete_dark: () => scan({ set: "concrete_dark", antiTile: true, sat: 0.35, tint: 0.62, rough: [1, 0], normalScale: 1.2 }),
+  concrete_floor_dry: () => scan({ set: "concrete_floor", antiTile: true, sat: 0.4, tint: 0.9, rough: [0.35, 0.45] }),
+  bark: () => scan({ set: "bark", sat: 0.8, tint: [0.5, 0.44, 0.4], rough: [0.3, 0.68], normalScale: 1.6 }),
+  // Creosote-treated pole weathered grey-brown.
+  wood_pole: () => scan({ set: "wood_pole", sat: 0.6, tint: [0.42, 0.33, 0.26], rough: [0.25, 0.7], normalScale: 1.6 }),
+  metal_galvanized: () => scan({ set: "metal_galvanized", sat: 0.15, tint: 1.05, rough: [0.6, 0.12], metal: 1, normalScale: 0.6, spangle: true }),
+  metal_dark: () => scan({ set: "metal_dark", tint: 0.7, rough: [0.8, 0.25], metalMap: true }),
+  ceiling_tile: () => scan({ set: "ceiling_tile", tint: [0.7, 0.69, 0.63], rough: [0, 0.92], normalScale: 0.8, stains: true }),
+  terrazzo: () => scan({ set: "terrazzo", tint: 0.78, rough: [0.1, 0.08], imp: [0.22, 2.1], normalScale: 0.4 }),
+  painted_wall: () => {
+    const c = new THREE.Color(0xb8b8a8).multiplyScalar(0.82)
+    return scan({ set: "plaster", sat: 0.3, tint: [c.r, c.g, c.b], rough: [0.25, 0.62], normalScale: 0.6 })
+  },
+  metal_painted: () => member("paint", [...rgb(0x5c615c), 0.35]),
+  door_steel: () => member("paint", [...rgb(0x3d5a4b), 0.3]),
+  tile_green: () => member("tile", [...rgb(lin(0.42, 0.53, 0.45)), 0, ...rgb(lin(0.36, 0.37, 0.33)), 0]),
+  tile_green_dark: () => member("tile", [...rgb(lin(0.055, 0.12, 0.085)), 0, ...rgb(lin(0.2, 0.21, 0.19)), 0]),
+  linoleum: () => member("linoleum", []),
+  pine_needles: () => member("pine_needles", []),
+  pine_foliage: () => member("pine_foliage", []),
+  chainlink: () => member("chainlink", []),
+  barbed_wire: () =>
+    member("flat", flatParams({ color: lin(0.42, 0.43, 0.42), color2: lin(0.16, 0.08, 0.04), roughness: 0.42, roughness2: 0.85, metalness: 1, metalness2: 0.2, noise: { scale: 3, channel: 0, lo: 0.62, hi: 0.9, smooth: true } })),
+  rubber: () => member("flat", flatParams({ color: lin(0.0096, 0.0096, 0.0096), color2: lin(0.0168, 0.0168, 0.0168), roughness: 0.72, roughness2: 0.9, noise: { scale: 4, channel: 3 } })),
+  plastic_orange: () => {
+    const o = new THREE.Color(0xb5561a)
+    return member("flat", flatParams({ color: o.clone().multiplyScalar(0.85), color2: o.clone().multiplyScalar(1.05), roughness: 0.38, roughness2: 0.55, noise: { scale: 2, channel: 1 } }))
+  },
+  chrome: () => member("flat", flatParams({ color: lin(0.78, 0.78, 0.8), roughness: 0.05, metalness: 1, smudge: { amount: 0.25, size: 0.5 } })),
+  glass_dark: () => member("flat", flatParams({ color: lin(0.006, 0.008, 0.008), roughness: 0.03, smudge: { amount: 0.22, size: 0.9 } })),
+  glass_lit: () => member("emissive", [0.02, 0.018, 0.014, 0.06, 1 * 2.2, 0.66 * 2.2, 0.34 * 2.2, 0, 1, 0, 0, 0]),
+  emissive_sodium: () => member("emissive", [0.05, 0.03, 0.01, 0.3, 1 * 9, 0.5 * 9, 0.14 * 9, 0, 0, 0, 0, 0]),
+  emissive_fluorescent: () => member("emissive", [0.6, 0.62, 0.6, 0.4, 0.92 * 7, 0.97 * 7, 1 * 7, 1, 0, 0, 0, 0]),
+  car_paint: () => {
+    const m = new THREE.MeshPhysicalNodeMaterial({ color: 0x3a4a3e, roughness: 0.38, metalness: 0.45, clearcoat: 1, clearcoatRoughness: 0.06 })
+    const grime = smoothstep(0.55, 0.95, wnoise(uv(), 1.4).r)
+    const c = new THREE.Color(0x2f3d33)
+    m.colorNode = vec3(c.r, c.g, c.b).mul(mix(float(1), float(0.75), grime))
+    m.clearcoatRoughnessNode = mix(float(0.04), float(0.25), grime)
+    return m
+  },
 }
 
 const cache = new Map<MaterialName, THREE.Material>()
 
+/** The library material `name` (shared; clone it before changing flags). See the migration note at the top. */
 export function material(name: MaterialName): THREE.Material {
   const hit = cache.get(name)
   if (hit) return hit
@@ -772,5 +951,42 @@ export function material(name: MaterialName): THREE.Material {
   const m = build()
   m.name = name
   cache.set(name, m)
+  return m
+}
+
+const forCache = new Map<string, SurfaceMaterial>()
+
+/**
+ * A shared-shader material for one-off surfaces that aren't in the library. All `flat` materials compile to one
+ * shader (and one more per distinct flag set: `transparent`, `side`, `vertexColors`, ...), however many colours.
+ *   materialFor("flat", { color: 0x4a5a48, roughness: 0.6 })                       plain paint/plastic
+ *   materialFor("flat", { color: 0x000000, emissive: [1, 0.6, 0.28], intensity: 4 })  a glow
+ *   materialFor("flat", { color, roughness: 0.08, transparent: 0.32 })             thin glass (opacity 0.32)
+ *   materialFor("emissive", { color: 0x050302, emissive: [1, 0.5, 0.14], intensity: 9, prism: true })
+ * Cached by parameters; returns the same object for the same arguments. Clone before changing flags.
+ */
+export function materialFor(cls: "flat", p: FlatOpts & { transparent?: number; side?: THREE.Side; name?: string }): SurfaceMaterial
+export function materialFor(cls: "emissive", p: { color: THREE.ColorRepresentation; roughness?: number; emissive: THREE.ColorRepresentation; intensity?: number; prism?: boolean; litRoom?: boolean; name?: string }): SurfaceMaterial
+export function materialFor(cls: "flat" | "emissive", p: Record<string, unknown>): SurfaceMaterial {
+  const key = `${cls}:${JSON.stringify(p, (_, v) => (v instanceof THREE.Color ? v.getHex() : v))}`
+  const hit = forCache.get(key)
+  if (hit) return hit
+  let m: SurfaceMaterial
+  if (cls === "flat") {
+    const o = p as FlatOpts & { transparent?: number; side?: THREE.Side }
+    m = member("flat", flatParams(o))
+    if (o.transparent !== undefined) {
+      m.transparent = true
+      m.opacity = o.transparent
+      m.depthWrite = false
+    }
+    if (o.side !== undefined) m.side = o.side
+  } else {
+    const o = p as { color: THREE.ColorRepresentation; roughness?: number; emissive: THREE.ColorRepresentation; intensity?: number; prism?: boolean; litRoom?: boolean }
+    const e = rgb(o.emissive).map((v) => v * (o.intensity ?? 1))
+    m = member("emissive", [...rgb(o.color), o.roughness ?? 0.4, ...e, o.prism ? 1 : 0, o.litRoom ? 1 : 0, 0, 0, 0])
+  }
+  m.name = (p.name as string | undefined) ?? `${cls}_${forCache.size}`
+  forCache.set(key, m)
   return m
 }

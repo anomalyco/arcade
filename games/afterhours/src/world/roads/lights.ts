@@ -26,10 +26,10 @@ function cobraHead(parts: Parts, m: THREE.Matrix4) {
   // Slip fitter over the arm end.
   parts.add("metal_painted", cylM(0.04, 0.045, 0.22, 8), at(new THREE.Matrix4().makeTranslation(0.08, 0, 0).multiply(rotZ)))
   // Housing: a long shallow dome, lens below it.
-  const dome = new THREE.SphereGeometry(1, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+  const dome = new THREE.SphereGeometry(1, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2)
   parts.add("metal_painted", dome, at(new THREE.Matrix4().makeTranslation(0.52, -0.01, 0).scale(new THREE.Vector3(0.4, 0.13, 0.18))))
   parts.add("metal_dark", cylM(0.18, 0.18, 0.03, 16), at(new THREE.Matrix4().makeTranslation(0.52, -0.02, 0).scale(new THREE.Vector3(2.2, 1, 1))))
-  const lens = new THREE.SphereGeometry(1, 16, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)
+  const lens = new THREE.SphereGeometry(1, 24, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)
   parts.add("emissive_sodium", lens, at(new THREE.Matrix4().makeTranslation(0.55, -0.03, 0).scale(new THREE.Vector3(0.3, 0.07, 0.13))))
   return new THREE.Vector3(0.55, -0.08, 0).applyMatrix4(m)
 }
@@ -54,7 +54,7 @@ function davit(ctx: WorldContext, parts: Parts, x: number, z: number, dx: number
   const g = heightAt(x, z)
   const base = frameAt(x, g, z, dx, dz)
   const h = 8.2
-  parts.add("metal_galvanized", cylM(0.065, 0.11, h, 10), base.clone().multiply(new THREE.Matrix4().makeTranslation(0, h / 2, 0)))
+  parts.add("metal_galvanized", cylM(0.065, 0.11, h, 16), base.clone().multiply(new THREE.Matrix4().makeTranslation(0, h / 2, 0)))
   parts.add("concrete_dark", cylM(0.26, 0.3, 0.5, 10), base.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.05, 0)))
   parts.add("metal_galvanized", cylM(0.16, 0.16, 0.05, 10), base.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.32, 0)))
   parts.add("metal_dark", boxM(0.07, 0.16, 0.02), base.clone().multiply(new THREE.Matrix4().makeTranslation(-0.1, 0.9, 0)))
@@ -101,8 +101,8 @@ export function buildLights(ctx: WorldContext, parts: Parts, access: Line, count
     const g = heightAt(x, z)
     const p = county.at(sc)
     const f = frameAt(x, g, z, p.tz, -p.tx)
-    parts.add("wood_pole", cylM(0.1, 0.14, 10, 9), f.clone().multiply(new THREE.Matrix4().makeTranslation(0, 4, 0)))
-    parts.add("wood_pole", cylM(0.105, 0.105, 0.05, 9), f.clone().multiply(new THREE.Matrix4().makeTranslation(0, 9.02, 0)))
+    parts.add("wood_pole", cylM(0.1, 0.14, 10, 14), f.clone().multiply(new THREE.Matrix4().makeTranslation(0, 4, 0)))
+    parts.add("wood_pole", cylM(0.105, 0.105, 0.05, 14), f.clone().multiply(new THREE.Matrix4().makeTranslation(0, 9.02, 0)))
     mastArm(ctx, parts, f, 7.6, 3.4, false)
     ctx.colliders.push({ min: [x - 0.2, g, z - 0.2], max: [x + 0.2, g + 9, z + 0.2] })
   }

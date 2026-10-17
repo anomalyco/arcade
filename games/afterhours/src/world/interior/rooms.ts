@@ -10,21 +10,6 @@ export const LAB = { x0: -25.5, x1: -17, z0: -9.6, z1: CORRIDOR.zn - WALL_T }
 export const CLOSET = { x0: -32.6, x1: -29.4, z0: CORRIDOR.zs + WALL_T, z1: 5.0 }
 
 const WARM: [number, number, number] = [1.0, 0.68, 0.38]
-const up = new THREE.Vector3(0, 1, 0)
-const dirV = new THREE.Vector3()
-
-/** Cylinder rod between two points. */
-function rod(b: Builder, mat: Mat, p0: readonly number[], p1: readonly number[], r: number, seg = 8) {
-  dirV.set(p1[0]! - p0[0]!, p1[1]! - p0[1]!, p1[2]! - p0[2]!)
-  const len = dirV.length()
-  const q = new THREE.Quaternion().setFromUnitVectors(up, dirV.normalize())
-  const m = new THREE.Matrix4().compose(
-    new THREE.Vector3((p0[0]! + p1[0]!) / 2, (p0[1]! + p1[1]!) / 2, (p0[2]! + p1[2]!) / 2),
-    q,
-    new THREE.Vector3(1, 1, 1),
-  )
-  b.cyl(mat, m, r, r, len, seg)
-}
 
 export function buildLab(b: Builder) {
   const { x0, x1, z0, z1 } = LAB
@@ -49,8 +34,8 @@ export function buildLab(b: Builder) {
   const sx = -20.6
   b.box(M.steel, sx - 0.3, y + 0.925, z0 + 0.12, sx + 0.3, y + 0.935, z0 + 0.56, { cast: false })
   b.box("metal_dark", sx - 0.24, y + 0.93, z0 + 0.17, sx + 0.24, y + 0.936, z0 + 0.51, { cast: false })
-  rod(b, M.steel, [sx, y + 0.93, z0 + 0.08], [sx, y + 1.25, z0 + 0.08], 0.012)
-  rod(b, M.steel, [sx, y + 1.25, z0 + 0.08], [sx, y + 1.22, z0 + 0.3], 0.012)
+  b.rod(M.steel, [sx, y + 0.93, z0 + 0.08], [sx, y + 1.25, z0 + 0.08], 0.012)
+  b.rod(M.steel, [sx, y + 1.25, z0 + 0.08], [sx, y + 1.22, z0 + 0.3], 0.012)
 
   // Canopy fume hood over the north bench with its duct into the ceiling.
   const hx = -24.0
@@ -73,8 +58,8 @@ export function buildLab(b: Builder) {
   const lx = -21.3
   const lz = z0 + 0.3
   b.cyl("metal_dark", T(lx, top + 0.012, lz), 0.075, 0.085, 0.024, 16)
-  rod(b, M.lampShade, [lx, top + 0.02, lz], [lx + 0.06, top + 0.36, lz + 0.05], 0.008)
-  rod(b, M.lampShade, [lx + 0.06, top + 0.36, lz + 0.05], [lx + 0.18, top + 0.42, lz + 0.26], 0.008)
+  b.rod(M.lampShade, [lx, top + 0.02, lz], [lx + 0.06, top + 0.36, lz + 0.05], 0.008)
+  b.rod(M.lampShade, [lx + 0.06, top + 0.36, lz + 0.05], [lx + 0.18, top + 0.42, lz + 0.26], 0.008)
   const shade = new THREE.Matrix4().compose(
     new THREE.Vector3(lx + 0.2, top + 0.36, lz + 0.3),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(0.55, 0, 0)),
@@ -143,14 +128,16 @@ export function buildLab(b: Builder) {
   b.collide(cx0, y, -3.7, cx1, y + 2.0, -2.0)
 }
 
-function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0: number, c1: number) {
+/** Run of steel base cabinets with an epoxy top along a wall; c0 is the wall side, c1 the front (either sign). */
+export function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0: number, c1: number) {
   const y = FLOOR_Y
+  const f = Math.sign(c1 - c0) || 1
   const box = (p0: number, p1: number, q0: number, q1: number, y0: number, y1: number, mat: Mat, cast = true) =>
     axis === "x" ? b.box(mat, p0, y0, q0, p1, y1, q1, { cast }) : b.box(mat, q0, y0, p0, q1, y1, p1, { cast })
   // Cabinet body (front face at c1), toe kick, top.
-  box(a0, a1, c0, c1 - 0.02, y + 0.1, y + 0.9, M.cabinet)
-  box(a0, a1, c0, c1 - 0.08, y, y + 0.1, "rubber", false)
-  box(a0, a1 + (axis === "x" ? 0.02 : 0), c0, c1 + 0.02, y + 0.9, y + 0.935, M.epoxy)
+  box(a0, a1, c0, c1 - f * 0.02, y + 0.1, y + 0.9, M.cabinet)
+  box(a0, a1, c0, c1 - f * 0.08, y, y + 0.1, M.rubber, false)
+  box(a0, a1, c0, c1 + f * 0.02, y + 0.9, y + 0.935, M.epoxy)
   // Drawer and door fronts with handles.
   const unit = 0.6
   const n = Math.floor((a1 - a0) / unit)
@@ -160,22 +147,22 @@ function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0: numbe
     const drawers = i % 3 === 1
     const rows = drawers ? [[0.12, 0.3], [0.32, 0.5], [0.52, 0.7], [0.72, 0.88]] : [[0.12, 0.88]]
     for (const [r0, r1] of rows) {
-      box(p0, p1, c1 - 0.02, c1 - 0.005, y + r0!, y + r1!, M.cabinet)
+      box(p0, p1, c1 - f * 0.02, c1 - f * 0.005, y + r0!, y + r1!, M.cabinet)
       const hy = drawers ? y + (r0! + r1!) / 2 + 0.03 : y + 0.78
-      box((p0 + p1) / 2 - 0.07, (p0 + p1) / 2 + 0.07, c1 - 0.005, c1 + 0.015, hy - 0.008, hy + 0.008, M.steel)
+      box((p0 + p1) / 2 - 0.07, (p0 + p1) / 2 + 0.07, c1 - f * 0.005, c1 + f * 0.015, hy - 0.008, hy + 0.008, M.steel)
     }
   }
-  if (axis === "x") b.collide(a0, y, c0, a1, y + 0.935, c1 + 0.02)
-  else b.collide(c0, y, a0, c1 + 0.02, y + 0.935, a1)
+  if (axis === "x") b.collide(a0, y, c0, a1, y + 0.935, c1 + f * 0.02)
+  else b.collide(c0, y, a0, c1 + f * 0.02, y + 0.935, a1)
 }
 
-function stool(b: Builder, x: number, z: number) {
+export function stool(b: Builder, x: number, z: number) {
   const y = FLOOR_Y
   b.cyl(M.stoolSeat, T(x, y + 0.66, z), 0.17, 0.17, 0.05, 18)
   b.cyl("metal_dark", T(x, y + 0.625, z), 0.12, 0.12, 0.02, 12)
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + 0.4
-    rod(b, "metal_dark", [x + Math.cos(a) * 0.1, y + 0.62, z + Math.sin(a) * 0.1], [x + Math.cos(a) * 0.2, y, z + Math.sin(a) * 0.2], 0.011, 6)
+    b.rod("metal_dark", [x + Math.cos(a) * 0.1, y + 0.62, z + Math.sin(a) * 0.1], [x + Math.cos(a) * 0.2, y, z + Math.sin(a) * 0.2], 0.011, 6)
   }
   const ring = new THREE.TorusGeometry(0.16, 0.008, 6, 20)
   ring.rotateX(Math.PI / 2)
@@ -201,7 +188,7 @@ export function buildCloset(b: Builder) {
   const bulb = new THREE.SphereGeometry(0.04, 12, 8)
   bulb.translate(bx, by - 0.13, bz)
   b.add(M.bulbWarm, bulb, { cast: false })
-  rod(b, M.steel, [bx + 0.03, by - 0.06, bz], [bx + 0.03, by - 0.5, bz], 0.002, 4)
+  b.rod(M.steel, [bx + 0.03, by - 0.06, bz], [bx + 0.03, by - 0.5, bz], 0.002, 4)
   b.lamp({ kind: "incandescent", position: [bx, by - 0.2, bz], color: WARM, intensity: 3, range: 4.5, shadow: true, size: 0.06 })
 
   // Floor-mounted mop sink in the back corner with a wall faucet.
@@ -216,17 +203,17 @@ export function buildCloset(b: Builder) {
   b.box(M.concreteSink, mx0, y, mz1 - 0.04, mx1, y + h, mz1)
   b.box(M.concreteSink, mx0, y, mz0, mx0 + 0.04, y + h, mz1)
   b.cyl("metal_dark", T((mx0 + mx1) / 2, y + 0.045, (mz0 + mz1) / 2), 0.04, 0.04, 0.01, 10, { cast: false })
-  rod(b, M.steel, [(mx0 + mx1) / 2 - 0.15, y + 0.95, z1], [(mx0 + mx1) / 2 + 0.15, y + 0.95, z1], 0.015)
-  rod(b, M.steel, [(mx0 + mx1) / 2, y + 0.95, z1], [(mx0 + mx1) / 2, y + 0.95, z1 - 0.2], 0.014)
-  rod(b, M.steel, [(mx0 + mx1) / 2, y + 0.95, z1 - 0.2], [(mx0 + mx1) / 2, y + 0.85, z1 - 0.22], 0.012)
+  b.rod(M.steel, [(mx0 + mx1) / 2 - 0.15, y + 0.95, z1], [(mx0 + mx1) / 2 + 0.15, y + 0.95, z1], 0.015)
+  b.rod(M.steel, [(mx0 + mx1) / 2, y + 0.95, z1], [(mx0 + mx1) / 2, y + 0.95, z1 - 0.2], 0.014)
+  b.rod(M.steel, [(mx0 + mx1) / 2, y + 0.95, z1 - 0.2], [(mx0 + mx1) / 2, y + 0.85, z1 - 0.22], 0.012)
   for (const s of [-1, 1]) b.cyl(M.red, T((mx0 + mx1) / 2 + s * 0.15, y + 1.0, z1 - 0.03), 0.03, 0.03, 0.02, 8)
   b.collide(mx0, y, mz0, mx1, y + h, mz1)
 
   // Yellow mop bucket with wringer, a mop leaning against the wall, a broom.
   bucket(b, x0 + 0.35, 3.6)
-  rod(b, M.wood, [x0 + 0.1, y + 0.05, 2.75], [x0 + 0.03, y + 1.45, 2.6], 0.012)
+  b.rod(M.wood, [x0 + 0.1, y + 0.05, 2.75], [x0 + 0.03, y + 1.45, 2.6], 0.012)
   b.box(M.paper, x0 + 0.03, y, 2.67, x0 + 0.25, y + 0.12, 2.86)
-  rod(b, M.wood, [x0 + 0.1, y + 0.08, 4.1], [x0 + 0.02, y + 1.45, 4.25], 0.012)
+  b.rod(M.wood, [x0 + 0.1, y + 0.08, 4.1], [x0 + 0.02, y + 1.45, 4.25], 0.012)
   b.box(M.stoolSeat, x0 + 0.06, y, 3.98, x0 + 0.16, y + 0.1, 4.25)
 }
 
@@ -316,17 +303,17 @@ function bucket(b: Builder, x: number, z: number) {
   const plate = new RoundedBoxGeometry(0.24, 0.16, 0.025, 2, 0.008)
   plate.applyMatrix4(W.clone().multiply(T(0, 0.11, -0.04)))
   b.add("metal_dark", plate)
-  rod(b, "metal_galvanized", [x + 0.155, y + 0.52, z + 0.13], [x + 0.17, y + 0.95, z + 0.2], 0.011)
-  rod(b, "metal_galvanized", [x + 0.17, y + 0.95, z + 0.2], [x - 0.02, y + 0.98, z + 0.21], 0.011)
-  rod(b, "rubber", [x + 0.02, y + 0.98, z + 0.21], [x - 0.1, y + 0.985, z + 0.215], 0.017, 10)
+  b.rod("metal_galvanized", [x + 0.155, y + 0.52, z + 0.13], [x + 0.17, y + 0.95, z + 0.2], 0.011)
+  b.rod("metal_galvanized", [x + 0.17, y + 0.95, z + 0.2], [x - 0.02, y + 0.98, z + 0.21], 0.011)
+  b.rod("rubber", [x + 0.02, y + 0.98, z + 0.21], [x - 0.1, y + 0.985, z + 0.215], 0.017, 10)
   // Mop standing in the water: wooden handle, clamp and a hank of grey strands.
   const mx = x - 0.04
   const mz = z - 0.09
-  rod(b, M.wood, [mx, y + 0.24, mz], [mx - 0.1, y + 1.45, mz - 0.2], 0.013)
+  b.rod(M.wood, [mx, y + 0.24, mz], [mx - 0.1, y + 1.45, mz - 0.2], 0.013)
   b.cyl("metal_dark", T(mx, y + 0.27, mz), 0.03, 0.03, 0.05, 10)
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2
-    rod(b, mopStrand, [mx + Math.cos(a) * 0.02, y + 0.26, mz + Math.sin(a) * 0.02], [mx + Math.cos(a) * 0.075, y + 0.2, mz + Math.sin(a) * 0.07], 0.012, 5)
+    b.rod(mopStrand, [mx + Math.cos(a) * 0.02, y + 0.26, mz + Math.sin(a) * 0.02], [mx + Math.cos(a) * 0.075, y + 0.2, mz + Math.sin(a) * 0.07], 0.012, 5)
   }
   b.collide(x - 0.22, y, z - 0.27, x + 0.22, y + 0.6, z + 0.27)
 }
