@@ -1,7 +1,7 @@
 import { MODELS } from "../../render/models"
 import { type Builder, type Mat, CEIL_Y, FLOOR_Y, M, T, ceiling, paint, wall } from "./kit"
 import { type TrofferCell, troffers, trofferGrid } from "./lights"
-import { COLUMNS, type Face, type Rect, type RoomSpec, SHELL, WALL, type Window, ZONE, windowsOn } from "./plan"
+import { COLUMNS, type Face, type Rect, type RoomSpec, SHELL, WALL, type Window, ZONE, subtract, windowsOn } from "./plan"
 import { column } from "./partition"
 import { placeModels } from "./props"
 import { type Anchor, interiorRooms } from "./registry"
@@ -20,6 +20,9 @@ export type RoomOpts = RoomSpec & {
   troffers?: false | { dx?: number; dz?: number; louvre?: boolean; warm?: boolean; intensity?: number; flicker?: readonly (readonly [number, number])[] }
   /** Facade windows on shell sides: blinds and what sits under the sill; false = bare lining. */
   windows?: false | { blinds?: "random" | "closed" | "open" | "up"; radiators?: "models" | "convector" | "none" }
+  /** Areas inside `rect` that are not this room (riser W-1, a column chase, a cupboard): no floor or ceiling there.
+   *  The cut-out's own walls are the caller's (e.g. `riserW1`). */
+  exclude?: Rect[]
   /** Columns from the structural grid that fall inside the room (default true). */
   columns?: boolean
   anchors?: Anchor[]
@@ -48,14 +51,16 @@ export function room(b: Builder, o: RoomOpts): RoomHandle {
   const r = o.rect
   let seed = hashStr(`${b.storey}:${o.id}`)
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  b.floor(o.floor ?? "linoleum", r.x0, r.z0, r.x1, r.z1)
-  if (!o.ceiling?.none) ceiling(b, r.x0, r.z0, r.x1, r.z1, o.ceiling?.missing ?? 0, o.ceiling?.seed ?? seed % 997)
+  const pieces = subtract(r, o.exclude ?? [])
+  for (const p of pieces) b.floor(o.floor ?? "linoleum", p.x0, p.z0, p.x1, p.z1)
+  if (!o.ceiling?.none) for (const p of pieces) ceiling(b, p.x0, p.z0, p.x1, p.z1, o.ceiling?.missing ?? 0, o.ceiling?.seed ?? seed % 997)
   // Troffers and lamps.
   let cells: TrofferCell[] = []
   let update = (_t: number) => {}
   if (o.troffers !== false) {
     const t = o.troffers ?? {}
-    const grid = trofferGrid(r, t.dx, t.dz)
+    const ex = o.exclude ?? []
+    const grid = trofferGrid(r, t.dx, t.dz).filter((c) => !ex.some((h) => c.x + 0.31 > h.x0 && c.x - 0.31 < h.x1 && c.z + 0.61 > h.z0 && c.z - 0.61 < h.z1))
     const lit = o.lit ?? "none"
     const litSet = new Set<number>()
     if (lit === "all") grid.forEach((_, i) => litSet.add(i))
@@ -82,7 +87,7 @@ export function room(b: Builder, o: RoomOpts): RoomHandle {
   if (o.columns ?? true)
     for (const x of COLUMNS.xs)
       for (const z of [-COLUMNS.z, COLUMNS.z])
-        if (x > r.x0 + 0.3 && x < r.x1 - 0.3 && z > r.z0 + 0.3 && z < r.z1 - 0.3) column(b, x, z, COLUMNS.size)
+        if (x > r.x0 + 0.3 && x < r.x1 - 0.3 && z > r.z0 + 0.3 && z < r.z1 - 0.3 && !(o.exclude ?? []).some((h) => x > h.x0 && x < h.x1 && z > h.z0 && z < h.z1)) column(b, x, z, COLUMNS.size)
   interiorRooms.push({ id: o.id, storey: b.storey, name: o.name, rect: r, lit: cells.some((c) => c.on), doors: [], anchors: o.anchors ?? [] })
   return {
     id: o.id,

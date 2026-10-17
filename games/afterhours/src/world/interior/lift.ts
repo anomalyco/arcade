@@ -1,10 +1,10 @@
 import * as THREE from "three/webgpu"
 import { float, floor, fract, hash, mix, positionWorld, smoothstep, vec2, vec3 } from "three/tsl"
 import type { Box, Floor, Lamp, WorldContext } from "../context"
-import { ROOF_Y } from "../layout"
 import { materialFor } from "../../render/materials"
 import { Builder, FLOOR_Y, TUBE, fluorescentPanel, glow, M, STOREY_H, T, type Band, corridorBands, flicker, wall } from "./kit"
-import { LOBBY, STOREYS } from "./core"
+import { HEAD_TOP, LOBBY, STOREYS } from "./core"
+import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
 
 // A working lift in the core: walk in, press E at the car panel (next storey up, wrapping to the ground floor) or at a
@@ -18,7 +18,8 @@ const DOOR = { c: -37.85, w: 1.1, h: 2.1 }
 const DX0 = DOOR.c - DOOR.w / 2
 const DX1 = DOOR.c + DOOR.w / 2
 const CALL = { x: -36.82, y: 1.15, z: LOBBY.z1 }
-const TOP = ROOF_Y - 0.15
+/** Top of the guide rails, under the headhouse slab (the sheave and its beam hang from here). */
+const TOP = HEAD_TOP - 0.2
 const LEVELS = STOREYS // storeys served: 0..STOREYS-1
 const carFloorY = (s: number) => FLOOR_Y + s * STOREY_H
 
@@ -51,14 +52,20 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
 
   for (let s = 0; s < LEVELS; s++) {
     shaft.storey = s
-    const ext = { y0: FLOOR_Y - 0.26, y1: FLOOR_Y + STOREY_H - 0.26 }
+    // One wall per line: front (lobby face in the storey finish | concrete shaft face, cut for the landing doors),
+    // east (concrete shaft face | room plaster on the storey side, then a 2 cm lining over the facility tower's wall),
+    // back lining with the tower slot. The west face is the core's stair/lift wall. On storey 4 every shaft wall
+    // continues up through the roof to the headhouse top, so the shaft is closed from the roof stair house.
+    const ext = { y0: FLOOR_Y - 0.26, y1: (s === LEVELS - 1 ? HEAD_TOP - shaft.oy : FLOOR_Y + STOREY_H - 0.26) }
     const opening = [{ a0: DX0 - 0.06, a1: DX1 + 0.06, top: DOOR.h + 0.06 }]
-    // Shaft north wall: tiled lobby face, bare concrete on the shaft side, cut for the landing doors.
-    wall(shaft, "x", SHAFT.x0, -36.15, LOBBY.z1, 19.53, STYLES[s]!.bands, opening)
+    // The front runs through to the east wall's outer face; the east wall starts behind it (a clean T, no doubled
+    // corner).
+    wall(shaft, "x", SHAFT.x0, -36.15, LOBBY.z1, 19.53, STYLES[s]!.bands, opening, ext)
     wall(shaft, "x", SHAFT.x0, -36.15, 19.53, SHAFT.z0, shaftBands, opening, { ...ext, collide: false })
-    wall(shaft, "z", LOBBY.z1, SHAFT.z1 + 0.14, SHAFT.x1, -36.15, shaftBands, [], ext)
-    wall(shaft, "x", SHAFT.x0, -36.15, SHAFT.z1, SHAFT.z1 + 0.14, shaftBands, [{ a0: SHAFT.x0, a1: -39.13, bottom: 0.84, top: 2.66 }], { ...ext, collide: false })
-    shaft.box(M.concrete, SHAFT.x0, ext.y0, SHAFT.z0, SHAFT.x0 + 0.02, ext.y1, SHAFT.z1, { cast: false })
+    wall(shaft, "z", SHAFT.z0, 21.65, SHAFT.x1, -36.24, shaftBands, [], ext)
+    wall(shaft, "z", SHAFT.z0, 21.65, -36.24, -36.15, ROOM_BANDS, [], { ...ext, collide: false })
+    wall(shaft, "z", 21.65, SHAFT.z1, SHAFT.x1, -36.3, shaftBands, [], { ...ext, collide: false })
+    wall(shaft, "x", SHAFT.x0, -36.3, SHAFT.z1, 24.85, shaftBands, [{ a0: SHAFT.x0, a1: -39.13, bottom: 0.84, top: 2.66 }], ext)
     const y = FLOOR_Y
     // Door frame, sill, call button and the floor dial over the doors.
     const F = T(DOOR.c, y, LOBBY.z1 - 0.01)
@@ -230,8 +237,9 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   const cw = new Builder(ctx, "lift-counterweight")
   cw.box(M.darkSteel, -38.7, 0, 24.25, -37.0, 0.12, 24.55)
   cw.box(M.darkSteel, -38.7, 1.5, 24.25, -37.0, 1.62, 24.55)
-  cw.box(M.darkSteel, -38.7, 0, 24.25, -38.62, 1.62, 24.55)
-  cw.box(M.darkSteel, -37.08, 0, 24.25, -37.0, 1.62, 24.55)
+  // Stiles between the bars (not overlapping them: no doubled faces).
+  cw.box(M.darkSteel, -38.7, 0.12, 24.25, -38.62, 1.5, 24.55)
+  cw.box(M.darkSteel, -37.08, 0.12, 24.25, -37.0, 1.5, 24.55)
   for (let k = 0; k < 9; k++) cw.box(M.concrete, -38.6, 0.13 + k * 0.152, 24.28, -37.1, 0.27 + k * 0.152, 24.52)
   const cwRoot = new THREE.Group()
   cw.flush(cwRoot)

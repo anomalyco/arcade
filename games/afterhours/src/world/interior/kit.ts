@@ -127,7 +127,7 @@ export const aaStep = (edge: N, x: N): N => {
   return smoothstep(float(edge).sub(w), float(edge).add(w), x)
 }
 /** Inside-[a, b] window on x, antialiased. */
-export const aaWindow = (x: N, a: number, b: number): N => aaStep(a, x).mul(float(1).sub(aaStep(b, x)))
+export const aaWindow = (x: N, a: N, b: N): N => aaStep(a, x).mul(float(1).sub(aaStep(b, x)))
 /** Box-filtered coverage of lines of width `wl` (fraction of the period) at the start of every period of t. */
 const lineInt = (x: N, wl: number): N => floor(x).mul(wl).add(fract(x).min(wl))
 export const aaLines = (t: N, wl: number): N => {
@@ -386,6 +386,7 @@ const QUAD = [0, 1, 2, 0, 2, 3]
 
 export class Builder {
   private parts = new Map<string, Part>()
+  private ends: (WallEnd & { oy: number })[] = []
   readonly group = new THREE.Group()
   /** Streamed furniture models (drawn only near the camera's storey, see interior.ts). */
   readonly props = new THREE.Group()
@@ -584,7 +585,77 @@ export class Builder {
     return mesh
   }
 
+  /** Records a wall end for joint resolution at flush (see `wall`). */
+  deferEnd(e: WallEnd) {
+    this.ends.push({ ...e, oy: this.oy })
+  }
+
+  /**
+   * Resolves recorded wall ends against every collider registered so far (this storey's walls, the core, the shell):
+   * an end that runs into a perpendicular wall-like solid (≥ 1.5 m tall, ≤ 0.45 m deep along this wall) is extended
+   * to that solid's far face without a cap; any other end gets a flush cap. Call order: storeys flush after the core.
+   */
+  resolveEnds() {
+    const save = this.oy
+    const cols = this.ctx.colliders
+    for (const e of this.ends) {
+      this.oy = e.oy
+      const ai = e.axis === "x" ? 0 : 2
+      const ci = e.axis === "x" ? 2 : 0
+      const c = (e.c0 + e.c1) / 2
+      const y0 = e.bands[0]?.[0] ?? FLOOR_Y
+      const y1 = e.bands[e.bands.length - 1]?.[1] ?? CEIL_Y
+      const ym = (y0 + Math.min(y1, FLOOR_Y + 2.2)) / 2 + e.oy
+      const probe = e.a + e.dir * 0.02
+      // Joint against the neighbour solid just past the end:
+      //  - it covers our whole cross-section (T-stem into a through-wall, or an L where it runs to our outer face):
+      //    sink 1/2 its depth into it without a cap (no T-crack), unless one of its edges is flush with one of our
+      //    faces (then its end cap shares our face plane): no extension, no cap;
+      //  - it covers part of our section (walls meeting on centre lines): extend to its far face, no cap (closes the
+      //    corner square);
+      //  - nothing: flush cap.
+      let ext = 0
+      let covered = false
+      for (const k of cols) {
+        if (k.max[1] - k.min[1] < 1.5 || ym < k.min[1] || ym > k.max[1]) continue
+        if (probe < k.min[ai] || probe > k.max[ai] || c < k.min[ci] || c > k.max[ci]) continue
+        const depth = k.max[ai] - k.min[ai]
+        if (depth > 0.45) continue
+        // A perpendicular wall is longer across our line than we are thick; a short collinear piece is not.
+        if (k.max[ci] - k.min[ci] < e.c1 - e.c0 + 0.2) continue
+        const far = e.dir > 0 ? k.max[ai] - e.a : e.a - k.min[ai]
+        const full = k.min[ci] <= e.c0 + 1e-4 && k.max[ci] >= e.c1 - 1e-4
+        if (full) {
+          covered = true
+          const flush = Math.abs(k.min[ci] - e.c0) < 1e-3 || Math.abs(k.max[ci] - e.c1) < 1e-3
+          if (!flush) ext = Math.max(ext, Math.min(far / 2, 0.2))
+        } else ext = Math.max(ext, Math.min(far, 0.45))
+      }
+      if (covered && ext < 0.005) continue
+      if (ext < 0.005) {
+        // Free end: flush cap per band.
+        for (const [b0, b1, m] of e.bands) {
+          const t = e.a
+          if (e.axis === "x") this.box(m, t, b0, e.c0, t, b1, e.c1, { skip: e.dir > 0 ? "xYyZz" : "XYyZz" })
+          else this.box(m, e.c0, b0, t, e.c1, b1, t, { skip: e.dir > 0 ? "XxYyz" : "XxYyZ" })
+        }
+        continue
+      }
+      // Butt joint: extend through the neighbour, no caps, bands kept.
+      const s0 = e.dir > 0 ? e.a : e.a - ext
+      const s1 = e.dir > 0 ? e.a + ext : e.a
+      e.bands.forEach(([b0, b1, m], bi) => {
+        const sy = (bi > 0 ? "y" : "") + (bi < e.bands.length - 1 ? "Y" : "")
+        if (e.axis === "x") this.box(m, s0, b0, e.c0, s1, b1, e.c1, { skip: "Xx" + sy })
+        else this.box(m, e.c0, b0, s0, e.c1, b1, s1, { skip: "Zz" + sy })
+      })
+    }
+    this.ends.length = 0
+    this.oy = save
+  }
+
   flush(parent: THREE.Object3D = this.ctx.scene) {
+    this.resolveEnds()
     for (const p of this.parts.values()) {
       if (!p.pos.length) continue
       const g = new THREE.BufferGeometry()
@@ -612,6 +683,9 @@ export class Builder {
 const UP = new THREE.Vector3(0, 1, 0)
 
 /** A gap in a wall from `bottom` (default the floor) to `top`, both relative to the finished floor. */
+/** A wall end awaiting joint resolution (bands are local y ranges with their materials). */
+export type WallEnd = { axis: "x" | "z"; a: number; dir: 1 | -1; c0: number; c1: number; bands: [number, number, Mat][] }
+
 export type Opening = { a0: number; a1: number; top: number; bottom?: number }
 
 /**
@@ -630,24 +704,20 @@ export function wall(
   openings: Opening[] = [],
   extent?: { y0: number; y1: number; collide?: boolean },
 ) {
-  const sorted = [...openings].sort((p, q) => p.a0 - q.a0)
-  // End caps are recessed 2 mm: a wall's end usually butts into a perpendicular wall or the shell, where a flush cap is
-  // coplanar with that wall's face and z-fights.
-  const CAP = 0.002
-  const seg = (s0: number, s1: number, y0: number, y1: number) => {
-    if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) return
-    if (axis === "x") {
-      b.box(mat, s0, y0, c0, s1, y1, c1, { skip: "Xx" })
-      b.box(mat, s0 + CAP, y0, c0, s0 + CAP, y1, c1, { skip: "XYyZz" })
-      b.box(mat, s1 - CAP, y0, c0, s1 - CAP, y1, c1, { skip: "xYyZz" })
-    } else {
-      b.box(mat, c0, y0, s0, c1, y1, s1, { skip: "Zz" })
-      b.box(mat, c0, y0, s0 + CAP, c1, y1, s0 + CAP, { skip: "XxYyZ" })
-      b.box(mat, c0, y0, s1 - CAP, c1, y1, s1 - CAP, { skip: "XxYyz" })
-    }
-  }
+  // Openings sorted and clipped so neighbouring openings never emit overlapping head/sill pieces.
+  const sorted = [...openings].sort((p, q) => p.a0 - q.a0).map((o) => ({ ...o, a0: Math.max(o.a0, a0), a1: Math.min(o.a1, a1) }))
+  for (let k = 1; k < sorted.length; k++) if (sorted[k]!.a0 < sorted[k - 1]!.a1) sorted[k] = { ...sorted[k]!, a0: sorted[k - 1]!.a1 }
   const top = extent?.y1 ?? CEIL_Y + 0.02
   const base = extent?.y0 ?? FLOOR_Y - 0.01
+  // Joints: the wall's two ENDS (a0, a1) are resolved when the builder flushes (Builder.resolveEnds): butted into a
+  // perpendicular wall they extend through it to its far face with no end cap (closed T and L joints, no coplanar
+  // faces, no slit, no notch at the ceiling); free ends get a flush cap. Jambs at openings are capped here. Pieces over
+  // and under openings carry no caps (they sit against the jambs). Bands share no internal faces.
+  const seg = (s0: number, s1: number, y0: number, y1: number, capStart: boolean, capEnd: boolean, skipY: string) => {
+    if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) return
+    if (axis === "x") b.box(mat, s0, y0, c0, s1, y1, c1, { skip: (capStart ? "" : "x") + (capEnd ? "" : "X") + skipY })
+    else b.box(mat, c0, y0, s0, c1, y1, s1, { skip: (capStart ? "" : "z") + (capEnd ? "" : "Z") + skipY })
+  }
   let mat: Mat = "painted_wall"
   let cursor = a0
   const spans: [number, number][] = []
@@ -656,17 +726,32 @@ export function wall(
     cursor = o.a1
   }
   spans.push([cursor, a1])
-  bands.forEach(([y0r, y1r, m], bi) => {
+  const emitted: [number, number, Mat][] = []
+  const live = bands
+    .map(([y0r, y1r, m], bi) => {
+      const y0 = bi === 0 ? base : Math.max(base, FLOOR_Y + y0r)
+      const y1 = bi === bands.length - 1 || y1r >= CEIL_Y ? top : Math.min(top, FLOOR_Y + y1r)
+      return [y0, y1, m] as const
+    })
+    .filter(([y0, y1]) => y1 > y0)
+  live.forEach(([y0, y1, m], bi) => {
     mat = m
-    const y0 = bi === 0 ? base : Math.max(base, FLOOR_Y + y0r)
-    const y1 = bi === bands.length - 1 || y1r >= CEIL_Y ? top : Math.min(top, FLOOR_Y + y1r)
-    if (y1 <= y0) return
-    for (const [s0, s1] of spans) seg(s0, s1, y0, y1)
+    emitted.push([y0, y1, m])
+    const skipY = (bi > 0 ? "y" : "") + (bi < live.length - 1 ? "Y" : "")
+    for (const [s0, s1] of spans) seg(s0, s1, y0, y1, s0 > a0 + 1e-6, s1 < a1 - 1e-6, skipY)
     for (const o of sorted) {
-      seg(o.a0, o.a1, Math.max(y0, FLOOR_Y + o.top), y1)
-      if (o.bottom !== undefined) seg(o.a0, o.a1, y0, Math.min(y1, FLOOR_Y + o.bottom))
+      const hy = Math.max(y0, FLOOR_Y + o.top)
+      seg(o.a0, o.a1, hy, y1, false, false, (hy <= y0 + 1e-6 && bi > 0 ? "y" : "") + (bi < live.length - 1 ? "Y" : ""))
+      if (o.bottom !== undefined) {
+        const sy = Math.min(y1, FLOOR_Y + o.bottom)
+        seg(o.a0, o.a1, y0, sy, false, false, (bi > 0 ? "y" : "") + (sy < y1 ? "" : "Y"))
+      }
     }
   })
+  // Ends are deferred only where a solid span reaches them.
+  if (spans[0]![1] - spans[0]![0] > 1e-3) b.deferEnd({ axis, a: a0, dir: -1, c0, c1, bands: emitted })
+  const last = spans[spans.length - 1]!
+  if (last[1] - last[0] > 1e-3) b.deferEnd({ axis, a: a1, dir: 1, c0, c1, bands: emitted })
   if (extent?.collide === false) return
   for (const [s0, s1] of spans) {
     if (s1 - s0 < 1e-3) continue

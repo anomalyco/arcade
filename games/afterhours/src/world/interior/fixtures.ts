@@ -272,10 +272,10 @@ export function slopSink(b: Builder, x: number, z: number, yaw: number) {
   const m = frame(x, z, yaw)
   const s = 0.75
   const h = 0.28
-  b.boxM(M.concreteSink, m, s, 0.04, s, 0, 0.02, 0)
+  b.boxM(M.concreteSink, m, s - 0.1, 0.04, s - 0.12, 0, 0.02, -0.01)
   b.boxM(M.concreteSink, m, s, h, 0.07, 0, h / 2, -s / 2 + 0.035)
   b.boxM(M.concreteSink, m, s, h, 0.05, 0, h / 2, s / 2 - 0.025)
-  for (const sx of [-1, 1]) b.boxM(M.concreteSink, m, 0.05, h, s, sx * (s / 2 - 0.025), h / 2, 0)
+  for (const sx of [-1, 1]) b.boxM(M.concreteSink, m, 0.05, h, s - 0.12, sx * (s / 2 - 0.025), h / 2, -0.01)
   b.rod(M.steel, ptIn(m, -0.15, 0.95, s / 2), ptIn(m, 0.15, 0.95, s / 2), 0.015)
   b.rod(M.steel, ptIn(m, 0, 0.95, s / 2), ptIn(m, 0, 0.88, s / 2 - 0.2), 0.012)
   coll(b, m, s, h, s)

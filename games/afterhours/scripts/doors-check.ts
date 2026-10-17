@@ -4,6 +4,7 @@
 //   bun scripts/doors-check.ts --all           # every registered door: doorway audit, then E + walk through both ways
 //   bun scripts/doors-check.ts --all --q "only=terrain,compound" --view gate
 //   bun scripts/doors-check.ts --all --only fire-escape,roof   # only doors whose id starts with one of these
+//   bun scripts/doors-check.ts --all --only s3: --at -20,11.6,0 --q "only=terrain,interior" --view corridor
 //
 // The self-test door exists only inside this script's page; nothing is added to the game. Expects the dev server on
 // :5196. Exits 1 on any failure.
@@ -24,6 +25,8 @@ const wanted = (id: string) => !only || only.some((p) => id.startsWith(p))
 const extra = flag("q") ?? (all ? "" : "only=terrain")
 const view = flag("view") ?? "lot"
 const shot = flag("shot")
+/** `--at x,y,z`: teleport the player there first (interior storeys build their doors as the player reaches them). */
+const at = flag("at")?.split(",").map(Number)
 
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const chrome = readdirSync(cache)
@@ -378,6 +381,16 @@ if (!all) {
   st = await state("test-panic")
   check(st.amount === 0, `test-panic: closer drew it shut (amount ${st.amount})`)
 } else {
+  if (at?.length === 3) {
+    await page.evaluate((at) => {
+      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; resetMotion(): void } }).__afterhoursPlayer
+      p.pos.x = at[0]!
+      p.pos.y = at[1]!
+      p.pos.z = at[2]!
+      p.resetMotion()
+    }, at)
+    for (let i = 0; i < 40 && only && !(await doorInfo()).some((d) => only.some((o) => d.id.startsWith(o))); i++) await page.waitForTimeout(250)
+  }
   const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
   for (const i of issues) if (wanted(i.id)) check(false, `${i.id}: ${i.issue}`)
   const registered = await doorInfo()

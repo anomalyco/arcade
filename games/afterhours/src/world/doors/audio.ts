@@ -1,10 +1,11 @@
 import type { MotionKind } from "./motion"
+import { unlockAudio } from "../../audio/context"
 
 // Procedural door sounds (Web Audio, no samples). One-shots: the latch releasing, the latch catching on close, a
 // locked door's rattle, roll-up ratchet ticks. Continuous, per moving door: a hinge creak whose stick-slip rate,
 // pitch and loudness follow the leaf's speed, with irregular sticks and slips, plus a grinding roll and chain
-// clinks for gates and a chain rumble for roll-ups. The AudioContext is created lazily on the first door use, which
-// always comes from a key press, so nothing plays before user input. Never constructed in `?shot` mode.
+// clinks for gates and a chain rumble for roll-ups. Uses the walker's shared AudioContext (src/audio/context.ts), unlocked
+// on the first door use, which always comes from a key press. Never constructed in `?shot` mode.
 
 export type DoorSound = "steel" | "wood" | "glass" | "gate"
 
@@ -40,26 +41,21 @@ export class DoorAudio {
   volume = 0.6
   creakVolume = 1
 
-  /** Call from a user-input handler; creates/resumes the context. */
+  /** Call from a user-input handler; creates/resumes the shared context (src/audio/context.ts). */
   unlock() {
-    if (!this.ac) {
-      const Ctor = globalThis.AudioContext ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!Ctor) return
-      this.ac = new Ctor()
-      this.master = this.ac.createGain()
-      this.master.connect(this.ac.destination)
-      const n = this.ac.sampleRate * 2
-      this.noise = this.ac.createBuffer(1, n, this.ac.sampleRate)
-      const d = this.noise.getChannelData(0)
-      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-      // An impulse train: each period is one stick-slip "release" that excites the leaf's resonances.
-      const H = 48
-      const real = new Float32Array(H + 1)
-      const imag = new Float32Array(H + 1)
-      for (let i = 1; i <= H; i++) real[i] = 1
-      this.pulse = this.ac.createPeriodicWave(real, imag)
-    }
-    if (this.ac.state === "suspended") void this.ac.resume()
+    const shared = unlockAudio()
+    if (!shared || this.ac) return
+    this.ac = shared.ctx
+    this.master = this.ac.createGain()
+    // Through the shared bus, so doors get the same room / outdoor reverb as footsteps.
+    this.master.connect(shared.bus)
+    this.noise = shared.noise
+    // An impulse train: each period is one stick-slip "release" that excites the leaf's resonances.
+    const H = 48
+    const real = new Float32Array(H + 1)
+    const imag = new Float32Array(H + 1)
+    for (let i = 1; i <= H; i++) real[i] = 1
+    this.pulse = this.ac.createPeriodicWave(real, imag)
   }
 
   private get live() {

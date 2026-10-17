@@ -7,6 +7,28 @@ import { CORE, CORRIDOR_EAST, FIRE_ESCAPE, FREIGHT, RISER, ANNEX_DOOR, BUILDING,
 export type Rect = { x0: number; x1: number; z0: number; z1: number }
 export const rect = (x0: number, x1: number, z0: number, z1: number): Rect => ({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1) })
 
+/** `r` minus the `holes` (axis-aligned), as up to 4 pieces per hole (slabs west/east, then north/south strips). */
+export function subtract(r: Rect, holes: readonly Rect[]): Rect[] {
+  let out: Rect[] = [r]
+  for (const h of holes) {
+    const next: Rect[] = []
+    for (const p of out) {
+      if (h.x1 <= p.x0 || h.x0 >= p.x1 || h.z1 <= p.z0 || h.z0 >= p.z1) {
+        next.push(p)
+        continue
+      }
+      const ix0 = Math.max(p.x0, h.x0)
+      const ix1 = Math.min(p.x1, h.x1)
+      if (ix0 > p.x0 + 1e-4) next.push({ ...p, x1: ix0 })
+      if (ix1 < p.x1 - 1e-4) next.push({ ...p, x0: ix1 })
+      if (h.z0 > p.z0 + 1e-4) next.push({ x0: ix0, x1: ix1, z0: p.z0, z1: h.z0 })
+      if (h.z1 < p.z1 - 1e-4) next.push({ x0: ix0, x1: ix1, z0: h.z1, z1: p.z1 })
+    }
+    out = next
+  }
+  return out
+}
+
 /** Shell inner faces. */
 export const SHELL: Rect = { x0: -54.65, x1: 34.65, z0: -21.65, z1: 21.65 }
 

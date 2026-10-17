@@ -91,7 +91,7 @@ export function createBody(ctx: WorldContext, player: Player) {
   loader
     .loadAsync(`${import.meta.env.BASE_URL}models/player/janitor.glb`)
     .then(async (gltf) => {
-      const r = new Rig(gltf.scene)
+      const r = new Rig(gltf.scene, ctx.settings)
       root.add(gltf.scene)
       root.visible = false
       // Compile off the critical path, then show.
@@ -229,7 +229,7 @@ class Rig {
   private p = v()
   private s = v()
 
-  constructor(readonly scene: THREE.Object3D) {
+  constructor(readonly scene: THREE.Object3D, private settings: Record<string, unknown>) {
     scene.updateMatrixWorld(true)
     const byName = new Map<string, THREE.Bone>()
     scene.traverse((o) => {
@@ -443,6 +443,9 @@ class Rig {
         target.y -= 0.55 + 0.08 * Math.max(0, -pitchArm)
         pole = [right.x * 0.7, -1, right.z * 0.7]
         barrel = v(-Math.sin(yaw) * Math.cos(player.pitch), Math.sin(player.pitch), -Math.cos(yaw) * Math.cos(player.pitch))
+        // render/lighting.ts emits the beam from a fixed point by the eye (camera-local 0.22, -0.28, -0.1). Keep the fist
+        // and torch just outside that cone, or the beam blows them out at point-blank range.
+        outOfBeam(target, eye, player, Number(this.settings["flash.angle"] ?? 24))
       }
       // Reaching hand: the free one (left while the right holds the torch).
       if (reach > 0 && i === (hold ? 0 : 1)) {
@@ -494,6 +497,27 @@ class Rig {
   finish() {
     this.bones.pelvis.updateMatrixWorld(true)
   }
+}
+
+const BEAM_FROM = v(0.22, -0.28, -0.1)
+const OUT_DIR = v(0.45, -1, 0)
+const camQ = new THREE.Quaternion()
+const euler = new THREE.Euler()
+/** Pushes `p` radially out of the flashlight's cone (half-angle in degrees, plus a margin for the fist and penumbra). */
+function outOfBeam(p: THREE.Vector3, eye: THREE.Vector3, player: Player, halfDeg: number) {
+  camQ.setFromEuler(euler.set(player.pitch, player.yaw, 0, "YXZ"))
+  const from = BEAM_FROM.clone().applyQuaternion(camQ).add(eye)
+  const dir = v(0, -0.04, -1).applyQuaternion(camQ).normalize()
+  const rel = p.clone().sub(from)
+  const t = rel.dot(dir)
+  if (t <= 0) return
+  const perp = rel.addScaledVector(dir, -t)
+  const need = t * Math.tan(((halfDeg + 14) * Math.PI) / 180) + 0.05
+  if (perp.length() >= need) return
+  // Out toward the lower right of the view (where a right hand holds a torch), never across the beam to the left.
+  const out = OUT_DIR.clone().applyQuaternion(camQ)
+  out.addScaledVector(dir, -out.dot(dir)).normalize()
+  p.copy(from).addScaledVector(dir, t).addScaledVector(out, need)
 }
 
 /**

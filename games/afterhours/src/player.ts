@@ -3,6 +3,7 @@ import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import type { Floor, WorldContext } from "./world/context"
 import { heightAt } from "./world/height"
 import { VIEWPOINTS, type ViewpointName } from "./world/layout"
+import { Footsteps } from "./audio/footsteps"
 
 const RADIUS = 0.3
 /** Standing and crouched eye heights above the feet (m). */
@@ -107,6 +108,8 @@ export class Player {
   private time = 0
   private foot = 0
   private floor: Floor | null = null
+  /** Footstep audio (src/audio/footsteps.ts); only with input enabled, so never in `?shot` mode. */
+  private footsteps: Footsteps | null = null
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -149,7 +152,12 @@ export class Player {
     ctx.doors.attach(ctx, { pos: this.pos, camera })
     ;(globalThis as { __afterhoursPlayer?: Player }).__afterhoursPlayer = this
     if (!enabled) return
-    canvas.addEventListener("click", () => canvas.requestPointerLock())
+    this.footsteps = new Footsteps(ctx, this)
+    // Audio unlocks on the first input (a click or a key), never before.
+    canvas.addEventListener("click", () => {
+      this.footsteps?.unlock()
+      canvas.requestPointerLock()
+    })
     document.addEventListener("mousemove", (e) => {
       if (document.pointerLockElement !== canvas) return
       const sens = Number(ctx.settings["player.sensitivity"] ?? 1) * 0.0022
@@ -159,6 +167,7 @@ export class Player {
     window.addEventListener("keydown", (e) => {
       if (isEditableEventTarget(e.target)) return
       if (e.code === "Space") e.preventDefault()
+      this.footsteps?.unlock()
       this.keys.add(e.code)
       if (e.repeat) return
       if (e.code === "KeyF") this.flashlight = !this.flashlight
@@ -206,9 +215,16 @@ export class Player {
   resetMotion() {
     this.vel.x = this.vel.y = this.vel.z = 0
     this.eyeOffset = this.eyeOffsetV = 0
-    this.grounded = this.wasGrounded = true
     this.coyote = 0
+    // Snap the feet to the floor at the new position (a teleport may set y a little above it), then rebuild the eye
+    // base around the new feet: the filter judges heights against the previous base, which may be storeys away.
+    const g = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
+    if (g >= this.pos.y - STEP_DOWN) this.pos.y = g
+    this.wasGrounded = false
+    this.grounded = true
+    this.base = this.pos.y
     this.base = this.filteredGround()
+    this.wasGrounded = true
     this.lastY = this.pos.y
   }
 
@@ -219,6 +235,7 @@ export class Player {
 
   update(dt: number) {
     this.ctx.doors.update(dt)
+    this.footsteps?.update(dt, this.camera)
     this.time += dt
     const k = this.keys
     const fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0)

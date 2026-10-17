@@ -10,7 +10,11 @@ export type Floor = {
   min: readonly [number, number]
   max: readonly [number, number]
   y: number
-  /** Footstep surface for `Player.onStep` ("concrete", "tile", "linoleum", "steel", "wood"…); default "floor". */
+  /**
+   * Footstep surface (`Surface` in src/audio/surfaces.ts): "concrete", "linoleum", "tile", "carpet", "raised" (access
+   * floor), "wood", "metal" (chequer plate), "grating", "gravel", "asphalt", "grass", "forest". Untagged floors get a
+   * default from their position (storey finish, fire escape, lift car, roof); tag a floor to override it.
+   */
   surface?: string
 }
 

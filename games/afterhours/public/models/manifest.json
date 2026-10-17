@@ -871,6 +871,130 @@
   "source": "polyhaven:mid_century_lounge_chair",
   "licence": "CC0-1.0"
  },
+ "urinal": {
+  "tris": 4822,
+  "lod1": 1499,
+  "bytes": 82376,
+  "size": [
+   0.293,
+   1.15,
+   0.353
+  ],
+  "footprint": [
+   0.293,
+   0.353
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:6bc39524d14f4dbfbe475d40ee7d9469",
+  "licence": "CC-BY-4.0"
+ },
+ "toilet": {
+  "tris": 12000,
+  "lod1": 2499,
+  "bytes": 105796,
+  "size": [
+   0.476,
+   1,
+   0.925
+  ],
+  "footprint": [
+   0.476,
+   0.925
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:75f5833242254d45b3dfb7e77ddeb24a",
+  "licence": "CC-BY-4.0"
+ },
+ "lavatory": {
+  "tris": 7488,
+  "lod1": 1500,
+  "bytes": 66920,
+  "size": [
+   0.56,
+   0.559,
+   0.554
+  ],
+  "footprint": [
+   0.56,
+   0.554
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:73bda35b6e7a499a80427fc1b049b192",
+  "licence": "CC-BY-4.0"
+ },
+ "tp_holder": {
+  "tris": 1758,
+  "bytes": 107192,
+  "size": [
+   0.17,
+   0.092,
+   0.1
+  ],
+  "footprint": [
+   0.17,
+   0.1
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:e24e7aac40f7444898deb1988fc4316d",
+  "licence": "CC-BY-4.0"
+ },
+ "towel_dispenser": {
+  "tris": 228,
+  "bytes": 99000,
+  "size": [
+   0.3,
+   0.38,
+   0.101
+  ],
+  "footprint": [
+   0.3,
+   0.101
+  ],
+  "meshes": 1,
+  "materials": 1,
+  "source": "sketchfab:8c2e6ea787a04578bed2042f3cddd5ff",
+  "licence": "CC-BY-4.0"
+ },
+ "waste_basket": {
+  "tris": 11460,
+  "lod1": 1456,
+  "bytes": 260168,
+  "size": [
+   0.352,
+   0.36,
+   0.352
+  ],
+  "footprint": [
+   0.352,
+   0.352
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:44c5af91288b4721a388c542f34f39bd",
+  "licence": "CC-BY-4.0"
+ },
+ "hand_dryer": {
+  "tris": 2588,
+  "lod1": 1200,
+  "bytes": 201928,
+  "size": [
+   0.278,
+   0.24,
+   0.212
+  ],
+  "footprint": [
+   0.278,
+   0.212
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:8e13a866ee184bed95bb5b59ddee62cd",
+  "licence": "CC-BY-4.0"
+ },
  "wet_floor_sign": {
   "tris": 228,
   "bytes": 189184,

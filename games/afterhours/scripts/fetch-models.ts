@@ -236,6 +236,55 @@ export const MODEL_SOURCES: Record<string, ModelSource> = {
   desk_lamp: { lod1: 2000, src: { site: "polyhaven", id: "desk_lamp_arm_01" }, maxTris: 12000, note: "sprung-arm desk lamp" },
   lab_stool: { lod1: 1200, src: { site: "polyhaven", id: "metal_stool_02" }, note: "steel lab stool with a wooden seat" },
   lounge_chair: { lod1: 1500, src: { site: "polyhaven", id: "mid_century_lounge_chair" }, yaw: 180, note: "leather swivel lounge chair" },
+  // Washroom fixtures (service stack WC-M / WC-W, docs/building-program.md).
+  urinal: {
+    yaw: 180,
+    lod1: 1500,
+    src: objaverse("6bc39524d14f4dbfbe475d40ee7d9469", "000-111", "Urinal", "ASA21"),
+    size: { axis: "y", m: 1.15 },
+    note: "floor-standing stall urinal (vitreous china) with exposed flush valve and riser",
+  },
+  toilet: {
+    yaw: 180,
+    lod1: 2500,
+    maxTris: 12000,
+    src: objaverse("75f5833242254d45b3dfb7e77ddeb24a", "000-139", "Toilet", "racche"),
+    size: { axis: "y", m: 1.0 },
+    note: "floor-mounted commercial toilet, open seat, exposed flushometer",
+  },
+  lavatory: {
+    yaw: 90,
+    lod1: 1500,
+    src: objaverse("73bda35b6e7a499a80427fc1b049b192", "000-077", "Simple Sink", "Andrew.Mischenko"),
+    size: { axis: "x", m: 0.56 },
+    note: "wall-hung lavatory with faucet and P-trap",
+  },
+  tp_holder: {
+    yaw: 180,
+    src: objaverse("e24e7aac40f7444898deb1988fc4316d", "000-054", "CC0 - Toilet Roll Holder 3", "plaggy"),
+    size: { axis: "x", m: 0.17 },
+    note: "chrome toilet-roll holder (wall)",
+  },
+  towel_dispenser: {
+    yaw: 180,
+    src: objaverse("8c2e6ea787a04578bed2042f3cddd5ff", "000-017", "Towel dispenser", "tombolaso"),
+    size: { axis: "y", m: 0.38 },
+    note: "stainless C-fold paper towel dispenser (wall)",
+  },
+  waste_basket: {
+    lod1: 1500,
+    src: objaverse("44c5af91288b4721a388c542f34f39bd", "000-102", "Paper Waste Bin", "ellieharrodine"),
+    size: { axis: "y", m: 0.36 },
+    note: "mesh wire wastebasket (washrooms, offices)",
+  },
+  hand_dryer: {
+    yaw: 90,
+    lod1: 1200,
+    src: objaverse("8e13a866ee184bed95bb5b59ddee62cd", "000-060", "Shower Room - Assets", "EvanPetrov"),
+    keep: /HandDryer/,
+    size: { axis: "y", m: 0.24 },
+    note: "wall-mounted push-button hand dryer",
+  },
   wet_floor_sign: { src: { site: "polyhaven", id: "WetFloorSign_01" }, note: "yellow wet-floor sign" },
   fluorescent_light: { src: { site: "polyhaven", id: "mounted_fluorescent_lights" }, keep: /_d$/, note: "surface-mount fluorescent tube fixture" },
   security_camera: { src: { site: "polyhaven", id: "security_camera_01" }, yaw: 180, note: "housed CCTV camera on bracket" },
@@ -520,6 +569,32 @@ async function atlasModel(name: string, spec: ModelSource, doc: any) {
   const span = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2])
   const atlas = spec.atlas ?? (span >= 3.5 ? 2048 : span >= 0.5 ? 1024 : 512)
 
+  // Materials sampling a secondary UV set (all their textures on one set): move that set to TEXCOORD_0.
+  for (const [mat, prims] of byMat) {
+    const infos = mat ? fn.listTextureInfoByMaterial(mat) : []
+    const sets = new Set<number>(infos.map((ti: any) => ti.getTexCoord()))
+    if (list) console.log("  uv sets", mat?.getName(), [...sets], infos.map((t: any) => t.getTexCoord()))
+    if (sets.size > 1 && sets.has(0)) {
+      // Mixed sets that are copies of TEXCOORD_0 (common in Sketchfab exports): point everything at set 0.
+      const same = prims.every((p: any) =>
+        [...sets].every((k) => {
+          const a = p.getAttribute("TEXCOORD_0")?.getArray()
+          const b = p.getAttribute(`TEXCOORD_${k}`)?.getArray()
+          return a && b && a.length === b.length && a.every((v: number, i: number) => Math.abs(v - b[i]) < 1e-3)
+        }),
+      )
+      if (!same) console.warn(`  ${name}: ${mat.getName()} UV sets differ; using TEXCOORD_0 for all maps`)
+      for (const ti of infos) ti.setTexCoord(0)
+      continue
+    }
+    if (sets.size !== 1 || sets.has(0)) continue
+    const n = [...sets][0]
+    for (const p of prims) {
+      const a = p.getAttribute(`TEXCOORD_${n}`)
+      if (a) p.setAttribute("TEXCOORD_0", a).setAttribute(`TEXCOORD_${n}`, null)
+    }
+    for (const ti of infos) ti.setTexCoord(0)
+  }
   const tiles: TileMat[] = []
   for (const [mat, prims] of byMat) {
     for (const ti of mat ? fn.listTextureInfoByMaterial(mat) : [])

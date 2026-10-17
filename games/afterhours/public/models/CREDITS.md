@@ -3,7 +3,7 @@
 Regenerate with `bun scripts/fetch-models.ts` (`--force` to rebuild). Every file is a single web-optimised .glb
 (meshopt + quantised geometry; at most two materials over one baked KTX2 atlas: base colour ETC1S, normal UASTC, ORM
 ETC1S; 2048 vehicles, 1024 ≥ 0.5 m, 512 small props), normalised to metres with the pivot at the
-footprint centre on the ground and the front facing -Z. Total 24.5 MB.
+footprint centre on the ground and the front facing -Z. Total 25.4 MB.
 
 No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiator", "Conquer", "Shvan", "LCT").
 
@@ -64,6 +64,13 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 | `desk_lamp.glb` | [desk_lamp_arm_01](https://polyhaven.com/a/desk_lamp_arm_01) | Poly Haven | CC0 1.0 | 12,410 | 406 KB | sprung-arm desk lamp |
 | `lab_stool.glb` | [metal_stool_02](https://polyhaven.com/a/metal_stool_02) | Poly Haven | CC0 1.0 | 6,532 | 250 KB | steel lab stool with a wooden seat |
 | `lounge_chair.glb` | [mid_century_lounge_chair](https://polyhaven.com/a/mid_century_lounge_chair) | Poly Haven | CC0 1.0 | 6,148 | 562 KB | leather swivel lounge chair |
+| `urinal.glb` | [Urinal](https://sketchfab.com/3d-models/6bc39524d14f4dbfbe475d40ee7d9469) | ASA21 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 4,822 | 80 KB | floor-standing stall urinal (vitreous china) with exposed flush valve and riser |
+| `toilet.glb` | [Toilet](https://sketchfab.com/3d-models/75f5833242254d45b3dfb7e77ddeb24a) | racche | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 12,000 | 103 KB | floor-mounted commercial toilet, open seat, exposed flushometer |
+| `lavatory.glb` | [Simple Sink](https://sketchfab.com/3d-models/73bda35b6e7a499a80427fc1b049b192) | Andrew.Mischenko | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 7,488 | 65 KB | wall-hung lavatory with faucet and P-trap |
+| `tp_holder.glb` | [CC0 - Toilet Roll Holder 3](https://sketchfab.com/3d-models/e24e7aac40f7444898deb1988fc4316d) | plaggy | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 1,758 | 105 KB | chrome toilet-roll holder (wall) |
+| `towel_dispenser.glb` | [Towel dispenser](https://sketchfab.com/3d-models/8c2e6ea787a04578bed2042f3cddd5ff) | tombolaso | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 228 | 97 KB | stainless C-fold paper towel dispenser (wall) |
+| `waste_basket.glb` | [Paper Waste Bin](https://sketchfab.com/3d-models/44c5af91288b4721a388c542f34f39bd) | ellieharrodine | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 11,460 | 254 KB | mesh wire wastebasket (washrooms, offices) |
+| `hand_dryer.glb` | [Shower Room - Assets](https://sketchfab.com/3d-models/8e13a866ee184bed95bb5b59ddee62cd) | EvanPetrov | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 2,588 | 197 KB | wall-mounted push-button hand dryer |
 | `wet_floor_sign.glb` | [WetFloorSign_01](https://polyhaven.com/a/WetFloorSign_01) | Poly Haven | CC0 1.0 | 228 | 185 KB | yellow wet-floor sign |
 | `fluorescent_light.glb` | [mounted_fluorescent_lights](https://polyhaven.com/a/mounted_fluorescent_lights) | Poly Haven | CC0 1.0 | 3,540 | 165 KB | surface-mount fluorescent tube fixture |
 | `security_camera.glb` | [security_camera_01](https://polyhaven.com/a/security_camera_01) | Poly Haven | CC0 1.0 | 13,571 | 303 KB | housed CCTV camera on bracket |
@@ -94,3 +101,10 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 - "Drinking Fountain" by MooKorea (https://sketchfab.com/3d-models/796e0b2660a440e3a2e8a24c6ed0fe72), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Retro-style Desk Fan" by futaba_blender (https://sketchfab.com/3d-models/79bb384f2ed545a5ae8c2b9cfa06cd8f), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Fire Extinguisher" by loichuet1 (https://sketchfab.com/3d-models/5676b179b3b744c0aaae53a3dcea2300), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Urinal" by ASA21 (https://sketchfab.com/3d-models/6bc39524d14f4dbfbe475d40ee7d9469), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Toilet" by racche (https://sketchfab.com/3d-models/75f5833242254d45b3dfb7e77ddeb24a), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Simple Sink" by Andrew.Mischenko (https://sketchfab.com/3d-models/73bda35b6e7a499a80427fc1b049b192), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "CC0 - Toilet Roll Holder 3" by plaggy (https://sketchfab.com/3d-models/e24e7aac40f7444898deb1988fc4316d), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Towel dispenser" by tombolaso (https://sketchfab.com/3d-models/8c2e6ea787a04578bed2042f3cddd5ff), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Paper Waste Bin" by ellieharrodine (https://sketchfab.com/3d-models/44c5af91288b4721a388c542f34f39bd), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Shower Room - Assets" by EvanPetrov (https://sketchfab.com/3d-models/8e13a866ee184bed95bb5b59ddee62cd), CC BY 4.0, modified (rescaled, re-centred, optimised).

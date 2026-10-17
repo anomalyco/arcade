@@ -45,6 +45,10 @@ export const renderState = {
   streaming: false,
   /** The lighting rig's per-frame update, for perf scripts that drive frames themselves. */
   lightingUpdate: null as ((dt: number, time: number) => void) | null,
+  /** Run by the post chain just before the frame's pipeline renders (un-jittered camera): mirrors. */
+  beforeRender: [] as (() => void)[],
+  /** View frustum of the live mirror's camera (lamps it sees must stay on), or null. */
+  mirrorFrustum: null as THREE.Frustum | null,
   flash: {
     on: false,
     pos: new THREE.Vector3(),

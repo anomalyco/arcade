@@ -17,6 +17,7 @@ import {
   peninsula,
   rect,
   riserW1,
+  RISER_W1_OUTER,
   room,
   serviceStack,
   spine,
@@ -57,7 +58,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   for (const x of [-12.7, -7.3, -1.9]) cubiclePod(b, x, -7.2, 0, { tubes: [1] })
   cubiclePod(b, -7.3, -16.6, 0)
   partition(b, { axis: "z", at: G[10], from: -21.65, to: -1.75, finish: [ROOM_BANDS, WET_BANDS] })
-  const lab = room(b, { id: "LAB", name: "Lab", rect: rect(G[10], G[12], -21.65, -1.75), floor: "linoleum", lit: [[3, -8], [9, -8]] })
+  const lab = room(b, { id: "LAB", name: "Lab", rect: rect(G[10], G[12], -21.65, -1.75), floor: "linoleum", lit: [[3, -8], [9, -8]], exclude: [RISER_W1_OUTER] })
   partition(b, { axis: "z", at: G[12], from: -21.65, to: -1.75, finish: [WET_BANDS, ROOM_BANDS] })
   peninsula(b, 4.5, -10.5, Math.PI / 2, 3.6, { sink: true })
   peninsula(b, 8.5, -10.5, Math.PI / 2, 3.6)
@@ -71,7 +72,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   partition(b, { axis: "z", at: G[9], from: 1.75, to: 9.6, finish: [ROOM_BANDS, ROOM_BANDS] })
   partition(b, { axis: "z", at: G[11], from: 1.75, to: 9.6, finish: [ROOM_BANDS, ROOM_BANDS] })
   kitchenette(b, -1.0, 9.6 - 0.31, 0, 2.4, { coffeeOn: true })
-  lockers(b, 5.5, 2.0, Math.PI, 5)
+  lockers(b, 5.0, 2.0, Math.PI, 4)
   const rooms = [n1, n2, open, lab, brk]
   return { update: (t) => [sp, ...rooms].forEach((r) => r.update(t)) }
 }

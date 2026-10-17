@@ -14,3 +14,35 @@
 4. core.ts hall()/lobby(): doubled faces x=-36.15 (z 16.05..19.45) and z=16.05 (2.5 m²).
 5. core.ts flights()/step(): tread ends at x=-39.7 flush with stair wall (76 pairs): stop treads 5 mm short; treads/landings at y 15.36, z 20.62/18.94 coplanar with lining.
 6. lift.ts "lift-counterweight": doubled frame faces at x=-38.7.
+7. Lift shaft is visible from the roof stair house (Aiden): enclose the shaft (walls, machine room/headhouse top, lift doors at roof level or solid wall), make the core read as a proper stair + lift lobby, not an open shaft. Audit the whole lift: car, doors, shaft walls per storey, top/bottom, counterweight, cables.
+
+## After all storey agents finish: integration audit (Aiden: "fell through most floors")
+- Floor coverage test: sample every storey on a 0.5 m grid inside the shell; every point not inside a collider must have a walkable floor at storeyY(i)+0.16 (and stair/lift/core). Report holes per storey.
+- Scripted walk: every corridor, every openable room, stair ground to roof, lift every storey, fire escape, roof.
+- Doors check --all, overlap audit, flicker map per storey, boot profile, frame ms per storey.
+8. Wall seams/gaps (Aiden screenshots): hairline vertical gaps between wall segments on room walls (light leaks through), and wall corners where two partitions meet leave a visible gap/notch with a lighter strip and a hole at the ceiling: partitions must overlap/butt fully, corners closed, tops meet the ceiling grid. (The 2 mm wall-end recess may be causing visible slits: replace with proper overlap.)
+9. Core hall to lift (Aiden): the opening from the spine into the core hall/lift lobby is a narrow slot (~1 m) with walls that don't line up (tile band on one side, chair rail on the other, offset faces). Make it a proper wide lift lobby opening (≥ 2.4 m, cased, consistent finish turning the corner), lift call button on the lobby wall beside the lift doors.
+
+## From storey 4 agent (forward when owners are free)
+- Kit: `doorway()` option for barricaded/no-hardware locked doors (4-14 used door()+registerDoor() directly).
+- Kit/lighting: corridor sconces light neighbouring room ceilings through the wall: point away from the wall / shorter range (lamps should be clipped by walls).
+- Kit: hoarding with a door, plastic sheets along x, wall tarps on any wall; promote s4's milky plastic material to the kit.
+- Documents: handwritten "DO NOT DISTURB — R.H." note; spray-paint "DO NOT DEMO — SEE DIRECTOR".
+- Program conflict: W-1 riser is inside 4-11, not behind the 4-01 "DO NOT DEMO" panel: update building-program.md or move the vignette.
+- Re-run s4 doors-check now that resetMotion is fixed (`--only s4: --at <x>,15.4,<z>`).
+
+## From storey 1 agent
+- Kit: officeSet desk orientation wrong (office_desk drawer side is -Z front; person should sit on the front side).
+- Kit: cubiclePod option to leave chairs out / lighter chair (chair cap 40).
+- Kit: Builder path to put procedural props on the small-prop layer (b.small).
+- Kit: export a carpet variant; PGlazed.blinds draws nothing; option to drop padlock on locked doors (vault, 4-14).
+- Kit rules: the "10 rules" live in the kit agent's report, not in kit.ts: add them to the kit.ts header.
+- Re-shoot s1 bullpen/fishbowl (shots predate a grid-index fix); re-run s1 doors-check now that resetMotion is fixed.
+
+## From storey 2 agent
+- Kit: plan.ts windows straddle the zone line (west face z -12.45..-9.15, east z 9.15..12.45): add a note/helper (s1 and s2 both had to shift walls).
+- Kit: spine bulletin() only correct on south-facing walls (north side ends up inside the wall).
+- Kit: settle the chair-facing convention (model notes -Z, officeSet +Z, conferenceTable -Z); export chairYaw.
+- Kit nice-to-have: pedestal eyewash, freestanding drench shower, softer closed blinds, less boxy fume hood.
+- Gameplay: sub-room ids (2-02b, 2-07b, 2-10b) need to be in the room registry.
+- Re-capture s2 microbiology UV and containment isolator after brightening.

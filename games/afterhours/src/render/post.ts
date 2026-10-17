@@ -994,6 +994,7 @@ export function createPost(ctx: WorldContext) {
       interiorTint.value.multiplyScalar(2 ** num(ctx, "grade.interiorExposure"))
       indoorU.value = indoor
 
+      for (const f of renderState.beforeRender) f()
       pipeline.render()
 
       // Keep this frame's accumulated reflections as next frame's history. The history keeps the size the reflections

@@ -47,13 +47,14 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
     builders[i] = b
     await pause()
   }
-  await buildOne(first)
+  // Core and lift first: storey walls resolve their joints against the core's colliders when they flush.
   const core = new Builder(ctx, "core")
   buildSlabs(core)
   await buildCore(core, pause)
   core.flush()
   await pause()
   const lift = buildLift(ctx, ctx.scene)
+  await buildOne(first)
   for (let i = 0; i < BUILDING.main.storeys; i++) if (i !== first) await buildOne(i)
 
   const { min, max } = BUILDING.main

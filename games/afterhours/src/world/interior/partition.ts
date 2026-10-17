@@ -61,6 +61,9 @@ export function partition(b: Builder, p: PartitionSpec): string[] {
     else if (o.kind === "cased") holes.push({ a0: o.from, a1: o.to, top: o.head ?? DOOR_H + 0.05 })
     else holes.push({ a0: o.from, a1: o.to, top: 99 })
   }
+  // Overlapping openings would emit overlapping head/sill segments (coplanar faces): clip each to the previous one.
+  holes.sort((p, q) => p.a0 - q.a0)
+  for (let k = 1; k < holes.length; k++) if (holes[k]!.a0 < holes[k - 1]!.a1) holes[k] = { ...holes[k]!, a0: holes[k - 1]!.a1 }
   const ext = { y0: FLOOR_Y - 0.01, y1: top, collide: p.collide ?? true }
   const [fa, fb] = p.finish
   const c = p.at

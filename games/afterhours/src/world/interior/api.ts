@@ -43,7 +43,7 @@ export { partition, studWall, column, type PartitionSpec, type POpening, type PD
 export { doorway, type DoorwaySpec } from "./doorway"
 export { room, dressWindow, type RoomOpts, type RoomHandle } from "./room"
 export { spine, type SpineOpts, type SpineHandle } from "./spine"
-export { serviceStack, riserW1, type ServiceOpts, type ServiceHandle, type ServiceRoom } from "./services"
+export { serviceStack, riserW1, RISER_W1_OUTER, type ServiceOpts, type ServiceHandle, type ServiceRoom } from "./services"
 export * from "./lights"
 export * from "./fixtures"
 export { STYLES, ROOM_BANDS, WET_BANDS, PLANT_BANDS, type Style } from "./styles"

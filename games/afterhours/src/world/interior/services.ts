@@ -170,14 +170,17 @@ function janitor(b: Builder) {
   const mx0 = r.x1 - 0.75
   const mz0 = r.z1 - 0.75
   const h = 0.28
+  // Curbs butt (front/back run full width, sides fit between them), 2 mm off the walls; base inside the curbs.
+  const wx1 = r.x1 - 0.002
+  const wz1 = r.z1 - 0.002
   for (const [a, c, d, e] of [
-    [mx0, r.x1, mz0, mz0 + 0.07],
-    [mx0, r.x1, r.z1 - 0.05, r.z1],
-    [mx0, mx0 + 0.06, mz0, r.z1],
-    [r.x1 - 0.05, r.x1, mz0, r.z1],
+    [mx0, wx1, mz0, mz0 + 0.07],
+    [mx0, wx1, wz1 - 0.05, wz1],
+    [mx0, mx0 + 0.06, mz0 + 0.07, wz1 - 0.05],
+    [wx1 - 0.05, wx1, mz0 + 0.07, wz1 - 0.05],
   ] as const)
-    b.box(M.concreteSink, a, y, d, c, y + h, e)
-  b.box(M.concreteSink, mx0, y, mz0, r.x1, y + 0.04, r.z1)
+    b.box(M.concreteSink, a, y, d, c, y + h, e, { skip: "y" })
+  b.box(M.concreteSink, mx0 + 0.06, y, mz0 + 0.07, wx1 - 0.05, y + 0.04, wz1 - 0.05, { skip: "y" })
   b.rod(M.steel, [mx0 + 0.25, y + 0.95, r.z1], [mx0 + 0.55, y + 0.95, r.z1], 0.015)
   b.rod(M.steel, [mx0 + 0.4, y + 0.95, r.z1], [mx0 + 0.4, y + 0.88, r.z1 - 0.2], 0.012)
   b.collide(mx0, y, mz0, r.x1, y + h, r.z1)
@@ -212,6 +215,10 @@ function store(b: Builder) {
   for (const dz of [-0.22, 0.22]) b.rod("metal_galvanized", [lx - 0.25, FLOOR_Y, 6.4 + dz], [lx, FLOOR_Y + 1.6, 6.4 + dz], 0.015, 6)
   for (let k = 1; k < 5; k++) b.box("metal_galvanized", lx - 0.25 + k * 0.05 - 0.04, FLOOR_Y + k * 0.32 - 0.01, 6.18, lx - 0.25 + k * 0.05 + 0.04, FLOOR_Y + k * 0.32 + 0.01, 6.62)
 }
+
+/** The footprint riserW1 occupies including its walls: pass it to `room({ exclude: [RISER_W1_OUTER] })` for the room
+ *  that contains it. */
+export const RISER_W1_OUTER: Rect = { x0: RISER_W1.x0 - 0.1, x1: RISER_W1.x1 + 0.1, z0: RISER_W1.z0 - 0.1, z1: RISER_W1.z1 + 0.1 }
 
 /** Riser W-1: a locked cupboard (stencilled trunk marks, no readable text) on every storey; door on `face`. */
 export function riserW1(b: Builder, o: { face?: "north" | "south" | "east" | "west"; state?: DoorState; hidden?: boolean } = {}) {

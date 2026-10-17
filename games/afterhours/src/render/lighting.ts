@@ -23,6 +23,7 @@ import {
   vec4,
 } from "three/tsl"
 import { ConeClusteredLighting } from "./clustered"
+import { initMirrors } from "./mirrors"
 import type { Lamp, WorldContext } from "../world/context"
 import type { Player } from "../player"
 import { fogSigma, opticalDepth } from "./atmosphere"
@@ -513,6 +514,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   glows.renderOrder = 10
   glows.visible = glowRigs.length > 0
   scene.add(glows)
+  initMirrors(ctx, () => [glows])
 
   // Culling. Clustered lights cost per pixel for every light whose sphere reaches the pixel's cluster, and their data
   // is re-sorted and re-uploaded each frame, so lamps that can't reach anything on screen are dropped: switched off,
@@ -537,7 +539,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const lampNeeded = (r: Rig) => {
     if (r.level <= 0.003 || !zoneOk(r)) return false
     sphere.set(r.pos, r.lamp.range)
-    return frustum.intersectsSphere(sphere)
+    // A live mirror sees behind the player: keep lamps lighting what it reflects.
+    return frustum.intersectsSphere(sphere) || (renderState.mirrorFrustum?.intersectsSphere(sphere) ?? false)
   }
 
   // Glow occlusion: emitters hidden by walls must not shine through them. Sprites are depth-tested, but a halo quad is
