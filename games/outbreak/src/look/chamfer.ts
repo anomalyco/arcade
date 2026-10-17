@@ -89,3 +89,19 @@ export function chamferBox(
     poly([P(s, 0), P(s, 1), P(s, 2)], [sx ? 1 : -1, sy ? 1 : -1, sz ? 1 : -1])
   }
 }
+
+/**
+ * 12-triangle axis-aligned box with vertical and under-face shading baked into vertex colour (`chamferBox` with `b = 0`).
+ * Used for flat garment trim, pockets, ties, straps, badges and torn hems where bevels would waste triangles.
+ */
+export function shadedBox(
+  m: Mesh,
+  x0: number, y0: number, z0: number,
+  x1: number, y1: number, z1: number,
+  col: Rgb,
+  mat: Mat,
+  shade: BakedShade = {},
+  aux = 0,
+): void {
+  chamferBox(m, x0, y0, z0, x1, y1, z1, 0, col, mat, shade, aux)
+}

@@ -55,7 +55,12 @@ import {
 import type { Survivor as Pose } from "../shared/session"
 import { hex } from "./level"
 import { BEAN_AUX, beanTint, DEFAULT_HERO_LOOK, HERO_AUX, heroShape, heroTint, softBeanShape } from "./look/hero"
-import { refinedSurvivorMeshes } from "./look/refined-figure"
+import {
+  buildColourBlocksSurvivorMeshes,
+  resolveSurvivorVariant,
+  SURVIVORS,
+  type SurvivorVariantSpec,
+} from "./look/survivors"
 import { SURVIVOR_COLOURS } from "./seat-colours"
 import { simpleFigureMeshes, softBeanMeshes, type SimpleFigureBone } from "@arcade/kit/avatar/simple-figure"
 
@@ -330,6 +335,9 @@ export class Survivor {
   private seat: [number, number, number] | null
   /** Co-op seat index (0 offline), picking Soft Bean's colour. */
   private seatIndex: number
+  /** Character index in `SURVIVORS` (0 solo, seat index by default in co-op, or lobby-selected variant). */
+  variantIndex: number
+  private paletteOverride?: { torso: number; legs: number }
   private renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setModel">>
   /** Soft Bean's shape knobs its meshes were last built from; it is built on first use and rebuilt when they change. */
   private beanKey = ""
@@ -359,14 +367,30 @@ export class Survivor {
   /** Each foot contact (plan x, y and body speed in m/s): footstep sounds land on the rig's own gait. */
   onFootfall?: (x: number, y: number, speed: number) => void
 
-  /** `palette` recolours the jacket and trousers (co-op seats); the default is the offline survivor. */
+  /**
+   * `paletteOrSeat` recolours Today's jacket and trousers (or passes a co-op seat index directly);
+   * `variant` selects the Colour Blocks character from `SURVIVORS` (defaults to 0 solo, or seat index in co-op).
+   */
   constructor(
     renderer: Pick<Renderer, "addModel"> & Partial<Pick<Renderer, "setModel">>,
-    palette: { torso: number; legs: number } = OFFLINE_PALETTE,
+    paletteOrSeat: { torso: number; legs: number } | number = OFFLINE_PALETTE,
+    variant?: number,
   ) {
     this.renderer = renderer
+    const numericSeat = typeof paletteOrSeat === "number" ? Math.max(0, Math.trunc(paletteOrSeat)) : null
+    const palette =
+      numericSeat !== null
+        ? numericSeat === 0
+          ? OFFLINE_PALETTE
+          : SURVIVOR_COLOURS[numericSeat % SURVIVOR_COLOURS.length]!
+        : paletteOrSeat
+    const colourIdx = SURVIVOR_COLOURS.indexOf(palette as (typeof SURVIVOR_COLOURS)[number])
     this.seat = palette === OFFLINE_PALETTE ? null : (hex(palette.torso).map(c => c ** 2.2) as [number, number, number])
-    this.seatIndex = Math.max(0, SURVIVOR_COLOURS.indexOf(palette as (typeof SURVIVOR_COLOURS)[number]))
+    this.seatIndex = numericSeat !== null ? numericSeat : Math.max(0, colourIdx)
+    const rawVariant = variant ?? this.seatIndex
+    this.variantIndex = ((Math.trunc(rawVariant) % SURVIVORS.length) + SURVIVORS.length) % SURVIVORS.length
+    const isStandardPalette = palette === OFFLINE_PALETTE || colourIdx >= 0
+    this.paletteOverride = isStandardPalette ? undefined : palette
     const box = (w: number, y0: number, h: number, d: number, color: number) => {
       const m = new Mesh()
       m.box(-w / 2, y0, -d / 2, w / 2, y0 + h, d / 2, hex(color), MAT.actor)
@@ -416,7 +440,7 @@ export class Survivor {
       const ids = [f.pelvis, f.torso, f.head, f.upperArm, f.foreArm, f.thigh, f.shin, f.foot, null, null, f.toe]
       return ids.map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     }
-    const refined = refinedSurvivorMeshes(palette, BEAN_AUX)
+    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride)
     const refinedIds = [refined.pelvis, refined.torso, refined.head, refined.upperArm, refined.foreArm, refined.thigh, refined.shin, refined.foot, null, null, refined.toe]
       .map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     this.shapes = [this.models, simple("mannequin"), simple("capsule"), [], refinedIds]
@@ -429,6 +453,27 @@ export class Survivor {
         [renderer.addModel(meleeMeshes0[id]), renderer.addModel(meleeMeshes1[id]), renderer.addModel(meleeMeshes2[id])],
       ]),
     ) as Record<MeleeWeaponId, [number, number, number]>
+  }
+
+  /** Resolved Colour Blocks character definition for this survivor's `variantIndex`. */
+  get variant(): SurvivorVariantSpec {
+    return resolveSurvivorVariant(this.variantIndex)
+  }
+
+  /** Switches this survivor's Colour Blocks character variant (`0..SURVIVORS.length - 1`) in place. */
+  setVariant(variant: number): void {
+    const next = ((Math.trunc(variant) % SURVIVORS.length) + SURVIVORS.length) % SURVIVORS.length
+    if (next === this.variantIndex) return
+    this.variantIndex = next
+    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride)
+    const order = [refined.pelvis, refined.torso, refined.head, refined.upperArm, refined.foreArm, refined.thigh, refined.shin, refined.foot, null, null, refined.toe]
+    const ids = this.shapes[4]!
+    const setModel = this.renderer.setModel?.bind(this.renderer)
+    order.forEach((mesh, i) => {
+      if (!mesh) ids[i] = this.models[i]!
+      else if (setModel) setModel(ids[i]!, mesh)
+      else ids[i] = this.renderer.addModel(mesh)
+    })
   }
 
   /** Builds Soft Bean's meshes, or rebuilds them in place when its shape knobs changed. */
