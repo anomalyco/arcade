@@ -95,6 +95,16 @@ export function WINDOWS(storey: number, face: Face): Window[] {
   return spans.map(([u0, u1]) => ({ face, u0, u1, sill, head }))
 }
 
+/**
+ * The window spanning `u` on a face, if any. Use it before placing a partition that meets the facade: a few facade
+ * windows straddle the zone line (west face z −12.45..−9.15, east face z 9.15..12.45 on storeys 2–4, and the bays
+ * either side of the core on the south face), so a wall at |z| 11.85..12.0 would run into the glass. Move the wall to
+ * the window's edge (`windowAt(...).u0 - 0.06` / `.u1 + 0.06`) or end it short of the lining.
+ */
+export function windowAt(storey: number, face: Face, u: number): Window | undefined {
+  return WINDOWS(storey, face).find((w) => u > w.u0 - 0.06 && u < w.u1 + 0.06)
+}
+
 /** Windows whose opening falls inside a room's wall on the given face (the room touches that shell face). */
 export function windowsOn(storey: number, r: Rect): Window[] {
   const out: Window[] = []

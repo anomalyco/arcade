@@ -38,6 +38,9 @@ export type DoorwaySpec = {
   /** "fixed" where one side of the opening is blocked (opens only to the `open`/`angle` sign side). */
   swing?: "auto" | "fixed"
   panic?: boolean
+  /** Lock hardware drawn for the state: "auto" (default: cylinder / card reader / hasp + padlock), or "none" (vault,
+   *  barricaded-from-inside doors: the door is locked but shows no padlock). */
+  hardware?: "auto" | "none"
 }
 
 const KEY_BRASS = paint(0x8a6a2a, 0.3, 0.9)
@@ -72,7 +75,10 @@ export function doorway(b: Builder, d: DoorwaySpec): string[] {
   const front = wallT / 2 + 0.014
   const latchX = width / 2 + 0.1
   // State hardware on the frame's latch side, front face.
-  if (d.state === "janitor") b.cyl(KEY_BRASS, F.clone().multiply(T(latchX - 0.04, 1.02, front, 0, Math.PI / 2)), 0.016, 0.016, 0.02, 12)
+  const hw = d.hardware ?? "auto"
+  if (hw === "none") {
+    // no visible lock hardware
+  } else if (d.state === "janitor") b.cyl(KEY_BRASS, F.clone().multiply(T(latchX - 0.04, 1.02, front, 0, Math.PI / 2)), 0.016, 0.016, 0.02, 12)
   else if (d.state.startsWith("keycard:")) {
     b.rbox(M.darkSteel, F, 0.08, 0.13, 0.025, 0.006, latchX + 0.04, 1.2, front + 0.004)
     b.boxM(M.felt, F, 0.05, 0.006, 0.004, latchX + 0.04, 1.23, front + 0.017, { cast: false })

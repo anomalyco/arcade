@@ -5,10 +5,10 @@ import { CORE_PLAN, type DoorState, RISER_W1, SERVICE, type Rect } from "./plan"
 import { type PDoor, type POpening, partition } from "./partition"
 import { placeModels } from "./props"
 import { room } from "./room"
-import { bucket } from "./rooms"
-import { fountain } from "./corridor"
+import { washroom } from "./washroom"
+import { bucket } from "./fixtures"
+import { fountain } from "./fittings"
 import { PLANT_BANDS, ROOM_BANDS, WET_BANDS } from "./styles"
-import { materialFor } from "../../render/materials"
 
 // The fixed parts every storey shares (building program §1): the service stack south of the spine (EL electrical,
 // TC telecom, WC-M, janitor closet, store, WC-W, the fountain between the WC doors, the mechanical chase beside the
@@ -30,9 +30,6 @@ export type ServiceHandle = {
   rooms: Record<ServiceRoom, Rect>
 }
 
-const PORCELAIN = paint(0xd8d6cc, 0.18, 0)
-const MIRROR = materialFor("flat", { color: 0xb8bcbc, roughness: 0.05, metalness: 1, name: "interior_mirror" })
-const PARTITION = paint(0x6a7a6e, 0.4, 0.2)
 
 export function serviceStack(b: Builder, o: ServiceOpts = {}): ServiceHandle {
   const skip = new Set(o.skip ?? [])
@@ -44,7 +41,9 @@ export function serviceStack(b: Builder, o: ServiceOpts = {}): ServiceHandle {
   partition(b, { axis: "z", at: -47.8, from: 1.75, to: z1, finish: [ROOM_BANDS, PLANT_BANDS] })
   partition(b, { axis: "x", at: 10.675, from: -47.8, to: -42.15, finish: [PLANT_BANDS, ROOM_BANDS] })
   partition(b, { axis: "x", at: 6.475, from: -47.8, to: -42.15, finish: [PLANT_BANDS, PLANT_BANDS] })
-  partition(b, { axis: "z", at: -36.075, from: 1.75, to: CORE_PLAN.chase.z1, thickness: 0.15, finish: [PLANT_BANDS, WET_BANDS] })
+  // Chase wall: toilet tile on the WC-M side, room finish north of the toilets.
+  partition(b, { axis: "z", at: -36.075, from: 1.75, to: 9.6, thickness: 0.15, finish: [PLANT_BANDS, WET_BANDS] })
+  partition(b, { axis: "z", at: -36.075, from: 9.6, to: CORE_PLAN.chase.z1, thickness: 0.15, finish: [PLANT_BANDS, ROOM_BANDS] })
   partition(b, { axis: "x", at: 9.675, from: -36.0, to: -26.2, finish: [WET_BANDS, ROOM_BANDS] })
   partition(b, { axis: "z", at: -26.2, from: 1.75, to: 9.75, finish: [WET_BANDS, ROOM_BANDS] })
   partition(b, { axis: "z", at: -32.675, from: 1.75, to: 9.6, finish: [WET_BANDS, WET_BANDS] })
@@ -109,57 +108,9 @@ function telecom(b: Builder) {
   for (let x = wx + 0.2; x < rx; x += 0.3) b.box("metal_galvanized", x - 0.01, CEIL_Y - 0.4, 8.45, x + 0.01, CEIL_Y - 0.385, 8.75, { cast: false })
 }
 
-/** Toilets: stalls along the back, urinals (M), a basin counter on the spine side, mirror, towel dispenser, drain. */
+/** Washrooms: see washroom.ts (library fixtures, steel stalls, mirror, drain). */
 function toilets(b: Builder, r: Rect, kind: "M" | "W", refurb?: boolean) {
-  room(b, { id: kind === "M" ? "WCM" : "WCW", name: kind === "M" ? "Men's room" : "Women's room", rect: r, floor: "terrazzo", lit: "none", windows: false, columns: false })
-  const y = FLOOR_Y
-  const stalls = kind === "M" ? 2 : 3
-  const sw = (r.x1 - r.x0) / stalls
-  const depth = 1.45
-  const sz0 = r.z1 - depth
-  // Stalls: steel partitions raised off the floor on legs, a door panel standing ajar, WC pan and cistern.
-  for (let k = 0; k < stalls; k++) {
-    const x0 = r.x0 + k * sw
-    if (k > 0) {
-      b.box(PARTITION, x0 - 0.0125, y + 0.25, sz0, x0 + 0.0125, y + 1.85, r.z1)
-      b.box(M.steel, x0 - 0.015, y, sz0 + 0.02, x0 + 0.015, y + 0.25, sz0 + 0.06)
-    }
-    b.box(PARTITION, x0 + 0.02, y + 0.25, sz0 - 0.0125, x0 + 0.12, y + 1.85, sz0 + 0.0125)
-    const open = 0.6 + ((k * 0.37) % 0.5)
-    b.boxM(PARTITION, T(x0 + 0.12, y + 0.25, sz0, -open), sw - 0.16, 1.6, 0.025, (sw - 0.16) / 2, 0.8, 0)
-    const cx = x0 + sw / 2
-    b.rbox(PORCELAIN, T(cx, y, r.z1 - 0.35), 0.38, 0.4, 0.55, 0.12, 0, 0.2, 0)
-    b.rbox(PORCELAIN, T(cx, y, r.z1 - 0.1), 0.42, 0.36, 0.17, 0.03, 0, 0.6, 0)
-    b.cyl(M.darkSteel, T(cx, y + 0.405, r.z1 - 0.38), 0.17, 0.18, 0.012, 20)
-    b.collide(cx - 0.2, y, r.z1 - 0.65, cx + 0.2, y + 0.45, r.z1)
-    b.collide(x0 - 0.015, y, sz0, x0 + 0.015, y + 1.85, r.z1)
-  }
-  if (refurb) b.box(M.safety, r.x0 + 0.1, y + 1.0, sz0 - 0.02, r.x1 - 0.1, y + 1.06, sz0 - 0.015, { cast: false })
-  // Urinals on the east (M) wall between stalls and counter.
-  if (kind === "M")
-    for (const z of [4.6, 5.5]) {
-      b.rbox(PORCELAIN, T(r.x1 - 0.17, y + 0.6, z), 0.3, 0.6, 0.36, 0.1)
-      b.rod(M.steel, [r.x1 - 0.06, y + 0.9, z], [r.x1 - 0.06, y + 1.4, z], 0.012, 8)
-      b.collide(r.x1 - 0.35, y, z - 0.18, r.x1, y + 0.9, z + 0.18)
-    }
-  // Basin counter along the west wall near the door, mirror above, towel dispenser, bin.
-  const cx = r.x0 + 0.3
-  b.rbox(M.laminateTop, T(cx, y + 0.84, 3.4), 0.55, 0.05, 2.0, 0.01)
-  b.box(M.laminate, r.x0, y + 0.66, 2.4, r.x0 + 0.55, y + 0.82, 4.4)
-  for (const z of [2.9, 3.9]) {
-    b.cyl(PORCELAIN, T(cx + 0.03, y + 0.83, z), 0.19, 0.15, 0.1, 20, { open: true })
-    b.cyl(M.darkSteel, T(cx + 0.03, y + 0.79, z), 0.15, 0.15, 0.005, 16)
-    b.rod(M.steel, [r.x0 + 0.06, y + 0.87, z], [r.x0 + 0.06, y + 1.05, z], 0.012, 8)
-    b.rod(M.steel, [r.x0 + 0.06, y + 1.05, z], [r.x0 + 0.22, y + 1.02, z], 0.01, 8)
-  }
-  b.collide(r.x0, y, 2.4, r.x0 + 0.58, y + 0.9, 4.4)
-  b.quad(MIRROR, T(r.x0 + 0.004, y + 1.5, 3.4, Math.PI / 2), 1.9, 0.8, { cast: false })
-  b.box(M.steel, r.x0, y + 1.08, 2.45, r.x0 + 0.01, y + 1.92, 4.35)
-  b.rbox(M.steel, T(r.x0 + 0.06, y + 1.3, 4.9, Math.PI / 2), 0.28, 0.36, 0.1, 0.02)
-  b.cyl(M.darkSteel, T(r.x0 + 0.3, y + 0.25, 5.4), 0.18, 0.16, 0.5, 18, { open: true })
-  b.collide(r.x0, y, 5.2, r.x0 + 0.5, y + 0.5, 5.6)
-  // Floor drain.
-  b.cyl(M.darkSteel, T((r.x0 + r.x1) / 2, y + 0.004, (r.z0 + r.z1) / 2 - 0.5), 0.09, 0.09, 0.002, 16, { cast: false })
+  washroom(b, { id: kind === "M" ? "WCM" : "WCW", name: kind === "M" ? "Men's room" : "Women's room", rect: r, kind, refurb })
 }
 
 function janitor(b: Builder) {

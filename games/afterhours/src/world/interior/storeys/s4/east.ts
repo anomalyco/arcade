@@ -28,6 +28,7 @@ import {
   paint,
   wastebasket,
   yawToward,
+  framedMirror,
 } from "../../api"
 import { type S4, paper } from "./common"
 import { BROADLOOM, CERAMIC, CHART, EXEC_BANDS, FROST, LED_AMBER, LED_GREEN, SURVEY_MAP, TRANSOM, WALNUT } from "./mats"
@@ -312,8 +313,10 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   partition(b, { axis: "z", at: 19.6, from: 1.75, to: 5.2, openings: [{ kind: "door", at: 3.7, side: "a", door: { id: "4-17W", state: "closed", room: "4-17", leaf: "veneer" } }], finish: [EXEC_BANDS, ROOM_BANDS] })
   partition(b, { axis: "x", at: 5.26, from: 19.54, to: 22.4, finish: [ROOM_BANDS, EXEC_BANDS] })
   toilet(b, 21.4, 1.75, 0)
-  b.rbox(CERAMIC, T(22.12, FLOOR_Y + 0.8, 4.4), 0.42, 0.14, 0.5, 0.04)
-  b.collide(21.9, FLOOR_Y, 4.15, 22.4, FLOOR_Y + 0.87, 4.65)
+  // Library lavatory (wall-hung, rim at 0.86 m) on the east wall, mirror over it.
+  placeModels(b, "lavatory", [{ position: [22.4 - MODELS.lavatory.size[2] / 2, FLOOR_Y + 0.49, 4.4], yaw: yawToward(-1, 0), collide: false, blob: 0 }])
+  b.collide(22.4 - MODELS.lavatory.size[2], FLOOR_Y + 0.49, 4.12, 22.4, FLOOR_Y + 1.05, 4.68)
+  framedMirror(b, { at: 22.4, u: 4.4, face: "x-", width: 0.46 })
   await pause()
 
   // ---------------------------------------------------------------- 4-13 Deputy Director
@@ -389,15 +392,14 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   partition(b, { axis: "x", at: 3.94, from: 31.06, to: 34.61, finish: [EXEC_BANDS, ROOM_BANDS] })
   partition(b, { axis: "x", at: 9.66, from: 31.06, to: 34.61, finish: [ROOM_BANDS, EXEC_BANDS] })
   toilet(b, 33.4, 4.0, 0)
+  placeModels(b, "lavatory", [{ position: [34.61 - MODELS.lavatory.size[2] / 2, FLOOR_Y + 0.49, 7.6], yaw: yawToward(-1, 0), collide: false, blob: 0 }])
+  b.collide(34.61 - MODELS.lavatory.size[2], FLOOR_Y + 0.49, 7.32, 34.61, FLOOR_Y + 1.05, 7.88)
+  framedMirror(b, { at: 34.61, u: 7.6, face: "x-", width: 0.46 })
 }
 
-/** WC pan and cistern with its back to the wall at z0 (yaw 0 = facing +z). */
+/** Library toilet with its back to the wall at z0, facing +z (`yaw` adds a turn). */
 function toilet(b: Builder, x: number, z0: number, yaw: number) {
-  const m = T(x, FLOOR_Y, z0, yaw)
-  b.rbox(CERAMIC, m, 0.38, 0.4, 0.55, 0.12, 0, 0.2, 0.35)
-  b.rbox(CERAMIC, m, 0.42, 0.36, 0.17, 0.03, 0, 0.6, 0.1)
-  b.cyl(M.darkSteel, m.clone().multiply(T(0, 0.405, 0.38)), 0.17, 0.18, 0.012, 20)
-  b.collideLocal(m, [-0.21, 0, 0], [0.21, 0.45, 0.65])
+  placeModels(b, "toilet", [{ position: [x, FLOOR_Y, z0 + 0.02 + MODELS.toilet.size[2] / 2], yaw: Math.PI + yaw, inset: 0.03, blob: 0 }])
 }
 
 const SCREEN = paint(0xe2e2da, 0.8)

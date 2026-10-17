@@ -2,7 +2,7 @@ import { type Builder, CEIL_Y, FLOOR_Y, LAYER, M, ceiling, doorOpening, paint, w
 import { type TrofferCell, emergencyPack, exitSign, sconce, troffers } from "./lights"
 import { CORE_PLAN, FIRE_DOOR, SHELL, WINDOWS } from "./plan"
 import { type Finish, type POpening, partition } from "./partition"
-import { extinguisher, bulletin } from "./corridor"
+import { extinguisher, bulletin } from "./fittings"
 import { ROOM_BANDS, STYLES, type Style } from "./styles"
 
 // The spine corridor (z ±1.6) of a storey: floor finish with edge stripes that stop at openings, both walls with the

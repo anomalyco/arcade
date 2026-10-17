@@ -92,6 +92,42 @@ import { material, materialFor, type MaterialName } from "../../render/materials
  * Z-FIGHTING
  *   Never two coplanar faces: drop hidden faces with `skip`, offset layers ≥ 4 mm, keep trims/plates proud of every
  *   finish layer. Check with the coplanar audit (ask the kit owner) or a stand-still flicker map.
+ *
+ * WALL JOINTS (since the joint round)
+ *   `wall()` defers its two ends to Builder.flush: an end that runs into a perpendicular wall-like collider (this
+ *   storey's walls, the core, the shell) is extended into it without a cap (closed T/L joints, no slit, no notch at
+ *   the ceiling, no coplanar end faces); a free end gets a flush cap. Build walls so they MEET (end on the other wall's
+ *   centre line or face), never stop short. The core and lift build first, so storey walls join onto them.
+ *
+ * CONVENTIONS
+ *   Chairs and every model: front faces local −Z; `chairYaw(cx, cz, tx, tz)` faces a seat at (cx, cz) towards (tx, tz).
+ *   The steel office desk's front (drawer side, where the occupant sits) is its local −Z: `officeSet` puts the task
+ *   chair there facing the desk and visitors on the back side.
+ *
+ * THE 10 RULES FOR STOREY FILES
+ *   1. Edit only storeys/sN.ts (+ an sN/ folder). Import from `../api`, layout, render/models, render/materials only.
+ *      Ask the kit owner for new helpers; a helper used by one storey stays local.
+ *   2. Author in ground-floor coordinates (FLOOR_Y 0.16, CEIL_Y 3.1); take positions from plan.ts, never re-derive.
+ *   3. Leave the core alone (spine adds the hall gap; storeys 1–4 get the fire-escape opening at x −54.65, z 0).
+ *      Rooms must not overlap SERVICE.footprint or CORE_PLAN.
+ *   4. Doors only through `doorway` / partition openings (or `liftGate`), ≥ 70 % openable; doorways clear and floored
+ *      (`bun scripts/doors-check.ts --all --only sN: --at <x>,<y>,<z>`).
+ *   5. Every lit fitting has a lamp (room({ lit }) and lights.ts do it). Per storey ≤ 48 lamps, ≤ 6 per room, ≤ 3 with
+ *      `shadow: true`. Omni lamps light through walls (clustered lights aren't occluded): aim spots away from walls.
+ *   6. Fixtures where the program puts them (eyewash/drench inside labs ≤ 3 m from the exit, etc.).
+ *   7. Library names, `paint()`, `glow()`, `M`, `carpet(hex)`; no per-object node materials; procedural patterns filtered
+ *      (aaStep/aaWindow/aaLines/aaFade). Models via `placeModels` (merged, never instanced).
+ *   8. Nothing coplanar (layers ≥ LAYER), trims proud of finishes, nothing floating or interpenetrating; walls meet.
+ *   9. `await pause()` every few rooms; return `update` (chain room/spine updates) and a cheap `proxy` for lit rooms.
+ *      Small procedural props go in `b.smallBuilder` (drawn on the camera's storey only).
+ *  10. Measure: `bun scripts/shot.ts` with an `icam` inside the storey and `only=interior,facility`; report frame/GPU ms.
+ *
+ * ADDITIVE API LOG
+ *   room({ exclude, liningOpenings, troffers.perLamp }) · subtract() · windowAt() · RISER_W1_OUTER · chairYaw ·
+ *   cubiclePod({ chairs }) · carpet(hex), M.carpetBlue/M.carpetRust · Builder.smallBuilder · PGlazed.blinds draws ·
+ *   doorway({ hardware: "none" }) · bulkhead() · screen({ material }) · liftGate() · hoardingWall() · plasticSheet() ·
+ *   wallTarp() · POLY (milky polythene) · washroom() · framedMirror() · WASHROOM_LAYER · fittings bulletin/hazardLight
+ *   work on either spine wall. Retired: lobby.ts, corridor.ts, rooms.ts, storeys.ts, furnish.ts, props.placeProps.
  */
 
 export type Mat = MaterialName | THREE.Material | Paint
@@ -209,7 +245,17 @@ const vcMaterial = (() => {
 })()
 
 /** Carpet tiles (50 cm, laid quarter-turned so alternate tiles read lighter), seams and fibre noise; one shader. */
-function carpetTiles() {
+const carpetCache = new Map<number, THREE.Material>()
+/** Carpet tiles in any base colour (linear-ish sRGB hex): every variant shares one shader (colour is a uniform). */
+export function carpet(hex = 0x1b1916) {
+  const hit = carpetCache.get(hex)
+  if (hit) return hit
+  const m = carpetTiles(new THREE.Color(hex))
+  carpetCache.set(hex, m)
+  return m
+}
+
+function carpetTiles(base = new THREE.Color(0.105, 0.1, 0.088)) {
   const m = nodeMat(0x3a3832, 0.98, 0, "carpet_tiles")
   const p = positionWorld.xz.mul(2)
   const c = floor(p)
@@ -217,7 +263,7 @@ function carpetTiles() {
   const seam = max(aaLines(p.x, 0.024), aaLines(p.y, 0.024))
   const fibre = hash(floor(positionWorld.xz.mul(220)).dot(vec2(1, 157))).mul(0.12).mul(aaFade(positionWorld.x.mul(220))).add(float(0.06).mul(float(1).sub(aaFade(positionWorld.x.mul(220)))))
   const wear = hash(c.dot(vec2(7, 113))).mul(0.06)
-  m.colorNode = vec3(0.105, 0.1, 0.088).mul(float(0.92).add(checker.mul(0.12)).add(fibre).sub(wear)).mul(float(1).sub(seam.mul(0.45)))
+  m.colorNode = (uniform(base) as N).mul(float(0.92).add(checker.mul(0.12)).add(fibre).sub(wear)).mul(float(1).sub(seam.mul(0.45)))
   return m
 }
 
@@ -290,6 +336,9 @@ export const M = {
   concreteSink: paint(0x6e6e66, 0.8, 0),
   rubber: paint(0x141414, 0.9, 0),
   carpet: carpetTiles(),
+  /** Muted blue-grey and rust carpet variants (same shader as M.carpet). */
+  carpetBlue: null as unknown as THREE.Material,
+  carpetRust: null as unknown as THREE.Material,
   block: blockWall(),
   hazard: hazardStripes(),
   vinylBeige: paint(0x8f8468, 0.82, 0),
@@ -315,6 +364,9 @@ export const M = {
   debris: paint(0x8a877c, 0.95, 0),
   stain: paint(0x6f6a5c, 0.95, 0),
 }
+
+M.carpetBlue = carpet(0x141a22)
+M.carpetRust = carpet(0x24140e)
 
 export const corridorBands: Band[] = [
   [0, 0.3, "tile_green_dark"],
@@ -392,6 +444,13 @@ export class Builder {
   readonly props = new THREE.Group()
   /** Small desk and bench props (drawn only on the camera's own storey, indoors). */
   readonly small = new THREE.Group()
+  private smallB: Builder | null = null
+  /** A builder whose geometry joins `small` (drawn only on the camera's own storey, like desk-top models): use it for
+   *  procedural props and vignette clutter. Same storey, flushed with this builder. */
+  get smallBuilder(): Builder {
+    if (!this.smallB) this.smallB = new Builder(this.ctx, `${this.group.name.replace(/^interior:/, "")}-small`, this.storey)
+    return this.smallB
+  }
   /** LOD1 copies of the furniture and small props, drawn instead of them from other storeys and from outside. */
   readonly propsLod = new THREE.Group()
   readonly smallLod = new THREE.Group()
@@ -655,6 +714,10 @@ export class Builder {
   }
 
   flush(parent: THREE.Object3D = this.ctx.scene) {
+    if (this.smallB) {
+      this.smallB.flush(this.small)
+      this.smallB = null
+    }
     this.resolveEnds()
     for (const p of this.parts.values()) {
       if (!p.pos.length) continue

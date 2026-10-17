@@ -3,6 +3,7 @@ import { type DoorwaySpec, doorway } from "./doorway"
 import { WALL } from "./plan"
 import type { Style } from "./styles"
 import { materialFor } from "../../render/materials"
+import { blindMats } from "./finishes"
 
 // Partitions: straight walls between rooms with two finishes (one per face) and typed openings that build their own
 // frames, glazing, trims and door leaves. All heights are above the storey's finished floor.
@@ -114,6 +115,16 @@ export function partition(b: Builder, p: PartitionSpec): string[] {
       const mid = (o.from + o.to) / 2
       const m = p.axis === "x" ? T(mid, FLOOR_Y + (sill + head) / 2, c) : T(c, FLOOR_Y + (sill + head) / 2, mid, Math.PI / 2)
       b.quad(PLATE_GLASS, m, o.to - o.from - 0.08, head - sill - 0.04, { cast: false })
+      if (o.kind === "glazed" && o.blinds) {
+        // Venetian blind on face a (−z / −x side), two thirds down, slats tilted open; head rail and bottom bar.
+        const bh = (head - sill - 0.08) * 0.66
+        const f = c - (t / 2 + 0.03)
+        const yt = FLOOR_Y + head - 0.03
+        const bm = p.axis === "x" ? T(mid, yt - 0.04 - bh / 2, f, Math.PI) : T(f, yt - 0.04 - bh / 2, mid, -Math.PI / 2)
+        b.quad(blindMats.open, bm, o.to - o.from - 0.1, bh, { cast: false })
+        box(b, p.axis, o.from + 0.05, o.to - 0.05, f - 0.02, f + 0.02, yt - 0.04, yt, M.beige, [], false)
+        box(b, p.axis, o.from + 0.05, o.to - 0.05, f - 0.012, f + 0.012, yt - 0.06 - bh, yt - 0.04 - bh, M.beige, [], false)
+      }
       if (p.collide ?? true) {
         if (p.axis === "x") b.collide(o.from, FLOOR_Y + sill, c - 0.03, o.to, FLOOR_Y + head, c + 0.03)
         else b.collide(c - 0.03, FLOOR_Y + sill, o.from, c + 0.03, FLOOR_Y + head, o.to)

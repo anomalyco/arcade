@@ -1,21 +1,26 @@
 import * as THREE from "three/webgpu"
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
+import { float, floor, fract, hash, mix, positionWorld, step, time, vec3 } from "three/tsl"
+import { materialFor } from "../../render/materials"
+import { type DoorState, SHELL } from "./plan"
+import { doorway } from "./doorway"
 import { MODELS, type ModelName, yawToward } from "../../render/models"
-import { type Builder, CEIL_Y, FLOOR_Y, M, T, glow, paint } from "./kit"
+import { type Builder, type Mat, CEIL_Y, FLOOR_Y, LAYER, M, T, aaFade, aaWindow, glow, paint } from "./kit"
 import { placeModels, wastebasket } from "./props"
-import { benchRun, bucket } from "./rooms"
-import { cabinet as rackCabinet, doorRelief, lineprinter as linePrinterSide, tapeDrive as tapeDriveRaw } from "./furnish"
-import { STAIN, PUDDLE, blindMats, fallenTile, hangingTroffer, hoarding, plastic, plasticMat, slabRemnants, tarpFloor, tarpHung } from "./storeys"
+import { STAIN, PUDDLE, POLY, blindMats, plasticMat } from "./finishes"
 
 // Furniture and fixtures for storey files. FRAME CONVENTION (same as the model library): a fixture stands at (x, z) on
 // the floor, its FRONT faces local −Z, so `yaw = yawToward(dx, dz)` turns its front towards (dx, dz); things that
 // stand against a wall have their BACK at local +Z (place them so x, z is the footprint centre, back on the wall).
 // Everything adds its own colliders. Positions are ground-floor coordinates.
 
-export { benchRun, bucket, doorRelief, wastebasket }
+export { wastebasket }
 /** Decay pieces (storey 4) and shared decals/materials. */
-export { STAIN, PUDDLE, blindMats, plasticMat, fallenTile, hangingTroffer, hoarding, plastic, slabRemnants, tarpFloor, tarpHung }
+export { STAIN, PUDDLE, POLY, blindMats, plasticMat }
 
 const frame = (x: number, z: number, yaw: number, y = FLOOR_Y) => T(x, y, z, yaw)
+/** Yaw that turns a seat at (cx, cz) to face (tx, tz) (seat fronts face local −Z, like the models). */
+export const chairYaw = (cx: number, cz: number, tx: number, tz: number) => yawToward(tx - cx, tz - cz)
 /** World AABB collider for a local box in a fixture frame. */
 const coll = (b: Builder, m: THREE.Matrix4, w: number, h: number, d: number, ox = 0, oz = 0) => b.collideLocal(m, [ox - w / 2, 0, oz - d / 2], [ox + w / 2, h, oz + d / 2])
 
@@ -128,7 +133,7 @@ export function sinkCounter(b: Builder, x: number, z: number, yaw: number, lengt
 
 /** Cubicle pod: 2 × 2 workstations (fabric panels 1.55 m, L worksurface, overhead bin, chair, phone; every 3rd a
  *  terminal). `tubes` lists cell indices (0..3) whose under-bin task tube is on. */
-export function cubiclePod(b: Builder, x: number, z: number, yaw: number, opts: { tubes?: number[]; terminalEvery?: number; seed?: number } = {}) {
+export function cubiclePod(b: Builder, x: number, z: number, yaw: number, opts: { tubes?: number[]; terminalEvery?: number; seed?: number; /** Seats: task chairs (default), lighter stacking chairs, or none. */ chairs?: "office" | "stack" | "none" } = {}) {
   const m = frame(x, z, yaw)
   const c = 1.8
   const ph = 1.55
@@ -165,29 +170,34 @@ export function cubiclePod(b: Builder, x: number, z: number, yaw: number, opts: 
       if (cell % (opts.terminalEvery ?? 3) === 0) placeModels(b, "crt_terminal", [{ position: [dp[0], deskTop, dp[2]], yaw: yaw + (sz > 0 ? Math.PI : 0), collide: false, blob: 0 }])
       else placeModels(b, "telephone", [{ position: [dp[0] + 0.3, deskTop, dp[2]], yaw: yaw + (sz > 0 ? Math.PI : 0) + 0.3, collide: false, blob: 0 }])
       const cp = ptIn(m, sx * (c / 2 - 0.1 + (rnd() - 0.5) * 0.4), 0, sz * (pt / 2 + 1.05))
-      placeModels(b, "office_chair", [{ position: [cp[0], FLOOR_Y, cp[2]], yaw: yaw + (sz > 0 ? 0 : Math.PI) + (rnd() - 0.5) * 1.2, inset: 0.15 }])
+      const cy = yaw + (sz > 0 ? 0 : Math.PI) + (rnd() - 0.5) * 1.2
+      if ((opts.chairs ?? "office") !== "none") placeModels(b, opts.chairs === "stack" ? "stack_chair" : "office_chair", [{ position: [cp[0], FLOOR_Y, cp[2]], yaw: cy, inset: 0.15 }])
     }
 }
 
-/** Private office set facing `yaw`: steel desk, task chair behind, two visitor chairs, filing cabinet, coat rack,
- *  phone, optional lit desk lamp. (x, z) is the desk centre. */
+/**
+ * Private office set. CHAIR CONVENTION (all kit fixtures): a seat's front faces local −Z like every library model, so
+ * `chairYaw(cx, cz, tx, tz)` turns a chair at (cx, cz) to face (tx, tz). The steel desk's front (drawer side, where
+ * the occupant sits) is its local −Z; `yaw` turns the desk. The task chair stands on the front side facing the desk,
+ * visitors on the back side facing it; phone and lamp turn towards the occupant. (x, z) is the desk centre.
+ */
 export function officeSet(b: Builder, x: number, z: number, yaw: number, opts: { lamp?: boolean; visitors?: number; coat?: boolean; seed?: number } = {}) {
   const m = frame(x, z, yaw)
   const top = FLOOR_Y + MODELS.office_desk.size[1]
   placeModels(b, "office_desk", [{ position: [x, FLOOR_Y, z], yaw }])
-  const behind = ptIn(m, 0.1, 0, 0.85)
-  placeModels(b, "office_chair", [{ position: [behind[0], FLOOR_Y, behind[2]], yaw: yaw + Math.PI + 0.2, inset: 0.15 }])
+  const seat = ptIn(m, 0.1, 0, -0.85)
+  placeModels(b, "office_chair", [{ position: [seat[0], FLOOR_Y, seat[2]], yaw: chairYaw(seat[0], seat[2], x, z) + 0.2, inset: 0.15 }])
   const v = opts.visitors ?? 2
   for (let k = 0; k < v; k++) {
-    const p = ptIn(m, (k - (v - 1) / 2) * 0.7, 0, -0.95)
-    placeModels(b, "stack_chair", [{ position: [p[0], FLOOR_Y, p[2]], yaw: yaw + (k - 0.5) * 0.3 }])
+    const p = ptIn(m, (k - (v - 1) / 2) * 0.7, 0, 0.95)
+    placeModels(b, "stack_chair", [{ position: [p[0], FLOOR_Y, p[2]], yaw: chairYaw(p[0], p[2], x, z) + (k - 0.5) * 0.3 }])
   }
   const ph = ptIn(m, 0.6, 0, 0.1)
-  placeModels(b, "telephone", [{ position: [ph[0], top, ph[2]], yaw: yaw + Math.PI - 0.3, collide: false, blob: 0 }])
+  placeModels(b, "telephone", [{ position: [ph[0], top, ph[2]], yaw: yaw - 0.3, collide: false, blob: 0 }])
   if (opts.lamp !== undefined) {
     const lp = ptIn(m, -0.7, 0, 0.15)
     // deskLamp lives in lights.ts; placed here directly to keep fixtures free of lamp policy.
-    placeModels(b, "desk_lamp", [{ position: [lp[0], top, lp[2]], yaw: yaw + Math.PI, collide: false, blob: 0 }])
+    placeModels(b, "desk_lamp", [{ position: [lp[0], top, lp[2]], yaw, collide: false, blob: 0 }])
     if (opts.lamp) {
       const f = ptIn(m, -0.7, 0.4, -0.15)
       b.lamp({ kind: "incandescent", position: [f[0], top + 0.4, f[2]], direction: dirIn(yaw, 0.53, -0.85), color: [1, 0.68, 0.38], intensity: 60, range: 5, angle: 1.0, penumbra: 0.8, size: 0.08 })
@@ -287,13 +297,13 @@ export function slopSink(b: Builder, x: number, z: number, yaw: number) {
 export function rackRow(b: Builder, x: number, z: number, yaw: number, count = 4, diskEvery = 3) {
   for (let k = 0; k < count; k++) {
     const p = ptIn(frame(x, z, yaw), (k - (count - 1) / 2) * 0.82, 0, 0)
-    rackCabinet(b, p[0], p[2], yaw, k % diskEvery === diskEvery - 1)
+    cabinet(b, p[0], p[2], yaw, k % diskEvery === diskEvery - 1)
   }
 }
 /** Tape drive (reels behind smoked glass), front −Z. */
-export const tapeDrive = (b: Builder, x: number, z: number, yaw: number, rnd: () => number) => tapeDriveRaw(b, x, z, yaw, rnd)
+export const tapeDrive = (b: Builder, x: number, z: number, yaw: number, rnd: () => number) => tapeDriveModel(b, x, z, yaw, rnd)
 /** Band printer on its stand with a fanfold sheet into the catch basket, front −Z. */
-export const linePrinter = (b: Builder, x: number, z: number, yaw: number, rnd: () => number) => linePrinterSide(b, x, z, yaw, rnd)
+export const linePrinter = (b: Builder, x: number, z: number, yaw: number, rnd: () => number) => lineprinter(b, x, z, yaw, rnd)
 
 // ------------------------------------------------------------------------------------------------ rest & walls
 
@@ -331,3 +341,453 @@ function ptIn(m: THREE.Matrix4, x: number, y: number, z: number): [number, numbe
 const dirIn = (yaw: number, fwd: number, down: number): [number, number, number] => [-Math.sin(yaw) * fwd, down, -Math.cos(yaw) * fwd]
 
 export { yawToward }
+
+
+// ------------------------------------------------------------------------------------------------ moved from the retired storey template
+
+/** Run of steel base cabinets with an epoxy top along a wall; c0 is the wall side, c1 the front (either sign). */
+export function benchRun(b: Builder, axis: "x" | "z", a0: number, a1: number, c0: number, c1: number) {
+  const y = FLOOR_Y
+  const f = Math.sign(c1 - c0) || 1
+  const box = (p0: number, p1: number, q0: number, q1: number, y0: number, y1: number, mat: Mat, cast = true) =>
+    axis === "x" ? b.box(mat, p0, y0, q0, p1, y1, q1, { cast }) : b.box(mat, q0, y0, p0, q1, y1, p1, { cast })
+  // Cabinet body (front face at c1), toe kick, top.
+  box(a0, a1, c0, c1 - f * 0.02, y + 0.1, y + 0.9, M.cabinet)
+  box(a0, a1, c0, c1 - f * 0.08, y, y + 0.1, M.rubber, false)
+  box(a0, a1, c0, c1 + f * 0.02, y + 0.9, y + 0.935, M.epoxy)
+  // Drawer and door fronts with handles.
+  const unit = 0.6
+  const n = Math.floor((a1 - a0) / unit)
+  for (let i = 0; i < n; i++) {
+    const p0 = a0 + i * unit + 0.015
+    const p1 = p0 + unit - 0.03
+    const drawers = i % 3 === 1
+    const rows = drawers ? [[0.12, 0.3], [0.32, 0.5], [0.52, 0.7], [0.72, 0.88]] : [[0.12, 0.88]]
+    for (const [r0, r1] of rows) {
+      box(p0, p1, c1 - f * 0.02, c1 - f * 0.005, y + r0!, y + r1!, M.cabinet)
+      const hy = drawers ? y + (r0! + r1!) / 2 + 0.03 : y + 0.78
+      box((p0 + p1) / 2 - 0.07, (p0 + p1) / 2 + 0.07, c1 - f * 0.005, c1 + f * 0.015, hy - 0.008, hy + 0.008, M.steel)
+    }
+  }
+  if (axis === "x") b.collide(a0, y, c0, a1, y + 0.935, c1 + f * 0.02)
+  else b.collide(c0, y, a0, c1 + f * 0.02, y + 0.935, a1)
+}
+
+/** Ring of points around a rounded rectangle (half extents hw × hd, corner radius r) at height y, counter-clockwise
+ *  seen from above. */
+export function roundedRing(hw: number, hd: number, r: number, y: number, n: number, out: number[]) {
+  const corners: [number, number, number][] = [
+    [hw - r, hd - r, 0],
+    [-(hw - r), hd - r, Math.PI / 2],
+    [-(hw - r), -(hd - r), Math.PI],
+    [hw - r, -(hd - r), Math.PI * 1.5],
+  ]
+  for (const [cx, cz, a0] of corners)
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / (n - 1)) * (Math.PI / 2)
+      out.push(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r)
+    }
+}
+
+/** Surface swept through a list of rounded-rectangle rings [hw, hd, r, y] (a moulded tub, rim and inner wall). */
+export function sweptTub(rings: readonly (readonly [number, number, number, number])[], n = 6, capBottom = true) {
+  const pos: number[] = []
+  for (const [hw, hd, r, y] of rings) roundedRing(hw, hd, r, y, n, pos)
+  const per = n * 4
+  const idx: number[] = []
+  for (let k = 0; k < rings.length - 1; k++)
+    for (let i = 0; i < per; i++) {
+      const a = k * per + i
+      const b2 = k * per + ((i + 1) % per)
+      const c = a + per
+      const d = b2 + per
+      idx.push(a, c, b2, b2, c, d)
+    }
+  if (capBottom) {
+    const centre = pos.length / 3
+    pos.push(0, rings[0]![3], 0)
+    for (let i = 0; i < per; i++) idx.push(centre, i, (i + 1) % per)
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+/** Rounded-rectangle cap (water surface, lids) at height y. */
+export function roundedCap(hw: number, hd: number, r: number, y: number, n = 6) {
+  const pos: number[] = [0, y, 0]
+  roundedRing(hw, hd, r, y, n, pos)
+  const per = n * 4
+  const idx: number[] = []
+  for (let i = 0; i < per; i++) idx.push(0, 1 + ((i + 1) % per), 1 + i)
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+/** Commercial mop bucket: tapered moulded tub with a rolled rim, grey water, side-press wringer, casters, mop. */
+export function bucket(b: Builder, x: number, z: number) {
+  const y = FLOOR_Y
+  const at = (g: THREE.BufferGeometry, yaw = 0) => g.applyMatrix4(T(x, y, z, yaw))
+  // Tub (long axis along Z), wall leaning out towards the rim.
+  const tub = sweptTub([
+    [0.15, 0.2, 0.05, 0.075],
+    [0.165, 0.215, 0.06, 0.1],
+    [0.19, 0.245, 0.075, 0.36],
+    [0.2, 0.255, 0.08, 0.375],
+    [0.197, 0.252, 0.078, 0.392],
+    [0.184, 0.239, 0.07, 0.385],
+    [0.17, 0.225, 0.062, 0.2],
+  ])
+  b.add(M.yellow, at(tub))
+  b.add(water, at(roundedCap(0.172, 0.227, 0.062, 0.215)), { cast: false })
+  // Caster forks and wheels under the corners.
+  for (const dx of [-0.13, 0.13])
+    for (const dz of [-0.18, 0.18]) {
+      b.box("metal_dark", x + dx - 0.015, y + 0.045, z + dz - 0.02, x + dx + 0.015, y + 0.075, z + dz + 0.02)
+      b.cyl("rubber", T(x + dx, y + 0.028, z + dz, 0, 0, Math.PI / 2), 0.028, 0.028, 0.022, 14)
+    }
+  // Wringer sitting across the rear of the tub: rounded box with a press plate, lever and grip.
+  const W = T(x, y + 0.39, z + 0.13)
+  const body = new RoundedBoxGeometry(0.3, 0.2, 0.17, 3, 0.025)
+  body.applyMatrix4(W.clone().multiply(T(0, 0.1, 0)))
+  b.add(M.yellow, body)
+  const plate = new RoundedBoxGeometry(0.24, 0.16, 0.025, 2, 0.008)
+  plate.applyMatrix4(W.clone().multiply(T(0, 0.11, -0.04)))
+  b.add("metal_dark", plate)
+  b.rod("metal_galvanized", [x + 0.155, y + 0.52, z + 0.13], [x + 0.17, y + 0.95, z + 0.2], 0.011)
+  b.rod("metal_galvanized", [x + 0.17, y + 0.95, z + 0.2], [x - 0.02, y + 0.98, z + 0.21], 0.011)
+  b.rod("rubber", [x + 0.02, y + 0.98, z + 0.21], [x - 0.1, y + 0.985, z + 0.215], 0.017, 10)
+  // Mop standing in the water: wooden handle, clamp and a hank of grey strands.
+  const mx = x - 0.04
+  const mz = z - 0.09
+  b.rod(M.wood, [mx, y + 0.24, mz], [mx - 0.1, y + 1.45, mz - 0.2], 0.013)
+  b.cyl("metal_dark", T(mx, y + 0.27, mz), 0.03, 0.03, 0.05, 10)
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2
+    b.rod(mopStrand, [mx + Math.cos(a) * 0.02, y + 0.26, mz + Math.sin(a) * 0.02], [mx + Math.cos(a) * 0.075, y + 0.2, mz + Math.sin(a) * 0.07], 0.012, 5)
+  }
+  b.collide(x - 0.22, y, z - 0.27, x + 0.22, y + 0.6, z + 0.27)
+}
+
+export const water = paint(0x1d2019, 0.05)
+
+export const mopStrand = paint(0x6a665a, 1)
+
+/** Blinking indicator lamps on computer cabinets: each lamp its own rate and colour. */
+export const panelLights = (() => {
+  const m = new THREE.MeshStandardNodeMaterial({ color: 0x050505, roughness: 0.4 })
+  // A strip of lamps on a 2.2 cm pitch drawn on one flat panel: round-ish dots, each its own rate and colour.
+  const q = positionWorld.mul(45)
+  const c = floor(q)
+  // Dots as filtered windows; sub-pixel they average to their area instead of sparkling.
+  const qa = q.x.add(q.z)
+  const dot = aaWindow(fract(qa), 0.22, 0.78).mul(aaWindow(fract(q.y), 0.22, 0.78)).mul(aaFade(qa)).add(float(0.31).mul(float(1).sub(aaFade(qa))))
+  const h = hash(c.x.add(c.y.mul(31)).add(c.z.mul(17)))
+  const blink = step(0.45, fract(time.mul(h.mul(1.8).add(0.15)).add(h.mul(10))))
+  const colour = mix(vec3(1, 0.42, 0.08), vec3(0.35, 1, 0.4), step(0.62, h))
+  m.emissiveNode = colour.mul(blink).mul(step(0.25, h)).mul(dot).mul(2.2)
+  m.name = "interior_panel_lights"
+  return m
+})()
+
+export const CAB_GREY = paint(0x858c8e, 0.5, 0.2)
+
+export const CAB_BLUE = paint(0x3d4f63, 0.45, 0.25)
+
+export const SMOKED = paint(0x0b0e0f, 0.06)
+
+export const TAPE = paint(0x1a130d, 0.35)
+
+function tapeDriveModel(b: Builder, x: number, z: number, yaw: number, rnd: () => number) {
+  const m = T(x, FLOOR_Y, z, yaw)
+  b.rbox(CAB_GREY, m, 0.72, 1.78, 0.7, 0.03, 0, 0.89, 0)
+  b.rbox(CAB_BLUE, m, 0.74, 0.16, 0.72, 0.03, 0, 1.72, 0)
+  b.boxM(SMOKED, m, 0.6, 0.78, 0.02, 0, 1.22, -0.351)
+  for (const dy of [0.2, -0.17]) {
+    const reel = m.clone().multiply(T(0, 1.22 + dy, -0.37, 0, Math.PI / 2))
+    b.cyl(TAPE, reel, 0.135 - rnd() * 0.04, 0.135 - rnd() * 0.04, 0.025, 28)
+    b.cyl(M.steel, reel.clone().multiply(T(0, -0.014, 0)), 0.15, 0.15, 0.004, 28, { cast: false })
+    b.cyl(M.steel, reel, 0.04, 0.04, 0.03, 14)
+  }
+  b.quad(M.glass, m.clone().multiply(T(0, 1.22, -0.39, Math.PI)), 0.6, 0.78, { cast: false })
+  b.boxM(M.darkSteel, m, 0.56, 0.12, 0.012, 0, 0.72, -0.352)
+  b.boxM(panelLights, m, 0.5, 0.022, 0.006, 0, 0.74, -0.36, { cast: false })
+  for (let k = 0; k < 4; k++) b.rbox(M.beige, m, 0.05, 0.035, 0.02, 0.006, -0.18 + k * 0.12, 0.68, -0.36)
+  // Lower door: seam round it, a recessed handle, and a louvred vent of raised slats.
+  doorRelief(b, m, 0.62, 0.55, 0.36, -0.351)
+  b.collideLocal(m, [-0.37, 0, -0.36], [0.37, 1.8, 0.36])
+}
+
+function cabinet(b: Builder, x: number, z: number, yaw: number, disk: boolean) {
+  const m = T(x, FLOOR_Y, z, yaw)
+  b.rbox(disk ? CAB_BLUE : CAB_GREY, m, 0.8, 1.6, 0.76, 0.03, 0, 0.8, 0)
+  b.boxM(M.darkSteel, m, 0.004, 1.5, 0.004, 0, 0.8, -0.381, { cast: false })
+  if (disk) {
+    b.rbox(M.beige, m, 0.7, 0.3, 0.6, 0.04, 0, 1.75, 0.02)
+    b.boxM(SMOKED, m, 0.5, 0.12, 0.004, 0, 1.78, -0.29)
+  } else
+    b.boxM(panelLights, m, 0.64, 0.28, 0.005, 0, 1.33, -0.382, { cast: false })
+  doorRelief(b, m, 0.7, 0.9, 0.5, -0.381)
+  b.collideLocal(m, [-0.4, 0, -0.38], [0.4, disk ? 1.9 : 1.6, 0.38])
+}
+
+/** Band printer on its stand: rounded chassis, sloped acoustic hood with a smoked window, platen and tractor-feed
+ *  slot, control panel with lamps, fanfold paper fed from a box behind and draped down into the catch basket in front. */
+function lineprinter(b: Builder, x: number, z: number, yaw: number, rnd: () => number) {
+  const m = T(x, FLOOR_Y, z, yaw)
+  // Stand: frame and four legs on levelling feet.
+  for (const dx of [-0.55, 0.55])
+    for (const dz of [-0.3, 0.3]) {
+      b.boxM(M.darkSteel, m, 0.04, 0.42, 0.04, dx, 0.21, dz)
+      b.boxM(M.rubber, m, 0.06, 0.015, 0.06, dx, 0.008, dz)
+    }
+  b.boxM(M.darkSteel, m, 1.14, 0.04, 0.64, 0, 0.42, 0)
+  // Chassis with panel seams and recessed vent slots on the sides.
+  b.rbox(M.beige, m, 1.2, 0.55, 0.72, 0.04, 0, 0.715, 0)
+  b.boxM(M.darkSteel, m, 0.004, 0.45, 0.004, 0, 0.7, -0.362, { cast: false })
+  for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) b.boxM(M.darkSteel, m, 0.006, 0.012, 0.4, sx * 0.602, 0.56 + k * 0.035, 0, { cast: false })
+  // Platen bar and tractor slot across the top.
+  b.rbox(CAB_GREY, m, 1.16, 0.06, 0.2, 0.02, 0, 1.02, -0.2)
+  b.boxM(M.rubber, m, 1.0, 0.035, 0.06, 0, 1.02, -0.06)
+  for (const dx of [-0.42, 0.42]) b.boxM(M.darkSteel, m, 0.05, 0.05, 0.16, dx, 1.03, -0.06)
+  // Sloped acoustic hood with a smoked window, hinged at the back.
+  const hood = m.clone().multiply(T(0, 1.1, 0.12, 0, -0.32))
+  b.rbox(CAB_GREY, hood, 1.18, 0.05, 0.5, 0.03, 0, 0, 0)
+  b.boxM(SMOKED, hood, 0.76, 0.012, 0.28, 0, 0.026, -0.02, { cast: false })
+  // Control panel on the front right: lamps and buttons.
+  const pm = m.clone().multiply(T(0.38, 0.92, -0.36, 0, -0.5))
+  b.rbox(M.darkSteel, pm, 0.32, 0.12, 0.03, 0.01)
+  b.boxM(panelLights, pm, 0.24, 0.02, 0.006, 0, 0.03, -0.017, { cast: false })
+  for (let k = 0; k < 4; k++) b.rbox(k === 3 ? M.red : M.beige, pm, 0.035, 0.03, 0.02, 0.006, -0.1 + k * 0.065, -0.025, -0.018)
+  // Fanfold stock in a box behind the stand.
+  b.boxM(M.cardboard, m, 0.44, 0.32, 0.32, 0, 0.16, 0.55)
+  for (let k = 0; k < 10; k++) b.boxM(M.paper, m, 0.38, 0.004, 0.28, 0, 0.33 + k * 0.004, 0.55 + (rnd() - 0.5) * 0.01, { cast: false })
+  // Printed sheet: up out of the slot, over the front edge and down in folds into a wire basket.
+  const pts: [number, number][] = [
+    [-0.06, 1.05], [-0.2, 1.12], [-0.36, 1.08], [-0.42, 0.95], [-0.44, 0.75], [-0.47, 0.55], [-0.53, 0.38], [-0.62, 0.3],
+  ]
+  const seg = pts.length - 1
+  const pos: number[] = []
+  const idx: number[] = []
+  for (let i = 0; i <= seg; i++) for (const u of [-0.19, 0.19]) pos.push(u, pts[i]![1], pts[i]![0])
+  for (let i = 0; i < seg; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2)
+  const sheet = new THREE.BufferGeometry()
+  sheet.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  sheet.setIndex(idx)
+  sheet.computeVertexNormals()
+  sheet.applyMatrix4(m)
+  b.add(paperTwoSided, sheet, { cast: false })
+  // Catch basket: wire frame with a fold pile in it.
+  for (const dz of [-0.5, -0.85]) b.rod(M.darkSteel, [-0.25, 0.3, dz], [0.25, 0.3, dz], 0.006, 5)
+  for (const dx of [-0.25, 0.25]) {
+    b.rod(M.darkSteel, [dx, 0.3, -0.5], [dx, 0.3, -0.85], 0.006, 5)
+    b.rod(M.darkSteel, [dx, 0.3, -0.85], [dx, 0.02, -0.85], 0.006, 5)
+  }
+  for (let k = 0; k < 6; k++) b.boxM(M.paper, m, 0.38, 0.006, 0.28, (rnd() - 0.5) * 0.02, 0.06 + k * 0.007, -0.68, { cast: false })
+  b.collideLocal(m, [-0.6, 0, -0.9], [0.6, 1.2, 0.72])
+}
+
+export const paperTwoSided = materialFor("flat", { color: 0xcfcbbb, roughness: 0.9, side: THREE.DoubleSide, name: "interior_paper_2s" })
+
+/** Cabinet door detail on a front face at local z: perimeter seam, handle, raised vent louvres. */
+export function doorRelief(b: Builder, m: THREE.Matrix4, w: number, h: number, yc: number, z: number) {
+  const seam = 0.006
+  b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc + h / 2, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, w, seam, 0.004, 0, yc - h / 2, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, seam, h, 0.004, -w / 2, yc, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, seam, h, 0.004, w / 2, yc, z - 0.001, { cast: false })
+  b.boxM(M.darkSteel, m, 0.004, h, 0.004, 0, yc, z - 0.001, { cast: false })
+  for (const sx of [-1, 1]) b.rbox(M.steel, m, 0.018, 0.12, 0.025, 0.006, sx * 0.04, yc + 0.05, z - 0.014)
+  const n = Math.floor((h * 0.35) / 0.03)
+  for (let k = 0; k < n; k++) for (const sx of [-1, 1]) b.boxM(M.frame, m, w / 2 - 0.08, 0.012, 0.014, sx * (w / 4), yc - h / 2 + 0.06 + k * 0.03, z - 0.006)
+}
+
+/** A ceiling tile on the floor: whole and skewed, or snapped in two. */
+export function fallenTile(b: Builder, x: number, z: number, rnd: () => number) {
+  const y = FLOOR_Y
+  const yaw = rnd() * Math.PI
+  if (rnd() < 0.5) b.boxM("ceiling_tile", T(x + (rnd() - 0.5) * 0.6, y + 0.03, z + (rnd() - 0.5) * 0.6, yaw, (rnd() - 0.5) * 0.08, (rnd() - 0.5) * 0.25), 0.6, 0.02, 1.2)
+  else
+    for (const s of [-1, 1]) b.boxM("ceiling_tile", T(x + s * 0.35 * Math.cos(yaw), y + 0.015, z + s * 0.35 * Math.sin(yaw), yaw + (rnd() - 0.5) * 0.6, 0, (rnd() - 0.5) * 0.1), 0.55, 0.02, 0.6)
+  for (let k = 0; k < 5; k++) b.box(M.debris, x + (rnd() - 0.5) * 1.2, y, z + (rnd() - 0.5) * 1.2, x + (rnd() - 0.5) * 1.2 + 0.04, y + 0.012, z + (rnd() - 0.5) * 1.2 + 0.03, { cast: false })
+}
+
+/** Hanging plastic sheet across z0..z1 at x, wrinkled, stopping `gap` short of the floor. */
+export function plastic(b: Builder, x: number, z0: number, z1: number, rnd: () => number, gap = 0.04) {
+  const w = z1 - z0
+  const h = CEIL_Y - FLOOR_Y - gap
+  const g = new THREE.PlaneGeometry(w, h, 12, 10)
+  const pos = g.getAttribute("position")
+  const ph = rnd() * 6
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i)
+    const v = pos.getY(i)
+    const sag = (v / h + 0.5) * 0
+    pos.setZ(i, Math.sin(u * 5.3 + ph) * 0.05 + Math.sin(u * 13 + v * 3 + ph) * 0.015 + sag + (0.5 - v / h) * 0.06)
+  }
+  g.computeVertexNormals()
+  g.applyMatrix4(T(x, CEIL_Y - h / 2, (z0 + z1) / 2, Math.PI / 2))
+  b.add(plasticMat, g, { worldUV: false, cast: false })
+}
+
+/** Patches of old linoleum and adhesive left on the stripped slab. */
+export function slabRemnants(b: Builder, rnd: () => number) {
+  for (let k = 0; k < 9; k++) {
+    const x = SHELL.x0 + 4 + rnd() * 80
+    const w = 0.6 + rnd() * 2.2
+    const z0 = -1.6 + rnd() * 1.2
+    // Each patch its own layer, so overlapping patches don't fight.
+    b.box("linoleum", x, FLOOR_Y, z0, x + w, FLOOR_Y + LAYER * (1 + k * 0.5), z0 + 0.5 + rnd() * 1.4, { cast: false })
+  }
+}
+
+/** A fitting hanging out of the grid on two wires, a T-bar sagging beside it. */
+export function hangingTroffer(b: Builder, x: number, rnd: () => number) {
+  const tilt = 0.5 + rnd() * 0.4
+  const m = T(x, CEIL_Y - 0.5, 0.15, rnd() * 0.4, 0.1, tilt)
+  b.boxM(M.housing, m, 0.6, 0.08, 1.2)
+  b.quad(M.diffuserOff, m.clone().multiply(T(0, -0.041, 0, 0, Math.PI / 2)), 0.56, 1.16, { cast: false })
+  b.rod(M.rubber, [x - 0.25, CEIL_Y, 0.2], [x - 0.25, CEIL_Y - 0.3, 0.25], 0.004, 4)
+  b.rod(M.rubber, [x + 0.25, CEIL_Y, 0.2], [x + 0.2, CEIL_Y - 0.72, 0.0], 0.004, 4)
+  b.rod(M.tbar, [x - 1.2, CEIL_Y - 0.01, 0.6], [x + 0.8, CEIL_Y - 0.45 - rnd() * 0.3, 0.55], 0.008, 4)
+}
+
+/** Blue tarp hung from the grid over a doorway, sagging and creased. */
+export function tarpHung(b: Builder, x: number, zWall: number, rnd: () => number) {
+  const w = 2.2
+  const h = CEIL_Y - FLOOR_Y - 0.5
+  const g = new THREE.PlaneGeometry(w, h, 10, 8)
+  const pos = g.getAttribute("position")
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i)
+    const v = pos.getY(i)
+    pos.setZ(i, Math.sin(u * 4 + rnd() * 0.3) * 0.06 + (0.5 - v / h) * 0.12 + Math.sin(v * 7) * 0.02)
+  }
+  g.computeVertexNormals()
+  g.applyMatrix4(T(x, CEIL_Y - h / 2, zWall + 0.2, 0))
+  b.add(M.tarp, g, { worldUV: false, cast: false })
+  b.box(M.wood, x - w / 2, CEIL_Y - 0.04, zWall + 0.15, x + w / 2, CEIL_Y - 0.01, zWall + 0.22)
+}
+
+/** Tarp spread on the floor under a leak, edges folded, a bucket of brown water on it. */
+export function tarpFloor(b: Builder, x: number, z: number, rnd: () => number) {
+  const g = new THREE.PlaneGeometry(1.8, 1.4, 8, 6)
+  const pos = g.getAttribute("position")
+  for (let i = 0; i < pos.count; i++) {
+    const e = Math.max(Math.abs(pos.getX(i)) / 0.9, Math.abs(pos.getY(i)) / 0.7)
+    pos.setZ(i, e > 0.85 ? 0.03 + rnd() * 0.04 : rnd() * 0.01)
+  }
+  g.computeVertexNormals()
+  g.applyMatrix4(T(x, FLOOR_Y + 0.004, z, 0.3, -Math.PI / 2))
+  b.add(M.tarp, g, { worldUV: false, cast: false })
+  b.quad(PUDDLE, T(x + 0.2, FLOOR_Y + 0.02, z - 0.1, 0, -Math.PI / 2), 0.9, 0.6, { cast: false })
+  b.cyl(M.darkSteel, T(x - 0.4, FLOOR_Y + 0.16, z + 0.3), 0.15, 0.13, 0.3, 16, { open: true })
+}
+
+/** Plywood hoarding across the corridor on its studs, hazard tape on it: the east end is closed off. */
+export function hoarding(b: Builder, x: number) {
+  b.box(M.plywood, x, FLOOR_Y, -1.6, x + 0.018, CEIL_Y, 1.6)
+  for (let z = -1.5; z <= 1.6; z += 0.6) b.box(M.wood, x + 0.018, FLOOR_Y, z - 0.02, x + 0.1, CEIL_Y, z + 0.02)
+  b.box(M.wood, x + 0.018, FLOOR_Y, -1.6, x + 0.1, FLOOR_Y + 0.05, 1.6)
+  b.box(M.wood, x + 0.018, CEIL_Y - 0.05, -1.6, x + 0.1, CEIL_Y, 1.6)
+  for (const y of [1.0, 1.25]) b.box(M.hazard, x - 0.004, FLOOR_Y + y, -1.6, x, FLOOR_Y + y + 0.08, 1.6, { cast: false })
+  // Seams between sheets.
+  b.box(M.darkSteel, x - 0.002, FLOOR_Y, -0.38, x, CEIL_Y, -0.36, { cast: false })
+  b.box(M.darkSteel, x - 0.002, FLOOR_Y + 2.44, -1.6, x, FLOOR_Y + 2.45, 1.6, { cast: false })
+  b.collide(x - 0.02, FLOOR_Y, -1.6, x + 0.1, CEIL_Y, 1.6)
+}
+// ------------------------------------------------------------------------------------------------ decay, any axis
+
+/**
+ * Plywood hoarding along x at z = at (`axis` "x") or along z at x = at, floor to ceiling, studs on the `studs` side
+ * (+1/−1), hazard tape on the other; optional contractor door (plywood leaf in the door system).
+ */
+export function hoardingWall(b: Builder, o: { axis: "x" | "z"; at: number; from: number; to: number; studs?: 1 | -1; door?: { at: number; id: string; state: DoorState; width?: number } }) {
+  const a0 = Math.min(o.from, o.to)
+  const a1 = Math.max(o.from, o.to)
+  const s = o.studs ?? 1
+  const c = o.at
+  const holes = o.door ? [{ a0: o.door.at - (o.door.width ?? 0.92) / 2 - 0.05, a1: o.door.at + (o.door.width ?? 0.92) / 2 + 0.05 }] : []
+  const spans: [number, number][] = []
+  let cur = a0
+  for (const h of holes) {
+    spans.push([cur, h.a0])
+    cur = h.a1
+  }
+  spans.push([cur, a1])
+  const bx = (u0: number, u1: number, d0: number, d1: number, y0: number, y1: number, mat: Mat, cast = true) => {
+    if (u1 - u0 < 1e-3) return
+    if (o.axis === "x") b.box(mat, u0, y0, Math.min(c + d0, c + d1), u1, y1, Math.max(c + d0, c + d1), { cast })
+    else b.box(mat, Math.min(c + d0, c + d1), y0, u0, Math.max(c + d0, c + d1), y1, u1, { cast })
+  }
+  const head = FLOOR_Y + 2.17
+  for (const [u0, u1] of spans) {
+    bx(u0, u1, -0.009, 0.009, FLOOR_Y, CEIL_Y, M.plywood)
+    for (let u = u0 + 0.05; u < u1; u += 0.6) bx(u - 0.02, u + 0.02, s * 0.009, s * 0.1, FLOOR_Y, CEIL_Y, M.wood)
+    for (const yy of [1.0, 1.25]) bx(u0, u1, -s * 0.013, -s * 0.009, FLOOR_Y + yy, FLOOR_Y + yy + 0.08, M.hazard, false)
+    if (o.axis === "x") b.collide(u0, FLOOR_Y, c - 0.02, u1, CEIL_Y, c + 0.02)
+    else b.collide(c - 0.02, FLOOR_Y, u0, c + 0.02, CEIL_Y, u1)
+  }
+  bx(a0, a1, s * 0.009, s * 0.1, FLOOR_Y, FLOOR_Y + 0.05, M.wood)
+  bx(a0, a1, s * 0.009, s * 0.1, CEIL_Y - 0.05, CEIL_Y, M.wood)
+  for (const h of holes) {
+    bx(h.a0, h.a1, -0.009, 0.009, head, CEIL_Y, M.plywood)
+    bx(h.a0, h.a0 + 0.05, -0.05, 0.05, FLOOR_Y, head, M.wood)
+    bx(h.a1 - 0.05, h.a1, -0.05, 0.05, FLOOR_Y, head, M.wood)
+  }
+  if (o.door) {
+    const rot = o.axis === "x" ? (s > 0 ? Math.PI : 0) : s > 0 ? -Math.PI / 2 : Math.PI / 2
+    const [x, z] = o.axis === "x" ? [o.door.at, c] : [c, o.door.at]
+    doorway(b, { x, z, rot, id: o.door.id, state: o.door.state, width: o.door.width, leaf: M.plywood, glass: "none", wallT: 0.1 })
+  }
+}
+
+/** Hanging polythene sheet along x at z = at or along z at x = at, `gap` short of the floor; `milky` for the dusty
+ *  contractor's sheet. Batten along the top. */
+export function plasticSheet(b: Builder, o: { axis: "x" | "z"; at: number; from: number; to: number; gap?: number; milky?: boolean }, rnd: () => number) {
+  const a0 = Math.min(o.from, o.to)
+  const a1 = Math.max(o.from, o.to)
+  const w = a1 - a0
+  const h = CEIL_Y - FLOOR_Y - (o.gap ?? 0.05)
+  const g = new THREE.PlaneGeometry(w, h, Math.max(8, Math.round(w * 2.5)), 10)
+  const pos = g.getAttribute("position")
+  const ph = rnd() * 6
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i)
+    const v = pos.getY(i)
+    pos.setZ(i, Math.sin(u * 5.3 + ph) * 0.05 + Math.sin(u * 13 + v * 3 + ph) * 0.015 + (0.5 - v / h) * 0.05 * Math.sin(u * 2 + ph))
+  }
+  g.computeVertexNormals()
+  const mid = (a0 + a1) / 2
+  g.applyMatrix4(o.axis === "x" ? T(mid, CEIL_Y - h / 2, o.at) : T(o.at, CEIL_Y - h / 2, mid, Math.PI / 2))
+  b.add(o.milky ? POLY : plasticMat, g, { worldUV: false, cast: false })
+  if (o.axis === "x") b.box("metal_galvanized", a0, CEIL_Y - 0.03, o.at - 0.015, a1, CEIL_Y - 0.006, o.at + 0.015, { cast: false })
+  else b.box("metal_galvanized", o.at - 0.015, CEIL_Y - 0.03, a0, o.at + 0.015, CEIL_Y - 0.006, a1, { cast: false })
+}
+
+/** Blue tarp hung from a batten on a wall face along x (z = at) or along z (x = at), `side` = the room side (+1/−1). */
+export function wallTarp(b: Builder, o: { axis: "x" | "z"; at: number; from: number; to: number; side: 1 | -1; drop?: number }, rnd: () => number) {
+  const a0 = Math.min(o.from, o.to)
+  const a1 = Math.max(o.from, o.to)
+  const w = a1 - a0
+  const h = o.drop ?? CEIL_Y - FLOOR_Y - 0.5
+  const g = new THREE.PlaneGeometry(w, h, Math.max(6, Math.round(w * 4)), 8)
+  const pos = g.getAttribute("position")
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i)
+    const v = pos.getY(i)
+    pos.setZ(i, Math.abs(Math.sin(u * 4 + rnd() * 0.3)) * 0.06 + (0.5 - v / h) * 0.1 + Math.sin(v * 7) * 0.02)
+  }
+  g.computeVertexNormals()
+  const mid = (a0 + a1) / 2
+  const d = o.side * 0.04
+  g.applyMatrix4(o.axis === "x" ? T(mid, CEIL_Y - h / 2, o.at + d, o.side > 0 ? 0 : Math.PI) : T(o.at + d, CEIL_Y - h / 2, mid, o.side > 0 ? Math.PI / 2 : -Math.PI / 2))
+  b.add(M.tarp, g, { worldUV: false, cast: false })
+  if (o.axis === "x") b.box(M.wood, a0, CEIL_Y - 0.04, Math.min(o.at, o.at + o.side * 0.06), a1, CEIL_Y - 0.01, Math.max(o.at, o.at + o.side * 0.06))
+  else b.box(M.wood, Math.min(o.at, o.at + o.side * 0.06), CEIL_Y - 0.04, a0, Math.max(o.at, o.at + o.side * 0.06), CEIL_Y - 0.01, a1)
+}

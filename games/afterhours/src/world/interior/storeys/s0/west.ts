@@ -29,7 +29,7 @@ import {
   partition,
   placeModels,
   rect,
-  registerDoor,
+  liftGate,
   room,
   sinkCounter,
   troffer,
@@ -122,6 +122,8 @@ function staffEntrance(b: Builder, docs: Docs): RoomHandle[] {
   b.boxM(M.darkSteel, clock, 0.12, 0.012, 0.02, 0, -0.14, -0.1)
   b.boxM(M.felt, clock, 0.1, 0.006, 0.01, 0, -0.14, -0.111)
   b.collide(xw - 0.21, y + 1.2, -7.37, xw, y + 1.64, -7.03)
+  // Night light over the time clock so the card racks read (coordinator: vignette too dark).
+  bulkhead(b, xw, y + 2.6, -7.2, -1, 0, true, 7, { range: 4.5 })
   rack(b, docs, xw, -8.25, true)
   rack(b, docs, xw, -6.15, false)
   // Bench, coat hooks with two coats, a notice board on the north wall.
@@ -260,6 +262,8 @@ function changeAndDecon(b: Builder, docs: Docs): RoomHandle[] {
   P(b, "z", -41.5, -21.65, -14.15, [SHOWER_BANDS, ROOM_BANDS], [door(-16.6, "b", { id: "0-14E", state: "closed", room: "0-15" })])
   b.box(RUBBER_MAT, -41.44, FLOOR_Y, -21.0, -37.6, FLOOR_Y + LAYER * 2, -14.6, { cast: false })
   bulkhead(b, -39.2, CEIL_Y, -17.8, 0, 0, true, 12)
+  // Gate light on the FL-1 enclosure wall, so the locked gate and its signs read from the lobby.
+  bulkhead(b, -37.075, y + 2.55, -20.4, -1, 0, true, 8, { range: 5 })
   bench(b, -40.9, -18.2, -Math.PI / 2, 2.4)
   const bx = -38.0
   b.box(M.wood, bx - 0.5, y + 1.15, -14.25, bx + 0.5, y + 1.75, -14.21)
@@ -316,10 +320,11 @@ function freightLift(b: Builder, docs: Docs) {
   b.cyl(KEY, op.clone().multiply(T(0, -0.1, -0.014, 0, Math.PI / 2)), 0.016, 0.016, 0.012, 12)
   b.cyl(M.red, op.clone().multiply(T(0, -0.16, -0.016, 0, Math.PI / 2)), 0.02, 0.025, 0.02, 12)
   // Landing gates (static, shut and locked: keycard sublevel) with indicators and call stations.
-  gate(b, "z", -37.0, -19.6, -16.4)
-  gate(b, "x", zs, -36.4, -33.6)
-  registerDoor({ id: "s0:FL-1W", storey: 0, state: "keycard:sublevel", room: "FL-1", x: -37.0, z: -18.0, sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
-  registerDoor({ id: "s0:FL-1S", storey: 0, state: "keycard:sublevel", room: "FL-1", x: -35.0, z: zs, sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
+  // Light over the receiving-side gate.
+  bulkhead(b, -35.0, y + 2.75, zs + 0.075, 0, 1, true, 8, { range: 5 })
+  // Real gates in the door system (kit liftGate): locked with the sublevel keycard, they fold when unlocked.
+  liftGate(b, { axis: "z", at: -37.0, from: -19.6, to: -16.4, id: "FL-1W", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
+  liftGate(b, { axis: "x", at: zs, from: -36.4, to: -33.6, id: "FL-1S", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
   // Position indicator over each gate (0 lit), key-switch call station, hazard floor stripes, signs.
   for (const [ix, iz, yaw] of [[-37.09, -18.0, -Math.PI / 2], [-35.0, zs + 0.09, 0]] as const) {
     const m = T(ix, y + 2.62, iz, yaw)
@@ -340,36 +345,6 @@ const KEY = paint(0x8a6a2a, 0.3, 0.9)
 const PLANT_BANDS_: Band[] = [[0, 99, "concrete_wall"]]
 
 /** Collapsible scissor gate filling an opening (axis: the wall's axis, at its line, from..to), locked shut. */
-function gate(b: Builder, axis: "x" | "z", at: number, from: number, to: number) {
-  const y = FLOOR_Y
-  const h = 2.3
-  const P2 = (u: number, yy: number, d = 0): [number, number, number] => (axis === "x" ? [u, yy, at + d] : [at + d, yy, u])
-  const bx = (u0: number, u1: number, y0: number, y1: number, d0: number, d1: number) => {
-    const [a, , c] = P2(u0, 0, d0)
-    const [e, , f] = P2(u1, 0, d1)
-    b.box(M.darkSteel, Math.min(a, e), y0, Math.min(c, f), Math.max(a, e), y1, Math.max(c, f))
-  }
-  bx(from, to, y + h - 0.06, y + h, -0.05, 0.05)
-  bx(from, to, y, y + 0.03, -0.03, 0.03)
-  const n = Math.round((to - from) / 0.14)
-  const pitch = (to - from) / n
-  for (let k = 0; k <= n; k++) bx(from + k * pitch - 0.01, from + k * pitch + 0.01, y + 0.03, y + h - 0.06, -0.012, 0.012)
-  // Lattice: crossed flat bars between neighbouring pickets, three tiers.
-  for (let k = 0; k < n; k++)
-    for (let t = 0; t < 3; t++) {
-      const u0 = from + k * pitch
-      const y0 = y + 0.15 + t * 0.7
-      const s = k % 2 ? 1 : -1
-      b.rod(M.darkSteel, P2(u0, y0, s * 0.016), P2(u0 + pitch, y0 + 0.6, s * 0.016), 0.006, 4)
-      b.rod(M.darkSteel, P2(u0, y0 + 0.6, -s * 0.016), P2(u0 + pitch, y0, -s * 0.016), 0.006, 4)
-    }
-  // Hasp and padlock at the latch end.
-  const [lx, , lz] = P2(to - 0.08, 0, 0.05)
-  b.rbox(KEY, T(lx, y + 1.05, lz), 0.06, 0.07, 0.025, 0.008)
-  const [c0x, , c0z] = P2(from, 0, -0.05)
-  const [c1x, , c1z] = P2(to, 0, 0.05)
-  b.collide(Math.min(c0x, c1x), y, Math.min(c0z, c1z), Math.max(c0x, c1x), y + h, Math.max(c0z, c1z))
-}
 
 // ------------------------------------------------------------------------------------------------ 0-16 receiving
 

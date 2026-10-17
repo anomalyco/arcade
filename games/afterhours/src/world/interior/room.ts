@@ -5,7 +5,7 @@ import { COLUMNS, type Face, type Rect, type RoomSpec, SHELL, WALL, type Window,
 import { column } from "./partition"
 import { placeModels } from "./props"
 import { type Anchor, interiorRooms } from "./registry"
-import { blindMats } from "./storeys"
+import { blindMats } from "./finishes"
 import { ROOM_BANDS } from "./styles"
 
 // A room's own surfaces: floor finish, drop ceiling, troffer grid with its lit fittings and real lamps, the exterior
@@ -17,7 +17,10 @@ export type RoomOpts = RoomSpec & {
   /** Drop ceiling: missing tile fraction (decay), seed; `none` for open plenum / no ceiling. */
   ceiling?: { missing?: number; seed?: number; none?: boolean }
   /** Troffer layout (grid spacing, louvres, warm tint, cd per lit pair), or false for no troffers. */
-  troffers?: false | { dx?: number; dz?: number; louvre?: boolean; warm?: boolean; intensity?: number; flicker?: readonly (readonly [number, number])[] }
+  troffers?: false | { dx?: number; dz?: number; louvre?: boolean; warm?: boolean; intensity?: number; flicker?: readonly (readonly [number, number])[]; /** Lit fittings per registered lamp (default 2). */ perLamp?: number }
+  /** Extra openings cut in the exterior lining (exterior doors, dock openings), in the face's u (x on north/south, z on
+   *  west/east) with heights above the floor. The facility owns the opening in the shell itself. */
+  liningOpenings?: { face: Face; u0: number; u1: number; top: number; bottom?: number }[]
   /** Facade windows on shell sides: blinds and what sits under the sill; false = bare lining. */
   windows?: false | { blinds?: "random" | "closed" | "open" | "up"; radiators?: "models" | "convector" | "none" }
   /** Areas inside `rect` that are not this room (riser W-1, a column chase, a cupboard): no floor or ceiling there.
@@ -76,12 +79,12 @@ export function room(b: Builder, o: RoomOpts): RoomHandle {
       }
     const flick = t.flicker ?? []
     cells = grid.map((c, i) => ({ ...c, on: litSet.has(i), flicker: flick.some(([fx, fz]) => Math.hypot(fx - c.x, fz - c.z) < 0.7) && litSet.has(i) ? 0.8 : undefined }))
-    const h = troffers(b, cells, { louvre: t.louvre, warm: t.warm, intensity: t.intensity })
+    const h = troffers(b, cells, { louvre: t.louvre, warm: t.warm, intensity: t.intensity, perLamp: t.perLamp })
     update = h.update
   }
   // Exterior lining and windows.
   const wins = windowsOn(b.storey, r)
-  for (const face of ["north", "south", "west", "east"] as Face[]) lining(b, r, face, wins.filter((w) => w.face === face))
+  for (const face of ["north", "south", "west", "east"] as Face[]) lining(b, r, face, wins.filter((w) => w.face === face), (o.liningOpenings ?? []).filter((l) => l.face === face))
   if (o.windows !== false) for (const w of wins) dressWindow(b, w, o.windows ?? {}, rnd)
   // Columns.
   if (o.columns ?? true)
@@ -101,10 +104,10 @@ export function room(b: Builder, o: RoomOpts): RoomHandle {
 }
 
 /** Lining over the shell's inner face on one side of the room, with that face's window openings. */
-function lining(b: Builder, r: Rect, face: Face, wins: Window[]) {
+function lining(b: Builder, r: Rect, face: Face, wins: Window[], extra: { u0: number; u1: number; top: number; bottom?: number }[]) {
   const eps = 0.3
   const ext = { y0: FLOOR_Y - 0.01, y1: CEIL_Y + 0.02, collide: false }
-  const holes = wins.map((w) => ({ a0: w.u0, a1: w.u1, bottom: w.sill, top: w.head }))
+  const holes = [...wins.map((w) => ({ a0: w.u0, a1: w.u1, bottom: w.sill, top: w.head })), ...extra.map((l) => ({ a0: l.u0, a1: l.u1, top: l.top, bottom: l.bottom }))]
   if (face === "south" && r.z1 >= ZONE.lining - eps) wall(b, "x", r.x0, r.x1, ZONE.lining, SHELL.z1, ROOM_BANDS, holes, ext)
   if (face === "north" && r.z0 <= -ZONE.lining + eps) wall(b, "x", r.x0, r.x1, SHELL.z0, -ZONE.lining, ROOM_BANDS, holes, ext)
   if (face === "west" && r.x0 <= SHELL.x0 + eps) wall(b, "z", r.z0, r.z1, SHELL.x0, SHELL.x0 + WALL.lining, ROOM_BANDS, holes, ext)

@@ -60,7 +60,7 @@ function facilities(b: Builder, docs: Docs): RoomHandle[] {
   P(b, "z", -47.8, 10.75, 21.65, [ROOM_BANDS, ROOM_BANDS], [door(18.0, "b", { id: "0-33", state: "janitor", room: "0-33", sign: { number: "0-33", label: "STORES" } })])
 
   // 0-30: supervisor's desk with its lamp (the player's base), key cabinet, work orders, radio chargers, coat rack.
-  officeSet(b, -51.4, 5.0, yawToward(0, -1), { lamp: true, visitors: 1 })
+  officeSet(b, -51.4, 5.0, yawToward(0, 1), { lamp: true, visitors: 1 })
   const top = y + MODELS.office_desk.size[1]
   const clip = T(-51.0, top, 5.1, 0.2)
   b.boxM(M.clipboard, clip, 0.23, 0.006, 0.32, 0, 0.003, 0, { cast: false })
@@ -210,7 +210,8 @@ function personnel(b: Builder, docs: Docs): RoomHandle[] {
   const rb = room(b, { id: "0-36b", name: "Badge room", rect: rect(-9.15, -1.75, 1.75, 8.85), lit: "none", floor: "linoleum" })
   P(b, "z", -9.075, 1.75, 8.85, [ROOM_BANDS, ROOM_BANDS], [{ kind: "cased", from: 4.6, to: 5.8 }], 0.15)
   // Four desks in two facing pairs, ID files along the west wall, the counter behind the lobby window.
-  for (const [dx, dz, yaw] of [[-17.2, 6.0, Math.PI], [-17.2, 7.0, 0], [-13.2, 6.0, Math.PI], [-13.2, 7.0, 0]] as const) officeSet(b, dx, dz, yaw, { visitors: 0 })
+  // Back-to-back pairs: desk fronts (the occupant side, local −Z) face outward (kit chair convention).
+  for (const [dx, dz, yaw] of [[-17.2, 6.0, 0], [-17.2, 7.0, Math.PI], [-13.2, 6.0, 0], [-13.2, 7.0, Math.PI]] as const) officeSet(b, dx, dz, yaw, { visitors: 0 })
   const fc = []
   for (let k = 0; k < 9; k++) fc.push({ position: [-20.74 + 0.26, y, 11.0 + k * 0.46] as const, yaw: yawToward(1, 0) })
   placeModels(b, "filing_cabinet", fc)

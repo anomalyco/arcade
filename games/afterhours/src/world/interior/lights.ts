@@ -147,6 +147,33 @@ export function pendant(b: Builder, x: number, z: number, opts: { drop?: number;
   }
 }
 
+/** Caged bulkhead light on a wall at (x, y, z) with outward normal (nx, nz): steel body, glass dome, cage bars, and
+ *  its lamp when on (stairwells, plant rooms, the freezer, the FL-1 lobby). */
+export function bulkhead(b: Builder, x: number, y: number, z: number, nx: number, nz: number, on = true, opts: { warm?: boolean; intensity?: number; range?: number } = {}) {
+  const m = T(x, y, z, Math.atan2(nx, nz))
+  b.rbox(M.darkSteel, m, 0.3, 0.2, 0.06, 0.02, 0, 0, 0.03)
+  b.cyl(on ? (opts.warm ? M.bulbWarm : M.bulbCool) : M.hazardOff, m.clone().multiply(T(0, 0, 0.08, 0, Math.PI / 2)), 0.085, 0.09, 0.06, 16, { cast: false })
+  for (let k = -1; k <= 1; k++) b.boxM(M.darkSteel, m, 0.012, 0.2, 0.012, k * 0.06, 0, 0.12)
+  b.boxM(M.darkSteel, m, 0.2, 0.012, 0.012, 0, 0, 0.12)
+  if (on)
+    b.lamp({
+      kind: opts.warm ? "incandescent" : "fluorescent",
+      position: [x + nx * 0.28, y - 0.05, z + nz * 0.28],
+      direction: norm3(nx * 0.5, -0.8, nz * 0.5),
+      color: opts.warm ? INCANDESCENT : TUBE,
+      intensity: opts.intensity ?? 6,
+      range: opts.range ?? 6,
+      angle: 1.35,
+      penumbra: 0.8,
+      size: 0.18,
+    })
+}
+
+const norm3 = (x: number, y: number, z: number): [number, number, number] => {
+  const l = Math.hypot(x, y, z)
+  return [x / l, y / l, z / l]
+}
+
 /** Wall sconce (storey 4 directorate): brass backplate, frosted half-shade, warm uplight + spill. Mounted on a wall
  *  plane at (x, z) whose outward normal is (nx, nz) (axis-aligned). */
 export function sconce(b: Builder, x: number, z: number, nx: number, nz: number, on = true) {
@@ -157,7 +184,9 @@ export function sconce(b: Builder, x: number, z: number, nx: number, nz: number,
   g.scale(1, 0.8, 0.8)
   g.applyMatrix4(m.clone().multiply(T(0, 0.02, 0.09, 0, Math.PI)))
   b.add(on ? glow(0x553a20, 0xffc890, 1.2, "sconce_glass") : M.paper, g, { worldUV: false, cast: false })
-  if (on) b.lamp({ kind: "incandescent", position: [x + nx * 0.15, FLOOR_Y + 1.8, z + nz * 0.15], color: INCANDESCENT, intensity: 8, range: 4.5, size: 0.08 })
+  // A spot aimed out of the wall (not an omni light): the clustered lights aren't occluded by walls, so an omni sconce
+  // lit the room behind the wall.
+  if (on) b.lamp({ kind: "incandescent", position: [x + nx * 0.18, FLOOR_Y + 1.8, z + nz * 0.18], direction: norm3(nx, 0.15, nz), color: INCANDESCENT, intensity: 8, range: 3.6, angle: 1.4, penumbra: 0.9, size: 0.08 })
 }
 
 /** Clamp halogen work light on a tripod stand, head aimed along yaw and tilted down `pitch`. */
@@ -190,8 +219,12 @@ export function underBinTube(b: Builder, x0: number, x1: number, z: number, y: n
 
 /** Glowing screen (CRT, scope, panel) as an emissive quad in frame `m` (facing local +Z); `lamp` adds a tiny light
  *  (hero screens only — most screens are emissive material alone). */
-export function screen(b: Builder, m: THREE.Matrix4, w: number, h: number, colour: number, opts: { intensity?: number; lamp?: boolean } = {}) {
-  b.quad(glow(0x050605, colour, opts.intensity ?? 0.6, `screen_${colour.toString(16)}`), m, w, h, { cast: false })
+export function screen(b: Builder, m: THREE.Matrix4, w: number, h: number, colour: number, opts: { intensity?: number; lamp?: boolean; /** Own node material (CCTV feed, slide, static): drawn as an unmerged mesh with the quad's 0..1 UVs. Build such materials once and reuse them. */ material?: THREE.Material } = {}) {
+  if (opts.material) {
+    const g = new THREE.PlaneGeometry(w, h)
+    g.applyMatrix4(m)
+    b.mesh(opts.material, g)
+  } else b.quad(glow(0x050605, colour, opts.intensity ?? 0.6, `screen_${colour.toString(16)}`), m, w, h, { cast: false })
   if (opts.lamp) {
     const p = new THREE.Vector3(0, 0, 0.3).applyMatrix4(m)
     const c = new THREE.Color(colour)
