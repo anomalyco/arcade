@@ -1688,6 +1688,7 @@ async function main() {
       rafScheduled = true
       requestAnimationFrame(rafLoop)
     }
+    if (coop.paused) return
     if (!channelPending) {
       const now = performance.now()
       const rem = msUntilNextDraw(now)
@@ -1719,7 +1720,7 @@ async function main() {
   let gpuPacerPending = false,
     gpuPacerUntil = 0
   const stepGpuPacer = () => {
-    if (gpuPacerPending || frozen || document.hidden) return
+    if (gpuPacerPending || frozen || document.hidden || coop.paused) return
     const now = performance.now()
     if (canDrawNow(now)) {
       tick(now)
@@ -1733,7 +1734,7 @@ async function main() {
     }
     void device.queue.onSubmittedWorkDone().then(() => {
       gpuPacerPending = false
-      if (frozen || document.hidden) return
+      if (frozen || document.hidden || coop.paused) return
       const t = performance.now()
       if (canDrawNow(t)) {
         tick(t)
@@ -1751,7 +1752,7 @@ async function main() {
   }
   window.addEventListener("pointerdown", () => kickGpuPacer(150), true)
   window.addEventListener("keydown", () => {
-    if (!frozen && !document.hidden) {
+    if (!frozen && !document.hidden && !coop.paused) {
       const now = performance.now()
       if (clock.primeIdleMove(now, liveMove())) {
         lastDrawAt = -Infinity
@@ -1764,7 +1765,7 @@ async function main() {
   })
   window.addEventListener("keyup", () => kickGpuPacer(150), true)
   audio.runtime.onTick = () => {
-    if (!frozen && !document.hidden) {
+    if (!frozen && !document.hidden && !coop.paused) {
       const now = performance.now()
       if (canDrawNow(now)) tick(now)
       else scheduleFrame()
@@ -1777,7 +1778,7 @@ async function main() {
       clock.pause(wallNow)
       return
     }
-    if (document.hidden) {
+    if (document.hidden || coop.paused) {
       clock.pause(wallNow)
       rafScheduled = true
       requestAnimationFrame(rafLoop)
@@ -1796,7 +1797,7 @@ async function main() {
       pacerTimer = 0
     }
     const wallNow = performance.now()
-    if (frozen || document.hidden) {
+    if (frozen || document.hidden || coop.paused) {
       clock.pause(wallNow)
     } else {
       const mv = liveMove()
@@ -1815,7 +1816,7 @@ async function main() {
   }
   renderer.onIdle = () => {
     const now = performance.now()
-    if (!frozen && !document.hidden && renderer.inflight === 0) {
+    if (!frozen && !document.hidden && !coop.paused && renderer.inflight === 0) {
       if (canDrawNow(now)) tick(now)
       else {
         if (pacerTimer) {
@@ -1826,6 +1827,7 @@ async function main() {
       }
     }
   }
+  lastDrawAt = performance.now()
   draw(TICK_DT)
   const harness = createOutbreakHarness({
     features: outbreakClientFeatures,

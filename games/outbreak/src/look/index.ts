@@ -14,6 +14,7 @@ export function applyLookPreset(settings: OutbreakSettings, id: string): boolean
   const preset = lookPreset(id)
   if (!preset) return false
   for (const [key, value] of Object.entries(preset.knobs)) setOutbreakSetting(settings, key, value)
+  if (id === "today") settings.zombies.zombieLook = 1
   settings.look.lookIdea = preset.id
   return true
 }
@@ -39,6 +40,15 @@ function controls(host: OutbreakLabControlHost): LabControl[] {
       },
     },
     ...heroLookControls,
+    {
+      key: "zombieLook",
+      label: "Zombie look",
+      group: "Look · Hero",
+      options: [
+        { label: "Today (boxes)", value: 0 },
+        { label: "Former Townsfolk", value: 1 },
+      ],
+    },
     ...lookTrimControls,
   ]
 }

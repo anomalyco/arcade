@@ -189,6 +189,11 @@ export class CoopView {
     return SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!
   }
 
+  /** Seat / character variant index for the local survivor (0 offline default, or lobby-picked variant). */
+  get localVariant(): number {
+    return this.net?.id ? this.net.variant : this.soloVariant
+  }
+
   /** The local survivor's drawn pose: predicted state plus the decaying reconciliation offset. */
   pose<P extends { x: number; y: number }>(p: P): P {
     const s = this.net?.smoother
@@ -256,7 +261,7 @@ export class CoopView {
       const variant = this.net ? this.net.variantOfSeat(slot.index) : clampSurvivorVariant(slot.index)
       let entry = this.avatars.get(slot.index)
       if (!entry || entry.variant !== variant) {
-        const avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!)
+        const avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!, variant)
         avatar.onFootfall = (x, y, speed) => this.onFootfall?.(x, y, speed)
         entry = { variant, avatar }
         this.avatars.set(slot.index, entry)
