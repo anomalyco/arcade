@@ -471,6 +471,10 @@ export function createPost(ctx: WorldContext) {
     return mix(prev, cur, a)
   })()
   const ssrAccum = rtt(accumulate, null, null, { resolutionScale: 0.5 } as never) as N
+  const blitSource = texture(new THREE.Texture()) as N
+  const blitMaterial = new THREE.NodeMaterial()
+  blitMaterial.colorNode = blitSource.sample(uv())
+  const blitQuad = new THREE.QuadMesh(blitMaterial)
 
   // ------------------------------------------------------------------ ambient occlusion
   const aoNode = ao(depth, normal, camera) as N
@@ -791,7 +795,10 @@ export function createPost(ctx: WorldContext) {
   // after a calm stretch, step back up. Hysteresis: a long median window, a 0.6 s hold after every change, and a calm
   // period before stepping up that doubles each time an up-step had to be undone (so it settles instead of
   // oscillating). Paused while the world streams in (`setBooting`) and in `?shot` captures.
+  // The controller below picks a target; the applied scale glides towards it (0.25 per second, in 0.02 steps so
+  // the render targets aren't reallocated every frame) instead of jumping 0.1 at once.
   let autoScale = 1
+  let autoTarget = 1
   let lastNow = 0
   const recent: number[] = []
   let calmSince = 0
@@ -799,15 +806,23 @@ export function createPost(ctx: WorldContext) {
   let backoff = 4000
   let lastUpAt = -Infinity
   let booting = false
+  let glide = 0
   const autoResolution = (now: number) => {
     const enabled = flag(ctx, "post.autoRes") && !ctx.params.has("shot")
     if (!enabled) {
-      autoScale = 1
+      autoScale = autoTarget = 1
       lastNow = 0
       return
     }
     const dt = lastNow ? now - lastNow : 16
     lastNow = now
+    if (Math.abs(autoTarget - autoScale) > 1e-4) {
+      glide += (Math.min(dt, 50) / 1000) * 0.25
+      if (glide >= 0.02 || Math.abs(autoTarget - autoScale) <= glide) {
+        autoScale += Math.sign(autoTarget - autoScale) * Math.min(glide, Math.abs(autoTarget - autoScale))
+        glide = 0
+      }
+    }
     if (booting || dt > 250) {
       recent.length = 0
       calmSince = now
@@ -820,16 +835,16 @@ export function createPost(ctx: WorldContext) {
     const median = sorted[22]!
     const p80 = sorted[36]!
     const floor = num(ctx, "post.minScale")
-    if (median > 18.5 && autoScale > floor + 1e-3) {
-      autoScale = Math.max(floor, autoScale - 0.1)
+    if (median > 18.5 && autoTarget > floor + 1e-3) {
+      autoTarget = Math.max(floor, autoTarget - 0.1)
       // Undoing a recent up-step: wait much longer before trying again.
       if (now - lastUpAt < 5000) backoff = Math.min(backoff * 2, 60000)
       recent.length = 0
       holdUntil = now + 600
       calmSince = now
-    } else if (p80 < 17.6 && autoScale < 1 - 1e-3) {
+    } else if (p80 < 17.6 && autoTarget < 1 - 1e-3) {
       if (now - calmSince > backoff) {
-        autoScale = Math.min(1, autoScale + 0.1)
+        autoTarget = Math.min(1, autoTarget + 0.1)
         lastUpAt = now
         recent.length = 0
         holdUntil = now + 600
@@ -931,7 +946,13 @@ export function createPost(ctx: WorldContext) {
       ssrStrength.value = num(ctx, "post.ssrStrength")
       ssrStreak.value = num(ctx, "post.ssrStreak")
       ssrNode.maxDistance.value = num(ctx, "post.ssrDistance")
-      ssrNode.quality.value = num(ctx, indoor > 0.5 ? "post.ssrQuality" : "post.ssrQualityOutdoor")
+      // SSR spends `quality` steps per reflection texel, so fewer texels (lower 3D or reflection resolution) meant
+      // coarser steps that missed thin hits and dimmed the reflections at each auto-res step. Keep the step density per
+      // CSS pixel that the settings give at the Retina defaults (0.9 samples per CSS px, 0.5 / 0.25 reflection scale).
+      const ssrIn = indoor > 0.5
+      const ssrSamples = num(ctx, "post.renderScale") * autoScale * num(ctx, ssrIn ? "post.ssrScale" : "post.ssrScaleOutdoor")
+      const ssrReference = 0.9 * (ssrIn ? 0.5 : 0.25)
+      ssrNode.quality.value = Math.min(1, Math.max(0.02, (num(ctx, ssrIn ? "post.ssrQuality" : "post.ssrQualityOutdoor") * ssrReference) / ssrSamples))
       aoStrength.value = num(ctx, "post.aoStrength")
       aoNode.radius.value = num(ctx, "post.aoRadius")
       aoNode.samples.value = num(ctx, "post.aoSamples")
@@ -975,15 +996,26 @@ export function createPost(ctx: WorldContext) {
 
       pipeline.render()
 
-      // Keep this frame's accumulated reflections as next frame's history (same size, so a plain copy).
+      // Keep this frame's accumulated reflections as next frame's history. The history keeps the size the reflections
+      // have at full auto-res scale and is resampled into (it's read by UV), so an auto-res step blends through
+      // instead of resetting; only a settings or window change restarts it.
       const src = ssrAccum.renderTarget as THREE.RenderTarget | undefined
       if (flag(ctx, "post.ssr") && src && src.width > 1) {
-        if (ssrHistory.width !== src.width || ssrHistory.height !== src.height) {
-          ssrHistory.setSize(src.width, src.height)
+        const full = Math.min(1, num(ctx, "post.renderScale") / scaleState.dpr) * scaleState.ssr
+        const hw = Math.max(1, Math.floor(resolution.value.x * full))
+        const hh = Math.max(1, Math.floor(resolution.value.y * full))
+        if (ssrHistory.width !== hw || ssrHistory.height !== hh) {
+          ssrHistory.setSize(hw, hh)
           ;(renderer as unknown as { initRenderTarget(t: THREE.RenderTarget): void }).initRenderTarget(ssrHistory)
           ssrHistoryValid.value = 0
         } else ssrHistoryValid.value = 1
-        renderer.copyTextureToTexture(src.texture, ssrHistory.texture)
+        if (src.width === hw && src.height === hh) renderer.copyTextureToTexture(src.texture, ssrHistory.texture)
+        else {
+          if (blitSource.value !== src.texture) blitSource.value = src.texture
+          renderer.setRenderTarget(ssrHistory)
+          blitQuad.render(renderer)
+          renderer.setRenderTarget(null)
+        }
       } else ssrHistoryValid.value = 0
     },
   }
