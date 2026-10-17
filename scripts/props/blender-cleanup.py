@@ -306,14 +306,10 @@ class SourceSampler:
             self.texels_per_m2 = 1.0
             ca = me.color_attributes.active_color or (me.color_attributes[0] if len(me.color_attributes) else None)
             if ca is not None:
-                if ca.domain == "CORNER":
-                    raw_c = np.empty(len(me.loops) * 4, dtype=np.float32)
-                    ca.data.foreach_get("color_srgb", raw_c)
-                    self.tri_vc = raw_c.reshape(-1, 4)[tl.reshape(-1, 3)]
-                else:
-                    raw_c = np.empty(len(me.vertices) * 4, dtype=np.float32)
-                    ca.data.foreach_get("color_srgb", raw_c)
-                    self.tri_vc = raw_c.reshape(-1, 4)[tv]
+                n_elem, tri_idx = (len(me.loops), tl.reshape(-1, 3)) if ca.domain == "CORNER" else (len(me.vertices), tv)
+                raw_c = np.empty(n_elem * 4, dtype=np.float32)
+                ca.data.foreach_get("color_srgb", raw_c)
+                self.tri_vc = raw_c.reshape(-1, 4)[tri_idx]
 
     def _hit_barycentric(self, pts, normals=None):
         idx = np.empty(len(pts), dtype=np.int64)
@@ -339,17 +335,18 @@ class SourceSampler:
         w0 = np.clip(1.0 - w1 - w2, 0.0, 1.0)
         return idx, w0, w1, w2
 
+    def _sample_tri_attr(self, tri_attr, pts, normals=None):
+        idx, w0, w1, w2 = self._hit_barycentric(pts, normals)
+        vals = tri_attr[idx]
+        return vals[:, 0] * w0[:, None] + vals[:, 1] * w1[:, None] + vals[:, 2] * w2[:, None]
+
     def uv(self, pts, normals=None):
         """UV of the source surface at each point."""
-        idx, w0, w1, w2 = self._hit_barycentric(pts, normals)
-        t = self.tri_uv[idx]
-        return t[:, 0] * w0[:, None] + t[:, 1] * w1[:, None] + t[:, 2] * w2[:, None]
+        return self._sample_tri_attr(self.tri_uv, pts, normals)
 
     def vertex_rgba(self, pts, normals=None):
         """Interpolated COLOR_0 (RGB base_color + alpha shiny flag) on vertex-coloured GLBs."""
-        idx, w0, w1, w2 = self._hit_barycentric(pts, normals)
-        vc = self.tri_vc[idx]
-        return vc[:, 0] * w0[:, None] + vc[:, 1] * w1[:, None] + vc[:, 2] * w2[:, None]
+        return self._sample_tri_attr(self.tri_vc, pts, normals)
 
 
 def bake_ao(obj, samples=48, distance=0.35):

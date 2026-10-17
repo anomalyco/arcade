@@ -2,11 +2,11 @@
 /**
  * The prop pipeline, end to end (see scripts/props/README.md):
  *
- *   bun scripts/props/generate.ts [--ids a,b] [--force] [--skip-trellis] [--work DIR] [--worker mini|pro]
+ *   bun scripts/props/generate.ts [--ids a,b] [--force] [--skip-trellis] [--work DIR] [--worker mini|pro|local]
  *
  * 1. source images: run `source-images.ts` first (it needs the OpenAI key; see its header).
- * 2. TRELLIS.2 on a remote render worker (mini preferred, pro fallback; never studio), one job at a time:
- *    `hivemind run --kind render --worker <worker>`. Uses the resident worker (`trellis_worker.py`, 5 min idle unload).
+ * 2. TRELLIS.2 on a remote render worker (`mini` default, `pro` fallback; never `studio` unless `ALLOW_STUDIO_TRELLIS=1`,
+ *    or `local` on a standalone Apple Silicon Mac), one job at a time via `trellis_worker.py` (5 min idle unload).
  * 3. Blender cleanup (headless, one process for all props) into packages/kit/props/assets/<id>.prop.
  * Writes <work>/report.json with per-prop seconds, triangles and bytes, and fixes from `fixups.json`.
  */
@@ -18,11 +18,14 @@ import { arg, trellisHome, workDir } from "./work"
 const work = workDir()
 const worker = arg("--worker") ?? process.env.PROPS_WORKER ?? "mini"
 if (worker === "studio" && process.env.ALLOW_STUDIO_TRELLIS !== "1") {
-  throw new Error("Refusing to run heavy TRELLIS/Blender jobs on studio (desk + OpenCode host). Use --worker mini or --worker pro.")
+  throw new Error("Refusing to run heavy TRELLIS/Blender jobs on studio (desk + OpenCode host). Use --worker mini, --worker pro, or --worker local on a standalone Mac.")
 }
 const repo = new URL("../../", import.meta.url).pathname
 const out = join(repo, "packages/kit/props/assets")
 const ids = arg("--ids")?.split(",") ?? PROP_IDS
+const idCsv = ids.join(",")
+const skipTrellis = process.argv.includes("--skip-trellis")
+const force = process.argv.includes("--force")
 mkdirSync(out, { recursive: true })
 
 const run = async (cmd: string[], label: string) => {
@@ -41,77 +44,87 @@ const specFile = join(work, "specs.json")
 const fixups = JSON.parse(readFileSync(new URL("./fixups.json", import.meta.url), "utf8"))
 writeFileSync(specFile, JSON.stringify({ props: PROP_SPECS, fixups }))
 
-const isRemote = worker !== "studio"
-const remoteWorkExpr = "$HOME/code/home/artifacts/2026-10-16-props"
-const remotePyExpr = "$HOME/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python"
+const isRemote = worker !== "studio" && worker !== "local"
+const remoteWorkRel = process.env.PROPS_REMOTE_WORK ?? "code/home/artifacts/2026-10-16-props"
+const remoteWork = `$HOME/${remoteWorkRel}`
+const remoteDest = `${worker}:${remoteWorkRel}`
+const remotePy = "$HOME/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python"
+
+const execStage = (remoteShellCmd: string, localCmd: string[], label: string) => {
+  if (isRemote) {
+    return run(["hivemind", "run", "--no-sync", "--kind", "render", "--worker", worker, "--", "sh", "-c", remoteShellCmd], label)
+  }
+  if (worker === "local") {
+    return run(localCmd, label)
+  }
+  return run(["hivemind", "run", "--kind", "render", "--worker", worker, "--", ...localCmd], label)
+}
 
 if (isRemote) {
-  await run(["ssh", worker, `mkdir -p ${remoteWorkExpr}/source ${remoteWorkExpr}/raw ${remoteWorkExpr}/assets ${remoteWorkExpr}/scripts`], "Prepare remote workdir")
+  await run(["ssh", worker, `mkdir -p ${remoteWork}/source ${remoteWork}/raw ${remoteWork}/assets ${remoteWork}/scripts`], "Prepare remote workdir")
   await run([
     "rsync", "-a",
     specFile,
     join(repo, "scripts/props/trellis-batch.py"),
     join(repo, "scripts/props/blender-cleanup.py"),
-    `${worker}:code/home/artifacts/2026-10-16-props/scripts/`,
+    `${remoteDest}/scripts/`,
   ], "Sync scripts and specs.json")
-  for (const id of ids) {
-    const srcPng = join(work, "source", `${id}.png`)
-    if (existsSync(srcPng)) {
-      await run(["rsync", "-a", srcPng, `${worker}:code/home/artifacts/2026-10-16-props/source/${id}.png`], `Sync source ${id}.png`)
-    }
-    const cutPng = join(work, "raw", `${id}-cutout.png`)
-    if (existsSync(cutPng)) {
-      await run(["rsync", "-a", cutPng, `${worker}:code/home/artifacts/2026-10-16-props/raw/${id}-cutout.png`], `Sync cutout ${id}-cutout.png`)
-    }
+
+  const srcPngs = ids.map(id => join(work, "source", `${id}.png`)).filter(existsSync)
+  if (srcPngs.length) {
+    await run(["rsync", "-a", ...srcPngs, `${remoteDest}/source/`], `Sync ${srcPngs.length} source image(s)`)
+  }
+  const rawSync = [
+    ...ids.map(id => join(work, "raw", `${id}-cutout.png`)).filter(existsSync),
+    ...(skipTrellis ? ids.map(id => join(work, "raw", `${id}.glb`)).filter(existsSync) : []),
+  ]
+  if (rawSync.length) {
+    await run(["rsync", "-a", ...rawSync, `${remoteDest}/raw/`], `Sync ${rawSync.length} cached raw file(s)`)
   }
 }
 
-if (!process.argv.includes("--skip-trellis")) {
-  const forceFlag = process.argv.includes("--force") ? " --force" : ""
-  if (isRemote) {
-    await run([
-      "hivemind", "run", "--no-sync", "--kind", "render", "--worker", worker, "--",
-      "sh", "-c", `${remotePyExpr} "${remoteWorkExpr}/scripts/trellis-batch.py" --work "${remoteWorkExpr}" --ids "${ids.join(",")}"${forceFlag}`,
-    ], "TRELLIS.2 batch")
-  } else {
-    await run([
-      "hivemind", "run", "--kind", "render", "--worker", worker, "--",
-      join(trellisHome(), ".venv/bin/python"), "scripts/props/trellis-batch.py", "--work", work, "--ids", ids.join(","),
-      ...(process.argv.includes("--force") ? ["--force"] : []),
-    ], "TRELLIS.2 batch")
-  }
+if (!skipTrellis) {
+  const forceFlag = force ? " --force" : ""
+  await execStage(
+    `${remotePy} "${remoteWork}/scripts/trellis-batch.py" --work "${remoteWork}" --ids "${idCsv}"${forceFlag}`,
+    [
+      join(trellisHome(), ".venv/bin/python"), "scripts/props/trellis-batch.py",
+      "--work", work, "--ids", idCsv, ...(force ? ["--force"] : []),
+    ],
+    "TRELLIS.2 batch",
+  )
 }
 
-const blenderS = await run(
-  isRemote
-    ? [
-        "hivemind", "run", "--no-sync", "--kind", "render", "--worker", worker, "--",
-        "sh", "-c", `blender -b --factory-startup -P "${remoteWorkExpr}/scripts/blender-cleanup.py" -- --work "${remoteWorkExpr}" --out "${remoteWorkExpr}/assets" --spec "${remoteWorkExpr}/scripts/specs.json" --ids "${ids.join(",")}"`,
-      ]
-    : [
-        "hivemind", "run", "--kind", "render", "--worker", worker, "--",
-        "blender", "-b", "--factory-startup", "-P", "scripts/props/blender-cleanup.py", "--",
-        "--work", work, "--out", out, "--spec", specFile, "--ids", ids.join(","),
-      ],
+const blenderS = await execStage(
+  `blender -b --factory-startup -P "${remoteWork}/scripts/blender-cleanup.py" -- --work "${remoteWork}" --out "${remoteWork}/assets" --spec "${remoteWork}/scripts/specs.json" --ids "${idCsv}"`,
+  [
+    "blender", "-b", "--factory-startup", "-P", "scripts/props/blender-cleanup.py", "--",
+    "--work", work, "--out", out, "--spec", specFile, "--ids", idCsv,
+  ],
   "Blender cleanup",
 )
 
 if (isRemote) {
   mkdirSync(join(work, "raw"), { recursive: true })
-  for (const id of ids) {
-    await run(["rsync", "-a", `${worker}:code/home/artifacts/2026-10-16-props/assets/${id}.prop`, join(out, `${id}.prop`)], `Fetch ${id}.prop`)
-  }
   await run([
     "rsync", "-a",
-    `${worker}:code/home/artifacts/2026-10-16-props/cleanup-report.json`,
-    `${worker}:code/home/artifacts/2026-10-16-props/cleanup-failed.json`,
-    work + "/",
+    ...ids.map(id => `${remoteDest}/assets/${id}.prop`),
+    `${out}/`,
+  ], `Fetch ${ids.length} .prop asset(s)`)
+  await run([
+    "rsync", "-a",
+    `${remoteDest}/cleanup-report.json`,
+    `${remoteDest}/cleanup-failed.json`,
+    `${work}/`,
   ], "Fetch cleanup reports")
-  const rawFiles = [`${worker}:code/home/artifacts/2026-10-16-props/raw/timings.jsonl`]
-  for (const id of ids) {
-    rawFiles.push(`${worker}:code/home/artifacts/2026-10-16-props/raw/${id}.glb`)
+  if (!skipTrellis) {
+    await run([
+      "rsync", "-a",
+      `${remoteDest}/raw/timings.jsonl`,
+      ...ids.map(id => `${remoteDest}/raw/${id}.glb`),
+      `${join(work, "raw")}/`,
+    ], "Fetch TRELLIS timings and GLBs")
   }
-  await run(["rsync", "-a", ...rawFiles, join(work, "raw") + "/"], "Fetch TRELLIS timings and GLBs")
 }
 
 const timings = new Map<string, Record<string, number>>()

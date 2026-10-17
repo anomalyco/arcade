@@ -1,0 +1,996 @@
+diff --git a/trellis2/models/__init__.py b/trellis2/models/__init__.py
+index d4fed03..8ad162c 100644
+--- a/trellis2/models/__init__.py
++++ b/trellis2/models/__init__.py
+@@ -46,6 +46,7 @@ def from_pretrained(path: str, **kwargs):
+     """
+     import os
+     import json
++    import torch
+     from safetensors.torch import load_file
+     is_local = os.path.exists(f"{path}.json") and os.path.exists(f"{path}.safetensors")
+ 
+@@ -57,12 +58,36 @@ def from_pretrained(path: str, **kwargs):
+         path_parts = path.split('/')
+         repo_id = f'{path_parts[0]}/{path_parts[1]}'
+         model_name = '/'.join(path_parts[2:])
+-        config_file = hf_hub_download(repo_id, f"{model_name}.json")
+-        model_file = hf_hub_download(repo_id, f"{model_name}.safetensors")
++        try:
++            config_file = hf_hub_download(repo_id, f"{model_name}.json", local_files_only=True)
++            model_file = hf_hub_download(repo_id, f"{model_name}.safetensors", local_files_only=True)
++        except Exception:
++            config_file = hf_hub_download(repo_id, f"{model_name}.json")
++            model_file = hf_hub_download(repo_id, f"{model_name}.safetensors")
+ 
+     with open(config_file, 'r') as f:
+         config = json.load(f)
+-    model = __getattr__(config['name'])(**config['args'], **kwargs)
++    model_cls = __getattr__(config['name'])
++    if os.environ.get("TRELLIS2_SKIP_INIT_WEIGHTS", "1") == "1":
++        noop = lambda self, *a, **kw: None
++        patched = [
++            (torch.nn.Linear, "reset_parameters", torch.nn.Linear.reset_parameters),
++            (torch.nn.Conv3d, "reset_parameters", torch.nn.Conv3d.reset_parameters),
++            *[
++                (cls_mro, "initialize_weights", cls_mro.__dict__["initialize_weights"])
++                for cls_mro in model_cls.__mro__
++                if "initialize_weights" in cls_mro.__dict__
++            ],
++        ]
++        for target_cls, attr, _ in patched:
++            setattr(target_cls, attr, noop)
++        try:
++            model = model_cls(**config['args'], **kwargs)
++        finally:
++            for target_cls, attr, orig in patched:
++                setattr(target_cls, attr, orig)
++    else:
++        model = model_cls(**config['args'], **kwargs)
+     model.load_state_dict(load_file(model_file), strict=False)
+ 
+     return model
+diff --git a/trellis2/models/sc_vaes/fdg_vae.py b/trellis2/models/sc_vaes/fdg_vae.py
+index 0209e69..9d3edc1 100644
+--- a/trellis2/models/sc_vaes/fdg_vae.py
++++ b/trellis2/models/sc_vaes/fdg_vae.py
+@@ -17,7 +17,22 @@ from .sparse_unet_vae import (
+     SparseUnetVaeDecoder,
+ )
+ from ...representations import Mesh
+-from o_voxel.convert import flexible_dual_grid_to_mesh
++# Force pure-Python mesh extraction — real o_voxel.convert (CUDA or Metal port)
++# segfaults on decoder output. Import our stub version explicitly.
++# stubs/ is appended (not prepended) so a pip-installed o_voxel still wins
++# for other submodules like o_voxel.postprocess.
++import sys, os
++_stubs = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'stubs')
++if _stubs not in sys.path:
++    sys.path.append(_stubs)
++try:
++    from o_voxel_override_convert import flexible_dual_grid_to_mesh
++except ImportError:
++    try:
++        from o_voxel.convert import flexible_dual_grid_to_mesh
++    except (ImportError, RuntimeError):
++        def flexible_dual_grid_to_mesh(*args, **kwargs):
++            raise RuntimeError("flexible_dual_grid_to_mesh unavailable")
+ 
+ 
+ class FlexiDualGridVaeEncoder(SparseUnetVaeEncoder):
+diff --git a/trellis2/modules/image_feature_extractor.py b/trellis2/modules/image_feature_extractor.py
+index c3cb515..de106ee 100644
+--- a/trellis2/modules/image_feature_extractor.py
++++ b/trellis2/modules/image_feature_extractor.py
+@@ -19,15 +19,19 @@ class DinoV2FeatureExtractor:
+             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+         ])
+ 
++    @property
++    def device(self):
++        return next(self.model.parameters()).device
++
+     def to(self, device):
+         self.model.to(device)
+ 
+     def cuda(self):
+-        self.model.cuda()
++        self.model.to(self.device)
+ 
+     def cpu(self):
+         self.model.cpu()
+-    
++
+     @torch.no_grad()
+     def __call__(self, image: Union[torch.Tensor, List[Image.Image]]) -> torch.Tensor:
+         """
+@@ -46,11 +50,11 @@ class DinoV2FeatureExtractor:
+             image = [i.resize((518, 518), Image.LANCZOS) for i in image]
+             image = [np.array(i.convert('RGB')).astype(np.float32) / 255 for i in image]
+             image = [torch.from_numpy(i).permute(2, 0, 1).float() for i in image]
+-            image = torch.stack(image).cuda()
++            image = torch.stack(image).to(self.device)
+         else:
+             raise ValueError(f"Unsupported type of image: {type(image)}")
+         
+-        image = self.transform(image).cuda()
++        image = self.transform(image).to(self.device)
+         features = self.model(image, is_training=True)['x_prenorm']
+         patchtokens = F.layer_norm(features, features.shape[-1:])
+         return patchtokens
+@@ -62,18 +66,25 @@ class DinoV3FeatureExtractor:
+     """
+     def __init__(self, model_name: str, image_size=512):
+         self.model_name = model_name
+-        self.model = DINOv3ViTModel.from_pretrained(model_name)
++        try:
++            self.model = DINOv3ViTModel.from_pretrained(model_name, local_files_only=True)
++        except Exception:
++            self.model = DINOv3ViTModel.from_pretrained(model_name)
+         self.model.eval()
+         self.image_size = image_size
+         self.transform = transforms.Compose([
+             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+         ])
+ 
++    @property
++    def device(self):
++        return next(self.model.parameters()).device
++
+     def to(self, device):
+         self.model.to(device)
+ 
+     def cuda(self):
+-        self.model.cuda()
++        self.model.to(self.device)
+ 
+     def cpu(self):
+         self.model.cpu()
+@@ -83,7 +94,8 @@ class DinoV3FeatureExtractor:
+         hidden_states = self.model.embeddings(image, bool_masked_pos=None)
+         position_embeddings = self.model.rope_embeddings(image)
+ 
+-        for i, layer_module in enumerate(self.model.layer):
++        layers = self.model.model.layer if hasattr(self.model, 'model') and hasattr(self.model.model, 'layer') else self.model.layer
++        for i, layer_module in enumerate(layers):
+             hidden_states = layer_module(
+                 hidden_states,
+                 position_embeddings=position_embeddings,
+@@ -109,10 +121,10 @@ class DinoV3FeatureExtractor:
+             image = [i.resize((self.image_size, self.image_size), Image.LANCZOS) for i in image]
+             image = [np.array(i.convert('RGB')).astype(np.float32) / 255 for i in image]
+             image = [torch.from_numpy(i).permute(2, 0, 1).float() for i in image]
+-            image = torch.stack(image).cuda()
++            image = torch.stack(image).to(self.device)
+         else:
+             raise ValueError(f"Unsupported type of image: {type(image)}")
+         
+-        image = self.transform(image).cuda()
++        image = self.transform(image).to(self.device)
+         features = self.extract_features(image)
+         return features
+diff --git a/trellis2/modules/sparse/attention/full_attn.py b/trellis2/modules/sparse/attention/full_attn.py
+index 4eb74d2..1f69f71 100644
+--- a/trellis2/modules/sparse/attention/full_attn.py
++++ b/trellis2/modules/sparse/attention/full_attn.py
+@@ -211,6 +211,48 @@ def sparse_scaled_dot_product_attention(*args, **kwargs):
+             max_q_seqlen = max(q_seqlen)
+             max_kv_seqlen = max(kv_seqlen)
+         out = flash_attn_3.flash_attn_varlen_func(q, k, v, cu_seqlens_q, cu_seqlens_kv, max_q_seqlen, max_kv_seqlen)
++    elif config.ATTN in ('sdpa', 'naive'):
++        import os
++        from torch.nn.functional import scaled_dot_product_attention as sdpa_fn
++        if num_all_args == 1:
++            q, k, v = qkv.unbind(dim=1)
++        elif num_all_args == 2:
++            k, v = kv.unbind(dim=1)
++        B = len(q_seqlen)
++        if B == 1 and os.environ.get("TRELLIS2_FAST_SDPA", "1") == "1":
++            q_in = q.unsqueeze(0).permute(0, 2, 1, 3)
++            k_in = k.unsqueeze(0).permute(0, 2, 1, 3)
++            v_in = v.unsqueeze(0).permute(0, 2, 1, 3)
++            out = sdpa_fn(q_in, k_in, v_in).permute(0, 2, 1, 3).squeeze(0)
++        else:
++            H = q.shape[-2]
++            max_q = max(q_seqlen)
++            max_kv = max(kv_seqlen) if kv_seqlen is not None else max_q
++            C_q = q.shape[-1]
++            C_v = v.shape[-1]
++            q_padded = torch.zeros(B, max_q, H, C_q, device=device, dtype=q.dtype)
++            k_padded = torch.zeros(B, max_kv, H, C_q, device=device, dtype=k.dtype)
++            v_padded = torch.zeros(B, max_kv, H, C_v, device=device, dtype=v.dtype)
++            q_offset = 0
++            kv_offset = 0
++            for b in range(B):
++                ql = q_seqlen[b]
++                kvl = kv_seqlen[b] if kv_seqlen is not None else ql
++                q_padded[b, :ql] = q[q_offset:q_offset+ql]
++                k_padded[b, :kvl] = k[kv_offset:kv_offset+kvl]
++                v_padded[b, :kvl] = v[kv_offset:kv_offset+kvl]
++                q_offset += ql
++                kv_offset += kvl
++            q_padded = q_padded.permute(0, 2, 1, 3)
++            k_padded = k_padded.permute(0, 2, 1, 3)
++            v_padded = v_padded.permute(0, 2, 1, 3)
++            out_padded = sdpa_fn(q_padded, k_padded, v_padded)
++            out_padded = out_padded.permute(0, 2, 1, 3)
++            out_list = []
++            for b in range(B):
++                ql = q_seqlen[b]
++                out_list.append(out_padded[b, :ql])
++            out = torch.cat(out_list, dim=0)
+     else:
+         raise ValueError(f"Unknown attention module: {config.ATTN}")
+     
+diff --git a/trellis2/modules/sparse/basic.py b/trellis2/modules/sparse/basic.py
+index 880973b..c39bc5d 100644
+--- a/trellis2/modules/sparse/basic.py
++++ b/trellis2/modules/sparse/basic.py
+@@ -280,6 +280,16 @@ class VarLenTensor:
+         if dim is None or 0 in dim:
+             return red
+         
++        import os
++        fast_seg = os.environ.get("TRELLIS2_FAST_SEGMENT_REDUCE", "1")
++        if fast_seg != "0" and red.device.type == "mps":
++            src = red.cpu() if fast_seg == "cpu" else red
++            if len(self.layout) == 1:
++                out = getattr(src, op)(dim=0, keepdim=True)
++            else:
++                out = torch.stack([getattr(src[s], op)(dim=0) for s in self.layout], dim=0)
++            return out.to(red.device) if fast_seg == "cpu" else out
++
+         red = torch.segment_reduce(red, reduce=op, lengths=self.seqlen)
+         return red
+     
+diff --git a/trellis2/modules/sparse/config.py b/trellis2/modules/sparse/config.py
+index a5f4d53..1b030b1 100644
+--- a/trellis2/modules/sparse/config.py
++++ b/trellis2/modules/sparse/config.py
+@@ -21,7 +21,7 @@ def __from_env():
+         CONV = env_sparse_conv_backend
+     if env_sparse_debug is not None:
+         DEBUG = env_sparse_debug == '1'
+-    if env_sparse_attn_backend is not None and env_sparse_attn_backend in ['xformers', 'flash_attn', 'flash_attn_3']:
++    if env_sparse_attn_backend is not None and env_sparse_attn_backend in ['xformers', 'flash_attn', 'flash_attn_3', 'sdpa', 'naive']:
+         ATTN = env_sparse_attn_backend
+         
+     print(f"[SPARSE] Conv backend: {CONV}; Attention backend: {ATTN}")
+diff --git a/trellis2/modules/sparse/conv/conv_none.py b/trellis2/modules/sparse/conv/conv_none.py
+new file mode 100644
+index 0000000..766b372
+--- /dev/null
++++ b/trellis2/modules/sparse/conv/conv_none.py
+@@ -0,0 +1,133 @@
++"""
++Pure-PyTorch sparse 3D convolution backend.
++
++Implements submanifold sparse convolution by gathering neighbor features,
++applying convolution weights via matrix multiply, and scatter-adding results.
++No CUDA extensions needed — works on MPS and CPU.
++
++Slower than flex_gemm/spconv but fully portable.
++"""
++
++import math
++import torch
++import torch.nn as nn
++from .. import SparseTensor
++
++
++def sparse_conv3d_init(self, in_channels, out_channels, kernel_size, stride=1, dilation=1, padding=None, bias=True, indice_key=None):
++    assert stride == 1 and (padding is None), \
++        "Naive implementation only supports submanifold sparse convolution (stride=1, padding=None)"
++
++    self.in_channels = in_channels
++    self.out_channels = out_channels
++    self.kernel_size = tuple(kernel_size) if isinstance(kernel_size, (list, tuple)) else (kernel_size,) * 3
++    self.stride = tuple(stride) if isinstance(stride, (list, tuple)) else (stride,) * 3
++    self.dilation = tuple(dilation) if isinstance(dilation, (list, tuple)) else (dilation,) * 3
++
++    self.weight = nn.Parameter(torch.empty((out_channels, in_channels, *self.kernel_size)))
++    if bias:
++        self.bias = nn.Parameter(torch.empty(out_channels))
++    else:
++        self.register_parameter("bias", None)
++
++    torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
++    if self.bias is not None:
++        fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
++        if fan_in != 0:
++            bound = 1 / math.sqrt(fan_in)
++            torch.nn.init.uniform_(self.bias, -bound, bound)
++
++    # Match flex_gemm weight layout: (Co, Ci, Kd, Kh, Kw) -> (Co, Kd, Kh, Kw, Ci)
++    self.weight = nn.Parameter(self.weight.permute(0, 2, 3, 4, 1).contiguous())
++
++
++def sparse_conv3d_forward(self, x: SparseTensor) -> SparseTensor:
++    """
++    Submanifold sparse 3D convolution via gather-scatter.
++
++    For each active voxel, gather features from its kernel-sized neighborhood
++    (only where other active voxels exist), multiply by the corresponding
++    kernel weight, and scatter-add results back.
++    """
++    Co, Kd, Kh, Kw, Ci = self.weight.shape
++    device = x.feats.device
++    dtype = x.feats.dtype
++
++    coords = x.coords  # [N, 4] (batch_idx, z, y, x)
++    feats = x.feats    # [N, Ci]
++    N = coords.shape[0]
++
++    # Build neighbor index cache (reused across forward passes for same coords)
++    cache_key = f'SubMConv3d_naive_neighbor_{Kw}x{Kh}x{Kd}_dilation{self.dilation}'
++    neighbor_cache = x.get_spatial_cache(cache_key)
++
++    if neighbor_cache is None:
++        # Build spatial hash: coord tuple -> voxel index
++        coord_to_idx = {}
++        coords_cpu = coords.cpu()
++        for i in range(N):
++            key = tuple(coords_cpu[i].tolist())
++            coord_to_idx[key] = i
++
++        # For each kernel position, find (source, target) voxel pairs
++        dz, dy, dx = self.dilation
++        src_indices = []
++        tgt_indices = []
++        kernel_indices = []
++
++        for kz in range(Kd):
++            for ky in range(Kh):
++                for kx in range(Kw):
++                    oz = (kz - Kd // 2) * dz
++                    oy = (ky - Kh // 2) * dy
++                    ox = (kx - Kw // 2) * dx
++                    k_idx = kz * Kh * Kw + ky * Kw + kx
++
++                    for i in range(N):
++                        b, z, y, xc = coords_cpu[i].tolist()
++                        neighbor_key = (b, z + oz, y + oy, xc + ox)
++                        if neighbor_key in coord_to_idx:
++                            j = coord_to_idx[neighbor_key]
++                            src_indices.append(j)
++                            tgt_indices.append(i)
++                            kernel_indices.append(k_idx)
++
++        neighbor_cache = (
++            torch.tensor(src_indices, dtype=torch.long, device=device),
++            torch.tensor(tgt_indices, dtype=torch.long, device=device),
++            torch.tensor(kernel_indices, dtype=torch.long, device=device),
++        )
++        x.register_spatial_cache(cache_key, neighbor_cache)
++
++    src_idx, tgt_idx, k_idx = neighbor_cache
++
++    # Reshape weight: (Co, Kd, Kh, Kw, Ci) -> (K, Ci, Co)
++    K_total = Kd * Kh * Kw
++    w = self.weight.reshape(Co, K_total, Ci).permute(1, 2, 0)  # (K, Ci, Co)
++
++    out = torch.zeros(N, Co, device=device, dtype=dtype)
++
++    if len(src_idx) > 0:
++        # Process each kernel position to keep memory bounded
++        for k in range(K_total):
++            mask = (k_idx == k)
++            if not mask.any():
++                continue
++            s_idx = src_idx[mask]
++            t_idx = tgt_idx[mask]
++            src_f = feats[s_idx]                    # [E_k, Ci]
++            edge_out = src_f @ w[k]                 # [E_k, Co]
++            out.scatter_add_(0, t_idx.unsqueeze(1).expand(-1, Co), edge_out)
++
++    if self.bias is not None:
++        out = out + self.bias
++
++    return x.replace(out)
++
++
++def sparse_inverse_conv3d_init(self, *args, **kwargs):
++    raise NotImplementedError("SparseInverseConv3d with naive backend is not implemented")
++
++
++def sparse_inverse_conv3d_forward(self, x: SparseTensor) -> SparseTensor:
++    raise NotImplementedError("SparseInverseConv3d with naive backend is not implemented")
+diff --git a/trellis2/pipelines/base.py b/trellis2/pipelines/base.py
+index 331e1ed..f1f49e9 100644
+--- a/trellis2/pipelines/base.py
++++ b/trellis2/pipelines/base.py
+@@ -31,7 +31,10 @@ class Pipeline:
+             config_file = f"{path}/{config_file}"
+         else:
+             from huggingface_hub import hf_hub_download
+-            config_file = hf_hub_download(path, config_file)
++            try:
++                config_file = hf_hub_download(path, config_file, local_files_only=True)
++            except Exception:
++                config_file = hf_hub_download(path, config_file)
+ 
+         with open(config_file, 'r') as f:
+             args = json.load(f)['args']
+@@ -40,10 +43,15 @@ class Pipeline:
+         for k, v in args['models'].items():
+             if hasattr(cls, 'model_names_to_load') and k not in cls.model_names_to_load:
+                 continue
+-            try:
++            if is_local and os.path.exists(f"{path}/{v}.json"):
+                 _models[k] = models.from_pretrained(f"{path}/{v}")
+-            except Exception as e:
++            elif v.count('/') >= 2:
+                 _models[k] = models.from_pretrained(v)
++            else:
++                try:
++                    _models[k] = models.from_pretrained(f"{path}/{v}")
++                except Exception:
++                    _models[k] = models.from_pretrained(v)
+ 
+         new_pipeline = cls(_models)
+         new_pipeline._pretrained_args = args
+@@ -66,7 +74,7 @@ class Pipeline:
+             model.to(device)
+ 
+     def cuda(self) -> None:
+-        self.to(torch.device("cuda"))
++        self.to(torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda"))
+ 
+     def cpu(self) -> None:
+         self.to(torch.device("cpu"))
+\ No newline at end of file
+diff --git a/trellis2/pipelines/rembg/BiRefNet.py b/trellis2/pipelines/rembg/BiRefNet.py
+index c71a992..dee236b 100644
+--- a/trellis2/pipelines/rembg/BiRefNet.py
++++ b/trellis2/pipelines/rembg/BiRefNet.py
+@@ -7,9 +7,14 @@ from PIL import Image
+ 
+ class BiRefNet:
+     def __init__(self, model_name: str = "ZhengPeng7/BiRefNet"):
+-        self.model = AutoModelForImageSegmentation.from_pretrained(
+-            model_name, trust_remote_code=True
+-        )
++        try:
++            self.model = AutoModelForImageSegmentation.from_pretrained(
++                model_name, trust_remote_code=True, local_files_only=True
++            ).float()
++        except Exception:
++            self.model = AutoModelForImageSegmentation.from_pretrained(
++                model_name, trust_remote_code=True
++            ).float()
+         self.model.eval()
+         self.transform_image = transforms.Compose(
+             [
+@@ -19,18 +24,24 @@ class BiRefNet:
+             ]
+         )
+     
+-    def to(self, device: str):
++    @property
++    def device(self):
++        return next(self.model.parameters()).device
++
++    def to(self, device):
+         self.model.to(device)
++        return self
+ 
+     def cuda(self):
+-        self.model.cuda()
++        self.model.to(self.device)
+ 
+     def cpu(self):
+         self.model.cpu()
+         
+     def __call__(self, image: Image.Image) -> Image.Image:
++        image = image.convert("RGB").copy()
+         image_size = image.size
+-        input_images = self.transform_image(image).unsqueeze(0).to("cuda")
++        input_images = self.transform_image(image).unsqueeze(0).to(self.device)
+         # Prediction
+         with torch.no_grad():
+             preds = self.model(input_images)[-1].sigmoid().cpu()
+diff --git a/trellis2/pipelines/trellis2_image_to_3d.py b/trellis2/pipelines/trellis2_image_to_3d.py
+index a7b84b9..c4c84ad 100644
+--- a/trellis2/pipelines/trellis2_image_to_3d.py
++++ b/trellis2/pipelines/trellis2_image_to_3d.py
+@@ -1,4 +1,6 @@
+ from typing import *
++import os
++import time
+ import torch
+ import torch.nn as nn
+ import numpy as np
+@@ -32,10 +34,8 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         'sparse_structure_flow_model',
+         'sparse_structure_decoder',
+         'shape_slat_flow_model_512',
+-        'shape_slat_flow_model_1024',
+         'shape_slat_decoder',
+         'tex_slat_flow_model_512',
+-        'tex_slat_flow_model_1024',
+         'tex_slat_decoder',
+     ]
+ 
+@@ -67,7 +67,8 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         self.shape_slat_normalization = shape_slat_normalization
+         self.tex_slat_normalization = tex_slat_normalization
+         self.image_cond_model = image_cond_model
+-        self.rembg_model = rembg_model
++        self._rembg_model = rembg_model
++        self._rembg_args = None
+         self.low_vram = low_vram
+         self.default_pipeline_type = default_pipeline_type
+         self.pbr_attr_layout = {
+@@ -77,6 +78,21 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+             'alpha': slice(5, 6),
+         }
+         self._device = 'cpu'
++        self.last_shape_seed_info = None
++
++    @property
++    def rembg_model(self):
++        if self._rembg_model is None and getattr(self, '_rembg_args', None) is not None:
++            name, r_args = self._rembg_args
++            self._rembg_model = getattr(rembg, name)(**r_args)
++            if not self.low_vram and str(self._device) != 'cpu':
++                rembg_dev = os.environ.get("TRELLIS2_REMBG_DEVICE", str(self._device))
++                self._rembg_model.to(rembg_dev)
++        return self._rembg_model
++
++    @rembg_model.setter
++    def rembg_model(self, val):
++        self._rembg_model = val
+ 
+     @classmethod
+     def from_pretrained(cls, path: str, config_file: str = "pipeline.json") -> "Trellis2ImageTo3DPipeline":
+@@ -86,7 +102,22 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         Args:
+             path (str): The path to the model. Can be either local path or a Hugging Face repository.
+         """
+-        pipeline = super().from_pretrained(path, config_file)
++        orig_names = cls.model_names_to_load
++        if os.environ.get("TRELLIS2_LOAD_1024", "0") == "1":
++            cls.model_names_to_load = [
++                'sparse_structure_flow_model',
++                'sparse_structure_decoder',
++                'shape_slat_flow_model_512',
++                'shape_slat_flow_model_1024',
++                'shape_slat_decoder',
++                'tex_slat_flow_model_512',
++                'tex_slat_flow_model_1024',
++                'tex_slat_decoder',
++            ]
++        try:
++            pipeline = super().from_pretrained(path, config_file)
++        finally:
++            cls.model_names_to_load = orig_names
+         args = pipeline._pretrained_args
+ 
+         pipeline.sparse_structure_sampler = getattr(samplers, args['sparse_structure_sampler']['name'])(**args['sparse_structure_sampler']['args'])
+@@ -101,28 +132,38 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         pipeline.shape_slat_normalization = args['shape_slat_normalization']
+         pipeline.tex_slat_normalization = args['tex_slat_normalization']
+ 
+-        pipeline.image_cond_model = getattr(image_feature_extractor, args['image_cond_model']['name'])(**args['image_cond_model']['args'])
+-        pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**args['rembg_model']['args'])
++        img_cond_args = dict(args['image_cond_model']['args'])
++        if img_cond_args.get('model_name') == 'facebook/dinov3-vitl16-pretrain-lvd1689m':
++            img_cond_args['model_name'] = os.environ.get('TRELLIS2_DINOV3_MODEL', 'camenduru/dinov3-vitl16-pretrain-lvd1689m')
++        pipeline.image_cond_model = getattr(image_feature_extractor, args['image_cond_model']['name'])(**img_cond_args)
++
++        rembg_args = dict(args['rembg_model']['args'])
++        if rembg_args.get('model_name') == 'briaai/RMBG-2.0':
++            rembg_args['model_name'] = os.environ.get('TRELLIS2_REMBG_MODEL', 'ZhengPeng7/BiRefNet')
++        pipeline._rembg_args = (args['rembg_model']['name'], rembg_args)
++        if os.environ.get("TRELLIS2_LAZY_REMBG", "1") == "1":
++            pipeline._rembg_model = None
++        else:
++            pipeline._rembg_model = getattr(rembg, args['rembg_model']['name'])(**rembg_args)
+         
+-        pipeline.low_vram = args.get('low_vram', True)
+-        pipeline.default_pipeline_type = args.get('default_pipeline_type', '1024_cascade')
+-        pipeline.pbr_attr_layout = {
+-            'base_color': slice(0, 3),
+-            'metallic': slice(3, 4),
+-            'roughness': slice(4, 5),
+-            'alpha': slice(5, 6),
+-        }
+-        pipeline._device = 'cpu'
++        env_low_vram = os.environ.get("TRELLIS2_LOW_VRAM")
++        pipeline.low_vram = (env_low_vram == "1") if env_low_vram is not None else False
++        pipeline.default_pipeline_type = os.environ.get("TRELLIS2_PIPELINE_TYPE", "512")
+ 
+         return pipeline
+ 
++    def _sync_device(self) -> None:
++        if torch.backends.mps.is_available() and str(self._device) == "mps":
++            torch.mps.synchronize()
++
+     def to(self, device: torch.device) -> None:
+         self._device = device
+         if not self.low_vram:
+             super().to(device)
+             self.image_cond_model.to(device)
+-            if self.rembg_model is not None:
+-                self.rembg_model.to(device)
++            if self._rembg_model is not None:
++                rembg_dev = os.environ.get("TRELLIS2_REMBG_DEVICE", str(device))
++                self._rembg_model.to(rembg_dev)
+ 
+     def preprocess_image(self, input: Image.Image) -> Image.Image:
+         """
+@@ -185,54 +226,192 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+             'neg_cond': neg_cond,
+         }
+ 
++    @staticmethod
++    def _exterior_prune_and_score(decoded_64: torch.Tensor, resolution: int, prune: bool) -> Tuple[torch.Tensor, dict]:
++        from scipy import ndimage
++
++        def _exterior_air(occ: np.ndarray) -> np.ndarray:
++            pad = np.pad(occ, 1, mode='constant', constant_values=False)
++            lbl, _ = ndimage.label(~pad)
++            return (lbl == lbl[0, 0, 0])[1:-1, 1:-1, 1:-1]
++
++        struct26 = np.ones((3, 3, 3), dtype=bool)
++        occ64 = decoded_64[0, 0].cpu().numpy().astype(bool)
++        ext_empty64 = _exterior_air(occ64)
++        solid64 = ~ext_empty64
++        cavity64 = solid64 & (~occ64)
++        solid_voxels64 = int(solid64.sum())
++        cavity_voxels64 = int(cavity64.sum())
++        cavity_ratio = cavity_voxels64 / max(solid_voxels64, 1)
++
++        raw_occ64_count = int(occ64.sum())
++        if prune and (cavity_voxels64 > 0 or raw_occ64_count > 24000):
++            if raw_occ64_count > 24000:
++                closed64 = ndimage.binary_closing(occ64, structure=struct26, iterations=2)
++                outer_band64 = ndimage.binary_dilation(_exterior_air(closed64), structure=struct26, iterations=5)
++            else:
++                outer_band64 = ndimage.binary_dilation(ext_empty64, structure=struct26, iterations=6)
++            occ64 = occ64 & outer_band64
++
++        occ_t = torch.from_numpy(occ64).to(device=decoded_64.device, dtype=torch.float32)[None, None]
++        if resolution != occ64.shape[0]:
++            ratio = occ64.shape[0] // resolution
++            occ32_t = (torch.nn.functional.max_pool3d(occ_t, ratio, ratio, 0) > 0.5)
++        else:
++            occ32_t = (occ_t > 0.5)
++
++        occ32 = occ32_t[0, 0].cpu().numpy().astype(bool)
++        solid32 = ~_exterior_air(occ32)
++        cavity32 = int((solid32 & (~occ32)).sum())
++        raw_tokens32 = int(occ32.sum())
++
++        comp_lbl, n_comp = ndimage.label(occ32, structure=struct26)
++        if prune:
++            if n_comp > 1:
++                counts = np.bincount(comp_lbl.ravel())
++                counts[0] = 0
++                main_c = counts.max()
++                keep_c = (counts >= 4) | (counts == main_c)
++                occ32 = keep_c[comp_lbl]
++                comp_lbl, n_comp = ndimage.label(occ32, structure=struct26)
++            occ32_t = torch.from_numpy(occ32)[None, None].to(device=decoded_64.device)
++
++        n_tokens = int(occ32.sum())
++        if n_comp > 0 and n_tokens > 0:
++            counts = np.bincount(comp_lbl.ravel())
++            counts[0] = 0
++            main_share = float(counts.max()) / float(n_tokens)
++        else:
++            main_share = 0.0
++        solid_voxels32 = max(int(solid32.sum()), 1)
++        surf_complexity = n_tokens / (solid_voxels32 ** (2.0 / 3.0))
++        score = (
++            surf_complexity
++            + 5.0 * (1.0 - main_share)
++            + 2.0 * cavity_ratio
++            + 0.15 * max(0, n_comp - 1)
++            + max(0.0, (n_tokens - 2600) / 500.0)
++        )
++        if n_tokens < 64:
++            score += 100.0
++        info = {
++            "score": round(float(score), 4),
++            "n_tokens": n_tokens,
++            "raw_tokens32": raw_tokens32,
++            "n_components": int(n_comp),
++            "main_share": round(main_share, 4),
++            "cavity_voxels64": cavity_voxels64,
++            "cavity_voxels32": cavity32,
++            "surf_complexity": round(float(surf_complexity), 4),
++        }
++        return occ32_t, info
++
+     def sample_sparse_structure(
+         self,
+         cond: dict,
+         resolution: int,
+         num_samples: int = 1,
+         sampler_params: dict = {},
++        fill_interior_voxels: Optional[bool] = None,
++        num_shape_seeds: Optional[int] = None,
++        base_seed: int = 42,
+     ) -> torch.Tensor:
+         """
+         Sample sparse structures with the given conditioning.
+-        
+-        Args:
+-            cond (dict): The conditioning information.
+-            resolution (int): The resolution of the sparse structure.
+-            num_samples (int): The number of samples to generate.
+-            sampler_params (dict): Additional parameters for the sampler.
+         """
+-        # Sample sparse structure latent
++        if fill_interior_voxels is None:
++            fill_interior_voxels = os.environ.get("TRELLIS2_FILL_INTERIOR_VOXELS", "0") == "1"
++        if num_shape_seeds is None:
++            num_shape_seeds = int(os.environ.get("TRELLIS2_SHAPE_SEEDS", "1"))
++
+         flow_model = self.models['sparse_structure_flow_model']
++        decoder = self.models['sparse_structure_decoder']
+         reso = flow_model.resolution
+         in_channels = flow_model.in_channels
+-        noise = torch.randn(num_samples, in_channels, reso, reso, reso).to(self.device)
+         sampler_params = {**self.sparse_structure_sampler_params, **sampler_params}
++
++        if not fill_interior_voxels and num_shape_seeds <= 1:
++            noise = torch.randn(num_samples, in_channels, reso, reso, reso).to(self.device)
++            if self.low_vram:
++                flow_model.to(self.device)
++            z_s = self.sparse_structure_sampler.sample(
++                flow_model,
++                noise,
++                **cond,
++                **sampler_params,
++                verbose=True,
++                tqdm_desc="Sampling sparse structure",
++            ).samples
++            if self.low_vram:
++                flow_model.cpu()
++            if self.low_vram:
++                decoder.to(self.device)
++            decoded = decoder(z_s)>0
++            if self.low_vram:
++                decoder.cpu()
++            if resolution != decoded.shape[2]:
++                ratio = decoded.shape[2] // resolution
++                decoded = torch.nn.functional.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
++            coords = torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
++            self.last_shape_seed_info = {"chosen_seed": base_seed, "n_tokens": int(coords.shape[0]), "candidates": 1}
++            return coords
++
++        # Best-of-K shape seeds and/or exterior flood-fill pruning
+         if self.low_vram:
+             flow_model.to(self.device)
+-        z_s = self.sparse_structure_sampler.sample(
+-            flow_model,
+-            noise,
+-            **cond,
+-            **sampler_params,
+-            verbose=True,
+-            tqdm_desc="Sampling sparse structure",
+-        ).samples
++            decoder.to(self.device)
++        best_coords = None
++        best_info = None
++        candidates_log = []
++        saved_rng = None
++        for k in range(max(1, num_shape_seeds)):
++            cand_seed = base_seed if k == 0 else (base_seed + k * 1009)
++            if k > 0:
++                torch.manual_seed(cand_seed)
++            noise = torch.randn(num_samples, in_channels, reso, reso, reso).to(self.device)
++            if k == 0:
++                saved_rng = torch.get_rng_state()
++            z_s = self.sparse_structure_sampler.sample(
++                flow_model,
++                noise,
++                **cond,
++                **sampler_params,
++                verbose=False,
++                tqdm_desc=f"Sampling sparse structure ({k+1}/{num_shape_seeds})",
++            ).samples
++            decoded_64 = decoder(z_s) > 0
++            occ32_t, info = self._exterior_prune_and_score(decoded_64, resolution, prune=fill_interior_voxels)
++            info["seed"] = cand_seed
++            candidates_log.append(info)
++            coords_k = torch.argwhere(occ32_t)[:, [0, 2, 3, 4]].int()
++            if best_info is None or info["score"] < best_info["score"]:
++                best_info = info
++                best_coords = coords_k
++            # Adaptive early-exit: if seed 0 is already compact, single-component, and low-cavity, skip extra seeds
++            if (
++                k == 0
++                and num_shape_seeds > 1
++                and os.environ.get("TRELLIS2_SHAPE_SEEDS_FORCE", "0") != "1"
++                and info["raw_tokens32"] <= 2650
++                and info["main_share"] >= 0.98
++                and info["n_components"] == 1
++                and info["surf_complexity"] <= 3.6
++            ):
++                break
+         if self.low_vram:
+             flow_model.cpu()
+-        
+-        # Decode sparse structure latent
+-        decoder = self.models['sparse_structure_decoder']
+-        if self.low_vram:
+-            decoder.to(self.device)
+-        decoded = decoder(z_s)>0
+-        if self.low_vram:
+             decoder.cpu()
+-        if resolution != decoded.shape[2]:
+-            ratio = decoded.shape[2] // resolution
+-            decoded = torch.nn.functional.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
+-        coords = torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
+-
+-        return coords
++        if saved_rng is not None:
++            torch.set_rng_state(saved_rng)
++        self.last_shape_seed_info = {
++            "chosen_seed": best_info["seed"],
++            "score": best_info["score"],
++            "n_tokens": best_info["n_tokens"],
++            "raw_tokens32": best_info["raw_tokens32"],
++            "cavity_voxels64": best_info["cavity_voxels64"],
++            "candidates": candidates_log,
++        }
++        return best_coords
+ 
+     def sample_shape_slat(
+         self,
+@@ -467,8 +646,18 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+             tex_slat (SparseTensor): The structured latent for texture.
+             resolution (int): The resolution of the output.
+         """
++        self._sync_device()
++        t0 = time.perf_counter()
+         meshes, subs = self.decode_shape_slat(shape_slat, resolution)
++        self._sync_device()
++        t1 = time.perf_counter()
+         tex_voxels = self.decode_tex_slat(tex_slat, subs)
++        self._sync_device()
++        t2 = time.perf_counter()
++        if not hasattr(self, "last_stage_timings") or self.last_stage_timings is None:
++            self.last_stage_timings = {}
++        self.last_stage_timings["shape_dec_s"] = round(t1 - t0, 3)
++        self.last_stage_timings["tex_dec_s"] = round(t2 - t1, 3)
+         out_mesh = []
+         for m, v in zip(meshes, tex_voxels):
+             m.fill_holes()
+@@ -498,6 +687,9 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         return_latent: bool = False,
+         pipeline_type: Optional[str] = None,
+         max_num_tokens: int = 49152,
++        fast_sampler: Optional[bool] = None,
++        fill_interior_voxels: Optional[bool] = None,
++        num_shape_seeds: Optional[int] = None,
+     ) -> List[MeshWithVoxel]:
+         """
+         Run the pipeline.
+@@ -533,25 +725,54 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+         else:
+             raise ValueError(f"Invalid pipeline type: {pipeline_type}")
+         
++        if fast_sampler is None:
++            fast_sampler = os.environ.get("TRELLIS2_FAST_SAMPLER", "0") == "1"
++        if fast_sampler:
++            sparse_structure_sampler_params = {"steps": 8, "guidance_interval": [0.70, 1.0], **sparse_structure_sampler_params}
++            shape_slat_sampler_params = {"steps": 8, "guidance_interval": [0.70, 1.0], **shape_slat_sampler_params}
++            tex_slat_sampler_params = {"steps": 8, **tex_slat_sampler_params}
++
++        self.last_stage_timings = {}
+         if preprocess_image:
++            t_pre0 = time.perf_counter()
+             image = self.preprocess_image(image)
++            self._sync_device()
++            self.last_stage_timings["preprocess_s"] = round(time.perf_counter() - t_pre0, 3)
+         torch.manual_seed(seed)
++        self._sync_device()
++        t_c0 = time.perf_counter()
+         cond_512 = self.get_cond([image], 512)
+         cond_1024 = self.get_cond([image], 1024) if pipeline_type != '512' else None
++        self._sync_device()
++        t_c1 = time.perf_counter()
++        self.last_stage_timings["cond_s"] = round(t_c1 - t_c0, 3)
+         ss_res = {'512': 32, '1024': 64, '1024_cascade': 32, '1536_cascade': 32}[pipeline_type]
+         coords = self.sample_sparse_structure(
+             cond_512, ss_res,
+-            num_samples, sparse_structure_sampler_params
++            num_samples, sparse_structure_sampler_params,
++            fill_interior_voxels=fill_interior_voxels,
++            num_shape_seeds=num_shape_seeds,
++            base_seed=seed,
+         )
++        self._sync_device()
++        t_ss1 = time.perf_counter()
++        self.last_stage_timings["sparse_s"] = round(t_ss1 - t_c1, 3)
++        self.last_stage_timings["n_tokens_32"] = int(coords.shape[0])
+         if pipeline_type == '512':
+             shape_slat = self.sample_shape_slat(
+                 cond_512, self.models['shape_slat_flow_model_512'],
+                 coords, shape_slat_sampler_params
+             )
++            self._sync_device()
++            t_sh1 = time.perf_counter()
++            self.last_stage_timings["shape_slat_s"] = round(t_sh1 - t_ss1, 3)
+             tex_slat = self.sample_tex_slat(
+                 cond_512, self.models['tex_slat_flow_model_512'],
+                 shape_slat, tex_slat_sampler_params
+             )
++            self._sync_device()
++            t_tx1 = time.perf_counter()
++            self.last_stage_timings["tex_slat_s"] = round(t_tx1 - t_sh1, 3)
+             res = 512
+         elif pipeline_type == '1024':
+             shape_slat = self.sample_shape_slat(
+@@ -587,7 +808,8 @@ class Trellis2ImageTo3DPipeline(Pipeline):
+                 cond_1024, self.models['tex_slat_flow_model_1024'],
+                 shape_slat, tex_slat_sampler_params
+             )
+-        torch.cuda.empty_cache()
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
+         out_mesh = self.decode_latent(shape_slat, tex_slat, res)
+         if return_latent:
+             return out_mesh, (shape_slat, tex_slat, res)
+diff --git a/trellis2/representations/mesh/base.py b/trellis2/representations/mesh/base.py
+index b70e4cc..cbaf6c0 100644
+--- a/trellis2/representations/mesh/base.py
++++ b/trellis2/representations/mesh/base.py
+@@ -1,8 +1,15 @@
+ from typing import *
+ import torch
+ from ..voxel import Voxel
+-import cumesh
+-from flex_gemm.ops.grid_sample import grid_sample_3d
++try:
++    import cumesh
++except (ImportError, RuntimeError):
++    cumesh = None
++try:
++    from flex_gemm.ops.grid_sample import grid_sample_3d
++except (ImportError, RuntimeError):
++    def grid_sample_3d(*args, **kwargs):
++        raise RuntimeError("flex_gemm requires CUDA")
+ 
+ 
+ class Mesh:
+@@ -33,8 +40,9 @@ class Mesh:
+         return self.to('cpu')
+     
+     def fill_holes(self, max_hole_perimeter=3e-2):
+-        vertices = self.vertices.cuda()
+-        faces = self.faces.cuda()
++        return  # Skip — Metal cumesh segfaults on large decode meshes
++        vertices = self.vertices.to(self.device)
++        faces = self.faces.to(self.device)
+         
+         mesh = cumesh.CuMesh()
+         mesh.init(vertices, faces)
+@@ -57,8 +65,9 @@ class Mesh:
+         self.faces = new_faces.to(self.device)
+         
+     def remove_faces(self, face_mask: torch.Tensor):
+-        vertices = self.vertices.cuda()
+-        faces = self.faces.cuda()
++        return
++        vertices = self.vertices.to(self.device)
++        faces = self.faces.to(self.device)
+         
+         mesh = cumesh.CuMesh()
+         mesh.init(vertices, faces)
+@@ -69,8 +78,9 @@ class Mesh:
+         self.faces = new_faces.to(self.device)
+         
+     def simplify(self, target=1000000, verbose: bool=False, options: dict={}):
+-        vertices = self.vertices.cuda()
+-        faces = self.faces.cuda()
++        return
++        vertices = self.vertices.to(self.device)
++        faces = self.faces.to(self.device)
+         
+         mesh = cumesh.CuMesh()
+         mesh.init(vertices, faces)

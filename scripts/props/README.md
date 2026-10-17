@@ -17,7 +17,9 @@ Work files (source images, raw GLBs, previews, reports) live outside the repo, b
    2password run --env "OPENAI_API_KEY=op://Automation/OpenAI API Key/credential" -- bun scripts/props/source-images.ts
    ```
 
-2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout (skipped when the source or cached cutout PNG already has alpha), image → 3D on the Apple Silicon Metal port at `~/code/experiments/image-to-3d/trellis2-mac` through the resident `trellis_worker.py` daemon (`low_vram=False`, 5-minute idle auto-unload), exported as a 40k-triangle GLB with direct O-Voxel vertex attributes (`COLOR_0` + `.ovoxel.npz` sidecar, or `--with-texture` for a 2048² UV atlas). Routed to a remote worker (`--worker mini` default, `--worker pro` fallback; never `studio` unless `ALLOW_STUDIO_TRELLIS=1`), one job at a time: `hivemind run --kind render --worker mini`.
+2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout (skipped when the source or cached cutout PNG already has alpha), image → 3D on the Apple Silicon Metal port at `~/code/experiments/image-to-3d/trellis2-mac` through the resident `trellis_worker.py` daemon (`low_vram=False`, 5-minute idle auto-unload), exported as a 40k-triangle GLB with direct O-Voxel vertex attributes (`COLOR_0`, or `--with-texture` for a 2048² UV atlas).
+   - **Kit's fleet routing (default)**: `--worker mini` (or `--worker pro` fallback; `studio` is refused unless `ALLOW_STUDIO_TRELLIS=1`), one job at a time via `hivemind run --kind render --worker mini`.
+   - **Standalone local Apple Silicon Mac**: pass `--worker local` (`bun scripts/props/generate.ts --worker local ...`) or invoke `trellis_worker.py` / `trellis-batch.py` directly after running `bash scripts/props/setup-trellis.sh`.
 3. **Blender cleanup**, `blender-cleanup.py` (headless Blender 5.2, one process for all props):
    - drop floater islands, orient the front to game +Z (yaw from `fixups.json` or the long axis), scale to the
      catalogue size (footprint within ±12% of a uniform fit, height exact), pivot on the floor;
@@ -27,20 +29,62 @@ Work files (source images, raw GLBs, previews, reports) live outside the repo, b
      distance from source samples to the candidate (torn panels, lost legs) plus the reverse (webbing), over the
      bounding-box diagonal; `report.json` lists every candidate's score. At game budgets the source wins almost
      everywhere: the remesh that the first batch relied on closed or tore thin panels such as cabinet doors;
-   - per-corner colour from the source texture (a short ray along the face normal, so a thin panel's front does
-     not take its back's colour; nearest point as fallback; filtered to the triangle's size), kit material from
-     metallic/roughness, Cycles AO with a floor plane (only the LOD and the floor occlude);
+   - per-corner colour from the source texture or vertex `COLOR_0` (a short ray along the face normal, so a thin
+     panel's front does not take its back's colour; nearest point as fallback), kit material from metallic/roughness,
+     Cycles AO with a floor plane (only the LOD and the floor occlude);
    - write `.prop` (format in `packages/kit/props/format.ts`) and three preview renders to `<work>/preview/`.
 
 ```sh
-bun scripts/props/generate.ts                  # all steps after source images
-bun scripts/props/generate.ts --skip-trellis   # re-run cleanup only (2.5 min for 26 props)
-bun scripts/props/generate.ts --ids bed,stove --force
+bun scripts/props/generate.ts                           # all steps after source images (default --worker mini)
+bun scripts/props/generate.ts --skip-trellis            # re-run cleanup only (2.5 min for 26 props)
+bun scripts/props/generate.ts --ids bed,stove --force   # regenerate specific props
+bun scripts/props/generate.ts --worker local --ids bed  # standalone Apple Silicon Mac (no HiveMind)
 ```
 
 `generate.ts` writes `<work>/report.json` (per prop: TRELLIS seconds, remesh depth per LOD, triangles, bytes) and
 lists failures. `bun test props/` in `packages/kit` checks every shipped file against the catalogue (2 LODs, floor
 pivot, size within 16%, triangles within 2% of budget).
+
+## Runtime Setup & Portable Patches (`scripts/props/patches/`)
+
+The TRELLIS.2 runtime, Python `.venv`, and ~11.0 GB of 512-pipeline Hugging Face weights (`~/.cache/huggingface/hub`)
+live outside Git. Our Stage 1 Apple Silicon changes are versioned in `scripts/props/patches/` alongside exact upstream
+commit pins in `scripts/props/patches/manifest.json`:
+
+| Repository | Upstream URL | Pinned Base Commit | Patch |
+| :--- | :--- | :--- | :--- |
+| `trellis-mac` | `https://github.com/shivampkumar/trellis-mac.git` | `d58628f4f5b9c3de8274cb110074154f4b31cef2` | `patches/trellis-mac.patch` |
+| `TRELLIS.2` | `https://github.com/microsoft/TRELLIS.2.git` | `75fbf0183001ed9876c8dbb35de6b68552ee08bd` | `patches/trellis2.patch` |
+| `trellis2-apple` | `https://github.com/pedronaugusto/trellis2-apple.git` | `17347247c91c36c8cdc1896234983e878a457bba` | `patches/trellis2-apple.patch` |
+| `mtlbvh` | `https://github.com/pedronaugusto/mtlbvh.git` | `6b2a0f63b476ad8225695d092902104beafd7f58` | — |
+| `mtldiffrast` | `https://github.com/pedronaugusto/mtldiffrast.git` | `c9499ba2e4ed6849e95ce5da7aae5bf61addb528` | — |
+| `mtlgemm` | `https://github.com/pedronaugusto/mtlgemm.git` | `566c133781ce4992de3f77c3a97dd6feaae9d013` | — |
+| `mtlmesh` | `https://github.com/pedronaugusto/mtlmesh.git` | `7de3864f783407201486bf6c900a4bd76a4018a3` | — |
+| `utils3d` | `https://github.com/EasternJournalist/utils3d.git` | `9a4eb15e4021b67b12c460c7057d642626897ec8` | — |
+
+```sh
+bash scripts/props/setup-trellis.sh                # clone pinned commits, apply patches, build .venv + Metal extensions
+bash scripts/props/setup-trellis.sh --apply-only   # apply Stage 1 patches idempotently to an existing checkout
+bash scripts/props/setup-trellis.sh --check-only   # verify base commits and patch applicability
+```
+
+### Ready-to-Paste Agent Prompt (`#arcade`)
+
+Paste this prompt into an agent in an `arcade` checkout to generate a 3D model from any input image `<image>`:
+
+```text
+Generate a 3D GLB model from <image> using Arcade's Stage 1 TRELLIS.2 Apple Silicon pipeline:
+1. Read `scripts/props/README.md` and `scripts/props/patches/manifest.json`.
+2. If running on a standalone Apple Silicon Mac (not Kit's HiveMind fleet), ensure `~/code/experiments/image-to-3d/trellis2-mac` is provisioned by running `bash scripts/props/setup-trellis.sh` (requires Xcode Metal Toolchain and ~11 GB free in `~/.cache/huggingface` for the 512-pipeline weights on first run). If running on Kit's fleet, route the job to `mini` with `hivemind run --no-sync --kind render --worker mini` (never run heavy TRELLIS jobs on `studio`).
+3. Run the resident worker on `<image>`:
+   `~/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python ~/code/experiments/image-to-3d/trellis2-mac/trellis_worker.py run --id <name> --image <image> --out-glb <out>/<name>.glb --fast-sampler --fill-interior --shape-seeds 3 --vertex-color-only`
+   (pass `--with-texture` instead of `--vertex-color-only` if a 2048x2048 UV texture atlas is needed).
+4. Render a quick 3-angle preview thumbnail (or run headless Blender cleanup if producing a `.prop`), and report:
+   - Output GLB path and file size in KB
+   - Raw vs simplified triangle count (`raw_tris` -> `out_tris`)
+   - Total and per-stage seconds (`load_s`, `cutout_s`, `generate_s`, `bake_s`, `stages`)
+   - Preview image path
+```
 
 ## Fixups
 
@@ -75,7 +119,9 @@ step if small props need sharper print and wear.
 
 ## Licences
 
-TRELLIS.2 code and weights are MIT. The port uses BiRefNet (MIT) for the cutout instead of RMBG-2.0 (non-commercial),
-and DINOv3 from the `camenduru` mirror; DINOv3 has its own licence, so accept it at
-https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m before relying on it commercially. The study is
-`~/code/home/artifacts/2026-10-14-local-image-to-3d.md`.
+TRELLIS.2 code and weights are MIT (`microsoft/TRELLIS.2-4B`, `microsoft/TRELLIS-image-large`). The Apple Silicon port
+(`shivampkumar/trellis-mac`, `pedronaugusto/trellis2-apple`, `mtlbvh`, `mtlgemm`, `mtlmesh`, `utils3d`) is MIT, and
+`mtldiffrast` is under the NVIDIA Source Code License. The cutout uses `ZhengPeng7/BiRefNet` (MIT) instead of
+`briaai/RMBG-2.0` (non-commercial), and image conditioning uses `camenduru/dinov3-vitl16-pretrain-lvd1689m`; DINOv3 has
+its own Meta DINOv3 licence, so accept it at https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m before
+relying on it commercially. The study is `~/code/home/artifacts/2026-10-14-local-image-to-3d.md`.

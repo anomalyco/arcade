@@ -1,0 +1,166 @@
+diff --git a/o-voxel/o_voxel/postprocess.py b/o-voxel/o_voxel/postprocess.py
+index e66ff97..49c770c 100644
+--- a/o-voxel/o_voxel/postprocess.py
++++ b/o-voxel/o_voxel/postprocess.py
+@@ -68,7 +68,47 @@ def _grid_sample_3d(feats, coords, shape, grid, mode='trilinear'):
+     sampled = F_gs.grid_sample(dense_vol, grid_norm, mode='bilinear',
+                                align_corners=True, padding_mode='border')
+     M = grid.shape[1]
+-    return sampled.reshape(B * C, M)
++    return sampled.reshape(B, C, M).permute(0, 2, 1).reshape(B * M, C)
++
++
++def _sample_surface_attrs(query_pos, vertices, faces, bvh, attr_volume, coords, grid_size, aabb, voxel_size):
++    """Project query_pos onto the original high-res mesh via BVH and trilinearly sample attr_volume."""
++    _, face_id, uvw = bvh.unsigned_distance(query_pos, return_uvw=True)
++    orig_tri_verts = vertices[faces[face_id.long()]]
++    valid_pos = (orig_tri_verts * uvw.unsqueeze(-1)).sum(dim=1)
++    return _grid_sample_3d(
++        attr_volume,
++        torch.cat([torch.zeros_like(coords[:, :1]), coords], dim=-1),
++        shape=torch.Size([1, attr_volume.shape[1], *grid_size.tolist()]),
++        grid=((valid_pos - aabb[0]) / voxel_size).reshape(1, -1, 3),
++        mode='trilinear',
++    ).reshape(-1, attr_volume.shape[1])
++
++
++def _finalize_zup_mesh(out_vertices, out_faces, out_normals):
++    """Convert Y-up tensors to Z-up numpy arrays and repair inward-flipped connected components."""
++    vertices_np = out_vertices.cpu().numpy()
++    faces_np = out_faces.cpu().numpy()
++    normals_np = out_normals.cpu().numpy()
++    vertices_np[:, 1], vertices_np[:, 2] = vertices_np[:, 2].copy(), -vertices_np[:, 1].copy()
++    normals_np[:, 1], normals_np[:, 2] = normals_np[:, 2].copy(), -normals_np[:, 1].copy()
++    try:
++        from scipy.spatial import cKDTree
++        g_merged = trimesh.Trimesh(vertices=vertices_np, faces=faces_np, process=True)
++        comps = trimesh.graph.connected_components(g_merged.face_adjacency, nodes=np.arange(len(faces_np)))
++        center_all = (vertices_np.min(axis=0) + vertices_np.max(axis=0)) * 0.5
++        fn_geom = g_merged.face_normals
++        fc = vertices_np[faces_np].mean(axis=1) - center_all
++        for comp in comps:
++            if (fn_geom[comp] * fc[comp]).sum() < 0:
++                faces_np[comp] = faces_np[comp][:, [0, 2, 1]]
++        g_merged2 = trimesh.Trimesh(vertices=vertices_np, faces=faces_np, process=True)
++        tree = cKDTree(g_merged2.vertices)
++        _, idx = tree.query(vertices_np)
++        normals_np = g_merged2.vertex_normals[idx]
++    except Exception:
++        pass
++    return vertices_np, faces_np, normals_np
+ 
+ 
+ def to_glb(
+@@ -101,6 +141,7 @@ def to_glb(
+     alpha_mode: str = 'OPAQUE',
+     alpha_blend_threshold: float = 0.5,
+     alpha_blend_min_fraction: float = 0.01,
++    bake_texture: Optional[bool] = None,
+     verbose: bool = False,
+     use_tqdm: bool = False,
+ ):
+@@ -318,6 +359,39 @@ def to_glb(
+         pbar.update(1)
+     if verbose:
+         print("Done")
++
++    import os
++    if bake_texture is None:
++        bake_texture = (os.environ.get("TRELLIS2_VERTEX_COLOR_BAKE", "0") != "1") and (texture_size is not None and texture_size > 0)
++
++    if not bake_texture:
++        out_vertices, out_faces = mesh.read()
++        out_vertices = out_vertices.to(device)
++        out_faces = out_faces.to(device).long()
++        mesh.compute_vertex_normals()
++        out_normals = mesh.read_vertex_normals().to(device)
++
++        v_attrs = _sample_surface_attrs(
++            out_vertices, vertices, faces, bvh, attr_volume, coords, grid_size, aabb, voxel_size
++        )
++        base_color = np.clip(v_attrs[:, attr_layout['base_color']].cpu().numpy() * 255, 0, 255).astype(np.uint8)
++        metallic = v_attrs[:, attr_layout['metallic']].cpu().numpy().reshape(-1)
++        roughness = v_attrs[:, attr_layout['roughness']].cpu().numpy().reshape(-1)
++        shiny_mask = (metallic > 0.5) | (roughness < 0.32)
++        alpha_u8 = np.where(shiny_mask, 255, 254).astype(np.uint8)[:, None]
++        vc_rgba = np.concatenate([base_color, alpha_u8], axis=-1)
++
++        vertices_np, faces_np, normals_np = _finalize_zup_mesh(out_vertices, out_faces, out_normals)
++        if use_tqdm:
++            pbar.update(3)
++            pbar.close()
++        return trimesh.Trimesh(
++            vertices=vertices_np,
++            faces=faces_np,
++            vertex_normals=normals_np,
++            process=False,
++            visual=trimesh.visual.ColorVisuals(vertex_colors=vc_rgba),
++        )
+         
+     
+     # --- UV Parameterization ---
+@@ -375,22 +449,11 @@ def to_glb(
+     
+     # Interpolate 3D positions in UV space (finding 3D coord for every texel)
+     pos = dr.interpolate(out_vertices.unsqueeze(0), rast, out_faces)[0][0]
+-    valid_pos = pos[mask]
+-    
+-    # Map these positions back to the *original* high-res mesh to get accurate attributes
+-    # This corrects geometric errors introduced by simplification/remeshing
+-    _, face_id, uvw = bvh.unsigned_distance(valid_pos, return_uvw=True)
+-    orig_tri_verts = vertices[faces[face_id.long()]] # (N_new, 3, 3)
+-    valid_pos = (orig_tri_verts * uvw.unsqueeze(-1)).sum(dim=1)
+     
+     # Trilinear sampling from the attribute volume (Color, Material props)
+     attrs = torch.zeros(texture_size, texture_size, attr_volume.shape[1], device=device)
+-    attrs[mask] = _grid_sample_3d(
+-        attr_volume,
+-        torch.cat([torch.zeros_like(coords[:, :1]), coords], dim=-1),
+-        shape=torch.Size([1, attr_volume.shape[1], *grid_size.tolist()]),
+-        grid=((valid_pos - aabb[0]) / voxel_size).reshape(1, -1, 3),
+-        mode='trilinear',
++    attrs[mask] = _sample_surface_attrs(
++        pos[mask], vertices, faces, bvh, attr_volume, coords, grid_size, aabb, voxel_size
+     )
+     if use_tqdm:
+         pbar.update(1)
+@@ -467,14 +530,8 @@ def to_glb(
+     )
+     
+     # --- Coordinate System Conversion & Final Object ---
+-    vertices_np = out_vertices.cpu().numpy()
+-    faces_np = out_faces.cpu().numpy()
++    vertices_np, faces_np, normals_np = _finalize_zup_mesh(out_vertices, out_faces, out_normals)
+     uvs_np = out_uvs.cpu().numpy()
+-    normals_np = out_normals.cpu().numpy()
+-    
+-    # Y-up to Z-up for GLB (must copy to avoid in-place corruption)
+-    vertices_np[:, 1], vertices_np[:, 2] = vertices_np[:, 2].copy(), -vertices_np[:, 1].copy()
+-    normals_np[:, 1], normals_np[:, 2] = normals_np[:, 2].copy(), -normals_np[:, 1].copy()
+     uvs_np[:, 1] = 1 - uvs_np[:, 1]
+     
+     textured_mesh = trimesh.Trimesh(
+diff --git a/o-voxel/setup.py b/o-voxel/setup.py
+index e9e7d4f..5c753a3 100644
+--- a/o-voxel/setup.py
++++ b/o-voxel/setup.py
+@@ -34,7 +34,7 @@ if BUILD_TARGET == "cpu" or (BUILD_TARGET == "auto" and platform.system() == "Da
+                 extra_compile_args={
+                     # -Wno-c++11-narrowing: upstream initializer lists narrow size_t -> int64,
+                     # an error under clang but fine for these tensor-shape values
+-                    "cxx": ["-O3", "-std=c++17", "-Wno-c++11-narrowing"],
++                    "cxx": ["-O3", "-std=c++20", "-Wno-c++11-narrowing"],
+                 },
+             )
+         ]
+@@ -80,8 +80,8 @@ else:
+                 os.path.join(ROOT, "third_party/eigen"),
+             ],
+             extra_compile_args={
+-                "cxx": ["-O3", "-std=c++17"],
+-                "nvcc": ["-O3", "-std=c++17"] + cc_flag,
++                "cxx": ["-O3", "-std=c++20"],
++                "nvcc": ["-O3", "-std=c++20"] + cc_flag,
+             },
+         )
+     ]

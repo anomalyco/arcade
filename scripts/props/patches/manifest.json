@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-17",
+  "default_trellis_home": "~/code/experiments/image-to-3d/trellis2-mac",
+  "python": "python3.11",
+  "repositories": [
+    {
+      "name": "trellis-mac",
+      "path": ".",
+      "url": "https://github.com/shivampkumar/trellis-mac.git",
+      "base_commit": "d58628f4f5b9c3de8274cb110074154f4b31cef2",
+      "patch": "trellis-mac.patch",
+      "license": "MIT"
+    },
+    {
+      "name": "TRELLIS.2",
+      "path": "TRELLIS.2",
+      "url": "https://github.com/microsoft/TRELLIS.2.git",
+      "base_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+      "patch": "trellis2.patch",
+      "license": "MIT"
+    },
+    {
+      "name": "trellis2-apple",
+      "path": "deps/trellis2-apple",
+      "url": "https://github.com/pedronaugusto/trellis2-apple.git",
+      "base_commit": "17347247c91c36c8cdc1896234983e878a457bba",
+      "patch": "trellis2-apple.patch",
+      "license": "MIT"
+    },
+    {
+      "name": "mtlbvh",
+      "path": "deps/mtlbvh",
+      "url": "https://github.com/pedronaugusto/mtlbvh.git",
+      "base_commit": "6b2a0f63b476ad8225695d092902104beafd7f58",
+      "patch": null,
+      "license": "MIT"
+    },
+    {
+      "name": "mtldiffrast",
+      "path": "deps/mtldiffrast",
+      "url": "https://github.com/pedronaugusto/mtldiffrast.git",
+      "base_commit": "c9499ba2e4ed6849e95ce5da7aae5bf61addb528",
+      "patch": null,
+      "license": "NVIDIA Source Code License (nvdiffrast Metal port)"
+    },
+    {
+      "name": "mtlgemm",
+      "path": "deps/mtlgemm",
+      "url": "https://github.com/pedronaugusto/mtlgemm.git",
+      "base_commit": "566c133781ce4992de3f77c3a97dd6feaae9d013",
+      "patch": null,
+      "license": "MIT"
+    },
+    {
+      "name": "mtlmesh",
+      "path": "deps/mtlmesh",
+      "url": "https://github.com/pedronaugusto/mtlmesh.git",
+      "base_commit": "7de3864f783407201486bf6c900a4bd76a4018a3",
+      "patch": null,
+      "license": "MIT"
+    },
+    {
+      "name": "utils3d",
+      "path": "deps/utils3d",
+      "url": "https://github.com/EasternJournalist/utils3d.git",
+      "base_commit": "9a4eb15e4021b67b12c460c7057d642626897ec8",
+      "patch": null,
+      "license": "MIT"
+    }
+  ],
+  "external_weights": {
+    "cache_dir": "~/.cache/huggingface/hub",
+    "approx_size_gb": 11.0,
+    "pipeline_type": "512",
+    "models": [
+      {
+        "repo_id": "microsoft/TRELLIS.2-4B",
+        "license": "MIT",
+        "notes": "512-pipeline checkpoints only (omits 1024 cascade DiTs)"
+      },
+      {
+        "repo_id": "microsoft/TRELLIS-image-large",
+        "license": "MIT",
+        "notes": "ckpts/ss_dec_conv3d_16l8_fp16.{json,safetensors}"
+      },
+      {
+        "repo_id": "ZhengPeng7/BiRefNet",
+        "license": "MIT",
+        "notes": "Background cutout model (replaces non-commercial briaai/RMBG-2.0)"
+      },
+      {
+        "repo_id": "camenduru/dinov3-vitl16-pretrain-lvd1689m",
+        "license": "Meta DINOv3 License (https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m)",
+        "notes": "Public mirror of facebook/dinov3-vitl16-pretrain-lvd1689m"
+      }
+    ]
+  }
+}
