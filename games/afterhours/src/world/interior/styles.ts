@@ -45,7 +45,6 @@ export const STYLES: Record<number, Style> = {
     leaf: M.veneer,
     missing: 0,
     louvre: true,
-    seam: { mat: M.vinylSeam, every: 0.9, y0: 0.93 },
   },
   // Labs: sheet vinyl with yellow safety lanes, two-tone epoxy-painted block.
   2: { floor: "linoleum", bands: [[0, 99, M.block]], stripe: paint(0x8a7212, 0.35), missing: 0, louvre: false },

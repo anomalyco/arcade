@@ -415,6 +415,7 @@ export function T(x: number, y: number, z: number, ry = 0, rx = 0, rz = 0, order
 }
 
 type AddOpts = { worldUV?: boolean; cast?: boolean }
+type Prim = { pt: Part; s: number; fixed: boolean }
 type Part = { mat: THREE.Material; cast: boolean; vc: boolean; pos: number[]; nor: number[]; uv: number[]; col: number[]; rm: number[] }
 
 
@@ -436,9 +437,283 @@ const FACES: [number, number, number, number[][]][] = [
  */
 const QUAD = [0, 1, 2, 0, 2, 3]
 
+/**
+ * Depth hygiene (run at flush over a storey's builders), the generic cure for z-fighting:
+ *  1. Structural faces (walls, floors, joints: emitted under `fixedDepth`) that lie on the same plane (within 3.5 mm,
+ *     same facing) as another structural face are trimmed where they overlap: within a builder the LATER face wins
+ *     (finishes are drawn after the base), against earlier builders of the world the earlier face wins.
+ *  2. Every pair of same-facing, axis-aligned faces of two different primitives within 3.5 mm that overlap is pulled
+ *     apart by moving the SMALLER movable primitive (a whole box / geometry, never structure, never an earlier
+ *     builder's geometry) outward along that face's normal so it sits 4.5 mm proud. Authors may place details flush;
+ *     the kit separates them. What is left (model meshes, documents) is reported by `scripts/audit/hygiene.ts`.
+ * Moving builders (door leaves, lift car and gates) opt out (`Builder.depthShared = false`).
+ */
+type DTri = { pr: number; ax: number; s: number; c: number; u0: number; v0: number; u1: number; v1: number }
+const depthRegistry = new WeakMap<object, Map<string, DTri[]>>()
+const DTOL = 0.0035
+const DGAP = 0.0045
+const dkey = (ax: number, s: number, c: number) => `${ax}|${s}|${Math.floor(c / DTOL)}`
+/** Frees the world's depth registry (call once every interior builder has flushed). */
+export function releaseDepthRegistry(ctx: WorldContext) {
+  depthRegistry.delete(ctx.colliders)
+}
+function separateDepth(builders: Builder[]) {
+  type P = { pt: Part; s: number; e: number; fixed: boolean; vol: number; tris: DTri[]; oy: number }
+  const shared = builders[0]!.depthShared
+  let reg = depthRegistry.get(builders[0]!.ctx.colliders)
+  if (shared && !reg) depthRegistry.set(builders[0]!.ctx.colliders, (reg = new Map()))
+  const prims: P[] = []
+  for (const b of builders) {
+    const list = (b as unknown as { prims: Prim[] }).prims
+    const nextStart = new Map<Part, number>()
+    const mine: P[] = []
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = list[i]!
+      const e = nextStart.get(r.pt) ?? r.pt.pos.length / 3
+      nextStart.set(r.pt, r.s)
+      if (e > r.s) mine.push({ pt: r.pt, s: r.s, e, fixed: r.fixed, vol: 0, tris: [], oy: b.oy })
+    }
+    prims.push(...mine.reverse())
+    list.length = 0
+  }
+  const buckets = new Map<string, DTri[]>()
+  const put = (m: Map<string, DTri[]>, t: DTri) => {
+    const k = dkey(t.ax, t.s, t.c)
+    let l = m.get(k)
+    if (!l) m.set(k, (l = []))
+    l.push(t)
+  }
+  const triOf = (pi: number, a: number[], v: number): DTri | null => {
+    const ax0 = a[v * 3]!, ay0 = a[v * 3 + 1]!, az0 = a[v * 3 + 2]!
+    const ux = a[v * 3 + 3]! - ax0, uy = a[v * 3 + 4]! - ay0, uz = a[v * 3 + 5]! - az0
+    const wx = a[v * 3 + 6]! - ax0, wy = a[v * 3 + 7]! - ay0, wz = a[v * 3 + 8]! - az0
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx
+    const L = Math.hypot(nx, ny, nz)
+    if (L < 1e-9) return null
+    const ax = Math.abs(nx) > 0.9995 * L ? 0 : Math.abs(ny) > 0.9995 * L ? 1 : Math.abs(nz) > 0.9995 * L ? 2 : -1
+    if (ax < 0) return null
+    const s = (ax === 0 ? nx : ax === 1 ? ny : nz) > 0 ? 1 : -1
+    const i0 = ax === 0 ? 1 : 0
+    const i1 = ax === 2 ? 1 : 2
+    const c0 = [ax0, ay0, az0]
+    const c1 = [ax0 + ux, ay0 + uy, az0 + uz]
+    const c2 = [ax0 + wx, ay0 + wy, az0 + wz]
+    return {
+      pr: pi,
+      ax,
+      s,
+      c: (c0[ax]! + c1[ax]! + c2[ax]!) / 3,
+      u0: Math.min(c0[i0]!, c1[i0]!, c2[i0]!),
+      u1: Math.max(c0[i0]!, c1[i0]!, c2[i0]!),
+      v0: Math.min(c0[i1]!, c1[i1]!, c2[i1]!),
+      v1: Math.max(c0[i1]!, c1[i1]!, c2[i1]!),
+    }
+  }
+  prims.forEach((p, pi) => {
+    const a = p.pt.pos
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
+    for (let v = p.s; v < p.e; v++) {
+      const x = a[v * 3]!, y = a[v * 3 + 1]!, z = a[v * 3 + 2]!
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+      if (y < y0) y0 = y
+      if (y > y1) y1 = y
+      if (z < z0) z0 = z
+      if (z > z1) z1 = z
+    }
+    p.vol = Math.max(x1 - x0, 0.001) * Math.max(y1 - y0, 0.001) * Math.max(z1 - z0, 0.001)
+    for (let v = p.s; v + 2 < p.e; v += 3) {
+      const t = triOf(pi, a, v)
+      if (!t) continue
+      p.tris.push(t)
+      put(buckets, t)
+    }
+  })
+  const near = (t: DTri, m: Map<string, DTri[]>, fn: (o: DTri) => void) => {
+    const kc = Math.floor(t.c / DTOL)
+    for (let d = -1; d <= 1; d++) {
+      const l = m.get(`${t.ax}|${t.s}|${kc + d}`)
+      if (l) for (const o of l) fn(o)
+    }
+  }
+  const overlaps = (t: DTri, o: DTri) =>
+    Math.abs(t.c - o.c) < DTOL && Math.min(t.u1, o.u1) - Math.max(t.u0, o.u0) > 0.0005 && Math.min(t.v1, o.v1) - Math.max(t.v0, o.v0) > 0.0005
+
+  // 1. Trim coincident structural faces. A box face is 6 consecutive vertices (two triangles on one rectangle).
+  type Rect = [number, number, number, number]
+  prims.forEach((p, pi) => {
+    if (!p.fixed || (p.e - p.s) % 6 !== 0) return
+    const a = p.pt.pos
+    for (let v = p.s; v < p.e; v += 6) {
+      const t1 = triOf(pi, a, v)
+      const t2 = triOf(pi, a, v + 3)
+      if (!t1 || !t2 || t1.ax !== t2.ax || t1.s !== t2.s || Math.abs(t1.c - t2.c) > 1e-6) continue
+      const f: DTri = { ...t1, u0: Math.min(t1.u0, t2.u0), u1: Math.max(t1.u1, t2.u1), v0: Math.min(t1.v0, t2.v0), v1: Math.max(t1.v1, t2.v1) }
+      let rects: Rect[] = [[f.u0, f.v0, f.u1, f.v1]]
+      const cut = (o: DTri) => {
+        if (!overlaps(f, o)) return
+        const next: Rect[] = []
+        for (const r of rects) {
+          const x0 = Math.max(r[0], o.u0), y0 = Math.max(r[1], o.v0), x1 = Math.min(r[2], o.u1), y1 = Math.min(r[3], o.v1)
+          if (x1 - x0 <= 0.0005 || y1 - y0 <= 0.0005) {
+            next.push(r)
+            continue
+          }
+          if (x0 - r[0] > 1e-5) next.push([r[0], r[1], x0, r[3]])
+          if (r[2] - x1 > 1e-5) next.push([x1, r[1], r[2], r[3]])
+          if (y0 - r[1] > 1e-5) next.push([x0, r[1], x1, y0])
+          if (r[3] - y1 > 1e-5) next.push([x0, y1, x1, r[3]])
+        }
+        rects = next
+      }
+      near(f, buckets, (o) => {
+        if (o.pr > pi && prims[o.pr]!.fixed) cut(o)
+      })
+      if (reg) near(f, reg, (o) => o.pr === -1 && cut(o))
+      if (rects.length === 1 && rects[0]![0] === f.u0 && rects[0]![2] === f.u1 && rects[0]![1] === f.v0 && rects[0]![3] === f.v1) continue
+      // Rebuild: collapse the face, append the remaining rectangles with the face's normal, colour and (affine) UV.
+      const pt = p.pt
+      const i0 = f.ax === 0 ? 1 : 0
+      const i1 = f.ax === 2 ? 1 : 2
+      const corner = (cu: number, cv: number) => {
+        for (let k = v; k < v + 6; k++) if (Math.abs(a[k * 3 + i0]! - cu) < 1e-6 && Math.abs(a[k * 3 + i1]! - cv) < 1e-6) return k
+        return v
+      }
+      const k00 = corner(f.u0, f.v0), k10 = corner(f.u1, f.v0), k01 = corner(f.u0, f.v1)
+      const du = f.u1 - f.u0 || 1, dv = f.v1 - f.v0 || 1
+      const uvAt = (cu: number, cv: number) => {
+        const fu = (cu - f.u0) / du, fv = (cv - f.v0) / dv
+        return [0, 1].map((j) => pt.uv[k00 * 2 + j]! + fu * (pt.uv[k10 * 2 + j]! - pt.uv[k00 * 2 + j]!) + fv * (pt.uv[k01 * 2 + j]! - pt.uv[k00 * 2 + j]!))
+      }
+      const n = [pt.nor[v * 3]!, pt.nor[v * 3 + 1]!, pt.nor[v * 3 + 2]!]
+      const col = pt.vc ? [pt.col[v * 3]!, pt.col[v * 3 + 1]!, pt.col[v * 3 + 2]!] : null
+      const rm = pt.vc ? [pt.rm[v * 2]!, pt.rm[v * 2 + 1]!] : null
+      // Winding: keep the original triangle's orientation by mapping corners through the same (u, v) order.
+      const flip = ((k10 - k00) * 0 + (f.s > 0 ? 1 : -1) * (f.ax === 1 ? -1 : 1)) < 0
+      for (let k = v; k < v + 6; k++) for (let j = 0; j < 3; j++) a[k * 3 + j] = a[v * 3 + j]!
+      for (const r of rects) {
+        const cs: [number, number][] = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]
+        const order = flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]
+        for (const q of order) {
+          const [cu, cv] = cs[q]!
+          const w = [0, 0, 0]
+          w[f.ax] = f.c
+          w[i0] = cu
+          w[i1] = cv
+          a.push(w[0]!, w[1]!, w[2]!)
+          pt.nor.push(n[0]!, n[1]!, n[2]!)
+          pt.uv.push(...uvAt(cu, cv))
+          if (col) pt.col.push(col[0]!, col[1]!, col[2]!)
+          if (rm) pt.rm.push(rm[0]!, rm[1]!)
+        }
+      }
+    }
+  })
+
+  // 2. Separate movable primitives, smallest first.
+  const order = prims.map((_, i) => i).filter((i) => !prims[i]!.fixed).sort((a, b) => prims[a]!.vol - prims[b]!.vol)
+  for (const pi of order) {
+    const p = prims[pi]!
+    const need = [0, 0, 0, 0, 0, 0]
+    for (const t of p.tris) {
+      const test = (o: DTri, registered: boolean) => {
+        if (!registered) {
+          if (o.pr === pi) return
+          const q = prims[o.pr]!
+          if (!q.fixed && (q.vol < p.vol || (q.vol === p.vol && o.pr > pi))) return
+        }
+        if (!overlaps(t, o)) return
+        const dc = (t.c - o.c) * t.s
+        const slot = t.ax * 2 + (t.s > 0 ? 1 : 0)
+        need[slot] = Math.max(need[slot]!, DGAP - dc)
+      }
+      near(t, buckets, (o) => test(o, false))
+      if (reg) near(t, reg, (o) => test(o, true))
+    }
+    for (let ax = 0; ax < 3; ax++) {
+      const up = need[ax * 2 + 1]!
+      const dn = need[ax * 2]!
+      const shift = up >= dn ? up : -dn
+      if (Math.abs(shift) < 1e-6) continue
+      const a = p.pt.pos
+      for (let v = p.s; v < p.e; v++) a[v * 3 + ax] += shift
+      for (const t of p.tris) {
+        if (t.ax === ax) {
+          const old = buckets.get(dkey(t.ax, t.s, t.c))
+          if (old) old.splice(old.indexOf(t), 1)
+          t.c += shift
+          put(buckets, t)
+          continue
+        }
+        // Triangles on the other planes move in-plane: update their rects.
+        if (ax === (t.ax === 0 ? 1 : 0)) {
+          t.u0 += shift
+          t.u1 += shift
+        } else {
+          t.v0 += shift
+          t.v1 += shift
+        }
+      }
+    }
+  }
+  // 3. Later builders treat everything emitted here as fixed.
+  if (reg) for (const p of prims) for (const t of p.tris) put(reg, { ...t, pr: p.fixed ? -1 : -2 })
+}
+
+/** An axis-aligned solid in world coordinates (a wall layer, lining, column...). `id` groups the layers of one wall. */
+export type Solid = { min: [number, number, number]; max: [number, number, number]; id: number }
+const solidRegistry = new WeakMap<object, Solid[]>()
+let solidSeq = 1
+/** Every interior wall solid registered so far for this world (keyed by the shared colliders array). */
+export const solidsOf = (ctx: WorldContext): Solid[] => {
+  let l = solidRegistry.get(ctx.colliders)
+  if (!l) solidRegistry.set(ctx.colliders, (l = []))
+  return l
+}
+/** A fresh solid id (one per wall assembly). */
+export const newSolidId = () => solidSeq++
+
+/** Registers a wall-like solid (world coordinates) for joints, finished-face queries and the hygiene audit. */
+export function registerSolid(ctx: WorldContext, min: [number, number, number], max: [number, number, number], id = solidSeq++) {
+  solidsOf(ctx).push({ min, max, id })
+  return id
+}
+
+/**
+ * The finished wall surface at a point: given a point (world x, y, z) near a wall and the normal pointing out of the
+ * wall into the room (axis-aligned: nx or nz = ±1), returns the coordinate (x or z) of the outermost registered solid
+ * face along that normal within 0.4 m behind / 0.1 m in front of the point, or the point's own coordinate if no wall
+ * is found there. Every wall-mounted item places itself at `finishedFace(...) + n * (gap ≥ 0.004)`.
+ */
+export function finishedFace(ctx: WorldContext, x: number, y: number, z: number, nx: number, nz: number): number {
+  const ax = nx !== 0 ? 0 : 2
+  const s = nx !== 0 ? Math.sign(nx) : Math.sign(nz)
+  const p = ax === 0 ? x : z
+  const u = ax === 0 ? z : x
+  const ui = ax === 0 ? 2 : 0
+  let best = p
+  let found = false
+  for (const k of solidsOf(ctx)) {
+    if (y < k.min[1] || y > k.max[1] || u < k.min[ui] - 1e-4 || u > k.max[ui] + 1e-4) continue
+    const near = s > 0 ? k.max[ax] : k.min[ax]
+    const far = s > 0 ? k.min[ax] : k.max[ax]
+    // The solid must lie behind (or straddle) the point: its near face within [p − 0.4, p + 0.1] along the normal.
+    const d = (near - p) * s
+    if (d < -0.4 || d > 0.1 || (far - p) * s > 0.1) continue
+    if (!found || (near - best) * s > 0) best = near
+    found = true
+  }
+  return best
+}
+
 export class Builder {
   private parts = new Map<string, Part>()
   private ends: (WallEnd & { oy: number })[] = []
+  private deferred: (() => void)[] = []
+  /** False for builders whose geometry moves (door leaves, lift car and gates): kept out of the world depth registry. */
+  depthShared = true
+  /** Set once the depth pass has run over this builder (a small builder is separated together with its parent). */
+  separated = false
   readonly group = new THREE.Group()
   /** Streamed furniture models (drawn only near the camera's storey, see interior.ts). */
   readonly props = new THREE.Group()
@@ -464,6 +739,7 @@ export class Builder {
     storey = 0,
   ) {
     this.group.name = `interior:${name}`
+    this.depthShared = !/^(door-leaf|gate-|lift-car|lift-gate|lift-counterweight)/.test(name)
     this.props.name = `interior:${name}:props`
     this.small.name = `interior:${name}:small`
     this.propsLod.name = `interior:${name}:props-lod1`
@@ -481,12 +757,18 @@ export class Builder {
     this.zone = `interior:${Math.min(i, BUILDING.main.storeys - 1)}`
   }
 
+  /** Primitive records (one per emitted box / geometry) for the depth-separation pass at flush. */
+  private prims: Prim[] = []
+  /** > 0 while emitting structural geometry (walls, floors, joints) that the depth pass must never move. */
+  fixedDepth = 0
+
   private part(mat: Mat, cast: boolean): Part {
     const isPaint = typeof mat === "object" && "paint" in mat
     const m = isPaint ? vcMaterial : typeof mat === "string" ? material(mat) : (mat as THREE.Material)
     const key = `${m.uuid}:${cast}`
     let p = this.parts.get(key)
     if (!p) this.parts.set(key, (p = { mat: m, cast, vc: isPaint, pos: [], nor: [], uv: [], col: [], rm: [] }))
+    this.prims.push({ pt: p, s: p.pos.length / 3, fixed: this.fixedDepth > 0 })
     return p
   }
 
@@ -624,7 +906,9 @@ export class Builder {
 
   floor(mat: Mat, x0: number, z0: number, x1: number, z1: number) {
     // Top face only: the edges would be coplanar with the wall faces they tuck under.
+    this.fixedDepth++
     this.box(mat, x0, FLOOR_Y - 0.012, z0, x1, FLOOR_Y, z1, { cast: false, skip: "XxyZz" })
+    this.fixedDepth--
     this.walk(x0, z0, x1, z1)
   }
 
@@ -644,76 +928,128 @@ export class Builder {
     return mesh
   }
 
+  /** Runs `fn` at flush, before joints are resolved, when every wall of this storey is registered (wall-mounted items
+   *  that must find the finished surface use it). The builder's storey lift is restored for the call. */
+  defer(fn: () => void) {
+    const oy = this.oy
+    this.deferred.push(() => {
+      const save = this.oy
+      this.oy = oy
+      fn()
+      this.oy = save
+    })
+  }
+
+  /** Registers a solid in this builder's storey frame (local y). */
+  solid(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, id?: number) {
+    return registerSolid(this.ctx, [Math.min(x0, x1), Math.min(y0, y1) + this.oy, Math.min(z0, z1)], [Math.max(x0, x1), Math.max(y0, y1) + this.oy, Math.max(z0, z1)], id)
+  }
+
+  /** `finishedFace` in this builder's frame (local y). */
+  face(x: number, y: number, z: number, nx: number, nz: number) {
+    return finishedFace(this.ctx, x, y + this.oy, z, nx, nz)
+  }
+
   /** Records a wall end for joint resolution at flush (see `wall`). */
   deferEnd(e: WallEnd) {
     this.ends.push({ ...e, oy: this.oy })
   }
 
   /**
-   * Resolves recorded wall ends against every collider registered so far (this storey's walls, the core, the shell):
-   * an end that runs into a perpendicular wall-like solid (≥ 1.5 m tall, ≤ 0.45 m deep along this wall) is extended
-   * to that solid's far face without a cap; any other end gets a flush cap. Call order: storeys flush after the core.
+   * Resolves recorded wall ends against the registered wall solids (every interior wall, lining and core wall; the
+   * shell's inner faces count as an infinite slab). Decisions use the wall's whole cross-section (`jc0..jc1`, all its
+   * finish layers), geometry is emitted per layer:
+   *  - collinear continuation (a solid with our cross-section beyond the end): butt, no cap;
+   *  - T (the neighbour covers our whole section): sink half its depth (thin linings: butt), no cap;
+   *  - L (the neighbour covers part of our section): walls along X take the corner square — they extend to the
+   *    neighbour's far face and cap only the part of the end the neighbour doesn't cover; walls along Z stop inside
+   *    the X wall with no cap. One owner per corner, so no coplanar faces and no open box ends;
+   *  - nothing at mid height and near the top: flush cap.
    */
   resolveEnds() {
     const save = this.oy
-    const cols = this.ctx.colliders
+    this.fixedDepth++
+    const solids = solidsOf(this.ctx)
+    const SH = { x0: -54.65, x1: 34.65, z0: -21.65, z1: 21.65 }
+    const shellAt = (ai: number, p: number) => (ai === 0 ? p <= SH.x0 + 1e-4 || p >= SH.x1 - 1e-4 : p <= SH.z0 + 1e-4 || p >= SH.z1 - 1e-4)
     for (const e of this.ends) {
       this.oy = e.oy
       const ai = e.axis === "x" ? 0 : 2
       const ci = e.axis === "x" ? 2 : 0
-      const c = (e.c0 + e.c1) / 2
-      const y0 = e.bands[0]?.[0] ?? FLOOR_Y
-      const y1 = e.bands[e.bands.length - 1]?.[1] ?? CEIL_Y
-      const ym = (y0 + Math.min(y1, FLOOR_Y + 2.2)) / 2 + e.oy
-      const probe = e.a + e.dir * 0.02
-      // Joint against the neighbour solid just past the end:
-      //  - it covers our whole cross-section (T-stem into a through-wall, or an L where it runs to our outer face):
-      //    sink 1/2 its depth into it without a cap (no T-crack), unless one of its edges is flush with one of our
-      //    faces (then its end cap shares our face plane): no extension, no cap;
-      //  - it covers part of our section (walls meeting on centre lines): extend to its far face, no cap (closes the
-      //    corner square);
-      //  - nothing: flush cap.
-      let ext = 0
-      let covered = false
-      for (const k of cols) {
-        if (k.max[1] - k.min[1] < 1.5 || ym < k.min[1] || ym > k.max[1]) continue
-        if (probe < k.min[ai] || probe > k.max[ai] || c < k.min[ci] || c > k.max[ci]) continue
-        const depth = k.max[ai] - k.min[ai]
-        if (depth > 0.45) continue
-        // A perpendicular wall is longer across our line than we are thick; a short collinear piece is not.
-        if (k.max[ci] - k.min[ci] < e.c1 - e.c0 + 0.2) continue
-        const far = e.dir > 0 ? k.max[ai] - e.a : e.a - k.min[ai]
-        const full = k.min[ci] <= e.c0 + 1e-4 && k.max[ci] >= e.c1 - 1e-4
-        if (full) {
-          covered = true
-          const flush = Math.abs(k.min[ci] - e.c0) < 1e-3 || Math.abs(k.max[ci] - e.c1) < 1e-3
-          if (!flush) ext = Math.max(ext, Math.min(far / 2, 0.2))
-        } else ext = Math.max(ext, Math.min(far, 0.45))
-      }
-      if (covered && ext < 0.005) continue
-      if (ext < 0.005) {
-        // Free end: flush cap per band.
+      const jc0 = e.jc0 ?? e.c0
+      const jc1 = e.jc1 ?? e.c1
+      const c = (jc0 + jc1) / 2
+      const y0 = (e.bands[0]?.[0] ?? FLOOR_Y) + e.oy
+      const y1 = (e.bands[e.bands.length - 1]?.[1] ?? CEIL_Y) + e.oy
+      const hs = [y0 + Math.min(0.6, (y1 - y0) * 0.3), Math.min(y1, e.oy + CEIL_Y) - 0.25]
+      const at = (p: number, yy: number, lat: number) =>
+        solids.find((k) => k.id !== e.id && p > k.min[ai] && p < k.max[ai] && lat >= k.min[ci] - 1e-3 && lat <= k.max[ci] + 1e-3 && yy >= k.min[1] && yy <= k.max[1])
+      const first = at(e.a + e.dir * 0.003, hs[0]!, c)
+      const second = at(e.a + e.dir * 0.003, hs[1]!, c)
+      const cap = (l0: number, l1: number) => {
+        if (l1 - l0 < 1e-3) return
         for (const [b0, b1, m] of e.bands) {
-          const t = e.a
-          if (e.axis === "x") this.box(m, t, b0, e.c0, t, b1, e.c1, { skip: e.dir > 0 ? "xYyZz" : "XYyZz" })
-          else this.box(m, e.c0, b0, t, e.c1, b1, t, { skip: e.dir > 0 ? "XxYyz" : "XxYyZ" })
+          const t = e.a + (e.dir > 0 ? ext : -ext)
+          if (e.axis === "x") this.box(m, t, b0, l0, t, b1, l1, { skip: e.dir > 0 ? "xYyZz" : "XYyZz" })
+          else this.box(m, l0, b0, t, l1, b1, t, { skip: e.dir > 0 ? "XxYyz" : "XxYyZ" })
         }
+      }
+      let ext = 0
+      if (!first || !second) {
+        if (shellAt(ai, e.a + e.dir * 0.003)) continue
+        cap(e.c0, e.c1)
         continue
       }
-      // Butt joint: extend through the neighbour, no caps, bands kept.
-      const s0 = e.dir > 0 ? e.a : e.a - ext
-      const s1 = e.dir > 0 ? e.a + ext : e.a
-      e.bands.forEach(([b0, b1, m], bi) => {
-        const sy = (bi > 0 ? "y" : "") + (bi < e.bands.length - 1 ? "Y" : "")
-        if (e.axis === "x") this.box(m, s0, b0, e.c0, s1, b1, e.c1, { skip: "Xx" + sy })
-        else this.box(m, e.c0, b0, s0, e.c1, b1, s1, { skip: "Zz" + sy })
-      })
+      const k = first
+      const kc0 = k.min[ci]
+      const kc1 = k.max[ci]
+      const kLen = k.max[ai] - k.min[ai]
+      const collinear = Math.abs(kc0 - jc0) < 0.002 && Math.abs(kc1 - jc1) < 0.002 && kLen > kc1 - kc0
+      if (collinear) continue
+      // Far face of the union of solids stacked along our axis (wall + its finish layers).
+      let far = (e.dir > 0 ? k.max[ai] : k.min[ai]) - e.a
+      for (let it = 0; it < 6; it++) {
+        const n = at(e.a + far + e.dir * 0.003, hs[0]!, c)
+        if (!n) break
+        far = (e.dir > 0 ? n.max[ai] : n.min[ai]) - e.a
+      }
+      far = Math.abs(far)
+      const full = kc0 <= jc0 + 1e-3 && kc1 >= jc1 - 1e-3
+      if (full) {
+        ext = far > 0.06 ? Math.min(far / 2, 0.2) : 0
+        if (ext > 0) this.extend(e, ext)
+        continue
+      }
+      if (e.axis === "z") continue
+      ext = Math.min(far, 0.45)
+      this.extend(e, ext)
+      // Cap the uncovered part of this layer's end.
+      cap(e.c0, Math.min(e.c1, kc0))
+      cap(Math.max(e.c0, kc1), e.c1)
     }
     this.ends.length = 0
     this.oy = save
+    this.fixedDepth--
+  }
+
+  private extend(e: WallEnd, ext: number) {
+    const s0 = e.dir > 0 ? e.a : e.a - ext
+    const s1 = e.dir > 0 ? e.a + ext : e.a
+    e.bands.forEach(([b0, b1, m], bi) => {
+      const sy = (bi > 0 ? "y" : "") + (bi < e.bands.length - 1 ? "Y" : "")
+      if (e.axis === "x") this.box(m, s0, b0, e.c0, s1, b1, e.c1, { skip: "Xx" + sy })
+      else this.box(m, e.c0, b0, s0, e.c1, b1, s1, { skip: "Zz" + sy })
+    })
   }
 
   flush(parent: THREE.Object3D = this.ctx.scene) {
+    for (const fn of this.deferred) fn()
+    this.deferred.length = 0
+    this.resolveEnds()
+    if (this.smallB) for (const fn of this.smallB.deferred) fn()
+    if (this.smallB) this.smallB.deferred.length = 0
+    if (!this.separated) separateDepth(this.smallB ? [this, this.smallB] : [this])
+    if (this.smallB) this.smallB.separated = true
     if (this.smallB) {
       this.smallB.flush(this.small)
       this.smallB = null
@@ -747,7 +1083,7 @@ const UP = new THREE.Vector3(0, 1, 0)
 
 /** A gap in a wall from `bottom` (default the floor) to `top`, both relative to the finished floor. */
 /** A wall end awaiting joint resolution (bands are local y ranges with their materials). */
-export type WallEnd = { axis: "x" | "z"; a: number; dir: 1 | -1; c0: number; c1: number; bands: [number, number, Mat][] }
+export type WallEnd = { axis: "x" | "z"; a: number; dir: 1 | -1; c0: number; c1: number; bands: [number, number, Mat][]; /** Whole-assembly cross-section (all layers of this wall). */ jc0?: number; jc1?: number; /** Solid id of this wall (its own solids are not neighbours). */ id?: number }
 
 export type Opening = { a0: number; a1: number; top: number; bottom?: number }
 
@@ -765,7 +1101,7 @@ export function wall(
   c1: number,
   bands: readonly Band[],
   openings: Opening[] = [],
-  extent?: { y0: number; y1: number; collide?: boolean },
+  extent?: { y0: number; y1: number; collide?: boolean; /** Whole-assembly cross-section [c0, c1] when this wall is one layer of several (partition finishes, linings over a wall): joints are decided on it. */ joint?: readonly [number, number]; /** Solid id shared by all layers of one assembly. */ id?: number },
 ) {
   // Openings sorted and clipped so neighbouring openings never emit overlapping head/sill pieces.
   const sorted = [...openings].sort((p, q) => p.a0 - q.a0).map((o) => ({ ...o, a0: Math.max(o.a0, a0), a1: Math.min(o.a1, a1) }))
@@ -782,6 +1118,7 @@ export function wall(
     else b.box(mat, c0, y0, s0, c1, y1, s1, { skip: (capStart ? "" : "z") + (capEnd ? "" : "Z") + skipY })
   }
   let mat: Mat = "painted_wall"
+  b.fixedDepth++
   let cursor = a0
   const spans: [number, number][] = []
   for (const o of sorted) {
@@ -811,10 +1148,25 @@ export function wall(
       }
     }
   })
+  b.fixedDepth--
+  // Register the solids (spans, heads over openings, sills under them) for joints, mounts and the hygiene audit.
+  const sid = extent?.id ?? solidSeq++
+  const reg = (s0: number, s1: number, y0: number, y1: number) => {
+    if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) return
+    if (axis === "x") b.solid(s0, y0, c0, s1, y1, c1, sid)
+    else b.solid(c0, y0, s0, c1, y1, s1, sid)
+  }
+  for (const [s0, s1] of spans) reg(s0, s1, base, top)
+  for (const o of sorted) {
+    reg(o.a0, o.a1, Math.max(base, FLOOR_Y + o.top), top)
+    if (o.bottom !== undefined) reg(o.a0, o.a1, base, Math.min(top, FLOOR_Y + o.bottom))
+  }
   // Ends are deferred only where a solid span reaches them.
-  if (spans[0]![1] - spans[0]![0] > 1e-3) b.deferEnd({ axis, a: a0, dir: -1, c0, c1, bands: emitted })
+  const jc0 = extent?.joint?.[0] ?? c0
+  const jc1 = extent?.joint?.[1] ?? c1
+  if (spans[0]![1] - spans[0]![0] > 1e-3) b.deferEnd({ axis, a: a0, dir: -1, c0, c1, bands: emitted, jc0, jc1, id: sid })
   const last = spans[spans.length - 1]!
-  if (last[1] - last[0] > 1e-3) b.deferEnd({ axis, a: a1, dir: 1, c0, c1, bands: emitted })
+  if (last[1] - last[0] > 1e-3) b.deferEnd({ axis, a: a1, dir: 1, c0, c1, bands: emitted, jc0, jc1, id: sid })
   if (extent?.collide === false) return
   for (const [s0, s1] of spans) {
     if (s1 - s0 < 1e-3) continue
@@ -901,6 +1253,22 @@ function leafTemplate(ctx: WorldContext, lw: number, glass: THREE.Material | nul
 }
 
 /**
+ * Depth of the finished wall surface from a wall-centre point, in a frame rotated by `rot` (local +X along the wall,
+ * local +Z = side +1): at along-wall offset `u`, local height `y`, on side `sd`. Wall-mounted items put their back on
+ * `sd * surfaceDepth(...)` (≥ 2 cm fallback if no wall is registered there; `wallT` is the expected thickness).
+ * Call it inside `b.defer(...)` so every wall of the storey is known.
+ */
+export function surfaceDepth(b: Builder, x: number, z: number, rot: number, u: number, y: number, sd: 1 | -1, wallT = 0.15) {
+  const px = x + Math.cos(rot) * u
+  const pz = z - Math.sin(rot) * u
+  const nx = Math.round(Math.sin(rot) * sd)
+  const nz = Math.round(Math.cos(rot) * sd)
+  const f = b.face(px + nx * (wallT / 2), y, pz + nz * (wallT / 2), nx, nz)
+  const d = nx !== 0 ? (f - px) * nx : (f - pz) * nz
+  return Math.max(d, 0.02)
+}
+
+/**
  * Institutional door: static frame and casings in the builder's batch; each leaf its own object registered with the
  * shared door system (`ctx.doors`, KeyE), which owns its swing and collider. Leaves of the same variant share
  * geometry.
@@ -913,24 +1281,30 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
   const open = o.open ?? 0
   const y = FLOOR_Y
   const F = T(x, y, z, o.rot)
-  const fd = wallT + 0.04
-  // Frame
-  // Jambs stop under the head and the casing legs under the casing head: overlapping pieces put coplanar faces on the
-  // frame front at the top corners (z-fighting squares).
-  b.boxM(M.frame, F, 0.05, DOOR_H, fd, -w / 2 - 0.025, DOOR_H / 2, 0)
-  b.boxM(M.frame, F, 0.05, DOOR_H, fd, w / 2 + 0.025, DOOR_H / 2, 0)
-  b.boxM(M.frame, F, w + 0.1, 0.05, fd, 0, DOOR_H + 0.025, 0)
-  // Face casings: a 6 cm dark steel return on both wall faces, so the jamb reads as a heavy frame.
-  for (const s of [1, -1]) {
-    const zc = s * (fd / 2 + 0.006)
-    b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, -w / 2 - 0.08, (DOOR_H + 0.05) / 2, zc)
-    b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, w / 2 + 0.08, (DOOR_H + 0.05) / 2, zc)
-    b.boxM(M.frame, F, w + 0.28, 0.06, 0.012, 0, DOOR_H + 0.08, zc)
-  }
-  if (o.plate ?? true) {
-    b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, wallT / 2 + 0.006)
-    b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, -wallT / 2 - 0.006)
-  }
+  // Frame, casings and plates are placed against the FINISHED surfaces on each side (tile bands, linings, finish
+  // layers), found at flush when every wall of the storey is registered; `wallT` is only the fallback.
+  b.defer(() => {
+    const faceAt = (u: number, yy: number, sd: 1 | -1) => surfaceDepth(b, x, z, o.rot, u, yy, sd, wallT)
+    const fF = Math.max(faceAt(-w / 2 - 0.15, 1.2, 1), faceAt(w / 2 + 0.15, 1.2, 1))
+    const fB = Math.max(faceAt(-w / 2 - 0.15, 1.2, -1), faceAt(w / 2 + 0.15, 1.2, -1))
+    const fd = fF + fB + 0.04
+    const fc = (fF - fB) / 2
+    b.boxM(M.frame, F, 0.05, DOOR_H, fd, -w / 2 - 0.025, DOOR_H / 2, fc)
+    b.boxM(M.frame, F, 0.05, DOOR_H, fd, w / 2 + 0.025, DOOR_H / 2, fc)
+    b.boxM(M.frame, F, w + 0.1, 0.05, fd, 0, DOOR_H + 0.025, fc)
+    // Face casings: a 6 cm dark steel return 6 mm proud of the jamb, on both faces.
+    for (const sd of [1, -1] as const) {
+      const zc = sd > 0 ? fF + 0.02 + 0.006 : -(fB + 0.02 + 0.006)
+      b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, -w / 2 - 0.08, (DOOR_H + 0.05) / 2, zc)
+      b.boxM(M.frame, F, 0.06, DOOR_H + 0.05, 0.012, w / 2 + 0.08, (DOOR_H + 0.05) / 2, zc)
+      b.boxM(M.frame, F, w + 0.28, 0.06, 0.012, 0, DOOR_H + 0.08, zc)
+    }
+    if (o.plate ?? true)
+      for (const sd of [1, -1] as const) {
+        const d = faceAt(w / 2 + 0.22, 1.5, sd)
+        b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, sd * (d + 0.006))
+      }
+  })
   const lw = w / leaves - (leaves === 2 ? 0.004 : 0.006)
   const glass = o.glass === undefined ? M.wireGlass : o.glass
   const tpl = leafTemplate(b.ctx, lw, glass, o.leaf ?? "door_steel", !!o.panic, leaves === 2)

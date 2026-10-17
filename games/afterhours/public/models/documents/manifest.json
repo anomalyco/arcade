@@ -1,7 +1,7 @@
 {
  "atlas": [
   4096,
-  6016
+  7808
  ],
  "documents": {
   "memo_signin": {
@@ -11,10 +11,10 @@
     0.279
    ],
    "uv": [
-    0.169189453125,
-    0.0019946808510638296,
-    0.32958984375,
-    0.14311835106382978
+    0.126708984375,
+    0.12986680327868852,
+    0.24462890625,
+    0.20978483606557377
    ],
    "tags": [
     "board",
@@ -22,7 +22,7 @@
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "memo_carbon_inventory": {
    "title": "Carbon copy: Sublevel equipment inventory",
@@ -31,17 +31,17 @@
     0.279
    ],
    "uv": [
-    0.33544921875,
-    0.0019946808510638296,
-    0.495849609375,
-    0.14311835106382978
+    0.25048828125,
+    0.12986680327868852,
+    0.368408203125,
+    0.20978483606557377
    ],
    "tags": [
     "desk",
     "clipboard"
    ],
    "paper": "onion",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "notice_sublevel": {
    "title": "Notice: unauthorized access to the Sublevel",
@@ -50,10 +50,10 @@
     0.279
    ],
    "uv": [
-    0.501708984375,
-    0.0019946808510638296,
-    0.662109375,
-    0.14311835106382978
+    0.374267578125,
+    0.12986680327868852,
+    0.4921875,
+    0.20978483606557377
    ],
    "tags": [
     "board",
@@ -61,7 +61,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "notice_north_lot": {
    "title": "Notice: north lot closed",
@@ -70,17 +70,17 @@
     0.279
    ],
    "uv": [
-    0.66796875,
-    0.0019946808510638296,
-    0.828369140625,
-    0.14311835106382978
+    0.498046875,
+    0.12986680327868852,
+    0.615966796875,
+    0.20978483606557377
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "notice_firedoors": {
    "title": "Notice: do not prop fire doors",
@@ -89,17 +89,17 @@
     0.279
    ],
    "uv": [
-    0.834228515625,
-    0.0019946808510638296,
-    0.99462890625,
-    0.14311835106382978
+    0.621826171875,
+    0.12986680327868852,
+    0.73974609375,
+    0.20978483606557377
    ],
    "tags": [
     "wall",
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "notice_nightshift": {
    "title": "Notice: night shift sign in at the lobby guard desk",
@@ -108,17 +108,17 @@
     0.14
    ],
    "uv": [
-    0.1943359375,
-    0.8262965425531915,
-    0.354736328125,
-    0.8971077127659575
+    0.23095703125,
+    0.6872438524590164,
+    0.348876953125,
+    0.7273309426229508
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "goldenrod",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "signin_sheet": {
    "title": "Night sign-in sheet (handwritten)",
@@ -127,10 +127,10 @@
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.15608377659574468,
-    0.163330078125,
-    0.29720744680851063
+    0.74560546875,
+    0.12986680327868852,
+    0.863525390625,
+    0.20978483606557377
    ],
    "tags": [
     "clipboard",
@@ -138,7 +138,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "roster_operators": {
    "title": "Operator watch roster, week of Oct 15 (SL names struck out)",
@@ -147,10 +147,10 @@
     0.279
    ],
    "uv": [
-    0.169189453125,
-    0.15608377659574468,
-    0.32958984375,
-    0.29720744680851063
+    0.869384765625,
+    0.12986680327868852,
+    0.9873046875,
+    0.20978483606557377
    ],
    "tags": [
     "board",
@@ -158,7 +158,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "roster_sl_rotation": {
    "title": "Records: SL rotation roster 1981–84, names crossed out in red",
@@ -167,17 +167,17 @@
     0.279
    ],
    "uv": [
-    0.33544921875,
-    0.15608377659574468,
-    0.495849609375,
-    0.29720744680851063
+    0.0029296875,
+    0.2179815573770492,
+    0.120849609375,
+    0.2978995901639344
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "memo_next_of_kin": {
    "title": "Memo: SL rotation — next of kin letters (6)",
@@ -186,17 +186,17 @@
     0.279
    ],
    "uv": [
-    0.501708984375,
-    0.15608377659574468,
-    0.662109375,
-    0.29720744680851063
+    0.126708984375,
+    0.2179815573770492,
+    0.24462890625,
+    0.2978995901639344
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "letter_regret": {
    "title": "Half-typed letter: '…regret to inform you that…'",
@@ -205,17 +205,17 @@
     0.279
    ],
    "uv": [
-    0.66796875,
-    0.15608377659574468,
-    0.828369140625,
-    0.29720744680851063
+    0.25048828125,
+    0.2179815573770492,
+    0.368408203125,
+    0.2978995901639344
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "security_log": {
    "title": "Protective Services night log (last entry 01:40, FL-1 called)",
@@ -224,10 +224,10 @@
     0.279
    ],
    "uv": [
-    0.834228515625,
-    0.15608377659574468,
-    0.99462890625,
-    0.29720744680851063
+    0.374267578125,
+    0.2179815573770492,
+    0.4921875,
+    0.2978995901639344
    ],
    "tags": [
     "desk",
@@ -235,7 +235,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "ops_log": {
    "title": "Operations log, console 3-06 ('03:04 — ???')",
@@ -244,10 +244,10 @@
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.3011968085106383,
-    0.163330078125,
-    0.44232047872340424
+    0.498046875,
+    0.2179815573770492,
+    0.615966796875,
+    0.2978995901639344
    ],
    "tags": [
     "desk",
@@ -255,7 +255,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "work_order_halt": {
    "title": "Work order: halt all work 4th floor, by order of the Director",
@@ -264,10 +264,10 @@
     0.14
    ],
    "uv": [
-    0.360595703125,
-    0.8262965425531915,
-    0.52099609375,
-    0.8971077127659575
+    0.354736328125,
+    0.6872438524590164,
+    0.47265625,
+    0.7273309426229508
    ],
    "tags": [
     "desk",
@@ -275,7 +275,7 @@
     "creepy"
    ],
    "paper": "yellow",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "work_order_night": {
    "title": "Night janitor work order (the player's task list)",
@@ -284,17 +284,17 @@
     0.279
    ],
    "uv": [
-    0.169189453125,
-    0.3011968085106383,
-    0.32958984375,
-    0.44232047872340424
+    0.621826171875,
+    0.2179815573770492,
+    0.73974609375,
+    0.2978995901639344
    ],
    "tags": [
     "clipboard",
     "desk"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "log_shower_test": {
    "title": "Weekly safety-shower test log (blank after Oct 3)",
@@ -303,10 +303,10 @@
     0.279
    ],
    "uv": [
-    0.33544921875,
-    0.3011968085106383,
-    0.495849609375,
-    0.44232047872340424
+    0.74560546875,
+    0.2179815573770492,
+    0.863525390625,
+    0.2978995901639344
    ],
    "tags": [
     "wall",
@@ -314,7 +314,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "signup_bowling": {
    "title": "Bowling league sign-up sheet",
@@ -323,17 +323,17 @@
     0.279
    ],
    "uv": [
-    0.501708984375,
-    0.3011968085106383,
-    0.662109375,
-    0.44232047872340424
+    0.869384765625,
+    0.2179815573770492,
+    0.9873046875,
+    0.2978995901639344
    ],
    "tags": [
     "board",
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "flyer_bowling": {
    "title": "Bowling league flyer with tear-off tabs",
@@ -342,17 +342,17 @@
     0.279
    ],
    "uv": [
-    0.66796875,
-    0.3011968085106383,
-    0.828369140625,
-    0.44232047872340424
+    0.0029296875,
+    0.3009733606557377,
+    0.120849609375,
+    0.38089139344262296
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "goldenrod",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "poster_missing_cat": {
    "title": "Missing cat poster (Biscuit)",
@@ -361,10 +361,10 @@
     0.279
    ],
    "uv": [
-    0.834228515625,
-    0.3011968085106383,
-    0.99462890625,
-    0.44232047872340424
+    0.126708984375,
+    0.3009733606557377,
+    0.24462890625,
+    0.38089139344262296
    ],
    "tags": [
     "board",
@@ -372,7 +372,7 @@
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "menu_cafeteria": {
    "title": "Cafeteria menu, week of Oct 15 1984",
@@ -381,17 +381,17 @@
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.4463098404255319,
-    0.163330078125,
-    0.5874335106382979
+    0.25048828125,
+    0.3009733606557377,
+    0.368408203125,
+    0.38089139344262296
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "poster_radiation": {
    "title": "Safety poster: caution radiation area",
@@ -400,16 +400,16 @@
     0.432
    ],
    "uv": [
-    0.43603515625,
-    0.5914228723404256,
-    0.552734375,
-    0.7142619680851063
+    0.3125,
+    0.0015368852459016393,
+    0.435302734375,
+    0.1011782786885246
    ],
    "tags": [
     "wall"
    ],
    "paper": "poster",
-   "pxPerMm": 1.71
+   "pxPerMm": 1.8
   },
   "poster_chemical": {
    "title": "Safety poster: chemical hazards, know your labels",
@@ -418,16 +418,16 @@
     0.432
    ],
    "uv": [
-    0.55859375,
-    0.5914228723404256,
-    0.67529296875,
-    0.7142619680851063
+    0.441162109375,
+    0.0015368852459016393,
+    0.56396484375,
+    0.1011782786885246
    ],
    "tags": [
     "wall"
    ],
    "paper": "poster",
-   "pxPerMm": 1.71
+   "pxPerMm": 1.8
   },
   "map_evac_0": {
    "title": "Evacuation route map, storey 0",
@@ -436,16 +436,16 @@
     0.216
    ],
    "uv": [
-    0.68115234375,
-    0.5914228723404256,
-    0.868896484375,
-    0.6904920212765957
+    0.3408203125,
+    0.46644467213114754,
+    0.47900390625,
+    0.5225409836065574
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "map_evac_1": {
    "title": "Evacuation route map, storey 1",
@@ -454,16 +454,16 @@
     0.216
    ],
    "uv": [
-    0.0029296875,
-    0.7232380319148937,
-    0.190673828125,
-    0.8223071808510638
+    0.48486328125,
+    0.46644467213114754,
+    0.623046875,
+    0.5225409836065574
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "map_evac_2": {
    "title": "Evacuation route map, storey 2",
@@ -472,16 +472,16 @@
     0.216
    ],
    "uv": [
-    0.196533203125,
-    0.7232380319148937,
-    0.38427734375,
-    0.8223071808510638
+    0.62890625,
+    0.46644467213114754,
+    0.76708984375,
+    0.5225409836065574
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "map_evac_3": {
    "title": "Evacuation route map, storey 3",
@@ -490,16 +490,16 @@
     0.216
    ],
    "uv": [
-    0.39013671875,
-    0.7232380319148937,
-    0.577880859375,
-    0.8223071808510638
+    0.77294921875,
+    0.46644467213114754,
+    0.9111328125,
+    0.5225409836065574
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "map_evac_4": {
    "title": "Evacuation route map, storey 4",
@@ -508,16 +508,16 @@
     0.216
    ],
    "uv": [
-    0.583740234375,
-    0.7232380319148937,
-    0.771484375,
-    0.8223071808510638
+    0.0029296875,
+    0.5309938524590164,
+    0.14111328125,
+    0.5870901639344263
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "form_requisition": {
    "title": "Lab supply requisition form (IOPS 113-B)",
@@ -526,17 +526,17 @@
     0.279
    ],
    "uv": [
-    0.169189453125,
-    0.4463098404255319,
-    0.32958984375,
-    0.5874335106382979
+    0.374267578125,
+    0.3009733606557377,
+    0.4921875,
+    0.38089139344262296
    ],
    "tags": [
     "desk",
     "clipboard"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "printout_greenbar": {
    "title": "Green-bar printout: SL link log (03:02 link up, 03:04 saturated)",
@@ -545,10 +545,10 @@
     0.279
    ],
    "uv": [
-    0.0029296875,
-    0.5914228723404256,
-    0.25732421875,
-    0.719248670212766
+    0.34521484375,
+    0.38396516393442626,
+    0.5322265625,
+    0.45645491803278687
    ],
    "tags": [
     "desk",
@@ -556,7 +556,7 @@
     "creepy"
    ],
    "paper": "greenbar",
-   "pxPerMm": 2.75
+   "pxPerMm": 2.03
   },
   "note_repeated": {
    "title": "Legal pad sheet, one line written over and over",
@@ -566,9 +566,9 @@
    ],
    "uv": [
     0.0029296875,
-    0.0019946808510638296,
-    0.163330078125,
-    0.15209441489361702
+    0.12986680327868852,
+    0.120849609375,
+    0.2149077868852459
    ],
    "tags": [
     "desk",
@@ -576,7 +576,7 @@
     "creepy"
    ],
    "paper": "legal",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "sticky_dish": {
    "title": "Sticky note: dish stays pointed down",
@@ -585,10 +585,10 @@
     0.076
    ],
    "uv": [
-    0.819091796875,
-    0.8262965425531915,
-    0.896728515625,
-    0.879155585106383
+    0.20849609375,
+    0.7306608606557377,
+    0.265625,
+    0.7606301229508197
    ],
    "tags": [
     "desk",
@@ -596,7 +596,7 @@
     "wall"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "sticky_marge": {
    "title": "Sticky note: call Marge",
@@ -605,17 +605,17 @@
     0.076
    ],
    "uv": [
-    0.902587890625,
-    0.8262965425531915,
-    0.980224609375,
-    0.879155585106383
+    0.271484375,
+    0.7306608606557377,
+    0.32861328125,
+    0.7606301229508197
    ],
    "tags": [
     "desk",
     "board"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "sticky_dont": {
    "title": "Sticky note: don't answer 300",
@@ -624,17 +624,17 @@
     0.076
    ],
    "uv": [
-    0.0029296875,
-    0.9047539893617021,
-    0.08056640625,
-    0.9576130319148937
+    0.33447265625,
+    0.7306608606557377,
+    0.3916015625,
+    0.7606301229508197
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "sticky_back5": {
    "title": "Sticky note: back in 5 — R. (lab 2-27)",
@@ -643,17 +643,17 @@
     0.076
    ],
    "uv": [
-    0.08642578125,
-    0.9047539893617021,
-    0.1640625,
-    0.9576130319148937
+    0.3974609375,
+    0.7306608606557377,
+    0.45458984375,
+    0.7606301229508197
    ],
    "tags": [
     "desk",
     "creepy"
    ],
    "paper": "sticky",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "card_extensions": {
    "title": "Index card: phone extensions",
@@ -662,17 +662,17 @@
     0.076
    ],
    "uv": [
-    0.169921875,
-    0.9047539893617021,
-    0.287841796875,
-    0.9527925531914894
+    0.86279296875,
+    0.7306608606557377,
+    0.949462890625,
+    0.7579405737704918
    ],
    "tags": [
     "desk",
     "board"
    ],
    "paper": "card",
-   "pxPerMm": 3.8
+   "pxPerMm": 2.79
   },
   "polaroid_dish": {
    "title": "Polaroid: the dish at dusk",
@@ -681,17 +681,17 @@
     0.107
    ],
    "uv": [
-    0.0029296875,
-    0.8262965425531915,
-    0.0927734375,
-    0.9007646276595744
+    0.8515625,
+    0.6390881147540983,
+    0.917724609375,
+    0.6812243852459017
    ],
    "tags": [
     "board",
     "desk"
    ],
    "paper": "polaroid",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "polaroid_corridor": {
    "title": "Polaroid: corridor at 2:40 am",
@@ -700,10 +700,10 @@
     0.107
    ],
    "uv": [
-    0.0986328125,
-    0.8262965425531915,
-    0.1884765625,
-    0.9007646276595744
+    0.923583984375,
+    0.6390881147540983,
+    0.98974609375,
+    0.6812243852459017
    ],
    "tags": [
     "board",
@@ -711,7 +711,7 @@
     "creepy"
    ],
    "paper": "polaroid",
-   "pxPerMm": 4.18
+   "pxPerMm": 3.07
   },
   "calendar_oct84": {
    "title": "Wall calendar page, October 1984",
@@ -720,17 +720,17 @@
     0.215
    ],
    "uv": [
-    0.77734375,
-    0.7232380319148937,
-    0.959228515625,
-    0.8183178191489362
+    0.23486328125,
+    0.5309938524590164,
+    0.36865234375,
+    0.5849129098360656
    ],
    "tags": [
     "wall",
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 2.66
+   "pxPerMm": 1.96
   },
   "directory_extensions": {
    "title": "Typed station telephone directory",
@@ -739,10 +739,10 @@
     0.279
    ],
    "uv": [
-    0.33544921875,
-    0.4463098404255319,
-    0.495849609375,
-    0.5874335106382979
+    0.498046875,
+    0.3009733606557377,
+    0.615966796875,
+    0.38089139344262296
    ],
    "tags": [
     "wall",
@@ -750,7 +750,7 @@
     "board"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "memo_coffee": {
    "title": "Memo: coffee fund short",
@@ -759,17 +759,17 @@
     0.14
    ],
    "uv": [
-    0.52685546875,
-    0.8262965425531915,
-    0.687255859375,
-    0.8971077127659575
+    0.478515625,
+    0.6872438524590164,
+    0.596435546875,
+    0.7273309426229508
    ],
    "tags": [
     "board",
     "wall"
    ],
    "paper": "pink",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "checklist_rounds": {
    "title": "Night rounds checklist (FL-1 gate open at 0310)",
@@ -778,17 +778,17 @@
     0.279
    ],
    "uv": [
-    0.501708984375,
-    0.4463098404255319,
-    0.662109375,
-    0.5874335106382979
+    0.621826171875,
+    0.3009733606557377,
+    0.73974609375,
+    0.38089139344262296
    ],
    "tags": [
     "clipboard",
     "creepy"
    ],
    "paper": "white",
-   "pxPerMm": 3.04
+   "pxPerMm": 2.23
   },
   "envelope_interoffice": {
    "title": "Interoffice routing envelope",
@@ -797,17 +797,17 @@
     0.33
    ],
    "uv": [
-    0.66796875,
-    0.4463098404255319,
-    0.81884765625,
-    0.5819481382978723
+    0.228515625,
+    0.38396516393442626,
+    0.33935546875,
+    0.4608094262295082
    ],
    "tags": [
     "desk",
     "floor"
    ],
    "paper": "manila",
-   "pxPerMm": 2.47
+   "pxPerMm": 1.82
   },
   "timecard_halverson": {
    "title": "Time card: D. Halverson (SL, punched IN 22:58)",
@@ -816,10 +816,10 @@
     0.187
    ],
    "uv": [
-    0.26318359375,
-    0.5914228723404256,
-    0.34375,
-    0.715591755319149
+    0.5380859375,
+    0.38396516393442626,
+    0.59716796875,
+    0.45427766393442626
    ],
    "tags": [
     "wall",
@@ -827,7 +827,7 @@
     "creepy"
    ],
    "paper": "timecard",
-   "pxPerMm": 3.99
+   "pxPerMm": 2.93
   },
   "timecard_lindqvist": {
    "title": "Time card: E. Lindqvist (SL, punched IN 22:58)",
@@ -836,10 +836,10 @@
     0.187
    ],
    "uv": [
-    0.349609375,
-    0.5914228723404256,
-    0.43017578125,
-    0.715591755319149
+    0.60302734375,
+    0.38396516393442626,
+    0.662109375,
+    0.45427766393442626
    ],
    "tags": [
     "wall",
@@ -847,7 +847,7 @@
     "creepy"
    ],
    "paper": "timecard",
-   "pxPerMm": 3.99
+   "pxPerMm": 2.93
   },
   "board_dosimeter": {
    "title": "Sign: SUBLEVEL — DOSIMETER REQUIRED (0-15)",
@@ -856,16 +856,16 @@
     0.3
    ],
    "uv": [
-    0.693115234375,
-    0.8262965425531915,
-    0.813232421875,
-    0.8808178191489362
+    0.5126953125,
+    0.6390881147540983,
+    0.63916015625,
+    0.6832735655737705
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.09
+   "pxPerMm": 1.15
   },
   "stencil_w1": {
    "title": "Stencil: W-1 — SL TRUNK (riser cupboard)",
@@ -874,16 +874,16 @@
     0.12
    ],
    "uv": [
-    0.374755859375,
-    0.9047539893617021,
-    0.47509765625,
-    0.9275265957446809
+    0.3955078125,
+    0.8021260245901639,
+    0.5009765625,
+    0.8205686475409836
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.14
+   "pxPerMm": 1.2
   },
   "plate_el0": {
    "title": "Door plate: EL-0 Electrical",
@@ -892,16 +892,16 @@
     0.075
    ],
    "uv": [
-    0.48095703125,
-    0.9047539893617021,
-    0.569091796875,
-    0.9273603723404256
+    0.6298828125,
+    0.8021260245901639,
+    0.72265625,
+    0.8204405737704918
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_el1": {
    "title": "Door plate: EL-1 Electrical",
@@ -910,16 +910,16 @@
     0.075
    ],
    "uv": [
-    0.574951171875,
-    0.9047539893617021,
-    0.6630859375,
-    0.9273603723404256
+    0.728515625,
+    0.8021260245901639,
+    0.8212890625,
+    0.8204405737704918
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_el2": {
    "title": "Door plate: EL-2 Electrical",
@@ -928,16 +928,16 @@
     0.075
    ],
    "uv": [
-    0.6689453125,
-    0.9047539893617021,
-    0.757080078125,
-    0.9273603723404256
+    0.8271484375,
+    0.8021260245901639,
+    0.919921875,
+    0.8204405737704918
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_el3": {
    "title": "Door plate: EL-3 Electrical",
@@ -946,16 +946,16 @@
     0.075
    ],
    "uv": [
-    0.762939453125,
-    0.9047539893617021,
-    0.85107421875,
-    0.9273603723404256
+    0.0029296875,
+    0.8271004098360656,
+    0.095703125,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_el4": {
    "title": "Door plate: EL-4 Electrical",
@@ -964,16 +964,16 @@
     0.075
    ],
    "uv": [
-    0.85693359375,
-    0.9047539893617021,
-    0.945068359375,
-    0.9273603723404256
+    0.1015625,
+    0.8271004098360656,
+    0.1943359375,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_tc0": {
    "title": "Door plate: TC-0 Telecom",
@@ -982,16 +982,16 @@
     0.075
    ],
    "uv": [
-    0.0029296875,
-    0.9616023936170213,
-    0.091064453125,
-    0.9842087765957447
+    0.2001953125,
+    0.8271004098360656,
+    0.29296875,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_tc1": {
    "title": "Door plate: TC-1 Telecom",
@@ -1000,16 +1000,16 @@
     0.075
    ],
    "uv": [
-    0.096923828125,
-    0.9616023936170213,
-    0.18505859375,
-    0.9842087765957447
+    0.298828125,
+    0.8271004098360656,
+    0.3916015625,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_tc2": {
    "title": "Door plate: TC-2 Telecom",
@@ -1018,16 +1018,16 @@
     0.075
    ],
    "uv": [
-    0.19091796875,
-    0.9616023936170213,
-    0.279052734375,
-    0.9842087765957447
+    0.3974609375,
+    0.8271004098360656,
+    0.490234375,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_tc3": {
    "title": "Door plate: TC-3 Telecom",
@@ -1036,16 +1036,16 @@
     0.075
    ],
    "uv": [
-    0.284912109375,
-    0.9616023936170213,
-    0.373046875,
-    0.9842087765957447
+    0.49609375,
+    0.8271004098360656,
+    0.5888671875,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_tc4": {
    "title": "Door plate: TC-4 Telecom",
@@ -1054,16 +1054,16 @@
     0.075
    ],
    "uv": [
-    0.37890625,
-    0.9616023936170213,
-    0.467041015625,
-    0.9842087765957447
+    0.5947265625,
+    0.8271004098360656,
+    0.6875,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_jc": {
    "title": "Door plate: Janitor closet",
@@ -1072,16 +1072,16 @@
     0.075
    ],
    "uv": [
-    0.472900390625,
-    0.9616023936170213,
-    0.56103515625,
-    0.9842087765957447
+    0.693359375,
+    0.8271004098360656,
+    0.7861328125,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "plate_vault": {
    "title": "Door plate: vault, two-person rule (1-01v)",
@@ -1090,16 +1090,16 @@
     0.075
    ],
    "uv": [
-    0.56689453125,
-    0.9616023936170213,
-    0.655029296875,
-    0.9842087765957447
+    0.7919921875,
+    0.8271004098360656,
+    0.884765625,
+    0.8454149590163934
    ],
    "tags": [
     "wall"
    ],
    "paper": "plate",
-   "pxPerMm": 1.8
+   "pxPerMm": 1.9
   },
   "sign_out_of_order": {
    "title": "Taped sign: OUT OF ORDER (4th floor WCs)",
@@ -1108,58 +1108,3858 @@
     0.14
    ],
    "uv": [
-    0.293701171875,
-    0.9047539893617021,
-    0.368896484375,
-    0.937998670212766
+    0.0029296875,
+    0.772156762295082,
+    0.08203125,
+    0.7990522540983607
    ],
    "tags": [
     "wall"
    ],
    "paper": "white",
-   "pxPerMm": 1.42
+   "pxPerMm": 1.5
+  },
+  "note_do_not_disturb": {
+   "title": "Taped note: DO NOT DISTURB — R.H. (Director's door)",
+   "size": [
+    0.22,
+    0.16
+   ],
+   "uv": [
+    0.0029296875,
+    0.5901639344262295,
+    0.123046875,
+    0.6360143442622951
+   ],
+   "tags": [
+    "wall",
+    "creepy"
+   ],
+   "paper": "white",
+   "pxPerMm": 2.23
+  },
+  "spray_do_not_demo": {
+   "title": "Spray-painted 'DO NOT DEMO — SEE DIRECTOR' on gypsum board (4-01)",
+   "size": [
+    1.3,
+    0.45
+   ],
+   "uv": [
+    0.0029296875,
+    0.6872438524590164,
+    0.22509765625,
+    0.7275870901639344
+   ],
+   "tags": [
+    "wall",
+    "creepy"
+   ],
+   "paper": "gypsum",
+   "pxPerMm": 0.7
+  },
+  "chalkboard_equations": {
+   "title": "Chalkboard, 3-09 analysis bullpen: propagation equations and SL source fixes",
+   "size": [
+    4.2,
+    1.1
+   ],
+   "uv": [
+    0.12890625,
+    0.5901639344262295,
+    0.45703125,
+    0.6352459016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "chalk",
+   "pxPerMm": 0.32
+  },
+  "chalkboard_agenda": {
+   "title": "Chalkboard, Conference A (1-02): staff meeting agenda",
+   "size": [
+    3,
+    1.1
+   ],
+   "uv": [
+    0.462890625,
+    0.5901639344262295,
+    0.697265625,
+    0.6352459016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "chalk",
+   "pxPerMm": 0.32
+  },
+  "chalkboard_titration": {
+   "title": "Chalkboard, biochem teaching lab (2-24): titration notes",
+   "size": [
+    3.6,
+    1.1
+   ],
+   "uv": [
+    0.703125,
+    0.5901639344262295,
+    0.984375,
+    0.6352459016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "chalk",
+   "pxPerMm": 0.32
+  },
+  "chalkboard_wiped": {
+   "title": "Chalkboard, wiped with ghosts of writing (generic)",
+   "size": [
+    2.4,
+    1.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.6390881147540983,
+    0.1904296875,
+    0.6841700819672131
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "chalk",
+   "pxPerMm": 0.32
+  },
+  "whiteboard_ops": {
+   "title": "Whiteboard, operations console 3-06: shift and tape schedule",
+   "size": [
+    2.6,
+    1.1
+   ],
+   "uv": [
+    0.1962890625,
+    0.6390881147540983,
+    0.3994140625,
+    0.6841700819672131
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white_board",
+   "pxPerMm": 0.32
+  },
+  "inout_board_1_09": {
+   "title": "Magnetic in/out board face, Personnel & Payroll (1-09): 22 names, IN / OUT / SL columns",
+   "size": [
+    1.2,
+    1.15
+   ],
+   "uv": [
+    0.0029296875,
+    0.0015368852459016393,
+    0.251953125,
+    0.12679303278688525
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white_board",
+   "pxPerMm": 0.85
+  },
+  "directory_board": {
+   "title": "Lobby floor directory: felt letter board (0-02)",
+   "size": [
+    0.9,
+    1.1
+   ],
+   "uv": [
+    0.56982421875,
+    0.0015368852459016393,
+    0.7236328125,
+    0.10015368852459017
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "felt",
+   "pxPerMm": 0.7
+  },
+  "plaque_dedication": {
+   "title": "Bronze dedication plaque under the 1979 dish photo (0-02)",
+   "size": [
+    0.42,
+    0.26
+   ],
+   "uv": [
+    0.64501953125,
+    0.6390881147540983,
+    0.7783203125,
+    0.6823770491803278
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "bronze",
+   "pxPerMm": 1.3
+  },
+  "flipchart_contracts": {
+   "title": "Flip chart: contracts Q4 FY84 bar chart (1-25)",
+   "size": [
+    0.66,
+    0.84
+   ],
+   "uv": [
+    0.7294921875,
+    0.0015368852459016393,
+    0.87451171875,
+    0.09836065573770492
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "newsprint",
+   "pxPerMm": 0.9
+  },
+  "blueprint_4th_floor": {
+   "title": "Blueprint: 4th floor refurbishment plan (4-02 site office / 4-01 wall)",
+   "size": [
+    0.9,
+    0.62
+   ],
+   "uv": [
+    0.74560546875,
+    0.3009733606557377,
+    0.96533203125,
+    0.38037909836065575
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "blueprint",
+   "pxPerMm": 1
+  },
+  "whiteprint_ceiling": {
+   "title": "White print: reflected ceiling plan, 4th floor (blue-line)",
+   "size": [
+    0.9,
+    0.62
+   ],
+   "uv": [
+    0.0029296875,
+    0.38396516393442626,
+    0.22265625,
+    0.46337090163934425
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "white",
+   "pxPerMm": 1
+  },
+  "chart_circular": {
+   "title": "Circular chart-recorder disc, 7-day temperature (0-21 HVAC panel)",
+   "size": [
+    0.3,
+    0.3
+   ],
+   "uv": [
+    0.87890625,
+    0.38396516393442626,
+    0.99609375,
+    0.4454405737704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 1.6
+  },
+  "printout_teletype": {
+   "title": "Teletype paper roll output: SL link console log",
+   "size": [
+    0.22,
+    0.3
+   ],
+   "uv": [
+    0.66796875,
+    0.38396516393442626,
+    0.765625,
+    0.453765368852459
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "white",
+   "pxPerMm": 1.82
+  },
+  "sign_eyewash": {
+   "title": "Sign: EMERGENCY EYE WASH (green)",
+   "size": [
+    0.16,
+    0.12
+   ],
+   "uv": [
+    0.087890625,
+    0.772156762295082,
+    0.150390625,
+    0.7967469262295082
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "sign_drench": {
+   "title": "Sign: EMERGENCY SHOWER (green)",
+   "size": [
+    0.3,
+    0.3
+   ],
+   "uv": [
+    0.0029296875,
+    0.46644467213114754,
+    0.1201171875,
+    0.5279200819672131
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "sign_halon_area": {
+   "title": "Sign: WARNING — HALON 1301 PROTECTED AREA (machine room door)",
+   "size": [
+    0.26,
+    0.32
+   ],
+   "uv": [
+    0.771484375,
+    0.38396516393442626,
+    0.873046875,
+    0.4495389344262295
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "sign_chem_store": {
+   "title": "Plate: CHEMICAL STORE 2-01, under the hazard diamond",
+   "size": [
+    0.3,
+    0.09
+   ],
+   "uv": [
+    0.5068359375,
+    0.8021260245901639,
+    0.6240234375,
+    0.8205686475409836
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "sign_cold_room": {
+   "title": "Plate: COLD ROOM 4 °C (2-06)",
+   "size": [
+    0.4,
+    0.14
+   ],
+   "uv": [
+    0.46044921875,
+    0.7306608606557377,
+    0.61669921875,
+    0.7593493852459017
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "sign_sensor_store": {
+   "title": "Placard: SL-ARRAY 2 — SENSOR HEADS (2-25)",
+   "size": [
+    0.6,
+    0.14
+   ],
+   "uv": [
+    0.62255859375,
+    0.7306608606557377,
+    0.85693359375,
+    0.7593493852459017
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "plate_sl_link": {
+   "title": "Legend plate: SL LINK STATUS (3-06)",
+   "size": [
+    0.26,
+    0.22
+   ],
+   "uv": [
+    0.4052734375,
+    0.6390881147540983,
+    0.5068359375,
+    0.6841700819672131
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "label_rack_in": {
+   "title": "Time-card rack label: IN",
+   "size": [
+    0.4,
+    0.05
+   ],
+   "uv": [
+    0.0498046875,
+    0.9541495901639344,
+    0.2060546875,
+    0.9643954918032787
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "label_rack_out": {
+   "title": "Time-card rack label: OUT",
+   "size": [
+    0.4,
+    0.05
+   ],
+   "uv": [
+    0.2119140625,
+    0.9541495901639344,
+    0.3681640625,
+    0.9643954918032787
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "label_rack_sl": {
+   "title": "Time-card rack strip: SL (red)",
+   "size": [
+    0.4,
+    0.05
+   ],
+   "uv": [
+    0.3740234375,
+    0.9541495901639344,
+    0.5302734375,
+    0.9643954918032787
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "lift_dial": {
+   "title": "Lift floor indicator dial face (semicircle: G 1 2 3 4)",
+   "size": [
+    0.34,
+    0.17
+   ],
+   "uv": [
+    0.06982421875,
+    0.7306608606557377,
+    0.20263671875,
+    0.7654969262295082
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.6
+  },
+  "lift_panel": {
+   "title": "Lift car operating panel labels",
+   "size": [
+    0.1,
+    0.4
+   ],
+   "uv": [
+    0.2578125,
+    0.0015368852459016393,
+    0.306640625,
+    0.10399590163934426
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 2
+  },
+  "cert_elevator": {
+   "title": "Elevator inspection certificate (framed, in the car)",
+   "size": [
+    0.2,
+    0.26
+   ],
+   "uv": [
+    0.14697265625,
+    0.5309938524590164,
+    0.22900390625,
+    0.5868340163934426
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "white",
+   "pxPerMm": 1.68
+  },
+  "tag_halon": {
+   "title": "Halon bottle inspection tag",
+   "size": [
+    0.12,
+    0.16
+   ],
+   "uv": [
+    0.7841796875,
+    0.6390881147540983,
+    0.845703125,
+    0.6821209016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "breaker_schedule_0": {
+   "title": "Panelboard directory card, EL-0",
+   "size": [
+    0.24,
+    0.2
+   ],
+   "uv": [
+    0.37451171875,
+    0.5309938524590164,
+    0.49169921875,
+    0.5822233606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2
+  },
+  "breaker_schedule_1": {
+   "title": "Panelboard directory card, EL-1",
+   "size": [
+    0.24,
+    0.2
+   ],
+   "uv": [
+    0.49755859375,
+    0.5309938524590164,
+    0.61474609375,
+    0.5822233606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2
+  },
+  "breaker_schedule_2": {
+   "title": "Panelboard directory card, EL-2",
+   "size": [
+    0.24,
+    0.2
+   ],
+   "uv": [
+    0.62060546875,
+    0.5309938524590164,
+    0.73779296875,
+    0.5822233606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2
+  },
+  "breaker_schedule_3": {
+   "title": "Panelboard directory card, EL-3",
+   "size": [
+    0.24,
+    0.2
+   ],
+   "uv": [
+    0.74365234375,
+    0.5309938524590164,
+    0.86083984375,
+    0.5822233606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2
+  },
+  "breaker_schedule_4": {
+   "title": "Panelboard directory card, EL-4",
+   "size": [
+    0.24,
+    0.2
+   ],
+   "uv": [
+    0.86669921875,
+    0.5309938524590164,
+    0.98388671875,
+    0.5822233606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2
+  },
+  "stencil_storey_0": {
+   "title": "Stair landing stencil: storey G",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.602294921875,
+    0.6872438524590164,
+    0.663330078125,
+    0.7256659836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "stencil_storey_1": {
+   "title": "Stair landing stencil: storey 1",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.669189453125,
+    0.6872438524590164,
+    0.730224609375,
+    0.7256659836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "stencil_storey_2": {
+   "title": "Stair landing stencil: storey 2",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.736083984375,
+    0.6872438524590164,
+    0.797119140625,
+    0.7256659836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "stencil_storey_3": {
+   "title": "Stair landing stencil: storey 3",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.802978515625,
+    0.6872438524590164,
+    0.864013671875,
+    0.7256659836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "stencil_storey_4": {
+   "title": "Stair landing stencil: storey 4",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.869873046875,
+    0.6872438524590164,
+    0.930908203125,
+    0.7256659836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "stencil_storey_5": {
+   "title": "Stair landing stencil: storey ROOF",
+   "size": [
+    0.5,
+    0.6
+   ],
+   "uv": [
+    0.0029296875,
+    0.7306608606557377,
+    0.06396484375,
+    0.7690829918032787
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "concrete",
+   "pxPerMm": 0.5
+  },
+  "locker_01": {
+   "title": "Locker number plate 1",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.78662109375,
+    0.9541495901639344,
+    0.8173828125,
+    0.962218237704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_02": {
+   "title": "Locker number plate 2",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.8232421875,
+    0.9541495901639344,
+    0.85400390625,
+    0.962218237704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_03": {
+   "title": "Locker number plate 3",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.85986328125,
+    0.9541495901639344,
+    0.890625,
+    0.962218237704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_04": {
+   "title": "Locker number plate 4",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.896484375,
+    0.9541495901639344,
+    0.92724609375,
+    0.962218237704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_05": {
+   "title": "Locker number plate 5",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.93310546875,
+    0.9541495901639344,
+    0.9638671875,
+    0.962218237704918
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_06": {
+   "title": "Locker number plate 6",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.0029296875,
+    0.9679815573770492,
+    0.03369140625,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_07": {
+   "title": "Locker number plate 7",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.03955078125,
+    0.9679815573770492,
+    0.0703125,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_08": {
+   "title": "Locker number plate 8",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.076171875,
+    0.9679815573770492,
+    0.10693359375,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_09": {
+   "title": "Locker number plate 9",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.11279296875,
+    0.9679815573770492,
+    0.1435546875,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_10": {
+   "title": "Locker number plate 10",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.1494140625,
+    0.9679815573770492,
+    0.18017578125,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_11": {
+   "title": "Locker number plate 11",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.18603515625,
+    0.9679815573770492,
+    0.216796875,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "locker_12": {
+   "title": "Locker number plate 12",
+   "size": [
+    0.06,
+    0.03
+   ],
+   "uv": [
+    0.22265625,
+    0.9679815573770492,
+    0.25341796875,
+    0.9760502049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "brass_plate",
+   "pxPerMm": 2.1
+  },
+  "label_depth_1": {
+   "title": "Archive shelf label: SL −120 m  TRAYS 1–40",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.30615234375,
+    0.9679815573770492,
+    0.36767578125,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_2": {
+   "title": "Archive shelf label: SL −180 m  TRAYS 41–88",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.37353515625,
+    0.9679815573770492,
+    0.43505859375,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_3": {
+   "title": "Archive shelf label: SL −240 m  TRAYS 89–130",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.44091796875,
+    0.9679815573770492,
+    0.50244140625,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_4": {
+   "title": "Archive shelf label: SL −300 m  TRAYS 131–160",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.50830078125,
+    0.9679815573770492,
+    0.56982421875,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_5": {
+   "title": "Archive shelf label: SL −361 m  SPECIMENS",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.57568359375,
+    0.9679815573770492,
+    0.63720703125,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_6": {
+   "title": "Archive shelf label: SL −388 m  SPECIMENS",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.64306640625,
+    0.9679815573770492,
+    0.70458984375,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_7": {
+   "title": "Archive shelf label: SL −410 m  DO NOT OPEN",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.71044921875,
+    0.9679815573770492,
+    0.77197265625,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_depth_8": {
+   "title": "Archive shelf label: WATER  SL-W1…W12",
+   "size": [
+    0.12,
+    0.025
+   ],
+   "uv": [
+    0.77783203125,
+    0.9679815573770492,
+    0.83935546875,
+    0.9747694672131147
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_1": {
+   "title": "Specimen jar label: SL-03 · 361 m · 9/12/84",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.5361328125,
+    0.9541495901639344,
+    0.572021484375,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_2": {
+   "title": "Specimen jar label: SL-07 · 372 m · 9/20/84",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.577880859375,
+    0.9541495901639344,
+    0.61376953125,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_3": {
+   "title": "Specimen jar label: SL-11 · 388 m · 10/1/84",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.61962890625,
+    0.9541495901639344,
+    0.655517578125,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_4": {
+   "title": "Specimen jar label: SL-14 · 401 m · 10/9/84",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.661376953125,
+    0.9541495901639344,
+    0.697265625,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_5": {
+   "title": "Specimen jar label: SL-W4 water · 10/2",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.703125,
+    0.9541495901639344,
+    0.739013671875,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_jar_6": {
+   "title": "Specimen jar label: SL-16 · 410 m · 10/17",
+   "size": [
+    0.07,
+    0.035
+   ],
+   "uv": [
+    0.744873046875,
+    0.9541495901639344,
+    0.78076171875,
+    0.9636270491803278
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_core_1": {
+   "title": "Core box end label: CORE 81-07  118–121 m",
+   "size": [
+    0.1,
+    0.05
+   ],
+   "uv": [
+    0.2958984375,
+    0.936859631147541,
+    0.34716796875,
+    0.9503073770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_core_2": {
+   "title": "Core box end label: CORE 82-22  204–207 m",
+   "size": [
+    0.1,
+    0.05
+   ],
+   "uv": [
+    0.35302734375,
+    0.936859631147541,
+    0.404296875,
+    0.9503073770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_core_3": {
+   "title": "Core box end label: CORE 83-40  296–299 m",
+   "size": [
+    0.1,
+    0.05
+   ],
+   "uv": [
+    0.41015625,
+    0.936859631147541,
+    0.46142578125,
+    0.9503073770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_core_4": {
+   "title": "Core box end label: CORE 84-11  388–391 m",
+   "size": [
+    0.1,
+    0.05
+   ],
+   "uv": [
+    0.46728515625,
+    0.936859631147541,
+    0.5185546875,
+    0.9503073770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_tray_sl14": {
+   "title": "Tray label: SL-14 (containment)",
+   "size": [
+    0.08,
+    0.03
+   ],
+   "uv": [
+    0.25927734375,
+    0.9679815573770492,
+    0.30029296875,
+    0.9760502049180327
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "tag_sl_array": {
+   "title": "Sensor head tag: SL-ARRAY 2",
+   "size": [
+    0.06,
+    0.04
+   ],
+   "uv": [
+    0.591796875,
+    0.936859631147541,
+    0.62255859375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_chem_key": {
+   "title": "Key cabinet label: CHEM STORE",
+   "size": [
+    0.12,
+    0.05
+   ],
+   "uv": [
+    0.5244140625,
+    0.936859631147541,
+    0.5859375,
+    0.9503073770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_cabinet_1": {
+   "title": "Cabinet label: RESPIRATORS",
+   "size": [
+    0.16,
+    0.06
+   ],
+   "uv": [
+    0.890625,
+    0.8271004098360656,
+    0.97265625,
+    0.8432377049180327
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_cabinet_2": {
+   "title": "Cabinet label: FILM · DARKROOM",
+   "size": [
+    0.16,
+    0.06
+   ],
+   "uv": [
+    0.0029296875,
+    0.8484887295081968,
+    0.0849609375,
+    0.8646260245901639
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_cabinet_3": {
+   "title": "Cabinet label: SPILL KIT",
+   "size": [
+    0.16,
+    0.06
+   ],
+   "uv": [
+    0.0908203125,
+    0.8484887295081968,
+    0.1728515625,
+    0.8646260245901639
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_cabinet_4": {
+   "title": "Cabinet label: GLASSWARE",
+   "size": [
+    0.16,
+    0.06
+   ],
+   "uv": [
+    0.1787109375,
+    0.8484887295081968,
+    0.2607421875,
+    0.8646260245901639
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_1": {
+   "title": "Card catalogue drawer label: A – BAL",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.84521484375,
+    0.9679815573770492,
+    0.86572265625,
+    0.9723360655737705
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_2": {
+   "title": "Card catalogue drawer label: BAN – CAR",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.87158203125,
+    0.9679815573770492,
+    0.89208984375,
+    0.9723360655737705
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_3": {
+   "title": "Card catalogue drawer label: CAS – DOR",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.89794921875,
+    0.9679815573770492,
+    0.91845703125,
+    0.9723360655737705
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_4": {
+   "title": "Card catalogue drawer label: DOS – FEN",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.92431640625,
+    0.9679815573770492,
+    0.94482421875,
+    0.9723360655737705
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_5": {
+   "title": "Card catalogue drawer label: FER – HAL",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.95068359375,
+    0.9679815573770492,
+    0.97119140625,
+    0.9723360655737705
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_6": {
+   "title": "Card catalogue drawer label: HAM – KEM",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.0029296875,
+    0.9791239754098361,
+    0.0234375,
+    0.9834784836065574
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_7": {
+   "title": "Card catalogue drawer label: KEN – LIN",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.029296875,
+    0.9791239754098361,
+    0.0498046875,
+    0.9834784836065574
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_catalogue_8": {
+   "title": "Card catalogue drawer label: LIP – MOR",
+   "size": [
+    0.04,
+    0.016
+   ],
+   "uv": [
+    0.0556640625,
+    0.9791239754098361,
+    0.076171875,
+    0.9834784836065574
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_1": {
+   "title": "File / shelving range label: CONTRACTS 1982",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.62841796875,
+    0.936859631147541,
+    0.66943359375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_2": {
+   "title": "File / shelving range label: CONTRACTS 1983",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.67529296875,
+    0.936859631147541,
+    0.71630859375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_3": {
+   "title": "File / shelving range label: CONTRACTS 1984",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.72216796875,
+    0.936859631147541,
+    0.76318359375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_4": {
+   "title": "File / shelving range label: PERSONNEL A–L",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.76904296875,
+    0.936859631147541,
+    0.81005859375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_5": {
+   "title": "File / shelving range label: PERSONNEL M–Z",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.81591796875,
+    0.936859631147541,
+    0.85693359375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_6": {
+   "title": "File / shelving range label: SL ROTATION 81–84",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.86279296875,
+    0.936859631147541,
+    0.90380859375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_7": {
+   "title": "File / shelving range label: PAYROLL FY84",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.90966796875,
+    0.936859631147541,
+    0.95068359375,
+    0.9476178278688525
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "label_file_8": {
+   "title": "File / shelving range label: IOPS CORRESP.",
+   "size": [
+    0.08,
+    0.04
+   ],
+   "uv": [
+    0.0029296875,
+    0.9541495901639344,
+    0.0439453125,
+    0.9649077868852459
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 2.1
+  },
+  "namecard_01": {
+   "title": "Table name card: R. HALLORAN (DIRECTOR), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.15625,
+    0.772156762295082,
+    0.24853515625,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_02": {
+   "title": "Table name card: M. ESCOBAR (DEPUTY DIRECTOR), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.25439453125,
+    0.772156762295082,
+    0.3466796875,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_03": {
+   "title": "Table name card: G. PRUITT (PROTECTIVE SVCS), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.3525390625,
+    0.772156762295082,
+    0.44482421875,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_04": {
+   "title": "Table name card: D. AMUNDSEN (SAMPLE SCIENCES), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.45068359375,
+    0.772156762295082,
+    0.54296875,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_05": {
+   "title": "Table name card: T. WEXLER (COMPUTING), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.548828125,
+    0.772156762295082,
+    0.64111328125,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_06": {
+   "title": "Table name card: J. ORMOND (PROGRAM ADMIN.), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.64697265625,
+    0.772156762295082,
+    0.7392578125,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_07": {
+   "title": "Table name card: P. MOREAU (FIELD OPERATIONS), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.7451171875,
+    0.772156762295082,
+    0.83740234375,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_08": {
+   "title": "Table name card: H. YOST (PROPERTY), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.84326171875,
+    0.772156762295082,
+    0.935546875,
+    0.7940573770491803
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_09": {
+   "title": "Table name card: L. PRUITT (LAB SAFETY), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.0029296875,
+    0.8021260245901639,
+    0.09521484375,
+    0.8240266393442623
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_10": {
+   "title": "Table name card: C. BRANDT (FACILITIES & PLANT), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.10107421875,
+    0.8021260245901639,
+    0.193359375,
+    0.8240266393442623
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_11": {
+   "title": "Table name card: IOPS (OBSERVER), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.19921875,
+    0.8021260245901639,
+    0.29150390625,
+    0.8240266393442623
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "namecard_12": {
+   "title": "Table name card: S. KALE (IOPS LIAISON), 4-12",
+   "size": [
+    0.21,
+    0.095
+   ],
+   "uv": [
+    0.29736328125,
+    0.8021260245901639,
+    0.3896484375,
+    0.8240266393442623
+   ],
+   "tags": [
+    "desk"
+   ],
+   "paper": "card",
+   "pxPerMm": 1.8
+  },
+  "timecard_day_1": {
+   "title": "Time card: D. Kemper (day staff, punched out)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.1259765625,
+    0.46644467213114754,
+    0.173828125,
+    0.5234375
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 2.37
+  },
+  "timecard_day_2": {
+   "title": "Time card: G. Pell (day staff, punched out)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.1796875,
+    0.46644467213114754,
+    0.2275390625,
+    0.5234375
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 2.37
+  },
+  "timecard_day_3": {
+   "title": "Time card: M. Duquette (day staff, punched out)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.2333984375,
+    0.46644467213114754,
+    0.28125,
+    0.5234375
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 2.37
+  },
+  "timecard_day_4": {
+   "title": "Time card: T. Okafor (day staff, punched out)",
+   "size": [
+    0.0825,
+    0.187
+   ],
+   "uv": [
+    0.287109375,
+    0.46644467213114754,
+    0.3349609375,
+    0.5234375
+   ],
+   "tags": [
+    "wall",
+    "desk"
+   ],
+   "paper": "timecard",
+   "pxPerMm": 2.37
+  },
+  "door_0_01": {
+   "title": "Door plate 0-01 LOBBY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2666015625,
+    0.8484887295081968,
+    0.3095703125,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_02": {
+   "title": "Door plate 0-02 JUNCTION LANDMARK",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3154296875,
+    0.8484887295081968,
+    0.3583984375,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_10": {
+   "title": "Door plate 0-10 STAFF ENTRANCE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3642578125,
+    0.8484887295081968,
+    0.4072265625,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_11": {
+   "title": "Door plate 0-11 HEALTH UNIT",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4130859375,
+    0.8484887295081968,
+    0.4560546875,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_14": {
+   "title": "Door plate 0-14 DECON SHOWERS",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4619140625,
+    0.8484887295081968,
+    0.5048828125,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_15": {
+   "title": "Door plate 0-15 CLEAN SIDE / FL-1 LOBBY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5107421875,
+    0.8484887295081968,
+    0.5537109375,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_16": {
+   "title": "Door plate 0-16 RECEIVING & STORES",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5595703125,
+    0.8484887295081968,
+    0.6025390625,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_17": {
+   "title": "Door plate 0-17 SAMPLE INTAKE LAB",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6083984375,
+    0.8484887295081968,
+    0.6513671875,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_18": {
+   "title": "Door plate 0-18 REPROGRAPHICS & SUPPLY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6572265625,
+    0.8484887295081968,
+    0.7001953125,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_19": {
+   "title": "Door plate 0-19 MAIL & MESSENGER",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7060546875,
+    0.8484887295081968,
+    0.7490234375,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_20": {
+   "title": "Door plate 0-20 PBX SWITCHBOARD",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7548828125,
+    0.8484887295081968,
+    0.7978515625,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_21": {
+   "title": "Door plate 0-21 BUILDING CONTROL",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8037109375,
+    0.8484887295081968,
+    0.8466796875,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_22": {
+   "title": "Door plate 0-22 DRY STORES",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8525390625,
+    0.8484887295081968,
+    0.8955078125,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_30": {
+   "title": "Door plate 0-30 FACILITIES OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9013671875,
+    0.8484887295081968,
+    0.9443359375,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_31": {
+   "title": "Door plate 0-31 FACILITIES WORKSHOP",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9501953125,
+    0.8484887295081968,
+    0.9931640625,
+    0.8627049180327869
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_32": {
+   "title": "Door plate 0-32 SERVICE STACK",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.8676997950819673,
+    0.0458984375,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_35": {
+   "title": "Door plate 0-35 BRIEFING AUDITORIUM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0517578125,
+    0.8676997950819673,
+    0.0947265625,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_36": {
+   "title": "Door plate 0-36 PERSONNEL & BADGE OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1005859375,
+    0.8676997950819673,
+    0.1435546875,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_37": {
+   "title": "Door plate 0-37 GUARD READY ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1494140625,
+    0.8676997950819673,
+    0.1923828125,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_38": {
+   "title": "Door plate 0-38 SECURITY OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1982421875,
+    0.8676997950819673,
+    0.2412109375,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_0_39": {
+   "title": "Door plate 0-39 CAFETERIA — SERVERY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2470703125,
+    0.8676997950819673,
+    0.2900390625,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_01": {
+   "title": "Door plate 1-01 RECORDS CENTER",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2958984375,
+    0.8676997950819673,
+    0.3388671875,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_01v": {
+   "title": "Door plate 1-01v CLASSIFIED VAULT",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3447265625,
+    0.8676997950819673,
+    0.3876953125,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_02": {
+   "title": "Door plate 1-02 CONFERENCE A",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3935546875,
+    0.8676997950819673,
+    0.4365234375,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_03": {
+   "title": "Door plate 1-03 CONTRACTS SUITE — RECEPTION",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4423828125,
+    0.8676997950819673,
+    0.4853515625,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_04": {
+   "title": "Door plate 1-04 CONTRACTS",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4912109375,
+    0.8676997950819673,
+    0.5341796875,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_05": {
+   "title": "Door plate 1-05 CONTRACTS",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5400390625,
+    0.8676997950819673,
+    0.5830078125,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_06": {
+   "title": "Door plate 1-06 CONTRACTS",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5888671875,
+    0.8676997950819673,
+    0.6318359375,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_07": {
+   "title": "Door plate 1-07 CONTRACTS",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6376953125,
+    0.8676997950819673,
+    0.6806640625,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_08": {
+   "title": "Door plate 1-08 COFFEE & COPY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6865234375,
+    0.8676997950819673,
+    0.7294921875,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_09": {
+   "title": "Door plate 1-09 PERSONNEL & PAYROLL BULLPEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7353515625,
+    0.8676997950819673,
+    0.7783203125,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_09f": {
+   "title": "Door plate 1-09f SUPERVISOR'S FISHBOWL",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7841796875,
+    0.8676997950819673,
+    0.8271484375,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_10": {
+   "title": "Door plate 1-10 TECHNICAL LIBRARY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8330078125,
+    0.8676997950819673,
+    0.8759765625,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_20": {
+   "title": "Door plate 1-20 WORD PROCESSING CENTRE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8818359375,
+    0.8676997950819673,
+    0.9248046875,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_22": {
+   "title": "Door plate 1-22 SUPPLY STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9306640625,
+    0.8676997950819673,
+    0.9736328125,
+    0.8819159836065574
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_24": {
+   "title": "Door plate 1-24 PROGRAM OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.8849897540983607,
+    0.0458984375,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_25": {
+   "title": "Door plate 1-25 CONFERENCE B",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0517578125,
+    0.8849897540983607,
+    0.0947265625,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_1_26": {
+   "title": "Door plate 1-26 AV STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1005859375,
+    0.8849897540983607,
+    0.1435546875,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_01": {
+   "title": "Door plate 2-01 CHEMICAL STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1494140625,
+    0.8849897540983607,
+    0.1923828125,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_02": {
+   "title": "Door plate 2-02 GEOCHEM LAB 1",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1982421875,
+    0.8849897540983607,
+    0.2412109375,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_03": {
+   "title": "Door plate 2-03 INSTRUMENT ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2470703125,
+    0.8849897540983607,
+    0.2900390625,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_04": {
+   "title": "Door plate 2-04 GEOCHEM LAB 2",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2958984375,
+    0.8849897540983607,
+    0.3388671875,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_05": {
+   "title": "Door plate 2-05 MICROBIOLOGY SUITE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3447265625,
+    0.8849897540983607,
+    0.3876953125,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_06": {
+   "title": "Door plate 2-06 COLD ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3935546875,
+    0.8849897540983607,
+    0.4365234375,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_07": {
+   "title": "Door plate 2-07 SPECIMEN ARCHIVE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4423828125,
+    0.8849897540983607,
+    0.4853515625,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_08": {
+   "title": "Door plate 2-08 LAB MANAGER",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4912109375,
+    0.8849897540983607,
+    0.5341796875,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_09": {
+   "title": "Door plate 2-09 DARKROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5400390625,
+    0.8849897540983607,
+    0.5830078125,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_10": {
+   "title": "Door plate 2-10 CONTAINMENT LAB",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5888671875,
+    0.8849897540983607,
+    0.6318359375,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_20": {
+   "title": "Door plate 2-20 LAB SAFETY OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6376953125,
+    0.8849897540983607,
+    0.6806640625,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_22": {
+   "title": "Door plate 2-22 GAS CYLINDER STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6865234375,
+    0.8849897540983607,
+    0.7294921875,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_24": {
+   "title": "Door plate 2-24 BIOCHEM TEACHING LAB",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7353515625,
+    0.8849897540983607,
+    0.7783203125,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_25": {
+   "title": "Door plate 2-25 ELECTRONICS & SENSOR LAB",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7841796875,
+    0.8849897540983607,
+    0.8271484375,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_26": {
+   "title": "Door plate 2-26 LAB BREAK ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8330078125,
+    0.8849897540983607,
+    0.8759765625,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_27": {
+   "title": "Door plate 2-27 ANALYTICAL LAB 4",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8818359375,
+    0.8849897540983607,
+    0.9248046875,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_28": {
+   "title": "Door plate 2-28 GLASSWASH & AUTOCLAVE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9306640625,
+    0.8849897540983607,
+    0.9736328125,
+    0.8992059426229508
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_2_29": {
+   "title": "Door plate 2-29 BALANCE & MEDIA PREP",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.9022797131147541,
+    0.0458984375,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_01": {
+   "title": "Door plate 3-01 DATA CONTROL / I/O COUNTER",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0517578125,
+    0.9022797131147541,
+    0.0947265625,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_02": {
+   "title": "Door plate 3-02 KEYPUNCH ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1005859375,
+    0.9022797131147541,
+    0.1435546875,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_03": {
+   "title": "Door plate 3-03 UPS & POWER DISTRIBUTION",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1494140625,
+    0.9022797131147541,
+    0.1923828125,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_04": {
+   "title": "Door plate 3-04 MACHINE ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1982421875,
+    0.9022797131147541,
+    0.2412109375,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_05": {
+   "title": "Door plate 3-05 TAPE LIBRARY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2470703125,
+    0.9022797131147541,
+    0.2900390625,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_06": {
+   "title": "Door plate 3-06 OPERATIONS CONSOLE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2958984375,
+    0.9022797131147541,
+    0.3388671875,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_07": {
+   "title": "Door plate 3-07 PLOTTER & MAP ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3447265625,
+    0.9022797131147541,
+    0.3876953125,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_08": {
+   "title": "Door plate 3-08 LISTENING ROOM, UNDER THE DISH",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3935546875,
+    0.9022797131147541,
+    0.4365234375,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_09": {
+   "title": "Door plate 3-09 DATA ANALYSIS BULLPEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4423828125,
+    0.9022797131147541,
+    0.4853515625,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_20": {
+   "title": "Door plate 3-20 OPERATORS' REST ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4912109375,
+    0.9022797131147541,
+    0.5341796875,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_22": {
+   "title": "Door plate 3-22 MANAGER, COMPUTING",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5400390625,
+    0.9022797131147541,
+    0.5830078125,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_24": {
+   "title": "Door plate 3-24 TERMINAL POOL",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5888671875,
+    0.9022797131147541,
+    0.6318359375,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_3_25": {
+   "title": "Door plate 3-25 PROGRAMMERS' WING",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6376953125,
+    0.9022797131147541,
+    0.6806640625,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_01": {
+   "title": "Door plate 4-01 GUTTED FLOOR PLATE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6865234375,
+    0.9022797131147541,
+    0.7294921875,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_02": {
+   "title": "Door plate 4-02 GUTTED SOUTH",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7353515625,
+    0.9022797131147541,
+    0.7783203125,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_03": {
+   "title": "Door plate 4-03 SERVICES",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7841796875,
+    0.9022797131147541,
+    0.8271484375,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_04": {
+   "title": "Door plate 4-04 WEST END",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8330078125,
+    0.9022797131147541,
+    0.8759765625,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_10": {
+   "title": "Door plate 4-10 DIRECTORATE RECEPTION",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8818359375,
+    0.9022797131147541,
+    0.9248046875,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_17": {
+   "title": "Door plate 4-17 EXECUTIVE KITCHENETTE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9306640625,
+    0.9022797131147541,
+    0.9736328125,
+    0.9164959016393442
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_11": {
+   "title": "Door plate 4-11 RECEIVER & FEED ROOM",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.9195696721311475,
+    0.0458984375,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_12": {
+   "title": "Door plate 4-12 EXECUTIVE CONFERENCE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0517578125,
+    0.9195696721311475,
+    0.0947265625,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_13": {
+   "title": "Door plate 4-13 DEPUTY DIRECTOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1005859375,
+    0.9195696721311475,
+    0.1435546875,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_14": {
+   "title": "Door plate 4-14 DIRECTOR'S OFFICE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1494140625,
+    0.9195696721311475,
+    0.1923828125,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_15": {
+   "title": "Door plate 4-15 EXECUTIVE SECRETARY",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1982421875,
+    0.9195696721311475,
+    0.2412109375,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_4_16": {
+   "title": "Door plate 4-16 DIRECTOR'S FILES",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2470703125,
+    0.9195696721311475,
+    0.2900390625,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_m0": {
+   "title": "Door plate WC-M0 MEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2958984375,
+    0.9195696721311475,
+    0.3388671875,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_w0": {
+   "title": "Door plate WC-W0 WOMEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3447265625,
+    0.9195696721311475,
+    0.3876953125,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_jc_0": {
+   "title": "Door plate JC-0 JANITOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.3935546875,
+    0.9195696721311475,
+    0.4365234375,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_st_0": {
+   "title": "Door plate ST-0 STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4423828125,
+    0.9195696721311475,
+    0.4853515625,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_m1": {
+   "title": "Door plate WC-M1 MEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.4912109375,
+    0.9195696721311475,
+    0.5341796875,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_w1": {
+   "title": "Door plate WC-W1 WOMEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5400390625,
+    0.9195696721311475,
+    0.5830078125,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_jc_1": {
+   "title": "Door plate JC-1 JANITOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.5888671875,
+    0.9195696721311475,
+    0.6318359375,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_st_1": {
+   "title": "Door plate ST-1 STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6376953125,
+    0.9195696721311475,
+    0.6806640625,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_m2": {
+   "title": "Door plate WC-M2 MEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.6865234375,
+    0.9195696721311475,
+    0.7294921875,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_w2": {
+   "title": "Door plate WC-W2 WOMEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7353515625,
+    0.9195696721311475,
+    0.7783203125,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_jc_2": {
+   "title": "Door plate JC-2 JANITOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.7841796875,
+    0.9195696721311475,
+    0.8271484375,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_st_2": {
+   "title": "Door plate ST-2 STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8330078125,
+    0.9195696721311475,
+    0.8759765625,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_m3": {
+   "title": "Door plate WC-M3 MEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.8818359375,
+    0.9195696721311475,
+    0.9248046875,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_w3": {
+   "title": "Door plate WC-W3 WOMEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.9306640625,
+    0.9195696721311475,
+    0.9736328125,
+    0.9337858606557377
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_jc_3": {
+   "title": "Door plate JC-3 JANITOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0029296875,
+    0.936859631147541,
+    0.0458984375,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_st_3": {
+   "title": "Door plate ST-3 STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.0517578125,
+    0.936859631147541,
+    0.0947265625,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_m4": {
+   "title": "Door plate WC-M4 MEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1005859375,
+    0.936859631147541,
+    0.1435546875,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_wc_w4": {
+   "title": "Door plate WC-W4 WOMEN",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1494140625,
+    0.936859631147541,
+    0.1923828125,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_jc_4": {
+   "title": "Door plate JC-4 JANITOR",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.1982421875,
+    0.936859631147541,
+    0.2412109375,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
+  },
+  "door_st_4": {
+   "title": "Door plate ST-4 STORE",
+   "size": [
+    0.16,
+    0.1
+   ],
+   "uv": [
+    0.2470703125,
+    0.936859631147541,
+    0.2900390625,
+    0.9510758196721312
+   ],
+   "tags": [
+    "wall"
+   ],
+   "paper": "plate",
+   "pxPerMm": 1.1
   }
  },
  "swatches": {
   "pin_red": [
    0.0087890625,
-   0.995345744680851
+   0.9964139344262295
   ],
   "pin_blue": [
    0.0205078125,
-   0.995345744680851
+   0.9964139344262295
   ],
   "pin_yellow": [
    0.0322265625,
-   0.995345744680851
+   0.9964139344262295
   ],
   "pin_green": [
    0.0439453125,
-   0.995345744680851
+   0.9964139344262295
   ],
   "pin_white": [
    0.0556640625,
-   0.995345744680851
+   0.9964139344262295
   ],
   "steel": [
    0.0673828125,
-   0.995345744680851
+   0.9964139344262295
   ],
   "brass": [
    0.0791015625,
-   0.995345744680851
+   0.9964139344262295
   ],
   "tape": [
    0.0908203125,
-   0.995345744680851
+   0.9964139344262295
   ],
   "clip_black": [
    0.1025390625,
-   0.995345744680851
+   0.9964139344262295
   ],
   "cork": [
    0.1142578125,
-   0.995345744680851
+   0.9964139344262295
+  ],
+  "paper": [
+   0.1259765625,
+   0.9964139344262295
   ]
  }
 }

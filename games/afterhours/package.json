@@ -8,7 +8,8 @@
     "preview": "vite build && vite preview --host 0.0.0.0 --port 5197 --strictPort",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && vite build",
-    "shot": "bun scripts/shot.ts"
+    "shot": "bun scripts/shot.ts",
+    "audit:hygiene": "bun scripts/audit/hygiene.ts"
   },
   "dependencies": {
     "@arcade/kit": "workspace:*",

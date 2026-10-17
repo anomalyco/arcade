@@ -1,4 +1,4 @@
-import { type Band, type Builder, type Mat, CEIL_Y, DOOR_H, FLOOR_Y, M, T, type Opening, wall } from "./kit"
+import { type Band, type Builder, type Mat, CEIL_Y, DOOR_H, FLOOR_Y, M, T, type Opening, newSolidId as registerSolidId, wall } from "./kit"
 import { type DoorwaySpec, doorway } from "./doorway"
 import { WALL } from "./plan"
 import type { Style } from "./styles"
@@ -65,7 +65,7 @@ export function partition(b: Builder, p: PartitionSpec): string[] {
   // Overlapping openings would emit overlapping head/sill segments (coplanar faces): clip each to the previous one.
   holes.sort((p, q) => p.a0 - q.a0)
   for (let k = 1; k < holes.length; k++) if (holes[k]!.a0 < holes[k - 1]!.a1) holes[k] = { ...holes[k]!, a0: holes[k - 1]!.a1 }
-  const ext = { y0: FLOOR_Y - 0.01, y1: top, collide: p.collide ?? true }
+  const ext = { y0: FLOOR_Y - 0.01, y1: top, collide: p.collide ?? true, joint: [p.at - t / 2, p.at + t / 2] as const, id: registerSolidId() }
   const [fa, fb] = p.finish
   const c = p.at
   if (bandsOf(fa) === bandsOf(fb)) wall(b, p.axis, a0, a1, c - t / 2, c + t / 2, bandsOf(fa), holes, ext)

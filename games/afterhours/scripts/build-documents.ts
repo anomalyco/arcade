@@ -20,7 +20,7 @@ const work = join(tmpdir(), "afterhours-documents")
 const fontDir = join(tmpdir(), "afterhours-fonts")
 const keepPng = process.argv.includes("--png")
 const ATLAS = 4096
-const ATLAS_MAX_H = 6144
+const ATLAS_MAX_H = 8192
 mkdirSync(out, { recursive: true })
 mkdirSync(work, { recursive: true })
 mkdirSync(fontDir, { recursive: true })
@@ -55,6 +55,26 @@ const images = Object.fromEntries(
     .map((f) => [f.replace(/\.jpg$/, ""), `data:image/jpeg;base64,${readFileSync(join(imgDir, f)).toString("base64")}`]),
 )
 
+// Room list for door plates, parsed from the building program's storey tables: "| 1-02 | Conference A (r2-07) | …".
+const program = readFileSync(join(root, "docs/building-program.md"), "utf8")
+const rooms: [string, string][] = []
+for (const m of program.matchAll(/^\| (\d-\d\d[a-z]?)(?:\.\.(\d\d))? \| ([^|]+?) \|/gm)) {
+  const label = m[3]!
+    .replace(/\*\*|`/g, "")
+    .replace(/\s*\([^)]*\)/g, "")
+    .replace(/:\s*/g, " — ")
+    .replace(/\s*\+.*$/, "")
+    .trim()
+    .toUpperCase()
+  if (m[2]) {
+    const [st, a] = m[1]!.split("-") as [string, string]
+    for (let n = Number(a); n <= Number(m[2]); n++) rooms.push([`${st}-${String(n).padStart(2, "0")}`, label.replace(/ PRIVATE OFFICES$/, "")])
+  } else rooms.push([m[1]!, label])
+}
+const seen = new Set<string>()
+const roomList = rooms.filter(([id]) => (seen.has(id) ? false : (seen.add(id), true)))
+console.log(`door plates for ${roomList.length} rooms`)
+
 const bundle = await Bun.build({ entrypoints: [join(import.meta.dir, "documents/render.ts")], target: "browser", format: "esm", minify: false })
 if (!bundle.success) throw new Error(bundle.logs.join("\n"))
 const js = await bundle.outputs[0]!.text()
@@ -70,7 +90,7 @@ const browser = await chromium.launch({ executablePath: chrome, headless: true, 
 const page = await browser.newPage()
 page.on("pageerror", (e) => console.error("page:", e.message))
 await page.setContent(`<!doctype html><html><head><style>${fontFaces}</style></head><body>
-<script>window.__images = ${JSON.stringify(images)}</script><script type="module">${js}</script></body></html>`)
+<script>window.__images = ${JSON.stringify(images)}; window.__rooms = ${JSON.stringify(roomList)}</script><script type="module">${js}</script></body></html>`)
 await page.waitForFunction(() => typeof (globalThis as { __build?: unknown }).__build === "function", undefined, { timeout: 60_000 })
 const t0 = performance.now()
 const result = (await page.evaluate((n) => (globalThis as unknown as { __build: (n: number, h: number) => Promise<unknown> }).__build(n[0]!, n[1]!), [ATLAS, ATLAS_MAX_H])) as {

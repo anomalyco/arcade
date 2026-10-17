@@ -18,11 +18,10 @@ import { WET_BANDS } from "./styles"
 // mirror camera rendering only that layer halves its cost; see the note on WASHROOM_LAYER).
 
 /**
- * Layer the washroom contents carry in addition to layer 0. The player's head is on layer 4 (render/mirrors.ts
- * HEAD_LAYER); 5 is free. A mirror camera that renders `(1 << WASHROOM_LAYER) | (1 << HEAD_LAYER)` sees the room and
+ * Layer the washroom contents carry in addition to layer 0 (4 = player head, 5 = player/body.ts SPARE_LAYER). A mirror camera that renders `(1 << WASHROOM_LAYER) | (1 << HEAD_LAYER)` sees the room and
  * the player only.
  */
-export const WASHROOM_LAYER = 5
+export const WASHROOM_LAYER = 6
 
 export type WashroomOpts = {
   id: string
@@ -39,6 +38,8 @@ export type WashroomOpts = {
   refurb?: boolean
   /** Optional lit fitting (default none: dark at 3 a.m.). */
   lit?: boolean
+  /** Spine door: centre x and id (its frame and leaf join the reflection layer). */
+  door?: { x: number; id: string; width?: number }
 }
 
 const ENAMEL = { M: paint(0xa7a397, 0.35, 0.2), W: paint(0xcbbf9f, 0.35, 0.2) }
@@ -70,7 +71,33 @@ export function washroom(b: Builder, o: WashroomOpts) {
   room(wb, { id: o.id, name: o.name, rect: r, floor: "terrazzo", lit: o.lit ? "all" : "none", windows: false, columns: false, troffers: { dx: 9, dz: 3.6 } })
   // Room-face tile linings (12 mm, back faces dropped) so the reflection layer has its own walls.
   const T12 = 0.012
-  linings(wb, r, T12)
+  linings(wb, r, T12, o.door)
+  // The door: its leaf (built later by the spine) joins the reflect layer when it is added; a reflect-only copy of the
+  // frame (the real one is in the storey batch, which the mirror doesn't render).
+  if (o.door) {
+    const leafId = `s${b.storey}:${o.door.id}`
+    const tag = (e: unknown) => {
+      const c = (e as { child: THREE.Object3D }).child
+      if (c.name === leafId || c.name === `${leafId}:b`) c.traverse((m) => m.layers.enable(WASHROOM_LAYER))
+    }
+    b.group.addEventListener("childadded", tag)
+    const rb = new Builder(b.ctx, `wc-${o.id}-reflect`, b.storey)
+    const w = o.door.width ?? 0.92
+    const x = o.door.x
+    const z = r.z0 - 0.075
+    rb.box(M.frame, x - w / 2 - 0.05, FLOOR_Y, z - 0.095, x - w / 2, FLOOR_Y + 2.12, z + 0.095)
+    rb.box(M.frame, x + w / 2, FLOOR_Y, z - 0.095, x + w / 2 + 0.05, FLOOR_Y + 2.12, z + 0.095)
+    rb.box(M.frame, x - w / 2 - 0.05, FLOOR_Y + 2.12, z - 0.095, x + w / 2 + 0.05, FLOOR_Y + 2.17, z + 0.095)
+    // The spine corridor seen through an open door: a dark backdrop at the far side of the opening.
+    // Reflect-only stand-in for the corridor seen through the open door: floor, far wall and ceiling, wide enough for
+    // any angle the mirror can see through the opening.
+    const zc = r.z0 - 0.15
+    rb.box("linoleum", x - 4, FLOOR_Y - 0.01, zc - 3.3, x + 4, FLOOR_Y, zc, { skip: "y" })
+    rb.box(M.felt, x - 4, FLOOR_Y, zc - 3.3, x + 4, CEIL_Y, zc - 3.25)
+    rb.box("ceiling_tile", x - 4, CEIL_Y, zc - 3.3, x + 4, CEIL_Y + 0.02, zc, { skip: "Y" })
+    rb.flush(b.group)
+    rb.group.traverse((m) => (m.layers.mask = 1 << WASHROOM_LAYER))
+  }
   const placements: MergePlacement[] = []
   const put = (name: ModelName, x: number, py: number, z: number, yaw: number) => placements.push({ name, position: [x, py + b.oy, z], yaw })
   const ix0 = r.x0 + T12
@@ -191,7 +218,7 @@ export function washroom(b: Builder, o: WashroomOpts) {
 
 /** Wet-tile linings on the room faces of the four walls (12 mm, room face only, door holes not needed: the spine
  *  wall's door opening is left uncovered). */
-function linings(wb: Builder, r: Rect, t: number) {
+function linings(wb: Builder, r: Rect, t: number, door?: { x: number; width?: number }) {
   const y0 = FLOOR_Y - 0.005
   for (const [y0r, y1r, mat] of WET_BANDS) {
     const ya = Math.max(y0, FLOOR_Y + y0r)
@@ -200,6 +227,12 @@ function linings(wb: Builder, r: Rect, t: number) {
     wb.box(mat, r.x0, ya, r.z1 - t, r.x1, yb, r.z1, { skip: "XxYyZ" })
     wb.box(mat, r.x0, ya, r.z0, r.x0 + t, yb, r.z1 - t, { skip: "xYyZz" })
     wb.box(mat, r.x1 - t, ya, r.z0, r.x1, yb, r.z1 - t, { skip: "XYyZz" })
+    // Door wall (spine side), cut for the door.
+    const dw = (door?.width ?? 0.92) / 2 + 0.05
+    const spans: [number, number, number, number][] = door
+      ? [[r.x0 + t, door.x - dw, ya, yb], [door.x + dw, r.x1 - t, ya, yb], [door.x - dw, door.x + dw, Math.max(ya, FLOOR_Y + 2.17), yb]]
+      : [[r.x0 + t, r.x1 - t, ya, yb]]
+    for (const [a0, a1, y0, y1] of spans) if (a1 > a0 && y1 > y0) wb.box(mat, a0, y0, r.z0, a1, y1, r.z0 + t, { skip: "xXyYz" })
   }
 }
 

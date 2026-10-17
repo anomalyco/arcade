@@ -1,5 +1,5 @@
 import type * as THREE from "three/webgpu"
-import { type Builder, type Mat, FLOOR_Y, M, T, door, glow, paint } from "./kit"
+import { type Builder, type Mat, FLOOR_Y, M, T, door, glow, paint, surfaceDepth } from "./kit"
 import { type DoorState, openable } from "./plan"
 import { registerDoor } from "./registry"
 
@@ -72,26 +72,30 @@ export function doorway(b: Builder, d: DoorwaySpec): string[] {
     id,
   })
   const F = T(d.x, FLOOR_Y, d.z, d.rot)
-  const front = wallT / 2 + 0.014
-  const latchX = width / 2 + 0.1
-  // State hardware on the frame's latch side, front face.
-  const hw = d.hardware ?? "auto"
-  if (hw === "none") {
-    // no visible lock hardware
-  } else if (d.state === "janitor") b.cyl(KEY_BRASS, F.clone().multiply(T(latchX - 0.04, 1.02, front, 0, Math.PI / 2)), 0.016, 0.016, 0.02, 12)
-  else if (d.state.startsWith("keycard:")) {
-    b.rbox(M.darkSteel, F, 0.08, 0.13, 0.025, 0.006, latchX + 0.04, 1.2, front + 0.004)
-    b.boxM(M.felt, F, 0.05, 0.006, 0.004, latchX + 0.04, 1.23, front + 0.017, { cast: false })
-    b.boxM(READER_LED, F, 0.012, 0.012, 0.004, latchX + 0.04, 1.16, front + 0.017, { cast: false })
-  } else if (d.state === "locked") {
-    b.boxM(M.steel, F, 0.03, 0.12, 0.02, latchX - 0.02, 1.15, front + 0.004)
-    b.rbox(KEY_BRASS, F, 0.05, 0.06, 0.02, 0.008, latchX - 0.02, 1.07, front + 0.02)
-  }
-  // Label strip under the number plate (blank: no readable text).
-  if (d.sign?.label) b.boxM(M.paper, F, 0.22, 0.05, 0.004, width / 2 + 0.22, 1.39, front, { cast: false })
-  // Dutch door: a service ledge on the wall beside the latch jamb (the leaf itself is one piece in the door system).
-  if (d.dutch) b.rbox(M.laminateTop, F, 0.5, 0.03, 0.28, 0.008, width / 2 + 0.38, 1.05, wallT / 2 + 0.14)
-  if (d.insulated) for (const y of [0.3, 1.6]) b.boxM(M.steel, F, 0.3, 0.05, 0.03, -width / 2 + 0.15, y, front + 0.04)
+  // Hardware sits on the FINISHED wall face (or on the casing, 32 mm proud of the jamb face), found at flush.
+  b.defer(() => {
+    const wf = (u: number, y: number) => surfaceDepth(b, d.x, d.z, d.rot, u, y, 1, wallT)
+    const casing = Math.max(wf(width / 2 + 0.15, 1.2), wf(-width / 2 - 0.15, 1.2)) + 0.032
+    const ux = width / 2 + 0.08
+    const hw = d.hardware ?? "auto"
+    if (hw === "none") {
+      // no visible lock hardware
+    } else if (d.state === "janitor") b.cyl(KEY_BRASS, F.clone().multiply(T(ux, 1.02, casing + 0.008, 0, Math.PI / 2)), 0.016, 0.016, 0.016, 12)
+    else if (d.state.startsWith("keycard:")) {
+      const u = width / 2 + 0.22
+      const f = wf(u, 1.2)
+      b.rbox(M.darkSteel, F, 0.08, 0.13, 0.025, 0.006, u, 1.2, f + 0.0125)
+      b.boxM(M.felt, F, 0.05, 0.006, 0.004, u, 1.23, f + 0.027, { cast: false })
+      b.boxM(READER_LED, F, 0.012, 0.012, 0.004, u, 1.16, f + 0.027, { cast: false })
+    } else if (d.state === "locked") {
+      b.boxM(M.steel, F, 0.03, 0.12, 0.012, ux, 1.15, casing + 0.006)
+      b.rbox(KEY_BRASS, F, 0.05, 0.06, 0.02, 0.008, ux, 1.07, casing + 0.022)
+    }
+    // Label strip under the number plate (blank: no readable text), 6 mm off the finished face.
+    if (d.sign?.label) b.boxM(M.paper, F, 0.22, 0.05, 0.004, width / 2 + 0.22, 1.39, wf(width / 2 + 0.22, 1.39) + 0.006, { cast: false })
+    // Dutch door: a service ledge on the wall beside the latch jamb (the leaf itself is one piece in the door system).
+    if (d.dutch) b.rbox(M.laminateTop, F, 0.5, 0.03, 0.28, 0.008, width / 2 + 0.38, 1.05, wf(width / 2 + 0.38, 1.05) + 0.14)
+  })
   registerDoor({ id: ids[0]!, storey: b.storey, state: d.state, room: d.room, x: d.x, z: d.z, sign: d.sign })
   return ids
 }

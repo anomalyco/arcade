@@ -15,8 +15,28 @@ type Bucket = { material: THREE.Material; geos: THREE.BufferGeometry[]; shadow: 
 
 const tmpV = new THREE.Vector3()
 
+type BoxRec = { mat: Mat; b: [number, number, number, number, number, number]; skip: number }
+type Pending = { batch: Batch; parent: THREE.Object3D; opts: FlushOpts }
+type FlushOpts = { castShadow?: boolean; receiveShadow?: boolean; name?: string }
+
+/** World-frame batches waiting for `flushWorld` (their boxes are de-z-fought against each other first). */
+const pending: Pending[] = []
+
+/** Faces closer than this (and overlapping) are treated as coplanar; the smaller box is pushed past by `NUDGE`. */
+const COPLANAR = 0.004
+const NUDGE = 0.005
+
 export class Batch {
   private buckets = new Map<THREE.Material, Bucket>()
+  /** Boxes recorded by a world-frame batch, built at `flushWorld` after the coplanar fix-up. */
+  readonly records: BoxRec[] = []
+
+  /**
+   * `world: true` (the facility's static batches, all in world coordinates): boxes are recorded and built only by
+   * `flushWorld()`, after every pair of same-facing faces within 4 mm of each other has been separated (the smaller box
+   * grows 5 mm past the larger one's face), so no frame, reveal, sill, mullion or fixture can z-fight anything else.
+   */
+  constructor(readonly world = false) {}
 
   private bucket(mat: Mat, shadow = true) {
     const m = typeof mat === "string" ? material(mat) : mat
@@ -34,6 +54,14 @@ export class Batch {
     if (y1 < y0) [y0, y1] = [y1, y0]
     if (z1 < z0) [z0, z1] = [z1, z0]
     if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4 || z1 - z0 < 1e-4) return
+    if (this.world) {
+      this.records.push({ mat, b: [x0, y0, z0, x1, y1, z1], skip })
+      return
+    }
+    this.emitBox(mat, x0, y0, z0, x1, y1, z1, skip)
+  }
+
+  private emitBox(mat: Mat, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, skip: number) {
     const pos: number[] = []
     const nor: number[] = []
     const uv: number[] = []
@@ -71,7 +99,8 @@ export class Batch {
 
   /** Any geometry, transformed into world space. UVs are scaled by `uvScale` (use it to bring unit UVs to metres). */
   add(mat: Mat, geo: THREE.BufferGeometry, matrix?: THREE.Matrix4, uvScale: number | [number, number] = 1, shadow = true) {
-    let g = geo.index ? geo : geo.toNonIndexed()
+    // Always work on a copy: callers reuse one geometry for many placements (shrubs, hoops).
+    let g = geo.index ? geo.clone() : geo.clone().toNonIndexed()
     if (!g.index) {
       const n = g.attributes.position!.count
       const idx = new Array<number>(n)
@@ -108,7 +137,21 @@ export class Batch {
   }
 
   /** Merge every bucket into one mesh per material, add them to `parent`, and clear the batch. */
-  flush(parent: THREE.Object3D, opts: { castShadow?: boolean; receiveShadow?: boolean; name?: string } = {}) {
+  flush(parent: THREE.Object3D, opts: FlushOpts = {}) {
+    if (this.world) {
+      pending.push({ batch: this, parent, opts })
+      return []
+    }
+    return this.build(parent, opts)
+  }
+
+  /** Builds the recorded boxes (after the fix-up) and everything added directly. */
+  emitRecords() {
+    for (const r of this.records) this.emitBox(r.mat, ...r.b, r.skip)
+    this.records.length = 0
+  }
+
+  build(parent: THREE.Object3D, opts: FlushOpts = {}) {
     const meshes: THREE.Mesh[] = []
     for (const b of this.buckets.values()) {
       if (!b.geos.length) continue
@@ -182,4 +225,65 @@ export class QuadBuilder {
     g.computeBoundingSphere()
     return g
   }
+}
+
+/**
+ * Builds every pending world-frame batch. First separates near-coplanar faces across all of them: for each pair of
+ * boxes whose same-facing faces lie within 4 mm and overlap in area, the smaller box's face moves 5 mm past the larger
+ * one's (a solid overlap instead of a tie). Faces that only touch along an edge are left alone.
+ */
+export function flushWorld() {
+  const all: BoxRec[] = pending.flatMap((p) => p.batch.records)
+  for (let pass = 0; pass < 3; pass++) if (!separate(all)) break
+  for (const p of pending.splice(0)) {
+    p.batch.emitRecords()
+    p.batch.build(p.parent, p.opts)
+  }
+}
+
+const vol = (b: BoxRec["b"]) => (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2])
+
+function separate(all: BoxRec[]) {
+  let moved = 0
+  const CELL = 0.05
+  for (let ax = 0; ax < 3; ax++) {
+    const u = (ax + 1) % 3
+    const v = (ax + 2) % 3
+    for (const side of [0, 1] as const) {
+      // Faces on plane `ax` at min (side 0, facing -) or max (side 1, facing +).
+      const bins = new Map<number, number[]>()
+      all.forEach((r, i) => {
+        const c = r.b[ax + side * 3]!
+        const k = Math.round(c / CELL)
+        let l = bins.get(k)
+        if (!l) bins.set(k, (l = []))
+        l.push(i)
+      })
+      for (const [k, list] of bins) {
+        const cand = [...list, ...(bins.get(k + 1) ?? [])]
+        for (let a = 0; a < list.length; a++) {
+          const A = all[list[a]!]!
+          for (const j of cand) {
+            const B = all[j]!
+            if (B === A) continue
+            if (list.includes(j) && j <= list[a]!) continue
+            const ca = A.b[ax + side * 3]!
+            const cb = B.b[ax + side * 3]!
+            if (Math.abs(ca - cb) >= COPLANAR) continue
+            const ou = Math.min(A.b[u + 3]!, B.b[u + 3]!) - Math.max(A.b[u]!, B.b[u]!)
+            const ov = Math.min(A.b[v + 3]!, B.b[v + 3]!) - Math.max(A.b[v]!, B.b[v]!)
+            if (ou <= 1e-4 || ov <= 1e-4) continue
+            // Skipped faces don't render: nothing to fight.
+            const bit = 1 << (ax * 2 + side)
+            if (A.skip & bit || B.skip & bit) continue
+            const [small, big] = vol(A.b) <= vol(B.b) ? [A, B] : [B, A]
+            const target = big.b[ax + side * 3]! + (side ? NUDGE : -NUDGE)
+            small.b[ax + side * 3] = target
+            moved++
+          }
+        }
+      }
+    }
+  }
+  return moved
 }

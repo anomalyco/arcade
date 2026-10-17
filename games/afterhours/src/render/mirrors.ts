@@ -35,6 +35,8 @@ const Fn = TslFn as N
 
 /** player/body.ts: HEAD_LAYER (head, neck, hair: hidden from the view camera, wanted in mirrors). */
 const HEAD_LAYER = 4
+/** player/body.ts: BODY_LAYER (body and held torch). */
+const BODY_LAYER = 3
 
 export type MirrorOptions = {
   width: number
@@ -133,7 +135,7 @@ export function createMirror(ctx: WorldContext, o: MirrorOptions): THREE.Mesh {
 }
 
 /** Installs the per-frame mirror renderer (called once by the lighting rig, with the real scene). */
-export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D[]) {
+export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D[], player?: unknown) {
   addControls(ctx, [
     { key: "mirror.on", label: "Live mirror reflections", group: "Mirrors", type: "toggle", value: true },
     { key: "mirror.range", label: "Render within", group: "Mirrors", unit: "m", min: 2, max: 20, step: 0.5, value: 8 },
@@ -215,7 +217,11 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     virtualCam.updateProjectionMatrix()
     virtualCam.updateMatrixWorld()
     // Body and head both visible in the mirror.
-    virtualCam.layers.mask = camera.layers.mask | (1 << HEAD_LAYER)
+    // A glass with `userData.reflectLayer` (washrooms) reflects only that layer plus the player (body + head): the
+    // rest of the world never reaches it anyway and skipping it roughly halves the cost. Lights are unaffected.
+    const only = best.mesh.userData.reflectLayer as number | undefined
+    virtualCam.layers.mask =
+      only !== undefined ? (1 << only) | (1 << BODY_LAYER) | (1 << HEAD_LAYER) : camera.layers.mask | (1 << HEAD_LAYER)
     // Sampling matrix: plain projection × view (before the oblique clip below, which only trims geometry behind
     // the glass and leaves x/y untouched).
     shared.viewProj.value.multiplyMatrices(virtualCam.projectionMatrix, virtualCam.matrixWorldInverse)
@@ -280,7 +286,7 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     lastMs = performance.now() - t0
   })
 
-  const api = { cpuMs: () => lastMs, count: () => mirrors.length, rt: shared.rt, mirrors, virtualCam }
+  const api = { cpuMs: () => lastMs, count: () => mirrors.length, rt: shared.rt, mirrors, virtualCam, player }
   if (ctx.params.has("perf")) (globalThis as { __afterhoursMirrors?: unknown }).__afterhoursMirrors = api
   return api
 }

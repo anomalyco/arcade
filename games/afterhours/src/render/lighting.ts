@@ -514,7 +514,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   glows.renderOrder = 10
   glows.visible = glowRigs.length > 0
   scene.add(glows)
-  initMirrors(ctx, () => [glows])
+  initMirrors(ctx, () => [glows], player)
 
   // Culling. Clustered lights cost per pixel for every light whose sphere reaches the pixel's cluster, and their data
   // is re-sorted and re-uploaded each frame, so lamps that can't reach anything on screen are dropped: switched off,

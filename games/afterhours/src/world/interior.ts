@@ -1,7 +1,10 @@
 import type * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { BUILDING, ROOF_Y, VIEWPOINTS, type ViewpointName } from "./layout"
-import { Builder, STOREY_H } from "./interior/kit"
+import { Builder, STOREY_H, releaseDepthRegistry, solidsOf } from "./interior/kit"
+import { interiorDoors as _doors, interiorRooms as _rooms } from "./interior/registry"
+const interiorRooms = _rooms
+const interiorDoors = _doors
 import { buildCore, buildSlabs } from "./interior/core"
 import { buildLift } from "./interior/lift"
 import { bakeModels } from "./interior/props"
@@ -56,11 +59,12 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const lift = buildLift(ctx, ctx.scene)
   await buildOne(first)
   for (let i = 0; i < BUILDING.main.storeys; i++) if (i !== first) await buildOne(i)
+  releaseDepthRegistry(ctx)
 
   const { min, max } = BUILDING.main
   // Automation only: `icam=x,y,z,yawDeg,pitchDeg` pins the camera for captures of rooms with no named viewpoint.
   const icam = ctx.params.get("icam")?.split(",").map(Number)
-  ;(globalThis as { __interior?: unknown }).__interior = { lift, ctx }
+  ;(globalThis as { __interior?: unknown }).__interior = { lift, ctx, solids: solidsOf(ctx), rooms: interiorRooms, doors: interiorDoors }
   let shown = -2
   let propKey = ""
   const NEAR = 18

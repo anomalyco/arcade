@@ -291,7 +291,9 @@ function freightLift(b: Builder, docs: Docs) {
   P(b, "z", -37.0, -21.65, -14.15, [ROOM_BANDS, PLANT_BANDS_], [{ kind: "cased", from: -19.6, to: -16.4, head: 2.4 }], 0.15)
   P(b, "z", -37.0, -14.0, -1.75, [ROOM_BANDS, BLOCK_BANDS], [], 0.15)
   P(b, "x", zs, -36.925, xs + 0.075, [PLANT_BANDS_, BLOCK_BANDS], [{ kind: "cased", from: -36.4, to: -33.6, head: 2.4 }], 0.15)
-  P(b, "z", xs, -21.65, zs - 0.075, [PLANT_BANDS_, BLOCK_BANDS], [], 0.15)
+  // East wall starts behind the dock leveller (the shut roll-up opens onto it at dock height).
+  P(b, "z", xs, -20.5, zs - 0.075, [PLANT_BANDS_, BLOCK_BANDS], [], 0.15)
+  dockLeveller(b)
   // Pit floor under the car (dark), car platform flush with the landings, sill plates.
   b.box(M.concrete, -36.925, y - 0.4, -21.61, xs - 0.075, y - 0.3, zs - 0.075, { cast: false, skip: "y" })
   b.box(CHECKER, c.x0, y - 0.12, c.z0, c.x1, y + 0.004, c.z1)
@@ -345,6 +347,35 @@ const KEY = paint(0x8a6a2a, 0.3, 0.9)
 const PLANT_BANDS_: Band[] = [[0, 99, "concrete_wall"]]
 
 /** Collapsible scissor gate filling an opening (axis: the wall's axis, at its line, from..to), locked shut. */
+
+/**
+ * Behind the shut roll-up (x −35.5..−32.3, sill at dock height 1.25): a steel dock leveller across the door between
+ * the facade and the FL-1 car's north side, then steps down into receiving at its east end, guard rail along the drop.
+ */
+function dockLeveller(b: Builder) {
+  const y = FLOOR_Y
+  const top = 1.25
+  const L = { x0: -35.6, x1: -31.85, z0: -21.61, z1: -20.52 }
+  b.box(M.concrete, L.x0, y, L.z0, L.x1, top - 0.02, L.z1, { skip: "y" })
+  b.box(CHECKER, L.x0, top - 0.02, L.z0, L.x1, top, L.z1)
+  b.box(M.safety, L.x0, top - 0.02, L.z1 - 0.05, L.x1, top + 0.002, L.z1 + 0.002, { cast: false })
+  b.walk(L.x0, L.z0 - 0.05, L.x1, L.z1, top)
+  b.collide(L.x0, y, L.z0, L.x1, top - 0.05, L.z1)
+  // Steps south from the leveller's east end into receiving (6 risers).
+  const sx0 = -32.9
+  const sx1 = -31.85
+  for (let k = 0; k < 6; k++) {
+    const t = top - (k + 1) * ((top - y) / 7)
+    const z0 = L.z1 + k * 0.28
+    b.box("concrete_floor_dry", sx0, y, z0, sx1, t, z0 + 0.28, { skip: "y" })
+    b.box(M.safety, sx0, t - 0.03, z0 + 0.25, sx1, t + 0.002, z0 + 0.282, { cast: false })
+    b.walk(sx0, z0, sx1, z0 + 0.28, t)
+  }
+  // Pipe rail along the steps' open (east) side and over the leveller's south edge where it meets receiving.
+  b.rod("metal_galvanized", [sx1 + 0.03, top + 1.0, L.z1], [sx1 + 0.03, y + 1.0 + (top - y) / 7, L.z1 + 1.68], 0.022, 8)
+  for (const z of [L.z1 + 0.05, L.z1 + 1.6]) b.rod("metal_galvanized", [sx1 + 0.03, y, z], [sx1 + 0.03, y + 1.0 + (top - y) * (1 - (z - L.z1) / 1.9), z], 0.02, 8)
+  b.collide(sx1, y, L.z1, sx1 + 0.06, top + 1.0, L.z1 + 1.68)
+}
 
 // ------------------------------------------------------------------------------------------------ 0-16 receiving
 

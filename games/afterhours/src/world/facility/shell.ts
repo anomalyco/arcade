@@ -143,7 +143,8 @@ export function facades(): Facade[] {
     holes: [
       ...windowRow(MAIN.min[0], MAIN.max[0], storeyRow(0), [...lobbySkip, ...coreSkip]),
       ...upperRows(MAIN.min[0], MAIN.max[0], coreSkip),
-      { u0: -9, u1: 9, y0: FY, y1: 3.1, kind: "storefront" },
+      // Storefront sill strip stops 1 cm under the lobby's terrazzo (y 0.16) so the two never share a plane.
+      { u0: -9, u1: 9, y0: FY - 0.01, y1: 3.1, kind: "storefront" },
       // The core tower is open to the building on every storey (the interior's stair and lift run through).
       // (The whole tower width: the tower's own side walls take over from the facade wall, so nothing doubles.)
       { u0: CORE.x0, u1: CORE.x1, y0: FY, y1: MAIN_TOP + 1, kind: "open" },
@@ -251,8 +252,12 @@ export function facades(): Facade[] {
 
 /** Wall solid minus rectangular holes, as a set of boxes (strips between hole edges). */
 function wallBoxes(b: Batch, f: Facade, mat: "concrete_wall") {
+  // Openings that start at a floor (doors, storefront, storeys) are cut from 12 mm under it, so the wall's sill face
+  // never lies in a floor's plane (ours or the interior's finishes at +0.01).
+  const floorish = (y: number) => Math.abs(((y - FY + 0.01) % SH + SH) % SH - 0.01) < 0.012 || Math.abs(y - BUILDING.dock.height) < 0.012
+  const holes = f.holes.map((h) => (floorish(h.y0) ? { ...h, y0: h.y0 - 0.012 } : h))
   const ys = new Set([f.y0, f.y1])
-  for (const h of f.holes) {
+  for (const h of holes) {
     ys.add(Math.max(f.y0, Math.min(f.y1, h.y0)))
     ys.add(Math.max(f.y0, Math.min(f.y1, h.y1)))
   }
@@ -260,7 +265,7 @@ function wallBoxes(b: Batch, f: Facade, mat: "concrete_wall") {
   for (let i = 0; i < cuts.length - 1; i++) {
     const ya = cuts[i]!
     const yb = cuts[i + 1]!
-    const spans = f.holes
+    const spans = holes
       .filter((h) => h.y0 <= ya + 1e-6 && h.y1 >= yb - 1e-6)
       .map((h) => [h.u0, h.u1] as const)
       .sort((a, c) => a[0] - c[0])
@@ -328,8 +333,8 @@ const CORE_CUT: [number, number][] = [[CORE.x0, CORE.x1]]
 const FE_CUT: [number, number][] = [[FE_DOOR.z0 - 0.05, FE_DOOR.z1 + 0.05]]
 
 export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult {
-  const b = new Batch()
-  const glass = new Batch()
+  const b = new Batch(true)
+  const glass = new Batch(true)
   const lit = new QuadBuilder(4)
   const stain = new QuadBuilder(4)
   const rand = rng(1984)
@@ -520,13 +525,27 @@ function ring(b: Batch, mat: "concrete_wall" | "concrete_dark", y0: number, y1: 
   b.box(mat, max[0] - 0.05, y0, eastFromZ ?? min[1] + 0.05, max[0] + proj, y1, max[1] - 0.05)
 }
 
+/** Interior wall linings at shared openings: up to this far in from the shell's inner face (kit linings are 40 mm). */
+const LINING = 0.04
+/**
+ * Steel frame round a through-wall opening shared with the interior: the jambs and head stand 6 mm into the clear
+ * opening and 15 mm proud of the outer wall face and of the interior lining, so every reveal face (ours and the
+ * interior's) is buried in the frame instead of lying in its planes.
+ */
+export function openingFrame(b: Batch, f: Facade, u0: number, u1: number, y0: number, y1: number, fr: number, depth = T + LINING) {
+  const e = 0.006
+  const d0 = -0.015
+  const d1 = depth + 0.015
+  fbox(b, "metal_dark", f, u0 - fr, u1 + fr, y1 - e, y1 + fr, d0, d1)
+  fbox(b, "metal_dark", f, u0 - fr, u0 + e, y0, y1 - e, d0, d1)
+  fbox(b, "metal_dark", f, u1 - e, u1 + fr, y0, y1 - e, d0, d1)
+}
+
 /** Steel fire door onto a fire-escape landing: frame, flush threshold through the wall, a working leaf. */
 function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, h: Hole) {
   const fr = 0.06
-  fbox(b, "metal_dark", f, h.u0 - fr, h.u1 + fr, h.y1, h.y1 + fr, -0.02, T)
-  fbox(b, "metal_dark", f, h.u0 - fr, h.u0, h.y0, h.y1, -0.02, T)
-  fbox(b, "metal_dark", f, h.u1, h.u1 + fr, h.y0, h.y1, -0.02, T)
-  fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.01, h.y0 + 0.006, 0, T)
+  openingFrame(b, f, h.u0, h.u1, h.y0, h.y1, fr)
+  fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.012, h.y0 + 0.02, -0.01, T + 0.01)
   const a = point(f, h.u0, 0, -0.05)
   const c = point(f, h.u1, 0, T + 0.05)
   ctx.floors.push({ min: [Math.min(a.x, c.x), Math.min(a.z, c.z)], max: [Math.max(a.x, c.x), Math.max(a.z, c.z)], y: h.y0 })
@@ -552,10 +571,8 @@ function fireDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, 
 /** Steel door from the cafeteria end of the main block into the annex plant corridor (door closer, no panic bar). */
 function annexDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, h: Hole) {
   const fr = 0.06
-  fbox(b, "metal_dark", f, h.u0 - fr, h.u1 + fr, h.y1, h.y1 + fr, -0.02, T + 0.02)
-  fbox(b, "metal_dark", f, h.u0 - fr, h.u0, h.y0, h.y1, -0.02, T + 0.02)
-  fbox(b, "metal_dark", f, h.u1, h.u1 + fr, h.y0, h.y1, -0.02, T + 0.02)
-  fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.01, h.y0 + 0.006, 0, T)
+  openingFrame(b, f, h.u0, h.u1, h.y0, h.y1, fr)
+  fbox(b, "metal_galvanized", f, h.u0, h.u1, h.y0 - 0.012, h.y0 + 0.02, -0.01, T + 0.01)
   addFacadeDoor(ctx, root, {
     id: "annex-door",
     f,
@@ -599,15 +616,16 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
   const sy1 = top - 1.3
   b.box("concrete_wall", x0 + T, -0.05, z1 - T, sx0, top, z1, SKIP_BOTTOM)
   b.box("concrete_wall", sx1, -0.05, z1 - T, x1 - T, top, z1, SKIP_BOTTOM)
+  // (Slot frame and transoms sit 1 cm inside the reveal faces so none of their faces lie in the concrete's planes.)
   b.box("concrete_wall", sx0, -0.05, z1 - T, sx1, sy0, z1, SKIP_BOTTOM)
   b.box("concrete_wall", sx0, sy1, z1 - T, sx1, top, z1)
   col(x0, -0.5, z1 - T, x1, top, z1)
-  glass.box(clear, sx0 + 0.06, sy0, z1 - 0.2, sx1 - 0.06, sy1, z1 - 0.19)
-  b.box("metal_dark", sx0, sy0, z1 - 0.24, sx0 + 0.06, sy1, z1 - 0.16)
-  b.box("metal_dark", sx1 - 0.06, sy0, z1 - 0.24, sx1, sy1, z1 - 0.16)
+  glass.box(clear, sx0 + 0.07, sy0 + 0.01, z1 - 0.2, sx1 - 0.07, sy1 - 0.01, z1 - 0.19)
+  b.box("metal_dark", sx0 + 0.01, sy0 + 0.01, z1 - 0.24, sx0 + 0.07, sy1 - 0.01, z1 - 0.16)
+  b.box("metal_dark", sx1 - 0.07, sy0 + 0.01, z1 - 0.24, sx1 - 0.01, sy1 - 0.01, z1 - 0.16)
   for (let k = 0; k <= STOREYS; k++) {
-    const y = Math.min(sy1 - 0.08, Math.max(sy0, storeyY(k) - 0.2))
-    b.box("metal_dark", sx0, y, z1 - 0.25, sx1, y + 0.08, z1 - 0.15)
+    const y = Math.min(sy1 - 0.09, Math.max(sy0 + 0.01, storeyY(k) - 0.2))
+    b.box("metal_dark", sx0 + 0.07, y, z1 - 0.25, sx1 - 0.07, y + 0.08, z1 - 0.15)
   }
   // Stairwell fluorescents left on all night: a glow on the slot glass around each half landing (one tube out).
   const n = new THREE.Vector3(0, 0, 1)
@@ -616,7 +634,7 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
     const yc = storeyY(k) + SH * 0.5
     const ya = Math.max(sy0 + 0.05, yc - 1.0)
     const yb = Math.min(sy1 - 0.05, yc + 1.0)
-    lit.quad(new THREE.Vector3(sx0 + 0.06, ya, z1 - 0.185), new THREE.Vector3(sx1 - sx0 - 0.12, 0, 0), new THREE.Vector3(0, yb - ya, 0), n, [1, 1], [0.8, 0.98, 0.9, 2.92])
+    lit.quad(new THREE.Vector3(sx0 + 0.07, ya, z1 - 0.185), new THREE.Vector3(sx1 - sx0 - 0.14, 0, 0), new THREE.Vector3(0, yb - ya, 0), n, [1, 1], [0.8, 0.98, 0.9, 2.92])
   }
   // North face of the stair house with the roof door: full width (the side walls start behind it), the opening cut
   // round the steel frame so jambs and head fill it instead of sharing faces with the concrete.
@@ -634,7 +652,8 @@ function buildCore(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Bat
   b.box("concrete_dark", x0 - 0.08, top, z0 - 0.08, x1 + 0.08, top + 0.16, z1 + 0.08)
   b.box("concrete_dark", x0 - 0.06, -0.05, z1, x1 + 0.06, PLINTH.y1, z1 + PLINTH.proj, SKIP_BOTTOM)
   // Ground slab of the projecting part.
-  b.box("concrete_floor", x0 + T, -0.3, zs, x1 - T, FY, z1 - T, SKIP_BOTTOM)
+  // (Stair side only: the lift pit is the interior's. Edges run 5 mm under the walls instead of meeting them flush.)
+  b.box("concrete_floor", x0 + T - 0.005, -0.3, zs, PLAN.lift.min[0] - 0.006, FY, z1 - T + 0.005, SKIP_BOTTOM)
   ctx.floors.push({ min: [x0 + T, zs], max: [x1 - T, z1 - T], y: FY })
   // Lift motor-room louvres near the top of the east side.
   for (let k = 0; k < 7; k++) b.box("metal_dark", x1, top - 2.6 + k * 0.28, zs + 0.8, x1 + 0.04, top - 2.48 + k * 0.28, z1 - 0.8)
@@ -649,9 +668,11 @@ function roofDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch) {
   const z = CORE.z0
   const fr = DOOR_FRAME
   // Pressed-steel frame: proud of both wall faces by 1.5 cm so no face lies in the concrete's planes.
-  b.box("metal_dark", D.x0 - fr, D.y0, z - 0.015, D.x0, D.y1 + fr, z + T + 0.015)
-  b.box("metal_dark", D.x1, D.y0, z - 0.015, D.x1 + fr, D.y1 + fr, z + T + 0.015)
-  b.box("metal_dark", D.x0, D.y1, z - 0.015, D.x1, D.y1 + fr, z + T + 0.015)
+  // (6 mm into the opening and past any interior lining on the stair side, like every shared opening.)
+  const dz = T + LINING + 0.015
+  b.box("metal_dark", D.x0 - fr, D.y0, z - 0.015, D.x0 + 0.006, D.y1 - 0.006, z + dz)
+  b.box("metal_dark", D.x1 - 0.006, D.y0, z - 0.015, D.x1 + fr, D.y1 - 0.006, z + dz)
+  b.box("metal_dark", D.x0 - fr, D.y1 - 0.006, z - 0.015, D.x1 + fr, D.y1 + fr, z + dz)
   b.box("metal_galvanized", D.x0, D.y0 - 0.01, z - 0.01, D.x1, D.y0 + 0.02, z + T + 0.01)
   ctx.floors.push({ min: [D.x0, z - 0.1], max: [D.x1, z + T + 0.1], y: D.y0 })
   const leaf = steelLeaf("roof-door", D.x1 - D.x0 - 0.02, D.y1 - D.y0 - 0.02, 0.05, false)
@@ -699,12 +720,13 @@ function buildRoofDecks(ctx: WorldContext, b: Batch) {
     [CORE.x0, CORE.x1, z0, CORE.z0],
   ]
   for (const [a, c, d, e] of rects) {
-    b.box("gravel", a, ROOF_Y - 0.3, d, c, ROOF_Y, e, SKIP_BOTTOM)
+    // Ballast runs 5 mm under the parapets so its edges never sit in the walls' (or the interior roof slab's) planes.
+    b.box("gravel", a - 0.005, ROOF_Y - 0.3, d - 0.005, c + 0.005, ROOF_Y, e + 0.005, SKIP_BOTTOM)
     ctx.floors.push({ min: [a, d], max: [c, e], y: ROOF_Y })
   }
   // Inside the stair house: the lift lobby's roof-level floor, east of the interior's stair-head floor (x < −38.9).
   void stair
-  b.box("concrete_floor_dry", -38.9, ROOF_Y - 0.3, CORE.z0 + T, lift.max[0], ROOF_Y, lift.min[1] - 0.01, SKIP_BOTTOM)
+  b.box("concrete_floor_dry", -38.9, ROOF_Y - 0.3, CORE.z0 + T - 0.005, lift.max[0] + 0.005, ROOF_Y, lift.min[1] - 0.01, SKIP_BOTTOM)
   ctx.floors.push({ min: [-38.9, CORE.z0 + T], max: [lift.max[0], lift.min[1]], y: ROOF_Y })
   b.box("gravel", ANNEX.min[0], ANNEX_ROOF_Y - 0.3, ANNEX.min[1] + T, ANNEX.max[0] - T, ANNEX_ROOF_Y, ANNEX.max[1] - T, SKIP_BOTTOM)
   ctx.floors.push({ min: [ANNEX.min[0], ANNEX.min[1] + T], max: [ANNEX.max[0] - T, ANNEX.max[1] - T], y: ANNEX_ROOF_Y })
@@ -723,23 +745,27 @@ function buildRoofDecks(ctx: WorldContext, b: Batch) {
   ctx.floors.push({ min: [ANNEX.min[0] - ap, ANNEX.min[1]], max: [ANNEX.min[0] + T, MAIN.min[1]], y: ay })
 }
 
+const ENT_DOOR_HALF = 0.9
 /** Lobby storefront, aluminium door frame with both leaves standing open, canopy on columns, landing and step. */
 function buildEntrance(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass: Batch, alu: THREE.Material, clear: THREE.Material) {
   const z = MAIN.max[1]
   const gz = z - 0.12
   const top = 3.1
   const doorTop = FY + ENT.height
-  const hw = ENT.width / 2
-  const mullions = [-9, -6.4, -3.8, 3.8, 6.4, 9]
+  // A pair of 0.9 m leaves (a 1.8 m doorway) in the 3.6 m entrance bay, fixed glass sidelights either side.
+  const hw = ENT_DOOR_HALF
+  const bay = ENT.width / 2
+  const mullions = [-9, -6.4, -3.8, -bay, bay, 3.8, 6.4, 9]
   for (const x of mullions) b.box(alu, x - 0.05, FY, gz - 0.07, x + 0.05, top, gz + 0.07)
   // Door frame: deeper jambs and head, a flush threshold plate (no step into the lobby).
   for (const s of [-1, 1]) b.box(alu, s * hw - 0.06, FY, gz - 0.1, s * hw + 0.06, top, gz + 0.1)
   b.box(alu, -hw, doorTop, gz - 0.1, hw, doorTop + 0.14, gz + 0.1)
   b.box("metal_galvanized", -hw, FY - 0.01, gz - 0.12, hw, FY + 0.012, gz + 0.12)
   for (const [a, c] of [[-9, -hw], [hw, 9]] as const) b.box(alu, a, FY, gz - 0.07, c, FY + 0.12, gz + 0.07)
+  for (const s of [-1, 1]) ctx.colliders.push({ min: [Math.min(s * hw, s * 9), -0.5, gz - 0.08], max: [Math.max(s * hw, s * 9), top, gz + 0.08] })
   b.box(alu, -9, doorTop, gz - 0.08, 9, doorTop + 0.1, gz + 0.08)
   b.box(alu, -9, top - 0.08, gz - 0.07, 9, top, gz + 0.07)
-  const xs = [-9, -6.4, -3.8, -hw, hw, 3.8, 6.4, 9]
+  const xs = [-9, -6.4, -3.8, -bay, -hw, hw, bay, 3.8, 6.4, 9]
   for (let i = 0; i < xs.length - 1; i++) {
     const x0 = xs[i]! + 0.06
     const x1 = xs[i + 1]! - 0.06
@@ -761,8 +787,8 @@ function buildEntrance(ctx: WorldContext, root: THREE.Object3D, b: Batch, glass:
       thickness: 0.05,
       openAngle: 1.45,
       swing: "auto",
-      // About half open on load (a 1.3 m gap: the lobby is reachable without touching them); E swings them wide.
-      startOpen: 0.49,
+      // Standing about half open on load so the lobby is reachable; E swings them wide.
+      startOpen: 0.55,
       double: sgn < 0 ? "entrance-right" : "entrance-left",
       sound: "glass",
     })

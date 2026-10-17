@@ -29,7 +29,7 @@ export function steelLeaf(name: string, width: number, height: number, thickness
     const t = thickness / 2
     box("door_steel", Math.min(0, X(w)), 0, -t, Math.max(0, X(w)), height, t)
     for (const z of [-1, 1]) {
-      box("metal_galvanized", Math.min(X(0.04), X(w - 0.04)), 0.01, z * t - 0.003, Math.max(X(0.04), X(w - 0.04)), 0.26, z * t + 0.003)
+      box("metal_galvanized", Math.min(X(0.04), X(w - 0.04)), 0.01, z * t - 0.006, Math.max(X(0.04), X(w - 0.04)), 0.26, z * t + 0.006)
       // Lever handle on the latch side.
       const hx = X(w - 0.1)
       box("metal_galvanized", Math.min(hx, hx - X(0.03)), 0.98, z * (t + 0.005), Math.max(hx, hx - X(0.03)), 1.1, z * (t + 0.03))
@@ -37,7 +37,7 @@ export function steelLeaf(name: string, width: number, height: number, thickness
     }
     if (vision) {
       const c = X(w / 2)
-      box("glass_dark", c - 0.1, 1.35, -t - 0.002, c + 0.1, 1.75, t + 0.002)
+      box("glass_dark", c - 0.1, 1.35, -t - 0.006, c + 0.1, 1.75, t + 0.006)
     }
   })
 }
@@ -86,7 +86,7 @@ function rollupCurtain(name: string, width: number, height: number) {
       box("metal_painted", 0.05, yb, -0.02, width - 0.05, y - 0.01, 0.02)
       box("metal_painted", 0.05, yb + 0.03, -0.04, width - 0.05, y - 0.04, -0.02)
     }
-    box("rubber", 0.05, -0.04, -0.04, width - 0.05, 0.04, 0.04)
+    box("rubber", 0.05, -0.04, -0.046, width - 0.05, 0.04, 0.046)
     box("metal_dark", 0.6, 0.06, -0.1, 0.75, 0.16, -0.03)
   })
 }

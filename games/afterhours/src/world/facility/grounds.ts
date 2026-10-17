@@ -231,7 +231,7 @@ function standbyGenerator(ctx: WorldContext, b: Batch, x: number, z: number) {
   b.box("concrete_wall", x - 2.8, 0, z - 1.6, x + 2.8, 0.2, z + 1.6, SKIP_BOTTOM)
   // Belly fuel tank and skid channels.
   rbox(b, "metal_dark", x - 2.45, 0.2, z - 1.18, x + 2.45, 0.74, z + 1.18, 0.04)
-  for (const s of [-1, 1]) b.box("metal_dark", x - 2.5, 0.2, z + s * 1.12 - 0.06, x + 2.5, 0.32, z + s * 1.12 + 0.06)
+  for (const s of [-1, 1]) b.box("metal_dark", x - 2.5, 0.2, z + s * 1.14 - 0.06, x + 2.5, 0.32, z + s * 1.14 + 0.06)
   b.cylinder("metal_galvanized", x + 1.9, 0.74, z + 0.85, 0.07, 0.12, 12)
   b.cylinder("metal_dark", x + 1.9, 0.86, z + 0.85, 0.085, 0.04, 12)
   b.cylinder("metal_galvanized", x + 2.15, 0.74, z + 0.95, 0.02, 0.5, 8)

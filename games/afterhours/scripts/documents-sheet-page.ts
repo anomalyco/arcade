@@ -31,22 +31,25 @@ key.position.set(-1.5, 2, 3)
 scene.add(key)
 
 const view = params.get("view") ?? "grid"
-const ids = Object.keys(DOCUMENTS) as DocumentId[]
+const only = params.get("only")
+const skip = params.get("skip")
+const ids = (Object.keys(DOCUMENTS) as DocumentId[]).filter((id) => (!only || new RegExp(only).test(id)) && (!skip || !new RegExp(skip).test(id)))
 const placements: DocumentPlacement[] = []
 if (view === "grid") {
-  const cols = 10
+  const cols = Number(params.get("cols") ?? 10)
   const pitchX = 0.44
   const pitchY = 0.47
   ids.forEach((id, i) => {
     const x = ((i % cols) - (cols - 1) / 2) * pitchX
     const y = -Math.floor(i / cols) * pitchY
-    placements.push({ id, position: [x, y, 0], rotation: ((i * 37) % 7 - 3) * 0.01, pin: id.startsWith("plate_") || id === "stencil_w1" || id === "board_dosimeter" ? "none" : i % 5 === 2 ? "tape" : i % 7 === 4 ? "tack" : "pin", curl: id.startsWith("plate_") || id === "stencil_w1" || id === "board_dosimeter" ? 0 : undefined, seed: i + 1 })
+    const big = Math.max(...DOCUMENTS[id].size)
+    placements.push({ id, position: [x, y, 0], scale: big > 0.42 ? 0.4 / big : 1, rotation: ((i * 37) % 7 - 3) * 0.01, pin: /^(plate_|door_|sign_|stencil|board_|chalkboard|whiteboard|inout|directory|plaque|spray|lift_|label_|locker_)/.test(id) ? "none" : i % 5 === 2 ? "tape" : i % 7 === 4 ? "tack" : "pin", curl: /^(plate_|door_|sign_|stencil|board_|chalkboard|whiteboard|inout|directory|plaque|spray|lift_|label_|locker_)/.test(id) ? 0 : undefined, seed: i + 1 })
   })
   const rows = Math.ceil(ids.length / cols)
   const cork = new THREE.Mesh(new THREE.PlaneGeometry(cols * pitchX + 0.3, rows * pitchY + 0.3), new THREE.MeshStandardNodeMaterial({ color: 0x8a6a46, roughness: 0.95 }))
   cork.position.set(0, (-(rows - 1) * pitchY) / 2, -0.002)
   scene.add(cork)
-  camera.position.set(0, cork.position.y, 5.6)
+  camera.position.set(0, cork.position.y, (Math.max(rows * pitchY, (cols * pitchX) / camera.aspect) * 0.56) / Math.tan((camera.fov * Math.PI) / 360))
   camera.lookAt(0, cork.position.y, 0)
 } else if (view === "close") {
   const id = (params.get("id") ?? "memo_signin") as DocumentId

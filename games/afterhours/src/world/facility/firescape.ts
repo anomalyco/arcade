@@ -90,14 +90,14 @@ function landing(ctx: WorldContext, b: Batch, y: number, hole: [number, number] 
     b.box(STEEL, W - 0.02, y - 0.25, z - 0.12, W, y + 0.05, z + 0.12)
   }
   // Outer railing (pipe posts, top rail and mid rail), returns at both ends.
-  const post = (x: number, z: number) => b.cylinder(STEEL, x, y, z, 0.022, RAIL, 6)
-  for (let z = Z0 + 0.04; z <= Z1 - 0.04 + 1e-6; z += (Z1 - Z0 - 0.08) / 6) post(XO + 0.04, z)
+  const post = (x: number, z: number) => b.cylinder(STEEL, x, y, z, 0.022, RAIL, 8)
+  for (let z = Z0 + 0.04; z <= Z1 - 0.04 + 1e-6; z += (Z1 - Z0 - 0.08) / 6) post(XO + 0.03, z)
   for (const z of [Z0 + 0.04, Z1 - 0.04]) post(XS, z)
   const rail = (a: THREE.Vector3, c: THREE.Vector3) => b.strut(STEEL, a, c, 0.04, true)
   for (const h of [RAIL, RAIL * 0.5]) {
-    rail(V(XO + 0.04, y + h, Z0 + 0.04), V(XO + 0.04, y + h, Z1 - 0.04))
-    rail(V(XO + 0.04, y + h, Z0 + 0.04), V(W - 0.05, y + h, Z0 + 0.04))
-    rail(V(XO + 0.04, y + h, Z1 - 0.04), V(W - 0.05, y + h, Z1 - 0.04))
+    rail(V(XO + 0.03, y + h, Z0 + 0.04), V(XO + 0.03, y + h, Z1 - 0.04))
+    rail(V(XO + 0.03, y + h, Z0 + 0.04), V(W - 0.05, y + h, Z0 + 0.04))
+    rail(V(XO + 0.03, y + h, Z1 - 0.04), V(W - 0.05, y + h, Z1 - 0.04))
   }
   ctx.colliders.push({ min: [XO - 0.05, y, Z0], max: [XO + 0.08, y + RAIL, Z1] })
   ctx.colliders.push({ min: [XO, y, Z0 - 0.05], max: [W, y + RAIL, Z0 + 0.08] })
@@ -110,7 +110,7 @@ function landing(ctx: WorldContext, b: Batch, y: number, hole: [number, number] 
     ctx.colliders.push({ min: [XS - 0.04, y, h0], max: [XS + 0.04, y + RAIL, h1] })
     // The end of the hole where the flight below is lowest gets a rail across the outer half.
     const lowEnd = (h0 + h1) / 2 < 0 ? h0 : h1
-    for (const h of [RAIL, RAIL * 0.5]) rail(V(XO + 0.04, y + h, lowEnd), V(XS, y + h, lowEnd))
+    for (const h of [RAIL, RAIL * 0.5]) rail(V(XO + 0.03, y + h, lowEnd), V(XS, y + h, lowEnd))
     ctx.colliders.push({ min: [XO, y, lowEnd - 0.04], max: [XS, y + RAIL, lowEnd + 0.04] })
   }
 }
@@ -152,13 +152,13 @@ function flight(ctx: WorldContext, b: Batch, i: number, y: number, yTop: number)
     b.strut(STEEL, a.clone().add(V(0, 0.12, 0)), c.clone().add(V(0, 0.12, 0)), 0.03)
   }
   // Handrails both sides (sloped pipe on posts), plus guard colliders stepping up along the flight.
-  for (const x of [XO + 0.04, XS]) {
+  for (const x of [XO + 0.03, XS]) {
     const posts = 4
     for (let k = 0; k <= posts; k++) {
       const t = k / posts
       const z = zStart + dir * len * t
       const fy = y + (yTop - y) * t
-      b.cylinder(STEEL, x, fy, z, 0.02, RAIL - 0.15, 6)
+      b.cylinder(STEEL, x, fy, z, 0.02, RAIL - 0.15, 8)
     }
     b.strut(STEEL, V(x, y + RAIL - 0.15, zStart), V(x, yTop + RAIL - 0.15, zEnd), 0.04, true)
     b.strut(STEEL, V(x, y + (RAIL - 0.15) / 2, zStart), V(x, yTop + (RAIL - 0.15) / 2, zEnd), 0.03, true)

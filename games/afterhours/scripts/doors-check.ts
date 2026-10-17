@@ -21,7 +21,8 @@ const flag = (name: string) => {
 }
 const all = args.includes("--all")
 const only = flag("only")?.split(",").filter(Boolean)
-const wanted = (id: string) => !only || only.some((p) => id.startsWith(p))
+/** `--only` entries are id prefixes; a trailing `$` makes one exact (`s0:0-39$` but not `s0:0-39K2`). */
+const wanted = (id: string) => !only || only.some((p) => (p.endsWith("$") ? id === p.slice(0, -1) || id === `${p.slice(0, -1)}:b` : id.startsWith(p)))
 const extra = flag("q") ?? (all ? "" : "only=terrain")
 const view = flag("view") ?? "lot"
 const shot = flag("shot")
@@ -167,7 +168,9 @@ async function throughAndBack(d: Info, s: number) {
   await ensureClosed(d.id)
   await stand(d, s, 1.1)
   let st = await state(d.id)
-  check(st.focused === d.id, `${d.id} side ${s > 0 ? "+" : "-"}: prompt targets the door (focused ${st.focused})`)
+  // A pair's leaves act together, so either leaf under the crosshair is the door.
+  const isMine = (f: string | null) => f === d.id || (!!d.partner && f === d.partner)
+  check(isMine(st.focused), `${d.id} side ${s > 0 ? "+" : "-"}: prompt targets the door (focused ${st.focused})`)
   await page.keyboard.press("KeyE")
   const took = await settle(d.id)
   st = await state(d.id)
@@ -191,25 +194,35 @@ async function throughAndBack(d: Info, s: number) {
   await page.waitForTimeout(150)
   st = await state(d.id)
   let via = "leaf"
-  if (st.focused !== d.id) {
+  if (!isMine(st.focused)) {
     via = "doorway"
     await aim(d.mx, d.hy + 1.0, d.mz)
     await page.waitForTimeout(150)
     st = await state(d.id)
   }
-  check(st.focused === d.id, `${d.id}: open door targetable from the far side via ${via} (focused ${st.focused})`)
+  check(isMine(st.focused), `${d.id}: open door targetable from the far side via ${via} (focused ${st.focused})`)
+  if (!isMine(st.focused))
+    console.log(
+      "  why:",
+      await page.evaluate(
+        ({ id, partner }) => {
+          type DD = { t: number; free: boolean; centre(o: object): { x: number; y: number; z: number } }
+          const g = globalThis as unknown as { __afterhoursDoors: { get(id: string): DD | undefined }; __afterhoursPlayer: { pos: object; camera: { matrixWorld: { elements: number[] } } } }
+          const leaf = (i: string | undefined) => {
+            const x = i ? g.__afterhoursDoors.get(i) : undefined
+            return x && { id: i, t: +x.t.toFixed(3), free: x.free, centre: x.centre({}) }
+          }
+          const e = g.__afterhoursPlayer.camera.matrixWorld.elements
+          return JSON.stringify({ pos: g.__afterhoursPlayer.pos, eye: [e[12], e[13], e[14]], look: [-e[8]!, -e[9]!, -e[10]!], leaves: [leaf(id), leaf(partner)] })
+        },
+        { id: d.id, partner: d.partner },
+      ),
+    )
   await page.keyboard.press("KeyE")
-  // Walk straight on through the doorway, out of the leaf's sweep: a closing leaf that meets the player stops against
-  // them and finishes once they're clear (a 5.5 m gate leaf's arc covers the whole gateway).
-  await page.evaluate(
-    ({ d, s }) => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { yaw: number; pitch: number } }).__afterhoursPlayer
-      p.yaw = Math.atan2(-d.nx * s, -d.nz * s)
-      p.pitch = 0
-    },
-    { d, s },
-  )
-  await walk(1600)
+  // Step back from the doorway while it closes: walking into a closing leaf would push it open again (body push), and
+  // a leaf closing towards the player stops against them.
+  await page.waitForTimeout(100)
+  await walk(1000, "KeyS")
   await settle(d.id)
   st = await state(d.id)
   check(!st.isOpen && st.amount < 0.01, `${d.id}: E closes it (amount ${st.amount.toFixed(3)})`)
@@ -389,7 +402,7 @@ if (!all) {
       p.pos.z = at[2]!
       p.resetMotion()
     }, at)
-    for (let i = 0; i < 40 && only && !(await doorInfo()).some((d) => only.some((o) => d.id.startsWith(o))); i++) await page.waitForTimeout(250)
+    for (let i = 0; i < 40 && only && !(await doorInfo()).some((d) => wanted(d.id)); i++) await page.waitForTimeout(250)
   }
   const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
   for (const i of issues) if (wanted(i.id)) check(false, `${i.id}: ${i.issue}`)

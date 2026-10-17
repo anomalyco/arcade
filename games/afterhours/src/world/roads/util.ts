@@ -269,13 +269,24 @@ export class Parts {
   }
 }
 
+/** +1 with a reversed depth buffer (greater depth = nearer), -1 with a standard one. three r186 passes
+ *  `polygonOffset*` straight to WebGPU's depthBias without flipping it for reversed-Z, so a negative offset there
+ *  pushes the decal *behind* the surface it sits on, and the slope-scaled part grows at grazing angles until distant
+ *  paint loses to the asphalt and only near paint draws. */
+let towardCamera = -1
+export function setDepthBiasDirection(renderer: THREE.WebGPURenderer) {
+  const p = (renderer.backend as { parameters?: { reversedDepthBuffer?: boolean } }).parameters
+  towardCamera = p?.reversedDepthBuffer ? 1 : -1
+}
+
 /** A vertex-coloured, polygon-offset copy of a library material for road surfaces and paint. All callers set the same
- *  flags, so every copy shares one shader; only the (pipeline-state) offset strength differs. */
-export function decalMaterial(name: MaterialName, offset = -2) {
+ *  flags, so every copy shares one shader; only the (pipeline-state) bias strength differs. `strength` is how far
+ *  towards the camera to pull: the paint also has a real geometric lift, so this only settles depth ties. */
+export function decalMaterial(name: MaterialName, strength = 2) {
   const m = material(name).clone()
   m.polygonOffset = true
-  m.polygonOffsetFactor = offset
-  m.polygonOffsetUnits = offset * 2
+  m.polygonOffsetFactor = towardCamera * strength * 0.5
+  m.polygonOffsetUnits = towardCamera * strength * 2
   m.vertexColors = true
   m.name = `${name}_road`
   return m

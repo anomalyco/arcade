@@ -3,7 +3,7 @@ import { BUILDING } from "../layout"
 import type { Lamp, WorldContext } from "../context"
 import { Batch, SKIP_BOTTOM } from "./geo"
 import { materialFor } from "../../render/materials"
-import { DOCK_DOORS, band, facades, fbox, normal, point, type Facade } from "./shell"
+import { DOCK_DOORS, band, facades, fbox, normal, openingFrame, point, type Facade } from "./shell"
 import { addFacadeDoor, rollupLeaf, steelLeaf } from "./doors"
 
 // The back of the building (concept r5-06): raised loading dock with bumpers and steps, one roll-up door shut and
@@ -78,24 +78,22 @@ export function buildDock(ctx: WorldContext, b: Batch, root: THREE.Object3D) {
   // The bay is the dock's key light (concept r5-06): concrete block walls lit deep sodium-orange by a hot fixture,
   // and a floor that carries a little warm glow of its own so the slot still reads if the light budget trims a lamp.
   const bayFloor = materialFor("emissive", { color: 0x4a3420, roughness: 0.5, emissive: new THREE.Color(1, 0.3, 0.04), intensity: 0.5, name: "facility_bay_floor" })
-  b.box(bayFloor, bx0, BUILDING.floorY, bz0, bx1, by, bz1, SKIP_BOTTOM)
+  b.box(bayFloor, bx0 - 0.005, BUILDING.floorY, bz0 - 0.005, bx1 + 0.005, by, bz1 + 0.005, SKIP_BOTTOM)
   ctx.floors.push({ min: [bx0, WALL_Z - 0.05], max: [bx1, bz1], y: by })
   ctx.colliders.push(
     { min: [bx0 - 0.2, -0.5, bz1], max: [bx1 + 0.2, 4.4, bz1 + 0.2] },
     { min: [bx0 - 0.2, -0.5, bz0], max: [bx0, 4.4, bz1] },
     { min: [bx1, -0.5, bz0], max: [bx1 + 0.2, 4.4, bz1] },
   )
-  // Second, unlit bay behind the shut roll-up door.
+  // Behind the shut roll-up door is the interior's receiving room and freight lift (FREIGHT): only a threshold strip
+  // through the wall at dock height here, no walls of ours.
   {
-    const cx0 = DOCK_DOORS.closed.u0 - 1.8
-    const cx1 = bx0 - 0.2
-    b.box("concrete_floor_dry", cx0, BUILDING.floorY, bz0, cx1, by, bz1, SKIP_BOTTOM)
-    b.box("concrete_block", cx0 - 0.2, by, bz1, cx1, 4.2, bz1 + 0.2)
-    b.box("concrete_block", cx0 - 0.2, by, bz0, cx0, 4.2, bz1)
-    b.box("concrete_dark", cx0 - 0.2, 4.2, bz0, cx1, 4.4, bz1 + 0.2)
-    ctx.floors.push({ min: [cx0, WALL_Z - 0.05], max: [cx1, bz1], y: by })
-    ctx.colliders.push({ min: [cx0 - 0.2, -0.5, bz1], max: [cx1, 4.4, bz1 + 0.2] }, { min: [cx0 - 0.2, -0.5, bz0], max: [cx0, 4.4, bz1] })
+    const d = DOCK_DOORS.closed
+    // Only through the wall thickness (stopping 6 mm short of its inner face): the interior's receiving floor is beyond.
+    b.box("concrete_floor_dry", d.u0 - 0.1, BUILDING.floorY, WALL_Z - 0.01, d.u1 + 0.1, by, bz0 - 0.006, SKIP_BOTTOM)
+    ctx.floors.push({ min: [d.u0 - 0.1, WALL_Z - 0.05], max: [d.u1 + 0.1, bz0 + 0.1], y: by })
   }
+
   // Bay walls: painted block glowing sodium-orange (self-lit so the slot reads like the concept whatever reaches it),
   // with darker recessed mortar joints in 400×200 running bond.
   const glowBlock = materialFor("emissive", { color: 0x5a4632, roughness: 0.85, emissive: new THREE.Color(1, 0.36, 0.07), intensity: 0.4, name: "facility_bay_block" })
@@ -168,9 +166,7 @@ function rollupFrame(b: Batch, f: Facade, u0: number, u1: number, y0: number, he
 function personnelDoor(ctx: WorldContext, root: THREE.Object3D, b: Batch, f: Facade, u0: number, u1: number, y0: number, y1: number) {
   const fr = 0.05
   // Frame round the opening (head and jambs sit outside the clear width), a flush threshold through the wall.
-  fbox(b, "metal_dark", f, u0 - fr, u1 + fr, y1, y1 + fr, 0.06, 0.22)
-  fbox(b, "metal_dark", f, u0 - fr, u0, y0, y1, 0.06, 0.22)
-  fbox(b, "metal_dark", f, u1, u1 + fr, y0, y1, 0.06, 0.22)
+  openingFrame(b, f, u0, u1, y0, y1, fr)
   const ta = point(f, u0, 0, -0.05)
   const tb = point(f, u1, 0, T + 0.05)
   ctx.floors.push({ min: [Math.min(ta.x, tb.x), Math.min(ta.z, tb.z)], max: [Math.max(ta.x, tb.x), Math.max(ta.z, tb.z)], y: y0 })

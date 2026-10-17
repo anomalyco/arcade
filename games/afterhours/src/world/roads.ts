@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { WORLD_HALF, accessRoadSamples, countyRoadSamples } from "./layout"
-import { Line, Parts } from "./roads/util"
+import { Line, Parts, setDepthBiasDirection } from "./roads/util"
 import { Wires } from "./roads/wires"
 import { loadModel, modelCollider, yawToward, type Placement } from "../render/models"
 import { heightAt } from "./height"
@@ -18,6 +18,7 @@ export function build(ctx: WorldContext): WorldModule | void {
   root.name = "roads"
   root.matrixAutoUpdate = false
   ctx.scene.add(root)
+  setDepthBiasDirection(ctx.renderer)
 
   const access = new Line(accessRoadSamples(1))
   const county = new Line(countyRoadSamples(-WORLD_HALF, WORLD_HALF, 1))

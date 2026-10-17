@@ -62,3 +62,19 @@
 - Kit: shared bulkhead fixture; screen variant taking custom node materials (CCTV, slide, TV static); lift-gate primitive registering real leaves for FL-1; FL-1 moving car (later: Sublevel).
 - Kit: retire lobby.ts/corridor.ts/rooms.ts/placeProps/storeys.ts/furnish.ts once kit no longer imports from them.
 - s0: time-clock and FL-1 areas too dark to read vignettes; emergency pack by core door.
+
+## For the integration audit
+- FL-1 gates now unblocked on the facility side but untested (locked → skipped): test them unlocked via a temporary unlock in the check.
+- Behind the shut roll-up: floor drops from dock height 1.25 m to receiving 0.15 m with no ramp/leveller: interior s0 should add a dock leveller/steps.
+- Re-run the overlap audit on the stair-tower slot.
+
+## Dock / receiving bay (Aiden, facility owner: send after the hygiene round)
+- Opening the roll-up: a pale flat panel still fills the opening (curtain visual or a fake emissive "bay glow" card) while the player can walk through it. Open = see into the bay; closed = opaque curtain, can't see in. Curtain mesh must follow the door state exactly; remove any fake glow card in the opening.
+- Inside the bay: a random free-standing glowing slab (the emissive orange "self-glow" panel added to fake bay light) and a black post; no proper door into the building. Rebuild the bay as a real receiving bay: block walls, real lamps (no emissive cards), a proper steel personnel door + the interior's dock leveller/steps into s0 receiving (0-16), coherent with s0's receiving room. Remove the self-glow hack now that real lights work.
+- Dock man door (Aiden screenshot): door leaf/opening shows a flat translucent grey-green plane filling the doorway (looks like fog/glass card), with a sliver of orange bay visible above it at an angle: leftover fake "bay glow"/glass card or wrong leaf material/transparency; the leaf must be opaque painted steel, and the opening shows the real space behind.
+- Dock steps (Aiden: "stairway's all fucked up"): the 3 concrete steps up to the dock are floating slabs: risers don't reach the tread below / ground (stepped gaps, slabs overhanging), handrail post goes through the top tread edge, rail ends in mid-air and kinks oddly, posts don't land on treads. Rebuild as solid cast-in-place concrete steps (solid mass to the ground, consistent rise ~0.17 and going ~0.28 to the dock's 1.25 m: ~7 risers, or a ramp), with a code-compliant pipe handrail (posts on treads, continuous rail, returns at ends).
+
+## Ownership decision (coordinator): receiving bay
+- Interior (s0 receiving 0-16) owns everything inside the main-block shell, including the space behind the roll-up doors: walls, floor at dock height + leveller/steps, lights, the personnel door into receiving. Facility drops its own bay (walls, floor, roof slab, lamps, glow cards) and keeps only exterior: dock platform, roll-up door assemblies (curtain follows state, no fake cards), exterior personnel doors, steps, canopy.
+- Interior follow-ups (after hygiene round): build the receiving bay behind both roll-ups at dock height 1.25 with leveller/steps down to 0.15; fix wall faces at z=-21.65 (s1 vs bay roof slab: moot once facility drops it); offset lift shaft/core walls 5 mm off tower walls at x -43.1/-36.3, z 24.85; door-main-west--10 stalls 1.1 m inside (interior collider); apply text-stand-ins.md.
+- Interior: s0/west.ts:277 board_dosimeter normal should be [0,0,-1] at z≈-14.152 (sign faces wrong side). Audit all document placements: any sheet showing blank (back face) from the room it belongs to has a wrong normal; hygiene gate should flag documents whose front faces into a wall/void.

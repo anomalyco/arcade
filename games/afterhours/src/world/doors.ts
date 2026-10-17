@@ -536,7 +536,22 @@ export class Doors {
         const to = d.ray(ox, oy, oz, dx, dy, dz, true, 0.25)
         if (to >= 0 && to <= REACH && (t < 0 || to < t)) t = to
       }
-      if (t >= 0 && t < bestT) {
+      if (t < 0) continue
+      // Paired leaves meet at the stiles, so one ray can hit both at almost the same distance: take the leaf whose
+      // centre is nearer the point under the crosshair (the one actually aimed at), not whichever was registered last.
+      if (best && Math.abs(t - bestT) < 0.03 && best.spec.double === d.id) {
+        const hx = ox + dx * t
+        const hz = oz + dz * t
+        const cd = d.centre(this.tmp)
+        const dd = Math.hypot(cd.x - hx, cd.z - hz)
+        const cb = best.centre(this.tmp)
+        if (dd < Math.hypot(cb.x - hx, cb.z - hz)) {
+          best = d
+          bestT = Math.min(t, bestT)
+        }
+        continue
+      }
+      if (t < bestT) {
         bestT = t
         best = d
       }
@@ -692,7 +707,7 @@ export class Doors {
       const nx = Math.sin(d.yaw0)
       const nz = Math.cos(d.yaw0)
       const g0 = this.groundAt(cx, cz, d.hy + PLAYER_STEP)
-      if (Math.abs(g0 - d.hy) > 0.12) issues.push({ id: d.id, issue: `floor in the opening is ${(g0 - d.hy).toFixed(2)} m from the hinge height` })
+      if (Math.abs(g0 - d.hy) > PLAYER_STEP) issues.push({ id: d.id, issue: `floor in the opening is ${(g0 - d.hy).toFixed(2)} m from the hinge height` })
       for (const s of [-0.6, 0, 0.6]) {
         const x = cx + nx * s
         const z = cz + nz * s

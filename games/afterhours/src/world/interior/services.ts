@@ -53,8 +53,8 @@ export function serviceStack(b: Builder, o: ServiceOpts = {}): ServiceHandle {
   // Rooms.
   if (!skip.has("EL")) electrical(b, o.refurb)
   if (!skip.has("TC")) telecom(b)
-  if (!skip.has("WCM")) toilets(b, S.WCM, "M", o.refurb)
-  if (!skip.has("WCW")) toilets(b, S.WCW, "W", o.refurb)
+  if (!skip.has("WCM")) toilets(b, S.WCM, "M", o.refurb, -34.4)
+  if (!skip.has("WCW")) toilets(b, S.WCW, "W", o.refurb, -27.7)
   if (!skip.has("JC")) janitor(b)
   if (!skip.has("STORE")) store(b)
   fountain(b, S.fountain.x, S.fountain.z)
@@ -109,8 +109,9 @@ function telecom(b: Builder) {
 }
 
 /** Washrooms: see washroom.ts (library fixtures, steel stalls, mirror, drain). */
-function toilets(b: Builder, r: Rect, kind: "M" | "W", refurb?: boolean) {
-  washroom(b, { id: kind === "M" ? "WCM" : "WCW", name: kind === "M" ? "Men's room" : "Women's room", rect: r, kind, refurb })
+function toilets(b: Builder, r: Rect, kind: "M" | "W", refurb: boolean | undefined, doorX: number) {
+  const id = kind === "M" ? "WCM" : "WCW"
+  washroom(b, { id, name: kind === "M" ? "Men's room" : "Women's room", rect: r, kind, refurb, door: { x: doorX, id } })
 }
 
 function janitor(b: Builder) {

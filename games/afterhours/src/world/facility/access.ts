@@ -38,7 +38,7 @@ export function cagedLadder(ctx: WorldContext, b: Batch, s: LadderSpec) {
   for (const a of [-0.22, 0.22]) b.strut(mat, at(a, s.y0, off), at(a, s.y1, off), 0.055)
   for (let y = s.y0 + 0.3; y < s.y1 - 0.05; y += 0.3) b.strut(mat, at(-0.22, y, off), at(0.22, y, off), 0.028, true)
   // Wall brackets every 1.8 m.
-  for (let y = s.y0 + 0.6; y < s.y1 - 0.3; y += 1.8) for (const a of [-0.22, 0.22]) b.strut(mat, at(a, y, 0), at(a, y, off), 0.05)
+  for (let y = s.y0 + 0.6; y < s.y1 - 0.3; y += 1.8) for (const a of [-0.22, 0.22]) b.strut(mat, at(a, y, 0), at(a, y, off), 0.04)
   // Top: stiles curve over as grab rails (a short horizontal return towards the wall).
   for (const a of [-0.22, 0.22]) b.strut(mat, at(a, s.y1, off), at(a, s.y1, -0.05), 0.045, true)
   if (s.cageFrom !== undefined) {

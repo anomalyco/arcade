@@ -5,7 +5,7 @@
 // All content is original and follows docs/building-program.md (Pine Hollow Station, the Sublevel); everyone is invented.
 
 type Ctx = CanvasRenderingContext2D
-type Paper = "white" | "onion" | "yellow" | "goldenrod" | "pink" | "green" | "manila" | "card" | "legal" | "greenbar" | "polaroid" | "poster" | "sticky" | "plate" | "timecard"
+type Paper = "white" | "onion" | "yellow" | "goldenrod" | "pink" | "green" | "manila" | "card" | "legal" | "greenbar" | "polaroid" | "poster" | "sticky" | "plate" | "timecard" | "chalk" | "white_board" | "gypsum" | "felt" | "bronze" | "newsprint" | "blueprint" | "concrete" | "brass_plate"
 type Tag = "wall" | "board" | "desk" | "clipboard" | "creepy" | "floor"
 
 type DocSpec = {
@@ -1655,6 +1655,608 @@ const DOCS: DocSpec[] = [
   },
 ]
 
+
+// ---------------------------------------------------------------------------------------------------- stand-in replacements
+// Documents for every place the storey/kit code drew fake text (docs/text-stand-ins.md maps call sites to ids).
+
+/** Rooms from docs/building-program.md (injected by scripts/build-documents.ts): id → label. */
+const ROOMS = (globalThis as { __rooms?: [string, string][] }).__rooms ?? []
+
+/** Room number plate: engraved charcoal plastic, number large, room name small (fits the kit's 0.16 × 0.10 plate). */
+function doorPlate(id: string, label: string, color = "#2b2e31"): DocSpec {
+  return {
+    id: `door_${id.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`,
+    title: `Door plate ${id} ${label}`,
+    size: [0.16, 0.1],
+    paper: "plate",
+    tags: ["wall"],
+    density: 1.1,
+    draw(d) {
+      d.fill(0, 0, d.wmm, d.hmm, color)
+      d.rect(2.5, 2.5, d.wmm - 5, d.hmm - 5, 0.5, "#c9c6bd")
+      d.print(id, d.wmm / 2, 54, { pt: 110, font: "Archivo Black", align: "center", color: "#e9e6dc" })
+      // Fit the label to the plate width.
+      let pt = 28
+      d.font("Libre Franklin", pt, 700)
+      while (d.ctx.measureText(label).width > d.wmm - 16 && pt > 9) d.font("Libre Franklin", (pt -= 1), 700)
+      d.print(label, d.wmm / 2, 84, { pt, font: "Libre Franklin", weight: 700, align: "center", color: "#e9e6dc", spacing: 0.4 })
+    },
+  }
+}
+
+function smallLabel(id: string, title: string, size: [number, number], lines: string[], o: { paper?: Paper; hand?: boolean; color?: string; tags?: Tag[] } = {}): DocSpec {
+  return {
+    id,
+    title,
+    size,
+    paper: o.paper ?? "card",
+    tags: o.tags ?? ["desk"],
+    density: 3,
+    draw(d) {
+      const n = lines.length
+      const lh = d.hmm / (n + 0.6)
+      lines.forEach((l, i) => {
+        const y = lh * (i + 0.95)
+        // Fit the line to the label width.
+        let pt = (lh / PT) * (o.hand ? 0.95 : 0.72)
+        d.font(o.hand ? "Caveat" : "Courier Prime", pt, o.hand ? 500 : 400)
+        const w = o.hand ? d.ctx.measureText(l).width * 1.04 : d.ctx.measureText("M").width * l.length
+        if (w > d.wmm - 6) pt *= (d.wmm - 6) / w
+        if (o.hand) d.hand(l, 3, y, { pt, color: o.color ?? INK.black, font: "Caveat" })
+        else d.type(l, 3, y, { pt, font: "Courier Prime", color: o.color })
+      })
+      d.rect(0.6, 0.6, d.wmm - 1.2, d.hmm - 1.2, 0.2, INK.black)
+    },
+  }
+}
+
+function sign(id: string, title: string, size: [number, number], bg: string, fg: string, lines: [string, number][], o: { density?: number; border?: string } = {}): DocSpec {
+  return {
+    id,
+    title,
+    size,
+    paper: "plate",
+    tags: ["wall"],
+    density: o.density ?? 1.6,
+    draw(d) {
+      d.fill(0, 0, d.wmm, d.hmm, bg)
+      if (o.border) d.rect(4, 4, d.wmm - 8, d.hmm - 8, 1.6, o.border)
+      const total = lines.reduce((a, [, pt]) => a + pt * PT * 1.25, 0)
+      let y = (d.hmm - total) / 2
+      for (const [s, pt] of lines) {
+        y += pt * PT * 1.05
+        d.print(s, d.wmm / 2, y, { pt, font: pt > 30 ? "Archivo Black" : "Libre Franklin", weight: 800, align: "center", color: fg })
+        y += pt * PT * 0.2
+      }
+    },
+  }
+}
+
+/** Chalkboard / whiteboard face: chalk or marker text with ghosts of earlier writing. */
+function board(id: string, title: string, size: [number, number], kind: "chalk" | "white", draw: (d: Draw, ink: (s: string, x: number, y: number, pt?: number, color?: string) => void) => void): DocSpec {
+  return {
+    id,
+    title,
+    size,
+    paper: kind === "chalk" ? "chalk" : "white_board",
+    tags: ["wall"],
+    density: 0.32,
+    draw(d) {
+      const chalk = kind === "chalk"
+      // Ghosts of wiped writing.
+      for (let i = 0; i < 9; i++)
+        d.hand(pick(["f = c / λ", "Δt = 12.4 ms", "∮ E·dl", "α = 0.031", "SL-3 ↔ SL-5", "N = 6", "h ≈ 410 m"]), rr(30, d.wmm - 300), rr(80, d.hmm - 40), {
+          pt: rr(120, 180),
+          color: chalk ? "rgba(220,225,215,0.07)" : "rgba(40,60,120,0.06)",
+          font: "Caveat",
+        })
+      const ink = (s: string, x: number, y: number, pt = 240, color = chalk ? "#e6e8de" : "#1f2f7a") =>
+        d.hand(s, x, y, { pt, color, font: chalk ? "Reenie Beanie" : "Caveat", slant: rr(-0.02, 0.02) })
+      draw(d, ink)
+    },
+  }
+}
+
+function dayCard(id: string, name: string, number: string): DocSpec {
+  return {
+    id,
+    title: `Time card: ${name} (day staff, punched out)`,
+    size: [0.0825, 0.187],
+    paper: "timecard",
+    tags: ["wall", "desk"],
+    density: 3.4,
+    draw(d) {
+      d.print("PINE HOLLOW STA.", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
+      d.print("WEEKLY TIME CARD", d.wmm / 2, 12.5, { pt: 6, align: "center" })
+      d.print("NO.", 5, 20, { pt: 6, weight: 700 })
+      d.type(number, 14, 20.5, { pt: 11, font: "Courier Prime" })
+      d.print("NAME", 5, 27, { pt: 6, weight: 700 })
+      d.hand(name, 16, 27.5, { pt: 15, color: INK.black })
+      d.print("WEEK ENDING  OCT 20 1984", 5, 41, { pt: 6, weight: 700 })
+      for (let r = 0; r <= 7; r++) d.line(4, 50.5 + r * 17, d.wmm - 4, 50.5 + r * 17, 0.2)
+      for (let c = 0; c <= 4; c++) d.line(14 + c * 16, 46, 14 + c * 16, 50.5 + 7 * 17, 0.2)
+      ;["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].forEach((s, r) => d.print(s, 4.5, 50.5 + r * 17 + 9.5, { pt: 5.5, weight: 700 }))
+      ;["IN", "OUT", "IN", "OUT"].forEach((c, i) => d.print(c, 14 + i * 16 + 6, 49, { pt: 6, weight: 700, align: "center" }))
+      const days = ["M", "T", "W"]
+      days.forEach((dy, r) => {
+        const a = 7 * 60 + Math.floor(rr(-6, 4))
+        const b = 15 * 60 + Math.floor(rr(0, 9))
+        const f = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
+        d.type(`${dy} ${f(a)}`, 15.2, 50.5 + r * 17 + 10, { pt: 7.5, font: "Courier Prime", fade: 0.9 })
+        d.type(`${dy} ${f(b)}`, 31.2, 50.5 + r * 17 + 10, { pt: 7.5, font: "Courier Prime", fade: 0.9 })
+      })
+    },
+  }
+}
+
+const SERVICE_PLATES: [string, string][] = []
+for (let s = 0; s <= 4; s++) SERVICE_PLATES.push([`WC-M${s}`, "MEN"], [`WC-W${s}`, "WOMEN"], [`JC-${s}`, "JANITOR"], [`ST-${s}`, "STORE"])
+
+const IN_OUT_NAMES = [
+  "Kemper, D.", "Pell, G.", "Duquette, M.", "Halverson, D.", "Reyes, A.", "Whitcomb, J.", "Brandt, M.", "Lindqvist, E.",
+  "Moreau, P.", "Albrecht, S.", "Tolliver, K.", "Hsu, L.", "Szabo, B.", "Ferraro, N.", "Gaines, R.", "Ostrowski, T.",
+  "Dunleavy, C.", "Dorsey, K.", "Marsh, F.", "Petrakis, H.", "Nakamura, A.", "Quinlan, V.",
+]
+
+const STAND_INS: DocSpec[] = [
+  {
+    id: "note_do_not_disturb",
+    title: "Taped note: DO NOT DISTURB — R.H. (Director's door)",
+    size: [0.22, 0.16],
+    paper: "white",
+    tags: ["wall", "creepy"],
+    density: 3.2,
+    draw(d) {
+      // Torn top edge.
+      d.ctx.save()
+      d.ctx.fillStyle = "#1a1814"
+      d.ctx.beginPath()
+      d.ctx.moveTo(0, 0)
+      for (let x = 0; x <= d.wmm; x += 3) d.ctx.lineTo(x, rr(0, 4))
+      d.ctx.lineTo(d.wmm, 0)
+      d.ctx.fill()
+      d.ctx.restore()
+      for (let y = 30; y < d.hmm; y += 8.5) d.line(0, y, d.wmm, y, 0.18, "#5f86b8", 0.4)
+      d.hand("DO NOT", 18, 58, { pt: 64, font: "Permanent Marker", color: "#151515", slant: -0.04 })
+      d.hand("DISTURB", 14, 100, { pt: 64, font: "Permanent Marker", color: "#151515", slant: -0.03 })
+      d.hand("— R.H.", 120, 138, { pt: 40, font: "Nothing You Could Do", color: "#151515", slant: -0.06 })
+      d.crease(0, d.hmm * 0.55, d.wmm, d.hmm * 0.5, 0.8)
+    },
+  },
+  {
+    id: "spray_do_not_demo",
+    title: "Spray-painted 'DO NOT DEMO — SEE DIRECTOR' on gypsum board (4-01)",
+    size: [1.3, 0.45],
+    paper: "gypsum",
+    tags: ["wall", "creepy"],
+    density: 0.7,
+    draw(d) {
+      const spray = (s: string, x: number, y: number, pt: number) => {
+        // Overspray halo, then the line.
+        d.hand(s, x, y, { pt, font: "Permanent Marker", color: "rgba(200,80,26,0.18)", slant: -0.02 })
+        d.ctx.save()
+        d.ctx.filter = "blur(1.2px)"
+        d.hand(s, x, y, { pt, font: "Permanent Marker", color: "#c8501a", slant: -0.02 })
+        d.ctx.restore()
+        // Drips.
+        for (let i = 0; i < 6; i++) {
+          const dx = x + rr(10, s.length * pt * 0.16)
+          d.line(dx, y + 2, dx + rr(-0.5, 0.5), y + rr(10, 45), rr(1.2, 2.2), "#c8501a", 0.8)
+        }
+      }
+      spray("DO NOT DEMO", 90, 190, 320)
+      spray("SEE DIRECTOR", 170, 400, 220)
+      d.hand("↓", 1150, 420, { pt: 260, font: "Permanent Marker", color: "#c8501a" })
+    },
+  },
+  board("chalkboard_equations", "Chalkboard, 3-09 analysis bullpen: propagation equations and SL source fixes", [4.2, 1.1], "chalk", (d, ink) => {
+    ink("E(z) = E₀ · e^(−αz)      α = 0.031 / m (wet granite)", 120, 190)
+    ink("λ = c / f  →  f = 11.905 kHz,  λ ≈ 25.2 km", 120, 340)
+    ink("Δφ(SL-1…SL-6) = 0.0° ± 0.3°   ALL SIX IN PHASE", 120, 490)
+    ink("⇒ source not a point?  or it is everywhere at once", 120, 640, 208)
+    ink("depth fix:  h = 410 m (Aug)   388 m (Sep)   361 m (Oct)", 120, 800)
+    ink("rising 25 m / month", 2700, 800, 240, "#e8b0a0")
+    d.ctx.save()
+    d.ctx.strokeStyle = "#e8b0a0"
+    d.ctx.lineWidth = 6
+    d.ctx.beginPath()
+    d.ctx.ellipse(3100, 760, 520, 110, -0.02, 0, Math.PI * 2)
+    d.ctx.stroke()
+    d.ctx.restore()
+    ink("DO NOT ERASE", 3350, 1020, 176)
+  }),
+  board("chalkboard_agenda", "Chalkboard, Conference A (1-02): staff meeting agenda", [3.0, 1.1], "chalk", (d, ink) => {
+    ink("STAFF MTG  — Mon 10/15", 100, 170, 272)
+    ink("1. FY85 contracts — IOPS renewal (due 11/1)", 120, 330)
+    ink("2. SL rotation staffing — 6 → Field Ops Wed.", 120, 470)
+    ink("3. Payroll: hold letters (see Dir.)", 120, 610)
+    ink("4. Parking — north lot CLOSED", 120, 750)
+    ink("5. Bowling — forfeits", 120, 890)
+    ink("✓", 2200, 330, 240)
+  }),
+  board("chalkboard_titration", "Chalkboard, biochem teaching lab (2-24): titration notes", [3.6, 1.1], "chalk", (d, ink) => {
+    ink("Titration — acid/base", 100, 170, 272)
+    ink("M₁V₁ = M₂V₂", 120, 340)
+    ink("0.100 M NaOH  ·  25.00 mL sample  ·  phenolphthalein", 120, 490)
+    ink("endpoint: faint pink 30 s", 120, 640)
+    ink("SL core leachate: pH 3.1 (?!) — redo w/ fresh std.", 120, 800, 224)
+    ink("goggles ON", 2700, 980, 224)
+  }),
+  board("chalkboard_wiped", "Chalkboard, wiped with ghosts of writing (generic)", [2.4, 1.1], "chalk", (d, ink) => {
+    ink("intake log — see binder", 120, 250, 208, "rgba(230,232,222,0.55)")
+    ink("SL-14  →  2-10 ONLY", 140, 520, 256)
+  }),
+  board("whiteboard_ops", "Whiteboard, operations console 3-06: shift and tape schedule", [2.6, 1.1], "white", (d, ink) => {
+    ink("OPS — WEEK OF 10/15", 90, 150, 256)
+    d.line(80, 190, 2500, 190, 4, "#1f2f7a", 0.8)
+    ink("2300–0700   Okafor  /  ———", 100, 300)
+    ink("0700–1500   Brandt  /  Vance", 100, 430)
+    ink("TAPE MOUNTS:  RCV-288, 289 (SIGLOG)", 100, 560)
+    ink("SL LINK WINDOW 0300–0315 — DO NOT IPL", 100, 700, 240, "#a3241c")
+    ink("call 3-22 if link drops (NOT x300)", 100, 840, 208)
+    ink("Halverson printouts → 3-01 (uncollected)", 100, 980, 192)
+  }),
+  {
+    id: "inout_board_1_09",
+    title: "Magnetic in/out board face, Personnel & Payroll (1-09): 22 names, IN / OUT / SL columns",
+    size: [1.2, 22 * 0.045 + 0.16],
+    paper: "white_board",
+    tags: ["wall"],
+    density: 0.85,
+    draw(d) {
+      // Matches s1 furniture inOutBoard: name strips x −0.5..0, columns IN 0.05..0.25, OUT 0.25..0.42, SL 0.42..0.6.
+      const cx = d.wmm / 2
+      const top = (v: number) => d.hmm / 2 - v * 1000 + 10
+      d.fill(cx - 580, top(0.5 * (22 * 0.045 + 0.16) - 0.025) - 25, 1160, 50, "#2b2e31")
+      d.print("PERSONNEL & PAYROLL", cx - 560, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Libre Franklin", weight: 800, color: "#e9e6dc" })
+      d.print("IN", cx + 150, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#e9e6dc" })
+      d.print("OUT", cx + 335, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#e9e6dc" })
+      d.fill(cx + 430, top(0.5 * (22 * 0.045 + 0.16) - 0.05) - 15, 150, 30, "#a3241c")
+      d.print("SL", cx + 510, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#f1ece0" })
+      for (const u of [0.05, 0.25, 0.42]) d.line(cx + u * 1000, top(0.5 * (22 * 0.045 + 0.16) - 0.09), cx + u * 1000, d.hmm - 30, 4, "#3a3a3a", 0.8)
+      IN_OUT_NAMES.forEach((n, r) => {
+        const v = (22 * 0.045 + 0.16) / 2 - 0.11 - r * 0.045
+        const y = top(v)
+        d.fill(cx - 500, y - 20, 500, 40, "#ece7da")
+        d.rect(cx - 500, y - 20, 500, 40, 1, "#9a968a")
+        d.type(n.toUpperCase(), cx - 485, y + 12, { pt: 72, font: "Courier Prime" })
+        d.line(cx + 50, y + 22, cx + 600, y + 22, 1.2, "#bdbab0", 0.7)
+      })
+      d.hand("SL: back Fri? — D.K.", cx + 60, d.hmm - 40, { pt: 70, color: INK.red, font: "Caveat" })
+    },
+  },
+  {
+    id: "directory_board",
+    title: "Lobby floor directory: felt letter board (0-02)",
+    size: [0.9, 1.1],
+    paper: "felt",
+    tags: ["wall"],
+    density: 0.7,
+    draw(d) {
+      const t = (s: string, x: number, y: number, pt: number) => d.print(s, x, y, { pt, font: "Libre Franklin", weight: 600, color: "#e8e6df", spacing: 2 })
+      t("PINE HOLLOW STATION", 50, 90, 64)
+      t("FLOOR DIRECTORY", 50, 140, 40)
+      const rows: [string, string][] = [
+        ["4", "DIRECTORATE · RECEIVER ROOM"], ["4W", "CLOSED — REFURBISHMENT"], ["3", "COMPUTING & SIGNAL PROCESSING"], ["3", "TERMINAL POOL · DATA CONTROL"],
+        ["2", "SAMPLE SCIENCES · LABS 2-02–2-29"], ["2", "LAB SAFETY OFFICE 2-20"], ["1", "PROGRAM ADMINISTRATION"], ["1", "PERSONNEL & PAYROLL 1-09"],
+        ["1", "RECORDS CENTER 1-01 · LIBRARY 1-10"], ["G", "SECURITY 0-38 · BADGES 0-36"], ["G", "CAFETERIA 0-39 · AUDITORIUM 0-35"], ["G", "RECEIVING 0-16 · MAIL 0-19"],
+      ]
+      rows.forEach(([f, s], i) => {
+        const y = 240 + i * 66
+        t(f, 50, y, 40)
+        t(s, 150, y, 32)
+      })
+      t("SL — AUTHORIZED PERSONNEL ONLY", 50, 1060, 28)
+    },
+  },
+  {
+    id: "plaque_dedication",
+    title: "Bronze dedication plaque under the 1979 dish photo (0-02)",
+    size: [0.42, 0.26],
+    paper: "bronze",
+    tags: ["wall"],
+    density: 1.3,
+    draw(d) {
+      const gold = "#e2c27a"
+      d.rect(8, 8, d.wmm - 16, d.hmm - 16, 2, gold)
+      d.print("PINE HOLLOW STATION", d.wmm / 2, 52, { pt: 56, font: "Archivo Black", align: "center", color: gold })
+      d.print("ATMOSPHERIC PROPAGATION RESEARCH FACILITY", d.wmm / 2, 92, { pt: 26, font: "Libre Franklin", weight: 800, align: "center", color: gold })
+      d.print("DEDICATED JUNE 9, 1979", d.wmm / 2, 140, { pt: 30, font: "Libre Franklin", weight: 700, align: "center", color: gold })
+      d.print("\"TO LISTEN TO THE EARTH AND THE SKY\"", d.wmm / 2, 180, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: gold })
+      d.print("INTERAGENCY OFFICE OF PROPAGATION STUDIES", d.wmm / 2, 225, { pt: 18, font: "Libre Franklin", weight: 700, align: "center", color: gold })
+      d.gloss.push([0, 0, d.wmm, d.hmm, 0])
+    },
+  },
+  {
+    id: "flipchart_contracts",
+    title: "Flip chart: contracts Q4 FY84 bar chart (1-25)",
+    size: [0.66, 0.84],
+    paper: "newsprint",
+    tags: ["wall"],
+    density: 0.9,
+    draw(d) {
+      const m = (s: string, x: number, y: number, pt: number, c = "#1f2f7a") => d.hand(s, x, y, { pt, font: "Permanent Marker", color: c })
+      m("CONTRACTS — Q4 FY84", 50, 110, 64)
+      d.line(80, 700, 600, 700, 5, "#151515", 0.9)
+      d.line(80, 700, 80, 220, 5, "#151515", 0.9)
+      const bars = [["JUL", 260], ["AUG", 320], ["SEP", 410], ["OCT", 180]] as const
+      bars.forEach(([lab, h], i) => {
+        d.fill(120 + i * 120, 700 - h, 80, h, i === 3 ? "#a3241c" : "#2a5a3a", 0.85)
+        m(lab, 120 + i * 120, 760, 40, "#151515")
+      })
+      m("$ (000)", 90, 200, 36, "#151515")
+      m("Oct: SL contract on HOLD", 60, 820, 44, "#a3241c")
+    },
+  },
+  {
+    id: "blueprint_4th_floor",
+    title: "Blueprint: 4th floor refurbishment plan (4-02 site office / 4-01 wall)",
+    size: [0.9, 0.62],
+    paper: "blueprint",
+    tags: ["wall", "desk"],
+    density: 1.0,
+    draw(d) {
+      const w = "#dfe8f4"
+      d.rect(20, 20, d.wmm - 40, d.hmm - 40, 2, w)
+      // Plan: corridor and stud partitions of the west half.
+      const x0 = 50, x1 = 720, y0 = 90, y1 = 470
+      d.rect(x0, y0, x1 - x0, y1 - y0, 3, w)
+      d.line(x0, 270, x1, 270, 2, w)
+      d.line(x0, 290, x1, 290, 2, w)
+      for (let x = x0 + 70; x < x1; x += 70) {
+        d.line(x, y0, x, 270, 1.2, w)
+        d.line(x, 290, x, y1, 1.2, w)
+      }
+      d.rect(560, 150, 50, 50, 1.5, w)
+      d.print("W-1", 585, 182, { pt: 26, weight: 700, align: "center", color: w })
+      d.print("DO NOT DEMO", 585, 225, { pt: 18, weight: 800, align: "center", color: "#ffd8a0" })
+      d.print("4TH FLOOR — WEST · STRIP-OUT", x0, 70, { pt: 34, weight: 800, color: w })
+      // Title block.
+      d.rect(740, 380, 140, 220, 1.5, w)
+      ;["PINE HOLLOW STA.", "4th FL. REFURB", "SHEET A-4.1", "DRN: WF", "DATE: 8/84", "SCALE 1:100"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: w }))
+      d.print("ALL WORK HALTED 9/26", 60, 540, { pt: 30, weight: 800, color: "#ffd8a0" })
+    },
+  },
+  {
+    id: "whiteprint_ceiling",
+    title: "White print: reflected ceiling plan, 4th floor (blue-line)",
+    size: [0.9, 0.62],
+    paper: "white",
+    tags: ["wall", "desk"],
+    density: 1.0,
+    draw(d) {
+      const b = "#3b4f8e"
+      d.rect(20, 20, d.wmm - 40, d.hmm - 40, 1.5, b)
+      d.print("REFLECTED CEILING PLAN — 4TH FLOOR", 50, 70, { pt: 30, weight: 800, color: b })
+      for (let x = 60; x < 720; x += 40) d.line(x, 100, x, 500, 0.6, b, 0.7)
+      for (let y = 100; y < 500; y += 40) d.line(60, y, 720, y, 0.6, b, 0.7)
+      for (let i = 0; i < 18; i++) d.rect(80 + (i % 6) * 110, 130 + Math.floor(i / 6) * 130, 40, 80, 1.2, b, "#c9d2ea")
+      d.print("2×4 TROFFERS · SEE E-4.2", 60, 540, { pt: 22, weight: 700, color: b })
+      d.rect(740, 380, 140, 220, 1.2, b)
+      ;["PINE HOLLOW STA.", "SHEET E-4.1", "DRN: WF", "DATE: 8/84"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: b }))
+    },
+  },
+  {
+    id: "chart_circular",
+    title: "Circular chart-recorder disc, 7-day temperature (0-21 HVAC panel)",
+    size: [0.3, 0.3],
+    paper: "white",
+    tags: ["wall"],
+    density: 1.6,
+    draw(d) {
+      const c = d.ctx
+      const cx = d.wmm / 2, cy = d.hmm / 2, R = 140
+      c.save()
+      c.strokeStyle = "#7a6a9a"
+      c.lineWidth = 0.6
+      for (let r = 30; r <= R; r += 15) {
+        c.beginPath()
+        c.arc(cx, cy, r, 0, Math.PI * 2)
+        c.stroke()
+      }
+      for (let k = 0; k < 168; k += 6) {
+        const a = (k / 168) * Math.PI * 2
+        c.beginPath()
+        c.moveTo(cx + Math.cos(a) * 30, cy + Math.sin(a) * 30)
+        c.quadraticCurveTo(cx + Math.cos(a + 0.2) * 90, cy + Math.sin(a + 0.2) * 90, cx + Math.cos(a + 0.25) * R, cy + Math.sin(a + 0.25) * R)
+        c.stroke()
+      }
+      c.strokeStyle = "#a3241c"
+      c.lineWidth = 1.4
+      c.beginPath()
+      for (let k = 0; k <= 400; k++) {
+        const a = (k / 400) * Math.PI * 2 * 0.85
+        const r = 85 + Math.sin(k * 0.21) * 8 + (k > 330 ? (k - 330) * 0.8 : 0)
+        const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r
+        k ? c.lineTo(px, py) : c.moveTo(px, py)
+      }
+      c.stroke()
+      c.restore()
+      ;["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].forEach((s, i) => {
+        const a = (i / 7) * Math.PI * 2
+        d.print(s, cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4), { pt: 12, weight: 700, align: "center", color: "#5a4a7a" })
+      })
+      d.print("SL INTAKE AIR  °F", cx, cy - 4, { pt: 10, weight: 700, align: "center", color: "#5a4a7a" })
+      d.hand("10/15", cx - 12, cy + 12, { pt: 12, color: INK.black })
+    },
+  },
+  {
+    id: "printout_teletype",
+    title: "Teletype paper roll output: SL link console log",
+    size: [0.22, 0.3],
+    paper: "white",
+    tags: ["desk"],
+    density: 2.6,
+    draw(d) {
+      const l = [
+        "PHS SLLNK 84.291", "", "0258 SL-1 CARRIER OK", "0258 SL-2 CARRIER OK", "0259 SL-3 CARRIER OK", "0259 SL-4 CARRIER OK",
+        "0300 SL-5 CARRIER OK", "0300 SL-6 CARRIER OK", "0302 LINK UP 6/6", "0303 LEVEL HIGH SL-1..6", "0304 LEVEL HIGH SL-1..6",
+        "0304 PHASE LOCK 6/6", "0304 ?? ?? ?? ??", "0305 HELLO", "0305 HELLO", "0305 HELLO", "0306 CARRIER LOST",
+      ]
+      l.forEach((s, i) => d.type(s, 12, 18 + i * 15, { pt: 11, font: "Courier Prime" }))
+    },
+  },
+  sign("sign_eyewash", "Sign: EMERGENCY EYE WASH (green)", [0.16, 0.12], "#1f6a3a", "#f1ece0", [["EMERGENCY", 30], ["EYE WASH", 46], ["PUSH PADDLE · FLUSH 15 MIN", 14]], { border: "#f1ece0" }),
+  sign("sign_drench", "Sign: EMERGENCY SHOWER (green)", [0.3, 0.3], "#1f6a3a", "#f1ece0", [["EMERGENCY", 56], ["SHOWER", 90], ["PULL HANDLE DOWN", 26], ["Lab Safety ext. 270", 22]], { border: "#f1ece0" }),
+  sign("sign_halon_area", "Sign: WARNING — HALON 1301 PROTECTED AREA (machine room door)", [0.26, 0.32], "#e8c31a", "#141414", [["WARNING", 60], ["HALON 1301", 50], ["PROTECTED AREA", 30], ["WHEN ALARM SOUNDS", 22], ["LEAVE ROOM AT ONCE", 22], ["DO NOT ENTER UNTIL", 20], ["VENTILATED", 20]], { border: "#141414" }),
+  sign("sign_chem_store", "Plate: CHEMICAL STORE 2-01, under the hazard diamond", [0.3, 0.09], "#2b2e31", "#e9e6dc", [["CHEMICAL STORE 2-01", 34], ["FLAMMABLES · CORROSIVES · KEY: LAB MGR 2-08", 13]]),
+  sign("sign_cold_room", "Plate: COLD ROOM 4 °C (2-06)", [0.4, 0.14], "#2f6a44", "#f1ece0", [["COLD ROOM  4 °C", 46], ["KEEP DOOR SHUT · INSIDE RELEASE ON LATCH", 16]]),
+  sign("sign_sensor_store", "Placard: SL-ARRAY 2 — SENSOR HEADS (2-25)", [0.6, 0.14], "#e8c31a", "#141414", [["SL-ARRAY 2 — SENSOR HEADS", 44], ["SIGN OUT WITH FIELD OPS · DO NOT POWER ON BENCH", 15]]),
+  sign("plate_sl_link", "Legend plate: SL LINK STATUS (3-06)", [0.26, 0.22], "#2b2e31", "#e9e6dc", [["SL LINK STATUS", 30], ["1   2   3   4   5   6", 34], ["GREEN = CARRIER", 16], ["RED = LOST", 16]]),
+  sign("label_rack_in", "Time-card rack label: IN", [0.4, 0.05], "#ece7da", "#141414", [["IN", 60]]),
+  sign("label_rack_out", "Time-card rack label: OUT", [0.4, 0.05], "#ece7da", "#141414", [["OUT", 60]]),
+  sign("label_rack_sl", "Time-card rack strip: SL (red)", [0.4, 0.05], "#a3241c", "#f1ece0", [["SL — FIELD OPERATIONS", 40]]),
+  {
+    id: "lift_dial",
+    title: "Lift floor indicator dial face (semicircle: G 1 2 3 4)",
+    size: [0.34, 0.17],
+    paper: "plate",
+    tags: ["wall"],
+    density: 1.6,
+    draw(d) {
+      d.fill(0, 0, d.wmm, d.hmm, "#d8d2c0")
+      const cx = d.wmm / 2, cy = d.hmm - 6
+      ;["G", "1", "2", "3", "4"].forEach((s, k) => {
+        const a = -Math.PI / 2 + ((k + 0.5) / 5) * Math.PI - Math.PI / 2
+        const r = 130
+        d.print(s, cx + Math.cos(a) * r, cy + Math.sin(a) * r + 10, { pt: 60, font: "Archivo Black", align: "center", color: "#1a1a1a" })
+      })
+    },
+  },
+  {
+    id: "lift_panel",
+    title: "Lift car operating panel labels",
+    size: [0.1, 0.4],
+    paper: "plate",
+    tags: ["wall"],
+    density: 2,
+    draw(d) {
+      d.fill(0, 0, d.wmm, d.hmm, "#b9b8b0")
+      ;["4", "3", "2", "1", "G"].forEach((s, i) => d.print(s, 22, 60 + i * 55, { pt: 50, font: "Archivo Black", align: "center", color: "#1a1a1a" }))
+      d.print("ALARM", 50, 340, { pt: 22, weight: 800, align: "center", color: "#a3241c" })
+      d.print("SL ⌧ KEY", 50, 380, { pt: 20, weight: 800, align: "center", color: "#1a1a1a" })
+      d.print("CAP. 2500 LB", 50, 20, { pt: 14, weight: 700, align: "center", color: "#1a1a1a" })
+    },
+  },
+  {
+    id: "cert_elevator",
+    title: "Elevator inspection certificate (framed, in the car)",
+    size: [0.2, 0.26],
+    paper: "white",
+    tags: ["wall"],
+    density: 2.4,
+    draw(d) {
+      d.rect(6, 6, d.wmm - 12, d.hmm - 12, 1, "#3b4f8e")
+      d.print("CERTIFICATE OF INSPECTION", d.wmm / 2, 30, { pt: 15, weight: 800, align: "center", color: "#3b4f8e" })
+      d.print("PASSENGER ELEVATOR", d.wmm / 2, 42, { pt: 11, weight: 700, align: "center" })
+      const r: [string, string][] = [["LOCATION", "PINE HOLLOW STATION, CORE"], ["CAR NO.", "P-1"], ["CAPACITY", "2500 LB / 16 PERSONS"], ["SERVES", "G, 1, 2, 3, 4"], ["INSPECTED", "MAY 14, 1984"], ["EXPIRES", "MAY 31, 1985"]]
+      r.forEach(([k, v], i) => {
+        d.print(k, 16, 70 + i * 22, { pt: 8, weight: 700 })
+        d.type(v, 62, 70 + i * 22, { pt: 9, font: "Courier Prime" })
+      })
+      d.hand("H. Grieve", 100, 225, { pt: 18, font: "Nothing You Could Do", color: INK.black })
+      d.print("STATE ELEVATOR INSPECTOR", d.wmm / 2, 245, { pt: 7, align: "center" })
+      d.hand("SL stop? not on cert", 14, 205, { pt: 12, color: INK.pencil, font: "Reenie Beanie" })
+    },
+  },
+  {
+    id: "tag_halon",
+    title: "Halon bottle inspection tag",
+    size: [0.12, 0.16],
+    paper: "card",
+    tags: ["wall"],
+    density: 3,
+    draw(d) {
+      d.fill(0, 0, d.wmm, 26, "#e8c31a")
+      d.print("DO NOT REMOVE", d.wmm / 2, 17, { pt: 14, weight: 800, align: "center" })
+      d.print("HALON 1301 · 95 LB", d.wmm / 2, 40, { pt: 11, weight: 700, align: "center" })
+      ;["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].forEach((m, i) => {
+        const x = 10 + (i % 4) * 26, y = 60 + Math.floor(i / 4) * 26
+        d.rect(x, y, 22, 20, 0.3)
+        d.print(m, x + 11, y + 8, { pt: 7, align: "center" })
+        if (i < 9) d.hand("✓", x + 6, y + 19, { pt: 14, color: INK.black })
+      })
+      d.hand("1984 — TO", 20, 150, { pt: 16, color: INK.black })
+    },
+  },
+  ...[0, 1, 2, 3, 4].map((s): DocSpec => ({
+    id: `breaker_schedule_${s}`,
+    title: `Panelboard directory card, EL-${s}`,
+    size: [0.24, 0.2],
+    paper: "card",
+    tags: ["wall"],
+    density: 2,
+    draw(d) {
+      d.print(`PANEL ${s === 0 ? "G" : s}A — EL-${s}`, d.wmm / 2, 14, { pt: 13, weight: 800, align: "center" })
+      d.print("120/208 V 3Ø 4W · 225 A MAIN", d.wmm / 2, 22, { pt: 7, align: "center" })
+      const ccts = ["SPINE LTG E", "SPINE LTG W", "EXIT / EMERG", "RECEPT N", "RECEPT S", s === 3 ? "MACH RM (SEE 3-03)" : "OFFICE LTG", s === 4 ? "TEMP — CONTRACTOR" : "WC / JC", "W-1 TRUNK HTR", "SPARE", "SPARE"]
+      ccts.forEach((c, i) => {
+        const col = i % 2, row = Math.floor(i / 2)
+        const x = 8 + col * 116, y = 40 + row * 30
+        d.type(String(i * 2 + 1 + col), x, y, { pt: 9, font: "Courier Prime" })
+        d.hand(c, x + 14, y, { pt: 12, color: INK.black })
+        d.line(x, y + 4, x + 110, y + 4, 0.15)
+      })
+      if (s === 3) d.hand("trips after 0200 — reset", 20, 192, { pt: 12, color: INK.red, font: "Caveat" })
+    },
+  })),
+  ...[0, 1, 2, 3, 4, 5].map((s): DocSpec => ({
+    id: `stencil_storey_${s}`,
+    title: `Stair landing stencil: storey ${s === 0 ? "G" : s === 5 ? "ROOF" : s}`,
+    size: [0.5, 0.6],
+    paper: "concrete",
+    tags: ["wall"],
+    density: 0.5,
+    draw(d) {
+      const t = s === 0 ? "G" : s === 5 ? "R" : String(s)
+      d.print(t, d.wmm / 2, 400, { pt: 1200, font: "Archivo Black", align: "center", color: "#1e1e1e", alpha: 0.82 })
+      d.print(s === 5 ? "ROOF" : s === 0 ? "GROUND" : "FLOOR", d.wmm / 2, 540, { pt: 180, font: "Archivo Black", align: "center", color: "#1e1e1e", alpha: 0.8 })
+      for (let x = 60; x < d.wmm; x += 110) d.fill(x, 80, 6, 360, "#8d8b84", 0.5)
+    },
+  })),
+  ...Array.from({ length: 12 }, (_, i) => smallLabel(`locker_${String(i + 1).padStart(2, "0")}`, `Locker number plate ${i + 1}`, [0.06, 0.03], [String(i + 1)], { paper: "brass_plate", tags: ["wall"] })),
+  ...["SL −120 m  TRAYS 1–40", "SL −180 m  TRAYS 41–88", "SL −240 m  TRAYS 89–130", "SL −300 m  TRAYS 131–160", "SL −361 m  SPECIMENS", "SL −388 m  SPECIMENS", "SL −410 m  DO NOT OPEN", "WATER  SL-W1…W12"].map((s, i) =>
+    smallLabel(`label_depth_${i + 1}`, `Archive shelf label: ${s}`, [0.12, 0.025], [s], { tags: ["wall"] }),
+  ),
+  ...["SL-03 · 361 m · 9/12/84", "SL-07 · 372 m · 9/20/84", "SL-11 · 388 m · 10/1/84", "SL-14 · 401 m · 10/9/84", "SL-W4 water · 10/2", "SL-16 · 410 m · 10/17"].map((s, i) =>
+    smallLabel(`label_jar_${i + 1}`, `Specimen jar label: ${s}`, [0.07, 0.035], s.split(" · ").slice(0, 2).concat(s.split(" · ")[2] ?? ""), { hand: true }),
+  ),
+  ...["CORE 81-07  118–121 m", "CORE 82-22  204–207 m", "CORE 83-40  296–299 m", "CORE 84-11  388–391 m"].map((s, i) => smallLabel(`label_core_${i + 1}`, `Core box end label: ${s}`, [0.1, 0.05], s.split("  "), { hand: true })),
+  smallLabel("label_tray_sl14", "Tray label: SL-14 (containment)", [0.08, 0.03], ["SL-14  10/9"], { hand: true, color: INK.red }),
+  smallLabel("tag_sl_array", "Sensor head tag: SL-ARRAY 2", [0.06, 0.04], ["SL-ARRAY 2", "HEAD 07"], { hand: true }),
+  smallLabel("label_chem_key", "Key cabinet label: CHEM STORE", [0.12, 0.05], ["CHEM STORE 2-01", "RETURN HERE"], {}),
+  ...["RESPIRATORS", "FILM · DARKROOM", "SPILL KIT", "GLASSWARE"].map((s, i) => smallLabel(`label_cabinet_${i + 1}`, `Cabinet label: ${s}`, [0.16, 0.06], [s], { tags: ["wall"] })),
+  ...["A – BAL", "BAN – CAR", "CAS – DOR", "DOS – FEN", "FER – HAL", "HAM – KEM", "KEN – LIN", "LIP – MOR"].map((s, i) =>
+    smallLabel(`label_catalogue_${i + 1}`, `Card catalogue drawer label: ${s}`, [0.04, 0.016], [s]),
+  ),
+  ...["CONTRACTS 1982", "CONTRACTS 1983", "CONTRACTS 1984", "PERSONNEL A–L", "PERSONNEL M–Z", "SL ROTATION 81–84", "PAYROLL FY84", "IOPS CORRESP."].map((s, i) =>
+    smallLabel(`label_file_${i + 1}`, `File / shelving range label: ${s}`, [0.08, 0.04], [s], { tags: ["wall", "desk"] }),
+  ),
+  ...[
+    ["R. HALLORAN", "DIRECTOR"], ["M. ESCOBAR", "DEPUTY DIRECTOR"], ["G. PRUITT", "PROTECTIVE SVCS"], ["D. AMUNDSEN", "SAMPLE SCIENCES"],
+    ["T. WEXLER", "COMPUTING"], ["J. ORMOND", "PROGRAM ADMIN."], ["P. MOREAU", "FIELD OPERATIONS"], ["H. YOST", "PROPERTY"],
+    ["L. PRUITT", "LAB SAFETY"], ["C. BRANDT", "FACILITIES & PLANT"], ["IOPS", "OBSERVER"], ["S. KALE", "IOPS LIAISON"],
+  ].map(([n, r], i): DocSpec => ({
+    id: `namecard_${String(i + 1).padStart(2, "0")}`,
+    title: `Table name card: ${n} (${r}), 4-12`,
+    size: [0.21, 0.095],
+    paper: "card",
+    tags: ["desk"],
+    density: 1.8,
+    draw(d) {
+      d.print(n!, d.wmm / 2, 52, { pt: 46, font: "Libre Franklin", weight: 800, align: "center" })
+      d.print(r!, d.wmm / 2, 78, { pt: 20, font: "Libre Franklin", weight: 600, align: "center" })
+    },
+  })),
+  dayCard("timecard_day_1", "D. Kemper", "0412"),
+  dayCard("timecard_day_2", "G. Pell", "0431"),
+  dayCard("timecard_day_3", "M. Duquette", "0377"),
+  dayCard("timecard_day_4", "T. Okafor", "0519"),
+  ...ROOMS.map(([id, label]) => doorPlate(id, label)),
+  ...SERVICE_PLATES.map(([id, label]) => doorPlate(id, label, label === "JANITOR" || label === "STORE" ? "#2b2e31" : "#22324a")),
+]
+DOCS.push(...STAND_INS)
+
 // ---------------------------------------------------------------------------------------------------- paper
 const PAPER: Record<Paper, { color: string; rough: number; age: number; grain: number }> = {
   white: { color: "#ece7da", rough: 0.88, age: 0.45, grain: 0.06 },
@@ -1672,6 +2274,15 @@ const PAPER: Record<Paper, { color: string; rough: number; age: number; grain: n
   sticky: { color: "#efe07a", rough: 0.86, age: 0.25, grain: 0.04 },
   plate: { color: "#2b2e31", rough: 0.45, age: 0.06, grain: 0.015 },
   timecard: { color: "#e6dcc2", rough: 0.88, age: 0.35, grain: 0.05 },
+  chalk: { color: "#2b3a33", rough: 0.92, age: 0.02, grain: 0.04 },
+  white_board: { color: "#e4e4dc", rough: 0.25, age: 0.08, grain: 0.015 },
+  gypsum: { color: "#b9b6a9", rough: 0.92, age: 0.1, grain: 0.05 },
+  felt: { color: "#1b1c1e", rough: 0.97, age: 0.02, grain: 0.03 },
+  bronze: { color: "#5a4426", rough: 0.4, age: 0.05, grain: 0.03 },
+  newsprint: { color: "#e2ddcc", rough: 0.9, age: 0.3, grain: 0.04 },
+  blueprint: { color: "#2c4a78", rough: 0.88, age: 0.15, grain: 0.05 },
+  concrete: { color: "#8d8b84", rough: 0.92, age: 0.05, grain: 0.07 },
+  brass_plate: { color: "#b8955a", rough: 0.35, age: 0.05, grain: 0.02 },
 }
 
 function paperBase(d: Draw, paper: Paper) {
@@ -1791,6 +2402,7 @@ const SWATCHES: Record<string, { color: string; rough: number; metal: number }> 
   tape: { color: "#d8c9a0", rough: 0.75, metal: 0 },
   clip_black: { color: "#1c1c1e", rough: 0.4, metal: 0.6 },
   cork: { color: "#9a7348", rough: 0.95, metal: 0 },
+  paper: { color: "#e2dccb", rough: 0.9, metal: 0 },
 }
 
 export async function build(atlasSize: number, maxHeight = atlasSize) {
@@ -1813,7 +2425,7 @@ export async function build(atlasSize: number, maxHeight = atlasSize) {
   let usedH = 0
   for (let attempt = 0; attempt < 20; attempt++) {
     const sizes = DOCS.map((s) => {
-      const mm = (s.density ?? 3.2) * scale
+      const mm = (s.density ?? 3.2) * ((s.density ?? 3.2) >= 2.2 ? scale : 1)
       return { s, mm, w: Math.ceil(s.size[0] * 1000 * mm), h: Math.ceil(s.size[1] * 1000 * mm) }
     })
     const order = [...sizes].sort((a, b) => b.h - a.h)

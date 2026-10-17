@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { BUILDING } from "./layout"
-import { Batch } from "./facility/geo"
+import { Batch, flushWorld } from "./facility/geo"
 import { buildShell } from "./facility/shell"
 import { buildDish } from "./facility/dish"
 import { buildRoof } from "./facility/roof"
@@ -37,13 +37,15 @@ export function build(ctx: WorldContext): WorldModule {
 
   const shell = buildShell(ctx, root)
 
-  const b = new Batch()
+  const b = new Batch(true)
   const dish = buildDish(ctx, root, b)
   buildRoof(ctx, b)
   buildDock(ctx, b, root)
   buildGrounds(ctx, b, root)
   buildAnnex(ctx, b)
   b.flush(root, { name: "facility-details" })
+  // Build every world-frame batch together, with near-coplanar faces separated (no z-fighting anywhere).
+  flushWorld()
   // Models stream in after the first frame; colliders and contact shadows are already in place.
   void buildProps(ctx, root)
 

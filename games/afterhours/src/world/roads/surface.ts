@@ -195,7 +195,7 @@ function strip(mb: MeshBuilder, line: Line, u: number, w: number, s0: number, s1
         const uu = uc + du
         const x = p.x - p.tz * uu
         const z = p.z + p.tx * uu
-        out.push(mb.vert(x, heightAt(x, z) + asphaltY(uu, o.half, o.crown(ss)) + 0.006, z, uu, ss, fade))
+        out.push(mb.vert(x, heightAt(x, z) + asphaltY(uu, o.half, o.crown(ss)) + 0.012, z, uu, ss, fade))
       }
       return out
     }
@@ -226,7 +226,7 @@ function cracks(mb: MeshBuilder, line: Line, s0: number, s1: number, half: numbe
         const p = line.at(ss)
         const x = p.x - p.tz * uu
         const z = p.z + p.tx * uu
-        row.push(mb.vert(x, heightAt(x, z) + asphaltY(uu, half, crown(ss)) + 0.004, z, uu, ss, 0.5 + 0.2 * hash(i, seed)))
+        row.push(mb.vert(x, heightAt(x, z) + asphaltY(uu, half, crown(ss)) + 0.008, z, uu, ss, 0.5 + 0.2 * hash(i, seed)))
       }
       if (prev) {
         triUp(mb, prev[0]!, prev[1]!, row[0]!)
@@ -453,7 +453,7 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
 
   // Every road clone sets the same flags (vertex colours + polygon offset) so they share one shader; the asphalt is
   // pulled forward a little over the terrain, the paint and tar a little more.
-  const asphaltMat = decalMaterial("asphalt", -1)
+  const asphaltMat = decalMaterial("asphalt", 1)
   const meshes: [MeshBuilder, THREE.Material, boolean][] = [
     [asphalt, asphaltMat, true],
     [gravel, material("gravel"), false],
@@ -461,7 +461,7 @@ export function buildSurface(scene: THREE.Object3D, access: Line, county: Line, 
     [white, decalMaterial("road_line_white"), true],
     [tar, decalMaterial("asphalt"), true],
     [conc, decalMaterial("concrete_floor"), true],
-    [kerb, decalMaterial("concrete_floor", -1), true],
+    [kerb, decalMaterial("concrete_floor", 1), true],
   ]
   for (const [mb, mat, colors] of meshes) {
     const geo = mb.geometry(colors)
