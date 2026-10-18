@@ -372,6 +372,8 @@ export class ZombieCrowdRenderer {
   /** Former Townsfolk look: shared limb/foot models (9 entries, 0..2 from archetype 0, 3..8 shared) + 18 archetype buckets (6 × pelvis/torso/head). */
   private refinedModels: number[] | null = null
   private archModels: number[] | null = null
+  private v1RefinedModels: number[] | null = null
+  private v1ArchModels: number[] | null = null
   private archPartData: Float32Array<ArrayBuffer>[] | null = null
   private readonly archPartCounts = new Int32Array(ARCH_BUCKET_COUNT)
   private archPoolBatches: Batch[] | null = null
@@ -661,29 +663,38 @@ export class ZombieCrowdRenderer {
     return s
   }
 
-  private ensureTownsfolkPools(): void {
-    if (this.refinedModels) return
-    const { archetypes, shared } = townsfolkZombieMeshes()
+  private ensureTownsfolkPools(undead = true): void {
+    if (!this.archPartData) {
+      this.archPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
+      this.archPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
+        model: 0,
+        data: this.archPartData![i]!,
+        count: 0,
+      }))
+      this.archGhostPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
+      this.archGhostPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
+        model: 0,
+        data: this.archGhostPartData![i]!,
+        count: 0,
+        alpha: true,
+      }))
+    }
+    if (undead && this.refinedModels) return
+    if (!undead && this.v1RefinedModels) return
+    const { archetypes, shared } = townsfolkZombieMeshes(0.35, undead)
     const archModels: number[] = []
     for (const a of archetypes) {
       archModels.push(this.addModel(a.pelvis), this.addModel(a.torso), this.addModel(a.head))
     }
     const sharedModels = shared.map((m) => this.addModel(m))
-    this.archModels = archModels
-    this.refinedModels = [archModels[0]!, archModels[1]!, archModels[2]!, ...sharedModels]
-    this.archPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
-    this.archPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
-      model: archModels[i]!,
-      data: this.archPartData![i]!,
-      count: 0,
-    }))
-    this.archGhostPartData = Array.from({ length: ARCH_BUCKET_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_ARCH * INST_FLOATS))
-    this.archGhostPoolBatches = Array.from({ length: ARCH_BUCKET_COUNT }, (_, i) => ({
-      model: archModels[i]!,
-      data: this.archGhostPartData![i]!,
-      count: 0,
-      alpha: true,
-    }))
+    const refinedModels = [archModels[0]!, archModels[1]!, archModels[2]!, ...sharedModels]
+    if (undead) {
+      this.archModels = archModels
+      this.refinedModels = refinedModels
+    } else {
+      this.v1ArchModels = archModels
+      this.v1RefinedModels = refinedModels
+    }
   }
 
   private emitUprightBone(
@@ -854,11 +865,19 @@ export class ZombieCrowdRenderer {
     time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
-    const refined = Math.round(zombieTune.zombieLook ?? 0) === 1
-    if (refined) this.ensureTownsfolkPools()
+    const lookMode = Math.round(zombieTune.zombieLook ?? 0)
+    const refined = lookMode === 1 || lookMode === 2
+    const undead = lookMode !== 2
+    if (refined) {
+      this.ensureTownsfolkPools(undead)
+      const activeArchModels = undead ? this.archModels! : this.v1ArchModels!
+      for (let i = 0; i < ARCH_BUCKET_COUNT; i++) {
+        this.archPoolBatches![i]!.model = this.archGhostPoolBatches![i]!.model = activeArchModels[i]!
+      }
+    }
     this.refinedActive = refined
     this.currentArch = 0
-    const models = refined ? this.refinedModels! : this.models
+    const models = refined ? (undead ? this.refinedModels! : this.v1RefinedModels!) : this.models
     for (let i = 0; i < PART_COUNT; i++) this.poolBatches[i]!.model = this.ghostPoolBatches[i]!.model = models[i]!
     if (!refined) this.partTint.fill(1)
     this.partCounts.fill(0)
@@ -973,7 +992,7 @@ export class ZombieCrowdRenderer {
       }
 
       const s = this.ensureSlot(a, support)
-      if (refined) zombiePalette(a.seed, this.partTint, a.id)
+      if (refined) zombiePalette(a.seed, this.partTint, a.id, undead)
       let hidden = this.hiddenMask[s]!
       if (a.detachedLimbs.length > 0) {
         for (let i = 0; i < a.detachedLimbs.length; i++) {

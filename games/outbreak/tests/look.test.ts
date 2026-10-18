@@ -264,8 +264,15 @@ describe("Outbreak look", () => {
   test("Former Townsfolk zombies: deterministic archetype and decayed palette per id/seed, instanced in ZombieCrowdRenderer", () => {
     expect(ZOMBIE_ARCHETYPES.length).toBeGreaterThanOrEqual(6)
     const { archetypes, shared } = townsfolkZombieMeshes()
+    const v1 = townsfolkZombieMeshes(0.35, false)
     expect(archetypes.length).toBe(ZOMBIE_ARCHETYPES.length)
     expect(shared.length).toBe(6)
+    for (let i = 0; i < archetypes.length; i++) {
+      expect(archetypes[i]!.torso.v.length).toBeGreaterThan(v1.archetypes[i]!.torso.v.length)
+      expect(archetypes[i]!.head.v.length).toBeGreaterThan(v1.archetypes[i]!.head.v.length)
+    }
+    expect(shared[0]!.v.length).toBeGreaterThan(v1.shared[0]!.v.length)
+    expect(shared[1]!.v.length).toBeGreaterThan(v1.shared[1]!.v.length)
 
     // Deterministic for same (seed, id), varied across a crowd.
     const archSet = new Set<number>()
@@ -309,6 +316,17 @@ describe("Outbreak look", () => {
     expect([...crowd.partCounts]).toEqual([60, 60, 60, 120, 120, 120, 120, 120, 120])
     expect(townsfolkBatches.length).toBeGreaterThan(9)
     expect(townsfolkBatches.reduce((sum, b) => sum + b.count, 0)).toBe(60 * 3 + 120 * 6)
+
+    const v1Batches = crowd.draw(
+      session.view.zombies,
+      1 / 60,
+      (x, z) => supportHeight(town, x, z),
+      vision,
+      [0, 0, 96, 96],
+      { ...zombieTuning, zombieLook: 2 },
+      true,
+    )
+    expect(v1Batches.reduce((sum, b) => sum + b.count, 0)).toBe(60 * 3 + 120 * 6)
 
     const todayBatches = crowd.draw(
       session.view.zombies,

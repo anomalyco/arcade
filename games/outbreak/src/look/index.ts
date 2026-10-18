@@ -49,6 +49,7 @@ function controls(host: OutbreakLabControlHost): LabControl[] {
       options: [
         { label: "Today (boxes)", value: 0 },
         { label: "Former Townsfolk", value: 1 },
+        { label: "Former Townsfolk (v1)", value: 2 },
       ],
     },
     ...lookTrimControls,

@@ -24,6 +24,7 @@ const arg = (name: string, fallback?: string) => {
 }
 const out = resolve(arg("out", resolve(root, "../../captures/outbreak-characters"))!)
 const looks = arg("looks", "before,after")!.split(",")
+const only = arg("only")?.split(",").filter(Boolean) ?? null
 const bench = process.argv.includes("--bench")
 const rounds = Number(arg("rounds", "8"))
 mkdirSync(out, { recursive: true })
@@ -134,8 +135,10 @@ const shots: Shot[] = [
 
 const LOOKS: Record<string, { label: string; set: Record<string, number> }> = {
   before: { label: "Before (Today boxes)", set: { heroStyle: 0, zombieLook: 0 } },
-  after: { label: "After (Colour Blocks & Former Townsfolk)", set: { heroStyle: 5, zombieLook: 1 } },
+  v1: { label: "Before (Former Townsfolk v1)", set: { heroStyle: 5, zombieLook: 2 } },
+  after: { label: "After (Undead Former Townsfolk)", set: { heroStyle: 5, zombieLook: 1 } },
 }
+const activeShots = only ? shots.filter(s => only.includes(s.name)) : shots
 const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, .coop-tag, .ob-hud, [data-callout-layer], .ob-callout-layer"
 const errors: string[] = []
 const meta: Record<string, unknown> = { shots: {} }
@@ -259,7 +262,7 @@ try {
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   await page.addStyleTag({ content: `${HUD} { visibility: hidden !important; }` })
   const files: Record<string, string> = {}
-  for (const shot of shots) {
+  for (const shot of activeShots) {
     for (const id of looks) {
       const info = await setup(page, shot, LOOKS[id]!.set)
       const name = `${shot.name}-${id}`
@@ -285,6 +288,8 @@ try {
   }
 
   if (bench && looks.length > 1) {
+    const baseLookId = looks[0]!
+    const nextLookId = looks[1]!
     await page.setViewportSize({ width: 1728, height: 947 })
     meta.gpuViewport = await page.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
     const med = (xs: number[]) => {
@@ -296,31 +301,45 @@ try {
       y: 41.8 + Math.floor(i / 10) * 0.72,
       aim: Math.PI + ((i % 5) - 2) * 0.08,
     }))
-    const benchShots: Shot[] = [
-      {
-        name: "horde-60-night-21h",
-        hour: 21,
-        zoom: 34,
-        x: 21.8,
-        y: 44.0,
-        aim: 0.02,
-        flashlight: true,
-        zombies: denseHordeZombies,
-        walk: 16,
-      },
-      shots[2]!, // coop-night-21h (4 co-op survivors)
-      shots[0]!, // solo-night-21h
-    ]
+    const benchShots: Shot[] = only
+      ? [
+          {
+            name: "horde-60-night-21h",
+            hour: 21,
+            zoom: 34,
+            x: 21.8,
+            y: 44.0,
+            aim: 0.02,
+            flashlight: true,
+            zombies: denseHordeZombies,
+            walk: 16,
+          },
+        ]
+      : [
+          {
+            name: "horde-60-night-21h",
+            hour: 21,
+            zoom: 34,
+            x: 21.8,
+            y: 44.0,
+            aim: 0.02,
+            flashlight: true,
+            zombies: denseHordeZombies,
+            walk: 16,
+          },
+          shots[2]!, // coop-night-21h (4 co-op survivors)
+          shots[0]!, // solo-night-21h
+        ]
     const perf: Record<string, unknown> = {}
     for (const shot of benchShots) {
-      await setup(page, shot, LOOKS.before!.set)
+      await setup(page, shot, LOOKS[baseLookId]!.set)
       const gpuA: number[] = []
       const gpuB: number[] = []
       const cpuA: number[] = []
       const cpuB: number[] = []
       for (let r = 0; r < rounds; r++) {
         for (const after of r % 2 ? [true, false] : [false, true]) {
-          const set = LOOKS[after ? "after" : "before"]!.set
+          const set = LOOKS[after ? nextLookId : baseLookId]!.set
           const res = await page.evaluate(async ({ set, aim }) => {
             const h = (window as any).__arcadeHarness
             for (const [k, v] of Object.entries(set)) h.setLab(k, v)
@@ -362,7 +381,7 @@ try {
   }
 
   if (looks.length > 1) {
-    for (const shot of shots) {
+    for (const shot of activeShots) {
       const row = (k: string) =>
         looks.map(id => ({
           label: `${LOOKS[id]!.label}${k ? ` (${k})` : ""}`,
