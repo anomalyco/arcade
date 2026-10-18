@@ -1269,6 +1269,25 @@ fn evalWindowAreaAttenuation(dv: vec2f, d3: f32, tight: f32) -> f32 {
   return rx * ry * mullionDip * solidAngle;
 }
 
+/** Nearest building rect (any archetype) from OL.bldRects[0..7]. */
+fn nearestBuildingRect(p: vec2f) -> vec4f {
+  let nBld = i32(OL.win.w);
+  var best = OL.bldRects[0];
+  var bestD2 = 1e12;
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let b = OL.bldRects[i];
+    let dx = clamp(p.x, b.x, b.z) - p.x;
+    let dz = clamp(p.y, b.y, b.w) - p.y;
+    let d2 = dx * dx + dz * dz;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = b;
+    }
+  }
+  return best;
+}
+
 /** Nearest L-plan bungalow rect from OL.bldRects[0..7] (falls back to bldRects[0]). */
 fn nearestHouseRect(p: vec2f) -> vec4f {
   let nBld = i32(OL.win.w);
