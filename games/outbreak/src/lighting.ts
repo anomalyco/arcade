@@ -1204,8 +1204,11 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let skyLum = dot(rawSky, vec3f(0.299, 0.587, 0.114));
   let suburbanSky = vec3f(skyLum) * vec3f(1.18, 0.90, 0.62);
-  let sky = mix(rawSky, suburbanSky, w * 0.92);
-  return mix(sky * 0.42, sky, n.y * 0.5 + 0.5);
+  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
+  let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
+  let overhaulSky = mix(rawSky * vec3f(0.74, 0.95, 1.34), mix(rawSky, suburbanSky, 0.34) * 0.68, sun);
+  let sky = select(mix(rawSky, suburbanSky, w * 0.92), overhaulSky, isOverhaul);
+  return mix(sky * select(0.42, 0.30, isOverhaul), sky, n.y * 0.5 + 0.5);
 }
 
 /**
@@ -1280,6 +1283,7 @@ fn fastExpNeg(x: f32) -> f32 {
 fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: bool, mat: i32) -> vec3f {
   if (mat == 2 || mat == 3 || mat == 6 || mat == 12 || world.y >= 2.72) { return surfCol; }
   let w = clamp(OL.u0.z, 0.0, 1.0);
+  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
   if (!inRoom && OL.u1.w <= 0.20 && w <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
   var col = surfCol;
   if (!inRoom) {
@@ -1306,7 +1310,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       if (dS2 < 95.0) {
         let sodiumCol = vec3f(1.0, 0.45, 0.09);
         let poolS = fastExpNeg(dS2 * select(0.05, 0.035714, isInView)) * groundMask;
-        col += texAlbedo * (1.0 + wetPuddle * OL.u2.y * 1.15) * sodiumCol * poolS * select(1.12, 2.75, isInView) * sScale;
+        let sMult = select(1.12, 2.75, isInView) * sScale;
+        col += texAlbedo * (1.0 + wetPuddle * OL.u2.y * 1.15) * sodiumCol * poolS * sMult;
+        outbreakPracticalIrr += poolS * sMult * 0.55;
       }
     }
 
@@ -1317,9 +1323,11 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       let vWL = (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64);
       let vWR = (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64);
       let vP = (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52);
-      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView);
-      let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655) + fastExpNeg(dot(vWR, vWR) * 0.0689655)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516) * pScale * 1.05) * cutZoneScale * groundMask;
-      col += texAlbedo * vec3f(1.0, 0.54, 0.14) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, 0.72, isOverhaul);
+      let tightSpill = select(1.0, 1.38, isOverhaul);
+      let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655 * tightSpill) + fastExpNeg(dot(vWR, vWR) * 0.0689655 * tightSpill)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516 * tightSpill) * pScale * 0.92) * cutZoneScale * groundMask;
+      col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
+      outbreakPracticalIrr += spill * w * 0.75;
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0) — scaled by w*w so Noir street stays dark outside the flashlight
@@ -1327,23 +1335,26 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       let dp = (world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85)) * vec2f(0.60, 0.76);
       let dp2 = dot(dp, dp);
       if (dp2 < 26.0) {
-        let pPool = fastExpNeg(dp2 * 0.133333);
-        col += texAlbedo * vec3f(1.0, 0.54, 0.16) * pPool * 0.68 * (w * w) * (1.0 + wetPuddle * 0.65);
+        let pPool = fastExpNeg(dp2 * select(0.133333, 0.14, isOverhaul)) * select(0.68, 1.12, isOverhaul);
+        col += texAlbedo * select(vec3f(1.08, 0.58, 0.16), vec3f(1.24, 0.62, 0.14), isOverhaul) * pPool * (w * w) * (1.0 + wetPuddle * 0.65);
+        outbreakPracticalIrr += pPool * (w * w) * select(0.72, 1.25, isOverhaul);
       }
     }
   } else {
-    col += evalAreaFloorBounce(world, n) * surfCol * 8.0;
+    let floorB = evalAreaFloorBounce(world, n);
+    col += floorB * surfCol * select(8.0, 7.2, isOverhaul);
+    outbreakPracticalIrr += dot(floorB, vec3f(14.0, 9.0, 3.0));
     // Interior indirect room bounce & wall-wash halos (branchless quadrant selection)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
-      let warmTungsten = vec3f(1.0, 0.50, 0.08);
-      let roomAlbedo = surfCol * 1.35 + outbreakAlbedo * 0.18;
+      let warmTungsten = select(vec3f(1.0, 0.50, 0.08), vec3f(1.06, 0.52, 0.10), isOverhaul);
+      let roomAlbedo = surfCol * select(1.35, 1.28, isOverhaul) + outbreakAlbedo * select(0.18, 0.16, isOverhaul);
       let isNorth = world.z < 29.6;
       let isWestN = world.x < 27.2;
       let isEastS = !isNorth && world.x > 30.6;
       let isWestS = !isNorth && !isEastS && world.x < 27.0;
       let cPos = select(
-        select(select(vec2f(28.2, 32.6), vec2f(25.0, 32.8), isWestS), vec2f(33.4, 30.1), isEastS),
+        select(select(vec2f(28.2, 32.6), vec2f(25.0, 32.8), isWestS), vec2f(33.4, 30.2), isEastS),
         select(vec2f(29.0, 26.2), vec2f(25.1, 25.4), isWestN),
         isNorth
       );
@@ -1352,11 +1363,12 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         select(vec2f(0.70, 0.76), vec2f(0.66, 0.74), isWestN),
         isNorth
       );
-      let invDenom = select(
+      let baseInvDenom = select(
         select(select(1.0 / 4.5, 1.0 / 5.2, isWestS), 1.0 / 5.2, isEastS),
         1.0 / 4.8,
         isNorth
       );
+      let invDenom = baseInvDenom * select(1.0, 1.55, isOverhaul);
       let v0 = (world.xz - cPos) * cScale;
       var pool = fastExpNeg(dot(v0, v0) * invDenom);
       let isVertWall = abs(n.y) < 0.45;
@@ -1364,20 +1376,23 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         pool *= select(select(0.62, 1.25, isVertWall && world.z < 26.2), select(0.55, 1.35, isVertWall && world.z < 26.8), isWestN);
       } else if (isEastS) {
         let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
-        pool = pool * select(0.75, 1.65, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 5.8));
+        pool = pool * select(0.75, 1.55, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, 0.48, isOverhaul);
       }
+      let neScale = select(1.15, 0.02, isOverhaul);
       let aScale = select(
-        select(select(0.65, 1.28, isWestS), 1.68, isEastS),
-        select(1.15, 1.0, isWestN),
+        select(select(0.65, select(1.28, 0.96, isOverhaul), isWestS), select(1.68, 1.18, isOverhaul), isEastS),
+        select(neScale, select(1.0, 0.95, isOverhaul), isWestN),
         isNorth
       );
+      let neBias = select(vec3f(0.012, 0.0048, 0.0008), vec3f(0.0), isOverhaul);
       let bias = select(
         select(select(vec3f(0.005, 0.0020, 0.0003), vec3f(0.014, 0.0056, 0.0009), isWestS), vec3f(0.022, 0.0088, 0.0014), isEastS),
-        select(vec3f(0.012, 0.0048, 0.0008), vec3f(0.011, 0.0042, 0.0006), isWestN),
+        select(neBias, vec3f(0.011, 0.0042, 0.0006), isWestN),
         isNorth
-      );
-      let baseTerm = select(roomAlbedo * aScale, surfCol * 1.35, isNorth && isWestN);
+      ) * select(1.0, pool * 0.65, isOverhaul);
+      let baseTerm = select(roomAlbedo * aScale, surfCol * select(1.35, 1.25, isOverhaul), isNorth && isWestN);
       col += (baseTerm + bias) * warmTungsten * (pool * roomScale);
+      outbreakPracticalIrr += pool * roomScale * aScale * 0.48;
     }
   }
   return col;
@@ -1457,11 +1472,12 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
       let full = polar[(u32(round(OL.u4.w)) * RAYS + ray) * 2u].x;
       eb *= 1.0 - smoothstep(full + 0.06, full + 0.18, length(lr));
     }
-    add += outbreakAlbedo * vec3f(1.0, 0.86, 0.7) * (eb * GAIN);
+    add += outbreakAlbedo * select(vec3f(1.0, 0.86, 0.7), vec3f(1.16, 0.80, 0.42), OL.round.x > 0.5) * (eb * GAIN);
     irr += eb;
   }
   outbreakFlashMask = irr;
-  return add * OL.u5.rgb;
+  let beamTint = select(OL.u5.rgb, OL.u5.rgb * vec3f(1.08, 0.92, 0.68), OL.round.x > 0.5);
+  return add * beamTint;
 }
 
 /** How strongly the light-colour rule holds: the toggle, faded in with darkness (\`lightRuleWeight\` in look/world.ts). */

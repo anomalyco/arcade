@@ -25,7 +25,7 @@ mkdirSync(out, { recursive: true })
 const server = await createServer({
   root,
   logLevel: "error",
-  server: { host: "127.0.0.1", port: 0 },
+  server: { host: "127.0.0.1", port: 0, fs: { allow: [resolve(root, "../.."), "/Users/kit/code/open-source/arcade"] } },
   plugins: [{
     name: "rendering-round-hooks",
     enforce: "pre",
@@ -55,6 +55,7 @@ type Scene = {
   y: number
   aim: number
   flashlight: boolean
+  horde?: boolean
 }
 
 const SCENES: Record<string, Scene> = {
@@ -62,6 +63,7 @@ const SCENES: Record<string, Scene> = {
   streetNight: { name: "street-night-21h", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true },
   interiorNight: { name: "interior-night-21h", hour: 21, zoom: 46, x: 27.7, y: 31.8, aim: -Math.PI / 2, flashlight: true },
   interiorClose: { name: "interior-close-21h", hour: 21, zoom: 28, x: 27.7, y: 33.8, aim: -Math.PI / 2, flashlight: true },
+  hordeNight: { name: "horde-night-21h", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true, horde: true },
 }
 
 const RESET_KNOBS = {
@@ -85,7 +87,7 @@ async function open(width: number, height: number, dpr: number): Promise<Page> {
   })
   page.on("pageerror", e => errors.push(e.message))
   page.on("console", m => { if (m.type() === "error" || /wgsl|WGSL|validation/i.test(m.text())) errors.push(m.text()) })
-  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&peaceful=1`)
+  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&peaceful=1`, { waitUntil: "domcontentloaded", timeout: 90000 })
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 90000 })
   return page
 }
@@ -101,10 +103,35 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown> = {}, 
     h.setZoomRaw(s.zoom)
     h.setLab("propsOn", true)
     h.lookPreset(preset)
-    for (const [k, v] of Object.entries(reset)) h.setLab(k, v)
-    if (preset !== "today") h.lookPreset(preset)
+    if (preset === "legacy-today") {
+      for (const [k, v] of Object.entries(reset)) h.setLab(k, v)
+    }
     for (const [k, v] of Object.entries(knobs)) h.setLab(k, v)
     h.pose(s.x, s.y, s.aim)
+    if (s.horde) {
+      const sim = h.session?.()?.sim
+      if (sim?.ai && sim?.town) {
+        const spots: [number, number, number][] = [
+          [27.4, 37.6, Math.PI / 2],
+          [28.3, 37.2, Math.PI / 2 + 0.18],
+          [26.6, 38.2, Math.PI / 2 - 0.22],
+          [28.9, 38.5, Math.PI / 2 + 0.25],
+          [27.8, 36.2, Math.PI / 2],
+          [26.1, 36.9, Math.PI / 2 - 0.15],
+          [29.5, 37.4, Math.PI / 2 + 0.3],
+          [24.8, 39.2, 0.35],
+          [30.6, 39.4, Math.PI - 0.35],
+          [25.4, 41.6, -0.25],
+          [30.2, 41.8, Math.PI + 0.2],
+          [23.6, 40.5, 0.15],
+        ]
+        for (let i = 0; i < spots.length; i++) {
+          const [zx, zy, zAim] = spots[i]!
+          const z = sim.ai.spawnZombie(sim.town, zx, zy, "chase", i)
+          if (z) z.h = zAim
+        }
+      }
+    }
     const p = h.state().player
     p.flashlightOn = s.flashlight
     p.flashlightOutput = s.flashlight ? 1 : 0
@@ -113,10 +140,10 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown> = {}, 
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
       const props = h.state().props
       const rugs = h.interiors?.()
-      if (props?.ready && (rugs?.settled ?? true) && performance.now() - t0 > 450) break
-      await new Promise(r => setTimeout(r, 25))
+      if (props?.ready && (rugs?.settled ?? true) && performance.now() - t0 > 120) break
+      await new Promise(r => setTimeout(r, 15))
     }
-    for (let i = 0; i < 20; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
+    for (let i = 0; i < 8; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     return {
       hour: h.state().hour,
       props: h.state().props?.lastFrame ?? null,
@@ -149,16 +176,16 @@ const med = (xs: number[]) => {
   return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2
 }
 
-async function measurePair(page: Page, scene: Scene, knobs: Record<string, unknown>, preset = "today") {
+async function measurePair(page: Page, scene: Scene, knobs: Record<string, unknown>, preset = "today", basePreset = "legacy-today") {
   const a: number[] = []
   const b: number[] = []
   for (let r = 0; r < rounds; r++) {
     for (const on of r % 2 ? [true, false] : [false, true]) {
-      await setup(page, scene, on ? knobs : {}, on ? preset : "today")
+      await setup(page, scene, on ? knobs : {}, on ? preset : basePreset)
       const ms = await page.evaluate(async () => {
         const h = (window as any).__arcadeHarness
         const v: number[] = []
-        for (let i = 0; i < 16; i++) v.push(await h.renderer.measure(h.render))
+        for (let i = 0; i < 10; i++) v.push(await h.renderer.measure(h.render))
         return v.slice(2).sort((x: number, y: number) => x - y)[1]!
       })
       ;(on ? b : a).push(ms)
@@ -177,7 +204,71 @@ try {
 
   if (mode === "baseline") {
     for (const s of Object.values(SCENES)) {
-      await capture(page, `baseline-${s.name}.png`, s)
+      await capture(page, `baseline-${s.name}.png`, s, {}, "legacy-today")
+    }
+  } else if (mode === "overhaul" || mode === "overhaul-stills") {
+    const legDay = await capture(page, "overhaul-before-street-day-14h.png", SCENES.streetDay!, {}, "legacy-today")
+    const newDay = await capture(page, "overhaul-after-street-day-14h.png", SCENES.streetDay!, {}, "today")
+
+    const legNight = await capture(page, "overhaul-before-street-night-21h.png", SCENES.streetNight!, {}, "legacy-today")
+    const newNight = await capture(page, "overhaul-after-street-night-21h.png", SCENES.streetNight!, {}, "today")
+
+    const legInt = await capture(page, "overhaul-before-interior-night-21h.png", SCENES.interiorNight!, {}, "legacy-today")
+    const newInt = await capture(page, "overhaul-after-interior-night-21h.png", SCENES.interiorNight!, {}, "today")
+
+    const legHorde = await capture(page, "overhaul-before-horde-night-21h.png", SCENES.hordeNight!, {}, "legacy-today")
+    const newHorde = await capture(page, "overhaul-after-horde-night-21h.png", SCENES.hordeNight!, {}, "today")
+
+    const paintDir = existsSync(resolve(import.meta.dir, "paintovers/paint-interior-night-21h.png"))
+      ? resolve(import.meta.dir, "paintovers")
+      : resolve(out, "paintovers")
+    const sheetPage = await browser.newPage({ deviceScaleFactor: 1 })
+    if (existsSync(resolve(paintDir, "paint-interior-night-21h.png"))) {
+      await sheet(
+        sheetPage,
+        resolve(out, "sheet-overhaul-comparison.png"),
+        "Outbreak Look Overhaul (AR-47) · Legacy Today vs Paint-Over Target vs Shipped New Default (Today · v4)",
+        [
+          { label: "1a. Before (Legacy Today) · Street Day 14:00 (ochre wash + 4m colour circle + road stipple)", file: legDay },
+          { label: "1b. Paint-Over Target · Street Day 14:00", file: resolve(paintDir, "paint-street-day-14h.png") },
+          { label: "1c. Shipped Default (Today · v4) · Street Day 14:00 (full-sun pigment, macadam asphalt, deep canopy shadow)", file: newDay },
+          { label: "2a. Before (Legacy Today) · Street Night 21:00 (warm sky wash, flat grey road)", file: legNight },
+          { label: "2b. Paint-Over Target · Street Night 21:00", file: resolve(paintDir, "paint-street-night-21h.png") },
+          { label: "2c. Shipped Default (Today · v4) · Street Night 21:00 (punchy golden beam & porch pools, cool indigo moonlight)", file: newNight },
+          { label: "3a. Before (Legacy Today) · Start House 21:00 (51% sepia pre-wash + unseen noise veil + practical desat)", file: legInt },
+          { label: "3b. Paint-Over Target · Start House 21:00", file: resolve(paintDir, "paint-interior-night-21h.png") },
+          { label: "3c. Shipped Default (Today · v4) · Start House 21:00 (saturated warm rooms, cool indigo unseen bedrooms, LOD0 satin props)", file: newInt },
+          { label: "4a. Before (Legacy Today) · Horde Night 21:00", file: legHorde },
+          { label: "4b. Paint-Over Target · Street Night 21:00 (reference)", file: resolve(paintDir, "paint-street-night-21h.png") },
+          { label: "4c. Shipped Default (Today · v4) · Horde Night 21:00 (warm beam lit crowd vs cool moonlit silhouettes)", file: newHorde },
+        ],
+        3,
+      )
+    }
+    await sheetPage.close()
+    await page.close()
+
+    if (mode === "overhaul") {
+      const gpuPage = await open(1728, 947, 2)
+      meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+      const gpuResults: Record<string, unknown> = {}
+      const pairs: { name: string; scene: Scene; knobs: Record<string, unknown>; preset: string }[] = [
+        { name: "total-overhaul-street-day-14h", scene: SCENES.streetDay!, knobs: {}, preset: "today" },
+        { name: "total-overhaul-street-night-21h", scene: SCENES.streetNight!, knobs: {}, preset: "today" },
+        { name: "total-overhaul-interior-night-21h", scene: SCENES.interiorNight!, knobs: {}, preset: "today" },
+        { name: "total-overhaul-horde-night-21h", scene: SCENES.hordeNight!, knobs: {}, preset: "today" },
+        { name: "pass-ground-weathered-only", scene: SCENES.streetNight!, knobs: { groundStyle: 1 }, preset: "legacy-today" },
+        { name: "pass-light-sat-split-only", scene: SCENES.interiorNight!, knobs: { lightSatStyle: 2 }, preset: "legacy-today" },
+        { name: "pass-models-lod0-satin-only", scene: SCENES.interiorNight!, knobs: { modelStyle: 1 }, preset: "legacy-today" },
+        { name: "pass-post-grade-only", scene: SCENES.interiorNight!, knobs: { styleGrade: 1 }, preset: "legacy-today" },
+      ]
+      for (const p of pairs) {
+        const res = await measurePair(gpuPage, p.scene, p.knobs, p.preset, "legacy-today")
+        gpuResults[p.name] = res
+        console.log("GPU", p.name, JSON.stringify(res))
+      }
+      meta.gpu = gpuResults
+      await gpuPage.close()
     }
   } else {
     // 1. Axis A: Ground candidates (street day & street night)

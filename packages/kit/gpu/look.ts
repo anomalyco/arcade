@@ -1564,6 +1564,9 @@ fn lookApplyTonemapFast(hdr: vec3f, mode: i32, huePreserve: f32) -> vec3f {
   if (mode == 1) {
     return lookTonemapFilmic(x);
   }
+  if (mode == 2) {
+    return lookTonemapAgX(x);
+  }
   let baseAces = lookTonemapACES(x);
   let peak = max(x.r, max(x.g, x.b));
   let hp = select(huePreserve, 0.52, mode == 3);
