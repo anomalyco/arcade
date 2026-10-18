@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
-import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
 import { propDressingState } from "../src/props/state"
 import {
   beanTint,
@@ -60,6 +60,8 @@ describe("Outbreak look", () => {
       saturation: DEFAULT_LOOK_TRIMS.worldSaturation,
       selectiveColor: DEFAULT_LOOK_TRIMS.litColour,
       practicalWarmth: 0,
+      vignette: DEFAULT_LOOK_TRIMS.nightVignette,
+      grain: base.grain + DEFAULT_LOOK_TRIMS.nightGrain,
     })
     expect(lightRuleWeight(DEFAULT_LOOK_TRIMS, 0.5)).toBeCloseTo(0.5)
     const settings = createOutbreakSettings()
@@ -190,7 +192,7 @@ describe("Outbreak look", () => {
     expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
   })
 
-  test("rendering round axes: presets sync groundStyle and modelStyle, today ships v6, today-v5 keeps v5, today-v4 keeps v4, and legacy-today restores 0 across all axes", () => {
+  test("rendering round axes: presets sync groundStyle and modelStyle, today ships v7, today-v6 keeps v6, today-v5 keeps v5, today-v4 keeps v4, and legacy-today restores 0 across all axes", () => {
     const settings = createOutbreakSettings()
     applyLookPreset(settings, "legacy-today")
     expect(settings.look.groundStyle).toBe(0)
@@ -213,7 +215,7 @@ describe("Outbreak look", () => {
     expect(settings.look.outOfLightDesat).toBe(0.25)
     expect(settings.look.outOfSightDarkening).toBe(0.25)
     expect(propDressingState.modelStyle).toBe(4)
-    applyLookPreset(settings, "today")
+    applyLookPreset(settings, "today-v6")
     expect(settings.look.groundStyle).toBe(1)
     expect(settings.look.lightSatStyle).toBe(5)
     expect(settings.look.modelStyle).toBe(4)
@@ -223,10 +225,29 @@ describe("Outbreak look", () => {
     expect(settings.look.outOfSightDarkening).toBe(1)
     expect(settings.look.worldSaturation).toBe(0.03)
     expect(settings.look.visionLift).toBe(0.03)
+    expect(settings.look.beamWarmth).toBe(1)
+    expect(settings.look.nightVignette).toBe(0.82)
+    expect(propDressingState.modelStyle).toBe(4)
+    applyLookPreset(settings, "today")
+    expect(settings.look.groundStyle).toBe(1)
+    expect(settings.look.lightSatStyle).toBe(6)
+    expect(settings.look.modelStyle).toBe(4)
+    expect(settings.look.styleGrade).toBe(6)
+    expect(settings.look.shroudDarkness).toBe(1)
+    expect(settings.look.outOfLightDesat).toBe(1)
+    expect(settings.look.outOfSightDarkening).toBe(1)
+    expect(settings.look.worldSaturation).toBe(0.03)
+    expect(settings.look.visionLift).toBe(0.03)
+    expect(settings.look.beamWarmth).toBe(0.28)
+    expect(settings.look.beamTightness).toBe(1)
+    expect(settings.look.zombieRimSpec).toBe(1.0)
+    expect(settings.look.nightGrain).toBe(0.05)
+    expect(settings.look.nightVignette).toBe(0.35)
     expect(propDressingState.modelStyle).toBe(4)
     const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
-    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([5, 4, 5, 1])
+    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([6, 4, 6, 1])
     expect([...packed.slice(OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([1, 1, 1, 0.03])
+    expect([...packed.slice(OUTBREAK_V7_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.28, 1, 1, 0.05])
   })
 
   test("co-op seats tint the simple figure a little toward their jacket", () => {

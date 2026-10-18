@@ -596,6 +596,8 @@ fn applyOutbreakFogOfWar(
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
   let isV5 = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
   let isV6 = OL.round.x > 4.5 || OL.round.z > 4.5;
+  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
+  let sunVal = clamp(F.monitorBounds.w, 0.0, 1.0);
   let shroudDark = clamp(OL.shroud.x, 0.0, 2.0);
   let unlitDesat = clamp(OL.shroud.y, 0.0, 1.5);
   let sightDark = clamp(OL.shroud.z, 0.0, 2.0);
@@ -622,16 +624,18 @@ fn applyOutbreakFogOfWar(
   let baseMemTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
   let v6UnlitTint = mix(vec3f(0.52, 0.86, 1.56), vec3f(0.93, 0.96, 1.02), clamp(unlitDesat, 0.0, 1.0));
   let overhaulUnlitTint = select(vec3f(0.52, 0.86, 1.56), v6UnlitTint, isV6);
-  let memTint = select(baseMemTint, mix(overhaulUnlitTint, vec3f(1.08, 0.94, 0.74), outbreakLitMask), isOverhaul);
+  let memTint = select(baseMemTint, mix(overhaulUnlitTint, select(vec3f(1.08, 0.94, 0.74), mix(vec3f(1.08, 0.94, 0.74), vec3f(1.02, 0.99, 0.95), sunVal), isV7), outbreakLitMask), isOverhaul);
   // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule); unlit memory desaturates heavily in v6.
-  let baseMemSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0) * select(1.0, clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0), isV6);
-  let memSat = mix(baseMemSat, 1.0, outbreakLitMask);
+  let v6MemSatScale = select(clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0), mix(clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0), clamp(0.72 - 0.34 * unlitDesat, 0.18, 0.85), sunVal), isV7 && !inRoom);
+  let baseMemSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0) * select(1.0, v6MemSatScale, isV6);
+  let memSat = mix(baseMemSat, select(1.0, mix(1.0, 0.58, sunVal * (1.0 - visible)), isV7 && !inRoom), outbreakLitMask);
   let v6MemUnlit = memDim * clamp(0.90 - 0.34 * sightDark, 0.20, 1.0);
+  let v7DayMemUnlit = mix(v6MemUnlit, clamp(0.68 - 0.14 * (sightDark - 1.0), 0.42, 0.88), sunVal);
   let v6MemLit = mix(memDim * 0.86, 1.0, clamp(1.0 - 0.22 * sightDark, 0.45, 1.0));
   let effMemDim = select(
     memDim,
     mix(
-      select(memDim * select(0.76, 0.90, !inRoom && isV5), v6MemUnlit, isV6),
+      select(memDim * select(0.76, 0.90, !inRoom && isV5), select(v6MemUnlit, v7DayMemUnlit, isV7 && !inRoom), isV6),
       select(select(memDim * 0.94, 1.0, isV5), v6MemLit, isV6),
       outbreakLitMask,
     ),
@@ -675,7 +679,8 @@ fn applyOutbreakFogOfWar(
     let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * explored;
     let v6ExtUnlit = clamp((0.46 + 0.18 * explored) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
     let v6ExtLit = clamp((0.76 + 0.14 * explored) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
-    let v6Ext = mix(v6ExtUnlit, v6ExtLit, outbreakLitMask);
+    let v7DayExt = mix(clamp(0.72 + 0.14 * explored - 0.14 * (sightDark - 1.0), 0.44, 0.96), clamp(0.88 + 0.08 * explored, 0.65, 1.0), outbreakLitMask);
+    let v6Ext = select(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), mix(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), v7DayExt, sunVal), isV7);
     let extUnexp = select(0.78 + 0.22 * explored, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
     baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }

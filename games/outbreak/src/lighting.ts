@@ -265,7 +265,9 @@ export const OUTBREAK_BEAN_UNIFORM_OFFSET = OUTBREAK_DUST_UNIFORM_OFFSET + 4
 export const OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 /** Shroud & out-of-light controls (see `look/world.ts`): shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation. */
 export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
+/** Dying Light v7 trims (see `look/world.ts`): beamWarmth, beamTightness, zombieRimSpec, nightGrain. */
+export const OUTBREAK_V7_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_V7_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -569,6 +571,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 1] = look.outOfLightDesat ?? DEFAULT_LOOK_TRIMS.outOfLightDesat
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 2] = look.outOfSightDarkening ?? DEFAULT_LOOK_TRIMS.outOfSightDarkening
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 3] = look.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation
+  out[OUTBREAK_V7_UNIFORM_OFFSET] = look.beamWarmth ?? DEFAULT_LOOK_TRIMS.beamWarmth
+  out[OUTBREAK_V7_UNIFORM_OFFSET + 1] = look.beamTightness ?? DEFAULT_LOOK_TRIMS.beamTightness
+  out[OUTBREAK_V7_UNIFORM_OFFSET + 2] = look.zombieRimSpec ?? DEFAULT_LOOK_TRIMS.zombieRimSpec
+  out[OUTBREAK_V7_UNIFORM_OFFSET + 3] = look.nightGrain ?? DEFAULT_LOOK_TRIMS.nightGrain
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1180,6 +1186,7 @@ struct OutbreakLightingUniforms {
   bean: vec4f, // Soft Bean: light wrap, sheen, sheen exponent, own colour in the dark
   round: vec4f, // rendering round: lightSatStyle, modelStyle, styleGrade, groundStyle
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
+  v7: vec4f, // Dying Light v7 trims: beamWarmth, beamTightness, zombieRimSpec, nightGrain
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1214,6 +1221,7 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
   let isV5 = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
   let isV6 = OL.round.x > 4.5 || OL.round.z > 4.5;
+  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
   let isV5OrV6 = isV5 || isV6;
   let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
   let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun));
@@ -1227,7 +1235,7 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
     ),
     isV5OrV6,
   );
-  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, 0.16) * 1.08, isV5OrV6);
+  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, select(0.16, 0.24, isV7)) * select(1.08, 1.02, isV7), isV5OrV6);
   let overhaulSky = mix(nightSky, daySky, sun);
   let sky = select(mix(rawSky, suburbanSky, w * 0.92), overhaulSky, isOverhaul);
   return mix(sky * select(0.42, select(0.30, select(0.40, 0.34, isV6), isV5OrV6), isOverhaul), sky, n.y * 0.5 + 0.5);

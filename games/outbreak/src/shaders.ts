@@ -191,7 +191,7 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
 ${outbreakFogOfWarDeclarationsWgsl}
 ${interiorDeclarationsWgsl(outbreakInteriorRefs)}
 ${outbreakHeroWgsl}`,
-  directional: "mix(select(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), select(vec3f(0.42, 0.68, 1.18), select(vec3f(0.54, 0.84, 1.48), vec3f(0.42, 0.50, 0.62), OL.round.x > 4.5 || OL.round.z > 4.5), OL.round.x > 3.5 || OL.round.z > 3.5), OL.round.x > 0.5 || OL.round.z > 0.5), select(vec3f(1.02, 0.79, 0.52), vec3f(1.52, 1.24, 0.88), OL.round.x > 3.5 || OL.round.z > 3.5), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(select(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), select(vec3f(0.42, 0.68, 1.18), select(vec3f(0.54, 0.84, 1.48), vec3f(0.42, 0.50, 0.62), OL.round.x > 4.5 || OL.round.z > 4.5), OL.round.x > 3.5 || OL.round.z > 3.5), OL.round.x > 0.5 || OL.round.z > 0.5), select(vec3f(1.02, 0.79, 0.52), select(vec3f(1.52, 1.24, 0.88), vec3f(1.38, 1.14, 0.82), OL.round.x > 5.5 || OL.round.z > 5.5), OL.round.x > 3.5 || OL.round.z > 3.5), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
       if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
@@ -226,6 +226,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
     let isV5Roof = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
     let isV6Roof = OL.round.x > 4.5 || OL.round.z > 4.5;
+    let isV7Roof = OL.round.x > 5.5 || OL.round.z > 5.5;
     let isV5OrV6Roof = isV5Roof || isV6Roof;
     let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
     let duskGlow = select(0.0, smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun)), isV5OrV6Roof);
@@ -256,13 +257,15 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let rExp = max(textureSampleLevel(exploredTex, floorSamp, (o.world.xz - OL.win.xy) * F.map.xy, 0.0).r, rSight.y);
       let rDim = select(0.55, select(0.42, clamp(0.48 - 0.14 * clamp(OL.shroud.z, 0.0, 2.0), 0.22, 0.72), isV6Roof), isOverhaul);
       col = applyOutbreakUnseenScene(col, col * rDim, o.world, n, false, mat, select(rSight.x, 1.0, isV5Roof), rExp, rSight.z);
-      let rShroudScale = select(1.0, clamp(0.88 * OL.shroud.x, 0.0, 1.8), isV6Roof);
+      let rDayWeight = select(1.0, clamp(1.0 - max(sun, duskGlow * 0.85) * 0.78, 0.22, 1.0), isV7Roof);
+      let rShroudScale = select(1.0, clamp(0.88 * OL.shroud.x * rDayWeight, 0.0, 1.8), isV6Roof);
       outbreakFlashMask = -outbreakUnseenAlpha * rShroudScale;
     }
     if (isV5Roof) {
       outbreakFlashMask = max(outbreakFlashMask, max(sun * 0.85, max(duskGlow * 0.88, 0.36)));
     } else if (isV6Roof) {
-      let roofDayMask = max(sun * roofSight * 0.85, duskGlow * roofSight * 0.88);
+      let effRoofSight = select(roofSight, mix(roofSight, 0.42 + 0.58 * roofSight, max(sun, duskGlow)), isV7Roof);
+      let roofDayMask = max(sun * effRoofSight * 0.85, duskGlow * effRoofSight * 0.88);
       outbreakFlashMask = select(outbreakFlashMask, roofDayMask, roofDayMask > 0.12);
     }
   } else {
@@ -272,7 +275,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let modStyle = i32(round(OL.round.y));
     let gradeStyle = i32(round(OL.round.z));
     let isV5 = satStyle == 4 || gradeStyle == 4;
-    let isV6 = satStyle == 5 || gradeStyle == 5;
+    let isV6 = satStyle >= 5 || gradeStyle >= 5;
+    let isV7 = satStyle == 6 || gradeStyle == 6;
     let isV5OrV6 = isV5 || isV6;
     let shroudDark = clamp(OL.shroud.x, 0.0, 2.0);
     let unlitDesat = clamp(OL.shroud.y, 0.0, 1.5);
@@ -414,9 +418,13 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let lightRule = outbreakLightRule();
     let baseSunLit = clamp((F.monitorBounds.w - 0.14) / 0.52, 0.0, 1.0) * select(1.0, 0.55, inRoom);
     let fdSun = floorData(o.world.xz);
+    let fdSunOut = select(fdSun, floorData(o.world.xz + n.xz * 0.55), isV7 && mat == 4 && !inRoom);
     let sunFacing = select(clamp(dot(n, F.monitorBounds.xyz) * 0.55 + 0.45, 0.22, 1.0), 1.0, mat == 22 || mat == 12);
-    let sunShadow = select(clamp((fdSun.g - 0.36) / 0.52, 0.0, 1.0) * (1.0 - fdSun.r * 0.52) * sunFacing, clamp(fdSun.g * 1.35, 0.0, 0.72), inRoom);
-    let v6SunLit = baseSunLit * mix(1.0, 0.14 + 0.86 * sunShadow, clamp(unlitDesat, 0.0, 1.2));
+    let heightSun = select(0.0, smoothstep(0.45, 1.45, o.world.y) * select(0.75, 0.92, mat == 22), isV7 && !inRoom);
+    let v7GroundSun = clamp((fdSunOut.g - 0.54) / 0.38, 0.0, 1.0) * (1.0 - fdSunOut.r * 0.62 * (1.0 - heightSun));
+    let rawExtSunShadow = select(clamp((fdSun.g - 0.36) / 0.52, 0.0, 1.0) * (1.0 - fdSun.r * 0.52), max(v7GroundSun, heightSun), isV7) * sunFacing;
+    let sunShadow = select(rawExtSunShadow, clamp(fdSun.g * 1.35, 0.0, 0.72), inRoom);
+    let v6SunLit = baseSunLit * mix(1.0, select(0.14, 0.22, isV7) + select(0.86, 0.78, isV7) * sunShadow, clamp(unlitDesat, 0.0, 1.2));
     let sunLit = select(0.0, max(select(baseSunLit, v6SunLit, isV6), duskGlow * select(0.84, 0.45, inRoom)), satStyle > 0);
     var litMask = select(outbreakColorMask(flashIrr), 0.88, mat == 2);
     if ((satStyle == 3 || isV5OrV6) && mat != 2) {
@@ -476,7 +484,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let shSlope = select(0.72, 1.15, mat == 20);
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(shKnee)) * shSlope);
     }
-    let knownSight = mix(outbreakSeen, max(outbreakSeen, outbreakKnown), select(lightRule, max(lightRule, sunLit), isV5));
+    let knownSight = mix(outbreakSeen, max(outbreakSeen, outbreakKnown), select(lightRule, max(lightRule, select(sunLit, sunLit * (0.35 + 0.65 * outbreakSeen), isV7)), isV5 || isV7));
     let isHeroAny = mat == 12 && ((o.aux > 4.5 && o.aux < 5.5) || o.aux > 6.5);
     if (satStyle > 0 && mat != 6) {
       let heroLitFloor = select(0.0, select(0.88, 0.28 * outbreakSeen, isV6), isV5OrV6 && isHeroAny);
@@ -484,10 +492,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let colLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       let albLum = max(dot(outbreakAlbedo, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
       let truePigment = outbreakAlbedo * (colLum / albLum);
-      let pigShare = select(select(0.42, 0.52, satStyle == 1), select(0.54, 0.68, mat == 12), isV5OrV6);
+      let v7DayTone = select(1.0, mix(1.0, 0.62, sunVal), isV7 && mat != 12);
+      let pigShare = select(select(0.42, 0.52, satStyle == 1), select(0.54 * v7DayTone, 0.68, mat == 12), isV5OrV6);
       col = mix(col, truePigment, litActive * pigShare);
       let cLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      let chromaBoost = 1.0 + select(select(0.44, 0.56, satStyle == 3), 0.58, isV5OrV6) * litActive;
+      let chromaBoost = 1.0 + select(select(0.44, 0.56, satStyle == 3), 0.58 * v7DayTone, isV5OrV6) * litActive;
       col = max(vec3f(0.0), vec3f(cLum) + (col - vec3f(cLum)) * chromaBoost);
       // Enrich warm practical/beam pools at night so golden light pools hit target chroma (~0.28..0.30)
       let nightPool = clamp(litActive * lightRule * (1.0 - duskGlow * 0.65), 0.0, 1.0);
@@ -502,9 +511,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let splitAmt = select(0.74, select(0.68, clamp(0.92 * unlitDesat, 0.0, 0.98), isV6), isV5OrV6);
         col = mix(col, mix(col, vec3f(sLum) * moonSplitCol, splitAmt), unlitNight);
         if (isV6 && sunVal > 0.05) {
-          let dayUnlit = clamp((1.0 - sunShadow * outbreakSeen) * sunVal * (1.0 - litMask) * (1.0 - heroExempt), 0.0, 1.0);
+          let daySunSight = select(sunShadow * outbreakSeen, sunShadow * (0.24 + 0.76 * outbreakSeen), isV7);
+          let dayUnlit = clamp((1.0 - daySunSight) * sunVal * (1.0 - litMask) * (1.0 - heroExempt), 0.0, 1.0);
           let dLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let dayDesatAmt = clamp(dayUnlit * (0.58 + 0.30 * (1.0 - outbreakSeen)) * unlitDesat, 0.0, 0.95);
+          let dayDesatScale = select(0.58 + 0.30 * (1.0 - outbreakSeen), 0.36 + 0.32 * (1.0 - outbreakSeen), isV7);
+          let dayDesatAmt = clamp(dayUnlit * dayDesatScale * unlitDesat, 0.0, select(0.95, 0.76, isV7));
           col = mix(col, vec3f(dLum) * vec3f(0.95, 0.97, 1.02), dayDesatAmt);
         }
       } else if (satStyle == 3) {
@@ -521,7 +532,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let v6UnlitBright = clamp(0.64 - 0.16 * (shroudDark - 1.0), 0.28, 0.94);
         let nightUnlitDark = select(0.36, select(mix(0.38, 0.84, duskGlow), mix(v6UnlitDark, 0.78, duskGlow), isV6), isV5OrV6);
         let nightUnlitBright = select(0.80, select(mix(0.94, 1.20, duskGlow), mix(v6UnlitBright, 1.14, duskGlow), isV6), isV5OrV6);
-        let dayShadeScale = select(1.0, mix(clamp(0.66 - 0.14 * (shroudDark - 1.0), 0.35, 1.0), 1.0, sunShadow * (0.45 + 0.55 * outbreakSeen)), isV6);
+        let dayShadeFloor = clamp(select(0.66, 0.76, isV7) - 0.14 * (shroudDark - 1.0), 0.35, 1.0);
+        let dayShadeCeil = select(1.0, 1.04, isV7);
+        let dayShadeScale = select(1.0, mix(dayShadeFloor, dayShadeCeil, sunShadow * (0.45 + 0.55 * outbreakSeen)), isV6);
         let darkScale = mix(mix(nightUnlitDark, select(0.94, 1.04, isV5OrV6), litMask), select(0.28, 0.68 * dayShadeScale, isV5OrV6), dayFactor);
         let brightScale = mix(mix(nightUnlitBright, select(1.12, 1.24, isV5OrV6), litMask), select(0.64, 1.34 * mix(0.78, 1.0, dayShadeScale), isV5OrV6), dayFactor);
         col *= mix(darkScale, brightScale, toe);
@@ -542,11 +555,13 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let beanKeep = select(0.0, clamp(OL.bean.w, 0.0, 1.0), mat == 12 && o.aux > 5.5 && o.aux < 6.5);
     let heroKeep = select(beanKeep, select(0.25, select(0.94, v6HeroKeep, isV6), isV5OrV6), isHeroAny) * lightRule;
     let baseFlashMask = max(lit + lift * (1.0 - lit), heroKeep);
-    let extUnseenScale = select(1.0, select(0.16, clamp(0.92 * shroudDark, 0.0, 1.8), isV6), !inRoom && isV5OrV6);
-    let litCancel = select(lit, max(litMask * knownSight, sunShadow * outbreakSeen * sunVal), isV6);
+    let v7ExtUnseen = mix(0.22 * clamp(shroudDark, 0.0, 1.8), clamp(0.92 * shroudDark, 0.0, 1.8), max(lightRule, duskGlow * 0.35));
+    let extUnseenScale = select(1.0, select(0.16, select(clamp(0.92 * shroudDark, 0.0, 1.8), v7ExtUnseen, isV7), isV6), !inRoom && isV5OrV6);
+    let litCancel = select(lit, max(litMask * knownSight, max(sunShadow * (select(1.0, 0.35, isV7) + select(0.0, 0.65, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.45 + 0.55 * outbreakSeen), isV7))), isV6);
+    let shroudFloorRule = select(mix(0.38, 1.18, lightRule), 1.18 * lightRule * (1.0 - duskGlow * 0.78), isV7);
     let unlitShroudFloor = select(
       0.0,
-      (1.0 - smoothstep(0.02, 0.30, max(litMask, sunShadow * sunVal))) * mix(0.38, 1.18, lightRule) * clamp(shroudDark, 0.0, 2.0) * (1.0 - select(0.0, 0.65, isHeroAny)),
+      (1.0 - smoothstep(0.02, 0.30, max(litMask, max(sunShadow * sunVal, select(0.0, duskGlow * 0.75, isV7))))) * shroudFloorRule * clamp(shroudDark, 0.0, 2.0) * (1.0 - select(0.0, 0.65, isHeroAny)),
       isV6 && OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001,
     );
     let rawUnseen = max(outbreakUnseenAlpha * extUnseenScale * select(1.0, clamp(0.35 + 0.65 * sightDark, 0.0, 2.0), isV6), unlitShroudFloor);
