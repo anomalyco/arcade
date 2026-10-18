@@ -1724,7 +1724,9 @@ Candidates from the code audits; measure and playtest before moving any into the
   (`src/bullet-impacts.ts`: flash 70 ms, sparks 120 ms, dust 260 ms, per surface, at the points `shotImpacts` gives the
   sound, delayed by the round's travel) are presentation fed by state the client already has, so co-op needs no wire
   fields. Hit-stop per hit kind, the impact flash, the lunge and an on-foot camera lead are typed settings in Lab ›
-  Feel and Lab › Camera (`src/feel-tuning.ts`).
+  Feel and Lab › Camera (`src/feel-tuning.ts`). Kit picked the defaults from clips (D-35, D-36): camera distance 38 (was
+  46) and a movement lead of 0.3 s of travel, with no aim lead. The follow eases the lead at 3.5/s, so the view runs
+  ahead while moving and is centred once you stop. Vehicles, horde watch and peeks skip the foot lead.
 - **Hit-stop is presentation only.** Freeze or slow what is drawn (`HitStop.step(dt)` in `@arcade/kit/client/camera`),
   never the simulation clock, so prediction and the server stay in step.
 - **Scale shake with trauma squared, and keep feel primitives composable.** `Camera.add(trauma, dir?, kick?)` in

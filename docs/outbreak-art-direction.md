@@ -47,6 +47,11 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
 6. **Painted ground, not noise.** Ground detail is dirt drifts, dried stains with darker rims, scuffed wear,
    leaf litter and cracks at 0.4–3 m in world space (`paintedGround` in `src/ground.ts`, `groundDetail`). Every
    term fades or widens with `surfaceFootprint`, so it holds still while walking.
+7. **Lamps are pools with a hot core.** A porch, window or room lamp reads as a warm pool: a small warm-white core
+   where its light is strongest, amber falloff around it and dark beyond. Never a clipped, flat yellow blob. Lamp
+   light is added light, never painted into albedo, so the flashlight crossing a pool keeps its own colour.
+   `lampRolloff` (Look · Lights) rolls lamp-lit surfaces off with the hue held and turns the hottest part warm white,
+   weighted by how much of the light is lamp rather than beam.
 
 ## Targets by hour
 
