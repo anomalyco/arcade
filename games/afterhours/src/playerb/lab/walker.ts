@@ -11,6 +11,8 @@ const STEP_DOWN = 0.5
 const GRAVITY = 9.81
 const JUMP_V = Math.sqrt(2 * GRAVITY * 0.48)
 
+const LADDER_FACE = { normal: [0, 0, 1] as const, plane: LADDER.z - 0.1 }
+
 export type WalkInput = { fwd: number; side: number; run: boolean; crouch: boolean; jump: boolean; yawRate: number; pitchRate: number }
 
 export class LabWalker {
@@ -30,6 +32,10 @@ export class LabWalker {
   /** Speed factors moving backwards / sideways (1 = the game's current controller). */
   backK = 1
   sideK = 1
+  /** The lab ladder's rung plane while climbing (PlayerState.ladder). */
+  get ladder() {
+    return this.onLadder ? LADDER_FACE : null
+  }
   readonly input: WalkInput = { fwd: 0, side: 0, run: false, crouch: false, jump: false, yawRate: 0, pitchRate: 0 }
   private eyeOff = 0
   private eyeV = 0

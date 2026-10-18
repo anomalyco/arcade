@@ -2,14 +2,15 @@ import * as THREE from "three/webgpu"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { LabPanel, type LabControl, type LabSettings } from "@arcade/kit/lab-panel"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
-import { PlayerBodyB } from "../body"
+import { BODY_LAYER, CHARACTERS, CharacterBody, HEAD_LAYER, clipSpeeds, saveCharacter, savedCharacter } from "../body"
 import { buildStage, groundAt, LADDER, RAMP, STAIRS } from "./stage"
 import { LabWalker } from "./walker"
 import "./lab.css"
 
-// Body B lab (bodyb.html): the natively skinned UAL janitor in the same room as body.html (floor, 0.17 m stairs, 15°
-// ramp, ladder), driven by the same stand-in controller, with an orbit camera, close-up cameras, a button per move
-// and slow motion, so it can be compared side by side with /body.html.
+// Character lab (bodyb.html): the player character component (src/playerb/body.ts) on any roster character, in a
+// room with a floor, 0.17 m stairs, a 15° ramp and a ladder, driven by a stand-in controller, with an orbit camera,
+// close-up cameras, a first-person inset (the game's camera layers), a button per move and slow motion. The character
+// picker shares its choice with the game (localStorage).
 //
 // Automation (query only): ?script=<name>, &speed=0.25, &cam=side|front|back|3q|top|hands|feet|knees|shoulders|face,
 // &pose=<clip>&phase=<0..1> holds one clip at a phase (0 = left heel strike), &skeleton=1, &shot=1 hides the UI.
@@ -47,24 +48,33 @@ const labControls: LabControl[] = [
 ]
 
 const walker = new LabWalker()
-const body = new PlayerBodyB({ url: `${import.meta.env.BASE_URL}models/playerb/janitor_b.glb`, ground: groundAt })
+const startCharacter = params.get("character") ?? savedCharacter()
+const body = new CharacterBody({ character: startCharacter, ground: groundAt, ladderTop: () => LADDER.top })
 scene.add(body.root)
 
 const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.03, 200)
 cam.position.set(3, 1.6, 3)
+cam.layers.enable(BODY_LAYER)
+cam.layers.enable(HEAD_LAYER)
+const fpInset = new THREE.PerspectiveCamera(68, 1.6, 0.15, 200)
+// The game's view camera: the body without its head (HEAD_LAYER).
+fpInset.layers.enable(BODY_LAYER)
 const orbit = new OrbitControls(cam, canvas)
 orbit.target.set(0, 1, 0)
 orbit.enableDamping = true
 let skeleton: THREE.SkeletonHelper | null = null
-body.ready.then(() => {
+const onModel = () => {
+  if (skeleton) scene.remove(skeleton)
   skeleton = new THREE.SkeletonHelper(body.model!)
   ;(skeleton.material as THREE.LineBasicMaterial).depthTest = false
   skeleton.renderOrder = 10
   scene.add(skeleton)
-})
+  status.clips = body.debug.clips
+  status.speeds = clipSpeeds(body.character)
+}
 
 // ------------------------------------------------------------------------------------------- scripted moves
-type Script = { label: string; treadmill: boolean; at?: [number, number, number]; input: (t: number) => Partial<typeof walker.input> & { flashlight?: boolean; pitch?: number } }
+type Script = { label: string; treadmill: boolean; at?: [number, number, number]; input: (t: number) => Partial<typeof walker.input> & { flashlight?: boolean; pitch?: number; press?: "button" | "door" } }
 const pulse = (t: number, every: number) => t % every < 1 / 60
 const SCRIPTS: Record<string, Script> = {
   demo: {
@@ -84,6 +94,9 @@ const SCRIPTS: Record<string, Script> = {
     },
   },
   idle: { label: "Idle", treadmill: true, input: () => ({}) },
+  press_button: { label: "Button", treadmill: true, input: (t) => ({ press: pulse(t + 2.8, 3) ? "button" : undefined }) },
+  press_door: { label: "Door", treadmill: true, input: (t) => ({ press: pulse(t + 2.8, 3) ? "door" : undefined }) },
+  walk_press: { label: "Walk + button", treadmill: true, input: (t) => ({ fwd: 1, flashlight: true, press: pulse(t + 2.8, 3) ? "button" : undefined }) },
   torch: { label: "Torch walk", treadmill: true, input: () => ({ flashlight: true, fwd: 1, pitch: Number(params.get("pitch") ?? 0) }) },
   torch_still: { label: "Torch still", treadmill: true, input: () => ({ flashlight: true, pitch: Number(params.get("pitch") ?? 0) }) },
   torch_crouch: { label: "Torch crouch", treadmill: true, input: (t) => ({ flashlight: true, crouch: true, fwd: t % 4 > 1.5 ? 1 : 0, pitch: Number(params.get("pitch") ?? 0) }) },
@@ -166,7 +179,26 @@ realBtn.onclick = () => {
   settings["lab.realSpeeds"] = !settings["lab.realSpeeds"]
   realLabel()
 }
-bar.append(camSel, speedSel, realBtn)
+const charSel = document.createElement("select")
+for (const c of CHARACTERS) charSel.append(new Option(c.name, c.id, c.id === startCharacter, c.id === startCharacter))
+charSel.onchange = () => {
+  saveCharacter(charSel.value)
+  void body.setCharacter(charSel.value).then(onModel)
+}
+const insetBtn = document.createElement("button")
+let inset = params.get("inset") !== "0"
+insetBtn.textContent = "FP inset"
+insetBtn.onclick = () => (inset = !inset)
+const eBtn = document.createElement("button")
+eBtn.textContent = "Button (E)"
+eBtn.onclick = () => body.interact("button")
+const dBtn = document.createElement("button")
+dBtn.textContent = "Door (R)"
+dBtn.onclick = () => body.interact("door")
+const fBtn = document.createElement("button")
+fBtn.textContent = "Torch (F)"
+fBtn.onclick = () => (walker.flashlight = !walker.flashlight)
+bar.append(charSel, camSel, speedSel, realBtn, insetBtn, eBtn, dBtn, fBtn)
 
 // ------------------------------------------------------------------------------------------- keyboard (free walk)
 const keys = new Set<string>()
@@ -175,6 +207,8 @@ window.addEventListener("keydown", (e) => {
   keys.add(e.code)
   if (e.repeat) return
   if (e.code === "KeyF") walker.flashlight = !walker.flashlight
+  if (e.code === "KeyE") body.interact("button")
+  if (e.code === "KeyR") body.interact("door")
   if (e.code === "Space") {
     walker.input.jump = true
     e.preventDefault()
@@ -199,6 +233,11 @@ scene.add(flash, flash.target)
 // Automation: `pause()` then `advance(n)` steps exactly n frames of 1/30 s each (deterministic video frames).
 const stepper = { paused: false, pending: 0 }
 const status = {
+  speeds: {} as Record<string, number>,
+  setCharacter: (id: string) => body.setCharacter(id).then(onModel),
+  info: () => body.info(),
+  /** Automation: hold the view pitch (rad) during scripts. */
+  pitchHold: undefined as number | undefined,
   clear: 0,
   clearMin: 0,
   clearAt: "", pause: () => (stepper.paused = true), advance: (n: number) => (stepper.pending += n), pending: () => stepper.pending, slideAvg: 0, slideMax: 0, ready: false, frames: 0, state: "", clips: {} as unknown, errors: [] as string[], body, walker, startScript, setCam: (c: Cam) => (camPreset = c), settings }
@@ -208,7 +247,7 @@ startScript(params.get("script"))
 let ready = false
 body.ready.then(() => {
   ready = true
-  status.clips = body.debug.clips
+  onModel()
   const pose = params.get("pose")
   if (pose) body.setPose({ clip: pose, phase: Number(params.get("phase") ?? 0) })
 })
@@ -240,6 +279,8 @@ renderer.setAnimationLoop(() => {
     Object.assign(k, { fwd: 0, side: 0, run: false, crouch: false, yawRate: 0, pitchRate: 0 }, si)
     if (si.flashlight !== undefined) walker.flashlight = si.flashlight
     if (si.pitch !== undefined) walker.pitch = si.pitch
+    if (status.pitchHold !== undefined) walker.pitch = status.pitchHold
+    if (si.press) body.interact(si.press)
   } else {
     k.fwd = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0)
     k.side = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0)
@@ -249,7 +290,8 @@ renderer.setAnimationLoop(() => {
     k.pitchRate = ((keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0)) * 1.4
   }
   walker.update(dt)
-  body.hideHead = camPreset === "fp"
+  if (camPreset === "fp") cam.layers.disable(HEAD_LAYER)
+  else cam.layers.enable(HEAD_LAYER)
   body.eyeAnchor = camPreset === "fp"
   body.update(dt, walker)
 
@@ -261,15 +303,15 @@ renderer.setAnimationLoop(() => {
   const bone = (n: string) => body.model?.getObjectByName(n)?.getWorldPosition(new THREE.Vector3())
   const near: Partial<Record<Cam, [string, number, number, number]>> = {
     // [bone, forward, right, up] offsets in metres.
-    hands: ["hand_r", 0.35, 0.75, 0.1],
-    feet: ["ball_r", 0.25, 0.9, 0.12],
-    knees: ["calf_r", 0.3, 1.1, 0.1],
-    shoulders: ["spine_03", 0.9, 0.9, 0.25],
+    hands: ["RightHand", 0.35, 0.75, 0.1],
+    feet: ["RightToeBase", 0.25, 0.9, 0.12],
+    knees: ["RightLeg", 0.3, 1.1, 0.1],
+    shoulders: ["Spine2", 0.9, 0.9, 0.25],
     face: ["Head", 0.75, 0.25, 0.05],
-    above: ["spine_02", 0.35, 0.3, 1.5],
-    grip: ["hand_r", 0.15, 0.3, 0.12],
-    gripin: ["hand_r", 0.3, -0.12, 0.05],
-    gripunder: ["hand_r", 0.18, 0.15, -0.3],
+    above: ["Spine1", 0.35, -0.3, 1.5],
+    grip: ["LeftHand", 0.15, -0.3, 0.12],
+    gripin: ["LeftHand", 0.3, 0.12, 0.05],
+    gripunder: ["LeftHand", 0.18, -0.15, -0.3],
   }
   const n = near[camPreset]
   if (n) {
@@ -304,7 +346,7 @@ renderer.setAnimationLoop(() => {
   const fpCam = camPreset === "fp"
   if (cam.fov !== (fpCam ? 68 : 40) || cam.near !== (fpCam ? 0.16 : 0.03)) {
     cam.fov = fpCam ? 68 : 40
-    cam.near = fpCam ? 0.16 : 0.03
+    cam.near = fpCam ? 0.15 : 0.03
   }
   // Flashlight: from the torch lens along the barrel (the arm's pose sets it); beyond the arm's aim range the beam
   // leads toward the view, as the game's light follows the camera.
@@ -329,7 +371,26 @@ renderer.setAnimationLoop(() => {
   }
   cam.aspect = canvas.clientWidth / canvas.clientHeight
   cam.updateProjectionMatrix()
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight)
   renderer.render(scene, cam)
+  // First-person inset (the game's view): the body with its head hidden, from the eye.
+  if (inset && !fpCam && ready) {
+    const W = canvas.clientWidth
+    const H = canvas.clientHeight
+    const iw = Math.round(W * 0.3)
+    const ih = Math.round(iw * 0.625)
+    fpInset.position.set(walker.eye.x, walker.eye.y, walker.eye.z)
+    fpInset.rotation.set(walker.pitch, walker.yaw, 0, "YXZ")
+    fpInset.aspect = iw / ih
+    fpInset.updateProjectionMatrix()
+    renderer.setScissorTest(true)
+    renderer.setScissor(W - iw - 12, 12, iw, ih)
+    renderer.setViewport(W - iw - 12, 12, iw, ih)
+    renderer.render(scene, fpInset)
+    renderer.setScissorTest(false)
+    renderer.setViewport(0, 0, W, H)
+  }
 
   if (ready && script && scriptT > 1 && dt > 0) {
     for (let i = 0; i < 2; i++) {

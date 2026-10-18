@@ -17,7 +17,7 @@ const flag = (name: string, def: string) => {
   args.splice(i, 2)
   return v
 }
-const tag = flag("tag", "")
+const tag = flag("tag", "") + (args.includes("--character") ? `-${args[args.indexOf("--character") + 1]}` : "")
 const [w, h] = flag("size", "900x900").split("x").map(Number) as [number, number]
 const out = `${import.meta.dir}/../../captures/bodyb`
 mkdirSync(out, { recursive: true })
@@ -39,7 +39,9 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 type B = { ready: boolean; errors: string[]; clips: unknown; body: { setPose(p: unknown): void }; setCam(c: string): void; startScript(n: string | null): void; settings: Record<string, unknown> }
 const pitch = flag("pitch", "")
-const q = mode === "poses" ? "shot=1&skeleton=0" : `shot=1&script=${what}&cam=${flag("cam", "side")}&speed=${flag("speed", "1")}${pitch ? `&pitch=${pitch}` : ""}${args.includes("--nohud") ? "&hud=0" : ""}`
+const charQ = flag("character", "")
+const matdbg = flag("matdbg", "")
+const q = (charQ ? `character=${charQ}&` : "") + (matdbg ? `matdbg=${matdbg}&` : "") + (mode === "poses" ? "shot=1&skeleton=0&hud=0&inset=0" : `shot=1&script=${what}&cam=${flag("cam", "side")}&speed=${flag("speed", "1")}${pitch ? `&pitch=${pitch}` : ""}${args.includes("--nohud") ? "&hud=0" : ""}`)
 await page.goto(`http://localhost:5196/bodyb.html?${q}`)
 await page.waitForFunction(() => (globalThis as { __bodyB?: B }).__bodyB?.ready, null, { timeout: 90_000 })
 await page.waitForTimeout(300)
