@@ -54,6 +54,11 @@ export type MocapClip = {
   still?: boolean
   /** Mirror left/right (a strafe the other way). */
   mirror?: boolean
+  /**
+   * Align the loop so its travel is exactly this direction from the body's forward (degrees; 0 forward, 180 back,
+   * −90 the actor's right). Default: keep the actor's mean facing.
+   */
+  travel?: number
 }
 
 /** How much of the actor's own head/neck motion to keep relative to the chest (the 100STYLE actor looks at the floor). */
@@ -165,7 +170,7 @@ export function bakeMocap(doc: Doc, dir: string, clips: MocapClip[], read: (f: s
     const pa = frameWorld(bvh, a).wp[hips]!
     const pb = frameWorld(bvh, b).wp[hips]!
     const travel = Math.atan2(pb.x - pa.x, pb.z - pa.z)
-    const heading = facing(bvh, a, b)
+    const heading = spec.travel === undefined || spec.still ? facing(bvh, a, b) : travel - (spec.travel * Math.PI) / 180
     const unturn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -heading)
     const scale = new Vector3().setFromMatrixPosition(W(pelvis)).y / (rest.wp[hips]!.y || 1)
     // Per-frame target local rotations.

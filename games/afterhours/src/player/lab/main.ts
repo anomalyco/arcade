@@ -39,7 +39,9 @@ const settings: LabSettings = {
   "lab.skeleton": params.get("skeleton") === "1",
   "lab.inset": params.get("inset") !== "0",
   "lab.follow": true,
-  "lab.walk": 1.9,
+  "lab.walk": 0.95,
+  "lab.run": 1.9,
+  "lab.crouchSpeed": 0.75,
 }
 const labControls: LabControl[] = [
   { key: "lab.speed", label: "Playback speed", group: "Lab", unit: "×", min: 0.1, max: 1, step: 0.05 },
@@ -47,10 +49,13 @@ const labControls: LabControl[] = [
   { key: "lab.skeleton", label: "Skeleton overlay", group: "Lab", type: "toggle" },
   { key: "lab.inset", label: "First-person inset", group: "Lab", type: "toggle" },
   { key: "lab.follow", label: "Camera follows the body", group: "Lab", type: "toggle" },
-  { key: "lab.walk", label: "Walk speed (run = 2.3×)", group: "Lab", unit: "m/s", min: 0.8, max: 3, step: 0.05 },
+  { key: "lab.walk", label: "Walk speed", group: "Lab", unit: "m/s", min: 0.5, max: 3, step: 0.05 },
+  { key: "lab.run", label: "Run speed (Shift)", group: "Lab", unit: "m/s", min: 1, max: 6, step: 0.05 },
+  { key: "lab.crouchSpeed", label: "Crouch speed", group: "Lab", unit: "m/s", min: 0.3, max: 2, step: 0.05 },
 ]
 
 const walker = new LabWalker()
+;(globalThis as { __labWalker?: LabWalker }).__labWalker = walker
 const body = new PlayerBody({ url: `${import.meta.env.BASE_URL}models/player/janitor.glb`, settings, ground: groundAt })
 scene.add(body.root)
 
@@ -93,6 +98,8 @@ const SCRIPTS: Record<string, Script> = {
   walk: { label: "Walk", treadmill: true, input: () => ({ fwd: 1 }) },
   run: { label: "Run", treadmill: true, input: () => ({ fwd: 1, run: true }) },
   back: { label: "Back", treadmill: true, input: () => ({ fwd: -1 }) },
+  jog: { label: "Jog", treadmill: true, input: () => ({ fwd: 1, run: true }) },
+  jog_back: { label: "Jog back", treadmill: true, input: () => ({ fwd: -1, run: true }) },
   strafe_l: { label: "Strafe L", treadmill: true, input: () => ({ side: -1 }) },
   strafe_r: { label: "Strafe R", treadmill: true, input: () => ({ side: 1 }) },
   diag: { label: "Diagonal", treadmill: true, input: () => ({ fwd: 1, side: 1 }) },
@@ -169,7 +176,7 @@ new LabPanel(settings, [...labControls, ...BODY_CONTROLS], params, () => keys.cl
 addEventListener("resize", () => renderer.setSize(innerWidth, innerHeight, false))
 
 // ------------------------------------------------------------------------------------------- loop
-const status = { ready: false, frames: 0, state: "", slide: [0, 0], slideAvg: 0, slideMax: 0, clips: {} as unknown, errors: [] as string[], settings, body, step: (dt: number) => simulate(dt), penetration: () => body.penetration(groundAt), view: (v: string | null) => (shotView = v), time: () => scriptT }
+const status = { ready: false, frames: 0, state: "", slide: [0, 0], slideAvg: 0, slideMax: 0, clips: {} as unknown, errors: [] as string[], settings, body, step: (dt: number) => simulate(dt), penetration: () => body.penetration(groundAt), torchClearance: () => body.torchClearance(), view: (v: string | null) => (shotView = v), time: () => scriptT }
 ;(globalThis as { __bodyLab?: unknown }).__bodyLab = status
 window.addEventListener("error", (e) => status.errors.push(String(e.message)))
 // `set=key:value,key:value` (automation): settings overrides, e.g. set=body.footIK:0.
@@ -294,6 +301,8 @@ renderer.setAnimationLoop(() => {
 function simulate(real: number) {
   const dt = real * Number(settings["lab.speed"])
   walker.walk = Number(settings["lab.walk"])
+  walker.run = Number(settings["lab.run"])
+  walker.crouchSpeed = Number(settings["lab.crouchSpeed"])
   walker.treadmill = settings["lab.treadmill"] === true
 
   // Input: a script, or the keyboard.
@@ -416,7 +425,7 @@ function draw(real: number) {
     const sp = Math.hypot(walker.vel.x, walker.vel.z)
     hud.textContent = [
       `${script ? `script ${script}  t ${scriptT.toFixed(1)}s` : "free walk: WASD, Shift run, C crouch, Space jump, F torch, E reach, arrows look"}  ×${Number(settings["lab.speed"]).toFixed(2)}`,
-      `state ${body.debug.state}  warp ${body.debug.warp.toFixed(0)}°  speed ${sp.toFixed(2)} m/s  phase ${body.debug.phase.toFixed(2)}${walker.treadmill ? "  (treadmill)" : ""}`,
+      `state ${body.debug.state}  speed ${sp.toFixed(2)} m/s  phase ${body.debug.phase.toFixed(2)}${walker.treadmill ? "  (treadmill)" : ""}`,
       `blend ${w}`,
       `foot slide while planted  L ${(body.debug.slide[0] * 100).toFixed(1)}  R ${(body.debug.slide[1] * 100).toFixed(1)} cm/s  ${body.debug.planted.map((p) => (p ? "▮" : "▯")).join("")}   script avg ${status.slideAvg} max ${status.slideMax} cm/s`,
     ].join("\n")

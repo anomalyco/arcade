@@ -18,12 +18,17 @@ import { bakeMocap, type MocapClip } from "./mocap"
 
 /** Cuts from the 100STYLE "Neutral" takes (straight, steady windows found by scanning hip travel). */
 const MOCAP: MocapClip[] = [
-  { name: "walk", file: "Neutral_FW.bvh", from: 8.0, to: 11.4, cycles: 1 },
-  { name: "walk_back", file: "Neutral_BW.bvh", from: 17.6, to: 20.1, cycles: 1 },
-  // The side-walk take steps to the actor's right; the left strafe is the same cycle mirrored.
-  { name: "strafe_r", file: "Neutral_SW.bvh", from: 82.2, to: 84.7, cycles: 1 },
-  { name: "strafe_l", file: "Neutral_SW.bvh", from: 82.2, to: 84.7, cycles: 1, mirror: true },
+  // Windows chosen by scanning each take for steady facing (< 1° turn) and straight travel; `travel` is the direction
+  // the loop is aligned to (0 forward, 180 back, −90 the actor's right), so its feet move exactly opposite it.
+  { name: "walk", file: "Neutral_FW.bvh", from: 8.0, to: 11.4, cycles: 1, travel: 0 },
+  { name: "walk_back", file: "Neutral_BW.bvh", from: 9.7, to: 12.3, cycles: 1, travel: 180 },
+  { name: "strafe_r", file: "Neutral_SW.bvh", from: 28.9, to: 31.4, cycles: 1, travel: -90 },
+  { name: "strafe_l", file: "Neutral_SW.bvh", from: 28.9, to: 31.4, cycles: 1, travel: -90, mirror: true },
   { name: "idle", file: "Neutral_ID.bvh", from: 12, to: 18, cycles: 0, still: true },
+  { name: "jog", file: "Neutral_FR.bvh", from: 7.5, to: 10.0, cycles: 1, travel: 0 },
+  { name: "jog_back", file: "Neutral_BR.bvh", from: 8.1, to: 10.2, cycles: 1, travel: 180 },
+  { name: "jog_r", file: "Neutral_SR.bvh", from: 44.6, to: 46.9, cycles: 1, travel: -90 },
+  { name: "jog_l", file: "Neutral_SR.bvh", from: 44.6, to: 46.9, cycles: 1, travel: -90, mirror: true },
 ]
 
 /**
@@ -87,7 +92,7 @@ const ual = await io.read(await download(UAL1, join(cache, "UAL1.glb")))
 rebind(doc, ual, [
   { name: "idle", clip: "Idle_Loop" },
   { name: "walk", clip: "Walk_Loop" },
-  { name: "jog", clip: "Jog_Fwd_Loop" },
+  { name: "run", clip: "Jog_Fwd_Loop" },
   { name: "sprint", clip: "Sprint_Loop" },
   { name: "crouch_idle", clip: "Crouch_Idle_Loop" },
   { name: "crouch_walk", clip: "Crouch_Fwd_Loop" },

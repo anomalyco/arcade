@@ -39,7 +39,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 type B = { ready: boolean; errors: string[]; clips: unknown; body: { setPose(p: unknown): void }; setCam(c: string): void; startScript(n: string | null): void; settings: Record<string, unknown> }
 const pitch = flag("pitch", "")
-const q = mode === "poses" ? "shot=1&skeleton=0" : `shot=1&script=${what}&cam=${flag("cam", "side")}&speed=${flag("speed", "1")}${pitch ? `&pitch=${pitch}` : ""}`
+const q = mode === "poses" ? "shot=1&skeleton=0" : `shot=1&script=${what}&cam=${flag("cam", "side")}&speed=${flag("speed", "1")}${pitch ? `&pitch=${pitch}` : ""}${args.includes("--nohud") ? "&hud=0" : ""}`
 await page.goto(`http://localhost:5196/bodyb.html?${q}`)
 await page.waitForFunction(() => (globalThis as { __bodyB?: B }).__bodyB?.ready, null, { timeout: 90_000 })
 await page.waitForTimeout(300)
@@ -105,7 +105,7 @@ if (mode === "poses") {
   for (let i = 0; i < frames; i++) {
     await page.evaluate((s) => (globalThis as unknown as { __bodyB: B & { advance(n: number): void; settings: Record<string, unknown> } }).__bodyB.settings["lab.speed"] = s, 1 / slow)
     await page.evaluate(() => (globalThis as unknown as { __bodyB: { advance(n: number): void } }).__bodyB.advance(1))
-    await page.waitForFunction(() => (globalThis as unknown as { __bodyB: { pending(): number } }).__bodyB.pending() === 0)
+    await page.waitForFunction(() => (globalThis as unknown as { __bodyB: { pending(): number } }).__bodyB.pending() === 0, null, { timeout: 120_000 })
     await page.waitForTimeout(20)
     await page.screenshot({ path: `${dir}/${String(i).padStart(5, "0")}.png` })
   }

@@ -19,20 +19,20 @@ FINGERS = ["index", "middle", "ring", "pinky"]
 
 # Pose parameters (degrees):
 #   flex   upper arm swung forward from hanging          abd    upper arm out from the side
-#   pron   forearm pronation from thumb-up               beam   torch pitch (straight ahead, 4° toward the midline)
+#   pron   forearm pronation from thumb-up               beam   torch pitch      yaw   beam toward the midline
 # The barrel crosses the palm obliquely (power grip); the hand is turned so the barrel points along the beam and the
 # forearm follows the hand with ULNAR° of ulnar deviation (the wrist neither flexed nor extended).
 POSES = {
-    "Carry_Level": dict(flex=-2, abd=20, pron=34, beam=-6),
-    "Carry_Up": dict(flex=10, abd=20, pron=30, beam=30),
-    "Carry_Down": dict(flex=8, abd=21, pron=40, beam=-34),
+    "Carry_Level": dict(flex=-6, abd=12, pron=34, beam=-2, yaw=14),
+    "Carry_Up": dict(flex=2, abd=12, pron=30, beam=32, yaw=12),
+    "Carry_Down": dict(flex=-6, abd=14, pron=40, beam=-32, yaw=12),
+    "Carry_Run": dict(flex=-2, abd=12, pron=34, beam=8, yaw=14),
     # Crouched (UAL crouch: trunk pitched ~50° forward): in the trunk frame the arm reaches forward and the beam
     # points up, so in the world the hand is in front of the knees and the beam slightly down.
-    "Carry_Crouch": dict(flex=105, abd=18, pron=30, beam=62),
-    "Carry_Run": dict(flex=2, abd=20, pron=34, beam=4),
+    "Carry_Crouch": dict(flex=105, abd=18, pron=30, beam=62, yaw=6),
 }
-TUNNEL = 44  # barrel vs hand axis in a power grip
-ULNAR = 22  # ulnar deviation of a hand gripping a torch (anatomical max ~30-35°); no flexion/extension
+TUNNEL = 72  # barrel vs hand axis in a power grip
+ULNAR = 32  # ulnar deviation of a hand gripping a torch (anatomical max ~30-35°); no flexion/extension
 
 
 def frame(p, s):
@@ -155,7 +155,7 @@ def author_carry(arm):
     # Power grip: the barrel crosses the palm obliquely, TUNNEL° from the hand's long axis toward the thumb, under the
     # bases of the proximal phalanges (between the index and middle knuckles, a little proximal).
     C = (hand_dir0 * math.cos(rad(TUNNEL)) - across0 * math.sin(rad(TUNNEL))).normalized()
-    A = (H["index_01_r"] + H["middle_01_r"]) * 0.5 + palm0 * depth - hand_dir0 * 0.012
+    A = (H["index_01_r"] + H["middle_01_r"]) * 0.5 + palm0 * depth - hand_dir0 * 0.02
     F, fpos = wrap_hand(H, parent, A, C, Rb, palm0, across0, hand_dir0)
     mid = fpos["middle_01_r"]
     centre = A + C * (mid - A).dot(C)
@@ -165,7 +165,8 @@ def author_carry(arm):
         f, a = rad(P["flex"]), rad(P["abd"])
         upper = Vector((-math.sin(a), -math.sin(f) * math.cos(a), -math.cos(f) * math.cos(a))).normalized()
         bp = rad(P["beam"])
-        beam = Vector((math.sin(rad(4)) * math.cos(bp), -math.cos(rad(4)) * math.cos(bp), math.sin(bp))).normalized()
+        yw = rad(P.get("yaw", 4))
+        beam = Vector((math.sin(yw) * math.cos(bp), -math.cos(yw) * math.cos(bp), math.sin(bp))).normalized()
         pr = rad(P["pron"])
         # Palm faces the body's midline (+X for the right hand), turned down by the pronation.
         n1 = Vector((math.cos(pr), 0, -math.sin(pr)))
@@ -183,7 +184,10 @@ def author_carry(arm):
 
         G = {n: R[n].copy() for n in bones.keys()}
         p0 = (H["lowerarm_r"] - H["upperarm_r"]).normalized()
-        G["upperarm_r"] = align(p0, p0.cross(Vector((0, -1, 0))), upper, hinge) @ R["upperarm_r"]
+        f0 = (H["hand_r"] - H["lowerarm_r"]).normalized()
+        # Rest elbow hinge: the bind pose's own elbow bend (T-pose rests: the forward flexion axis).
+        h0 = p0.cross(f0) if p0.cross(f0).length > 0.2 else p0.cross(Vector((0, -1, 0)))
+        G["upperarm_r"] = align(p0, h0, upper, hinge) @ R["upperarm_r"]
         p0 = (H["hand_r"] - H["lowerarm_r"]).normalized()
         G["lowerarm_r"] = align(p0, across0, fore, across) @ R["lowerarm_r"]
         G["hand_r"] = Qh @ R["hand_r"]

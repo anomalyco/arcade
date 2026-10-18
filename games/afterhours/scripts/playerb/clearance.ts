@@ -17,6 +17,18 @@ const chrome = readdirSync(cache)
   .find(existsSync)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--mute-audio", "--use-angle=metal"] })
 for (const arg of args) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await measure(arg)
+      break
+    } catch (e) {
+      if (attempt) console.log(`${arg}: failed (${(e as Error).message.split("\n")[0]})`)
+    }
+  }
+}
+await browser.close()
+
+async function measure(arg: string) {
   const [script, pitch] = arg.split(":") as [string, string | undefined]
   const page = await browser.newPage({ viewport: { width: 320, height: 240 } })
   await page.goto(`http://localhost:5196/bodyb.html?shot=1${pitch !== undefined ? `&pitch=${pitch}` : ""}`)
@@ -38,7 +50,6 @@ for (const arg of args) {
     const b = (globalThis as unknown as { __bodyB: B }).__bodyB
     return { min: b.clearMin, at: b.clearAt }
   })
-  console.log(`${arg.padEnd(14)} min ${String(r.min).padStart(5)} cm  (${r.at})  frames<1cm ${trace.filter((x) => x < 1).length}/${n}`)
+  console.log(`${arg.padEnd(14)} min ${String(r.min).padStart(5)} cm  (${r.at})  frames<1cm ${trace.slice(20).filter((x) => x < 1).length}/${n - 20}`)
   await page.close()
 }
-await browser.close()

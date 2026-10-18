@@ -249,6 +249,8 @@ renderer.setAnimationLoop(() => {
     k.pitchRate = ((keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0)) * 1.4
   }
   walker.update(dt)
+  body.hideHead = camPreset === "fp"
+  body.eyeAnchor = camPreset === "fp"
   body.update(dt, walker)
 
   // Cameras: framing presets relative to the walker's facing; close-ups aim at a joint.
@@ -361,3 +363,4 @@ renderer.setAnimationLoop(() => {
   }
 })
 if (params.has("shot")) document.body.classList.add("shot")
+if (params.get("hud") === "0") hud.style.display = "none"

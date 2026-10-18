@@ -26,10 +26,10 @@ export type HandPose = {
 
 /** A relaxed, hanging human hand (real resting posture: flexion grows from index to pinky). */
 export const RELAXED: HandPose = {
-  index: [24, 24, 8],
-  middle: [30, 28, 10],
-  ring: [36, 30, 12],
-  pinky: [42, 32, 14],
+  index: [12, 26, 14],
+  middle: [16, 32, 16],
+  ring: [20, 36, 18],
+  pinky: [24, 40, 20],
   thumbOppose: 28,
   thumbAlong: 0,
   thumb: [6, 10, 14],
@@ -143,3 +143,8 @@ export function relaxedPose(curl: number, thumbOppose: number, thumbAlong: numbe
   return out
 }
 export const newPose = (): HandPose => structuredClone(RELAXED)
+
+/** Scales one finger's flexion of `pose` (in place) to `k` × TORCH_GRIP's (thumb: its curl; opposition kept). */
+export function scaleFinger(pose: HandPose, finger: "index" | "middle" | "ring" | "pinky" | "thumb", k: number) {
+  for (let j = 0; j < 3; j++) pose[finger][j] = TORCH_GRIP[finger][j]! * k
+}

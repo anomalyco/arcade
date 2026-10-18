@@ -59,6 +59,26 @@ for o in bpy.data.objects:
             if m.type == "SUBSURF":
                 o.modifiers.remove(m)
 
+# Hands: one level of smooth subdivision on the hand and finger faces only (the base mesh's fingers are 8-sided tubes
+# that read as fused sausages up close; in first person the hands are the closest thing on screen). Vertex groups
+# (the skin weights) are interpolated onto the new vertices.
+import bmesh  # noqa: E402
+
+HAND = ("hand_", "thumb_", "index_", "middle_", "ring_", "pinky_")
+groups = {g.index for g in body.vertex_groups if g.name.startswith(HAND)}
+bpy.context.view_layer.objects.active = body
+bpy.ops.object.mode_set(mode="OBJECT")
+for v in body.data.vertices:
+    v.select = sum(g.weight for g in v.groups if g.group in groups) > 0.5
+for f in body.data.polygons:
+    f.select = all(body.data.vertices[i].select for i in f.vertices)
+bpy.ops.object.mode_set(mode="EDIT")
+bpy.ops.mesh.select_mode(type="FACE")
+bpy.ops.mesh.subdivide(number_cuts=1, smoothness=1.0, quadcorner="INNERVERT")
+bpy.ops.mesh.select_all(action="DESELECT")
+bpy.ops.object.mode_set(mode="OBJECT")
+print("hand faces subdivided; body faces now", len(body.data.polygons))
+
 
 def load(path, size):
     img = bpy.data.images.load(path)

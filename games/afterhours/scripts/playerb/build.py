@@ -26,6 +26,7 @@ addon_utils.enable("bl_ext.user_default.mpfb", default_set=True)
 from bl_ext.user_default.mpfb.services.humanservice import HumanService  # noqa: E402
 from bl_ext.user_default.mpfb.services.locationservice import LocationService  # noqa: E402
 
+UAL_KEEP = {"Crouch_Idle_Loop", "Crouch_Fwd_Loop", "Interact"}
 KEEP = {
     # UAL1
     "Idle_Loop", "Walk_Loop", "Jog_Fwd_Loop", "Sprint_Loop", "Crouch_Idle_Loop", "Crouch_Fwd_Loop", "Jump_Start",
@@ -127,145 +128,47 @@ for s in "lr":
         for i in (1, 2, 3):
             AIM[f"{f}_0{i}_{s}"] = f"{f}_0{i + 1}_{s}" if i < 3 else f"{f}_04_leaf_{s}"
 
-# --------------------------------------------------------------- 2. pose the MakeHuman rig into the UAL rest (T-pose)
-bpy.context.view_layer.objects.active = mh_rig
-bpy.ops.object.mode_set(mode="POSE")
-P = mh_rig.pose.bones
-mw = mh_rig.matrix_world
-
-
-def mh_aim(n):
-    """Posed world points of the MH bone: head and the point it aims at (chain child's head, else tail)."""
-    pb = P[mh_name(n)]
-    c = AIM.get(n)
-    h = mw @ pb.head
-    if c and mh_name(c) in P:
-        return h, mw @ P[mh_name(c)].head
-    return h, mw @ pb.tail
-
-
-order = []
-
-
-def walk(b):
-    order.append(b.name)
-    for c in b.children:
-        walk(c)
-
-
-walk(U["root"])
-for n in order:
-    if n not in AIM or mh_name(n) not in P:
-        continue
-    bpy.context.view_layer.update()
-    h, e = mh_aim(n)
-    cur = (e - h).normalized()
-    tgt = (ual_end(n) - ual_head(n)).normalized()
-    q = cur.rotation_difference(tgt)
-    pb = P[mh_name(n)]
-    m = mw.inverted() @ (Matrix.Translation(h) @ q.to_matrix().to_4x4() @ Matrix.Translation(-h)) @ mw @ pb.matrix
-    pb.matrix = m
-bpy.context.view_layer.update()
-
-# Report how well the posed hands agree with UAL's (palm across-vector, index -> pinky knuckle).
-for s in "lr":
-    a = (mw @ P[f"pinky_01_{s}"].head - mw @ P[f"index_01_{s}"].head).normalized()
-    b = (ual_head(f"pinky_01_{s}") - ual_head(f"index_01_{s}")).normalized()
-    print(f"palm {s}: mh {tuple(round(x, 2) for x in a)} ual {tuple(round(x, 2) for x in b)} angle {math.degrees(a.angle(b)):.1f}")
-
-# Twist the forearm (pronation) so the palm faces like UAL's: rotate lowerarm about its own axis; half the twist stays
-# in the forearm mesh, which is how a real forearm carries it.
-for s in "lr":
-    bpy.context.view_layer.update()
-    h = mw @ P[f"lowerarm_{s}"].head
-    axis = (mw @ P[f"hand_{s}"].head - h).normalized()
-    a = (mw @ P[f"pinky_01_{s}"].head - mw @ P[f"index_01_{s}"].head)
-    b = (ual_head(f"pinky_01_{s}") - ual_head(f"index_01_{s}"))
-    a = (a - axis * a.dot(axis)).normalized()
-    b = (b - axis * b.dot(axis)).normalized()
-    ang = math.atan2(axis.dot(a.cross(b)), a.dot(b))
-    print(f"forearm twist {s}: {math.degrees(ang):.1f}")
-    from mathutils import Quaternion
-
-    q = Quaternion(axis, ang)
-    pb = P[f"lowerarm_{s}"]
-    pb.matrix = mw.inverted() @ (Matrix.Translation(h) @ q.to_matrix().to_4x4() @ Matrix.Translation(-h)) @ mw @ pb.matrix
-bpy.context.view_layer.update()
-# Re-aim the hands and fingers after the twist (twist does not move the aims, but keep the order exact).
-for n in order:
-    if not (n.startswith("hand_") or any(n.startswith(f) for f in ("thumb", "index", "middle", "ring", "pinky"))):
-        continue
-    if n not in AIM or mh_name(n) not in P:
-        continue
-    bpy.context.view_layer.update()
-    h, e = mh_aim(n)
-    q = (e - h).normalized().rotation_difference((ual_end(n) - ual_head(n)).normalized())
-    pb = P[mh_name(n)]
-    pb.matrix = mw.inverted() @ (Matrix.Translation(h) @ q.to_matrix().to_4x4() @ Matrix.Translation(-h)) @ mw @ pb.matrix
-bpy.context.view_layer.update()
-
-posed_head = {b.name: (mw @ b.head).copy() for b in P}
-posed_tail = {b.name: (mw @ b.tail).copy() for b in P}
-bpy.ops.object.mode_set(mode="OBJECT")
-
-# Freeze the meshes in the posed rest.
+# -------------------------------------------------------------- 2. the man keeps his own (natural, A-pose) rest
+# His MPFB game_engine skeleton, with UAL's bone names (head -> Head, Root -> root) and UAL's leaf bones added, so the
+# mesh stays in the pose its weights were made for (binding it in a T-pose raised the shoulders and bent the trunk).
+arm = mh_rig
+arm.name = "Janitor"
 for o in mh_meshes:
-    bpy.context.view_layer.objects.active = o
-    for m in list(o.modifiers):
-        if m.type == "ARMATURE":
-            bpy.ops.object.modifier_apply(modifier=m.name)
-
-# ------------------------------------------------------------------- 3. the UAL skeleton fitted to the man's joints
-bpy.ops.object.select_all(action="DESELECT")
-arm = ual.copy()
-arm.data = ual.data.copy()
-arm.name = arm.data.name = "Janitor"
-bpy.context.scene.collection.objects.link(arm)
-arm.animation_data_clear()
-bpy.context.view_layer.objects.active = arm
-bpy.ops.object.mode_set(mode="EDIT")
-inv = arm.matrix_world.inverted()
-E = arm.data.edit_bones
-for eb in E:
-    eb.use_connect = False
-moved = {}
-for eb in E:
-    n = eb.name
-    if n == "root":
-        continue
-    if mh_name(n) in posed_head:
-        p = posed_head[mh_name(n)]
-    elif n.endswith("_leaf_l") or n.endswith("_leaf_r"):
-        par = eb.parent.name
-        p = posed_tail[mh_name(par)]
-    else:
-        print("unmatched UAL bone", n)
-        continue
-    moved[n] = inv @ p
-for n, p in moved.items():
-    eb = E[n]
-    L = eb.length
-    m = eb.matrix.copy()
-    m.translation = p
-    eb.matrix = m
-    eb.length = L
-bpy.ops.object.mode_set(mode="OBJECT")
-
-hip_ratio = posed_head["pelvis"].z / ual_head("pelvis").z
-print("hip ratio", hip_ratio)
-
-for o in mh_meshes:
-    o.parent = arm
-    o.matrix_parent_inverse = arm.matrix_world.inverted()
     for g in o.vertex_groups:
         if g.name == "head":
             g.name = "Head"
         elif g.name == "Root":
             g.name = "root"
-    mod = o.modifiers.new("Armature", "ARMATURE")
-    mod.object = arm
+arm.data.bones["head"].name = "Head"
+arm.data.bones["Root"].name = "root"
+bpy.context.view_layer.objects.active = arm
+bpy.ops.object.mode_set(mode="EDIT")
+E = arm.data.edit_bones
+for s_ in "lr":
+    leaves = [(f"{f}_03_{s_}", f"{f}_04_leaf_{s_}") for f in ("thumb", "index", "middle", "ring", "pinky")]
+    leaves.append((f"ball_{s_}", f"ball_leaf_{s_}"))
+    for par, leaf in leaves:
+        if par not in E or leaf in E:
+            continue
+        pe = E[par]
+        le = E.new(leaf)
+        le.head = pe.tail
+        le.tail = pe.tail + (pe.tail - pe.head) * 0.6
+        le.roll = pe.roll
+        le.parent = pe
+        le.use_deform = False
+bpy.ops.object.mode_set(mode="OBJECT")
+for o in mh_meshes:
+    for g in o.vertex_groups:
+        if g.name == "head":
+            g.name = "Head"
+hip_ratio = arm.data.bones["pelvis"].head_local.z / U["pelvis"].head_local.z
+print("hip ratio", hip_ratio)
 
-# ------------------------------------------------------------------------------------------------ 4. the clips
+# ------------------------------------------------------------------- 3. UAL clips we still use, retargeted offline
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from rt import relaxed_hand, retarget_armature_action  # noqa: E402
+
 def fcurves(a):
     if hasattr(a, "layers") and len(a.layers):
         for layer in a.layers:
@@ -276,22 +179,21 @@ def fcurves(a):
         yield from a.fcurves
 
 
-keep = KEEP | set(filter(None, EXTRA.split(",")))
-seen = set()
-for a in list(bpy.data.actions):
-    base = a.name.split(".")[0]
-    if base not in keep or base in seen:
-        bpy.data.actions.remove(a)
-        continue
-    seen.add(base)
-    a.name = base
-    for fc in fcurves(a):
-        if fc.data_path.endswith(".location"):
-            for k in fc.keyframe_points:
-                k.co.y *= hip_ratio
-                k.handle_left.y *= hip_ratio
-                k.handle_right.y *= hip_ratio
-print("actions", sorted(seen))
+hand = relaxed_hand(arm)
+sources = list(bpy.data.actions)
+made = []
+for a_ in sources:
+    base = a_.name.split(".")[0]
+    if base in UAL_KEEP and base not in [m.name.split("__")[0] for m in made]:
+        made.append(retarget_armature_action(arm, ual, a_, base + "__t", hip_ratio, loop=base.endswith("_Loop")))
+for a_ in sources:
+    bpy.data.actions.remove(a_)
+for m in made:
+    m.name = m.name.split("__")[0]
+for o in ual_junk:
+    if o.name in bpy.data.objects:
+        bpy.data.objects.remove(o)
+print("actions", sorted(a_.name for a_ in bpy.data.actions))
 
 # ------------------------------------------------------------------------- 5. CMU mocap loops, retargeted offline
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -328,8 +230,6 @@ MOCAP = [
 ]
 meta = {}
 if cmu_dir:
-    idle = bpy.data.actions.get("Idle_Loop")
-    hand = action_pose(idle, idle.frame_range[0]) if idle else {}
     for name, subj, take, want, mirror, window in MOCAP:
         try:
             meta[name] = bake(arm, name, os.path.join(cmu_dir, f"{subj}.asf"), ",".join(os.path.join(cmu_dir, f"{t}.amc") for t in take.split(",")), want,
@@ -362,14 +262,13 @@ if cmu_dir:
         with open(meta_out, "w") as f:
             json.dump(meta, f, indent=1)
 
-for o in ual_junk:
-    if o.name in bpy.data.objects:
-        bpy.data.objects.remove(o)
-bpy.data.objects.remove(mh_rig)
 
 # --------------------------------------------------------------- 6. authored flashlight carry (right arm poses)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from carry import author_carry  # noqa: E402
+
+if os.environ.get("PLAYERB_SAVE_RIG"):
+    bpy.ops.wm.save_as_mainfile(filepath=os.environ["PLAYERB_SAVE_RIG"])
 
 meta["carry"] = author_carry(arm)
 if meta_out:

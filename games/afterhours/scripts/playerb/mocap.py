@@ -14,6 +14,7 @@ import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 
 from cmu import Skeleton, fk, read_amc
+from rt import rest_alignment
 
 K = np.array([[1.0, 0, 0], [0, 0, -1.0], [0, 1.0, 0]])
 
@@ -169,17 +170,11 @@ def _bake(arm, name, sk, F, a, b, fps, want, amc, step, finger_pose, segment=Fal
     ang = math.atan2(fsum[1], fsum[0]) - math.atan2(-1, 0)
     H = np.array(Matrix.Rotation(-ang, 3, "Z"))
 
-    # Rest alignment A per mapped bone.
-    A = {}
-    # Only limbs are aligned by direction; the trunk, neck and clavicles join at different anatomical points in the two
-    # skeletons (CMU's clavicle starts low on the neck, UAL's at the shoulder line), so their rests are taken as equal.
-    for t, s in MAP.items():
-        if t in AIM and AIM[t] in head and not t.startswith(("spine", "neck", "Head", "clavicle")):
-            dt = (head[AIM[t]] - head[t]).normalized()
-            ds = Vector(K @ sk.bones[s]["dir"]).normalized() if s != "root" else dt
-            A[t] = np.array(dt.rotation_difference(ds).to_matrix())
-        else:
-            A[t] = np.eye(3)
+    # Rest alignment A per mapped bone (scripts/playerb/rt.py): CMU's rest is a T-pose with palms down.
+    inv = {}
+    for t_, s_ in MAP.items():
+        inv[t_] = s_
+    A = {k: np.array(v) for k, v in rest_alignment(arm, lambda t_: Vector((K @ sk.bones[inv[t_]]["dir"]).tolist()) if t_ in inv and inv[t_] != "root" else None).items()}
 
     order = []
 

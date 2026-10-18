@@ -5,7 +5,7 @@ import { groundAt, LADDER, ladderAt } from "./stage"
 // body reads. On the treadmill it keeps its place while its velocity runs (the belt).
 
 const EYE = 1.65
-const EYE_CROUCH = 1.05
+const EYE_CROUCH = 0.92
 const STEP_UP = 0.45
 const STEP_DOWN = 0.5
 const GRAVITY = 9.81
@@ -26,7 +26,9 @@ export class LabWalker {
   fly = false
   running = false
   treadmill = false
-  walk = 1.9
+  walk = 0.95
+  run = 1.9
+  crouchSpeed = 0.75
   readonly input: WalkInput = { fwd: 0, side: 0, run: false, crouch: false, jump: false, yawRate: 0, pitchRate: 0 }
   private eyeOff = 0
   private eyeV = 0
@@ -79,12 +81,13 @@ export class LabWalker {
       return
     }
 
-    const wish = (k.fwd || k.side ? 1 : 0) * this.walk * (k.run && this.crouch < 0.5 ? 2.3 : 1) * (1 - 0.55 * this.crouch)
+    const base = k.run && this.crouch < 0.5 ? this.run : this.walk
+    const wish = (k.fwd || k.side ? 1 : 0) * (base + (this.crouchSpeed - base) * Math.min(1, this.crouch * 1.5))
     const rate = this.grounded ? (k.fwd || k.side ? 9 : 11) : 1.2
     const a = 1 - Math.exp(-rate * dt)
     this.vel.x += (wx * wish - this.vel.x) * a
     this.vel.z += (wz * wish - this.vel.z) * a
-    this.running = k.run && wish > this.walk * 1.5
+    this.running = k.run && wish > this.walk * 1.3
     if (!this.treadmill) {
       const nx = this.pos.x + this.vel.x * dt
       const nz = this.pos.z + this.vel.z * dt

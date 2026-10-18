@@ -3,11 +3,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import BAKED from "./clips.json"
 import { createTorch } from "./torch"
 
-// Body B: the janitor (public/models/playerb/janitor_b.glb) skinned natively to the Quaternius Universal Animation
-// Library skeleton, so every clip plays exactly as authored — no runtime retargeting, no limb IK. Locomotion is a
-// distance-driven phase shared by all loops (one stride per cycle at each clip's own measured speed), a speed blend
-// within a direction set and a direction blend across sets by the local velocity. The only correction is a small,
-// smoothed pelvis (root) height offset that keeps the planted foot on the ground it is standing on (stairs, ramps).
+// Body B: the janitor (public/models/playerb/janitor_b.glb), a MakeHuman man on his own skeleton in his natural bind
+// pose, with every clip retargeted OFFLINE in Blender (scripts/playerb/): CMU mocap for walk, jog, run, backpedal,
+// sidesteps, idle and jump; Quaternius UAL for crouch; authored right-arm poses for the flashlight carry. At runtime
+// the clips play as they are (no retargeting, no limb IK): locomotion is a distance-driven phase shared by all loops,
+// a speed blend within a direction set and a direction blend across sets by the local velocity. The only correction
+// is a small, smoothed pelvis height offset that keeps the planted foot on the ground it stands on.
 
 /** The PlayerState fields the body reads (src/player.ts PlayerState is a superset). */
 export type BodyBState = {
@@ -26,6 +27,7 @@ type CarryMeta = Record<string, { beam_pitch: number }>
 const CARRY = ["Carry_Level", "Carry_Up", "Carry_Down", "Carry_Run", "Carry_Crouch"] as const
 const TORSO = new Set(["pelvis", "spine_01", "spine_02", "spine_03"])
 const THIGHS = new Set(["thigh_l", "thigh_r"])
+const HIDE_Y = 1.49
 
 export type GroundFn = (x: number, z: number, maxY: number) => number
 
@@ -109,6 +111,13 @@ export class PlayerBodyB {
   private carryW = 0
   private carryRun = 0
   readonly torch = createTorch()
+  /** First-person view: collapse the head (and the hair, eyes and brows bound to it) into the neck. */
+  hideHead = false
+  /** Head-and-neck draw parts (those triangles of the skin and shirt, hair, eyes, brows, lashes), hidden in first person. */
+  private headParts: { visible: boolean }[] = []
+  /** First person: shift the body (smoothed, horizontal) so its eyes stay under the camera instead of the feet. */
+  eyeAnchor = false
+  private eyeOff = new THREE.Vector2()
   /** Skinned torso/thigh vertices for the clearance test: [mesh, vertex index, axis kind]. */
   private probe: { mesh: THREE.SkinnedMesh; idx: number[]; kind: number[] }[] = []
   private posed = false
@@ -165,6 +174,39 @@ export class PlayerBodyB {
       M.decompose(this.torch.position, this.torch.quaternion, this.torch.scale)
       hand.add(this.torch)
     }
+    // First-person head hiding without collapsing bones: the skin mesh's triangles dominated by the head bone go in
+    // their own draw group with their own (hideable) material; hair, eyes, brows and lashes are separate meshes.
+    model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh
+      if (!m.isSkinnedMesh) return
+      const mat = m.material as THREE.Material
+      if (["hair", "eyes", "brows", "lashes"].includes(mat.name)) return void this.headParts.push(m)
+      if ((mat.name !== "skin" && mat.name !== "suit") || !m.geometry.index) return
+      // Head, neck and the collar above HIDE_Y in the bind pose (they ring the camera when looking down).
+      const upper = new Set(["Head", "neck_01", "spine_03", "clavicle_l", "clavicle_r"])
+      const hb = new Set(m.skeleton.bones.flatMap((b, i) => (upper.has(b.name) ? [i] : [])))
+      const pos = m.geometry.attributes.position!
+      const bind = m.bindMatrix
+      const pv = new THREE.Vector3()
+      const si = m.geometry.attributes.skinIndex!
+      const sw = m.geometry.attributes.skinWeight!
+      const isHead = (v: number) => {
+        let w = 0
+        for (let k = 0; k < 4; k++) if (hb.has(si.getComponent(v, k))) w += sw.getComponent(v, k)
+        return w > 0.5 && pv.fromBufferAttribute(pos, v).applyMatrix4(bind).y > HIDE_Y
+      }
+      const idx = m.geometry.index.array
+      const a: number[] = []
+      const b: number[] = []
+      for (let i = 0; i < idx.length; i += 3) (isHead(idx[i]!) && isHead(idx[i + 1]!) && isHead(idx[i + 2]!) ? b : a).push(idx[i]!, idx[i + 1]!, idx[i + 2]!)
+      m.geometry.setIndex([...a, ...b])
+      m.geometry.clearGroups()
+      m.geometry.addGroup(0, a.length, 0)
+      m.geometry.addGroup(a.length, b.length, 1)
+      const headMat = mat.clone()
+      m.material = [mat, headMat]
+      this.headParts.push(headMat)
+    })
     model.traverse((o) => {
       const m = o as THREE.SkinnedMesh
       if (!m.isSkinnedMesh || !/^Human(\.?male_casualsuit01)?(_\d+)?$/.test(m.name)) return
@@ -193,9 +235,12 @@ export class PlayerBodyB {
       action.timeScale = 0
       action.setEffectiveWeight(0)
       const baked = (BAKED as unknown as Record<string, { speed: number; dir: number }>)[name]
-      const m = baked ? { speed: baked.speed, offset: 0 } : this.measure(action, clip, probe)
+      // Forward loops: the planted foot's measured speed on this skeleton (the bake's stride solve is a fallback for
+      // the side/back loops the forward-only measure can't read).
+      const meas = this.measure(action, clip, probe)
+      const m = baked ? { speed: meas.speed > 0.3 ? meas.speed : baked.speed, offset: 0 } : meas
       this.loops.set(name, { name, action, duration: clip.duration, speed: m.speed, offset: m.offset, weight: 0, dir: baked ? (-baked.dir * Math.PI) / 180 : 0 })
-      const mm = this.measure(action, clip, probe)
+      const mm = meas
       this.debug.clips[name] = { speed: +m.speed.toFixed(3), offset: +(m.offset / clip.duration).toFixed(3), duration: +clip.duration.toFixed(3), measured: +mm.speed.toFixed(3) } as never
     }
     for (const name of Object.values(ONESHOTS)) {
@@ -298,6 +343,9 @@ export class PlayerBodyB {
     const R = this.carry.get("Carry_Run")!
     const K = this.carry.get("Carry_Crouch")
     const crouch = smooth(0.15, 0.7, s.crouch)
+    // Unsmoothed: the thighs swing higher the moment the stride lengthens.
+    const strideW = (this.loops.get(LOOPS.jog)?.weight ?? 0) + (this.loops.get(LOOPS.run)?.weight ?? 0)
+    const fast = Math.max(this.carryRun, smooth(1.9, 2.8, speed), Math.min(1, strideW * 1.5))
     const q = new THREE.Quaternion()
     for (const [bone, ql] of L) {
       const b = this.bones[bone]
@@ -305,7 +353,7 @@ export class PlayerBodyB {
       q.copy(ql)
       if (tUp > 0) q.slerp(U.get(bone)!, tUp)
       // Running, the thighs swing up to the hand: the arm only lowers the torch a little (the beam leads the rest).
-      if (tDn > 0) q.slerp(D.get(bone)!, tDn * (1 - 0.7 * this.carryRun))
+      if (tDn > 0) q.slerp(D.get(bone)!, tDn * (1 - 0.85 * fast))
       if (this.carryRun > 0) q.slerp(R.get(bone)!, this.carryRun * (1 - 0.5 * Math.max(tUp, tDn)))
       if (K && crouch > 0) q.slerp(K.get(bone)!, crouch)
       // A carried arm still moves a little with the body: keep a trace of the gait's swing at the shoulder.
@@ -605,6 +653,24 @@ export class PlayerBodyB {
 
     mixer.update(0)
     this.applyCarry(dt, s, speed)
+    if (this.eyeAnchor) {
+      // Eyes ≈ 9 cm above and 9 cm in front of the head joint; keep them under the camera (low-passed so the gait's
+      // sway stays in the body and the feet stay planted).
+      this.model.updateMatrixWorld(true)
+      const e = this.bones.Head!.localToWorld(new THREE.Vector3(0, 0, 0))
+      const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion)
+      e.addScaledVector(fwd, 0.09)
+      // Looking down, the body steps back under the eye (up to 12 cm) so the view falls on the chest, belly and
+      // the torch, not into the neck opening.
+      const back = 0.12 * Math.max(0, -Math.sin(s.pitch ?? 0))
+      const tx = -(e.x - this.root.position.x) - fwd.x * back
+      const tz = -(e.z - this.root.position.z) - fwd.z * back
+      this.eyeOff.x += (tx - this.eyeOff.x) * damp(4, dt)
+      this.eyeOff.y += (tz - this.eyeOff.y) * damp(4, dt)
+    } else this.eyeOff.set(0, 0)
+    this.root.position.x = s.pos.x + this.eyeOff.x
+    this.root.position.z = s.pos.z + this.eyeOff.y
+    for (const m of this.headParts) m.visible = !this.hideHead
 
     // Pelvis height: the root follows the ground under the planted foot (lower foot weighs more), smoothed.
     this.model.updateMatrixWorld(true)
