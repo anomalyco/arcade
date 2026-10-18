@@ -331,11 +331,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     if (!inRoom) {
       if (mat != 12) {
         let dayVig = select(0.0, select(0.68, select(0.12, 0.22 * clamp(0.5 + 0.5 * shroudDark, 0.0, 1.6), isV6), isV5OrV6) * sunVal, gradeStyle > 0);
-        let vigScale = select(1.0, select(0.68, 0.92 * clamp(0.4 + 0.6 * shroudDark, 0.0, 1.6), isV6), isV5OrV6);
+        let vigScale = select(1.0, select(0.68, select(0.92, 0.64, isV7) * clamp(0.4 + 0.6 * shroudDark, 0.0, 1.6), isV6), isV5OrV6);
         let vigDark = max(clamp(OL.u2.w * vigScale, 0.0, 1.2), dayVig);
         let centerRef = select(vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5)), F.eye.xy, OL.win.z > 0.5);
         let dCenter = length((o.world.xz - centerRef) * vec2f(0.052, 0.064));
-        let v6PeriphFloor = clamp(0.34 - 0.10 * (shroudDark - 1.0), 0.16, 0.56);
+        let v6PeriphFloor = clamp(select(0.34, 0.46, isV7) - 0.10 * (shroudDark - 1.0), 0.16, 0.64);
         let periphFloor = select(0.46, select(0.28, select(0.56, v6PeriphFloor, isV6), isV5OrV6), gradeStyle > 0);
         let periphSlope = select(0.42, select(0.48, select(0.36, 0.44, isV6), isV5OrV6), gradeStyle > 0);
         let periphShade = mix(1.0, clamp(1.16 - dCenter * periphSlope, periphFloor, 1.0), vigDark);

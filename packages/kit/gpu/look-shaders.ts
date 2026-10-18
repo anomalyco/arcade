@@ -546,7 +546,8 @@ ${
   hdrCenter = max(vec3f(0.0), hdrCenter + clarityDelta * clarityStrength * 0.5);
 
   let bloomPeak = max(bloom.r, max(bloom.g, bloom.b));
-  let bloomGate = smoothstep(0.045, 0.32, bloomPeak);
+  let hdrPeak = max(hdrCenter.r, max(hdrCenter.g, hdrCenter.b)) * G.w;
+  let bloomGate = smoothstep(0.16, 0.68, bloomPeak) * mix(0.24, 1.0, smoothstep(0.40, 0.82, max(hdrPeak, bloomPeak * 1.65)));
   let halationTint = vec3f(1.12, 0.34, 0.09) * halation * 0.32;
   var hdr = hdrCenter * G.w + bloom * bloomGate * (baseBloom * bloomMult + halationTint);
   let hdrIn = hdrCenter * G.w;
@@ -554,7 +555,8 @@ ${
   let practicalWarm = clamp((hdrIn.r - hdrIn.b * 1.15) / max(hdrIn.r + 0.002, 1e-4), 0.0, 1.0) * smoothstep(0.006, 0.055, hdrLuma);
   let effBeamRetain = max(beamRetain, practicalWarm * clamp(selectiveColor * 0.88, 0.0, 1.0));
   let nightRule = clamp((0.22 - saturation) * 6.0, 0.0, 1.0);
-  let effTemp = mix(temperature * (1.0 - nightRule * 0.90), max(temperature, 0.10), effBeamRetain * 0.90);
+  let beamWarmWeight = mix(1.0, 0.32 + 0.68 * practicalWarm, nightRule);
+  let effTemp = mix(temperature * (1.0 - nightRule * 0.90), max(temperature, 0.10 * beamWarmWeight), effBeamRetain * 0.90);
   hdr = max(hdr * exposure * vec3f(1.0 + effTemp * 0.24, 1.0 + effTemp * 0.03, 1.0 - effTemp * 0.24), vec3f(0.0));
   if (abs(contrast - 1.0) > 0.001) {
     let uC = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4) * 5.5556;
@@ -586,7 +588,8 @@ ${
   let effSat = max(mix(saturation, max(saturation, 0.88), warmBias * 0.82), coolShadow * 0.55);
   let outsideCol = mix(mono, warmTinted, effSat);
   if (effBeamRetain > 0.001) {
-    let beamSplit = mix(activeSplit, vec3f(1.06, 0.99, 0.90), effBeamRetain * 0.92);
+    let beamTargetSplit = mix(vec3f(1.01, 0.99, 0.96), vec3f(1.06, 0.99, 0.90), beamWarmWeight);
+    let beamSplit = mix(activeSplit, beamTargetSplit, effBeamRetain * 0.92);
     let beamSat = clamp(max(saturation, 1.24 * min(selectiveColor, 1.45)), 0.0, 1.65);
     let beamCol = mix(vec3f(luma) * beamSplit, c * beamSplit, beamSat);
     c = mix(outsideCol, beamCol, effBeamRetain);
@@ -602,16 +605,22 @@ ${
   let baseVigFactor = mix(1.0, baseVig, smoothstep(0.32, 0.85, vDist));
   let extraVig = 1.0 - clamp(vigStrength * 0.65, 0.0, 0.92) * smoothstep(0.20, 0.84, vDist);
   c *= baseVigFactor * extraVig;
+  ${finish?.customPostHook ?? ""}
   if (grainStrength > 0.001) {
     let timeSalt = select(0.0, floor(G.x * 24.0) * 19.37, grainAnim);
     let seedVec = vec2f(grainSeed * 1.13 + timeSalt, grainSeed * 2.71 - timeSalt * 0.63);
     let finePx = floor(o.pos.xy * 0.85) + seedVec;
-    let grainVal = (hash(finePx) - 0.5) * 1.45;
-    let midMask = smoothstep(0.004, 0.12, luma) * (1.0 - smoothstep(0.75, 1.0, luma));
-    let amp = (0.026 + 0.008 * clamp(L.shaftStrength, 0.0, 1.0)) * grainStrength * (0.25 + 0.75 * midMask);
-    c = max(vec3f(0.0), c + vec3f(grainVal * amp * (luma * 2.2 + 0.04 * midMask)));
+    let coarsePx = floor(o.pos.xy * 0.45) + seedVec * 0.67;
+    let gFine = hash(finePx) - 0.42;
+    let gCoarse = hash(coarsePx) - 0.45;
+    let grainVal = (gFine * 0.72 + gCoarse * 0.38) * 1.45;
+    let postLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let darkMask = 1.0 - smoothstep(0.04, 0.38, postLuma);
+    let midMask = smoothstep(0.004, 0.12, postLuma) * (1.0 - smoothstep(0.75, 1.0, postLuma));
+    let darkGrainDelta = grainVal * grainStrength * (0.048 * darkMask + 0.022 * midMask) * (0.18 + 0.82 * sqrt(max(postLuma, 0.0018)));
+    let dayGrainDelta = grainVal * (0.026 + 0.008 * clamp(L.shaftStrength, 0.0, 1.0)) * grainStrength * (0.25 + 0.75 * midMask) * (postLuma * 2.2 + 0.04 * midMask);
+    c = max(vec3f(0.0), c + vec3f(mix(dayGrainDelta, darkGrainDelta, nightRule)));
   }
-  ${finish?.customPostHook ?? ""}
   c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, vDist));
   let s1 = sqrt(clamp(c, vec3f(0.0), vec3f(1.0)));
   c = mix(s1, sqrt(s1), 0.182);
