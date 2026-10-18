@@ -428,7 +428,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let sunLit = select(0.0, max(select(baseSunLit, v6SunLit, isV6), duskGlow * select(0.84, 0.45, inRoom)), satStyle > 0);
     var litMask = select(outbreakColorMask(flashIrr), 0.88, mat == 2);
     if ((satStyle == 3 || isV5OrV6) && mat != 2) {
-      let eDeep = flashIrr * 1.15 + outbreakPracticalIrr * OL.u16.y * select(1.25, 1.42, isV5OrV6) + outbreakBounceIrr * max(OL.colour.z, 0.95) * lightRule;
+      let flashDeepScale = select(1.15, mix(1.15, 0.82, clamp(OL.v7.y, 0.0, 1.0)), isV7);
+      let eDeep = flashIrr * flashDeepScale + outbreakPracticalIrr * OL.u16.y * select(1.25, 1.42, isV5OrV6) + outbreakBounceIrr * max(OL.colour.z, 0.95) * lightRule;
       let deepMask = smoothstep(0.04, 0.88, 1.0 - fastExpNeg(eDeep / max(OL.u13.w * 0.80, 0.01)));
       litMask = select(deepMask, max(litMask, deepMask), isV5OrV6);
     }
@@ -480,8 +481,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     col += beamAdd * outbreakSeen * select(1.0, 0.16, isV5OrV6 && mat == 12);
     if (modStyle > 0 && (mat == 0 || mat == 3 || mat == 10 || mat == 12 || (isV5OrV6 && mat == 20 && nightLamps > 0.2))) {
       // Soft shoulder roll-off so near-lens flashlight glare does not bleach the survivor, props, or dark macadam asphalt
-      let shKnee = select(0.52, 0.34, mat == 20);
-      let shSlope = select(0.72, 1.15, mat == 20);
+      let shKnee = select(0.52, select(0.34, 0.62, isV7), mat == 20);
+      let shSlope = select(0.72, select(1.15, 0.55, isV7), mat == 20);
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(shKnee)) * shSlope);
     }
     let knownSight = mix(outbreakSeen, max(outbreakSeen, outbreakKnown), select(lightRule, max(lightRule, select(sunLit, sunLit * (0.35 + 0.65 * outbreakSeen), isV7)), isV5 || isV7));
@@ -501,7 +502,10 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       // Enrich warm practical/beam pools at night so golden light pools hit target chroma (~0.28..0.30)
       let nightPool = clamp(litActive * lightRule * (1.0 - duskGlow * 0.65), 0.0, 1.0);
       let poolWarmShare = select(0.62, select(0.68, 0.22, mat == 12), isV5OrV6);
-      col *= mix(vec3f(1.0), select(vec3f(1.18, 0.96, 0.68), vec3f(1.22, 0.95, 0.62), isV5OrV6), nightPool * poolWarmShare);
+      let flashShare = clamp(flashIrr / max(flashIrr + outbreakPracticalIrr * 1.6 + outbreakBounceIrr * 1.2, 1e-4), 0.0, 1.0);
+      let v7BeamWarmCol = mix(vec3f(1.01, 0.98, 0.93), vec3f(1.22, 0.95, 0.62), clamp(OL.v7.x, 0.0, 1.0));
+      let v6PoolCol = select(vec3f(1.22, 0.95, 0.62), mix(vec3f(1.22, 0.95, 0.62), v7BeamWarmCol, flashShare), isV7);
+      col *= mix(vec3f(1.0), select(vec3f(1.18, 0.96, 0.68), v6PoolCol, isV5OrV6), nightPool * poolWarmShare);
       if (satStyle == 2 || isV5OrV6) {
         let heroExempt = select(0.0, select(0.94, clamp(0.34 - 0.14 * (unlitDesat - 1.0), 0.10, 0.65) * outbreakSeen, isV6), isV5OrV6 && isHeroAny);
         let unlitNight = clamp((1.0 - max(litMask, duskGlow * 0.75)) * lightRule * (1.0 - heroExempt), 0.0, 1.0);

@@ -1315,7 +1315,8 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
   let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
-  let wSpill = select(w, max(w, 0.88), isV5);
+  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
+  let wSpill = select(w, max(w, select(0.88, 0.62, isV7)), isV5);
   if (!inRoom && OL.u1.w <= 0.20 && wSpill <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
   var col = surfCol;
   if (!inRoom) {
@@ -1355,8 +1356,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       let vWL = (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64);
       let vWR = (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64);
       let vP = (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52);
-      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul);
-      let tightSpill = select(1.0, select(1.38, 1.05, isV5), isOverhaul);
+      let v7StreetFade = select(1.0, 1.0 - smoothstep(38.0, 41.2, world.z), isV7 && !isInView);
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul) * v7StreetFade;
+      let tightSpill = select(1.0, select(1.38, select(1.05, 1.85, isV7), isV5), isOverhaul);
       let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655 * tightSpill) + fastExpNeg(dot(vWR, vWR) * 0.0689655 * tightSpill)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516 * tightSpill) * pScale * 0.92) * cutZoneScale * groundMask;
       col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * wSpill * (1.0 + wetPuddle * OL.u2.y * 0.95);
       outbreakPracticalIrr += spill * wSpill * 0.75;
@@ -1437,19 +1439,28 @@ const FLASH_RADIANCE: f32 = 9.0;
 fn flashProfile(cosT: f32) -> f32 {
   let omc = max(0.0, 1.0 - clamp(cosT, -1.0, 1.0));
   let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * OL.u17.y;
-  let cone = 1.0 - smoothstep(OL.u11.z, 1.0, t);
-  let dark = (t - OL.u12.x * 1.35) * 9.0;
-  let bright = (t - 0.84) * 12.5;
+  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tightShare = clamp(tight, 0.0, 1.0);
+  let effInner = mix(OL.u11.z, min(OL.u11.z, 0.36), tightShare);
+  let legacyCone = 1.0 - smoothstep(effInner, 1.0, t);
+  let tightCone = (1.0 - smoothstep(0.18, 0.74, t)) * 0.24;
+  let cone = mix(legacyCone, tightCone, tightShare);
+  let effCoreW = mix(max(OL.u12.x, 0.05), min(max(OL.u12.x, 0.05), 0.28), tightShare) / max(1.0, tight);
+  let dark = (t - effCoreW * 1.35) * 9.0;
+  let bright = (t - mix(0.84, 0.56, tightShare)) * 12.5;
   let bBell = 1.0 / (1.0 + bright * bright * (1.0 + 0.35 * bright * bright));
   let dBell = 1.0 / (1.0 + dark * dark * (1.0 + 0.35 * dark * dark));
-  let rings = 1.0 + OL.u12.w * (0.2 * bBell - 0.18 * dBell);
-  let tc = t / max(OL.u12.x, 0.05);
+  let rings = 1.0 + OL.u12.w * mix(1.0, 0.45, tightShare) * (0.2 * bBell - 0.18 * dBell);
+  let tc = t / max(effCoreW, 0.04);
   let ts = t / max(OL.u12.z, 1.0);
   let tc2 = tc * tc;
   let ts2 = ts * ts;
   let core = 1.0 / (1.0 + tc2 * (1.0 + 0.48 * tc2));
-  let spill = 1.0 / (1.0 + ts2 * (1.0 + 0.48 * ts2));
-  return cone * rings + OL.u11.w * core + OL.u12.y * spill;
+  let spillWindow = mix(1.0, 1.0 - smoothstep(0.62, 1.18, t), tightShare);
+  let spill = (1.0 / (1.0 + ts2 * (1.0 + 0.48 * ts2))) * spillWindow;
+  let effCoreAmp = mix(OL.u11.w, max(OL.u11.w, 1.52), tightShare) * mix(1.0, 1.18, clamp(tight - 1.0, 0.0, 1.0));
+  let effSpillAmp = mix(OL.u12.y, min(OL.u12.y, 0.035), tightShare);
+  return cone * rings + effCoreAmp * core + effSpillAmp * spill;
 }
 
 /** Attenuation of the local flashlight (cone.w 2) for lightSum; toLight points from the surface to the lens. */
@@ -1463,10 +1474,13 @@ fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
 fn flashFalloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
   let x2 = d2 / (r * r);
-  let soft = max(OL.u13.z, 0.1);
+  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tightShare = clamp(tight, 0.0, 1.0);
+  let soft = mix(max(OL.u13.z, 0.1), min(max(OL.u13.z, 0.1), 1.42), tightShare);
   if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
   let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
-  return win * win / (1.0 + d2 / (soft * soft));
+  let tightWin = pow(clamp(1.0 - x2, 0.0, 1.0), 2.5);
+  return mix(win * win, tightWin, tightShare) / (1.0 + d2 / (soft * soft));
 }
 
 /**
@@ -1504,11 +1518,15 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
       let full = polar[(u32(round(OL.u4.w)) * RAYS + ray) * 2u].x;
       eb *= 1.0 - smoothstep(full + 0.06, full + 0.18, length(lr));
     }
-    add += outbreakAlbedo * select(vec3f(1.0, 0.86, 0.7), vec3f(1.16, 0.80, 0.42), OL.round.x > 0.5) * (eb * GAIN);
-    irr += eb;
+    let bWarm = clamp(OL.v7.x, 0.0, 1.0);
+    let bounceWarmCol = mix(vec3f(1.02, 0.95, 0.84), vec3f(1.16, 0.80, 0.42), bWarm);
+    let bTightScale = mix(1.0, 0.48, clamp(OL.v7.y, 0.0, 1.0));
+    add += outbreakAlbedo * select(vec3f(1.0, 0.86, 0.7), bounceWarmCol, OL.round.x > 0.5) * (eb * bTightScale * GAIN);
+    irr += eb * bTightScale;
   }
   outbreakFlashMask = irr;
-  let beamTint = select(OL.u5.rgb, OL.u5.rgb * vec3f(1.08, 0.92, 0.68), OL.round.x > 0.5);
+  let warmTint = mix(vec3f(1.0, 0.98, 0.94), vec3f(1.08, 0.92, 0.68), clamp(OL.v7.x, 0.0, 1.0));
+  let beamTint = select(OL.u5.rgb, OL.u5.rgb * warmTint, OL.round.x > 0.5);
   return add * beamTint;
 }
 

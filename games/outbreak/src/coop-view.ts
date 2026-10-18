@@ -15,6 +15,7 @@ import type { HudRemote } from "./hud"
 import { OutbreakLobby, shouldShowStartScreen } from "./lobby/lobby-ui"
 import { NetSession, remoteLift, SURVIVOR_COLOURS, type NetSessionFeatures } from "./net-session"
 import { beamPose } from "./flashlight-beam"
+import { resolveBeamColor } from "./look/world"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings =
@@ -27,6 +28,7 @@ type LightSettings =
         beamPoolDistance: number
       }
       lighting: { practicalWarmth: number }
+      look?: { beamWarmth: number }
     }
 
 /** Visibility of an actor to the local survivor: the fog/vision module's soft actor test when present. */
@@ -246,7 +248,8 @@ export class CoopView {
     if (!others.length) return count
     const flash = "flashlight" in settings ? settings.flashlight : settings
     const practicalWarmth = "lighting" in settings ? settings.lighting.practicalWarmth : settings.practicalWarmth
-    const rgb = flashlightColor(flash.flashlightWarmth)
+    const beamWarmth = "look" in settings && settings.look ? settings.look.beamWarmth : 1
+    const rgb = resolveBeamColor(flashlightColor(flash.flashlightWarmth), beamWarmth)
     const cosHalf = Math.cos((flash.flashlightCone * Math.PI) / 360)
     const directScale = practicalWarmth > 0.6 ? 0.28 : 1.0
     for (const slot of others) {
