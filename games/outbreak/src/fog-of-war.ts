@@ -594,6 +594,7 @@ fn applyOutbreakFogOfWar(
   let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
   let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
+  let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
   outbreakKnown = select(1.0, select(explored, max(explored, outbreakLitMask * 0.92), isOverhaul), inRoom && world.y < 2.8);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
@@ -618,7 +619,7 @@ fn applyOutbreakFogOfWar(
   let memTint = select(baseMemTint, mix(vec3f(0.52, 0.86, 1.56), vec3f(1.08, 0.94, 0.74), outbreakLitMask), isOverhaul);
   // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule).
   let memSat = mix(select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0), 1.0, outbreakLitMask);
-  let effMemDim = select(memDim, mix(memDim * 0.76, memDim * 0.94, outbreakLitMask), isOverhaul);
+  let effMemDim = select(memDim, mix(memDim * select(0.76, 0.90, !inRoom && isV5), select(memDim * 0.94, 1.0, isV5), outbreakLitMask), isOverhaul);
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * effMemDim;
 
   var baseFowCol: vec3f;
@@ -637,13 +638,19 @@ fn applyOutbreakFogOfWar(
     let legacyShroud = max(vec3f(0.0015, 0.0018, 0.0024), outbreakAlbedo * 0.012 + vec3f(0.0042, 0.0040, 0.0040) + vec3f(shroudNoise));
     let overhaulShroud = max(
       vec3f(0.00010, 0.00022, 0.00055),
-      colIn * mix(vec3f(0.04, 0.08, 0.18), vec3f(0.22, 0.18, 0.14), outbreakLitMask) + outbreakAlbedo * vec3f(0.0004, 0.0008, 0.0018),
+      colIn * mix(
+        select(vec3f(0.04, 0.08, 0.18), vec3f(0.12, 0.20, 0.42), isV5),
+        select(vec3f(0.22, 0.18, 0.14), vec3f(0.44, 0.35, 0.24), isV5),
+        outbreakLitMask,
+      ) + outbreakAlbedo * select(vec3f(0.0004, 0.0008, 0.0018), vec3f(0.0035, 0.0070, 0.0160), isV5),
     );
     let unknownShroud = select(legacyShroud, overhaulShroud, isOverhaul);
     let unrevealed = mix(unknownShroud, roomMem, explored);
     baseFowCol = mix(unrevealed, colIn, visible);
   } else {
-    let extUnexp = select(0.78 + 0.22 * explored, mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * explored, isOverhaul);
+    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * explored;
+    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * explored;
+    let extUnexp = select(0.78 + 0.22 * explored, select(v4Ext, v5Ext, isV5), isOverhaul);
     baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }
 

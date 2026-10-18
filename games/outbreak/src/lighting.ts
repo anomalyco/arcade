@@ -1205,10 +1205,18 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let skyLum = dot(rawSky, vec3f(0.299, 0.587, 0.114));
   let suburbanSky = vec3f(skyLum) * vec3f(1.18, 0.90, 0.62);
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
+  let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
   let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
-  let overhaulSky = mix(rawSky * vec3f(0.74, 0.95, 1.34), mix(rawSky, suburbanSky, 0.34) * 0.68, sun);
+  let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun));
+  let nightSky = select(
+    rawSky * vec3f(0.74, 0.95, 1.34),
+    mix(rawSky * vec3f(0.86, 1.14, 1.66), rawSky * vec3f(0.96, 1.18, 2.12) + vec3f(0.012, 0.010, 0.025), duskGlow),
+    isV5,
+  );
+  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, 0.16) * 1.08, isV5);
+  let overhaulSky = mix(nightSky, daySky, sun);
   let sky = select(mix(rawSky, suburbanSky, w * 0.92), overhaulSky, isOverhaul);
-  return mix(sky * select(0.42, 0.30, isOverhaul), sky, n.y * 0.5 + 0.5);
+  return mix(sky * select(0.42, select(0.30, 0.40, isV5), isOverhaul), sky, n.y * 0.5 + 0.5);
 }
 
 /**
@@ -1284,7 +1292,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
   if (mat == 2 || mat == 3 || mat == 6 || mat == 12 || world.y >= 2.72) { return surfCol; }
   let w = clamp(OL.u0.z, 0.0, 1.0);
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
-  if (!inRoom && OL.u1.w <= 0.20 && w <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
+  let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
+  let wSpill = select(w, max(w, 0.88), isV5);
+  if (!inRoom && OL.u1.w <= 0.20 && wSpill <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
   var col = surfCol;
   if (!inRoom) {
     let isInView = OL.u5.w > 0.5;
@@ -1319,15 +1329,15 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    if (w > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
+    if (wSpill > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
       let vWL = (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64);
       let vWR = (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64);
       let vP = (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52);
-      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, 0.72, isOverhaul);
-      let tightSpill = select(1.0, 1.38, isOverhaul);
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul);
+      let tightSpill = select(1.0, select(1.38, 1.05, isV5), isOverhaul);
       let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655 * tightSpill) + fastExpNeg(dot(vWR, vWR) * 0.0689655 * tightSpill)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516 * tightSpill) * pScale * 0.92) * cutZoneScale * groundMask;
-      col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * w * (1.0 + wetPuddle * OL.u2.y * 0.95);
-      outbreakPracticalIrr += spill * w * 0.75;
+      col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * wSpill * (1.0 + wetPuddle * OL.u2.y * 0.95);
+      outbreakPracticalIrr += spill * wSpill * 0.75;
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0) — scaled by w*w so Noir street stays dark outside the flashlight
@@ -1368,7 +1378,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         1.0 / 4.8,
         isNorth
       );
-      let invDenom = baseInvDenom * select(1.0, 1.55, isOverhaul);
+      let invDenom = baseInvDenom * select(1.0, select(1.55, 1.15, isV5), isOverhaul);
       let v0 = (world.xz - cPos) * cScale;
       var pool = fastExpNeg(dot(v0, v0) * invDenom);
       let isVertWall = abs(n.y) < 0.45;
@@ -1376,12 +1386,12 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         pool *= select(select(0.62, 1.25, isVertWall && world.z < 26.2), select(0.55, 1.35, isVertWall && world.z < 26.8), isWestN);
       } else if (isEastS) {
         let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
-        pool = pool * select(0.75, 1.55, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, 0.48, isOverhaul);
+        pool = pool * select(0.75, 1.55, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, select(0.48, 0.96, isV5), isOverhaul);
       }
-      let neScale = select(1.15, 0.02, isOverhaul);
+      let neScale = select(1.15, select(0.02, 0.16, isV5), isOverhaul);
       let aScale = select(
-        select(select(0.65, select(1.28, 0.96, isOverhaul), isWestS), select(1.68, 1.18, isOverhaul), isEastS),
-        select(neScale, select(1.0, 0.95, isOverhaul), isWestN),
+        select(select(select(0.65, 1.08, isV5), select(1.28, select(0.96, 1.36, isV5), isOverhaul), isWestS), select(1.68, select(1.18, 1.72, isV5), isOverhaul), isEastS),
+        select(neScale, select(1.0, select(0.95, 1.24, isV5), isOverhaul), isWestN),
         isNorth
       );
       let neBias = select(vec3f(0.012, 0.0048, 0.0008), vec3f(0.0), isOverhaul);

@@ -24,9 +24,16 @@ export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
   {
     id: "today",
     label: "Today",
-    version: 4,
-    note: "The shipped look: high-contrast survival horror grade, weathered suburban ground, warm practical & flashlight pools against cold moonlit shadows, LOD0 grounded satin props, Colour Blocks survivors and Former Townsfolk zombies.",
+    version: 5,
+    note: "The shipped look (v5): high-contrast sunlit day, copper-indigo sunset dusk, rich golden beam & practical pools against readable cool moonlit silhouettes, smart LOD0 hero anchors with crisp satin bevels, and vibrant Colour Blocks survivors & Former Townsfolk zombies.",
     knobs: TODAY,
+  },
+  {
+    id: "today-v4",
+    label: "Before: Today v4 (first overhaul)",
+    version: 4,
+    note: "The first rendering overhaul (PR #242): weathered suburban ground, warm/cool split, uniform LOD0 satin props, and survival-horror shadow toe.",
+    knobs: { ...TODAY, groundStyle: 1, lightSatStyle: 2, modelStyle: 1, styleGrade: 1 },
   },
   {
     id: "legacy-today",

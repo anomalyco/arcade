@@ -190,7 +190,7 @@ describe("Outbreak look", () => {
     expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
   })
 
-  test("rendering round axes: presets sync groundStyle and modelStyle, today ships the new look and legacy-today restores 0 across all axes", () => {
+  test("rendering round axes: presets sync groundStyle and modelStyle, today ships v5, today-v4 keeps v4, and legacy-today restores 0 across all axes", () => {
     const settings = createOutbreakSettings()
     applyLookPreset(settings, "legacy-today")
     expect(settings.look.groundStyle).toBe(0)
@@ -198,14 +198,20 @@ describe("Outbreak look", () => {
     expect(settings.look.modelStyle).toBe(0)
     expect(settings.look.styleGrade).toBe(0)
     expect(propDressingState.modelStyle).toBe(0)
-    applyLookPreset(settings, "today")
+    applyLookPreset(settings, "today-v4")
     expect(settings.look.groundStyle).toBe(1)
     expect(settings.look.lightSatStyle).toBe(2)
     expect(settings.look.modelStyle).toBe(1)
     expect(settings.look.styleGrade).toBe(1)
     expect(propDressingState.modelStyle).toBe(1)
+    applyLookPreset(settings, "today")
+    expect(settings.look.groundStyle).toBe(1)
+    expect(settings.look.lightSatStyle).toBe(4)
+    expect(settings.look.modelStyle).toBe(4)
+    expect(settings.look.styleGrade).toBe(4)
+    expect(propDressingState.modelStyle).toBe(4)
     const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
-    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([2, 1, 1, 1])
+    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([4, 4, 4, 1])
   })
 
   test("co-op seats tint the simple figure a little toward their jacket", () => {

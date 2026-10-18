@@ -11,22 +11,25 @@ export const GROUND_STYLES = [
 export const LIGHT_SAT_STYLES = [
   { id: "today", label: "Today (orange wash)", value: 0 },
   { id: "true-pigment", label: "True Pigment in Light", value: 1 },
-  { id: "warm-cool-split", label: "Warm Beam / Cold Moon Split", value: 2 },
+  { id: "warm-cool-split", label: "Warm Beam / Cold Moon Split (v4)", value: 2 },
   { id: "deep-amber", label: "Deep Amber Halation (RE)", value: 3 },
+  { id: "paintover-v5", label: "Paintover Contrast & Dusk Split (v5)", value: 4 },
 ] as const
 
 export const MODEL_STYLES = [
   { id: "today", label: "Today (LOD1 at zoom 46)", value: 0 },
-  { id: "clean-satin", label: "Clean LOD0 + Grounded Satin", value: 1 },
+  { id: "clean-satin", label: "Clean LOD0 + Grounded Satin (v4)", value: 1 },
   { id: "crisp-rim", label: "Crisp Bevel & Rim Relief", value: 2 },
   { id: "matte-cavity", label: "Weathered Matte (Fast LOD1)", value: 3 },
+  { id: "smart-lod0-satin", label: "Smart LOD0 Anchors + Crisp Satin (v5)", value: 4 },
 ] as const
 
 export const STYLE_GRADES = [
   { id: "today", label: "Today", value: 0 },
-  { id: "survival-horror", label: "Survival Horror (RE Biohazard)", value: 1 },
+  { id: "survival-horror", label: "Survival Horror (RE Biohazard v4)", value: 1 },
   { id: "bleach-nocturne", label: "Bleach Nocturne (28 Days)", value: 2 },
   { id: "amber-lantern", label: "Amber Lantern & Deep Shroud", value: 3 },
+  { id: "paintover-v5", label: "Paintover Contrast & Daylight/Dusk (v5)", value: 4 },
 ] as const
 
 /**
@@ -101,9 +104,9 @@ export type OutbreakLookTrims = {
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
   groundStyle: 1,
-  lightSatStyle: 2,
-  modelStyle: 1,
-  styleGrade: 1,
+  lightSatStyle: 4,
+  modelStyle: 4,
+  styleGrade: 4,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
