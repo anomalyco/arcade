@@ -9,6 +9,7 @@ import {
 } from "../../shared/melee/index"
 import { supportHeight } from "../../shared/terrain"
 import { registerOutbreakClientFeature } from "../feature-registry"
+import { hitStopSeconds } from "../feel-tuning"
 import { stageMeleeScene, type MeleeStageSwing } from "./stage"
 
 export const outbreakMeleeFeature = registerOutbreakClientFeature({
@@ -126,7 +127,9 @@ export const outbreakMeleeFeature = registerOutbreakClientFeature({
               const k = heavyScale * (1 + Math.min(2, Math.max(0, hitCount - 1)) * 0.28) * (anySever ? 1.22 : 1.0)
               cam.add((anyKill ? 0.36 : 0.24) * k, swing.aim, (anyKill ? 2.6 : 1.7) * k)
               cam.punch(-0.24 * k, (swing.combo === 2 ? -1 : 1) * 0.011 * k)
-              const stopDur = (swing.heavy ? 0.044 : anyKill || anyHead ? 0.036 : 0.026) * (anySever ? 1.15 : 1.0)
+              const c = settings.combat
+              const stopMs = swing.heavy ? c.hitStopMeleeHeavy : anyKill || anyHead ? c.hitStopMeleeStrong : c.hitStopMeleeLight
+              const stopDur = hitStopSeconds(stopMs) * (anySever ? 1.15 : 1.0)
               tracker.hitStop.trigger(stopDur, 0.06, !cam.isReducedMotion())
               if (!cam.isReducedMotion()) {
                 tracker.motionBurst.add(

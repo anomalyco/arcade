@@ -23,6 +23,7 @@ import { BenchLean } from "../discovery/lean"
 import { DiscoveryProps } from "../discovery/props"
 import { outbreakClientFeatures } from "../features"
 import { OutbreakFeelTracker } from "../feel-events"
+import { onFootLead } from "../feel-tuning"
 import { collectFogSoundSprites } from "../fog-of-war"
 import { GroundWearRenderer } from "../ground"
 import { renderFlowOverlay } from "../hordes/flow-overlay"
@@ -293,8 +294,9 @@ export class OutbreakFrameRenderer {
     const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
     const camX = watch ? watch.x : drawn.x + (activePeek ? activePeek.camOffsetX * this.peekBlend : 0) + lean.dx
     const camY = watch ? watch.y : drawn.y + (activePeek ? activePeek.camOffsetY * this.peekBlend : 0) + lean.dy
-    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
-    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
+    const footLead = localVehicle || watch || activePeek ? null : onFootLead(p, settings.view)
+    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : (footLead?.x ?? 0)
+    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : (footLead?.y ?? 0)
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.update(w / h)
     const view = cam.groundRect(5.5)

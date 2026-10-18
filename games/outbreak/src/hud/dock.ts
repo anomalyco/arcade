@@ -49,6 +49,11 @@ export class Dock {
   private first = true
   private snapKey = ""
   private rect: DOMRect | null = null
+  /** Set when the dock or HUD box changes size; reading their size every frame forced a layout each frame. */
+  private layoutDirty = true
+  private readonly observed = typeof ResizeObserver !== "undefined"
+  private idleOpacity = Number.NaN
+  private snapRatio = 0
 
   constructor(
     private readonly els: DockEls,
@@ -80,6 +85,13 @@ export class Dock {
       this.cells.push({ el, key: "" })
     }
     els.sheet.dataset.open = "false"
+    if (this.observed) {
+      const ro = new ResizeObserver(() => {
+        this.layoutDirty = true
+      })
+      ro.observe(els.dock)
+      ro.observe(els.hud)
+    }
     if (typeof window !== "undefined") window.addEventListener("pointermove", (e: PointerEvent) => this.pointer(e.clientX, e.clientY), { passive: true })
   }
 
@@ -120,6 +132,7 @@ export class Dock {
       if (hotbar) this.syncHotbar(view, hotbar, animate)
       if (pack) this.syncPack(view, pack, animate)
       this.snapKey = ""
+      this.layoutDirty = true
     }
     if (packOpen !== this.open) {
       this.open = packOpen
@@ -132,12 +145,20 @@ export class Dock {
       this.state = state
       this.els.hud.dataset.dock = state
     }
-    this.els.hud.style.setProperty("--hud-idle", String(this.settings.dockIdleOpacity))
-    // Keep the centred dock's edges on whole device pixels so its text is crisp at rest.
-    const snap = `${innerWidth}|${innerHeight}|${devicePixelRatio}|${this.els.dock.offsetWidth}|${this.els.hud.offsetHeight}`
-    if (snap !== this.snapKey) {
-      if (snapToPixels(this.els.dock)) this.snapKey = snap
-      this.rect = this.els.dock.getBoundingClientRect()
+    if (this.settings.dockIdleOpacity !== this.idleOpacity) {
+      this.idleOpacity = this.settings.dockIdleOpacity
+      this.els.hud.style.setProperty("--hud-idle", String(this.idleOpacity))
+    }
+    // Keep the centred dock's edges on whole device pixels so its text is crisp at rest. Only measured after the dock
+    // or HUD changed size (or the pixel ratio did), so a quiet frame never forces a layout.
+    if (!this.observed || this.layoutDirty || devicePixelRatio !== this.snapRatio) {
+      const snap = `${innerWidth}|${innerHeight}|${devicePixelRatio}|${this.els.dock.offsetWidth}|${this.els.hud.offsetHeight}`
+      if (snap !== this.snapKey) {
+        if (snapToPixels(this.els.dock)) this.snapKey = snap
+        this.rect = this.els.dock.getBoundingClientRect()
+      }
+      this.snapRatio = devicePixelRatio
+      this.layoutDirty = this.snapKey !== snap
     }
     this.first = false
   }

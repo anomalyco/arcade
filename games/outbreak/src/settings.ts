@@ -18,6 +18,7 @@ import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
 import { LIGHT_CURVE_KEYS } from "./light-ramps"
+import { DEFAULT_CAMERA_LEAD, DEFAULT_FEEL_TUNING, type CameraLeadSettings, type FeelTuning } from "./feel-tuning"
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
@@ -74,13 +75,15 @@ export type OutbreakDayCycleSettings = DayNightCurveSettings & {
   lookPreset: LookPresetId
 }
 
-export type OutbreakViewSettings = CameraShakeSettings & {
+export type OutbreakViewSettings = CameraShakeSettings &
+  CameraLeadSettings & {
   zoom: number
   diagnostic: number
   quality: QualityMode
 }
 
-export type OutbreakCombatSettings = MeleeTuning & {
+export type OutbreakCombatSettings = MeleeTuning &
+  FeelTuning & {
   infiniteAmmo: number
   bloodStyle: number
 }
@@ -151,12 +154,14 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   diagnostic: 0,
   quality: "auto",
   ...cameraShakeDefaults(),
+  ...DEFAULT_CAMERA_LEAD,
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {
   infiniteAmmo: 0,
   bloodStyle: 1,
   ...DEFAULT_MELEE_TUNING,
+  ...DEFAULT_FEEL_TUNING,
 }
 
 export const DEFAULT_OUTBREAK_MOTION: MotionBlurSettings = {
