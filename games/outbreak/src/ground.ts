@@ -156,9 +156,9 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
 
     var borderDist = min(abs(p.y - 38.0), abs(p.y - 50.0));
     if (isWalkway) {
-      let b = select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 44.0);
-      let inPorch = p.y < b.w + 1.32 && p.y > b.w - 0.1;
-      borderDist = max(0.0, select(0.70, 1.25, inPorch) - abs(p.x - select(b.x + 5.70, b.x + 5.75, inPorch)));
+      let b = nearestHouseRect(pIn);
+      let inPorch = pIn.y < b.w + 1.32 && pIn.y > b.w - 0.1;
+      borderDist = max(0.0, select(0.70, 1.25, inPorch) - abs(pIn.x - select(b.x + 5.70, b.x + 5.75, inPorch)));
     } else if (isNS) {
       borderDist = min(abs(p.x - 38.0), abs(p.x - 50.0));
     }
@@ -289,27 +289,30 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
         }
       } else if (kind == 1) {
         let gParams = unpackGroundParams();
-        let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
+        let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);
+        let roadU = clamp((pBlock.y - 40.0) * 0.125, 0.0, 1.0);
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
-        let dxRoad = (p.x - 31.5) * 0.055;
+        let dxRoad = (p.x - F.eye.x) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
         let rainBoost = select(0.0, 1.35, gStyle == 2);
         let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * (gParams.z + (OL.u8.y + rainBoost * 0.45) * 1.45);
         let roadSheenCol = select(mix(vec3f(0.030, 0.038, 0.060), vec3f(0.078, 0.076, 0.072), w), vec3f(0.022, 0.036, 0.068), gStyle > 0);
         col = col * (1.0 - (OL.u8.y + rainBoost * 0.25) * 0.22) + roadSheenCol * max(F.ambient.w, 0.35 * rainBoost) * OL.u2.y * sheen;
       } else if (kind == 2 || kind == 6) {
-        let inVerge = (o.world.z > 39.28 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.72);
+        let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);
+        let inVerge = (pBlock.y > 39.28 && pBlock.y < 39.80) || (pBlock.y > 48.20 && pBlock.y < 48.72);
         if (!inVerge) {
           let isV5Walk = OL.round.x > 3.5 || OL.round.z > 3.5;
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
           let warmStone = vec3f(walkLum) * vec3f(1.22, 0.95, 0.56);
           let stoneMix = select(w * 0.65, w * 0.32, gStyle > 0 || OL.round.x > 0.5);
           col = mix(col, warmStone, stoneMix) * select(0.76, select(0.72, mix(0.76, 0.94, clamp(F.monitorBounds.w, 0.0, 1.0)), isV5Walk), gStyle > 0);
-          let dxWalk = o.world.x - 27.7;
-          if (abs(dxWalk) < 4.5 && o.world.z > 34.8 && o.world.z < 40.4) {
+          let wb = nearestHouseRect(o.world.xz);
+          let dxWalk = o.world.x - (wb.x + 5.7);
+          if (abs(dxWalk) < 4.5 && o.world.z > wb.w - 0.7 && o.world.z < wb.w + 4.9) {
             let dxWalk2 = dxWalk * dxWalk;
-            let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(40.4, 35.0, o.world.z);
-            let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
+            let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(wb.w + 4.9, wb.w - 0.5, o.world.z);
+            let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(wb.w + 1.9, wb.w + 2.9, o.world.z) * smoothstep(wb.w + 4.7, wb.w + 3.3, o.world.z);
             let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * select(1.0, select(0.54, 0.96, isV5Walk), gStyle > 0 || OL.round.x > 0.5);
             let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
             col += col * vec3f(1.26, 0.72, 0.22) * walkPool;

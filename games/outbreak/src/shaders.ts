@@ -9,7 +9,6 @@ import {
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
-import { BUILDING_RECTS } from "../shared/map"
 import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
@@ -87,12 +86,10 @@ export const outbreakSceneHooks: SceneHooks = {
     } else if (L.cone.w > 1.125 && L.cone.w < 1.5) {
       let along = dot(dv, abs(L.cone.yx));
       if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
-    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
-  material: " ",
+    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (outbreakInRoom && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
+  material: "let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4)); outbreakInRoom = inRoom;",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
-    let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4));
-    outbreakInRoom = inRoom;
     let isPropTone = mat == 0 || mat == 10 || mat == 24;
     let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), !isPropTone && o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
       * select(1.0, 1.15, !isPropTone && n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
@@ -113,55 +110,38 @@ export const outbreakSceneHooks: SceneHooks = {
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
-/** Streamed window building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
+/** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
 fn slotLPlan(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(i)) & 1u) == 1u; }
 /** Whether the rect last returned by houseRect is an L-plan bungalow (cut and lit by wing, not by rect). */
 var<private> houseIsL: bool;
 fn houseRect(id: i32) -> vec4f {
   houseIsL = false;
-  if (OL.win.z > 0.5) {
-    if (id >= 0 && id <= 7) {
-      let b0 = OL.bldRects[id];
-      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { houseIsL = slotLPlan(id); return b0; }
-    }
-    let nBld = i32(OL.win.w);
-    for (var i = 0; i < 8; i++) {
-      if (i >= nBld) { break; }
-      let bi = OL.bldRects[i];
-      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { houseIsL = slotLPlan(i); return bi; }
-    }
-    if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
-    houseIsL = slotLPlan(clamp(id, 0, 7));
-    return OL.bldRects[clamp(id, 0, 7)];
+  let nBld = i32(OL.win.w);
+  if (id >= 0 && id < nBld) {
+    let b0 = OL.bldRects[id];
+    if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { houseIsL = slotLPlan(id); return b0; }
   }
-  houseIsL = id == 0 || id == 1;
-  switch id {
-    ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let bi = OL.bldRects[i];
+    if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { houseIsL = slotLPlan(i); return bi; }
   }
+  if (id < 0 || id >= nBld) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
+  houseIsL = slotLPlan(id);
+  return OL.bldRects[id];
 }
 fn interior(p:vec2f) -> bool {
-  if (OL.win.z > 0.5) {
-    let nBld = i32(OL.win.w);
-    for (var i = 0; i < 8; i++) {
-      if (i >= nBld) { break; }
-      let b = OL.bldRects[i];
-      if (slotLPlan(i)) {
-        if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22) { return true; }
-        if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72) { return true; }
-        if (p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
-      } else if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
-    }
-    return false;
+  let nBld = i32(OL.win.w);
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let b = OL.bldRects[i];
+    if (p.x <= b.x + 0.22 || p.x >= b.z - 0.22 || p.y <= b.y + 0.22 || p.y >= b.w - 0.22) { continue; }
+    if (!slotLPlan(i)) { return true; }
+    if (p.y > b.y + 5.70) { return true; }
+    if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y < b.y + 5.72) { return true; }
+    if (p.x > b.x + 9.25 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
   }
-  let b = select(
-    select(vec4f(53.22, 54.22, 71.78, 67.78), vec4f(53.22, 23.22, 72.78, 37.78), p.y < 45.0),
-    select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 45.0),
-    p.x < 45.0
-  );
-  let south = p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22;
-  let north = p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72;
-  let wing = p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72;
-  return select(all(p > b.xy) && all(p < b.zw), south || north || wing, p.x < 45.0);
+  return false;
 }
 fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
@@ -196,7 +176,7 @@ ${outbreakHeroWgsl}`,
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
       if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
-        let nCut = select(4, i32(OL.win.w), OL.win.z > 0.5);
+        let nCut = i32(OL.win.w);
         for(var i=0;i<nCut;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
       }
       if (F.eye.z > 1.0001 && o.world.y > 0.88 && (mat == 4 || mat == 9 || mat == 2 || mat == 6)) {
@@ -246,7 +226,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let extRoofScale = select(1.0, 0.46, OL.u5.w > 0.5) * select(1.0, mix(select(0.62, select(0.78, 0.64, isV6Roof), isV5OrV6Roof), select(0.84, 1.24, isV5OrV6Roof), sun), isOverhaul);
     let roofGlint = (0.58 * eave + 0.36 * courseStep + 0.95 * ridgeRim + 2.15 * surfaceAlpha * (0.45 + 0.55 * eave)) * F.ambient.w * OL.u2.z * max(0.0, n.y) * select(1.0, select(0.48, select(0.84, 0.62, isV6Roof), isV5OrV6Roof), isOverhaul);
     col = (col * mix(select(1.08, select(0.80, select(0.94, 0.82, isV6Roof), isV5OrV6Roof), isOverhaul), select(1.66, select(1.20, select(1.54, 1.28, isV6Roof), isV5OrV6Roof), isOverhaul), eave) + roofTint * roofGlint) * extRoofScale;
-    let westRoof = smoothstep(36.2, 21.8, o.world.x) * (0.32 + 0.68 * eave);
+    let rb = nearestBuildingRect(o.world.xz);
+    let westRoof = smoothstep(rb.z - 0.8, rb.x - 0.2, o.world.x) * (0.32 + 0.68 * eave);
     let sunsetCopper = (col * 1.8 + vec3f(0.18, 0.062, 0.014)) * vec3f(1.48, 0.52, 0.12) * (0.75 + 0.25 * courseStep);
     let twilightIndigo = select(col * vec3f(0.75, 0.95, 1.65) + vec3f(0.014, 0.026, 0.078) * eave, col * vec3f(1.08, 0.90, 0.76) + vec3f(0.016, 0.009, 0.004) * eave, isV7Roof);
     let effWestRoof = select(westRoof, 0.28 + 0.72 * westRoof, isV7Roof);
@@ -287,9 +268,10 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     ${groundSurfaceHookWgsl}
     if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
+      let hb = nearestHouseRect(o.world.xz);
       let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
       let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.22;
-      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (hb.x + 5.7)), 1.62) * step(hb.w - 1.0, o.world.z) * step(o.world.z, hb.w + 1.8);
       col *= mix(1.0, 0.48, clamp(eaveShadow + lowShadow + underPorchGable * 0.35, 0.0, 1.0));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * select(0.74, 0.10, satStyle > 0)) * select(0.96, select(0.92, mix(0.96, 1.18, sunVal), isV5OrV6), satStyle > 0);
@@ -324,7 +306,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
           let rimTone = mix(vec3f(0.042, 0.058, 0.092), vec3f(0.090, 0.064, 0.034), clamp(outbreakPracticalIrr * 2.2, 0.0, 1.0));
           col += (outbreakAlbedo * 0.45 + rimTone) * silRim * select(0.65, 0.48, modStyle == 4);
         }
-        let carSun = clamp(dot(n, vec3f(-0.82, 0.55, -0.36)) * 0.6 + 0.4, 0.0, 1.0) * smoothstep(0.25, 1.15, o.world.y) * select(0.0, duskGlow, !inRoom && mat == 3);
+        let carSunDir = normalize(vec3f(F.monitorBounds.x, max(F.monitorBounds.y, 0.52), F.monitorBounds.z));
+        let carSun = clamp(dot(n, carSunDir) * 0.6 + 0.4, 0.0, 1.0) * smoothstep(0.25, 1.15, o.world.y) * select(0.0, duskGlow, !inRoom && mat == 3);
         col += (outbreakAlbedo * 0.95 + vec3f(0.14, 0.055, 0.012)) * vec3f(1.35, 0.48, 0.10) * carSun * 0.78;
       }
     }
@@ -333,20 +316,22 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let dayVig = select(0.0, select(0.68, select(0.12, 0.22 * clamp(0.5 + 0.5 * shroudDark, 0.0, 1.6), isV6), isV5OrV6) * sunVal, gradeStyle > 0);
         let vigScale = select(1.0, select(0.68, select(0.92, 0.64, isV7) * clamp(0.4 + 0.6 * shroudDark, 0.0, 1.6), isV6), isV5OrV6);
         let vigDark = max(clamp(OL.u2.w * vigScale, 0.0, 1.2), dayVig);
-        let centerRef = select(vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5)), F.eye.xy, OL.win.z > 0.5);
+        let centerRef = F.eye.xy;
         let dCenter = length((o.world.xz - centerRef) * vec2f(0.052, 0.064));
         let v6PeriphFloor = clamp(select(0.34, 0.46, isV7) - 0.10 * (shroudDark - 1.0), 0.16, 0.64);
         let periphFloor = select(0.46, select(0.28, select(0.56, v6PeriphFloor, isV6), isV5OrV6), gradeStyle > 0);
         let periphSlope = select(0.42, select(0.48, select(0.36, 0.44, isV6), isV5OrV6), gradeStyle > 0);
         let periphShade = mix(1.0, clamp(1.16 - dCenter * periphSlope, periphFloor, 1.0), vigDark);
-        let extCutDim = select(1.0, select(0.54, 0.82, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
+        let cb = houseRect(-1);
+        let extCutDim = select(1.0, select(0.54, 0.82, o.world.x > cb.z + 0.2 || o.world.z > cb.w + 0.3 || o.world.x < cb.x - 8.0 || o.world.z < cb.y - 8.0), OL.u5.w > 0.5);
         col *= periphShade * extCutDim;
-        let westSweep = smoothstep(35.0, 20.5, o.world.x - (o.world.z - 38.0) * 0.32);
+        let db = nearestBuildingRect(o.world.xz);
+        let westSweep = smoothstep(db.z - 2.0, db.x - 1.5, o.world.x - (o.world.z - (db.w + 2.5)) * 0.32);
         let duskEastTint = select(vec3f(0.76, 0.92, 1.48), select(vec3f(0.98, 0.86, 0.74), vec3f(0.88, 0.92, 0.84), mat == 22), isV7);
         let duskWestTint = select(vec3f(1.36, 0.78, 0.42), select(vec3f(1.44, 0.84, 0.44), vec3f(1.06, 0.98, 0.76), mat == 22), isV7);
         let duskTint = mix(duskEastTint, duskWestTint, select(westSweep, 0.32 + 0.68 * westSweep, isV7));
         let duskEastAdd = select(vec3f(0.004, 0.008, 0.024), vec3f(0.010, 0.006, 0.003), isV7);
-        let duskAdd = mix(duskEastAdd, vec3f(0.024, 0.010, 0.002), westSweep) * select(1.0, 0.45, mat == 20 && o.world.z > 39.8 && o.world.z < 48.2) * select(1.0, 0.0, isV7 && mat == 22);
+        let duskAdd = mix(duskEastAdd, vec3f(0.024, 0.010, 0.002), westSweep) * select(1.0, 0.45, mat == 20 && i32(round(o.aux)) == 5) * select(1.0, 0.0, isV7 && mat == 22);
         col = mix(col, col * duskTint + duskAdd, select(0.0, duskGlow * select(0.72, 0.82, isV7 && mat != 22), mat != 2));
       }
     } else if (mat != 12) {
@@ -356,8 +341,14 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let roomDim = select(mix(0.84, 0.66, w), select(mix(0.94, 0.86, w), 1.04, isV5OrV6), satStyle > 0);
       col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), roomWash) * roomDim;
       // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
-      if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
-        col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
+      if (mat == 2 && o.world.y > 1.05 && o.world.y < 2.22) {
+        let bi = interiorBuildingAt(o.world.xz);
+        if (bi >= 0 && slotLPlan(bi)) {
+          let kb = OL.bldRects[bi];
+          if (o.world.x > kb.z - 4.36 && o.world.x < kb.z - 2.94 && o.world.z > kb.y + 5.65 && o.world.z < kb.y + 6.18) {
+            col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
+          }
+        }
       }
     }
     if (mat == 22) {
@@ -401,11 +392,14 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let v6SheenCol = vec3f(0.56, 0.62, 0.72) * 0.14;
       let sheenCol = select(vec3f(0.50, 0.62, 0.90) * 0.32, select(vec3f(0.18, 0.36, 0.82) * 0.035, select(vec3f(0.26, 0.48, 0.98) * 0.24, v6SheenCol, isV6), isV5OrV6), isOverhaulFol);
       col += outbreakAlbedo * sheenCol * OL.u0.y * crownSheen * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
-      let westCrown = clamp(dot(n, vec3f(-0.83, 0.50, -0.37)) * 0.62 + 0.38, 0.0, 1.0) * smoothstep(0.42, 2.15, o.world.y) * (0.35 + 0.65 * tipWeight);
-      let v7CrownRim = pow(clamp(dot(n, vec3f(-0.83, 0.50, -0.37)), 0.0, 1.0), 1.45) * smoothstep(0.55, 2.15, o.world.y) * tipWeight;
+      let duskSunDir = normalize(vec3f(F.monitorBounds.x, max(F.monitorBounds.y, 0.48), F.monitorBounds.z));
+      let fb = nearestBuildingRect(o.world.xz);
+      let crownWest = smoothstep(fb.z + 5.0, fb.x - 2.0, o.world.x);
+      let westCrown = clamp(dot(n, duskSunDir) * 0.62 + 0.38, 0.0, 1.0) * smoothstep(0.42, 2.15, o.world.y) * (0.35 + 0.65 * tipWeight);
+      let v7CrownRim = pow(clamp(dot(n, duskSunDir), 0.0, 1.0), 1.45) * smoothstep(0.55, 2.15, o.world.y) * tipWeight;
       let duskCrownTerm = select(
-        (outbreakAlbedo * 1.45 + vec3f(0.12, 0.048, 0.010)) * vec3f(1.46, 0.50, 0.10) * westCrown * (0.45 + 0.55 * smoothstep(42.0, 20.0, o.world.x)),
-        outbreakAlbedo * vec3f(1.28, 0.98, 0.36) * v7CrownRim * (0.55 + 0.45 * smoothstep(42.0, 20.0, o.world.x)),
+        (outbreakAlbedo * 1.45 + vec3f(0.12, 0.048, 0.010)) * vec3f(1.46, 0.50, 0.10) * westCrown * (0.45 + 0.55 * crownWest),
+        outbreakAlbedo * vec3f(1.28, 0.98, 0.36) * v7CrownRim * (0.55 + 0.45 * crownWest),
         isV7,
       );
       col = select(col, col * mix(1.0, 0.76, duskGlow), isV7) + duskCrownTerm * duskGlow * 0.95;
@@ -505,9 +499,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
           let lensVec = vec3f(OL.u3.x, OL.u11.x, OL.u3.y) - o.world;
           let dLens = length(lensVec);
           let toLens = lensVec / max(dLens, 1e-4);
-          let toPorch = normalize(vec3f(27.7 - o.world.x, max(1.2, 2.25 - o.world.y), 36.3 - o.world.z));
+          let zb = nearestHouseRect(o.world.xz);
+          let porchXZ = vec2f(zb.x + 5.7, zb.w + 0.8);
+          let toPorch = normalize(vec3f(porchXZ.x - o.world.x, max(1.2, 2.25 - o.world.y), porchXZ.y - o.world.z));
           let toStreet = normalize(vec3f(OL.u7.x - o.world.x, max(1.4, OL.u7.y - o.world.y), OL.u7.z - o.world.z));
-          let dPorch = length(vec2f(27.7, 36.3) - o.world.xz);
+          let dPorch = length(porchXZ - o.world.xz);
           let toLamp = select(toStreet, toPorch, !inRoom && dPorch < 9.5);
           let hBeam = normalize(toLens + V);
           let hLamp = normalize(toLamp + V);
