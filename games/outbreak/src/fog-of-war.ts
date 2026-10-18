@@ -682,13 +682,15 @@ fn applyOutbreakFogOfWar(
     let unrevealed = mix(unknownShroud, roomMem, explored);
     baseFowCol = mix(unrevealed, colIn, visible);
   } else {
-    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * explored;
-    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * explored;
-    let v6ExtUnlit = clamp((0.46 + 0.18 * explored) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
-    let v6ExtLit = clamp((0.76 + 0.14 * explored) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
-    let v7DayExt = mix(clamp(0.78 + 0.12 * explored - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * explored, 0.75, 1.0), outbreakLitMask);
+    // Darkwood (v8): outdoors the shroud is one even charcoal, so explored blocks no longer show as lighter rectangles.
+    let exploredExt = select(explored, explored * 0.2, OL.round.x > 6.5 || OL.round.z > 6.5);
+    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * exploredExt;
+    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * exploredExt;
+    let v6ExtUnlit = clamp((0.46 + 0.18 * exploredExt) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
+    let v6ExtLit = clamp((0.76 + 0.14 * exploredExt) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
+    let v7DayExt = mix(clamp(0.78 + 0.12 * exploredExt - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * exploredExt, 0.75, 1.0), outbreakLitMask);
     let v6Ext = select(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), mix(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), v7DayExt, dayOrDusk), isV7);
-    let extUnexp = select(0.78 + 0.22 * explored, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
+    let extUnexp = select(0.78 + 0.22 * exploredExt, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
     baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }
 
