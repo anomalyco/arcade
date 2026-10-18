@@ -268,12 +268,12 @@ async function capture(page: Page, filename: string, scene: Scene, knobs: Record
 }
 
 async function sheet(page: Page, file: string, title: string, tiles: { label: string; file: string }[], columns = 2) {
-  const img = (f: string) => `data:image/png;base64,${readFileSync(f).toString("base64")}`
+  const img = (f: string) => `data:image/${f.endsWith(".jpg") || f.endsWith(".jpeg") ? "jpeg" : "png"};base64,${readFileSync(f).toString("base64")}`
   await page.setViewportSize({ width: columns * 760 + 36, height: Math.ceil(tiles.length / columns) * 545 + 64 })
   await page.setContent(`<body style="margin:0;padding:16px;background:#0e1013;color:#e6e8ec;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif">
     <div style="font-size:19px;margin:0 0 12px;letter-spacing:-0.01em">${title}</div>
     <div style="display:grid;grid-template-columns:repeat(${columns},748px);gap:14px">
-    ${tiles.map(t => `<figure style="margin:0;background:#171a20;border:1px solid #282d37;border-radius:6px;overflow:hidden"><img src="${img(t.file)}" style="width:748px;display:block"><figcaption style="padding:7px 10px;font-size:14px;color:#cfd4dc">${t.label}</figcaption></figure>`).join("")}
+    ${tiles.map(t => `<figure style="margin:0;background:#171a20;border:1px solid #282d37;border-radius:6px;overflow:hidden"><img src="${img(t.file)}" style="width:748px;height:498px;object-fit:cover;display:block"><figcaption style="padding:7px 10px;font-size:14px;color:#cfd4dc">${t.label}</figcaption></figure>`).join("")}
     </div></body>`)
   await page.locator("body").screenshot({ path: file })
 }
@@ -327,6 +327,83 @@ try {
       await capture(page, `v4-${s.name}.png`, s, {}, "today-v4")
     }
     await page.close()
+  } else if (mode === "v7" || mode === "v7-stills" || mode === "v7-sheet") {
+    const v6Day = mode === "v7-sheet" ? resolve(out, "v6-street-day-14h.png") : await capture(page, "v6-street-day-14h.png", SCENES.streetDay!, {}, "today-v6")
+    const v7Day = mode === "v7-sheet" ? resolve(out, "v7-street-day-14h.png") : await capture(page, "v7-street-day-14h.png", SCENES.streetDay!, {}, "today")
+
+    const v6Dusk = mode === "v7-sheet" ? resolve(out, "v6-street-dusk-18h30.png") : await capture(page, "v6-street-dusk-18h30.png", SCENES.dusk!, {}, "today-v6")
+    const v7Dusk = mode === "v7-sheet" ? resolve(out, "v7-street-dusk-18h30.png") : await capture(page, "v7-street-dusk-18h30.png", SCENES.dusk!, {}, "today")
+
+    const v6Night = mode === "v7-sheet" ? resolve(out, "v6-street-night-21h.png") : await capture(page, "v6-street-night-21h.png", SCENES.streetNight!, {}, "today-v6")
+    const v7Night = mode === "v7-sheet" ? resolve(out, "v7-street-night-21h.png") : await capture(page, "v7-street-night-21h.png", SCENES.streetNight!, {}, "today")
+
+    const v6Int = mode === "v7-sheet" ? resolve(out, "v6-interior-night-21h.png") : await capture(page, "v6-interior-night-21h.png", SCENES.interiorNight!, {}, "today-v6")
+    const v7Int = mode === "v7-sheet" ? resolve(out, "v7-interior-night-21h.png") : await capture(page, "v7-interior-night-21h.png", SCENES.interiorNight!, {}, "today")
+
+    const v6Horde = mode === "v7-sheet" ? resolve(out, "v6-horde-night-21h.png") : await capture(page, "v6-horde-night-21h.png", SCENES.hordeNight!, {}, "today-v6")
+    const v7Horde = mode === "v7-sheet" ? resolve(out, "v7-horde-night-21h.png") : await capture(page, "v7-horde-night-21h.png", SCENES.hordeNight!, {}, "today")
+
+    const v6Surv = mode === "v7-sheet" ? resolve(out, "v6-survivors-close-21h.png") : await capture(page, "v6-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today-v6")
+    const v7Surv = mode === "v7-sheet" ? resolve(out, "v7-survivors-close-21h.png") : await capture(page, "v7-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today")
+
+    const localRefDir = resolve(import.meta.dir, "dying-light-refs")
+    const homeRefDir = "/Users/kit/code/home/artifacts/2026-10-18-dying-light-look"
+    const refOr = (name: string, fallback: string) => {
+      const pLocal = resolve(localRefDir, name)
+      if (existsSync(pLocal)) return pLocal
+      const pHome = resolve(homeRefDir, name)
+      return existsSync(pHome) ? pHome : fallback
+    }
+    const sheetPage = await browser.newPage({ deviceScaleFactor: 1 })
+    await sheet(
+      sheetPage,
+      resolve(out, "sheet-v7-dying-light.png"),
+      "Outbreak Dying Light Look Pass (AR-50) · Before (Today · v6) vs Dying Light Reference vs Shipped Default (Today · v7)",
+      [
+        { label: "1a. Before (Today · v6) · Street Day 14:00 (washed grey monochrome regression)", file: v6Day },
+        { label: "1b. Dying Light Reference · Daytime Harran (sunlit colour vs cool desaturated shade)", file: refOr("09-dl1-daytime-bleach-contrast.jpg", v6Day) },
+        { label: "1c. Shipped Default (Today · v7) · Street Day 14:00 (sunlit colour in sight, desaturated canopy shade & out-of-sight)", file: v7Day },
+        { label: "2a. Before (Today · v6) · Street Dusk 18:30 (crushed into cold night shroud)", file: v6Dusk },
+        { label: "2b. Dying Light Reference · Harran Sunset Dusk (warm copper sky & dark tree silhouettes)", file: refOr("08-dl1-harran-sunset-dusk.jpg", v6Dusk) },
+        { label: "2c. Shipped Default (Today · v7) · Street Dusk 18:30 (warm copper-amber sunset, dark olive trees with golden rims)", file: v7Dusk },
+        { label: "3a. Before (Today · v6) · Street Night 21:00 (wide chalky orange/cream cone washing asphalt)", file: v6Night },
+        { label: "3b. Dying Light Reference · Night Street Shroud & Practicals", file: refOr("02-dl1-night-street-desaturated-shroud.jpg", v6Night) },
+        { label: "3c. Shipped Default (Today · v7) · Street Night 21:00 (~4800K neutral-warm tight hotspot, steep falloff, dark grain)", file: v7Night },
+        { label: "4a. Before (Today · v6) · Start House 21:00 (warm lit rooms, near-black unseen rooms)", file: v6Int },
+        { label: "4b. Dying Light Reference · Dark Interior & Practicals", file: refOr("04-dl1-interior-godrays-shroud.jpg", v6Int) },
+        { label: "4c. Shipped Default (Today · v7) · Start House 21:00 (saturated warm rooms, near-black unseen rooms, highlight-only bloom)", file: v7Int },
+        { label: "5a. Before (Today · v6) · Horde Night 21:00 (flat ambient lift, wide orange beam wash)", file: v6Horde },
+        { label: "5b. Dying Light Reference · Night Volatile Rim/Specular Catches vs Warm Light", file: refOr("03-dl1-night-volatile-rim-vs-fire.jpg", v6Horde) },
+        { label: "5c. Shipped Default (Today · v7) · Horde Night 21:00 (dark silhouettes outside light, sharp wet rim/specular & glints)", file: v7Horde },
+        { label: "6a. Before (Today · v6) · Co-op Survivors 21:00 (wide orange beams, heavy 0.82 vignette)", file: v6Surv },
+        { label: "6b. Dying Light Reference · Tight ~4800K Flashlight Hotspot Core & Soft Dark Spill", file: refOr("01-dl1-flashlight-interior-hotspot.jpg", v6Surv) },
+        { label: "6c. Shipped Default (Today · v7) · Co-op Survivors 21:00 (readable co-op jackets, ~4800K tight beams, 0.35 vignette)", file: v7Surv },
+      ],
+      3,
+    )
+    await sheetPage.close()
+    await page.close()
+
+    if (mode === "v7") {
+      const gpuPage = await open(1728, 947, 2)
+      meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+      const gpuResults: Record<string, unknown> = {}
+      const pairs: { name: string; scene: Scene; preset: string; basePreset: string }[] = [
+        { name: "v7-vs-v6-street-day-14h", scene: SCENES.streetDay!, preset: "today", basePreset: "today-v6" },
+        { name: "v7-vs-v6-street-dusk-18h30", scene: SCENES.dusk!, preset: "today", basePreset: "today-v6" },
+        { name: "v7-vs-v6-street-night-21h", scene: SCENES.streetNight!, preset: "today", basePreset: "today-v6" },
+        { name: "v7-vs-v6-interior-night-21h", scene: SCENES.interiorNight!, preset: "today", basePreset: "today-v6" },
+        { name: "v7-vs-v6-horde-night-21h", scene: SCENES.hordeNight!, preset: "today", basePreset: "today-v6" },
+        { name: "v7-vs-v6-survivors-close-21h", scene: SCENES.survivorsClose!, preset: "today", basePreset: "today-v6" },
+      ]
+      for (const p of pairs) {
+        const res = await measurePair(gpuPage, p.scene, {}, p.preset, p.basePreset)
+        gpuResults[p.name] = res
+        console.log("GPU", p.name, JSON.stringify(res))
+      }
+      meta.gpu = gpuResults
+      await gpuPage.close()
+    }
   } else if (mode === "v6" || mode === "v6-stills") {
     const legNight = await capture(page, "legacy-street-night-21h.png", SCENES.streetNight!, {}, "legacy-today")
     const v5Night = await capture(page, "v5-street-night-21h.png", SCENES.streetNight!, {}, "today-v5")
@@ -684,7 +761,7 @@ try {
   }
   meta.errors = errors
 } finally {
-  writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
+  if (mode !== "v7-sheet") writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
   await browser.close()
   await server.close()
 }

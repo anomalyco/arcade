@@ -28,7 +28,7 @@ type LightSettings =
         beamPoolDistance: number
       }
       lighting: { practicalWarmth: number }
-      look?: { beamWarmth: number }
+      look?: { beamWarmth: number; beamTightness?: number }
     }
 
 /** Visibility of an actor to the local survivor: the fog/vision module's soft actor test when present. */
@@ -249,15 +249,18 @@ export class CoopView {
     const flash = "flashlight" in settings ? settings.flashlight : settings
     const practicalWarmth = "lighting" in settings ? settings.lighting.practicalWarmth : settings.practicalWarmth
     const beamWarmth = "look" in settings && settings.look ? settings.look.beamWarmth : 1
+    const beamTightness = "look" in settings && settings.look ? (settings.look.beamTightness ?? 0) : 0
+    const tightShare = Math.max(0, Math.min(1, beamTightness))
     const rgb = resolveBeamColor(flashlightColor(flash.flashlightWarmth), beamWarmth)
-    const cosHalf = Math.cos((flash.flashlightCone * Math.PI) / 360)
-    const directScale = practicalWarmth > 0.6 ? 0.28 : 1.0
+    const effCone = flash.flashlightCone * (1 - 0.28 * tightShare)
+    const cosHalf = Math.cos((effCone * Math.PI) / 360)
+    const directScale = practicalWarmth > 0.6 ? 0.28 + 0.24 * tightShare : 1.0
     for (const slot of others) {
       const p = slot.survivor
       if (count >= MAX_LIGHTS - 2 || p.flashlightOutput <= 0.001 || !p.flashlightOn) continue
       const inside = town.buildings.some((b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1)
       const power = p.flashlightOutput * flash.flashlightIntensity * directScale
-      const range = Math.min(flash.flashlightRange, inside ? 5.2 : 6.4)
+      const range = Math.min(flash.flashlightRange, (inside ? 5.2 : 6.4) + 1.8 * tightShare)
       const ground = supportHeight(town, p.x, p.y)
       const avatar = this.avatars.get(slot.index)?.avatar
       const rig = avatar?.light ?? { p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const, d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const, mounted: false }

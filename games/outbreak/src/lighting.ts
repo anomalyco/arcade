@@ -1443,33 +1443,39 @@ fn flashProfile(cosT: f32) -> f32 {
   let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * OL.u17.y;
   let tight = clamp(OL.v7.y, 0.0, 2.0);
   let tightShare = clamp(tight, 0.0, 1.0);
-  let effInner = mix(OL.u11.z, min(OL.u11.z, 0.36), tightShare);
+  let effInner = mix(OL.u11.z, min(OL.u11.z, 0.38), tightShare);
   let legacyCone = 1.0 - smoothstep(effInner, 1.0, t);
-  let tightCone = (1.0 - smoothstep(0.18, 0.74, t)) * 0.24;
+  let tightCone = (1.0 - smoothstep(0.22, 0.78, t)) * 0.30;
   let cone = mix(legacyCone, tightCone, tightShare);
-  let effCoreW = mix(max(OL.u12.x, 0.05), min(max(OL.u12.x, 0.05), 0.28), tightShare) / max(1.0, tight);
+  let effCoreW = mix(max(OL.u12.x, 0.05), min(max(OL.u12.x, 0.05), 0.30), tightShare) / max(1.0, tight);
   let dark = (t - effCoreW * 1.35) * 9.0;
   let bright = (t - mix(0.84, 0.56, tightShare)) * 12.5;
   let bBell = 1.0 / (1.0 + bright * bright * (1.0 + 0.35 * bright * bright));
   let dBell = 1.0 / (1.0 + dark * dark * (1.0 + 0.35 * dark * dark));
-  let rings = 1.0 + OL.u12.w * mix(1.0, 0.45, tightShare) * (0.2 * bBell - 0.18 * dBell);
+  let rings = 1.0 + OL.u12.w * mix(1.0, 0.35, tightShare) * (0.2 * bBell - 0.18 * dBell);
   let tc = t / max(effCoreW, 0.04);
   let ts = t / max(OL.u12.z, 1.0);
   let tc2 = tc * tc;
   let ts2 = ts * ts;
   let core = 1.0 / (1.0 + tc2 * (1.0 + 0.48 * tc2));
-  let spillWindow = mix(1.0, 1.0 - smoothstep(0.62, 1.18, t), tightShare);
+  let spillWindow = mix(1.0, 1.0 - smoothstep(0.60, 1.15, t), tightShare);
   let spill = (1.0 / (1.0 + ts2 * (1.0 + 0.48 * ts2))) * spillWindow;
-  let effCoreAmp = mix(OL.u11.w, max(OL.u11.w, 1.52), tightShare) * mix(1.0, 1.18, clamp(tight - 1.0, 0.0, 1.0));
-  let effSpillAmp = mix(OL.u12.y, min(OL.u12.y, 0.035), tightShare);
+  let effCoreAmp = mix(OL.u11.w, max(OL.u11.w, 2.15), tightShare) * mix(1.0, 1.18, clamp(tight - 1.0, 0.0, 1.0));
+  let effSpillAmp = mix(OL.u12.y, min(OL.u12.y, 0.038), tightShare);
   return cone * rings + effCoreAmp * core + effSpillAmp * spill;
 }
 
 /** Attenuation of the local flashlight (cone.w 2) for lightSum; toLight points from the surface to the lens. */
 fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
-  let cosT = -dot(toLight, vec3f(OL.u3.z * OL.u13.y, OL.u13.x, OL.u3.w * OL.u13.y));
-  if (cosT <= OL.u16.z) { return 0.0; }
-  return power * FLASH_RADIANCE * flashProfile(cosT) * flashFalloff(d3 * d3);
+  let cosT3D = -dot(toLight, vec3f(OL.u3.z * OL.u13.y, OL.u13.x, OL.u3.w * OL.u13.y));
+  if (cosT3D <= OL.u16.z) { return 0.0; }
+  let tightShare = clamp(OL.v7.y, 0.0, 1.0);
+  let planLen = inverseSqrt(max(dot(toLight.xz, toLight.xz), 1e-6));
+  let cosPlan = -dot(toLight.xz * planLen, OL.u3.zw);
+  // In v7, tighten lateral plan angle while keeping vertical pitch forgiving between hand and ground pool center
+  let cosT = mix(cosT3D, mix(cosPlan, cosT3D, 0.24), tightShare * step(0.0, cosPlan));
+  let nearReach = mix(1.0, smoothstep(0.35, 1.35, d3), tightShare);
+  return power * FLASH_RADIANCE * flashProfile(cosT) * flashFalloff(d3 * d3) * nearReach;
 }
 
 /** Inverse-square falloff softened inside the near-lens radius and windowed smoothly to zero at the beam range. */
@@ -1478,10 +1484,10 @@ fn flashFalloff(d2: f32) -> f32 {
   let x2 = d2 / (r * r);
   let tight = clamp(OL.v7.y, 0.0, 2.0);
   let tightShare = clamp(tight, 0.0, 1.0);
-  let soft = mix(max(OL.u13.z, 0.1), min(max(OL.u13.z, 0.1), 1.42), tightShare);
+  let soft = mix(max(OL.u13.z, 0.1), min(max(OL.u13.z, 0.1), 1.65), tightShare);
   if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
   let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
-  let tightWin = pow(clamp(1.0 - x2, 0.0, 1.0), 2.5);
+  let tightWin = pow(clamp(1.0 - x2, 0.0, 1.0), 2.35);
   return mix(win * win, tightWin, tightShare) / (1.0 + d2 / (soft * soft));
 }
 

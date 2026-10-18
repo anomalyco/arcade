@@ -265,7 +265,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     if (isV5Roof) {
       outbreakFlashMask = max(outbreakFlashMask, max(sun * 0.85, max(duskGlow * 0.88, 0.36)));
     } else if (isV6Roof) {
-      let effRoofSight = select(roofSight, mix(roofSight, 0.42 + 0.58 * roofSight, max(sun, duskGlow)), isV7Roof);
+      let effRoofSight = select(roofSight, mix(roofSight, 0.68 + 0.32 * roofSight, max(sun, duskGlow)), isV7Roof);
       let roofDayMask = max(sun * effRoofSight * 0.85, duskGlow * effRoofSight * 0.88);
       outbreakFlashMask = select(outbreakFlashMask, roofDayMask, roofDayMask > 0.12);
     }
@@ -430,11 +430,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let fdSun = floorData(o.world.xz);
     let fdSunOut = select(fdSun, floorData(o.world.xz + n.xz * 0.55), isV7 && mat == 4 && !inRoom);
     let sunFacing = select(clamp(dot(n, F.monitorBounds.xyz) * 0.55 + 0.45, 0.22, 1.0), 1.0, mat == 22 || mat == 12);
-    let heightSun = select(0.0, smoothstep(0.45, 1.45, o.world.y) * select(0.75, 0.92, mat == 22), isV7 && !inRoom);
+    let heightSun = select(0.0, select(smoothstep(0.45, 1.45, o.world.y) * 0.78, smoothstep(0.22, 0.85, o.world.y) * 0.94, mat == 22), isV7 && !inRoom);
     let v7GroundSun = clamp((fdSunOut.g - 0.54) / 0.38, 0.0, 1.0) * (1.0 - fdSunOut.r * 0.62 * (1.0 - heightSun));
     let rawExtSunShadow = select(clamp((fdSun.g - 0.36) / 0.52, 0.0, 1.0) * (1.0 - fdSun.r * 0.52), max(v7GroundSun, heightSun), isV7) * sunFacing;
     let sunShadow = select(rawExtSunShadow, clamp(fdSun.g * 1.35, 0.0, 0.72), inRoom);
-    let v6SunLit = baseSunLit * mix(1.0, select(0.14, 0.22, isV7) + select(0.86, 0.78, isV7) * sunShadow, clamp(unlitDesat, 0.0, 1.2));
+    let v6SunLit = baseSunLit * mix(1.0, select(0.14, 0.28, isV7) + select(0.86, 0.72, isV7) * sunShadow, clamp(unlitDesat, 0.0, 1.2));
     let sunLit = select(0.0, max(select(baseSunLit, v6SunLit, isV6), duskGlow * select(0.84, 0.45, inRoom)), satStyle > 0);
     var litMask = select(outbreakColorMask(flashIrr), 0.88, mat == 2);
     if ((satStyle == 3 || isV5OrV6) && mat != 2) {
@@ -502,28 +502,37 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let legacyZomRim = rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale * (1.0 - 0.84 * zRimShare * lightRule);
         var wetCatch = vec3f(0.0);
         if (zRimSpec > 0.001) {
-          let toLens = normalize(vec3f(OL.u3.x, OL.u11.x, OL.u3.y) - o.world);
-          let toLamp = normalize(vec3f(OL.u7.x - o.world.x, max(1.4, OL.u7.y - o.world.y), OL.u7.z - o.world.z));
+          let lensVec = vec3f(OL.u3.x, OL.u11.x, OL.u3.y) - o.world;
+          let dLens = length(lensVec);
+          let toLens = lensVec / max(dLens, 1e-4);
+          let toPorch = normalize(vec3f(27.7 - o.world.x, max(1.2, 2.25 - o.world.y), 36.3 - o.world.z));
+          let toStreet = normalize(vec3f(OL.u7.x - o.world.x, max(1.4, OL.u7.y - o.world.y), OL.u7.z - o.world.z));
+          let dPorch = length(vec2f(27.7, 36.3) - o.world.xz);
+          let toLamp = select(toStreet, toPorch, !inRoom && dPorch < 9.5);
           let hBeam = normalize(toLens + V);
           let hLamp = normalize(toLamp + V);
           let bloodMask = clamp((outbreakAlbedo.r - max(outbreakAlbedo.g, outbreakAlbedo.b) * 1.32) * 4.5, 0.0, 1.0);
           let skinCrownMask = smoothstep(0.72, 1.45, o.world.y);
-          let wetGloss = 0.42 + 0.58 * max(bloodMask, skinCrownMask * 0.75);
-          let specExp = mix(16.0, 34.0, bloodMask);
-          let beamReach = clamp(sqrt(max(flashIrr, 0.0)) * 2.8, 0.0, 1.8);
-          let lampReach = clamp(sqrt(max(outbreakPracticalIrr * 2.2 + outbreakBounceIrr * 1.4, 0.0)) * 2.4, 0.0, 1.6);
+          let wetGloss = 0.48 + 0.52 * max(bloodMask, skinCrownMask * 0.80);
+          let specExp = mix(14.0, 30.0, bloodMask);
+          let wideBeamGraze = clamp(1.0 - dLens / max(OL.u4.y, 1.0), 0.0, 1.0) * smoothstep(-0.35, 0.55, dot(-toLens.xz, OL.u3.zw)) * clamp(OL.u4.z, 0.0, 1.6) * 0.72;
+          let widePorchGraze = select(0.0, smoothstep(8.5, 2.2, dPorch) * nightLamps * 0.65, !inRoom);
+          let beamReach = clamp(max(sqrt(max(flashIrr, 0.0)) * 2.6, wideBeamGraze), 0.0, 1.7);
+          let lampReach = clamp(max(sqrt(max(outbreakPracticalIrr * 2.2 + outbreakBounceIrr * 1.4, 0.0)) * 2.2, widePorchGraze), 0.0, 1.5);
+          let brightCoreDamp = 1.0 - 0.55 * smoothstep(0.35, 0.92, max(inBeam, outbreakPracticalIrr * 1.5));
           let beamFacing = clamp(dot(n, toLens) * 0.65 + 0.55, 0.0, 1.0);
-          let beamSpec = pow(max(0.0, dot(n, hBeam)), specExp) * wetGloss * beamReach * 1.35;
-          let lampSpec = pow(max(0.0, dot(n, hLamp)), 18.0) * wetGloss * lampReach * 0.95;
-          let grazeRim = (pow(v1, 2.1) * 1.35 + contourRim * 0.80 + topCatch * 0.65);
-          let beamRim = grazeRim * beamFacing * beamReach * 0.42;
-          let lampRim = grazeRim * lampReach * 0.34;
-          let darkEdgeRim = pow(v1, 3.6) * (0.35 + 0.65 * max(0.0, n.y)) * 0.095;
-          let beamCatchCol = mix(OL.u5.rgb, vec3f(0.96, 0.94, 0.88), 0.45) * (0.65 + 0.55 * outbreakAlbedo);
-          let lampCatchCol = vec3f(1.05, 0.68, 0.32) * (0.60 + 0.55 * outbreakAlbedo);
-          let woundGlint = vec3f(0.46, 0.048, 0.036) * bloodMask * (0.18 + 1.35 * max(pow(v1, 1.8), pow(max(0.0, dot(n, hBeam)), 10.0)) * (0.28 + 0.72 * max(beamReach, lampReach)));
-          wetCatch = ((beamCatchCol * (beamSpec + beamRim) + lampCatchCol * (lampSpec + lampRim) + vec3f(0.11, 0.13, 0.16) * darkEdgeRim) + woundGlint) * darkLosScale * zRimSpec;
-          zombieRimMask = clamp((beamSpec * 0.85 + beamRim * 0.95 + lampSpec * 0.75 + lampRim * 0.80 + bloodMask * 0.42) * zRimSpec, 0.0, 0.92);
+          let lampFacing = clamp(dot(n, toLamp) * 0.65 + 0.55, 0.0, 1.0);
+          let beamSpec = pow(max(0.0, dot(n, hBeam)), specExp) * wetGloss * beamReach * 1.45 * brightCoreDamp;
+          let lampSpec = pow(max(0.0, dot(n, hLamp)), 16.0) * wetGloss * lampReach * 1.05 * brightCoreDamp;
+          let grazeRim = pow(v1, 1.85) * 1.45 + contourRim * 0.90 + topCatch * 0.70;
+          let beamRim = grazeRim * beamFacing * beamReach * 0.52 * brightCoreDamp;
+          let lampRim = grazeRim * lampFacing * lampReach * 0.42 * brightCoreDamp;
+          let darkEdgeRim = pow(v1, 2.8) * (0.35 + 0.65 * max(0.0, n.y)) * 0.16;
+          let beamCatchCol = mix(OL.u5.rgb, vec3f(0.96, 0.95, 0.90), 0.45) * (0.72 + 0.45 * outbreakAlbedo);
+          let lampCatchCol = vec3f(1.08, 0.72, 0.36) * (0.68 + 0.45 * outbreakAlbedo);
+          let woundGlint = vec3f(0.52, 0.055, 0.040) * bloodMask * (0.24 + 1.45 * max(pow(v1, 1.7), pow(max(0.0, dot(n, hBeam)), 10.0)) * (0.35 + 0.65 * max(beamReach, lampReach)));
+          wetCatch = ((beamCatchCol * (beamSpec + beamRim) + lampCatchCol * (lampSpec + lampRim) + vec3f(0.14, 0.17, 0.21) * darkEdgeRim) + woundGlint) * darkLosScale * zRimSpec;
+          zombieRimMask = clamp((beamSpec * 0.95 + beamRim * 1.10 + lampSpec * 0.85 + lampRim * 0.95 + bloodMask * 0.48 + darkEdgeRim * 0.85) * zRimSpec, 0.0, 0.94);
         }
         col = (max(cleanCol, darkReadFloor) + v5ActorAdd + legacyZomRim + wetCatch) * bootAO * zomForm;
       }
@@ -536,7 +545,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let shSlope = select(0.72, select(1.15, 0.55, isV7), mat == 20);
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(shKnee)) * shSlope);
     }
-    let knownSight = mix(outbreakSeen, max(outbreakSeen, outbreakKnown), select(lightRule, max(lightRule, select(sunLit, sunLit * (0.35 + 0.65 * outbreakSeen), isV7)), isV5 || isV7));
+    let knownSight = mix(outbreakSeen, max(outbreakSeen, outbreakKnown), select(lightRule, max(lightRule, select(sunLit, sunLit * (0.72 + 0.28 * outbreakSeen), isV7)), isV5 || isV7));
     let isHeroAny = mat == 12 && ((o.aux > 4.5 && o.aux < 5.5) || o.aux > 6.5);
     if (satStyle > 0 && mat != 6) {
       let heroLitFloor = select(0.0, select(0.88, 0.28 * outbreakSeen, isV6), isV5OrV6 && isHeroAny);
@@ -544,7 +553,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let colLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       let albLum = max(dot(outbreakAlbedo, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
       let truePigment = outbreakAlbedo * (colLum / albLum);
-      let v7DayTone = select(1.0, mix(1.0, 0.62, sunVal), isV7 && mat != 12);
+      let v7DayTone = select(1.0, mix(1.0, 0.80, sunVal), isV7 && mat != 12);
       let pigShare = select(select(0.42, 0.52, satStyle == 1), select(0.54 * v7DayTone, 0.68, mat == 12), isV5OrV6);
       col = mix(col, truePigment, litActive * pigShare);
       let cLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
@@ -566,11 +575,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let splitAmt = select(0.74, select(0.68, clamp(0.92 * unlitDesat, 0.0, 0.98), isV6), isV5OrV6);
         col = mix(col, mix(col, vec3f(sLum) * moonSplitCol, splitAmt), unlitNight);
         if (isV6 && sunVal > 0.05) {
-          let daySunSight = select(sunShadow * outbreakSeen, sunShadow * (0.24 + 0.76 * outbreakSeen), isV7);
+          let daySunSight = select(sunShadow * outbreakSeen, sunShadow * (0.58 + 0.42 * outbreakSeen), isV7);
           let dayUnlit = clamp((1.0 - daySunSight) * sunVal * (1.0 - litMask) * (1.0 - heroExempt), 0.0, 1.0);
           let dLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-          let dayDesatScale = select(0.58 + 0.30 * (1.0 - outbreakSeen), 0.36 + 0.32 * (1.0 - outbreakSeen), isV7);
-          let dayDesatAmt = clamp(dayUnlit * dayDesatScale * unlitDesat, 0.0, select(0.95, 0.76, isV7));
+          let dayDesatScale = select(0.58 + 0.30 * (1.0 - outbreakSeen), 0.28 + 0.24 * (1.0 - outbreakSeen), isV7);
+          let dayDesatAmt = clamp(dayUnlit * dayDesatScale * unlitDesat, 0.0, select(0.95, 0.62, isV7));
           col = mix(col, vec3f(dLum) * vec3f(0.95, 0.97, 1.02), dayDesatAmt);
         }
       } else if (satStyle == 3) {
@@ -583,13 +592,13 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       if (gradeStyle == 1 || isV5OrV6) {
         let dayFactor = clamp(F.monitorBounds.w, 0.0, 1.0);
         let toe = smoothstep(0.005, mix(select(0.08, 0.11, isV5OrV6), select(0.24, 0.19, isV5OrV6), dayFactor), gLum);
-        let v6UnlitDark = clamp(0.26 - 0.07 * (shroudDark - 1.0), 0.10, 0.44);
-        let v6UnlitBright = clamp(0.64 - 0.16 * (shroudDark - 1.0), 0.28, 0.94);
+        let v6UnlitDark = clamp(select(0.26, 0.14, isV7) - 0.07 * (shroudDark - 1.0), 0.08, 0.44);
+        let v6UnlitBright = clamp(select(0.64, 0.32, isV7) - 0.16 * (shroudDark - 1.0), 0.20, 0.94);
         let nightUnlitDark = select(0.36, select(mix(0.38, 0.84, duskGlow), mix(v6UnlitDark, 0.78, duskGlow), isV6), isV5OrV6);
         let nightUnlitBright = select(0.80, select(mix(0.94, 1.20, duskGlow), mix(v6UnlitBright, 1.14, duskGlow), isV6), isV5OrV6);
-        let dayShadeFloor = clamp(select(0.66, 0.76, isV7) - 0.14 * (shroudDark - 1.0), 0.35, 1.0);
-        let dayShadeCeil = select(1.0, 1.04, isV7);
-        let dayShadeScale = select(1.0, mix(dayShadeFloor, dayShadeCeil, sunShadow * (0.45 + 0.55 * outbreakSeen)), isV6);
+        let dayShadeFloor = clamp(select(0.66, 0.82, isV7) - 0.14 * (shroudDark - 1.0), 0.35, 1.0);
+        let dayShadeCeil = select(1.0, 1.06, isV7);
+        let dayShadeScale = select(1.0, mix(dayShadeFloor, dayShadeCeil, sunShadow * (select(0.45, 0.65, isV7) + select(0.55, 0.35, isV7) * outbreakSeen)), isV6);
         let darkScale = mix(mix(nightUnlitDark, select(0.94, 1.04, isV5OrV6), litMask), select(0.28, 0.68 * dayShadeScale, isV5OrV6), dayFactor);
         let brightScale = mix(mix(nightUnlitBright, select(1.12, 1.24, isV5OrV6), litMask), select(0.64, 1.34 * mix(0.78, 1.0, dayShadeScale), isV5OrV6), dayFactor);
         col *= mix(darkScale, brightScale, toe);
@@ -610,11 +619,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let beanKeep = select(0.0, clamp(OL.bean.w, 0.0, 1.0), mat == 12 && o.aux > 5.5 && o.aux < 6.5);
     let heroKeep = select(beanKeep, select(0.25, select(0.94, v6HeroKeep, isV6), isV5OrV6), isHeroAny) * lightRule;
     let baseFlashMask = max(max(lit + lift * (1.0 - lit), heroKeep), zombieRimMask * outbreakSeen);
-    let v7ExtUnseen = mix(0.22 * clamp(shroudDark, 0.0, 1.8), clamp(0.92 * shroudDark, 0.0, 1.8), max(lightRule, duskGlow * 0.35));
+    let v7ExtUnseen = mix(0.14 * clamp(shroudDark, 0.0, 1.8), clamp(0.92 * shroudDark, 0.0, 1.8), max(lightRule, duskGlow * 0.25));
     let extUnseenScale = select(1.0, select(0.16, select(clamp(0.92 * shroudDark, 0.0, 1.8), v7ExtUnseen, isV7), isV6), !inRoom && isV5OrV6);
-    let litCancel = select(lit, max(max(litMask * knownSight, zombieRimMask * outbreakSeen), max(sunShadow * (select(1.0, 0.35, isV7) + select(0.0, 0.65, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.45 + 0.55 * outbreakSeen), isV7))), isV6);
-    let shroudFloorRule = select(mix(0.38, 1.18, lightRule), 1.18 * lightRule * (1.0 - duskGlow * 0.78), isV7);
-    let actorShroudExempt = select(select(0.0, 0.65, isHeroAny), max(select(0.0, 0.65, isHeroAny), clamp((0.55 + 0.45 * zombieRimMask) * outbreakSeen * clamp(OL.v7.z, 0.0, 1.5), 0.0, 0.92)), isV7 && (mat == 12 || (mat == 3 && o.aux > 0.25 && o.aux < 0.95)));
+    let litCancel = select(lit, max(max(litMask * knownSight, zombieRimMask * outbreakSeen), max(sunShadow * (select(1.0, 0.68, isV7) + select(0.0, 0.32, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.62 + 0.38 * outbreakSeen), isV7))), isV6);
+    let shroudFloorRule = select(mix(0.38, 1.18, lightRule), 2.55 * lightRule * (1.0 - duskGlow * 0.82), isV7);
+    let actorShroudExempt = select(select(0.0, 0.65, isHeroAny), max(select(0.0, 0.65, isHeroAny), clamp((0.62 + 0.38 * zombieRimMask) * outbreakSeen * clamp(OL.v7.z, 0.0, 1.5), 0.0, 0.94)), isV7 && (mat == 12 || (mat == 3 && o.aux > 0.25 && o.aux < 0.95)));
     let unlitShroudFloor = select(
       0.0,
       (1.0 - smoothstep(0.02, 0.30, max(max(litMask, zombieRimMask), max(sunShadow * sunVal, select(0.0, duskGlow * 0.75, isV7))))) * shroudFloorRule * clamp(shroudDark, 0.0, 2.0) * (1.0 - actorShroudExempt),
