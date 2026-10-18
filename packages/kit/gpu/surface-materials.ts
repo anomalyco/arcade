@@ -1576,7 +1576,8 @@ export const surfaceMaterial = /* wgsl */ `
         n = normalize(n + surfaceNormalShift);
       }
     } else if (mat == 24) {
-      albedo *= (0.72 + surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) * 0.24) * mix(0.45, 0.82, smoothstep(0.0, 1.4, o.world.y)) * (1.0 - 0.42 * smoothstep(2.1, 3.8, o.world.y));
+      let timberFade = 1.0 - smoothstep(0.12, 0.48, surfaceFootprint * 28.0);
+      albedo *= (0.84 + (surfaceNoise(vec2f(o.world.x + o.world.z, o.world.y * 0.18) * 28.0) - 0.5) * 0.24 * timberFade) * mix(0.45, 0.82, smoothstep(0.0, 1.4, o.world.y)) * (1.0 - 0.42 * smoothstep(2.1, 3.8, o.world.y));
     }
 `
 

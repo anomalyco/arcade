@@ -91,10 +91,11 @@ export const outbreakSceneHooks: SceneHooks = {
   material: " ",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
-    let inRoom = interior(o.world.xz + n.xz * 0.28);
+    let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4));
     outbreakInRoom = inRoom;
-    let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
-      * select(1.0, 1.15, n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
+    let isPropTone = mat == 0 || mat == 10 || mat == 24;
+    let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), !isPropTone && o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
+      * select(1.0, 1.15, !isPropTone && n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
       * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
     albedo *= vTone;
     outbreakAlbedo = albedo;
@@ -147,7 +148,7 @@ fn interior(p:vec2f) -> bool {
       if (slotLPlan(i)) {
         if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22) { return true; }
         if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72) { return true; }
-        if (p.x > b.x + 9.72 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
+        if (p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
       } else if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
     }
     return false;
@@ -159,7 +160,7 @@ fn interior(p:vec2f) -> bool {
   );
   let south = p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22;
   let north = p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72;
-  let wing = p.x > b.x + 9.72 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72;
+  let wing = p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72;
   return select(all(p > b.xy) && all(p < b.zw), south || north || wing, p.x < 45.0);
 }
 fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
@@ -291,9 +292,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let wallKnee = select(0.14, mix(0.16, 0.42, sunVal), isV5OrV6);
         col = col / (1.0 + max(vec3f(0.0), col - vec3f(wallKnee)) * select(2.2, mix(1.8, 0.85, sunVal), isV5OrV6));
       }
-    } else if ((mat == 0 || mat == 3) && o.world.y > 0.03 && o.world.y < 2.68) {
+    } else if ((mat == 0 || mat == 3 || mat == 10) && o.world.y > 0.03 && o.world.y < 2.68) {
       // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
-      if (mat == 0 && o.world.y > 0.14 && o.world.y < 2.65) {
+      if ((mat == 0 || mat == 10) && o.world.y > 0.14 && o.world.y < 2.65) {
         let grainMod = evalTriplanarPropMod(o.world, n);
         col *= select(grainMod, 1.0 + (grainMod - 1.0) * select(1.15, 1.65, modStyle == 3), modStyle > 0);
       }
@@ -303,17 +304,18 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         col *= propGround;
         let Vp = normalize(F.cam.xyz - o.world);
         let contourP = clamp(length(n.xz), 0.0, 1.0);
+        let specAa = 1.0 / (1.0 + surfaceFootprint * 24.0);
         if (modStyle == 1 || modStyle == 2 || modStyle == 4) {
           let hTop = normalize(Vp + vec3f(0.15, 0.96, 0.22));
-          let satinExp = select(10.0, 22.0, mat == 3);
-          let satinAmp = select(0.032, 0.14, mat == 3) * select(1.0, select(1.35, 1.22, modStyle == 4), modStyle >= 2);
+          let satinExp = select(10.0, 22.0, mat == 3) * (0.45 + 0.55 * specAa);
+          let satinAmp = select(0.032, 0.14, mat == 3) * select(1.0, select(1.35, 1.22, modStyle == 4), modStyle >= 2) * specAa;
           let satinSpec = pow(max(0.0, dot(n, hTop)), satinExp) * satinAmp;
-          let bevelCatch = smoothstep(0.22, 0.86, n.y) * contourP * smoothstep(0.18, 1.35, o.world.y) * select(0.14, select(0.30, 0.22, modStyle == 4), modStyle >= 2);
+          let bevelCatch = smoothstep(0.22, 0.86, n.y) * contourP * smoothstep(0.18, 1.35, o.world.y) * select(0.14, select(0.30, 0.22, modStyle == 4), modStyle >= 2) * (0.35 + 0.65 * specAa);
           col = col * (1.0 + bevelCatch) + (outbreakAlbedo * 0.72 + vec3f(0.02)) * satinSpec * max(F.ambient.w, 0.45);
         }
         if (modStyle == 2 || modStyle == 4) {
           let rimF = 1.0 - max(dot(n, Vp), 0.0);
-          let silRim = (rimF * rimF) * (0.4 + 0.6 * contourP) * smoothstep(0.18, 1.35, o.world.y);
+          let silRim = (rimF * rimF) * (0.4 + 0.6 * contourP) * smoothstep(0.18, 1.35, o.world.y) * (0.35 + 0.65 * specAa);
           let rimTone = mix(vec3f(0.042, 0.058, 0.092), vec3f(0.090, 0.064, 0.034), clamp(outbreakPracticalIrr * 2.2, 0.0, 1.0));
           col += (outbreakAlbedo * 0.45 + rimTone) * silRim * select(0.65, 0.48, modStyle == 4);
         }
@@ -468,7 +470,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen * select(1.0, 0.16, isV5OrV6 && mat == 12);
-    if (modStyle > 0 && (mat == 0 || mat == 3 || mat == 12 || (isV5OrV6 && mat == 20 && nightLamps > 0.2))) {
+    if (modStyle > 0 && (mat == 0 || mat == 3 || mat == 10 || mat == 12 || (isV5OrV6 && mat == 20 && nightLamps > 0.2))) {
       // Soft shoulder roll-off so near-lens flashlight glare does not bleach the survivor, props, or dark macadam asphalt
       let shKnee = select(0.52, 0.34, mat == 20);
       let shSlope = select(0.72, 1.15, mat == 20);

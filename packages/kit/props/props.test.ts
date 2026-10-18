@@ -57,6 +57,34 @@ describe("prop meshes and batches", () => {
     expect([m.v[9], m.v[11 + 9], m.v[2 * 11 + 9]]).toEqual([MAT.lit, MAT.shiny, MAT.lit]) // only lit or shiny
   })
 
+  test("welds split seam vertices across shared positions, encodes AO in sRGB, and keeps MAT.shiny only on all-shiny faces", () => {
+    const splitSeam: PropAsset["lods"][number] = {
+      // Five triangles (>12 indices) sharing edge (0,0,0)-(1,0,0) with duplicated split vertices (0,1 and 3,4) that have a 0-vs-255 AO jump
+      positions: new Float32Array([
+        0, 0, 0,  1, 0, 0,  0, 1, 0,
+        0, 0, 0,  1, 0, 0,  0, -1, 0,
+      ]),
+      normals: new Float32Array([
+        0, 1, 0,  0, 1, 0,  0, 1, 0,
+        0, 1, 0,  0, 1, 0,  0, 1, 0,
+      ]),
+      colors: new Uint8Array([
+        255, 255, 255,  255, 255, 255,  255, 255, 255,
+        255, 255, 255,  255, 255, 255,  255, 255, 255,
+      ]),
+      ao: new Uint8Array([255, 255, 255, 0, 0, 255]),
+      mats: new Uint8Array([10, 10, 10, 10, 10, 0]),
+      indices: new Uint16Array([0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2]),
+    }
+    const m = propMesh(splitSeam, { ...DEFAULT_PROP_LOOK, brightness: 1, ao: 1, saturation: 1 })
+    // Duplicated seam vertices (0 and 3 at (0,0,0)) weld to identical color/AO
+    expect(m.v[0 * 11 + 6]).toBeCloseTo(m.v[3 * 11 + 6]!, 5)
+    expect(m.v[1 * 11 + 6]).toBeCloseTo(m.v[4 * 11 + 6]!, 5)
+    // First triangle has all 3 vertices mat=10 -> MAT.shiny; second triangle has mixed [10,10,0] -> MAT.lit
+    expect(m.v[0 * 11 + 9]).toBe(MAT.shiny)
+    expect(m.v[3 * 11 + 9]).toBe(MAT.lit)
+  })
+
   test("lamp faces above the shade line glow through the given light slot", () => {
     const quad: PropAsset["lods"][number] = {
       ...tri.lods[0]!,
