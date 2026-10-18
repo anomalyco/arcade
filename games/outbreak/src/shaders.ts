@@ -447,12 +447,23 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     outbreakLitMask = max(litMask * lightRule, sunLit);
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
+    var zombieRimMask = 0.0;
     if (mat != 12) {
       col = applyOutbreakFogOfWar(col, o.world, n, inRoom, mat, w);
+      if (isV7 && mat == 3 && o.aux > 0.25 && o.aux < 0.95) {
+        // Faint tapetum eye glint on zombies in sight, brightening sharply when grazed by beam or lamp light
+        let zomEyeSpec = clamp(OL.v7.z, 0.0, 2.0);
+        let eyeGrazing = clamp(flashIrr * 3.2 + outbreakPracticalIrr * 2.2, 0.0, 1.6);
+        col += vec3f(0.76, 0.86, 0.42) * (0.22 + 1.45 * eyeGrazing) * outbreakSeen * zomEyeSpec;
+        zombieRimMask = clamp((0.38 + 0.62 * eyeGrazing) * outbreakSeen * zomEyeSpec, 0.0, 0.95);
+      }
     } else {
       let V = normalize(F.cam.xyz - o.world);
       // Actors in LOS: Limbo/Noir top-down contour rim + anatomical form shading so zombies stay clearly readable even in dark areas
       let isLiveActor = o.extra.z >= 0.92;
+      let isZombieActor = o.aux < 4.5;
+      let zRimSpec = select(0.0, clamp(OL.v7.z, 0.0, 2.0), isV7 && isZombieActor);
+      let zRimShare = clamp(zRimSpec, 0.0, 1.0);
       let inBeam = outbreakColorMask(flashIrr);
       let darkLosScale = select(0.42, 1.0 - select(0.72, 0.30, isV5OrV6) * inBeam, isLiveActor);
       let v1 = 1.0 - max(dot(n, V), 0.0);
@@ -469,7 +480,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         mix(select(vec3f(0.095, 0.145, 0.245), v6RimCool, isV6), vec3f(0.11, 0.078, 0.042), max(w, inBeam)),
         isV5OrV6,
       );
-      let v6ReadCool = vec3f(0.20, 0.22, 0.25);
+      let v7ZomSilhouetteCool = mix(vec3f(0.20, 0.22, 0.25), vec3f(0.036, 0.040, 0.048), zRimShare * lightRule);
+      let v6ReadCool = select(vec3f(0.20, 0.22, 0.25), v7ZomSilhouetteCool, isV7 && isZombieActor);
       let darkReadFloor = outbreakAlbedo * formShade * select(
         mix(vec3f(0.22, 0.25, 0.30), vec3f(0.18, 0.15, 0.12), w),
         mix(select(vec3f(0.26, 0.30, 0.38), v6ReadCool, isV6), vec3f(0.32, 0.26, 0.20), max(w, inBeam)),
@@ -484,7 +496,36 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         col = outbreakBeanSurface(max(col, darkReadFloor), outbreakAlbedo, n, V, w, darkLosScale);
       } else {
         let zomForm = select(1.0, select(0.72 + 0.38 * formShade, 1.0, o.aux > 6.5), isV5OrV6);
-        col = (max(col, darkReadFloor) + v5ActorAdd + rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale) * bootAO * zomForm;
+        // Remove the base scene shader's flat ambient lift on zombies in v7 so unlit bodies stay dark silhouettes
+        let baseSceneLift = (outbreakAlbedo * vec3f(0.045, 0.054, 0.080) + vec3f(0.058, 0.075, 0.125) * pow(v1, 2.5)) * zRimShare * lightRule * (1.0 - clamp(inBeam * 1.4, 0.0, 1.0));
+        let cleanCol = max(vec3f(0.0), col - baseSceneLift);
+        let legacyZomRim = rimCol * max(F.ambient.w, 0.75) * (actorRim + topCatch) * darkLosScale * (1.0 - 0.84 * zRimShare * lightRule);
+        var wetCatch = vec3f(0.0);
+        if (zRimSpec > 0.001) {
+          let toLens = normalize(vec3f(OL.u3.x, OL.u11.x, OL.u3.y) - o.world);
+          let toLamp = normalize(vec3f(OL.u7.x - o.world.x, max(1.4, OL.u7.y - o.world.y), OL.u7.z - o.world.z));
+          let hBeam = normalize(toLens + V);
+          let hLamp = normalize(toLamp + V);
+          let bloodMask = clamp((outbreakAlbedo.r - max(outbreakAlbedo.g, outbreakAlbedo.b) * 1.32) * 4.5, 0.0, 1.0);
+          let skinCrownMask = smoothstep(0.72, 1.45, o.world.y);
+          let wetGloss = 0.42 + 0.58 * max(bloodMask, skinCrownMask * 0.75);
+          let specExp = mix(16.0, 34.0, bloodMask);
+          let beamReach = clamp(sqrt(max(flashIrr, 0.0)) * 2.8, 0.0, 1.8);
+          let lampReach = clamp(sqrt(max(outbreakPracticalIrr * 2.2 + outbreakBounceIrr * 1.4, 0.0)) * 2.4, 0.0, 1.6);
+          let beamFacing = clamp(dot(n, toLens) * 0.65 + 0.55, 0.0, 1.0);
+          let beamSpec = pow(max(0.0, dot(n, hBeam)), specExp) * wetGloss * beamReach * 1.35;
+          let lampSpec = pow(max(0.0, dot(n, hLamp)), 18.0) * wetGloss * lampReach * 0.95;
+          let grazeRim = (pow(v1, 2.1) * 1.35 + contourRim * 0.80 + topCatch * 0.65);
+          let beamRim = grazeRim * beamFacing * beamReach * 0.42;
+          let lampRim = grazeRim * lampReach * 0.34;
+          let darkEdgeRim = pow(v1, 3.6) * (0.35 + 0.65 * max(0.0, n.y)) * 0.095;
+          let beamCatchCol = mix(OL.u5.rgb, vec3f(0.96, 0.94, 0.88), 0.45) * (0.65 + 0.55 * outbreakAlbedo);
+          let lampCatchCol = vec3f(1.05, 0.68, 0.32) * (0.60 + 0.55 * outbreakAlbedo);
+          let woundGlint = vec3f(0.46, 0.048, 0.036) * bloodMask * (0.18 + 1.35 * max(pow(v1, 1.8), pow(max(0.0, dot(n, hBeam)), 10.0)) * (0.28 + 0.72 * max(beamReach, lampReach)));
+          wetCatch = ((beamCatchCol * (beamSpec + beamRim) + lampCatchCol * (lampSpec + lampRim) + vec3f(0.11, 0.13, 0.16) * darkEdgeRim) + woundGlint) * darkLosScale * zRimSpec;
+          zombieRimMask = clamp((beamSpec * 0.85 + beamRim * 0.95 + lampSpec * 0.75 + lampRim * 0.80 + bloodMask * 0.42) * zRimSpec, 0.0, 0.92);
+        }
+        col = (max(cleanCol, darkReadFloor) + v5ActorAdd + legacyZomRim + wetCatch) * bootAO * zomForm;
       }
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
@@ -568,14 +609,15 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let lift = OL.colour.y * lightRule * outbreakSeen * select(1.0, clamp(1.0 - 0.65 * unlitDesat, 0.0, 1.0), isV6);
     let beanKeep = select(0.0, clamp(OL.bean.w, 0.0, 1.0), mat == 12 && o.aux > 5.5 && o.aux < 6.5);
     let heroKeep = select(beanKeep, select(0.25, select(0.94, v6HeroKeep, isV6), isV5OrV6), isHeroAny) * lightRule;
-    let baseFlashMask = max(lit + lift * (1.0 - lit), heroKeep);
+    let baseFlashMask = max(max(lit + lift * (1.0 - lit), heroKeep), zombieRimMask * outbreakSeen);
     let v7ExtUnseen = mix(0.22 * clamp(shroudDark, 0.0, 1.8), clamp(0.92 * shroudDark, 0.0, 1.8), max(lightRule, duskGlow * 0.35));
     let extUnseenScale = select(1.0, select(0.16, select(clamp(0.92 * shroudDark, 0.0, 1.8), v7ExtUnseen, isV7), isV6), !inRoom && isV5OrV6);
-    let litCancel = select(lit, max(litMask * knownSight, max(sunShadow * (select(1.0, 0.35, isV7) + select(0.0, 0.65, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.45 + 0.55 * outbreakSeen), isV7))), isV6);
+    let litCancel = select(lit, max(max(litMask * knownSight, zombieRimMask * outbreakSeen), max(sunShadow * (select(1.0, 0.35, isV7) + select(0.0, 0.65, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.45 + 0.55 * outbreakSeen), isV7))), isV6);
     let shroudFloorRule = select(mix(0.38, 1.18, lightRule), 1.18 * lightRule * (1.0 - duskGlow * 0.78), isV7);
+    let actorShroudExempt = select(select(0.0, 0.65, isHeroAny), max(select(0.0, 0.65, isHeroAny), clamp((0.55 + 0.45 * zombieRimMask) * outbreakSeen * clamp(OL.v7.z, 0.0, 1.5), 0.0, 0.92)), isV7 && (mat == 12 || (mat == 3 && o.aux > 0.25 && o.aux < 0.95)));
     let unlitShroudFloor = select(
       0.0,
-      (1.0 - smoothstep(0.02, 0.30, max(litMask, max(sunShadow * sunVal, select(0.0, duskGlow * 0.75, isV7))))) * shroudFloorRule * clamp(shroudDark, 0.0, 2.0) * (1.0 - select(0.0, 0.65, isHeroAny)),
+      (1.0 - smoothstep(0.02, 0.30, max(max(litMask, zombieRimMask), max(sunShadow * sunVal, select(0.0, duskGlow * 0.75, isV7))))) * shroudFloorRule * clamp(shroudDark, 0.0, 2.0) * (1.0 - actorShroudExempt),
       isV6 && OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001,
     );
     let rawUnseen = max(outbreakUnseenAlpha * extUnseenScale * select(1.0, clamp(0.35 + 0.65 * sightDark, 0.0, 2.0), isV6), unlitShroudFloor);
